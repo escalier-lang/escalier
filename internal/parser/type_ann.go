@@ -306,6 +306,18 @@ func (p *Parser) primaryTypeAnn() ast.TypeAnn {
 	var typeAnn ast.TypeAnn
 
 	for typeAnn == nil {
+		// A keyword followed by `.` heads a qualified type reference rather than
+		// meaning what the keyword means. `set.Set<T>` reaches the `Set` a
+		// `std:set` import binds, and the primitive keywords behave the same way,
+		// since `string` has no members to reach in type position. Six package
+		// names lex as keywords — `string`, `number`, `boolean`, `bigint`, `set`
+		// and `async` — and a package binds under its own name, so each of them
+		// heads a reference somewhere in the generated tree.
+		if token.Type != Identifier && p.lexer.peek2().Type == Dot {
+			p.lexer.consume()
+			typeAnn = p.parseTypeRef(token)
+			break
+		}
 		// nolint: exhaustive
 		switch token.Type {
 		case LineComment, BlockComment:

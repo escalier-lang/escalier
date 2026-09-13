@@ -84,10 +84,12 @@ func TestPartitionLib_LibES5_EndToEnd(t *testing.T) {
 		require.NoError(t, err, "%s should be on disk", path)
 		require.NotEmpty(t, contents, "%s should not be empty", path)
 
-		_, parseErrs := parser.ParseDecls(context.Background(), &ast.Source{
+		// ParseLibFiles rather than ParseDecls: a generated package opens with an
+		// import header, and only the whole-file parser reads one.
+		_, parseErrs := parser.ParseLibFiles(context.Background(), []*ast.Source{{
 			Path:     path,
 			Contents: string(contents),
-		})
+		}})
 		require.Empty(t, parseErrs, "%s must parse back", pkg.File)
 	}
 
@@ -180,10 +182,12 @@ func TestPartitionLib_PinnedLibSet_RoutesConvertsAndWrites(t *testing.T) {
 		require.NoError(t, err, "%s should be on disk", path)
 		require.NotEmpty(t, contents, "%s should not be empty", path)
 
-		_, parseErrs := parser.ParseDecls(context.Background(), &ast.Source{
+		// ParseLibFiles rather than ParseDecls: a generated package opens with an
+		// import header, and only the whole-file parser reads one.
+		_, parseErrs := parser.ParseLibFiles(context.Background(), []*ast.Source{{
 			Path:     path,
 			Contents: string(contents),
-		})
+		}})
 		require.Empty(t, parseErrs, "%s must parse back", pkg.File)
 	}
 }
@@ -289,10 +293,12 @@ func TestGenerate_PinnedLibSet(t *testing.T) {
 			"%s should open with the generated-file header", pkg.File)
 		first[pkg.File] = string(contents)
 
-		_, parseErrs := parser.ParseDecls(context.Background(), &ast.Source{
+		// ParseLibFiles rather than ParseDecls: a generated package opens with an
+		// import header, and only the whole-file parser reads one.
+		_, parseErrs := parser.ParseLibFiles(context.Background(), []*ast.Source{{
 			Path:     path,
 			Contents: string(contents),
-		})
+		}})
 		require.Empty(t, parseErrs, "%s must parse back", pkg.File)
 	}
 

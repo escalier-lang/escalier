@@ -2,6 +2,16 @@
 // Its facts come from the pinned lib.*.d.ts set, the ECMA-262
 // derived facts, and the overlay. Change one of those and re-run.
 
+import "std:map"
+import "std:object"
+import "std:prelude"
+import "std:typed_arrays"
+import "web:core"
+import "web:crypto"
+import "web:dom"
+import "web:file"
+import "web:workers"
+
 export declare interface RTCAnswerOptions extends RTCOfferAnswerOptions {}
 
 export declare interface RTCCertificateExpiration {
@@ -10,14 +20,14 @@ export declare interface RTCCertificateExpiration {
 
 export declare interface RTCConfiguration {
     bundlePolicy?: RTCBundlePolicy,
-    certificates?: mut Array<RTCCertificate>,
+    certificates?: mut prelude.Array<RTCCertificate>,
     iceCandidatePoolSize?: number,
-    iceServers?: mut Array<RTCIceServer>,
+    iceServers?: mut prelude.Array<RTCIceServer>,
     iceTransportPolicy?: RTCIceTransportPolicy,
     rtcpMuxPolicy?: RTCRtcpMuxPolicy
 }
 
-export declare interface RTCDataChannelEventInit extends EventInit {
+export declare interface RTCDataChannelEventInit extends core.EventInit {
     channel: RTCDataChannel
 }
 
@@ -36,15 +46,15 @@ export declare interface RTCDtlsFingerprint {
 }
 
 export declare interface RTCEncodedAudioFrameMetadata {
-    contributingSources?: mut Array<number>,
+    contributingSources?: mut prelude.Array<number>,
     payloadType?: number,
     sequenceNumber?: number,
     synchronizationSource?: number
 }
 
 export declare interface RTCEncodedVideoFrameMetadata {
-    contributingSources?: mut Array<number>,
-    dependencies?: mut Array<number>,
+    contributingSources?: mut prelude.Array<number>,
+    dependencies?: mut prelude.Array<number>,
     frameId?: number,
     height?: number,
     payloadType?: number,
@@ -55,7 +65,7 @@ export declare interface RTCEncodedVideoFrameMetadata {
     width?: number
 }
 
-export declare interface RTCErrorEventInit extends EventInit {
+export declare interface RTCErrorEventInit extends core.EventInit {
     error: RTCError
 }
 
@@ -83,8 +93,8 @@ export declare interface RTCIceCandidatePairStats extends RTCStats {
     bytesSent?: number,
     consentRequestsSent?: number,
     currentRoundTripTime?: number,
-    lastPacketReceivedTimestamp?: DOMHighResTimeStamp,
-    lastPacketSentTimestamp?: DOMHighResTimeStamp,
+    lastPacketReceivedTimestamp?: core.DOMHighResTimeStamp,
+    lastPacketSentTimestamp?: core.DOMHighResTimeStamp,
     localCandidateId: string,
     nominated?: boolean,
     packetsDiscardedOnSend?: number,
@@ -102,7 +112,7 @@ export declare interface RTCIceCandidatePairStats extends RTCStats {
 
 export declare interface RTCIceServer {
     credential?: string,
-    urls: string | mut Array<string>,
+    urls: string | mut prelude.Array<string>,
     username?: string
 }
 
@@ -112,7 +122,7 @@ export declare interface RTCInboundRtpStreamStats extends RTCReceivedRtpStreamSt
     concealedSamples?: number,
     concealmentEvents?: number,
     decoderImplementation?: string,
-    estimatedPlayoutTimestamp?: DOMHighResTimeStamp,
+    estimatedPlayoutTimestamp?: core.DOMHighResTimeStamp,
     fecBytesReceived?: number,
     fecPacketsDiscarded?: number,
     fecPacketsReceived?: number,
@@ -134,7 +144,7 @@ export declare interface RTCInboundRtpStreamStats extends RTCReceivedRtpStreamSt
     jitterBufferMinimumDelay?: number,
     jitterBufferTargetDelay?: number,
     keyFramesDecoded?: number,
-    lastPacketReceivedTimestamp?: DOMHighResTimeStamp,
+    lastPacketReceivedTimestamp?: core.DOMHighResTimeStamp,
     mid?: string,
     nackCount?: number,
     packetsDiscarded?: number,
@@ -190,7 +200,7 @@ export declare interface RTCOutboundRtpStreamStats extends RTCSentRtpStreamStats
     nackCount?: number,
     pliCount?: number,
     qpSum?: number,
-    qualityLimitationDurations?: Record<string, number>,
+    qualityLimitationDurations?: object.Record<string, number>,
     qualityLimitationReason?: RTCQualityLimitationReason,
     qualityLimitationResolutionChanges?: number,
     remoteId?: string,
@@ -205,7 +215,7 @@ export declare interface RTCOutboundRtpStreamStats extends RTCSentRtpStreamStats
     totalPacketSendDelay?: number
 }
 
-export declare interface RTCPeerConnectionIceErrorEventInit extends EventInit {
+export declare interface RTCPeerConnectionIceErrorEventInit extends core.EventInit {
     address?: string | null,
     errorCode: number,
     errorText?: string,
@@ -213,7 +223,7 @@ export declare interface RTCPeerConnectionIceErrorEventInit extends EventInit {
     url?: string
 }
 
-export declare interface RTCPeerConnectionIceEventInit extends EventInit {
+export declare interface RTCPeerConnectionIceEventInit extends core.EventInit {
     candidate?: RTCIceCandidate | null,
     url?: string | null
 }
@@ -230,8 +240,8 @@ export declare interface RTCRtcpParameters {
 }
 
 export declare interface RTCRtpCapabilities {
-    codecs: mut Array<RTCRtpCodec>,
-    headerExtensions: mut Array<RTCRtpHeaderExtensionCapability>
+    codecs: mut prelude.Array<RTCRtpCodec>,
+    headerExtensions: mut prelude.Array<RTCRtpHeaderExtensionCapability>
 }
 
 export declare interface RTCRtpCodec {
@@ -253,7 +263,7 @@ export declare interface RTCRtpContributingSource {
     audioLevel?: number,
     rtpTimestamp: number,
     source: number,
-    timestamp: DOMHighResTimeStamp
+    timestamp: core.DOMHighResTimeStamp
 }
 
 export declare interface RTCRtpEncodingParameters extends RTCRtpCodingParameters {
@@ -276,8 +286,8 @@ export declare interface RTCRtpHeaderExtensionParameters {
 }
 
 export declare interface RTCRtpParameters {
-    codecs: mut Array<RTCRtpCodecParameters>,
-    headerExtensions: mut Array<RTCRtpHeaderExtensionParameters>,
+    codecs: mut prelude.Array<RTCRtpCodecParameters>,
+    headerExtensions: mut prelude.Array<RTCRtpHeaderExtensionParameters>,
     rtcp: RTCRtcpParameters
 }
 
@@ -285,7 +295,7 @@ export declare interface RTCRtpReceiveParameters extends RTCRtpParameters {}
 
 export declare interface RTCRtpSendParameters extends RTCRtpParameters {
     degradationPreference?: RTCDegradationPreference,
-    encodings: mut Array<RTCRtpEncodingParameters>,
+    encodings: mut prelude.Array<RTCRtpEncodingParameters>,
     transactionId: string
 }
 
@@ -300,8 +310,8 @@ export declare interface RTCRtpSynchronizationSource extends RTCRtpContributingS
 
 export declare interface RTCRtpTransceiverInit {
     direction?: RTCRtpTransceiverDirection,
-    sendEncodings?: mut Array<RTCRtpEncodingParameters>,
-    streams?: mut Array<MediaStream>
+    sendEncodings?: mut prelude.Array<RTCRtpEncodingParameters>,
+    streams?: mut prelude.Array<dom.MediaStream>
 }
 
 export declare interface RTCSentRtpStreamStats extends RTCRtpStreamStats {
@@ -318,14 +328,14 @@ export declare interface RTCSetParameterOptions {}
 
 export declare interface RTCStats {
     id: string,
-    timestamp: DOMHighResTimeStamp,
+    timestamp: core.DOMHighResTimeStamp,
     type: RTCStatsType
 }
 
-export declare interface RTCTrackEventInit extends EventInit {
+export declare interface RTCTrackEventInit extends core.EventInit {
     receiver: RTCRtpReceiver,
-    streams?: mut Array<MediaStream>,
-    track: MediaStreamTrack,
+    streams?: mut prelude.Array<dom.MediaStream>,
+    track: dom.MediaStreamTrack,
     transceiver: RTCRtpTransceiver
 }
 
@@ -352,27 +362,27 @@ export declare interface RTCTransportStats extends RTCStats {
 @js("RTCCertificate")
 export declare class RTCCertificate {
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/RTCCertificate/expires) */
-    readonly expires: EpochTimeStamp,
+    readonly expires: dom.EpochTimeStamp,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/RTCCertificate/getFingerprints) */
-    getFingerprints(self) -> mut Array<RTCDtlsFingerprint>,
+    getFingerprints(self) -> mut prelude.Array<RTCDtlsFingerprint>,
     static prototype: RTCCertificate,
     constructor(mut self)
 }
 
 export declare interface RTCDataChannelEventMap {
-    "bufferedamountlow": Event,
-    "close": Event,
-    "closing": Event,
+    "bufferedamountlow": core.Event,
+    "close": core.Event,
+    "closing": core.Event,
     "error": RTCErrorEvent,
-    "message": MessageEvent,
-    "open": Event
+    "message": dom.MessageEvent,
+    "open": core.Event
 }
 
 /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/RTCDataChannel) */
 @js("RTCDataChannel")
-export declare class RTCDataChannel extends EventTarget {
+export declare class RTCDataChannel extends core.EventTarget {
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/RTCDataChannel/binaryType) */
-    binaryType: BinaryType,
+    binaryType: dom.BinaryType,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/RTCDataChannel/bufferedAmount) */
     readonly bufferedAmount: number,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/RTCDataChannel/bufferedAmountLowThreshold) */
@@ -388,17 +398,17 @@ export declare class RTCDataChannel extends EventTarget {
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/RTCDataChannel/negotiated) */
     readonly negotiated: boolean,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/RTCDataChannel/bufferedamountlow_event) */
-    onbufferedamountlow: (fn (this: RTCDataChannel, ev: Event) -> any) | null,
+    onbufferedamountlow: (fn (this: RTCDataChannel, ev: core.Event) -> any) | null,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/RTCDataChannel/close_event) */
-    onclose: (fn (this: RTCDataChannel, ev: Event) -> any) | null,
+    onclose: (fn (this: RTCDataChannel, ev: core.Event) -> any) | null,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/RTCDataChannel/closing_event) */
-    onclosing: (fn (this: RTCDataChannel, ev: Event) -> any) | null,
+    onclosing: (fn (this: RTCDataChannel, ev: core.Event) -> any) | null,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/RTCDataChannel/error_event) */
     onerror: (fn (this: RTCDataChannel, ev: RTCErrorEvent) -> any) | null,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/RTCDataChannel/message_event) */
-    onmessage: (fn (this: RTCDataChannel, ev: MessageEvent) -> any) | null,
+    onmessage: (fn (this: RTCDataChannel, ev: dom.MessageEvent) -> any) | null,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/RTCDataChannel/open_event) */
-    onopen: (fn (this: RTCDataChannel, ev: Event) -> any) | null,
+    onopen: (fn (this: RTCDataChannel, ev: core.Event) -> any) | null,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/RTCDataChannel/ordered) */
     readonly ordered: boolean,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/RTCDataChannel/protocol) */
@@ -409,20 +419,20 @@ export declare class RTCDataChannel extends EventTarget {
     close(mut self) -> unknown,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/RTCDataChannel/send) */
     send(mut self, data: string) -> unknown,
-    send(mut self, data: Blob) -> unknown,
-    send(mut self, data: ArrayBuffer) -> unknown,
-    send(mut self, data: ArrayBufferView) -> unknown,
-    addEventListener<K: keyof RTCDataChannelEventMap>(mut self, type: K, listener: fn (this: RTCDataChannel, ev: RTCDataChannelEventMap[K]) -> any, options?: boolean | AddEventListenerOptions) -> unknown,
-    addEventListener(mut self, type: string, listener: EventListenerOrEventListenerObject, options?: boolean | AddEventListenerOptions) -> unknown,
-    removeEventListener<K: keyof RTCDataChannelEventMap>(mut self, type: K, listener: fn (this: RTCDataChannel, ev: RTCDataChannelEventMap[K]) -> any, options?: boolean | EventListenerOptions) -> unknown,
-    removeEventListener(mut self, type: string, listener: EventListenerOrEventListenerObject, options?: boolean | EventListenerOptions) -> unknown,
+    send(mut self, data: file.Blob) -> unknown,
+    send(mut self, data: typed_arrays.ArrayBuffer) -> unknown,
+    send(mut self, data: typed_arrays.ArrayBufferView) -> unknown,
+    addEventListener<K: keyof RTCDataChannelEventMap>(mut self, type: K, listener: fn (this: RTCDataChannel, ev: RTCDataChannelEventMap[K]) -> any, options?: boolean | core.AddEventListenerOptions) -> unknown,
+    addEventListener(mut self, type: string, listener: core.EventListenerOrEventListenerObject, options?: boolean | core.AddEventListenerOptions) -> unknown,
+    removeEventListener<K: keyof RTCDataChannelEventMap>(mut self, type: K, listener: fn (this: RTCDataChannel, ev: RTCDataChannelEventMap[K]) -> any, options?: boolean | core.EventListenerOptions) -> unknown,
+    removeEventListener(mut self, type: string, listener: core.EventListenerOrEventListenerObject, options?: boolean | core.EventListenerOptions) -> unknown,
     static prototype: RTCDataChannel,
     constructor(mut self)
 }
 
 /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/RTCDataChannelEvent) */
 @js("RTCDataChannelEvent")
-export declare class RTCDataChannelEvent extends Event {
+export declare class RTCDataChannelEvent extends core.Event {
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/RTCDataChannelEvent/channel) */
     readonly channel: RTCDataChannel,
     static prototype: RTCDataChannelEvent,
@@ -431,24 +441,24 @@ export declare class RTCDataChannelEvent extends Event {
 
 export declare interface RTCDtlsTransportEventMap {
     "error": RTCErrorEvent,
-    "statechange": Event
+    "statechange": core.Event
 }
 
 /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/RTCDtlsTransport) */
 @js("RTCDtlsTransport")
-export declare class RTCDtlsTransport extends EventTarget {
+export declare class RTCDtlsTransport extends core.EventTarget {
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/RTCDtlsTransport/iceTransport) */
     readonly iceTransport: RTCIceTransport,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/RTCDtlsTransport/error_event) */
     onerror: (fn (this: RTCDtlsTransport, ev: RTCErrorEvent) -> any) | null,
-    onstatechange: (fn (this: RTCDtlsTransport, ev: Event) -> any) | null,
+    onstatechange: (fn (this: RTCDtlsTransport, ev: core.Event) -> any) | null,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/RTCDtlsTransport/state) */
     readonly state: RTCDtlsTransportState,
-    getRemoteCertificates(self) -> mut Array<ArrayBuffer>,
-    addEventListener<K: keyof RTCDtlsTransportEventMap>(mut self, type: K, listener: fn (this: RTCDtlsTransport, ev: RTCDtlsTransportEventMap[K]) -> any, options?: boolean | AddEventListenerOptions) -> unknown,
-    addEventListener(mut self, type: string, listener: EventListenerOrEventListenerObject, options?: boolean | AddEventListenerOptions) -> unknown,
-    removeEventListener<K: keyof RTCDtlsTransportEventMap>(mut self, type: K, listener: fn (this: RTCDtlsTransport, ev: RTCDtlsTransportEventMap[K]) -> any, options?: boolean | EventListenerOptions) -> unknown,
-    removeEventListener(mut self, type: string, listener: EventListenerOrEventListenerObject, options?: boolean | EventListenerOptions) -> unknown,
+    getRemoteCertificates(self) -> mut prelude.Array<typed_arrays.ArrayBuffer>,
+    addEventListener<K: keyof RTCDtlsTransportEventMap>(mut self, type: K, listener: fn (this: RTCDtlsTransport, ev: RTCDtlsTransportEventMap[K]) -> any, options?: boolean | core.AddEventListenerOptions) -> unknown,
+    addEventListener(mut self, type: string, listener: core.EventListenerOrEventListenerObject, options?: boolean | core.AddEventListenerOptions) -> unknown,
+    removeEventListener<K: keyof RTCDtlsTransportEventMap>(mut self, type: K, listener: fn (this: RTCDtlsTransport, ev: RTCDtlsTransportEventMap[K]) -> any, options?: boolean | core.EventListenerOptions) -> unknown,
+    removeEventListener(mut self, type: string, listener: core.EventListenerOrEventListenerObject, options?: boolean | core.EventListenerOptions) -> unknown,
     static prototype: RTCDtlsTransport,
     constructor(mut self)
 }
@@ -457,7 +467,7 @@ export declare class RTCDtlsTransport extends EventTarget {
 @js("RTCEncodedAudioFrame")
 export declare class RTCEncodedAudioFrame {
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/RTCEncodedAudioFrame/data) */
-    data: ArrayBuffer,
+    data: typed_arrays.ArrayBuffer,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/RTCEncodedAudioFrame/timestamp) */
     readonly timestamp: number,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/RTCEncodedAudioFrame/getMetadata) */
@@ -470,7 +480,7 @@ export declare class RTCEncodedAudioFrame {
 @js("RTCEncodedVideoFrame")
 export declare class RTCEncodedVideoFrame {
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/RTCEncodedVideoFrame/data) */
-    data: ArrayBuffer,
+    data: typed_arrays.ArrayBuffer,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/RTCEncodedVideoFrame/timestamp) */
     readonly timestamp: number,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/RTCEncodedVideoFrame/type) */
@@ -483,7 +493,7 @@ export declare class RTCEncodedVideoFrame {
 
 /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/RTCError) */
 @js("RTCError")
-export declare class RTCError extends DOMException {
+export declare class RTCError extends core.DOMException {
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/RTCError/errorDetail) */
     readonly errorDetail: RTCErrorDetailType,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/RTCError/receivedAlert) */
@@ -500,7 +510,7 @@ export declare class RTCError extends DOMException {
 
 /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/RTCErrorEvent) */
 @js("RTCErrorEvent")
-export declare class RTCErrorEvent extends Event {
+export declare class RTCErrorEvent extends core.Event {
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/RTCErrorEvent/error) */
     readonly error: RTCError,
     static prototype: RTCErrorEvent,
@@ -554,9 +564,9 @@ export declare interface RTCIceCandidatePair {
 }
 
 export declare interface RTCIceTransportEventMap {
-    "gatheringstatechange": Event,
-    "selectedcandidatepairchange": Event,
-    "statechange": Event
+    "gatheringstatechange": core.Event,
+    "selectedcandidatepairchange": core.Event,
+    "statechange": core.Event
 }
 
 /**
@@ -565,36 +575,36 @@ export declare interface RTCIceTransportEventMap {
  * [MDN Reference](https://developer.mozilla.org/docs/Web/API/RTCIceTransport)
  */
 @js("RTCIceTransport")
-export declare class RTCIceTransport extends EventTarget {
+export declare class RTCIceTransport extends core.EventTarget {
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/RTCIceTransport/gatheringState) */
     readonly gatheringState: RTCIceGathererState,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/RTCIceTransport/gatheringstatechange_event) */
-    ongatheringstatechange: (fn (this: RTCIceTransport, ev: Event) -> any) | null,
+    ongatheringstatechange: (fn (this: RTCIceTransport, ev: core.Event) -> any) | null,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/RTCIceTransport/selectedcandidatepairchange_event) */
-    onselectedcandidatepairchange: (fn (this: RTCIceTransport, ev: Event) -> any) | null,
+    onselectedcandidatepairchange: (fn (this: RTCIceTransport, ev: core.Event) -> any) | null,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/RTCIceTransport/statechange_event) */
-    onstatechange: (fn (this: RTCIceTransport, ev: Event) -> any) | null,
+    onstatechange: (fn (this: RTCIceTransport, ev: core.Event) -> any) | null,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/RTCIceTransport/state) */
     readonly state: RTCIceTransportState,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/RTCIceTransport/getSelectedCandidatePair) */
     getSelectedCandidatePair(self) -> RTCIceCandidatePair | null,
-    addEventListener<K: keyof RTCIceTransportEventMap>(mut self, type: K, listener: fn (this: RTCIceTransport, ev: RTCIceTransportEventMap[K]) -> any, options?: boolean | AddEventListenerOptions) -> unknown,
-    addEventListener(mut self, type: string, listener: EventListenerOrEventListenerObject, options?: boolean | AddEventListenerOptions) -> unknown,
-    removeEventListener<K: keyof RTCIceTransportEventMap>(mut self, type: K, listener: fn (this: RTCIceTransport, ev: RTCIceTransportEventMap[K]) -> any, options?: boolean | EventListenerOptions) -> unknown,
-    removeEventListener(mut self, type: string, listener: EventListenerOrEventListenerObject, options?: boolean | EventListenerOptions) -> unknown,
+    addEventListener<K: keyof RTCIceTransportEventMap>(mut self, type: K, listener: fn (this: RTCIceTransport, ev: RTCIceTransportEventMap[K]) -> any, options?: boolean | core.AddEventListenerOptions) -> unknown,
+    addEventListener(mut self, type: string, listener: core.EventListenerOrEventListenerObject, options?: boolean | core.AddEventListenerOptions) -> unknown,
+    removeEventListener<K: keyof RTCIceTransportEventMap>(mut self, type: K, listener: fn (this: RTCIceTransport, ev: RTCIceTransportEventMap[K]) -> any, options?: boolean | core.EventListenerOptions) -> unknown,
+    removeEventListener(mut self, type: string, listener: core.EventListenerOrEventListenerObject, options?: boolean | core.EventListenerOptions) -> unknown,
     static prototype: RTCIceTransport,
     constructor(mut self)
 }
 
 export declare interface RTCPeerConnectionEventMap {
-    "connectionstatechange": Event,
+    "connectionstatechange": core.Event,
     "datachannel": RTCDataChannelEvent,
     "icecandidate": RTCPeerConnectionIceEvent,
     "icecandidateerror": RTCPeerConnectionIceErrorEvent,
-    "iceconnectionstatechange": Event,
-    "icegatheringstatechange": Event,
-    "negotiationneeded": Event,
-    "signalingstatechange": Event,
+    "iceconnectionstatechange": core.Event,
+    "icegatheringstatechange": core.Event,
+    "negotiationneeded": core.Event,
+    "signalingstatechange": core.Event,
     "track": RTCTrackEvent
 }
 
@@ -604,7 +614,7 @@ export declare interface RTCPeerConnectionEventMap {
  * [MDN Reference](https://developer.mozilla.org/docs/Web/API/RTCPeerConnection)
  */
 @js("RTCPeerConnection")
-export declare class RTCPeerConnection extends EventTarget {
+export declare class RTCPeerConnection extends core.EventTarget {
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/RTCPeerConnection/canTrickleIceCandidates) */
     readonly canTrickleIceCandidates: boolean | null,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/RTCPeerConnection/connectionState) */
@@ -620,7 +630,7 @@ export declare class RTCPeerConnection extends EventTarget {
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/RTCPeerConnection/localDescription) */
     readonly localDescription: RTCSessionDescription | null,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/RTCPeerConnection/connectionstatechange_event) */
-    onconnectionstatechange: (fn (this: RTCPeerConnection, ev: Event) -> any) | null,
+    onconnectionstatechange: (fn (this: RTCPeerConnection, ev: core.Event) -> any) | null,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/RTCPeerConnection/datachannel_event) */
     ondatachannel: (fn (this: RTCPeerConnection, ev: RTCDataChannelEvent) -> any) | null,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/RTCPeerConnection/icecandidate_event) */
@@ -628,13 +638,13 @@ export declare class RTCPeerConnection extends EventTarget {
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/RTCPeerConnection/icecandidateerror_event) */
     onicecandidateerror: (fn (this: RTCPeerConnection, ev: RTCPeerConnectionIceErrorEvent) -> any) | null,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/RTCPeerConnection/iceconnectionstatechange_event) */
-    oniceconnectionstatechange: (fn (this: RTCPeerConnection, ev: Event) -> any) | null,
+    oniceconnectionstatechange: (fn (this: RTCPeerConnection, ev: core.Event) -> any) | null,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/RTCPeerConnection/icegatheringstatechange_event) */
-    onicegatheringstatechange: (fn (this: RTCPeerConnection, ev: Event) -> any) | null,
+    onicegatheringstatechange: (fn (this: RTCPeerConnection, ev: core.Event) -> any) | null,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/RTCPeerConnection/negotiationneeded_event) */
-    onnegotiationneeded: (fn (this: RTCPeerConnection, ev: Event) -> any) | null,
+    onnegotiationneeded: (fn (this: RTCPeerConnection, ev: core.Event) -> any) | null,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/RTCPeerConnection/signalingstatechange_event) */
-    onsignalingstatechange: (fn (this: RTCPeerConnection, ev: Event) -> any) | null,
+    onsignalingstatechange: (fn (this: RTCPeerConnection, ev: core.Event) -> any) | null,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/RTCPeerConnection/track_event) */
     ontrack: (fn (this: RTCPeerConnection, ev: RTCTrackEvent) -> any) | null,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/RTCPeerConnection/pendingLocalDescription) */
@@ -648,35 +658,35 @@ export declare class RTCPeerConnection extends EventTarget {
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/RTCPeerConnection/signalingState) */
     readonly signalingState: RTCSignalingState,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/RTCPeerConnection/addIceCandidate) */
-    addIceCandidate(mut self, candidate?: RTCIceCandidateInit | null) -> Promise<undefined>,
+    addIceCandidate(mut self, candidate?: RTCIceCandidateInit | null) -> prelude.Promise<undefined>,
     /** @deprecated */
-    addIceCandidate(mut self, candidate: RTCIceCandidateInit | null, successCallback: VoidFunction, failureCallback: RTCPeerConnectionErrorCallback) -> Promise<undefined>,
+    addIceCandidate(mut self, candidate: RTCIceCandidateInit | null, successCallback: dom.VoidFunction, failureCallback: RTCPeerConnectionErrorCallback) -> prelude.Promise<undefined>,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/RTCPeerConnection/addTrack) */
-    addTrack(mut self, track: MediaStreamTrack, ...streams: mut Array<MediaStream>) -> RTCRtpSender,
+    addTrack(mut self, track: dom.MediaStreamTrack, ...streams: mut prelude.Array<dom.MediaStream>) -> RTCRtpSender,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/RTCPeerConnection/addTransceiver) */
-    addTransceiver(mut self, trackOrKind: MediaStreamTrack | string, init?: RTCRtpTransceiverInit) -> RTCRtpTransceiver,
+    addTransceiver(mut self, trackOrKind: dom.MediaStreamTrack | string, init?: RTCRtpTransceiverInit) -> RTCRtpTransceiver,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/RTCPeerConnection/close) */
     close(mut self) -> unknown,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/RTCPeerConnection/createAnswer) */
-    createAnswer(mut self, options?: RTCAnswerOptions) -> Promise<RTCSessionDescriptionInit>,
+    createAnswer(mut self, options?: RTCAnswerOptions) -> prelude.Promise<RTCSessionDescriptionInit>,
     /** @deprecated */
-    createAnswer(mut self, successCallback: RTCSessionDescriptionCallback, failureCallback: RTCPeerConnectionErrorCallback) -> Promise<undefined>,
+    createAnswer(mut self, successCallback: RTCSessionDescriptionCallback, failureCallback: RTCPeerConnectionErrorCallback) -> prelude.Promise<undefined>,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/RTCPeerConnection/createDataChannel) */
     createDataChannel(mut self, label: string, dataChannelDict?: RTCDataChannelInit) -> RTCDataChannel,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/RTCPeerConnection/createOffer) */
-    createOffer(mut self, options?: RTCOfferOptions) -> Promise<RTCSessionDescriptionInit>,
+    createOffer(mut self, options?: RTCOfferOptions) -> prelude.Promise<RTCSessionDescriptionInit>,
     /** @deprecated */
-    createOffer(mut self, successCallback: RTCSessionDescriptionCallback, failureCallback: RTCPeerConnectionErrorCallback, options?: RTCOfferOptions) -> Promise<undefined>,
+    createOffer(mut self, successCallback: RTCSessionDescriptionCallback, failureCallback: RTCPeerConnectionErrorCallback, options?: RTCOfferOptions) -> prelude.Promise<undefined>,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/RTCPeerConnection/getConfiguration) */
     getConfiguration(self) -> RTCConfiguration,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/RTCPeerConnection/getReceivers) */
-    getReceivers(self) -> mut Array<RTCRtpReceiver>,
+    getReceivers(self) -> mut prelude.Array<RTCRtpReceiver>,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/RTCPeerConnection/getSenders) */
-    getSenders(self) -> mut Array<RTCRtpSender>,
+    getSenders(self) -> mut prelude.Array<RTCRtpSender>,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/RTCPeerConnection/getStats) */
-    getStats(self, selector?: MediaStreamTrack | null) -> Promise<RTCStatsReport>,
+    getStats(self, selector?: dom.MediaStreamTrack | null) -> prelude.Promise<RTCStatsReport>,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/RTCPeerConnection/getTransceivers) */
-    getTransceivers(self) -> mut Array<RTCRtpTransceiver>,
+    getTransceivers(self) -> mut prelude.Array<RTCRtpTransceiver>,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/RTCPeerConnection/removeTrack) */
     removeTrack(mut self, sender: RTCRtpSender) -> unknown,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/RTCPeerConnection/restartIce) */
@@ -684,26 +694,26 @@ export declare class RTCPeerConnection extends EventTarget {
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/RTCPeerConnection/setConfiguration) */
     setConfiguration(mut self, configuration?: RTCConfiguration) -> unknown,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/RTCPeerConnection/setLocalDescription) */
-    setLocalDescription(mut self, description?: RTCLocalSessionDescriptionInit) -> Promise<undefined>,
+    setLocalDescription(mut self, description?: RTCLocalSessionDescriptionInit) -> prelude.Promise<undefined>,
     /** @deprecated */
-    setLocalDescription(mut self, description: RTCLocalSessionDescriptionInit, successCallback: VoidFunction, failureCallback: RTCPeerConnectionErrorCallback) -> Promise<undefined>,
+    setLocalDescription(mut self, description: RTCLocalSessionDescriptionInit, successCallback: dom.VoidFunction, failureCallback: RTCPeerConnectionErrorCallback) -> prelude.Promise<undefined>,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/RTCPeerConnection/setRemoteDescription) */
-    setRemoteDescription(mut self, description: RTCSessionDescriptionInit) -> Promise<undefined>,
+    setRemoteDescription(mut self, description: RTCSessionDescriptionInit) -> prelude.Promise<undefined>,
     /** @deprecated */
-    setRemoteDescription(mut self, description: RTCSessionDescriptionInit, successCallback: VoidFunction, failureCallback: RTCPeerConnectionErrorCallback) -> Promise<undefined>,
-    addEventListener<K: keyof RTCPeerConnectionEventMap>(mut self, type: K, listener: fn (this: RTCPeerConnection, ev: RTCPeerConnectionEventMap[K]) -> any, options?: boolean | AddEventListenerOptions) -> unknown,
-    addEventListener(mut self, type: string, listener: EventListenerOrEventListenerObject, options?: boolean | AddEventListenerOptions) -> unknown,
-    removeEventListener<K: keyof RTCPeerConnectionEventMap>(mut self, type: K, listener: fn (this: RTCPeerConnection, ev: RTCPeerConnectionEventMap[K]) -> any, options?: boolean | EventListenerOptions) -> unknown,
-    removeEventListener(mut self, type: string, listener: EventListenerOrEventListenerObject, options?: boolean | EventListenerOptions) -> unknown,
+    setRemoteDescription(mut self, description: RTCSessionDescriptionInit, successCallback: dom.VoidFunction, failureCallback: RTCPeerConnectionErrorCallback) -> prelude.Promise<undefined>,
+    addEventListener<K: keyof RTCPeerConnectionEventMap>(mut self, type: K, listener: fn (this: RTCPeerConnection, ev: RTCPeerConnectionEventMap[K]) -> any, options?: boolean | core.AddEventListenerOptions) -> unknown,
+    addEventListener(mut self, type: string, listener: core.EventListenerOrEventListenerObject, options?: boolean | core.AddEventListenerOptions) -> unknown,
+    removeEventListener<K: keyof RTCPeerConnectionEventMap>(mut self, type: K, listener: fn (this: RTCPeerConnection, ev: RTCPeerConnectionEventMap[K]) -> any, options?: boolean | core.EventListenerOptions) -> unknown,
+    removeEventListener(mut self, type: string, listener: core.EventListenerOrEventListenerObject, options?: boolean | core.EventListenerOptions) -> unknown,
     static prototype: RTCPeerConnection,
     constructor(mut self, configuration?: RTCConfiguration),
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/RTCPeerConnection/generateCertificate_static) */
-    static generateCertificate(keygenAlgorithm: AlgorithmIdentifier) -> Promise<RTCCertificate>
+    static generateCertificate(keygenAlgorithm: crypto.AlgorithmIdentifier) -> prelude.Promise<RTCCertificate>
 }
 
 /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/RTCPeerConnectionIceErrorEvent) */
 @js("RTCPeerConnectionIceErrorEvent")
-export declare class RTCPeerConnectionIceErrorEvent extends Event {
+export declare class RTCPeerConnectionIceErrorEvent extends core.Event {
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/RTCPeerConnectionIceErrorEvent/address) */
     readonly address: string | null,
     readonly errorCode: number,
@@ -720,7 +730,7 @@ export declare class RTCPeerConnectionIceErrorEvent extends Event {
  * [MDN Reference](https://developer.mozilla.org/docs/Web/API/RTCPeerConnectionIceEvent)
  */
 @js("RTCPeerConnectionIceEvent")
-export declare class RTCPeerConnectionIceEvent extends Event {
+export declare class RTCPeerConnectionIceEvent extends core.Event {
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/RTCPeerConnectionIceEvent/candidate) */
     readonly candidate: RTCIceCandidate | null,
     static prototype: RTCPeerConnectionIceEvent,
@@ -735,21 +745,21 @@ export declare class RTCPeerConnectionIceEvent extends Event {
 @js("RTCRtpReceiver")
 export declare class RTCRtpReceiver {
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/RTCRtpReceiver/jitterBufferTarget) */
-    jitterBufferTarget: DOMHighResTimeStamp | null,
+    jitterBufferTarget: core.DOMHighResTimeStamp | null,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/RTCRtpReceiver/track) */
-    readonly track: MediaStreamTrack,
+    readonly track: dom.MediaStreamTrack,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/RTCRtpReceiver/transform) */
     transform: RTCRtpTransform | null,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/RTCRtpReceiver/transport) */
     readonly transport: RTCDtlsTransport | null,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/RTCRtpReceiver/getContributingSources) */
-    getContributingSources(self) -> mut Array<RTCRtpContributingSource>,
+    getContributingSources(self) -> mut prelude.Array<RTCRtpContributingSource>,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/RTCRtpReceiver/getParameters) */
     getParameters(self) -> RTCRtpReceiveParameters,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/RTCRtpReceiver/getStats) */
-    getStats(self) -> Promise<RTCStatsReport>,
+    getStats(self) -> prelude.Promise<RTCStatsReport>,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/RTCRtpReceiver/getSynchronizationSources) */
-    getSynchronizationSources(self) -> mut Array<RTCRtpSynchronizationSource>,
+    getSynchronizationSources(self) -> mut prelude.Array<RTCRtpSynchronizationSource>,
     static prototype: RTCRtpReceiver,
     constructor(mut self),
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/RTCRtpReceiver/getCapabilities_static) */
@@ -760,7 +770,7 @@ export declare class RTCRtpReceiver {
 @js("RTCRtpScriptTransform")
 export declare class RTCRtpScriptTransform {
     static prototype: RTCRtpScriptTransform,
-    constructor(mut self, worker: Worker, options?: unknown, transfer?: mut Array<any>)
+    constructor(mut self, worker: workers.Worker, options?: unknown, transfer?: mut prelude.Array<any>)
 }
 
 /**
@@ -771,9 +781,9 @@ export declare class RTCRtpScriptTransform {
 @js("RTCRtpSender")
 export declare class RTCRtpSender {
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/RTCRtpSender/dtmf) */
-    readonly dtmf: RTCDTMFSender | null,
+    readonly dtmf: dom.RTCDTMFSender | null,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/RTCRtpSender/track) */
-    readonly track: MediaStreamTrack | null,
+    readonly track: dom.MediaStreamTrack | null,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/RTCRtpSender/transform) */
     transform: RTCRtpTransform | null,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/RTCRtpSender/transport) */
@@ -781,13 +791,13 @@ export declare class RTCRtpSender {
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/RTCRtpSender/getParameters) */
     getParameters(self) -> RTCRtpSendParameters,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/RTCRtpSender/getStats) */
-    getStats(self) -> Promise<RTCStatsReport>,
+    getStats(self) -> prelude.Promise<RTCStatsReport>,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/RTCRtpSender/replaceTrack) */
-    replaceTrack(mut self, withTrack: MediaStreamTrack | null) -> Promise<undefined>,
+    replaceTrack(mut self, withTrack: dom.MediaStreamTrack | null) -> prelude.Promise<undefined>,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/RTCRtpSender/setParameters) */
-    setParameters(mut self, parameters: RTCRtpSendParameters, setParameterOptions?: RTCSetParameterOptions) -> Promise<undefined>,
+    setParameters(mut self, parameters: RTCRtpSendParameters, setParameterOptions?: RTCSetParameterOptions) -> prelude.Promise<undefined>,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/RTCRtpSender/setStreams) */
-    setStreams(mut self, ...streams: mut Array<MediaStream>) -> unknown,
+    setStreams(mut self, ...streams: mut prelude.Array<dom.MediaStream>) -> unknown,
     static prototype: RTCRtpSender,
     constructor(mut self),
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/RTCRtpSender/getCapabilities_static) */
@@ -808,36 +818,36 @@ export declare class RTCRtpTransceiver {
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/RTCRtpTransceiver/sender) */
     readonly sender: RTCRtpSender,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/RTCRtpTransceiver/setCodecPreferences) */
-    setCodecPreferences(mut self, codecs: mut Array<RTCRtpCodec>) -> unknown,
+    setCodecPreferences(mut self, codecs: mut prelude.Array<RTCRtpCodec>) -> unknown,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/RTCRtpTransceiver/stop) */
     stop(mut self) -> unknown,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/RTCRtpTransceiver/setCodecPreferences) */
-    setCodecPreferences(mut self, codecs: Iterable<RTCRtpCodec>) -> unknown,
+    setCodecPreferences(mut self, codecs: prelude.Iterable<RTCRtpCodec>) -> unknown,
     static prototype: RTCRtpTransceiver,
     constructor(mut self)
 }
 
 export declare interface RTCSctpTransportEventMap {
-    "statechange": Event
+    "statechange": core.Event
 }
 
 /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/RTCSctpTransport) */
 @js("RTCSctpTransport")
-export declare class RTCSctpTransport extends EventTarget {
+export declare class RTCSctpTransport extends core.EventTarget {
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/RTCSctpTransport/maxChannels) */
     readonly maxChannels: number | null,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/RTCSctpTransport/maxMessageSize) */
     readonly maxMessageSize: number,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/RTCSctpTransport/statechange_event) */
-    onstatechange: (fn (this: RTCSctpTransport, ev: Event) -> any) | null,
+    onstatechange: (fn (this: RTCSctpTransport, ev: core.Event) -> any) | null,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/RTCSctpTransport/state) */
     readonly state: RTCSctpTransportState,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/RTCSctpTransport/transport) */
     readonly transport: RTCDtlsTransport,
-    addEventListener<K: keyof RTCSctpTransportEventMap>(mut self, type: K, listener: fn (this: RTCSctpTransport, ev: RTCSctpTransportEventMap[K]) -> any, options?: boolean | AddEventListenerOptions) -> unknown,
-    addEventListener(mut self, type: string, listener: EventListenerOrEventListenerObject, options?: boolean | AddEventListenerOptions) -> unknown,
-    removeEventListener<K: keyof RTCSctpTransportEventMap>(mut self, type: K, listener: fn (this: RTCSctpTransport, ev: RTCSctpTransportEventMap[K]) -> any, options?: boolean | EventListenerOptions) -> unknown,
-    removeEventListener(mut self, type: string, listener: EventListenerOrEventListenerObject, options?: boolean | EventListenerOptions) -> unknown,
+    addEventListener<K: keyof RTCSctpTransportEventMap>(mut self, type: K, listener: fn (this: RTCSctpTransport, ev: RTCSctpTransportEventMap[K]) -> any, options?: boolean | core.AddEventListenerOptions) -> unknown,
+    addEventListener(mut self, type: string, listener: core.EventListenerOrEventListenerObject, options?: boolean | core.AddEventListenerOptions) -> unknown,
+    removeEventListener<K: keyof RTCSctpTransportEventMap>(mut self, type: K, listener: fn (this: RTCSctpTransport, ev: RTCSctpTransportEventMap[K]) -> any, options?: boolean | core.EventListenerOptions) -> unknown,
+    removeEventListener(mut self, type: string, listener: core.EventListenerOrEventListenerObject, options?: boolean | core.EventListenerOptions) -> unknown,
     static prototype: RTCSctpTransport,
     constructor(mut self)
 }
@@ -861,7 +871,7 @@ export declare class RTCSessionDescription {
 
 /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/RTCStatsReport) */
 @js("RTCStatsReport")
-export declare class RTCStatsReport extends Map<string, any> {
+export declare class RTCStatsReport extends map.Map<string, any> {
     forEach(self, callbackfn: fn (value: any, key: string, parent: RTCStatsReport) -> unknown, thisArg?: unknown) -> unknown,
     static prototype: RTCStatsReport,
     constructor(mut self)
@@ -869,13 +879,13 @@ export declare class RTCStatsReport extends Map<string, any> {
 
 /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/RTCTrackEvent) */
 @js("RTCTrackEvent")
-export declare class RTCTrackEvent extends Event {
+export declare class RTCTrackEvent extends core.Event {
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/RTCTrackEvent/receiver) */
     readonly receiver: RTCRtpReceiver,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/RTCTrackEvent/streams) */
-    readonly streams: Array<MediaStream>,
+    readonly streams: prelude.Array<dom.MediaStream>,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/RTCTrackEvent/track) */
-    readonly track: MediaStreamTrack,
+    readonly track: dom.MediaStreamTrack,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/RTCTrackEvent/transceiver) */
     readonly transceiver: RTCRtpTransceiver,
     static prototype: RTCTrackEvent,
@@ -883,7 +893,7 @@ export declare class RTCTrackEvent extends Event {
 }
 
 export declare interface RTCPeerConnectionErrorCallback {
-    (error: DOMException) -> unknown
+    (error: core.DOMException) -> unknown
 }
 
 export declare interface RTCSessionDescriptionCallback {

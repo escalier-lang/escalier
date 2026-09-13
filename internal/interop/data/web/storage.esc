@@ -2,7 +2,10 @@
 // Its facts come from the pinned lib.*.d.ts set, the ECMA-262
 // derived facts, and the overlay. Change one of those and re-run.
 
-export declare interface StorageEventInit extends EventInit {
+import "web:core"
+import "web:url"
+
+export declare interface StorageEventInit extends core.EventInit {
     key?: string | null,
     newValue?: string | null,
     oldValue?: string | null,
@@ -71,7 +74,7 @@ export declare class Storage {
  * [MDN Reference](https://developer.mozilla.org/docs/Web/API/StorageEvent)
  */
 @js("StorageEvent")
-export declare class StorageEvent extends Event {
+export declare class StorageEvent extends core.Event {
     /**
      * Returns the key of the storage item being changed.
      *
@@ -107,7 +110,7 @@ export declare class StorageEvent extends Event {
      *
      * [MDN Reference](https://developer.mozilla.org/docs/Web/API/StorageEvent/initStorageEvent)
      */
-    initStorageEvent(mut self, type: string, bubbles?: boolean, cancelable?: boolean, key?: string | null, oldValue?: string | null, newValue?: string | null, url?: string | URL, storageArea?: Storage | null) -> unknown,
+    initStorageEvent(mut self, type: string, bubbles?: boolean, cancelable?: boolean, key?: string | null, oldValue?: string | null, newValue?: string | null, url?: string | url.URL, storageArea?: Storage | null) -> unknown,
     static prototype: StorageEvent,
     constructor(mut self, type: string, eventInitDict?: StorageEventInit)
 }

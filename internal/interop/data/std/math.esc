@@ -2,6 +2,8 @@
 // Its facts come from the pinned lib.*.d.ts set, the ECMA-262
 // derived facts, and the overlay. Change one of those and re-run.
 
+import "std:prelude"
+
 /**
  * Returns the number of leading zero bits in the 32-bit binary representation of a number.
  * @param x A numeric expression.
@@ -106,7 +108,7 @@ export declare fn atanh(x: number) -> number
  *     If all arguments are either +0 or −0, the result is +0.
  */
 @js("Math.hypot")
-export declare fn hypot(...values: mut Array<number>) -> number
+export declare fn hypot(...values: mut prelude.Array<number>) -> number
 
 /**
  * Returns the integral part of the a numeric expression, x, removing any fractional digits.
@@ -239,14 +241,14 @@ export declare fn log(x: number) -> number
  * @param values Numeric expressions to be evaluated.
  */
 @js("Math.max")
-export declare fn max(...values: mut Array<number>) -> number
+export declare fn max(...values: mut prelude.Array<number>) -> number
 
 /**
  * Returns the smaller of a set of supplied numeric expressions.
  * @param values Numeric expressions to be evaluated.
  */
 @js("Math.min")
-export declare fn min(...values: mut Array<number>) -> number
+export declare fn min(...values: mut prelude.Array<number>) -> number
 
 /**
  * Returns the value of a base expression taken to a specified power.

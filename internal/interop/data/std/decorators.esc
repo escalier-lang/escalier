@@ -2,6 +2,8 @@
 // Its facts come from the pinned lib.*.d.ts set, the ECMA-262
 // derived facts, and the overlay. Change one of those and re-run.
 
+import "std:object"
+
 /**
  * The decorator context types provided to class element decorators.
  */
@@ -12,7 +14,7 @@ export declare type ClassMemberDecoratorContext = ClassMethodDecoratorContext | 
  */
 export declare type DecoratorContext = ClassDecoratorContext | ClassMemberDecoratorContext
 
-export declare type DecoratorMetadataObject = Record<PropertyKey, unknown> & {...}
+export declare type DecoratorMetadataObject = object.Record<object.PropertyKey, unknown> & {...}
 
 export declare type DecoratorMetadata = if typeof globalThis : {
     Symbol: {

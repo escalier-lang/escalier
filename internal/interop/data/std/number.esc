@@ -2,6 +2,9 @@
 // Its facts come from the pinned lib.*.d.ts set, the ECMA-262
 // derived facts, and the overlay. Change one of those and re-run.
 
+import "std:intl"
+import "std:prelude"
+
 @js("Number")
 export declare class Number {
     /**
@@ -9,7 +12,7 @@ export declare class Number {
      * @param locales A locale string, array of locale strings, Intl.Locale object, or array of Intl.Locale objects that contain one or more language or locale tags. If you include more than one locale string, list them in descending order of priority so that the first entry is the preferred locale. If you omit this parameter, the default locale of the JavaScript runtime is used.
      * @param options An object that contains one or more properties that specify comparison options.
      */
-    toLocaleString(self, locales?: Intl.LocalesArgument, options?: Intl.NumberFormatOptions) -> string,
+    toLocaleString(self, locales?: intl.LocalesArgument, options?: intl.NumberFormatOptions) -> string,
     /**
      * Returns a string representation of an object.
      * @param radix Specifies a radix for converting numeric values to strings. This value is only used for numbers.
@@ -37,7 +40,7 @@ export declare class Number {
      * @param locales A locale string or array of locale strings that contain one or more language or locale tags. If you include more than one locale string, list them in descending order of priority so that the first entry is the preferred locale. If you omit this parameter, the default locale of the JavaScript runtime is used.
      * @param options An object that contains one or more properties that specify comparison options.
      */
-    toLocaleString(self, locales?: string | mut Array<string>, options?: Intl.NumberFormatOptions) -> string,
+    toLocaleString(self, locales?: string | mut prelude.Array<string>, options?: intl.NumberFormatOptions) -> string,
     /**
      * The value of Number.EPSILON is the difference between 1 and the smallest value greater than 1
      * that is representable as a Number value, which is approximately:

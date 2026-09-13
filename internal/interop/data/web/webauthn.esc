@@ -2,6 +2,12 @@
 // Its facts come from the pinned lib.*.d.ts set, the ECMA-262
 // derived facts, and the overlay. Change one of those and re-run.
 
+import "std:object"
+import "std:prelude"
+import "std:typed_arrays"
+import "web:core"
+import "web:dom"
+
 export declare interface AuthenticationExtensionsClientInputs {
     appid?: string,
     credProps?: boolean,
@@ -21,7 +27,7 @@ export declare interface AuthenticationExtensionsClientOutputs {
 
 export declare interface AuthenticationExtensionsPRFInputs {
     eval?: AuthenticationExtensionsPRFValues,
-    evalByCredential?: Record<string, AuthenticationExtensionsPRFValues>
+    evalByCredential?: object.Record<string, AuthenticationExtensionsPRFValues>
 }
 
 export declare interface AuthenticationExtensionsPRFOutputs {
@@ -30,8 +36,8 @@ export declare interface AuthenticationExtensionsPRFOutputs {
 }
 
 export declare interface AuthenticationExtensionsPRFValues {
-    first: BufferSource,
-    second?: BufferSource
+    first: core.BufferSource,
+    second?: core.BufferSource
 }
 
 export declare interface AuthenticatorSelectionCriteria {
@@ -48,10 +54,10 @@ export declare interface CredentialPropertiesOutput {
 export declare interface PublicKeyCredentialCreationOptions {
     attestation?: AttestationConveyancePreference,
     authenticatorSelection?: AuthenticatorSelectionCriteria,
-    challenge: BufferSource,
-    excludeCredentials?: mut Array<PublicKeyCredentialDescriptor>,
+    challenge: core.BufferSource,
+    excludeCredentials?: mut prelude.Array<PublicKeyCredentialDescriptor>,
     extensions?: AuthenticationExtensionsClientInputs,
-    pubKeyCredParams: mut Array<PublicKeyCredentialParameters>,
+    pubKeyCredParams: mut prelude.Array<PublicKeyCredentialParameters>,
     rp: PublicKeyCredentialRpEntity,
     timeout?: number,
     user: PublicKeyCredentialUserEntity
@@ -61,24 +67,24 @@ export declare interface PublicKeyCredentialCreationOptionsJSON {
     attestation?: string,
     authenticatorSelection?: AuthenticatorSelectionCriteria,
     challenge: Base64URLString,
-    excludeCredentials?: mut Array<PublicKeyCredentialDescriptorJSON>,
+    excludeCredentials?: mut prelude.Array<PublicKeyCredentialDescriptorJSON>,
     extensions?: AuthenticationExtensionsClientInputsJSON,
-    hints?: mut Array<string>,
-    pubKeyCredParams: mut Array<PublicKeyCredentialParameters>,
+    hints?: mut prelude.Array<string>,
+    pubKeyCredParams: mut prelude.Array<PublicKeyCredentialParameters>,
     rp: PublicKeyCredentialRpEntity,
     timeout?: number,
     user: PublicKeyCredentialUserEntityJSON
 }
 
 export declare interface PublicKeyCredentialDescriptor {
-    id: BufferSource,
-    transports?: mut Array<AuthenticatorTransport>,
+    id: core.BufferSource,
+    transports?: mut prelude.Array<AuthenticatorTransport>,
     type: PublicKeyCredentialType
 }
 
 export declare interface PublicKeyCredentialDescriptorJSON {
     id: Base64URLString,
-    transports?: mut Array<string>,
+    transports?: mut prelude.Array<string>,
     type: string
 }
 
@@ -92,8 +98,8 @@ export declare interface PublicKeyCredentialParameters {
 }
 
 export declare interface PublicKeyCredentialRequestOptions {
-    allowCredentials?: mut Array<PublicKeyCredentialDescriptor>,
-    challenge: BufferSource,
+    allowCredentials?: mut prelude.Array<PublicKeyCredentialDescriptor>,
+    challenge: core.BufferSource,
     extensions?: AuthenticationExtensionsClientInputs,
     rpId?: string,
     timeout?: number,
@@ -101,10 +107,10 @@ export declare interface PublicKeyCredentialRequestOptions {
 }
 
 export declare interface PublicKeyCredentialRequestOptionsJSON {
-    allowCredentials?: mut Array<PublicKeyCredentialDescriptorJSON>,
+    allowCredentials?: mut prelude.Array<PublicKeyCredentialDescriptorJSON>,
     challenge: Base64URLString,
     extensions?: AuthenticationExtensionsClientInputsJSON,
-    hints?: mut Array<string>,
+    hints?: mut prelude.Array<string>,
     rpId?: string,
     timeout?: number,
     userVerification?: string
@@ -116,7 +122,7 @@ export declare interface PublicKeyCredentialRpEntity extends PublicKeyCredential
 
 export declare interface PublicKeyCredentialUserEntity extends PublicKeyCredentialEntity {
     displayName: string,
-    id: BufferSource
+    id: core.BufferSource
 }
 
 export declare interface PublicKeyCredentialUserEntityJSON {
@@ -133,11 +139,11 @@ export declare interface PublicKeyCredentialUserEntityJSON {
 @js("AuthenticatorAssertionResponse")
 export declare class AuthenticatorAssertionResponse extends AuthenticatorResponse {
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/AuthenticatorAssertionResponse/authenticatorData) */
-    readonly authenticatorData: ArrayBuffer,
+    readonly authenticatorData: typed_arrays.ArrayBuffer,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/AuthenticatorAssertionResponse/signature) */
-    readonly signature: ArrayBuffer,
+    readonly signature: typed_arrays.ArrayBuffer,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/AuthenticatorAssertionResponse/userHandle) */
-    readonly userHandle: ArrayBuffer | null,
+    readonly userHandle: typed_arrays.ArrayBuffer | null,
     static prototype: AuthenticatorAssertionResponse,
     constructor(mut self)
 }
@@ -150,15 +156,15 @@ export declare class AuthenticatorAssertionResponse extends AuthenticatorRespons
 @js("AuthenticatorAttestationResponse")
 export declare class AuthenticatorAttestationResponse extends AuthenticatorResponse {
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/AuthenticatorAttestationResponse/attestationObject) */
-    readonly attestationObject: ArrayBuffer,
+    readonly attestationObject: typed_arrays.ArrayBuffer,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/AuthenticatorAttestationResponse/getAuthenticatorData) */
-    getAuthenticatorData(self) -> ArrayBuffer,
+    getAuthenticatorData(self) -> typed_arrays.ArrayBuffer,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/AuthenticatorAttestationResponse/getPublicKey) */
-    getPublicKey(self) -> ArrayBuffer | null,
+    getPublicKey(self) -> typed_arrays.ArrayBuffer | null,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/AuthenticatorAttestationResponse/getPublicKeyAlgorithm) */
     getPublicKeyAlgorithm(self) -> COSEAlgorithmIdentifier,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/AuthenticatorAttestationResponse/getTransports) */
-    getTransports(self) -> mut Array<string>,
+    getTransports(self) -> mut prelude.Array<string>,
     static prototype: AuthenticatorAttestationResponse,
     constructor(mut self)
 }
@@ -171,7 +177,7 @@ export declare class AuthenticatorAttestationResponse extends AuthenticatorRespo
 @js("AuthenticatorResponse")
 export declare class AuthenticatorResponse {
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/AuthenticatorResponse/clientDataJSON) */
-    readonly clientDataJSON: ArrayBuffer,
+    readonly clientDataJSON: typed_arrays.ArrayBuffer,
     static prototype: AuthenticatorResponse,
     constructor(mut self)
 }
@@ -182,11 +188,11 @@ export declare class AuthenticatorResponse {
  * [MDN Reference](https://developer.mozilla.org/docs/Web/API/PublicKeyCredential)
  */
 @js("PublicKeyCredential")
-export declare class PublicKeyCredential extends Credential {
+export declare class PublicKeyCredential extends dom.Credential {
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/PublicKeyCredential/authenticatorAttachment) */
     readonly authenticatorAttachment: string | null,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/PublicKeyCredential/rawId) */
-    readonly rawId: ArrayBuffer,
+    readonly rawId: typed_arrays.ArrayBuffer,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/PublicKeyCredential/response) */
     readonly response: AuthenticatorResponse,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/PublicKeyCredential/getClientExtensionResults) */
@@ -195,11 +201,11 @@ export declare class PublicKeyCredential extends Credential {
     toJSON(self) -> PublicKeyCredentialJSON,
     static prototype: PublicKeyCredential,
     constructor(mut self),
-    static getClientCapabilities() -> Promise<PublicKeyCredentialClientCapabilities>,
+    static getClientCapabilities() -> prelude.Promise<PublicKeyCredentialClientCapabilities>,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/PublicKeyCredential/isConditionalMediationAvailable_static) */
-    static isConditionalMediationAvailable() -> Promise<boolean>,
+    static isConditionalMediationAvailable() -> prelude.Promise<boolean>,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/PublicKeyCredential/isUserVerifyingPlatformAuthenticatorAvailable_static) */
-    static isUserVerifyingPlatformAuthenticatorAvailable() -> Promise<boolean>,
+    static isUserVerifyingPlatformAuthenticatorAvailable() -> prelude.Promise<boolean>,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/PublicKeyCredential/parseCreationOptionsFromJSON_static) */
     static parseCreationOptionsFromJSON(options: PublicKeyCredentialCreationOptionsJSON) -> PublicKeyCredentialCreationOptions,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/PublicKeyCredential/parseRequestOptionsFromJSON_static) */
@@ -210,7 +216,7 @@ export declare type Base64URLString = string
 
 export declare type COSEAlgorithmIdentifier = number
 
-export declare type PublicKeyCredentialClientCapabilities = Record<string, boolean>
+export declare type PublicKeyCredentialClientCapabilities = object.Record<string, boolean>
 
 export declare type PublicKeyCredentialJSON = any
 

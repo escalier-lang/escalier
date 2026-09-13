@@ -2,6 +2,11 @@
 // Its facts come from the pinned lib.*.d.ts set, the ECMA-262
 // derived facts, and the overlay. Change one of those and re-run.
 
+import "std:date"
+import "std:prelude"
+import "web:core"
+import "web:dom"
+
 export declare interface IDBDatabaseInfo {
     name?: string,
     version?: number
@@ -14,14 +19,14 @@ export declare interface IDBIndexParameters {
 
 export declare interface IDBObjectStoreParameters {
     autoIncrement?: boolean,
-    keyPath?: string | mut Array<string> | null
+    keyPath?: string | mut prelude.Array<string> | null
 }
 
 export declare interface IDBTransactionOptions {
     durability?: IDBTransactionDurability
 }
 
-export declare interface IDBVersionChangeEventInit extends EventInit {
+export declare interface IDBVersionChangeEventInit extends core.EventInit {
     newVersion?: number | null,
     oldVersion?: number
 }
@@ -117,9 +122,9 @@ export declare class IDBCursorWithValue extends IDBCursor {
 }
 
 export declare interface IDBDatabaseEventMap {
-    "abort": Event,
-    "close": Event,
-    "error": Event,
+    "abort": core.Event,
+    "close": core.Event,
+    "error": core.Event,
     "versionchange": IDBVersionChangeEvent
 }
 
@@ -129,7 +134,7 @@ export declare interface IDBDatabaseEventMap {
  * [MDN Reference](https://developer.mozilla.org/docs/Web/API/IDBDatabase)
  */
 @js("IDBDatabase")
-export declare class IDBDatabase extends EventTarget {
+export declare class IDBDatabase extends core.EventTarget {
     /**
      * Returns the name of the database.
      *
@@ -141,11 +146,11 @@ export declare class IDBDatabase extends EventTarget {
      *
      * [MDN Reference](https://developer.mozilla.org/docs/Web/API/IDBDatabase/objectStoreNames)
      */
-    readonly objectStoreNames: DOMStringList,
-    onabort: (fn (this: IDBDatabase, ev: Event) -> any) | null,
+    readonly objectStoreNames: dom.DOMStringList,
+    onabort: (fn (this: IDBDatabase, ev: core.Event) -> any) | null,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/IDBDatabase/close_event) */
-    onclose: (fn (this: IDBDatabase, ev: Event) -> any) | null,
-    onerror: (fn (this: IDBDatabase, ev: Event) -> any) | null,
+    onclose: (fn (this: IDBDatabase, ev: core.Event) -> any) | null,
+    onerror: (fn (this: IDBDatabase, ev: core.Event) -> any) | null,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/IDBDatabase/versionchange_event) */
     onversionchange: (fn (this: IDBDatabase, ev: IDBVersionChangeEvent) -> any) | null,
     /**
@@ -181,17 +186,17 @@ export declare class IDBDatabase extends EventTarget {
      *
      * [MDN Reference](https://developer.mozilla.org/docs/Web/API/IDBDatabase/transaction)
      */
-    transaction(mut self, storeNames: string | mut Array<string>, mode?: IDBTransactionMode, options?: IDBTransactionOptions) -> IDBTransaction,
-    addEventListener<K: keyof IDBDatabaseEventMap>(mut self, type: K, listener: fn (this: IDBDatabase, ev: IDBDatabaseEventMap[K]) -> any, options?: boolean | AddEventListenerOptions) -> unknown,
-    addEventListener(mut self, type: string, listener: EventListenerOrEventListenerObject, options?: boolean | AddEventListenerOptions) -> unknown,
-    removeEventListener<K: keyof IDBDatabaseEventMap>(mut self, type: K, listener: fn (this: IDBDatabase, ev: IDBDatabaseEventMap[K]) -> any, options?: boolean | EventListenerOptions) -> unknown,
-    removeEventListener(mut self, type: string, listener: EventListenerOrEventListenerObject, options?: boolean | EventListenerOptions) -> unknown,
+    transaction(mut self, storeNames: string | mut prelude.Array<string>, mode?: IDBTransactionMode, options?: IDBTransactionOptions) -> IDBTransaction,
+    addEventListener<K: keyof IDBDatabaseEventMap>(mut self, type: K, listener: fn (this: IDBDatabase, ev: IDBDatabaseEventMap[K]) -> any, options?: boolean | core.AddEventListenerOptions) -> unknown,
+    addEventListener(mut self, type: string, listener: core.EventListenerOrEventListenerObject, options?: boolean | core.AddEventListenerOptions) -> unknown,
+    removeEventListener<K: keyof IDBDatabaseEventMap>(mut self, type: K, listener: fn (this: IDBDatabase, ev: IDBDatabaseEventMap[K]) -> any, options?: boolean | core.EventListenerOptions) -> unknown,
+    removeEventListener(mut self, type: string, listener: core.EventListenerOrEventListenerObject, options?: boolean | core.EventListenerOptions) -> unknown,
     /**
      * Returns a new transaction with the given mode ("readonly" or "readwrite") and scope which can be a single object store name or an array of names.
      *
      * [MDN Reference](https://developer.mozilla.org/docs/Web/API/IDBDatabase/transaction)
      */
-    transaction(mut self, storeNames: string | Iterable<string>, mode?: IDBTransactionMode, options?: IDBTransactionOptions) -> IDBTransaction,
+    transaction(mut self, storeNames: string | prelude.Iterable<string>, mode?: IDBTransactionMode, options?: IDBTransactionOptions) -> IDBTransaction,
     static prototype: IDBDatabase,
     constructor(mut self)
 }
@@ -212,7 +217,7 @@ export declare class IDBFactory {
      */
     cmp(mut self, first: unknown, second: unknown) -> number,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/IDBFactory/databases) */
-    databases(mut self) -> Promise<mut Array<IDBDatabaseInfo>>,
+    databases(mut self) -> prelude.Promise<mut prelude.Array<IDBDatabaseInfo>>,
     /**
      * Attempts to delete the named database. If the database already exists and there are open connections that don't close in response to a versionchange event, the request will be blocked until all they close. If the request is successful request's result will be null.
      *
@@ -237,7 +242,7 @@ export declare class IDBFactory {
 @js("IDBIndex")
 export declare class IDBIndex {
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/IDBIndex/keyPath) */
-    readonly keyPath: string | mut Array<string>,
+    readonly keyPath: string | mut prelude.Array<string>,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/IDBIndex/multiEntry) */
     readonly multiEntry: boolean,
     /**
@@ -277,7 +282,7 @@ export declare class IDBIndex {
      *
      * [MDN Reference](https://developer.mozilla.org/docs/Web/API/IDBIndex/getAll)
      */
-    getAll(self, query?: IDBValidKey | IDBKeyRange | null, count?: number) -> IDBRequest<mut Array<any>>,
+    getAll(self, query?: IDBValidKey | IDBKeyRange | null, count?: number) -> IDBRequest<mut prelude.Array<any>>,
     /**
      * Retrieves the keys of records matching the given key or key range in query (up to count if given).
      *
@@ -285,7 +290,7 @@ export declare class IDBIndex {
      *
      * [MDN Reference](https://developer.mozilla.org/docs/Web/API/IDBIndex/getAllKeys)
      */
-    getAllKeys(self, query?: IDBValidKey | IDBKeyRange | null, count?: number) -> IDBRequest<mut Array<IDBValidKey>>,
+    getAllKeys(self, query?: IDBValidKey | IDBKeyRange | null, count?: number) -> IDBRequest<mut prelude.Array<IDBValidKey>>,
     /**
      * Retrieves the key of the first record matching the given key or key range in query.
      *
@@ -397,13 +402,13 @@ export declare class IDBObjectStore {
      *
      * [MDN Reference](https://developer.mozilla.org/docs/Web/API/IDBObjectStore/indexNames)
      */
-    readonly indexNames: DOMStringList,
+    readonly indexNames: dom.DOMStringList,
     /**
      * Returns the key path of the store, or null if none.
      *
      * [MDN Reference](https://developer.mozilla.org/docs/Web/API/IDBObjectStore/keyPath)
      */
-    readonly keyPath: string | mut Array<string>,
+    readonly keyPath: string | mut prelude.Array<string>,
     /**
      * Returns the name of the store.
      *
@@ -451,7 +456,7 @@ export declare class IDBObjectStore {
      *
      * [MDN Reference](https://developer.mozilla.org/docs/Web/API/IDBObjectStore/createIndex)
      */
-    createIndex(mut self, name: string, keyPath: string | mut Array<string>, options?: IDBIndexParameters) -> IDBIndex,
+    createIndex(mut self, name: string, keyPath: string | mut prelude.Array<string>, options?: IDBIndexParameters) -> IDBIndex,
     /**
      * Deletes records in store with the given key or in the given key range in query.
      *
@@ -483,7 +488,7 @@ export declare class IDBObjectStore {
      *
      * [MDN Reference](https://developer.mozilla.org/docs/Web/API/IDBObjectStore/getAll)
      */
-    getAll(self, query?: IDBValidKey | IDBKeyRange | null, count?: number) -> IDBRequest<mut Array<any>>,
+    getAll(self, query?: IDBValidKey | IDBKeyRange | null, count?: number) -> IDBRequest<mut prelude.Array<any>>,
     /**
      * Retrieves the keys of records matching the given key or key range in query (up to count if given).
      *
@@ -491,7 +496,7 @@ export declare class IDBObjectStore {
      *
      * [MDN Reference](https://developer.mozilla.org/docs/Web/API/IDBObjectStore/getAllKeys)
      */
-    getAllKeys(self, query?: IDBValidKey | IDBKeyRange | null, count?: number) -> IDBRequest<mut Array<IDBValidKey>>,
+    getAllKeys(self, query?: IDBValidKey | IDBKeyRange | null, count?: number) -> IDBRequest<mut prelude.Array<IDBValidKey>>,
     /**
      * Retrieves the key of the first record matching the given key or key range in query.
      *
@@ -537,7 +542,7 @@ export declare class IDBObjectStore {
      *
      * [MDN Reference](https://developer.mozilla.org/docs/Web/API/IDBObjectStore/createIndex)
      */
-    createIndex(mut self, name: string, keyPath: string | Iterable<string>, options?: IDBIndexParameters) -> IDBIndex,
+    createIndex(mut self, name: string, keyPath: string | prelude.Iterable<string>, options?: IDBIndexParameters) -> IDBIndex,
     static prototype: IDBObjectStore,
     constructor(mut self)
 }
@@ -558,17 +563,17 @@ export declare class IDBOpenDBRequest extends IDBRequest<IDBDatabase> {
     onblocked: (fn (this: IDBOpenDBRequest, ev: IDBVersionChangeEvent) -> any) | null,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/IDBOpenDBRequest/upgradeneeded_event) */
     onupgradeneeded: (fn (this: IDBOpenDBRequest, ev: IDBVersionChangeEvent) -> any) | null,
-    addEventListener<K: keyof IDBOpenDBRequestEventMap>(mut self, type: K, listener: fn (this: IDBOpenDBRequest, ev: IDBOpenDBRequestEventMap[K]) -> any, options?: boolean | AddEventListenerOptions) -> unknown,
-    addEventListener(mut self, type: string, listener: EventListenerOrEventListenerObject, options?: boolean | AddEventListenerOptions) -> unknown,
-    removeEventListener<K: keyof IDBOpenDBRequestEventMap>(mut self, type: K, listener: fn (this: IDBOpenDBRequest, ev: IDBOpenDBRequestEventMap[K]) -> any, options?: boolean | EventListenerOptions) -> unknown,
-    removeEventListener(mut self, type: string, listener: EventListenerOrEventListenerObject, options?: boolean | EventListenerOptions) -> unknown,
+    addEventListener<K: keyof IDBOpenDBRequestEventMap>(mut self, type: K, listener: fn (this: IDBOpenDBRequest, ev: IDBOpenDBRequestEventMap[K]) -> any, options?: boolean | core.AddEventListenerOptions) -> unknown,
+    addEventListener(mut self, type: string, listener: core.EventListenerOrEventListenerObject, options?: boolean | core.AddEventListenerOptions) -> unknown,
+    removeEventListener<K: keyof IDBOpenDBRequestEventMap>(mut self, type: K, listener: fn (this: IDBOpenDBRequest, ev: IDBOpenDBRequestEventMap[K]) -> any, options?: boolean | core.EventListenerOptions) -> unknown,
+    removeEventListener(mut self, type: string, listener: core.EventListenerOrEventListenerObject, options?: boolean | core.EventListenerOptions) -> unknown,
     static prototype: IDBOpenDBRequest,
     constructor(mut self)
 }
 
 export declare interface IDBRequestEventMap {
-    "error": Event,
-    "success": Event
+    "error": core.Event,
+    "success": core.Event
 }
 
 /**
@@ -577,17 +582,17 @@ export declare interface IDBRequestEventMap {
  * [MDN Reference](https://developer.mozilla.org/docs/Web/API/IDBRequest)
  */
 @js("IDBRequest")
-export declare class IDBRequest<T = any> extends EventTarget {
+export declare class IDBRequest<T = any> extends core.EventTarget {
     /**
      * When a request is completed, returns the error (a DOMException), or null if the request succeeded. Throws a "InvalidStateError" DOMException if the request is still pending.
      *
      * [MDN Reference](https://developer.mozilla.org/docs/Web/API/IDBRequest/error)
      */
-    readonly error: DOMException | null,
+    readonly error: core.DOMException | null,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/IDBRequest/error_event) */
-    onerror: (fn (this: IDBRequest<T>, ev: Event) -> any) | null,
+    onerror: (fn (this: IDBRequest<T>, ev: core.Event) -> any) | null,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/IDBRequest/success_event) */
-    onsuccess: (fn (this: IDBRequest<T>, ev: Event) -> any) | null,
+    onsuccess: (fn (this: IDBRequest<T>, ev: core.Event) -> any) | null,
     /**
      * Returns "pending" until a request is complete, then returns "done".
      *
@@ -612,23 +617,23 @@ export declare class IDBRequest<T = any> extends EventTarget {
      * [MDN Reference](https://developer.mozilla.org/docs/Web/API/IDBRequest/transaction)
      */
     readonly transaction: IDBTransaction | null,
-    addEventListener<K: keyof IDBRequestEventMap>(mut self, type: K, listener: fn (this: IDBRequest<T>, ev: IDBRequestEventMap[K]) -> any, options?: boolean | AddEventListenerOptions) -> unknown,
-    addEventListener(mut self, type: string, listener: EventListenerOrEventListenerObject, options?: boolean | AddEventListenerOptions) -> unknown,
-    removeEventListener<K: keyof IDBRequestEventMap>(mut self, type: K, listener: fn (this: IDBRequest<T>, ev: IDBRequestEventMap[K]) -> any, options?: boolean | EventListenerOptions) -> unknown,
-    removeEventListener(mut self, type: string, listener: EventListenerOrEventListenerObject, options?: boolean | EventListenerOptions) -> unknown,
+    addEventListener<K: keyof IDBRequestEventMap>(mut self, type: K, listener: fn (this: IDBRequest<T>, ev: IDBRequestEventMap[K]) -> any, options?: boolean | core.AddEventListenerOptions) -> unknown,
+    addEventListener(mut self, type: string, listener: core.EventListenerOrEventListenerObject, options?: boolean | core.AddEventListenerOptions) -> unknown,
+    removeEventListener<K: keyof IDBRequestEventMap>(mut self, type: K, listener: fn (this: IDBRequest<T>, ev: IDBRequestEventMap[K]) -> any, options?: boolean | core.EventListenerOptions) -> unknown,
+    removeEventListener(mut self, type: string, listener: core.EventListenerOrEventListenerObject, options?: boolean | core.EventListenerOptions) -> unknown,
     static prototype: IDBRequest,
     constructor(mut self)
 }
 
 export declare interface IDBTransactionEventMap {
-    "abort": Event,
-    "complete": Event,
-    "error": Event
+    "abort": core.Event,
+    "complete": core.Event,
+    "error": core.Event
 }
 
 /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/IDBTransaction) */
 @js("IDBTransaction")
-export declare class IDBTransaction extends EventTarget {
+export declare class IDBTransaction extends core.EventTarget {
     /**
      * Returns the transaction's connection.
      *
@@ -642,7 +647,7 @@ export declare class IDBTransaction extends EventTarget {
      *
      * [MDN Reference](https://developer.mozilla.org/docs/Web/API/IDBTransaction/error)
      */
-    readonly error: DOMException | null,
+    readonly error: core.DOMException | null,
     /**
      * Returns the mode the transaction was created with ("readonly" or "readwrite"), or "versionchange" for an upgrade transaction.
      *
@@ -654,13 +659,13 @@ export declare class IDBTransaction extends EventTarget {
      *
      * [MDN Reference](https://developer.mozilla.org/docs/Web/API/IDBTransaction/objectStoreNames)
      */
-    readonly objectStoreNames: DOMStringList,
+    readonly objectStoreNames: dom.DOMStringList,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/IDBTransaction/abort_event) */
-    onabort: (fn (this: IDBTransaction, ev: Event) -> any) | null,
+    onabort: (fn (this: IDBTransaction, ev: core.Event) -> any) | null,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/IDBTransaction/complete_event) */
-    oncomplete: (fn (this: IDBTransaction, ev: Event) -> any) | null,
+    oncomplete: (fn (this: IDBTransaction, ev: core.Event) -> any) | null,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/IDBTransaction/error_event) */
-    onerror: (fn (this: IDBTransaction, ev: Event) -> any) | null,
+    onerror: (fn (this: IDBTransaction, ev: core.Event) -> any) | null,
     /**
      * Aborts the transaction. All pending requests will fail with a "AbortError" DOMException and all changes made to the database will be reverted.
      *
@@ -675,10 +680,10 @@ export declare class IDBTransaction extends EventTarget {
      * [MDN Reference](https://developer.mozilla.org/docs/Web/API/IDBTransaction/objectStore)
      */
     objectStore(mut self, name: string) -> IDBObjectStore,
-    addEventListener<K: keyof IDBTransactionEventMap>(mut self, type: K, listener: fn (this: IDBTransaction, ev: IDBTransactionEventMap[K]) -> any, options?: boolean | AddEventListenerOptions) -> unknown,
-    addEventListener(mut self, type: string, listener: EventListenerOrEventListenerObject, options?: boolean | AddEventListenerOptions) -> unknown,
-    removeEventListener<K: keyof IDBTransactionEventMap>(mut self, type: K, listener: fn (this: IDBTransaction, ev: IDBTransactionEventMap[K]) -> any, options?: boolean | EventListenerOptions) -> unknown,
-    removeEventListener(mut self, type: string, listener: EventListenerOrEventListenerObject, options?: boolean | EventListenerOptions) -> unknown,
+    addEventListener<K: keyof IDBTransactionEventMap>(mut self, type: K, listener: fn (this: IDBTransaction, ev: IDBTransactionEventMap[K]) -> any, options?: boolean | core.AddEventListenerOptions) -> unknown,
+    addEventListener(mut self, type: string, listener: core.EventListenerOrEventListenerObject, options?: boolean | core.AddEventListenerOptions) -> unknown,
+    removeEventListener<K: keyof IDBTransactionEventMap>(mut self, type: K, listener: fn (this: IDBTransaction, ev: IDBTransactionEventMap[K]) -> any, options?: boolean | core.EventListenerOptions) -> unknown,
+    removeEventListener(mut self, type: string, listener: core.EventListenerOrEventListenerObject, options?: boolean | core.EventListenerOptions) -> unknown,
     static prototype: IDBTransaction,
     constructor(mut self)
 }
@@ -689,7 +694,7 @@ export declare class IDBTransaction extends EventTarget {
  * [MDN Reference](https://developer.mozilla.org/docs/Web/API/IDBVersionChangeEvent)
  */
 @js("IDBVersionChangeEvent")
-export declare class IDBVersionChangeEvent extends Event {
+export declare class IDBVersionChangeEvent extends core.Event {
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/IDBVersionChangeEvent/newVersion) */
     readonly newVersion: number | null,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/IDBVersionChangeEvent/oldVersion) */
@@ -698,7 +703,7 @@ export declare class IDBVersionChangeEvent extends Event {
     constructor(mut self, type: string, eventInitDict?: IDBVersionChangeEventInit)
 }
 
-export declare type IDBValidKey = number | string | Date | BufferSource | mut Array<IDBValidKey>
+export declare type IDBValidKey = number | string | date.Date | core.BufferSource | mut prelude.Array<IDBValidKey>
 
 export declare type IDBCursorDirection = "next" | "nextunique" | "prev" | "prevunique"
 

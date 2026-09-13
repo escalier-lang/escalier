@@ -2,6 +2,9 @@
 // Its facts come from the pinned lib.*.d.ts set, the ECMA-262
 // derived facts, and the overlay. Change one of those and re-run.
 
+import "std:intl"
+import "std:prelude"
+
 @js("Date")
 export declare class Date {
     /**
@@ -30,19 +33,19 @@ export declare class Date {
      * @param locales A locale string, array of locale strings, Intl.Locale object, or array of Intl.Locale objects that contain one or more language or locale tags. If you include more than one locale string, list them in descending order of priority so that the first entry is the preferred locale. If you omit this parameter, the default locale of the JavaScript runtime is used.
      * @param options An object that contains one or more properties that specify comparison options.
      */
-    toLocaleString(self, locales?: Intl.LocalesArgument, options?: Intl.DateTimeFormatOptions) -> string,
+    toLocaleString(self, locales?: intl.LocalesArgument, options?: intl.DateTimeFormatOptions) -> string,
     /**
      * Converts a date to a string by using the current or specified locale.
      * @param locales A locale string, array of locale strings, Intl.Locale object, or array of Intl.Locale objects that contain one or more language or locale tags. If you include more than one locale string, list them in descending order of priority so that the first entry is the preferred locale. If you omit this parameter, the default locale of the JavaScript runtime is used.
      * @param options An object that contains one or more properties that specify comparison options.
      */
-    toLocaleDateString(self, locales?: Intl.LocalesArgument, options?: Intl.DateTimeFormatOptions) -> string,
+    toLocaleDateString(self, locales?: intl.LocalesArgument, options?: intl.DateTimeFormatOptions) -> string,
     /**
      * Converts a time to a string by using the current or specified locale.
      * @param locales A locale string, array of locale strings, Intl.Locale object, or array of Intl.Locale objects that contain one or more language or locale tags. If you include more than one locale string, list them in descending order of priority so that the first entry is the preferred locale. If you omit this parameter, the default locale of the JavaScript runtime is used.
      * @param options An object that contains one or more properties that specify comparison options.
      */
-    toLocaleTimeString(self, locales?: Intl.LocalesArgument, options?: Intl.DateTimeFormatOptions) -> string,
+    toLocaleTimeString(self, locales?: intl.LocalesArgument, options?: intl.DateTimeFormatOptions) -> string,
     /** Returns a string representation of a date. The format of the string depends on the locale. */
     toString(self) -> string,
     /** Returns a date as a string value. */
@@ -197,19 +200,19 @@ export declare class Date {
      * @param locales A locale string or array of locale strings that contain one or more language or locale tags. If you include more than one locale string, list them in descending order of priority so that the first entry is the preferred locale. If you omit this parameter, the default locale of the JavaScript runtime is used.
      * @param options An object that contains one or more properties that specify comparison options.
      */
-    toLocaleString(self, locales?: string | mut Array<string>, options?: Intl.DateTimeFormatOptions) -> string,
+    toLocaleString(self, locales?: string | mut prelude.Array<string>, options?: intl.DateTimeFormatOptions) -> string,
     /**
      * Converts a date to a string by using the current or specified locale.
      * @param locales A locale string or array of locale strings that contain one or more language or locale tags. If you include more than one locale string, list them in descending order of priority so that the first entry is the preferred locale. If you omit this parameter, the default locale of the JavaScript runtime is used.
      * @param options An object that contains one or more properties that specify comparison options.
      */
-    toLocaleDateString(self, locales?: string | mut Array<string>, options?: Intl.DateTimeFormatOptions) -> string,
+    toLocaleDateString(self, locales?: string | mut prelude.Array<string>, options?: intl.DateTimeFormatOptions) -> string,
     /**
      * Converts a time to a string by using the current or specified locale.
      * @param locales A locale string or array of locale strings that contain one or more language or locale tags. If you include more than one locale string, list them in descending order of priority so that the first entry is the preferred locale. If you omit this parameter, the default locale of the JavaScript runtime is used.
      * @param options An object that contains one or more properties that specify comparison options.
      */
-    toLocaleTimeString(self, locales?: string | mut Array<string>, options?: Intl.DateTimeFormatOptions) -> string,
+    toLocaleTimeString(self, locales?: string | mut prelude.Array<string>, options?: intl.DateTimeFormatOptions) -> string,
     constructor(mut self, value: number | string | Date),
     /**
      * Returns the number of milliseconds between midnight, January 1, 1970 Universal Coordinated Time (UTC) (or GMT) and the specified date.

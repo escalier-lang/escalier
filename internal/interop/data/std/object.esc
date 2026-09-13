@@ -2,6 +2,9 @@
 // Its facts come from the pinned lib.*.d.ts set, the ECMA-262
 // derived facts, and the overlay. Change one of those and re-run.
 
+import "std:function"
+import "std:prelude"
+
 export declare type PropertyKey = string | number | symbol
 
 export declare interface PropertyDescriptor {
@@ -18,7 +21,7 @@ export declare interface PropertyDescriptorMap {}
 @js("Object")
 export declare class Object {
     /** The initial value of Object.prototype.constructor is the standard built-in Object constructor. */
-    constructor: Function,
+    constructor: function.Function,
     /** Returns a string representation of an object. */
     toString(self) -> string,
     /** Returns a date converted to a string using the current locale. */
@@ -70,17 +73,17 @@ export declare class Object {
      * @param target The target object to copy to.
      * @param sources One or more source objects from which to copy properties
      */
-    static assign(target: {...}, ...sources: mut Array<any>) -> any,
+    static assign(target: {...}, ...sources: mut prelude.Array<any>) -> any,
     /**
      * Returns an array of all symbol properties found directly on object o.
      * @param o Object to retrieve the symbols from.
      */
-    static getOwnPropertySymbols(o: unknown) -> mut Array<symbol>,
+    static getOwnPropertySymbols(o: unknown) -> mut prelude.Array<symbol>,
     /**
      * Returns the names of the enumerable string properties and methods of an object.
      * @param o Object that contains the properties and methods. This can be an object that you created or an existing Document Object Model (DOM) object.
      */
-    static keys(o: {...}) -> mut Array<string>,
+    static keys(o: {...}) -> mut prelude.Array<string>,
     /**
      * Returns true if the values are the same value, false otherwise.
      * @param value1 The first value.
@@ -97,22 +100,22 @@ export declare class Object {
      * Returns an array of values of the enumerable own properties of an object
      * @param o Object that contains the properties and methods. This can be an object that you created or an existing Document Object Model (DOM) object.
      */
-    static values<T>(o: {} | ArrayLike<T>) -> mut Array<T>,
+    static values<T>(o: {} | prelude.ArrayLike<T>) -> mut prelude.Array<T>,
     /**
      * Returns an array of values of the enumerable own properties of an object
      * @param o Object that contains the properties and methods. This can be an object that you created or an existing Document Object Model (DOM) object.
      */
-    static values(o: {...}) -> mut Array<any>,
+    static values(o: {...}) -> mut prelude.Array<any>,
     /**
      * Returns an array of key/values of the enumerable own properties of an object
      * @param o Object that contains the properties and methods. This can be an object that you created or an existing Document Object Model (DOM) object.
      */
-    static entries<T>(o: {} | ArrayLike<T>) -> mut Array<[string, T]>,
+    static entries<T>(o: {} | prelude.ArrayLike<T>) -> mut prelude.Array<[string, T]>,
     /**
      * Returns an array of key/values of the enumerable own properties of an object
      * @param o Object that contains the properties and methods. This can be an object that you created or an existing Document Object Model (DOM) object.
      */
-    static entries(o: {...}) -> mut Array<[string, any]>,
+    static entries(o: {...}) -> mut prelude.Array<[string, any]>,
     /**
      * Returns an object containing all own property descriptors of an object
      * @param o Object that contains the properties and methods. This can be an object that you created or an existing Document Object Model (DOM) object.
@@ -124,12 +127,12 @@ export declare class Object {
      * Returns an object created by key-value entries for properties and methods
      * @param entries An iterable object that contains key-value entries for properties and methods.
      */
-    static fromEntries<T = any>(entries: Iterable<[PropertyKey, T]>) -> {},
+    static fromEntries<T = any>(entries: prelude.Iterable<[PropertyKey, T]>) -> {},
     /**
      * Returns an object created by key-value entries for properties and methods
      * @param entries An iterable object that contains key-value entries for properties and methods.
      */
-    static fromEntries(entries: Iterable<Array<any>>) -> any,
+    static fromEntries(entries: prelude.Iterable<prelude.Array<any>>) -> any,
     /**
      * Determines whether an object has a property with the specified name.
      * @param o An object.
@@ -141,7 +144,7 @@ export declare class Object {
      * @param items An iterable.
      * @param keySelector A callback which will be invoked for each item in items.
      */
-    static groupBy<K: PropertyKey, T>(items: Iterable<T>, keySelector: fn (item: T, index: number) -> K) -> Partial<Record<K, mut Array<T>>>,
+    static groupBy<K: PropertyKey, T>(items: prelude.Iterable<T>, keySelector: fn (item: T, index: number) -> K) -> Partial<Record<K, mut prelude.Array<T>>>,
     constructor(mut self, value?: unknown),
     () -> any,
     (value: unknown) -> any,
@@ -164,7 +167,7 @@ export declare class Object {
      * on that object, and are not inherited from the object's prototype. The properties of an object include both fields (objects) and functions.
      * @param o Object that contains the own properties.
      */
-    static getOwnPropertyNames(o: unknown) -> mut Array<string>,
+    static getOwnPropertyNames(o: unknown) -> mut prelude.Array<string>,
     /**
      * Creates an object that has the specified prototype or that has null prototype.
      * @param o Object to use as a prototype. May be null.
@@ -175,20 +178,20 @@ export declare class Object {
      * @param o Object to use as a prototype. May be null
      * @param properties JavaScript object that contains one or more property descriptors.
      */
-    static create(o: {...} | null, properties: PropertyDescriptorMap & ThisType<any>) -> any,
+    static create(o: {...} | null, properties: PropertyDescriptorMap & function.ThisType<any>) -> any,
     /**
      * Adds a property to an object, or modifies attributes of an existing property.
      * @param o Object on which to add or modify the property. This can be a native JavaScript object (that is, a user-defined object or a built in object) or a DOM object.
      * @param p The property name.
      * @param attributes Descriptor for the property. It can be for a data property or an accessor property.
      */
-    static defineProperty<T>(o: T, p: PropertyKey, attributes: PropertyDescriptor & ThisType<any>) -> T,
+    static defineProperty<T>(o: T, p: PropertyKey, attributes: PropertyDescriptor & function.ThisType<any>) -> T,
     /**
      * Adds one or more properties to an object, and/or modifies attributes of existing properties.
      * @param o Object on which to add or modify the properties. This can be a native JavaScript object or a DOM object.
      * @param properties JavaScript object that contains one or more descriptor objects. Each descriptor object describes a data property or an accessor property.
      */
-    static defineProperties<T>(o: T, properties: PropertyDescriptorMap & ThisType<any>) -> T,
+    static defineProperties<T>(o: T, properties: PropertyDescriptorMap & function.ThisType<any>) -> T,
     /**
      * Prevents the modification of attributes of existing properties, and prevents the addition of new properties.
      * @param o Object on which to lock the attributes.
@@ -198,7 +201,7 @@ export declare class Object {
      * Prevents the modification of existing property attributes and values, and prevents the addition of new properties.
      * @param f Object on which to lock the attributes.
      */
-    static freeze<T: Function>(f: T) -> T,
+    static freeze<T: function.Function>(f: T) -> T,
     /**
      * Prevents the modification of existing property attributes and values, and prevents the addition of new properties.
      * @param o Object on which to lock the attributes.

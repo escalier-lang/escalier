@@ -2,26 +2,30 @@
 // Its facts come from the pinned lib.*.d.ts set, the ECMA-262
 // derived facts, and the overlay. Change one of those and re-run.
 
+import "std:prelude"
+import "web:core"
+import "web:dom"
+
 export declare interface PerformanceMarkOptions {
     detail?: any,
-    startTime?: DOMHighResTimeStamp
+    startTime?: core.DOMHighResTimeStamp
 }
 
 export declare interface PerformanceMeasureOptions {
     detail?: any,
-    duration?: DOMHighResTimeStamp,
-    end?: string | DOMHighResTimeStamp,
-    start?: string | DOMHighResTimeStamp
+    duration?: core.DOMHighResTimeStamp,
+    end?: string | core.DOMHighResTimeStamp,
+    start?: string | core.DOMHighResTimeStamp
 }
 
 export declare interface PerformanceObserverInit {
     buffered?: boolean,
-    entryTypes?: mut Array<string>,
+    entryTypes?: mut prelude.Array<string>,
     type?: string
 }
 
 export declare interface PerformanceEventMap {
-    "resourcetimingbufferfull": Event
+    "resourcetimingbufferfull": core.Event
 }
 
 /**
@@ -30,9 +34,9 @@ export declare interface PerformanceEventMap {
  * [MDN Reference](https://developer.mozilla.org/docs/Web/API/Performance)
  */
 @js("Performance")
-export declare class Performance extends EventTarget {
+export declare class Performance extends core.EventTarget {
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/Performance/eventCounts) */
-    readonly eventCounts: EventCounts,
+    readonly eventCounts: dom.EventCounts,
     /**
      * @deprecated
      *
@@ -40,9 +44,9 @@ export declare class Performance extends EventTarget {
      */
     readonly navigation: PerformanceNavigation,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/Performance/resourcetimingbufferfull_event) */
-    onresourcetimingbufferfull: (fn (this: Performance, ev: Event) -> any) | null,
+    onresourcetimingbufferfull: (fn (this: Performance, ev: core.Event) -> any) | null,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/Performance/timeOrigin) */
-    readonly timeOrigin: DOMHighResTimeStamp,
+    readonly timeOrigin: core.DOMHighResTimeStamp,
     /**
      * @deprecated
      *
@@ -66,15 +70,15 @@ export declare class Performance extends EventTarget {
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/Performance/measure) */
     measure(mut self, measureName: string, startOrMeasureOptions?: string | PerformanceMeasureOptions, endMark?: string) -> PerformanceMeasure,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/Performance/now) */
-    now(mut self) -> DOMHighResTimeStamp,
+    now(mut self) -> core.DOMHighResTimeStamp,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/Performance/setResourceTimingBufferSize) */
     setResourceTimingBufferSize(mut self, maxSize: number) -> unknown,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/Performance/toJSON) */
     toJSON(self) -> any,
-    addEventListener<K: keyof PerformanceEventMap>(mut self, type: K, listener: fn (this: Performance, ev: PerformanceEventMap[K]) -> any, options?: boolean | AddEventListenerOptions) -> unknown,
-    addEventListener(mut self, type: string, listener: EventListenerOrEventListenerObject, options?: boolean | AddEventListenerOptions) -> unknown,
-    removeEventListener<K: keyof PerformanceEventMap>(mut self, type: K, listener: fn (this: Performance, ev: PerformanceEventMap[K]) -> any, options?: boolean | EventListenerOptions) -> unknown,
-    removeEventListener(mut self, type: string, listener: EventListenerOrEventListenerObject, options?: boolean | EventListenerOptions) -> unknown,
+    addEventListener<K: keyof PerformanceEventMap>(mut self, type: K, listener: fn (this: Performance, ev: PerformanceEventMap[K]) -> any, options?: boolean | core.AddEventListenerOptions) -> unknown,
+    addEventListener(mut self, type: string, listener: core.EventListenerOrEventListenerObject, options?: boolean | core.AddEventListenerOptions) -> unknown,
+    removeEventListener<K: keyof PerformanceEventMap>(mut self, type: K, listener: fn (this: Performance, ev: PerformanceEventMap[K]) -> any, options?: boolean | core.EventListenerOptions) -> unknown,
+    removeEventListener(mut self, type: string, listener: core.EventListenerOrEventListenerObject, options?: boolean | core.EventListenerOptions) -> unknown,
     static prototype: Performance,
     constructor(mut self)
 }
@@ -87,13 +91,13 @@ export declare class Performance extends EventTarget {
 @js("PerformanceEntry")
 export declare class PerformanceEntry {
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/PerformanceEntry/duration) */
-    readonly duration: DOMHighResTimeStamp,
+    readonly duration: core.DOMHighResTimeStamp,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/PerformanceEntry/entryType) */
     readonly entryType: string,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/PerformanceEntry/name) */
     readonly name: string,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/PerformanceEntry/startTime) */
-    readonly startTime: DOMHighResTimeStamp,
+    readonly startTime: core.DOMHighResTimeStamp,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/PerformanceEntry/toJSON) */
     toJSON(self) -> any,
     static prototype: PerformanceEntry,
@@ -172,25 +176,25 @@ export declare class PerformanceNavigation {
 @js("PerformanceNavigationTiming")
 export declare class PerformanceNavigationTiming extends PerformanceResourceTiming {
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/PerformanceNavigationTiming/domComplete) */
-    readonly domComplete: DOMHighResTimeStamp,
+    readonly domComplete: core.DOMHighResTimeStamp,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/PerformanceNavigationTiming/domContentLoadedEventEnd) */
-    readonly domContentLoadedEventEnd: DOMHighResTimeStamp,
+    readonly domContentLoadedEventEnd: core.DOMHighResTimeStamp,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/PerformanceNavigationTiming/domContentLoadedEventStart) */
-    readonly domContentLoadedEventStart: DOMHighResTimeStamp,
+    readonly domContentLoadedEventStart: core.DOMHighResTimeStamp,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/PerformanceNavigationTiming/domInteractive) */
-    readonly domInteractive: DOMHighResTimeStamp,
+    readonly domInteractive: core.DOMHighResTimeStamp,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/PerformanceNavigationTiming/loadEventEnd) */
-    readonly loadEventEnd: DOMHighResTimeStamp,
+    readonly loadEventEnd: core.DOMHighResTimeStamp,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/PerformanceNavigationTiming/loadEventStart) */
-    readonly loadEventStart: DOMHighResTimeStamp,
+    readonly loadEventStart: core.DOMHighResTimeStamp,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/PerformanceNavigationTiming/redirectCount) */
     readonly redirectCount: number,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/PerformanceNavigationTiming/type) */
     readonly type: NavigationTimingType,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/PerformanceNavigationTiming/unloadEventEnd) */
-    readonly unloadEventEnd: DOMHighResTimeStamp,
+    readonly unloadEventEnd: core.DOMHighResTimeStamp,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/PerformanceNavigationTiming/unloadEventStart) */
-    readonly unloadEventStart: DOMHighResTimeStamp,
+    readonly unloadEventStart: core.DOMHighResTimeStamp,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/PerformanceNavigationTiming/toJSON) */
     toJSON(self) -> any,
     static prototype: PerformanceNavigationTiming,
@@ -209,7 +213,7 @@ export declare class PerformanceObserver {
     static prototype: PerformanceObserver,
     constructor(mut self, callback: PerformanceObserverCallback),
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/PerformanceObserver/supportedEntryTypes_static) */
-    static readonly supportedEntryTypes: Array<string>
+    static readonly supportedEntryTypes: prelude.Array<string>
 }
 
 /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/PerformanceObserverEntryList) */
@@ -240,43 +244,43 @@ export declare class PerformancePaintTiming extends PerformanceEntry {
 @js("PerformanceResourceTiming")
 export declare class PerformanceResourceTiming extends PerformanceEntry {
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/PerformanceResourceTiming/connectEnd) */
-    readonly connectEnd: DOMHighResTimeStamp,
+    readonly connectEnd: core.DOMHighResTimeStamp,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/PerformanceResourceTiming/connectStart) */
-    readonly connectStart: DOMHighResTimeStamp,
+    readonly connectStart: core.DOMHighResTimeStamp,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/PerformanceResourceTiming/decodedBodySize) */
     readonly decodedBodySize: number,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/PerformanceResourceTiming/domainLookupEnd) */
-    readonly domainLookupEnd: DOMHighResTimeStamp,
+    readonly domainLookupEnd: core.DOMHighResTimeStamp,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/PerformanceResourceTiming/domainLookupStart) */
-    readonly domainLookupStart: DOMHighResTimeStamp,
+    readonly domainLookupStart: core.DOMHighResTimeStamp,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/PerformanceResourceTiming/encodedBodySize) */
     readonly encodedBodySize: number,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/PerformanceResourceTiming/fetchStart) */
-    readonly fetchStart: DOMHighResTimeStamp,
+    readonly fetchStart: core.DOMHighResTimeStamp,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/PerformanceResourceTiming/initiatorType) */
     readonly initiatorType: string,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/PerformanceResourceTiming/nextHopProtocol) */
     readonly nextHopProtocol: string,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/PerformanceResourceTiming/redirectEnd) */
-    readonly redirectEnd: DOMHighResTimeStamp,
+    readonly redirectEnd: core.DOMHighResTimeStamp,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/PerformanceResourceTiming/redirectStart) */
-    readonly redirectStart: DOMHighResTimeStamp,
+    readonly redirectStart: core.DOMHighResTimeStamp,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/PerformanceResourceTiming/requestStart) */
-    readonly requestStart: DOMHighResTimeStamp,
+    readonly requestStart: core.DOMHighResTimeStamp,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/PerformanceResourceTiming/responseEnd) */
-    readonly responseEnd: DOMHighResTimeStamp,
+    readonly responseEnd: core.DOMHighResTimeStamp,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/PerformanceResourceTiming/responseStart) */
-    readonly responseStart: DOMHighResTimeStamp,
+    readonly responseStart: core.DOMHighResTimeStamp,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/PerformanceResourceTiming/responseStatus) */
     readonly responseStatus: number,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/PerformanceResourceTiming/secureConnectionStart) */
-    readonly secureConnectionStart: DOMHighResTimeStamp,
+    readonly secureConnectionStart: core.DOMHighResTimeStamp,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/PerformanceResourceTiming/serverTiming) */
-    readonly serverTiming: Array<PerformanceServerTiming>,
+    readonly serverTiming: prelude.Array<PerformanceServerTiming>,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/PerformanceResourceTiming/transferSize) */
     readonly transferSize: number,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/PerformanceResourceTiming/workerStart) */
-    readonly workerStart: DOMHighResTimeStamp,
+    readonly workerStart: core.DOMHighResTimeStamp,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/PerformanceResourceTiming/toJSON) */
     toJSON(self) -> any,
     static prototype: PerformanceResourceTiming,
@@ -289,7 +293,7 @@ export declare class PerformanceServerTiming {
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/PerformanceServerTiming/description) */
     readonly description: string,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/PerformanceServerTiming/duration) */
-    readonly duration: DOMHighResTimeStamp,
+    readonly duration: core.DOMHighResTimeStamp,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/PerformanceServerTiming/name) */
     readonly name: string,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/PerformanceServerTiming/toJSON) */
@@ -450,6 +454,6 @@ export declare interface PerformanceObserverCallback {
 @js("performance")
 export declare var performance: Performance
 
-export declare type PerformanceEntryList = mut Array<PerformanceEntry>
+export declare type PerformanceEntryList = mut prelude.Array<PerformanceEntry>
 
 export declare type NavigationTimingType = "back_forward" | "navigate" | "prerender" | "reload"

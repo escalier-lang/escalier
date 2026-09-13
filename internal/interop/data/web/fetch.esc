@@ -2,6 +2,15 @@
 // Its facts come from the pinned lib.*.d.ts set, the ECMA-262
 // derived facts, and the overlay. Change one of those and re-run.
 
+import "std:object"
+import "std:prelude"
+import "std:typed_arrays"
+import "web:core"
+import "web:dom"
+import "web:file"
+import "web:streams"
+import "web:url"
+
 export declare interface RequestInit {
     /** A BodyInit object or null to set request's body. */
     body?: BodyInit | null,
@@ -27,7 +36,7 @@ export declare interface RequestInit {
     /** A referrer policy to set request's referrerPolicy. */
     referrerPolicy?: ReferrerPolicy,
     /** An AbortSignal to set request's signal. */
-    signal?: AbortSignal | null,
+    signal?: core.AbortSignal | null,
     /** Can only be null. Used to disassociate request from any Window. */
     window?: null
 }
@@ -40,21 +49,21 @@ export declare interface ResponseInit {
 
 export declare interface Body {
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/Request/body) */
-    readonly body: ReadableStream<Uint8Array> | null,
+    readonly body: streams.ReadableStream<typed_arrays.Uint8Array> | null,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/Request/bodyUsed) */
     readonly bodyUsed: boolean,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/Request/arrayBuffer) */
-    arrayBuffer() -> Promise<ArrayBuffer>,
+    arrayBuffer() -> prelude.Promise<typed_arrays.ArrayBuffer>,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/Request/blob) */
-    blob() -> Promise<Blob>,
+    blob() -> prelude.Promise<file.Blob>,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/Request/bytes) */
-    bytes() -> Promise<Uint8Array>,
+    bytes() -> prelude.Promise<typed_arrays.Uint8Array>,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/Request/formData) */
-    formData() -> Promise<FormData>,
+    formData() -> prelude.Promise<dom.FormData>,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/Request/json) */
-    json() -> Promise<any>,
+    json() -> prelude.Promise<any>,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/Request/text) */
-    text() -> Promise<string>
+    text() -> prelude.Promise<string>
 }
 
 /**
@@ -71,7 +80,7 @@ export declare class Headers {
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/Headers/get) */
     get(self, name: string) -> string | null,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/Headers/getSetCookie) */
-    getSetCookie(self) -> mut Array<string>,
+    getSetCookie(self) -> mut prelude.Array<string>,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/Headers/has) */
     has(self, name: string) -> boolean,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/Headers/set) */
@@ -166,7 +175,7 @@ export declare class Request extends Body {
      *
      * [MDN Reference](https://developer.mozilla.org/docs/Web/API/Request/signal)
      */
-    readonly signal: AbortSignal,
+    readonly signal: core.AbortSignal,
     /**
      * Returns the URL of request as a string.
      *
@@ -176,7 +185,7 @@ export declare class Request extends Body {
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/Request/clone) */
     clone(self) -> Request,
     static prototype: Request,
-    constructor(mut self, input: RequestInfo | URL, init?: RequestInit)
+    constructor(mut self, input: RequestInfo | url.URL, init?: RequestInit)
 }
 
 /**
@@ -209,16 +218,16 @@ export declare class Response extends Body {
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/Response/json_static) */
     static json(data: unknown, init?: ResponseInit) -> Response,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/Response/redirect_static) */
-    static redirect(url: string | URL, status?: number) -> Response
+    static redirect(url: string | url.URL, status?: number) -> Response
 }
 
 /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/Window/fetch) */
 @js("fetch")
-export declare fn fetch(input: RequestInfo | URL, init?: RequestInit) -> Promise<Response>
+export declare fn fetch(input: RequestInfo | url.URL, init?: RequestInit) -> prelude.Promise<Response>
 
-export declare type BodyInit = ReadableStream | XMLHttpRequestBodyInit
+export declare type BodyInit = streams.ReadableStream | dom.XMLHttpRequestBodyInit
 
-export declare type HeadersInit = mut Array<[string, string]> | Record<string, string> | Headers
+export declare type HeadersInit = mut prelude.Array<[string, string]> | object.Record<string, string> | Headers
 
 export declare type RequestInfo = Request | string
 
@@ -238,6 +247,6 @@ export declare type RequestRedirect = "error" | "follow" | "manual"
 
 export declare type ResponseType = "basic" | "cors" | "default" | "error" | "opaque" | "opaqueredirect"
 
-export declare interface HeadersIterator<T> extends IteratorObject<T, BuiltinIteratorReturn, unknown> {
+export declare interface HeadersIterator<T> extends prelude.IteratorObject<T, prelude.BuiltinIteratorReturn, unknown> {
     [Symbol.iterator]() -> HeadersIterator<T>
 }

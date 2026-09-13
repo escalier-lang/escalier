@@ -56,12 +56,15 @@ func (c *typeRefCollector) visitTypeParams(params []*ast.TypeParam) {
 	}
 }
 
-// EnterTypeAnn records a `TypeRefTypeAnn`'s head name and keeps walking, so
-// the arguments of `Foo<Bar>` are collected beside `Foo` itself.
+// EnterTypeAnn records a `TypeRefTypeAnn`'s name and keeps walking, so the
+// arguments of `Foo<Bar>` are collected beside `Foo` itself.
 //
-// A qualified reference contributes its FIRST segment alone. `Intl.Collator`
-// records `Intl`, since that is the name an import has to bring into scope;
-// `Collator` is read off it and belongs to no package on its own.
+// A qualified reference contributes both ends. The head is the name an import
+// normally has to bring into scope. The last segment matters too, because
+// namespace flattening turns `namespace Intl { type LocalesArgument }` into a
+// top-level `LocalesArgument` while leaving references to it written
+// `Intl.LocalesArgument`. There `Intl` names nothing and the last segment is
+// what resolves.
 func (c *typeRefCollector) EnterTypeAnn(t ast.TypeAnn) bool {
 	ref, ok := t.(*ast.TypeRefTypeAnn)
 	if !ok {
@@ -69,6 +72,9 @@ func (c *typeRefCollector) EnterTypeAnn(t ast.TypeAnn) bool {
 	}
 	if name, ok := headIdent(ref.Name); ok {
 		c.names.Add(name)
+	}
+	if member, ok := ref.Name.(*ast.Member); ok {
+		c.names.Add(member.Right.Name)
 	}
 	return true
 }

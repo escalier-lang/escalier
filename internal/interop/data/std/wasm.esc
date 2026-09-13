@@ -2,8 +2,16 @@
 // Its facts come from the pinned lib.*.d.ts set, the ECMA-262
 // derived facts, and the overlay. Change one of those and re-run.
 
+import "std:error"
+import "std:function"
+import "std:object"
+import "std:prelude"
+import "std:typed_arrays"
+import "web:core"
+import "web:fetch"
+
 @js("WebAssembly.CompileError")
-export declare class CompileError extends Error {
+export declare class CompileError extends error.Error {
     static prototype: CompileError,
     constructor(mut self, message?: string),
     (message?: string) -> CompileError
@@ -28,7 +36,7 @@ export declare class Instance {
 }
 
 @js("WebAssembly.LinkError")
-export declare class LinkError extends Error {
+export declare class LinkError extends error.Error {
     static prototype: LinkError,
     constructor(mut self, message?: string),
     (message?: string) -> LinkError
@@ -38,7 +46,7 @@ export declare class LinkError extends Error {
 @js("WebAssembly.Memory")
 export declare class Memory {
     /** [MDN Reference](https://developer.mozilla.org/docs/WebAssembly/JavaScript_interface/Memory/buffer) */
-    readonly buffer: ArrayBuffer,
+    readonly buffer: typed_arrays.ArrayBuffer,
     /** [MDN Reference](https://developer.mozilla.org/docs/WebAssembly/JavaScript_interface/Memory/grow) */
     grow(mut self, delta: number) -> number,
     static prototype: Memory,
@@ -49,17 +57,17 @@ export declare class Memory {
 @js("WebAssembly.Module")
 export declare class Module {
     static prototype: Module,
-    constructor(mut self, bytes: BufferSource),
+    constructor(mut self, bytes: core.BufferSource),
     /** [MDN Reference](https://developer.mozilla.org/docs/WebAssembly/JavaScript_interface/Module/customSections_static) */
-    static customSections(moduleObject: Module, sectionName: string) -> mut Array<ArrayBuffer>,
+    static customSections(moduleObject: Module, sectionName: string) -> mut prelude.Array<typed_arrays.ArrayBuffer>,
     /** [MDN Reference](https://developer.mozilla.org/docs/WebAssembly/JavaScript_interface/Module/exports_static) */
-    static exports(moduleObject: Module) -> mut Array<ModuleExportDescriptor>,
+    static exports(moduleObject: Module) -> mut prelude.Array<ModuleExportDescriptor>,
     /** [MDN Reference](https://developer.mozilla.org/docs/WebAssembly/JavaScript_interface/Module/imports_static) */
-    static imports(moduleObject: Module) -> mut Array<ModuleImportDescriptor>
+    static imports(moduleObject: Module) -> mut prelude.Array<ModuleImportDescriptor>
 }
 
 @js("WebAssembly.RuntimeError")
-export declare class RuntimeError extends Error {
+export declare class RuntimeError extends error.Error {
     static prototype: RuntimeError,
     constructor(mut self, message?: string),
     (message?: string) -> RuntimeError
@@ -109,7 +117,7 @@ export declare interface TableDescriptor {
 }
 
 export declare interface ValueTypeMap {
-    anyfunc: Function,
+    anyfunc: function.Function,
     externref: any,
     f32: number,
     f64: number,
@@ -127,37 +135,37 @@ export declare type ImportExportKind = "function" | "global" | "memory" | "table
 
 export declare type TableKind = "anyfunc" | "externref"
 
-export declare type ExportValue = Function | Global | Memory | Table
+export declare type ExportValue = function.Function | Global | Memory | Table
 
-export declare type Exports = Record<string, ExportValue>
+export declare type Exports = object.Record<string, ExportValue>
 
 export declare type ImportValue = ExportValue | number
 
-export declare type Imports = Record<string, ModuleImports>
+export declare type Imports = object.Record<string, ModuleImports>
 
-export declare type ModuleImports = Record<string, ImportValue>
+export declare type ModuleImports = object.Record<string, ImportValue>
 
 export declare type ValueType = keyof ValueTypeMap
 
 /** [MDN Reference](https://developer.mozilla.org/docs/WebAssembly/JavaScript_interface/compile_static) */
 @js("WebAssembly.compile")
-export declare fn compile(bytes: BufferSource) -> Promise<Module>
+export declare fn compile(bytes: core.BufferSource) -> prelude.Promise<Module>
 
 /** [MDN Reference](https://developer.mozilla.org/docs/WebAssembly/JavaScript_interface/compileStreaming_static) */
 @js("WebAssembly.compileStreaming")
-export declare fn compileStreaming(source: Response | PromiseLike<Response>) -> Promise<Module>
+export declare fn compileStreaming(source: fetch.Response | prelude.PromiseLike<fetch.Response>) -> prelude.Promise<Module>
 
 /** [MDN Reference](https://developer.mozilla.org/docs/WebAssembly/JavaScript_interface/instantiate_static) */
 @js("WebAssembly.instantiate")
-export declare fn instantiate(bytes: BufferSource, importObject?: Imports) -> Promise<WebAssemblyInstantiatedSource>
+export declare fn instantiate(bytes: core.BufferSource, importObject?: Imports) -> prelude.Promise<WebAssemblyInstantiatedSource>
 
 @js("WebAssembly.instantiate")
-export declare fn instantiate(moduleObject: Module, importObject?: Imports) -> Promise<Instance>
+export declare fn instantiate(moduleObject: Module, importObject?: Imports) -> prelude.Promise<Instance>
 
 /** [MDN Reference](https://developer.mozilla.org/docs/WebAssembly/JavaScript_interface/instantiateStreaming_static) */
 @js("WebAssembly.instantiateStreaming")
-export declare fn instantiateStreaming(source: Response | PromiseLike<Response>, importObject?: Imports) -> Promise<WebAssemblyInstantiatedSource>
+export declare fn instantiateStreaming(source: fetch.Response | prelude.PromiseLike<fetch.Response>, importObject?: Imports) -> prelude.Promise<WebAssemblyInstantiatedSource>
 
 /** [MDN Reference](https://developer.mozilla.org/docs/WebAssembly/JavaScript_interface/validate_static) */
 @js("WebAssembly.validate")
-export declare fn validate(bytes: BufferSource) -> boolean
+export declare fn validate(bytes: core.BufferSource) -> boolean

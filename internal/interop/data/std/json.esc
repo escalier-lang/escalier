@@ -2,6 +2,8 @@
 // Its facts come from the pinned lib.*.d.ts set, the ECMA-262
 // derived facts, and the overlay. Change one of those and re-run.
 
+import "std:prelude"
+
 /**
  * Converts a JavaScript Object Notation (JSON) string into an object.
  * @param text A valid JSON string.
@@ -27,4 +29,4 @@ export declare fn stringify(value: unknown, replacer?: fn (this: any, key: strin
  * @param space Adds indentation, white space, and line break characters to the return-value JSON text to make it easier to read.
  */
 @js("JSON.stringify")
-export declare fn stringify(value: unknown, replacer?: mut Array<number | string> | null, space?: string | number) -> string
+export declare fn stringify(value: unknown, replacer?: mut prelude.Array<number | string> | null, space?: string | number) -> string

@@ -2,6 +2,9 @@
 // Its facts come from the pinned lib.*.d.ts set, the ECMA-262
 // derived facts, and the overlay. Change one of those and re-run.
 
+import "std:prelude"
+import "std:weak_ref"
+
 @js("Set")
 export declare class Set<T> {
     /**
@@ -69,14 +72,14 @@ export declare class Set<T> {
      * @returns a boolean indicating whether this Set has no elements in common with the argument.
      */
     isDisjointFrom(self, other: ReadonlySetLike<unknown>) -> boolean,
-    constructor(mut self, values?: Array<T> | null),
+    constructor(mut self, values?: prelude.Array<T> | null),
     static readonly prototype: mut Set<any>,
-    constructor(mut self, iterable?: Iterable<T> | null),
+    constructor(mut self, iterable?: prelude.Iterable<T> | null),
     static readonly [Symbol.species]: typeof Set
 }
 
 @js("WeakSet")
-export declare class WeakSet<T: WeakKey> {
+export declare class WeakSet<T: weak_ref.WeakKey> {
     /**
      * Appends a new value to the end of the WeakSet.
      */
@@ -91,12 +94,12 @@ export declare class WeakSet<T: WeakKey> {
      */
     has(self, value: T) -> boolean,
     readonly [Symbol.toStringTag]: string,
-    constructor(mut self, values?: Array<T> | null),
-    static readonly prototype: WeakSet<WeakKey>,
-    constructor(mut self, iterable: Iterable<T>)
+    constructor(mut self, values?: prelude.Array<T> | null),
+    static readonly prototype: WeakSet<weak_ref.WeakKey>,
+    constructor(mut self, iterable: prelude.Iterable<T>)
 }
 
-export declare interface SetIterator<T> extends IteratorObject<T, BuiltinIteratorReturn, unknown> {
+export declare interface SetIterator<T> extends prelude.IteratorObject<T, prelude.BuiltinIteratorReturn, unknown> {
     [Symbol.iterator]() -> SetIterator<T>
 }
 
@@ -104,7 +107,7 @@ export declare interface ReadonlySetLike<T> {
     /**
      * Despite its name, returns an iterator of the values in the set-like.
      */
-    keys() -> Iterator<T>,
+    keys() -> prelude.Iterator<T>,
     /**
      * @returns a boolean indicating whether an element with the specified value exists in the set-like or not.
      */

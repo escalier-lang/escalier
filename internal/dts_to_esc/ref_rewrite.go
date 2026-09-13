@@ -94,6 +94,16 @@ type refRewriter struct {
 	// consumedCtor maps a fused constructor interface's name to the instance name it fused
 	// into. Empty when the pass is not respelling those references.
 	consumedCtor map[string]string
+	// qualifiers maps a name another package declares to the binding that
+	// package's import makes, so `Event` becomes `core.Event`. Empty when the
+	// pass is not qualifying cross-package references.
+	qualifiers map[string]string
+	// flattenedQualifiers maps the last segment of a qualified reference whose
+	// head names nothing to the binding of the package declaring that segment.
+	// Namespace flattening produces those: `Intl.LocalesArgument` survives with
+	// `LocalesArgument` declared at the top level of `std:intl` and `Intl`
+	// declared nowhere, so the head is replaced rather than prefixed.
+	flattenedQualifiers map[string]string
 }
 
 // rewriteDecl dispatches over every Decl variant. The default panics
@@ -226,9 +236,47 @@ func (r *refRewriter) rewriteClassElem(elem ast.ClassElem) {
 // Eight declarations in the pinned lib set take this shape,
 // `RegExpMatchArray`, `FontFaceSet`, and `HighlightRegistry` among
 // them.
+// requalifyFlattenedRef replaces the head of a qualified reference whose head
+// names nothing with the binding of the package that declares its last
+// segment, turning `Intl.LocalesArgument` into `intl.LocalesArgument`.
+func (r *refRewriter) requalifyFlattenedRef(ref *ast.TypeRefTypeAnn) bool {
+	member, ok := ref.Name.(*ast.Member)
+	if !ok {
+		return false
+	}
+	head, ok := member.Left.(*ast.Ident)
+	if !ok {
+		return false
+	}
+	if _, headResolves := r.qualifiers[head.Name]; headResolves {
+		return false
+	}
+	qualifier, ok := r.flattenedQualifiers[member.Right.Name]
+	if !ok {
+		return false
+	}
+	head.Name = qualifier
+	return true
+}
+
+func (r *refRewriter) qualifyRef(ref *ast.TypeRefTypeAnn, head *ast.Ident) bool {
+	qualifier, ok := r.qualifiers[head.Name]
+	if !ok {
+		return false
+	}
+	ref.Name = &ast.Member{
+		Left:  ast.NewIdentifier(qualifier, head.Span()),
+		Right: ast.NewIdentifier(head.Name, head.Span()),
+	}
+	return true
+}
+
 func (r *refRewriter) renameTypeRefInPlace(ref *ast.TypeRefTypeAnn) {
 	for i, arg := range ref.TypeArgs {
 		ref.TypeArgs[i] = r.rewrite(arg)
+	}
+	if r.requalifyFlattenedRef(ref) {
+		return
 	}
 	id, ok := ref.Name.(*ast.Ident)
 	if !ok {
@@ -238,6 +286,7 @@ func (r *refRewriter) renameTypeRefInPlace(ref *ast.TypeRefTypeAnn) {
 		id.Name = mutableName
 		return
 	}
+	r.qualifyRef(ref, id)
 }
 
 // rewrite walks a TypeAnn, rewriting twin references in every
@@ -250,6 +299,9 @@ func (r *refRewriter) rewrite(t ast.TypeAnn) ast.TypeAnn {
 	case *ast.TypeRefTypeAnn:
 		for i, arg := range tt.TypeArgs {
 			tt.TypeArgs[i] = r.rewrite(arg)
+		}
+		if r.requalifyFlattenedRef(tt) {
+			return tt
 		}
 		id, ok := tt.Name.(*ast.Ident)
 		if !ok {
@@ -265,6 +317,9 @@ func (r *refRewriter) rewrite(t ast.TypeAnn) ast.TypeAnn {
 		// visibly dangling name rather than a silently wrong type.
 		if instance, ok := r.consumedCtor[id.Name]; ok && len(tt.TypeArgs) == 0 {
 			return ast.NewTypeOfTypeAnn(ast.NewIdentifier(instance, tt.Span()), tt.Span())
+		}
+		if r.qualifyRef(tt, id) {
+			return tt
 		}
 		if mutableName, ok := r.readonlyToMutable[id.Name]; ok {
 			id.Name = mutableName

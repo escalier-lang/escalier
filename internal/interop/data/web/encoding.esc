@@ -2,20 +2,24 @@
 // Its facts come from the pinned lib.*.d.ts set, the ECMA-262
 // derived facts, and the overlay. Change one of those and re-run.
 
+import "std:typed_arrays"
+import "web:core"
+import "web:streams"
+
 /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/TextDecoderStream) */
 @js("TextDecoderStream")
-export declare class TextDecoderStream extends GenericTransformStream {
-    readonly readable: ReadableStream<string>,
-    readonly writable: WritableStream<BufferSource>,
+export declare class TextDecoderStream extends streams.GenericTransformStream {
+    readonly readable: streams.ReadableStream<string>,
+    readonly writable: streams.WritableStream<core.BufferSource>,
     static prototype: TextDecoderStream,
-    constructor(mut self, label?: string, options?: TextDecoderOptions)
+    constructor(mut self, label?: string, options?: core.TextDecoderOptions)
 }
 
 /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/TextEncoderStream) */
 @js("TextEncoderStream")
-export declare class TextEncoderStream extends GenericTransformStream {
-    readonly readable: ReadableStream<Uint8Array>,
-    readonly writable: WritableStream<string>,
+export declare class TextEncoderStream extends streams.GenericTransformStream {
+    readonly readable: streams.ReadableStream<typed_arrays.Uint8Array>,
+    readonly writable: streams.WritableStream<string>,
     static prototype: TextEncoderStream,
     constructor(mut self)
 }

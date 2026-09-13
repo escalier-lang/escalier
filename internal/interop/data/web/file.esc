@@ -2,6 +2,12 @@
 // Its facts come from the pinned lib.*.d.ts set, the ECMA-262
 // derived facts, and the overlay. Change one of those and re-run.
 
+import "std:prelude"
+import "std:typed_arrays"
+import "web:core"
+import "web:dom"
+import "web:streams"
+
 export declare interface BlobPropertyBag {
     endings?: EndingType,
     type?: string
@@ -23,17 +29,17 @@ export declare class Blob {
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/Blob/type) */
     readonly type: string,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/Blob/arrayBuffer) */
-    arrayBuffer(mut self) -> Promise<ArrayBuffer>,
+    arrayBuffer(mut self) -> prelude.Promise<typed_arrays.ArrayBuffer>,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/Blob/bytes) */
-    bytes(mut self) -> Promise<Uint8Array>,
+    bytes(mut self) -> prelude.Promise<typed_arrays.Uint8Array>,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/Blob/slice) */
     slice(self, start?: number, end?: number, contentType?: string) -> Blob,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/Blob/stream) */
-    stream(mut self) -> ReadableStream<Uint8Array>,
+    stream(mut self) -> streams.ReadableStream<typed_arrays.Uint8Array>,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/Blob/text) */
-    text(mut self) -> Promise<string>,
+    text(mut self) -> prelude.Promise<string>,
     static prototype: Blob,
-    constructor(mut self, blobParts?: mut Array<BlobPart>, options?: BlobPropertyBag)
+    constructor(mut self, blobParts?: mut prelude.Array<BlobPart>, options?: BlobPropertyBag)
 }
 
 /**
@@ -50,7 +56,7 @@ export declare class File extends Blob {
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/File/webkitRelativePath) */
     readonly webkitRelativePath: string,
     static prototype: File,
-    constructor(mut self, fileBits: mut Array<BlobPart>, fileName: string, options?: FilePropertyBag)
+    constructor(mut self, fileBits: mut prelude.Array<BlobPart>, fileName: string, options?: FilePropertyBag)
 }
 
 /**
@@ -64,18 +70,18 @@ export declare class FileList {
     readonly length: number,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/FileList/item) */
     item(mut self, index: number) -> File | null,
-    [Symbol.iterator](self) -> ArrayIterator<File>,
+    [Symbol.iterator](self) -> prelude.ArrayIterator<File>,
     static prototype: FileList,
     constructor(mut self)
 }
 
 export declare interface FileReaderEventMap {
-    "abort": ProgressEvent<FileReader>,
-    "error": ProgressEvent<FileReader>,
-    "load": ProgressEvent<FileReader>,
-    "loadend": ProgressEvent<FileReader>,
-    "loadstart": ProgressEvent<FileReader>,
-    "progress": ProgressEvent<FileReader>
+    "abort": dom.ProgressEvent<FileReader>,
+    "error": dom.ProgressEvent<FileReader>,
+    "load": dom.ProgressEvent<FileReader>,
+    "loadend": dom.ProgressEvent<FileReader>,
+    "loadstart": dom.ProgressEvent<FileReader>,
+    "progress": dom.ProgressEvent<FileReader>
 }
 
 /**
@@ -84,25 +90,25 @@ export declare interface FileReaderEventMap {
  * [MDN Reference](https://developer.mozilla.org/docs/Web/API/FileReader)
  */
 @js("FileReader")
-export declare class FileReader extends EventTarget {
+export declare class FileReader extends core.EventTarget {
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/FileReader/error) */
-    readonly error: DOMException | null,
+    readonly error: core.DOMException | null,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/FileReader/abort_event) */
-    onabort: (fn (this: FileReader, ev: ProgressEvent<FileReader>) -> any) | null,
+    onabort: (fn (this: FileReader, ev: dom.ProgressEvent<FileReader>) -> any) | null,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/FileReader/error_event) */
-    onerror: (fn (this: FileReader, ev: ProgressEvent<FileReader>) -> any) | null,
+    onerror: (fn (this: FileReader, ev: dom.ProgressEvent<FileReader>) -> any) | null,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/FileReader/load_event) */
-    onload: (fn (this: FileReader, ev: ProgressEvent<FileReader>) -> any) | null,
+    onload: (fn (this: FileReader, ev: dom.ProgressEvent<FileReader>) -> any) | null,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/FileReader/loadend_event) */
-    onloadend: (fn (this: FileReader, ev: ProgressEvent<FileReader>) -> any) | null,
+    onloadend: (fn (this: FileReader, ev: dom.ProgressEvent<FileReader>) -> any) | null,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/FileReader/loadstart_event) */
-    onloadstart: (fn (this: FileReader, ev: ProgressEvent<FileReader>) -> any) | null,
+    onloadstart: (fn (this: FileReader, ev: dom.ProgressEvent<FileReader>) -> any) | null,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/FileReader/progress_event) */
-    onprogress: (fn (this: FileReader, ev: ProgressEvent<FileReader>) -> any) | null,
+    onprogress: (fn (this: FileReader, ev: dom.ProgressEvent<FileReader>) -> any) | null,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/FileReader/readyState) */
     readonly readyState: typeof FileReader.EMPTY | typeof FileReader.LOADING | typeof FileReader.DONE,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/FileReader/result) */
-    readonly result: string | ArrayBuffer | null,
+    readonly result: string | typed_arrays.ArrayBuffer | null,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/FileReader/abort) */
     abort(mut self) -> unknown,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/FileReader/readAsArrayBuffer) */
@@ -120,10 +126,10 @@ export declare class FileReader extends EventTarget {
     readonly EMPTY: 0,
     readonly LOADING: 1,
     readonly DONE: 2,
-    addEventListener<K: keyof FileReaderEventMap>(mut self, type: K, listener: fn (this: FileReader, ev: FileReaderEventMap[K]) -> any, options?: boolean | AddEventListenerOptions) -> unknown,
-    addEventListener(mut self, type: string, listener: EventListenerOrEventListenerObject, options?: boolean | AddEventListenerOptions) -> unknown,
-    removeEventListener<K: keyof FileReaderEventMap>(mut self, type: K, listener: fn (this: FileReader, ev: FileReaderEventMap[K]) -> any, options?: boolean | EventListenerOptions) -> unknown,
-    removeEventListener(mut self, type: string, listener: EventListenerOrEventListenerObject, options?: boolean | EventListenerOptions) -> unknown,
+    addEventListener<K: keyof FileReaderEventMap>(mut self, type: K, listener: fn (this: FileReader, ev: FileReaderEventMap[K]) -> any, options?: boolean | core.AddEventListenerOptions) -> unknown,
+    addEventListener(mut self, type: string, listener: core.EventListenerOrEventListenerObject, options?: boolean | core.AddEventListenerOptions) -> unknown,
+    removeEventListener<K: keyof FileReaderEventMap>(mut self, type: K, listener: fn (this: FileReader, ev: FileReaderEventMap[K]) -> any, options?: boolean | core.EventListenerOptions) -> unknown,
+    removeEventListener(mut self, type: string, listener: core.EventListenerOrEventListenerObject, options?: boolean | core.EventListenerOptions) -> unknown,
     static prototype: FileReader,
     constructor(mut self),
     static readonly EMPTY: 0,
@@ -131,6 +137,6 @@ export declare class FileReader extends EventTarget {
     static readonly DONE: 2
 }
 
-export declare type BlobPart = BufferSource | Blob | string
+export declare type BlobPart = core.BufferSource | Blob | string
 
 export declare type EndingType = "native" | "transparent"

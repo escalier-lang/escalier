@@ -2,6 +2,12 @@
 // Its facts come from the pinned lib.*.d.ts set, the ECMA-262
 // derived facts, and the overlay. Change one of those and re-run.
 
+import "std:prelude"
+import "std:typed_arrays"
+import "web:core"
+import "web:dom"
+import "web:web_codecs"
+
 export declare interface WebGLContextAttributes {
     alpha?: boolean,
     antialias?: boolean,
@@ -14,7 +20,7 @@ export declare interface WebGLContextAttributes {
     stencil?: boolean
 }
 
-export declare interface WebGLContextEventInit extends EventInit {
+export declare interface WebGLContextEventInit extends core.EventInit {
     statusMessage?: string
 }
 
@@ -214,7 +220,7 @@ export declare interface WEBGL_color_buffer_float {
 /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/WEBGL_compressed_texture_astc) */
 export declare interface WEBGL_compressed_texture_astc {
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/WEBGL_compressed_texture_astc/getSupportedProfiles) */
-    getSupportedProfiles() -> mut Array<string>,
+    getSupportedProfiles() -> mut prelude.Array<string>,
     readonly COMPRESSED_RGBA_ASTC_4x4_KHR: 37808,
     readonly COMPRESSED_RGBA_ASTC_5x4_KHR: 37809,
     readonly COMPRESSED_RGBA_ASTC_5x5_KHR: 37810,
@@ -320,7 +326,7 @@ export declare interface WEBGL_depth_texture {
 /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/WEBGL_draw_buffers) */
 export declare interface WEBGL_draw_buffers {
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/WEBGL_draw_buffers/drawBuffersWEBGL) */
-    drawBuffersWEBGL(buffers: mut Array<GLenum>) -> unknown,
+    drawBuffersWEBGL(buffers: mut prelude.Array<GLenum>) -> unknown,
     readonly COLOR_ATTACHMENT0_WEBGL: 36064,
     readonly COLOR_ATTACHMENT1_WEBGL: 36065,
     readonly COLOR_ATTACHMENT2_WEBGL: 36066,
@@ -356,7 +362,7 @@ export declare interface WEBGL_draw_buffers {
     readonly MAX_COLOR_ATTACHMENTS_WEBGL: 36063,
     readonly MAX_DRAW_BUFFERS_WEBGL: 34852,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/WEBGL_draw_buffers/drawBuffersWEBGL) */
-    drawBuffersWEBGL(buffers: Iterable<GLenum>) -> unknown
+    drawBuffersWEBGL(buffers: prelude.Iterable<GLenum>) -> unknown
 }
 
 /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/WEBGL_lose_context) */
@@ -370,21 +376,21 @@ export declare interface WEBGL_lose_context {
 /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/WEBGL_multi_draw) */
 export declare interface WEBGL_multi_draw {
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/WEBGL_multi_draw/multiDrawArraysInstancedWEBGL) */
-    multiDrawArraysInstancedWEBGL(mode: GLenum, firstsList: Int32Array | mut Array<GLint>, firstsOffset: number, countsList: Int32Array | mut Array<GLsizei>, countsOffset: number, instanceCountsList: Int32Array | mut Array<GLsizei>, instanceCountsOffset: number, drawcount: GLsizei) -> unknown,
+    multiDrawArraysInstancedWEBGL(mode: GLenum, firstsList: typed_arrays.Int32Array | mut prelude.Array<GLint>, firstsOffset: number, countsList: typed_arrays.Int32Array | mut prelude.Array<GLsizei>, countsOffset: number, instanceCountsList: typed_arrays.Int32Array | mut prelude.Array<GLsizei>, instanceCountsOffset: number, drawcount: GLsizei) -> unknown,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/WEBGL_multi_draw/multiDrawArraysWEBGL) */
-    multiDrawArraysWEBGL(mode: GLenum, firstsList: Int32Array | mut Array<GLint>, firstsOffset: number, countsList: Int32Array | mut Array<GLsizei>, countsOffset: number, drawcount: GLsizei) -> unknown,
+    multiDrawArraysWEBGL(mode: GLenum, firstsList: typed_arrays.Int32Array | mut prelude.Array<GLint>, firstsOffset: number, countsList: typed_arrays.Int32Array | mut prelude.Array<GLsizei>, countsOffset: number, drawcount: GLsizei) -> unknown,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/WEBGL_multi_draw/multiDrawElementsInstancedWEBGL) */
-    multiDrawElementsInstancedWEBGL(mode: GLenum, countsList: Int32Array | mut Array<GLsizei>, countsOffset: number, type: GLenum, offsetsList: Int32Array | mut Array<GLsizei>, offsetsOffset: number, instanceCountsList: Int32Array | mut Array<GLsizei>, instanceCountsOffset: number, drawcount: GLsizei) -> unknown,
+    multiDrawElementsInstancedWEBGL(mode: GLenum, countsList: typed_arrays.Int32Array | mut prelude.Array<GLsizei>, countsOffset: number, type: GLenum, offsetsList: typed_arrays.Int32Array | mut prelude.Array<GLsizei>, offsetsOffset: number, instanceCountsList: typed_arrays.Int32Array | mut prelude.Array<GLsizei>, instanceCountsOffset: number, drawcount: GLsizei) -> unknown,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/WEBGL_multi_draw/multiDrawElementsWEBGL) */
-    multiDrawElementsWEBGL(mode: GLenum, countsList: Int32Array | mut Array<GLsizei>, countsOffset: number, type: GLenum, offsetsList: Int32Array | mut Array<GLsizei>, offsetsOffset: number, drawcount: GLsizei) -> unknown,
+    multiDrawElementsWEBGL(mode: GLenum, countsList: typed_arrays.Int32Array | mut prelude.Array<GLsizei>, countsOffset: number, type: GLenum, offsetsList: typed_arrays.Int32Array | mut prelude.Array<GLsizei>, offsetsOffset: number, drawcount: GLsizei) -> unknown,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/WEBGL_multi_draw/multiDrawArraysInstancedWEBGL) */
-    multiDrawArraysInstancedWEBGL(mode: GLenum, firstsList: Int32Array | Iterable<GLint>, firstsOffset: number, countsList: Int32Array | Iterable<GLsizei>, countsOffset: number, instanceCountsList: Int32Array | Iterable<GLsizei>, instanceCountsOffset: number, drawcount: GLsizei) -> unknown,
+    multiDrawArraysInstancedWEBGL(mode: GLenum, firstsList: typed_arrays.Int32Array | prelude.Iterable<GLint>, firstsOffset: number, countsList: typed_arrays.Int32Array | prelude.Iterable<GLsizei>, countsOffset: number, instanceCountsList: typed_arrays.Int32Array | prelude.Iterable<GLsizei>, instanceCountsOffset: number, drawcount: GLsizei) -> unknown,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/WEBGL_multi_draw/multiDrawArraysWEBGL) */
-    multiDrawArraysWEBGL(mode: GLenum, firstsList: Int32Array | Iterable<GLint>, firstsOffset: number, countsList: Int32Array | Iterable<GLsizei>, countsOffset: number, drawcount: GLsizei) -> unknown,
+    multiDrawArraysWEBGL(mode: GLenum, firstsList: typed_arrays.Int32Array | prelude.Iterable<GLint>, firstsOffset: number, countsList: typed_arrays.Int32Array | prelude.Iterable<GLsizei>, countsOffset: number, drawcount: GLsizei) -> unknown,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/WEBGL_multi_draw/multiDrawElementsInstancedWEBGL) */
-    multiDrawElementsInstancedWEBGL(mode: GLenum, countsList: Int32Array | Iterable<GLsizei>, countsOffset: number, type: GLenum, offsetsList: Int32Array | Iterable<GLsizei>, offsetsOffset: number, instanceCountsList: Int32Array | Iterable<GLsizei>, instanceCountsOffset: number, drawcount: GLsizei) -> unknown,
+    multiDrawElementsInstancedWEBGL(mode: GLenum, countsList: typed_arrays.Int32Array | prelude.Iterable<GLsizei>, countsOffset: number, type: GLenum, offsetsList: typed_arrays.Int32Array | prelude.Iterable<GLsizei>, offsetsOffset: number, instanceCountsList: typed_arrays.Int32Array | prelude.Iterable<GLsizei>, instanceCountsOffset: number, drawcount: GLsizei) -> unknown,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/WEBGL_multi_draw/multiDrawElementsWEBGL) */
-    multiDrawElementsWEBGL(mode: GLenum, countsList: Int32Array | Iterable<GLsizei>, countsOffset: number, type: GLenum, offsetsList: Int32Array | Iterable<GLsizei>, offsetsOffset: number, drawcount: GLsizei) -> unknown
+    multiDrawElementsWEBGL(mode: GLenum, countsList: typed_arrays.Int32Array | prelude.Iterable<GLsizei>, countsOffset: number, type: GLenum, offsetsList: typed_arrays.Int32Array | prelude.Iterable<GLsizei>, offsetsOffset: number, drawcount: GLsizei) -> unknown
 }
 
 /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/WebGL2RenderingContext) */
@@ -982,10 +988,10 @@ export declare interface WebGL2RenderingContextBase {
     clientWaitSync(sync: WebGLSync, flags: GLbitfield, timeout: GLuint64) -> GLenum,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/WebGL2RenderingContext/compressedTexImage3D) */
     compressedTexImage3D(target: GLenum, level: GLint, internalformat: GLenum, width: GLsizei, height: GLsizei, depth: GLsizei, border: GLint, imageSize: GLsizei, offset: GLintptr) -> unknown,
-    compressedTexImage3D(target: GLenum, level: GLint, internalformat: GLenum, width: GLsizei, height: GLsizei, depth: GLsizei, border: GLint, srcData: ArrayBufferView, srcOffset?: number, srcLengthOverride?: GLuint) -> unknown,
+    compressedTexImage3D(target: GLenum, level: GLint, internalformat: GLenum, width: GLsizei, height: GLsizei, depth: GLsizei, border: GLint, srcData: typed_arrays.ArrayBufferView, srcOffset?: number, srcLengthOverride?: GLuint) -> unknown,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/WebGL2RenderingContext/compressedTexSubImage3D) */
     compressedTexSubImage3D(target: GLenum, level: GLint, xoffset: GLint, yoffset: GLint, zoffset: GLint, width: GLsizei, height: GLsizei, depth: GLsizei, format: GLenum, imageSize: GLsizei, offset: GLintptr) -> unknown,
-    compressedTexSubImage3D(target: GLenum, level: GLint, xoffset: GLint, yoffset: GLint, zoffset: GLint, width: GLsizei, height: GLsizei, depth: GLsizei, format: GLenum, srcData: ArrayBufferView, srcOffset?: number, srcLengthOverride?: GLuint) -> unknown,
+    compressedTexSubImage3D(target: GLenum, level: GLint, xoffset: GLint, yoffset: GLint, zoffset: GLint, width: GLsizei, height: GLsizei, depth: GLsizei, format: GLenum, srcData: typed_arrays.ArrayBufferView, srcOffset?: number, srcLengthOverride?: GLuint) -> unknown,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/WebGL2RenderingContext/copyBufferSubData) */
     copyBufferSubData(readTarget: GLenum, writeTarget: GLenum, readOffset: GLintptr, writeOffset: GLintptr, size: GLsizeiptr) -> unknown,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/WebGL2RenderingContext/copyTexSubImage3D) */
@@ -1011,7 +1017,7 @@ export declare interface WebGL2RenderingContextBase {
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/WebGL2RenderingContext/drawArraysInstanced) */
     drawArraysInstanced(mode: GLenum, first: GLint, count: GLsizei, instanceCount: GLsizei) -> unknown,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/WebGL2RenderingContext/drawBuffers) */
-    drawBuffers(buffers: mut Array<GLenum>) -> unknown,
+    drawBuffers(buffers: mut prelude.Array<GLenum>) -> unknown,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/WebGL2RenderingContext/drawElementsInstanced) */
     drawElementsInstanced(mode: GLenum, count: GLsizei, type: GLenum, offset: GLintptr, instanceCount: GLsizei) -> unknown,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/WebGL2RenderingContext/drawRangeElements) */
@@ -1029,9 +1035,9 @@ export declare interface WebGL2RenderingContextBase {
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/WebGL2RenderingContext/getActiveUniformBlockParameter) */
     getActiveUniformBlockParameter(program: WebGLProgram, uniformBlockIndex: GLuint, pname: GLenum) -> any,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/WebGL2RenderingContext/getActiveUniforms) */
-    getActiveUniforms(program: WebGLProgram, uniformIndices: mut Array<GLuint>, pname: GLenum) -> any,
+    getActiveUniforms(program: WebGLProgram, uniformIndices: mut prelude.Array<GLuint>, pname: GLenum) -> any,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/WebGL2RenderingContext/getBufferSubData) */
-    getBufferSubData(target: GLenum, srcByteOffset: GLintptr, dstBuffer: ArrayBufferView, dstOffset?: number, length?: GLuint) -> unknown,
+    getBufferSubData(target: GLenum, srcByteOffset: GLintptr, dstBuffer: typed_arrays.ArrayBufferView, dstOffset?: number, length?: GLuint) -> unknown,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/WebGL2RenderingContext/getFragDataLocation) */
     getFragDataLocation(program: WebGLProgram, name: string) -> GLint,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/WebGL2RenderingContext/getIndexedParameter) */
@@ -1051,11 +1057,11 @@ export declare interface WebGL2RenderingContextBase {
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/WebGL2RenderingContext/getUniformBlockIndex) */
     getUniformBlockIndex(program: WebGLProgram, uniformBlockName: string) -> GLuint,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/WebGL2RenderingContext/getUniformIndices) */
-    getUniformIndices(program: WebGLProgram, uniformNames: mut Array<string>) -> mut Array<GLuint> | null,
+    getUniformIndices(program: WebGLProgram, uniformNames: mut prelude.Array<string>) -> mut prelude.Array<GLuint> | null,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/WebGL2RenderingContext/invalidateFramebuffer) */
-    invalidateFramebuffer(target: GLenum, attachments: mut Array<GLenum>) -> unknown,
+    invalidateFramebuffer(target: GLenum, attachments: mut prelude.Array<GLenum>) -> unknown,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/WebGL2RenderingContext/invalidateSubFramebuffer) */
-    invalidateSubFramebuffer(target: GLenum, attachments: mut Array<GLenum>, x: GLint, y: GLint, width: GLsizei, height: GLsizei) -> unknown,
+    invalidateSubFramebuffer(target: GLenum, attachments: mut prelude.Array<GLenum>, x: GLint, y: GLint, width: GLsizei, height: GLsizei) -> unknown,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/WebGL2RenderingContext/isQuery) */
     isQuery(query: WebGLQuery | null) -> GLboolean,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/WebGL2RenderingContext/isSampler) */
@@ -1081,8 +1087,8 @@ export declare interface WebGL2RenderingContextBase {
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/WebGL2RenderingContext/texImage3D) */
     texImage3D(target: GLenum, level: GLint, internalformat: GLint, width: GLsizei, height: GLsizei, depth: GLsizei, border: GLint, format: GLenum, type: GLenum, pboOffset: GLintptr) -> unknown,
     texImage3D(target: GLenum, level: GLint, internalformat: GLint, width: GLsizei, height: GLsizei, depth: GLsizei, border: GLint, format: GLenum, type: GLenum, source: TexImageSource) -> unknown,
-    texImage3D(target: GLenum, level: GLint, internalformat: GLint, width: GLsizei, height: GLsizei, depth: GLsizei, border: GLint, format: GLenum, type: GLenum, srcData: ArrayBufferView | null) -> unknown,
-    texImage3D(target: GLenum, level: GLint, internalformat: GLint, width: GLsizei, height: GLsizei, depth: GLsizei, border: GLint, format: GLenum, type: GLenum, srcData: ArrayBufferView, srcOffset: number) -> unknown,
+    texImage3D(target: GLenum, level: GLint, internalformat: GLint, width: GLsizei, height: GLsizei, depth: GLsizei, border: GLint, format: GLenum, type: GLenum, srcData: typed_arrays.ArrayBufferView | null) -> unknown,
+    texImage3D(target: GLenum, level: GLint, internalformat: GLint, width: GLsizei, height: GLsizei, depth: GLsizei, border: GLint, format: GLenum, type: GLenum, srcData: typed_arrays.ArrayBufferView, srcOffset: number) -> unknown,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/WebGL2RenderingContext/texStorage2D) */
     texStorage2D(target: GLenum, levels: GLsizei, internalformat: GLenum, width: GLsizei, height: GLsizei) -> unknown,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/WebGL2RenderingContext/texStorage3D) */
@@ -1090,9 +1096,9 @@ export declare interface WebGL2RenderingContextBase {
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/WebGL2RenderingContext/texSubImage3D) */
     texSubImage3D(target: GLenum, level: GLint, xoffset: GLint, yoffset: GLint, zoffset: GLint, width: GLsizei, height: GLsizei, depth: GLsizei, format: GLenum, type: GLenum, pboOffset: GLintptr) -> unknown,
     texSubImage3D(target: GLenum, level: GLint, xoffset: GLint, yoffset: GLint, zoffset: GLint, width: GLsizei, height: GLsizei, depth: GLsizei, format: GLenum, type: GLenum, source: TexImageSource) -> unknown,
-    texSubImage3D(target: GLenum, level: GLint, xoffset: GLint, yoffset: GLint, zoffset: GLint, width: GLsizei, height: GLsizei, depth: GLsizei, format: GLenum, type: GLenum, srcData: ArrayBufferView | null, srcOffset?: number) -> unknown,
+    texSubImage3D(target: GLenum, level: GLint, xoffset: GLint, yoffset: GLint, zoffset: GLint, width: GLsizei, height: GLsizei, depth: GLsizei, format: GLenum, type: GLenum, srcData: typed_arrays.ArrayBufferView | null, srcOffset?: number) -> unknown,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/WebGL2RenderingContext/transformFeedbackVaryings) */
-    transformFeedbackVaryings(program: WebGLProgram, varyings: mut Array<string>, bufferMode: GLenum) -> unknown,
+    transformFeedbackVaryings(program: WebGLProgram, varyings: mut prelude.Array<string>, bufferMode: GLenum) -> unknown,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/WebGL2RenderingContext/uniform) */
     uniform1ui(location: WebGLUniformLocation | null, v0: GLuint) -> unknown,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/WebGL2RenderingContext/uniform) */
@@ -1400,79 +1406,79 @@ export declare interface WebGL2RenderingContextBase {
     readonly TIMEOUT_IGNORED: -1,
     readonly MAX_CLIENT_WAIT_TIMEOUT_WEBGL: 37447,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/WebGL2RenderingContext/clearBuffer) */
-    clearBufferfv(buffer: GLenum, drawbuffer: GLint, values: Iterable<GLfloat>, srcOffset?: number) -> unknown,
+    clearBufferfv(buffer: GLenum, drawbuffer: GLint, values: prelude.Iterable<GLfloat>, srcOffset?: number) -> unknown,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/WebGL2RenderingContext/clearBuffer) */
-    clearBufferiv(buffer: GLenum, drawbuffer: GLint, values: Iterable<GLint>, srcOffset?: number) -> unknown,
+    clearBufferiv(buffer: GLenum, drawbuffer: GLint, values: prelude.Iterable<GLint>, srcOffset?: number) -> unknown,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/WebGL2RenderingContext/clearBuffer) */
-    clearBufferuiv(buffer: GLenum, drawbuffer: GLint, values: Iterable<GLuint>, srcOffset?: number) -> unknown,
+    clearBufferuiv(buffer: GLenum, drawbuffer: GLint, values: prelude.Iterable<GLuint>, srcOffset?: number) -> unknown,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/WebGL2RenderingContext/drawBuffers) */
-    drawBuffers(buffers: Iterable<GLenum>) -> unknown,
+    drawBuffers(buffers: prelude.Iterable<GLenum>) -> unknown,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/WebGL2RenderingContext/getActiveUniforms) */
-    getActiveUniforms(program: WebGLProgram, uniformIndices: Iterable<GLuint>, pname: GLenum) -> any,
+    getActiveUniforms(program: WebGLProgram, uniformIndices: prelude.Iterable<GLuint>, pname: GLenum) -> any,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/WebGL2RenderingContext/getUniformIndices) */
-    getUniformIndices(program: WebGLProgram, uniformNames: Iterable<string>) -> Iterable<GLuint> | null,
+    getUniformIndices(program: WebGLProgram, uniformNames: prelude.Iterable<string>) -> prelude.Iterable<GLuint> | null,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/WebGL2RenderingContext/invalidateFramebuffer) */
-    invalidateFramebuffer(target: GLenum, attachments: Iterable<GLenum>) -> unknown,
+    invalidateFramebuffer(target: GLenum, attachments: prelude.Iterable<GLenum>) -> unknown,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/WebGL2RenderingContext/invalidateSubFramebuffer) */
-    invalidateSubFramebuffer(target: GLenum, attachments: Iterable<GLenum>, x: GLint, y: GLint, width: GLsizei, height: GLsizei) -> unknown,
+    invalidateSubFramebuffer(target: GLenum, attachments: prelude.Iterable<GLenum>, x: GLint, y: GLint, width: GLsizei, height: GLsizei) -> unknown,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/WebGL2RenderingContext/transformFeedbackVaryings) */
-    transformFeedbackVaryings(program: WebGLProgram, varyings: Iterable<string>, bufferMode: GLenum) -> unknown,
+    transformFeedbackVaryings(program: WebGLProgram, varyings: prelude.Iterable<string>, bufferMode: GLenum) -> unknown,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/WebGL2RenderingContext/uniform) */
-    uniform1uiv(location: WebGLUniformLocation | null, data: Iterable<GLuint>, srcOffset?: number, srcLength?: GLuint) -> unknown,
+    uniform1uiv(location: WebGLUniformLocation | null, data: prelude.Iterable<GLuint>, srcOffset?: number, srcLength?: GLuint) -> unknown,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/WebGL2RenderingContext/uniform) */
-    uniform2uiv(location: WebGLUniformLocation | null, data: Iterable<GLuint>, srcOffset?: number, srcLength?: GLuint) -> unknown,
+    uniform2uiv(location: WebGLUniformLocation | null, data: prelude.Iterable<GLuint>, srcOffset?: number, srcLength?: GLuint) -> unknown,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/WebGL2RenderingContext/uniform) */
-    uniform3uiv(location: WebGLUniformLocation | null, data: Iterable<GLuint>, srcOffset?: number, srcLength?: GLuint) -> unknown,
+    uniform3uiv(location: WebGLUniformLocation | null, data: prelude.Iterable<GLuint>, srcOffset?: number, srcLength?: GLuint) -> unknown,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/WebGL2RenderingContext/uniform) */
-    uniform4uiv(location: WebGLUniformLocation | null, data: Iterable<GLuint>, srcOffset?: number, srcLength?: GLuint) -> unknown,
+    uniform4uiv(location: WebGLUniformLocation | null, data: prelude.Iterable<GLuint>, srcOffset?: number, srcLength?: GLuint) -> unknown,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/WebGL2RenderingContext/uniformMatrix) */
-    uniformMatrix2x3fv(location: WebGLUniformLocation | null, transpose: GLboolean, data: Iterable<GLfloat>, srcOffset?: number, srcLength?: GLuint) -> unknown,
+    uniformMatrix2x3fv(location: WebGLUniformLocation | null, transpose: GLboolean, data: prelude.Iterable<GLfloat>, srcOffset?: number, srcLength?: GLuint) -> unknown,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/WebGL2RenderingContext/uniformMatrix) */
-    uniformMatrix2x4fv(location: WebGLUniformLocation | null, transpose: GLboolean, data: Iterable<GLfloat>, srcOffset?: number, srcLength?: GLuint) -> unknown,
+    uniformMatrix2x4fv(location: WebGLUniformLocation | null, transpose: GLboolean, data: prelude.Iterable<GLfloat>, srcOffset?: number, srcLength?: GLuint) -> unknown,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/WebGL2RenderingContext/uniformMatrix) */
-    uniformMatrix3x2fv(location: WebGLUniformLocation | null, transpose: GLboolean, data: Iterable<GLfloat>, srcOffset?: number, srcLength?: GLuint) -> unknown,
+    uniformMatrix3x2fv(location: WebGLUniformLocation | null, transpose: GLboolean, data: prelude.Iterable<GLfloat>, srcOffset?: number, srcLength?: GLuint) -> unknown,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/WebGL2RenderingContext/uniformMatrix) */
-    uniformMatrix3x4fv(location: WebGLUniformLocation | null, transpose: GLboolean, data: Iterable<GLfloat>, srcOffset?: number, srcLength?: GLuint) -> unknown,
+    uniformMatrix3x4fv(location: WebGLUniformLocation | null, transpose: GLboolean, data: prelude.Iterable<GLfloat>, srcOffset?: number, srcLength?: GLuint) -> unknown,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/WebGL2RenderingContext/uniformMatrix) */
-    uniformMatrix4x2fv(location: WebGLUniformLocation | null, transpose: GLboolean, data: Iterable<GLfloat>, srcOffset?: number, srcLength?: GLuint) -> unknown,
+    uniformMatrix4x2fv(location: WebGLUniformLocation | null, transpose: GLboolean, data: prelude.Iterable<GLfloat>, srcOffset?: number, srcLength?: GLuint) -> unknown,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/WebGL2RenderingContext/uniformMatrix) */
-    uniformMatrix4x3fv(location: WebGLUniformLocation | null, transpose: GLboolean, data: Iterable<GLfloat>, srcOffset?: number, srcLength?: GLuint) -> unknown,
+    uniformMatrix4x3fv(location: WebGLUniformLocation | null, transpose: GLboolean, data: prelude.Iterable<GLfloat>, srcOffset?: number, srcLength?: GLuint) -> unknown,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/WebGL2RenderingContext/vertexAttribI) */
-    vertexAttribI4iv(index: GLuint, values: Iterable<GLint>) -> unknown,
+    vertexAttribI4iv(index: GLuint, values: prelude.Iterable<GLint>) -> unknown,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/WebGL2RenderingContext/vertexAttribI) */
-    vertexAttribI4uiv(index: GLuint, values: Iterable<GLuint>) -> unknown
+    vertexAttribI4uiv(index: GLuint, values: prelude.Iterable<GLuint>) -> unknown
 }
 
 export declare interface WebGL2RenderingContextOverloads {
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/WebGL2RenderingContext/bufferData) */
     bufferData(target: GLenum, size: GLsizeiptr, usage: GLenum) -> unknown,
-    bufferData(target: GLenum, srcData: AllowSharedBufferSource | null, usage: GLenum) -> unknown,
-    bufferData(target: GLenum, srcData: ArrayBufferView, usage: GLenum, srcOffset: number, length?: GLuint) -> unknown,
+    bufferData(target: GLenum, srcData: core.AllowSharedBufferSource | null, usage: GLenum) -> unknown,
+    bufferData(target: GLenum, srcData: typed_arrays.ArrayBufferView, usage: GLenum, srcOffset: number, length?: GLuint) -> unknown,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/WebGL2RenderingContext/bufferSubData) */
-    bufferSubData(target: GLenum, dstByteOffset: GLintptr, srcData: AllowSharedBufferSource) -> unknown,
-    bufferSubData(target: GLenum, dstByteOffset: GLintptr, srcData: ArrayBufferView, srcOffset: number, length?: GLuint) -> unknown,
+    bufferSubData(target: GLenum, dstByteOffset: GLintptr, srcData: core.AllowSharedBufferSource) -> unknown,
+    bufferSubData(target: GLenum, dstByteOffset: GLintptr, srcData: typed_arrays.ArrayBufferView, srcOffset: number, length?: GLuint) -> unknown,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/WebGLRenderingContext/compressedTexImage2D) */
     compressedTexImage2D(target: GLenum, level: GLint, internalformat: GLenum, width: GLsizei, height: GLsizei, border: GLint, imageSize: GLsizei, offset: GLintptr) -> unknown,
-    compressedTexImage2D(target: GLenum, level: GLint, internalformat: GLenum, width: GLsizei, height: GLsizei, border: GLint, srcData: ArrayBufferView, srcOffset?: number, srcLengthOverride?: GLuint) -> unknown,
+    compressedTexImage2D(target: GLenum, level: GLint, internalformat: GLenum, width: GLsizei, height: GLsizei, border: GLint, srcData: typed_arrays.ArrayBufferView, srcOffset?: number, srcLengthOverride?: GLuint) -> unknown,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/WebGLRenderingContext/compressedTexSubImage2D) */
     compressedTexSubImage2D(target: GLenum, level: GLint, xoffset: GLint, yoffset: GLint, width: GLsizei, height: GLsizei, format: GLenum, imageSize: GLsizei, offset: GLintptr) -> unknown,
-    compressedTexSubImage2D(target: GLenum, level: GLint, xoffset: GLint, yoffset: GLint, width: GLsizei, height: GLsizei, format: GLenum, srcData: ArrayBufferView, srcOffset?: number, srcLengthOverride?: GLuint) -> unknown,
+    compressedTexSubImage2D(target: GLenum, level: GLint, xoffset: GLint, yoffset: GLint, width: GLsizei, height: GLsizei, format: GLenum, srcData: typed_arrays.ArrayBufferView, srcOffset?: number, srcLengthOverride?: GLuint) -> unknown,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/WebGLRenderingContext/readPixels) */
-    readPixels(x: GLint, y: GLint, width: GLsizei, height: GLsizei, format: GLenum, type: GLenum, dstData: ArrayBufferView | null) -> unknown,
+    readPixels(x: GLint, y: GLint, width: GLsizei, height: GLsizei, format: GLenum, type: GLenum, dstData: typed_arrays.ArrayBufferView | null) -> unknown,
     readPixels(x: GLint, y: GLint, width: GLsizei, height: GLsizei, format: GLenum, type: GLenum, offset: GLintptr) -> unknown,
-    readPixels(x: GLint, y: GLint, width: GLsizei, height: GLsizei, format: GLenum, type: GLenum, dstData: ArrayBufferView, dstOffset: number) -> unknown,
+    readPixels(x: GLint, y: GLint, width: GLsizei, height: GLsizei, format: GLenum, type: GLenum, dstData: typed_arrays.ArrayBufferView, dstOffset: number) -> unknown,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/WebGLRenderingContext/texImage2D) */
-    texImage2D(target: GLenum, level: GLint, internalformat: GLint, width: GLsizei, height: GLsizei, border: GLint, format: GLenum, type: GLenum, pixels: ArrayBufferView | null) -> unknown,
+    texImage2D(target: GLenum, level: GLint, internalformat: GLint, width: GLsizei, height: GLsizei, border: GLint, format: GLenum, type: GLenum, pixels: typed_arrays.ArrayBufferView | null) -> unknown,
     texImage2D(target: GLenum, level: GLint, internalformat: GLint, format: GLenum, type: GLenum, source: TexImageSource) -> unknown,
     texImage2D(target: GLenum, level: GLint, internalformat: GLint, width: GLsizei, height: GLsizei, border: GLint, format: GLenum, type: GLenum, pboOffset: GLintptr) -> unknown,
     texImage2D(target: GLenum, level: GLint, internalformat: GLint, width: GLsizei, height: GLsizei, border: GLint, format: GLenum, type: GLenum, source: TexImageSource) -> unknown,
-    texImage2D(target: GLenum, level: GLint, internalformat: GLint, width: GLsizei, height: GLsizei, border: GLint, format: GLenum, type: GLenum, srcData: ArrayBufferView, srcOffset: number) -> unknown,
+    texImage2D(target: GLenum, level: GLint, internalformat: GLint, width: GLsizei, height: GLsizei, border: GLint, format: GLenum, type: GLenum, srcData: typed_arrays.ArrayBufferView, srcOffset: number) -> unknown,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/WebGLRenderingContext/texSubImage2D) */
-    texSubImage2D(target: GLenum, level: GLint, xoffset: GLint, yoffset: GLint, width: GLsizei, height: GLsizei, format: GLenum, type: GLenum, pixels: ArrayBufferView | null) -> unknown,
+    texSubImage2D(target: GLenum, level: GLint, xoffset: GLint, yoffset: GLint, width: GLsizei, height: GLsizei, format: GLenum, type: GLenum, pixels: typed_arrays.ArrayBufferView | null) -> unknown,
     texSubImage2D(target: GLenum, level: GLint, xoffset: GLint, yoffset: GLint, format: GLenum, type: GLenum, source: TexImageSource) -> unknown,
     texSubImage2D(target: GLenum, level: GLint, xoffset: GLint, yoffset: GLint, width: GLsizei, height: GLsizei, format: GLenum, type: GLenum, pboOffset: GLintptr) -> unknown,
     texSubImage2D(target: GLenum, level: GLint, xoffset: GLint, yoffset: GLint, width: GLsizei, height: GLsizei, format: GLenum, type: GLenum, source: TexImageSource) -> unknown,
-    texSubImage2D(target: GLenum, level: GLint, xoffset: GLint, yoffset: GLint, width: GLsizei, height: GLsizei, format: GLenum, type: GLenum, srcData: ArrayBufferView, srcOffset: number) -> unknown,
+    texSubImage2D(target: GLenum, level: GLint, xoffset: GLint, yoffset: GLint, width: GLsizei, height: GLsizei, format: GLenum, type: GLenum, srcData: typed_arrays.ArrayBufferView, srcOffset: number) -> unknown,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/WebGLRenderingContext/uniform) */
     uniform1fv(location: WebGLUniformLocation | null, data: Float32List, srcOffset?: number, srcLength?: GLuint) -> unknown,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/WebGLRenderingContext/uniform) */
@@ -1496,27 +1502,27 @@ export declare interface WebGL2RenderingContextOverloads {
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/WebGLRenderingContext/uniformMatrix) */
     uniformMatrix4fv(location: WebGLUniformLocation | null, transpose: GLboolean, data: Float32List, srcOffset?: number, srcLength?: GLuint) -> unknown,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/WebGLRenderingContext/uniform) */
-    uniform1fv(location: WebGLUniformLocation | null, data: Iterable<GLfloat>, srcOffset?: number, srcLength?: GLuint) -> unknown,
+    uniform1fv(location: WebGLUniformLocation | null, data: prelude.Iterable<GLfloat>, srcOffset?: number, srcLength?: GLuint) -> unknown,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/WebGLRenderingContext/uniform) */
-    uniform1iv(location: WebGLUniformLocation | null, data: Iterable<GLint>, srcOffset?: number, srcLength?: GLuint) -> unknown,
+    uniform1iv(location: WebGLUniformLocation | null, data: prelude.Iterable<GLint>, srcOffset?: number, srcLength?: GLuint) -> unknown,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/WebGLRenderingContext/uniform) */
-    uniform2fv(location: WebGLUniformLocation | null, data: Iterable<GLfloat>, srcOffset?: number, srcLength?: GLuint) -> unknown,
+    uniform2fv(location: WebGLUniformLocation | null, data: prelude.Iterable<GLfloat>, srcOffset?: number, srcLength?: GLuint) -> unknown,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/WebGLRenderingContext/uniform) */
-    uniform2iv(location: WebGLUniformLocation | null, data: Iterable<GLint>, srcOffset?: number, srcLength?: GLuint) -> unknown,
+    uniform2iv(location: WebGLUniformLocation | null, data: prelude.Iterable<GLint>, srcOffset?: number, srcLength?: GLuint) -> unknown,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/WebGLRenderingContext/uniform) */
-    uniform3fv(location: WebGLUniformLocation | null, data: Iterable<GLfloat>, srcOffset?: number, srcLength?: GLuint) -> unknown,
+    uniform3fv(location: WebGLUniformLocation | null, data: prelude.Iterable<GLfloat>, srcOffset?: number, srcLength?: GLuint) -> unknown,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/WebGLRenderingContext/uniform) */
-    uniform3iv(location: WebGLUniformLocation | null, data: Iterable<GLint>, srcOffset?: number, srcLength?: GLuint) -> unknown,
+    uniform3iv(location: WebGLUniformLocation | null, data: prelude.Iterable<GLint>, srcOffset?: number, srcLength?: GLuint) -> unknown,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/WebGLRenderingContext/uniform) */
-    uniform4fv(location: WebGLUniformLocation | null, data: Iterable<GLfloat>, srcOffset?: number, srcLength?: GLuint) -> unknown,
+    uniform4fv(location: WebGLUniformLocation | null, data: prelude.Iterable<GLfloat>, srcOffset?: number, srcLength?: GLuint) -> unknown,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/WebGLRenderingContext/uniform) */
-    uniform4iv(location: WebGLUniformLocation | null, data: Iterable<GLint>, srcOffset?: number, srcLength?: GLuint) -> unknown,
+    uniform4iv(location: WebGLUniformLocation | null, data: prelude.Iterable<GLint>, srcOffset?: number, srcLength?: GLuint) -> unknown,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/WebGL2RenderingContext/uniformMatrix) */
-    uniformMatrix2fv(location: WebGLUniformLocation | null, transpose: GLboolean, data: Iterable<GLfloat>, srcOffset?: number, srcLength?: GLuint) -> unknown,
+    uniformMatrix2fv(location: WebGLUniformLocation | null, transpose: GLboolean, data: prelude.Iterable<GLfloat>, srcOffset?: number, srcLength?: GLuint) -> unknown,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/WebGLRenderingContext/uniformMatrix) */
-    uniformMatrix3fv(location: WebGLUniformLocation | null, transpose: GLboolean, data: Iterable<GLfloat>, srcOffset?: number, srcLength?: GLuint) -> unknown,
+    uniformMatrix3fv(location: WebGLUniformLocation | null, transpose: GLboolean, data: prelude.Iterable<GLfloat>, srcOffset?: number, srcLength?: GLuint) -> unknown,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/WebGLRenderingContext/uniformMatrix) */
-    uniformMatrix4fv(location: WebGLUniformLocation | null, transpose: GLboolean, data: Iterable<GLfloat>, srcOffset?: number, srcLength?: GLuint) -> unknown
+    uniformMatrix4fv(location: WebGLUniformLocation | null, transpose: GLboolean, data: prelude.Iterable<GLfloat>, srcOffset?: number, srcLength?: GLuint) -> unknown
 }
 
 /**
@@ -1553,7 +1559,7 @@ export declare class WebGLBuffer {
  * [MDN Reference](https://developer.mozilla.org/docs/Web/API/WebGLContextEvent)
  */
 @js("WebGLContextEvent")
-export declare class WebGLContextEvent extends Event {
+export declare class WebGLContextEvent extends core.Event {
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/WebGLContextEvent/statusMessage) */
     readonly statusMessage: string,
     static prototype: WebGLContextEvent,
@@ -1910,15 +1916,15 @@ export declare class WebGLRenderingContext extends WebGLRenderingContextBase {
 
 export declare interface WebGLRenderingContextBase {
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/WebGLRenderingContext/canvas) */
-    readonly canvas: HTMLCanvasElement | OffscreenCanvas,
+    readonly canvas: dom.HTMLCanvasElement | dom.OffscreenCanvas,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/WebGL2RenderingContext/drawingBufferColorSpace) */
-    drawingBufferColorSpace: PredefinedColorSpace,
+    drawingBufferColorSpace: dom.PredefinedColorSpace,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/WebGLRenderingContext/drawingBufferHeight) */
     readonly drawingBufferHeight: GLsizei,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/WebGLRenderingContext/drawingBufferWidth) */
     readonly drawingBufferWidth: GLsizei,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/WebGL2RenderingContext/unpackColorSpace) */
-    unpackColorSpace: PredefinedColorSpace,
+    unpackColorSpace: dom.PredefinedColorSpace,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/WebGLRenderingContext/activeTexture) */
     activeTexture(texture: GLenum) -> unknown,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/WebGLRenderingContext/attachShader) */
@@ -2024,7 +2030,7 @@ export declare interface WebGLRenderingContextBase {
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/WebGLRenderingContext/getActiveUniform) */
     getActiveUniform(program: WebGLProgram, index: GLuint) -> WebGLActiveInfo | null,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/WebGLRenderingContext/getAttachedShaders) */
-    getAttachedShaders(program: WebGLProgram) -> mut Array<WebGLShader> | null,
+    getAttachedShaders(program: WebGLProgram) -> mut prelude.Array<WebGLShader> | null,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/WebGLRenderingContext/getAttribLocation) */
     getAttribLocation(program: WebGLProgram, name: string) -> GLint,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/WebGLRenderingContext/getBufferParameter) */
@@ -2088,7 +2094,7 @@ export declare interface WebGLRenderingContextBase {
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/WebGLRenderingContext/getShaderSource) */
     getShaderSource(shader: WebGLShader) -> string | null,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/WebGLRenderingContext/getSupportedExtensions) */
-    getSupportedExtensions() -> mut Array<string> | null,
+    getSupportedExtensions() -> mut prelude.Array<string> | null,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/WebGLRenderingContext/getTexParameter) */
     getTexParameter(target: GLenum, pname: GLenum) -> any,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/WebGLRenderingContext/getUniform) */
@@ -2487,32 +2493,32 @@ export declare interface WebGLRenderingContextBase {
     readonly UNPACK_COLORSPACE_CONVERSION_WEBGL: 37443,
     readonly BROWSER_DEFAULT_WEBGL: 37444,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/WebGLRenderingContext/vertexAttrib) */
-    vertexAttrib1fv(index: GLuint, values: Iterable<GLfloat>) -> unknown,
+    vertexAttrib1fv(index: GLuint, values: prelude.Iterable<GLfloat>) -> unknown,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/WebGLRenderingContext/vertexAttrib) */
-    vertexAttrib2fv(index: GLuint, values: Iterable<GLfloat>) -> unknown,
+    vertexAttrib2fv(index: GLuint, values: prelude.Iterable<GLfloat>) -> unknown,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/WebGLRenderingContext/vertexAttrib) */
-    vertexAttrib3fv(index: GLuint, values: Iterable<GLfloat>) -> unknown,
+    vertexAttrib3fv(index: GLuint, values: prelude.Iterable<GLfloat>) -> unknown,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/WebGLRenderingContext/vertexAttrib) */
-    vertexAttrib4fv(index: GLuint, values: Iterable<GLfloat>) -> unknown
+    vertexAttrib4fv(index: GLuint, values: prelude.Iterable<GLfloat>) -> unknown
 }
 
 export declare interface WebGLRenderingContextOverloads {
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/WebGLRenderingContext/bufferData) */
     bufferData(target: GLenum, size: GLsizeiptr, usage: GLenum) -> unknown,
-    bufferData(target: GLenum, data: AllowSharedBufferSource | null, usage: GLenum) -> unknown,
+    bufferData(target: GLenum, data: core.AllowSharedBufferSource | null, usage: GLenum) -> unknown,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/WebGLRenderingContext/bufferSubData) */
-    bufferSubData(target: GLenum, offset: GLintptr, data: AllowSharedBufferSource) -> unknown,
+    bufferSubData(target: GLenum, offset: GLintptr, data: core.AllowSharedBufferSource) -> unknown,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/WebGLRenderingContext/compressedTexImage2D) */
-    compressedTexImage2D(target: GLenum, level: GLint, internalformat: GLenum, width: GLsizei, height: GLsizei, border: GLint, data: ArrayBufferView) -> unknown,
+    compressedTexImage2D(target: GLenum, level: GLint, internalformat: GLenum, width: GLsizei, height: GLsizei, border: GLint, data: typed_arrays.ArrayBufferView) -> unknown,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/WebGLRenderingContext/compressedTexSubImage2D) */
-    compressedTexSubImage2D(target: GLenum, level: GLint, xoffset: GLint, yoffset: GLint, width: GLsizei, height: GLsizei, format: GLenum, data: ArrayBufferView) -> unknown,
+    compressedTexSubImage2D(target: GLenum, level: GLint, xoffset: GLint, yoffset: GLint, width: GLsizei, height: GLsizei, format: GLenum, data: typed_arrays.ArrayBufferView) -> unknown,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/WebGLRenderingContext/readPixels) */
-    readPixels(x: GLint, y: GLint, width: GLsizei, height: GLsizei, format: GLenum, type: GLenum, pixels: ArrayBufferView | null) -> unknown,
+    readPixels(x: GLint, y: GLint, width: GLsizei, height: GLsizei, format: GLenum, type: GLenum, pixels: typed_arrays.ArrayBufferView | null) -> unknown,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/WebGLRenderingContext/texImage2D) */
-    texImage2D(target: GLenum, level: GLint, internalformat: GLint, width: GLsizei, height: GLsizei, border: GLint, format: GLenum, type: GLenum, pixels: ArrayBufferView | null) -> unknown,
+    texImage2D(target: GLenum, level: GLint, internalformat: GLint, width: GLsizei, height: GLsizei, border: GLint, format: GLenum, type: GLenum, pixels: typed_arrays.ArrayBufferView | null) -> unknown,
     texImage2D(target: GLenum, level: GLint, internalformat: GLint, format: GLenum, type: GLenum, source: TexImageSource) -> unknown,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/WebGLRenderingContext/texSubImage2D) */
-    texSubImage2D(target: GLenum, level: GLint, xoffset: GLint, yoffset: GLint, width: GLsizei, height: GLsizei, format: GLenum, type: GLenum, pixels: ArrayBufferView | null) -> unknown,
+    texSubImage2D(target: GLenum, level: GLint, xoffset: GLint, yoffset: GLint, width: GLsizei, height: GLsizei, format: GLenum, type: GLenum, pixels: typed_arrays.ArrayBufferView | null) -> unknown,
     texSubImage2D(target: GLenum, level: GLint, xoffset: GLint, yoffset: GLint, format: GLenum, type: GLenum, source: TexImageSource) -> unknown,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/WebGLRenderingContext/uniform) */
     uniform1fv(location: WebGLUniformLocation | null, v: Float32List) -> unknown,
@@ -2537,27 +2543,27 @@ export declare interface WebGLRenderingContextOverloads {
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/WebGLRenderingContext/uniformMatrix) */
     uniformMatrix4fv(location: WebGLUniformLocation | null, transpose: GLboolean, value: Float32List) -> unknown,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/WebGLRenderingContext/uniform) */
-    uniform1fv(location: WebGLUniformLocation | null, v: Iterable<GLfloat>) -> unknown,
+    uniform1fv(location: WebGLUniformLocation | null, v: prelude.Iterable<GLfloat>) -> unknown,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/WebGLRenderingContext/uniform) */
-    uniform1iv(location: WebGLUniformLocation | null, v: Iterable<GLint>) -> unknown,
+    uniform1iv(location: WebGLUniformLocation | null, v: prelude.Iterable<GLint>) -> unknown,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/WebGLRenderingContext/uniform) */
-    uniform2fv(location: WebGLUniformLocation | null, v: Iterable<GLfloat>) -> unknown,
+    uniform2fv(location: WebGLUniformLocation | null, v: prelude.Iterable<GLfloat>) -> unknown,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/WebGLRenderingContext/uniform) */
-    uniform2iv(location: WebGLUniformLocation | null, v: Iterable<GLint>) -> unknown,
+    uniform2iv(location: WebGLUniformLocation | null, v: prelude.Iterable<GLint>) -> unknown,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/WebGLRenderingContext/uniform) */
-    uniform3fv(location: WebGLUniformLocation | null, v: Iterable<GLfloat>) -> unknown,
+    uniform3fv(location: WebGLUniformLocation | null, v: prelude.Iterable<GLfloat>) -> unknown,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/WebGLRenderingContext/uniform) */
-    uniform3iv(location: WebGLUniformLocation | null, v: Iterable<GLint>) -> unknown,
+    uniform3iv(location: WebGLUniformLocation | null, v: prelude.Iterable<GLint>) -> unknown,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/WebGLRenderingContext/uniform) */
-    uniform4fv(location: WebGLUniformLocation | null, v: Iterable<GLfloat>) -> unknown,
+    uniform4fv(location: WebGLUniformLocation | null, v: prelude.Iterable<GLfloat>) -> unknown,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/WebGLRenderingContext/uniform) */
-    uniform4iv(location: WebGLUniformLocation | null, v: Iterable<GLint>) -> unknown,
+    uniform4iv(location: WebGLUniformLocation | null, v: prelude.Iterable<GLint>) -> unknown,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/WebGLRenderingContext/uniformMatrix) */
-    uniformMatrix2fv(location: WebGLUniformLocation | null, transpose: GLboolean, value: Iterable<GLfloat>) -> unknown,
+    uniformMatrix2fv(location: WebGLUniformLocation | null, transpose: GLboolean, value: prelude.Iterable<GLfloat>) -> unknown,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/WebGLRenderingContext/uniformMatrix) */
-    uniformMatrix3fv(location: WebGLUniformLocation | null, transpose: GLboolean, value: Iterable<GLfloat>) -> unknown,
+    uniformMatrix3fv(location: WebGLUniformLocation | null, transpose: GLboolean, value: prelude.Iterable<GLfloat>) -> unknown,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/WebGLRenderingContext/uniformMatrix) */
-    uniformMatrix4fv(location: WebGLUniformLocation | null, transpose: GLboolean, value: Iterable<GLfloat>) -> unknown
+    uniformMatrix4fv(location: WebGLUniformLocation | null, transpose: GLboolean, value: prelude.Iterable<GLfloat>) -> unknown
 }
 
 /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/WebGLSampler) */
@@ -2641,7 +2647,7 @@ export declare class WebGLVertexArrayObject {
 /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/WebGLVertexArrayObject) */
 export declare interface WebGLVertexArrayObjectOES {}
 
-export declare type Float32List = Float32Array | mut Array<GLfloat>
+export declare type Float32List = typed_arrays.Float32Array | mut prelude.Array<GLfloat>
 
 export declare type GLbitfield = number
 
@@ -2667,10 +2673,10 @@ export declare type GLuint = number
 
 export declare type GLuint64 = number
 
-export declare type Int32List = Int32Array | mut Array<GLint>
+export declare type Int32List = typed_arrays.Int32Array | mut prelude.Array<GLint>
 
-export declare type TexImageSource = ImageBitmap | ImageData | HTMLImageElement | HTMLCanvasElement | HTMLVideoElement | OffscreenCanvas | VideoFrame
+export declare type TexImageSource = dom.ImageBitmap | dom.ImageData | dom.HTMLImageElement | dom.HTMLCanvasElement | dom.HTMLVideoElement | dom.OffscreenCanvas | web_codecs.VideoFrame
 
-export declare type Uint32List = Uint32Array | mut Array<GLuint>
+export declare type Uint32List = typed_arrays.Uint32Array | mut prelude.Array<GLuint>
 
 export declare type WebGLPowerPreference = "default" | "high-performance" | "low-power"

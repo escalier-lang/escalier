@@ -2,6 +2,8 @@
 // Its facts come from the pinned lib.*.d.ts set, the ECMA-262
 // derived facts, and the overlay. Change one of those and re-run.
 
+import "std:prelude"
+
 @js("RegExp")
 export declare class RegExp {
     /**
@@ -47,7 +49,7 @@ export declare class RegExp {
      *               this regular expression will be replaced
      * @param replacer A function that returns the replacement text.
      */
-    [Symbol.replace](mut self, string: string, replacer: fn (substring: string, ...args: mut Array<any>) -> string) -> string,
+    [Symbol.replace](mut self, string: string, replacer: fn (substring: string, ...args: mut prelude.Array<any>) -> string) -> string,
     /**
      * Finds the position beginning first substring match in a regular expression search
      * using this regular expression.
@@ -67,7 +69,7 @@ export declare class RegExp {
      * @param limit if not undefined, the output array is truncated so that it contains no more
      * than 'limit' elements.
      */
-    [Symbol.split](self, string: string, limit?: number) -> mut Array<string>,
+    [Symbol.split](self, string: string, limit?: number) -> mut prelude.Array<string>,
     /**
      * Returns a Boolean value indicating the state of the dotAll flag (s) used with a regular expression.
      * Default is false. Read-only.
@@ -158,7 +160,7 @@ export declare class RegExp {
     static "$'": string
 }
 
-export declare interface RegExpMatchArray extends Array<string> {
+export declare interface RegExpMatchArray extends prelude.Array<string> {
     groups?: {},
     indices?: RegExpIndicesArray,
     /**
@@ -175,7 +177,7 @@ export declare interface RegExpMatchArray extends Array<string> {
     0: string
 }
 
-export declare interface RegExpExecArray extends Array<string> {
+export declare interface RegExpExecArray extends prelude.Array<string> {
     groups?: {},
     indices?: RegExpIndicesArray,
     /**
@@ -192,10 +194,10 @@ export declare interface RegExpExecArray extends Array<string> {
     0: string
 }
 
-export declare interface RegExpStringIterator<T> extends IteratorObject<T, BuiltinIteratorReturn, unknown> {
+export declare interface RegExpStringIterator<T> extends prelude.IteratorObject<T, prelude.BuiltinIteratorReturn, unknown> {
     [Symbol.iterator]() -> RegExpStringIterator<T>
 }
 
-export declare interface RegExpIndicesArray extends Array<[number, number]> {
+export declare interface RegExpIndicesArray extends prelude.Array<[number, number]> {
     groups?: {}
 }
