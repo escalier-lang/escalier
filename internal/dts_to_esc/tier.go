@@ -25,7 +25,7 @@ import (
 type Tier int
 
 const (
-	// TierCore is available on every runtime that implements the WinterCG
+	// TierCore is available on every runtime that implements the WinterTC
 	// minimum common API: the event model, `AbortSignal`, `DOMException`,
 	// `BufferSource`, and the text encoder and decoder.
 	TierCore Tier = iota
@@ -33,10 +33,10 @@ const (
 	// browser. Fetch, URL, streams, files, crypto, performance and
 	// WebSockets are here.
 	//
-	// The promise is per package, not per declaration. Every WinterCG runtime
+	// The promise is per package, not per declaration. Every WinterTC runtime
 	// ships the package. A few legacy or browser-only members inside one are
-	// still absent off the browser: Node 22 defines neither `FileReader` nor
-	// `PerformanceTiming`. #1586 tracks tiering a declaration rather than a
+	// still absent off the browser, such as `PerformanceTiming`, which Node 22
+	// does not define. #1586 tracks tiering a declaration rather than a
 	// package.
 	TierPortable
 	// TierBrowser is available in a browser alone. The DOM and everything
@@ -72,14 +72,14 @@ func (t Tier) String() string {
 // TierLanguage.
 var stdTiers = map[string]Tier{
 	// WebAssembly is a host global rather than an ECMAScript one, and
-	// `instantiateStreaming` takes a fetch `Response`. Every WinterCG runtime
+	// `instantiateStreaming` takes a fetch `Response`. Every WinterTC runtime
 	// ships it, so it is portable rather than browser-only.
 	"std:wasm": TierPortable,
 }
 
 // webTiers assigns a tier to each `web:*` package.
 //
-// A package is portable when every runtime in the WinterCG set ships it,
+// A package is portable when every runtime in the WinterTC set ships it,
 // not when its specification is silent about the browser. `web:websocket`
 // is portable because Node, Deno, Bun and Workers all implement it;
 // `web:webgl` is not, because it takes an `HTMLCanvasElement` to draw on.
@@ -141,32 +141,15 @@ func PackagesInTier(tier Tier) []string {
 // AcceptedUpwardEdges lists the import edges that go up a tier and are allowed
 // to, keyed by the importing package and naming the references that force each.
 //
-// Every entry is a declaration the pinned `.d.ts` types against a browser type
-// that a portable runtime implements differently or not at all. Answering one
-// means deciding what the portable form should say, which is a change to the
-// declaration rather than to this table, so each is left recorded until that
-// decision is made. #1590 carries them.
+// An entry belongs here only while a decision is outstanding. A declaration the
+// pinned `.d.ts` types against a browser type that a portable runtime
+// implements differently or not at all needs a portable form written for it,
+// which is a change to the declaration or an overlay rather than to this table.
+// Recording the edge keeps the run green until that form is written.
 //
 // An edge absent from this table fails `generate`, so a new one is caught at
 // the run that introduces it.
-var AcceptedUpwardEdges = map[string][]string{
-	// Node defines FormData, but the pinned type gives it an HTMLFormElement
-	// constructor no portable runtime has. XMLHttpRequestBodyInit is a union
-	// that names FormData.
-	"web:fetch": {"FormData", "XMLHttpRequestBodyInit"},
-	// FileReader fires progress events. Node 22 defines neither it nor
-	// ProgressEvent, so both belong on the browser side of the line.
-	"web:file": {"ProgressEvent"},
-	// EventCounts is the performance-timeline map keyed by DOM event names.
-	"web:performance": {"EventCounts"},
-	// URL.createObjectURL takes a MediaSource in the browser and a Blob
-	// everywhere else.
-	"web:url": {"MediaSource"},
-	// MessageEvent.source is a WindowProxy or ServiceWorker in the browser and
-	// always null off it. BinaryType is the socket's payload mode, a string
-	// union filed under the DOM.
-	"web:websocket": {"BinaryType", "MessageEvent"},
-}
+var AcceptedUpwardEdges = map[string][]string{}
 
 // acceptsUpwardEdge reports whether every reference forcing an edge is one
 // AcceptedUpwardEdges records for that importer.

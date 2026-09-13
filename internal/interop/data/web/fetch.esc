@@ -5,7 +5,6 @@
 import "std:object"
 import "std:typed_arrays"
 import "web:core"
-import "web:dom"
 import "web:file"
 import "web:streams"
 import "web:url"
@@ -58,7 +57,7 @@ export declare interface Body {
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/Request/bytes) */
     bytes() -> Promise<typed_arrays.Uint8Array>,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/Request/formData) */
-    formData() -> Promise<dom.FormData>,
+    formData() -> Promise<file.FormData>,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/Request/json) */
     json() -> Promise<any>,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/Request/text) */
@@ -224,7 +223,7 @@ export declare class Response extends Body {
 @js("fetch")
 export declare fn fetch(input: RequestInfo | url.URL, init?: RequestInit) -> Promise<Response>
 
-export declare type BodyInit = streams.ReadableStream | dom.XMLHttpRequestBodyInit
+export declare type BodyInit = streams.ReadableStream | file.Blob | BufferSource | file.FormData | url.URLSearchParams | string
 
 export declare type HeadersInit = mut Array<[string, string]> | object.Record<string, string> | Headers
 

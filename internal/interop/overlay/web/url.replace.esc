@@ -1,0 +1,11 @@
+// `URL.createObjectURL` takes a `MediaSource` in the browser and a `Blob`
+// everywhere else. `MediaSource` is the Media Source Extensions object, which
+// no portable runtime implements, and naming it would put `web:url` in a cycle
+// with `web:dom` that spans two tiers.
+//
+// A browser program loses the `MediaSource` overload. That is the trade the
+// portable form makes, and it types what every runtime has. #1586 is where a
+// per-declaration tier would let the browser keep the overload.
+export declare class URL {
+    static createObjectURL(obj: file.Blob) -> string,
+}

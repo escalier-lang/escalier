@@ -372,28 +372,16 @@ func TestACrossTierGroupReportsOnceAndStillLoads(t *testing.T) {
 }
 
 // crossTierCyclesInTheCommittedTree records the cross-tier cycles the shipped
-// tree currently forms, so a new one fails while the known one is worked.
+// tree is allowed to form, so a new one fails the test below.
 //
-// There is one, and it is not incidental. `generate` accepts five import edges
-// that go up a tier, each a portable declaration typed against a browser type
-// the portable runtimes implement differently. Those five are what pull
-// `web:fetch`, `web:file`, `web:performance`, `web:url` and `web:websocket`
-// into `web:dom`'s component: with them the browser and portable packages form
-// one 18-member cycle, and without them the browser tier forms an 11-member one
-// of its own and the portable packages stay out of it.
-//
-// So the accepted edges cost more than the references they excuse. A tier-
-// spanning cycle means importing `web:fetch` loads the whole browser tier,
-// which is the opposite of what the portable tier is for. #1590 resolves the
-// five, and this set empties with them.
-var crossTierCyclesInTheCommittedTree = [][]string{{
-	"web:cache", "web:dom", "web:fetch", "web:file", "web:indexeddb",
-	"web:payments", "web:performance", "web:push", "web:service_worker",
-	"web:storage", "web:url", "web:web_audio", "web:web_codecs", "web:web_rtc",
-	"web:webauthn", "web:webgl", "web:websocket", "web:workers",
-}}
+// It is empty, and staying empty is what makes the portable tier worth having.
+// One upward edge is enough to merge the portable packages into `web:dom`'s
+// component, and a tier-spanning cycle means importing `web:fetch` loads the
+// whole browser tier. The browser tier still has a cycle of its own, which
+// TestTheCommittedTreeHasWithinTierCycles covers.
+var crossTierCyclesInTheCommittedTree [][]string
 
-// The committed tree forms no cross-tier cycle beyond the one recorded above.
+// The committed tree forms no cross-tier cycle beyond the ones recorded above.
 //
 // This is the check that says whether the shipped tree loads. `generate`
 // enforces the rule edge by edge, which a cycle can satisfy at every edge and
@@ -419,7 +407,7 @@ func TestTheCommittedTreeFormsNoNewCrossTierCycle(t *testing.T) {
 		}
 	}
 	sort.Strings(unexpected)
-	require.Empty(t, unexpected, "cross-tier cycles beyond the recorded one:\n  %s",
+	require.Empty(t, unexpected, "cross-tier cycles beyond the recorded ones:\n  %s",
 		strings.Join(unexpected, "\n  "))
 }
 

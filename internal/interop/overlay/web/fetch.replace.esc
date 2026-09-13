@@ -1,0 +1,12 @@
+// `BodyInit` is spelled out here rather than reaching its member set through
+// `XMLHttpRequestBodyInit`, which `web:dom` declares. Naming that alias would
+// put `web:fetch` in a cycle with the browser tier.
+//
+// The members are the same ones the alias holds, `FormData` included.
+export declare type BodyInit =
+    streams.ReadableStream
+    | file.Blob
+    | BufferSource
+    | file.FormData
+    | url.URLSearchParams
+    | string

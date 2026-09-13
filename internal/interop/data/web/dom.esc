@@ -376,7 +376,7 @@ export declare interface FontFaceSetLoadEventInit extends EventInit {
 }
 
 export declare interface FormDataEventInit extends EventInit {
-    formData: FormData
+    formData: file.FormData
 }
 
 export declare interface FullscreenOptions {
@@ -694,14 +694,6 @@ export declare interface MediaTrackSupportedConstraints {
     sampleRate?: boolean,
     sampleSize?: boolean,
     width?: boolean
-}
-
-export declare interface MessageEventInit<T = any> extends EventInit {
-    data?: T,
-    lastEventId?: string,
-    origin?: string,
-    ports?: mut Array<MessagePort>,
-    source?: MessageEventSource | null
 }
 
 export declare interface MouseEventInit extends EventModifierInit {
@@ -4534,7 +4526,7 @@ export declare class DataTransfer {
      *
      * [MDN Reference](https://developer.mozilla.org/docs/Web/API/DataTransfer/files)
      */
-    readonly files: file.FileList,
+    readonly files: FileList,
     /**
      * Returns a DataTransferItemList object, with the drag data.
      *
@@ -5831,7 +5823,7 @@ export declare class ElementInternals extends ARIAMixin {
      *
      * [MDN Reference](https://developer.mozilla.org/docs/Web/API/ElementInternals/setFormValue)
      */
-    setFormValue(mut self, value: file.File | string | FormData | null, state?: file.File | string | FormData | null) -> unknown,
+    setFormValue(mut self, value: file.File | string | file.FormData | null, state?: file.File | string | file.FormData | null) -> unknown,
     /**
      * Marks internals's target element as suffering from the constraints indicated by the flags argument, and sets the element's validation message to message. If anchor is specified, the user agent might use it to indicate problems with the constraints of internals's target element when the form owner is validated interactively or reportValidity() is called.
      *
@@ -5861,14 +5853,6 @@ export declare class ErrorEvent extends Event {
     readonly message: string,
     static prototype: ErrorEvent,
     constructor(mut self, type: string, eventInitDict?: ErrorEventInit)
-}
-
-/** [MDN Reference](https://developer.mozilla.org/docs/Web/API/EventCounts) */
-@js("EventCounts")
-export declare class EventCounts extends map.Map<string, number> {
-    forEach(self, callbackfn: fn (value: number, key: string, parent: EventCounts) -> unknown, thisArg?: unknown) -> unknown,
-    static prototype: EventCounts,
-    constructor(mut self)
 }
 
 export declare interface EventSourceEventMap {
@@ -5935,6 +5919,84 @@ export declare class External {
     IsSearchProviderInstalled(mut self) -> unknown,
     static prototype: External,
     constructor(mut self)
+}
+
+/**
+ * An object of this type is returned by the files property of the HTML <input> element; this lets you access the list of files selected with the <input type="file"> element. It's also used for a list of files dropped into web content when using the drag and drop API; see the DataTransfer object for details on this usage.
+ *
+ * [MDN Reference](https://developer.mozilla.org/docs/Web/API/FileList)
+ */
+@js("FileList")
+export declare class FileList {
+    /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/FileList/length) */
+    readonly length: number,
+    /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/FileList/item) */
+    item(mut self, index: number) -> file.File | null,
+    [Symbol.iterator](self) -> ArrayIterator<file.File>,
+    static prototype: FileList,
+    constructor(mut self)
+}
+
+export declare interface FileReaderEventMap {
+    "abort": ProgressEvent<FileReader>,
+    "error": ProgressEvent<FileReader>,
+    "load": ProgressEvent<FileReader>,
+    "loadend": ProgressEvent<FileReader>,
+    "loadstart": ProgressEvent<FileReader>,
+    "progress": ProgressEvent<FileReader>
+}
+
+/**
+ * Lets web applications asynchronously read the contents of files (or raw data buffers) stored on the user's computer, using File or Blob objects to specify the file or data to read.
+ *
+ * [MDN Reference](https://developer.mozilla.org/docs/Web/API/FileReader)
+ */
+@js("FileReader")
+export declare class FileReader extends EventTarget {
+    /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/FileReader/error) */
+    readonly error: DOMException | null,
+    /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/FileReader/abort_event) */
+    onabort: (fn (this: FileReader, ev: ProgressEvent<FileReader>) -> any) | null,
+    /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/FileReader/error_event) */
+    onerror: (fn (this: FileReader, ev: ProgressEvent<FileReader>) -> any) | null,
+    /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/FileReader/load_event) */
+    onload: (fn (this: FileReader, ev: ProgressEvent<FileReader>) -> any) | null,
+    /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/FileReader/loadend_event) */
+    onloadend: (fn (this: FileReader, ev: ProgressEvent<FileReader>) -> any) | null,
+    /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/FileReader/loadstart_event) */
+    onloadstart: (fn (this: FileReader, ev: ProgressEvent<FileReader>) -> any) | null,
+    /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/FileReader/progress_event) */
+    onprogress: (fn (this: FileReader, ev: ProgressEvent<FileReader>) -> any) | null,
+    /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/FileReader/readyState) */
+    readonly readyState: typeof FileReader.EMPTY | typeof FileReader.LOADING | typeof FileReader.DONE,
+    /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/FileReader/result) */
+    readonly result: string | typed_arrays.ArrayBuffer | null,
+    /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/FileReader/abort) */
+    abort(mut self) -> unknown,
+    /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/FileReader/readAsArrayBuffer) */
+    readAsArrayBuffer(mut self, blob: file.Blob) -> unknown,
+    /**
+     * @deprecated
+     *
+     * [MDN Reference](https://developer.mozilla.org/docs/Web/API/FileReader/readAsBinaryString)
+     */
+    readAsBinaryString(mut self, blob: file.Blob) -> unknown,
+    /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/FileReader/readAsDataURL) */
+    readAsDataURL(mut self, blob: file.Blob) -> unknown,
+    /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/FileReader/readAsText) */
+    readAsText(mut self, blob: file.Blob, encoding?: string) -> unknown,
+    readonly EMPTY: 0,
+    readonly LOADING: 1,
+    readonly DONE: 2,
+    addEventListener<K: keyof FileReaderEventMap>(mut self, type: K, listener: fn (this: FileReader, ev: FileReaderEventMap[K]) -> any, options?: boolean | AddEventListenerOptions) -> unknown,
+    addEventListener(mut self, type: string, listener: EventListenerOrEventListenerObject, options?: boolean | AddEventListenerOptions) -> unknown,
+    removeEventListener<K: keyof FileReaderEventMap>(mut self, type: K, listener: fn (this: FileReader, ev: FileReaderEventMap[K]) -> any, options?: boolean | EventListenerOptions) -> unknown,
+    removeEventListener(mut self, type: string, listener: EventListenerOrEventListenerObject, options?: boolean | EventListenerOptions) -> unknown,
+    static prototype: FileReader,
+    constructor(mut self),
+    static readonly EMPTY: 0,
+    static readonly LOADING: 1,
+    static readonly DONE: 2
 }
 
 /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/FileSystem) */
@@ -6140,41 +6202,6 @@ export declare interface FontFaceSource {
     readonly fonts: FontFaceSet
 }
 
-/**
- * Provides a way to easily construct a set of key/value pairs representing form fields and their values, which can then be easily sent using the XMLHttpRequest.send() method. It uses the same format a form would use if the encoding type were set to "multipart/form-data".
- *
- * [MDN Reference](https://developer.mozilla.org/docs/Web/API/FormData)
- */
-@js("FormData")
-export declare class FormData {
-    /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/FormData/append) */
-    append(mut self, name: string, value: string | file.Blob) -> unknown,
-    append(mut self, name: string, value: string) -> unknown,
-    append(mut self, name: string, blobValue: file.Blob, filename?: string) -> unknown,
-    /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/FormData/delete) */
-    delete(mut self, name: string) -> unknown,
-    /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/FormData/get) */
-    get(self, name: string) -> FormDataEntryValue | null,
-    /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/FormData/getAll) */
-    getAll(self, name: string) -> mut Array<FormDataEntryValue>,
-    /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/FormData/has) */
-    has(self, name: string) -> boolean,
-    /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/FormData/set) */
-    set(mut self, name: string, value: string | file.Blob) -> unknown,
-    set(mut self, name: string, value: string) -> unknown,
-    set(mut self, name: string, blobValue: file.Blob, filename?: string) -> unknown,
-    forEach(self, callbackfn: fn (value: FormDataEntryValue, key: string, parent: FormData) -> unknown, thisArg?: unknown) -> unknown,
-    [Symbol.iterator](self) -> FormDataIterator<[string, FormDataEntryValue]>,
-    /** Returns an array of key, value pairs for every entry in the list. */
-    entries(self) -> FormDataIterator<[string, FormDataEntryValue]>,
-    /** Returns a list of keys in the list. */
-    keys(self) -> FormDataIterator<string>,
-    /** Returns a list of values in the list. */
-    values(self) -> FormDataIterator<FormDataEntryValue>,
-    static prototype: FormData,
-    constructor(mut self, form?: HTMLFormElement, submitter?: HTMLElement | null)
-}
-
 /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/FormDataEvent) */
 @js("FormDataEvent")
 export declare class FormDataEvent extends Event {
@@ -6183,7 +6210,7 @@ export declare class FormDataEvent extends Event {
      *
      * [MDN Reference](https://developer.mozilla.org/docs/Web/API/FormDataEvent/formData)
      */
-    readonly formData: FormData,
+    readonly formData: file.FormData,
     static prototype: FormDataEvent,
     constructor(mut self, type: string, eventInitDict: FormDataEventInit)
 }
@@ -8407,7 +8434,7 @@ export declare class HTMLInputElement extends HTMLElement {
      *
      * [MDN Reference](https://developer.mozilla.org/docs/Web/API/HTMLInputElement/files)
      */
-    files: file.FileList | null,
+    files: FileList | null,
     /**
      * Retrieves a reference to the form that the object is embedded in.
      *
@@ -12130,51 +12157,6 @@ export declare class MessageChannel {
     readonly port2: MessagePort,
     static prototype: MessageChannel,
     constructor(mut self)
-}
-
-/**
- * A message received by a target object.
- *
- * [MDN Reference](https://developer.mozilla.org/docs/Web/API/MessageEvent)
- */
-@js("MessageEvent")
-export declare class MessageEvent<T = any> extends Event {
-    /**
-     * Returns the data of the message.
-     *
-     * [MDN Reference](https://developer.mozilla.org/docs/Web/API/MessageEvent/data)
-     */
-    readonly data: T,
-    /**
-     * Returns the last event ID string, for server-sent events.
-     *
-     * [MDN Reference](https://developer.mozilla.org/docs/Web/API/MessageEvent/lastEventId)
-     */
-    readonly lastEventId: string,
-    /**
-     * Returns the origin of the message, for server-sent events and cross-document messaging.
-     *
-     * [MDN Reference](https://developer.mozilla.org/docs/Web/API/MessageEvent/origin)
-     */
-    readonly origin: string,
-    /**
-     * Returns the MessagePort array sent with the message, for cross-document messaging and channel messaging.
-     *
-     * [MDN Reference](https://developer.mozilla.org/docs/Web/API/MessageEvent/ports)
-     */
-    readonly ports: Array<MessagePort>,
-    /**
-     * Returns the WindowProxy of the source window, for cross-document messaging, and the MessagePort being attached, in the connect event fired at SharedWorkerGlobalScope objects.
-     *
-     * [MDN Reference](https://developer.mozilla.org/docs/Web/API/MessageEvent/source)
-     */
-    readonly source: MessageEventSource | null,
-    /** @deprecated */
-    initMessageEvent(mut self, type: string, bubbles?: boolean, cancelable?: boolean, data?: unknown, origin?: string, lastEventId?: string, source?: MessageEventSource | null, ports?: mut Array<MessagePort>) -> unknown,
-    /** @deprecated */
-    initMessageEvent(mut self, type: string, bubbles?: boolean, cancelable?: boolean, data?: unknown, origin?: string, lastEventId?: string, source?: MessageEventSource | null, ports?: Iterable<MessagePort>) -> unknown,
-    static prototype: MessageEvent,
-    constructor(mut self, type: string, eventInitDict?: MessageEventInit<T>)
 }
 
 export declare interface MessageEventTargetEventMap {
@@ -20022,8 +20004,6 @@ export declare type EpochTimeStamp = number
 
 export declare type FileSystemWriteChunkType = BufferSource | file.Blob | string | WriteParams
 
-export declare type FormDataEntryValue = file.File | string
-
 export declare type HTMLOrSVGImageElement = HTMLImageElement | SVGImageElement
 
 export declare type HTMLOrSVGScriptElement = HTMLScriptElement | SVGScriptElement
@@ -20060,7 +20040,7 @@ export declare type VibratePattern = number | mut Array<number>
 
 export declare type WindowProxy = Window
 
-export declare type XMLHttpRequestBodyInit = file.Blob | BufferSource | FormData | url.URLSearchParams | string
+export declare type XMLHttpRequestBodyInit = file.Blob | BufferSource | file.FormData | url.URLSearchParams | string
 
 export declare type AlignSetting = "center" | "end" | "left" | "right" | "start"
 
@@ -20083,8 +20063,6 @@ export declare type AutoFillCredentialField = "webauthn"
 export declare type AutoFillNormalField = "additional-name" | "address-level1" | "address-level2" | "address-level3" | "address-level4" | "address-line1" | "address-line2" | "address-line3" | "bday-day" | "bday-month" | "bday-year" | "cc-csc" | "cc-exp" | "cc-exp-month" | "cc-exp-year" | "cc-family-name" | "cc-given-name" | "cc-name" | "cc-number" | "cc-type" | "country" | "country-name" | "current-password" | "family-name" | "given-name" | "honorific-prefix" | "honorific-suffix" | "name" | "new-password" | "one-time-code" | "organization" | "postal-code" | "street-address" | "transaction-amount" | "transaction-currency" | "username"
 
 export declare type AutoKeyword = "auto"
-
-export declare type BinaryType = "arraybuffer" | "blob"
 
 export declare type CSSMathOperator = "clamp" | "invert" | "max" | "min" | "negate" | "product" | "sum"
 
@@ -20269,10 +20247,6 @@ export declare type WebTransportErrorSource = "session" | "stream"
 export declare type WriteCommandType = "seek" | "truncate" | "write"
 
 export declare type XMLHttpRequestResponseType = "" | "arraybuffer" | "blob" | "document" | "json" | "text"
-
-export declare interface FormDataIterator<T> extends IteratorObject<T, BuiltinIteratorReturn, unknown> {
-    [Symbol.iterator]() -> FormDataIterator<T>
-}
 
 export declare interface MediaKeyStatusMapIterator<T> extends IteratorObject<T, BuiltinIteratorReturn, unknown> {
     [Symbol.iterator]() -> MediaKeyStatusMapIterator<T>

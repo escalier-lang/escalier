@@ -9,6 +9,7 @@ import "web:core"
 import "web:crypto"
 import "web:dom"
 import "web:file"
+import "web:websocket"
 import "web:workers"
 
 export declare interface RTCAnswerOptions extends RTCOfferAnswerOptions {}
@@ -373,7 +374,7 @@ export declare interface RTCDataChannelEventMap {
     "close": Event,
     "closing": Event,
     "error": RTCErrorEvent,
-    "message": dom.MessageEvent,
+    "message": MessageEvent,
     "open": Event
 }
 
@@ -381,7 +382,7 @@ export declare interface RTCDataChannelEventMap {
 @js("RTCDataChannel")
 export declare class RTCDataChannel extends EventTarget {
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/RTCDataChannel/binaryType) */
-    binaryType: dom.BinaryType,
+    binaryType: websocket.BinaryType,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/RTCDataChannel/bufferedAmount) */
     readonly bufferedAmount: number,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/RTCDataChannel/bufferedAmountLowThreshold) */
@@ -405,7 +406,7 @@ export declare class RTCDataChannel extends EventTarget {
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/RTCDataChannel/error_event) */
     onerror: (fn (this: RTCDataChannel, ev: RTCErrorEvent) -> any) | null,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/RTCDataChannel/message_event) */
-    onmessage: (fn (this: RTCDataChannel, ev: dom.MessageEvent) -> any) | null,
+    onmessage: (fn (this: RTCDataChannel, ev: MessageEvent) -> any) | null,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/RTCDataChannel/open_event) */
     onopen: (fn (this: RTCDataChannel, ev: Event) -> any) | null,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/RTCDataChannel/ordered) */

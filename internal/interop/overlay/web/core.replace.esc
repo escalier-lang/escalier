@@ -1,0 +1,31 @@
+// `MessageEvent` is in the WinterTC minimum common API, so it belongs in the
+// core tier. Two of its members name the browser and are retyped here.
+//
+// `MessagePort` could not come with it. It reaches `StructuredSerializeOptions`
+// and through it `Transferable`, which names `OffscreenCanvas`, `ImageBitmap`,
+// `MediaSourceHandle` and the WebCodecs and WebRTC types. Pulling that closure
+// into the core tier would defeat the point of the tier.
+//
+// `source` is a `WindowProxy`, a `MessagePort`, or a `ServiceWorker` in the
+// browser, and is always null off it. `null` is what every portable runtime
+// reports, so it is what the type says.
+//
+// `ports` is an array of ports on every runtime and the element type differs by
+// runtime, so the tier names the array without naming the element. A browser
+// program reaching a port has to say which type it expects.
+//
+// One class serves every tier, so a browser program reads these two members at
+// their portable types too. That is the trade the portable form makes, and
+// #1586 is where a per-declaration tier would let the browser keep its own.
+export declare class MessageEvent<T = any> {
+    readonly source: null,
+    readonly ports: Array<unknown>,
+}
+
+// `MessageEventInit` is the argument to the `MessageEvent` constructor, so it
+// carries the same two browser-typed members and takes the same retypes for the
+// same reasons.
+export declare interface MessageEventInit<T = any> {
+    ports?: mut Array<unknown>,
+    source?: null,
+}

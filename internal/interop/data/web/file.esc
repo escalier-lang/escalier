@@ -4,7 +4,6 @@
 
 import "std:typed_arrays"
 import "web:core"
-import "web:dom"
 import "web:streams"
 
 export declare interface BlobPropertyBag {
@@ -59,83 +58,46 @@ export declare class File extends Blob {
 }
 
 /**
- * An object of this type is returned by the files property of the HTML <input> element; this lets you access the list of files selected with the <input type="file"> element. It's also used for a list of files dropped into web content when using the drag and drop API; see the DataTransfer object for details on this usage.
+ * Provides a way to easily construct a set of key/value pairs representing form fields and their values, which can then be easily sent using the XMLHttpRequest.send() method. It uses the same format a form would use if the encoding type were set to "multipart/form-data".
  *
- * [MDN Reference](https://developer.mozilla.org/docs/Web/API/FileList)
+ * [MDN Reference](https://developer.mozilla.org/docs/Web/API/FormData)
  */
-@js("FileList")
-export declare class FileList {
-    /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/FileList/length) */
-    readonly length: number,
-    /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/FileList/item) */
-    item(mut self, index: number) -> File | null,
-    [Symbol.iterator](self) -> ArrayIterator<File>,
-    static prototype: FileList,
+@js("FormData")
+export declare class FormData {
+    /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/FormData/append) */
+    append(mut self, name: string, value: string | Blob) -> unknown,
+    append(mut self, name: string, value: string) -> unknown,
+    append(mut self, name: string, blobValue: Blob, filename?: string) -> unknown,
+    /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/FormData/delete) */
+    delete(mut self, name: string) -> unknown,
+    /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/FormData/get) */
+    get(self, name: string) -> FormDataEntryValue | null,
+    /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/FormData/getAll) */
+    getAll(self, name: string) -> mut Array<FormDataEntryValue>,
+    /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/FormData/has) */
+    has(self, name: string) -> boolean,
+    /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/FormData/set) */
+    set(mut self, name: string, value: string | Blob) -> unknown,
+    set(mut self, name: string, value: string) -> unknown,
+    set(mut self, name: string, blobValue: Blob, filename?: string) -> unknown,
+    forEach(self, callbackfn: fn (value: FormDataEntryValue, key: string, parent: FormData) -> unknown, thisArg?: unknown) -> unknown,
+    [Symbol.iterator](self) -> FormDataIterator<[string, FormDataEntryValue]>,
+    /** Returns an array of key, value pairs for every entry in the list. */
+    entries(self) -> FormDataIterator<[string, FormDataEntryValue]>,
+    /** Returns a list of keys in the list. */
+    keys(self) -> FormDataIterator<string>,
+    /** Returns a list of values in the list. */
+    values(self) -> FormDataIterator<FormDataEntryValue>,
+    static prototype: FormData,
     constructor(mut self)
-}
-
-export declare interface FileReaderEventMap {
-    "abort": dom.ProgressEvent<FileReader>,
-    "error": dom.ProgressEvent<FileReader>,
-    "load": dom.ProgressEvent<FileReader>,
-    "loadend": dom.ProgressEvent<FileReader>,
-    "loadstart": dom.ProgressEvent<FileReader>,
-    "progress": dom.ProgressEvent<FileReader>
-}
-
-/**
- * Lets web applications asynchronously read the contents of files (or raw data buffers) stored on the user's computer, using File or Blob objects to specify the file or data to read.
- *
- * [MDN Reference](https://developer.mozilla.org/docs/Web/API/FileReader)
- */
-@js("FileReader")
-export declare class FileReader extends EventTarget {
-    /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/FileReader/error) */
-    readonly error: DOMException | null,
-    /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/FileReader/abort_event) */
-    onabort: (fn (this: FileReader, ev: dom.ProgressEvent<FileReader>) -> any) | null,
-    /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/FileReader/error_event) */
-    onerror: (fn (this: FileReader, ev: dom.ProgressEvent<FileReader>) -> any) | null,
-    /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/FileReader/load_event) */
-    onload: (fn (this: FileReader, ev: dom.ProgressEvent<FileReader>) -> any) | null,
-    /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/FileReader/loadend_event) */
-    onloadend: (fn (this: FileReader, ev: dom.ProgressEvent<FileReader>) -> any) | null,
-    /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/FileReader/loadstart_event) */
-    onloadstart: (fn (this: FileReader, ev: dom.ProgressEvent<FileReader>) -> any) | null,
-    /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/FileReader/progress_event) */
-    onprogress: (fn (this: FileReader, ev: dom.ProgressEvent<FileReader>) -> any) | null,
-    /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/FileReader/readyState) */
-    readonly readyState: typeof FileReader.EMPTY | typeof FileReader.LOADING | typeof FileReader.DONE,
-    /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/FileReader/result) */
-    readonly result: string | typed_arrays.ArrayBuffer | null,
-    /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/FileReader/abort) */
-    abort(mut self) -> unknown,
-    /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/FileReader/readAsArrayBuffer) */
-    readAsArrayBuffer(mut self, blob: Blob) -> unknown,
-    /**
-     * @deprecated
-     *
-     * [MDN Reference](https://developer.mozilla.org/docs/Web/API/FileReader/readAsBinaryString)
-     */
-    readAsBinaryString(mut self, blob: Blob) -> unknown,
-    /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/FileReader/readAsDataURL) */
-    readAsDataURL(mut self, blob: Blob) -> unknown,
-    /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/FileReader/readAsText) */
-    readAsText(mut self, blob: Blob, encoding?: string) -> unknown,
-    readonly EMPTY: 0,
-    readonly LOADING: 1,
-    readonly DONE: 2,
-    addEventListener<K: keyof FileReaderEventMap>(mut self, type: K, listener: fn (this: FileReader, ev: FileReaderEventMap[K]) -> any, options?: boolean | AddEventListenerOptions) -> unknown,
-    addEventListener(mut self, type: string, listener: EventListenerOrEventListenerObject, options?: boolean | AddEventListenerOptions) -> unknown,
-    removeEventListener<K: keyof FileReaderEventMap>(mut self, type: K, listener: fn (this: FileReader, ev: FileReaderEventMap[K]) -> any, options?: boolean | EventListenerOptions) -> unknown,
-    removeEventListener(mut self, type: string, listener: EventListenerOrEventListenerObject, options?: boolean | EventListenerOptions) -> unknown,
-    static prototype: FileReader,
-    constructor(mut self),
-    static readonly EMPTY: 0,
-    static readonly LOADING: 1,
-    static readonly DONE: 2
 }
 
 export declare type BlobPart = BufferSource | Blob | string
 
+export declare type FormDataEntryValue = File | string
+
 export declare type EndingType = "native" | "transparent"
+
+export declare interface FormDataIterator<T> extends IteratorObject<T, BuiltinIteratorReturn, unknown> {
+    [Symbol.iterator]() -> FormDataIterator<T>
+}

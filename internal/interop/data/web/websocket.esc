@@ -4,7 +4,6 @@
 
 import "std:typed_arrays"
 import "web:core"
-import "web:dom"
 import "web:file"
 import "web:url"
 
@@ -46,7 +45,7 @@ export declare class CloseEvent extends Event {
 export declare interface WebSocketEventMap {
     "close": CloseEvent,
     "error": Event,
-    "message": dom.MessageEvent,
+    "message": MessageEvent,
     "open": Event
 }
 
@@ -64,7 +63,7 @@ export declare class WebSocket extends EventTarget {
      *
      * [MDN Reference](https://developer.mozilla.org/docs/Web/API/WebSocket/binaryType)
      */
-    binaryType: dom.BinaryType,
+    binaryType: BinaryType,
     /**
      * Returns the number of bytes of application data (UTF-8 text and binary data) that have been queued using send() but not yet been transmitted to the network.
      *
@@ -84,7 +83,7 @@ export declare class WebSocket extends EventTarget {
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/WebSocket/error_event) */
     onerror: (fn (this: WebSocket, ev: Event) -> any) | null,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/WebSocket/message_event) */
-    onmessage: (fn (this: WebSocket, ev: dom.MessageEvent) -> any) | null,
+    onmessage: (fn (this: WebSocket, ev: MessageEvent) -> any) | null,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/WebSocket/open_event) */
     onopen: (fn (this: WebSocket, ev: Event) -> any) | null,
     /**
@@ -132,3 +131,5 @@ export declare class WebSocket extends EventTarget {
     static readonly CLOSING: 2,
     static readonly CLOSED: 3
 }
+
+export declare type BinaryType = "arraybuffer" | "blob"

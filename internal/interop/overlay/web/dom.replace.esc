@@ -1,0 +1,13 @@
+// `web:fetch` spells `BodyInit`'s members out in fetch.replace.esc rather than
+// reaching this alias, which would put a portable package in a cycle with the
+// browser tier. The two member lists have to agree and nothing else makes them.
+//
+// This entry restates the converted alias unchanged, so the sidecar beside this
+// file records its digest. A TypeScript bump that adds or drops a member fails
+// the run and names this file, and fetch.replace.esc takes the same edit.
+export declare type XMLHttpRequestBodyInit =
+    file.Blob
+    | BufferSource
+    | file.FormData
+    | url.URLSearchParams
+    | string
