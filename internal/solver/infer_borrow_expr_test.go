@@ -342,38 +342,37 @@ func TestInferValAnnotatedBorrowMut(t *testing.T) {
 
 // --- Auto-borrow at call sites -------------------------------------------------
 
-// An owned-mutable argument auto-borrows into a `&mut` parameter. The
-// RefType<:RefType rule treats an owned source (Lt nil) as satisfying any borrow
-// destination, so the call type-checks without an explicit `&mut`.
-func TestInferAutoBorrowOwnedIntoMutParam(t *testing.T) {
+// A `&mut` parameter takes a borrow, so the call has to write one. #1541 made that explicit:
+// passing p by name reports rather than borrowing it silently.
+func TestOwnedMutArgumentNeedsAWrittenBorrow(t *testing.T) {
 	src := `fn use(o: &mut {x: number}) -> number {
   return o.x
 }
 fn f(p: mut {x: number}) {
   return use(p)
 }`
+	_, _, errs := inferSource(t, src)
+	require.Equal(t, []string{
+		"5:14-5:15: this argument is borrowed by the callee, so write the borrow: `&mut`",
+	}, messagesWithSpan(t, errs))
+}
+
+// The written form is what the rule asks for, and the call types as it did before.
+func TestOwnedMutArgumentWithAWrittenBorrow(t *testing.T) {
+	src := `fn use(o: &mut {x: number}) -> number {
+  return o.x
+}
+fn f(p: mut {x: number}) {
+  return use(&mut p)
+}`
 	values, _, errs := inferSource(t, src)
 	require.Empty(t, errs)
 	require.Equal(t, "fn (p: mut {x: number}) -> number", values["f"])
 }
 
-// An owned-immutable argument auto-borrows into a `&` parameter.
-func TestInferAutoBorrowOwnedIntoImmParam(t *testing.T) {
+// A shared parameter follows the same rule and asks for `&` rather than `&mut`.
+func TestOwnedArgumentNeedsAWrittenSharedBorrow(t *testing.T) {
 	src := `fn use(o: &{x: number}) -> number {
-  return o.x
-}
-fn f(p: {x: number}) {
-  return use(p)
-}`
-	values, _, errs := inferSource(t, src)
-	require.Empty(t, errs)
-	require.Equal(t, "fn (p: {x: number}) -> number", values["f"])
-}
-
-// An owned-immutable argument cannot auto-borrow into a `&mut` parameter: the
-// mutability check rejects an immutable source filling a mutable borrow destination.
-func TestInferAutoBorrowImmIntoMutParamRejected(t *testing.T) {
-	src := `fn use(o: &mut {x: number}) -> number {
   return o.x
 }
 fn f(p: {x: number}) {
@@ -381,7 +380,34 @@ fn f(p: {x: number}) {
 }`
 	_, _, errs := inferSource(t, src)
 	require.Equal(t, []string{
-		"5:10-5:16: cannot constrain immutable object <: mutable object",
+		"5:14-5:15: this argument is borrowed by the callee, so write the borrow: `&`",
+	}, messagesWithSpan(t, errs))
+}
+
+func TestOwnedArgumentWithAWrittenSharedBorrow(t *testing.T) {
+	src := `fn use(o: &{x: number}) -> number {
+  return o.x
+}
+fn f(p: {x: number}) {
+  return use(&p)
+}`
+	values, _, errs := inferSource(t, src)
+	require.Empty(t, errs)
+	require.Equal(t, "fn (p: {x: number}) -> number", values["f"])
+}
+
+// An owned-immutable value cannot fill a `&mut` parameter even with the borrow written. The
+// mutability check rejects it before the borrow's spelling matters.
+func TestImmutableArgumentCannotFillAMutBorrow(t *testing.T) {
+	src := `fn use(o: &mut {x: number}) -> number {
+  return o.x
+}
+fn f(p: {x: number}) {
+  return use(&mut p)
+}`
+	_, _, errs := inferSource(t, src)
+	require.Equal(t, []string{
+		"5:14-5:20: cannot constrain immutable object <: mutable object",
 	}, messagesWithSpan(t, errs))
 }
 
