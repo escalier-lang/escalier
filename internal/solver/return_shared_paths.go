@@ -11,12 +11,15 @@ import (
 )
 
 // Two paths out of one return. A returned value may reach a function-local more than once, and
-// when a write can go through one of those paths the caller ends up holding two disagreeing
-// views of one object. `return [a.peer, &mut b]` over `val a = {peer: &mut b}` hands out two
-// mutable handles to b.
+// when one of those paths writes and the other reads the caller ends up holding two disagreeing
+// views of one object. `return [a.peer, &mut b]` over `val a = {peer: &{value: 1}}` hands out a
+// reader of b and a writer of it.
 //
-// Two SHARED paths are fine, since two readers see the same value. What makes the pair a hazard
-// is that one of them can write.
+// Two paths of the SAME mutability are fine. Two readers see one unchanging value. Two writers
+// are Rule 3, which allows several mutable references to one value while their types match, and
+// the GC'd target means a second writer cannot dangle the first's reference. The hazard is the
+// MIX. A shared borrow's type promises the value does not change under it, and narrowing rests
+// on that promise, so a write through the other path falsifies it.
 //
 // The borrow-edge graph cannot answer this on its own. addBorrowEdge keeps one edge per route
 // into the referent, so the two borrows of b in that tuple, which take the same route, collapse
@@ -38,9 +41,14 @@ import (
 // What this does NOT cover: a path group holding more positions than edges when several edges
 // share it. Which position reaches which referent is unknown there, so the group is skipped
 // rather than guessed at.
+//
+// A borrow edge records no mutability, so a returned literal's element that is not a written
+// `&mut` counts as a path that does not write even when it holds a mutable borrow. `return
+// [a.peer, &mut b]` over `val a = {peer: &mut b}` is two writers, which Rule 3 allows, and it
+// reports as a mix. Closing that needs fieldBorrow to carry the borrow's mutability.
 
-// SharedReturnPathsError reports a returned value that reaches one local through two paths
-// where a write can go through at least one of them.
+// SharedReturnPathsError reports a returned value that reaches one local through a path that
+// writes and a path that reads.
 type SharedReturnPathsError struct {
 	// LocalName is the local reached twice, for the message.
 	LocalName string
@@ -52,7 +60,7 @@ func (*SharedReturnPathsError) isSolverError()        {}
 func (e *SharedReturnPathsError) Span() ast.Span      { return e.node.Span() }
 func (e *SharedReturnPathsError) Related() []ast.Span { return nil }
 func (e *SharedReturnPathsError) Message() string {
-	return fmt.Sprintf("returned value reaches '%s' through two paths while one of them can write", e.LocalName)
+	return fmt.Sprintf("returned value reaches '%s' through a mutable path and an immutable one", e.LocalName)
 }
 
 // borrowPosition is one borrow the return type carries: the field path within the carrier where
@@ -62,9 +70,9 @@ type borrowPosition struct {
 	mut  bool
 }
 
-// reportSharedReturnPaths reports each local the returned value reaches more than once with a
-// write available through one of those paths. root is the carrier the graph's edges hang off,
-// and blame is the returned expression both paths leave through.
+// reportSharedReturnPaths reports each local the returned value reaches through both a mutable
+// path and an immutable one. root is the carrier the graph's edges hang off, and blame is the
+// returned expression both paths leave through.
 func (c *checker) reportSharedReturnPaths(
 	ret soltype.Type,
 	root liveness.VarID,
@@ -121,9 +129,9 @@ type reachedPlace struct {
 	mut      bool
 }
 
-// reportReachedTwice reports each local two of the paths reach overlapping data in, with a write
-// available through at least one of the two. Reports come in VarID order so a value reached from
-// several places reads the same way every run.
+// reportReachedTwice reports each local two of the paths reach overlapping data in, one of them
+// mutable and the other not. Reports come in VarID order so a value reached from several places
+// reads the same way every run.
 //
 // Two paths into one local overlap when their field paths within it are prefix-related. Equal
 // paths reach the same data, and a path above another contains it. Disjoint fields such as
@@ -135,7 +143,7 @@ func (c *checker) reportReachedTwice(reached []reachedPlace, blame ast.Expr) {
 			if a.referent != b.referent || slices.Contains(shared, a.referent) {
 				continue
 			}
-			if (a.mut || b.mut) && pathPrefixRelated(a.refPath, b.refPath) {
+			if a.mut != b.mut && pathPrefixRelated(a.refPath, b.refPath) {
 				shared = append(shared, a.referent)
 			}
 		}
@@ -156,8 +164,9 @@ func (c *checker) reportReachedTwice(reached []reachedPlace, blame ast.Expr) {
 // seeing one borrow where the literal has two.
 //
 // An element that is an explicit `&mut` marks its referents writable. Any other element counts
-// toward the reach without claiming a write, so a pair of reads is not reported and a pair whose
-// writability is unknown is reported only when the other path is a written `&mut`.
+// toward the reach without claiming a write, so a pair of written `&mut` elements is not
+// reported, a pair of reads is not reported, and a pair whose writability is unknown is reported
+// only when the other path is a written `&mut`.
 func (c *checker) reportLiteralSharedPaths(
 	e ast.Expr,
 	graph map[liveness.VarID][]fieldBorrow,
@@ -197,7 +206,7 @@ func (c *checker) reportLiteralSharedPaths(
 			if !placesOverlap(reaches[i].place, reaches[j].place) {
 				continue
 			}
-			if !reaches[i].mut && !reaches[j].mut {
+			if reaches[i].mut == reaches[j].mut {
 				continue
 			}
 			root := reaches[i].place.root
