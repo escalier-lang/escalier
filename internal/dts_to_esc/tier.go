@@ -11,13 +11,10 @@ import (
 // tiers, so an import edge can be checked against the runtimes its two
 // ends are available on.
 //
-// A file that imports the portable tier and nothing above it is
-// checkable against Node, Deno, Bun and Workers, which is the line the
-// `node:*` scheme already draws from the other side. Grouping by
-// specification does not draw that line. `AbortSignal` is specified in
-// the DOM and implemented everywhere, so a package that takes one has to
-// reach a name filed under the browser. `web:core` holds those names
-// instead, which is what keeps the portable tier off the DOM.
+// Grouping by specification does not draw that line. `AbortSignal` is
+// specified in the DOM and implemented everywhere, so a package taking
+// one would have to reach a name filed under the browser. `web:core`
+// holds those names instead, which keeps the portable tier off the DOM.
 
 // Tier is the set of runtimes a package's declarations are available
 // on. Fewer runtimes carry a higher tier, so the values order by how
@@ -63,13 +60,10 @@ func (t Tier) String() string {
 	return fmt.Sprintf("Tier(%d)", int(t))
 }
 
-// The scheme and the tier answer different questions. The scheme says how a
-// package is named and grouped; the tier says which runtimes carry it. They
-// agree for almost every package, and stdTiers records where they do not.
-
 // stdTiers assigns a tier to each `std:*` package whose contents are not
 // available wherever ECMAScript is. A `std:*` package absent from this map is
-// TierLanguage.
+// TierLanguage. The scheme says how a package is named; the tier says which
+// runtimes carry it, and this is where the two disagree.
 var stdTiers = map[string]Tier{
 	// WebAssembly is a host global rather than an ECMAScript one, and
 	// `instantiateStreaming` takes a fetch `Response`. Every WinterCG runtime
