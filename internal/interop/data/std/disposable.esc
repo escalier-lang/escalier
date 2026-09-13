@@ -2,8 +2,6 @@
 // Its facts come from the pinned lib.*.d.ts set, the ECMA-262
 // derived facts, and the overlay. Change one of those and re-run.
 
-import "std:prelude"
-
 @js("DisposableStack")
 export declare class DisposableStack {
     /**
@@ -19,7 +17,7 @@ export declare class DisposableStack {
      * @param value The resource to add. `null` and `undefined` will not be added, but will be returned.
      * @returns The provided {@link value}.
      */
-    use<T: prelude.Disposable | null | undefined>(mut self, value: T) -> T,
+    use<T: Disposable | null | undefined>(mut self, value: T) -> T,
     /**
      * Adds a value and associated disposal callback as a resource to the stack.
      * @param value The value to add.
@@ -77,13 +75,13 @@ export declare class AsyncDisposableStack {
     /**
      * Disposes each resource in the stack in the reverse order that they were added.
      */
-    disposeAsync(mut self) -> prelude.Promise<undefined>,
+    disposeAsync(mut self) -> Promise<undefined>,
     /**
      * Adds a disposable resource to the stack, returning the resource.
      * @param value The resource to add. `null` and `undefined` will not be added, but will be returned.
      * @returns The provided {@link value}.
      */
-    use<T: prelude.AsyncDisposable | prelude.Disposable | null | undefined>(mut self, value: T) -> T,
+    use<T: AsyncDisposable | Disposable | null | undefined>(mut self, value: T) -> T,
     /**
      * Adds a value and associated disposal callback as a resource to the stack.
      * @param value The value to add.
@@ -91,11 +89,11 @@ export declare class AsyncDisposableStack {
      * as the first parameter.
      * @returns The provided {@link value}.
      */
-    adopt<T>(mut self, value: T, onDisposeAsync: fn (value: T) -> prelude.PromiseLike<undefined> | undefined) -> T,
+    adopt<T>(mut self, value: T, onDisposeAsync: fn (value: T) -> PromiseLike<undefined> | undefined) -> T,
     /**
      * Adds a callback to be invoked when the stack is disposed.
      */
-    defer(mut self, onDisposeAsync: fn () -> prelude.PromiseLike<undefined> | undefined) -> unknown,
+    defer(mut self, onDisposeAsync: fn () -> PromiseLike<undefined> | undefined) -> unknown,
     /**
      * Move all resources out of this stack and into a new `DisposableStack`, and marks this stack as disposed.
      * @example
@@ -126,7 +124,7 @@ export declare class AsyncDisposableStack {
      * ```
      */
     move(mut self) -> AsyncDisposableStack,
-    [Symbol.asyncDispose](mut self) -> prelude.Promise<undefined>,
+    [Symbol.asyncDispose](mut self) -> Promise<undefined>,
     readonly [Symbol.toStringTag]: string,
     constructor(mut self),
     static readonly prototype: AsyncDisposableStack

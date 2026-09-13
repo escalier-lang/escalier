@@ -2,7 +2,6 @@
 // Its facts come from the pinned lib.*.d.ts set, the ECMA-262
 // derived facts, and the overlay. Change one of those and re-run.
 
-import "std:prelude"
 import "std:weak_ref"
 
 @js("Map")
@@ -49,16 +48,16 @@ export declare class Map<K, V> {
     values(self) -> MapIterator<V>,
     readonly [Symbol.toStringTag]: string,
     constructor(mut self),
-    constructor(mut self, entries?: prelude.Array<[K, V]> | null),
+    constructor(mut self, entries?: Array<[K, V]> | null),
     static readonly prototype: mut Map<any, any>,
-    constructor(mut self, iterable?: prelude.Iterable<[K, V]> | null),
+    constructor(mut self, iterable?: Iterable<[K, V]> | null),
     static readonly [Symbol.species]: typeof Map,
     /**
      * Groups members of an iterable according to the return value of the passed callback.
      * @param items An iterable.
      * @param keySelector A callback which will be invoked for each item in items.
      */
-    static groupBy<K, T>(items: prelude.Iterable<T>, keySelector: fn (item: T, index: number) -> K) -> mut Map<K, mut prelude.Array<T>>
+    static groupBy<K, T>(items: Iterable<T>, keySelector: fn (item: T, index: number) -> K) -> mut Map<K, mut Array<T>>
 }
 
 @js("WeakMap")
@@ -82,11 +81,11 @@ export declare class WeakMap<K: weak_ref.WeakKey, V> {
      */
     set(mut self, key: K, value: V) -> Self,
     readonly [Symbol.toStringTag]: string,
-    constructor(mut self, entries?: prelude.Array<[K, V]> | null),
+    constructor(mut self, entries?: Array<[K, V]> | null),
     static readonly prototype: WeakMap<weak_ref.WeakKey, any>,
-    constructor(mut self, iterable: prelude.Iterable<[K, V]>)
+    constructor(mut self, iterable: Iterable<[K, V]>)
 }
 
-export declare interface MapIterator<T> extends prelude.IteratorObject<T, prelude.BuiltinIteratorReturn, unknown> {
+export declare interface MapIterator<T> extends IteratorObject<T, BuiltinIteratorReturn, unknown> {
     [Symbol.iterator]() -> MapIterator<T>
 }

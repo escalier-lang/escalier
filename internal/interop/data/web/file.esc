@@ -2,7 +2,6 @@
 // Its facts come from the pinned lib.*.d.ts set, the ECMA-262
 // derived facts, and the overlay. Change one of those and re-run.
 
-import "std:prelude"
 import "std:typed_arrays"
 import "web:core"
 import "web:dom"
@@ -29,17 +28,17 @@ export declare class Blob {
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/Blob/type) */
     readonly type: string,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/Blob/arrayBuffer) */
-    arrayBuffer(mut self) -> prelude.Promise<typed_arrays.ArrayBuffer>,
+    arrayBuffer(mut self) -> Promise<typed_arrays.ArrayBuffer>,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/Blob/bytes) */
-    bytes(mut self) -> prelude.Promise<typed_arrays.Uint8Array>,
+    bytes(mut self) -> Promise<typed_arrays.Uint8Array>,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/Blob/slice) */
     slice(self, start?: number, end?: number, contentType?: string) -> Blob,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/Blob/stream) */
     stream(mut self) -> streams.ReadableStream<typed_arrays.Uint8Array>,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/Blob/text) */
-    text(mut self) -> prelude.Promise<string>,
+    text(mut self) -> Promise<string>,
     static prototype: Blob,
-    constructor(mut self, blobParts?: mut prelude.Array<BlobPart>, options?: BlobPropertyBag)
+    constructor(mut self, blobParts?: mut Array<BlobPart>, options?: BlobPropertyBag)
 }
 
 /**
@@ -56,7 +55,7 @@ export declare class File extends Blob {
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/File/webkitRelativePath) */
     readonly webkitRelativePath: string,
     static prototype: File,
-    constructor(mut self, fileBits: mut prelude.Array<BlobPart>, fileName: string, options?: FilePropertyBag)
+    constructor(mut self, fileBits: mut Array<BlobPart>, fileName: string, options?: FilePropertyBag)
 }
 
 /**
@@ -70,7 +69,7 @@ export declare class FileList {
     readonly length: number,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/FileList/item) */
     item(mut self, index: number) -> File | null,
-    [Symbol.iterator](self) -> prelude.ArrayIterator<File>,
+    [Symbol.iterator](self) -> ArrayIterator<File>,
     static prototype: FileList,
     constructor(mut self)
 }

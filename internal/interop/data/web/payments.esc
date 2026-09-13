@@ -2,7 +2,6 @@
 // Its facts come from the pinned lib.*.d.ts set, the ECMA-262
 // derived facts, and the overlay. Change one of those and re-run.
 
-import "std:prelude"
 import "web:core"
 import "web:dom"
 
@@ -31,9 +30,9 @@ export declare interface PaymentCurrencyAmount {
 }
 
 export declare interface PaymentDetailsBase {
-    displayItems?: mut prelude.Array<PaymentItem>,
-    modifiers?: mut prelude.Array<PaymentDetailsModifier>,
-    shippingOptions?: mut prelude.Array<PaymentShippingOption>
+    displayItems?: mut Array<PaymentItem>,
+    modifiers?: mut Array<PaymentDetailsModifier>,
+    shippingOptions?: mut Array<PaymentShippingOption>
 }
 
 export declare interface PaymentDetailsInit extends PaymentDetailsBase {
@@ -42,7 +41,7 @@ export declare interface PaymentDetailsInit extends PaymentDetailsBase {
 }
 
 export declare interface PaymentDetailsModifier {
-    additionalDisplayItems?: mut prelude.Array<PaymentItem>,
+    additionalDisplayItems?: mut Array<PaymentItem>,
     data?: any,
     supportedMethods: string,
     total?: PaymentItem
@@ -156,17 +155,17 @@ export declare class PaymentRequest extends core.EventTarget {
      */
     readonly shippingType: PaymentShippingType | null,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/PaymentRequest/abort) */
-    abort(mut self) -> prelude.Promise<undefined>,
+    abort(mut self) -> Promise<undefined>,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/PaymentRequest/canMakePayment) */
-    canMakePayment(self) -> prelude.Promise<boolean>,
+    canMakePayment(self) -> Promise<boolean>,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/PaymentRequest/show) */
-    show(mut self, detailsPromise?: PaymentDetailsUpdate | prelude.PromiseLike<PaymentDetailsUpdate>) -> prelude.Promise<PaymentResponse>,
+    show(mut self, detailsPromise?: PaymentDetailsUpdate | PromiseLike<PaymentDetailsUpdate>) -> Promise<PaymentResponse>,
     addEventListener<K: keyof PaymentRequestEventMap>(mut self, type: K, listener: fn (this: PaymentRequest, ev: PaymentRequestEventMap[K]) -> any, options?: boolean | core.AddEventListenerOptions) -> unknown,
     addEventListener(mut self, type: string, listener: core.EventListenerOrEventListenerObject, options?: boolean | core.AddEventListenerOptions) -> unknown,
     removeEventListener<K: keyof PaymentRequestEventMap>(mut self, type: K, listener: fn (this: PaymentRequest, ev: PaymentRequestEventMap[K]) -> any, options?: boolean | core.EventListenerOptions) -> unknown,
     removeEventListener(mut self, type: string, listener: core.EventListenerOrEventListenerObject, options?: boolean | core.EventListenerOptions) -> unknown,
     static prototype: PaymentRequest,
-    constructor(mut self, methodData: mut prelude.Array<PaymentMethodData>, details: PaymentDetailsInit, options?: PaymentOptions)
+    constructor(mut self, methodData: mut Array<PaymentMethodData>, details: PaymentDetailsInit, options?: PaymentOptions)
 }
 
 export declare interface PaymentResponseEventMap {
@@ -200,9 +199,9 @@ export declare class PaymentResponse extends core.EventTarget {
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/PaymentResponse/shippingOption) */
     readonly shippingOption: string | null,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/PaymentResponse/complete) */
-    complete(mut self, result?: PaymentComplete) -> prelude.Promise<undefined>,
+    complete(mut self, result?: PaymentComplete) -> Promise<undefined>,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/PaymentResponse/retry) */
-    retry(mut self, errorFields?: PaymentValidationErrors) -> prelude.Promise<undefined>,
+    retry(mut self, errorFields?: PaymentValidationErrors) -> Promise<undefined>,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/PaymentResponse/toJSON) */
     toJSON(self) -> any,
     addEventListener<K: keyof PaymentResponseEventMap>(mut self, type: K, listener: fn (this: PaymentResponse, ev: PaymentResponseEventMap[K]) -> any, options?: boolean | core.AddEventListenerOptions) -> unknown,

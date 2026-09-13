@@ -3,24 +3,23 @@
 // derived facts, and the overlay. Change one of those and re-run.
 
 import "std:intl"
-import "std:prelude"
 
 @js("Int8Array")
 export declare class Int8Array<TArrayBuffer: ArrayBufferLike> {
-    toLocaleString(self, locales: string | mut prelude.Array<string>, options?: intl.NumberFormatOptions) -> string,
-    [Symbol.iterator](self) -> prelude.ArrayIterator<number>,
+    toLocaleString(self, locales: string | mut Array<string>, options?: intl.NumberFormatOptions) -> string,
+    [Symbol.iterator](self) -> ArrayIterator<number>,
     /**
      * Returns an array of key, value pairs for every entry in the array
      */
-    entries(self) -> prelude.ArrayIterator<[number, number]>,
+    entries(self) -> ArrayIterator<[number, number]>,
     /**
      * Returns an list of keys in the array
      */
-    keys(self) -> prelude.ArrayIterator<number>,
+    keys(self) -> ArrayIterator<number>,
     /**
      * Returns an list of values in the array
      */
-    values(self) -> prelude.ArrayIterator<number>,
+    values(self) -> ArrayIterator<number>,
     readonly [Symbol.toStringTag]: "Int8Array",
     /**
      * Determines whether an array includes a certain element, returning true or false as appropriate.
@@ -245,7 +244,7 @@ export declare class Int8Array<TArrayBuffer: ArrayBufferLike> {
      * @param array A typed or untyped array of values to set.
      * @param offset The index in the current array at which the values are to be written.
      */
-    set(mut self, array: prelude.ArrayLike<number>, offset?: number) -> unknown,
+    set(mut self, array: ArrayLike<number>, offset?: number) -> unknown,
     /**
      * Returns a section of an array.
      * @param start The beginning of the specified portion of the array.
@@ -288,26 +287,26 @@ export declare class Int8Array<TArrayBuffer: ArrayBufferLike> {
     toString(self) -> string,
     /** Returns the primitive value of the specified object. */
     valueOf(self) -> Self,
-    constructor(mut self, elements: prelude.Iterable<number>),
+    constructor(mut self, elements: Iterable<number>),
     /**
      * Creates an array from an array-like or iterable object.
      * @param elements An iterable object to convert to an array.
      */
-    static from(elements: prelude.Iterable<number>) -> Int8Array<ArrayBuffer>,
+    static from(elements: Iterable<number>) -> Int8Array<ArrayBuffer>,
     /**
      * Creates an array from an array-like or iterable object.
      * @param elements An iterable object to convert to an array.
      * @param mapfn A mapping function to call on every element of the array.
      * @param thisArg Value of 'this' used to invoke the mapfn.
      */
-    static from<T>(elements: prelude.Iterable<T>, mapfn?: fn (v: T, k: number) -> number, thisArg?: unknown) -> Int8Array<ArrayBuffer>,
+    static from<T>(elements: Iterable<T>, mapfn?: fn (v: T, k: number) -> number, thisArg?: unknown) -> Int8Array<ArrayBuffer>,
     constructor(mut self),
     static readonly prototype: Int8Array<ArrayBufferLike>,
     constructor(mut self, length: number),
-    constructor(mut self, array: prelude.ArrayLike<number>),
+    constructor(mut self, array: ArrayLike<number>),
     constructor(mut self, buffer: TArrayBuffer, byteOffset?: number, length?: number),
     constructor(mut self, buffer: ArrayBuffer, byteOffset?: number, length?: number),
-    constructor(mut self, array: prelude.ArrayLike<number> | ArrayBuffer),
+    constructor(mut self, array: ArrayLike<number> | ArrayBuffer),
     /**
      * The size in bytes of each element in the array.
      */
@@ -316,37 +315,37 @@ export declare class Int8Array<TArrayBuffer: ArrayBufferLike> {
      * Returns a new array from a set of elements.
      * @param items A set of elements to include in the new array object.
      */
-    static of(...items: mut prelude.Array<number>) -> Int8Array<ArrayBuffer>,
+    static of(...items: mut Array<number>) -> Int8Array<ArrayBuffer>,
     /**
      * Creates an array from an array-like or iterable object.
      * @param arrayLike An array-like object to convert to an array.
      */
-    static from(arrayLike: prelude.ArrayLike<number>) -> Int8Array<ArrayBuffer>,
+    static from(arrayLike: ArrayLike<number>) -> Int8Array<ArrayBuffer>,
     /**
      * Creates an array from an array-like or iterable object.
      * @param arrayLike An array-like object to convert to an array.
      * @param mapfn A mapping function to call on every element of the array.
      * @param thisArg Value of 'this' used to invoke the mapfn.
      */
-    static from<T>(arrayLike: prelude.ArrayLike<T>, mapfn: fn (v: T, k: number) -> number, thisArg?: unknown) -> Int8Array<ArrayBuffer>
+    static from<T>(arrayLike: ArrayLike<T>, mapfn: fn (v: T, k: number) -> number, thisArg?: unknown) -> Int8Array<ArrayBuffer>
 }
 
 @js("Uint8Array")
 export declare class Uint8Array<TArrayBuffer: ArrayBufferLike> {
-    toLocaleString(self, locales: string | mut prelude.Array<string>, options?: intl.NumberFormatOptions) -> string,
-    [Symbol.iterator](self) -> prelude.ArrayIterator<number>,
+    toLocaleString(self, locales: string | mut Array<string>, options?: intl.NumberFormatOptions) -> string,
+    [Symbol.iterator](self) -> ArrayIterator<number>,
     /**
      * Returns an array of key, value pairs for every entry in the array
      */
-    entries(self) -> prelude.ArrayIterator<[number, number]>,
+    entries(self) -> ArrayIterator<[number, number]>,
     /**
      * Returns an list of keys in the array
      */
-    keys(self) -> prelude.ArrayIterator<number>,
+    keys(self) -> ArrayIterator<number>,
     /**
      * Returns an list of values in the array
      */
-    values(self) -> prelude.ArrayIterator<number>,
+    values(self) -> ArrayIterator<number>,
     readonly [Symbol.toStringTag]: "Uint8Array",
     /**
      * Determines whether an array includes a certain element, returning true or false as appropriate.
@@ -571,7 +570,7 @@ export declare class Uint8Array<TArrayBuffer: ArrayBufferLike> {
      * @param array A typed or untyped array of values to set.
      * @param offset The index in the current array at which the values are to be written.
      */
-    set(mut self, array: prelude.ArrayLike<number>, offset?: number) -> unknown,
+    set(mut self, array: ArrayLike<number>, offset?: number) -> unknown,
     /**
      * Returns a section of an array.
      * @param start The beginning of the specified portion of the array.
@@ -614,26 +613,26 @@ export declare class Uint8Array<TArrayBuffer: ArrayBufferLike> {
     toString(self) -> string,
     /** Returns the primitive value of the specified object. */
     valueOf(self) -> Self,
-    constructor(mut self, elements: prelude.Iterable<number>),
+    constructor(mut self, elements: Iterable<number>),
     /**
      * Creates an array from an array-like or iterable object.
      * @param elements An iterable object to convert to an array.
      */
-    static from(elements: prelude.Iterable<number>) -> Uint8Array<ArrayBuffer>,
+    static from(elements: Iterable<number>) -> Uint8Array<ArrayBuffer>,
     /**
      * Creates an array from an array-like or iterable object.
      * @param elements An iterable object to convert to an array.
      * @param mapfn A mapping function to call on every element of the array.
      * @param thisArg Value of 'this' used to invoke the mapfn.
      */
-    static from<T>(elements: prelude.Iterable<T>, mapfn?: fn (v: T, k: number) -> number, thisArg?: unknown) -> Uint8Array<ArrayBuffer>,
+    static from<T>(elements: Iterable<T>, mapfn?: fn (v: T, k: number) -> number, thisArg?: unknown) -> Uint8Array<ArrayBuffer>,
     constructor(mut self),
     static readonly prototype: Uint8Array<ArrayBufferLike>,
     constructor(mut self, length: number),
-    constructor(mut self, array: prelude.ArrayLike<number>),
+    constructor(mut self, array: ArrayLike<number>),
     constructor(mut self, buffer: TArrayBuffer, byteOffset?: number, length?: number),
     constructor(mut self, buffer: ArrayBuffer, byteOffset?: number, length?: number),
-    constructor(mut self, array: prelude.ArrayLike<number> | ArrayBuffer),
+    constructor(mut self, array: ArrayLike<number> | ArrayBuffer),
     /**
      * The size in bytes of each element in the array.
      */
@@ -642,37 +641,37 @@ export declare class Uint8Array<TArrayBuffer: ArrayBufferLike> {
      * Returns a new array from a set of elements.
      * @param items A set of elements to include in the new array object.
      */
-    static of(...items: mut prelude.Array<number>) -> Uint8Array<ArrayBuffer>,
+    static of(...items: mut Array<number>) -> Uint8Array<ArrayBuffer>,
     /**
      * Creates an array from an array-like or iterable object.
      * @param arrayLike An array-like object to convert to an array.
      */
-    static from(arrayLike: prelude.ArrayLike<number>) -> Uint8Array<ArrayBuffer>,
+    static from(arrayLike: ArrayLike<number>) -> Uint8Array<ArrayBuffer>,
     /**
      * Creates an array from an array-like or iterable object.
      * @param arrayLike An array-like object to convert to an array.
      * @param mapfn A mapping function to call on every element of the array.
      * @param thisArg Value of 'this' used to invoke the mapfn.
      */
-    static from<T>(arrayLike: prelude.ArrayLike<T>, mapfn: fn (v: T, k: number) -> number, thisArg?: unknown) -> Uint8Array<ArrayBuffer>
+    static from<T>(arrayLike: ArrayLike<T>, mapfn: fn (v: T, k: number) -> number, thisArg?: unknown) -> Uint8Array<ArrayBuffer>
 }
 
 @js("Uint8ClampedArray")
 export declare class Uint8ClampedArray<TArrayBuffer: ArrayBufferLike> {
-    toLocaleString(self, locales: string | mut prelude.Array<string>, options?: intl.NumberFormatOptions) -> string,
-    [Symbol.iterator](self) -> prelude.ArrayIterator<number>,
+    toLocaleString(self, locales: string | mut Array<string>, options?: intl.NumberFormatOptions) -> string,
+    [Symbol.iterator](self) -> ArrayIterator<number>,
     /**
      * Returns an array of key, value pairs for every entry in the array
      */
-    entries(self) -> prelude.ArrayIterator<[number, number]>,
+    entries(self) -> ArrayIterator<[number, number]>,
     /**
      * Returns an list of keys in the array
      */
-    keys(self) -> prelude.ArrayIterator<number>,
+    keys(self) -> ArrayIterator<number>,
     /**
      * Returns an list of values in the array
      */
-    values(self) -> prelude.ArrayIterator<number>,
+    values(self) -> ArrayIterator<number>,
     readonly [Symbol.toStringTag]: "Uint8ClampedArray",
     /**
      * Determines whether an array includes a certain element, returning true or false as appropriate.
@@ -897,7 +896,7 @@ export declare class Uint8ClampedArray<TArrayBuffer: ArrayBufferLike> {
      * @param array A typed or untyped array of values to set.
      * @param offset The index in the current array at which the values are to be written.
      */
-    set(mut self, array: prelude.ArrayLike<number>, offset?: number) -> unknown,
+    set(mut self, array: ArrayLike<number>, offset?: number) -> unknown,
     /**
      * Returns a section of an array.
      * @param start The beginning of the specified portion of the array.
@@ -940,26 +939,26 @@ export declare class Uint8ClampedArray<TArrayBuffer: ArrayBufferLike> {
     toString(self) -> string,
     /** Returns the primitive value of the specified object. */
     valueOf(self) -> Self,
-    constructor(mut self, elements: prelude.Iterable<number>),
+    constructor(mut self, elements: Iterable<number>),
     /**
      * Creates an array from an array-like or iterable object.
      * @param elements An iterable object to convert to an array.
      */
-    static from(elements: prelude.Iterable<number>) -> Uint8ClampedArray<ArrayBuffer>,
+    static from(elements: Iterable<number>) -> Uint8ClampedArray<ArrayBuffer>,
     /**
      * Creates an array from an array-like or iterable object.
      * @param elements An iterable object to convert to an array.
      * @param mapfn A mapping function to call on every element of the array.
      * @param thisArg Value of 'this' used to invoke the mapfn.
      */
-    static from<T>(elements: prelude.Iterable<T>, mapfn?: fn (v: T, k: number) -> number, thisArg?: unknown) -> Uint8ClampedArray<ArrayBuffer>,
+    static from<T>(elements: Iterable<T>, mapfn?: fn (v: T, k: number) -> number, thisArg?: unknown) -> Uint8ClampedArray<ArrayBuffer>,
     constructor(mut self),
     static readonly prototype: Uint8ClampedArray<ArrayBufferLike>,
     constructor(mut self, length: number),
-    constructor(mut self, array: prelude.ArrayLike<number>),
+    constructor(mut self, array: ArrayLike<number>),
     constructor(mut self, buffer: TArrayBuffer, byteOffset?: number, length?: number),
     constructor(mut self, buffer: ArrayBuffer, byteOffset?: number, length?: number),
-    constructor(mut self, array: prelude.ArrayLike<number> | ArrayBuffer),
+    constructor(mut self, array: ArrayLike<number> | ArrayBuffer),
     /**
      * The size in bytes of each element in the array.
      */
@@ -968,37 +967,37 @@ export declare class Uint8ClampedArray<TArrayBuffer: ArrayBufferLike> {
      * Returns a new array from a set of elements.
      * @param items A set of elements to include in the new array object.
      */
-    static of(...items: mut prelude.Array<number>) -> Uint8ClampedArray<ArrayBuffer>,
+    static of(...items: mut Array<number>) -> Uint8ClampedArray<ArrayBuffer>,
     /**
      * Creates an array from an array-like or iterable object.
      * @param arrayLike An array-like object to convert to an array.
      */
-    static from(arrayLike: prelude.ArrayLike<number>) -> Uint8ClampedArray<ArrayBuffer>,
+    static from(arrayLike: ArrayLike<number>) -> Uint8ClampedArray<ArrayBuffer>,
     /**
      * Creates an array from an array-like or iterable object.
      * @param arrayLike An array-like object to convert to an array.
      * @param mapfn A mapping function to call on every element of the array.
      * @param thisArg Value of 'this' used to invoke the mapfn.
      */
-    static from<T>(arrayLike: prelude.ArrayLike<T>, mapfn: fn (v: T, k: number) -> number, thisArg?: unknown) -> Uint8ClampedArray<ArrayBuffer>
+    static from<T>(arrayLike: ArrayLike<T>, mapfn: fn (v: T, k: number) -> number, thisArg?: unknown) -> Uint8ClampedArray<ArrayBuffer>
 }
 
 @js("Int16Array")
 export declare class Int16Array<TArrayBuffer: ArrayBufferLike> {
-    toLocaleString(self, locales: string | mut prelude.Array<string>, options?: intl.NumberFormatOptions) -> string,
-    [Symbol.iterator](self) -> prelude.ArrayIterator<number>,
+    toLocaleString(self, locales: string | mut Array<string>, options?: intl.NumberFormatOptions) -> string,
+    [Symbol.iterator](self) -> ArrayIterator<number>,
     /**
      * Returns an array of key, value pairs for every entry in the array
      */
-    entries(self) -> prelude.ArrayIterator<[number, number]>,
+    entries(self) -> ArrayIterator<[number, number]>,
     /**
      * Returns an list of keys in the array
      */
-    keys(self) -> prelude.ArrayIterator<number>,
+    keys(self) -> ArrayIterator<number>,
     /**
      * Returns an list of values in the array
      */
-    values(self) -> prelude.ArrayIterator<number>,
+    values(self) -> ArrayIterator<number>,
     readonly [Symbol.toStringTag]: "Int16Array",
     /**
      * Determines whether an array includes a certain element, returning true or false as appropriate.
@@ -1223,7 +1222,7 @@ export declare class Int16Array<TArrayBuffer: ArrayBufferLike> {
      * @param array A typed or untyped array of values to set.
      * @param offset The index in the current array at which the values are to be written.
      */
-    set(mut self, array: prelude.ArrayLike<number>, offset?: number) -> unknown,
+    set(mut self, array: ArrayLike<number>, offset?: number) -> unknown,
     /**
      * Returns a section of an array.
      * @param start The beginning of the specified portion of the array.
@@ -1266,26 +1265,26 @@ export declare class Int16Array<TArrayBuffer: ArrayBufferLike> {
     toString(self) -> string,
     /** Returns the primitive value of the specified object. */
     valueOf(self) -> Self,
-    constructor(mut self, elements: prelude.Iterable<number>),
+    constructor(mut self, elements: Iterable<number>),
     /**
      * Creates an array from an array-like or iterable object.
      * @param elements An iterable object to convert to an array.
      */
-    static from(elements: prelude.Iterable<number>) -> Int16Array<ArrayBuffer>,
+    static from(elements: Iterable<number>) -> Int16Array<ArrayBuffer>,
     /**
      * Creates an array from an array-like or iterable object.
      * @param elements An iterable object to convert to an array.
      * @param mapfn A mapping function to call on every element of the array.
      * @param thisArg Value of 'this' used to invoke the mapfn.
      */
-    static from<T>(elements: prelude.Iterable<T>, mapfn?: fn (v: T, k: number) -> number, thisArg?: unknown) -> Int16Array<ArrayBuffer>,
+    static from<T>(elements: Iterable<T>, mapfn?: fn (v: T, k: number) -> number, thisArg?: unknown) -> Int16Array<ArrayBuffer>,
     constructor(mut self),
     static readonly prototype: Int16Array<ArrayBufferLike>,
     constructor(mut self, length: number),
-    constructor(mut self, array: prelude.ArrayLike<number>),
+    constructor(mut self, array: ArrayLike<number>),
     constructor(mut self, buffer: TArrayBuffer, byteOffset?: number, length?: number),
     constructor(mut self, buffer: ArrayBuffer, byteOffset?: number, length?: number),
-    constructor(mut self, array: prelude.ArrayLike<number> | ArrayBuffer),
+    constructor(mut self, array: ArrayLike<number> | ArrayBuffer),
     /**
      * The size in bytes of each element in the array.
      */
@@ -1294,37 +1293,37 @@ export declare class Int16Array<TArrayBuffer: ArrayBufferLike> {
      * Returns a new array from a set of elements.
      * @param items A set of elements to include in the new array object.
      */
-    static of(...items: mut prelude.Array<number>) -> Int16Array<ArrayBuffer>,
+    static of(...items: mut Array<number>) -> Int16Array<ArrayBuffer>,
     /**
      * Creates an array from an array-like or iterable object.
      * @param arrayLike An array-like object to convert to an array.
      */
-    static from(arrayLike: prelude.ArrayLike<number>) -> Int16Array<ArrayBuffer>,
+    static from(arrayLike: ArrayLike<number>) -> Int16Array<ArrayBuffer>,
     /**
      * Creates an array from an array-like or iterable object.
      * @param arrayLike An array-like object to convert to an array.
      * @param mapfn A mapping function to call on every element of the array.
      * @param thisArg Value of 'this' used to invoke the mapfn.
      */
-    static from<T>(arrayLike: prelude.ArrayLike<T>, mapfn: fn (v: T, k: number) -> number, thisArg?: unknown) -> Int16Array<ArrayBuffer>
+    static from<T>(arrayLike: ArrayLike<T>, mapfn: fn (v: T, k: number) -> number, thisArg?: unknown) -> Int16Array<ArrayBuffer>
 }
 
 @js("Uint16Array")
 export declare class Uint16Array<TArrayBuffer: ArrayBufferLike> {
-    toLocaleString(self, locales: string | mut prelude.Array<string>, options?: intl.NumberFormatOptions) -> string,
-    [Symbol.iterator](self) -> prelude.ArrayIterator<number>,
+    toLocaleString(self, locales: string | mut Array<string>, options?: intl.NumberFormatOptions) -> string,
+    [Symbol.iterator](self) -> ArrayIterator<number>,
     /**
      * Returns an array of key, value pairs for every entry in the array
      */
-    entries(self) -> prelude.ArrayIterator<[number, number]>,
+    entries(self) -> ArrayIterator<[number, number]>,
     /**
      * Returns an list of keys in the array
      */
-    keys(self) -> prelude.ArrayIterator<number>,
+    keys(self) -> ArrayIterator<number>,
     /**
      * Returns an list of values in the array
      */
-    values(self) -> prelude.ArrayIterator<number>,
+    values(self) -> ArrayIterator<number>,
     readonly [Symbol.toStringTag]: "Uint16Array",
     /**
      * Determines whether an array includes a certain element, returning true or false as appropriate.
@@ -1549,7 +1548,7 @@ export declare class Uint16Array<TArrayBuffer: ArrayBufferLike> {
      * @param array A typed or untyped array of values to set.
      * @param offset The index in the current array at which the values are to be written.
      */
-    set(mut self, array: prelude.ArrayLike<number>, offset?: number) -> unknown,
+    set(mut self, array: ArrayLike<number>, offset?: number) -> unknown,
     /**
      * Returns a section of an array.
      * @param start The beginning of the specified portion of the array.
@@ -1592,26 +1591,26 @@ export declare class Uint16Array<TArrayBuffer: ArrayBufferLike> {
     toString(self) -> string,
     /** Returns the primitive value of the specified object. */
     valueOf(self) -> Self,
-    constructor(mut self, elements: prelude.Iterable<number>),
+    constructor(mut self, elements: Iterable<number>),
     /**
      * Creates an array from an array-like or iterable object.
      * @param elements An iterable object to convert to an array.
      */
-    static from(elements: prelude.Iterable<number>) -> Uint16Array<ArrayBuffer>,
+    static from(elements: Iterable<number>) -> Uint16Array<ArrayBuffer>,
     /**
      * Creates an array from an array-like or iterable object.
      * @param elements An iterable object to convert to an array.
      * @param mapfn A mapping function to call on every element of the array.
      * @param thisArg Value of 'this' used to invoke the mapfn.
      */
-    static from<T>(elements: prelude.Iterable<T>, mapfn?: fn (v: T, k: number) -> number, thisArg?: unknown) -> Uint16Array<ArrayBuffer>,
+    static from<T>(elements: Iterable<T>, mapfn?: fn (v: T, k: number) -> number, thisArg?: unknown) -> Uint16Array<ArrayBuffer>,
     constructor(mut self),
     static readonly prototype: Uint16Array<ArrayBufferLike>,
     constructor(mut self, length: number),
-    constructor(mut self, array: prelude.ArrayLike<number>),
+    constructor(mut self, array: ArrayLike<number>),
     constructor(mut self, buffer: TArrayBuffer, byteOffset?: number, length?: number),
     constructor(mut self, buffer: ArrayBuffer, byteOffset?: number, length?: number),
-    constructor(mut self, array: prelude.ArrayLike<number> | ArrayBuffer),
+    constructor(mut self, array: ArrayLike<number> | ArrayBuffer),
     /**
      * The size in bytes of each element in the array.
      */
@@ -1620,37 +1619,37 @@ export declare class Uint16Array<TArrayBuffer: ArrayBufferLike> {
      * Returns a new array from a set of elements.
      * @param items A set of elements to include in the new array object.
      */
-    static of(...items: mut prelude.Array<number>) -> Uint16Array<ArrayBuffer>,
+    static of(...items: mut Array<number>) -> Uint16Array<ArrayBuffer>,
     /**
      * Creates an array from an array-like or iterable object.
      * @param arrayLike An array-like object to convert to an array.
      */
-    static from(arrayLike: prelude.ArrayLike<number>) -> Uint16Array<ArrayBuffer>,
+    static from(arrayLike: ArrayLike<number>) -> Uint16Array<ArrayBuffer>,
     /**
      * Creates an array from an array-like or iterable object.
      * @param arrayLike An array-like object to convert to an array.
      * @param mapfn A mapping function to call on every element of the array.
      * @param thisArg Value of 'this' used to invoke the mapfn.
      */
-    static from<T>(arrayLike: prelude.ArrayLike<T>, mapfn: fn (v: T, k: number) -> number, thisArg?: unknown) -> Uint16Array<ArrayBuffer>
+    static from<T>(arrayLike: ArrayLike<T>, mapfn: fn (v: T, k: number) -> number, thisArg?: unknown) -> Uint16Array<ArrayBuffer>
 }
 
 @js("Int32Array")
 export declare class Int32Array<TArrayBuffer: ArrayBufferLike> {
-    toLocaleString(self, locales: string | mut prelude.Array<string>, options?: intl.NumberFormatOptions) -> string,
-    [Symbol.iterator](self) -> prelude.ArrayIterator<number>,
+    toLocaleString(self, locales: string | mut Array<string>, options?: intl.NumberFormatOptions) -> string,
+    [Symbol.iterator](self) -> ArrayIterator<number>,
     /**
      * Returns an array of key, value pairs for every entry in the array
      */
-    entries(self) -> prelude.ArrayIterator<[number, number]>,
+    entries(self) -> ArrayIterator<[number, number]>,
     /**
      * Returns an list of keys in the array
      */
-    keys(self) -> prelude.ArrayIterator<number>,
+    keys(self) -> ArrayIterator<number>,
     /**
      * Returns an list of values in the array
      */
-    values(self) -> prelude.ArrayIterator<number>,
+    values(self) -> ArrayIterator<number>,
     readonly [Symbol.toStringTag]: "Int32Array",
     /**
      * Determines whether an array includes a certain element, returning true or false as appropriate.
@@ -1875,7 +1874,7 @@ export declare class Int32Array<TArrayBuffer: ArrayBufferLike> {
      * @param array A typed or untyped array of values to set.
      * @param offset The index in the current array at which the values are to be written.
      */
-    set(mut self, array: prelude.ArrayLike<number>, offset?: number) -> unknown,
+    set(mut self, array: ArrayLike<number>, offset?: number) -> unknown,
     /**
      * Returns a section of an array.
      * @param start The beginning of the specified portion of the array.
@@ -1918,26 +1917,26 @@ export declare class Int32Array<TArrayBuffer: ArrayBufferLike> {
     toString(self) -> string,
     /** Returns the primitive value of the specified object. */
     valueOf(self) -> Self,
-    constructor(mut self, elements: prelude.Iterable<number>),
+    constructor(mut self, elements: Iterable<number>),
     /**
      * Creates an array from an array-like or iterable object.
      * @param elements An iterable object to convert to an array.
      */
-    static from(elements: prelude.Iterable<number>) -> Int32Array<ArrayBuffer>,
+    static from(elements: Iterable<number>) -> Int32Array<ArrayBuffer>,
     /**
      * Creates an array from an array-like or iterable object.
      * @param elements An iterable object to convert to an array.
      * @param mapfn A mapping function to call on every element of the array.
      * @param thisArg Value of 'this' used to invoke the mapfn.
      */
-    static from<T>(elements: prelude.Iterable<T>, mapfn?: fn (v: T, k: number) -> number, thisArg?: unknown) -> Int32Array<ArrayBuffer>,
+    static from<T>(elements: Iterable<T>, mapfn?: fn (v: T, k: number) -> number, thisArg?: unknown) -> Int32Array<ArrayBuffer>,
     constructor(mut self),
     static readonly prototype: Int32Array<ArrayBufferLike>,
     constructor(mut self, length: number),
-    constructor(mut self, array: prelude.ArrayLike<number>),
+    constructor(mut self, array: ArrayLike<number>),
     constructor(mut self, buffer: TArrayBuffer, byteOffset?: number, length?: number),
     constructor(mut self, buffer: ArrayBuffer, byteOffset?: number, length?: number),
-    constructor(mut self, array: prelude.ArrayLike<number> | ArrayBuffer),
+    constructor(mut self, array: ArrayLike<number> | ArrayBuffer),
     /**
      * The size in bytes of each element in the array.
      */
@@ -1946,37 +1945,37 @@ export declare class Int32Array<TArrayBuffer: ArrayBufferLike> {
      * Returns a new array from a set of elements.
      * @param items A set of elements to include in the new array object.
      */
-    static of(...items: mut prelude.Array<number>) -> Int32Array<ArrayBuffer>,
+    static of(...items: mut Array<number>) -> Int32Array<ArrayBuffer>,
     /**
      * Creates an array from an array-like or iterable object.
      * @param arrayLike An array-like object to convert to an array.
      */
-    static from(arrayLike: prelude.ArrayLike<number>) -> Int32Array<ArrayBuffer>,
+    static from(arrayLike: ArrayLike<number>) -> Int32Array<ArrayBuffer>,
     /**
      * Creates an array from an array-like or iterable object.
      * @param arrayLike An array-like object to convert to an array.
      * @param mapfn A mapping function to call on every element of the array.
      * @param thisArg Value of 'this' used to invoke the mapfn.
      */
-    static from<T>(arrayLike: prelude.ArrayLike<T>, mapfn: fn (v: T, k: number) -> number, thisArg?: unknown) -> Int32Array<ArrayBuffer>
+    static from<T>(arrayLike: ArrayLike<T>, mapfn: fn (v: T, k: number) -> number, thisArg?: unknown) -> Int32Array<ArrayBuffer>
 }
 
 @js("Uint32Array")
 export declare class Uint32Array<TArrayBuffer: ArrayBufferLike> {
-    toLocaleString(self, locales: string | mut prelude.Array<string>, options?: intl.NumberFormatOptions) -> string,
-    [Symbol.iterator](self) -> prelude.ArrayIterator<number>,
+    toLocaleString(self, locales: string | mut Array<string>, options?: intl.NumberFormatOptions) -> string,
+    [Symbol.iterator](self) -> ArrayIterator<number>,
     /**
      * Returns an array of key, value pairs for every entry in the array
      */
-    entries(self) -> prelude.ArrayIterator<[number, number]>,
+    entries(self) -> ArrayIterator<[number, number]>,
     /**
      * Returns an list of keys in the array
      */
-    keys(self) -> prelude.ArrayIterator<number>,
+    keys(self) -> ArrayIterator<number>,
     /**
      * Returns an list of values in the array
      */
-    values(self) -> prelude.ArrayIterator<number>,
+    values(self) -> ArrayIterator<number>,
     readonly [Symbol.toStringTag]: "Uint32Array",
     /**
      * Determines whether an array includes a certain element, returning true or false as appropriate.
@@ -2201,7 +2200,7 @@ export declare class Uint32Array<TArrayBuffer: ArrayBufferLike> {
      * @param array A typed or untyped array of values to set.
      * @param offset The index in the current array at which the values are to be written.
      */
-    set(mut self, array: prelude.ArrayLike<number>, offset?: number) -> unknown,
+    set(mut self, array: ArrayLike<number>, offset?: number) -> unknown,
     /**
      * Returns a section of an array.
      * @param start The beginning of the specified portion of the array.
@@ -2244,26 +2243,26 @@ export declare class Uint32Array<TArrayBuffer: ArrayBufferLike> {
     toString(self) -> string,
     /** Returns the primitive value of the specified object. */
     valueOf(self) -> Self,
-    constructor(mut self, elements: prelude.Iterable<number>),
+    constructor(mut self, elements: Iterable<number>),
     /**
      * Creates an array from an array-like or iterable object.
      * @param elements An iterable object to convert to an array.
      */
-    static from(elements: prelude.Iterable<number>) -> Uint32Array<ArrayBuffer>,
+    static from(elements: Iterable<number>) -> Uint32Array<ArrayBuffer>,
     /**
      * Creates an array from an array-like or iterable object.
      * @param elements An iterable object to convert to an array.
      * @param mapfn A mapping function to call on every element of the array.
      * @param thisArg Value of 'this' used to invoke the mapfn.
      */
-    static from<T>(elements: prelude.Iterable<T>, mapfn?: fn (v: T, k: number) -> number, thisArg?: unknown) -> Uint32Array<ArrayBuffer>,
+    static from<T>(elements: Iterable<T>, mapfn?: fn (v: T, k: number) -> number, thisArg?: unknown) -> Uint32Array<ArrayBuffer>,
     constructor(mut self),
     static readonly prototype: Uint32Array<ArrayBufferLike>,
     constructor(mut self, length: number),
-    constructor(mut self, array: prelude.ArrayLike<number>),
+    constructor(mut self, array: ArrayLike<number>),
     constructor(mut self, buffer: TArrayBuffer, byteOffset?: number, length?: number),
     constructor(mut self, buffer: ArrayBuffer, byteOffset?: number, length?: number),
-    constructor(mut self, array: prelude.ArrayLike<number> | ArrayBuffer),
+    constructor(mut self, array: ArrayLike<number> | ArrayBuffer),
     /**
      * The size in bytes of each element in the array.
      */
@@ -2272,37 +2271,37 @@ export declare class Uint32Array<TArrayBuffer: ArrayBufferLike> {
      * Returns a new array from a set of elements.
      * @param items A set of elements to include in the new array object.
      */
-    static of(...items: mut prelude.Array<number>) -> Uint32Array<ArrayBuffer>,
+    static of(...items: mut Array<number>) -> Uint32Array<ArrayBuffer>,
     /**
      * Creates an array from an array-like or iterable object.
      * @param arrayLike An array-like object to convert to an array.
      */
-    static from(arrayLike: prelude.ArrayLike<number>) -> Uint32Array<ArrayBuffer>,
+    static from(arrayLike: ArrayLike<number>) -> Uint32Array<ArrayBuffer>,
     /**
      * Creates an array from an array-like or iterable object.
      * @param arrayLike An array-like object to convert to an array.
      * @param mapfn A mapping function to call on every element of the array.
      * @param thisArg Value of 'this' used to invoke the mapfn.
      */
-    static from<T>(arrayLike: prelude.ArrayLike<T>, mapfn: fn (v: T, k: number) -> number, thisArg?: unknown) -> Uint32Array<ArrayBuffer>
+    static from<T>(arrayLike: ArrayLike<T>, mapfn: fn (v: T, k: number) -> number, thisArg?: unknown) -> Uint32Array<ArrayBuffer>
 }
 
 @js("Float32Array")
 export declare class Float32Array<TArrayBuffer: ArrayBufferLike> {
-    toLocaleString(self, locales: string | mut prelude.Array<string>, options?: intl.NumberFormatOptions) -> string,
-    [Symbol.iterator](self) -> prelude.ArrayIterator<number>,
+    toLocaleString(self, locales: string | mut Array<string>, options?: intl.NumberFormatOptions) -> string,
+    [Symbol.iterator](self) -> ArrayIterator<number>,
     /**
      * Returns an array of key, value pairs for every entry in the array
      */
-    entries(self) -> prelude.ArrayIterator<[number, number]>,
+    entries(self) -> ArrayIterator<[number, number]>,
     /**
      * Returns an list of keys in the array
      */
-    keys(self) -> prelude.ArrayIterator<number>,
+    keys(self) -> ArrayIterator<number>,
     /**
      * Returns an list of values in the array
      */
-    values(self) -> prelude.ArrayIterator<number>,
+    values(self) -> ArrayIterator<number>,
     readonly [Symbol.toStringTag]: "Float32Array",
     /**
      * Determines whether an array includes a certain element, returning true or false as appropriate.
@@ -2527,7 +2526,7 @@ export declare class Float32Array<TArrayBuffer: ArrayBufferLike> {
      * @param array A typed or untyped array of values to set.
      * @param offset The index in the current array at which the values are to be written.
      */
-    set(mut self, array: prelude.ArrayLike<number>, offset?: number) -> unknown,
+    set(mut self, array: ArrayLike<number>, offset?: number) -> unknown,
     /**
      * Returns a section of an array.
      * @param start The beginning of the specified portion of the array.
@@ -2570,26 +2569,26 @@ export declare class Float32Array<TArrayBuffer: ArrayBufferLike> {
     toString(self) -> string,
     /** Returns the primitive value of the specified object. */
     valueOf(self) -> Self,
-    constructor(mut self, elements: prelude.Iterable<number>),
+    constructor(mut self, elements: Iterable<number>),
     /**
      * Creates an array from an array-like or iterable object.
      * @param elements An iterable object to convert to an array.
      */
-    static from(elements: prelude.Iterable<number>) -> Float32Array<ArrayBuffer>,
+    static from(elements: Iterable<number>) -> Float32Array<ArrayBuffer>,
     /**
      * Creates an array from an array-like or iterable object.
      * @param elements An iterable object to convert to an array.
      * @param mapfn A mapping function to call on every element of the array.
      * @param thisArg Value of 'this' used to invoke the mapfn.
      */
-    static from<T>(elements: prelude.Iterable<T>, mapfn?: fn (v: T, k: number) -> number, thisArg?: unknown) -> Float32Array<ArrayBuffer>,
+    static from<T>(elements: Iterable<T>, mapfn?: fn (v: T, k: number) -> number, thisArg?: unknown) -> Float32Array<ArrayBuffer>,
     constructor(mut self),
     static readonly prototype: Float32Array<ArrayBufferLike>,
     constructor(mut self, length: number),
-    constructor(mut self, array: prelude.ArrayLike<number>),
+    constructor(mut self, array: ArrayLike<number>),
     constructor(mut self, buffer: TArrayBuffer, byteOffset?: number, length?: number),
     constructor(mut self, buffer: ArrayBuffer, byteOffset?: number, length?: number),
-    constructor(mut self, array: prelude.ArrayLike<number> | ArrayBuffer),
+    constructor(mut self, array: ArrayLike<number> | ArrayBuffer),
     /**
      * The size in bytes of each element in the array.
      */
@@ -2598,37 +2597,37 @@ export declare class Float32Array<TArrayBuffer: ArrayBufferLike> {
      * Returns a new array from a set of elements.
      * @param items A set of elements to include in the new array object.
      */
-    static of(...items: mut prelude.Array<number>) -> Float32Array<ArrayBuffer>,
+    static of(...items: mut Array<number>) -> Float32Array<ArrayBuffer>,
     /**
      * Creates an array from an array-like or iterable object.
      * @param arrayLike An array-like object to convert to an array.
      */
-    static from(arrayLike: prelude.ArrayLike<number>) -> Float32Array<ArrayBuffer>,
+    static from(arrayLike: ArrayLike<number>) -> Float32Array<ArrayBuffer>,
     /**
      * Creates an array from an array-like or iterable object.
      * @param arrayLike An array-like object to convert to an array.
      * @param mapfn A mapping function to call on every element of the array.
      * @param thisArg Value of 'this' used to invoke the mapfn.
      */
-    static from<T>(arrayLike: prelude.ArrayLike<T>, mapfn: fn (v: T, k: number) -> number, thisArg?: unknown) -> Float32Array<ArrayBuffer>
+    static from<T>(arrayLike: ArrayLike<T>, mapfn: fn (v: T, k: number) -> number, thisArg?: unknown) -> Float32Array<ArrayBuffer>
 }
 
 @js("Float64Array")
 export declare class Float64Array<TArrayBuffer: ArrayBufferLike> {
-    toLocaleString(self, locales: string | mut prelude.Array<string>, options?: intl.NumberFormatOptions) -> string,
-    [Symbol.iterator](self) -> prelude.ArrayIterator<number>,
+    toLocaleString(self, locales: string | mut Array<string>, options?: intl.NumberFormatOptions) -> string,
+    [Symbol.iterator](self) -> ArrayIterator<number>,
     /**
      * Returns an array of key, value pairs for every entry in the array
      */
-    entries(self) -> prelude.ArrayIterator<[number, number]>,
+    entries(self) -> ArrayIterator<[number, number]>,
     /**
      * Returns an list of keys in the array
      */
-    keys(self) -> prelude.ArrayIterator<number>,
+    keys(self) -> ArrayIterator<number>,
     /**
      * Returns an list of values in the array
      */
-    values(self) -> prelude.ArrayIterator<number>,
+    values(self) -> ArrayIterator<number>,
     readonly [Symbol.toStringTag]: "Float64Array",
     /**
      * Determines whether an array includes a certain element, returning true or false as appropriate.
@@ -2853,7 +2852,7 @@ export declare class Float64Array<TArrayBuffer: ArrayBufferLike> {
      * @param array A typed or untyped array of values to set.
      * @param offset The index in the current array at which the values are to be written.
      */
-    set(mut self, array: prelude.ArrayLike<number>, offset?: number) -> unknown,
+    set(mut self, array: ArrayLike<number>, offset?: number) -> unknown,
     /**
      * Returns a section of an array.
      * @param start The beginning of the specified portion of the array.
@@ -2896,26 +2895,26 @@ export declare class Float64Array<TArrayBuffer: ArrayBufferLike> {
     toString(self) -> string,
     /** Returns the primitive value of the specified object. */
     valueOf(self) -> Self,
-    constructor(mut self, elements: prelude.Iterable<number>),
+    constructor(mut self, elements: Iterable<number>),
     /**
      * Creates an array from an array-like or iterable object.
      * @param elements An iterable object to convert to an array.
      */
-    static from(elements: prelude.Iterable<number>) -> Float64Array<ArrayBuffer>,
+    static from(elements: Iterable<number>) -> Float64Array<ArrayBuffer>,
     /**
      * Creates an array from an array-like or iterable object.
      * @param elements An iterable object to convert to an array.
      * @param mapfn A mapping function to call on every element of the array.
      * @param thisArg Value of 'this' used to invoke the mapfn.
      */
-    static from<T>(elements: prelude.Iterable<T>, mapfn?: fn (v: T, k: number) -> number, thisArg?: unknown) -> Float64Array<ArrayBuffer>,
+    static from<T>(elements: Iterable<T>, mapfn?: fn (v: T, k: number) -> number, thisArg?: unknown) -> Float64Array<ArrayBuffer>,
     constructor(mut self),
     static readonly prototype: Float64Array<ArrayBufferLike>,
     constructor(mut self, length: number),
-    constructor(mut self, array: prelude.ArrayLike<number>),
+    constructor(mut self, array: ArrayLike<number>),
     constructor(mut self, buffer: TArrayBuffer, byteOffset?: number, length?: number),
     constructor(mut self, buffer: ArrayBuffer, byteOffset?: number, length?: number),
-    constructor(mut self, array: prelude.ArrayLike<number> | ArrayBuffer),
+    constructor(mut self, array: ArrayLike<number> | ArrayBuffer),
     /**
      * The size in bytes of each element in the array.
      */
@@ -2924,19 +2923,19 @@ export declare class Float64Array<TArrayBuffer: ArrayBufferLike> {
      * Returns a new array from a set of elements.
      * @param items A set of elements to include in the new array object.
      */
-    static of(...items: mut prelude.Array<number>) -> Float64Array<ArrayBuffer>,
+    static of(...items: mut Array<number>) -> Float64Array<ArrayBuffer>,
     /**
      * Creates an array from an array-like or iterable object.
      * @param arrayLike An array-like object to convert to an array.
      */
-    static from(arrayLike: prelude.ArrayLike<number>) -> Float64Array<ArrayBuffer>,
+    static from(arrayLike: ArrayLike<number>) -> Float64Array<ArrayBuffer>,
     /**
      * Creates an array from an array-like or iterable object.
      * @param arrayLike An array-like object to convert to an array.
      * @param mapfn A mapping function to call on every element of the array.
      * @param thisArg Value of 'this' used to invoke the mapfn.
      */
-    static from<T>(arrayLike: prelude.ArrayLike<T>, mapfn: fn (v: T, k: number) -> number, thisArg?: unknown) -> Float64Array<ArrayBuffer>
+    static from<T>(arrayLike: ArrayLike<T>, mapfn: fn (v: T, k: number) -> number, thisArg?: unknown) -> Float64Array<ArrayBuffer>
 }
 
 @js("ArrayBuffer")
@@ -3398,7 +3397,7 @@ export declare fn waitAsync(typedArray: Int32Array, index: number, value: number
     value: "not-equal" | "timed-out"
 } | {
     async: true,
-    value: prelude.Promise<"ok" | "timed-out">
+    value: Promise<"ok" | "timed-out">
 }
 
 /**
@@ -3415,7 +3414,7 @@ export declare fn waitAsync(typedArray: BigInt64Array, index: number, value: big
     value: "not-equal" | "timed-out"
 } | {
     async: true,
-    value: prelude.Promise<"ok" | "timed-out">
+    value: Promise<"ok" | "timed-out">
 }
 
 /**
@@ -3443,7 +3442,7 @@ export declare class BigInt64Array<TArrayBuffer: ArrayBufferLike = ArrayBufferLi
      */
     copyWithin(mut self, target: number, start: number, end?: number) -> Self,
     /** Yields index, value pairs for every entry in the array. */
-    entries(self) -> prelude.ArrayIterator<[number, bigint]>,
+    entries(self) -> ArrayIterator<[number, bigint]>,
     /**
      * Determines whether all the members of an array satisfy the specified test.
      * @param predicate A function that accepts up to three arguments. The every method calls
@@ -3518,7 +3517,7 @@ export declare class BigInt64Array<TArrayBuffer: ArrayBufferLike = ArrayBufferLi
      */
     join(mut self, separator?: string) -> string,
     /** Yields each index in the array. */
-    keys(self) -> prelude.ArrayIterator<number>,
+    keys(self) -> ArrayIterator<number>,
     /**
      * Returns the index of the last occurrence of a value in an array.
      * @param searchElement The value to locate in the array.
@@ -3588,7 +3587,7 @@ export declare class BigInt64Array<TArrayBuffer: ArrayBufferLike = ArrayBufferLi
      * @param array A typed or untyped array of values to set.
      * @param offset The index in the current array at which the values are to be written.
      */
-    set(mut self, array: prelude.ArrayLike<bigint>, offset?: number) -> unknown,
+    set(mut self, array: ArrayLike<bigint>, offset?: number) -> unknown,
     /**
      * Returns a section of an array.
      * @param start The beginning of the specified portion of the array.
@@ -3617,14 +3616,14 @@ export declare class BigInt64Array<TArrayBuffer: ArrayBufferLike = ArrayBufferLi
      */
     subarray(mut self, begin?: number, end?: number) -> BigInt64Array<TArrayBuffer>,
     /** Converts the array to a string by using the current locale. */
-    toLocaleString(self, locales?: string | mut prelude.Array<string>, options?: intl.NumberFormatOptions) -> string,
+    toLocaleString(self, locales?: string | mut Array<string>, options?: intl.NumberFormatOptions) -> string,
     /** Returns a string representation of the array. */
     toString(self) -> string,
     /** Returns the primitive value of the specified object. */
     valueOf(self) -> BigInt64Array<TArrayBuffer>,
     /** Yields each value in the array. */
-    values(self) -> prelude.ArrayIterator<bigint>,
-    [Symbol.iterator](self) -> prelude.ArrayIterator<bigint>,
+    values(self) -> ArrayIterator<bigint>,
+    [Symbol.iterator](self) -> ArrayIterator<bigint>,
     readonly [Symbol.toStringTag]: "BigInt64Array",
     /**
      * Returns the item located at the specified index.
@@ -3677,41 +3676,41 @@ export declare class BigInt64Array<TArrayBuffer: ArrayBufferLike = ArrayBufferLi
     with(self, index: number, value: bigint) -> BigInt64Array<ArrayBuffer>,
     static readonly prototype: BigInt64Array<ArrayBufferLike>,
     constructor(mut self, length?: number),
-    constructor(mut self, array: prelude.ArrayLike<bigint> | prelude.Iterable<bigint>),
+    constructor(mut self, array: ArrayLike<bigint> | Iterable<bigint>),
     constructor(mut self, buffer: TArrayBuffer, byteOffset?: number, length?: number),
     constructor(mut self, buffer: ArrayBuffer, byteOffset?: number, length?: number),
-    constructor(mut self, array: prelude.ArrayLike<bigint> | ArrayBuffer),
+    constructor(mut self, array: ArrayLike<bigint> | ArrayBuffer),
     /** The size in bytes of each element in the array. */
     static readonly BYTES_PER_ELEMENT: number,
     /**
      * Returns a new array from a set of elements.
      * @param items A set of elements to include in the new array object.
      */
-    static of(...items: mut prelude.Array<bigint>) -> BigInt64Array<ArrayBuffer>,
+    static of(...items: mut Array<bigint>) -> BigInt64Array<ArrayBuffer>,
     /**
      * Creates an array from an array-like or iterable object.
      * @param arrayLike An array-like object to convert to an array.
      */
-    static from(arrayLike: prelude.ArrayLike<bigint>) -> BigInt64Array<ArrayBuffer>,
+    static from(arrayLike: ArrayLike<bigint>) -> BigInt64Array<ArrayBuffer>,
     /**
      * Creates an array from an array-like or iterable object.
      * @param arrayLike An array-like object to convert to an array.
      * @param mapfn A mapping function to call on every element of the array.
      * @param thisArg Value of 'this' used to invoke the mapfn.
      */
-    static from<U>(arrayLike: prelude.ArrayLike<U>, mapfn: fn (v: U, k: number) -> bigint, thisArg?: unknown) -> BigInt64Array<ArrayBuffer>,
+    static from<U>(arrayLike: ArrayLike<U>, mapfn: fn (v: U, k: number) -> bigint, thisArg?: unknown) -> BigInt64Array<ArrayBuffer>,
     /**
      * Creates an array from an array-like or iterable object.
      * @param elements An iterable object to convert to an array.
      */
-    static from(elements: prelude.Iterable<bigint>) -> BigInt64Array<ArrayBuffer>,
+    static from(elements: Iterable<bigint>) -> BigInt64Array<ArrayBuffer>,
     /**
      * Creates an array from an array-like or iterable object.
      * @param elements An iterable object to convert to an array.
      * @param mapfn A mapping function to call on every element of the array.
      * @param thisArg Value of 'this' used to invoke the mapfn.
      */
-    static from<T>(elements: prelude.Iterable<T>, mapfn?: fn (v: T, k: number) -> bigint, thisArg?: unknown) -> BigInt64Array<ArrayBuffer>
+    static from<T>(elements: Iterable<T>, mapfn?: fn (v: T, k: number) -> bigint, thisArg?: unknown) -> BigInt64Array<ArrayBuffer>
 }
 
 /**
@@ -3739,7 +3738,7 @@ export declare class BigUint64Array<TArrayBuffer: ArrayBufferLike = ArrayBufferL
      */
     copyWithin(mut self, target: number, start: number, end?: number) -> Self,
     /** Yields index, value pairs for every entry in the array. */
-    entries(self) -> prelude.ArrayIterator<[number, bigint]>,
+    entries(self) -> ArrayIterator<[number, bigint]>,
     /**
      * Determines whether all the members of an array satisfy the specified test.
      * @param predicate A function that accepts up to three arguments. The every method calls
@@ -3814,7 +3813,7 @@ export declare class BigUint64Array<TArrayBuffer: ArrayBufferLike = ArrayBufferL
      */
     join(mut self, separator?: string) -> string,
     /** Yields each index in the array. */
-    keys(self) -> prelude.ArrayIterator<number>,
+    keys(self) -> ArrayIterator<number>,
     /**
      * Returns the index of the last occurrence of a value in an array.
      * @param searchElement The value to locate in the array.
@@ -3884,7 +3883,7 @@ export declare class BigUint64Array<TArrayBuffer: ArrayBufferLike = ArrayBufferL
      * @param array A typed or untyped array of values to set.
      * @param offset The index in the current array at which the values are to be written.
      */
-    set(mut self, array: prelude.ArrayLike<bigint>, offset?: number) -> unknown,
+    set(mut self, array: ArrayLike<bigint>, offset?: number) -> unknown,
     /**
      * Returns a section of an array.
      * @param start The beginning of the specified portion of the array.
@@ -3913,14 +3912,14 @@ export declare class BigUint64Array<TArrayBuffer: ArrayBufferLike = ArrayBufferL
      */
     subarray(mut self, begin?: number, end?: number) -> BigUint64Array<TArrayBuffer>,
     /** Converts the array to a string by using the current locale. */
-    toLocaleString(self, locales?: string | mut prelude.Array<string>, options?: intl.NumberFormatOptions) -> string,
+    toLocaleString(self, locales?: string | mut Array<string>, options?: intl.NumberFormatOptions) -> string,
     /** Returns a string representation of the array. */
     toString(self) -> string,
     /** Returns the primitive value of the specified object. */
     valueOf(self) -> BigUint64Array<TArrayBuffer>,
     /** Yields each value in the array. */
-    values(self) -> prelude.ArrayIterator<bigint>,
-    [Symbol.iterator](self) -> prelude.ArrayIterator<bigint>,
+    values(self) -> ArrayIterator<bigint>,
+    [Symbol.iterator](self) -> ArrayIterator<bigint>,
     readonly [Symbol.toStringTag]: "BigUint64Array",
     /**
      * Returns the item located at the specified index.
@@ -3973,41 +3972,41 @@ export declare class BigUint64Array<TArrayBuffer: ArrayBufferLike = ArrayBufferL
     with(self, index: number, value: bigint) -> BigUint64Array<ArrayBuffer>,
     static readonly prototype: BigUint64Array<ArrayBufferLike>,
     constructor(mut self, length?: number),
-    constructor(mut self, array: prelude.ArrayLike<bigint> | prelude.Iterable<bigint>),
+    constructor(mut self, array: ArrayLike<bigint> | Iterable<bigint>),
     constructor(mut self, buffer: TArrayBuffer, byteOffset?: number, length?: number),
     constructor(mut self, buffer: ArrayBuffer, byteOffset?: number, length?: number),
-    constructor(mut self, array: prelude.ArrayLike<bigint> | ArrayBuffer),
+    constructor(mut self, array: ArrayLike<bigint> | ArrayBuffer),
     /** The size in bytes of each element in the array. */
     static readonly BYTES_PER_ELEMENT: number,
     /**
      * Returns a new array from a set of elements.
      * @param items A set of elements to include in the new array object.
      */
-    static of(...items: mut prelude.Array<bigint>) -> BigUint64Array<ArrayBuffer>,
+    static of(...items: mut Array<bigint>) -> BigUint64Array<ArrayBuffer>,
     /**
      * Creates an array from an array-like or iterable object.
      * @param arrayLike An array-like object to convert to an array.
      */
-    static from(arrayLike: prelude.ArrayLike<bigint>) -> BigUint64Array<ArrayBuffer>,
+    static from(arrayLike: ArrayLike<bigint>) -> BigUint64Array<ArrayBuffer>,
     /**
      * Creates an array from an array-like or iterable object.
      * @param arrayLike An array-like object to convert to an array.
      * @param mapfn A mapping function to call on every element of the array.
      * @param thisArg Value of 'this' used to invoke the mapfn.
      */
-    static from<U>(arrayLike: prelude.ArrayLike<U>, mapfn: fn (v: U, k: number) -> bigint, thisArg?: unknown) -> BigUint64Array<ArrayBuffer>,
+    static from<U>(arrayLike: ArrayLike<U>, mapfn: fn (v: U, k: number) -> bigint, thisArg?: unknown) -> BigUint64Array<ArrayBuffer>,
     /**
      * Creates an array from an array-like or iterable object.
      * @param elements An iterable object to convert to an array.
      */
-    static from(elements: prelude.Iterable<bigint>) -> BigUint64Array<ArrayBuffer>,
+    static from(elements: Iterable<bigint>) -> BigUint64Array<ArrayBuffer>,
     /**
      * Creates an array from an array-like or iterable object.
      * @param elements An iterable object to convert to an array.
      * @param mapfn A mapping function to call on every element of the array.
      * @param thisArg Value of 'this' used to invoke the mapfn.
      */
-    static from<T>(elements: prelude.Iterable<T>, mapfn?: fn (v: T, k: number) -> bigint, thisArg?: unknown) -> BigUint64Array<ArrayBuffer>
+    static from<T>(elements: Iterable<T>, mapfn?: fn (v: T, k: number) -> bigint, thisArg?: unknown) -> BigUint64Array<ArrayBuffer>
 }
 
 export declare type ArrayBufferLike = ArrayBufferTypes[keyof ArrayBufferTypes]
@@ -4233,7 +4232,7 @@ export declare class Float16Array<TArrayBuffer: ArrayBufferLike = ArrayBufferLik
      * @param array A typed or untyped array of values to set.
      * @param offset The index in the current array at which the values are to be written.
      */
-    set(mut self, array: prelude.ArrayLike<number>, offset?: number) -> unknown,
+    set(mut self, array: ArrayLike<number>, offset?: number) -> unknown,
     /**
      * Returns a section of an array.
      * @param start The beginning of the specified portion of the array.
@@ -4269,7 +4268,7 @@ export declare class Float16Array<TArrayBuffer: ArrayBufferLike = ArrayBufferLik
     /**
      * Converts a number to a string by using the current locale.
      */
-    toLocaleString(self, locales?: string | mut prelude.Array<string>, options?: intl.NumberFormatOptions) -> string,
+    toLocaleString(self, locales?: string | mut Array<string>, options?: intl.NumberFormatOptions) -> string,
     /**
      * Copies the array and returns the copy with the elements in reverse order.
      */
@@ -4299,23 +4298,23 @@ export declare class Float16Array<TArrayBuffer: ArrayBufferLike = ArrayBufferLik
      * @returns A copy of the original array with the inserted value.
      */
     with(self, index: number, value: number) -> Float16Array<ArrayBuffer>,
-    [Symbol.iterator](self) -> prelude.ArrayIterator<number>,
+    [Symbol.iterator](self) -> ArrayIterator<number>,
     /**
      * Returns an array of key, value pairs for every entry in the array
      */
-    entries(self) -> prelude.ArrayIterator<[number, number]>,
+    entries(self) -> ArrayIterator<[number, number]>,
     /**
      * Returns an list of keys in the array
      */
-    keys(self) -> prelude.ArrayIterator<number>,
+    keys(self) -> ArrayIterator<number>,
     /**
      * Returns an list of values in the array
      */
-    values(self) -> prelude.ArrayIterator<number>,
+    values(self) -> ArrayIterator<number>,
     readonly [Symbol.toStringTag]: "Float16Array",
     static readonly prototype: Float16Array<ArrayBufferLike>,
     constructor(mut self, length?: number),
-    constructor(mut self, array: prelude.ArrayLike<number> | prelude.Iterable<number>),
+    constructor(mut self, array: ArrayLike<number> | Iterable<number>),
     constructor(mut self, buffer: TArrayBuffer, byteOffset?: number, length?: number),
     /**
      * The size in bytes of each element in the array.
@@ -4325,29 +4324,29 @@ export declare class Float16Array<TArrayBuffer: ArrayBufferLike = ArrayBufferLik
      * Returns a new array from a set of elements.
      * @param items A set of elements to include in the new array object.
      */
-    static of(...items: mut prelude.Array<number>) -> Float16Array<ArrayBuffer>,
+    static of(...items: mut Array<number>) -> Float16Array<ArrayBuffer>,
     /**
      * Creates an array from an array-like or iterable object.
      * @param arrayLike An array-like object to convert to an array.
      */
-    static from(arrayLike: prelude.ArrayLike<number>) -> Float16Array<ArrayBuffer>,
+    static from(arrayLike: ArrayLike<number>) -> Float16Array<ArrayBuffer>,
     /**
      * Creates an array from an array-like or iterable object.
      * @param arrayLike An array-like object to convert to an array.
      * @param mapfn A mapping function to call on every element of the array.
      * @param thisArg Value of 'this' used to invoke the mapfn.
      */
-    static from<T>(arrayLike: prelude.ArrayLike<T>, mapfn: fn (v: T, k: number) -> number, thisArg?: unknown) -> Float16Array<ArrayBuffer>,
+    static from<T>(arrayLike: ArrayLike<T>, mapfn: fn (v: T, k: number) -> number, thisArg?: unknown) -> Float16Array<ArrayBuffer>,
     /**
      * Creates an array from an array-like or iterable object.
      * @param elements An iterable object to convert to an array.
      */
-    static from(elements: prelude.Iterable<number>) -> Float16Array<ArrayBuffer>,
+    static from(elements: Iterable<number>) -> Float16Array<ArrayBuffer>,
     /**
      * Creates an array from an array-like or iterable object.
      * @param elements An iterable object to convert to an array.
      * @param mapfn A mapping function to call on every element of the array.
      * @param thisArg Value of 'this' used to invoke the mapfn.
      */
-    static from<T>(elements: prelude.Iterable<T>, mapfn?: fn (v: T, k: number) -> number, thisArg?: unknown) -> Float16Array<ArrayBuffer>
+    static from<T>(elements: Iterable<T>, mapfn?: fn (v: T, k: number) -> number, thisArg?: unknown) -> Float16Array<ArrayBuffer>
 }

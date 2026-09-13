@@ -4,7 +4,6 @@
 
 import "std:map"
 import "std:object"
-import "std:prelude"
 import "std:typed_arrays"
 import "web:core"
 import "web:dom"
@@ -56,7 +55,7 @@ export declare interface AudioTimestamp {
 export declare interface AudioWorkletNodeOptions extends AudioNodeOptions {
     numberOfInputs?: number,
     numberOfOutputs?: number,
-    outputChannelCount?: mut prelude.Array<number>,
+    outputChannelCount?: mut Array<number>,
     parameterData?: object.Record<string, number>,
     processorOptions?: any
 }
@@ -104,8 +103,8 @@ export declare interface GainOptions extends AudioNodeOptions {
 }
 
 export declare interface IIRFilterOptions extends AudioNodeOptions {
-    feedback: mut prelude.Array<number>,
-    feedforward: mut prelude.Array<number>
+    feedback: mut Array<number>,
+    feedforward: mut Array<number>
 }
 
 export declare interface MediaElementAudioSourceOptions {
@@ -155,8 +154,8 @@ export declare interface PeriodicWaveConstraints {
 }
 
 export declare interface PeriodicWaveOptions extends PeriodicWaveConstraints {
-    imag?: mut prelude.Array<number> | typed_arrays.Float32Array,
-    real?: mut prelude.Array<number> | typed_arrays.Float32Array
+    imag?: mut Array<number> | typed_arrays.Float32Array,
+    real?: mut Array<number> | typed_arrays.Float32Array
 }
 
 export declare interface StereoPannerOptions extends AudioNodeOptions {
@@ -164,7 +163,7 @@ export declare interface StereoPannerOptions extends AudioNodeOptions {
 }
 
 export declare interface WaveShaperOptions extends AudioNodeOptions {
-    curve?: mut prelude.Array<number> | typed_arrays.Float32Array,
+    curve?: mut Array<number> | typed_arrays.Float32Array,
     oversample?: OverSampleType
 }
 
@@ -263,7 +262,7 @@ export declare class AudioContext extends BaseAudioContext {
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/AudioContext/outputLatency) */
     readonly outputLatency: number,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/AudioContext/close) */
-    close(mut self) -> prelude.Promise<undefined>,
+    close(mut self) -> Promise<undefined>,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/AudioContext/createMediaElementSource) */
     createMediaElementSource(mut self, mediaElement: dom.HTMLMediaElement) -> MediaElementAudioSourceNode,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/AudioContext/createMediaStreamDestination) */
@@ -273,9 +272,9 @@ export declare class AudioContext extends BaseAudioContext {
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/AudioContext/getOutputTimestamp) */
     getOutputTimestamp(self) -> AudioTimestamp,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/AudioContext/resume) */
-    resume(mut self) -> prelude.Promise<undefined>,
+    resume(mut self) -> Promise<undefined>,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/AudioContext/suspend) */
-    suspend(mut self) -> prelude.Promise<undefined>,
+    suspend(mut self) -> Promise<undefined>,
     addEventListener<K: keyof BaseAudioContextEventMap>(mut self, type: K, listener: fn (this: AudioContext, ev: BaseAudioContextEventMap[K]) -> any, options?: boolean | core.AddEventListenerOptions) -> unknown,
     addEventListener(mut self, type: string, listener: core.EventListenerOrEventListenerObject, options?: boolean | core.AddEventListenerOptions) -> unknown,
     removeEventListener<K: keyof BaseAudioContextEventMap>(mut self, type: K, listener: fn (this: AudioContext, ev: BaseAudioContextEventMap[K]) -> any, options?: boolean | core.EventListenerOptions) -> unknown,
@@ -401,9 +400,9 @@ export declare class AudioParam {
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/AudioParam/setValueAtTime) */
     setValueAtTime(mut self, value: number, startTime: number) -> AudioParam,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/AudioParam/setValueCurveAtTime) */
-    setValueCurveAtTime(mut self, values: mut prelude.Array<number> | typed_arrays.Float32Array, startTime: number, duration: number) -> AudioParam,
+    setValueCurveAtTime(mut self, values: mut Array<number> | typed_arrays.Float32Array, startTime: number, duration: number) -> AudioParam,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/AudioParam/setValueCurveAtTime) */
-    setValueCurveAtTime(mut self, values: prelude.Iterable<number>, startTime: number, duration: number) -> AudioParam,
+    setValueCurveAtTime(mut self, values: Iterable<number>, startTime: number, duration: number) -> AudioParam,
     static prototype: AudioParam,
     constructor(mut self)
 }
@@ -551,13 +550,13 @@ export declare class BaseAudioContext extends core.EventTarget {
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/BaseAudioContext/createGain) */
     createGain(mut self) -> GainNode,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/BaseAudioContext/createIIRFilter) */
-    createIIRFilter(mut self, feedforward: mut prelude.Array<number>, feedback: mut prelude.Array<number>) -> IIRFilterNode,
+    createIIRFilter(mut self, feedforward: mut Array<number>, feedback: mut Array<number>) -> IIRFilterNode,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/BaseAudioContext/createOscillator) */
     createOscillator(mut self) -> OscillatorNode,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/BaseAudioContext/createPanner) */
     createPanner(mut self) -> PannerNode,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/BaseAudioContext/createPeriodicWave) */
-    createPeriodicWave(mut self, real: mut prelude.Array<number> | typed_arrays.Float32Array, imag: mut prelude.Array<number> | typed_arrays.Float32Array, constraints?: PeriodicWaveConstraints) -> PeriodicWave,
+    createPeriodicWave(mut self, real: mut Array<number> | typed_arrays.Float32Array, imag: mut Array<number> | typed_arrays.Float32Array, constraints?: PeriodicWaveConstraints) -> PeriodicWave,
     /**
      * @deprecated
      *
@@ -569,15 +568,15 @@ export declare class BaseAudioContext extends core.EventTarget {
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/BaseAudioContext/createWaveShaper) */
     createWaveShaper(mut self) -> WaveShaperNode,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/BaseAudioContext/decodeAudioData) */
-    decodeAudioData(mut self, audioData: typed_arrays.ArrayBuffer, successCallback?: DecodeSuccessCallback | null, errorCallback?: DecodeErrorCallback | null) -> prelude.Promise<AudioBuffer>,
+    decodeAudioData(mut self, audioData: typed_arrays.ArrayBuffer, successCallback?: DecodeSuccessCallback | null, errorCallback?: DecodeErrorCallback | null) -> Promise<AudioBuffer>,
     addEventListener<K: keyof BaseAudioContextEventMap>(mut self, type: K, listener: fn (this: BaseAudioContext, ev: BaseAudioContextEventMap[K]) -> any, options?: boolean | core.AddEventListenerOptions) -> unknown,
     addEventListener(mut self, type: string, listener: core.EventListenerOrEventListenerObject, options?: boolean | core.AddEventListenerOptions) -> unknown,
     removeEventListener<K: keyof BaseAudioContextEventMap>(mut self, type: K, listener: fn (this: BaseAudioContext, ev: BaseAudioContextEventMap[K]) -> any, options?: boolean | core.EventListenerOptions) -> unknown,
     removeEventListener(mut self, type: string, listener: core.EventListenerOrEventListenerObject, options?: boolean | core.EventListenerOptions) -> unknown,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/BaseAudioContext/createIIRFilter) */
-    createIIRFilter(mut self, feedforward: prelude.Iterable<number>, feedback: prelude.Iterable<number>) -> IIRFilterNode,
+    createIIRFilter(mut self, feedforward: Iterable<number>, feedback: Iterable<number>) -> IIRFilterNode,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/BaseAudioContext/createPeriodicWave) */
-    createPeriodicWave(mut self, real: prelude.Iterable<number>, imag: prelude.Iterable<number>, constraints?: PeriodicWaveConstraints) -> PeriodicWave,
+    createPeriodicWave(mut self, real: Iterable<number>, imag: Iterable<number>, constraints?: PeriodicWaveConstraints) -> PeriodicWave,
     static prototype: BaseAudioContext,
     constructor(mut self)
 }
@@ -781,11 +780,11 @@ export declare class OfflineAudioContext extends BaseAudioContext {
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/OfflineAudioContext/complete_event) */
     oncomplete: (fn (this: OfflineAudioContext, ev: OfflineAudioCompletionEvent) -> any) | null,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/OfflineAudioContext/resume) */
-    resume(mut self) -> prelude.Promise<undefined>,
+    resume(mut self) -> Promise<undefined>,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/OfflineAudioContext/startRendering) */
-    startRendering(mut self) -> prelude.Promise<AudioBuffer>,
+    startRendering(mut self) -> Promise<AudioBuffer>,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/OfflineAudioContext/suspend) */
-    suspend(mut self, suspendTime: number) -> prelude.Promise<undefined>,
+    suspend(mut self, suspendTime: number) -> Promise<undefined>,
     addEventListener<K: keyof OfflineAudioContextEventMap>(mut self, type: K, listener: fn (this: OfflineAudioContext, ev: OfflineAudioContextEventMap[K]) -> any, options?: boolean | core.AddEventListenerOptions) -> unknown,
     addEventListener(mut self, type: string, listener: core.EventListenerOrEventListenerObject, options?: boolean | core.AddEventListenerOptions) -> unknown,
     removeEventListener<K: keyof OfflineAudioContextEventMap>(mut self, type: K, listener: fn (this: OfflineAudioContext, ev: OfflineAudioContextEventMap[K]) -> any, options?: boolean | core.EventListenerOptions) -> unknown,

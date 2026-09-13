@@ -2,7 +2,6 @@
 // Its facts come from the pinned lib.*.d.ts set, the ECMA-262
 // derived facts, and the overlay. Change one of those and re-run.
 
-import "std:prelude"
 import "web:core"
 import "web:dom"
 import "web:fetch"
@@ -54,7 +53,7 @@ export declare class Worker extends core.EventTarget {
      *
      * [MDN Reference](https://developer.mozilla.org/docs/Web/API/Worker/postMessage)
      */
-    postMessage(mut self, message: unknown, transfer: mut prelude.Array<dom.Transferable>) -> unknown,
+    postMessage(mut self, message: unknown, transfer: mut Array<dom.Transferable>) -> unknown,
     postMessage(mut self, message: unknown, options?: dom.StructuredSerializeOptions) -> unknown,
     /**
      * Aborts worker's associated global environment.

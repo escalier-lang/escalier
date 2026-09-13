@@ -2,7 +2,6 @@
 // Its facts come from the pinned lib.*.d.ts set, the ECMA-262
 // derived facts, and the overlay. Change one of those and re-run.
 
-import "std:prelude"
 import "web:fetch"
 import "web:url"
 
@@ -25,21 +24,21 @@ export declare interface MultiCacheQueryOptions extends CacheQueryOptions {
 @js("Cache")
 export declare class Cache {
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/Cache/add) */
-    add(mut self, request: fetch.RequestInfo | url.URL) -> prelude.Promise<undefined>,
+    add(mut self, request: fetch.RequestInfo | url.URL) -> Promise<undefined>,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/Cache/addAll) */
-    addAll(mut self, requests: mut prelude.Array<fetch.RequestInfo>) -> prelude.Promise<undefined>,
+    addAll(mut self, requests: mut Array<fetch.RequestInfo>) -> Promise<undefined>,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/Cache/delete) */
-    delete(mut self, request: fetch.RequestInfo | url.URL, options?: CacheQueryOptions) -> prelude.Promise<boolean>,
+    delete(mut self, request: fetch.RequestInfo | url.URL, options?: CacheQueryOptions) -> Promise<boolean>,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/Cache/keys) */
-    keys(self, request?: fetch.RequestInfo | url.URL, options?: CacheQueryOptions) -> prelude.Promise<prelude.Array<fetch.Request>>,
+    keys(self, request?: fetch.RequestInfo | url.URL, options?: CacheQueryOptions) -> Promise<Array<fetch.Request>>,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/Cache/match) */
-    match(mut self, request: fetch.RequestInfo | url.URL, options?: CacheQueryOptions) -> prelude.Promise<fetch.Response | undefined>,
+    match(mut self, request: fetch.RequestInfo | url.URL, options?: CacheQueryOptions) -> Promise<fetch.Response | undefined>,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/Cache/matchAll) */
-    matchAll(mut self, request?: fetch.RequestInfo | url.URL, options?: CacheQueryOptions) -> prelude.Promise<prelude.Array<fetch.Response>>,
+    matchAll(mut self, request?: fetch.RequestInfo | url.URL, options?: CacheQueryOptions) -> Promise<Array<fetch.Response>>,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/Cache/put) */
-    put(mut self, request: fetch.RequestInfo | url.URL, response: fetch.Response) -> prelude.Promise<undefined>,
+    put(mut self, request: fetch.RequestInfo | url.URL, response: fetch.Response) -> Promise<undefined>,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/Cache/addAll) */
-    addAll(mut self, requests: prelude.Iterable<fetch.RequestInfo>) -> prelude.Promise<undefined>,
+    addAll(mut self, requests: Iterable<fetch.RequestInfo>) -> Promise<undefined>,
     static prototype: Cache,
     constructor(mut self)
 }
@@ -53,15 +52,15 @@ export declare class Cache {
 @js("CacheStorage")
 export declare class CacheStorage {
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/CacheStorage/delete) */
-    delete(mut self, cacheName: string) -> prelude.Promise<boolean>,
+    delete(mut self, cacheName: string) -> Promise<boolean>,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/CacheStorage/has) */
-    has(self, cacheName: string) -> prelude.Promise<boolean>,
+    has(self, cacheName: string) -> Promise<boolean>,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/CacheStorage/keys) */
-    keys(self) -> prelude.Promise<mut prelude.Array<string>>,
+    keys(self) -> Promise<mut Array<string>>,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/CacheStorage/match) */
-    match(mut self, request: fetch.RequestInfo | url.URL, options?: MultiCacheQueryOptions) -> prelude.Promise<fetch.Response | undefined>,
+    match(mut self, request: fetch.RequestInfo | url.URL, options?: MultiCacheQueryOptions) -> Promise<fetch.Response | undefined>,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/CacheStorage/open) */
-    open(mut self, cacheName: string) -> prelude.Promise<Cache>,
+    open(mut self, cacheName: string) -> Promise<Cache>,
     static prototype: CacheStorage,
     constructor(mut self)
 }

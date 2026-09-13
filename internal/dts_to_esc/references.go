@@ -15,6 +15,54 @@ import (
 type typeRefCollector struct {
 	ast.DefaultVisitor
 	names set.Set[string]
+	// bound counts the type parameters in scope by name. A reference to one of
+	// them names the parameter rather than a declaration, so it contributes no
+	// edge. `Promise<T, E>` would otherwise be read as needing whichever package
+	// declares `E`, and `std:math` declares one.
+	bound map[string]int
+}
+
+func (c *typeRefCollector) push(params []*ast.TypeParam) {
+	for _, tp := range params {
+		c.bound[tp.Name]++
+	}
+}
+
+func (c *typeRefCollector) pop(params []*ast.TypeParam) {
+	for _, tp := range params {
+		c.bound[tp.Name]--
+		if c.bound[tp.Name] <= 0 {
+			delete(c.bound, tp.Name)
+		}
+	}
+}
+
+// typeParamsOfDecl returns the type parameters a declaration binds over its own
+// body.
+func typeParamsOfDecl(d ast.Decl) []*ast.TypeParam {
+	switch d := d.(type) {
+	case *ast.ClassDecl:
+		return d.TypeParams
+	case *ast.TypeDecl:
+		return d.TypeParams
+	case *ast.InterfaceDecl:
+		return d.TypeParams
+	case *ast.EnumDecl:
+		return d.TypeParams
+	case *ast.FuncDecl:
+		return d.TypeParams
+	}
+	return nil
+}
+
+func (c *typeRefCollector) ExitDecl(d ast.Decl) {
+	c.pop(typeParamsOfDecl(d))
+}
+
+func (c *typeRefCollector) ExitTypeAnn(t ast.TypeAnn) {
+	if fn, ok := t.(*ast.FuncTypeAnn); ok {
+		c.pop(fn.TypeParams)
+	}
 }
 
 // EnterDecl visits the slots the AST walk does not reach on its own: a type
@@ -27,6 +75,7 @@ type typeRefCollector struct {
 // reach are collected once each. A name recorded twice costs nothing, since
 // the result is a set.
 func (c *typeRefCollector) EnterDecl(d ast.Decl) bool {
+	c.push(typeParamsOfDecl(d))
 	switch d := d.(type) {
 	case *ast.ClassDecl:
 		c.visitTypeParams(d.TypeParams)
@@ -66,11 +115,14 @@ func (c *typeRefCollector) visitTypeParams(params []*ast.TypeParam) {
 // `Intl.LocalesArgument`. There `Intl` names nothing and the last segment is
 // what resolves.
 func (c *typeRefCollector) EnterTypeAnn(t ast.TypeAnn) bool {
+	c.enterFuncTypeParams(t)
 	// `typeof X` names the value X, which a package declares and an importer has
 	// to reach the same way it reaches a type.
 	if typeOf, ok := t.(*ast.TypeOfTypeAnn); ok {
 		if name, ok := headIdent(typeOf.Value); ok {
-			c.names.Add(name)
+			if _, shadowed := c.bound[name]; !shadowed {
+				c.names.Add(name)
+			}
 		}
 		if member, ok := typeOf.Value.(*ast.Member); ok {
 			c.names.Add(member.Right.Name)
@@ -82,12 +134,22 @@ func (c *typeRefCollector) EnterTypeAnn(t ast.TypeAnn) bool {
 		return true
 	}
 	if name, ok := headIdent(ref.Name); ok {
-		c.names.Add(name)
+		if _, shadowed := c.bound[name]; !shadowed {
+			c.names.Add(name)
+		}
 	}
 	if member, ok := ref.Name.(*ast.Member); ok {
 		c.names.Add(member.Right.Name)
 	}
 	return true
+}
+
+// enterFuncTypeParams binds a function type's own parameters over its body, the
+// way a declaration's are bound over its.
+func (c *typeRefCollector) enterFuncTypeParams(t ast.TypeAnn) {
+	if fn, ok := t.(*ast.FuncTypeAnn); ok {
+		c.push(fn.TypeParams)
+	}
 }
 
 // headIdent returns the leftmost segment of a qualified identifier.
@@ -108,7 +170,7 @@ func headIdent(q ast.QualIdent) (string, bool) {
 // A name the module declares itself is included; the caller resolves each
 // name against what every package declares and drops the local ones.
 func TypeRefNames(module *ast.Module) set.Set[string] {
-	c := &typeRefCollector{names: set.NewSet[string]()}
+	c := &typeRefCollector{names: set.NewSet[string](), bound: map[string]int{}}
 	module.Namespaces.Scan(func(_ string, ns *ast.Namespace) bool {
 		for _, decl := range ns.Decls {
 			decl.Accept(c)
