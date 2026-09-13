@@ -64,45 +64,42 @@ alternative. Qualified-only access is the Go convention: reading `math.sin(x)`
 makes the origin of `sin` visible at every call site, and gives editor tooling an
 unambiguous target.
 
-### The single-class shortcut
+### A class is reached through its package
 
-When a package's lowercased name matches a class declared in it, the binding
-**is** that class, named with its original capitalization.
+There is no shortcut that lifts a class out of its package. `std:date` declares
+`Date`, and the way to reach it is through the binding the import makes:
 
 ```escalier
 import "std:date"
 
-val d: Date = Date()          // construct — no `new` keyword
+val d: date.Date = date.Date()   // construct — no `new` keyword
+val start = date.Date.now()      // a class static
 ```
 
-The shortcut is structural: it fires when the package declares a top-level class
-whose name matches the URI segment, ignoring case and the underscores that
-separate words in a package name. That is what pairs `std:weak_ref` with
-`WeakRef`. `std:string`, `std:number`, `std:boolean`, `std:bigint`,
-`std:regexp`, `std:object`, `std:function`, `std:date`, `std:map`,
-`std:set`, and `std:weak_ref` all qualify. `std:math` declares no
-`Math` class, so its binding stays the lowercase namespace `math`.
-
-`Array`, `Promise` and `Symbol` are on neither list, because none of them needs
-an import at all. See the prelude below.
-
-Other exports of a shortcut package are reachable as namespace members on the
-same binding. Where a name collides, class statics win.
-
-`std:number` is the case that has one. It exports the `Number` class, whose
-static side already carries `parseInt`, and it also owns the free `parseInt` that
-JavaScript exposes globally, since both belong to the numeric-parsing domain.
-Both would land on the same binding:
+Every export is a member of that one binding, whatever kind it is. A class, a
+function, a value, a type, and a nested namespace are all read the same way, so
+nothing about a package's contents changes how you name a thing inside it.
 
 ```escalier
 import "std:number"
 
-Number.parseInt("42")   // the class static
+val n = number.Number("42")     // the class
+val i = number.parseInt("42")   // a free function beside it
+val inf = number.Infinity       // a value
 ```
 
-The class static is what `Number.parseInt` resolves to. The rule exists so that
-the shortcut binding behaves the way the class does, rather than depending on
-what else the package happens to export.
+An earlier revision did lift a matching class out, so `std:date` bound `Date`
+directly. It was dropped for three reasons. `Array`, `Iterator`, `Promise` and
+`Symbol` moved to the prelude and need no import at all, which covered the cases
+the shortcut was worth having for. A lifted class had to carry its package's
+other exports as well, producing a binding that matched no declaration. And
+those merged exports needed a rule to settle what happened when a class static
+and a package export shared a name.
+
+The cost is that `date.Date.now()` is longer than `Date.now()`. If that proves
+worth fixing, the fix is a named import — `import { Date } from "std:date"` —
+which would shorten every package alike rather than only the ones whose name
+happens to match a class.
 
 ### Binding-shape flags
 
@@ -293,8 +290,8 @@ import "lodash" as underscore
 
 ## Status
 
-The parser, the resolver, the binding shape, the single-class shortcut, `@js`
-lowering, and the `web:dom` partition are implemented.
+The parser, the resolver, the binding shape, `@js` lowering, and the `web:dom`
+partition are implemented.
 
 Three pieces are still in progress. The committed `.esc` source for the `std:*`
 and `web:*` packages is generated from the pinned TypeScript `.d.ts` set by a

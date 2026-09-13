@@ -133,9 +133,8 @@ func (c *Checker) inferStdlibImport(ctx Context, importStmt *ast.ImportStmt) []E
 		return errs
 	}
 
-	// --- Bind phase. `?local` is the only binding shape; the
-	// single-class shortcut may bind a class directly when the pkg name
-	// matches the class name case-insensitively (FR5).
+	// --- Bind phase. `?local` is the only binding shape, and it binds the
+	// package as a namespace whatever the package declares (FR5).
 	errs = append(errs, c.bindStdlibLocal(ctx, pkg, pkgNs, span)...)
 	return errs
 }
@@ -336,10 +335,9 @@ func (c *Checker) loadStdlibPackage(uri, filePath string, span ast.Span) (*type_
 }
 
 // bindStdlibLocal binds the package under the lowercased last URI
-// segment in the importing file's scope. If the package declares a
-// top-level class whose name matches the package name
-// case-insensitively (FR5 single-class shortcut), bind that class
-// directly with its original capitalization instead.
+// segment in the importing file's scope. That is the only binding it
+// makes: a class the package declares is reached through it as
+// `date.Date`, never lifted out under its own name (FR5).
 //
 // The binding shares the canonical pkgNs pointer (no filtered copy):
 // stdlib pkgs by §3.4 contain only exported decls, so the pointer is
@@ -351,22 +349,6 @@ func (c *Checker) loadStdlibPackage(uri, filePath string, span ast.Span) (*type_
 // stores) after binding — every importer of this package, plus the
 // PackageRegistry entry, observes the same `*Namespace`.
 func (c *Checker) bindStdlibLocal(ctx Context, pkg string, pkgNs *type_system.Namespace, span ast.Span) []Error {
-	// Single-class shortcut: look for a class whose name matches the
-	// package name case-insensitively. Activation requires the package
-	// to expose both a value (the constructor) and a type alias under
-	// the same identifier — which is exactly the shape a class
-	// declaration produces.
-	if className, ok := findSingleClassShortcut(pkgNs, pkg); ok {
-		ns := ctx.Scope.Namespace
-		ns.Values[className] = pkgNs.Values[className]
-		ns.Types[className] = pkgNs.Types[className]
-		// TODO (§2.4): also expose other package exports as namespace
-		// members on the same binding, with static methods winning on
-		// collision. Deferred until a stdlib package that takes the
-		// shortcut actually has both a class and non-class exports.
-		return nil
-	}
-
 	bindingName := lastSegmentLower(pkg)
 	if err := ctx.Scope.Namespace.SetNamespace(bindingName, pkgNs); err != nil {
 		return []Error{&GenericError{
@@ -375,21 +357,6 @@ func (c *Checker) bindStdlibLocal(ctx Context, pkg string, pkgNs *type_system.Na
 		}}
 	}
 	return nil
-}
-
-// findSingleClassShortcut returns the original-capitalization class
-// name when ns exposes a value+type pair whose identifier matches pkg
-// case-insensitively. Returns ("", false) otherwise.
-func findSingleClassShortcut(ns *type_system.Namespace, pkg string) (string, bool) {
-	for name := range ns.Values {
-		if !strings.EqualFold(name, pkg) {
-			continue
-		}
-		if _, hasType := ns.Types[name]; hasType {
-			return name, true
-		}
-	}
-	return "", false
 }
 
 // lastSegmentLower returns the last `_`-separated segment of pkg,

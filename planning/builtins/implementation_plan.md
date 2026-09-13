@@ -14,12 +14,12 @@ Status legend: ✅ done, 🚧 partial, ⬜ not started.
 | §   | Phase                                                | FRs         | Status | Depends on | Notes                                                                                                                                                                                                                                                |
 | --- | ---------------------------------------------------- | ----------- | ------ | ---------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | 1   | Declaration-printer audit                            | FR14        | ✅      | —          | Audit test lives in [internal/printer/print_decl_audit_test.go](../../internal/printer/print_decl_audit_test.go); every in-scope form round-trips. Notes on converter-side syntax decisions below.                                                  |
-| 2   | URI-scheme imports + binding-shape flags             | FR2–FR5     | ✅      | §1         | Parser, resolver, both binding shapes, single-class shortcut, and the `--stdlib-dir` flag (+ env var, sibling-to-exe, repo-relative discovery) all landed. Gate satisfied via `std:math` and `std:array` stubs; unit + fixture coverage in place. One follow-up deferred to §7 — the FR5 "non-class package exports as namespace members on the same binding" surface. |
+| 2   | URI-scheme imports + binding-shape flags             | FR2–FR5     | ✅      | §1         | Parser, resolver, both binding shapes, and the `--stdlib-dir` flag (+ env var, sibling-to-exe, repo-relative discovery) all landed. Gate satisfied via `std:math` and `std:array` stubs; unit + fixture coverage in place. The single-class shortcut landed here and was later retired; FR5 records why, and the §7 follow-up it owed closed with it. |
 | 3   | Codegen lowering and `@js` decorators                | FR3         | ✅      | §1         | Decorator parser, `@js` codegen lowering, and loader rules §3.4(1-4) all landed. The §3.5 fixtures that need `std:number` / `std:iterator` stubs (`parseInt`, Symbol re-export, package-private invisibility) moved to §7 where the stubs live.                            |
 | 4   | Single `web:dom` package + inter-package imports     | FR6, FR7 (deferred), FR8, FR9 (deferred) | ✅ | §2 | SCC-aware pseudo-package loader (`internal/checker/infer_stdlib_scc.go`) permits cycles among `std:`/`web:` packages (§4.3); §4.4 gate fixtures (closed-registry `keyof T` / `T[K]` narrowing, NS-keyed overloads, cross-package qualified type references, std↔std / web↔web / web↔std cycles, decorator-error URI labels, rollback) pass in `internal/checker/tests/stdlib_import_test.go`. MVP collapses the entire DOM tree (HTML/SVG/MathML/CSSOM/observers/events/…) into one `web:dom` package with closed registries; standalone web APIs (Fetch, Streams, Crypto, Workers, WebGL, …) get sibling `web:*` packages that thread `web:dom` types through via qualified references (§4.2). Well-known symbols stay on `Symbol`; domain packages re-export aliases (FR8). FR7 (per-file cross-package augmentation) and FR9 (its activation semantics) are deferred to a future custom-elements workstream; §4.1 records the spike conclusions. §4.6 (method-elem overload resolution on class/interface declarations) landed via PR-A (#652), PR-B (#653), and PR-C (#656); the NS-keyed-overloads gate fixture is now declared as methods on a `Document` class, matching the shape the real DOM needs. Inheritance + `implements` overload merging is deferred to [#651](https://github.com/escalier-lang/escalier/issues/651). |
 | 5   | Converter MVP (`tools/dts_to_esc/`)                  | FR10        | ✅      | §1, §3     | CLI at [tools/dts_to_esc/](../../tools/dts_to_esc/) wraps `dts_to_esc.ConvertToStandaloneModule` ([internal/dts_to_esc/dts_to_esc.go](../../internal/dts_to_esc/dts_to_esc.go)). Boolean-trio fusion + namespace flattening + `@js("...")` decoration land; gate fixtures in [internal/dts_to_esc/dts_to_esc_test.go](../../internal/dts_to_esc/dts_to_esc_test.go) (printed output parses; idempotent re-conversion; trio yields one `ClassDecl` and zero `VarDecl`; namespace slice emits zero nested namespaces). |
 | 6   | Converter productionization                          | FR10        | 🚧      | §5         | PR A landed: hand-maintained partition map ([internal/dts_to_esc/partition.go](../../internal/dts_to_esc/partition.go)) with `Route` + DOM residual + unmapped-symbol fail-safe; partition pipeline ([internal/dts_to_esc/partition_writer.go](../../internal/dts_to_esc/partition_writer.go)) that buckets, interface-/namespace-merges across input files, converts each bucket, and writes the partitioned tree under `<out>/std/`, `<out>/web/`, `<out>/node/`; the seeding subcommand `dts_to_esc bootstrap <lib-dir> <out-dir>`. The whole pinned lib set now routes and converts: 49 packages under `std/` and `web/`, every emitted file reparses, and two runs produce identical trees. #1333 and #1340 closed the last printer and parser gaps. PR D landed: the AST-producing conversion moved to [internal/dts_to_esc/](../../internal/dts_to_esc/), leaving `internal/interop` with the runtime override store alone. The converter reads recorded receiver mutability through the `dts_to_esc.OverrideLookup` interface, which the store implements, so no converter file imports `type_system`. One transitive link survives through `internal/ast`, which names `type_system.Type` and `type_system.BindingOwner`; M12 re-homes those two references whether or not the converter moves. PR B landed check 1 (missing declarations and members) plus additive write mode, wired as `dts_to_esc check` and `dts_to_esc regenerate`; its §6.4 checks 2 and 3 run the solver's `constrain` over `soltype` and wait on SimpleSub M7.5. PR C landed the three pinned-lib subcommands `bootstrap` / `regenerate` / `check`, the unified-diff `check` report over `go-udiff`, and the bump walkthrough in [tools/dts_to_esc/README.md](../../tools/dts_to_esc/README.md). PR E ([#1341](https://github.com/escalier-lang/escalier/issues/1341)) supersedes B and C: a generated `.esc` becomes a build output written by one `generate` subcommand from the three inputs of §6.4, so [#1345](https://github.com/escalier-lang/escalier/issues/1345) removed the additive write mode, the `check` / `regenerate` split, and the `go-udiff` dependency, and regenerating and diffing subsumes B's outstanding checks 2 and 3 without waiting on SimpleSub M7.5. §6.8 sequences the four derived determinations onto the generated declarations and records the three trio shapes that do not fuse yet — 625 inline-constructor pairs deferred with `web:*` fusion, `Array`, and `Symbol` / `BigInt`. |
-| 7   | Stdlib bootstrap (committed `.esc` files)            | FR1–FR2     | 🚧      | §6         | Run `generate` once; review; commit the tree together with the overlay and `curated.json` entries that produce it. Review never edits the output — a wrong determination costs a `curated.json` entry, an inexpressible shape costs an overlay `replace`, a systematic error is a converter fix (§7 step 2). The output is checker-agnostic `.esc` source, so this can land before SimpleSub M7.5 ingests it. The tree is committed: 49 packages, 40,312 lines, byte-identical on a re-run. Nothing type-checks it yet — the prelude loads the ES2015 lib subset while `generate` reads all 88 lib files, so every post-ES2015 global the tree declares fails the §3.4(4) `@js` target check ([#1402](https://github.com/escalier-lang/escalier/issues/1402)). Four `TestStdlibImport_*` tests and the `stdlib_import_local` and `stdlib_import_single_class` fixtures are disabled against it until M7.5. (§4.6 prerequisite for same-named method dispatch — `createElement`, `addEventListener`, `getContext`, … — landed with §4.)                                                                                                                                                                                                                                                                                            |
+| 7   | Stdlib bootstrap (committed `.esc` files)            | FR1–FR2     | 🚧      | §6         | Run `generate` once; review; commit the tree together with the overlay and `curated.json` entries that produce it. Review never edits the output — a wrong determination costs a `curated.json` entry, an inexpressible shape costs an overlay `replace`, a systematic error is a converter fix (§7 step 2). The output is checker-agnostic `.esc` source, so this can land before SimpleSub M7.5 ingests it. The tree is committed: 49 packages, 40,312 lines, byte-identical on a re-run. Nothing type-checks it yet — the prelude loads the ES2015 lib subset while `generate` reads all 88 lib files, so every post-ES2015 global the tree declares fails the §3.4(4) `@js` target check ([#1402](https://github.com/escalier-lang/escalier/issues/1402)). Four `TestStdlibImport_*` tests and the `stdlib_import_local` and `stdlib_import_class_via_namespace` fixtures are disabled against it until M7.5. (§4.6 prerequisite for same-named method dispatch — `createElement`, `addEventListener`, `getContext`, … — landed with §4.)                                                                                                                                                                                                                                                                                            |
 | 8   | Internal fixture migration                           | (before M12)  | ⬜ | §4, §7, M7.5 | Migrate Escalier's own fixtures to `import "std:*"`. The solver has no ambient surface, so this is what lets SimpleSub M8's second fixture harness run the `fixtures/` tree at all. Requires §7 because the imports resolve against the committed `.esc` files; requires §4 for any fixture that touches inter-package imports / the single-`web:dom` package + cross-package type references. The old checker keeps resolving previously-ambient names while it exists, so the added imports are additive and both harnesses stay green. |
 | 9   | Per-file shape loading in `internal/solver`          | FR11, FR12  | ⬜      | §2, §4, §7, §8, M7.5 | Add the FR11 trigger map on top of M7.5's import ingestion, so a file gets a literal's or language feature's method surface without naming the owning package. There is no switchover: the solver never had an ambient lib, and the legacy `internal/checker/` machinery goes out with the M12 flip, so §9.3 is an audit rather than a deletion PR. Re-home the §3.4 loader rules: rules 1–3 are AST-only and move to the pseudo-package load path; rule 4 (`@js` arg validation) needs a parsed TS lib, which only the old checker has via `GlobalScope.Namespace.Values` in [js_globals.go](../../internal/checker/js_globals.go), so it becomes a CI-only test that freshly parses the pinned `lib.*.d.ts` and validates every `@js("...")` arg across the committed stdlib. Same test adds **rule §3.4(5): `@js` decl shape matches lib target** — locate the lib member named by each `@js("...")` and assert: `readonly` / getter-only lib member ⇒ Escalier decl is `val` or `get`, never `var`; setter-only ⇒ `set`; method ⇒ `fn`. Catches stdlib stubs that silently make readonly things look writable. Today `@js("Math.PI") export declare var PI: number` compiles and lowers to a `Math.PI = ...` that TypeErrors at runtime. Rule 5 shares the lib parse with rule 4, so doing them separately would duplicate it. |
 | 10  | Intrinsics, adaptive rendering, LSP support          | FR13, FR15, FR16 | ⬜ | M7.5, M9, M11, M11.5 | Implement adaptive diagnostic rendering (FR15) over the `soltype` printer and the auto-import quick-fix (FR16) on the solver-backed LSP (SimpleSub M11); verify the `Awaited<T>` source-level definition with documented-fallback policy; confirm the intrinsic handlers stay solver-resident (FR13). |
@@ -264,8 +264,7 @@ the §5 / §6 converter implementation):
 ## §2. URI-scheme imports + binding-shape flags (FR2–FR5)
 
 **Goal.** End-to-end resolution and scope-binding for
-`import "std:math"`, including the three binding-shape flags and
-the single-class shortcut.
+`import "std:math"`, including the three binding-shape flags.
 
 ### 2.1 Parser change
 
@@ -362,8 +361,8 @@ it lazily on first scheme-prefixed import.
 
 - Implement the flag rules from FR4. Each pseudo-package import
   contributes a binding entry under `?local` (the only shape today):
-  binding name = lowercased last URI segment (or capitalized class
-  name when the single-class shortcut FR5 fires).
+  binding name = lowercased last URI segment, whatever the package
+  declares (FR5).
 - Internal bookkeeping (whether a file has loaded a package's
   declarations) keys on the package's full URI (`web:fetch`),
   independent of binding-shape flag.
@@ -377,18 +376,16 @@ it lazily on first scheme-prefixed import.
   only matched canonical `<pkg>.<name>` binding keys; cross-stdlib
   collisions can be addressed later via file-local renaming.
 
-### 2.4 Single-class shortcut (FR5)
+### 2.4 One binding shape (FR5)
 
-- Detect activation: the package declares a top-level class whose
-  name matches the lowercased last URI segment case-insensitively.
-- When active **and** the import is `?local`, bind the class name
-  with its original capitalization (`Array`, `Date`, `Promise`).
-  Other package exports remain accessible as namespace members on
-  the same binding.
-- `Array.isArray(xs)`, `Array<number>` (type position),
-  `Array(5)` (construct, no `new`).
-- Static methods on the class take precedence over namespace
-  members on name collision.
+- An import binds the package under its lowercased last URI segment
+  and nothing else, whatever the package declares.
+- A class inside it is reached through that binding in every
+  position: `date.Date.now()`, `val d: date.Date`, `date.Date()`
+  to construct.
+- An earlier revision lifted a matching class out of its package.
+  FR5 records the three reasons it was retired and what replaces
+  it if the qualified form proves too long.
 
 ### 2.5 Tests and gates
 
@@ -475,7 +472,7 @@ export declare class Number { … }
 @js("Symbol.iterator")
 export declare val iteratorKey: unique symbol
 
-// std/array.esc — single-class shortcut package
+// std/array.esc — a package whose class shares its name
 @js("Array")
 export declare class Array<T> { … }
 
@@ -1656,21 +1653,11 @@ A typical browser program imports `web:dom` plus 1–2 sibling
 packages (`web:fetch` for HTTP, `web:storage` for
 localStorage, etc.).
 
-**Single-class shortcut eligibility (FR5).** Per FR5, the
-single-class shortcut applies to:
-
-`std:array → Array`, `std:string → String`,
-`std:number → Number`, `std:boolean → Boolean`,
-`std:bigint → BigInt`, `std:regexp → RegExp`,
-`std:symbol → Symbol`, `std:object → Object`,
-`std:function → Function`, `std:date → Date`, `std:map → Map`,
-`std:set → Set`, `std:weak_ref → WeakRef`. The converter does
-not mark this explicitly — the shortcut activates structurally
-when the package's lowercased URI segment matches a top-level
-class name case-insensitively. `std:async` does **not**
-qualify (multiple top-level classes including `Promise`,
-`AsyncIterator`, …; no class named `Async`), so `Promise.all`
-is accessed as `async.Promise.all` under `?local`.
+**Access to a package's classes (FR5).** Every class is reached
+through its package binding, so `std:date` reads `date.Date` and
+`std:async` reads `async.Promise`. A package whose name matches a
+class it declares is bound no differently from one whose does not,
+and the converter marks nothing for it.
 
 **Drops.** `globalThis` and `eval` drop entirely — `eval` has
 no good use case; `globalThis` was the union of every
@@ -2426,15 +2413,13 @@ Depends on §6 PR E. Before that lands this phase reads as
    risk is the definition itself. Verification waits on SimpleSub
    M9. On a concrete blocker, fall back to a solver-resident
    intrinsic and document the specific failure.
-4. **FR5 finalization — non-class package exports as namespace
-   members**
+4. **FR5 finalization — closed with the shortcut**
    ([#1406](https://github.com/escalier-lang/escalier/issues/1406))**.**
-   §2's single-class shortcut binds the class itself when
-   activated; FR5 also calls for other package exports to stay
-   reachable as namespace members on the same binding, with static
-   methods winning a name collision. §2 left this a TODO in
-   [bindStdlibLocal](../../internal/checker/infer_stdlib_import.go)
-   because the §2-era stubs have a single export each. This phase
+   §2's single-class shortcut bound a matching class itself, which
+   left the package's other exports needing somewhere to go. FR5
+   retired the shortcut, so a package binds as one namespace and
+   every export is a member of it. There is nothing left to merge
+   and no collision to settle. This phase
    produces the first package pairing a class with non-class
    exports, so implement the merge once in the solver's stdlib
    binding path when M7.5 ports it, with a unit test pinning the
@@ -2539,18 +2524,11 @@ left.
 
 **Carries-over from §2.** §2 landed three binding-shape fixtures
 under [fixtures/](../../fixtures/) (`stdlib_import_local`,
-`stdlib_import_nested`, `stdlib_import_single_class`). One §2.5
-fixture was deferred to this phase because it needs material
-that does not exist until §7:
-
-- A **single-class shortcut fixture with non-class package exports**
-  on the same binding. §2's `std:array` stub has only the class;
-  once §7 populates `std:array` with companion helpers (or another
-  package mixes a class with constants/functions), add a fixture
-  that exercises both the class and a non-class export through the
-  same shortcut binding, including the static-method-wins
-  tiebreaker (the work itself lives in §7 — this fixture is the
-  end-to-end gate).
+`stdlib_import_nested`, `stdlib_import_class_via_namespace`). The
+deferred §2.5 fixture went away with the single-class shortcut: a
+package mixing a class with constants and functions reaches all of
+them through the one namespace binding, which
+`stdlib_import_class_via_namespace` already covers.
 
 ### 8.1 Third-party `.d.ts` fixture carve-out
 
@@ -2870,13 +2848,9 @@ alongside them. FR15 needs a fourth mode — call it
 form for `t` given the bindings in scope at the diagnostic's
 source location:
 
-1. **Single-class shortcut.** If the file has a `?local` import
-   whose package qualifies for the single-class shortcut (FR5),
-   render as the capitalized class binding (`Array<number>`,
-   `Date.now()`) — matching what the user would write.
-2. **Namespace member.** `?local` without shortcut → `math.Foo`;
-   `?nested` → `std.math.Foo`.
-3. **Not imported.** Fully-qualified canonical name
+1. **Namespace member.** `?local` → `math.Foo` and `date.Date`,
+   matching what the user would write; `?nested` → `std.math.Foo`.
+2. **Not imported.** Fully-qualified canonical name
    (`std:array.Array`) plus a "did you mean to
    `import "std:array"`?" hint pointing at the FR16 quick-fix.
 
@@ -3073,8 +3047,8 @@ Per requirements §"Testing strategy":
   this reduces to "a file sees a name iff it imported the
   package that owns it." The original FR9 per-file augmentation
   semantics are deferred along with FR7.
-- **Ergonomics.** `?local` default; single-class shortcut keeps
-  per-class access terse.
+- **Ergonomics.** `?local` default; the prelude carries `Array`,
+  `Iterator`, `Promise` and `Symbol` with no import at all.
 
 ### Risks (from requirements §"Risks")
 
@@ -3086,7 +3060,7 @@ phasing above:
   precede §5.
 - **Ergonomic cost of imports** — mitigated by auto-import
   quick-fix (§10.3, hard requirement), suggestion-bearing
-  diagnostics (FR15/§10.2), and the single-class shortcut
+  diagnostics (FR15/§10.2), and `std:prelude` needing no import
   (FR5/§2.4).
 - **Initial bootstrap quality** — mitigated by the human review
   pass at §7 and by the regenerate-and-diff job at §6.6. Note the
