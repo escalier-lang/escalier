@@ -21,28 +21,34 @@ import (
 // node. It records inferred types in the Info side table, keyed by node, and
 // each run holds its own. TestACachedModuleServesIndependentRuns pins that.
 
-// parsedModuleCache holds one parsed module per distinct file content.
+// parsedModuleCache holds one parsed module per distinct source.
 //
-// The key is a hash of the contents rather than the path, which decides three
-// things at once.
+// The key is a hash of the file's basename and its contents, which are the two
+// inputs the parse reads. The directory is deliberately not in it, and that
+// decides three things at once.
 //
 //  1. A file that changed is a different key, so no stamp is compared and no
 //     stale parse can survive an edit. A language server runs for hours and
 //     outlives a contributor regenerating the tree underneath it.
-//  2. Two paths holding the same source share one parse. Each test seeding a
-//     stdlib tree writes the same prelude to a fresh temporary directory, so
-//     path keys would pin thousands of identical ASTs and serve no hit between
-//     them.
+//  2. Two directories holding the same file share one parse. Each test seeding
+//     a stdlib tree writes the same prelude to a fresh temporary directory, so
+//     keying on the full path would pin thousands of identical ASTs and serve
+//     no hit between them.
 //  3. The cache is bounded by how many distinct package sources a process
 //     reads, rather than by how many directories it visits.
 //
-// Reading the file is no longer saved, since the contents are what the key is
-// computed from. That costs microseconds against a parse that costs
-// milliseconds.
+// The basename is in the key because the entry records it. A parsed module
+// carries an ast.Source per source id, holding the basename the parse was given,
+// and GetSourcePath reads it back. Keying on contents alone would let two
+// packages that happen to share a body resolve to one module under whichever
+// basename was parsed first.
+//
+// Reading the file is not saved, since the contents are what the key is computed
+// from. That costs microseconds against a parse that costs milliseconds.
 type parsedModuleCache struct {
 	mu      sync.Mutex
 	entries map[[sha256.Size]byte]parsedModuleEntry
-	// nextSourceID is handed out once per distinct content, so every package in
+	// nextSourceID is handed out once per distinct source, so every package in
 	// a process parses under an id of its own and keeps it across runs. A span
 	// carries its source id into provenance and into every diagnostic built from
 	// it, and two packages sharing one would make a "declared here" from either
@@ -63,8 +69,8 @@ func newParsedModuleCache(firstSourceID int) *parsedModuleCache {
 	}
 }
 
-// get returns the module parsed from contents, calling parse with a fresh source
-// id on a miss.
+// get returns the module parsed from the file called name holding contents,
+// calling parse with a fresh source id on a miss.
 //
 // The lock is held across the parse, so a second caller for the same contents
 // waits rather than parsing it again. That serializes parses of DIFFERENT
@@ -72,10 +78,12 @@ func newParsedModuleCache(firstSourceID int) *parsedModuleCache {
 // load is milliseconds and the contention window is one process's stdlib, so the
 // simpler structure is worth more than the parallelism.
 func (c *parsedModuleCache) get(
-	contents string,
+	name, contents string,
 	parse func(sourceID int) (*ast.Module, error),
 ) (*ast.Module, error) {
-	key := sha256.Sum256([]byte(contents))
+	// A NUL separates the two parts. A basename cannot hold one, so the first NUL
+	// always ends the name and no two pairs hash the same bytes.
+	key := sha256.Sum256([]byte(name + "\x00" + contents))
 
 	c.mu.Lock()
 	defer c.mu.Unlock()
