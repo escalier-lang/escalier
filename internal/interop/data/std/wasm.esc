@@ -56,7 +56,7 @@ export declare class Memory {
 @js("WebAssembly.Module")
 export declare class Module {
     static prototype: Module,
-    constructor(mut self, bytes: core.BufferSource),
+    constructor(mut self, bytes: BufferSource),
     /** [MDN Reference](https://developer.mozilla.org/docs/WebAssembly/JavaScript_interface/Module/customSections_static) */
     static customSections(moduleObject: Module, sectionName: string) -> mut Array<typed_arrays.ArrayBuffer>,
     /** [MDN Reference](https://developer.mozilla.org/docs/WebAssembly/JavaScript_interface/Module/exports_static) */
@@ -148,7 +148,7 @@ export declare type ValueType = keyof ValueTypeMap
 
 /** [MDN Reference](https://developer.mozilla.org/docs/WebAssembly/JavaScript_interface/compile_static) */
 @js("WebAssembly.compile")
-export declare fn compile(bytes: core.BufferSource) -> Promise<Module>
+export declare fn compile(bytes: BufferSource) -> Promise<Module>
 
 /** [MDN Reference](https://developer.mozilla.org/docs/WebAssembly/JavaScript_interface/compileStreaming_static) */
 @js("WebAssembly.compileStreaming")
@@ -156,7 +156,7 @@ export declare fn compileStreaming(source: fetch.Response | PromiseLike<fetch.Re
 
 /** [MDN Reference](https://developer.mozilla.org/docs/WebAssembly/JavaScript_interface/instantiate_static) */
 @js("WebAssembly.instantiate")
-export declare fn instantiate(bytes: core.BufferSource, importObject?: Imports) -> Promise<WebAssemblyInstantiatedSource>
+export declare fn instantiate(bytes: BufferSource, importObject?: Imports) -> Promise<WebAssemblyInstantiatedSource>
 
 @js("WebAssembly.instantiate")
 export declare fn instantiate(moduleObject: Module, importObject?: Imports) -> Promise<Instance>
@@ -167,4 +167,4 @@ export declare fn instantiateStreaming(source: fetch.Response | PromiseLike<fetc
 
 /** [MDN Reference](https://developer.mozilla.org/docs/WebAssembly/JavaScript_interface/validate_static) */
 @js("WebAssembly.validate")
-export declare fn validate(bytes: core.BufferSource) -> boolean
+export declare fn validate(bytes: BufferSource) -> boolean

@@ -10,9 +10,9 @@ import "web:streams"
 @js("TextDecoderStream")
 export declare class TextDecoderStream extends streams.GenericTransformStream {
     readonly readable: streams.ReadableStream<string>,
-    readonly writable: streams.WritableStream<core.BufferSource>,
+    readonly writable: streams.WritableStream<BufferSource>,
     static prototype: TextDecoderStream,
-    constructor(mut self, label?: string, options?: core.TextDecoderOptions)
+    constructor(mut self, label?: string, options?: TextDecoderOptions)
 }
 
 /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/TextEncoderStream) */

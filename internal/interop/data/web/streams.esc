@@ -112,7 +112,7 @@ export declare interface StreamPipeOptions {
      * The signal option can be set to an AbortSignal to allow aborting an ongoing pipe operation via the corresponding AbortController. In this case, this source readable stream will be canceled, and destination aborted, unless the respective options preventCancel or preventAbort are set.
      */
     preventClose?: boolean,
-    signal?: core.AbortSignal
+    signal?: AbortSignal
 }
 
 export declare interface Transformer<I = any, O = any> {
@@ -318,7 +318,7 @@ export declare class WritableStream<W = any> {
 @js("WritableStreamDefaultController")
 export declare class WritableStreamDefaultController {
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/WritableStreamDefaultController/signal) */
-    readonly signal: core.AbortSignal,
+    readonly signal: AbortSignal,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/WritableStreamDefaultController/error) */
     error(mut self, e?: unknown) -> unknown,
     static prototype: WritableStreamDefaultController,

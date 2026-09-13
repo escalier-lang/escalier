@@ -5,7 +5,7 @@
 import "web:core"
 import "web:url"
 
-export declare interface StorageEventInit extends core.EventInit {
+export declare interface StorageEventInit extends EventInit {
     key?: string | null,
     newValue?: string | null,
     oldValue?: string | null,
@@ -74,7 +74,7 @@ export declare class Storage {
  * [MDN Reference](https://developer.mozilla.org/docs/Web/API/StorageEvent)
  */
 @js("StorageEvent")
-export declare class StorageEvent extends core.Event {
+export declare class StorageEvent extends Event {
     /**
      * Returns the key of the storage item being changed.
      *

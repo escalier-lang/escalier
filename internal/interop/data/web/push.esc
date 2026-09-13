@@ -14,7 +14,7 @@ export declare interface PushSubscriptionJSON {
 }
 
 export declare interface PushSubscriptionOptionsInit {
-    applicationServerKey?: core.BufferSource | string | null,
+    applicationServerKey?: BufferSource | string | null,
     userVisibleOnly?: boolean
 }
 

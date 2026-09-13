@@ -8,7 +8,7 @@ import "web:dom"
 import "web:file"
 import "web:url"
 
-export declare interface CloseEventInit extends core.EventInit {
+export declare interface CloseEventInit extends EventInit {
     code?: number,
     reason?: string,
     wasClean?: boolean
@@ -20,7 +20,7 @@ export declare interface CloseEventInit extends core.EventInit {
  * [MDN Reference](https://developer.mozilla.org/docs/Web/API/CloseEvent)
  */
 @js("CloseEvent")
-export declare class CloseEvent extends core.Event {
+export declare class CloseEvent extends Event {
     /**
      * Returns the WebSocket connection close code provided by the server.
      *
@@ -45,9 +45,9 @@ export declare class CloseEvent extends core.Event {
 
 export declare interface WebSocketEventMap {
     "close": CloseEvent,
-    "error": core.Event,
+    "error": Event,
     "message": dom.MessageEvent,
-    "open": core.Event
+    "open": Event
 }
 
 /**
@@ -56,7 +56,7 @@ export declare interface WebSocketEventMap {
  * [MDN Reference](https://developer.mozilla.org/docs/Web/API/WebSocket)
  */
 @js("WebSocket")
-export declare class WebSocket extends core.EventTarget {
+export declare class WebSocket extends EventTarget {
     /**
      * Returns a string that indicates how binary data from the WebSocket object is exposed to scripts:
      *
@@ -82,11 +82,11 @@ export declare class WebSocket extends core.EventTarget {
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/WebSocket/close_event) */
     onclose: (fn (this: WebSocket, ev: CloseEvent) -> any) | null,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/WebSocket/error_event) */
-    onerror: (fn (this: WebSocket, ev: core.Event) -> any) | null,
+    onerror: (fn (this: WebSocket, ev: Event) -> any) | null,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/WebSocket/message_event) */
     onmessage: (fn (this: WebSocket, ev: dom.MessageEvent) -> any) | null,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/WebSocket/open_event) */
-    onopen: (fn (this: WebSocket, ev: core.Event) -> any) | null,
+    onopen: (fn (this: WebSocket, ev: Event) -> any) | null,
     /**
      * Returns the subprotocol selected by the server, if any. It can be used in conjunction with the array form of the constructor's second argument to perform subprotocol negotiation.
      *
@@ -121,10 +121,10 @@ export declare class WebSocket extends core.EventTarget {
     readonly OPEN: 1,
     readonly CLOSING: 2,
     readonly CLOSED: 3,
-    addEventListener<K: keyof WebSocketEventMap>(mut self, type: K, listener: fn (this: WebSocket, ev: WebSocketEventMap[K]) -> any, options?: boolean | core.AddEventListenerOptions) -> unknown,
-    addEventListener(mut self, type: string, listener: core.EventListenerOrEventListenerObject, options?: boolean | core.AddEventListenerOptions) -> unknown,
-    removeEventListener<K: keyof WebSocketEventMap>(mut self, type: K, listener: fn (this: WebSocket, ev: WebSocketEventMap[K]) -> any, options?: boolean | core.EventListenerOptions) -> unknown,
-    removeEventListener(mut self, type: string, listener: core.EventListenerOrEventListenerObject, options?: boolean | core.EventListenerOptions) -> unknown,
+    addEventListener<K: keyof WebSocketEventMap>(mut self, type: K, listener: fn (this: WebSocket, ev: WebSocketEventMap[K]) -> any, options?: boolean | AddEventListenerOptions) -> unknown,
+    addEventListener(mut self, type: string, listener: EventListenerOrEventListenerObject, options?: boolean | AddEventListenerOptions) -> unknown,
+    removeEventListener<K: keyof WebSocketEventMap>(mut self, type: K, listener: fn (this: WebSocket, ev: WebSocketEventMap[K]) -> any, options?: boolean | EventListenerOptions) -> unknown,
+    removeEventListener(mut self, type: string, listener: EventListenerOrEventListenerObject, options?: boolean | EventListenerOptions) -> unknown,
     static prototype: WebSocket,
     constructor(mut self, url: string | url.URL, protocols?: string | mut Array<string>),
     static readonly CONNECTING: 0,
