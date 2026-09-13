@@ -297,9 +297,9 @@ func TestStoreEffectLoans(t *testing.T) {
 			want: nil,
 		},
 		// What the store puts in the target decides whether a write can go through it. A
-		// signature storing a shared `&'a B` leaves the target able to read the item and not to
-		// write it, so a second shared borrow is two readers of one value.
-		"SharedItemStoredLeavesItReadableOk": {
+		// signature storing an immutable `&'a B` leaves the target able to read the item and not
+		// to write it, so a second immutable borrow is two readers of one value.
+		"ImmutableItemStoredLeavesItReadableOk": {
 			src: `
 				declare fn store<'a, 'b, 'c>(
 					target: &'c mut {peer: &'a {value: number}, spare: &'b mut {value: number}},
@@ -363,11 +363,11 @@ func TestStoreEffectLoans(t *testing.T) {
 //
 // A `mut self` receiver is a mutable RefType carrying no lifetime, the same shape an
 // owned-mutable parameter takes, so the lifetime test that decides an ordinary parameter's
-// mutability does not describe it. Reading it as shared would let the target hold a writable
+// mutability does not describe it. Reading it as immutable would let the target hold a writable
 // view while the check believed it held a read-only one.
 //
-// The later SHARED borrow of h is what pins this. It conflicts with a mutable loan and not with
-// a shared one, so the diagnostic appears only when the receiver was read as mutable.
+// The later IMMUTABLE borrow of h is what pins this. It conflicts with a mutable loan and not
+// with an immutable one, so the diagnostic appears only when the receiver was read as mutable.
 func TestMutSelfIsAMutableStoreSource(t *testing.T) {
 	_, _, errs := inferSource(t, `
 		class Holder<'a> {
