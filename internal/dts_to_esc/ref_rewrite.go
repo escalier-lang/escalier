@@ -235,6 +235,9 @@ func (r *refRewriter) rewriteClassElem(elem ast.ClassElem) {
 	}
 }
 
+// requalifyFlattenedRef replaces the head of a qualified reference whose head
+// names nothing with the binding of the package that declares its last
+// segment, turning `Intl.LocalesArgument` into `intl.LocalesArgument`.
 func (r *refRewriter) requalifyFlattenedRef(ref *ast.TypeRefTypeAnn) bool {
 	member, ok := ref.Name.(*ast.Member)
 	if !ok {
@@ -287,9 +290,6 @@ func (r *refRewriter) qualifyRef(ref *ast.TypeRefTypeAnn, head *ast.Ident) bool 
 // Eight declarations in the pinned lib set take this shape,
 // `RegExpMatchArray`, `FontFaceSet`, and `HighlightRegistry` among
 // them.
-// requalifyFlattenedRef replaces the head of a qualified reference whose head
-// names nothing with the binding of the package that declares its last
-// segment, turning `Intl.LocalesArgument` into `intl.LocalesArgument`.
 func (r *refRewriter) renameTypeRefInPlace(ref *ast.TypeRefTypeAnn) {
 	for i, arg := range ref.TypeArgs {
 		ref.TypeArgs[i] = r.rewrite(arg)
@@ -379,12 +379,12 @@ func (r *refRewriter) rewrite(t ast.TypeAnn) ast.TypeAnn {
 		}
 		return tt
 	case *ast.FuncTypeAnn:
-		if r.elideVacuous {
-			elideVacuousIn(sigParts{
-				typeParams: &tt.TypeParams, params: tt.Params,
-				ret: tt.Return, throws: tt.Throws,
-			})
-		}
+		// No elision here. This arm is a function type nested inside another
+		// annotation, most often a callback parameter, and its own parameters are
+		// contravariant there. Widening one narrows what a caller may pass:
+		// `fn <T>(x: T) -> boolean` accepts a `fn (x: string) -> boolean` while
+		// `fn (x: unknown) -> boolean` does not. A signature a declaration owns is
+		// elided in rewriteFuncSig and rewriteFnTypeAnn instead.
 		r.rewriteTypeParams(tt.TypeParams)
 		for _, p := range tt.Params {
 			if p.TypeAnn != nil {

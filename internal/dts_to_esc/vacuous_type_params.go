@@ -39,8 +39,31 @@ type sigParts struct {
 	throws     ast.TypeAnn
 }
 
-// elideVacuousIn drops each type parameter of one signature that occurs exactly
-// once and only among the parameters.
+// elideVacuousIn drops each type parameter of one signature whose only
+// occurrence is a whole parameter's type.
+//
+// That restriction is what makes the rewrite safe rather than merely shorter.
+// Replacing a whole parameter's type with the parameter's constraint, or with
+// `unknown`, widens what the function accepts, so every call that type-checked
+// still does. An occurrence NESTED inside a parameter does not widen:
+//
+//	fn each<T>(cb: fn (x: T) -> undefined)
+//
+// sits in a contravariant position, so `fn each(cb: fn (x: unknown) -> undefined)`
+// rejects the `fn (x: string) -> undefined` the generic form accepted. An
+// occurrence inside a type argument is no safer, since the argument's variance
+// decides: `ReadonlySetLike<U>` declares `has(value: U)`, so
+// `ReadonlySetLike<unknown>` is not a supertype of `ReadonlySetLike<string>`.
+//
+// The restriction also makes shadowing moot. An inner `fn <T>` rebinding the
+// name contributes an occurrence, and any occurrence beyond the one whole
+// parameter stops the elision.
+//
+// Only a signature a declaration owns is elided: a top-level function, a class
+// member, or a member of an object type. The generated tree declares what a
+// runtime already implements, so widening a declared input cannot break the
+// implementation. A function type nested inside another annotation is left
+// alone, since its parameters are contravariant where it sits.
 func elideVacuousIn(sig sigParts) {
 	if len(*sig.typeParams) == 0 {
 		return
@@ -50,19 +73,24 @@ func elideVacuousIn(sig sigParts) {
 		// A parameter with a default is a knob the declaration offers a caller,
 		// so it stays even when the signature relates it to nothing. That is what
 		// `Object.fromEntries<T = any>` is: its `T` occurs once only because the
-		// conversion dropped the `{ [k: string]: T }` return, and the fix there is
-		// to restore the return rather than to erase the parameter.
+		// conversion dropped the `{ [k: string]: T }` return that used it, and the
+		// fix there is to restore the return rather than to erase the parameter.
 		if tp.Default != nil {
 			kept = append(kept, tp)
 			continue
 		}
-		inParams := 0
+
+		whole := 0     // parameters whose type is exactly this parameter
+		elsewhere := 0 // every other occurrence, wherever it sits
 		for _, p := range sig.params {
-			inParams += countTypeParamRefs(p.TypeAnn, tp.Name)
+			if isBareRefTo(p.TypeAnn, tp.Name) {
+				whole++
+				continue
+			}
+			elsewhere += countTypeParamRefs(p.TypeAnn, tp.Name)
 		}
-		elsewhere := countTypeParamRefs(sig.ret, tp.Name) + countTypeParamRefs(sig.throws, tp.Name)
-		// A default names a type of its own and does not count as a use, but a
-		// constraint mentioning the parameter would make the rewrite circular.
+		elsewhere += countTypeParamRefs(sig.ret, tp.Name)
+		elsewhere += countTypeParamRefs(sig.throws, tp.Name)
 		elsewhere += countTypeParamRefs(tp.Constraint, tp.Name)
 		for _, other := range *sig.typeParams {
 			if other != tp {
@@ -70,25 +98,37 @@ func elideVacuousIn(sig sigParts) {
 				elsewhere += countTypeParamRefs(other.Default, tp.Name)
 			}
 		}
-		if inParams != 1 || elsewhere != 0 {
+		if whole != 1 || elsewhere != 0 {
 			kept = append(kept, tp)
 			continue
 		}
+
 		replacement := tp.Constraint
 		if replacement == nil {
 			replacement = ast.NewUnknownTypeAnn(ast.Span{})
 		}
-		sub := &refRewriter{substitutions: map[string]ast.TypeAnn{tp.Name: replacement}}
 		for _, p := range sig.params {
-			if p.TypeAnn != nil {
-				p.TypeAnn = sub.rewrite(p.TypeAnn)
+			if isBareRefTo(p.TypeAnn, tp.Name) {
+				p.TypeAnn = replacement
 			}
 		}
 	}
 	*sig.typeParams = kept
 }
 
-// countTypeRefs counts the references to name inside a type annotation.
+// isBareRefTo reports whether t is exactly a reference to name, carrying no type
+// arguments and wrapped in nothing.
+func isBareRefTo(t ast.TypeAnn, name string) bool {
+	ref, ok := t.(*ast.TypeRefTypeAnn)
+	if !ok || len(ref.TypeArgs) > 0 {
+		return false
+	}
+	id, ok := ref.Name.(*ast.Ident)
+	return ok && id.Name == name
+}
+
+// countTypeParamRefs counts the references to a type parameter by name inside
+// one type annotation.
 func countTypeParamRefs(t ast.TypeAnn, name string) int {
 	if t == nil {
 		return 0

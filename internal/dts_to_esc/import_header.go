@@ -234,18 +234,18 @@ func qualifyCrossPackageRefs(mod *StandaloneModule, uri string, owner map[string
 	if len(qualifiers) == 0 {
 		return
 	}
-	// A head naming any declaration, this package's own included, keeps it. Only
-	// a head naming nothing at all is replaced, which is what a flattened
-	// namespace leaves behind: `Intl.LocalesArgument` with no `Intl` anywhere.
-	// Without that guard a local `Ns.Widget` would have `Ns` overwritten by
-	// whichever package declares `Widget`.
-	flattened := map[string]string{}
-	for name, qualifier := range qualifiers {
-		flattened[name] = qualifier
-	}
+	// One table serves both rules, since a name resolving to another package is
+	// what each of them looks up. They differ in what they do with it: a
+	// reference resolving through its head is prefixed, and one resolving through
+	// its last segment has its head replaced, which is what a flattened namespace
+	// leaves behind.
+	//
+	// declaredNames is the guard on the second. Only a head naming nothing at all
+	// is replaced, so a local `Ns.Widget` keeps its `Ns` rather than having it
+	// overwritten by whichever package declares `Widget`.
 	rw := &refRewriter{
 		qualifiers:          qualifiers,
-		flattenedQualifiers: flattened,
+		flattenedQualifiers: qualifiers,
 		declaredNames:       declaredNamesOf(owner),
 	}
 	mod.Module.Namespaces.Scan(func(_ string, ns *ast.Namespace) bool {
