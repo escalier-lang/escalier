@@ -6,7 +6,6 @@ import "std:date"
 import "std:error"
 import "std:function"
 import "std:map"
-import "std:math"
 import "std:object"
 import "std:set"
 import "std:typed_arrays"
@@ -5592,7 +5591,7 @@ export declare class Element extends Node {
     closest<K: keyof HTMLElementTagNameMap>(mut self, selector: K) -> HTMLElementTagNameMap[K] | null,
     closest<K: keyof SVGElementTagNameMap>(mut self, selector: K) -> SVGElementTagNameMap[K] | null,
     closest<K: keyof MathMLElementTagNameMap>(mut self, selector: K) -> MathMLElementTagNameMap[K] | null,
-    closest<E: Element = Element>(mut self, selectors: string) -> math.E | null,
+    closest<E: Element = Element>(mut self, selectors: string) -> E | null,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/Element/computedStyleMap) */
     computedStyleMap(mut self) -> StylePropertyMapReadOnly,
     /**
@@ -13278,7 +13277,7 @@ export declare interface ParentNode extends Node {
     querySelector<K: keyof MathMLElementTagNameMap>(selectors: K) -> MathMLElementTagNameMap[K] | null,
     /** @deprecated */
     querySelector<K: keyof HTMLElementDeprecatedTagNameMap>(selectors: K) -> HTMLElementDeprecatedTagNameMap[K] | null,
-    querySelector<E: Element = Element>(selectors: string) -> math.E | null,
+    querySelector<E: Element = Element>(selectors: string) -> E | null,
     /**
      * Returns all element descendants of node that match selectors.
      *
@@ -13289,7 +13288,7 @@ export declare interface ParentNode extends Node {
     querySelectorAll<K: keyof MathMLElementTagNameMap>(selectors: K) -> NodeListOf<MathMLElementTagNameMap[K]>,
     /** @deprecated */
     querySelectorAll<K: keyof HTMLElementDeprecatedTagNameMap>(selectors: K) -> NodeListOf<HTMLElementDeprecatedTagNameMap[K]>,
-    querySelectorAll<E: Element = Element>(selectors: string) -> NodeListOf<math.E>,
+    querySelectorAll<E: Element = Element>(selectors: string) -> NodeListOf<E>,
     /**
      * Replace all children of node with nodes, while replacing strings in nodes with equivalent Text nodes.
      *

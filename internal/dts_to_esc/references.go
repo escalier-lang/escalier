@@ -65,6 +65,24 @@ func (c *typeRefCollector) ExitTypeAnn(t ast.TypeAnn) {
 	}
 }
 
+// EnterExpr brings a function expression's own type parameters into scope. A
+// class member holds its signature as a `FuncExpr`, so
+// `closest<E: Element = Element>(mut self, selectors: string) -> E | null`
+// would otherwise read `E` as a name `web:dom` has to import, and `std:math`
+// declares one.
+func (c *typeRefCollector) EnterExpr(e ast.Expr) bool {
+	if fn, ok := e.(*ast.FuncExpr); ok {
+		c.push(fn.TypeParams)
+	}
+	return true
+}
+
+func (c *typeRefCollector) ExitExpr(e ast.Expr) {
+	if fn, ok := e.(*ast.FuncExpr); ok {
+		c.pop(fn.TypeParams)
+	}
+}
+
 // EnterDecl visits the slots the AST walk does not reach on its own: a type
 // parameter's constraint and default, and a signature's `throws` clause.
 // `Accept` skips all three, so `class Box<T: HTMLElement>` would otherwise
