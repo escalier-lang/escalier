@@ -76,3 +76,19 @@ func TestDeclaredNamesCoversEveryDeclarationKind(t *testing.T) {
 	// A namespace member is read off the namespace and is not a top-level name.
 	require.False(t, refs.Contains("inner"))
 }
+
+// A destructuring binding contributes every leaf it binds. The generated tree
+// writes a bare name, so this guards a hand-authored package rather than the
+// converter's own output.
+func TestDeclaredNamesReadsEveryLeafOfABinding(t *testing.T) {
+	refs := DeclaredNames(parseSource(t, `
+		export val {a, b: renamed, ...rest} = source
+		export val [first, ...others] = tuple
+	`))
+
+	for _, name := range []string{"a", "renamed", "rest", "first", "others"} {
+		require.True(t, refs.Contains(name), "%s was not recorded; recorded %v", name, refs.ToSlice())
+	}
+	// `b` is the key read off the object, not the name the pattern binds.
+	require.False(t, refs.Contains("b"))
+}

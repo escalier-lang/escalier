@@ -105,63 +105,19 @@ func TypeRefNames(module *ast.Module) set.Set[string] {
 // the other half of the reference graph: what a package offers, against what
 // its siblings ask for.
 //
-// A `DeclareModuleDecl` and a `DeclareGlobalDecl` contribute nothing. Neither
-// binds a name a sibling package can refer to.
+// `ast.DeclNames` reads what each declaration binds, so a destructuring `val`
+// contributes every leaf and a `DeclareModuleDecl` or `DeclareGlobalDecl`
+// contributes nothing. Neither of those binds a name a sibling package can
+// refer to.
 func DeclaredNames(module *ast.Module) set.Set[string] {
 	names := set.NewSet[string]()
 	module.Namespaces.Scan(func(_ string, ns *ast.Namespace) bool {
 		for _, decl := range ns.Decls {
-			addDeclName(names, decl)
+			for _, name := range ast.DeclNames(decl) {
+				names.Add(name)
+			}
 		}
 		return true
 	})
 	return names
-}
-
-func addDeclName(names set.Set[string], decl ast.Decl) {
-	switch d := decl.(type) {
-	case *ast.VarDecl:
-		addPatNames(names, d.Pattern)
-	case *ast.FuncDecl:
-		names.Add(d.Name.Name)
-	case *ast.TypeDecl:
-		names.Add(d.Name.Name)
-	case *ast.InterfaceDecl:
-		names.Add(d.Name.Name)
-	case *ast.EnumDecl:
-		names.Add(d.Name.Name)
-	case *ast.ClassDecl:
-		names.Add(d.Name.Name)
-	case *ast.NamespaceDecl:
-		// The namespace's own name is what a sibling refers to. Its members are
-		// read off it and are not top-level names of their own.
-		names.Add(d.Name.Name)
-	}
-}
-
-// addPatNames records the identifiers a `val` or `var` pattern binds. The
-// generated tree writes a bare name, and a destructuring pattern is handled
-// so a hand-authored package cannot slip a binding past the graph.
-func addPatNames(names set.Set[string], pat ast.Pat) {
-	switch p := pat.(type) {
-	case *ast.IdentPat:
-		names.Add(p.Name)
-	case *ast.TuplePat:
-		for _, elem := range p.Elems {
-			addPatNames(names, elem)
-		}
-	case *ast.ObjectPat:
-		for _, elem := range p.Elems {
-			switch e := elem.(type) {
-			case *ast.ObjKeyValuePat:
-				addPatNames(names, e.Value)
-			case *ast.ObjShorthandPat:
-				names.Add(e.Key.Name)
-			case *ast.ObjRestPat:
-				addPatNames(names, e.Pattern)
-			}
-		}
-	case *ast.RestPat:
-		addPatNames(names, p.Pattern)
-	}
 }

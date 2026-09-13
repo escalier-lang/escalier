@@ -157,7 +157,7 @@ func exportedSurface(uri string, module *ast.Module, scope *Scope) *Namespace {
 			}
 			// A `namespace` block carries its whole Namespace onto the surface, since
 			// its members are reached through it rather than named beside it.
-			// exportedNames answers nothing for a block, so it is taken here instead.
+			// ast.DeclNames answers nothing for a block, so it is taken here instead.
 			if nsDecl, isNS := decl.(*ast.NamespaceDecl); isNS {
 				if nsDecl.Name != nil && nsDecl.Name.Name != "" {
 					if bound, ok := scope.GetNamespace(qualify(nsPath, nsDecl.Name.Name)); ok {
@@ -166,7 +166,7 @@ func exportedSurface(uri string, module *ast.Module, scope *Scope) *Namespace {
 				}
 				continue
 			}
-			for _, name := range exportedNames(decl) {
+			for _, name := range ast.DeclNames(decl) {
 				// A value binds under the plain namespace-qualified name the dep-graph
 				// walk defined it under. A type binds under the key its registration
 				// used, which carries the package URI as well. Both are re-keyed to the
@@ -227,48 +227,6 @@ func qualify(prefix, name string) string {
 		return name
 	}
 	return prefix + "." + name
-}
-
-// exportedNames returns the names a top-level declaration introduces. A `val`
-// binding a pattern introduces one name per leaf, so a destructuring export
-// carries every name it binds.
-func exportedNames(decl ast.Decl) []string {
-	switch d := decl.(type) {
-	case *ast.VarDecl:
-		return patternNames(d.Pattern)
-	case *ast.FuncDecl:
-		if d.Name != nil {
-			return []string{d.Name.Name}
-		}
-	case *ast.ClassDecl:
-		if d.Name != nil {
-			return []string{d.Name.Name}
-		}
-	case *ast.TypeDecl:
-		if d.Name != nil {
-			return []string{d.Name.Name}
-		}
-	case *ast.InterfaceDecl:
-		if d.Name != nil {
-			return []string{d.Name.Name}
-		}
-	case *ast.EnumDecl:
-		if d.Name != nil {
-			return []string{d.Name.Name}
-		}
-	}
-	return nil
-}
-
-// patternNames returns every identifier a binding pattern introduces, in source
-// order. Extractor and instance patterns bind through their sub-patterns, so
-// this reads the leaves through the shared walk rather than its own traversal.
-func patternNames(pat ast.Pat) []string {
-	var names []string
-	ast.ForEachLeafBinding(pat, func(name string, _ int) {
-		names = append(names, name)
-	})
-	return names
 }
 
 // PackageInferenceError reports that a package failed to type-check, on the
@@ -333,7 +291,7 @@ func exportedMembers(decl *ast.NamespaceDecl, ns *Namespace) *Namespace {
 		if !inner.Export() {
 			continue
 		}
-		for _, name := range exportedNames(inner) {
+		for _, name := range ast.DeclNames(inner) {
 			if b, held := ns.Values[name]; held {
 				out.Values[name] = b
 			}
