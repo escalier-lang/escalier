@@ -36,32 +36,42 @@ import (
 //     the call boundary. This is sound. The component move already keeps the nodes alive.
 //   - A parameter borrow is never stripped, since it carries no local edge.
 
-// ownedReturnType returns the index of the return whose value is e and the owned type its
-// borrows strip to, when e's reachable borrow graph is a tree. ok is false when e is not a
-// return value, when the carrier is not a direct place, literal, or borrow, when the graph is
-// not a tree, or when the walk changes nothing. snapshot is the flow-sensitive borrow-edge
-// graph at this return's program point, which resolveComponentEscapes reads from the dataflow
-// and passes in.
+// ownedReturnType returns the owned type the return at idx strips its borrows to, when the
+// carrier's reachable borrow graph is a tree. ok is false when the graph is not a tree or the
+// walk changes nothing. The carrier comes from returnCarrier, so the graph is looked up once
+// and feeds both this and the shared-path report.
 func (c *checker) ownedReturnType(
 	e ast.Expr,
-	snapshot map[liveness.VarID][]fieldBorrow,
-) (int, soltype.Type, bool) {
-	idx := c.returnIndexOf(e)
-	if idx < 0 {
-		return 0, nil, false
-	}
-	graph, root, ok := c.carrierGraph(e, snapshot)
-	if !ok {
-		return 0, nil, false
-	}
+	idx int,
+	graph map[liveness.VarID][]fieldBorrow,
+	root liveness.VarID,
+) (soltype.Type, bool) {
 	if !isTreeReachable(graph, root) {
-		return 0, nil, false
+		return nil, false
 	}
 	owned := stripBorrowTree(c.fn.returns[idx], root, nil, graph)
 	if owned == c.fn.returns[idx] {
-		return 0, nil, false
+		return nil, false
 	}
-	return idx, owned, true
+	return owned, true
+}
+
+// returnCarrier locates the return e is the value of, together with the borrow-edge graph and
+// root its borrows hang off. ok is false when e is not a return value or names no carrier the
+// graph describes.
+func (c *checker) returnCarrier(
+	e ast.Expr,
+	snapshot map[liveness.VarID][]fieldBorrow,
+) (int, map[liveness.VarID][]fieldBorrow, liveness.VarID, bool) {
+	idx := c.returnIndexOf(e)
+	if idx < 0 {
+		return 0, nil, 0, false
+	}
+	graph, root, ok := c.carrierGraph(e, snapshot)
+	if !ok {
+		return 0, nil, 0, false
+	}
+	return idx, graph, root, true
 }
 
 // mayBeBorrowed reports whether t could still be a borrow when the union of a function's

@@ -127,6 +127,11 @@ type loan struct {
 	// holder is the binding the borrow is bound to, and 0 for a call argument. A held loan
 	// lasts while its binding is live; one with no holder lasts for its own statement.
 	holder liveness.VarID
+	// holderPath is the field path within holder the borrow landed at, empty when the whole
+	// binding took it. `b.peer = &mut d` lands at [peer]. Repointing that field ends the loan
+	// there and leaves a sibling field's loan alone, which is the strong update the borrow
+	// graph makes for the same statement.
+	holderPath []placeSeg
 	// ref is the statement the borrow is created at.
 	ref liveness.StmtRef
 	// node is the expression the diagnostic blames.
@@ -136,8 +141,12 @@ type loan struct {
 	// is not yet reaching data through it.
 	fromStore bool
 	// seq orders this loan against the reads walked around it. It counts up and is never
-	// reused, so it survives dropLoansHeldBy compacting the slice, where a position would not.
+	// reused, so it survives the loan list changing shape, where a position would not.
 	seq int
+	// endSeq is the sequence at which a reassignment of the holder ended this loan, and 0 while
+	// it still holds. The loan stays in the list so a read walked BEFORE that point is still
+	// weighed against it; erasing it would let a later reassignment silence an earlier read.
+	endSeq int
 }
 
 // nextLoanSeq returns the sequence number the next loan takes. It counts up across the whole
@@ -232,6 +241,10 @@ func (c *checker) liveAt(l loan, ref liveness.StmtRef) bool {
 // statement.
 func (c *checker) checkAgainstHeldLoans(fresh loan) {
 	for _, held := range c.fn.loans {
+		// A loan the holder's reassignment ended reaches nothing from here on.
+		if held.endSeq != 0 {
+			continue
+		}
 		if !c.liveAt(held, fresh.ref) {
 			continue
 		}
@@ -273,16 +286,31 @@ func (c *checker) recordBorrowLoan(holder int, init ast.Expr, ref liveness.StmtR
 	c.fn.loans = append(c.fn.loans, fresh)
 }
 
-// dropLoansHeldBy removes the loans bound to holder, which a reassignment of that binding has
-// made unreachable.
+// dropLoansHeldBy ends the loans bound to holder, which a reassignment of that binding has made
+// unreachable from here on. They stay in the list carrying the sequence they ended at, so a read
+// walked before the reassignment is still weighed against them.
 func (c *checker) dropLoansHeldBy(holder liveness.VarID) {
-	kept := c.fn.loans[:0]
-	for _, l := range c.fn.loans {
-		if l.holder != holder {
-			kept = append(kept, l)
+	ended := c.nextLoanSeq()
+	for i := range c.fn.loans {
+		if c.fn.loans[i].holder == holder && c.fn.loans[i].endSeq == 0 {
+			c.fn.loans[i].endSeq = ended
 		}
 	}
-	c.fn.loans = kept
+}
+
+// endLoansAt ends the loans holder took at base or under it, which a store into that field has
+// made unreachable from here on. `b.peer = &mut e` after `b.peer = &mut d` ends the loan of d
+// while a loan at a sibling field such as [data] keeps holding. Like dropLoansHeldBy it marks
+// the sequence rather than erasing, so a read walked before the store is still weighed against
+// what the field held then.
+func (c *checker) endLoansAt(holder liveness.VarID, base []placeSeg) {
+	ended := c.nextLoanSeq()
+	for i := range c.fn.loans {
+		l := &c.fn.loans[i]
+		if l.holder == holder && l.endSeq == 0 && pathHasPrefix(l.holderPath, base) {
+			l.endSeq = ended
+		}
+	}
 }
 
 // recordStoreEdgeLoan records the loan a call's store effect creates. `store(&mut p, &mut b)`
@@ -295,18 +323,20 @@ func (c *checker) dropLoansHeldBy(holder liveness.VarID) {
 //
 // target is the binding the borrow lands in and referent is the local it reaches, so the loan
 // is a borrow of referent held by target. It lasts as long as target is live, the same rule a
-// borrow bound to a name follows.
-func (c *checker) recordStoreEdgeLoan(place movePlace, mut bool, target liveness.VarID, ref liveness.StmtRef, blame ast.Node) {
+// borrow bound to a name follows. targetPath is the field of target the borrow lands at, so a
+// later store into that field can end this loan and leave a sibling field's alone.
+func (c *checker) recordStoreEdgeLoan(place movePlace, mut bool, target liveness.VarID, targetPath []placeSeg, ref liveness.StmtRef, blame ast.Node) {
 	if c.fn == nil || target <= 0 || place.root <= 0 {
 		return
 	}
-	fresh := loan{place: place, mut: mut, holder: target, ref: ref, node: blame, fromStore: true, seq: c.nextLoanSeq()}
+	fresh := loan{place: place, mut: mut, holder: target, holderPath: targetPath, ref: ref, node: blame, fromStore: true, seq: c.nextLoanSeq()}
 	// One signature can write an argument into several positions of the target, so the same
 	// loan reaches here once per position. Recording it once keeps a later conflict to one
 	// diagnostic instead of one per position.
 	for _, l := range c.fn.loans {
 		if l.fromStore && l.holder == fresh.holder && l.ref == fresh.ref &&
-			l.mut == fresh.mut && placesEqual(l.place, fresh.place) {
+			l.mut == fresh.mut && placesEqual(l.place, fresh.place) &&
+			slices.Equal(l.holderPath, fresh.holderPath) {
 			return
 		}
 	}
@@ -338,11 +368,26 @@ func (c *checker) checkUsesAgainstLoans(reported set.Set[ast.Node]) {
 		if c.fn.loanReads.Contains(u.node) || reported.Contains(u.node) {
 			continue
 		}
+		// A read INSIDE a returned expression already reported for reaching a local twice needs
+		// no second diagnostic. The return names where the two paths leave together, which is
+		// the more useful of the two. A read elsewhere in the body is a separate fact and keeps
+		// its own.
+		if slices.ContainsFunc(c.fn.sharedPathSpans, func(s ast.Span) bool {
+			return s.ContainsSpan(u.node.Span())
+		}) {
+			continue
+		}
 		for _, l := range c.fn.loans {
 			// Only the loans that existed when this read was walked. A borrow written later in
 			// the source has not taken hold at the read, and on the other arm of a branch it
 			// never does.
 			if l.seq >= u.loanSeqAt {
+				continue
+			}
+			// A loan ended before this read was walked reaches nothing at it. One ended after it
+			// still does, which is what keeps a later reassignment from silencing an earlier
+			// read.
+			if l.endSeq != 0 && l.endSeq < u.loanSeqAt {
 				continue
 			}
 			if !l.mut || !c.liveAt(l, u.ref) || !placesOverlap(l.place, u.place) {

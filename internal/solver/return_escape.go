@@ -29,8 +29,9 @@ import (
 // leaves the frame running, so a bare borrow flowing out either of those still has a second
 // path through the local it names, and stays an escape. See componentMoveCovers.
 //
-// Two borrows of one local can leave together in a single returned value, which no rule here
-// reports. #1263 covers that.
+// A returned value that reaches one local twice hands the caller two views of it. That is a
+// hazard once a write can go through either, and reportSharedReturnPaths reports it. See
+// return_shared_paths.go.
 //
 // A field-granular borrow-edge graph drives the check, over the move engine's borrow
 // tracking rather than the lifetime sort. recordBorrowEdges records which locals each
@@ -162,12 +163,17 @@ func (c *checker) resolveComponentEscapes(
 				}
 				c.recordMove(id, es.expr, es.stmtRef)
 			}
-			// When the moved graph is a tree — every borrowed local reached exactly once with
-			// no cycle — the return value is the sole owner of each node, so owning them in the
-			// type is honest. The rewrites are collected here and committed together, since one
-			// return left borrowed holds back the rest.
-			if idx, owned, ok := c.ownedReturnType(es.expr, fieldBorrowGraph); ok {
-				ownedReturns[idx] = owned
+			if idx, graph, root, ok := c.returnCarrier(es.expr, fieldBorrowGraph); ok {
+				// A returned value that reaches one local twice hands the caller two views of it,
+				// which is a hazard as soon as a write can go through either.
+				c.reportSharedReturnPaths(c.fn.returns[idx], root, graph, es.expr)
+				// When the moved graph is a tree — every borrowed local reached exactly once with
+				// no cycle — the return value is the sole owner of each node, so owning them in
+				// the type is honest. The rewrites are collected here and committed together,
+				// since one return left borrowed holds back the rest.
+				if owned, ok := c.ownedReturnType(es.expr, idx, graph, root); ok {
+					ownedReturns[idx] = owned
+				}
 			}
 			consumed = true
 			continue
@@ -216,7 +222,11 @@ func (c *checker) localsLeavingOutsideAReturn(flowBorrowGraph *flowBorrowGraph) 
 			continue
 		}
 		graph := flowBorrowGraph.fieldBorrowGraphBefore(es.stmtRef)
-		for _, id := range c.escapingLocalsOf(es.expr, graph).ToSlice() {
+		// Closed over the graph for the reason the return side closes its own set: a value
+		// flowing out reaches more than the locals it borrows directly, and a local it reaches
+		// only through another local's edges leaves the frame just the same.
+		leaving := reachableLocals(c.escapingLocalsOf(es.expr, graph), graph)
+		for _, id := range leaving.ToSlice() {
 			// The first site wins, so a local leaving twice blames the earliest one rather
 			// than whichever the walk reached last.
 			if _, seen := out[id]; !seen {
@@ -406,6 +416,11 @@ func pathHasPrefix(full, prefix []placeSeg) bool {
 type fieldBorrow struct {
 	path     []placeSeg
 	referent liveness.VarID
+	// refPath is the field path INSIDE referent the borrow reaches, empty for a borrow of the
+	// whole binding. `val t = {p: &mut b.x}` records refPath [x] beside path [p]. It is what
+	// separates two borrows of disjoint fields of one local from two borrows of the same field,
+	// which reach the same data and are the pair reportSharedReturnPaths exists to catch.
+	refPath []placeSeg
 }
 
 // borrowCollector gathers the BorrowExprs an expression carries by value, riding the
@@ -484,14 +499,22 @@ func (c *checker) paramReferentOutlivesFrame(root liveness.VarID) bool {
 // rooted at a real binding that is not a parameter. A parameter referent is exempt, and a
 // non-place operand names no tracked binding.
 func (c *checker) isLocalReferent(arg ast.Expr) (liveness.VarID, bool) {
+	p, ok := c.localReferentPlace(arg)
+	return p.root, ok
+}
+
+// localReferentPlace is isLocalReferent keeping the field path within the local, so a caller
+// recording an edge can say which part of the referent the borrow reaches. `&mut b.x` gives
+// root b and path [x].
+func (c *checker) localReferentPlace(arg ast.Expr) (movePlace, bool) {
 	p, ok := exprPlace(arg)
 	if !ok || p.root <= 0 {
-		return 0, false
+		return movePlace{}, false
 	}
 	if c.fn.paramVarIDs.Contains(p.root) {
-		return 0, false
+		return movePlace{}, false
 	}
-	return p.root, true
+	return p, true
 }
 
 // escapingLocalsOf returns the function-locals whose data e carries by value. Two sources
@@ -526,8 +549,8 @@ func (c *checker) escapingLocalsOf(
 // given field path, allocating the root's edge list on first use. A duplicate edge with
 // the same path and referent is ignored, so repeated walks keep one copy rather than
 // accumulating identical edges.
-func (c *checker) addBorrowEdge(root liveness.VarID, path []placeSeg, referent liveness.VarID) {
-	fb := fieldBorrow{path: path, referent: referent}
+func (c *checker) addBorrowEdge(root liveness.VarID, path []placeSeg, referent liveness.VarID, refPath []placeSeg) {
+	fb := fieldBorrow{path: path, referent: referent, refPath: refPath}
 	if containsFieldBorrow(c.fn.eagerBorrowGraph[root], fb) {
 		return
 	}
@@ -568,8 +591,8 @@ func (c *checker) recordBorrowEdges(destVarID int, init ast.Expr) {
 func (c *checker) recordBorrowSources(root liveness.VarID, base []placeSeg, e ast.Expr) {
 	switch e := e.(type) {
 	case *ast.BorrowExpr:
-		if referent, ok := c.isLocalReferent(e.Arg); ok && referent != root {
-			c.addBorrowEdge(root, base, referent)
+		if src, ok := c.localReferentPlace(e.Arg); ok && src.root != root {
+			c.addBorrowEdge(root, base, src.root, src.path)
 		}
 	case *ast.ObjectExpr:
 		for _, elem := range e.Elems {
@@ -615,8 +638,8 @@ func (c *checker) recordBorrowSources(root liveness.VarID, base []placeSeg, e as
 		// in the `if cond { &mut b } else { … }` of `val a = if cond { &mut b } else { … }`.
 		// The walk descends through it but stops at call and nested-function boundaries.
 		for _, b := range borrowsIn(e) {
-			if referent, ok := c.isLocalReferent(b.Arg); ok && referent != root {
-				c.addBorrowEdge(root, base, referent)
+			if src, ok := c.localReferentPlace(b.Arg); ok && src.root != root {
+				c.addBorrowEdge(root, base, src.root, src.path)
 			}
 		}
 	}
@@ -640,7 +663,7 @@ func (c *checker) copyPlaceEdges(root liveness.VarID, base []placeSeg, src moveP
 		if len(edge.path) > len(src.path) {
 			suffix = edge.path[len(src.path):]
 		}
-		c.addBorrowEdge(root, appendPath(base, suffix), edge.referent)
+		c.addBorrowEdge(root, appendPath(base, suffix), edge.referent, edge.refPath)
 	}
 }
 
@@ -757,6 +780,10 @@ func (c *checker) recordFieldStoreEdges(
 	}
 	base := appendSeg(rp.path, field)
 	c.clearEagerSubtree(rp.root, base)
+	// The store repoints the field, so whatever it reached before is unreachable through it.
+	// The loans at that field end with the edges, which is the same strong update on the same
+	// subtree.
+	c.endLoansAt(rp.root, base)
 	c.recordBorrowSources(rp.root, base, source)
 	c.flushBorrowDirty(stmtRef)
 	// The receiver reaches the stored place from here on, so it holds a borrow of it that a
@@ -764,7 +791,7 @@ func (c *checker) recordFieldStoreEdges(
 	// recordCallStoreEdges derives from a call's store effect.
 	if borrow, ok := source.(*ast.BorrowExpr); ok {
 		if place, ok := loanPlace(borrow); ok {
-			c.recordStoreEdgeLoan(place, borrow.Mut, rp.root, stmtRef, borrow)
+			c.recordStoreEdgeLoan(place, borrow.Mut, rp.root, base, stmtRef, borrow)
 		}
 	}
 }
