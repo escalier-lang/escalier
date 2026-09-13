@@ -400,17 +400,29 @@ export declare class Array<T> {
 }
 
 export declare interface Generator<T = unknown, TReturn = any, TNext = any, E = never> extends IteratorObject<T, TReturn, TNext> {
-    next(...value: [] | [TNext]) -> iterator.IteratorResult<T, TReturn>,
-    return(value: TReturn) -> iterator.IteratorResult<T, TReturn>,
-    throw(e: E) -> iterator.IteratorResult<T, TReturn>,
+    next(...value: [] | [TNext]) -> IteratorResult<T, TReturn>,
+    return(value: TReturn) -> IteratorResult<T, TReturn>,
+    throw(e: E) -> IteratorResult<T, TReturn>,
     [Symbol.iterator]() -> Generator<T, TReturn, TNext, E>
 }
 
+export declare interface IteratorYieldResult<TYield> {
+    done?: false,
+    value: TYield
+}
+
+export declare interface IteratorReturnResult<TReturn> {
+    done: true,
+    value: TReturn
+}
+
+export declare type IteratorResult<T, TReturn = any> = IteratorYieldResult<T> | IteratorReturnResult<TReturn>
+
 @js("Iterator")
 export declare class Iterator<T, TReturn = any, TNext = any> {
-    next(mut self, ...value: [] | [TNext]) -> iterator.IteratorResult<T, TReturn>,
-    return(mut self, value?: TReturn) -> iterator.IteratorResult<T, TReturn>,
-    throw(mut self, e?: unknown) -> iterator.IteratorResult<T, TReturn>,
+    next(mut self, ...value: [] | [TNext]) -> IteratorResult<T, TReturn>,
+    return(mut self, value?: TReturn) -> IteratorResult<T, TReturn>,
+    throw(mut self, e?: unknown) -> IteratorResult<T, TReturn>,
     /**
      * Creates a native iterator from an iterator or iterable object.
      * Returns its input if the input already inherits from the built-in Iterator class.
@@ -775,16 +787,16 @@ export declare class Symbol {
 }
 
 export declare interface AsyncGenerator<T = unknown, TReturn = any, TNext = any, E = never> extends AsyncIteratorObject<T, TReturn, TNext> {
-    next(...value: [] | [TNext]) -> Promise<iterator.IteratorResult<T, TReturn>, E>,
-    return(value: TReturn | PromiseLike<TReturn, E>) -> Promise<iterator.IteratorResult<T, TReturn>, E>,
-    throw(e: E) -> Promise<iterator.IteratorResult<T, TReturn>, E>,
+    next(...value: [] | [TNext]) -> Promise<IteratorResult<T, TReturn>, E>,
+    return(value: TReturn | PromiseLike<TReturn, E>) -> Promise<IteratorResult<T, TReturn>, E>,
+    throw(e: E) -> Promise<IteratorResult<T, TReturn>, E>,
     [Symbol.asyncIterator]() -> AsyncGenerator<T, TReturn, TNext, E>
 }
 
 export declare interface AsyncIterator<T, TReturn = any, TNext = any> {
-    next(...value: [] | [TNext]) -> Promise<iterator.IteratorResult<T, TReturn>>,
-    return?(value?: TReturn | PromiseLike<TReturn>) -> Promise<iterator.IteratorResult<T, TReturn>>,
-    throw?(e?: any) -> Promise<iterator.IteratorResult<T, TReturn>>
+    next(...value: [] | [TNext]) -> Promise<IteratorResult<T, TReturn>>,
+    return?(value?: TReturn | PromiseLike<TReturn>) -> Promise<IteratorResult<T, TReturn>>,
+    throw?(e?: any) -> Promise<IteratorResult<T, TReturn>>
 }
 
 export declare interface AsyncIterable<T, TReturn = any, TNext = any> {

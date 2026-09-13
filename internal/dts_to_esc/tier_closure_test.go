@@ -262,15 +262,6 @@ func TestEveryCommittedImportRespectsTheTiers(t *testing.T) {
 	require.Empty(t, upward, "import lines going up a tier:\n  %s", strings.Join(upward, "\n  "))
 }
 
-// builtinAliasNames are the names the solver registers on every Context, so a
-// reference to one resolves whether or not a package declaring it is in reach.
-// `registerIteratorResultAliases` in internal/solver/prelude.go is what binds
-// them, which is why `std:prelude` names `IteratorResult` while importing
-// nothing.
-var builtinAliasNames = set.FromSlice([]string{
-	"IteratorResult", "IteratorYieldResult", "IteratorReturnResult",
-})
-
 // Every package a file references is one it imports. A reference with no import
 // resolves nothing, which is the state the whole tree was in before #1403.
 func TestEveryCrossPackageReferenceIsImported(t *testing.T) {
@@ -296,8 +287,7 @@ func TestEveryCrossPackageReferenceIsImported(t *testing.T) {
 			// into the scope every package's inference descends from, so reaching
 			// one takes no import and no qualifier.
 			if !known || declaredIn == uri || declaredIn == preludeURI ||
-				imported.Contains(declaredIn) || bindings.Contains(name) ||
-				builtinAliasNames.Contains(name) {
+				imported.Contains(declaredIn) || bindings.Contains(name) {
 				continue
 			}
 			missing = append(missing, fmt.Sprintf("%s names %s from %s without importing it",
