@@ -9,8 +9,9 @@ import (
 )
 
 // Borrow exclusivity. Data a borrow can write through may not be reachable at the same time
-// through a borrow that expects it to hold still. A mutable borrow beside a shared one is the
-// pair that breaks: the shared view promises stability and the mutable view can take it away.
+// through a borrow that expects it to hold still. A mutable borrow beside an immutable one is
+// the pair that breaks. The immutable view promises stability and the mutable view can take it
+// away.
 //
 // Two mutable borrows of one value are allowed. That is Rule 3 of
 // planning/lifetimes/requirements.md, a deliberate departure from Rust: both views agree the
@@ -18,7 +19,7 @@ import (
 // referent, so two mutable borrows of one place also agree on its type and neither can write a
 // value the other would misread.
 //
-// Two shared borrows are fine for the mirror-image reason, since neither writes.
+// Two immutable borrows are fine for the mirror-image reason, since neither writes.
 //
 // A loan is one borrow the checker tracks. It records the place the borrow reaches, whether a
 // write can go through it, and how long it stays usable. Loans come from two sites:
@@ -30,7 +31,7 @@ import (
 //
 // A call argument's mutability comes from the PARAMETER, not from the argument. Passing
 // `&mut x` to a `&T` parameter hands the callee a read-only view, so the callee cannot write
-// through it and it counts as shared. `f(&mut x, &mut x)` against `fn f(a: &T, b: &T)` is
+// through it and it counts as immutable. `f(&mut x, &mut x)` against `fn f(a: &T, b: &T)` is
 // therefore accepted.
 //
 // Places carry field paths, so two borrows conflict only when their paths are prefix-related.
@@ -73,7 +74,7 @@ type BorrowAliasError struct {
 	Place      string
 	FirstPlace string
 	// FirstMut and SecondMut say whether a write can go through each borrow. Exactly one of them
-	// is true, since a conflicting pair is one mutable borrow beside one shared borrow. Second is
+	// is true, since a conflicting pair is one mutable borrow beside one immutable borrow. Second is
 	// the one the error is blamed on, since it is where the program first holds two views.
 	FirstMut  bool
 	SecondMut bool
@@ -241,7 +242,7 @@ func (c *checker) dropLoansHeldBy(holder liveness.VarID) {
 // where at least one parameter can write. Every argument of a call is live at once, so the
 // arguments are compared against each other as well as against the loans already held.
 //
-// `f(&x, &mut x)` and `f(m, m)` filling a shared and a mutable parameter both report. The
+// `f(&x, &mut x)` and `f(m, m)` filling an immutable and a mutable parameter both report. The
 // second shows why the parameter decides: m is one borrow reaching one place, and what makes
 // the pair a conflict is that the callee may write through one view while reading the other.
 func (c *checker) checkCallBorrowExclusivity(e *ast.CallExpr, fn *soltype.FuncType, ref liveness.StmtRef) {

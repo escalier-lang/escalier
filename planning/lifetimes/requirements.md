@@ -2049,8 +2049,8 @@ because `shared` is permanently live and mutable.
   of the enclosing function (conservative but correct — the callee may
   store the closure). `AnalyzeCaptures` already works on any FuncExpr.
   Estimated scope: ~50-100 lines of production code.
-- **Data race prevention.** The mutable-XOR-shared rule is enforced: a
-  mutable borrow may not be live alongside a SHARED borrow of overlapping
+- **Data race prevention.** The mutable-XOR-immutable rule is enforced: a
+  mutable borrow may not be live alongside an IMMUTABLE borrow of overlapping
   data. Two mutable borrows stay legal, per Rule 3 above. See
   `internal/solver/borrow_exclusivity.go`, which lists the cases the check
   does not yet reach. What stays out of scope is concurrency, which needs a

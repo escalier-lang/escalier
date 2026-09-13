@@ -15,9 +15,9 @@ const exclusivityDecls = `
 	declare fn write(a: &mut {v: number}) -> undefined
 `
 
-// TestBorrowExclusivity covers the mutable-XOR-shared rule: data one borrow can write through
+// TestBorrowExclusivity covers the mutable-XOR-immutable rule: data one borrow can write through
 // may not be reachable at the same time through a borrow that expects it to hold still. Two
-// borrows that agree, both mutable or both shared, are allowed.
+// borrows that agree, both mutable or both immutable, are allowed.
 //
 // Each case pins the full diagnostic, so the wording that says WHICH pair conflicts is part of
 // what is asserted. A case that should be accepted asserts no diagnostic at all.
@@ -28,7 +28,7 @@ func TestBorrowExclusivity(t *testing.T) {
 	}{
 		// The canonical case. One argument reads x and the other writes it, so the callee holds
 		// two views of one value and one of them can change it.
-		"SharedAndMutableOfOnePlace": {
+		"ImmutableAndMutableOfOnePlace": {
 			src: exclusivityDecls + `
 				fn g() {
 					val mut x = {v: 1}
@@ -51,7 +51,7 @@ func TestBorrowExclusivity(t *testing.T) {
 			want: nil,
 		},
 		// Two readers see the same value, so nothing can disagree.
-		"TwoSharedOfOnePlaceOk": {
+		"TwoImmutableOfOnePlaceOk": {
 			src: exclusivityDecls + `
 				fn g() {
 					val mut x = {v: 1}
@@ -62,8 +62,8 @@ func TestBorrowExclusivity(t *testing.T) {
 		},
 		// The parameter decides, not the argument. One argument is written `&mut` and the other
 		// `&`, which would be the conflicting pair if the argument decided. The callee takes both
-		// as shared, so neither view can change the value.
-		"MutableArgumentIntoASharedParamOk": {
+		// as immutable, so neither view can change the value.
+		"MutableArgumentIntoAnImmutableParamOk": {
 			src: exclusivityDecls + `
 				fn g() {
 					val mut x = {v: 1}
@@ -121,7 +121,7 @@ func TestBorrowExclusivity(t *testing.T) {
 		// One borrow filling two parameters is the shape #794 names. m is a single borrow, and
 		// what makes the pair a conflict is that the callee may write through one view while
 		// reading the other.
-		"OneBorrowFillingASharedAndAMutableParam": {
+		"OneBorrowFillingAnImmutableAndAMutableParam": {
 			src: exclusivityDecls + `
 				fn g(m: &mut {v: number}) {
 					readWrite(m, m)
@@ -182,7 +182,7 @@ func TestBorrowExclusivity(t *testing.T) {
 			want: nil,
 		},
 		// The reassignment does not silence a real conflict: a borrows x mutably after it, and
-		// the shared b then reads data a can write.
+		// the immutable borrow of b then reads data a can write.
 		"ReassignedBorrowStillConflicts": {
 			src: exclusivityDecls + `
 				fn g(x: mut {v: number}, y: mut {v: number}) {
