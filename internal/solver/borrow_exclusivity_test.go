@@ -225,8 +225,8 @@ func TestExplicitBorrowArgs(t *testing.T) {
 		src  string
 		want []string
 	}{
-		// A bare place filling a shared parameter reports, naming the borrow it needs.
-		"BarePlaceIntoASharedParam": {
+		// A bare place filling an immutable parameter reports, naming the borrow it needs.
+		"BarePlaceIntoAnImmutableParam": {
 			src: exclusivityDecls + `
 				fn g() {
 					val mut x = {v: 1}

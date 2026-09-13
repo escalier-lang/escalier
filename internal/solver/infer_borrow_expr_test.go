@@ -370,8 +370,8 @@ fn f(p: mut {x: number}) {
 	require.Equal(t, "fn (p: mut {x: number}) -> number", values["f"])
 }
 
-// A shared parameter follows the same rule and asks for `&` rather than `&mut`.
-func TestOwnedArgumentNeedsAWrittenSharedBorrow(t *testing.T) {
+// An immutable parameter follows the same rule and asks for `&` rather than `&mut`.
+func TestOwnedArgumentNeedsAWrittenImmutableBorrow(t *testing.T) {
 	src := `fn use(o: &{x: number}) -> number {
   return o.x
 }
@@ -384,7 +384,7 @@ fn f(p: {x: number}) {
 	}, messagesWithSpan(t, errs))
 }
 
-func TestOwnedArgumentWithAWrittenSharedBorrow(t *testing.T) {
+func TestOwnedArgumentWithAWrittenImmutableBorrow(t *testing.T) {
 	src := `fn use(o: &{x: number}) -> number {
   return o.x
 }
