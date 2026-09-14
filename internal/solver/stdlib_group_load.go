@@ -93,12 +93,6 @@ func (c *checker) loadPackageGroup(group []string, span ast.Span) []SolverError 
 		return errs
 	}
 
-	// Reported at the import that pulled the group in, so a run reaching none of
-	// the tree's groups reports nothing and one reaching a group gets a span to
-	// point at. The load carries on, since refusing it would bury this diagnostic
-	// under every `import cycle` the grouping exists to prevent.
-	tierErrs := CheckGroupTiers(PackageGroups{group[0]: group}, span)
-
 	module, paths, err := c.groupSource(group)
 	if err != nil {
 		return []SolverError{&UnresolvedPackageError{
@@ -147,14 +141,14 @@ func (c *checker) loadPackageGroup(group []string, span ast.Span) []SolverError 
 	}
 
 	if len(errs) > 0 {
-		return append(tierErrs, &PackageInferenceError{
+		return []SolverError{&PackageInferenceError{
 			URI:      strings.Join(group, ", "),
 			Path:     paths[group[0]],
 			Messages: messagesOf(errs),
 			span:     span,
-		})
+		}}
 	}
-	return tierErrs
+	return nil
 }
 
 // sortedGroup returns a copy of group in sorted order, so a diagnostic and a
@@ -169,12 +163,12 @@ func sortedGroup(group []string) []string {
 //
 // It is the entry point a run with a stdlib directory uses rather than
 // InferModuleWithSource, because loading a package needs two things a bare
-// ModuleSource cannot supply: the groups that have to load together, and a
-// reader for a whole group at once.
+// ModuleSource cannot supply: the closure a module's imports reach, and a
+// reader for the whole closure at once.
 func InferModuleAgainstStdlib(module *ast.Module, dir string) *ModuleResult {
-	groups, err := BuildPackageGroups(dir)
+	groups, err := BuildPackageClosure(dir, stdlibImportsOf(module))
 	if err != nil {
-		// Nothing is known about which packages cycle, so every package loads
+		// Nothing is known about what the imports reach, so every package loads
 		// alone. That is right for the tree a readable directory would have held
 		// and reports honestly for one that cycles.
 		result := InferModuleWithSource(module, StdlibSource(dir))
@@ -184,6 +178,22 @@ func InferModuleAgainstStdlib(module *ast.Module, dir string) *ModuleResult {
 		return result
 	}
 	return inferModuleWithGroups(module, StdlibSource(dir), StdlibGroupSource(dir), groups)
+}
+
+// stdlibImportsOf returns the pseudo-package URIs a module's files import,
+// sorted. These are the roots the closure grows from.
+func stdlibImportsOf(module *ast.Module) []string {
+	roots := set.NewSet[string]()
+	for _, file := range module.Files {
+		for _, stmt := range file.Imports {
+			if IsSchemePrefixedImport(stmt.PackageName) {
+				roots.Add(stmt.PackageName)
+			}
+		}
+	}
+	out := roots.ToSlice()
+	sort.Strings(out)
+	return out
 }
 
 // groupKeyURI is the URI a group's declarations register their type keys under.
