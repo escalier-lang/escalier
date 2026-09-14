@@ -140,10 +140,10 @@ type checker struct {
 	// invisible to a sibling file and to the package's exported surface.
 	moduleScope *Scope
 
-	// nsShells holds the `namespace` blocks pre-bound for the module under
-	// inference, so refreshNamespaces can fill them as bindings land. It is nil
-	// outside a module walk.
-	nsShells []*namespaceShell
+	// nsIndex maps each qualified prefix pre-bound for the module under inference
+	// to the namespace bound for it, so routeToNamespace can place a binding as the
+	// walk defines it. It is nil outside a walk.
+	nsIndex map[string]*namespaceShell
 
 	// fileScopes holds one scope per file of the module being inferred, keyed by
 	// source id, each carrying that file's import bindings.

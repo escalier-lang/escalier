@@ -101,6 +101,12 @@ type Scope struct {
 	types      map[string]TypeBinding
 	namespaces map[string]*Namespace
 	parent     *Scope
+	// onDefine, when set, is called with each name this scope binds, in either
+	// sort. The module scope of a run under inference sets it so a qualified
+	// member reaches the namespace pre-bound for its prefix as it is defined,
+	// rather than being collected by a later scan. Child does not inherit it: a
+	// function body binding `x` is not a namespace member.
+	onDefine func(name string)
 }
 
 // NewScope returns an empty root scope (no parent).
@@ -127,6 +133,9 @@ func (s *Scope) Child() *Scope {
 // binds each rec-group name twice (fresh var, then coalesced type) (§3.7).
 func (s *Scope) defineValue(name string, b ValueBinding) {
 	s.values[name] = b
+	if s.onDefine != nil {
+		s.onDefine(name)
+	}
 }
 
 // bindings returns THIS scope's own value bindings, without a parent's. The walk over a
@@ -147,6 +156,9 @@ func (s *Scope) removeValue(name string) {
 // defineType inserts b under name in this scope's type map (overwrite, as above).
 func (s *Scope) defineType(name string, b TypeBinding) {
 	s.types[name] = b
+	if s.onDefine != nil {
+		s.onDefine(name)
+	}
 }
 
 // defineNamespace inserts ns under name in this scope's namespace map.

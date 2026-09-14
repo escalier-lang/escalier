@@ -30,13 +30,13 @@ import (
 //
 // Each block is marked handled, since it introduces no binding of its own and would
 // otherwise be reported as a declaration the dep graph did not model.
-func (c *checker) preBindNamespaceDecls(scope *Scope, module *ast.Module, handled set.Set[ast.Decl]) []*namespaceShell {
+func (c *checker) preBindNamespaceDecls(scope *Scope, module *ast.Module, handled set.Set[ast.Decl]) map[string]*namespaceShell {
 	target := c.declTarget(scope)
 	// One qualified name may be declared by several blocks, the same way an
 	// interface may. byName keeps one shell per name so the second block adds to
-	// the first's Namespace rather than replacing it.
+	// the first's Namespace rather than replacing it. It is also what the walk
+	// routes each binding through, keyed by the prefix the binding carries.
 	byName := map[string]*namespaceShell{}
-	var shells []*namespaceShell
 	module.Namespaces.Scan(func(prefix string, ns *ast.Namespace) bool {
 		for _, decl := range ns.Decls {
 			nsDecl, ok := decl.(*ast.NamespaceDecl)
@@ -58,12 +58,12 @@ func (c *checker) preBindNamespaceDecls(scope *Scope, module *ast.Module, handle
 				// members, so a block in a directory-derived namespace does not collide
 				// with a same-named block in a sibling directory.
 				target.defineNamespace(sh.qname, sh.ns)
-				shells = append(shells, sh)
 			}
 		}
 		return true
 	})
-	return append(shells, c.preBindPathNamespaces(target, module, byName)...)
+	c.preBindPathNamespaces(target, module, byName)
+	return byName
 }
 
 // preBindPathNamespaces mints a shell for every prefix in module.Namespaces that
@@ -76,8 +76,7 @@ func (c *checker) preBindNamespaceDecls(scope *Scope, module *ast.Module, handle
 // Each ancestor prefix gets a shell as well, hung off its parent, so the members
 // of `geo.sub` are reached by writing `geo.sub.member`. The scan runs in sorted
 // order, which reaches `geo` before `geo.sub`.
-func (c *checker) preBindPathNamespaces(target *Scope, module *ast.Module, byName map[string]*namespaceShell) []*namespaceShell {
-	var roots []*namespaceShell
+func (c *checker) preBindPathNamespaces(target *Scope, module *ast.Module, byName map[string]*namespaceShell) {
 	module.Namespaces.Scan(func(prefix string, ns *ast.Namespace) bool {
 		if prefix == "" {
 			return true
@@ -91,38 +90,21 @@ func (c *checker) preBindPathNamespaces(target *Scope, module *ast.Module, byNam
 				sh = &namespaceShell{ns: newNamespace(walked), qname: walked}
 				byName[walked] = sh
 				target.defineNamespace(walked, sh.ns)
-				if parent == nil {
-					roots = append(roots, sh)
-				} else {
+				if parent != nil {
 					parent.ns.Nested[segment] = sh.ns
-					parent.nested = append(parent.nested, sh)
 				}
 			}
 			parent = sh
 		}
-		// A block written at this prefix has its own shell and its own members, so
-		// only what is declared directly here belongs to this one.
-		for _, decl := range ns.Decls {
-			if _, isBlock := decl.(*ast.NamespaceDecl); isBlock {
-				continue
-			}
-			parent.decls = append(parent.decls, decl)
-		}
 		return true
 	})
-	return roots
 }
 
 // namespaceShell pairs a `namespace` block with the empty Namespace bound for it,
 // which populateNamespaces fills once the walk has bound its members.
 type namespaceShell struct {
-	// decls are the members declared under this qualified name, in source order,
-	// gathered from every block of the name and from the prefix itself. A block
-	// nested inside is left out: it has a shell of its own.
-	decls  []ast.Decl
-	ns     *Namespace
-	qname  string
-	nested []*namespaceShell
+	ns    *Namespace
+	qname string
 }
 
 // preBindOneNamespace mints the empty Namespace for one block and recurses into the
@@ -138,28 +120,14 @@ func (c *checker) preBindOneNamespace(prefix string, decl *ast.NamespaceDecl, ha
 	// A second block of one name reuses the first's Namespace and records its own
 	// declarations, so both blocks' members land in one binding.
 	if existing, seen := byName[qname]; seen {
-		existing.decls = append(existing.decls, membersOf(decl)...)
 		c.preBindNestedBlocks(qname, decl, handled, byName, existing)
 		return nil
 	}
 
-	sh := &namespaceShell{decls: membersOf(decl), ns: newNamespace(qname), qname: qname}
+	sh := &namespaceShell{ns: newNamespace(qname), qname: qname}
 	byName[qname] = sh
 	c.preBindNestedBlocks(qname, decl, handled, byName, sh)
 	return sh
-}
-
-// membersOf returns the declarations a block introduces, leaving out the blocks
-// nested inside it. Each of those has a shell of its own.
-func membersOf(decl *ast.NamespaceDecl) []ast.Decl {
-	out := make([]ast.Decl, 0, len(decl.Decls))
-	for _, inner := range decl.Decls {
-		if _, isBlock := inner.(*ast.NamespaceDecl); isBlock {
-			continue
-		}
-		out = append(out, inner)
-	}
-	return out
 }
 
 // preBindNestedBlocks mints the Namespace for each block written inside decl and
@@ -173,60 +141,52 @@ func (c *checker) preBindNestedBlocks(qname string, decl *ast.NamespaceDecl, han
 		}
 		if child := c.preBindOneNamespace(qname, nested, handled, byName); child != nil {
 			parent.ns.Nested[nested.Name.Name] = child.ns
-			parent.nested = append(parent.nested, child)
 		}
 	}
 }
 
-// refreshNamespaces fills every namespace pre-bound for the module under
-// inference. It runs whenever new bindings have landed, so a member reached
-// through `Foo.member` sees what the walk has bound so far.
+// routeToNamespace places a binding the module scope just made into the namespace
+// pre-bound for its prefix, so a member reached through `Foo.member` sees it as
+// soon as the walk defines it.
 //
-// Re-scanning every shell per component costs O(members) each time, which is
-// quadratic over a module of one component per member. #1493 replaces it with a
-// prefix-to-shell index the walk pushes each binding into as it defines it.
-func (c *checker) refreshNamespaces(scope *Scope) {
-	if len(c.nsShells) == 0 {
+// The alternative is re-scanning every shell after each component, which costs
+// O(members) each time and is quadratic over a module of one component per
+// member.
+//
+// A name with no dot is a top-level binding and belongs to no namespace. A dotted
+// name whose prefix has no shell is left alone, which is how a member of a
+// namespace this module does not declare passes through.
+func (c *checker) routeToNamespace(scope *Scope, key string) {
+	if len(c.nsIndex) == 0 {
 		return
 	}
-	c.populateNamespaces(c.declTarget(scope), c.nsShells)
-}
-
-// populateNamespaces populates each pre-bound Namespace in shells.
-func (c *checker) populateNamespaces(scope *Scope, shells []*namespaceShell) {
-	for _, sh := range shells {
-		c.populateNamespace(scope, sh)
-	}
-}
-
-// populateNamespace copies the bindings the walk placed under sh's qualified
-// prefix into the Namespace pre-bound for it, then does the same for the blocks
-// nested inside it. A nested block is populated through the same pointer its
-// parent already holds, so `namespace a { namespace b { val x } }` gives `a.b.x`.
-func (c *checker) populateNamespace(scope *Scope, sh *namespaceShell) {
-	out := sh.ns
-	// Each member was keyed under `qname.member` and bound by the walk, so its
-	// names are read back rather than re-inferred here. ast.DeclNames answers what
-	// a declaration introduces. Its export flag is not consulted, since that flag
-	// gates a package's surface rather than what a namespace holds.
-	for _, decl := range sh.decls {
-		for _, name := range ast.DeclNames(decl) {
-			key := qualify(sh.qname, name)
-			if b, found := scope.GetValue(key); found {
-				out.Values[name] = b
-			}
-			if b, found := scope.GetType(key); found {
-				out.Types[name] = b
-			} else if b, found := scope.GetType(qualify(packageKeyPrefix(c.pkgURI), key)); found {
-				// A type declared inside a package registers under a key carrying the
-				// package URI, which is what keeps two packages' same-named classes
-				// apart. The member is re-keyed to its bare name here, the way
-				// exportedSurface re-keys a package's top-level types.
-				out.Types[name] = b
-			}
+	// A type declared inside a package registers under a key carrying the package
+	// URI, which is what keeps two packages' same-named classes apart. That head
+	// escapes the URI's own dots, so the first dot ends it and what follows is the
+	// qualified name the namespace knows the member by.
+	member := key
+	if strings.HasPrefix(member, packageKeyHead) {
+		_, rest, ok := strings.Cut(member, ".")
+		if !ok {
+			return
 		}
+		member = rest
 	}
-	c.populateNamespaces(scope, sh.nested)
+	dot := strings.LastIndex(member, ".")
+	if dot < 0 {
+		return
+	}
+	sh, held := c.nsIndex[member[:dot]]
+	if !held {
+		return
+	}
+	name := member[dot+1:]
+	if b, found := scope.GetValue(key); found {
+		sh.ns.Values[name] = b
+	}
+	if b, found := scope.GetType(key); found {
+		sh.ns.Types[name] = b
+	}
 }
 
 // importBindsNamespace reports whether any file of the module being inferred binds
