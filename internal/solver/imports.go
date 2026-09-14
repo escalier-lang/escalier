@@ -77,16 +77,17 @@ func (c *checker) bindPseudoPackageImport(fileScope *Scope, stmt *ast.ImportStmt
 	}
 
 	uri := stmt.PackageName
-	// An `as` clause is refused rather than skipped. A member's declarations are
-	// reached by qualified name — `beta.Beta` — and nothing binds those names
-	// under a second prefix, so an alias would silently resolve nothing. The
-	// generated tree writes bare imports only, so this is a hand-written stdlib
-	// directory being told to drop the alias rather than a gap in the tree.
+	// A member of the group being loaded is already in the merged module, so it is
+	// bound from there rather than loaded again. The binding goes in this file's
+	// scope under the name this file wrote, which is what lets two members import
+	// packages whose URIs derive one name: `std:url` and `web:url` are two
+	// namespaces, and each importer reaches the one it named.
+	//
+	// The namespace is empty at this point and the walk fills it through the same
+	// pointer, the way a `namespace` block's is filled.
 	if c.activeGroup.Contains(uri) {
-		if stmt.Alias != "" {
-			return []SolverError{&AliasedCycleImportError{
-				URI: uri, Alias: stmt.Alias, span: stmt.Span(),
-			}}
+		if ns, held := c.memberNamespaces[groupNamespace(uri)]; held {
+			fileScope.defineNamespace(stmt.LocalName(), ns)
 		}
 		return nil
 	}
@@ -106,24 +107,6 @@ func (c *checker) bindPseudoPackageImport(fileScope *Scope, stmt *ast.ImportStmt
 	}
 	return errs
 }
-
-// AliasedCycleImportError reports an `as` clause on an import naming a sibling
-// in the same cycle.
-type AliasedCycleImportError struct {
-	URI   string
-	Alias string
-	span  ast.Span
-}
-
-func (e *AliasedCycleImportError) Message() string {
-	return fmt.Sprintf(
-		"cannot import %q as %q: the two packages import each other and load as one "+
-			"module, where a sibling is reached by its own name; write the bare import",
-		e.URI, e.Alias)
-}
-func (e *AliasedCycleImportError) Span() ast.Span      { return e.span }
-func (e *AliasedCycleImportError) Related() []ast.Span { return nil }
-func (e *AliasedCycleImportError) isSolverError()      {}
 
 // coreURI is the one package whose exports an importer binds unprefixed. It
 // still takes an import, which is the whole difference between it and the

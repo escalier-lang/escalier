@@ -140,6 +140,12 @@ type checker struct {
 	// invisible to a sibling file and to the package's exported surface.
 	moduleScope *Scope
 
+	// memberNamespaces holds the Namespace minted for each member of the group
+	// being loaded, keyed by the prefix its declarations land under. Minted before
+	// the imports bind so a member importing a sibling binds the object the walk
+	// then fills, and nil outside a group load.
+	memberNamespaces map[string]*Namespace
+
 	// nsIndex maps each qualified prefix pre-bound for the module under inference
 	// to the namespace bound for it, so routeToNamespace can place a binding as the
 	// walk defines it. It is nil outside a walk.

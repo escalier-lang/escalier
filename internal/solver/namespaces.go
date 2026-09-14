@@ -87,7 +87,11 @@ func (c *checker) preBindPathNamespaces(target *Scope, module *ast.Module, byNam
 			walked = qualify(walked, segment)
 			sh, seen := byName[walked]
 			if !seen {
-				sh = &namespaceShell{ns: newNamespace(walked), qname: walked}
+				ns, minted := c.memberNamespaces[walked]
+				if !minted {
+					ns = newNamespace(walked)
+				}
+				sh = &namespaceShell{ns: ns, qname: walked}
 				byName[walked] = sh
 				target.defineNamespace(walked, sh.ns)
 				if parent != nil {

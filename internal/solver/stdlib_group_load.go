@@ -89,10 +89,6 @@ func (c *checker) loadPackageGroup(group []string, span ast.Span) []SolverError 
 		}}
 	}
 
-	if errs := checkGroupBindings(group, span); len(errs) > 0 {
-		return errs
-	}
-
 	module, paths, err := c.groupSource(group)
 	if err != nil {
 		return []SolverError{&UnresolvedPackageError{
@@ -114,6 +110,15 @@ func (c *checker) loadPackageGroup(group []string, span ast.Span) []SolverError 
 	c.activeGroup = set.FromSlice(group)
 
 	scope := c.preludeScope().Child()
+	// Minted before the imports bind, so a member importing a sibling binds the
+	// object the walk then fills. preBindPathNamespaces reuses these rather than
+	// minting its own for the same prefixes.
+	c.memberNamespaces = map[string]*Namespace{}
+	for _, uri := range group {
+		c.memberNamespaces[groupNamespace(uri)] = newNamespace(groupNamespace(uri))
+	}
+	defer func() { c.memberNamespaces = nil }()
+
 	c.bindFileImports(scope, module)
 	c.inferDepGraph(scope, 0, module, dep_graph.BuildDepGraph(module))
 
@@ -207,46 +212,14 @@ func (c *checker) groupKeyURI(group []string) string {
 // groupNamespace is the namespace one member's declarations land under inside a
 // merged module.
 //
-// It is the name that member's import binds, since a member of `std:beta` reads
-// `beta.Beta` whether it imports the package or shares a group with it. Two
-// members deriving one name therefore cannot both be in a group: the scheme is
-// not part of the name, so `std:url` and `web:url` collide.
+// It carries the scheme, so `std:url` and `web:url` land apart. Neither is the
+// name anything writes: a member reaches a sibling by whatever name its own
+// import binds, and bindPseudoPackageImport binds that name in the member's file
+// scope to the namespace this one keys.
 func groupNamespace(uri string) string {
-	return ast.DeriveImportName(uri)
-}
-
-// checkGroupBindings refuses a group whose members do not each bind a distinct
-// name. A member reaches a sibling by the name its import binds, so two members
-// sharing one leave every reference to it ambiguous.
-func checkGroupBindings(group []string, span ast.Span) []SolverError {
-	seen := map[string]string{}
-	for _, uri := range group {
-		name := groupNamespace(uri)
-		if first, dup := seen[name]; dup {
-			return []SolverError{&GroupBindingCollisionError{
-				First: first, Second: uri, Binding: name, span: span,
-			}}
-		}
-		seen[name] = uri
+	scheme, pkg, ok := splitScheme(uri)
+	if !ok {
+		return ast.DeriveImportName(uri)
 	}
-	return nil
+	return scheme + "__" + ast.DeriveImportName(pkg)
 }
-
-// GroupBindingCollisionError reports two members of one group binding the same
-// name.
-type GroupBindingCollisionError struct {
-	First   string
-	Second  string
-	Binding string
-	span    ast.Span
-}
-
-func (e *GroupBindingCollisionError) Message() string {
-	return fmt.Sprintf(
-		"%s and %s import each other and both bind %q; a member of a cycle reaches a "+
-			"sibling by that name, so the two cannot be told apart",
-		e.First, e.Second, e.Binding)
-}
-func (e *GroupBindingCollisionError) Span() ast.Span      { return e.span }
-func (e *GroupBindingCollisionError) Related() []ast.Span { return nil }
-func (e *GroupBindingCollisionError) isSolverError()      {}

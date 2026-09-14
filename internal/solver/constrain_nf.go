@@ -486,4 +486,3 @@ func isNegation(t soltype.Type) bool {
 	_, ok := t.(*soltype.NegationType)
 	return ok
 }
-

@@ -263,10 +263,10 @@ func TestAReportingGroupStillBinds(t *testing.T) {
 	require.Equal(t, "number", soltype.Print(inferredValueType(t, res.Scope, "ok")))
 }
 
-// An `as` clause on an import naming a sibling in the same cycle is refused. A
-// member is reached by its own name inside the merged module, so an alias would
-// resolve nothing; saying so beats binding nothing.
-func TestAnAliasedIntraGroupImportIsRefused(t *testing.T) {
+// An `as` clause on an import naming a sibling works like any other alias. Each
+// member binds the sibling in its own file scope under the name it wrote, so
+// nothing depends on the two agreeing.
+func TestAnAliasedIntraClosureImportBinds(t *testing.T) {
 	t.Parallel()
 
 	res := inferAgainstCyclicStdlib(t, `
@@ -284,31 +284,63 @@ func TestAnAliasedIntraGroupImportIsRefused(t *testing.T) {
 		`,
 	})
 
-	messages := errorMessagesOf(res.Errors)
-	require.NotEmpty(t, messages)
-	require.Contains(t, messages[0],
-		`cannot import "std:beta" as "b": the two packages import each other and load as `+
-			`one module, where a sibling is reached by its own name; write the bare import`)
+	require.Empty(t, errorMessagesOf(res.Errors))
+	require.Equal(t, "Beta", soltype.Print(inferredValueType(t, res.Scope, "partner")))
 }
 
-// Two members of one group binding the same name are refused. A member reaches
-// a sibling by that name, so the two could not be told apart.
-func TestAGroupWithCollidingBindingsIsRefused(t *testing.T) {
+// Two packages whose URIs derive one name load together. A member's declarations
+// land under a prefix carrying the scheme, so `std:url` and `web:url` are two
+// namespaces rather than one ambiguous name, and a closure may hold both.
+//
+// The importing file aliases one of them, since two bare imports would both bind
+// `url` in that file and the second would shadow the first. That is ordinary
+// import shadowing and has nothing to do with the closure.
+func TestTwoPackagesOfOneDerivedNameLoadTogether(t *testing.T) {
 	t.Parallel()
 
 	res := inferAgainstCyclicStdlib(t, `
 		import "std:url"
-		val x = 1
+		import "web:url" as weburl
+		declare val a: url.Parsed
+		declare val b: weburl.Parsed
+		val href = a.href
+		val origin = b.origin
 	`, map[string]string{
-		"std/url.esc": "import \"web:url\"\nexport declare val a: number",
-		"web/url.esc": "import \"std:url\"\nexport declare val b: number",
+		"std/url.esc": `export declare class Parsed { href: string }`,
+		"web/url.esc": `export declare class Parsed { origin: string }`,
 	})
 
-	// The pair also spans tiers, since `std:*` is the language tier and `web:url`
-	// is portable, so both diagnostics are correct and both are reported.
-	require.Contains(t, errorMessagesOf(res.Errors),
-		`std:url and web:url import each other and both bind "url"; a member of a cycle `+
-			`reaches a sibling by that name, so the two cannot be told apart`)
+	require.Empty(t, errorMessagesOf(res.Errors))
+	require.Equal(t, "string", soltype.Print(inferredValueType(t, res.Scope, "href")))
+	require.Equal(t, "string", soltype.Print(inferredValueType(t, res.Scope, "origin")))
+}
+
+// The same pair reached from inside the closure. Each member writes the bare
+// name of what it imported, and the two resolve apart.
+func TestTwoMembersOfOneDerivedNameResolveApart(t *testing.T) {
+	t.Parallel()
+
+	res := inferAgainstCyclicStdlib(t, `
+		import "std:consumer"
+		declare val c: consumer.Holder
+		val href = c.fromStd.href
+		val origin = c.fromWeb.origin
+	`, map[string]string{
+		"std/url.esc": `export declare class Parsed { href: string }`,
+		"web/url.esc": `export declare class Parsed { origin: string }`,
+		"std/consumer.esc": `
+			import "std:url"
+			import "web:url" as weburl
+			export declare class Holder {
+				fromStd: url.Parsed,
+				fromWeb: weburl.Parsed,
+			}
+		`,
+	})
+
+	require.Empty(t, errorMessagesOf(res.Errors))
+	require.Equal(t, "string", soltype.Print(inferredValueType(t, res.Scope, "href")))
+	require.Equal(t, "string", soltype.Print(inferredValueType(t, res.Scope, "origin")))
 }
 
 // A cycle whose members sit in different tiers loads like any other. Refusing
@@ -382,39 +414,3 @@ func TestTheCommittedTreeClosureIsBoundedByTheRoots(t *testing.T) {
 // committedTree is the generated tree these tests read, relative to this
 // package's directory.
 const committedTree = "../interop/data"
-
-// Two packages whose URIs derive the same local name can both be in one
-// closure, since a closure is what the imports reach rather than what cycles.
-// `std:url` and `web:url` both derive `url`, and a merged module holds one
-// namespace per derived name, so the load is refused and the program gets
-// nothing.
-//
-// No single package's closure hits this: all 47 in the committed tree are
-// collision-free, so it takes a program importing both halves. Under the
-// component detection this replaced the two were never in one group, so this is
-// a narrowing of what loads.
-//
-// The fix is for a member's import to bind in that file's own scope rather than
-// for every member to share one namespace keyed by derived name. Each file would
-// then reach what it imported, `checkGroupBindings` would have nothing to refuse,
-// and an alias would work too.
-//
-// DISABLED until the per-file member binding lands. The assertions below are
-// what should hold then.
-/*
-func TestAClosureHoldingTwoPackagesOfOneName(t *testing.T) {
-	t.Parallel()
-
-	res := inferAgainstCyclicStdlib(t, `
-		import "std:url"
-		import "web:url"
-		declare val a: url.Parsed
-		val x = a
-	`, map[string]string{
-		"std/url.esc": `export declare class Parsed { href: string }`,
-		"web/url.esc": `export declare class Parsed { origin: string }`,
-	})
-
-	require.Empty(t, errorMessagesOf(res.Errors))
-}
-*/
