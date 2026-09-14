@@ -84,21 +84,17 @@ func TestModuleDeclarationOutranksThePrelude(t *testing.T) {
 	require.Equal(t, "string", soltype.Print(inferredValueType(t, res.Scope, "s")))
 }
 
-// A file's import outranks the prelude export of the same name. An import binds
-// into the file scope, which is a child of the module scope, so it is nearer
-// still.
+// An import does not shadow a prelude name, because it binds a namespace rather
+// than the names inside it. A package declaring `Widget` is reached as
+// `widget.Widget`, and a bare `Widget` still resolves to the prelude's.
 //
-// The package is named after the class it declares, so the FR5 shortcut binds
-// `Widget` itself rather than a namespace to reach it through. That is what puts
-// the two bindings under one name, which a qualified `pkg.Widget` would not do.
-func TestFileImportOutranksThePrelude(t *testing.T) {
+// A file scope is nearer than the prelude scope, so a name bound in both would
+// resolve to the file's. An import binds only the package's own name, so the two
+// never land under one identifier.
+func TestAnImportDoesNotShadowAPreludeName(t *testing.T) {
 	t.Parallel()
 
-	res := inferAgainstStdlib(t, `
-		import "std:widget"
-		val w = Widget("hi")
-		val s: string = w.label
-	`, map[string]string{
+	files := map[string]string{
 		"std/prelude.esc": `
 			export class Widget {
 				size: number,
@@ -109,12 +105,29 @@ func TestFileImportOutranksThePrelude(t *testing.T) {
 				label: string,
 			}
 		`,
+	}
+
+	t.Run("TheBareNameStaysThePreludes", func(t *testing.T) {
+		res := inferAgainstStdlib(t, `
+			import "std:widget"
+			val w = Widget(1)
+			val n: number = w.size
+		`, files)
+
+		require.Empty(t, errorMessagesOf(res.Errors))
+		require.Equal(t, "number", soltype.Print(inferredValueType(t, res.Scope, "n")))
 	})
 
-	require.Empty(t, errorMessagesOf(res.Errors))
-	// Only the imported `Widget` has a label, so reading one says which binding
-	// the bare reference resolved to.
-	require.Equal(t, "string", soltype.Print(inferredValueType(t, res.Scope, "s")))
+	t.Run("TheImportedOneIsReachedQualified", func(t *testing.T) {
+		res := inferAgainstStdlib(t, `
+			import "std:widget"
+			val w = widget.Widget("hi")
+			val s: string = w.label
+		`, files)
+
+		require.Empty(t, errorMessagesOf(res.Errors))
+		require.Equal(t, "string", soltype.Print(inferredValueType(t, res.Scope, "s")))
+	})
 }
 
 // The prelude package does not inject into itself. Its own declarations resolve

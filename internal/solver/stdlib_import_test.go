@@ -106,33 +106,52 @@ func TestStdlibImportAcceptsUnderscoresAndDigits(t *testing.T) {
 	require.Equal(t, "string", soltype.Print(inferredValueType(t, res.Scope, "b")))
 }
 
-// A package whose sole class shares its name binds that class directly, under
-// the class's own capitalization rather than the package's. This is the FR5
-// single-class shortcut.
-func TestStdlibImportBindsASingleClassDirectly(t *testing.T) {
+// A class is reached through its package's namespace, the same route every other
+// export takes. A package whose name matches a class it declares gets no special
+// binding, so `std:shapes` reads `shapes.Shapes` and never a bare `Shapes`.
+func TestStdlibImportReachesAClassThroughItsNamespace(t *testing.T) {
 	t.Parallel()
 
-	res := inferAgainstStdlib(t, `
-		import "std:array"
-		val xs = Array(1)
-		val n = xs.length
-		val other = array.helper
-	`, map[string]string{
-		"std/array.esc": `
-			export declare class Array {
-				length: number,
-			}
-			export val helper: number = 1
-		`,
+	const pkg = `
+		export declare class Shapes {
+			size: number,
+		}
+		export val helper: number = 1
+	`
+
+	t.Run("TheNamespaceReachesTheClassAndItsSiblings", func(t *testing.T) {
+		res := inferAgainstStdlib(t, `
+			import "std:shapes"
+			val s = shapes.Shapes(1)
+			val n = s.size
+			val other = shapes.helper
+		`, map[string]string{"std/shapes.esc": pkg})
+
+		require.Empty(t, errorMessagesOf(res.Errors))
+		require.Equal(t, "Shapes", soltype.Print(inferredValueType(t, res.Scope, "s")))
+		require.Equal(t, "number", soltype.Print(inferredValueType(t, res.Scope, "n")))
+		require.Equal(t, "number", soltype.Print(inferredValueType(t, res.Scope, "other")))
 	})
 
-	require.Empty(t, errorMessagesOf(res.Errors))
-	require.Equal(t, "Array", soltype.Print(inferredValueType(t, res.Scope, "xs")))
-	require.Equal(t, "number", soltype.Print(inferredValueType(t, res.Scope, "n")))
+	t.Run("TheBareClassNameIsUnbound", func(t *testing.T) {
+		res := inferAgainstStdlib(t, `
+			import "std:shapes"
+			val s = Shapes(1)
+		`, map[string]string{"std/shapes.esc": pkg})
 
-	// The package's other exports stay reachable through the namespace. FR5 asks
-	// for them on the class binding as well, which is #1466.
-	require.Equal(t, "number", soltype.Print(inferredValueType(t, res.Scope, "other")))
+		require.Equal(t, []string{"Unknown identifier: Shapes"}, errorMessagesOf(res.Errors))
+	})
+
+	t.Run("TheClassTypeIsReachedThroughTheNamespaceToo", func(t *testing.T) {
+		res := inferAgainstStdlib(t, `
+			import "std:shapes"
+			declare val s: shapes.Shapes
+			val n = s.size
+		`, map[string]string{"std/shapes.esc": pkg})
+
+		require.Empty(t, errorMessagesOf(res.Errors))
+		require.Equal(t, "number", soltype.Print(inferredValueType(t, res.Scope, "n")))
+	})
 }
 
 // A package writing a name a file never imports is unbound. There is no ambient
@@ -394,14 +413,11 @@ func TestStdlibSourceRejectsADirectory(t *testing.T) {
 		`unknown package "shaped" in std: scheme (no std/shaped.esc under `+dir+`)`)
 }
 
-// The single-class shortcut fires for a class and nothing else.
-//
-// A package exporting a function beside a same-named type has a value and a
-// type under one name, the pair a class produces, but binding that function
-// directly would shadow the namespace: a member access that finds a value never
-// reaches a namespace of the same name, so every other export would be
-// unreachable.
-func TestStdlibShortcutFiresOnlyForAClass(t *testing.T) {
+// A package binds as a namespace and nothing else, so an export sharing the
+// package's own name never displaces it. A package exporting `fn array` beside
+// `type array` used to be the case the single-class shortcut had to rule out;
+// with one binding shape there is nothing to rule out.
+func TestStdlibImportBindsNoValueUnderThePackageName(t *testing.T) {
 	t.Parallel()
 
 	res := inferAgainstStdlib(t, `
@@ -418,11 +434,10 @@ func TestStdlibShortcutFiresOnlyForAClass(t *testing.T) {
 	require.Empty(t, errorMessagesOf(res.Errors))
 	require.Equal(t, "number", soltype.Print(inferredValueType(t, res.Scope, "n")))
 
-	// The package binds as a namespace, and no value shadows it.
 	_, boundNamespace := res.FileScopes[0].GetNamespace("array")
 	require.True(t, boundNamespace)
 	_, boundValue := res.FileScopes[0].values["array"]
-	require.False(t, boundValue, "the shortcut should not bind a non-class value")
+	require.False(t, boundValue, "an import binds a namespace, never a value")
 }
 
 // An `as` clause names the namespace a pseudo-package binds under, the same way
@@ -448,15 +463,13 @@ func TestStdlibImportBindsUnderItsAlias(t *testing.T) {
 	require.False(t, derived, "the derived name is not bound alongside the alias")
 }
 
-// An alias renames the namespace binding and nothing else. A package whose sole
-// class is named after it still binds that class under its own capitalization,
-// since that binding is the class rather than the package.
-func TestStdlibImportAliasLeavesTheSingleClassShortcut(t *testing.T) {
+// An alias renames the one binding an import makes, so a class inside the
+// package is reached under the alias and under no other name.
+func TestStdlibImportAliasRenamesTheOnlyBinding(t *testing.T) {
 	t.Parallel()
 
 	res := inferAgainstStdlib(t, `
 		import "std:shapes" as S
-		val a = Shapes(1)
 		val b = S.Shapes(2)
 	`, map[string]string{
 		"std/shapes.esc": `
@@ -467,6 +480,8 @@ func TestStdlibImportAliasLeavesTheSingleClassShortcut(t *testing.T) {
 	})
 
 	require.Empty(t, errorMessagesOf(res.Errors))
-	require.Equal(t, "Shapes", soltype.Print(inferredValueType(t, res.Scope, "a")))
 	require.Equal(t, "Shapes", soltype.Print(inferredValueType(t, res.Scope, "b")))
+
+	_, bare := res.FileScopes[0].values["Shapes"]
+	require.False(t, bare, "the class is not lifted out of its package")
 }

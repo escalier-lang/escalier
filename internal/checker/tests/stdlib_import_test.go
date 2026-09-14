@@ -143,35 +143,6 @@ func TestStdlibImport_DuplicateFlag(t *testing.T) {
 	)
 }
 
-// DISABLED until #1457. Importing a pseudo-package panics before any assertion
-// here is reached. The class's instance alias prunes to a `RestSpreadType` and
-// `InferComponent` asserts an `*ObjectType` on it. Re-enable by removing the
-// wrapper once that import loads.
-func TestStdlibImport_SingleClassShortcut(t *testing.T) {
-	/*
-		// std:date exposes `class Date` — FR5 binds the class
-		// with its original capitalization. It does not bind the
-		// lowercased `date`.
-		fileScopes, errs := inferStdlibImportSource(t, `
-			import "std:date"
-			val now: Date = Date()
-			val stamp: number = now.getTime()
-		`)
-		require.Empty(t, errorMessages(errs))
-
-		fileScope := fileScopes[0]
-		_, hasValue := fileScope.Namespace.Values["Date"]
-		require.True(t, hasValue, "expected Date value binding")
-		_, hasType := fileScope.Namespace.Types["Date"]
-		require.True(t, hasType, "expected Date type binding")
-
-		// The lowercased fallback namespace should NOT be present when the
-		// shortcut fires.
-		_, hasNs := fileScope.Namespace.GetNamespace("date")
-		require.False(t, hasNs, "single-class shortcut should suppress lowercased namespace")
-	*/
-}
-
 func TestStdlibImport_InvalidPackageName(t *testing.T) {
 	_, errs := inferStdlibImportSource(t, `import "std:Math"`)
 	require.Len(t, errs, 1)
@@ -244,10 +215,8 @@ func TestStdlibImport_LocalBindingSharesPkgNsPointer(t *testing.T) {
 	// A synthetic `std:math`, for the reason syntheticMath records: this test
 	// pins a pointer, not the committed tree's contents.
 	//
-	// `math` has no class whose name matches the package name, so the
-	// single-class shortcut does not fire and `?local` binds the package as a
-	// namespace — the shape the pointer comparison needs. `std:array` would route
-	// through the shortcut and bind the class directly.
+	// `?local` binds the package as a namespace, which is the shape the pointer
+	// comparison needs.
 	t.Setenv("ESCALIER_STDLIB_DIR", makeCustomStdlibDir(t, syntheticMath))
 
 	source := &ast.Source{ID: 0, Path: "lib/main.esc", Contents: `
@@ -476,16 +445,12 @@ import "web:webgl"
 	require.Empty(t, errorMessages(errs))
 
 	fileNs := fileScopes[0].Namespace
-	// dom and webgl don't trigger the single-class shortcut (class
-	// names don't match pkg names), so they bind under lowercased pkg
-	// namespaces. app does trigger the shortcut (class App ↔ pkg app),
-	// so the App class binds directly at file scope.
-	for _, pkg := range []string{"dom", "webgl"} {
+	// Every package binds under its lowercased name, `app` included. A package
+	// whose class shares its name is bound no differently from one whose does not.
+	for _, pkg := range []string{"app", "dom", "webgl"} {
 		_, ok := fileNs.GetNamespace(pkg)
 		require.True(t, ok, "expected %s namespace bound at file scope", pkg)
 	}
-	_, hasAppType := fileNs.Types["App"]
-	require.True(t, hasAppType, "expected App class type bound at file scope (single-class shortcut)")
 }
 
 // TestStdlibImport_PseudoPackageCycleMixedSchemes verifies the SCC
@@ -494,12 +459,9 @@ import "web:webgl"
 // cycles confined to a single scheme.
 //
 // The user-side imports use the default binding shape (no flag →
-// ?local). Both packages expose a single class whose name matches the
-// pkg name case-insensitively (`Host`/`host`, `Client`/`client`), so
-// the §FR5 single-class shortcut fires: the class names bind directly
-// at file scope rather than under a `host`/`client` namespace. This
-// proves the shortcut path stacks correctly on top of the cyclic
-// merged load.
+// ?local), so each package binds under its lowercased name and its class
+// is reached as `host.Host` and `client.Client`. This proves the binding
+// path stacks correctly on top of the cyclic merged load.
 func TestStdlibImport_PseudoPackageCycleMixedSchemes(t *testing.T) {
 	dir := makeCustomStdlibDir(t, map[string]string{
 		"std/host.esc": `
@@ -525,16 +487,16 @@ export declare class Client {
 import "std:host"
 import "web:client"
 
-export declare fn makeHost() -> Host
-export declare fn makeClient() -> Client
+export declare fn makeHost() -> host.Host
+export declare fn makeClient() -> client.Client
 `)
 	require.Empty(t, errorMessages(errs))
 
-	fileScope := fileScopes[0]
-	_, hasHostType := fileScope.Namespace.Types["Host"]
-	require.True(t, hasHostType, "single-class shortcut should bind Host directly at file scope")
-	_, hasClientType := fileScope.Namespace.Types["Client"]
-	require.True(t, hasClientType, "single-class shortcut should bind Client directly at file scope")
+	fileNs := fileScopes[0].Namespace
+	for _, pkg := range []string{"host", "client"} {
+		_, ok := fileNs.GetNamespace(pkg)
+		require.True(t, ok, "expected %s namespace bound at file scope", pkg)
+	}
 }
 
 // TestStdlibImport_PseudoPackageCycle_DecoratorErrorNamesURI pins the
@@ -972,9 +934,10 @@ import "std:beta"
 	require.Empty(t, errorMessages(errs))
 
 	fileNs := fileScopes[0].Namespace
-	// Single-class shortcut fires for both (class Alpha ↔ pkg alpha, Beta ↔ beta).
-	for _, name := range []string{"Alpha", "Beta"} {
-		_, ok := fileNs.Types[name]
-		require.True(t, ok, "expected %s type bound at file scope via single-class shortcut", name)
+	// Each package binds as a namespace, so the classes inside the merged load are
+	// reached as `alpha.Alpha` and `beta.Beta`.
+	for _, pkg := range []string{"alpha", "beta"} {
+		_, ok := fileNs.GetNamespace(pkg)
+		require.True(t, ok, "expected %s namespace bound at file scope", pkg)
 	}
 }

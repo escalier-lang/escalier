@@ -1375,11 +1375,12 @@ a desugaring rule — rather than opaque placeholders.
   waiting behind it. Recorded here so the dependency is visible from the milestone that
   unblocks it.
 
-**Accept:** real source that **imports** core lib types (`import { Array } from
-"std:array"`, `Promise`, `Map<K, V>`, `Iterable<T>`/`Iterator<T>`/
-`IteratorResult<T>`, `console`) resolves them to real `soltype` structures and
-type-checks, not placeholders, and `import { … } from "std:array"` / `"web:dom"`
-resolves member types. A file that names `Array` **without importing it** is an
+**Accept:** real source that **imports** core lib types (`import "std:array"`,
+`Promise`, `Map<K, V>`, `Iterable<T>`/`Iterator<T>`/ `IteratorResult<T>`,
+`console`) resolves them to real `soltype` structures and type-checks, not
+placeholders, and `import "std:array"` / `import "web:dom"` resolves member
+types. The import is bare: a pseudo-package has no named-import form, and access
+goes through the binding the URI makes. A file that names `Array` **without importing it** is an
 unbound-name error, proving there is no ambient surface. The M3 `await` and M5
 `for (x in xs)` rules exercise against the **real** `Promise`/`Iterable` (replacing
 the M2 placeholders) even in a file that never imports those names, through the

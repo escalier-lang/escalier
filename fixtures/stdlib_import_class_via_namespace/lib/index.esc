@@ -1,4 +1,4 @@
 import "std:date"
 
-export val now: Date = Date()
+export val now: date.Date = date.Date()
 export val stamp: number = now.getTime()
