@@ -26,13 +26,18 @@ import (
 // reads it back. Keying on contents alone would let two packages that happen to
 // share a body resolve to one module under whichever basename parsed first.
 //
-// The directory is deliberately out, which decides three things.
+// The directory is out of the key and no modification time is consulted.
+// Keying on the path and comparing a size-and-mtime stamp is the obvious
+// alternative, and three things decide against it.
 //
-//  1. A file that changed is a different key, so no stamp is compared and no
-//     stale parse survives an edit. A language server runs for hours and
-//     outlives a contributor regenerating the tree underneath it.
-//  2. Two directories holding the same file share one parse. Each test seeding
-//     a stdlib tree writes the same prelude to a fresh temporary directory.
+//  1. Two directories holding the same file share one parse. Each test seeding
+//     a stdlib tree writes the same prelude to a fresh temporary directory, so
+//     a path key pins an identical module per test and serves no hit between
+//     them. This is where most of what the cache saves comes from.
+//  2. Nothing stale survives an edit, because changed content is a different
+//     key. A stamp can miss a write landing at the same size within the
+//     filesystem's timestamp granularity, and a language server runs for hours
+//     and outlives a contributor regenerating the tree underneath it.
 //  3. The cache is bounded by how many distinct sources a process reads rather
 //     than how many directories it visits.
 //
