@@ -16,10 +16,18 @@
     "digest": "fce3e28102d0c094"
   },
   {
+    "decl": "BuiltinIteratorReturn",
+    "digest": "12428e1afa5d2542"
+  },
+  {
     "decl": "Generator",
     "member": "throw",
     "kind": "method",
     "digest": "e207885967150b58"
+  },
+  {
+    "decl": "NonNullable",
+    "digest": "cd845ace7ee44d0e"
   },
   {
     "decl": "Promise",

@@ -15,6 +15,68 @@ import (
 type typeRefCollector struct {
 	ast.DefaultVisitor
 	names set.Set[string]
+	// bound counts the type parameters in scope by name. A reference to one names
+	// the binder rather than a declaration, so it forces no import. `std:math`
+	// declares a top-level `E`, which `Promise<T, E>` would otherwise pull in.
+	bound map[string]int
+}
+
+func (c *typeRefCollector) push(params []*ast.TypeParam) {
+	for _, tp := range params {
+		c.bound[tp.Name]++
+	}
+}
+
+func (c *typeRefCollector) pop(params []*ast.TypeParam) {
+	for _, tp := range params {
+		c.bound[tp.Name]--
+		if c.bound[tp.Name] <= 0 {
+			delete(c.bound, tp.Name)
+		}
+	}
+}
+
+// typeParamsOfDecl returns the type parameters a declaration binds over its own
+// body.
+func typeParamsOfDecl(d ast.Decl) []*ast.TypeParam {
+	switch d := d.(type) {
+	case *ast.ClassDecl:
+		return d.TypeParams
+	case *ast.TypeDecl:
+		return d.TypeParams
+	case *ast.InterfaceDecl:
+		return d.TypeParams
+	case *ast.EnumDecl:
+		return d.TypeParams
+	case *ast.FuncDecl:
+		return d.TypeParams
+	}
+	return nil
+}
+
+func (c *typeRefCollector) ExitDecl(d ast.Decl) {
+	c.pop(typeParamsOfDecl(d))
+}
+
+func (c *typeRefCollector) ExitTypeAnn(t ast.TypeAnn) {
+	if fn, ok := t.(*ast.FuncTypeAnn); ok {
+		c.pop(fn.TypeParams)
+	}
+}
+
+// EnterExpr brings a function expression's own type parameters into scope. A
+// class member holds its signature as a `FuncExpr`, which nothing else binds.
+func (c *typeRefCollector) EnterExpr(e ast.Expr) bool {
+	if fn, ok := e.(*ast.FuncExpr); ok {
+		c.push(fn.TypeParams)
+	}
+	return true
+}
+
+func (c *typeRefCollector) ExitExpr(e ast.Expr) {
+	if fn, ok := e.(*ast.FuncExpr); ok {
+		c.pop(fn.TypeParams)
+	}
 }
 
 // EnterDecl visits the slots `Accept` does not reach: a type parameter's
@@ -25,6 +87,7 @@ type typeRefCollector struct {
 // Returning true leaves the ordinary walk to the rest. A name recorded twice
 // costs nothing, since the result is a set.
 func (c *typeRefCollector) EnterDecl(d ast.Decl) bool {
+	c.push(typeParamsOfDecl(d))
 	switch d := d.(type) {
 	case *ast.ClassDecl:
 		c.visitTypeParams(d.TypeParams)
@@ -54,21 +117,48 @@ func (c *typeRefCollector) visitTypeParams(params []*ast.TypeParam) {
 	}
 }
 
-// EnterTypeAnn records a `TypeRefTypeAnn`'s head name and keeps walking, so
-// the arguments of `Foo<Bar>` are collected beside `Foo` itself.
+// EnterTypeAnn records a `TypeRefTypeAnn`'s name and keeps walking, so the
+// arguments of `Foo<Bar>` are collected beside `Foo` itself.
 //
-// A qualified reference contributes its FIRST segment alone, since that is what
-// an import brings into scope. `Intl.Collator` records `Intl`, and `Collator`
-// is read off it.
+// A qualified reference contributes both ends. The head is what an import
+// normally brings into scope, and the last segment matters where namespace
+// flattening left the head naming nothing: `namespace Intl { type
+// LocalesArgument }` becomes a top-level `LocalesArgument` while references
+// still read `Intl.LocalesArgument`.
 func (c *typeRefCollector) EnterTypeAnn(t ast.TypeAnn) bool {
+	c.enterFuncTypeParams(t)
+	// `typeof X` names a value a package declares, reached the way a type is.
+	if typeOf, ok := t.(*ast.TypeOfTypeAnn); ok {
+		if name, ok := headIdent(typeOf.Value); ok {
+			if _, shadowed := c.bound[name]; !shadowed {
+				c.names.Add(name)
+			}
+		}
+		if member, ok := typeOf.Value.(*ast.Member); ok {
+			c.names.Add(member.Right.Name)
+		}
+		return true
+	}
 	ref, ok := t.(*ast.TypeRefTypeAnn)
 	if !ok {
 		return true
 	}
 	if name, ok := headIdent(ref.Name); ok {
-		c.names.Add(name)
+		if _, shadowed := c.bound[name]; !shadowed {
+			c.names.Add(name)
+		}
+	}
+	if member, ok := ref.Name.(*ast.Member); ok {
+		c.names.Add(member.Right.Name)
 	}
 	return true
+}
+
+// enterFuncTypeParams binds a function type's own parameters over its body.
+func (c *typeRefCollector) enterFuncTypeParams(t ast.TypeAnn) {
+	if fn, ok := t.(*ast.FuncTypeAnn); ok {
+		c.push(fn.TypeParams)
+	}
 }
 
 // headIdent returns the leftmost segment of a qualified identifier.
@@ -89,7 +179,7 @@ func headIdent(q ast.QualIdent) (string, bool) {
 // A name the module declares itself is included; the caller resolves each
 // name against what every package declares and drops the local ones.
 func TypeRefNames(module *ast.Module) set.Set[string] {
-	c := &typeRefCollector{names: set.NewSet[string]()}
+	c := &typeRefCollector{names: set.NewSet[string](), bound: map[string]int{}}
 	module.Namespaces.Scan(func(_ string, ns *ast.Namespace) bool {
 		for _, decl := range ns.Decls {
 			decl.Accept(c)

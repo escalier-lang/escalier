@@ -100,14 +100,17 @@ var stdPackages = []struct {
 		// them are unsupported today and so resolve nothing, which is
 		// the only reason the reference does not already fail.
 		//
-		// Two cases this set stops short of. `IteratorResult` and its
-		// two arms stay in `std:iterator`, since
-		// registerIteratorResultAliases binds them on every Context and
-		// they resolve with no declaration in reach. The `Intl.*`
-		// options bags stay in `std:intl`, which flattens the namespace
-		// and declares them bare, so the qualifier written against them
-		// names nothing wherever they live. Rewriting the reference is
-		// the fix, not moving the declaration. See #1403.
+		// `IteratorResult` and its two arms are here because the
+		// prelude's own `Iterator.next` returns one and the prelude
+		// imports nothing. registerIteratorResultAliases in
+		// internal/solver/prelude.go still binds the same three shapes
+		// on every Context, agreeing member for member; retiring that is
+		// #1593.
+		//
+		// The `Intl.*` options bags stay in `std:intl` despite the same
+		// pressure. It flattens the namespace and declares them bare, so
+		// the qualifier written against them names nothing wherever they
+		// live, and rewriting the reference is the fix.
 		// `BuiltinIteratorReturn` is the second type argument of the
 		// `IteratorObject` that `ArrayIterator` extends. Its own body
 		// is `= intrinsic`, a TypeScript compiler keyword with no
@@ -115,12 +118,33 @@ var stdPackages = []struct {
 		// the alias it names does not. #1403 carries the fix.
 		"ArrayLike", "ConcatArray", "FlatArray",
 		"ArrayIterator", "BuiltinIteratorReturn",
+		"IteratorResult", "IteratorYieldResult", "IteratorReturnResult",
 		"PromiseLike", "Awaited", "PromiseWithResolvers",
 		"PromiseSettledResult", "PromiseFulfilledResult", "PromiseRejectedResult",
 		"Iterator", "IteratorObject",
 		"AsyncIterator", "AsyncIteratorObject",
 		"Disposable", "AsyncDisposable",
 		"Symbol", "SymbolConstructor",
+
+		// The utility types, which TypeScript declares global.
+		// `Partial<Config>` and `ReturnType<F>` are written the way
+		// `Promise` is, so they belong beside it. Each is a type alias
+		// over its own parameters naming nothing outside this list,
+		// which is what lets the prelude hold them while importing
+		// nothing.
+		//
+		// The classes they were declared with stay put. `Object` and
+		// `Function` are reached as `object.Object` and
+		// `function.Function`, and no other package names either.
+		// `Function` also carries
+		// `[Symbol.metadata]: decorators.DecoratorMetadata`, so moving
+		// it would pull `std:decorators` in behind it.
+		"PropertyKey",
+		"Partial", "Required", "Readonly", "Pick", "Omit", "Record",
+		"Exclude", "Extract", "NonNullable",
+		"Parameters", "ConstructorParameters", "ReturnType",
+		"InstanceType", "ThisParameterType", "OmitThisParameter",
+		"ThisType",
 	}},
 	{"std:string", "std/string.esc", []string{
 		"String", "StringConstructor",
@@ -149,19 +173,17 @@ var stdPackages = []struct {
 		"RegExpStringIterator",
 	}},
 	{"std:object", "std/object.esc", []string{
+		// The utility types this file declared upstream are in
+		// std:prelude, which is where a program reaches them unqualified.
 		"Object", "ObjectConstructor",
 		"PropertyDescriptor", "PropertyDescriptorMap",
 		"TypedPropertyDescriptor",
-		"Partial", "Required", "Readonly", "Pick", "Omit", "Record",
-		"Exclude", "Extract", "NonNullable",
-		"PropertyKey",
 	}},
 	{"std:function", "std/function.esc", []string{
+		// The signature-reading utility types are in std:prelude, beside
+		// the ones std:object contributed.
 		"Function", "FunctionConstructor", "CallableFunction",
 		"NewableFunction", "IArguments",
-		"Parameters", "ConstructorParameters", "ReturnType",
-		"InstanceType", "ThisParameterType", "OmitThisParameter",
-		"ThisType",
 	}},
 	{"std:date", "std/date.esc", []string{
 		"Date", "DateConstructor",
@@ -183,7 +205,6 @@ var stdPackages = []struct {
 	}},
 	{"std:iterator", "std/iterator.esc", []string{
 		"IterableIterator",
-		"IteratorResult", "IteratorYieldResult", "IteratorReturnResult",
 		"GeneratorFunction", "GeneratorFunctionConstructor",
 	}},
 	{"std:async", "std/async.esc", []string{

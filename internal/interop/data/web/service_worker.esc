@@ -2,6 +2,12 @@
 // Its facts come from the pinned lib.*.d.ts set, the ECMA-262
 // derived facts, and the overlay. Change one of those and re-run.
 
+import "web:core"
+import "web:dom"
+import "web:push"
+import "web:url"
+import "web:workers"
+
 export declare interface ClientQueryOptions {
     includeUncontrolled?: boolean,
     type?: ClientTypes
@@ -18,7 +24,7 @@ export declare interface NavigationPreloadState {
 
 export declare interface RegistrationOptions {
     scope?: string,
-    type?: WorkerType,
+    type?: workers.WorkerType,
     updateViaCache?: ServiceWorkerUpdateViaCache
 }
 
@@ -41,7 +47,7 @@ export declare class NavigationPreloadManager {
     constructor(mut self)
 }
 
-export declare interface ServiceWorkerEventMap extends AbstractWorkerEventMap {
+export declare interface ServiceWorkerEventMap extends dom.AbstractWorkerEventMap {
     "statechange": Event
 }
 
@@ -60,8 +66,8 @@ export declare class ServiceWorker extends EventTarget {
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/ServiceWorker/state) */
     readonly state: ServiceWorkerState,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/ServiceWorker/postMessage) */
-    postMessage(mut self, message: unknown, transfer: mut Array<Transferable>) -> unknown,
-    postMessage(mut self, message: unknown, options?: StructuredSerializeOptions) -> unknown,
+    postMessage(mut self, message: unknown, transfer: mut Array<dom.Transferable>) -> unknown,
+    postMessage(mut self, message: unknown, options?: dom.StructuredSerializeOptions) -> unknown,
     addEventListener<K: keyof ServiceWorkerEventMap>(mut self, type: K, listener: fn (this: ServiceWorker, ev: ServiceWorkerEventMap[K]) -> any, options?: boolean | AddEventListenerOptions) -> unknown,
     addEventListener(mut self, type: string, listener: EventListenerOrEventListenerObject, options?: boolean | AddEventListenerOptions) -> unknown,
     removeEventListener<K: keyof ServiceWorkerEventMap>(mut self, type: K, listener: fn (this: ServiceWorker, ev: ServiceWorkerEventMap[K]) -> any, options?: boolean | EventListenerOptions) -> unknown,
@@ -72,8 +78,8 @@ export declare class ServiceWorker extends EventTarget {
 
 export declare interface ServiceWorkerContainerEventMap {
     "controllerchange": Event,
-    "message": MessageEvent,
-    "messageerror": MessageEvent
+    "message": dom.MessageEvent,
+    "messageerror": dom.MessageEvent
 }
 
 /**
@@ -89,17 +95,17 @@ export declare class ServiceWorkerContainer extends EventTarget {
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/ServiceWorkerContainer/controllerchange_event) */
     oncontrollerchange: (fn (this: ServiceWorkerContainer, ev: Event) -> any) | null,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/ServiceWorkerContainer/message_event) */
-    onmessage: (fn (this: ServiceWorkerContainer, ev: MessageEvent) -> any) | null,
+    onmessage: (fn (this: ServiceWorkerContainer, ev: dom.MessageEvent) -> any) | null,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/ServiceWorkerContainer/messageerror_event) */
-    onmessageerror: (fn (this: ServiceWorkerContainer, ev: MessageEvent) -> any) | null,
+    onmessageerror: (fn (this: ServiceWorkerContainer, ev: dom.MessageEvent) -> any) | null,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/ServiceWorkerContainer/ready) */
     readonly ready: Promise<ServiceWorkerRegistration>,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/ServiceWorkerContainer/getRegistration) */
-    getRegistration(self, clientURL?: string | URL) -> Promise<ServiceWorkerRegistration | undefined>,
+    getRegistration(self, clientURL?: string | url.URL) -> Promise<ServiceWorkerRegistration | undefined>,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/ServiceWorkerContainer/getRegistrations) */
     getRegistrations(self) -> Promise<Array<ServiceWorkerRegistration>>,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/ServiceWorkerContainer/register) */
-    register(mut self, scriptURL: string | URL, options?: RegistrationOptions) -> Promise<ServiceWorkerRegistration>,
+    register(mut self, scriptURL: string | url.URL, options?: RegistrationOptions) -> Promise<ServiceWorkerRegistration>,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/ServiceWorkerContainer/startMessages) */
     startMessages(mut self) -> unknown,
     addEventListener<K: keyof ServiceWorkerContainerEventMap>(mut self, type: K, listener: fn (this: ServiceWorkerContainer, ev: ServiceWorkerContainerEventMap[K]) -> any, options?: boolean | AddEventListenerOptions) -> unknown,
@@ -131,7 +137,7 @@ export declare class ServiceWorkerRegistration extends EventTarget {
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/ServiceWorkerRegistration/updatefound_event) */
     onupdatefound: (fn (this: ServiceWorkerRegistration, ev: Event) -> any) | null,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/ServiceWorkerRegistration/pushManager) */
-    readonly pushManager: PushManager,
+    readonly pushManager: push.PushManager,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/ServiceWorkerRegistration/scope) */
     readonly scope: string,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/ServiceWorkerRegistration/updateViaCache) */
@@ -139,9 +145,9 @@ export declare class ServiceWorkerRegistration extends EventTarget {
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/ServiceWorkerRegistration/waiting) */
     readonly waiting: ServiceWorker | null,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/ServiceWorkerRegistration/getNotifications) */
-    getNotifications(self, filter?: GetNotificationOptions) -> Promise<mut Array<Notification>>,
+    getNotifications(self, filter?: GetNotificationOptions) -> Promise<mut Array<dom.Notification>>,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/ServiceWorkerRegistration/showNotification) */
-    showNotification(mut self, title: string, options?: NotificationOptions) -> Promise<undefined>,
+    showNotification(mut self, title: string, options?: dom.NotificationOptions) -> Promise<undefined>,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/ServiceWorkerRegistration/unregister) */
     unregister(mut self) -> Promise<boolean>,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/ServiceWorkerRegistration/update) */

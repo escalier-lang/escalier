@@ -123,6 +123,36 @@ func Generate(opts GenerateOptions) (*GenerateResult, error) {
 		}
 	}
 
+	// Before the header, so a signature that loses a type parameter loses any
+	// import that parameter's constraint was the only reason for.
+	for _, mod := range mods {
+		elideVacuousTypeParams(mod)
+	}
+
+	// The header is computed after the overlay, so a `replace` that changes what
+	// a declaration refers to changes what its package imports.
+	graph, err := ImportGraph(mods)
+	if err != nil {
+		return nil, err
+	}
+	violations, err := CheckTiers(mods, graph)
+	if err != nil {
+		return nil, err
+	}
+	if len(violations) > 0 {
+		lines := make([]string, 0, len(violations))
+		for _, v := range violations {
+			lines = append(lines, v.String())
+		}
+		return nil, fmt.Errorf(
+			"%d import edge(s) go up a tier; answer each with an overlay `replace` "+
+				"that types the declaration against what the lower tier has:\n  %s",
+			len(violations), strings.Join(lines, "\n  "))
+	}
+	if err := AddImportHeaders(mods); err != nil {
+		return nil, err
+	}
+
 	// Validated against the same `.d.ts` set the conversion read, so a target
 	// naming a global that set does not declare fails this run rather than
 	// whoever imports the package it would have been written to.

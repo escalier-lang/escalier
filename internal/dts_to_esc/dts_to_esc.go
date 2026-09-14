@@ -173,6 +173,28 @@ func writeStandaloneModule(m *StandaloneModule, w io.Writer) error {
 	opts := printer.DefaultOptions()
 	first := true
 	var iterErr error
+	// The import header comes first, and a blank line separates it from the
+	// declarations, so the file reads the way a hand-written one would.
+	for _, file := range m.Module.Files {
+		for _, stmt := range file.Imports {
+			s, err := printer.Print(stmt, opts)
+			if err != nil {
+				return err
+			}
+			if _, err := io.WriteString(w, s+"\n"); err != nil {
+				return err
+			}
+			first = false
+		}
+	}
+	if !first {
+		if _, err := io.WriteString(w, "\n"); err != nil {
+			return err
+		}
+		// The first declaration writes its own separator only when something
+		// preceded it, and the header already wrote one.
+		first = true
+	}
 	m.Module.Namespaces.Scan(func(_ string, ns *ast.Namespace) bool {
 		for _, decl := range ns.Decls {
 			if !first {

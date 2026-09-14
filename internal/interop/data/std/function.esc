@@ -2,6 +2,8 @@
 // Its facts come from the pinned lib.*.d.ts set, the ECMA-262
 // derived facts, and the overlay. Change one of those and re-run.
 
+import "std:decorators"
+
 @js("Function")
 export declare class Function {
     /**
@@ -41,7 +43,7 @@ export declare class Function {
     readonly length: number,
     arguments: any,
     caller: Function,
-    [Symbol.metadata]: DecoratorMetadata | null,
+    [Symbol.metadata]: decorators.DecoratorMetadata | null,
     /**
      * Creates a new function.
      * @param args A list of arguments the function accepts.
@@ -57,16 +59,6 @@ export declare interface IArguments {
     length: number,
     callee: Function
 }
-
-/**
- * Extracts the type of the 'this' parameter of a function type, or 'unknown' if the function type has no 'this' parameter.
- */
-export declare type ThisParameterType<T> = if T : fn (this: infer U, ...args: never) -> any { U } else { unknown }
-
-/**
- * Removes the 'this' parameter from a function type.
- */
-export declare type OmitThisParameter<T> = if unknown : ThisParameterType<T> { T } else { if T : fn (...args: infer A) -> infer R { fn (...args: A) -> R } else { T } }
 
 export declare interface CallableFunction extends Function {
     /**
@@ -133,28 +125,3 @@ export declare interface NewableFunction extends Function {
      */
     bind<A: mut Array<any>, B: mut Array<any>, R>(this: fn (...args: [...A, ...B]) -> R, thisArg: unknown, ...args: A) -> fn (...args: B) -> R
 }
-
-/**
- * Obtain the parameters of a function type in a tuple
- */
-export declare type Parameters<T: fn (...args: any) -> any> = if T : fn (...args: infer P) -> any { P } else { never }
-
-/**
- * Obtain the parameters of a constructor function type in a tuple
- */
-export declare type ConstructorParameters<T: fn (...args: any) -> any> = if T : fn (...args: infer P) -> any { P } else { never }
-
-/**
- * Obtain the return type of a function type
- */
-export declare type ReturnType<T: fn (...args: any) -> any> = if T : fn (...args: any) -> infer R { R } else { any }
-
-/**
- * Obtain the return type of a constructor function type
- */
-export declare type InstanceType<T: fn (...args: any) -> any> = if T : fn (...args: any) -> infer R { R } else { any }
-
-/**
- * Marker for contextual 'this' type
- */
-export declare interface ThisType<T> {}

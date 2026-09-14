@@ -647,3 +647,22 @@ func (lexer *Lexer) Next() *Token {
 func (lexer *Lexer) Consume() {
 	lexer.consume()
 }
+
+// isKeywordQualifier reports whether tok is a keyword standing where a
+// qualified reference's head goes, which a following `.` decides.
+//
+// Six pseudo-package names lex as keywords — `string`, `number`, `boolean`,
+// `bigint`, `set` and `async` — and a package binds under its own name, so
+// `set.Set(1)` has to reach the `Set` a `std:set` import binds. The rule holds
+// in type and expression position alike.
+//
+// A value literal is excluded, since it means itself and `true.valueOf()` reads
+// a member off the boolean. `super` is excluded because it heads its own form
+// and reading it as a name would lose the diagnostic saying so.
+func isKeywordQualifier(tok *Token) bool {
+	switch tok.Type {
+	case True, False, Null, Undefined, Super:
+		return false
+	}
+	return isKeyword(tok.Type)
+}

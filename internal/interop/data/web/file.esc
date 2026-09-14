@@ -2,6 +2,11 @@
 // Its facts come from the pinned lib.*.d.ts set, the ECMA-262
 // derived facts, and the overlay. Change one of those and re-run.
 
+import "std:typed_arrays"
+import "web:core"
+import "web:dom"
+import "web:streams"
+
 export declare interface BlobPropertyBag {
     endings?: EndingType,
     type?: string
@@ -23,13 +28,13 @@ export declare class Blob {
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/Blob/type) */
     readonly type: string,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/Blob/arrayBuffer) */
-    arrayBuffer(mut self) -> Promise<ArrayBuffer>,
+    arrayBuffer(mut self) -> Promise<typed_arrays.ArrayBuffer>,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/Blob/bytes) */
-    bytes(mut self) -> Promise<Uint8Array>,
+    bytes(mut self) -> Promise<typed_arrays.Uint8Array>,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/Blob/slice) */
     slice(self, start?: number, end?: number, contentType?: string) -> Blob,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/Blob/stream) */
-    stream(mut self) -> ReadableStream<Uint8Array>,
+    stream(mut self) -> streams.ReadableStream<typed_arrays.Uint8Array>,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/Blob/text) */
     text(mut self) -> Promise<string>,
     static prototype: Blob,
@@ -70,12 +75,12 @@ export declare class FileList {
 }
 
 export declare interface FileReaderEventMap {
-    "abort": ProgressEvent<FileReader>,
-    "error": ProgressEvent<FileReader>,
-    "load": ProgressEvent<FileReader>,
-    "loadend": ProgressEvent<FileReader>,
-    "loadstart": ProgressEvent<FileReader>,
-    "progress": ProgressEvent<FileReader>
+    "abort": dom.ProgressEvent<FileReader>,
+    "error": dom.ProgressEvent<FileReader>,
+    "load": dom.ProgressEvent<FileReader>,
+    "loadend": dom.ProgressEvent<FileReader>,
+    "loadstart": dom.ProgressEvent<FileReader>,
+    "progress": dom.ProgressEvent<FileReader>
 }
 
 /**
@@ -88,21 +93,21 @@ export declare class FileReader extends EventTarget {
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/FileReader/error) */
     readonly error: DOMException | null,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/FileReader/abort_event) */
-    onabort: (fn (this: FileReader, ev: ProgressEvent<FileReader>) -> any) | null,
+    onabort: (fn (this: FileReader, ev: dom.ProgressEvent<FileReader>) -> any) | null,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/FileReader/error_event) */
-    onerror: (fn (this: FileReader, ev: ProgressEvent<FileReader>) -> any) | null,
+    onerror: (fn (this: FileReader, ev: dom.ProgressEvent<FileReader>) -> any) | null,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/FileReader/load_event) */
-    onload: (fn (this: FileReader, ev: ProgressEvent<FileReader>) -> any) | null,
+    onload: (fn (this: FileReader, ev: dom.ProgressEvent<FileReader>) -> any) | null,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/FileReader/loadend_event) */
-    onloadend: (fn (this: FileReader, ev: ProgressEvent<FileReader>) -> any) | null,
+    onloadend: (fn (this: FileReader, ev: dom.ProgressEvent<FileReader>) -> any) | null,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/FileReader/loadstart_event) */
-    onloadstart: (fn (this: FileReader, ev: ProgressEvent<FileReader>) -> any) | null,
+    onloadstart: (fn (this: FileReader, ev: dom.ProgressEvent<FileReader>) -> any) | null,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/FileReader/progress_event) */
-    onprogress: (fn (this: FileReader, ev: ProgressEvent<FileReader>) -> any) | null,
+    onprogress: (fn (this: FileReader, ev: dom.ProgressEvent<FileReader>) -> any) | null,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/FileReader/readyState) */
     readonly readyState: typeof FileReader.EMPTY | typeof FileReader.LOADING | typeof FileReader.DONE,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/FileReader/result) */
-    readonly result: string | ArrayBuffer | null,
+    readonly result: string | typed_arrays.ArrayBuffer | null,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/FileReader/abort) */
     abort(mut self) -> unknown,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/FileReader/readAsArrayBuffer) */

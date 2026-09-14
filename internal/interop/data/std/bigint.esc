@@ -2,6 +2,8 @@
 // Its facts come from the pinned lib.*.d.ts set, the ECMA-262
 // derived facts, and the overlay. Change one of those and re-run.
 
+import "std:intl"
+
 export declare interface BigIntToLocaleStringOptions {
     /**
      * The locale matching algorithm to use.The default is "best fit". For information about this option, see the {@link https://developer.mozilla.org/docs/Web/JavaScript/Reference/Global_Objects/Intl#Locale_negotiation Intl page}.
@@ -84,7 +86,7 @@ export declare class BigInt {
      */
     toString(self, radix?: number) -> string,
     /** Returns a string representation appropriate to the host environment's current locale. */
-    toLocaleString(self, locales?: Intl.LocalesArgument, options?: BigIntToLocaleStringOptions) -> string,
+    toLocaleString(self, locales?: intl.LocalesArgument, options?: BigIntToLocaleStringOptions) -> string,
     /** Returns the primitive value of the specified object. */
     valueOf(self) -> bigint,
     readonly [Symbol.toStringTag]: "BigInt",

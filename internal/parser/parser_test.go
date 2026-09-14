@@ -1529,3 +1529,51 @@ func TestDeriveNamespaceFromPath(t *testing.T) {
 		})
 	}
 }
+
+// A keyword followed by `.` heads a qualified reference rather than meaning
+// what the keyword means. Six pseudo-package names lex as keywords, and a
+// package binds under its own name, so each has to head a reference.
+func TestKeywordQualifiedReferences(t *testing.T) {
+	tests := []struct {
+		name string
+		src  string
+	}{
+		{"SetInTypePosition", `export declare val x: set.Set<string>`},
+		{"SetInAnExtendsClause", `export declare class A extends set.Set<string> {}`},
+		{"SetInValuePosition", `val a = set.Set(1)`},
+		{"AsyncInValuePosition", `val a = async.foo`},
+		{"StringInTypePosition", `export declare val x: string.String`},
+		{"NumberInValuePosition", `val a = number.parseInt("1")`},
+		{"GetInTypePosition", `export declare val x: get.Foo`},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			_, errs := ParseLibFiles(context.Background(), []*ast.Source{{
+				ID: 1, Path: "p.esc", Contents: tt.src,
+			}})
+			require.Empty(t, errs, "%s should parse", tt.src)
+		})
+	}
+}
+
+// A value literal keeps its meaning before `.`, and so does a string literal.
+// Neither is a name a package can bind.
+func TestLiteralsAreNotKeywordQualifiers(t *testing.T) {
+	tests := []struct {
+		name string
+		src  string
+	}{
+		{"ABooleanLiteral", `val a = true.valueOf()`},
+		{"AStringLiteral", `val a = "x".length`},
+		{"ANumberLiteral", `val a = (42).toString()`},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			module, errs := ParseLibFiles(context.Background(), []*ast.Source{{
+				ID: 1, Path: "p.esc", Contents: tt.src,
+			}})
+			require.Empty(t, errs, "%s should parse", tt.src)
+			require.NotNil(t, module)
+		})
+	}
+}

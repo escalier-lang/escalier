@@ -2,6 +2,8 @@
 // Its facts come from the pinned lib.*.d.ts set, the ECMA-262
 // derived facts, and the overlay. Change one of those and re-run.
 
+import "std:date"
+
 /**
  * The `Intl.getCanonicalLocales()` method returns an array containing
  * the canonical locale names. Duplicates will be omitted and elements
@@ -40,10 +42,10 @@ export declare interface DateTimeFormatPart {
 
 @js("Intl.DateTimeFormat")
 export declare class DateTimeFormat {
-    formatToParts(mut self, date?: Date | number) -> mut Array<DateTimeFormatPart>,
-    formatRange(mut self, startDate: Date | number | bigint, endDate: Date | number | bigint) -> string,
-    formatRangeToParts(mut self, startDate: Date | number | bigint, endDate: Date | number | bigint) -> mut Array<DateTimeRangeFormatPart>,
-    format(mut self, date?: Date | number) -> string,
+    formatToParts(mut self, date?: date.Date | number) -> mut Array<DateTimeFormatPart>,
+    formatRange(mut self, startDate: date.Date | number | bigint, endDate: date.Date | number | bigint) -> string,
+    formatRangeToParts(mut self, startDate: date.Date | number | bigint, endDate: date.Date | number | bigint) -> mut Array<DateTimeRangeFormatPart>,
+    format(mut self, date?: date.Date | number) -> string,
     resolvedOptions(mut self) -> ResolvedDateTimeFormatOptions,
     constructor(mut self, locales?: LocalesArgument, options?: DateTimeFormatOptions),
     (locales?: LocalesArgument, options?: DateTimeFormatOptions) -> DateTimeFormat,

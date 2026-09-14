@@ -276,7 +276,7 @@ export declare class Array<T> {
      * @param thisArg An object to which the this keyword can refer in the predicate function.
      * If thisArg is omitted, undefined is used as the this value.
      */
-    every<S: T>(self, predicate: fn (value: T, index: number, array: mut Array<T>) -> boolean, thisArg?: unknown) -> boolean,
+    every(self, predicate: fn (value: T, index: number, array: mut Array<T>) -> boolean, thisArg?: unknown) -> boolean,
     /**
      * Determines whether all the members of an array satisfy the specified test.
      * @param predicate A function that accepts up to three arguments. The every method calls
@@ -406,6 +406,18 @@ export declare interface Generator<T = unknown, TReturn = any, TNext = any, E = 
     [Symbol.iterator]() -> Generator<T, TReturn, TNext, E>
 }
 
+export declare interface IteratorYieldResult<TYield> {
+    done?: false,
+    value: TYield
+}
+
+export declare interface IteratorReturnResult<TReturn> {
+    done: true,
+    value: TReturn
+}
+
+export declare type IteratorResult<T, TReturn = any> = IteratorYieldResult<T> | IteratorReturnResult<TReturn>
+
 @js("Iterator")
 export declare class Iterator<T, TReturn = any, TNext = any> {
     next(mut self, ...value: [] | [TNext]) -> IteratorResult<T, TReturn>,
@@ -514,7 +526,7 @@ export declare interface IteratorObject<T, TReturn = unknown, TNext = unknown> e
  * Defines the `TReturn` type used for built-in iterators produced by `Array`, `Map`, `Set`, and others.
  * This is `undefined` when `strictBuiltInIteratorReturn` is `true`; otherwise, this is `any`.
  */
-export declare type BuiltinIteratorReturn = intrinsic
+export declare type BuiltinIteratorReturn = undefined
 
 export declare interface ArrayIterator<T> extends IteratorObject<T, BuiltinIteratorReturn, unknown> {
     [Symbol.iterator]() -> ArrayIterator<T>
@@ -821,6 +833,18 @@ export declare interface PromiseWithResolvers<T> {
     reject: fn (reason?: any) -> unknown
 }
 
+export declare type PropertyKey = string | number | symbol
+
+/**
+ * Extracts the type of the 'this' parameter of a function type, or 'unknown' if the function type has no 'this' parameter.
+ */
+export declare type ThisParameterType<T> = if T : fn (this: infer U, ...args: never) -> any { U } else { unknown }
+
+/**
+ * Removes the 'this' parameter from a function type.
+ */
+export declare type OmitThisParameter<T> = if unknown : ThisParameterType<T> { T } else { if T : fn (...args: infer A) -> infer R { fn (...args: A) -> R } else { T } }
+
 export declare interface ConcatArray<T> {
     readonly length: number,
     join(separator?: string) -> string,
@@ -849,6 +873,86 @@ export declare type Awaited<T> = if T : null | undefined { T } else { if T : {..
 export declare interface ArrayLike<T> {
     readonly length: number
 }
+
+/**
+ * Make all properties in T optional
+ */
+export declare type Partial<T> = {
+    [P]+?: T[P] for P in keyof T
+}
+
+/**
+ * Make all properties in T required
+ */
+export declare type Required<T> = {
+    [P]-?: T[P] for P in keyof T
+}
+
+/**
+ * Make all properties in T readonly
+ */
+export declare type Readonly<T> = {
+    readonly [P]: T[P] for P in keyof T
+}
+
+/**
+ * From T, pick a set of properties whose keys are in the union K
+ */
+export declare type Pick<T, K: keyof T> = {
+    [P]: T[P] for P in K
+}
+
+/**
+ * Construct a type with a set of properties K of type T
+ */
+export declare type Record<K: keyof any, T> = {
+    [P]: T for P in K
+}
+
+/**
+ * Exclude from T those types that are assignable to U
+ */
+export declare type Exclude<T, U> = if T : U { never } else { T }
+
+/**
+ * Extract from T those types that are assignable to U
+ */
+export declare type Extract<T, U> = if T : U { T } else { never }
+
+/**
+ * Construct a type with the properties of T except for those in type K.
+ */
+export declare type Omit<T, K: keyof any> = Pick<T, Exclude<keyof T, K>>
+
+/**
+ * Exclude null and undefined from T
+ */
+export declare type NonNullable<T> = T & ~(undefined | null)
+
+/**
+ * Obtain the parameters of a function type in a tuple
+ */
+export declare type Parameters<T: fn (...args: any) -> any> = if T : fn (...args: infer P) -> any { P } else { never }
+
+/**
+ * Obtain the parameters of a constructor function type in a tuple
+ */
+export declare type ConstructorParameters<T: fn (...args: any) -> any> = if T : fn (...args: infer P) -> any { P } else { never }
+
+/**
+ * Obtain the return type of a function type
+ */
+export declare type ReturnType<T: fn (...args: any) -> any> = if T : fn (...args: any) -> infer R { R } else { any }
+
+/**
+ * Obtain the return type of a constructor function type
+ */
+export declare type InstanceType<T: fn (...args: any) -> any> = if T : fn (...args: any) -> infer R { R } else { any }
+
+/**
+ * Marker for contextual 'this' type
+ */
+export declare interface ThisType<T> {}
 
 export declare interface Disposable {
     [Symbol.dispose]() -> unknown

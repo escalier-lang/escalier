@@ -306,6 +306,11 @@ func (p *Parser) primaryTypeAnn() ast.TypeAnn {
 	var typeAnn ast.TypeAnn
 
 	for typeAnn == nil {
+		if isKeywordQualifier(token) && p.lexer.peek2().Type == Dot {
+			p.lexer.consume()
+			typeAnn = p.parseTypeRef(token)
+			break
+		}
 		// nolint: exhaustive
 		switch token.Type {
 		case LineComment, BlockComment:

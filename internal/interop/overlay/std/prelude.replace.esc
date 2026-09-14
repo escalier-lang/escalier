@@ -121,3 +121,24 @@ export declare class Array<T> {
     toLocaleString(self, locales: string | mut Array<string>, options?: {...}) -> string,
     toLocaleString(self) -> string,
 }
+
+// TypeScript writes this as `type BuiltinIteratorReturn = intrinsic` and
+// resolves it to `undefined` under `strictBuiltinIteratorReturn`, which is on
+// with `strict` from TypeScript 5.6. `intrinsic` is a TypeScript compiler
+// keyword with no Escalier meaning, and the converter prints a type annotation
+// back out, so the alias would otherwise reach the tree naming nothing.
+//
+// The alias is replaced rather than dropped. Twenty interfaces across six
+// packages name it, so dropping it would trade one dangling name for twenty.
+export declare type BuiltinIteratorReturn = undefined
+
+// TypeScript writes `NonNullable<T>` as `T & {}`, leaning on its own
+// reading of `{}` as any value except `null` and `undefined`. Escalier's
+// `{}` is the exact empty object, so the mechanical lowering computes
+// the wrong set: `NonNullable<string>` would come out empty rather than
+// `string`.
+//
+// The complement says it directly. `~(undefined | null)` admits every
+// value the union rejects, so the intersection subtracts exactly the two
+// members TypeScript means to exclude, primitives included.
+export declare type NonNullable<T> = T & ~(undefined | null)

@@ -385,6 +385,11 @@ func (p *Parser) primaryExpr() ast.Expr {
 			// continue
 		}
 
+		if isKeywordQualifier(token) && p.lexer.peek2().Type == Dot {
+			p.lexer.consume()
+			expr = ast.NewIdent(token.Value, token.Span)
+			break
+		}
 		// nolint: exhaustive
 		switch token.Type {
 		case LineComment, BlockComment:

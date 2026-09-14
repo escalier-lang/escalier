@@ -37,18 +37,6 @@ export declare interface GeneratorFunctionConstructor {
     readonly prototype: GeneratorFunction
 }
 
-export declare interface IteratorYieldResult<TYield> {
-    done?: false,
-    value: TYield
-}
-
-export declare interface IteratorReturnResult<TReturn> {
-    done: true,
-    value: TReturn
-}
-
-export declare type IteratorResult<T, TReturn = any> = IteratorYieldResult<T> | IteratorReturnResult<TReturn>
-
 /**
  * Describes a user-defined {@link Iterator} that is also iterable.
  */
