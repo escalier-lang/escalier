@@ -30,11 +30,16 @@ import (
 type GroupSource func(uris []string) (module *ast.Module, paths map[string]string, err error)
 
 // StdlibGroupSource returns a GroupSource reading pseudo-packages from dir.
+//
+// The merged parse goes through the shared cache, so a second load of the same
+// members reuses it. That matters because the whole group re-parses otherwise:
+// a member's own file is cached under its basename by readPackageImports, but a
+// group parses under synthetic paths and merges, which is a different module.
 func StdlibGroupSource(dir string) GroupSource {
-	nextSourceID := stdlibSourceIDBase + groupSourceIDOffset
 	return func(uris []string) (*ast.Module, map[string]string, error) {
-		sources := make([]*ast.Source, 0, len(uris))
 		paths := make(map[string]string, len(uris))
+		synthetic := make([]string, 0, len(uris))
+		bodies := make([]string, 0, len(uris))
 		for _, uri := range uris {
 			path, err := resolveStdlibPath(dir, uri)
 			if err != nil {
@@ -45,24 +50,35 @@ func StdlibGroupSource(dir string) GroupSource {
 				return nil, nil, fmt.Errorf("reading %s: %w", path, err)
 			}
 			paths[uri] = path
-			sources = append(sources, &ast.Source{
-				ID: nextSourceID,
-				// `<namespace>/index.esc`, so the member's declarations land under a
-				// namespace of its own rather than at the top level where two members
-				// would collide.
-				Path:     filepath.Join(groupNamespace(uri), "index.esc"),
-				Contents: string(contents),
-			})
-			nextSourceID++
+			// `<namespace>/index.esc`, so the member's declarations land under a
+			// namespace of its own rather than at the top level where two members
+			// would collide.
+			synthetic = append(synthetic, filepath.Join(groupNamespace(uri), "index.esc"))
+			bodies = append(bodies, string(contents))
 		}
-		module, parseErrs := parser.ParseLibFiles(context.Background(), sources)
-		if len(parseErrs) > 0 {
-			messages := make([]string, 0, len(parseErrs))
-			for _, pe := range parseErrs {
-				messages = append(messages, pe.String())
+
+		module, err := stdlibParses.getGroup(synthetic, bodies, func(firstSourceID int) (*ast.Module, error) {
+			sources := make([]*ast.Source, 0, len(uris))
+			for i := range uris {
+				sources = append(sources, &ast.Source{
+					ID:       firstSourceID + groupSourceIDOffset + i,
+					Path:     synthetic[i],
+					Contents: bodies[i],
+				})
 			}
-			return nil, nil, fmt.Errorf("parse errors in %s: %s",
-				strings.Join(uris, ", "), strings.Join(messages, "; "))
+			parsed, parseErrs := parser.ParseLibFiles(context.Background(), sources)
+			if len(parseErrs) > 0 {
+				messages := make([]string, 0, len(parseErrs))
+				for _, pe := range parseErrs {
+					messages = append(messages, pe.String())
+				}
+				return nil, fmt.Errorf("parse errors in %s: %s",
+					strings.Join(uris, ", "), strings.Join(messages, "; "))
+			}
+			return parsed, nil
+		})
+		if err != nil {
+			return nil, nil, err
 		}
 		return module, paths, nil
 	}
