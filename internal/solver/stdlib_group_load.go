@@ -171,7 +171,7 @@ func sortedGroup(group []string) []string {
 // ModuleSource cannot supply: the closure a module's imports reach, and a
 // reader for the whole closure at once.
 func InferModuleAgainstStdlib(module *ast.Module, dir string) *ModuleResult {
-	groups, err := BuildPackageClosure(dir, stdlibImportsOf(module))
+	groups, err := BuildPackageClosure(dir, pseudoPackageImportsOf(module))
 	if err != nil {
 		// Nothing is known about what the imports reach, so every package loads
 		// alone. That is right for the tree a readable directory would have held
@@ -185,9 +185,12 @@ func InferModuleAgainstStdlib(module *ast.Module, dir string) *ModuleResult {
 	return inferModuleWithGroups(module, StdlibSource(dir), StdlibGroupSource(dir), groups)
 }
 
-// stdlibImportsOf returns the pseudo-package URIs a module's files import,
+// pseudoPackageImportsOf returns the pseudo-package URIs a module's files import,
 // sorted. These are the roots the closure grows from.
-func stdlibImportsOf(module *ast.Module) []string {
+//
+// Every scheme counts, not `std:` alone. A file importing `web:dom` roots the
+// closure there the same way, and `node:` will when it is populated.
+func pseudoPackageImportsOf(module *ast.Module) []string {
 	roots := set.NewSet[string]()
 	for _, file := range module.Files {
 		for _, stmt := range file.Imports {
