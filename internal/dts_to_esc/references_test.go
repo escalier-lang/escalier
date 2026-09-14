@@ -80,6 +80,39 @@ func TestDeclaredNamesCoversEveryDeclarationKind(t *testing.T) {
 	require.False(t, refs.Contains("inner"))
 }
 
+// A type parameter is not a name the package has to import, whichever `<…>`
+// list binds it. The four cases are the four kinds of list the generated tree
+// writes: a declaration's own, a class member's, an interface member's, and a
+// standalone function type's.
+func TestTypeRefNamesLeavesOutABoundTypeParameter(t *testing.T) {
+	tests := []struct {
+		name string
+		src  string
+	}{
+		{"ADeclarationsOwn", `export declare class C<T> { f: T }`},
+		{"AClassMembers", "export declare class C {\n    m<U>(self, x: U) -> U\n}"},
+		{"AnInterfaceMembers", "export declare interface I {\n    m<U>(x: U) -> U\n}"},
+		{"AFunctionTypes", `export type A = fn <U>(x: U) -> U`},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			refs := TypeRefNames(parseSource(t, tt.src)).ToSlice()
+			require.Empty(t, refs, "%s recorded %v", tt.src, refs)
+		})
+	}
+}
+
+// A member's own binder shadows only its own signature. A reference written
+// after it, under the same name, is the declaration the package imports.
+func TestTypeRefNamesRecordsANameAMemberBinderShadowedEarlier(t *testing.T) {
+	refs := TypeRefNames(parseSource(t, "export declare class C {\n"+
+		"    m<U>(self, x: U) -> U,\n"+
+		"    f: U\n"+
+		"}"))
+	require.Equal(t, []string{"U"}, refs.ToSlice())
+}
+
 // A `<…>` binder shadows a name another package declares, so the reference to
 // it takes no qualifier and forces no import.
 //

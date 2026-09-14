@@ -130,6 +130,16 @@ func TestAttachComments(t *testing.T) {
 			want: []string{"leading *ast.IdentExpr /* b */"},
 		},
 		{
+			name: "a comment before a type parameter's bound leads that bound",
+			src:  "fn f<T: /* bound */ number>() {\n    return 1\n}\n",
+			want: []string{"leading *ast.NumberTypeAnn /* bound */"},
+		},
+		{
+			name: "a comment before a throws type leads that type",
+			src:  "fn f() -> number throws /* boom */ number {\n    return 1\n}\n",
+			want: []string{"leading *ast.NumberTypeAnn /* boom */"},
+		},
+		{
 			name: "a comment at the end of the file dangles on the script",
 			src:  "val x = 1\n// last word\n",
 			want: []string{"dangling *ast.Script // last word"},

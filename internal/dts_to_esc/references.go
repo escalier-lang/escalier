@@ -64,6 +64,13 @@ func (c *typeRefCollector) ExitTypeAnn(t ast.TypeAnn) {
 	}
 }
 
+// EnterDecl brings the declaration's own type parameters into scope for the
+// walk over its body, and returns true so that walk runs.
+func (c *typeRefCollector) EnterDecl(d ast.Decl) bool {
+	c.push(typeParamsOfDecl(d))
+	return true
+}
+
 // EnterExpr brings a function expression's own type parameters into scope. A
 // class member holds its signature as a `FuncExpr`, which nothing else binds.
 func (c *typeRefCollector) EnterExpr(e ast.Expr) bool {
@@ -76,44 +83,6 @@ func (c *typeRefCollector) EnterExpr(e ast.Expr) bool {
 func (c *typeRefCollector) ExitExpr(e ast.Expr) {
 	if fn, ok := e.(*ast.FuncExpr); ok {
 		c.pop(fn.TypeParams)
-	}
-}
-
-// EnterDecl visits the slots `Accept` does not reach: a type parameter's
-// constraint and default, and a signature's `throws` clause. Without it
-// `class Box<T: HTMLElement>` names `HTMLElement` with nothing recording it.
-// #1587 covers closing the gap in the walk itself.
-//
-// Returning true leaves the ordinary walk to the rest. A name recorded twice
-// costs nothing, since the result is a set.
-func (c *typeRefCollector) EnterDecl(d ast.Decl) bool {
-	c.push(typeParamsOfDecl(d))
-	switch d := d.(type) {
-	case *ast.ClassDecl:
-		c.visitTypeParams(d.TypeParams)
-	case *ast.TypeDecl:
-		c.visitTypeParams(d.TypeParams)
-	case *ast.InterfaceDecl:
-		c.visitTypeParams(d.TypeParams)
-	case *ast.EnumDecl:
-		c.visitTypeParams(d.TypeParams)
-	case *ast.FuncDecl:
-		c.visitTypeParams(d.TypeParams)
-		if d.Throws != nil {
-			d.Throws.Accept(c)
-		}
-	}
-	return true
-}
-
-func (c *typeRefCollector) visitTypeParams(params []*ast.TypeParam) {
-	for _, tp := range params {
-		if tp.Constraint != nil {
-			tp.Constraint.Accept(c)
-		}
-		if tp.Default != nil {
-			tp.Default.Accept(c)
-		}
 	}
 }
 
