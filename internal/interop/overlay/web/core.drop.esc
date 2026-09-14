@@ -1,0 +1,7 @@
+// `initMessageEvent` is the pre-2015 way to build a message event, kept in the
+// DOM for compatibility and deprecated there. Its two overloads each name
+// `MessageEventSource` and `MessagePort`, neither of which the core tier
+// carries, and `MessageEvent(type, init)` is the form to write instead.
+export declare interface MessageEvent {
+    initMessageEvent: unknown,
+}

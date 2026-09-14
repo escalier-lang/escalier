@@ -2,8 +2,8 @@
 // Its facts come from the pinned lib.*.d.ts set, the ECMA-262
 // derived facts, and the overlay. Change one of those and re-run.
 
+import "std:map"
 import "web:core"
-import "web:dom"
 
 export declare interface PerformanceMarkOptions {
     detail?: any,
@@ -23,6 +23,14 @@ export declare interface PerformanceObserverInit {
     type?: string
 }
 
+/** [MDN Reference](https://developer.mozilla.org/docs/Web/API/EventCounts) */
+@js("EventCounts")
+export declare class EventCounts extends map.Map<string, number> {
+    forEach(self, callbackfn: fn (value: number, key: string, parent: EventCounts) -> unknown, thisArg?: unknown) -> unknown,
+    static prototype: EventCounts,
+    constructor(mut self)
+}
+
 export declare interface PerformanceEventMap {
     "resourcetimingbufferfull": Event
 }
@@ -35,7 +43,7 @@ export declare interface PerformanceEventMap {
 @js("Performance")
 export declare class Performance extends EventTarget {
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/Performance/eventCounts) */
-    readonly eventCounts: dom.EventCounts,
+    readonly eventCounts: EventCounts,
     /**
      * @deprecated
      *

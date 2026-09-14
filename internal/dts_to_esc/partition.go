@@ -414,7 +414,7 @@ var webPackages = []struct {
 		"EventListenerOrEventListenerObject",
 		"EventListenerOptions", "AddEventListenerOptions",
 		// ProgressEvent is deliberately absent. Node 22 does not define it and
-		// the WinterCG minimum common API does not list it, so it routes to
+		// the WinterTC minimum common API does not list it, so it routes to
 		// web:dom with the rest of the browser surface.
 		// Cancellation, which fetch, streams, and any long-running call
 		// take as a parameter.
@@ -430,6 +430,11 @@ var webPackages = []struct {
 		"TextEncoder", "TextEncoderCommon", "TextEncoderEncodeIntoResult",
 		"TextDecoder", "TextDecoderCommon", "TextDecoderOptions",
 		"TextDecodeOptions",
+		// The message event, which the WinterTC minimum common API lists.
+		// `source` and `ports` name the browser and web/core.replace.esc
+		// retypes them; the deprecated `initMessageEvent` does too and
+		// web/core.drop.esc removes it.
+		"MessageEvent", "MessageEventInit",
 	}},
 	{"web:fetch", "web/fetch.esc", []string{
 		"fetch",
@@ -441,10 +446,11 @@ var webPackages = []struct {
 		"RequestCache", "RequestCredentials", "RequestDestination",
 		"RequestMode", "RequestRedirect",
 		"HeadersIterator", "RequestPriority",
-		// FormData / FormDataEntryValue intentionally not listed:
-		// MDN classifies them under the XMLHttpRequest API, not
-		// Fetch. They are declared in lib.dom.d.ts so they route to
-		// web:dom via the residual rule.
+		// FormData and FormDataEntryValue are not listed here. MDN
+		// classifies them under the XMLHttpRequest API rather than
+		// Fetch, and web:file is where they sit, beside the Blob and
+		// File a FormData holds. `Body.formData` returns one, so
+		// web:fetch imports web:file for it.
 	}},
 	{"web:streams", "web/streams.esc", []string{
 		"ReadableStream", "ReadableStreamDefaultReader",
@@ -771,6 +777,10 @@ var webPackages = []struct {
 		"MultiCacheQueryOptions",
 	}},
 	{"web:websocket", "web/websocket.esc", []string{
+		// The socket's payload mode. A string union filed under the DOM
+		// upstream, and portable exactly as written. web:web_rtc names it
+		// too and is browser tier, so it may import this one.
+		"BinaryType",
 		"WebSocket", "WebSocketEventMap",
 		"CloseEvent", "CloseEventInit",
 	}},
@@ -784,13 +794,28 @@ var webPackages = []struct {
 	{"web:file", "web/file.esc", []string{
 		"Blob", "BlobPropertyBag", "BlobPart", "EndingType",
 		"File", "FilePropertyBag",
-		"FileList", "FileReader", "FileReaderEventMap",
+		// FormData holds files, and both `Blob` and `File` are here, so this
+		// is the one portable package it can sit in without naming another.
+		// MDN files it under XMLHttpRequest, but the tier asks which runtimes
+		// have it, and `web:fetch` returns one from `Body.formData`, so a
+		// FormData in `web:dom` would cycle across two tiers.
+		// web/file.replace.esc drops the `HTMLFormElement` constructor no
+		// portable runtime has. FormDataIterator comes along, since `entries`,
+		// `keys` and `values` each return one.
+		"FormData", "FormDataEntryValue", "FormDataIterator",
+		// FileList and FileReader belong to the browser tier. Node 22 defines
+		// neither, and FileReader fires the ProgressEvent that `web:core`
+		// deliberately does not carry.
 	}},
 	{"web:performance", "web/performance.esc", []string{
+		// The performance timeline's own map, keyed by event name. It extends
+		// std:map and names nothing browser-only, so it sits with the rest of
+		// the timeline rather than with the DOM it was filed under.
+		"EventCounts",
 		// Symbols MDN documents under Performance that are absent from
 		// the pinned lib.dom.d.ts (no partition entry needed today):
 		// PerformanceEventTiming, PerformanceLongTaskTiming,
-		// LargestContentfulPaint, LayoutShift, EventCounts,
+		// LargestContentfulPaint, LayoutShift,
 		// TaskAttributionTiming, PerformanceElementTiming,
 		// VisibilityStateEntry. Add here if a future TS version bump
 		// ships them.
@@ -943,6 +968,35 @@ var UnreferencedDOMTypes = set.FromSlice([]string{
 	// `onbeforeunload` declarations spell the signature out instead.
 	"OnBeforeUnloadEventHandler",
 })
+
+// OverlayRetypedSoleReferrers maps a type-only `web:dom` declaration to the
+// one package whose references to it an overlay retypes or drops.
+// ReportTypeOnlyRouting leaves a name out only when its sole referrer is the
+// package recorded here.
+//
+// The routing analysis reads the pinned `.d.ts` statements with only the
+// whole-symbol drops applied, since the per-package overlays are Escalier
+// fragments folding into the converted tree rather than the TypeScript one.
+// A name here therefore reads as sole-referred there and is referenced by
+// nothing outside `web:dom` in the tree the run writes.
+//
+// The referrer is half the key because only that package's overlay answers
+// the references. A TypeScript bump that moves the sole reference to
+// another package leaves it unanswered, and pairing the two makes
+// TestOverlayRetypedSoleReferrers_MatchesThePinnedLibSet name it rather
+// than stay quiet. That test also catches a name the map does not cover
+// and an entry that stopped being sole-referred.
+//
+// The other half of the cover is the digest sidecar beside each overlay
+// file, which fails when a member the file stands in for changes upstream.
+var OverlayRetypedSoleReferrers = map[string]string{
+	// `web:core` declares `MessageEvent` and `MessageEventInit`, and their
+	// four references to the name are all answered there. The `source`
+	// member of each is retyped to `null` in overlay/web/core.replace.esc,
+	// and the two `initMessageEvent` overloads that name it are removed in
+	// overlay/web/core.drop.esc.
+	"MessageEventSource": "web:core",
+}
 
 // DOMResidualSources is the set of `.d.ts` source-file basenames whose
 // unmapped top-level declarations route to `web:dom` (the single-DOM

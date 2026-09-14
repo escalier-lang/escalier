@@ -2,7 +2,6 @@
 // Its facts come from the pinned lib.*.d.ts set, the ECMA-262
 // derived facts, and the overlay. Change one of those and re-run.
 
-import "web:dom"
 import "web:file"
 
 /**
@@ -44,7 +43,7 @@ export declare class URL {
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/URL/canParse_static) */
     static canParse(url: string | URL, base?: string | URL) -> boolean,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/URL/createObjectURL_static) */
-    static createObjectURL(obj: file.Blob | dom.MediaSource) -> string,
+    static createObjectURL(obj: file.Blob) -> string,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/URL/parse_static) */
     static parse(url: string | URL, base?: string | URL) -> URL | null,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/URL/revokeObjectURL_static) */

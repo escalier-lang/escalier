@@ -78,8 +78,8 @@ export declare class ServiceWorker extends EventTarget {
 
 export declare interface ServiceWorkerContainerEventMap {
     "controllerchange": Event,
-    "message": dom.MessageEvent,
-    "messageerror": dom.MessageEvent
+    "message": MessageEvent,
+    "messageerror": MessageEvent
 }
 
 /**
@@ -95,9 +95,9 @@ export declare class ServiceWorkerContainer extends EventTarget {
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/ServiceWorkerContainer/controllerchange_event) */
     oncontrollerchange: (fn (this: ServiceWorkerContainer, ev: Event) -> any) | null,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/ServiceWorkerContainer/message_event) */
-    onmessage: (fn (this: ServiceWorkerContainer, ev: dom.MessageEvent) -> any) | null,
+    onmessage: (fn (this: ServiceWorkerContainer, ev: MessageEvent) -> any) | null,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/ServiceWorkerContainer/messageerror_event) */
-    onmessageerror: (fn (this: ServiceWorkerContainer, ev: dom.MessageEvent) -> any) | null,
+    onmessageerror: (fn (this: ServiceWorkerContainer, ev: MessageEvent) -> any) | null,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/ServiceWorkerContainer/ready) */
     readonly ready: Promise<ServiceWorkerRegistration>,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/ServiceWorkerContainer/getRegistration) */

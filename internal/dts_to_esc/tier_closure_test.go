@@ -19,33 +19,6 @@ import (
 // package's directory.
 const committedTree = "../interop/data"
 
-// knownUpwardRefs records every reference in the committed tree that names a
-// package above the referring package's tier. Each is a declaration the
-// pinned `.d.ts` types against a browser type that the portable runtimes
-// implement differently or not at all, so each is answered by an overlay
-// `replace` rather than by moving a package between tiers.
-//
-// The list is empty for the core tier, which is what makes `web:core`
-// loadable on a runtime that has no DOM. Emptying it for the portable tier
-// is #1403 item 5, which is also where the check that forbids these edges
-// lands. Until then this test pins the set so a new one is caught.
-var knownUpwardRefs = map[string][]string{
-	// Node's FormData has no HTMLFormElement constructor, and
-	// XMLHttpRequestBodyInit names one transitively.
-	"web:fetch": {"FormData", "XMLHttpRequestBodyInit"},
-	// FileReader fires progress events, and Node 22 defines neither it nor
-	// ProgressEvent. Both leave the portable tier together, or neither does.
-	"web:file": {"ProgressEvent"},
-	// EventCounts is the performance-timeline map keyed by DOM event names.
-	"web:performance": {"EventCounts"},
-	// URL.createObjectURL takes a MediaSource in the browser and a Blob
-	// everywhere else.
-	"web:url": {"MediaSource"},
-	// MessageEvent.source is a WindowProxy or ServiceWorker in the browser
-	// and always null off it. BinaryType is the socket's payload mode.
-	"web:websocket": {"BinaryType", "MessageEvent"},
-}
-
 // declaringPackage maps each exported top-level name in the committed tree to
 // the package URI that declares it.
 //
@@ -126,8 +99,7 @@ func importBindings(module *ast.Module) set.Set[string] {
 	return bindings
 }
 
-// No package refers to a name declared in a package above its own tier,
-// except for the references knownUpwardRefs records.
+// No package refers to a name declared in a package above its own tier.
 //
 // This is what the tier order buys. A file importing only the portable tier
 // is checkable against Node, which holds exactly as long as no portable
@@ -146,7 +118,6 @@ func TestNoReferenceGoesUpATier(t *testing.T) {
 		tier, ok := TierOf(uri)
 		require.True(t, ok, "%s has no tier", uri)
 
-		allowed := set.FromSlice(knownUpwardRefs[uri])
 		bindings := importBindings(module)
 		for _, name := range TypeRefNames(module).ToSlice() {
 			declaredIn, known := owner[name]
@@ -154,7 +125,7 @@ func TestNoReferenceGoesUpATier(t *testing.T) {
 				continue
 			}
 			refTier, ok := TierOf(declaredIn)
-			if !ok || refTier <= tier || allowed.Contains(name) {
+			if !ok || refTier <= tier {
 				continue
 			}
 			upward = append(upward, fmt.Sprintf("%s (%s) -> %s (%s) via %s",
@@ -163,32 +134,6 @@ func TestNoReferenceGoesUpATier(t *testing.T) {
 	}
 	sort.Strings(upward)
 	require.Empty(t, upward, "references going up a tier:\n  %s", strings.Join(upward, "\n  "))
-}
-
-// Every name knownUpwardRefs excuses is still an upward reference. An entry
-// left behind after the overlay that answers it lands would silently excuse a
-// reference that came back.
-func TestKnownUpwardRefsAreAllStillUpward(t *testing.T) {
-	modules := parseCommittedTree(t)
-	owner := declaringPackage(t, modules)
-
-	for uri, names := range knownUpwardRefs {
-		module, held := modules[uri]
-		require.True(t, held, "%s names no committed package", uri)
-		tier, ok := TierOf(uri)
-		require.True(t, ok)
-		refs := TypeRefNames(module)
-
-		for _, name := range names {
-			require.True(t, refs.Contains(name), "%s no longer refers to %s", uri, name)
-			declaredIn, known := owner[name]
-			require.True(t, known, "%s is declared by no package", name)
-			refTier, ok := TierOf(declaredIn)
-			require.True(t, ok)
-			require.Greater(t, refTier, tier,
-				"%s is in %s, which is not above %s's %s tier", name, refTier, uri, tier)
-		}
-	}
 }
 
 // The core tier refers to nothing outside itself and the language tier, which
@@ -200,7 +145,6 @@ func TestTheCoreTierIsSelfContained(t *testing.T) {
 	for _, uri := range PackagesInTier(TierCore) {
 		module, held := modules[uri]
 		require.True(t, held, "%s has no committed file", uri)
-		require.Empty(t, knownUpwardRefs[uri], "the core tier allows no exception")
 
 		var outside []string
 		bindings := importBindings(module)
@@ -221,7 +165,7 @@ func TestTheCoreTierIsSelfContained(t *testing.T) {
 }
 
 // Every import line in the committed tree names a package the partition holds,
-// and no line goes up a tier except the ones AcceptedUpwardEdges records.
+// and no line goes up a tier.
 //
 // This reads the written headers rather than the references behind them, so it
 // catches a hand-edit to a generated file that the reference graph would not
@@ -233,7 +177,6 @@ func TestEveryCommittedImportRespectsTheTiers(t *testing.T) {
 	for uri, module := range modules {
 		tier, ok := TierOf(uri)
 		require.True(t, ok, "%s has no tier", uri)
-		accepted := set.FromSlice(AcceptedUpwardEdges[uri])
 
 		for _, file := range module.Files {
 			for _, stmt := range file.Imports {
@@ -244,12 +187,6 @@ func TestEveryCommittedImportRespectsTheTiers(t *testing.T) {
 				targetTier, ok := TierOf(target)
 				require.True(t, ok, "%s has no tier", target)
 				if targetTier <= tier {
-					continue
-				}
-				// An accepted edge is one whose every forcing reference is
-				// recorded. Checking that the importer has any accepted entry
-				// would excuse a second, unrelated upward import from it.
-				if acceptedEdgeTarget(t, modules, uri, target, accepted) {
 					continue
 				}
 				upward = append(upward, fmt.Sprintf("%s (%s) imports %s (%s)",
@@ -295,22 +232,4 @@ func TestEveryCrossPackageReferenceIsImported(t *testing.T) {
 	}
 	sort.Strings(missing)
 	require.Empty(t, missing, "references with no import:\n  %s", strings.Join(missing, "\n  "))
-}
-
-// acceptedEdgeTarget reports whether every reference forcing the edge from uri
-// to target is one AcceptedUpwardEdges records for uri.
-func acceptedEdgeTarget(t *testing.T, modules map[string]*ast.Module, uri, target string, accepted set.Set[string]) bool {
-	t.Helper()
-	owner := declaringPackage(t, modules)
-	forcing := 0
-	for _, name := range TypeRefNames(modules[uri]).ToSlice() {
-		if owner[name] != target {
-			continue
-		}
-		forcing++
-		if !accepted.Contains(name) {
-			return false
-		}
-	}
-	return forcing > 0
 }

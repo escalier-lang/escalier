@@ -1,0 +1,26 @@
+[
+  {
+    "decl": "MessageEvent",
+    "member": "ports",
+    "kind": "field",
+    "digest": "4cd8b664b1364854"
+  },
+  {
+    "decl": "MessageEvent",
+    "member": "source",
+    "kind": "field",
+    "digest": "a153084c8c544cb7"
+  },
+  {
+    "decl": "MessageEventInit",
+    "member": "ports",
+    "kind": "property",
+    "digest": "fef302b009e773ef"
+  },
+  {
+    "decl": "MessageEventInit",
+    "member": "source",
+    "kind": "property",
+    "digest": "a6dc0e1199b5e74c"
+  }
+]

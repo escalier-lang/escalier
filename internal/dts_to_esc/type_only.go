@@ -218,22 +218,30 @@ func ReportTypeOnlyRouting(result *PartitionResult, w io.Writer) error {
 	// stays free of error plumbing.
 	var b strings.Builder
 
+	sole := make([]SoleReferrer, 0, len(routing.SoleReferrer))
+	for _, e := range routing.SoleReferrer {
+		if acknowledged, held := OverlayRetypedSoleReferrers[e.Name]; held &&
+			acknowledged == e.ReferencedBy {
+			continue
+		}
+		sole = append(sole, e)
+	}
+
 	// Consecutive entries share a referrer because AnalyzeTypeOnly
 	// Routing sorts by referrer within a declaring package, so one pass
-	// groups them.
-	for i := 0; i < len(routing.SoleReferrer); {
+	// groups them. Dropping entries above keeps that order.
+	for i := 0; i < len(sole); {
 		j := i
-		for j < len(routing.SoleReferrer) &&
-			routing.SoleReferrer[j].ReferencedBy == routing.SoleReferrer[i].ReferencedBy {
+		for j < len(sole) && sole[j].ReferencedBy == sole[i].ReferencedBy {
 			j++
 		}
 		names := make([]string, 0, j-i)
-		for _, e := range routing.SoleReferrer[i:j] {
+		for _, e := range sole[i:j] {
 			names = append(names, e.Name)
 		}
 		fmt.Fprintf(&b, "  %s: %d type-only decl%s only %s references (%s)\n",
 			WebDOM.URI, len(names), plural(len(names)),
-			routing.SoleReferrer[i].ReferencedBy, strings.Join(names, ", "))
+			sole[i].ReferencedBy, strings.Join(names, ", "))
 		i = j
 	}
 

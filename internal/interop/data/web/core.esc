@@ -21,6 +21,14 @@ export declare interface EventListenerOptions {
     capture?: boolean
 }
 
+export declare interface MessageEventInit<T = any> extends EventInit {
+    data?: T,
+    lastEventId?: string,
+    origin?: string,
+    ports?: mut Array<unknown>,
+    source?: null
+}
+
 export declare interface TextDecodeOptions {
     stream?: boolean
 }
@@ -340,6 +348,47 @@ export declare class EventTarget {
     removeEventListener(mut self, type: string, callback: EventListenerOrEventListenerObject | null, options?: EventListenerOptions | boolean) -> unknown,
     static prototype: EventTarget,
     constructor(mut self)
+}
+
+/**
+ * A message received by a target object.
+ *
+ * [MDN Reference](https://developer.mozilla.org/docs/Web/API/MessageEvent)
+ */
+@js("MessageEvent")
+export declare class MessageEvent<T = any> extends Event {
+    /**
+     * Returns the data of the message.
+     *
+     * [MDN Reference](https://developer.mozilla.org/docs/Web/API/MessageEvent/data)
+     */
+    readonly data: T,
+    /**
+     * Returns the last event ID string, for server-sent events.
+     *
+     * [MDN Reference](https://developer.mozilla.org/docs/Web/API/MessageEvent/lastEventId)
+     */
+    readonly lastEventId: string,
+    /**
+     * Returns the origin of the message, for server-sent events and cross-document messaging.
+     *
+     * [MDN Reference](https://developer.mozilla.org/docs/Web/API/MessageEvent/origin)
+     */
+    readonly origin: string,
+    /**
+     * Returns the MessagePort array sent with the message, for cross-document messaging and channel messaging.
+     *
+     * [MDN Reference](https://developer.mozilla.org/docs/Web/API/MessageEvent/ports)
+     */
+    readonly ports: Array<unknown>,
+    /**
+     * Returns the WindowProxy of the source window, for cross-document messaging, and the MessagePort being attached, in the connect event fired at SharedWorkerGlobalScope objects.
+     *
+     * [MDN Reference](https://developer.mozilla.org/docs/Web/API/MessageEvent/source)
+     */
+    readonly source: null,
+    static prototype: MessageEvent,
+    constructor(mut self, type: string, eventInitDict?: MessageEventInit<T>)
 }
 
 /**

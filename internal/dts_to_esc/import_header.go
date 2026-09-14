@@ -139,9 +139,6 @@ func CheckTiers(mods map[string]*StandaloneModule, graph map[string][]string) ([
 				}
 			}
 			sort.Strings(names)
-			if acceptsUpwardEdge(from, names) {
-				continue
-			}
 			violations = append(violations, TierViolation{
 				From: from, FromTier: fromTier, To: to, ToTier: toTier, Names: names,
 			})
