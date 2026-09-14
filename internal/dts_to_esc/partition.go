@@ -247,9 +247,6 @@ var stdPackages = []struct {
 	{"std:temporal", "std/temporal.esc", []string{
 		"Temporal",
 	}},
-	{"std:wasm", "std/wasm.esc", []string{
-		"WebAssembly",
-	}},
 	{"std:disposable", "std/disposable.esc", []string{
 		// Explicit resource management: the `using` / `await using`
 		// protocol. Three members of lib.esnext.disposable.d.ts route
@@ -386,6 +383,33 @@ var webPackages = []struct {
 	File    string
 	Members []string
 }{
+	{"web:core", "web/core.esc", []string{
+		// The event model. Every package that reports progress or
+		// listens for anything names these, and none of them mentions a
+		// document or an element.
+		"Event", "EventInit",
+		"EventTarget",
+		"EventListener", "EventListenerObject",
+		"EventListenerOrEventListenerObject",
+		"EventListenerOptions", "AddEventListenerOptions",
+		// ProgressEvent is deliberately absent. Node 22 does not define it and
+		// the WinterCG minimum common API does not list it, so it routes to
+		// web:dom with the rest of the browser surface.
+		// Cancellation, which fetch, streams, and any long-running call
+		// take as a parameter.
+		"AbortController", "AbortSignal", "AbortSignalEventMap",
+		// The error every web API throws.
+		"DOMException",
+		// Binary and timing aliases named across the tier.
+		"BufferSource", "AllowSharedBufferSource",
+		"DOMHighResTimeStamp",
+		// Encoding. The pair that wraps these in a stream is in
+		// web:streams, a tier above, since a core package cannot name a
+		// stream.
+		"TextEncoder", "TextEncoderCommon", "TextEncoderEncodeIntoResult",
+		"TextDecoder", "TextDecoderCommon", "TextDecoderOptions",
+		"TextDecodeOptions",
+	}},
 	{"web:fetch", "web/fetch.esc", []string{
 		"fetch",
 		"Request", "RequestInit", "RequestInfo",
@@ -425,10 +449,23 @@ var webPackages = []struct {
 		"TransformerStartCallback", "TransformerTransformCallback",
 		"TransformerCancelCallback",
 		"GenericTransformStream",
+		// The encoding pair. MDN files them under the Encoding API, but
+		// each extends GenericTransformStream and names a readable and a
+		// writable side, so they say more about streams than about
+		// encoding. The encoder and decoder they wrap are in web:core,
+		// which is a tier below and cannot name a stream.
+		"TextEncoderStream", "TextDecoderStream",
 		"ReadableStreamAsyncIterator", "ReadableStreamController",
 		"ReadableStreamGetReaderOptions", "ReadableStreamIteratorOptions",
 		"ReadableStreamReader", "ReadableStreamType",
 		"ReadableStreamReaderMode",
+	}},
+	{"web:wasm", "web/wasm.esc", []string{
+		// The WebAssembly JS API is a W3C Community Group spec rather than
+		// ECMA-262, and TypeScript declares it in lib.dom.d.ts. The scheme
+		// names the spec a declaration comes from; the tier says which
+		// runtimes carry it, and every WinterTC runtime carries this one.
+		"WebAssembly",
 	}},
 	{"web:compression", "web/compression.esc", []string{
 		// MDN documents the Compression Streams API as its own API
@@ -456,11 +493,10 @@ var webPackages = []struct {
 		"RsaHashedKeyGenParams", "RsaKeyAlgorithm", "RsaKeyGenParams",
 		"RsaOaepParams", "RsaOtherPrimesInfo", "RsaPssParams",
 		"HashAlgorithmIdentifier",
-		// BufferSource is a general WebIDL typedef
-		// (ArrayBuffer | ArrayBufferView) used by Fetch, Streams,
-		// WebSocket, TextDecoder, WebGL, Crypto, …; it routes to
-		// web:dom via the residual rule (it is declared in
-		// lib.dom.d.ts) rather than being pinned to any one API.
+		// BufferSource is not listed here. It is a general WebIDL
+		// typedef, ArrayBuffer | ArrayBufferView, that Fetch, Streams,
+		// WebSocket, TextDecoder, WebGL and Crypto all name, so web:core
+		// carries it rather than any one of them.
 	}},
 	{"web:workers", "web/workers.esc", []string{
 		// The document side of workers: what a page constructs and the
@@ -723,14 +759,6 @@ var webPackages = []struct {
 	{"web:url", "web/url.esc", []string{
 		"URL", "URLSearchParams",
 		"URLSearchParamsIterator",
-	}},
-	{"web:encoding", "web/encoding.esc", []string{
-		"TextEncoder", "TextEncoderCommon", "TextEncoderEncodeIntoResult",
-		"TextDecoder", "TextDecoderCommon", "TextDecoderOptions",
-		"TextDecodeOptions",
-		// Per MDN, the *Stream variants belong to the Encoding API,
-		// not the Streams API: https://developer.mozilla.org/en-US/docs/Web/API/Encoding_API
-		"TextEncoderStream", "TextDecoderStream",
 	}},
 	{"web:file", "web/file.esc", []string{
 		"Blob", "BlobPropertyBag", "BlobPart", "EndingType",

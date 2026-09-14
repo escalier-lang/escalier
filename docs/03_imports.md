@@ -179,7 +179,7 @@ package, so `createElement("canvas")` narrows to `HTMLCanvasElement` and
 Web families with no DOM coupling get their own packages: `web:fetch`,
 `web:streams`, `web:crypto`, `web:workers`, `web:webgl`, `web:web_audio`,
 `web:web_rtc`, `web:web_codecs`, `web:indexeddb`, `web:service_worker`,
-`web:websocket`, `web:storage`, `web:url`, `web:encoding`, `web:file`,
+`web:websocket`, `web:storage`, `web:url`, `web:file`,
 `web:performance`, `web:webauthn`, `web:payments`. A typical browser program
 imports `web:dom` plus one or two siblings.
 

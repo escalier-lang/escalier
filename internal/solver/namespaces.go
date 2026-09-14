@@ -147,10 +147,10 @@ func (c *checker) populateNamespace(scope *Scope, sh *namespaceShell) {
 				continue
 			}
 			// Every other kind was keyed under `qname.member` and bound by the walk, so
-			// its names are read back rather than re-inferred here. exportedNames answers
+			// its names are read back rather than re-inferred here. ast.DeclNames answers
 			// what a declaration introduces. Its export flag is not consulted, since that
 			// flag gates a package's surface rather than what a block holds.
-			for _, name := range exportedNames(inner) {
+			for _, name := range ast.DeclNames(inner) {
 				key := qualify(sh.qname, name)
 				if b, found := scope.GetValue(key); found {
 					out.Values[name] = b
