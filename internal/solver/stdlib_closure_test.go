@@ -382,3 +382,39 @@ func TestTheCommittedTreeClosureIsBoundedByTheRoots(t *testing.T) {
 // committedTree is the generated tree these tests read, relative to this
 // package's directory.
 const committedTree = "../interop/data"
+
+// Two packages whose URIs derive the same local name can both be in one
+// closure, since a closure is what the imports reach rather than what cycles.
+// `std:url` and `web:url` both derive `url`, and a merged module holds one
+// namespace per derived name, so the load is refused and the program gets
+// nothing.
+//
+// No single package's closure hits this: all 47 in the committed tree are
+// collision-free, so it takes a program importing both halves. Under the
+// component detection this replaced the two were never in one group, so this is
+// a narrowing of what loads.
+//
+// The fix is for a member's import to bind in that file's own scope rather than
+// for every member to share one namespace keyed by derived name. Each file would
+// then reach what it imported, `checkGroupBindings` would have nothing to refuse,
+// and an alias would work too.
+//
+// DISABLED until the per-file member binding lands. The assertions below are
+// what should hold then.
+/*
+func TestAClosureHoldingTwoPackagesOfOneName(t *testing.T) {
+	t.Parallel()
+
+	res := inferAgainstCyclicStdlib(t, `
+		import "std:url"
+		import "web:url"
+		declare val a: url.Parsed
+		val x = a
+	`, map[string]string{
+		"std/url.esc": `export declare class Parsed { href: string }`,
+		"web/url.esc": `export declare class Parsed { origin: string }`,
+	})
+
+	require.Empty(t, errorMessagesOf(res.Errors))
+}
+*/
