@@ -28,7 +28,7 @@ func TestRoute_ExplicitPartition(t *testing.T) {
 		{"URIError", "std:url"},
 		{"encodeURIComponent", "std:url"},
 		{"Math", "std:math"},
-		{"WebAssembly", "std:wasm"},
+		{"WebAssembly", "web:wasm"},
 		{"fetch", "web:fetch"},
 		{"ReadableStream", "web:streams"},
 		{"WebGLRenderingContext", "web:webgl"},
