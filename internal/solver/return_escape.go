@@ -176,7 +176,8 @@ func (c *checker) resolveComponentEscapes(
 		// return, so the borrow would be fine on its own; what breaks is the second path the
 		// other flow-out left behind, which is what the report names.
 		if es.isReturn {
-			if id, other, ok := leavesElsewhere(escaping, outOfFrame); ok {
+			reached := reachableLocals(escaping, fieldBorrowGraph)
+			if id, other, ok := leavesElsewhere(reached, outOfFrame); ok {
 				c.report(&ReturnedBorrowAlsoLeftError{
 					LocalName: c.varIDToName(id), node: es.expr, other: other.Span(),
 				})
@@ -242,6 +243,28 @@ func leavesElsewhere(
 	return 0, nil, false
 }
 
+// reachableLocals returns roots together with every local reachable from one of them through
+// the borrow graph.
+func reachableLocals(
+	roots set.Set[liveness.VarID],
+	fieldBorrowGraph map[liveness.VarID][]fieldBorrow,
+) set.Set[liveness.VarID] {
+	out := roots.Clone()
+	pending := roots.ToSlice()
+	for len(pending) > 0 {
+		node := pending[len(pending)-1]
+		pending = pending[:len(pending)-1]
+		for _, edge := range fieldBorrowGraph[node] {
+			if out.Contains(edge.referent) {
+				continue
+			}
+			out.Add(edge.referent)
+			pending = append(pending, edge.referent)
+		}
+	}
+	return out
+}
+
 // componentMoveCovers reports whether the escape of es is a self-contained connected-component
 // move rather than an ordinary escape. It holds when two conditions are met:
 //
@@ -282,9 +305,13 @@ func (c *checker) componentMoveCovers(
 	fieldBorrowGraph map[liveness.VarID][]fieldBorrow,
 ) bool {
 	e, stmtRef := es.expr, es.stmtRef
-	// A return earns the exemption when none of the locals it carries leaves the frame
-	// elsewhere. Any other site has to carry an owned aggregate.
-	_, _, alsoLeaves := leavesElsewhere(escaping, outOfFrame)
+	// A return earns the exemption when none of the data it carries leaves the frame
+	// elsewhere. escaping names only what the returned value borrows directly. A bare
+	// `return &mut b` yields b alone even when b holds a borrow of c, since a borrow expression
+	// is not a place and carries no edges to follow. Closing over the graph adds c, and a c
+	// that also leaves through a store means the return is not the only path to it. Any other
+	// site has to carry an owned aggregate.
+	_, _, alsoLeaves := leavesElsewhere(reachableLocals(escaping, fieldBorrowGraph), outOfFrame)
 	exemptAsReturn := es.isReturn && !alsoLeaves
 	if !exemptAsReturn && !c.escapesAsOwnedCarrier(e, fieldBorrowGraph) {
 		return false
