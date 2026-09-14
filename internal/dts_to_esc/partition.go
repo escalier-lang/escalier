@@ -247,9 +247,6 @@ var stdPackages = []struct {
 	{"std:temporal", "std/temporal.esc", []string{
 		"Temporal",
 	}},
-	{"std:wasm", "std/wasm.esc", []string{
-		"WebAssembly",
-	}},
 	{"std:disposable", "std/disposable.esc", []string{
 		// Explicit resource management: the `using` / `await using`
 		// protocol. Three members of lib.esnext.disposable.d.ts route
@@ -462,6 +459,13 @@ var webPackages = []struct {
 		"ReadableStreamGetReaderOptions", "ReadableStreamIteratorOptions",
 		"ReadableStreamReader", "ReadableStreamType",
 		"ReadableStreamReaderMode",
+	}},
+	{"web:wasm", "web/wasm.esc", []string{
+		// The WebAssembly JS API is a W3C Community Group spec rather than
+		// ECMA-262, and TypeScript declares it in lib.dom.d.ts. The scheme
+		// names the spec a declaration comes from; the tier says which
+		// runtimes carry it, and every WinterTC runtime carries this one.
+		"WebAssembly",
 	}},
 	{"web:compression", "web/compression.esc", []string{
 		// MDN documents the Compression Streams API as its own API
