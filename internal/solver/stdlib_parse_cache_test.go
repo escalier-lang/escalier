@@ -172,3 +172,70 @@ func TestTheParseCacheKeepsTwoBasenamesApart(t *testing.T) {
 	require.Equal(t, "alpha.esc", first.GetSourcePath(1<<20))
 	require.Equal(t, "beta.esc", second.GetSourcePath(1<<20+1))
 }
+
+// A second load of the same members reuses the merged parse. A group parses its
+// members under synthetic paths and merges them, which is a different module
+// from any one member's own parse, so it needs an entry of its own.
+func TestTheParseCacheReusesAGroupParse(t *testing.T) {
+	t.Parallel()
+
+	cache := newParsedModuleCache(1 << 20)
+	parses := 0
+	parse := func(int) (*ast.Module, error) {
+		parses++
+		return &ast.Module{}, nil
+	}
+
+	paths := []string{"alpha/index.esc", "beta/index.esc"}
+	bodies := []string{"export val a: number = 1", "export val b: number = 2"}
+
+	first, err := cache.getGroup(paths, bodies, parse)
+	require.NoError(t, err)
+	second, err := cache.getGroup(paths, bodies, parse)
+	require.NoError(t, err)
+
+	require.Equal(t, 1, parses)
+	require.Same(t, first, second)
+}
+
+// A group whose members changed is a different key, so nothing stale survives an
+// edit to any one of them.
+func TestTheParseCacheRereadsAChangedGroup(t *testing.T) {
+	t.Parallel()
+
+	cache := newParsedModuleCache(1 << 20)
+	parses := 0
+	parse := func(int) (*ast.Module, error) {
+		parses++
+		return &ast.Module{}, nil
+	}
+
+	paths := []string{"alpha/index.esc", "beta/index.esc"}
+	_, err := cache.getGroup(paths, []string{"export val a: number = 1", "export val b: number = 2"}, parse)
+	require.NoError(t, err)
+	_, err = cache.getGroup(paths, []string{"export val a: number = 1", "export val b: number = 3"}, parse)
+	require.NoError(t, err)
+
+	require.Equal(t, 2, parses)
+}
+
+// One group of two members never reads as one group of one whose parts happen to
+// hold the separator. The key writes each part's length before it, so no other
+// list of parts builds the same string.
+func TestTheParseCacheKeepsGroupsApart(t *testing.T) {
+	t.Parallel()
+
+	cache := newParsedModuleCache(1 << 20)
+	parses := 0
+	parse := func(int) (*ast.Module, error) {
+		parses++
+		return &ast.Module{}, nil
+	}
+
+	_, err := cache.getGroup([]string{"a/index.esc", "b/index.esc"}, []string{"x", "y"}, parse)
+	require.NoError(t, err)
+	_, err = cache.getGroup([]string{"a/index.esc\x00b/index.esc"}, []string{"x\x00y"}, parse)
+	require.NoError(t, err)
+
+	require.Equal(t, 2, parses, "a joined key must not collide with the members it joins")
+}
