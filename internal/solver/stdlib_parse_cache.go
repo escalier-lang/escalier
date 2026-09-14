@@ -1,7 +1,6 @@
 package solver
 
 import (
-	"crypto/sha256"
 	"sync"
 
 	"github.com/escalier-lang/escalier/internal/ast"
@@ -37,17 +36,32 @@ import (
 //  3. The cache is bounded by how many distinct sources a process reads rather
 //     than how many directories it visits.
 //
-// Reading the file is not saved, since the contents are what the key is computed
+// Reading the file is not saved, since the contents are what the key is built
 // from. That costs microseconds against a parse that costs milliseconds.
+//
+// The key holds the two strings rather than a digest of them. Go hashes the
+// fields and compares them for equality on a hash match, so two distinct
+// sources can never resolve to one entry, where a digest would have to be
+// trusted without that comparison. It is also far cheaper. A SHA-256 over the
+// megabyte of `web/dom.esc` costs milliseconds on every lookup, hit or miss.
+//
+// The key holds no memory of its own. The entry's module carries an ast.Source
+// recording the same name and contents.
 type parsedModuleCache struct {
 	mu      sync.Mutex
-	entries map[[sha256.Size]byte]parsedModuleEntry
+	entries map[parseKey]parsedModuleEntry
 	// nextSourceID is handed out once per distinct source, so every package in
 	// a process parses under an id of its own and keeps it across runs. A span
 	// carries its source id into provenance and into every diagnostic built from
 	// it, and two packages sharing one would make a "declared here" from either
 	// read as the other's.
 	nextSourceID int
+}
+
+// parseKey identifies a source by the two inputs the parse reads.
+type parseKey struct {
+	name     string
+	contents string
 }
 
 // parsedModuleEntry is one parsed module and the source id it parsed under.
@@ -58,7 +72,7 @@ type parsedModuleEntry struct {
 
 func newParsedModuleCache(firstSourceID int) *parsedModuleCache {
 	return &parsedModuleCache{
-		entries:      map[[sha256.Size]byte]parsedModuleEntry{},
+		entries:      map[parseKey]parsedModuleEntry{},
 		nextSourceID: firstSourceID,
 	}
 }
@@ -73,9 +87,7 @@ func (c *parsedModuleCache) get(
 	name, contents string,
 	parse func(sourceID int) (*ast.Module, error),
 ) (*ast.Module, error) {
-	// A NUL separates the two parts. A basename cannot hold one, so the first NUL
-	// always ends the name and no two pairs hash the same bytes.
-	key := sha256.Sum256([]byte(name + "\x00" + contents))
+	key := parseKey{name: name, contents: contents}
 
 	c.mu.Lock()
 	defer c.mu.Unlock()
