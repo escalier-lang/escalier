@@ -40,8 +40,9 @@ const (
 	// that names a document, an element, or a browser-only device.
 	TierBrowser
 	// TierLanguage is available wherever ECMAScript is, so it sits below core
-	// and names nothing above itself. Almost every `std:*` package is here;
-	// stdTiers records the ones that are not.
+	// and names nothing above itself. Every `std:*` package is here, since the
+	// scheme names the spec a declaration comes from and ECMA-262 is the one
+	// spec every runtime implements.
 	TierLanguage Tier = -1
 )
 
@@ -58,17 +59,6 @@ func (t Tier) String() string {
 		return "browser"
 	}
 	return fmt.Sprintf("Tier(%d)", int(t))
-}
-
-// stdTiers assigns a tier to each `std:*` package whose contents are not
-// available wherever ECMAScript is. A `std:*` package absent from this map is
-// TierLanguage. The scheme says how a package is named; the tier says which
-// runtimes carry it, and this is where the two disagree.
-var stdTiers = map[string]Tier{
-	// WebAssembly is a host global rather than an ECMAScript one, and
-	// `instantiateStreaming` takes a fetch `Response`. Every WinterCG runtime
-	// ships it, so it is portable rather than browser-only.
-	"std:wasm": TierPortable,
 }
 
 // webTiers assigns a tier to each `web:*` package.
@@ -88,6 +78,7 @@ var webTiers = map[string]Tier{
 	"web:performance": TierPortable,
 	"web:websocket":   TierPortable,
 	"web:compression": TierPortable,
+	"web:wasm":        TierPortable,
 
 	"web:dom":            TierBrowser,
 	"web:workers":        TierBrowser,
@@ -110,9 +101,6 @@ func TierOf(uri string) (Tier, bool) {
 	if tier, ok := webTiers[uri]; ok {
 		return tier, true
 	}
-	if tier, ok := stdTiers[uri]; ok {
-		return tier, true
-	}
 	if _, ok := PackageForURI(uri); ok && SchemeOf(uri) == "std" {
 		return TierLanguage, true
 	}
@@ -121,7 +109,7 @@ func TierOf(uri string) (Tier, bool) {
 
 // PackagesInTier returns the URIs of every package in a tier, sorted.
 func PackagesInTier(tier Tier) []string {
-	uris := make([]string, 0, len(webTiers)+len(stdTiers))
+	uris := make([]string, 0, len(webTiers))
 	for _, uri := range PackageList() {
 		if got, ok := TierOf(uri); ok && got == tier {
 			uris = append(uris, uri)

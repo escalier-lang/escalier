@@ -20,11 +20,9 @@ func TestEveryPackageHasATier(t *testing.T) {
 // webTiers names only packages the partition holds, so a renamed package
 // cannot leave a stale entry behind that silently assigns nothing.
 func TestEveryTieredPackageExists(t *testing.T) {
-	for _, table := range []map[string]Tier{webTiers, stdTiers} {
-		for uri := range table {
-			_, ok := PackageForURI(uri)
-			require.True(t, ok, "the tier table names %s, which the partition does not hold", uri)
-		}
+	for uri := range webTiers {
+		_, ok := PackageForURI(uri)
+		require.True(t, ok, "the tier table names %s, which the partition does not hold", uri)
 	}
 }
 
@@ -50,10 +48,9 @@ func TestTierMembership(t *testing.T) {
 	require.Equal(t, []string{"web:core"}, PackagesInTier(TierCore))
 
 	require.Equal(t, []string{
-		"std:wasm",
 		"web:compression", "web:crypto", "web:fetch",
 		"web:file", "web:performance", "web:streams", "web:url",
-		"web:websocket",
+		"web:wasm", "web:websocket",
 	}, PackagesInTier(TierPortable))
 
 	require.Equal(t, []string{
@@ -63,11 +60,19 @@ func TestTierMembership(t *testing.T) {
 		"web:workers",
 	}, PackagesInTier(TierBrowser))
 
-	// Every remaining package is a `std:*` one. The reverse does not hold:
-	// `std:wasm` is portable, because the scheme names a package and the tier
-	// says which runtimes carry it.
+	// The language tier and the `std:` scheme hold the same packages. The
+	// scheme names the spec a declaration comes from, and ECMA-262 is the one
+	// spec every runtime implements, so the two agree by construction rather
+	// than by coincidence.
 	for _, uri := range PackagesInTier(TierLanguage) {
 		require.True(t, strings.HasPrefix(uri, "std:"), "%s is not a std package", uri)
+	}
+	for _, uri := range PackageList() {
+		if strings.HasPrefix(uri, "std:") {
+			tier, ok := TierOf(uri)
+			require.True(t, ok, "%s has no tier", uri)
+			require.Equal(t, TierLanguage, tier, "%s is not in the language tier", uri)
+		}
 	}
 	require.NotEmpty(t, PackagesInTier(TierLanguage))
 }
