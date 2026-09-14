@@ -1616,7 +1616,7 @@ output and the LSP name-index (§10.3). Driven by the
 | `std:proxy`       | per-class           | unchanged                                                                                                                        |
 | `std:intl`        | bundled             | unchanged; needs `import "std:date"`                                                                                             |
 | `std:temporal`    | bundled             | unchanged                                                                                                                        |
-| `std:wasm`        | bundled             | unchanged                                                                                                                        |
+| `web:wasm`        | bundled             | unchanged                                                                                                                        |
 | `std:disposable`  | bundled             | `Disposable`, `AsyncDisposable`, `DisposableStack`, `AsyncDisposableStack` — the `using` / `await using` protocol. `SuppressedError` is an `Error` subclass and goes to `std:error` |
 | `std:decorators`  | bundled             | The TC39 decorator context types (`DecoratorContext`, `ClassMethodDecoratorContext`, …) and the `Symbol.metadata` types. TypeScript's legacy `experimentalDecorators` aliases are dropped instead — see Drops |
 
