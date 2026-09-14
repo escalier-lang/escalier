@@ -427,14 +427,14 @@ func TestClassLifetimeStoreEdge(t *testing.T) {
 		declare fn store<'a, 'c>(target: &'c mut Holder<'a>, item: &'a mut {value: number}) -> undefined
 	`
 	src := decls + `
-		fn build(h: mut Holder<'static>) -> undefined {
+		fn build(h: &mut Holder<'static>) -> undefined {
 			val mut b = {value: 2}
-			store(&mut h, &mut b)
+			store(h, &mut b)
 		}
 	`
 	values, _, errs := inferSource(t, src)
 	require.Equal(t, []string{
-		"7:18-7:24: borrowed value 'b' does not live long enough to escape the function",
+		"7:13-7:19: borrowed value 'b' does not live long enough to escape the function",
 	}, messagesWithSpan(t, errs))
 	require.Equal(t,
 		"fn <'a>(target: &mut Holder<'a>, item: &'a mut {value: number}) -> undefined",
