@@ -15,14 +15,14 @@ import (
 
 // --- Rule 2 (params) -----------------------------------------------------------
 
-// A bare `mut` parameter is OWNED-mutable, not a borrow. Under the pre-PR 3
-// borrow-by-default convention, a `mut T` param picked up a fresh inferred
-// lifetime. Now only an explicit `&` annotation borrows, so the rendered
-// signature carries no lifetime quantifier on a bare-mut returning function.
+// A bare `mut` parameter is OWNED-mutable, not a borrow. Only an explicit `&`
+// annotation borrows, so the rendered signature carries no lifetime quantifier. The
+// parameter is where that shows: the return hands the value back frozen, so it renders the
+// same as TestInferBareImmutableParamIsOwned's.
 func TestInferBareMutParamIsOwned(t *testing.T) {
 	values, _, errs := inferSource(t, `fn f(p: mut {x: number}) { return p }`)
 	require.Empty(t, errs)
-	require.Equal(t, "fn (p: mut {x: number}) -> mut {x: number}", values["f"])
+	require.Equal(t, "fn (p: mut {x: number}) -> {x: number}", values["f"])
 }
 
 // A bare immutable parameter is OWNED-immutable. The signature renders the
@@ -71,14 +71,17 @@ func TestInferValBorrowFromOwnedImm(t *testing.T) {
 }
 */
 
-// `val mut q = p` for an owned-mutable p establishes q as owned-mutable.
+// `val mut q = p` for an owned-mutable p establishes q as owned-mutable. The write is what
+// pins that: it type-checks only against a mutable binding. The return renders frozen, so it
+// cannot show the mutability the write proves.
 func TestInferValMutOwnedFromOwnedMut(t *testing.T) {
 	values, _, errs := inferSource(t, `fn f(p: mut {x: number}) {
   val mut q = p
+  q.x = 5
   return q
 }`)
 	require.Empty(t, errs)
-	require.Equal(t, "fn (p: mut {x: number}) -> mut {x: number}", values["f"])
+	require.Equal(t, "fn (p: mut {x: number}) -> {x: number}", values["f"])
 }
 
 // `val q = &mut p` for an owned-mutable p establishes q as a mutable borrow.
@@ -115,21 +118,27 @@ func TestInferBorrowMutOnImmutableRejected(t *testing.T) {
 
 // `val mut q = {…}` from a freshly constructed literal builds an owned-mutable
 // value, the unannotated mirror of `val q: mut {x} = {x: 1}`. A fresh literal is
-// uniquely owned, so granting it the mutable type aliases nothing. The literal's
-// field widens, since the mutable cell admits any `number`, so the result is
-// `mut {x: number}` rather than `mut {x: 0}`.
+// uniquely owned, so granting it the mutable type aliases nothing.
+//
+// The widened field is what shows the upgrade happened. A mutable cell admits any
+// `number`, so q holds `{x: number}` where a plain `val q = {x: 0}` keeps the singleton
+// `{x: 0}`. The `mut` itself does not reach the return, which hands the value back frozen.
 func TestInferValMutConstructsOwnedMut(t *testing.T) {
 	values, _, errs := inferSource(t, `fn f() {
   val mut q = {x: 0}
   return q
 }`)
 	require.Empty(t, errs)
-	require.Equal(t, "fn () -> mut {x: number}", values["f"])
+	require.Equal(t, "fn () -> {x: number}", values["f"])
 }
 
 // `var mut q = {…}` constructs owned-mutable too. The reassignable binding and the
-// mutable value are orthogonal: both widen the literal, so the cell renders the
-// same `mut {x: number}` as the `val mut` form.
+// mutable value are orthogonal: both widen the literal, so the cell holds the same
+// `mut {x: number}` as the `val mut` form.
+//
+// The `mut` reaches the rendered return here where the `val mut` form's does not. A `var`
+// binding is an inference variable that resolves at coalescing, after the peel on the
+// inferred return has run. #1505 covers closing that gap.
 func TestInferVarMutConstructsOwnedMut(t *testing.T) {
 	values, _, errs := inferSource(t, `fn f() {
   var mut q = {x: 0}
@@ -147,7 +156,7 @@ func TestInferValMutConstructsDeepOwnedMut(t *testing.T) {
   return q
 }`)
 	require.Empty(t, errs)
-	require.Equal(t, "fn () -> mut {a: {b: number}}", values["f"])
+	require.Equal(t, "fn () -> {a: {b: number}}", values["f"])
 }
 
 // A constructed owned-mutable value admits an ordinary field write. The widened
@@ -160,7 +169,7 @@ func TestInferValMutConstructedAllowsFieldWrite(t *testing.T) {
   return q
 }`)
 	require.Empty(t, errs)
-	require.Equal(t, "fn () -> mut {x: number}", values["f"])
+	require.Equal(t, "fn () -> {x: number}", values["f"])
 }
 
 // A constructed owned-mutable value can be borrowed `&mut`. The mutable cell fills the
@@ -195,22 +204,27 @@ func TestInferValMutPrimitiveUnchanged(t *testing.T) {
 // `val mut p = src` thaws an owned-immutable source into an owned-mutable binding.
 // The move consumes `src` and leaves `p` the sole owner. No reference to the value
 // survives to observe `p`'s later mutations, so it is sound for `p` to be mutable. The
-// binding's mutability comes from the `mut` pattern, not from the source. So `p` is
-// `mut {x: number}` and the function returns it at that type.
+// binding's mutability comes from the `mut` pattern, not from the source.
+//
+// The write is what pins the thaw: `p.x = 5` type-checks against the mutable binding and
+// would be rejected against the immutable `src` it moved from. The return renders frozen and
+// so cannot show it.
 func TestInferValMutThawFromVariable(t *testing.T) {
 	values, _, errs := inferSource(t, `fn f(src: {x: number}) {
   val mut p = src
+  p.x = 5
   return p
 }`)
 	require.Empty(t, errs)
-	require.Equal(t, "fn (src: {x: number}) -> mut {x: number}", values["f"])
+	require.Equal(t, "fn (src: {x: number}) -> {x: number}", values["f"])
 }
 
 // Thawing widens the source's literal fields to their primitive type. `p` holds the
-// singleton `{x: 0}`, and thawing it into `val mut q` yields `mut {x: number}` rather
-// than `mut {x: 0}`. A mutable cell admits any value of the field's primitive type, so
-// a write like `q.x = 5` would otherwise be rejected against a `0` singleton. This is
-// the same widening the fresh-literal `val mut q = {x: 0}` upgrade applies.
+// singleton `{x: 0}`, and thawing it into `val mut q` yields `{x: number}` rather than
+// `{x: 0}`. A mutable cell admits any value of the field's primitive type, so a write like
+// `q.x = 5` would otherwise be rejected against a `0` singleton. The widening is what the
+// rendered return shows, since the `mut` does not reach it. This is the same widening the
+// fresh-literal `val mut q = {x: 0}` upgrade applies.
 func TestInferValMutThawWidensLiteral(t *testing.T) {
 	values, _, errs := inferSource(t, `fn f() {
   val p = {x: 0}
@@ -218,7 +232,40 @@ func TestInferValMutThawWidensLiteral(t *testing.T) {
   return q
 }`)
 	require.Empty(t, errs)
-	require.Equal(t, "fn () -> mut {x: number}", values["f"])
+	require.Equal(t, "fn () -> {x: number}", values["f"])
+}
+
+// An unannotated return hands its value back frozen, and the caller's own binding decides
+// what to do with it. The pair below is the round trip: build owns a mutable cell, its
+// signature renders the frozen `{x: number}`, and `val mut q = build(){T} takes the result
+// mutably again. The write through q is what proves the thaw, since it type-checks only
+// against a mutable binding.
+func TestInferredReturnFreezesAndCallerThaws(t *testing.T) {
+	values, _, errs := inferSource(t, `fn build() {
+  val mut p = {x: 0}
+  p.x = 1
+  return p
+}
+fn use() {
+  val mut q = build()
+  q.x = 2
+  return q
+}`)
+	require.Empty(t, errs)
+	require.Equal(t, "fn () -> {x: number}", values["build"])
+	require.Equal(t, "fn () -> {x: number}", values["use"])
+}
+
+// An annotated `-> mut T` still means what it says. Only the INFERRED return is frozen, so a
+// signature that asks for a mutable return keeps it and the caller needs no `val mut` to
+// write through what it gets.
+func TestAnnotatedMutReturnKeepsItsMut(t *testing.T) {
+	values, _, errs := inferSource(t, `fn build() -> mut {x: number} {
+  val mut p = {x: 0}
+  return p
+}`)
+	require.Empty(t, errs)
+	require.Equal(t, "fn () -> mut {x: number}", values["build"])
 }
 
 // Freezing into a `var` binding widens the source's literal fields, since a `var` binding

@@ -166,7 +166,7 @@ func TestDestructureMutLeafRendersThawedCell(t *testing.T) {
 		}
 	`)
 	require.Empty(t, errs)
-	require.Equal(t, "fn () -> mut {y: number}", values["f"])
+	require.Equal(t, "fn () -> {y: number}", values["f"])
 }
 
 // TestDestructureMutBorrowLeafRendersBorrow checks that a leaf projected from a `&mut`
