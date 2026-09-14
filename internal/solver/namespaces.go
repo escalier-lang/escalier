@@ -1,6 +1,8 @@
 package solver
 
 import (
+	"strings"
+
 	"github.com/escalier-lang/escalier/internal/ast"
 	"github.com/escalier-lang/escalier/internal/set"
 )
@@ -13,10 +15,10 @@ import (
 // left is collecting them under one Namespace, which is what makes `Foo.member`
 // resolve rather than reading as an unknown identifier.
 //
-// Only a written block reaches this file. A namespace whose prefix comes from a
-// subdirectory of `lib/` gets no shell, so nothing binds the prefix and a sibling
-// file cannot name it. #1494 covers extending the pre-bind pass to every non-empty
-// prefix in module.Namespaces rather than only the ones a NamespaceDecl introduces.
+// A prefix a subdirectory or a merged package group introduced gets a shell too.
+// Without one the flat qualified key `geo.x` is bound and carries the right type,
+// but nothing binds `geo`, so a sibling file writing `geo.x` reads it as an
+// unknown identifier.
 
 // preBindNamespaceDecls binds one empty Namespace per `namespace` block before the
 // component walk, and returns each block paired with the object to fill.
@@ -61,14 +63,63 @@ func (c *checker) preBindNamespaceDecls(scope *Scope, module *ast.Module, handle
 		}
 		return true
 	})
-	return shells
+	return append(shells, c.preBindPathNamespaces(target, module, byName)...)
+}
+
+// preBindPathNamespaces mints a shell for every prefix in module.Namespaces that
+// no `namespace` block already covers.
+//
+// A prefix comes from a subdirectory of `lib/`, or from the synthetic path a
+// merged package group parses each member under. Neither has a NamespaceDecl to
+// key off, so neither reaches the block pass above.
+//
+// Each ancestor prefix gets a shell as well, hung off its parent, so the members
+// of `geo.sub` are reached by writing `geo.sub.member`. The scan runs in sorted
+// order, which reaches `geo` before `geo.sub`.
+func (c *checker) preBindPathNamespaces(target *Scope, module *ast.Module, byName map[string]*namespaceShell) []*namespaceShell {
+	var roots []*namespaceShell
+	module.Namespaces.Scan(func(prefix string, ns *ast.Namespace) bool {
+		if prefix == "" {
+			return true
+		}
+		var parent *namespaceShell
+		walked := ""
+		for _, segment := range strings.Split(prefix, ".") {
+			walked = qualify(walked, segment)
+			sh, seen := byName[walked]
+			if !seen {
+				sh = &namespaceShell{ns: newNamespace(walked), qname: walked}
+				byName[walked] = sh
+				target.defineNamespace(walked, sh.ns)
+				if parent == nil {
+					roots = append(roots, sh)
+				} else {
+					parent.ns.Nested[segment] = sh.ns
+					parent.nested = append(parent.nested, sh)
+				}
+			}
+			parent = sh
+		}
+		// A block written at this prefix has its own shell and its own members, so
+		// only what is declared directly here belongs to this one.
+		for _, decl := range ns.Decls {
+			if _, isBlock := decl.(*ast.NamespaceDecl); isBlock {
+				continue
+			}
+			parent.decls = append(parent.decls, decl)
+		}
+		return true
+	})
+	return roots
 }
 
 // namespaceShell pairs a `namespace` block with the empty Namespace bound for it,
 // which populateNamespaces fills once the walk has bound its members.
 type namespaceShell struct {
-	// decls are every block declaring this qualified name, in source order.
-	decls  []*ast.NamespaceDecl
+	// decls are the members declared under this qualified name, in source order,
+	// gathered from every block of the name and from the prefix itself. A block
+	// nested inside is left out: it has a shell of its own.
+	decls  []ast.Decl
 	ns     *Namespace
 	qname  string
 	nested []*namespaceShell
@@ -87,15 +138,28 @@ func (c *checker) preBindOneNamespace(prefix string, decl *ast.NamespaceDecl, ha
 	// A second block of one name reuses the first's Namespace and records its own
 	// declarations, so both blocks' members land in one binding.
 	if existing, seen := byName[qname]; seen {
-		existing.decls = append(existing.decls, decl)
+		existing.decls = append(existing.decls, membersOf(decl)...)
 		c.preBindNestedBlocks(qname, decl, handled, byName, existing)
 		return nil
 	}
 
-	sh := &namespaceShell{decls: []*ast.NamespaceDecl{decl}, ns: newNamespace(qname), qname: qname}
+	sh := &namespaceShell{decls: membersOf(decl), ns: newNamespace(qname), qname: qname}
 	byName[qname] = sh
 	c.preBindNestedBlocks(qname, decl, handled, byName, sh)
 	return sh
+}
+
+// membersOf returns the declarations a block introduces, leaving out the blocks
+// nested inside it. Each of those has a shell of its own.
+func membersOf(decl *ast.NamespaceDecl) []ast.Decl {
+	out := make([]ast.Decl, 0, len(decl.Decls))
+	for _, inner := range decl.Decls {
+		if _, isBlock := inner.(*ast.NamespaceDecl); isBlock {
+			continue
+		}
+		out = append(out, inner)
+	}
+	return out
 }
 
 // preBindNestedBlocks mints the Namespace for each block written inside decl and
@@ -141,29 +205,24 @@ func (c *checker) populateNamespaces(scope *Scope, shells []*namespaceShell) {
 // parent already holds, so `namespace a { namespace b { val x } }` gives `a.b.x`.
 func (c *checker) populateNamespace(scope *Scope, sh *namespaceShell) {
 	out := sh.ns
+	// Each member was keyed under `qname.member` and bound by the walk, so its
+	// names are read back rather than re-inferred here. ast.DeclNames answers what
+	// a declaration introduces. Its export flag is not consulted, since that flag
+	// gates a package's surface rather than what a namespace holds.
 	for _, decl := range sh.decls {
-		for _, inner := range decl.Decls {
-			if _, ok := inner.(*ast.NamespaceDecl); ok {
-				continue
+		for _, name := range ast.DeclNames(decl) {
+			key := qualify(sh.qname, name)
+			if b, found := scope.GetValue(key); found {
+				out.Values[name] = b
 			}
-			// Every other kind was keyed under `qname.member` and bound by the walk, so
-			// its names are read back rather than re-inferred here. ast.DeclNames answers
-			// what a declaration introduces. Its export flag is not consulted, since that
-			// flag gates a package's surface rather than what a block holds.
-			for _, name := range ast.DeclNames(inner) {
-				key := qualify(sh.qname, name)
-				if b, found := scope.GetValue(key); found {
-					out.Values[name] = b
-				}
-				if b, found := scope.GetType(key); found {
-					out.Types[name] = b
-				} else if b, found := scope.GetType(qualify(packageKeyPrefix(c.pkgURI), key)); found {
-					// A type declared inside a package registers under a key carrying the
-					// package URI, which is what keeps two packages' same-named classes
-					// apart. The member is re-keyed to its bare name here, the way
-					// exportedSurface re-keys a package's top-level types.
-					out.Types[name] = b
-				}
+			if b, found := scope.GetType(key); found {
+				out.Types[name] = b
+			} else if b, found := scope.GetType(qualify(packageKeyPrefix(c.pkgURI), key)); found {
+				// A type declared inside a package registers under a key carrying the
+				// package URI, which is what keeps two packages' same-named classes
+				// apart. The member is re-keyed to its bare name here, the way
+				// exportedSurface re-keys a package's top-level types.
+				out.Types[name] = b
 			}
 		}
 	}
