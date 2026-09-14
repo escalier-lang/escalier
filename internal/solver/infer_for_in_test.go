@@ -326,30 +326,30 @@ func TestForInBackEdgeBorrows(t *testing.T) {
 		// borrows d, so the union at the exit escapes both locals.
 		"ReassignInLoopUnionsAtMerge": {
 			src: `
-				fn f(xs: [number]) {
+				fn f(xs: [number], out: &mut {slot: &mut {value: number}}) {
 					val mut c = {value: 1}
 					val mut d = {value: 0}
 					var a = &mut c
 					for x in xs {
 						a = &mut d
 					}
-					return a
+					out.slot = a
 				}
 			`,
 			want: []string{
-				`9:13-9:14: borrowed value 'c' does not live long enough to escape the function`,
-				`9:13-9:14: borrowed value 'd' does not live long enough to escape the function`,
+				`9:17-9:18: borrowed value 'c' does not live long enough to escape the function`,
+				`9:17-9:18: borrowed value 'd' does not live long enough to escape the function`,
 			},
-			types: map[string]string{"f": "fn (xs: [number]) -> &mut {value: number}"},
+			types: map[string]string{"f": "fn (xs: [number], out: &mut {slot: &mut {value: number}}) -> undefined"},
 		},
 		// A whole-binding reassignment after the loop clears every referent the loop
-		// carried into it: `a = &mut d` replaces a's whole edge set, so returning a
+		// carried into it: `a = &mut d` replaces a's whole edge set, so storing a out
 		// escapes only d, not the c the loop body kept repointing to. This is
 		// clearEagerSubtree's unconditional kill clearing a referent that reaches the
 		// reassignment through the back edge.
 		"PostLoopReassignClearsLoopEdges": {
 			src: `
-				fn f(xs: [number]) {
+				fn f(xs: [number], out: &mut {slot: &mut {value: number}}) {
 					val mut c = {value: 1}
 					val mut d = {value: 0}
 					var a = &mut c
@@ -357,11 +357,11 @@ func TestForInBackEdgeBorrows(t *testing.T) {
 						a = &mut c
 					}
 					a = &mut d
-					return a
+					out.slot = a
 				}
 			`,
-			want:  []string{`10:13-10:14: borrowed value 'd' does not live long enough to escape the function`},
-			types: map[string]string{"f": "fn (xs: [number]) -> &mut {value: number}"},
+			want:  []string{`10:17-10:18: borrowed value 'd' does not live long enough to escape the function`},
+			types: map[string]string{"f": "fn (xs: [number], out: &mut {slot: &mut {value: number}}) -> undefined"},
 		},
 		// A field store inside the loop repoints only the stored field's subtree, so
 		// returning the carrier component-moves the stored local and re-anchors it in the
