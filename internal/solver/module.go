@@ -67,8 +67,22 @@ type ModuleResult struct {
 // what InferModule passes, since a run over one module has no second module to
 // reach.
 func InferModuleWithSource(module *ast.Module, source ModuleSource) *ModuleResult {
+	return inferModuleWithGroups(module, source, nil, nil)
+}
+
+// inferModuleWithGroups is InferModuleWithSource with the two things a stdlib
+// directory adds: the groups that load together, and a reader for a whole
+// group. Both are nil for a run whose packages each load alone.
+func inferModuleWithGroups(
+	module *ast.Module,
+	source ModuleSource,
+	groupSource GroupSource,
+	groups PackageGroups,
+) *ModuleResult {
 	c := newChecker()
 	c.source = source
+	c.groupSource = groupSource
+	c.groups = groups
 	// The prelude package is loaded before anything is walked, so no rule reaches
 	// for a handle from inside a speculation trial, where a load would publish a
 	// package whose bounds a discard then truncates.

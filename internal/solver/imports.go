@@ -77,6 +77,20 @@ func (c *checker) bindPseudoPackageImport(fileScope *Scope, stmt *ast.ImportStmt
 	}
 
 	uri := stmt.PackageName
+	// An `as` clause is refused rather than skipped. A member's declarations are
+	// reached by qualified name — `beta.Beta` — and nothing binds those names
+	// under a second prefix, so an alias would silently resolve nothing. The
+	// generated tree writes bare imports only, so this is a hand-written stdlib
+	// directory being told to drop the alias rather than a gap in the tree.
+	if c.activeGroup.Contains(uri) {
+		if stmt.Alias != "" {
+			return []SolverError{&AliasedCycleImportError{
+				URI: uri, Alias: stmt.Alias, span: stmt.Span(),
+			}}
+		}
+		return nil
+	}
+
 	ns, errs := c.loadPackage(uri, stmt.Span())
 	if ns == nil {
 		return errs
@@ -92,6 +106,24 @@ func (c *checker) bindPseudoPackageImport(fileScope *Scope, stmt *ast.ImportStmt
 	}
 	return errs
 }
+
+// AliasedCycleImportError reports an `as` clause on an import naming a sibling
+// in the same cycle.
+type AliasedCycleImportError struct {
+	URI   string
+	Alias string
+	span  ast.Span
+}
+
+func (e *AliasedCycleImportError) Message() string {
+	return fmt.Sprintf(
+		"cannot import %q as %q: the two packages import each other and load as one "+
+			"module, where a sibling is reached by its own name; write the bare import",
+		e.URI, e.Alias)
+}
+func (e *AliasedCycleImportError) Span() ast.Span      { return e.span }
+func (e *AliasedCycleImportError) Related() []ast.Span { return nil }
+func (e *AliasedCycleImportError) isSolverError()      {}
 
 // coreURI is the one package whose exports an importer binds unprefixed. It
 // still takes an import, which is the whole difference between it and the

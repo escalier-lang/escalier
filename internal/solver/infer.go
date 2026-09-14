@@ -157,6 +157,18 @@ type checker struct {
 	// source resolves a package URI to the module to infer for it. A run given no
 	// source reports every import as unresolved rather than loading anything.
 	source ModuleSource
+	// groupSource reads a whole package group as one module, for a group whose
+	// members import each other. Nil when the run has no stdlib directory, which
+	// is every run whose packages are acyclic.
+	groupSource GroupSource
+	// groups maps a pseudo-package URI to the group it loads with. Empty when no
+	// stdlib directory was scanned, in which case every package loads alone.
+	groups PackageGroups
+	// activeGroup holds the members of the group currently being inferred as one
+	// module. An import naming one of them binds nothing, since its declarations
+	// are already in the merged module scope under the name the import would
+	// have bound.
+	activeGroup set.Set[string]
 
 	// moduleDeclared holds the top-level names of the module whose imports are
 	// being bound, split by the namespace each occupies. Imports bind before the
