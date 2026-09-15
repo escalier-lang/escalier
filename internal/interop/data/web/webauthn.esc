@@ -6,6 +6,7 @@ import "std:typed_arrays"
 import "web:core"
 import "web:credentials"
 
+@env("window")
 export declare interface AuthenticationExtensionsClientInputs {
     appid?: string,
     credProps?: boolean,
@@ -14,8 +15,10 @@ export declare interface AuthenticationExtensionsClientInputs {
     prf?: AuthenticationExtensionsPRFInputs
 }
 
+@env("window")
 export declare interface AuthenticationExtensionsClientInputsJSON {}
 
+@env("window")
 export declare interface AuthenticationExtensionsClientOutputs {
     appid?: boolean,
     credProps?: CredentialPropertiesOutput,
@@ -23,21 +26,25 @@ export declare interface AuthenticationExtensionsClientOutputs {
     prf?: AuthenticationExtensionsPRFOutputs
 }
 
+@env("window")
 export declare interface AuthenticationExtensionsPRFInputs {
     eval?: AuthenticationExtensionsPRFValues,
     evalByCredential?: Record<string, AuthenticationExtensionsPRFValues>
 }
 
+@env("window")
 export declare interface AuthenticationExtensionsPRFOutputs {
     enabled?: boolean,
     results?: AuthenticationExtensionsPRFValues
 }
 
+@env("window")
 export declare interface AuthenticationExtensionsPRFValues {
     first: BufferSource,
     second?: BufferSource
 }
 
+@env("window")
 export declare interface AuthenticatorSelectionCriteria {
     authenticatorAttachment?: AuthenticatorAttachment,
     requireResidentKey?: boolean,
@@ -45,10 +52,12 @@ export declare interface AuthenticatorSelectionCriteria {
     userVerification?: UserVerificationRequirement
 }
 
+@env("window")
 export declare interface CredentialPropertiesOutput {
     rk?: boolean
 }
 
+@env("window")
 export declare interface PublicKeyCredentialCreationOptions {
     attestation?: AttestationConveyancePreference,
     authenticatorSelection?: AuthenticatorSelectionCriteria,
@@ -61,6 +70,7 @@ export declare interface PublicKeyCredentialCreationOptions {
     user: PublicKeyCredentialUserEntity
 }
 
+@env("window")
 export declare interface PublicKeyCredentialCreationOptionsJSON {
     attestation?: string,
     authenticatorSelection?: AuthenticatorSelectionCriteria,
@@ -74,27 +84,32 @@ export declare interface PublicKeyCredentialCreationOptionsJSON {
     user: PublicKeyCredentialUserEntityJSON
 }
 
+@env("window")
 export declare interface PublicKeyCredentialDescriptor {
     id: BufferSource,
     transports?: mut Array<AuthenticatorTransport>,
     type: PublicKeyCredentialType
 }
 
+@env("window")
 export declare interface PublicKeyCredentialDescriptorJSON {
     id: Base64URLString,
     transports?: mut Array<string>,
     type: string
 }
 
+@env("window")
 export declare interface PublicKeyCredentialEntity {
     name: string
 }
 
+@env("window")
 export declare interface PublicKeyCredentialParameters {
     alg: COSEAlgorithmIdentifier,
     type: PublicKeyCredentialType
 }
 
+@env("window")
 export declare interface PublicKeyCredentialRequestOptions {
     allowCredentials?: mut Array<PublicKeyCredentialDescriptor>,
     challenge: BufferSource,
@@ -104,6 +119,7 @@ export declare interface PublicKeyCredentialRequestOptions {
     userVerification?: UserVerificationRequirement
 }
 
+@env("window")
 export declare interface PublicKeyCredentialRequestOptionsJSON {
     allowCredentials?: mut Array<PublicKeyCredentialDescriptorJSON>,
     challenge: Base64URLString,
@@ -114,15 +130,18 @@ export declare interface PublicKeyCredentialRequestOptionsJSON {
     userVerification?: string
 }
 
+@env("window")
 export declare interface PublicKeyCredentialRpEntity extends PublicKeyCredentialEntity {
     id?: string
 }
 
+@env("window")
 export declare interface PublicKeyCredentialUserEntity extends PublicKeyCredentialEntity {
     displayName: string,
     id: BufferSource
 }
 
+@env("window")
 export declare interface PublicKeyCredentialUserEntityJSON {
     displayName: string,
     id: Base64URLString,
@@ -134,6 +153,7 @@ export declare interface PublicKeyCredentialUserEntityJSON {
  *
  * [MDN Reference](https://developer.mozilla.org/docs/Web/API/AuthenticatorAssertionResponse)
  */
+@env("window")
 @js("AuthenticatorAssertionResponse")
 export declare class AuthenticatorAssertionResponse extends AuthenticatorResponse {
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/AuthenticatorAssertionResponse/authenticatorData) */
@@ -151,6 +171,7 @@ export declare class AuthenticatorAssertionResponse extends AuthenticatorRespons
  *
  * [MDN Reference](https://developer.mozilla.org/docs/Web/API/AuthenticatorAttestationResponse)
  */
+@env("window")
 @js("AuthenticatorAttestationResponse")
 export declare class AuthenticatorAttestationResponse extends AuthenticatorResponse {
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/AuthenticatorAttestationResponse/attestationObject) */
@@ -172,6 +193,7 @@ export declare class AuthenticatorAttestationResponse extends AuthenticatorRespo
  *
  * [MDN Reference](https://developer.mozilla.org/docs/Web/API/AuthenticatorResponse)
  */
+@env("window")
 @js("AuthenticatorResponse")
 export declare class AuthenticatorResponse {
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/AuthenticatorResponse/clientDataJSON) */
@@ -185,6 +207,7 @@ export declare class AuthenticatorResponse {
  *
  * [MDN Reference](https://developer.mozilla.org/docs/Web/API/PublicKeyCredential)
  */
+@env("window")
 @js("PublicKeyCredential")
 export declare class PublicKeyCredential extends credentials.Credential {
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/PublicKeyCredential/authenticatorAttachment) */
@@ -210,22 +233,32 @@ export declare class PublicKeyCredential extends credentials.Credential {
     static parseRequestOptionsFromJSON(options: PublicKeyCredentialRequestOptionsJSON) -> PublicKeyCredentialRequestOptions
 }
 
+@env("window")
 export declare type Base64URLString = string
 
+@env("window")
 export declare type COSEAlgorithmIdentifier = number
 
+@env("window")
 export declare type PublicKeyCredentialClientCapabilities = Record<string, boolean>
 
+@env("window")
 export declare type PublicKeyCredentialJSON = any
 
+@env("window")
 export declare type AttestationConveyancePreference = "direct" | "enterprise" | "indirect" | "none"
 
+@env("window")
 export declare type AuthenticatorAttachment = "cross-platform" | "platform"
 
+@env("window")
 export declare type AuthenticatorTransport = "ble" | "hybrid" | "internal" | "nfc" | "usb"
 
+@env("window")
 export declare type PublicKeyCredentialType = "public-key"
 
+@env("window")
 export declare type ResidentKeyRequirement = "discouraged" | "preferred" | "required"
 
+@env("window")
 export declare type UserVerificationRequirement = "discouraged" | "preferred" | "required"

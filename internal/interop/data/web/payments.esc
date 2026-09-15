@@ -4,6 +4,7 @@
 
 import "web:core"
 
+@env("window")
 export declare interface AddressErrors {
     addressLine?: string,
     city?: string,
@@ -17,28 +18,33 @@ export declare interface AddressErrors {
     sortingCode?: string
 }
 
+@env("window")
 export declare interface PayerErrors {
     email?: string,
     name?: string,
     phone?: string
 }
 
+@env("window")
 export declare interface PaymentCurrencyAmount {
     currency: string,
     value: string
 }
 
+@env("window")
 export declare interface PaymentDetailsBase {
     displayItems?: mut Array<PaymentItem>,
     modifiers?: mut Array<PaymentDetailsModifier>,
     shippingOptions?: mut Array<PaymentShippingOption>
 }
 
+@env("window")
 export declare interface PaymentDetailsInit extends PaymentDetailsBase {
     id?: string,
     total: PaymentItem
 }
 
+@env("window")
 export declare interface PaymentDetailsModifier {
     additionalDisplayItems?: mut Array<PaymentItem>,
     data?: any,
@@ -46,6 +52,7 @@ export declare interface PaymentDetailsModifier {
     total?: PaymentItem
 }
 
+@env("window")
 export declare interface PaymentDetailsUpdate extends PaymentDetailsBase {
     error?: string,
     paymentMethodErrors?: any,
@@ -53,22 +60,26 @@ export declare interface PaymentDetailsUpdate extends PaymentDetailsBase {
     total?: PaymentItem
 }
 
+@env("window")
 export declare interface PaymentItem {
     amount: PaymentCurrencyAmount,
     label: string,
     pending?: boolean
 }
 
+@env("window")
 export declare interface PaymentMethodChangeEventInit extends PaymentRequestUpdateEventInit {
     methodDetails?: any,
     methodName?: string
 }
 
+@env("window")
 export declare interface PaymentMethodData {
     data?: any,
     supportedMethods: string
 }
 
+@env("window")
 export declare interface PaymentOptions {
     requestPayerEmail?: boolean,
     requestPayerName?: boolean,
@@ -77,8 +88,10 @@ export declare interface PaymentOptions {
     shippingType?: PaymentShippingType
 }
 
+@env("window")
 export declare interface PaymentRequestUpdateEventInit extends EventInit {}
 
+@env("window")
 export declare interface PaymentShippingOption {
     amount: PaymentCurrencyAmount,
     id: string,
@@ -86,6 +99,7 @@ export declare interface PaymentShippingOption {
     selected?: boolean
 }
 
+@env("window")
 export declare interface PaymentValidationErrors {
     error?: string,
     payer?: PayerErrors,
@@ -93,6 +107,7 @@ export declare interface PaymentValidationErrors {
 }
 
 /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/ContactAddress) */
+@env("window")
 @js("PaymentAddress")
 export declare class PaymentAddress {
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/ContactAddress/addressLine) */
@@ -126,6 +141,7 @@ export declare class PaymentAddress {
  *
  * [MDN Reference](https://developer.mozilla.org/docs/Web/API/PaymentMethodChangeEvent)
  */
+@env("window")
 @js("PaymentMethodChangeEvent")
 export declare class PaymentMethodChangeEvent extends PaymentRequestUpdateEvent {
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/PaymentMethodChangeEvent/methodDetails) */
@@ -136,6 +152,7 @@ export declare class PaymentMethodChangeEvent extends PaymentRequestUpdateEvent 
     constructor(mut self, type: string, eventInitDict?: PaymentMethodChangeEventInit)
 }
 
+@env("window")
 export declare interface PaymentRequestEventMap {
     "paymentmethodchange": PaymentMethodChangeEvent,
     "shippingaddresschange": PaymentRequestUpdateEvent,
@@ -148,6 +165,7 @@ export declare interface PaymentRequestEventMap {
  *
  * [MDN Reference](https://developer.mozilla.org/docs/Web/API/PaymentRequest)
  */
+@env("window")
 @js("PaymentRequest")
 export declare class PaymentRequest extends EventTarget {
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/PaymentRequest/id) */
@@ -204,6 +222,7 @@ export declare class PaymentRequest extends EventTarget {
  *
  * [MDN Reference](https://developer.mozilla.org/docs/Web/API/PaymentRequestUpdateEvent)
  */
+@env("window")
 @js("PaymentRequestUpdateEvent")
 export declare class PaymentRequestUpdateEvent extends Event {
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/PaymentRequestUpdateEvent/updateWith) */
@@ -212,6 +231,7 @@ export declare class PaymentRequestUpdateEvent extends Event {
     constructor(mut self, type: string, eventInitDict?: PaymentRequestUpdateEventInit)
 }
 
+@env("window")
 export declare interface PaymentResponseEventMap {
     "payerdetailchange": PaymentRequestUpdateEvent
 }
@@ -222,6 +242,7 @@ export declare interface PaymentResponseEventMap {
  *
  * [MDN Reference](https://developer.mozilla.org/docs/Web/API/PaymentResponse)
  */
+@env("window")
 @js("PaymentResponse")
 export declare class PaymentResponse extends EventTarget {
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/PaymentResponse/details) */
@@ -256,6 +277,8 @@ export declare class PaymentResponse extends EventTarget {
     constructor(mut self)
 }
 
+@env("window")
 export declare type PaymentComplete = "fail" | "success" | "unknown"
 
+@env("window")
 export declare type PaymentShippingType = "delivery" | "pickup" | "shipping"

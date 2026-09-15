@@ -7,12 +7,14 @@ import "web:dom"
 import "web:fetch"
 import "web:url"
 
+@env("window")
 export declare interface WorkerOptions {
     credentials?: fetch.RequestCredentials,
     name?: string,
     type?: WorkerType
 }
 
+@env("window")
 export declare interface AbstractWorker {
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/ServiceWorker/error_event) */
     onerror: (fn (this: AbstractWorker, ev: dom.ErrorEvent) -> any) | null,
@@ -23,6 +25,7 @@ export declare interface AbstractWorker {
 }
 
 /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/SharedWorker) */
+@env("window")
 @js("SharedWorker")
 export declare class SharedWorker extends EventTarget {
     /**
@@ -39,6 +42,7 @@ export declare class SharedWorker extends EventTarget {
     constructor(mut self, scriptURL: string | url.URL, options?: string | WorkerOptions)
 }
 
+@env("window")
 export declare interface WorkerEventMap extends dom.AbstractWorkerEventMap, dom.MessageEventTargetEventMap {}
 
 /**
@@ -46,6 +50,7 @@ export declare interface WorkerEventMap extends dom.AbstractWorkerEventMap, dom.
  *
  * [MDN Reference](https://developer.mozilla.org/docs/Web/API/Worker)
  */
+@env("window")
 @js("Worker")
 export declare class Worker extends EventTarget {
     /**
@@ -69,4 +74,5 @@ export declare class Worker extends EventTarget {
     constructor(mut self, scriptURL: string | url.URL, options?: WorkerOptions)
 }
 
+@env("window")
 export declare type WorkerType = "classic" | "module"

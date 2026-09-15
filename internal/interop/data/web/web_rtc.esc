@@ -11,12 +11,15 @@ import "web:file"
 import "web:websocket"
 import "web:workers"
 
+@env("window")
 export declare interface RTCAnswerOptions extends RTCOfferAnswerOptions {}
 
+@env("window")
 export declare interface RTCCertificateExpiration {
     expires?: number
 }
 
+@env("window")
 export declare interface RTCConfiguration {
     bundlePolicy?: RTCBundlePolicy,
     certificates?: mut Array<RTCCertificate>,
@@ -26,14 +29,17 @@ export declare interface RTCConfiguration {
     rtcpMuxPolicy?: RTCRtcpMuxPolicy
 }
 
+@env("window")
 export declare interface RTCDTMFToneChangeEventInit extends EventInit {
     tone?: string
 }
 
+@env("window")
 export declare interface RTCDataChannelEventInit extends EventInit {
     channel: RTCDataChannel
 }
 
+@env("window")
 export declare interface RTCDataChannelInit {
     id?: number,
     maxPacketLifeTime?: number,
@@ -43,11 +49,13 @@ export declare interface RTCDataChannelInit {
     protocol?: string
 }
 
+@env("window")
 export declare interface RTCDtlsFingerprint {
     algorithm?: string,
     value?: string
 }
 
+@env("window")
 export declare interface RTCEncodedAudioFrameMetadata {
     contributingSources?: mut Array<number>,
     payloadType?: number,
@@ -55,6 +63,7 @@ export declare interface RTCEncodedAudioFrameMetadata {
     synchronizationSource?: number
 }
 
+@env("window")
 export declare interface RTCEncodedVideoFrameMetadata {
     contributingSources?: mut Array<number>,
     dependencies?: mut Array<number>,
@@ -68,10 +77,12 @@ export declare interface RTCEncodedVideoFrameMetadata {
     width?: number
 }
 
+@env("window")
 export declare interface RTCErrorEventInit extends EventInit {
     error: RTCError
 }
 
+@env("window")
 export declare interface RTCErrorInit {
     errorDetail: RTCErrorDetailType,
     httpRequestStatusCode?: number,
@@ -81,6 +92,7 @@ export declare interface RTCErrorInit {
     sentAlert?: number
 }
 
+@env("window")
 export declare interface RTCIceCandidateInit {
     candidate?: string,
     sdpMLineIndex?: number | null,
@@ -88,6 +100,7 @@ export declare interface RTCIceCandidateInit {
     usernameFragment?: string | null
 }
 
+@env("window")
 export declare interface RTCIceCandidatePairStats extends RTCStats {
     availableIncomingBitrate?: number,
     availableOutgoingBitrate?: number,
@@ -113,12 +126,14 @@ export declare interface RTCIceCandidatePairStats extends RTCStats {
     transportId: string
 }
 
+@env("window")
 export declare interface RTCIceServer {
     credential?: string,
     urls: string | mut Array<string>,
     username?: string
 }
 
+@env("window")
 export declare interface RTCInboundRtpStreamStats extends RTCReceivedRtpStreamStats {
     audioLevel?: number,
     bytesReceived?: number,
@@ -174,19 +189,23 @@ export declare interface RTCInboundRtpStreamStats extends RTCReceivedRtpStreamSt
     trackIdentifier: string
 }
 
+@env("window")
 export declare interface RTCLocalSessionDescriptionInit {
     sdp?: string,
     type?: RTCSdpType
 }
 
+@env("window")
 export declare interface RTCOfferAnswerOptions {}
 
+@env("window")
 export declare interface RTCOfferOptions extends RTCOfferAnswerOptions {
     iceRestart?: boolean,
     offerToReceiveAudio?: boolean,
     offerToReceiveVideo?: boolean
 }
 
+@env("window")
 export declare interface RTCOutboundRtpStreamStats extends RTCSentRtpStreamStats {
     active?: boolean,
     firCount?: number,
@@ -218,6 +237,7 @@ export declare interface RTCOutboundRtpStreamStats extends RTCSentRtpStreamStats
     totalPacketSendDelay?: number
 }
 
+@env("window")
 export declare interface RTCPeerConnectionIceErrorEventInit extends EventInit {
     address?: string | null,
     errorCode: number,
@@ -226,27 +246,32 @@ export declare interface RTCPeerConnectionIceErrorEventInit extends EventInit {
     url?: string
 }
 
+@env("window")
 export declare interface RTCPeerConnectionIceEventInit extends EventInit {
     candidate?: RTCIceCandidate | null,
     url?: string | null
 }
 
+@env("window")
 export declare interface RTCReceivedRtpStreamStats extends RTCRtpStreamStats {
     jitter?: number,
     packetsLost?: number,
     packetsReceived?: number
 }
 
+@env("window")
 export declare interface RTCRtcpParameters {
     cname?: string,
     reducedSize?: boolean
 }
 
+@env("window")
 export declare interface RTCRtpCapabilities {
     codecs: mut Array<RTCRtpCodec>,
     headerExtensions: mut Array<RTCRtpHeaderExtensionCapability>
 }
 
+@env("window")
 export declare interface RTCRtpCodec {
     channels?: number,
     clockRate: number,
@@ -254,14 +279,17 @@ export declare interface RTCRtpCodec {
     sdpFmtpLine?: string
 }
 
+@env("window")
 export declare interface RTCRtpCodecParameters extends RTCRtpCodec {
     payloadType: number
 }
 
+@env("window")
 export declare interface RTCRtpCodingParameters {
     rid?: string
 }
 
+@env("window")
 export declare interface RTCRtpContributingSource {
     audioLevel?: number,
     rtpTimestamp: number,
@@ -269,6 +297,7 @@ export declare interface RTCRtpContributingSource {
     timestamp: DOMHighResTimeStamp
 }
 
+@env("window")
 export declare interface RTCRtpEncodingParameters extends RTCRtpCodingParameters {
     active?: boolean,
     maxBitrate?: number,
@@ -278,30 +307,36 @@ export declare interface RTCRtpEncodingParameters extends RTCRtpCodingParameters
     scaleResolutionDownBy?: number
 }
 
+@env("window")
 export declare interface RTCRtpHeaderExtensionCapability {
     uri: string
 }
 
+@env("window")
 export declare interface RTCRtpHeaderExtensionParameters {
     encrypted?: boolean,
     id: number,
     uri: string
 }
 
+@env("window")
 export declare interface RTCRtpParameters {
     codecs: mut Array<RTCRtpCodecParameters>,
     headerExtensions: mut Array<RTCRtpHeaderExtensionParameters>,
     rtcp: RTCRtcpParameters
 }
 
+@env("window")
 export declare interface RTCRtpReceiveParameters extends RTCRtpParameters {}
 
+@env("window")
 export declare interface RTCRtpSendParameters extends RTCRtpParameters {
     degradationPreference?: RTCDegradationPreference,
     encodings: mut Array<RTCRtpEncodingParameters>,
     transactionId: string
 }
 
+@env("window")
 export declare interface RTCRtpStreamStats extends RTCStats {
     codecId?: string,
     kind: string,
@@ -309,32 +344,39 @@ export declare interface RTCRtpStreamStats extends RTCStats {
     transportId?: string
 }
 
+@env("window")
 export declare interface RTCRtpSynchronizationSource extends RTCRtpContributingSource {}
 
+@env("window")
 export declare interface RTCRtpTransceiverInit {
     direction?: RTCRtpTransceiverDirection,
     sendEncodings?: mut Array<RTCRtpEncodingParameters>,
     streams?: mut Array<dom.MediaStream>
 }
 
+@env("window")
 export declare interface RTCSentRtpStreamStats extends RTCRtpStreamStats {
     bytesSent?: number,
     packetsSent?: number
 }
 
+@env("window")
 export declare interface RTCSessionDescriptionInit {
     sdp?: string,
     type: RTCSdpType
 }
 
+@env("window")
 export declare interface RTCSetParameterOptions {}
 
+@env("window")
 export declare interface RTCStats {
     id: string,
     timestamp: DOMHighResTimeStamp,
     type: RTCStatsType
 }
 
+@env("window")
 export declare interface RTCTrackEventInit extends EventInit {
     receiver: RTCRtpReceiver,
     streams?: mut Array<dom.MediaStream>,
@@ -342,6 +384,7 @@ export declare interface RTCTrackEventInit extends EventInit {
     transceiver: RTCRtpTransceiver
 }
 
+@env("window")
 export declare interface RTCTransportStats extends RTCStats {
     bytesReceived?: number,
     bytesSent?: number,
@@ -362,6 +405,7 @@ export declare interface RTCTransportStats extends RTCStats {
 }
 
 /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/RTCCertificate) */
+@env("window")
 @js("RTCCertificate")
 export declare class RTCCertificate {
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/RTCCertificate/expires) */
@@ -372,11 +416,13 @@ export declare class RTCCertificate {
     constructor(mut self)
 }
 
+@env("window")
 export declare interface RTCDTMFSenderEventMap {
     "tonechange": RTCDTMFToneChangeEvent
 }
 
 /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/RTCDTMFSender) */
+@env("window")
 @js("RTCDTMFSender")
 export declare class RTCDTMFSender extends EventTarget {
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/RTCDTMFSender/canInsertDTMF) */
@@ -400,6 +446,7 @@ export declare class RTCDTMFSender extends EventTarget {
  *
  * [MDN Reference](https://developer.mozilla.org/docs/Web/API/RTCDTMFToneChangeEvent)
  */
+@env("window")
 @js("RTCDTMFToneChangeEvent")
 export declare class RTCDTMFToneChangeEvent extends Event {
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/RTCDTMFToneChangeEvent/tone) */
@@ -408,6 +455,7 @@ export declare class RTCDTMFToneChangeEvent extends Event {
     constructor(mut self, type: string, eventInitDict?: RTCDTMFToneChangeEventInit)
 }
 
+@env("window")
 export declare interface RTCDataChannelEventMap {
     "bufferedamountlow": Event,
     "close": Event,
@@ -418,6 +466,7 @@ export declare interface RTCDataChannelEventMap {
 }
 
 /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/RTCDataChannel) */
+@env("window")
 @js("RTCDataChannel")
 export declare class RTCDataChannel extends EventTarget {
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/RTCDataChannel/binaryType) */
@@ -470,6 +519,7 @@ export declare class RTCDataChannel extends EventTarget {
 }
 
 /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/RTCDataChannelEvent) */
+@env("window")
 @js("RTCDataChannelEvent")
 export declare class RTCDataChannelEvent extends Event {
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/RTCDataChannelEvent/channel) */
@@ -478,12 +528,14 @@ export declare class RTCDataChannelEvent extends Event {
     constructor(mut self, type: string, eventInitDict: RTCDataChannelEventInit)
 }
 
+@env("window")
 export declare interface RTCDtlsTransportEventMap {
     "error": RTCErrorEvent,
     "statechange": Event
 }
 
 /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/RTCDtlsTransport) */
+@env("window")
 @js("RTCDtlsTransport")
 export declare class RTCDtlsTransport extends EventTarget {
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/RTCDtlsTransport/iceTransport) */
@@ -503,6 +555,7 @@ export declare class RTCDtlsTransport extends EventTarget {
 }
 
 /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/RTCEncodedAudioFrame) */
+@env("window")
 @js("RTCEncodedAudioFrame")
 export declare class RTCEncodedAudioFrame {
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/RTCEncodedAudioFrame/data) */
@@ -516,6 +569,7 @@ export declare class RTCEncodedAudioFrame {
 }
 
 /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/RTCEncodedVideoFrame) */
+@env("window")
 @js("RTCEncodedVideoFrame")
 export declare class RTCEncodedVideoFrame {
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/RTCEncodedVideoFrame/data) */
@@ -531,6 +585,7 @@ export declare class RTCEncodedVideoFrame {
 }
 
 /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/RTCError) */
+@env("window")
 @js("RTCError")
 export declare class RTCError extends DOMException {
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/RTCError/errorDetail) */
@@ -548,6 +603,7 @@ export declare class RTCError extends DOMException {
 }
 
 /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/RTCErrorEvent) */
+@env("window")
 @js("RTCErrorEvent")
 export declare class RTCErrorEvent extends Event {
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/RTCErrorEvent/error) */
@@ -561,6 +617,7 @@ export declare class RTCErrorEvent extends Event {
  *
  * [MDN Reference](https://developer.mozilla.org/docs/Web/API/RTCIceCandidate)
  */
+@env("window")
 @js("RTCIceCandidate")
 export declare class RTCIceCandidate {
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/RTCIceCandidate/address) */
@@ -597,11 +654,13 @@ export declare class RTCIceCandidate {
     constructor(mut self, candidateInitDict?: RTCIceCandidateInit)
 }
 
+@env("window")
 export declare interface RTCIceCandidatePair {
     local: RTCIceCandidate,
     remote: RTCIceCandidate
 }
 
+@env("window")
 export declare interface RTCIceTransportEventMap {
     "gatheringstatechange": Event,
     "selectedcandidatepairchange": Event,
@@ -613,6 +672,7 @@ export declare interface RTCIceTransportEventMap {
  *
  * [MDN Reference](https://developer.mozilla.org/docs/Web/API/RTCIceTransport)
  */
+@env("window")
 @js("RTCIceTransport")
 export declare class RTCIceTransport extends EventTarget {
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/RTCIceTransport/gatheringState) */
@@ -635,6 +695,7 @@ export declare class RTCIceTransport extends EventTarget {
     constructor(mut self)
 }
 
+@env("window")
 export declare interface RTCPeerConnectionEventMap {
     "connectionstatechange": Event,
     "datachannel": RTCDataChannelEvent,
@@ -652,6 +713,7 @@ export declare interface RTCPeerConnectionEventMap {
  *
  * [MDN Reference](https://developer.mozilla.org/docs/Web/API/RTCPeerConnection)
  */
+@env("window")
 @js("RTCPeerConnection")
 export declare class RTCPeerConnection extends EventTarget {
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/RTCPeerConnection/canTrickleIceCandidates) */
@@ -751,6 +813,7 @@ export declare class RTCPeerConnection extends EventTarget {
 }
 
 /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/RTCPeerConnectionIceErrorEvent) */
+@env("window")
 @js("RTCPeerConnectionIceErrorEvent")
 export declare class RTCPeerConnectionIceErrorEvent extends Event {
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/RTCPeerConnectionIceErrorEvent/address) */
@@ -768,6 +831,7 @@ export declare class RTCPeerConnectionIceErrorEvent extends Event {
  *
  * [MDN Reference](https://developer.mozilla.org/docs/Web/API/RTCPeerConnectionIceEvent)
  */
+@env("window")
 @js("RTCPeerConnectionIceEvent")
 export declare class RTCPeerConnectionIceEvent extends Event {
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/RTCPeerConnectionIceEvent/candidate) */
@@ -781,6 +845,7 @@ export declare class RTCPeerConnectionIceEvent extends Event {
  *
  * [MDN Reference](https://developer.mozilla.org/docs/Web/API/RTCRtpReceiver)
  */
+@env("window")
 @js("RTCRtpReceiver")
 export declare class RTCRtpReceiver {
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/RTCRtpReceiver/jitterBufferTarget) */
@@ -806,6 +871,7 @@ export declare class RTCRtpReceiver {
 }
 
 /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/RTCRtpScriptTransform) */
+@env("window")
 @js("RTCRtpScriptTransform")
 export declare class RTCRtpScriptTransform {
     static prototype: RTCRtpScriptTransform,
@@ -817,6 +883,7 @@ export declare class RTCRtpScriptTransform {
  *
  * [MDN Reference](https://developer.mozilla.org/docs/Web/API/RTCRtpSender)
  */
+@env("window")
 @js("RTCRtpSender")
 export declare class RTCRtpSender {
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/RTCRtpSender/dtmf) */
@@ -844,6 +911,7 @@ export declare class RTCRtpSender {
 }
 
 /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/RTCRtpTransceiver) */
+@env("window")
 @js("RTCRtpTransceiver")
 export declare class RTCRtpTransceiver {
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/RTCRtpTransceiver/currentDirection) */
@@ -866,11 +934,13 @@ export declare class RTCRtpTransceiver {
     constructor(mut self)
 }
 
+@env("window")
 export declare interface RTCSctpTransportEventMap {
     "statechange": Event
 }
 
 /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/RTCSctpTransport) */
+@env("window")
 @js("RTCSctpTransport")
 export declare class RTCSctpTransport extends EventTarget {
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/RTCSctpTransport/maxChannels) */
@@ -896,6 +966,7 @@ export declare class RTCSctpTransport extends EventTarget {
  *
  * [MDN Reference](https://developer.mozilla.org/docs/Web/API/RTCSessionDescription)
  */
+@env("window")
 @js("RTCSessionDescription")
 export declare class RTCSessionDescription {
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/RTCSessionDescription/sdp) */
@@ -909,6 +980,7 @@ export declare class RTCSessionDescription {
 }
 
 /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/RTCStatsReport) */
+@env("window")
 @js("RTCStatsReport")
 export declare class RTCStatsReport extends map.Map<string, any> {
     forEach(self, callbackfn: fn (value: any, key: string, parent: RTCStatsReport) -> unknown, thisArg?: unknown) -> unknown,
@@ -917,6 +989,7 @@ export declare class RTCStatsReport extends map.Map<string, any> {
 }
 
 /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/RTCTrackEvent) */
+@env("window")
 @js("RTCTrackEvent")
 export declare class RTCTrackEvent extends Event {
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/RTCTrackEvent/receiver) */
@@ -931,66 +1004,96 @@ export declare class RTCTrackEvent extends Event {
     constructor(mut self, type: string, eventInitDict: RTCTrackEventInit)
 }
 
+@env("window")
 export declare interface RTCPeerConnectionErrorCallback {
     (error: DOMException) -> unknown
 }
 
+@env("window")
 export declare interface RTCSessionDescriptionCallback {
     (description: RTCSessionDescriptionInit) -> unknown
 }
 
+@env("window")
 export declare type RTCRtpTransform = RTCRtpScriptTransform
 
+@env("window")
 export declare type RTCBundlePolicy = "balanced" | "max-bundle" | "max-compat"
 
+@env("window")
 export declare type RTCDataChannelState = "closed" | "closing" | "connecting" | "open"
 
+@env("window")
 export declare type RTCDegradationPreference = "balanced" | "maintain-framerate" | "maintain-resolution"
 
+@env("window")
 export declare type RTCDtlsRole = "client" | "server" | "unknown"
 
+@env("window")
 export declare type RTCDtlsTransportState = "closed" | "connected" | "connecting" | "failed" | "new"
 
+@env("window")
 export declare type RTCEncodedVideoFrameType = "delta" | "empty" | "key"
 
+@env("window")
 export declare type RTCErrorDetailType = "data-channel-failure" | "dtls-failure" | "fingerprint-failure" | "hardware-encoder-error" | "hardware-encoder-not-available" | "sctp-failure" | "sdp-syntax-error"
 
+@env("window")
 export declare type RTCIceCandidateType = "host" | "prflx" | "relay" | "srflx"
 
+@env("window")
 export declare type RTCIceComponent = "rtcp" | "rtp"
 
+@env("window")
 export declare type RTCIceConnectionState = "checking" | "closed" | "completed" | "connected" | "disconnected" | "failed" | "new"
 
+@env("window")
 export declare type RTCIceGathererState = "complete" | "gathering" | "new"
 
+@env("window")
 export declare type RTCIceGatheringState = "complete" | "gathering" | "new"
 
+@env("window")
 export declare type RTCIceProtocol = "tcp" | "udp"
 
+@env("window")
 export declare type RTCIceRole = "controlled" | "controlling" | "unknown"
 
+@env("window")
 export declare type RTCIceTcpCandidateType = "active" | "passive" | "so"
 
+@env("window")
 export declare type RTCIceTransportPolicy = "all" | "relay"
 
+@env("window")
 export declare type RTCIceTransportState = "checking" | "closed" | "completed" | "connected" | "disconnected" | "failed" | "new"
 
+@env("window")
 export declare type RTCPeerConnectionState = "closed" | "connected" | "connecting" | "disconnected" | "failed" | "new"
 
+@env("window")
 export declare type RTCPriorityType = "high" | "low" | "medium" | "very-low"
 
+@env("window")
 export declare type RTCQualityLimitationReason = "bandwidth" | "cpu" | "none" | "other"
 
+@env("window")
 export declare type RTCRtcpMuxPolicy = "require"
 
+@env("window")
 export declare type RTCRtpTransceiverDirection = "inactive" | "recvonly" | "sendonly" | "sendrecv" | "stopped"
 
+@env("window")
 export declare type RTCSctpTransportState = "closed" | "connected" | "connecting"
 
+@env("window")
 export declare type RTCSdpType = "answer" | "offer" | "pranswer" | "rollback"
 
+@env("window")
 export declare type RTCSignalingState = "closed" | "have-local-offer" | "have-local-pranswer" | "have-remote-offer" | "have-remote-pranswer" | "stable"
 
+@env("window")
 export declare type RTCStatsIceCandidatePairState = "failed" | "frozen" | "in-progress" | "inprogress" | "succeeded" | "waiting"
 
+@env("window")
 export declare type RTCStatsType = "candidate-pair" | "certificate" | "codec" | "data-channel" | "inbound-rtp" | "local-candidate" | "media-playout" | "media-source" | "outbound-rtp" | "peer-connection" | "remote-candidate" | "remote-inbound-rtp" | "remote-outbound-rtp" | "transport"

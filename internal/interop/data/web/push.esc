@@ -6,12 +6,14 @@ import "std:typed_arrays"
 import "web:core"
 import "web:dom"
 
+@env("window")
 export declare interface PushSubscriptionJSON {
     endpoint?: string,
     expirationTime?: dom.EpochTimeStamp | null,
     keys?: Record<string, string>
 }
 
+@env("window")
 export declare interface PushSubscriptionOptionsInit {
     applicationServerKey?: BufferSource | string | null,
     userVisibleOnly?: boolean
@@ -23,6 +25,7 @@ export declare interface PushSubscriptionOptionsInit {
  *
  * [MDN Reference](https://developer.mozilla.org/docs/Web/API/PushManager)
  */
+@env("window")
 @js("PushManager")
 export declare class PushManager {
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/PushManager/getSubscription) */
@@ -43,6 +46,7 @@ export declare class PushManager {
  *
  * [MDN Reference](https://developer.mozilla.org/docs/Web/API/PushSubscription)
  */
+@env("window")
 @js("PushSubscription")
 export declare class PushSubscription {
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/PushSubscription/endpoint) */
@@ -66,6 +70,7 @@ export declare class PushSubscription {
  *
  * [MDN Reference](https://developer.mozilla.org/docs/Web/API/PushSubscriptionOptions)
  */
+@env("window")
 @js("PushSubscriptionOptions")
 export declare class PushSubscriptionOptions {
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/PushSubscriptionOptions/applicationServerKey) */
@@ -76,4 +81,5 @@ export declare class PushSubscriptionOptions {
     constructor(mut self)
 }
 
+@env("window")
 export declare type PushEncryptionKeyName = "auth" | "p256dh"

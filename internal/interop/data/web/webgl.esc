@@ -7,6 +7,7 @@ import "web:core"
 import "web:dom"
 import "web:web_codecs"
 
+@env("window")
 export declare interface WebGLContextAttributes {
     alpha?: boolean,
     antialias?: boolean,
@@ -19,6 +20,7 @@ export declare interface WebGLContextAttributes {
     stencil?: boolean
 }
 
+@env("window")
 export declare interface WebGLContextEventInit extends EventInit {
     statusMessage?: string
 }
@@ -28,6 +30,7 @@ export declare interface WebGLContextEventInit extends EventInit {
  *
  * [MDN Reference](https://developer.mozilla.org/docs/Web/API/ANGLE_instanced_arrays)
  */
+@env("window")
 export declare interface ANGLE_instanced_arrays {
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/ANGLE_instanced_arrays/drawArraysInstancedANGLE) */
     drawArraysInstancedANGLE(mode: GLenum, first: GLint, count: GLsizei, primcount: GLsizei) -> unknown,
@@ -39,15 +42,18 @@ export declare interface ANGLE_instanced_arrays {
 }
 
 /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/EXT_blend_minmax) */
+@env("window")
 export declare interface EXT_blend_minmax {
     readonly MIN_EXT: 32775,
     readonly MAX_EXT: 32776
 }
 
 /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/EXT_color_buffer_float) */
+@env("window")
 export declare interface EXT_color_buffer_float {}
 
 /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/EXT_color_buffer_half_float) */
+@env("window")
 export declare interface EXT_color_buffer_half_float {
     readonly RGBA16F_EXT: 34842,
     readonly RGB16F_EXT: 34843,
@@ -56,6 +62,7 @@ export declare interface EXT_color_buffer_half_float {
 }
 
 /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/EXT_float_blend) */
+@env("window")
 export declare interface EXT_float_blend {}
 
 /**
@@ -63,9 +70,11 @@ export declare interface EXT_float_blend {}
  *
  * [MDN Reference](https://developer.mozilla.org/docs/Web/API/EXT_frag_depth)
  */
+@env("window")
 export declare interface EXT_frag_depth {}
 
 /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/EXT_sRGB) */
+@env("window")
 export declare interface EXT_sRGB {
     readonly SRGB_EXT: 35904,
     readonly SRGB_ALPHA_EXT: 35906,
@@ -74,9 +83,11 @@ export declare interface EXT_sRGB {
 }
 
 /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/EXT_shader_texture_lod) */
+@env("window")
 export declare interface EXT_shader_texture_lod {}
 
 /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/EXT_texture_compression_bptc) */
+@env("window")
 export declare interface EXT_texture_compression_bptc {
     readonly COMPRESSED_RGBA_BPTC_UNORM_EXT: 36492,
     readonly COMPRESSED_SRGB_ALPHA_BPTC_UNORM_EXT: 36493,
@@ -85,6 +96,7 @@ export declare interface EXT_texture_compression_bptc {
 }
 
 /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/EXT_texture_compression_rgtc) */
+@env("window")
 export declare interface EXT_texture_compression_rgtc {
     readonly COMPRESSED_RED_RGTC1_EXT: 36283,
     readonly COMPRESSED_SIGNED_RED_RGTC1_EXT: 36284,
@@ -97,12 +109,14 @@ export declare interface EXT_texture_compression_rgtc {
  *
  * [MDN Reference](https://developer.mozilla.org/docs/Web/API/EXT_texture_filter_anisotropic)
  */
+@env("window")
 export declare interface EXT_texture_filter_anisotropic {
     readonly TEXTURE_MAX_ANISOTROPY_EXT: 34046,
     readonly MAX_TEXTURE_MAX_ANISOTROPY_EXT: 34047
 }
 
 /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/EXT_texture_norm16) */
+@env("window")
 export declare interface EXT_texture_norm16 {
     readonly R16_EXT: 33322,
     readonly RG16_EXT: 33324,
@@ -115,11 +129,13 @@ export declare interface EXT_texture_norm16 {
 }
 
 /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/KHR_parallel_shader_compile) */
+@env("window")
 export declare interface KHR_parallel_shader_compile {
     readonly COMPLETION_STATUS_KHR: 37297
 }
 
 /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/OES_draw_buffers_indexed) */
+@env("window")
 export declare interface OES_draw_buffers_indexed {
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/OES_draw_buffers_indexed/blendEquationSeparateiOES) */
     blendEquationSeparateiOES(buf: GLuint, modeRGB: GLenum, modeAlpha: GLenum) -> unknown,
@@ -142,9 +158,11 @@ export declare interface OES_draw_buffers_indexed {
  *
  * [MDN Reference](https://developer.mozilla.org/docs/Web/API/OES_element_index_uint)
  */
+@env("window")
 export declare interface OES_element_index_uint {}
 
 /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/OES_fbo_render_mipmap) */
+@env("window")
 export declare interface OES_fbo_render_mipmap {}
 
 /**
@@ -152,6 +170,7 @@ export declare interface OES_fbo_render_mipmap {}
  *
  * [MDN Reference](https://developer.mozilla.org/docs/Web/API/OES_standard_derivatives)
  */
+@env("window")
 export declare interface OES_standard_derivatives {
     readonly FRAGMENT_SHADER_DERIVATIVE_HINT_OES: 35723
 }
@@ -161,6 +180,7 @@ export declare interface OES_standard_derivatives {
  *
  * [MDN Reference](https://developer.mozilla.org/docs/Web/API/OES_texture_float)
  */
+@env("window")
 export declare interface OES_texture_float {}
 
 /**
@@ -168,6 +188,7 @@ export declare interface OES_texture_float {}
  *
  * [MDN Reference](https://developer.mozilla.org/docs/Web/API/OES_texture_float_linear)
  */
+@env("window")
 export declare interface OES_texture_float_linear {}
 
 /**
@@ -175,6 +196,7 @@ export declare interface OES_texture_float_linear {}
  *
  * [MDN Reference](https://developer.mozilla.org/docs/Web/API/OES_texture_half_float)
  */
+@env("window")
 export declare interface OES_texture_half_float {
     readonly HALF_FLOAT_OES: 36193
 }
@@ -184,9 +206,11 @@ export declare interface OES_texture_half_float {
  *
  * [MDN Reference](https://developer.mozilla.org/docs/Web/API/OES_texture_half_float_linear)
  */
+@env("window")
 export declare interface OES_texture_half_float_linear {}
 
 /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/OES_vertex_array_object) */
+@env("window")
 export declare interface OES_vertex_array_object {
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/OES_vertex_array_object/bindVertexArrayOES) */
     bindVertexArrayOES(arrayObject: WebGLVertexArrayObjectOES | null) -> unknown,
@@ -200,6 +224,7 @@ export declare interface OES_vertex_array_object {
 }
 
 /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/OVR_multiview2) */
+@env("window")
 export declare interface OVR_multiview2 {
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/OVR_multiview2/framebufferTextureMultiviewOVR) */
     framebufferTextureMultiviewOVR(target: GLenum, attachment: GLenum, texture: WebGLTexture | null, level: GLint, baseViewIndex: GLint, numViews: GLsizei) -> unknown,
@@ -210,6 +235,7 @@ export declare interface OVR_multiview2 {
 }
 
 /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/WEBGL_color_buffer_float) */
+@env("window")
 export declare interface WEBGL_color_buffer_float {
     readonly RGBA32F_EXT: 34836,
     readonly FRAMEBUFFER_ATTACHMENT_COMPONENT_TYPE_EXT: 33297,
@@ -217,6 +243,7 @@ export declare interface WEBGL_color_buffer_float {
 }
 
 /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/WEBGL_compressed_texture_astc) */
+@env("window")
 export declare interface WEBGL_compressed_texture_astc {
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/WEBGL_compressed_texture_astc/getSupportedProfiles) */
     getSupportedProfiles() -> mut Array<string>,
@@ -251,6 +278,7 @@ export declare interface WEBGL_compressed_texture_astc {
 }
 
 /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/WEBGL_compressed_texture_etc) */
+@env("window")
 export declare interface WEBGL_compressed_texture_etc {
     readonly COMPRESSED_R11_EAC: 37488,
     readonly COMPRESSED_SIGNED_R11_EAC: 37489,
@@ -265,11 +293,13 @@ export declare interface WEBGL_compressed_texture_etc {
 }
 
 /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/WEBGL_compressed_texture_etc1) */
+@env("window")
 export declare interface WEBGL_compressed_texture_etc1 {
     readonly COMPRESSED_RGB_ETC1_WEBGL: 36196
 }
 
 /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/WEBGL_compressed_texture_pvrtc) */
+@env("window")
 export declare interface WEBGL_compressed_texture_pvrtc {
     readonly COMPRESSED_RGB_PVRTC_4BPPV1_IMG: 35840,
     readonly COMPRESSED_RGB_PVRTC_2BPPV1_IMG: 35841,
@@ -282,6 +312,7 @@ export declare interface WEBGL_compressed_texture_pvrtc {
  *
  * [MDN Reference](https://developer.mozilla.org/docs/Web/API/WEBGL_compressed_texture_s3tc)
  */
+@env("window")
 export declare interface WEBGL_compressed_texture_s3tc {
     readonly COMPRESSED_RGB_S3TC_DXT1_EXT: 33776,
     readonly COMPRESSED_RGBA_S3TC_DXT1_EXT: 33777,
@@ -290,6 +321,7 @@ export declare interface WEBGL_compressed_texture_s3tc {
 }
 
 /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/WEBGL_compressed_texture_s3tc_srgb) */
+@env("window")
 export declare interface WEBGL_compressed_texture_s3tc_srgb {
     readonly COMPRESSED_SRGB_S3TC_DXT1_EXT: 35916,
     readonly COMPRESSED_SRGB_ALPHA_S3TC_DXT1_EXT: 35917,
@@ -302,12 +334,14 @@ export declare interface WEBGL_compressed_texture_s3tc_srgb {
  *
  * [MDN Reference](https://developer.mozilla.org/docs/Web/API/WEBGL_debug_renderer_info)
  */
+@env("window")
 export declare interface WEBGL_debug_renderer_info {
     readonly UNMASKED_VENDOR_WEBGL: 37445,
     readonly UNMASKED_RENDERER_WEBGL: 37446
 }
 
 /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/WEBGL_debug_shaders) */
+@env("window")
 export declare interface WEBGL_debug_shaders {
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/WEBGL_debug_shaders/getTranslatedShaderSource) */
     getTranslatedShaderSource(shader: WebGLShader) -> string
@@ -318,11 +352,13 @@ export declare interface WEBGL_debug_shaders {
  *
  * [MDN Reference](https://developer.mozilla.org/docs/Web/API/WEBGL_depth_texture)
  */
+@env("window")
 export declare interface WEBGL_depth_texture {
     readonly UNSIGNED_INT_24_8_WEBGL: 34042
 }
 
 /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/WEBGL_draw_buffers) */
+@env("window")
 export declare interface WEBGL_draw_buffers {
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/WEBGL_draw_buffers/drawBuffersWEBGL) */
     drawBuffersWEBGL(buffers: mut Array<GLenum>) -> unknown,
@@ -365,6 +401,7 @@ export declare interface WEBGL_draw_buffers {
 }
 
 /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/WEBGL_lose_context) */
+@env("window")
 export declare interface WEBGL_lose_context {
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/WEBGL_lose_context/loseContext) */
     loseContext() -> unknown,
@@ -373,6 +410,7 @@ export declare interface WEBGL_lose_context {
 }
 
 /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/WEBGL_multi_draw) */
+@env("window")
 export declare interface WEBGL_multi_draw {
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/WEBGL_multi_draw/multiDrawArraysInstancedWEBGL) */
     multiDrawArraysInstancedWEBGL(mode: GLenum, firstsList: typed_arrays.Int32Array | mut Array<GLint>, firstsOffset: number, countsList: typed_arrays.Int32Array | mut Array<GLsizei>, countsOffset: number, instanceCountsList: typed_arrays.Int32Array | mut Array<GLsizei>, instanceCountsOffset: number, drawcount: GLsizei) -> unknown,
@@ -393,6 +431,7 @@ export declare interface WEBGL_multi_draw {
 }
 
 /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/WebGL2RenderingContext) */
+@env("window")
 @js("WebGL2RenderingContext")
 export declare class WebGL2RenderingContext extends WebGL2RenderingContextBase {
     static prototype: WebGL2RenderingContext,
@@ -958,6 +997,7 @@ export declare class WebGL2RenderingContext extends WebGL2RenderingContextBase {
     static readonly BROWSER_DEFAULT_WEBGL: 37444
 }
 
+@env("window")
 export declare interface WebGL2RenderingContextBase {
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/WebGL2RenderingContext/beginQuery) */
     beginQuery(target: GLenum, query: WebGLQuery) -> unknown,
@@ -1448,6 +1488,7 @@ export declare interface WebGL2RenderingContextBase {
     vertexAttribI4uiv(index: GLuint, values: Iterable<GLuint>) -> unknown
 }
 
+@env("window")
 export declare interface WebGL2RenderingContextOverloads {
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/WebGL2RenderingContext/bufferData) */
     bufferData(target: GLenum, size: GLsizeiptr, usage: GLenum) -> unknown,
@@ -1529,6 +1570,7 @@ export declare interface WebGL2RenderingContextOverloads {
  *
  * [MDN Reference](https://developer.mozilla.org/docs/Web/API/WebGLActiveInfo)
  */
+@env("window")
 @js("WebGLActiveInfo")
 export declare class WebGLActiveInfo {
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/WebGLActiveInfo/name) */
@@ -1546,6 +1588,7 @@ export declare class WebGLActiveInfo {
  *
  * [MDN Reference](https://developer.mozilla.org/docs/Web/API/WebGLBuffer)
  */
+@env("window")
 @js("WebGLBuffer")
 export declare class WebGLBuffer {
     static prototype: WebGLBuffer,
@@ -1557,6 +1600,7 @@ export declare class WebGLBuffer {
  *
  * [MDN Reference](https://developer.mozilla.org/docs/Web/API/WebGLContextEvent)
  */
+@env("window")
 @js("WebGLContextEvent")
 export declare class WebGLContextEvent extends Event {
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/WebGLContextEvent/statusMessage) */
@@ -1570,6 +1614,7 @@ export declare class WebGLContextEvent extends Event {
  *
  * [MDN Reference](https://developer.mozilla.org/docs/Web/API/WebGLFramebuffer)
  */
+@env("window")
 @js("WebGLFramebuffer")
 export declare class WebGLFramebuffer {
     static prototype: WebGLFramebuffer,
@@ -1581,6 +1626,7 @@ export declare class WebGLFramebuffer {
  *
  * [MDN Reference](https://developer.mozilla.org/docs/Web/API/WebGLProgram)
  */
+@env("window")
 @js("WebGLProgram")
 export declare class WebGLProgram {
     static prototype: WebGLProgram,
@@ -1588,6 +1634,7 @@ export declare class WebGLProgram {
 }
 
 /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/WebGLQuery) */
+@env("window")
 @js("WebGLQuery")
 export declare class WebGLQuery {
     static prototype: WebGLQuery,
@@ -1599,6 +1646,7 @@ export declare class WebGLQuery {
  *
  * [MDN Reference](https://developer.mozilla.org/docs/Web/API/WebGLRenderbuffer)
  */
+@env("window")
 @js("WebGLRenderbuffer")
 export declare class WebGLRenderbuffer {
     static prototype: WebGLRenderbuffer,
@@ -1610,6 +1658,7 @@ export declare class WebGLRenderbuffer {
  *
  * [MDN Reference](https://developer.mozilla.org/docs/Web/API/WebGLRenderingContext)
  */
+@env("window")
 @js("WebGLRenderingContext")
 export declare class WebGLRenderingContext extends WebGLRenderingContextBase {
     static prototype: WebGLRenderingContext,
@@ -1913,6 +1962,7 @@ export declare class WebGLRenderingContext extends WebGLRenderingContextBase {
     static readonly BROWSER_DEFAULT_WEBGL: 37444
 }
 
+@env("window")
 export declare interface WebGLRenderingContextBase {
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/WebGLRenderingContext/canvas) */
     readonly canvas: dom.HTMLCanvasElement | dom.OffscreenCanvas,
@@ -2501,6 +2551,7 @@ export declare interface WebGLRenderingContextBase {
     vertexAttrib4fv(index: GLuint, values: Iterable<GLfloat>) -> unknown
 }
 
+@env("window")
 export declare interface WebGLRenderingContextOverloads {
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/WebGLRenderingContext/bufferData) */
     bufferData(target: GLenum, size: GLsizeiptr, usage: GLenum) -> unknown,
@@ -2566,6 +2617,7 @@ export declare interface WebGLRenderingContextOverloads {
 }
 
 /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/WebGLSampler) */
+@env("window")
 @js("WebGLSampler")
 export declare class WebGLSampler {
     static prototype: WebGLSampler,
@@ -2577,6 +2629,7 @@ export declare class WebGLSampler {
  *
  * [MDN Reference](https://developer.mozilla.org/docs/Web/API/WebGLShader)
  */
+@env("window")
 @js("WebGLShader")
 export declare class WebGLShader {
     static prototype: WebGLShader,
@@ -2588,6 +2641,7 @@ export declare class WebGLShader {
  *
  * [MDN Reference](https://developer.mozilla.org/docs/Web/API/WebGLShaderPrecisionFormat)
  */
+@env("window")
 @js("WebGLShaderPrecisionFormat")
 export declare class WebGLShaderPrecisionFormat {
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/WebGLShaderPrecisionFormat/precision) */
@@ -2601,6 +2655,7 @@ export declare class WebGLShaderPrecisionFormat {
 }
 
 /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/WebGLSync) */
+@env("window")
 @js("WebGLSync")
 export declare class WebGLSync {
     static prototype: WebGLSync,
@@ -2612,6 +2667,7 @@ export declare class WebGLSync {
  *
  * [MDN Reference](https://developer.mozilla.org/docs/Web/API/WebGLTexture)
  */
+@env("window")
 @js("WebGLTexture")
 export declare class WebGLTexture {
     static prototype: WebGLTexture,
@@ -2619,6 +2675,7 @@ export declare class WebGLTexture {
 }
 
 /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/WebGLTransformFeedback) */
+@env("window")
 @js("WebGLTransformFeedback")
 export declare class WebGLTransformFeedback {
     static prototype: WebGLTransformFeedback,
@@ -2630,6 +2687,7 @@ export declare class WebGLTransformFeedback {
  *
  * [MDN Reference](https://developer.mozilla.org/docs/Web/API/WebGLUniformLocation)
  */
+@env("window")
 @js("WebGLUniformLocation")
 export declare class WebGLUniformLocation {
     static prototype: WebGLUniformLocation,
@@ -2637,6 +2695,7 @@ export declare class WebGLUniformLocation {
 }
 
 /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/WebGLVertexArrayObject) */
+@env("window")
 @js("WebGLVertexArrayObject")
 export declare class WebGLVertexArrayObject {
     static prototype: WebGLVertexArrayObject,
@@ -2644,38 +2703,56 @@ export declare class WebGLVertexArrayObject {
 }
 
 /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/WebGLVertexArrayObject) */
+@env("window")
 export declare interface WebGLVertexArrayObjectOES {}
 
+@env("window")
 export declare type Float32List = typed_arrays.Float32Array | mut Array<GLfloat>
 
+@env("window")
 export declare type GLbitfield = number
 
+@env("window")
 export declare type GLboolean = boolean
 
+@env("window")
 export declare type GLclampf = number
 
+@env("window")
 export declare type GLenum = number
 
+@env("window")
 export declare type GLfloat = number
 
+@env("window")
 export declare type GLint = number
 
+@env("window")
 export declare type GLint64 = number
 
+@env("window")
 export declare type GLintptr = number
 
+@env("window")
 export declare type GLsizei = number
 
+@env("window")
 export declare type GLsizeiptr = number
 
+@env("window")
 export declare type GLuint = number
 
+@env("window")
 export declare type GLuint64 = number
 
+@env("window")
 export declare type Int32List = typed_arrays.Int32Array | mut Array<GLint>
 
+@env("window")
 export declare type TexImageSource = dom.ImageBitmap | dom.ImageData | dom.HTMLImageElement | dom.HTMLCanvasElement | dom.HTMLVideoElement | dom.OffscreenCanvas | web_codecs.VideoFrame
 
+@env("window")
 export declare type Uint32List = typed_arrays.Uint32Array | mut Array<GLuint>
 
+@env("window")
 export declare type WebGLPowerPreference = "default" | "high-performance" | "low-power"
