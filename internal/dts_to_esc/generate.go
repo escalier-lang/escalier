@@ -130,15 +130,13 @@ func Generate(opts GenerateOptions) (*GenerateResult, error) {
 		elideVacuousTypeParams(mod)
 	}
 
-	// The header is computed after the overlay, so a `replace` that changes what
-	// a declaration refers to changes what its package imports.
-	graph, err := ImportGraph(mods)
-	if err != nil {
+	// Ahead of the environment pass, so a name two packages declare is reported
+	// as the collision it is. The pass keys on declaration names, so a duplicate
+	// reaches it as a set of references that resolve to the wrong package's
+	// environments. AddImportHeaders reads the same answer again below.
+	if _, err := declaringPackages(mods); err != nil {
 		return nil, err
 	}
-	// Both checks run because they answer at different grains. CheckTiers reads a
-	// package's import edges, and CheckEnvs reads each reference a declaration or
-	// member makes, so it reports what a package-level edge cannot show.
 	if err := AnnotateEnvs(mods); err != nil {
 		return nil, err
 	}
@@ -156,20 +154,6 @@ func Generate(opts GenerateOptions) (*GenerateResult, error) {
 				"referrer claims; narrow the referrer with `@env`, widen the referent "+
 				"in declEnvOverrides, or answer it with an overlay `replace`:\n  %s",
 			len(envViolations), strings.Join(lines, "\n  "))
-	}
-	violations, err := CheckTiers(mods, graph)
-	if err != nil {
-		return nil, err
-	}
-	if len(violations) > 0 {
-		lines := make([]string, 0, len(violations))
-		for _, v := range violations {
-			lines = append(lines, v.String())
-		}
-		return nil, fmt.Errorf(
-			"%d import edge(s) go up a tier; answer each with an overlay `replace` "+
-				"that types the declaration against what the lower tier has:\n  %s",
-			len(violations), strings.Join(lines, "\n  "))
 	}
 	if err := AddImportHeaders(mods); err != nil {
 		return nil, err

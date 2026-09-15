@@ -1,6 +1,7 @@
 // `web:fetch` spells `BodyInit`'s members out in fetch.replace.esc rather than
-// reaching this alias, which would put a portable package in a cycle with the
-// browser tier. The two member lists have to agree and nothing else makes them.
+// reaching this alias, which would put the whole DOM in the closure of every
+// program that fetches. The two member lists have to agree and nothing else
+// makes them.
 //
 // This entry restates the converted alias unchanged, so the sidecar beside this
 // file records its digest. A TypeScript bump that adds or drops a member fails

@@ -77,13 +77,12 @@ func windowOnly() set.Set[Env] { return set.FromSlice([]Env{EnvWindow}) }
 // A package-wide default is coarse, and a declaration that contradicts it is
 // what the override is for. Each entry records why, since the reason is what a
 // reader needs to judge whether a TypeScript bump has invalidated it.
-var declEnvOverrides = map[packageDecl]set.Set[Env]{
-	// Declared in `web:dom` and portable in substance. Its arms are `Blob`,
-	// `BufferSource`, `FormData`, `URLSearchParams` and `string`, all of which
-	// every environment has. `web:fetch` names it for `BodyInit`, and that
-	// reference is what the alias exists to serve.
-	{URI: "web:dom", Name: "XMLHttpRequestBodyInit"}: AllEnvs(),
-}
+// It is empty today. `XMLHttpRequestBodyInit` was the one candidate, declared
+// in `web:dom` and portable in substance, and it needs no entry because
+// fetch.replace.esc keeps `web:fetch` from naming it. An entry earns its place
+// when a reference across the package's boundary is worth its cost in closure
+// size.
+var declEnvOverrides = map[packageDecl]set.Set[Env]{}
 
 // packageDecl addresses one declaration by the package holding it. The package
 // is half the key because a bare name would widen a same-named declaration
@@ -95,7 +94,13 @@ type packageDecl struct {
 
 // PackageDeclEnvs returns the environments a declaration in uri exists on.
 func PackageDeclEnvs(uri, name string) set.Set[Env] {
-	if envs, held := declEnvOverrides[packageDecl{URI: uri, Name: name}]; held {
+	return declEnvsFrom(declEnvOverrides, uri, name)
+}
+
+// declEnvsFrom is PackageDeclEnvs over a chosen override map, so a test reaches
+// the override path while the committed one is empty.
+func declEnvsFrom(overrides map[packageDecl]set.Set[Env], uri, name string) set.Set[Env] {
+	if envs, held := overrides[packageDecl{URI: uri, Name: name}]; held {
 		return envs
 	}
 	if envs, err := packageFileEnvs(uri); err == nil {
@@ -157,9 +162,17 @@ func AnnotateEnvs(mods map[string]*StandaloneModule) error {
 // it, so one decorator has to answer for every name and the names have to
 // agree.
 func declaredEnvs(uri string, names []string) (set.Set[Env], error) {
-	envs := PackageDeclEnvs(uri, names[0])
+	return declaredEnvsFrom(declEnvOverrides, uri, names)
+}
+
+// declaredEnvsFrom is declaredEnvs over a chosen override map, so a test reaches
+// the disagreement while the committed one is empty.
+func declaredEnvsFrom(
+	overrides map[packageDecl]set.Set[Env], uri string, names []string,
+) (set.Set[Env], error) {
+	envs := declEnvsFrom(overrides, uri, names[0])
 	for _, name := range names[1:] {
-		if other := PackageDeclEnvs(uri, name); !other.Equals(envs) {
+		if other := declEnvsFrom(overrides, uri, name); !other.Equals(envs) {
 			return nil, fmt.Errorf(
 				"converter: %s: one declaration binds %q and %q with different "+
 					"environments; a decorator answers for the whole declaration, so "+
