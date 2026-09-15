@@ -39,6 +39,14 @@ type StandaloneModule struct {
 	// ECMA-262 join still has to address the members an interface declares.
 	Paths map[ast.Decl]string
 
+	// MemberSources maps a member kept by the dedupe to every lib file that
+	// declared it, by source id. Only a member two files declared has an entry,
+	// since a member declared once is fully described by its own span.
+	//
+	// A side map rather than a field on the node, the way Paths is, so the AST
+	// carries no record of which lib a converted member came from.
+	MemberSources map[ast.Node]set.Set[int]
+
 	// KeyDrops lists every singleton member flattening skipped because
 	// the member's key has no plain-name form.
 	// ReportSingletonKeyDrops filters this against
