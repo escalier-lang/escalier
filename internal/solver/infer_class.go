@@ -344,8 +344,9 @@ func (c *checker) classValue(
 // carries the finished body.
 func (c *checker) getOrCreateClass(scope *Scope, decl *ast.ClassDecl, ns string) (*soltype.ClassType, *ClassDef) {
 	qname := c.qualifyClassName(ns, decl)
+	key := declScopeKey(ns, decl.Name.Name)
 	if def, ok := c.ctx.classDef(qname); ok {
-		if b, found := scope.GetType(qname); found {
+		if b, found := scope.GetType(key); found {
 			if self, ok := b.Type.(*soltype.ClassType); ok && self.Name == qname {
 				return self, def
 			}
@@ -366,11 +367,11 @@ func (c *checker) getOrCreateClass(scope *Scope, decl *ast.ClassDecl, ns string)
 		EdgesPending: true,
 	}
 	c.ctx.registerClass(qname, def)
-	// Register the type binding under the qualified name so a cross-namespace reference
-	// resolves it and a self-referential type in the body resolves to this class rather
-	// than falling through as unknown. A bare sibling reference resolves through the
-	// checker's classNamespace, which reconstructs this qualified key.
-	c.declTarget(scope).defineType(qname, TypeBinding{
+	// Bind under the namespace-qualified name so a cross-namespace reference resolves it
+	// and a self-referential type in the body resolves to this class rather than falling
+	// through as unknown. A bare sibling reference resolves through the checker's
+	// classNamespace, which rebuilds this key.
+	c.declTarget(scope).defineType(key, TypeBinding{
 		Type:    self,
 		Sources: []provenance.Provenance{&ast.NodeProvenance{Node: decl}},
 	})
@@ -507,8 +508,24 @@ func (c *checker) qualifyClassName(ns string, decl *ast.ClassDecl) string {
 // the package URI, the dep_graph namespace, and the local name, joined by dots
 // and each omitted when empty. A root-namespace class in the entry module keys
 // on its bare name.
+//
+// The registry lives on the Context, which one run shares across every package
+// it loads, so the URI is what keeps two packages' same-named classes apart.
+// The scope is the other half of the pair and takes declScopeKey instead.
 func (c *checker) qualifyDecl(ns, name string) string {
 	return qualify(packageKeyPrefix(c.pkgURI), qualify(ns, name))
+}
+
+// declScopeKey builds the key a declaration binds under in the scope: the
+// dep_graph namespace joined to the local name.
+//
+// No package URI, unlike the registry key qualifyDecl builds. A scope belongs
+// to one load, and within a merged load each member's declarations already sit
+// under a namespace carrying its scheme and name, so the URI would repeat what
+// the namespace says. It also matches the key the value side binds under, which
+// dep_graph hands over as BindingKey.Name().
+func declScopeKey(ns, name string) string {
+	return qualify(ns, name)
 }
 
 // packageKeyPrefix is the first segment of every key a package's declarations
@@ -520,9 +537,6 @@ func (c *checker) qualifyDecl(ns, name string) string {
 // hold a dot, so `npm:a.b`'s `D` and `npm:a`'s `b.D` would read the same. The
 // `import:` marker answers the first, since no namespace segment holds a colon,
 // and escaping the dots answers the second, since the escaped prefix holds none.
-// packageKeyHead opens the key a declaration inside a package registers under.
-// The URI's own dots are escaped after it, so the first dot following this head
-// ends the head.
 const packageKeyHead = "import:"
 
 func packageKeyPrefix(uri string) string {
@@ -720,28 +734,35 @@ func paramDefaults(params []*soltype.TypeParam) []soltype.Type {
 //     how a member of an imported package is reached. It runs last so a name a flat
 //     key does hold keeps its answer.
 func (c *checker) lookupClassBinding(scope *Scope, name string) (TypeBinding, bool) {
-	// Inside a package, three sources can answer one bare name, and they rank by
+	// Inside a package, four sources can answer one bare name, and they rank by
 	// how near they are to the reference.
 	//
-	//  1. An import the file wrote, bound in that file's own scope.
-	//  2. A declaration the package made, bound in the module scope under a key
-	//     carrying the package prefix.
-	//  3. A prelude seed, bound in the root scope under the bare name.
+	//  1. A type parameter, or an import the file wrote. Both sit in a scope
+	//     between the reference and the module scope.
+	//  2. A sibling in the reference's own namespace, keyed `Inner.Point`.
+	//  3. A root-namespace declaration of this package, keyed bare.
+	//  4. A prelude seed, bound in the root scope under the bare name.
 	//
-	// The bare walk below reaches the third without distinguishing it from the
-	// first, so a package declaring `Promise` would resolve its own references to
-	// the prelude's placeholder. Ranking the first two ahead of it is what stops
-	// that.
-	if c.pkgURI != "" {
-		if b, ok := scope.getTypeUpTo(name, c.moduleScope); ok {
+	// A plain walk up the chain would answer 3 before 2, since both sit in the
+	// module scope and only one of them is keyed bare, and would then run on into
+	// 4, so a package declaring `Promise` would resolve its own references to the
+	// prelude's placeholder. Walking as far as the module scope and no further,
+	// then probing that scope's two keys in order, is what separates the four.
+	//
+	// Step 2 reads c.classNamespace, which is set only while a type declaration is
+	// being inferred. A `declare val outer: Point` inside a merged group therefore
+	// misses its sibling and reports `cannot find type Point`, since every key in
+	// that scope carries the member's namespace. #1626 covers it.
+	if c.pkgURI != "" && c.moduleScope != nil {
+		if b, ok := scope.getTypeBefore(name, c.moduleScope); ok {
 			return b, true
 		}
 		if c.classNamespace != "" {
-			if b, ok := scope.GetType(c.qualifyDecl(c.classNamespace, name)); ok {
+			if b, ok := c.moduleScope.ownType(declScopeKey(c.classNamespace, name)); ok {
 				return b, true
 			}
 		}
-		if b, ok := scope.GetType(c.qualifyDecl("", name)); ok {
+		if b, ok := c.moduleScope.ownType(name); ok {
 			return b, true
 		}
 	}
@@ -753,7 +774,7 @@ func (c *checker) lookupClassBinding(scope *Scope, name string) (TypeBinding, bo
 		}
 	}
 	if c.classNamespace != "" {
-		if b, ok := scope.GetType(c.qualifyDecl(c.classNamespace, name)); ok {
+		if b, ok := scope.GetType(declScopeKey(c.classNamespace, name)); ok {
 			return b, true
 		}
 	}

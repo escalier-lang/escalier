@@ -414,3 +414,108 @@ func TestTheCommittedTreeClosureIsBoundedByTheRoots(t *testing.T) {
 // committedTree is the generated tree these tests read, relative to this
 // package's directory.
 const committedTree = "../interop/data"
+
+// Two packages of one derived name declaring the same type name keep their
+// declarations apart, for each sort of type declaration.
+//
+// A type binds in the scope under its namespace-qualified name, with no package
+// URI on it, so what separates `std:thing`'s `Shape` from `web:thing`'s is the
+// namespace each member of a merged load sits under. That namespace carries the
+// scheme, which is what makes the two keys differ.
+func TestTwoPackagesOfOneDerivedNameKeepEachSortApart(t *testing.T) {
+	t.Parallel()
+
+	// Each row declares one `Shape` per package, in one sort. `std:thing`'s carries
+	// `sides: number` and `web:thing`'s carries `corners: string`, so reading a
+	// member says which of the two a reference bound.
+	tests := map[string]struct {
+		std, web string
+	}{
+		"Alias": {
+			std: `export type Shape = {sides: number}`,
+			web: `export type Shape = {corners: string}`,
+		},
+		"Interface": {
+			std: `export declare interface Shape { sides: number }`,
+			web: `export declare interface Shape { corners: string }`,
+		},
+		"Class": {
+			std: `export declare class Shape { sides: number }`,
+			web: `export declare class Shape { corners: string }`,
+		},
+	}
+
+	for name, test := range tests {
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+			res := inferAgainstCyclicStdlib(t, `
+				import "std:thing"
+				import "web:thing" as webthing
+				declare val a: thing.Shape
+				declare val b: webthing.Shape
+				val fromStd = a.sides
+				val fromWeb = b.corners
+			`, map[string]string{
+				"std/thing.esc": test.std,
+				"web/thing.esc": test.web,
+			})
+
+			require.Empty(t, errorMessagesOf(res.Errors))
+			require.Equal(t, "number", soltype.Print(inferredValueType(t, res.Scope, "fromStd")))
+			require.Equal(t, "string", soltype.Print(inferredValueType(t, res.Scope, "fromWeb")))
+		})
+	}
+}
+
+// A package's published surface holds what the package declared and nothing the
+// prelude seeded under the same name.
+//
+// Both sorts bind in the package's module scope under one key, and the prelude
+// sits above that scope. Reading the chain rather than the scope's own maps
+// would publish the prelude's `Promise` type beside this package's `Promise`
+// value, and `thing.Promise<number>` would check against it.
+func TestAPackageSurfaceHoldsNoPreludeSeed(t *testing.T) {
+	t.Parallel()
+
+	res := inferAgainstCyclicStdlib(t, `
+		import "std:thing"
+		declare val p: thing.Promise<number>
+		val read = p
+	`, map[string]string{
+		"std/thing.esc": `export declare val Promise: number`,
+	})
+
+	require.Equal(t,
+		[]string{"cannot find type `thing.Promise`"},
+		errorMessagesOf(res.Errors))
+}
+
+// A bare type name written inside a package resolves its own namespace's
+// sibling ahead of a root-namespace declaration of the same name.
+//
+// Both sit in the one module scope, `Inner.Point` under the namespace-qualified
+// key and `Point` bare, so the order the two keys are probed in is the whole
+// rule. `Box.p` names the `Point` beside it, which is the one carrying `y`.
+func TestASiblingInTheSameNamespaceOutranksARootDeclaration(t *testing.T) {
+	t.Parallel()
+
+	res := inferAgainstCyclicStdlib(t, `
+		import "std:thing"
+		val sibling = thing.probe.p.y
+		val root = thing.outer.x
+	`, map[string]string{
+		"std/thing.esc": `
+			export declare class Point { x: number }
+			namespace Inner {
+				export declare class Point { y: string }
+				export declare class Box { p: Point }
+			}
+			export declare val probe: Inner.Box
+			export declare val outer: Point
+		`,
+	})
+
+	require.Empty(t, errorMessagesOf(res.Errors))
+	require.Equal(t, "string", soltype.Print(inferredValueType(t, res.Scope, "sibling")))
+	require.Equal(t, "number", soltype.Print(inferredValueType(t, res.Scope, "root")))
+}

@@ -167,7 +167,7 @@ func (c *checker) preBindAlias(scope *Scope, lvl int, decl *ast.TypeDecl, ns str
 	c.ctx.registerAlias(qname, def)
 
 	t := &soltype.AliasType{Name: qname}
-	c.declTarget(scope).defineType(qname, TypeBinding{
+	c.declTarget(scope).defineType(declScopeKey(ns, decl.Name.Name), TypeBinding{
 		Type:    t,
 		Sources: []provenance.Provenance{&ast.NodeProvenance{Node: decl}},
 	})

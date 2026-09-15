@@ -95,7 +95,7 @@ func (c *checker) preBindInterface(scope *Scope, lvl int, decls []*ast.Interface
 	for _, d := range decls {
 		sources = append(sources, &ast.NodeProvenance{Node: d})
 	}
-	c.declTarget(scope).defineType(qname, TypeBinding{Type: t, Sources: sources})
+	c.declTarget(scope).defineType(declScopeKey(ns, first.Name.Name), TypeBinding{Type: t, Sources: sources})
 	c.recordType(first.Name, t)
 
 	return &interfaceShell{

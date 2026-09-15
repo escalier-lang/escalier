@@ -181,15 +181,20 @@ func exportedSurface(uri string, module *ast.Module, scope *Scope) *Namespace {
 				continue
 			}
 			for _, name := range ast.DeclNames(decl) {
-				// A value binds under the plain namespace-qualified name the dep-graph
-				// walk defined it under. A type binds under the key its registration
-				// used, which carries the package URI as well. Both are re-keyed to the
-				// bare name here, since an importer names a member without either
-				// qualifier.
-				if b, ok := scope.GetValue(qualify(nsPath, name)); ok {
+				// Both sorts bind under the namespace-qualified name the walk defined
+				// them under, and both are re-keyed to the bare name here, since an
+				// importer names a member without the qualifier.
+				//
+				// scope is the module scope the package inferred into, and only its own
+				// maps are read. Walking the chain would reach the prelude, so a package
+				// declaring `val Promise` would publish the prelude's `Promise` TYPE
+				// beside its own value and an importer's `thing.Promise<number>` would
+				// check against it.
+				key := qualify(nsPath, name)
+				if b, ok := scope.ownValue(key); ok {
 					target.Values[name] = b
 				}
-				if b, ok := scope.GetType(qualify(packageKeyPrefix(uri), qualify(nsPath, name))); ok {
+				if b, ok := scope.ownType(key); ok {
 					target.Types[name] = b
 				}
 				// An enum binds its variant constructors under a namespace of its own
