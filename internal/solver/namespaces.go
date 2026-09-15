@@ -63,7 +63,33 @@ func (c *checker) preBindNamespaceDecls(scope *Scope, module *ast.Module, handle
 		return true
 	})
 	c.preBindPathNamespaces(target, module, byName)
+	linkNamespacesToParents(byName)
 	return byName
+}
+
+// linkNamespacesToParents hangs each namespace off the one its qualified name
+// names as its parent, so a walk down `Nested` reaches it.
+//
+// The two pre-bind passes each link only what they mint. A block declared in a
+// subdirectory is minted by the block pass as `geo.shapes`, while its parent
+// `geo` comes from the path pass that runs after, so neither pass is in a
+// position to join them. Running over every name once both passes are done
+// covers that pair along with the ones already linked, where it rewrites the
+// entry with the pointer it already holds.
+//
+// A name with no dot is a top-level namespace and hangs off nothing. A parent
+// this module does not declare leaves the child reachable by its own qualified
+// name alone.
+func linkNamespacesToParents(byName map[string]*Namespace) {
+	for qname, ns := range byName {
+		dot := strings.LastIndex(qname, ".")
+		if dot < 0 {
+			continue
+		}
+		if parent, held := byName[qname[:dot]]; held {
+			parent.Nested[qname[dot+1:]] = ns
+		}
+	}
 }
 
 // preBindPathNamespaces binds a Namespace for every prefix in module.Namespaces
