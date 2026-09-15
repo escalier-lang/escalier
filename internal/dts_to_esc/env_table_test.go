@@ -160,3 +160,29 @@ func TestPackageDeclEnvs_AnOverrideBeatsThePackageDefault(t *testing.T) {
 	require.Equal(t, []Env{EnvWindow, EnvDedicatedWorker, EnvSharedWorker, EnvServiceWorker},
 		sortedEnvs(PackageDeclEnvs("web:dom", "XMLHttpRequestBodyInit")))
 }
+
+// A declaration binding several names needs one answer for all of them, since
+// one decorator answers for the whole declaration.
+//
+// A destructuring `val` is the case. EnvIndex records the declaration's set
+// against every name it binds, so resolving the annotation against the first
+// alone would let a second name's override go unread here while the index
+// honoured it.
+func TestDeclaredEnvs_NeedsEveryNameToAgree(t *testing.T) {
+	t.Parallel()
+
+	// Both names take web:dom's default, so they agree.
+	envs, err := declaredEnvs("web:dom", []string{"a", "b"})
+	require.NoError(t, err)
+	require.Equal(t, []Env{EnvWindow}, sortedEnvs(envs))
+
+	// One name carrying an override and the other not is the disagreement, and
+	// `XMLHttpRequestBodyInit` is the entry the tree holds.
+	_, err = declaredEnvs("web:dom", []string{"XMLHttpRequestBodyInit", "HTMLCanvasElement"})
+	require.Error(t, err)
+	require.Equal(t,
+		"converter: web:dom: one declaration binds \"XMLHttpRequestBodyInit\" and "+
+			"\"HTMLCanvasElement\" with different environments; a decorator answers "+
+			"for the whole declaration, so give them one entry or split the declaration",
+		err.Error())
+}
