@@ -129,11 +129,16 @@ func (c *checker) loadPackageGroup(group []string, span ast.Span) []SolverError 
 	// Minted before the imports bind, so a member importing a sibling binds the
 	// object the walk then fills. preBindPathNamespaces reuses these rather than
 	// minting its own for the same prefixes.
+	//
+	// Put back on the way out, the way the URI and the active group are, so a load
+	// nested inside this one leaves the outer group's objects in place for the walk
+	// that has yet to fill them.
+	prevMembers := c.memberNamespaces
 	c.memberNamespaces = map[string]*Namespace{}
 	for _, uri := range group {
 		c.memberNamespaces[groupNamespace(uri)] = newNamespace(groupNamespace(uri))
 	}
-	defer func() { c.memberNamespaces = nil }()
+	defer func() { c.memberNamespaces = prevMembers }()
 
 	c.bindFileImports(scope, module)
 	c.inferDepGraph(scope, 0, module, dep_graph.BuildDepGraph(module))
