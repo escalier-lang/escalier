@@ -106,6 +106,7 @@ func AnnotateEnvs(mods map[string]*StandaloneModule) error {
 		return err
 	}
 	everywhere := AllEnvs()
+	var scanErr error
 	for _, uri := range sortedURIs(mods) {
 		mods[uri].Module.Namespaces.Scan(func(_ string, ns *ast.Namespace) bool {
 			for _, decl := range ns.Decls {
@@ -119,7 +120,11 @@ func AnnotateEnvs(mods map[string]*StandaloneModule) error {
 				if hasEnvDecorator(decl) {
 					continue
 				}
-				envs := PackageDeclEnvs(uri, names[0])
+				envs, err := declaredEnvs(uri, names)
+				if err != nil {
+					scanErr = err
+					return false
+				}
 				if envs.Equals(everywhere) {
 					continue
 				}
@@ -127,8 +132,33 @@ func AnnotateEnvs(mods map[string]*StandaloneModule) error {
 			}
 			return true
 		})
+		if scanErr != nil {
+			return scanErr
+		}
 	}
 	return nil
+}
+
+// declaredEnvs returns the environments one declaration exists on, given every
+// name it binds.
+//
+// A destructuring `val` binds several names, and EnvIndex records the
+// declaration's set against each of them. Resolving against the first alone
+// would let a second name's override go unread here while the index honoured
+// it, so one decorator has to answer for every name and the names have to
+// agree.
+func declaredEnvs(uri string, names []string) (set.Set[Env], error) {
+	envs := PackageDeclEnvs(uri, names[0])
+	for _, name := range names[1:] {
+		if other := PackageDeclEnvs(uri, name); !other.Equals(envs) {
+			return nil, fmt.Errorf(
+				"converter: %s: one declaration binds %q and %q with different "+
+					"environments; a decorator answers for the whole declaration, so "+
+					"give them one entry or split the declaration",
+				uri, names[0], name)
+		}
+	}
+	return envs, nil
 }
 
 // hasEnvDecorator reports whether a declaration already carries `@env`.
