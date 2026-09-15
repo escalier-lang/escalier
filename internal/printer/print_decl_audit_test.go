@@ -111,6 +111,23 @@ export declare class Date {}`},
 		{"multiple decorators stacked", `@js("Math.PI")
 @js("Math.PI")
 export declare val PI: number`},
+		// A member's decorators print above its modifier keywords, the way a
+		// declaration's print above `export` and `declare`.
+		{"decorators on class members", `declare class Perf {
+    @avail("browser")
+    timing: number,
+    @avail("browser")
+    @deprecated
+    static readonly origin: number,
+    @avail("browser")
+    now(self) -> number,
+    @avail("browser")
+    get x(self) -> number,
+    @avail("browser")
+    set x(self, v: number),
+    @avail("browser")
+    constructor(mut self)
+}`},
 		// `@foo` (no parens) and `@foo()` (empty parens) round-trip as
 		// distinct forms; the printer uses `Args == nil` vs an empty
 		// slice to tell them apart. Pin both shapes so a future change

@@ -6291,3 +6291,251 @@
     span: 5-89,
 }
 ---
+
+[TestParseModuleNoErrors/DecoratorsOnClassMembers - 1]
+&ast.DeclStmt{
+    Decl: &ast.ClassDecl{
+        Name: &ast.Ident{
+            Name: "Perf",
+            span: 19-23,
+        },
+        Body: []ast.ClassElem{
+            &ast.FieldElem{
+                elemDecorators: ast.elemDecorators{
+                    Decorators: []*ast.Decorator{
+                        &ast.Decorator{
+                            Name: &ast.Ident{
+                                Name: "avail",
+                                span: 32-37,
+                            },
+                            Args: []ast.Expr{
+                                &ast.LiteralExpr{
+                                    Lit: &ast.StrLit{
+                                        Value: "browser",
+                                        span: 38-47,
+                                    },
+                                    span: 38-47,
+                                },
+                            },
+                            Span_: 31-48,
+                        },
+                    },
+                },
+                Name: &ast.IdentExpr{
+                    Name: "timing",
+                    span: 54-60,
+                },
+                Type: &ast.NumberTypeAnn{
+                    span: 62-68,
+                },
+                Span_: 31-68,
+            },
+            &ast.FieldElem{
+                elemDecorators: ast.elemDecorators{
+                    Decorators: []*ast.Decorator{
+                        &ast.Decorator{
+                            Name: &ast.Ident{
+                                Name: "avail",
+                                span: 76-81,
+                            },
+                            Args: []ast.Expr{
+                                &ast.LiteralExpr{
+                                    Lit: &ast.StrLit{
+                                        Value: "browser",
+                                        span: 82-91,
+                                    },
+                                    span: 82-91,
+                                },
+                            },
+                            Span_: 75-92,
+                        },
+                        &ast.Decorator{
+                            Name: &ast.Ident{
+                                Name: "deprecated",
+                                span: 99-109,
+                            },
+                            Span_: 98-109,
+                        },
+                    },
+                },
+                Name: &ast.IdentExpr{
+                    Name: "origin",
+                    span: 131-137,
+                },
+                Type: &ast.NumberTypeAnn{
+                    span: 139-145,
+                },
+                Static: true,
+                Readonly: true,
+                Span_: 75-145,
+            },
+            &ast.MethodElem{
+                elemDecorators: ast.elemDecorators{
+                    Decorators: []*ast.Decorator{
+                        &ast.Decorator{
+                            Name: &ast.Ident{
+                                Name: "avail",
+                                span: 153-158,
+                            },
+                            Args: []ast.Expr{
+                                &ast.LiteralExpr{
+                                    Lit: &ast.StrLit{
+                                        Value: "browser",
+                                        span: 159-168,
+                                    },
+                                    span: 159-168,
+                                },
+                            },
+                            Span_: 152-169,
+                        },
+                    },
+                },
+                Name: &ast.IdentExpr{
+                    Name: "now",
+                    span: 175-178,
+                },
+                Fn: &ast.FuncExpr{
+                    FuncSig: ast.FuncSig{
+                        Return: &ast.NumberTypeAnn{
+                            span: 188-194,
+                        },
+                    },
+                    span: 175-194,
+                },
+                Receiver: &ast.MethodReceiver{
+                    Span_: 179-183,
+                },
+                Span_: 152-194,
+            },
+            &ast.GetterElem{
+                elemDecorators: ast.elemDecorators{
+                    Decorators: []*ast.Decorator{
+                        &ast.Decorator{
+                            Name: &ast.Ident{
+                                Name: "avail",
+                                span: 202-207,
+                            },
+                            Args: []ast.Expr{
+                                &ast.LiteralExpr{
+                                    Lit: &ast.StrLit{
+                                        Value: "browser",
+                                        span: 208-217,
+                                    },
+                                    span: 208-217,
+                                },
+                            },
+                            Span_: 201-218,
+                        },
+                    },
+                },
+                Name: &ast.IdentExpr{
+                    Name: "x",
+                    span: 228-229,
+                },
+                Fn: &ast.FuncExpr{
+                    FuncSig: ast.FuncSig{
+                        Return: &ast.NumberTypeAnn{
+                            span: 239-245,
+                        },
+                    },
+                    span: 224-245,
+                },
+                Receiver: &ast.MethodReceiver{
+                    Span_: 230-234,
+                },
+                Span_: 201-245,
+            },
+            &ast.SetterElem{
+                elemDecorators: ast.elemDecorators{
+                    Decorators: []*ast.Decorator{
+                        &ast.Decorator{
+                            Name: &ast.Ident{
+                                Name: "avail",
+                                span: 253-258,
+                            },
+                            Args: []ast.Expr{
+                                &ast.LiteralExpr{
+                                    Lit: &ast.StrLit{
+                                        Value: "browser",
+                                        span: 259-268,
+                                    },
+                                    span: 259-268,
+                                },
+                            },
+                            Span_: 252-269,
+                        },
+                    },
+                },
+                Name: &ast.IdentExpr{
+                    Name: "x",
+                    span: 279-280,
+                },
+                Fn: &ast.FuncExpr{
+                    FuncSig: ast.FuncSig{
+                        Params: []*ast.Param{
+                            &ast.Param{
+                                Pattern: &ast.IdentPat{
+                                    Name: "v",
+                                    span: 287-288,
+                                },
+                                TypeAnn: &ast.NumberTypeAnn{
+                                    span: 290-296,
+                                },
+                            },
+                        },
+                    },
+                    span: 275-297,
+                },
+                Receiver: &ast.MethodReceiver{
+                    Span_: 281-285,
+                },
+                Span_: 252-297,
+            },
+            &ast.ConstructorElem{
+                elemDecorators: ast.elemDecorators{
+                    Decorators: []*ast.Decorator{
+                        &ast.Decorator{
+                            Name: &ast.Ident{
+                                Name: "avail",
+                                span: 305-310,
+                            },
+                            Args: []ast.Expr{
+                                &ast.LiteralExpr{
+                                    Lit: &ast.StrLit{
+                                        Value: "browser",
+                                        span: 311-320,
+                                    },
+                                    span: 311-320,
+                                },
+                            },
+                            Span_: 304-321,
+                        },
+                    },
+                },
+                Fn: &ast.FuncExpr{
+                    FuncSig: ast.FuncSig{
+                        Params: []*ast.Param{
+                            &ast.Param{
+                                Pattern: &ast.IdentPat{
+                                    Name: "self",
+                                    Mutable: true,
+                                    span: 339-347,
+                                },
+                            },
+                        },
+                    },
+                    span: 327-348,
+                },
+                Receiver: &ast.MethodReceiver{
+                    Mut: true,
+                    Span_: 339-347,
+                },
+                Span_: 304-348,
+            },
+        },
+        declare: true,
+        span: 5-354,
+    },
+    span: 5-354,
+}
+---

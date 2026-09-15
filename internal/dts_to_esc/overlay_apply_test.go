@@ -850,3 +850,33 @@ export declare class ArrayLike<T> extends Array<T> {
 			"    readonly length: number,\n}\n",
 	}), "std:prelude"))
 }
+
+// A decorator an overlay writes on a member reaches the generated tree.
+//
+// Nothing in the pinned `.d.ts` set carries one, so the overlay is how a
+// member-level annotation enters a converted package. The member is replaced
+// whole, so its decorator list travels with it, while the converted member's
+// JSDoc is carried over as it is for any replace.
+func TestApplyOverlay_ReplaceKeepsAMemberDecorator(t *testing.T) {
+	t.Parallel()
+	mods, err := convertLibWithOverlay(t, overlayDocLib, map[string]string{
+		"std/prelude.replace.esc": "export declare class Array<T> {\n" +
+			"    @avail(\"browser\")\n" +
+			"    at(self, index: number) -> T,\n}\n",
+	})
+	require.NoError(t, err)
+	require.Equal(t, `@js("Array")
+export declare class Array<T> {
+    length: number,
+    /** Reads one element. */
+    @avail("browser")
+    at(self, index: number) -> T,
+    constructor(mut self),
+    static isArray(arg: unknown) -> boolean
+}
+
+export declare interface ArrayLike<T> {
+    readonly length: number
+}
+`, renderPackage(t, mods, "std:prelude"))
+}

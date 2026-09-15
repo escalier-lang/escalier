@@ -22,6 +22,16 @@ func DeclDecorators(decl Decl) []*Decorator {
 	}
 }
 
+// ClassElemDecorators returns the decorator list attached to a class member,
+// or nil for a member carrying none. It is the ClassElem counterpart of
+// DeclDecorators.
+func ClassElemDecorators(elem ClassElem) []*Decorator {
+	if d, ok := elem.(decorated); ok {
+		return d.decoratorList()
+	}
+	return nil
+}
+
 // FindJsDecorator returns the first `@js("...")` decorator on decl and
 // its argument string. Returns (nil, "", false) if no `@js` decorator is
 // present, and (dec, "", false) if `@js` is present but the argument
