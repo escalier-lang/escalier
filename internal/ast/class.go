@@ -93,8 +93,8 @@ func (d *ClassDecl) SetOverride(o bool) { d.override = o }
 func (d *ClassDecl) Final() bool { return d.final }
 func (d *ClassDecl) Span() Span  { return d.span }
 func (d *ClassDecl) Accept(v Visitor) {
-	// TODO(#634): traverse d.Decorators once Decorator has Accept.
 	if v.EnterDecl(d) {
+		acceptDecorators(v, d.Decorators)
 		acceptLifetimeParams(v, d.LifetimeParams)
 		acceptTypeParams(v, d.TypeParams)
 		if d.Extends != nil {
@@ -112,6 +112,7 @@ func (d *ClassDecl) Accept(v Visitor) {
 
 type FieldElem struct {
 	declDoc
+	elemDecorators
 	Name ObjKey
 	Type TypeAnn // required for class fields; optional for object-pattern shorthands
 	// Value is the field's initializer expression (`= expr`). Only valid
@@ -130,6 +131,7 @@ type FieldElem struct {
 func (*FieldElem) IsClassElem() {}
 func (f *FieldElem) Accept(v Visitor) {
 	if v.EnterClassElem(f) {
+		acceptDecorators(v, f.Decorators)
 		f.Name.Accept(v)
 		if f.Type != nil {
 			f.Type.Accept(v)
@@ -144,6 +146,7 @@ func (f *FieldElem) Span() Span { return f.Span_ }
 
 type MethodElem struct {
 	declDoc
+	elemDecorators
 	Name     ObjKey
 	Fn       *FuncExpr
 	Receiver *MethodReceiver // nil if static / no receiver
@@ -156,6 +159,7 @@ type MethodElem struct {
 func (*MethodElem) IsClassElem() {}
 func (m *MethodElem) Accept(v Visitor) {
 	if v.EnterClassElem(m) {
+		acceptDecorators(v, m.Decorators)
 		m.Name.Accept(v)
 		acceptReceiver(v, m.Receiver)
 		if m.Fn != nil {
@@ -169,6 +173,7 @@ func (m *MethodElem) Span() Span { return m.Span_ }
 // GetterElem represents a getter in a class.
 type GetterElem struct {
 	declDoc
+	elemDecorators
 	Name     ObjKey
 	Fn       *FuncExpr
 	Receiver *MethodReceiver // nil if static / no receiver
@@ -181,6 +186,7 @@ type GetterElem struct {
 func (*GetterElem) IsClassElem() {}
 func (g *GetterElem) Accept(v Visitor) {
 	if v.EnterClassElem(g) {
+		acceptDecorators(v, g.Decorators)
 		g.Name.Accept(v)
 		acceptReceiver(v, g.Receiver)
 		if g.Fn != nil {
@@ -202,6 +208,7 @@ func (g *GetterElem) Span() Span { return g.Span_ }
 // `Fn.Throws` may be non-nil — constructors may declare a `throws` clause.
 type ConstructorElem struct {
 	declDoc
+	elemDecorators
 	Fn       *FuncExpr
 	Receiver *MethodReceiver // nil if absent. Carried for diagnostics — a non-nil Lifetime is rejected by validation.
 	Private  bool            // reserved for future "Private Constructors" work
@@ -212,6 +219,7 @@ type ConstructorElem struct {
 func (*ConstructorElem) IsClassElem() {}
 func (c *ConstructorElem) Accept(v Visitor) {
 	if v.EnterClassElem(c) {
+		acceptDecorators(v, c.Decorators)
 		acceptReceiver(v, c.Receiver)
 		if c.Fn != nil {
 			c.Fn.Accept(v)
@@ -224,6 +232,7 @@ func (c *ConstructorElem) Span() Span { return c.Span_ }
 // SetterElem represents a setter in a class.
 type SetterElem struct {
 	declDoc
+	elemDecorators
 	Name     ObjKey
 	Fn       *FuncExpr
 	Receiver *MethodReceiver // nil if static / no receiver
@@ -236,6 +245,7 @@ type SetterElem struct {
 func (*SetterElem) IsClassElem() {}
 func (s *SetterElem) Accept(v Visitor) {
 	if v.EnterClassElem(s) {
+		acceptDecorators(v, s.Decorators)
 		s.Name.Accept(v)
 		acceptReceiver(v, s.Receiver)
 		if s.Fn != nil {
@@ -255,6 +265,7 @@ func (s *SetterElem) Span() Span { return s.Span_ }
 // implementation, so only a `declare class` may carry one.
 type CallableElem struct {
 	declDoc
+	elemDecorators
 	Fn    *FuncExpr
 	Span_ Span
 	commentSlots
@@ -263,6 +274,7 @@ type CallableElem struct {
 func (*CallableElem) IsClassElem() {}
 func (c *CallableElem) Accept(v Visitor) {
 	if v.EnterClassElem(c) {
+		acceptDecorators(v, c.Decorators)
 		if c.Fn != nil {
 			c.Fn.Accept(v)
 		}

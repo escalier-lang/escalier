@@ -379,6 +379,7 @@ func (p *Printer) printClassElem(elem ast.ClassElem) {
 	if doc := elem.Doc(); doc != "" && !p.opts.OmitDocComments {
 		p.writeDoc(doc)
 	}
+	p.printDecorators(ast.ClassElemDecorators(elem))
 	switch e := elem.(type) {
 	case *ast.FieldElem:
 		if e.Static {
@@ -607,11 +608,11 @@ func (p *Printer) printReturnAndThrows(ret ast.TypeAnn, throws ast.TypeAnn) {
 	}
 }
 
-// printDecorators emits each decorator on its own line, preserving
-// source order. Called by every decoratable decl's print method
-// (VarDecl, FuncDecl, TypeDecl, InterfaceDecl, ClassDecl) before any
-// modifier keywords. Per planning/builtins/implementation_plan.md
-// §3.3, decorators sit above `export` / `declare`.
+// printDecorators emits each decorator on its own line, preserving source
+// order. Every decoratable declaration's print method calls it before any
+// modifier keyword, and so does printClassElem. Per
+// planning/builtins/implementation_plan.md §3.3, decorators sit above
+// `export` and `declare`, and above a member's `static` and `readonly`.
 func (p *Printer) printDecorators(decorators []*ast.Decorator) {
 	for _, dec := range decorators {
 		p.writeString("@")

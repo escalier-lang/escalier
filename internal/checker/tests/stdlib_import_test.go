@@ -190,6 +190,28 @@ func TestStdlibImport_LoaderRule_UnexportedValueLevelRejected(t *testing.T) {
 		errs[0].Message())
 }
 
+// A member of a class in a pseudo-package file cannot carry `@js`.
+//
+// A member lowers to a property access on whatever the class's own `@js` names,
+// so codegen reads no second runtime path and would drop the decorator without
+// a word. Every other decorator on a member is left alone.
+func TestStdlibImport_LoaderRule_RejectsJSDecoratorOnAMember(t *testing.T) {
+	dir := makeCustomStdlibDir(t, map[string]string{
+		"std/example.esc": "@js(\"Perf\")\nexport declare class Perf {\n" +
+			"    @js(\"timing\")\n    timing: number,\n" +
+			"    @deprecated\n    origin: number\n}",
+	})
+	t.Setenv("ESCALIER_STDLIB_DIR", dir)
+
+	_, errs := inferStdlibImportSource(t, `import "std:example"`)
+	require.Len(t, errs, 1)
+	require.Equal(t,
+		fmt.Sprintf("`@js` decorator on a member of class %q in pseudo-package file %s "+
+			"has no runtime mapping; the class's own `@js` names what the member is reached through",
+			"Perf", filepath.Join(dir, "std/example.esc")),
+		errs[0].Message())
+}
+
 // TestStdlibImport_LoaderRule_AcceptsValidPackage confirms the loader
 // rules don't false-positive on a correctly-authored pseudo-package
 // (every exported value-level decl has `@js("...")`; every type-level

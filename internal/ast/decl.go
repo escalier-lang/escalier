@@ -106,8 +106,8 @@ func (d *VarDecl) Override() bool     { return d.override }
 func (d *VarDecl) SetOverride(o bool) { d.override = o }
 func (d *VarDecl) Span() Span         { return d.span }
 func (d *VarDecl) Accept(v Visitor) {
-	// TODO(#634): traverse d.Decorators once Decorator has Accept.
 	if v.EnterDecl(d) {
+		acceptDecorators(v, d.Decorators)
 		d.Pattern.Accept(v)
 		if d.TypeAnn != nil {
 			d.TypeAnn.Accept(v)
@@ -191,9 +191,9 @@ func (d *FuncDecl) Override() bool     { return d.override }
 func (d *FuncDecl) SetOverride(o bool) { d.override = o }
 func (d *FuncDecl) Span() Span         { return d.span }
 func (d *FuncDecl) Accept(v Visitor) {
-	// TODO(#634): traverse d.Decorators once Decorator has Accept.
 	// TODO(#635): once FuncSig has SelfParam, visit it before d.Params.
 	if v.EnterDecl(d) {
+		acceptDecorators(v, d.Decorators)
 		acceptLifetimeParams(v, d.LifetimeParams)
 		acceptTypeParams(v, d.TypeParams)
 		for _, param := range d.Params {
