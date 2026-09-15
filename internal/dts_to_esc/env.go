@@ -361,11 +361,15 @@ func checkModuleEnvs(
 // default.
 func classOwnRefs(cls *ast.ClassDecl) set.Set[string] {
 	names := set.NewSet[string]()
+	// One collector across every clause, with the class's own type parameters
+	// pushed once. `class Box<E> extends Base<E>` names Base and not E, and
+	// `extends crypto.Crypto` names Crypto and not the global `crypto`.
+	c := &declRefCollector{names: names, bound: map[string]int{}}
+	c.push(cls.TypeParams)
 	collect := func(t ast.TypeAnn) {
 		if t == nil {
 			return
 		}
-		c := &typeRefCollector{names: names, bound: map[string]int{}}
 		t.Accept(c)
 	}
 	// Extends and Implements hold a concrete pointer rather than the interface,

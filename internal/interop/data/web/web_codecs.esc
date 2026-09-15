@@ -7,6 +7,7 @@ import "web:core"
 import "web:dom"
 import "web:streams"
 
+@env("window")
 export declare interface AudioDataCopyToOptions {
     format?: AudioSampleFormat,
     frameCount?: number,
@@ -14,6 +15,7 @@ export declare interface AudioDataCopyToOptions {
     planeIndex: number
 }
 
+@env("window")
 export declare interface AudioDataInit {
     data: BufferSource,
     format: AudioSampleFormat,
@@ -24,6 +26,7 @@ export declare interface AudioDataInit {
     transfer?: mut Array<typed_arrays.ArrayBuffer>
 }
 
+@env("window")
 export declare interface AudioDecoderConfig {
     codec: string,
     description?: BufferSource,
@@ -31,16 +34,19 @@ export declare interface AudioDecoderConfig {
     sampleRate: number
 }
 
+@env("window")
 export declare interface AudioDecoderInit {
     error: WebCodecsErrorCallback,
     output: AudioDataOutputCallback
 }
 
+@env("window")
 export declare interface AudioDecoderSupport {
     config?: AudioDecoderConfig,
     supported?: boolean
 }
 
+@env("window")
 export declare interface AudioEncoderConfig {
     bitrate?: number,
     bitrateMode?: BitrateMode,
@@ -50,20 +56,24 @@ export declare interface AudioEncoderConfig {
     sampleRate: number
 }
 
+@env("window")
 export declare interface AudioEncoderInit {
     error: WebCodecsErrorCallback,
     output: EncodedAudioChunkOutputCallback
 }
 
+@env("window")
 export declare interface AudioEncoderSupport {
     config?: AudioEncoderConfig,
     supported?: boolean
 }
 
+@env("window")
 export declare interface AvcEncoderConfig {
     format?: AvcBitstreamFormat
 }
 
+@env("window")
 export declare interface EncodedAudioChunkInit {
     data: AllowSharedBufferSource,
     duration?: number,
@@ -72,10 +82,12 @@ export declare interface EncodedAudioChunkInit {
     type: EncodedAudioChunkType
 }
 
+@env("window")
 export declare interface EncodedAudioChunkMetadata {
     decoderConfig?: AudioDecoderConfig
 }
 
+@env("window")
 export declare interface EncodedVideoChunkInit {
     data: AllowSharedBufferSource,
     duration?: number,
@@ -83,20 +95,24 @@ export declare interface EncodedVideoChunkInit {
     type: EncodedVideoChunkType
 }
 
+@env("window")
 export declare interface EncodedVideoChunkMetadata {
     decoderConfig?: VideoDecoderConfig
 }
 
+@env("window")
 export declare interface ImageDecodeOptions {
     completeFramesOnly?: boolean,
     frameIndex?: number
 }
 
+@env("window")
 export declare interface ImageDecodeResult {
     complete: boolean,
     image: VideoFrame
 }
 
+@env("window")
 export declare interface ImageDecoderInit {
     colorSpaceConversion?: dom.ColorSpaceConversion,
     data: ImageBufferSource,
@@ -107,6 +123,7 @@ export declare interface ImageDecoderInit {
     type: string
 }
 
+@env("window")
 export declare interface OpusEncoderConfig {
     complexity?: number,
     format?: OpusBitstreamFormat,
@@ -116,11 +133,13 @@ export declare interface OpusEncoderConfig {
     useinbandfec?: boolean
 }
 
+@env("window")
 export declare interface PlaneLayout {
     offset: number,
     stride: number
 }
 
+@env("window")
 export declare interface VideoColorSpaceInit {
     fullRange?: boolean | null,
     matrix?: VideoMatrixCoefficients | null,
@@ -128,6 +147,7 @@ export declare interface VideoColorSpaceInit {
     transfer?: VideoTransferCharacteristics | null
 }
 
+@env("window")
 export declare interface VideoDecoderConfig {
     codec: string,
     codedHeight?: number,
@@ -140,16 +160,19 @@ export declare interface VideoDecoderConfig {
     optimizeForLatency?: boolean
 }
 
+@env("window")
 export declare interface VideoDecoderInit {
     error: WebCodecsErrorCallback,
     output: VideoFrameOutputCallback
 }
 
+@env("window")
 export declare interface VideoDecoderSupport {
     config?: VideoDecoderConfig,
     supported?: boolean
 }
 
+@env("window")
 export declare interface VideoEncoderConfig {
     alpha?: AlphaOption,
     avc?: AvcEncoderConfig,
@@ -167,25 +190,30 @@ export declare interface VideoEncoderConfig {
     width: number
 }
 
+@env("window")
 export declare interface VideoEncoderEncodeOptions {
     avc?: VideoEncoderEncodeOptionsForAvc,
     keyFrame?: boolean
 }
 
+@env("window")
 export declare interface VideoEncoderEncodeOptionsForAvc {
     quantizer?: number | null
 }
 
+@env("window")
 export declare interface VideoEncoderInit {
     error: WebCodecsErrorCallback,
     output: EncodedVideoChunkOutputCallback
 }
 
+@env("window")
 export declare interface VideoEncoderSupport {
     config?: VideoEncoderConfig,
     supported?: boolean
 }
 
+@env("window")
 export declare interface VideoFrameBufferInit {
     codedHeight: number,
     codedWidth: number,
@@ -199,6 +227,7 @@ export declare interface VideoFrameBufferInit {
     visibleRect?: dom.DOMRectInit
 }
 
+@env("window")
 export declare interface VideoFrameCopyToOptions {
     colorSpace?: dom.PredefinedColorSpace,
     format?: VideoPixelFormat,
@@ -206,6 +235,7 @@ export declare interface VideoFrameCopyToOptions {
     rect?: dom.DOMRectInit
 }
 
+@env("window")
 export declare interface VideoFrameInit {
     alpha?: AlphaOption,
     displayHeight?: number,
@@ -216,6 +246,7 @@ export declare interface VideoFrameInit {
 }
 
 /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/AudioData) */
+@env("window")
 @js("AudioData")
 export declare class AudioData {
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/AudioData/duration) */
@@ -242,6 +273,7 @@ export declare class AudioData {
     constructor(mut self, init: AudioDataInit)
 }
 
+@env("window")
 export declare interface AudioDecoderEventMap {
     "dequeue": Event
 }
@@ -251,6 +283,7 @@ export declare interface AudioDecoderEventMap {
  *
  * [MDN Reference](https://developer.mozilla.org/docs/Web/API/AudioDecoder)
  */
+@env("window")
 @js("AudioDecoder")
 export declare class AudioDecoder extends EventTarget {
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/AudioDecoder/decodeQueueSize) */
@@ -279,6 +312,7 @@ export declare class AudioDecoder extends EventTarget {
     static isConfigSupported(config: AudioDecoderConfig) -> Promise<AudioDecoderSupport>
 }
 
+@env("window")
 export declare interface AudioEncoderEventMap {
     "dequeue": Event
 }
@@ -288,6 +322,7 @@ export declare interface AudioEncoderEventMap {
  *
  * [MDN Reference](https://developer.mozilla.org/docs/Web/API/AudioEncoder)
  */
+@env("window")
 @js("AudioEncoder")
 export declare class AudioEncoder extends EventTarget {
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/AudioEncoder/encodeQueueSize) */
@@ -317,6 +352,7 @@ export declare class AudioEncoder extends EventTarget {
 }
 
 /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/EncodedAudioChunk) */
+@env("window")
 @js("EncodedAudioChunk")
 export declare class EncodedAudioChunk {
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/EncodedAudioChunk/byteLength) */
@@ -334,6 +370,7 @@ export declare class EncodedAudioChunk {
 }
 
 /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/EncodedVideoChunk) */
+@env("window")
 @js("EncodedVideoChunk")
 export declare class EncodedVideoChunk {
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/EncodedVideoChunk/byteLength) */
@@ -355,6 +392,7 @@ export declare class EncodedVideoChunk {
  *
  * [MDN Reference](https://developer.mozilla.org/docs/Web/API/ImageDecoder)
  */
+@env("window")
 @js("ImageDecoder")
 export declare class ImageDecoder {
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/ImageDecoder/complete) */
@@ -378,6 +416,7 @@ export declare class ImageDecoder {
 }
 
 /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/ImageTrack) */
+@env("window")
 @js("ImageTrack")
 export declare class ImageTrack {
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/ImageTrack/animated) */
@@ -393,6 +432,7 @@ export declare class ImageTrack {
 }
 
 /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/ImageTrackList) */
+@env("window")
 @js("ImageTrackList")
 export declare class ImageTrackList {
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/ImageTrackList/length) */
@@ -409,6 +449,7 @@ export declare class ImageTrackList {
 }
 
 /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/VideoColorSpace) */
+@env("window")
 @js("VideoColorSpace")
 export declare class VideoColorSpace {
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/VideoColorSpace/fullRange) */
@@ -425,6 +466,7 @@ export declare class VideoColorSpace {
     constructor(mut self, init?: VideoColorSpaceInit)
 }
 
+@env("window")
 export declare interface VideoDecoderEventMap {
     "dequeue": Event
 }
@@ -434,6 +476,7 @@ export declare interface VideoDecoderEventMap {
  *
  * [MDN Reference](https://developer.mozilla.org/docs/Web/API/VideoDecoder)
  */
+@env("window")
 @js("VideoDecoder")
 export declare class VideoDecoder extends EventTarget {
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/VideoDecoder/decodeQueueSize) */
@@ -462,6 +505,7 @@ export declare class VideoDecoder extends EventTarget {
     static isConfigSupported(config: VideoDecoderConfig) -> Promise<VideoDecoderSupport>
 }
 
+@env("window")
 export declare interface VideoEncoderEventMap {
     "dequeue": Event
 }
@@ -471,6 +515,7 @@ export declare interface VideoEncoderEventMap {
  *
  * [MDN Reference](https://developer.mozilla.org/docs/Web/API/VideoEncoder)
  */
+@env("window")
 @js("VideoEncoder")
 export declare class VideoEncoder extends EventTarget {
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/VideoEncoder/encodeQueueSize) */
@@ -500,6 +545,7 @@ export declare class VideoEncoder extends EventTarget {
 }
 
 /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/VideoFrame) */
+@env("window")
 @js("VideoFrame")
 export declare class VideoFrame {
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/VideoFrame/codedHeight) */
@@ -535,54 +581,75 @@ export declare class VideoFrame {
     constructor(mut self, data: AllowSharedBufferSource, init: VideoFrameBufferInit)
 }
 
+@env("window")
 export declare interface AudioDataOutputCallback {
     (output: AudioData) -> unknown
 }
 
+@env("window")
 export declare interface EncodedAudioChunkOutputCallback {
     (output: EncodedAudioChunk, metadata?: EncodedAudioChunkMetadata) -> unknown
 }
 
+@env("window")
 export declare interface EncodedVideoChunkOutputCallback {
     (chunk: EncodedVideoChunk, metadata?: EncodedVideoChunkMetadata) -> unknown
 }
 
+@env("window")
 export declare interface VideoFrameOutputCallback {
     (output: VideoFrame) -> unknown
 }
 
+@env("window")
 export declare interface WebCodecsErrorCallback {
     (error: DOMException) -> unknown
 }
 
+@env("window")
 export declare type ImageBufferSource = AllowSharedBufferSource | streams.ReadableStream
 
+@env("window")
 export declare type AlphaOption = "discard" | "keep"
 
+@env("window")
 export declare type AudioSampleFormat = "f32" | "f32-planar" | "s16" | "s16-planar" | "s32" | "s32-planar" | "u8" | "u8-planar"
 
+@env("window")
 export declare type AvcBitstreamFormat = "annexb" | "avc"
 
+@env("window")
 export declare type BitrateMode = "constant" | "variable"
 
+@env("window")
 export declare type CodecState = "closed" | "configured" | "unconfigured"
 
+@env("window")
 export declare type EncodedAudioChunkType = "delta" | "key"
 
+@env("window")
 export declare type EncodedVideoChunkType = "delta" | "key"
 
+@env("window")
 export declare type HardwareAcceleration = "no-preference" | "prefer-hardware" | "prefer-software"
 
+@env("window")
 export declare type LatencyMode = "quality" | "realtime"
 
+@env("window")
 export declare type OpusBitstreamFormat = "ogg" | "opus"
 
+@env("window")
 export declare type VideoColorPrimaries = "bt470bg" | "bt709" | "smpte170m"
 
+@env("window")
 export declare type VideoEncoderBitrateMode = "constant" | "quantizer" | "variable"
 
+@env("window")
 export declare type VideoMatrixCoefficients = "bt470bg" | "bt709" | "rgb" | "smpte170m"
 
+@env("window")
 export declare type VideoPixelFormat = "BGRA" | "BGRX" | "I420" | "I420A" | "I422" | "I444" | "NV12" | "RGBA" | "RGBX"
 
+@env("window")
 export declare type VideoTransferCharacteristics = "bt709" | "iec61966-2-1" | "smpte170m"
