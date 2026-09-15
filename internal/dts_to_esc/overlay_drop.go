@@ -86,6 +86,11 @@ func validateDropInterfaceDecl(rel string, d *ast.InterfaceDecl) error {
 			"overlay: %s gives %s type parameters or an extends clause, which a "+
 				"drop ignores; write `%s`", rel, owner, dropMemberForm)
 	}
+	if len(d.Decorators) > 0 {
+		return fmt.Errorf(
+			"overlay: %s decorates %s, which a drop ignores; write `%s`",
+			rel, owner, dropMemberForm)
+	}
 	if d.TypeAnn == nil || len(d.TypeAnn.Elems) == 0 {
 		return fmt.Errorf(
 			"overlay: %s drops %s with an empty body; a drop naming a whole "+

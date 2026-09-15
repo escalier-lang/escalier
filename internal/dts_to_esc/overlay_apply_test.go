@@ -851,6 +851,33 @@ export declare class ArrayLike<T> extends Array<T> {
 	}), "std:prelude"))
 }
 
+// A decorator on an overlay's own declaration line is rejected rather than
+// dropped.
+//
+// The merge reads an overlay declaration for its members and its shape, not for
+// its decorators, so one written there would say nothing. Saying so is the
+// difference between an author seeing the mistake and an `@env` quietly not
+// taking effect.
+func TestApplyOverlay_RejectsADecoratorOnTheDeclarationLine(t *testing.T) {
+	t.Parallel()
+
+	tests := map[string]string{
+		"Class":     "@env(\"window\")\nexport declare class Array<T> {\n    at(self, index: number) -> T,\n}\n",
+		"Interface": "@env(\"window\")\nexport declare interface ArrayLike<T> {\n    readonly length: number,\n}\n",
+	}
+
+	for name, overlay := range tests {
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+			_, err := convertWithOverlay(t, map[string]string{
+				"std/prelude.replace.esc": overlay,
+			})
+			require.Error(t, err)
+			require.Contains(t, err.Error(), "a decorator")
+		})
+	}
+}
+
 // A decorator an overlay writes on a member reaches the generated tree.
 //
 // Nothing in the pinned `.d.ts` set carries one, so the overlay is how a

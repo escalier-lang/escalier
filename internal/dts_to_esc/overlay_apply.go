@@ -325,10 +325,22 @@ func unreadDeclPart(decl ast.Decl) string {
 		}
 	case *ast.InterfaceDecl:
 		switch {
+		case len(d.Decorators) > 0:
+			return "a decorator"
 		case len(d.Extends) > 0:
 			return "an extends clause"
 		case len(d.LifetimeParams) > 0:
 			return "a lifetime parameter"
+		}
+	case *ast.TypeDecl:
+		switch {
+		case len(d.Decorators) > 0:
+			return "a decorator"
+		}
+	case *ast.EnumDecl:
+		switch {
+		case len(d.Decorators) > 0:
+			return "a decorator"
 		}
 	}
 	return ""
