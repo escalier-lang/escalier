@@ -8,7 +8,7 @@
 // `source` is a `WindowProxy`, a `MessagePort` or a `ServiceWorker` in the
 // browser and always null off it, so `null` is what every portable runtime
 // reports. `ports` is an array on every runtime whose element type differs by
-// runtime, so the tier names the array without the element.
+// runtime, so `web:core` names the array without the element.
 //
 // One class serves every environment, so a browser program reads both at their
 // portable types.

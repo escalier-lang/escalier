@@ -1,6 +1,7 @@
 // `FormData`'s constructor takes an `HTMLFormElement` to read initial entries
 // from, and a submitter button beside it. Neither exists off the browser, and
-// naming them would put this package in a cycle with the browser tier.
+// naming them would make `web:file` import `web:dom`. Every program that
+// reaches a file would then load the whole DOM.
 //
 // The no-argument form is what every environment has, and what a browser
 // program writes unless it is populating from a form element. That case loses
