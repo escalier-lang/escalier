@@ -84,6 +84,28 @@ func windowOnly() set.Set[Env] { return set.FromSlice([]Env{EnvWindow}) }
 // size.
 var declEnvOverrides = map[packageDecl]set.Set[Env]{}
 
+// Unreconciled names the 629 declarations both web libs declare, which the run
+// has no trustworthy environment reading for.
+//
+// The window lib's copy is what the tree carries and the worker lib's is
+// skipped, so the members and union arms in the tree are a window's while the
+// name itself exists in both. Neither reading is right. Marking such a
+// declaration for the window hides it from a worker that has it, and marking it
+// for both claims its window-shaped contents are reachable from a worker.
+//
+// So it carries no `@env`, and CheckEnvs reads no reference into or out of one.
+// Checking against a reading the run knows is wrong would bury the findings that
+// are real under hundreds that are not.
+//
+// That gives up coverage over those 629. What it keeps is every reference among
+// the window-only and worker-only surfaces, which nothing checked before.
+// Merging the two copies of a shared declaration, using the per-member
+// provenance the run already records, is what restores the rest. See #1633.
+//
+// A PartitionResult carries the set rather than a package variable holding it,
+// so two runs in one process cannot see each other's.
+type Unreconciled = set.Set[string]
+
 // packageDecl addresses one declaration by the package holding it. The package
 // is half the key because a bare name would widen a same-named declaration
 // anywhere in the tree, which is the sort of reach nothing here should have.
@@ -92,15 +114,33 @@ type packageDecl struct {
 	Name string
 }
 
-// PackageDeclEnvs returns the environments a declaration in uri exists on.
+// PackageDeclEnvs returns the environments a declaration in uri exists on, from
+// the tables alone. Callers with a partition in hand pass its lib reading to
+// resolveDeclEnvs instead, which is the more specific answer.
 func PackageDeclEnvs(uri, name string) set.Set[Env] {
-	return declEnvsFrom(declEnvOverrides, uri, name)
+	return declEnvsFrom(declEnvOverrides, uri, name, nil, nil)
 }
 
-// declEnvsFrom is PackageDeclEnvs over a chosen override map, so a test reaches
-// the override path while the committed one is empty.
-func declEnvsFrom(overrides map[packageDecl]set.Set[Env], uri, name string) set.Set[Env] {
+// declEnvsFrom answers where one bound name exists, reading three sources in
+// order of how specific they are.
+//
+//  1. overrides, which names the declarations a reader had to settle by hand
+//     because no source answers them.
+//  2. The lib files that declared it, which is TypeScript's own statement and is
+//     per declaration. A caller with no partition passes nil for both maps and
+//     skips this.
+//  3. packageEnvs, for a package no lib contributed to.
+//
+// The override map is a parameter so a test reaches the override path while the
+// committed map is empty.
+func declEnvsFrom(
+	overrides map[packageDecl]set.Set[Env], uri, name string,
+	declSources map[string]set.Set[int], sourceFiles map[int]string,
+) set.Set[Env] {
 	if envs, held := overrides[packageDecl{URI: uri, Name: name}]; held {
+		return envs
+	}
+	if envs := DeclEnvsFromLibs(name, declSources, sourceFiles); envs != nil {
 		return envs
 	}
 	if envs, err := packageFileEnvs(uri); err == nil {
@@ -109,20 +149,37 @@ func declEnvsFrom(overrides map[packageDecl]set.Set[Env], uri, name string) set.
 	return AllEnvs()
 }
 
-// AnnotateEnvs stamps `@env` on every declaration the tables narrow, and
-// reports a package or declaration the tables name that the tree does not hold.
+// AnnotateEnvs stamps `@env` on every declaration the run can narrow, and
+// reports a `web:*` package packageEnvs does not classify.
 //
-// A declaration on every environment is left alone. Annotating it would say
-// what an unannotated declaration already says, and would put a decorator on
-// most of the tree for no reader's benefit.
-func AnnotateEnvs(mods map[string]*StandaloneModule) error {
+// The lib set answers first. Which file declared a name is TypeScript's own
+// statement of where it exists, and it is per declaration where packageEnvs is
+// per package. packageEnvs answers for a package no lib contributed to, which is
+// a hand-authored one.
+//
+// A declaration on every environment is left alone. Annotating it would say what
+// the absence of a decorator already says, and would put one on most of the
+// tree.
+//
+// Members are not annotated. A declaration both web libs declare is taken from
+// the window lib alone, so the run has no reading of where each of its members
+// exists, and every member inherits its declaration. Annotating from the window
+// copy's spans would mark the whole shared surface for a window. Per-member
+// annotation waits on the two copies of a shared declaration being merged, which
+// is the rest of #1633.
+func AnnotateEnvs(
+	mods map[string]*StandaloneModule,
+	declSources map[string]set.Set[int],
+	sourceFiles map[int]string,
+) error {
 	if err := checkEnvTablesMatchTheTree(mods); err != nil {
 		return err
 	}
 	everywhere := AllEnvs()
 	var scanErr error
 	for _, uri := range sortedURIs(mods) {
-		mods[uri].Module.Namespaces.Scan(func(_ string, ns *ast.Namespace) bool {
+		mod := mods[uri]
+		mod.Module.Namespaces.Scan(func(_ string, ns *ast.Namespace) bool {
 			for _, decl := range ns.Decls {
 				names := ast.DeclNames(decl)
 				if len(names) == 0 {
@@ -134,7 +191,7 @@ func AnnotateEnvs(mods map[string]*StandaloneModule) error {
 				if hasEnvDecorator(decl) {
 					continue
 				}
-				envs, err := declaredEnvs(uri, names)
+				envs, err := resolveDeclEnvs(uri, names, declSources, sourceFiles)
 				if err != nil {
 					scanErr = err
 					return false
@@ -153,7 +210,7 @@ func AnnotateEnvs(mods map[string]*StandaloneModule) error {
 	return nil
 }
 
-// declaredEnvs returns the environments one declaration exists on, given every
+// resolveDeclEnvs returns the environments one declaration exists on, given every
 // name it binds.
 //
 // A destructuring `val` binds several names, and EnvIndex records the
@@ -161,18 +218,23 @@ func AnnotateEnvs(mods map[string]*StandaloneModule) error {
 // would let a second name's override go unread here while the index honoured
 // it, so one decorator has to answer for every name and the names have to
 // agree.
-func declaredEnvs(uri string, names []string) (set.Set[Env], error) {
-	return declaredEnvsFrom(declEnvOverrides, uri, names)
+func resolveDeclEnvs(
+	uri string, names []string,
+	declSources map[string]set.Set[int], sourceFiles map[int]string,
+) (set.Set[Env], error) {
+	return declaredEnvsFrom(declEnvOverrides, uri, names, declSources, sourceFiles)
 }
 
-// declaredEnvsFrom is declaredEnvs over a chosen override map, so a test reaches
-// the disagreement while the committed one is empty.
+// declaredEnvsFrom is resolveDeclEnvs over a chosen override map, so a test
+// reaches the disagreement while the committed one is empty.
 func declaredEnvsFrom(
 	overrides map[packageDecl]set.Set[Env], uri string, names []string,
+	declSources map[string]set.Set[int], sourceFiles map[int]string,
 ) (set.Set[Env], error) {
-	envs := declEnvsFrom(overrides, uri, names[0])
+	envs := declEnvsFrom(overrides, uri, names[0], declSources, sourceFiles)
 	for _, name := range names[1:] {
-		if other := declEnvsFrom(overrides, uri, name); !other.Equals(envs) {
+		other := declEnvsFrom(overrides, uri, name, declSources, sourceFiles)
+		if !other.Equals(envs) {
 			return nil, fmt.Errorf(
 				"converter: %s: one declaration binds %q and %q with different "+
 					"environments; a decorator answers for the whole declaration, so "+
@@ -267,18 +329,64 @@ func StaleEnvTableEntries(mods map[string]*StandaloneModule) []string {
 //
 // A file named here narrows; every other lib file is the language surface and
 // exists everywhere, which is why the `lib.es*` set is absent.
-var libEnvs = map[string]set.Set[Env]{
-	"lib.dom.d.ts":                     windowOnly(),
-	"lib.dom.iterable.d.ts":            windowOnly(),
-	"lib.dom.asynciterable.d.ts":       windowOnly(),
-	"lib.webworker.d.ts":               workerKinds(),
-	"lib.webworker.importscripts.d.ts": workerKinds(),
-	"lib.webworker.iterable.d.ts":      workerKinds(),
-	"lib.webworker.asynciterable.d.ts": workerKinds(),
+//
+// It is built from the two source sets the partition already names rather than
+// listing the same basenames a third time, so a file the partition learns about
+// cannot go unclassified here.
+var libEnvs = buildLibEnvs()
+
+func buildLibEnvs() map[string]set.Set[Env] {
+	out := map[string]set.Set[Env]{}
+	for _, file := range WindowLibSources.ToSlice() {
+		out[file] = windowOnly()
+	}
+	for _, file := range WorkerLibSources.ToSlice() {
+		out[file] = workerKinds()
+	}
+	return out
 }
 
 func workerKinds() set.Set[Env] {
 	return set.FromSlice(envGroups["worker"])
+}
+
+// DeclEnvsFromLibs returns the environments a declaration exists on, read from
+// the lib files that declared it.
+//
+// A declaration both web libs declare exists in both, whether the two copies
+// merged or one replaced the other. A declaration no lib declared, or one a
+// language lib declared, exists everywhere, which is what the nil return says.
+func DeclEnvsFromLibs(
+	name string, declSources map[string]set.Set[int], sourceFiles map[int]string,
+) set.Set[Env] {
+	ids, held := declSources[name]
+	if !held {
+		return nil
+	}
+	return envsOfSourceIDs(ids, sourceFiles)
+}
+
+// envsOfSourceIDs unions the environments each lib file answers for.
+//
+// A nil return means the declaration exists everywhere, either because a file
+// is not one the tables narrow or because it is not a lib file at all.
+func envsOfSourceIDs(ids set.Set[int], sourceFiles map[int]string) set.Set[Env] {
+	envs := set.NewSet[Env]()
+	for _, id := range ids.ToSlice() {
+		file, held := sourceFiles[id]
+		if !held {
+			return nil
+		}
+		narrowed, named := libEnvs[file]
+		if !named {
+			return nil
+		}
+		envs = envs.Union(narrowed)
+	}
+	if envs.Len() == 0 {
+		return nil
+	}
+	return envs
 }
 
 // MemberEnvsFromLibs returns the environments a converted member exists on,
@@ -289,18 +397,19 @@ func workerKinds() set.Set[Env] {
 // member the converter synthesized has no lib and exists wherever its
 // declaration does, which is what the nil return says.
 //
-// This is the lib set's reading and is not reconciled with packageEnvs. The two
-// disagree, and the lib set is the better source: over a conversion of
-// lib.dom.d.ts and lib.webworker.d.ts together, 2058 of 7762 members read as
-// available outside the environments their package claims, most of them in
-// `web:webgl` and `web:dom`. packageEnvs says both are a window's, and its own
-// comment says that is for want of a source. Reconciling them is what #1633
-// does when it undrops the worker lib; until then the worker lib contributes
-// nothing and every member of a `web:*` package reads as a window's, which is
-// what packageEnvs already says.
+// Nothing in the run calls this yet. A worker lib's copy of a declaration a
+// window lib also declares is skipped, so a shared declaration in the tree
+// carries the window copy's spans alone and reading them would mark the whole
+// shared surface for a window. Merging the two copies is what makes the reading
+// answerable, and is the rest of #1633.
 //
-// TestTheLibReadingDisagreesWithThePackageTable measures the gap, so the
-// reconciliation has a number to work against.
+// The reading disagrees with packageEnvs, and is the better source. Over a
+// conversion of lib.dom.d.ts and lib.webworker.d.ts with both copies merged,
+// 2044 of 7762 members read as available outside the environments their package
+// claims, most of them in `web:webgl` and `web:dom`. packageEnvs says both are a
+// window's, and its own comment says that is for want of a source.
+// TestTheLibReadingDisagreesWithThePackageTable measures the gap, so the merge
+// has a number to work against.
 func MemberEnvsFromLibs(
 	mod *StandaloneModule, member ast.Node, sourceFiles map[int]string,
 ) set.Set[Env] {
@@ -308,23 +417,5 @@ func MemberEnvsFromLibs(
 	if ids == nil {
 		ids = set.FromSlice([]int{member.Span().SourceID})
 	}
-	envs := set.NewSet[Env]()
-	for _, id := range ids.ToSlice() {
-		file, held := sourceFiles[id]
-		if !held {
-			// A span the converter minted, so the member belongs to whatever
-			// its declaration does rather than to a lib.
-			return nil
-		}
-		narrowed, named := libEnvs[file]
-		if !named {
-			// A language lib, which every environment has.
-			return nil
-		}
-		envs = envs.Union(narrowed)
-	}
-	if envs.Len() == 0 {
-		return nil
-	}
-	return envs
+	return envsOfSourceIDs(ids, sourceFiles)
 }

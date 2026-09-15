@@ -116,7 +116,7 @@ func TestNoReferenceEscapesItsEnvironments(t *testing.T) {
 		mods[uri] = &StandaloneModule{Module: module}
 	}
 
-	violations, err := CheckEnvs(mods)
+	violations, err := CheckEnvs(mods, unreconciledInThePinnedLibSet(t))
 	require.NoError(t, err)
 
 	lines := make([]string, 0, len(violations))
@@ -210,4 +210,28 @@ func TestEveryCrossPackageReferenceIsImported(t *testing.T) {
 	}
 	sort.Strings(missing)
 	require.Empty(t, missing, "references with no import:\n  %s", strings.Join(missing, "\n  "))
+}
+
+// pinnedPartition routes the pinned lib set through the committed overlay, for
+// the two facts about the inputs that the tree records nowhere: which lib files
+// declared each name, and which names both web libs declare.
+//
+// Recomputing them here rather than reading them off the tree keeps these tests
+// checking what the run checked.
+func pinnedPartition(t *testing.T) *PartitionResult {
+	t.Helper()
+	names, err := DiscoverLibFiles(pinnedLibDir)
+	require.NoError(t, err)
+	inputs, err := ParseLibFiles(pinnedLibDir, names)
+	require.NoError(t, err)
+	res, err := PartitionLibWithOverlay(inputs, committedOverlay(t))
+	require.NoError(t, err)
+	return res
+}
+
+// unreconciledInThePinnedLibSet returns the declarations both web libs declare,
+// which is the set the generator skips the environment check for.
+func unreconciledInThePinnedLibSet(t *testing.T) Unreconciled {
+	t.Helper()
+	return pinnedPartition(t).Unreconciled
 }

@@ -65,6 +65,18 @@ type PartitionResult struct {
 	// member's span says which lib file declared it.
 	SourceFiles map[int]string
 
+	// Unreconciled names the declarations both web libs declare, which the run
+	// has no trustworthy environment reading for. See the type's own comment.
+	Unreconciled Unreconciled
+
+	// DeclSources maps each routed declaration name to every lib file that
+	// declared it, by source id.
+	//
+	// Recorded here rather than after the merge, because the merge is what
+	// collapses two libs' copies of one declaration into one and a type alias is
+	// not merged at all. This pass sees each copy with the file it came from.
+	DeclSources map[string]set.Set[int]
+
 	// Drops records (name, source-file basename) pairs for every
 	// top-level declaration the run skipped, whether the overlay's root
 	// drop file named it or a DroppedSources file declared it. Callers
@@ -116,8 +128,10 @@ func PartitionLib(inputs []LibInput) (*PartitionResult, error) {
 // single unit to std:intl regardless of which lib file declared it.
 func PartitionLibWithOverlay(inputs []LibInput, overlay *Overlay) (*PartitionResult, error) {
 	out := &PartitionResult{
-		Buckets:     make(map[string][]dts_parser.Statement),
-		SourceFiles: make(map[int]string, len(inputs)),
+		Buckets:      make(map[string][]dts_parser.Statement),
+		SourceFiles:  make(map[int]string, len(inputs)),
+		DeclSources:  map[string]set.Set[int]{},
+		Unreconciled: set.NewSet[string](),
 	}
 	for _, in := range inputs {
 		if in.SourceID != 0 {
@@ -141,6 +155,7 @@ func PartitionLibWithOverlay(inputs []LibInput, overlay *Overlay) (*PartitionRes
 	}
 	overlayDrops := overlay.GlobalDrops()
 	matched := set.NewSet[string]()
+	windowDeclared := declaredByWindowLibs(inputs)
 	for _, in := range inputs {
 		if in.Module == nil {
 			return nil, fmt.Errorf("partition: nil module for %s", in.SourceFile)
@@ -164,6 +179,22 @@ func PartitionLibWithOverlay(inputs []LibInput, overlay *Overlay) (*PartitionRes
 				matched.Add(name)
 			}
 			if dropped || overlayDropped {
+				out.Drops = append(out.Drops,
+					DropNote{Name: name, SourceFile: in.SourceFile})
+				continue
+			}
+			// Recorded before the skip below, because a worker lib's copy of a
+			// shared name still says the name exists in a worker. What the skip
+			// decides is which copy's members the tree carries, not where the
+			// declaration exists.
+			if in.SourceID != 0 {
+				if _, held := out.DeclSources[name]; !held {
+					out.DeclSources[name] = set.NewSet[int]()
+				}
+				out.DeclSources[name].Add(in.SourceID)
+			}
+			if WorkerLibSources.Contains(in.SourceFile) && windowDeclared.Contains(name) {
+				out.Unreconciled.Add(name)
 				out.Drops = append(out.Drops,
 					DropNote{Name: name, SourceFile: in.SourceFile})
 				continue
@@ -362,6 +393,24 @@ func liftGlobals(stmts []dts_parser.Statement) []dts_parser.Statement {
 		out = append(out, stmt)
 	}
 	return out
+}
+
+// declaredByWindowLibs returns every top-level name the window lib files
+// declare, which is what a worker lib's copy of a shared name is skipped
+// against. See WorkerLibSources.
+func declaredByWindowLibs(inputs []LibInput) set.Set[string] {
+	names := set.NewSet[string]()
+	for _, in := range inputs {
+		if in.Module == nil || !WindowLibSources.Contains(in.SourceFile) {
+			continue
+		}
+		for _, stmt := range globalStatements(in.Module.Statements) {
+			if name := topLevelName(stmt); name != "" {
+				names.Add(name)
+			}
+		}
+	}
+	return names
 }
 
 // mergeDecls performs TS-style declaration merging within a routed
@@ -1106,10 +1155,20 @@ func ReportPartition(result *PartitionResult, w io.Writer) error {
 	var dropped []string
 	seen := set.NewSet[string]()
 	sourceCounts := btree.Map[string, int]{}
+	skippedCopies := btree.Map[string, int]{}
 	for _, d := range result.Drops {
 		if DroppedSources.Contains(d.SourceFile) {
 			n, _ := sourceCounts.Get(d.SourceFile)
 			sourceCounts.Set(d.SourceFile, n+1)
+			continue
+		}
+		// A worker lib's copy of a name a window lib also declares is counted
+		// rather than named, for the same reason. The name is in the tree,
+		// carrying the window lib's members, so a flat name list would read as
+		// the tree having lost it.
+		if WorkerLibSources.Contains(d.SourceFile) {
+			n, _ := skippedCopies.Get(d.SourceFile)
+			skippedCopies.Set(d.SourceFile, n+1)
 			continue
 		}
 		if !seen.Contains(d.Name) {
@@ -1123,6 +1182,10 @@ func ReportPartition(result *PartitionResult, w io.Writer) error {
 	}
 	sourceCounts.Scan(func(file string, n int) bool {
 		fmt.Fprintf(&b, "  dropped source %s: %d decls\n", file, n)
+		return true
+	})
+	skippedCopies.Scan(func(file string, n int) bool {
+		fmt.Fprintf(&b, "  %s: %d decls a window lib also declares, taken from there\n", file, n)
 		return true
 	})
 

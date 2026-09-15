@@ -5,15 +5,15 @@
 import "std:typed_arrays"
 import "web:core"
 import "web:dom"
+import "web:file"
+import "web:service_worker"
 
-@env("window")
 export declare interface PushSubscriptionJSON {
     endpoint?: string,
     expirationTime?: dom.EpochTimeStamp | null,
     keys?: Record<string, string>
 }
 
-@env("window")
 export declare interface PushSubscriptionOptionsInit {
     applicationServerKey?: BufferSource | string | null,
     userVisibleOnly?: boolean
@@ -25,7 +25,6 @@ export declare interface PushSubscriptionOptionsInit {
  *
  * [MDN Reference](https://developer.mozilla.org/docs/Web/API/PushManager)
  */
-@env("window")
 @js("PushManager")
 export declare class PushManager {
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/PushManager/getSubscription) */
@@ -46,7 +45,6 @@ export declare class PushManager {
  *
  * [MDN Reference](https://developer.mozilla.org/docs/Web/API/PushSubscription)
  */
-@env("window")
 @js("PushSubscription")
 export declare class PushSubscription {
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/PushSubscription/endpoint) */
@@ -70,7 +68,6 @@ export declare class PushSubscription {
  *
  * [MDN Reference](https://developer.mozilla.org/docs/Web/API/PushSubscriptionOptions)
  */
-@env("window")
 @js("PushSubscriptionOptions")
 export declare class PushSubscriptionOptions {
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/PushSubscriptionOptions/applicationServerKey) */
@@ -81,5 +78,50 @@ export declare class PushSubscriptionOptions {
     constructor(mut self)
 }
 
-@env("window")
 export declare type PushEncryptionKeyName = "auth" | "p256dh"
+
+@env("dedicated_worker", "shared_worker", "service_worker")
+export declare interface PushEventInit extends service_worker.ExtendableEventInit {
+    data?: PushMessageDataInit
+}
+
+/**
+ * This Push API interface represents a push message that has been received. This event is sent to the global scope of a ServiceWorker. It contains the information sent from an application server to a PushSubscription.
+ * Available only in secure contexts.
+ *
+ * [MDN Reference](https://developer.mozilla.org/docs/Web/API/PushEvent)
+ */
+@env("dedicated_worker", "shared_worker", "service_worker")
+@js("PushEvent")
+export declare class PushEvent extends service_worker.ExtendableEvent {
+    /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/PushEvent/data) */
+    readonly data: PushMessageData | null,
+    static prototype: PushEvent,
+    constructor(mut self, type: string, eventInitDict?: PushEventInit)
+}
+
+/**
+ * This Push API interface provides methods which let you retrieve the push data sent by a server in various formats.
+ * Available only in secure contexts.
+ *
+ * [MDN Reference](https://developer.mozilla.org/docs/Web/API/PushMessageData)
+ */
+@env("dedicated_worker", "shared_worker", "service_worker")
+@js("PushMessageData")
+export declare class PushMessageData {
+    /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/PushMessageData/arrayBuffer) */
+    arrayBuffer(mut self) -> typed_arrays.ArrayBuffer,
+    /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/PushMessageData/blob) */
+    blob(mut self) -> file.Blob,
+    /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/PushMessageData/bytes) */
+    bytes(mut self) -> typed_arrays.Uint8Array,
+    /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/PushMessageData/json) */
+    json(mut self) -> any,
+    /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/PushMessageData/text) */
+    text(mut self) -> string,
+    static prototype: PushMessageData,
+    constructor(mut self)
+}
+
+@env("dedicated_worker", "shared_worker", "service_worker")
+export declare type PushMessageDataInit = BufferSource | string

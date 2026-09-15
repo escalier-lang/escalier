@@ -137,10 +137,10 @@ func Generate(opts GenerateOptions) (*GenerateResult, error) {
 	if _, err := declaringPackages(mods); err != nil {
 		return nil, err
 	}
-	if err := AnnotateEnvs(mods); err != nil {
+	if err := AnnotateEnvs(mods, partition.DeclSources, partition.SourceFiles); err != nil {
 		return nil, err
 	}
-	envViolations, err := CheckEnvs(mods)
+	envViolations, err := CheckEnvs(mods, partition.Unreconciled)
 	if err != nil {
 		return nil, err
 	}

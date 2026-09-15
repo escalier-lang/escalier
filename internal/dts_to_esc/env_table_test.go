@@ -29,8 +29,9 @@ func TestEnvTablesMatchThePinnedLibSet(t *testing.T) {
 		"table entries naming something the tree does not hold")
 }
 
-// Every declaration in the committed tree carries the environments its package
-// claims, and no declaration on every environment carries a decorator.
+// Every declaration in the committed tree carries the environments the lib set
+// and the tables answer for it, and no declaration on every environment carries
+// a decorator.
 //
 // The second half is what keeps the tree readable. Annotating a declaration
 // available everywhere would say what an unannotated one already says, and
@@ -39,6 +40,7 @@ func TestTheCommittedTreeCarriesItsEnvironments(t *testing.T) {
 	t.Parallel()
 
 	everywhere := AllEnvs()
+	partition := pinnedPartition(t)
 	var wrong []string
 	for uri, module := range parseCommittedTree(t) {
 		module.Namespaces.Scan(func(_ string, ns *ast.Namespace) bool {
@@ -47,7 +49,9 @@ func TestTheCommittedTreeCarriesItsEnvironments(t *testing.T) {
 				if len(names) == 0 {
 					continue
 				}
-				want := PackageDeclEnvs(uri, names[0])
+				want, err := resolveDeclEnvs(
+					uri, names, partition.DeclSources, partition.SourceFiles)
+				require.NoError(t, err, "%s: %s", uri, names[0])
 				got, err := DeclEnvs(decl)
 				require.NoError(t, err, "%s: %s", uri, names[0])
 				if !got.Equals(want) {
@@ -89,7 +93,7 @@ func TestAnnotateEnvs_RejectsAPackageNoPartitionEntryNames(t *testing.T) {
 
 	err := AnnotateEnvs(envPackages(t, map[string]string{
 		"web:brand_new": "export declare class C {}",
-	}))
+	}), nil, nil)
 	require.Error(t, err)
 	require.Equal(t,
 		"converter: web:brand_new is in no partition entry, so nothing names its file",
@@ -107,7 +111,7 @@ func TestAnnotateEnvs_ReadsTheEnvironmentsFromTheFileName(t *testing.T) {
 		"web:dom":   "export declare class C {}",
 		"web:fetch": "export declare class D {}",
 	})
-	require.NoError(t, AnnotateEnvs(mods))
+	require.NoError(t, AnnotateEnvs(mods, nil, nil))
 
 	for _, ns := range mods["web:dom"].Module.Namespaces.Values() {
 		for _, decl := range ns.Decls {
@@ -131,7 +135,7 @@ func TestAnnotateEnvs_LeavesTheLanguageSurfaceAlone(t *testing.T) {
 	mods := envPackages(t, map[string]string{
 		"std:brand_new": "export declare class C {}",
 	})
-	require.NoError(t, AnnotateEnvs(mods))
+	require.NoError(t, AnnotateEnvs(mods, nil, nil))
 	for _, ns := range mods["std:brand_new"].Module.Namespaces.Values() {
 		for _, decl := range ns.Decls {
 			require.Empty(t, envDecoratorsOf(decl))
@@ -151,7 +155,7 @@ func TestAnnotateEnvs_LeavesAnAnnotationTheSourceCarries(t *testing.T) {
 	mods := envPackages(t, map[string]string{
 		"web:dom": "@env(\"window\", \"service_worker\")\nexport declare class C {}",
 	})
-	require.NoError(t, AnnotateEnvs(mods))
+	require.NoError(t, AnnotateEnvs(mods, nil, nil))
 
 	for _, ns := range mods["web:dom"].Module.Namespaces.Values() {
 		for _, decl := range ns.Decls {
@@ -177,14 +181,14 @@ func TestPackageDeclEnvs_AnOverrideBeatsThePackageDefaultForOnePackage(t *testin
 	everywhere := []Env{EnvWindow, EnvDedicatedWorker, EnvSharedWorker, EnvServiceWorker}
 
 	// The override answers for the package it names.
-	require.Equal(t, everywhere, sortedEnvs(declEnvsFrom(overrides, "web:dom", "Portable")))
+	require.Equal(t, everywhere, sortedEnvs(declEnvsFrom(overrides, "web:dom", "Portable", nil, nil)))
 	// Another narrowed package holding the same name takes its own default.
-	require.Equal(t, []Env{EnvWindow}, sortedEnvs(declEnvsFrom(overrides, "web:storage", "Portable")))
+	require.Equal(t, []Env{EnvWindow}, sortedEnvs(declEnvsFrom(overrides, "web:storage", "Portable", nil, nil)))
 	// A declaration the map does not name takes its package's default.
 	require.Equal(t, []Env{EnvWindow},
-		sortedEnvs(declEnvsFrom(overrides, "web:dom", "HTMLCanvasElement")))
+		sortedEnvs(declEnvsFrom(overrides, "web:dom", "HTMLCanvasElement", nil, nil)))
 	// A package the table does not narrow is every environment.
-	require.Equal(t, everywhere, sortedEnvs(declEnvsFrom(overrides, "web:url", "URL")))
+	require.Equal(t, everywhere, sortedEnvs(declEnvsFrom(overrides, "web:url", "URL", nil, nil)))
 }
 
 // A declaration binding several names needs one answer for all of them, since
@@ -202,12 +206,12 @@ func TestDeclaredEnvs_NeedsEveryNameToAgree(t *testing.T) {
 	}
 
 	// Both names take web:dom's default, so they agree.
-	envs, err := declaredEnvsFrom(overrides, "web:dom", []string{"a", "b"})
+	envs, err := declaredEnvsFrom(overrides, "web:dom", []string{"a", "b"}, nil, nil)
 	require.NoError(t, err)
 	require.Equal(t, []Env{EnvWindow}, sortedEnvs(envs))
 
 	// One name carrying an override and the other not is the disagreement.
-	_, err = declaredEnvsFrom(overrides, "web:dom", []string{"Portable", "HTMLCanvasElement"})
+	_, err = declaredEnvsFrom(overrides, "web:dom", []string{"Portable", "HTMLCanvasElement"}, nil, nil)
 	require.Error(t, err)
 	require.Equal(t,
 		"converter: web:dom: one declaration binds \"Portable\" and "+
@@ -223,4 +227,26 @@ func mustEnvsFromDecorator(t *testing.T, dec *ast.Decorator) set.Set[Env] {
 	envs, err := envsFromDecorator(dec)
 	require.NoError(t, err)
 	return envs
+}
+
+// The window and worker lib sets partition the web surface, and every file in
+// either routes and is classified.
+//
+// Three tables name the same basenames, and a file missing from one of them
+// fails quietly. A worker file left out of DOMResidualSources trips the §6.1
+// fail-safe on its first unlisted name, and one left out of libEnvs widens its
+// declarations to every environment.
+func TestTheWebLibSetsAgree(t *testing.T) {
+	t.Parallel()
+
+	require.Empty(t, WindowLibSources.Intersection(WorkerLibSources).ToSlice(),
+		"a file declaring both surfaces has no one environment reading")
+	for _, file := range WindowLibSources.Union(WorkerLibSources).ToSlice() {
+		require.True(t, DOMResidualSources.Contains(file),
+			"%s routes nothing by residual, so a name no package lists fails the run", file)
+		require.False(t, DroppedSources.Contains(file),
+			"%s is dropped, so nothing it declares reaches the tree", file)
+		require.Contains(t, libEnvs, file,
+			"%s narrows no declaration, so everything it declares reads as everywhere", file)
+	}
 }
