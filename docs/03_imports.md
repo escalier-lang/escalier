@@ -180,8 +180,8 @@ Web families with no DOM coupling get their own packages: `web:fetch`,
 `web:streams`, `web:crypto`, `web:workers`, `web:webgl`, `web:web_audio`,
 `web:web_rtc`, `web:web_codecs`, `web:indexeddb`, `web:service_worker`,
 `web:websocket`, `web:storage`, `web:url`, `web:file`,
-`web:performance`, `web:webauthn`, `web:payments`. A typical browser program
-imports `web:dom` plus one or two siblings.
+`web:performance`, `web:credentials`, `web:webauthn`, `web:payments`. A typical
+browser program imports `web:dom` plus one or two siblings.
 
 A sibling that needs a `web:dom` type refers to it through a qualified name, so
 `web:fetch`'s `Response.body` is a `streams.ReadableStream | null` and has to be

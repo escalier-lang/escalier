@@ -89,6 +89,7 @@ var webTiers = map[string]Tier{
 	"web:push":           TierBrowser,
 	"web:cache":          TierBrowser,
 	"web:storage":        TierBrowser,
+	"web:credentials":    TierBrowser,
 	"web:webauthn":       TierBrowser,
 	"web:payments":       TierBrowser,
 }

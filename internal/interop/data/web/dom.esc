@@ -10,6 +10,7 @@ import "std:set"
 import "std:typed_arrays"
 import "web:cache"
 import "web:core"
+import "web:credentials"
 import "web:crypto"
 import "web:fetch"
 import "web:file"
@@ -23,7 +24,6 @@ import "web:url"
 import "web:web_audio"
 import "web:web_codecs"
 import "web:web_rtc"
-import "web:webauthn"
 import "web:webgl"
 import "web:websocket"
 
@@ -168,17 +168,6 @@ export declare interface ConstrainULongRange extends ULongRange {
 
 export declare interface ContentVisibilityAutoStateChangeEventInit extends EventInit {
     skipped?: boolean
-}
-
-export declare interface CredentialCreationOptions {
-    publicKey?: webauthn.PublicKeyCredentialCreationOptions,
-    signal?: AbortSignal
-}
-
-export declare interface CredentialRequestOptions {
-    mediation?: CredentialMediationRequirement,
-    publicKey?: webauthn.PublicKeyCredentialRequestOptions,
-    signal?: AbortSignal
 }
 
 export declare interface CustomEventInit<T = any> extends EventInit {
@@ -760,8 +749,6 @@ export declare interface PageTransitionEventInit extends EventInit {
     persisted?: boolean
 }
 
-export declare interface PaymentRequestUpdateEventInit extends EventInit {}
-
 export declare interface PermissionDescriptor {
     name: PermissionName
 }
@@ -823,10 +810,6 @@ export declare interface PropertyIndexedKeyframes {
     composite?: CompositeOperationOrAuto | mut Array<CompositeOperationOrAuto>,
     easing?: string | mut Array<string>,
     offset?: number | mut Array<number | null>
-}
-
-export declare interface RTCDTMFToneChangeEventInit extends EventInit {
-    tone?: string
 }
 
 export declare interface ReportingObserverOptions {
@@ -3936,40 +3919,6 @@ export declare class ContentVisibilityAutoStateChangeEvent extends Event {
     constructor(mut self, type: string, eventInitDict?: ContentVisibilityAutoStateChangeEventInit)
 }
 
-/**
- * Available only in secure contexts.
- *
- * [MDN Reference](https://developer.mozilla.org/docs/Web/API/Credential)
- */
-@js("Credential")
-export declare class Credential {
-    /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/Credential/id) */
-    readonly id: string,
-    /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/Credential/type) */
-    readonly type: string,
-    static prototype: Credential,
-    constructor(mut self)
-}
-
-/**
- * Available only in secure contexts.
- *
- * [MDN Reference](https://developer.mozilla.org/docs/Web/API/CredentialsContainer)
- */
-@js("CredentialsContainer")
-export declare class CredentialsContainer {
-    /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/CredentialsContainer/create) */
-    create(mut self, options?: CredentialCreationOptions) -> Promise<Credential | null>,
-    /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/CredentialsContainer/get) */
-    get(self, options?: CredentialRequestOptions) -> Promise<Credential | null>,
-    /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/CredentialsContainer/preventSilentAccess) */
-    preventSilentAccess(mut self) -> Promise<undefined>,
-    /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/CredentialsContainer/store) */
-    store(mut self, credential: Credential) -> Promise<undefined>,
-    static prototype: CredentialsContainer,
-    constructor(mut self)
-}
-
 /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/CustomElementRegistry) */
 @js("CustomElementRegistry")
 export declare class CustomElementRegistry {
@@ -5143,13 +5092,13 @@ export declare class Document extends Node {
     createEvent(mut self, eventInterface: "PageSwapEvent") -> PageSwapEvent,
     createEvent(mut self, eventInterface: "PageTransitionEvent") -> PageTransitionEvent,
     createEvent(mut self, eventInterface: "PaymentMethodChangeEvent") -> payments.PaymentMethodChangeEvent,
-    createEvent(mut self, eventInterface: "PaymentRequestUpdateEvent") -> PaymentRequestUpdateEvent,
+    createEvent(mut self, eventInterface: "PaymentRequestUpdateEvent") -> payments.PaymentRequestUpdateEvent,
     createEvent(mut self, eventInterface: "PictureInPictureEvent") -> PictureInPictureEvent,
     createEvent(mut self, eventInterface: "PointerEvent") -> PointerEvent,
     createEvent(mut self, eventInterface: "PopStateEvent") -> PopStateEvent,
     createEvent(mut self, eventInterface: "ProgressEvent") -> ProgressEvent,
     createEvent(mut self, eventInterface: "PromiseRejectionEvent") -> PromiseRejectionEvent,
-    createEvent(mut self, eventInterface: "RTCDTMFToneChangeEvent") -> RTCDTMFToneChangeEvent,
+    createEvent(mut self, eventInterface: "RTCDTMFToneChangeEvent") -> web_rtc.RTCDTMFToneChangeEvent,
     createEvent(mut self, eventInterface: "RTCDataChannelEvent") -> web_rtc.RTCDataChannelEvent,
     createEvent(mut self, eventInterface: "RTCErrorEvent") -> web_rtc.RTCErrorEvent,
     createEvent(mut self, eventInterface: "RTCPeerConnectionIceErrorEvent") -> web_rtc.RTCPeerConnectionIceErrorEvent,
@@ -12510,7 +12459,7 @@ export declare class Navigator extends NavigatorAutomationInformation {
      *
      * [MDN Reference](https://developer.mozilla.org/docs/Web/API/Navigator/credentials)
      */
-    readonly credentials: CredentialsContainer,
+    readonly credentials: credentials.CredentialsContainer,
     readonly doNotTrack: string | null,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/Navigator/geolocation) */
     readonly geolocation: Geolocation,
@@ -13297,49 +13246,6 @@ export declare class Path2D extends CanvasPath {
     constructor(mut self, path?: Path2D | string)
 }
 
-/** [MDN Reference](https://developer.mozilla.org/docs/Web/API/ContactAddress) */
-@js("PaymentAddress")
-export declare class PaymentAddress {
-    /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/ContactAddress/addressLine) */
-    readonly addressLine: Array<string>,
-    /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/ContactAddress/city) */
-    readonly city: string,
-    /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/ContactAddress/country) */
-    readonly country: string,
-    /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/ContactAddress/dependentLocality) */
-    readonly dependentLocality: string,
-    /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/ContactAddress/organization) */
-    readonly organization: string,
-    /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/ContactAddress/phone) */
-    readonly phone: string,
-    /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/ContactAddress/postalCode) */
-    readonly postalCode: string,
-    /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/ContactAddress/recipient) */
-    readonly recipient: string,
-    /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/ContactAddress/region) */
-    readonly region: string,
-    /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/ContactAddress/sortingCode) */
-    readonly sortingCode: string,
-    /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/ContactAddress/toJSON) */
-    toJSON(self) -> any,
-    static prototype: PaymentAddress,
-    constructor(mut self)
-}
-
-/**
- * This Payment Request API interface enables a web page to update the details of a PaymentRequest in response to a user action.
- * Available only in secure contexts.
- *
- * [MDN Reference](https://developer.mozilla.org/docs/Web/API/PaymentRequestUpdateEvent)
- */
-@js("PaymentRequestUpdateEvent")
-export declare class PaymentRequestUpdateEvent extends Event {
-    /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/PaymentRequestUpdateEvent/updateWith) */
-    updateWith(mut self, detailsPromise: payments.PaymentDetailsUpdate | PromiseLike<payments.PaymentDetailsUpdate>) -> unknown,
-    static prototype: PaymentRequestUpdateEvent,
-    constructor(mut self, type: string, eventInitDict?: PaymentRequestUpdateEventInit)
-}
-
 /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/PerformanceEventTiming) */
 @js("PerformanceEventTiming")
 export declare class PerformanceEventTiming extends performance.PerformanceEntry {
@@ -13588,42 +13494,6 @@ export declare class PromiseRejectionEvent extends Event {
     readonly reason: any,
     static prototype: PromiseRejectionEvent,
     constructor(mut self, type: string, eventInitDict: PromiseRejectionEventInit)
-}
-
-export declare interface RTCDTMFSenderEventMap {
-    "tonechange": RTCDTMFToneChangeEvent
-}
-
-/** [MDN Reference](https://developer.mozilla.org/docs/Web/API/RTCDTMFSender) */
-@js("RTCDTMFSender")
-export declare class RTCDTMFSender extends EventTarget {
-    /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/RTCDTMFSender/canInsertDTMF) */
-    readonly canInsertDTMF: boolean,
-    /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/RTCDTMFSender/tonechange_event) */
-    ontonechange: (fn (this: RTCDTMFSender, ev: RTCDTMFToneChangeEvent) -> any) | null,
-    /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/RTCDTMFSender/toneBuffer) */
-    readonly toneBuffer: string,
-    /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/RTCDTMFSender/insertDTMF) */
-    insertDTMF(mut self, tones: string, duration?: number, interToneGap?: number) -> unknown,
-    addEventListener<K: keyof RTCDTMFSenderEventMap>(mut self, type: K, listener: fn (this: RTCDTMFSender, ev: RTCDTMFSenderEventMap[K]) -> any, options?: boolean | AddEventListenerOptions) -> unknown,
-    addEventListener(mut self, type: string, listener: EventListenerOrEventListenerObject, options?: boolean | AddEventListenerOptions) -> unknown,
-    removeEventListener<K: keyof RTCDTMFSenderEventMap>(mut self, type: K, listener: fn (this: RTCDTMFSender, ev: RTCDTMFSenderEventMap[K]) -> any, options?: boolean | EventListenerOptions) -> unknown,
-    removeEventListener(mut self, type: string, listener: EventListenerOrEventListenerObject, options?: boolean | EventListenerOptions) -> unknown,
-    static prototype: RTCDTMFSender,
-    constructor(mut self)
-}
-
-/**
- * Events sent to indicate that DTMF tones have started or finished playing. This interface is used by the tonechange event.
- *
- * [MDN Reference](https://developer.mozilla.org/docs/Web/API/RTCDTMFToneChangeEvent)
- */
-@js("RTCDTMFToneChangeEvent")
-export declare class RTCDTMFToneChangeEvent extends Event {
-    /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/RTCDTMFToneChangeEvent/tone) */
-    readonly tone: string,
-    static prototype: RTCDTMFToneChangeEvent,
-    constructor(mut self, type: string, eventInitDict?: RTCDTMFToneChangeEventInit)
 }
 
 /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/RadioNodeList) */
@@ -15961,38 +15831,6 @@ export declare class ScreenOrientation extends EventTarget {
     removeEventListener<K: keyof ScreenOrientationEventMap>(mut self, type: K, listener: fn (this: ScreenOrientation, ev: ScreenOrientationEventMap[K]) -> any, options?: boolean | EventListenerOptions) -> unknown,
     removeEventListener(mut self, type: string, listener: EventListenerOrEventListenerObject, options?: boolean | EventListenerOptions) -> unknown,
     static prototype: ScreenOrientation,
-    constructor(mut self)
-}
-
-export declare interface ScriptProcessorNodeEventMap {
-    "audioprocess": web_audio.AudioProcessingEvent
-}
-
-/**
- * Allows the generation, processing, or analyzing of audio using JavaScript.
- * @deprecated As of the August 29 2014 Web Audio API spec publication, this feature has been marked as deprecated, and was replaced by AudioWorklet (see AudioWorkletNode).
- *
- * [MDN Reference](https://developer.mozilla.org/docs/Web/API/ScriptProcessorNode)
- */
-@js("ScriptProcessorNode")
-export declare class ScriptProcessorNode extends web_audio.AudioNode {
-    /**
-     * @deprecated
-     *
-     * [MDN Reference](https://developer.mozilla.org/docs/Web/API/ScriptProcessorNode/bufferSize)
-     */
-    readonly bufferSize: number,
-    /**
-     * @deprecated
-     *
-     * [MDN Reference](https://developer.mozilla.org/docs/Web/API/ScriptProcessorNode/audioprocess_event)
-     */
-    onaudioprocess: (fn (this: ScriptProcessorNode, ev: web_audio.AudioProcessingEvent) -> any) | null,
-    addEventListener<K: keyof ScriptProcessorNodeEventMap>(mut self, type: K, listener: fn (this: ScriptProcessorNode, ev: ScriptProcessorNodeEventMap[K]) -> any, options?: boolean | AddEventListenerOptions) -> unknown,
-    addEventListener(mut self, type: string, listener: EventListenerOrEventListenerObject, options?: boolean | AddEventListenerOptions) -> unknown,
-    removeEventListener<K: keyof ScriptProcessorNodeEventMap>(mut self, type: K, listener: fn (this: ScriptProcessorNode, ev: ScriptProcessorNodeEventMap[K]) -> any, options?: boolean | EventListenerOptions) -> unknown,
-    removeEventListener(mut self, type: string, listener: EventListenerOrEventListenerObject, options?: boolean | EventListenerOptions) -> unknown,
-    static prototype: ScriptProcessorNode,
     constructor(mut self)
 }
 
@@ -20095,8 +19933,6 @@ export declare type ColorSpaceConversion = "default" | "none"
 export declare type CompositeOperation = "accumulate" | "add" | "replace"
 
 export declare type CompositeOperationOrAuto = "accumulate" | "add" | "auto" | "replace"
-
-export declare type CredentialMediationRequirement = "conditional" | "optional" | "required" | "silent"
 
 export declare type DOMParserSupportedType = "application/xhtml+xml" | "application/xml" | "image/svg+xml" | "text/html" | "text/xml"
 
