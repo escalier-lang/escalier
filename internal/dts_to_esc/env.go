@@ -203,8 +203,17 @@ func MemberEnvs(elem ast.ClassElem, owner set.Set[Env]) (set.Set[Env], error) {
 //
 // Several declarations may share one name. An overload set is one declaration
 // per signature, and TypeScript's class idiom pairs an interface with a
-// `declare var` of the same name. The entry is the intersection over them,
-// since a reference reaches the name only where every half of it exists.
+// `declare var` of the same name. The entry is the intersection over them.
+//
+// That is right for the interface and `declare var` pair, where a reference
+// reaches the name only where both halves exist, and too narrow for an overload
+// set, where one arm is enough to call it. Telling them apart means indexing by
+// sort rather than by name, since the pair is one type and one value while the
+// overloads are all values. Intersection is the conservative half of that
+// choice: it reports a reference the finer answer would allow, which is loud
+// and answered with an override, where the union would pass one it should
+// catch. Nothing reaches it today, since every declaration in a package takes
+// that package's set and the override map is empty.
 func EnvIndex(mods map[string]*StandaloneModule) (map[string]set.Set[Env], error) {
 	index := map[string]set.Set[Env]{}
 	for _, uri := range sortedURIs(mods) {
