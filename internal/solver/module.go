@@ -123,8 +123,17 @@ func (c *checker) inferDepGraph(scope *Scope, lvl int, module *ast.Module, g *de
 	// Bind an empty Namespace per `namespace` block before the walk, so a member of
 	// this module that writes `Foo.member` finds the binding while the walk is still
 	// running. populateNamespaces fills them through the same pointers afterwards.
-	c.nsShells = c.preBindNamespaceDecls(scope, module, handled)
-	defer func() { c.nsShells = nil }()
+	target := c.declTarget(scope)
+	c.nsIndex = c.preBindNamespaceDecls(scope, module, handled)
+	// Every binding the walk makes from here routes to the namespace pre-bound for
+	// its prefix. Restored on the way out, since the same scope serves a nested
+	// load of another package.
+	prevOnDefine := target.onDefine
+	target.onDefine = func(key string) { c.routeToNamespace(target, key) }
+	defer func() {
+		target.onDefine = prevOnDefine
+		c.nsIndex = nil
+	}()
 	// M4 E3: dep_graph fans one top-level destructuring `val {x, y} = …` across one
 	// SCC component per leaf key. Its initializer is typed and its pattern bound
 	// once, memoized here on the first leaf reached. Each leaf component then
@@ -132,10 +141,6 @@ func (c *checker) inferDepGraph(scope *Scope, lvl int, module *ast.Module, g *de
 	destructured := map[*ast.VarDecl]*moduleDestructure{}
 	for _, component := range g.Components {
 		c.inferComponent(scope, lvl, module, g, component, handled, destructured)
-		// Components run in dependency order, so refreshing after each one means a
-		// later component reading `Foo.member` finds the member its own component
-		// already bound.
-		c.refreshNamespaces(scope)
 	}
 	// Every class is inferred, so each superclass edge and body is final. Check the members
 	// each subclass redeclares against the ones they override.
@@ -300,7 +305,6 @@ func (c *checker) inferComponent(
 	// members can answer for them. Two functions in one namespace calling each other
 	// land in one component, and each body reads the other through `Foo.member`
 	// while both are still being inferred.
-	c.refreshNamespaces(scope)
 
 	// Pre-bind every nominal identity in this component — each class handle and each enum
 	// union type — before any enum body resolves a variant parameter, so a group of

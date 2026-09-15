@@ -520,12 +520,17 @@ func (c *checker) qualifyDecl(ns, name string) string {
 // hold a dot, so `npm:a.b`'s `D` and `npm:a`'s `b.D` would read the same. The
 // `import:` marker answers the first, since no namespace segment holds a colon,
 // and escaping the dots answers the second, since the escaped prefix holds none.
+// packageKeyHead opens the key a declaration inside a package registers under.
+// The URI's own dots are escaped after it, so the first dot following this head
+// ends the head.
+const packageKeyHead = "import:"
+
 func packageKeyPrefix(uri string) string {
 	if uri == "" {
 		return ""
 	}
 	escaped := strings.ReplaceAll(uri, "%", "%25")
-	return "import:" + strings.ReplaceAll(escaped, ".", "%2E")
+	return packageKeyHead + strings.ReplaceAll(escaped, ".", "%2E")
 }
 
 // nestedLifetimeScope returns the named-lifetime scope a signature nested in a class body
