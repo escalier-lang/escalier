@@ -669,7 +669,7 @@ func TestReportPartition_NamesDropsWithoutRoutedCounts(t *testing.T) {
 	res := &PartitionResult{
 		Buckets: map[string][]dts_parser.Statement{
 			"std:prelude": make([]dts_parser.Statement, 3),
-			"web:dom":   make([]dts_parser.Statement, 5),
+			"web:dom":     make([]dts_parser.Statement, 5),
 		},
 		Drops: []DropNote{
 			{Name: "globalThis", SourceFile: "lib.es5.d.ts"},
@@ -980,7 +980,7 @@ export declare class Map<K, V> {
 func TestDedupeBy_KeepsTheFirstOfEachKey(t *testing.T) {
 	t.Parallel()
 	got, err := dedupeBy([]string{"a1", "b", "a2", "c", "b"},
-		func(s string) (string, error) { return s[:1], nil })
+		func(s string) (string, error) { return s[:1], nil }, nil)
 	require.NoError(t, err)
 	require.Equal(t, []string{"a1", "b", "c"}, got)
 }
