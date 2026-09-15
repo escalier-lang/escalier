@@ -5,10 +5,10 @@ package ast
 // planning/builtins/implementation_plan.md §3.
 const JSDecoratorName = "js"
 
-// DeclDecorators returns the decorator list attached to decl, or nil if
-// decl is a kind that cannot carry decorators (the parser rejects
-// decorators on those kinds at parse time; the nil return lets callers
-// treat "no decorators" and "cannot carry" uniformly).
+// DeclDecorators returns the decorator list attached to decl, or nil if decl is
+// a kind that cannot carry decorators. A namespace is the one such kind; the
+// parser rejects decorators on it, and the nil return lets callers treat "no
+// decorators" and "cannot carry" uniformly.
 func DeclDecorators(decl Decl) []*Decorator {
 	switch d := decl.(type) {
 	case *VarDecl:
@@ -16,6 +16,12 @@ func DeclDecorators(decl Decl) []*Decorator {
 	case *FuncDecl:
 		return d.Decorators
 	case *ClassDecl:
+		return d.Decorators
+	case *TypeDecl:
+		return d.Decorators
+	case *InterfaceDecl:
+		return d.Decorators
+	case *EnumDecl:
 		return d.Decorators
 	default:
 		return nil

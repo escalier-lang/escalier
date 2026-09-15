@@ -1,6 +1,7 @@
 package parser
 
 import (
+	"fmt"
 	"reflect"
 
 	"github.com/escalier-lang/escalier/internal/ast"
@@ -349,28 +350,28 @@ func (p *Parser) declInner() ast.Decl {
 		decl.SetOverride(true)
 	}
 	if decl != nil && len(decorators) > 0 {
-		switch decl.(type) {
-		case *ast.EnumDecl:
-			p.reportError(decorators[0].Span_,
-				"decorators are not allowed on enum declarations")
-		case *ast.NamespaceDecl:
+		// A namespace introduces no declaration of its own, so nothing on it
+		// could describe one.
+		if _, isNamespace := decl.(*ast.NamespaceDecl); isNamespace {
 			p.reportError(decorators[0].Span_,
 				"decorators are not allowed on namespace declarations")
-		case *ast.TypeDecl:
-			// Type aliases are erased at codegen — `@js` has nothing
-			// to lower. Reject the decorator at parse time so the
-			// user sees the mistake immediately rather than at the
-			// loader. See planning/builtins/implementation_plan.md §3.3.
-			p.reportError(decorators[0].Span_,
-				"decorators are not allowed on type declarations (type aliases have no runtime form)")
-		case *ast.InterfaceDecl:
-			// Interfaces are erased at codegen — same reasoning as
-			// TypeDecl above.
-			p.reportError(decorators[0].Span_,
-				"decorators are not allowed on interface declarations (interfaces have no runtime form)")
-		default:
-			attachDecorators(decl, decorators)
+			return decl
 		}
+		// A type-level declaration is erased at codegen, so `@js` has nothing to
+		// lower on one. Every other decorator says something about the
+		// declaration rather than its lowering, so it attaches. Reporting here
+		// rather than at the loader is what puts the mistake where it was
+		// written. See planning/builtins/implementation_plan.md §3.3.
+		if kind, erased := erasedDeclKind(decl); erased {
+			for _, dec := range decorators {
+				if dec.Name != nil && dec.Name.Name == ast.JSDecoratorName {
+					p.reportError(dec.Span_, fmt.Sprintf(
+						"`@js` is not allowed on %s (%s have no runtime form)",
+						kind.decl, kind.plural))
+				}
+			}
+		}
+		attachDecorators(decl, decorators)
 	}
 	return decl
 }
@@ -411,11 +412,24 @@ func (p *Parser) parseDecorators() []*ast.Decorator {
 	return decorators
 }
 
+// erasedDeclKind names a declaration kind that codegen erases, for the `@js`
+// diagnostic. The second return is false for a kind that survives to runtime.
+func erasedDeclKind(decl ast.Decl) (struct{ decl, plural string }, bool) {
+	switch decl.(type) {
+	case *ast.TypeDecl:
+		return struct{ decl, plural string }{"type declarations", "type aliases"}, true
+	case *ast.InterfaceDecl:
+		return struct{ decl, plural string }{"interface declarations", "interfaces"}, true
+	case *ast.EnumDecl:
+		return struct{ decl, plural string }{"enum declarations", "enums"}, true
+	}
+	return struct{ decl, plural string }{}, false
+}
+
 // attachDecorators stamps the decorator list onto a parsed declaration.
-// Decl() rejects decorators on enum, namespace, type, and interface
-// declarations before reaching here; declare module / global never
-// reach this path because Decl() returns early for those. Any other
-// unsupported decl kind is a defensive no-op.
+// Decl() rejects decorators on a namespace before reaching here; declare
+// module / global never reach this path because Decl() returns early for
+// those. Any other unsupported decl kind is a defensive no-op.
 func attachDecorators(decl ast.Decl, decorators []*ast.Decorator) {
 	switch d := decl.(type) {
 	case *ast.VarDecl:
@@ -423,6 +437,12 @@ func attachDecorators(decl ast.Decl, decorators []*ast.Decorator) {
 	case *ast.FuncDecl:
 		d.Decorators = decorators
 	case *ast.ClassDecl:
+		d.Decorators = decorators
+	case *ast.TypeDecl:
+		d.Decorators = decorators
+	case *ast.InterfaceDecl:
+		d.Decorators = decorators
+	case *ast.EnumDecl:
 		d.Decorators = decorators
 	}
 }

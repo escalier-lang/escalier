@@ -186,13 +186,14 @@ func TestPrintConstructor_NoDuplicateReceiver(t *testing.T) {
 	require.Contains(t, out, "constructor(mut self, x: number)")
 }
 
-// TestPrintDeclAudit_DecoratorRejection pins the parser's rejection
-// of decorators on decl kinds that have no runtime form. `@js` lowers
-// a *value*-binding reference; type aliases and interfaces don't
-// introduce value bindings, so attaching `@js` to them is
-// semantically meaningless and the parser surfaces it at the
-// decorator span. Enum and namespace decls are also rejected (they
-// existed before §3.3 landed); included here for completeness.
+// TestPrintDeclAudit_DecoratorRejection pins the parser's rejection of `@js` on
+// the decl kinds that have no runtime form. `@js` lowers a value-binding
+// reference, and a type alias, an interface and an enum introduce no value
+// binding, so the parser surfaces it at the decorator span.
+//
+// The rejection is by decorator name rather than by declaration kind. Any other
+// decorator on one of these attaches, which is what lets `@env` say where an
+// interface exists.
 func TestPrintDeclAudit_DecoratorRejection(t *testing.T) {
 	tests := []struct {
 		name string
@@ -200,22 +201,22 @@ func TestPrintDeclAudit_DecoratorRejection(t *testing.T) {
 		want string
 	}{
 		{
-			"decorator on type alias",
+			"@js on a type alias",
 			`@js("X")
 declare type T = number`,
-			"decorators are not allowed on type declarations (type aliases have no runtime form)",
+			"`@js` is not allowed on type declarations (type aliases have no runtime form)",
 		},
 		{
-			"decorator on interface",
+			"@js on an interface",
 			`@js("X")
 declare interface I {x: number}`,
-			"decorators are not allowed on interface declarations (interfaces have no runtime form)",
+			"`@js` is not allowed on interface declarations (interfaces have no runtime form)",
 		},
 		{
-			"decorator on enum",
+			"@js on an enum",
 			`@js("X")
 enum E { A, B }`,
-			"decorators are not allowed on enum declarations",
+			"`@js` is not allowed on enum declarations (enums have no runtime form)",
 		},
 	}
 	for _, tt := range tests {
