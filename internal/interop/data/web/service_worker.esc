@@ -4,28 +4,25 @@
 
 import "web:core"
 import "web:dom"
+import "web:fetch"
 import "web:push"
 import "web:url"
 import "web:workers"
 
-@env("window")
 export declare interface ClientQueryOptions {
     includeUncontrolled?: boolean,
     type?: ClientTypes
 }
 
-@env("window")
 export declare interface GetNotificationOptions {
     tag?: string
 }
 
-@env("window")
 export declare interface NavigationPreloadState {
     enabled?: boolean,
     headerValue?: string
 }
 
-@env("window")
 export declare interface RegistrationOptions {
     scope?: string,
     type?: workers.WorkerType,
@@ -37,7 +34,6 @@ export declare interface RegistrationOptions {
  *
  * [MDN Reference](https://developer.mozilla.org/docs/Web/API/NavigationPreloadManager)
  */
-@env("window")
 @js("NavigationPreloadManager")
 export declare class NavigationPreloadManager {
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/NavigationPreloadManager/disable) */
@@ -52,7 +48,6 @@ export declare class NavigationPreloadManager {
     constructor(mut self)
 }
 
-@env("window")
 export declare interface ServiceWorkerEventMap extends dom.AbstractWorkerEventMap {
     "statechange": Event
 }
@@ -63,7 +58,6 @@ export declare interface ServiceWorkerEventMap extends dom.AbstractWorkerEventMa
  *
  * [MDN Reference](https://developer.mozilla.org/docs/Web/API/ServiceWorker)
  */
-@env("window")
 @js("ServiceWorker")
 export declare class ServiceWorker extends EventTarget {
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/ServiceWorker/statechange_event) */
@@ -83,7 +77,6 @@ export declare class ServiceWorker extends EventTarget {
     constructor(mut self)
 }
 
-@env("window")
 export declare interface ServiceWorkerContainerEventMap {
     "controllerchange": Event,
     "message": MessageEvent,
@@ -96,7 +89,6 @@ export declare interface ServiceWorkerContainerEventMap {
  *
  * [MDN Reference](https://developer.mozilla.org/docs/Web/API/ServiceWorkerContainer)
  */
-@env("window")
 @js("ServiceWorkerContainer")
 export declare class ServiceWorkerContainer extends EventTarget {
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/ServiceWorkerContainer/controller) */
@@ -125,7 +117,6 @@ export declare class ServiceWorkerContainer extends EventTarget {
     constructor(mut self)
 }
 
-@env("window")
 export declare interface ServiceWorkerRegistrationEventMap {
     "updatefound": Event
 }
@@ -136,7 +127,6 @@ export declare interface ServiceWorkerRegistrationEventMap {
  *
  * [MDN Reference](https://developer.mozilla.org/docs/Web/API/ServiceWorkerRegistration)
  */
-@env("window")
 @js("ServiceWorkerRegistration")
 export declare class ServiceWorkerRegistration extends EventTarget {
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/ServiceWorkerRegistration/active) */
@@ -171,11 +161,234 @@ export declare class ServiceWorkerRegistration extends EventTarget {
     constructor(mut self)
 }
 
-@env("window")
 export declare type ClientTypes = "all" | "sharedworker" | "window" | "worker"
 
-@env("window")
 export declare type ServiceWorkerState = "activated" | "activating" | "installed" | "installing" | "parsed" | "redundant"
 
-@env("window")
 export declare type ServiceWorkerUpdateViaCache = "all" | "imports" | "none"
+
+@env("dedicated_worker", "shared_worker", "service_worker")
+export declare interface ExtendableEventInit extends EventInit {}
+
+@env("dedicated_worker", "shared_worker", "service_worker")
+export declare interface ExtendableMessageEventInit extends ExtendableEventInit {
+    data?: any,
+    lastEventId?: string,
+    origin?: string,
+    ports?: mut Array<dom.MessagePort>,
+    source?: Client | ServiceWorker | dom.MessagePort | null
+}
+
+@env("dedicated_worker", "shared_worker", "service_worker")
+export declare interface FetchEventInit extends ExtendableEventInit {
+    clientId?: string,
+    handled?: Promise<undefined>,
+    preloadResponse?: Promise<any>,
+    replacesClientId?: string,
+    request: fetch.Request,
+    resultingClientId?: string
+}
+
+@env("dedicated_worker", "shared_worker", "service_worker")
+export declare interface NotificationEventInit extends ExtendableEventInit {
+    action?: string,
+    notification: dom.Notification
+}
+
+/**
+ * The Client interface represents an executable context such as a Worker, or a SharedWorker. Window clients are represented by the more-specific WindowClient. You can get Client/WindowClient objects from methods such as Clients.matchAll() and Clients.get().
+ *
+ * [MDN Reference](https://developer.mozilla.org/docs/Web/API/Client)
+ */
+@env("dedicated_worker", "shared_worker", "service_worker")
+@js("Client")
+export declare class Client {
+    /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/Client/frameType) */
+    readonly frameType: FrameType,
+    /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/Client/id) */
+    readonly id: string,
+    /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/Client/type) */
+    readonly type: ClientTypes,
+    /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/Client/url) */
+    readonly url: string,
+    /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/Client/postMessage) */
+    postMessage(mut self, message: unknown, transfer: mut Array<dom.Transferable>) -> unknown,
+    postMessage(mut self, message: unknown, options?: dom.StructuredSerializeOptions) -> unknown,
+    static prototype: Client,
+    constructor(mut self)
+}
+
+/**
+ * Provides access to Client objects. Access it via self.clients within a service worker.
+ *
+ * [MDN Reference](https://developer.mozilla.org/docs/Web/API/Clients)
+ */
+@env("dedicated_worker", "shared_worker", "service_worker")
+@js("Clients")
+export declare class Clients {
+    /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/Clients/claim) */
+    claim(mut self) -> Promise<undefined>,
+    /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/Clients/get) */
+    get(self, id: string) -> Promise<Client | undefined>,
+    /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/Clients/matchAll) */
+    matchAll<T: ClientQueryOptions>(mut self, options?: T) -> Promise<Array<if T["type"] : "window" { WindowClient } else { Client }>>,
+    /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/Clients/openWindow) */
+    openWindow(mut self, url: string | url.URL) -> Promise<WindowClient | null>,
+    static prototype: Clients,
+    constructor(mut self)
+}
+
+/**
+ * Extends the lifetime of the install and activate events dispatched on the global scope as part of the service worker lifecycle. This ensures that any functional events (like FetchEvent) are not dispatched until it upgrades database schemas and deletes the outdated cache entries.
+ *
+ * [MDN Reference](https://developer.mozilla.org/docs/Web/API/ExtendableEvent)
+ */
+@env("dedicated_worker", "shared_worker", "service_worker")
+@js("ExtendableEvent")
+export declare class ExtendableEvent extends Event {
+    /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/ExtendableEvent/waitUntil) */
+    waitUntil(mut self, f: Promise<any>) -> unknown,
+    static prototype: ExtendableEvent,
+    constructor(mut self, type: string, eventInitDict?: ExtendableEventInit)
+}
+
+/**
+ * This ServiceWorker API interface represents the event object of a message event fired on a service worker (when a channel message is received on the ServiceWorkerGlobalScope from another context) — extends the lifetime of such events.
+ *
+ * [MDN Reference](https://developer.mozilla.org/docs/Web/API/ExtendableMessageEvent)
+ */
+@env("dedicated_worker", "shared_worker", "service_worker")
+@js("ExtendableMessageEvent")
+export declare class ExtendableMessageEvent extends ExtendableEvent {
+    /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/ExtendableMessageEvent/data) */
+    readonly data: any,
+    /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/ExtendableMessageEvent/lastEventId) */
+    readonly lastEventId: string,
+    /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/ExtendableMessageEvent/origin) */
+    readonly origin: string,
+    /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/ExtendableMessageEvent/ports) */
+    readonly ports: Array<dom.MessagePort>,
+    /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/ExtendableMessageEvent/source) */
+    readonly source: Client | ServiceWorker | dom.MessagePort | null,
+    static prototype: ExtendableMessageEvent,
+    constructor(mut self, type: string, eventInitDict?: ExtendableMessageEventInit)
+}
+
+/**
+ * This is the event type for fetch events dispatched on the service worker global scope. It contains information about the fetch, including the request and how the receiver will treat the response. It provides the event.respondWith() method, which allows us to provide a response to this fetch.
+ *
+ * [MDN Reference](https://developer.mozilla.org/docs/Web/API/FetchEvent)
+ */
+@env("dedicated_worker", "shared_worker", "service_worker")
+@js("FetchEvent")
+export declare class FetchEvent extends ExtendableEvent {
+    /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/FetchEvent/clientId) */
+    readonly clientId: string,
+    /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/FetchEvent/handled) */
+    readonly handled: Promise<undefined>,
+    /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/FetchEvent/preloadResponse) */
+    readonly preloadResponse: Promise<any>,
+    /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/FetchEvent/request) */
+    readonly request: fetch.Request,
+    /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/FetchEvent/resultingClientId) */
+    readonly resultingClientId: string,
+    /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/FetchEvent/respondWith) */
+    respondWith(mut self, r: fetch.Response | PromiseLike<fetch.Response>) -> unknown,
+    static prototype: FetchEvent,
+    constructor(mut self, type: string, eventInitDict: FetchEventInit)
+}
+
+/**
+ * The parameter passed into the onnotificationclick handler, the NotificationEvent interface represents a notification click event that is dispatched on the ServiceWorkerGlobalScope of a ServiceWorker.
+ *
+ * [MDN Reference](https://developer.mozilla.org/docs/Web/API/NotificationEvent)
+ */
+@env("dedicated_worker", "shared_worker", "service_worker")
+@js("NotificationEvent")
+export declare class NotificationEvent extends ExtendableEvent {
+    /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/NotificationEvent/action) */
+    readonly action: string,
+    /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/NotificationEvent/notification) */
+    readonly notification: dom.Notification,
+    static prototype: NotificationEvent,
+    constructor(mut self, type: string, eventInitDict: NotificationEventInit)
+}
+
+@env("dedicated_worker", "shared_worker", "service_worker")
+export declare interface ServiceWorkerGlobalScopeEventMap extends workers.WorkerGlobalScopeEventMap {
+    "activate": ExtendableEvent,
+    "fetch": FetchEvent,
+    "install": ExtendableEvent,
+    "message": ExtendableMessageEvent,
+    "messageerror": MessageEvent,
+    "notificationclick": NotificationEvent,
+    "notificationclose": NotificationEvent,
+    "push": push.PushEvent,
+    "pushsubscriptionchange": Event
+}
+
+/**
+ * This ServiceWorker API interface represents the global execution context of a service worker.
+ * Available only in secure contexts.
+ *
+ * [MDN Reference](https://developer.mozilla.org/docs/Web/API/ServiceWorkerGlobalScope)
+ */
+@env("dedicated_worker", "shared_worker", "service_worker")
+@js("ServiceWorkerGlobalScope")
+export declare class ServiceWorkerGlobalScope extends workers.WorkerGlobalScope {
+    /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/ServiceWorkerGlobalScope/clients) */
+    readonly clients: Clients,
+    /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/ServiceWorkerGlobalScope/activate_event) */
+    onactivate: (fn (this: ServiceWorkerGlobalScope, ev: ExtendableEvent) -> any) | null,
+    /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/ServiceWorkerGlobalScope/fetch_event) */
+    onfetch: (fn (this: ServiceWorkerGlobalScope, ev: FetchEvent) -> any) | null,
+    /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/ServiceWorkerGlobalScope/install_event) */
+    oninstall: (fn (this: ServiceWorkerGlobalScope, ev: ExtendableEvent) -> any) | null,
+    /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/ServiceWorkerGlobalScope/message_event) */
+    onmessage: (fn (this: ServiceWorkerGlobalScope, ev: ExtendableMessageEvent) -> any) | null,
+    /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/ServiceWorkerGlobalScope/messageerror_event) */
+    onmessageerror: (fn (this: ServiceWorkerGlobalScope, ev: MessageEvent) -> any) | null,
+    /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/ServiceWorkerGlobalScope/notificationclick_event) */
+    onnotificationclick: (fn (this: ServiceWorkerGlobalScope, ev: NotificationEvent) -> any) | null,
+    /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/ServiceWorkerGlobalScope/notificationclose_event) */
+    onnotificationclose: (fn (this: ServiceWorkerGlobalScope, ev: NotificationEvent) -> any) | null,
+    /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/ServiceWorkerGlobalScope/push_event) */
+    onpush: (fn (this: ServiceWorkerGlobalScope, ev: push.PushEvent) -> any) | null,
+    /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/ServiceWorkerGlobalScope/pushsubscriptionchange_event) */
+    onpushsubscriptionchange: (fn (this: ServiceWorkerGlobalScope, ev: Event) -> any) | null,
+    /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/ServiceWorkerGlobalScope/registration) */
+    readonly registration: ServiceWorkerRegistration,
+    /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/ServiceWorkerGlobalScope/serviceWorker) */
+    readonly serviceWorker: ServiceWorker,
+    /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/ServiceWorkerGlobalScope/skipWaiting) */
+    skipWaiting(mut self) -> Promise<undefined>,
+    addEventListener<K: keyof ServiceWorkerGlobalScopeEventMap>(mut self, type: K, listener: fn (this: ServiceWorkerGlobalScope, ev: ServiceWorkerGlobalScopeEventMap[K]) -> any, options?: boolean | AddEventListenerOptions) -> unknown,
+    addEventListener(mut self, type: string, listener: EventListenerOrEventListenerObject, options?: boolean | AddEventListenerOptions) -> unknown,
+    removeEventListener<K: keyof ServiceWorkerGlobalScopeEventMap>(mut self, type: K, listener: fn (this: ServiceWorkerGlobalScope, ev: ServiceWorkerGlobalScopeEventMap[K]) -> any, options?: boolean | EventListenerOptions) -> unknown,
+    removeEventListener(mut self, type: string, listener: EventListenerOrEventListenerObject, options?: boolean | EventListenerOptions) -> unknown,
+    static prototype: ServiceWorkerGlobalScope,
+    constructor(mut self)
+}
+
+/**
+ * This ServiceWorker API interface represents the scope of a service worker client that is a document in a browser context, controlled by an active worker. The service worker client independently selects and uses a service worker for its own loading and sub-resources.
+ *
+ * [MDN Reference](https://developer.mozilla.org/docs/Web/API/WindowClient)
+ */
+@env("dedicated_worker", "shared_worker", "service_worker")
+@js("WindowClient")
+export declare class WindowClient extends Client {
+    /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/WindowClient/focused) */
+    readonly focused: boolean,
+    /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/WindowClient/visibilityState) */
+    readonly visibilityState: dom.DocumentVisibilityState,
+    /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/WindowClient/focus) */
+    focus(mut self) -> Promise<WindowClient>,
+    /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/WindowClient/navigate) */
+    navigate(mut self, url: string | url.URL) -> Promise<WindowClient | null>,
+    static prototype: WindowClient,
+    constructor(mut self)
+}
+
+@env("dedicated_worker", "shared_worker", "service_worker")
+export declare type FrameType = "auxiliary" | "nested" | "none" | "top-level"

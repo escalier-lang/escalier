@@ -101,3 +101,56 @@ export declare type EndingType = "native" | "transparent"
 export declare interface FormDataIterator<T> extends IteratorObject<T, BuiltinIteratorReturn, unknown> {
     [Symbol.iterator]() -> FormDataIterator<T>
 }
+
+@env("dedicated_worker", "shared_worker", "service_worker")
+export declare interface FileSystemReadWriteOptions {
+    at?: number
+}
+
+/**
+ * Allows to read File or Blob objects in a synchronous way.
+ *
+ * [MDN Reference](https://developer.mozilla.org/docs/Web/API/FileReaderSync)
+ */
+@env("dedicated_worker", "shared_worker", "service_worker")
+@js("FileReaderSync")
+export declare class FileReaderSync {
+    /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/FileReaderSync/readAsArrayBuffer) */
+    readAsArrayBuffer(mut self, blob: Blob) -> typed_arrays.ArrayBuffer,
+    /**
+     * @deprecated
+     *
+     * [MDN Reference](https://developer.mozilla.org/docs/Web/API/FileReaderSync/readAsBinaryString)
+     */
+    readAsBinaryString(mut self, blob: Blob) -> string,
+    /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/FileReaderSync/readAsDataURL) */
+    readAsDataURL(mut self, blob: Blob) -> string,
+    /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/FileReaderSync/readAsText) */
+    readAsText(mut self, blob: Blob, encoding?: string) -> string,
+    static prototype: FileReaderSync,
+    constructor(mut self)
+}
+
+/**
+ * Available only in secure contexts.
+ *
+ * [MDN Reference](https://developer.mozilla.org/docs/Web/API/FileSystemSyncAccessHandle)
+ */
+@env("dedicated_worker", "shared_worker", "service_worker")
+@js("FileSystemSyncAccessHandle")
+export declare class FileSystemSyncAccessHandle {
+    /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/FileSystemSyncAccessHandle/close) */
+    close(mut self) -> unknown,
+    /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/FileSystemSyncAccessHandle/flush) */
+    flush(mut self) -> unknown,
+    /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/FileSystemSyncAccessHandle/getSize) */
+    getSize(self) -> number,
+    /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/FileSystemSyncAccessHandle/read) */
+    read(mut self, buffer: AllowSharedBufferSource, options?: FileSystemReadWriteOptions) -> number,
+    /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/FileSystemSyncAccessHandle/truncate) */
+    truncate(mut self, newSize: number) -> unknown,
+    /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/FileSystemSyncAccessHandle/write) */
+    write(mut self, buffer: AllowSharedBufferSource, options?: FileSystemReadWriteOptions) -> number,
+    static prototype: FileSystemSyncAccessHandle,
+    constructor(mut self)
+}

@@ -41,6 +41,7 @@ export declare interface CryptoKeyPair {
     publicKey: CryptoKey
 }
 
+@env("window")
 export declare interface EcKeyAlgorithm extends KeyAlgorithm {
     namedCurve: NamedCurve
 }
@@ -72,6 +73,7 @@ export declare interface HmacImportParams extends Algorithm {
     length?: number
 }
 
+@env("window")
 export declare interface HmacKeyAlgorithm extends KeyAlgorithm {
     hash: KeyAlgorithm,
     length: number
@@ -117,6 +119,7 @@ export declare interface RsaHashedImportParams extends Algorithm {
     hash: HashAlgorithmIdentifier
 }
 
+@env("window")
 export declare interface RsaHashedKeyAlgorithm extends RsaKeyAlgorithm {
     hash: KeyAlgorithm
 }
@@ -125,6 +128,7 @@ export declare interface RsaHashedKeyGenParams extends RsaKeyGenParams {
     hash: HashAlgorithmIdentifier
 }
 
+@env("window")
 export declare interface RsaKeyAlgorithm extends KeyAlgorithm {
     modulusLength: number,
     publicExponent: BigInteger

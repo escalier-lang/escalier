@@ -6,30 +6,25 @@ import "std:date"
 import "web:core"
 import "web:dom"
 
-@env("window")
 export declare interface IDBDatabaseInfo {
     name?: string,
     version?: number
 }
 
-@env("window")
 export declare interface IDBIndexParameters {
     multiEntry?: boolean,
     unique?: boolean
 }
 
-@env("window")
 export declare interface IDBObjectStoreParameters {
     autoIncrement?: boolean,
     keyPath?: string | mut Array<string> | null
 }
 
-@env("window")
 export declare interface IDBTransactionOptions {
     durability?: IDBTransactionDurability
 }
 
-@env("window")
 export declare interface IDBVersionChangeEventInit extends EventInit {
     newVersion?: number | null,
     oldVersion?: number
@@ -40,7 +35,6 @@ export declare interface IDBVersionChangeEventInit extends EventInit {
  *
  * [MDN Reference](https://developer.mozilla.org/docs/Web/API/IDBCursor)
  */
-@env("window")
 @js("IDBCursor")
 export declare class IDBCursor {
     /**
@@ -114,7 +108,6 @@ export declare class IDBCursor {
  *
  * [MDN Reference](https://developer.mozilla.org/docs/Web/API/IDBCursorWithValue)
  */
-@env("window")
 @js("IDBCursorWithValue")
 export declare class IDBCursorWithValue extends IDBCursor {
     /**
@@ -127,7 +120,6 @@ export declare class IDBCursorWithValue extends IDBCursor {
     constructor(mut self)
 }
 
-@env("window")
 export declare interface IDBDatabaseEventMap {
     "abort": Event,
     "close": Event,
@@ -140,7 +132,6 @@ export declare interface IDBDatabaseEventMap {
  *
  * [MDN Reference](https://developer.mozilla.org/docs/Web/API/IDBDatabase)
  */
-@env("window")
 @js("IDBDatabase")
 export declare class IDBDatabase extends EventTarget {
     /**
@@ -214,7 +205,6 @@ export declare class IDBDatabase extends EventTarget {
  *
  * [MDN Reference](https://developer.mozilla.org/docs/Web/API/IDBFactory)
  */
-@env("window")
 @js("IDBFactory")
 export declare class IDBFactory {
     /**
@@ -248,7 +238,6 @@ export declare class IDBFactory {
  *
  * [MDN Reference](https://developer.mozilla.org/docs/Web/API/IDBIndex)
  */
-@env("window")
 @js("IDBIndex")
 export declare class IDBIndex {
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/IDBIndex/keyPath) */
@@ -334,7 +323,6 @@ export declare class IDBIndex {
  *
  * [MDN Reference](https://developer.mozilla.org/docs/Web/API/IDBKeyRange)
  */
-@env("window")
 @js("IDBKeyRange")
 export declare class IDBKeyRange {
     /**
@@ -400,7 +388,6 @@ export declare class IDBKeyRange {
  *
  * [MDN Reference](https://developer.mozilla.org/docs/Web/API/IDBObjectStore)
  */
-@env("window")
 @js("IDBObjectStore")
 export declare class IDBObjectStore {
     /**
@@ -559,7 +546,6 @@ export declare class IDBObjectStore {
     constructor(mut self)
 }
 
-@env("window")
 export declare interface IDBOpenDBRequestEventMap extends IDBRequestEventMap {
     "blocked": IDBVersionChangeEvent,
     "upgradeneeded": IDBVersionChangeEvent
@@ -570,7 +556,6 @@ export declare interface IDBOpenDBRequestEventMap extends IDBRequestEventMap {
  *
  * [MDN Reference](https://developer.mozilla.org/docs/Web/API/IDBOpenDBRequest)
  */
-@env("window")
 @js("IDBOpenDBRequest")
 export declare class IDBOpenDBRequest extends IDBRequest<IDBDatabase> {
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/IDBOpenDBRequest/blocked_event) */
@@ -585,7 +570,6 @@ export declare class IDBOpenDBRequest extends IDBRequest<IDBDatabase> {
     constructor(mut self)
 }
 
-@env("window")
 export declare interface IDBRequestEventMap {
     "error": Event,
     "success": Event
@@ -596,7 +580,6 @@ export declare interface IDBRequestEventMap {
  *
  * [MDN Reference](https://developer.mozilla.org/docs/Web/API/IDBRequest)
  */
-@env("window")
 @js("IDBRequest")
 export declare class IDBRequest<T = any> extends EventTarget {
     /**
@@ -641,7 +624,6 @@ export declare class IDBRequest<T = any> extends EventTarget {
     constructor(mut self)
 }
 
-@env("window")
 export declare interface IDBTransactionEventMap {
     "abort": Event,
     "complete": Event,
@@ -649,7 +631,6 @@ export declare interface IDBTransactionEventMap {
 }
 
 /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/IDBTransaction) */
-@env("window")
 @js("IDBTransaction")
 export declare class IDBTransaction extends EventTarget {
     /**
@@ -711,7 +692,6 @@ export declare class IDBTransaction extends EventTarget {
  *
  * [MDN Reference](https://developer.mozilla.org/docs/Web/API/IDBVersionChangeEvent)
  */
-@env("window")
 @js("IDBVersionChangeEvent")
 export declare class IDBVersionChangeEvent extends Event {
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/IDBVersionChangeEvent/newVersion) */
@@ -722,17 +702,12 @@ export declare class IDBVersionChangeEvent extends Event {
     constructor(mut self, type: string, eventInitDict?: IDBVersionChangeEventInit)
 }
 
-@env("window")
 export declare type IDBValidKey = number | string | date.Date | BufferSource | mut Array<IDBValidKey>
 
-@env("window")
 export declare type IDBCursorDirection = "next" | "nextunique" | "prev" | "prevunique"
 
-@env("window")
 export declare type IDBRequestReadyState = "done" | "pending"
 
-@env("window")
 export declare type IDBTransactionDurability = "default" | "relaxed" | "strict"
 
-@env("window")
 export declare type IDBTransactionMode = "readonly" | "readwrite" | "versionchange"
