@@ -1189,6 +1189,22 @@ func TestClassElemDocs(t *testing.T) {
 		require.Len(t, ast.ClassElemDecorators(cls.Body[0]), 1)
 	})
 
+	t.Run("AMisplacedDecoratorKeepsTheBody", func(t *testing.T) {
+		t.Parallel()
+		// A decorator belongs above a member's modifiers. Written after one it
+		// is consumed here rather than left for the name parse, which would
+		// fail on the `@` and take the rest of the class body with it.
+		ctx, cancel := context.WithTimeout(context.Background(), 1*time.Second)
+		defer cancel()
+		decls, errors := ParseDecls(ctx, &ast.Source{ID: 0, Path: "input.esc",
+			Contents: "class Foo {\n static @avail(\"browser\") foo() -> number,\n y: number\n}"})
+		require.Len(t, errors, 1)
+		require.Equal(t, "Decorators must come before a member's modifiers", errors[0].Message)
+		cls, ok := decls[0].(*ast.ClassDecl)
+		require.True(t, ok)
+		require.Len(t, cls.Body, 2, "both members still parse")
+	})
+
 	t.Run("TrailingDocAfterCommaReportsOrphanError", func(t *testing.T) {
 		t.Parallel()
 		// Same shape as TrailingDocReportsOrphanError, but the doc

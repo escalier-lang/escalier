@@ -865,6 +865,19 @@ func (p *Parser) parseClassElemInner() ast.ClassElem {
 			goto modifiers_done
 		}
 
+		// A decorator written after a modifier, the one place a member cannot
+		// carry one. Consuming it here keeps the rest of the member parseable,
+		// where leaving the `@` for the name parse loses the whole class body.
+		if token.Type == AtSign {
+			misplaced := p.parseDecorators()
+			if len(misplaced) > 0 {
+				p.reportError(misplaced[0].Span_,
+					"Decorators must come before a member's modifiers")
+			}
+			token = p.lexer.peek()
+			continue
+		}
+
 		// nolint: exhaustive
 		switch token.Type {
 		case Static:
