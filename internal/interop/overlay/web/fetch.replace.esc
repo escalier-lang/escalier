@@ -1,8 +1,13 @@
 // `BodyInit` is spelled out here rather than reaching its member set through
-// `XMLHttpRequestBodyInit`, which `web:dom` declares. Naming that alias would
-// put `web:fetch` in a cycle with the browser tier.
+// `XMLHttpRequestBodyInit`, which `web:dom` declares.
 //
-// The members are the same ones the alias holds, `FormData` included.
+// Naming that alias costs load time rather than correctness. A load reads the
+// transitive closure of a program's imports, so one reference puts the whole
+// DOM in the closure of every program that fetches: 45ms to 268ms warm, and
+// 912ms to 4.4s cold, measured with BenchmarkStdlibClosureLoad.
+//
+// The members are the same ones the alias holds, `FormData` included, and
+// dom.replace.esc pins that agreement.
 export declare type BodyInit =
     streams.ReadableStream
     | file.Blob

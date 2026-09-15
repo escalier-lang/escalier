@@ -9,16 +9,15 @@ import (
 	"github.com/escalier-lang/escalier/internal/set"
 )
 
-// env.go says which runtimes a declaration exists on, and reports a
-// declaration that reaches something absent from a runtime it claims.
+// env.go says which environments a declaration exists on, and reports a
+// declaration that reaches something absent from an environment it claims.
 //
-// It answers per declaration and per member, where the package-to-tier table in
-// tier.go answers per package. `web:performance` is portable by that table, yet
-// `PerformanceTiming` is absent from Node, so the package-level answer is wrong
-// for one member and right for the rest. #1613 is the change, #1614 removes the
-// table this replaces.
+// It answers per declaration and per member. A package-wide answer is too
+// coarse for the cases that matter: `web:performance` is available everywhere,
+// yet `PerformanceTiming` is a window's alone, so one member differs from the
+// rest of its package.
 
-// Env names one runtime a declaration may exist on.
+// Env names one environment a declaration may exist on.
 //
 // The four are the web environments the pinned lib set declares a global scope
 // type for. A window and a worker are siblings rather than one containing the
@@ -245,8 +244,7 @@ func EnvIndex(mods map[string]*StandaloneModule) (map[string]set.Set[Env], error
 // EnvViolation is one reference from a declaration to something absent from an
 // environment the referring declaration claims.
 //
-// It is the per-declaration form of what TierViolation reports per import edge,
-// and it names the reference rather than the package pair, so a reader goes
+// It names the reference rather than the pair of packages, so a reader goes
 // straight to the line to change.
 type EnvViolation struct {
 	// Package is the pseudo-package URI holding the reference.

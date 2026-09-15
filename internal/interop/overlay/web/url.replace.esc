@@ -1,10 +1,16 @@
-// `URL.createObjectURL` takes a `MediaSource` in the browser and a `Blob`
+// `URL.createObjectURL` takes a `MediaSource` in a window and a `Blob`
 // everywhere else. `MediaSource` is the Media Source Extensions object, which
-// no portable runtime implements, and naming it would put `web:url` in a cycle
-// with `web:dom` that spans two tiers.
+// only a window has.
 //
-// A browser program loses the `MediaSource` overload, which is what the
-// portable form costs. #1586 would let it keep the overload.
+// A browser program loses the `MediaSource` overload, which is what this form
+// costs. `@env("window")` on the overload expresses it exactly, and the reason
+// to keep the overlay is load time rather than the annotation: a load reads the
+// transitive closure of a program's imports, so one reference from `web:url`
+// puts the whole DOM in the closure of everything that touches a URL,
+// `web:fetch` included. BenchmarkStdlibClosureLoad measures 45ms to 268ms warm
+// and 912ms to 4.4s cold for a program importing `web:fetch` alone.
+//
+// Paying that for one overload is the wrong trade. #1613 has the detail.
 export declare class URL {
     static createObjectURL(obj: file.Blob) -> string,
 }

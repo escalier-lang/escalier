@@ -20966,6 +20966,7 @@ export declare type VibratePattern = number | mut Array<number>
 @env("window")
 export declare type WindowProxy = Window
 
+@env("window")
 export declare type XMLHttpRequestBodyInit = file.Blob | BufferSource | file.FormData | url.URLSearchParams | string
 
 @env("window")

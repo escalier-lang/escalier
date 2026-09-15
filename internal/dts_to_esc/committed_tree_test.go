@@ -99,103 +99,81 @@ func importBindings(module *ast.Module) set.Set[string] {
 	return bindings
 }
 
-// No package refers to a name declared in a package above its own tier.
+// No declaration in the committed tree names something absent from an
+// environment it claims.
 //
-// This is what the tier order buys. A file importing only the portable tier
-// is checkable against Node, which holds exactly as long as no portable
-// declaration names a browser type.
-func TestNoReferenceGoesUpATier(t *testing.T) {
+// This is what the annotations buy, and it is the property the tier order used
+// to carry: a file checked against a worker is checkable as long as nothing it
+// reaches is a window's alone.
+//
+// The generator runs the same check over what it is about to write. This reads
+// the committed files, so a hand-edit to a generated package fails here rather
+// than surviving until the next regeneration.
+func TestNoReferenceEscapesItsEnvironments(t *testing.T) {
+	modules := parseCommittedTree(t)
+	mods := make(map[string]*StandaloneModule, len(modules))
+	for uri, module := range modules {
+		mods[uri] = &StandaloneModule{Module: module}
+	}
+
+	violations, err := CheckEnvs(mods)
+	require.NoError(t, err)
+
+	lines := make([]string, 0, len(violations))
+	for _, v := range violations {
+		lines = append(lines, v.String())
+	}
+	require.Empty(t, lines, "references escaping their environments:\n  %s",
+		strings.Join(lines, "\n  "))
+}
+
+// `web:core` refers to nothing outside itself and the `std:*` surface, which is
+// the property that lets a runtime with no DOM load it.
+//
+// It survives the tier order because it is a statement about one package rather
+// than about a rank. Every other package's reach is answered by its
+// annotations, and this one is answered by naming the package.
+func TestTheCorePackageIsSelfContained(t *testing.T) {
 	modules := parseCommittedTree(t)
 	owner := declaringPackage(t, modules)
 
-	var upward []string
-	for _, uri := range PackageList() {
-		module, held := modules[uri]
-		if !held {
-			require.True(t, unroutedPackages.Contains(uri), "%s has no committed file", uri)
+	module, held := modules[coreURI]
+	require.True(t, held, "%s has no committed file", coreURI)
+
+	var outside []string
+	bindings := importBindings(module)
+	for _, name := range TypeRefNames(module).ToSlice() {
+		declaredIn, known := owner[name]
+		if !known || declaredIn == coreURI || bindings.Contains(name) {
 			continue
 		}
-		tier, ok := TierOf(uri)
-		require.True(t, ok, "%s has no tier", uri)
-
-		bindings := importBindings(module)
-		for _, name := range TypeRefNames(module).ToSlice() {
-			declaredIn, known := owner[name]
-			if !known || declaredIn == uri || bindings.Contains(name) {
-				continue
-			}
-			refTier, ok := TierOf(declaredIn)
-			if !ok || refTier <= tier {
-				continue
-			}
-			upward = append(upward, fmt.Sprintf("%s (%s) -> %s (%s) via %s",
-				uri, tier, declaredIn, refTier, name))
+		if SchemeOf(declaredIn) == "std" {
+			continue
 		}
+		outside = append(outside, fmt.Sprintf("%s -> %s", name, declaredIn))
 	}
-	sort.Strings(upward)
-	require.Empty(t, upward, "references going up a tier:\n  %s", strings.Join(upward, "\n  "))
+	sort.Strings(outside)
+	require.Empty(t, outside, "%s refers outside itself and the language surface:\n  %s",
+		coreURI, strings.Join(outside, "\n  "))
 }
 
-// The core tier refers to nothing outside itself and the language tier, which
-// is the property that lets a runtime with no DOM load it.
-func TestTheCoreTierIsSelfContained(t *testing.T) {
-	modules := parseCommittedTree(t)
-	owner := declaringPackage(t, modules)
-
-	for _, uri := range PackagesInTier(TierCore) {
-		module, held := modules[uri]
-		require.True(t, held, "%s has no committed file", uri)
-
-		var outside []string
-		bindings := importBindings(module)
-		for _, name := range TypeRefNames(module).ToSlice() {
-			declaredIn, known := owner[name]
-			if !known || declaredIn == uri || bindings.Contains(name) {
-				continue
-			}
-			if tier, ok := TierOf(declaredIn); ok && tier <= TierCore {
-				continue
-			}
-			outside = append(outside, fmt.Sprintf("%s -> %s", name, declaredIn))
-		}
-		sort.Strings(outside)
-		require.Empty(t, outside, "%s refers outside the core tier:\n  %s",
-			uri, strings.Join(outside, "\n  "))
-	}
-}
-
-// Every import line in the committed tree names a package the partition holds,
-// and no line goes up a tier.
+// Every import line in the committed tree names a package the partition holds.
 //
 // This reads the written headers rather than the references behind them, so it
 // catches a hand-edit to a generated file that the reference graph would not
 // see. #1403 item 6.
-func TestEveryCommittedImportRespectsTheTiers(t *testing.T) {
+func TestEveryCommittedImportNamesAKnownPackage(t *testing.T) {
 	modules := parseCommittedTree(t)
 
-	var upward []string
 	for uri, module := range modules {
-		tier, ok := TierOf(uri)
-		require.True(t, ok, "%s has no tier", uri)
-
 		for _, file := range module.Files {
 			for _, stmt := range file.Imports {
-				target := stmt.PackageName
-				_, held := PackageForURI(target)
-				require.True(t, held, "%s imports %s, which the partition does not hold", uri, target)
-
-				targetTier, ok := TierOf(target)
-				require.True(t, ok, "%s has no tier", target)
-				if targetTier <= tier {
-					continue
-				}
-				upward = append(upward, fmt.Sprintf("%s (%s) imports %s (%s)",
-					uri, tier, target, targetTier))
+				_, held := PackageForURI(stmt.PackageName)
+				require.True(t, held,
+					"%s imports %s, which the partition does not hold", uri, stmt.PackageName)
 			}
 		}
 	}
-	sort.Strings(upward)
-	require.Empty(t, upward, "import lines going up a tier:\n  %s", strings.Join(upward, "\n  "))
 }
 
 // Every package a file references is one it imports. A reference with no import
