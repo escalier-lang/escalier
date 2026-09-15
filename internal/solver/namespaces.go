@@ -113,7 +113,13 @@ func (c *checker) preBindPathNamespaces(target *Scope, module *ast.Module, byNam
 			walked = qualify(walked, segment)
 			bound, seen := byName[walked]
 			if !seen {
-				bound = newNamespace(walked)
+				// A closure member's Namespace is minted before the imports bind, so
+				// that a member importing a sibling binds the object the walk then
+				// fills. Indexing a nil map outside a group load yields nil.
+				bound = c.memberNamespaces[walked]
+				if bound == nil {
+					bound = newNamespace(walked)
+				}
 				byName[walked] = bound
 				target.defineNamespace(walked, bound)
 				if parent != nil {
