@@ -143,7 +143,7 @@ type checker struct {
 	// nsIndex maps each qualified prefix pre-bound for the module under inference
 	// to the namespace bound for it, so routeToNamespace can place a binding as the
 	// walk defines it. It is nil outside a walk.
-	nsIndex map[string]*namespaceShell
+	nsIndex map[string]*Namespace
 
 	// fileScopes holds one scope per file of the module being inferred, keyed by
 	// source id, each carrying that file's import bindings.
