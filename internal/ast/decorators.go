@@ -6,10 +6,11 @@ package ast
 const JSDecoratorName = "js"
 
 // DeclDecorators returns the decorator list attached to decl, or nil if decl is
-// a kind that cannot carry decorators. A kind that can carry them embeds
-// nodeDecorators and so satisfies the assertion below; one that cannot does
-// not. The parser rejects a decorator on those kinds anyway, and the nil return
-// lets a caller treat "carries none" and "cannot carry" alike.
+// a kind that cannot carry decorators. A namespace is the one such kind. Every
+// kind that can carry them embeds nodeDecorators and so satisfies the assertion
+// below, and a namespace does not. The parser rejects a decorator on a
+// namespace anyway, and the nil return lets a caller treat "carries none" and
+// "cannot carry" alike.
 func DeclDecorators(decl Decl) []*Decorator {
 	if d, ok := decl.(decorated); ok {
 		return d.decoratorList()

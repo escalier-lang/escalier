@@ -221,10 +221,11 @@ type TypeDecl struct {
 	LifetimeParams []*LifetimeParam
 	TypeParams     []*TypeParam
 	TypeAnn        TypeAnn
-	export         bool
-	declare        bool
-	override       bool
-	span           Span
+	nodeDecorators
+	export   bool
+	declare  bool
+	override bool
+	span     Span
 	declProvenance
 	commentSlots
 }
@@ -249,6 +250,7 @@ func (d *TypeDecl) SetOverride(o bool) { d.override = o }
 func (d *TypeDecl) Span() Span         { return d.span }
 func (d *TypeDecl) Accept(v Visitor) {
 	if v.EnterDecl(d) {
+		acceptDecorators(v, d.Decorators)
 		acceptLifetimeParams(v, d.LifetimeParams)
 		acceptTypeParams(v, d.TypeParams)
 		if d.TypeAnn != nil {
@@ -265,10 +267,11 @@ type InterfaceDecl struct {
 	TypeParams     []*TypeParam
 	Extends        []*TypeRefTypeAnn
 	TypeAnn        *ObjectTypeAnn
-	export         bool
-	declare        bool
-	override       bool
-	span           Span
+	nodeDecorators
+	export   bool
+	declare  bool
+	override bool
+	span     Span
 	declProvenance
 	commentSlots
 }
@@ -295,6 +298,7 @@ func (d *InterfaceDecl) SetOverride(o bool) { d.override = o }
 func (d *InterfaceDecl) Span() Span         { return d.span }
 func (d *InterfaceDecl) Accept(v Visitor) {
 	if v.EnterDecl(d) {
+		acceptDecorators(v, d.Decorators)
 		acceptLifetimeParams(v, d.LifetimeParams)
 		acceptTypeParams(v, d.TypeParams)
 		for _, ext := range d.Extends {
@@ -363,10 +367,11 @@ type EnumDecl struct {
 	Name       *Ident
 	TypeParams []*TypeParam
 	Elems      []EnumElem // variants and spreads
-	export     bool
-	declare    bool
-	override   bool
-	span       Span
+	nodeDecorators
+	export   bool
+	declare  bool
+	override bool
+	span     Span
 	declProvenance
 	commentSlots
 }
@@ -392,6 +397,7 @@ func (d *EnumDecl) Span() Span         { return d.span }
 func (d *EnumDecl) Accept(v Visitor) {
 	// An enum takes no lifetime parameters, so this walks only the type ones.
 	if v.EnterDecl(d) {
+		acceptDecorators(v, d.Decorators)
 		acceptTypeParams(v, d.TypeParams)
 		for _, elem := range d.Elems {
 			switch e := elem.(type) {
