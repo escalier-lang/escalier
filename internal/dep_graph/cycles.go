@@ -55,6 +55,16 @@ func (g *DepGraph) FindCycles() []CycleInfo {
 			continue
 		}
 
+		// A cycle whose value bindings are all ambient constructs nothing, so it
+		// has no initialization order to get wrong. An `extends` clause is what
+		// puts a class's value binding in a cycle, since building the subclass
+		// needs the superclass built first, and `declare class A extends B`
+		// builds neither. A member's type annotation reaches the other class's
+		// type binding alone and forms a type-only cycle, which is allowed above.
+		if g.constructsNothing(cycle) {
+			continue
+		}
+
 		// For cycles involving values, they are problematic in these cases:
 		// 1. Mixed cycles (type + value) are always problematic
 		// 2. Value-only cycles are problematic if any value is used outside function bodies
@@ -96,6 +106,31 @@ func (g *DepGraph) FindCycles() []CycleInfo {
 	}
 
 	return problematicCycles
+}
+
+// constructsNothing reports whether every value binding in the cycle is declared
+// ambiently, so nothing in it is built at run time.
+//
+// The test is the `declare` modifier rather than the absence of an initializing
+// expression. A class carries no initializer either way, so the looser test would
+// also excuse `class A extends B` beside `class B extends A`, which is a real
+// ordering failure.
+func (g *DepGraph) constructsNothing(cycle []BindingKey) bool {
+	for _, key := range cycle {
+		if !key.IsValueBinding() {
+			continue
+		}
+		decls, held := g.Decls.Get(key)
+		if !held || len(decls) == 0 {
+			return false
+		}
+		for _, decl := range decls {
+			if !decl.Declare() {
+				return false
+			}
+		}
+	}
+	return true
 }
 
 // findBindingsUsedOutsideFunctionBodies finds all bindings that are used outside function bodies
