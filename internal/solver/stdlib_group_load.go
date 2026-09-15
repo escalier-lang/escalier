@@ -30,11 +30,16 @@ import (
 type GroupSource func(uris []string) (module *ast.Module, paths map[string]string, err error)
 
 // StdlibGroupSource returns a GroupSource reading pseudo-packages from dir.
+//
+// The merged parse goes through the shared cache, so a second load of the same
+// members reuses it. That matters because the whole group re-parses otherwise:
+// a member's own file is cached under its basename by readPackageImports, but a
+// group parses under synthetic paths and merges, which is a different module.
 func StdlibGroupSource(dir string) GroupSource {
-	nextSourceID := stdlibSourceIDBase + groupSourceIDOffset
 	return func(uris []string) (*ast.Module, map[string]string, error) {
-		sources := make([]*ast.Source, 0, len(uris))
 		paths := make(map[string]string, len(uris))
+		synthetic := make([]string, 0, len(uris))
+		bodies := make([]string, 0, len(uris))
 		for _, uri := range uris {
 			path, err := resolveStdlibPath(dir, uri)
 			if err != nil {
@@ -45,24 +50,35 @@ func StdlibGroupSource(dir string) GroupSource {
 				return nil, nil, fmt.Errorf("reading %s: %w", path, err)
 			}
 			paths[uri] = path
-			sources = append(sources, &ast.Source{
-				ID: nextSourceID,
-				// `<namespace>/index.esc`, so the member's declarations land under a
-				// namespace of its own rather than at the top level where two members
-				// would collide.
-				Path:     filepath.Join(groupNamespace(uri), "index.esc"),
-				Contents: string(contents),
-			})
-			nextSourceID++
+			// `<namespace>/index.esc`, so the member's declarations land under a
+			// namespace of its own rather than at the top level where two members
+			// would collide.
+			synthetic = append(synthetic, filepath.Join(groupNamespace(uri), "index.esc"))
+			bodies = append(bodies, string(contents))
 		}
-		module, parseErrs := parser.ParseLibFiles(context.Background(), sources)
-		if len(parseErrs) > 0 {
-			messages := make([]string, 0, len(parseErrs))
-			for _, pe := range parseErrs {
-				messages = append(messages, pe.String())
+
+		module, err := stdlibParses.getGroup(synthetic, bodies, func(firstSourceID int) (*ast.Module, error) {
+			sources := make([]*ast.Source, 0, len(uris))
+			for i := range uris {
+				sources = append(sources, &ast.Source{
+					ID:       firstSourceID + groupSourceIDOffset + i,
+					Path:     synthetic[i],
+					Contents: bodies[i],
+				})
 			}
-			return nil, nil, fmt.Errorf("parse errors in %s: %s",
-				strings.Join(uris, ", "), strings.Join(messages, "; "))
+			parsed, parseErrs := parser.ParseLibFiles(context.Background(), sources)
+			if len(parseErrs) > 0 {
+				messages := make([]string, 0, len(parseErrs))
+				for _, pe := range parseErrs {
+					messages = append(messages, pe.String())
+				}
+				return nil, fmt.Errorf("parse errors in %s: %s",
+					strings.Join(uris, ", "), strings.Join(messages, "; "))
+			}
+			return parsed, nil
+		})
+		if err != nil {
+			return nil, nil, err
 		}
 		return module, paths, nil
 	}
@@ -92,12 +108,6 @@ func (c *checker) loadPackageGroup(group []string, span ast.Span) []SolverError 
 	if errs := checkGroupBindings(group, span); len(errs) > 0 {
 		return errs
 	}
-
-	// Reported at the import that pulled the group in, so a run reaching none of
-	// the tree's groups reports nothing and one reaching a group gets a span to
-	// point at. The load carries on, since refusing it would bury this diagnostic
-	// under every `import cycle` the grouping exists to prevent.
-	tierErrs := CheckGroupTiers(PackageGroups{group[0]: group}, span)
 
 	module, paths, err := c.groupSource(group)
 	if err != nil {
@@ -147,14 +157,14 @@ func (c *checker) loadPackageGroup(group []string, span ast.Span) []SolverError 
 	}
 
 	if len(errs) > 0 {
-		return append(tierErrs, &PackageInferenceError{
+		return []SolverError{&PackageInferenceError{
 			URI:      strings.Join(group, ", "),
 			Path:     paths[group[0]],
 			Messages: messagesOf(errs),
 			span:     span,
-		})
+		}}
 	}
-	return tierErrs
+	return nil
 }
 
 // sortedGroup returns a copy of group in sorted order, so a diagnostic and a
@@ -169,12 +179,12 @@ func sortedGroup(group []string) []string {
 //
 // It is the entry point a run with a stdlib directory uses rather than
 // InferModuleWithSource, because loading a package needs two things a bare
-// ModuleSource cannot supply: the groups that have to load together, and a
-// reader for a whole group at once.
+// ModuleSource cannot supply: the closure a module's imports reach, and a
+// reader for the whole closure at once.
 func InferModuleAgainstStdlib(module *ast.Module, dir string) *ModuleResult {
-	groups, err := BuildPackageGroups(dir)
+	groups, err := BuildPackageClosure(dir, pseudoPackageImportsOf(module))
 	if err != nil {
-		// Nothing is known about which packages cycle, so every package loads
+		// Nothing is known about what the imports reach, so every package loads
 		// alone. That is right for the tree a readable directory would have held
 		// and reports honestly for one that cycles.
 		result := InferModuleWithSource(module, StdlibSource(dir))
@@ -184,6 +194,25 @@ func InferModuleAgainstStdlib(module *ast.Module, dir string) *ModuleResult {
 		return result
 	}
 	return inferModuleWithGroups(module, StdlibSource(dir), StdlibGroupSource(dir), groups)
+}
+
+// pseudoPackageImportsOf returns the pseudo-package URIs a module's files import,
+// sorted. These are the roots the closure grows from.
+//
+// Every scheme counts, not `std:` alone. A file importing `web:dom` roots the
+// closure there the same way, and `node:` will when it is populated.
+func pseudoPackageImportsOf(module *ast.Module) []string {
+	roots := set.NewSet[string]()
+	for _, file := range module.Files {
+		for _, stmt := range file.Imports {
+			if IsSchemePrefixedImport(stmt.PackageName) {
+				roots.Add(stmt.PackageName)
+			}
+		}
+	}
+	out := roots.ToSlice()
+	sort.Strings(out)
+	return out
 }
 
 // groupKeyURI is the URI a group's declarations register their type keys under.

@@ -1,6 +1,8 @@
 package solver
 
 import (
+	"strconv"
+	"strings"
 	"sync"
 
 	"github.com/escalier-lang/escalier/internal/ast"
@@ -55,6 +57,11 @@ import (
 type parsedModuleCache struct {
 	mu      sync.Mutex
 	entries map[parseKey]parsedModuleEntry
+	// groups holds one merged module per distinct set of members. A group parse
+	// produces one module from many sources, which the per-source entries above
+	// cannot be composed into: the merge is what places each member's
+	// declarations under its own namespace, and only the parser does it.
+	groups map[groupKey]parsedModuleEntry
 	// nextSourceID is handed out once per distinct source, so every package in
 	// a process parses under an id of its own and keeps it across runs. A span
 	// carries its source id into provenance and into every diagnostic built from
@@ -69,6 +76,27 @@ type parseKey struct {
 	contents string
 }
 
+// groupKey identifies a merged parse by every member's synthetic path and
+// contents, in order.
+type groupKey struct {
+	paths    string
+	contents string
+}
+
+// joinParts builds one string from parts that no other list of parts can build,
+// by writing each part's length before it. A separator alone would not do: with
+// one, ["a", "b"] and ["a<sep>b"] join to the same thing, and nothing rules a
+// separator out of a source file.
+func joinParts(parts []string) string {
+	var b strings.Builder
+	for _, part := range parts {
+		b.WriteString(strconv.Itoa(len(part)))
+		b.WriteByte(':')
+		b.WriteString(part)
+	}
+	return b.String()
+}
+
 // parsedModuleEntry is one parsed module and the source id it parsed under.
 type parsedModuleEntry struct {
 	module   *ast.Module
@@ -78,6 +106,7 @@ type parsedModuleEntry struct {
 func newParsedModuleCache(firstSourceID int) *parsedModuleCache {
 	return &parsedModuleCache{
 		entries:      map[parseKey]parsedModuleEntry{},
+		groups:       map[groupKey]parsedModuleEntry{},
 		nextSourceID: firstSourceID,
 	}
 }
@@ -109,6 +138,38 @@ func (c *parsedModuleCache) get(
 	}
 	c.nextSourceID++
 	c.entries[key] = parsedModuleEntry{module: module, sourceID: sourceID}
+	return module, nil
+}
+
+// getGroup returns the module parsed from the members called paths holding
+// contents, calling parse with the first of len(paths) consecutive source ids on
+// a miss.
+//
+// A group is cached as one module rather than as its members, since the merge is
+// what puts each member's declarations under its own namespace. Parsing the
+// members separately and merging afterwards would mean doing the parser's job
+// again.
+func (c *parsedModuleCache) getGroup(
+	paths, contents []string,
+	parse func(firstSourceID int) (*ast.Module, error),
+) (*ast.Module, error) {
+	key := groupKey{paths: joinParts(paths), contents: joinParts(contents)}
+
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	if entry, held := c.groups[key]; held {
+		return entry.module, nil
+	}
+
+	firstSourceID := c.nextSourceID
+	module, err := parse(firstSourceID)
+	if err != nil {
+		// Not cached and no id consumed, so the next load of the same members
+		// retries. The single-source path answers a failure the same way.
+		return nil, err
+	}
+	c.nextSourceID += len(paths)
+	c.groups[key] = parsedModuleEntry{module: module, sourceID: firstSourceID}
 	return module, nil
 }
 
