@@ -7,6 +7,7 @@ import "std:typed_arrays"
 import "web:core"
 import "web:dom"
 
+@env("window")
 export declare interface AnalyserOptions extends AudioNodeOptions {
     fftSize?: number,
     maxDecibels?: number,
@@ -14,12 +15,14 @@ export declare interface AnalyserOptions extends AudioNodeOptions {
     smoothingTimeConstant?: number
 }
 
+@env("window")
 export declare interface AudioBufferOptions {
     length: number,
     numberOfChannels?: number,
     sampleRate: number
 }
 
+@env("window")
 export declare interface AudioBufferSourceOptions {
     buffer?: AudioBuffer | null,
     detune?: number,
@@ -29,28 +32,33 @@ export declare interface AudioBufferSourceOptions {
     playbackRate?: number
 }
 
+@env("window")
 export declare interface AudioContextOptions {
     latencyHint?: AudioContextLatencyCategory | number,
     sampleRate?: number
 }
 
+@env("window")
 export declare interface AudioNodeOptions {
     channelCount?: number,
     channelCountMode?: ChannelCountMode,
     channelInterpretation?: ChannelInterpretation
 }
 
+@env("window")
 export declare interface AudioProcessingEventInit extends EventInit {
     inputBuffer: AudioBuffer,
     outputBuffer: AudioBuffer,
     playbackTime: number
 }
 
+@env("window")
 export declare interface AudioTimestamp {
     contextTime?: number,
     performanceTime?: DOMHighResTimeStamp
 }
 
+@env("window")
 export declare interface AudioWorkletNodeOptions extends AudioNodeOptions {
     numberOfInputs?: number,
     numberOfOutputs?: number,
@@ -59,6 +67,7 @@ export declare interface AudioWorkletNodeOptions extends AudioNodeOptions {
     processorOptions?: any
 }
 
+@env("window")
 export declare interface BiquadFilterOptions extends AudioNodeOptions {
     Q?: number,
     detune?: number,
@@ -67,28 +76,34 @@ export declare interface BiquadFilterOptions extends AudioNodeOptions {
     type?: BiquadFilterType
 }
 
+@env("window")
 export declare interface ChannelMergerOptions extends AudioNodeOptions {
     numberOfInputs?: number
 }
 
+@env("window")
 export declare interface ChannelSplitterOptions extends AudioNodeOptions {
     numberOfOutputs?: number
 }
 
+@env("window")
 export declare interface ConstantSourceOptions {
     offset?: number
 }
 
+@env("window")
 export declare interface ConvolverOptions extends AudioNodeOptions {
     buffer?: AudioBuffer | null,
     disableNormalization?: boolean
 }
 
+@env("window")
 export declare interface DelayOptions extends AudioNodeOptions {
     delayTime?: number,
     maxDelayTime?: number
 }
 
+@env("window")
 export declare interface DynamicsCompressorOptions extends AudioNodeOptions {
     attack?: number,
     knee?: number,
@@ -97,33 +112,40 @@ export declare interface DynamicsCompressorOptions extends AudioNodeOptions {
     threshold?: number
 }
 
+@env("window")
 export declare interface GainOptions extends AudioNodeOptions {
     gain?: number
 }
 
+@env("window")
 export declare interface IIRFilterOptions extends AudioNodeOptions {
     feedback: mut Array<number>,
     feedforward: mut Array<number>
 }
 
+@env("window")
 export declare interface MediaElementAudioSourceOptions {
     mediaElement: dom.HTMLMediaElement
 }
 
+@env("window")
 export declare interface MediaStreamAudioSourceOptions {
     mediaStream: dom.MediaStream
 }
 
+@env("window")
 export declare interface OfflineAudioCompletionEventInit extends EventInit {
     renderedBuffer: AudioBuffer
 }
 
+@env("window")
 export declare interface OfflineAudioContextOptions {
     length: number,
     numberOfChannels?: number,
     sampleRate: number
 }
 
+@env("window")
 export declare interface OscillatorOptions extends AudioNodeOptions {
     detune?: number,
     frequency?: number,
@@ -131,6 +153,7 @@ export declare interface OscillatorOptions extends AudioNodeOptions {
     type?: OscillatorType
 }
 
+@env("window")
 export declare interface PannerOptions extends AudioNodeOptions {
     coneInnerAngle?: number,
     coneOuterAngle?: number,
@@ -148,19 +171,23 @@ export declare interface PannerOptions extends AudioNodeOptions {
     rolloffFactor?: number
 }
 
+@env("window")
 export declare interface PeriodicWaveConstraints {
     disableNormalization?: boolean
 }
 
+@env("window")
 export declare interface PeriodicWaveOptions extends PeriodicWaveConstraints {
     imag?: mut Array<number> | typed_arrays.Float32Array,
     real?: mut Array<number> | typed_arrays.Float32Array
 }
 
+@env("window")
 export declare interface StereoPannerOptions extends AudioNodeOptions {
     pan?: number
 }
 
+@env("window")
 export declare interface WaveShaperOptions extends AudioNodeOptions {
     curve?: mut Array<number> | typed_arrays.Float32Array,
     oversample?: OverSampleType
@@ -171,6 +198,7 @@ export declare interface WaveShaperOptions extends AudioNodeOptions {
  *
  * [MDN Reference](https://developer.mozilla.org/docs/Web/API/AnalyserNode)
  */
+@env("window")
 @js("AnalyserNode")
 export declare class AnalyserNode extends AudioNode {
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/AnalyserNode/fftSize) */
@@ -200,6 +228,7 @@ export declare class AnalyserNode extends AudioNode {
  *
  * [MDN Reference](https://developer.mozilla.org/docs/Web/API/AudioBuffer)
  */
+@env("window")
 @js("AudioBuffer")
 export declare class AudioBuffer {
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/AudioBuffer/duration) */
@@ -225,6 +254,7 @@ export declare class AudioBuffer {
  *
  * [MDN Reference](https://developer.mozilla.org/docs/Web/API/AudioBufferSourceNode)
  */
+@env("window")
 @js("AudioBufferSourceNode")
 export declare class AudioBufferSourceNode extends AudioScheduledSourceNode {
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/AudioBufferSourceNode/buffer) */
@@ -254,6 +284,7 @@ export declare class AudioBufferSourceNode extends AudioScheduledSourceNode {
  *
  * [MDN Reference](https://developer.mozilla.org/docs/Web/API/AudioContext)
  */
+@env("window")
 @js("AudioContext")
 export declare class AudioContext extends BaseAudioContext {
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/AudioContext/baseLatency) */
@@ -287,6 +318,7 @@ export declare class AudioContext extends BaseAudioContext {
  *
  * [MDN Reference](https://developer.mozilla.org/docs/Web/API/AudioDestinationNode)
  */
+@env("window")
 @js("AudioDestinationNode")
 export declare class AudioDestinationNode extends AudioNode {
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/AudioDestinationNode/maxChannelCount) */
@@ -300,6 +332,7 @@ export declare class AudioDestinationNode extends AudioNode {
  *
  * [MDN Reference](https://developer.mozilla.org/docs/Web/API/AudioListener)
  */
+@env("window")
 @js("AudioListener")
 export declare class AudioListener {
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/AudioListener/forwardX) */
@@ -341,6 +374,7 @@ export declare class AudioListener {
  *
  * [MDN Reference](https://developer.mozilla.org/docs/Web/API/AudioNode)
  */
+@env("window")
 @js("AudioNode")
 export declare class AudioNode extends EventTarget {
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/AudioNode/channelCount) */
@@ -375,6 +409,7 @@ export declare class AudioNode extends EventTarget {
  *
  * [MDN Reference](https://developer.mozilla.org/docs/Web/API/AudioParam)
  */
+@env("window")
 @js("AudioParam")
 export declare class AudioParam {
     automationRate: AutomationRate,
@@ -407,6 +442,7 @@ export declare class AudioParam {
 }
 
 /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/AudioParamMap) */
+@env("window")
 @js("AudioParamMap")
 export declare class AudioParamMap extends map.Map<string, AudioParam> {
     forEach(self, callbackfn: fn (value: AudioParam, key: string, parent: AudioParamMap) -> unknown, thisArg?: unknown) -> unknown,
@@ -420,6 +456,7 @@ export declare class AudioParamMap extends map.Map<string, AudioParam> {
  *
  * [MDN Reference](https://developer.mozilla.org/docs/Web/API/AudioProcessingEvent)
  */
+@env("window")
 @js("AudioProcessingEvent")
 export declare class AudioProcessingEvent extends Event {
     /**
@@ -444,11 +481,13 @@ export declare class AudioProcessingEvent extends Event {
     constructor(mut self, type: string, eventInitDict: AudioProcessingEventInit)
 }
 
+@env("window")
 export declare interface AudioScheduledSourceNodeEventMap {
     "ended": Event
 }
 
 /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/AudioScheduledSourceNode) */
+@env("window")
 @js("AudioScheduledSourceNode")
 export declare class AudioScheduledSourceNode extends AudioNode {
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/AudioScheduledSourceNode/ended_event) */
@@ -470,12 +509,14 @@ export declare class AudioScheduledSourceNode extends AudioNode {
  *
  * [MDN Reference](https://developer.mozilla.org/docs/Web/API/AudioWorklet)
  */
+@env("window")
 @js("AudioWorklet")
 export declare class AudioWorklet extends dom.Worklet {
     static prototype: AudioWorklet,
     constructor(mut self)
 }
 
+@env("window")
 export declare interface AudioWorkletNodeEventMap {
     "processorerror": dom.ErrorEvent
 }
@@ -485,6 +526,7 @@ export declare interface AudioWorkletNodeEventMap {
  *
  * [MDN Reference](https://developer.mozilla.org/docs/Web/API/AudioWorkletNode)
  */
+@env("window")
 @js("AudioWorkletNode")
 export declare class AudioWorkletNode extends AudioNode {
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/AudioWorkletNode/processorerror_event) */
@@ -501,11 +543,13 @@ export declare class AudioWorkletNode extends AudioNode {
     constructor(mut self, context: BaseAudioContext, name: string, options?: AudioWorkletNodeOptions)
 }
 
+@env("window")
 export declare interface BaseAudioContextEventMap {
     "statechange": Event
 }
 
 /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/BaseAudioContext) */
+@env("window")
 @js("BaseAudioContext")
 export declare class BaseAudioContext extends EventTarget {
     /**
@@ -585,6 +629,7 @@ export declare class BaseAudioContext extends EventTarget {
  *
  * [MDN Reference](https://developer.mozilla.org/docs/Web/API/BiquadFilterNode)
  */
+@env("window")
 @js("BiquadFilterNode")
 export declare class BiquadFilterNode extends AudioNode {
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/BiquadFilterNode/Q) */
@@ -608,6 +653,7 @@ export declare class BiquadFilterNode extends AudioNode {
  *
  * [MDN Reference](https://developer.mozilla.org/docs/Web/API/ChannelMergerNode)
  */
+@env("window")
 @js("ChannelMergerNode")
 export declare class ChannelMergerNode extends AudioNode {
     static prototype: ChannelMergerNode,
@@ -619,6 +665,7 @@ export declare class ChannelMergerNode extends AudioNode {
  *
  * [MDN Reference](https://developer.mozilla.org/docs/Web/API/ChannelSplitterNode)
  */
+@env("window")
 @js("ChannelSplitterNode")
 export declare class ChannelSplitterNode extends AudioNode {
     static prototype: ChannelSplitterNode,
@@ -626,6 +673,7 @@ export declare class ChannelSplitterNode extends AudioNode {
 }
 
 /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/ConstantSourceNode) */
+@env("window")
 @js("ConstantSourceNode")
 export declare class ConstantSourceNode extends AudioScheduledSourceNode {
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/ConstantSourceNode/offset) */
@@ -643,6 +691,7 @@ export declare class ConstantSourceNode extends AudioScheduledSourceNode {
  *
  * [MDN Reference](https://developer.mozilla.org/docs/Web/API/ConvolverNode)
  */
+@env("window")
 @js("ConvolverNode")
 export declare class ConvolverNode extends AudioNode {
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/ConvolverNode/buffer) */
@@ -658,6 +707,7 @@ export declare class ConvolverNode extends AudioNode {
  *
  * [MDN Reference](https://developer.mozilla.org/docs/Web/API/DelayNode)
  */
+@env("window")
 @js("DelayNode")
 export declare class DelayNode extends AudioNode {
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/DelayNode/delayTime) */
@@ -671,6 +721,7 @@ export declare class DelayNode extends AudioNode {
  *
  * [MDN Reference](https://developer.mozilla.org/docs/Web/API/DynamicsCompressorNode)
  */
+@env("window")
 @js("DynamicsCompressorNode")
 export declare class DynamicsCompressorNode extends AudioNode {
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/DynamicsCompressorNode/attack) */
@@ -694,6 +745,7 @@ export declare class DynamicsCompressorNode extends AudioNode {
  *
  * [MDN Reference](https://developer.mozilla.org/docs/Web/API/GainNode)
  */
+@env("window")
 @js("GainNode")
 export declare class GainNode extends AudioNode {
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/GainNode/gain) */
@@ -707,6 +759,7 @@ export declare class GainNode extends AudioNode {
  *
  * [MDN Reference](https://developer.mozilla.org/docs/Web/API/IIRFilterNode)
  */
+@env("window")
 @js("IIRFilterNode")
 export declare class IIRFilterNode extends AudioNode {
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/IIRFilterNode/getFrequencyResponse) */
@@ -720,6 +773,7 @@ export declare class IIRFilterNode extends AudioNode {
  *
  * [MDN Reference](https://developer.mozilla.org/docs/Web/API/MediaElementAudioSourceNode)
  */
+@env("window")
 @js("MediaElementAudioSourceNode")
 export declare class MediaElementAudioSourceNode extends AudioNode {
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/MediaElementAudioSourceNode/mediaElement) */
@@ -729,6 +783,7 @@ export declare class MediaElementAudioSourceNode extends AudioNode {
 }
 
 /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/MediaStreamAudioDestinationNode) */
+@env("window")
 @js("MediaStreamAudioDestinationNode")
 export declare class MediaStreamAudioDestinationNode extends AudioNode {
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/MediaStreamAudioDestinationNode/stream) */
@@ -742,6 +797,7 @@ export declare class MediaStreamAudioDestinationNode extends AudioNode {
  *
  * [MDN Reference](https://developer.mozilla.org/docs/Web/API/MediaStreamAudioSourceNode)
  */
+@env("window")
 @js("MediaStreamAudioSourceNode")
 export declare class MediaStreamAudioSourceNode extends AudioNode {
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/MediaStreamAudioSourceNode/mediaStream) */
@@ -755,6 +811,7 @@ export declare class MediaStreamAudioSourceNode extends AudioNode {
  *
  * [MDN Reference](https://developer.mozilla.org/docs/Web/API/OfflineAudioCompletionEvent)
  */
+@env("window")
 @js("OfflineAudioCompletionEvent")
 export declare class OfflineAudioCompletionEvent extends Event {
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/OfflineAudioCompletionEvent/renderedBuffer) */
@@ -763,6 +820,7 @@ export declare class OfflineAudioCompletionEvent extends Event {
     constructor(mut self, type: string, eventInitDict: OfflineAudioCompletionEventInit)
 }
 
+@env("window")
 export declare interface OfflineAudioContextEventMap extends BaseAudioContextEventMap {
     "complete": OfflineAudioCompletionEvent
 }
@@ -772,6 +830,7 @@ export declare interface OfflineAudioContextEventMap extends BaseAudioContextEve
  *
  * [MDN Reference](https://developer.mozilla.org/docs/Web/API/OfflineAudioContext)
  */
+@env("window")
 @js("OfflineAudioContext")
 export declare class OfflineAudioContext extends BaseAudioContext {
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/OfflineAudioContext/length) */
@@ -798,6 +857,7 @@ export declare class OfflineAudioContext extends BaseAudioContext {
  *
  * [MDN Reference](https://developer.mozilla.org/docs/Web/API/OscillatorNode)
  */
+@env("window")
 @js("OscillatorNode")
 export declare class OscillatorNode extends AudioScheduledSourceNode {
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/OscillatorNode/detune) */
@@ -821,6 +881,7 @@ export declare class OscillatorNode extends AudioScheduledSourceNode {
  *
  * [MDN Reference](https://developer.mozilla.org/docs/Web/API/PannerNode)
  */
+@env("window")
 @js("PannerNode")
 export declare class PannerNode extends AudioNode {
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/PannerNode/coneInnerAngle) */
@@ -872,12 +933,14 @@ export declare class PannerNode extends AudioNode {
  *
  * [MDN Reference](https://developer.mozilla.org/docs/Web/API/PeriodicWave)
  */
+@env("window")
 @js("PeriodicWave")
 export declare class PeriodicWave {
     static prototype: PeriodicWave,
     constructor(mut self, context: BaseAudioContext, options?: PeriodicWaveOptions)
 }
 
+@env("window")
 export declare interface ScriptProcessorNodeEventMap {
     "audioprocess": AudioProcessingEvent
 }
@@ -888,6 +951,7 @@ export declare interface ScriptProcessorNodeEventMap {
  *
  * [MDN Reference](https://developer.mozilla.org/docs/Web/API/ScriptProcessorNode)
  */
+@env("window")
 @js("ScriptProcessorNode")
 export declare class ScriptProcessorNode extends AudioNode {
     /**
@@ -915,6 +979,7 @@ export declare class ScriptProcessorNode extends AudioNode {
  *
  * [MDN Reference](https://developer.mozilla.org/docs/Web/API/StereoPannerNode)
  */
+@env("window")
 @js("StereoPannerNode")
 export declare class StereoPannerNode extends AudioNode {
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/StereoPannerNode/pan) */
@@ -928,6 +993,7 @@ export declare class StereoPannerNode extends AudioNode {
  *
  * [MDN Reference](https://developer.mozilla.org/docs/Web/API/WaveShaperNode)
  */
+@env("window")
 @js("WaveShaperNode")
 export declare class WaveShaperNode extends AudioNode {
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/WaveShaperNode/curve) */
@@ -938,30 +1004,42 @@ export declare class WaveShaperNode extends AudioNode {
     constructor(mut self, context: BaseAudioContext, options?: WaveShaperOptions)
 }
 
+@env("window")
 export declare interface DecodeErrorCallback {
     (error: DOMException) -> unknown
 }
 
+@env("window")
 export declare interface DecodeSuccessCallback {
     (decodedData: AudioBuffer) -> unknown
 }
 
+@env("window")
 export declare type AudioContextLatencyCategory = "balanced" | "interactive" | "playback"
 
+@env("window")
 export declare type AudioContextState = "closed" | "running" | "suspended"
 
+@env("window")
 export declare type AutomationRate = "a-rate" | "k-rate"
 
+@env("window")
 export declare type BiquadFilterType = "allpass" | "bandpass" | "highpass" | "highshelf" | "lowpass" | "lowshelf" | "notch" | "peaking"
 
+@env("window")
 export declare type ChannelCountMode = "clamped-max" | "explicit" | "max"
 
+@env("window")
 export declare type ChannelInterpretation = "discrete" | "speakers"
 
+@env("window")
 export declare type DistanceModelType = "exponential" | "inverse" | "linear"
 
+@env("window")
 export declare type OscillatorType = "custom" | "sawtooth" | "sine" | "square" | "triangle"
 
+@env("window")
 export declare type OverSampleType = "2x" | "4x" | "none"
 
+@env("window")
 export declare type PanningModelType = "HRTF" | "equalpower"

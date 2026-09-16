@@ -193,6 +193,37 @@ func TestCheckEnvs_ATypeParameterIsNotAReference(t *testing.T) {
 	})))
 }
 
+// A class's own clauses are read the same way a member's signature is: the
+// qualifier on a cross-package reference names a package rather than a
+// declaration, and the class's type parameters are in scope.
+func TestCheckEnvs_AClassOwnClausesReadLikeAMember(t *testing.T) {
+	t.Parallel()
+
+	tests := map[string]map[string]string{
+		// `crypto` is a declared global as well as a package qualifier, so
+		// reading the head of `crypto.Crypto` would report against it.
+		"AQualifiedSuperclass": {
+			"web:crypto": "@env(\"window\")\nexport declare val crypto: number\n" +
+				"export declare class Crypto {}",
+			"web:dom": "export declare class Doc extends crypto.Crypto {}",
+		},
+		// `E` is the class's own type parameter, not the annotated declaration
+		// of that name in another package.
+		"ATypeParameterInAnExtendsClause": {
+			"web:a": "@env(\"window\")\nexport declare class E {}",
+			"web:b": "export declare class Base<T> {}\n" +
+				"export declare class Box<E> extends Base<E> {}",
+		},
+	}
+
+	for name, sources := range tests {
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+			require.Empty(t, envMessages(t, envPackages(t, sources)))
+		})
+	}
+}
+
 // Two declarations of one name intersect, so neither half's narrowing is lost.
 //
 // TypeScript's class idiom pairs an interface with a `declare var` of the same

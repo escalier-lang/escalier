@@ -135,6 +135,27 @@ func Generate(opts GenerateOptions) (*GenerateResult, error) {
 	if err != nil {
 		return nil, err
 	}
+	// Both checks run because they answer at different grains. CheckTiers reads a
+	// package's import edges, and CheckEnvs reads each reference a declaration or
+	// member makes, so it reports what a package-level edge cannot show.
+	if err := AnnotateEnvs(mods); err != nil {
+		return nil, err
+	}
+	envViolations, err := CheckEnvs(mods)
+	if err != nil {
+		return nil, err
+	}
+	if len(envViolations) > 0 {
+		lines := make([]string, 0, len(envViolations))
+		for _, v := range envViolations {
+			lines = append(lines, v.String())
+		}
+		return nil, fmt.Errorf(
+			"%d reference(s) reach a declaration absent from an environment the "+
+				"referrer claims; narrow the referrer with `@env`, widen the referent "+
+				"in declEnvOverrides, or answer it with an overlay `replace`:\n  %s",
+			len(envViolations), strings.Join(lines, "\n  "))
+	}
 	violations, err := CheckTiers(mods, graph)
 	if err != nil {
 		return nil, err
