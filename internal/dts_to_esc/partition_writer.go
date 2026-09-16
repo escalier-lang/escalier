@@ -1166,7 +1166,13 @@ func ReportPartition(result *PartitionResult, w io.Writer) error {
 		// rather than named, for the same reason. The name is in the tree,
 		// carrying the window lib's members, so a flat name list would read as
 		// the tree having lost it.
-		if WorkerLibSources.Contains(d.SourceFile) {
+		//
+		// Unreconciled is what separates that copy from an overlay drop the
+		// worker lib happens to declare. `ImportMeta` is both dropped by the
+		// overlay and declared in lib.webworker.d.ts, and it is a drop rather
+		// than a copy the tree kept.
+		if WorkerLibSources.Contains(d.SourceFile) &&
+			result.Unreconciled.Contains(d.Name) {
 			n, _ := skippedCopies.Get(d.SourceFile)
 			skippedCopies.Set(d.SourceFile, n+1)
 			continue
