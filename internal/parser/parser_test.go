@@ -470,21 +470,26 @@ func TestParseDeclareBlockErrors(t *testing.T) {
 			input:         `declare global { namespace 42 { } }`,
 			expectedError: "Expected identifier after 'namespace'",
 		},
-		"DecoratorOnEnum": {
+		// `@js` names what a declaration lowers to, and a type-level
+		// declaration lowers to nothing. Any other decorator on one attaches,
+		// which is what lets `@env` say where an interface exists.
+		"JsOnEnum": {
 			input:         `@js("E") enum E { A, B }`,
-			expectedError: "decorators are not allowed on enum declarations",
+			expectedError: "`@js` is not allowed on enum declarations (enums have no runtime form)",
 		},
-		"DecoratorOnNamespace": {
-			input:         `@js("N") namespace N { declare val x: number }`,
-			expectedError: "decorators are not allowed on namespace declarations",
-		},
-		"DecoratorOnTypeAlias": {
+		"JsOnTypeAlias": {
 			input:         `@js("T") declare type T = number`,
-			expectedError: "decorators are not allowed on type declarations (type aliases have no runtime form)",
+			expectedError: "`@js` is not allowed on type declarations (type aliases have no runtime form)",
 		},
-		"DecoratorOnInterface": {
+		"JsOnInterface": {
 			input:         `@js("I") declare interface I {x: number}`,
-			expectedError: "decorators are not allowed on interface declarations (interfaces have no runtime form)",
+			expectedError: "`@js` is not allowed on interface declarations (interfaces have no runtime form)",
+		},
+		// A namespace introduces no declaration of its own, so every decorator
+		// on one is rejected rather than only `@js`.
+		"DecoratorOnNamespace": {
+			input:         `@env("window") namespace N { declare val x: number }`,
+			expectedError: "decorators are not allowed on namespace declarations",
 		},
 	}
 

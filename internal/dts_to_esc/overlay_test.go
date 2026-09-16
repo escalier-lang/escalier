@@ -65,11 +65,11 @@ func TestCommittedRootDropFile_NamesEveryLanguagePolicyDrop(t *testing.T) {
 func TestLoadOverlay_ReadsOperationAndPackageFromTheFilename(t *testing.T) {
 	t.Parallel()
 	dir := seedOverlay(t, map[string]string{
-		"README.md":             "not an overlay file\n",
-		"drop.esc":              "export declare val eval\n",
-		"std/set.add.esc":       "export declare interface ReadonlySetLike {\n    readonly size: number,\n}\n",
+		"README.md":               "not an overlay file\n",
+		"drop.esc":                "export declare val eval\n",
+		"std/set.add.esc":         "export declare interface ReadonlySetLike {\n    readonly size: number,\n}\n",
 		"std/prelude.replace.esc": "export declare interface Array<T> {\n    length: number,\n}\n",
-		"std/date.drop.esc":     "export declare interface Date {\n    getYear: unknown,\n}\n",
+		"std/date.drop.esc":       "export declare interface Date {\n    getYear: unknown,\n}\n",
 	})
 
 	overlay, err := LoadOverlay(dir)
@@ -285,6 +285,14 @@ func TestLoadOverlay_Rejects(t *testing.T) {
 			},
 			want: "overlay: std/date.drop.esc drops Date with an empty body; a drop naming " +
 				"a whole declaration is written `export declare val <name>`",
+		},
+		{
+			name: "member drop carrying a decorator",
+			files: map[string]string{
+				"std/date.drop.esc": "@env(\"window\")\nexport declare interface Date {\n    getYear: unknown,\n}\n",
+			},
+			want: "overlay: std/date.drop.esc decorates Date, which a drop ignores; " +
+				"write `export declare interface <name> {\n    <member>: unknown,\n}`",
 		},
 		{
 			name: "member drop in the root drop file",
