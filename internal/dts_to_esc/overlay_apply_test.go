@@ -877,6 +877,12 @@ func TestApplyOverlay_RejectsADecoratorOnTheDeclarationLine(t *testing.T) {
 				"member operation does not read; it contributes members alone, so drop it " +
 				"from the overlay",
 		},
+		// Class and interface are the whole set. A member operation merges into a
+		// converted declaration of the same kind, and those are the two kinds the
+		// converter emits that hold members. An overlay declaration of any other
+		// kind substitutes for the converted one whole, which reads its decorator
+		// rather than ignoring it. TestApplyOverlay_ReplaceCarriesADeclarationDecorator
+		// covers that.
 	}
 
 	for name, test := range tests {
@@ -889,6 +895,34 @@ func TestApplyOverlay_RejectsADecoratorOnTheDeclarationLine(t *testing.T) {
 			require.Equal(t, test.want, err.Error())
 		})
 	}
+}
+
+// A decorator an overlay writes on a declaration that substitutes for the
+// converted one reaches the generated tree.
+//
+// A member operation merges into a converted class or interface and reads
+// neither the overlay declaration's decorators nor its other declaration-level
+// parts, which is what TestApplyOverlay_RejectsADecoratorOnTheDeclarationLine
+// pins. An overlay declaration of another kind takes the converted one's place
+// whole, so everything it writes is what the tree carries.
+func TestApplyOverlay_ReplaceCarriesADeclarationDecorator(t *testing.T) {
+	t.Parallel()
+	require.Equal(t, `@js("Array")
+export declare class Array<T> {
+    length: number,
+    at(self, index: number) -> T | undefined,
+    constructor(mut self),
+    static isArray(arg: unknown) -> boolean
+}
+
+@env("window")
+export declare type ArrayLike<T> = {
+    length: number
+}
+`, renderPackage(t, overlayModules(t, map[string]string{
+		"std/prelude.replace.esc": "@env(\"window\")\n" +
+			"export declare type ArrayLike<T> = { length: number }\n",
+	}), "std:prelude"))
 }
 
 // A decorator an overlay writes on a member reaches the generated tree.
