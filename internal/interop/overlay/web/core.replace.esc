@@ -1,5 +1,5 @@
-// `MessageEvent` is in the WinterTC minimum common API, so it belongs in the
-// core tier. Two of its members name the browser and are retyped here.
+// `MessageEvent` is in the WinterTC minimum common API, so every environment
+// has it. Two of its members name the browser and are retyped here.
 //
 // `MessagePort` could not come with it. It reaches `StructuredSerializeOptions`
 // and through it `Transferable`, which names `OffscreenCanvas`, `ImageBitmap`,
@@ -8,10 +8,16 @@
 // `source` is a `WindowProxy`, a `MessagePort` or a `ServiceWorker` in the
 // browser and always null off it, so `null` is what every portable runtime
 // reports. `ports` is an array on every runtime whose element type differs by
-// runtime, so the tier names the array without the element.
+// runtime, so `web:core` names the array without the element.
 //
-// One class serves every tier, so a browser program reads both at their
-// portable types. #1586 would let it keep its own.
+// One class serves every environment, so a browser program reads both at their
+// portable types.
+//
+// `@env` does not reach this one. It annotates a declaration or a member, and
+// what differs here is which arms of a union each environment has: a window's
+// `source` is a `WindowProxy`, a `MessagePort` or a `ServiceWorker`, and
+// everywhere else it is `null`. Saying that needs per-arm availability. #1613
+// has the detail.
 export declare class MessageEvent<T = any> {
     readonly source: null,
     readonly ports: Array<unknown>,

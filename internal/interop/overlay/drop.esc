@@ -6,8 +6,8 @@
 // what the upstream declaration is. `export declare type <name>` needs
 // an `= ...` to parse, so a dropped type alias is named with `val` too.
 //
-// `globalThis` has no entry here. §6.1 lists it as dropped because
-// there is no ambient tier for it to take a union over, but TypeScript
+// `globalThis` has no entry here. §6.1 lists it as dropped because no
+// one ambient scope exists for it to take a union over, but TypeScript
 // synthesizes it rather than declaring it, so no lib.*.d.ts file
 // carries a declaration for the generator to skip.
 

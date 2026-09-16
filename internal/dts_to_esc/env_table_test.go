@@ -6,6 +6,7 @@ import (
 	"testing"
 
 	"github.com/escalier-lang/escalier/internal/ast"
+	"github.com/escalier-lang/escalier/internal/set"
 	"github.com/stretchr/testify/require"
 )
 
@@ -133,32 +134,27 @@ func TestAnnotateEnvs_LeavesAnAnnotationTheSourceCarries(t *testing.T) {
 	require.Empty(t, envMessages(t, mods))
 }
 
-// An override is addressed by package as well as name, so it cannot widen a
-// same-named declaration in another package.
-func TestPackageDeclEnvs_AnOverrideIsAddressedByPackage(t *testing.T) {
-	t.Parallel()
-
-	require.Equal(t, []Env{EnvWindow, EnvDedicatedWorker, EnvSharedWorker, EnvServiceWorker},
-		sortedEnvs(PackageDeclEnvs("web:dom", "XMLHttpRequestBodyInit")))
-	// The same name in a narrowed package that holds no override takes that
-	// package's default.
-	require.Equal(t, []Env{EnvWindow},
-		sortedEnvs(PackageDeclEnvs("web:storage", "XMLHttpRequestBodyInit")))
-}
-
-// A declaration whose environments differ from its package's takes the override
-// rather than the package default.
+// An override beats its package's default, and is addressed by package as well
+// as name so it cannot widen a same-named declaration elsewhere.
 //
-// `XMLHttpRequestBodyInit` is the case in the tree: `web:dom` is a window, and
-// this alias is `Blob | BufferSource | FormData | URLSearchParams | string`,
-// every arm of which each environment has.
-func TestPackageDeclEnvs_AnOverrideBeatsThePackageDefault(t *testing.T) {
+// The committed override map is empty, so this passes its own.
+func TestPackageDeclEnvs_AnOverrideBeatsThePackageDefaultForOnePackage(t *testing.T) {
 	t.Parallel()
 
+	overrides := map[packageDecl]set.Set[Env]{
+		{URI: "web:dom", Name: "Portable"}: AllEnvs(),
+	}
+	everywhere := []Env{EnvWindow, EnvDedicatedWorker, EnvSharedWorker, EnvServiceWorker}
+
+	// The override answers for the package it names.
+	require.Equal(t, everywhere, sortedEnvs(declEnvsFrom(overrides, "web:dom", "Portable")))
+	// Another narrowed package holding the same name takes its own default.
+	require.Equal(t, []Env{EnvWindow}, sortedEnvs(declEnvsFrom(overrides, "web:storage", "Portable")))
+	// A declaration the map does not name takes its package's default.
 	require.Equal(t, []Env{EnvWindow},
-		sortedEnvs(PackageDeclEnvs("web:dom", "HTMLCanvasElement")))
-	require.Equal(t, []Env{EnvWindow, EnvDedicatedWorker, EnvSharedWorker, EnvServiceWorker},
-		sortedEnvs(PackageDeclEnvs("web:dom", "XMLHttpRequestBodyInit")))
+		sortedEnvs(declEnvsFrom(overrides, "web:dom", "HTMLCanvasElement")))
+	// A package the table does not narrow is every environment.
+	require.Equal(t, everywhere, sortedEnvs(declEnvsFrom(overrides, "web:url", "URL")))
 }
 
 // A declaration binding several names needs one answer for all of them, since
@@ -171,17 +167,20 @@ func TestPackageDeclEnvs_AnOverrideBeatsThePackageDefault(t *testing.T) {
 func TestDeclaredEnvs_NeedsEveryNameToAgree(t *testing.T) {
 	t.Parallel()
 
+	overrides := map[packageDecl]set.Set[Env]{
+		{URI: "web:dom", Name: "Portable"}: AllEnvs(),
+	}
+
 	// Both names take web:dom's default, so they agree.
-	envs, err := declaredEnvs("web:dom", []string{"a", "b"})
+	envs, err := declaredEnvsFrom(overrides, "web:dom", []string{"a", "b"})
 	require.NoError(t, err)
 	require.Equal(t, []Env{EnvWindow}, sortedEnvs(envs))
 
-	// One name carrying an override and the other not is the disagreement, and
-	// `XMLHttpRequestBodyInit` is the entry the tree holds.
-	_, err = declaredEnvs("web:dom", []string{"XMLHttpRequestBodyInit", "HTMLCanvasElement"})
+	// One name carrying an override and the other not is the disagreement.
+	_, err = declaredEnvsFrom(overrides, "web:dom", []string{"Portable", "HTMLCanvasElement"})
 	require.Error(t, err)
 	require.Equal(t,
-		"converter: web:dom: one declaration binds \"XMLHttpRequestBodyInit\" and "+
+		"converter: web:dom: one declaration binds \"Portable\" and "+
 			"\"HTMLCanvasElement\" with different environments; a decorator answers "+
 			"for the whole declaration, so give them one entry or split the declaration",
 		err.Error())

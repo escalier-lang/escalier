@@ -3,7 +3,6 @@ package dts_to_esc
 import (
 	"fmt"
 	"sort"
-	"strings"
 
 	"github.com/escalier-lang/escalier/internal/ast"
 	"github.com/escalier-lang/escalier/internal/set"
@@ -93,64 +92,6 @@ func ImportGraph(mods map[string]*StandaloneModule) (map[string][]string, error)
 		graph[uri] = targets
 	}
 	return graph, nil
-}
-
-// TierViolation is one import edge whose target sits above its source in the
-// tier order, so the target is unavailable on a runtime the source claims.
-type TierViolation struct {
-	From     string
-	FromTier Tier
-	To       string
-	ToTier   Tier
-	// Names are the references that force the edge, sorted.
-	Names []string
-}
-
-func (v TierViolation) String() string {
-	return fmt.Sprintf("%s (%s tier) imports %s (%s tier) for %s",
-		v.From, v.FromTier, v.To, v.ToTier, strings.Join(v.Names, ", "))
-}
-
-// CheckTiers returns every import edge that goes up a tier, sorted. Direct
-// edges are enough: a path cannot rise unless one of its edges does.
-func CheckTiers(mods map[string]*StandaloneModule, graph map[string][]string) ([]TierViolation, error) {
-	owner, err := declaringPackages(mods)
-	if err != nil {
-		return nil, err
-	}
-	var violations []TierViolation
-	for from, targets := range graph {
-		fromTier, ok := TierOf(from)
-		if !ok {
-			return nil, fmt.Errorf("converter: %s has no tier; add one to internal/dts_to_esc/tier.go", from)
-		}
-		for _, to := range targets {
-			toTier, ok := TierOf(to)
-			if !ok {
-				return nil, fmt.Errorf("converter: %s has no tier; add one to internal/dts_to_esc/tier.go", to)
-			}
-			if toTier <= fromTier {
-				continue
-			}
-			var names []string
-			for _, name := range TypeRefNames(mods[from].Module).ToSlice() {
-				if owner[name] == to {
-					names = append(names, name)
-				}
-			}
-			sort.Strings(names)
-			violations = append(violations, TierViolation{
-				From: from, FromTier: fromTier, To: to, ToTier: toTier, Names: names,
-			})
-		}
-	}
-	sort.Slice(violations, func(i, j int) bool {
-		if violations[i].From != violations[j].From {
-			return violations[i].From < violations[j].From
-		}
-		return violations[i].To < violations[j].To
-	})
-	return violations, nil
 }
 
 // AddImportHeaders writes each package's import header and qualifies every
