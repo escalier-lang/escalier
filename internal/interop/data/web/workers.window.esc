@@ -74,7 +74,7 @@ export declare class Worker extends EventTarget {
 
 export declare type WorkerType = "classic" | "module"
 
-@env("dedicated_worker", "shared_worker", "service_worker")
+@env("dedicated_worker")
 export declare interface DedicatedWorkerGlobalScopeEventMap extends WorkerGlobalScopeEventMap, dom.MessageEventTargetEventMap {
     "message": MessageEvent,
     "messageerror": MessageEvent,
@@ -86,7 +86,7 @@ export declare interface DedicatedWorkerGlobalScopeEventMap extends WorkerGlobal
  *
  * [MDN Reference](https://developer.mozilla.org/docs/Web/API/DedicatedWorkerGlobalScope)
  */
-@env("dedicated_worker", "shared_worker", "service_worker")
+@env("dedicated_worker")
 @js("DedicatedWorkerGlobalScope")
 export declare class DedicatedWorkerGlobalScope extends WorkerGlobalScope {
     /**
@@ -118,13 +118,13 @@ export declare class DedicatedWorkerGlobalScope extends WorkerGlobalScope {
     constructor(mut self)
 }
 
-@env("dedicated_worker", "shared_worker", "service_worker")
+@env("shared_worker")
 export declare interface SharedWorkerGlobalScopeEventMap extends WorkerGlobalScopeEventMap {
     "connect": MessageEvent
 }
 
 /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/SharedWorkerGlobalScope) */
-@env("dedicated_worker", "shared_worker", "service_worker")
+@env("shared_worker")
 @js("SharedWorkerGlobalScope")
 export declare class SharedWorkerGlobalScope extends WorkerGlobalScope {
     /**

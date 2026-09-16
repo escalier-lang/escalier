@@ -167,10 +167,10 @@ export declare type ServiceWorkerState = "activated" | "activating" | "installed
 
 export declare type ServiceWorkerUpdateViaCache = "all" | "imports" | "none"
 
-@env("dedicated_worker", "shared_worker", "service_worker")
+@env("service_worker")
 export declare interface ExtendableEventInit extends EventInit {}
 
-@env("dedicated_worker", "shared_worker", "service_worker")
+@env("service_worker")
 export declare interface ExtendableMessageEventInit extends ExtendableEventInit {
     data?: any,
     lastEventId?: string,
@@ -179,7 +179,7 @@ export declare interface ExtendableMessageEventInit extends ExtendableEventInit 
     source?: Client | ServiceWorker | dom.MessagePort | null
 }
 
-@env("dedicated_worker", "shared_worker", "service_worker")
+@env("service_worker")
 export declare interface FetchEventInit extends ExtendableEventInit {
     clientId?: string,
     handled?: Promise<undefined>,
@@ -189,7 +189,7 @@ export declare interface FetchEventInit extends ExtendableEventInit {
     resultingClientId?: string
 }
 
-@env("dedicated_worker", "shared_worker", "service_worker")
+@env("service_worker")
 export declare interface NotificationEventInit extends ExtendableEventInit {
     action?: string,
     notification: dom.Notification
@@ -200,7 +200,7 @@ export declare interface NotificationEventInit extends ExtendableEventInit {
  *
  * [MDN Reference](https://developer.mozilla.org/docs/Web/API/Client)
  */
-@env("dedicated_worker", "shared_worker", "service_worker")
+@env("service_worker")
 @js("Client")
 export declare class Client {
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/Client/frameType) */
@@ -223,7 +223,7 @@ export declare class Client {
  *
  * [MDN Reference](https://developer.mozilla.org/docs/Web/API/Clients)
  */
-@env("dedicated_worker", "shared_worker", "service_worker")
+@env("service_worker")
 @js("Clients")
 export declare class Clients {
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/Clients/claim) */
@@ -243,7 +243,7 @@ export declare class Clients {
  *
  * [MDN Reference](https://developer.mozilla.org/docs/Web/API/ExtendableEvent)
  */
-@env("dedicated_worker", "shared_worker", "service_worker")
+@env("service_worker")
 @js("ExtendableEvent")
 export declare class ExtendableEvent extends Event {
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/ExtendableEvent/waitUntil) */
@@ -257,7 +257,7 @@ export declare class ExtendableEvent extends Event {
  *
  * [MDN Reference](https://developer.mozilla.org/docs/Web/API/ExtendableMessageEvent)
  */
-@env("dedicated_worker", "shared_worker", "service_worker")
+@env("service_worker")
 @js("ExtendableMessageEvent")
 export declare class ExtendableMessageEvent extends ExtendableEvent {
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/ExtendableMessageEvent/data) */
@@ -279,7 +279,7 @@ export declare class ExtendableMessageEvent extends ExtendableEvent {
  *
  * [MDN Reference](https://developer.mozilla.org/docs/Web/API/FetchEvent)
  */
-@env("dedicated_worker", "shared_worker", "service_worker")
+@env("service_worker")
 @js("FetchEvent")
 export declare class FetchEvent extends ExtendableEvent {
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/FetchEvent/clientId) */
@@ -303,7 +303,7 @@ export declare class FetchEvent extends ExtendableEvent {
  *
  * [MDN Reference](https://developer.mozilla.org/docs/Web/API/NotificationEvent)
  */
-@env("dedicated_worker", "shared_worker", "service_worker")
+@env("service_worker")
 @js("NotificationEvent")
 export declare class NotificationEvent extends ExtendableEvent {
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/NotificationEvent/action) */
@@ -314,7 +314,7 @@ export declare class NotificationEvent extends ExtendableEvent {
     constructor(mut self, type: string, eventInitDict: NotificationEventInit)
 }
 
-@env("dedicated_worker", "shared_worker", "service_worker")
+@env("service_worker")
 export declare interface ServiceWorkerGlobalScopeEventMap extends workers.WorkerGlobalScopeEventMap {
     "activate": ExtendableEvent,
     "fetch": FetchEvent,
@@ -333,7 +333,7 @@ export declare interface ServiceWorkerGlobalScopeEventMap extends workers.Worker
  *
  * [MDN Reference](https://developer.mozilla.org/docs/Web/API/ServiceWorkerGlobalScope)
  */
-@env("dedicated_worker", "shared_worker", "service_worker")
+@env("service_worker")
 @js("ServiceWorkerGlobalScope")
 export declare class ServiceWorkerGlobalScope extends workers.WorkerGlobalScope {
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/ServiceWorkerGlobalScope/clients) */
@@ -375,7 +375,7 @@ export declare class ServiceWorkerGlobalScope extends workers.WorkerGlobalScope 
  *
  * [MDN Reference](https://developer.mozilla.org/docs/Web/API/WindowClient)
  */
-@env("dedicated_worker", "shared_worker", "service_worker")
+@env("service_worker")
 @js("WindowClient")
 export declare class WindowClient extends Client {
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/WindowClient/focused) */

@@ -77,12 +77,53 @@ func windowOnly() set.Set[Env] { return set.FromSlice([]Env{EnvWindow}) }
 // A package-wide default is coarse, and a declaration that contradicts it is
 // what the override is for. Each entry records why, since the reason is what a
 // reader needs to judge whether a TypeScript bump has invalidated it.
-// It is empty today. `XMLHttpRequestBodyInit` was the one candidate, declared
-// in `web:dom` and portable in substance, and it needs no entry because
-// fetch.replace.esc keeps `web:fetch` from naming it. An entry earns its place
-// when a reference across the package's boundary is worth its cost in closure
-// size.
-var declEnvOverrides = map[packageDecl]set.Set[Env]{}
+//
+// Every entry today separates the three worker kinds. TypeScript ships one
+// lib.webworker.d.ts for all of them, so the lib reading answers "some worker"
+// and cannot say which. What distinguishes them is the scope class a
+// declaration belongs to, and its event map is what says which events that
+// scope receives. These entries carry that reading, which no file in the lib
+// set states.
+var declEnvOverrides = map[packageDecl]set.Set[Env]{
+	// A dedicated worker's scope, and the encoded-transform surface only it
+	// receives. `DedicatedWorkerGlobalScopeEventMap` is what declares
+	// `rtctransform`, so the three RTC declarations go with it.
+	{"web:workers", "DedicatedWorkerGlobalScope"}:         dedicatedWorkerOnly(),
+	{"web:workers", "DedicatedWorkerGlobalScopeEventMap"}: dedicatedWorkerOnly(),
+	{"web:web_rtc", "RTCTransformEvent"}:                  dedicatedWorkerOnly(),
+	{"web:web_rtc", "RTCRtpScriptTransformer"}:            dedicatedWorkerOnly(),
+	{"web:web_rtc", "onrtctransform"}:                     dedicatedWorkerOnly(),
+
+	// A shared worker's scope. `connect` is the one event its map adds, and it
+	// carries no type the other scopes lack.
+	{"web:workers", "SharedWorkerGlobalScope"}:         sharedWorkerOnly(),
+	{"web:workers", "SharedWorkerGlobalScopeEventMap"}: sharedWorkerOnly(),
+
+	// A service worker's scope, the clients only it reaches, and the events only
+	// its map declares. A page never receives a fetch, push or notification
+	// event, and neither does a dedicated or shared worker.
+	{"web:service_worker", "ServiceWorkerGlobalScope"}:         serviceWorkerOnly(),
+	{"web:service_worker", "ServiceWorkerGlobalScopeEventMap"}: serviceWorkerOnly(),
+	{"web:service_worker", "Client"}:                           serviceWorkerOnly(),
+	{"web:service_worker", "Clients"}:                          serviceWorkerOnly(),
+	{"web:service_worker", "WindowClient"}:                     serviceWorkerOnly(),
+	{"web:service_worker", "ExtendableEvent"}:                  serviceWorkerOnly(),
+	{"web:service_worker", "ExtendableEventInit"}:              serviceWorkerOnly(),
+	{"web:service_worker", "ExtendableMessageEvent"}:           serviceWorkerOnly(),
+	{"web:service_worker", "ExtendableMessageEventInit"}:       serviceWorkerOnly(),
+	{"web:service_worker", "FetchEvent"}:                       serviceWorkerOnly(),
+	{"web:service_worker", "FetchEventInit"}:                   serviceWorkerOnly(),
+	{"web:service_worker", "NotificationEvent"}:                serviceWorkerOnly(),
+	{"web:service_worker", "NotificationEventInit"}:            serviceWorkerOnly(),
+	{"web:push", "PushEvent"}:                                  serviceWorkerOnly(),
+	{"web:push", "PushEventInit"}:                              serviceWorkerOnly(),
+	{"web:push", "PushMessageData"}:                            serviceWorkerOnly(),
+	{"web:push", "PushMessageDataInit"}:                        serviceWorkerOnly(),
+}
+
+func dedicatedWorkerOnly() set.Set[Env] { return set.FromSlice([]Env{EnvDedicatedWorker}) }
+func sharedWorkerOnly() set.Set[Env]    { return set.FromSlice([]Env{EnvSharedWorker}) }
+func serviceWorkerOnly() set.Set[Env]   { return set.FromSlice([]Env{EnvServiceWorker}) }
 
 // Unreconciled names the 629 declarations both web libs declare, which the run
 // has no trustworthy environment reading for.

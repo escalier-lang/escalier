@@ -1092,7 +1092,7 @@ export declare type RTCStatsIceCandidatePairState = "failed" | "frozen" | "in-pr
 export declare type RTCStatsType = "candidate-pair" | "certificate" | "codec" | "data-channel" | "inbound-rtp" | "local-candidate" | "media-playout" | "media-source" | "outbound-rtp" | "peer-connection" | "remote-candidate" | "remote-inbound-rtp" | "remote-outbound-rtp" | "transport"
 
 /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/RTCRtpScriptTransformer) */
-@env("dedicated_worker", "shared_worker", "service_worker")
+@env("dedicated_worker")
 @js("RTCRtpScriptTransformer")
 export declare class RTCRtpScriptTransformer extends EventTarget {
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/RTCRtpScriptTransformer/options) */
@@ -1110,7 +1110,7 @@ export declare class RTCRtpScriptTransformer extends EventTarget {
 }
 
 /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/RTCTransformEvent) */
-@env("dedicated_worker", "shared_worker", "service_worker")
+@env("dedicated_worker")
 @js("RTCTransformEvent")
 export declare class RTCTransformEvent extends Event {
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/RTCTransformEvent/transformer) */
@@ -1120,6 +1120,6 @@ export declare class RTCTransformEvent extends Event {
 }
 
 /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/DedicatedWorkerGlobalScope/rtctransform_event) */
-@env("dedicated_worker", "shared_worker", "service_worker")
+@env("dedicated_worker")
 @js("onrtctransform")
 export declare var onrtctransform: (fn (this: workers.DedicatedWorkerGlobalScope, ev: RTCTransformEvent) -> any) | null

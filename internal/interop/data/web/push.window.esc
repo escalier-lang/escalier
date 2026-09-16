@@ -80,7 +80,7 @@ export declare class PushSubscriptionOptions {
 
 export declare type PushEncryptionKeyName = "auth" | "p256dh"
 
-@env("dedicated_worker", "shared_worker", "service_worker")
+@env("service_worker")
 export declare interface PushEventInit extends service_worker.ExtendableEventInit {
     data?: PushMessageDataInit
 }
@@ -91,7 +91,7 @@ export declare interface PushEventInit extends service_worker.ExtendableEventIni
  *
  * [MDN Reference](https://developer.mozilla.org/docs/Web/API/PushEvent)
  */
-@env("dedicated_worker", "shared_worker", "service_worker")
+@env("service_worker")
 @js("PushEvent")
 export declare class PushEvent extends service_worker.ExtendableEvent {
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/PushEvent/data) */
@@ -106,7 +106,7 @@ export declare class PushEvent extends service_worker.ExtendableEvent {
  *
  * [MDN Reference](https://developer.mozilla.org/docs/Web/API/PushMessageData)
  */
-@env("dedicated_worker", "shared_worker", "service_worker")
+@env("service_worker")
 @js("PushMessageData")
 export declare class PushMessageData {
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/PushMessageData/arrayBuffer) */
@@ -123,5 +123,5 @@ export declare class PushMessageData {
     constructor(mut self)
 }
 
-@env("dedicated_worker", "shared_worker", "service_worker")
+@env("service_worker")
 export declare type PushMessageDataInit = BufferSource | string
