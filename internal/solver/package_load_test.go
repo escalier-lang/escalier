@@ -769,9 +769,9 @@ func TestTheRegistryKeyCarriesThePackageAndTheScopeKeyDoesNot(t *testing.T) {
 			wantScope:    "Parsed",
 		},
 		"NamespacedInAPackage": {
-			uri: "web:dom", ns: "web__url", name: "Parsed",
-			wantRegistry: "import:web:dom.web__url.Parsed",
-			wantScope:    "web__url.Parsed",
+			uri: "web:dom", ns: "web_url", name: "Parsed",
+			wantRegistry: "import:web:dom.web_url.Parsed",
+			wantScope:    "web_url.Parsed",
 		},
 		// A URI holding a dot has it escaped, so `npm:a.b`'s `D` cannot read the
 		// same as `npm:a`'s `b.D`.
