@@ -113,6 +113,27 @@ func TestParseModuleNoErrors(t *testing.T) {
 				declare val x: number
 			`,
 		},
+		// A decorator sits between a member's JSDoc and its modifier keywords,
+		// the same place it takes on a declaration.
+		"DecoratorsOnClassMembers": {
+			input: `
+				declare class Perf {
+					@avail("browser")
+					timing: number,
+					@avail("browser")
+					@deprecated
+					static readonly origin: number,
+					@avail("browser")
+					now(self) -> number,
+					@avail("browser")
+					get x(self) -> number,
+					@avail("browser")
+					set x(self, v: number),
+					@avail("browser")
+					constructor(mut self)
+				}
+			`,
+		},
 		"ExprStmts": {
 			input: `
 				foo()
@@ -1115,6 +1136,73 @@ func TestClassElemDocs(t *testing.T) {
 		cls, ok := decls[0].(*ast.ClassDecl)
 		require.True(t, ok)
 		require.Empty(t, cls.Body, "no spurious elem from the orphan path")
+	})
+
+	t.Run("TrailingDecoratorReportsOrphanError", func(t *testing.T) {
+		t.Parallel()
+		// A decorator immediately before `}` has no member to attach to, the
+		// counterpart of TrailingDocReportsOrphanError. Without its own
+		// diagnostic the member parse reports a missing property name at the
+		// brace, which says nothing about the decorator.
+		ctx, cancel := context.WithTimeout(context.Background(), 1*time.Second)
+		defer cancel()
+		decls, errors := ParseDecls(ctx, &ast.Source{ID: 0, Path: "input.esc",
+			Contents: `class Foo { x: number, @avail("browser") }`})
+		require.Len(t, errors, 1)
+		require.Equal(t, "Decorator is not attached to a class member", errors[0].Message)
+		require.Len(t, decls, 1)
+		cls, ok := decls[0].(*ast.ClassDecl)
+		require.True(t, ok)
+		require.Len(t, cls.Body, 1, "the elem before the comma still parses")
+	})
+
+	t.Run("ACommentUnderADecoratorKeepsTheBody", func(t *testing.T) {
+		t.Parallel()
+		// A comment may sit on either side of a member's decorators. Leaving
+		// the one below them unconsumed hands it to the member parse as the
+		// member's first token, which fails and ends the whole class body.
+		ctx, cancel := context.WithTimeout(context.Background(), 1*time.Second)
+		defer cancel()
+		decls, errors := ParseDecls(ctx, &ast.Source{ID: 0, Path: "input.esc",
+			Contents: "class Foo {\n @avail(\"browser\")\n // note\n x: number,\n y: number\n}"})
+		require.Empty(t, errors)
+		require.Len(t, decls, 1)
+		cls, ok := decls[0].(*ast.ClassDecl)
+		require.True(t, ok)
+		require.Len(t, cls.Body, 2)
+		require.Len(t, ast.ClassElemDecorators(cls.Body[0]), 1)
+	})
+
+	t.Run("ADocUnderADecoratorAttachesToTheMember", func(t *testing.T) {
+		t.Parallel()
+		// The later doc wins, so a JSDoc written below the decorators reaches
+		// the member rather than being dropped with them in between.
+		ctx, cancel := context.WithTimeout(context.Background(), 1*time.Second)
+		defer cancel()
+		decls, errors := ParseDecls(ctx, &ast.Source{ID: 0, Path: "input.esc",
+			Contents: "class Foo {\n @avail(\"browser\")\n /** Reads it. */\n x: number\n}"})
+		require.Empty(t, errors)
+		cls, ok := decls[0].(*ast.ClassDecl)
+		require.True(t, ok)
+		require.Len(t, cls.Body, 1)
+		require.Equal(t, "/** Reads it. */", cls.Body[0].Doc())
+		require.Len(t, ast.ClassElemDecorators(cls.Body[0]), 1)
+	})
+
+	t.Run("AMisplacedDecoratorKeepsTheBody", func(t *testing.T) {
+		t.Parallel()
+		// A decorator belongs above a member's modifiers. Written after one it
+		// is consumed here rather than left for the name parse, which would
+		// fail on the `@` and take the rest of the class body with it.
+		ctx, cancel := context.WithTimeout(context.Background(), 1*time.Second)
+		defer cancel()
+		decls, errors := ParseDecls(ctx, &ast.Source{ID: 0, Path: "input.esc",
+			Contents: "class Foo {\n static @avail(\"browser\") foo() -> number,\n y: number\n}"})
+		require.Len(t, errors, 1)
+		require.Equal(t, "Decorators must come before a member's modifiers", errors[0].Message)
+		cls, ok := decls[0].(*ast.ClassDecl)
+		require.True(t, ok)
+		require.Len(t, cls.Body, 2, "both members still parse")
 	})
 
 	t.Run("TrailingDocAfterCommaReportsOrphanError", func(t *testing.T) {

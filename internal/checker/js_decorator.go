@@ -168,5 +168,37 @@ func validateJsDecorator(filePath string, decl ast.Decl, importSpan ast.Span) []
 			span: importSpan,
 		}}
 	}
+	if cls, isClass := decl.(*ast.ClassDecl); isClass {
+		return validateMemberJsDecorators(filePath, cls, name, importSpan)
+	}
 	return nil
+}
+
+// validateMemberJsDecorators rejects `@js` written on a class member.
+//
+// A member lowers to a property access on whatever the class's own `@js`
+// names, so there is no second runtime path for a member decorator to carry and
+// codegen reads none. Accepting one would drop it without a word. Every other
+// decorator on a member is left alone, which is what lets an annotation that
+// says something about the member rather than its lowering be written there.
+func validateMemberJsDecorators(
+	filePath string, cls *ast.ClassDecl, className string, importSpan ast.Span,
+) []Error {
+	var errs []Error
+	for _, elem := range cls.Body {
+		for _, dec := range ast.ClassElemDecorators(elem) {
+			if dec.Name == nil || dec.Name.Name != ast.JSDecoratorName {
+				continue
+			}
+			errs = append(errs, &GenericError{
+				message: fmt.Sprintf(
+					"`@js` decorator on a member of class %q in pseudo-package file %s "+
+						"has no runtime mapping; the class's own `@js` names what the "+
+						"member is reached through",
+					className, filePath),
+				span: importSpan,
+			})
+		}
+	}
+	return errs
 }

@@ -783,9 +783,45 @@ func (p *Parser) parseClassElem() ast.ClassElem {
 		}
 		return nil
 	}
+	// Decorators sit between the JSDoc and the member's modifier keywords, the
+	// same place they take on a declaration, so `@js("x") static foo` parses and
+	// `static @js("x") foo` does not.
+	decorators := p.parseDecorators()
+	// A comment may sit on either side of the decorators, so the doc is consumed
+	// again here and the later one wins. Without this second pass a comment
+	// written under a decorator reaches parseClassElemInner as the member's first
+	// token, which fails and ends the whole class body.
+	if after := p.consumeLeadingDoc(); after != "" {
+		doc = after
+	}
+	// A decorator with no member under it, the counterpart of the dangling JSDoc
+	// above. Reporting it here names what is wrong, where letting the member
+	// parse run on would report a missing property name at the brace.
+	if next := p.lexer.peek(); next.Type == CloseBrace {
+		if len(decorators) > 0 {
+			p.reportError(next.Span, "Decorator is not attached to a class member")
+		}
+		return nil
+	}
 	elem := p.parseClassElemInner()
 	attachDoc(elem, doc)
+	attachElemDecorators(elem, decorators)
 	return elem
+}
+
+// attachElemDecorators stamps the decorator list onto a parsed class member,
+// and widens the member's span to open at the first decorator.
+//
+// A nil elem means the member failed to parse, in which case the decorators
+// have nowhere to go and the parse error already says what is wrong.
+func attachElemDecorators(elem ast.ClassElem, decorators []*ast.Decorator) {
+	if elem == nil || len(decorators) == 0 {
+		return
+	}
+	elem.SetDecorators(decorators)
+	span := elem.Span()
+	span.Start = decorators[0].Span().Start
+	elem.SetSpan(span)
 }
 
 func (p *Parser) parseClassElemInner() ast.ClassElem {
@@ -816,6 +852,19 @@ func (p *Parser) parseClassElemInner() ast.ClassElem {
 		// let objExprKey read the keyword as an identifier.
 		if followsAName(p.lexer.peek2().Type) {
 			goto modifiers_done
+		}
+
+		// A decorator written after a modifier, the one place a member cannot
+		// carry one. Consuming it here keeps the rest of the member parseable,
+		// where leaving the `@` for the name parse loses the whole class body.
+		if token.Type == AtSign {
+			misplaced := p.parseDecorators()
+			if len(misplaced) > 0 {
+				p.reportError(misplaced[0].Span_,
+					"Decorators must come before a member's modifiers")
+			}
+			token = p.lexer.peek()
+			continue
 		}
 
 		// nolint: exhaustive

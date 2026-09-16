@@ -493,3 +493,74 @@ func TestTypeAnnAccept_WalksLifetimeUseSites(t *testing.T) {
 		"EnterLifetimeAnn", // Ref's lifetime argument
 	}, visitor.enterCalls)
 }
+
+// A decorator's arguments are reachable from the walk over a class member.
+//
+// Decorator offers no hook of its own, so what a visitor sees is the argument
+// expressions. The walk reaches a member's decorator before the member's name,
+// matching the order the source writes them in.
+func TestDecoratorArgumentsAreReachableFromTheWalk(t *testing.T) {
+	span := Span{Start: Location{Offset: 0}, End: Location{Offset: 1}, SourceID: 0}
+	decorator := func(name string) *Decorator {
+		return &Decorator{
+			Name:  NewIdentifier(name, span),
+			Args:  []Expr{NewLitExpr(NewString("browser", span))},
+			Span_: span,
+		}
+	}
+
+	field := &FieldElem{Name: NewIdent("timing", span), Type: NewNumberTypeAnn(span), Span_: span}
+	field.Decorators = []*Decorator{decorator("avail")}
+
+	visitor := newMockVisitor()
+	field.Accept(visitor)
+
+	require.Equal(t, []string{
+		"EnterClassElem", // the field
+		"EnterExpr",      // the decorator's `"browser"` argument
+		"EnterExpr",      // the field's name
+		"EnterTypeAnn",   // the field's `number`
+	}, visitor.enterCalls)
+}
+
+// A visitor that turns a member down keeps the walk out of its decorators too.
+func TestDecoratorArgumentsAreSkippedWithTheirMember(t *testing.T) {
+	span := Span{Start: Location{Offset: 0}, End: Location{Offset: 1}, SourceID: 0}
+	field := &FieldElem{Name: NewIdent("timing", span), Type: NewNumberTypeAnn(span), Span_: span}
+	field.Decorators = []*Decorator{{
+		Name:  NewIdentifier("avail", span),
+		Args:  []Expr{NewLitExpr(NewString("browser", span))},
+		Span_: span,
+	}}
+
+	visitor := newMockVisitor()
+	visitor.skipNode("ClassElem")
+	field.Accept(visitor)
+
+	require.Equal(t, []string{"EnterClassElem"}, visitor.enterCalls)
+}
+
+// ClassElemDecorators reads the list off any member kind, which is how a caller
+// after a member's decorators reaches them through the ClassElem interface.
+func TestClassElemDecoratorsReadsEveryMemberKind(t *testing.T) {
+	span := Span{Start: Location{Offset: 0}, End: Location{Offset: 1}, SourceID: 0}
+	dec := []*Decorator{{Name: NewIdentifier("avail", span), Span_: span}}
+
+	field := &FieldElem{Span_: span}
+	field.Decorators = dec
+	method := &MethodElem{Span_: span}
+	method.Decorators = dec
+	getter := &GetterElem{Span_: span}
+	getter.Decorators = dec
+	setter := &SetterElem{Span_: span}
+	setter.Decorators = dec
+	ctor := &ConstructorElem{Span_: span}
+	ctor.Decorators = dec
+	callable := &CallableElem{Span_: span}
+	callable.Decorators = dec
+
+	for _, elem := range []ClassElem{field, method, getter, setter, ctor, callable} {
+		require.Len(t, ClassElemDecorators(elem), 1, "%T", elem)
+	}
+	require.Nil(t, ClassElemDecorators(&FieldElem{Span_: span}))
+}
