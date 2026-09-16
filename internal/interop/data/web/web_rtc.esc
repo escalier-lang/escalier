@@ -26,6 +26,10 @@ export declare interface RTCConfiguration {
     rtcpMuxPolicy?: RTCRtcpMuxPolicy
 }
 
+export declare interface RTCDTMFToneChangeEventInit extends EventInit {
+    tone?: string
+}
+
 export declare interface RTCDataChannelEventInit extends EventInit {
     channel: RTCDataChannel
 }
@@ -366,6 +370,42 @@ export declare class RTCCertificate {
     getFingerprints(self) -> mut Array<RTCDtlsFingerprint>,
     static prototype: RTCCertificate,
     constructor(mut self)
+}
+
+export declare interface RTCDTMFSenderEventMap {
+    "tonechange": RTCDTMFToneChangeEvent
+}
+
+/** [MDN Reference](https://developer.mozilla.org/docs/Web/API/RTCDTMFSender) */
+@js("RTCDTMFSender")
+export declare class RTCDTMFSender extends EventTarget {
+    /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/RTCDTMFSender/canInsertDTMF) */
+    readonly canInsertDTMF: boolean,
+    /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/RTCDTMFSender/tonechange_event) */
+    ontonechange: (fn (this: RTCDTMFSender, ev: RTCDTMFToneChangeEvent) -> any) | null,
+    /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/RTCDTMFSender/toneBuffer) */
+    readonly toneBuffer: string,
+    /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/RTCDTMFSender/insertDTMF) */
+    insertDTMF(mut self, tones: string, duration?: number, interToneGap?: number) -> unknown,
+    addEventListener<K: keyof RTCDTMFSenderEventMap>(mut self, type: K, listener: fn (this: RTCDTMFSender, ev: RTCDTMFSenderEventMap[K]) -> any, options?: boolean | AddEventListenerOptions) -> unknown,
+    addEventListener(mut self, type: string, listener: EventListenerOrEventListenerObject, options?: boolean | AddEventListenerOptions) -> unknown,
+    removeEventListener<K: keyof RTCDTMFSenderEventMap>(mut self, type: K, listener: fn (this: RTCDTMFSender, ev: RTCDTMFSenderEventMap[K]) -> any, options?: boolean | EventListenerOptions) -> unknown,
+    removeEventListener(mut self, type: string, listener: EventListenerOrEventListenerObject, options?: boolean | EventListenerOptions) -> unknown,
+    static prototype: RTCDTMFSender,
+    constructor(mut self)
+}
+
+/**
+ * Events sent to indicate that DTMF tones have started or finished playing. This interface is used by the tonechange event.
+ *
+ * [MDN Reference](https://developer.mozilla.org/docs/Web/API/RTCDTMFToneChangeEvent)
+ */
+@js("RTCDTMFToneChangeEvent")
+export declare class RTCDTMFToneChangeEvent extends Event {
+    /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/RTCDTMFToneChangeEvent/tone) */
+    readonly tone: string,
+    static prototype: RTCDTMFToneChangeEvent,
+    constructor(mut self, type: string, eventInitDict?: RTCDTMFToneChangeEventInit)
 }
 
 export declare interface RTCDataChannelEventMap {
@@ -780,7 +820,7 @@ export declare class RTCRtpScriptTransform {
 @js("RTCRtpSender")
 export declare class RTCRtpSender {
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/RTCRtpSender/dtmf) */
-    readonly dtmf: dom.RTCDTMFSender | null,
+    readonly dtmf: RTCDTMFSender | null,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/RTCRtpSender/track) */
     readonly track: dom.MediaStreamTrack | null,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/RTCRtpSender/transform) */

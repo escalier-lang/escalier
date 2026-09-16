@@ -561,7 +561,7 @@ export declare class BaseAudioContext extends EventTarget {
      *
      * [MDN Reference](https://developer.mozilla.org/docs/Web/API/BaseAudioContext/createScriptProcessor)
      */
-    createScriptProcessor(mut self, bufferSize?: number, numberOfInputChannels?: number, numberOfOutputChannels?: number) -> dom.ScriptProcessorNode,
+    createScriptProcessor(mut self, bufferSize?: number, numberOfInputChannels?: number, numberOfOutputChannels?: number) -> ScriptProcessorNode,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/BaseAudioContext/createStereoPanner) */
     createStereoPanner(mut self) -> StereoPannerNode,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/BaseAudioContext/createWaveShaper) */
@@ -876,6 +876,38 @@ export declare class PannerNode extends AudioNode {
 export declare class PeriodicWave {
     static prototype: PeriodicWave,
     constructor(mut self, context: BaseAudioContext, options?: PeriodicWaveOptions)
+}
+
+export declare interface ScriptProcessorNodeEventMap {
+    "audioprocess": AudioProcessingEvent
+}
+
+/**
+ * Allows the generation, processing, or analyzing of audio using JavaScript.
+ * @deprecated As of the August 29 2014 Web Audio API spec publication, this feature has been marked as deprecated, and was replaced by AudioWorklet (see AudioWorkletNode).
+ *
+ * [MDN Reference](https://developer.mozilla.org/docs/Web/API/ScriptProcessorNode)
+ */
+@js("ScriptProcessorNode")
+export declare class ScriptProcessorNode extends AudioNode {
+    /**
+     * @deprecated
+     *
+     * [MDN Reference](https://developer.mozilla.org/docs/Web/API/ScriptProcessorNode/bufferSize)
+     */
+    readonly bufferSize: number,
+    /**
+     * @deprecated
+     *
+     * [MDN Reference](https://developer.mozilla.org/docs/Web/API/ScriptProcessorNode/audioprocess_event)
+     */
+    onaudioprocess: (fn (this: ScriptProcessorNode, ev: AudioProcessingEvent) -> any) | null,
+    addEventListener<K: keyof ScriptProcessorNodeEventMap>(mut self, type: K, listener: fn (this: ScriptProcessorNode, ev: ScriptProcessorNodeEventMap[K]) -> any, options?: boolean | AddEventListenerOptions) -> unknown,
+    addEventListener(mut self, type: string, listener: EventListenerOrEventListenerObject, options?: boolean | AddEventListenerOptions) -> unknown,
+    removeEventListener<K: keyof ScriptProcessorNodeEventMap>(mut self, type: K, listener: fn (this: ScriptProcessorNode, ev: ScriptProcessorNodeEventMap[K]) -> any, options?: boolean | EventListenerOptions) -> unknown,
+    removeEventListener(mut self, type: string, listener: EventListenerOrEventListenerObject, options?: boolean | EventListenerOptions) -> unknown,
+    static prototype: ScriptProcessorNode,
+    constructor(mut self)
 }
 
 /**

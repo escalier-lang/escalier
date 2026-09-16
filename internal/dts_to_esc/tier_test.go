@@ -54,10 +54,10 @@ func TestTierMembership(t *testing.T) {
 	}, PackagesInTier(TierPortable))
 
 	require.Equal(t, []string{
-		"web:cache", "web:dom", "web:indexeddb", "web:payments",
-		"web:push", "web:service_worker", "web:storage", "web:web_audio",
-		"web:web_codecs", "web:web_rtc", "web:webauthn", "web:webgl",
-		"web:workers",
+		"web:cache", "web:credentials", "web:dom", "web:indexeddb",
+		"web:payments", "web:push", "web:service_worker", "web:storage",
+		"web:web_audio", "web:web_codecs", "web:web_rtc", "web:webauthn",
+		"web:webgl", "web:workers",
 	}, PackagesInTier(TierBrowser))
 
 	// The language tier and the `std:` scheme hold the same packages. The

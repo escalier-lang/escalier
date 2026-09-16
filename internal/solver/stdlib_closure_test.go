@@ -372,9 +372,9 @@ func TestACycleAcrossTiersLoads(t *testing.T) {
 	require.Equal(t, "Beta", soltype.Print(inferredValueType(t, res.Scope, "partner")))
 }
 
-// The committed tree's cycles load. `web:dom` sits in an eleven-package
-// component, and every member coming back with a surface is what says the
-// closure resolved the references between them.
+// The committed tree's cycles load. `web:dom` reaches most of the `web:*` tree
+// and several `std:*` packages, and every member coming back with a surface is
+// what says the closure resolved the references between them.
 func TestTheCommittedTreeLoadsItsCycles(t *testing.T) {
 	t.Parallel()
 
@@ -409,6 +409,55 @@ func TestTheCommittedTreeClosureIsBoundedByTheRoots(t *testing.T) {
 	require.NoError(t, err)
 	require.Contains(t, closure, "web:fetch")
 	require.NotContains(t, closure, "web:dom", "web:fetch reaches the DOM")
+}
+
+// A declaration the committed tree routes to the package owning its API is
+// reached under that package's prefix, by a program that imports it alone.
+//
+// Each of these sat in `web:dom` before #1605, so reaching one meant importing
+// the whole DOM and writing `dom.Name`. The test is what says the move landed
+// where a caller looks.
+func TestTheCommittedTreeReachesEachAPIUnderItsOwnPackage(t *testing.T) {
+	t.Parallel()
+
+	tests := map[string]struct {
+		uri  string
+		src  string
+		want string
+	}{
+		"WebAudio": {
+			uri:  "web:web_audio",
+			src:  "declare val n: web_audio.ScriptProcessorNode\nval read = n.bufferSize",
+			want: "number",
+		},
+		"WebRTC": {
+			uri:  "web:web_rtc",
+			src:  "declare val s: web_rtc.RTCDTMFSender\nval read = s.toneBuffer",
+			want: "string",
+		},
+		"Payments": {
+			uri:  "web:payments",
+			src:  "declare val a: payments.PaymentAddress\nval read = a.city",
+			want: "string",
+		},
+		"Credentials": {
+			uri:  "web:credentials",
+			src:  "declare val c: credentials.Credential\nval read = c.id",
+			want: "string",
+		},
+	}
+
+	for name, test := range tests {
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+			src := "import \"" + test.uri + "\"\n" + test.src + "\n"
+			res := InferModuleAgainstStdlib(parseModule(t, src), committedTree)
+			// The committed tree reports known diagnostics of its own, so what
+			// this asserts is the member's type rather than a clean run. Naming
+			// the old prefix, as in `dom.Credential`, leaves `read` at `never`.
+			require.Equal(t, test.want, soltype.Print(inferredValueType(t, res.Scope, "read")))
+		})
+	}
 }
 
 // committedTree is the generated tree these tests read, relative to this

@@ -205,3 +205,47 @@ func TestSchemeOf(t *testing.T) {
 	require.Equal(t, "web", SchemeOf("web:dom"))
 	require.Equal(t, "", SchemeOf("nocolon"))
 }
+
+// Names lib.dom.d.ts declares that belong to an API another package owns.
+// Without an entry each falls through to the DOMResidual catch-all, which
+// routes it to `web:dom`, where a caller reaches it only as `dom.Name`.
+//
+// The catch-all is right for the DOM mass and wrong for these, so an entry per
+// name is what says which package owns the API.
+func TestRoute_APIOwnerBeatsTheDOMCatchAll(t *testing.T) {
+	t.Parallel()
+	cases := []struct {
+		name    string
+		wantURI string
+	}{
+		// Deprecated Web Audio node, superseded by AudioWorkletNode.
+		{"ScriptProcessorNode", "web:web_audio"},
+		{"ScriptProcessorNodeEventMap", "web:web_audio"},
+
+		// The DTMF tone sender reached through RTCRtpSender.dtmf.
+		{"RTCDTMFSender", "web:web_rtc"},
+		{"RTCDTMFSenderEventMap", "web:web_rtc"},
+		{"RTCDTMFToneChangeEvent", "web:web_rtc"},
+		{"RTCDTMFToneChangeEventInit", "web:web_rtc"},
+
+		// Payment Request types the rest of web:payments names back.
+		{"PaymentAddress", "web:payments"},
+		{"PaymentRequestUpdateEvent", "web:payments"},
+		{"PaymentRequestUpdateEventInit", "web:payments"},
+
+		// The Credential Management API, which web:webauthn builds on.
+		{"Credential", "web:credentials"},
+		{"CredentialsContainer", "web:credentials"},
+		{"CredentialCreationOptions", "web:credentials"},
+		{"CredentialRequestOptions", "web:credentials"},
+		{"CredentialMediationRequirement", "web:credentials"},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			got := Route(tc.name, "lib.dom.d.ts")
+			require.False(t, got.Unmapped)
+			require.Equal(t, tc.wantURI, got.Pkg.URI)
+		})
+	}
+}

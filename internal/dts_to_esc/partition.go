@@ -587,8 +587,8 @@ var webPackages = []struct {
 		// Symbols MDN documents under Web Audio that are absent from
 		// the pinned lib.dom.d.ts (no partition entry needed today):
 		// AudioWorkletProcessor, AudioWorkletGlobalScope,
-		// AudioPlaybackStats, ScriptProcessorNode (legacy). Add here
-		// if a future TS version bump ships them.
+		// AudioPlaybackStats. Add here if a future TS version bump
+		// ships them.
 		"AudioContext", "AudioContextOptions", "AudioContextState",
 		"AudioContextLatencyCategory",
 		"AudioBuffer", "AudioBufferOptions", "AudioBufferSourceNode",
@@ -623,6 +623,10 @@ var webPackages = []struct {
 		"PannerNode", "PannerOptions", "PanningModelType",
 		"DistanceModelType",
 		"PeriodicWave", "PeriodicWaveConstraints", "PeriodicWaveOptions",
+		// Deprecated in the spec and superseded by AudioWorkletNode. It
+		// extends AudioNode and fires AudioProcessingEvent, both declared
+		// here, so this is the package that owns it.
+		"ScriptProcessorNode", "ScriptProcessorNodeEventMap",
 		"StereoPannerNode", "StereoPannerOptions",
 		"WaveShaperNode", "WaveShaperOptions", "OverSampleType",
 		"AutomationRate",
@@ -632,14 +636,18 @@ var webPackages = []struct {
 	{"web:web_rtc", "web/web_rtc.esc", []string{
 		// Symbols MDN documents under WebRTC that are absent from the
 		// pinned lib.dom.d.ts (no partition entry needed today):
-		// RTCDTMFSender, RTCDTMFToneChangeEvent,
-		// RTCDTMFToneChangeEventInit, RTCIdentityAssertion,
-		// RTCIdentityProvider, RTCIdentityProviderRegistrar,
-		// RTCTransformEvent, RTCRtpScriptTransformer, and the
-		// per-source/codec stats variants (RTCAudioSourceStats,
-		// RTCVideoSourceStats, RTCCodecStats, RTCIceCandidateStats,
-		// RTCPeerConnectionStats). Add here if a future TS version
-		// bump ships them.
+		// RTCIdentityAssertion, RTCIdentityProvider,
+		// RTCIdentityProviderRegistrar, RTCTransformEvent,
+		// RTCRtpScriptTransformer, and the per-source/codec stats
+		// variants RTCAudioSourceStats, RTCVideoSourceStats,
+		// RTCCodecStats, RTCIceCandidateStats and
+		// RTCPeerConnectionStats. Add here if a future TS version bump
+		// ships them.
+		//
+		// The DTMF tone sender reached through RTCRtpSender.dtmf, with
+		// the event it fires. Nothing outside this package names them.
+		"RTCDTMFSender", "RTCDTMFSenderEventMap",
+		"RTCDTMFToneChangeEvent", "RTCDTMFToneChangeEventInit",
 		"RTCPeerConnection", "RTCPeerConnectionEventMap",
 		"RTCPeerConnectionIceErrorEvent", "RTCPeerConnectionIceErrorEventInit",
 		"RTCPeerConnectionIceEvent", "RTCPeerConnectionIceEventInit",
@@ -831,6 +839,21 @@ var webPackages = []struct {
 		"performance",
 		"NavigationTimingType",
 	}},
+	// The Credential Management API, which WebAuthn builds on rather than
+	// contains. The two reference each other: `PublicKeyCredential extends
+	// Credential`, and the `publicKey` member of each option type here
+	// takes a WebAuthn options bag. Two-phase loading makes that pair one
+	// module, so neither has to swallow the other.
+	//
+	// A package of its own is what lets `Navigator.credentials` name
+	// something that says nothing about public keys. It also keeps
+	// `web:webauthn` off `web:dom` entirely. `Credential` is the only name
+	// WebAuthn reaches for outside its own spec, and it lives here.
+	{"web:credentials", "web/credentials.esc", []string{
+		"Credential", "CredentialsContainer",
+		"CredentialCreationOptions", "CredentialRequestOptions",
+		"CredentialMediationRequirement",
+	}},
 	{"web:webauthn", "web/webauthn.esc", []string{
 		"AuthenticatorAssertionResponse", "AuthenticatorAttestationResponse",
 		"AuthenticatorResponse", "AuthenticatorTransport",
@@ -860,10 +883,15 @@ var webPackages = []struct {
 	{"web:payments", "web/payments.esc", []string{
 		// Symbols MDN documents under the Payment Request API that
 		// are absent from the pinned lib.dom.d.ts (no partition entry
-		// needed today): PaymentAddress, PaymentRequestUpdateEvent,
-		// MerchantValidationEvent, SecurePaymentConfirmationRequest.
-		// Add here if a future TS version bump ships them.
+		// needed today): MerchantValidationEvent and
+		// SecurePaymentConfirmationRequest. Add here if a future TS
+		// version bump ships them.
 		"PaymentRequest", "PaymentRequestEventMap",
+		// The shipping address a response carries, and the event a
+		// handler calls updateWith on with a PaymentDetailsUpdate
+		// declared here.
+		"PaymentAddress",
+		"PaymentRequestUpdateEvent", "PaymentRequestUpdateEventInit",
 		"PaymentResponse", "PaymentResponseEventMap",
 		"PaymentMethodData", "PaymentMethodChangeEvent",
 		"PaymentMethodChangeEventInit",
