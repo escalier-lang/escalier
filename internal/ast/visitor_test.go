@@ -494,8 +494,7 @@ func TestTypeAnnAccept_WalksLifetimeUseSites(t *testing.T) {
 	}, visitor.enterCalls)
 }
 
-// A decorator's arguments are reachable from the walk, on a class member and on
-// the declaration that holds it.
+// A decorator's arguments are reachable from the walk over a class member.
 //
 // Decorator offers no hook of its own, so what a visitor sees is the argument
 // expressions. The walk reaches a member's decorator before the member's name,
