@@ -861,19 +861,32 @@ export declare class ArrayLike<T> extends Array<T> {
 func TestApplyOverlay_RejectsADecoratorOnTheDeclarationLine(t *testing.T) {
 	t.Parallel()
 
-	tests := map[string]string{
-		"Class":     "@env(\"window\")\nexport declare class Array<T> {\n    at(self, index: number) -> T,\n}\n",
-		"Interface": "@env(\"window\")\nexport declare interface ArrayLike<T> {\n    readonly length: number,\n}\n",
+	tests := map[string]struct {
+		overlay string
+		want    string
+	}{
+		"Class": {
+			overlay: "@env(\"window\")\nexport declare class Array<T> {\n    at(self, index: number) -> T,\n}\n",
+			want: "overlay: std/prelude.replace.esc writes a decorator on Array, which a " +
+				"member operation does not read; it contributes members alone, so drop it " +
+				"from the overlay",
+		},
+		"Interface": {
+			overlay: "@env(\"window\")\nexport declare interface ArrayLike<T> {\n    readonly length: number,\n}\n",
+			want: "overlay: std/prelude.replace.esc writes a decorator on ArrayLike, which a " +
+				"member operation does not read; it contributes members alone, so drop it " +
+				"from the overlay",
+		},
 	}
 
-	for name, overlay := range tests {
+	for name, test := range tests {
 		t.Run(name, func(t *testing.T) {
 			t.Parallel()
 			_, err := convertWithOverlay(t, map[string]string{
-				"std/prelude.replace.esc": overlay,
+				"std/prelude.replace.esc": test.overlay,
 			})
 			require.Error(t, err)
-			require.Contains(t, err.Error(), "a decorator")
+			require.Equal(t, test.want, err.Error())
 		})
 	}
 }
