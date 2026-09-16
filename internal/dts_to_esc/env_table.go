@@ -24,13 +24,12 @@ import (
 // omission. A `std:*` package is the language surface and is everywhere, so the
 // table says nothing about those.
 //
-// The claim is no more precise than the package-to-tier table it replaces: a
-// package that table calls browser is a window here, and language, core and
-// portable are every environment. `web:cache` and `web:indexeddb` are reachable
-// from a worker in reality, and saying so needs a source the repository does
-// not hold, so they stay as the table had them. Narrowing is the safe
-// direction, since the check asks whether a referent covers its referrer and a
-// referrer claiming less is never the cause of a report.
+// The claim is coarse and deliberately so. `web:cache` and `web:indexeddb` are
+// reachable from a worker in reality, and saying so needs a source the
+// repository does not hold, so both are marked for the window alone. Narrowing
+// is the safe direction: the check asks whether a referent covers its referrer,
+// so a referrer claiming less is never the cause of a report, and a referent
+// claiming less produces one a reader can answer.
 var packageEnvs = map[string]set.Set[Env]{
 	"web:core": AllEnvs(),
 

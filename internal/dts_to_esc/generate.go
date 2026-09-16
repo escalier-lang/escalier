@@ -135,8 +135,9 @@ func Generate(opts GenerateOptions) (*GenerateResult, error) {
 	if err != nil {
 		return nil, err
 	}
-	// Both checks run while the tier table is still the seed the annotations come
-	// from. #1614 drops the tier half once this one has stood on a full run.
+	// Both checks run because they answer at different grains. CheckTiers reads a
+	// package's import edges, and CheckEnvs reads each reference a declaration or
+	// member makes, so it reports what a package-level edge cannot show.
 	if err := AnnotateEnvs(mods); err != nil {
 		return nil, err
 	}
