@@ -225,13 +225,13 @@ enum E { A, B }`,
 			require.NotEmpty(t, errs, "expected parse error for %q", tt.src)
 			found := false
 			for _, e := range errs {
-				if strings.Contains(e.Message, tt.want) {
+				if e.Message == tt.want {
 					found = true
 					break
 				}
 			}
 			require.True(t, found,
-				"expected error containing %q, got %v", tt.want, errs)
+				"expected the error %q, got %v", tt.want, errs)
 		})
 	}
 }
