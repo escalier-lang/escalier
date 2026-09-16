@@ -260,3 +260,73 @@ func StaleEnvTableEntries(mods map[string]*StandaloneModule) []string {
 	sort.Strings(stale)
 	return stale
 }
+
+// libEnvs is the environments a lib file's declarations exist on.
+//
+// TypeScript ships the window surface and the worker surface as alternatives a
+// `tsconfig.json` picks between, so which file declared a member is the upstream
+// statement of where it exists. A member both files declare exists in both.
+//
+// A file named here narrows; every other lib file is the language surface and
+// exists everywhere, which is why the `lib.es*` set is absent.
+var libEnvs = map[string]set.Set[Env]{
+	"lib.dom.d.ts":                     windowOnly(),
+	"lib.dom.iterable.d.ts":            windowOnly(),
+	"lib.dom.asynciterable.d.ts":       windowOnly(),
+	"lib.webworker.d.ts":               workerKinds(),
+	"lib.webworker.importscripts.d.ts": workerKinds(),
+	"lib.webworker.iterable.d.ts":      workerKinds(),
+	"lib.webworker.asynciterable.d.ts": workerKinds(),
+}
+
+func workerKinds() set.Set[Env] {
+	return set.FromSlice(envGroups["worker"])
+}
+
+// MemberEnvsFromLibs returns the environments a converted member exists on,
+// read from the lib files that declared it.
+//
+// A member two files declare carries both, which dedupeMembers recorded on the
+// way through. A member one file declared carries its own span's id alone. A
+// member the converter synthesized has no lib and exists wherever its
+// declaration does, which is what the nil return says.
+//
+// This is the lib set's reading and is not reconciled with packageEnvs. The two
+// disagree, and the lib set is the better source: over a conversion of
+// lib.dom.d.ts and lib.webworker.d.ts together, 2058 of 7762 members read as
+// available outside the environments their package claims, most of them in
+// `web:webgl` and `web:dom`. packageEnvs says both are a window's, and its own
+// comment says that is for want of a source. Reconciling them is what #1633
+// does when it undrops the worker lib; until then the worker lib contributes
+// nothing and every member of a `web:*` package reads as a window's, which is
+// what packageEnvs already says.
+//
+// TestTheLibReadingDisagreesWithThePackageTable measures the gap, so the
+// reconciliation has a number to work against.
+func MemberEnvsFromLibs(
+	mod *StandaloneModule, member ast.Node, sourceFiles map[int]string,
+) set.Set[Env] {
+	ids := mod.MemberSources[member]
+	if ids == nil {
+		ids = set.FromSlice([]int{member.Span().SourceID})
+	}
+	envs := set.NewSet[Env]()
+	for _, id := range ids.ToSlice() {
+		file, held := sourceFiles[id]
+		if !held {
+			// A span the converter minted, so the member belongs to whatever
+			// its declaration does rather than to a lib.
+			return nil
+		}
+		narrowed, named := libEnvs[file]
+		if !named {
+			// A language lib, which every environment has.
+			return nil
+		}
+		envs = envs.Union(narrowed)
+	}
+	if envs.Len() == 0 {
+		return nil
+	}
+	return envs
+}
