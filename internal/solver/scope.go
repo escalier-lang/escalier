@@ -196,17 +196,21 @@ func (s *Scope) ownType(name string) (TypeBinding, bool) {
 	return b, ok
 }
 
-// getTypeUpTo resolves name in the type sort like GetType, but stops after
-// stop rather than walking the whole chain. It is how a lookup asks for a
-// binding the module or one of its files made, as opposed to one the prelude
-// seeded under the same name. A nil stop searches the whole chain.
-func (s *Scope) getTypeUpTo(name string, stop *Scope) (TypeBinding, bool) {
-	for cur := s; cur != nil; cur = cur.parent {
+// ownValue is the value-sort counterpart of ownType.
+func (s *Scope) ownValue(name string) (ValueBinding, bool) {
+	b, ok := s.values[name]
+	return b, ok
+}
+
+// getTypeBefore resolves name in the type sort like GetType, but stops WITHOUT
+// consulting stop. It is how a lookup asks for a binding nearer the reference
+// than the module scope, such as a type parameter or a name the file imported,
+// leaving the module scope to a probe that orders its keys itself. A nil stop
+// searches the whole chain.
+func (s *Scope) getTypeBefore(name string, stop *Scope) (TypeBinding, bool) {
+	for cur := s; cur != nil && cur != stop; cur = cur.parent {
 		if b, ok := cur.types[name]; ok {
 			return b, true
-		}
-		if cur == stop {
-			break
 		}
 	}
 	return TypeBinding{}, false

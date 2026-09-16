@@ -178,6 +178,9 @@ func (c *checker) preBindNestedBlocks(qname string, decl *ast.NamespaceDecl, han
 // O(members) each time and is quadratic over a module of one component per
 // member.
 //
+// The key is the namespace-qualified name both sorts bind under, so the text
+// before the last dot is the namespace and the text after it is the member.
+//
 // A name with no dot is a top-level binding and belongs to no namespace. A dotted
 // name whose prefix names no namespace is left alone, which is how a member of a
 // namespace this module does not declare passes through.
@@ -185,27 +188,15 @@ func (c *checker) routeToNamespace(scope *Scope, key string) {
 	if len(c.nsIndex) == 0 {
 		return
 	}
-	// A type declared inside a package registers under a key carrying the package
-	// URI, which is what keeps two packages' same-named classes apart. That head
-	// escapes the URI's own dots, so the first dot ends it and what follows is the
-	// qualified name the namespace knows the member by.
-	member := key
-	if strings.HasPrefix(member, packageKeyHead) {
-		_, rest, ok := strings.Cut(member, ".")
-		if !ok {
-			return
-		}
-		member = rest
-	}
-	dot := strings.LastIndex(member, ".")
+	dot := strings.LastIndex(key, ".")
 	if dot < 0 {
 		return
 	}
-	ns, held := c.nsIndex[member[:dot]]
+	ns, held := c.nsIndex[key[:dot]]
 	if !held {
 		return
 	}
-	name := member[dot+1:]
+	name := key[dot+1:]
 	if b, found := scope.GetValue(key); found {
 		ns.Values[name] = b
 	}

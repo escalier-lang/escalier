@@ -153,9 +153,9 @@ func (c *checker) loadPackageGroup(group []string, span ast.Span) []SolverError 
 	// declarations landed under. exportedSurface has already dropped every
 	// unexported declaration, so what a member publishes is its public half.
 	//
-	// The URI is the one inference ran under, since a type registers under a key
-	// carrying it and exportedSurface reads that key back. Every member of a
-	// group registers under the same one.
+	// The URI names the merged Namespace alone. Both sorts bind in the scope under
+	// the namespace-qualified name, so what separates one member's declarations
+	// from another's is the namespace, and the split below reads that.
 	merged := exportedSurface(c.groupKeyURI(group), module, scope)
 	for _, uri := range group {
 		member, held := merged.Nested[groupNamespace(uri)]

@@ -138,7 +138,7 @@ func (c *checker) preBindEnum(scope *Scope, lvl int, decl *ast.EnumDecl, ns stri
 		Enum:       true,
 	})
 	enumType := soltype.Type(&soltype.AliasType{Name: qname, TypeArgs: typeArgs})
-	c.declTarget(scope).defineType(qname, TypeBinding{
+	c.declTarget(scope).defineType(declScopeKey(ns, decl.Name.Name), TypeBinding{
 		Type:    enumType,
 		Sources: []provenance.Provenance{&ast.NodeProvenance{Node: decl}},
 	})

@@ -746,3 +746,54 @@ func TestAQualifiedNameReachesTheImportedDeclaration(t *testing.T) {
 	require.Empty(t, errorMessagesOf(res.Errors))
 	require.Equal(t, "number", soltype.Print(inferredValueType(t, res.Scope, "tag")))
 }
+
+// The registry key and the scope key a declaration takes are built separately,
+// and only the registry key carries the package URI.
+//
+// The registry lives on the Context, which one run shares across every package
+// it loads, so two packages declaring `Point` need the URI to stay apart there.
+// A scope belongs to one load, and inside a merged load each member's
+// declarations already sit under a namespace naming its scheme and package, so
+// repeating the URI in the scope key would say nothing the namespace does not.
+func TestTheRegistryKeyCarriesThePackageAndTheScopeKeyDoesNot(t *testing.T) {
+	t.Parallel()
+
+	tests := map[string]struct {
+		uri, ns, name string
+		wantRegistry  string
+		wantScope     string
+	}{
+		"RootNamespaceInAPackage": {
+			uri: "std:url", name: "Parsed",
+			wantRegistry: "import:std:url.Parsed",
+			wantScope:    "Parsed",
+		},
+		"NamespacedInAPackage": {
+			uri: "web:dom", ns: "web_url", name: "Parsed",
+			wantRegistry: "import:web:dom.web_url.Parsed",
+			wantScope:    "web_url.Parsed",
+		},
+		// A URI holding a dot has it escaped, so `npm:a.b`'s `D` cannot read the
+		// same as `npm:a`'s `b.D`.
+		"ADottedURIIsEscaped": {
+			uri: "npm:a.b", name: "D",
+			wantRegistry: "import:npm:a%2Eb.D",
+			wantScope:    "D",
+		},
+		// The entry module has no URI, so both keys agree.
+		"TheEntryModule": {
+			ns: "geo", name: "Point",
+			wantRegistry: "geo.Point",
+			wantScope:    "geo.Point",
+		},
+	}
+
+	for name, test := range tests {
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+			c := &checker{pkgURI: test.uri}
+			require.Equal(t, test.wantRegistry, c.qualifyDecl(test.ns, test.name))
+			require.Equal(t, test.wantScope, declScopeKey(test.ns, test.name))
+		})
+	}
+}
