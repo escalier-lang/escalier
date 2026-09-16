@@ -479,15 +479,46 @@ func TestAPackageSurfaceHoldsNoPreludeSeed(t *testing.T) {
 
 	res := inferAgainstCyclicStdlib(t, `
 		import "std:thing"
+		val read = thing.Promise
 		declare val p: thing.Promise<number>
-		val read = p
 	`, map[string]string{
 		"std/thing.esc": `export declare val Promise: number`,
 	})
 
+	// The value half is published. That is what makes the missing type below a
+	// statement about the surface rather than about the package failing to load.
+	require.Equal(t, "number", soltype.Print(inferredValueType(t, res.Scope, "read")))
 	require.Equal(t,
 		[]string{"cannot find type `thing.Promise`"},
 		errorMessagesOf(res.Errors))
+}
+
+// A package declares its own type under a name the prelude also declares, and
+// the two coexist.
+//
+// The prelude is ambient rather than reserved, so a bare `Promise` means the
+// prelude's and `thing.Promise` means the package's. Neither shadows the other,
+// because a package is its own namespace and the name a consumer writes says
+// which one it wants.
+func TestAPackageDeclaresATypeThePreludeAlsoDeclares(t *testing.T) {
+	t.Parallel()
+
+	res := inferAgainstCyclicStdlib(t, `
+		import "std:thing"
+		declare val mine: thing.Promise<number>
+		declare val ambient: Promise<number>
+		val fromPackage = mine.settled
+		val fromPrelude = ambient.then
+	`, map[string]string{
+		"std/thing.esc": `export declare class Promise<T> { settled: T }`,
+	})
+
+	require.Empty(t, errorMessagesOf(res.Errors))
+	// `settled` is the package's alone and `then` the prelude's, so each read
+	// naming a member the other lacks is what says the two did not merge.
+	require.Equal(t, "number", soltype.Print(inferredValueType(t, res.Scope, "fromPackage")))
+	require.Equal(t, "fn <U>(f: fn (v: number) -> U) -> Promise<U>",
+		soltype.Print(inferredValueType(t, res.Scope, "fromPrelude")))
 }
 
 // A bare type name written inside a package resolves its own namespace's
