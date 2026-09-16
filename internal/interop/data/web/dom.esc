@@ -27,12 +27,10 @@ import "web:web_rtc"
 import "web:webgl"
 import "web:websocket"
 
-@env("window")
 export declare interface FileSystemDirectoryHandleAsyncIterator<T> extends AsyncIteratorObject<T, BuiltinIteratorReturn, unknown> {
     [Symbol.asyncIterator]() -> FileSystemDirectoryHandleAsyncIterator<T>
 }
 
-@env("window")
 @js("FileSystemDirectoryHandle")
 export declare class FileSystemDirectoryHandle extends FileSystemHandle {
     [Symbol.asyncIterator](self) -> FileSystemDirectoryHandleAsyncIterator<[string, FileSystemHandle]>,
@@ -70,7 +68,6 @@ export declare interface AssignedNodesOptions {
     flatten?: boolean
 }
 
-@env("window")
 export declare interface AudioConfiguration {
     bitrate?: number,
     channels?: string,
@@ -85,12 +82,10 @@ export declare interface BlobEventInit {
     timecode?: DOMHighResTimeStamp
 }
 
-@env("window")
 export declare interface CSSMatrixComponentOptions {
     is2D?: boolean
 }
 
-@env("window")
 export declare interface CSSNumericType {
     angle?: number,
     flex?: number,
@@ -193,12 +188,10 @@ export declare interface ContentVisibilityAutoStateChangeEventInit extends Event
     skipped?: boolean
 }
 
-@env("window")
 export declare interface CustomEventInit<T = any> extends EventInit {
     detail?: T
 }
 
-@env("window")
 export declare interface DOMMatrix2DInit {
     a?: number,
     b?: number,
@@ -214,7 +207,6 @@ export declare interface DOMMatrix2DInit {
     m42?: number
 }
 
-@env("window")
 export declare interface DOMMatrixInit extends DOMMatrix2DInit {
     is2D?: boolean,
     m13?: number,
@@ -229,7 +221,6 @@ export declare interface DOMMatrixInit extends DOMMatrix2DInit {
     m44?: number
 }
 
-@env("window")
 export declare interface DOMPointInit {
     w?: number,
     x?: number,
@@ -237,7 +228,6 @@ export declare interface DOMPointInit {
     z?: number
 }
 
-@env("window")
 export declare interface DOMQuadInit {
     p1?: DOMPointInit,
     p2?: DOMPointInit,
@@ -245,7 +235,6 @@ export declare interface DOMQuadInit {
     p4?: DOMPointInit
 }
 
-@env("window")
 export declare interface DOMRectInit {
     height?: number,
     width?: number,
@@ -328,7 +317,6 @@ export declare interface ElementDefinitionOptions {
     extends?: string
 }
 
-@env("window")
 export declare interface ErrorEventInit extends EventInit {
     colno?: number,
     error?: any,
@@ -355,12 +343,10 @@ export declare interface EventModifierInit extends UIEventInit {
     shiftKey?: boolean
 }
 
-@env("window")
 export declare interface EventSourceInit {
     withCredentials?: boolean
 }
 
-@env("window")
 export declare interface FileSystemCreateWritableOptions {
     keepExistingData?: boolean
 }
@@ -371,17 +357,14 @@ export declare interface FileSystemFlags {
     exclusive?: boolean
 }
 
-@env("window")
 export declare interface FileSystemGetDirectoryOptions {
     create?: boolean
 }
 
-@env("window")
 export declare interface FileSystemGetFileOptions {
     create?: boolean
 }
 
-@env("window")
 export declare interface FileSystemRemoveOptions {
     recursive?: boolean
 }
@@ -396,7 +379,6 @@ export declare interface FocusOptions {
     preventScroll?: boolean
 }
 
-@env("window")
 export declare interface FontFaceDescriptors {
     ascentOverride?: string,
     descentOverride?: string,
@@ -409,7 +391,6 @@ export declare interface FontFaceDescriptors {
     weight?: string
 }
 
-@env("window")
 export declare interface FontFaceSetLoadEventInit extends EventInit {
     fontfaces?: mut Array<FontFace>
 }
@@ -466,7 +447,6 @@ export declare interface IdleRequestOptions {
     timeout?: number
 }
 
-@env("window")
 export declare interface ImageBitmapOptions {
     colorSpaceConversion?: ColorSpaceConversion,
     imageOrientation?: ImageOrientation,
@@ -476,17 +456,14 @@ export declare interface ImageBitmapOptions {
     resizeWidth?: number
 }
 
-@env("window")
 export declare interface ImageBitmapRenderingContextSettings {
     alpha?: boolean
 }
 
-@env("window")
 export declare interface ImageDataSettings {
     colorSpace?: PredefinedColorSpace
 }
 
-@env("window")
 export declare interface ImageEncodeOptions {
     quality?: number,
     type?: string
@@ -541,20 +518,17 @@ export declare interface KeyframeEffectOptions extends EffectTiming {
     pseudoElement?: string | null
 }
 
-@env("window")
 export declare interface LockInfo {
     clientId?: string,
     mode?: LockMode,
     name?: string
 }
 
-@env("window")
 export declare interface LockManagerSnapshot {
     held?: mut Array<LockInfo>,
     pending?: mut Array<LockInfo>
 }
 
-@env("window")
 export declare interface LockOptions {
     ifAvailable?: boolean,
     mode?: LockMode,
@@ -578,35 +552,29 @@ export declare interface MIDIOptions {
     sysex?: boolean
 }
 
-@env("window")
 export declare interface MediaCapabilitiesDecodingInfo extends MediaCapabilitiesInfo {
     configuration?: MediaDecodingConfiguration
 }
 
-@env("window")
 export declare interface MediaCapabilitiesEncodingInfo extends MediaCapabilitiesInfo {
     configuration?: MediaEncodingConfiguration
 }
 
-@env("window")
 export declare interface MediaCapabilitiesInfo {
     powerEfficient: boolean,
     smooth: boolean,
     supported: boolean
 }
 
-@env("window")
 export declare interface MediaConfiguration {
     audio?: AudioConfiguration,
     video?: VideoConfiguration
 }
 
-@env("window")
 export declare interface MediaDecodingConfiguration extends MediaConfiguration {
     type: MediaDecodingType
 }
 
-@env("window")
 export declare interface MediaEncodingConfiguration extends MediaConfiguration {
     type: MediaEncodingType
 }
@@ -815,7 +783,6 @@ export declare interface MutationObserverInit {
     subtree?: boolean
 }
 
-@env("window")
 export declare interface NotificationOptions {
     badge?: string,
     body?: string,
@@ -857,7 +824,6 @@ export declare interface PageTransitionEventInit extends EventInit {
     persisted?: boolean
 }
 
-@env("window")
 export declare interface PermissionDescriptor {
     name: PermissionName
 }
@@ -902,14 +868,12 @@ export declare interface PositionOptions {
     timeout?: number
 }
 
-@env("window")
 export declare interface ProgressEventInit extends EventInit {
     lengthComputable?: boolean,
     loaded?: number,
     total?: number
 }
 
-@env("window")
 export declare interface PromiseRejectionEventInit extends EventInit {
     promise: Promise<any>,
     reason?: any
@@ -930,7 +894,6 @@ export declare interface PropertyIndexedKeyframes {
     offset?: number | mut Array<number | null>
 }
 
-@env("window")
 export declare interface ReportingObserverOptions {
     buffered?: boolean,
     types?: mut Array<string>
@@ -966,7 +929,6 @@ export declare interface ScrollToOptions extends ScrollOptions {
     top?: number
 }
 
-@env("window")
 export declare interface SecurityPolicyViolationEventInit extends EventInit {
     blockedURI?: string,
     columnNumber?: number,
@@ -1020,13 +982,11 @@ export declare interface StaticRangeInit {
     startOffset: number
 }
 
-@env("window")
 export declare interface StorageEstimate {
     quota?: number,
     usage?: number
 }
 
-@env("window")
 export declare interface StructuredSerializeOptions {
     transfer?: mut Array<Transferable>
 }
@@ -1108,7 +1068,6 @@ export declare interface ValidityStateFlags {
     valueMissing?: boolean
 }
 
-@env("window")
 export declare interface VideoConfiguration {
     bitrate: number,
     colorGamut?: ColorGamut,
@@ -1136,25 +1095,21 @@ export declare interface VideoFrameCallbackMetadata {
     width: number
 }
 
-@env("window")
 export declare interface WebTransportCloseInfo {
     closeCode?: number,
     reason?: string
 }
 
-@env("window")
 export declare interface WebTransportErrorOptions {
     source?: WebTransportErrorSource,
     streamErrorCode?: number | null
 }
 
-@env("window")
 export declare interface WebTransportHash {
     algorithm?: string,
     value?: BufferSource
 }
 
-@env("window")
 export declare interface WebTransportOptions {
     allowPooling?: boolean,
     congestionControl?: WebTransportCongestionControl,
@@ -1162,7 +1117,6 @@ export declare interface WebTransportOptions {
     serverCertificateHashes?: mut Array<WebTransportHash>
 }
 
-@env("window")
 export declare interface WebTransportSendStreamOptions {
     sendOrder?: number
 }
@@ -1185,7 +1139,6 @@ export declare interface WorkletOptions {
     credentials?: fetch.RequestCredentials
 }
 
-@env("window")
 export declare interface WriteParams {
     data?: BufferSource | file.Blob | string | null,
     position?: number | null,
@@ -1352,7 +1305,6 @@ export declare class AbstractRange {
     constructor(mut self)
 }
 
-@env("window")
 export declare interface AbstractWorkerEventMap {
     "error": ErrorEvent
 }
@@ -1460,7 +1412,6 @@ export declare class AnimationEvent extends Event {
     constructor(mut self, type: string, animationEventInitDict?: AnimationEventInit)
 }
 
-@env("window")
 export declare interface AnimationFrameProvider {
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/DedicatedWorkerGlobalScope/cancelAnimationFrame) */
     cancelAnimationFrame(handle: number) -> unknown,
@@ -1561,14 +1512,12 @@ export declare class BlobEvent extends Event {
     constructor(mut self, type: string, eventInitDict: BlobEventInit)
 }
 
-@env("window")
 export declare interface BroadcastChannelEventMap {
     "message": MessageEvent,
     "messageerror": MessageEvent
 }
 
 /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/BroadcastChannel) */
-@env("window")
 @js("BroadcastChannel")
 export declare class BroadcastChannel extends EventTarget {
     /**
@@ -1739,7 +1688,6 @@ export declare class CSSGroupingRule extends CSSRule {
 }
 
 /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/CSSImageValue) */
-@env("window")
 @js("CSSImageValue")
 export declare class CSSImageValue extends CSSStyleValue {
     static prototype: CSSImageValue,
@@ -1808,7 +1756,6 @@ export declare class CSSKeyframesRule extends CSSRule {
 }
 
 /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/CSSKeywordValue) */
-@env("window")
 @js("CSSKeywordValue")
 export declare class CSSKeywordValue extends CSSStyleValue {
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/CSSKeywordValue/value) */
@@ -1837,7 +1784,6 @@ export declare class CSSLayerStatementRule extends CSSRule {
     constructor(mut self)
 }
 
-@env("window")
 @js("CSSMathClamp")
 export declare class CSSMathClamp extends CSSMathValue {
     readonly lower: CSSNumericValue,
@@ -1848,7 +1794,6 @@ export declare class CSSMathClamp extends CSSMathValue {
 }
 
 /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/CSSMathInvert) */
-@env("window")
 @js("CSSMathInvert")
 export declare class CSSMathInvert extends CSSMathValue {
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/CSSMathInvert/value) */
@@ -1858,7 +1803,6 @@ export declare class CSSMathInvert extends CSSMathValue {
 }
 
 /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/CSSMathMax) */
-@env("window")
 @js("CSSMathMax")
 export declare class CSSMathMax extends CSSMathValue {
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/CSSMathMax/values) */
@@ -1868,7 +1812,6 @@ export declare class CSSMathMax extends CSSMathValue {
 }
 
 /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/CSSMathMin) */
-@env("window")
 @js("CSSMathMin")
 export declare class CSSMathMin extends CSSMathValue {
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/CSSMathMin/values) */
@@ -1878,7 +1821,6 @@ export declare class CSSMathMin extends CSSMathValue {
 }
 
 /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/CSSMathNegate) */
-@env("window")
 @js("CSSMathNegate")
 export declare class CSSMathNegate extends CSSMathValue {
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/CSSMathNegate/value) */
@@ -1888,7 +1830,6 @@ export declare class CSSMathNegate extends CSSMathValue {
 }
 
 /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/CSSMathProduct) */
-@env("window")
 @js("CSSMathProduct")
 export declare class CSSMathProduct extends CSSMathValue {
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/CSSMathProduct/values) */
@@ -1898,7 +1839,6 @@ export declare class CSSMathProduct extends CSSMathValue {
 }
 
 /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/CSSMathSum) */
-@env("window")
 @js("CSSMathSum")
 export declare class CSSMathSum extends CSSMathValue {
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/CSSMathSum/values) */
@@ -1908,7 +1848,6 @@ export declare class CSSMathSum extends CSSMathValue {
 }
 
 /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/CSSMathValue) */
-@env("window")
 @js("CSSMathValue")
 export declare class CSSMathValue extends CSSNumericValue {
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/CSSMathValue/operator) */
@@ -1918,7 +1857,6 @@ export declare class CSSMathValue extends CSSNumericValue {
 }
 
 /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/CSSMatrixComponent) */
-@env("window")
 @js("CSSMatrixComponent")
 export declare class CSSMatrixComponent extends CSSTransformComponent {
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/CSSMatrixComponent/matrix) */
@@ -1970,7 +1908,6 @@ export declare class CSSNestedDeclarations extends CSSRule {
 }
 
 /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/CSSNumericArray) */
-@env("window")
 @js("CSSNumericArray")
 export declare class CSSNumericArray {
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/CSSNumericArray/length) */
@@ -1985,7 +1922,6 @@ export declare class CSSNumericArray {
 }
 
 /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/CSSNumericValue) */
-@env("window")
 @js("CSSNumericValue")
 export declare class CSSNumericValue extends CSSStyleValue {
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/CSSNumericValue/add) */
@@ -2032,7 +1968,6 @@ export declare class CSSPageRule extends CSSGroupingRule {
 }
 
 /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/CSSPerspective) */
-@env("window")
 @js("CSSPerspective")
 export declare class CSSPerspective extends CSSTransformComponent {
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/CSSPerspective/length) */
@@ -2058,7 +1993,6 @@ export declare class CSSPropertyRule extends CSSRule {
 }
 
 /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/CSSRotate) */
-@env("window")
 @js("CSSRotate")
 export declare class CSSRotate extends CSSTransformComponent {
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/CSSRotate/angle) */
@@ -2140,7 +2074,6 @@ export declare class CSSRuleList {
 }
 
 /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/CSSScale) */
-@env("window")
 @js("CSSScale")
 export declare class CSSScale extends CSSTransformComponent {
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/CSSScale/x) */
@@ -2166,7 +2099,6 @@ export declare class CSSScopeRule extends CSSGroupingRule {
 }
 
 /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/CSSSkew) */
-@env("window")
 @js("CSSSkew")
 export declare class CSSSkew extends CSSTransformComponent {
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/CSSSkew/ax) */
@@ -2178,7 +2110,6 @@ export declare class CSSSkew extends CSSTransformComponent {
 }
 
 /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/CSSSkewX) */
-@env("window")
 @js("CSSSkewX")
 export declare class CSSSkewX extends CSSTransformComponent {
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/CSSSkewX/ax) */
@@ -2188,7 +2119,6 @@ export declare class CSSSkewX extends CSSTransformComponent {
 }
 
 /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/CSSSkewY) */
-@env("window")
 @js("CSSSkewY")
 export declare class CSSSkewY extends CSSTransformComponent {
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/CSSSkewY/ay) */
@@ -3580,7 +3510,6 @@ export declare class CSSStyleSheet extends StyleSheet {
 }
 
 /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/CSSStyleValue) */
-@env("window")
 @js("CSSStyleValue")
 export declare class CSSStyleValue {
     toString(self) -> string,
@@ -3605,7 +3534,6 @@ export declare class CSSSupportsRule extends CSSConditionRule {
 }
 
 /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/CSSTransformComponent) */
-@env("window")
 @js("CSSTransformComponent")
 export declare class CSSTransformComponent {
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/CSSTransformComponent/is2D) */
@@ -3618,7 +3546,6 @@ export declare class CSSTransformComponent {
 }
 
 /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/CSSTransformValue) */
-@env("window")
 @js("CSSTransformValue")
 export declare class CSSTransformValue extends CSSStyleValue {
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/CSSTransformValue/is2D) */
@@ -3651,7 +3578,6 @@ export declare class CSSTransition extends Animation {
 }
 
 /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/CSSTranslate) */
-@env("window")
 @js("CSSTranslate")
 export declare class CSSTranslate extends CSSTransformComponent {
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/CSSTranslate/x) */
@@ -3665,7 +3591,6 @@ export declare class CSSTranslate extends CSSTransformComponent {
 }
 
 /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/CSSUnitValue) */
-@env("window")
 @js("CSSUnitValue")
 export declare class CSSUnitValue extends CSSNumericValue {
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/CSSUnitValue/unit) */
@@ -3677,7 +3602,6 @@ export declare class CSSUnitValue extends CSSNumericValue {
 }
 
 /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/CSSUnparsedValue) */
-@env("window")
 @js("CSSUnparsedValue")
 export declare class CSSUnparsedValue extends CSSStyleValue {
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/CSSUnparsedValue/length) */
@@ -3692,7 +3616,6 @@ export declare class CSSUnparsedValue extends CSSStyleValue {
 }
 
 /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/CSSVariableReferenceValue) */
-@env("window")
 @js("CSSVariableReferenceValue")
 export declare class CSSVariableReferenceValue {
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/CSSVariableReferenceValue/fallback) */
@@ -3728,7 +3651,6 @@ export declare class CanvasCaptureMediaStreamTrack extends MediaStreamTrack {
     constructor(mut self)
 }
 
-@env("window")
 export declare interface CanvasCompositing {
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/CanvasRenderingContext2D/globalAlpha) */
     globalAlpha: number,
@@ -3736,7 +3658,6 @@ export declare interface CanvasCompositing {
     globalCompositeOperation: GlobalCompositeOperation
 }
 
-@env("window")
 export declare interface CanvasDrawImage {
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/CanvasRenderingContext2D/drawImage) */
     drawImage(image: CanvasImageSource, dx: number, dy: number) -> unknown,
@@ -3744,7 +3665,6 @@ export declare interface CanvasDrawImage {
     drawImage(image: CanvasImageSource, sx: number, sy: number, sw: number, sh: number, dx: number, dy: number, dw: number, dh: number) -> unknown
 }
 
-@env("window")
 export declare interface CanvasDrawPath {
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/CanvasRenderingContext2D/beginPath) */
     beginPath() -> unknown,
@@ -3765,7 +3685,6 @@ export declare interface CanvasDrawPath {
     stroke(path: Path2D) -> unknown
 }
 
-@env("window")
 export declare interface CanvasFillStrokeStyles {
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/CanvasRenderingContext2D/fillStyle) */
     fillStyle: string | CanvasGradient | CanvasPattern,
@@ -3781,7 +3700,6 @@ export declare interface CanvasFillStrokeStyles {
     createRadialGradient(x0: number, y0: number, r0: number, x1: number, y1: number, r1: number) -> CanvasGradient
 }
 
-@env("window")
 export declare interface CanvasFilters {
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/CanvasRenderingContext2D/filter) */
     filter: string
@@ -3792,7 +3710,6 @@ export declare interface CanvasFilters {
  *
  * [MDN Reference](https://developer.mozilla.org/docs/Web/API/CanvasGradient)
  */
-@env("window")
 @js("CanvasGradient")
 export declare class CanvasGradient {
     /**
@@ -3807,7 +3724,6 @@ export declare class CanvasGradient {
     constructor(mut self)
 }
 
-@env("window")
 export declare interface CanvasImageData {
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/CanvasRenderingContext2D/createImageData) */
     createImageData(sw: number, sh: number, settings?: ImageDataSettings) -> ImageData,
@@ -3819,7 +3735,6 @@ export declare interface CanvasImageData {
     putImageData(imagedata: ImageData, dx: number, dy: number, dirtyX: number, dirtyY: number, dirtyWidth: number, dirtyHeight: number) -> unknown
 }
 
-@env("window")
 export declare interface CanvasImageSmoothing {
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/CanvasRenderingContext2D/imageSmoothingEnabled) */
     imageSmoothingEnabled: boolean,
@@ -3827,7 +3742,6 @@ export declare interface CanvasImageSmoothing {
     imageSmoothingQuality: ImageSmoothingQuality
 }
 
-@env("window")
 export declare interface CanvasPath {
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/CanvasRenderingContext2D/arc) */
     arc(x: number, y: number, radius: number, startAngle: number, endAngle: number, counterclockwise?: boolean) -> unknown,
@@ -3853,7 +3767,6 @@ export declare interface CanvasPath {
     roundRect(x: number, y: number, w: number, h: number, radii?: number | DOMPointInit | Iterable<number | DOMPointInit>) -> unknown
 }
 
-@env("window")
 export declare interface CanvasPathDrawingStyles {
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/CanvasRenderingContext2D/lineCap) */
     lineCap: CanvasLineCap,
@@ -3878,7 +3791,6 @@ export declare interface CanvasPathDrawingStyles {
  *
  * [MDN Reference](https://developer.mozilla.org/docs/Web/API/CanvasPattern)
  */
-@env("window")
 @js("CanvasPattern")
 export declare class CanvasPattern {
     /**
@@ -3891,7 +3803,6 @@ export declare class CanvasPattern {
     constructor(mut self)
 }
 
-@env("window")
 export declare interface CanvasRect {
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/CanvasRenderingContext2D/clearRect) */
     clearRect(x: number, y: number, w: number, h: number) -> unknown,
@@ -3921,7 +3832,6 @@ export declare interface CanvasSettings {
     getContextAttributes() -> CanvasRenderingContext2DSettings
 }
 
-@env("window")
 export declare interface CanvasShadowStyles {
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/CanvasRenderingContext2D/shadowBlur) */
     shadowBlur: number,
@@ -3933,7 +3843,6 @@ export declare interface CanvasShadowStyles {
     shadowOffsetY: number
 }
 
-@env("window")
 export declare interface CanvasState {
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/CanvasRenderingContext2D/isContextLost) */
     isContextLost() -> boolean,
@@ -3945,7 +3854,6 @@ export declare interface CanvasState {
     save() -> unknown
 }
 
-@env("window")
 export declare interface CanvasText {
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/CanvasRenderingContext2D/fillText) */
     fillText(text: string, x: number, y: number, maxWidth?: number) -> unknown,
@@ -3955,7 +3863,6 @@ export declare interface CanvasText {
     strokeText(text: string, x: number, y: number, maxWidth?: number) -> unknown
 }
 
-@env("window")
 export declare interface CanvasTextDrawingStyles {
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/CanvasRenderingContext2D/direction) */
     direction: CanvasDirection,
@@ -3979,7 +3886,6 @@ export declare interface CanvasTextDrawingStyles {
     wordSpacing: string
 }
 
-@env("window")
 export declare interface CanvasTransform {
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/CanvasRenderingContext2D/getTransform) */
     getTransform() -> DOMMatrix,
@@ -4196,7 +4102,6 @@ export declare class CustomElementRegistry {
 }
 
 /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/CustomEvent) */
-@env("window")
 @js("CustomEvent")
 export declare class CustomEvent<T = any> extends Event {
     /**
@@ -4249,7 +4154,6 @@ export declare class DOMImplementation {
 }
 
 /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/DOMMatrix) */
-@env("window")
 @js("DOMMatrix")
 export declare class DOMMatrix extends DOMMatrixReadOnly {
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/DOMMatrix#instance_properties) */
@@ -4338,7 +4242,6 @@ export declare type WebKitCSSMatrix = DOMMatrix
 export declare var WebKitCSSMatrix: typeof DOMMatrix
 
 /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/DOMMatrixReadOnly) */
-@env("window")
 @js("DOMMatrixReadOnly")
 export declare class DOMMatrixReadOnly {
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/DOMMatrixReadOnly#instance_properties) */
@@ -4450,7 +4353,6 @@ export declare class DOMParser {
 }
 
 /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/DOMPoint) */
-@env("window")
 @js("DOMPoint")
 export declare class DOMPoint extends DOMPointReadOnly {
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/DOMPoint/w) */
@@ -4475,7 +4377,6 @@ export declare type SVGPoint = DOMPoint
 export declare var SVGPoint: typeof DOMPoint
 
 /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/DOMPointReadOnly) */
-@env("window")
 @js("DOMPointReadOnly")
 export declare class DOMPointReadOnly {
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/DOMPointReadOnly/w) */
@@ -4497,7 +4398,6 @@ export declare class DOMPointReadOnly {
 }
 
 /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/DOMQuad) */
-@env("window")
 @js("DOMQuad")
 export declare class DOMQuad {
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/DOMQuad/p1) */
@@ -4519,7 +4419,6 @@ export declare class DOMQuad {
 }
 
 /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/DOMRect) */
-@env("window")
 @js("DOMRect")
 export declare class DOMRect extends DOMRectReadOnly {
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/DOMRect/height) */
@@ -4557,7 +4456,6 @@ export declare class DOMRectList {
 }
 
 /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/DOMRectReadOnly) */
-@env("window")
 @js("DOMRectReadOnly")
 export declare class DOMRectReadOnly {
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/DOMRectReadOnly/bottom) */
@@ -4589,7 +4487,6 @@ export declare class DOMRectReadOnly {
  *
  * [MDN Reference](https://developer.mozilla.org/docs/Web/API/DOMStringList)
  */
-@env("window")
 @js("DOMStringList")
 export declare class DOMStringList {
     /**
@@ -6087,7 +5984,6 @@ export declare class ElementInternals extends ARIAMixin {
  *
  * [MDN Reference](https://developer.mozilla.org/docs/Web/API/ErrorEvent)
  */
-@env("window")
 @js("ErrorEvent")
 export declare class ErrorEvent extends Event {
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/ErrorEvent/colno) */
@@ -6104,7 +6000,6 @@ export declare class ErrorEvent extends Event {
     constructor(mut self, type: string, eventInitDict?: ErrorEventInit)
 }
 
-@env("window")
 export declare interface EventSourceEventMap {
     "error": Event,
     "message": MessageEvent,
@@ -6112,7 +6007,6 @@ export declare interface EventSourceEventMap {
 }
 
 /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/EventSource) */
-@env("window")
 @js("EventSource")
 export declare class EventSource extends EventTarget {
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/EventSource/error_event) */
@@ -6178,7 +6072,6 @@ export declare class External {
  *
  * [MDN Reference](https://developer.mozilla.org/docs/Web/API/FileList)
  */
-@env("window")
 @js("FileList")
 export declare class FileList {
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/FileList/length) */
@@ -6190,7 +6083,6 @@ export declare class FileList {
     constructor(mut self)
 }
 
-@env("window")
 export declare interface FileReaderEventMap {
     "abort": ProgressEvent<FileReader>,
     "error": ProgressEvent<FileReader>,
@@ -6205,7 +6097,6 @@ export declare interface FileReaderEventMap {
  *
  * [MDN Reference](https://developer.mozilla.org/docs/Web/API/FileReader)
  */
-@env("window")
 @js("FileReader")
 export declare class FileReader extends EventTarget {
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/FileReader/error) */
@@ -6325,7 +6216,6 @@ export declare class FileSystemFileEntry extends FileSystemEntry {
  *
  * [MDN Reference](https://developer.mozilla.org/docs/Web/API/FileSystemFileHandle)
  */
-@env("window")
 @js("FileSystemFileHandle")
 export declare class FileSystemFileHandle extends FileSystemHandle {
     readonly kind: "file",
@@ -6342,7 +6232,6 @@ export declare class FileSystemFileHandle extends FileSystemHandle {
  *
  * [MDN Reference](https://developer.mozilla.org/docs/Web/API/FileSystemHandle)
  */
-@env("window")
 @js("FileSystemHandle")
 export declare class FileSystemHandle {
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/FileSystemHandle/kind) */
@@ -6360,7 +6249,6 @@ export declare class FileSystemHandle {
  *
  * [MDN Reference](https://developer.mozilla.org/docs/Web/API/FileSystemWritableFileStream)
  */
-@env("window")
 @js("FileSystemWritableFileStream")
 export declare class FileSystemWritableFileStream extends streams.WritableStream {
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/FileSystemWritableFileStream/seek) */
@@ -6388,7 +6276,6 @@ export declare class FocusEvent extends UIEvent {
 }
 
 /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/FontFace) */
-@env("window")
 @js("FontFace")
 export declare class FontFace {
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/FontFace/ascentOverride) */
@@ -6421,7 +6308,6 @@ export declare class FontFace {
     constructor(mut self, family: string, source: string | BufferSource, descriptors?: FontFaceDescriptors)
 }
 
-@env("window")
 export declare interface FontFaceSetEventMap {
     "loading": FontFaceSetLoadEvent,
     "loadingdone": FontFaceSetLoadEvent,
@@ -6429,7 +6315,6 @@ export declare interface FontFaceSetEventMap {
 }
 
 /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/FontFaceSet) */
-@env("window")
 @js("FontFaceSet")
 export declare class FontFaceSet extends EventTarget {
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/FontFaceSet/loading_event) */
@@ -6456,7 +6341,6 @@ export declare class FontFaceSet extends EventTarget {
 }
 
 /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/FontFaceSetLoadEvent) */
-@env("window")
 @js("FontFaceSetLoadEvent")
 export declare class FontFaceSetLoadEvent extends Event {
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/FontFaceSetLoadEvent/fontfaces) */
@@ -6465,7 +6349,6 @@ export declare class FontFaceSetLoadEvent extends Event {
     constructor(mut self, type: string, eventInitDict?: FontFaceSetLoadEventInit)
 }
 
-@env("window")
 export declare interface FontFaceSource {
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/Document/fonts) */
     readonly fonts: FontFaceSet
@@ -6498,7 +6381,6 @@ export declare class FragmentDirective {
  *
  * [MDN Reference](https://developer.mozilla.org/docs/Web/API/GPUError)
  */
-@env("window")
 export declare interface GPUError {
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/GPUError/message) */
     readonly message: string
@@ -11417,7 +11299,6 @@ export declare class IdleDeadline {
 }
 
 /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/ImageBitmap) */
-@env("window")
 @js("ImageBitmap")
 export declare class ImageBitmap {
     /**
@@ -11443,7 +11324,6 @@ export declare class ImageBitmap {
 }
 
 /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/ImageBitmapRenderingContext) */
-@env("window")
 @js("ImageBitmapRenderingContext")
 export declare class ImageBitmapRenderingContext {
     /**
@@ -11467,7 +11347,6 @@ export declare class ImageBitmapRenderingContext {
  *
  * [MDN Reference](https://developer.mozilla.org/docs/Web/API/ImageData)
  */
-@env("window")
 @js("ImageData")
 export declare class ImageData {
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/ImageData/colorSpace) */
@@ -11798,7 +11677,6 @@ export declare class Location {
  *
  * [MDN Reference](https://developer.mozilla.org/docs/Web/API/Lock)
  */
-@env("window")
 @js("Lock")
 export declare class Lock {
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/Lock/mode) */
@@ -11814,7 +11692,6 @@ export declare class Lock {
  *
  * [MDN Reference](https://developer.mozilla.org/docs/Web/API/LockManager)
  */
-@env("window")
 @js("LockManager")
 export declare class LockManager {
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/LockManager/query) */
@@ -12009,7 +11886,6 @@ export declare class MathMLElement extends Element {
 }
 
 /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/MediaCapabilities) */
-@env("window")
 @js("MediaCapabilities")
 export declare class MediaCapabilities {
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/MediaCapabilities/decodingInfo) */
@@ -12443,7 +12319,6 @@ export declare class MediaSource extends EventTarget {
 }
 
 /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/MediaSourceHandle) */
-@env("window")
 @js("MediaSourceHandle")
 export declare class MediaSourceHandle {
     static prototype: MediaSourceHandle,
@@ -12570,7 +12445,6 @@ export declare class MediaStreamTrackEvent extends Event {
  *
  * [MDN Reference](https://developer.mozilla.org/docs/Web/API/MessageChannel)
  */
-@env("window")
 @js("MessageChannel")
 export declare class MessageChannel {
     /**
@@ -12589,13 +12463,11 @@ export declare class MessageChannel {
     constructor(mut self)
 }
 
-@env("window")
 export declare interface MessageEventTargetEventMap {
     "message": MessageEvent,
     "messageerror": MessageEvent
 }
 
-@env("window")
 export declare interface MessageEventTarget<T> {
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/DedicatedWorkerGlobalScope/message_event) */
     onmessage: (fn (this: T, ev: MessageEvent) -> any) | null,
@@ -12607,7 +12479,6 @@ export declare interface MessageEventTarget<T> {
     removeEventListener(type: string, listener: EventListenerOrEventListenerObject, options?: boolean | EventListenerOptions) -> unknown
 }
 
-@env("window")
 export declare interface MessagePortEventMap extends MessageEventTargetEventMap {
     "message": MessageEvent,
     "messageerror": MessageEvent
@@ -12618,7 +12489,6 @@ export declare interface MessagePortEventMap extends MessageEventTargetEventMap 
  *
  * [MDN Reference](https://developer.mozilla.org/docs/Web/API/MessagePort)
  */
-@env("window")
 @js("MessagePort")
 export declare class MessagePort extends EventTarget {
     /**
@@ -13033,7 +12903,6 @@ export declare interface NavigatorAutomationInformation {
 }
 
 /** Available only in secure contexts. */
-@env("window")
 export declare interface NavigatorBadge {
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/Navigator/clearAppBadge) */
     clearAppBadge() -> Promise<undefined>,
@@ -13041,7 +12910,6 @@ export declare interface NavigatorBadge {
     setAppBadge(contents?: number) -> Promise<undefined>
 }
 
-@env("window")
 export declare interface NavigatorConcurrentHardware {
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/Navigator/hardwareConcurrency) */
     readonly hardwareConcurrency: number
@@ -13063,7 +12931,6 @@ export declare interface NavigatorCookies {
     readonly cookieEnabled: boolean
 }
 
-@env("window")
 export declare interface NavigatorID {
     /**
      * @deprecated
@@ -13117,7 +12984,6 @@ export declare interface NavigatorID {
     readonly vendorSub: string
 }
 
-@env("window")
 export declare interface NavigatorLanguage {
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/Navigator/language) */
     readonly language: string,
@@ -13126,13 +12992,11 @@ export declare interface NavigatorLanguage {
 }
 
 /** Available only in secure contexts. */
-@env("window")
 export declare interface NavigatorLocks {
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/Navigator/locks) */
     readonly locks: LockManager
 }
 
-@env("window")
 export declare interface NavigatorOnLine {
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/Navigator/onLine) */
     readonly onLine: boolean
@@ -13163,7 +13027,6 @@ export declare interface NavigatorPlugins {
 }
 
 /** Available only in secure contexts. */
-@env("window")
 export declare interface NavigatorStorage {
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/Navigator/storage) */
     readonly storage: StorageManager
@@ -13490,7 +13353,6 @@ export declare interface NonElementParentNode {
     getElementById(elementId: string) -> Element | null
 }
 
-@env("window")
 export declare interface NotificationEventMap {
     "click": Event,
     "close": Event,
@@ -13503,7 +13365,6 @@ export declare interface NotificationEventMap {
  *
  * [MDN Reference](https://developer.mozilla.org/docs/Web/API/Notification)
  */
-@env("window")
 @js("Notification")
 export declare class Notification extends EventTarget {
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/Notification/badge) */
@@ -13548,14 +13409,12 @@ export declare class Notification extends EventTarget {
     static requestPermission(deprecatedCallback?: NotificationPermissionCallback) -> Promise<NotificationPermission>
 }
 
-@env("window")
 export declare interface OffscreenCanvasEventMap {
     "contextlost": Event,
     "contextrestored": Event
 }
 
 /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/OffscreenCanvas) */
-@env("window")
 @js("OffscreenCanvas")
 export declare class OffscreenCanvas extends EventTarget {
     /**
@@ -13615,7 +13474,6 @@ export declare class OffscreenCanvas extends EventTarget {
 }
 
 /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/OffscreenCanvasRenderingContext2D) */
-@env("window")
 @js("OffscreenCanvasRenderingContext2D")
 export declare class OffscreenCanvasRenderingContext2D extends CanvasCompositing {
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/CanvasRenderingContext2D/canvas) */
@@ -13758,7 +13616,6 @@ export declare interface ParentNode extends Node {
  *
  * [MDN Reference](https://developer.mozilla.org/docs/Web/API/Path2D)
  */
-@env("window")
 @js("Path2D")
 export declare class Path2D extends CanvasPath {
     /**
@@ -13789,13 +13646,11 @@ export declare class PerformanceEventTiming extends performance.PerformanceEntry
     constructor(mut self)
 }
 
-@env("window")
 export declare interface PermissionStatusEventMap {
     "change": Event
 }
 
 /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/PermissionStatus) */
-@env("window")
 @js("PermissionStatus")
 export declare class PermissionStatus extends EventTarget {
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/PermissionStatus/name) */
@@ -13813,7 +13668,6 @@ export declare class PermissionStatus extends EventTarget {
 }
 
 /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/Permissions) */
-@env("window")
 @js("Permissions")
 export declare class Permissions {
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/Permissions/query) */
@@ -14010,7 +13864,6 @@ export declare class ProcessingInstruction extends CharacterData {
  *
  * [MDN Reference](https://developer.mozilla.org/docs/Web/API/ProgressEvent)
  */
-@env("window")
 @js("ProgressEvent")
 export declare class ProgressEvent<T: EventTarget = EventTarget> extends Event {
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/ProgressEvent/lengthComputable) */
@@ -14025,7 +13878,6 @@ export declare class ProgressEvent<T: EventTarget = EventTarget> extends Event {
 }
 
 /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/PromiseRejectionEvent) */
-@env("window")
 @js("PromiseRejectionEvent")
 export declare class PromiseRejectionEvent extends Event {
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/PromiseRejectionEvent/promise) */
@@ -14161,7 +14013,6 @@ export declare class RemotePlayback extends EventTarget {
 }
 
 /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/Report) */
-@env("window")
 @js("Report")
 export declare class Report {
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/Report/body) */
@@ -14176,7 +14027,6 @@ export declare class Report {
 }
 
 /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/ReportBody) */
-@env("window")
 @js("ReportBody")
 export declare class ReportBody {
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/ReportBody/toJSON) */
@@ -14186,7 +14036,6 @@ export declare class ReportBody {
 }
 
 /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/ReportingObserver) */
-@env("window")
 @js("ReportingObserver")
 export declare class ReportingObserver {
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/ReportingObserver/disconnect) */
@@ -16493,7 +16342,6 @@ export declare class ScreenOrientation extends EventTarget {
  *
  * [MDN Reference](https://developer.mozilla.org/docs/Web/API/SecurityPolicyViolationEvent)
  */
-@env("window")
 @js("SecurityPolicyViolationEvent")
 export declare class SecurityPolicyViolationEvent extends Event {
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/SecurityPolicyViolationEvent/blockedURI) */
@@ -16902,7 +16750,6 @@ export declare class StaticRange extends AbstractRange {
  *
  * [MDN Reference](https://developer.mozilla.org/docs/Web/API/StorageManager)
  */
-@env("window")
 @js("StorageManager")
 export declare class StorageManager {
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/StorageManager/estimate) */
@@ -16941,7 +16788,6 @@ export declare class StylePropertyMap extends StylePropertyMapReadOnly {
 }
 
 /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/StylePropertyMapReadOnly) */
-@env("window")
 @js("StylePropertyMapReadOnly")
 export declare class StylePropertyMapReadOnly {
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/StylePropertyMapReadOnly/size) */
@@ -17072,7 +16918,6 @@ export declare class TextEvent extends UIEvent {
  *
  * [MDN Reference](https://developer.mozilla.org/docs/Web/API/TextMetrics)
  */
-@env("window")
 @js("TextMetrics")
 export declare class TextMetrics {
     /**
@@ -17816,7 +17661,6 @@ export declare class WakeLockSentinel extends EventTarget {
  *
  * [MDN Reference](https://developer.mozilla.org/docs/Web/API/WebTransport)
  */
-@env("window")
 @js("WebTransport")
 export declare class WebTransport {
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/WebTransport/closed) */
@@ -17844,7 +17688,6 @@ export declare class WebTransport {
  *
  * [MDN Reference](https://developer.mozilla.org/docs/Web/API/WebTransportBidirectionalStream)
  */
-@env("window")
 @js("WebTransportBidirectionalStream")
 export declare class WebTransportBidirectionalStream {
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/WebTransportBidirectionalStream/readable) */
@@ -17860,7 +17703,6 @@ export declare class WebTransportBidirectionalStream {
  *
  * [MDN Reference](https://developer.mozilla.org/docs/Web/API/WebTransportDatagramDuplexStream)
  */
-@env("window")
 @js("WebTransportDatagramDuplexStream")
 export declare class WebTransportDatagramDuplexStream {
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/WebTransportDatagramDuplexStream/incomingHighWaterMark) */
@@ -17886,7 +17728,6 @@ export declare class WebTransportDatagramDuplexStream {
  *
  * [MDN Reference](https://developer.mozilla.org/docs/Web/API/WebTransportError)
  */
-@env("window")
 @js("WebTransportError")
 export declare class WebTransportError extends DOMException {
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/WebTransportError/source) */
@@ -18287,7 +18128,6 @@ export declare interface WindowLocalStorage {
     readonly localStorage: storage.Storage
 }
 
-@env("window")
 export declare interface WindowOrWorkerGlobalScope {
     /**
      * Available only in secure contexts.
@@ -18376,7 +18216,6 @@ export declare class XMLDocument extends Document {
     constructor(mut self)
 }
 
-@env("window")
 export declare interface XMLHttpRequestEventMap extends XMLHttpRequestEventTargetEventMap {
     "readystatechange": Event
 }
@@ -18386,7 +18225,6 @@ export declare interface XMLHttpRequestEventMap extends XMLHttpRequestEventTarge
  *
  * [MDN Reference](https://developer.mozilla.org/docs/Web/API/XMLHttpRequest)
  */
-@env("window")
 @js("XMLHttpRequest")
 export declare class XMLHttpRequest extends XMLHttpRequestEventTarget {
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/XMLHttpRequest/readystatechange_event) */
@@ -18528,7 +18366,6 @@ export declare class XMLHttpRequest extends XMLHttpRequestEventTarget {
     static readonly DONE: 4
 }
 
-@env("window")
 export declare interface XMLHttpRequestEventTargetEventMap {
     "abort": ProgressEvent<XMLHttpRequestEventTarget>,
     "error": ProgressEvent<XMLHttpRequestEventTarget>,
@@ -18540,7 +18377,6 @@ export declare interface XMLHttpRequestEventTargetEventMap {
 }
 
 /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/XMLHttpRequestEventTarget) */
-@env("window")
 @js("XMLHttpRequestEventTarget")
 export declare class XMLHttpRequestEventTarget extends EventTarget {
     onabort: (fn (this: XMLHttpRequest, ev: ProgressEvent) -> any) | null,
@@ -18559,7 +18395,6 @@ export declare class XMLHttpRequestEventTarget extends EventTarget {
 }
 
 /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/XMLHttpRequestUpload) */
-@env("window")
 @js("XMLHttpRequestUpload")
 export declare class XMLHttpRequestUpload extends XMLHttpRequestEventTarget {
     addEventListener<K: keyof XMLHttpRequestEventTargetEventMap>(mut self, type: K, listener: fn (this: XMLHttpRequestUpload, ev: XMLHttpRequestEventTargetEventMap[K]) -> any, options?: boolean | AddEventListenerOptions) -> unknown,
@@ -19058,7 +18893,6 @@ export declare interface FileSystemEntryCallback {
     (entry: FileSystemEntry) -> unknown
 }
 
-@env("window")
 export declare interface FrameRequestCallback {
     (time: DOMHighResTimeStamp) -> unknown
 }
@@ -19078,7 +18912,6 @@ export declare interface IntersectionObserverCallback {
     (entries: mut Array<IntersectionObserverEntry>, observer: IntersectionObserver) -> unknown
 }
 
-@env("window")
 export declare interface LockGrantedCallback {
     (lock: Lock | null) -> any
 }
@@ -19103,7 +18936,6 @@ export declare interface OnBeforeUnloadEventHandlerNonNull {
     (event: Event) -> string | null
 }
 
-@env("window")
 export declare interface OnErrorEventHandlerNonNull {
     (event: Event | string, source?: string, lineno?: number, colno?: number, error?: error.Error) -> any
 }
@@ -19123,7 +18955,6 @@ export declare interface RemotePlaybackAvailabilityCallback {
     (available: boolean) -> unknown
 }
 
-@env("window")
 export declare interface ReportingObserverCallback {
     (reports: mut Array<Report>, observer: ReportingObserver) -> unknown
 }
@@ -19143,7 +18974,6 @@ export declare interface ViewTransitionUpdateCallback {
     () -> any
 }
 
-@env("window")
 export declare interface VoidFunction {
     () -> unknown
 }
@@ -19506,7 +19336,6 @@ export declare var innerWidth: number
 export declare var length: number
 
 /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/Window/location) */
-@env("window")
 @js("location")
 export declare var location: Location
 
@@ -19529,12 +19358,10 @@ export declare var locationbar: BarProp
 export declare var menubar: BarProp
 
 /** @deprecated */
-@env("window")
 @js("name")
 export declare val name: undefined
 
 /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/Window/navigator) */
-@env("window")
 @js("navigator")
 export declare var navigator: Navigator
 
@@ -19673,7 +19500,6 @@ export declare var scrollY: number
 export declare var scrollbars: BarProp
 
 /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/Window/self) */
-@env("window")
 @js("self")
 export declare var self: Window & typeof globalThis
 
@@ -19757,7 +19583,6 @@ export declare fn captureEvents() -> unknown
  *
  * [MDN Reference](https://developer.mozilla.org/docs/Web/API/Window/close)
  */
-@env("window")
 @js("close")
 export declare fn close() -> unknown
 
@@ -19818,11 +19643,9 @@ export declare fn open(url?: string | url.URL, target?: string, features?: strin
  *
  * [MDN Reference](https://developer.mozilla.org/docs/Web/API/Window/postMessage)
  */
-@env("window")
 @js("postMessage")
 export declare fn postMessage(message: unknown, targetOrigin: string, transfer?: mut Array<Transferable>) -> unknown
 
-@env("window")
 @js("postMessage")
 export declare fn postMessage(message: unknown, options?: WindowPostMessageOptions) -> unknown
 
@@ -19905,17 +19728,14 @@ export declare fn toString() -> string
  *
  * [MDN Reference](https://developer.mozilla.org/docs/Web/API/EventTarget/dispatchEvent)
  */
-@env("window")
 @js("dispatchEvent")
 export declare fn dispatchEvent(event: Event) -> boolean
 
 /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/DedicatedWorkerGlobalScope/cancelAnimationFrame) */
-@env("window")
 @js("cancelAnimationFrame")
 export declare fn cancelAnimationFrame(handle: number) -> unknown
 
 /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/DedicatedWorkerGlobalScope/requestAnimationFrame) */
-@env("window")
 @js("requestAnimationFrame")
 export declare fn requestAnimationFrame(callback: FrameRequestCallback) -> number
 
@@ -20165,7 +19985,6 @@ export declare var onended: (fn (this: Window, ev: Event) -> any) | null
  *
  * [MDN Reference](https://developer.mozilla.org/docs/Web/API/HTMLElement/error_event)
  */
-@env("window")
 @js("onerror")
 export declare var onerror: OnErrorEventHandler
 
@@ -20682,27 +20501,22 @@ export declare var ongamepaddisconnected: (fn (this: Window, ev: GamepadEvent) -
 export declare var onhashchange: (fn (this: Window, ev: HashChangeEvent) -> any) | null
 
 /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/Window/languagechange_event) */
-@env("window")
 @js("onlanguagechange")
 export declare var onlanguagechange: (fn (this: Window, ev: Event) -> any) | null
 
 /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/Window/message_event) */
-@env("window")
 @js("onmessage")
 export declare var onmessage: (fn (this: Window, ev: MessageEvent) -> any) | null
 
 /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/Window/messageerror_event) */
-@env("window")
 @js("onmessageerror")
 export declare var onmessageerror: (fn (this: Window, ev: MessageEvent) -> any) | null
 
 /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/Window/offline_event) */
-@env("window")
 @js("onoffline")
 export declare var onoffline: (fn (this: Window, ev: Event) -> any) | null
 
 /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/Window/online_event) */
-@env("window")
 @js("ononline")
 export declare var ononline: (fn (this: Window, ev: Event) -> any) | null
 
@@ -20732,7 +20546,6 @@ export declare var onpageswap: (fn (this: Window, ev: Event) -> any) | null
 export declare var onpopstate: (fn (this: Window, ev: PopStateEvent) -> any) | null
 
 /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/Window/rejectionhandled_event) */
-@env("window")
 @js("onrejectionhandled")
 export declare var onrejectionhandled: (fn (this: Window, ev: PromiseRejectionEvent) -> any) | null
 
@@ -20742,7 +20555,6 @@ export declare var onrejectionhandled: (fn (this: Window, ev: PromiseRejectionEv
 export declare var onstorage: (fn (this: Window, ev: storage.StorageEvent) -> any) | null
 
 /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/Window/unhandledrejection_event) */
-@env("window")
 @js("onunhandledrejection")
 export declare var onunhandledrejection: (fn (this: Window, ev: PromiseRejectionEvent) -> any) | null
 
@@ -20765,81 +20577,65 @@ export declare var localStorage: storage.Storage
  *
  * [MDN Reference](https://developer.mozilla.org/docs/Web/API/Window/caches)
  */
-@env("window")
 @js("caches")
 export declare var caches: cache.CacheStorage
 
 /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/Window/crossOriginIsolated) */
-@env("window")
 @js("crossOriginIsolated")
 export declare var crossOriginIsolated: boolean
 
 /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/Window/indexedDB) */
-@env("window")
 @js("indexedDB")
 export declare var indexedDB: indexeddb.IDBFactory
 
 /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/Window/isSecureContext) */
-@env("window")
 @js("isSecureContext")
 export declare var isSecureContext: boolean
 
 /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/Window/origin) */
-@env("window")
 @js("origin")
 export declare var origin: string
 
 /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/Window/atob) */
-@env("window")
 @js("atob")
 export declare fn atob(data: string) -> string
 
 /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/Window/btoa) */
-@env("window")
 @js("btoa")
 export declare fn btoa(data: string) -> string
 
 /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/Window/clearInterval) */
-@env("window")
 @js("clearInterval")
 export declare fn clearInterval(id: number | undefined) -> unknown
 
 /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/Window/clearTimeout) */
-@env("window")
 @js("clearTimeout")
 export declare fn clearTimeout(id: number | undefined) -> unknown
 
 /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/Window/createImageBitmap) */
-@env("window")
 @js("createImageBitmap")
 export declare fn createImageBitmap(image: ImageBitmapSource, options?: ImageBitmapOptions) -> Promise<ImageBitmap>
 
-@env("window")
 @js("createImageBitmap")
 export declare fn createImageBitmap(image: ImageBitmapSource, sx: number, sy: number, sw: number, sh: number, options?: ImageBitmapOptions) -> Promise<ImageBitmap>
 
 /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/Window/queueMicrotask) */
-@env("window")
 @js("queueMicrotask")
 export declare fn queueMicrotask(callback: VoidFunction) -> unknown
 
 /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/Window/reportError) */
-@env("window")
 @js("reportError")
 export declare fn reportError(e: unknown) -> unknown
 
 /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/Window/setInterval) */
-@env("window")
 @js("setInterval")
 export declare fn setInterval(handler: TimerHandler, timeout?: number, ...arguments: mut Array<any>) -> number
 
 /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/Window/setTimeout) */
-@env("window")
 @js("setTimeout")
 export declare fn setTimeout(handler: TimerHandler, timeout?: number, ...arguments: mut Array<any>) -> number
 
 /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/Window/structuredClone) */
-@env("window")
 @js("structuredClone")
 export declare fn structuredClone<T = any>(value: T, options?: StructuredSerializeOptions) -> T
 
@@ -20848,19 +20644,15 @@ export declare fn structuredClone<T = any>(value: T, options?: StructuredSeriali
 @js("sessionStorage")
 export declare var sessionStorage: storage.Storage
 
-@env("window")
 @js("addEventListener")
 export declare fn addEventListener<K: keyof WindowEventMap>(type: K, listener: fn (this: Window, ev: WindowEventMap[K]) -> any, options?: boolean | AddEventListenerOptions) -> unknown
 
-@env("window")
 @js("addEventListener")
 export declare fn addEventListener(type: string, listener: EventListenerOrEventListenerObject, options?: boolean | AddEventListenerOptions) -> unknown
 
-@env("window")
 @js("removeEventListener")
 export declare fn removeEventListener<K: keyof WindowEventMap>(type: K, listener: fn (this: Window, ev: WindowEventMap[K]) -> any, options?: boolean | EventListenerOptions) -> unknown
 
-@env("window")
 @js("removeEventListener")
 export declare fn removeEventListener(type: string, listener: EventListenerOrEventListenerObject, options?: boolean | EventListenerOptions) -> unknown
 
@@ -20873,19 +20665,14 @@ export declare type AutoFillField = AutoFillNormalField | `${OptionalPrefixToken
 @env("window")
 export declare type AutoFillSection = `section-${string}`
 
-@env("window")
 export declare type CSSKeywordish = string | CSSKeywordValue
 
-@env("window")
 export declare type CSSNumberish = number | CSSNumericValue
 
-@env("window")
 export declare type CSSPerspectiveValue = CSSNumericValue | CSSKeywordish
 
-@env("window")
 export declare type CSSUnparsedSegment = string | CSSVariableReferenceValue
 
-@env("window")
 export declare type CanvasImageSource = HTMLOrSVGImageElement | HTMLVideoElement | HTMLCanvasElement | ImageBitmap | OffscreenCanvas | web_codecs.VideoFrame
 
 @env("window")
@@ -20906,10 +20693,8 @@ export declare type ConstrainDouble = number | ConstrainDoubleRange
 @env("window")
 export declare type ConstrainULong = number | ConstrainULongRange
 
-@env("window")
 export declare type EpochTimeStamp = number
 
-@env("window")
 export declare type FileSystemWriteChunkType = BufferSource | file.Blob | string | WriteParams
 
 @env("window")
@@ -20918,7 +20703,6 @@ export declare type HTMLOrSVGImageElement = HTMLImageElement | SVGImageElement
 @env("window")
 export declare type HTMLOrSVGScriptElement = HTMLScriptElement | SVGScriptElement
 
-@env("window")
 export declare type ImageBitmapSource = CanvasImageSource | file.Blob | ImageData
 
 @env("window")
@@ -20927,19 +20711,16 @@ export declare type LineAndPositionSetting = number | AutoKeyword
 @env("window")
 export declare type MediaProvider = MediaStream | MediaSource | file.Blob
 
-@env("window")
 export declare type MessageEventSource = WindowProxy | MessagePort | service_worker.ServiceWorker
 
 @env("window")
 export declare type MutationRecordType = "attributes" | "characterData" | "childList"
 
-@env("window")
 export declare type OffscreenRenderingContext = OffscreenCanvasRenderingContext2D | ImageBitmapRenderingContext | webgl.WebGLRenderingContext | webgl.WebGL2RenderingContext
 
 @env("window")
 export declare type OnBeforeUnloadEventHandler = OnBeforeUnloadEventHandlerNonNull | null
 
-@env("window")
 export declare type OnErrorEventHandler = OnErrorEventHandlerNonNull | null
 
 @env("window")
@@ -20951,13 +20732,10 @@ export declare type OptionalPrefixToken<T: string> = `${T} ` | ""
 @env("window")
 export declare type RenderingContext = CanvasRenderingContext2D | ImageBitmapRenderingContext | webgl.WebGLRenderingContext | webgl.WebGL2RenderingContext
 
-@env("window")
 export declare type ReportList = mut Array<Report>
 
-@env("window")
 export declare type TimerHandler = string | function.Function
 
-@env("window")
 export declare type Transferable = OffscreenCanvas | ImageBitmap | MessagePort | MediaSourceHandle | streams.ReadableStream | streams.WritableStream | streams.TransformStream | web_codecs.AudioData | web_codecs.VideoFrame | web_rtc.RTCDataChannel | typed_arrays.ArrayBuffer
 
 @env("window")
@@ -20966,7 +20744,6 @@ export declare type VibratePattern = number | mut Array<number>
 @env("window")
 export declare type WindowProxy = Window
 
-@env("window")
 export declare type XMLHttpRequestBodyInit = file.Blob | BufferSource | file.FormData | url.URLSearchParams | string
 
 @env("window")
@@ -21002,49 +20779,35 @@ export declare type AutoFillNormalField = "additional-name" | "address-level1" |
 @env("window")
 export declare type AutoKeyword = "auto"
 
-@env("window")
 export declare type CSSMathOperator = "clamp" | "invert" | "max" | "min" | "negate" | "product" | "sum"
 
-@env("window")
 export declare type CSSNumericBaseType = "angle" | "flex" | "frequency" | "length" | "percent" | "resolution" | "time"
 
 @env("window")
 export declare type CanPlayTypeResult = "" | "maybe" | "probably"
 
-@env("window")
 export declare type CanvasDirection = "inherit" | "ltr" | "rtl"
 
-@env("window")
 export declare type CanvasFillRule = "evenodd" | "nonzero"
 
-@env("window")
 export declare type CanvasFontKerning = "auto" | "none" | "normal"
 
-@env("window")
 export declare type CanvasFontStretch = "condensed" | "expanded" | "extra-condensed" | "extra-expanded" | "normal" | "semi-condensed" | "semi-expanded" | "ultra-condensed" | "ultra-expanded"
 
-@env("window")
 export declare type CanvasFontVariantCaps = "all-petite-caps" | "all-small-caps" | "normal" | "petite-caps" | "small-caps" | "titling-caps" | "unicase"
 
-@env("window")
 export declare type CanvasLineCap = "butt" | "round" | "square"
 
-@env("window")
 export declare type CanvasLineJoin = "bevel" | "miter" | "round"
 
-@env("window")
 export declare type CanvasTextAlign = "center" | "end" | "left" | "right" | "start"
 
-@env("window")
 export declare type CanvasTextBaseline = "alphabetic" | "bottom" | "hanging" | "ideographic" | "middle" | "top"
 
-@env("window")
 export declare type CanvasTextRendering = "auto" | "geometricPrecision" | "optimizeLegibility" | "optimizeSpeed"
 
-@env("window")
 export declare type ColorGamut = "p3" | "rec2020" | "srgb"
 
-@env("window")
 export declare type ColorSpaceConversion = "default" | "none"
 
 @env("window")
@@ -21065,25 +20828,20 @@ export declare type DisplayCaptureSurfaceType = "browser" | "monitor" | "window"
 @env("window")
 export declare type DocumentReadyState = "complete" | "interactive" | "loading"
 
-@env("window")
 export declare type DocumentVisibilityState = "hidden" | "visible"
 
 @env("window")
 export declare type EndOfStreamError = "decode" | "network"
 
-@env("window")
 export declare type FileSystemHandleKind = "directory" | "file"
 
 @env("window")
 export declare type FillMode = "auto" | "backwards" | "both" | "forwards" | "none"
 
-@env("window")
 export declare type FontDisplay = "auto" | "block" | "fallback" | "optional" | "swap"
 
-@env("window")
 export declare type FontFaceLoadStatus = "error" | "loaded" | "loading" | "unloaded"
 
-@env("window")
 export declare type FontFaceSetLoadStatus = "loaded" | "loading"
 
 @env("window")
@@ -21098,19 +20856,15 @@ export declare type GamepadHapticsResult = "complete" | "preempted"
 @env("window")
 export declare type GamepadMappingType = "" | "standard" | "xr-standard"
 
-@env("window")
 export declare type GlobalCompositeOperation = "color" | "color-burn" | "color-dodge" | "copy" | "darken" | "destination-atop" | "destination-in" | "destination-out" | "destination-over" | "difference" | "exclusion" | "hard-light" | "hue" | "lighten" | "lighter" | "luminosity" | "multiply" | "overlay" | "saturation" | "screen" | "soft-light" | "source-atop" | "source-in" | "source-out" | "source-over" | "xor"
 
-@env("window")
 export declare type HdrMetadataType = "smpteSt2086" | "smpteSt2094-10" | "smpteSt2094-40"
 
 @env("window")
 export declare type HighlightType = "grammar-error" | "highlight" | "spelling-error"
 
-@env("window")
 export declare type ImageOrientation = "flipY" | "from-image" | "none"
 
-@env("window")
 export declare type ImageSmoothingQuality = "high" | "low" | "medium"
 
 @env("window")
@@ -21122,7 +20876,6 @@ export declare type IterationCompositeOperation = "accumulate" | "replace"
 @env("window")
 export declare type LineAlignSetting = "center" | "end" | "start"
 
-@env("window")
 export declare type LockMode = "exclusive" | "shared"
 
 @env("window")
@@ -21134,13 +20887,11 @@ export declare type MIDIPortDeviceState = "connected" | "disconnected"
 @env("window")
 export declare type MIDIPortType = "input" | "output"
 
-@env("window")
 export declare type MediaDecodingType = "file" | "media-source" | "webrtc"
 
 @env("window")
 export declare type MediaDeviceKind = "audioinput" | "audiooutput" | "videoinput"
 
-@env("window")
 export declare type MediaEncodingType = "record" | "webrtc"
 
 @env("window")
@@ -21170,22 +20921,17 @@ export declare type MediaStreamTrackState = "ended" | "live"
 @env("window")
 export declare type NavigationType = "push" | "reload" | "replace" | "traverse"
 
-@env("window")
 export declare type NotificationDirection = "auto" | "ltr" | "rtl"
 
-@env("window")
 export declare type NotificationPermission = "default" | "denied" | "granted"
 
-@env("window")
 export declare type OffscreenRenderingContextId = "2d" | "bitmaprenderer" | "webgl" | "webgl2" | "webgpu"
 
 @env("window")
 export declare type OrientationType = "landscape-primary" | "landscape-secondary" | "portrait-primary" | "portrait-secondary"
 
-@env("window")
 export declare type PermissionName = "camera" | "geolocation" | "microphone" | "midi" | "notifications" | "persistent-storage" | "push" | "screen-wake-lock" | "storage-access"
 
-@env("window")
 export declare type PermissionState = "denied" | "granted" | "prompt"
 
 @env("window")
@@ -21194,10 +20940,8 @@ export declare type PlaybackDirection = "alternate" | "alternate-reverse" | "nor
 @env("window")
 export declare type PositionAlignSetting = "auto" | "center" | "line-left" | "line-right"
 
-@env("window")
 export declare type PredefinedColorSpace = "display-p3" | "srgb"
 
-@env("window")
 export declare type PremultiplyAlpha = "default" | "none" | "premultiply"
 
 @env("window")
@@ -21215,7 +20959,6 @@ export declare type RemotePlaybackState = "connected" | "connecting" | "disconne
 @env("window")
 export declare type ResizeObserverBoxOptions = "border-box" | "content-box" | "device-pixel-content-box"
 
-@env("window")
 export declare type ResizeQuality = "high" | "low" | "medium" | "pixelated"
 
 @env("window")
@@ -21230,7 +20973,6 @@ export declare type ScrollRestoration = "auto" | "manual"
 @env("window")
 export declare type ScrollSetting = "" | "up"
 
-@env("window")
 export declare type SecurityPolicyViolationEventDisposition = "enforce" | "report"
 
 @env("window")
@@ -21254,7 +20996,6 @@ export declare type TextTrackMode = "disabled" | "hidden" | "showing"
 @env("window")
 export declare type TouchType = "direct" | "stylus"
 
-@env("window")
 export declare type TransferFunction = "hlg" | "pq" | "srgb"
 
 @env("window")
@@ -21263,16 +21004,12 @@ export declare type VideoFacingModeEnum = "environment" | "left" | "right" | "us
 @env("window")
 export declare type WakeLockType = "screen"
 
-@env("window")
 export declare type WebTransportCongestionControl = "default" | "low-latency" | "throughput"
 
-@env("window")
 export declare type WebTransportErrorSource = "session" | "stream"
 
-@env("window")
 export declare type WriteCommandType = "seek" | "truncate" | "write"
 
-@env("window")
 export declare type XMLHttpRequestResponseType = "" | "arraybuffer" | "blob" | "document" | "json" | "text"
 
 @env("window")
@@ -21280,7 +21017,26 @@ export declare interface MediaKeyStatusMapIterator<T> extends IteratorObject<T, 
     [Symbol.iterator]() -> MediaKeyStatusMapIterator<T>
 }
 
-@env("window")
 export declare interface StylePropertyMapReadOnlyIterator<T> extends IteratorObject<T, BuiltinIteratorReturn, unknown> {
     [Symbol.iterator]() -> StylePropertyMapReadOnlyIterator<T>
 }
+
+@env("dedicated_worker", "shared_worker", "service_worker")
+export declare interface MediaStreamTrackProcessorInit {
+    maxBufferSize?: number
+}
+
+/** [MDN Reference](https://developer.mozilla.org/docs/Web/API/MediaStreamTrackProcessor) */
+@env("dedicated_worker", "shared_worker", "service_worker")
+@js("MediaStreamTrackProcessor")
+export declare class MediaStreamTrackProcessor {
+    /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/MediaStreamTrackProcessor/readable) */
+    readonly readable: streams.ReadableStream,
+    static prototype: MediaStreamTrackProcessor,
+    constructor(mut self, init: MediaStreamTrackProcessorInit)
+}
+
+/** [MDN Reference](https://developer.mozilla.org/docs/Web/API/Document/fonts) */
+@env("dedicated_worker", "shared_worker", "service_worker")
+@js("fonts")
+export declare var fonts: FontFaceSet

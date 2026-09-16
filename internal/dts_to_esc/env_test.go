@@ -8,6 +8,7 @@ import (
 
 	"github.com/escalier-lang/escalier/internal/ast"
 	"github.com/escalier-lang/escalier/internal/parser"
+	"github.com/escalier-lang/escalier/internal/set"
 	"github.com/stretchr/testify/require"
 )
 
@@ -41,7 +42,7 @@ func envPackages(t *testing.T, sources map[string]string) map[string]*Standalone
 // envMessages renders each violation CheckEnvs reports, in its order.
 func envMessages(t *testing.T, mods map[string]*StandaloneModule) []string {
 	t.Helper()
-	violations, err := CheckEnvs(mods)
+	violations, err := CheckEnvs(mods, set.NewSet[string]())
 	require.NoError(t, err)
 	out := make([]string, 0, len(violations))
 	for _, v := range violations {

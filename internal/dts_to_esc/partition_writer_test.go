@@ -55,14 +55,13 @@ interface Date { getVarDate: () => VarDate; }
 	}, res.Drops)
 }
 
-func TestPartitionLib_IgnoresTheWorkerHostLib(t *testing.T) {
+func TestPartitionLib_SkipsTheWorkerCopyOfASharedName(t *testing.T) {
 	t.Parallel()
-	// The partition covers the browser. TypeScript ships lib.dom and
-	// lib.webworker as alternatives a `tsconfig.json` picks between, so
-	// the worker files restate the globals a document also has and add
-	// ones it does not. Neither half is wanted here. The restatement
-	// would double the members of every shared interface, and
-	// `ServiceWorkerGlobalScope` names nothing a document can reach.
+	// TypeScript ships lib.dom and lib.webworker as alternatives a
+	// `tsconfig.json` picks between, so the worker files restate the globals a
+	// document also has and add ones it does not. The run carries the window
+	// copy of a restated name and routes the worker-only names on their own.
+	// Carrying both copies would double the members of every shared interface.
 	dom := parseLib(t, "lib.dom.d.ts", `
 interface ReadableStream<R = any> { readonly locked: boolean; }
 `)
@@ -74,20 +73,28 @@ interface ServiceWorkerGlobalScope { readonly clients: Clients; }
 	res, err := PartitionLib([]LibInput{dom, worker})
 	require.NoError(t, err)
 
+	require.Len(t, res.Buckets, 2)
+
 	// One ReadableStream, carrying `locked` once rather than twice.
-	require.Len(t, res.Buckets, 1)
 	require.Len(t, res.Buckets["web:streams"], 1)
 	stream, ok := res.Buckets["web:streams"][0].(*dts_parser.InterfaceDecl)
 	require.True(t, ok)
 	require.Len(t, stream.Members, 1)
 	require.Equal(t, "locked", memberKey(stream.Members[0]))
 
-	// The worker-only name lands in no bucket, and the §6.1 fail-safe
-	// does not fire for it either.
+	// The worker-only name routes to its own package.
+	require.Len(t, res.Buckets["web:service_worker"], 1)
+	scope, ok := res.Buckets["web:service_worker"][0].(*dts_parser.InterfaceDecl)
+	require.True(t, ok)
+	require.Equal(t, "ServiceWorkerGlobalScope", scope.Name.Name)
+
+	// The skipped copy is reported, and the name it restates is left without an
+	// environment reading the run can trust.
 	require.Equal(t, []DropNote{
 		{Name: "ReadableStream", SourceFile: "lib.webworker.d.ts"},
-		{Name: "ServiceWorkerGlobalScope", SourceFile: "lib.webworker.d.ts"},
 	}, res.Drops)
+	require.True(t, res.Unreconciled.Contains("ReadableStream"))
+	require.False(t, res.Unreconciled.Contains("ServiceWorkerGlobalScope"))
 }
 
 func TestPartitionLib_RoutesByName(t *testing.T) {

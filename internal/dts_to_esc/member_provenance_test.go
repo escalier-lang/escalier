@@ -12,26 +12,26 @@ import (
 // pinnedLibDir is the pinned TypeScript lib set, relative to this package.
 const pinnedLibDir = "../../node_modules/typescript/lib"
 
-// convertBothWebLibs routes lib.dom.d.ts and lib.webworker.d.ts together and
-// converts the result.
+// convertBothWebLibs routes lib.dom.d.ts and lib.webworker.d.ts together, with
+// both copies of every shared declaration merged, and converts the result.
 //
-// The run's own DroppedSources skips the worker lib, and this reads it anyway.
-// The environments a member exists on come from which file declared it, so the
-// table has to answer before the tree carries the worker surface, and this is
-// what says it does. #1633 is the change that undrops the file.
+// A run skips the worker lib's copy of a name the window lib also declares, so
+// only a worker-only declaration reaches the tree carrying two libs' spans.
+// Merging the two copies is what the rest of #1633 does, and these tests are
+// what say the member reading answers correctly once it does.
 func convertBothWebLibs(t *testing.T) (map[string]*StandaloneModule, map[int]string) {
 	t.Helper()
 	inputs, err := ParseLibFiles(pinnedLibDir,
 		[]string{"lib.dom.d.ts", "lib.webworker.d.ts"})
 	require.NoError(t, err)
 
-	// The run's own drop list, minus the worker libs. Keeping
-	// lib.scripthost.d.ts dropped matters even though this reads neither: a file
-	// no table names would widen to every environment rather than be flagged.
-	prevDropped, prevResidual := DroppedSources, DOMResidualSources
-	DroppedSources = set.FromSlice([]string{"lib.scripthost.d.ts"})
+	// Emptying WorkerLibSources is what lifts the skip, so both copies of a
+	// shared declaration route and merge. Routing the worker lib as DOM residual
+	// gives its worker-only names a package without listing each one here.
+	prevResidual, prevWorker := DOMResidualSources, WorkerLibSources
 	DOMResidualSources = set.FromSlice([]string{"lib.dom.d.ts", "lib.webworker.d.ts"})
-	defer func() { DroppedSources, DOMResidualSources = prevDropped, prevResidual }()
+	WorkerLibSources = set.NewSet[string]()
+	defer func() { DOMResidualSources, WorkerLibSources = prevResidual, prevWorker }()
 
 	res, err := PartitionLib(inputs)
 	require.NoError(t, err)
@@ -156,8 +156,8 @@ func TestMemberEnvsFromLibs_MostSharedMembersAreNotNarrowed(t *testing.T) {
 	t.Logf("window-only %d, shared %d, everywhere %d", windowOnly, shared, everywhere)
 }
 
-// The lib set's reading and the package table disagree, and the gap is the work
-// #1633 has to reconcile.
+// The lib set's reading and the package table disagree, and closing the gap is
+// what the rest of #1633 does.
 //
 // packageEnvs answers per package and says every `web:*` package a browser
 // carries is a window's, which its own comment records as being for want of a
@@ -195,6 +195,6 @@ func TestTheLibReadingDisagreesWithThePackageTable(t *testing.T) {
 	}
 
 	require.Equal(t, 7762, read, "members the lib set answers for")
-	require.Equal(t, 2058, outside,
+	require.Equal(t, 2044, outside,
 		"members available outside the environments their package claims")
 }

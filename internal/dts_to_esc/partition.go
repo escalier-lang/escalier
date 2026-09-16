@@ -526,6 +526,13 @@ var webPackages = []struct {
 		// carries it rather than any one of them.
 	}},
 	{"web:workers", "web/workers.esc", []string{
+		// The worker side of the API, declared only by lib.webworker.d.ts. The
+		// four scope types nest — service ⊃ shared ≈ dedicated ⊃ the base — and
+		// each is what `self` is in that kind of worker.
+		"WorkerGlobalScope", "WorkerGlobalScopeEventMap",
+		"WorkerLocation", "WorkerNavigator", "importScripts",
+		"DedicatedWorkerGlobalScope", "DedicatedWorkerGlobalScopeEventMap",
+		"SharedWorkerGlobalScope", "SharedWorkerGlobalScopeEventMap",
 		// The document side of workers: what a page constructs and the
 		// events it gets back. The scope a worker runs inside —
 		// `WorkerGlobalScope`, `DedicatedWorkerGlobalScope`,
@@ -634,6 +641,8 @@ var webPackages = []struct {
 		"AudioTimestamp",
 	}},
 	{"web:web_rtc", "web/web_rtc.esc", []string{
+		// Encoded-transform types a dedicated worker receives.
+		"RTCTransformEvent", "RTCRtpScriptTransformer", "onrtctransform",
 		// Symbols MDN documents under WebRTC that are absent from the
 		// pinned lib.dom.d.ts (no partition entry needed today):
 		// RTCIdentityAssertion, RTCIdentityProvider,
@@ -750,6 +759,16 @@ var webPackages = []struct {
 		"IDBValidKey", "IDBArrayKey",
 	}},
 	{"web:service_worker", "web/service_worker.esc", []string{
+		// The scope side, declared only by lib.webworker.d.ts. An event goes
+		// with the scope whose event map declares it rather than with the API
+		// family that names it, which is what keeps ExtendableEvent and
+		// FetchEvent here instead of in a package of their own.
+		"ServiceWorkerGlobalScope", "ServiceWorkerGlobalScopeEventMap",
+		"Client", "Clients", "WindowClient",
+		"ExtendableEvent", "ExtendableEventInit",
+		"ExtendableMessageEvent", "ExtendableMessageEventInit",
+		"FetchEvent", "FetchEventInit",
+		"NotificationEvent", "NotificationEventInit",
 		// Service Worker proper. MDN splits Push and Cache into their
 		// own APIs (https://developer.mozilla.org/en-US/docs/Web/API/Service_Worker_API);
 		// see web:push and web:cache below.
@@ -771,6 +790,10 @@ var webPackages = []struct {
 		"ClientTypes",
 	}},
 	{"web:push", "web/push.esc", []string{
+		// A page never receives a push event, so these sit beside PushManager
+		// rather than in web:service_worker, and the annotation is what says a
+		// page cannot reach them.
+		"PushEvent", "PushEventInit", "PushMessageData", "PushMessageDataInit",
 		// MDN documents Push as a separate API:
 		// https://developer.mozilla.org/en-US/docs/Web/API/Push_API
 		"PushManager", "PushSubscription", "PushSubscriptionJSON",
@@ -800,6 +823,9 @@ var webPackages = []struct {
 		"URLSearchParamsIterator",
 	}},
 	{"web:file", "web/file.esc", []string{
+		// The synchronous file API, which only a worker has. Blocking is
+		// acceptable off the main thread and nowhere else.
+		"FileReaderSync", "FileSystemSyncAccessHandle", "FileSystemReadWriteOptions",
 		"Blob", "BlobPropertyBag", "BlobPart", "EndingType",
 		"File", "FilePropertyBag",
 		// FormData holds files, and both `Blob` and `File` are here, so this
@@ -953,10 +979,6 @@ var AllowedSingletonKeyDrops = set.FromSlice([]SingletonMember{
 // pseudo-packages, the same question Node raises, and §6.1 defers both.
 var DroppedSources = set.FromSlice([]string{
 	"lib.scripthost.d.ts",
-	"lib.webworker.d.ts",
-	"lib.webworker.iterable.d.ts",
-	"lib.webworker.asynciterable.d.ts",
-	"lib.webworker.importscripts.d.ts",
 })
 
 // UnreferencedDOMTypes names the type-only `web:dom` declarations that
@@ -1036,10 +1058,20 @@ var OverlayRetypedSoleReferrers = map[string]string{
 // Standalone web siblings (Fetch / Streams / Crypto / …) are mapped
 // explicitly via webPackages above, so they take precedence over this
 // residual rule even when they appear in lib.dom.d.ts.
+//
+// The worker lib files are here for the same reason, and the names they leave
+// to the residual rule are ones whose referent web:dom already holds. The
+// worker global `fonts` is a `FontFaceSet`, and `MediaStreamTrackProcessor`
+// wraps a `MediaStreamTrack`. Their `@env` is what says a document cannot reach
+// them. Which package holds them says where a reader finds them.
 var DOMResidualSources = set.FromSlice([]string{
 	"lib.dom.d.ts",
 	"lib.dom.iterable.d.ts",
 	"lib.dom.asynciterable.d.ts",
+	"lib.webworker.d.ts",
+	"lib.webworker.importscripts.d.ts",
+	"lib.webworker.iterable.d.ts",
+	"lib.webworker.asynciterable.d.ts",
 })
 
 func init() {
@@ -1196,3 +1228,34 @@ func SchemeOf(uri string) string {
 	}
 	return scheme
 }
+
+// WorkerLibSources are the lib files declaring the Web Worker surface.
+//
+// A name one of these declares that a `lib.dom.*` file also declares is skipped,
+// so the worker libs contribute only what the window libs do not. That bound is
+// what keeps the change tractable. Carrying the worker-only surface and
+// reconciling the shared one are separate problems, and only the first is
+// settled here.
+//
+// 629 names are shared. 594 of them are declared identically in the two libs and
+// 35 differ. Of the 35, the ambient globals differ in the type the name is
+// declared at. `self` is a `Window` in a page and a `WorkerGlobalScope` in a
+// worker, so saying both needs one ambient module per environment. The rest
+// differ inside a type, either in a union arm a window has and a worker does not
+// or in a member declared at two types. Saying those needs per-arm availability
+// or a decorator slot on an interface member. All three reach far past this
+// change. See #1633.
+var WorkerLibSources = set.FromSlice([]string{
+	"lib.webworker.d.ts",
+	"lib.webworker.importscripts.d.ts",
+	"lib.webworker.iterable.d.ts",
+	"lib.webworker.asynciterable.d.ts",
+})
+
+// WindowLibSources are the lib files declaring the window surface, which is the
+// half a shared name is taken from.
+var WindowLibSources = set.FromSlice([]string{
+	"lib.dom.d.ts",
+	"lib.dom.iterable.d.ts",
+	"lib.dom.asynciterable.d.ts",
+})
