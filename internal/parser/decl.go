@@ -818,21 +818,10 @@ func attachElemDecorators(elem ast.ClassElem, decorators []*ast.Decorator) {
 	if elem == nil || len(decorators) == 0 {
 		return
 	}
-	start := decorators[0].Span_.Start
-	switch e := elem.(type) {
-	case *ast.FieldElem:
-		e.Decorators, e.Span_.Start = decorators, start
-	case *ast.MethodElem:
-		e.Decorators, e.Span_.Start = decorators, start
-	case *ast.GetterElem:
-		e.Decorators, e.Span_.Start = decorators, start
-	case *ast.SetterElem:
-		e.Decorators, e.Span_.Start = decorators, start
-	case *ast.ConstructorElem:
-		e.Decorators, e.Span_.Start = decorators, start
-	case *ast.CallableElem:
-		e.Decorators, e.Span_.Start = decorators, start
-	}
+	elem.SetDecorators(decorators)
+	span := elem.Span()
+	span.Start = decorators[0].Span().Start
+	elem.SetSpan(span)
 }
 
 func (p *Parser) parseClassElemInner() ast.ClassElem {

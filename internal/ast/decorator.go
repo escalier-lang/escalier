@@ -46,6 +46,10 @@ type elemDecorators struct {
 
 func (e *elemDecorators) decoratorList() []*Decorator { return e.Decorators }
 
+// SetDecorators replaces a member's decorator list. It is promoted from the
+// embed, so one definition serves every ClassElem.
+func (e *elemDecorators) SetDecorators(decorators []*Decorator) { e.Decorators = decorators }
+
 // decorated is what ClassElemDecorators matches a member against. The field is
 // exported and reached directly on a concrete member, so the accessor exists
 // only to let the helper below read it through the ClassElem interface.

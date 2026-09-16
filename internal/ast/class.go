@@ -28,6 +28,12 @@ type ClassElem interface {
 	// dts_to_esc converter and the regular parser (#663).
 	Doc() string
 	SetDoc(string)
+	// SetDecorators and SetSpan let a caller attach decorators parsed ahead of a
+	// member and widen the member's span back over them, without switching on
+	// the member's kind. SetSpan is the dual of Span, which returns by value and
+	// so cannot be assigned through.
+	SetDecorators([]*Decorator)
+	SetSpan(Span)
 }
 
 // MethodReceiver describes a `self` receiver on a method, getter, setter, or
@@ -144,6 +150,8 @@ func (f *FieldElem) Accept(v Visitor) {
 }
 func (f *FieldElem) Span() Span { return f.Span_ }
 
+func (f *FieldElem) SetSpan(span Span) { f.Span_ = span }
+
 type MethodElem struct {
 	declDoc
 	elemDecorators
@@ -169,6 +177,8 @@ func (m *MethodElem) Accept(v Visitor) {
 	v.ExitClassElem(m)
 }
 func (m *MethodElem) Span() Span { return m.Span_ }
+
+func (m *MethodElem) SetSpan(span Span) { m.Span_ = span }
 
 // GetterElem represents a getter in a class.
 type GetterElem struct {
@@ -196,6 +206,8 @@ func (g *GetterElem) Accept(v Visitor) {
 	v.ExitClassElem(g)
 }
 func (g *GetterElem) Span() Span { return g.Span_ }
+
+func (g *GetterElem) SetSpan(span Span) { g.Span_ = span }
 
 // ConstructorElem represents an explicit `constructor(...) { ... }` block
 // inside a class body. The constructor's receiver is represented by
@@ -229,6 +241,8 @@ func (c *ConstructorElem) Accept(v Visitor) {
 }
 func (c *ConstructorElem) Span() Span { return c.Span_ }
 
+func (c *ConstructorElem) SetSpan(span Span) { c.Span_ = span }
+
 // SetterElem represents a setter in a class.
 type SetterElem struct {
 	declDoc
@@ -256,6 +270,8 @@ func (s *SetterElem) Accept(v Visitor) {
 }
 func (s *SetterElem) Span() Span { return s.Span_ }
 
+func (s *SetterElem) SetSpan(span Span) { s.Span_ = span }
+
 // CallableElem represents an unnamed `(...) -> T` call signature in a class body. It makes
 // the class value callable: `Symbol("desc")` calls it where `Symbol()` alone would construct.
 //
@@ -282,3 +298,5 @@ func (c *CallableElem) Accept(v Visitor) {
 	v.ExitClassElem(c)
 }
 func (c *CallableElem) Span() Span { return c.Span_ }
+
+func (c *CallableElem) SetSpan(span Span) { c.Span_ = span }
