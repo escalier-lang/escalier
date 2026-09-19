@@ -6,8 +6,9 @@
 // DOM in the closure of every program that fetches: 45ms to 268ms warm, and
 // 912ms to 4.4s cold, measured with BenchmarkStdlibClosureLoad.
 //
-// The members are the same ones the alias holds, `FormData` included, and
-// dom.replace.esc pins that agreement.
+// Every member of that alias appears here, `FormData` included, and
+// `streams.ReadableStream` is the one arm `BodyInit` adds on top. Those five
+// shared members are what dom.replace.esc pins.
 export declare type BodyInit =
     streams.ReadableStream
     | file.Blob
