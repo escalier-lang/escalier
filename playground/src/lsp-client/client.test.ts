@@ -7,6 +7,7 @@ import type * as lsp from 'vscode-languageserver-protocol';
 import { Client } from './client';
 
 let client: Client;
+let runPromise: Promise<unknown>;
 let tmpDir: string;
 let rootUri: string;
 
@@ -33,11 +34,34 @@ beforeEach(() => {
             '../../../internal/interop/data',
         ),
     });
-    client.run();
+    runPromise = client.run();
 });
+
+// A server that never exits would park afterEach until Vitest's own hook
+// timeout, which reports no cause. Failing first, and sooner, names it.
+async function awaitServerExit() {
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    const expired = new Promise<never>((_resolve, reject) => {
+        timer = setTimeout(
+            () => reject(new Error('the LSP server did not exit')),
+            5_000,
+        );
+    });
+    try {
+        await Promise.race([runPromise, expired]);
+    } finally {
+        clearTimeout(timer);
+    }
+}
 
 afterEach(async () => {
     await client.stop();
+    // `stop()` sends `exit`, which returns the server from its main and
+    // resolves the run promise. Awaiting it puts the Go runtime's shutdown
+    // inside the test that started it. Without this the runtime outlives the
+    // file, and Vitest fails the run when one of its console messages is still
+    // in flight as the worker closes its rpc channel.
+    await awaitServerExit();
     fs.rmSync(tmpDir, { recursive: true, force: true });
 });
 
@@ -372,6 +396,38 @@ test.skip('workspace/executeCommand', async () => {
     expect(resp.uri).toBe(`${rootUri}/bin/foo.js`);
     expect(resp.text).toContain('const x = 5;');
 });
+
+test('constructing a second client leaves the running one usable', async () => {
+    // Go resolves `globalThis.fs` on every syscall. Building a Client used to
+    // install its shim there, which repointed this already-running server's
+    // stdin at the new streams, and it never read another message. This
+    // initialize would hang.
+    const second = new Client(buffer, process.cwd(), fs);
+    expect(second).toBeDefined();
+
+    const initResult = await client.initialize({
+        processId: process.pid,
+        rootUri,
+        capabilities: {},
+    });
+    expect(initResult).toBeDefined();
+});
+
+test('a second client refuses to run while one is already running', async () => {
+    // One set of globals serves every runtime, so the second would take over
+    // the first's streams. Refusing says so where the mistake is.
+    const second = new Client(buffer, process.cwd(), fs);
+    await expect(second.run()).rejects.toThrow(
+        'an LSP server is already running: only one Client can run at a time',
+    );
+});
+
+// The two tests below exercise how the client reassembles a response that
+// arrives split across several stdout chunks. A message is delimited by a
+// `Content-Length` header rather than by the chunk it came in, so the client
+// has to buffer until it holds the whole body. They build their own Client and
+// never call run(), so they drive its stdout directly and no LSP server is
+// involved.
 
 test('multi-chunk message handling', async () => {
     const encoder = new TextEncoder();

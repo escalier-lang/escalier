@@ -10,6 +10,10 @@ import './wasm_exec'; // run for side-effects
 
 const Go = globalThis.Go;
 
+// The Client whose shims `globalThis` currently carries, or undefined when no
+// runtime is running. See run().
+let runningClient: Client | undefined;
+
 const encoder = new TextEncoder();
 const decoder = new TextDecoder();
 
@@ -56,6 +60,13 @@ export class Client {
     private messageBuffer: string;
     /** Set by `stop()`. Silences the server's output from then on. */
     private stopped = false;
+
+    // Go resolves `globalThis.fs` and `globalThis.process` on every syscall,
+    // so whichever value is installed last serves every runtime rather than
+    // the one that installed it. These are built here and installed in run(),
+    // which keeps constructing a Client from reaching into a running one.
+    private fsShim: unknown;
+    private processShim: unknown;
 
     constructor(
         wasmBuf: ArrayBuffer,
@@ -144,7 +155,7 @@ export class Client {
         //     return err;
         // };
 
-        globalThis.fs = {
+        this.fsShim = {
             // Defined in src/syscall/syscall_js.go in https://github.com/golang
             constants: {
                 O_WRONLY: 1,
@@ -376,7 +387,7 @@ export class Client {
         };
 
         // @ts-ignore
-        globalThis.process = {
+        this.processShim = {
             getuid() {
                 return -1;
             },
@@ -421,11 +432,29 @@ export class Client {
     }
 
     async run() {
-        const { instance } = await WebAssembly.instantiate(
-            this.wasmBuf,
-            this.go.importObject,
-        );
-        return this.go.run(instance);
+        // One set of globals serves every runtime, so a second one started
+        // while the first is alive would take over the first's streams and
+        // the first would never read another message. Refusing says so at the
+        // point of the mistake.
+        if (runningClient !== undefined) {
+            throw new Error(
+                'an LSP server is already running: only one Client can run at a time',
+            );
+        }
+        runningClient = this;
+
+        globalThis.fs = this.fsShim as typeof globalThis.fs;
+        globalThis.process = this.processShim as typeof globalThis.process;
+
+        try {
+            const { instance } = await WebAssembly.instantiate(
+                this.wasmBuf,
+                this.go.importObject,
+            );
+            return await this.go.run(instance);
+        } finally {
+            runningClient = undefined;
+        }
     }
 
     //

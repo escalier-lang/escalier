@@ -36,18 +36,37 @@ func main() {
 
 	fmt.Fprintf(os.Stderr, "Hello, from lsp-server\n")
 
-	server := glsp_server.NewServer(NewServer(), lsName, false)
+	s := NewServer()
+	server := glsp_server.NewServer(s, lsName, false)
 
-	err := server.RunStdio()
-	if err != nil {
-		fmt.Fprintf(os.Stderr, "error: %s\n", err)
-		os.Exit(1)
+	// The server stops on either signal. A client that closes the pipe
+	// disconnects the connection. A client that sends `exit` closes
+	// s.exited, and the connection is closed here. Under WebAssembly the
+	// host holds the pipe open for the life of the page, so `exit` is the
+	// only signal that arrives.
+	conn := server.GetStdio()
+	select {
+	case <-conn.DisconnectNotify():
+		// The client closed the pipe, so the connection is already down
+		// and there is nothing left to close.
+	case <-s.exited:
+		if err := conn.Close(); err != nil {
+			fmt.Fprintf(os.Stderr, "error: %s\n", err)
+			os.Exit(1)
+		}
 	}
 }
 
 type Server struct {
 	handler   protocol.Handler
 	documents map[protocol.DocumentUri]protocol.TextDocumentItem
+
+	// exited is closed by the `exit` notification and read by the serve
+	// loop in main. A channel rather than a bool because the loop is
+	// parked on a select and has to be woken, and closing broadcasts to
+	// every reader without a second signal.
+	exited     chan struct{}
+	exitedOnce sync.Once
 
 	// Unified package check output — contains ASTs, scopes, and errors
 	// for all lib/ and bin/ files. Updated by validate().
@@ -94,6 +113,7 @@ func NewServer() *Server {
 		validatedVersion: map[protocol.DocumentUri]protocol.Integer{},
 		libFilesCache:    set.NewSet[string](),
 		binFilesCache:    set.NewSet[string](),
+		exited:           make(chan struct{}),
 	}
 	s.validated = sync.NewCond(s.mu.RLocker())
 	// nolint: exhaustruct
@@ -115,17 +135,26 @@ func NewServer() *Server {
 		TextDocumentCodeAction:     s.textDocumentCodeAction,
 
 		// Workspace
-		WorkspaceExecuteCommand:            s.workspaceExecuteCommand,
-		WorkspaceDidChangeWatchedFiles:     s.workspaceDidChangeWatchedFiles,
-		WorkspaceDidCreateFiles:            s.workspaceDidCreateFiles,
-		WorkspaceDidRenameFiles:            s.workspaceDidRenameFiles,
-		WorkspaceDidDeleteFiles:            s.workspaceDidDeleteFiles,
+		WorkspaceExecuteCommand:        s.workspaceExecuteCommand,
+		WorkspaceDidChangeWatchedFiles: s.workspaceDidChangeWatchedFiles,
+		WorkspaceDidCreateFiles:        s.workspaceDidCreateFiles,
+		WorkspaceDidRenameFiles:        s.workspaceDidRenameFiles,
+		WorkspaceDidDeleteFiles:        s.workspaceDidDeleteFiles,
 	}
 
 	return &s
 }
 
 func (s *Server) Handle(context *glsp.Context) (r any, validMethod bool, validParams bool, err error) {
+	// glsp answers every method but `initialize` with "server not
+	// initialized" until initialization completes, and it applies that
+	// rule to `exit` as well. LSP puts `exit` outside the lifecycle: a
+	// server ends on it whatever state it is in, which is what a client
+	// falls back to when initialization itself failed. Answering it here
+	// keeps that true.
+	if context.Method == string(protocol.MethodExit) {
+		return nil, true, true, s.exit(context)
+	}
 	return s.handler.Handle(context)
 }
 
@@ -221,6 +250,14 @@ func (*Server) initialized(context *glsp.Context, params *protocol.InitializedPa
 
 func (*Server) shutdown(context *glsp.Context) error {
 	protocol.SetTraceValue(protocol.TraceValueOff)
+	return nil
+}
+
+// exit ends the serve loop in main. A client may send this notification
+// more than once, and closing a closed channel panics, so the close runs
+// once.
+func (s *Server) exit(context *glsp.Context) error {
+	s.exitedOnce.Do(func() { close(s.exited) })
 	return nil
 }
 
