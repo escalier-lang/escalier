@@ -178,20 +178,14 @@ func attachEnvDecorator(decl ast.Decl, envs set.Set[Env]) {
 		args = append(args, ast.NewLitExpr(ast.NewString(string(env), ast.Span{})))
 	}
 	dec := &ast.Decorator{Name: ast.NewIdentifier(EnvDecoratorName, ast.Span{}), Args: args}
-	switch d := decl.(type) {
-	case *ast.VarDecl:
-		d.Decorators = append([]*ast.Decorator{dec}, d.Decorators...)
-	case *ast.FuncDecl:
-		d.Decorators = append([]*ast.Decorator{dec}, d.Decorators...)
-	case *ast.ClassDecl:
-		d.Decorators = append([]*ast.Decorator{dec}, d.Decorators...)
-	case *ast.TypeDecl:
-		d.Decorators = append([]*ast.Decorator{dec}, d.Decorators...)
-	case *ast.InterfaceDecl:
-		d.Decorators = append([]*ast.Decorator{dec}, d.Decorators...)
-	case *ast.EnumDecl:
-		d.Decorators = append([]*ast.Decorator{dec}, d.Decorators...)
+	// A namespace is the one declaration kind that carries no decorators, so it
+	// has nothing to prepend to. Asking whether the kind can hold them leaves
+	// this with no list of the kinds that can.
+	setter, ok := decl.(ast.DecoratorSetter)
+	if !ok {
+		return
 	}
+	setter.SetDecorators(append([]*ast.Decorator{dec}, ast.DeclDecorators(decl)...))
 }
 
 // checkEnvTablesMatchTheTree reports a `web:*` package the run emits that
