@@ -8,12 +8,12 @@ type ClassDecl struct {
 	Extends        *TypeRefTypeAnn   // optional superclass (can be a simple identifier or a generic type reference)
 	Implements     []*TypeRefTypeAnn // interfaces this class implements (may be nil/empty)
 	Body           []ClassElem       // fields, methods, etc.
-	Decorators     []*Decorator
-	export         bool
-	declare        bool
-	override       bool
-	final          bool
-	span           Span
+	nodeDecorators
+	export   bool
+	declare  bool
+	override bool
+	final    bool
+	span     Span
 	declProvenance
 	commentSlots
 }
@@ -118,7 +118,7 @@ func (d *ClassDecl) Accept(v Visitor) {
 
 type FieldElem struct {
 	declDoc
-	elemDecorators
+	nodeDecorators
 	Name ObjKey
 	Type TypeAnn // required for class fields; optional for object-pattern shorthands
 	// Value is the field's initializer expression (`= expr`). Only valid
@@ -154,7 +154,7 @@ func (f *FieldElem) SetSpan(span Span) { f.Span_ = span }
 
 type MethodElem struct {
 	declDoc
-	elemDecorators
+	nodeDecorators
 	Name     ObjKey
 	Fn       *FuncExpr
 	Receiver *MethodReceiver // nil if static / no receiver
@@ -183,7 +183,7 @@ func (m *MethodElem) SetSpan(span Span) { m.Span_ = span }
 // GetterElem represents a getter in a class.
 type GetterElem struct {
 	declDoc
-	elemDecorators
+	nodeDecorators
 	Name     ObjKey
 	Fn       *FuncExpr
 	Receiver *MethodReceiver // nil if static / no receiver
@@ -220,7 +220,7 @@ func (g *GetterElem) SetSpan(span Span) { g.Span_ = span }
 // `Fn.Throws` may be non-nil — constructors may declare a `throws` clause.
 type ConstructorElem struct {
 	declDoc
-	elemDecorators
+	nodeDecorators
 	Fn       *FuncExpr
 	Receiver *MethodReceiver // nil if absent. Carried for diagnostics — a non-nil Lifetime is rejected by validation.
 	Private  bool            // reserved for future "Private Constructors" work
@@ -246,7 +246,7 @@ func (c *ConstructorElem) SetSpan(span Span) { c.Span_ = span }
 // SetterElem represents a setter in a class.
 type SetterElem struct {
 	declDoc
-	elemDecorators
+	nodeDecorators
 	Name     ObjKey
 	Fn       *FuncExpr
 	Receiver *MethodReceiver // nil if static / no receiver
@@ -281,7 +281,7 @@ func (s *SetterElem) SetSpan(span Span) { s.Span_ = span }
 // implementation, so only a `declare class` may carry one.
 type CallableElem struct {
 	declDoc
-	elemDecorators
+	nodeDecorators
 	Fn    *FuncExpr
 	Span_ Span
 	commentSlots

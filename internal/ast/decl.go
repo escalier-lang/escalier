@@ -66,8 +66,8 @@ type VarDecl struct {
 	Init    Expr    // optional
 	// Else is the `else` block of a `let`-`else` binding, run when the pattern fails
 	// to match. It is nil for a plain `val`/`var`.
-	Else         *Block
-	Decorators   []*Decorator
+	Else *Block
+	nodeDecorators
 	export       bool
 	declare      bool
 	override     bool
@@ -143,12 +143,12 @@ type FuncDecl struct {
 	Name  *Ident
 	VarID int // Set by the rename pass (liveness Phase 2)
 	FuncSig
-	Body       *Block // optional
-	Decorators []*Decorator
-	export     bool
-	declare    bool
-	override   bool
-	span       Span
+	Body *Block // optional
+	nodeDecorators
+	export   bool
+	declare  bool
+	override bool
+	span     Span
 	declProvenance
 	commentSlots
 }

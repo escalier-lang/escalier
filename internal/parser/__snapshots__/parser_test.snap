@@ -2751,24 +2751,26 @@
             },
             span: 12-13,
         },
-        Decorators: []*ast.Decorator{
-            &ast.Decorator{
-                Name: &ast.Ident{
-                    span: 1-1,
+        nodeDecorators: ast.nodeDecorators{
+            Decorators: []*ast.Decorator{
+                &ast.Decorator{
+                    Name: &ast.Ident{
+                        span: 1-1,
+                    },
+                    Span_: 0-1,
                 },
-                Span_: 0-1,
-            },
-            &ast.Decorator{
-                Name: &ast.Ident{
-                    span: 2-2,
+                &ast.Decorator{
+                    Name: &ast.Ident{
+                        span: 2-2,
+                    },
+                    Span_: 1-2,
                 },
-                Span_: 1-2,
-            },
-            &ast.Decorator{
-                Name: &ast.Ident{
-                    span: 3-3,
+                &ast.Decorator{
+                    Name: &ast.Ident{
+                        span: 3-3,
+                    },
+                    Span_: 2-3,
                 },
-                Span_: 2-3,
             },
         },
         span: 0-13,
@@ -2828,24 +2830,26 @@
             },
             span: 22-23,
         },
-        Decorators: []*ast.Decorator{
-            &ast.Decorator{
-                Name: &ast.Ident{
-                    span: 11-11,
+        nodeDecorators: ast.nodeDecorators{
+            Decorators: []*ast.Decorator{
+                &ast.Decorator{
+                    Name: &ast.Ident{
+                        span: 11-11,
+                    },
+                    Span_: 10-11,
                 },
-                Span_: 10-11,
-            },
-            &ast.Decorator{
-                Name: &ast.Ident{
-                    span: 12-12,
+                &ast.Decorator{
+                    Name: &ast.Ident{
+                        span: 12-12,
+                    },
+                    Span_: 11-12,
                 },
-                Span_: 11-12,
-            },
-            &ast.Decorator{
-                Name: &ast.Ident{
-                    span: 13-13,
+                &ast.Decorator{
+                    Name: &ast.Ident{
+                        span: 13-13,
+                    },
+                    Span_: 12-13,
                 },
-                Span_: 12-13,
             },
         },
         span: 10-23,
@@ -2868,24 +2872,26 @@
             },
             span: 22-23,
         },
-        Decorators: []*ast.Decorator{
-            &ast.Decorator{
-                Name: &ast.Ident{
-                    span: 11-11,
+        nodeDecorators: ast.nodeDecorators{
+            Decorators: []*ast.Decorator{
+                &ast.Decorator{
+                    Name: &ast.Ident{
+                        span: 11-11,
+                    },
+                    Span_: 10-11,
                 },
-                Span_: 10-11,
-            },
-            &ast.Decorator{
-                Name: &ast.Ident{
-                    span: 12-12,
+                &ast.Decorator{
+                    Name: &ast.Ident{
+                        span: 12-12,
+                    },
+                    Span_: 11-12,
                 },
-                Span_: 11-12,
-            },
-            &ast.Decorator{
-                Name: &ast.Ident{
-                    span: 13-13,
+                &ast.Decorator{
+                    Name: &ast.Ident{
+                        span: 13-13,
+                    },
+                    Span_: 12-13,
                 },
-                Span_: 12-13,
             },
         },
         span: 10-23,
@@ -5754,29 +5760,31 @@
         TypeAnn: &ast.NumberTypeAnn{
             span: 63-69,
         },
-        Decorators: []*ast.Decorator{
-            &ast.Decorator{
-                Name: &ast.Ident{
-                    Name: "js",
-                    span: 6-8,
-                },
-                Args: []ast.Expr{
-                    &ast.LiteralExpr{
-                        Lit: &ast.StrLit{
-                            Value: "Math.PI",
+        nodeDecorators: ast.nodeDecorators{
+            Decorators: []*ast.Decorator{
+                &ast.Decorator{
+                    Name: &ast.Ident{
+                        Name: "js",
+                        span: 6-8,
+                    },
+                    Args: []ast.Expr{
+                        &ast.LiteralExpr{
+                            Lit: &ast.StrLit{
+                                Value: "Math.PI",
+                                span: 9-18,
+                            },
                             span: 9-18,
                         },
-                        span: 9-18,
                     },
+                    Span_: 5-19,
                 },
-                Span_: 5-19,
-            },
-            &ast.Decorator{
-                Name: &ast.Ident{
-                    Name: "deprecated",
-                    span: 25-35,
+                &ast.Decorator{
+                    Name: &ast.Ident{
+                        Name: "deprecated",
+                        span: 25-35,
+                    },
+                    Span_: 24-35,
                 },
-                Span_: 24-35,
             },
         },
         export: true,
@@ -5819,22 +5827,24 @@
                 span: 72-78,
             },
         },
-        Decorators: []*ast.Decorator{
-            &ast.Decorator{
-                Name: &ast.Ident{
-                    Name: "js",
-                    span: 6-8,
-                },
-                Args: []ast.Expr{
-                    &ast.LiteralExpr{
-                        Lit: &ast.StrLit{
-                            Value: "Math.max",
+        nodeDecorators: ast.nodeDecorators{
+            Decorators: []*ast.Decorator{
+                &ast.Decorator{
+                    Name: &ast.Ident{
+                        Name: "js",
+                        span: 6-8,
+                    },
+                    Args: []ast.Expr{
+                        &ast.LiteralExpr{
+                            Lit: &ast.StrLit{
+                                Value: "Math.max",
+                                span: 9-19,
+                            },
                             span: 9-19,
                         },
-                        span: 9-19,
                     },
+                    Span_: 5-20,
                 },
-                Span_: 5-20,
             },
         },
         export: true,
@@ -5855,13 +5865,15 @@
         TypeAnn: &ast.NumberTypeAnn{
             span: 34-40,
         },
-        Decorators: []*ast.Decorator{
-            &ast.Decorator{
-                Name: &ast.Ident{
-                    Name: "marker",
-                    span: 6-12,
+        nodeDecorators: ast.nodeDecorators{
+            Decorators: []*ast.Decorator{
+                &ast.Decorator{
+                    Name: &ast.Ident{
+                        Name: "marker",
+                        span: 6-12,
+                    },
+                    Span_: 5-14,
                 },
-                Span_: 5-14,
             },
         },
         declare: true,
@@ -5881,22 +5893,24 @@
         TypeAnn: &ast.NumberTypeAnn{
             span: 47-53,
         },
-        Decorators: []*ast.Decorator{
-            &ast.Decorator{
-                Name: &ast.Ident{
-                    Name: "js",
-                    span: 6-8,
-                },
-                Args: []ast.Expr{
-                    &ast.LiteralExpr{
-                        Lit: &ast.StrLit{
-                            Value: "Math.PI",
+        nodeDecorators: ast.nodeDecorators{
+            Decorators: []*ast.Decorator{
+                &ast.Decorator{
+                    Name: &ast.Ident{
+                        Name: "js",
+                        span: 6-8,
+                    },
+                    Args: []ast.Expr{
+                        &ast.LiteralExpr{
+                            Lit: &ast.StrLit{
+                                Value: "Math.PI",
+                                span: 9-18,
+                            },
                             span: 9-18,
                         },
-                        span: 9-18,
                     },
+                    Span_: 5-19,
                 },
-                Span_: 5-19,
             },
         },
         export: true,
@@ -5914,22 +5928,24 @@
             Name: "Date",
             span: 42-46,
         },
-        Decorators: []*ast.Decorator{
-            &ast.Decorator{
-                Name: &ast.Ident{
-                    Name: "js",
-                    span: 6-8,
-                },
-                Args: []ast.Expr{
-                    &ast.LiteralExpr{
-                        Lit: &ast.StrLit{
-                            Value: "Date",
+        nodeDecorators: ast.nodeDecorators{
+            Decorators: []*ast.Decorator{
+                &ast.Decorator{
+                    Name: &ast.Ident{
+                        Name: "js",
+                        span: 6-8,
+                    },
+                    Args: []ast.Expr{
+                        &ast.LiteralExpr{
+                            Lit: &ast.StrLit{
+                                Value: "Date",
+                                span: 9-15,
+                            },
                             span: 9-15,
                         },
-                        span: 9-15,
                     },
+                    Span_: 5-16,
                 },
-                Span_: 5-16,
             },
         },
         export: true,
@@ -5950,13 +5966,15 @@
         TypeAnn: &ast.NumberTypeAnn{
             span: 32-38,
         },
-        Decorators: []*ast.Decorator{
-            &ast.Decorator{
-                Name: &ast.Ident{
-                    Name: "marker",
-                    span: 6-12,
+        nodeDecorators: ast.nodeDecorators{
+            Decorators: []*ast.Decorator{
+                &ast.Decorator{
+                    Name: &ast.Ident{
+                        Name: "marker",
+                        span: 6-12,
+                    },
+                    Span_: 5-12,
                 },
-                Span_: 5-12,
             },
         },
         declare: true,
@@ -6301,7 +6319,7 @@
         },
         Body: []ast.ClassElem{
             &ast.FieldElem{
-                elemDecorators: ast.elemDecorators{
+                nodeDecorators: ast.nodeDecorators{
                     Decorators: []*ast.Decorator{
                         &ast.Decorator{
                             Name: &ast.Ident{
@@ -6331,7 +6349,7 @@
                 Span_: 31-68,
             },
             &ast.FieldElem{
-                elemDecorators: ast.elemDecorators{
+                nodeDecorators: ast.nodeDecorators{
                     Decorators: []*ast.Decorator{
                         &ast.Decorator{
                             Name: &ast.Ident{
@@ -6370,7 +6388,7 @@
                 Span_: 75-145,
             },
             &ast.MethodElem{
-                elemDecorators: ast.elemDecorators{
+                nodeDecorators: ast.nodeDecorators{
                     Decorators: []*ast.Decorator{
                         &ast.Decorator{
                             Name: &ast.Ident{
@@ -6408,7 +6426,7 @@
                 Span_: 152-194,
             },
             &ast.GetterElem{
-                elemDecorators: ast.elemDecorators{
+                nodeDecorators: ast.nodeDecorators{
                     Decorators: []*ast.Decorator{
                         &ast.Decorator{
                             Name: &ast.Ident{
@@ -6446,7 +6464,7 @@
                 Span_: 201-245,
             },
             &ast.SetterElem{
-                elemDecorators: ast.elemDecorators{
+                nodeDecorators: ast.nodeDecorators{
                     Decorators: []*ast.Decorator{
                         &ast.Decorator{
                             Name: &ast.Ident{
@@ -6492,7 +6510,7 @@
                 Span_: 252-297,
             },
             &ast.ConstructorElem{
-                elemDecorators: ast.elemDecorators{
+                nodeDecorators: ast.nodeDecorators{
                     Decorators: []*ast.Decorator{
                         &ast.Decorator{
                             Name: &ast.Ident{

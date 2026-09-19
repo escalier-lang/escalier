@@ -38,21 +38,32 @@ func acceptDecorators(v Visitor, decorators []*Decorator) {
 	}
 }
 
-// elemDecorators carries the decorator list on a class member. Every ClassElem
-// embeds it, so no member kind repeats the field.
-type elemDecorators struct {
+// nodeDecorators carries the decorator list on a node that takes decorators.
+// Every ClassElem embeds it, as does every Decl but a namespace, so no node
+// kind repeats the field. A Decl and a ClassElem never sit in the same struct,
+// so one embed serves both.
+type nodeDecorators struct {
 	Decorators []*Decorator
 }
 
-func (e *elemDecorators) decoratorList() []*Decorator { return e.Decorators }
+func (n *nodeDecorators) decoratorList() []*Decorator { return n.Decorators }
 
-// SetDecorators replaces a member's decorator list. It is promoted from the
-// embed, so one definition serves every ClassElem.
-func (e *elemDecorators) SetDecorators(decorators []*Decorator) { e.Decorators = decorators }
+// SetDecorators replaces a node's decorator list. It is promoted from the
+// embed, so one definition serves every Decl and every ClassElem.
+func (n *nodeDecorators) SetDecorators(decorators []*Decorator) { n.Decorators = decorators }
 
-// decorated is what ClassElemDecorators matches a member against. The field is
-// exported and reached directly on a concrete member, so the accessor exists
-// only to let the helper below read it through the ClassElem interface.
+// DecoratorSetter is a node whose decorator list can be replaced. Every Decl
+// but a namespace satisfies it, as does every ClassElem, in both cases through
+// the promoted SetDecorators on the embed. A caller holding the Decl or
+// ClassElem interface asserts against this rather than naming the kinds.
+type DecoratorSetter interface {
+	SetDecorators([]*Decorator)
+}
+
+// decorated is what DeclDecorators and ClassElemDecorators match against. The
+// field is exported and reached directly on a concrete node, so the accessor
+// exists only to let the helpers read it through the Decl and ClassElem
+// interfaces.
 type decorated interface {
 	decoratorList() []*Decorator
 }
