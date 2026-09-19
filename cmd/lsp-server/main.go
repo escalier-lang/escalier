@@ -39,14 +39,11 @@ func main() {
 	s := NewServer()
 	server := glsp_server.NewServer(s, lsName, false)
 
-	// glsp's own server.RunStdio() is the usual way to run this loop, and
-	// it returns only when the connection closes. LSP ends the server
-	// process on the `exit` notification as well, and a client that sends
-	// `exit` without also closing the pipe would leave this process
-	// running. Under WebAssembly the host holds the pipe open for the life
-	// of the page, so `exit` is the only signal that ever arrives. The
-	// select below waits on it alongside the disconnect, which is why the
-	// loop is written out here instead.
+	// The server stops on either signal. A client that closes the pipe
+	// disconnects the connection. A client that sends `exit` closes
+	// s.exited, and the connection is closed here. Under WebAssembly the
+	// host holds the pipe open for the life of the page, so `exit` is the
+	// only signal that arrives.
 	conn := server.GetStdio()
 	select {
 	case <-conn.DisconnectNotify():
@@ -152,8 +149,7 @@ func (s *Server) Handle(context *glsp.Context) (r any, validMethod bool, validPa
 	// rule to `exit` as well. LSP puts `exit` outside the lifecycle: a
 	// server ends on it whatever state it is in, which is what a client
 	// falls back to when initialization itself failed. Answering it here
-	// keeps that true and is why protocol.Handler.Exit is left unset —
-	// wiring it as well would be a second path that never runs.
+	// keeps that true.
 	if context.Method == string(protocol.MethodExit) {
 		return nil, true, true, s.exit(context)
 	}
