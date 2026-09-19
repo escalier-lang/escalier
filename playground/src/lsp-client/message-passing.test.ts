@@ -4,9 +4,11 @@ import { expect, test, vi } from 'vitest';
 
 import { Client } from './client';
 
-// These exercise the client's Content-Length framing: whether it reassembles a
-// response that arrives split across several stdout chunks. They build their
-// own Client and never call run(), so no LSP server is involved.
+// These exercise how the client reassembles a response that arrives split
+// across several stdout chunks. A message is delimited by a `Content-Length`
+// header rather than by the chunk it came in, so the client has to buffer
+// until it holds the whole body. They build their own Client and never call
+// run(), so no LSP server is involved.
 //
 // They live apart from client.test.ts because constructing a Client installs
 // its filesystem shim on `globalThis.fs`. Doing that beside a running server
