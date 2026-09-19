@@ -121,6 +121,21 @@ func PartitionLibWithOverlay(inputs []LibInput, overlay *Overlay) (*PartitionRes
 	}
 	for _, in := range inputs {
 		if in.SourceID != 0 {
+			// ParseLibFiles numbers from 1 on every call, so a caller
+			// that concatenates two of its results hands the same id to
+			// two files. The later one would win and every member from
+			// the earlier file would read as the later file's, which
+			// resolves its environment from the wrong lib. Refusing the
+			// input names the collision instead.
+			//
+			// Repeating one file under the id it already holds is not a
+			// collision. The map already says what that entry would set.
+			if prev, taken := out.SourceFiles[in.SourceID]; taken &&
+				prev != in.SourceFile {
+				return nil, fmt.Errorf(
+					"partition: source id %d is claimed by %s and %s",
+					in.SourceID, prev, in.SourceFile)
+			}
 			out.SourceFiles[in.SourceID] = in.SourceFile
 		}
 	}

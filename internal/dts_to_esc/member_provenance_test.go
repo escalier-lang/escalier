@@ -5,6 +5,7 @@ import (
 	"testing"
 
 	"github.com/escalier-lang/escalier/internal/ast"
+	"github.com/escalier-lang/escalier/internal/dts_parser"
 	"github.com/escalier-lang/escalier/internal/set"
 	"github.com/stretchr/testify/require"
 )
@@ -197,4 +198,54 @@ func TestTheLibReadingDisagreesWithThePackageTable(t *testing.T) {
 	require.Equal(t, 7762, read, "members the lib set answers for")
 	require.Equal(t, 2058, outside,
 		"members available outside the environments their package claims")
+}
+
+// emptyLib is a lib input that declares nothing, for the source-id checks
+// below. Routing never reaches its statements, so the id and the basename are
+// the whole of what it carries.
+func emptyLib(id int, file string) LibInput {
+	return LibInput{
+		SourceID:   id,
+		SourceFile: file,
+		Module:     &dts_parser.Module{},
+	}
+}
+
+func TestPartitionRejectsOneSourceIDForTwoFiles(t *testing.T) {
+	// ParseLibFiles numbers from 1 on every call, so concatenating two of
+	// its results gives two files the same id. Without the check the later
+	// file silently wins and every member of the earlier one reads as its,
+	// which resolves the wrong environment for them.
+	_, err := PartitionLib([]LibInput{
+		emptyLib(1, "lib.dom.d.ts"),
+		emptyLib(1, "lib.webworker.d.ts"),
+	})
+	require.EqualError(t, err,
+		"partition: source id 1 is claimed by lib.dom.d.ts and lib.webworker.d.ts")
+}
+
+func TestPartitionAcceptsAFileRepeatedUnderItsOwnID(t *testing.T) {
+	// The map already says what the second entry would set, so there is
+	// nothing to disagree about and no reason to refuse the input.
+	res, err := PartitionLib([]LibInput{
+		emptyLib(1, "lib.dom.d.ts"),
+		emptyLib(1, "lib.dom.d.ts"),
+		emptyLib(2, "lib.webworker.d.ts"),
+	})
+	require.NoError(t, err)
+	require.Equal(t, map[int]string{
+		1: "lib.dom.d.ts",
+		2: "lib.webworker.d.ts",
+	}, res.SourceFiles)
+}
+
+func TestPartitionIgnoresTheZeroSourceID(t *testing.T) {
+	// Zero reads as "no lib file", which is what a span the converter
+	// synthesized carries, so two of them are not a collision.
+	res, err := PartitionLib([]LibInput{
+		emptyLib(0, "first.d.ts"),
+		emptyLib(0, "second.d.ts"),
+	})
+	require.NoError(t, err)
+	require.Empty(t, res.SourceFiles)
 }
