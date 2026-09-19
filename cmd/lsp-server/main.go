@@ -47,6 +47,8 @@ func main() {
 	conn := server.GetStdio()
 	select {
 	case <-conn.DisconnectNotify():
+		// The client closed the pipe, so the connection is already down
+		// and there is nothing left to close.
 	case <-s.exited:
 		if err := conn.Close(); err != nil {
 			fmt.Fprintf(os.Stderr, "error: %s\n", err)
