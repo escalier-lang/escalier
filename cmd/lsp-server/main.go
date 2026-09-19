@@ -39,13 +39,14 @@ func main() {
 	s := NewServer()
 	server := glsp_server.NewServer(s, lsName, false)
 
-	// The serve loop is spelled out here rather than delegated to
-	// RunStdio, which returns only once the connection closes. LSP says
-	// the server process ends on the `exit` notification, and a client
-	// that sends it without also closing the pipe would otherwise leave
-	// this process running. Under WebAssembly the pipe is a stream the
-	// host holds open for the life of the page, so `exit` is the only
-	// signal that ever arrives.
+	// glsp's own server.RunStdio() is the usual way to run this loop, and
+	// it returns only when the connection closes. LSP ends the server
+	// process on the `exit` notification as well, and a client that sends
+	// `exit` without also closing the pipe would leave this process
+	// running. Under WebAssembly the host holds the pipe open for the life
+	// of the page, so `exit` is the only signal that ever arrives. The
+	// select below waits on it alongside the disconnect, which is why the
+	// loop is written out here instead.
 	conn := server.GetStdio()
 	select {
 	case <-conn.DisconnectNotify():
