@@ -54,6 +54,8 @@ export class Client {
     private errorBuffer: string;
     private contentLength: number;
     private messageBuffer: string;
+    /** Set by `stop()`. Silences the server's output from then on. */
+    private stopped = false;
 
     constructor(
         wasmBuf: ArrayBuffer,
@@ -204,7 +206,12 @@ export class Client {
                         callback(null, length, buffer);
                     }, 0);
                 } else if (fd === 2) {
-                    console.warn('[Escalier LSP] -', decoder.decode(buffer));
+                    if (!this.stopped) {
+                        console.warn(
+                            '[Escalier LSP] -',
+                            decoder.decode(buffer),
+                        );
+                    }
                     setTimeout(() => {
                         callback(null, length, buffer);
                     }, 0);
@@ -440,6 +447,16 @@ export class Client {
     async stop() {
         await this.shutdown();
         await this.exit();
+        // The Go runtime keeps running past this point. `exit` is a
+        // notification, and the callbacks that drain the server's writes are
+        // scheduled on timers that outlive this call. Whatever it prints from
+        // here on describes a server nobody reads.
+        //
+        // Under Vitest that output reaches the main process as an
+        // `onUserConsoleLog` message. One that arrives after the worker has
+        // begun closing its rpc channel fails the whole run with an
+        // EnvironmentTeardownError, while every test passes.
+        this.stopped = true;
     }
 
     async exit() {

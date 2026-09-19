@@ -36,8 +36,8 @@ beforeEach(() => {
     client.run();
 });
 
-afterEach(() => {
-    client.stop();
+afterEach(async () => {
+    await client.stop();
     fs.rmSync(tmpDir, { recursive: true, force: true });
 });
 
