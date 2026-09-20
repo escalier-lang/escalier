@@ -1,7 +1,7 @@
 # 01 — Cutover plan
 
-Eight phases, about two dozen pull requests. P0 through P5 reach the flip, and
-P6 and P7 finish the migration. Each phase states what it does not do. The plan
+Nine phases, about thirty pull requests. P0 through P5 reach the flip, and P6
+and P7 finish the migration. Each phase states what it does not do. The plan
 is short because it keeps refusing work the flip does not need.
 
 Every numbered item below is one pull request. A phase that fits in a single
@@ -35,31 +35,40 @@ which is M11.5's parity baseline. P7 is what removes it.
 
 ## Phase order
 
-| Phase | Pull requests | Parallel within the phase |
-| --- | --- | --- |
-| P1 — ledger | P1.1 | one |
-| P0 — ingestion | P0.1 … P0.7 | P0.1 to P0.6 are all independent; P0.7 closes them |
-| P2 — flag and harness | P2.1 … P2.3, then one per skip-list cause | sequential to P2.3, then parallel |
-| P3 — JS emission | P3 | one |
-| P4 — `.d.ts` emission | P4.1 … P4.3 | sequential, but P4.1 starts on day one |
-| P5 — flip | P5 | one, and atomic by design |
-| P6 — LSP | P6.1 … P6.5 | P6.1 to P6.3 independent; P6.4 and P6.5 follow P6.3 |
-| P7 — deletion | P7.1 … P7.3 | sequential |
+Rows are in execution order, so the numbers do not read top to bottom. P1.1 is
+first because it is the measurement harness the P0 pull requests report against.
 
-Three things are worth reading off this table before anything else.
+| Order | Phase | Pull requests | Depends on | Parallel within the phase |
+| --- | --- | --- | --- | --- |
+| 1 | P1 — ledger | P1.1 | — | one |
+| 2 | P0 — ingestion | P0.1 … P0.7 | P1.1, softly | P0.1 to P0.6 all independent; P0.7 closes them |
+| 2 | P2 — flag and harness | P2.1 … P2.3, then one per skip-list cause | P1.5 for a useful skip list | sequential to P2.3, then parallel |
+| 2 | P4 — `.d.ts` emission | P4.1 … P4.3 | P4.1 on nothing; P4.2 on P2.2 | sequential, but P4.1 starts on day one |
+| 3 | P1.5 — ambient builtins | P1.5a … P1.5c | P0.1–P0.5, then P0.6 | sequential |
+| 4 | P3 — JS emission | P3 | P2.3 | one |
+| 5 | P5 — flip | P5 | P0.7, P1.5, P2, P3, P4.3 | one, and atomic by design |
+| 6 | P6 — LSP | P6.1 … P6.5 | P5 | P6.1 to P6.3 independent; P6.4 and P6.5 follow P6.3 |
+| 7 | P7 — deletion | P7.1 … P7.3 | P6, and M11.5 for P7.2 | sequential |
 
-**P1.1 is the first pull request of the whole plan**, ahead of P0 despite the
-number. It is the measurement harness, so each P0 pull request lands as a
-baseline reduction in one committed table rather than as an unverifiable claim.
+Four things are worth reading off this table before anything else.
 
-**P4.1 is the long pole and has no dependencies.** The `soltype` type renderer
-is roughly 490 lines ported from `dts.go`, it is unit-testable against `soltype`
+**P1.1 is the first pull request of the plan.** It is the measurement harness, so
+each P0 pull request lands as a baseline reduction in one committed table rather
+than as an unverifiable claim.
+
+**P4.1 is the long pole and has no dependencies.** The `soltype` type renderer is
+roughly 490 lines ported from `dts.go`, it is unit-testable against `soltype`
 values alone, and it needs neither the compiler seam nor the fixture harness. It
 can start the same day as P1.1 and run alongside all of P0 and P2.
 
-**P0 and P2 never touch the same file.** P0 is library data quality and lives in
-`internal/solver` plus the generator; P2 is compiler wiring and lives in
-`internal/compiler` and `cmd/escalier`. Two people can take one each.
+**P1.5 gates P2.3's usefulness, not its existence.** The harness can be built
+first, but a skip list seeded before the ambient surface exists is mostly
+`Unknown identifier: Math`. Land P1.5 first and the skip list names real solver
+gaps instead.
+
+**Three tracks run at once.** P0 is library data quality in `internal/solver` and
+the generator. P2 is compiler wiring in `internal/compiler` and `cmd/escalier`.
+P4 starts in `internal/codegen`. They share no files.
 
 ### The work, and what runs in parallel
 
@@ -76,6 +85,13 @@ graph TD
         P06["P0.6 · web:core + web:fetch"]
     end
     P07["P0.7 · zero-diagnostic gate"]
+
+    subgraph SP15["P1.5 · ambient builtin scope"]
+        P15a["P1.5a · ambient scope builder"]
+        P15b["P1.5b · collisions"]
+        P15c["P1.5c · web packages + opt-out"]
+        P15a --> P15b --> P15c
+    end
 
     subgraph SP2["P2 · flag and check-only harness"]
         P21["P2.1 · solver API gaps"]
@@ -116,17 +132,24 @@ graph TD
 
     P11 -.->|baseline to lower| P01 & P02 & P03 & P04 & P05 & P06
     P01 & P02 & P03 & P04 & P05 & P06 --> P07
+    P01 & P02 & P03 & P04 & P05 --> P15a
+    P06 --> P15c
+    P15c -.->|a skip list worth reading| P23
     P23 --> P3
     P22 --> P42
     P23 --> P43
-    P07 & P24 & P3 & P43 --> P5
+    P07 & P15c & P24 & P3 & P43 --> P5
     P5 --> P61 & P62 & P63
     P61 & P62 & P65 --> P71
     M115 --> P72
+
+    classDef longpole stroke-width:3px;
+    class P41 longpole;
 ```
 
-The dotted edges out of P1.1 are soft. A P0 pull request can land without the
-ledger; it just lands without a number attached to it.
+The dotted edges are soft. A P0 pull request can land without the ledger; it
+just lands without a number attached to it. P2.3 can land without P1.5; its skip
+list is then mostly noise.
 
 ---
 
@@ -227,6 +250,88 @@ data file, the partition table, the tiering pass, or the loader. See
 
 ---
 
+## P1.5 — Ambient builtin scope
+
+**Goal.** A program writes `Math.PI`, `console.log`, `JSON.parse`, `parseInt`,
+and `Error` with no import, the way it does on the old checker.
+
+**Why this is a phase and not a footnote.** The old checker flattens every lib
+file into one global scope. The solver binds a pseudo-package as a namespace, so
+the same program has to say `import "std:math"` and then `math.PI` — a different
+spelling, not just an added line. Without this phase the flip is a user-visible
+language change riding on a checker swap, which is the coupling this whole plan
+exists to avoid. See
+[00-current-state.md](00-current-state.md)§"How a builtin is reached, on each
+checker" for the measured spellings.
+
+This phase does **not** reverse the imports-only decision in M7.5 and builtins
+FR1. It is a compatibility surface with a retirement path, so that decision can
+be taken on its own schedule instead of being forced by the flip.
+
+**The binding rule is derivable, not hand-written.** Every value-carrying export
+in the tree already carries an `@js` decorator naming its runtime path, and
+type-only exports carry none because a type has no runtime path. Three rules
+cover the whole surface:
+
+1. A type-only export binds ambient under its declared name. `interface Console`
+   binds as `Console`.
+2. A value export with a bare path binds ambient under that path.
+   `@js("parseInt")` binds `parseInt`; `@js("Error")` binds `Error`.
+3. A value export with a dotted path binds its last segment into an ambient
+   namespace named by the prefix, created on first use. `@js("Math.clz32")` puts
+   `clz32` into an ambient `Math`.
+
+Rule 3 is what reconstructs `Math`, `JSON`, `Reflect`, and `Intl` as objects
+after the partition dissolved them, and rule 2 is what restores `console`,
+`NaN`, `parseFloat`, and the global constructors. Nothing here needs a table
+that could drift from the tree.
+
+Rule 2 also routes around
+[#1651](https://github.com/escalier-lang/escalier/issues/1651), where
+`import "std:console"` followed by `console.log` fails because the package's
+derived namespace name hides its own `console` export. The ambient scope binds
+that export from its `@js("console")` path, so it never consults the namespace.
+That is a side effect, not a fix, and #1651 still owns the explicit-import
+spelling.
+
+**P1.5a — the ambient scope builder.** Mint a scope between the prelude scope
+and the module scope, and fill it from a configured package list by the three
+rules above. `bindPreludeExports` in `prelude.go` is the model for the ambient
+half and `bindCoreExports` in `imports.go` for the flat-binding half; this is
+those two composed over a list, plus rule 3, which neither has. Scope the list
+to `std:*` in this pull request. Depends on P0.1 through P0.5, so the surface it
+binds is not also a diagnostic source.
+
+**P1.5b — collisions.** Two packages can claim one global name: `std:url` and
+`web:url` both export `URL`. The old checker resolved this by load order, ES
+libs then DOM. Pick a policy, state it, and report a diagnostic when two
+packages claim one name with different definitions. `CoreImportShadowsDeclarationError`
+in `imports.go` is the shape to follow. A module's own declaration still wins
+over the ambient surface, as it does for the prelude today.
+
+**P1.5c — `web:core`, `web:fetch`, and the opt-out.** Extend the list to the two
+web packages P0.6 clears, which is what makes `fetch` ambient again and keeps
+`fixtures/async_await` working without an import. Add a way for a file or a
+package to decline the ambient surface, so imports-only can arrive later per
+file rather than as a second flip. Depends on P0.6 and P1.5b.
+
+**Cost to watch.** The ambient list loads on every inference run, and a language
+server pays it per re-inference. `BenchmarkStdlibClosureLoad` in
+`stdlib_load_bench_test.go` already measures exactly this, warm and cold, so
+record both figures in P1.5a and again in P1.5c rather than discovering the cost
+at P6.
+
+**Gate.** A test asserting that `Math.PI`, `JSON.parse`, `console.log`,
+`parseInt`, `NaN`, `Error`, and `fetch` all resolve with no import, and that a
+module-level declaration of any of those names shadows the ambient one. The
+benchmark's warm and cold figures are recorded.
+
+**Not in scope.** `web:dom` and everything behind it, which stays parked; the
+ambient list only covers what P0 has cleared. The builtins §9 trigger map, which
+is the eventual replacement for this phase rather than part of it.
+
+---
+
 ## P2 — Solver behind a flag, with a check-only fixture harness
 
 **Goal.** Find out what the solver actually rejects in real Escalier code,
@@ -256,7 +361,8 @@ points, not a `soltype` to `type_system` bridge, which this plan never builds.
 asserts accept or reject, with no codegen and no `build/` comparison. Give it a
 per-fixture skip list, seeded with everything that fails on day one. The seeded
 list is this pull request's real output, because it is the first honest measure
-of what the solver cannot yet check.
+of what the solver cannot yet check. Land P1.5 first, or most of that list is
+`Unknown identifier: Math` rather than a solver gap.
 
 **P2.4 and up — burn the skip list down.** One pull request per cause, and they
 parallelize once P2.3 has named them. Two causes are known from the milestone
@@ -360,12 +466,14 @@ in between.
 
 1. Default the environment variable from P2 to the solver, keeping the old
    checker reachable by setting it the other way.
-2. Add `import "std:…"` to the roughly 20 fixtures that name `console`,
-   `String`, `Date`, `Number`, or `Object`. These must ride in the same commit
-   as the default change, because the old checker cannot resolve those imports
-   against the committed tree. That is why both existing stdlib fixtures are
-   marked `DISABLED`, and it is the one place this plan accepts a moment where
-   the two harnesses cannot both be green on the same tree.
+2. Fix up whatever fixtures P1.5 did not cover. With the ambient scope in place
+   most of the 18 fixtures that name `console`, `String`, `Date`, `Number`, or
+   `Object` need no change at all, because those names bind ambiently again.
+   Anything left over is rewritten here, and it rides in the same commit as the
+   default change, because the old checker cannot resolve `std:` imports against
+   the committed tree. That is why both existing stdlib fixtures are marked
+   `DISABLED`, and it is the one place this plan accepts a moment where the two
+   harnesses cannot both be green on the same tree.
 3. Re-enable `fixtures/stdlib_import_local` and
    `fixtures/stdlib_import_class_via_namespace` by removing their `DISABLED`
    markers. Builtins §7 also records four disabled `TestStdlibImport_*` tests;
@@ -464,20 +572,22 @@ expected strings are hardcoded.
 Stated plainly so nobody reads P5 as "the migration is finished":
 
 - Everything behind `web:dom` ingests with roughly 2,500 diagnostics, so a
-  program importing one of those packages gets a wall of noise. Worse, the DOM
-  is ambient on the old checker, which loads `lib.dom.d.ts` into the global
-  scope, so a program writing `document` or `Element` today has to import a
-  package that does not work. The ledger from P1 is the honest record.
+  program importing one of those packages gets a wall of noise, and P1.5 cannot
+  put those names in the ambient scope either. A program writing `document` or
+  `Element` today has nowhere to get them after the flip. The ledger from P1 is
+  the honest record. Everything P0 clears does stay ambient, so this is the DOM
+  proper rather than the whole builtin surface.
 - Third-party `.d.ts` ingestion does not work on the solver. A program importing
   from `node_modules` does not type-check.
 - JSX does not type-check on the solver. `internal/solver` has no JSX handling
   at all, and JSX reaches `@types/react` through the same resolver chain, so it
   is downstream of the previous item.
 
-  These two are the genuine capability losses at the flip, and neither has
-  fixture coverage, so P2's harness will not flag them. They are parked rather
-  than dropped; [02-parked-work.md](02-parked-work.md) says how they are kept
-  asserted.
-- The per-file shape loader, builtins §9, does not exist, so a file must import
-  a package to reach a literal's method surface.
+  `node_modules` and JSX have no fixture coverage, so P2's harness will not flag
+  either. All three losses are parked rather than dropped;
+  [02-parked-work.md](02-parked-work.md) says how each is kept asserted.
+- The per-file shape loader, builtins §9, does not exist. P1.5's ambient scope
+  covers the common case it was meant to serve, so what is missing is the lazy
+  part: a file pays for the whole ambient list rather than for the packages its
+  literals actually reach.
 - Diagnostics quality has had no cross-cutting pass. M11.5 still owes that.

@@ -138,17 +138,68 @@ diagnostics because it reaches `web:core`. So the `std:` / `web:` split does not
 fall exactly on the fixture tree, and P0 has to carry `web:core` and `web:fetch`
 with it.
 
-That ambient DOM load is also the wider compatibility story. Today a program
-writes `fetch`, `document`, or `Element` with no import. After the flip the
-`web:*` packages are the only route to those names, and they do not ingest
-cleanly. See [02-parked-work.md](02-parked-work.md)§"The three real regressions
-at the flip".
+That ambient load is the wider compatibility story, and the next section
+measures it. `document` and the element types stay lost after the flip, because
+P1.5's ambient scope reaches only what P0 has cleared. See
+[02-parked-work.md](02-parked-work.md)§"The three real regressions at the flip".
 
 The old checker cannot resolve these imports against the committed tree, which
 is why both stdlib fixtures are disabled. Adding imports to a fixture therefore
 breaks the old-checker harness on that fixture. The consequence for sequencing
-is in [01-cutover-plan.md](01-cutover-plan.md) P2: the fixture migration rides
-with the flip rather than preceding it.
+is in [01-cutover-plan.md](01-cutover-plan.md) P5: whatever fixture edits remain
+after P1.5 ride with the flip rather than preceding it.
+
+## How a builtin is reached, on each checker
+
+The old checker has no namespaces for builtins. `loadGlobalDefinitions`
+(`internal/checker/prelude.go:488`) merges every `lib.es*.d.ts` plus
+`lib.dom.d.ts` into one flat global scope, so `Math`, `console`, `JSON`,
+`Element` are all bare names with no import.
+
+The solver has exactly two unprefixed mechanisms, and neither is a general
+global surface:
+
+| Mechanism | Names | Needs an import |
+| --- | --- | --- |
+| `std:prelude`, via `bindPreludeExports` in `prelude.go` | 44 | no, it is ambient |
+| `web:core`, via `bindCoreExports` in `imports.go:105` | 24 | yes, `import "web:core"` |
+
+Everything else is namespace-qualified. The tree exports 278 top-level names
+under `std/` and 1,823 under `web/`, so roughly 2,030 names are reachable only
+as `<package>.<name>`.
+
+**The spellings change, not just the import list.** The partition dissolved the
+TypeScript wrapper objects: `std:math` exports bare `fn clz32`, not a `Math`
+object, so the package namespace became the prefix and lost its capital. Checked
+against the committed tree:
+
+| Written today | On the solver |
+| --- | --- |
+| `Math.PI` | `Unknown identifier: Math`; write `import "std:math"` then `math.PI` |
+| `JSON.parse` | `Unknown identifier: JSON`; write `import "std:json"` then `json.parse` |
+| `console.log` | `Unknown identifier: console`; `import "std:console"` then `console.log` gives `Namespace std:console has no member: log`, because the package namespace and the exported var share the name. `console.console.log` resolves. Tracked at [#1651](https://github.com/escalier-lang/escalier/issues/1651) |
+| `Array<number>` | resolves, `std:prelude` exports it |
+
+So the fixture migration is a rewrite of call sites rather than added import
+lines, and the flip would otherwise carry a user-visible language change.
+P1.5 is the phase that avoids that.
+
+**The old spelling is recorded in the tree already.** Every value-carrying
+export has an `@js` decorator naming its runtime path, and no type-only export
+has one, because a type has no runtime path:
+
+| Export kind | Count | Carries `@js` |
+| --- | --- | --- |
+| `class` | 691 | yes |
+| `fn` | 210 | yes |
+| `var` | 186 | yes |
+| `val` | 9 | yes |
+| `interface` | 701 | no |
+| `type` | 335 | no |
+
+`@js("Math.clz32")`, `@js("console")`, `@js("parseInt")`, `@js("NaN")`. That
+makes the global spelling of every builtin derivable rather than hand-listed,
+which is what P1.5 builds on.
 
 ## Integration surface
 

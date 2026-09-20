@@ -56,9 +56,9 @@ the resume points below.
 
 | Parked | Owner | Why it is safe to park |
 | --- | --- | --- |
-| `web:dom` ingestion and the eight packages behind it, roughly 2,500 diagnostics | builtins §7 | **not safe to park silently** — see below. `web:core` and `web:fetch` are P0's, not parked |
+| `web:dom` ingestion and the eight packages behind it, roughly 2,500 diagnostics | builtins §7 | **not safe to park silently** — see below. `web:core` and `web:fetch` are P0's, and P1.5 keeps them ambient |
 | DOM-touching fixture migration | builtins §8 | `fixtures/async_await` is the only one, and P0 covers it by clearing `web:fetch` |
-| Per-file shape loading, the FR11 trigger map | builtins §9 | a file can import the package instead; the cost is verbosity, not capability |
+| Per-file shape loading, the FR11 trigger map | builtins §9 | P1.5's ambient scope covers the reachability half; what is parked is loading lazily rather than loading the whole list per run |
 | Intrinsics, adaptive rendering, auto-import quick-fix | builtins §10 | tooling on top of a working checker |
 | Third-party `.d.ts` ingestion on the solver | M7.5 tail | **not safe to park silently** — see below |
 | JSX inference on the solver | `planning/react_and_jsx/` | **not safe to park silently** — see below |
@@ -100,16 +100,18 @@ design.
 
 `internal/checker/prelude.go:529` appends `lib.dom.d.ts` to the old checker's
 global load, so a program writes `fetch`, `document`, or `Element` with no
-import today. The solver has no ambient surface beyond `std:prelude`, so those
-names come only from a `web:*` package, and every package behind `web:dom` sits
-at 2,707 diagnostics.
+import today.
 
-This is the one regression with fixture coverage: `fixtures/async_await` calls
-`fetch`. P0 clears `web:core` and `web:fetch` so that fixture keeps working,
-which leaves the DOM proper as the parked part. A program using `document` or an
-element type type-checks before P5 and does not after it.
+P1.5 rebuilds an ambient scope over the packages P0 clears, so the `std:*`
+surface and `web:core` plus `web:fetch` keep their old spellings. What it cannot
+cover is `web:dom` and the eight packages behind it, which sit at 2,707
+diagnostics. A program using `document` or an element type type-checks before P5
+and does not after it.
 
-Unlike the other two, no amount of porting fixes this one quickly. It is the
+This is the one regression with fixture coverage, through `fetch` in
+`fixtures/async_await`, and P0.6 plus P1.5c are what keep that fixture working.
+
+Unlike the other two, no amount of porting fixes the rest quickly. It is the
 `web:dom` ingestion grind, and parking it is the whole reason this plan exists.
 The P1 ledger is what keeps its size visible.
 
