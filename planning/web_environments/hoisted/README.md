@@ -52,7 +52,7 @@ divergent names, which contribute one declaration per environment.
 | package | declarations |
 | --- | --- |
 | `web:dom` | 176 |
-| `web:core` | 39 |
+| `web:core` | 39, plus the merged `Navigator` and its 11 mixins |
 | `web:worker` | 16 |
 | `web:storage` | 2 |
 | `web:canvas` | 1, two signatures |
@@ -173,13 +173,15 @@ in the type itself, it does not. `location` needs F5 for mutability and
 `onmessage` needs it for type, since `ExtendableMessageEvent` extends
 `ExtendableEvent` rather than `MessageEvent`.
 
-**The merged `Navigator` is in `merged-navigator.esc`.** The environment lands
+**The merged `Navigator` is at the foot of `core.esc`.** The environment lands
 in two places rather than on 26 members. The four mixins only a page has carry
 `@env("window")` where they are declared, covering seven members with no
 per-member annotation, and the 16 that are `Navigator`'s own are tagged
 individually. `WorkerNavigator` goes away.
 
-That file uses `implements` for the eleven mixins, which is #1648's proposal:
+It sits in `core.esc` because `navigator` does, which means `web:core` imports
+the packages the window-only members name. That section uses `implements` for
+the eleven mixins, which is #1648's proposal:
 
 ```
 @js("Navigator")
@@ -272,10 +274,13 @@ git show <ref>:internal/interop/data/web/worker.worker.esc > /tmp/hoist/worker.e
 WORK=/tmp/hoist node extract.mjs
 WORK=/tmp/hoist node merge.mjs
 WORK=/tmp/hoist OUT=.. node emit.mjs
+WORK=/tmp/hoist OUT=.. node merge-navigator.mjs
 ```
 
 `extract.mjs` walks the scope interfaces and writes each member's environments.
 `merge.mjs` joins those to the converted Escalier text. `emit.mjs` assigns
-packages and writes the `.esc` files beside this README. The files here were
+packages and writes the `.esc` files beside this README. `merge-navigator.mjs`
+appends the merged `Navigator` to `core.esc`, so it runs after `emit.mjs` and
+has to be re-run whenever `emit.mjs` is. The files here were
 produced from `claude/undrop-worker-libs`, which is #1635's branch, since
 `web/worker.worker.esc` does not exist on `main` yet.
