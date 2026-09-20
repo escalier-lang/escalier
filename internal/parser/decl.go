@@ -582,18 +582,26 @@ func (p *Parser) classDecl(start ast.Location, export, declare, final bool) ast.
 		implementsTok := token
 		p.lexer.consume()
 		for {
-			// Implements entries must be type references (qualified
-			// identifiers with optional type args), not arbitrary type
-			// annotations — that's both what the grammar requires and
-			// what avoids the `implements { ... }` ambiguity where the
-			// class body would otherwise be parsed as an object type.
-			next := p.lexer.peek()
-			if next.Type != Identifier {
+			// An entry is a type reference: a qualified identifier with
+			// optional type args, such as `Iterable` or `set.Set<string>`.
+			// An arbitrary type annotation is not allowed, which is what
+			// the grammar requires and what keeps the class body from
+			// being read as the object type in `implements { ... }`.
+			if p.lexer.peek().Type == OpenBrace {
 				p.reportError(implementsTok.Span, "Expected type reference after 'implements'")
 				break
 			}
-			p.lexer.consume()
-			implements = append(implements, p.parseTypeRef(next))
+			implTypeAnn := p.typeAnn()
+			if implTypeAnn == nil {
+				p.reportError(implementsTok.Span, "Expected type reference after 'implements'")
+				break
+			}
+			ref, ok := implTypeAnn.(*ast.TypeRefTypeAnn)
+			if !ok {
+				p.reportError(implementsTok.Span, "implements clause must be a type reference")
+				break
+			}
+			implements = append(implements, ref)
 			if p.lexer.peek().Type != Comma {
 				break
 			}

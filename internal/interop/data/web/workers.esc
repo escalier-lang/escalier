@@ -24,7 +24,7 @@ export declare interface AbstractWorker {
 
 /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/SharedWorker) */
 @js("SharedWorker")
-export declare class SharedWorker extends EventTarget {
+export declare class SharedWorker extends EventTarget implements AbstractWorker {
     /**
      * Returns sharedWorker's MessagePort object which can be used to communicate with the global environment.
      *
@@ -47,7 +47,7 @@ export declare interface WorkerEventMap extends dom.AbstractWorkerEventMap, dom.
  * [MDN Reference](https://developer.mozilla.org/docs/Web/API/Worker)
  */
 @js("Worker")
-export declare class Worker extends EventTarget {
+export declare class Worker extends EventTarget implements AbstractWorker, dom.MessageEventTarget<Worker> {
     /**
      * Clones message and transmits it to worker's global environment. transfer can be passed as a list of objects that are to be transferred rather than cloned.
      *

@@ -1222,13 +1222,21 @@ func fuseTrio(info *trioInfo, nsPath string, facts *ReceiverFacts) (*ast.ClassDe
 		}
 	}
 
+	// A TypeScript interface names any number of supertypes and an Escalier
+	// ClassDecl carries one `extends`, so the first supertype fills it and
+	// the rest become `implements`. Which one lands in `extends` does not
+	// decide what the class has. A `declare` class takes its members from
+	// both clauses, so the split loses nothing. See checkImplements in
+	// internal/checker.
+	//
+	// The first supertype is often the nominal base, as in `interface
+	// Element extends Node, ARIAMixin, ...`, but not always. `interface
+	// CanvasRenderingContext2D extends CanvasCompositing, ...` opens with a
+	// mixin, and the converted class extends it.
 	var extends *ast.TypeRefTypeAnn
-	if len(info.instance.Extends) > 0 {
-		// For the MVP we take only the first extends — Escalier's
-		// ClassDecl carries a single Extends (`*TypeRefTypeAnn`). TS
-		// interfaces can extend multiple bases; §6 handles the wider
-		// surface (likely by routing extras through `implements`).
-		conv, err := convertTypeAnn(info.instance.Extends[0])
+	var implements []*ast.TypeRefTypeAnn
+	for i, superTypeAnn := range info.instance.Extends {
+		conv, err := convertTypeAnn(superTypeAnn)
 		if err != nil {
 			return nil, fmt.Errorf("converting extends: %w", err)
 		}
@@ -1236,7 +1244,11 @@ func fuseTrio(info *trioInfo, nsPath string, facts *ReceiverFacts) (*ast.ClassDe
 		if !ok {
 			return nil, fmt.Errorf("trio %s: extends is not a type ref", className)
 		}
-		extends = ref
+		if i == 0 {
+			extends = ref
+			continue
+		}
+		implements = append(implements, ref)
 	}
 
 	// Escalier's `Promise` takes a raise parameter where the TypeScript
@@ -1254,7 +1266,7 @@ func fuseTrio(info *trioInfo, nsPath string, facts *ReceiverFacts) (*ast.ClassDe
 		nil, // lifetime params
 		typeParams,
 		extends,
-		nil, // implements
+		implements,
 		body,
 		true,  // export
 		true,  // declare

@@ -3667,7 +3667,7 @@ export declare interface CanvasRect {
  * [MDN Reference](https://developer.mozilla.org/docs/Web/API/CanvasRenderingContext2D)
  */
 @js("CanvasRenderingContext2D")
-export declare class CanvasRenderingContext2D extends CanvasCompositing {
+export declare class CanvasRenderingContext2D extends CanvasCompositing implements CanvasDrawImage, CanvasDrawPath, CanvasFillStrokeStyles, CanvasFilters, CanvasImageData, CanvasImageSmoothing, CanvasPath, CanvasPathDrawingStyles, CanvasRect, CanvasSettings, CanvasShadowStyles, CanvasState, CanvasText, CanvasTextDrawingStyles, CanvasTransform, CanvasUserInterface {
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/CanvasRenderingContext2D/canvas) */
     readonly canvas: HTMLCanvasElement,
     static prototype: CanvasRenderingContext2D,
@@ -3773,7 +3773,7 @@ export declare class CaretPosition {
  * [MDN Reference](https://developer.mozilla.org/docs/Web/API/CharacterData)
  */
 @js("CharacterData")
-export declare class CharacterData extends Node {
+export declare class CharacterData extends Node implements ChildNode, NonDocumentTypeChildNode {
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/CharacterData/data) */
     data: string,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/CharacterData/length) */
@@ -4672,7 +4672,7 @@ export declare interface DocumentEventMap extends GlobalEventHandlersEventMap {
  * [MDN Reference](https://developer.mozilla.org/docs/Web/API/Document)
  */
 @js("Document")
-export declare class Document extends Node {
+export declare class Document extends Node implements DocumentOrShadowRoot, FontFaceSource, GlobalEventHandlers, NonElementParentNode, ParentNode, XPathEvaluatorBase {
     /**
      * Sets or gets the URL for the current document.
      *
@@ -5327,7 +5327,7 @@ export declare class Document extends Node {
  * [MDN Reference](https://developer.mozilla.org/docs/Web/API/DocumentFragment)
  */
 @js("DocumentFragment")
-export declare class DocumentFragment extends Node {
+export declare class DocumentFragment extends Node implements NonElementParentNode, ParentNode {
     readonly ownerDocument: Document,
     getElementById(self, elementId: string) -> HTMLElement | null,
     static prototype: DocumentFragment,
@@ -5387,7 +5387,7 @@ export declare class DocumentTimeline extends AnimationTimeline {
  * [MDN Reference](https://developer.mozilla.org/docs/Web/API/DocumentType)
  */
 @js("DocumentType")
-export declare class DocumentType extends Node {
+export declare class DocumentType extends Node implements ChildNode {
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/DocumentType/name) */
     readonly name: string,
     readonly ownerDocument: Document,
@@ -5427,7 +5427,7 @@ export declare interface ElementEventMap {
  * [MDN Reference](https://developer.mozilla.org/docs/Web/API/Element)
  */
 @js("Element")
-export declare class Element extends Node {
+export declare class Element extends Node implements ARIAMixin, Animatable, ChildNode, NonDocumentTypeChildNode, ParentNode, Slottable {
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/Element/attributes) */
     readonly attributes: NamedNodeMap,
     /**
@@ -6111,7 +6111,7 @@ export declare interface FontFaceSetEventMap {
 
 /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/FontFaceSet) */
 @js("FontFaceSet")
-export declare class FontFaceSet extends EventTarget {
+export declare class FontFaceSet extends EventTarget implements set.Set<FontFace> {
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/FontFaceSet/loading_event) */
     onloading: (fn (this: FontFaceSet, ev: FontFaceSetLoadEvent) -> any) | null,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/FontFaceSet/loadingdone_event) */
@@ -6916,7 +6916,7 @@ export declare class HTMLAllCollection {
  * [MDN Reference](https://developer.mozilla.org/docs/Web/API/HTMLAnchorElement)
  */
 @js("HTMLAnchorElement")
-export declare class HTMLAnchorElement extends HTMLElement {
+export declare class HTMLAnchorElement extends HTMLElement implements HTMLHyperlinkElementUtils {
     /**
      * Sets or retrieves the character set used to encode the object.
      * @deprecated
@@ -6991,7 +6991,7 @@ export declare class HTMLAnchorElement extends HTMLElement {
  * [MDN Reference](https://developer.mozilla.org/docs/Web/API/HTMLAreaElement)
  */
 @js("HTMLAreaElement")
-export declare class HTMLAreaElement extends HTMLElement {
+export declare class HTMLAreaElement extends HTMLElement implements HTMLHyperlinkElementUtils {
     /**
      * Sets or retrieves a text alternative to the graphic.
      *
@@ -7110,7 +7110,7 @@ export declare interface HTMLBodyElementEventMap extends HTMLElementEventMap, Wi
  * [MDN Reference](https://developer.mozilla.org/docs/Web/API/HTMLBodyElement)
  */
 @js("HTMLBodyElement")
-export declare class HTMLBodyElement extends HTMLElement {
+export declare class HTMLBodyElement extends HTMLElement implements WindowEventHandlers {
     /** @deprecated */
     aLink: string,
     /** @deprecated */
@@ -7137,7 +7137,7 @@ export declare class HTMLBodyElement extends HTMLElement {
  * [MDN Reference](https://developer.mozilla.org/docs/Web/API/HTMLButtonElement)
  */
 @js("HTMLButtonElement")
-export declare class HTMLButtonElement extends HTMLElement {
+export declare class HTMLButtonElement extends HTMLElement implements PopoverInvokerElement {
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/HTMLButtonElement/disabled) */
     disabled: boolean,
     /**
@@ -7480,7 +7480,7 @@ export declare interface HTMLElementEventMap extends ElementEventMap, GlobalEven
  * [MDN Reference](https://developer.mozilla.org/docs/Web/API/HTMLElement)
  */
 @js("HTMLElement")
-export declare class HTMLElement extends Element {
+export declare class HTMLElement extends Element implements ElementCSSInlineStyle, ElementContentEditable, GlobalEventHandlers, HTMLOrSVGElement {
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/HTMLElement/accessKey) */
     accessKey: string,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/HTMLElement/accessKeyLabel) */
@@ -7884,7 +7884,7 @@ export declare interface HTMLFrameSetElementEventMap extends HTMLElementEventMap
  * [MDN Reference](https://developer.mozilla.org/docs/Web/API/HTMLFrameSetElement)
  */
 @js("HTMLFrameSetElement")
-export declare class HTMLFrameSetElement extends HTMLElement {
+export declare class HTMLFrameSetElement extends HTMLElement implements WindowEventHandlers {
     /**
      * Sets or retrieves the frame widths of the object.
      * @deprecated
@@ -8329,7 +8329,7 @@ export declare class HTMLImageElement extends HTMLElement {
  * [MDN Reference](https://developer.mozilla.org/docs/Web/API/HTMLInputElement)
  */
 @js("HTMLInputElement")
-export declare class HTMLInputElement extends HTMLElement {
+export declare class HTMLInputElement extends HTMLElement implements PopoverInvokerElement {
     /**
      * Sets or retrieves a comma-separated list of content types.
      *
@@ -8717,7 +8717,7 @@ export declare class HTMLLegendElement extends HTMLElement {
  * [MDN Reference](https://developer.mozilla.org/docs/Web/API/HTMLLinkElement)
  */
 @js("HTMLLinkElement")
-export declare class HTMLLinkElement extends HTMLElement {
+export declare class HTMLLinkElement extends HTMLElement implements LinkStyle {
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/HTMLLinkElement/as) */
     as: string,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/HTMLLinkElement/blocking) */
@@ -10012,7 +10012,7 @@ export declare class HTMLSpanElement extends HTMLElement {
  * [MDN Reference](https://developer.mozilla.org/docs/Web/API/HTMLStyleElement)
  */
 @js("HTMLStyleElement")
-export declare class HTMLStyleElement extends HTMLElement {
+export declare class HTMLStyleElement extends HTMLElement implements LinkStyle {
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/HTMLStyleElement/blocking) */
     get blocking(self) -> DOMTokenList,
     set blocking(mut self, value: string),
@@ -11545,7 +11545,7 @@ export declare interface MathMLElementEventMap extends ElementEventMap, GlobalEv
 
 /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/MathMLElement) */
 @js("MathMLElement")
-export declare class MathMLElement extends Element {
+export declare class MathMLElement extends Element implements ElementCSSInlineStyle, GlobalEventHandlers, HTMLOrSVGElement {
     addEventListener<K: keyof MathMLElementEventMap>(mut self, type: K, listener: fn (this: MathMLElement, ev: MathMLElementEventMap[K]) -> any, options?: boolean | AddEventListenerOptions) -> unknown,
     addEventListener(mut self, type: string, listener: EventListenerOrEventListenerObject, options?: boolean | AddEventListenerOptions) -> unknown,
     removeEventListener<K: keyof MathMLElementEventMap>(mut self, type: K, listener: fn (this: MathMLElement, ev: MathMLElementEventMap[K]) -> any, options?: boolean | EventListenerOptions) -> unknown,
@@ -12133,7 +12133,7 @@ export declare interface MessagePortEventMap extends MessageEventTargetEventMap 
  * [MDN Reference](https://developer.mozilla.org/docs/Web/API/MessagePort)
  */
 @js("MessagePort")
-export declare class MessagePort extends EventTarget {
+export declare class MessagePort extends EventTarget implements MessageEventTarget<MessagePort> {
     /**
      * Disconnects the port, so that it is no longer active.
      *
@@ -12447,7 +12447,7 @@ export declare class NavigationHistoryEntry extends EventTarget {
  * [MDN Reference](https://developer.mozilla.org/docs/Web/API/Navigator)
  */
 @js("Navigator")
-export declare class Navigator extends NavigatorAutomationInformation {
+export declare class Navigator extends NavigatorAutomationInformation implements NavigatorBadge, NavigatorConcurrentHardware, NavigatorContentUtils, NavigatorCookies, NavigatorID, NavigatorLanguage, NavigatorLocks, NavigatorOnLine, NavigatorPlugins, NavigatorStorage {
     /**
      * Available only in secure contexts.
      *
@@ -13098,7 +13098,7 @@ export declare class OffscreenCanvas extends EventTarget {
 
 /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/OffscreenCanvasRenderingContext2D) */
 @js("OffscreenCanvasRenderingContext2D")
-export declare class OffscreenCanvasRenderingContext2D extends CanvasCompositing {
+export declare class OffscreenCanvasRenderingContext2D extends CanvasCompositing implements CanvasDrawImage, CanvasDrawPath, CanvasFillStrokeStyles, CanvasFilters, CanvasImageData, CanvasImageSmoothing, CanvasPath, CanvasPathDrawingStyles, CanvasRect, CanvasShadowStyles, CanvasState, CanvasText, CanvasTextDrawingStyles, CanvasTransform {
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/CanvasRenderingContext2D/canvas) */
     readonly canvas: OffscreenCanvas,
     static prototype: OffscreenCanvasRenderingContext2D,
@@ -13459,7 +13459,7 @@ export declare interface PopoverInvokerElement {
  * [MDN Reference](https://developer.mozilla.org/docs/Web/API/ProcessingInstruction)
  */
 @js("ProcessingInstruction")
-export declare class ProcessingInstruction extends CharacterData {
+export declare class ProcessingInstruction extends CharacterData implements LinkStyle {
     readonly ownerDocument: Document,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/ProcessingInstruction/target) */
     readonly target: string,
@@ -13699,7 +13699,7 @@ export declare class ResizeObserverSize {
  * [MDN Reference](https://developer.mozilla.org/docs/Web/API/SVGAElement)
  */
 @js("SVGAElement")
-export declare class SVGAElement extends SVGGraphicsElement {
+export declare class SVGAElement extends SVGGraphicsElement implements SVGURIReference {
     rel: string,
     get relList(self) -> DOMTokenList,
     set relList(mut self, value: string),
@@ -13968,7 +13968,7 @@ export declare class SVGAnimatedTransformList {
 
 /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/SVGAnimationElement) */
 @js("SVGAnimationElement")
-export declare class SVGAnimationElement extends SVGElement {
+export declare class SVGAnimationElement extends SVGElement implements SVGTests {
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/SVGAnimationElement/targetElement) */
     readonly targetElement: SVGElement | null,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/SVGAnimationElement/beginElement) */
@@ -14112,7 +14112,7 @@ export declare interface SVGElementEventMap extends ElementEventMap, GlobalEvent
  * [MDN Reference](https://developer.mozilla.org/docs/Web/API/SVGElement)
  */
 @js("SVGElement")
-export declare class SVGElement extends Element {
+export declare class SVGElement extends Element implements ElementCSSInlineStyle, GlobalEventHandlers, HTMLOrSVGElement {
     /** @deprecated */
     readonly className: any,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/SVGElement/ownerSVGElement) */
@@ -14152,7 +14152,7 @@ export declare class SVGEllipseElement extends SVGGeometryElement {
  * [MDN Reference](https://developer.mozilla.org/docs/Web/API/SVGFEBlendElement)
  */
 @js("SVGFEBlendElement")
-export declare class SVGFEBlendElement extends SVGElement {
+export declare class SVGFEBlendElement extends SVGElement implements SVGFilterPrimitiveStandardAttributes {
     readonly in1: SVGAnimatedString,
     readonly in2: SVGAnimatedString,
     readonly mode: SVGAnimatedEnumeration,
@@ -14204,7 +14204,7 @@ export declare class SVGFEBlendElement extends SVGElement {
  * [MDN Reference](https://developer.mozilla.org/docs/Web/API/SVGFEColorMatrixElement)
  */
 @js("SVGFEColorMatrixElement")
-export declare class SVGFEColorMatrixElement extends SVGElement {
+export declare class SVGFEColorMatrixElement extends SVGElement implements SVGFilterPrimitiveStandardAttributes {
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/SVGFEColorMatrixElement/in1) */
     readonly in1: SVGAnimatedString,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/SVGFEColorMatrixElement/type) */
@@ -14235,7 +14235,7 @@ export declare class SVGFEColorMatrixElement extends SVGElement {
  * [MDN Reference](https://developer.mozilla.org/docs/Web/API/SVGFEComponentTransferElement)
  */
 @js("SVGFEComponentTransferElement")
-export declare class SVGFEComponentTransferElement extends SVGElement {
+export declare class SVGFEComponentTransferElement extends SVGElement implements SVGFilterPrimitiveStandardAttributes {
     readonly in1: SVGAnimatedString,
     addEventListener<K: keyof SVGElementEventMap>(mut self, type: K, listener: fn (this: SVGFEComponentTransferElement, ev: SVGElementEventMap[K]) -> any, options?: boolean | AddEventListenerOptions) -> unknown,
     addEventListener(mut self, type: string, listener: EventListenerOrEventListenerObject, options?: boolean | AddEventListenerOptions) -> unknown,
@@ -14251,7 +14251,7 @@ export declare class SVGFEComponentTransferElement extends SVGElement {
  * [MDN Reference](https://developer.mozilla.org/docs/Web/API/SVGFECompositeElement)
  */
 @js("SVGFECompositeElement")
-export declare class SVGFECompositeElement extends SVGElement {
+export declare class SVGFECompositeElement extends SVGElement implements SVGFilterPrimitiveStandardAttributes {
     readonly in1: SVGAnimatedString,
     readonly in2: SVGAnimatedString,
     readonly k1: SVGAnimatedNumber,
@@ -14287,7 +14287,7 @@ export declare class SVGFECompositeElement extends SVGElement {
  * [MDN Reference](https://developer.mozilla.org/docs/Web/API/SVGFEConvolveMatrixElement)
  */
 @js("SVGFEConvolveMatrixElement")
-export declare class SVGFEConvolveMatrixElement extends SVGElement {
+export declare class SVGFEConvolveMatrixElement extends SVGElement implements SVGFilterPrimitiveStandardAttributes {
     readonly bias: SVGAnimatedNumber,
     readonly divisor: SVGAnimatedNumber,
     readonly edgeMode: SVGAnimatedEnumeration,
@@ -14322,7 +14322,7 @@ export declare class SVGFEConvolveMatrixElement extends SVGElement {
  * [MDN Reference](https://developer.mozilla.org/docs/Web/API/SVGFEDiffuseLightingElement)
  */
 @js("SVGFEDiffuseLightingElement")
-export declare class SVGFEDiffuseLightingElement extends SVGElement {
+export declare class SVGFEDiffuseLightingElement extends SVGElement implements SVGFilterPrimitiveStandardAttributes {
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/SVGFEDiffuseLightingElement/diffuseConstant) */
     readonly diffuseConstant: SVGAnimatedNumber,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/SVGFEDiffuseLightingElement/in1) */
@@ -14347,7 +14347,7 @@ export declare class SVGFEDiffuseLightingElement extends SVGElement {
  * [MDN Reference](https://developer.mozilla.org/docs/Web/API/SVGFEDisplacementMapElement)
  */
 @js("SVGFEDisplacementMapElement")
-export declare class SVGFEDisplacementMapElement extends SVGElement {
+export declare class SVGFEDisplacementMapElement extends SVGElement implements SVGFilterPrimitiveStandardAttributes {
     readonly in1: SVGAnimatedString,
     readonly in2: SVGAnimatedString,
     readonly scale: SVGAnimatedNumber,
@@ -14392,7 +14392,7 @@ export declare class SVGFEDistantLightElement extends SVGElement {
 
 /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/SVGFEDropShadowElement) */
 @js("SVGFEDropShadowElement")
-export declare class SVGFEDropShadowElement extends SVGElement {
+export declare class SVGFEDropShadowElement extends SVGElement implements SVGFilterPrimitiveStandardAttributes {
     readonly dx: SVGAnimatedNumber,
     readonly dy: SVGAnimatedNumber,
     readonly in1: SVGAnimatedString,
@@ -14413,7 +14413,7 @@ export declare class SVGFEDropShadowElement extends SVGElement {
  * [MDN Reference](https://developer.mozilla.org/docs/Web/API/SVGFEFloodElement)
  */
 @js("SVGFEFloodElement")
-export declare class SVGFEFloodElement extends SVGElement {
+export declare class SVGFEFloodElement extends SVGElement implements SVGFilterPrimitiveStandardAttributes {
     addEventListener<K: keyof SVGElementEventMap>(mut self, type: K, listener: fn (this: SVGFEFloodElement, ev: SVGElementEventMap[K]) -> any, options?: boolean | AddEventListenerOptions) -> unknown,
     addEventListener(mut self, type: string, listener: EventListenerOrEventListenerObject, options?: boolean | AddEventListenerOptions) -> unknown,
     removeEventListener<K: keyof SVGElementEventMap>(mut self, type: K, listener: fn (this: SVGFEFloodElement, ev: SVGElementEventMap[K]) -> any, options?: boolean | EventListenerOptions) -> unknown,
@@ -14488,7 +14488,7 @@ export declare class SVGFEFuncRElement extends SVGComponentTransferFunctionEleme
  * [MDN Reference](https://developer.mozilla.org/docs/Web/API/SVGFEGaussianBlurElement)
  */
 @js("SVGFEGaussianBlurElement")
-export declare class SVGFEGaussianBlurElement extends SVGElement {
+export declare class SVGFEGaussianBlurElement extends SVGElement implements SVGFilterPrimitiveStandardAttributes {
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/SVGFEGaussianBlurElement/in1) */
     readonly in1: SVGAnimatedString,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/SVGFEGaussianBlurElement/stdDeviationX) */
@@ -14511,7 +14511,7 @@ export declare class SVGFEGaussianBlurElement extends SVGElement {
  * [MDN Reference](https://developer.mozilla.org/docs/Web/API/SVGFEImageElement)
  */
 @js("SVGFEImageElement")
-export declare class SVGFEImageElement extends SVGElement {
+export declare class SVGFEImageElement extends SVGElement implements SVGFilterPrimitiveStandardAttributes, SVGURIReference {
     readonly preserveAspectRatio: SVGAnimatedPreserveAspectRatio,
     addEventListener<K: keyof SVGElementEventMap>(mut self, type: K, listener: fn (this: SVGFEImageElement, ev: SVGElementEventMap[K]) -> any, options?: boolean | AddEventListenerOptions) -> unknown,
     addEventListener(mut self, type: string, listener: EventListenerOrEventListenerObject, options?: boolean | AddEventListenerOptions) -> unknown,
@@ -14527,7 +14527,7 @@ export declare class SVGFEImageElement extends SVGElement {
  * [MDN Reference](https://developer.mozilla.org/docs/Web/API/SVGFEMergeElement)
  */
 @js("SVGFEMergeElement")
-export declare class SVGFEMergeElement extends SVGElement {
+export declare class SVGFEMergeElement extends SVGElement implements SVGFilterPrimitiveStandardAttributes {
     addEventListener<K: keyof SVGElementEventMap>(mut self, type: K, listener: fn (this: SVGFEMergeElement, ev: SVGElementEventMap[K]) -> any, options?: boolean | AddEventListenerOptions) -> unknown,
     addEventListener(mut self, type: string, listener: EventListenerOrEventListenerObject, options?: boolean | AddEventListenerOptions) -> unknown,
     removeEventListener<K: keyof SVGElementEventMap>(mut self, type: K, listener: fn (this: SVGFEMergeElement, ev: SVGElementEventMap[K]) -> any, options?: boolean | EventListenerOptions) -> unknown,
@@ -14559,7 +14559,7 @@ export declare class SVGFEMergeNodeElement extends SVGElement {
  * [MDN Reference](https://developer.mozilla.org/docs/Web/API/SVGFEMorphologyElement)
  */
 @js("SVGFEMorphologyElement")
-export declare class SVGFEMorphologyElement extends SVGElement {
+export declare class SVGFEMorphologyElement extends SVGElement implements SVGFilterPrimitiveStandardAttributes {
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/SVGFEMorphologyElement/in1) */
     readonly in1: SVGAnimatedString,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/SVGFEMorphologyElement/operator) */
@@ -14588,7 +14588,7 @@ export declare class SVGFEMorphologyElement extends SVGElement {
  * [MDN Reference](https://developer.mozilla.org/docs/Web/API/SVGFEOffsetElement)
  */
 @js("SVGFEOffsetElement")
-export declare class SVGFEOffsetElement extends SVGElement {
+export declare class SVGFEOffsetElement extends SVGElement implements SVGFilterPrimitiveStandardAttributes {
     readonly dx: SVGAnimatedNumber,
     readonly dy: SVGAnimatedNumber,
     readonly in1: SVGAnimatedString,
@@ -14627,7 +14627,7 @@ export declare class SVGFEPointLightElement extends SVGElement {
  * [MDN Reference](https://developer.mozilla.org/docs/Web/API/SVGFESpecularLightingElement)
  */
 @js("SVGFESpecularLightingElement")
-export declare class SVGFESpecularLightingElement extends SVGElement {
+export declare class SVGFESpecularLightingElement extends SVGElement implements SVGFilterPrimitiveStandardAttributes {
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/SVGFESpecularLightingElement/in1) */
     readonly in1: SVGAnimatedString,
     readonly kernelUnitLengthX: SVGAnimatedNumber,
@@ -14678,7 +14678,7 @@ export declare class SVGFESpotLightElement extends SVGElement {
  * [MDN Reference](https://developer.mozilla.org/docs/Web/API/SVGFETileElement)
  */
 @js("SVGFETileElement")
-export declare class SVGFETileElement extends SVGElement {
+export declare class SVGFETileElement extends SVGElement implements SVGFilterPrimitiveStandardAttributes {
     readonly in1: SVGAnimatedString,
     addEventListener<K: keyof SVGElementEventMap>(mut self, type: K, listener: fn (this: SVGFETileElement, ev: SVGElementEventMap[K]) -> any, options?: boolean | AddEventListenerOptions) -> unknown,
     addEventListener(mut self, type: string, listener: EventListenerOrEventListenerObject, options?: boolean | AddEventListenerOptions) -> unknown,
@@ -14694,7 +14694,7 @@ export declare class SVGFETileElement extends SVGElement {
  * [MDN Reference](https://developer.mozilla.org/docs/Web/API/SVGFETurbulenceElement)
  */
 @js("SVGFETurbulenceElement")
-export declare class SVGFETurbulenceElement extends SVGElement {
+export declare class SVGFETurbulenceElement extends SVGElement implements SVGFilterPrimitiveStandardAttributes {
     readonly baseFrequencyX: SVGAnimatedNumber,
     readonly baseFrequencyY: SVGAnimatedNumber,
     readonly numOctaves: SVGAnimatedInteger,
@@ -14727,7 +14727,7 @@ export declare class SVGFETurbulenceElement extends SVGElement {
  * [MDN Reference](https://developer.mozilla.org/docs/Web/API/SVGFilterElement)
  */
 @js("SVGFilterElement")
-export declare class SVGFilterElement extends SVGElement {
+export declare class SVGFilterElement extends SVGElement implements SVGURIReference {
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/SVGFilterElement/filterUnits) */
     readonly filterUnits: SVGAnimatedEnumeration,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/SVGFilterElement/height) */
@@ -14824,7 +14824,7 @@ export declare class SVGGeometryElement extends SVGGraphicsElement {
  * [MDN Reference](https://developer.mozilla.org/docs/Web/API/SVGGradientElement)
  */
 @js("SVGGradientElement")
-export declare class SVGGradientElement extends SVGElement {
+export declare class SVGGradientElement extends SVGElement implements SVGURIReference {
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/SVGGradientElement/gradientTransform) */
     readonly gradientTransform: SVGAnimatedTransformList,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/SVGGradientElement/gradientUnits) */
@@ -14853,7 +14853,7 @@ export declare class SVGGradientElement extends SVGElement {
  * [MDN Reference](https://developer.mozilla.org/docs/Web/API/SVGGraphicsElement)
  */
 @js("SVGGraphicsElement")
-export declare class SVGGraphicsElement extends SVGElement {
+export declare class SVGGraphicsElement extends SVGElement implements SVGTests {
     readonly transform: SVGAnimatedTransformList,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/SVGGraphicsElement/getBBox) */
     getBBox(self, options?: SVGBoundingBoxOptions) -> DOMRect,
@@ -14873,7 +14873,7 @@ export declare class SVGGraphicsElement extends SVGElement {
  * [MDN Reference](https://developer.mozilla.org/docs/Web/API/SVGImageElement)
  */
 @js("SVGImageElement")
-export declare class SVGImageElement extends SVGGraphicsElement {
+export declare class SVGImageElement extends SVGGraphicsElement implements SVGURIReference {
     crossOrigin: string | null,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/SVGImageElement/height) */
     readonly height: SVGAnimatedLength,
@@ -15010,7 +15010,7 @@ export declare class SVGLinearGradientElement extends SVGGradientElement {
 
 /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/SVGMPathElement) */
 @js("SVGMPathElement")
-export declare class SVGMPathElement extends SVGElement {
+export declare class SVGMPathElement extends SVGElement implements SVGURIReference {
     addEventListener<K: keyof SVGElementEventMap>(mut self, type: K, listener: fn (this: SVGMPathElement, ev: SVGElementEventMap[K]) -> any, options?: boolean | AddEventListenerOptions) -> unknown,
     addEventListener(mut self, type: string, listener: EventListenerOrEventListenerObject, options?: boolean | AddEventListenerOptions) -> unknown,
     removeEventListener<K: keyof SVGElementEventMap>(mut self, type: K, listener: fn (this: SVGMPathElement, ev: SVGElementEventMap[K]) -> any, options?: boolean | EventListenerOptions) -> unknown,
@@ -15021,7 +15021,7 @@ export declare class SVGMPathElement extends SVGElement {
 
 /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/SVGMarkerElement) */
 @js("SVGMarkerElement")
-export declare class SVGMarkerElement extends SVGElement {
+export declare class SVGMarkerElement extends SVGElement implements SVGFitToViewBox {
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/SVGMarkerElement/markerHeight) */
     readonly markerHeight: SVGAnimatedLength,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/SVGMarkerElement/markerUnits) */
@@ -15165,7 +15165,7 @@ export declare class SVGPathElement extends SVGGeometryElement {
  * [MDN Reference](https://developer.mozilla.org/docs/Web/API/SVGPatternElement)
  */
 @js("SVGPatternElement")
-export declare class SVGPatternElement extends SVGElement {
+export declare class SVGPatternElement extends SVGElement implements SVGFitToViewBox, SVGURIReference {
     readonly height: SVGAnimatedLength,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/SVGPatternElement/patternContentUnits) */
     readonly patternContentUnits: SVGAnimatedEnumeration,
@@ -15216,7 +15216,7 @@ export declare class SVGPointList {
  * [MDN Reference](https://developer.mozilla.org/docs/Web/API/SVGPolygonElement)
  */
 @js("SVGPolygonElement")
-export declare class SVGPolygonElement extends SVGGeometryElement {
+export declare class SVGPolygonElement extends SVGGeometryElement implements SVGAnimatedPoints {
     addEventListener<K: keyof SVGElementEventMap>(mut self, type: K, listener: fn (this: SVGPolygonElement, ev: SVGElementEventMap[K]) -> any, options?: boolean | AddEventListenerOptions) -> unknown,
     addEventListener(mut self, type: string, listener: EventListenerOrEventListenerObject, options?: boolean | AddEventListenerOptions) -> unknown,
     removeEventListener<K: keyof SVGElementEventMap>(mut self, type: K, listener: fn (this: SVGPolygonElement, ev: SVGElementEventMap[K]) -> any, options?: boolean | EventListenerOptions) -> unknown,
@@ -15231,7 +15231,7 @@ export declare class SVGPolygonElement extends SVGGeometryElement {
  * [MDN Reference](https://developer.mozilla.org/docs/Web/API/SVGPolylineElement)
  */
 @js("SVGPolylineElement")
-export declare class SVGPolylineElement extends SVGGeometryElement {
+export declare class SVGPolylineElement extends SVGGeometryElement implements SVGAnimatedPoints {
     addEventListener<K: keyof SVGElementEventMap>(mut self, type: K, listener: fn (this: SVGPolylineElement, ev: SVGElementEventMap[K]) -> any, options?: boolean | AddEventListenerOptions) -> unknown,
     addEventListener(mut self, type: string, listener: EventListenerOrEventListenerObject, options?: boolean | AddEventListenerOptions) -> unknown,
     removeEventListener<K: keyof SVGElementEventMap>(mut self, type: K, listener: fn (this: SVGPolylineElement, ev: SVGElementEventMap[K]) -> any, options?: boolean | EventListenerOptions) -> unknown,
@@ -15342,7 +15342,7 @@ export declare interface SVGSVGElementEventMap extends SVGElementEventMap, Windo
  * [MDN Reference](https://developer.mozilla.org/docs/Web/API/SVGSVGElement)
  */
 @js("SVGSVGElement")
-export declare class SVGSVGElement extends SVGGraphicsElement {
+export declare class SVGSVGElement extends SVGGraphicsElement implements SVGFitToViewBox, WindowEventHandlers {
     currentScale: number,
     readonly currentTranslate: DOMPointReadOnly,
     readonly height: SVGAnimatedLength,
@@ -15390,7 +15390,7 @@ export declare class SVGSVGElement extends SVGGraphicsElement {
  * [MDN Reference](https://developer.mozilla.org/docs/Web/API/SVGScriptElement)
  */
 @js("SVGScriptElement")
-export declare class SVGScriptElement extends SVGElement {
+export declare class SVGScriptElement extends SVGElement implements SVGURIReference {
     type: string,
     addEventListener<K: keyof SVGElementEventMap>(mut self, type: K, listener: fn (this: SVGScriptElement, ev: SVGElementEventMap[K]) -> any, options?: boolean | AddEventListenerOptions) -> unknown,
     addEventListener(mut self, type: string, listener: EventListenerOrEventListenerObject, options?: boolean | AddEventListenerOptions) -> unknown,
@@ -15455,7 +15455,7 @@ export declare class SVGStringList {
  * [MDN Reference](https://developer.mozilla.org/docs/Web/API/SVGStyleElement)
  */
 @js("SVGStyleElement")
-export declare class SVGStyleElement extends SVGElement {
+export declare class SVGStyleElement extends SVGElement implements LinkStyle {
     disabled: boolean,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/SVGStyleElement/media) */
     media: string,
@@ -15496,7 +15496,7 @@ export declare class SVGSwitchElement extends SVGGraphicsElement {
  * [MDN Reference](https://developer.mozilla.org/docs/Web/API/SVGSymbolElement)
  */
 @js("SVGSymbolElement")
-export declare class SVGSymbolElement extends SVGElement {
+export declare class SVGSymbolElement extends SVGElement implements SVGFitToViewBox {
     addEventListener<K: keyof SVGElementEventMap>(mut self, type: K, listener: fn (this: SVGSymbolElement, ev: SVGElementEventMap[K]) -> any, options?: boolean | AddEventListenerOptions) -> unknown,
     addEventListener(mut self, type: string, listener: EventListenerOrEventListenerObject, options?: boolean | AddEventListenerOptions) -> unknown,
     removeEventListener<K: keyof SVGElementEventMap>(mut self, type: K, listener: fn (this: SVGSymbolElement, ev: SVGElementEventMap[K]) -> any, options?: boolean | EventListenerOptions) -> unknown,
@@ -15591,7 +15591,7 @@ export declare class SVGTextElement extends SVGTextPositioningElement {
  * [MDN Reference](https://developer.mozilla.org/docs/Web/API/SVGTextPathElement)
  */
 @js("SVGTextPathElement")
-export declare class SVGTextPathElement extends SVGTextContentElement {
+export declare class SVGTextPathElement extends SVGTextContentElement implements SVGURIReference {
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/SVGTextPathElement/method) */
     readonly method: SVGAnimatedEnumeration,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/SVGTextPathElement/spacing) */
@@ -15758,7 +15758,7 @@ export declare class SVGUnitTypes {
  * [MDN Reference](https://developer.mozilla.org/docs/Web/API/SVGUseElement)
  */
 @js("SVGUseElement")
-export declare class SVGUseElement extends SVGGraphicsElement {
+export declare class SVGUseElement extends SVGGraphicsElement implements SVGURIReference {
     readonly height: SVGAnimatedLength,
     readonly width: SVGAnimatedLength,
     readonly x: SVGAnimatedLength,
@@ -15777,7 +15777,7 @@ export declare class SVGUseElement extends SVGGraphicsElement {
  * [MDN Reference](https://developer.mozilla.org/docs/Web/API/SVGViewElement)
  */
 @js("SVGViewElement")
-export declare class SVGViewElement extends SVGElement {
+export declare class SVGViewElement extends SVGElement implements SVGFitToViewBox {
     addEventListener<K: keyof SVGElementEventMap>(mut self, type: K, listener: fn (this: SVGViewElement, ev: SVGElementEventMap[K]) -> any, options?: boolean | AddEventListenerOptions) -> unknown,
     addEventListener(mut self, type: string, listener: EventListenerOrEventListenerObject, options?: boolean | AddEventListenerOptions) -> unknown,
     removeEventListener<K: keyof SVGElementEventMap>(mut self, type: K, listener: fn (this: SVGViewElement, ev: SVGElementEventMap[K]) -> any, options?: boolean | EventListenerOptions) -> unknown,
@@ -15933,7 +15933,7 @@ export declare interface ShadowRootEventMap {
 
 /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/ShadowRoot) */
 @js("ShadowRoot")
-export declare class ShadowRoot extends DocumentFragment {
+export declare class ShadowRoot extends DocumentFragment implements DocumentOrShadowRoot {
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/ShadowRoot/clonable) */
     readonly clonable: boolean,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/ShadowRoot/delegatesFocus) */
@@ -16344,7 +16344,7 @@ export declare class SubmitEvent extends Event {
  * [MDN Reference](https://developer.mozilla.org/docs/Web/API/Text)
  */
 @js("Text")
-export declare class Text extends CharacterData {
+export declare class Text extends CharacterData implements Slottable {
     /**
      * Returns the combined data of all direct Text node siblings.
      *
@@ -17220,7 +17220,7 @@ export declare interface WindowEventMap extends GlobalEventHandlersEventMap, Win
  * [MDN Reference](https://developer.mozilla.org/docs/Web/API/Window)
  */
 @js("Window")
-export declare class Window extends EventTarget {
+export declare class Window extends EventTarget implements AnimationFrameProvider, GlobalEventHandlers, WindowEventHandlers, WindowLocalStorage, WindowOrWorkerGlobalScope, WindowSessionStorage {
     /**
      * @deprecated This is a legacy alias of `navigator`.
      *

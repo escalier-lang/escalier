@@ -1299,3 +1299,347 @@ func TestDefaultMutabilityFromClass(t *testing.T) {
 		})
 	}
 }
+
+// TestDeclareClassImplementsContributesMembers covers the `declare` half
+// of the `implements` split. A `declare` class describes an object the
+// runtime already provides, so its `implements` clause contributes each
+// interface's members instead of asserting the class restates them.
+//
+// This is what the dts_to_esc converter relies on. A TypeScript interface
+// names any number of supertypes, and the converted class keeps the first
+// as `extends` and routes the rest through `implements`, so a member
+// declared on a mixin such as `ParentNode` has to be reachable on the
+// class itself.
+func TestDeclareClassImplementsContributesMembers(t *testing.T) {
+	tests := map[string]struct {
+		input        string
+		bindingName  string
+		expectedType string
+	}{
+		"MemberFromImplementedInterface": {
+			input: `
+				interface ParentNode {
+					querySelector(self, selectors: string) -> string,
+				}
+				declare class Node {
+					nodeName: string,
+				}
+				declare class Element extends Node implements ParentNode {}
+				declare fn makeElement() -> Element
+				val found = makeElement().querySelector(".x")
+			`,
+			bindingName:  "found",
+			expectedType: "string",
+		},
+		"MemberFromTheSecondImplementedInterface": {
+			input: `
+				interface ARIAMixin {
+					ariaLabel: string,
+				}
+				interface Slottable {
+					assignedSlot: number,
+				}
+				declare class Element implements ARIAMixin, Slottable {}
+				declare fn makeElement() -> Element
+				val slot = makeElement().assignedSlot
+			`,
+			bindingName:  "slot",
+			expectedType: "number",
+		},
+		// An overloaded method reaches the class the same way a
+		// single-signature one does. The interop tree gets here through
+		// interfaces such as `CanvasDrawImage`, whose `drawImage`
+		// declares three arms.
+		"OverloadedMemberFromImplementedInterface": {
+			input: `
+				interface CanvasDrawImage {
+					drawImage(self, dx: number, dy: number) -> string,
+					drawImage(self, dx: number, dy: number, dw: number) -> string,
+				}
+				declare class CanvasRenderingContext2D implements CanvasDrawImage {}
+				declare fn makeContext() -> CanvasRenderingContext2D
+				val drawn = makeContext().drawImage(1, 2)
+			`,
+			bindingName:  "drawn",
+			expectedType: "string",
+		},
+		"MemberFromTheSuperclassOfAnImplementedInterface": {
+			input: `
+				interface Animatable {
+					animate(self) -> boolean,
+				}
+				interface ChildNode extends Animatable {
+					remove(self) -> undefined,
+				}
+				declare class Element implements ChildNode {}
+				declare fn makeElement() -> Element
+				val animated = makeElement().animate()
+			`,
+			bindingName:  "animated",
+			expectedType: "boolean",
+		},
+		// A member the class restates narrows the one the interface
+		// declares, and the class's declaration is what lookup returns.
+		// `MessagePort` retypes one member of `MessageEventTarget` this
+		// way and inherits the rest.
+		"RestatedMemberNarrows": {
+			input: `
+				interface MessageEventTarget {
+					onmessage: string | undefined,
+				}
+				declare class MessagePort implements MessageEventTarget {
+					onmessage: string,
+				}
+				declare fn makePort() -> MessagePort
+				val handler = makePort().onmessage
+			`,
+			bindingName:  "handler",
+			expectedType: "string",
+		},
+	}
+
+	for name, test := range tests {
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+			ns := mustInferAsModule(t, test.input)
+			actual := collectBindingTypes(ns)
+			got, ok := actual[test.bindingName]
+			require.Truef(t, ok, "binding %q not found", test.bindingName)
+			assert.Equalf(t, test.expectedType, got,
+				"unexpected type for %q", test.bindingName)
+		})
+	}
+}
+
+// TestDeclareClassImplementsConformance pins which `implements` failures a
+// `declare` class still reports. It inherits what it leaves out, so a
+// missing member is not an error, but a member it restates has to be
+// assignable to the one the interface declares.
+func TestDeclareClassImplementsConformance(t *testing.T) {
+	tests := map[string]struct {
+		input          string
+		expectedErrors []string
+	}{
+		"MissingMemberIsInherited": {
+			input: `
+				interface ParentNode {
+					querySelector(self, selectors: string) -> string,
+				}
+				declare class Element implements ParentNode {}
+			`,
+		},
+		"WideningRestatementIsRejected": {
+			input: `
+				interface MessageEventTarget {
+					onmessage: string,
+				}
+				declare class MessagePort implements MessageEventTarget {
+					onmessage: string | number,
+				}
+			`,
+			expectedErrors: []string{
+				"Class 'MessagePort' does not implement interface 'MessageEventTarget': member 'onmessage' property type does not match",
+			},
+		},
+		"UnrelatedRestatementIsRejected": {
+			input: `
+				interface MessageEventTarget {
+					onmessage: string,
+				}
+				declare class MessagePort implements MessageEventTarget {
+					onmessage: number,
+				}
+			`,
+			expectedErrors: []string{
+				"Class 'MessagePort' does not implement interface 'MessageEventTarget': member 'onmessage' property type does not match",
+			},
+		},
+		// A class restating an overloaded member is left unchecked, since
+		// comparing an overload arm by arm is deferred to #651. This is
+		// the shape `SharedWorker` has in the interop tree, where the
+		// class restates `addEventListener`.
+		"RestatedOverloadIsNotCompared": {
+			input: `
+				interface AbstractWorker {
+					addEventListener(self, name: string) -> undefined,
+					addEventListener(self, name: string, once: boolean) -> undefined,
+				}
+				declare class SharedWorker implements AbstractWorker {
+					addEventListener(self, name: string) -> undefined,
+					addEventListener(self, name: string, once: boolean) -> undefined,
+				}
+			`,
+		},
+		"NarrowingRestatementIsAccepted": {
+			input: `
+				interface MessageEventTarget {
+					onmessage: string | number,
+				}
+				declare class MessagePort implements MessageEventTarget {
+					onmessage: string,
+				}
+			`,
+		},
+	}
+
+	for name, test := range tests {
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+			source := &ast.Source{ID: 0, Path: "input.esc", Contents: test.input}
+			ctx, cancel := context.WithTimeout(context.Background(), 1*time.Second)
+			defer cancel()
+			module, parseErrors := parser.ParseLibFiles(ctx, []*ast.Source{source})
+			require.Empty(t, parseErrors, "expected no parse errors")
+
+			c := NewChecker(ctx)
+			inferCtx := Context{Scope: Prelude(c)}
+			_, inferErrors := c.InferModule(inferCtx, module)
+
+			conformanceErrs := filterConformanceErrors(inferErrors)
+			otherErrs := otherInferErrors(inferErrors)
+			if len(otherErrs) > 0 {
+				msgs := make([]string, len(otherErrs))
+				for i, e := range otherErrs {
+					msgs[i] = e.Message()
+				}
+				t.Fatalf("unexpected non-conformance inference errors: %v", msgs)
+			}
+			actualMsgs := make([]string, len(conformanceErrs))
+			for i, e := range conformanceErrs {
+				actualMsgs[i] = e.Message()
+			}
+			if test.expectedErrors == nil {
+				assert.Empty(t, actualMsgs, "expected no conformance errors")
+			} else {
+				assert.Equal(t, test.expectedErrors, actualMsgs)
+			}
+		})
+	}
+}
+
+// TestDeclareClassImplementsConflicts covers two implemented interfaces
+// declaring the same member name on a `declare` class. Both contribute the
+// member, so types that disagree have to be resolved by the class rather
+// than settled by whichever interface lookup reaches first.
+func TestDeclareClassImplementsConflicts(t *testing.T) {
+	tests := map[string]struct {
+		input          string
+		expectedErrors []string
+	}{
+		"AgreeingMembersAreAccepted": {
+			input: `
+				interface ChildNode {
+					remove(self) -> undefined,
+					nodeName: string,
+				}
+				interface ParentNode {
+					nodeName: string,
+				}
+				declare class Element implements ChildNode, ParentNode {}
+			`,
+		},
+		"ConflictingMembersAreRejected": {
+			input: `
+				interface ChildNode {
+					nodeName: string,
+				}
+				interface ParentNode {
+					nodeName: number,
+				}
+				declare class Element implements ChildNode, ParentNode {}
+			`,
+			expectedErrors: []string{
+				"Class 'Element' implements 'ChildNode' and 'ParentNode', which declare member 'nodeName' with conflicting types",
+			},
+		},
+		// Lookup walks the superclass before the implemented interfaces,
+		// so a member the superclass declares is what the name resolves
+		// to and the two interfaces no longer decide it.
+		"ASuperclassMemberResolvesTheConflict": {
+			input: `
+				interface ChildNode {
+					nodeName: string,
+				}
+				interface ParentNode {
+					nodeName: number,
+				}
+				declare class Node {
+					nodeName: string,
+				}
+				declare class Element extends Node implements ChildNode, ParentNode {}
+			`,
+		},
+		// The two declare the same type but disagree on whether the
+		// member is there at all, so reading it gives `string | undefined`
+		// through one and `string` through the other.
+		"AnOptionalAndARequiredMemberConflict": {
+			input: `
+				interface ChildNode {
+					nodeName?: string,
+				}
+				interface ParentNode {
+					nodeName: string,
+				}
+				declare class Element implements ChildNode, ParentNode {}
+			`,
+			expectedErrors: []string{
+				"Class 'Element' implements 'ChildNode' and 'ParentNode', which declare member 'nodeName' with conflicting types",
+			},
+		},
+		"AConflictInheritedByAnInterfaceIsRejected": {
+			input: `
+				interface Animatable {
+					nodeName: string,
+				}
+				interface ChildNode extends Animatable {
+					remove(self) -> undefined,
+				}
+				interface ParentNode {
+					nodeName: number,
+				}
+				declare class Element implements ChildNode, ParentNode {}
+			`,
+			expectedErrors: []string{
+				"Class 'Element' implements 'ChildNode' and 'ParentNode', which declare member 'nodeName' with conflicting types",
+			},
+		},
+		"ARestatedMemberResolvesTheConflict": {
+			input: `
+				interface ChildNode {
+					nodeName: string | number,
+				}
+				interface ParentNode {
+					nodeName: number,
+				}
+				declare class Element implements ChildNode, ParentNode {
+					nodeName: number,
+				}
+			`,
+		},
+	}
+
+	for name, test := range tests {
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+			source := &ast.Source{ID: 0, Path: "input.esc", Contents: test.input}
+			ctx, cancel := context.WithTimeout(context.Background(), 1*time.Second)
+			defer cancel()
+			module, parseErrors := parser.ParseLibFiles(ctx, []*ast.Source{source})
+			require.Empty(t, parseErrors, "expected no parse errors")
+
+			c := NewChecker(ctx)
+			inferCtx := Context{Scope: Prelude(c)}
+			_, inferErrors := c.InferModule(inferCtx, module)
+
+			actualMsgs := make([]string, len(inferErrors))
+			for i, e := range inferErrors {
+				actualMsgs[i] = e.Message()
+			}
+			if test.expectedErrors == nil {
+				assert.Empty(t, actualMsgs, "expected no inference errors")
+			} else {
+				assert.Equal(t, test.expectedErrors, actualMsgs)
+			}
+		})
+	}
+}

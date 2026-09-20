@@ -1598,3 +1598,53 @@ declare var Callable: CallableConstructor;
 	}
 	require.Contains(t, printed, "(x: number) -> string", "the instance callable survives")
 }
+
+// multiSupertypeTrio is the shape of `Element` in lib.dom.d.ts, cut down
+// to two supertypes past the base. `Node` is the nominal base TypeScript
+// names first; `ParentNode` and `Slottable` are mixins that declare the
+// rest of the surface.
+const multiSupertypeTrio = `
+interface Node {
+    readonly nodeName: string;
+}
+interface ParentNode {
+    querySelector(selectors: string): Element | null;
+}
+interface Slottable {
+    readonly assignedSlot: string | null;
+}
+interface Element extends Node, ParentNode, Slottable {
+    readonly tagName: string;
+}
+interface ElementConstructor {
+    new (): Element;
+}
+declare var Element: ElementConstructor;
+`
+
+// A TypeScript interface names any number of supertypes and an Escalier
+// ClassDecl carries one `extends`, so a fused trio splits them. The first
+// supertype becomes `extends` and the rest become `implements`. A trio that
+// kept only the first would lose every member the others declare, such as
+// `querySelector` on `Element` (#1648).
+func TestStandalone_TrioKeepsEverySupertype(t *testing.T) {
+	astModule, _ := convertSlice(t, multiSupertypeTrio)
+
+	rootNS, ok := astModule.Module.Namespaces.Get("")
+	require.True(t, ok)
+	var cls *ast.ClassDecl
+	for _, d := range rootNS.Decls {
+		if cd, ok := d.(*ast.ClassDecl); ok && cd.Name.Name == "Element" {
+			cls = cd
+		}
+	}
+	require.NotNil(t, cls)
+
+	printed, err := printer.Print(cls, printer.DefaultOptions())
+	require.NoError(t, err)
+	snaps.MatchInlineSnapshot(t, printed, snaps.Inline(`@js("Element")
+export declare class Element extends Node implements ParentNode, Slottable {
+    readonly tagName: string,
+    constructor(mut self)
+}`))
+}

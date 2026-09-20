@@ -58,7 +58,7 @@ export declare interface ServiceWorkerEventMap extends dom.AbstractWorkerEventMa
  * [MDN Reference](https://developer.mozilla.org/docs/Web/API/ServiceWorker)
  */
 @js("ServiceWorker")
-export declare class ServiceWorker extends EventTarget {
+export declare class ServiceWorker extends EventTarget implements workers.AbstractWorker {
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/ServiceWorker/statechange_event) */
     onstatechange: (fn (this: ServiceWorker, ev: Event) -> any) | null,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/ServiceWorker/scriptURL) */

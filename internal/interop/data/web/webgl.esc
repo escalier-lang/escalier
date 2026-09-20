@@ -394,7 +394,7 @@ export declare interface WEBGL_multi_draw {
 
 /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/WebGL2RenderingContext) */
 @js("WebGL2RenderingContext")
-export declare class WebGL2RenderingContext extends WebGL2RenderingContextBase {
+export declare class WebGL2RenderingContext extends WebGL2RenderingContextBase implements WebGL2RenderingContextOverloads, WebGLRenderingContextBase {
     static prototype: WebGL2RenderingContext,
     constructor(mut self),
     static readonly READ_BUFFER: 3074,
@@ -1611,7 +1611,7 @@ export declare class WebGLRenderbuffer {
  * [MDN Reference](https://developer.mozilla.org/docs/Web/API/WebGLRenderingContext)
  */
 @js("WebGLRenderingContext")
-export declare class WebGLRenderingContext extends WebGLRenderingContextBase {
+export declare class WebGLRenderingContext extends WebGLRenderingContextBase implements WebGLRenderingContextOverloads {
     static prototype: WebGLRenderingContext,
     constructor(mut self),
     static readonly DEPTH_BUFFER_BIT: 256,

@@ -1189,6 +1189,49 @@ func (c *Checker) lazyMemberLookup(ctx Context, t *type_system.TypeRefType, name
 	return memberType, true
 }
 
+// getSuperTypeAccess looks the key up on each entry of objType.Extends and
+// returns the first supertype that has it. That list holds more than one entry
+// in three cases. An interface records every supertype it extends, a `declare`
+// class records each interface it implements beside its superclass, and a class
+// records its superclass alone. A key missing from one entry can still be found
+// on a later one, so the search stops only on a hit.
+//
+// The reported bool says whether a supertype had the key. The errors returned
+// alongside it name each entry that did not resolve to an object type. That is
+// a broken `extends` clause, so the caller reports it whether or not the key
+// was found elsewhere.
+func (c *Checker) getSuperTypeAccess(
+	objType *type_system.ObjectType,
+	key MemberAccessKey,
+	mode AccessMode,
+	receiverMut bool,
+) (type_system.Type, bool, []Error) {
+	var errors []Error
+	for _, extendsTypeRef := range objType.Extends {
+		extendsType := type_system.Type(extendsTypeRef)
+
+		if typeRef, ok := type_system.Prune(extendsType).(*type_system.TypeRefType); ok {
+			if resolved := aliasedType(typeRef); resolved != nil {
+				extendsType = type_system.Prune(resolved)
+			}
+		}
+
+		extendsObjType, ok := extendsType.(*type_system.ObjectType)
+		if !ok {
+			// If the extended type cannot be resolved to an ObjectType,
+			// report this instead of silently skipping it.
+			errors = append(errors, &ExpectedObjectError{Type: extendsType})
+			continue
+		}
+
+		superType, superErrors := c.getObjectAccess(extendsObjType, key, mode, receiverMut, nil)
+		if len(superErrors) == 0 {
+			return superType, true, errors
+		}
+	}
+	return nil, false, errors
+}
+
 // getObjectAccess handles property and index access on ObjectType.
 // mode controls getter/setter resolution: AccessRead uses getters, AccessWrite uses setters.
 // receiverMut indicates whether the receiver was wrapped in a definite `mut`;
@@ -1267,23 +1310,10 @@ func (c *Checker) getObjectAccess(objType *type_system.ObjectType, key MemberAcc
 		// nil check below is a defensive guard for error-recovery paths where
 		// inferTypeAnn couldn't resolve an unknown type name (already reported as
 		// UnknownTypeError).
-		for _, extendsTypeRef := range objType.Extends {
-			extendsType := type_system.Type(extendsTypeRef)
-
-			if typeRef, ok := type_system.Prune(extendsType).(*type_system.TypeRefType); ok {
-				if resolved := aliasedType(typeRef); resolved != nil {
-					extendsType = type_system.Prune(resolved)
-				}
-			}
-
-			if extendsObjType, ok := extendsType.(*type_system.ObjectType); ok {
-				// Recursively check the extended type
-				return c.getObjectAccess(extendsObjType, key, mode, receiverMut, errors)
-			}
-
-			// If the extended type cannot be resolved to an ObjectType,
-			// report this instead of silently skipping it.
-			errors = append(errors, &ExpectedObjectError{Type: extendsType})
+		superType, found, superErrors := c.getSuperTypeAccess(objType, key, mode, receiverMut)
+		errors = slices.Concat(errors, superErrors)
+		if found {
+			return superType, errors
 		}
 
 		// If the object is open, add the new property instead of reporting an error
@@ -1493,17 +1523,8 @@ func (c *Checker) getObjectAccess(objType *type_system.ObjectType, key MemberAcc
 		// Check the Extends field if index key not found (same invariant as
 		// the PropertyKey branch above — see comment there for why TypeAlias
 		// is guaranteed non-nil for valid code).
-		for _, extendsTypeRef := range objType.Extends {
-			extendsType := type_system.Type(extendsTypeRef)
-			if typeRef, ok := type_system.Prune(extendsType).(*type_system.TypeRefType); ok {
-				if resolved := aliasedType(typeRef); resolved != nil {
-					extendsType = type_system.Prune(resolved)
-				}
-			}
-			if extendsObjType, ok := extendsType.(*type_system.ObjectType); ok {
-				// Recursively check the extended type
-				return c.getObjectAccess(extendsObjType, key, mode, receiverMut, errors)
-			}
+		if superType, found, _ := c.getSuperTypeAccess(objType, key, mode, receiverMut); found {
+			return superType, errors
 		}
 
 		// If the object is open and the key is a string literal, add the new property
