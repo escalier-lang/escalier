@@ -30,8 +30,10 @@ deletion, not the switch.
 - **[00-current-state.md](00-current-state.md)** — what has landed, what the
   measurements say, and the gaps between the solver's API and the compiler's
   needs. Read this first. The phase order in `01` follows from its numbers.
-- **[01-cutover-plan.md](01-cutover-plan.md)** — phases P0 through P7, each with
-  a scope, a gate, and an explicit statement of what it does not do.
+- **[01-cutover-plan.md](01-cutover-plan.md)** — phases P0 through P7 broken into
+  about two dozen pull requests, each with a scope, a gate, and an explicit
+  statement of what it does not do. Its §"Phase order" has the dependency graph
+  and says what runs in parallel.
 - **[02-parked-work.md](02-parked-work.md)** — the pseudo-package work this plan
   defers, the files that hold it, and the order to resume it in.
 

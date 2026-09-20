@@ -1,8 +1,11 @@
 # 01 — Cutover plan
 
-Eight phases. P0 through P5 reach the flip, and P6 and P7 finish the migration.
-Each phase states what it does not do. The plan is short because it keeps
-refusing work the flip does not need.
+Eight phases, about two dozen pull requests. P0 through P5 reach the flip, and
+P6 and P7 finish the migration. Each phase states what it does not do. The plan
+is short because it keeps refusing work the flip does not need.
+
+Every numbered item below is one pull request. A phase that fits in a single
+pull request carries no sub-number.
 
 ## The two splits this plan makes
 
@@ -32,17 +35,98 @@ which is M11.5's parity baseline. P7 is what removes it.
 
 ## Phase order
 
-```
-P0 (std:* ingestion) ──┐
-                       ├──► P2 (flag + check-only harness) ──► P3 (JS codegen) ──► P4 (.d.ts codegen) ──► P5 (flip + fixture imports)
-P1 (web:* quarantine) ─┘                                                                                      │
-                                                                                                              ├──► P6 (LSP)
-                                                                                                              └──► P7 (deletion) ── needs P6 + M11.5
+| Phase | Pull requests | Parallel within the phase |
+| --- | --- | --- |
+| P1 — ledger | P1.1 | one |
+| P0 — ingestion | P0.1 … P0.7 | P0.1 to P0.6 are all independent; P0.7 closes them |
+| P2 — flag and harness | P2.1 … P2.3, then one per skip-list cause | sequential to P2.3, then parallel |
+| P3 — JS emission | P3 | one |
+| P4 — `.d.ts` emission | P4.1 … P4.3 | sequential, but P4.1 starts on day one |
+| P5 — flip | P5 | one, and atomic by design |
+| P6 — LSP | P6.1 … P6.5 | P6.1 to P6.3 independent; P6.4 and P6.5 follow P6.3 |
+| P7 — deletion | P7.1 … P7.3 | sequential |
+
+Three things are worth reading off this table before anything else.
+
+**P1.1 is the first pull request of the whole plan**, ahead of P0 despite the
+number. It is the measurement harness, so each P0 pull request lands as a
+baseline reduction in one committed table rather than as an unverifiable claim.
+
+**P4.1 is the long pole and has no dependencies.** The `soltype` type renderer
+is roughly 490 lines ported from `dts.go`, it is unit-testable against `soltype`
+values alone, and it needs neither the compiler seam nor the fixture harness. It
+can start the same day as P1.1 and run alongside all of P0 and P2.
+
+**P0 and P2 never touch the same file.** P0 is library data quality and lives in
+`internal/solver` plus the generator; P2 is compiler wiring and lives in
+`internal/compiler` and `cmd/escalier`. Two people can take one each.
+
+### The work, and what runs in parallel
+
+```mermaid
+graph TD
+    P11["P1.1 · web ledger test"]
+
+    subgraph SP0["P0 · library ingestion"]
+        P01["P0.1 · bigint type annotation"]
+        P02["P0.2 · typed_arrays siblings"]
+        P03["P0.3 · residual conditional bound"]
+        P04["P0.4 · numeric index, tuple bound"]
+        P05["P0.5 · the tail under 70"]
+        P06["P0.6 · web:core + web:fetch"]
+    end
+    P07["P0.7 · zero-diagnostic gate"]
+
+    subgraph SP2["P2 · flag and check-only harness"]
+        P21["P2.1 · solver API gaps"]
+        P22["P2.2 · checker-selection seam"]
+        P23["P2.3 · check-only fixture harness"]
+        P24["P2.4+ · burn the skip list down"]
+        P21 --> P22 --> P23 --> P24
+    end
+
+    P3["P3 · JS emission"]
+
+    subgraph SP4["P4 · .d.ts emission"]
+        P41["P4.1 · soltype type renderer"]
+        P42["P4.2 · declaration + namespace walk"]
+        P43["P4.3 · golden reconciliation"]
+        P41 --> P42 --> P43
+    end
+
+    P5["P5 · flip the default"]
+
+    subgraph SP6["P6 · LSP"]
+        P61["P6.1 · diagnostics path"]
+        P62["P6.2 · hover + go-to-definition"]
+        P63["P6.3 · type-driven completions"]
+        P64["P6.4 · scope-driven completions"]
+        P65["P6.5 · completion tests, last import"]
+        P63 --> P64 --> P65
+    end
+
+    subgraph SP7["P7 · deletion"]
+        P71["P7.1 · drop the fallback path"]
+        P72["P7.2 · delete internal/checker"]
+        P73["P7.3 · delete type_system + AST field"]
+        P71 --> P72 --> P73
+    end
+
+    M115["M11.5 · diagnostics capstone"]
+
+    P11 -.->|baseline to lower| P01 & P02 & P03 & P04 & P05 & P06
+    P01 & P02 & P03 & P04 & P05 & P06 --> P07
+    P23 --> P3
+    P22 --> P42
+    P23 --> P43
+    P07 & P24 & P3 & P43 --> P5
+    P5 --> P61 & P62 & P63
+    P61 & P62 & P65 --> P71
+    M115 --> P72
 ```
 
-P0 and P1 are independent of each other and can land in either order, except
-that P0's `web:core` and `web:fetch` rows leave the P1 ledger when P0 clears
-them. P6 and P7 are the only phases after the flip.
+The dotted edges out of P1.1 are soft. A P0 pull request can land without the
+ledger; it just lands without a number attached to it.
 
 ---
 
@@ -51,50 +135,68 @@ them. P6 and P7 are the only phases after the flip.
 **Goal.** Every `std:*` package loads with zero diagnostics, and so do
 `web:core` and `web:fetch`.
 
-**Work.** The four root causes from
+**Work.** Seven pull requests. P0.1 through P0.6 touch different files and can
+land in any order or at the same time; P0.7 closes them out. The first five come
+from the four root causes in
 [00-current-state.md](00-current-state.md)§"What the residual diagnostics
-actually are":
+actually are".
 
-1. Add the `*ast.BigintTypeAnn` arm to `internal/solver/type_ann.go`. Port the
-   shape from `internal/checker/infer_type_ann.go:99`. This clears 137
-   diagnostics. Three solver tests assert the current `Unsupported:
-   BigintTypeAnn` message and need updating: `infer_async_test.go:419` and `:434`,
-   `infer_throws_test.go:394`.
-2. Find why a bare sibling name fails to resolve inside `std:typed_arrays` while
-   the qualified spelling works. The fix is either in the generator's reference
-   rewriter, `internal/dts_to_esc/ref_rewrite.go`, or in how a group member's own
-   namespace is searched during a load, `internal/solver/stdlib_group_load.go`.
-   Decide which from a minimal reproduction before touching either. This clears
-   82 diagnostics.
-3. Defer a residual conditional rather than constraining it against a type
-   parameter's bound, so `Omit<T, K> = Pick<T, Exclude<keyof T, K>>` checks. This
-   is a bound-check ordering question in the type-operator evaluator, not new
-   operator surface.
-4. Make a numeric indexed access against a type parameter bounded by
-   `Array<unknown> | []` yield the element type instead of constraining the
-   tuple against `number`.
+**P0.1 — the `bigint` type annotation.** Add the `*ast.BigintTypeAnn` arm to
+`internal/solver/type_ann.go`, porting the shape from
+`internal/checker/infer_type_ann.go:99`. Clears 137 diagnostics. Three solver
+tests assert the current `Unsupported: BigintTypeAnn` message and need updating:
+`infer_async_test.go:419` and `:434`, and `infer_throws_test.go:394`.
 
-Then the tail under 70: the `owned-mutable field annotation` reports, the
-`typeof of a name that is not a readable value` reports, the two overload
-reports, and the inherited-member redeclarations. Triage each as a solver gap or
-a generator gap and file the generator ones against builtins §6 rather than
-hand-editing the committed tree, which is generated output.
+**P0.2 — bare sibling names in `std:typed_arrays`.** A bare `Int32Array` fails to
+resolve inside its own package while `typed_arrays.Int32Array` succeeds. Build a
+minimal reproduction first and let it say which side is wrong: the generator
+emitting the bare name, in `internal/dts_to_esc/ref_rewrite.go`, or the loader
+failing to search a group member's own namespace, in
+`internal/solver/stdlib_group_load.go`. If it is the generator, this pull request
+also regenerates the affected files. Clears 82 diagnostics.
 
-Then `web:core` and `web:fetch`. They are here rather than in P1 because
+**P0.3 — a residual conditional against a type parameter's bound.**
+`export declare type Omit<T, K: keyof any> = Pick<T, Exclude<keyof T, K>>` at
+`internal/interop/data/std/prelude.esc:925` leaves `Exclude` as a residual
+conditional, which is then checked against `Pick`'s `K: keyof T` bound instead
+of being deferred. This is bound-check ordering in the type-operator evaluator,
+not new operator surface.
+
+**P0.4 — a numeric indexed access against a tuple-bounded parameter.**
+`static race<T: Array<unknown> | []>(values: T) -> Promise<Awaited<T[number]>>`
+at `internal/interop/data/std/prelude.esc:599`, repeated for `any` at 645,
+constrains the tuple itself against `number` rather than yielding the element
+type.
+
+P0.3 and P0.4 are the two diagnostics `std:prelude` carries, so they reach every
+run. Take them first if anything is blocked on a clean baseline.
+
+**P0.5 — the tail under 70.** The `owned-mutable field annotation` reports, the
+`typeof of a name that is not a readable value` reports, the two
+overload-distinguishability reports, and the inherited-member redeclarations.
+Triage each as a solver gap or a generator gap, and file the generator ones
+against builtins §6 rather than hand-editing the committed tree, which is
+generated output. Split further if the triage finds unrelated causes.
+
+**P0.6 — `web:core` and `web:fetch`.** They are in P0 rather than P1 because
 `fixtures/async_await` calls `fetch`, which the old checker supplies ambiently
 from `lib.dom.d.ts` and the solver supplies only from `web:fetch`. `web:core` is
 the shared floor under every `web:*` sibling, so clearing it moves all ten at
 once and shrinks what P1 has to quarantine. Triage its 224 diagnostics before
-committing to this scope; if they turn out to be the DOM-name mass rather than a
+committing to this scope. If they turn out to be the DOM-name mass rather than a
 few root causes, the cheaper answer is to rewrite `fixtures/async_await` to
 declare its own `fetch` and move both packages to P1.
 
-**Gate.** A test that loads every `std:*` package, plus `web:core` and
-`web:fetch`, and asserts an empty diagnostic list. This is the strict version of
-the P1 ledger and replaces those rows in it.
+**P0.7 — the zero-diagnostic gate.** Replace the P1 ledger's rows for `std:*`,
+`web:core`, and `web:fetch` with a test that asserts an empty diagnostic list for
+each. Depends on P0.1 through P0.6.
 
-**Not in scope.** Any `web:*` package behind `web:dom`. Regenerating the tree.
-Hand-edits to generated `.esc` files.
+**Gate.** P0.7 passes, so every `std:*` package plus `web:core` and `web:fetch`
+loads with nothing reported.
+
+**Not in scope.** Any `web:*` package behind `web:dom`. Regenerating the tree,
+except where P0.2 or P0.5 finds a generator gap. Hand-edits to generated `.esc`
+files.
 
 ---
 
@@ -103,7 +205,8 @@ Hand-edits to generated `.esc` files.
 **Goal.** Everything behind `web:dom` stops gating anything, without rotting
 while parked. `web:core` and `web:fetch` belong to P0, not here.
 
-**Work.** Commit the per-package survey from
+**P1.1 — the ledger test.** One pull request, and the first of the plan. Commit
+the per-package survey from
 [00-current-state.md](00-current-state.md)§"How these numbers were taken" as a
 real test in `internal/solver`. It loads each package's closure, counts
 diagnostics, and compares against a checked-in baseline table. A count that
@@ -129,28 +232,36 @@ data file, the partition table, the tiering pass, or the loader. See
 **Goal.** Find out what the solver actually rejects in real Escalier code,
 before any codegen work is spent.
 
-**Work.**
+**Work.** Three pull requests, then one per cause the harness turns up. P2.1
+through P2.3 are strictly sequential; each one is the thing the next needs.
 
-1. Close the two API gaps the compiler path needs, from
-   [00-current-state.md](00-current-state.md)§"Gaps between the solver's API and
-   the compiler's needs": a lib-scope argument on `InferScript`, and the dep
-   graph on `ModuleResult`. Third-party `.d.ts` ingestion and JSX inference are
-   the other two gaps and are **not** needed here; both are parked in
-   [02-parked-work.md](02-parked-work.md).
-2. Add a solver path at the five `checker.NewChecker` sites in
-   `internal/compiler/compiler.go`, selected by one environment variable. The
-   `type_system.Namespace` in the public signatures of `CheckBinScript`,
-   `CompileScript`, and `collectUsedLibSymbols` is the seam that resists this;
-   the cheapest shape is a small interface or a per-checker pair of entry points
-   rather than a `soltype` to `type_system` bridge, which this plan never builds.
-3. Add the second fixture harness, M8 phase 1: a sibling to
-   `cmd/escalier/fixture_test.go` that runs the solver over every fixture and
-   asserts accept or reject, with no codegen and no `build/` comparison. Give it
-   a per-fixture skip list, seeded with everything that fails on day one.
-4. Burn the skip list down. This is the phase where the solver's remaining
-   language-surface gaps surface. Two are known from the milestone plans and may
-   or may not bite: M6 PR7, which is `if`-`val` and `val`-`else`, and M9 PR9f,
-   which is regular-tree normalization.
+**P2.1 — the solver API gaps.** Close the two gaps the compiler path needs, from
+[00-current-state.md](00-current-state.md)§"Gaps between the solver's API and the
+compiler's needs": a lib-scope argument on `InferScript`, so a `bin/` script
+checks against the library module's scope, and the dep graph on `ModuleResult`,
+which codegen takes. Both live in `internal/solver` and touch nothing else.
+Third-party `.d.ts` ingestion and JSX inference are the other two gaps and are
+**not** needed here; both are parked in
+[02-parked-work.md](02-parked-work.md).
+
+**P2.2 — the checker-selection seam.** Add a solver path at the five
+`checker.NewChecker` sites in `internal/compiler/compiler.go`, selected by one
+environment variable. The `type_system.Namespace` in the public signatures of
+`CheckBinScript`, `CompileScript`, and `collectUsedLibSymbols` is what resists
+this. The cheapest shape is a small interface or a per-checker pair of entry
+points, not a `soltype` to `type_system` bridge, which this plan never builds.
+
+**P2.3 — the check-only fixture harness.** M8 phase 1: a sibling to
+`cmd/escalier/fixture_test.go` that runs the solver over every fixture and
+asserts accept or reject, with no codegen and no `build/` comparison. Give it a
+per-fixture skip list, seeded with everything that fails on day one. The seeded
+list is this pull request's real output, because it is the first honest measure
+of what the solver cannot yet check.
+
+**P2.4 and up — burn the skip list down.** One pull request per cause, and they
+parallelize once P2.3 has named them. Two causes are known from the milestone
+plans and may or may not bite: M6 PR7, which is `if`-`val` and `val`-`else`, and
+M9 PR9f, which is regular-tree normalization.
 
 **Gate.** The skip list is empty, or every remaining entry is a triaged intended
 improvement with a note naming why the divergence is right.
@@ -173,7 +284,12 @@ expression's object a namespace. `js_lowering.go` also reads the AST's
 `BindingOwner` field, which P7 re-homes.
 
 The emitter is otherwise driven by the AST and the dep graph, which are
-checker-agnostic, so this is a narrow change rather than a port.
+checker-agnostic, so this is a narrow change rather than a port. That is why P3
+carries no sub-number: five call sites in two files is one pull request. Split it
+only if the golden comparison below turns up diffs that need their own
+investigation.
+
+**Depends on** P2.3, for a harness to compare against.
 
 **Gate.** Every fixture's `build/lib/index.js` and `index.js.map` is
 byte-identical under both checkers. Extend the P2 harness to compare them.
@@ -186,18 +302,44 @@ byte-identical under both checkers. Extend the P2 harness to compare them.
 
 **Goal.** `BuildDefinitions` produces `.d.ts` from solver results.
 
-**Work.** This is the largest single piece of the cutover. `BuildDefinitions`
-takes a `type_system.Namespace` and renders through
-`buildTypeAnn(type_sys.Type)`, about half of `dts.go`'s 1,350 lines, plus all of
-`self_type_utils.go`.
+**Work.** The largest piece of the cutover, in three pull requests.
+`BuildDefinitions` takes a `type_system.Namespace` and renders through
+`buildTypeAnn(type_sys.Type)`, so the split follows that seam: the renderer
+first, then the walk that calls it, then the goldens.
 
 Write a `soltype` twin of `buildTypeAnn` rather than a `soltype` to
 `type_system` bridge. A bridge would have to reconstruct a representation the
 whole migration exists to retire, and it would keep `type_system` alive past P7.
 
+**P4.1 — the `soltype` type renderer.** Port the type-driven half of `dts.go`:
+`buildTypeAnn` at 186 lines, `buildObjTypeAnnElems` and `buildObjTypeAnnElem` at
+94, `buildFuncTypeAnn` and `funcTypeToParams` at 46, `buildTypeAnnObjKey` at 37,
+`patToPat` at 24, `litToLit` at 18, `mapMappedModifier` at 16, and
+`convertQualIdent` at 12, plus all 53 lines of `self_type_utils.go`, which
+rewrites `Self` to `this`. Roughly 490 lines.
+
+This pull request has **no dependencies at all**. It takes `soltype` values and
+returns codegen `TypeAnn` nodes, so it is unit-testable on its own and needs
+neither the compiler seam nor a fixture. Start it on day one.
+
 `internal/soltype/print.go` already renders every `soltype` former for
-diagnostics. It emits Escalier syntax, not TypeScript, so it is a reference for
-the case analysis rather than something to reuse directly.
+diagnostics. It emits Escalier syntax rather than TypeScript, so it is a
+reference for the case analysis rather than something to reuse.
+
+The `*FromAST` functions stay as they are. `buildObjTypeAnnElemFromAST`,
+`buildTypeAnnObjKeyFromAST`, `mapASTMappedModifier`, `buildFuncTypeAnnFromAST`,
+and `astPatToPat` are roughly 184 lines already driven by the AST, so they are
+checker-agnostic and need no port.
+
+**P4.2 — the declaration and namespace walk.** Retarget `BuildDefinitions` at
+102 lines, `buildDeclStmt` at 519, `buildNamespaceDecl` at 44, and `findNamespace`
+at 19 onto the solver's `Scope` and `Namespace`, calling P4.1's renderer. Depends
+on P4.1 and on P2.2 for the seam that hands it solver results.
+
+**P4.3 — golden reconciliation.** Extend the P2.3 harness to compare
+`build/lib/index.d.ts` across every fixture, and work the diffs down. Depends on
+P4.2 and P2.3. This is where the surprises land, so keep it separate from the
+port.
 
 **Gate.** Every fixture's `build/lib/index.d.ts` is byte-identical, or its diff
 is triaged and recorded.
@@ -212,7 +354,9 @@ which the current fixtures exercise.
 
 **Goal.** `internal/solver` is the checker the compiler runs.
 
-**Work.** One pull request doing three things together:
+**Work.** One pull request, and it has to stay one. The three changes below are
+atomic with each other, because the fixture tree cannot be green on both checkers
+in between.
 
 1. Default the environment variable from P2 to the solver, keeping the old
    checker reachable by setting it the other way.
@@ -241,9 +385,41 @@ and tested, as the parity baseline M11.5 needs.
 
 **Goal.** `cmd/lsp-server` stops importing `internal/checker`.
 
-**Work.** This is M11 unchanged. 86 non-test references, 76 of them in
+**Work.** M11, in five pull requests. 86 non-test references, 76 of them in
 `completion.go`, plus 51 in `completion_test.go`. The LSP runs on the old checker
-from P5 until this lands, which is safe because both packages are in the tree.
+from P5 until P6.5 lands, which is safe because both packages are in the tree.
+
+The split follows where the references sit. P6.1, P6.2, and P6.3 touch different
+files or different regions of `completion.go` and can run in parallel. P6.4 and
+P6.5 follow P6.3 because they edit regions it has already moved.
+
+**P6.1 — the diagnostics path.** `text_document.go`'s `validate`,
+`validateBinScript`, `validateFull`, `publishDiagnosticsForScript`, and
+`filterOutTypeErrors` thread `checker.Error`. Retarget them at the solver's
+error type. Nine references.
+
+**P6.2 — hover and go-to-definition.** `textDocumentHover` reads
+`node.InferredType()` at four places. Move them to the solver's `Info` side
+table. This one also has to land before P7.3, which deletes the AST field those
+reads use.
+
+**P6.3 — type-driven completions.** `completionsFromType` and its family —
+`completionsFromTypeImpl`, `completionsFromObjectType`, `completionsFromNamespace`,
+`completionsFromUnionType`, `completionsFromIntersectionType` — plus the
+rendering helpers at the end of the file: `safeTypeString`,
+`completionKindForValueType`, `completionKindForTypeAlias`, `primWrapperName`,
+`stripNullUndefined`, and `isNullOrUndefined`. 53 references, the largest single
+block.
+
+**P6.4 — scope-driven completions.** `buildPreludeCompletions`,
+`buildScopeCompletionsNoDetail`, `getPreludeCompletions`, `completionsFromScope`,
+`completionsFromModuleScope`, `collectScopeTypeBindings`, and
+`typeCompletionsFromScope` all take a `*checker.Scope`, as does `main.go`'s
+`preludeScope` field. 17 references.
+
+**P6.5 — the tests and the last import.** Port `completion_test.go`'s 51
+references and `testmain_test.go`'s 2, then delete the `checker` and
+`type_system` imports from `cmd/lsp-server`.
 
 **Gate.** No `checker` or `type_system` import under `cmd/lsp-server`, and the
 existing LSP tests pass.
@@ -254,16 +430,30 @@ existing LSP tests pass.
 
 **Goal.** Finish M12.
 
-**Work.** Delete `internal/checker`, `internal/checker/tests`,
-`internal/type_system`, the AST's `inferredType` field and its
-`InferredType`/`SetInferredType` accessors, the `type Type = type_system.Type`
-alias, and `tools/gen_ast`'s generation of the field. Re-home the two
-`type_system` names `internal/ast` still carries, `type_system.Type` and
-`type_system.BindingOwner`. Retire `internal/simplesub`'s differential harness,
-which imports the old checker.
+**Work.** Three pull requests, strictly sequential: stop referring to the old
+checker, delete it, then delete the representation it carried.
 
-**Depends on** P6, so nothing still imports the old checker, and on M11.5, whose
-audit wants the old checker's diagnostics as the parity baseline.
+**P7.1 — drop the fallback path.** Remove P2.2's environment variable and the
+old-checker branch at the five compiler entry points, leaving one path. Depends
+on P6, so nothing outside `internal/checker` still reaches it.
+
+**P7.2 — delete `internal/checker`.** Remove the package and
+`internal/checker/tests`. Before this lands, port the assertions
+[02-parked-work.md](02-parked-work.md)§"What keeps the first two honest" names,
+so the `node_modules` and JSX gaps stay asserted rather than disappearing with
+the old checker's test files. Depends on M11.5, whose audit wants the old
+checker's diagnostics as its parity baseline.
+
+**P7.3 — delete `internal/type_system` and the AST field.** Remove the package,
+re-home the two names `internal/ast` still carries — `type_system.Type` and
+`type_system.BindingOwner` — and delete the `inferredType` field, its
+`InferredType` and `SetInferredType` accessors, the
+`type Type = type_system.Type` alias, and `tools/gen_ast`'s generation of the
+field. This is what leaves the AST type-system-agnostic.
+
+`internal/simplesub` needs nothing here. Its `doc.go` and `differential_test.go`
+name `internal/checker` in prose only; the package does not import it, and its
+expected strings are hardcoded.
 
 **Not in scope.** Anything in [02-parked-work.md](02-parked-work.md).
 
