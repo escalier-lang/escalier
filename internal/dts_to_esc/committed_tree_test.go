@@ -116,7 +116,7 @@ func TestNoReferenceEscapesItsEnvironments(t *testing.T) {
 		mods[uri] = &StandaloneModule{Module: module}
 	}
 
-	violations, err := CheckEnvs(mods, unreconciledInThePinnedLibSet(t))
+	violations, err := CheckEnvs(mods, conflictingInThePinnedLibSet(t))
 	require.NoError(t, err)
 
 	lines := make([]string, 0, len(violations))
@@ -229,9 +229,10 @@ func pinnedPartition(t *testing.T) *PartitionResult {
 	return res
 }
 
-// unreconciledInThePinnedLibSet returns the declarations both web libs declare,
-// which is the set the generator skips the environment check for.
-func unreconciledInThePinnedLibSet(t *testing.T) Unreconciled {
+// conflictingInThePinnedLibSet returns the declarations both web libs declare
+// at different types, which is the set the generator skips the environment
+// check for.
+func conflictingInThePinnedLibSet(t *testing.T) ConflictingDecls {
 	t.Helper()
-	return pinnedPartition(t).Unreconciled
+	return pinnedPartition(t).ConflictingDecls
 }

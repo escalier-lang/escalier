@@ -6,6 +6,7 @@ import (
 	"maps"
 	"os"
 	"path/filepath"
+	"slices"
 	"sort"
 	"strings"
 
@@ -46,6 +47,9 @@ type LibInput struct {
 	SourceID   int
 	SourceFile string
 	Module     *dts_parser.Module
+	// Contents is the file's source text, which declText slices a
+	// declaration out of so two libs' copies of one name can be compared.
+	Contents string
 }
 
 // PartitionResult is the bucketed output of PartitionLib: top-level
@@ -65,9 +69,15 @@ type PartitionResult struct {
 	// member's span says which lib file declared it.
 	SourceFiles map[int]string
 
-	// Unreconciled names the declarations both web libs declare, which the run
-	// has no trustworthy environment reading for. See the type's own comment.
-	Unreconciled Unreconciled
+	// SharedWithWindowLibs names every declaration a worker lib declares that a
+	// window lib also declares, whose worker copy the run skipped. It is what
+	// tells such a copy from an overlay drop when the run reports its counts.
+	SharedWithWindowLibs set.Set[string]
+
+	// ConflictingDecls is the subset of those whose two copies disagree, which
+	// the run has no trustworthy environment reading for. See the type's own
+	// comment.
+	ConflictingDecls ConflictingDecls
 
 	// DeclSources maps each routed declaration name to every lib file that
 	// declared it, by source id.
@@ -128,10 +138,11 @@ func PartitionLib(inputs []LibInput) (*PartitionResult, error) {
 // single unit to std:intl regardless of which lib file declared it.
 func PartitionLibWithOverlay(inputs []LibInput, overlay *Overlay) (*PartitionResult, error) {
 	out := &PartitionResult{
-		Buckets:      make(map[string][]dts_parser.Statement),
-		SourceFiles:  make(map[int]string, len(inputs)),
-		DeclSources:  map[string]set.Set[int]{},
-		Unreconciled: set.NewSet[string](),
+		Buckets:              make(map[string][]dts_parser.Statement),
+		SourceFiles:          make(map[int]string, len(inputs)),
+		DeclSources:          map[string]set.Set[int]{},
+		SharedWithWindowLibs: set.NewSet[string](),
+		ConflictingDecls:     set.NewSet[string](),
 	}
 	for _, in := range inputs {
 		if in.SourceID != 0 {
@@ -155,7 +166,10 @@ func PartitionLibWithOverlay(inputs []LibInput, overlay *Overlay) (*PartitionRes
 	}
 	overlayDrops := overlay.GlobalDrops()
 	matched := set.NewSet[string]()
-	windowDeclared := declaredByWindowLibs(inputs)
+	windowDecls := declaredByWindowLibs(inputs)
+	// The worker copies skipped below, kept so each name's two copies can be
+	// compared once every input has been read.
+	workerDecls := map[string][]string{}
 	for _, in := range inputs {
 		if in.Module == nil {
 			return nil, fmt.Errorf("partition: nil module for %s", in.SourceFile)
@@ -193,8 +207,9 @@ func PartitionLibWithOverlay(inputs []LibInput, overlay *Overlay) (*PartitionRes
 				}
 				out.DeclSources[name].Add(in.SourceID)
 			}
-			if WorkerLibSources.Contains(in.SourceFile) && windowDeclared.Contains(name) {
-				out.Unreconciled.Add(name)
+			if _, sharedName := windowDecls[name]; WorkerLibSources.Contains(in.SourceFile) && sharedName {
+				out.SharedWithWindowLibs.Add(name)
+				workerDecls[name] = append(workerDecls[name], declText(in, stmt))
 				out.Drops = append(out.Drops,
 					DropNote{Name: name, SourceFile: in.SourceFile})
 				continue
@@ -216,7 +231,52 @@ func PartitionLibWithOverlay(inputs []LibInput, overlay *Overlay) (*PartitionRes
 	for uri, stmts := range out.Buckets {
 		out.Buckets[uri] = mergeDecls(stmts)
 	}
+	// Iterated in map order, which is fine because the body only adds to a set.
+	for name, workerText := range workerDecls {
+		if !sameDeclText(windowDecls[name], workerText) {
+			out.ConflictingDecls.Add(name)
+		}
+	}
 	return out, nil
+}
+
+// declText returns the source text of one declaration, which is how two libs'
+// copies of a name are compared. It returns "" for a span the contents do not
+// cover, and sameDeclText reads that as a difference.
+func declText(in LibInput, stmt dts_parser.Statement) string {
+	sp := stmt.Span()
+	lo, hi := sp.Start.Offset, sp.End.Offset
+	if in.Contents == "" || lo < 0 || hi > len(in.Contents) || lo >= hi {
+		return ""
+	}
+	return in.Contents[lo:hi]
+}
+
+// sameDeclText reports whether two libs declare a name the same way.
+//
+// A name may be declared several times in one lib, since TypeScript merges an
+// interface across files, so each side is the whole list. The lists are sorted
+// before comparing, because the order two files are read in says nothing about
+// whether they agree.
+//
+// The comparison is over source text, doc comments included, so a name whose
+// two copies differ only in their prose counts as differing. That is the safe
+// direction: it puts the name in ConflictingDecls, which suppresses a check
+// rather than asserting something false.
+func sameDeclText(window, worker []string) bool {
+	if len(window) != len(worker) || len(window) == 0 {
+		return false
+	}
+	w := slices.Clone(window)
+	k := slices.Clone(worker)
+	sort.Strings(w)
+	sort.Strings(k)
+	for i := range w {
+		if w[i] == "" || w[i] != k[i] {
+			return false
+		}
+	}
+	return true
 }
 
 // renameTypeParams rewrites decl's type-parameter names to keep, matched
@@ -398,19 +458,19 @@ func liftGlobals(stmts []dts_parser.Statement) []dts_parser.Statement {
 // declaredByWindowLibs returns every top-level name the window lib files
 // declare, which is what a worker lib's copy of a shared name is skipped
 // against. See WorkerLibSources.
-func declaredByWindowLibs(inputs []LibInput) set.Set[string] {
-	names := set.NewSet[string]()
+func declaredByWindowLibs(inputs []LibInput) map[string][]string {
+	byName := map[string][]string{}
 	for _, in := range inputs {
 		if in.Module == nil || !WindowLibSources.Contains(in.SourceFile) {
 			continue
 		}
 		for _, stmt := range globalStatements(in.Module.Statements) {
 			if name := topLevelName(stmt); name != "" {
-				names.Add(name)
+				byName[name] = append(byName[name], declText(in, stmt))
 			}
 		}
 	}
-	return names
+	return byName
 }
 
 // mergeDecls performs TS-style declaration merging within a routed
@@ -1123,7 +1183,9 @@ func ParseLibFiles(dir string, basenames []string) ([]LibInput, error) {
 			parseErrs = append(parseErrs, fmt.Sprintf("%s: %v", name, errs))
 			continue
 		}
-		inputs = append(inputs, LibInput{SourceID: id, SourceFile: name, Module: mod})
+		inputs = append(inputs, LibInput{
+			SourceID: id, SourceFile: name, Module: mod, Contents: string(contents),
+		})
 	}
 	if len(parseErrs) > 0 {
 		return inputs, fmt.Errorf("parse errors: %s", strings.Join(parseErrs, "; "))
@@ -1167,12 +1229,13 @@ func ReportPartition(result *PartitionResult, w io.Writer) error {
 		// carrying the window lib's members, so a flat name list would read as
 		// the tree having lost it.
 		//
-		// Unreconciled is what separates that copy from an overlay drop the
-		// worker lib happens to declare. `ImportMeta` is both dropped by the
+		// SharedWithWindowLibs is what separates that copy from an overlay drop
+		// the worker lib happens to declare. `ImportMeta` is both dropped by the
 		// overlay and declared in lib.webworker.d.ts, and it is a drop rather
-		// than a copy the tree kept.
+		// than a copy the tree kept. Every skipped copy counts here, not just
+		// the ones whose two declarations disagree.
 		if WorkerLibSources.Contains(d.SourceFile) &&
-			result.Unreconciled.Contains(d.Name) {
+			result.SharedWithWindowLibs.Contains(d.Name) {
 			n, _ := skippedCopies.Get(d.SourceFile)
 			skippedCopies.Set(d.SourceFile, n+1)
 			continue

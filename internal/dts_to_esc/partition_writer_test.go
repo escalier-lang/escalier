@@ -20,7 +20,7 @@ func parseLib(t *testing.T, name, src string) LibInput {
 	source := &ast.Source{Path: name, Contents: src}
 	mod, errs := dts_parser.NewDtsParser(source).ParseModule()
 	require.Empty(t, errs, "parse %s", name)
-	return LibInput{SourceFile: name, Module: mod}
+	return LibInput{SourceFile: name, Module: mod, Contents: src}
 }
 
 func TestPartitionLib_DroppedSourceContributesNothing(t *testing.T) {
@@ -94,8 +94,58 @@ interface ServiceWorkerGlobalScope { readonly clients: Clients; }
 	require.Equal(t, []DropNote{
 		{Name: "ReadableStream", SourceFile: "lib.webworker.d.ts"},
 	}, res.Drops)
-	require.True(t, res.Unreconciled.Contains("ReadableStream"))
-	require.False(t, res.Unreconciled.Contains("ServiceWorkerGlobalScope"))
+	require.True(t, res.SharedWithWindowLibs.Contains("ReadableStream"))
+	require.False(t, res.SharedWithWindowLibs.Contains("ServiceWorkerGlobalScope"))
+	// The two copies of ReadableStream are declared the same way here, so the
+	// name is shared without conflicting and stays under the environment check.
+	require.False(t, res.ConflictingDecls.Contains("ReadableStream"))
+}
+
+// A name the two libs declare differently is the case the environment check
+// cannot answer: the tree carries the window copy's members under a name a
+// worker also has, so neither "window-only" nor "everywhere" is true of it.
+func TestPartitionLib_ASharedNameDeclaredTwoWaysConflicts(t *testing.T) {
+	t.Parallel()
+	dom := parseLib(t, "lib.dom.d.ts", `
+interface ReadableStream<R = any> { readonly locked: boolean; }
+interface FileReader { readonly result: string; }
+`)
+	worker := parseLib(t, "lib.webworker.d.ts", `
+interface ReadableStream<R = any> { readonly locked: boolean; }
+interface FileReader { readonly result: number; }
+`)
+
+	res, err := PartitionLib([]LibInput{dom, worker})
+	require.NoError(t, err)
+
+	// Both names are shared, so both worker copies are skipped.
+	require.True(t, res.SharedWithWindowLibs.Contains("ReadableStream"))
+	require.True(t, res.SharedWithWindowLibs.Contains("FileReader"))
+
+	// Only the one the two libs disagree on is left out of the check.
+	require.False(t, res.ConflictingDecls.Contains("ReadableStream"))
+	require.True(t, res.ConflictingDecls.Contains("FileReader"))
+}
+
+// Interface merging means a name can be declared several times in one lib, so
+// the comparison is over the whole list rather than one declaration. The order
+// the two files are read in says nothing about whether they agree.
+func TestPartitionLib_AMergedDeclarationComparesAsAWhole(t *testing.T) {
+	t.Parallel()
+	dom := parseLib(t, "lib.dom.d.ts", `
+interface Headers { get(name: string): string | null; }
+interface Headers { has(name: string): boolean; }
+`)
+	worker := parseLib(t, "lib.webworker.d.ts", `
+interface Headers { has(name: string): boolean; }
+interface Headers { get(name: string): string | null; }
+`)
+
+	res, err := PartitionLib([]LibInput{dom, worker})
+	require.NoError(t, err)
+
+	require.True(t, res.SharedWithWindowLibs.Contains("Headers"))
+	require.False(t, res.ConflictingDecls.Contains("Headers"))
 }
 
 func TestPartitionLib_RoutesByName(t *testing.T) {

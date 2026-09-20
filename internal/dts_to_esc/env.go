@@ -293,22 +293,22 @@ func envList(envs []Env) string {
 // parameter, a builtin, and a name the lib set uses without declaring, none of
 // which carry environments.
 //
-// A reference into or out of an unreconciled declaration is skipped too. Such a
+// A reference into or out of a conflicting declaration is skipped too. Such a
 // declaration reads as available everywhere while its members are the window's,
 // so both directions would be answered against a reading the run knows is wrong.
-// See the Unreconciled type.
+// See the ConflictingDecls type.
 //
-// An unreconciled declaration carrying `@env` is checked all the same. The run
+// A conflicting declaration carrying `@env` is checked all the same. The run
 // annotates no such declaration, so the decorator came from declEnvOverrides or
 // from an overlay, and both are a reader answering the question by hand.
 func CheckEnvs(
-	mods map[string]*StandaloneModule, unreconciled Unreconciled,
+	mods map[string]*StandaloneModule, conflicting ConflictingDecls,
 ) ([]EnvViolation, error) {
 	index, err := EnvIndex(mods)
 	if err != nil {
 		return nil, err
 	}
-	unread := unreconciled.Difference(annotatedDecls(mods))
+	unread := conflicting.Difference(annotatedDecls(mods))
 	var violations []EnvViolation
 	for _, uri := range sortedURIs(mods) {
 		found, err := checkModuleEnvs(uri, mods[uri].Module, index, unread)
@@ -355,7 +355,7 @@ func annotatedDecls(mods map[string]*StandaloneModule) set.Set[string] {
 
 // checkModuleEnvs reports every violating reference in one package.
 func checkModuleEnvs(
-	uri string, module *ast.Module, index map[string]set.Set[Env], unreconciled Unreconciled,
+	uri string, module *ast.Module, index map[string]set.Set[Env], conflicting ConflictingDecls,
 ) ([]EnvViolation, error) {
 	var violations []EnvViolation
 	var scanErr error
@@ -370,7 +370,7 @@ func checkModuleEnvs(
 			cls, isClass := decl.(*ast.ClassDecl)
 			if !isClass {
 				violations = append(violations,
-					envViolations(uri, name, "", declEnvs, declRefNames(decl), index, unreconciled)...)
+					envViolations(uri, name, "", declEnvs, declRefNames(decl), index, conflicting)...)
 				continue
 			}
 			// A class's members are checked one at a time, each against its own
@@ -384,10 +384,10 @@ func checkModuleEnvs(
 				}
 				violations = append(violations, envViolations(
 					uri, name, classElemLabel(elem), memberEnvs,
-					classElemRefNames(cls, elem), index, unreconciled)...)
+					classElemRefNames(cls, elem), index, conflicting)...)
 			}
 			violations = append(violations,
-				envViolations(uri, name, "", declEnvs, classOwnRefs(cls), index, unreconciled)...)
+				envViolations(uri, name, "", declEnvs, classOwnRefs(cls), index, conflicting)...)
 		}
 		return true
 	})
@@ -429,16 +429,16 @@ func classOwnRefs(cls *ast.ClassDecl) set.Set[string] {
 }
 
 // envViolations reports each name in refs that the index says is absent from an
-// environment envs claims. An unreconciled declaration is skipped, on either
+// environment envs claims. A conflicting declaration is skipped, on either
 // side of the reference.
 func envViolations(
 	uri, decl, member string,
 	envs set.Set[Env],
 	refs set.Set[string],
 	index map[string]set.Set[Env],
-	unreconciled Unreconciled,
+	conflicting ConflictingDecls,
 ) []EnvViolation {
-	if unreconciled.Contains(decl) {
+	if conflicting.Contains(decl) {
 		return nil
 	}
 	names := refs.ToSlice()
@@ -446,7 +446,7 @@ func envViolations(
 	var violations []EnvViolation
 	for _, name := range names {
 		target, declared := index[name]
-		if !declared || unreconciled.Contains(name) {
+		if !declared || conflicting.Contains(name) {
 			continue
 		}
 		missing := envs.Difference(target)

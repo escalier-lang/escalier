@@ -125,27 +125,32 @@ func dedicatedWorkerOnly() set.Set[Env] { return set.FromSlice([]Env{EnvDedicate
 func sharedWorkerOnly() set.Set[Env]    { return set.FromSlice([]Env{EnvSharedWorker}) }
 func serviceWorkerOnly() set.Set[Env]   { return set.FromSlice([]Env{EnvServiceWorker}) }
 
-// Unreconciled names the 629 declarations both web libs declare, which the run
-// has no trustworthy environment reading for.
+// ConflictingDecls names the declarations both web libs declare at different
+// types, which the run has no trustworthy environment reading for.
 //
 // The window lib's copy is what the tree carries and the worker lib's is
-// skipped, so the members and union arms in the tree are a window's while the
-// name itself exists in both. Neither reading is right. Marking such a
-// declaration for the window hides it from a worker that has it, and marking it
-// for both claims its window-shaped contents are reachable from a worker.
+// skipped. For a name the two libs declare the same way that costs nothing, and
+// the declaration reads as available everywhere, which is true of it. For a
+// name they declare differently the tree holds the window's members under a
+// name a worker also has, and neither reading is right: marking it for the
+// window hides it from a worker that has it, and marking it for both claims its
+// window-shaped contents are reachable from a worker.
 //
-// So it carries no `@env`, and CheckEnvs reads no reference into or out of one.
-// Checking against a reading the run knows is wrong would bury the findings that
-// are real under hundreds that are not.
+// So a conflicting declaration carries no `@env`, and CheckEnvs reads no
+// reference into or out of one. Checking against a reading the run knows is
+// wrong would bury the findings that are real.
 //
-// That gives up coverage over those 629. What it keeps is every reference among
-// the window-only and worker-only surfaces, which nothing checked before.
-// Merging the two copies of a shared declaration, using the per-member
-// provenance the run already records, is what restores the rest. See #1633.
+// Only the conflicts are listed. A shared name the two libs agree on is checked
+// like any other, which is what keeps the suppression to the declarations that
+// need it.
+//
+// What that gives up is coverage over the conflicts alone. Merging the two
+// copies, using the per-member provenance the run already records, is what
+// restores it. See #1633.
 //
 // A PartitionResult carries the set rather than a package variable holding it,
 // so two runs in one process cannot see each other's.
-type Unreconciled = set.Set[string]
+type ConflictingDecls = set.Set[string]
 
 // packageDecl addresses one declaration by the package holding it. The package
 // is half the key because a bare name would widen a same-named declaration
