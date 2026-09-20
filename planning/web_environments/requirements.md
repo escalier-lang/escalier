@@ -108,12 +108,16 @@ family. Environments cut across those families, so a package is not importable a
 a unit. `web:dom` mixes the 931 window-only declarations with the 264 portable
 ones, and the canvas surface a worker needs sits among them.
 
-### 3.6 The environment vocabulary is finer than the source data
+### 3.6 The environment vocabulary is both finer and coarser than the platform
 
-The tree distinguishes four environments. `lib.webworker.d.ts` is a single file
-covering all three worker kinds, so it cannot express the difference. Every
-per-worker-kind fact in the repository comes from a 24-entry hand-written table at
-`internal/dts_to_esc/env_table.go:91-121`.
+The tree distinguishes four environments where the platform has nine, and
+`lib.webworker.d.ts` is a single file covering three of them, so it cannot
+express the difference either. Every per-worker-kind fact in the repository comes
+from a 24-entry hand-written table at `internal/dts_to_esc/env_table.go:91-121`.
+
+`vocabulary.md` sets out the nine and what matching them costs. WebIDL answers
+both halves: `[Exposed]` per interface, and `[Global=...]` for the scopes an
+`Exposed` value resolves against.
 
 This matters for `Transferable`, whose arms are not uniformly available. Six of
 the sixteen transferable interfaces are `Exposed=(DedicatedWorker, Window)` and
@@ -253,6 +257,18 @@ event map, so every scope contributes a different one. `location` is a
 declarations the hoist has to fall back on the intersection of these, which is the
 same loss `MessageEvent.source` already takes.
 
+**F10. The environment vocabulary matches the platform's globals.** `@env` names
+the nine global scopes WebIDL declares with `[Global=...]`, and the two group
+names those scopes answer to. An unannotated declaration means all nine, which
+is `Exposed=*`. `vocabulary.md` in this folder has the names and what the change
+costs.
+
+Two consequences, both breaking. `worker` covers four environments rather than
+three, because `RTCIdentityProviderGlobalScope` is
+`[Global=(Worker, RTCIdentityProvider)]`. And an unannotated declaration claims
+nine environments rather than four, so around 290 declarations that carry no
+decorator today need one.
+
 ### 4.2 Non-functional
 
 **N1. One fact, one place.** Where a declaration exists is a property of the
@@ -286,8 +302,9 @@ members does not make the classes removable.
 - Feature detection at runtime in user code, such as narrowing on
   `typeof OffscreenCanvas !== "undefined"`. Worth having, not needed for any
   requirement here.
-- Node, Deno and Bun. The environment vocabulary is browser-shaped today and
-  widening it is separate work.
+- Node, Deno and Bun. Widening the vocabulary past the browser is separate work.
+  The worklets are not in this exclusion: they are browser global scopes and F10
+  brings them in.
 - Replacing TypeScript's libs as the conversion input. WebIDL is proposed below as
   a supplement for facts the libs do not carry, not as a replacement.
 
