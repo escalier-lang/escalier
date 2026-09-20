@@ -107,8 +107,6 @@ of the interfaces exposed in each:
 worklets are not a corner: `LayoutWorklet` and `PaintWorklet` together carry
 more interfaces than `ServiceWorker`.
 
-This does not have to be solved here. It has to be decided: either the
-vocabulary grows to match the IDL, or the non-goals record that worklets are out
-of scope and something rejects an `Exposed` value the vocabulary cannot map.
-Silently dropping a global the IDL names would put the tree back where the file
-name left it, claiming more than it knows.
+Decided: the vocabulary grows to match. F10 in `requirements.md` states it and
+`vocabulary.md` has the nine names, the two groups, and the roughly 290
+declarations that gain a decorator as a result.
