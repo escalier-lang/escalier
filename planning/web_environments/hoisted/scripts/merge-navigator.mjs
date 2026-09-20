@@ -1,5 +1,8 @@
-// Builds the merged Navigator: one declaration serving every environment, with
-// `@env("window")` on the parts only a page has.
+// Appends the merged Navigator to core.esc: one declaration serving every
+// environment, with `@env("window")` on the parts only a page has.
+//
+// Run after emit.mjs, which writes core.esc. Running emit.mjs again drops this
+// section, so the two go together.
 //
 // The committed tree cannot show this yet. Its `Navigator` extends
 // `NavigatorAutomationInformation` alone, having dropped the other ten mixins,
@@ -55,7 +58,12 @@ const ownLines = ownMembers(esc, "Navigator", /^export declare class Navigator e
   .filter((m) => ownWindowOnly.includes(m.name)).length;
 
 const header = [
-  "// The merged Navigator, written the way this analysis proposes.",
+  "// ---------------------------------------------------------------------------",
+  "// The merged Navigator, and the mixins it is built from.",
+  "//",
+  "// `navigator` above is typed against this. It sits in web:core because the",
+  "// global exists in every environment, which means web:core imports the",
+  "// packages the window-only members name.",
   "//",
   `// WorkerNavigator is a strict subset of Navigator: ${workerMixins.length} of the ${windowMixins.length} mixins`,
   `// and ${ownWorker.length} of the ${ownWindow.length} own members, with no member they share differing in`,
@@ -91,7 +99,9 @@ for (const mem of ownMembers(esc, "Navigator", /^export declare class Navigator 
 }
 out.push("}");
 
-writeFileSync(`${OUT}/merged-navigator.esc`, out.join("\n") + "\n");
+const corePath = `${OUT}/core.esc`;
+const core = readFileSync(corePath, "utf8").replace(/\n+$/, "\n");
+writeFileSync(corePath, core + "\n" + out.join("\n") + "\n");
 console.log(
   `mixins: ${sharedMixins.length} shared, ${windowOnlyMixins.length} window-only covering ${coveredByMixins} members; ` +
   `own: ${ownWindow.length - ownWindowOnly.length} shared, ${ownWindowOnly.length} window-only`,
