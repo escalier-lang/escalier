@@ -257,6 +257,12 @@ event map, so every scope contributes a different one. `location` is a
 declarations the hoist has to fall back on the intersection of these, which is the
 same loss `MessageEvent.source` already takes.
 
+**F11. A worklet is a compilation target with packages of its own.** A paint
+worklet is a module the browser loads, so it is a target in the same sense a
+worker is, and F1 through F5 apply to it unchanged. The `web:*` packages cover
+the worklet surface, which they do not today: the CSS Typed OM sits in
+window-only `web:dom`, so a paint worklet cannot name `CSSUnitValue`.
+
 **F10. The environment vocabulary matches the platform's globals.** `@env` names
 the nine global scopes WebIDL declares with `[Global=...]`, and the two group
 names those scopes answer to. An unannotated declaration means all nine, which
@@ -296,6 +302,55 @@ object is in scope.
 **N6. The scope classes survive as types.** Event-handler signatures annotate
 `this` with the scope class and event maps are keyed by it, so hoisting the
 members does not make the classes removable.
+
+### 4.3 Phases
+
+The work lands in three phases, one environment family at a time: `window`, then
+the workers, then the worklets. A phase is done when programs targeting that
+family compile correctly and the requirements marked for it hold.
+
+| requirement | window | workers | worklets |
+| --- | --- | --- | --- |
+| F1 target environment | ✅ | extend | extend |
+| F2 unsatisfiable imports | — | ✅ | extend |
+| F3 reference check | ✅ | extend | extend |
+| F4 nameable where provided | partial | ✅ | ✅ |
+| F5 per-environment declarations | — | ✅ | extend |
+| F6 globals through a binding | ✅ | extend | extend |
+| F7 hoisted forms | ✅ | extend | extend |
+| F8 hoisted environments | ✅ | extend | extend |
+| F9 no double hoist | ✅ | extend | extend |
+| F10 vocabulary | ✅ | — | — |
+| F11 worklets as targets | — | — | ✅ |
+| N1 one fact, one place | ✅ | — | — |
+| N2 importable as a unit | partial | ✅ | ✅ |
+| N3 derived claims | ✅ | — | — |
+| N4 cold load | ✅ | ✅ | ✅ |
+| N5 bare reference | ✅ | extend | extend |
+| N6 scope classes as types | ✅ | extend | extend |
+
+✅ lands in that phase. "extend" means the phase applies an existing mechanism to
+more environments without changing it. "partial" means the phase does as much as
+one family allows.
+
+Three of these are phase-one work for a reason worth stating.
+
+**F10 lands whole in phase one, before any worklet is a target.** A declaration
+that says `@env("window")` is making a claim about the other eight environments.
+Without all nine names the claim cannot be written down, so the vocabulary has to
+be complete even while only `window` is an accepted target.
+
+**N3 lands with it.** `@env("window")` is only correct if something knows the
+declaration is absent everywhere else, and `Exposed` is what knows. Ingesting
+WebIDL is not a later refinement; phase one's annotations are wrong without it.
+
+**F1 lands in phase one even though there is one target.** The target has to be
+recorded and threaded through before F3 has anything to check against. What
+phases is the set of accepted values, not the mechanism.
+
+F2 and F5 have nothing to do in phase one. A single environment cannot
+contradict itself, and no set of imports is unsatisfiable when every package a
+window program can reach is a window package.
 
 ## 5. Non-goals
 

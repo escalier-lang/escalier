@@ -78,15 +78,17 @@ case the four-name vocabulary cannot state at all.
 So the worklets are not a corner to postpone. `LayoutWorklet` and `PaintWorklet`
 each appear on more interfaces than `SharedWorker` does.
 
-## Open
+## Settled
 
-**Is a program ever compiled for a worklet?** A paint worklet is a module the
-browser loads, so it is a compilation target in the same sense a worker is. If
-it is one, the target environment from F1 has to accept these names. If it is
-not, the names still have to exist so a declaration can say where it lives, but
-nothing would ever resolve against them as a target.
+**A worklet is a compilation target.** A paint worklet is a module the browser
+loads, so the target environment from F1 accepts these names and every rule that
+reads it applies to a worklet unchanged.
 
-**Does `web:*` gain worklet packages?** The CSS Typed OM is in `web:dom` today,
-which is window-only, so a paint worklet cannot name `CSSUnitValue`. That is the
-same reachability failure `transferable.md` records, in a family that has not
-been looked at yet.
+**`web:*` gains worklet packages.** The CSS Typed OM is in window-only `web:dom`
+today, so a paint worklet cannot name `CSSUnitValue`. That is the same
+reachability failure `transferable.md` records, in a family nothing has looked at
+yet, and F11 covers it.
+
+Both land in phase three. The vocabulary itself lands in phase one, because a
+declaration that says `@env("window")` is making a claim about the other eight
+environments and cannot be written without the names for them.
