@@ -54,7 +54,7 @@ const PACKAGE_OF = {
   onerror: "core", onrejectionhandled: "core", onunhandledrejection: "core",
   onlanguagechange: "core", onoffline: "core", ononline: "core",
   onmessage: "core", onmessageerror: "core", postMessage: "core",
-  self: "core",
+  self: "core", location: "core", navigator: "core",
 
   // Family packages named by the qualifier already in the signature.
   fetch: "fetch",
@@ -77,10 +77,23 @@ const PACKAGE_OF = {
 // Members whose form differs by environment go to the package that owns each
 // form rather than to one package.
 const SPLIT = {
-  location: { window: "dom", worker: "worker" },
-  navigator: { window: "dom", worker: "worker" },
   close: { window: "dom", worker: "worker" },
   name: { window: "dom", worker: "worker" },
+};
+
+// `location` and `navigator` exist in every environment and only their types
+// differ, so both go to web:core. Each type has a shared part the platform has
+// already factored out, and the note is emitted above the declaration because
+// the split has to happen before this compiles. See README.md.
+const SHARED_PART = {
+  location:
+    "WorkerLocation is Location without ancestorOrigins, assign, reload and\n" +
+    "// replace. The ten shared members are what web:core can name.",
+  navigator:
+    "Navigator and WorkerNavigator share seven mixins: NavigatorBadge,\n" +
+    "// NavigatorConcurrentHardware, NavigatorID, NavigatorLanguage,\n" +
+    "// NavigatorLocks, NavigatorOnLine and NavigatorStorage. Those are what\n" +
+    "// web:core can name.",
 };
 
 // The event-map machinery is a property of each scope rather than a global a
@@ -122,6 +135,7 @@ for (const g of globals) {
     pkgs.add(pkg);
     const dec = envDecorator(v.envs);
     const lines = [];
+    if (SHARED_PART[g.name]) lines.push(`// NEEDS A TYPE SPLIT: ${SHARED_PART[g.name]}`);
     if (dec) lines.push(dec);
     lines.push(`@js("${g.name}")`);
     for (const sig of v.text.split("\n")) lines.push(hoist(g.name, sig));

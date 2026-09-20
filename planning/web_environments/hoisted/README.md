@@ -45,16 +45,17 @@ are assigned by family in the table inside `emit.mjs`, reproduced in
 
 ## Results
 
-246 declarations from 227 distinct globals. The gap is the divergent names,
-which contribute one declaration per environment.
+240 declarations from 227 distinct globals, written as 246 signature lines
+because an overload set stays several lines. The gap between 240 and 227 is the
+divergent names, which contribute one declaration per environment.
 
 | package | declarations |
 | --- | --- |
-| `web:dom` | 181 |
-| `web:core` | 38 |
-| `web:worker` | 18 |
-| `web:canvas` | 2 |
+| `web:dom` | 176 |
+| `web:core` | 40 |
+| `web:worker` | 16 |
 | `web:storage` | 2 |
+| `web:canvas` | 1, two signatures |
 | `web:cache`, `web:crypto`, `web:fetch`, `web:indexeddb`, `web:performance` | 1 each |
 
 Environments:
@@ -62,7 +63,7 @@ Environments:
 | `@env` | count |
 | --- | --- |
 | `@env("window")` | 189 |
-| none, meaning every environment | 24 |
+| none, meaning every environment | 18 |
 | `@env("service_worker")` | 13 |
 | `@env("worker")` | 11 |
 | `@env("dedicated_worker")` | 4 |
@@ -105,14 +106,54 @@ Every one of these needs F5. Without per-environment declarations the hoist has
 to intersect the three, which loses `ExtendableMessageEvent` for the service
 worker.
 
-### Three names split across packages
+### A global on every environment belongs in a package every environment can import
 
-`location`, `name` and `navigator` each take one form in a page and another in a
-worker, and the two forms belong to different packages. `location` is a
-`Location` in `web:dom` and a `WorkerLocation` in `web:worker`; `navigator`
-likewise. So a per-environment declaration is not always a pair of declarations
-in one file. Some pairs straddle two packages, which the resolution rule has to
-allow.
+`location` and `navigator` are both on `Window` and on `WorkerGlobalScope`, so
+both are available everywhere. An earlier pass sent them to `web:dom` and
+`web:worker` on the strength of their types, which made them the only two of the
+29 every-environment globals routed to environment-specific packages. A portable
+program would then need a different import per environment to reach one global.
+
+Both are in `web:core` here instead. That is not free, because their types
+differ, and moving a type wholesale does not work:
+
+| type | size |
+| --- | --- |
+| `Location` | 13 members |
+| `WorkerLocation` | 10 members, exactly `Location` without `ancestorOrigins`, `assign`, `reload` and `replace` |
+| `Navigator` | 11 mixins and 69 own members |
+| `WorkerNavigator` | 7 mixins and 3 own members |
+
+`Navigator` reaches most of the browser, so it cannot move to `web:core`.
+
+The platform has already factored out the shared part, which is the way through.
+`Navigator` and `WorkerNavigator` share seven mixins exactly, `NavigatorBadge`,
+`NavigatorConcurrentHardware`, `NavigatorID`, `NavigatorLanguage`,
+`NavigatorLocks`, `NavigatorOnLine` and `NavigatorStorage`. The four the window
+adds are `NavigatorAutomationInformation`, `NavigatorContentUtils`,
+`NavigatorCookies` and `NavigatorPlugins`. `WorkerLocation` is a strict subset of
+`Location` on the same principle.
+
+So the shared surface is identified in the source data already. `web:core` can
+hold the shared mixins and a `location` and `navigator` typed against them, while
+`web:dom` and `web:worker` keep the environment-specific extensions. The two
+declarations in `core.esc` carry a `NEEDS A TYPE SPLIT` comment, since they name
+the unsplit types and would not compile as written.
+
+**This is a third option for F5.** Per-environment copies and per-arm
+annotations both assume the divergence is irreducible. Where the platform
+factored a mixin out, the shared part can be hoisted and only the extension left
+behind, which needs neither. It does not cover everything: `ExtendableMessageEvent`
+extends `ExtendableEvent`, not `MessageEvent`, so `onmessage` has no shared type
+and still needs F5 proper.
+
+### `name` still splits across packages
+
+`name` is a `string` in both a page and a worker, so the types agree, but it is
+on `Window`, `DedicatedWorkerGlobalScope` and `SharedWorkerGlobalScope` and not
+on `ServiceWorkerGlobalScope`. It stays in `web:dom` and `web:worker` here.
+Whether a per-environment pair may straddle two packages is a question the
+resolution rule has to answer either way.
 
 ### `requestAnimationFrame` fits no existing package
 
@@ -142,6 +183,8 @@ Both are left out of the files here and need a decision of their own.
   `WorkerGlobalScope`. Their event types, `ErrorEvent` and
   `PromiseRejectionEvent`, are in `web:dom` today, so this placement assumes
   those move with them.
+- **`location` and `navigator` go to `web:core`** on the reasoning above,
+  conditional on the type split.
 - **`createImageBitmap` goes to `web:canvas`,** the package Stage 2 of the
   implementation plan proposes. It has nowhere else to go that a worker can
   import.
