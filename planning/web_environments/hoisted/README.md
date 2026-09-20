@@ -173,10 +173,28 @@ in the type itself, it does not. `location` needs F5 for mutability and
 `onmessage` needs it for type, since `ExtendableMessageEvent` extends
 `ExtendableEvent` rather than `MessageEvent`.
 
-**The `Navigator` merge is blocked today.** The converted `Navigator` extends
-only `NavigatorAutomationInformation`, having dropped the other ten mixins, so
-the tree cannot yet show what the merged type looks like. That is a converter
-bug rather than a partitioning question and is recorded separately.
+**The merged `Navigator` is in `merged-navigator.esc`.** The environment lands
+in two places rather than on 26 members. The four mixins only a page has carry
+`@env("window")` where they are declared, covering seven members with no
+per-member annotation, and the 16 that are `Navigator`'s own are tagged
+individually. `WorkerNavigator` goes away.
+
+That file uses `implements` for the eleven mixins, which is #1648's proposal:
+
+```
+@js("Navigator")
+export declare class Navigator implements
+    NavigatorBadge, NavigatorConcurrentHardware, NavigatorID, NavigatorLanguage,
+    NavigatorLocks, NavigatorOnLine, NavigatorStorage,
+    NavigatorAutomationInformation, NavigatorContentUtils, NavigatorCookies,
+    NavigatorPlugins {
+```
+
+The committed tree cannot produce this yet. Its `Navigator` extends
+`NavigatorAutomationInformation` alone, having dropped the other ten, so the
+generator takes the mixin list from TypeScript and the member text from the
+tree's own mixin declarations, which are all present. That drop is #1648, a
+converter bug rather than a partitioning question.
 
 ### `name` still splits across packages
 
