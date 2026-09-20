@@ -1,0 +1,215 @@
+# 00 — Current state
+
+Measured at `6c620c2`. Every number below is reproducible; the method is in
+§"How these numbers were taken".
+
+## What has landed
+
+The solver is further along than a reader of [01-milestones.md](../simple_sub/01-milestones.md)
+would guess, because most milestone sections carry no status line.
+
+| Milestone | State | Evidence |
+| --- | --- | --- |
+| M1–M2.5 | landed | status lines in `01-milestones.md` |
+| M3 | landed | `poly.go`, `overload.go`, `probe.go`, `simplify.go` |
+| M4, M4.5 | landed | status line; `script.go` is the M4.5 entry point |
+| M5 | landed | `infer_class.go`, `classes.go`, `inherit.go`, `super.go` |
+| M6 | PR1–PR6, PR2.5, PR2.7, PR8 landed; PR7 open | `m6-implementation-plan.md` status block |
+| M6.5 | landed | `lifetime_bounds.go`, `lifetime_coalesce.go` |
+| M7 | landed | `aliases.go` |
+| M7.5 | landed as machinery; the data is the gap | `stdlib_import.go`, `stdlib_closure.go`, `package_load.go` |
+| M9 | landed except PR9f | `m9-implementation-plan.md` dependency graph; `typeops.go`, `generator.go` |
+| M8, M10, M11, M11.5, M12 | not started | no `soltype` or `solver` reference in `internal/compiler/`, `internal/codegen/`, or `cmd/` |
+
+Size, non-test Go:
+
+| Package | Lines |
+| --- | --- |
+| `internal/solver` | 45,369 |
+| `internal/checker` | 28,374 |
+| `internal/type_system` | 7,946 |
+
+Tests: 139 files and 61,220 lines under `internal/solver`, against 43 files and
+34,649 lines under `internal/checker/tests`.
+
+## Library ingestion, measured per package
+
+The committed tree under `internal/interop/data/` holds 48 pseudo-packages plus
+`std:prelude`. Loading one package loads its import closure, so the count a
+package reports includes everything it reaches. The prelude loads on every run,
+so its own 2 diagnostics are the floor.
+
+| Package | Diagnostics |
+| --- | --- |
+| `std:prelude` alone | 2 |
+| `std:async`, `std:boolean`, `std:console`, `std:disposable`, `std:error`, `std:iterator`, `std:json`, `std:math`, `std:regexp`, `std:url`, `std:weak_ref` | 2 |
+| `std:map`, `std:set` | 4 |
+| `std:decorators`, `std:function`, `std:object`, `std:reflect` | 6 |
+| `std:proxy` | 7 |
+| `std:date`, `std:intl`, `std:number` | 17 |
+| `std:string` | 18 |
+| `std:bigint` | 24 |
+| `std:typed_arrays` | 215 |
+| `web:core` and the ten standalone `web:*` siblings | 224–279 |
+| `web:dom` and the eight packages that reach it | 2,707 |
+| every package at once | 2,741 |
+
+Eleven `std:*` packages are already clean, in the sense that they add nothing to
+the prelude's floor.
+
+## What the residual diagnostics actually are
+
+Across the whole tree, 2,397 of 2,741 are `cannot find type` and they concentrate
+on five names:
+
+| Name | Occurrences |
+| --- | --- |
+| `EventListenerOptions` | 457 |
+| `AddEventListenerOptions` | 457 |
+| `EventListenerOrEventListenerObject` | 456 |
+| `Event` | 334 |
+| `Window` | 125 |
+
+All five are DOM types, so the bulk of the grind sits behind `web:dom`. The
+`std:*` half reduces to four root causes:
+
+1. **`Unsupported: BigintTypeAnn`, 137 occurrences.** `internal/solver/type_ann.go`
+   has no arm for `*ast.BigintTypeAnn`. `internal/checker/infer_type_ann.go:99`
+   has one. Nearly all of these land in `std:typed_arrays` and `std:bigint`.
+2. **Unqualified sibling references in `std:typed_arrays`, 82 occurrences.**
+   `Int32Array`, `BigInt64Array`, `Uint8Array` and the rest fail to resolve bare
+   while `typed_arrays.Uint8Array` resolves, so the generated file names a
+   same-package sibling in a position the qualification pass does not rewrite.
+3. **`std:prelude`'s two constraint failures.** These reach every run.
+   - `cannot constrain if keyof T : K { never } else { keyof T } <: keyof T`
+     comes from `export declare type Omit<T, K: keyof any> = Pick<T, Exclude<keyof T, K>>`
+     at `internal/interop/data/std/prelude.esc:925`. `Exclude` leaves a residual
+     conditional, and the residual is then checked against `Pick`'s `K: keyof T`
+     bound instead of being deferred.
+   - `cannot constrain tuple[T] <: number` comes from
+     `static race<T: Array<unknown> | []>(values: T) -> Promise<Awaited<T[number]>>`
+     at `internal/interop/data/std/prelude.esc:599`, repeated for `any` at 645.
+     A numeric indexed access against a type parameter whose bound includes the
+     empty tuple constrains the tuple itself against `number`.
+4. **A long tail under 70 occurrences total** — `owned-mutable field annotation
+   is not allowed`, `Unsupported: typeof of a name that is not a readable value`,
+   two overload-distinguishability reports, and a handful of inherited-member
+   redeclarations.
+
+None of the four is a pseudo-package problem. Three are solver gaps and one is a
+generator gap.
+
+## What no Escalier source in this repository imports
+
+Two fixtures carry an `import` statement, `fixtures/stdlib_import_local` for
+`std:math` and `fixtures/stdlib_import_class_via_namespace` for `std:date`. Both
+are marked `DISABLED`. No fixture imports a `web:*` package, and no fixture
+imports from `node_modules`.
+
+Fixtures naming a stdlib type without importing it, counted by name:
+
+| Name | Fixtures | Reachable today |
+| --- | --- | --- |
+| `Array` | 9 | yes, `std:prelude` exports it |
+| `Symbol` | 7 | yes |
+| `Promise` | 1 | yes |
+| `console` | 8 | no |
+| `String` | 4 | no |
+| `Date`, `Number` | 3 each | no |
+| `Object` | 2 | no |
+| `Math`, `JSON`, `Map`, `Set`, `RegExp` | 0 | — |
+
+So roughly 20 of 73 fixtures need an added `import "std:…"` line, and the rest
+need nothing. `std:prelude` is ambient in the solver, which is what already
+covers `Array`, `Promise`, and `Symbol`.
+
+The old checker cannot resolve these imports against the committed tree, which
+is why both stdlib fixtures are disabled. Adding imports to a fixture therefore
+breaks the old-checker harness on that fixture. The consequence for sequencing
+is in [01-cutover-plan.md](01-cutover-plan.md) P2: the fixture migration rides
+with the flip rather than preceding it.
+
+## Integration surface
+
+### Compiler
+
+`internal/compiler/compiler.go` reaches the checker through **five**
+`checker.NewChecker` sites across six exported entry points: `CheckLib`,
+`CheckPackage`, `CheckBinScript`, `Compile`, `CompilePackage`, and
+`CompileScript`. The `00-overview.md` boundary analysis says three; it has grown
+since.
+
+`type_system.Namespace` also threads through the public signatures of
+`CheckBinScript`, `CompileScript`, and `collectUsedLibSymbols`. That is the
+`lib/` to `bin/` seam: a script is checked against the namespace the library
+module produced.
+
+### Codegen
+
+51 references to `type_system` or `InferredType()`, in four files:
+
+| File | References | What they do |
+| --- | --- | --- |
+| `dts.go` | 17 | `.d.ts` emission; `buildTypeAnn(type_sys.Type)` walks a whole type |
+| `builder.go` | 16 | JS emission |
+| `self_type_utils.go` | 15 | rewrites `Self` to `this` for `.d.ts` |
+| `js_lowering.go` | 3 | JS emission |
+
+The JS half is smaller than the count suggests. Across `builder.go` and
+`js_lowering.go` there are five `InferredType()` read sites, asking five
+questions: is the callee's type a nominal object, does it carry a constructor
+element, is this expression a function, does an optional-chaining target's union
+include `null` or `undefined`, and is a member expression's object a namespace.
+`js_lowering.go` also reads the AST's `BindingOwner` field, which M12 re-homes
+anyway. Everything else in JS emission is driven by the AST and the dep graph,
+both checker-agnostic.
+
+`.d.ts` emission is the real cost. `BuildDefinitions(depGraph, libNS)` consumes
+a `type_system.Namespace` and renders types through
+`buildTypeAnn(type_sys.Type)`, roughly half of `dts.go`'s 1,350 lines.
+
+### LSP
+
+`cmd/lsp-server` holds 86 non-test references to `checker` or `type_system`, 76
+of them in `completion.go`. `completion_test.go` holds 51 more.
+
+## Gaps between the solver's API and the compiler's needs
+
+1. **No lib-scope argument on `InferScript`.** `InferScript(script, source)`
+   parents the script scope to the prelude. The compiler needs a script checked
+   against the library module's scope, which is what `CheckBinScript` and
+   `CompileScript` do with `libNS`.
+2. **`ModuleResult` does not carry the dep graph.** Codegen takes one.
+   `inferDepGraph` builds it internally from `dep_graph.BuildDepGraph(module)`,
+   which is deterministic and checker-agnostic, so the caller can rebuild it. A
+   field is cheaper than a second build.
+3. **No third-party `.d.ts` ingestion.** `bindImport` sends a non-scheme URI to
+   `loadPackage`, which asks the run's `ModuleSource`. No `ModuleSource` in the
+   tree routes `internal/resolver` to `dts_parser` to `dts_to_esc.ConvertModule`.
+   Nothing in `fixtures/` needs this. The coverage lives in
+   `internal/checker/tests/import_load_test.go`, `package_registry_test.go`, and
+   `jsx_test.go`, all of which P7 deletes.
+4. **No JSX inference.** `internal/solver` contains no reference to `JSX` at
+   all. The old checker has `infer_jsx.go` at 677 lines and `react_types.go` at
+   194, with 3,126 lines of tests. `internal/codegen/jsx.go` emits it, so this
+   is a shipped language feature with no solver implementation.
+   `react_types.go` reaches `@types/react` through `internal/resolver`, so JSX
+   sits downstream of gap 3. No fixture uses JSX, so the P2 harness will not
+   surface this.
+5. **No solver path at any compiler entry point.** Nothing under
+   `internal/compiler/`, `internal/codegen/`, or `cmd/` names `solver` or
+   `soltype`.
+
+## How these numbers were taken
+
+The per-package table came from a throwaway test in `internal/solver` that
+globs `../interop/data/{std,web}/*.esc`, builds a one-line module importing each
+URI in turn, runs `InferModuleAgainstStdlib(module, "../interop/data")`, and
+counts the messages `errorMessagesOf` returns. A package group reports as one
+message holding a nested count, so the counter adds the nested lines. P1 turns
+this into the committed ledger test, so the table above becomes a checked-in
+baseline rather than a one-off.
+
+Coupling counts came from `grep -c 'type_system\.\|InferredType()'` per file and
+`grep -rn 'checker.NewChecker'`. Fixture name counts came from
+`grep -rlw '<name>' fixtures --include='*.esc'`.
