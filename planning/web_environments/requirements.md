@@ -152,6 +152,41 @@ Cold barely moves because `buildPackageGraph` parses every file in the tree to
 read its import header, reached or not. Closure size costs about 18ms of warm
 inference per run, not the seconds earlier estimates suggested.
 
+### 3.9 A global is reachable only through a scope class
+
+Escalier does not give a program the global object. Declarations are organized
+into packages and imported under a namespace binding, so a page calls
+`fetch(...)` after `import "web:fetch"` rather than reading it off a global.
+
+The `*GlobalScope` classes do not follow that. Each one describes what a runtime
+puts in scope, and the tree carries them as classes whose members a program has no
+way to reach:
+
+```
+export declare class WorkerGlobalScope extends EventTarget {
+    readonly location: WorkerLocation,
+    readonly navigator: WorkerNavigator,
+    onerror: (fn (this: WorkerGlobalScope, ev: dom.ErrorEvent) -> any) | null,
+    readonly self: WorkerGlobalScope & typeof globalThis,
+    importScripts(mut self, ...urls: mut Array<string | url.URL>) -> unknown,
+    ...
+}
+```
+
+A worker program cannot call `importScripts`, read `location`, or set
+`onerror`. The declarations exist and describe the runtime correctly, and nothing
+can name them.
+
+Three members of `web:worker` are already hoisted by hand, `importScripts`,
+`onrtctransform` and `fonts`, so the shape is established but applied
+inconsistently. `web:fetch` shows the target form, a top-level declaration
+carrying the global's own name:
+
+```
+@js("fetch")
+export declare fn fetch(input: RequestInfo | url.URL, init?: RequestInit) -> Promise<Response>
+```
+
 ## 4. Requirements
 
 Functional requirements say what the compiler does that it does not do today.
@@ -181,6 +216,45 @@ Where environments genuinely disagree, as with `MessageEvent.source`, the tree
 states each environment's form rather than narrowing every environment to their
 intersection.
 
+**F6. A global is reached through a package binding.** Every member of a
+`*GlobalScope` class is a top-level declaration in the package owning its family.
+A worker program calls `worker.importScripts(...)` after importing
+`web:worker`, and no program is handed a scope object to read members off.
+
+**F7. Each member kind hoists to its matching top-level form.** A method becomes a
+`declare fn`, a read-only property a `declare val`, a settable event-handler
+property a `declare var`, and an overload set one `declare fn` per signature.
+The hoisted declaration carries `@js` with the global's own name, as
+`web:fetch`'s `fetch` already does.
+
+**F8. A hoisted member's environments come from the scope that declares it.**
+Resolution follows the inheritance chain, so a member reaches every environment
+whose scope class inherits it:
+
+| declaring scope | `@env` on the hoisted declaration |
+| --- | --- |
+| `WindowOrWorkerGlobalScope` | none, meaning every environment |
+| `WorkerGlobalScope` | `worker` |
+| `DedicatedWorkerGlobalScope` | `dedicated_worker` |
+| `SharedWorkerGlobalScope` | `shared_worker` |
+| `ServiceWorkerGlobalScope` | `service_worker` |
+| `Window` | `window` |
+
+**F9. A member a family package already declares is not hoisted twice.** `fetch`
+is a member of `WindowOrWorkerGlobalScope` and a top-level declaration of
+`web:fetch`. The hoist drops the member rather than adding a second binding for
+one global.
+
+F6 depends on F5. Several scope members share a name across scopes and differ in
+type, so hoisting them produces several top-level declarations of one name with
+disjoint environments. `onmessage` is a `MessageEvent` handler on
+`DedicatedWorkerGlobalScope` and an `ExtendableMessageEvent` handler on
+`ServiceWorkerGlobalScope`. `addEventListener` is generic over each scope's own
+event map, so every scope contributes a different one. `location` is a
+`WorkerLocation` in a worker and a `Location` in a page. Without per-environment
+declarations the hoist has to fall back on the intersection of these, which is the
+same loss `MessageEvent.source` already takes.
+
 ### 4.2 Non-functional
 
 **N1. One fact, one place.** Where a declaration exists is a property of the
@@ -200,6 +274,14 @@ and each entry says why it exists.
 **N4. Nothing regresses cold load.** Reorganization is measured against
 `BenchmarkStdlibClosureLoad`. #1643 covers the separate finding that comment
 attachment is 74% of cold load.
+
+**N5. A hoisted global compiles to a bare reference.** Codegen emits
+`importScripts(...)`, never a member access on a scope object, since no such
+object is in scope.
+
+**N6. The scope classes survive as types.** Event-handler signatures annotate
+`this` with the scope class and event maps are keyed by it, so hoisting the
+members does not make the classes removable.
 
 ## 5. Non-goals
 
@@ -231,6 +313,16 @@ attachment is 74% of cold load.
 5. **Is a type-only reference needed?** For `WindowProxy` in a portable union the
    answer looks like yes, since no split can make it portable. It is not needed
    for `OffscreenCanvas`, which a repartition reaches.
+
+6. **Does `Window` get the same treatment?** Symmetry says yes, and it is a far
+   larger change. `Window` and its mixins would add several hundred top-level
+   declarations to whichever packages own them.
+7. **Does `self` survive the hoist?** `WorkerGlobalScope.self` is the global
+   object, and exposing it returns the program the handle F6 withholds. Dropping it
+   removes an escape hatch that portable code sometimes wants.
+8. **What is the `this` of a hoisted listener?** `addEventListener` annotates
+   its callback with `this: DedicatedWorkerGlobalScope`, which stays true after
+   the hoist even though the receiver is no longer nameable.
 
 ## 7. Related issues
 
