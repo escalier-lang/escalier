@@ -197,9 +197,14 @@ and hold whether or not any functional requirement changes.
 
 ### 4.1 Functional
 
-**F1. A program has a target environment.** A program compiled for a runtime
-declares which one, or it is inferred from the packages it imports. Every rule
-below reads that one answer.
+**F1. A program has a target environment, or none.** A program compiled for a
+runtime declares which one, or it is inferred from the packages it imports.
+Every rule below reads that one answer.
+
+A program may also have no target, which is not an absence but a claim: the code
+runs in every environment. Its references have to resolve in all nine, so it
+reaches the intersection of what they provide. This is what a portable library
+is, and it is the reason a target is optional rather than required.
 
 **F2. An unsatisfiable set of imports is reported.** Importing two packages no
 single environment provides, such as `web:dom` and `web:worker`, is an error
@@ -207,7 +212,13 @@ naming both. Under inference this is the empty intersection of F1.
 
 **F3. A reference outside the program's environment is reported.** The check that
 a reference does not escape its environments applies to a user program, not only
-to the generated tree.
+to the generated tree. It is an error from the first release rather than a
+warning that hardens later.
+
+It covers a value reference in any position, including a pattern. Matching
+`x is OffscreenCanvas` while targeting an environment without `OffscreenCanvas`
+is a compile-time error, not a guard that never fires. Nothing is emitted that
+could throw `ReferenceError` at a narrowing site.
 
 **F4. Every declaration an environment provides is nameable in it.** A worker can
 name an `OffscreenCanvas` it receives, and everything reachable from it, without
@@ -257,12 +268,6 @@ event map, so every scope contributes a different one. `location` is a
 declarations the hoist has to fall back on the intersection of these, which is the
 same loss `MessageEvent.source` already takes.
 
-**F11. A worklet is a compilation target with packages of its own.** A paint
-worklet is a module the browser loads, so it is a target in the same sense a
-worker is, and F1 through F5 apply to it unchanged. The `web:*` packages cover
-the worklet surface, which they do not today: the CSS Typed OM sits in
-window-only `web:dom`, so a paint worklet cannot name `CSSUnitValue`.
-
 **F10. The environment vocabulary matches the platform's globals.** `@env` names
 the nine global scopes WebIDL declares with `[Global=...]`, and the two group
 names those scopes answer to. An unannotated declaration means all nine, which
@@ -274,6 +279,23 @@ three, because `RTCIdentityProviderGlobalScope` is
 `[Global=(Worker, RTCIdentityProvider)]`. And an unannotated declaration claims
 nine environments rather than four, so around 290 declarations that carry no
 decorator today need one.
+
+**F11. A worklet is a compilation target with packages of its own.** A paint
+worklet is a module the browser loads, so it is a target in the same sense a
+worker is, and F1 through F5 apply to it unchanged. The `web:*` packages cover
+the worklet surface, which they do not today: the CSS Typed OM sits in
+window-only `web:dom`, so a paint worklet cannot name `CSSUnitValue`.
+
+**F12. Tooling resolves the same target environment the compiler does.** The
+language server reads the target rather than assuming a page, so completion
+inside a worker does not offer `document`. It resolves the target from the file
+name, from the `package.json` of the package the file belongs to, or from
+`escalier.toml` at the repository root, in that order of specificity.
+
+**F13. The event-map machinery lives in `web:events`.** `addEventListener` and
+`removeEventListener` are generic over each scope's own event map, so they
+collide under one name when hoisted and need a package of their own. Whether the
+rest of the event model moves there from `web:core` is open.
 
 ### 4.2 Non-functional
 
@@ -303,6 +325,12 @@ object is in scope.
 `this` with the scope class and event maps are keyed by it, so hoisting the
 members does not make the classes removable.
 
+**N7. New fixtures cover the new import style rather than migrated ones.** The
+environment rules land in `internal/solver`, and the fixture suite that exercises
+`internal/checker` is not being backported. So the fixtures for this work are
+copies written against the new imports, and the existing ones keep running
+unchanged against the old path.
+
 ### 4.3 Phases
 
 The work lands in three phases, one environment family at a time: `window`, then
@@ -322,16 +350,24 @@ family compile correctly and the requirements marked for it hold.
 | F9 no double hoist | ✅ | extend | extend |
 | F10 vocabulary | ✅ | — | — |
 | F11 worklets as targets | — | — | ✅ |
+| F12 tooling reads the target | ✅ | extend | extend |
+| F13 `web:events` | ✅ | extend | extend |
 | N1 one fact, one place | ✅ | — | — |
 | N2 importable as a unit | partial | ✅ | ✅ |
 | N3 derived claims | ✅ | — | — |
 | N4 cold load | ✅ | ✅ | ✅ |
 | N5 bare reference | ✅ | extend | extend |
 | N6 scope classes as types | ✅ | extend | extend |
+| N7 new fixtures | ✅ | extend | extend |
 
 ✅ lands in that phase. "extend" means the phase applies an existing mechanism to
 more environments without changing it. "partial" means the phase does as much as
 one family allows.
+
+**#1648 is a phase-one prerequisite rather than a neighbour.** An interface with
+several supertypes converts to a class with one, so `Element` keeps `Node` and
+loses `querySelector`. The merged types this plan rests on cannot be written
+until `implements` contributes members to a `declare` class.
 
 Three of these are phase-one work for a reason worth stating.
 
@@ -369,9 +405,12 @@ window program can reach is a window package.
    declarations inside. Either it is redefined as the package's importability,
    which is a real and distinct fact, or it goes and importability is derived
    from the declarations.
-2. **How does a program declare its environment?** A `package.json` field, a
-   compiler flag, or inference from the intersection of its imports. Inference
-   gives the `web:dom` plus `web:worker` error for free as an empty intersection.
+2. **How does a program declare its environment?** Answered by F1 and F12. It
+   is read from the file name, the package's `package.json`, or `escalier.toml`
+   at the repository root, most specific first, and a program may declare none,
+   which claims every environment. What remains is the spelling of the
+   `package.json` and `escalier.toml` keys.
+
 3. **Per-environment declarations or per-arm annotations?** #1613 proposes
    annotating union arms. Emitting one declaration per environment is simpler and
    needs no new annotation granularity, but it makes name resolution

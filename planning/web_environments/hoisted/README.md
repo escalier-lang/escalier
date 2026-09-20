@@ -215,12 +215,21 @@ wider than the declaration needs. This is N2 biting: the packages are not carved
 along environment lines, so a member spanning an unusual pair has nowhere exact
 to go.
 
-### `addEventListener` is not hoisted
+### `addEventListener` and `removeEventListener` go to `web:events`
 
-`addEventListener` and `removeEventListener` are generic over each scope's own
-event map, so hoisting yields one per scope, all colliding. They are also the
-only members that are more the scope's machinery than a global a program calls.
-Both are left out of the files here and need a decision of their own.
+Both are generic over each scope's own event map, so hoisting yields one per
+scope, all colliding on the name. They are also the only members that are more
+the scope's machinery than a global a program calls, and they are the most used
+globals in the set.
+
+They go to a new `web:events` package. That leaves one thing to settle: whether
+the rest of the event model moves with them. `Event`, `EventTarget`,
+`EventListener`, `EventListenerOptions` and `AddEventListenerOptions` are in
+`web:core` today, and a `web:events` holding only the two functions would name
+all of them across a package boundary.
+
+The files here still leave both out, since their per-scope forms need F5 and the
+event maps need somewhere to live first.
 
 ## Assignments worth arguing about
 
