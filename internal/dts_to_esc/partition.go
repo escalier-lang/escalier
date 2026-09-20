@@ -526,22 +526,55 @@ var webPackages = []struct {
 		// carries it rather than any one of them.
 	}},
 	{"web:workers", "web/workers.window.esc", []string{
-		// The worker side of the API, declared only by lib.webworker.d.ts. The
-		// four scope types nest — service ⊃ shared ≈ dedicated ⊃ the base — and
-		// each is what `self` is in that kind of worker.
+		// The document side of workers: what a page constructs and the events
+		// it gets back. The scope a worker runs inside is in web:worker, which
+		// a page cannot import.
+		"Worker", "WorkerOptions", "WorkerType",
+		"SharedWorker",
+		"AbstractWorker", "WorkerEventMap",
+	}},
+	{"web:worker", "web/worker.worker.esc", []string{
+		// Everything a worker has and a page does not. Gathering it here lets
+		// the package name say where its declarations run, so a page is turned
+		// away at the import rather than at each name it reaches for.
+		//
+		// This is the one place the API-family partition in §4.2 gives way to
+		// the runtime split. A family that straddles the line cannot say where
+		// its declarations run, and this package can, so web:file keeps `Blob`
+		// while `FileReaderSync` moves here, and web:push keeps `PushManager`
+		// while `PushEvent` moves.
+
+		// The four scope types nest — service ⊃ shared ≈ dedicated ⊃ the base —
+		// and each is what `self` is in that kind of worker.
 		"WorkerGlobalScope", "WorkerGlobalScopeEventMap",
 		"WorkerLocation", "WorkerNavigator", "importScripts",
 		"DedicatedWorkerGlobalScope", "DedicatedWorkerGlobalScopeEventMap",
 		"SharedWorkerGlobalScope", "SharedWorkerGlobalScopeEventMap",
-		// The document side of workers: what a page constructs and the
-		// events it gets back. The scope a worker runs inside —
-		// `WorkerGlobalScope`, `DedicatedWorkerGlobalScope`,
-		// `SharedWorkerGlobalScope`, `WorkerLocation`,
-		// `WorkerNavigator` — is declared only by the worker host lib,
-		// which DroppedSources ignores, so no entry here would match.
-		"Worker", "WorkerOptions", "WorkerType",
-		"SharedWorker",
-		"AbstractWorker", "WorkerEventMap",
+		"ServiceWorkerGlobalScope", "ServiceWorkerGlobalScopeEventMap",
+
+		// The clients a service worker reaches, and the events only its scope's
+		// map declares. An event goes with the scope whose event map declares
+		// it rather than with the API family that names it, which is what
+		// brings ExtendableEvent, FetchEvent and PushEvent here.
+		"Client", "Clients", "WindowClient", "FrameType",
+		"ExtendableEvent", "ExtendableEventInit",
+		"ExtendableMessageEvent", "ExtendableMessageEventInit",
+		"FetchEvent", "FetchEventInit",
+		"NotificationEvent", "NotificationEventInit",
+		"PushEvent", "PushEventInit", "PushMessageData", "PushMessageDataInit",
+
+		// The encoded-transform surface a dedicated worker receives.
+		// DedicatedWorkerGlobalScopeEventMap is what declares `rtctransform`.
+		"RTCTransformEvent", "RTCRtpScriptTransformer", "onrtctransform",
+
+		// The synchronous file API. Blocking is acceptable off the main thread
+		// and nowhere else.
+		"FileReaderSync", "FileSystemSyncAccessHandle", "FileSystemReadWriteOptions",
+
+		// Declared by the worker host lib alone, so web:dom's residual rule
+		// would otherwise take them.
+		"fonts",
+		"MediaStreamTrackProcessor", "MediaStreamTrackProcessorInit",
 	}},
 	{"web:webgl", "web/webgl.window.esc", []string{
 		"WebGLRenderingContext", "WebGLRenderingContextBase",
@@ -641,8 +674,6 @@ var webPackages = []struct {
 		"AudioTimestamp",
 	}},
 	{"web:web_rtc", "web/web_rtc.window.esc", []string{
-		// Encoded-transform types a dedicated worker receives.
-		"RTCTransformEvent", "RTCRtpScriptTransformer", "onrtctransform",
 		// Symbols MDN documents under WebRTC that are absent from the
 		// pinned lib.dom.d.ts (no partition entry needed today):
 		// RTCIdentityAssertion, RTCIdentityProvider,
@@ -759,16 +790,9 @@ var webPackages = []struct {
 		"IDBValidKey", "IDBArrayKey",
 	}},
 	{"web:service_worker", "web/service_worker.window.esc", []string{
-		// The scope side, declared only by lib.webworker.d.ts. An event goes
-		// with the scope whose event map declares it rather than with the API
-		// family that names it, which is what keeps ExtendableEvent and
-		// FetchEvent here instead of in a package of their own.
-		"ServiceWorkerGlobalScope", "ServiceWorkerGlobalScopeEventMap",
-		"Client", "Clients", "WindowClient",
-		"ExtendableEvent", "ExtendableEventInit",
-		"ExtendableMessageEvent", "ExtendableMessageEventInit",
-		"FetchEvent", "FetchEventInit",
-		"NotificationEvent", "NotificationEventInit",
+		// The page's view of a service worker. The scope side is in
+		// web:worker, which a page cannot import.
+		//
 		// Service Worker proper. MDN splits Push and Cache into their
 		// own APIs (https://developer.mozilla.org/en-US/docs/Web/API/Service_Worker_API);
 		// see web:push and web:cache below.
@@ -785,15 +809,14 @@ var webPackages = []struct {
 		"ServiceWorkerUpdateViaCache",
 		"RegistrationOptions",
 		"NavigationPreloadManager", "NavigationPreloadState",
-		"FrameType", "ClientType",
+		"ClientType",
 		"ClientQueryOptions", "GetNotificationOptions",
 		"ClientTypes",
 	}},
 	{"web:push", "web/push.window.esc", []string{
-		// A page never receives a push event, so these sit beside PushManager
-		// rather than in web:service_worker, and the annotation is what says a
-		// page cannot reach them.
-		"PushEvent", "PushEventInit", "PushMessageData", "PushMessageDataInit",
+		// A page never receives a push event, so those four declarations are in
+		// web:worker and this package holds the page's half.
+		//
 		// MDN documents Push as a separate API:
 		// https://developer.mozilla.org/en-US/docs/Web/API/Push_API
 		"PushManager", "PushSubscription", "PushSubscriptionJSON",
@@ -823,9 +846,6 @@ var webPackages = []struct {
 		"URLSearchParamsIterator",
 	}},
 	{"web:file", "web/file.esc", []string{
-		// The synchronous file API, which only a worker has. Blocking is
-		// acceptable off the main thread and nowhere else.
-		"FileReaderSync", "FileSystemSyncAccessHandle", "FileSystemReadWriteOptions",
 		"Blob", "BlobPropertyBag", "BlobPart", "EndingType",
 		"File", "FilePropertyBag",
 		// FormData holds files, and both `Blob` and `File` are here, so this

@@ -183,6 +183,13 @@ Web families with no DOM coupling get their own packages: `web:fetch`,
 `web:performance`, `web:credentials`, `web:webauthn`, `web:payments`. A typical
 browser program imports `web:dom` plus one or two siblings.
 
+`web:worker` is the exception to that family split. It holds what a worker has
+and a page does not, drawn from several families: the four `*GlobalScope` types,
+the clients and events a service worker receives, `importScripts`, and the
+synchronous file API. A page cannot import it. Its siblings keep the page's half
+of each family, so `web:workers` still holds `Worker` and `SharedWorker` for a
+page to construct, and `web:push` still holds `PushManager`.
+
 A package's file name says where it runs. `web/fetch.esc` carries no suffix, so
 `web:fetch` exists in every environment; `web/dom.window.esc` narrows `web:dom`
 to a page. The suffix is no part of the URI — the import is still

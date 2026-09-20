@@ -21020,23 +21020,3 @@ export declare interface MediaKeyStatusMapIterator<T> extends IteratorObject<T, 
 export declare interface StylePropertyMapReadOnlyIterator<T> extends IteratorObject<T, BuiltinIteratorReturn, unknown> {
     [Symbol.iterator]() -> StylePropertyMapReadOnlyIterator<T>
 }
-
-@env("dedicated_worker", "shared_worker", "service_worker")
-export declare interface MediaStreamTrackProcessorInit {
-    maxBufferSize?: number
-}
-
-/** [MDN Reference](https://developer.mozilla.org/docs/Web/API/MediaStreamTrackProcessor) */
-@env("dedicated_worker", "shared_worker", "service_worker")
-@js("MediaStreamTrackProcessor")
-export declare class MediaStreamTrackProcessor {
-    /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/MediaStreamTrackProcessor/readable) */
-    readonly readable: streams.ReadableStream,
-    static prototype: MediaStreamTrackProcessor,
-    constructor(mut self, init: MediaStreamTrackProcessorInit)
-}
-
-/** [MDN Reference](https://developer.mozilla.org/docs/Web/API/Document/fonts) */
-@env("dedicated_worker", "shared_worker", "service_worker")
-@js("fonts")
-export declare var fonts: FontFaceSet

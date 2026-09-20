@@ -8,7 +8,6 @@ import "web:core"
 import "web:crypto"
 import "web:dom"
 import "web:file"
-import "web:streams"
 import "web:websocket"
 import "web:workers"
 
@@ -1090,36 +1089,3 @@ export declare type RTCStatsIceCandidatePairState = "failed" | "frozen" | "in-pr
 
 @env("window")
 export declare type RTCStatsType = "candidate-pair" | "certificate" | "codec" | "data-channel" | "inbound-rtp" | "local-candidate" | "media-playout" | "media-source" | "outbound-rtp" | "peer-connection" | "remote-candidate" | "remote-inbound-rtp" | "remote-outbound-rtp" | "transport"
-
-/** [MDN Reference](https://developer.mozilla.org/docs/Web/API/RTCRtpScriptTransformer) */
-@env("dedicated_worker")
-@js("RTCRtpScriptTransformer")
-export declare class RTCRtpScriptTransformer extends EventTarget {
-    /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/RTCRtpScriptTransformer/options) */
-    readonly options: any,
-    /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/RTCRtpScriptTransformer/readable) */
-    readonly readable: streams.ReadableStream,
-    /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/RTCRtpScriptTransformer/writable) */
-    readonly writable: streams.WritableStream,
-    /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/RTCRtpScriptTransformer/generateKeyFrame) */
-    generateKeyFrame(mut self, rid?: string) -> Promise<number>,
-    /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/RTCRtpScriptTransformer/sendKeyFrameRequest) */
-    sendKeyFrameRequest(mut self) -> Promise<undefined>,
-    static prototype: RTCRtpScriptTransformer,
-    constructor(mut self)
-}
-
-/** [MDN Reference](https://developer.mozilla.org/docs/Web/API/RTCTransformEvent) */
-@env("dedicated_worker")
-@js("RTCTransformEvent")
-export declare class RTCTransformEvent extends Event {
-    /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/RTCTransformEvent/transformer) */
-    readonly transformer: RTCRtpScriptTransformer,
-    static prototype: RTCTransformEvent,
-    constructor(mut self)
-}
-
-/** [MDN Reference](https://developer.mozilla.org/docs/Web/API/DedicatedWorkerGlobalScope/rtctransform_event) */
-@env("dedicated_worker")
-@js("onrtctransform")
-export declare var onrtctransform: (fn (this: workers.DedicatedWorkerGlobalScope, ev: RTCTransformEvent) -> any) | null

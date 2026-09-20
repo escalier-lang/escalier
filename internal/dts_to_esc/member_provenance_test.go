@@ -166,8 +166,12 @@ func TestMemberEnvsFromLibs_MostSharedMembersAreNotNarrowed(t *testing.T) {
 // the members: `web:webgl` is largely worker-available through an
 // `OffscreenCanvas`, and `web:indexeddb` wholly so.
 //
-// Pinning the number keeps the gap from moving unnoticed while the two readings
-// coexist.
+// web:worker is the part of the gap already closed. It claims the three worker
+// kinds, so the members it holds agree with the lib reading and are not counted
+// below.
+//
+// Pinning the number keeps the rest of the gap from moving unnoticed while the
+// two readings coexist.
 func TestTheLibReadingDisagreesWithThePackageTable(t *testing.T) {
 	mods, sourceFiles := convertBothWebLibs(t)
 
@@ -196,7 +200,7 @@ func TestTheLibReadingDisagreesWithThePackageTable(t *testing.T) {
 	}
 
 	require.Equal(t, 7762, read, "members the lib set answers for")
-	require.Equal(t, 2044, outside,
+	require.Equal(t, 1907, outside,
 		"members available outside the environments their package claims")
 }
 

@@ -88,37 +88,37 @@ var declEnvOverrides = map[packageDecl]set.Set[Env]{
 	// A dedicated worker's scope, and the encoded-transform surface only it
 	// receives. `DedicatedWorkerGlobalScopeEventMap` is what declares
 	// `rtctransform`, so the three RTC declarations go with it.
-	{"web:workers", "DedicatedWorkerGlobalScope"}:         dedicatedWorkerOnly(),
-	{"web:workers", "DedicatedWorkerGlobalScopeEventMap"}: dedicatedWorkerOnly(),
-	{"web:web_rtc", "RTCTransformEvent"}:                  dedicatedWorkerOnly(),
-	{"web:web_rtc", "RTCRtpScriptTransformer"}:            dedicatedWorkerOnly(),
-	{"web:web_rtc", "onrtctransform"}:                     dedicatedWorkerOnly(),
+	{"web:worker", "DedicatedWorkerGlobalScope"}:         dedicatedWorkerOnly(),
+	{"web:worker", "DedicatedWorkerGlobalScopeEventMap"}: dedicatedWorkerOnly(),
+	{"web:worker", "RTCTransformEvent"}:                  dedicatedWorkerOnly(),
+	{"web:worker", "RTCRtpScriptTransformer"}:            dedicatedWorkerOnly(),
+	{"web:worker", "onrtctransform"}:                     dedicatedWorkerOnly(),
 
 	// A shared worker's scope. `connect` is the one event its map adds, and it
 	// carries no type the other scopes lack.
-	{"web:workers", "SharedWorkerGlobalScope"}:         sharedWorkerOnly(),
-	{"web:workers", "SharedWorkerGlobalScopeEventMap"}: sharedWorkerOnly(),
+	{"web:worker", "SharedWorkerGlobalScope"}:         sharedWorkerOnly(),
+	{"web:worker", "SharedWorkerGlobalScopeEventMap"}: sharedWorkerOnly(),
 
 	// A service worker's scope, the clients only it reaches, and the events only
 	// its map declares. A page never receives a fetch, push or notification
 	// event, and neither does a dedicated or shared worker.
-	{"web:service_worker", "ServiceWorkerGlobalScope"}:         serviceWorkerOnly(),
-	{"web:service_worker", "ServiceWorkerGlobalScopeEventMap"}: serviceWorkerOnly(),
-	{"web:service_worker", "Client"}:                           serviceWorkerOnly(),
-	{"web:service_worker", "Clients"}:                          serviceWorkerOnly(),
-	{"web:service_worker", "WindowClient"}:                     serviceWorkerOnly(),
-	{"web:service_worker", "ExtendableEvent"}:                  serviceWorkerOnly(),
-	{"web:service_worker", "ExtendableEventInit"}:              serviceWorkerOnly(),
-	{"web:service_worker", "ExtendableMessageEvent"}:           serviceWorkerOnly(),
-	{"web:service_worker", "ExtendableMessageEventInit"}:       serviceWorkerOnly(),
-	{"web:service_worker", "FetchEvent"}:                       serviceWorkerOnly(),
-	{"web:service_worker", "FetchEventInit"}:                   serviceWorkerOnly(),
-	{"web:service_worker", "NotificationEvent"}:                serviceWorkerOnly(),
-	{"web:service_worker", "NotificationEventInit"}:            serviceWorkerOnly(),
-	{"web:push", "PushEvent"}:                                  serviceWorkerOnly(),
-	{"web:push", "PushEventInit"}:                              serviceWorkerOnly(),
-	{"web:push", "PushMessageData"}:                            serviceWorkerOnly(),
-	{"web:push", "PushMessageDataInit"}:                        serviceWorkerOnly(),
+	{"web:worker", "ServiceWorkerGlobalScope"}:         serviceWorkerOnly(),
+	{"web:worker", "ServiceWorkerGlobalScopeEventMap"}: serviceWorkerOnly(),
+	{"web:worker", "Client"}:                           serviceWorkerOnly(),
+	{"web:worker", "Clients"}:                          serviceWorkerOnly(),
+	{"web:worker", "WindowClient"}:                     serviceWorkerOnly(),
+	{"web:worker", "ExtendableEvent"}:                  serviceWorkerOnly(),
+	{"web:worker", "ExtendableEventInit"}:              serviceWorkerOnly(),
+	{"web:worker", "ExtendableMessageEvent"}:           serviceWorkerOnly(),
+	{"web:worker", "ExtendableMessageEventInit"}:       serviceWorkerOnly(),
+	{"web:worker", "FetchEvent"}:                       serviceWorkerOnly(),
+	{"web:worker", "FetchEventInit"}:                   serviceWorkerOnly(),
+	{"web:worker", "NotificationEvent"}:                serviceWorkerOnly(),
+	{"web:worker", "NotificationEventInit"}:            serviceWorkerOnly(),
+	{"web:worker", "PushEvent"}:                        serviceWorkerOnly(),
+	{"web:worker", "PushEventInit"}:                    serviceWorkerOnly(),
+	{"web:worker", "PushMessageData"}:                  serviceWorkerOnly(),
+	{"web:worker", "PushMessageDataInit"}:              serviceWorkerOnly(),
 }
 
 func dedicatedWorkerOnly() set.Set[Env] { return set.FromSlice([]Env{EnvDedicatedWorker}) }

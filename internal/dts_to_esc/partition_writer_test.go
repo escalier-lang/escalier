@@ -82,9 +82,10 @@ interface ServiceWorkerGlobalScope { readonly clients: Clients; }
 	require.Len(t, stream.Members, 1)
 	require.Equal(t, "locked", memberKey(stream.Members[0]))
 
-	// The worker-only name routes to its own package.
-	require.Len(t, res.Buckets["web:service_worker"], 1)
-	scope, ok := res.Buckets["web:service_worker"][0].(*dts_parser.InterfaceDecl)
+	// The worker-only name routes to web:worker, which holds what a worker has
+	// and a page does not.
+	require.Len(t, res.Buckets["web:worker"], 1)
+	scope, ok := res.Buckets["web:worker"][0].(*dts_parser.InterfaceDecl)
 	require.True(t, ok)
 	require.Equal(t, "ServiceWorkerGlobalScope", scope.Name.Name)
 
