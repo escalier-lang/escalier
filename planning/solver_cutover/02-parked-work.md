@@ -56,22 +56,22 @@ the resume points below.
 
 | Parked | Owner | Why it is safe to park |
 | --- | --- | --- |
-| `web:*` ingestion, roughly 2,500 diagnostics | builtins §7 | no fixture, compiler entry point, or `.esc` file in this repository imports a `web:*` package |
-| DOM-touching fixture migration | builtins §8 | there are none |
+| `web:dom` ingestion and the eight packages behind it, roughly 2,500 diagnostics | builtins §7 | **not safe to park silently** — see below. `web:core` and `web:fetch` are P0's, not parked |
+| DOM-touching fixture migration | builtins §8 | `fixtures/async_await` is the only one, and P0 covers it by clearing `web:fetch` |
 | Per-file shape loading, the FR11 trigger map | builtins §9 | a file can import the package instead; the cost is verbosity, not capability |
 | Intrinsics, adaptive rendering, auto-import quick-fix | builtins §10 | tooling on top of a working checker |
 | Third-party `.d.ts` ingestion on the solver | M7.5 tail | **not safe to park silently** — see below |
 | JSX inference on the solver | `planning/react_and_jsx/` | **not safe to park silently** — see below |
-| Regenerating the committed tree | builtins §6, §7 | P0 fixes solver gaps, which need no regeneration; any generator gap it finds is filed, not applied |
+| Regenerating the committed tree | builtins §6, §7 | P0's confirmed causes are solver gaps and need no regeneration. Its one unresolved cause may turn out to be a generator gap, and a regeneration is in P0's scope if it does |
 | M6 PR7, `if`-`val` and `val`-`else` | M6 | P2's harness says whether a fixture needs it |
 | M9 PR9f, regular-tree normalization | M9 | same |
 | M11.5, the diagnostics capstone | M11.5 | its precondition is the old checker still being in the tree, which P5 preserves and P7 ends |
 
-## The two real regressions at the flip
+## The three real regressions at the flip
 
-These are the exceptions in that table. Both are shipped features that work on
-the old checker and do not work on the solver, and neither has fixture coverage,
-so the P2 harness will not surface either one.
+These are the exceptions in that table. All three are shipped capabilities that
+work on the old checker and do not work on the solver. The first two have no
+fixture coverage at all, so the P2 harness will not surface them.
 
 ### Third-party `.d.ts` ingestion
 
@@ -96,7 +96,24 @@ through `internal/resolver`, which makes JSX downstream of the previous item:
 port ingestion first, then JSX on top of it. `planning/react_and_jsx/` holds the
 design.
 
-### What keeps both honest
+### The ambient DOM surface
+
+`internal/checker/prelude.go:529` appends `lib.dom.d.ts` to the old checker's
+global load, so a program writes `fetch`, `document`, or `Element` with no
+import today. The solver has no ambient surface beyond `std:prelude`, so those
+names come only from a `web:*` package, and every package behind `web:dom` sits
+at 2,707 diagnostics.
+
+This is the one regression with fixture coverage: `fixtures/async_await` calls
+`fetch`. P0 clears `web:core` and `web:fetch` so that fixture keeps working,
+which leaves the DOM proper as the parked part. A program using `document` or an
+element type type-checks before P5 and does not after it.
+
+Unlike the other two, no amount of porting fixes this one quickly. It is the
+`web:dom` ingestion grind, and parking it is the whole reason this plan exists.
+The P1 ledger is what keeps its size visible.
+
+### What keeps the first two honest
 
 1. **Before P7, port the assertions.** The coverage for both lives in
    `internal/checker/tests/import_load_test.go`,
@@ -111,7 +128,7 @@ design.
 ## Resume order after the flip
 
 1. **Third-party `.d.ts` ingestion**, then **JSX** on top of it. They are the
-   two regressions, so they go first, in that order.
+   two regressions a port closes, so they go first, in that order.
 2. **`web:core` and the ten standalone `web:*` siblings.** They sit at 224 to
    279 diagnostics, and `web:core` is the shared floor under all of them, so
    fixing `web:core` moves every sibling at once.

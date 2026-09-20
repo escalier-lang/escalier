@@ -96,15 +96,22 @@ All five are DOM types, so the bulk of the grind sits behind `web:dom`. The
    two overload-distinguishability reports, and a handful of inherited-member
    redeclarations.
 
-None of the four is a pseudo-package problem. Three are solver gaps and one is a
-generator gap.
+None of the four is a pseudo-package problem. Causes 1, 3, and 4 are confirmed
+solver gaps. Cause 2 is unresolved between the generator and the solver, and
+stays that way until a minimal reproduction says whether the bare name is
+emitted wrong by `internal/dts_to_esc/ref_rewrite.go` or looked up wrong by
+`internal/solver/stdlib_group_load.go`.
 
-## What no Escalier source in this repository imports
+## What the fixture tree actually needs
 
 Two fixtures carry an `import` statement, `fixtures/stdlib_import_local` for
 `std:math` and `fixtures/stdlib_import_class_via_namespace` for `std:date`. Both
-are marked `DISABLED`. No fixture imports a `web:*` package, and no fixture
-imports from `node_modules`.
+are marked `DISABLED`. No fixture imports from `node_modules`, and none uses
+JSX.
+
+No fixture writes an `import` for a `web:*` package either, but that is not the
+same as needing none, because the old checker supplies the DOM ambiently. The
+paragraph after the table says which fixture that catches.
 
 Fixtures naming a stdlib type without importing it, counted by name:
 
@@ -119,9 +126,23 @@ Fixtures naming a stdlib type without importing it, counted by name:
 | `Object` | 2 | no |
 | `Math`, `JSON`, `Map`, `Set`, `RegExp` | 0 | — |
 
-So roughly 20 of 73 fixtures need an added `import "std:…"` line, and the rest
+So 18 of 73 fixtures need an added `import "std:…"` line, and most of the rest
 need nothing. `std:prelude` is ambient in the solver, which is what already
 covers `Array`, `Promise`, and `Symbol`.
+
+**One fixture needs a `web:*` package.** `fixtures/async_await` calls `fetch` at
+four places and declares it nowhere. The old checker supplies it ambiently,
+because `internal/checker/prelude.go:529` appends `lib.dom.d.ts` to the global
+load. On the solver it comes only from `web:fetch`, which sits at 257
+diagnostics because it reaches `web:core`. So the `std:` / `web:` split does not
+fall exactly on the fixture tree, and P0 has to carry `web:core` and `web:fetch`
+with it.
+
+That ambient DOM load is also the wider compatibility story. Today a program
+writes `fetch`, `document`, or `Element` with no import. After the flip the
+`web:*` packages are the only route to those names, and they do not ingest
+cleanly. See [02-parked-work.md](02-parked-work.md)§"The three real regressions
+at the flip".
 
 The old checker cannot resolve these imports against the committed tree, which
 is why both stdlib fixtures are disabled. Adding imports to a fixture therefore

@@ -6,22 +6,29 @@ refusing work the flip does not need.
 
 ## The two splits this plan makes
 
-**Split the library prerequisite at the `std:` / `web:` line.** M7.5 and
+**Split the library prerequisite near the `std:` / `web:` line.** M7.5 and
 builtins §7 treat clean ingestion of the pseudo-package tree as one gate. The
 measurements in [00-current-state.md](00-current-state.md) say the two halves
 are nothing alike: `std:*` is four root causes from clean, and `web:*` carries
-roughly 2,500 diagnostics concentrated in DOM types. Nothing the compiler
-builds, and no fixture, imports a `web:*` package. So `std:*` is a prerequisite
-and `web:*` is not.
+roughly 2,500 diagnostics concentrated in DOM types.
+
+The split is near the line rather than on it. `web:core` is the shared floor
+under every `web:*` sibling at 224 diagnostics, and `fixtures/async_await` needs
+`web:fetch`, which reaches it. So the prerequisite is `std:*` plus `web:core`
+plus `web:fetch`, and everything behind `web:dom` is not.
 
 **Split the M12 flip from the M12 deletion.** M12 reads as one step: default the
 compiler to the solver, retire `internal/checker`, delete the AST's
 `inferredType` field. Those have different prerequisites. Defaulting needs
 codegen to work. Deleting needs the LSP ported and the diagnostics audit done,
 because `cmd/lsp-server` imports `checker` and because M11.5 wants the old
-checker's diagnostics as its parity baseline. Keeping `internal/checker/` in the
-tree, compiled but unreferenced by the compiler, satisfies both and costs
-nothing but build time.
+checker's diagnostics as its parity baseline.
+
+Keeping `internal/checker/` in the tree satisfies both and costs nothing but
+build time. After P5 it is no longer the compiler's default, and it stays
+reachable three ways: through P2's environment variable, through
+`cmd/lsp-server`, which imports it until P6, and through its own test suite,
+which is M11.5's parity baseline. P7 is what removes it.
 
 ## Phase order
 
@@ -33,14 +40,16 @@ P1 (web:* quarantine) ─┘                                                    
                                                                                                               └──► P7 (deletion) ── needs P6 + M11.5
 ```
 
-P0 and P1 are independent of each other and can land in either order. P6 and P7
-are the only phases after the flip.
+P0 and P1 are independent of each other and can land in either order, except
+that P0's `web:core` and `web:fetch` rows leave the P1 ledger when P0 clears
+them. P6 and P7 are the only phases after the flip.
 
 ---
 
-## P0 — Clear the `std:*` ingestion tail
+## P0 — Clear the `std:*` ingestion tail, plus `web:core` and `web:fetch`
 
-**Goal.** Every `std:*` package loads with zero diagnostics.
+**Goal.** Every `std:*` package loads with zero diagnostics, and so do
+`web:core` and `web:fetch`.
 
 **Work.** The four root causes from
 [00-current-state.md](00-current-state.md)§"What the residual diagnostics
@@ -71,18 +80,28 @@ reports, and the inherited-member redeclarations. Triage each as a solver gap or
 a generator gap and file the generator ones against builtins §6 rather than
 hand-editing the committed tree, which is generated output.
 
-**Gate.** A test that loads every `std:*` package and asserts an empty
-diagnostic list. This is the strict version of the P1 ledger and replaces the
-`std:*` rows in it.
+Then `web:core` and `web:fetch`. They are here rather than in P1 because
+`fixtures/async_await` calls `fetch`, which the old checker supplies ambiently
+from `lib.dom.d.ts` and the solver supplies only from `web:fetch`. `web:core` is
+the shared floor under every `web:*` sibling, so clearing it moves all ten at
+once and shrinks what P1 has to quarantine. Triage its 224 diagnostics before
+committing to this scope; if they turn out to be the DOM-name mass rather than a
+few root causes, the cheaper answer is to rewrite `fixtures/async_await` to
+declare its own `fetch` and move both packages to P1.
 
-**Not in scope.** Any `web:*` package. Regenerating the tree. Hand-edits to
-generated `.esc` files.
+**Gate.** A test that loads every `std:*` package, plus `web:core` and
+`web:fetch`, and asserts an empty diagnostic list. This is the strict version of
+the P1 ledger and replaces those rows in it.
+
+**Not in scope.** Any `web:*` package behind `web:dom`. Regenerating the tree.
+Hand-edits to generated `.esc` files.
 
 ---
 
 ## P1 — Quarantine `web:*` behind a ledger
 
-**Goal.** The `web:*` tree stops gating anything, without rotting while parked.
+**Goal.** Everything behind `web:dom` stops gating anything, without rotting
+while parked. `web:core` and `web:fetch` belong to P0, not here.
 
 **Work.** Commit the per-package survey from
 [00-current-state.md](00-current-state.md)§"How these numbers were taken" as a
@@ -254,8 +273,11 @@ audit wants the old checker's diagnostics as the parity baseline.
 
 Stated plainly so nobody reads P5 as "the migration is finished":
 
-- `web:*` ingests with roughly 2,500 diagnostics. A program importing a `web:*`
-  package gets a wall of noise. The ledger from P1 is the honest record.
+- Everything behind `web:dom` ingests with roughly 2,500 diagnostics, so a
+  program importing one of those packages gets a wall of noise. Worse, the DOM
+  is ambient on the old checker, which loads `lib.dom.d.ts` into the global
+  scope, so a program writing `document` or `Element` today has to import a
+  package that does not work. The ledger from P1 is the honest record.
 - Third-party `.d.ts` ingestion does not work on the solver. A program importing
   from `node_modules` does not type-check.
 - JSX does not type-check on the solver. `internal/solver` has no JSX handling

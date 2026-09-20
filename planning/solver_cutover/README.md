@@ -13,14 +13,16 @@ the compiler's own path never touches.
 
 ## The strategy in one paragraph
 
-Split the library-ingestion prerequisite at the `std:` / `web:` line, and split
-the M12 flip from the M12 deletion. The `std:*` tree ingests with a handful of
-root causes left; the `web:*` tree carries roughly ten times as many diagnostics
-and no fixture, no compiler entry point, and no Escalier source file in this
-repository imports from it. Finish `std:*`, quarantine `web:*` behind a ledger
-test that keeps it from rotting, point the compiler at the solver, and leave
-`internal/checker/` in the tree unreferenced until the LSP and the diagnostics
-audit are done. The flip becomes cheap because the expensive half of M12 is the
+Split the library-ingestion prerequisite near the `std:` / `web:` line, and
+split the M12 flip from the M12 deletion. The `std:*` tree ingests with a
+handful of root causes left. The packages behind `web:dom` carry roughly ten
+times as many diagnostics, and one fixture depends on that half, through
+`web:fetch`. So the prerequisite is `std:*` plus `web:core` plus `web:fetch`.
+Finish those, quarantine `web:dom` behind a ledger test that keeps it from
+rotting, and point the compiler at the solver. `internal/checker/` stays in the
+tree afterwards, no longer the default but still reachable behind a flag and
+still imported by the LSP, until P6 ports the LSP and the diagnostics audit
+finishes. The flip becomes cheap because the expensive half of M12 is the
 deletion, not the switch.
 
 ## Documents
@@ -35,17 +37,25 @@ deletion, not the switch.
 
 ## One decision to confirm before P2
 
-Two shipped features work on the old checker and have no solver implementation:
-imports from `node_modules`, and JSX. Neither has fixture coverage, so the
-harness in P2 will not flag them, and neither is on the critical path to the
-flip. [01-cutover-plan.md](01-cutover-plan.md) parks both, which means P5 lands
-a checker that type-checks less than the one it replaces.
+P5 lands a checker that type-checks less than the one it replaces, in three
+ways. Two are shipped features with no solver implementation and no fixture
+coverage, so the P2 harness will not flag either: imports from `node_modules`,
+and JSX. The third is the ambient DOM. The old checker loads `lib.dom.d.ts` into
+the global scope, so a program writes `document` or `Element` with no import,
+and after the flip those names come only from `web:dom`, which does not ingest.
 
-That is a real cost, and parking a regression is a heavier call than parking
-polish, so it should be a decision rather than a default. The alternative is a
-phase between P4 and P5 that ports the resolver chain and then JSX — roughly 870
-lines of checker code and 3,100 lines of tests to carry over. Pick one before
-P2 starts, because the answer changes what the P2 harness needs to cover.
+[01-cutover-plan.md](01-cutover-plan.md) parks all three, and
+[02-parked-work.md](02-parked-work.md) says how each stays visible. Parking a
+regression is a heavier call than parking polish, so it should be a decision
+rather than a default:
+
+- **`node_modules` and JSX** can be bought back with a phase between P4 and P5
+  that ports the resolver chain and then JSX, roughly 870 lines of checker code
+  and 3,100 lines of tests.
+- **The ambient DOM** cannot be bought back cheaply. It is the `web:dom`
+  ingestion grind, which is the thing this plan exists to defer.
+
+Pick before P2 starts, because the answer changes what the P2 harness covers.
 
 ## The preservation rule
 
