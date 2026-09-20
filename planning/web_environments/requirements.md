@@ -206,6 +206,12 @@ runs in every environment. Its references have to resolve in all nine, so it
 reaches the intersection of what they provide. This is what a portable library
 is, and it is the reason a target is optional rather than required.
 
+The intersection of a set of per-environment declarations is empty, and that is
+the intended answer rather than a gap to patch. A program with no target cannot
+use `location` at all, because `Location` in a page and `WorkerLocation` in a
+worker have nothing in common that the program could rely on. It has to name a
+target to get one.
+
 **F2. An unsatisfiable set of imports is reported.** Importing two packages no
 single environment provides, such as `web:dom` and `web:worker`, is an error
 naming both. Under inference this is the empty intersection of F1.
@@ -286,16 +292,49 @@ worker is, and F1 through F5 apply to it unchanged. The `web:*` packages cover
 the worklet surface, which they do not today: the CSS Typed OM sits in
 window-only `web:dom`, so a paint worklet cannot name `CSSUnitValue`.
 
-**F12. Tooling resolves the same target environment the compiler does.** The
-language server reads the target rather than assuming a page, so completion
-inside a worker does not offer `document`. It resolves the target from the file
-name, from the `package.json` of the package the file belongs to, or from
-`escalier.toml` at the repository root, in that order of specificity.
+**F12. A package states each entrypoint's environments in `package.json`.** The
+environments an entrypoint supports travel with the published package, so they
+live in `package.json` and nowhere else. `escalier.toml` is not consulted; it
+does not ship.
 
-**F13. The event-map machinery lives in `web:events`.** `addEventListener` and
-`removeEventListener` are generic over each scope's own event map, so they
-collide under one name when hoisted and need a package of their own. Whether the
-rest of the event model moves there from `web:core` is open.
+Every entrypoint is covered, both the `lib/` one named by `main` and each `bin/`
+one named under `bin`. They are stated separately, because a package routinely
+ships a page module and a worker module together, and the two do not run in the
+same place. An entrypoint listing every environment, or listing none, is the
+no-target case from F1.
+
+The spelling is open. Something along these lines, keyed by the source
+entrypoint rather than the build output:
+
+```json
+{
+  "main": "build/lib/index.js",
+  "bin": { "render": "build/bin/render.js" },
+  "escalier": {
+    "environments": {
+      "lib/index.esc": ["window"],
+      "bin/render.esc": ["dedicated_worker"]
+    }
+  }
+}
+```
+
+Tooling reads the same field the compiler does, so completion inside a worker
+entrypoint does not offer `document`. An import whose own entrypoint does not
+cover the importer's environments is an F2 error, which is how a page-only
+dependency is caught in a worker.
+
+
+**F13. `addEventListener` and `removeEventListener` live in `web:core`.** They
+are among the most used globals on the platform, and `web:core` already holds the
+event model they belong to: `Event`, `EventTarget`, `EventListener`,
+`EventListenerOptions` and `AddEventListenerOptions`. A separate package holding
+two functions that name all of those across a boundary buys nothing.
+
+Both are generic over each scope's own event map, so they arrive as
+per-environment declarations under F5. That puts the event maps themselves in
+`web:core`'s reach, and they are in `web:dom` and `web:worker` today, so the maps
+move with the functions or `web:core` imports the packages holding them.
 
 ### 4.2 Non-functional
 
@@ -350,8 +389,8 @@ family compile correctly and the requirements marked for it hold.
 | F9 no double hoist | ✅ | extend | extend |
 | F10 vocabulary | ✅ | — | — |
 | F11 worklets as targets | — | — | ✅ |
-| F12 tooling reads the target | ✅ | extend | extend |
-| F13 `web:events` | ✅ | extend | extend |
+| F12 entrypoint environments in `package.json` | ✅ | extend | extend |
+| F13 event listeners in `web:core` | ✅ | extend | extend |
 | N1 one fact, one place | ✅ | — | — |
 | N2 importable as a unit | partial | ✅ | ✅ |
 | N3 derived claims | ✅ | — | — |
@@ -393,6 +432,9 @@ window program can reach is a window package.
 - Feature detection at runtime in user code, such as narrowing on
   `typeof OffscreenCanvas !== "undefined"`. Worth having, not needed for any
   requirement here.
+- `typeof globalThis`. It appears seven times in the tree, five of them in
+  `dom.window.esc`. F6 withholds the global object, so the intersections naming
+  it lose their second half and the annotation goes. Nothing replaces it.
 - Node, Deno and Bun. Widening the vocabulary past the browser is separate work.
   The worklets are not in this exclusion: they are browser global scopes and F10
   brings them in.
@@ -405,11 +447,10 @@ window program can reach is a window package.
    declarations inside. Either it is redefined as the package's importability,
    which is a real and distinct fact, or it goes and importability is derived
    from the declarations.
-2. **How does a program declare its environment?** Answered by F1 and F12. It
-   is read from the file name, the package's `package.json`, or `escalier.toml`
-   at the repository root, most specific first, and a program may declare none,
-   which claims every environment. What remains is the spelling of the
-   `package.json` and `escalier.toml` keys.
+2. **How does a program declare its environment?** Answered by F1 and F12. Each
+   entrypoint states its environments in `package.json`, `escalier.toml` is not
+   consulted, and an entrypoint may state none, which claims every environment.
+   Only the spelling of the `package.json` field is left.
 
 3. **Per-environment declarations or per-arm annotations?** #1613 proposes
    annotating union arms. Emitting one declaration per environment is simpler and
