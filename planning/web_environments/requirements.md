@@ -154,35 +154,50 @@ inference per run, not the seconds earlier estimates suggested.
 
 ## 4. Requirements
 
-**R1. One fact, one place.** Where a declaration exists is a property of the
+Functional requirements say what the compiler does that it does not do today.
+Non-functional requirements constrain how the tree and the conversion are built,
+and hold whether or not any functional requirement changes.
+
+### 4.1 Functional
+
+**F1. A program has a target environment.** A program compiled for a runtime
+declares which one, or it is inferred from the packages it imports. Every rule
+below reads that one answer.
+
+**F2. An unsatisfiable set of imports is reported.** Importing two packages no
+single environment provides, such as `web:dom` and `web:worker`, is an error
+naming both. Under inference this is the empty intersection of F1.
+
+**F3. A reference outside the program's environment is reported.** The check that
+a reference does not escape its environments applies to a user program, not only
+to the generated tree.
+
+**F4. Every declaration an environment provides is nameable in it.** A worker can
+name an `OffscreenCanvas` it receives, and everything reachable from it, without
+importing declarations that environment lacks.
+
+**F5. A declaration that differs by environment is expressible per environment.**
+Where environments genuinely disagree, as with `MessageEvent.source`, the tree
+states each environment's form rather than narrowing every environment to their
+intersection.
+
+### 4.2 Non-functional
+
+**N1. One fact, one place.** Where a declaration exists is a property of the
 declaration. Nothing else may restate it. A package file name, a partition entry
 and a directory layout must not carry an environment claim that can drift from the
 declaration's own.
 
-**R2. A package is importable as a unit.** Every declaration a package holds is
+**N2. A package is importable as a unit.** Every declaration a package holds is
 reachable from every environment that may import the package. Splitting a family
 across packages is acceptable; a package no environment can fully use is not.
+This is the structural invariant F4 rests on.
 
-**R3. A program states its environment.** A program compiled for a runtime
-declares which one, or it is inferred from its imports. Both the import rule and
-any per-environment name resolution read that one answer.
-
-**R4. Environment rules reach user code.** The check that a reference does not
-escape its environments applies to a user program, not only to the generated tree.
-
-**R5. A worker can name what it receives.** Any declaration the platform makes
-available in an environment is nameable there, without importing declarations that
-environment does not have.
-
-**R6. A divergent declaration is expressible.** Where environments genuinely
-disagree, as with `MessageEvent.source`, the tree states each environment's form
-rather than narrowing every environment to their intersection.
-
-**R7. Claims are derived, not hand-maintained.** A per-declaration environment
+**N3. Claims are derived, not hand-maintained.** A per-declaration environment
 comes from the source data. Hand-written tables are for what no source answers,
 and each entry says why it exists.
 
-**R8. Nothing regresses cold load.** Reorganization is measured against
+**N4. Nothing regresses cold load.** Reorganization is measured against
 `BenchmarkStdlibClosureLoad`. #1643 covers the separate finding that comment
 attachment is 74% of cold load.
 
@@ -198,7 +213,7 @@ attachment is 74% of cold load.
 
 ## 6. Open questions
 
-1. **Does the file name survive?** Under R1 it cannot claim anything about the
+1. **Does the file name survive?** Under N1 it cannot claim anything about the
    declarations inside. Either it is redefined as the package's importability,
    which is a real and distinct fact, or it goes and importability is derived
    from the declarations.

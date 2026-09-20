@@ -4,8 +4,9 @@ Stages are ordered so each one lands on its own and leaves the tree green. A
 stage names what it does not do, because several of these problems are tempting
 to fix together and doing so makes a diff nobody can review.
 
-`requirements.md` in this folder states the problems and the requirements R1
-through R8 referenced here.
+`requirements.md` in this folder states the problems, the functional
+requirements F1 through F5, and the non-functional requirements N1 through N4
+referenced here.
 
 ## Stage 0: Settle what a package file name means
 
@@ -31,7 +32,7 @@ enforces it or the rule explicitly needs none.
 
 ## Stage 1: Derive exposure from WebIDL
 
-**Goal.** Satisfy R7 for the facts TypeScript's libs cannot carry: which worker
+**Goal.** Satisfy N3 for the facts TypeScript's libs cannot carry: which worker
 kinds expose an interface, and which interfaces are constructible.
 
 **Work.**
@@ -55,7 +56,7 @@ same generated table.
 
 ## Stage 2: Repartition so a package is importable as a unit
 
-**Goal.** Satisfy R2 and R5. A worker can name `OffscreenCanvas` and everything
+**Goal.** Satisfy N2 and F4. A worker can name `OffscreenCanvas` and everything
 `getContext` returns.
 
 **Work.**
@@ -84,7 +85,7 @@ because nothing checks it yet.
 
 ## Stage 3: Give a program a target environment
 
-**Goal.** Satisfy R3, and supply the input Stages 4 and 5 both need.
+**Goal.** Satisfy F1 and F2, and supply the input Stages 4 and 5 both need.
 
 **Work.**
 
@@ -107,7 +108,7 @@ nothing consults it yet.
 
 ## Stage 4: Enforce environments on user code
 
-**Goal.** Satisfy R4.
+**Goal.** Satisfy F3.
 
 **Work.**
 
@@ -128,7 +129,7 @@ which is stricter than the end state and is the safe direction.
 
 ## Stage 5: Represent a divergent declaration
 
-**Goal.** Satisfy R6, so `MessageEvent.source` stops being retyped to `null`.
+**Goal.** Satisfy F5, so `MessageEvent.source` stops being retyped to `null`.
 
 **Work.**
 
