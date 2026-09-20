@@ -115,15 +115,13 @@ covering all three worker kinds, so it cannot express the difference. Every
 per-worker-kind fact in the repository comes from a 24-entry hand-written table at
 `internal/dts_to_esc/env_table.go:91-121`.
 
-This matters for `Transferable`, whose arms are not uniformly available:
+This matters for `Transferable`, whose arms are not uniformly available. Six of
+the sixteen transferable interfaces are `Exposed=(DedicatedWorker, Window)` and
+are absent from shared and service workers. The two libs declare `Transferable`
+identically, so the converter sees no difference and cannot derive the split.
 
-| arm | exposed in |
-| --- | --- |
-| `ArrayBuffer`, `MessagePort`, `ReadableStream`, `WritableStream`, `TransformStream`, `ImageBitmap`, `OffscreenCanvas` | window and every worker kind |
-| `AudioData`, `VideoFrame`, `RTCDataChannel`, `MediaSourceHandle` | window and dedicated worker only |
-
-The two libs declare `Transferable` identically, so the converter sees no
-difference and cannot derive the split.
+`transferable.md` in this folder works the case through in full, against
+`@webref/idl`.
 
 ### 3.7 Per-arm availability has no representation
 
@@ -307,9 +305,13 @@ members does not make the classes removable.
    needs no new annotation granularity, but it makes name resolution
    environment-dependent and `EnvIndex` currently intersects over a duplicate
    name, which is the wrong operation for disjoint copies.
-4. **Where does per-worker-kind data come from?** `@webref/idl` publishes the
-   curated WebIDL with `[Exposed]` on every interface. Adding it as a build-time
-   input would also settle #1645.
+4. **Where does per-worker-kind data come from?** Answered. `@webref/idl`
+   publishes the curated WebIDL with `[Exposed]` on every interface, and it is
+   reachable from the build environment. `transferable.md` uses it. Adding it as
+   a build-time input would also settle #1645. What remains is whether the
+   `@env` vocabulary grows to match the twelve globals the IDL names, or the
+   non-goals record the worklets as out of scope and an unmappable `Exposed`
+   value is rejected rather than dropped.
 5. **Is a type-only reference needed?** For `WindowProxy` in a portable union the
    answer looks like yes, since no split can make it portable. It is not needed
    for `OffscreenCanvas`, which a repartition reaches.
