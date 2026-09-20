@@ -82,18 +82,32 @@ const SPLIT = {
 };
 
 // `location` and `navigator` exist in every environment and only their types
-// differ, so both go to web:core. Each type has a shared part the platform has
-// already factored out, and the note is emitted above the declaration because
-// the split has to happen before this compiles. See README.md.
-const SHARED_PART = {
+// differ, so both go to web:core.
+//
+// `navigator` collapses to one declaration. WorkerNavigator is a strict subset
+// of Navigator, 17 of its 43 members with no signature differing, so the 26 a
+// page adds carry `@env("window")` on the merged type and the global needs no
+// decorator of its own.
+const MERGED = {
+  navigator: {
+    type: "Navigator",
+    note:
+      "Navigator here is the merged type. WorkerNavigator is a strict subset,\n" +
+      "// 17 of 43 members with no signature differing, so the 26 members only a\n" +
+      "// page has carry `@env(\"window\")` on the type itself.",
+  },
+};
+
+// `location` keeps one declaration per environment. Location and WorkerLocation
+// name the same members, but hash, host, hostname, href, pathname, port,
+// protocol and search are writable in a page and readonly in a worker. A
+// decorator says where a member exists, not whether it can be assigned, so one
+// merged type cannot hold both.
+const SPLIT_NOTE = {
   location:
-    "WorkerLocation is Location without ancestorOrigins, assign, reload and\n" +
-    "// replace. The ten shared members are what web:core can name.",
-  navigator:
-    "Navigator and WorkerNavigator share seven mixins: NavigatorBadge,\n" +
-    "// NavigatorConcurrentHardware, NavigatorID, NavigatorLanguage,\n" +
-    "// NavigatorLocks, NavigatorOnLine and NavigatorStorage. Those are what\n" +
-    "// web:core can name.",
+    "Kept per environment. The member sets match, but eight members are\n" +
+    "// writable in a page and readonly in a worker, which no decorator on a\n" +
+    "// merged type can express.",
 };
 
 // The event-map machinery is a property of each scope rather than a global a
@@ -119,15 +133,28 @@ function packageFor(name, envs) {
 
 // pkg -> list of rendered declarations
 const files = new Map();
-const notes = { notHoisted: [], divergent: [], splitAcrossPackages: [] };
+const notes = { notHoisted: [], divergent: [], splitAcrossPackages: [], merged: [] };
 
 for (const g of globals) {
   if (NOT_HOISTED.has(g.name)) {
     notes.notHoisted.push(g.name);
     continue;
   }
-  const variants = g.variants.map((v) => ({ ...v, envs: envsOf(v.scopes) }));
+  let variants = g.variants.map((v) => ({ ...v, envs: envsOf(v.scopes) }));
   if (variants.length > 1) notes.divergent.push(g.name);
+
+  const merge = MERGED[g.name];
+  if (merge) {
+    const envs = ALL.filter((e) => variants.some((v) => v.envs.includes(e)));
+    const readonly = variants.every((v) => /^readonly /.test(v.text));
+    variants = [{
+      text: `${readonly ? "readonly " : ""}${g.name}: ${merge.type}`,
+      scopes: [...new Set(variants.flatMap((v) => v.scopes))],
+      envs,
+      note: merge.note,
+    }];
+    notes.merged.push(`${g.name} -> ${merge.type}`);
+  }
 
   const pkgs = new Set();
   for (const v of variants) {
@@ -135,7 +162,8 @@ for (const g of globals) {
     pkgs.add(pkg);
     const dec = envDecorator(v.envs);
     const lines = [];
-    if (SHARED_PART[g.name]) lines.push(`// NEEDS A TYPE SPLIT: ${SHARED_PART[g.name]}`);
+    if (v.note) lines.push(`// ${v.note}`);
+    if (SPLIT_NOTE[g.name]) lines.push(`// ${SPLIT_NOTE[g.name]}`);
     if (dec) lines.push(dec);
     lines.push(`@js("${g.name}")`);
     for (const sig of v.text.split("\n")) lines.push(hoist(g.name, sig));
@@ -179,4 +207,5 @@ console.log("files:", [...files.keys()].map((k) => `${k}=${files.get(k).length}`
 console.log("not hoisted:", notes.notHoisted.join(", "));
 console.log("divergent:", notes.divergent.length, notes.divergent.join(", "));
 console.log("split across packages:", notes.splitAcrossPackages.join(" | "));
+console.log("merged:", notes.merged.join(", "));
 writeFileSync(`${S}/notes.json`, JSON.stringify(notes, null, 2));

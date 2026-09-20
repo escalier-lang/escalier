@@ -45,14 +45,14 @@ are assigned by family in the table inside `emit.mjs`, reproduced in
 
 ## Results
 
-240 declarations from 227 distinct globals, written as 246 signature lines
-because an overload set stays several lines. The gap between 240 and 227 is the
+239 declarations from 227 distinct globals, written as 245 signature lines
+because an overload set stays several lines. The gap between 239 and 227 is the
 divergent names, which contribute one declaration per environment.
 
 | package | declarations |
 | --- | --- |
 | `web:dom` | 176 |
-| `web:core` | 40 |
+| `web:core` | 39 |
 | `web:worker` | 16 |
 | `web:storage` | 2 |
 | `web:canvas` | 1, two signatures |
@@ -62,10 +62,10 @@ Environments:
 
 | `@env` | count |
 | --- | --- |
-| `@env("window")` | 189 |
-| none, meaning every environment | 18 |
+| `@env("window")` | 188 |
+| none, meaning every environment | 19 |
 | `@env("service_worker")` | 13 |
-| `@env("worker")` | 11 |
+| `@env("worker")` | 10 |
 | `@env("dedicated_worker")` | 4 |
 | `@env("window", "dedicated_worker")` | 2 |
 | `@env("window", "dedicated_worker", "shared_worker")` | 1 |
@@ -140,12 +140,43 @@ hold the shared mixins and a `location` and `navigator` typed against them, whil
 declarations in `core.esc` carry a `NEEDS A TYPE SPLIT` comment, since they name
 the unsplit types and would not compile as written.
 
-**This is a third option for F5.** Per-environment copies and per-arm
-annotations both assume the divergence is irreducible. Where the platform
-factored a mixin out, the shared part can be hoisted and only the extension left
-behind, which needs neither. It does not cover everything: `ExtendableMessageEvent`
-extends `ExtendableEvent`, not `MessageEvent`, so `onmessage` has no shared type
-and still needs F5 proper.
+**The two are not alike, and they take different treatments.**
+
+`navigator` merges. `WorkerNavigator` is a strict subset of `Navigator`, 17 of
+43 members with no shared member differing in signature and nothing worker-only.
+So one declaration on every environment serves both, and the 26 members a page
+adds carry `@env("window")` on the type. `core.esc` holds a single
+`export declare val navigator: Navigator` with no decorator.
+
+`location` does not merge. The member sets match, but eight of them differ in
+mutability rather than in type:
+
+```
+Location                      WorkerLocation
+hash: string;                 readonly hash: string;
+host: string;                 readonly host: string;
+href: string;                 readonly href: string;
+pathname: string;             readonly pathname: string;
+```
+
+`location.hash = "#x"` navigates a page. A worker has nothing to navigate. A
+decorator says where a member exists, not whether it can be assigned, so a
+merged type has to choose, and both choices are wrong. Writable everywhere lets
+a worker assign and throw under strict mode. Readonly everywhere takes
+navigation away from pages. So `location` keeps one declaration per environment,
+which needs F5.
+
+**So F5 has a third option, and it is partial.** Where the platform factored the
+shared surface out and the divergence is only which members exist, the types
+merge and per-member `@env` covers it. Where the divergence is in a modifier or
+in the type itself, it does not. `location` needs F5 for mutability and
+`onmessage` needs it for type, since `ExtendableMessageEvent` extends
+`ExtendableEvent` rather than `MessageEvent`.
+
+**The `Navigator` merge is blocked today.** The converted `Navigator` extends
+only `NavigatorAutomationInformation`, having dropped the other ten mixins, so
+the tree cannot yet show what the merged type looks like. That is a converter
+bug rather than a partitioning question and is recorded separately.
 
 ### `name` still splits across packages
 
