@@ -206,8 +206,11 @@ func (c *Checker) resolveStdlibPath(scheme, pkg string, span ast.Span) (string, 
 			span: span,
 		}}
 	}
-	path := filepath.Join(dir, scheme, pkg+".esc")
-	if info, statErr := os.Stat(path); statErr != nil || info.IsDir() {
+	path, found, lookupErr := stdlibdir.PackageFile(dir, scheme, pkg)
+	if lookupErr != nil {
+		return "", []Error{&GenericError{message: lookupErr.Error(), span: span}}
+	}
+	if !found {
 		return "", []Error{&GenericError{
 			message: fmt.Sprintf("unknown package %q in %s: scheme (no %s/%s.esc under %s)",
 				pkg, scheme, scheme, pkg, dir),

@@ -7,11 +7,11 @@ import (
 	"path/filepath"
 	"slices"
 	"sort"
-	"strings"
 
 	"github.com/escalier-lang/escalier/internal/ast"
 	"github.com/escalier-lang/escalier/internal/parser"
 	"github.com/escalier-lang/escalier/internal/set"
+	"github.com/escalier-lang/escalier/internal/stdlibdir"
 )
 
 // stdlib_closure.go works out which pseudo-packages a module's imports reach,
@@ -107,10 +107,14 @@ func buildPackageGraph(dir string) (map[string][]string, error) {
 			return nil, fmt.Errorf("cannot scan %s: %w", schemeDir, err)
 		}
 		for _, entry := range entries {
-			if entry.IsDir() || !strings.HasSuffix(entry.Name(), ".esc") {
+			if entry.IsDir() {
 				continue
 			}
-			uri := scheme + ":" + strings.TrimSuffix(entry.Name(), ".esc")
+			name, ok := stdlibdir.PackageName(entry.Name())
+			if !ok {
+				continue
+			}
+			uri := scheme + ":" + name
 			imports, err := readPackageImports(filepath.Join(schemeDir, entry.Name()))
 			if err != nil {
 				return nil, err

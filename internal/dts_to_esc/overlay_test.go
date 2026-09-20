@@ -249,7 +249,7 @@ func TestLoadOverlay_Rejects(t *testing.T) {
 		{
 			name:  "package not in the partition table",
 			files: map[string]string{"std/nonesuch.add.esc": "export declare val x\n"},
-			want: "overlay: std/nonesuch.add.esc targets std/nonesuch.esc, which is not a " +
+			want: "overlay: std/nonesuch.add.esc targets std:nonesuch, which is not a " +
 				"package in the partition table (see internal/dts_to_esc/partition.go)",
 		},
 		{

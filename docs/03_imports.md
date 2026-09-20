@@ -183,6 +183,11 @@ Web families with no DOM coupling get their own packages: `web:fetch`,
 `web:performance`, `web:credentials`, `web:webauthn`, `web:payments`. A typical
 browser program imports `web:dom` plus one or two siblings.
 
+A package's file name says where it runs. `web/fetch.esc` carries no suffix, so
+`web:fetch` exists in every environment; `web/dom.window.esc` narrows `web:dom`
+to a page. The suffix is no part of the URI — the import is still
+`import "web:dom"` — and it uses the same environment names `@env` takes.
+
 A sibling that needs a `web:dom` type refers to it through a qualified name, so
 `web:fetch`'s `Response.body` is a `streams.ReadableStream | null` and has to be
 narrowed before a stream method can be called on it. The scheme does not appear

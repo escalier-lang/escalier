@@ -11,6 +11,7 @@ import (
 	"github.com/escalier-lang/escalier/internal/ast"
 	"github.com/escalier-lang/escalier/internal/parser"
 	"github.com/escalier-lang/escalier/internal/set"
+	"github.com/escalier-lang/escalier/internal/stdlibdir"
 )
 
 // stdlib_import.go resolves the `std:` / `web:` / `node:` import surface: which
@@ -166,8 +167,11 @@ func resolveStdlibPath(dir, uri string) (string, error) {
 			"invalid package name %q in %s:%s; expected lowercase letters, digits, and underscores",
 			pkg, scheme, pkg)
 	}
-	path := filepath.Join(dir, scheme, pkg+".esc")
-	if info, err := os.Stat(path); err != nil || info.IsDir() {
+	path, found, err := stdlibdir.PackageFile(dir, scheme, pkg)
+	if err != nil {
+		return "", err
+	}
+	if !found {
 		return "", fmt.Errorf("unknown package %q in %s: scheme (no %s/%s.esc under %s)",
 			pkg, scheme, scheme, pkg, dir)
 	}

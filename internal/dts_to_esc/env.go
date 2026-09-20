@@ -117,20 +117,28 @@ func envsFromDecorator(dec *ast.Decorator) (set.Set[Env], error) {
 		if !ok {
 			return nil, fmt.Errorf("`@%s` takes string-literal arguments", EnvDecoratorName)
 		}
-		if group, isGroup := envGroups[str.Value]; isGroup {
-			for _, env := range group {
-				envs.Add(env)
-			}
-			continue
-		}
-		env := Env(str.Value)
-		if !AllEnvs().Contains(env) {
+		named, ok := envsNamed(str.Value)
+		if !ok {
 			return nil, fmt.Errorf("`@%s` names unknown environment %q; the vocabulary is %s",
 				EnvDecoratorName, str.Value, knownEnvNames())
 		}
-		envs.Add(env)
+		envs = envs.Union(named)
 	}
 	return envs, nil
+}
+
+// envsNamed resolves one name from the vocabulary, which is an environment or
+// a group standing for several. It is what keeps `@env("worker")` and a
+// `.worker.esc` file name reading the same set.
+func envsNamed(name string) (set.Set[Env], bool) {
+	if group, isGroup := envGroups[name]; isGroup {
+		return set.FromSlice(group), true
+	}
+	env := Env(name)
+	if !AllEnvs().Contains(env) {
+		return nil, false
+	}
+	return set.FromSlice([]Env{env}), true
 }
 
 // findEnvDecorator returns the `@env` in a decorator list, or nil for a list

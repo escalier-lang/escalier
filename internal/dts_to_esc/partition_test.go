@@ -65,7 +65,7 @@ func TestRoute_DOMResidual(t *testing.T) {
 			got := Route(tc.name, tc.sourceFile)
 			require.False(t, got.Unmapped)
 			require.Equal(t, "web:dom", got.Pkg.URI)
-			require.Equal(t, "web/dom.esc", got.Pkg.File)
+			require.Equal(t, "web/dom.window.esc", got.Pkg.File)
 		})
 	}
 }
@@ -193,7 +193,7 @@ func TestPackageForURI(t *testing.T) {
 
 	got, ok = PackageForURI("web:dom")
 	require.True(t, ok)
-	require.Equal(t, "web/dom.esc", got.File)
+	require.Equal(t, "web/dom.window.esc", got.File)
 
 	_, ok = PackageForURI("std:does_not_exist")
 	require.False(t, ok)

@@ -6,6 +6,7 @@ import (
 	"testing"
 
 	"github.com/escalier-lang/escalier/internal/ast"
+	"github.com/escalier-lang/escalier/internal/set"
 	"github.com/stretchr/testify/require"
 )
 
@@ -77,9 +78,13 @@ func envDecoratorsOf(decl ast.Decl) []*ast.Decorator {
 	return found
 }
 
-// A `web:*` package with no entry fails the run rather than defaulting to every
-// environment, so a new package has to be classified.
-func TestAnnotateEnvs_RejectsAnUnclassifiedWebPackage(t *testing.T) {
+// A `web:*` package the partition table does not name fails the run, since
+// nothing says what file it is written to and so nothing says where it runs.
+//
+// A package the table does name but whose file carries no suffix is a different
+// case: that is a claim to every environment rather than an omission.
+// TestAnnotateEnvs_ReadsTheEnvironmentsFromTheFileName covers it.
+func TestAnnotateEnvs_RejectsAPackageNoPartitionEntryNames(t *testing.T) {
 	t.Parallel()
 
 	err := AnnotateEnvs(envPackages(t, map[string]string{
@@ -87,9 +92,35 @@ func TestAnnotateEnvs_RejectsAnUnclassifiedWebPackage(t *testing.T) {
 	}))
 	require.Error(t, err)
 	require.Equal(t,
-		"converter: packageEnvs has no entry for web:brand_new; say which "+
-			"environments each exists on in internal/dts_to_esc/env_table.go",
+		"converter: web:brand_new is in no partition entry, so nothing names its file",
 		err.Error())
+}
+
+// A package's file name is where its environments are read from, so this pins
+// both halves of the rule against the committed table. `web/dom.window.esc`
+// narrows every declaration in it to a page, and `web/fetch.esc` carries no
+// suffix and so annotates nothing.
+func TestAnnotateEnvs_ReadsTheEnvironmentsFromTheFileName(t *testing.T) {
+	t.Parallel()
+
+	mods := envPackages(t, map[string]string{
+		"web:dom":   "export declare class C {}",
+		"web:fetch": "export declare class D {}",
+	})
+	require.NoError(t, AnnotateEnvs(mods))
+
+	for _, ns := range mods["web:dom"].Module.Namespaces.Values() {
+		for _, decl := range ns.Decls {
+			decs := envDecoratorsOf(decl)
+			require.Len(t, decs, 1)
+			require.Equal(t, []Env{EnvWindow}, sortedEnvs(mustEnvsFromDecorator(t, decs[0])))
+		}
+	}
+	for _, ns := range mods["web:fetch"].Module.Namespaces.Values() {
+		for _, decl := range ns.Decls {
+			require.Empty(t, envDecoratorsOf(decl))
+		}
+	}
 }
 
 // A `std:*` package needs no entry. The language surface is every environment,
@@ -185,4 +216,13 @@ func TestDeclaredEnvs_NeedsEveryNameToAgree(t *testing.T) {
 			"\"HTMLCanvasElement\" with different environments; a decorator answers "+
 			"for the whole declaration, so give them one entry or split the declaration",
 		err.Error())
+}
+
+// mustEnvsFromDecorator reads the set one `@env` names, failing the test rather
+// than returning an error, since a decorator this package wrote should parse.
+func mustEnvsFromDecorator(t *testing.T, dec *ast.Decorator) set.Set[Env] {
+	t.Helper()
+	envs, err := envsFromDecorator(dec)
+	require.NoError(t, err)
+	return envs
 }

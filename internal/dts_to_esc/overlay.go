@@ -234,12 +234,15 @@ func classifyOverlayPath(rel string) (OverlayOp, string, error) {
 			"overlay: %s names the unknown operation %q; the operations are "+
 				"add, replace, and drop", rel, opText)
 	}
-	pkgFile := dir + "/" + name + ".esc"
-	pkg, ok := PackageForFile(pkgFile)
+	// An overlay is named for the package it targets, not for the file that
+	// package is written to. `web/dom.replace.esc` targets `web:dom` whether
+	// the tree writes it to `dom.esc` or `dom.window.esc`, so an overlay does
+	// not have to be renamed when a package's environments change.
+	pkg, ok := PackageForName(dir, name)
 	if !ok {
 		return "", "", fmt.Errorf(
-			"overlay: %s targets %s, which is not a package in the partition "+
-				"table (see internal/dts_to_esc/partition.go)", rel, pkgFile)
+			"overlay: %s targets %s:%s, which is not a package in the partition "+
+				"table (see internal/dts_to_esc/partition.go)", rel, dir, name)
 	}
 	return op, pkg.URI, nil
 }

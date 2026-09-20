@@ -2,6 +2,7 @@ package dts_to_esc
 
 import (
 	"fmt"
+	"path/filepath"
 	"sort"
 	"strings"
 
@@ -12,51 +13,60 @@ import (
 // env_table.go says which environments each generated declaration exists on,
 // and stamps `@env` on the ones that are not everywhere.
 //
-// Two tables answer it. packageEnvs gives a package's declarations their
+// Two sources answer it. A package's file name gives its declarations their
 // default, and declEnvOverrides names the declarations that differ from their
 // package. A declaration on every environment carries no decorator, since that
 // is what an unannotated declaration already means.
 
-// packageEnvs is the environments a package's declarations default to.
+// packageFileEnvs returns the environments a package's declarations default
+// to, read from the name of the file the partition table writes it to.
 //
-// It is total over the `web:*` packages a run emits, checked both ways, so a
-// new package has to be classified rather than picking up "everywhere" by
-// omission. A `std:*` package is the language surface and is everywhere, so the
-// table says nothing about those.
+// `web/dom.window.esc` says a page is the only place `web:dom` exists, and
+// `web/fetch.esc` carries no suffix, so `web:fetch` exists everywhere. Putting
+// the answer in the name means the tree states it where a reader already is,
+// rather than in a table they have to find.
 //
 // The claim is coarse and deliberately so. `web:cache` and `web:indexeddb` are
 // reachable from a worker in reality, and saying so needs a source the
-// repository does not hold, so both are marked for the window alone. Narrowing
+// repository does not hold, so both are named for the window alone. Narrowing
 // is the safe direction: the check asks whether a referent covers its referrer,
 // so a referrer claiming less is never the cause of a report, and a referent
 // claiming less produces one a reader can answer.
-var packageEnvs = map[string]set.Set[Env]{
-	"web:core": AllEnvs(),
+//
+// A `std:*` package is the language surface and is everywhere, so none of them
+// carries a suffix.
+func packageFileEnvs(uri string) (set.Set[Env], error) {
+	pkg, held := PackageForURI(uri)
+	if !held {
+		return nil, fmt.Errorf(
+			"converter: %s is in no partition entry, so nothing names its file", uri)
+	}
+	return envsFromFileName(pkg.File)
+}
 
-	"web:fetch":       AllEnvs(),
-	"web:url":         AllEnvs(),
-	"web:streams":     AllEnvs(),
-	"web:file":        AllEnvs(),
-	"web:crypto":      AllEnvs(),
-	"web:performance": AllEnvs(),
-	"web:websocket":   AllEnvs(),
-	"web:compression": AllEnvs(),
-	"web:wasm":        AllEnvs(),
-
-	"web:dom":            windowOnly(),
-	"web:workers":        windowOnly(),
-	"web:webgl":          windowOnly(),
-	"web:web_audio":      windowOnly(),
-	"web:web_rtc":        windowOnly(),
-	"web:web_codecs":     windowOnly(),
-	"web:indexeddb":      windowOnly(),
-	"web:service_worker": windowOnly(),
-	"web:push":           windowOnly(),
-	"web:cache":          windowOnly(),
-	"web:storage":        windowOnly(),
-	"web:webauthn":       windowOnly(),
-	"web:credentials":    windowOnly(),
-	"web:payments":       windowOnly(),
+// envsFromFileName reads the environments a package file's name claims. A name
+// with no suffix claims every environment.
+//
+// The suffix is dot-separated, so `web/foo.window.service_worker.esc` names
+// two. Each part is an environment or a group, the same vocabulary `@env`
+// takes, since one spelling for the idea is what keeps them comparable.
+func envsFromFileName(file string) (set.Set[Env], error) {
+	stem := strings.TrimSuffix(filepath.Base(file), ".esc")
+	_, suffix, found := strings.Cut(stem, ".")
+	if !found {
+		return AllEnvs(), nil
+	}
+	envs := set.NewSet[Env]()
+	for _, part := range strings.Split(suffix, ".") {
+		named, ok := envsNamed(part)
+		if !ok {
+			return nil, fmt.Errorf(
+				"converter: %s names the environment %q, which is not one of %s",
+				file, part, knownEnvNames())
+		}
+		envs = envs.Union(named)
+	}
+	return envs, nil
 }
 
 func windowOnly() set.Set[Env] { return set.FromSlice([]Env{EnvWindow}) }
@@ -88,7 +98,7 @@ func PackageDeclEnvs(uri, name string) set.Set[Env] {
 	if envs, held := declEnvOverrides[packageDecl{URI: uri, Name: name}]; held {
 		return envs
 	}
-	if envs, held := packageEnvs[uri]; held {
+	if envs, err := packageFileEnvs(uri); err == nil {
 		return envs
 	}
 	return AllEnvs()
@@ -188,44 +198,38 @@ func attachEnvDecorator(decl ast.Decl, envs set.Set[Env]) {
 	setter.SetDecorators(append([]*ast.Decorator{dec}, ast.DeclDecorators(decl)...))
 }
 
-// checkEnvTablesMatchTheTree reports a `web:*` package the run emits that
-// packageEnvs does not classify.
+// checkEnvTablesMatchTheTree reports a `web:*` package the run emits whose file
+// name does not say which environments it exists on.
 //
-// Only this direction is checked here, because a run over part of the lib set
-// emits part of the tree and an entry for a package it did not reach is not
-// stale. The other direction, an entry naming something the whole tree does not
-// hold, is a property of the pinned lib set and
-// TestEnvTablesMatchThePinnedLibSet reads it there.
+// A name with no suffix is a claim rather than an omission: it says the package
+// exists everywhere. So what this catches is a name whose suffix does not parse,
+// which is a typo in the partition table's path.
 func checkEnvTablesMatchTheTree(mods map[string]*StandaloneModule) error {
-	var missing []string
+	var unreadable []string
 	for _, uri := range sortedURIs(mods) {
 		if SchemeOf(uri) != "web" {
 			continue
 		}
-		if _, held := packageEnvs[uri]; !held {
-			missing = append(missing, uri)
+		if _, err := packageFileEnvs(uri); err != nil {
+			unreadable = append(unreadable, err.Error())
 		}
 	}
-	if len(missing) == 0 {
+	if len(unreadable) == 0 {
 		return nil
 	}
-	sort.Strings(missing)
-	return fmt.Errorf(
-		"converter: packageEnvs has no entry for %s; say which environments each "+
-			"exists on in internal/dts_to_esc/env_table.go",
-		strings.Join(missing, ", "))
+	sort.Strings(unreadable)
+	return fmt.Errorf("%s", strings.Join(unreadable, "; "))
 }
 
-// StaleEnvTableEntries returns each table entry naming a package or declaration
-// mods does not hold, sorted. It answers against a whole-tree run, which is
-// where an entry a TypeScript bump left behind shows up.
+// StaleEnvTableEntries returns each declEnvOverrides entry naming a package or
+// declaration mods does not hold, sorted. It answers against a whole-tree run,
+// which is where an entry a TypeScript bump left behind shows up.
+//
+// A package's own environments need no such check. They are read from the name
+// of the file the partition table writes, so a package the tree does not hold
+// has no file and no claim to go stale.
 func StaleEnvTableEntries(mods map[string]*StandaloneModule) []string {
 	var stale []string
-	for uri := range packageEnvs {
-		if _, held := mods[uri]; !held {
-			stale = append(stale, fmt.Sprintf("packageEnvs names %s", uri))
-		}
-	}
 	for key := range declEnvOverrides {
 		mod, held := mods[key.URI]
 		if !held {

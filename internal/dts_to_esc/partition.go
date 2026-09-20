@@ -525,7 +525,7 @@ var webPackages = []struct {
 		// WebSocket, TextDecoder, WebGL and Crypto all name, so web:core
 		// carries it rather than any one of them.
 	}},
-	{"web:workers", "web/workers.esc", []string{
+	{"web:workers", "web/workers.window.esc", []string{
 		// The document side of workers: what a page constructs and the
 		// events it gets back. The scope a worker runs inside —
 		// `WorkerGlobalScope`, `DedicatedWorkerGlobalScope`,
@@ -536,7 +536,7 @@ var webPackages = []struct {
 		"SharedWorker",
 		"AbstractWorker", "WorkerEventMap",
 	}},
-	{"web:webgl", "web/webgl.esc", []string{
+	{"web:webgl", "web/webgl.window.esc", []string{
 		"WebGLRenderingContext", "WebGLRenderingContextBase",
 		"WebGLRenderingContextOverloads",
 		"WebGL2RenderingContext", "WebGL2RenderingContextBase",
@@ -583,7 +583,7 @@ var webPackages = []struct {
 		"WEBGL_lose_context", "WEBGL_multi_draw",
 		"WebGLVertexArrayObjectOES",
 	}},
-	{"web:web_audio", "web/web_audio.esc", []string{
+	{"web:web_audio", "web/web_audio.window.esc", []string{
 		// Symbols MDN documents under Web Audio that are absent from
 		// the pinned lib.dom.d.ts (no partition entry needed today):
 		// AudioWorkletProcessor, AudioWorkletGlobalScope,
@@ -633,7 +633,7 @@ var webPackages = []struct {
 		"DecodeErrorCallback", "DecodeSuccessCallback",
 		"AudioTimestamp",
 	}},
-	{"web:web_rtc", "web/web_rtc.esc", []string{
+	{"web:web_rtc", "web/web_rtc.window.esc", []string{
 		// Symbols MDN documents under WebRTC that are absent from the
 		// pinned lib.dom.d.ts (no partition entry needed today):
 		// RTCIdentityAssertion, RTCIdentityProvider,
@@ -697,7 +697,7 @@ var webPackages = []struct {
 		"RTCCertificateExpiration", "RTCDtlsRole",
 		"RTCLocalSessionDescriptionInit", "RTCQualityLimitationReason",
 	}},
-	{"web:web_codecs", "web/web_codecs.esc", []string{
+	{"web:web_codecs", "web/web_codecs.window.esc", []string{
 		"AudioData", "AudioDataInit", "AudioDataCopyToOptions",
 		"AudioSampleFormat",
 		"AudioDecoder", "AudioDecoderConfig", "AudioDecoderInit",
@@ -736,7 +736,7 @@ var webPackages = []struct {
 		"VideoFrameOutputCallback",
 		"OpusBitstreamFormat",
 	}},
-	{"web:indexeddb", "web/indexeddb.esc", []string{
+	{"web:indexeddb", "web/indexeddb.window.esc", []string{
 		"IDBFactory", "IDBOpenDBRequest", "IDBOpenDBRequestEventMap",
 		"IDBDatabase", "IDBDatabaseEventMap", "IDBDatabaseInfo",
 		"IDBObjectStore", "IDBObjectStoreParameters",
@@ -749,7 +749,7 @@ var webPackages = []struct {
 		"IDBVersionChangeEvent", "IDBVersionChangeEventInit",
 		"IDBValidKey", "IDBArrayKey",
 	}},
-	{"web:service_worker", "web/service_worker.esc", []string{
+	{"web:service_worker", "web/service_worker.window.esc", []string{
 		// Service Worker proper. MDN splits Push and Cache into their
 		// own APIs (https://developer.mozilla.org/en-US/docs/Web/API/Service_Worker_API);
 		// see web:push and web:cache below.
@@ -770,14 +770,14 @@ var webPackages = []struct {
 		"ClientQueryOptions", "GetNotificationOptions",
 		"ClientTypes",
 	}},
-	{"web:push", "web/push.esc", []string{
+	{"web:push", "web/push.window.esc", []string{
 		// MDN documents Push as a separate API:
 		// https://developer.mozilla.org/en-US/docs/Web/API/Push_API
 		"PushManager", "PushSubscription", "PushSubscriptionJSON",
 		"PushSubscriptionOptions", "PushSubscriptionOptionsInit",
 		"PushEncryptionKeyName", "PushPermissionState",
 	}},
-	{"web:cache", "web/cache.esc", []string{
+	{"web:cache", "web/cache.window.esc", []string{
 		// MDN documents the Cache API as a separate API (defined in the
 		// SW spec but usable from any context):
 		// https://developer.mozilla.org/en-US/docs/Web/API/Cache
@@ -792,7 +792,7 @@ var webPackages = []struct {
 		"WebSocket", "WebSocketEventMap",
 		"CloseEvent", "CloseEventInit",
 	}},
-	{"web:storage", "web/storage.esc", []string{
+	{"web:storage", "web/storage.window.esc", []string{
 		"Storage", "StorageEvent", "StorageEventInit",
 	}},
 	{"web:url", "web/url.esc", []string{
@@ -849,12 +849,12 @@ var webPackages = []struct {
 	// something that says nothing about public keys. It also keeps
 	// `web:webauthn` off `web:dom` entirely. `Credential` is the only name
 	// WebAuthn reaches for outside its own spec, and it lives here.
-	{"web:credentials", "web/credentials.esc", []string{
+	{"web:credentials", "web/credentials.window.esc", []string{
 		"Credential", "CredentialsContainer",
 		"CredentialCreationOptions", "CredentialRequestOptions",
 		"CredentialMediationRequirement",
 	}},
-	{"web:webauthn", "web/webauthn.esc", []string{
+	{"web:webauthn", "web/webauthn.window.esc", []string{
 		"AuthenticatorAssertionResponse", "AuthenticatorAttestationResponse",
 		"AuthenticatorResponse", "AuthenticatorTransport",
 		"AuthenticatorAttachment", "AuthenticatorSelectionCriteria",
@@ -880,7 +880,7 @@ var webPackages = []struct {
 		"PublicKeyCredentialUserEntityJSON",
 		"AuthenticationExtensionsPRFValues", "Base64URLString",
 	}},
-	{"web:payments", "web/payments.esc", []string{
+	{"web:payments", "web/payments.window.esc", []string{
 		// Symbols MDN documents under the Payment Request API that
 		// are absent from the pinned lib.dom.d.ts (no partition entry
 		// needed today): MerchantValidationEvent and
@@ -1068,7 +1068,7 @@ func init() {
 // WebDOM is the catch-all package for lib.dom.d.ts symbols not pinned
 // by the standalone-sibling explicit map. Returned by Route when the
 // source file is in DOMResidualSources.
-var WebDOM = Package{URI: "web:dom", File: "web/dom.esc"}
+var WebDOM = Package{URI: "web:dom", File: "web/dom.window.esc"}
 
 // RouteResult records the outcome of a Route call. Exactly one of Pkg
 // and Unmapped is meaningful per result.
@@ -1165,10 +1165,16 @@ func PackageForURI(uri string) (Package, bool) {
 	return Package{}, false
 }
 
+// PackageForName returns the package a scheme and package name address,
+// whatever environment suffix its file carries. The overlay reads this, since
+// an overlay is named for the package rather than for the package's file.
+func PackageForName(scheme, name string) (Package, bool) {
+	return PackageForURI(scheme + ":" + name)
+}
+
 // PackageForFile returns the Package whose generated file is the given
 // slash-separated path under internal/interop/data/, such as
-// "std/symbol.esc". The overlay reads this to turn a filename like
-// "std/symbol.add.esc" into the package it applies to.
+// "std/symbol.esc".
 func PackageForFile(file string) (Package, bool) {
 	for _, p := range stdPackages {
 		if p.File == file {

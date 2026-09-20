@@ -2,6 +2,7 @@ package dts_to_esc
 
 import (
 	"fmt"
+	"github.com/escalier-lang/escalier/internal/stdlibdir"
 	"os"
 	"path/filepath"
 	"sort"
@@ -239,8 +240,16 @@ func removeStalePackages(outDir string, written, handAuthored set.Set[string]) (
 			}
 			rel := dir + "/" + entry.Name()
 			uri := packageURIForFile(rel)
-			if written.Contains(uri) || handAuthored.Contains(uri) {
+			if handAuthored.Contains(uri) {
 				continue
+			}
+			// A written package is kept only under the name the table gives
+			// it. That is what retires the old file when a package's
+			// environments change and its name gains or loses a suffix.
+			if written.Contains(uri) {
+				if pkg, held := PackageForURI(uri); held && pkg.File == rel {
+					continue
+				}
 			}
 			if err := os.Remove(filepath.Join(outDir, filepath.FromSlash(rel))); err != nil {
 				return nil, fmt.Errorf("removing stale %s: %w", rel, err)
@@ -252,10 +261,10 @@ func removeStalePackages(outDir string, written, handAuthored set.Set[string]) (
 	return removed, nil
 }
 
-// packageURIForFile returns the package URI a generated file belongs to,
-// so "std/typed_arrays.esc" gives "std:typed_arrays". Every entry in the
-// partition table pairs its URI with its file by that rule, which
-// TestPackageURIForFile_MatchesThePartitionTable holds the two to.
+// packageURIForFile returns the package URI a generated file belongs to, so
+// "std/typed_arrays.esc" gives "std:typed_arrays" and "web/dom.window.esc"
+// gives "web:dom". The environment suffix names where the package runs and is
+// no part of its URI.
 //
 // removeStalePackages derives the URI rather than looking the file up in
 // the table, so a hand-authored package the table does not name is still
@@ -265,7 +274,11 @@ func packageURIForFile(file string) string {
 	if !found {
 		return ""
 	}
-	return dir + ":" + strings.TrimSuffix(base, ".esc")
+	name, ok := stdlibdir.PackageName(base)
+	if !ok {
+		return ""
+	}
+	return dir + ":" + name
 }
 
 // generatedDirs returns the subdirectories of the output root that hold

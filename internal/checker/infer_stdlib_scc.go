@@ -3,11 +3,11 @@ package checker
 import (
 	"context"
 	"fmt"
+	"github.com/escalier-lang/escalier/internal/stdlibdir"
 	"os"
 	"path/filepath"
 	"slices"
 	"sort"
-	"strings"
 	"sync"
 
 	"github.com/escalier-lang/escalier/internal/ast"
@@ -92,10 +92,13 @@ func buildStdlibPkgGraph(ctx context.Context, dir string) (map[string][]string, 
 			return nil, fmt.Errorf("cannot scan %s/: %w", schemeDir, err)
 		}
 		for _, e := range entries {
-			if e.IsDir() || !strings.HasSuffix(e.Name(), ".esc") {
+			if e.IsDir() {
 				continue
 			}
-			pkg := strings.TrimSuffix(e.Name(), ".esc")
+			pkg, ok := stdlibdir.PackageName(e.Name())
+			if !ok {
+				continue
+			}
 			uri := scheme + ":" + pkg
 			path := filepath.Join(schemeDir, e.Name())
 			imports, ierr := extractPseudoPackageImports(ctx, path)
