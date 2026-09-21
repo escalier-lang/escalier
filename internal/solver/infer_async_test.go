@@ -404,34 +404,35 @@ func TestInferAwaitUnknownArgNoCascade(t *testing.T) {
 	require.Equal(t, "fn () -> Promise<never>", values["f"])
 }
 
-// An unsupported INNER of a supported `Promise<…>` keeps the Promise wrapper: the
-// param stays Promise-shaped (recovered inner = a fresh var) rather than collapsing
-// to a bare var, and only the inner's own unsupported error is reported. Here the
-// param is unused, so its recovered inner var coalesces to `unknown` (contravariant,
-// no bounds).
+// An unsupported INNER of a supported `Promise<…>` keeps the Promise wrapper. The param
+// stays Promise-shaped, its recovered inner a fresh var, rather than collapsing to a bare
+// var. Only the inner's own unsupported error is reported. The regex literal type `/x/`
+// stands in for any annotation resolveTypeAnn does not support. The param here is unused,
+// so its recovered inner var sits in contravariant position with no bounds and coalesces
+// to `unknown`.
 func TestInferPromiseUnsupportedInnerKeepsWrapper(t *testing.T) {
 	values, _, errs := inferSource(t, `
-		fn f(p: Promise<bigint>) {
+		fn f(p: Promise< /x/ >) {
 			return 0
 		}
 	`)
 	require.Len(t, errs, 1)
-	require.Equal(t, "2:19-2:25: Unsupported: BigintTypeAnn", msgWithSpan(t, errs[0]))
+	require.Equal(t, "2:20-2:23: Unsupported: LitTypeAnn", msgWithSpan(t, errs[0]))
 	require.Equal(t, "fn (p: Promise<unknown>) -> 0", values["f"])
 }
 
-// When the recovered Promise inner is actually used (returned), it behaves like any
-// unconstrained variable: it generalizes to a type parameter, so the wrapper carries
-// through both positions as Promise<T0>. Proves the recovery is a real fresh var,
-// not a poisoned `never`/`unknown` (which would have cascaded or frozen).
+// A recovered Promise inner that the body returns behaves like any unconstrained
+// variable. It generalizes to a type parameter, so the wrapper carries through both
+// positions as Promise<T0>. That proves the recovery is a real fresh var rather than
+// a poisoned `never` or `unknown`, either of which would have cascaded or frozen.
 func TestInferPromiseUnsupportedInnerGeneralizes(t *testing.T) {
 	values, _, errs := inferSource(t, `
-		fn f(p: Promise<bigint>) {
+		fn f(p: Promise< /x/ >) {
 			return p
 		}
 	`)
 	require.Len(t, errs, 1)
-	require.Equal(t, "2:19-2:25: Unsupported: BigintTypeAnn", msgWithSpan(t, errs[0]))
+	require.Equal(t, "2:20-2:23: Unsupported: LitTypeAnn", msgWithSpan(t, errs[0]))
 	require.Equal(t, "fn <T0>(p: Promise<T0>) -> Promise<T0>", values["f"])
 }
 

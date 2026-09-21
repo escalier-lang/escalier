@@ -63,15 +63,17 @@ func (v *TypeVarType) BoundsAt(pol Polarity) []Type {
 }
 
 // Prim is the closed set of primitives. Mirrors the type_system package's Prim
-// enum. BigIntPrim and the literal kinds BigIntLit, NullLit and UndefinedLit are
-// still absent, and each is inert from constrain's perspective — the same prim
-// and literal arms with one more concrete — so their absence is scope rather
-// than design.
+// enum. The literal kinds BigIntLit, NullLit and UndefinedLit are still absent,
+// and each is inert from constrain's perspective — the same literal arms with
+// one more concrete — so their absence is scope rather than design.
 //
 // SymPrim is the type of every symbol, the one a `unique symbol` is a subtype
 // of. A symbol carries no literal kind: two symbols with the same description
 // are still different values, so nothing about a symbol is written down the way
 // a number or a string is.
+//
+// BigIntPrim is the type of every bigint. A bigint literal such as `1n` has no
+// soltype form, so nothing is a strict subtype of it.
 type Prim int
 
 const (
@@ -79,6 +81,7 @@ const (
 	StrPrim
 	BoolPrim
 	SymPrim
+	BigIntPrim
 )
 
 type PrimType struct{ Prim Prim }
