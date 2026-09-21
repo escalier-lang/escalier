@@ -1,6 +1,8 @@
 package solver
 
 import (
+	"strconv"
+
 	"github.com/escalier-lang/escalier/internal/ast"
 )
 
@@ -43,13 +45,59 @@ import (
 func InferScript(script *ast.Script, source ModuleSource) (*Scope, *Info, []SolverError) {
 	c := newChecker()
 	c.source = source
-	scope := c.preludeScope().Child()
+	return c.inferScriptIn(c.preludeScope().Child(), script)
+}
 
+// InferScriptInLib infers script against the scope a library module's run produced,
+// so the script reads that module's top-level declarations without importing them.
+// It returns the same three results InferScript does, with the diagnostics covering
+// the script alone rather than repeating the library's.
+//
+// This is the bin/ to lib/ seam. A package's lib/ files are one module and each of
+// its bin/ files is a script checked as if the library's declarations were already
+// in scope. The script scope is a child of lib.Scope, so a name the script does not
+// declare itself resolves to the library's binding, and then to the prelude through
+// lib.Scope's own parent.
+//
+// The script carries on the library's run rather than starting a fresh one. A class,
+// enum, or alias the library declares resolves to a handle carrying a name, and the
+// definition that name stands for lives in the run's Context. A second run would hold
+// none of those definitions, so a script could name the library's `Point` but could
+// read no member off it. Sharing the Context is what makes a library type usable from
+// a script. It also numbers the two runs' inference variables apart and loads each
+// imported package once. forScript builds the checker that does this.
+//
+// Two scripts checked against one library share that Context as well, so a constraint
+// one script puts on a library binding's inference variable is visible to the next.
+// The old checker has the same property: it hands each bin/ script the one
+// type_system.Namespace the library produced.
+//
+// lib must be a result InferModuleWithSource or InferModuleAgainstStdlib returned.
+// A script with no library to check against goes through InferScript instead, which
+// parents it to the prelude directly.
+func InferScriptInLib(script *ast.Script, lib *ModuleResult) (*Scope, *Info, []SolverError) {
+	c := lib.run.forScript(scriptPkgURI(script))
+	return c.inferScriptIn(lib.Scope.Child(), script)
+}
+
+// scriptPkgURI is the prefix the nominal registries key one script's declarations
+// under. Every script checked against one library shares that run's registries, so
+// each needs a prefix of its own for two scripts declaring the same class name to
+// hold two definitions. The source id names the file, which is what distinguishes
+// one bin/ script from another within a package.
+func scriptPkgURI(script *ast.Script) string {
+	return "script:" + strconv.Itoa(script.Span().SourceID)
+}
+
+// inferScriptIn walks script's statements into scope, the body both script entry
+// points share. scope is the freshly created scope the script's own bindings land
+// in, already parented to whatever the script resolves free names through.
+func (c *checker) inferScriptIn(scope *Scope, script *ast.Script) (*Scope, *Info, []SolverError) {
 	// A script's statements form one linear body, so give them the same per-body
 	// context a function body gets. pushFuncCtx makes c.fn non-nil. The transition
 	// checker keys off c.fn, and runLivenessPrePass writes its liveness and alias state
-	// onto it. The node is nil because a script has no enclosing function. The child
-	// of the prelude scope is the outer scope the pre-pass resolves names against. There is no
+	// onto it. The node is nil because a script has no enclosing function. scope's
+	// parent chain is what the pre-pass resolves outer names against. There is no
 	// enclosing context to restore, so the returned previous one is discarded.
 	scriptBody := &ast.Block{Stmts: script.Stmts, Span: script.Span()}
 	c.pushFuncCtx(false, nil, 0)
