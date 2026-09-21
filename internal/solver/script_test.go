@@ -605,3 +605,62 @@ func TestInferScriptInLibRechecksAScript(t *testing.T) {
 		})
 	}
 }
+
+// TestInferScriptInLibRechecksAnEnum is TestInferScriptInLibRechecksAScript for an
+// enum, which registers a class per variant and one alias for the enum itself. A
+// script cannot declare a type alias — the walk rejects a TypeDecl in a function
+// body, which a script body is — so an enum is how a script reaches the alias
+// registry, and this is what checks that the alias side is cleared too.
+func TestInferScriptInLibRechecksAnEnum(t *testing.T) {
+	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+	defer cancel()
+
+	libSource := &ast.Source{ID: 0, Path: "lib/index.esc", Contents: `export val unused = 0`}
+	module, parseErrors := parser.ParseLibFiles(ctx, []*ast.Source{libSource})
+	require.Empty(t, parseErrors)
+
+	lib := InferModuleWithSource(module, testStdlibSource())
+	require.Empty(t, lib.Errors)
+	classesBefore := len(lib.run.ctx.classes)
+	aliasesBefore := len(lib.run.ctx.aliases)
+
+	versions := []struct {
+		name     string
+		contents string
+		payload  string
+		variants int
+	}{
+		{
+			name:     "TwoVariants",
+			contents: "enum Color {\n\tHex(code: string),\n\tRgb(r: number),\n}\nval c = Color.Hex(\"#fff\")\nval p = c",
+			payload:  "Color",
+			variants: 2,
+		},
+		{
+			name:     "OneVariantWithAChangedPayload",
+			contents: "enum Color {\n\tHex(code: number),\n}\nval c = Color.Hex(1)\nval p = c",
+			payload:  "Color",
+			variants: 1,
+		},
+	}
+
+	for _, version := range versions {
+		t.Run(version.name, func(t *testing.T) {
+			source := &ast.Source{ID: 1, Path: "bin/index.esc", Contents: version.contents}
+			registerTestSources(t, map[int]*ast.Source{libSource.ID: libSource, source.ID: source})
+			script, scriptParseErrors := parser.NewParser(ctx, source).ParseScript()
+			require.Empty(t, scriptParseErrors)
+
+			scope, _, errs := InferScriptInLib(script, lib)
+			require.Empty(t, errs)
+			b, found := scope.GetValue("p")
+			require.True(t, found)
+			require.Equal(t, version.payload, renderScheme(b.Schemes[0]))
+
+			// One class per variant this version declares, and one alias for the
+			// enum, whichever check this is.
+			require.Equal(t, classesBefore+version.variants, len(lib.run.ctx.classes))
+			require.Equal(t, aliasesBefore+1, len(lib.run.ctx.aliases))
+		})
+	}
+}
