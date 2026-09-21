@@ -23,6 +23,8 @@ func (c *checker) resolveTypeAnn(scope *Scope, ta ast.TypeAnn, lvl int) (soltype
 		return c.annPrim(ta, soltype.BoolPrim), true
 	case *ast.SymbolTypeAnn:
 		return c.annPrim(ta, soltype.SymPrim), true
+	case *ast.BigintTypeAnn:
+		return c.annPrim(ta, soltype.BigIntPrim), true
 	case *ast.UniqueSymbolTypeAnn:
 		// Each written `unique symbol` names its own symbol, so the annotation mints one
 		// rather than resolving to a shared type. Two references to the declaration that

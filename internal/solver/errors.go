@@ -3123,6 +3123,8 @@ func primName(p soltype.Prim) string {
 		return "boolean"
 	case soltype.SymPrim:
 		return "symbol"
+	case soltype.BigIntPrim:
+		return "bigint"
 	}
 	return "?"
 }

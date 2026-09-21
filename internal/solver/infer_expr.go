@@ -4284,14 +4284,15 @@ func narrowUnionMembers(shape soltype.Type, keep func(soltype.Type) bool) (solty
 
 // infiniteInhabitants reports whether a carrier admits infinitely many values, so no finite
 // set of value patterns ever covers it and only a catch-all arm makes a match over it
-// exhaustive. A bare `number`, `string` or `symbol` and `unknown` are such carriers. A
-// program mints a fresh symbol whenever it likes, so no set of `unique symbol` arms
-// enumerates them. `boolean`, a literal, `null`, and `undefined` each admit finitely many
-// values that finite arms can enumerate, so they are not.
+// exhaustive. `unknown` is such a carrier, and so is a bare `number`, `string`, `symbol`
+// or `bigint`. A program mints a fresh symbol whenever it likes, so no set of `unique
+// symbol` arms enumerates them. `boolean`, a literal, `null`, and `undefined` each admit
+// finitely many values that finite arms can enumerate, so they are not.
 func infiniteInhabitants(t soltype.Type) bool {
 	switch t := t.(type) {
 	case *soltype.PrimType:
-		return t.Prim == soltype.NumPrim || t.Prim == soltype.StrPrim || t.Prim == soltype.SymPrim
+		return t.Prim == soltype.NumPrim || t.Prim == soltype.StrPrim ||
+			t.Prim == soltype.SymPrim || t.Prim == soltype.BigIntPrim
 	case *soltype.UnknownType:
 		return true
 	default:

@@ -102,15 +102,17 @@ func TestInferIdentNamespaceUsedAsValue(t *testing.T) {
 	require.Equal(t, testSpan(), c.errs[0].Span())
 }
 
+// An expression kind with no arm in inferExpr reports UnsupportedNodeError naming
+// that kind and recovers to the ErrorType sentinel. JSX is parked work, see
+// planning/solver_cutover/02-parked-work.md, so a fragment exercises the
+// fall-through arm.
 func TestInferExprUnsupportedNode(t *testing.T) {
 	c := newTestChecker()
-	left := ast.NewLitExpr(ast.NewNumber(1, testSpan()))
-	right := ast.NewLitExpr(ast.NewNumber(2, testSpan()))
-	e := ast.NewBinary(left, right, ast.Plus, testSpan())
+	e := ast.NewJSXFragment(nil, nil, nil, testSpan())
 
 	got := c.inferExpr(NewScope(), 0, e)
-	require.IsType(t, &soltype.ErrorType{}, got) // PR8: report's recovery placeholder
+	require.IsType(t, &soltype.ErrorType{}, got)
 	require.Len(t, c.errs, 1)
-	require.Equal(t, "Unsupported: BinaryExpr", c.errs[0].Message())
+	require.Equal(t, "Unsupported: JSXFragmentExpr", c.errs[0].Message())
 	require.Equal(t, testSpan(), c.errs[0].Span())
 }
