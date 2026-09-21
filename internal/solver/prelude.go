@@ -28,10 +28,9 @@ func sharedPrelude() *Scope {
 // two hand-seeded sorts:
 //
 //   - operator/builtin value bindings — the monomorphic-over-primitives schemes
-//     the BinaryExpr/UnaryExpr walk resolves (the BinaryExpr walk itself is a
-//     later PR; the bindings live here from PR-1). A near-mechanical port of the
-//     old checker's addOperatorBindings from type_system constructors to soltype
-//     ones.
+//     the BinaryExpr and UnaryExpr walks resolve by operator name. A
+//     near-mechanical port of the old checker's addOperatorBindings from
+//     type_system constructors to soltype ones.
 //   - placeholder stdlib *type* bindings (§3.8) — opaque stubs so a reference to
 //     Promise/Iterable/… resolves without an unbound-name error. M2 seeds
 //     placeholders only; real ingestion (real structures, arity) is M7.
@@ -69,11 +68,10 @@ func opFunc(ret soltype.Type, params ...soltype.Type) *soltype.FuncType {
 // arithmetic, string <, generic equality) are refinements that land with their
 // enabling milestone (overloads M3, unions M6), not M2.
 //
-// unknown is the top type, so an operand of any type is a subtype of it. The
+// `unknown` is the top type, so an operand of any type is a subtype of it. The
 // equality operators are seeded with `unknown` parameters, so an operand of any
 // type fills them. The `_ <: unknown` rule in constrain accepts that directly, so
-// `1 == 2` constrains `1 <: unknown` and succeeds. When the operator/call walk
-// lands, add a `1 == 2 ⇒ boolean` regression test.
+// `1 == 2` constrains `1 <: unknown` and succeeds, yielding `boolean`.
 func addOperatorBindings(s *Scope) {
 	num := func() soltype.Type { return prim(soltype.NumPrim) }
 	str := func() soltype.Type { return prim(soltype.StrPrim) }
