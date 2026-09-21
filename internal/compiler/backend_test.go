@@ -3,6 +3,7 @@ package compiler
 import (
 	"context"
 	"path/filepath"
+	"strconv"
 	"testing"
 	"time"
 
@@ -179,6 +180,16 @@ func TestCompileReportsTheSolverCodegenGap(t *testing.T) {
 		// each is a file whose emitted output is wrong.
 		require.Equal(t, 2, countMessage(messages(out.TypeErrors), gap))
 		require.Empty(t, out.CompUnits["lib/index"].DTS)
+
+		// Each blames the file it is about, so a caller placing diagnostics puts
+		// them on the library and on the script rather than both on one.
+		blamed := []int{}
+		for _, err := range out.TypeErrors {
+			if err.Message() == gap {
+				blamed = append(blamed, err.Span().SourceID)
+			}
+		}
+		require.Equal(t, []int{0, 1}, blamed)
 	})
 }
 
@@ -191,4 +202,85 @@ func countMessage(msgs []string, want string) int {
 		}
 	}
 	return n
+}
+
+// TestCompileAScriptWithNoLibrary checks the entry point a package with no lib/
+// files takes: the script resolves what the prelude declares and nothing else, on
+// either checker.
+func TestCompileAScriptWithNoLibrary(t *testing.T) {
+	tests := []struct {
+		name  string
+		setup func(*testing.T)
+	}{
+		{name: "Checker", setup: useChecker},
+		{name: "Solver", setup: useSolver},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			test.setup(t)
+			out := Compile(&ast.Source{ID: 0, Path: "bin/index.esc", Contents: "val g = \"hello\"\n"})
+			require.Empty(t, out.ParseErrors)
+			require.NotContains(t, messages(out.TypeErrors), "Unknown identifier: g")
+			require.Contains(t, out.CompUnits["index"].JS, `const g = "hello";`)
+		})
+	}
+}
+
+// TestCompileScriptImportsALibraryNamespace checks that a `namespace` block the
+// library declares is imported by a script that reads through it, on either
+// checker. A namespace is the second sort declaresTopLevel answers for, and each
+// checker reads it off its own representation of the library.
+func TestCompileScriptImportsALibraryNamespace(t *testing.T) {
+	const lib = "namespace Geometry {\n\texport val origin = 0\n}\n"
+
+	tests := []struct {
+		name  string
+		setup func(*testing.T)
+	}{
+		{name: "Checker", setup: useChecker},
+		{name: "Solver", setup: useSolver},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			test.setup(t)
+			ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+			defer cancel()
+
+			libOutput := CheckLib(ctx, libSources(lib))
+			require.NotNil(t, libOutput.LibScope)
+
+			out := CompileScript(libOutput.LibScope, binSource("val o = Geometry.origin\n"))
+			require.Empty(t, out.ParseErrors)
+			require.Contains(t, out.CompUnits["bin/index"].JS,
+				"import { Geometry } from \"../lib/index.js\";")
+		})
+	}
+}
+
+// TestCheckLibWithoutAStandardLibrary checks what the solver path reports when the
+// standard library tree cannot be found. The run then resolves no package and
+// reports the prelude classes its own rules name as missing, so this diagnostic is
+// what says the cause is the tree rather than the code being checked.
+func TestCheckLibWithoutAStandardLibrary(t *testing.T) {
+	useSolver(t)
+	empty := t.TempDir()
+	t.Setenv("ESCALIER_STDLIB_DIR", empty)
+
+	out := CheckLib(context.Background(), libSources("export val greeting = \"hello\"\n"))
+
+	require.Empty(t, out.ParseErrors)
+	want := "cannot find the standard library: ESCALIER_STDLIB_DIR=" + strconv.Quote(empty) +
+		" does not contain a std/ subdirectory"
+	require.Contains(t, messages(out.TypeErrors), want)
+
+	// It blames the module's first file. The fault is in the run's configuration
+	// rather than in anything written, and that file is what a caller has to place
+	// a diagnostic against.
+	for _, err := range out.TypeErrors {
+		if err.Message() == want {
+			require.Equal(t, 0, err.Span().SourceID)
+		}
+	}
 }
