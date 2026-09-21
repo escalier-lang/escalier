@@ -1,6 +1,10 @@
 package solver
 
-import "github.com/escalier-lang/escalier/internal/soltype"
+import (
+	"strings"
+
+	"github.com/escalier-lang/escalier/internal/soltype"
+)
 
 // Context owns the engine's mutable counters. M1 carries ONLY varCounter; M4 D1
 // adds lifetimeCounter for the lifetime sort. M4 C3's read-after-write cache,
@@ -248,6 +252,45 @@ func (c *Context) registerClass(name string, def *ClassDef) {
 		c.classes = map[string]*ClassDef{}
 	}
 	c.classes[name] = def
+}
+
+// forgetKeyPrefix drops every registration whose qualified name starts with prefix,
+// along with the two caches keyed off those names.
+//
+// One run's registries serve every module and script it walks, keyed by a name that
+// carries the package or script the declaration came from. Checking one script twice
+// against the same run therefore writes the second check's definitions over the
+// first's, and a cache the first check filled would answer for a definition that no
+// longer exists. An editor re-checks one bin/ file on every keystroke, so this is the
+// ordinary case rather than an unusual one.
+//
+// Clearing the prefix before a check starts leaves that script registering into an
+// empty space, so no answer can come from the check before it and the registries stay
+// the size one check needs. Handles a previous check returned name keys that are gone
+// after this, which is what supersedes them.
+func (c *Context) forgetKeyPrefix(prefix string) {
+	for name := range c.classes {
+		if strings.HasPrefix(name, prefix) {
+			delete(c.classes, name)
+			delete(c.uniformKnots, name)
+		}
+	}
+	for name := range c.aliases {
+		if strings.HasPrefix(name, prefix) {
+			delete(c.aliases, name)
+			delete(c.uniformKnots, name)
+		}
+	}
+	// An interned alias reference keys on its rendered form, which spells the alias
+	// and each of its arguments under a qualified name, so the prefix can appear
+	// anywhere in the key. A representative is only ever compared by identity, so
+	// dropping more entries than this script registered costs a re-intern and
+	// nothing else.
+	for key := range c.aliasInterns {
+		if strings.Contains(key, prefix) {
+			delete(c.aliasInterns, key)
+		}
+	}
 }
 
 // freshVar allocates a new inference variable at the given level, assigning it

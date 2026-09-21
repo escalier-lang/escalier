@@ -644,6 +644,10 @@ func (c *checker) forScript(pkgURI string) *checker {
 		groups:       c.groups,
 	}
 	sc.ctx.fusionRecorder = sc.recordFusionEdge
+	// A script keyed under pkgURI may have been checked before, against this same
+	// run, and its definitions from that check are still registered. Dropping them
+	// leaves this check registering into an empty space.
+	sc.ctx.forgetKeyPrefix(packageKeyPrefix(pkgURI) + ".")
 	return sc
 }
 

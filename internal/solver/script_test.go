@@ -537,3 +537,71 @@ func TestInferScriptInLibLeavesTheLibraryTableAlone(t *testing.T) {
 
 	require.Equal(t, before, len(lib.run.prov))
 }
+
+// TestInferScriptInLibRechecksAScript checks what a second check of one script
+// against one library sees. An editor re-checks a bin/ file on every keystroke
+// against a cached library, so the two checks share the run that holds the class
+// and alias registries.
+//
+// The second check reads the declarations it was given rather than the ones the
+// first check registered under the same names, and the registries hold what the
+// current check declared rather than the union of every check so far. The second
+// version below drops a class the first declared, which is what a registry that
+// only ever overwrites would keep.
+func TestInferScriptInLibRechecksAScript(t *testing.T) {
+	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+	defer cancel()
+
+	libSource := &ast.Source{ID: 0, Path: "lib/index.esc", Contents: `export val unused = 0`}
+	module, parseErrors := parser.ParseLibFiles(ctx, []*ast.Source{libSource})
+	require.Empty(t, parseErrors)
+
+	lib := InferModuleWithSource(module, testStdlibSource())
+	require.Empty(t, lib.Errors)
+	classesBefore := len(lib.run.ctx.classes)
+
+	// Every version is the same file, so they carry the same source id and key their
+	// declarations under the same names.
+	versions := []struct {
+		name     string
+		contents string
+		member   string
+		classes  int
+	}{
+		{
+			name:     "TwoClasses",
+			contents: "class Point {\n\tx: number,\n}\nclass Shape {\n\tsides: number,\n}\nval p = Point(1)\nval m = p.x",
+			member:   "number",
+			classes:  2,
+		},
+		{
+			name:     "OneClassWithAChangedMember",
+			contents: "class Point {\n\tlabel: string,\n}\nval p = Point(\"here\")\nval m = p.label",
+			member:   "string",
+			classes:  1,
+		},
+		{
+			name:     "BackToTheFirstMember",
+			contents: "class Point {\n\tx: number,\n}\nval p = Point(2)\nval m = p.x",
+			member:   "number",
+			classes:  1,
+		},
+	}
+
+	for _, version := range versions {
+		t.Run(version.name, func(t *testing.T) {
+			source := &ast.Source{ID: 1, Path: "bin/index.esc", Contents: version.contents}
+			registerTestSources(t, map[int]*ast.Source{libSource.ID: libSource, source.ID: source})
+			script, scriptParseErrors := parser.NewParser(ctx, source).ParseScript()
+			require.Empty(t, scriptParseErrors)
+
+			scope, _, errs := InferScriptInLib(script, lib)
+			require.Empty(t, errs)
+			b, found := scope.GetValue("m")
+			require.True(t, found)
+			require.Equal(t, version.member, renderScheme(b.Schemes[0]))
+
+			require.Equal(t, classesBefore+version.classes, len(lib.run.ctx.classes))
+		})
+	}
+}
