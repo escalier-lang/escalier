@@ -502,7 +502,7 @@ func TestInferScriptInLibClassPerScript(t *testing.T) {
 	require.NotEqual(t, qnames[0], qnames[1])
 	wantBody := []string{"{sides: number}", "{name: string}"}
 	for i, qname := range qnames {
-		def, registered := lib.run.ctx.classDef(qname)
+		def, registered := lib.checker.ctx.classDef(qname)
 		require.True(t, registered, "script %s", scripts[i].Path)
 		require.Equal(t, wantBody[i], soltype.Print(def.Body), "script %s", scripts[i].Path)
 	}
@@ -526,7 +526,7 @@ func TestInferScriptInLibLeavesTheLibraryTableAlone(t *testing.T) {
 
 	lib := InferModuleWithSource(module, testStdlibSource())
 	require.Empty(t, lib.Errors)
-	before := len(lib.run.prov)
+	before := len(lib.checker.prov)
 
 	for range 5 {
 		script, scriptParseErrors := parser.NewParser(ctx, scriptSource).ParseScript()
@@ -535,7 +535,7 @@ func TestInferScriptInLibLeavesTheLibraryTableAlone(t *testing.T) {
 		require.Empty(t, errs)
 	}
 
-	require.Equal(t, before, len(lib.run.prov))
+	require.Equal(t, before, len(lib.checker.prov))
 }
 
 // TestInferScriptInLibRechecksAScript checks what a second check of one script
@@ -558,7 +558,7 @@ func TestInferScriptInLibRechecksAScript(t *testing.T) {
 
 	lib := InferModuleWithSource(module, testStdlibSource())
 	require.Empty(t, lib.Errors)
-	classesBefore := len(lib.run.ctx.classes)
+	classesBefore := len(lib.checker.ctx.classes)
 
 	// Every version is the same file, so they carry the same source id and key their
 	// declarations under the same names.
@@ -601,7 +601,7 @@ func TestInferScriptInLibRechecksAScript(t *testing.T) {
 			require.True(t, found)
 			require.Equal(t, version.member, renderScheme(b.Schemes[0]))
 
-			require.Equal(t, classesBefore+version.classes, len(lib.run.ctx.classes))
+			require.Equal(t, classesBefore+version.classes, len(lib.checker.ctx.classes))
 		})
 	}
 }
@@ -621,8 +621,8 @@ func TestInferScriptInLibRechecksAnEnum(t *testing.T) {
 
 	lib := InferModuleWithSource(module, testStdlibSource())
 	require.Empty(t, lib.Errors)
-	classesBefore := len(lib.run.ctx.classes)
-	aliasesBefore := len(lib.run.ctx.aliases)
+	classesBefore := len(lib.checker.ctx.classes)
+	aliasesBefore := len(lib.checker.ctx.aliases)
 
 	versions := []struct {
 		name     string
@@ -659,8 +659,8 @@ func TestInferScriptInLibRechecksAnEnum(t *testing.T) {
 
 			// One class per variant this version declares, and one alias for the
 			// enum, whichever check this is.
-			require.Equal(t, classesBefore+version.variants, len(lib.run.ctx.classes))
-			require.Equal(t, aliasesBefore+1, len(lib.run.ctx.aliases))
+			require.Equal(t, classesBefore+version.variants, len(lib.checker.ctx.classes))
+			require.Equal(t, aliasesBefore+1, len(lib.checker.ctx.aliases))
 		})
 	}
 }
