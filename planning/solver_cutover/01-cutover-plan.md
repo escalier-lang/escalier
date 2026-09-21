@@ -386,7 +386,9 @@ seeds every operator as a monomorphic scheme: `+ - * /` over `number`,
 `< > <= >=` to `boolean`, `== !=` over `unknown`, `&& ||` over `boolean`, `!`,
 and `++` over `string`. Nothing looks them up. The comment above it already
 asks for the `1 == 2 ⇒ boolean` regression test "when the operator/call walk
-lands", and `m2-implementation-plan.md:784` calls the port near-mechanical.
+lands". `m2-implementation-plan.md:784` calls the schemes a near-mechanical
+port, and that half is what already landed; the walk over them is new code,
+though it reuses the path `inferCall` runs.
 
 **P1.7a [#1652](https://github.com/escalier-lang/escalier/issues/1652) — the binary operator walk.** Resolve the operator name in scope,
 instantiate its scheme, constrain the operands, and yield the return type. This
