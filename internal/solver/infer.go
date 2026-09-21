@@ -740,14 +740,20 @@ func (c *checker) recordType(n ast.Node, t soltype.Type) {
 	c.info.setType(n, t)
 }
 
-// inferExpr dispatches on the concrete expression kind. PR-1 wired the two leaf
-// cases (literals, identifiers); PR-3 adds the function/application walk
-// (FuncExpr, CallExpr — the block/statement walk they drive lives in
-// infer_stmt.go); PR-4 adds tuples, object literals, and member access; M3 adds
-// await/if-else and (PR8) the assignment form of BinaryExpr. Every remaining kind
-// falls through to a clean UnsupportedNodeError (never a panic).
+// inferExpr dispatches on the concrete expression kind. The function and call arms
+// drive a walk over blocks and statements, which lives in infer_stmt.go. An
+// expression kind with no arm here falls through to a clean UnsupportedNodeError,
+// never a panic.
 func (c *checker) inferExpr(scope *Scope, lvl int, e ast.Expr) soltype.Type {
 	switch e := e.(type) {
+	case *ast.ErrorExpr:
+		// The parser substitutes this for an expression it could not read and reports
+		// the parse error itself. Recovering to the ErrorType sentinel leaves the
+		// malformed subtree without a second diagnostic, since ErrorType absorbs in
+		// both directions inside constrain.
+		t := soltype.Type(&soltype.ErrorType{})
+		c.recordType(e, t)
+		return t
 	case *ast.LiteralExpr:
 		return c.inferLiteral(e)
 	case *ast.IdentExpr:
@@ -783,13 +789,12 @@ func (c *checker) inferExpr(scope *Scope, lvl int, e ast.Expr) soltype.Type {
 	case *ast.TryCatchExpr:
 		return c.inferTryCatch(scope, lvl, e)
 	case *ast.BinaryExpr:
-		// PR8 handles the ASSIGNMENT op only (`a = expr`); every other binary
-		// operator (+, ==, &&, ++, …) needs the operator-scheme walk over the prelude
-		// bindings, a separate unlanded PR, so it stays UnsupportedNodeError.
+		// `a = expr` writes to a place. Every other operator applies a signature the
+		// prelude binds under the operator's name.
 		if e.Op == ast.Assign {
 			return c.inferAssign(scope, lvl, e)
 		}
-		return c.reportUnsupported(e)
+		return c.inferBinary(scope, lvl, e)
 	default:
 		return c.reportUnsupported(e)
 	}

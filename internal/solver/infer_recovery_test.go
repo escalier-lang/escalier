@@ -1,8 +1,12 @@
 package solver
 
 import (
+	"context"
 	"testing"
+	"time"
 
+	"github.com/escalier-lang/escalier/internal/ast"
+	"github.com/escalier-lang/escalier/internal/parser"
 	"github.com/stretchr/testify/require"
 )
 
@@ -43,4 +47,33 @@ func TestInferObjectSpreadOverUnknownIdentifierRecovers(t *testing.T) {
 	require.Len(t, errs, 1)
 	require.Equal(t, "2:15-2:17: Unknown identifier: xs", msgWithSpan(t, errs[0]))
 	require.Equal(t, "{}", values["o"])
+}
+
+// The parser substitutes an ErrorExpr for an expression it could not read and
+// reports the parse error itself, so the walk recovers over that subtree without
+// reporting a second diagnostic of its own. A missing operand and a missing
+// initializer are the two shapes that reach the walk.
+func TestInferErrorExprReportsNothing(t *testing.T) {
+	tests := []struct {
+		name     string
+		src      string
+		parseErr string
+	}{
+		{name: "MissingOperand", src: `val x = 1 +`, parseErr: "11-11: Expected an expression"},
+		{name: "MissingInitializer", src: `export val broken =`, parseErr: "19-19: Expected an expression"},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+			defer cancel()
+			module, parseErrors := parser.ParseLibFiles(ctx,
+				[]*ast.Source{{ID: 0, Path: "input.esc", Contents: test.src}})
+			require.Len(t, parseErrors, 1)
+			require.Equal(t, test.parseErr, parseErrors[0].String())
+			registerTestSources(t, module.Sources)
+
+			_, _, errs := inferModule(module)
+			require.Empty(t, errs)
+		})
+	}
 }
