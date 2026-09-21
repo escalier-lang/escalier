@@ -118,25 +118,28 @@ func TestInferFuncDeclBodylessReturnAnnotation(t *testing.T) {
 	require.Equal(t, "fn () -> number", render(ty))
 }
 
-// A bodyless function with an UNSUPPORTED return annotation recovers to `unknown`
-// (the honest "couldn't resolve the declared return"), not the synthetic `undefined`
-// (which would falsely signal "returns nothing" to callers). The annotation error
-// is still reported once. A `declare fn` is a no-body site, so inferFuncDecl types it
-// body-free and this recovery path runs; the decl here is built with a nil body to
-// exercise it directly.
+// A bodyless function with an UNSUPPORTED return annotation recovers to `unknown`,
+// the honest "couldn't resolve the declared return". It does not recover to the
+// synthetic `undefined`, which would falsely signal "returns nothing" to callers. The
+// annotation error is still reported once. A `declare fn` is a no-body site, so
+// inferFuncDecl types it body-free and this recovery path runs. The decl here is built
+// with a nil body to exercise it directly.
 func TestInferFuncDeclBodylessUnsupportedReturnRecoversToUnknown(t *testing.T) {
 	c := newTestChecker()
-	// declare fn now() -> bigint   (bigint is unsupported in M2)
+	// declare fn now() -> /x/
+	//
+	// A regex literal type stands in for any annotation resolveTypeAnn does not
+	// support.
 	d := ast.NewFuncDecl(
 		ast.NewIdentifier("now", testSpan()), nil, nil,
-		nil, ast.NewBigintTypeAnn(testSpan()), nil,
+		nil, ast.NewLitTypeAnn(ast.NewRegex("x", testSpan()), testSpan()), nil,
 		nil, // no body
 		false, true, false, testSpan(),
 	)
 
 	ty, _ := c.inferFuncDecl(NewScope(), 0, d)
 	require.Len(t, c.errs, 1)
-	require.Equal(t, "Unsupported: BigintTypeAnn", c.errs[0].Message())
+	require.Equal(t, "Unsupported: LitTypeAnn", c.errs[0].Message())
 	require.Equal(t, "fn () -> unknown", render(ty))
 }
 
