@@ -26,12 +26,13 @@ import (
 
 // solTypeAnnBuilder renders soltype values as .d.ts type annotations.
 type solTypeAnnBuilder struct {
-	// promiseClass is the qualified name the prelude's `Promise` binds to, which
-	// the solver settles once per run and holds on its context. TypeScript's
-	// Promise takes one type argument where Escalier's takes two, so the renderer
-	// has to know which class to trim, and the name is qualified by whichever
-	// package declared it. An empty value trims nothing.
-	promiseClass string
+	// preludePrefix is the package key `std:prelude` is registered under, such as
+	// `import:std:prelude`. Four of its declarations take one more type parameter
+	// than TypeScript's, and the renderer has to know which references are to
+	// those declarations rather than to a user's own type of the same name. The
+	// prefix is what tells them apart, since every registry key leads with the
+	// key of the package that declared it. An empty value trims nothing.
+	preludePrefix string
 	// typeParamNames is the name each quantified type parameter renders under. A
 	// soltype type parameter is an inference variable that a TypeParam binds
 	// through its Var field, not a reference by name, so a `T` written in a
@@ -43,12 +44,14 @@ type solTypeAnnBuilder struct {
 
 // newSolTypeAnnBuilder returns a renderer for one declaration.
 //
-// promiseClass is the solver context's settled name for the prelude's `Promise`.
-// typeParams are the declaration's own type parameters. A generic class or alias
-// declares them on the declaration, so nothing inside its body binds them and a
-// use of one would otherwise reach the unresolved-variable fallback.
-func newSolTypeAnnBuilder(promiseClass string, typeParams []*soltype.TypeParam) *solTypeAnnBuilder {
-	b := &solTypeAnnBuilder{promiseClass: promiseClass, typeParamNames: nil}
+// preludePrefix is the package key `std:prelude` is registered under. The solver
+// settles the prelude's `Promise` to a qualified name at the start of a run, and
+// that name's prefix is this one. typeParams are the declaration's own type
+// parameters. A generic class or alias declares them on the declaration, so
+// nothing inside its body binds them and a use of one would otherwise reach the
+// unresolved-variable fallback.
+func newSolTypeAnnBuilder(preludePrefix string, typeParams []*soltype.TypeParam) *solTypeAnnBuilder {
+	b := &solTypeAnnBuilder{preludePrefix: preludePrefix, typeParamNames: nil}
 	b.bindTypeParams(typeParams)
 	return b
 }
@@ -95,6 +98,8 @@ func (b *solTypeAnnBuilder) typeAnn(t soltype.Type) TypeAnn {
 			return NewBooleanTypeAnn(nil)
 		case soltype.SymPrim:
 			return NewSymbolTypeAnn(nil)
+		case soltype.BigIntPrim:
+			return NewBigIntTypeAnn(nil)
 		default:
 			panic(fmt.Sprintf("typeAnn: unknown primitive %d", int(t.Prim)))
 		}
@@ -231,22 +236,59 @@ func (b *solTypeAnnBuilder) typeAnn(t soltype.Type) TypeAnn {
 	panic(fmt.Sprintf("typeAnn: unhandled %T", t))
 }
 
+// preludeTypeScriptArity is how many type arguments TypeScript's own declaration
+// takes, for each `std:prelude` type whose Escalier declaration adds one.
+//
+// Escalier tracks what a value may raise as a trailing type parameter TypeScript
+// has no slot for: the `E` of `Promise<T, E>` and `PromiseLike<T, E>`, and of
+// `Generator<T, TReturn, TNext, E>` and `AsyncGenerator<T, TReturn, TNext, E>`.
+// Emitting it would hand the reference more arguments than the TypeScript library
+// declares, which the use site rejects.
+//
+// Only these four carry one. The prelude's `Iterator`, `AsyncIterator`,
+// `Iterable`, and `AsyncIterable` each declare the parameters TypeScript does, so
+// a reference to one renders with every argument it was given.
+//
+// TODO(#385): Preserve the dropped raise type as TSDoc metadata.
+var preludeTypeScriptArity = map[string]int{
+	"Promise":        1,
+	"PromiseLike":    1,
+	"Generator":      3,
+	"AsyncGenerator": 3,
+}
+
 // typeArgs renders a nominal reference's type arguments, dropping the ones
 // TypeScript's declaration of the same name does not take.
 func (b *solTypeAnnBuilder) typeArgs(name string, args []soltype.Type) []TypeAnn {
-	// TypeScript's `Promise` has only one type parameter, so drop the error type
-	// that Escalier tracks as the second type arg. The comparison is against the
-	// prelude's own qualified name, so a user class whose last name component is
-	// also `Promise` keeps every argument it declared.
-	// TODO(#385): Preserve the dropped error type as TSDoc metadata.
-	if b.promiseClass != "" && name == b.promiseClass && len(args) > 1 {
-		args = args[:1]
+	if arity, declared := b.typeScriptArity(name); declared && len(args) > arity {
+		args = args[:arity]
 	}
 	typeArgs := make([]TypeAnn, len(args))
 	for i, arg := range args {
 		typeArgs[i] = b.typeAnn(arg)
 	}
 	return typeArgs
+}
+
+// typeScriptArity reports how many type arguments TypeScript's declaration of
+// this reference takes, and false for a reference TypeScript declares with the
+// parameters Escalier does.
+//
+// The name has to be one the prelude registered. A user's own `Promise` is a
+// different type that keeps every argument it declared, and its registry key
+// leads with the key of the package that declared it rather than the prelude's.
+// An empty preludePrefix matches nothing, so a caller that has not settled the
+// prelude trims no reference rather than trimming by bare name.
+func (b *solTypeAnnBuilder) typeScriptArity(qualifiedName string) (int, bool) {
+	if b.preludePrefix == "" {
+		return 0, false
+	}
+	local, inPrelude := strings.CutPrefix(qualifiedName, b.preludePrefix+".")
+	if !inPrelude {
+		return 0, false
+	}
+	arity, declared := preludeTypeScriptArity[local]
+	return arity, declared
 }
 
 // objectTypeAnn renders an object type, splitting it into an intersection where

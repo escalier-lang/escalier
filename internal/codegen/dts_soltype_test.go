@@ -9,10 +9,10 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-// solPromiseClass is the name the prelude registers `Promise` under, which
+// solPreludePrefix is the package key `std:prelude` is registered under, which
 // TestResolveTypeAnnForTestPreludeName in internal/solver pins. A renderer that
-// matched on the bare last component instead would fail the cases below.
-const solPromiseClass = "import:std:prelude.Promise"
+// matched on the bare last name component instead would fail the cases below.
+const solPreludePrefix = "import:std:prelude"
 
 // renderSol renders a solver type the way BuildDefinitions emits it: through the
 // soltype renderer and then the .d.ts printer. Asserting on the printed
@@ -26,7 +26,7 @@ func renderSol(t *testing.T, ty soltype.Type) string {
 func renderSolWithParams(t *testing.T, ty soltype.Type, typeParams []*soltype.TypeParam) string {
 	t.Helper()
 	printer := NewPrinter()
-	printer.PrintTypeAnn(newSolTypeAnnBuilder(solPromiseClass, typeParams).typeAnn(ty))
+	printer.PrintTypeAnn(newSolTypeAnnBuilder(solPreludePrefix, typeParams).typeAnn(ty))
 	return printer.Output
 }
 
@@ -142,12 +142,43 @@ func TestBuildTypeAnnFromSolNominalRefs(t *testing.T) {
 		"Alias":                {alias("Point"), "Point"},
 		"GenericAlias":         {alias("Box", solStr()), "Box<string>"},
 		"ImportedAlias":        {alias("import:std:array.Elem"), "Elem"},
-		// TypeScript's `Promise` takes one type argument, so the error type Escalier
-		// tracks second is dropped. The prelude's key prefix goes with it.
-		"Promise": {class(solPromiseClass, solNum(), solStr()), "Promise<number>"},
-		// A user class whose last name component is also `Promise` is a different
-		// class and keeps every argument it declared.
+		// Four prelude declarations take one more type parameter than TypeScript's,
+		// the trailing `E` for what the value may raise. A reference to one is
+		// trimmed to the arity TypeScript declares.
+		"Promise": {
+			class(solPreludePrefix+".Promise", solNum(), solStr()),
+			"Promise<number>",
+		},
+		"PromiseLike": {
+			alias(solPreludePrefix+".PromiseLike", solNum(), solStr()),
+			"PromiseLike<number>",
+		},
+		"Generator": {
+			alias(solPreludePrefix+".Generator", solNum(), solStr(), solBool(), solStr()),
+			"Generator<number, string, boolean>",
+		},
+		"AsyncGenerator": {
+			alias(solPreludePrefix+".AsyncGenerator", solNum(), solStr(), solBool(), solStr()),
+			"AsyncGenerator<number, string, boolean>",
+		},
+		// The prelude's iteration types declare the parameters TypeScript does, so
+		// a reference to one keeps every argument it was given.
+		"PreludeIterator": {
+			alias(solPreludePrefix+".Iterator", solNum(), solStr(), solBool()),
+			"Iterator<number, string, boolean>",
+		},
+		"PreludeIterable": {
+			alias(solPreludePrefix+".Iterable", solNum(), solStr(), solBool()),
+			"Iterable<number, string, boolean>",
+		},
+		// A user type whose last name component is also `Promise` is a different
+		// type and keeps every argument it declared.
 		"LookalikePromise": {class("app.Promise", solNum(), solStr()), "app.Promise<number, string>"},
+		// So is one in a package other than the prelude.
+		"LookalikeGenerator": {
+			alias("import:npm:rxjs.Generator", solNum(), solStr(), solBool(), solStr()),
+			"Generator<number, string, boolean, string>",
+		},
 	}
 
 	for name, test := range tests {
@@ -176,6 +207,7 @@ func TestBuildTypeAnnFromSolFromSource(t *testing.T) {
 		"String":       {"", "string", "string"},
 		"Boolean":      {"", "boolean", "boolean"},
 		"Symbol":       {"", "symbol", "symbol"},
+		"BigInt":       {"", "bigint", "bigint"},
 		"UniqueSymbol": {"", "unique symbol", "unique symbol"},
 		"NumLit":       {"", "5", "5"},
 		"StrLit":       {"", `"hi"`, `"hi"`},
@@ -268,6 +300,15 @@ func TestBuildTypeAnnFromSolFromSource(t *testing.T) {
 		// tracks second is dropped. The name is the prelude's own registry key, whose
 		// `import:` prefix TypeScript cannot write.
 		"Promise": {"", "Promise<number, string>", "Promise<number>"},
+		// The trim keys off that prefix, so a type the caller declares under one of
+		// the same names is a different type and keeps every argument. The prelude's
+		// three other over-parameterized declarations are pinned by
+		// TestBuildTypeAnnFromSolNominalRefs, since this stdlib declares none of them.
+		"UserGenerator": {
+			"declare interface Generator<T, TReturn, TNext, E = never> { next(self) -> T }",
+			"Generator<number, string, boolean, string>",
+			"Generator<number, string, boolean, string>",
+		},
 		// A class or alias from another package drops that prefix too. Resolution
 		// fills in the arguments the declaration defaults, and every one is
 		// emitted: `Iterable<T, TReturn, TNext>` reads back with all three.
@@ -380,7 +421,7 @@ func TestBuildTypeAnnFromSolUnspellableFormers(t *testing.T) {
 // TestBuildTypeAnnFromSolInferBinder pins the binder form separately, because the
 // .d.ts printer has no InferTypeAnn case yet and panics on one.
 func TestBuildTypeAnnFromSolInferBinder(t *testing.T) {
-	ann := newSolTypeAnnBuilder(solPromiseClass, nil).
+	ann := newSolTypeAnnBuilder(solPreludePrefix, nil).
 		typeAnn(&soltype.InferType{ID: 1, Name: "U", Binder: true})
 	infer, ok := ann.(*InferTypeAnn)
 	require.True(t, ok, "an infer binder renders as InferTypeAnn, got %T", ann)
@@ -665,11 +706,10 @@ func solIndexSig(keys, value soltype.Type) *soltype.MappedElem {
 //   - An index signature is its own element kind in type_system and a settled
 //     mapped member in soltype.
 //
-// `Promise` is the one former left out. Both renderers drop the error type
-// TypeScript's Promise has no slot for, but they identify the class differently:
-// the twin compares against the literal name `Promise`, and the port against the
-// qualified name the solver settled for the prelude's class.
-// TestBuildTypeAnnFromSolNominalRefs covers it instead.
+// The prelude types that carry a trailing raise parameter are left out. The twin
+// trims only a reference whose whole name is the literal `Promise`, where the port
+// trims each of the four against the prelude's own package key.
+// TestBuildTypeAnnFromSolNominalRefs covers them instead.
 func TestBuildTypeAnnFromSolParity(t *testing.T) {
 	b := &Builder{tempId: 0, depGraph: nil}
 	tsNum := type_sys.NewNumPrimType(nil)
