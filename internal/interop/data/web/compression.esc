@@ -8,7 +8,7 @@ import "web:streams"
 
 /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/CompressionStream) */
 @js("CompressionStream")
-export declare class CompressionStream extends streams.GenericTransformStream {
+export declare class CompressionStream implements streams.GenericTransformStream {
     readonly readable: streams.ReadableStream<typed_arrays.Uint8Array>,
     readonly writable: streams.WritableStream<BufferSource>,
     static prototype: CompressionStream,
@@ -17,7 +17,7 @@ export declare class CompressionStream extends streams.GenericTransformStream {
 
 /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/DecompressionStream) */
 @js("DecompressionStream")
-export declare class DecompressionStream extends streams.GenericTransformStream {
+export declare class DecompressionStream implements streams.GenericTransformStream {
     readonly readable: streams.ReadableStream<typed_arrays.Uint8Array>,
     readonly writable: streams.WritableStream<BufferSource>,
     static prototype: DecompressionStream,

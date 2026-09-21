@@ -447,7 +447,23 @@ func mergeDecls(stmts []dts_parser.Statement) []dts_parser.Statement {
 // `ReadonlyArray<T>` for the same reason.
 func ConvertBucket(stmts []dts_parser.Statement, facts *ReceiverFacts) (*StandaloneModule, error) {
 	stmts, twins := fuseReadonlyTwins(stmts)
-	return convertFusedBucket(stmts, twins, twins, ConsumedCtorNames(stmts), facts)
+	classNames := withTwinNames(ClassNames(stmts), twins)
+	return convertFusedBucket(stmts, twins, twins, ConsumedCtorNames(stmts), classNames, facts)
+}
+
+// withTwinNames adds each readonly twin's name to a set holding its mutable
+// counterpart. A supertype is classified before rewriteReadonlyTwinRefs runs,
+// so it is still spelled `ReadonlyMap` where the emitted tree will say `Map`.
+// Without the alias, `interface AudioParamMap extends ReadonlyMap` would read
+// as extending an interface and land in `implements`, where the rewrite would
+// then respell it as the `Map` class.
+func withTwinNames(names set.Set[string], twins []readonlyTwin) set.Set[string] {
+	for _, twin := range twins {
+		if names.Contains(twin.mutableName) {
+			names.Add(twin.readonlyName)
+		}
+	}
+	return names
 }
 
 // convertFusedBucket converts one already-fused bucket. `own` are the
@@ -463,9 +479,10 @@ func convertFusedBucket(
 	stmts []dts_parser.Statement,
 	own, all []readonlyTwin,
 	consumedCtor map[string]string,
+	classNames set.Set[string],
 	facts *ReceiverFacts,
 ) (*StandaloneModule, error) {
-	mod, err := convertStandaloneModule(&dts_parser.Module{Statements: stmts}, facts, consumedCtor)
+	mod, err := convertStandaloneModule(&dts_parser.Module{Statements: stmts}, facts, consumedCtor, classNames)
 	if err != nil {
 		return nil, err
 	}
@@ -831,20 +848,28 @@ func ConvertBuckets(result *PartitionResult, facts *ReceiverFacts) (map[string]*
 	fused := make(map[string][]dts_parser.Statement, len(result.Buckets))
 	own := make(map[string][]readonlyTwin, len(result.Buckets))
 	var all []readonlyTwin
-	// consumedCtor is every constructor interface the tree fuses away, for the same reason
-	// `all` holds every twin: a bucket may reference one another bucket consumed.
+	// consumedCtor is every constructor interface the tree fuses away, and classNames every
+	// name it turns into a class. Both span the tree for the same reason `all` holds every
+	// twin: a bucket may reference, or extend, what another bucket declares.
 	consumedCtor := make(map[string]string)
+	classNames := set.NewSet[string]()
 	for _, uri := range uris {
 		stmts, twins := fuseReadonlyTwins(result.Buckets[uri])
 		fused[uri] = stmts
 		own[uri] = twins
 		all = append(all, twins...)
-		maps.Copy(consumedCtor, ConsumedCtorNames(stmts))
+		// Both readings come from one trio detection over the bucket, since
+		// ConsumedCtorNames and ClassNames would each repeat it.
+		lifted := liftGlobals(stmts)
+		bucketTrios := detectTrios(lifted)
+		maps.Copy(consumedCtor, bucketTrios.consumedCtor)
+		classNames = classNames.Union(classNamesFrom(lifted, bucketTrios))
 	}
+	classNames = withTwinNames(classNames, all)
 
 	mods := make(map[string]*StandaloneModule, len(result.Buckets))
 	for _, uri := range uris {
-		mod, err := convertFusedBucket(fused[uri], own[uri], all, consumedCtor, facts)
+		mod, err := convertFusedBucket(fused[uri], own[uri], all, consumedCtor, classNames, facts)
 		if err != nil {
 			return nil, &BucketConvertError{pkgError{uri}, err}
 		}
@@ -1068,6 +1093,51 @@ func ReportSingletonKeyDrops(mods map[string]*StandaloneModule, w io.Writer) err
 	fmt.Fprintf(&b, "  singleton members skipped for a non-name key: %d\n", len(entries))
 	for _, e := range entries {
 		fmt.Fprintf(&b, "    %s %s[%s]\n", e.uri, e.member.Singleton, e.member.Key)
+	}
+	_, err := io.WriteString(w, b.String())
+	return err
+}
+
+// ReportDemotedBases prints one line per class supertype that moved to
+// `implements` because the class's `extends` slot was already filled. Over
+// the pinned lib set this is `FontFaceSet`, which TypeScript declares as both
+// an `EventTarget` and a `Set<FontFace>`.
+//
+// The `generate` subcommand calls this after ReportSingletonKeyDrops, so a
+// TypeScript bump that gives some other declaration a second class base shows
+// up beside the other conversion notes rather than passing unremarked. No
+// member is lost either way, since a `declare` class takes its members from
+// both clauses.
+func ReportDemotedBases(mods map[string]*StandaloneModule, w io.Writer) error {
+	type entry struct {
+		uri  string
+		base DemotedBase
+	}
+	var entries []entry
+	for uri, mod := range mods {
+		for _, b := range mod.DemotedBases {
+			entries = append(entries, entry{uri: uri, base: b})
+		}
+	}
+	if len(entries) == 0 {
+		return nil
+	}
+	sort.Slice(entries, func(i, j int) bool {
+		a, b := entries[i], entries[j]
+		if a.uri != b.uri {
+			return a.uri < b.uri
+		}
+		if a.base.Class != b.base.Class {
+			return a.base.Class < b.base.Class
+		}
+		return a.base.Demoted < b.base.Demoted
+	})
+
+	var b strings.Builder
+	fmt.Fprintf(&b, "  class bases moved to implements: %d\n", len(entries))
+	for _, e := range entries {
+		fmt.Fprintf(&b, "    %s %s extends %s, implements %s\n",
+			e.uri, e.base.Class, e.base.Kept, e.base.Demoted)
 	}
 	_, err := io.WriteString(w, b.String())
 	return err

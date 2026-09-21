@@ -3667,7 +3667,7 @@ export declare interface CanvasRect {
  * [MDN Reference](https://developer.mozilla.org/docs/Web/API/CanvasRenderingContext2D)
  */
 @js("CanvasRenderingContext2D")
-export declare class CanvasRenderingContext2D extends CanvasCompositing implements CanvasDrawImage, CanvasDrawPath, CanvasFillStrokeStyles, CanvasFilters, CanvasImageData, CanvasImageSmoothing, CanvasPath, CanvasPathDrawingStyles, CanvasRect, CanvasSettings, CanvasShadowStyles, CanvasState, CanvasText, CanvasTextDrawingStyles, CanvasTransform, CanvasUserInterface {
+export declare class CanvasRenderingContext2D implements CanvasCompositing, CanvasDrawImage, CanvasDrawPath, CanvasFillStrokeStyles, CanvasFilters, CanvasImageData, CanvasImageSmoothing, CanvasPath, CanvasPathDrawingStyles, CanvasRect, CanvasSettings, CanvasShadowStyles, CanvasState, CanvasText, CanvasTextDrawingStyles, CanvasTransform, CanvasUserInterface {
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/CanvasRenderingContext2D/canvas) */
     readonly canvas: HTMLCanvasElement,
     static prototype: CanvasRenderingContext2D,
@@ -5712,7 +5712,7 @@ export declare interface ElementContentEditable {
 
 /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/ElementInternals) */
 @js("ElementInternals")
-export declare class ElementInternals extends ARIAMixin {
+export declare class ElementInternals implements ARIAMixin {
     /**
      * Returns the form owner of internals's target element.
      *
@@ -7310,7 +7310,7 @@ export declare interface HTMLCollectionBase {
 }
 
 @js("HTMLCollection")
-export declare class HTMLCollection extends HTMLCollectionBase {
+export declare class HTMLCollection implements HTMLCollectionBase {
     /**
      * Retrieves a select object or an object from an options collection.
      *
@@ -7694,7 +7694,7 @@ export declare class HTMLFontElement extends HTMLElement {
  * [MDN Reference](https://developer.mozilla.org/docs/Web/API/HTMLFormControlsCollection)
  */
 @js("HTMLFormControlsCollection")
-export declare class HTMLFormControlsCollection extends HTMLCollectionBase {
+export declare class HTMLFormControlsCollection implements HTMLCollectionBase {
     /**
      * Returns the item with ID or name name from the collection.
      *
@@ -9455,7 +9455,7 @@ export declare class HTMLOptionElement extends HTMLElement {
  * [MDN Reference](https://developer.mozilla.org/docs/Web/API/HTMLOptionsCollection)
  */
 @js("HTMLOptionsCollection")
-export declare class HTMLOptionsCollection extends HTMLCollectionOf<HTMLOptionElement> {
+export declare class HTMLOptionsCollection implements HTMLCollectionOf<HTMLOptionElement> {
     /**
      * Returns the number of elements in the collection.
      *
@@ -12447,7 +12447,7 @@ export declare class NavigationHistoryEntry extends EventTarget {
  * [MDN Reference](https://developer.mozilla.org/docs/Web/API/Navigator)
  */
 @js("Navigator")
-export declare class Navigator extends NavigatorAutomationInformation implements NavigatorBadge, NavigatorConcurrentHardware, NavigatorContentUtils, NavigatorCookies, NavigatorID, NavigatorLanguage, NavigatorLocks, NavigatorOnLine, NavigatorPlugins, NavigatorStorage {
+export declare class Navigator implements NavigatorAutomationInformation, NavigatorBadge, NavigatorConcurrentHardware, NavigatorContentUtils, NavigatorCookies, NavigatorID, NavigatorLanguage, NavigatorLocks, NavigatorOnLine, NavigatorPlugins, NavigatorStorage {
     /**
      * Available only in secure contexts.
      *
@@ -13098,7 +13098,7 @@ export declare class OffscreenCanvas extends EventTarget {
 
 /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/OffscreenCanvasRenderingContext2D) */
 @js("OffscreenCanvasRenderingContext2D")
-export declare class OffscreenCanvasRenderingContext2D extends CanvasCompositing implements CanvasDrawImage, CanvasDrawPath, CanvasFillStrokeStyles, CanvasFilters, CanvasImageData, CanvasImageSmoothing, CanvasPath, CanvasPathDrawingStyles, CanvasRect, CanvasShadowStyles, CanvasState, CanvasText, CanvasTextDrawingStyles, CanvasTransform {
+export declare class OffscreenCanvasRenderingContext2D implements CanvasCompositing, CanvasDrawImage, CanvasDrawPath, CanvasFillStrokeStyles, CanvasFilters, CanvasImageData, CanvasImageSmoothing, CanvasPath, CanvasPathDrawingStyles, CanvasRect, CanvasShadowStyles, CanvasState, CanvasText, CanvasTextDrawingStyles, CanvasTransform {
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/CanvasRenderingContext2D/canvas) */
     readonly canvas: OffscreenCanvas,
     static prototype: OffscreenCanvasRenderingContext2D,
@@ -13235,7 +13235,7 @@ export declare interface ParentNode extends Node {
  * [MDN Reference](https://developer.mozilla.org/docs/Web/API/Path2D)
  */
 @js("Path2D")
-export declare class Path2D extends CanvasPath {
+export declare class Path2D implements CanvasPath {
     /**
      * Adds to the path the path given by the argument.
      *
@@ -17856,7 +17856,7 @@ export declare class XMLSerializer {
  * [MDN Reference](https://developer.mozilla.org/docs/Web/API/XPathEvaluator)
  */
 @js("XPathEvaluator")
-export declare class XPathEvaluator extends XPathEvaluatorBase {
+export declare class XPathEvaluator implements XPathEvaluatorBase {
     static prototype: XPathEvaluator,
     constructor(mut self)
 }

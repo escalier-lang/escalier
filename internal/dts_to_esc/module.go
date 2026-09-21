@@ -7,6 +7,7 @@ import (
 
 	"github.com/escalier-lang/escalier/internal/ast"
 	"github.com/escalier-lang/escalier/internal/dts_parser"
+	"github.com/escalier-lang/escalier/internal/set"
 	"github.com/tidwall/btree"
 )
 
@@ -35,10 +36,29 @@ type convertCtx struct {
 	// namespaces.
 	namespacePath string
 
+	// classNames holds every name the tree turns into a class, which is
+	// what fuseTrio consults to fill a class's single `extends` slot.
+	// Empty leaves every supertype in `implements`.
+	classNames set.Set[string]
+
+	// demotedBases accumulates every extra class supertype fuseTrio moved
+	// to `implements`. ReportDemotedBases names them.
+	demotedBases []DemotedBase
+
 	// keyDrops accumulates every singleton member flattenSingleton
 	// skipped because the member's key has no plain-name form.
 	// ReportSingletonKeyDrops decides which of these are expected.
 	keyDrops []SingletonMember
+}
+
+// noteDemotedBase records that a class supertype could not fill the class's
+// `extends` slot because an earlier one already had.
+func (c *convertCtx) noteDemotedBase(class, kept, demoted string) {
+	c.demotedBases = append(c.demotedBases, DemotedBase{
+		Class:   class,
+		Kept:    kept,
+		Demoted: demoted,
+	})
 }
 
 // noteSingletonKeyDrop records that flattenSingleton skipped a member

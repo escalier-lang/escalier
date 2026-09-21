@@ -100,7 +100,7 @@ export declare class Headers {
  * [MDN Reference](https://developer.mozilla.org/docs/Web/API/Request)
  */
 @js("Request")
-export declare class Request extends Body {
+export declare class Request implements Body {
     /**
      * Returns the cache mode associated with request, which is a string indicating how the request will interact with the browser's cache when fetching.
      *
@@ -191,7 +191,7 @@ export declare class Request extends Body {
  * [MDN Reference](https://developer.mozilla.org/docs/Web/API/Response)
  */
 @js("Response")
-export declare class Response extends Body {
+export declare class Response implements Body {
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/Response/headers) */
     readonly headers: Headers,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/Response/ok) */

@@ -1599,14 +1599,18 @@ declare var Callable: CallableConstructor;
 	require.Contains(t, printed, "(x: number) -> string", "the instance callable survives")
 }
 
-// multiSupertypeTrio is the shape of `Element` in lib.dom.d.ts, cut down
-// to two supertypes past the base. `Node` is the nominal base TypeScript
-// names first; `ParentNode` and `Slottable` are mixins that declare the
-// rest of the surface.
+// multiSupertypeTrio is the shape of `Element` in lib.dom.d.ts, cut down to
+// two supertypes past the base. `Node` is a trio, so it converts to a class
+// and fills `extends`. `ParentNode` and `Slottable` are mixins that convert
+// to interfaces and declare the rest of the surface.
 const multiSupertypeTrio = `
 interface Node {
     readonly nodeName: string;
 }
+interface NodeConstructor {
+    new (): Node;
+}
+declare var Node: NodeConstructor;
 interface ParentNode {
     querySelector(selectors: string): Element | null;
 }
@@ -1623,28 +1627,201 @@ declare var Element: ElementConstructor;
 `
 
 // A TypeScript interface names any number of supertypes and an Escalier
-// ClassDecl carries one `extends`, so a fused trio splits them. The first
-// supertype becomes `extends` and the rest become `implements`. A trio that
+// ClassDecl carries one `extends`, so a fused trio splits them. A trio that
 // kept only the first would lose every member the others declare, such as
 // `querySelector` on `Element` (#1648).
 func TestStandalone_TrioKeepsEverySupertype(t *testing.T) {
-	astModule, _ := convertSlice(t, multiSupertypeTrio)
-
-	rootNS, ok := astModule.Module.Namespaces.Get("")
-	require.True(t, ok)
-	var cls *ast.ClassDecl
-	for _, d := range rootNS.Decls {
-		if cd, ok := d.(*ast.ClassDecl); ok && cd.Name.Name == "Element" {
-			cls = cd
-		}
-	}
-	require.NotNil(t, cls)
-
-	printed, err := printer.Print(cls, printer.DefaultOptions())
-	require.NoError(t, err)
+	printed := printTrioClass(t, multiSupertypeTrio, "Element")
 	snaps.MatchInlineSnapshot(t, printed, snaps.Inline(`@js("Element")
 export declare class Element extends Node implements ParentNode, Slottable {
     readonly tagName: string,
     constructor(mut self)
 }`))
+}
+
+// mixinFirstTrio names a mixin before the class the type derives from.
+// TypeScript writes supertypes in no particular order, so position cannot
+// decide which one fills `extends`.
+const mixinFirstTrio = `
+interface Node {
+    readonly nodeName: string;
+}
+interface NodeConstructor {
+    new (): Node;
+}
+declare var Node: NodeConstructor;
+interface ParentNode {
+    querySelector(selectors: string): Element | null;
+}
+interface Element extends ParentNode, Node {
+    readonly tagName: string;
+}
+interface ElementConstructor {
+    new (): Element;
+}
+declare var Element: ElementConstructor;
+`
+
+// An Escalier class extends a class and implements interfaces, so the
+// supertype that converts to a class fills `extends` wherever TypeScript
+// wrote it. `Node` is a trio here and `ParentNode` is not.
+func TestStandalone_TrioExtendsTheSupertypeThatIsAClass(t *testing.T) {
+	printed := printTrioClass(t, mixinFirstTrio, "Element")
+	snaps.MatchInlineSnapshot(t, printed, snaps.Inline(`@js("Element")
+export declare class Element extends Node implements ParentNode {
+    readonly tagName: string,
+    constructor(mut self)
+}`))
+}
+
+// mixinOnlyTrio names no supertype that converts to a class, which is the
+// shape of `CanvasRenderingContext2D` and its seventeen mixins.
+const mixinOnlyTrio = `
+interface CanvasPath {
+    arc(x: number, y: number, radius: number): void;
+}
+interface CanvasText {
+    fillText(text: string, x: number, y: number): void;
+}
+interface CanvasRenderingContext2D extends CanvasPath, CanvasText {
+    readonly canvas: string;
+}
+interface CanvasRenderingContext2DConstructor {
+    new (): CanvasRenderingContext2D;
+}
+declare var CanvasRenderingContext2D: CanvasRenderingContext2DConstructor;
+`
+
+// Every supertype converts to an interface, so the class extends nothing and
+// implements all of them. Emitting `extends CanvasPath` would say the class
+// derives from an interface.
+func TestStandalone_TrioWithNoClassSupertypeExtendsNothing(t *testing.T) {
+	printed := printTrioClass(t, mixinOnlyTrio, "CanvasRenderingContext2D")
+	snaps.MatchInlineSnapshot(t, printed, snaps.Inline(`@js("CanvasRenderingContext2D")
+export declare class CanvasRenderingContext2D implements CanvasPath, CanvasText {
+    readonly canvas: string,
+    constructor(mut self)
+}`))
+}
+
+// twoClassTrio is the shape of `FontFaceSet`, which TypeScript declares as
+// both an `EventTarget` and a `Set`. Both convert to classes.
+const twoClassTrio = `
+interface EventTarget {
+    dispatchEvent(event: string): boolean;
+}
+interface EventTargetConstructor {
+    new (): EventTarget;
+}
+declare var EventTarget: EventTargetConstructor;
+interface Collection {
+    readonly size: number;
+}
+interface CollectionConstructor {
+    new (): Collection;
+}
+declare var Collection: CollectionConstructor;
+interface FontFaceSet extends EventTarget, Collection {
+    readonly ready: string;
+}
+interface FontFaceSetConstructor {
+    new (): FontFaceSet;
+}
+declare var FontFaceSet: FontFaceSetConstructor;
+`
+
+// An Escalier class extends one class, so a second class supertype joins
+// `implements` and the conversion records it. Its members still reach the
+// class. What the declaration no longer states is that the class derives
+// from it.
+func TestStandalone_ASecondClassSupertypeIsDemotedAndRecorded(t *testing.T) {
+	mod, _ := convertSlice(t, twoClassTrio)
+
+	printed := printNamedClass(t, mod, "FontFaceSet")
+	snaps.MatchInlineSnapshot(t, printed, snaps.Inline(`@js("FontFaceSet")
+export declare class FontFaceSet extends EventTarget implements Collection {
+    readonly ready: string,
+    constructor(mut self)
+}`))
+
+	require.Equal(t, []DemotedBase{
+		{Class: "FontFaceSet", Kept: "EventTarget", Demoted: "Collection"},
+	}, mod.DemotedBases)
+}
+
+// A trio records no demotion when nothing competed for the `extends` slot,
+// whether one supertype converts to a class or none does.
+func TestStandalone_NoDemotionWithoutASecondClassSupertype(t *testing.T) {
+	mod, _ := convertSlice(t, mixinOnlyTrio)
+	require.Empty(t, mod.DemotedBases)
+
+	mod, _ = convertSlice(t, mixinFirstTrio)
+	require.Empty(t, mod.DemotedBases)
+}
+
+// printTrioClass converts a slice and prints the fused class named by
+// className.
+func printTrioClass(t *testing.T, input, className string) string {
+	t.Helper()
+	mod, _ := convertSlice(t, input)
+	return printNamedClass(t, mod, className)
+}
+
+// printNamedClass prints the class named className from an already converted
+// module.
+func printNamedClass(t *testing.T, mod *StandaloneModule, className string) string {
+	t.Helper()
+	rootNS, ok := mod.Module.Namespaces.Get("")
+	require.True(t, ok)
+	var cls *ast.ClassDecl
+	for _, d := range rootNS.Decls {
+		if cd, ok := d.(*ast.ClassDecl); ok && cd.Name.Name == className {
+			cls = cd
+		}
+	}
+	require.NotNil(t, cls)
+	printed, err := printer.Print(cls, printer.DefaultOptions())
+	require.NoError(t, err)
+	return printed
+}
+
+// nestedClassTrio declares a trio inside a namespace that extends another
+// trio in the same namespace. Both convert to classes, and the reference is
+// written bare because that is how a namespace's own declarations name each
+// other.
+const nestedClassTrio = `
+declare namespace NS {
+    interface Base {
+        readonly id: string;
+    }
+    interface BaseConstructor {
+        new (): Base;
+    }
+    var Base: BaseConstructor;
+    interface Mixin {
+        readonly extra: number;
+    }
+    interface Derived extends Mixin, Base {
+        readonly name: string;
+    }
+    interface DerivedConstructor {
+        new (): Derived;
+    }
+    var Derived: DerivedConstructor;
+}
+`
+
+// A namespace's classes are reachable by bare name from inside it, so they
+// classify the same way a top-level class does. Reading only the top level
+// would emit `implements NS.Base` and say the class derives from an
+// interface.
+func TestStandalone_NestedTrioExtendsANestedClass(t *testing.T) {
+	mod, _ := convertSlice(t, nestedClassTrio)
+	printed := printNamedClass(t, mod, "Derived")
+	snaps.MatchInlineSnapshot(t, printed, snaps.Inline(`@js("NS.Derived")
+export declare class Derived extends Base implements Mixin {
+    readonly name: string,
+    constructor(mut self)
+}`))
+	require.Empty(t, mod.DemotedBases)
 }
