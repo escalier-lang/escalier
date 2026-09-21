@@ -310,7 +310,7 @@ func (b *solTypeAnnBuilder) objectTypeAnn(t *soltype.ObjectType) TypeAnn {
 	for _, elem := range t.Elems {
 		if mapped, ok := elem.(*soltype.MappedElem); ok && !soltype.MappedElemSettled(mapped) {
 			// Each mapped element gets its own object type in the intersection.
-			mappedAnns = append(mappedAnns, NewObjectTypeAnn([]ObjTypeAnnElem{b.mappedTypeAnn(mapped)}))
+			mappedAnns = append(mappedAnns, NewObjectTypeAnn(b.objTypeAnnElems(mapped)))
 			continue
 		}
 		// An overloaded method or call signature contributes one element per arm.
@@ -454,9 +454,10 @@ func indexSignatureKeyName(keys soltype.Type) string {
 		return "index"
 	case soltype.SymPrim:
 		return "sym"
-	case soltype.StrPrim, soltype.BoolPrim:
-		// A string key set takes the default name. A boolean one names no index
-		// signature at all, since a key set of two values is countable.
+	case soltype.StrPrim, soltype.BoolPrim, soltype.BigIntPrim:
+		// A string key set takes the default name. A boolean or bigint one names no
+		// index signature at all, since UncountableKeys admits only string, number,
+		// and symbol, so a member over either is never settled.
 		return "key"
 	}
 	return "key"

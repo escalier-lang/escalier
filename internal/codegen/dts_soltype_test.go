@@ -233,7 +233,12 @@ func TestBuildTypeAnnFromSolFromSource(t *testing.T) {
 			"number extends string ? boolean : number",
 		},
 
+		// The `?` and `readonly` markers are set from separate fields, so each
+		// corner of the pair is pinned. With only the neither and both cases a
+		// renderer that swapped the two would still pass.
 		"Property":         {"", "{x: number}", "{x: number}"},
+		"OptionalOnly":     {"", "{x?: number}", "{x?: number}"},
+		"ReadonlyOnly":     {"", "{readonly x: number}", "{readonly x: number}"},
 		"OptionalReadonly": {"", "{readonly x?: number}", "{readonly x?: number}"},
 		// A name that is not a valid identifier is quoted by the printer.
 		"QuotedProperty": {"", `{"a-b": number}`, `{"a-b": number}`},
@@ -267,6 +272,10 @@ func TestBuildTypeAnnFromSolFromSource(t *testing.T) {
 		"NumericIndexSig":  {"", "{[index: number]?: string}", "{[index: number]: string}"},
 		"SymbolIndexSig":   {"", "{[K: symbol]?: string}", "{[sym: symbol]: string}"},
 		"ReadonlyIndexSig": {"", "{readonly [K: string]?: number}", "{readonly [key: string]: number}"},
+		// `-readonly` removes the marker, and an index signature inherits none, so
+		// it emits without one the way an unmarked signature does. Only ModAdd puts
+		// `readonly` on the emitted form.
+		"MinusReadonlyIndexSig": {"", "{-readonly [K: string]?: number}", "{[key: string]: number}"},
 		// A union key set has no single primitive to name the key after.
 		"UnionIndexSig":        {"", "{[K: string | number]?: number}", "{[key: number | string]: number}"},
 		"IndexSigBesideMember": {"", "{name: string, [K: string]?: number}", "{name: string, [key: string]: number}"},
@@ -282,6 +291,17 @@ func TestBuildTypeAnnFromSolFromSource(t *testing.T) {
 		"MappedRemoveModifiers": {
 			"type T = {a: number}", "{-readonly [K]-?: T[K] for K in keyof T}",
 			"{-readonly [K in keyof T]-?: T[K]}",
+		},
+		// A mapped member's two modifiers come from separate fields, so one case
+		// sets each on its own. With only the cases that set both to the same
+		// value a renderer that swapped them would still pass.
+		"MappedReadonlyOnly": {
+			"type T = {a: number}", "{readonly [K]: T[K] for K in keyof T}",
+			"{readonly [K in keyof T]: T[K]}",
+		},
+		"MappedOptionalOnly": {
+			"type T = {a: number}", "{[K]?: T[K] for K in keyof T}",
+			"{[K in keyof T]?: T[K]}",
 		},
 		// A key-remapping expression becomes TypeScript's `as` clause.
 		"MappedKeyRemapping": {
@@ -697,6 +717,81 @@ func solIndexSig(keys, value soltype.Type) *soltype.MappedElem {
 		Optional: soltype.ModAdd,
 		Readonly: soltype.ModNone,
 	}
+}
+
+// TestRefNameFromSol pins how a registry key becomes a name TypeScript can write.
+func TestRefNameFromSol(t *testing.T) {
+	tests := map[string]struct {
+		qualifiedName string
+		expected      string
+	}{
+		"Bare":           {"Point", "Point"},
+		"Namespaced":     {"Geometry.Point", "Geometry.Point"},
+		"Imported":       {"import:std:array.Foo", "Foo"},
+		"ImportedNested": {"import:npm:a%2Eb.Geometry.Point", "Geometry.Point"},
+		// A key that is a package prefix and nothing else names no declaration, so
+		// there is no path to strip down to and it is returned whole.
+		"PrefixWithoutName": {"import:std:prelude", "import:std:prelude"},
+		// A name that merely starts with the marker's letters is not a package key.
+		"NotAPackageKey": {"imported.Thing", "imported.Thing"},
+	}
+
+	for name, test := range tests {
+		t.Run(name, func(t *testing.T) {
+			require.Equal(t, test.expected, refNameFromSol(test.qualifiedName))
+		})
+	}
+}
+
+// TestBuildTypeAnnFromSolWithoutPreludePrefix pins what a renderer built without
+// a settled prelude does. It trims no reference, rather than trimming by bare
+// name and mangling a user's own `Promise`.
+func TestBuildTypeAnnFromSolWithoutPreludePrefix(t *testing.T) {
+	promise := &soltype.ClassType{
+		Name:     solPreludePrefix + ".Promise",
+		TypeArgs: []soltype.Type{solNum(), solStr()},
+		Defaults: nil, LifetimeArgs: nil, Lt: nil, Final: false, Variant: false,
+	}
+
+	printer := NewPrinter()
+	printer.PrintTypeAnn(newSolTypeAnnBuilder("", nil).typeAnn(promise))
+	require.Equal(t, "Promise<number, string>", printer.Output)
+
+	// The same reference through a builder that knows the prelude is trimmed.
+	require.Equal(t, "Promise<number>", renderSol(t, promise))
+}
+
+// TestBuildTypeAnnFromSolUnnamedTypeParam pins a type parameter its binder left
+// unnamed. Nothing can render a reference to it, so it falls back to `unknown`
+// rather than binding the empty name.
+func TestBuildTypeAnnFromSolUnnamedTypeParam(t *testing.T) {
+	v := &soltype.TypeVarType{
+		ID: 1, Level: 1, LowerBounds: nil, UpperBounds: nil, Open: false, Widenable: false,
+	}
+	unnamed := &soltype.TypeParam{Name: "", Var: v, Default: nil, Constraint: nil}
+	require.Equal(t, "{value: unknown}",
+		renderSolWithParams(t, solObj(solProp("value", v)), []*soltype.TypeParam{unnamed}))
+}
+
+// TestReferencesMappedKey pins the walk that decides whether an index signature
+// keeps the key name its source wrote.
+func TestReferencesMappedKey(t *testing.T) {
+	key := &soltype.MappedKeyType{ID: 7, Name: "K"}
+	indexed := &soltype.IndexType{
+		Target:  &soltype.AliasType{Name: "T", TypeArgs: nil, Defaults: nil, LifetimeArgs: nil},
+		Index:   &soltype.MappedKeyType{ID: 7, Name: "K"},
+		Inexact: false,
+	}
+
+	require.True(t, referencesMappedKey(indexed, key))
+	require.False(t, referencesMappedKey(solNum(), key))
+	// A nested mapped member writing the same name draws its own id, which is what
+	// keeps its binding separate from this one.
+	require.False(t, referencesMappedKey(&soltype.MappedKeyType{ID: 8, Name: "K"}, key))
+	// A mapped member always carries a key, and Value is never nil, so neither nil
+	// arises from a well-formed member. The walk answers rather than faulting.
+	require.False(t, referencesMappedKey(nil, key))
+	require.False(t, referencesMappedKey(indexed, nil))
 }
 
 // TestBuildTypeAnnFromSolParity pairs each solver type with the type_system type
