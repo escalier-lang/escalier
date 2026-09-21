@@ -63,7 +63,7 @@ func (v *TypeVarType) BoundsAt(pol Polarity) []Type {
 }
 
 // Prim is the closed set of primitives. Mirrors the type_system package's Prim
-// enum. The literal kinds BigIntLit, NullLit and UndefinedLit are still absent,
+// enum. The literal kinds BigIntLit, NullLit and UndefinedLit are absent,
 // and each is inert from constrain's perspective — the same literal arms with
 // one more concrete — so their absence is scope rather than design.
 //
