@@ -149,6 +149,58 @@ breaks the old-checker harness on that fixture. The consequence for sequencing
 is in [01-cutover-plan.md](01-cutover-plan.md) P5: whatever fixture edits remain
 after P1.5 ride with the flip rather than preceding it.
 
+## Expression forms the solver rejects
+
+Six expression forms report `UnsupportedNodeError`. Measured through
+`InferModuleAgainstStdlib` against the committed tree:
+
+| Form | Example | Report | Issue |
+| --- | --- | --- | --- |
+| binary operators | `1 + 2`, `1 < 2`, `true && false` | `Unsupported: BinaryExpr` | [#1652](https://github.com/escalier-lang/escalier/issues/1652) |
+| unary operators | `-5`, `!true` | `Unsupported: UnaryExpr` | [#1653](https://github.com/escalier-lang/escalier/issues/1653) |
+| template literals | `` `hi` ``, tagged | `Unsupported: TemplateLitExpr`, `TaggedTemplateLitExpr` | [#1654](https://github.com/escalier-lang/escalier/issues/1654) |
+| typecast | `x : number` | `Unsupported: TypeCastExpr` | [#1655](https://github.com/escalier-lang/escalier/issues/1655) |
+| `do` expressions | `do { 5 }` | `Unsupported: DoExpr` | [#1656](https://github.com/escalier-lang/escalier/issues/1656) |
+| regex literals | `/ab+c/` | `Unsupported: RegexLit` | [#1657](https://github.com/escalier-lang/escalier/issues/1657) |
+
+All six parse cleanly, so these are inference gaps rather than syntax the
+language lacks. JSX is a seventh, covered separately under §"Gaps between the
+solver's API and the compiler's needs".
+
+Binary operators are the one that matters for sequencing. They appear in 59 of
+the 73 directories under `fixtures/` — `return a + b` in `func_decl`, `r + g + b`
+in `enum` — so until [#1652](https://github.com/escalier-lang/escalier/issues/1652)
+lands, a solver run over the fixture tree reports almost all of it as failing and
+every other gap is hidden behind that.
+
+The operator schemes themselves are already seeded. `addOperatorBindings` in
+`prelude.go:77` binds `+ - * /` over `number`, `< > <= >=` to `boolean`,
+`== !=` over `unknown`, `&& ||` over `boolean`, `!`, and `++` over `string`.
+Nothing looks them up. `infer.go:785` says so directly:
+
+```go
+// PR8 handles the ASSIGNMENT op only (`a = expr`); every other binary
+// operator (+, ==, &&, ++, …) needs the operator-scheme walk over the prelude
+// bindings, a separate unlanded PR, so it stays UnsupportedNodeError.
+```
+
+**How six forms went unowned.** `m2-implementation-plan.md:199` lists
+`BinaryExpr` as in scope for M2 and calls the port near-mechanical at line 784.
+`m3-implementation-plan.md:1160` then defers it, and no later milestone picked it
+up. The other five appear in no milestone plan at all, because the M-series
+tracks the type-system surface and treated the plain expression walk as M2 table
+stakes. P1.7's gate is a test over every `isExpr` implementor, so the next form
+cannot go unowned the same way.
+
+**What the same sweep cleared.** Partial and unparseable source degrades to
+diagnostics rather than panicking — `val x = foo.`, `val x = foo(`, an unclosed
+brace, a missing right-hand side. That matters most for the LSP, which
+re-checks on every keystroke. The solver also already has the constructor
+initialization checks (`FieldNotInitializedError`, `ReadBeforeInitError`,
+`MethodCallBeforeInitError`), match exhaustiveness in `ucs_coverage.go`, and
+decorator parsing. `ArraySpreadExpr` is handled by the solver and not by the old
+checker.
+
 ## How a builtin is reached, on each checker
 
 The old checker has no namespaces for builtins. `loadGlobalDefinitions`

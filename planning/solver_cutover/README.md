@@ -32,7 +32,7 @@ expensive half of M12 is the deletion, not the switch.
   measurements say, and the gaps between the solver's API and the compiler's
   needs. Read this first. The phase order in `01` follows from its numbers.
 - **[01-cutover-plan.md](01-cutover-plan.md)** — phases P0 through P7 broken into
-  about thirty pull requests, each with a scope, a gate, and an explicit
+  about thirty-five pull requests, each with a scope, a gate, and an explicit
   statement of what it does not do. Its §"Phase order" has the dependency graph
   and says what runs in parallel.
 - **[02-parked-work.md](02-parked-work.md)** — the pseudo-package work this plan
@@ -63,6 +63,20 @@ rather than a default:
   grind, which is the thing this plan exists to defer.
 
 Pick before P2 starts, because the answer changes what the P2 harness covers.
+
+## The shortest path to a measurable solver
+
+Two phases were added after the first draft, both found by asking what the old
+checker does that the solver does not. P1.7 fills six expression forms the
+solver rejects, binary operators among them. P1.5 rebuilds the ambient builtin
+surface. Until both land, running the solver over `fixtures/` reports nearly the
+whole tree as failing for reasons that say nothing about the migration, so no
+later phase can be measured.
+
+If only one thing starts today, make it
+[#1652](https://github.com/escalier-lang/escalier/issues/1652), the binary
+operator walk. It unblocks 59 of 73 fixtures, and the operator schemes it needs
+are already seeded in the solver's prelude.
 
 ## The preservation rule
 

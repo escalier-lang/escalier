@@ -1,7 +1,7 @@
 # 01 — Cutover plan
 
-Nine phases, about thirty pull requests. P0 through P5 reach the flip, and P6
-and P7 finish the migration. Each phase states what it does not do. The plan
+Ten phases, about thirty-five pull requests. P0 through P5 reach the flip, and
+P6 and P7 finish the migration. Each phase states what it does not do. The plan
 is short because it keeps refusing work the flip does not need.
 
 Every numbered item below is one pull request. A phase that fits in a single
@@ -35,40 +35,44 @@ which is M11.5's parity baseline. P7 is what removes it.
 
 ## Phase order
 
-Rows are in execution order, so the numbers do not read top to bottom. P1.1 is
-first because it is the measurement harness the P0 pull requests report against.
+Rows are in execution order. Numbers were allocated as phases were added, so
+they do not read top to bottom; the "depends on" column is what binds.
 
 | Order | Phase | Pull requests | Depends on | Parallel within the phase |
 | --- | --- | --- | --- | --- |
 | 1 | P1 — ledger | P1.1 | — | one |
 | 2 | P0 — ingestion | P0.1 … P0.7 | P1.1, softly | P0.1 to P0.6 all independent; P0.7 closes them |
-| 2 | P2 — flag and harness | P2.1 … P2.3, then one per skip-list cause | P1.5 for a useful skip list | sequential to P2.3, then parallel |
+| 2 | P1.7 — expression walk | P1.7a … P1.7f | P0 for P1.7f only | P1.7b follows P1.7a; c–f independent |
 | 2 | P4 — `.d.ts` emission | P4.1 … P4.3 | P4.1 on nothing; P4.2 on P2.2 | sequential, but P4.1 starts on day one |
 | 3 | P1.5 — ambient builtins | P1.5a … P1.5c | P0.1–P0.5, then P0.6 | sequential |
-| 4 | P3 — JS emission | P3 | P2.3 | one |
-| 5 | P5 — flip | P5 | P0.7, P1.5, P2, P3, P4.3 | one, and atomic by design |
-| 6 | P6 — LSP | P6.1 … P6.5 | P5 | P6.1 to P6.3 independent; P6.4 and P6.5 follow P6.3 |
-| 7 | P7 — deletion | P7.1 … P7.3 | P6, and M11.5 for P7.2 | sequential |
+| 4 | P2 — flag and harness | P2.1 … P2.3, then one per skip-list cause | P1.5 and P1.7 for a useful skip list | sequential to P2.3, then parallel |
+| 5 | P3 — JS emission | P3 | P2.3 | one |
+| 6 | P5 — flip | P5 | P0.7, P1.5, P1.7, P2, P3, P4.3 | one, and atomic by design |
+| 7 | P6 — LSP | P6.1 … P6.5 | P5 | P6.1 to P6.3 independent; P6.4 and P6.5 follow P6.3 |
+| 8 | P7 — deletion | P7.1 … P7.3 | P6, and M11.5 for P7.2 | sequential |
 
 Four things are worth reading off this table before anything else.
 
-**P1.1 is the first pull request of the plan.** It is the measurement harness, so
-each P0 pull request lands as a baseline reduction in one committed table rather
-than as an unverifiable claim.
+**P1.7a is the critical path.** Binary operators appear in 59 of the 73
+fixtures, so until that one pull request lands, nothing downstream can be
+measured: P2.3's skip list is the whole tree and P3's and P4.3's golden
+comparisons have nothing green to compare. It is also described as a
+near-mechanical port, which makes it the cheapest large unblock in the plan.
+
+**P1.1 is the first pull request of the plan.** It is the measurement harness,
+so each P0 pull request lands as a baseline reduction in one committed table
+rather than as an unverifiable claim.
 
 **P4.1 is the long pole and has no dependencies.** The `soltype` type renderer is
 roughly 490 lines ported from `dts.go`, it is unit-testable against `soltype`
 values alone, and it needs neither the compiler seam nor the fixture harness. It
-can start the same day as P1.1 and run alongside all of P0 and P2.
+can start the same day as P1.1 and run alongside all of P0, P1.7, and P2.
 
-**P1.5 gates P2.3's usefulness, not its existence.** The harness can be built
-first, but a skip list seeded before the ambient surface exists is mostly
-`Unknown identifier: Math`. Land P1.5 first and the skip list names real solver
-gaps instead.
-
-**Three tracks run at once.** P0 is library data quality in `internal/solver` and
-the generator. P2 is compiler wiring in `internal/compiler` and `cmd/escalier`.
-P4 starts in `internal/codegen`. They share no files.
+**Four tracks run at once.** P0 is library data quality in `internal/solver` and
+the generator. P1.7 is the expression walk in `internal/solver`. P4 starts in
+`internal/codegen`. P2 is compiler wiring in `internal/compiler` and
+`cmd/escalier`. Only P0 and P1.7 share a package, and they touch different files
+within it.
 
 ### The work, and what runs in parallel
 
@@ -85,6 +89,16 @@ graph TD
         P06["P0.6 · web:core + web:fetch"]
     end
     P07["P0.7 · zero-diagnostic gate"]
+
+    subgraph SP17["P1.7 · expression walk"]
+        P17a["P1.7a · binary operators #1652"]
+        P17b["P1.7b · unary operators #1653"]
+        P17c["P1.7c · template literals #1654"]
+        P17d["P1.7d · typecast #1655"]
+        P17e["P1.7e · do expressions #1656"]
+        P17f["P1.7f · regex literals #1657"]
+        P17a --> P17b
+    end
 
     subgraph SP15["P1.5 · ambient builtin scope"]
         P15a["P1.5a · ambient scope builder"]
@@ -134,22 +148,23 @@ graph TD
     P01 & P02 & P03 & P04 & P05 & P06 --> P07
     P01 & P02 & P03 & P04 & P05 --> P15a
     P06 --> P15c
-    P15c -.->|a skip list worth reading| P23
+    P03 & P04 --> P17f
+    P15c & P17a & P17c & P17d & P17e & P17f -.->|a skip list worth reading| P23
     P23 --> P3
     P22 --> P42
     P23 --> P43
-    P07 & P15c & P24 & P3 & P43 --> P5
+    P07 & P15c & P17b & P17c & P17d & P17e & P17f & P24 & P3 & P43 --> P5
     P5 --> P61 & P62 & P63
     P61 & P62 & P65 --> P71
     M115 --> P72
 
-    classDef longpole stroke-width:3px;
-    class P41 longpole;
+    classDef critical stroke-width:3px;
+    class P17a,P41 critical;
 ```
 
 The dotted edges are soft. A P0 pull request can land without the ledger; it
-just lands without a number attached to it. P2.3 can land without P1.5; its skip
-list is then mostly noise.
+just lands without a number attached to it. P2.3 can land without P1.5 and P1.7;
+its skip list is then mostly noise.
 
 ---
 
@@ -332,6 +347,91 @@ is the eventual replacement for this phase rather than part of it.
 
 ---
 
+## P1.7 — Expression walk gaps
+
+**Goal.** Every expression form the parser produces type-checks, or is a
+deliberate, recorded omission.
+
+**Why this is a phase.** `internal/solver/infer.go:785` routes every
+`*ast.BinaryExpr` except an assignment to `reportUnsupported`, so `1 + 2`,
+`a < b`, and `x && y` all report `Unsupported: BinaryExpr`. Five more forms do
+the same. Measured against the committed tree:
+
+| Form | Example | Report |
+| --- | --- | --- |
+| binary operators | `1 + 2`, `1 < 2`, `true && false` | `Unsupported: BinaryExpr` |
+| unary operators | `-5`, `!true` | `Unsupported: UnaryExpr` |
+| template literals | `` `hi` ``, `` String.raw`a${n}b` `` | `Unsupported: TemplateLitExpr`, `TaggedTemplateLitExpr` |
+| typecast | `x : number` | `Unsupported: TypeCastExpr` |
+| `do` expressions | `do { 5 }` | `Unsupported: DoExpr` |
+| regex literals | `/ab+c/` | `Unsupported: RegexLit` |
+
+Binary operators appear in 59 of the 73 fixtures, so without this phase P2.3's
+skip list is nearly the whole tree and says nothing useful. That is what makes
+this the critical path to the flip rather than a burn-down item.
+
+**How it went unowned.** `m2-implementation-plan.md:199` lists `BinaryExpr` as in
+scope for M2. `m3-implementation-plan.md:1160` then defers it to a later pull
+request, and no milestone picked it up. The other five forms appear in no
+milestone plan at all, because the M-series tracks the type-system surface and
+treated the plain expression walk as M2 table stakes.
+
+**Most of the work is already done.** `addOperatorBindings` in `prelude.go:77`
+seeds every operator as a monomorphic scheme: `+ - * /` over `number`,
+`< > <= >=` to `boolean`, `== !=` over `unknown`, `&& ||` over `boolean`, `!`,
+and `++` over `string`. Nothing looks them up. The comment above it already
+asks for the `1 == 2 ⇒ boolean` regression test "when the operator/call walk
+lands", and `m2-implementation-plan.md:784` calls the port near-mechanical.
+
+**P1.7a — the binary operator walk.** Resolve the operator name in scope,
+instantiate its scheme, constrain the operands, and yield the return type. This
+is the call path `inferCall` already runs, applied to an operator name instead of
+a callee expression. Add the regression test `prelude.go` asks for. Clears the
+59-fixture block on its own. Tracked at
+[#1652](https://github.com/escalier-lang/escalier/issues/1652).
+
+**P1.7b — unary operators.** `!` already has a binding. Unary minus does not:
+the `-` in the table is the binary `number, number -> number` form, so this pull
+request adds a binding for the prefix form as well as the walk. Tracked at
+[#1653](https://github.com/escalier-lang/escalier/issues/1653).
+
+**P1.7c — template literals.** Both `TemplateLitExpr` and
+`TaggedTemplateLitExpr`. The quasis are `string` and each interpolation is
+constrained against what the concatenation accepts; the tagged form is a call
+whose first argument is the quasi array. Tracked at
+[#1654](https://github.com/escalier-lang/escalier/issues/1654).
+
+**P1.7d — typecast.** `x : number` asserts a type on an expression, checked by
+constraining the expression against the annotation. The old checker's cases are
+in `internal/checker/tests/typecast_test.go`. Tracked at
+[#1655](https://github.com/escalier-lang/escalier/issues/1655).
+
+**P1.7e — `do` expressions.** A block that evaluates to its last expression.
+`inferBlock` already exists, so this is the expression-position wrapper around
+it. `fixtures/do` covers it. Tracked at
+[#1656](https://github.com/escalier-lang/escalier/issues/1656).
+
+**P1.7f — regex literals.** The only one that needs a library type: `RegExp`
+comes from `std:regexp`, so this depends on P0. Tracked at
+[#1657](https://github.com/escalier-lang/escalier/issues/1657).
+
+P1.7a and P1.7b share the operator-scheme lookup, so take them in that order.
+P1.7c through P1.7f are independent of each other and of the first two.
+
+**Gate.** No expression form the parser produces reports
+`UnsupportedNodeError`, checked by a test that walks every `isExpr` implementor
+in `internal/ast` and asserts each one either has a case in `inferExpr` or is
+named in an explicit deferred list. That test is what stops the next form from
+going unowned the way these six did.
+
+**Not in scope.** JSX, which is parked in
+[02-parked-work.md](02-parked-work.md). Richer operator forms the prelude
+comment defers — bigint arithmetic, `string` comparison, generic equality —
+which ride with their own milestones. Statement and declaration forms, which
+P2.3's harness will surface if any are missing.
+
+---
+
 ## P2 — Solver behind a flag, with a check-only fixture harness
 
 **Goal.** Find out what the solver actually rejects in real Escalier code,
@@ -361,13 +461,17 @@ points, not a `soltype` to `type_system` bridge, which this plan never builds.
 asserts accept or reject, with no codegen and no `build/` comparison. Give it a
 per-fixture skip list, seeded with everything that fails on day one. The seeded
 list is this pull request's real output, because it is the first honest measure
-of what the solver cannot yet check. Land P1.5 first, or most of that list is
-`Unknown identifier: Math` rather than a solver gap.
+of what the solver cannot yet check. Land P1.5 and P1.7 first, or most of that
+list is `Unknown identifier: Math` and `Unsupported: BinaryExpr` rather than
+anything new.
 
 **P2.4 and up — burn the skip list down.** One pull request per cause, and they
-parallelize once P2.3 has named them. Two causes are known from the milestone
-plans and may or may not bite: M6 PR7, which is `if`-`val` and `val`-`else`, and
-M9 PR9f, which is regular-tree normalization.
+parallelize once P2.3 has named them. P1.7 clears the six expression forms that
+would otherwise dominate this list, so what lands here is whatever is left.
+Two further causes are known from the milestone plans and may or may not bite:
+M6 PR7, which is `if`-`val` and `val`-`else`, and M9 PR9f, which is regular-tree
+normalization. Expect statement and declaration forms too, since P1.7's audit
+covers expressions only.
 
 **Gate.** The skip list is empty, or every remaining entry is a triaged intended
 improvement with a note naming why the divergence is right.
