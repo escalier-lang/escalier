@@ -612,6 +612,16 @@ func TestBuildTypeAnnFromSolUnnameableParams(t *testing.T) {
 		}, "(arg0: number) => number"},
 		// The solver leaves a pattern it has no counterpart for nil.
 		"Absent": {nil, "(arg0: number) => number"},
+		// A rest element keeps its `...` when the sub-pattern names nothing.
+		// Dropping it would bind one element where the source bound the tail.
+		"RestInsideTuple": {&soltype.TuplePat{Elems: []soltype.Pat{
+			&soltype.IdentPat{Name: "a"},
+			&soltype.RestPat{Pattern: &soltype.WildcardPat{}},
+		}}, "([a, ...arg0]: number) => number"},
+		// The solver leaves a rest whose sub-pattern it has no counterpart for nil.
+		"RestOverAbsentSubPattern": {&soltype.TuplePat{Elems: []soltype.Pat{
+			&soltype.RestPat{Pattern: nil},
+		}}, "([...arg0]: number) => number"},
 		// A sub-pattern that names nothing draws from the same namer as a
 		// parameter, so a nested position never reuses an outer name.
 		"InsideTuple": {&soltype.TuplePat{Elems: []soltype.Pat{

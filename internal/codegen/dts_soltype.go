@@ -607,8 +607,8 @@ func litToLitFromSol(lit soltype.Lit) Lit {
 // nil. TypeScript needs a name at every binding position, so the caller draws one
 // from names rather than emitting a signature with an empty slot.
 //
-// A sub-pattern inside a tuple or an object is named here, since only this walk
-// reaches it.
+// A sub-pattern inside a tuple, an object, or a rest element is named here, since
+// only this walk reaches it.
 func patToPatFromSol(pat soltype.Pat, names *paramNamer) (Pat, bool) {
 	switch pat := pat.(type) {
 	case *soltype.IdentPat:
@@ -641,9 +641,13 @@ func patToPatFromSol(pat soltype.Pat, names *paramNamer) (Pat, bool) {
 		}
 		return NewObjectPat(elems, nil), true
 	case *soltype.RestPat:
+		// A rest element binds the tail, which is a fact about the pattern rather
+		// than about the sub-pattern it binds through. Dropping the `...` for an
+		// unnamed sub-pattern would turn `[a, ..._]` into `[a, arg0]`, binding one
+		// element where the source bound every remaining one.
 		sub, named := patToPatFromSol(pat.Pattern, names)
 		if !named {
-			return nil, false
+			sub = NewIdentPat(names.next(), nil, nil)
 		}
 		return NewRestPat(sub, nil), true
 	}
