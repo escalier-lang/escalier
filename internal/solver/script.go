@@ -76,7 +76,7 @@ func InferScript(script *ast.Script, source ModuleSource) (*Scope, *Info, []Solv
 // A script with no library to check against goes through InferScript instead, which
 // parents it to the prelude directly.
 func InferScriptInLib(script *ast.Script, lib *ModuleResult) (*Scope, *Info, []SolverError) {
-	c := lib.run.forScript(scriptPkgURI(script))
+	c := lib.checker.forScript(scriptPkgURI(script))
 	return c.inferScriptIn(lib.Scope.Child(), script)
 }
 

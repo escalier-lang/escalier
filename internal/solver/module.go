@@ -61,11 +61,10 @@ type ModuleResult struct {
 	// Errors are the run's diagnostics, the imported packages' included.
 	Errors []SolverError
 
-	// run is the checker that produced the rest of this struct. InferScriptInLib
-	// carries it on for a bin/ script checked against Scope, which needs the
-	// nominal registries and counters on the run's Context rather than a second
-	// run's empty ones.
-	run *checker
+	// checker produced the rest of this struct. InferScriptInLib carries it on for a
+	// bin/ script checked against Scope, which needs the nominal registries and
+	// counters on this run's Context rather than a second run's empty ones.
+	checker *checker
 }
 
 // InferModuleWithSource infers module, resolving its imports through source.
@@ -108,7 +107,7 @@ func inferModuleWithGroups(
 		Packages:   c.packages,
 		DepGraph:   g,
 		Errors:     c.errs,
-		run:        c,
+		checker:    c,
 	}
 }
 
