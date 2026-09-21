@@ -111,7 +111,7 @@ compiler.CompilerOutput{
 
 [TestForInIterator - 1]
 compiler.CompilerOutput{
-    TypeErrors: []checker.Error{
+    TypeErrors: []compiler.Diagnostic{
         &checker.UnimplementedError{
             message: "Type 'Iterator<number>' is not iterable",
             span: 45-50,
@@ -128,7 +128,7 @@ compiler.CompilerOutput{
 
 [TestForAwaitInAsyncIterator - 1]
 compiler.CompilerOutput{
-    TypeErrors: []checker.Error{
+    TypeErrors: []compiler.Diagnostic{
         &checker.UnknownTypeError{
             TypeName: "AsyncIterator",
             TypeRef: &type_system.TypeRefType{

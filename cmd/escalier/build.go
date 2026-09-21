@@ -12,7 +12,6 @@ import (
 	"unicode/utf8"
 
 	"github.com/escalier-lang/escalier/internal/ast"
-	"github.com/escalier-lang/escalier/internal/checker"
 	"github.com/escalier-lang/escalier/internal/compiler"
 )
 
@@ -90,7 +89,7 @@ func printErrors(stderr io.Writer, output compiler.CompilerOutput, idToSource ma
 }
 
 // formatTypeError formats a type error with source context and location highlighting
-func formatTypeError(err checker.Error, source *ast.Source) string {
+func formatTypeError(err compiler.Diagnostic, source *ast.Source) string {
 	span := err.Span()
 	lineMap := source.LineMap()
 

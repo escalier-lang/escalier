@@ -67,6 +67,22 @@ type ModuleResult struct {
 	checker *checker
 }
 
+// DeclaresTopLevel reports whether the module declared name at its top level, in
+// the value or the namespace sort.
+//
+// It reads the module scope's own maps rather than walking to the parent, so a
+// prelude binding under the same name does not answer for the module. That is the
+// question a bin/ script's emitter asks: a name the script uses that the library
+// declares is imported from the library's output, and one the prelude declares is
+// not.
+func (r *ModuleResult) DeclaresTopLevel(name string) bool {
+	if _, ok := r.Scope.ownValue(name); ok {
+		return true
+	}
+	_, ok := r.Scope.namespaces[name]
+	return ok
+}
+
 // InferModuleWithSource infers module, resolving its imports through source.
 //
 // Imports are bound before the dep-graph walk, so a declaration referring to an

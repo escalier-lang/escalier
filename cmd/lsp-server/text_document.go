@@ -12,11 +12,9 @@ import (
 	"time"
 
 	"github.com/escalier-lang/escalier/internal/ast"
-	"github.com/escalier-lang/escalier/internal/checker"
 	"github.com/escalier-lang/escalier/internal/compiler"
 	"github.com/escalier-lang/escalier/internal/parser"
 	"github.com/escalier-lang/escalier/internal/set"
-	"github.com/escalier-lang/escalier/internal/type_system"
 	"github.com/tliron/glsp"
 	protocol "github.com/tliron/glsp/protocol_3_16"
 )
@@ -386,13 +384,13 @@ func (server *Server) validate(lspContext *glsp.Context, uri protocol.DocumentUr
 	// doing a full package check) when all three conditions hold:
 	//   1. The file is a bin/ script (lib/ changes always need a full check).
 	//   2. A prior full check has run (checkOutput != nil), so we have a
-	//      cached lib namespace to type-check the script against.
+	//      cached lib surface to type-check the script against.
 	//   3. No lib/ files have changed since that full check
-	//      (libGen == libValidatedGen), so the cached namespace is still valid.
+	//      (libGen == libValidatedGen), so the cached surface is still valid.
 	canIncrCheck := isBinFile && server.checkOutput != nil && server.libGen == server.libValidatedGen
-	var cachedLibNS *type_system.Namespace
-	if canIncrCheck && server.checkOutput != nil && server.checkOutput.ModuleScope != nil {
-		cachedLibNS = server.checkOutput.ModuleScope.Namespace
+	var cachedLib compiler.LibScope
+	if canIncrCheck && server.checkOutput != nil {
+		cachedLib = server.checkOutput.LibScope
 	}
 	snapshotPackageGen := server.packageGen
 	snapshotLibGen := server.libGen
@@ -406,8 +404,8 @@ func (server *Server) validate(lspContext *glsp.Context, uri protocol.DocumentUr
 
 	if canIncrCheck {
 		// Fast path: only a bin/ file changed and lib/ is unchanged.
-		// Re-check just this one script using the cached lib namespace.
-		server.validateBinScript(lspContext, uri, contents, version, rootPath, cachedLibNS, snapshotPackageGen, snapshotLibGen)
+		// Re-check just this one script against the cached lib surface.
+		server.validateBinScript(lspContext, uri, contents, version, rootPath, cachedLib, snapshotPackageGen, snapshotLibGen)
 		return
 	}
 
@@ -415,15 +413,15 @@ func (server *Server) validate(lspContext *glsp.Context, uri protocol.DocumentUr
 	server.validateFull(lspContext, uri, contents, version, rootPath, snapshotPackageGen, snapshotLibGen)
 }
 
-// validateBinScript re-checks a single bin/ script using a cached lib namespace,
-// avoiding re-parsing and re-checking all lib/ files.
+// validateBinScript re-checks a single bin/ script against the cached library
+// surface, avoiding re-parsing and re-checking all lib/ files.
 func (server *Server) validateBinScript(
 	lspContext *glsp.Context,
 	uri protocol.DocumentUri,
 	contents string,
 	version protocol.Integer,
 	rootPath string,
-	libNS *type_system.Namespace,
+	lib compiler.LibScope,
 	snapshotPackageGen int64,
 	snapshotLibGen int64,
 ) {
@@ -443,7 +441,7 @@ func (server *Server) validateBinScript(
 
 	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
 	defer cancel()
-	result := compiler.CheckBinScript(ctx, libNS, src)
+	result := compiler.CheckBinScript(ctx, lib, src)
 
 	// Verify staleness and update caches.
 	server.mu.Lock()
@@ -613,7 +611,7 @@ func (server *Server) publishDiagnosticsForScript(
 	sourceID int,
 	lineMap *ast.LineMap,
 	parseErrors []*parser.Error,
-	typeErrors []checker.Error,
+	typeErrors []compiler.Diagnostic,
 ) {
 	if lspContext.Notify == nil {
 		return
@@ -664,8 +662,8 @@ func filterOutSourceID(errs []*parser.Error, sourceID int) []*parser.Error {
 }
 
 // filterOutTypeErrors removes type errors belonging to the given sourceID.
-func filterOutTypeErrors(errs []checker.Error, sourceID int) []checker.Error {
-	result := make([]checker.Error, 0, len(errs))
+func filterOutTypeErrors(errs []compiler.Diagnostic, sourceID int) []compiler.Diagnostic {
+	result := make([]compiler.Diagnostic, 0, len(errs))
 	for _, e := range errs {
 		if e.Span().SourceID != sourceID {
 			result = append(result, e)
