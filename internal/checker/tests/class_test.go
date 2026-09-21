@@ -1554,8 +1554,29 @@ func TestDeclareClassImplementsConflicts(t *testing.T) {
 		},
 		// Lookup walks the superclass before the implemented interfaces,
 		// so a member the superclass declares is what the name resolves
-		// to and the two interfaces no longer decide it.
+		// to and the two interfaces no longer decide it. `number` is
+		// assignable to what each one declares, so the superclass settles
+		// the name without contradicting either.
 		"ASuperclassMemberResolvesTheConflict": {
+			input: `
+				interface ChildNode {
+					nodeName: string | number,
+				}
+				interface ParentNode {
+					nodeName: number,
+				}
+				declare class Node {
+					nodeName: number,
+				}
+				declare class Element extends Node implements ChildNode, ParentNode {}
+			`,
+		},
+		// The superclass settles the name, so the two interfaces no longer
+		// conflict with each other. What it settles on contradicts
+		// `ParentNode`, though: `element.nodeName` reads as `string` where
+		// the interface promises `number`. That is reported against the
+		// one interface it disagrees with, not as a conflict between them.
+		"ASuperclassMemberContradictingAnInterfaceIsRejected": {
 			input: `
 				interface ChildNode {
 					nodeName: string,
@@ -1568,6 +1589,9 @@ func TestDeclareClassImplementsConflicts(t *testing.T) {
 				}
 				declare class Element extends Node implements ChildNode, ParentNode {}
 			`,
+			expectedErrors: []string{
+				"Class 'Element' does not implement interface 'ParentNode': member 'nodeName' property type does not match",
+			},
 		},
 		// The two declare the same type but disagree on whether the
 		// member is there at all, so reading it gives `string | undefined`

@@ -62,9 +62,12 @@ func implementsSpan(decl *ast.ClassDecl, ifaceRef *type_system.TypeRefType) ast.
 // checkContributedConflicts reports a member name two implemented interfaces
 // declare with types that do not agree. On a `declare` class both interfaces
 // contribute their member, and member lookup would silently return whichever
-// comes first, so the class has to restate the member and narrow both to say
-// which one it means. A member the class restates is already checked against
-// each interface by checkImplementsOne and takes no part here.
+// comes first, so the class has to settle the name to say which one it means.
+//
+// A name the class already settles takes no part here, whether it states the
+// member itself or inherits it from its superclass. checkImplementsOne checks
+// that member against every interface that declares the name, which covers the
+// disagreement this function otherwise reports.
 //
 // Two members agree when each one's type is assignable to the other's. The
 // comparison asks Check rather than Unify, since it is a question about the
@@ -109,7 +112,7 @@ func (c *Checker) checkContributedConflicts(
 			if first.ifaceName == ifaceName {
 				continue
 			}
-			if c.classResolvesMember(ctx, classObj, key) {
+			if c.findClassElem(ctx, classObj, key, true) != nil {
 				continue
 			}
 			if c.Check(ctx, elemType, first.elemType) &&
@@ -126,43 +129,6 @@ func (c *Checker) checkContributedConflicts(
 		}
 	}
 	return errors
-}
-
-// classResolvesMember reports whether the class settles a member name by
-// itself, either by declaring it or by inheriting it from its superclass.
-// Lookup walks classObj.Extends in order, and the superclass comes first. A
-// member the superclass provides is therefore what the name resolves to, in
-// spite of anything the implemented interfaces declare.
-//
-// The implemented interfaces sit in classObj.Extends beside the superclass, so
-// they are skipped here. They are the contributions being compared, not a
-// resolution of the conflict between them.
-func (c *Checker) classResolvesMember(
-	ctx Context,
-	classObj *type_system.ObjectType,
-	key type_system.ObjTypeKey,
-) bool {
-	if c.findClassElem(ctx, classObj, key, true) != nil {
-		return true
-	}
-	implemented := set.FromSlice(classObj.Implements)
-	for _, superRef := range classObj.Extends {
-		if implemented.Contains(superRef) {
-			continue
-		}
-		expanded, expandErrors := c.expandTypeRef(ctx, superRef)
-		if len(expandErrors) > 0 {
-			continue
-		}
-		superObj, ok := type_system.Prune(expanded).(*type_system.ObjectType)
-		if !ok {
-			continue
-		}
-		if findElemByKey(ctx, c, superObj, key) != nil {
-			return true
-		}
-	}
-	return false
 }
 
 // contributedElemType returns the type an object-type element contributes
@@ -505,26 +471,54 @@ func setterArgType(fn *type_system.FuncType) type_system.Type {
 }
 
 // findClassElem looks up the class member the interface member is compared
-// against. On a `declare` class the comparison covers only what the class
-// states itself, so the search stops at classObj.Elems. Walking `extends`
-// there would find the interface's own member, since resolveImplements records
-// the implemented interfaces in that list. On any other class an inherited
-// member satisfies the interface, so the search walks `extends` too.
+// against. On any class but a `declare` one an inherited member satisfies the
+// interface, so the search walks all of `extends`.
+//
+// On a `declare` class the search covers the class's own body and its
+// superclass chain, and skips the implemented interfaces. Those sit in
+// classObj.Extends beside the superclass, since that is how resolveImplements
+// makes them contribute members, and walking into them would find the
+// interface's own member and compare it with itself.
+//
+// What is left is what member lookup resolves the name to, which is the type
+// the interface's declaration has to be satisfied by. A member the superclass
+// provides shadows the interface's, so it is checked like a member the class
+// states itself. Finding nothing means the name resolves through the clause,
+// which is the inherited case and no error.
 func (c *Checker) findClassElem(
 	ctx Context,
 	classObj *type_system.ObjectType,
 	key type_system.ObjTypeKey,
 	declared bool,
 ) type_system.ObjTypeElem {
-	if declared {
-		for _, elem := range classObj.Elems {
-			if k, ok := elemKey(elem); ok && k == key {
-				return elem
-			}
-		}
-		return nil
+	if !declared {
+		return findElemByKey(ctx, c, classObj, key)
 	}
-	return findElemByKey(ctx, c, classObj, key)
+
+	for _, elem := range classObj.Elems {
+		if k, ok := elemKey(elem); ok && k == key {
+			return elem
+		}
+	}
+
+	implemented := set.FromSlice(classObj.Implements)
+	for _, superRef := range classObj.Extends {
+		if implemented.Contains(superRef) {
+			continue
+		}
+		expanded, expandErrors := c.expandTypeRef(ctx, superRef)
+		if len(expandErrors) > 0 {
+			continue
+		}
+		superObj, ok := type_system.Prune(expanded).(*type_system.ObjectType)
+		if !ok {
+			continue
+		}
+		if elem := findElemByKey(ctx, c, superObj, key); elem != nil {
+			return elem
+		}
+	}
+	return nil
 }
 
 // findElemByKey looks for a non-callable element with the given key on
