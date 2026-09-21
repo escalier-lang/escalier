@@ -644,9 +644,13 @@ func (c *checker) forScript(pkgURI string) *checker {
 		groups:       c.groups,
 	}
 	sc.ctx.fusionRecorder = sc.recordFusionEdge
-	// A script keyed under pkgURI may have been checked before, against this same
-	// run, and its definitions from that check are still registered. Dropping them
-	// leaves this check registering into an empty space.
+	// Clearing the prefix matters for one caller: a language server re-checking a
+	// single bin/ file against a cached library. It hands this run the same source
+	// id on every keystroke, so each check lands on the prefix the one before it
+	// registered under, and the definitions from that check are still there. A
+	// compile repeats no prefix, since each bin/ script is its own source with its
+	// own id. Dropping the earlier check's definitions leaves this one registering
+	// into an empty space.
 	sc.ctx.forgetKeyPrefix(packageKeyPrefix(pkgURI) + ".")
 	return sc
 }

@@ -261,8 +261,8 @@ func (c *Context) registerClass(name string, def *ClassDef) {
 // carries the package or script the declaration came from. Checking one script twice
 // against the same run therefore writes the second check's definitions over the
 // first's, and a cache the first check filled would answer for a definition that no
-// longer exists. An editor re-checks one bin/ file on every keystroke, so this is the
-// ordinary case rather than an unusual one.
+// longer exists. A language server re-checking one bin/ file against a cached library
+// does exactly that, once per keystroke. See the call in forScript.
 //
 // Clearing the prefix before a check starts leaves that script registering into an
 // empty space, so no answer can come from the check before it and the registries stay
