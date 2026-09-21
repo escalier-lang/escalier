@@ -49,11 +49,6 @@ type backend interface {
 	// resolves only what the prelude declares. checkScriptIn routes to it for a
 	// package whose lib/ directory holds no files.
 	checkScript(ctx context.Context, script *ast.Script) scriptResult
-	// codegenGap returns a diagnostic naming what this checker's results cannot yet
-	// drive in codegen, blaming span, or nil when they drive it fully. Each entry
-	// point that emits reports it beside the source's own diagnostics, so output
-	// that cannot be trusted says so rather than passing for output that can.
-	codegenGap(span ast.Span) Diagnostic
 }
 
 // LibScope is the surface a package's lib/ module declared, in whatever form the
@@ -92,6 +87,17 @@ type libResult struct {
 	fileScopes map[int]*checker.Scope
 	// diagnostics are the module's type errors.
 	diagnostics []Diagnostic
+	// codegenGap names what the checker that produced this result cannot yet drive
+	// in codegen, or is nil when it drives it fully. An entry point that emits
+	// reports it beside the source's own diagnostics, so output that cannot be
+	// trusted says so rather than passing for output that can.
+	//
+	// It rides the result rather than being asked of a backend, because the checker
+	// that produced a result is the one whose gaps the emitted output carries, and
+	// that is not always the backend the entry point selected. A LibScope holds the
+	// checker that made it, so a script checked against one is checked by that
+	// checker whatever CheckerEnvVar says at the time.
+	codegenGap Diagnostic
 }
 
 // scriptResult is what a backend produced for one bin/ script.
@@ -101,11 +107,13 @@ type scriptResult struct {
 	scope *checker.Scope
 	// diagnostics are the script's type errors.
 	diagnostics []Diagnostic
+	// codegenGap is libResult.codegenGap for this script.
+	codegenGap Diagnostic
 }
 
 // checkScriptIn infers script with lib in scope, or with the prelude alone when the
-// package declared no library. A LibScope carries its own checker, so pairing a
-// library surface with the backend that made it needs no check here.
+// package declared no library. A LibScope holds the checker that produced it, so a
+// script checked against one is checked by that checker rather than by b.
 func checkScriptIn(ctx context.Context, b backend, lib LibScope, script *ast.Script) scriptResult {
 	if lib == nil {
 		return b.checkScript(ctx, script)
