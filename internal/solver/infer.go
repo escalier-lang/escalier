@@ -5,6 +5,7 @@ import (
 	"github.com/escalier-lang/escalier/internal/liveness"
 	"github.com/escalier-lang/escalier/internal/set"
 	"github.com/escalier-lang/escalier/internal/soltype"
+	"maps"
 )
 
 // checker is the per-inference-run carrier for the M2 constraint-generating
@@ -125,7 +126,9 @@ type checker struct {
 	// empty while inferring the entry module. Every class, enum, and alias
 	// registered under it keys on the URI joined to the dep_graph-qualified name,
 	// so `std:prelude`'s `Array` and a user's `Array` are two entries in the one
-	// nominal registry a run shares.
+	// nominal registry a run shares. A bin/ script checked against a library module
+	// takes a URI of its own for the same reason, so its declarations do not land on
+	// the library's keys. See scriptPkgURI.
 	//
 	// The separator is a dot, and a URI holds a colon that no identifier may, so
 	// `std:prelude.Array` splits back into its parts unambiguously and the display
@@ -592,6 +595,56 @@ func newChecker() *checker {
 	c.ctx.fusionRecorder = c.recordFusionEdge
 	registerIteratorResultAliases(c.ctx)
 	return c
+}
+
+// forScript returns a checker that carries c's run on for a bin/ script checked
+// against c's module scope. See InferScriptInLib, which is its only caller.
+//
+// pkgURI is the prefix the script's own classes, enums, and aliases register under,
+// and it is what keeps them apart from the module's and from another script's. The
+// registries live on the shared Context and are keyed by qualified name, so a script
+// declaring `Point` against a module that also declares one would otherwise find the
+// module's definition and fill its own members into it. The prefix is stripped for
+// display, so the script's class still renders as `Point`.
+//
+// It carries over the run state a script needs to read the module's types:
+//
+//   - ctx, which holds the class and alias registries every named type resolves
+//     through, an enum's registration included, plus the counters that number
+//     inference variables, unique symbols, and lifetimes, so what the script mints
+//     is numbered past what the module minted;
+//   - prov, copied rather than shared, so a diagnostic about a module type can still
+//     blame the source the module run recorded for it while what the script records
+//     stays out of the module's table. Sharing it would grow one table without bound
+//     across the many times a bin/ script is re-checked against one library;
+//   - packages, so an import the module already resolved is not loaded a second time;
+//   - prelude, along with the source and group readers that populated it, so the
+//     prelude the script resolves through is the one the module scope parents to.
+//
+// Info and the diagnostics start empty, so the script's side table and reports cover
+// the script alone. varIDCounter is copied rather than shared, so two scripts can mint
+// the same liveness id. That is harmless. A liveness table belongs to the funcCtx of
+// the body being walked, so no id outlives its script.
+//
+// The Context's fusion recorder is pointed at the returned checker, so a fusion the
+// script's walk records lands in the script's Prov table rather than the module's.
+// The module run has finished by the time this is called, so nothing writes through
+// the recorder it installed.
+func (c *checker) forScript(pkgURI string) *checker {
+	sc := &checker{
+		ctx:          c.ctx,
+		pkgURI:       pkgURI,
+		info:         NewInfo(),
+		prov:         maps.Clone(c.prov),
+		varIDCounter: c.varIDCounter,
+		prelude:      c.prelude,
+		packages:     c.packages,
+		source:       c.source,
+		groupSource:  c.groupSource,
+		groups:       c.groups,
+	}
+	sc.ctx.fusionRecorder = sc.recordFusionEdge
+	return sc
 }
 
 // freshAt allocates a fresh inference variable at the given level. Provenance for
