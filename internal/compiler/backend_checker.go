@@ -10,6 +10,9 @@ import (
 
 // checkerBackend runs internal/checker. It is what every entry point uses unless
 // CheckerEnvVar selects the solver.
+//
+// Its results leave codegenGap nil. Codegen reads the types this checker stamps onto
+// the tree and the namespace it produces, so it drives both emitters.
 type checkerBackend struct{}
 
 // checkLib infers module through InferModule rather than the lower-level
@@ -41,10 +44,6 @@ func (checkerBackend) checkScript(ctx context.Context, script *ast.Script) scrip
 	c := checker.NewChecker(ctx)
 	return inferScriptInScope(c, checker.Prelude(c), script)
 }
-
-// codegenGap returns nil. Codegen reads the types this checker stamps onto the tree
-// and the namespace it produces, so it drives both emitters.
-func (checkerBackend) codegenGap(ast.Span) Diagnostic { return nil }
 
 // checkerLibScope is the library surface internal/checker produces: the namespace
 // the module's scope accumulated.

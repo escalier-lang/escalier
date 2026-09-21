@@ -171,10 +171,10 @@ func Compile(source *ast.Source) CompilerOutput {
 	p := parser.NewParser(ctx, source)
 	inMod, parseErrors := p.ParseScript()
 
-	selected := selectBackend()
-	typeErrors := selected.checkScript(ctx, inMod).diagnostics
-	if gap := selected.codegenGap(ast.Span{SourceID: source.ID}); gap != nil {
-		typeErrors = append(typeErrors, gap)
+	result := selectBackend().checkScript(ctx, inMod)
+	typeErrors := result.diagnostics
+	if result.codegenGap != nil {
+		typeErrors = append(typeErrors, result.codegenGap)
 	}
 
 	// namespace := scope.Namespace
@@ -248,8 +248,8 @@ func CompilePackage(sources []*ast.Source) CompilerOutput {
 
 		output.ParseErrors = append(output.ParseErrors, parseErrors...)
 		output.TypeErrors = append(output.TypeErrors, lib.diagnostics...)
-		if gap := selected.codegenGap(moduleSpan(inMod)); gap != nil {
-			output.TypeErrors = append(output.TypeErrors, gap)
+		if lib.codegenGap != nil {
+			output.TypeErrors = append(output.TypeErrors, lib.codegenGap)
 		}
 
 		// A parse error leaves an error node in the tree where a declaration or type
@@ -363,10 +363,10 @@ func CompileScript(lib LibScope, source *ast.Source) CompilerOutput {
 	p := parser.NewParser(ctx, source)
 	inMod, parseErrors := p.ParseScript()
 
-	selected := selectBackend()
-	typeErrors := checkScriptIn(ctx, selected, lib, inMod).diagnostics
-	if gap := selected.codegenGap(ast.Span{SourceID: source.ID}); gap != nil {
-		typeErrors = append(typeErrors, gap)
+	result := checkScriptIn(ctx, selectBackend(), lib, inMod)
+	typeErrors := result.diagnostics
+	if result.codegenGap != nil {
+		typeErrors = append(typeErrors, result.codegenGap)
 	}
 
 	builder := &codegen.Builder{}

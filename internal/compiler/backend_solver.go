@@ -45,6 +45,7 @@ func (solverBackend) checkLib(_ context.Context, module *ast.Module) libResult {
 		lib:         &solverLibScope{module: result},
 		depGraph:    result.DepGraph,
 		diagnostics: append(dirErrs, diagnostics(result.Errors)...),
+		codegenGap:  &codegenGapError{span: moduleSpan(module)},
 	}
 }
 
@@ -52,18 +53,15 @@ func (solverBackend) checkLib(_ context.Context, module *ast.Module) libResult {
 func (solverBackend) checkScript(_ context.Context, script *ast.Script) scriptResult {
 	dir, dirErrs := solverStdlibDir(script.Span())
 	_, _, errs := solver.InferScript(script, solver.StdlibSource(dir))
-	return scriptResult{diagnostics: append(dirErrs, diagnostics(errs)...)}
+	return scriptResult{
+		diagnostics: append(dirErrs, diagnostics(errs)...),
+		codegenGap:  &codegenGapError{span: scriptSpan(script)},
+	}
 }
 
-// codegenGap reports that this path's emitted output is not yet trustworthy, so a
-// caller reads it as a diagnostic rather than discovering it from output that looks
+// codegenGapError reports that this path's emitted output is not yet trustworthy, so
+// a caller reads it as a diagnostic rather than discovering it from output that looks
 // finished. The two gaps it names are the first two in this file's type doc.
-func (solverBackend) codegenGap(span ast.Span) Diagnostic {
-	return &codegenGapError{span: span}
-}
-
-// codegenGapError reports that the checker driving codegen cannot yet supply
-// everything the emitters read.
 type codegenGapError struct {
 	span ast.Span
 }
@@ -86,7 +84,10 @@ type solverLibScope struct {
 // the library's top-level declarations without importing them.
 func (l *solverLibScope) checkScript(_ context.Context, script *ast.Script) scriptResult {
 	_, _, errs := solver.InferScriptInLib(script, l.module)
-	return scriptResult{diagnostics: diagnostics(errs)}
+	return scriptResult{
+		diagnostics: diagnostics(errs),
+		codegenGap:  &codegenGapError{span: scriptSpan(script)},
+	}
 }
 
 // declaresTopLevel asks the module scope for a declaration of its own under name.
@@ -106,6 +107,12 @@ func solverStdlibDir(span ast.Span) (string, []Diagnostic) {
 		return "", []Diagnostic{&stdlibDirError{reason: err.Error(), span: span}}
 	}
 	return dir, nil
+}
+
+// scriptSpan returns a span naming the script's file, for a diagnostic about the
+// whole file rather than about anything written in it.
+func scriptSpan(script *ast.Script) ast.Span {
+	return ast.Span{SourceID: script.Span().SourceID}
 }
 
 // moduleSpan returns a span in the module's first file, for a diagnostic about the

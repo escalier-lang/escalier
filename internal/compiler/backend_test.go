@@ -163,9 +163,7 @@ func TestCompileScriptImportsUsedLibSymbols(t *testing.T) {
 // Codegen reads types only internal/checker stamps onto the tree, so the solver's
 // JavaScript is wrong in ways no other diagnostic names and its .d.ts is empty.
 func TestCompileReportsTheSolverCodegenGap(t *testing.T) {
-	const gap = "ESCALIER_CHECKER=solver does not yet emit correct output for this file: " +
-		"codegen reads types internal/checker stamps onto the tree, so a constructor call, " +
-		"a method reference, and an `if val` guard are emitted wrongly, and no .d.ts is written"
+	const gap = solverCodegenGap
 
 	t.Run("Checker", func(t *testing.T) {
 		useChecker(t)
@@ -192,6 +190,11 @@ func TestCompileReportsTheSolverCodegenGap(t *testing.T) {
 		require.Equal(t, []int{0, 1}, blamed)
 	})
 }
+
+// solverCodegenGap is the message the solver path reports for each file it emits.
+const solverCodegenGap = "ESCALIER_CHECKER=solver does not yet emit correct output for this file: " +
+	"codegen reads types internal/checker stamps onto the tree, so a constructor call, " +
+	"a method reference, and an `if val` guard are emitted wrongly, and no .d.ts is written"
 
 // countMessage returns how many of msgs equal want.
 func countMessage(msgs []string, want string) int {
@@ -283,4 +286,25 @@ func TestCheckLibWithoutAStandardLibrary(t *testing.T) {
 			require.Equal(t, 0, err.Span().SourceID)
 		}
 	}
+}
+
+// TestCompileScriptReportsTheGapOfTheCheckerThatChecked checks that the codegen gap
+// follows the checker that checked the script rather than the one selected when the
+// emit happens.
+//
+// A LibScope holds the checker that produced it, so a script checked against a
+// solver library is checked by the solver whatever CheckerEnvVar says at the time.
+// Reading the gap off the selected backend instead would emit solver-checked
+// JavaScript with nothing saying it cannot be trusted.
+func TestCompileScriptReportsTheGapOfTheCheckerThatChecked(t *testing.T) {
+	useSolver(t)
+	libOutput := CheckLib(context.Background(), libSources("export val greeting = \"hello\"\n"))
+	require.NotNil(t, libOutput.LibScope)
+
+	// The library keeps the solver. The variable goes back to the old checker.
+	t.Setenv(CheckerEnvVar, "")
+
+	out := CompileScript(libOutput.LibScope, binSource("val g = greeting\n"))
+	require.Empty(t, out.ParseErrors)
+	require.Equal(t, 1, countMessage(messages(out.TypeErrors), solverCodegenGap))
 }
