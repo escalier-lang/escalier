@@ -301,9 +301,11 @@ func TestBuildTypeAnnFromSolFromSource(t *testing.T) {
 		// `import:` prefix TypeScript cannot write.
 		"Promise": {"", "Promise<number, string>", "Promise<number>"},
 		// The trim keys off that prefix, so a type the caller declares under one of
-		// the same names is a different type and keeps every argument. The prelude's
-		// three other over-parameterized declarations are pinned by
-		// TestBuildTypeAnnFromSolNominalRefs, since this stdlib declares none of them.
+		// the same names is a different type and keeps every argument. This stdlib
+		// declares no `PromiseLike`, `Generator`, or `AsyncGenerator`, so the trim
+		// over a declared one of those is pinned by
+		// TestBuildTypeAnnFromSolNominalRefs. The generator rows below reach the
+		// built-in former instead, which is the other way one is written.
 		"UserGenerator": {
 			"declare interface Generator<T, TReturn, TNext, E = never> { next(self) -> T }",
 			"Generator<number, string, boolean, string>",
@@ -315,19 +317,26 @@ func TestBuildTypeAnnFromSolFromSource(t *testing.T) {
 		"PreludeAlias": {"", "Iterable<number>", "Iterable<number, undefined, unknown>"},
 		"UserAlias":    {"type Box<T> = {value: T}", "Box<number>", "Box<number>"},
 		"UserClass":    {"class Point { x: number }", "Point", "Point"},
-		// TypeScript's `Generator` takes three type arguments. Escalier tracks a
-		// fourth, what advancing the generator may raise, and TypeScript has no slot.
+		// This stdlib declares neither generator, so both reach the built-in
+		// GeneratorType former rather than a prelude declaration. TypeScript's
+		// `Generator` and `AsyncGenerator` take three type arguments, and the
+		// fourth Escalier tracks, what advancing the generator may raise, has no
+		// slot. Each renders the same whether or not it was written.
 		"Generator": {
 			"", "Generator<number, string, boolean>",
+			"Generator<number, string, boolean>",
+		},
+		"GeneratorThrows": {
+			"", "Generator<number, string, boolean, string>",
 			"Generator<number, string, boolean>",
 		},
 		"AsyncGenerator": {
 			"", "AsyncGenerator<number, string, boolean>",
 			"AsyncGenerator<number, string, boolean>",
 		},
-		"GeneratorThrows": {
-			"", "Generator<number, string, boolean, string>",
-			"Generator<number, string, boolean>",
+		"AsyncGeneratorThrows": {
+			"", "AsyncGenerator<number, string, boolean, string>",
+			"AsyncGenerator<number, string, boolean>",
 		},
 	}
 
