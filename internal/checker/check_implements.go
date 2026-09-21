@@ -66,7 +66,9 @@ func implementsSpan(decl *ast.ClassDecl, ifaceRef *type_system.TypeRefType) ast.
 // which one it means. A member the class restates is already checked against
 // each interface by checkImplementsOne and takes no part here.
 //
-// Two members agree when each one's type is assignable to the other's.
+// Two members agree when each one's type is assignable to the other's. The
+// comparison asks Check rather than Unify, since it is a question about the
+// two interfaces and must not bind a type var on either side.
 // contributedElemType names the type each member kind is compared by.
 func (c *Checker) checkContributedConflicts(
 	ctx Context,
@@ -110,8 +112,8 @@ func (c *Checker) checkContributedConflicts(
 			if c.classResolvesMember(ctx, classObj, key) {
 				continue
 			}
-			if len(c.Unify(ctx, elemType, first.elemType)) == 0 &&
-				len(c.Unify(ctx, first.elemType, elemType)) == 0 {
+			if c.Check(ctx, elemType, first.elemType) &&
+				c.Check(ctx, first.elemType, elemType) {
 				continue
 			}
 			errors = append(errors, &ConflictingInterfaceMembersError{

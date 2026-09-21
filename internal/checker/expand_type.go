@@ -1523,7 +1523,9 @@ func (c *Checker) getObjectAccess(objType *type_system.ObjectType, key MemberAcc
 		// Check the Extends field if index key not found (same invariant as
 		// the PropertyKey branch above — see comment there for why TypeAlias
 		// is guaranteed non-nil for valid code).
-		if superType, found, _ := c.getSuperTypeAccess(objType, key, mode, receiverMut); found {
+		superType, found, superErrors := c.getSuperTypeAccess(objType, key, mode, receiverMut)
+		errors = slices.Concat(errors, superErrors)
+		if found {
 			return superType, errors
 		}
 
