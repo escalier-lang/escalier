@@ -4,14 +4,15 @@ import (
 	"testing"
 
 	"github.com/escalier-lang/escalier/internal/soltype"
+	"github.com/escalier-lang/escalier/internal/solver"
 	type_sys "github.com/escalier-lang/escalier/internal/type_system"
 	"github.com/stretchr/testify/require"
 )
 
-// solPromiseClass stands in for the qualified name the solver settles the
-// prelude's `Promise` to. The tests use a namespaced one so a case that matched
-// on the bare last component instead would fail here.
-const solPromiseClass = "std.prelude.Promise"
+// solPromiseClass is the name the prelude registers `Promise` under, which
+// TestResolveTypeAnnForTestPreludeName in internal/solver pins. A renderer that
+// matched on the bare last component instead would fail the cases below.
+const solPromiseClass = "import:std:prelude.Promise"
 
 // renderSol renders a solver type the way BuildDefinitions emits it: through the
 // soltype renderer and then the .d.ts printer. Asserting on the printed
@@ -142,8 +143,8 @@ func TestBuildTypeAnnFromSolNominalRefs(t *testing.T) {
 		"GenericAlias":         {alias("Box", solStr()), "Box<string>"},
 		"ImportedAlias":        {alias("import:std:array.Elem"), "Elem"},
 		// TypeScript's `Promise` takes one type argument, so the error type Escalier
-		// tracks second is dropped.
-		"Promise": {class(solPromiseClass, solNum(), solStr()), solPromiseClass + "<number>"},
+		// tracks second is dropped. The prelude's key prefix goes with it.
+		"Promise": {class(solPromiseClass, solNum(), solStr()), "Promise<number>"},
 		// A user class whose last name component is also `Promise` is a different
 		// class and keeps every argument it declared.
 		"LookalikePromise": {class("app.Promise", solNum(), solStr()), "app.Promise<number, string>"},
@@ -156,74 +157,161 @@ func TestBuildTypeAnnFromSolNominalRefs(t *testing.T) {
 	}
 }
 
-func TestBuildTypeAnnFromSolGenerator(t *testing.T) {
+// TestBuildTypeAnnFromSolFromSource renders types the checker built from real
+// Escalier source, so each case reads as the annotation a user would write beside
+// the declaration it emits.
+//
+// It covers the formers source can spell.
+// TestBuildTypeAnnFromSolUnspellableFormers covers the ones it cannot, and the
+// hand-built tests around them cover the error sentinel, a skolem, an unresolved
+// inference variable, an `import:`-prefixed name from another package, a
+// signature-less overload set, and a parameter pattern that binds no name.
+func TestBuildTypeAnnFromSolFromSource(t *testing.T) {
 	tests := map[string]struct {
-		ty       soltype.Type
+		decls    string
+		ann      string
 		expected string
 	}{
-		"Sync": {&soltype.GeneratorType{
-			Yield: solNum(), Ret: solStr(), Next: solBool(), Throws: nil, Async: false,
-		}, "Generator<number, string, boolean>"},
-		"Async": {&soltype.GeneratorType{
-			Yield: solNum(), Ret: solStr(), Next: solBool(), Throws: nil, Async: true,
-		}, "AsyncGenerator<number, string, boolean>"},
-		// TypeScript has no fourth slot, so what advancing the generator raises is dropped.
-		"Throws": {&soltype.GeneratorType{
-			Yield: solNum(), Ret: solStr(), Next: solBool(), Throws: solStr(), Async: false,
-		}, "Generator<number, string, boolean>"},
+		"Number":       {"", "number", "number"},
+		"String":       {"", "string", "string"},
+		"Boolean":      {"", "boolean", "boolean"},
+		"Symbol":       {"", "symbol", "symbol"},
+		"UniqueSymbol": {"", "unique symbol", "unique symbol"},
+		"NumLit":       {"", "5", "5"},
+		"StrLit":       {"", `"hi"`, `"hi"`},
+		"BoolLit":      {"", "true", "true"},
+		"Null":         {"", "null", "null"},
+		"Undefined":    {"", "undefined", "undefined"},
+		"Never":        {"", "never", "never"},
+		"Unknown":      {"", "unknown", "unknown"},
+
+		"Tuple":        {"", "[number, string]", "[number, string]"},
+		"Union":        {"", "string | number", "number | string"},
+		"Intersection": {"", "{a: number} & {b: string}", "{a: number} & {b: string}"},
+		"TemplateLit":  {"", "`on${string}`", "`on${string}`"},
+		// TypeScript ships the string intrinsics as generic aliases.
+		"StringIntrinsic": {"", "Uppercase<string>", "Uppercase<string>"},
+		// Ownership has no TypeScript form, so a `mut` renders as what it wraps.
+		"Mutable": {"", "mut {x: number}", "{x: number}"},
+
+		"Keyof": {"type T = {a: number}", "keyof T", "keyof T"},
+		"Index": {"type T = {a: number}", `T["a"]`, `T["a"]`},
+		"Cond": {
+			"", "if number : string { boolean } else { number }",
+			"number extends string ? boolean : number",
+		},
+
+		"Property":         {"", "{x: number}", "{x: number}"},
+		"OptionalReadonly": {"", "{readonly x?: number}", "{readonly x?: number}"},
+		// A name that is not a valid identifier is quoted by the printer.
+		"QuotedProperty": {"", `{"a-b": number}`, `{"a-b": number}`},
+		// A member keyed off a well-known symbol is stored under a reserved `@@name`
+		// spelling, which renders back as a computed key.
+		"SymbolProperty": {"", "{[Symbol.iterator]: number}", "{[Symbol.iterator]: number}"},
+		// A method's `self` receiver is implicit in TypeScript, so it has no slot.
+		"Method": {"", "{m(self, x: number) -> string}", "{m(x: number): string}"},
+		"Getter": {"", "{get x(self) -> number}", "{get x(): number}"},
+		// TypeScript forbids a return type on a setter.
+		"Setter":         {"", "{set x(self, value: number)}", "{set x(value: number)}"},
+		"OptionalMethod": {"", "{m?(self) -> string}", "{m?(): string}"},
+		"Callable":       {"", "{(x: number) -> string}", "{(x: number): string}"},
+		"Constructor":    {"", "{new (x: number) -> string}", "{new (x: number): string}"},
+		"ObjectSpread":   {"type A = {x: number}", "{...A, y: string}", "{...A, y: string}"},
+
+		"Func":        {"", "fn (x: number) -> string", "(x: number) => string"},
+		"GenericFunc": {"", "fn <T>(x: T) -> T", "<T>(x: T) => T"},
+		"RestParam":   {"", "fn (...xs: Array<number>) -> number", "(...xs: Array<number>) => number"},
+		"TuplePatParam": {
+			"", "fn ([a, b]: [number, number]) -> number",
+			"([a, b]: [number, number]) => number",
+		},
+		"ObjectPatParam": {"", "fn ({x}: {x: number}) -> number", "({x: x}: {x: number}) => number"},
+		// What a call raises has no TypeScript form.
+		"Throws": {"", "fn () -> number throws string", "() => number"},
+
+		// An index signature is a settled mapped member in `soltype`. TypeScript
+		// allows one beside ordinary members, so it needs no intersection split.
+		"IndexSignature":   {"", "{[K: string]?: number}", "{[key: string]: number}"},
+		"NumericIndexSig":  {"", "{[index: number]?: string}", "{[index: number]: string}"},
+		"SymbolIndexSig":   {"", "{[K: symbol]?: string}", "{[sym: symbol]: string}"},
+		"ReadonlyIndexSig": {"", "{readonly [K: string]?: number}", "{readonly [key: string]: number}"},
+		// A union key set has no single primitive to name the key after.
+		"UnionIndexSig":        {"", "{[K: string | number]?: number}", "{[key: number | string]: number}"},
+		"IndexSigBesideMember": {"", "{name: string, [K: string]?: number}", "{name: string, [key: string]: number}"},
+		// A member that names its key in the value it computes keeps the source's
+		// name, since the conventional one would leave `T[K]` dangling.
+		"IndexSigKeyInValue": {"type T = {a: number}", "{[K: string]?: T[K]}", "{[K: string]: T[K]}"},
+
+		"Mapped": {"type T = {a: number}", "{[K]: T[K] for K in keyof T}", "{[K in keyof T]: T[K]}"},
+		"MappedAddModifiers": {
+			"type T = {a: number}", "{readonly [K]?: T[K] for K in keyof T}",
+			"{readonly [K in keyof T]?: T[K]}",
+		},
+		"MappedRemoveModifiers": {
+			"type T = {a: number}", "{-readonly [K]-?: T[K] for K in keyof T}",
+			"{-readonly [K in keyof T]-?: T[K]}",
+		},
+		// A key-remapping expression becomes TypeScript's `as` clause.
+		"MappedKeyRemapping": {
+			"type T = {a: number}", "{[Uppercase<K>]: T[K] for K in keyof T}",
+			"{[K in keyof T as Uppercase<K>]: T[K]}",
+		},
+		// TypeScript requires a mapped type to be the sole member of its type
+		// literal (TS7061), so an object carrying one beside anything else splits
+		// into an intersection.
+		"MappedBesideMember": {
+			"type T = {a: number}", "{name: string, [K]: T[K] for K in keyof T}",
+			"{[K in keyof T]: T[K]} & {name: string}",
+		},
+
+		// TypeScript's `Promise` takes one type argument, so the error type Escalier
+		// tracks second is dropped. The name is the prelude's own registry key, whose
+		// `import:` prefix TypeScript cannot write.
+		"Promise": {"", "Promise<number, string>", "Promise<number>"},
+		// A class or alias from another package drops that prefix too. Resolution
+		// fills in the arguments the declaration defaults, and every one is
+		// emitted: `Iterable<T, TReturn, TNext>` reads back with all three.
+		"PreludeAlias": {"", "Iterable<number>", "Iterable<number, undefined, unknown>"},
+		"UserAlias":    {"type Box<T> = {value: T}", "Box<number>", "Box<number>"},
+		"UserClass":    {"class Point { x: number }", "Point", "Point"},
+		// TypeScript's `Generator` takes three type arguments. Escalier tracks a
+		// fourth, what advancing the generator may raise, and TypeScript has no slot.
+		"Generator": {
+			"", "Generator<number, string, boolean>",
+			"Generator<number, string, boolean>",
+		},
+		"AsyncGenerator": {
+			"", "AsyncGenerator<number, string, boolean>",
+			"AsyncGenerator<number, string, boolean>",
+		},
+		"GeneratorThrows": {
+			"", "Generator<number, string, boolean, string>",
+			"Generator<number, string, boolean>",
+		},
 	}
 
 	for name, test := range tests {
 		t.Run(name, func(t *testing.T) {
-			require.Equal(t, test.expected, renderSol(t, test.ty))
+			ty, diagnostics, err := solver.ResolveTypeAnnForTest(test.decls, test.ann)
+			require.NoError(t, err)
+			require.Empty(t, diagnostics)
+			require.Equal(t, test.expected, renderSol(t, ty))
 		})
 	}
 }
 
-func TestBuildTypeAnnFromSolComposites(t *testing.T) {
+// TestBuildTypeAnnFromSolUnspellableFormers covers the formers no Escalier source
+// produces, so TestBuildTypeAnnFromSolFromSource cannot reach them. Each one is a
+// degradation path: TypeScript has no form for it, and the renderer has to choose
+// what to emit instead.
+func TestBuildTypeAnnFromSolUnspellableFormers(t *testing.T) {
 	tests := map[string]struct {
 		ty       soltype.Type
 		expected string
 	}{
-		"Tuple": {&soltype.TupleType{Elems: []soltype.Type{solNum(), solStr()}, Inexact: false}, "[number, string]"},
-		// The trailing `...` marker has no TypeScript form, so an inexact tuple
-		// renders the same as an exact one. M10 owns carrying exactness across.
-		"InexactTuple": {&soltype.TupleType{Elems: []soltype.Type{solNum()}, Inexact: true}, "[number]"},
-		"TupleRestSpread": {&soltype.TupleType{
-			Elems:   []soltype.Type{solNum(), &soltype.RestSpreadType{Operand: solStr()}},
-			Inexact: false,
-		}, "[number, ...string]"},
-		"Union":        {&soltype.UnionType{Types: []soltype.Type{solNum(), solStr()}}, "number | string"},
-		"Intersection": {&soltype.IntersectionType{Types: []soltype.Type{solNum(), solStr()}}, "number & string"},
-		// Ownership and borrowing have no TypeScript form, so a reference renders
-		// as the value it points at.
-		"Ref": {&soltype.RefType{Mut: true, Lt: nil, Inner: solObj(solProp("x", solNum()))}, "{x: number}"},
-		"Keyof": {&soltype.KeyofType{
-			Operand: solObj(solProp("x", solNum())), Inexact: false,
-		}, "keyof {x: number}"},
-		"Index": {&soltype.IndexType{
-			Target: solObj(solProp("x", solNum())),
-			Index:  &soltype.LitType{Lit: &soltype.StrLit{Value: "x"}},
-			// A key set's openness is not carried into TypeScript.
-			Inexact: false,
-		}, `{x: number}["x"]`},
-		"Typeof":       {&soltype.TypeofType{Ident: "x", Ty: solNum()}, "typeof x"},
-		"TypeofMember": {&soltype.TypeofType{Ident: "p.inner", Ty: solNum()}, "typeof p.inner"},
-		"Cond": {&soltype.CondType{
-			Check: solNum(), Extends: solStr(), Then: solBool(), Else: solNum(), Distribute: false,
-		}, "number extends string ? boolean : number"},
-		// A reference to an `infer` binder renders as the bare name the clause bound.
-		"InferRef":  {&soltype.InferType{ID: 1, Name: "U", Binder: false}, "U"},
-		"MappedKey": {&soltype.MappedKeyType{ID: 1, Name: "K"}, "K"},
-		"TemplateLit": {&soltype.TemplateLitType{
-			Quasis: []string{"on", ""}, Interps: []soltype.Type{solStr()},
-		}, "`on${string}`"},
-		// TypeScript ships the string intrinsics as generic aliases.
-		"StringIntrinsic": {&soltype.StringIntrinsicType{
-			Kind: soltype.Uppercase, Operand: solStr(),
-		}, "Uppercase<string>"},
-		// TypeScript has no complement type. Rendering one as `unknown` reduces
-		// the `A & ~B` a narrowed match remainder produces to `A`, dropping the
+		// The normalization layer is the only producer of a complement, and
+		// TypeScript has no complement type. Rendering one as `unknown` reduces the
+		// `A & ~B` a narrowed match remainder produces to `A`, dropping the
 		// refinement and keeping the type it refines.
 		"Negation": {&soltype.NegationType{Inner: solStr()}, "unknown"},
 		"NegationUnderIntersection": {&soltype.IntersectionType{Types: []soltype.Type{
@@ -231,10 +319,55 @@ func TestBuildTypeAnnFromSolComposites(t *testing.T) {
 			&soltype.NegationType{Inner: solStr()},
 		}}, "{x: number} & unknown"},
 		// The exactness operators set and clear a trailing `...` marker, which
-		// TypeScript has no form for, so the operand renders alone.
+		// TypeScript has no form for, so the operand renders alone. Resolution
+		// reduces a written `Exact<T>` over a ground operand before it reaches the
+		// renderer, so only a hand-built one is still an ExactnessType here.
 		"Exact": {&soltype.ExactnessType{
 			Kind: soltype.MakeExact, Operand: solObj(solProp("x", solNum())),
 		}, "{x: number}"},
+		"Inexact": {&soltype.ExactnessType{
+			Kind: soltype.MakeInexact, Operand: solObj(solProp("x", solNum())),
+		}, "{x: number}"},
+		// A TypeScript overload set is one sibling declaration per arm. Escalier's
+		// surface syntax writes no overloaded member inside an object type, so the
+		// solver only builds one for a declaration-merged interface.
+		"OverloadedMethod": {solObj(&soltype.MethodElem{
+			Name: "m",
+			Signatures: []*soltype.FuncType{
+				solFn([]*soltype.FuncParam{solParam("x", solNum())}, solNum()),
+				solFn([]*soltype.FuncParam{solParam("x", solStr())}, solStr()),
+			},
+			Static:   false,
+			Optional: false,
+		}), "{m(x: number): number, m(x: string): string}"},
+		"OverloadedCallable": {solObj(&soltype.CallableElem{
+			Signatures: []*soltype.FuncType{
+				solFn([]*soltype.FuncParam{solParam("x", solNum())}, solNum()),
+				solFn(nil, solStr()),
+			},
+		}), "{(x: number): number, (): string}"},
+		"OverloadedConstructor": {solObj(&soltype.ConstructorElem{
+			Signatures: []*soltype.FuncType{
+				solFn([]*soltype.FuncParam{solParam("n", solNum())}, solStr()),
+				solFn(nil, solStr()),
+			},
+		}), "{new (n: number): string, new (): string}"},
+		// A reference to an `infer` binder renders as the bare name the clause
+		// bound. The binder itself is pinned by TestBuildTypeAnnFromSolInferBinder,
+		// which cannot go through the printer.
+		"InferReference": {&soltype.InferType{ID: 1, Name: "U", Binder: false}, "U"},
+		// A mapped type's key variable, the `K` of `T[K]`, reached on its own.
+		"MappedKeyReference": {&soltype.MappedKeyType{ID: 1, Name: "K"}, "K"},
+		// A `...P` spread element inside a tuple, over an operand that never grounds.
+		"TupleRestSpread": {&soltype.TupleType{
+			Elems: []soltype.Type{solNum(), &soltype.RestSpreadType{
+				Operand: &soltype.AliasType{Name: "P", TypeArgs: nil, Defaults: nil, LifetimeArgs: nil},
+			}},
+			Inexact: false,
+		}, "[number, ...P]"},
+		// The trailing `...` marker has no TypeScript form, so an inexact tuple
+		// renders the same as an exact one. M10 owns carrying exactness across.
+		"InexactTuple": {&soltype.TupleType{Elems: []soltype.Type{solNum()}, Inexact: true}, "[number]"},
 	}
 
 	for name, test := range tests {
@@ -334,183 +467,6 @@ func TestBuildTypeAnnFromSolFuncTypes(t *testing.T) {
 		sig.Throws = solStr()
 		require.Equal(t, "(x: number) => number", renderSol(t, sig))
 	})
-}
-
-func TestBuildTypeAnnFromSolObjectMembers(t *testing.T) {
-	selfParam := solParam("self", &soltype.SelfType{Class: &soltype.ClassType{
-		Name: "Point", TypeArgs: nil, Defaults: nil, LifetimeArgs: nil,
-		Lt: nil, Final: false, Variant: false,
-	}})
-
-	tests := map[string]struct {
-		ty       soltype.Type
-		expected string
-	}{
-		"Empty":    {solObj(), "{}"},
-		"Property": {solObj(solProp("x", solNum())), "{x: number}"},
-		"OptionalReadonlyProperty": {
-			solObj(&soltype.PropertyElem{Name: "x", Type: solNum(), Optional: true, Readonly: true}),
-			"{readonly x?: number}",
-		},
-		// A name that is not a valid identifier is quoted by the printer.
-		"QuotedProperty": {solObj(solProp("a-b", solNum())), `{"a-b": number}`},
-		// soltype stores a member keyed off a well-known symbol under a reserved
-		// `@@name` spelling, which renders back as a computed key.
-		"SymbolProperty": {solObj(solProp(soltype.IteratorSymbolMember, solNum())), "{[Symbol.iterator]: number}"},
-		"Method": {solObj(&soltype.MethodElem{
-			Name:       "m",
-			Signatures: []*soltype.FuncType{solFn([]*soltype.FuncParam{solParam("x", solNum())}, solStr())},
-			Static:     false,
-			Optional:   false,
-		}), "{m(x: number): string}"},
-		"OptionalMethod": {solObj(&soltype.MethodElem{
-			Name:       "m",
-			Signatures: []*soltype.FuncType{solFn(nil, solStr())},
-			Static:     false,
-			Optional:   true,
-		}), "{m?(): string}"},
-		// A TypeScript overload set is one sibling declaration per arm.
-		"OverloadedMethod": {solObj(&soltype.MethodElem{
-			Name: "m",
-			Signatures: []*soltype.FuncType{
-				solFn([]*soltype.FuncParam{solParam("x", solNum())}, solNum()),
-				solFn([]*soltype.FuncParam{solParam("x", solStr())}, solStr()),
-			},
-			Static:   false,
-			Optional: false,
-		}), "{m(x: number): number, m(x: string): string}"},
-		"Getter": {solObj(&soltype.GetterElem{
-			Name: "x", SelfParam: selfParam, Type: solNum(), Throws: nil,
-		}), "{get x(): number}"},
-		// TypeScript forbids a return type on a setter.
-		"Setter": {solObj(&soltype.SetterElem{
-			Name: "x", SelfParam: selfParam, Param: solNum(), Throws: nil,
-		}), "{set x(value: number)}"},
-		"Callable": {solObj(&soltype.CallableElem{
-			Signatures: []*soltype.FuncType{solFn([]*soltype.FuncParam{solParam("x", solNum())}, solStr())},
-		}), "{(x: number): string}"},
-		"OverloadedCallable": {solObj(&soltype.CallableElem{
-			Signatures: []*soltype.FuncType{
-				solFn([]*soltype.FuncParam{solParam("x", solNum())}, solNum()),
-				solFn(nil, solStr()),
-			},
-		}), "{(x: number): number, (): string}"},
-		"Constructor": {solObj(&soltype.ConstructorElem{
-			Signatures: []*soltype.FuncType{solFn([]*soltype.FuncParam{solParam("x", solNum())}, solStr())},
-		}), "{new (x: number): string}"},
-		"OverloadedConstructor": {solObj(&soltype.ConstructorElem{
-			Signatures: []*soltype.FuncType{
-				solFn([]*soltype.FuncParam{solParam("n", solNum())}, solStr()),
-				solFn(nil, solStr()),
-			},
-		}), "{new (n: number): string, new (): string}"},
-		"Spread": {solObj(&soltype.SpreadElem{Type: solObj(solProp("x", solNum()))}, solProp("y", solStr())),
-			"{...{x: number}, y: string}"},
-	}
-
-	for name, test := range tests {
-		t.Run(name, func(t *testing.T) {
-			require.Equal(t, test.expected, renderSol(t, test.ty))
-		})
-	}
-}
-
-// solIndexSig builds the settled mapped member Escalier stores an index signature as:
-// an uncountable key set, no key remapping, no filter, and the `?` marker set.
-func solIndexSig(keys soltype.Type, value soltype.Type, readonly soltype.MappedModifier) *soltype.MappedElem {
-	return &soltype.MappedElem{
-		Key:      &soltype.MappedKeyType{ID: 1, Name: "K"},
-		Keys:     keys,
-		Value:    value,
-		Name:     nil,
-		Check:    nil,
-		Extends:  nil,
-		Optional: soltype.ModAdd,
-		Readonly: readonly,
-	}
-}
-
-func TestBuildTypeAnnFromSolIndexSignatures(t *testing.T) {
-	tests := map[string]struct {
-		ty       soltype.Type
-		expected string
-	}{
-		"String": {solObj(solIndexSig(solStr(), solNum(), soltype.ModNone)), "{[key: string]: number}"},
-		"Number": {solObj(solIndexSig(solNum(), solStr(), soltype.ModNone)), "{[index: number]: string}"},
-		"Symbol": {solObj(solIndexSig(&soltype.PrimType{Prim: soltype.SymPrim}, solStr(), soltype.ModNone)),
-			"{[sym: symbol]: string}"},
-		"Readonly": {solObj(solIndexSig(solStr(), solNum(), soltype.ModAdd)), "{readonly [key: string]: number}"},
-		// TypeScript allows an index signature beside ordinary members, so this
-		// needs none of the intersection splitting a mapped type does.
-		"BesideProperty": {solObj(solProp("name", solStr()), solIndexSig(solStr(), solNum(), soltype.ModNone)),
-			"{name: string, [key: string]: number}"},
-		// A union key set is uncountable when one member is, and it has no single
-		// primitive to name the key after.
-		"UnionKeys": {solObj(solIndexSig(&soltype.UnionType{Types: []soltype.Type{solStr(), solNum()}}, solNum(), soltype.ModNone)),
-			"{[key: string | number]: number}"},
-		// A member that names its key in the value it computes keeps the name the
-		// source wrote, since the conventional one would leave `T[K]` dangling.
-		"KeyReferencedByValue": {solObj(&soltype.MappedElem{
-			Key:  &soltype.MappedKeyType{ID: 7, Name: "K"},
-			Keys: solStr(),
-			Value: &soltype.IndexType{
-				Target:  &soltype.AliasType{Name: "T", TypeArgs: nil, Defaults: nil, LifetimeArgs: nil},
-				Index:   &soltype.MappedKeyType{ID: 7, Name: "K"},
-				Inexact: false,
-			},
-			Name: nil, Check: nil, Extends: nil,
-			Optional: soltype.ModAdd, Readonly: soltype.ModNone,
-		}), "{[K: string]: T[K]}"},
-	}
-
-	for name, test := range tests {
-		t.Run(name, func(t *testing.T) {
-			require.Equal(t, test.expected, renderSol(t, test.ty))
-		})
-	}
-}
-
-// solMapped builds a mapped member over a countable key set, so it stays a mapped
-// type rather than lowering to an index signature.
-func solMapped(optional, readonly soltype.MappedModifier, name soltype.Type) *soltype.MappedElem {
-	return &soltype.MappedElem{
-		Key:      &soltype.MappedKeyType{ID: 1, Name: "K"},
-		Keys:     &soltype.KeyofType{Operand: &soltype.AliasType{Name: "T", TypeArgs: nil, Defaults: nil, LifetimeArgs: nil}, Inexact: false},
-		Value:    solNum(),
-		Name:     name,
-		Check:    nil,
-		Extends:  nil,
-		Optional: optional,
-		Readonly: readonly,
-	}
-}
-
-func TestBuildTypeAnnFromSolMappedTypes(t *testing.T) {
-	tests := map[string]struct {
-		ty       soltype.Type
-		expected string
-	}{
-		"Plain": {solObj(solMapped(soltype.ModNone, soltype.ModNone, nil)), "{[K in keyof T]: number}"},
-		"AddModifiers": {solObj(solMapped(soltype.ModAdd, soltype.ModAdd, nil)),
-			"{readonly [K in keyof T]?: number}"},
-		"RemoveModifiers": {solObj(solMapped(soltype.ModRemove, soltype.ModRemove, nil)),
-			"{-readonly [K in keyof T]-?: number}"},
-		"KeyRemapping": {solObj(solMapped(soltype.ModNone, soltype.ModNone, solStr())),
-			"{[K in keyof T as string]: number}"},
-		// TypeScript requires a mapped type to be the sole member of its type
-		// literal (TS7061), so an object carrying one beside anything else splits
-		// into an intersection.
-		"BesideProperty": {solObj(solProp("name", solStr()), solMapped(soltype.ModNone, soltype.ModNone, nil)),
-			"{[K in keyof T]: number} & {name: string}"},
-		"TwoMapped": {solObj(solMapped(soltype.ModNone, soltype.ModNone, nil), solMapped(soltype.ModAdd, soltype.ModNone, nil)),
-			"{[K in keyof T]: number} & {[K in keyof T]?: number}"},
-	}
-
-	for name, test := range tests {
-		t.Run(name, func(t *testing.T) {
-			require.Equal(t, test.expected, renderSol(t, test.ty))
-		})
-	}
 }
 
 func TestBuildTypeAnnFromSolWithParams(t *testing.T) {
@@ -675,6 +631,21 @@ func TestBuildTypeAnnFromSolEmptyOverloadSets(t *testing.T) {
 		t.Run(name, func(t *testing.T) {
 			require.Equal(t, "{x: number}", renderSol(t, solObj(solProp("x", solNum()), elem)))
 		})
+	}
+}
+
+// solIndexSig builds the settled mapped member `soltype` stores an index signature
+// as: an uncountable key set, no key remapping, no filter, and the `?` marker set.
+func solIndexSig(keys, value soltype.Type) *soltype.MappedElem {
+	return &soltype.MappedElem{
+		Key:      &soltype.MappedKeyType{ID: 1, Name: "K"},
+		Keys:     keys,
+		Value:    value,
+		Name:     nil,
+		Check:    nil,
+		Extends:  nil,
+		Optional: soltype.ModAdd,
+		Readonly: soltype.ModNone,
 	}
 }
 
@@ -858,7 +829,7 @@ func TestBuildTypeAnnFromSolParity(t *testing.T) {
 			type_sys.NewObjectType(nil, []type_sys.ObjTypeElem{
 				type_sys.NewIndexSignatureElem(tsStr, tsNum, false),
 			}),
-			solObj(solIndexSig(solStr(), solNum(), soltype.ModNone)),
+			solObj(solIndexSig(solStr(), solNum())),
 		},
 		"ObjectSpread": {
 			type_sys.NewObjectType(nil, []type_sys.ObjTypeElem{
