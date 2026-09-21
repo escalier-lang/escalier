@@ -53,14 +53,24 @@ func TestInferObjectSpreadOverUnknownIdentifierRecovers(t *testing.T) {
 // reports the parse error itself, so the walk recovers over that subtree without
 // reporting a second diagnostic of its own. A missing operand and a missing
 // initializer are the two shapes that reach the walk.
+//
+// The binding the declaration introduces still gets a type. `1 +` keeps the `+`
+// signature. The walk constrains `error <: number` for the operand that is gone,
+// the ErrorType sentinel absorbs that, and the declaration takes the `number` that
+// `+` returns. `export val broken =` has no signature to fall back on, so its
+// binding takes the sentinel itself.
 func TestInferErrorExprReportsNothing(t *testing.T) {
 	tests := []struct {
 		name     string
 		src      string
 		parseErr string
+		binding  string
+		want     string
 	}{
-		{name: "MissingOperand", src: `val x = 1 +`, parseErr: "11-11: Expected an expression"},
-		{name: "MissingInitializer", src: `export val broken =`, parseErr: "19-19: Expected an expression"},
+		{name: "MissingOperand", src: `val x = 1 +`, parseErr: "11-11: Expected an expression",
+			binding: "x", want: "number"},
+		{name: "MissingInitializer", src: `export val broken =`, parseErr: "19-19: Expected an expression",
+			binding: "broken", want: "error"},
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
@@ -72,8 +82,9 @@ func TestInferErrorExprReportsNothing(t *testing.T) {
 			require.Equal(t, test.parseErr, parseErrors[0].String())
 			registerTestSources(t, module.Sources)
 
-			_, _, errs := inferModule(module)
+			values, _, errs := inferModule(module)
 			require.Empty(t, errs)
+			require.Equal(t, test.want, values[test.binding])
 		})
 	}
 }
