@@ -156,3 +156,39 @@ func TestCompileScriptImportsUsedLibSymbols(t *testing.T) {
 		})
 	}
 }
+
+// TestCompileReportsTheSolverCodegenGap checks that a compile on the solver path
+// says its output is not yet correct, and that the checker path says nothing extra.
+// Codegen reads types only internal/checker stamps onto the tree, so the solver's
+// JavaScript is wrong in ways no other diagnostic names and its .d.ts is empty.
+func TestCompileReportsTheSolverCodegenGap(t *testing.T) {
+	const gap = "ESCALIER_CHECKER=solver does not yet emit correct output for this file: " +
+		"codegen reads types internal/checker stamps onto the tree, so a constructor call, " +
+		"a method reference, and an `if val` guard are emitted wrongly, and no .d.ts is written"
+
+	t.Run("Checker", func(t *testing.T) {
+		useChecker(t)
+		out := CompilePackage(append(libSources("export val greeting = \"hello\"\n"), binSource("val g = greeting\n")))
+		require.NotContains(t, messages(out.TypeErrors), gap)
+	})
+
+	t.Run("Solver", func(t *testing.T) {
+		useSolver(t)
+		out := CompilePackage(append(libSources("export val greeting = \"hello\"\n"), binSource("val g = greeting\n")))
+		// One for the library's compilation unit and one for the script's, since
+		// each is a file whose emitted output is wrong.
+		require.Equal(t, 2, countMessage(messages(out.TypeErrors), gap))
+		require.Empty(t, out.CompUnits["lib/index"].DTS)
+	})
+}
+
+// countMessage returns how many of msgs equal want.
+func countMessage(msgs []string, want string) int {
+	n := 0
+	for _, msg := range msgs {
+		if msg == want {
+			n++
+		}
+	}
+	return n
+}
