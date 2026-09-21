@@ -55,6 +55,27 @@ func (solverBackend) checkScript(_ context.Context, script *ast.Script) scriptRe
 	return scriptResult{diagnostics: append(dirErrs, diagnostics(errs)...)}
 }
 
+// codegenGap reports that this path's emitted output is not yet trustworthy, so a
+// caller reads it as a diagnostic rather than discovering it from output that looks
+// finished. The two gaps it names are the first two in this file's type doc.
+func (solverBackend) codegenGap(span ast.Span) Diagnostic {
+	return &codegenGapError{span: span}
+}
+
+// codegenGapError reports that the checker driving codegen cannot yet supply
+// everything the emitters read.
+type codegenGapError struct {
+	span ast.Span
+}
+
+func (e *codegenGapError) Span() ast.Span { return e.span }
+
+func (e *codegenGapError) Message() string {
+	return CheckerEnvVar + "=" + CheckerSolver + " does not yet emit correct output for this file: " +
+		"codegen reads types internal/checker stamps onto the tree, so a constructor call, " +
+		"a method reference, and an `if val` guard are emitted wrongly, and no .d.ts is written"
+}
+
 // solverLibScope is the library surface internal/solver produces: the module run
 // itself, since a script checked against it carries that run on.
 type solverLibScope struct {

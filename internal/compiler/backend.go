@@ -49,6 +49,11 @@ type backend interface {
 	// resolves only what the prelude declares. checkScriptIn routes to it for a
 	// package whose lib/ directory holds no files.
 	checkScript(ctx context.Context, script *ast.Script) scriptResult
+	// codegenGap returns a diagnostic naming what this checker's results cannot yet
+	// drive in codegen, blaming span, or nil when they drive it fully. Each entry
+	// point that emits reports it beside the source's own diagnostics, so output
+	// that cannot be trusted says so rather than passing for output that can.
+	codegenGap(span ast.Span) Diagnostic
 }
 
 // LibScope is the surface a package's lib/ module declared, in whatever form the
