@@ -65,6 +65,22 @@ func solProp(name string, ty soltype.Type) *soltype.PropertyElem {
 	return &soltype.PropertyElem{Name: name, Type: ty, Optional: false, Readonly: false}
 }
 
+func solClass(name string, args ...soltype.Type) *soltype.ClassType {
+	return &soltype.ClassType{
+		Name: name, TypeArgs: args, Defaults: nil, LifetimeArgs: nil,
+		Lt: nil, Final: false, Variant: false,
+	}
+}
+
+func solAlias(name string, args ...soltype.Type) *soltype.AliasType {
+	return &soltype.AliasType{Name: name, TypeArgs: args, Defaults: nil, LifetimeArgs: nil}
+}
+
+// solSelf is a `Self` written inside a member of the named class.
+func solSelf(className string) *soltype.SelfType {
+	return &soltype.SelfType{Class: solClass(className)}
+}
+
 func TestBuildTypeAnnFromSolAtoms(t *testing.T) {
 	tests := map[string]struct {
 		ty       soltype.Type
@@ -87,10 +103,7 @@ func TestBuildTypeAnnFromSolAtoms(t *testing.T) {
 		// A skolem is a rigid type parameter and renders under its source name.
 		"Skolem": {&soltype.SkolemType{ID: 1, Name: "T", Upper: nil}, "T"},
 		// `Self` denotes the receiver's class, which TypeScript spells `this`.
-		"Self": {&soltype.SelfType{Class: &soltype.ClassType{
-			Name: "Point", TypeArgs: nil, Defaults: nil, LifetimeArgs: nil,
-			Lt: nil, Final: false, Variant: false,
-		}}, "this"},
+		"Self": {solSelf("Point"), "this"},
 	}
 
 	for name, test := range tests {
@@ -111,72 +124,62 @@ func TestBuildTypeAnnFromSolUnresolvedTypeVar(t *testing.T) {
 }
 
 func TestBuildTypeAnnFromSolNominalRefs(t *testing.T) {
-	class := func(name string, args ...soltype.Type) *soltype.ClassType {
-		return &soltype.ClassType{
-			Name: name, TypeArgs: args, Defaults: nil, LifetimeArgs: nil,
-			Lt: nil, Final: false, Variant: false,
-		}
-	}
-	alias := func(name string, args ...soltype.Type) *soltype.AliasType {
-		return &soltype.AliasType{Name: name, TypeArgs: args, Defaults: nil, LifetimeArgs: nil}
-	}
-
 	tests := map[string]struct {
 		ty       soltype.Type
 		expected string
 	}{
-		"Class":        {class("Point"), "Point"},
-		"GenericClass": {class("Box", solNum()), "Box<number>"},
+		"Class":        {solClass("Point"), "Point"},
+		"GenericClass": {solClass("Box", solNum()), "Box<number>"},
 		// A same-module namespace path is what TypeScript writes too, so it
 		// survives. An enum variant keeps its enum's name the same way.
-		"QualifiedClass": {class("Geometry.Point"), "Geometry.Point"},
+		"QualifiedClass": {solClass("Geometry.Point"), "Geometry.Point"},
 		"EnumVariant": {&soltype.ClassType{
 			Name: "Color.RGB", TypeArgs: nil, Defaults: nil, LifetimeArgs: nil,
 			Lt: nil, Final: false, Variant: true,
 		}, "Color.RGB"},
 		// A class from another package carries the `import:<uri>.` key prefix its
 		// declaration is registered under, which TypeScript cannot write.
-		"ImportedClass":        {class("import:std:array.Foo"), "Foo"},
-		"ImportedNestedClass":  {class("import:npm:a%2Eb.Geometry.Point"), "Geometry.Point"},
-		"ImportedGenericClass": {class("import:lodash.Box", solNum()), "Box<number>"},
-		"Alias":                {alias("Point"), "Point"},
-		"GenericAlias":         {alias("Box", solStr()), "Box<string>"},
-		"ImportedAlias":        {alias("import:std:array.Elem"), "Elem"},
+		"ImportedClass":        {solClass("import:std:array.Foo"), "Foo"},
+		"ImportedNestedClass":  {solClass("import:npm:a%2Eb.Geometry.Point"), "Geometry.Point"},
+		"ImportedGenericClass": {solClass("import:lodash.Box", solNum()), "Box<number>"},
+		"Alias":                {solAlias("Point"), "Point"},
+		"GenericAlias":         {solAlias("Box", solStr()), "Box<string>"},
+		"ImportedAlias":        {solAlias("import:std:array.Elem"), "Elem"},
 		// Four prelude declarations take one more type parameter than TypeScript's,
 		// the trailing `E` for what the value may raise. A reference to one is
 		// trimmed to the arity TypeScript declares.
 		"Promise": {
-			class(solPreludePrefix+".Promise", solNum(), solStr()),
+			solClass(solPreludePrefix+".Promise", solNum(), solStr()),
 			"Promise<number>",
 		},
 		"PromiseLike": {
-			alias(solPreludePrefix+".PromiseLike", solNum(), solStr()),
+			solAlias(solPreludePrefix+".PromiseLike", solNum(), solStr()),
 			"PromiseLike<number>",
 		},
 		"Generator": {
-			alias(solPreludePrefix+".Generator", solNum(), solStr(), solBool(), solStr()),
+			solAlias(solPreludePrefix+".Generator", solNum(), solStr(), solBool(), solStr()),
 			"Generator<number, string, boolean>",
 		},
 		"AsyncGenerator": {
-			alias(solPreludePrefix+".AsyncGenerator", solNum(), solStr(), solBool(), solStr()),
+			solAlias(solPreludePrefix+".AsyncGenerator", solNum(), solStr(), solBool(), solStr()),
 			"AsyncGenerator<number, string, boolean>",
 		},
 		// The prelude's iteration types declare the parameters TypeScript does, so
 		// a reference to one keeps every argument it was given.
 		"PreludeIterator": {
-			alias(solPreludePrefix+".Iterator", solNum(), solStr(), solBool()),
+			solAlias(solPreludePrefix+".Iterator", solNum(), solStr(), solBool()),
 			"Iterator<number, string, boolean>",
 		},
 		"PreludeIterable": {
-			alias(solPreludePrefix+".Iterable", solNum(), solStr(), solBool()),
+			solAlias(solPreludePrefix+".Iterable", solNum(), solStr(), solBool()),
 			"Iterable<number, string, boolean>",
 		},
 		// A user type whose last name component is also `Promise` is a different
 		// type and keeps every argument it declared.
-		"LookalikePromise": {class("app.Promise", solNum(), solStr()), "app.Promise<number, string>"},
+		"LookalikePromise": {solClass("app.Promise", solNum(), solStr()), "app.Promise<number, string>"},
 		// So is one in a package other than the prelude.
 		"LookalikeGenerator": {
-			alias("import:npm:rxjs.Generator", solNum(), solStr(), solBool(), solStr()),
+			solAlias("import:npm:rxjs.Generator", solNum(), solStr(), solBool(), solStr()),
 			"Generator<number, string, boolean, string>",
 		},
 	}
@@ -389,6 +392,11 @@ func TestBuildTypeAnnFromSolFromSource(t *testing.T) {
 		"SymbolProperty": {"", "{[Symbol.iterator]: number}", "{[Symbol.iterator]: number}"},
 		// A method's `self` receiver is implicit in TypeScript, so it has no slot.
 		"Method": {"", "{m(self, x: number) -> string}", "{m(x: number): string}"},
+		// TypeScript carries a method's receiver implicitly and has no throws
+		// clause, so neither reaches the emitted signature.
+		"MethodSelfAndThrows": {
+			"", "{m(self, x: number) -> number throws string}", "{m(x: number): number}",
+		},
 		"Getter": {"", "{get x(self) -> number}", "{get x(): number}"},
 		// TypeScript forbids a return type on a setter.
 		"Setter":         {"", "{set x(self, value: number)}", "{set x(value: number)}"},
@@ -397,9 +405,20 @@ func TestBuildTypeAnnFromSolFromSource(t *testing.T) {
 		"Constructor":    {"", "{new (x: number) -> string}", "{new (x: number): string}"},
 		"ObjectSpread":   {"type A = {x: number}", "{...A, y: string}", "{...A, y: string}"},
 
-		"Func":        {"", "fn (x: number) -> string", "(x: number) => string"},
-		"GenericFunc": {"", "fn <T>(x: T) -> T", "<T>(x: T) => T"},
-		"RestParam":   {"", "fn (...xs: Array<number>) -> number", "(...xs: Array<number>) => number"},
+		"Func":          {"", "fn (x: number) -> string", "(x: number) => string"},
+		"SeveralParams": {"", "fn (x: number, y: string) -> boolean", "(x: number, y: string) => boolean"},
+		"GenericFunc":   {"", "fn <T>(x: T) -> T", "<T>(x: T) => T"},
+		"ConstrainedAndDefaultedTypeParam": {
+			"", `fn <T: string = "a">(x: T) -> T`, `<T extends string = "a">(x: T) => T`,
+		},
+		// A rest element inside a destructuring pattern, and an object pattern's
+		// own rest, which soltype carries in a field of its own rather than among
+		// the named fields.
+		"DestructuredParams": {
+			"", "fn ([a, ...b]: [number, ...], {x, ...other}: {x: number}) -> number",
+			"([a, ...b]: [number], {x: x, ...other}: {x: number}) => number",
+		},
+		"RestParam": {"", "fn (...xs: Array<number>) -> number", "(...xs: Array<number>) => number"},
 		"TuplePatParam": {
 			"", "fn ([a, b]: [number, number]) -> number",
 			"([a, b]: [number, number]) => number",
@@ -558,7 +577,7 @@ func TestBuildTypeAnnFromSolFormersSourceCannotReach(t *testing.T) {
 		"TupleRestSpread": {
 			&soltype.TupleType{
 				Elems: []soltype.Type{solNum(), &soltype.RestSpreadType{
-					Operand: &soltype.AliasType{Name: "P", TypeArgs: nil, Defaults: nil, LifetimeArgs: nil},
+					Operand: solAlias("P"),
 				}},
 				Inexact: false,
 			},
@@ -596,76 +615,6 @@ func TestBuildTypeAnnFromSolRecursive(t *testing.T) {
 	require.Equal(t, "{next: any}", renderSol(t, knot))
 }
 
-func TestBuildTypeAnnFromSolFuncTypes(t *testing.T) {
-	t.Run("Params", func(t *testing.T) {
-		sig := solFn([]*soltype.FuncParam{solParam("x", solNum()), solParam("y", solStr())}, solBool())
-		require.Equal(t, "(x: number, y: string) => boolean", renderSol(t, sig))
-	})
-
-	t.Run("RestParam", func(t *testing.T) {
-		// soltype marks a rest parameter with a flag beside an ordinary pattern.
-		// TypeScript writes the `...` on the binding itself.
-		rest := &soltype.FuncParam{
-			Pattern:  &soltype.IdentPat{Name: "xs"},
-			Type:     &soltype.TupleType{Elems: []soltype.Type{solNum()}, Inexact: true},
-			Optional: false,
-			Rest:     true,
-		}
-		sig := solFn([]*soltype.FuncParam{rest}, solNum())
-		require.Equal(t, "(...xs: [number]) => number", renderSol(t, sig))
-	})
-
-	t.Run("DestructuredParams", func(t *testing.T) {
-		tuplePat := &soltype.TuplePat{Elems: []soltype.Pat{
-			&soltype.IdentPat{Name: "a"},
-			&soltype.RestPat{Pattern: &soltype.IdentPat{Name: "b"}},
-		}}
-		objectPat := &soltype.ObjectPat{
-			Fields: []*soltype.ObjectPatField{{Name: "x", Value: &soltype.IdentPat{Name: "x"}}},
-			Rest:   &soltype.IdentPat{Name: "other"},
-		}
-		sig := solFn([]*soltype.FuncParam{
-			{Pattern: tuplePat, Type: &soltype.TupleType{Elems: []soltype.Type{solNum()}, Inexact: true}, Optional: false, Rest: false},
-			{Pattern: objectPat, Type: solObj(solProp("x", solNum())), Optional: false, Rest: false},
-		}, solNum())
-		require.Equal(t, "([a, ...b]: [number], {x: x, ...other}: {x: number}) => number", renderSol(t, sig))
-	})
-
-	t.Run("TypeParams", func(t *testing.T) {
-		// A soltype type parameter is an inference variable reached through
-		// TypeParam.Var, so the body names it by pointer rather than by name.
-		v := &soltype.TypeVarType{
-			ID: 1, Level: 1, LowerBounds: nil, UpperBounds: nil, Open: false, Widenable: false,
-		}
-		tp := &soltype.TypeParam{Name: "T", Var: v, Default: nil, Constraint: nil}
-		sig := solFn([]*soltype.FuncParam{solParam("x", v)}, v)
-		sig.TypeParams = []*soltype.TypeParam{tp}
-		require.Equal(t, "<T>(x: T) => T", renderSol(t, sig))
-	})
-
-	t.Run("ConstrainedAndDefaultedTypeParams", func(t *testing.T) {
-		v := &soltype.TypeVarType{
-			ID: 2, Level: 1, LowerBounds: nil, UpperBounds: nil, Open: false, Widenable: false,
-		}
-		tp := &soltype.TypeParam{Name: "T", Var: v, Default: solNum(), Constraint: solStr()}
-		sig := solFn([]*soltype.FuncParam{solParam("x", v)}, v)
-		sig.TypeParams = []*soltype.TypeParam{tp}
-		require.Equal(t, "<T extends string = number>(x: T) => T", renderSol(t, sig))
-	})
-
-	t.Run("SelfParamAndThrowsAreDropped", func(t *testing.T) {
-		// TypeScript carries a method's receiver implicitly and has no throws
-		// clause, so neither reaches the emitted signature.
-		sig := solFn([]*soltype.FuncParam{solParam("x", solNum())}, solNum())
-		sig.SelfParam = solParam("self", &soltype.SelfType{Class: &soltype.ClassType{
-			Name: "Point", TypeArgs: nil, Defaults: nil, LifetimeArgs: nil,
-			Lt: nil, Final: false, Variant: false,
-		}})
-		sig.Throws = solStr()
-		require.Equal(t, "(x: number) => number", renderSol(t, sig))
-	})
-}
-
 func TestBuildTypeAnnFromSolWithParams(t *testing.T) {
 	// A generic class or alias declares its parameters on the declaration, so
 	// nothing inside the body binds them.
@@ -683,10 +632,7 @@ func TestBuildTypeAnnFromSolWithParams(t *testing.T) {
 }
 
 func TestContainsSelfTypeFromSol(t *testing.T) {
-	self := &soltype.SelfType{Class: &soltype.ClassType{
-		Name: "Point", TypeArgs: nil, Defaults: nil, LifetimeArgs: nil,
-		Lt: nil, Final: false, Variant: false,
-	}}
+	self := solSelf("Point")
 
 	tests := map[string]struct {
 		ty    soltype.Type
@@ -874,11 +820,7 @@ func TestRefNameFromSol(t *testing.T) {
 // a settled prelude does. It trims no reference, rather than trimming by bare
 // name and mangling a user's own `Promise`.
 func TestBuildTypeAnnFromSolWithoutPreludePrefix(t *testing.T) {
-	promise := &soltype.ClassType{
-		Name:     solPreludePrefix + ".Promise",
-		TypeArgs: []soltype.Type{solNum(), solStr()},
-		Defaults: nil, LifetimeArgs: nil, Lt: nil, Final: false, Variant: false,
-	}
+	promise := solClass(solPreludePrefix+".Promise", solNum(), solStr())
 
 	printer := NewPrinter()
 	printer.PrintTypeAnn(newSolTypeAnnBuilder("", nil).render(promise))
@@ -905,7 +847,7 @@ func TestBuildTypeAnnFromSolUnnamedTypeParam(t *testing.T) {
 func TestReferencesMappedKey(t *testing.T) {
 	key := &soltype.MappedKeyType{ID: 7, Name: "K"}
 	indexed := &soltype.IndexType{
-		Target:  &soltype.AliasType{Name: "T", TypeArgs: nil, Defaults: nil, LifetimeArgs: nil},
+		Target:  solAlias("T"),
 		Index:   &soltype.MappedKeyType{ID: 7, Name: "K"},
 		Inexact: false,
 	}
@@ -976,21 +918,15 @@ func TestBuildTypeAnnFromSolParity(t *testing.T) {
 		},
 		"Self": {
 			type_sys.Prune(replaceSelfWithThis(tsSelfRef)),
-			&soltype.SelfType{Class: &soltype.ClassType{
-				Name: "Point", TypeArgs: nil, Defaults: nil, LifetimeArgs: nil,
-				Lt: nil, Final: false, Variant: false,
-			}},
+			solSelf("Point"),
 		},
 		"NominalRef": {
 			type_sys.NewTypeRefType(nil, "Point", nil),
-			&soltype.ClassType{
-				Name: "Point", TypeArgs: nil, Defaults: nil, LifetimeArgs: nil,
-				Lt: nil, Final: false, Variant: false,
-			},
+			solClass("Point"),
 		},
 		"GenericRef": {
 			type_sys.NewTypeRefType(nil, "Box", nil, tsNum),
-			&soltype.AliasType{Name: "Box", TypeArgs: []soltype.Type{solNum()}, Defaults: nil, LifetimeArgs: nil},
+			solAlias("Box", solNum()),
 		},
 		"Generator": {
 			type_sys.NewTypeRefType(nil, "Generator", nil, tsNum, tsStr, tsBool),
@@ -1032,14 +968,14 @@ func TestBuildTypeAnnFromSolParity(t *testing.T) {
 		"KeyOf": {
 			type_sys.NewKeyOfType(nil, type_sys.NewTypeRefType(nil, "T", nil)),
 			&soltype.KeyofType{
-				Operand: &soltype.AliasType{Name: "T", TypeArgs: nil, Defaults: nil, LifetimeArgs: nil},
+				Operand: solAlias("T"),
 				Inexact: false,
 			},
 		},
 		"Index": {
 			type_sys.NewIndexType(nil, type_sys.NewTypeRefType(nil, "T", nil), type_sys.NewStrLitType(nil, "x")),
 			&soltype.IndexType{
-				Target:  &soltype.AliasType{Name: "T", TypeArgs: nil, Defaults: nil, LifetimeArgs: nil},
+				Target:  solAlias("T"),
 				Index:   &soltype.LitType{Lit: &soltype.StrLit{Value: "x"}},
 				Inexact: false,
 			},
@@ -1107,7 +1043,7 @@ func TestBuildTypeAnnFromSolParity(t *testing.T) {
 				type_sys.NewRestSpreadElem(type_sys.NewTypeRefType(nil, "A", nil)),
 			}),
 			solObj(&soltype.SpreadElem{
-				Type: &soltype.AliasType{Name: "A", TypeArgs: nil, Defaults: nil, LifetimeArgs: nil},
+				Type: solAlias("A"),
 			}),
 		},
 	}
