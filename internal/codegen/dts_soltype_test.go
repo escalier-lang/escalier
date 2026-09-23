@@ -188,11 +188,6 @@ func TestBuildTypeAnnFromSolNominalRefs(t *testing.T) {
 	}
 }
 
-// TestBuildTypeAnnFromSolFromSource renders types the checker built from real
-// Escalier source, so each case reads as the annotation a user would write beside
-// the declaration it emits.
-//
-// It covers the formers source can spell.
 // TestBuildTypeAnnFromSolInferredTypeParams pins the binders for a generic
 // function that declares none.
 //
@@ -313,8 +308,14 @@ func TestBuildTypeAnnFromSolInferredTypeParams(t *testing.T) {
 	})
 }
 
-// TestBuildTypeAnnFromSolUnspellableFormers covers the ones it cannot, and the
-// hand-built tests around them cover the error sentinel, a skolem, an unresolved
+// TestBuildTypeAnnFromSolFromSource renders types the checker built from real
+// Escalier source, so each case reads as the annotation a user would write beside
+// the declaration it emits.
+//
+// It covers every former source can spell.
+// TestBuildTypeAnnFromSolFormersSourceCannotReach covers the four it cannot, each
+// for a reason stated on the case. The hand-built tests around them cover what no
+// declaration produces either: the error sentinel, a skolem, an unresolved
 // inference variable, an `import:`-prefixed name from another package, a
 // signature-less overload set, and a parameter pattern that binds no name.
 func TestBuildTypeAnnFromSolFromSource(t *testing.T) {
@@ -345,6 +346,27 @@ func TestBuildTypeAnnFromSolFromSource(t *testing.T) {
 		"StringIntrinsic": {"", "Uppercase<string>", "Uppercase<string>"},
 		// Ownership has no TypeScript form, so a `mut` renders as what it wraps.
 		"Mutable": {"", "mut {x: number}", "{x: number}"},
+		// TypeScript has no complement type. Rendering one as `unknown` reduces the
+		// `A & ~B` a narrowed match remainder produces to `A`, dropping the
+		// refinement and keeping the type it refines.
+		"Negation":          {"", "~string", "unknown"},
+		"NegationUnderMeet": {"", "{x: number} & ~string", "{x: number} & unknown"},
+		// The exactness operators set and clear a trailing `...` marker, and the
+		// marker itself has no TypeScript form either, so all four erase to the
+		// shape they mark. M10 owns carrying exactness across.
+		"Exact":         {"", "Exact<{x: number}>", "{x: number}"},
+		"Inexact":       {"", "Inexact<{x: number}>", "{x: number}"},
+		"InexactTuple":  {"", "[number, ...]", "[number]"},
+		"InexactObject": {"", "{x: number, ...}", "{x: number}"},
+		// A TypeScript overload set is one sibling declaration per arm.
+		"OverloadedMethod": {
+			"", "{m(self, x: number) -> number, m(self, x: string) -> string}",
+			"{m(x: number): number, m(x: string): string}",
+		},
+		"OverloadedCallable": {
+			"", "{(x: number) -> number, (x: string) -> string}",
+			"{(x: number): number, (x: string): string}",
+		},
 
 		"Keyof": {"type T = {a: number}", "keyof T", "keyof T"},
 		"Index": {"type T = {a: number}", `T["a"]`, `T["a"]`},
@@ -490,79 +512,64 @@ func TestBuildTypeAnnFromSolFromSource(t *testing.T) {
 	}
 }
 
-// TestBuildTypeAnnFromSolUnspellableFormers covers the formers no Escalier source
-// produces, so TestBuildTypeAnnFromSolFromSource cannot reach them. Each one is a
-// degradation path: TypeScript has no form for it, and the renderer has to choose
-// what to emit instead.
-func TestBuildTypeAnnFromSolUnspellableFormers(t *testing.T) {
+// TestBuildTypeAnnFromSolFormersSourceCannotReach covers the formers that
+// TestBuildTypeAnnFromSolFromSource cannot exercise, each for its own reason,
+// stated on the case. Every other former is spellable and is covered there
+// against real solver output.
+func TestBuildTypeAnnFromSolFormersSourceCannotReach(t *testing.T) {
 	tests := map[string]struct {
 		ty       soltype.Type
 		expected string
+		why      string
 	}{
-		// The normalization layer is the only producer of a complement, and
-		// TypeScript has no complement type. Rendering one as `unknown` reduces the
-		// `A & ~B` a narrowed match remainder produces to `A`, dropping the
-		// refinement and keeping the type it refines.
-		"Negation": {&soltype.NegationType{Inner: solStr()}, "unknown"},
-		"NegationUnderIntersection": {&soltype.IntersectionType{Types: []soltype.Type{
-			solObj(solProp("x", solNum())),
-			&soltype.NegationType{Inner: solStr()},
-		}}, "{x: number} & unknown"},
-		// The exactness operators set and clear a trailing `...` marker, which
-		// TypeScript has no form for, so the operand renders alone. Resolution
-		// reduces a written `Exact<T>` over a ground operand before it reaches the
-		// renderer, so only a hand-built one is still an ExactnessType here.
-		"Exact": {&soltype.ExactnessType{
-			Kind: soltype.MakeExact, Operand: solObj(solProp("x", solNum())),
-		}, "{x: number}"},
-		"Inexact": {&soltype.ExactnessType{
-			Kind: soltype.MakeInexact, Operand: solObj(solProp("x", solNum())),
-		}, "{x: number}"},
-		// A TypeScript overload set is one sibling declaration per arm. Escalier's
-		// surface syntax writes no overloaded member inside an object type, so the
-		// solver only builds one for a declaration-merged interface.
-		"OverloadedMethod": {solObj(&soltype.MethodElem{
-			Name: "m",
-			Signatures: []*soltype.FuncType{
-				solFn([]*soltype.FuncParam{solParam("x", solNum())}, solNum()),
-				solFn([]*soltype.FuncParam{solParam("x", solStr())}, solStr()),
+		// `{new (n: number) -> string, new () -> string}` is rejected with "An
+		// object type may declare at most one `new` signature." Only class
+		// inference builds an overloaded constructor, which `Array` needs because
+		// its length form and its element-list form mean different things.
+		"OverloadedConstructor": {
+			solObj(&soltype.ConstructorElem{
+				Signatures: []*soltype.FuncType{
+					solFn([]*soltype.FuncParam{solParam("n", solNum())}, solStr()),
+					solFn(nil, solStr()),
+				},
+			}),
+			"{new (n: number): string, new (): string}",
+			"an object type annotation admits one `new` signature",
+		},
+		// A reference to an `infer` binder is spellable, but only inside the
+		// conditional that declares it, and the .d.ts printer has no InferTypeAnn
+		// case and panics on the binder. TestBuildTypeAnnFromSolInferBinder pins
+		// the binder itself without going through the printer.
+		"InferReference": {
+			&soltype.InferType{ID: 1, Name: "U", Binder: false},
+			"U",
+			"its binder cannot be printed",
+		},
+		// A mapped type's key variable has no form outside the member that binds
+		// it. Inside one it renders through the source-driven mapped cases.
+		"MappedKeyReference": {
+			&soltype.MappedKeyType{ID: 1, Name: "K"},
+			"K",
+			"no standalone form",
+		},
+		// `[number, ...P]` over an abstract operand is rejected with "cannot
+		// spread P into a tuple", so no annotation puts one in front of the
+		// renderer.
+		"TupleRestSpread": {
+			&soltype.TupleType{
+				Elems: []soltype.Type{solNum(), &soltype.RestSpreadType{
+					Operand: &soltype.AliasType{Name: "P", TypeArgs: nil, Defaults: nil, LifetimeArgs: nil},
+				}},
+				Inexact: false,
 			},
-			Static:   false,
-			Optional: false,
-		}), "{m(x: number): number, m(x: string): string}"},
-		"OverloadedCallable": {solObj(&soltype.CallableElem{
-			Signatures: []*soltype.FuncType{
-				solFn([]*soltype.FuncParam{solParam("x", solNum())}, solNum()),
-				solFn(nil, solStr()),
-			},
-		}), "{(x: number): number, (): string}"},
-		"OverloadedConstructor": {solObj(&soltype.ConstructorElem{
-			Signatures: []*soltype.FuncType{
-				solFn([]*soltype.FuncParam{solParam("n", solNum())}, solStr()),
-				solFn(nil, solStr()),
-			},
-		}), "{new (n: number): string, new (): string}"},
-		// A reference to an `infer` binder renders as the bare name the clause
-		// bound. The binder itself is pinned by TestBuildTypeAnnFromSolInferBinder,
-		// which cannot go through the printer.
-		"InferReference": {&soltype.InferType{ID: 1, Name: "U", Binder: false}, "U"},
-		// A mapped type's key variable, the `K` of `T[K]`, reached on its own.
-		"MappedKeyReference": {&soltype.MappedKeyType{ID: 1, Name: "K"}, "K"},
-		// A `...P` spread element inside a tuple, over an operand that never grounds.
-		"TupleRestSpread": {&soltype.TupleType{
-			Elems: []soltype.Type{solNum(), &soltype.RestSpreadType{
-				Operand: &soltype.AliasType{Name: "P", TypeArgs: nil, Defaults: nil, LifetimeArgs: nil},
-			}},
-			Inexact: false,
-		}, "[number, ...P]"},
-		// The trailing `...` marker has no TypeScript form, so an inexact tuple
-		// renders the same as an exact one. M10 owns carrying exactness across.
-		"InexactTuple": {&soltype.TupleType{Elems: []soltype.Type{solNum()}, Inexact: true}, "[number]"},
+			"[number, ...P]",
+			"a spread over an abstract operand is rejected",
+		},
 	}
 
 	for name, test := range tests {
 		t.Run(name, func(t *testing.T) {
-			require.Equal(t, test.expected, renderSol(t, test.ty))
+			require.Equal(t, test.expected, renderSol(t, test.ty), "reason it is hand-built: %s", test.why)
 		})
 	}
 }
