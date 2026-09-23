@@ -26,7 +26,7 @@ func renderSol(t *testing.T, ty soltype.Type) string {
 func renderSolWithParams(t *testing.T, ty soltype.Type, typeParams []*soltype.TypeParam) string {
 	t.Helper()
 	printer := NewPrinter()
-	printer.PrintTypeAnn(newSolTypeAnnBuilder(solPreludePrefix, typeParams).render(ty))
+	printer.PrintTypeAnn(newSolTypeAnnBuilder(solPreludePrefix, "t", typeParams).render(ty))
 	return printer.Output
 }
 
@@ -241,9 +241,10 @@ func TestBuildTypeAnnFromSolInferredTypeParams(t *testing.T) {
 		require.Equal(t, "<T0>(x: T0) => T0", renderSol(t, sig))
 	})
 
-	// A variable free in a nested signature is free in the enclosing one too, and
-	// the enclosing signature renders first, so that is where the binder lands.
-	t.Run("NestedSignatureBindsAtTheOutermost", func(t *testing.T) {
+	// A variable used by both the callback and the enclosing signature has no
+	// single nested signature holding every occurrence, so the enclosing one is
+	// the innermost that does.
+	t.Run("SharedWithACallbackBindsAtTheEnclosing", func(t *testing.T) {
 		arg, ret := freshVar(1), freshVar(2)
 		callback := solFn([]*soltype.FuncParam{solParam("a", arg)}, ret)
 		sig := solFn([]*soltype.FuncParam{solParam("f", callback), solParam("x", arg)}, ret)
@@ -268,6 +269,20 @@ func TestBuildTypeAnnFromSolInferredTypeParams(t *testing.T) {
 			{Name: "T0", Var: declared, Default: nil, Constraint: nil},
 		}
 		require.Equal(t, "<T0, T1>(x: T0, y: T1) => T1", renderSol(t, sig))
+	})
+
+	// A variable confined to a nested signature binds there, not on the enclosing
+	// one that also contains it. Binding it outside would hand the choice to
+	// whoever calls the outer function, when only the inner one is polymorphic.
+	t.Run("ConfinedToANestedSignature", func(t *testing.T) {
+		put, get := freshVar(1), freshVar(2)
+		sig := solFn(nil, solObj(
+			solProp("put", solFn([]*soltype.FuncParam{solParam("v", put)}, put)),
+			solProp("get", solFn([]*soltype.FuncParam{solParam("w", get)}, get)),
+		))
+		require.Equal(t,
+			"() => {put: <T0>(v: T0) => T0, get: <T1>(w: T1) => T1}",
+			renderSol(t, sig))
 	})
 
 	// A variable outside every signature has nothing to hang a binder on.
@@ -608,16 +623,50 @@ func TestBuildTypeAnnFromSolInferBinder(t *testing.T) {
 	require.Equal(t, "infer U", renderSol(t, binder))
 }
 
-// TestBuildTypeAnnFromSolRecursive pins the μ-knot lowering. TypeScript names a
-// recursive type through an interface, so an inline annotation renders one level
-// of the unfolding with `any` at the binder.
+// A μ-knot has no inline form in TypeScript, so it emits as a companion
+// interface naming itself, and the type that held it references that name.
 func TestBuildTypeAnnFromSolRecursive(t *testing.T) {
 	binder := &soltype.RecursiveVarType{ID: 0, Name: "X0"}
 	knot := &soltype.RecursiveType{
 		Binder: binder,
 		Body:   solObj(solProp("next", binder)),
 	}
-	require.Equal(t, "{next: any}", renderSol(t, knot))
+
+	builder := newSolTypeAnnBuilder(solPreludePrefix, "next", nil)
+	printer := NewPrinter()
+	printer.PrintTypeAnn(builder.render(knot))
+	require.Equal(t, "__next_rec0__", printer.Output)
+
+	companions := builder.companionDecls()
+	require.Len(t, companions, 1)
+	decl := NewPrinter()
+	decl.PrintDecl(companions[0])
+	require.Equal(t, "interface __next_rec0__{next: __next_rec0__}", decl.Output)
+	require.True(t, companions[0].Interface, "a self-naming type alias is a TypeScript error")
+}
+
+// A knot whose body is no object has neither form: an interface holds only an
+// object, and a type alias naming itself outside one is rejected. It keeps the
+// older rendering, one level of the unfolding with `any` at the binder.
+func TestBuildTypeAnnFromSolRecursiveOverAUnion(t *testing.T) {
+	binder := &soltype.RecursiveVarType{ID: 0, Name: "X0"}
+	knot := &soltype.RecursiveType{
+		Binder: binder,
+		Body:   &soltype.UnionType{Types: []soltype.Type{solNum(), binder}},
+	}
+
+	builder := newSolTypeAnnBuilder(solPreludePrefix, "u", nil)
+	printer := NewPrinter()
+	printer.PrintTypeAnn(builder.render(knot))
+	require.Equal(t, "number | any", printer.Output)
+	require.Empty(t, builder.companionDecls())
+}
+
+// A type carrying no knot mints nothing.
+func TestBuildTypeAnnFromSolMintsNoCompanionWithoutAKnot(t *testing.T) {
+	builder := newSolTypeAnnBuilder(solPreludePrefix, "x", nil)
+	builder.render(solObj(solProp("x", solNum())))
+	require.Empty(t, builder.companionDecls())
 }
 
 func TestBuildTypeAnnFromSolWithParams(t *testing.T) {
@@ -834,7 +883,7 @@ func TestArityTrimNeedsThePreludePrefix(t *testing.T) {
 
 	render := func(preludePrefix string) string {
 		printer := NewPrinter()
-		printer.PrintTypeAnn(newSolTypeAnnBuilder(preludePrefix, nil).render(promise))
+		printer.PrintTypeAnn(newSolTypeAnnBuilder(preludePrefix, "t", nil).render(promise))
 		return printer.Output
 	}
 
