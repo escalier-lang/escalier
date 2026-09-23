@@ -855,9 +855,19 @@ func patToPatFromSol(pat soltype.Pat, names *paramNamer) (Pat, bool) {
 			sub = NewIdentPat(names.next(), nil, nil)
 		}
 		return NewRestPat(sub, nil), true
+	case *soltype.InstancePat:
+		// A class-instance pattern binds through its object part, and the class it
+		// names is already carried by the parameter's own type. `Point {x}: Point`
+		// binds the same name TypeScript's `{x}: Point` does.
+		if pat.Object == nil {
+			return nil, false
+		}
+		return patToPatFromSol(pat.Object, names)
 	}
-	// A wildcard, a literal, `null`, `undefined`, an extractor, a class instance,
-	// and a nil pattern all land here. None of them binds a name.
+	// A wildcard, a literal, `null`, `undefined`, a nil pattern, and an extractor
+	// all land here. None binds a name TypeScript can write: the first five bind
+	// nothing at all, and an extractor binds its arguments positionally behind a
+	// constructor, which no TypeScript binding form takes apart.
 	return nil, false
 }
 

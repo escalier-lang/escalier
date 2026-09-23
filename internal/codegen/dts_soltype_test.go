@@ -638,11 +638,11 @@ func TestContainsSelfTypeFromSol(t *testing.T) {
 		ty    soltype.Type
 		found bool
 	}{
-		"Bare":           {self, true},
-		"UnderObject":    {solObj(solProp("me", self)), true},
-		"UnderSignature": {solFn([]*soltype.FuncParam{solParam("x", solNum())}, self), true},
-		"UnderUnion":     {&soltype.UnionType{Types: []soltype.Type{solNum(), self}}, true},
-		"Absent":         {solObj(solProp("x", solNum())), false},
+		"Bare":                {self, true},
+		"SelfInsideObject":    {solObj(solProp("me", self)), true},
+		"SelfInsideSignature": {solFn([]*soltype.FuncParam{solParam("x", solNum())}, self), true},
+		"SelfInsideUnion":     {&soltype.UnionType{Types: []soltype.Type{solNum(), self}}, true},
+		"Absent":              {solObj(solProp("x", solNum())), false},
 		// The class `Self` was declared in is an ordinary nominal reference.
 		"ClassAlone": {self.Class, false},
 	}
@@ -689,74 +689,69 @@ func TestConvertQualIdentFromSol(t *testing.T) {
 	}
 }
 
-// TestBuildTypeAnnFromSolUnnameableParams pins the recovery for a parameter that
-// binds no name. TypeScript needs one at every binding position, so a pattern
-// that names nothing gets a positional one rather than an empty slot.
-func TestBuildTypeAnnFromSolUnnameableParams(t *testing.T) {
+// TestBuildTypeAnnFromSolParamPatterns pins how each parameter pattern binds in
+// the emitted signature.
+//
+// TypeScript needs a name at every binding position. A pattern that supplies
+// none takes a positional `arg0`, drawn from a namer that serves the whole
+// signature so no two positions collide.
+//
+// The type on each parameter is the annotated one, never one read off the
+// pattern. `fn (1: number)` accepts any number, so `arg0: number` is what it
+// means.
+func TestBuildTypeAnnFromSolParamPatterns(t *testing.T) {
+	const enumDecl = "enum Opt { Some(number), None }"
+	const classDecl = "class Point { x: number, y: number }"
+
 	tests := map[string]struct {
-		pattern  soltype.Pat
+		decls    string
+		ann      string
 		expected string
 	}{
-		"Wildcard": {&soltype.WildcardPat{}, "(arg0: number) => number"},
-		"Literal":  {&soltype.LitPat{Lit: &soltype.NumLit{Value: 1}}, "(arg0: number) => number"},
-		"Null":     {&soltype.NullPat{}, "(arg0: number) => number"},
-		// A function type annotation may write a constructor or class pattern in a
-		// parameter position, and the solver mirrors it onto the parameter.
-		"Extractor": {&soltype.ExtractorPat{
-			Name: "Some", Args: []soltype.Pat{&soltype.IdentPat{Name: "v"}},
-		}, "(arg0: number) => number"},
-		"Instance": {&soltype.InstancePat{
-			ClassName: "Point",
-			Object:    &soltype.ObjectPat{Fields: nil, Rest: nil},
-		}, "(arg0: number) => number"},
-		// The solver leaves a pattern it has no counterpart for nil.
-		"Absent": {nil, "(arg0: number) => number"},
-		// A rest element keeps its `...` when the sub-pattern names nothing.
-		// Dropping it would bind one element where the source bound the tail.
-		"RestInsideTuple": {&soltype.TuplePat{Elems: []soltype.Pat{
-			&soltype.IdentPat{Name: "a"},
-			&soltype.RestPat{Pattern: &soltype.WildcardPat{}},
-		}}, "([a, ...arg0]: number) => number"},
-		// The solver leaves a rest whose sub-pattern it has no counterpart for nil.
-		"RestOverAbsentSubPattern": {&soltype.TuplePat{Elems: []soltype.Pat{
-			&soltype.RestPat{Pattern: nil},
-		}}, "([...arg0]: number) => number"},
-		// A sub-pattern that names nothing draws from the same namer as a
-		// parameter, so a nested position never reuses an outer name.
-		"InsideTuple": {&soltype.TuplePat{Elems: []soltype.Pat{
-			&soltype.IdentPat{Name: "a"}, &soltype.WildcardPat{},
-		}}, "([a, arg0]: number) => number"},
-		"InsideObject": {&soltype.ObjectPat{
-			Fields: []*soltype.ObjectPatField{{Name: "x", Value: &soltype.WildcardPat{}}},
-			Rest:   &soltype.WildcardPat{},
-		}, "({x: arg0, ...arg1}: number) => number"},
+		// Each of these matches a value without naming it.
+		"Wildcard":  {"", "fn (_: number) -> number", "(arg0: number) => number"},
+		"NumLit":    {"", "fn (1: number) -> number", "(arg0: number) => number"},
+		"StrLit":    {"", `fn ("a": string) -> number`, "(arg0: string) => number"},
+		"Null":      {"", "fn (null: null) -> number", "(arg0: null) => number"},
+		"Undefined": {"", "fn (undefined: undefined) -> number", "(arg0: undefined) => number"},
+		// A regex pattern has no soltype counterpart, so the solver mirrors it to
+		// nothing and the renderer sees a nil pattern.
+		"NoCounterpart": {"", "fn (/ab/: string) -> number", "(arg0: string) => number"},
+		// An extractor binds its arguments positionally behind a constructor, which
+		// no TypeScript binding form takes apart, so the name `v` is lost.
+		"Extractor": {enumDecl, "fn (Opt.Some(v): Opt) -> number", "(arg0: Opt) => number"},
+		// A class-instance pattern binds through its object part, and the class it
+		// names is already carried by the parameter's type, so both names survive.
+		"Instance":      {classDecl, "fn (Point {x, y}: Point) -> number", "({x: x, y: y}: Point) => number"},
+		"InstanceEmpty": {classDecl, "fn (Point {}: Point) -> number", "({}: Point) => number"},
+
+		// A sub-pattern that names nothing draws from the same namer, so a nested
+		// position never reuses an outer name.
+		"InsideTuple":  {"", "fn ([a, _]: [number, number]) -> number", "([a, arg0]: [number, number]) => number"},
+		"InsideObject": {"", "fn ({x: _}: {x: number}) -> number", "({x: arg0}: {x: number}) => number"},
+		// A rest element binds the tail, which is a fact about the pattern rather
+		// than the sub-pattern it binds through. Dropping the `...` would bind one
+		// element where the source bound every remaining one.
+		"RestInsideTuple":  {"", "fn ([a, ..._]: [number, ...]) -> number", "([a, ...arg0]: [number]) => number"},
+		"RestOnlyElement":  {"", "fn ([..._]: [number, ...]) -> number", "([...arg0]: [number]) => number"},
+		"RestInsideObject": {"", "fn ({x, ..._}: {x: number}) -> number", "({x: x, ...arg0}: {x: number}) => number"},
+
+		// One namer serves the whole signature. A name reused across two binding
+		// positions would be a duplicate-identifier error in the declaration.
+		"NamesStayDistinct": {
+			"", "fn (_: number, [_]: [string], _: boolean) -> number",
+			"(arg0: number, [arg1]: [string], arg2: boolean) => number",
+		},
 	}
 
 	for name, test := range tests {
 		t.Run(name, func(t *testing.T) {
-			sig := solFn([]*soltype.FuncParam{{
-				Pattern: test.pattern, Type: solNum(), Optional: false, Rest: false,
-			}}, solNum())
-			require.Equal(t, test.expected, renderSol(t, sig))
+			ty, diagnostics, err := solver.ResolveTypeAnnForTest(test.decls, test.ann)
+			require.NoError(t, err)
+			require.Empty(t, diagnostics)
+			require.Equal(t, test.expected, renderSol(t, ty))
 		})
 	}
-}
-
-// TestBuildTypeAnnFromSolUnnameableParamsAreDistinct pins that one namer serves a
-// whole signature. A name reused across two binding positions would be a
-// duplicate-identifier error in the emitted declaration.
-func TestBuildTypeAnnFromSolUnnameableParamsAreDistinct(t *testing.T) {
-	unnamed := func(ty soltype.Type, pat soltype.Pat) *soltype.FuncParam {
-		return &soltype.FuncParam{Pattern: pat, Type: ty, Optional: false, Rest: false}
-	}
-	sig := solFn([]*soltype.FuncParam{
-		unnamed(solNum(), &soltype.WildcardPat{}),
-		unnamed(solStr(), &soltype.TuplePat{Elems: []soltype.Pat{&soltype.WildcardPat{}}}),
-		unnamed(solBool(), &soltype.WildcardPat{}),
-	}, solNum())
-	require.Equal(t,
-		"(arg0: number, [arg1]: string, arg2: boolean) => number",
-		renderSol(t, sig))
 }
 
 // TestBuildTypeAnnFromSolEmptyOverloadSets pins what an element carrying no
