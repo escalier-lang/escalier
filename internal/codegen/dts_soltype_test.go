@@ -811,18 +811,35 @@ func TestRefNameFromSol(t *testing.T) {
 	}
 }
 
-// TestBuildTypeAnnFromSolWithoutPreludePrefix pins what a renderer built without
-// a settled prelude does. It trims no reference, rather than trimming by bare
-// name and mangling a user's own `Promise`.
-func TestBuildTypeAnnFromSolWithoutPreludePrefix(t *testing.T) {
+// TestArityTrimNeedsThePreludePrefix pins what the arity trim keys off: the
+// package the reference was declared in, which the builder knows only from the
+// prelude prefix it was given.
+//
+// Both cases render the same type, the prelude's own `Promise<number, string>`.
+// It is trimmed to `Promise<number>` by a builder that was told where the
+// prelude lives, and left whole by one that was not.
+//
+// Leaving it whole emits an argument TypeScript's `Promise` has no slot for, so
+// a caller that forgets the prefix gets a declaration its own use site rejects.
+// That is the intended failure: the alternative of falling back to a bare-name
+// match would quietly cut an argument off a user's unrelated `Promise`.
+// TestBuildTypeAnnFromSolNominalRefs/LookalikePromise covers that one.
+func TestArityTrimNeedsThePreludePrefix(t *testing.T) {
 	promise := solClass(solPreludePrefix+".Promise", solNum(), solStr())
 
-	printer := NewPrinter()
-	printer.PrintTypeAnn(newSolTypeAnnBuilder("", nil).render(promise))
-	require.Equal(t, "Promise<number, string>", printer.Output)
+	render := func(preludePrefix string) string {
+		printer := NewPrinter()
+		printer.PrintTypeAnn(newSolTypeAnnBuilder(preludePrefix, nil).render(promise))
+		return printer.Output
+	}
 
-	// The same reference through a builder that knows the prelude is trimmed.
-	require.Equal(t, "Promise<number>", renderSol(t, promise))
+	t.Run("PrefixGiven", func(t *testing.T) {
+		require.Equal(t, "Promise<number>", render(solPreludePrefix))
+	})
+
+	t.Run("PrefixMissing", func(t *testing.T) {
+		require.Equal(t, "Promise<number, string>", render(""))
+	})
 }
 
 // TestBuildTypeAnnFromSolUnnamedTypeParam pins a type parameter its binder left

@@ -31,7 +31,8 @@ type solTypeAnnBuilder struct {
 	// than TypeScript's, and the renderer has to know which references are to
 	// those declarations rather than to a user's own type of the same name. The
 	// prefix is what tells them apart, since every registry key leads with the
-	// key of the package that declared it. An empty value trims nothing.
+	// key of the package that declared it. An empty value means the caller has not
+	// settled the prelude, and no reference is trimmed at all.
 	preludePrefix string
 	// typeParamNames is the name each quantified type parameter renders under. A
 	// soltype type parameter is an inference variable that a TypeParam binds
