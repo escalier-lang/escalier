@@ -13,28 +13,23 @@ import (
 	"github.com/escalier-lang/escalier/internal/soltype"
 )
 
-// testsupport.go exports one entry point for tests in packages that consume
-// soltype values but cannot reach this package's resolver. resolveTypeAnn is a
-// method on the unexported checker, so a consumer such as internal/codegen has no
-// way to turn the annotation syntax a test wants to write into the type it
-// denotes. parser.ParseTypeAnn reaches the syntax but not the resolution, and an
-// annotation naming a class or alias needs a scope those declarations were
-// inferred into, which is why this runs a whole module rather than one rule.
+// testsupport.go lets a test outside this package turn annotation syntax into
+// the type it denotes, which resolveTypeAnn cannot do for it because it is a
+// method on the unexported checker.
 //
-// The file deliberately does not end in _test.go. Such a file compiles only into
-// its own package's test binary, so nothing outside could import what it declares.
-// Nothing in production calls what this one exports.
+// It runs a whole module because an annotation naming a class needs a scope that
+// class was inferred into. The filename avoids the _test.go suffix, since such a
+// file compiles only into its own package's test binary. Production calls none
+// of this.
 
-// annBindingName is the binding ResolveTypeAnnForTest hangs the annotation off.
-// A leading underscore starts a valid identifier, so decls could bind the same
-// name and shadow the annotation. ResolveTypeAnnForTest rejects source that
-// mentions it rather than returning the wrong type.
+// annBindingName is the binding the annotation hangs off. A leading underscore
+// starts a valid identifier, so decls could bind it too and shadow the
+// annotation, which is what the guard below rejects.
 const annBindingName = "__ann_for_test"
 
-// testStdlibDir returns the pseudo-package tree this package's own tests infer
-// against, the one that declares `Array`, `Promise`, and the rest of the prelude.
-// The path is resolved against this file rather than the working directory,
-// because a caller in another package runs from its own.
+// testStdlibDir returns the pseudo-package tree this package's tests infer
+// against, resolved against this file because a caller elsewhere runs from its
+// own directory.
 func testStdlibDir() string {
 	_, thisFile, _, ok := runtime.Caller(0)
 	if !ok {
@@ -44,23 +39,13 @@ func testStdlibDir() string {
 }
 
 // ResolveTypeAnnForTest resolves one Escalier type annotation to the soltype.Type
-// the checker builds for it.
+// the checker builds for it. decls is module source declaring whatever the
+// annotation references, and is empty for one naming only primitives and the
+// prelude.
 //
-// decls is module source declaring whatever the annotation references, such as a
-// class, a type alias, or an interface. It is empty for an annotation that names
-// only primitives and the prelude. ann is the annotation itself, resolved as the
-// type of a `declare val`, so any form a declaration can be annotated with is
-// accepted.
-//
-// It returns the resolved type and every diagnostic the run reported. A caller
-// asserting on a well-formed annotation checks that the diagnostics are empty. One
-// exercising a recovery path reads them instead. The error is non-nil only when
-// the source does not parse or binds no type, which is a fault in the test rather
-// than a result to assert on.
-//
-// A type it cannot produce is one no source spells. The error sentinel, a skolem,
-// a complement, an unresolved inference variable, and a signature-less overload
-// set all have to be built by hand.
+// The diagnostics are the run's own, for a caller exercising a recovery path. The
+// error is a fault in the test itself: source that does not parse, or that binds
+// no type.
 func ResolveTypeAnnForTest(decls, ann string) (soltype.Type, []SolverError, error) {
 	if strings.Contains(decls, annBindingName) {
 		return nil, nil, fmt.Errorf(
@@ -68,8 +53,8 @@ func ResolveTypeAnnForTest(decls, ann string) (soltype.Type, []SolverError, erro
 			annBindingName)
 	}
 
-	// The annotation parses on its own first, so a syntax error in it is reported
-	// against the annotation rather than against the module built around it.
+	// Parsing the annotation alone first is what points a syntax error at it
+	// rather than at the module built around it.
 	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
 	defer cancel()
 	parsed, parseErrors := parser.ParseTypeAnn(ctx, ann)
@@ -77,10 +62,9 @@ func ResolveTypeAnnForTest(decls, ann string) (soltype.Type, []SolverError, erro
 		return nil, nil, fmt.Errorf("parsing the annotation %q: %s", ann, parseErrors[0].Message)
 	}
 	if parsed == nil {
-		// An annotation holding nothing but whitespace or a comment parses without
-		// complaint and yields no node. Left alone it would reach inference as a
-		// `declare val` with no type, whose diagnostic names this helper's own
-		// binding and reads as though the caller wrote a variable declaration.
+		// Whitespace or a comment parses without complaint and yields no node. Left
+		// alone it reaches inference as a `declare val` with no type, whose
+		// diagnostic names this helper's binding instead of the caller's mistake.
 		return nil, nil, fmt.Errorf("the annotation %q declares no type", ann)
 	}
 
@@ -88,20 +72,15 @@ func ResolveTypeAnnForTest(decls, ann string) (soltype.Type, []SolverError, erro
 	source := &ast.Source{ID: 0, Path: "testsupport.esc", Contents: src}
 	module, parseErrors := parser.ParseLibFiles(ctx, []*ast.Source{source})
 	if len(parseErrors) > 0 {
-		// The annotation already parsed, so what is left is the declarations.
 		return nil, nil, fmt.Errorf("parsing the declarations: %s", parseErrors[0].Message)
 	}
 
 	scope, _, errs := InferModule(module, StdlibSource(testStdlibDir()))
 	binding, bound := scope.GetValue(annBindingName)
 	if !bound || len(binding.Schemes) == 0 {
-		// Defensive. A `declare val` that parsed always binds, and the two earlier
-		// guards reject the inputs that reach here without one. It is kept so a
-		// change upstream surfaces as this message rather than as a nil dereference.
+		// Defensive: a `declare val` that parsed always binds. Kept so an upstream
+		// change surfaces here rather than as a nil dereference.
 		return nil, errs, fmt.Errorf("resolving %q: the annotation bound no type", ann)
 	}
-	// Exactly one scheme. A binding carries several only as an overload set, which
-	// takes two declarations under one name, and the collision guard above rejects
-	// any that would name this one.
 	return schemeType(binding.Schemes[0]), errs, nil
 }
