@@ -1237,7 +1237,11 @@ func (p *Printer) PrintTypeAnn(ta TypeAnn) {
 		p.print(" : ")
 		p.PrintTypeAnn(ta.Alt)
 	case *InferTypeAnn:
-		panic("PrintTypeAnn: InferTypeAnn not implemented")
+		// TypeScript spells the capture the same way, inside the `extends` operand
+		// of a conditional. A reference to the name from a branch is an ordinary
+		// type reference and prints through TypeRefTypeAnn.
+		p.print("infer ")
+		p.print(ta.Name)
 	case *AnyTypeAnn:
 		p.print("any")
 	case *TemplateLitTypeAnn:

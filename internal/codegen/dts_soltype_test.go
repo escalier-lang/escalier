@@ -377,6 +377,22 @@ func TestBuildTypeAnnFromSolFromSource(t *testing.T) {
 			"", "if number : string { boolean } else { number }",
 			"number extends string ? boolean : number",
 		},
+		// A capture and the reference to it from a branch. TypeScript spells the
+		// clause the same way, and the reference is an ordinary type reference.
+		"CondWithInfer": {
+			"type T = [number]", "if T : [infer U] { U } else { boolean }",
+			"T extends [infer U] ? U : boolean",
+		},
+		"CondWithTwoInfers": {
+			"type T = [number, string]", "if T : [infer A, infer B] { [B, A] } else { never }",
+			"T extends [infer A, infer B] ? [B, A] : never",
+		},
+		// A function type on the `extends` side would run past the `?`, so it takes
+		// parentheses.
+		"CondInferUnderSignature": {
+			"type T = fn () -> number", "if T : fn () -> infer R { R } else { never }",
+			"T extends (() => infer R) ? R : never",
+		},
 
 		// The `?` and `readonly` markers are set from separate fields, so each
 		// corner of the pair is pinned. With only the neither and both cases a
@@ -555,15 +571,6 @@ func TestBuildTypeAnnFromSolFormersSourceCannotReach(t *testing.T) {
 			"{new (n: number): string, new (): string}",
 			"an object type annotation admits one `new` signature",
 		},
-		// A reference to an `infer` binder is spellable, but only inside the
-		// conditional that declares it, and the .d.ts printer has no InferTypeAnn
-		// case and panics on the binder. TestBuildTypeAnnFromSolInferBinder pins
-		// the binder itself without going through the printer.
-		"InferReference": {
-			&soltype.InferType{ID: 1, Name: "U", Binder: false},
-			"U",
-			"its binder cannot be printed",
-		},
 		// A mapped type's key variable has no form outside the member that binds
 		// it. Inside one it renders through the source-driven mapped cases.
 		"MappedKeyReference": {
@@ -593,14 +600,12 @@ func TestBuildTypeAnnFromSolFormersSourceCannotReach(t *testing.T) {
 	}
 }
 
-// TestBuildTypeAnnFromSolInferBinder pins the binder form separately, because the
-// .d.ts printer has no InferTypeAnn case yet and panics on one.
+// TestBuildTypeAnnFromSolInferBinder pins the binder on its own. A conditional
+// carrying one reaches it through the source-driven table below; this is the
+// clause by itself, which no annotation writes.
 func TestBuildTypeAnnFromSolInferBinder(t *testing.T) {
-	ann := newSolTypeAnnBuilder(solPreludePrefix, nil).
-		render(&soltype.InferType{ID: 1, Name: "U", Binder: true})
-	infer, ok := ann.(*InferTypeAnn)
-	require.True(t, ok, "an infer binder renders as InferTypeAnn, got %T", ann)
-	require.Equal(t, "U", infer.Name)
+	binder := &soltype.InferType{ID: 1, Name: "U", Binder: true}
+	require.Equal(t, "infer U", renderSol(t, binder))
 }
 
 // TestBuildTypeAnnFromSolRecursive pins the μ-knot lowering. TypeScript names a

@@ -349,3 +349,44 @@ fn sub(a, b) { return a - b }`,
 		t.Errorf("got %d, want 11", printer.location.Line)
 	}
 }
+
+// An `infer` clause prints the way TypeScript spells it. It binds at prefix
+// power, the same as `keyof`, so it stays bare where a union or intersection
+// member is expected and takes parentheses where a primary type is.
+func TestPrintInferTypeAnn(t *testing.T) {
+	tests := map[string]struct {
+		typeAnn  TypeAnn
+		expected string
+	}{
+		"Alone": {NewInferTypeAnn("U"), "infer U"},
+		"UnderCondExtends": {
+			NewCondTypeAnn(
+				NewRefTypeAnn("T", nil),
+				NewTupleTypeAnn([]TypeAnn{NewInferTypeAnn("U")}),
+				NewRefTypeAnn("U", nil),
+				NewNeverTypeAnn(nil),
+			),
+			"T extends [infer U] ? U : never",
+		},
+		"UnderUnion": {
+			NewUnionTypeAnn([]TypeAnn{NewInferTypeAnn("U"), NewStringTypeAnn(nil)}),
+			"infer U | string",
+		},
+		"UnderIndexTarget": {
+			NewIndexTypeAnn(NewInferTypeAnn("U"), NewStringTypeAnn(nil)),
+			"(infer U)[string]",
+		},
+		"UnderKeyOf": {
+			NewKeyOfTypeAnn(NewInferTypeAnn("U")),
+			"keyof infer U",
+		},
+	}
+
+	for name, test := range tests {
+		t.Run(name, func(t *testing.T) {
+			printer := NewPrinter()
+			printer.PrintTypeAnn(test.typeAnn)
+			require.Equal(t, test.expected, printer.Output)
+		})
+	}
+}
