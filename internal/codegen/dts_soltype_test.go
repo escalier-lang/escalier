@@ -26,7 +26,7 @@ func renderSol(t *testing.T, ty soltype.Type) string {
 func renderSolWithParams(t *testing.T, ty soltype.Type, typeParams []*soltype.TypeParam) string {
 	t.Helper()
 	printer := NewPrinter()
-	printer.PrintTypeAnn(newSolTypeAnnBuilder(solPreludePrefix, typeParams).typeAnn(ty))
+	printer.PrintTypeAnn(newSolTypeAnnBuilder(solPreludePrefix, typeParams).render(ty))
 	return printer.Output
 }
 
@@ -193,6 +193,126 @@ func TestBuildTypeAnnFromSolNominalRefs(t *testing.T) {
 // the declaration it emits.
 //
 // It covers the formers source can spell.
+// TestBuildTypeAnnFromSolInferredTypeParams pins the binders for a generic
+// function that declares none.
+//
+// An un-annotated `fn f(x) { return x }` coalesces to `fn (x: t1) -> t1`, a
+// signature whose TypeParams list is empty and whose parameter and return share
+// one retained variable. Rendering each occurrence on its own would emit
+// `(x: unknown) => unknown` and lose the link the variable carries.
+func TestBuildTypeAnnFromSolInferredTypeParams(t *testing.T) {
+	freshVar := func(id int) *soltype.TypeVarType {
+		return &soltype.TypeVarType{
+			ID: id, Level: 1, LowerBounds: nil, UpperBounds: nil,
+			Open: false, Widenable: false,
+		}
+	}
+
+	t.Run("OneVariableTwoPositions", func(t *testing.T) {
+		v := freshVar(1)
+		sig := solFn([]*soltype.FuncParam{solParam("x", v)}, v)
+		require.Equal(t, "<T0>(x: T0) => T0", renderSol(t, sig))
+	})
+
+	t.Run("TwoVariables", func(t *testing.T) {
+		a, b := freshVar(1), freshVar(2)
+		sig := solFn([]*soltype.FuncParam{solParam("a", a), solParam("b", b)},
+			&soltype.TupleType{Elems: []soltype.Type{a, b}, Inexact: false})
+		require.Equal(t, "<T0, T1>(a: T0, b: T1) => [T0, T1]", renderSol(t, sig))
+	})
+
+	t.Run("UnderAStructuralPosition", func(t *testing.T) {
+		v := freshVar(1)
+		sig := solFn([]*soltype.FuncParam{solParam("x", v)}, solObj(solProp("value", v)))
+		require.Equal(t, "<T0>(x: T0) => {value: T0}", renderSol(t, sig))
+	})
+
+	t.Run("BoundVariableRendersAnExtendsClause", func(t *testing.T) {
+		v := freshVar(1)
+		v.UpperBounds = []soltype.Type{solStr()}
+		sig := solFn([]*soltype.FuncParam{solParam("x", v)}, v)
+		require.Equal(t, "<T0 extends string>(x: T0) => T0", renderSol(t, sig))
+	})
+
+	// Several bounds would meet to an intersection, a shape the type_system twin
+	// never emitted and P4.3 has no golden for, so the binder renders unbounded.
+	t.Run("SeveralBoundsRenderNoClause", func(t *testing.T) {
+		v := freshVar(1)
+		v.UpperBounds = []soltype.Type{solObj(solProp("a", solNum())), solObj(solProp("b", solStr()))}
+		sig := solFn([]*soltype.FuncParam{solParam("x", v)}, v)
+		require.Equal(t, "<T0>(x: T0) => T0", renderSol(t, sig))
+	})
+
+	// A variable free in a nested signature is free in the enclosing one too, and
+	// the enclosing signature renders first, so that is where the binder lands.
+	t.Run("NestedSignatureBindsAtTheOutermost", func(t *testing.T) {
+		arg, ret := freshVar(1), freshVar(2)
+		callback := solFn([]*soltype.FuncParam{solParam("a", arg)}, ret)
+		sig := solFn([]*soltype.FuncParam{solParam("f", callback), solParam("x", arg)}, ret)
+		require.Equal(t, "<T0, T1>(f: (a: T0) => T1, x: T0) => T1", renderSol(t, sig))
+	})
+
+	// A declared parameter keeps the name its binder wrote, and a retained one
+	// beside it takes the next free name rather than colliding with it.
+	t.Run("BesideADeclaredParameter", func(t *testing.T) {
+		declared, retained := freshVar(1), freshVar(2)
+		sig := solFn([]*soltype.FuncParam{solParam("x", declared), solParam("y", retained)}, retained)
+		sig.TypeParams = []*soltype.TypeParam{
+			{Name: "T", Var: declared, Default: nil, Constraint: nil},
+		}
+		require.Equal(t, "<T, T0>(x: T, y: T0) => T0", renderSol(t, sig))
+	})
+
+	t.Run("DeclaredNameCollision", func(t *testing.T) {
+		declared, retained := freshVar(1), freshVar(2)
+		sig := solFn([]*soltype.FuncParam{solParam("x", declared), solParam("y", retained)}, retained)
+		sig.TypeParams = []*soltype.TypeParam{
+			{Name: "T0", Var: declared, Default: nil, Constraint: nil},
+		}
+		require.Equal(t, "<T0, T1>(x: T0, y: T1) => T1", renderSol(t, sig))
+	})
+
+	// A variable outside every signature has nothing to hang a binder on.
+	t.Run("OutsideASignature", func(t *testing.T) {
+		require.Equal(t, "{value: unknown}", renderSol(t, solObj(solProp("value", freshVar(1)))))
+	})
+
+	// Neither sibling holds every occurrence, so neither may bind it. Naming it on
+	// the first would leave the second referencing a name TypeScript cannot see.
+	t.Run("SharedBetweenSiblingSignatures", func(t *testing.T) {
+		v := freshVar(1)
+		obj := solObj(
+			solProp("push", solFn([]*soltype.FuncParam{solParam("v", v)}, &soltype.UndefinedType{})),
+			solProp("pop", solFn(nil, v)),
+		)
+		require.Equal(t, "{push: (v: unknown) => undefined, pop: () => unknown}", renderSol(t, obj))
+	})
+
+	// Every variable of a batch is named before any bound renders, so a bound
+	// naming a sibling of the same batch reads as that sibling's name.
+	t.Run("BoundNamesAnotherOfTheSameBatch", func(t *testing.T) {
+		bounded, other := freshVar(1), freshVar(2)
+		bounded.UpperBounds = []soltype.Type{solObj(solProp("k", other))}
+		sig := solFn([]*soltype.FuncParam{solParam("x", bounded), solParam("y", other)}, bounded)
+		require.Equal(t, "<T0 extends {k: T1}, T1>(x: T0, y: T1) => T0", renderSol(t, sig))
+	})
+
+	// What a call raises and a method's receiver have no TypeScript form, so a
+	// variable reachable only through one earns no binder. An unused `<T0>` on a
+	// signature that never mentions it reads as a mistake.
+	t.Run("VariableOnlyInThrows", func(t *testing.T) {
+		sig := solFn([]*soltype.FuncParam{solParam("x", solNum())}, solNum())
+		sig.Throws = freshVar(1)
+		require.Equal(t, "(x: number) => number", renderSol(t, sig))
+	})
+
+	t.Run("VariableOnlyOnTheSelfReceiver", func(t *testing.T) {
+		sig := solFn([]*soltype.FuncParam{solParam("x", solNum())}, solNum())
+		sig.SelfParam = solParam("self", freshVar(1))
+		require.Equal(t, "(x: number) => number", renderSol(t, sig))
+	})
+}
+
 // TestBuildTypeAnnFromSolUnspellableFormers covers the ones it cannot, and the
 // hand-built tests around them cover the error sentinel, a skolem, an unresolved
 // inference variable, an `import:`-prefixed name from another package, a
@@ -451,7 +571,7 @@ func TestBuildTypeAnnFromSolUnspellableFormers(t *testing.T) {
 // .d.ts printer has no InferTypeAnn case yet and panics on one.
 func TestBuildTypeAnnFromSolInferBinder(t *testing.T) {
 	ann := newSolTypeAnnBuilder(solPreludePrefix, nil).
-		typeAnn(&soltype.InferType{ID: 1, Name: "U", Binder: true})
+		render(&soltype.InferType{ID: 1, Name: "U", Binder: true})
 	infer, ok := ann.(*InferTypeAnn)
 	require.True(t, ok, "an infer binder renders as InferTypeAnn, got %T", ann)
 	require.Equal(t, "U", infer.Name)
@@ -754,7 +874,7 @@ func TestBuildTypeAnnFromSolWithoutPreludePrefix(t *testing.T) {
 	}
 
 	printer := NewPrinter()
-	printer.PrintTypeAnn(newSolTypeAnnBuilder("", nil).typeAnn(promise))
+	printer.PrintTypeAnn(newSolTypeAnnBuilder("", nil).render(promise))
 	require.Equal(t, "Promise<number, string>", printer.Output)
 
 	// The same reference through a builder that knows the prelude is trimmed.

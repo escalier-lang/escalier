@@ -1,6 +1,7 @@
 package solver
 
 import (
+	"fmt"
 	"testing"
 
 	"github.com/escalier-lang/escalier/internal/soltype"
@@ -62,10 +63,21 @@ func TestResolveTypeAnnForTestReportsDiagnostics(t *testing.T) {
 // says which of the two inputs failed so a typo in one does not point at the other.
 func TestResolveTypeAnnForTestRejectsUnparsableSource(t *testing.T) {
 	_, _, err := ResolveTypeAnnForTest("", "{{{")
-	require.ErrorContains(t, err, `parsing the annotation "{{{"`)
+	require.EqualError(t, err, `parsing the annotation "{{{": Expected a property name`)
 
 	_, _, err = ResolveTypeAnnForTest("type = = =", "number")
-	require.ErrorContains(t, err, "parsing the declarations")
+	require.EqualError(t, err, "parsing the declarations: Expected identifier")
+}
+
+// TestResolveTypeAnnForTestRejectsEmptyAnnotation pins the third input fault.
+// Whitespace or a comment parses without complaint and yields no annotation, so
+// the parse-error check alone would let it through to inference, where the
+// diagnostic names this helper's own binding.
+func TestResolveTypeAnnForTestRejectsEmptyAnnotation(t *testing.T) {
+	for _, ann := range []string{"", "   ", "// nothing"} {
+		_, _, err := ResolveTypeAnnForTest("", ann)
+		require.EqualError(t, err, fmt.Sprintf("the annotation %q declares no type", ann))
+	}
 }
 
 // TestResolveTypeAnnForTestRejectsBindingNameCollision checks the guard on the
@@ -74,5 +86,18 @@ func TestResolveTypeAnnForTestRejectsUnparsableSource(t *testing.T) {
 // own binding instead of the annotation.
 func TestResolveTypeAnnForTestRejectsBindingNameCollision(t *testing.T) {
 	_, _, err := ResolveTypeAnnForTest("declare val "+annBindingName+": string", "number")
-	require.ErrorContains(t, err, "rename it")
+	require.EqualError(t, err,
+		"the declarations mention __ann_for_test, "+
+			"the name this helper binds the annotation to; rename it")
+}
+
+// TestResolveTypeAnnForTestDeclsEndingInAComment pins the newline the helper puts
+// between the caller's declarations and the binding it appends. Without it a
+// declarations block whose last line is a comment would swallow the binding, and
+// the annotation would resolve to nothing.
+func TestResolveTypeAnnForTestDeclsEndingInAComment(t *testing.T) {
+	ty, diagnostics, err := ResolveTypeAnnForTest("type T = number // the alias", "T")
+	require.NoError(t, err)
+	require.Empty(t, diagnostics)
+	require.Equal(t, "T", soltype.Print(ty))
 }

@@ -72,8 +72,16 @@ func ResolveTypeAnnForTest(decls, ann string) (soltype.Type, []SolverError, erro
 	// against the annotation rather than against the module built around it.
 	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
 	defer cancel()
-	if _, parseErrors := parser.ParseTypeAnn(ctx, ann); len(parseErrors) > 0 {
+	parsed, parseErrors := parser.ParseTypeAnn(ctx, ann)
+	if len(parseErrors) > 0 {
 		return nil, nil, fmt.Errorf("parsing the annotation %q: %s", ann, parseErrors[0].Message)
+	}
+	if parsed == nil {
+		// An annotation holding nothing but whitespace or a comment parses without
+		// complaint and yields no node. Left alone it would reach inference as a
+		// `declare val` with no type, whose diagnostic names this helper's own
+		// binding and reads as though the caller wrote a variable declaration.
+		return nil, nil, fmt.Errorf("the annotation %q declares no type", ann)
 	}
 
 	src := decls + "\ndeclare val " + annBindingName + ": " + ann + "\n"
@@ -87,7 +95,13 @@ func ResolveTypeAnnForTest(decls, ann string) (soltype.Type, []SolverError, erro
 	scope, _, errs := InferModule(module, StdlibSource(testStdlibDir()))
 	binding, bound := scope.GetValue(annBindingName)
 	if !bound || len(binding.Schemes) == 0 {
+		// Defensive. A `declare val` that parsed always binds, and the two earlier
+		// guards reject the inputs that reach here without one. It is kept so a
+		// change upstream surfaces as this message rather than as a nil dereference.
 		return nil, errs, fmt.Errorf("resolving %q: the annotation bound no type", ann)
 	}
+	// Exactly one scheme. A binding carries several only as an overload set, which
+	// takes two declarations under one name, and the collision guard above rejects
+	// any that would name this one.
 	return schemeType(binding.Schemes[0]), errs, nil
 }

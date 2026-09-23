@@ -40,6 +40,15 @@ type solTypeAnnBuilder struct {
 	// binder holds. This map is what turns that pointer back into the `T` the
 	// source wrote.
 	typeParamNames map[*soltype.TypeVarType]string
+	// nextTypeParam is the index the next name for a retained variable is drawn
+	// from, so two signatures in one rendered type never reuse a name.
+	nextTypeParam int
+	// varOccurrences counts how often each variable occurs in the whole type being
+	// rendered, which is what decides whether a signature holds all of a variable's
+	// occurrences and may therefore bind it. render fills it; a nil map binds
+	// nothing, so a caller reaching typeAnn directly renders every retained
+	// variable as `unknown`.
+	varOccurrences map[*soltype.TypeVarType]int
 }
 
 // newSolTypeAnnBuilder returns a renderer for one declaration.
@@ -51,7 +60,12 @@ type solTypeAnnBuilder struct {
 // nothing inside its body binds them and a use of one would otherwise reach the
 // unresolved-variable fallback.
 func newSolTypeAnnBuilder(preludePrefix string, typeParams []*soltype.TypeParam) *solTypeAnnBuilder {
-	b := &solTypeAnnBuilder{preludePrefix: preludePrefix, typeParamNames: nil}
+	b := &solTypeAnnBuilder{
+		preludePrefix:  preludePrefix,
+		typeParamNames: nil,
+		nextTypeParam:  0,
+		varOccurrences: nil,
+	}
 	b.bindTypeParams(typeParams)
 	return b
 }
@@ -74,15 +88,31 @@ func (b *solTypeAnnBuilder) bindTypeParams(typeParams []*soltype.TypeParam) {
 	}
 }
 
+// render is the entry point for a whole type. It counts each variable's
+// occurrences first, which is what lets a signature tell a variable it fully
+// contains from one it shares with a sibling.
+func (b *solTypeAnnBuilder) render(t soltype.Type) TypeAnn {
+	if b.typeParamNames == nil {
+		b.typeParamNames = map[*soltype.TypeVarType]string{}
+	}
+	b.varOccurrences = map[*soltype.TypeVarType]int{}
+	collectRenderedVars(t, b.varOccurrences)
+	return b.typeAnn(t)
+}
+
 func (b *solTypeAnnBuilder) typeAnn(t soltype.Type) TypeAnn {
 	switch t := t.(type) {
 	case *soltype.TypeVarType:
-		// A quantified type parameter renders under the name its binder declared.
+		// A quantified type parameter renders under the name its binder declared,
+		// or under the one funcTypeAnn assigned it.
 		if name, ok := b.typeParamNames[t]; ok {
 			return NewRefTypeAnn(name, nil)
 		}
-		// Generalization inlines every other variable into its bounds, so one
-		// reaching here is unresolved. Fall back to unknown as a safety net.
+		// A variable reaching here stands outside every function in the rendered
+		// type, so there is no signature to hang a `<T>` on. Coalescing retains one
+		// only where it occurs at both polarities, which for a value binding such
+		// as `val xs = []` means its element type is genuinely undetermined.
+		// `unknown` is the honest rendering of that.
 		return NewUnknownTypeAnn(nil)
 	case *soltype.SkolemType:
 		// A skolem is a rigid type parameter held abstract while a term is checked.
@@ -558,10 +588,11 @@ func (p *paramNamer) next() string {
 // TypeScript has no throws clause.
 func (b *solTypeAnnBuilder) funcTypeAnn(funcType *soltype.FuncType) FuncTypeAnn {
 	b.bindTypeParams(funcType.TypeParams)
+	inferred := b.bindInferredTypeParams(funcType)
 
-	var typeParams []*TypeParam
+	typeParams := inferred
 	if len(funcType.TypeParams) > 0 {
-		typeParams = make([]*TypeParam, len(funcType.TypeParams))
+		typeParams = make([]*TypeParam, len(funcType.TypeParams), len(funcType.TypeParams)+len(inferred))
 		for i, param := range funcType.TypeParams {
 			var constraint TypeAnn
 			if param.Constraint != nil {
@@ -577,6 +608,7 @@ func (b *solTypeAnnBuilder) funcTypeAnn(funcType *soltype.FuncType) FuncTypeAnn 
 				Default:    defaultType,
 			}
 		}
+		typeParams = append(typeParams, inferred...)
 	}
 
 	return FuncTypeAnn{
@@ -587,6 +619,136 @@ func (b *solTypeAnnBuilder) funcTypeAnn(funcType *soltype.FuncType) FuncTypeAnn 
 		span:       nil,
 		source:     nil,
 	}
+}
+
+// bindInferredTypeParams names the variables let-generalization retained in this
+// signature and returns a type parameter for each.
+//
+// An un-annotated generic function declares nothing: inference quantifies it, and
+// coalescing keeps a variable symbolic where it occurs at both polarities so the
+// link between its uses survives. `fn f(x) { return x }` coalesces to
+// `fn (x: t1) -> t1` with an empty TypeParams list, and rendering each `t1`
+// independently would emit `(x: unknown) => unknown`, losing the very link the
+// variable was retained to carry. Naming it emits `<T0>(x: T0) => T0`.
+//
+// A variable binds here only when this signature holds every occurrence of it in
+// the whole rendered type. One shared with a sibling signature belongs to a scope
+// neither of them opens, as the `t1` of `{push: fn (v: t1) -> undefined, pop: fn
+// () -> t1}` does; binding it on the first would leave the second referencing a
+// name TypeScript cannot see. Such a variable stays unnamed and renders `unknown`,
+// which is lossy where an interface-level parameter would be exact, but is a
+// declaration TypeScript accepts. The enclosing declaration is what could carry
+// one, so P4.2 owns that.
+func (b *solTypeAnnBuilder) bindInferredTypeParams(funcType *soltype.FuncType) []*TypeParam {
+	local := map[*soltype.TypeVarType]int{}
+	collectRenderedVars(funcType, local)
+
+	var bind []*soltype.TypeVarType
+	for _, v := range orderRenderedVars(funcType) {
+		if _, named := b.typeParamNames[v]; named {
+			continue
+		}
+		if local[v] != b.varOccurrences[v] {
+			continue
+		}
+		bind = append(bind, v)
+	}
+	if len(bind) == 0 {
+		return nil
+	}
+
+	// Name every variable in the batch before rendering any constraint, so a bound
+	// naming a sibling of the same batch reads as that sibling's name.
+	for _, v := range bind {
+		b.typeParamNames[v] = b.claimTypeParamName()
+	}
+
+	params := make([]*TypeParam, len(bind))
+	for i, v := range bind {
+		var constraint TypeAnn
+		if len(v.UpperBounds) == 1 {
+			// A single upper bound renders as the `extends` clause it stands for.
+			// Several would meet to an intersection, a shape the twin never emitted
+			// and P4.3 has no golden for, so they are left off.
+			constraint = b.typeAnn(v.UpperBounds[0])
+		}
+		params[i] = &TypeParam{Name: b.typeParamNames[v], Constraint: constraint, Default: nil}
+	}
+	return params
+}
+
+// claimTypeParamName hands out the next name no binder in this render has taken,
+// `T0`, `T1` and so on, matching what soltype's own scheme printer assigns.
+func (b *solTypeAnnBuilder) claimTypeParamName() string {
+	if b.typeParamNames == nil {
+		b.typeParamNames = map[*soltype.TypeVarType]string{}
+	}
+	taken := make(map[string]bool, len(b.typeParamNames))
+	for _, name := range b.typeParamNames {
+		taken[name] = true
+	}
+	for i := b.nextTypeParam; ; i++ {
+		name := "T" + strconv.Itoa(i)
+		if !taken[name] {
+			b.nextTypeParam = i + 1
+			return name
+		}
+	}
+}
+
+// collectRenderedVars counts each type variable's occurrences in t, and
+// orderRenderedVars lists them in the order the walk first reaches one.
+//
+// Both count only the positions the renderer emits. A signature's `self` receiver
+// and what it raises have no TypeScript form, so a variable reachable only through
+// one of them would otherwise earn a binder that appears nowhere in the rendered
+// signature. A variable's own bounds are a side graph rather than tree children,
+// and the walk leaves them alone for the same reason: nothing reads a bound unless
+// the variable it belongs to is itself named.
+func collectRenderedVars(t soltype.Type, into map[*soltype.TypeVarType]int) {
+	t.Accept(&solRenderedVarVisitor{counts: into}, soltype.Positive)
+}
+
+func orderRenderedVars(t soltype.Type) []*soltype.TypeVarType {
+	visitor := &solRenderedVarVisitor{counts: map[*soltype.TypeVarType]int{}}
+	t.Accept(visitor, soltype.Positive)
+	return visitor.order
+}
+
+type solRenderedVarVisitor struct {
+	counts map[*soltype.TypeVarType]int
+	order  []*soltype.TypeVarType
+}
+
+func (v *solRenderedVarVisitor) EnterType(t soltype.Type, pol soltype.Polarity) soltype.EnterResult {
+	switch t := t.(type) {
+	case *soltype.TypeVarType:
+		if t == nil {
+			return soltype.EnterResult{Type: nil, SkipChildren: true}
+		}
+		if v.counts[t] == 0 {
+			v.order = append(v.order, t)
+		}
+		v.counts[t]++
+	case *soltype.FuncType:
+		// Walk the emitted positions by hand and skip the rest. The polarity is
+		// threaded the way Accept would, though nothing here reads it: a variable
+		// counts the same whichever side of an arrow it stands on.
+		for _, param := range t.Params {
+			if param.Type != nil {
+				param.Type.Accept(v, pol.Flip())
+			}
+		}
+		if t.Ret != nil {
+			t.Ret.Accept(v, pol)
+		}
+		return soltype.EnterResult{Type: nil, SkipChildren: true}
+	}
+	return soltype.EnterResult{Type: nil, SkipChildren: false}
+}
+
+func (v *solRenderedVarVisitor) ExitType(t soltype.Type, _ soltype.Polarity) soltype.Type {
+	return t
 }
 
 // buildTypeAnnObjKeyFromSol renders a member name as a .d.ts object key. soltype
