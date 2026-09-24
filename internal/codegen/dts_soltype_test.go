@@ -26,7 +26,7 @@ func renderSol(t *testing.T, ty soltype.Type) string {
 func renderSolWithParams(t *testing.T, ty soltype.Type, typeParams []*soltype.TypeParam) string {
 	t.Helper()
 	printer := NewPrinter()
-	printer.PrintTypeAnn(newSolTypeAnnBuilder(solPreludePrefix, typeParams).render(ty))
+	printer.PrintTypeAnn(newSolTypeAnnBuilder(solPreludePrefix, "t", typeParams).render(ty))
 	return printer.Output
 }
 
@@ -241,9 +241,10 @@ func TestBuildTypeAnnFromSolInferredTypeParams(t *testing.T) {
 		require.Equal(t, "<T0>(x: T0) => T0", renderSol(t, sig))
 	})
 
-	// A variable free in a nested signature is free in the enclosing one too, and
-	// the enclosing signature renders first, so that is where the binder lands.
-	t.Run("NestedSignatureBindsAtTheOutermost", func(t *testing.T) {
+	// A variable used by both the callback and the enclosing signature has no
+	// single nested signature holding every occurrence, so the enclosing one is
+	// the innermost that does.
+	t.Run("SharedWithACallbackBindsAtTheEnclosing", func(t *testing.T) {
 		arg, ret := freshVar(1), freshVar(2)
 		callback := solFn([]*soltype.FuncParam{solParam("a", arg)}, ret)
 		sig := solFn([]*soltype.FuncParam{solParam("f", callback), solParam("x", arg)}, ret)
@@ -268,6 +269,20 @@ func TestBuildTypeAnnFromSolInferredTypeParams(t *testing.T) {
 			{Name: "T0", Var: declared, Default: nil, Constraint: nil},
 		}
 		require.Equal(t, "<T0, T1>(x: T0, y: T1) => T1", renderSol(t, sig))
+	})
+
+	// A variable confined to a nested signature binds there, not on the enclosing
+	// one that also contains it. Binding it outside would hand the choice to
+	// whoever calls the outer function, when only the inner one is polymorphic.
+	t.Run("ConfinedToANestedSignature", func(t *testing.T) {
+		put, get := freshVar(1), freshVar(2)
+		sig := solFn(nil, solObj(
+			solProp("put", solFn([]*soltype.FuncParam{solParam("v", put)}, put)),
+			solProp("get", solFn([]*soltype.FuncParam{solParam("w", get)}, get)),
+		))
+		require.Equal(t,
+			"() => {put: <T0>(v: T0) => T0, get: <T1>(w: T1) => T1}",
+			renderSol(t, sig))
 	})
 
 	// A variable outside every signature has nothing to hang a binder on.
@@ -608,16 +623,161 @@ func TestBuildTypeAnnFromSolInferBinder(t *testing.T) {
 	require.Equal(t, "infer U", renderSol(t, binder))
 }
 
-// TestBuildTypeAnnFromSolRecursive pins the μ-knot lowering. TypeScript names a
-// recursive type through an interface, so an inline annotation renders one level
-// of the unfolding with `any` at the binder.
+// A μ-knot has no inline form in TypeScript, so it emits as a companion
+// declaration naming itself, and the type that held it references that name. An
+// object body takes an interface and every other body a type alias.
+//
+// The exception is a reference TypeScript resolves while it resolves the
+// declaration. There the companion would be the error "Type alias circularly
+// references itself", so the knot keeps the older rendering: one level of the
+// unfolding with `any` at the binder.
 func TestBuildTypeAnnFromSolRecursive(t *testing.T) {
-	binder := &soltype.RecursiveVarType{ID: 0, Name: "X0"}
-	knot := &soltype.RecursiveType{
-		Binder: binder,
-		Body:   solObj(solProp("next", binder)),
+	// body takes the binder so each case can close its own knot over it.
+	tests := map[string]struct {
+		body     func(binder soltype.Type) soltype.Type
+		rendered string
+		decl     string // empty when the knot mints no companion
+	}{
+		"Object": {
+			body:     func(x soltype.Type) soltype.Type { return solObj(solProp("next", x)) },
+			rendered: "__t_rec0__",
+			decl:     "interface __t_rec0__ {next: __t_rec0__}",
+		},
+		"Tuple": {
+			body: func(x soltype.Type) soltype.Type {
+				return &soltype.TupleType{Elems: []soltype.Type{solNum(), x}, Inexact: false}
+			},
+			rendered: "__t_rec0__",
+			decl:     "type __t_rec0__ = [number, __t_rec0__];",
+		},
+		"Signature": {
+			body:     func(x soltype.Type) soltype.Type { return solFn(nil, x) },
+			rendered: "__t_rec0__",
+			decl:     "type __t_rec0__ = () => __t_rec0__;",
+		},
+		// The reference sits under an object, which defers it, so the union as a
+		// whole is fine as an alias.
+		"UnionOverAnObject": {
+			body: func(x soltype.Type) soltype.Type {
+				return &soltype.UnionType{Types: []soltype.Type{solNum(), solObj(solProp("next", x))}}
+			},
+			rendered: "__t_rec0__",
+			decl:     "type __t_rec0__ = number | {next: __t_rec0__};",
+		},
+		// A union member sits at the same level as the union, so nothing defers.
+		"UnionOverTheBinder": {
+			body: func(x soltype.Type) soltype.Type {
+				return &soltype.UnionType{Types: []soltype.Type{solNum(), x}}
+			},
+			rendered: "number | any",
+		},
+		"Keyof": {
+			body:     func(x soltype.Type) soltype.Type { return &soltype.KeyofType{Operand: x} },
+			rendered: "keyof any",
+		},
 	}
-	require.Equal(t, "{next: any}", renderSol(t, knot))
+
+	for name, test := range tests {
+		t.Run(name, func(t *testing.T) {
+			binder := &soltype.RecursiveVarType{ID: 0, Name: "X0"}
+			knot := &soltype.RecursiveType{Binder: binder, Body: test.body(binder)}
+
+			builder := newSolTypeAnnBuilder(solPreludePrefix, "t", nil)
+			printer := NewPrinter()
+			printer.PrintTypeAnn(builder.render(knot))
+			require.Equal(t, test.rendered, printer.Output)
+
+			companions := builder.companionDecls()
+			if test.decl == "" {
+				require.Empty(t, companions)
+				return
+			}
+			require.Len(t, companions, 1)
+			decl := NewPrinter()
+			decl.PrintDecl(companions[0])
+			require.Equal(t, test.decl, decl.Output)
+		})
+	}
+}
+
+// referencesNameEagerly decides whether a knot can be named, so each case below
+// pairs the `TypeAnn` shape with the TypeScript declaration it stands for. Every
+// expectation was checked by running `tsc --noEmit --strict` over
+// `type X = <shape>`: a true case is the error TS2456 "Type alias circularly
+// references itself", a false case compiles. `MappedAsClause` is the one
+// exception, noted on the case itself.
+//
+// A conditional resolves before its branches, so a reference in the branch not
+// taken compiles. The predicate does not evaluate the condition and answers true
+// for either branch, which costs only the `any` fallback.
+func TestReferencesNameEagerly(t *testing.T) {
+	// self is the reference under test, and other is a name the knot never binds.
+	self := NewRefTypeAnn("X", nil)
+	other := NewRefTypeAnn("Y", nil)
+	num := NewNumberTypeAnn(nil)
+
+	// prop wraps ta in `{p: ta}`, an object member, which defers.
+	prop := func(ta TypeAnn) TypeAnn {
+		return NewObjectTypeAnn([]ObjTypeAnnElem{&PropertyTypeAnn{
+			Name: NewIdentExpr("p", "", nil), Optional: false, Readonly: false, Value: ta,
+		}})
+	}
+	// mapped wraps constraint into `{[K in constraint]: number}`, adding the
+	// key-remapping `as name` when name is not nil.
+	mapped := func(constraint, name TypeAnn) TypeAnn {
+		return NewObjectTypeAnn([]ObjTypeAnnElem{&MappedTypeAnn{
+			TypeParam: &IndexParamTypeAnn{Name: "K", Constraint: constraint},
+			Name:      name,
+			Value:     num,
+			Optional:  nil,
+			ReadOnly:  nil,
+		}})
+	}
+
+	tests := map[string]struct {
+		ta    TypeAnn
+		eager bool
+	}{
+		"Bare":               {self, true},
+		"AnotherName":        {other, false},
+		"TypeArgument":       {NewRefTypeAnn("Array", []TypeAnn{self}), false},
+		"Property":           {prop(self), false},
+		"Tuple":              {NewTupleTypeAnn([]TypeAnn{num, self}), false},
+		"UnionMember":        {NewUnionTypeAnn([]TypeAnn{num, self}), true},
+		"UnionUnderAProp":    {NewUnionTypeAnn([]TypeAnn{num, prop(self)}), false},
+		"IntersectionMember": {NewIntersectionTypeAnn([]TypeAnn{num, self}), true},
+		"Interpolation": {NewTemplateLitTypeAnn(
+			[]*Quasi{{Value: "a", Span: nil}, {Value: "", Span: nil}},
+			[]TypeAnn{self},
+		), true},
+		"KeyOfOperand": {NewKeyOfTypeAnn(self), true},
+		"IndexTarget":  {NewIndexTypeAnn(self, num), true},
+		"IndexKey":     {NewIndexTypeAnn(other, self), true},
+		"CondCheck":    {NewCondTypeAnn(self, num, num, num), true},
+		"CondExtends":  {NewCondTypeAnn(num, self, num, num), true},
+		"CondBranch":   {NewCondTypeAnn(num, num, self, num), true},
+		// The extends clause fails, so the else branch is the one taken.
+		"CondElse":        {NewCondTypeAnn(num, NewStringTypeAnn(nil), num, self), true},
+		"MappedKeys":      {mapped(NewKeyOfTypeAnn(self), nil), true},
+		"MappedOverOther": {mapped(NewKeyOfTypeAnn(other), nil), false},
+		// The one case tsc does not answer with TS2456. On
+		// `type X = {[K in "a" as keyof X]: number}` TypeScript 5.8 overflows its
+		// stack instead, which the fallback keeps out of the output just the same.
+		"MappedAsClause": {mapped(NewStringTypeAnn(nil), NewKeyOfTypeAnn(self)), true},
+	}
+
+	for name, test := range tests {
+		t.Run(name, func(t *testing.T) {
+			require.Equal(t, test.eager, referencesNameEagerly(test.ta, "X"))
+		})
+	}
+}
+
+// A type carrying no knot mints nothing.
+func TestBuildTypeAnnFromSolMintsNoCompanionWithoutAKnot(t *testing.T) {
+	builder := newSolTypeAnnBuilder(solPreludePrefix, "x", nil)
+	builder.render(solObj(solProp("x", solNum())))
+	require.Empty(t, builder.companionDecls())
 }
 
 func TestBuildTypeAnnFromSolWithParams(t *testing.T) {
@@ -834,7 +994,7 @@ func TestArityTrimNeedsThePreludePrefix(t *testing.T) {
 
 	render := func(preludePrefix string) string {
 		printer := NewPrinter()
-		printer.PrintTypeAnn(newSolTypeAnnBuilder(preludePrefix, nil).render(promise))
+		printer.PrintTypeAnn(newSolTypeAnnBuilder(preludePrefix, "t", nil).render(promise))
 		return printer.Output
 	}
 

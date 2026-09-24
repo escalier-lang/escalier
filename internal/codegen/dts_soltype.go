@@ -2,6 +2,7 @@ package codegen
 
 import (
 	"fmt"
+	"slices"
 	"strconv"
 	"strings"
 
@@ -27,23 +28,48 @@ type solTypeAnnBuilder struct {
 	typeParamNames map[*soltype.TypeVarType]string
 	// nextTypeParam is the index the next name for a retained variable comes from.
 	nextTypeParam int
-	// varOccurrences counts each variable over the whole type being rendered,
-	// which is what tells a signature it holds every occurrence of one and may
-	// bind it. render fills it; a nil map binds nothing.
-	varOccurrences map[*soltype.TypeVarType]int
+	// bindAt names, for each variable, the innermost signature holding every
+	// occurrence of it, which is the one that may bind it. A variable whose
+	// occurrences share no enclosing signature maps to nil and renders `unknown`.
+	// render fills this; a nil map binds nothing.
+	bindAt map[*soltype.TypeVarType]*soltype.FuncType
+	// varOrder is every variable in the order the walk reached it, so a signature
+	// renders its binders in a stable order.
+	varOrder []*soltype.TypeVarType
+	// companionPrefix seeds the names of the declarations a render mints, so two
+	// bindings in one file cannot collide. The declaration walk passes the
+	// binding's own local name.
+	companionPrefix string
+	// companions are the declarations this render minted, in the order they must
+	// be emitted. A recursive type has no inline form, so it is named by one.
+	companions []*TypeDecl
+	// recursiveNames maps a knot's binder id to the name its companion declares,
+	// so a reference back to the binder resolves to that name.
+	recursiveNames map[int]string
 }
 
 // newSolTypeAnnBuilder returns a renderer for one declaration. typeParams are
 // that declaration's own, since nothing inside its body binds them.
-func newSolTypeAnnBuilder(preludePrefix string, typeParams []*soltype.TypeParam) *solTypeAnnBuilder {
+func newSolTypeAnnBuilder(preludePrefix, companionPrefix string, typeParams []*soltype.TypeParam) *solTypeAnnBuilder {
 	b := &solTypeAnnBuilder{
-		preludePrefix:  preludePrefix,
-		typeParamNames: nil,
-		nextTypeParam:  0,
-		varOccurrences: nil,
+		preludePrefix:   preludePrefix,
+		typeParamNames:  nil,
+		nextTypeParam:   0,
+		bindAt:          nil,
+		varOrder:        nil,
+		companionPrefix: companionPrefix,
+		companions:      nil,
+		recursiveNames:  map[int]string{},
 	}
 	b.bindTypeParams(typeParams)
 	return b
+}
+
+// companionDecls are the declarations this render minted. They carry what
+// TypeScript has no inline form for, so each must be emitted before the
+// declaration whose type references it.
+func (b *solTypeAnnBuilder) companionDecls() []*TypeDecl {
+	return b.companions
 }
 
 // bindTypeParams registers each parameter under its declared name. Nothing is
@@ -67,8 +93,7 @@ func (b *solTypeAnnBuilder) render(t soltype.Type) TypeAnn {
 	if b.typeParamNames == nil {
 		b.typeParamNames = map[*soltype.TypeVarType]string{}
 	}
-	b.varOccurrences = map[*soltype.TypeVarType]int{}
-	collectRenderedVars(t, b.varOccurrences)
+	b.bindAt, b.varOrder = bindingSignatures(t)
 	return b.typeAnn(t)
 }
 
@@ -206,11 +231,13 @@ func (b *solTypeAnnBuilder) typeAnn(t soltype.Type) TypeAnn {
 		// so the operand renders alone. M10 owns carrying exactness across.
 		return b.typeAnn(t.Operand)
 	case *soltype.RecursiveType:
-		// TypeScript names a recursive type through a declaration, so a μ-knot has
-		// no inline form. One level of the unfolding keeps the shape visible, with
-		// `any` at the binder. See #1700.
-		return b.typeAnn(t.Body)
+		return b.recursiveTypeAnn(t)
 	case *soltype.RecursiveVarType:
+		if name, named := b.recursiveNames[t.ID]; named {
+			return NewRefTypeAnn(name, nil)
+		}
+		// Only reachable for a knot whose companion could not be minted, where the
+		// body rendered to something no interface can hold.
 		return NewAnyTypeAnn(nil)
 	case *soltype.NegationType:
 		// TypeScript has no complement. `unknown` reduces the `A & ~B` a narrowed
@@ -218,6 +245,107 @@ func (b *solTypeAnnBuilder) typeAnn(t soltype.Type) TypeAnn {
 		return NewUnknownTypeAnn(nil)
 	}
 	panic(fmt.Sprintf("typeAnn: unhandled %T", t))
+}
+
+// recursiveTypeAnn names a μ-knot through a companion declaration and returns a
+// reference to it.
+//
+// TypeScript has no inline form for a recursive type, so `μX0.{next: X0}` would
+// otherwise render one level of its unfolding with `any` where the recursion
+// closes, and a reader of `{next: {next: any}}` could assign anything two steps
+// in. A declaration can refer to its own name, so the knot emits as one.
+//
+// The binder is registered before the body renders, which is what lets a
+// reference back to it resolve to the name.
+func (b *solTypeAnnBuilder) recursiveTypeAnn(t *soltype.RecursiveType) TypeAnn {
+	name := b.claimCompanionName()
+	b.recursiveNames[t.Binder.ID] = name
+	body := b.typeAnn(t.Body)
+
+	if referencesNameEagerly(body, name) {
+		// `type X = number | X` is the error "Type alias circularly references
+		// itself". Nothing defers the reference, so the knot keeps the older
+		// rendering: one level of the unfolding, with `any` at the binder.
+		delete(b.recursiveNames, t.Binder.ID)
+		return b.typeAnn(t.Body)
+	}
+
+	// An object body emits as an interface, matching the `Self` companion dts.go
+	// already emits. Every other body emits as a type alias.
+	_, isObject := body.(*ObjectTypeAnn)
+	b.companions = append(b.companions, &TypeDecl{
+		Name:       NewIdentifier(name, nil),
+		TypeParams: nil,
+		TypeAnn:    body,
+		Interface:  isObject,
+		declare:    false, // not exported, matching the `Self` companion in dts.go
+		export:     false,
+		span:       nil,
+		source:     nil,
+	})
+	return NewRefTypeAnn(name, nil)
+}
+
+// referencesNameEagerly reports whether ta names name in a position TypeScript
+// resolves while it resolves ta itself. Such a reference is what makes a
+// self-referencing declaration circular, the error TS2456.
+//
+// A property, a tuple element, a signature, and a type argument all defer, so
+// `type X = {next: X}`, `type X = [1, X]`, `type X = () => X` and
+// `type X = Array<X>` are accepted. A union or intersection defers nothing of its
+// own, which is why `type X = number | X` is rejected. Eager too: the operands of
+// `keyof`, of an indexed access and of a conditional, a template literal's
+// interpolations, and a mapped type's key clauses.
+func referencesNameEagerly(ta TypeAnn, name string) bool {
+	anyMemberReferences := func(members []TypeAnn) bool {
+		return slices.ContainsFunc(members, func(m TypeAnn) bool {
+			return referencesNameEagerly(m, name)
+		})
+	}
+
+	switch ta := ta.(type) {
+	case *TypeRefTypeAnn:
+		// A reference carrying arguments defers them, so only a bare name counts.
+		return len(ta.TypeArgs) == 0 && ta.Name == name
+	case *UnionTypeAnn:
+		return anyMemberReferences(ta.Types)
+	case *IntersectionTypeAnn:
+		return anyMemberReferences(ta.Types)
+	case *TemplateLitTypeAnn:
+		return anyMemberReferences(ta.TypeAnns)
+	case *KeyOfTypeAnn:
+		return referencesNameEagerly(ta.Type, name)
+	case *IndexTypeAnn:
+		return referencesNameEagerly(ta.Target, name) ||
+			referencesNameEagerly(ta.Index, name)
+	case *CondTypeAnn:
+		return referencesNameEagerly(ta.Check, name) ||
+			referencesNameEagerly(ta.Extends, name) ||
+			referencesNameEagerly(ta.Cons, name) ||
+			referencesNameEagerly(ta.Alt, name)
+	case *ObjectTypeAnn:
+		// A mapped element's key clauses are the only eager position an object
+		// holds. Every other element defers, as does a mapped element's value.
+		return slices.ContainsFunc(ta.Elems, func(elem ObjTypeAnnElem) bool {
+			mapped, ok := elem.(*MappedTypeAnn)
+			if !ok {
+				return false
+			}
+			if mapped.Name != nil && referencesNameEagerly(mapped.Name, name) {
+				return true
+			}
+			return referencesNameEagerly(mapped.TypeParam.Constraint, name)
+		})
+	}
+	// A tuple, a signature, and every atom defer or hold nothing.
+	return false
+}
+
+// claimCompanionName is the next name for a minted declaration, seeded by the
+// prefix the caller gave so two bindings in one file cannot collide. It matches
+// the shape of the `__<name>_self__` companion dts.go already emits.
+func (b *solTypeAnnBuilder) claimCompanionName() string {
+	return "__" + b.companionPrefix + "_rec" + strconv.Itoa(len(b.companions)) + "__"
 }
 
 // preludeTypeScriptArity is how many type arguments TypeScript's own declaration
@@ -555,15 +683,12 @@ func (b *solTypeAnnBuilder) funcTypeAnn(funcType *soltype.FuncType) FuncTypeAnn 
 // second naming something TypeScript cannot see. Those stay `unknown`. See
 // #1697.
 func (b *solTypeAnnBuilder) bindInferredTypeParams(funcType *soltype.FuncType) []*TypeParam {
-	local := map[*soltype.TypeVarType]int{}
-	collectRenderedVars(funcType, local)
-
 	var bind []*soltype.TypeVarType
-	for _, v := range orderRenderedVars(funcType) {
+	for _, v := range b.varOrder {
 		if _, named := b.typeParamNames[v]; named {
 			continue
 		}
-		if local[v] != b.varOccurrences[v] {
+		if b.bindAt[v] != funcType {
 			continue
 		}
 		bind = append(bind, v)
@@ -610,40 +735,62 @@ func (b *solTypeAnnBuilder) claimTypeParamName() string {
 	}
 }
 
-// collectRenderedVars counts a type's variables, and orderRenderedVars lists them
-// in the order the walk reaches them.
+// bindingSignatures returns, for each type variable, the innermost signature
+// holding every occurrence of it, and every variable in the order the walk
+// reached it.
 //
-// Both visit only the positions the renderer emits. A variable reachable only
-// through a `self` receiver, a throws clause, or another variable's bounds would
-// otherwise earn a binder appearing nowhere in the signature.
-func collectRenderedVars(t soltype.Type, into map[*soltype.TypeVarType]int) {
-	t.Accept(&solRenderedVarVisitor{counts: into}, soltype.Positive)
+// That signature is the one that may bind the variable. The outermost holding
+// all occurrences would be wrong: in `fn () -> {put: fn (v: t1) -> t1}` the
+// outer signature does hold t1, but binding it there hands the choice to
+// whoever calls the outer function, when `put` alone is what is polymorphic.
+// A variable whose occurrences share no enclosing signature, as the two
+// siblings of `{push: fn (v: t1) -> undefined, pop: fn () -> t1}` do, maps to
+// nil and renders `unknown`.
+//
+// Only the positions the renderer emits are walked. A variable reachable only
+// through a `self` receiver, a throws clause, or another variable's bounds
+// would otherwise earn a binder appearing nowhere in the signature.
+func bindingSignatures(t soltype.Type) (map[*soltype.TypeVarType]*soltype.FuncType, []*soltype.TypeVarType) {
+	v := &solVarScopeVisitor{
+		stack:    nil,
+		enclosed: map[*soltype.TypeVarType][]*soltype.FuncType{},
+		order:    nil,
+	}
+	t.Accept(v, soltype.Positive)
+
+	at := make(map[*soltype.TypeVarType]*soltype.FuncType, len(v.order))
+	for _, tv := range v.order {
+		if shared := v.enclosed[tv]; len(shared) > 0 {
+			at[tv] = shared[len(shared)-1]
+		}
+	}
+	return at, v.order
 }
 
-func orderRenderedVars(t soltype.Type) []*soltype.TypeVarType {
-	visitor := &solRenderedVarVisitor{counts: map[*soltype.TypeVarType]int{}}
-	t.Accept(visitor, soltype.Positive)
-	return visitor.order
+// solVarScopeVisitor records the signatures enclosing every occurrence of each
+// variable, narrowing to the ones common to all of them.
+type solVarScopeVisitor struct {
+	stack    []*soltype.FuncType
+	enclosed map[*soltype.TypeVarType][]*soltype.FuncType
+	order    []*soltype.TypeVarType
 }
 
-type solRenderedVarVisitor struct {
-	counts map[*soltype.TypeVarType]int
-	order  []*soltype.TypeVarType
-}
-
-func (v *solRenderedVarVisitor) EnterType(t soltype.Type, pol soltype.Polarity) soltype.EnterResult {
+func (v *solVarScopeVisitor) EnterType(t soltype.Type, pol soltype.Polarity) soltype.EnterResult {
 	switch t := t.(type) {
 	case *soltype.TypeVarType:
 		if t == nil {
 			return soltype.EnterResult{Type: nil, SkipChildren: true}
 		}
-		if v.counts[t] == 0 {
+		if seen, ok := v.enclosed[t]; ok {
+			v.enclosed[t] = commonPrefix(seen, v.stack)
+		} else {
 			v.order = append(v.order, t)
+			v.enclosed[t] = append([]*soltype.FuncType(nil), v.stack...)
 		}
-		v.counts[t]++
 	case *soltype.FuncType:
 		// Walk the emitted positions by hand and skip the rest. Polarity is threaded
-		// the way Accept would, though counting does not read it.
+		// the way Accept would, though nothing here reads it.
+		v.stack = append(v.stack, t)
 		for _, param := range t.Params {
 			if param.Type != nil {
 				param.Type.Accept(v, pol.Flip())
@@ -652,13 +799,29 @@ func (v *solRenderedVarVisitor) EnterType(t soltype.Type, pol soltype.Polarity) 
 		if t.Ret != nil {
 			t.Ret.Accept(v, pol)
 		}
+		v.stack = v.stack[:len(v.stack)-1]
 		return soltype.EnterResult{Type: nil, SkipChildren: true}
 	}
 	return soltype.EnterResult{Type: nil, SkipChildren: false}
 }
 
-func (v *solRenderedVarVisitor) ExitType(t soltype.Type, _ soltype.Polarity) soltype.Type {
+func (v *solVarScopeVisitor) ExitType(t soltype.Type, _ soltype.Polarity) soltype.Type {
 	return t
+}
+
+// commonPrefix truncates a to the signatures it shares with b from the outside
+// in. a is the walk's own copy, so truncating it aliases nothing.
+func commonPrefix(a, b []*soltype.FuncType) []*soltype.FuncType {
+	n := len(a)
+	if len(b) < n {
+		n = len(b)
+	}
+	for i := 0; i < n; i++ {
+		if a[i] != b[i] {
+			return a[:i]
+		}
+	}
+	return a[:n]
 }
 
 // buildTypeAnnObjKeyFromSol renders a member name as an object key. soltype
