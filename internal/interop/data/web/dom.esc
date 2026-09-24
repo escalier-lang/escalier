@@ -27,29 +27,6 @@ import "web:web_rtc"
 import "web:webgl"
 import "web:websocket"
 
-export declare interface FileSystemDirectoryHandleAsyncIterator<T> extends AsyncIteratorObject<T, BuiltinIteratorReturn, unknown> {
-    [Symbol.asyncIterator]() -> FileSystemDirectoryHandleAsyncIterator<T>
-}
-
-@js("FileSystemDirectoryHandle")
-export declare class FileSystemDirectoryHandle extends FileSystemHandle {
-    [Symbol.asyncIterator](self) -> FileSystemDirectoryHandleAsyncIterator<[string, FileSystemHandle]>,
-    entries(self) -> FileSystemDirectoryHandleAsyncIterator<[string, FileSystemHandle]>,
-    keys(self) -> FileSystemDirectoryHandleAsyncIterator<string>,
-    values(self) -> FileSystemDirectoryHandleAsyncIterator<FileSystemHandle>,
-    readonly kind: "directory",
-    /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/FileSystemDirectoryHandle/getDirectoryHandle) */
-    getDirectoryHandle(self, name: string, options?: FileSystemGetDirectoryOptions) -> Promise<FileSystemDirectoryHandle>,
-    /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/FileSystemDirectoryHandle/getFileHandle) */
-    getFileHandle(self, name: string, options?: FileSystemGetFileOptions) -> Promise<FileSystemFileHandle>,
-    /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/FileSystemDirectoryHandle/removeEntry) */
-    removeEntry(mut self, name: string, options?: FileSystemRemoveOptions) -> Promise<undefined>,
-    /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/FileSystemDirectoryHandle/resolve) */
-    resolve(mut self, possibleDescendant: FileSystemHandle) -> Promise<mut Array<string> | null>,
-    static prototype: FileSystemDirectoryHandle,
-    constructor(mut self)
-}
-
 export declare interface AnimationEventInit extends EventInit {
     animationName?: string,
     elapsedTime?: number,
@@ -5967,6 +5944,30 @@ export declare class FileSystemDirectoryEntry extends FileSystemEntry {
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/FileSystemDirectoryEntry/getFile) */
     getFile(self, path?: string | null, options?: FileSystemFlags, successCallback?: FileSystemEntryCallback, errorCallback?: ErrorCallback) -> unknown,
     static prototype: FileSystemDirectoryEntry,
+    constructor(mut self)
+}
+
+/**
+ * Available only in secure contexts.
+ *
+ * [MDN Reference](https://developer.mozilla.org/docs/Web/API/FileSystemDirectoryHandle)
+ */
+@js("FileSystemDirectoryHandle")
+export declare class FileSystemDirectoryHandle extends FileSystemHandle {
+    readonly kind: "directory",
+    /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/FileSystemDirectoryHandle/getDirectoryHandle) */
+    getDirectoryHandle(self, name: string, options?: FileSystemGetDirectoryOptions) -> Promise<FileSystemDirectoryHandle>,
+    /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/FileSystemDirectoryHandle/getFileHandle) */
+    getFileHandle(self, name: string, options?: FileSystemGetFileOptions) -> Promise<FileSystemFileHandle>,
+    /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/FileSystemDirectoryHandle/removeEntry) */
+    removeEntry(mut self, name: string, options?: FileSystemRemoveOptions) -> Promise<undefined>,
+    /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/FileSystemDirectoryHandle/resolve) */
+    resolve(mut self, possibleDescendant: FileSystemHandle) -> Promise<mut Array<string> | null>,
+    [Symbol.asyncIterator](self) -> FileSystemDirectoryHandleAsyncIterator<[string, FileSystemHandle]>,
+    entries(self) -> FileSystemDirectoryHandleAsyncIterator<[string, FileSystemHandle]>,
+    keys(self) -> FileSystemDirectoryHandleAsyncIterator<string>,
+    values(self) -> FileSystemDirectoryHandleAsyncIterator<FileSystemHandle>,
+    static prototype: FileSystemDirectoryHandle,
     constructor(mut self)
 }
 
@@ -20081,6 +20082,10 @@ export declare type WebTransportErrorSource = "session" | "stream"
 export declare type WriteCommandType = "seek" | "truncate" | "write"
 
 export declare type XMLHttpRequestResponseType = "" | "arraybuffer" | "blob" | "document" | "json" | "text"
+
+export declare interface FileSystemDirectoryHandleAsyncIterator<T> extends AsyncIteratorObject<T, BuiltinIteratorReturn, unknown> {
+    [Symbol.asyncIterator]() -> FileSystemDirectoryHandleAsyncIterator<T>
+}
 
 export declare interface MediaKeyStatusMapIterator<T> extends IteratorObject<T, BuiltinIteratorReturn, unknown> {
     [Symbol.iterator]() -> MediaKeyStatusMapIterator<T>

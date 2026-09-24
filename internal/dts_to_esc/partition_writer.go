@@ -977,9 +977,11 @@ func DiscoverLibFiles(dir string) ([]string, error) {
 }
 
 // ParseLibFiles reads and parses every name in basenames as a dts
-// module rooted at dir. Returns one LibInput per file in the same
-// order. Per-file parse errors are joined into a single error with
-// the offending filenames; the caller decides whether to proceed.
+// module rooted at dir. Per-file parse errors are joined into a single error
+// with the offending filenames; the caller decides whether to proceed.
+//
+// The returned order is basenames reordered by orderLibInputs, so a lib that
+// declares a name comes before the libs that augment it.
 func ParseLibFiles(dir string, basenames []string) ([]LibInput, error) {
 	var inputs []LibInput
 	var parseErrs []string
@@ -1001,7 +1003,90 @@ func ParseLibFiles(dir string, basenames []string) ([]LibInput, error) {
 	if len(parseErrs) > 0 {
 		return inputs, fmt.Errorf("parse errors: %s", strings.Join(parseErrs, "; "))
 	}
-	return inputs, nil
+	return orderLibInputs(inputs), nil
+}
+
+// orderLibInputs moves each lib file that augments another to just after the
+// one it augments, leaving every other file where DiscoverLibFiles sorted it.
+//
+// Ingestion order decides merge order. mergeDecls folds every declaration of
+// one interface name into the first it sees and concatenates their `extends`
+// entries, so the file read first supplies the supertype fuseTrio reads as the
+// class's base. Sorting basenames alphabetically makes that an accident of
+// spelling: `lib.dom.d.ts` declares `interface FontFaceSet extends
+// EventTarget` and `lib.dom.iterable.d.ts` adds `extends Set<FontFace>`, and
+// the right one wins only because "d" sorts before "i".
+//
+// A lib augments the lib named by the longest dotted prefix of its own name
+// that is also a lib file, so `lib.dom.iterable.d.ts` and
+// `lib.dom.asynciterable.d.ts` both augment `lib.dom.d.ts`. A file that
+// declares nothing is not a base: the per-year bundles such as
+// `lib.es2015.d.ts` hold a licence header and reference directives alone, and
+// treating them as one would move every `lib.es2015.*.d.ts` for no reason.
+//
+// Over the pinned lib set this moves `lib.dom.asynciterable.d.ts`, the one
+// file that sorts ahead of the lib it augments.
+func orderLibInputs(inputs []LibInput) []LibInput {
+	declaring := set.NewSet[string]()
+	for _, in := range inputs {
+		if in.Module != nil && len(in.Module.Statements) > 0 {
+			declaring.Add(in.SourceFile)
+		}
+	}
+
+	// waiting holds each augmentation under the base it is waiting for, in the
+	// order the inputs arrived.
+	waiting := make(map[string][]LibInput)
+	emitted := set.NewSet[string]()
+	out := make([]LibInput, 0, len(inputs))
+
+	var emit func(in LibInput)
+	emit = func(in LibInput) {
+		out = append(out, in)
+		emitted.Add(in.SourceFile)
+		held := waiting[in.SourceFile]
+		delete(waiting, in.SourceFile)
+		for _, aug := range held {
+			emit(aug)
+		}
+	}
+
+	for _, in := range inputs {
+		base := augmentedLib(in.SourceFile, declaring)
+		if base != "" && !emitted.Contains(base) {
+			waiting[base] = append(waiting[base], in)
+			continue
+		}
+		emit(in)
+	}
+
+	// A base that never arrived leaves its augmentations waiting. Emit them in
+	// input order so no file is dropped.
+	if len(waiting) > 0 {
+		for _, in := range inputs {
+			if !emitted.Contains(in.SourceFile) {
+				out = append(out, in)
+				emitted.Add(in.SourceFile)
+			}
+		}
+	}
+	return out
+}
+
+// augmentedLib returns the lib basename that name augments, or "" when name
+// augments none. The answer is the longest proper dotted prefix of name that
+// is itself a declaring lib file, so `lib.dom.iterable.d.ts` answers
+// `lib.dom.d.ts`.
+func augmentedLib(name string, declaring set.Set[string]) string {
+	stem := strings.TrimSuffix(strings.TrimPrefix(name, "lib."), ".d.ts")
+	parts := strings.Split(stem, ".")
+	for i := len(parts) - 1; i > 0; i-- {
+		candidate := "lib." + strings.Join(parts[:i], ".") + ".d.ts"
+		if candidate != name && declaring.Contains(candidate) {
+			return candidate
+		}
+	}
+	return ""
 }
 
 // ReportPartition prints what the routing pass decided to leave out, so
