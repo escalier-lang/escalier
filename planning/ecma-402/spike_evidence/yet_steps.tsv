@@ -1,0 +1,526 @@
+collator.html	INTRINSICS.Intl.Collator	If _collation_ cannot be matched by the <code>type</code> Unicode locale nonterminal, throw a *RangeError* exception.
+collator.html	INTRINSICS.Intl.Collator	Let _localeData_ be %Intl.Collator%.[[SearchLocaleData]].
+collator.html	INTRINSICS.Intl.Collator	Let _localeData_ be %Intl.Collator%.[[SortLocaleData]].
+collator.html	INTRINSICS.Intl.Collator	Let _r_ be ResolveLocale(%Intl.Collator%.[[AvailableLocales]], _requestedLocales_, _opt_, _relevantExtensionKeys_, _localeData_).
+collator.html	INTRINSICS.Intl.Collator	Let _relevantExtensionKeys_ be %Intl.Collator%.[[RelevantExtensionKeys]].
+collator.html	INTRINSICS.Intl.Collator	if %Intl.Collator%.[[RelevantExtensionKeys]] contains *"kf"*, then
+  1. Append [[CaseFirst]] to _internalSlotsList_.
+collator.html	INTRINSICS.Intl.Collator	if %Intl.Collator%.[[RelevantExtensionKeys]] contains *"kn"*, then
+  1. Append [[Numeric]] to _internalSlotsList_.
+collator.html	INTRINSICS.Intl.Collator	let _newTarget_ be the active function object, else let _newTarget_ be NewTarget.
+collator.html	INTRINSICS.Intl.Collator.prototype.resolvedOptions	For each row of <emu-xref href="#table-collator-resolvedoptions-properties"></emu-xref>, except the header row, in table order, do
+  1. Let _p_ be the Property value of the current row.
+  1. Let _v_ b
+collator.html	INTRINSICS.Intl.Collator.prototype.resolvedOptions	Let _extensionKey_ be the Extension Key value of the current row.
+collator.html	INTRINSICS.Intl.Collator.prototype.resolvedOptions	Let _p_ be the Property value of the current row.
+collator.html	INTRINSICS.Intl.Collator.prototype.resolvedOptions	Let _v_ be the value of _collator_'s internal slot whose name is the Internal Slot value of the current row.
+collator.html	INTRINSICS.Intl.Collator.prototype.resolvedOptions	if %Intl.Collator%.[[RelevantExtensionKeys]] does not contain _extensionKey_, then
+  1. Set _v_ to *undefined*.
+collator.html	INTRINSICS.Intl.Collator.prototype.resolvedOptions	if the current row has an Extension Key value, then
+  1. Let _extensionKey_ be the Extension Key value of the current row.
+  1. If %Intl.Collator%.[[RelevantExtensionKeys]] does not contain _extension
+collator.html	INTRINSICS.Intl.Collator.supportedLocalesOf	Let _availableLocales_ be %Intl.Collator%.[[AvailableLocales]].
+collator.html	INTRINSICS.get:Intl.Collator.prototype.compare	Let _F_ be a new built-in function object as defined in <emu-xref href="#sec-collator-compare-functions"></emu-xref>.
+collator.html	INTRINSICS.yet:CollatorCompareFunctions	If _x_ is not provided, let _x_ be *undefined*.
+collator.html	INTRINSICS.yet:CollatorCompareFunctions	If _y_ is not provided, let _y_ be *undefined*.
+datetimeformat.html	BasicFormatMatcher	For each row of <emu-xref href="#table-datetimeformat-components"></emu-xref>, except the header row, in table order, do
+  1. Let _property_ be the name given in the Property column of the current row
+datetimeformat.html	BasicFormatMatcher	If _format_ has a field [[<_property_>]], let _formatProp_ be _format_.[[<_property_>]]; else let _formatProp_ be *undefined*.
+datetimeformat.html	BasicFormatMatcher	If _options_ has a field [[<_property_>]], let _optionsProp_ be _options_.[[<_property_>]]; else let _optionsProp_ be *undefined*.
+datetimeformat.html	BasicFormatMatcher	Let _formatPropIndex_ be the index of _formatProp_ within _values_.
+datetimeformat.html	BasicFormatMatcher	Let _optionsPropIndex_ be the index of _optionsProp_ within _values_.
+datetimeformat.html	BasicFormatMatcher	Let _property_ be the name given in the Property column of the current row.
+datetimeformat.html	BasicFormatMatcher	set _score_ to _score - _shortMorePenalty_.
+datetimeformat.html	ChainDateTimeFormat	Perform ? DefinePropertyOrThrow(_this_, %Intl%.[[FallbackSymbol]], PropertyDescriptor{ [[Value]]: _dateTimeFormat_, [[Writable]]: *false*, [[Enumerable]]: *false*, [[Configurable]]: *false* }).
+datetimeformat.html	CreateDateTimeFormat	For each property name _prop_ of « *"dayPeriod"*, *"hour"*, *"minute"*, *"second"*, *"fractionalSecondDigits"* », do
+  1. Let _value_ be _formatOptions_.[[<_prop_>]].
+  1. If _value_ is not *undefined
+datetimeformat.html	CreateDateTimeFormat	For each property name _prop_ of « *"hour"*, *"minute"*, *"second"* », do
+  1. Set _formatOptions_.[[<_prop_>]] to *"numeric"*.
+datetimeformat.html	CreateDateTimeFormat	For each property name _prop_ of « *"weekday"*, *"year"*, *"month"*, *"day"* », do
+  1. Let _value_ be _formatOptions_.[[<_prop_>]].
+  1. If _value_ is not *undefined*, set _needDefaults_ to *false*.
+datetimeformat.html	CreateDateTimeFormat	For each property name _prop_ of « *"year"*, *"month"*, *"day"* », do
+  1. Set _formatOptions_.[[<_prop_>]] to *"numeric"*.
+datetimeformat.html	CreateDateTimeFormat	For each row of <emu-xref href="#table-datetimeformat-components"></emu-xref>, except the header row, in table order, do
+  1. Let _prop_ be the name given in the Property column of the current row.
+  
+datetimeformat.html	CreateDateTimeFormat	If _calendar_ cannot be matched by the <code>type</code> Unicode locale nonterminal, throw a *RangeError* exception.
+datetimeformat.html	CreateDateTimeFormat	If _numberingSystem_ cannot be matched by the <code>type</code> Unicode locale nonterminal, throw a *RangeError* exception.
+datetimeformat.html	CreateDateTimeFormat	If _parseResult_ contains more than one |MinuteSecond| Parse Node, throw a *RangeError* exception.
+datetimeformat.html	CreateDateTimeFormat	Let _formats_ be _resolvedLocaleData_.[[formats]].[[<_resolvedCalendar_>]].
+datetimeformat.html	CreateDateTimeFormat	Let _prop_ be the name given in the Property column of the current row.
+datetimeformat.html	CreateDateTimeFormat	Let _r_ be ResolveLocale(%Intl.DateTimeFormat%.[[AvailableLocales]], _requestedLocales_, _opt_, %Intl.DateTimeFormat%.[[RelevantExtensionKeys]], %Intl.DateTimeFormat%.[[LocaleData]]).
+datetimeformat.html	CreateDateTimeFormat	Let _styles_ be _resolvedLocaleData_.[[styles]].[[<_resolvedCalendar_>]].
+datetimeformat.html	CreateDateTimeFormat	Let _value_ be _formatOptions_.[[<_prop_>]].
+datetimeformat.html	CreateDateTimeFormat	Let _value_ be _formatOptions_.[[<_prop_>]].
+datetimeformat.html	CreateDateTimeFormat	Let _values_ be a List whose elements are the strings given in the Values column of the current row.
+datetimeformat.html	CreateDateTimeFormat	Set _formatOptions_.[[<_prop_>]] to *"numeric"*.
+datetimeformat.html	CreateDateTimeFormat	Set _formatOptions_.[[<_prop_>]] to *"numeric"*.
+datetimeformat.html	CreateDateTimeFormat	Set _formatOptions_.[[<_prop_>]] to _value_.
+datetimeformat.html	CreateDateTimeFormat	if _bestFormat_ has a field [[hour]], then
+  1. Set _dateTimeFormat_.[[HourCycle]] to _hc_.
+datetimeformat.html	DateTimeStyleFormat	Add to _format_ all fields from _dateFormat_ except [[pattern]] and [[rangePatterns]].
+datetimeformat.html	DateTimeStyleFormat	Add to _format_ all fields from _timeFormat_ except [[pattern]], [[rangePatterns]], [[pattern12]], and [[rangePatterns12]], if present.
+datetimeformat.html	DateTimeStyleFormat	Let _connector_ be _styles_.[[Connector]].[[<_dateStyle_>]].
+datetimeformat.html	DateTimeStyleFormat	Let _dateFormat_ be _styles_.[[Date]].[[<_dateStyle_>]].
+datetimeformat.html	DateTimeStyleFormat	Let _dateTimeRangeFormat_ be _styles_.[[DateTimeRangeFormat]].[[<_dateStyle_>]].[[<_timeStyle_>]].
+datetimeformat.html	DateTimeStyleFormat	Let _pattern12_ be the string _connector_ with the substring *"{0}"* replaced with _timeFormat_.[[pattern12]] and the substring *"{1}"* replaced with _dateFormat_.[[pattern]].
+datetimeformat.html	DateTimeStyleFormat	Let _pattern_ be the string _connector_ with the substring *"{0}"* replaced with _timeFormat_.[[pattern]] and the substring *"{1}"* replaced with _dateFormat_.[[pattern]].
+datetimeformat.html	DateTimeStyleFormat	Let _timeFormat_ be _styles_.[[Time]].[[<_timeStyle_>]].
+datetimeformat.html	FormatDateTimePattern	Let _f_ be _format_.[[<_p_>]].
+datetimeformat.html	FormatDateTimePattern	Let _fv_ be a String value representing _v_ in the form given by _f_; the String value depends upon the implementation and the effective locale and calendar of _dateTimeFormat_. If _p_ is *"month"*, t
+datetimeformat.html	FormatDateTimePattern	Let _fv_ be a String value representing _v_ in the form given by _f_; the String value depends upon the implementation and the effective locale of _dateTimeFormat_. The String value may also depend on
+datetimeformat.html	FormatDateTimePattern	Let _fv_ be a String value representing the day period of _tm_ in the form given by _f_; the String value depends upon the implementation and the effective locale of _dateTimeFormat_.
+datetimeformat.html	FormatDateTimePattern	Let _fv_ be an ILD String value representing *"ante meridiem"*.
+datetimeformat.html	FormatDateTimePattern	Let _fv_ be an ILD String value representing *"post meridiem"*.
+datetimeformat.html	FormatDateTimePattern	Let _fv_ be an ILD String value representing _v_.
+datetimeformat.html	FormatDateTimePattern	Let _unknown_ be an implementation-, locale-, and numbering system-dependent String based on _epochNanoseconds_ and _p_.
+datetimeformat.html	FormatDateTimePattern	Let _v_ be the value of _tm_'s field whose name is the Internal Slot column of the matching row.
+datetimeformat.html	FormatDateTimePattern	assert: _format_ has a field [[<_p_>]].
+datetimeformat.html	FormatDateTimePattern	assert: _format_ has a field [[dayPeriod]].
+datetimeformat.html	FormatDateTimePattern	assert: _format_ has a field [[fractionalSecondDigits]].
+datetimeformat.html	FormatDateTimePattern	assert: _format_ has a field [[timeZoneName]].
+datetimeformat.html	FormatDateTimePattern	if _format_ has a field [[fractionalSecondDigits]], then
+  1. Let _fractionalSecondDigits_ be _format_.[[fractionalSecondDigits]].
+  1. Let _nf3Options_ be OrdinaryObjectCreate(*null*).
+  1. Perform !
+datetimeformat.html	FormatDateTimePattern	if _p_ matches a Property column of the row in <emu-xref href="#table-datetimeformat-components"></emu-xref>, then
+  1. Assert: _format_ has a field [[<_p_>]].
+  1. Let _f_ be _format_.[[<_p_>]].
+  1.
+datetimeformat.html	FormatDateTimePattern	if _v_ is greater than 11, then
+  1. Let _fv_ be an ILD String value representing *"post meridiem"*.
+1. Else,
+  1. Let _fv_ be an ILD String value representing *"ante meridiem"*.
+datetimeformat.html	FormatDateTimeRangeToParts	Increment _n_ by 1.
+datetimeformat.html	FormatDateTimeToParts	Increment _n_ by 1.
+datetimeformat.html	INTRINSICS.Intl.DateTimeFormat	if the implementation supports the normative optional constructor mode of <emu-xref href="#legacy-constructor"></emu-xref>, then
+  1. Let _this_ be the *this* value.
+  1. Return ? ChainDateTimeFormat(
+datetimeformat.html	INTRINSICS.Intl.DateTimeFormat	let _newTarget_ be the active function object, else let _newTarget_ be NewTarget.
+datetimeformat.html	INTRINSICS.Intl.DateTimeFormat.prototype.resolvedOptions	For each row of <emu-xref href="#table-datetimeformat-resolvedoptions-properties"></emu-xref>, except the header row, in table order, do
+  1. Let _p_ be the Property value of the current row.
+  1. If 
+datetimeformat.html	INTRINSICS.Intl.DateTimeFormat.prototype.resolvedOptions	Let _conversion_ be the Conversion value of the current row.
+datetimeformat.html	INTRINSICS.Intl.DateTimeFormat.prototype.resolvedOptions	Let _p_ be the Property value of the current row.
+datetimeformat.html	INTRINSICS.Intl.DateTimeFormat.prototype.resolvedOptions	Let _v_ be _format_.[[<_p_>]].
+datetimeformat.html	INTRINSICS.Intl.DateTimeFormat.prototype.resolvedOptions	Let _v_ be the value of _dtf_'s internal slot whose name is the Internal Slot value of the current row.
+datetimeformat.html	INTRINSICS.Intl.DateTimeFormat.prototype.resolvedOptions	if _format_ has a field [[<_p_>]] and _dtf_.[[DateStyle]] is *undefined* and _dtf_.[[TimeStyle]] is *undefined*, then
+  1. Let _v_ be _format_.[[<_p_>]].
+1. Else,
+  1. Let _v_ be *undefined*.
+datetimeformat.html	INTRINSICS.Intl.DateTimeFormat.prototype.resolvedOptions	if the implementation supports the normative optional constructor mode of <emu-xref href="#legacy-constructor"></emu-xref>, then
+  1. Set _dtf_ to ? UnwrapDateTimeFormat(_dtf_).
+datetimeformat.html	INTRINSICS.Intl.DateTimeFormat.prototype.resolvedOptions	if there is a Conversion value in the current row, then
+  1. Let _conversion_ be the Conversion value of the current row.
+  1. If _conversion_ is ~hour12~, then
+    1. If _v_ is either *"h11"* or *"h1
+datetimeformat.html	INTRINSICS.Intl.DateTimeFormat.prototype.resolvedOptions	if there is an Internal Slot value in the current row, then
+  1. Let _v_ be the value of _dtf_'s internal slot whose name is the Internal Slot value of the current row.
+1. Else,
+  1. Let _format_ be _
+datetimeformat.html	INTRINSICS.Intl.DateTimeFormat.supportedLocalesOf	Let _availableLocales_ be %Intl.DateTimeFormat%.[[AvailableLocales]].
+datetimeformat.html	INTRINSICS.get:Intl.DateTimeFormat.prototype.format	Let _F_ be a new built-in function object as defined in DateTime Format Functions (<emu-xref href="#sec-datetime-format-functions"></emu-xref>).
+datetimeformat.html	INTRINSICS.get:Intl.DateTimeFormat.prototype.format	if the implementation supports the normative optional constructor mode of <emu-xref href="#legacy-constructor"></emu-xref>, then
+  1. Set _dtf_ to ? UnwrapDateTimeFormat(_dtf_).
+datetimeformat.html	INTRINSICS.yet:DateTimeFormatFunctions	if _date_ is not provided or is *undefined*, then
+  1. Let _x_ be ! Call(%Date.now%, *undefined*).
+1. Else,
+  1. Let _x_ be ? ToNumber(_date_).
+datetimeformat.html	PartitionDateTimeRangePattern	For each row of <emu-xref href="#table-datetimeformat-range-pattern-record"></emu-xref>, except the header row, in table order, do
+  1. Let _fieldName_ be the name given in the Field Name column of th
+datetimeformat.html	PartitionDateTimeRangePattern	If _rangePatterns_ has a field whose name is _fieldName_, let _rangePattern_ be _rangePatterns_' field whose name is _fieldName_; else let _rangePattern_ be *undefined*.
+datetimeformat.html	PartitionDateTimeRangePattern	If _tm1_.[[Hour]] is less than 12, let _v1_ be *"am"*; else let _v1_ be *"pm"*.
+datetimeformat.html	PartitionDateTimeRangePattern	If _tm2_.[[Hour]] is less than 12, let _v2_ be *"am"*; else let _v2_ be *"pm"*.
+datetimeformat.html	PartitionDateTimeRangePattern	Let _fieldName_ be the name given in the Field Name column of the row.
+datetimeformat.html	PartitionDateTimeRangePattern	Let _v1_ be _tm1_'s field whose name is _fieldName_.
+datetimeformat.html	PartitionDateTimeRangePattern	Let _v1_ be a String value representing the day period of _tm1_; the String value depends upon the implementation and the effective locale of _dateTimeFormat_.
+datetimeformat.html	PartitionDateTimeRangePattern	Let _v2_ be _tm2_'s field whose name is _fieldName_.
+datetimeformat.html	PartitionDateTimeRangePattern	Let _v2_ be a String value representing the day period of _tm2_; the String value depends upon the implementation and the effective locale of _dateTimeFormat_.
+datetimeformat.html	PartitionDateTimeRangePattern	if _fieldName_ is not equal to [[Default]] and _relevantFieldsEqual_ is *true* and _checkMoreFields_ is *true*, then
+  1. Set _selectedRangePattern_ to _rangePattern_.
+  1. If _fieldName_ is [[AmPm]],
+datetimeformat.html	PartitionDateTimeRangePattern	if _v1_ is not equal to _v2_, then
+  1. Set _relevantFieldsEqual_ to *false*.
+datetimeformat.html	ToLocalTime	Return a ToLocalTime Record with fields calculated from _tz_ according to <emu-xref href="#table-datetimeformat-tolocaltime-record"></emu-xref>.
+datetimeformat.html	ToLocalTime	Return a ToLocalTime Record with the fields calculated from _tz_ for the given _calendar_. The calculations should use best available information about the specified _calendar_.
+datetimeformat.html	UnwrapDateTimeFormat	Return ? Get(_dtf_, %Intl%.[[FallbackSymbol]]).
+displaynames.html	CanonicalCodeForDisplayNames	If _code_ cannot be matched by the <code>type</code> Unicode locale nonterminal, throw a *RangeError* exception.
+displaynames.html	CanonicalCodeForDisplayNames	If _code_ cannot be matched by the <code>unicode_language_id</code> Unicode locale nonterminal, throw a *RangeError* exception.
+displaynames.html	CanonicalCodeForDisplayNames	If _code_ cannot be matched by the <code>unicode_region_subtag</code> Unicode locale nonterminal, throw a *RangeError* exception.
+displaynames.html	CanonicalCodeForDisplayNames	If _code_ cannot be matched by the <code>unicode_script_subtag</code> Unicode locale nonterminal, throw a *RangeError* exception.
+displaynames.html	CanonicalCodeForDisplayNames	If _code_ uses any of the backwards compatibility syntax described in <a href="https://unicode.org/reports/tr35/#BCP_47_Conformance">Unicode Technical Standard #35 Part 1 Core, Section 3.3 BCP 47 Conf
+displaynames.html	CanonicalCodeForDisplayNames	If the result of IsValidDateTimeFieldCode(_code_) is *false*, throw a *RangeError* exception.
+displaynames.html	CanonicalCodeForDisplayNames	Let _first_ be the ASCII-uppercase of the substring of _code_ from 0 to 1.
+displaynames.html	CanonicalCodeForDisplayNames	Let _rest_ be the ASCII-lowercase of the substring of _code_ from 1.
+displaynames.html	CanonicalCodeForDisplayNames	Return the ASCII-lowercase of _code_.
+displaynames.html	CanonicalCodeForDisplayNames	Return the ASCII-uppercase of _code_.
+displaynames.html	CanonicalCodeForDisplayNames	Return the ASCII-uppercase of _code_.
+displaynames.html	CanonicalCodeForDisplayNames	assert: The length of _code_ is 4, and every code unit of _code_ represents an ASCII letter (0x0041 through 0x005A and 0x0061 through 0x007A, both inclusive).
+displaynames.html	INTRINSICS.Intl.DisplayNames	Let _r_ be ResolveLocale(%Intl.DisplayNames%.[[AvailableLocales]], _requestedLocales_, _opt_, %Intl.DisplayNames%.[[RelevantExtensionKeys]], %Intl.DisplayNames%.[[LocaleData]]).
+displaynames.html	INTRINSICS.Intl.DisplayNames	Let _styleFields_ be _typeFields_.[[<_style_>]].
+displaynames.html	INTRINSICS.Intl.DisplayNames	Let _typeFields_ be _types_.[[<_type_>]].
+displaynames.html	INTRINSICS.Intl.DisplayNames	Set _typeFields_ to _typeFields_.[[<_languageDisplay_>]].
+displaynames.html	INTRINSICS.Intl.DisplayNames	assert: _styleFields_ is a Record (see <emu-xref href="#sec-Intl.DisplayNames-internal-slots"></emu-xref>).
+displaynames.html	INTRINSICS.Intl.DisplayNames	assert: _typeFields_ is a Record (see <emu-xref href="#sec-Intl.DisplayNames-internal-slots"></emu-xref>).
+displaynames.html	INTRINSICS.Intl.DisplayNames	assert: _typeFields_ is a Record (see <emu-xref href="#sec-Intl.DisplayNames-internal-slots"></emu-xref>).
+displaynames.html	INTRINSICS.Intl.DisplayNames	assert: _types_ is a Record (see <emu-xref href="#sec-Intl.DisplayNames-internal-slots"></emu-xref>).
+displaynames.html	INTRINSICS.Intl.DisplayNames.prototype.of	If _fields_ has a field [[<_code_>]], return _fields_.[[<_code_>]].
+displaynames.html	INTRINSICS.Intl.DisplayNames.prototype.resolvedOptions	For each row of <emu-xref href="#table-displaynames-resolvedoptions-properties"></emu-xref>, except the header row, in table order, do
+  1. Let _p_ be the Property value of the current row.
+  1. Let _
+displaynames.html	INTRINSICS.Intl.DisplayNames.prototype.resolvedOptions	Let _p_ be the Property value of the current row.
+displaynames.html	INTRINSICS.Intl.DisplayNames.prototype.resolvedOptions	Let _v_ be the value of _displayNames_'s internal slot whose name is the Internal Slot value of the current row.
+displaynames.html	INTRINSICS.Intl.DisplayNames.supportedLocalesOf	Let _availableLocales_ be %Intl.DisplayNames%.[[AvailableLocales]].
+displaynames.html	IsValidDateTimeFieldCode	If _field_ is listed in the Code column of <emu-xref href="#table-validcodefordatetimefield"></emu-xref>, return *true*.
+durationformat.html	ComputeFractionalDigits	For each row of <emu-xref href="#table-partition-duration-format-pattern"></emu-xref>, except the header row, in table order, do
+  1. Let _unitOptions_ be the value of _durationFormat_'s internal slot
+durationformat.html	ComputeFractionalDigits	Let _unitOptions_ be the value of _durationFormat_'s internal slot whose name is the Internal Slot value of the current row.
+durationformat.html	ComputeFractionalDigits	Let _unit_ be the Unit value of the current row.
+durationformat.html	ComputeFractionalDigits	Let _value_ be the value of _duration_'s field whose name is the Value Field value of the current row.
+durationformat.html	DurationSign	For each value _v_ of « _duration_.[[Years]], _duration_.[[Months]], _duration_.[[Weeks]], _duration_.[[Days]], _duration_.[[Hours]], _duration_.[[Minutes]], _duration_.[[Seconds]], _duration_.[[Milli
+durationformat.html	FormatNumericUnits	Set _secondsValue_ to _secondsValue_ + ComputeFractionalDigits(_durationFormat_, _duration_).
+durationformat.html	FormatNumericUnits	if _duration_.[[Milliseconds]] is not 0 or _duration_.[[Microseconds]] is not 0 or _duration_.[[Nanoseconds]] is not 0, then
+  1. Set _secondsValue_ to _secondsValue_ + ComputeFractionalDigits(_durati
+durationformat.html	INTRINSICS.Intl.DurationFormat	For each row of <emu-xref href="#table-durationformat"></emu-xref>, except the header row, in table order, do
+  1. Let _slot_ be the Internal Slot value of the current row.
+  1. Let _unit_ be the Unit
+durationformat.html	INTRINSICS.Intl.DurationFormat	If _numberingSystem_ cannot be matched by the <code>type</code> Unicode locale nonterminal, throw a *RangeError* exception.
+durationformat.html	INTRINSICS.Intl.DurationFormat	Let _digitalBase_ be the Digital Default value of the current row.
+durationformat.html	INTRINSICS.Intl.DurationFormat	Let _r_ be ResolveLocale(%Intl.DurationFormat%.[[AvailableLocales]], _requestedLocales_, _opt_, %Intl.DurationFormat%.[[RelevantExtensionKeys]], %Intl.DurationFormat%.[[LocaleData]]).
+durationformat.html	INTRINSICS.Intl.DurationFormat	Let _slot_ be the Internal Slot value of the current row.
+durationformat.html	INTRINSICS.Intl.DurationFormat	Let _styles_ be the Styles value of the current row.
+durationformat.html	INTRINSICS.Intl.DurationFormat	Let _unit_ be the Unit value of the current row.
+durationformat.html	INTRINSICS.Intl.DurationFormat	Set the value of _durationFormat_'s internal slot whose name is _slot_ to _unitOptions_.
+durationformat.html	INTRINSICS.Intl.DurationFormat.prototype.format	For each Record { [[Type]], [[Value]], [[Unit]] } _part_ in _parts_, do
+  1. Set _result_ to the string-concatenation of _result_ and _part_.[[Value]].
+durationformat.html	INTRINSICS.Intl.DurationFormat.prototype.formatToParts	For each Record { [[Type]], [[Value]], [[Unit]] } _part_ in _parts_, do
+  1. Let _obj_ be OrdinaryObjectCreate(%Object.prototype%).
+  1. Perform ! CreateDataPropertyOrThrow(_obj_, *"type"*, _part_.[[T
+durationformat.html	INTRINSICS.Intl.DurationFormat.prototype.resolvedOptions	For each row of <emu-xref href="#table-durationformat-resolvedoptions-properties"></emu-xref>, except the header row, in table order, do
+  1. Let _p_ be the Property value of the current row.
+  1. Let
+durationformat.html	INTRINSICS.Intl.DurationFormat.prototype.resolvedOptions	If there is a Conversion value in the current row, let _conversion_ be that value; else let _conversion_ be ~empty~.
+durationformat.html	INTRINSICS.Intl.DurationFormat.prototype.resolvedOptions	Let _p_ be the Property value of the current row.
+durationformat.html	INTRINSICS.Intl.DurationFormat.prototype.resolvedOptions	Let _v_ be the value of _df_'s internal slot whose name is the Internal Slot value of the current row.
+durationformat.html	INTRINSICS.Intl.DurationFormat.supportedLocalesOf	Let _availableLocales_ be %Intl.DurationFormat%.[[AvailableLocales]].
+durationformat.html	IsValidDuration	For each value _v_ of « _years_, _months_, _weeks_, _days_, _hours_, _minutes_, _seconds_, _milliseconds_, _microseconds_, _nanoseconds_ », do
+  1. If 𝔽(_v_) is not finite, return *false*.
+  1. If _v
+durationformat.html	IsValidDuration	Let _normalizedSeconds_ be _days_ × 86,400 + _hours_ × 3600 + _minutes_ × 60 + _seconds_ + ℝ(𝔽(_milliseconds_)) × 10<sup>-3</sup> + ℝ(𝔽(_microseconds_)) × 10<sup>-6</sup> + ℝ(𝔽(_nanoseconds_)) × 10
+durationformat.html	ListFormatParts	For each Record { [[Type]], [[Value]] } _listPart_ in _formattedPartsList_, do
+  1. If _listPart_.[[Type]] is *"element"*, then
+    1. Assert: _partitionedPartsIndex_ < _partitionedLength_.
+    1. Let
+durationformat.html	ListFormatParts	For each Record { [[Type]], [[Value]], [[Unit]] } _part_ in _parts_, do
+  1. Append _part_ to _flattenedPartsList_.
+durationformat.html	ListFormatParts	For each Record { [[Type]], [[Value]], [[Unit]] } _part_ in _parts_, do
+  1. Set _string_ to the string-concatenation of _string_ and _part_.[[Value]].
+durationformat.html	PartitionDurationFormatPattern	Let _numberFormatUnit_ be the NumberFormat Unit value of the current row.
+durationformat.html	PartitionDurationFormatPattern	Let _unitOptions_ be the value of _durationFormat_'s internal slot whose name is the Internal Slot value of the current row.
+durationformat.html	PartitionDurationFormatPattern	Let _unit_ be the Unit value of the current row.
+durationformat.html	PartitionDurationFormatPattern	Let _value_ be the value of _duration_'s field whose name is the Value Field value of the current row.
+durationformat.html	PartitionDurationFormatPattern	Set _value_ to _value_ + ComputeFractionalDigits(_durationFormat_, _duration_).
+durationformat.html	PartitionDurationFormatPattern	While _numericUnitFound_ is *false*, repeat for each row in <emu-xref href="#table-partition-duration-format-pattern"></emu-xref> in table order, except the header row:
+  1. Let _value_ be the value o
+durationformat.html	ToDurationRecord	If _years_, _months_, _weeks_, _days_, _hours_, _minutes_, _seconds_, _milliseconds_, _microseconds_, and _nanoseconds_ are all *undefined*, throw a *TypeError* exception.
+durationformat.html	ToDurationRecord	Let _result_ be a new Duration Record with each field set to 0.
+listformat.html	CreatePartsFromList	Decrement _i_ by 1.
+listformat.html	CreatePartsFromList	Let _n_ be an implementation-defined index into _listFormat_.[[Templates]] based on _listFormat_.[[Locale]], _head_, and _parts_.
+listformat.html	CreatePartsFromList	Let _n_ be an index into _listFormat_.[[Templates]] based on _listFormat_.[[Locale]], _list_[0], and _list_[1].
+listformat.html	CreatePartsFromList	Let _placeables_ be the Record { [[0]]: _first_, [[1]]: _second_ }.
+listformat.html	CreatePartsFromList	Let _placeables_ be the Record { [[0]]: _head_, [[1]]: _parts_ }.
+listformat.html	CreatePartsFromList	Let _size_ be the number of elements of _list_.
+listformat.html	CreatePartsFromList	if _i_ is less than _size_ - 2, then
+  1. Let _pattern_ be _listFormat_.[[Templates]][_n_].[[Middle]].
+1. Else,
+  1. Let _pattern_ be _listFormat_.[[Templates]][_n_].[[End]].
+listformat.html	DeconstructPattern	Let _subst_ be _placeables_.[[<_part_>]].
+listformat.html	DeconstructPattern	assert: _placeables_ has a field [[<_part_>]].
+listformat.html	FormatListToParts	Increment _n_ by 1.
+listformat.html	INTRINSICS.Intl.ListFormat	Let _dataLocaleTypes_ be _resolvedLocaleData_.[[<_type_>]].
+listformat.html	INTRINSICS.Intl.ListFormat	Let _r_ be ResolveLocale(%Intl.ListFormat%.[[AvailableLocales]], _requestedLocales_, _opt_, %Intl.ListFormat%.[[RelevantExtensionKeys]], %Intl.ListFormat%.[[LocaleData]]).
+listformat.html	INTRINSICS.Intl.ListFormat	Set _listFormat_.[[Templates]] to _dataLocaleTypes_.[[<_style_>]].
+listformat.html	INTRINSICS.Intl.ListFormat.prototype.resolvedOptions	For each row of <emu-xref href="#table-listformat-resolvedoptions-properties"></emu-xref>, except the header row, in table order, do
+  1. Let _p_ be the Property value of the current row.
+  1. Let _v_
+listformat.html	INTRINSICS.Intl.ListFormat.prototype.resolvedOptions	Let _p_ be the Property value of the current row.
+listformat.html	INTRINSICS.Intl.ListFormat.prototype.resolvedOptions	Let _v_ be the value of _lf_'s internal slot whose name is the Internal Slot value of the current row.
+listformat.html	INTRINSICS.Intl.ListFormat.supportedLocalesOf	Let _availableLocales_ be %Intl.ListFormat%.[[AvailableLocales]].
+locale-sensitive-functions.html	INTRINSICS.Array.prototype.toLocaleString	Let _separator_ be the implementation-defined list-separator String value appropriate for the host environment's current locale (such as *", "*).
+locale-sensitive-functions.html	TransformCase	Let _availableLocales_ be an Available Locales List which includes the language tags for which the Unicode Character Database contains language-sensitive case mappings. If the implementation supports 
+locale-sensitive-functions.html	TransformCase	Let _newCodePoints_ be a List whose elements are the result of a lowercase transformation of _codePoints_ according to an implementation-derived algorithm using _locale_ or the Unicode Default Case Co
+locale-sensitive-functions.html	TransformCase	Let _newCodePoints_ be a List whose elements are the result of an uppercase transformation of _codePoints_ according to an implementation-derived algorithm using _locale_ or the Unicode Default Case C
+locale.html	GetLocaleBaseName	Return the longest prefix of _locale_ matched by the <code>unicode_language_id</code> Unicode locale nonterminal.
+locale.html	GetLocaleBaseName	assert: _locale_ can be matched by the <code>unicode_locale_id</code> Unicode locale nonterminal.
+locale.html	GetLocaleLanguage	Return the first subtag of _baseName_.
+locale.html	GetLocaleLanguage	assert: The first subtag of _baseName_ can be matched by the <code>unicode_language_subtag</code> Unicode locale nonterminal.
+locale.html	GetLocaleRegion	If _baseNameTail_ contains a subtag matched by the <code>unicode_region_subtag</code> Unicode locale nonterminal, return that subtag.
+locale.html	GetLocaleRegion	Let _baseNameTail_ be the suffix of _baseName_ following the first subtag.
+locale.html	GetLocaleRegion	assert: The first subtag of _baseName_ can be matched by the <code>unicode_language_subtag</code> Unicode locale nonterminal.
+locale.html	GetLocaleRegion	assert: _baseNameTail_ contains at most one subtag that can be matched by the <code>unicode_region_subtag</code> Unicode locale nonterminal.
+locale.html	GetLocaleScript	If _baseName_ contains a subtag matched by the <code>unicode_script_subtag</code> Unicode locale nonterminal, return that subtag.
+locale.html	GetLocaleScript	assert: _baseName_ contains at most one subtag that can be matched by the <code>unicode_script_subtag</code> Unicode locale nonterminal.
+locale.html	GetLocaleVariants	Let _variants_ be the longest suffix of _baseName_ that starts with a *"-"* followed by a <emu-not-ref>substring</emu-not-ref> that is matched by the <code>unicode_variant_subtag</code> Unicode locale
+locale.html	INTRINSICS.Intl.Locale	If _calendar_ cannot be matched by the <code>type</code> Unicode locale nonterminal, throw a *RangeError* exception.
+locale.html	INTRINSICS.Intl.Locale	If _collation_ cannot be matched by the <code>type</code> Unicode locale nonterminal, throw a *RangeError* exception.
+locale.html	INTRINSICS.Intl.Locale	If _numberingSystem_ cannot be matched by the <code>type</code> Unicode locale nonterminal, throw a *RangeError* exception.
+locale.html	INTRINSICS.Intl.Locale	Let _localeExtensionKeys_ be %Intl.Locale%.[[LocaleExtensionKeys]].
+locale.html	INTRINSICS.Intl.Locale.prototype.maximize	Let _maximal_ be the result of the <a href="https://unicode.org/reports/tr35/#Likely_Subtags">Add Likely Subtags</a> algorithm applied to _loc_.[[Locale]]. If an error is signaled, set _maximal_ to _l
+locale.html	INTRINSICS.Intl.Locale.prototype.minimize	Let _minimal_ be the result of the <a href="https://unicode.org/reports/tr35/#Likely_Subtags">Remove Likely Subtags</a> algorithm applied to _loc_.[[Locale]]. If an error is signaled, set _minimal_ to
+locale.html	MakeLocaleRecord	Let _entry_ be the element of _keywords_ whose [[Key]] is _key_.
+locale.html	MakeLocaleRecord	Let _extension_ be the String value consisting of the <emu-not-ref>substring</emu-not-ref> of the Unicode locale extension sequence within _tag_.
+locale.html	MakeLocaleRecord	Let _locale_ be the String value that is _tag_ with any Unicode locale extension sequences removed.
+locale.html	MakeLocaleRecord	Let _overrideValue_ be _options_.[[<_key_>]].
+locale.html	MakeLocaleRecord	Set _result_.[[<_key_>]] to _value_.
+locale.html	MakeLocaleRecord	assert: _options_ has a field [[<_key_>]].
+locale.html	MakeLocaleRecord	if _tag_ contains a <emu-not-ref>substring</emu-not-ref> that is a Unicode locale extension sequence, then
+  1. Let _extension_ be the String value consisting of the <emu-not-ref>substring</emu-not-re
+locale.html	UpdateLanguageId	If _language_ cannot be matched by the <code>unicode_language_subtag</code> Unicode locale nonterminal, throw a *RangeError* exception.
+locale.html	UpdateLanguageId	If _region_ cannot be matched by the <code>unicode_region_subtag</code> Unicode locale nonterminal, throw a *RangeError* exception.
+locale.html	UpdateLanguageId	If _script_ cannot be matched by the <code>unicode_script_subtag</code> Unicode locale nonterminal, throw a *RangeError* exception.
+locale.html	UpdateLanguageId	Let _allExtensions_ be the suffix of _tag_ following _baseName_.
+locales-currencies-tz.html	AvailableNamedTimeZoneIdentifiers	Let _backzoneLinkLines_ be the List of lines in the file <code>backzone</code> of the IANA Time Zone Database that start with either *"Link "* or *"#PACKRATLIST zone.tab Link "*.
+locales-currencies-tz.html	AvailableNamedTimeZoneIdentifiers	Let _countryCodeLineCount_ be the number of lines in file <code>zone.tab</code> of the IANA Time Zone Database where the “country-code” column is _identifierCountryCode_.
+locales-currencies-tz.html	AvailableNamedTimeZoneIdentifiers	Let _countryCodeLine_ be the line in file <code>zone.tab</code> of the IANA Time Zone Database where the “country-code” column is _identifierCountryCode_.
+locales-currencies-tz.html	AvailableNamedTimeZoneIdentifiers	Let _identifierCountryCode_ be the <a href="https://www.iso.org/glossary-for-iso-3166.html">ISO 3166-1 Alpha-2</a> country code whose territory contains the geographical area corresponding to _identif
+locales-currencies-tz.html	AvailableNamedTimeZoneIdentifiers	Let _identifiers_ be a List containing the String value of each Zone or Link name in the IANA Time Zone Database.
+locales-currencies-tz.html	AvailableNamedTimeZoneIdentifiers	Let _renamedIdentifier_ be the renamed time zone identifier that _primary_ replaced.
+locales-currencies-tz.html	AvailableNamedTimeZoneIdentifiers	Let _zoneCountryCode_ be the ISO 3166-1 Alpha-2 country code whose territory contains the geographical area corresponding to _zone_.
+locales-currencies-tz.html	AvailableNamedTimeZoneIdentifiers	Let _zone_ be the Zone name that _identifier_ resolves to, according to the rules for resolving Link names in the IANA Time Zone Database.
+locales-currencies-tz.html	AvailableNamedTimeZoneIdentifiers	Set _primary_ to the contents of the “TZ” column of _countryCodeLine_.
+locales-currencies-tz.html	AvailableNamedTimeZoneIdentifiers	Sort _identifiers_ according to lexicographic code unit order.
+locales-currencies-tz.html	AvailableNamedTimeZoneIdentifiers	assert: No element of _identifiers_ is an ASCII-case-insensitive match for any other element.
+locales-currencies-tz.html	AvailableNamedTimeZoneIdentifiers	assert: _backzoneAndLink_ has at least two elements, and both _backzoneAndLink_[0] and _backzoneAndLink_[1] are available named time zone identifiers.
+locales-currencies-tz.html	AvailableNamedTimeZoneIdentifiers	if _identifier_ is a Link name in the IANA Time Zone Database and _identifier_ is not present in the “TZ” column of <code>zone.tab</code> of the IANA Time Zone Database, then
+  1. Let _zone_ be the Zo
+locales-currencies-tz.html	AvailableNamedTimeZoneIdentifiers	if _primary_ is a replacement time zone identifier and its rename waiting period has not concluded, then
+  1. Let _renamedIdentifier_ be the renamed time zone identifier that _primary_ replaced.
+  1. 
+locales-currencies-tz.html	AvailableNamedTimeZoneIdentifiers	if _zone_ starts with *"Etc/"*, then
+  1. Set _primary_ to _zone_.
+1. Else,
+  1. Let _identifierCountryCode_ be the <a href="https://www.iso.org/glossary-for-iso-3166.html">ISO 3166-1 Alpha-2</a> coun
+locales-currencies-tz.html	CanonicalizeUnicodeLocaleId	Let _extension_ be the String value consisting of the <emu-not-ref>substring</emu-not-ref> of the Unicode locale extension sequence within _localeId_.
+locales-currencies-tz.html	CanonicalizeUnicodeLocaleId	Let _localeId_ be the String value resulting from performing the algorithm to transform _locale_ to canonical form per <a href="https://unicode.org/reports/tr35/#LocaleId_Canonicalization">Unicode Tec
+locales-currencies-tz.html	CanonicalizeUnicodeLocaleId	Set _localeId_ to a copy of _localeId_ in which the first appearance of <emu-not-ref>substring</emu-not-ref> _extension_ has been replaced with _newExtension_.
+locales-currencies-tz.html	CanonicalizeUnicodeLocaleId	if _localeId_ contains a <emu-not-ref>substring</emu-not-ref> that is a Unicode locale extension sequence, then
+  1. Let _extension_ be the String value consisting of the <emu-not-ref>substring</emu-n
+locales-currencies-tz.html	GetAvailableNamedTimeZoneIdentifier	If _record_.[[Identifier]] is an ASCII-case-insensitive match for _timeZoneIdentifier_, return _record_.
+locales-currencies-tz.html	IsSanctionedSingleUnitIdentifier	Else, return *false*.
+locales-currencies-tz.html	IsSanctionedSingleUnitIdentifier	If _unitIdentifier_ is listed in <emu-xref href="#table-sanctioned-single-unit-identifiers"></emu-xref> below, return *true*.
+locales-currencies-tz.html	IsStructurallyValidLanguageTag	If _extensions_ contains any duplicate singleton subtags, return *false*.
+locales-currencies-tz.html	IsStructurallyValidLanguageTag	If _lowerLocale_ cannot be matched by the <code>unicode_locale_id</code> Unicode locale nonterminal, return *false*.
+locales-currencies-tz.html	IsStructurallyValidLanguageTag	If _lowerLocale_ uses any of the backwards compatibility syntax described in <a href="https://unicode.org/reports/tr35/#BCP_47_Conformance">Unicode Technical Standard #35 Part 1 Core, Section 3.3 BCP 
+locales-currencies-tz.html	IsStructurallyValidLanguageTag	If _tlangVariants_ contains any duplicate subtags, return *false*.
+locales-currencies-tz.html	IsStructurallyValidLanguageTag	If _variants_ contains any duplicate subtags, return *false*.
+locales-currencies-tz.html	IsStructurallyValidLanguageTag	Let _extensions_ be the suffix of _lowerLocale_ following _baseName_.
+locales-currencies-tz.html	IsStructurallyValidLanguageTag	Let _lowerLocale_ be the ASCII-lowercase of _locale_.
+locales-currencies-tz.html	IsStructurallyValidLanguageTag	Let _tlang_ be the longest prefix of _tPrefix_ matched by the <code>tlang</code> Unicode locale nonterminal. If there is no such prefix, return *true*.
+locales-currencies-tz.html	IsStructurallyValidLanguageTag	Let _transformExtension_ be the longest <emu-not-ref>substring</emu-not-ref> of _extensions_ matched by the <code>transformed_extensions</code> Unicode locale nonterminal. If there is no such <emu-not
+locales-currencies-tz.html	IsWellFormedCurrencyCode	If _normalized_ contains any code unit outside of 0x0041 through 0x005A (corresponding to Unicode characters LATIN CAPITAL LETTER A through LATIN CAPITAL LETTER Z), return *false*.
+locales-currencies-tz.html	IsWellFormedCurrencyCode	Let _normalized_ be the ASCII-uppercase of _currency_.
+locales-currencies-tz.html	IsWellFormedUnitIdentifier	assert: The five-character substring *"-per-"* occurs exactly once in _unitIdentifier_, at index _i_.
+negotiation.html	CanonicalizeLocaleList	if _locales_ is a String or _locales_ is an Object and _locales_ has an [[InitializedLocale]] internal slot, then
+  1. Let _O_ be CreateArrayFromList(« _locales_ »).
+1. Else,
+  1. Let _O_ be ? ToObjec
+negotiation.html	DefaultNumberOption	If _value_ is not finite or ℝ(_value_) < _minimum_ or ℝ(_value_) > _maximum_, throw a *RangeError* exception.
+negotiation.html	InsertUnicodeExtensionAndCanonicalize	assert: _locale_ does not contain a Unicode locale extension sequence.
+negotiation.html	LookupMatchingLocaleByPrefix	Set _extension_ to the Unicode locale extension sequence of _locale_.
+negotiation.html	LookupMatchingLocaleByPrefix	Set _locale_ to the String value that is _locale_ with any Unicode locale extension sequences removed.
+negotiation.html	LookupMatchingLocaleByPrefix	if _locale_ contains a Unicode locale extension sequence, then
+  1. Set _extension_ to the Unicode locale extension sequence of _locale_.
+  1. Set _locale_ to the String value that is _locale_ with an
+negotiation.html	LookupMatchingLocaleByPrefix	let _pos_ be the index into _prefix_ of the last occurrence of *"-"*; else let _pos_ be 0.
+negotiation.html	ResolveLocale	Let _entry_ be the element of _keywords_ whose [[Key]] is _key_.
+negotiation.html	ResolveLocale	Let _foundLocaleData_ be _localeData_.[[<_foundLocale_>]].
+negotiation.html	ResolveLocale	Let _keyLocaleData_ be _foundLocaleData_.[[<_key_>]].
+negotiation.html	ResolveLocale	Let _optionsValue_ be _options_.[[<_key_>]].
+negotiation.html	ResolveLocale	Let _ukey_ be the ASCII-lowercase of _key_.
+negotiation.html	ResolveLocale	Set _result_.[[<_key_>]] to _value_.
+negotiation.html	ResolveLocale	assert: _options_ has a field [[<_key_>]].
+negotiation.html	UnicodeExtensionComponents	If _subtag_ is not an element of _attributes_, append _subtag_ to _attributes_.
+negotiation.html	UnicodeExtensionComponents	assert: The ASCII-lowercase of _extension_ is _extension_.
+numberformat.html	ApplyUnsignedRoundingMode	Let _cardinality_ be <emu-eqn>(_r1_ / (_r2_ – _r1_)) modulo 2</emu-eqn>.
+numberformat.html	ApplyUnsignedRoundingMode	Let _d1_ be <emu-eqn>_x_ – _r1_</emu-eqn>.
+numberformat.html	ApplyUnsignedRoundingMode	Let _d2_ be <emu-eqn>_r2_ – _x_</emu-eqn>.
+numberformat.html	ApplyUnsignedRoundingMode	assert: _r1_ < _x_ < _r2_.
+numberformat.html	ChainNumberFormat	Perform ? DefinePropertyOrThrow(_this_, %Intl%.[[FallbackSymbol]], PropertyDescriptor{ [[Value]]: _numberFormat_, [[Writable]]: *false*, [[Enumerable]]: *false*, [[Configurable]]: *false* }).
+numberformat.html	ComputeExponent	Let _magnitude_ be the base 10 logarithm of _x_ rounded down to the nearest integer.
+numberformat.html	ComputeExponent	Let _newMagnitude_ be the base 10 logarithm of _formatNumberResult_.[[RoundedNumber]] rounded down to the nearest integer.
+numberformat.html	ComputeExponent	Let _x_ = -_x_.
+numberformat.html	ComputeExponentForMagnitude	Let _exponent_ be an ILD integer by which to scale a number of the given magnitude in compact notation for the current locale.
+numberformat.html	ComputeExponentForMagnitude	Let _thousands_ be the greatest integer that is not greater than _magnitude_ / 3.
+numberformat.html	CurrencyDigits	Return a non-negative integer indicating the number of fractional digits used when formatting quantities of the currency corresponding to _currency_. If there is no available information on the number
+numberformat.html	FormatApproximately	Let _approximatelySign_ be an ILND String value used to signify that a number is approximate.
+numberformat.html	FormatApproximately	insert the Record { [[Type]]: *"approximatelySign"*, [[Value]]: _approximatelySign_ } at an ILND index in _result_. For example, if _numberFormat_ has [[Locale]] *"en-US"* and [[NumberingSystem]] *"la
+numberformat.html	FormatNumericRangeToParts	Increment _n_ by 1.
+numberformat.html	FormatNumericToParts	Increment _n_ by 1.
+numberformat.html	FormatNumericToString	Let _forwardZeros_ be the String consisting of _minInteger_ - _int_ occurrences of the code unit 0x0030 (DIGIT ZERO).
+numberformat.html	FormatNumericToString	assert: _x_ is a mathematical value.
+numberformat.html	FormatNumericToString	if _intlObject_.[[TrailingZeroDisplay]] is *"stripIfInteger"* and <emu-eqn>_x_ modulo 1 = 0</emu-eqn>, then
+  1. Let _i_ be StringIndexOf(_string_, *"."*, 0).
+  1. If _i_ is not ~not-found~, set _stri
+numberformat.html	GetNotationSubPattern	Let _compactPatterns_ be _notationSubPatterns_.[[compact]].[[<_compactDisplay_>]].
+numberformat.html	GetNotationSubPattern	Return _compactPatterns_.[[<_exponent_>]].
+numberformat.html	GetNotationSubPattern	assert: _notationSubPatterns_ is a Record (see <emu-xref href="#sec-intl.numberformat-internal-slots"></emu-xref>).
+numberformat.html	GetNumberFormatPattern	Set _patterns_ to _patterns_.[[<_currencyDisplay_>]].
+numberformat.html	GetNumberFormatPattern	Set _patterns_ to _patterns_.[[<_currencySign_>]].
+numberformat.html	GetNumberFormatPattern	Set _patterns_ to _patterns_.[[<_currency_>]].
+numberformat.html	GetNumberFormatPattern	Set _patterns_ to _patterns_.[[<_unitDisplay_>]].
+numberformat.html	GetNumberFormatPattern	Set _patterns_ to _patterns_.[[<_unit_>]].
+numberformat.html	GetNumberFormatPattern	assert: _patterns_ is a Record (see <emu-xref href="#sec-intl.numberformat-internal-slots"></emu-xref>).
+numberformat.html	GetNumberFormatPattern	assert: _x_ is a mathematical value.
+numberformat.html	GetNumberFormatPattern	if _patterns_ doesn't have a field [[<_currency_>]], then
+  1. Set _currency_ to *"fallback"*.
+numberformat.html	GetNumberFormatPattern	if _patterns_ doesn't have a field [[<_unit_>]], then
+  1. Set _unit_ to *"fallback"*.
+numberformat.html	GetUnsignedRoundingMode	Return the specification type in the Unsigned Rounding Mode column of <emu-xref href="#table-intl-unsigned-rounding-modes"></emu-xref> for the row where the value in the Identifier column is _rounding
+numberformat.html	INTRINSICS.Intl.NumberFormat	If _numberingSystem_ cannot be matched by the <code>type</code> Unicode locale nonterminal, throw a *RangeError* exception.
+numberformat.html	INTRINSICS.Intl.NumberFormat	Let _r_ be ResolveLocale(%Intl.NumberFormat%.[[AvailableLocales]], _requestedLocales_, _opt_, %Intl.NumberFormat%.[[RelevantExtensionKeys]], %Intl.NumberFormat%.[[LocaleData]]).
+numberformat.html	INTRINSICS.Intl.NumberFormat	if the implementation supports the normative optional constructor mode of <emu-xref href="#legacy-constructor"></emu-xref>, then
+  1. Let _this_ be the *this* value.
+  1. Return ? ChainNumberFormat(_n
+numberformat.html	INTRINSICS.Intl.NumberFormat	let _newTarget_ be the active function object, else let _newTarget_ be NewTarget.
+numberformat.html	INTRINSICS.Intl.NumberFormat.prototype.resolvedOptions	For each row of <emu-xref href="#table-numberformat-resolvedoptions-properties"></emu-xref>, except the header row, in table order, do
+  1. Let _p_ be the Property value of the current row.
+  1. Let _
+numberformat.html	INTRINSICS.Intl.NumberFormat.prototype.resolvedOptions	Let _p_ be the Property value of the current row.
+numberformat.html	INTRINSICS.Intl.NumberFormat.prototype.resolvedOptions	Let _v_ be the value of _nf_'s internal slot whose name is the Internal Slot value of the current row.
+numberformat.html	INTRINSICS.Intl.NumberFormat.prototype.resolvedOptions	assert: The Conversion value of the current row is ~number~.
+numberformat.html	INTRINSICS.Intl.NumberFormat.prototype.resolvedOptions	if the implementation supports the normative optional constructor mode of <emu-xref href="#legacy-constructor"></emu-xref>, then
+  1. Set _nf_ to ? UnwrapNumberFormat(_nf_).
+numberformat.html	INTRINSICS.Intl.NumberFormat.prototype.resolvedOptions	if there is a Conversion value in the current row, then
+  1. Assert: The Conversion value of the current row is ~number~.
+  1. Set _v_ to 𝔽(_v_).
+numberformat.html	INTRINSICS.Intl.NumberFormat.supportedLocalesOf	Let _availableLocales_ be %Intl.NumberFormat%.[[AvailableLocales]].
+numberformat.html	INTRINSICS.get:Intl.NumberFormat.prototype.format	Let _F_ be a new built-in function object as defined in Number Format Functions (<emu-xref href="#sec-number-format-functions"></emu-xref>).
+numberformat.html	INTRINSICS.get:Intl.NumberFormat.prototype.format	if the implementation supports the normative optional constructor mode of <emu-xref href="#legacy-constructor"></emu-xref>, then
+  1. Set _nf_ to ? UnwrapNumberFormat(_nf_).
+numberformat.html	INTRINSICS.yet:NumberFormatFunctions	If _value_ is not provided, let _value_ be *undefined*.
+numberformat.html	PartitionNotationSubPattern	Let _compactName_ be an ILD string representing _exponent_ in long form, which may depend on _x_ in languages having different plural forms. The implementation must be able to provide this string, or 
+numberformat.html	PartitionNotationSubPattern	Let _compactSymbol_ be an ILD string representing _exponent_ in short form, which may depend on _x_ in languages having different plural forms. The implementation must be able to provide this string, 
+numberformat.html	PartitionNotationSubPattern	Let _decimalSepSymbol_ be the ILND String representing the decimal separator.
+numberformat.html	PartitionNotationSubPattern	Let _digits_ be a List whose elements are the code points specified in the Digits column of the matching row in <emu-xref href="#table-numbering-system-digits"></emu-xref>.
+numberformat.html	PartitionNotationSubPattern	Let _groupSepSymbol_ be the ILND String representing the grouping separator.
+numberformat.html	PartitionNotationSubPattern	Let _groups_ be a List whose elements are, in left to right order, the substrings defined by ILND set of locations within the _integer_, which may depend on the value of _numberFormat_.[[UseGrouping]]
+numberformat.html	PartitionNotationSubPattern	Let _minusSignSymbol_ be the ILND String representing the minus sign.
+numberformat.html	PartitionNotationSubPattern	Let _scientificSeparator_ be the ILND String representing the exponent separator.
+numberformat.html	PartitionNotationSubPattern	Let _unknown_ be an ILND String based on _x_ and _p_.
+numberformat.html	PartitionNotationSubPattern	Remove the first element from _groups_ and let _integerGroup_ be the value of that element.
+numberformat.html	PartitionNotationSubPattern	Repeat, while _groups_ List is not empty,
+  1. Remove the first element from _groups_ and let _integerGroup_ be the value of that element.
+  1. Append the Record { [[Type]]: *"integer"*, [[Value]]: _i
+numberformat.html	PartitionNotationSubPattern	Use an implementation dependent algorithm to map _n_ to the appropriate representation of _n_ in the given numbering system.
+numberformat.html	PartitionNotationSubPattern	assert: The number of elements in _groups_ List is greater than 0.
+numberformat.html	PartitionNotationSubPattern	if _groups_ List is not empty, then
+  1. Append the Record { [[Type]]: *"group"*, [[Value]]: _groupSepSymbol_ } to _result_.
+numberformat.html	PartitionNotationSubPattern	if the _numberFormat_.[[NumberingSystem]] matches one of the values in the Numbering System column of <emu-xref href="#table-numbering-system-digits"></emu-xref> below, then
+  1. Let _digits_ be a Lis
+numberformat.html	PartitionNotationSubPattern	if the _numberFormat_.[[UseGrouping]] is *false*, then
+  1. Append the Record { [[Type]]: *"integer"*, [[Value]]: _integer_ } to _result_.
+1. Else,
+  1. Let _groupSepSymbol_ be the ILND String represe
+numberformat.html	PartitionNumberPattern	Let _cd_ be an ILD String value representing _currency_ after _x_ in _currencyDisplay_ form, which may depend on _x_ in languages having different plural forms. If the implementation does not have suc
+numberformat.html	PartitionNumberPattern	Let _cd_ be an ILD String value representing _currency_ before _x_ in _currencyDisplay_ form, which may depend on _x_ in languages having different plural forms.
+numberformat.html	PartitionNumberPattern	Let _minusSignSymbol_ be the ILND String representing the minus sign.
+numberformat.html	PartitionNumberPattern	Let _mu_ be an ILD String value representing _unit_ after _x_ in _unitDisplay_ form, which may depend on _x_ in languages having different plural forms.
+numberformat.html	PartitionNumberPattern	Let _mu_ be an ILD String value representing _unit_ before _x_ in _unitDisplay_ form, which may depend on _x_ in languages having different plural forms.
+numberformat.html	PartitionNumberPattern	Let _n_ be an ILD String value indicating negative infinity.
+numberformat.html	PartitionNumberPattern	Let _n_ be an ILD String value indicating positive infinity.
+numberformat.html	PartitionNumberPattern	Let _n_ be an ILD String value indicating the *NaN* value.
+numberformat.html	PartitionNumberPattern	Let _percentSignSymbol_ be the ILND String representing the percent sign.
+numberformat.html	PartitionNumberPattern	Let _plusSignSymbol_ be the ILND String representing the plus sign.
+numberformat.html	PartitionNumberPattern	Let _unknown_ be an ILND String based on _x_ and _p_.
+numberformat.html	PartitionNumberPattern	assert: _x_ is a mathematical value.
+numberformat.html	PartitionNumberPattern	set _x_ be 100 × _x_.
+numberformat.html	PartitionNumberRangePattern	Let _rangeSeparator_ be an ILND String value used to separate two numbers.
+numberformat.html	SetNumberFormatDigitOptions	If _roundingIncrement_ is not in « 1, 2, 5, 10, 20, 25, 50, 100, 200, 250, 500, 1000, 2000, 2500, 5000 », throw a *RangeError* exception.
+numberformat.html	SetNumberFormatDigitOptions	if _mnfd_ is greater than _mxfd_, throw a *RangeError* exception.
+numberformat.html	SetNumberFormatDigitOptions	if _needSd_ is *true*, or _hasFd_ is *false* and _notation_ is *"compact"*, then
+  1. Set _needFd_ to *false*.
+numberformat.html	SetNumberFormatUnitOptions	Set _intlObj_.[[Currency]] to the ASCII-uppercase of _currency_.
+numberformat.html	ToIntlMathematicalValue	if _intlMV_ is a mathematical value, then
+  1. Let _rounded_ be RoundMVResult(abs(_intlMV_)).
+  1. If _rounded_ is *+∞*<sub>𝔽</sub> and _intlMV_ < 0, return ~negative-infinity~.
+  1. If _rounded_ is 
+numberformat.html	ToRawFixed	Let _a_ be the first _k_ - _f_ code units of _m_, and let _b_ be the remaining _f_ code units of _m_.
+numberformat.html	ToRawFixed	Let _n1_ be an integer and _r1_ a mathematical value, with <emu-eqn>_r1_ = ToRawFixedFn(_n1_, _f_)</emu-eqn>, such that <emu-eqn>_n1_ modulo _roundingIncrement_ = 0</emu-eqn>, <emu-eqn>_r1_ ≤ _x_</emu
+numberformat.html	ToRawFixed	Let _n2_ be an integer and _r2_ a mathematical value, with <emu-eqn>_r2_ = ToRawFixedFn(_n2_, _f_)</emu-eqn>, such that <emu-eqn>_n2_ modulo _roundingIncrement_ = 0</emu-eqn>, <emu-eqn>_r2_ ≥ _x_</emu
+numberformat.html	ToRawFixed	Let _z_ be the String value consisting of _f_ + 1 - _k_ occurrences of the code unit 0x0030 (DIGIT ZERO).
+numberformat.html	ToRawFixed	Remove the last code unit from _m_.
+numberformat.html	ToRawFixed	Remove the last code unit from _m_.
+numberformat.html	ToRawFixed	Repeat, while _cut_ > 0 and the last code unit of _m_ is 0x0030 (DIGIT ZERO),
+  1. Remove the last code unit from _m_.
+  1. Set _cut_ to _cut_ - 1.
+numberformat.html	ToRawFixed	Return the Record { [[FormattedString]]: _m_, [[RoundedNumber]]: _xFinal_, [[IntegerDigitsCount]]: _int_, [[RoundingMagnitude]]: –_f_ }.
+numberformat.html	ToRawFixed	if the last code unit of _m_ is 0x002E (FULL STOP), then
+  1. Remove the last code unit from _m_.
+numberformat.html	ToRawFixed	let _m_ be the String consisting of the digits of the decimal representation of _n_ (in order, with no leading zeroes).
+numberformat.html	ToRawPrecision	Let _m_ be the String consisting of _p_ occurrences of the code unit 0x0030 (DIGIT ZERO).
+numberformat.html	ToRawPrecision	Let _m_ be the String consisting of the digits of the decimal representation of _n_ (in order, with no leading zeroes).
+numberformat.html	ToRawPrecision	Let _n1_ and _e1_ each be an integer and _r1_ a mathematical value, with <emu-eqn>_r1_ = ToRawPrecisionFn(_n1_, _e1_, _p_)</emu-eqn>, such that <emu-eqn>_r1_ ≤ _x_</emu-eqn> and _r1_ is maximized.
+numberformat.html	ToRawPrecision	Let _n2_ and _e2_ each be an integer and _r2_ a mathematical value, with <emu-eqn>_r2_ = ToRawPrecisionFn(_n2_, _e2_, _p_)</emu-eqn>, such that <emu-eqn>_r2_ ≥ _x_</emu-eqn> and _r2_ is minimized.
+numberformat.html	ToRawPrecision	Remove the last code unit from _m_.
+numberformat.html	ToRawPrecision	Remove the last code unit from _m_.
+numberformat.html	ToRawPrecision	Repeat, while _cut_ > 0 and the last code unit of _m_ is 0x0030 (DIGIT ZERO),
+  1. Remove the last code unit from _m_.
+  1. Set _cut_ to _cut_ - 1.
+numberformat.html	ToRawPrecision	Return the Record { [[FormattedString]]: _m_, [[RoundedNumber]]: _xFinal_, [[IntegerDigitsCount]]: _int_, [[RoundingMagnitude]]: _e_–_p_+1 }.
+numberformat.html	ToRawPrecision	Set _m_ to the string-concatenation of *"0."*, -(_e_ + 1) occurrences of the code unit 0x0030 (DIGIT ZERO), and _m_.
+numberformat.html	ToRawPrecision	Set _m_ to the string-concatenation of _m_ and _e_ - _p_ + 1 occurrences of the code unit 0x0030 (DIGIT ZERO).
+numberformat.html	ToRawPrecision	Set _m_ to the string-concatenation of the first _e_ + 1 code units of _m_, the code unit 0x002E (FULL STOP), and the remaining _p_ - (_e_ + 1) code units of _m_.
+numberformat.html	ToRawPrecision	if the last code unit of _m_ is 0x002E (FULL STOP), then
+  1. Remove the last code unit from _m_.
+numberformat.html	UnwrapNumberFormat	Return ? Get(_nf_, %Intl%.[[FallbackSymbol]]).
+pluralrules.html	INTRINSICS.Intl.PluralRules	Let _r_ be ResolveLocale(%Intl.PluralRules%.[[AvailableLocales]], _requestedLocales_, _opt_, %Intl.PluralRules%.[[RelevantExtensionKeys]], %Intl.PluralRules%.[[LocaleData]]).
+pluralrules.html	INTRINSICS.Intl.PluralRules.prototype.resolvedOptions	For each row of <emu-xref href="#table-pluralrules-resolvedoptions-properties"></emu-xref>, except the header row, in table order, do
+  1. Let _p_ be the Property value of the current row.
+  1. If _p_
+pluralrules.html	INTRINSICS.Intl.PluralRules.prototype.resolvedOptions	Let _p_ be the Property value of the current row.
+pluralrules.html	INTRINSICS.Intl.PluralRules.prototype.resolvedOptions	Let _pluralCategories_ be a List of Strings containing all possible results of <emu-xref href="#sec-pluralruleselect">PluralRuleSelect</emu-xref> for the selected locale _pr_.[[Locale]], sorted accord
+pluralrules.html	INTRINSICS.Intl.PluralRules.prototype.resolvedOptions	Let _v_ be the value of _pr_'s internal slot whose name is the Internal Slot value of the current row.
+pluralrules.html	INTRINSICS.Intl.PluralRules.prototype.resolvedOptions	assert: The Conversion value of the current row is ~number~.
+pluralrules.html	INTRINSICS.Intl.PluralRules.prototype.resolvedOptions	if there is a Conversion value in the current row, then
+  1. Assert: The Conversion value of the current row is ~number~.
+  1. Set _v_ to 𝔽(_v_).
+pluralrules.html	INTRINSICS.Intl.PluralRules.prototype.select	Return ResolvePlural(_pr_, _n_).[[PluralCategory]].
+pluralrules.html	INTRINSICS.Intl.PluralRules.supportedLocalesOf	Let _availableLocales_ be %Intl.PluralRules%.[[AvailableLocales]].
+pluralrules.html	ResolvePlural	if _n_ is not a finite Number, then
+  1. Let _s_ be ! ToString(_n_).
+  1. Return the Record { [[PluralCategory]]: *"other"*, [[FormattedString]]: _s_ }.
+relativetimeformat.html	FormatRelativeTimeToParts	Increment _n_ by 1.
+relativetimeformat.html	INTRINSICS.Intl.RelativeTimeFormat	If _numberingSystem_ cannot be matched by the <code>type</code> Unicode locale nonterminal, throw a *RangeError* exception.
+relativetimeformat.html	INTRINSICS.Intl.RelativeTimeFormat	Let _r_ be ResolveLocale(%Intl.RelativeTimeFormat%.[[AvailableLocales]], _requestedLocales_, _opt_, %Intl.RelativeTimeFormat%.[[RelevantExtensionKeys]], %Intl.RelativeTimeFormat%.[[LocaleData]]).
+relativetimeformat.html	INTRINSICS.Intl.RelativeTimeFormat	Let _relativeTimeFormat_.[[NumberFormat]] be ! Construct(%Intl.NumberFormat%, « _locale_, _nfOptions_ »).
+relativetimeformat.html	INTRINSICS.Intl.RelativeTimeFormat	Let _relativeTimeFormat_.[[PluralRules]] be ! Construct(%Intl.PluralRules%, « _locale_ »).
+relativetimeformat.html	INTRINSICS.Intl.RelativeTimeFormat.prototype.resolvedOptions	For each row of <emu-xref href="#table-relativetimeformat-resolvedoptions-properties"></emu-xref>, except the header row, in table order, do
+  1. Let _p_ be the Property value of the current row.
+  1.
+relativetimeformat.html	INTRINSICS.Intl.RelativeTimeFormat.prototype.resolvedOptions	Let _p_ be the Property value of the current row.
+relativetimeformat.html	INTRINSICS.Intl.RelativeTimeFormat.prototype.resolvedOptions	Let _v_ be the value of _relativeTimeFormat_'s internal slot whose name is the Internal Slot value of the current row.
+relativetimeformat.html	INTRINSICS.Intl.RelativeTimeFormat.supportedLocalesOf	Let _availableLocales_ be %Intl.RelativeTimeFormat%.[[AvailableLocales]].
+relativetimeformat.html	PartitionRelativeTimePattern	If _fields_ has a field [[<_key_>]], set _patterns_ to _fields_.[[<_key_>]].
+relativetimeformat.html	PartitionRelativeTimePattern	Let _pattern_ be _po_.[[<_pr_>]].
+relativetimeformat.html	PartitionRelativeTimePattern	Let _patterns_ be _fields_.[[<_unit_>]].
+relativetimeformat.html	PartitionRelativeTimePattern	Let _po_ be _patterns_.[[<_tl_>]].
+relativetimeformat.html	PartitionRelativeTimePattern	Let _pr_ be ResolvePlural(_relativeTimeFormat_.[[PluralRules]], _value_).[[PluralCategory]].
+relativetimeformat.html	PartitionRelativeTimePattern	Let _result_ be _patterns_.[[<_valueString_>]].
+relativetimeformat.html	PartitionRelativeTimePattern	Return a List containing the Record { [[Type]]: *"literal"*, [[Value]]: _result_, [[Unit]]: ~empty~ }.
+relativetimeformat.html	PartitionRelativeTimePattern	if _patterns_ has a field [[<_valueString_>]], then
+  1. Let _result_ be _patterns_.[[<_valueString_>]].
+  1. Return a List containing the Record { [[Type]]: *"literal"*, [[Value]]: _result_, [[Unit]]
+segmenter.html	CreateSegmentDataObject	Let _isWordLike_ be a Boolean value indicating whether the _segment_ in _string_ is "word-like" according to locale _segmenter_.[[Locale]].
+segmenter.html	FindBoundary	If a boundary is found, return the count of code units in _string_ preceding it.
+segmenter.html	FindBoundary	If a boundary is found, return the count of code units in _string_ preceding it.
+segmenter.html	FindBoundary	Search _string_ for the first segmentation boundary that follows the code unit at index _startIndex_, using locale _locale_ and text element granularity _granularity_.
+segmenter.html	FindBoundary	Search _string_ for the last segmentation boundary that is preceded by at most _startIndex_ code units from the beginning, using locale _locale_ and text element granularity _granularity_.
+segmenter.html	INTRINSICS.Intl.Segmenter	Let _r_ be ResolveLocale(%Intl.Segmenter%.[[AvailableLocales]], _requestedLocales_, _opt_, %Intl.Segmenter%.[[RelevantExtensionKeys]], %Intl.Segmenter%.[[LocaleData]]).
+segmenter.html	INTRINSICS.Intl.Segmenter.prototype.resolvedOptions	For each row of <emu-xref href="#table-segmenter-resolvedoptions-properties"></emu-xref>, except the header row, in table order, do
+  1. Let _p_ be the Property value of the current row.
+  1. Let _v_ 
+segmenter.html	INTRINSICS.Intl.Segmenter.prototype.resolvedOptions	Let _p_ be the Property value of the current row.
+segmenter.html	INTRINSICS.Intl.Segmenter.prototype.resolvedOptions	Let _v_ be the value of _segmenter_'s internal slot whose name is the Internal Slot value of the current row.
+segmenter.html	INTRINSICS.Intl.Segmenter.supportedLocalesOf	Let _availableLocales_ be %Intl.Segmenter%.[[AvailableLocales]].
