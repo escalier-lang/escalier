@@ -2706,6 +2706,14 @@ func equals(t1, t2 Type) bool {
 	if t1 == nil || t2 == nil {
 		return false
 	}
+	// One type is equal to itself, and answering that here is what
+	// terminates the walk on a type that reaches itself. A method whose
+	// `self` receiver is the type declaring it produces such a type:
+	// `interface I { m(self) -> undefined }` gives a TypeRefType for `I`
+	// whose TypeAlias holds the object type the receiver points back at.
+	if t1 == t2 {
+		return true
+	}
 	return t1.Equals(t2)
 }
 

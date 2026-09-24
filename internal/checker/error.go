@@ -81,6 +81,7 @@ func (e ComputedSelfAccessBeforeInitError) isError()        {}
 func (e LoopInConstructorNotSupportedError) isError()       {}
 func (e TryInConstructorNotSupportedError) isError()        {}
 func (e ClassDoesNotImplementInterfaceError) isError()      {}
+func (e ConflictingInterfaceMembersError) isError()         {}
 func (e ReceiverLifetimeOutsideMemberError) isError()       {}
 func (e OverloadReceiverMutMismatchError) isError()         {}
 
@@ -143,6 +144,7 @@ func (e ComputedSelfAccessBeforeInitError) IsWarning() bool        { return fals
 func (e LoopInConstructorNotSupportedError) IsWarning() bool       { return false }
 func (e TryInConstructorNotSupportedError) IsWarning() bool        { return false }
 func (e ClassDoesNotImplementInterfaceError) IsWarning() bool      { return false }
+func (e ConflictingInterfaceMembersError) IsWarning() bool         { return false }
 func (e ReceiverLifetimeOutsideMemberError) IsWarning() bool       { return false }
 func (e OverloadReceiverMutMismatchError) IsWarning() bool         { return false }
 
@@ -167,6 +169,27 @@ func (e ClassDoesNotImplementInterfaceError) Message() string {
 	}
 	return "Class '" + e.ClassName + "' does not implement interface '" +
 		e.InterfaceName + "': member '" + e.MemberName + "' " + e.Reason
+}
+
+// ConflictingInterfaceMembersError is reported when a `declare` class
+// implements two interfaces that declare the same member name with types
+// that do not agree. The clause contributes both members, so the class has
+// to restate the member and narrow both to say which one it means.
+type ConflictingInterfaceMembersError struct {
+	ClassName   string
+	FirstIface  string
+	SecondIface string
+	MemberName  string
+	span        ast.Span
+}
+
+func (e ConflictingInterfaceMembersError) Span() ast.Span {
+	return e.span
+}
+func (e ConflictingInterfaceMembersError) Message() string {
+	return "Class '" + e.ClassName + "' implements '" + e.FirstIface + "' and '" +
+		e.SecondIface + "', which declare member '" + e.MemberName +
+		"' with conflicting types"
 }
 
 // TypeCheckTimeoutError is returned when the type checker's context deadline

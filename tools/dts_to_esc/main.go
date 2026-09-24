@@ -171,6 +171,9 @@ func runGenerate(args []string, stderr io.Writer) error {
 	if err := dts_to_esc.ReportSingletonKeyDrops(res.Modules, stderr); err != nil {
 		return err
 	}
+	if err := dts_to_esc.ReportDemotedBases(res.Modules, stderr); err != nil {
+		return err
+	}
 	if *cfgPath == "" {
 		// Every run classifies from the facts; only a run that named a
 		// graph reports on it. The filter report alone runs to thousands

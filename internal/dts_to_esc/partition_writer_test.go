@@ -1103,3 +1103,97 @@ declare global {
 	require.ElementsMatch(t, []string{"Boolean", "Number"}, names,
 		"the block is lifted and the script's own declaration is kept")
 }
+
+// A lib that augments another is read after it, so mergeDecls folds the
+// augmentation into the base declaration rather than the other way round.
+// Sorting basenames alphabetically does not give that on its own:
+// `lib.dom.asynciterable.d.ts` sorts ahead of the `lib.dom.d.ts` it augments.
+func TestOrderLibInputs(t *testing.T) {
+	t.Parallel()
+
+	declaring := &dts_parser.Module{
+		Statements: []dts_parser.Statement{&dts_parser.InterfaceDecl{}},
+	}
+	empty := &dts_parser.Module{}
+
+	tests := map[string]struct {
+		inputs []LibInput
+		want   []string
+	}{
+		"AnAugmentationSortingAheadOfItsBaseMovesAfterIt": {
+			inputs: []LibInput{
+				{SourceFile: "lib.dom.asynciterable.d.ts", Module: declaring},
+				{SourceFile: "lib.dom.d.ts", Module: declaring},
+				{SourceFile: "lib.dom.iterable.d.ts", Module: declaring},
+			},
+			want: []string{
+				"lib.dom.d.ts",
+				"lib.dom.asynciterable.d.ts",
+				"lib.dom.iterable.d.ts",
+			},
+		},
+		"AnAugmentationAlreadyAfterItsBaseStaysPut": {
+			inputs: []LibInput{
+				{SourceFile: "lib.dom.d.ts", Module: declaring},
+				{SourceFile: "lib.dom.iterable.d.ts", Module: declaring},
+			},
+			want: []string{"lib.dom.d.ts", "lib.dom.iterable.d.ts"},
+		},
+		// A per-year bundle such as `lib.es2015.d.ts` holds a licence header
+		// and reference directives alone. Treating it as a base would move
+		// every `lib.es2015.*.d.ts` for no reason.
+		"ABundleThatDeclaresNothingIsNotABase": {
+			inputs: []LibInput{
+				{SourceFile: "lib.es2015.collection.d.ts", Module: declaring},
+				{SourceFile: "lib.es2015.core.d.ts", Module: declaring},
+				{SourceFile: "lib.es2015.d.ts", Module: empty},
+			},
+			want: []string{
+				"lib.es2015.collection.d.ts",
+				"lib.es2015.core.d.ts",
+				"lib.es2015.d.ts",
+			},
+		},
+		"AFileThatAugmentsNothingKeepsItsPlace": {
+			inputs: []LibInput{
+				{SourceFile: "lib.decorators.d.ts", Module: declaring},
+				{SourceFile: "lib.es5.d.ts", Module: declaring},
+			},
+			want: []string{"lib.decorators.d.ts", "lib.es5.d.ts"},
+		},
+		// The base is the longest dotted prefix that declares something, so a
+		// two-level chain lands base, middle, leaf.
+		"AChainOfAugmentationsFollowsItsBase": {
+			inputs: []LibInput{
+				{SourceFile: "lib.dom.iterable.extra.d.ts", Module: declaring},
+				{SourceFile: "lib.dom.iterable.d.ts", Module: declaring},
+				{SourceFile: "lib.dom.d.ts", Module: declaring},
+			},
+			want: []string{
+				"lib.dom.d.ts",
+				"lib.dom.iterable.d.ts",
+				"lib.dom.iterable.extra.d.ts",
+			},
+		},
+		// An augmentation whose base is absent is still emitted, in the order
+		// it arrived, rather than dropped.
+		"AnAugmentationWithNoBasePresentSurvives": {
+			inputs: []LibInput{
+				{SourceFile: "lib.dom.iterable.d.ts", Module: declaring},
+				{SourceFile: "lib.es5.d.ts", Module: declaring},
+			},
+			want: []string{"lib.dom.iterable.d.ts", "lib.es5.d.ts"},
+		},
+	}
+
+	for name, test := range tests {
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+			got := make([]string, 0, len(test.inputs))
+			for _, in := range orderLibInputs(test.inputs) {
+				got = append(got, in.SourceFile)
+			}
+			require.Equal(t, test.want, got)
+		})
+	}
+}

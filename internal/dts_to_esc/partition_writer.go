@@ -447,7 +447,23 @@ func mergeDecls(stmts []dts_parser.Statement) []dts_parser.Statement {
 // `ReadonlyArray<T>` for the same reason.
 func ConvertBucket(stmts []dts_parser.Statement, facts *ReceiverFacts) (*StandaloneModule, error) {
 	stmts, twins := fuseReadonlyTwins(stmts)
-	return convertFusedBucket(stmts, twins, twins, ConsumedCtorNames(stmts), facts)
+	classNames := withTwinNames(ClassNames(stmts), twins)
+	return convertFusedBucket(stmts, twins, twins, ConsumedCtorNames(stmts), classNames, facts)
+}
+
+// withTwinNames adds each readonly twin's name to a set holding its mutable
+// counterpart. A supertype is classified before rewriteReadonlyTwinRefs runs,
+// so it is still spelled `ReadonlyMap` where the emitted tree will say `Map`.
+// Without the alias, `interface AudioParamMap extends ReadonlyMap` would read
+// as extending an interface and land in `implements`, where the rewrite would
+// then respell it as the `Map` class.
+func withTwinNames(names set.Set[string], twins []readonlyTwin) set.Set[string] {
+	for _, twin := range twins {
+		if names.Contains(twin.mutableName) {
+			names.Add(twin.readonlyName)
+		}
+	}
+	return names
 }
 
 // convertFusedBucket converts one already-fused bucket. `own` are the
@@ -463,9 +479,10 @@ func convertFusedBucket(
 	stmts []dts_parser.Statement,
 	own, all []readonlyTwin,
 	consumedCtor map[string]string,
+	classNames set.Set[string],
 	facts *ReceiverFacts,
 ) (*StandaloneModule, error) {
-	mod, err := convertStandaloneModule(&dts_parser.Module{Statements: stmts}, facts, consumedCtor)
+	mod, err := convertStandaloneModule(&dts_parser.Module{Statements: stmts}, facts, consumedCtor, classNames)
 	if err != nil {
 		return nil, err
 	}
@@ -831,20 +848,28 @@ func ConvertBuckets(result *PartitionResult, facts *ReceiverFacts) (map[string]*
 	fused := make(map[string][]dts_parser.Statement, len(result.Buckets))
 	own := make(map[string][]readonlyTwin, len(result.Buckets))
 	var all []readonlyTwin
-	// consumedCtor is every constructor interface the tree fuses away, for the same reason
-	// `all` holds every twin: a bucket may reference one another bucket consumed.
+	// consumedCtor is every constructor interface the tree fuses away, and classNames every
+	// name it turns into a class. Both span the tree for the same reason `all` holds every
+	// twin: a bucket may reference, or extend, what another bucket declares.
 	consumedCtor := make(map[string]string)
+	classNames := set.NewSet[string]()
 	for _, uri := range uris {
 		stmts, twins := fuseReadonlyTwins(result.Buckets[uri])
 		fused[uri] = stmts
 		own[uri] = twins
 		all = append(all, twins...)
-		maps.Copy(consumedCtor, ConsumedCtorNames(stmts))
+		// Both readings come from one trio detection over the bucket, since
+		// ConsumedCtorNames and ClassNames would each repeat it.
+		lifted := liftGlobals(stmts)
+		bucketTrios := detectTrios(lifted)
+		maps.Copy(consumedCtor, bucketTrios.consumedCtor)
+		classNames = classNames.Union(classNamesFrom(lifted, bucketTrios))
 	}
+	classNames = withTwinNames(classNames, all)
 
 	mods := make(map[string]*StandaloneModule, len(result.Buckets))
 	for _, uri := range uris {
-		mod, err := convertFusedBucket(fused[uri], own[uri], all, consumedCtor, facts)
+		mod, err := convertFusedBucket(fused[uri], own[uri], all, consumedCtor, classNames, facts)
 		if err != nil {
 			return nil, &BucketConvertError{pkgError{uri}, err}
 		}
@@ -952,9 +977,11 @@ func DiscoverLibFiles(dir string) ([]string, error) {
 }
 
 // ParseLibFiles reads and parses every name in basenames as a dts
-// module rooted at dir. Returns one LibInput per file in the same
-// order. Per-file parse errors are joined into a single error with
-// the offending filenames; the caller decides whether to proceed.
+// module rooted at dir. Per-file parse errors are joined into a single error
+// with the offending filenames; the caller decides whether to proceed.
+//
+// The returned order is basenames reordered by orderLibInputs, so a lib that
+// declares a name comes before the libs that augment it.
 func ParseLibFiles(dir string, basenames []string) ([]LibInput, error) {
 	var inputs []LibInput
 	var parseErrs []string
@@ -976,7 +1003,90 @@ func ParseLibFiles(dir string, basenames []string) ([]LibInput, error) {
 	if len(parseErrs) > 0 {
 		return inputs, fmt.Errorf("parse errors: %s", strings.Join(parseErrs, "; "))
 	}
-	return inputs, nil
+	return orderLibInputs(inputs), nil
+}
+
+// orderLibInputs moves each lib file that augments another to just after the
+// one it augments, leaving every other file where DiscoverLibFiles sorted it.
+//
+// Ingestion order decides merge order. mergeDecls folds every declaration of
+// one interface name into the first it sees and concatenates their `extends`
+// entries, so the file read first supplies the supertype fuseTrio reads as the
+// class's base. Sorting basenames alphabetically makes that an accident of
+// spelling: `lib.dom.d.ts` declares `interface FontFaceSet extends
+// EventTarget` and `lib.dom.iterable.d.ts` adds `extends Set<FontFace>`, and
+// the right one wins only because "d" sorts before "i".
+//
+// A lib augments the lib named by the longest dotted prefix of its own name
+// that is also a lib file, so `lib.dom.iterable.d.ts` and
+// `lib.dom.asynciterable.d.ts` both augment `lib.dom.d.ts`. A file that
+// declares nothing is not a base: the per-year bundles such as
+// `lib.es2015.d.ts` hold a licence header and reference directives alone, and
+// treating them as one would move every `lib.es2015.*.d.ts` for no reason.
+//
+// Over the pinned lib set this moves `lib.dom.asynciterable.d.ts`, the one
+// file that sorts ahead of the lib it augments.
+func orderLibInputs(inputs []LibInput) []LibInput {
+	declaring := set.NewSet[string]()
+	for _, in := range inputs {
+		if in.Module != nil && len(in.Module.Statements) > 0 {
+			declaring.Add(in.SourceFile)
+		}
+	}
+
+	// waiting holds each augmentation under the base it is waiting for, in the
+	// order the inputs arrived.
+	waiting := make(map[string][]LibInput)
+	emitted := set.NewSet[string]()
+	out := make([]LibInput, 0, len(inputs))
+
+	var emit func(in LibInput)
+	emit = func(in LibInput) {
+		out = append(out, in)
+		emitted.Add(in.SourceFile)
+		held := waiting[in.SourceFile]
+		delete(waiting, in.SourceFile)
+		for _, aug := range held {
+			emit(aug)
+		}
+	}
+
+	for _, in := range inputs {
+		base := augmentedLib(in.SourceFile, declaring)
+		if base != "" && !emitted.Contains(base) {
+			waiting[base] = append(waiting[base], in)
+			continue
+		}
+		emit(in)
+	}
+
+	// A base that never arrived leaves its augmentations waiting. Emit them in
+	// input order so no file is dropped.
+	if len(waiting) > 0 {
+		for _, in := range inputs {
+			if !emitted.Contains(in.SourceFile) {
+				out = append(out, in)
+				emitted.Add(in.SourceFile)
+			}
+		}
+	}
+	return out
+}
+
+// augmentedLib returns the lib basename that name augments, or "" when name
+// augments none. The answer is the longest proper dotted prefix of name that
+// is itself a declaring lib file, so `lib.dom.iterable.d.ts` answers
+// `lib.dom.d.ts`.
+func augmentedLib(name string, declaring set.Set[string]) string {
+	stem := strings.TrimSuffix(strings.TrimPrefix(name, "lib."), ".d.ts")
+	parts := strings.Split(stem, ".")
+	for i := len(parts) - 1; i > 0; i-- {
+		candidate := "lib." + strings.Join(parts[:i], ".") + ".d.ts"
+		if candidate != name && declaring.Contains(candidate) {
+			return candidate
+		}
+	}
+	return ""
 }
 
 // ReportPartition prints what the routing pass decided to leave out, so
@@ -1068,6 +1178,51 @@ func ReportSingletonKeyDrops(mods map[string]*StandaloneModule, w io.Writer) err
 	fmt.Fprintf(&b, "  singleton members skipped for a non-name key: %d\n", len(entries))
 	for _, e := range entries {
 		fmt.Fprintf(&b, "    %s %s[%s]\n", e.uri, e.member.Singleton, e.member.Key)
+	}
+	_, err := io.WriteString(w, b.String())
+	return err
+}
+
+// ReportDemotedBases prints one line per class supertype that moved to
+// `implements` because the class's `extends` slot was already filled. Over
+// the pinned lib set this is `FontFaceSet`, which TypeScript declares as both
+// an `EventTarget` and a `Set<FontFace>`.
+//
+// The `generate` subcommand calls this after ReportSingletonKeyDrops, so a
+// TypeScript bump that gives some other declaration a second class base shows
+// up beside the other conversion notes rather than passing unremarked. No
+// member is lost either way, since a `declare` class takes its members from
+// both clauses.
+func ReportDemotedBases(mods map[string]*StandaloneModule, w io.Writer) error {
+	type entry struct {
+		uri  string
+		base DemotedBase
+	}
+	var entries []entry
+	for uri, mod := range mods {
+		for _, b := range mod.DemotedBases {
+			entries = append(entries, entry{uri: uri, base: b})
+		}
+	}
+	if len(entries) == 0 {
+		return nil
+	}
+	sort.Slice(entries, func(i, j int) bool {
+		a, b := entries[i], entries[j]
+		if a.uri != b.uri {
+			return a.uri < b.uri
+		}
+		if a.base.Class != b.base.Class {
+			return a.base.Class < b.base.Class
+		}
+		return a.base.Demoted < b.base.Demoted
+	})
+
+	var b strings.Builder
+	fmt.Fprintf(&b, "  class bases moved to implements: %d\n", len(entries))
+	for _, e := range entries {
+		fmt.Fprintf(&b, "    %s %s extends %s, implements %s\n",
+			e.uri, e.base.Class, e.base.Kept, e.base.Demoted)
 	}
 	_, err := io.WriteString(w, b.String())
 	return err
