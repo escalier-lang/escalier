@@ -454,3 +454,72 @@ func TestHasLifetimeVar(t *testing.T) {
 		})
 	}
 }
+
+// A rebuilt object member carries every marker the original declared. The markers
+// say what a member means rather than what it holds, so a rewrite that reaches
+// inside one must not disturb them: an optional method that came back required
+// would make its object stop accepting one that omits the member, and valid code
+// would be rejected after any pass that touched the signature.
+func TestAcceptObjElemPreservesMarkers(t *testing.T) {
+	str := &PrimType{Prim: StrPrim}
+
+	// Each case puts the rewritten variable in a walked position, so the element
+	// is rebuilt rather than returned by pointer.
+	tests := map[string]struct {
+		elem   func(*TypeVarType) ObjTypeElem
+		assert func(*testing.T, ObjTypeElem)
+	}{
+		"Property": {
+			func(a *TypeVarType) ObjTypeElem {
+				return &PropertyElem{Name: "x", Type: a, Optional: true, Readonly: true}
+			},
+			func(t *testing.T, got ObjTypeElem) {
+				e := got.(*PropertyElem)
+				require.True(t, e.Optional)
+				require.True(t, e.Readonly)
+			},
+		},
+		"Method": {
+			func(a *TypeVarType) ObjTypeElem {
+				return &MethodElem{
+					Name:       "m",
+					Signatures: []*FuncType{{Params: []*FuncParam{{Pattern: &IdentPat{Name: "x"}, Type: a}}, Ret: a}},
+					Static:     true,
+					Optional:   true,
+				}
+			},
+			func(t *testing.T, got ObjTypeElem) {
+				e := got.(*MethodElem)
+				require.True(t, e.Static)
+				require.True(t, e.Optional)
+			},
+		},
+		"Mapped": {
+			func(a *TypeVarType) ObjTypeElem {
+				return &MappedElem{
+					Key:      &MappedKeyType{ID: 1, Name: "K"},
+					Keys:     &PrimType{Prim: StrPrim},
+					Value:    a,
+					Optional: ModAdd,
+					Readonly: ModRemove,
+				}
+			},
+			func(t *testing.T, got ObjTypeElem) {
+				e := got.(*MappedElem)
+				require.Equal(t, ModAdd, e.Optional)
+				require.Equal(t, ModRemove, e.Readonly)
+				require.NotNil(t, e.Key, "the binding the member owns survives the rebuild")
+			},
+		},
+	}
+
+	for name, test := range tests {
+		t.Run(name, func(t *testing.T) {
+			a := &TypeVarType{ID: 1}
+			elem := test.elem(a)
+			got := AcceptObjElem(elem, &replaceVar{target: a, repl: str}, Positive)
+			require.NotSame(t, elem, got, "a changed child forces a rebuild")
+			test.assert(t, got)
+		})
+	}
+}

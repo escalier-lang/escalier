@@ -684,7 +684,7 @@ func AcceptObjElem(e ObjTypeElem, v TypeVisitor, pol Polarity) ObjTypeElem {
 		if !changed {
 			return e
 		}
-		return &MethodElem{Name: e.Name, Signatures: sigs, Static: e.Static}
+		return &MethodElem{Name: e.Name, Signatures: sigs, Static: e.Static, Optional: e.Optional}
 	case *ConstructorElem:
 		sigs, changed := acceptSignatures(e.Signatures, v, pol) // params contravariant, via FuncType.Accept
 		if !changed {
