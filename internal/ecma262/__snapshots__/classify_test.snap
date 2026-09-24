@@ -25,3 +25,30 @@ TypedArray.prototype.slice
 TypedArray.prototype.toLocaleString
 get RegExp.prototype.flags
 ---
+
+[TestFactsBorrowingReturnsAreListed - 1]
+  return aliases: 22 borrowing, 232 owned, 247 open
+    param(0): Object.assign
+    param(0): Object.defineProperty
+    param(0): Object.freeze
+    param(0): Object.preventExtensions
+    param(0): Object.seal
+    param(0): Object.setPrototypeOf
+    receiver: Array.prototype.copyWithin
+    receiver: Array.prototype.fill
+    receiver: Array.prototype.reverse
+    receiver: Array.prototype.sort
+    receiver: AsyncIteratorPrototype [ @@asyncIterator ]
+    receiver: Iterator.prototype [ @@iterator ]
+    receiver: Map.prototype.set
+    receiver: Object.prototype.valueOf
+    receiver: Set.prototype.add
+    receiver: TypedArray.prototype.copyWithin
+    receiver: TypedArray.prototype.fill
+    receiver: TypedArray.prototype.reverse
+    receiver: TypedArray.prototype.sort
+    receiver: WeakMap.prototype.set
+    receiver: WeakSet.prototype.add
+    union(fresh, param(0)): Object
+
+---
