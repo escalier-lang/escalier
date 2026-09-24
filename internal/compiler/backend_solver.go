@@ -12,27 +12,23 @@ import (
 // by default while the cutover is in progress.
 //
 // The path is a seam, not a finished compiler. Four things it does differently from
-// the checker path are each a later phase of the cutover rather than an oversight,
-// and this is the list to read before trusting anything it produces:
+// the checker path are each a later phase of the cutover, and this is the list to
+// read before trusting anything it produces:
 //
-//   - The emitted JavaScript can be wrong where codegen reads a node's inferred
-//     type, which only internal/checker stamps onto the tree. A constructor call
-//     loses its `new`, a method reference loses its `.bind`, and an `if val` loses
-//     its null guard, all without a diagnostic. Emitting JavaScript from the
-//     solver's own results is the next phase.
-//   - libResult.dtsNamespace is nil, so a package emits no .d.ts. Rendering a
-//     soltype surface is a phase of its own, and this cutover builds no bridge from
-//     soltype back to type_system.
-//   - The diagnostics include every package the run loaded, the standard library's
-//     own among them, so a package that is itself clean can still report the two
-//     errors `std:prelude` currently carries. Clearing the library's own
-//     diagnostics is the first phase of the cutover.
+//   - The emitted JavaScript can be wrong where codegen reads a node's inferred type,
+//     which only internal/checker stamps onto the tree. A constructor call loses its
+//     `new`, a method reference loses its `.bind`, and an `if val` loses its null
+//     guard, all without a diagnostic.
+//   - libResult.dtsNamespace is nil, so a package emits no .d.ts. Rendering a soltype
+//     surface is its own phase, and this cutover builds no bridge from soltype back
+//     to type_system.
+//   - The diagnostics include every package the run loaded, so a package that is
+//     itself clean still reports the two errors `std:prelude` carries.
 //   - libResult.scope, libResult.fileScopes, and scriptResult.scope are nil, because
-//     the LSP reads internal/checker's scope type. Porting the LSP comes after the
-//     compiler's default flips.
+//     the LSP reads internal/checker's scope type.
 //
-// internal/solver takes no context, so the deadline each entry point sets bounds
-// nothing here. Each method names the parameter `_` to say so at the signature.
+// internal/solver takes no context, so each method names the parameter `_` to say the
+// caller's deadline bounds nothing here.
 type solverBackend struct{}
 
 // checkLib infers module against the standard library tree on disk. The run resolves
@@ -96,11 +92,10 @@ func (l *solverLibScope) declaresTopLevel(name string) bool {
 }
 
 // solverStdlibDir resolves the directory holding the standard library's `.esc`
-// files, blaming span for a tree it cannot find.
-//
-// An unresolvable tree returns "", which resolves no package. The run then reports
-// the prelude classes its own rules name as missing, so the diagnostic returned here
-// is what says the cause is the tree rather than the code being checked.
+// files, blaming span for a tree it cannot find. An unresolvable tree returns "",
+// which resolves no package, and the run then reports the prelude classes as missing.
+// The diagnostic returned here is what says the cause is the tree rather than the
+// code being checked.
 func solverStdlibDir(span ast.Span) (string, []Diagnostic) {
 	dir, err := stdlibdir.StdlibDir("")
 	if err != nil {
@@ -117,9 +112,8 @@ func scriptSpan(script *ast.Script) ast.Span {
 
 // moduleSpan returns a span in the module's first file, for a diagnostic about the
 // module as a whole rather than about anything written in it. A module with no files
-// has no source to name, and the zero span's source id of 0 is then wrong in a way
-// no reader can act on, so it carries -1, the id the error printers treat as "no
-// source".
+// has no source to name, so it carries -1, the id the error printers treat as "no
+// source". A zero span would name source id 0, which is some other file.
 func moduleSpan(module *ast.Module) ast.Span {
 	if len(module.Files) == 0 {
 		return ast.Span{SourceID: -1}

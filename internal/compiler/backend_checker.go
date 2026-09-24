@@ -9,10 +9,9 @@ import (
 )
 
 // checkerBackend runs internal/checker. It is what every entry point uses unless
-// CheckerEnvVar selects the solver.
-//
-// Its results leave codegenGap nil. Codegen reads the types this checker stamps onto
-// the tree and the namespace it produces, so it drives both emitters.
+// CheckerEnvVar selects the solver. Its results leave codegenGap nil, since codegen
+// reads the types this checker stamps onto the tree and the namespace it produces,
+// so it drives both emitters.
 type checkerBackend struct{}
 
 // checkLib infers module through InferModule rather than the lower-level
