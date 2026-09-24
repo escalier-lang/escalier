@@ -2,7 +2,6 @@ package escalier.specextract
 
 import esmeta.cfg.CFG
 import esmeta.cfgBuilder.CFGBuilder
-import esmeta.compiler.Compiler
 import esmeta.extractor.Extractor
 import esmeta.spec.Algorithm
 import esmeta.util.SystemUtils.dumpFile
@@ -50,7 +49,12 @@ object MergeCheck:
       println(s"    ${algos.length}\t${file.getOrElse("")}")
 
     println("compiling to IR and building the control-flow graph ...")
-    val cfg = new CFGBuilder(new Compiler(spec).result).result
+    val compiler = new MergedCompiler(spec)
+    val cfg = new CFGBuilder(compiler.program).result
+    println(
+      s"  ${compiler.supersededStubs.size} manual stubs ECMA-402 supersedes",
+    )
+    for (name <- compiler.supersededStubs.toList.sorted) println(s"    $name")
     println(s"  ${cfg.funcs.length} functions")
     report402(cfg)
     println("  merge OK")
