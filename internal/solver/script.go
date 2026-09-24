@@ -50,41 +50,31 @@ func InferScript(script *ast.Script, source ModuleSource) (*Scope, *Info, []Solv
 
 // InferScriptInLib infers script against the scope a library module's run produced,
 // so the script reads that module's top-level declarations without importing them.
-// It returns the same three results InferScript does, with the diagnostics covering
-// the script alone rather than repeating the library's.
+// It returns what InferScript returns, with the diagnostics covering the script alone
+// rather than repeating the library's.
 //
-// This is the bin/ to lib/ seam. A package's lib/ files are one module and each of
-// its bin/ files is a script checked as if the library's declarations were already
-// in scope. The script scope is a child of lib.Scope, so a name the script does not
-// declare itself resolves to the library's binding, and then to the prelude through
-// lib.Scope's own parent.
+// This is the lib/ to bin/ seam. A package's lib/ files are one module, and each of
+// its bin/ files is a script checked as if the library's declarations were already in
+// scope. The script scope is a child of lib.Scope, so a name the script does not
+// declare resolves to the library's binding, and then to the prelude.
 //
-// The script carries on the library's run rather than starting a fresh one. A class,
-// enum, or alias the library declares resolves to a handle carrying a name, and the
-// definition that name stands for lives in the run's Context. A second run would hold
-// none of those definitions, so a script could name the library's `Point` but could
-// read no member off it. Sharing the Context is what makes a library type usable from
-// a script. It also numbers the two runs' inference variables apart and loads each
-// imported package once. forScript builds the checker that does this.
+// The script carries the library's run on rather than starting a fresh one, which is
+// what forScript builds and what makes the library's named types usable here. Two
+// scripts checked against one library therefore share a Context, so a constraint one
+// puts on a library binding is visible to the next. The old checker has the same
+// property: it hands each bin/ script the one namespace the library produced.
 //
-// Two scripts checked against one library share that Context as well, so a constraint
-// one script puts on a library binding's inference variable is visible to the next.
-// The old checker has the same property: it hands each bin/ script the one
-// type_system.Namespace the library produced.
-//
-// lib must be a result InferModuleWithSource or InferModuleAgainstStdlib returned.
-// A script with no library to check against goes through InferScript instead, which
-// parents it to the prelude directly.
+// lib must be a result InferModuleWithSource or InferModuleAgainstStdlib returned. A
+// script with no library goes through InferScript, which parents it to the prelude.
 func InferScriptInLib(script *ast.Script, lib *ModuleResult) (*Scope, *Info, []SolverError) {
 	c := lib.checker.forScript(scriptPkgURI(script))
 	return c.inferScriptIn(lib.Scope.Child(), script)
 }
 
 // scriptPkgURI is the prefix the nominal registries key one script's declarations
-// under. Every script checked against one library shares that run's registries, so
-// each needs a prefix of its own for two scripts declaring the same class name to
-// hold two definitions. The source id names the file, which is what distinguishes
-// one bin/ script from another within a package.
+// under. Scripts checked against one library share that run's registries, so each
+// needs a prefix of its own for two of them to declare the same class name. The
+// source id is what names the file.
 func scriptPkgURI(script *ast.Script) string {
 	return "script:" + strconv.Itoa(script.Span().SourceID)
 }

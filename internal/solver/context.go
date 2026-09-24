@@ -257,17 +257,10 @@ func (c *Context) registerClass(name string, def *ClassDef) {
 // forgetKeyPrefix drops every registration whose qualified name starts with prefix,
 // along with the two caches keyed off those names.
 //
-// One run's registries serve every module and script it walks, keyed by a name that
-// carries the package or script the declaration came from. Checking one script twice
-// against the same run therefore writes the second check's definitions over the
-// first's, and a cache the first check filled would answer for a definition that no
-// longer exists. A language server re-checking one bin/ file against a cached library
-// does exactly that, once per keystroke. See the call in forScript.
-//
-// Clearing the prefix before a check starts leaves that script registering into an
-// empty space, so no answer can come from the check before it and the registries stay
-// the size one check needs. Handles a previous check returned name keys that are gone
-// after this, which is what supersedes them.
+// A run's registries are keyed by a name carrying the package or script a declaration
+// came from, so checking one script twice against the same run leaves the first
+// check's definitions in place for the second to find. See the call in forScript,
+// which is where that happens.
 func (c *Context) forgetKeyPrefix(prefix string) {
 	for name := range c.classes {
 		if strings.HasPrefix(name, prefix) {
@@ -283,9 +276,8 @@ func (c *Context) forgetKeyPrefix(prefix string) {
 	}
 	// An interned alias reference keys on its rendered form, which spells the alias
 	// and each of its arguments under a qualified name, so the prefix can appear
-	// anywhere in the key. A representative is only ever compared by identity, so
-	// dropping more entries than this script registered costs a re-intern and
-	// nothing else.
+	// anywhere in the key. A representative is only compared by identity, so dropping
+	// more entries than this script registered costs a re-intern and nothing else.
 	for key := range c.aliasInterns {
 		if strings.Contains(key, prefix) {
 			delete(c.aliasInterns, key)
