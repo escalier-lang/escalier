@@ -54,16 +54,15 @@ type ModuleResult struct {
 	// Packages holds the surface of every package the run loaded.
 	Packages *PackageRegistry
 	// DepGraph is the graph the run built from the module and walked in SCC order.
-	// Codegen takes one, and reading it here rather than calling
-	// dep_graph.BuildDepGraph a second time removes the chance of emitting against
-	// a different graph than the one inference walked.
+	// Codegen emits from one, and reading it here rather than rebuilding it removes
+	// the chance of emitting against a different graph than inference walked.
 	DepGraph *dep_graph.DepGraph
 	// Errors are the run's diagnostics, the imported packages' included.
 	Errors []SolverError
 
 	// checker produced the rest of this struct. InferScriptInLib carries it on for a
-	// bin/ script checked against Scope, which needs the nominal registries and
-	// counters on this run's Context rather than a second run's empty ones.
+	// bin/ script checked against Scope, which needs this run's registries and
+	// counters rather than a second run's empty ones.
 	checker *checker
 }
 

@@ -539,15 +539,11 @@ func TestInferScriptInLibLeavesTheLibraryTableAlone(t *testing.T) {
 }
 
 // TestInferScriptInLibRechecksAScript checks what a second check of one script
-// against one library sees. An editor re-checks a bin/ file on every keystroke
-// against a cached library, so the two checks share the run that holds the class
-// and alias registries.
-//
-// The second check reads the declarations it was given rather than the ones the
-// first check registered under the same names, and the registries hold what the
-// current check declared rather than the union of every check so far. The second
-// version below drops a class the first declared, which is what a registry that
-// only ever overwrites would keep.
+// against one library sees. An editor re-checks a bin/ file on every keystroke, so
+// both checks share the run holding the class and alias registries. Each check must
+// see the declarations it was given rather than the union of every check so far. The
+// second version below drops a class the first declared, which is what a registry
+// that only overwrites would keep.
 func TestInferScriptInLibRechecksAScript(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
 	defer cancel()
@@ -607,10 +603,10 @@ func TestInferScriptInLibRechecksAScript(t *testing.T) {
 }
 
 // TestInferScriptInLibRechecksAnEnum is TestInferScriptInLibRechecksAScript for an
-// enum, which registers a class per variant and one alias for the enum itself. A
-// script cannot declare a type alias — the walk rejects a TypeDecl in a function
-// body, which a script body is — so an enum is how a script reaches the alias
-// registry, and this is what checks that the alias side is cleared too.
+// enum, which registers a class per variant and one alias for the enum itself. An
+// enum is how a script reaches the alias registry at all, since the walk rejects a
+// TypeDecl in a function body and a script body is one. This is what checks that the
+// alias side is cleared too.
 func TestInferScriptInLibRechecksAnEnum(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
 	defer cancel()

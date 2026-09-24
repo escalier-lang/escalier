@@ -126,9 +126,8 @@ type checker struct {
 	// empty while inferring the entry module. Every class, enum, and alias
 	// registered under it keys on the URI joined to the dep_graph-qualified name,
 	// so `std:prelude`'s `Array` and a user's `Array` are two entries in the one
-	// nominal registry a run shares. A bin/ script checked against a library module
-	// takes a URI of its own for the same reason, so its declarations do not land on
-	// the library's keys. See scriptPkgURI.
+	// nominal registry a run shares. A bin/ script checked against a library takes a
+	// URI of its own for the same reason. See scriptPkgURI.
 	//
 	// The separator is a dot, and a URI holds a colon that no identifier may, so
 	// `std:prelude.Array` splits back into its parts unambiguously and the display
@@ -598,38 +597,21 @@ func newChecker() *checker {
 }
 
 // forScript returns a checker that carries c's run on for a bin/ script checked
-// against c's module scope. See InferScriptInLib, which is its only caller.
+// against c's module scope. See InferScriptInLib, its only caller.
 //
-// pkgURI is the prefix the script's own classes, enums, and aliases register under,
-// and it is what keeps them apart from the module's and from another script's. The
-// registries live on the shared Context and are keyed by qualified name, so a script
-// declaring `Point` against a module that also declares one would otherwise find the
-// module's definition and fill its own members into it. The prefix is stripped for
-// display, so the script's class still renders as `Point`.
+// Sharing c.ctx is what lets the script read the module's named types. A class, enum,
+// or alias resolves to a handle whose definition lives on the Context, and a second
+// run would hold none of them.
 //
-// It carries over the run state a script needs to read the module's types:
+// pkgURI is the prefix the script's own declarations register under, which keeps them
+// off the module's keys and off another script's. A script declaring `Point` against a
+// module that declares one would otherwise fill its own members into the module's
+// definition. The prefix is stripped for display, so the class still renders as
+// `Point`.
 //
-//   - ctx, which holds the class and alias registries every named type resolves
-//     through, an enum's registration included, plus the counters that number
-//     inference variables, unique symbols, and lifetimes, so what the script mints
-//     is numbered past what the module minted;
-//   - prov, copied rather than shared, so a diagnostic about a module type can still
-//     blame the source the module run recorded for it while what the script records
-//     stays out of the module's table. Sharing it would grow one table without bound
-//     across the many times a bin/ script is re-checked against one library;
-//   - packages, so an import the module already resolved is not loaded a second time;
-//   - prelude, along with the source and group readers that populated it, so the
-//     prelude the script resolves through is the one the module scope parents to.
-//
-// Info and the diagnostics start empty, so the script's side table and reports cover
-// the script alone. varIDCounter is copied rather than shared, so two scripts can mint
-// the same liveness id. That is harmless. A liveness table belongs to the funcCtx of
-// the body being walked, so no id outlives its script.
-//
-// The Context's fusion recorder is pointed at the returned checker, so a fusion the
-// script's walk records lands in the script's Prov table rather than the module's.
-// The module run has finished by the time this is called, so nothing writes through
-// the recorder it installed.
+// prov is copied rather than shared, so what the script records stays out of the
+// module's table, which a re-checked script would otherwise grow without bound. Info
+// and the diagnostics start empty, so the script's results cover the script alone.
 func (c *checker) forScript(pkgURI string) *checker {
 	sc := &checker{
 		ctx:          c.ctx,
@@ -643,14 +625,13 @@ func (c *checker) forScript(pkgURI string) *checker {
 		groupSource:  c.groupSource,
 		groups:       c.groups,
 	}
+	// Point the recorder at the script, so a fusion its walk records lands in the
+	// script's Prov table rather than the module's.
 	sc.ctx.fusionRecorder = sc.recordFusionEdge
-	// Clearing the prefix matters for one caller: a language server re-checking a
-	// single bin/ file against a cached library. It hands this run the same source
-	// id on every keystroke, so each check lands on the prefix the one before it
-	// registered under, and the definitions from that check are still there. A
-	// compile repeats no prefix, since each bin/ script is its own source with its
-	// own id. Dropping the earlier check's definitions leaves this one registering
-	// into an empty space.
+	// A language server re-checks one bin/ file against a cached library on every
+	// keystroke, handing this run the same source id each time, so drop whatever the
+	// previous check registered under this prefix. A compile repeats no prefix, since
+	// each bin/ script is its own source.
 	sc.ctx.forgetKeyPrefix(packageKeyPrefix(pkgURI) + ".")
 	return sc
 }
