@@ -2,6 +2,7 @@ package codegen
 
 import (
 	"fmt"
+	"slices"
 	"strconv"
 	"strings"
 
@@ -246,13 +247,13 @@ func (b *solTypeAnnBuilder) typeAnn(t soltype.Type) TypeAnn {
 	panic(fmt.Sprintf("typeAnn: unhandled %T", t))
 }
 
-// recursiveTypeAnn names a μ-knot through a companion interface and returns a
+// recursiveTypeAnn names a μ-knot through a companion declaration and returns a
 // reference to it.
 //
 // TypeScript has no inline form for a recursive type, so `μX0.{next: X0}` would
 // otherwise render one level of its unfolding with `any` where the recursion
 // closes, and a reader of `{next: {next: any}}` could assign anything two steps
-// in. An interface may name itself, so the knot emits as one.
+// in. A declaration can refer to its own name, so the knot emits as one.
 //
 // The binder is registered before the body renders, which is what lets a
 // reference back to it resolve to the name.
@@ -261,27 +262,83 @@ func (b *solTypeAnnBuilder) recursiveTypeAnn(t *soltype.RecursiveType) TypeAnn {
 	b.recursiveNames[t.Binder.ID] = name
 	body := b.typeAnn(t.Body)
 
-	object, isObject := body.(*ObjectTypeAnn)
-	if !isObject {
-		// An interface holds an object and nothing else, and a type alias naming
-		// itself outside one is the error "Type alias circularly references
-		// itself". A knot over a union has neither form, so it keeps the older
+	if referencesNameEagerly(body, name) {
+		// `type X = number | X` is the error "Type alias circularly references
+		// itself". Nothing defers the reference, so the knot keeps the older
 		// rendering: one level of the unfolding, with `any` at the binder.
 		delete(b.recursiveNames, t.Binder.ID)
 		return b.typeAnn(t.Body)
 	}
 
+	// An object body emits as an interface, matching the `Self` companion dts.go
+	// already emits. Every other body emits as a type alias.
+	_, isObject := body.(*ObjectTypeAnn)
 	b.companions = append(b.companions, &TypeDecl{
 		Name:       NewIdentifier(name, nil),
 		TypeParams: nil,
-		TypeAnn:    object,
-		Interface:  true,
+		TypeAnn:    body,
+		Interface:  isObject,
 		declare:    false, // not exported, matching the `Self` companion in dts.go
 		export:     false,
 		span:       nil,
 		source:     nil,
 	})
 	return NewRefTypeAnn(name, nil)
+}
+
+// referencesNameEagerly reports whether ta names name in a position TypeScript
+// resolves while it resolves ta itself. Such a reference is what makes a
+// self-referencing declaration circular, the error TS2456.
+//
+// A property, a tuple element, a signature, and a type argument all defer, so
+// `type X = {next: X}`, `type X = [1, X]`, `type X = () => X` and
+// `type X = Array<X>` are accepted. A union or intersection defers nothing of its
+// own, which is why `type X = number | X` is rejected. Eager too: the operands of
+// `keyof`, of an indexed access and of a conditional, a template literal's
+// interpolations, and a mapped type's key clauses.
+func referencesNameEagerly(ta TypeAnn, name string) bool {
+	anyMemberReferences := func(members []TypeAnn) bool {
+		return slices.ContainsFunc(members, func(m TypeAnn) bool {
+			return referencesNameEagerly(m, name)
+		})
+	}
+
+	switch ta := ta.(type) {
+	case *TypeRefTypeAnn:
+		// A reference carrying arguments defers them, so only a bare name counts.
+		return len(ta.TypeArgs) == 0 && ta.Name == name
+	case *UnionTypeAnn:
+		return anyMemberReferences(ta.Types)
+	case *IntersectionTypeAnn:
+		return anyMemberReferences(ta.Types)
+	case *TemplateLitTypeAnn:
+		return anyMemberReferences(ta.TypeAnns)
+	case *KeyOfTypeAnn:
+		return referencesNameEagerly(ta.Type, name)
+	case *IndexTypeAnn:
+		return referencesNameEagerly(ta.Target, name) ||
+			referencesNameEagerly(ta.Index, name)
+	case *CondTypeAnn:
+		return referencesNameEagerly(ta.Check, name) ||
+			referencesNameEagerly(ta.Extends, name) ||
+			referencesNameEagerly(ta.Cons, name) ||
+			referencesNameEagerly(ta.Alt, name)
+	case *ObjectTypeAnn:
+		// A mapped element's key clauses are the only eager position an object
+		// holds. Every other element defers, as does a mapped element's value.
+		return slices.ContainsFunc(ta.Elems, func(elem ObjTypeAnnElem) bool {
+			mapped, ok := elem.(*MappedTypeAnn)
+			if !ok {
+				return false
+			}
+			if mapped.Name != nil && referencesNameEagerly(mapped.Name, name) {
+				return true
+			}
+			return referencesNameEagerly(mapped.TypeParam.Constraint, name)
+		})
+	}
+	// A tuple, a signature, and every atom defer or hold nothing.
+	return false
 }
 
 // claimCompanionName is the next name for a minted declaration, seeded by the

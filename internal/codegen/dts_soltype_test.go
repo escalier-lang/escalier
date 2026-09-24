@@ -624,42 +624,80 @@ func TestBuildTypeAnnFromSolInferBinder(t *testing.T) {
 }
 
 // A μ-knot has no inline form in TypeScript, so it emits as a companion
-// interface naming itself, and the type that held it references that name.
+// declaration naming itself, and the type that held it references that name. An
+// object body takes an interface and every other body a type alias.
+//
+// The exception is a reference TypeScript resolves while it resolves the
+// declaration. There the companion would be the error "Type alias circularly
+// references itself", so the knot keeps the older rendering: one level of the
+// unfolding with `any` at the binder.
 func TestBuildTypeAnnFromSolRecursive(t *testing.T) {
-	binder := &soltype.RecursiveVarType{ID: 0, Name: "X0"}
-	knot := &soltype.RecursiveType{
-		Binder: binder,
-		Body:   solObj(solProp("next", binder)),
+	// body takes the binder so each case can close its own knot over it.
+	tests := map[string]struct {
+		body     func(binder soltype.Type) soltype.Type
+		rendered string
+		decl     string // empty when the knot mints no companion
+	}{
+		"Object": {
+			body:     func(x soltype.Type) soltype.Type { return solObj(solProp("next", x)) },
+			rendered: "__t_rec0__",
+			decl:     "interface __t_rec0__ {next: __t_rec0__}",
+		},
+		"Tuple": {
+			body: func(x soltype.Type) soltype.Type {
+				return &soltype.TupleType{Elems: []soltype.Type{solNum(), x}, Inexact: false}
+			},
+			rendered: "__t_rec0__",
+			decl:     "type __t_rec0__ = [number, __t_rec0__];",
+		},
+		"Signature": {
+			body:     func(x soltype.Type) soltype.Type { return solFn(nil, x) },
+			rendered: "__t_rec0__",
+			decl:     "type __t_rec0__ = () => __t_rec0__;",
+		},
+		// The reference sits under an object, which defers it, so the union as a
+		// whole is fine as an alias.
+		"UnionOverAnObject": {
+			body: func(x soltype.Type) soltype.Type {
+				return &soltype.UnionType{Types: []soltype.Type{solNum(), solObj(solProp("next", x))}}
+			},
+			rendered: "__t_rec0__",
+			decl:     "type __t_rec0__ = number | {next: __t_rec0__};",
+		},
+		// A union member sits at the same level as the union, so nothing defers.
+		"UnionOverTheBinder": {
+			body: func(x soltype.Type) soltype.Type {
+				return &soltype.UnionType{Types: []soltype.Type{solNum(), x}}
+			},
+			rendered: "number | any",
+		},
+		"Keyof": {
+			body:     func(x soltype.Type) soltype.Type { return &soltype.KeyofType{Operand: x} },
+			rendered: "keyof any",
+		},
 	}
 
-	builder := newSolTypeAnnBuilder(solPreludePrefix, "next", nil)
-	printer := NewPrinter()
-	printer.PrintTypeAnn(builder.render(knot))
-	require.Equal(t, "__next_rec0__", printer.Output)
+	for name, test := range tests {
+		t.Run(name, func(t *testing.T) {
+			binder := &soltype.RecursiveVarType{ID: 0, Name: "X0"}
+			knot := &soltype.RecursiveType{Binder: binder, Body: test.body(binder)}
 
-	companions := builder.companionDecls()
-	require.Len(t, companions, 1)
-	decl := NewPrinter()
-	decl.PrintDecl(companions[0])
-	require.Equal(t, "interface __next_rec0__ {next: __next_rec0__}", decl.Output)
-	require.True(t, companions[0].Interface, "a self-naming type alias is a TypeScript error")
-}
+			builder := newSolTypeAnnBuilder(solPreludePrefix, "t", nil)
+			printer := NewPrinter()
+			printer.PrintTypeAnn(builder.render(knot))
+			require.Equal(t, test.rendered, printer.Output)
 
-// A knot whose body is no object has neither form: an interface holds only an
-// object, and a type alias naming itself outside one is rejected. It keeps the
-// older rendering, one level of the unfolding with `any` at the binder.
-func TestBuildTypeAnnFromSolRecursiveOverAUnion(t *testing.T) {
-	binder := &soltype.RecursiveVarType{ID: 0, Name: "X0"}
-	knot := &soltype.RecursiveType{
-		Binder: binder,
-		Body:   &soltype.UnionType{Types: []soltype.Type{solNum(), binder}},
+			companions := builder.companionDecls()
+			if test.decl == "" {
+				require.Empty(t, companions)
+				return
+			}
+			require.Len(t, companions, 1)
+			decl := NewPrinter()
+			decl.PrintDecl(companions[0])
+			require.Equal(t, test.decl, decl.Output)
+		})
 	}
-
-	builder := newSolTypeAnnBuilder(solPreludePrefix, "u", nil)
-	printer := NewPrinter()
-	printer.PrintTypeAnn(builder.render(knot))
-	require.Equal(t, "number | any", printer.Output)
-	require.Empty(t, builder.companionDecls())
 }
 
 // A type carrying no knot mints nothing.
