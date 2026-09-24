@@ -165,9 +165,17 @@ output path, and it writes the merged document out:
 sbt 'runMain escalier.specextract.MergeCheck ecma402/spec merged.html'
 ```
 
-`Main` serializes ECMA-262 alone. Extracting from the merged document
-needs the two ECMA-402 abstract-operation heads whose type wording ends the run,
-which is [#1451](https://github.com/escalier-lang/escalier/issues/1451).
+Two ECMA-402 heads declare a type in wording ECMA-262 never uses, and ESMeta
+raises on a head it cannot parse. The raise ends extraction for the whole
+document, so one unreadable head costs every algorithm rather than its own,
+which is why the merge restates those two and leaves the unread steps alone. A
+step falls back to a `yet` and costs only itself. `MergedSpec.HeadRewrites`
+records what each restatement says and why it declares the same values, and the
+run fails if a pattern stops matching its head exactly once.
+
+`Main` serializes ECMA-262 alone and writes the committed `cfg.json`.
+Committing a merged graph is
+[#1455](https://github.com/escalier-lang/escalier/issues/1455).
 
 ## The serializer
 
