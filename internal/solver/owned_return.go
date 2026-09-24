@@ -64,6 +64,21 @@ func (c *checker) ownedReturnType(
 	return idx, owned, true
 }
 
+// mayBeBorrowed reports whether t could still be a borrow when the union of a function's
+// returns is built. A `RefType` carrying a lifetime is one outright. A type variable is one
+// too, since what it resolves to is not settled while the rewrites are decided, and `return
+// id(p)` records exactly that. Treating an unsettled return as owned would let a rewrite through
+// and build the mixed union commitOwnedReturnTypes exists to prevent.
+func mayBeBorrowed(t soltype.Type) bool {
+	switch t := t.(type) {
+	case *soltype.RefType:
+		return t.Lt != nil
+	case *soltype.TypeVarType:
+		return true
+	}
+	return false
+}
+
 // commitOwnedReturnTypes writes every collected rewrite onto the function's return types, or
 // writes none of them.
 //
@@ -76,7 +91,7 @@ func (c *checker) ownedReturnType(
 //		return p
 //	}
 //
-// only the first return strips, since a parameter borrow carries no local edge. Owning that one
+// only the first return ownedReturns, since a parameter borrow carries no local edge. Owning that one
 // and leaving `return p` borrowed would union `mut B` with `&'a mut B` and reject the whole
 // function. Holding the rewrite back leaves both borrowed, which is uniform and checks.
 func (c *checker) commitOwnedReturnTypes(ownedReturns map[int]soltype.Type) {
@@ -87,7 +102,7 @@ func (c *checker) commitOwnedReturnTypes(ownedReturns map[int]soltype.Type) {
 		if _, rewritten := ownedReturns[i]; rewritten {
 			continue
 		}
-		if ref, isRef := t.(*soltype.RefType); isRef && ref.Lt != nil {
+		if mayBeBorrowed(t) {
 			return
 		}
 	}
