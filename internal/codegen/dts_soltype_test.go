@@ -700,6 +700,79 @@ func TestBuildTypeAnnFromSolRecursive(t *testing.T) {
 	}
 }
 
+// referencesNameEagerly decides whether a knot can be named, so each case below
+// pairs the `TypeAnn` shape with the TypeScript declaration it stands for. Every
+// expectation was checked by running `tsc --noEmit --strict` over
+// `type X = <shape>`: a true case is the error TS2456 "Type alias circularly
+// references itself", a false case compiles. `MappedAsClause` is the one
+// exception, noted on the case itself.
+//
+// A conditional resolves before its branches, so a reference in the branch not
+// taken compiles. The predicate does not evaluate the condition and answers true
+// for either branch, which costs only the `any` fallback.
+func TestReferencesNameEagerly(t *testing.T) {
+	// self is the reference under test, and other is a name the knot never binds.
+	self := NewRefTypeAnn("X", nil)
+	other := NewRefTypeAnn("Y", nil)
+	num := NewNumberTypeAnn(nil)
+
+	// prop wraps ta in `{p: ta}`, an object member, which defers.
+	prop := func(ta TypeAnn) TypeAnn {
+		return NewObjectTypeAnn([]ObjTypeAnnElem{&PropertyTypeAnn{
+			Name: NewIdentExpr("p", "", nil), Optional: false, Readonly: false, Value: ta,
+		}})
+	}
+	// mapped wraps constraint into `{[K in constraint]: number}`, adding the
+	// key-remapping `as name` when name is not nil.
+	mapped := func(constraint, name TypeAnn) TypeAnn {
+		return NewObjectTypeAnn([]ObjTypeAnnElem{&MappedTypeAnn{
+			TypeParam: &IndexParamTypeAnn{Name: "K", Constraint: constraint},
+			Name:      name,
+			Value:     num,
+			Optional:  nil,
+			ReadOnly:  nil,
+		}})
+	}
+
+	tests := map[string]struct {
+		ta    TypeAnn
+		eager bool
+	}{
+		"Bare":               {self, true},
+		"AnotherName":        {other, false},
+		"TypeArgument":       {NewRefTypeAnn("Array", []TypeAnn{self}), false},
+		"Property":           {prop(self), false},
+		"Tuple":              {NewTupleTypeAnn([]TypeAnn{num, self}), false},
+		"UnionMember":        {NewUnionTypeAnn([]TypeAnn{num, self}), true},
+		"UnionUnderAProp":    {NewUnionTypeAnn([]TypeAnn{num, prop(self)}), false},
+		"IntersectionMember": {NewIntersectionTypeAnn([]TypeAnn{num, self}), true},
+		"Interpolation": {NewTemplateLitTypeAnn(
+			[]*Quasi{{Value: "a", Span: nil}, {Value: "", Span: nil}},
+			[]TypeAnn{self},
+		), true},
+		"KeyOfOperand": {NewKeyOfTypeAnn(self), true},
+		"IndexTarget":  {NewIndexTypeAnn(self, num), true},
+		"IndexKey":     {NewIndexTypeAnn(other, self), true},
+		"CondCheck":    {NewCondTypeAnn(self, num, num, num), true},
+		"CondExtends":  {NewCondTypeAnn(num, self, num, num), true},
+		"CondBranch":   {NewCondTypeAnn(num, num, self, num), true},
+		// The extends clause fails, so the else branch is the one taken.
+		"CondElse":        {NewCondTypeAnn(num, NewStringTypeAnn(nil), num, self), true},
+		"MappedKeys":      {mapped(NewKeyOfTypeAnn(self), nil), true},
+		"MappedOverOther": {mapped(NewKeyOfTypeAnn(other), nil), false},
+		// The one case tsc does not answer with TS2456. On
+		// `type X = {[K in "a" as keyof X]: number}` TypeScript 5.8 overflows its
+		// stack instead, which the fallback keeps out of the output just the same.
+		"MappedAsClause": {mapped(NewStringTypeAnn(nil), NewKeyOfTypeAnn(self)), true},
+	}
+
+	for name, test := range tests {
+		t.Run(name, func(t *testing.T) {
+			require.Equal(t, test.eager, referencesNameEagerly(test.ta, "X"))
+		})
+	}
+}
+
 // A type carrying no knot mints nothing.
 func TestBuildTypeAnnFromSolMintsNoCompanionWithoutAKnot(t *testing.T) {
 	builder := newSolTypeAnnBuilder(solPreludePrefix, "x", nil)
