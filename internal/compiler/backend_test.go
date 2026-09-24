@@ -263,9 +263,8 @@ func TestCompileScriptImportsALibraryNamespace(t *testing.T) {
 }
 
 // TestCheckLibWithoutAStandardLibrary checks what the solver path reports when the
-// standard library tree cannot be found. The run then resolves no package and
-// reports the prelude classes its own rules name as missing, so this diagnostic is
-// what says the cause is the tree rather than the code being checked.
+// standard library tree cannot be found. The run reports the prelude classes as
+// missing on top of this, so the diagnostic asserted here is the one naming the cause.
 func TestCheckLibWithoutAStandardLibrary(t *testing.T) {
 	useSolver(t)
 	empty := t.TempDir()
@@ -290,12 +289,9 @@ func TestCheckLibWithoutAStandardLibrary(t *testing.T) {
 
 // TestCompileScriptReportsTheGapOfTheCheckerThatChecked checks that the codegen gap
 // follows the checker that checked the script rather than the one selected when the
-// emit happens.
-//
-// A LibScope holds the checker that produced it, so a script checked against a
-// solver library is checked by the solver whatever CheckerEnvVar says at the time.
-// Reading the gap off the selected backend instead would emit solver-checked
-// JavaScript with nothing saying it cannot be trusted.
+// emit happens. A LibScope holds the checker that produced it, so reading the gap off
+// the selected backend instead would emit solver-checked JavaScript with nothing
+// saying it cannot be trusted.
 func TestCompileScriptReportsTheGapOfTheCheckerThatChecked(t *testing.T) {
 	useSolver(t)
 	libOutput := CheckLib(context.Background(), libSources("export val greeting = \"hello\"\n"))

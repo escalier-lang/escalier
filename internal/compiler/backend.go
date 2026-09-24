@@ -20,12 +20,10 @@ type Diagnostic interface {
 }
 
 // CheckerEnvVar names the environment variable that picks which type checker the
-// compiler's entry points run.
-//
-// Set it to CheckerSolver to run internal/solver. Any other value, the variable
-// being unset included, runs internal/checker, which is the default while the
-// solver cutover is in progress. The variable is read on each entry point call, so
-// a test can set it for one call with t.Setenv.
+// compiler's entry points run. Set it to CheckerSolver to run internal/solver. Any
+// other value, unset included, runs internal/checker, the default while the cutover
+// is in progress. It is read on each entry point call, so a test can set it for one
+// call with t.Setenv.
 const CheckerEnvVar = "ESCALIER_CHECKER"
 
 // CheckerSolver is the CheckerEnvVar value that selects internal/solver.
@@ -54,11 +52,9 @@ type backend interface {
 // LibScope is the surface a package's lib/ module declared, in whatever form the
 // checker that produced it holds. It is the lib/ to bin/ seam: each bin/ script is
 // checked as if the library's top-level declarations were already in scope, and the
-// emitted script imports the ones it used.
-//
-// The two implementations wrap what their own checker produced. Neither converts to
-// the other's type representation, which is what keeps the cutover from building a
-// bridge back into type_system.
+// emitted script imports the ones it used. Neither implementation converts to the
+// other's type representation, which is what keeps the cutover from building a bridge
+// back into type_system.
 type LibScope interface {
 	// checkScript infers a parsed bin/ script with this library in scope.
 	checkScript(ctx context.Context, script *ast.Script) scriptResult
@@ -87,15 +83,12 @@ type libResult struct {
 	fileScopes map[int]*checker.Scope
 	// diagnostics are the module's type errors.
 	diagnostics []Diagnostic
-	// codegenGap names what the checker that produced this result cannot yet drive
-	// in codegen, or is nil when it drives it fully. An entry point that emits
-	// reports it beside the source's own diagnostics, so output that cannot be
-	// trusted says so rather than passing for output that can.
+	// codegenGap names what the checker that produced this result cannot yet drive in
+	// codegen, or is nil when it drives it fully. An entry point that emits reports it
+	// beside the source's own diagnostics, so output that cannot be trusted says so.
 	//
-	// It rides the result rather than being asked of a backend, because the checker
-	// that produced a result is the one whose gaps the emitted output carries, and
-	// that is not always the backend the entry point selected. A LibScope holds the
-	// checker that made it, so a script checked against one is checked by that
+	// It rides the result rather than being asked of a backend, because a LibScope
+	// holds the checker that made it: a script checked against one is checked by that
 	// checker whatever CheckerEnvVar says at the time.
 	codegenGap Diagnostic
 }
