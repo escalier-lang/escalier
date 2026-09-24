@@ -641,7 +641,7 @@ func TestBuildTypeAnnFromSolRecursive(t *testing.T) {
 	require.Len(t, companions, 1)
 	decl := NewPrinter()
 	decl.PrintDecl(companions[0])
-	require.Equal(t, "interface __next_rec0__{next: __next_rec0__}", decl.Output)
+	require.Equal(t, "interface __next_rec0__ {next: __next_rec0__}", decl.Output)
 	require.True(t, companions[0].Interface, "a self-naming type alias is a TypeScript error")
 }
 

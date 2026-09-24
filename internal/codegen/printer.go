@@ -931,7 +931,11 @@ func (p *Printer) PrintDecl(decl Decl) {
 			p.print(">")
 		}
 		if d.TypeAnn != nil {
-			if !d.Interface {
+			// An interface's body follows its name after a space, the way
+			// InterfaceDecl writes one. An alias takes `=` and a terminator.
+			if d.Interface {
+				p.print(" ")
+			} else {
 				p.print(" = ")
 			}
 			p.PrintTypeAnn(d.TypeAnn)
