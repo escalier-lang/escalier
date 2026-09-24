@@ -321,3 +321,342 @@ func TestScriptAwaitOutsideAsync(t *testing.T) {
 	require.Equal(t, "3:11-3:18: await can only be used inside an async function", msgWithSpan(t, errs[0]))
 	require.Empty(t, errs[0].Related())
 }
+
+// inferScriptInLib parses libSrc as a library module and scriptSrc as a script,
+// infers the module, then infers the script against the module's scope through
+// InferScriptInLib. It returns the script scope's own value bindings and the
+// script's diagnostics. The module is required to infer cleanly, so an error the
+// caller sees belongs to the script.
+func inferScriptInLib(t *testing.T, libSrc, scriptSrc string) (values map[string]string, errs []SolverError) {
+	t.Helper()
+	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+	defer cancel()
+
+	libSource := &ast.Source{ID: 0, Path: "lib/index.esc", Contents: libSrc}
+	module, libParseErrors := parser.ParseLibFiles(ctx, []*ast.Source{libSource})
+	require.Empty(t, libParseErrors, "expected no parse errors in the library")
+
+	scriptSource := &ast.Source{ID: 1, Path: "bin/index.esc", Contents: scriptSrc}
+	script, scriptParseErrors := parser.NewParser(ctx, scriptSource).ParseScript()
+	require.Empty(t, scriptParseErrors, "expected no parse errors in the script")
+
+	registerTestSources(t, map[int]*ast.Source{libSource.ID: libSource, scriptSource.ID: scriptSource})
+
+	lib := InferModuleWithSource(module, testStdlibSource())
+	require.Empty(t, lib.Errors, "expected no errors from the library module")
+
+	scope, _, errs := InferScriptInLib(script, lib)
+	values = make(map[string]string, len(scope.values))
+	for name, b := range scope.values {
+		values[name] = renderScheme(b.Schemes[0])
+	}
+	return values, errs
+}
+
+// TestInferScriptInLib checks the bin/ to lib/ seam: a script infers against the
+// scope a library module's run produced, so a name the script does not declare
+// resolves to the library's binding without an import.
+//
+// The class and alias cases are what a second inference run could not do. Both
+// resolve to a handle carrying a name whose definition lives on the run's Context,
+// so reading `p.x` off a library class or annotating against a library alias only
+// works because the script carries the library's run on.
+func TestInferScriptInLib(t *testing.T) {
+	tests := []struct {
+		name       string
+		lib        string
+		script     string
+		wantValues map[string]string
+	}{
+		{
+			name:       "Value",
+			lib:        `export val greeting = "hello"`,
+			script:     `val g = greeting`,
+			wantValues: map[string]string{"g": `"hello"`},
+		},
+		{
+			name: "ClassMember",
+			lib: `
+				export class Point {
+					x: number,
+					y: number,
+					getX(self) -> number { return self.x },
+				}
+			`,
+			script: `
+				val p = Point(1, 2)
+				val px = p.x
+				val gx = p.getX()
+			`,
+			wantValues: map[string]string{"p": "Point", "px": "number", "gx": "number"},
+		},
+		{
+			name:       "TypeAliasAnnotation",
+			lib:        `export type Pair = {a: number, b: number}`,
+			script:     `val pr: Pair = {a: 1, b: 2}`,
+			wantValues: map[string]string{"pr": "Pair"},
+		},
+		{
+			name:       "ScriptBindingShadowsLibrary",
+			lib:        `export val greeting = "hello"`,
+			script:     `val greeting = "goodbye"`,
+			wantValues: map[string]string{"greeting": `"goodbye"`},
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			values, errs := inferScriptInLib(t, test.lib, test.script)
+			require.Empty(t, errs)
+			for name, want := range test.wantValues {
+				require.Equal(t, want, values[name], "value binding %q", name)
+			}
+		})
+	}
+}
+
+// TestInferScriptInLibUnknownName checks that the library scope adds the library's
+// bindings and nothing else: a name neither the script nor the library declares is
+// still unknown.
+func TestInferScriptInLibUnknownName(t *testing.T) {
+	_, errs := inferScriptInLib(t, `export val greeting = "hello"`, `val f = farewell`)
+	require.Len(t, errs, 1)
+	require.Equal(t, "1:9-1:17: Unknown identifier: farewell", msgWithSpan(t, errs[0]))
+}
+
+// TestInferScriptInLibClassShadowsLibrary checks that a class a script declares is
+// its own class rather than an addition to the library's class of the same name.
+// Both scripts and the library register their nominal definitions in the run's one
+// Context, so each needs a key prefix of its own for two same-named classes to hold
+// two definitions.
+func TestInferScriptInLibClassShadowsLibrary(t *testing.T) {
+	values, errs := inferScriptInLib(t, `
+		export class Point {
+			x: number,
+		}
+		export fn origin() -> Point { return Point(0) }
+	`, `
+		class Point {
+			label: string,
+		}
+		val p = Point("here")
+		val l = p.label
+		val o = origin()
+		val ox = o.x
+	`)
+	require.Empty(t, errs)
+	require.Equal(t, `{new (label: string) -> Point}`, values["Point"])
+	require.Equal(t, "Point", values["p"])
+	require.Equal(t, "string", values["l"])
+	require.Equal(t, "Point", values["o"])
+	require.Equal(t, "number", values["ox"])
+}
+
+// TestInferScriptInLibClassPerScript checks that two scripts checked against one
+// library each keep their own definition for a class name they both declare. The
+// registries live on the run all three share, so without a per-script key the second
+// script's definition would replace the first's while the first's scope still holds a
+// handle naming it.
+func TestInferScriptInLibClassPerScript(t *testing.T) {
+	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+	defer cancel()
+
+	libSource := &ast.Source{ID: 0, Path: "lib/index.esc", Contents: `export val unused = 0`}
+	module, parseErrors := parser.ParseLibFiles(ctx, []*ast.Source{libSource})
+	require.Empty(t, parseErrors)
+
+	scripts := []*ast.Source{
+		{ID: 1, Path: "bin/first.esc", Contents: "class Shape {\n\tsides: number,\n}\nval s = Shape(3)\nval n = s.sides"},
+		{ID: 2, Path: "bin/second.esc", Contents: "class Shape {\n\tname: string,\n}\nval s = Shape(\"square\")\nval n = s.name"},
+	}
+	sources := map[int]*ast.Source{libSource.ID: libSource}
+	for _, src := range scripts {
+		sources[src.ID] = src
+	}
+	registerTestSources(t, sources)
+
+	lib := InferModuleWithSource(module, testStdlibSource())
+	require.Empty(t, lib.Errors)
+
+	wantMember := []string{"number", "string"}
+	qnames := make([]string, len(scripts))
+	for i, src := range scripts {
+		script, scriptParseErrors := parser.NewParser(ctx, src).ParseScript()
+		require.Empty(t, scriptParseErrors)
+		scope, _, errs := InferScriptInLib(script, lib)
+		require.Empty(t, errs, "script %s", src.Path)
+
+		b, found := scope.GetValue("n")
+		require.True(t, found)
+		require.Equal(t, wantMember[i], renderScheme(b.Schemes[0]), "script %s", src.Path)
+
+		shape, found := scope.GetType("Shape")
+		require.True(t, found)
+		cls, isClass := shape.Type.(*soltype.ClassType)
+		require.True(t, isClass)
+		qnames[i] = cls.Name
+	}
+
+	// Each script's handle names a key of its own, and both definitions still hold
+	// their own members once the second script has run.
+	require.NotEqual(t, qnames[0], qnames[1])
+	wantBody := []string{"{sides: number}", "{name: string}"}
+	for i, qname := range qnames {
+		def, registered := lib.checker.ctx.classDef(qname)
+		require.True(t, registered, "script %s", scripts[i].Path)
+		require.Equal(t, wantBody[i], soltype.Print(def.Body), "script %s", scripts[i].Path)
+	}
+}
+
+// TestInferScriptInLibLeavesTheLibraryTableAlone checks that re-checking a script
+// against one library does not grow the library run's Prov table. The table maps a
+// type to the source it came from, and a script's own entries belong to the script:
+// an editor re-checks one bin/ file on every keystroke against a cached library, so
+// a table shared with the library would grow for as long as the session lasts.
+func TestInferScriptInLibLeavesTheLibraryTableAlone(t *testing.T) {
+	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+	defer cancel()
+
+	libSource := &ast.Source{ID: 0, Path: "lib/index.esc", Contents: `export val greeting = "hello"`}
+	module, parseErrors := parser.ParseLibFiles(ctx, []*ast.Source{libSource})
+	require.Empty(t, parseErrors)
+
+	scriptSource := &ast.Source{ID: 1, Path: "bin/index.esc", Contents: "val g = greeting\nval h = g"}
+	registerTestSources(t, map[int]*ast.Source{libSource.ID: libSource, scriptSource.ID: scriptSource})
+
+	lib := InferModuleWithSource(module, testStdlibSource())
+	require.Empty(t, lib.Errors)
+	before := len(lib.checker.prov)
+
+	for range 5 {
+		script, scriptParseErrors := parser.NewParser(ctx, scriptSource).ParseScript()
+		require.Empty(t, scriptParseErrors)
+		_, _, errs := InferScriptInLib(script, lib)
+		require.Empty(t, errs)
+	}
+
+	require.Equal(t, before, len(lib.checker.prov))
+}
+
+// TestInferScriptInLibRechecksAScript checks what a second check of one script
+// against one library sees. An editor re-checks a bin/ file on every keystroke, so
+// both checks share the run holding the class and alias registries. Each check must
+// see the declarations it was given rather than the union of every check so far. The
+// second version below drops a class the first declared, which is what a registry
+// that only overwrites would keep.
+func TestInferScriptInLibRechecksAScript(t *testing.T) {
+	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+	defer cancel()
+
+	libSource := &ast.Source{ID: 0, Path: "lib/index.esc", Contents: `export val unused = 0`}
+	module, parseErrors := parser.ParseLibFiles(ctx, []*ast.Source{libSource})
+	require.Empty(t, parseErrors)
+
+	lib := InferModuleWithSource(module, testStdlibSource())
+	require.Empty(t, lib.Errors)
+	classesBefore := len(lib.checker.ctx.classes)
+
+	// Every version is the same file, so they carry the same source id and key their
+	// declarations under the same names.
+	versions := []struct {
+		name     string
+		contents string
+		member   string
+		classes  int
+	}{
+		{
+			name:     "TwoClasses",
+			contents: "class Point {\n\tx: number,\n}\nclass Shape {\n\tsides: number,\n}\nval p = Point(1)\nval m = p.x",
+			member:   "number",
+			classes:  2,
+		},
+		{
+			name:     "OneClassWithAChangedMember",
+			contents: "class Point {\n\tlabel: string,\n}\nval p = Point(\"here\")\nval m = p.label",
+			member:   "string",
+			classes:  1,
+		},
+		{
+			name:     "BackToTheFirstMember",
+			contents: "class Point {\n\tx: number,\n}\nval p = Point(2)\nval m = p.x",
+			member:   "number",
+			classes:  1,
+		},
+	}
+
+	for _, version := range versions {
+		t.Run(version.name, func(t *testing.T) {
+			source := &ast.Source{ID: 1, Path: "bin/index.esc", Contents: version.contents}
+			registerTestSources(t, map[int]*ast.Source{libSource.ID: libSource, source.ID: source})
+			script, scriptParseErrors := parser.NewParser(ctx, source).ParseScript()
+			require.Empty(t, scriptParseErrors)
+
+			scope, _, errs := InferScriptInLib(script, lib)
+			require.Empty(t, errs)
+			b, found := scope.GetValue("m")
+			require.True(t, found)
+			require.Equal(t, version.member, renderScheme(b.Schemes[0]))
+
+			require.Equal(t, classesBefore+version.classes, len(lib.checker.ctx.classes))
+		})
+	}
+}
+
+// TestInferScriptInLibRechecksAnEnum is TestInferScriptInLibRechecksAScript for an
+// enum, which registers a class per variant and one alias for the enum itself. An
+// enum is how a script reaches the alias registry at all, since the walk rejects a
+// TypeDecl in a function body and a script body is one. This is what checks that the
+// alias side is cleared too.
+func TestInferScriptInLibRechecksAnEnum(t *testing.T) {
+	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+	defer cancel()
+
+	libSource := &ast.Source{ID: 0, Path: "lib/index.esc", Contents: `export val unused = 0`}
+	module, parseErrors := parser.ParseLibFiles(ctx, []*ast.Source{libSource})
+	require.Empty(t, parseErrors)
+
+	lib := InferModuleWithSource(module, testStdlibSource())
+	require.Empty(t, lib.Errors)
+	classesBefore := len(lib.checker.ctx.classes)
+	aliasesBefore := len(lib.checker.ctx.aliases)
+
+	versions := []struct {
+		name     string
+		contents string
+		payload  string
+		variants int
+	}{
+		{
+			name:     "TwoVariants",
+			contents: "enum Color {\n\tHex(code: string),\n\tRgb(r: number),\n}\nval c = Color.Hex(\"#fff\")\nval p = c",
+			payload:  "Color",
+			variants: 2,
+		},
+		{
+			name:     "OneVariantWithAChangedPayload",
+			contents: "enum Color {\n\tHex(code: number),\n}\nval c = Color.Hex(1)\nval p = c",
+			payload:  "Color",
+			variants: 1,
+		},
+	}
+
+	for _, version := range versions {
+		t.Run(version.name, func(t *testing.T) {
+			source := &ast.Source{ID: 1, Path: "bin/index.esc", Contents: version.contents}
+			registerTestSources(t, map[int]*ast.Source{libSource.ID: libSource, source.ID: source})
+			script, scriptParseErrors := parser.NewParser(ctx, source).ParseScript()
+			require.Empty(t, scriptParseErrors)
+
+			scope, _, errs := InferScriptInLib(script, lib)
+			require.Empty(t, errs)
+			b, found := scope.GetValue("p")
+			require.True(t, found)
+			require.Equal(t, version.payload, renderScheme(b.Schemes[0]))
+
+			// One class per variant this version declares, and one alias for the
+			// enum, whichever check this is.
+			require.Equal(t, classesBefore+version.variants, len(lib.checker.ctx.classes))
+			require.Equal(t, aliasesBefore+1, len(lib.checker.ctx.aliases))
+		})
+	}
+}
