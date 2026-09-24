@@ -14,7 +14,6 @@ import (
 	"github.com/escalier-lang/escalier/internal/checker"
 	"github.com/escalier-lang/escalier/internal/codegen"
 	"github.com/escalier-lang/escalier/internal/parser"
-	"github.com/escalier-lang/escalier/internal/type_system"
 )
 
 type CompUnitOutput struct {
@@ -25,7 +24,7 @@ type CompUnitOutput struct {
 
 type CompilerOutput struct {
 	ParseErrors []*parser.Error
-	TypeErrors  []checker.Error
+	TypeErrors  []Diagnostic
 	CompUnits   map[string]CompUnitOutput
 }
 
@@ -41,13 +40,18 @@ type CheckOutput struct {
 	Scripts      map[int]*ast.Script    // SourceID -> parsed script AST
 	ScriptScopes map[int]*checker.Scope // SourceID -> script scope
 
+	// LibScope is the library surface each bin/ script was checked against, nil
+	// when the package has no lib/ files. The LSP caches it so a bin/ script that
+	// changes on its own is re-checked without re-checking lib/.
+	LibScope LibScope
+
 	// Sources maps a SourceID to the file it names. A Span carries byte
 	// offsets, so anything turning one into a line and column needs the text
 	// it indexes into.
 	Sources map[int]*ast.Source
 
 	ParseErrors []*parser.Error
-	TypeErrors  []checker.Error
+	TypeErrors  []Diagnostic
 }
 
 // SourceByID returns the file a SourceID names, or nil when the output holds
@@ -61,9 +65,9 @@ type CheckLibOutput struct {
 	Module      *ast.Module            // parsed lib module (nil if no lib/ files)
 	ModuleScope *checker.Scope         // scope after InferModule
 	FileScopes  map[int]*checker.Scope // SourceID -> file scope (lib/ files)
-	LibNS       *type_system.Namespace // lib namespace for bin/ script checking
+	LibScope    LibScope               // lib surface for bin/ script checking
 	ParseErrors []*parser.Error
-	TypeErrors  []checker.Error
+	TypeErrors  []Diagnostic
 }
 
 // CheckLib parses and type-checks lib/ source files without codegen.
@@ -72,28 +76,20 @@ func CheckLib(ctx context.Context, libSources []*ast.Source) CheckLibOutput {
 		return CheckLibOutput{
 			FileScopes:  map[int]*checker.Scope{},
 			ParseErrors: []*parser.Error{},
-			TypeErrors:  []checker.Error{},
+			TypeErrors:  []Diagnostic{},
 		}
 	}
 
 	module, parseErrors := parser.ParseLibFiles(ctx, libSources)
-
-	c := checker.NewChecker(ctx)
-	inferCtx := checker.Context{
-		// Create a child scope to avoid polluting the prelude with lib bindings.
-		Scope:      checker.Prelude(c).WithNewScope(),
-		IsAsync:    false,
-		IsPatMatch: false,
-	}
-	_, typeErrors := c.InferModule(inferCtx, module)
+	lib := selectBackend().checkLib(ctx, module)
 
 	return CheckLibOutput{
 		Module:      module,
-		ModuleScope: inferCtx.Scope,
-		FileScopes:  c.FileScopes,
-		LibNS:       inferCtx.Scope.Namespace,
+		ModuleScope: lib.scope,
+		FileScopes:  lib.fileScopes,
+		LibScope:    lib.lib,
 		ParseErrors: parseErrors,
-		TypeErrors:  typeErrors,
+		TypeErrors:  lib.diagnostics,
 	}
 }
 
@@ -123,17 +119,18 @@ func CheckPackage(sources []*ast.Source) CheckOutput {
 		FileScopes:   libOutput.FileScopes,
 		Scripts:      map[int]*ast.Script{},
 		ScriptScopes: map[int]*checker.Scope{},
+		LibScope:     libOutput.LibScope,
 		Sources:      sourcesByID,
 		ParseErrors:  libOutput.ParseErrors,
 		TypeErrors:   libOutput.TypeErrors,
 	}
 
-	// Check each bin/ script with the lib namespace injected.
+	// Check each bin/ script with the library surface in scope.
 	for _, src := range sources {
 		if !strings.HasPrefix(src.Path, "bin/") {
 			continue
 		}
-		scriptOutput := CheckBinScript(ctx, libOutput.LibNS, src)
+		scriptOutput := CheckBinScript(ctx, libOutput.LibScope, src)
 		output.Scripts[src.ID] = scriptOutput.Script
 		output.ScriptScopes[src.ID] = scriptOutput.Scope
 		output.ParseErrors = append(output.ParseErrors, scriptOutput.ParseErrors...)
@@ -148,35 +145,23 @@ type BinScriptOutput struct {
 	Script      *ast.Script
 	Scope       *checker.Scope
 	ParseErrors []*parser.Error
-	TypeErrors  []checker.Error
+	TypeErrors  []Diagnostic
 }
 
 // CheckBinScript parses and type-checks a single bin/ script with the given
-// lib namespace injected into the scope chain. If libNS is nil, the script
-// is checked with only the prelude in scope.
-func CheckBinScript(ctx context.Context, libNS *type_system.Namespace, src *ast.Source) BinScriptOutput {
+// library surface in scope. If lib is nil, the script is checked with only the
+// prelude in scope.
+func CheckBinScript(ctx context.Context, lib LibScope, src *ast.Source) BinScriptOutput {
 	p := parser.NewParser(ctx, src)
 	script, parseErrors := p.ParseScript()
 
-	c := checker.NewChecker(ctx)
-	scope := checker.Prelude(c)
-	if libNS != nil {
-		// Insert the lib namespace between the prelude and the script scope
-		// so bin/ scripts can access lib exports without an explicit import.
-		scope = scope.WithNewScopeAndNamespace(libNS)
-	}
-	inferCtx := checker.Context{
-		Scope:      scope,
-		IsAsync:    false,
-		IsPatMatch: false,
-	}
-	scriptScope, typeErrors := c.InferScript(inferCtx, script)
+	result := checkScriptIn(ctx, selectBackend(), lib, script)
 
 	return BinScriptOutput{
 		Script:      script,
-		Scope:       scriptScope,
+		Scope:       result.scope,
 		ParseErrors: parseErrors,
-		TypeErrors:  typeErrors,
+		TypeErrors:  result.diagnostics,
 	}
 }
 
@@ -186,13 +171,11 @@ func Compile(source *ast.Source) CompilerOutput {
 	p := parser.NewParser(ctx, source)
 	inMod, parseErrors := p.ParseScript()
 
-	c := checker.NewChecker(ctx)
-	inferCtx := checker.Context{
-		Scope:      checker.Prelude(c),
-		IsAsync:    false,
-		IsPatMatch: false,
+	result := selectBackend().checkScript(ctx, inMod)
+	typeErrors := result.diagnostics
+	if result.codegenGap != nil {
+		typeErrors = append(typeErrors, result.codegenGap)
 	}
-	_, typeErrors := c.InferScript(inferCtx, inMod)
 
 	// namespace := scope.Namespace
 
@@ -247,37 +230,27 @@ func CompilePackage(sources []*ast.Source) CompilerOutput {
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 
+	selected := selectBackend()
+
 	output := CompilerOutput{
 		ParseErrors: []*parser.Error{},
-		TypeErrors:  []checker.Error{},
+		TypeErrors:  []Diagnostic{},
 		CompUnits:   map[string]CompUnitOutput{},
 	}
 
-	var libNS *type_system.Namespace
+	var libScope LibScope
 
 	if len(libSources) > 0 {
 		inMod, parseErrors := parser.ParseLibFiles(ctx, libSources)
 
-		c := checker.NewChecker(ctx)
-		inferCtx := checker.Context{
-			// We add a new scope here to avoid polluting the prelude scope.
-			Scope:      checker.Prelude(c).WithNewScope(),
-			IsAsync:    false,
-			IsPatMatch: false,
-		}
-		// InferModule (rather than the lower-level InferDepGraph) so
-		// per-file imports — including pseudo-package `import "std:*"`
-		// statements — are processed before declarations are checked.
-		// It returns the dep_graph it builds in Phase 2; we reuse that
-		// here for codegen instead of rebuilding from scratch.
-		depGraph, typeErrors := c.InferModule(inferCtx, inMod)
-
-		// No longer need MergeOverloadedFunctions - overloads are already grouped by BindingKey
-
-		libNS = inferCtx.Scope.Namespace
+		lib := selected.checkLib(ctx, inMod)
+		libScope = lib.lib
 
 		output.ParseErrors = append(output.ParseErrors, parseErrors...)
-		output.TypeErrors = append(output.TypeErrors, typeErrors...)
+		output.TypeErrors = append(output.TypeErrors, lib.diagnostics...)
+		if lib.codegenGap != nil {
+			output.TypeErrors = append(output.TypeErrors, lib.codegenGap)
+		}
 
 		// A parse error leaves an error node in the tree where a declaration or type
 		// annotation belongs, and codegen has no lowering for one. `buildTypeAnn`
@@ -286,9 +259,11 @@ func CompilePackage(sources []*ast.Source) CompilerOutput {
 		// still reach the caller. A type error needs no such skip. The tree is well
 		// formed, so codegen runs and the caller decides whether to keep its output.
 		if len(parseErrors) == 0 {
+			// The graph comes from the run rather than a second call to
+			// dep_graph.BuildDepGraph, so the emitter walks the declarations in the
+			// order inference typed them.
 			builder := &codegen.Builder{}
-			jsMod := builder.BuildTopLevelDecls(depGraph)
-			dtsMod := builder.BuildDefinitions(depGraph, libNS)
+			jsMod := builder.BuildTopLevelDecls(lib.depGraph)
 
 			printer := codegen.NewPrinter()
 			jsOutput := printer.PrintModule(jsMod)
@@ -299,8 +274,15 @@ func CompilePackage(sources []*ast.Source) CompilerOutput {
 			outmap := "./index.js.map"
 			jsOutput += "//# sourceMappingURL=" + outmap + "\n"
 
-			printer = codegen.NewPrinter()
-			dtsOutput := printer.PrintModule(dtsMod)
+			// A .d.ts is rendered from the library's type surface, which only the
+			// old checker produces in the shape codegen reads. The solver path
+			// leaves it empty until the declaration emitter lands.
+			dtsOutput := ""
+			if lib.dtsNamespace != nil {
+				dtsMod := builder.BuildDefinitions(lib.depGraph, lib.dtsNamespace)
+				printer = codegen.NewPrinter()
+				dtsOutput = printer.PrintModule(dtsMod)
+			}
 
 			output.CompUnits["lib/index"] = CompUnitOutput{
 				JS:        jsOutput,
@@ -310,7 +292,7 @@ func CompilePackage(sources []*ast.Source) CompilerOutput {
 		}
 	}
 
-	// Compile each of the bin/ scripts, using the libNS as the base namespace.
+	// Compile each of the bin/ scripts, with the library surface in scope.
 	binSources := []*ast.Source{}
 	for _, src := range sources {
 		if strings.HasPrefix(src.Path, "bin/") {
@@ -319,7 +301,7 @@ func CompilePackage(sources []*ast.Source) CompilerOutput {
 	}
 
 	for _, src := range binSources {
-		scriptOutput := CompileScript(libNS, src)
+		scriptOutput := CompileScript(libScope, src)
 		output.ParseErrors = append(output.ParseErrors, scriptOutput.ParseErrors...)
 		output.TypeErrors = append(output.TypeErrors, scriptOutput.TypeErrors...)
 
@@ -334,31 +316,28 @@ func CompilePackage(sources []*ast.Source) CompilerOutput {
 // symbolCollector is a visitor that collects top-level library symbols used in the script
 type symbolCollector struct {
 	ast.DefaultVisitor
-	libNS       *type_system.Namespace
+	lib         LibScope
 	usedSymbols map[string]bool
 }
 
 func (v *symbolCollector) EnterExpr(e ast.Expr) bool {
 	if ident, ok := e.(*ast.IdentExpr); ok {
-		// Check if this identifier is a top-level symbol in libNS
-		if _, exists := v.libNS.Values[ident.Name]; exists {
-			v.usedSymbols[ident.Name] = true
-		}
-		if _, exists := v.libNS.GetNamespace(ident.Name); exists {
+		if v.lib.declaresTopLevel(ident.Name) {
 			v.usedSymbols[ident.Name] = true
 		}
 	}
 	return true
 }
 
-// collectUsedLibSymbols walks the AST to find which top-level symbols from libNS are used
-func collectUsedLibSymbols(script *ast.Script, libNS *type_system.Namespace) []string {
-	if libNS == nil {
+// collectUsedLibSymbols walks the AST to find which of the library's top-level
+// symbols the script uses
+func collectUsedLibSymbols(script *ast.Script, lib LibScope) []string {
+	if lib == nil {
 		return nil
 	}
 
 	visitor := &symbolCollector{
-		libNS:       libNS,
+		lib:         lib,
 		usedSymbols: make(map[string]bool),
 	}
 
@@ -378,31 +357,23 @@ func collectUsedLibSymbols(script *ast.Script, libNS *type_system.Namespace) []s
 
 // TODO: Update this so that we inject an `import` statement at the start of
 // each script source to import the `lib` namespace.
-func CompileScript(libNS *type_system.Namespace, source *ast.Source) CompilerOutput {
+func CompileScript(lib LibScope, source *ast.Source) CompilerOutput {
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 	p := parser.NewParser(ctx, source)
 	inMod, parseErrors := p.ParseScript()
 
-	c := checker.NewChecker(ctx)
-	scope := checker.Prelude(c)
-	if libNS != nil {
-		// Insert the lib namespace between the prelude and the script scope
-		// so bin/ scripts can access lib exports without an explicit import.
-		scope = scope.WithNewScopeAndNamespace(libNS)
+	result := checkScriptIn(ctx, selectBackend(), lib, inMod)
+	typeErrors := result.diagnostics
+	if result.codegenGap != nil {
+		typeErrors = append(typeErrors, result.codegenGap)
 	}
-	inferCtx := checker.Context{
-		Scope:      scope,
-		IsAsync:    false,
-		IsPatMatch: false,
-	}
-	_, typeErrors := c.InferScript(inferCtx, inMod)
 
 	builder := &codegen.Builder{}
 	jsMod := builder.BuildScript(inMod)
 
 	// Collect used library symbols and add import statement if needed
-	usedSymbols := collectUsedLibSymbols(inMod, libNS)
+	usedSymbols := collectUsedLibSymbols(inMod, lib)
 	if len(usedSymbols) > 0 {
 		// Create an import declaration for the used symbols
 		importDecl := codegen.NewImportDecl(usedSymbols, "../lib/index.js", nil)

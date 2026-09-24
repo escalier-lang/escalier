@@ -262,7 +262,7 @@ func TestPrintErrors(t *testing.T) {
 		}
 		output := compiler.CompilerOutput{
 			ParseErrors: []*parser.Error{parseErr1, parseErr2},
-			TypeErrors:  []checker.Error{},
+			TypeErrors:  []compiler.Diagnostic{},
 			CompUnits:   map[string]compiler.CompUnitOutput{},
 		}
 		idToSource := make(map[int]*ast.Source)
@@ -278,7 +278,7 @@ func TestPrintErrors(t *testing.T) {
 		stderr := &bytes.Buffer{}
 		output := compiler.CompilerOutput{
 			ParseErrors: []*parser.Error{},
-			TypeErrors:  []checker.Error{},
+			TypeErrors:  []compiler.Diagnostic{},
 			CompUnits:   map[string]compiler.CompUnitOutput{},
 		}
 		idToSource := make(map[int]*ast.Source)
