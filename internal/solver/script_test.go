@@ -492,11 +492,12 @@ func TestInferScriptInLibShadowedDecls(t *testing.T) {
 		{
 			name:   "DestructuringShadowsTwoLibVals",
 			lib:    "export val a = 1\nexport val b = 2",
-			script: `val {a, b} = {a: 3, b: 4}`,
-			// One error per shadowed name, in sorted order, both blaming the one decl.
+			script: `val {b, a} = {b: 3, a: 4}`,
+			// One error per shadowed name, in the order the pattern writes them rather
+			// than sorted, both blaming the one decl.
 			wantErrs: []string{
-				"1:1-1:26: Declaration shadows a lib/ declaration of the same name: a",
 				"1:1-1:26: Declaration shadows a lib/ declaration of the same name: b",
+				"1:1-1:26: Declaration shadows a lib/ declaration of the same name: a",
 			},
 		},
 		{

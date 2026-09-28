@@ -1,7 +1,6 @@
 package solver
 
 import (
-	"slices"
 	"strconv"
 
 	"github.com/escalier-lang/escalier/internal/ast"
@@ -126,34 +125,27 @@ func (d declPositions) libDecl(lib *Scope, name string) (ast.Node, bool) {
 	return nil, false
 }
 
-// shadowableNames returns the names decl binds, sorted so two shadowed names in one
-// destructuring pattern report in a stable order, along with the positions those names
-// can be written in. A declaration that binds no name returns none.
+// shadowableNames returns the names decl binds, in source order, along with the positions
+// those names can be written in. A declaration a script body rejects binds nothing here
+// and returns no names, which leaves BodyDeclNotAllowedError as its only diagnostic.
+//
+// The names come from ast.DeclNames, which topLevelNames also reads to classify a
+// module's declarations. Only the positions are decided here, since DeclNames reports
+// what a declaration binds rather than where the name can be written.
 func shadowableNames(decl ast.Decl) ([]string, declPositions) {
-	switch d := decl.(type) {
+	switch decl.(type) {
 	case *ast.VarDecl:
-		names := ast.FindBindings(d.Pattern).ToSlice()
-		slices.Sort(names)
-		return names, declPositions{term: true}
+		return ast.DeclNames(decl), declPositions{term: true}
 	case *ast.ClassDecl:
 		// A class binds its constructor as a value and its instances as a type.
-		return declaredName(d.Name), declPositions{term: true, typ: true}
+		return ast.DeclNames(decl), declPositions{term: true, typ: true}
 	case *ast.EnumDecl:
 		// An enum binds its union as a type and its variant constructors under a
 		// namespace, which shares a position with the value map.
-		return declaredName(d.Name), declPositions{term: true, typ: true}
+		return ast.DeclNames(decl), declPositions{term: true, typ: true}
 	default:
 		return nil, declPositions{}
 	}
-}
-
-// declaredName wraps a declaration's identifier as the one-element list shadowableNames
-// returns, or none when the parser left the declaration unnamed.
-func declaredName(ident *ast.Ident) []string {
-	if ident == nil || ident.Name == "" {
-		return nil
-	}
-	return []string{ident.Name}
 }
 
 // scriptPkgURI is the prefix the nominal registries key one script's declarations
