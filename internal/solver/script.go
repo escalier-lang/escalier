@@ -49,21 +49,15 @@ func InferScript(script *ast.Script, source ModuleSource) (*Scope, *Info, []Solv
 	return c.inferScriptIn(c.preludeScope().Child(), script)
 }
 
-// InferScriptInLib infers script against the scope a library module's run produced,
-// so the script reads that module's top-level declarations without importing them.
-// It returns what InferScript returns, with the diagnostics covering the script alone
-// rather than repeating the library's.
+// InferScriptInLib infers script against the scope a library module's run produced, so
+// the script reads that module's top-level declarations without importing them. It
+// returns what InferScript returns, with the diagnostics covering the script alone.
 //
-// This is the lib/ to bin/ seam. A package's lib/ files are one module, and each of
-// its bin/ files is a script checked as if the library's declarations were already in
-// scope. The script scope is a child of lib.Scope, so a name the script does not
-// declare resolves to the library's binding, and then to the prelude.
-//
-// The script carries the library's run on rather than starting a fresh one, which is
-// what forScript builds and what makes the library's named types usable here. Two
-// scripts checked against one library therefore share a Context, so a constraint one
-// puts on a library binding is visible to the next. The old checker has the same
-// property: it hands each bin/ script the one namespace the library produced.
+// The script scope is a child of lib.Scope, so a name the script does not declare
+// resolves to the library's binding, and then to the prelude. forScript builds the
+// checker that carries the library's run on, which is what makes the library's named
+// types usable here. Two scripts checked against one library share a Context, so a
+// constraint one puts on a library binding is visible to the next.
 //
 // lib must be a result InferModuleWithSource or InferModuleAgainstStdlib returned. A
 // script with no library goes through InferScript, which parents it to the prelude.
@@ -102,15 +96,11 @@ func (c *checker) reportShadowedLibDecls(script *ast.Script, lib *Scope) {
 	}
 }
 
-// declPositions is the set of source positions a declaration's name can be written in,
-// which is what decides whether it hides a library name of the same spelling.
-//
-// A name written in an expression is resolved by resolveIdentPath, which reads the
-// value map first and falls back to the namespace map, both walking the parent chain.
-// The two maps are therefore one position: a script `val Color` hides a library
-// `enum Color`'s variants, and a library `val Color` hides a script enum's. Type
-// position is separate, since a type annotation reads only the type map, so a script
-// `val Alias` leaves a library `type Alias` reachable.
+// declPositions is where a declaration's name can be written, which is what decides
+// whether it hides a library name of the same spelling. resolveIdentPath reads the value
+// map and then the namespace map, both walking the parent chain, so those two are the one
+// term position: a script `val Color` hides a library `enum Color`'s variants. A type
+// annotation reads only the type map, so typ is separate.
 type declPositions struct {
 	term bool
 	typ  bool
