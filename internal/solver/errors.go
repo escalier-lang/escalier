@@ -888,6 +888,31 @@ type DuplicateDeclarationError struct {
 	Name           string
 }
 
+// ShadowedLibDeclError fires when a bin/ script's top-level declaration reuses a name
+// the lib/ module of the same package declares. The script and the library are one
+// package, and a script reads the library's declarations without importing them, so
+// reusing a name leaves two meanings for it in one package: the script's inside the
+// script, the library's everywhere else.
+//
+// It fires per source position rather than per name, because a type annotation reads
+// only the type map. A script `val Alias` alongside a library `type Alias` is accepted,
+// since the library's type stays reachable where a type is written. A script
+// `class Point` alongside a library `class Point` is rejected, because a class is
+// written in both positions and the library's class binds both too.
+//
+// Shadowing a prelude name stays legal, which is what a module may do today. Only the
+// library module's own bindings count.
+//
+// Decl is the script's declaration, which is the blame span. Previous is the library's
+// declaration, surfaced via Related() as the place the library declared the name. It is
+// nil when the library's binding carries no source node, and Related() then reports
+// nothing. Name is the shadowed name.
+type ShadowedLibDeclError struct {
+	Decl     ast.Decl
+	Previous ast.Node
+	Name     string
+}
+
 // NoMatchingOverloadError fires when a call to an overloaded name (PR6) matches
 // none of the overload set's arms — every candidate either disagreed on arity or
 // failed to accept the supplied argument types. It replaces M2's interim
@@ -1216,6 +1241,7 @@ func (*UnsupportedFeatureError) isSolverError()             {}
 func (*BodyDeclNotAllowedError) isSolverError()             {}
 func (*MissingInitializerError) isSolverError()             {}
 func (*DuplicateDeclarationError) isSolverError()           {}
+func (*ShadowedLibDeclError) isSolverError()                {}
 func (*NoMatchingOverloadError) isSolverError()             {}
 func (*UnannotatedRecursiveOverloadError) isSolverError()   {}
 func (*DuplicateOverloadError) isSolverError()              {}
@@ -2470,6 +2496,17 @@ func (e *DuplicateDeclarationError) Span() ast.Span      { return e.Decl.Span() 
 func (e *DuplicateDeclarationError) Related() []ast.Span { return []ast.Span{e.Previous.Span()} }
 func (e *DuplicateDeclarationError) Message() string {
 	return "Duplicate declaration: " + e.Name
+}
+
+func (e *ShadowedLibDeclError) Span() ast.Span { return e.Decl.Span() }
+func (e *ShadowedLibDeclError) Related() []ast.Span {
+	if e.Previous == nil {
+		return nil
+	}
+	return []ast.Span{e.Previous.Span()}
+}
+func (e *ShadowedLibDeclError) Message() string {
+	return "Declaration shadows a lib/ declaration of the same name: " + e.Name
 }
 
 func (e *NoMatchingOverloadError) Span() ast.Span { return e.Call.Span() }

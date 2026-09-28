@@ -2361,10 +2361,18 @@ func (c *checker) recordWritten(recv soltype.Type, name string, t soltype.Type) 
 // placeholder for an unsupported param). It reads the first Source: a plain
 // `val`/`var`/`fn` — and now a parameter — has exactly one.
 func bindingDecl(b ValueBinding) ast.Node {
-	if len(b.Sources) == 0 {
+	return sourceDecl(b.Sources)
+}
+
+// sourceDecl returns the AST node the first of sources names, or nil when sources is
+// empty or its first entry names no node. A binding records its introducing
+// declaration there, so this is how a diagnostic recovers the place a name was
+// declared. A prelude binding carries no source.
+func sourceDecl(sources []provenance.Provenance) ast.Node {
+	if len(sources) == 0 {
 		return nil
 	}
-	if np, ok := b.Sources[0].(*ast.NodeProvenance); ok {
+	if np, ok := sources[0].(*ast.NodeProvenance); ok {
 		return np.Node
 	}
 	return nil

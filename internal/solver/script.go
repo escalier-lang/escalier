@@ -1,6 +1,7 @@
 package solver
 
 import (
+	"slices"
 	"strconv"
 
 	"github.com/escalier-lang/escalier/internal/ast"
@@ -68,7 +69,101 @@ func InferScript(script *ast.Script, source ModuleSource) (*Scope, *Info, []Solv
 // script with no library goes through InferScript, which parents it to the prelude.
 func InferScriptInLib(script *ast.Script, lib *ModuleResult) (*Scope, *Info, []SolverError) {
 	c := lib.checker.forScript(scriptPkgURI(script))
+	// Report shadowing before the walk, so a shadowed name is named once against its
+	// declaration rather than once per use. The walk then proceeds as if the name were
+	// the script's alone, which is how the rest of the script reads.
+	c.reportShadowedLibDecls(script, lib.Scope)
 	return c.inferScriptIn(lib.Scope.Child(), script)
+}
+
+// reportShadowedLibDecls reports every top-level declaration in script that reuses a
+// name lib declares. lib is the library module's own scope, so a prelude name reached
+// through its parent is not consulted and a script may still declare its own `Array`.
+//
+// A script's top-level declarations are val, var, class, and enum. A top-level fn or
+// type is rejected before this matters, by the function-body rule a script body runs
+// under. See the DeclStmt arm of inferStmt.
+func (c *checker) reportShadowedLibDecls(script *ast.Script, lib *Scope) {
+	for _, stmt := range script.Stmts {
+		declStmt, ok := stmt.(*ast.DeclStmt)
+		if !ok {
+			continue
+		}
+		names, ns := shadowableNames(declStmt.Decl)
+		for _, name := range names {
+			if prev, shadowed := ns.libDecl(lib, name); shadowed {
+				c.report(&ShadowedLibDeclError{
+					Decl:     declStmt.Decl,
+					Previous: prev,
+					Name:     name,
+				})
+			}
+		}
+	}
+}
+
+// declPositions is the set of source positions a declaration's name can be written in,
+// which is what decides whether it hides a library name of the same spelling.
+//
+// A name written in an expression is resolved by resolveIdentPath, which reads the
+// value map first and falls back to the namespace map, both walking the parent chain.
+// The two maps are therefore one position: a script `val Color` hides a library
+// `enum Color`'s variants, and a library `val Color` hides a script enum's. Type
+// position is separate, since a type annotation reads only the type map, so a script
+// `val Alias` leaves a library `type Alias` reachable.
+type declPositions struct {
+	term bool
+	typ  bool
+}
+
+// libDecl returns the library declaration of name in one of d's positions, and whether
+// the library declares it at all. The node is nil for a library binding that carries no
+// source, which leaves the diagnostic with nothing to relate.
+func (d declPositions) libDecl(lib *Scope, name string) (ast.Node, bool) {
+	if d.term {
+		if b, ok := lib.ownValue(name); ok {
+			return sourceDecl(b.Sources), true
+		}
+		if _, ok := lib.namespaces[name]; ok {
+			return nil, true
+		}
+	}
+	if d.typ {
+		if b, ok := lib.ownType(name); ok {
+			return sourceDecl(b.Sources), true
+		}
+	}
+	return nil, false
+}
+
+// shadowableNames returns the names decl binds, sorted so two shadowed names in one
+// destructuring pattern report in a stable order, along with the positions those names
+// can be written in. A declaration that binds no name returns none.
+func shadowableNames(decl ast.Decl) ([]string, declPositions) {
+	switch d := decl.(type) {
+	case *ast.VarDecl:
+		names := ast.FindBindings(d.Pattern).ToSlice()
+		slices.Sort(names)
+		return names, declPositions{term: true}
+	case *ast.ClassDecl:
+		// A class binds its constructor as a value and its instances as a type.
+		return declaredName(d.Name), declPositions{term: true, typ: true}
+	case *ast.EnumDecl:
+		// An enum binds its union as a type and its variant constructors under a
+		// namespace, which shares a position with the value map.
+		return declaredName(d.Name), declPositions{term: true, typ: true}
+	default:
+		return nil, declPositions{}
+	}
+}
+
+// declaredName wraps a declaration's identifier as the one-element list shadowableNames
+// returns, or none when the parser left the declaration unnamed.
+func declaredName(ident *ast.Ident) []string {
+	if ident == nil || ident.Name == "" {
+		return nil
+	}
+	return []string{ident.Name}
 }
 
 // scriptPkgURI is the prefix the nominal registries key one script's declarations
