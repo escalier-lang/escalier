@@ -54,9 +54,9 @@ func InferScript(script *ast.Script, source ModuleSource) (*Scope, *Info, []Solv
 //
 // The script scope is a child of lib.Scope, so a name the script does not declare
 // resolves to the library's binding, and then to the prelude. forScript builds the
-// checker that carries the library's run on, which is what makes the library's named
-// types usable here. Two scripts checked against one library share a Context, so a
-// constraint one puts on a library binding is visible to the next.
+// checker the walk runs on, carrying the library's run forward. Two scripts checked
+// against one library therefore share a Context, so a constraint one puts on a library
+// binding is visible to the next.
 //
 // lib must be a result InferModuleWithSource or InferModuleAgainstStdlib returned. A
 // script with no library goes through InferScript, which parents it to the prelude.
