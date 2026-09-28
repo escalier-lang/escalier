@@ -396,6 +396,12 @@ func TestInferScriptInLib(t *testing.T) {
 			script:     `val pr: Pair = {a: 1, b: 2}`,
 			wantValues: map[string]string{"pr": "Pair"},
 		},
+		{
+			name:       "ScriptBindingShadowsLibrary",
+			lib:        `export val greeting = "hello"`,
+			script:     `val greeting = "goodbye"`,
+			wantValues: map[string]string{"greeting": `"goodbye"`},
+		},
 	}
 
 	for _, test := range tests {
@@ -452,140 +458,11 @@ func TestInferScriptInLibReadsUnexportedNames(t *testing.T) {
 	require.Equal(t, `"seen"`, values["p"])
 }
 
-// TestInferScriptInLibShadowedDecls checks which script declarations the lib/ shadowing
-// rule rejects, across the declaration kinds a script body accepts and both namespaces
-// a name can land in.
-//
-// The rule is per namespace, because resolution reads the value, type, and namespace
-// maps separately. A script `val` alongside a library `type` of the same name is
-// accepted, since neither hides the other. A prelude name is not the library's, so a
-// script may still declare its own.
-//
-// A script body accepts only val, var, class, and enum at top level. A top-level fn or
-// type reports BodyDeclNotAllowedError from the DeclStmt arm of inferStmt before this
-// rule could apply, so neither appears below.
-func TestInferScriptInLibShadowedDecls(t *testing.T) {
-	tests := []struct {
-		name     string
-		lib      string
-		script   string
-		wantErrs []string
-	}{
-		{
-			name:     "ValShadowsLibVal",
-			lib:      `export val greeting = "hello"`,
-			script:   `val greeting = "again"`,
-			wantErrs: []string{"1:1-1:23: Declaration shadows a lib/ declaration of the same name: greeting"},
-		},
-		{
-			name:     "VarShadowsLibVal",
-			lib:      `export val count = 0`,
-			script:   `var count = 1`,
-			wantErrs: []string{"1:1-1:14: Declaration shadows a lib/ declaration of the same name: count"},
-		},
-		{
-			name:     "ValShadowsUnexportedLibVal",
-			lib:      `val secret = 42`,
-			script:   `val secret = 7`,
-			wantErrs: []string{"1:1-1:15: Declaration shadows a lib/ declaration of the same name: secret"},
-		},
-		{
-			name:   "DestructuringShadowsTwoLibVals",
-			lib:    "export val a = 1\nexport val b = 2",
-			script: `val {b, a} = {b: 3, a: 4}`,
-			// One error per shadowed name, in the order the pattern writes them rather
-			// than sorted, both blaming the one decl.
-			wantErrs: []string{
-				"1:1-1:26: Declaration shadows a lib/ declaration of the same name: b",
-				"1:1-1:26: Declaration shadows a lib/ declaration of the same name: a",
-			},
-		},
-		{
-			name:   "DestructuringShadowsOnlyTheCollidingName",
-			lib:    `export val a = 1`,
-			script: `val {a, fresh} = {a: 3, fresh: 4}`,
-			wantErrs: []string{
-				"1:1-1:34: Declaration shadows a lib/ declaration of the same name: a",
-			},
-		},
-		{
-			name:     "ClassShadowsLibVal",
-			lib:      `export val Box = 1`,
-			script:   "class Box {\n\tx: number,\n}",
-			wantErrs: []string{"1:1-3:2: Declaration shadows a lib/ declaration of the same name: Box"},
-		},
-		{
-			name:     "EnumShadowsLibEnum",
-			lib:      "export enum Color {\n\tRed,\n}",
-			script:   "enum Color {\n\tBlue,\n}",
-			wantErrs: []string{"1:1-3:2: Declaration shadows a lib/ declaration of the same name: Color"},
-		},
-		{
-			name:     "EnumShadowsLibTypeAlias",
-			lib:      `type Shape = string`,
-			script:   "enum Shape {\n\tRound,\n}",
-			wantErrs: []string{"1:1-3:2: Declaration shadows a lib/ declaration of the same name: Shape"},
-		},
-		{
-			name:   "ValShadowsLibEnumNamespace",
-			lib:    "export enum Color {\n\tRed,\n}",
-			script: `val Color = 1`,
-			// resolveIdentPath reads the value map before the namespace map, so the
-			// script's value hides the library enum's variants: `Color.Red` would
-			// otherwise fail against `1` rather than say what went wrong.
-			wantErrs: []string{
-				"1:1-1:14: Declaration shadows a lib/ declaration of the same name: Color",
-			},
-		},
-		{
-			name:   "EnumShadowsLibVal",
-			lib:    `export val Color = 1`,
-			script: "enum Color {\n\tRed,\n}",
-			// The mirror case: the library's value is found first, so the script's own
-			// variants are unreachable.
-			wantErrs: []string{
-				"1:1-3:2: Declaration shadows a lib/ declaration of the same name: Color",
-			},
-		},
-		{
-			name:   "ValBesideLibTypeAliasIsAllowed",
-			lib:    `type Alias = string`,
-			script: `val Alias = 1`,
-			// A value and a type of one name do not hide each other, so the library's
-			// `Alias` is still reachable in type position.
-			wantErrs: nil,
-		},
-		{
-			name:     "ValShadowingPreludeIsAllowed",
-			lib:      `export val unrelated = 0`,
-			script:   `val Array = 1`,
-			wantErrs: nil,
-		},
-		{
-			name:     "FreshNameIsAllowed",
-			lib:      `export val greeting = "hello"`,
-			script:   `val farewell = "bye"`,
-			wantErrs: nil,
-		},
-	}
-
-	for _, test := range tests {
-		t.Run(test.name, func(t *testing.T) {
-			_, errs := inferScriptInLib(t, test.lib, test.script)
-			require.Equal(t, test.wantErrs, messagesWithSpan(t, errs))
-		})
-	}
-}
-
-// TestInferScriptInLibClassShadowsLibrary checks that a class a script declares under
-// a name the library already declares is rejected, and that the script is still walked
-// as if the name were its own.
-//
-// Reporting and continuing is what keeps the rest of the script coherent: `p.label`
-// resolves against the script's class rather than cascading into a second error. It
-// also keeps the two nominal definitions apart, which is what the per-script key prefix
-// buys. Both scripts and the library register into the run's one Context, so without
-// that prefix the script's members would land in the library's definition.
+// TestInferScriptInLibClassShadowsLibrary checks that a class a script declares is
+// its own class rather than an addition to the library's class of the same name.
+// Both scripts and the library register their nominal definitions in the run's one
+// Context, so each needs a key prefix of its own for two same-named classes to hold
+// two definitions.
 func TestInferScriptInLibClassShadowsLibrary(t *testing.T) {
 	values, errs := inferScriptInLib(t, `
 		export class Point {
@@ -601,13 +478,7 @@ func TestInferScriptInLibClassShadowsLibrary(t *testing.T) {
 		val o = origin()
 		val ox = o.x
 	`)
-	require.Len(t, errs, 1)
-	require.Equal(t,
-		"2:3-4:4: Declaration shadows a lib/ declaration of the same name: Point",
-		msgWithSpan(t, errs[0]))
-
-	// The script's class is its own, and the library's is untouched: `p` is built from
-	// the script's `Point` and `o` from the library's.
+	require.Empty(t, errs)
 	require.Equal(t, `{new (label: string) -> Point}`, values["Point"])
 	require.Equal(t, "Point", values["p"])
 	require.Equal(t, "string", values["l"])
