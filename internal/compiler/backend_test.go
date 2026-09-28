@@ -287,6 +287,30 @@ func TestCheckLibWithoutAStandardLibrary(t *testing.T) {
 	}
 }
 
+// TestCompileWithoutAStandardLibrary is TestCheckLibWithoutAStandardLibrary for a
+// script with no library. The script path names the file the same way the module path
+// does, so a caller places both diagnostics the same way.
+func TestCompileWithoutAStandardLibrary(t *testing.T) {
+	useSolver(t)
+	empty := t.TempDir()
+	t.Setenv("ESCALIER_STDLIB_DIR", empty)
+
+	out := Compile(binSource("val greeting = \"hello\"\n"))
+
+	require.Empty(t, out.ParseErrors)
+	want := "cannot find the standard library: ESCALIER_STDLIB_DIR=" + strconv.Quote(empty) +
+		" does not contain a std/ subdirectory"
+	require.Contains(t, messages(out.TypeErrors), want)
+
+	// It blames the script's file and nothing written in it. binSource carries id 1,
+	// so the id asserted here is the file's rather than the zero value.
+	for _, err := range out.TypeErrors {
+		if err.Message() == want {
+			require.Equal(t, ast.Span{SourceID: 1}, err.Span())
+		}
+	}
+}
+
 // TestCompileScriptReportsTheGapOfTheCheckerThatChecked checks that the codegen gap
 // follows the checker that checked the script rather than the one selected when the
 // emit happens. A LibScope holds the checker that produced it, so reading the gap off

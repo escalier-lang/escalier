@@ -48,7 +48,7 @@ func (solverBackend) checkLib(_ context.Context, module *ast.Module) libResult {
 
 // checkScript infers script against the prelude alone.
 func (solverBackend) checkScript(_ context.Context, script *ast.Script) scriptResult {
-	dir, dirErrs := solverStdlibDir(script.Span())
+	dir, dirErrs := solverStdlibDir(scriptSpan(script))
 	_, _, errs := solver.InferScript(script, solver.StdlibSource(dir))
 	return scriptResult{
 		diagnostics: append(dirErrs, diagnostics(errs)...),
