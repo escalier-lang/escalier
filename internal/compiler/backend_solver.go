@@ -18,14 +18,15 @@ import (
 //   - The emitted JavaScript can be wrong where codegen reads a node's inferred type,
 //     which only internal/checker stamps onto the tree. A constructor call loses its
 //     `new`, a method reference loses its `.bind`, and an `if val` loses its null
-//     guard, all without a diagnostic.
+//     guard, all without a diagnostic. Tracked in #1673.
 //   - libResult.dtsNamespace is nil, so a package emits no .d.ts. Rendering a soltype
 //     surface is its own phase, and this cutover builds no bridge from soltype back
-//     to type_system.
+//     to type_system. Tracked in #1675, with #1676 for the goldens.
 //   - The diagnostics include every package the run loaded, so a package that is
-//     itself clean still reports the two errors `std:prelude` carries.
+//     itself clean still reports the two errors `std:prelude` carries. Tracked in
+//     #1664 for the errors themselves and #1696 for the file they are blamed on.
 //   - libResult.scope, libResult.fileScopes, and scriptResult.scope are nil, because
-//     the LSP reads internal/checker's scope type.
+//     the LSP reads internal/checker's scope type. Tracked in #1678 through #1682.
 //
 // internal/solver takes no context, so each method names the parameter `_` to say the
 // caller's deadline bounds nothing here.
