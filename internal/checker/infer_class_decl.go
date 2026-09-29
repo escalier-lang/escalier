@@ -100,6 +100,7 @@ func (c *Checker) inferClassDecl(ctx Context, decl *ast.ClassDecl) []Error {
 
 	objTypeElems := []type_system.ObjTypeElem{}
 	staticElems := []type_system.ObjTypeElem{}
+	callableElems := []type_system.ObjTypeElem{}
 	instanceSymbolKeyMap := make(map[int]any)
 	staticSymbolKeyMap := make(map[int]any)
 
@@ -268,6 +269,24 @@ func (c *Checker) inferClassDecl(ctx Context, decl *ast.ClassDecl) []Error {
 				objTypeElems = append(objTypeElems,
 					type_system.NewSetterElem(*key, funcType))
 			}
+		case *ast.CallableElem:
+			// A bare call signature describes calling the class value, as
+			// `Boolean(x)` does. It joins the statics on the class object
+			// rather than the instance, and takes no receiver.
+			fnType, _, _, sigErrors := c.inferFuncSig(
+				declCtx, &elem.Fn.FuncSig, elem.Fn, nil)
+			errors = slices.Concat(errors, sigErrors)
+			if !decl.Declare() {
+				// A class body has nowhere to put the implementation. Its
+				// members belong to the instance, and Escalier has no syntax
+				// for the function the class value itself is.
+				errors = append(errors, CallSignatureNeedsDeclareError{
+					ClassName: decl.Name.Name,
+					span:      elem.Span(),
+				})
+				continue
+			}
+			callableElems = append(callableElems, &type_system.CallableElem{Fn: fnType})
 		case *ast.ConstructorElem:
 			// Constructor signatures are handled separately below via
 			// inferConstructorSig; nothing to do during the element walk.
@@ -329,6 +348,7 @@ func (c *Checker) inferClassDecl(ctx Context, decl *ast.ClassDecl) []Error {
 	errors = slices.Concat(errors, staticMergeErrors)
 	constructorElem := &type_system.ConstructorElem{Fn: ctorFuncType}
 	classObjTypeElems := []type_system.ObjTypeElem{constructorElem}
+	classObjTypeElems = append(classObjTypeElems, callableElems...)
 	classObjTypeElems = append(classObjTypeElems, mergedStaticElems...)
 
 	classObjType := type_system.NewObjectType(provenance, classObjTypeElems)

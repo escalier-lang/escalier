@@ -1902,3 +1902,58 @@ func TestSelfIsNotVisibleOutsideAClass(t *testing.T) {
 	require.NotEmpty(t, errorsContaining(errs, "Unknown type: Self"),
 		"expected Self to be unbound outside the class; got: %v", formatErrs(errs))
 }
+
+// A bare call signature describes calling the class value, as `Boolean(x)`
+// does, so it belongs on the class object beside the statics. Class inference
+// had no case for it and reported `Unimplemented` on sight, which was 39 of
+// `web:dom`'s diagnostics (#1723).
+func TestClassCallSignature(t *testing.T) {
+	t.Parallel()
+	t.Run("LandsOnTheClassValueType", func(t *testing.T) {
+		t.Parallel()
+		input := `
+			declare class Err {
+				constructor(mut self, message?: string),
+				(message?: string) -> Err,
+				(message?: string, options?: number) -> Err,
+			}
+		`
+		source := &ast.Source{ID: 0, Path: "input.esc", Contents: input}
+		ctx, cancel := context.WithTimeout(context.Background(), 1*time.Second)
+		defer cancel()
+		module, parseErrors := parser.ParseLibFiles(ctx, []*ast.Source{source})
+		require.Empty(t, parseErrors)
+
+		c := NewChecker(ctx)
+		_, errs := c.InferModule(Context{Scope: Prelude(c)}, module)
+		require.Empty(t, errorMessages(errs))
+
+		var got string
+		for _, scope := range c.FileScopes {
+			if b := scope.GetValue("Err"); b != nil {
+				got = b.Type.String()
+			}
+		}
+		// Both arms are recorded, beside the constructor rather than
+		// replacing it.
+		require.Equal(t,
+			"{new (message?: string) -> Err, (message?: string) -> Err, "+
+				"(message?: string, options?: number) -> Err}", got)
+	})
+
+	// A class with a body has nowhere to put the implementation, so the
+	// signature is rejected rather than silently recorded.
+	t.Run("AClassWithABodyIsRejected", func(t *testing.T) {
+		t.Parallel()
+		errs := inferModuleErrors(t, `
+			class Foo {
+				constructor(mut self) {},
+				(x: number) -> string,
+			}
+		`)
+		require.NotEmpty(t, errorsContaining(errs,
+			"Only a `declare` class can have a call signature, but class "+
+				"'Foo' has a body"),
+			"got: %v", formatErrs(errs))
+	})
+}
