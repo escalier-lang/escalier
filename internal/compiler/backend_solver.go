@@ -2,8 +2,12 @@ package compiler
 
 import (
 	"context"
+	"strings"
 
 	"github.com/escalier-lang/escalier/internal/ast"
+	"github.com/escalier-lang/escalier/internal/codegen"
+	"github.com/escalier-lang/escalier/internal/dep_graph"
+	"github.com/escalier-lang/escalier/internal/soltype"
 	"github.com/escalier-lang/escalier/internal/solver"
 	"github.com/escalier-lang/escalier/internal/stdlibdir"
 )
@@ -19,9 +23,9 @@ import (
 //     which only internal/checker stamps onto the tree. A constructor call loses its
 //     `new`, a method reference loses its `.bind`, and an `if val` loses its null
 //     guard, all without a diagnostic. Tracked in #1673.
-//   - libResult.dtsNamespace is nil, so a package emits no .d.ts. Rendering a soltype
-//     surface is its own phase, and this cutover builds no bridge from soltype back
-//     to type_system. Tracked in #1675, with #1676 for the goldens.
+//   - The emitted .d.ts is rendered from soltype and does not yet match what the
+//     checker path writes for the same source. Reconciling the two is tracked in
+//     #1676, and #1697 through #1699 are renderer faults it will surface.
 //   - The diagnostics include every package the run loaded, so a package that is
 //     itself clean still reports the two errors `std:prelude` carries. Tracked in
 //     #1664 for the errors themselves and #1696 for the file they are blamed on.
@@ -41,6 +45,7 @@ func (solverBackend) checkLib(_ context.Context, module *ast.Module) libResult {
 	return libResult{
 		lib:         &solverLibScope{module: result},
 		depGraph:    result.DepGraph,
+		dts:         &solverDts{module: result},
 		diagnostics: append(dirErrs, diagnostics(result.Errors)...),
 		codegenGap:  &codegenGapError{span: moduleSpan(module)},
 	}
@@ -68,7 +73,108 @@ func (e *codegenGapError) Span() ast.Span { return e.span }
 func (e *codegenGapError) Message() string {
 	return CheckerEnvVar + "=" + CheckerSolver + " does not yet emit correct output for this file: " +
 		"codegen reads types internal/checker stamps onto the tree, so a constructor call, " +
-		"a method reference, and an `if val` guard are emitted wrongly, and no .d.ts is written"
+		"a method reference, and an `if val` guard are emitted wrongly, and the .d.ts does not " +
+		"yet match the one the old checker writes"
+}
+
+// solverDts renders the library's .d.ts from the module run, which holds the scope
+// the declarations landed in and the registries their members are keyed in.
+type solverDts struct {
+	module *solver.ModuleResult
+}
+
+func (d *solverDts) buildDefinitions(b *codegen.Builder, depGraph *dep_graph.DepGraph) *codegen.Module {
+	root := &solverDtsScope{module: d.module}
+	return b.BuildDefinitionsFromSol(depGraph, root, solver.PreludeKeyPrefix())
+}
+
+// solverDtsScope reads the module's own top level, where a declaration a namespace
+// block holds is keyed under its qualified name.
+type solverDtsScope struct {
+	module *solver.ModuleResult
+}
+
+func (s *solverDtsScope) ValueType(name string) (soltype.Type, bool) {
+	binding, ok := s.module.Scope.OwnValue(name)
+	if !ok {
+		return nil, false
+	}
+	t := binding.DisplayType()
+	return t, t != nil
+}
+
+func (s *solverDtsScope) DeclaredType(name string) (soltype.Type, []*soltype.TypeParam, bool) {
+	binding, ok := s.module.Scope.OwnType(name)
+	if !ok {
+		return nil, nil, false
+	}
+	return declaredTypeFromSol(s.module, binding.Type)
+}
+
+func (s *solverDtsScope) Namespace(name string) (codegen.SolNamespace, bool) {
+	ns, ok := s.module.Scope.OwnNamespace(name)
+	if !ok {
+		return nil, false
+	}
+	return &solverDtsNamespace{module: s.module, ns: ns}, true
+}
+
+// solverDtsNamespace reads one namespace's members, which it keys under their local
+// names rather than the qualified ones the module scope uses.
+type solverDtsNamespace struct {
+	module *solver.ModuleResult
+	ns     *solver.Namespace
+}
+
+func (s *solverDtsNamespace) ValueType(name string) (soltype.Type, bool) {
+	binding, ok := s.ns.Values[localName(name)]
+	if !ok {
+		return nil, false
+	}
+	t := binding.DisplayType()
+	return t, t != nil
+}
+
+func (s *solverDtsNamespace) DeclaredType(name string) (soltype.Type, []*soltype.TypeParam, bool) {
+	binding, ok := s.ns.Types[localName(name)]
+	if !ok {
+		return nil, nil, false
+	}
+	return declaredTypeFromSol(s.module, binding.Type)
+}
+
+func (s *solverDtsNamespace) Namespace(name string) (codegen.SolNamespace, bool) {
+	nested, ok := s.ns.Nested[localName(name)]
+	if !ok {
+		return nil, false
+	}
+	return &solverDtsNamespace{module: s.module, ns: nested}, true
+}
+
+// declaredTypeFromSol resolves what a type binding stands for. A class, enum,
+// interface, or alias binds a handle carrying the declaration's qualified name, with
+// the members registered under that name, so the handle is followed to them. Any other
+// type already holds what it stands for and is returned as it is.
+func declaredTypeFromSol(module *solver.ModuleResult, t soltype.Type) (soltype.Type, []*soltype.TypeParam, bool) {
+	var qualifiedName string
+	switch handle := t.(type) {
+	case *soltype.ClassType:
+		qualifiedName = handle.Name
+	case *soltype.AliasType:
+		qualifiedName = handle.Name
+	default:
+		return t, nil, t != nil
+	}
+	return module.TypeBody(qualifiedName)
+}
+
+// localName is the last segment of a qualified name, which is how a namespace keys its
+// own members. A bare name has one segment and comes back unchanged.
+func localName(name string) string {
+	if dot := strings.LastIndex(name, "."); dot != -1 {
+		return name[dot+1:]
+	}
+	return name
 }
 
 // solverLibScope is the library surface internal/solver produces: the module run

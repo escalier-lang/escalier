@@ -75,11 +75,33 @@ type ModuleResult struct {
 // declares is imported from the library's output, and one the prelude declares is
 // not.
 func (r *ModuleResult) DeclaresTopLevel(name string) bool {
-	if _, ok := r.Scope.ownValue(name); ok {
+	if _, ok := r.Scope.OwnValue(name); ok {
 		return true
 	}
 	_, ok := r.Scope.namespaces[name]
 	return ok
+}
+
+// TypeBody returns the members a named class, enum, interface, or alias declaration
+// registered, along with the type parameters it quantifies. The type map binds only a
+// handle carrying the declaration's name, so a consumer that has to spell the members
+// out reads them here. An enum's body is the union of its variants, and ok is false for
+// a name no declaration registered.
+func (r *ModuleResult) TypeBody(name string) (soltype.Type, []*soltype.TypeParam, bool) {
+	if def, ok := r.checker.ctx.classDef(name); ok {
+		return def.Body, def.TypeParams, true
+	}
+	if def, ok := r.checker.ctx.aliasDef(name); ok {
+		return def.Body, def.TypeParams, true
+	}
+	return nil, nil, false
+}
+
+// PreludeKeyPrefix is the prefix the prelude package's declarations are registered
+// under. A renderer consults it to tell a reference to a prelude type from a user's
+// own type of the same name, since only the prelude's carries the prefix.
+func PreludeKeyPrefix() string {
+	return packageKeyPrefix(preludeURI)
 }
 
 // InferModuleWithSource infers module, resolving its imports through source.

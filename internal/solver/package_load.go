@@ -191,10 +191,10 @@ func exportedSurface(uri string, module *ast.Module, scope *Scope) *Namespace {
 				// beside its own value and an importer's `thing.Promise<number>` would
 				// check against it.
 				key := qualify(nsPath, name)
-				if b, ok := scope.ownValue(key); ok {
+				if b, ok := scope.OwnValue(key); ok {
 					target.Values[name] = b
 				}
-				if b, ok := scope.ownType(key); ok {
+				if b, ok := scope.OwnType(key); ok {
 					target.Types[name] = b
 				}
 				// An enum binds its variant constructors under a namespace of its own

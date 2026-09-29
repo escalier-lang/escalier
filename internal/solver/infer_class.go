@@ -758,11 +758,11 @@ func (c *checker) lookupClassBinding(scope *Scope, name string) (TypeBinding, bo
 			return b, true
 		}
 		if c.classNamespace != "" {
-			if b, ok := c.moduleScope.ownType(declScopeKey(c.classNamespace, name)); ok {
+			if b, ok := c.moduleScope.OwnType(declScopeKey(c.classNamespace, name)); ok {
 				return b, true
 			}
 		}
-		if b, ok := c.moduleScope.ownType(name); ok {
+		if b, ok := c.moduleScope.OwnType(name); ok {
 			return b, true
 		}
 	}

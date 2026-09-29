@@ -188,16 +188,16 @@ func (s *Scope) GetType(name string) (TypeBinding, bool) {
 	return TypeBinding{}, false
 }
 
-// ownType resolves name in this scope's own type map, without walking to the
+// OwnType resolves name in this scope's own type map, without walking to the
 // parent. It is how a lookup asks for a binding this scope itself made, as
 // opposed to one an enclosing scope seeded under the same name.
-func (s *Scope) ownType(name string) (TypeBinding, bool) {
+func (s *Scope) OwnType(name string) (TypeBinding, bool) {
 	b, ok := s.types[name]
 	return b, ok
 }
 
-// ownValue is the value-sort counterpart of ownType.
-func (s *Scope) ownValue(name string) (ValueBinding, bool) {
+// OwnValue is the value-sort counterpart of OwnType.
+func (s *Scope) OwnValue(name string) (ValueBinding, bool) {
 	b, ok := s.values[name]
 	return b, ok
 }
@@ -214,6 +214,13 @@ func (s *Scope) getTypeBefore(name string, stop *Scope) (TypeBinding, bool) {
 		}
 	}
 	return TypeBinding{}, false
+}
+
+// OwnNamespace resolves name in this scope's own namespace map, the namespace-sort
+// counterpart of OwnType.
+func (s *Scope) OwnNamespace(name string) (*Namespace, bool) {
+	ns, ok := s.namespaces[name]
+	return ns, ok
 }
 
 // GetNamespace resolves name in the namespace sort by the same lexical walk.

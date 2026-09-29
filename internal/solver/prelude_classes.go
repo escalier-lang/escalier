@@ -54,7 +54,7 @@ const (
 // so it answers what the prelude package declared rather than what an enclosing scope
 // seeded under the same name.
 func (c *checker) preludeClass(name string, params int) string {
-	b, found := c.preludeScope().ownType(name)
+	b, found := c.preludeScope().OwnType(name)
 	if !found {
 		c.report(&MissingPreludeClassError{Name: name, Params: params, Fault: preludeClassAbsent})
 		return ""

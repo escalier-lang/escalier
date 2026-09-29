@@ -6,8 +6,8 @@ import (
 
 	"github.com/escalier-lang/escalier/internal/ast"
 	"github.com/escalier-lang/escalier/internal/checker"
+	"github.com/escalier-lang/escalier/internal/codegen"
 	"github.com/escalier-lang/escalier/internal/dep_graph"
-	"github.com/escalier-lang/escalier/internal/type_system"
 )
 
 // Diagnostic is one type error, as everything downstream of the compiler reads it:
@@ -64,6 +64,15 @@ type LibScope interface {
 	declaresTopLevel(name string) bool
 }
 
+// dtsEmitter renders one library module's .d.ts. The two checkers hold a module's
+// type surface in different representations, so each implements this over its own and
+// neither converts to the other's.
+type dtsEmitter interface {
+	// buildDefinitions emits the declarations of the module depGraph orders, so they
+	// appear in the order inference typed them.
+	buildDefinitions(b *codegen.Builder, depGraph *dep_graph.DepGraph) *codegen.Module
+}
+
 // libResult is what a backend produced for one lib/ module.
 type libResult struct {
 	// lib is the surface each of the package's bin/ scripts is checked against. It
@@ -72,10 +81,11 @@ type libResult struct {
 	// depGraph is the graph the run ordered the module's declarations by, which
 	// codegen emits the library's JS from.
 	depGraph *dep_graph.DepGraph
-	// dtsNamespace is the namespace codegen renders the library's .d.ts from. It is
-	// nil on the solver path, where rendering a soltype surface is still to come and
-	// this cutover builds no bridge from soltype back to type_system.
-	dtsNamespace *type_system.Namespace
+	// dts renders the library's .d.ts from the type surface this run produced. Each
+	// checker represents that surface in its own types, so each renders from its own
+	// rather than converting to the other's. It is nil when the run produced no surface
+	// to render.
+	dts dtsEmitter
 	// scope and fileScopes are the LSP's view of the module. Both are nil on the
 	// solver path, whose scopes have a different type; porting the LSP is a later
 	// phase of the cutover.
