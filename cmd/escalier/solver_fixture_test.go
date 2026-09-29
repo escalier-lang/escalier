@@ -24,7 +24,9 @@ import (
 //
 // A fixture's committed `error.txt` is the expected answer. The build harness writes
 // that file when a compile reports anything, so its presence records that the package
-// is meant to be rejected and its absence that the package is meant to be accepted.
+// is meant to be rejected and its absence that the package is meant to be accepted. A
+// fixture a DISABLED marker holds out of that harness never ran, so its missing
+// `error.txt` records nothing and this harness holds it out too.
 
 // solverSkipCause is a root cause several fixtures wait on. Grouping the skip list by
 // cause rather than listing fixtures flat is what makes it a work queue: one pull
@@ -94,7 +96,7 @@ type solverSkip struct {
 	fixture string
 	cause   *solverSkipCause
 	// reason is one diagnostic from the fixture's run, quoted as the run reports it.
-	// A fixture usually reports several; this is the one that names the cause.
+	// A fixture usually reports several. This is the one that names the cause.
 	reason string
 }
 
@@ -160,14 +162,32 @@ func TestCheckFixturesOnSolver(t *testing.T) {
 	t.Setenv("ESCALIER_STDLIB_DIR", dataDir)
 	t.Setenv("ESCALIER_BUILTINS_DIR", dataDir)
 
+	entries, err := os.ReadDir(filepath.Join(rootDir, "fixtures"))
+	require.NoError(t, err)
+
+	fixtures := set.NewSet[string]()
+	disabled := set.NewSet[string]()
+	for _, entry := range entries {
+		if !entry.IsDir() {
+			continue
+		}
+		fixtures.Add(entry.Name())
+		if _, err := os.Stat(filepath.Join(rootDir, "fixtures", entry.Name(), disabledMarker)); err == nil {
+			disabled.Add(entry.Name())
+		}
+	}
+
 	skips := make(map[string]solverSkip, len(solverSkips))
 	for _, skip := range solverSkips {
+		// A renamed or deleted fixture would otherwise leave a dead entry behind, and
+		// for the stack-overflow entry that would let the fixture run and take the test
+		// binary down with it.
+		require.True(t, fixtures.Contains(skip.fixture), "solverSkips names no such fixture")
+		require.False(t, disabled.Contains(skip.fixture),
+			"a disabled fixture is held out of the run already, so it needs no entry")
 		require.NotContains(t, skips, skip.fixture, "one fixture is listed twice")
 		skips[skip.fixture] = skip
 	}
-
-	entries, err := os.ReadDir(filepath.Join(rootDir, "fixtures"))
-	require.NoError(t, err)
 
 	for _, entry := range entries {
 		if !entry.IsDir() {
@@ -182,6 +202,12 @@ func TestCheckFixturesOnSolver(t *testing.T) {
 			}
 
 			fixtureDir := filepath.Join(rootDir, "fixtures", entry.Name())
+			// A disabled fixture never ran, so its missing error.txt records that rather
+			// than an expected acceptance, and there is no answer to check against.
+			if reason, err := os.ReadFile(filepath.Join(fixtureDir, disabledMarker)); err == nil {
+				t.Skipf("disabled: %s", strings.TrimSpace(string(reason)))
+			}
+
 			sources := fixtureSources(t, fixtureDir)
 			require.NotEmpty(t, sources, "a fixture declares at least one .esc file")
 
@@ -207,22 +233,25 @@ func TestCheckFixturesOnSolver(t *testing.T) {
 		})
 	}
 
-	reportSolverSkipCauses(t, len(entries))
+	reportSolverSkipCauses(t, fixtures.Len()-disabled.Len())
 }
+
+// preludeURI is the package every run loads whether or not the source imports it.
+const preludeURI = "std:prelude"
 
 // checkOnSolver checks one package and returns the diagnostics that belong to it,
 // rendered as the run reports them.
 //
-// A diagnostic about a package the run loaded is dropped. The solver reports every
-// loaded package's own diagnostics, so `std:prelude` currently contributes two to
-// every run, and counting them would make every fixture look rejected. Clearing them
-// is #1664.
+// The prelude's own diagnostics are dropped. Every run loads it and it currently
+// reports two, so counting them would make all 73 fixtures look rejected. Clearing
+// them is #1664. Any other package's diagnostics are kept, because a fixture reaches
+// one only by importing it, which makes its failure part of that fixture's story.
 func checkOnSolver(sources []*ast.Source) []string {
 	output := compiler.CheckPackage(sources)
 
 	var diagnostics []string
 	for _, diagnostic := range output.TypeErrors {
-		if _, fromPackage := diagnostic.(*solver.PackageInferenceError); fromPackage {
+		if fromPackage, ok := diagnostic.(*solver.PackageInferenceError); ok && fromPackage.URI == preludeURI {
 			continue
 		}
 		diagnostics = append(diagnostics, diagnostic.Message())
@@ -279,8 +308,9 @@ func fixtureSources(t *testing.T, fixtureDir string) []*ast.Source {
 
 // reportSolverSkipCauses logs how many fixtures each cause holds back, so a run says
 // where the remaining work is rather than only that some fixtures are skipped. Run
-// with `-v` to read it.
-func reportSolverSkipCauses(t *testing.T, fixtureCount int) {
+// with `-v` to read it. runnable counts the fixtures this harness checks at all, which
+// leaves out the ones a DISABLED marker holds back.
+func reportSolverSkipCauses(t *testing.T, runnable int) {
 	t.Helper()
 
 	counts := map[*solverSkipCause]int{}
@@ -305,6 +335,6 @@ func reportSolverSkipCauses(t *testing.T, fixtureCount int) {
 	}
 
 	t.Logf("the solver checks %d of %d fixtures; %d are held back by %d causes, %d of them unticketed:\n%s",
-		fixtureCount-len(solverSkips), fixtureCount, len(solverSkips), len(causes), unticketed.Len(),
+		runnable-len(solverSkips), runnable, len(solverSkips), len(causes), unticketed.Len(),
 		strings.Join(lines, "\n"))
 }
