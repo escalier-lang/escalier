@@ -45,7 +45,8 @@ var (
 		ticket: "#1666",
 	}
 	causePrimitiveMember = &solverSkipCause{
-		name: "a member read off a primitive, which needs its wrapper type",
+		name:   "a member read off a primitive, which needs its wrapper type",
+		ticket: "#1714",
 	}
 	causeUnaryOperators = &solverSkipCause{
 		name:   "unary operators",
@@ -64,25 +65,32 @@ var (
 		ticket: "#1656",
 	}
 	causeIndexAndComputed = &solverSkipCause{
-		name: "index expressions, computed keys, and assignment to a member",
+		name:   "index expressions, computed keys, and assignment to a member",
+		ticket: "#1715",
 	}
 	causeNamespaceMember = &solverSkipCause{
-		name: "a namespace member reached from another file",
+		name:   "a bare reference to a namespace sibling",
+		ticket: "#1716",
 	}
 	causeSuperGate = &solverSkipCause{
-		name: "the gate requiring a subclass constructor to call `super(…)`",
+		name:   "the gate requiring a subclass constructor to call `super(…)`",
+		ticket: "#1720",
 	}
 	causeIteration = &solverSkipCause{
-		name: "generators, iteration, and spreading an iterable",
+		name:   "iteration and spreading an iterable",
+		ticket: "#1717",
 	}
 	causePatterns = &solverSkipCause{
-		name: "pattern matching and extractor patterns",
+		name:   "rest and default sub-patterns in an extractor pattern",
+		ticket: "#1718",
 	}
-	causeTypeArgDefaults = &solverSkipCause{
-		name: "a type argument left out because the parameter declares a default",
+	causeExtendsTypeArgs = &solverSkipCause{
+		name:   "a generic named in an `extends` clause without its type arguments",
+		ticket: "#1721",
 	}
-	causeUnderChecking = &solverSkipCause{
-		name: "the solver accepts what the old checker rejects",
+	causeUnionMember = &solverSkipCause{
+		name:   "a property read on a union whose arms do not all declare it",
+		ticket: "#1719",
 	}
 	causeStackOverflow = &solverSkipCause{
 		name:   "inference overflows the stack",
@@ -142,9 +150,9 @@ var solverSkips = []solverSkip{
 	{"extractor_with_defaults", causePatterns, "cannot constrain undefined <: string"},
 	{"pattern_matching", causePatterns, "object is missing property: area"},
 
-	{"interface", causeTypeArgDefaults, "type alias `Box` expects 1 type argument but got 0"},
+	{"interface", causeExtendsTypeArgs, "type alias `Box` expects 1 type argument but got 0"},
 
-	{"member_access", causeUnderChecking, "the package is accepted, and error.txt records a rejection"},
+	{"member_access", causeUnionMember, "the package is accepted, and error.txt records a rejection"},
 
 	{"class_with_fluent_mutating_methods", causeStackOverflow, "inference never returns"},
 }
