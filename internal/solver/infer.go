@@ -5,6 +5,7 @@ import (
 	"github.com/escalier-lang/escalier/internal/liveness"
 	"github.com/escalier-lang/escalier/internal/set"
 	"github.com/escalier-lang/escalier/internal/soltype"
+	"maps"
 )
 
 // checker is the per-inference-run carrier for the M2 constraint-generating
@@ -125,7 +126,8 @@ type checker struct {
 	// empty while inferring the entry module. Every class, enum, and alias
 	// registered under it keys on the URI joined to the dep_graph-qualified name,
 	// so `std:prelude`'s `Array` and a user's `Array` are two entries in the one
-	// nominal registry a run shares.
+	// nominal registry a run shares. A bin/ script checked against a library takes a
+	// URI of its own for the same reason. See scriptPkgURI.
 	//
 	// The separator is a dot, and a URI holds a colon that no identifier may, so
 	// `std:prelude.Array` splits back into its parts unambiguously and the display
@@ -592,6 +594,46 @@ func newChecker() *checker {
 	c.ctx.fusionRecorder = c.recordFusionEdge
 	registerIteratorResultAliases(c.ctx)
 	return c
+}
+
+// forScript returns a checker that carries c's run on for a bin/ script checked
+// against c's module scope. See InferScriptInLib, its only caller.
+//
+// Sharing c.ctx is what lets the script read the module's named types. A class, enum,
+// or alias resolves to a handle whose definition lives on the Context, and a second
+// run would hold none of them.
+//
+// pkgURI is the prefix the script's own declarations register under, which keeps them
+// off the module's keys and off another script's. A script declaring `Point` against a
+// module that declares one would otherwise fill its own members into the module's
+// definition. The prefix is stripped for display, so the class still renders as
+// `Point`.
+//
+// prov is copied rather than shared, so what the script records stays out of the
+// module's table, which a re-checked script would otherwise grow without bound. Info
+// and the diagnostics start empty, so the script's results cover the script alone.
+func (c *checker) forScript(pkgURI string) *checker {
+	sc := &checker{
+		ctx:          c.ctx,
+		pkgURI:       pkgURI,
+		info:         NewInfo(),
+		prov:         maps.Clone(c.prov),
+		varIDCounter: c.varIDCounter,
+		prelude:      c.prelude,
+		packages:     c.packages,
+		source:       c.source,
+		groupSource:  c.groupSource,
+		groups:       c.groups,
+	}
+	// Point the recorder at the script, so a fusion its walk records lands in the
+	// script's Prov table rather than the module's.
+	sc.ctx.fusionRecorder = sc.recordFusionEdge
+	// A language server re-checks one bin/ file against a cached library on every
+	// keystroke, handing this run the same source id each time, so drop whatever the
+	// previous check registered under this prefix. A compile repeats no prefix, since
+	// each bin/ script is its own source.
+	sc.ctx.forgetKeyPrefix(packageKeyPrefix(pkgURI) + ".")
+	return sc
 }
 
 // freshAt allocates a fresh inference variable at the given level. Provenance for
