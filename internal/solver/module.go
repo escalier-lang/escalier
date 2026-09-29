@@ -82,16 +82,11 @@ func (r *ModuleResult) DeclaresTopLevel(name string) bool {
 	return ok
 }
 
-// TypeBody returns what a named type stands for, along with the type parameters it
-// quantifies. A class, enum, interface, or alias declaration binds a handle in the
-// type map and registers its members under the declaration's qualified name, so the
-// handle alone renders as that name and says nothing about what is in it. This is how
-// a consumer that has to spell the members out, such as `.d.ts` emission, reaches
-// them.
-//
-// A class returns its instance members. An alias, an enum, and an interface return
-// their body, which for an enum is the union of its variants. ok is false for a name
-// no declaration registered.
+// TypeBody returns the members a named class, enum, interface, or alias declaration
+// registered, along with the type parameters it quantifies. The type map binds only a
+// handle carrying the declaration's name, so a consumer that has to spell the members
+// out reads them here. An enum's body is the union of its variants, and ok is false for
+// a name no declaration registered.
 func (r *ModuleResult) TypeBody(name string) (soltype.Type, []*soltype.TypeParam, bool) {
 	if def, ok := r.checker.ctx.classDef(name); ok {
 		return def.Body, def.TypeParams, true

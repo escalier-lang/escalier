@@ -15,13 +15,11 @@ import (
 // `FromSol` suffix dts_soltype.go establishes for a counterpart of a function there,
 // and goes when internal/type_system does.
 
-// SolNamespace is the solver surface the declaration walk reads at one namespace
-// level. It is an interface so this package keeps reading type representations alone,
-// as the type_system walk does, rather than the checker that produced them. One
-// implementation lives beside the solver backend that fills it.
-//
-// Each method answers for the namespace itself and never for an enclosing one, so a
-// prelude binding under the same spelling does not answer for the module.
+// SolNamespace is the solver surface the declaration walk reads at one namespace level,
+// an interface so this package keeps reading type representations rather than the checker
+// that produced them. Its implementation lives beside the solver backend. Each method
+// answers for the namespace itself, never for an enclosing one, so a prelude binding
+// under the same spelling does not answer for the module.
 type SolNamespace interface {
 	// ValueType is the type a name renders as in value position, which for a class is
 	// its static side and for an enum variant its constructor. Nothing in this
@@ -30,11 +28,8 @@ type SolNamespace interface {
 
 	// DeclaredType is what a name's type declaration stands for, along with the type
 	// parameters it quantifies. A class returns its instance members, and an alias, an
-	// enum, or an interface returns its body.
-	//
-	// A type declaration binds a handle in the type map, which is a reference carrying
-	// the declaration's name and nothing about its contents. A walk that has to spell
-	// the members out asks for them here rather than reading that binding.
+	// enum, or an interface returns its body. The type binding holds only a handle
+	// carrying the declaration's name, which is why the members are read here.
 	DeclaredType(name string) (soltype.Type, []*soltype.TypeParam, bool)
 
 	// Namespace is the namespace a name declares, which is what an enum's variants
@@ -42,15 +37,11 @@ type SolNamespace interface {
 	Namespace(name string) (SolNamespace, bool)
 }
 
-// BuildDefinitionsFromSol builds `.d.ts` definitions from a solver module run.
-// depGraph is the graph that run walked, so declarations emit in the order inference
-// typed them. root is the module's own top level, and preludePrefix is the key the
-// prelude package's declarations are registered under, which tells a reference to a
-// prelude type from a user's own type of the same name.
-//
-// The namespace grouping matches the type_system walk. Root-level declarations emit at
-// module level, and each other namespace's emit inside a namespace block, with the
-// namespace names sorted so one module's output does not depend on map order.
+// BuildDefinitionsFromSol builds `.d.ts` definitions from a solver module run, grouping
+// declarations by namespace the way the type_system walk does and emitting them in the
+// order depGraph typed them. Namespace names are sorted, so one module's output does not
+// depend on map order. preludePrefix is the key the prelude's declarations are registered
+// under, which tells a reference to a prelude type from a user's own of the same name.
 func (b *Builder) BuildDefinitionsFromSol(
 	depGraph *dep_graph.DepGraph,
 	root SolNamespace,
@@ -137,11 +128,9 @@ func findNamespaceFromSol(ns SolNamespace, path string) (SolNamespace, bool) {
 
 // buildDeclStmtFromSol emits the statements one declaration contributes. isTopLevel
 // marks a declaration at the module's own level, which is what carries `declare`. One
-// inside a namespace block does not.
-//
-// A declaration whose types the run did not record emits nothing rather than a
-// half-written statement. The solver reports the fault that left them missing, so
-// emitting nothing here costs no diagnostic.
+// inside a namespace block does not. A declaration whose types the run did not record
+// emits nothing rather than a half-written statement, and the solver has already
+// reported the fault that left them missing.
 func (b *Builder) buildDeclStmtFromSol(
 	decl ast.Decl,
 	ns SolNamespace,
@@ -362,13 +351,10 @@ func (b *Builder) buildInterfaceDeclFromSol(
 }
 
 // interfacePartsFromSol splits a rendered interface body into the members it declares
-// between its braces and the interfaces it extends.
-//
-// An interface that extends another is registered as the intersection of the parent and
-// the members this one adds, so `interface Employee extends Person { employeeId: number }`
-// arrives as `Person & {employeeId: number}`. Each arm that rendered as an object
-// contributes its members, and every other arm names a parent. A body that is one object
-// extends nothing, and one that rendered as anything else declares no members.
+// and the interfaces it extends. An interface extending another is registered as the
+// intersection of the parent and the members this one adds, so `interface Employee
+// extends Person` arrives as `Person & {employeeId: number}`. Each object arm contributes
+// members and every other arm names a parent.
 func interfacePartsFromSol(typeAnn TypeAnn) ([]ObjTypeAnnElem, []TypeAnn) {
 	switch t := typeAnn.(type) {
 	case *ObjectTypeAnn:
@@ -456,10 +442,9 @@ func (b *Builder) buildClassDeclFromSol(
 	})
 }
 
-// buildEnumDeclFromSol emits an enum as a namespace holding one type and one
-// constructor per variant, beside a type alias naming the union of those variants.
-// `Color.Hex` is then both a type and a callable, and `Color` is the union a value of
-// the enum inhabits.
+// buildEnumDeclFromSol emits an enum as a namespace holding one type and one constructor
+// per variant, beside a type alias naming the union of those variants, so `Color.Hex` is
+// both a type and a callable.
 func (b *Builder) buildEnumDeclFromSol(
 	decl *ast.EnumDecl,
 	ns SolNamespace,
