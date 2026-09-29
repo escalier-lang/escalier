@@ -111,6 +111,14 @@ func (c *Checker) inferClassDecl(ctx Context, decl *ast.ClassDecl) []Error {
 	}
 	classSelfRef := type_system.NewTypeRefType(nil, decl.Name.Name, typeAlias, classTypeArgs...)
 
+	// `Self` names the class's own instance type inside its body, the way it
+	// already does inside an interface. The dts converter emits it on a fused
+	// class's methods, as in `add(mut self, value: T) -> Self` on `Set`.
+	declCtx.Scope.SetTypeAlias("Self", &type_system.TypeAlias{
+		Type:       classSelfRef,
+		TypeParams: []*type_system.TypeParam{},
+	})
+
 	// Track method/getter/setter contexts keyed by body-element index. The
 	// module-level path keys by (decl, index); for a single body-level class
 	// the index alone suffices.
