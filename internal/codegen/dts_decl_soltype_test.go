@@ -229,7 +229,7 @@ func TestBuildDeclStmtFromSol(t *testing.T) {
 				"export declare type Color = Color.Red | Color.Hex;\n",
 		},
 		{
-			name:   "EnumWithNoVariantNamespaceEmitsTheUnionAlone",
+			name:   "EnumWithNoVariantNamespaceEmitsNothing",
 			source: "enum Color {\n\tRed,\n}",
 			ns: &fakeSolNamespace{
 				declared: map[string]fakeDeclaredType{
@@ -237,7 +237,10 @@ func TestBuildDeclStmtFromSol(t *testing.T) {
 				},
 			},
 			isTopLevel: true,
-			want:       "declare type Color = Color.Red;\n",
+			// The union names its variants through the namespace, so emitting the alias
+			// alone would declare `type Color = Color.Red` against a `Color.Red` nothing
+			// declares.
+			want: "",
 		},
 	}
 

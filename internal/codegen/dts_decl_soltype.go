@@ -445,26 +445,32 @@ func (b *Builder) buildClassDeclFromSol(
 // buildEnumDeclFromSol emits an enum as a namespace holding one type and one constructor
 // per variant, beside a type alias naming the union of those variants, so `Color.Hex` is
 // both a type and a callable.
+//
+// An enum with no variant namespace emits nothing at all, matching its twin. The union
+// names each variant through that namespace, so emitting the alias without it would
+// declare `type Color = Color.Red` against a `Color.Red` nothing declares.
 func (b *Builder) buildEnumDeclFromSol(
 	decl *ast.EnumDecl,
 	ns SolNamespace,
 	preludePrefix string,
 	isTopLevel bool,
 ) []Stmt {
+	variantNS, ok := ns.Namespace(decl.Name.Name)
+	if !ok {
+		return nil
+	}
 	localName := extractLocalName(decl.Name.Name)
 
 	var namespaceStmts []Stmt
-	if variantNS, ok := ns.Namespace(decl.Name.Name); ok {
-		for _, elem := range decl.Elems {
-			variant, ok := elem.(*ast.EnumVariant)
-			if !ok {
-				// An `...Other` spread contributes its own enum's variants, which this
-				// walk does not expand. Tracked in #178.
-				continue
-			}
-			namespaceStmts = append(namespaceStmts,
-				b.buildEnumVariantFromSol(variant, variantNS, preludePrefix)...)
+	for _, elem := range decl.Elems {
+		variant, isVariant := elem.(*ast.EnumVariant)
+		if !isVariant {
+			// An `...Other` spread contributes its own enum's variants, which this walk
+			// does not expand. Tracked in #178.
+			continue
 		}
+		namespaceStmts = append(namespaceStmts,
+			b.buildEnumVariantFromSol(variant, variantNS, preludePrefix)...)
 	}
 
 	var stmts []Stmt
@@ -483,8 +489,8 @@ func (b *Builder) buildEnumDeclFromSol(
 		})
 	}
 
-	union, typeParams, ok := ns.DeclaredType(decl.Name.Name)
-	if !ok || union == nil {
+	union, typeParams, hasUnion := ns.DeclaredType(decl.Name.Name)
+	if !hasUnion || union == nil {
 		return stmts
 	}
 	render := newSolTypeAnnBuilder(preludePrefix, localName, typeParams)
