@@ -178,7 +178,6 @@ func localName(name string) string {
 }
 
 // solverLibScope is the library surface internal/solver produces: the module run
-// solverLibScope is the library surface internal/solver produces: the module run
 // itself, since a script checked against it carries that run on.
 type solverLibScope struct {
 	module *solver.ModuleResult

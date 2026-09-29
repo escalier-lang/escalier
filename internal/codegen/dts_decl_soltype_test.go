@@ -138,6 +138,36 @@ func TestBuildDeclStmtFromSol(t *testing.T) {
 			want:       "export declare type Alias = string;\n",
 		},
 		{
+			name:   "InterfaceEmitsItsMembers",
+			source: "export interface Person {\n\tname: string,\n}",
+			ns: &fakeSolNamespace{
+				declared: map[string]fakeDeclaredType{
+					"Person": {body: solObj(solProp("name", solStr()))},
+				},
+			},
+			isTopLevel: true,
+			want:       "export declare interface Person {\n  name: string;\n}\n",
+		},
+		{
+			name:   "InterfaceExtendingAnotherSplitsTheIntersection",
+			source: "export interface Employee extends Person {\n\tid: number,\n}",
+			ns: &fakeSolNamespace{
+				declared: map[string]fakeDeclaredType{
+					// An interface that extends another is registered as the parent
+					// intersected with the members this one adds.
+					"Employee": {body: &soltype.IntersectionType{Types: []soltype.Type{
+						solClass("Person"),
+						solObj(solProp("id", solNum())),
+					}}},
+				},
+			},
+			isTopLevel: true,
+			// The object arm becomes the body and the named arm the `extends` clause.
+			// Emitting the intersection whole would leave the interface with no members
+			// at all, its own included.
+			want: "export declare interface Employee extends Person {\n  id: number;\n}\n",
+		},
+		{
 			name:   "ClassEmitsAnInstanceTypeAndAStaticValue",
 			source: "export class Point {\n\tx: number,\n}",
 			ns: &fakeSolNamespace{

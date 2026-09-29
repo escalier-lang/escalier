@@ -410,10 +410,12 @@ func TestSolverEmitsDefinitionsForEveryFixture(t *testing.T) {
 				t.Skip("no lib/ module to emit definitions for")
 			}
 			golden, err := os.ReadFile(filepath.Join(fixtureDir, "build", "lib", "index.d.ts"))
-			if os.IsNotExist(err) || len(golden) == 0 {
+			if err != nil {
+				require.True(t, os.IsNotExist(err), "reading the golden: %v", err)
+			}
+			if len(golden) == 0 {
 				t.Skip("the checker path emits no definitions for this fixture either")
 			}
-			require.NoError(t, err)
 
 			useSolver(t)
 			out := CompilePackage(sources)

@@ -82,9 +82,9 @@ type libResult struct {
 	// codegen emits the library's JS from.
 	depGraph *dep_graph.DepGraph
 	// dts renders the library's .d.ts from the type surface this run produced. Each
-	// checker represents that surface in its own types, so each supplies its own
-	// renderer rather than converting to the other's. It is nil when the run produced
-	// no surface to render.
+	// checker represents that surface in its own types, so each renders from its own
+	// rather than converting to the other's. It is nil when the run produced no surface
+	// to render.
 	dts dtsEmitter
 	// scope and fileScopes are the LSP's view of the module. Both are nil on the
 	// solver path, whose scopes have a different type; porting the LSP is a later

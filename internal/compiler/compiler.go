@@ -275,7 +275,7 @@ func CompilePackage(sources []*ast.Source) CompilerOutput {
 			jsOutput += "//# sourceMappingURL=" + outmap + "\n"
 
 			// A .d.ts is rendered from the library's type surface, which each checker
-			// holds in its own representation, so the run that produced it supplies
+			// holds in its own representation, so the run that produced it carries
 			// the renderer.
 			dtsOutput := ""
 			if lib.dts != nil {

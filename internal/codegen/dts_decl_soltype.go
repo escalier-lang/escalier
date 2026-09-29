@@ -30,9 +30,11 @@ type SolNamespace interface {
 
 	// DeclaredType is what a name's type declaration stands for, along with the type
 	// parameters it quantifies. A class returns its instance members, and an alias, an
-	// enum, or an interface returns its body. A type declaration binds a handle
-	// carrying only the declaration's name, so a walk that has to spell the members
-	// out asks for them here.
+	// enum, or an interface returns its body.
+	//
+	// A type declaration binds a handle in the type map, which is a reference carrying
+	// the declaration's name and nothing about its contents. A walk that has to spell
+	// the members out asks for them here rather than reading that binding.
 	DeclaredType(name string) (soltype.Type, []*soltype.TypeParam, bool)
 
 	// Namespace is the namespace a name declares, which is what an enum's variants
@@ -134,7 +136,7 @@ func findNamespaceFromSol(ns SolNamespace, path string) (SolNamespace, bool) {
 }
 
 // buildDeclStmtFromSol emits the statements one declaration contributes. isTopLevel
-// marks a declaration at the module's own level, which is what carries `declare`; one
+// marks a declaration at the module's own level, which is what carries `declare`. One
 // inside a namespace block does not.
 //
 // A declaration whose types the run did not record emits nothing rather than a
@@ -152,7 +154,7 @@ func (b *Builder) buildDeclStmtFromSol(
 	case *ast.FuncDecl:
 		return b.buildFuncDeclFromSol(decl, ns, preludePrefix, isTopLevel)
 	case *ast.TypeDecl:
-		return b.buildTypeDeclFromSol(decl, ns, preludePrefix, isTopLevel, false)
+		return b.buildTypeDeclFromSol(decl, ns, preludePrefix, isTopLevel)
 	case *ast.InterfaceDecl:
 		return b.buildInterfaceDeclFromSol(decl, ns, preludePrefix, isTopLevel)
 	case *ast.ClassDecl:
@@ -164,7 +166,7 @@ func (b *Builder) buildDeclStmtFromSol(
 	}
 }
 
-// buildVarDeclFromSol emits one `declare val` per name the declaration's pattern
+// buildVarDeclFromSol emits one `declare const` per name the declaration's pattern
 // binds, in sorted order so a destructuring declaration emits the same way on every
 // run. Each name carries its own type, since `val {x, y} = …` binds two.
 func (b *Builder) buildVarDeclFromSol(
@@ -198,8 +200,8 @@ func (b *Builder) buildVarDeclFromSol(
 					TypeParams: nil,
 					TypeAnn:    interfaceBodyFromSol(typeAnn),
 					Interface:  true,
-					// Held back from the output's exports on purpose: the name exists to
-					// give `this` a body, not for a consumer to write.
+					// Held back from the output's exports on purpose. The name exists
+					// to give `this` a body, not for a consumer to write.
 					declare: false,
 					export:  false,
 					span:    nil,
@@ -244,9 +246,9 @@ func interfaceBodyFromSol(typeAnn TypeAnn) TypeAnn {
 	return NewObjectTypeAnn([]ObjTypeAnnElem{&CallableTypeAnn{Fn: *fn}})
 }
 
-// buildFuncDeclFromSol emits a `declare fn` from the signature inference gave the
-// name. The type parameters come from that signature rather than from the `<…>` the
-// declaration wrote, so a generic an un-annotated function only picked up through
+// buildFuncDeclFromSol emits a `declare function` from the signature inference gave
+// the name. The type parameters come from that signature rather than from the `<…>` the
+// declaration wrote, so a parameter an un-annotated function picked up only through
 // generalization is declared too.
 func (b *Builder) buildFuncDeclFromSol(
 	decl *ast.FuncDecl,
@@ -255,7 +257,7 @@ func (b *Builder) buildFuncDeclFromSol(
 	isTopLevel bool,
 ) []Stmt {
 	// A declaration error recovery left without params or a body has no signature to
-	// emit, and `declare fn` needs one.
+	// emit, and `declare function` needs one.
 	if decl.Body == nil && !decl.Declare() {
 		return nil
 	}
@@ -293,14 +295,12 @@ func (b *Builder) buildFuncDeclFromSol(
 }
 
 // buildTypeDeclFromSol emits a type alias from the body registered under the
-// declaration's name. asInterface emits `interface Name { … }` in place of
-// `type Name = { … }`, which is how an interface declaration reaches this.
+// declaration's name.
 func (b *Builder) buildTypeDeclFromSol(
 	decl *ast.TypeDecl,
 	ns SolNamespace,
 	preludePrefix string,
 	isTopLevel bool,
-	asInterface bool,
 ) []Stmt {
 	body, typeParams, ok := ns.DeclaredType(decl.Name.Name)
 	if !ok || body == nil {
@@ -309,17 +309,15 @@ func (b *Builder) buildTypeDeclFromSol(
 	localName := extractLocalName(decl.Name.Name)
 	render := newSolTypeAnnBuilder(preludePrefix, localName, typeParams)
 	typeAnn := render.render(body)
-	if asInterface {
-		typeAnn = interfaceBodyFromSol(typeAnn)
-	}
+	declTypeParams := typeParamsFromSol(render, typeParams)
 
 	stmts := companionStmtsFromSol(render)
 	return append(stmts, &DeclStmt{
 		Decl: &TypeDecl{
 			Name:       NewIdentifier(localName, decl.Name),
-			TypeParams: typeParamsFromSol(render, typeParams),
+			TypeParams: declTypeParams,
 			TypeAnn:    typeAnn,
-			Interface:  asInterface,
+			Interface:  false,
 			declare:    isTopLevel,
 			export:     decl.Export(),
 			span:       nil,
@@ -331,9 +329,6 @@ func (b *Builder) buildTypeDeclFromSol(
 }
 
 // buildInterfaceDeclFromSol emits an interface from the body its arms merged into.
-// The declaration's `extends` clause is not re-stated, because the members it brings
-// in are already part of that body, so the emitted interface spells out everything a
-// consumer can reach rather than naming its parents.
 func (b *Builder) buildInterfaceDeclFromSol(
 	decl *ast.InterfaceDecl,
 	ns SolNamespace,
@@ -346,14 +341,15 @@ func (b *Builder) buildInterfaceDeclFromSol(
 	}
 	localName := extractLocalName(decl.Name.Name)
 	render := newSolTypeAnnBuilder(preludePrefix, localName, typeParams)
-	members := objTypeAnnElemsFromSol(render.render(body))
+	members, extends := interfacePartsFromSol(render.render(body))
+	declTypeParams := typeParamsFromSol(render, typeParams)
 
 	stmts := companionStmtsFromSol(render)
 	return append(stmts, &DeclStmt{
 		Decl: &InterfaceDecl{
 			Name:       NewIdentifier(localName, decl.Name),
-			TypeParams: typeParamsFromSol(render, typeParams),
-			Extends:    nil,
+			TypeParams: declTypeParams,
+			Extends:    extends,
 			Members:    members,
 			export:     decl.Export(),
 			declare:    isTopLevel,
@@ -365,15 +361,32 @@ func (b *Builder) buildInterfaceDeclFromSol(
 	})
 }
 
-// objTypeAnnElemsFromSol reads an object type's members back off a rendered
-// annotation, which is what an interface declares between its braces. A body that
-// rendered as anything else declares no members.
-func objTypeAnnElemsFromSol(typeAnn TypeAnn) []ObjTypeAnnElem {
-	obj, ok := typeAnn.(*ObjectTypeAnn)
-	if !ok {
-		return nil
+// interfacePartsFromSol splits a rendered interface body into the members it declares
+// between its braces and the interfaces it extends.
+//
+// An interface that extends another is registered as the intersection of the parent and
+// the members this one adds, so `interface Employee extends Person { employeeId: number }`
+// arrives as `Person & {employeeId: number}`. Each arm that rendered as an object
+// contributes its members, and every other arm names a parent. A body that is one object
+// extends nothing, and one that rendered as anything else declares no members.
+func interfacePartsFromSol(typeAnn TypeAnn) ([]ObjTypeAnnElem, []TypeAnn) {
+	switch t := typeAnn.(type) {
+	case *ObjectTypeAnn:
+		return t.Elems, nil
+	case *IntersectionTypeAnn:
+		var members []ObjTypeAnnElem
+		var extends []TypeAnn
+		for _, arm := range t.Types {
+			if obj, ok := arm.(*ObjectTypeAnn); ok {
+				members = append(members, obj.Elems...)
+				continue
+			}
+			extends = append(extends, arm)
+		}
+		return members, extends
+	default:
+		return nil, nil
 	}
-	return obj.Elems
 }
 
 // buildClassDeclFromSol emits a class as the two declarations TypeScript needs for
@@ -396,14 +409,18 @@ func (b *Builder) buildClassDeclFromSol(
 	}
 
 	localName := extractLocalName(decl.Name.Name)
+	// The two sides render under their own builders, and each seeds the names it mints
+	// from a prefix of its own. Both numbering from one prefix would let the instance
+	// type and the static side mint the same name for two different bodies.
 	instanceRender := newSolTypeAnnBuilder(preludePrefix, localName, typeParams)
 	instanceAnn := instanceRender.render(instance)
+	instanceTypeParams := typeParamsFromSol(instanceRender, typeParams)
 
 	stmts := companionStmtsFromSol(instanceRender)
 	stmts = append(stmts, &DeclStmt{
 		Decl: &TypeDecl{
 			Name:       NewIdentifier(localName, decl.Name),
-			TypeParams: typeParamsFromSol(instanceRender, typeParams),
+			TypeParams: instanceTypeParams,
 			TypeAnn:    instanceAnn,
 			Interface:  false,
 			declare:    isTopLevel,
@@ -415,10 +432,10 @@ func (b *Builder) buildClassDeclFromSol(
 		source: nil,
 	})
 
-	// The static side renders under its own builder, and leaves the class's parameters
-	// for its constructor signature to bind. A `{new (value: T): Box<T>}` naming a `T`
-	// nothing binds is not valid TypeScript; the signature has to write `new <T>`.
-	staticRender := newSolTypeAnnBuilder(preludePrefix, localName, nil)
+	// The static side leaves the class's parameters for its constructor signature to
+	// bind. A `{new (value: T): Box<T>}` naming a `T` nothing binds is not valid
+	// TypeScript; the signature has to write `new <T>`.
+	staticRender := newSolTypeAnnBuilder(preludePrefix, localName+"_static", nil)
 	staticAnn := staticRender.render(staticType)
 	stmts = append(stmts, companionStmtsFromSol(staticRender)...)
 	return append(stmts, &DeclStmt{
@@ -487,12 +504,13 @@ func (b *Builder) buildEnumDeclFromSol(
 	}
 	render := newSolTypeAnnBuilder(preludePrefix, localName, typeParams)
 	unionAnn := render.render(union)
+	declTypeParams := typeParamsFromSol(render, typeParams)
 
 	stmts = append(stmts, companionStmtsFromSol(render)...)
 	return append(stmts, &DeclStmt{
 		Decl: &TypeDecl{
 			Name:       NewIdentifier(localName, decl.Name),
-			TypeParams: typeParamsFromSol(render, typeParams),
+			TypeParams: declTypeParams,
 			TypeAnn:    unionAnn,
 			Interface:  false,
 			declare:    isTopLevel,
@@ -519,11 +537,12 @@ func (b *Builder) buildEnumVariantFromSol(
 	if body, typeParams, ok := variantNS.DeclaredType(name); ok && body != nil {
 		render := newSolTypeAnnBuilder(preludePrefix, name, typeParams)
 		typeAnn := render.render(body)
+		declTypeParams := typeParamsFromSol(render, typeParams)
 		stmts = append(stmts, companionStmtsFromSol(render)...)
 		stmts = append(stmts, &DeclStmt{
 			Decl: &TypeDecl{
 				Name:       NewIdentifier(name, variant.Name),
-				TypeParams: typeParamsFromSol(render, typeParams),
+				TypeParams: declTypeParams,
 				TypeAnn:    typeAnn,
 				Interface:  false,
 				declare:    false,
@@ -537,7 +556,9 @@ func (b *Builder) buildEnumVariantFromSol(
 	}
 
 	if ctorType, ok := variantNS.ValueType(name); ok {
-		render := newSolTypeAnnBuilder(preludePrefix, name, nil)
+		// A prefix of its own, so the variant's type and its constructor cannot mint one
+		// name for two bodies.
+		render := newSolTypeAnnBuilder(preludePrefix, name+"_ctor", nil)
 		ctorAnn := render.render(ctorType)
 		stmts = append(stmts, companionStmtsFromSol(render)...)
 		stmts = append(stmts, &DeclStmt{
