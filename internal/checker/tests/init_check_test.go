@@ -1,10 +1,14 @@
 package tests
 
 import (
+	"context"
 	"strings"
 	"testing"
+	"time"
 
+	"github.com/escalier-lang/escalier/internal/ast"
 	. "github.com/escalier-lang/escalier/internal/checker"
+	"github.com/escalier-lang/escalier/internal/parser"
 	"github.com/stretchr/testify/require"
 )
 
@@ -379,6 +383,117 @@ func TestConstructorDefiniteAssignmentErrors(t *testing.T) {
 			require.NotEmptyf(t, matched,
 				"expected an error containing %q; got: %v",
 				test.expected, formatErrs(errs))
+		})
+	}
+}
+
+// A static field needs an initializer because the emitted `static x;` would
+// otherwise read back `undefined`, contradicting the declared type. A
+// `declare` class emits nothing, so there is no slot to read back and its
+// static describes one the runtime already fills. Every fused class in the
+// interop tree carries `static readonly prototype`, which is this shape, and
+// the rule accounted for 1781 of `web:dom`'s diagnostics (#1725).
+func TestStaticFieldInitializerRequiredOnlyWhenEmitted(t *testing.T) {
+	t.Parallel()
+	tests := map[string]struct {
+		input       string
+		wantMissing bool
+		wantOther   string
+	}{
+		"DeclareClassNeedsNoInitializer": {
+			input: `
+				declare class Element {
+					static readonly prototype: Element,
+				}
+			`,
+		},
+		"ClassWithABodyStillNeedsOne": {
+			input: `
+				class Foo {
+					static x: number,
+				}
+			`,
+			wantMissing: true,
+		},
+		// The pre-existing escape hatch: a type that admits `undefined`
+		// matches what `static x;` actually holds.
+		"AStaticPermittingUndefinedNeedsNone": {
+			input: `
+				class Foo {
+					static x: number | undefined,
+				}
+			`,
+		},
+		// Waiving the initializer does not waive the annotation: the
+		// static still has the type it declares.
+		"ADeclareClassStillChecksTheAnnotation": {
+			input: `
+				declare class Foo {
+					static x: number,
+				}
+				val n: string = Foo.x
+			`,
+			wantOther: "number cannot be assigned to string",
+		},
+	}
+
+	for name, test := range tests {
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+			errs := inferModuleErrors(t, test.input)
+			matched := errorsContaining(errs, "must have an initializer")
+			if test.wantMissing {
+				require.NotEmptyf(t, matched,
+					"expected a missing-initializer error; got: %v", formatErrs(errs))
+			} else {
+				require.Emptyf(t, matched,
+					"expected no missing-initializer error; got: %v", formatErrs(errs))
+			}
+			if test.wantOther != "" {
+				require.NotEmptyf(t, errorsContaining(errs, test.wantOther),
+					"expected an error containing %q; got: %v",
+					test.wantOther, formatErrs(errs))
+			}
+		})
+	}
+}
+
+// The same rule on the statement-level class path, which is a separate
+// implementation from the module one.
+func TestStaticFieldInitializerInAScript(t *testing.T) {
+	t.Parallel()
+	tests := map[string]struct {
+		input       string
+		wantMissing bool
+	}{
+		"DeclareClassNeedsNoInitializer": {
+			input: "declare class Foo {\n\tstatic x: number,\n}\n",
+		},
+		"ClassWithABodyStillNeedsOne": {
+			input:       "class Foo {\n\tstatic x: number,\n}\n",
+			wantMissing: true,
+		},
+	}
+
+	for name, test := range tests {
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+			source := &ast.Source{ID: 0, Path: "input.esc", Contents: test.input}
+			ctx, cancel := context.WithTimeout(context.Background(), 1*time.Second)
+			defer cancel()
+			script, parseErrors := parser.NewParser(ctx, source).ParseScript()
+			require.Empty(t, parseErrors, "expected no parse errors")
+
+			c := NewChecker(ctx)
+			_, errs := c.InferScript(Context{Scope: Prelude(c)}, script)
+			matched := errorsContaining(errs, "must have an initializer")
+			if test.wantMissing {
+				require.NotEmptyf(t, matched,
+					"expected a missing-initializer error; got: %v", formatErrs(errs))
+			} else {
+				require.Emptyf(t, matched,
+					"expected no missing-initializer error; got: %v", formatErrs(errs))
+			}
 		})
 	}
 }

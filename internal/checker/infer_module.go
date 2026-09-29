@@ -1326,7 +1326,13 @@ func (c *Checker) InferComponent(
 							// the emitted `static x;` faithfully matches the
 							// type). Otherwise the runtime value would be
 							// `undefined`, contradicting the declared type.
-							if isStatic && bodyElem.Value == nil {
+							//
+							// A `declare` class emits nothing, so it has
+							// nowhere to put an initializer and no slot that
+							// could read back `undefined`. Its static
+							// describes one the runtime already fills, as
+							// `static readonly prototype: Element` does.
+							if isStatic && bodyElem.Value == nil && !decl.Declare() {
 								// Expand type refs/aliases so that an
 								// `undefined` member nested in an aliased
 								// union (e.g. `type Maybe = string | undefined`)

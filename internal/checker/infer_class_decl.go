@@ -389,7 +389,9 @@ func (c *Checker) inferClassDecl(ctx Context, decl *ast.ClassDecl) []Error {
 				}
 			}
 
-			if isStatic && bodyElem.Value == nil {
+			// A `declare` class emits nothing, so it has nowhere to put an
+			// initializer. See the same guard in infer_module.go.
+			if isStatic && bodyElem.Value == nil && !decl.Declare() {
 				resolved, expandErrors := c.ExpandType(ctx, prop.Value, 1)
 				errors = slices.Concat(errors, expandErrors)
 				if !typeContainsUndefined(type_system.Prune(resolved)) {
