@@ -671,6 +671,19 @@ func (b *solTypeAnnBuilder) funcTypeAnn(funcType *soltype.FuncType) FuncTypeAnn 
 	}
 }
 
+// declFuncTypeAnn renders funcType for a declaration that spells its signature out,
+// such as `declare function f<T0>(x: T0): T0`. render seeds the occurrence counts a
+// signature reads to tell a variable it fully contains from one it shares, and a
+// declaration reaches its signature without going through render, so it seeds them
+// here.
+func (b *solTypeAnnBuilder) declFuncTypeAnn(funcType *soltype.FuncType) FuncTypeAnn {
+	if b.typeParamNames == nil {
+		b.typeParamNames = map[*soltype.TypeVarType]string{}
+	}
+	b.bindAt, b.varOrder = bindingSignatures(funcType)
+	return b.funcTypeAnn(funcType)
+}
+
 // bindInferredTypeParams names the variables let-generalization retained, which
 // an un-annotated generic function declares none of. `fn f(x) { return x }`
 // coalesces to `fn (x: t1) -> t1` with an empty TypeParams list, and rendering

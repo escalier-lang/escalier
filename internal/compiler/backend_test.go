@@ -2,12 +2,17 @@ package compiler
 
 import (
 	"context"
+	"io/fs"
+	"os"
 	"path/filepath"
+	"sort"
 	"strconv"
+	"strings"
 	"testing"
 	"time"
 
 	"github.com/escalier-lang/escalier/internal/ast"
+	"github.com/escalier-lang/escalier/internal/set"
 	"github.com/stretchr/testify/require"
 )
 
@@ -161,7 +166,7 @@ func TestCompileScriptImportsUsedLibSymbols(t *testing.T) {
 // TestCompileReportsTheSolverCodegenGap checks that a compile on the solver path
 // says its output is not yet correct, and that the checker path says nothing extra.
 // Codegen reads types only internal/checker stamps onto the tree, so the solver's
-// JavaScript is wrong in ways no other diagnostic names and its .d.ts is empty.
+// JavaScript is wrong in ways no other diagnostic names.
 func TestCompileReportsTheSolverCodegenGap(t *testing.T) {
 	const gap = solverCodegenGap
 
@@ -177,7 +182,9 @@ func TestCompileReportsTheSolverCodegenGap(t *testing.T) {
 		// One for the library's compilation unit and one for the script's, since
 		// each is a file whose emitted output is wrong.
 		require.Equal(t, 2, countMessage(messages(out.TypeErrors), gap))
-		require.Empty(t, out.CompUnits["lib/index"].DTS)
+		// The gap covers output that is written but not yet right, so the library's
+		// .d.ts is emitted rather than left empty.
+		require.NotEmpty(t, out.CompUnits["lib/index"].DTS)
 
 		// Each blames the file it is about, so a caller placing diagnostics puts
 		// them on the library and on the script rather than both on one.
@@ -194,7 +201,8 @@ func TestCompileReportsTheSolverCodegenGap(t *testing.T) {
 // solverCodegenGap is the message the solver path reports for each file it emits.
 const solverCodegenGap = "ESCALIER_CHECKER=solver does not yet emit correct output for this file: " +
 	"codegen reads types internal/checker stamps onto the tree, so a constructor call, " +
-	"a method reference, and an `if val` guard are emitted wrongly, and no .d.ts is written"
+	"a method reference, and an `if val` guard are emitted wrongly, and the .d.ts does not " +
+	"yet match the one the old checker writes"
 
 // countMessage returns how many of msgs equal want.
 func countMessage(msgs []string, want string) int {
@@ -327,4 +335,89 @@ func TestCompileScriptReportsTheGapOfTheCheckerThatChecked(t *testing.T) {
 	out := CompileScript(libOutput.LibScope, binSource("val g = greeting\n"))
 	require.Empty(t, out.ParseErrors)
 	require.Equal(t, 1, countMessage(messages(out.TypeErrors), solverCodegenGap))
+}
+
+// fixtureLibSources reads a fixture's lib/ files as the source list the entry points
+// take. It walks subdirectories, because a fixture puts a namespace's declarations in a
+// directory of that name, and sorts by path so a multi-file fixture is assembled the
+// same way on every run. It returns none for a fixture with no lib/ directory, which is
+// a bin/-only one.
+func fixtureLibSources(t *testing.T, fixtureDir string) []*ast.Source {
+	t.Helper()
+	libDir := filepath.Join(fixtureDir, "lib")
+	if _, err := os.Stat(libDir); os.IsNotExist(err) {
+		return nil
+	}
+
+	var paths []string
+	err := filepath.WalkDir(libDir, func(path string, entry fs.DirEntry, err error) error {
+		if err != nil {
+			return err
+		}
+		if !entry.IsDir() && strings.HasSuffix(entry.Name(), ".esc") {
+			paths = append(paths, path)
+		}
+		return nil
+	})
+	require.NoError(t, err)
+	sort.Strings(paths)
+
+	sources := make([]*ast.Source, 0, len(paths))
+	for i, path := range paths {
+		contents, err := os.ReadFile(path)
+		require.NoError(t, err)
+		rel, err := filepath.Rel(fixtureDir, path)
+		require.NoError(t, err)
+		sources = append(sources, &ast.Source{
+			ID: i,
+			// The path the CLI would pass, since a declaration's namespace comes from
+			// the directory holding its file.
+			Path:     rel,
+			Contents: string(contents),
+		})
+	}
+	return sources
+}
+
+// solverInferenceOverflows are fixtures whose inference overflows the stack on the
+// solver path, before any emission runs. A Go stack overflow is fatal and takes the
+// test binary with it, so these are skipped rather than allowed to fail. Tracked in
+// #1695.
+var solverInferenceOverflows = set.FromSlice([]string{"class_with_fluent_mutating_methods"})
+
+// TestSolverEmitsDefinitionsForEveryFixture is the done-condition of #1675: the solver
+// path renders a `.d.ts` for every fixture whose lib/ module the checker path renders
+// one for. The committed golden says which those are, so a fixture whose source does
+// not parse and whose golden is therefore empty is not held to it.
+//
+// It asserts only that something is written. Whether it matches what the checker path
+// writes for the same source is #1676's job, and today much of it does not.
+func TestSolverEmitsDefinitionsForEveryFixture(t *testing.T) {
+	entries, err := os.ReadDir(filepath.Join("..", "..", "fixtures"))
+	require.NoError(t, err)
+
+	for _, entry := range entries {
+		if !entry.IsDir() {
+			continue
+		}
+		t.Run(entry.Name(), func(t *testing.T) {
+			if solverInferenceOverflows.Contains(entry.Name()) {
+				t.Skip("inference overflows the stack on the solver path, see #1695")
+			}
+			fixtureDir := filepath.Join("..", "..", "fixtures", entry.Name())
+			sources := fixtureLibSources(t, fixtureDir)
+			if len(sources) == 0 {
+				t.Skip("no lib/ module to emit definitions for")
+			}
+			golden, err := os.ReadFile(filepath.Join(fixtureDir, "build", "lib", "index.d.ts"))
+			if os.IsNotExist(err) || len(golden) == 0 {
+				t.Skip("the checker path emits no definitions for this fixture either")
+			}
+			require.NoError(t, err)
+
+			useSolver(t)
+			out := CompilePackage(sources)
+			require.NotEmpty(t, out.CompUnits["lib/index"].DTS)
+		})
+	}
 }

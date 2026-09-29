@@ -5,6 +5,8 @@ import (
 
 	"github.com/escalier-lang/escalier/internal/ast"
 	"github.com/escalier-lang/escalier/internal/checker"
+	"github.com/escalier-lang/escalier/internal/codegen"
+	"github.com/escalier-lang/escalier/internal/dep_graph"
 	"github.com/escalier-lang/escalier/internal/type_system"
 )
 
@@ -29,12 +31,12 @@ func (checkerBackend) checkLib(ctx context.Context, module *ast.Module) libResul
 	depGraph, typeErrors := c.InferModule(inferCtx, module)
 
 	return libResult{
-		lib:          &checkerLibScope{ns: inferCtx.Scope.Namespace},
-		depGraph:     depGraph,
-		dtsNamespace: inferCtx.Scope.Namespace,
-		scope:        inferCtx.Scope,
-		fileScopes:   c.FileScopes,
-		diagnostics:  diagnostics(typeErrors),
+		lib:         &checkerLibScope{ns: inferCtx.Scope.Namespace},
+		depGraph:    depGraph,
+		dts:         &checkerDts{ns: inferCtx.Scope.Namespace},
+		scope:       inferCtx.Scope,
+		fileScopes:  c.FileScopes,
+		diagnostics: diagnostics(typeErrors),
 	}
 }
 
@@ -42,6 +44,16 @@ func (checkerBackend) checkLib(ctx context.Context, module *ast.Module) libResul
 func (checkerBackend) checkScript(ctx context.Context, script *ast.Script) scriptResult {
 	c := checker.NewChecker(ctx)
 	return inferScriptInScope(c, checker.Prelude(c), script)
+}
+
+// checkerDts renders the library's .d.ts from the namespace the module's scope
+// accumulated, which is the surface BuildDefinitions reads.
+type checkerDts struct {
+	ns *type_system.Namespace
+}
+
+func (d *checkerDts) buildDefinitions(b *codegen.Builder, depGraph *dep_graph.DepGraph) *codegen.Module {
+	return b.BuildDefinitions(depGraph, d.ns)
 }
 
 // checkerLibScope is the library surface internal/checker produces: the namespace

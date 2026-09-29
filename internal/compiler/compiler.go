@@ -274,12 +274,12 @@ func CompilePackage(sources []*ast.Source) CompilerOutput {
 			outmap := "./index.js.map"
 			jsOutput += "//# sourceMappingURL=" + outmap + "\n"
 
-			// A .d.ts is rendered from the library's type surface, which only the
-			// old checker produces in the shape codegen reads. The solver path
-			// leaves it empty until the declaration emitter lands.
+			// A .d.ts is rendered from the library's type surface, which each checker
+			// holds in its own representation, so the run that produced it supplies
+			// the renderer.
 			dtsOutput := ""
-			if lib.dtsNamespace != nil {
-				dtsMod := builder.BuildDefinitions(lib.depGraph, lib.dtsNamespace)
+			if lib.dts != nil {
+				dtsMod := lib.dts.buildDefinitions(builder, lib.depGraph)
 				printer = codegen.NewPrinter()
 				dtsOutput = printer.PrintModule(dtsMod)
 			}

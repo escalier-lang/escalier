@@ -655,6 +655,27 @@ func schemeType(s TypeScheme) soltype.Type {
 	panic(fmt.Sprintf("schemeType: unknown TypeScheme %T", s))
 }
 
+// DisplayType returns the type b's name renders as, which is what a consumer outside
+// this package reads off a binding. An ordinary binding coalesces its one scheme. An
+// overload set renders as the intersection of its arms, the form a reader sees for a
+// name declared by several signatures. A binding carrying no scheme returns nil, since
+// there is no type to show.
+//
+// A generalized binding's display type RETAINS its quantified type-parameter
+// variables, so it is not variable-free. A consumer has to name those variables
+// itself. soltype.PrintAsScheme does it for a printed string, and
+// codegen's solTypeAnnBuilder does it for a .d.ts annotation.
+func (b ValueBinding) DisplayType() soltype.Type {
+	switch len(b.Schemes) {
+	case 0:
+		return nil
+	case 1:
+		return schemeType(b.Schemes[0])
+	default:
+		return overloadDisplayType(b)
+	}
+}
+
 // renderScheme renders a scheme to its Escalier type-annotation string, with a
 // <T0, …> quantifier prefix when generalization left type parameters behind.
 //
