@@ -397,7 +397,7 @@ export declare class MessageEvent<T = any> extends Event {
  * [MDN Reference](https://developer.mozilla.org/docs/Web/API/TextDecoder)
  */
 @js("TextDecoder")
-export declare class TextDecoder extends TextDecoderCommon {
+export declare class TextDecoder implements TextDecoderCommon {
     /**
      * Returns the result of running encoding's decoder. The method can be invoked zero or more times with options's stream set to true, and then once without options's stream (or set to false), to process a fragmented input. If the invocation without options's stream (or set to false) has no input, it's clearest to omit both arguments.
      *
@@ -445,7 +445,7 @@ export declare interface TextDecoderCommon {
  * [MDN Reference](https://developer.mozilla.org/docs/Web/API/TextEncoder)
  */
 @js("TextEncoder")
-export declare class TextEncoder extends TextEncoderCommon {
+export declare class TextEncoder implements TextEncoderCommon {
     /**
      * Returns the result of running UTF-8's encoder.
      *

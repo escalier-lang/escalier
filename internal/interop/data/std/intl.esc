@@ -448,7 +448,7 @@ export declare interface LocaleOptions {
 }
 
 @js("Intl.Locale")
-export declare class Locale extends LocaleOptions {
+export declare class Locale implements LocaleOptions {
     /** A string containing the language, and the script and region if available. */
     baseName: string,
     /** The primary language subtag associated with the locale. */

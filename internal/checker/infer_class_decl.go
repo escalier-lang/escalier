@@ -287,22 +287,10 @@ func (c *Checker) inferClassDecl(ctx Context, decl *ast.ClassDecl) []Error {
 		}
 	}
 
-	var implementsTypes []*type_system.TypeRefType
-	for _, implTypeAnn := range decl.Implements {
-		implType, implErrors := c.inferTypeAnn(declCtx, implTypeAnn)
-		errors = slices.Concat(errors, implErrors)
-		typeRef, ok := type_system.Prune(implType).(*type_system.TypeRefType)
-		if !ok {
-			continue
-		}
-		implementsTypes = append(implementsTypes, typeRef)
-	}
-	objType.Implements = implementsTypes
+	errors = slices.Concat(errors, c.resolveImplements(declCtx, decl, objType))
 
 	unifyErrors := c.Unify(ctx, instanceType, objType)
 	errors = slices.Concat(errors, unifyErrors)
-
-	errors = slices.Concat(errors, c.checkImplements(declCtx, decl, objType))
 
 	// Build the constructor signature. The instance ref built above
 	// (classSelfRef) is reused as the constructor's return type.
@@ -681,5 +669,39 @@ func (c *Checker) inferClassDecl(ctx Context, decl *ast.ClassDecl) []Error {
 		}
 	}
 
+	// Runs here rather than beside the placeholder object type above, where a
+	// field's type is still the fresh var this phase resolves against the
+	// annotation.
+	errors = slices.Concat(errors, c.checkImplements(declCtx, decl, objType))
+
+	return errors
+}
+
+// resolveImplements records the class's `implements` interfaces on its object
+// type. A `declare` class also takes its members from them, so they go in
+// objType.Mixins as well. See checkImplements.
+func (c *Checker) resolveImplements(
+	ctx Context,
+	decl *ast.ClassDecl,
+	objType *type_system.ObjectType,
+) []Error {
+	var errors []Error
+	var implementsTypes []*type_system.TypeRefType
+	for _, implTypeAnn := range decl.Implements {
+		implType, implErrors := c.inferTypeAnn(ctx, implTypeAnn)
+		errors = slices.Concat(errors, implErrors)
+		typeRef, ok := type_system.Prune(implType).(*type_system.TypeRefType)
+		if !ok {
+			continue
+		}
+		implementsTypes = append(implementsTypes, typeRef)
+	}
+	objType.Implements = implementsTypes
+	if decl.Declare() {
+		// Both lists, because the clause means two things on a `declare`
+		// class: Implements is what the class is checked against, Mixins is
+		// what member lookup walks for the members it contributes.
+		objType.Mixins = implementsTypes
+	}
 	return errors
 }

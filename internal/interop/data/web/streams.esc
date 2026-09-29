@@ -5,38 +5,6 @@
 import "std:typed_arrays"
 import "web:core"
 
-export declare interface ReadableStreamAsyncIterator<T> extends AsyncIteratorObject<T, BuiltinIteratorReturn, unknown> {
-    [Symbol.asyncIterator]() -> ReadableStreamAsyncIterator<T>
-}
-
-@js("ReadableStream")
-export declare class ReadableStream<R = any> {
-    [Symbol.asyncIterator](self, options?: ReadableStreamIteratorOptions) -> ReadableStreamAsyncIterator<R>,
-    values(self, options?: ReadableStreamIteratorOptions) -> ReadableStreamAsyncIterator<R>,
-    /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/ReadableStream/locked) */
-    readonly locked: boolean,
-    /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/ReadableStream/cancel) */
-    cancel(mut self, reason?: unknown) -> Promise<undefined>,
-    /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/ReadableStream/getReader) */
-    getReader(self, options: {
-        mode: "byob"
-    }) -> ReadableStreamBYOBReader,
-    getReader(self) -> ReadableStreamDefaultReader<R>,
-    getReader(self, options?: ReadableStreamGetReaderOptions) -> ReadableStreamReader<R>,
-    /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/ReadableStream/pipeThrough) */
-    pipeThrough<T>(mut self, transform: ReadableWritablePair<T, R>, options?: StreamPipeOptions) -> ReadableStream<T>,
-    /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/ReadableStream/pipeTo) */
-    pipeTo(mut self, destination: WritableStream<R>, options?: StreamPipeOptions) -> Promise<undefined>,
-    /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/ReadableStream/tee) */
-    tee(mut self) -> [ReadableStream<R>, ReadableStream<R>],
-    static prototype: ReadableStream,
-    constructor(mut self, underlyingSource: UnderlyingByteSource, strategy?: {
-        highWaterMark?: number
-    }),
-    constructor(mut self, underlyingSource: UnderlyingDefaultSource<R>, strategy?: QueuingStrategy<R>),
-    constructor(mut self, underlyingSource?: UnderlyingSource<R>, strategy?: QueuingStrategy<R>)
-}
-
 export declare interface QueuingStrategy<T = any> {
     highWaterMark?: number,
     size?: QueuingStrategySize<T>
@@ -160,7 +128,7 @@ export declare interface UnderlyingSource<R = any> {
  * [MDN Reference](https://developer.mozilla.org/docs/Web/API/ByteLengthQueuingStrategy)
  */
 @js("ByteLengthQueuingStrategy")
-export declare class ByteLengthQueuingStrategy extends QueuingStrategy<typed_arrays.ArrayBufferView> {
+export declare class ByteLengthQueuingStrategy implements QueuingStrategy<typed_arrays.ArrayBufferView> {
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/ByteLengthQueuingStrategy/highWaterMark) */
     readonly highWaterMark: number,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/ByteLengthQueuingStrategy/size) */
@@ -175,7 +143,7 @@ export declare class ByteLengthQueuingStrategy extends QueuingStrategy<typed_arr
  * [MDN Reference](https://developer.mozilla.org/docs/Web/API/CountQueuingStrategy)
  */
 @js("CountQueuingStrategy")
-export declare class CountQueuingStrategy extends QueuingStrategy {
+export declare class CountQueuingStrategy implements QueuingStrategy {
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/CountQueuingStrategy/highWaterMark) */
     readonly highWaterMark: number,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/CountQueuingStrategy/size) */
@@ -208,9 +176,42 @@ export declare class ReadableByteStreamController {
     constructor(mut self)
 }
 
+/**
+ * This Streams API interface represents a readable stream of byte data. The Fetch API offers a concrete instance of a ReadableStream through the body property of a Response object.
+ *
+ * [MDN Reference](https://developer.mozilla.org/docs/Web/API/ReadableStream)
+ */
+@js("ReadableStream")
+export declare class ReadableStream<R = any> {
+    /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/ReadableStream/locked) */
+    readonly locked: boolean,
+    /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/ReadableStream/cancel) */
+    cancel(mut self, reason?: unknown) -> Promise<undefined>,
+    /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/ReadableStream/getReader) */
+    getReader(self, options: {
+        mode: "byob"
+    }) -> ReadableStreamBYOBReader,
+    getReader(self) -> ReadableStreamDefaultReader<R>,
+    getReader(self, options?: ReadableStreamGetReaderOptions) -> ReadableStreamReader<R>,
+    /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/ReadableStream/pipeThrough) */
+    pipeThrough<T>(mut self, transform: ReadableWritablePair<T, R>, options?: StreamPipeOptions) -> ReadableStream<T>,
+    /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/ReadableStream/pipeTo) */
+    pipeTo(mut self, destination: WritableStream<R>, options?: StreamPipeOptions) -> Promise<undefined>,
+    /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/ReadableStream/tee) */
+    tee(mut self) -> [ReadableStream<R>, ReadableStream<R>],
+    [Symbol.asyncIterator](self, options?: ReadableStreamIteratorOptions) -> ReadableStreamAsyncIterator<R>,
+    values(self, options?: ReadableStreamIteratorOptions) -> ReadableStreamAsyncIterator<R>,
+    static prototype: ReadableStream,
+    constructor(mut self, underlyingSource: UnderlyingByteSource, strategy?: {
+        highWaterMark?: number
+    }),
+    constructor(mut self, underlyingSource: UnderlyingDefaultSource<R>, strategy?: QueuingStrategy<R>),
+    constructor(mut self, underlyingSource?: UnderlyingSource<R>, strategy?: QueuingStrategy<R>)
+}
+
 /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/ReadableStreamBYOBReader) */
 @js("ReadableStreamBYOBReader")
-export declare class ReadableStreamBYOBReader extends ReadableStreamGenericReader {
+export declare class ReadableStreamBYOBReader implements ReadableStreamGenericReader {
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/ReadableStreamBYOBReader/read) */
     read<T: typed_arrays.ArrayBufferView>(mut self, view: T) -> Promise<ReadableStreamReadResult<T>>,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/ReadableStreamBYOBReader/releaseLock) */
@@ -249,7 +250,7 @@ export declare class ReadableStreamDefaultController<R = any> {
 
 /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/ReadableStreamDefaultReader) */
 @js("ReadableStreamDefaultReader")
-export declare class ReadableStreamDefaultReader<R = any> extends ReadableStreamGenericReader {
+export declare class ReadableStreamDefaultReader<R = any> implements ReadableStreamGenericReader {
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/ReadableStreamDefaultReader/read) */
     read(mut self) -> Promise<ReadableStreamReadResult<R>>,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/ReadableStreamDefaultReader/releaseLock) */
@@ -267,7 +268,7 @@ export declare interface ReadableStreamGenericReader {
 
 /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/TextDecoderStream) */
 @js("TextDecoderStream")
-export declare class TextDecoderStream extends GenericTransformStream {
+export declare class TextDecoderStream implements GenericTransformStream, TextDecoderCommon {
     readonly readable: ReadableStream<string>,
     readonly writable: WritableStream<BufferSource>,
     static prototype: TextDecoderStream,
@@ -276,7 +277,7 @@ export declare class TextDecoderStream extends GenericTransformStream {
 
 /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/TextEncoderStream) */
 @js("TextEncoderStream")
-export declare class TextEncoderStream extends GenericTransformStream {
+export declare class TextEncoderStream implements GenericTransformStream, TextEncoderCommon {
     readonly readable: ReadableStream<typed_arrays.Uint8Array>,
     readonly writable: WritableStream<string>,
     static prototype: TextEncoderStream,
@@ -421,3 +422,7 @@ export declare type ReadableStreamReader<T> = ReadableStreamDefaultReader<T> | R
 export declare type ReadableStreamReaderMode = "byob"
 
 export declare type ReadableStreamType = "bytes"
+
+export declare interface ReadableStreamAsyncIterator<T> extends AsyncIteratorObject<T, BuiltinIteratorReturn, unknown> {
+    [Symbol.asyncIterator]() -> ReadableStreamAsyncIterator<T>
+}

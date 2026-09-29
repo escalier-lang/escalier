@@ -650,9 +650,9 @@ func (c *Checker) collectPropsFromType(
 			}
 		}
 
-		// Recursively collect properties from extended interfaces
-		for _, extendsTypeRef := range typ.Extends {
-			c.collectPropsFromType(ctx, extendsTypeRef, expectedProps, requiredProps)
+		// Recursively collect properties from extended interfaces and mixins
+		for _, ref := range slices.Concat(typ.Extends, typ.Mixins) {
+			c.collectPropsFromType(ctx, ref, expectedProps, requiredProps)
 		}
 
 	case *type_system.TypeRefType:

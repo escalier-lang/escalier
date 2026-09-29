@@ -755,26 +755,11 @@ func (c *Checker) InferComponent(
 					}
 				}
 
-				// Infer the Implements clause if present
-				var implementsTypes []*type_system.TypeRefType
-				for _, implTypeAnn := range decl.Implements {
-					implType, implErrors := c.inferTypeAnn(declCtx, implTypeAnn)
-					errors = slices.Concat(errors, implErrors)
-					typeRef, ok := type_system.Prune(implType).(*type_system.TypeRefType)
-					if !ok {
-						continue
-					}
-					implementsTypes = append(implementsTypes, typeRef)
-				}
-				objType.Implements = implementsTypes
+				errors = slices.Concat(errors, c.resolveImplements(declCtx, decl, objType))
 
 				// TODO: call c.bind() directly
 				unifyErrors := c.Unify(ctx, instanceType, objType)
 				errors = slices.Concat(errors, unifyErrors)
-
-				// Verify the class structurally satisfies each entry in
-				// objType.Implements (#558).
-				errors = slices.Concat(errors, c.checkImplements(declCtx, decl, objType))
 
 				typeArgs := make([]type_system.Type, len(typeParams))
 				for i := range typeParams {
@@ -1769,6 +1754,12 @@ func (c *Checker) InferComponent(
 						}
 					}
 				}
+
+				// Runs here rather than in the placeholder phase, where a
+				// field's type is still the fresh var this phase resolves
+				// against the annotation.
+				errors = slices.Concat(errors,
+					c.checkImplements(declCtx, decl, instanceType))
 			}
 		}
 	}
