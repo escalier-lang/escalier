@@ -447,14 +447,14 @@ func TestBuildTypeAnnFromSolFromSource(t *testing.T) {
 		// the named fields.
 		"DestructuredParams": {
 			"", "fn ([a, ...b]: [number, ...], {x, ...other}: {x: number}) -> number",
-			"([a, ...b]: [number], {x: x, ...other}: {x: number}) => number",
+			"([a, ...b]: [number], {x, ...other}: {x: number}) => number",
 		},
 		"RestParam": {"", "fn (...xs: Array<number>) -> number", "(...xs: Array<number>) => number"},
 		"TuplePatParam": {
 			"", "fn ([a, b]: [number, number]) -> number",
 			"([a, b]: [number, number]) => number",
 		},
-		"ObjectPatParam": {"", "fn ({x}: {x: number}) -> number", "({x: x}: {x: number}) => number"},
+		"ObjectPatParam": {"", "fn ({x}: {x: number}) -> number", "({x}: {x: number}) => number"},
 		// What a call raises has no TypeScript form.
 		"Throws": {"", "fn () -> number throws string", "() => number"},
 
@@ -887,19 +887,22 @@ func TestBuildTypeAnnFromSolParamPatterns(t *testing.T) {
 		"Extractor": {enumDecl, "fn (Opt.Some(v): Opt) -> number", "(arg0: Opt) => number"},
 		// A class-instance pattern binds through its object part, and the class it
 		// names is already carried by the parameter's type, so both names survive.
-		"Instance":      {classDecl, "fn (Point {x, y}: Point) -> number", "({x: x, y: y}: Point) => number"},
+		"Instance":      {classDecl, "fn (Point {x, y}: Point) -> number", "({x, y}: Point) => number"},
 		"InstanceEmpty": {classDecl, "fn (Point {}: Point) -> number", "({}: Point) => number"},
 
 		// A sub-pattern that names nothing draws from the same namer, so a nested
 		// position never reuses an outer name.
 		"InsideTuple":  {"", "fn ([a, _]: [number, number]) -> number", "([a, arg0]: [number, number]) => number"},
 		"InsideObject": {"", "fn ({x: _}: {x: number}) -> number", "({x: arg0}: {x: number}) => number"},
+		// A field binding a name of its own keeps the long form, since `{x}` would
+		// bind `x` where the source bound `y`.
+		"RenamedField": {"", "fn ({x: y}: {x: number}) -> number", "({x: y}: {x: number}) => number"},
 		// A rest element binds the tail, which is a fact about the pattern rather
 		// than the sub-pattern it binds through. Dropping the `...` would bind one
 		// element where the source bound every remaining one.
 		"RestInsideTuple":  {"", "fn ([a, ..._]: [number, ...]) -> number", "([a, ...arg0]: [number]) => number"},
 		"RestOnlyElement":  {"", "fn ([..._]: [number, ...]) -> number", "([...arg0]: [number]) => number"},
-		"RestInsideObject": {"", "fn ({x, ..._}: {x: number}) -> number", "({x: x, ...arg0}: {x: number}) => number"},
+		"RestInsideObject": {"", "fn ({x, ..._}: {x: number}) -> number", "({x, ...arg0}: {x: number}) => number"},
 
 		// One namer serves the whole signature. A name reused across two binding
 		// positions would be a duplicate-identifier error in the declaration.

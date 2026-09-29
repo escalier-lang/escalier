@@ -911,7 +911,16 @@ func patToPatFromSol(pat soltype.Pat, names *paramNamer) (Pat, bool) {
 		for _, field := range pat.Fields {
 			value, named := patToPatFromSol(field.Value, names)
 			if !named {
-				value = NewIdentPat(names.next(), nil, nil)
+				// A sub-pattern that binds no name takes one from names, and that name is
+				// not the field's, so the field keeps its long form.
+				elems = append(elems, NewObjKeyValuePat(field.Name, NewIdentPat(names.next(), nil, nil), nil, nil))
+				continue
+			}
+			// A field binding its own name is written `{x}` rather than `{x: x}`. A field
+			// that renames, `{x: y}`, keeps the long form, since the two names differ.
+			if ident, ok := value.(*IdentPat); ok && ident.Name == field.Name {
+				elems = append(elems, NewObjShorthandPat(field.Name, nil, nil))
+				continue
 			}
 			elems = append(elems, NewObjKeyValuePat(field.Name, value, nil, nil))
 		}
