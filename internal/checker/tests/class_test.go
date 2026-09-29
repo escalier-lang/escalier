@@ -1342,14 +1342,15 @@ func TestDeclareClassImplementsContributesMembers(t *testing.T) {
 			expectedType: "number",
 		},
 		// An overloaded method reaches the class the same way a
-		// single-signature one does. The interop tree gets here through
-		// interfaces such as `CanvasDrawImage`, whose `drawImage`
-		// declares three arms.
+		// single-signature one does. Each arm returns a different type, so
+		// the inferred type names the arm the call picked. The interop tree
+		// gets here through interfaces such as `CanvasDrawImage`, whose
+		// `drawImage` declares three arms.
 		"OverloadedMemberFromImplementedInterface": {
 			input: `
 				interface CanvasDrawImage {
 					drawImage(self, dx: number, dy: number) -> string,
-					drawImage(self, dx: number, dy: number, dw: number) -> string,
+					drawImage(self, dx: number, dy: number, dw: number) -> boolean,
 				}
 				declare class CanvasRenderingContext2D implements CanvasDrawImage {}
 				declare fn makeContext() -> CanvasRenderingContext2D
@@ -1357,6 +1358,19 @@ func TestDeclareClassImplementsContributesMembers(t *testing.T) {
 			`,
 			bindingName:  "drawn",
 			expectedType: "string",
+		},
+		"TheSecondOverloadArmFromImplementedInterface": {
+			input: `
+				interface CanvasDrawImage {
+					drawImage(self, dx: number, dy: number) -> string,
+					drawImage(self, dx: number, dy: number, dw: number) -> boolean,
+				}
+				declare class CanvasRenderingContext2D implements CanvasDrawImage {}
+				declare fn makeContext() -> CanvasRenderingContext2D
+				val drawn = makeContext().drawImage(1, 2, 3)
+			`,
+			bindingName:  "drawn",
+			expectedType: "boolean",
 		},
 		"MemberFromTheSuperclassOfAnImplementedInterface": {
 			input: `
@@ -1373,16 +1387,16 @@ func TestDeclareClassImplementsContributesMembers(t *testing.T) {
 			bindingName:  "animated",
 			expectedType: "boolean",
 		},
-		// A restated member narrows the interface's, and the class's
-		// declaration is what lookup returns. `MessagePort` retypes one
-		// member of `MessageEventTarget` this way.
-		"RestatedMemberNarrows": {
+		// A restated readonly member narrows the interface's, and the
+		// class's declaration is what lookup returns. `MessagePort` retypes
+		// one member of `MessageEventTarget` this way.
+		"RestatedReadonlyMemberNarrows": {
 			input: `
 				interface MessageEventTarget {
-					onmessage: string | undefined,
+					readonly onmessage: string | undefined,
 				}
 				declare class MessagePort implements MessageEventTarget {
-					onmessage: string,
+					readonly onmessage: string,
 				}
 				declare fn makePort() -> MessagePort
 				val handler = makePort().onmessage
@@ -1463,13 +1477,43 @@ func TestDeclareClassImplementsConformance(t *testing.T) {
 				}
 			`,
 		},
-		"NarrowingRestatementIsAccepted": {
+		// Only a readonly member may narrow. Reading is covariant, so a
+		// class promising less than the interface declares is safe.
+		"NarrowingAReadonlyRestatementIsAccepted": {
+			input: `
+				interface MessageEventTarget {
+					readonly onmessage: string | number,
+				}
+				declare class MessagePort implements MessageEventTarget {
+					readonly onmessage: string,
+				}
+			`,
+		},
+		// A mutable property is written through as well as read, which makes
+		// it invariant. TypeScript accepts this narrowing; Escalier does not,
+		// because a write of `number` satisfies the interface's type and not
+		// the class's.
+		"NarrowingAMutableRestatementIsRejected": {
 			input: `
 				interface MessageEventTarget {
 					onmessage: string | number,
 				}
 				declare class MessagePort implements MessageEventTarget {
 					onmessage: string,
+				}
+			`,
+			expectedErrors: []string{
+				"Class 'MessagePort' does not implement interface 'MessageEventTarget': member 'onmessage' is a mutable property, so its type has to match the interface's exactly",
+			},
+		},
+		// Restating a mutable member at the interface's own type is fine.
+		"RestatingAMutableMemberExactlyIsAccepted": {
+			input: `
+				interface MessageEventTarget {
+					onmessage: string | number,
+				}
+				declare class MessagePort implements MessageEventTarget {
+					onmessage: string | number,
 				}
 			`,
 		},
@@ -1546,9 +1590,26 @@ func TestDeclareClassImplementsConflicts(t *testing.T) {
 			},
 		},
 		// Lookup walks the superclass first, so its member settles the name.
-		// `number` is assignable to what each interface declares, so it
-		// settles without contradicting either.
+		// The members are readonly, so reading is covariant and `number`
+		// satisfies what each interface declares.
 		"ASuperclassMemberResolvesTheConflict": {
+			input: `
+				interface ChildNode {
+					readonly nodeName: string | number,
+				}
+				interface ParentNode {
+					readonly nodeName: number,
+				}
+				declare class Node {
+					readonly nodeName: number,
+				}
+				declare class Element extends Node implements ChildNode, ParentNode {}
+			`,
+		},
+		// The same shape with mutable members. A mutable property is
+		// invariant, so no single type satisfies two interfaces that declare
+		// the name differently, and the superclass settles nothing.
+		"AMutableSuperclassMemberCannotResolveTheConflict": {
 			input: `
 				interface ChildNode {
 					nodeName: string | number,
@@ -1561,6 +1622,9 @@ func TestDeclareClassImplementsConflicts(t *testing.T) {
 				}
 				declare class Element extends Node implements ChildNode, ParentNode {}
 			`,
+			expectedErrors: []string{
+				"Class 'Element' does not implement interface 'ChildNode': member 'nodeName' is a mutable property, so its type has to match the interface's exactly",
+			},
 		},
 		// The superclass settles the name, so the interfaces no longer
 		// conflict. What it settles on contradicts `ParentNode`, which is
@@ -1615,7 +1679,26 @@ func TestDeclareClassImplementsConflicts(t *testing.T) {
 				"Class 'Element' implements 'ChildNode' and 'ParentNode', which declare member 'nodeName' with conflicting types",
 			},
 		},
-		"ARestatedMemberResolvesTheConflict": {
+		// A restated readonly member settles the name, and reading is
+		// covariant, so `number` satisfies both interfaces.
+		"ARestatedReadonlyMemberResolvesTheConflict": {
+			input: `
+				interface ChildNode {
+					readonly nodeName: string | number,
+				}
+				interface ParentNode {
+					readonly nodeName: number,
+				}
+				declare class Element implements ChildNode, ParentNode {
+					readonly nodeName: number,
+				}
+			`,
+		},
+		// TypeScript accepts the mutable form, where the class narrows one
+		// interface's member to satisfy the other. Escalier rejects it: a
+		// mutable property is invariant, so `number` does not satisfy
+		// `ChildNode`.
+		"ARestatedMutableMemberCannotResolveTheConflict": {
 			input: `
 				interface ChildNode {
 					nodeName: string | number,
@@ -1627,6 +1710,9 @@ func TestDeclareClassImplementsConflicts(t *testing.T) {
 					nodeName: number,
 				}
 			`,
+			expectedErrors: []string{
+				"Class 'Element' does not implement interface 'ChildNode': member 'nodeName' is a mutable property, so its type has to match the interface's exactly",
+			},
 		},
 	}
 

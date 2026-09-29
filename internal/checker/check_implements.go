@@ -14,8 +14,11 @@ import (
 // A class with a body has to satisfy the interface, and a missing or
 // mismatched member reports ClassDoesNotImplementInterfaceError. A `declare`
 // class takes the interface's members instead, so a member it does not resolve
-// itself is inherited rather than missing. One it does resolve is a narrowing
-// override, still checked for assignability to the interface's.
+// itself is inherited rather than missing.
+//
+// A member it does resolve overrides the interface's and is still checked
+// against it. A readonly member may narrow, since reading is covariant. A
+// mutable one is written through as well, so its type has to match exactly.
 func (c *Checker) checkImplements(
 	ctx Context,
 	decl *ast.ClassDecl,
@@ -409,6 +412,14 @@ func (c *Checker) checkInterfaceElem(
 		if errs := c.Unify(ctx, cp.Value, ifaceVal); len(errs) > 0 {
 			return mismatchedMember(span, className, ifaceName, ie.Name.String(),
 				"property type does not match")
+		}
+		// A readonly property is only read, so the class may narrow it. A
+		// mutable one is also written through, which makes it invariant: a
+		// class narrowing it would accept a write the interface's type
+		// permits and its own does not.
+		if !ie.Readonly && !c.Check(ctx, ifaceVal, cp.Value) {
+			return mismatchedMember(span, className, ifaceName, ie.Name.String(),
+				"is a mutable property, so its type has to match the interface's exactly")
 		}
 	}
 	return nil

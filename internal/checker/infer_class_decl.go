@@ -699,6 +699,17 @@ func (c *Checker) resolveImplements(
 	}
 	objType.Implements = implementsTypes
 	if decl.Declare() {
+		// Extends is the list member lookup walks, so recording the
+		// interfaces here is what makes the clause contribute their members.
+		// It overloads the field: for a class the first entry is the
+		// superclass and the rest are not superclasses at all, which is why
+		// findClassElem has to skip them by identity against Implements.
+		//
+		// A field of its own would say what these are, at the cost of
+		// teaching every reader of Extends about it. Copying the members into
+		// objType.Elems would avoid the second list entirely. Neither changes
+		// what a program sees, since a nominal class is not assignable to an
+		// interface either way.
 		objType.Extends = slices.Concat(objType.Extends, implementsTypes)
 	}
 	return errors
