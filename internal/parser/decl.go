@@ -582,10 +582,8 @@ func (p *Parser) classDecl(start ast.Location, export, declare, final bool) ast.
 		implementsTok := token
 		p.lexer.consume()
 		for {
-			// An entry is a type reference: a qualified identifier with
-			// optional type args, such as `Iterable` or `set.Set<string>`.
-			// An arbitrary type annotation is not allowed, which is what
-			// the grammar requires and what keeps the class body from
+			// An entry is a type reference, such as `Iterable` or
+			// `set.Set<string>`. Stopping at `{` keeps the class body from
 			// being read as the object type in `implements { ... }`.
 			if p.lexer.peek().Type == OpenBrace {
 				p.reportError(implementsTok.Span, "Expected type reference after 'implements'")

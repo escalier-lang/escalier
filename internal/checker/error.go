@@ -172,9 +172,8 @@ func (e ClassDoesNotImplementInterfaceError) Message() string {
 }
 
 // ConflictingInterfaceMembersError is reported when a `declare` class
-// implements two interfaces that declare the same member name with types
-// that do not agree. The clause contributes both members, so the class has
-// to restate the member and narrow both to say which one it means.
+// implements two interfaces declaring the same member name with types that do
+// not agree. The class has to settle the name to say which one it means.
 type ConflictingInterfaceMembersError struct {
 	ClassName   string
 	FirstIface  string

@@ -1626,9 +1626,8 @@ interface ElementConstructor {
 declare var Element: ElementConstructor;
 `
 
-// A TypeScript interface names any number of supertypes and an Escalier
-// ClassDecl carries one `extends`, so a fused trio splits them. A trio that
-// kept only the first would lose every member the others declare, such as
+// A fused trio splits its supertypes across `extends` and `implements`.
+// Keeping only one would lose every member the others declare, such as
 // `querySelector` on `Element` (#1648).
 func TestStandalone_TrioKeepsEverySupertype(t *testing.T) {
 	printed := printTrioClass(t, multiSupertypeTrio, "Element")
@@ -1662,8 +1661,7 @@ interface ElementConstructor {
 declare var Element: ElementConstructor;
 `
 
-// An Escalier class extends a class and implements interfaces, so the
-// supertype that converts to a class fills `extends` wherever TypeScript
+// The supertype that converts to a class fills `extends` wherever TypeScript
 // wrote it. `Node` is a trio here and `ParentNode` is not.
 func TestStandalone_TrioExtendsTheSupertypeThatIsAClass(t *testing.T) {
 	printed := printTrioClass(t, mixinFirstTrio, "Element")
@@ -1731,9 +1729,7 @@ declare var FontFaceSet: FontFaceSetConstructor;
 `
 
 // An Escalier class extends one class, so a second class supertype joins
-// `implements` and the conversion records it. Its members still reach the
-// class. What the declaration no longer states is that the class derives
-// from it.
+// `implements` and is recorded. Its members still reach the class.
 func TestStandalone_ASecondClassSupertypeIsDemotedAndRecorded(t *testing.T) {
 	mod, _ := convertSlice(t, twoClassTrio)
 

@@ -1104,10 +1104,9 @@ declare global {
 		"the block is lifted and the script's own declaration is kept")
 }
 
-// A lib that augments another is read after it, so mergeDecls folds the
-// augmentation into the base declaration rather than the other way round.
-// Sorting basenames alphabetically does not give that on its own:
-// `lib.dom.asynciterable.d.ts` sorts ahead of the `lib.dom.d.ts` it augments.
+// A lib that augments another is read after it, which alphabetical order does
+// not give on its own: `lib.dom.asynciterable.d.ts` sorts ahead of the
+// `lib.dom.d.ts` it augments.
 func TestOrderLibInputs(t *testing.T) {
 	t.Parallel()
 

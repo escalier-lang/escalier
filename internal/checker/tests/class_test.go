@@ -1300,16 +1300,11 @@ func TestDefaultMutabilityFromClass(t *testing.T) {
 	}
 }
 
-// TestDeclareClassImplementsContributesMembers covers the `declare` half
-// of the `implements` split. A `declare` class describes an object the
-// runtime already provides, so its `implements` clause contributes each
-// interface's members instead of asserting the class restates them.
-//
-// This is what the dts_to_esc converter relies on. A TypeScript interface
-// names any number of supertypes, and the converted class keeps the first
-// as `extends` and routes the rest through `implements`, so a member
-// declared on a mixin such as `ParentNode` has to be reachable on the
-// class itself.
+// TestDeclareClassImplementsContributesMembers covers the `declare` half of
+// the `implements` split, where the clause contributes each interface's
+// members instead of asserting the class restates them. The dts_to_esc
+// converter relies on it: a member declared on a mixin such as `ParentNode`
+// has to be reachable on the class that implements it.
 func TestDeclareClassImplementsContributesMembers(t *testing.T) {
 	tests := map[string]struct {
 		input        string
@@ -1378,10 +1373,9 @@ func TestDeclareClassImplementsContributesMembers(t *testing.T) {
 			bindingName:  "animated",
 			expectedType: "boolean",
 		},
-		// A member the class restates narrows the one the interface
-		// declares, and the class's declaration is what lookup returns.
-		// `MessagePort` retypes one member of `MessageEventTarget` this
-		// way and inherits the rest.
+		// A restated member narrows the interface's, and the class's
+		// declaration is what lookup returns. `MessagePort` retypes one
+		// member of `MessageEventTarget` this way.
 		"RestatedMemberNarrows": {
 			input: `
 				interface MessageEventTarget {
@@ -1412,9 +1406,8 @@ func TestDeclareClassImplementsContributesMembers(t *testing.T) {
 }
 
 // TestDeclareClassImplementsConformance pins which `implements` failures a
-// `declare` class still reports. It inherits what it leaves out, so a
-// missing member is not an error, but a member it restates has to be
-// assignable to the one the interface declares.
+// `declare` class still reports. A missing member is inherited rather than
+// an error; a restated one has to be assignable to the interface's.
 func TestDeclareClassImplementsConformance(t *testing.T) {
 	tests := map[string]struct {
 		input          string
@@ -1518,9 +1511,9 @@ func TestDeclareClassImplementsConformance(t *testing.T) {
 }
 
 // TestDeclareClassImplementsConflicts covers two implemented interfaces
-// declaring the same member name on a `declare` class. Both contribute the
-// member, so types that disagree have to be resolved by the class rather
-// than settled by whichever interface lookup reaches first.
+// declaring the same member name on a `declare` class. Both contribute it, so
+// types that disagree must be settled by the class rather than by lookup
+// order.
 func TestDeclareClassImplementsConflicts(t *testing.T) {
 	tests := map[string]struct {
 		input          string
@@ -1552,11 +1545,9 @@ func TestDeclareClassImplementsConflicts(t *testing.T) {
 				"Class 'Element' implements 'ChildNode' and 'ParentNode', which declare member 'nodeName' with conflicting types",
 			},
 		},
-		// Lookup walks the superclass before the implemented interfaces,
-		// so a member the superclass declares is what the name resolves
-		// to and the two interfaces no longer decide it. `number` is
-		// assignable to what each one declares, so the superclass settles
-		// the name without contradicting either.
+		// Lookup walks the superclass first, so its member settles the name.
+		// `number` is assignable to what each interface declares, so it
+		// settles without contradicting either.
 		"ASuperclassMemberResolvesTheConflict": {
 			input: `
 				interface ChildNode {
@@ -1571,11 +1562,9 @@ func TestDeclareClassImplementsConflicts(t *testing.T) {
 				declare class Element extends Node implements ChildNode, ParentNode {}
 			`,
 		},
-		// The superclass settles the name, so the two interfaces no longer
-		// conflict with each other. What it settles on contradicts
-		// `ParentNode`, though: `element.nodeName` reads as `string` where
-		// the interface promises `number`. That is reported against the
-		// one interface it disagrees with, not as a conflict between them.
+		// The superclass settles the name, so the interfaces no longer
+		// conflict. What it settles on contradicts `ParentNode`, which is
+		// reported against that interface rather than as a conflict.
 		"ASuperclassMemberContradictingAnInterfaceIsRejected": {
 			input: `
 				interface ChildNode {
@@ -1593,9 +1582,8 @@ func TestDeclareClassImplementsConflicts(t *testing.T) {
 				"Class 'Element' does not implement interface 'ParentNode': member 'nodeName' property type does not match",
 			},
 		},
-		// The two declare the same type but disagree on whether the
-		// member is there at all, so reading it gives `string | undefined`
-		// through one and `string` through the other.
+		// Same type, but one declares it optional, so reading the name gives
+		// `string | undefined` through one and `string` through the other.
 		"AnOptionalAndARequiredMemberConflict": {
 			input: `
 				interface ChildNode {

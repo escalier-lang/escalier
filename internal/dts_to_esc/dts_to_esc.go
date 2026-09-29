@@ -46,19 +46,17 @@ type StandaloneModule struct {
 	KeyDrops []SingletonMember
 
 	// DemotedBases lists every class supertype that moved to `implements`
-	// because the class's `extends` slot was already filled.
-	// ReportDemotedBases names them.
+	// because the `extends` slot was already filled. ReportDemotedBases
+	// names them.
 	DemotedBases []DemotedBase
 }
 
 // DemotedBase records a TypeScript interface that extended more than one type
-// the converter turns into a class. An Escalier class extends one class, so
-// the first fills `extends` and each later one joins `implements`.
-//
-// No member is lost, since a `declare` class takes its members from both
-// clauses. What is lost is the statement that the class derives from Demoted,
-// which `implements` does not make. `interface FontFaceSet extends
-// EventTarget, Set<FontFace>` is the one such shape in the pinned lib set.
+// the converter turns into a class. An Escalier class extends one, so the
+// first fills `extends` and each later one joins `implements`. No member is
+// lost; what is lost is the statement that the class derives from Demoted.
+// `interface FontFaceSet extends EventTarget, Set<FontFace>` is the one such
+// shape in the pinned lib set.
 type DemotedBase struct {
 	// Class is the class being declared.
 	Class string
@@ -116,9 +114,8 @@ func convertStandaloneModule(
 	trios := detectTrios(stmts)
 	cctx := &convertCtx{
 		facts: facts,
-		// A bucket may extend a class another bucket declares, so the
-		// classification reads every name the tree turns into a class and not
-		// only this bucket's.
+		// A bucket may extend a class another bucket declares, so this reads
+		// every name the tree turns into a class, not only its own.
 		classNames: classNamesFrom(stmts, trios).Union(treeClassNames),
 	}
 	singletons := detectSingletons(stmts, trios)
@@ -1026,10 +1023,9 @@ func typeRefName(ref *dts_parser.TypeReference) string {
 //
 // Returns zero or more decls — namespace flattening expands to N decls;
 // `consumed` trio sides return zero; everything else returns one.
-// scopeClassNames holds every name reachable by a bare reference from this
-// statement's scope that converts to a class. It is the tree's top-level set
-// at the module root, widened by each namespace's own classes as the walk
-// descends into it.
+// scopeClassNames holds every name a bare reference from this statement's
+// scope resolves to a class, widened by each namespace's own classes as the
+// walk descends.
 func convertStandaloneStmt(
 	cctx *convertCtx,
 	stmt dts_parser.Statement,
@@ -1049,9 +1045,7 @@ func convertStandaloneStmt(
 		innerTrios := detectTrios(s.Statements)
 		innerSingletons := detectSingletons(s.Statements, innerTrios)
 		// A namespace's classes are reachable by bare name from inside it, so
-		// they join the enclosing scope's for the statements it holds. A name
-		// the namespace declares shadows nothing, since both sets are keyed by
-		// the bare name and a class is a class either way.
+		// they join the enclosing scope's set for the statements it holds.
 		innerClassNames := scopeClassNames.Union(classNamesFrom(s.Statements, innerTrios))
 		for _, child := range s.Statements {
 			children, err := convertStandaloneStmt(cctx, child, innerTrios, innerSingletons, qual, innerClassNames)
@@ -1268,20 +1262,12 @@ func fuseTrio(
 		}
 	}
 
-	// A TypeScript interface names any number of supertypes, and each one
-	// converts to either a class or an interface. An Escalier class extends a
-	// class and implements interfaces, so the supertype that converts to a
-	// class fills `extends` and every other one joins `implements`.
-	//
-	// Position does not decide this. `interface Element extends Node,
-	// ARIAMixin, ...` opens with its base class, but `interface
+	// An Escalier class extends a class and implements interfaces, so the
+	// supertype that converts to a class fills `extends` and the rest join
+	// `implements`. Position does not decide it: `interface
 	// CanvasRenderingContext2D extends CanvasCompositing, ...` opens with a
-	// mixin and names no class at all, so that class extends nothing and
-	// implements all seventeen. classNames is what tells the two apart.
-	//
-	// Whichever clause a supertype lands in, a `declare` class takes its
-	// members from both, so the split loses no member. See checkImplements in
-	// internal/checker.
+	// mixin and names no class at all. A `declare` class takes its members
+	// from both clauses, so the split loses none.
 	var extends *ast.TypeRefTypeAnn
 	var extendsName string
 	var implements []*ast.TypeRefTypeAnn
@@ -1299,12 +1285,9 @@ func fuseTrio(
 			implements = append(implements, ref)
 			continue
 		}
-		// Escalier has one `extends` slot and no way to say a class derives
-		// from two, so a second class supertype joins `implements` and is
-		// recorded. Its members still reach the class, and what the emitted
-		// declaration no longer states is that the class derives from it.
-		// `interface FontFaceSet extends EventTarget, Set<FontFace>` is the
-		// one such shape in the pinned lib set.
+		// Escalier cannot say a class derives from two, so a second class
+		// supertype joins `implements` and is recorded. Its members still
+		// reach the class. See DemotedBase.
 		if extends != nil {
 			cctx.noteDemotedBase(className, extendsName, name)
 			implements = append(implements, ref)
@@ -1571,22 +1554,19 @@ func propertyKeyName(pk dts_parser.PropertyKey) string {
 }
 
 // ClassNames returns every top-level name a bucket's statements turn into a
-// class: the instance side of each fused trio, plus each `declare class`.
-// Nothing else in a `.d.ts` becomes one, so a supertype outside this set
-// converts to an interface. fuseTrio reads the set to fill a class's single
-// `extends` slot.
+// class: each fused trio's instance side, plus each `declare class`. A
+// supertype outside the set converts to an interface, which is how fuseTrio
+// fills the single `extends` slot.
 //
-// Only the top level is counted, matching ConsumedCtorNames over the same
-// statements. A namespace's own classes are added to this set for the
-// statements it holds, which convertStandaloneStmt does as it descends.
+// Only the top level is counted, matching ConsumedCtorNames. A namespace's own
+// classes are added as convertStandaloneStmt descends into it.
 func ClassNames(stmts []dts_parser.Statement) set.Set[string] {
 	lifted := liftGlobals(stmts)
 	return classNamesFrom(lifted, detectTrios(lifted))
 }
 
 // classNamesFrom is ClassNames over one scope's statements, with the trio
-// table the caller detected over them. A namespace is a scope of its own, so
-// convertStandaloneStmt calls this again for the statements one holds.
+// table the caller already detected over them.
 func classNamesFrom(stmts []dts_parser.Statement, trios *trioTable) set.Set[string] {
 	names := set.NewSet[string]()
 	for name := range trios.byName {
@@ -1600,14 +1580,10 @@ func classNamesFrom(stmts []dts_parser.Statement, trios *trioTable) set.Set[stri
 	return names
 }
 
-// supertypeName returns the name a supertype entry references, or "" when the
-// entry is neither a type reference nor written as a bare name.
-//
-// A qualified reference such as `NS.Foo` answers "". Class names are keyed by
-// the declared name alone, so answering "Foo" would match a top-level `Foo`
-// that the reference does not name. Declining to classify it puts the
-// supertype in `implements`, which keeps its members. No supertype in the
-// pinned lib set is written qualified.
+// supertypeName returns the name a supertype references, or "" when it is not
+// a bare type reference. A qualified `NS.Foo` answers "" rather than "Foo",
+// which would match an unrelated top-level `Foo`, and so lands in
+// `implements`. No supertype in the pinned lib set is written qualified.
 func supertypeName(typeAnn dts_parser.TypeAnn) string {
 	ref, ok := typeAnn.(*dts_parser.TypeReference)
 	if !ok {

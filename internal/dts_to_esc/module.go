@@ -36,9 +36,9 @@ type convertCtx struct {
 	// namespaces.
 	namespacePath string
 
-	// classNames holds every name the tree turns into a class, which is
-	// what fuseTrio consults to fill a class's single `extends` slot.
-	// Empty leaves every supertype in `implements`.
+	// classNames holds every name the tree turns into a class, which fuseTrio
+	// reads to fill the single `extends` slot. Empty leaves every supertype
+	// in `implements`.
 	classNames set.Set[string]
 
 	// demotedBases accumulates every extra class supertype fuseTrio moved
@@ -51,8 +51,8 @@ type convertCtx struct {
 	keyDrops []SingletonMember
 }
 
-// noteDemotedBase records that a class supertype could not fill the class's
-// `extends` slot because an earlier one already had.
+// noteDemotedBase records a class supertype that could not fill the `extends`
+// slot because an earlier one already had.
 func (c *convertCtx) noteDemotedBase(class, kept, demoted string) {
 	c.demotedBases = append(c.demotedBases, DemotedBase{
 		Class:   class,

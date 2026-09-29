@@ -452,11 +452,9 @@ func ConvertBucket(stmts []dts_parser.Statement, facts *ReceiverFacts) (*Standal
 }
 
 // withTwinNames adds each readonly twin's name to a set holding its mutable
-// counterpart. A supertype is classified before rewriteReadonlyTwinRefs runs,
-// so it is still spelled `ReadonlyMap` where the emitted tree will say `Map`.
-// Without the alias, `interface AudioParamMap extends ReadonlyMap` would read
-// as extending an interface and land in `implements`, where the rewrite would
-// then respell it as the `Map` class.
+// counterpart. Supertypes are classified before rewriteReadonlyTwinRefs runs,
+// so `interface AudioParamMap extends ReadonlyMap` would otherwise miss the
+// `Map` class the rewrite respells it as.
 func withTwinNames(names set.Set[string], twins []readonlyTwin) set.Set[string] {
 	for _, twin := range twins {
 		if names.Contains(twin.mutableName) {
@@ -858,8 +856,8 @@ func ConvertBuckets(result *PartitionResult, facts *ReceiverFacts) (map[string]*
 		fused[uri] = stmts
 		own[uri] = twins
 		all = append(all, twins...)
-		// Both readings come from one trio detection over the bucket, since
-		// ConsumedCtorNames and ClassNames would each repeat it.
+		// One trio detection serves both, where ConsumedCtorNames and
+		// ClassNames would each repeat it.
 		lifted := liftGlobals(stmts)
 		bucketTrios := detectTrios(lifted)
 		maps.Copy(consumedCtor, bucketTrios.consumedCtor)
@@ -980,8 +978,8 @@ func DiscoverLibFiles(dir string) ([]string, error) {
 // module rooted at dir. Per-file parse errors are joined into a single error
 // with the offending filenames; the caller decides whether to proceed.
 //
-// The returned order is basenames reordered by orderLibInputs, so a lib that
-// declares a name comes before the libs that augment it.
+// The returned order is orderLibInputs', so a lib comes before those that
+// augment it.
 func ParseLibFiles(dir string, basenames []string) ([]LibInput, error) {
 	var inputs []LibInput
 	var parseErrs []string
@@ -1007,25 +1005,18 @@ func ParseLibFiles(dir string, basenames []string) ([]LibInput, error) {
 }
 
 // orderLibInputs moves each lib file that augments another to just after the
-// one it augments, leaving every other file where DiscoverLibFiles sorted it.
+// one it augments, leaving the rest where DiscoverLibFiles sorted them.
 //
-// Ingestion order decides merge order. mergeDecls folds every declaration of
-// one interface name into the first it sees and concatenates their `extends`
-// entries, so the file read first supplies the supertype fuseTrio reads as the
-// class's base. Sorting basenames alphabetically makes that an accident of
-// spelling: `lib.dom.d.ts` declares `interface FontFaceSet extends
-// EventTarget` and `lib.dom.iterable.d.ts` adds `extends Set<FontFace>`, and
-// the right one wins only because "d" sorts before "i".
+// Ingestion order decides merge order, and mergeDecls concatenates the
+// `extends` entries of every declaration of one name, so the file read first
+// supplies the supertype fuseTrio takes as the class's base. Alphabetical
+// order makes that an accident of spelling, since `lib.dom.d.ts` beats
+// `lib.dom.iterable.d.ts` only because "d" sorts before "i".
 //
-// A lib augments the lib named by the longest dotted prefix of its own name
-// that is also a lib file, so `lib.dom.iterable.d.ts` and
-// `lib.dom.asynciterable.d.ts` both augment `lib.dom.d.ts`. A file that
-// declares nothing is not a base: the per-year bundles such as
+// A file that declares nothing is not a base. The per-year bundles such as
 // `lib.es2015.d.ts` hold a licence header and reference directives alone, and
-// treating them as one would move every `lib.es2015.*.d.ts` for no reason.
-//
-// Over the pinned lib set this moves `lib.dom.asynciterable.d.ts`, the one
-// file that sorts ahead of the lib it augments.
+// counting them would move every `lib.es2015.*.d.ts` for no reason. Over the
+// pinned set this moves `lib.dom.asynciterable.d.ts` alone.
 func orderLibInputs(inputs []LibInput) []LibInput {
 	declaring := set.NewSet[string]()
 	for _, in := range inputs {
@@ -1073,10 +1064,9 @@ func orderLibInputs(inputs []LibInput) []LibInput {
 	return out
 }
 
-// augmentedLib returns the lib basename that name augments, or "" when name
-// augments none. The answer is the longest proper dotted prefix of name that
-// is itself a declaring lib file, so `lib.dom.iterable.d.ts` answers
-// `lib.dom.d.ts`.
+// augmentedLib returns the lib basename that name augments, the longest
+// proper dotted prefix of it that is itself a declaring lib file, or "" when
+// there is none. `lib.dom.iterable.d.ts` answers `lib.dom.d.ts`.
 func augmentedLib(name string, declaring set.Set[string]) string {
 	stem := strings.TrimSuffix(strings.TrimPrefix(name, "lib."), ".d.ts")
 	parts := strings.Split(stem, ".")
@@ -1184,15 +1174,9 @@ func ReportSingletonKeyDrops(mods map[string]*StandaloneModule, w io.Writer) err
 }
 
 // ReportDemotedBases prints one line per class supertype that moved to
-// `implements` because the class's `extends` slot was already filled. Over
-// the pinned lib set this is `FontFaceSet`, which TypeScript declares as both
-// an `EventTarget` and a `Set<FontFace>`.
-//
-// The `generate` subcommand calls this after ReportSingletonKeyDrops, so a
-// TypeScript bump that gives some other declaration a second class base shows
-// up beside the other conversion notes rather than passing unremarked. No
-// member is lost either way, since a `declare` class takes its members from
-// both clauses.
+// `implements` because the `extends` slot was already filled. Over the pinned
+// lib set that is `FontFaceSet` alone, so a TypeScript bump adding another
+// shows up beside the other conversion notes rather than passing unremarked.
 func ReportDemotedBases(mods map[string]*StandaloneModule, w io.Writer) error {
 	type entry struct {
 		uri  string

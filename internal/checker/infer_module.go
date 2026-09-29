@@ -1755,11 +1755,9 @@ func (c *Checker) InferComponent(
 					}
 				}
 
-				// The conformance check runs here rather than in the
-				// placeholder phase, where every field's type is still the
-				// fresh var this phase resolves against the annotation.
-				// Comparing a field to the member an interface declares needs
-				// the resolved type.
+				// Runs here rather than in the placeholder phase, where a
+				// field's type is still the fresh var this phase resolves
+				// against the annotation.
 				errors = slices.Concat(errors,
 					c.checkImplements(declCtx, decl, instanceType))
 			}

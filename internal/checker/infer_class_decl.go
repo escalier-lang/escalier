@@ -669,22 +669,18 @@ func (c *Checker) inferClassDecl(ctx Context, decl *ast.ClassDecl) []Error {
 		}
 	}
 
-	// The conformance check runs here rather than beside the placeholder
-	// object type above, where every field's type is still the fresh var the
-	// definition phase resolves against the annotation. Comparing a field to
-	// the member an interface declares needs the resolved type.
+	// Runs here rather than beside the placeholder object type above, where a
+	// field's type is still the fresh var this phase resolves against the
+	// annotation.
 	errors = slices.Concat(errors, c.checkImplements(declCtx, decl, objType))
 
 	return errors
 }
 
-// resolveImplements resolves the class's `implements` clause and records the
-// interfaces on its object type.
-//
-// A `declare` class also takes its members from those interfaces, so they join
-// the superclass in objType.Extends, which is the list member lookup walks. For
-// why `implements` contributes members on a `declare` class and only asserts
-// conformance on a class with a body, see checkImplements.
+// resolveImplements records the class's `implements` interfaces on its object
+// type. A `declare` class also takes its members from them, so they join the
+// superclass in objType.Extends, the list member lookup walks. See
+// checkImplements.
 func (c *Checker) resolveImplements(
 	ctx Context,
 	decl *ast.ClassDecl,

@@ -1190,16 +1190,11 @@ func (c *Checker) lazyMemberLookup(ctx Context, t *type_system.TypeRefType, name
 }
 
 // getSuperTypeAccess looks the key up on each entry of objType.Extends and
-// returns the first supertype that has it. That list holds more than one entry
-// in three cases. An interface records every supertype it extends, a `declare`
-// class records each interface it implements beside its superclass, and a class
-// records its superclass alone. A key missing from one entry can still be found
-// on a later one, so the search stops only on a hit.
+// returns the first supertype that has it, so a key missing from one entry is
+// still found on a later one.
 //
-// The reported bool says whether a supertype had the key. The errors returned
-// alongside it name each entry that did not resolve to an object type. That is
-// a broken `extends` clause, so the caller reports it whether or not the key
-// was found elsewhere.
+// The errors returned alongside name each entry that did not resolve to an
+// object type. The caller reports those whether or not the key was found.
 func (c *Checker) getSuperTypeAccess(
 	objType *type_system.ObjectType,
 	key MemberAccessKey,

@@ -8,27 +8,14 @@ import (
 	"github.com/escalier-lang/escalier/internal/type_system"
 )
 
-// checkImplements checks each `implements I` clause recorded on classObj.
-// What the clause means depends on whether the class is declared with
-// `declare`, so the keyword carries two rules.
+// checkImplements checks each `implements I` clause on classObj. The keyword
+// means two things.
 //
-// A class with a body has to satisfy the interface. For every member declared
-// on the resolved interface body, checkImplements looks up a matching member on
-// the class, walking `extends` for inherited members, and reports
-// ClassDoesNotImplementInterfaceError when one is missing or has a mismatched
-// signature.
-//
-// A `declare` class describes an object the runtime already provides, so it
-// has no implementation to check against the interface. The clause contributes
-// the interface's members to the class instead. resolveImplements arranges
-// that by recording the interfaces in objType.Extends, the list member lookup
-// walks. A member the class leaves out is inherited rather than missing, so it
-// is not an error.
-//
-// A member the class does declare itself is a narrowing override. The class's
-// declaration wins for member lookup, and its type still has to be assignable
-// to the one the interface declares. Two interfaces contributing the same
-// member name have to agree, which checkContributedConflicts checks.
+// A class with a body has to satisfy the interface, and a missing or
+// mismatched member reports ClassDoesNotImplementInterfaceError. A `declare`
+// class takes the interface's members instead, so a member it does not resolve
+// itself is inherited rather than missing. One it does resolve is a narrowing
+// override, still checked for assignability to the interface's.
 func (c *Checker) checkImplements(
 	ctx Context,
 	decl *ast.ClassDecl,
@@ -46,9 +33,8 @@ func (c *Checker) checkImplements(
 }
 
 // implementsSpan returns the span of the clause entry naming ifaceRef, so a
-// diagnostic points at the interface the class named rather than at the whole
-// declaration. It falls back to the declaration's span when the resolved
-// interface matches no entry by name.
+// diagnostic points at that interface rather than the whole declaration. It
+// falls back to the declaration's span when no entry matches by name.
 func implementsSpan(decl *ast.ClassDecl, ifaceRef *type_system.TypeRefType) ast.Span {
 	ifaceName := type_system.QualIdentToString(ifaceRef.Name)
 	for _, implAnn := range decl.Implements {
@@ -60,19 +46,12 @@ func implementsSpan(decl *ast.ClassDecl, ifaceRef *type_system.TypeRefType) ast.
 }
 
 // checkContributedConflicts reports a member name two implemented interfaces
-// declare with types that do not agree. On a `declare` class both interfaces
-// contribute their member, and member lookup would silently return whichever
-// comes first, so the class has to settle the name to say which one it means.
+// declare with types that do not agree, which member lookup would otherwise
+// resolve to whichever comes first. A name the class settles itself is checked
+// by checkImplementsOne instead and takes no part here.
 //
-// A name the class already settles takes no part here, whether it states the
-// member itself or inherits it from its superclass. checkImplementsOne checks
-// that member against every interface that declares the name, which covers the
-// disagreement this function otherwise reports.
-//
-// Two members agree when each one's type is assignable to the other's. The
-// comparison asks Check rather than Unify, since it is a question about the
-// two interfaces and must not bind a type var on either side.
-// contributedElemType names the type each member kind is compared by.
+// Agreement is mutual assignability, asked through Check rather than Unify so
+// the comparison cannot bind a type var on either side.
 func (c *Checker) checkContributedConflicts(
 	ctx Context,
 	decl *ast.ClassDecl,
@@ -131,11 +110,9 @@ func (c *Checker) checkContributedConflicts(
 	return errors
 }
 
-// contributedElemType returns the type an object-type element contributes
-// under a member name, or nil for an element with no single type to compare.
-// A setter contributes the type it writes, which is its one non-self
-// parameter. An overloaded method contributes nothing, since comparing an
-// overload arm by arm is deferred to #651.
+// contributedElemType returns the type an element contributes under a member
+// name, or nil for one with no single type to compare. An overloaded method
+// contributes nothing, since comparing arm by arm is deferred to #651.
 func contributedElemType(elem type_system.ObjTypeElem) type_system.Type {
 	switch e := elem.(type) {
 	case *type_system.MethodElem:
@@ -153,10 +130,8 @@ func contributedElemType(elem type_system.ObjTypeElem) type_system.Type {
 	return nil
 }
 
-// withOptional widens a member's type with `undefined` when the member is
-// optional. An optional member and a required one of the same type do not
-// agree, because reading the name gives `T | undefined` through the one that
-// declares it optional and `T` through the other.
+// withOptional widens an optional member's type with `undefined`, so an
+// optional member and a required one of the same type do not compare equal.
 func withOptional(t type_system.Type, optional bool) type_system.Type {
 	if !optional {
 		return t
@@ -198,15 +173,9 @@ func (c *Checker) checkImplementsOne(
 	return errors
 }
 
-// collectInterfaceElems returns every member an interface declares, both the
-// ones in its own body and the ones it inherits through its own `extends`
-// clause. `interface ChildNode extends Animatable` contributes Animatable's
-// `animate` as well as its own members, so a class implementing ChildNode is
-// checked against both.
-//
-// A member the interface redeclares shadows the inherited one of the same
-// name. `seen` records the object types already walked, so a cycle in the
-// `extends` graph stops the walk instead of repeating it.
+// collectInterfaceElems returns every member an interface declares, its own
+// and those it inherits through its `extends` clause. A redeclared member
+// shadows the inherited one, and `seen` stops a cycle in the `extends` graph.
 func (c *Checker) collectInterfaceElems(
 	ctx Context,
 	ifaceObj *type_system.ObjectType,
@@ -270,11 +239,9 @@ func buildSelfSubstitution(ctx Context, decl *ast.ClassDecl, ifaceName string) m
 	}
 }
 
-// checkInterfaceElem compares one member declared on the interface against the
-// class. `declared` marks a class written with the `declare` keyword, whose
-// clause contributes members rather than asserting conformance. There the
-// comparison covers only a member the class states in its own body. One the
-// class leaves out is inherited rather than missing.
+// checkInterfaceElem compares one interface member against the class.
+// `declared` marks a `declare` class, where a member the class does not
+// resolve itself is inherited rather than missing.
 func (c *Checker) checkInterfaceElem(
 	ctx Context,
 	classObj *type_system.ObjectType,
@@ -470,21 +437,13 @@ func setterArgType(fn *type_system.FuncType) type_system.Type {
 	return fn.Params[0].Type
 }
 
-// findClassElem looks up the class member the interface member is compared
-// against. On any class but a `declare` one an inherited member satisfies the
-// interface, so the search walks all of `extends`.
+// findClassElem returns the class member an interface member is compared
+// against, which is what member lookup resolves the name to. On an ordinary
+// class that is any inherited member, so the search walks all of `extends`.
 //
-// On a `declare` class the search covers the class's own body and its
-// superclass chain, and skips the implemented interfaces. Those sit in
-// classObj.Extends beside the superclass, since that is how resolveImplements
-// makes them contribute members, and walking into them would find the
-// interface's own member and compare it with itself.
-//
-// What is left is what member lookup resolves the name to, which is the type
-// the interface's declaration has to be satisfied by. A member the superclass
-// provides shadows the interface's, so it is checked like a member the class
-// states itself. Finding nothing means the name resolves through the clause,
-// which is the inherited case and no error.
+// On a `declare` class it walks the class body and the superclass chain but
+// skips the implemented interfaces, which resolveImplements also records in
+// `extends`. Walking those would compare an interface's member with itself.
 func (c *Checker) findClassElem(
 	ctx Context,
 	classObj *type_system.ObjectType,
