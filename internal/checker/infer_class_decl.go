@@ -678,9 +678,8 @@ func (c *Checker) inferClassDecl(ctx Context, decl *ast.ClassDecl) []Error {
 }
 
 // resolveImplements records the class's `implements` interfaces on its object
-// type. A `declare` class also takes its members from them, so they join the
-// superclass in objType.Extends, the list member lookup walks. See
-// checkImplements.
+// type. A `declare` class also takes its members from them, so they go in
+// objType.Mixins as well. See checkImplements.
 func (c *Checker) resolveImplements(
 	ctx Context,
 	decl *ast.ClassDecl,
@@ -699,18 +698,10 @@ func (c *Checker) resolveImplements(
 	}
 	objType.Implements = implementsTypes
 	if decl.Declare() {
-		// Extends is the list member lookup walks, so recording the
-		// interfaces here is what makes the clause contribute their members.
-		// It overloads the field: for a class the first entry is the
-		// superclass and the rest are not superclasses at all, which is why
-		// findClassElem has to skip them by identity against Implements.
-		//
-		// A field of its own would say what these are, at the cost of
-		// teaching every reader of Extends about it. Copying the members into
-		// objType.Elems would avoid the second list entirely. Neither changes
-		// what a program sees, since a nominal class is not assignable to an
-		// interface either way.
-		objType.Extends = slices.Concat(objType.Extends, implementsTypes)
+		// Both lists, because the clause means two things on a `declare`
+		// class: Implements is what the class is checked against, Mixins is
+		// what member lookup walks for the members it contributes.
+		objType.Mixins = implementsTypes
 	}
 	return errors
 }

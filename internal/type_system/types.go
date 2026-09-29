@@ -1376,13 +1376,26 @@ func (r *RestSpreadElem) Accept(v TypeVisitor) ObjTypeElem {
 type ObjectType struct {
 	ID         int
 	Elems      []ObjTypeElem
-	Exact      bool // Can't be true if any of Interface, Implements, or Extends are true
+	Exact      bool // Can't be true if any of Interface, Implements, Mixins, or Extends are true
 	Immutable  bool // true for `#{...}`, false for `{...}`
 	Mutable    bool // true for `mut {...}`, false for `{...}`
 	Nominal    bool // true for classes
 	Interface  bool
-	Extends    []*TypeRefType
+	// Extends holds the types this one derives from: an interface's supertypes,
+	// or a class's superclass.
+	Extends []*TypeRefType
+	// Implements holds the interfaces a class declares it satisfies. They are
+	// checked against the class, and contribute nothing to it.
 	Implements []*TypeRefType
+	// Mixins holds the types whose members this one has without deriving from
+	// them. Member lookup walks them after Extends, so a member either
+	// declares is reachable, but nothing here is a supertype.
+	//
+	// A `declare` class records its `implements` interfaces in both lists. The
+	// clause means two things there: the interfaces are checked against the
+	// class, and their members become the class's. See checkImplements in
+	// internal/checker.
+	Mixins []*TypeRefType
 	// NOTE: the value type is ast.Expr, but we can't use that here because it
 	// would cause a cycle between type_system and ast packages.
 	// Maps symbols used as keys to the ast.Expr that was used as the computed
@@ -1413,6 +1426,7 @@ func NewObjectType(provenance Provenance, elems []ObjTypeElem) *ObjectType {
 		Interface:    false,
 		Extends:      nil,
 		Implements:   nil,
+		Mixins:       nil,
 		SymbolKeyMap: nil,
 		provenance:   provenance,
 	}
@@ -1429,6 +1443,7 @@ func NewNominalObjectType(provenance Provenance, elems []ObjTypeElem) *ObjectTyp
 		Interface:    false,
 		Extends:      nil,
 		Implements:   nil,
+		Mixins:       nil,
 		SymbolKeyMap: nil,
 		provenance:   provenance,
 	}
@@ -1449,7 +1464,8 @@ func (t *ObjectType) Accept(v TypeVisitor) Type {
 	newElems, elemsChanged := CowAcceptElems(t.Elems, v)
 	newExtends, extendsChanged := CowAcceptTypeRefs(t.Extends, v)
 	newImplements, implementsChanged := CowAcceptTypeRefs(t.Implements, v)
-	changed := elemsChanged || extendsChanged || implementsChanged
+	newMixins, mixinsChanged := CowAcceptTypeRefs(t.Mixins, v)
+	changed := elemsChanged || extendsChanged || implementsChanged || mixinsChanged
 
 	var result *ObjectType = t
 	if changed {
@@ -1462,6 +1478,7 @@ func (t *ObjectType) Accept(v TypeVisitor) Type {
 		result.Interface = t.Interface
 		result.Extends = newExtends
 		result.Implements = newImplements
+		result.Mixins = newMixins
 		result.SymbolKeyMap = t.SymbolKeyMap
 		result.Open = t.Open
 		result.MatchedUnionMembers = t.MatchedUnionMembers
@@ -1509,6 +1526,15 @@ func (t *ObjectType) Equals(other Type) bool {
 		}
 		for i := range t.Implements {
 			if !equals(t.Implements[i], other.Implements[i]) {
+				return false
+			}
+		}
+		// Compare Mixins
+		if len(t.Mixins) != len(other.Mixins) {
+			return false
+		}
+		for i := range t.Mixins {
+			if !equals(t.Mixins[i], other.Mixins[i]) {
 				return false
 			}
 		}

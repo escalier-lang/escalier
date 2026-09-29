@@ -315,6 +315,7 @@ func (c *Checker) deepCloneType(t type_system.Type, varMapping map[int]*type_sys
 			Interface:    t.Interface,
 			Extends:      t.Extends,
 			Implements:   t.Implements,
+			Mixins:       t.Mixins,
 			SymbolKeyMap: t.SymbolKeyMap,
 			Open:         t.Open,
 		}

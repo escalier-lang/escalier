@@ -2,6 +2,7 @@ package tests
 
 import (
 	"context"
+	"fmt"
 	"testing"
 	"time"
 
@@ -1737,6 +1738,90 @@ func TestDeclareClassImplementsConflicts(t *testing.T) {
 				assert.Empty(t, actualMsgs, "expected no inference errors")
 			} else {
 				assert.Equal(t, test.expectedErrors, actualMsgs)
+			}
+		})
+	}
+}
+
+// A class with a body is checked against its `implements` interfaces but
+// takes no members from them, which is what keeps Implements and Mixins
+// apart on the object type. Only a `declare` class fills both.
+func TestNonDeclareClassTakesNoMembersFromImplements(t *testing.T) {
+	t.Parallel()
+	input := `
+		interface Greeter {
+			greet(self) -> string,
+		}
+		class Hello implements Greeter {
+			greet(self) -> string { return "hi" },
+		}
+		interface Extra {
+			bonus(self) -> string,
+		}
+		class Partial implements Extra {
+			bonus(self) -> string { return "b" },
+		}
+		val h = Hello()
+		val g = h.greet()
+	`
+	source := &ast.Source{ID: 0, Path: "input.esc", Contents: input}
+	ctx, cancel := context.WithTimeout(context.Background(), 1*time.Second)
+	defer cancel()
+	module, parseErrors := parser.ParseLibFiles(ctx, []*ast.Source{source})
+	require.Empty(t, parseErrors)
+
+	c := NewChecker(ctx)
+	_, inferErrors := c.InferModule(Context{Scope: Prelude(c)}, module)
+	msgs := make([]string, len(inferErrors))
+	for i, e := range inferErrors {
+		msgs[i] = e.Message()
+	}
+	assert.Empty(t, msgs)
+}
+
+// A `declare` class that leaves a member to its clause still reports the
+// member as missing once the class is not `declare`, which is the same
+// source checked both ways.
+func TestImplementsMeansConformanceWithoutDeclare(t *testing.T) {
+	t.Parallel()
+	body := `
+		interface ParentNode {
+			querySelector(self, selectors: string) -> string,
+		}
+		%s class Element implements ParentNode {}
+	`
+	tests := map[string]struct {
+		modifier string
+		want     []string
+	}{
+		"Declare": {modifier: "declare"},
+		"NotDeclare": {
+			modifier: "",
+			want: []string{
+				"Class 'Element' does not implement interface 'ParentNode': missing member 'querySelector'",
+			},
+		},
+	}
+	for name, test := range tests {
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+			input := fmt.Sprintf(body, test.modifier)
+			source := &ast.Source{ID: 0, Path: "input.esc", Contents: input}
+			ctx, cancel := context.WithTimeout(context.Background(), 1*time.Second)
+			defer cancel()
+			module, parseErrors := parser.ParseLibFiles(ctx, []*ast.Source{source})
+			require.Empty(t, parseErrors)
+
+			c := NewChecker(ctx)
+			_, inferErrors := c.InferModule(Context{Scope: Prelude(c)}, module)
+			msgs := make([]string, len(inferErrors))
+			for i, e := range inferErrors {
+				msgs[i] = e.Message()
+			}
+			if test.want == nil {
+				assert.Empty(t, msgs)
+			} else {
+				assert.Equal(t, test.want, msgs)
 			}
 		})
 	}

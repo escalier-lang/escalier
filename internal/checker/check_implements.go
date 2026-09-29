@@ -176,9 +176,9 @@ func (c *Checker) checkImplementsOne(
 	return errors
 }
 
-// collectInterfaceElems returns every member an interface declares, its own
-// and those it inherits through its `extends` clause. A redeclared member
-// shadows the inherited one, and `seen` stops a cycle in the `extends` graph.
+// collectInterfaceElems returns every member an implemented entry declares:
+// its own, and those it takes from its supertypes and mixins. A redeclared
+// member shadows the inherited one, and `seen` stops a cycle in the graph.
 func (c *Checker) collectInterfaceElems(
 	ctx Context,
 	ifaceObj *type_system.ObjectType,
@@ -197,7 +197,7 @@ func (c *Checker) collectInterfaceElems(
 		}
 	}
 
-	for _, superRef := range ifaceObj.Extends {
+	for _, superRef := range slices.Concat(ifaceObj.Extends, ifaceObj.Mixins) {
 		expanded, expandErrors := c.expandTypeRef(ctx, superRef)
 		if len(expandErrors) > 0 {
 			continue
@@ -449,12 +449,12 @@ func setterArgType(fn *type_system.FuncType) type_system.Type {
 }
 
 // findClassElem returns the class member an interface member is compared
-// against, which is what member lookup resolves the name to. On an ordinary
-// class that is any inherited member, so the search walks all of `extends`.
+// against, which is what member lookup resolves the name to.
 //
-// On a `declare` class it walks the class body and the superclass chain but
-// skips the implemented interfaces, which resolveImplements also records in
-// `extends`. Walking those would compare an interface's member with itself.
+// On a `declare` class that is the class body and the superclass chain, and
+// not the mixins: those are the interfaces being checked, and walking them
+// would compare a member with itself. Elsewhere any inherited member
+// satisfies the interface, so the search walks everything.
 func (c *Checker) findClassElem(
 	ctx Context,
 	classObj *type_system.ObjectType,
@@ -471,11 +471,7 @@ func (c *Checker) findClassElem(
 		}
 	}
 
-	implemented := set.FromSlice(classObj.Implements)
 	for _, superRef := range classObj.Extends {
-		if implemented.Contains(superRef) {
-			continue
-		}
 		expanded, expandErrors := c.expandTypeRef(ctx, superRef)
 		if len(expandErrors) > 0 {
 			continue
@@ -492,14 +488,14 @@ func (c *Checker) findClassElem(
 }
 
 // findElemByKey looks for a non-callable element with the given key on
-// objType, walking `extends` to find inherited members.
+// objType, walking its supertypes and mixins to find inherited members.
 func findElemByKey(ctx Context, c *Checker, objType *type_system.ObjectType, key type_system.ObjTypeKey) type_system.ObjTypeElem {
 	for _, elem := range objType.Elems {
 		if k, ok := elemKey(elem); ok && k == key {
 			return elem
 		}
 	}
-	for _, ext := range objType.Extends {
+	for _, ext := range slices.Concat(objType.Extends, objType.Mixins) {
 		expanded, _ := c.expandTypeRef(ctx, ext)
 		if parent, ok := type_system.Prune(expanded).(*type_system.ObjectType); ok {
 			if found := findElemByKey(ctx, c, parent, key); found != nil {
