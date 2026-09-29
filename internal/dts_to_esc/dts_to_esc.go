@@ -1280,7 +1280,11 @@ func fuseTrio(
 		if !ok {
 			return nil, fmt.Errorf("trio %s: extends is not a type ref", className)
 		}
-		name := supertypeName(superTypeAnn)
+		// Class names are keyed by the bare name, so a qualified supertype
+		// goes unclassified rather than risk matching an unrelated top-level
+		// name. It lands in `implements`, which keeps its members. No
+		// supertype in the pinned lib set is written qualified.
+		name := bareTypeRefName(superTypeAnn)
 		if !classNames.Contains(name) {
 			implements = append(implements, ref)
 			continue
@@ -1580,11 +1584,9 @@ func classNamesFrom(stmts []dts_parser.Statement, trios *trioTable) set.Set[stri
 	return names
 }
 
-// supertypeName returns the name a supertype references, or "" when it is not
-// a bare type reference. A qualified `NS.Foo` answers "" rather than "Foo",
-// which would match an unrelated top-level `Foo`, and so lands in
-// `implements`. No supertype in the pinned lib set is written qualified.
-func supertypeName(typeAnn dts_parser.TypeAnn) string {
+// bareTypeRefName returns the identifier an unqualified type reference names.
+// Anything else answers "", including a qualified reference such as `NS.Foo`.
+func bareTypeRefName(typeAnn dts_parser.TypeAnn) string {
 	ref, ok := typeAnn.(*dts_parser.TypeReference)
 	if !ok {
 		return ""
