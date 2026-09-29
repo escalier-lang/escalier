@@ -1381,8 +1381,8 @@ type ObjectType struct {
 	Mutable    bool // true for `mut {...}`, false for `{...}`
 	Nominal    bool // true for classes
 	Interface  bool
-	// Extends holds the types this one derives from: an interface's supertypes,
-	// or a class's superclass.
+	// Extends holds the types this one derives from. A class has at most one
+	// entry, its superclass. An interface has one per supertype it names.
 	Extends []*TypeRefType
 	// Implements holds the interfaces a class declares it satisfies. They are
 	// checked against the class, and contribute nothing to it.
