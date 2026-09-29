@@ -119,6 +119,19 @@ func (l *LitType) Equal(o *LitType) bool {
 	}
 }
 
+// Equal reports whether a and b are the same type, compared by the form each one
+// prints as. Two types that render identically are the same type for every purpose a
+// renderer has, and comparing the rendered form is total where a structural walk would
+// need an arm per kind and would drift as kinds are added.
+//
+// A nil operand equals only another nil.
+func Equal(a, b Type) bool {
+	if a == nil || b == nil {
+		return a == nil && b == nil
+	}
+	return Print(a) == Print(b)
+}
+
 // Pat is the sealed interface for parameter patterns. Mirrors the role of
 // type_system.Pat (and ast.Pat) but lives in soltype to keep soltype ast-free.
 // M1 ships a single concrete (IdentPat); M2 adds destructuring concretes

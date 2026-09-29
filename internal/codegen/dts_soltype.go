@@ -146,9 +146,9 @@ func (b *solTypeAnnBuilder) typeAnn(t soltype.Type) TypeAnn {
 		// pass is needed because soltype carries it as a kind of its own.
 		return NewRefTypeAnn("this", nil)
 	case *soltype.ClassType:
-		return NewRefTypeAnn(refNameFromSol(t.Name), b.typeArgs(t.Name, t.TypeArgs))
+		return NewRefTypeAnn(refNameFromSol(t.Name), b.typeArgs(t.Name, t.TypeArgs, t.Defaults))
 	case *soltype.AliasType:
-		return NewRefTypeAnn(refNameFromSol(t.Name), b.typeArgs(t.Name, t.TypeArgs))
+		return NewRefTypeAnn(refNameFromSol(t.Name), b.typeArgs(t.Name, t.TypeArgs, t.Defaults))
 	case *soltype.GeneratorType:
 		// Both take three type arguments in TypeScript. Escalier's fourth, what
 		// advancing the generator may raise, has no slot.
@@ -365,15 +365,36 @@ var preludeTypeScriptArity = map[string]int{
 
 // typeArgs renders a reference's type arguments, dropping any TypeScript's own
 // declaration does not take.
-func (b *solTypeAnnBuilder) typeArgs(name string, args []soltype.Type) []TypeAnn {
+func (b *solTypeAnnBuilder) typeArgs(name string, args, defaults []soltype.Type) []TypeAnn {
 	if arity, declared := b.typeScriptArity(name); declared && len(args) > arity {
 		args = args[:arity]
 	}
+	args = args[:trimmedArgCountFromSol(args, defaults)]
 	typeArgs := make([]TypeAnn, len(args))
 	for i, arg := range args {
 		typeArgs[i] = b.typeAnn(arg)
 	}
 	return typeArgs
+}
+
+// trimmedArgCountFromSol is how many type arguments a reference has to write. Resolution
+// fills in every argument a declaration defaults, so `Iterable<number>` arrives carrying
+// the three `Iterable<number, undefined, unknown>` and would read back longer than it was
+// written. Each trailing argument that repeats the default at its position is dropped.
+//
+// The walk stops at the first argument that differs, since an argument is addressed by
+// position and TypeScript has no way to omit one before a supplied one. A reference whose
+// declaration was out of reach carries no defaults and keeps every argument.
+func trimmedArgCountFromSol(args, defaults []soltype.Type) int {
+	count := len(args)
+	for count > 0 && count <= len(defaults) {
+		i := count - 1
+		if defaults[i] == nil || !soltype.Equal(args[i], defaults[i]) {
+			break
+		}
+		count = i
+	}
+	return count
 }
 
 // typeScriptArity reports how many type arguments TypeScript declares for this
