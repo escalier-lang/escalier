@@ -407,17 +407,21 @@ func (c *Checker) inferObjectTypeAnn(
 	errors := []Error{}
 	provenance := &ast.NodeProvenance{Node: typeAnn}
 
-	elems := make([]type_system.ObjTypeElem, len(typeAnn.Elems))
-	for i, elem := range typeAnn.Elems {
+	// Appended rather than written by index. A member whose key does not
+	// resolve reports an error and contributes nothing, and an index write
+	// would leave a nil in the slice for the object type to dereference
+	// later.
+	elems := make([]type_system.ObjTypeElem, 0, len(typeAnn.Elems))
+	for _, elem := range typeAnn.Elems {
 		switch elem := elem.(type) {
 		case *ast.CallableTypeAnn:
 			fn, fnErrors := c.inferFuncTypeAnn(ctx, elem.Fn, nil)
 			errors = slices.Concat(errors, fnErrors)
-			elems[i] = &type_system.CallableElem{Fn: fn}
+			elems = append(elems, &type_system.CallableElem{Fn: fn})
 		case *ast.ConstructorTypeAnn:
 			fn, fnErrors := c.inferFuncTypeAnn(ctx, elem.Fn, nil)
 			errors = slices.Concat(errors, fnErrors)
-			elems[i] = &type_system.ConstructorElem{Fn: fn}
+			elems = append(elems, &type_system.ConstructorElem{Fn: fn})
 		case *ast.MethodTypeAnn:
 			key, keyErrors := c.astKeyToTypeKey(ctx, elem.Name)
 			errors = slices.Concat(errors, keyErrors)
@@ -430,7 +434,7 @@ func (c *Checker) inferObjectTypeAnn(
 			errors = slices.Concat(errors, fnErrors)
 			method := type_system.NewMethodElem(*key, fn)
 			method.Optional = elem.Optional
-			elems[i] = method
+			elems = append(elems, method)
 		case *ast.GetterTypeAnn:
 			key, keyErrors := c.astKeyToTypeKey(ctx, elem.Name)
 			errors = slices.Concat(errors, keyErrors)
@@ -441,7 +445,7 @@ func (c *Checker) inferObjectTypeAnn(
 			errors = slices.Concat(errors, recvErrs)
 			fn, fnErrors := c.inferFuncTypeAnn(ctx, elem.Fn, recv)
 			errors = slices.Concat(errors, fnErrors)
-			elems[i] = &type_system.GetterElem{Name: *key, Fn: fn}
+			elems = append(elems, &type_system.GetterElem{Name: *key, Fn: fn})
 		case *ast.SetterTypeAnn:
 			key, keyErrors := c.astKeyToTypeKey(ctx, elem.Name)
 			errors = slices.Concat(errors, keyErrors)
@@ -452,7 +456,7 @@ func (c *Checker) inferObjectTypeAnn(
 			errors = slices.Concat(errors, recvErrs)
 			fn, fnErrors := c.inferFuncTypeAnn(ctx, elem.Fn, recv)
 			errors = slices.Concat(errors, fnErrors)
-			elems[i] = &type_system.SetterElem{Name: *key, Fn: fn}
+			elems = append(elems, &type_system.SetterElem{Name: *key, Fn: fn})
 		case *ast.PropertyTypeAnn:
 			var t type_system.Type
 			if elem.Value != nil {
@@ -467,12 +471,12 @@ func (c *Checker) inferObjectTypeAnn(
 			if key == nil {
 				continue
 			}
-			elems[i] = &type_system.PropertyElem{
+			elems = append(elems, &type_system.PropertyElem{
 				Name:     *key,
 				Optional: elem.Optional,
 				Readonly: elem.Readonly,
 				Value:    t,
-			}
+			})
 		case *ast.MappedTypeAnn:
 			// Infer the constraint type for the type parameter
 			var constraintType type_system.Type
@@ -558,7 +562,7 @@ func (c *Checker) inferObjectTypeAnn(
 				errors = slices.Concat(errors, extendsErrors)
 			}
 
-			elems[i] = &type_system.MappedElem{
+			elems = append(elems, &type_system.MappedElem{
 				TypeParam: typeParam,
 				Name:      nameType,
 				Value:     valueType,
@@ -566,7 +570,7 @@ func (c *Checker) inferObjectTypeAnn(
 				Readonly:  readOnly,
 				Check:     checkType,
 				Extends:   extendsType,
-			}
+			})
 		case *ast.RestSpreadTypeAnn:
 			panic("TODO: handle RestSpreadTypeAnn")
 		}
