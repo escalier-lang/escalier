@@ -64,7 +64,13 @@ func (s *Scope) SetLifetimeVar(name string, lv *type_system.LifetimeVar) {
 	s.Lifetimes[name] = lv
 }
 
+// A nil Scope resolves nothing rather than panicking. compareBySubtype runs
+// the subtype query under a zero Context on purpose, so that every scope
+// lookup reached from it answers "not found" and the query fails closed.
 func (s *Scope) GetValue(name string) *type_system.Binding {
+	if s == nil {
+		return nil
+	}
 	if v, ok := s.Namespace.Values[name]; ok {
 		return v
 	}
@@ -83,6 +89,9 @@ func (s *Scope) setValue(name string, binding *type_system.Binding) {
 }
 
 func (s *Scope) getNamespace(name string) *type_system.Namespace {
+	if s == nil {
+		return nil
+	}
 	if v, ok := s.Namespace.GetNamespace(name); ok {
 		return v
 	}
@@ -102,6 +111,9 @@ func (s *Scope) setNamespace(name string, namespace *type_system.Namespace) {
 }
 
 func (s *Scope) GetTypeAlias(name string) *type_system.TypeAlias {
+	if s == nil {
+		return nil
+	}
 	if v, ok := s.Namespace.Types[name]; ok {
 		return v
 	}

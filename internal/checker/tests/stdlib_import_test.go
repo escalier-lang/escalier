@@ -941,3 +941,39 @@ import "std:beta"
 		require.True(t, ok, "expected %s namespace bound at file scope", pkg)
 	}
 }
+
+// A member whose computed key does not resolve reports the key error and
+// contributes nothing. inferObjectTypeAnn used to leave a nil in the element
+// slice for that member, which the object type dereferenced later (#1722).
+func TestObjectTypeWithAnUnresolvableComputedKey(t *testing.T) {
+	t.Parallel()
+	_, errs := inferStdlibImportSource(t, `
+		declare val notASymbol: number
+		export declare interface Weird {
+			[notASymbol](self) -> string,
+		}
+	`)
+	require.Equal(t, []string{"Invalid object key: number"}, errorMessages(errs))
+}
+
+// Importing web:dom exercises the whole converted tree, which is what made it
+// the reproduction for both crashes in #1722. The package does not check clean
+// yet, so this asserts only that the checker returns rather than panicking.
+// The remaining diagnostics are tracked separately.
+func TestImportingWebDomDoesNotPanic(t *testing.T) {
+	t.Parallel()
+	source := &ast.Source{ID: 0, Path: "lib/main.esc", Contents: `
+		import "web:dom"
+		export declare fn element() -> dom.Element
+	`}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
+	defer cancel()
+	module, parseErrs := parser.ParseLibFiles(ctx, []*ast.Source{source})
+	require.Empty(t, parseErrs)
+
+	c := NewChecker(ctx)
+	require.NotPanics(t, func() {
+		c.InferModule(Context{Scope: Prelude(c)}, module)
+	})
+}
