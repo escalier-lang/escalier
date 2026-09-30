@@ -227,8 +227,8 @@ func TestStoreEffectLoans(t *testing.T) {
 		src  string
 		want []string
 	}{
-		// A second mutable borrow of the stored item is a second writable path, since the
-		// target still reaches the first.
+		// An immutable borrow of the stored item conflicts with the mutable loan the store
+		// leaves, since the target can still write through it.
 		"SecondBorrowAfterAStore": {
 			src: storeEffectDecls + `
 				fn f(q: mut {value: number}, r: mut {value: number}) -> undefined {

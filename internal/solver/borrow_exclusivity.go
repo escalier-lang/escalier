@@ -288,7 +288,8 @@ func (c *checker) dropLoansHeldBy(holder liveness.VarID) {
 
 // recordStoreEdgeLoan records the loan a call's store effect creates. `store(&mut p, &mut b)`
 // against a signature that writes its second argument into the first leaves p reaching b, so
-// from that point p holds a mutable borrow of b and a second borrow of b conflicts with it.
+// from that point p holds a mutable borrow of b. An immutable borrow of b then conflicts with
+// it. A second mutable borrow does not, since two mutable borrows of one value are allowed.
 //
 // Whether a write can go through the loan comes from the SOURCE parameter, since that is the
 // view the target ends up holding. A signature storing a `&'a B` leaves the target able to read
