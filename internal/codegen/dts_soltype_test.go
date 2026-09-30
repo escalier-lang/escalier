@@ -524,11 +524,15 @@ func TestBuildTypeAnnFromSolFromSource(t *testing.T) {
 			"Generator<number, string, boolean, string>",
 		},
 		// A class or alias from another package drops that prefix too. Resolution
-		// fills in the arguments the declaration defaults, and every one is
-		// emitted: `Iterable<T, TReturn, TNext>` reads back with all three.
-		"PreludeAlias": {"", "Iterable<number>", "Iterable<number, undefined, unknown>"},
-		"UserAlias":    {"type Box<T> = {value: T}", "Box<number>", "Box<number>"},
-		"UserClass":    {"class Point { x: number }", "Point", "Point"},
+		// fills in the arguments the declaration defaults, and each trailing one that
+		// repeats its default is dropped, so `Iterable<number>` reads back as written
+		// rather than as the `Iterable<number, undefined, unknown>` it resolved to.
+		"PreludeAlias": {"", "Iterable<number>", "Iterable<number>"},
+		// An argument that overrides its default is kept, and so is every argument
+		// before it, since a supplied argument cannot be reached past an omitted one.
+		"PreludeAliasOverridesDefault": {"", "Iterable<number, string>", "Iterable<number, string>"},
+		"UserAlias":                    {"type Box<T> = {value: T}", "Box<number>", "Box<number>"},
+		"UserClass":                    {"class Point { x: number }", "Point", "Point"},
 		// This stdlib declares neither generator, so both reach the built-in
 		// GeneratorType former rather than a prelude declaration. TypeScript's
 		// `Generator` and `AsyncGenerator` take three type arguments, and the

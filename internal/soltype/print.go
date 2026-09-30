@@ -113,6 +113,10 @@ func typePrec(t Type) int {
 // M2 walk records var-carrying types in its Info side table and coalesces only
 // at binding boundaries, so a consumer may legitimately print an inner node's
 // still-raw type (M2 plan §7).
+//
+// Equal currently answers by comparing two of these renderings, so a change made here
+// for readability changes what it answers. #1737 moves Equal onto a structural
+// comparison, after which this function has no caller outside display.
 func Print(t Type) string {
 	return (&namedPrinter{}).printType(t)
 }
@@ -853,13 +857,19 @@ func isPrintLeaf(t Type) bool {
 // Only a trailing run is dropped, since an argument is addressed by position and an
 // earlier one cannot be left out. A reference whose instantiation site had no
 // declaration in reach has no Defaults and keeps every argument.
+//
+// `.d.ts` emission drops every trailing argument that repeats its default, not only a
+// `never` one, because the two have opposite audiences. A reader of a diagnostic wants
+// the concrete type a reference resolved to, and a reader of a `.d.ts` wants a file
+// that reads back the way its source was written. See typeArgs in
+// internal/codegen/dts_soltype.go.
 func (p *namedPrinter) printedArgs(typeArgs, defaults []Type) []string {
 	args := make([]string, len(typeArgs))
 	for i, a := range typeArgs {
 		args[i] = p.printType(a)
 	}
 	for i := len(args) - 1; i >= 0 && i < len(defaults); i-- {
-		if defaults[i] == nil || !isNever(defaults[i]) || !isNever(typeArgs[i]) {
+		if defaults[i] == nil || !isNever(defaults[i]) || !Equal(typeArgs[i], defaults[i]) {
 			break
 		}
 		args = args[:i]
