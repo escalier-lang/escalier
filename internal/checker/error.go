@@ -82,6 +82,7 @@ func (e LoopInConstructorNotSupportedError) isError()       {}
 func (e TryInConstructorNotSupportedError) isError()        {}
 func (e ClassDoesNotImplementInterfaceError) isError()      {}
 func (e ConflictingInterfaceMembersError) isError()         {}
+func (e CallSignatureNeedsDeclareError) isError()           {}
 func (e ReceiverLifetimeOutsideMemberError) isError()       {}
 func (e OverloadReceiverMutMismatchError) isError()         {}
 
@@ -145,6 +146,7 @@ func (e LoopInConstructorNotSupportedError) IsWarning() bool       { return fals
 func (e TryInConstructorNotSupportedError) IsWarning() bool        { return false }
 func (e ClassDoesNotImplementInterfaceError) IsWarning() bool      { return false }
 func (e ConflictingInterfaceMembersError) IsWarning() bool         { return false }
+func (e CallSignatureNeedsDeclareError) IsWarning() bool           { return false }
 func (e ReceiverLifetimeOutsideMemberError) IsWarning() bool       { return false }
 func (e OverloadReceiverMutMismatchError) IsWarning() bool         { return false }
 
@@ -1018,4 +1020,20 @@ func GetNode(p provenance.Provenance) ast.Node {
 	default:
 		return nil
 	}
+}
+
+// CallSignatureNeedsDeclareError is reported when a class with a body
+// declares a bare call signature. The signature describes calling the class
+// value itself, which a class body has no syntax to implement.
+type CallSignatureNeedsDeclareError struct {
+	ClassName string
+	span      ast.Span
+}
+
+func (e CallSignatureNeedsDeclareError) Span() ast.Span {
+	return e.span
+}
+func (e CallSignatureNeedsDeclareError) Message() string {
+	return "Only a `declare` class can have a call signature, but class '" +
+		e.ClassName + "' has a body"
 }
