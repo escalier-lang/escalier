@@ -322,12 +322,15 @@ func placesEqual(a, b movePlace) bool {
 	return a.root == b.root && slices.Equal(a.path, b.path)
 }
 
-// checkUsesAgainstLoans reports a read of data some live borrow can write through. Two readers
-// are fine, so only a mutable loan conflicts with a use.
+// checkUsesAgainstLoans reports a use of data that a live mutable loan can write through. A use
+// here names the place directly, as in `val y = b` or `b.value`, rather than borrowing it. An
+// immutable loan never conflicts with a use, since nothing can write through it.
 //
-// The read a borrow performs to take its own loan is skipped. `&mut b` reads b, and that read
-// is what creates the loan rather than a second path to it. The loan-against-loan check is what
-// compares one borrow with another.
+// A borrow is not a use for this check. The read a borrow performs to take its own loan is
+// skipped. `&mut b` reads b, and that read is what creates the loan rather than a second path
+// to it. The loan-against-loan check in conflicts compares one borrow with another, and it
+// rejects only a mutable borrow beside an immutable one. So a second `&mut b` while a mutable
+// loan of b is live is accepted, since two mutable borrows of one value are allowed.
 //
 // A read the use-after-move scan already reported is skipped too, so one bad read yields one
 // diagnostic rather than two.
