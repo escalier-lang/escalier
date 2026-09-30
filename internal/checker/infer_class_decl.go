@@ -331,10 +331,17 @@ func (c *Checker) inferClassDecl(ctx Context, decl *ast.ClassDecl) []Error {
 			declCtx, ctor, typeParams, classSelfRef, provenance,
 		)
 		errors = slices.Concat(errors, sigErrors)
-	} else {
+	} else if len(callableElems) == 0 {
 		// Synthesis failed or `declare class`; emit a zero-arg placeholder so
 		// downstream phases don't crash. The class is already in an error
 		// state in the synthesis-failure case.
+		//
+		// A class whose only callable surface is a call signature gets no
+		// placeholder. Escalier has no `new` expression, so a plain call
+		// resolves against the first constructor or call signature on the
+		// class value. A placeholder sits ahead of the signature and takes
+		// every such call. `Boolean`, `String`, `Number`, `BigInt`, and
+		// `Symbol` are the classes this covers.
 		ctorFuncType = type_system.NewFuncType(
 			provenance,
 			typeParams,
@@ -346,8 +353,11 @@ func (c *Checker) inferClassDecl(ctx Context, decl *ast.ClassDecl) []Error {
 
 	mergedStaticElems, staticMergeErrors := c.MergeMethodOverloads(staticElems, decl.Span())
 	errors = slices.Concat(errors, staticMergeErrors)
-	constructorElem := &type_system.ConstructorElem{Fn: ctorFuncType}
-	classObjTypeElems := []type_system.ObjTypeElem{constructorElem}
+	classObjTypeElems := []type_system.ObjTypeElem{}
+	if ctorFuncType != nil {
+		classObjTypeElems = append(classObjTypeElems,
+			&type_system.ConstructorElem{Fn: ctorFuncType})
+	}
 	classObjTypeElems = append(classObjTypeElems, callableElems...)
 	classObjTypeElems = append(classObjTypeElems, mergedStaticElems...)
 

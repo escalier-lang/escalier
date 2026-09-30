@@ -1,0 +1,9 @@
+// `String(value)` converts a value to `string`, and converting is what the
+// class is reached for. The constructor builds a wrapper object whose
+// `typeof` reads `"object"` rather than `"string"`, which is a shape no
+// Escalier program wants. Escalier has no `new` expression, so a plain call
+// resolves against the constructor whenever one is there. Dropping it leaves
+// the call signature as the only way to reach the class.
+export declare interface String {
+    constructor: unknown,
+}

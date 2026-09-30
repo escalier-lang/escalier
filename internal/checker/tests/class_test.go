@@ -1957,3 +1957,96 @@ func TestClassCallSignature(t *testing.T) {
 			"got: %v", formatErrs(errs))
 	})
 }
+
+// A class value carries a `ConstructorElem` only when the class can be
+// constructed. Escalier has no `new` expression, so a plain call resolves
+// against the first constructor or call signature on the class value. A
+// synthesised zero-arg constructor sits ahead of the signature, so a class
+// whose only callable surface is a call signature must not carry one.
+func TestCallOnlyClassHasNoConstructor(t *testing.T) {
+	t.Parallel()
+	tests := map[string]struct {
+		input        string
+		bindingName  string
+		expectedType string
+	}{
+		// The call signature is the whole callable surface, so the class
+		// value holds it alone.
+		"ACallSignatureAloneLeavesNoConstructor": {
+			input: `
+				declare class Sym {
+					(desc?: string) -> symbol,
+				}
+			`,
+			bindingName:  "Sym",
+			expectedType: "{(desc?: string) -> symbol}",
+		},
+		"CallingSuchAClassReturnsTheSignaturesReturn": {
+			input: `
+				declare class Sym {
+					(desc?: string) -> symbol,
+				}
+				val s = Sym("x")
+			`,
+			bindingName:  "s",
+			expectedType: "symbol",
+		},
+		// A declared constructor is kept, and comes first.
+		"BothKeepsTheConstructorFirst": {
+			input: `
+				declare class Wrapper {
+					constructor(mut self, value: number),
+					(value: number) -> string,
+				}
+			`,
+			bindingName:  "Wrapper",
+			expectedType: "{new (value: number) -> Wrapper, (value: number) -> string}",
+		},
+		// So a plain call on it constructs rather than converting.
+		"BothConstructsOnAPlainCall": {
+			input: `
+				declare class Wrapper {
+					constructor(mut self, value: number),
+					(value: number) -> string,
+				}
+				val w = Wrapper(1)
+			`,
+			bindingName:  "w",
+			expectedType: "Wrapper",
+		},
+		// A `declare` class with neither still gets the zero-arg
+		// placeholder, which downstream phases rely on being there.
+		"NeitherStillGetsThePlaceholder": {
+			input: `
+				declare class Plain {
+					static readonly tag: string,
+				}
+			`,
+			bindingName:  "Plain",
+			expectedType: "{new () -> Plain, readonly tag: string}",
+		},
+	}
+
+	for name, test := range tests {
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+			source := &ast.Source{ID: 0, Path: "input.esc", Contents: test.input}
+			ctx, cancel := context.WithTimeout(context.Background(), 1*time.Second)
+			defer cancel()
+			module, parseErrors := parser.ParseLibFiles(ctx, []*ast.Source{source})
+			require.Empty(t, parseErrors, "expected no parse errors")
+
+			c := NewChecker(ctx)
+			_, errs := c.InferModule(Context{Scope: Prelude(c)}, module)
+			require.Empty(t, errorMessages(errs))
+
+			var got string
+			for _, scope := range c.FileScopes {
+				if b := scope.GetValue(test.bindingName); b != nil {
+					got = b.Type.String()
+				}
+			}
+			require.Equal(t, test.expectedType, got)
+		})
+	}
+}

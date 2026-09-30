@@ -1,6 +1,7 @@
 package interop
 
 import (
+	"slices"
 	"strings"
 
 	"github.com/escalier-lang/escalier/internal/set"
@@ -211,8 +212,13 @@ func tryFuseTrio(
 }
 
 // tryFuseEscalierClass recognises the Escalier-style class shape:
-// Values[name] is an ObjectType carrying a ConstructorElem. The
-// instance side, when present, is read from Types[name].
+// Values[name] is an ObjectType carrying a ConstructorElem or a
+// CallableElem. The instance side, when present, is read from
+// Types[name].
+//
+// A call signature counts on its own. The overlay drops the
+// constructor of `Boolean`, `String`, and `Number`, and the call
+// signature is all those classes have left to make them callable.
 //
 // Skips names whose value side already participated in a trio fusion
 // (in which case consumedValues[name] is set).
@@ -227,14 +233,15 @@ func tryFuseEscalierClass(
 	if !ok {
 		return nil
 	}
-	hasCtor := false
-	for _, e := range staticObj.Elems {
-		if _, isCtor := e.(*type_system.ConstructorElem); isCtor {
-			hasCtor = true
-			break
-		}
-	}
-	if !hasCtor {
+	callable := slices.ContainsFunc(staticObj.Elems,
+		func(e type_system.ObjTypeElem) bool {
+			switch e.(type) {
+			case *type_system.ConstructorElem, *type_system.CallableElem:
+				return true
+			}
+			return false
+		})
+	if !callable {
 		return nil
 	}
 	var instObj *type_system.ObjectType
