@@ -266,3 +266,28 @@ func TestRecoverClassShapesEscalierClassWithNonObjectTypeAlias(t *testing.T) {
 	require.NotNil(t, cs.Static.Methods["doStatic"])
 	require.NotContains(t, ms.Free, "Bar", "class fusion at this name consumes the type side too")
 }
+
+// A class the overlay drops the constructor from is still a class. Its call
+// signature is the only thing that makes it callable, and `Boolean`,
+// `String`, and `Number` are the classes this covers. The Ctor slot stays
+// empty, since there is no constructor to fill it from.
+func TestRecoverClassShapesCallOnlyClass(t *testing.T) {
+	instFn := type_system.NewFuncType(nil, nil, nil, type_system.NewBoolPrimType(nil), nil)
+	instObj := type_system.NewObjectType(nil, []type_system.ObjTypeElem{
+		type_system.NewMethodElem(type_system.NewStrKey("valueOf"), instFn),
+	})
+	callFn := type_system.NewFuncType(nil, nil, nil, type_system.NewBoolPrimType(nil), nil)
+	staticObj := type_system.NewObjectType(nil, []type_system.ObjTypeElem{
+		&type_system.CallableElem{Fn: callFn},
+	})
+
+	ns := type_system.NewNamespace()
+	ns.Types["Boolean"] = &type_system.TypeAlias{Type: instObj}
+	ns.Values["Boolean"] = &type_system.Binding{Type: staticObj}
+
+	ms := RecoverClassShapes(ns)
+	cs, ok := ms.Children["Boolean"].(*ClassScope)
+	require.True(t, ok)
+	require.Same(t, instFn, cs.Instance.Methods["valueOf"].Type)
+	require.Nil(t, cs.Instance.Ctor)
+}

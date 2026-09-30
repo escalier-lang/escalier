@@ -827,10 +827,18 @@ func (c *Checker) InferComponent(
 						ParamBindings: paramBindings,
 						Ctx:           ctorCtx,
 					}
-				} else {
+				} else if len(callableElems) == 0 {
 					// Synthesis failed earlier; emit a placeholder no-arg
 					// signature so downstream phases don't crash. The class
 					// is already in an error state.
+					//
+					// A class whose only callable surface is a call
+					// signature gets no placeholder. Escalier has no `new`
+					// expression, so a plain call resolves against the first
+					// constructor or call signature on the class value. A
+					// placeholder sits ahead of the signature and takes every
+					// such call. `Boolean`, `String`, `Number`, `BigInt`,
+					// and `Symbol` are the classes this covers.
 					funcType = type_system.NewFuncType(
 						provenance,
 						typeParams,
@@ -843,8 +851,11 @@ func (c *Checker) InferComponent(
 				// Create an object type with a constructor element and static methods/properties
 				mergedStaticElems, staticMergeErrors := c.MergeMethodOverloads(staticElems, decl.Span())
 				errors = slices.Concat(errors, staticMergeErrors)
-				constructorElem := &type_system.ConstructorElem{Fn: funcType}
-				classObjTypeElems := []type_system.ObjTypeElem{constructorElem}
+				classObjTypeElems := []type_system.ObjTypeElem{}
+				if funcType != nil {
+					classObjTypeElems = append(classObjTypeElems,
+						&type_system.ConstructorElem{Fn: funcType})
+				}
 				classObjTypeElems = append(classObjTypeElems, callableElems...)
 				classObjTypeElems = append(classObjTypeElems, mergedStaticElems...)
 

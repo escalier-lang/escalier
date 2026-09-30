@@ -191,6 +191,24 @@ export declare interface Date {
 under that name, overload set included, matching the rule `replace`
 follows.
 
+A class's constructor is named `constructor`, the same name the
+generator keys it under:
+
+```
+// overlay/std/boolean.drop.esc
+export declare interface Boolean {
+    constructor: unknown,
+}
+```
+
+Escalier has no `new` expression, so a plain call resolves against the
+constructor whenever one is there. Dropping the constructor of a class
+that carries a call signature leaves the signature as the only way to
+reach it, and the class becomes callable rather than constructible.
+That is what `Boolean`, `String`, and `Number` want. `Boolean(value)`
+converts, and the constructor builds a wrapper object whose `typeof`
+reads `"object"`.
+
 Both keywords are containers for the names inside them rather than
 claims about what is being dropped. `export declare type <name>` does
 not parse without `= …`, so a dropped type alias is named with the `val`

@@ -977,3 +977,56 @@ func TestImportingWebDomDoesNotPanic(t *testing.T) {
 		c.InferModule(Context{Scope: Prelude(c)}, module)
 	})
 }
+
+// The overlay drops the constructors of the primitive wrapper classes, so a
+// plain call reaches the call signature and converts. The constructor builds
+// a wrapper object whose `typeof` reads `"object"` rather than the
+// primitive's name. Escalier has no `new` expression to tell the two forms
+// apart, so the class carries only the one worth reaching.
+func TestPrimitiveWrappersConvertOnAPlainCall(t *testing.T) {
+	t.Parallel()
+	tests := map[string]struct {
+		input        string
+		bindingName  string
+		expectedType string
+	}{
+		"Boolean": {
+			input: `
+				import "std:boolean"
+				export val flag = boolean.Boolean(0)
+			`,
+			bindingName:  "flag",
+			expectedType: "boolean",
+		},
+		"String": {
+			input: `
+				import "std:string"
+				export val text = string.String(42)
+			`,
+			bindingName:  "text",
+			expectedType: "string",
+		},
+		"Number": {
+			input: `
+				import "std:number"
+				export val count = number.Number("7")
+			`,
+			bindingName:  "count",
+			expectedType: "number",
+		},
+	}
+
+	for name, test := range tests {
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+			fileNs, _ := inferStdlibImportSource(t, test.input)
+			var got string
+			for _, scope := range fileNs {
+				if b := scope.GetValue(test.bindingName); b != nil {
+					got = b.Type.String()
+				}
+			}
+			require.Equal(t, test.expectedType, got)
+		})
+	}
+}

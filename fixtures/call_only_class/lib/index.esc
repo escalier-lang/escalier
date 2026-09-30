@@ -1,0 +1,16 @@
+import "std:boolean"
+
+// `Boolean` declares a call signature and no constructor, so a plain call
+// converts and codegen emits no `new`.
+export val flag = boolean.Boolean(0)
+
+// A class with a constructor still constructs on a plain call, and codegen
+// emits the `new`.
+class Box {
+    value: number,
+    constructor(mut self, value: number) {
+        self.value = value
+    },
+}
+
+export val box = Box(1)
