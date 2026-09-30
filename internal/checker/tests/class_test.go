@@ -1826,3 +1826,79 @@ func TestImplementsMeansConformanceWithoutDeclare(t *testing.T) {
 		})
 	}
 }
+
+// `Self` names the class's own instance type inside its body, the way it does
+// inside an interface. The dts converter emits it on a fused class's methods,
+// as in `add(mut self, value: T) -> Self` on `Set`, and it accounted for 228
+// of `web:dom`'s diagnostics (#1725).
+func TestSelfInAClassBody(t *testing.T) {
+	tests := map[string]struct {
+		input        string
+		bindingName  string
+		expectedType string
+	}{
+		"DeclareClassMethodReturningSelf": {
+			input: `
+				declare class Node {
+					cloneNode(self) -> Self,
+				}
+				declare fn makeNode() -> Node
+				val cloned = makeNode().cloneNode()
+			`,
+			bindingName:  "cloned",
+			expectedType: "Node",
+		},
+		"ClassWithABodyToo": {
+			input: `
+				class Builder {
+					count: number,
+					constructor(mut self) { self.count = 0 },
+					self_(self) -> Self { return self },
+				}
+				val b = Builder().self_()
+			`,
+			bindingName:  "b",
+			expectedType: "Builder",
+		},
+		// `Self` carries the class's own type arguments, so it is the
+		// instantiated type rather than the bare name.
+		"SelfCarriesTypeArguments": {
+			input: `
+				declare class Box<T> {
+					value: T,
+					clone(self) -> Self,
+				}
+				declare fn makeBox() -> Box<number>
+				val copied = makeBox().clone()
+				val inner = copied.value
+			`,
+			bindingName:  "inner",
+			expectedType: "number",
+		},
+	}
+
+	for name, test := range tests {
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+			ns := mustInferAsModule(t, test.input)
+			actual := collectBindingTypes(ns)
+			got, ok := actual[test.bindingName]
+			require.Truef(t, ok, "binding %q not found", test.bindingName)
+			assert.Equalf(t, test.expectedType, got,
+				"unexpected type for %q", test.bindingName)
+		})
+	}
+}
+
+// `Self` is bound by the class body and nowhere else.
+func TestSelfIsNotVisibleOutsideAClass(t *testing.T) {
+	t.Parallel()
+	errs := inferModuleErrors(t, `
+		declare class Node {
+			cloneNode(self) -> Self,
+		}
+		declare fn stray() -> Self
+	`)
+	require.NotEmpty(t, errorsContaining(errs, "Unknown type: Self"),
+		"expected Self to be unbound outside the class; got: %v", formatErrs(errs))
+}
