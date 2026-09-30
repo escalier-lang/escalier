@@ -233,7 +233,7 @@ func tryFuseEscalierClass(
 	if !ok {
 		return nil
 	}
-	callable := slices.ContainsFunc(staticObj.Elems,
+	hasCallOrCtor := slices.ContainsFunc(staticObj.Elems,
 		func(e type_system.ObjTypeElem) bool {
 			switch e.(type) {
 			case *type_system.ConstructorElem, *type_system.CallableElem:
@@ -241,7 +241,7 @@ func tryFuseEscalierClass(
 			}
 			return false
 		})
-	if !callable {
+	if !hasCallOrCtor {
 		return nil
 	}
 	var instObj *type_system.ObjectType
