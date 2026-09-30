@@ -24,12 +24,14 @@ import (
 // Two immutable borrows are fine for the mirror-image reason, since neither writes.
 //
 // A loan is one borrow the checker tracks. It records the place the borrow reaches, whether a
-// write can go through it, and how long it stays usable. Loans come from two sites:
+// write can go through it, and how long it stays usable. Loans come from three sites:
 //
 //   - A `val`/`var` initializer that borrows a place, as in `val a = &mut x`. The binding holds
 //     the loan, so the loan lasts as long as that binding is live.
 //   - A call argument filling a `&` or `&mut` parameter. The callee holds it for the length of
 //     the call and no name outlives that, so the loan lasts for the one statement.
+//   - A call whose signature stores one argument into another, as in `store(&mut p, &mut b)`.
+//     The target p holds the loan of b, so the loan lasts as long as p is live.
 //
 // A call argument's mutability comes from the PARAMETER, not from the argument. Passing
 // `&mut x` to a `&T` parameter hands the callee a read-only view, so the callee cannot write
@@ -295,8 +297,8 @@ func (c *checker) dropLoansHeldBy(holder liveness.VarID) {
 // view the target ends up holding. A signature storing a `&'a B` leaves the target able to read
 // the item and not to write it, even though the target itself is a mutable borrow.
 //
-// target is the binding the borrow lands in and referent is the local it reaches, so the loan
-// is a borrow of referent held by target. It lasts as long as target is live, the same rule a
+// place is the data the stored borrow reaches and target is the binding it lands in, so the
+// loan is a borrow of place held by target. It lasts as long as target is live, the same rule a
 // borrow bound to a name follows.
 func (c *checker) recordStoreEdgeLoan(place movePlace, mut bool, target liveness.VarID, ref liveness.StmtRef, blame ast.Node) {
 	if c.fn == nil || target <= 0 || place.root <= 0 {
