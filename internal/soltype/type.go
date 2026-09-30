@@ -124,6 +124,11 @@ func (l *LitType) Equal(o *LitType) bool {
 // renderer has, and comparing the rendered form is total where a structural walk would
 // need an arm per kind and would drift as kinds are added.
 //
+// Comparing renderings makes equality a property of the presentation, so a change to
+// Print for readability changes what this answers. #1737 replaces it with a structural
+// comparison and settles what identity means for a type variable and for a recursive
+// type, neither of which this form has to decide.
+//
 // A nil operand equals only another nil.
 func Equal(a, b Type) bool {
 	if a == nil || b == nil {

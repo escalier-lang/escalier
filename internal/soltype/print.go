@@ -113,6 +113,10 @@ func typePrec(t Type) int {
 // M2 walk records var-carrying types in its Info side table and coalesces only
 // at binding boundaries, so a consumer may legitimately print an inner node's
 // still-raw type (M2 plan §7).
+//
+// Equal currently answers by comparing two of these renderings, so a change made here
+// for readability changes what it answers. #1737 moves Equal onto a structural
+// comparison, after which this function has no caller outside display.
 func Print(t Type) string {
 	return (&namedPrinter{}).printType(t)
 }
