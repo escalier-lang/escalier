@@ -43,7 +43,7 @@ func TestTierNames(t *testing.T) {
 }
 
 // Each tier holds what it is meant to. The membership is the input to
-// every check built on it, so it is pinned rather than left implicit.
+// every check built on it, so it is asserted rather than left implicit.
 func TestTierMembership(t *testing.T) {
 	require.Equal(t, []string{"web:core"}, PackagesInTier(TierCore))
 

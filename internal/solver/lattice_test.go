@@ -195,7 +195,7 @@ func TestNewIntersectionSubsumeWithContext(t *testing.T) {
 	require.True(t, equalType(parseType(t, "{x: number, y: string, ...}"), got), "got %s", soltype.Print(got))
 }
 
-// TestSubsumeMutualPicksCanonicalSurvivor pins the M6 PR1 canonicalization
+// TestSubsumeMutualPicksCanonicalSurvivor asserts the M6 PR1 canonicalization
 // fix. When two members mutually subsume but are not equalType-equal, the
 // survivor must be deterministic across input shuffles.
 //
@@ -254,7 +254,7 @@ func TestNewIntersectionNoSubsumeWithoutContext(t *testing.T) {
 	require.Len(t, it.Types, 2)
 }
 
-// TestNewUnionSubsumptionSkipsVar pins the concrete gate: a member that still
+// TestNewUnionSubsumptionSkipsVar asserts the concrete gate: a member that still
 // carries a free type variable is left alone, even with a Context, to avoid
 // speculatively pinning that variable mid-walk. The free var has no surface
 // form parseType can produce, so the test builds it directly.
@@ -267,7 +267,7 @@ func TestNewUnionSubsumptionSkipsVar(t *testing.T) {
 	require.Len(t, u.Types, 2)
 }
 
-// TestNewUnionSubsumptionSkipsLifetimeVar pins the lifetime half of the concrete
+// TestNewUnionSubsumptionSkipsLifetimeVar asserts the lifetime half of the concrete
 // gate: two mut borrows differing only in lifetime variable both survive.
 func TestNewUnionSubsumptionSkipsLifetimeVar(t *testing.T) {
 	c := &Context{}
@@ -280,7 +280,7 @@ func TestNewUnionSubsumptionSkipsLifetimeVar(t *testing.T) {
 	require.Len(t, got.(*soltype.UnionType).Types, 2)
 }
 
-// TestUndefinedAndNullSortLast pins the convention that the absence markers
+// TestUndefinedAndNullSortLast asserts the convention that the absence markers
 // NullType and UndefinedType appear after data members in canonical order, with
 // NullType before UndefinedType. A mixed union such as `number | null | undefined`
 // surfaces the data first and the absence markers last.
@@ -319,7 +319,7 @@ func TestUndefinedAndNullSortLast(t *testing.T) {
 	}
 }
 
-// TestCompareTypeConsistentWithEqual pins compareType's consistency
+// TestCompareTypeConsistentWithEqual asserts compareType's consistency
 // contract. Two equalType-equal types must compare equal. Without that,
 // canonicalization would be unstable and dedup unreliable.
 func TestCompareTypeConsistentWithEqual(t *testing.T) {
@@ -345,7 +345,7 @@ func TestCompareTypeConsistentWithEqual(t *testing.T) {
 	}
 }
 
-// TestCompareTypeKindOrder pins the kind ranking that orders dissimilar
+// TestCompareTypeKindOrder asserts the kind ranking that orders dissimilar
 // members so a union of mixed kinds renders deterministically. TypeVarType
 // leads, then PrimType, then LitType, so a quantified parameter shows up
 // before the primitive or literal it is constrained against.
@@ -358,7 +358,7 @@ func TestCompareTypeKindOrder(t *testing.T) {
 	require.Less(t, compareType(parseType(t, "unknown"), v), 0, "UnknownType < TypeVarType")
 }
 
-// TestCompareTypeNegation pins the canonical order over complements. Two complements order
+// TestCompareTypeNegation asserts the canonical order over complements. Two complements order
 // by their operands, and a complement occupies a kind slot of its own beside the union and
 // intersection forms. A complement has no surface syntax, so parseType cannot author one and
 // the operands are built directly.
@@ -394,7 +394,7 @@ func TestCompareTypeNegation(t *testing.T) {
 	require.True(t, equalType(negStr, forward[3]), "~string sorts after ~number")
 }
 
-// TestCompareTypeDistinctRefsWithUnnamedLifetimes pins the structural
+// TestCompareTypeDistinctRefsWithUnnamedLifetimes asserts the structural
 // comparator fix for borrows. Two RefTypes that differ only in distinct,
 // unnamed LifetimeVars print identically when the top-level Print supplies
 // no name map, so a Print-based tie-break would collapse them. The

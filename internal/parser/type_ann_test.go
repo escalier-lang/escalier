@@ -610,7 +610,7 @@ func TestParseOptionalMethodTypeAnn(t *testing.T) {
 	}
 }
 
-// TestParseOptionalMethodTypeAnn_GenericIsNotSupported pins the one form
+// TestParseOptionalMethodTypeAnn_GenericIsNotSupported asserts the one form
 // the grammar leaves out. TypeScript writes `m?<T>(x: T): T`, where the
 // type parameters follow the marker. `?<` is two tokens rather than the
 // single `?(`, so the member reads as a property and fails on the

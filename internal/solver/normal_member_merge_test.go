@@ -174,7 +174,7 @@ func TestObjectMemberJoin(t *testing.T) {
 // residual test alone. MappedElemSettled recognizes the settled form only when the
 // optional marker is present; the non-optional `[K: string]: number` is
 // uninhabited and stays an unsettled residual, which the residual test already
-// keeps out. The assertion pins that the source lowers to the settled form.
+// keeps out. This test asserts that the source lowers to the settled form.
 func TestIndexSignatureObjectStaysUnfused(t *testing.T) {
 	c := &Context{}
 	withIndexSig := func() *soltype.ObjectType {

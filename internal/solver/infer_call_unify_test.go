@@ -13,7 +13,7 @@ import (
 //
 // Three divergences have been found by inspection rather than by a test — the missing
 // argument moves #1508 fixed, the missing owned-mutable upgrade #1519 fixed, and the missing
-// rest expansion below. These cases pin the shared behavior so a fourth cannot pass silently.
+// rest expansion below. These cases assert the shared behavior so a fourth cannot pass silently.
 
 // A tuple-typed rest parameter expands to one positional parameter per element, so each
 // argument is checked against its own element. The overload path did not expand it: the arity

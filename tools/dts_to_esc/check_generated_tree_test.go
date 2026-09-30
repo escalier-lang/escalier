@@ -228,7 +228,7 @@ func TestCheckGeneratedTree_ReportsAnIgnoredFile(t *testing.T) {
 	require.Equal(t, []string{"data/std/date.esc"}, reportedPaths(output))
 }
 
-// TestCheckGeneratedTree_RejectsAMissingSeparator pins the argument
+// TestCheckGeneratedTree_RejectsAMissingSeparator asserts the argument
 // contract. The generator is everything after `--`, so a call without
 // one is a usage error rather than a run of whatever followed.
 func TestCheckGeneratedTree_RejectsAMissingSeparator(t *testing.T) {

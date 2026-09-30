@@ -343,7 +343,7 @@ func TestProbeRestoresShallowestAssumedOnDiscardOnly(t *testing.T) {
 	})
 }
 
-// TestTrialBindsWatched pins the asymmetry the try/catch difference turns on. The trial
+// TestTrialBindsWatched asserts the asymmetry the try/catch difference turns on. The trial
 // reports a binding only for the variables the caller watches, so one constraint answers
 // "bound" or "not bound" depending on which side of it the caller cares about.
 //

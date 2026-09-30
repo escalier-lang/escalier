@@ -26,7 +26,7 @@ const ownedParamDecls = `
 // anything.
 //
 // What remains after a store into an owned parameter is an aliasing question, not a lifetime
-// one, and the borrow-exclusivity check is what answers it. The last three cases pin that
+// one, and the borrow-exclusivity check is what answers it. The last three cases assert that
 // division.
 func TestStoreIntoOwnedParameter(t *testing.T) {
 	tests := map[string]struct {
@@ -142,7 +142,7 @@ func TestStoreIntoOwnedParameter(t *testing.T) {
 		// caller-owned would report a store into it.
 		//
 		// Nothing valid can store into one, since both a field write and an `&mut` need a
-		// mutable place, so what this pins is the absence of a second diagnostic on top of the
+		// mutable place, so what this asserts is the absence of a second diagnostic on top of the
 		// mutability error that already rejects the program.
 		"StoreIntoAPlainOwnedParameterAddsNoEscape": {
 			src: `

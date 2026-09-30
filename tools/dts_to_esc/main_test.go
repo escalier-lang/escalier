@@ -42,7 +42,7 @@ declare var Symbol: SymbolConstructor;
 
 // TestRun_SingleFileWritesEscToStdout covers the §5 single-file mode:
 // one `.d.ts` in, Escalier source out on stdout, nothing written to
-// disk. The snapshot is the whole emitted module, so it also pins the
+// disk. The snapshot is the whole emitted module, so it also asserts the
 // trio fusion — `interface ArrayConstructor` and `declare var Array`
 // are gone, collapsed into the one class.
 func TestRun_SingleFileWritesEscToStdout(t *testing.T) {
@@ -67,7 +67,7 @@ export declare class Array<T> {
 const committedCFG = "../../internal/ecma262/cfg.json"
 
 // Every ECMA-262 report reaches stderr, and none does without the flag. The
-// rendering of each line is pinned against a demo graph where the report is
+// rendering of each line is asserted against a demo graph where the report is
 // built. What the snapshot below adds is what a real run over the committed
 // graph and the seeded lib reports, the partition summary above them included.
 //
@@ -91,7 +91,7 @@ func TestRun_GenerateWithCFGPrintsEveryReport(t *testing.T) {
 // reportSummaries keeps the summary line of each report and drops the per-name
 // detail under it. A summary carries two leading spaces and a detail line four,
 // so the indent is what tells them apart. The detail is every name the join
-// could not match, hundreds of lines that internal/ecma262 already pins.
+// could not match, hundreds of lines that internal/ecma262 already asserts.
 func reportSummaries(stderr string) string {
 	var kept []string
 	for _, line := range strings.Split(stderr, "\n") {
@@ -163,7 +163,7 @@ func treeOf(t *testing.T, root string) []string {
 // readGenerated reads one generated package file and returns it without
 // the `Code generated` header. The header holds backticks, which
 // go-snaps cannot write back into an inline snapshot, and
-// TestGenerate_WritesTheTreeWithAHeader in internal/dts_to_esc pins it
+// TestGenerate_WritesTheTreeWithAHeader in internal/dts_to_esc asserts it
 // already.
 func readGenerated(t *testing.T, path string) string {
 	t.Helper()

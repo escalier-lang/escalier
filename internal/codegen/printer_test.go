@@ -31,7 +31,7 @@ func TestPrintExpr(t *testing.T) {
 	snaps.MatchSnapshot(t, snapshot.String(sum))
 }
 
-// TestPrintExprPrecedence pins the parentheses the printer adds. The codegen AST records
+// TestPrintExprPrecedence asserts the parentheses the printer adds. The codegen AST records
 // grouping in its tree shape and has no parenthesis node, so the printer derives them from
 // operator binding power. Each case builds the tree that source parentheses produce and
 // asserts the emitted JavaScript reparses to the same grouping.
@@ -149,7 +149,7 @@ func TestPrintExprPrecedence(t *testing.T) {
 	}
 }
 
-// TestPrintExprStmtAmbiguousStart pins the parentheses an expression statement adds. A
+// TestPrintExprStmtAmbiguousStart asserts the parentheses an expression statement adds. A
 // statement beginning with `function` starts a function declaration and one beginning with
 // `{` starts a block, so either emitted bare is a JavaScript syntax error rather than the
 // expression the tree holds. Only the leftmost token decides, which is why an expression
@@ -209,7 +209,7 @@ func TestPrintExprStmtAmbiguousStart(t *testing.T) {
 	}
 }
 
-// TestPrintTypeAnnPrecedence pins the parentheses the type-annotation printer adds. The
+// TestPrintTypeAnnPrecedence asserts the parentheses the type-annotation printer adds. The
 // codegen AST records grouping in its tree shape and has no parenthesis node, so a member
 // that binds looser than the operator holding it has to be wrapped. Each case builds the
 // tree that source parentheses produce and asserts the emitted TypeScript reparses to the

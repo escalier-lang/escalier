@@ -36,7 +36,7 @@ func makeCustomStdlibDir(t *testing.T, files map[string]string) string {
 //
 // Inferring the committed `std/math.esc` takes most of the budget
 // inferStdlibImportSource allows, and a loaded CI runner spends the rest, so a
-// test pointed at it fails on machine speed rather than on the rule it pins.
+// test pointed at it fails on machine speed rather than on the rule it asserts.
 // The stdlib_import_local fixture is what holds the committed tree to loading.
 var syntheticMath = map[string]string{
 	"std/math.esc": "@js(\"Math.PI\")\nexport declare val PI: number\n",
@@ -152,7 +152,7 @@ func TestStdlibImport_InvalidPackageName(t *testing.T) {
 	)
 }
 
-// TestStdlibImport_LoaderRule_MissingJSDecorator pins loader rule §3.4(1):
+// TestStdlibImport_LoaderRule_MissingJSDecorator asserts loader rule §3.4(1):
 // every exported value-level decl in a pseudo-package file must carry
 // an `@js("...")` decorator. The error is anchored to the importing
 // `import` statement, not a location inside the stdlib file.
@@ -170,7 +170,7 @@ func TestStdlibImport_LoaderRule_MissingJSDecorator(t *testing.T) {
 		errs[0].Message())
 }
 
-// TestStdlibImport_LoaderRule_UnexportedValueLevelRejected pins loader
+// TestStdlibImport_LoaderRule_UnexportedValueLevelRejected asserts loader
 // rule §3.4(2): unexported value-level decls in pseudo-package files
 // are rejected (no runtime mapping, invisible to importers — almost
 // certainly a missing `export`). The diagnostic tells the user how to
@@ -205,7 +205,7 @@ func TestStdlibImport_LoaderRule_AcceptsValidPackage(t *testing.T) {
 	require.Empty(t, errorMessages(errs))
 }
 
-// TestStdlibImport_LocalBindingSharesPkgNsPointer pins the
+// TestStdlibImport_LocalBindingSharesPkgNsPointer asserts the
 // share-by-pointer model: a `?local` file-scope binding for a stdlib
 // pkg holds the *same* `*type_system.Namespace` instance that the
 // PackageRegistry caches. Combined with the §3.4 rule that forbids
@@ -213,7 +213,7 @@ func TestStdlibImport_LoaderRule_AcceptsValidPackage(t *testing.T) {
 // canonical declarations without an intervening filtered copy.
 func TestStdlibImport_LocalBindingSharesPkgNsPointer(t *testing.T) {
 	// A synthetic `std:math`, for the reason syntheticMath records: this test
-	// pins a pointer, not the committed tree's contents.
+	// compares a pointer, not the committed tree's contents.
 	//
 	// `?local` binds the package as a namespace, which is the shape the pointer
 	// comparison needs.
@@ -243,7 +243,7 @@ func TestStdlibImport_LocalBindingSharesPkgNsPointer(t *testing.T) {
 		"?local binding should share the canonical pkgNs pointer, not a filtered copy")
 }
 
-// TestStdlibImport_LoaderRule_UnexportedTypeLevelRejected pins the
+// TestStdlibImport_LoaderRule_UnexportedTypeLevelRejected asserts the
 // extended §3.4 rule: unexported type-level decls in pseudo-package
 // files are rejected. The canonical pkgNs is shared by reference into
 // importers' file scopes (so they can resolve qualified refs through
@@ -291,7 +291,7 @@ func TestStdlibImport_LoaderRule_UnexportedTypeLevelRejected(t *testing.T) {
 	}
 }
 
-// TestStdlibImport_LoaderRule_MalformedJSDecorator pins the loader's
+// TestStdlibImport_LoaderRule_MalformedJSDecorator asserts the loader's
 // shape check on `@js(...)`: the argument must be a single string
 // literal. Non-string args and zero/multi-arg forms are rejected
 // uniformly. The parser accepts any positional expression list to leave
@@ -319,7 +319,7 @@ func TestStdlibImport_LoaderRule_MalformedJSDecorator(t *testing.T) {
 	}
 }
 
-// TestStdlibImport_PseudoPackageCycle pins §4.3's "cycles between
+// TestStdlibImport_PseudoPackageCycle asserts §4.3's "cycles between
 // pseudo-packages are permitted" rule. Two `web:*` packages with a
 // mutual import — modeled on the canonical `HTMLCanvasElement
 // .getContext("webgl") -> WebGLRenderingContext` ↔ `WebGLRenderingContext
@@ -403,7 +403,7 @@ export declare class ClassC {
 	require.Empty(t, errorMessages(errs))
 }
 
-// TestStdlibImport_PseudoPackageCycle_NonCyclicImporter pins that a
+// TestStdlibImport_PseudoPackageCycle_NonCyclicImporter asserts that a
 // pseudo-package which imports into a cycle but isn't itself part of
 // the cycle is loaded via the normal singleton path, not absorbed
 // into the merged SCC load. `web:app → web:dom ↔ web:webgl`: app is a
@@ -499,7 +499,7 @@ export declare fn makeClient() -> client.Client
 	}
 }
 
-// TestStdlibImport_PseudoPackageCycle_DecoratorErrorNamesURI pins the
+// TestStdlibImport_PseudoPackageCycle_DecoratorErrorNamesURI asserts the
 // diagnostic-label fix: when an SCC member fails the §3.4 `@js` rules,
 // the error message must identify the offending member by URI
 // (e.g. `web:webgl`) rather than by an opaque synthetic SCC label.
@@ -623,7 +623,7 @@ import "web:webgl"
 		"expected parse-error diagnostics anchored to both import spans (rollback should re-attempt the load); got spans=%v, msgs=%v", parseSpans, msgs)
 }
 
-// TestStdlibImport_ClosedRegistryNarrowing pins §4.4's closed-registry
+// TestStdlibImport_ClosedRegistryNarrowing exercises §4.4's closed-registry
 // fixture: a `web:dom` package declares `HTMLElementTagNameMap`
 // populated with two concrete entries and a generic `createElement`
 // whose type parameter is bound by `keyof HTMLElementTagNameMap`. The
@@ -702,7 +702,7 @@ val bogus = doc.createElement("does-not-exist")
 	)
 }
 
-// TestStdlibImport_LiteralKeyedMethodOverloads pins the simplest
+// TestStdlibImport_LiteralKeyedMethodOverloads asserts the simplest
 // literal-narrowed method overload case: two `createElement` arms
 // keyed on a string literal, no generic. Mirrors
 // TestStdlibImport_ClosedRegistryNarrowing but with the registry
@@ -736,7 +736,7 @@ val d: dom.HTMLDivElement = doc.createElement("div")
 	require.Empty(t, errorMessages(errs))
 }
 
-// TestStdlibImport_AddEventListenerOverloads pins the event-map idiom:
+// TestStdlibImport_AddEventListenerOverloads asserts the event-map idiom:
 // a small `HTMLElementEventMap` keyed by event name, plus per-event
 // `addEventListener` overloads on a single class. Each overload narrows
 // the handler's event parameter to the event-specific type, so a `click`
@@ -782,7 +782,7 @@ val _c = el.addEventListener("custom-anything", fn (ev) {})
 	require.Empty(t, errorMessages(errs))
 }
 
-// TestStdlibImport_OverloadReceiverMutMismatch pins the receiver-
+// TestStdlibImport_OverloadReceiverMutMismatch asserts the receiver-
 // mutability uniformity check: two arms on the same method that
 // disagree on `self` vs `mut self` produce an elaboration-time error
 // naming both shapes. The merged signature keeps the first arm's
@@ -812,7 +812,7 @@ import "web:dom"
 	)
 }
 
-// TestStdlibImport_NSKeyedOverloads pins §4.4's `createElementNS`
+// TestStdlibImport_NSKeyedOverloads exercises §4.4's `createElementNS`
 // fixture in the method shape §4.2 actually wants: two overloads of a
 // single `createElementNS` method on a `Document` class, each keyed on
 // a namespace-URI literal and bound to a different registry. The call
@@ -864,7 +864,7 @@ val frac: dom.MathMLElement = doc.createElementNS("http://www.w3.org/1998/Math/M
 	require.Empty(t, errorMessages(errs))
 }
 
-// TestStdlibImport_CrossPackageTypeReference pins §4.4's cross-package
+// TestStdlibImport_CrossPackageTypeReference exercises §4.4's cross-package
 // type-reference fixture (§4.2b). A sibling `web:fetch` package
 // references a type defined in `web:streams` via a qualified name. No
 // cycle, no augmentation — `web:fetch` imports `web:streams`, and the
@@ -902,7 +902,7 @@ val b: streams.ReadableStream | null = r.body
 	}
 }
 
-// TestStdlibImport_PseudoPackageCycleStdStd pins §4.4's std↔std cycle
+// TestStdlibImport_PseudoPackageCycleStdStd exercises §4.4's std↔std cycle
 // fixture: cycle handling isn't web-only. Two `std:*` packages with a
 // mutual import load as a single merged SCC, mirroring the web↔web
 // case in TestStdlibImport_PseudoPackageCycle.

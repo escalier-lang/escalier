@@ -58,7 +58,7 @@ func TestLineMapPosition(t *testing.T) {
 			line, column := lineMap.Position(tc.offset, tc.enc)
 			require.Equal(t, tc.line, line)
 			require.Equal(t, tc.column, column)
-			// The offset is what actually indexes the file, so pin the text it
+			// The offset is what actually indexes the file, so assert the text it
 			// lands on rather than trusting the line and column alone.
 			require.Equal(t, tc.coversText, mixedContents[tc.offset:tc.offset+len(tc.coversText)])
 		})

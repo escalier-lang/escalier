@@ -652,7 +652,7 @@ func TestCallStoreEdgeNonStores(t *testing.T) {
 	}
 }
 
-// TestCallStoreEdgeAliasChainTerminates pins the node budget the lifetime walk runs under.
+// TestCallStoreEdgeAliasChainTerminates asserts the node budget the lifetime walk runs under.
 // The signature below names a chain of aliases where each body names the next one twice, so
 // its field paths number 2^depth. Without the budget the walk enumerates all of them and the
 // call takes minutes; with it the walk stops early, and the store at the chain's leaf is

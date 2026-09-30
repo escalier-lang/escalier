@@ -88,7 +88,7 @@ fn f() { a = "x" }`
 // yet produce a borrow-typed or inexact var initializer — C3's field-write path
 // is the first consumer of the RefType arm, and inexactness only reaches a var
 // binding through annotations (which take the annotation, not widening). These
-// pin the helper's full contract — literal lowering, recursive object/tuple
+// cases assert the helper's full contract — literal lowering, recursive object/tuple
 // descent preserving Inexact, RefType peel/re-wrap preserving Mut, and
 // passthrough of already-widened or still-variable types — that C3 relies on.
 func TestWidenHelper(t *testing.T) {
@@ -177,7 +177,7 @@ fn f() { y = 6 }`)
 	// binding keeps the precise literal: `val z = y` ⇒ z: 5. A direct literal
 	// widens at the constraint level instead, so ITS reads widen (see
 	// TestInferVarWideningPropagatesToReads). z: 5 is sound — z is an immutable
-	// snapshot of the value 5 — and this pins the narrow remaining corner.
+	// snapshot of the value 5 — and this asserts the narrow remaining corner.
 	t.Run("reading a reference-widened var keeps the literal", func(t *testing.T) {
 		values, _, errs := inferSource(t, `val x = 5
 var y = x
@@ -281,7 +281,7 @@ func TestWidenVar(t *testing.T) {
 // The freshener copies the Widenable flag onto an instantiated binding var. This
 // behavior is currently unreachable from source — a read of a widened binding
 // gets the literal propagated concretely, routing around the freshened copy — so
-// it is pinned here directly as the defensive contract that keeps Widenable
+// it is asserted here directly as the defensive contract that keeps Widenable
 // parallel to Open. See the freshener note in poly.go.
 func TestFreshenCopiesWidenable(t *testing.T) {
 	c := newTestChecker()

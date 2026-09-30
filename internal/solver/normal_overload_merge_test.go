@@ -102,7 +102,7 @@ func TestObjectOverloadConstructorMeet(t *testing.T) {
 		soltype.Print(fused))
 }
 
-// TestOverloadReceiverMismatchStaysUnfused pins the receiver guard. Under the concatenation
+// TestOverloadReceiverMismatchStaysUnfused asserts the receiver guard. Under the concatenation
 // each arm keeps the receiver it was written with, so two sets whose receivers disagree
 // would fuse into a member mixing them — a shape classes.go could not read, since it takes
 // the first arm's receiver as the receiver of the whole member. The guard keeps both atoms

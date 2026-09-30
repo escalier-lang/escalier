@@ -221,7 +221,7 @@ func TestPathBinderProjectsAndBinds(t *testing.T) {
 		// A structural test over a union keeps only the members it can destructure, so the
 		// field step reads `x` off the one member that has it. Without the narrowing the
 		// lookup would run against both members and widen the leaf to include the absent
-		// field's `undefined`; UnionUnnarrowed below pins that contrast.
+		// field's `undefined`; UnionUnnarrowed below asserts that contrast.
 		"UnionNarrowed": {
 			rootType: func(t *testing.T, _ *checker, _ *Scope) soltype.Type {
 				return parseType(t, "{x: number} | {y: string}")
@@ -410,7 +410,7 @@ func TestPathBinderBranchesNarrowIndependently(t *testing.T) {
 // A destructuring default replaces the `undefined` an optional property reads as, so
 // `{x = 0}` over `{x?: number}` binds the property type joined with the default's, where
 // the same field with no default binds `number | undefined`. The OptionalField case above
-// pins the undefaulted half. This is the meaningful use of the marker an object test
+// asserts the undefaulted half. This is the meaningful use of the marker an object test
 // carries, and binding the same leaf through bindPattern renders the same `number | 0`.
 func TestPathBinderDefaultFillsOptionalProperty(t *testing.T) {
 	c, scope := newPathChecker(t, "")
@@ -431,7 +431,7 @@ func TestPathBinderDefaultFillsOptionalProperty(t *testing.T) {
 //
 // Whether `{x = 0}` should match a scrutinee with no `x` at all is a question about
 // bindPattern rather than about the IR, and #1053 argues it should not.
-// TestInferObjectPatternLeafDefault in infer_pattern_test.go pins the same answer for
+// TestInferObjectPatternLeafDefault in infer_pattern_test.go asserts the same answer for
 // `val {z = 0} = p` over `{x: number}`, and this case exists to hold the path binder to
 // it. Change the two together or not at all.
 func TestPathBinderDefaultedKeyBindsAgainstScrutineeWithoutTheField(t *testing.T) {

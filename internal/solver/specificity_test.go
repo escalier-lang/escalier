@@ -12,7 +12,7 @@ import (
 // The overload resolver (overloadOrder), the IntersectionType-sub exists arm, and the
 // UnionType-super exists arm all order their candidate members through specificityOrder,
 // so most-specific-first is the one ordering rule every trial site shares. These tests
-// pin the ordering primitive directly, independent of any single trial site. The
+// assert the ordering primitive directly, independent of any single trial site. The
 // observable end-to-end payoff at the overload site lives in infer_overload_test.go
 // (TestInferOverloadSpecificityBeatsDeclarationOrder and TestInferOverloadThreeArmSpecificity).
 

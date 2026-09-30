@@ -21,7 +21,7 @@ var (
 )
 
 // testFacts is the published fact set over the committed graph, curated layer
-// merged in, classified once for the whole package. A test pinning what the
+// merged in, classified once for the whole package. A test asserting what the
 // converter consumes reads this.
 func testFacts(t *testing.T) *Facts {
 	t.Helper()
@@ -35,7 +35,7 @@ func testFacts(t *testing.T) *Facts {
 }
 
 // testAnalyzedFacts is what the committed graph alone concludes, before
-// curated.json is merged over it. A test pinning what §4 can read off the graph
+// curated.json is merged over it. A test asserting what §4 can read off the graph
 // reads this, so a curated entry never disguises what the analysis found.
 func testAnalyzedFacts(t *testing.T) *Facts {
 	t.Helper()

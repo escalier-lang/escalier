@@ -98,7 +98,7 @@ func renderPackage(t *testing.T, mods map[string]*StandaloneModule, uri string) 
 }
 
 // TestApplyOverlay_Operations covers what each operation does to the
-// converted package. The `replace` cases also pin substitution in place
+// converted package. The `replace` cases also assert substitution in place
 // rather than append, which is what keeps a second run byte-identical.
 func TestApplyOverlay_Operations(t *testing.T) {
 	t.Parallel()
@@ -409,7 +409,7 @@ func overlayKindError(t *testing.T, files map[string]string) string {
 	return err.Error()
 }
 
-// TestApplyOverlay_KeysAMemberOnItsKind pins the half of the member key
+// TestApplyOverlay_KeysAMemberOnItsKind asserts the half of the member key
 // that is not the name. A `readonly x: T` and a `get x()` are two
 // members, so an overlay addresses one without disturbing the other and
 // cannot turn one into the other by writing the name in a new form.

@@ -103,7 +103,7 @@ func TestPrintRecursive(t *testing.T) {
 	}
 }
 
-// TestLevelOfRecursive pins the split that lets a knot cross a level boundary. The body's variables
+// TestLevelOfRecursive asserts the split that lets a knot cross a level boundary. The body's variables
 // lift the level so the freshener and extruder prune descends into them, while the binder and its
 // references contribute nothing.
 func TestLevelOfRecursive(t *testing.T) {
@@ -143,7 +143,7 @@ func TestLevelOfRecursive(t *testing.T) {
 	}
 }
 
-// TestAcceptRecursive pins the visitor arm: the body is rewritten, the binder carries through
+// TestAcceptRecursive asserts the visitor arm: the body is rewritten, the binder carries through
 // unchanged, and an unchanged body keeps the knot's pointer so identity-keyed caches stay valid.
 func TestAcceptRecursive(t *testing.T) {
 	original := knot(0, "X0", func(ref *RecursiveVarType) Type {

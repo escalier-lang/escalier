@@ -10,7 +10,7 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-// TestTarjanSCCs_NonCyclicImporterStaysSingleton pins the Tarjan
+// TestTarjanSCCs_NonCyclicImporterStaysSingleton asserts the Tarjan
 // invariant that a node which imports into an SCC but isn't reachable
 // back from the SCC is its own singleton component, not absorbed into
 // the cycle. Without this, the loader would merge a non-cyclic

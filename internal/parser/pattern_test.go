@@ -329,7 +329,7 @@ func TestParseMutSelfWithMutParam(t *testing.T) {
 	}
 }
 
-// TestStaticMethodRejectsSelfReceiver pins that the method parser
+// TestStaticMethodRejectsSelfReceiver asserts that the method parser
 // emits a diagnostic when a `static` method declares a `self`,
 // `mut self`, or `'a self` receiver — and that the receiver does
 // not leak into MethodElem.MutSelf / SelfLifetime regardless.
@@ -397,7 +397,7 @@ func TestStaticMethodRejectsSelfReceiver(t *testing.T) {
 	}
 }
 
-// TestParseMethodWithoutSelfReceiver pins that a non-static method with no
+// TestParseMethodWithoutSelfReceiver asserts that a non-static method with no
 // `self` receiver still parses its parameter list.
 func TestParseMethodWithoutSelfReceiver(t *testing.T) {
 	t.Parallel()

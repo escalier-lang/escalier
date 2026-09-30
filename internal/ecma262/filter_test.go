@@ -262,7 +262,7 @@ func TestFilterCarriesModeledRejections(t *testing.T) {
 // entry was added by reading the operation in ECMA-262 and confirming that its
 // `TypeError` reports the wrong dynamic type for the value at coercionGuardArg,
 // and that `accepts` and `returnsAtOnce` say what it does per receiver type. The
-// graph carries the step but not the reason, so the snapshot pins what was read
+// graph carries the step but not the reason, so the snapshot asserts what was read
 // rather than proving it.
 //
 // A spec bump that adds or moves a throw step in one of these operations shows

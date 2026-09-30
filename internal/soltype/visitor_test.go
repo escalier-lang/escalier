@@ -233,7 +233,7 @@ func TestAcceptDescendDifferentKindPanics(t *testing.T) {
 // An Accept rewrite over an inexact ObjectType carries the Inexact flag onto the
 // rebuilt object. The old RecordType rebuild had no flag to carry; the M4
 // ObjectType.Accept must copy it (visitor.go), or a coalesce/extrude/freshenAbove
-// pass would silently turn an inexact object exact. This pins the property the A1
+// pass would silently turn an inexact object exact. This asserts the property the A1
 // plan flagged as a latent bug the new field exposes.
 func TestAcceptObjectPreservesInexact(t *testing.T) {
 	num := &PrimType{Prim: NumPrim}

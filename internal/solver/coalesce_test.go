@@ -95,7 +95,7 @@ func TestCoalesceMultiBound(t *testing.T) {
 	})
 }
 
-// TestCoalesceNegativeObjectMerge pins B1: a negative variable carrying several
+// TestCoalesceNegativeObjectMerge asserts B1: a negative variable carrying several
 // member-access requirements as separate inexact one-property objects coalesces to
 // a single EXACT object (Policy A), not an intersection of one-property objects.
 // This is the receiver of `fn (p) { p.a; p.b }`, whose body lands `{a: …, ...}` and
@@ -163,7 +163,7 @@ func TestCoalesceNegativeObjectMerge(t *testing.T) {
 	})
 }
 
-// TestCoalesceMutWriteFold pins the C3 whole-object mut merge: a field-write bound
+// TestCoalesceMutWriteFold asserts the C3 whole-object mut merge: a field-write bound
 // (a mut-wrapped inexact object) folds with the receiver's reads into ONE object,
 // and the presence of any write wraps the merged object in `mut`. usageObject is the
 // classifier that routes both read and write requirements into the fold.
@@ -207,7 +207,7 @@ func TestCoalesceMutWriteFold(t *testing.T) {
 	})
 }
 
-// TestUsageObject pins the requirement classifier directly: a bare inexact object is
+// TestUsageObject asserts the requirement classifier directly: a bare inexact object is
 // a read, a mut-wrapped inexact object is a write, and an exact object, an immutable
 // borrow, or a non-object is not a usage requirement.
 func TestUsageObject(t *testing.T) {
@@ -232,7 +232,7 @@ func TestUsageObject(t *testing.T) {
 	}
 }
 
-// TestCoalesceOpenVarStaysInexact pins B2: an `open` parameter var's folded usage
+// TestCoalesceOpenVarStaysInexact asserts B2: an `open` parameter var's folded usage
 // object stays inexact (row-polymorphic) instead of closing to exact. The Open flag
 // on the var is the opt-out from B1's Policy-A close.
 func TestCoalesceOpenVarStaysInexact(t *testing.T) {
@@ -296,7 +296,7 @@ func TestCoalesceStructuralRecursion(t *testing.T) {
 	require.True(t, equalType(want, got))
 }
 
-// TestCoalesceBorrowedVarInnerPeels pins review finding 1: coalescing a borrow whose
+// TestCoalesceBorrowedVarInnerPeels covers review finding 1: coalescing a borrow whose
 // inner is an inference variable inlines that variable to its bounds. RefInner admits
 // *TypeVarType, so `mut β` is well-formed mid-inference. When β inlines to a
 // non-borrowable type — a primitive bound, or never for empty bounds — the borrow
@@ -1015,7 +1015,7 @@ func TestEqualTypeClassLifetimeArgs(t *testing.T) {
 	}
 }
 
-// TestBijectionRebindKeepsOneToOne pins the invariant bijection's doc comment states. A
+// TestBijectionRebindKeepsOneToOne asserts the invariant bijection's doc comment states. A
 // rebind must drop the old pairing from both directions, so no name is left with a
 // reciprocal entry naming a partner it no longer has. A stale entry would make decide
 // report a mismatch by rule 2 against a binding that had already been replaced.

@@ -271,7 +271,7 @@ func moduleWithJSTarget(target string) *StandaloneModule {
 // pinned `.d.ts` set declares.
 //
 // The two are read from the same input, so this holds by construction for a
-// generated decorator. What it pins is the overlay, whose targets are written
+// generated decorator. What it asserts is the overlay, whose targets are written
 // by hand, and the collector itself: a shape it stops reading takes real
 // targets out of the set and fails here.
 func TestGeneratedTreeJSTargetsAreAllKnown(t *testing.T) {

@@ -59,7 +59,7 @@ val r = foo({x: 1, y: 2})`)
 	})
 }
 
-// TestInferOpenParamNested pins the DEEP semantics of `open`: it makes the param's
+// TestInferOpenParamNested asserts the DEEP semantics of `open`: it makes the param's
 // whole inferred shape row-polymorphic, every nested object included — not just the
 // top object. The un-`open` peer seals every level to exact. So a closed param
 // rejects an extra field at ANY depth, while an open param accepts one at any depth.

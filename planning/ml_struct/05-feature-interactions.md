@@ -63,7 +63,7 @@ solved by `constrainLt` over `LifetimeVar` bounds, and carried on the
   with `lower=1 upper=0`. That is the outlives direction flipping.
   `RefType.Accept` not walking the lifetime turns out not to matter, because no pass
   relies on `Accept` to reach it.
-  `TestComplementFlipsExtrudedLifetimeDirection` pins both rows.
+  `TestComplementFlipsExtrudedLifetimeDirection` asserts both rows.
 - **A complement may name a borrow.** `¬(&'a T)` denotes every value that is not a
   borrow of `T` under `'a`, so it admits a borrow of another type, a borrow of `T` under
   a different lifetime, and every value that is not a borrow. The lifetime is part of

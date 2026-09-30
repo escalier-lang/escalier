@@ -15,7 +15,7 @@ import (
 // it is garbage collected. The return is then re-typed to own what it borrowed, since owning
 // is what the caller actually holds.
 //
-// Each case pins the function's inferred type, which is where the re-typing shows. An
+// Each case asserts the function's inferred type, which is where the re-typing shows. An
 // unannotated `return &mut b` over `val mut b` comes out as `mut {value: number}`. A signature
 // that annotates its return keeps the annotation, since an owned value satisfies a borrow
 // destination.
@@ -234,7 +234,7 @@ func TestReturnValueBorrows(t *testing.T) {
 		// and through the return, which is two live mutable paths to one value. The return
 		// takes no exemption and reports.
 		//
-		// The wording is what pins the reason. b's lifetime is not the problem, since the frame
+		// The wording is what this case asserts. b's lifetime is not the problem, since the frame
 		// ends at the return and a borrow leaving through it alone would be fine. The store is,
 		// so the message names the second path rather than claiming b does not live long enough.
 		"ReturnOfALocalAlsoStoredIntoAParam": {
@@ -381,7 +381,7 @@ func TestReturnValueBorrows(t *testing.T) {
 // into a parameter, where the value flows into the caller's object, and a consuming
 // argument, where it flows into the callee. A borrow of a local that flows out either
 // way escapes, while a parameter borrow and a plain owned value do not. Each case also
-// pins the inferred type of every function it declares.
+// asserts the inferred type of every function it declares.
 func TestEscapeAtStoreAndArgSites(t *testing.T) {
 	tests := map[string]struct {
 		src   string

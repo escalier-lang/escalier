@@ -10,7 +10,7 @@ import (
 )
 
 // solPreludePrefix is the package key `std:prelude` is registered under, which
-// TestResolveTypeAnnForTestPreludeName in internal/solver pins. A renderer that
+// TestResolveTypeAnnForTestPreludeName in internal/solver asserts. A renderer that
 // matched on the bare last name component instead would fail the cases below.
 const solPreludePrefix = "import:std:prelude"
 
@@ -191,7 +191,7 @@ func TestBuildTypeAnnFromSolNominalRefs(t *testing.T) {
 	}
 }
 
-// TestBuildTypeAnnFromSolInferredTypeParams pins the binders for a generic
+// TestBuildTypeAnnFromSolInferredTypeParams asserts the binders for a generic
 // function that declares none.
 //
 // An un-annotated `fn f(x) { return x }` coalesces to `fn (x: t1) -> t1`, a
@@ -410,7 +410,7 @@ func TestBuildTypeAnnFromSolFromSource(t *testing.T) {
 		},
 
 		// The `?` and `readonly` markers are set from separate fields, so each
-		// corner of the pair is pinned. With only the neither and both cases a
+		// corner of the pair is asserted. With only the neither and both cases a
 		// renderer that swapped the two would still pass.
 		"Property":         {"", "{x: number}", "{x: number}"},
 		"OptionalOnly":     {"", "{x?: number}", "{x?: number}"},
@@ -515,7 +515,7 @@ func TestBuildTypeAnnFromSolFromSource(t *testing.T) {
 		// The trim keys off that prefix, so a type the caller declares under one of
 		// the same names is a different type and keeps every argument. This stdlib
 		// declares no `PromiseLike`, `Generator`, or `AsyncGenerator`, so the trim
-		// over a declared one of those is pinned by
+		// over a declared one of those is asserted by
 		// TestBuildTypeAnnFromSolNominalRefs. The generator rows below reach the
 		// built-in former instead, which is the other way one is written.
 		"UserGenerator": {
@@ -619,7 +619,7 @@ func TestBuildTypeAnnFromSolFormersSourceCannotReach(t *testing.T) {
 	}
 }
 
-// TestBuildTypeAnnFromSolInferBinder pins the binder on its own. A conditional
+// TestBuildTypeAnnFromSolInferBinder asserts the binder on its own. A conditional
 // carrying one reaches it through the source-driven table below; this is the
 // clause by itself, which no annotation writes.
 func TestBuildTypeAnnFromSolInferBinder(t *testing.T) {
@@ -858,7 +858,7 @@ func TestConvertQualIdentFromSol(t *testing.T) {
 	}
 }
 
-// TestBuildTypeAnnFromSolParamPatterns pins how each parameter pattern binds in
+// TestBuildTypeAnnFromSolParamPatterns asserts how each parameter pattern binds in
 // the emitted signature.
 //
 // TypeScript needs a name at every binding position. A pattern that supplies
@@ -926,7 +926,7 @@ func TestBuildTypeAnnFromSolParamPatterns(t *testing.T) {
 	}
 }
 
-// TestBuildTypeAnnFromSolEmptyOverloadSets pins what an element carrying no
+// TestBuildTypeAnnFromSolEmptyOverloadSets asserts what an element carrying no
 // signature emits. It describes no callable, so it contributes no member.
 func TestBuildTypeAnnFromSolEmptyOverloadSets(t *testing.T) {
 	tests := map[string]soltype.ObjTypeElem{
@@ -959,7 +959,7 @@ func solIndexSig(keys, value soltype.Type) *soltype.MappedElem {
 	}
 }
 
-// TestRefNameFromSol pins how a registry key becomes a name TypeScript can write.
+// TestRefNameFromSol asserts how a registry key becomes a name TypeScript can write.
 func TestRefNameFromSol(t *testing.T) {
 	tests := map[string]struct {
 		qualifiedName string
@@ -983,7 +983,7 @@ func TestRefNameFromSol(t *testing.T) {
 	}
 }
 
-// TestArityTrimNeedsThePreludePrefix pins what the arity trim keys off: the
+// TestArityTrimNeedsThePreludePrefix asserts what the arity trim keys off: the
 // package the reference was declared in, which the builder knows only from the
 // prelude prefix it was given.
 //
@@ -1014,9 +1014,9 @@ func TestArityTrimNeedsThePreludePrefix(t *testing.T) {
 	})
 }
 
-// TestBuildTypeAnnFromSolUnnamedTypeParam pins a type parameter its binder left
-// unnamed. Nothing can render a reference to it, so it falls back to `unknown`
-// rather than binding the empty name.
+// TestBuildTypeAnnFromSolUnnamedTypeParam asserts that a type parameter its binder
+// left unnamed falls back to `unknown`. Nothing can render a reference to it, so
+// binding the empty name is not an option.
 func TestBuildTypeAnnFromSolUnnamedTypeParam(t *testing.T) {
 	v := &soltype.TypeVarType{
 		ID: 1, Level: 1, LowerBounds: nil, UpperBounds: nil, Open: false, Widenable: false,
@@ -1026,7 +1026,7 @@ func TestBuildTypeAnnFromSolUnnamedTypeParam(t *testing.T) {
 		renderSolWithParams(t, solObj(solProp("value", v)), []*soltype.TypeParam{unnamed}))
 }
 
-// TestReferencesMappedKey pins the walk that decides whether an index signature
+// TestReferencesMappedKey asserts the walk that decides whether an index signature
 // keeps the key name its source wrote.
 func TestReferencesMappedKey(t *testing.T) {
 	key := &soltype.MappedKeyType{ID: 7, Name: "K"}

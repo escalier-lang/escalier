@@ -70,7 +70,7 @@ func runCoOcc(body soltype.Type) (map[int]occPolarity, map[coKey]set.Set[int]) {
 
 // The co-occurrence pass records a UNION of per-group peers, and the merge decision
 // is made by mutualCoOcc's bidirectional, all-polarities check — not by membership
-// in any single group. This pins that semantics on the `outer` shape: param a flows
+// in any single group. This asserts that semantics on the `outer` shape: param a flows
 // to result vars b and c, both returned in a tuple.
 //
 // gatherGroup follows a transitive but ASYMMETRIC closure, so at positive polarity a

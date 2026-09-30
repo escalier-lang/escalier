@@ -516,7 +516,7 @@ func TestObjectMember(t *testing.T) {
 // declaration order and cannot reach the second, so it is insufficient on its own to
 // resolve read-versus-write member access, where obj.x reads the getter and obj.x = v
 // writes the setter. ReadMember and WriteMember, covered below, are the two lookups that
-// choose by direction. This pins Member's first-declared-wins behavior.
+// choose by direction. This asserts Member's first-declared-wins behavior.
 func TestObjectMemberGetterSetterSameName(t *testing.T) {
 	getter := &GetterElem{Name: "x", Type: numP()}
 	setter := &SetterElem{Name: "x", Param: strP()}

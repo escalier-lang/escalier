@@ -14,7 +14,7 @@ import (
 )
 
 // TestInferLifetimeTypes type-checks a program and asserts the printed
-// type of each named binding, so that we can pin down both the inferred
+// type of each named binding, so that we can assert both the inferred
 // lifetime parameters on functions and the lifetime annotations on the
 // parameter/return types.
 func TestInferLifetimeTypes(t *testing.T) {
@@ -943,7 +943,7 @@ func TestInferConstructorLifetimeTypes(t *testing.T) {
 			// detector consults src.Kind() which returns Fresh for
 			// fresh-rooted sources, so without path-based escape
 			// recognition only the alias-rooted RHS (e.g. `self.x = a`)
-			// is detected. This case pins down the new behavior.
+			// is detected. This case asserts the new behavior.
 			// Constructor params are unannotated; their types and
 			// lifetimes are inferred from the field they store into.
 			input: `

@@ -12,7 +12,7 @@ import (
 // in the mixed-ownership rows below.
 const mixedOwnershipMsg = "a union or intersection mixes owned and borrowed members. Make ownership uniform first. Clone the borrowed member to own it, or borrow the owned member."
 
-// TestInferRefUnion pins binding `f`'s rendered type when wantErrs is nil, else asserts the exact diagnostics.
+// TestInferRefUnion asserts the rendered type of binding `f` when wantErrs is nil, and the exact diagnostics otherwise.
 func TestInferRefUnion(t *testing.T) {
 	cases := []struct {
 		name     string
@@ -137,7 +137,7 @@ func TestInferRefUnion(t *testing.T) {
 	}
 }
 
-// TestInferDestructureBorrowUnion pins what a pattern binds when it takes apart a scrutinee
+// TestInferDestructureBorrowUnion asserts what a pattern binds when it takes apart a scrutinee
 // whose type is a union of borrows. Such a union carries no outermost borrow, so the peel
 // runs per member: the leaves project out of the peeled members and reach their borrow
 // through the binding mode, exactly as they do under a single `&{…}` scrutinee.
@@ -337,7 +337,7 @@ func TestInferDestructureBorrowUnion(t *testing.T) {
 	}
 }
 
-// TestBorrowUnionLeafBindsAsBorrow pins the type ONE leaf of a borrow union binds at. Each
+// TestBorrowUnionLeafBindsAsBorrow asserts the type ONE leaf of a borrow union binds at. Each
 // source destructures `p` into `v`, and the assertion is on `v` itself rather than on the
 // function's rendered type, which the surrounding returns would otherwise widen.
 //
@@ -431,7 +431,7 @@ func TestBorrowUnionLeafBindsAsBorrow(t *testing.T) {
 	}
 }
 
-// TestBorrowUnionLeafLifetime pins the lifetime a leaf of a borrow union carries. The
+// TestBorrowUnionLeafLifetime asserts the lifetime a leaf of a borrow union carries. The
 // members have no one lifetime between them, so the mode takes their join: a fresh lifetime
 // each member's is bounded above, which is what keeps a leaf from outliving the member it
 // may have been projected from. joinBorrows unites a set of returned borrows the same way.
@@ -465,7 +465,7 @@ func TestBorrowUnionLeafLifetime(t *testing.T) {
 	})
 }
 
-// TestConstrainRefUnion pins the variance of a borrow over a union pointee at the
+// TestConstrainRefUnion asserts the variance of a borrow over a union pointee at the
 // constraint level. A mutable borrow is invariant in its pointee, an immutable borrow
 // factors covariantly, and a bare owned union auto-borrows into a borrow destination.
 func TestConstrainRefUnion(t *testing.T) {

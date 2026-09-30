@@ -185,7 +185,7 @@ func TestLifetimeUnificationByInference(t *testing.T) {
 // that have no script equivalent, because the relevant LifetimeValues
 // are only constructed via internal mechanisms (the alias tracker
 // today does not attach LifetimeValues to ordinary call arguments —
-// only `'static` is reachable from source). These cases pin the
+// only `'static` is reachable from source). These cases assert the
 // internal contract directly.
 func TestUnifyLifetimesUnit(t *testing.T) {
 	// Two missing lifetimes is degenerate input: no script can produce
@@ -248,7 +248,7 @@ func TestUnifyLifetimesUnit(t *testing.T) {
 	// direction (caller passes a non-static, callee declares
 	// `'static`). The reverse direction can't be expressed in source —
 	// there's no syntax for a caller to construct a `'static` value
-	// and pass it to a non-static parameter. Asserted directly to pin
+	// and pass it to a non-static parameter. Asserted directly to cover
 	// the symmetry.
 	t.Run("static_absorbs_concrete", func(t *testing.T) {
 		c := NewChecker(context.Background())
@@ -375,7 +375,7 @@ func TestSubstituteLifetimes(t *testing.T) {
 	// Substitution traversing through a `MutType` wrapper into the
 	// inner object's lifetime is exercised end-to-end by every call
 	// site involving `mut 'a T` types. From a script, you can confirm
-	// the call type-checks, but you can't pin the precise rebuilt-
+	// the call type-checks, but you can't assert the precise rebuilt-
 	// type structure: pruning, printing, and subsequent unification
 	// all flatten the result. Asserted directly so the walker's
 	// recursion through MutType is locked in.
@@ -404,7 +404,7 @@ func TestSubstituteLifetimes(t *testing.T) {
 	// (lifetime-bearing type-alias instantiation, manual map
 	// construction by callers other than instantiateGenericFunc) ever
 	// produced colliding IDs, and unit-testing it directly is the
-	// only way to pin the masking behavior since well-behaved
+	// only way to assert the masking behavior since well-behaved
 	// instantiation never triggers it.
 	t.Run("inner_func_masks_shadowed_lifetime_param", func(t *testing.T) {
 		outerVar := &type_system.LifetimeVar{ID: 1, Name: "a"}

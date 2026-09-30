@@ -25,7 +25,7 @@ func TestPreludeOverridesCallableOnNonMutReceiver(t *testing.T) {
 			declare val o: Object
 			val s = o.toString()
 		`,
-		// stripIteratorReceiverPolarity pins these: [Symbol.iterator]
+		// These cases cover stripIteratorReceiverPolarity: [Symbol.iterator]
 		// and [Symbol.asyncIterator] are non-mutating on the source, so
 		// they must be visible on a non-mut receiver. Pre-fix, these
 		// were only callable via the asMutReceiver wrap inside

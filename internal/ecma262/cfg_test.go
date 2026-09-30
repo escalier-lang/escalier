@@ -268,7 +268,7 @@ func TestOpaqueNodesCarryStepText(t *testing.T) {
 // A regeneration that stopped recognizing a step would put an opaque node back
 // here, and the function would report nothing but the fact that a step was
 // unreadable. The serializer's own run fails when a phrasing stops matching the
-// number of steps it was reviewed against. This pins what the committed graph
+// number of steps it was reviewed against. This asserts what the committed graph
 // carries, which is what the analysis reads.
 func TestGraphCarriesTheStepsReadFromProse(t *testing.T) {
 	tests := map[string]struct {

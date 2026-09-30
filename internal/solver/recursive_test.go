@@ -34,7 +34,7 @@ func muKnot(id int, name string, body func(ref *soltype.RecursiveVarType) soltyp
 //
 // Every source here puts nothing between the recursive call and the value the body builds, so none
 // of these functions returns when called. The types are right all the same, since no finite value
-// inhabits a knot with no base case, and what is being pinned is the rendering rather than a program
+// inhabits a knot with no base case, and what these cases assert is the rendering rather than a program
 // anyone runs. checkCanReturn rejects each source for that reason, so every case carries the
 // diagnostic it draws beside the type. TestInferGuardedRecursionRendersMuKnot covers the shapes that
 // do return.
@@ -61,7 +61,7 @@ func TestInferRecursiveRendersMuKnot(t *testing.T) {
 			wantErrs: []string{nonReturningMsg("1:4-1:5", "f", "fn () -> [μX0.[X0]]")},
 		},
 		{
-			// The diagnostic renders the same display type this case pins, quantifier and all, since
+			// The diagnostic renders the same display type this case asserts, quantifier and all, since
 			// checkCanReturn reads the whole signature through coalesceScheme.
 			name:     "knot beside a retained type parameter",
 			src:      `fn f(x) { return {next: f(x), value: x} }`,
@@ -107,7 +107,7 @@ func TestInferRecursiveRendersMuKnot(t *testing.T) {
 // terminator sits inside the μ form rather than beside it. A lambda defers the recursive call until
 // something forces it, and the knot then closes through that lambda's return type.
 //
-// The rendering is what these pin. Without a μ form each recursive position collapses to the
+// The rendering is what these cases assert. Without a μ form each recursive position collapses to the
 // polarity identity, so a linked list inferred from a builder reads `{head: number, tail: never}`
 // and says nothing about the list.
 func TestInferGuardedRecursionRendersMuKnot(t *testing.T) {
@@ -221,7 +221,7 @@ func TestInferGuardedRecursionRendersMuKnot(t *testing.T) {
 //
 // A read and a generic call run on the RAW bound graph instead. instantiate freshens a scheme's
 // Body, not its coalesced display, so no knot exists while the member chain, the destructuring
-// pattern, or the type parameter is being solved. Those cases pin that the recursive shape survives
+// pattern, or the type parameter is being solved. Those cases assert that the recursive shape survives
 // the round trip and still renders as a knot once the resulting binding is displayed.
 //
 // Building a knot needs an unguarded recursion, so every source here also draws checkCanReturn's
@@ -314,7 +314,7 @@ func TestInferRecursiveThroughSourcePaths(t *testing.T) {
 	}
 }
 
-// TestCoalesceRecursiveVarPolarities pins the two coalescing rules directly on a hand-built cyclic
+// TestCoalesceRecursiveVarPolarities asserts the two coalescing rules directly on a hand-built cyclic
 // bound graph, without the extra variable layer a real call site introduces.
 //
 // A variable whose bound mentions itself in the SAME polarity it was entered at ties a knot. One
@@ -358,7 +358,7 @@ func TestCoalesceRecursiveVarPolarities(t *testing.T) {
 	})
 }
 
-// TestEqualTypeRecursive pins the alpha-equivalence rule: two knots are equal when their bodies
+// TestEqualTypeRecursive asserts the alpha-equivalence rule: two knots are equal when their bodies
 // match under a pairing of their binders, so binder ids and names carry no weight. The bijection
 // must be consistent, so two knots that name their binders at different positions are not equal.
 func TestEqualTypeRecursive(t *testing.T) {
@@ -417,7 +417,7 @@ func TestEqualTypeRecursive(t *testing.T) {
 	}
 }
 
-// TestConstrainRecursiveUnfolds pins the constrain arm. A knot is transparent, so a constraint on
+// TestConstrainRecursiveUnfolds asserts the constrain arm. A knot is transparent, so a constraint on
 // one runs against its one-level unfolding. Two knots compared against each other close
 // coinductively through the seen-set. Unfolding substitutes the knot's own pointer, so the pair the
 // recursion returns to is the pair the seen-set already holds.
@@ -468,7 +468,7 @@ func TestConstrainRecursiveUnfolds(t *testing.T) {
 	})
 }
 
-// TestDescribeRecursive pins the raw mid-constrain renderer's knot arms, so a diagnostic naming a
+// TestDescribeRecursive asserts the raw mid-constrain renderer's knot arms, so a diagnostic naming a
 // knot reads as the μ form rather than describe's default `?`. describe is the second per-node type
 // renderer beside soltype.Print, and both must carry every kind.
 func TestDescribeRecursive(t *testing.T) {
@@ -480,7 +480,7 @@ func TestDescribeRecursive(t *testing.T) {
 	require.Equal(t, "r7", describe(&soltype.RecursiveVarType{ID: 7}))
 }
 
-// TestExtrudeRecursiveKeepsBinder pins that a knot crosses a level boundary intact. LevelOf reads
+// TestExtrudeRecursiveKeepsBinder asserts that a knot crosses a level boundary intact. LevelOf reads
 // the body and skips the binder, so the prune descends to freshen the body's out-of-level variable
 // while the binder and every reference to it are left alone. If the binder were an inference
 // variable, extrude would freshen it and desync it from its uses in the body.
@@ -510,7 +510,7 @@ func TestExtrudeRecursiveKeepsBinder(t *testing.T) {
 	require.Equal(t, 0, fresh.Level)
 }
 
-// TestUnfoldRecursiveShadowing pins the substitution's binding discipline: a nested knot rebinding
+// TestUnfoldRecursiveShadowing asserts the substitution's binding discipline: a nested knot rebinding
 // the same id shadows the outer binding, so its references stay bound to it. Coalescing numbers
 // binders per walk, so two walks whose display types are composed into one type can each contribute
 // a knot bound to id 0, which is what makes the case worth guarding.
@@ -528,7 +528,7 @@ func TestUnfoldRecursiveShadowing(t *testing.T) {
 		soltype.Print(unfoldRecursive(shadowed)))
 }
 
-// TestConstrainRecursiveSeenSetCloses pins that the coinductive close is what makes a recursive
+// TestConstrainRecursiveSeenSetCloses asserts that the coinductive close is what makes a recursive
 // comparison terminate rather than the unwrap budget. A budget cut-off would surface an
 // ExpansionLimitError, so an empty error list proves the seen-set closed the derivation.
 func TestConstrainRecursiveSeenSetCloses(t *testing.T) {

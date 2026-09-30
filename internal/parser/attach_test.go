@@ -311,7 +311,7 @@ func TestAttachCommentsKeepsANonDocBlockLeading(t *testing.T) {
 }
 
 // A comment written after a parameter attaches, but not to that parameter.
-// These cases pin what the pass does today so a fix announces itself.
+// These cases assert what the pass does today so a fix announces itself.
 //
 // The pass reads nodes and line breaks and never sees the comma, so a comment
 // written before one still leads the parameter after it. See #1373.

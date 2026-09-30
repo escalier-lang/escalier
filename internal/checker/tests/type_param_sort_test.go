@@ -257,7 +257,7 @@ func TestTypeParamCyclicDependency(t *testing.T) {
 			// cycle and preserves original order without panicking" — not
 			// "inference is error-free". Cyclic constraints (e.g. `T<T: T>`)
 			// are inherently meaningless and inference does produce
-			// diagnostics; the contract this test pins is that the sort and
+			// diagnostics; the contract this test asserts is that the sort and
 			// module construction survive the cycle. We intentionally
 			// discard inferErrors here.
 			_, _ = checker.InferModule(inferCtx, module)

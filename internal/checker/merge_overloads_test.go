@@ -124,7 +124,7 @@ func TestMergeMethodOverloads_ReceiverMutMismatch_ReverseDirection(t *testing.T)
 	require.True(t, type_system.ReceiverIsMut(merged.Signatures[0]))
 }
 
-// TestMergeMethodOverloads_StableErrorOrder pins the ordering of
+// TestMergeMethodOverloads_StableErrorOrder asserts the ordering of
 // OverloadReceiverMutMismatchErrors when more than one method name
 // has a mismatch. Go map iteration is randomized per-run, so iterating
 // indicesByName directly would expose this test to flakes.

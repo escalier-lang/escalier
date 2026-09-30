@@ -90,7 +90,7 @@ func TestInferMemberAssignWrittenAndEscapingReadField(t *testing.T) {
 // Write-after-read on the SAME field needs no `written`-map support: the read mints
 // `T0` and constrains `obj <: {x: T0}`, the later write adds `obj <: mut {x: number}`,
 // and the two upper bounds merge so the field folds to `T0 & number`. The read's
-// value (returned `x`) stays `T0`. This pins the plan's claim that write-after-read
+// value (returned `x`) stays `T0`. This asserts the plan's claim that write-after-read
 // falls out of ordinary constraint accumulation, the reverse of read-after-write.
 func TestInferMemberAssignWriteAfterRead(t *testing.T) {
 	values, _, errs := inferSource(t, `fn foo(obj) { val x = obj.x

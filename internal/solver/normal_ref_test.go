@@ -40,7 +40,7 @@ func normScheme(c *Context, ty soltype.Type) string {
 	return soltype.PrintAsScheme(c.mkDNF(ty, soltype.Positive).toType())
 }
 
-// TestRefAtomMerge pins which pairs of borrow atoms fuse and what the fusion
+// TestRefAtomMerge asserts which pairs of borrow atoms fuse and what the fusion
 // carries. Each row unions or intersects two borrows and asserts the normal form.
 func TestRefAtomMerge(t *testing.T) {
 	tests := []struct {
@@ -220,7 +220,7 @@ func TestRefAtomMerge(t *testing.T) {
 	}
 }
 
-// TestRefLifetimeCombination pins the lifetime half of the merge on its own, one
+// TestRefLifetimeCombination asserts the lifetime half of the merge on its own, one
 // pair of lifetimes at a time. The atom merges reach these two functions only in
 // the order sortAtoms puts the borrows in, so a table over the pairs is what
 // states the rule in both argument orders.
@@ -317,7 +317,7 @@ func TestNegatedBorrowNormalizes(t *testing.T) {
 	})
 }
 
-// TestNegationInsideBorrowNormalizes pins the case the invariant leaves alone. A
+// TestNegationInsideBorrowNormalizes asserts the case the invariant leaves alone. A
 // complement INSIDE a borrow sits in the pure type sort, which RefInner already
 // admits through UnionType and IntersectionType, so it normalizes by the ordinary
 // rules while the wrapper stays opaque.
@@ -338,7 +338,7 @@ func TestNegationInsideBorrowNormalizes(t *testing.T) {
 		soltype.PrintAsScheme(c.normalizeDeep(ref, soltype.Positive)))
 }
 
-// TestBorrowNarrowingKeepsBorrowsWhole pins the rule a complement over a borrow
+// TestBorrowNarrowingKeepsBorrowsWhole asserts the rule a complement over a borrow
 // rests on: normalization never takes a borrow wrapper apart. A borrow reaches the
 // normal-form layer as ONE atom and is handed straight back to the structural
 // rules, which is what keeps the RefType arm of constrain the only code that reads
@@ -373,7 +373,7 @@ func TestBorrowNarrowingKeepsBorrowsWhole(t *testing.T) {
 	require.Empty(t, sub.Conjuncts[0].Rnf.Atoms, "no borrow reaches a negated part")
 }
 
-// TestNegationIsNotBorrowable pins the other half of the invariant: no borrow can
+// TestNegationIsNotBorrowable asserts the other half of the invariant: no borrow can
 // point AT a complement either, so `&~T` cannot be built in the first place. A
 // complement names no allocated value, so there is nothing there to borrow.
 func TestNegationIsNotBorrowable(t *testing.T) {
@@ -383,7 +383,7 @@ func TestNegationIsNotBorrowable(t *testing.T) {
 	require.False(t, soltype.BorrowableType(complement))
 }
 
-// TestBorrowDisjointFromValueAtoms pins the disjointness rule that lets a meet decide
+// TestBorrowDisjointFromValueAtoms asserts the disjointness rule that lets a meet decide
 // a borrow against a primitive. A borrow over an object, a tuple, or a class instance
 // admits none of the values a primitive or an absence marker admits, so the two are
 // disjoint and their meet is `never`.
@@ -432,7 +432,7 @@ func TestBorrowDisjointFromValueAtoms(t *testing.T) {
 	}
 }
 
-// TestBorrowOverAnUnsettledCarrierIsNotDisjoint pins the gate the disjointness rule
+// TestBorrowOverAnUnsettledCarrierIsNotDisjoint asserts the gate the disjointness rule
 // needs to stay sound. RefType.Accept PEELS the wrapper when a rewritten inner leaves
 // the RefInner set, so a borrow over a carrier that can still become a primitive is not
 // yet a borrow of anything.
@@ -461,7 +461,7 @@ func TestBorrowOverAnUnsettledCarrierIsNotDisjoint(t *testing.T) {
 	}
 }
 
-// TestBorrowAndPrimitiveJoinKeepsBothMembers pins the dual. Disjointness makes the MEET
+// TestBorrowAndPrimitiveJoinKeepsBothMembers asserts the dual. Disjointness makes the MEET
 // empty and says nothing about the join, so a union of the two keeps both members. No
 // borrow absorbs a primitive the way `number` absorbs `5`.
 func TestBorrowAndPrimitiveJoinKeepsBothMembers(t *testing.T) {

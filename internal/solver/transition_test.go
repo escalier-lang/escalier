@@ -187,7 +187,7 @@ func TestStaticEscapeTransition(t *testing.T) {
 	// This one has no faithful Escalier form. The escape's mutability IS the source
 	// borrow's own mutability, so a mutable escape and an immutable transition source
 	// cannot coexist on one variable. An immutable binding sharing a value with a
-	// mutable escaped one would itself be a Rule 1 transition. The unit test pins the
+	// mutable escaped one would itself be a Rule 1 transition. The unit test asserts the
 	// mutable escape directly on the immutable source to isolate the polarity check that
 	// escMut must equal sourceMut.
 	t.Run("MutEscape_DoesNotTriggerRule2", func(t *testing.T) {
@@ -291,7 +291,7 @@ func TestGlobalWriteMutTransition(t *testing.T) {
 	// and the CALLER may keep a live mutable alias to the same value and mutate it after
 	// the call, so the immutable `sink` observes a mutation. Catching that needs the call
 	// site to enforce the 'static borrow as unique, which is the borrow checker's job
-	// (#618, #762), not this pass. The assertion pins current behavior and is expected to
+	// (#618, #762), not this pass. The assertion covers current behavior and is expected to
 	// gain an error once the caller-side check lands.
 	t.Run("dead_in_body_source_no_inbody_conflict", func(t *testing.T) {
 		_, _, errs := inferSource(t, `

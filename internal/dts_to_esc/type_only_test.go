@@ -159,7 +159,7 @@ func TestUnreferencedDOMTypes_MatchesThePinnedLibSet(t *testing.T) {
 	require.Equal(t, acknowledged, orphans)
 }
 
-// TestAnalyzeTypeOnlyRouting_ReadsTemplateLiteralInterpolations pins
+// TestAnalyzeTypeOnlyRouting_ReadsTemplateLiteralInterpolations asserts
 // the one place a reference hides from a walk that stops at the type
 // annotation's surface. lib.dom.d.ts writes every reference to
 // `AutoFillSection` inside an interpolation:
@@ -214,7 +214,7 @@ interface Deflt { size: number; }
 	}, routing.SoleReferrer)
 }
 
-// TestReportTypeOnlyRouting_Renders pins the report's text. The other
+// TestReportTypeOnlyRouting_Renders asserts the report's text. The other
 // report tests assert an empty one, which says nothing about what a
 // finding looks like when there is one.
 //

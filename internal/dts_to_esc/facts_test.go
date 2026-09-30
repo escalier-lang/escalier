@@ -20,7 +20,7 @@ import (
 // converts. A method no fact addresses is left out: the name tiers answer it,
 // and what they answer is not what this measures.
 //
-// The count is pinned alongside, because a fact tier that stopped firing would
+// The count is asserted alongside, because a fact tier that stopped firing would
 // leave the receivers agreeing with the heuristics on most of these names and
 // show up here as a drop rather than as a mismatch. It moves when the pinned
 // lib set or the committed graph does.

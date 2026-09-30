@@ -347,7 +347,7 @@ __REMOVE_ELEM__: list`))
 // handed, so charging it with the seeded operation's mutations would claim a
 // write the callback may never perform.
 //
-// This pins the order of those two checks. The graph holds callbacks, and
+// This asserts the order of those two checks. The graph holds callbacks, and
 // `chargeUnresolved` treats them as unreadable bodies on every one, but none
 // carries a seeded name, so reversing the order would leave every real answer
 // and every tally unchanged. `TestGraphHoldsNoneOfTheHandWrittenShapes` is what

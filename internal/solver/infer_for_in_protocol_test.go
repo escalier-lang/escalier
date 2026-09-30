@@ -404,7 +404,7 @@ func TestYieldFromInAnAsyncBodyReadsTheAsyncMember(t *testing.T) {
 
 // A chain of aliases is followed to the nominal reference at its end, and a chain that
 // returns to a name it already walked stops rather than looping. The degenerate aliases
-// below draw a productivity report of their own; what this pins is that the slot read
+// below draw a productivity report of their own; what this asserts is that the slot read
 // terminates and still answers.
 func TestForInFollowsAnAliasChainWithoutLooping(t *testing.T) {
 	tests := []struct {

@@ -174,7 +174,7 @@ func TestInferInexactTupleRest(t *testing.T) {
 			_, _, viaMarker := inferSource(t, inexactFn+"val r = "+tt.call)
 			// Compared without spans, since the two declarations differ in length and the
 			// point here is that the two spellings agree on what they report. The spans for
-			// these diagnostics are pinned by the ground-tuple cases above.
+			// these diagnostics are asserted by the ground-tuple cases above.
 			require.Equal(t, tt.want, Messages(viaTuple), "through the inexact tuple rest")
 			require.Equal(t, tt.want, Messages(viaMarker), "through the inexact function")
 		})

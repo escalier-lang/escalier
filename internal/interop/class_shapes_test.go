@@ -245,7 +245,7 @@ func TestRecoverClassShapesEscalierClassWithNonObjectTypeAlias(t *testing.T) {
 	// aliases a non-object type (the alias can't be the instance shape).
 	// Per RecoverClassShapes's documented behavior, class shapes consume both
 	// the type and value side at the shared name — the unrelated type
-	// alias is intentionally not surfaced as a Free entry. This pins
+	// alias is intentionally not surfaced as a Free entry. This asserts
 	// that invariant so future "preserve the type entry" changes can't
 	// silently shadow a class binding.
 	ctorFn := type_system.NewFuncType(nil, nil, nil, type_system.NewNumPrimType(nil), nil)

@@ -481,7 +481,7 @@ fn f(p: {x: number}) {
 
 // `&mut p` as an argument into a `&mut` parameter on an owned-mutable receiver
 // type-checks. The same source written `use(p)` also checks via auto-borrow, so
-// this pins the explicit-borrow form as an alternative spelling.
+// this asserts the explicit-borrow form as an alternative spelling.
 func TestInferBorrowMutExprAsArgumentIntoMutBorrowParam(t *testing.T) {
 	src := `fn use(o: &mut {x: number}) -> number {
   return o.x

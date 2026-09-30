@@ -105,7 +105,7 @@ func TestCompilePackageWritesDespiteATypeError(t *testing.T) {
 	require.Error(t, err)
 	// Reported as a span beside a message, the shape the parse-error path uses. The span
 	// carries a SourceID derived from a per-run temp path, so the message and the count
-	// are what is pinned.
+	// are what the test asserts.
 	var typeErrs []struct {
 		Message string `json:"message"`
 	}

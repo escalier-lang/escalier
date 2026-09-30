@@ -287,7 +287,7 @@ func TestConstrainUnionSuperPreservesBorrowEscape(t *testing.T) {
 		errs[0].Message())
 }
 
-// TestBorrowEscapePromotionByPeeledInner pins the firing condition for both the
+// TestBorrowEscapePromotionByPeeledInner asserts the firing condition for both the
 // single-trial RefType arm and the union-level promotion. BorrowEscapeError is
 // emitted only when peeling the borrow's inner would have satisfied the
 // destination — when the lifetime is the genuine blocker. When the inner is

@@ -204,7 +204,7 @@ func TestScriptTransitionParity(t *testing.T) {
 	}
 }
 
-// TestScriptLinearScoping pins the defining difference between a script and a
+// TestScriptLinearScoping asserts the defining difference between a script and a
 // module: a script's top-level statements are a linear body, so a binding sees only
 // the ones before it. The same source that forward-references a later binding is an
 // "Unknown identifier" error as a script but type-checks as a module, where
@@ -308,7 +308,7 @@ func TestScriptBorrowLifetimeParity(t *testing.T) {
 	require.Equal(t, scriptValues["id"], moduleValues["id"])
 }
 
-// TestScriptAwaitOutsideAsync pins the top-level `await` diagnostic. A script has no
+// TestScriptAwaitOutsideAsync asserts the top-level `await` diagnostic. A script has no
 // enclosing function to mark `async`, so the error carries no related span. That
 // matches a module top-level await, rather than pointing Related() at the whole
 // script. This guards InferScript passing a nil funcCtx node.

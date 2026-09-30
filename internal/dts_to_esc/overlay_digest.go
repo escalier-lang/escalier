@@ -65,7 +65,7 @@ type OverlayDigest struct {
 //
 // A `replace` forks its target. The overlay wins by construction, so a
 // change upstream stops reaching the output. The digest is what turns
-// that silence into a failed run. It pins the converted form the
+// that silence into a failed run. It records the converted form the
 // overlay was written against, and a run compares the two.
 //
 // A recording run keeps each digest as the current answer instead of
@@ -120,7 +120,7 @@ func (dp *digestPass) compute(f OverlayFile, key digestKey, forms []string) erro
 }
 
 // finish closes the pass over one overlay file, reporting a recorded
-// entry the file no longer replaces. Such an entry pins a form nothing
+// entry the file no longer replaces. Such an entry records a form nothing
 // reads. A recording run rewrites the sidecar from what the file
 // replaces now, so it has nothing to report.
 func (dp *digestPass) finish(f OverlayFile) error {

@@ -9,7 +9,7 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-// TestParseMethodReceiverForms pins the six receiver spellings a method accepts and the
+// TestParseMethodReceiverForms asserts the six receiver spellings a method accepts and the
 // receiver each one parses to. A borrow is written with `&`, and its lifetime precedes
 // `mut` the way it does in a borrow type annotation. A consuming receiver writes no `&`.
 func TestParseMethodReceiverForms(t *testing.T) {
@@ -53,7 +53,7 @@ func TestParseMethodReceiverForms(t *testing.T) {
 	}
 }
 
-// TestParseMutableConsumingReceiverIsNotAParameter pins that `mut self` reads as a receiver
+// TestParseMutableConsumingReceiverIsNotAParameter asserts that `mut self` reads as a receiver
 // while `mut x` stays an ordinary mutable parameter. Both start with `mut`, so the receiver
 // probe has to give the tokens back when no `self` follows.
 func TestParseMutableConsumingReceiverIsNotAParameter(t *testing.T) {
@@ -96,7 +96,7 @@ func TestParseMutableConsumingReceiverIsNotAParameter(t *testing.T) {
 	}
 }
 
-// TestParseReceiverDiagnostics pins the receivers the parser reports. A lifetime belongs on a
+// TestParseReceiverDiagnostics asserts the receivers the parser reports. A lifetime belongs on a
 // borrow, so writing one on a consuming receiver names the borrow it meant. A constructor fills
 // in the instance it is handed, so only `&mut self` is accepted there.
 func TestParseReceiverDiagnostics(t *testing.T) {

@@ -97,7 +97,7 @@ func TestBuildBuiltinStore_DoesNotMemoizeErrors(t *testing.T) {
 	require.Equal(t, 2, calls, "build function must be re-invoked after an erroring call")
 }
 
-// TestBuiltinsDir_HasNoEscFilesYet pins the §6.A invariant. Once §6.B
+// TestBuiltinsDir_HasNoEscFilesYet asserts the §6.A invariant. Once §6.B
 // starts adding override `.esc` files this test should be deleted (or
 // inverted to assert non-empty coverage).
 func TestBuiltinsDir_HasNoEscFilesYet(t *testing.T) {
@@ -112,7 +112,7 @@ func TestBuiltinsDir_HasNoEscFilesYet(t *testing.T) {
 		if d.IsDir() {
 			// Skip the stdlib scheme subtrees — those belong to the
 			// builtins (FR1-FR16) workstream, not the override system
-			// this invariant pins.
+			// this invariant covers.
 			if p != root && isStdlibSchemeSubtree(filepath.Base(p), "") {
 				return filepath.SkipDir
 			}

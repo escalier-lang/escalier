@@ -603,7 +603,7 @@ exclusivity.
   in the post-pass, so the inline check and the separate reconciliation collapse
   into one lattice-driven pass. With that done, the
   [internal/solver/transition_test.go](../../internal/solver/transition_test.go)
-  static-escape unit tests, which pin the M4 G2 `borrowEscapedToStatic` self-conflict
+  static-escape unit tests, which assert the M4 G2 `borrowEscapedToStatic` self-conflict
   the move now subsumes, can be retired or rephrased as phase tests.
 
 Tests: the thaw example with a use-after-move on the immutable source; the
@@ -922,7 +922,7 @@ done as one focused change rather than dripped into the move-engine PRs.
   deep-mut behaviour stay; only their rendered strings update.
 
 Tests: the PR 13 acceptance tests still pass with the rendered strings switched to
-the surface form. Two new tests pin the constrain-side rule: `mut {a: {x: number}}`
+the surface form. Two new tests assert the constrain-side rule: `mut {a: {x: number}}`
 and `mut {a: {y: number}}` are incomparable under the lazy form when the outer is
 mut, matching the eager form's invariance, while the same shapes are subtypes under
 an immutable wrapper. A diagnostic that previously rendered through the elision pass

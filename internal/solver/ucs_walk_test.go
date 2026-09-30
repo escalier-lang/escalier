@@ -7,9 +7,9 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-// These cases pin what the walk over the normalized form is responsible for: first-match
+// These cases assert what the walk over the normalized form is responsible for: first-match
 // order, arm scoping, and typing each arm exactly once however many paths the normalized
-// form reaches it by. The inferred types and messages a `match` produces are pinned by the
+// form reaches it by. The inferred types and messages a `match` produces are asserted by the
 // pattern suites instead, in infer_pattern_test.go, infer_pattern_nominal_test.go,
 // infer_pattern_mut_test.go, and the match cases in infer_expr_test.go.
 
@@ -170,7 +170,7 @@ func TestInferMatchArmBindingDoesNotEscape(t *testing.T) {
 //
 // This says nothing about how many times the target runs. Evaluating it once is a
 // property of the shared *ucs.Scrutinee node every projection hangs off, which
-// TestPathBinderMaterializesEachScrutineeOnce pins on the solver side.
+// TestPathBinderMaterializesEachScrutineeOnce asserts on the solver side.
 func TestInferMatchInfersTheTargetOnce(t *testing.T) {
 	_, _, errs := inferSource(t, `
 		fn g(s: string) { return {x: 1} }

@@ -14,7 +14,7 @@ import (
 // The tests below hand-build IR for the worked examples in
 // planning/ucs/implementation_plan.md, then lock the printer's rendering with an
 // inline snapshot. They construct each term directly rather than running a desugarer
-// or a normalizer over source, so a snapshot pins the printer's output for a shape
+// or a normalizer over source, so a snapshot asserts the printer's output for a shape
 // the test states outright.
 
 // In a literal match the catch-all arm is still an ordinary branch of the core.
