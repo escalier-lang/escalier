@@ -699,11 +699,10 @@ func (c *Context) recordMethodLifetimes(obj *soltype.ObjectType, classLts set.Se
 // through the same copy.
 //
 // When recv holds a borrow and a signature's receiver borrows at a freshened lifetime, every
-// borrow recv may hold must outlive it, which is what passing a borrow to a `&'a` parameter
-// requires.
-// `v.peek()` on `v: &'r View` for `peek<'a>(&'a self) -> &'a T` then returns a borrow no
-// longer-lived than 'r. An owned receiver is borrowed for the call at the fresh lifetime, the
-// way `&v` is, so it adds no constraint.
+// borrow recv may hold must outlive that lifetime, as an argument passed to a `&'a`
+// parameter must. For `peek<'a>(&'a self) -> &'a T`, `v.peek()` on `v: &'r View` then
+// returns a borrow no longer-lived than 'r. An owned receiver is borrowed for the call at the
+// fresh lifetime, the way `&v` is, so it adds no constraint.
 //
 // A member other than a method is returned unchanged.
 func (c *checker) instantiateMethodLifetimes(lvl int, blame ast.Node, recv soltype.Type, member soltype.ObjTypeElem) soltype.ObjTypeElem {
@@ -728,9 +727,10 @@ func (c *checker) instantiateMethodLifetimes(lvl int, blame ast.Node, recv solty
 			continue
 		}
 		if orig, ok := sig.SelfParam.Type.(*soltype.RefType); ok && orig.Lt != self.Lt {
-			// Relate the two the way an argument relates to a `&'a` parameter. The borrow is
-			// read as shared, since checkReceiverMut has already answered whether the
-			// receiver lends the mutability the member asks for.
+			// Constrain each held borrow against a shared borrow at the fresh lifetime, the
+			// check an argument passed to a `&'a` parameter goes through. Shared is enough
+			// here, since checkReceiverMut has already checked that the receiver lends the
+			// mutability the member asks for.
 			for _, b := range held {
 				c.constrain(blame, b, soltype.NewRef(false, self.Lt, b.Inner))
 			}
