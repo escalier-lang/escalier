@@ -150,12 +150,11 @@ func TestSharedReturnPaths(t *testing.T) {
 			`,
 			want: nil,
 		},
-		// DISABLED until #1600, and until a borrow written in a return counts as its own read.
-		// This case reports today for two reasons. The literal walk reads a.peer as a path that
-		// does not write, because a borrow edge records no mutability. With that report gone, the
-		// use check still flags the b in the returned `&mut b` as a use while a's store loan is
-		// live, since only a borrow in an initializer or a call argument is noted as the read
-		// that takes its own loan. Once both are fixed, the case checks.
+		// DISABLED until #1600 and #1745. This case reports today for two reasons. The literal
+		// walk reads a.peer as a path that does not write, because a borrow edge records no
+		// mutability. That is #1600. With that report gone, the use check still flags the b in
+		// the returned `&mut b` as a use while a's store loan is live. That is #1745. Once both
+		// land, the case checks.
 		/*
 			// The first repro in #1263, where a call's store effect is what aliases the two paths
 			// rather than an initializer. The store leaves a.peer reaching b, so the tuple hands
