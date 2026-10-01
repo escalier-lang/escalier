@@ -32,6 +32,10 @@ func TestPrintClassElem(t *testing.T) {
     indexOf(&self, item: T) -> number,
     get first(&self) -> T,
     set first(&mut self, value: T),
+    view<'a>(&'a self) -> number,
+    edit<'a>(&'a mut self) -> number,
+    finish(self) -> T,
+    drain(mut self) -> T,
 }`)
 	class, ok := decl.(*ast.ClassDecl)
 	require.True(t, ok)
@@ -43,6 +47,10 @@ func TestPrintClassElem(t *testing.T) {
 		"indexOf(&self, item: T) -> number",
 		"get first(&self) -> T",
 		"set first(&mut self, value: T)",
+		"view<'a>(&'a self) -> number",
+		"edit<'a>(&'a mut self) -> number",
+		"finish(self) -> T",
+		"drain(mut self) -> T",
 	}
 	require.Len(t, class.Body, len(expected))
 	for i, want := range expected {

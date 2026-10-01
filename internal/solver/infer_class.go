@@ -1047,10 +1047,13 @@ func (c *checker) buildMemberSigs(
 			stub.SelfParam = c.selfParam(lvl, elem.Receiver, elem.Static, self)
 			method, arm := appendMethodSig(targetBody(body, static, elem.Static), name, stub, elem.Static)
 			// An overloaded method dispatches on its value arguments, so its arms must agree
-			// on receiver mutability. The receiver-mutability check reads only the first arm,
-			// so a later `mut self` arm reached from a plain-`self` body would otherwise slip
-			// past it. Reject the mixture here, where the offending arm has a span to blame.
-			if arm > 0 && selfParamMut(stub.SelfParam) != selfParamMut(method.Signatures[0].SelfParam) {
+			// on the receiver they take. The receiver check reads only the first arm, so a
+			// later `&mut self` arm reached from a `&self` body would otherwise slip past it,
+			// as would a consuming arm beside a borrowing one. Reject the mixture here, where
+			// the offending arm has a span to blame.
+			first := method.Signatures[0].SelfParam
+			if arm > 0 && (selfParamMut(stub.SelfParam) != selfParamMut(first) ||
+				selfParamConsumes(stub.SelfParam) != selfParamConsumes(first)) {
 				c.report(&MethodOverloadReceiverMismatchError{Name: name, Elem: elem})
 			}
 			pending = append(pending, pendingMember{
@@ -1090,11 +1093,11 @@ func (c *checker) buildMemberSigs(
 			}
 			c.checkSelfReceiver(name, elem, elem.Static, elem.Receiver)
 			// An instance setter mutates the instance, so it must hold mutable access to it.
-			// Report a plain `self` or shared `&self` receiver here, then keep the declared
+			// Report any receiver but `&mut self` here, then keep the declared
 			// receiver on the elem so a write through it draws only this one diagnostic. An
 			// absent receiver is checkSelfReceiver's to report, and a static setter has no
 			// instance to mutate.
-			if elem.Receiver != nil && !elem.Receiver.Mut {
+			if elem.Receiver != nil && (!elem.Receiver.Mut || elem.Receiver.Consumes()) {
 				c.report(&SetterReceiverError{Name: name, Elem: elem})
 			}
 			// A well-formed setter declares exactly one value parameter beyond `self` — the
@@ -1281,15 +1284,22 @@ func (c *checker) selfType(lvl int, recv *ast.MethodReceiver, self soltype.Type)
 	return soltype.NewRef(recv.Mut, c.ctx.freshLifetime(lvl), inner)
 }
 
-// selfParamMut reports whether a receiver grants mutable access to the instance. A `mut
-// self` receiver wraps the instance in an owned-mutable borrow, so its type is a mutable
-// RefType; a plain `self`, a shared `&self`, and a static member's absent receiver do not.
+// selfParamMut reports whether a receiver grants mutable access to the instance. A `&mut
+// self` or `mut self` receiver is a mutable RefType over the instance. A `&self` or `self`
+// receiver and a static member's absent receiver are not.
 func selfParamMut(sp *soltype.FuncParam) bool {
 	if sp == nil {
 		return false
 	}
 	r, ok := sp.Type.(*soltype.RefType)
 	return ok && r.Mut
+}
+
+// selfParamConsumes reports whether a receiver moves the instance into the call. A `self` or
+// `mut self` receiver owns the instance, so its type carries no borrow lifetime. A `&self` or
+// `&mut self` receiver borrows it, and a static member's absent receiver takes nothing.
+func selfParamConsumes(sp *soltype.FuncParam) bool {
+	return sp != nil && !isBorrowType(sp.Type)
 }
 
 // bindSelf binds the `self` identifier in a member or constructor body scope to the full

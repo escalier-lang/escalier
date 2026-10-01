@@ -1804,7 +1804,38 @@ func (c *checker) recordCallArgEffects(
 	// receiver, aliases the two for as long as the target lives. Record that edge here rather
 	// than leaving the alias invisible to the escape check and the component move.
 	recv, self := c.calleeReceiver(e.Callee)
+	c.consumeReceiver(recv, self, consumeRef)
 	c.recordCallStoreEdges(e, fn, recv, self, consumeRef)
+}
+
+// consumeReceiver moves the receiver of a call through a consuming `self` or `mut self`
+// method, recording the move at ref, the call's statement. `c.finish()` on a local `c`
+// leaves `c` unusable afterwards. A borrowed `&self` or `&mut self` receiver leaves it
+// usable, and so does a receiver that names no place, such as `make().finish()`.
+//
+// A receiver that is itself a borrow has nothing to move. checkReceiverMut rejects it at
+// the member access, so it is skipped here.
+//
+// The move is recorded directly rather than through consumeOwned. consumeOwned moves only
+// an object, tuple, or owned RefType, and a receiver is a class instance, which the move
+// engine reads as neither. The method's signature names the consuming form, so the receiver
+// is known to be owned without that test.
+func (c *checker) consumeReceiver(recv ast.Expr, self *soltype.FuncParam, ref liveness.StmtRef) {
+	if recv == nil || self == nil || isBorrowType(self.Type) {
+		return
+	}
+	if c.fn == nil || c.fn.cfg == nil || isBorrowType(c.info.TypeOf(recv)) {
+		return
+	}
+	p, ok := exprPlace(recv)
+	if !ok {
+		return
+	}
+	if c.fn.movedSources == nil {
+		c.fn.movedSources = set.NewSet[ast.Node]()
+	}
+	c.fn.movedSources.Add(recv)
+	c.recordMovePlace(p, recv, ref)
 }
 
 // ctorOverloadArms returns the signatures of an overloaded constructor when t reads as a class
@@ -2276,7 +2307,7 @@ func (c *checker) inferAccessorAssign(
 	// checks are independent.
 	c.raiseAccessorThrows(lvl, e, setter.ThrowsOrNever())
 	errsBefore := len(c.errs)
-	c.checkReceiverMut(e.Left, recv, setter.SelfParam)
+	c.checkReceiverMut(e.Left, m.Prop.Name, recv, setter.SelfParam)
 	c.constrain(e.Right, source, setter.Param)
 	// A concretely owned parameter takes the value out of this frame, so the source
 	// binding is consumed and a later use of it is a use-after-move. This mirrors

@@ -1068,6 +1068,10 @@ func TestPrintMemberTypeAnnotations(t *testing.T) {
 		{"method with receiver", "{f(&mut self, x: number) -> string}", "{\n    f(&mut self, x: number) -> string\n}"},
 		{"setter", "{set a(&mut self, v: number)}", "{\n    set a(&mut self, v: number)\n}"},
 		{"setter with plain receiver", "{set a(&self, v: number)}", "{\n    set a(&self, v: number)\n}"},
+		{"shared borrow with lifetime", "{f<'a>(&'a self) -> number}", "{\n    f<'a>(&'a self) -> number\n}"},
+		{"mutable borrow with lifetime", "{f<'a>(&'a mut self) -> number}", "{\n    f<'a>(&'a mut self) -> number\n}"},
+		{"consuming receiver", "{f(self) -> number}", "{\n    f(self) -> number\n}"},
+		{"mutable consuming receiver", "{f(mut self, x: number) -> number}", "{\n    f(mut self, x: number) -> number\n}"},
 		// An accessor that writes no receiver still prints one, so the rendered form is the
 		// `.d.ts` converter's output rather than a byte-for-byte echo of the source.
 		{"getter without a receiver", "{get a() -> number}", "{\n    get a(&self) -> number\n}"},

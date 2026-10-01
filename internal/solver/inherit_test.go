@@ -422,8 +422,8 @@ func TestInferClassOverrideCompat(t *testing.T) {
 			// receiver across every arm, so Dog's `mut self` arm is seen whichever position it
 			// is written in.
 			want: []string{
-				"Overloaded method 'f' must use the same `self` receiver mutability in every arm.",
-				"class `Dog` redeclares inherited member `f` as a method taking `mut self`, " +
+				"Overloaded method 'f' must use the same `self` receiver in every arm.",
+				"class `Dog` redeclares inherited member `f` as a method taking `&mut self`, " +
 					"but `Animal` declares it as a method",
 			},
 		},
@@ -447,7 +447,7 @@ func TestInferClassOverrideCompat(t *testing.T) {
 			// An immutable `Animal` reference can call `bump`, so a subclass cannot make the
 			// call need a mutable one.
 			want: []string{
-				"class `Dog` redeclares inherited member `bump` as a method taking `mut self`, " +
+				"class `Dog` redeclares inherited member `bump` as a method taking `&mut self`, " +
 					"but `Animal` declares it as a method",
 			},
 		},

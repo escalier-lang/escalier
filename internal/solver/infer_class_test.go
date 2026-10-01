@@ -1606,7 +1606,7 @@ func TestInferClassErrors(t *testing.T) {
 					set value(&self, x: number) { },
 				}
 			`,
-			want: "Setter 'value' must declare a `mut self` receiver; writing through it mutates the instance.",
+			want: "Setter 'value' must declare a `&mut self` receiver; writing through it mutates the instance.",
 		},
 		{
 			name: "FieldInitializerNotAllowed",
@@ -2112,7 +2112,7 @@ func TestInferMethodOverloadMixedReceiverRejected(t *testing.T) {
 	`)
 	require.Len(t, errs, 1)
 	require.Equal(t,
-		"Overloaded method 'f' must use the same `self` receiver mutability in every arm.",
+		"Overloaded method 'f' must use the same `self` receiver in every arm.",
 		errs[0].Message())
 }
 

@@ -809,8 +809,8 @@ func (e InnerNonExhaustiveMatchError) Message() string {
 	return "Non-exhaustive match: " + memberStr + " is missing inner cases for " + strings.Join(names, ", ")
 }
 
-// MissingMutSelfParameterError is reported when a constructor's `mut self`
-// parameter is missing, not declared `mut`, or has a type annotation.
+// MissingMutSelfParameterError is reported when a constructor's `&mut self`
+// parameter is missing, is not a mutable borrow, or has a type annotation.
 //
 // TODO(#571): split this into one error type per `MutSelfReason` shape —
 // the four reasons share no structural template, and three of them are
@@ -821,7 +821,7 @@ type MissingMutSelfParameterError struct {
 }
 
 // MutSelfReason enumerates the specific shapes of a malformed
-// `mut self` receiver. Typed so the message switch in `Message()` is
+// `&mut self` receiver. Typed so the message switch in `Message()` is
 // exhaustive at compile time.
 type MutSelfReason int
 
@@ -838,19 +838,19 @@ func (e MissingMutSelfParameterError) Span() ast.Span {
 func (e MissingMutSelfParameterError) Message() string {
 	switch e.Reason {
 	case MutSelfMissing:
-		return "Constructors must declare `mut self` as their first parameter."
+		return "Constructors must declare `&mut self` as their first parameter."
 	case MutSelfNotMut:
-		return "The `self` parameter of a constructor must be declared `mut self`."
+		return "The `self` parameter of a constructor must be declared `&mut self`."
 	case MutSelfHasTypeAnnotation:
-		return "The `mut self` parameter cannot have a type annotation."
+		return "The `&mut self` parameter cannot have a type annotation."
 	case MutSelfHasLifetime:
 		return "Constructors cannot have a lifetime on `self`."
 	default:
-		return "Invalid `mut self` parameter on constructor."
+		return "Invalid `&mut self` parameter on constructor."
 	}
 }
 
-// ReceiverLifetimeOutsideMemberError is reported when a `'a self`
+// ReceiverLifetimeOutsideMemberError is reported when a `&'a self`
 // annotation appears on a method/getter/setter inside a structural
 // object-type annotation (e.g. `type X = { m(&'a self) -> 'a T }`).
 // Such positions have no class/interface receiver type to attach the

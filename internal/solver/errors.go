@@ -1244,6 +1244,7 @@ func (*WriteOnlyPropertyError) isSolverError()              {}
 func (*ReadOnlyPropertyError) isSolverError()               {}
 func (*SetterArityError) isSolverError()                    {}
 func (*SetterReceiverError) isSolverError()                 {}
+func (*ConsumingReceiverBorrowedError) isSolverError()      {}
 func (*RecursiveMethodAnnotationError) isSolverError()      {}
 func (*FieldNotInitializedError) isSolverError()            {}
 func (*ReadBeforeInitError) isSolverError()                 {}
@@ -1278,10 +1279,10 @@ func (e *MissingSelfReceiverError) Message() string {
 }
 
 // MethodOverloadReceiverMismatchError fires when the arms of an overloaded method disagree
-// on their `self` receiver mutability, as when one arm declares `self` and another `mut
-// self`. Overload resolution dispatches on the value arguments rather than the receiver, and
-// the receiver-mutability check reads one representative arm, so every arm must agree on
-// whether it needs a mutable receiver. Elem is the offending arm.
+// on their `self` receiver, as when one arm declares `&self` and another `&mut self`, or one
+// borrows the instance and another consumes it. Overload resolution dispatches on the value
+// arguments rather than the receiver, and the receiver check reads one representative arm, so
+// every arm must take the same receiver. Elem is the offending arm.
 type MethodOverloadReceiverMismatchError struct {
 	Name string
 	Elem ast.ClassElem
@@ -1290,7 +1291,7 @@ type MethodOverloadReceiverMismatchError struct {
 func (e *MethodOverloadReceiverMismatchError) Span() ast.Span      { return e.Elem.Span() }
 func (e *MethodOverloadReceiverMismatchError) Related() []ast.Span { return nil }
 func (e *MethodOverloadReceiverMismatchError) Message() string {
-	return "Overloaded method '" + e.Name + "' must use the same `self` receiver mutability in every arm."
+	return "Overloaded method '" + e.Name + "' must use the same `self` receiver in every arm."
 }
 
 // WriteOnlyPropertyError fires when a setter-only member is read, as in `val v =
@@ -1827,10 +1828,11 @@ func (e *SetterArityError) Message() string {
 	return "Setter '" + e.Name + "' must declare exactly one value parameter; found " + strconv.Itoa(e.Count) + "."
 }
 
-// SetterReceiverError fires when an instance setter declares a receiver other than `mut
-// self`. Writing through a setter mutates the instance, so a plain `self` or a shared
-// `&self` receiver holds no mutable access to do it with. A static setter has no instance
-// to mutate and declares no receiver, so it never reaches this.
+// SetterReceiverError fires when an instance setter declares a receiver other than `&mut
+// self`. Writing through a setter mutates the instance, so a shared `&self` receiver holds no
+// mutable access to do it with. A consuming `self` or `mut self` receiver would move the
+// instance on every write. A static setter has no instance to mutate and declares no
+// receiver, so it never reaches this.
 type SetterReceiverError struct {
 	Name string
 	Elem *ast.SetterElem
@@ -1839,7 +1841,22 @@ type SetterReceiverError struct {
 func (e *SetterReceiverError) Span() ast.Span      { return e.Elem.Span() }
 func (e *SetterReceiverError) Related() []ast.Span { return nil }
 func (e *SetterReceiverError) Message() string {
-	return "Setter '" + e.Name + "' must declare a `mut self` receiver; writing through it mutates the instance."
+	return "Setter '" + e.Name + "' must declare a `&mut self` receiver; writing through it mutates the instance."
+}
+
+// ConsumingReceiverBorrowedError fires when a member that consumes its receiver, one declared
+// `self` or `mut self`, is reached through a borrow. Calling it would move the instance, and a
+// borrow has no instance to give up. In `fn f(p: &C) { p.finish() }` the caller still owns
+// what p points at, so `finish` cannot take it. Site is the member access.
+type ConsumingReceiverBorrowedError struct {
+	Name string
+	Site ast.Node
+}
+
+func (e *ConsumingReceiverBorrowedError) Span() ast.Span      { return e.Site.Span() }
+func (e *ConsumingReceiverBorrowedError) Related() []ast.Span { return nil }
+func (e *ConsumingReceiverBorrowedError) Message() string {
+	return "'" + soltype.DisplayMemberName(e.Name) + "' takes its receiver by value, so it moves the instance and cannot be reached through a borrow."
 }
 
 // RecursiveMethodAnnotationError fires when a group of mutually recursive methods

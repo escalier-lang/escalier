@@ -65,12 +65,12 @@ type storeEdge struct {
 // longer read what the callee writes there. A source must be a borrow too, since an owned
 // argument is moved and its escape belongs to the consuming-argument rule.
 //
-// self is the receiver of the method being called, or nil for a plain call. It sits on both
-// sides. As a target it is what a `mut self` method writes an argument into. As a source it is
-// what a method drains, since a signature sharing the receiver's lifetime with a `&mut`
-// parameter's referent says the callee may write the receiver's data out there. Either way a
-// receiver is borrowed for the call rather than moved into it, which is why the tests read it
-// differently from a parameter of the same shape.
+// self is the receiver of the method being called, or nil for a plain call. A borrowed
+// receiver is classified the way a parameter is. As a target it is what a `&mut self` method
+// writes an argument into. As a source it is what a method drains, since a signature sharing
+// the receiver's lifetime with a `&mut` parameter's referent says the callee may write the
+// receiver's data out there. A consuming `self` or `mut self` receiver is moved into the call,
+// so it is neither, the same as an owned parameter.
 //
 // Each side is classified by type kind before any type is walked, so a call over owned
 // arguments costs one pass over the parameter list and walks no type at all. Every position
@@ -81,24 +81,21 @@ type storeEdge struct {
 // none, since dropping the edge would drop the escape a borrow written there raises.
 func callStoreEdges(ctx *Context, fn *soltype.FuncType, self *soltype.FuncParam) []storeEdge {
 	var sources, targets []int
-	if self != nil {
-		sources = append(sources, selfIndex)
-		// A `mut self` receiver is a mutable RefType carrying no lifetime, the same shape an
-		// owned-mutable parameter takes. The lifetime test that rules a parameter out does
-		// not apply here, since the receiver is borrowed for the call rather than moved.
-		if ref, isRef := self.Type.(*soltype.RefType); isRef && ref.Mut {
-			targets = append(targets, selfIndex)
-		}
-	}
-	for i, p := range fn.Params {
-		ref, isRef := p.Type.(*soltype.RefType)
+	classify := func(i int, t soltype.Type) {
+		ref, isRef := t.(*soltype.RefType)
 		if !isRef || ref.Lt == nil {
-			continue
+			return
 		}
 		sources = append(sources, i)
 		if ref.Mut {
 			targets = append(targets, i)
 		}
+	}
+	if self != nil {
+		classify(selfIndex, self.Type)
+	}
+	for i, p := range fn.Params {
+		classify(i, p.Type)
 	}
 	if !storeIsPossible(sources, targets) {
 		return nil
@@ -580,22 +577,13 @@ func (c *checker) placeReferents(arg ast.Expr) []liveness.VarID {
 // storing a `&'a B` leaves the target able to read the item and not to write it, even though
 // the target itself is a mutable borrow.
 func storeSourceMut(fn *soltype.FuncType, self *soltype.FuncParam, arg int) bool {
-	if arg == selfIndex {
-		// A `mut self` receiver is a mutable RefType carrying no lifetime, the same shape an
-		// owned-mutable parameter takes. The lifetime test that rules a parameter out does not
-		// apply here, since the receiver is borrowed for the call rather than moved. This is
-		// the source-side twin of the test callStoreEdges makes when it classifies the
-		// receiver as a target.
-		if self == nil {
-			return false
-		}
-		ref, isRef := self.Type.(*soltype.RefType)
-		return isRef && ref.Mut
+	var param *soltype.FuncParam
+	switch {
+	case arg == selfIndex:
+		param = self
+	case arg >= 0 && arg < len(fn.Params):
+		param = fn.Params[arg]
 	}
-	if arg < 0 || arg >= len(fn.Params) {
-		return false
-	}
-	param := fn.Params[arg]
 	if param == nil {
 		return false
 	}

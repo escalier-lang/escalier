@@ -54,14 +54,14 @@ func ctorCallableParams(ctor *ast.ConstructorElem) []*ast.Param {
 }
 
 // validateConstructorSelf checks that the constructor's first parameter
-// is a well-formed `mut self` receiver and that the constructor does not
+// is a well-formed `&mut self` receiver and that the constructor does not
 // declare an explicit return type. Returns the diagnostics; an empty
 // slice means the signature shape is acceptable.
 //
-// `MutSelf` is the parser's truth source for whether the user wrote
-// `self` / `mut self`: nil means absent, false means `self`, true means
-// `mut self`. The first `ast.Param` (when present) carries the `self`
-// pattern itself, which is where a stray type annotation would live.
+// `Receiver` is the parser's record of the receiver the user wrote. A nil
+// receiver means none was written. The first `ast.Param`, when present,
+// carries the `self` pattern itself, which is where a stray type
+// annotation would live.
 func validateConstructorSelf(ctor *ast.ConstructorElem) []Error {
 	errors := []Error{}
 	span := ctor.Span()
@@ -69,7 +69,7 @@ func validateConstructorSelf(ctor *ast.ConstructorElem) []Error {
 	switch {
 	case ctor.Receiver == nil:
 		errors = append(errors, MissingMutSelfParameterError{Reason: MutSelfMissing, span: span})
-	case !ctor.Receiver.Mut:
+	case !ctor.Receiver.Mut || ctor.Receiver.Consumes():
 		errors = append(errors, MissingMutSelfParameterError{Reason: MutSelfNotMut, span: span})
 	}
 

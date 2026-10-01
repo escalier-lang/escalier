@@ -298,10 +298,15 @@ func isAccessor(elem soltype.ObjTypeElem) bool {
 //
 //   - it is an optional field where the inherited one is required, so it may be absent while
 //     the superclass view reads it as always present;
-//   - it takes a `mut self` receiver where the inherited one takes a plain `self`, so an
-//     immutable superclass reference can no longer reach it.
+//   - it takes a mutable receiver where the inherited one takes a shared one, so an
+//     immutable superclass reference can no longer reach it;
+//   - it consumes its receiver where the inherited one borrows it, so a borrowed superclass
+//     reference can no longer reach it.
 func formWeakens(subElem, superElem soltype.ObjTypeElem) bool {
 	if isOptional(subElem) && !isOptional(superElem) {
+		return true
+	}
+	if receiverConsumes(subElem) && !receiverConsumes(superElem) {
 		return true
 	}
 	return receiverMut(subElem) && !receiverMut(superElem)
@@ -314,10 +319,10 @@ func isOptional(elem soltype.ObjTypeElem) bool {
 }
 
 // receiverMut reports whether reaching a member needs a mutable reference to the instance. A
-// `mut self` receiver on a method, getter, or setter demands one, and a field carries no
-// receiver at all.
+// `&mut self` or `mut self` receiver on a method, getter, or setter demands one, and a field
+// carries no receiver at all.
 //
-// One `mut self` arm makes a whole overload set demand a mutable reference. buildMemberSigs
+// One mutable arm makes a whole overload set demand a mutable reference. buildMemberSigs
 // rejects a set whose arms disagree but appends the offending arm anyway, so reading a single
 // arm would answer by declaration order on exactly the input that already disagrees.
 func receiverMut(elem soltype.ObjTypeElem) bool {
@@ -333,6 +338,25 @@ func receiverMut(elem soltype.ObjTypeElem) bool {
 		return selfParamMut(elem.SelfParam)
 	case *soltype.SetterElem:
 		return selfParamMut(elem.SelfParam)
+	}
+	return false
+}
+
+// receiverConsumes reports whether reaching a member moves the instance, which a `self` or
+// `mut self` receiver does. It reads every overload arm for the reason receiverMut does.
+func receiverConsumes(elem soltype.ObjTypeElem) bool {
+	switch elem := elem.(type) {
+	case *soltype.MethodElem:
+		for _, sig := range elem.Signatures {
+			if selfParamConsumes(sig.SelfParam) {
+				return true
+			}
+		}
+		return false
+	case *soltype.GetterElem:
+		return selfParamConsumes(elem.SelfParam)
+	case *soltype.SetterElem:
+		return selfParamConsumes(elem.SelfParam)
 	}
 	return false
 }
@@ -386,17 +410,22 @@ func memberForm(elem soltype.ObjTypeElem) string {
 	case *soltype.GetterElem:
 		return mutReceiverForm("a getter", elem)
 	case *soltype.SetterElem:
-		// A setter writes, so its receiver is always `mut self` and saying so adds nothing.
+		// A setter writes, so its receiver is always `&mut self` and saying so adds nothing.
 		return "a setter"
 	}
 	return "a member"
 }
 
-// mutReceiverForm names the receiver when reaching a member needs a mutable reference, so two
-// members differing only there do not render alike.
+// mutReceiverForm names the receiver when it is anything but `&self`, so two members differing
+// only there do not render alike.
 func mutReceiverForm(base string, elem soltype.ObjTypeElem) string {
-	if receiverMut(elem) {
+	switch {
+	case receiverConsumes(elem) && receiverMut(elem):
 		return base + " taking `mut self`"
+	case receiverConsumes(elem):
+		return base + " taking `self`"
+	case receiverMut(elem):
+		return base + " taking `&mut self`"
 	}
 	return base
 }

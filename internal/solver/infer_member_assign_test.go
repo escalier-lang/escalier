@@ -283,7 +283,7 @@ func TestInferMemberAssignSetter(t *testing.T) {
 				class C { set x(&self, n: number) { } }
 				fn f(c: C) { c.x = 5 }
 			`,
-			want: []string{"2:15-2:42: Setter 'x' must declare a `mut self` receiver; writing through it mutates the instance."},
+			want: []string{"2:15-2:42: Setter 'x' must declare a `&mut self` receiver; writing through it mutates the instance."},
 		},
 		{
 			name: "mut self setter reached from a plain self body",
