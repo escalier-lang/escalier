@@ -1295,20 +1295,22 @@ func strippedMethodSig(sig *soltype.FuncType) *soltype.FuncType {
 // its `self` declares. It constrains the accessing receiver recv against the accessed member's
 // own declared `self`, which the caller passes as self.
 //
-// A borrowed receiver needs mutable access only for `&mut self`. The four pairings:
+// A member needs mutable access for `&mut self` and `mut self`. The four pairings:
 //
-//   - shared receiver  → `&mut self` member: rejected, a shared borrow has no mut to lend
-//   - mutable receiver → `&mut self` member: ok
-//   - mutable receiver → `&self` member: ok, mutable downgrades to shared
-//   - shared receiver  → `&self` member: ok
+//   - immutable receiver → mutable member: rejected, there is no mut to lend
+//   - mutable receiver   → mutable member: ok
+//   - mutable receiver   → immutable member: ok, mutable downgrades to shared
+//   - immutable receiver → immutable member: ok
 //
 // The receiver is rebuilt as `Self` in the mutability it lends, so the diagnostic reads
 // `immutable C <: mutable C`.
 //
-// A consuming `self` or `mut self` member moves the instance, so the receiver must own it and
-// its mutability does not matter. An owned receiver is moved at the access, through
-// consumeReceiver. A borrowed receiver has nothing to move, so it is reported as a
-// ConsumingReceiverBorrowedError naming the member.
+// A consuming `self` or `mut self` member moves the instance, so the receiver must also own
+// it. An owned receiver is moved at the access, through consumeReceiver. A borrowed receiver
+// has nothing to move, so it is reported as a ConsumingReceiverBorrowedError naming the
+// member. A `mut self` member still asks for a mutable receiver. Passing a class instance to
+// an owned parameter does not move it in the caller, so an immutable instance may still be
+// shared, and only a mutable binding vouches that nothing else reads it.
 //
 // recv is the un-stripped receiver, so it still carries the access it has to lend. A nil
 // self, which a static member and a property both have, is a no-op, as is a receiver that is
@@ -1327,7 +1329,6 @@ func (c *checker) checkReceiverMut(blame ast.Node, name string, recv soltype.Typ
 			return
 		}
 		c.consumeReceiver(blame)
-		return
 	}
 	recvT := soltype.Type(inner)
 	if lendsMut(recv) {

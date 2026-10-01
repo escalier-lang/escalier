@@ -98,13 +98,23 @@ func TestReceiverModes(t *testing.T) {
 			want: []string{"10:13-10:16: use of moved value 'd'"},
 		},
 		{
-			name: "a mutable consuming receiver takes an immutable owned instance",
+			name: "a mutable consuming receiver takes a mutable owned instance",
+			src: counter + `
+				fn f() {
+					val mut c = C(1)
+					c.drain()
+				}
+			`,
+		},
+		{
+			name: "a mutable consuming receiver rejects an immutable instance",
 			src: counter + `
 				fn f() {
 					val c = C(1)
 					c.drain()
 				}
 			`,
+			want: []string{"14:6-14:13: cannot constrain immutable C <: mutable C"},
 		},
 		{
 			name: "a consuming call through a borrowed parameter is rejected",
