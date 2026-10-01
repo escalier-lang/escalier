@@ -1812,16 +1812,28 @@ func (c *checker) recordCallArgEffects(
 // `c` leaves `c` unusable afterwards, and so does reading `val f = c.finish`, since the bound
 // method holds the instance. A receiver that names no place, such as `make().finish()`, has
 // nothing to record.
+//
+// The move is recorded directly rather than through consumeOwned, which tests the
+// receiver's type with isOwnedMovable. A receiver typed by an alias such as `type B = C`
+// fails that test, and the member's signature already names the consuming form.
 func (c *checker) consumeReceiver(access ast.Node) {
 	recv := accessReceiver(access)
 	if recv == nil {
 		return
 	}
 	ref, ok := c.currentStmtRef()
+	if !ok || c.fn.cfg == nil {
+		return
+	}
+	p, ok := exprPlace(recv)
 	if !ok {
 		return
 	}
-	c.consumeOwned(recv, c.info.TypeOf(recv), recv, ref)
+	if c.fn.movedSources == nil {
+		c.fn.movedSources = set.NewSet[ast.Node]()
+	}
+	c.fn.movedSources.Add(recv)
+	c.recordMovePlace(p, recv, ref)
 }
 
 // accessReceiver returns the object a member or index access reads from, or nil for any

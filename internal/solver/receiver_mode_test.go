@@ -82,6 +82,16 @@ func TestReceiverModes(t *testing.T) {
 			want: []string{"16:13-16:16: use of moved value 'c'"},
 		},
 		{
+			name: "a consuming call moves a receiver typed by an alias",
+			src: counter + `
+				type B = C
+				fn f(b: B) -> number {
+					return b.take() + b.take()
+				}
+			`,
+			want: []string{"14:24-14:25: use of moved value 'b'"},
+		},
+		{
 			name: "an overloaded consuming method moves the receiver",
 			src: `
 				class D {
