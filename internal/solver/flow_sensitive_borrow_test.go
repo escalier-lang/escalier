@@ -114,6 +114,7 @@ func TestFieldStoreBorrowEdges(t *testing.T) {
 		// Storing a local borrow into a field, then aliasing the carrier from a live binding
 		// outside the moved component, blocks the move and escapes: keep holds `&b` and is read
 		// after the store, so b's node is externally referenced when storing b tries to move it.
+		// The same live borrow makes the move of b itself a conflict.
 		"FieldStoreEscapesWhenExternallyAliased": {
 			src: `
 				fn store(x: {peer: &mut {x: number}}) {}
@@ -125,7 +126,10 @@ func TestFieldStoreBorrowEdges(t *testing.T) {
 					val y = keep
 				}
 			`,
-			want: []string{"7:12-7:13: borrowed value 'd' does not live long enough to escape the function"},
+			want: []string{
+				"7:12-7:13: borrowed value 'd' does not live long enough to escape the function",
+				"7:12-7:13: cannot move 'b' while it is borrowed",
+			},
 			types: map[string]string{
 				"store": "fn (x: {peer: &mut {x: number}}) -> undefined",
 				"f":     "fn () -> undefined",

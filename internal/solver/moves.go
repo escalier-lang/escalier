@@ -422,6 +422,10 @@ func (c *checker) consumeOwned(source ast.Expr, sourceT soltype.Type, moveNode a
 	if !isOwnedMovable(sourceT) {
 		return
 	}
+	if c.fn.movedSources == nil {
+		c.fn.movedSources = set.NewSet[ast.Node]()
+	}
+	c.fn.movedSources.Add(source)
 	c.recordMovePlace(p, moveNode, ref)
 }
 

@@ -105,6 +105,22 @@ func (e *BorrowAliasError) Message() string {
 	return fmt.Sprintf("cannot borrow '%s' as immutable while %s borrowed as mutable", e.Place, held)
 }
 
+// MoveWhileBorrowedError reports a move of data a live borrow still reaches. After
+// `val y = b` the new owner y holds the data, and a borrow taken from b still points at it.
+type MoveWhileBorrowedError struct {
+	// Place names the data moved, `x` for a whole binding and `x.a` for a field.
+	Place  string
+	move   ast.Node
+	borrow ast.Span
+}
+
+func (*MoveWhileBorrowedError) isSolverError()        {}
+func (e *MoveWhileBorrowedError) Span() ast.Span      { return e.move.Span() }
+func (e *MoveWhileBorrowedError) Related() []ast.Span { return []ast.Span{e.borrow} }
+func (e *MoveWhileBorrowedError) Message() string {
+	return fmt.Sprintf("cannot move '%s' while it is borrowed", e.Place)
+}
+
 // BorrowedValueUseError reports a read of data a live borrow can write through.
 type BorrowedValueUseError struct {
 	// Place names the data read, `x` for a whole binding and `x.a` for a field.
@@ -324,7 +340,11 @@ func placesEqual(a, b movePlace) bool {
 
 // checkUsesAgainstLoans reports a use of data that a live mutable loan can write through. A use
 // here names the place directly, as in `val y = b` or `b.value`, rather than borrowing it. An
-// immutable loan never conflicts with a use, since nothing can write through it.
+// immutable loan never conflicts with a plain use, since nothing can write through it.
+//
+// A use that moves the place conflicts with every live loan of it, mutable or immutable. After
+// `val y = b` the data belongs to y, and a borrow taken from b would reach data its new owner
+// controls. That use reports as a move rather than as a plain use.
 //
 // A borrow is not a use for this check. The read a borrow performs to take its own loan is
 // skipped. `&mut b` reads b, and that read is what creates the loan rather than a second path
@@ -352,7 +372,8 @@ func (c *checker) checkUsesAgainstLoans(reported set.Set[ast.Node]) {
 			if l.seq >= u.loanSeqAt {
 				continue
 			}
-			if !l.mut || !c.liveAt(l, u.ref) || !placesOverlap(l.place, u.place) {
+			moved := c.fn.movedSources != nil && c.fn.movedSources.Contains(u.node)
+			if (!l.mut && !moved) || !c.liveAt(l, u.ref) || !placesOverlap(l.place, u.place) {
 				continue
 			}
 			// The call that declares a store is where its loan begins, so a read in that same
@@ -362,11 +383,19 @@ func (c *checker) checkUsesAgainstLoans(reported set.Set[ast.Node]) {
 			if l.fromStore && l.ref == u.ref {
 				continue
 			}
-			c.report(&BorrowedValueUseError{
-				Place:  c.renderPlace(u.place),
-				use:    u.node,
-				borrow: l.node.Span(),
-			})
+			if moved {
+				c.report(&MoveWhileBorrowedError{
+					Place:  c.renderPlace(u.place),
+					move:   u.node,
+					borrow: l.node.Span(),
+				})
+			} else {
+				c.report(&BorrowedValueUseError{
+					Place:  c.renderPlace(u.place),
+					use:    u.node,
+					borrow: l.node.Span(),
+				})
+			}
 			break
 		}
 	}

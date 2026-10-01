@@ -394,6 +394,10 @@ type funcCtx struct {
 	// binding moved on more than one path keeps the last-recorded move node, which
 	// is a coarse but adequate blame target.
 	moveNodes map[liveness.VarID]ast.Node
+	// movedSources holds each expression whose owned value an assignment or argument moves,
+	// such as the b in `val y = b`. checkUsesAgainstLoans reads it to report a move of
+	// borrowed data as a move rather than as a plain use.
+	movedSources set.Set[ast.Node]
 	// placeIDs assigns each field-level place one synthetic VarID (PR 7). A field-level
 	// place is a root binding plus a path of field segments, such as `pair.a`. The key is
 	// placeKey's encoding of the place, its root VarID followed by each segment's kind and
