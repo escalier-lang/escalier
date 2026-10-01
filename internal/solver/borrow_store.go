@@ -483,11 +483,12 @@ func (c *checker) recordCallStoreEdges(
 			// where a borrow lands and not whether the callee overwrites what was there.
 			// A store names the referent the callee writes, not a part of it, so the edge
 			// reaches the whole of it.
-			c.addBorrowEdge(target.root, appendPath(target.path, edge.path), referent, nil)
+			sourceMut := storeSourceMut(fn, self, edge.arg)
+			c.addBorrowEdge(target.root, appendPath(target.path, edge.path), referent, nil, sourceMut)
 			// The target reaches the referent from here on, so it holds a borrow of it that a
 			// second borrow or a read of the referent has to respect.
 			c.recordStoreEdgeLoan(storeLoanPlace(argExpr, referent, edge.direct),
-				storeSourceMut(fn, self, edge.arg), target.root, appendPath(target.path, edge.path), ref, argExpr)
+				sourceMut, target.root, appendPath(target.path, edge.path), ref, argExpr)
 			recorded = true
 		}
 	}

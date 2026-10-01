@@ -299,10 +299,12 @@ func unionEdges(a, b []fieldBorrow) []fieldBorrow {
 }
 
 // containsFieldBorrow reports whether edges holds one reaching the same data by the same route
-// as fb: the same path within the holder, the same referent, and the same path within it.
+// as fb: the same path within the holder, the same referent, and the same path within it. The
+// two must also agree on mutability. A branch join can leave a route mutable on one arm and
+// immutable on the other, and keeping both edges keeps the writable one visible.
 func containsFieldBorrow(fieldBorrows []fieldBorrow, fb fieldBorrow) bool {
 	for _, x := range fieldBorrows {
-		if x.referent == fb.referent && slices.Equal(x.path, fb.path) && slices.Equal(x.refPath, fb.refPath) {
+		if x.referent == fb.referent && x.mut == fb.mut && slices.Equal(x.path, fb.path) && slices.Equal(x.refPath, fb.refPath) {
 			return true
 		}
 	}
