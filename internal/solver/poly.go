@@ -3,6 +3,7 @@ package solver
 import (
 	"math"
 
+	"github.com/escalier-lang/escalier/internal/ast"
 	"github.com/escalier-lang/escalier/internal/set"
 	"github.com/escalier-lang/escalier/internal/soltype"
 )
@@ -272,11 +273,22 @@ type ltFreshener struct {
 	lim   int
 	lvl   int
 	cache map[*soltype.LifetimeVar]*soltype.LifetimeVar
+	// only, when set, replaces the level test. A LifetimeVar in it is freshened and every
+	// other lifetime is shared, whatever its level. instantiateMethodLifetimes uses it to
+	// freshen exactly the lifetimes a method quantifies.
+	only set.Set[*soltype.LifetimeVar]
 }
 
 func (lf *ltFreshener) fresh(lt soltype.Lifetime) soltype.Lifetime {
 	lv, ok := lt.(*soltype.LifetimeVar)
-	if !ok || lv.Level <= lf.lim {
+	if !ok {
+		return lt
+	}
+	if lf.only != nil {
+		if !lf.only.Contains(lv) {
+			return lt
+		}
+	} else if lv.Level <= lf.lim {
 		return lt
 	}
 	if lf.cache == nil {
@@ -596,4 +608,132 @@ func propagateOpen(vars map[int]*soltype.TypeVarType) {
 			}
 		}
 	}
+}
+
+// methodLtFreshener copies a method signature with the lifetimes lt selects replaced by fresh
+// ones, the lifetime-only counterpart of freshener. Type variables are shared, since a
+// method's own type parameters are instantiated per call through its TypeParams binder.
+type methodLtFreshener struct {
+	lt ltFreshener
+}
+
+func (f *methodLtFreshener) EnterType(t soltype.Type, _ soltype.Polarity) soltype.EnterResult {
+	if res, ok := freshenLifetimeFormer(t, &f.lt); ok {
+		return res
+	}
+	if _, isVar := t.(*soltype.TypeVarType); isVar {
+		return soltype.EnterResult{Type: t, SkipChildren: true}
+	}
+	return soltype.EnterResult{}
+}
+
+func (f *methodLtFreshener) ExitType(t soltype.Type, _ soltype.Polarity) soltype.Type { return t }
+
+// lifetimeCollector records every LifetimeVar a type writes: a borrow's lifetime, a class or
+// alias reference's lifetime arguments, a class's borrow lifetime, and a function's own
+// lifetime parameters. It does not descend into a type variable's bounds.
+type lifetimeCollector struct {
+	out set.Set[*soltype.LifetimeVar]
+}
+
+func (v *lifetimeCollector) add(lt soltype.Lifetime) {
+	if lv, ok := lt.(*soltype.LifetimeVar); ok {
+		v.out.Add(lv)
+	}
+}
+
+func (v *lifetimeCollector) EnterType(t soltype.Type, _ soltype.Polarity) soltype.EnterResult {
+	switch t := t.(type) {
+	case *soltype.RefType:
+		v.add(t.Lt)
+	case *soltype.ClassType:
+		v.add(t.Lt)
+		for _, a := range t.LifetimeArgs {
+			v.add(a)
+		}
+	case *soltype.AliasType:
+		for _, a := range t.LifetimeArgs {
+			v.add(a)
+		}
+	case *soltype.FuncType:
+		for _, lp := range t.LifetimeParams {
+			v.add(lp.Var)
+		}
+	case *soltype.TypeVarType:
+		return soltype.EnterResult{Type: t, SkipChildren: true}
+	}
+	return soltype.EnterResult{}
+}
+
+func (v *lifetimeCollector) ExitType(t soltype.Type, _ soltype.Polarity) soltype.Type { return t }
+
+// recordMethodLifetimes adds to methodLifetimes every lifetime a method signature in obj
+// writes, other than the class's own lifetime parameters in classLts. It runs once a class
+// body is frozen, so it records the lifetimes the member signatures settle on.
+func (c *Context) recordMethodLifetimes(obj *soltype.ObjectType, classLts set.Set[*soltype.LifetimeVar]) {
+	for _, e := range obj.Elems {
+		m, ok := e.(*soltype.MethodElem)
+		if !ok {
+			continue
+		}
+		for _, sig := range m.Signatures {
+			col := &lifetimeCollector{out: set.NewSet[*soltype.LifetimeVar]()}
+			sig.Accept(col, soltype.Positive)
+			for _, lv := range col.out.ToSlice() {
+				if classLts.Contains(lv) {
+					continue
+				}
+				if c.methodLifetimes == nil {
+					c.methodLifetimes = set.NewSet[*soltype.LifetimeVar]()
+				}
+				c.methodLifetimes.Add(lv)
+			}
+		}
+	}
+}
+
+// instantiateMethodLifetimes returns member with each signature's own lifetimes replaced by
+// fresh ones at lvl, so this access shares none of them with another call to the same
+// method. A lifetime the class declares is shared, since projection has already replaced it
+// with the instance's argument. A freshened lifetime keeps its outlives bounds, rewritten
+// through the same copy.
+//
+// When recv holds a borrow and a signature's receiver borrows at a freshened lifetime, recv's
+// borrow must outlive it, which is what passing a borrow to a `&'a` parameter requires.
+// `v.peek()` on `v: &'r View` for `peek<'a>(&'a self) -> &'a T` then returns a borrow no
+// longer-lived than 'r. An owned receiver is borrowed for the call at the fresh lifetime, the
+// way `&v` is, so it adds no constraint.
+//
+// A member other than a method is returned unchanged.
+func (c *checker) instantiateMethodLifetimes(lvl int, blame ast.Node, recv soltype.Type, member soltype.ObjTypeElem) soltype.ObjTypeElem {
+	m, ok := member.(*soltype.MethodElem)
+	if !ok || c.ctx.methodLifetimes == nil {
+		return member
+	}
+	held := heldBorrow(recv)
+	sigs := make([]*soltype.FuncType, len(m.Signatures))
+	for i, sig := range m.Signatures {
+		f := &methodLtFreshener{lt: ltFreshener{ctx: c.ctx, lvl: lvl, only: c.ctx.methodLifetimes}}
+		inst, ok := sig.Accept(f, soltype.Positive).(*soltype.FuncType)
+		if !ok {
+			inst = sig
+		}
+		sigs[i] = inst
+		if held == nil || inst.SelfParam == nil || inst == sig {
+			continue
+		}
+		self, ok := inst.SelfParam.Type.(*soltype.RefType)
+		if !ok || self.Lt == nil {
+			continue
+		}
+		if orig, ok := sig.SelfParam.Type.(*soltype.RefType); ok && orig.Lt != self.Lt {
+			// Relate the two the way an argument relates to a `&'a` parameter. The borrow is
+			// read as shared, since checkReceiverMut has already answered whether the
+			// receiver lends the mutability the member asks for.
+			c.constrain(blame, held, soltype.NewRef(false, self.Lt, held.Inner))
+		}
+	}
+	cp := *m
+	cp.Signatures = sigs
+	return &cp
 }

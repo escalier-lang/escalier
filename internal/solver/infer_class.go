@@ -190,6 +190,8 @@ func (c *checker) inferClassDecl(scope *Scope, lvl int, decl *ast.ClassDecl, ns 
 	flow := keptFlowMap(keep)
 	c.freezeClassBody(body, keep, flow, keepLts)
 	c.freezeClassBody(static, keep, flow, keepLts)
+	c.ctx.recordMethodLifetimes(body, keepLts)
+	c.ctx.recordMethodLifetimes(static, keepLts)
 
 	// Freeze both per-parameter variance vectors once every member body has refined its
 	// signature, so the walk measures each type parameter at its final occurrences. The

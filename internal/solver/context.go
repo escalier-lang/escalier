@@ -3,6 +3,7 @@ package solver
 import (
 	"strings"
 
+	"github.com/escalier-lang/escalier/internal/set"
 	"github.com/escalier-lang/escalier/internal/soltype"
 )
 
@@ -62,6 +63,13 @@ type Context struct {
 	// removed from its bound list is simply never matched, since findLtProxy scans
 	// only bounds currently present.
 	ltProxyOrigin map[*soltype.LifetimeVar]soltype.Lifetime
+
+	// methodLifetimes holds every lifetime variable a frozen class method's signature
+	// quantifies on its own: the lifetimes it declares in its `<…>` list and the ones its
+	// body inferred for its borrows. A lifetime the class declares is not in it, since it
+	// belongs to the instance. A member access freshens these per access, so two calls to
+	// one method do not share them. recordMethodLifetimes fills it when a class body freezes.
+	methodLifetimes set.Set[*soltype.LifetimeVar]
 
 	// classes is the nominal registry (M5): each class's heavy data — the projected
 	// instance body, the resolved supers, and the per-parameter variance — keyed by

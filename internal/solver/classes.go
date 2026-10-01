@@ -876,7 +876,9 @@ func (c *checker) projectedMember(lvl int, blame ast.Node, name string, recv, ca
 	// call the same check, so `c.bump()` and `self.bump()` answer the same way for the same
 	// receiver.
 	c.checkReceiverMut(blame, name, recv, memberSelfParam(member))
-	return c.memberValue(lvl, blame, member), true
+	// Each access from outside the class gets its own copy of the method's lifetimes, the
+	// way a call to a free function instantiates the function's scheme.
+	return c.memberValue(lvl, blame, c.instantiateMethodLifetimes(lvl, blame, recv, member)), true
 }
 
 // objectMember resolves a read of a method, getter, or setter carried by a plain object type,
@@ -1436,7 +1438,9 @@ func (c *checker) classValueMember(lvl int, blame ast.Node, name string, carrier
 	if !found {
 		return pathResult{}, false
 	}
-	return c.memberValue(lvl, blame, member), true
+	// A static method's lifetimes are instantiated per access the way an instance method's
+	// are. It has no receiver to relate.
+	return c.memberValue(lvl, blame, c.instantiateMethodLifetimes(lvl, blame, nil, member)), true
 }
 
 // classValueCarrier resolves a receiver to the class-value object it reads as: an object
