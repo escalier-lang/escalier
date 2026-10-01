@@ -63,11 +63,15 @@ func TestParseReceiverDiagnostics(t *testing.T) {
 	}{
 		"lifetime on a consuming receiver": {
 			input:   "class Foo { bar<'a>('a self) -> number { return 1 } }",
-			wantErr: "a lifetime belongs on a borrowed receiver, so write `&'a self`",
+			wantErr: "a receiver's lifetime goes right after `&`, so write `&'a self`",
 		},
 		"lifetime on a mutable consuming receiver": {
 			input:   "class Foo { bar<'a>(mut 'a self) -> number { return 1 } }",
-			wantErr: "a lifetime belongs on a borrowed receiver, so write `&'a mut self`",
+			wantErr: "a receiver's lifetime goes right after `&`, so write `&'a mut self`",
+		},
+		"lifetime after mut on a borrow": {
+			input:   "class Foo { bar<'a>(&mut 'a self) -> number { return 1 } }",
+			wantErr: "a receiver's lifetime goes right after `&`, so write `&'a mut self`",
 		},
 		"constructor with a shared borrow": {
 			input:   "class Foo { constructor(&self) {} }",

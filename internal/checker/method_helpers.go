@@ -39,6 +39,16 @@ func makeSelfParamWithLifetime(
 	}
 }
 
+// checkGetterReceiver reports an instance getter that consumes its
+// receiver. A getter that writes no receiver is MissingSelfReceiverError's
+// to report, so it passes here.
+func checkGetterReceiver(elem *ast.GetterElem) []Error {
+	if elem.Receiver == nil || !elem.Receiver.Consumes() {
+		return nil
+	}
+	return []Error{GetterReceiverError{span: elem.Receiver.Span()}}
+}
+
 // checkSetterReceiver reports an instance setter whose receiver is not
 // `&mut self`. A setter that writes no receiver is
 // MissingSelfReceiverError's to report, so it passes here.

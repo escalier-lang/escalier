@@ -1070,6 +1070,11 @@ func (c *checker) buildMemberSigs(
 				continue
 			}
 			c.checkSelfReceiver(name, elem, elem.Static, elem.Receiver)
+			// A read leaves the instance where it was, so a getter must borrow it. A
+			// consuming receiver is reported and kept, so the body still checks.
+			if elem.Receiver != nil && elem.Receiver.Consumes() {
+				c.report(&GetterReceiverError{Name: name, Elem: elem})
+			}
 			stub := c.memberSigStub(lvl, elem.Fn)
 			getter := &soltype.GetterElem{
 				Name:      name,

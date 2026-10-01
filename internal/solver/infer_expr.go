@@ -1804,27 +1804,31 @@ func (c *checker) recordCallArgEffects(
 	// receiver, aliases the two for as long as the target lives. Record that edge here rather
 	// than leaving the alias invisible to the escape check and the component move.
 	recv, self := c.calleeReceiver(e.Callee)
-	c.consumeReceiver(recv, self, consumeRef)
 	c.recordCallStoreEdges(e, fn, recv, self, consumeRef)
 }
 
-// consumeReceiver moves the receiver of a call through a consuming `self` or `mut self`
-// method, recording the move at ref, the call's statement. `c.finish()` on a local `c`
-// leaves `c` unusable afterwards. A borrowed `&self` or `&mut self` receiver leaves it
-// usable, and so does a receiver that names no place, such as `make().finish()`.
-//
-// A receiver that is itself a borrow has nothing to move. checkReceiverMut rejects it at
-// the member access, so it is skipped here.
+// consumeReceiver moves the receiver of a member access that reaches a consuming `self` or
+// `mut self` member, recording the move at the access's statement. `c.finish()` on a local
+// `c` leaves `c` unusable afterwards, and so does reading `val f = c.finish`, since the bound
+// method holds the instance. A receiver that names no place, such as `make().finish()`, has
+// nothing to record.
 //
 // The move is recorded directly rather than through consumeOwned. consumeOwned moves only
 // an object, tuple, or owned RefType, and a receiver is a class instance, which the move
-// engine reads as neither. The method's signature names the consuming form, so the receiver
+// engine reads as neither. The member's signature names the consuming form, so the receiver
 // is known to be owned without that test.
-func (c *checker) consumeReceiver(recv ast.Expr, self *soltype.FuncParam, ref liveness.StmtRef) {
-	if recv == nil || self == nil || isBorrowType(self.Type) {
+func (c *checker) consumeReceiver(access ast.Node) {
+	var recv ast.Expr
+	switch access := access.(type) {
+	case *ast.MemberExpr:
+		recv = access.Object
+	case *ast.IndexExpr:
+		recv = access.Object
+	default:
 		return
 	}
-	if c.fn == nil || c.fn.cfg == nil || isBorrowType(c.info.TypeOf(recv)) {
+	ref, ok := c.currentStmtRef()
+	if !ok || c.fn.cfg == nil {
 		return
 	}
 	p, ok := exprPlace(recv)

@@ -66,6 +66,7 @@ func (e NestedMutInParamError) isError()                    {}
 func (e MissingMutSelfParameterError) isError()             {}
 func (e MissingSelfReceiverError) isError()                 {}
 func (e SetterReceiverError) isError()                      {}
+func (e GetterReceiverError) isError()                      {}
 func (e MultipleConstructorsNotYetSupportedError) isError() {}
 func (e ConstructorWithReturnTypeError) isError()           {}
 func (e PrivateConstructorNotYetSupportedError) isError()   {}
@@ -131,6 +132,7 @@ func (e RedundantMatchCaseWarning) IsWarning() bool                { return true
 func (e MissingMutSelfParameterError) IsWarning() bool             { return false }
 func (e MissingSelfReceiverError) IsWarning() bool                 { return false }
 func (e SetterReceiverError) IsWarning() bool                      { return false }
+func (e GetterReceiverError) IsWarning() bool                      { return false }
 func (e MultipleConstructorsNotYetSupportedError) IsWarning() bool { return false }
 func (e ConstructorWithReturnTypeError) IsWarning() bool           { return false }
 func (e PrivateConstructorNotYetSupportedError) IsWarning() bool   { return false }
@@ -898,6 +900,20 @@ func (e SetterReceiverError) Span() ast.Span {
 }
 func (e SetterReceiverError) Message() string {
 	return "Setters must declare a `&mut self` receiver, since writing through one mutates the instance."
+}
+
+// GetterReceiverError is reported when an instance getter consumes its
+// receiver, declaring `self` or `mut self`. Reading a property leaves the
+// instance where it was, so a getter borrows it.
+type GetterReceiverError struct {
+	span ast.Span
+}
+
+func (e GetterReceiverError) Span() ast.Span {
+	return e.span
+}
+func (e GetterReceiverError) Message() string {
+	return "Getters must borrow their receiver with `&self` or `&mut self`, since reading through one leaves the instance in place."
 }
 
 type MultipleConstructorsNotYetSupportedError struct {

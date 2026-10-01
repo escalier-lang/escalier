@@ -644,9 +644,10 @@ func (p *Parser) fnExpr(start ast.Location, async bool, gen bool) ast.Expr {
 // parse a regular `mut x` parameter or report a stray `'a`.
 //
 // A lifetime written on a consuming receiver, as in `'a self` or `mut 'a self`,
-// is reported, since only a borrow has a loan for a lifetime to bound. The
-// receiver comes back as the borrow the lifetime implies, so later passes see
-// one diagnostic rather than a cascade.
+// is reported, since only a borrow has a loan for a lifetime to bound. So is a
+// lifetime written after `mut` in a borrow, as in `&mut 'a self`. Either way
+// the report names the borrow to write, and the receiver comes back as that
+// borrow, so later passes see one diagnostic rather than a cascade.
 //
 // Receiver lifetimes are single only. `&('a | 'b) self` is not recognised,
 // since lifetime unions only appear on return-position types.
@@ -660,14 +661,20 @@ func (p *Parser) selfReceiver() *ast.MethodReceiver {
 		mode = ast.BorrowReceiver
 	}
 
-	// A borrow writes its lifetime before `mut`. A consuming receiver takes no
-	// lifetime, but `mut 'a self` is read here too so the report below can name
-	// the borrow it meant.
+	// A borrow writes its lifetime before `mut`. A lifetime after `mut` is read
+	// too, so the report below can name the form it meant. That covers the
+	// borrow `&mut 'a self` and the consuming `mut 'a self`, which takes no
+	// lifetime at all.
 	lifetime := p.parseOptLifetimeAnn()
 	mut := false
 	if p.lexer.peek().Type == Mut {
 		p.lexer.consume()
 		mut = true
+	}
+	misplaced := false
+	if lifetime == nil && mut {
+		lifetime = p.parseOptLifetimeAnn()
+		misplaced = lifetime != nil && mode == ast.BorrowReceiver
 	}
 	if lifetime == nil && mode == ast.ConsumeReceiver {
 		lifetime = p.parseOptLifetimeAnn()
@@ -681,14 +688,14 @@ func (p *Parser) selfReceiver() *ast.MethodReceiver {
 	p.lexer.consume() // consume 'self'
 	span := ast.Span{Start: start, End: p.lexer.currentLoc(), SourceID: p.lexer.source.ID}
 
-	if mode == ast.ConsumeReceiver && lifetime != nil {
+	if misplaced || (mode == ast.ConsumeReceiver && lifetime != nil) {
 		want := "&" + lifetimeText(lifetime) + " self"
 		if mut {
 			want = "&" + lifetimeText(lifetime) + " mut self"
 		}
 		p.reportError(
 			span,
-			fmt.Sprintf("a lifetime belongs on a borrowed receiver, so write `%s`", want),
+			fmt.Sprintf("a receiver's lifetime goes right after `&`, so write `%s`", want),
 		)
 		mode = ast.BorrowReceiver
 	}

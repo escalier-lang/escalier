@@ -59,3 +59,36 @@ func TestSetterReceiver(t *testing.T) {
 		})
 	}
 }
+
+// TestGetterReceiver pins that an instance getter must borrow its receiver, since reading a
+// property leaves the instance in place.
+func TestGetterReceiver(t *testing.T) {
+	const want = "Getters must borrow their receiver with `&self` or `&mut self`, since reading through one leaves the instance in place."
+	tests := map[string]struct {
+		receiver string
+		want     []string
+	}{
+		"shared borrow":     {receiver: "&self"},
+		"mutable borrow":    {receiver: "&mut self"},
+		"consuming":         {receiver: "self", want: []string{want}},
+		"mutable consuming": {receiver: "mut self", want: []string{want}},
+	}
+	for name, tc := range tests {
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+			errs := inferModuleErrors(t, `
+				class C {
+					v: number,
+					get x(`+tc.receiver+`) -> number { return self.v },
+				}
+			`)
+			var msgs []string
+			for _, e := range errs {
+				if _, ok := e.(GetterReceiverError); ok {
+					msgs = append(msgs, e.Message())
+				}
+			}
+			require.Equal(t, tc.want, msgs)
+		})
+	}
+}

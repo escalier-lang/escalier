@@ -1245,6 +1245,7 @@ func (*ReadOnlyPropertyError) isSolverError()               {}
 func (*SetterArityError) isSolverError()                    {}
 func (*SetterReceiverError) isSolverError()                 {}
 func (*ConsumingReceiverBorrowedError) isSolverError()      {}
+func (*GetterReceiverError) isSolverError()                 {}
 func (*RecursiveMethodAnnotationError) isSolverError()      {}
 func (*FieldNotInitializedError) isSolverError()            {}
 func (*ReadBeforeInitError) isSolverError()                 {}
@@ -1826,6 +1827,20 @@ func (e *SetterArityError) Span() ast.Span      { return e.Elem.Span() }
 func (e *SetterArityError) Related() []ast.Span { return nil }
 func (e *SetterArityError) Message() string {
 	return "Setter '" + e.Name + "' must declare exactly one value parameter; found " + strconv.Itoa(e.Count) + "."
+}
+
+// GetterReceiverError fires when an instance getter consumes its receiver, declaring `self`
+// or `mut self`. Reading a property leaves the instance where it was, so a getter borrows it
+// through `&self` or `&mut self`.
+type GetterReceiverError struct {
+	Name string
+	Elem *ast.GetterElem
+}
+
+func (e *GetterReceiverError) Span() ast.Span      { return e.Elem.Span() }
+func (e *GetterReceiverError) Related() []ast.Span { return nil }
+func (e *GetterReceiverError) Message() string {
+	return "Getter '" + e.Name + "' must borrow its receiver with `&self` or `&mut self`; reading through it leaves the instance in place."
 }
 
 // SetterReceiverError fires when an instance setter declares a receiver other than `&mut

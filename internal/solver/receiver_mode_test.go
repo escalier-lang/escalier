@@ -70,6 +70,34 @@ func TestReceiverModes(t *testing.T) {
 			`,
 		},
 		{
+			name: "reading a consuming method as a value moves the receiver",
+			src: counter + `
+				fn f() -> number {
+					val c = C(1)
+					val g = c.take
+					g()
+					return c.v
+				}
+			`,
+			want: []string{"16:13-16:16: use of moved value 'c'"},
+		},
+		{
+			name: "an overloaded consuming method moves the receiver",
+			src: `
+				class D {
+					v: number,
+					take(self, x: number) -> number { return x },
+					take(self, x: string) -> string { return x },
+				}
+				fn f() -> number {
+					val d = D(1)
+					d.take(1)
+					return d.v
+				}
+			`,
+			want: []string{"10:13-10:16: use of moved value 'd'"},
+		},
+		{
 			name: "a mutable consuming receiver takes an immutable owned instance",
 			src: counter + `
 				fn f() {
@@ -156,6 +184,30 @@ func TestReceiverModeAgreement(t *testing.T) {
 				}
 			`,
 			want: []string{"4:6-4:55: Setter 'x' must declare a `&mut self` receiver; writing through it mutates the instance."},
+		},
+		{
+			name: "a getter with a consuming receiver is rejected",
+			src: `
+				class C {
+					v: number,
+					get x(self) -> number { return self.v },
+				}
+			`,
+			want: []string{"4:6-4:45: Getter 'x' must borrow its receiver with `&self` or `&mut self`; reading through it leaves the instance in place."},
+		},
+		{
+			name: "a constructor cannot consume the instance it returns",
+			src: `
+				class C {
+					v: number,
+					constructor(&mut self, v: number) {
+						self.v = v
+						self.take()
+					},
+					take(self) -> number { return self.v },
+				}
+			`,
+			want: []string{"6:7-6:16: 'take' takes its receiver by value, so it moves the instance and cannot be reached through a borrow."},
 		},
 		{
 			name: "an override that consumes where the inherited member borrows is rejected",

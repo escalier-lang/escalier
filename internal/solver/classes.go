@@ -1306,8 +1306,9 @@ func strippedMethodSig(sig *soltype.FuncType) *soltype.FuncType {
 // `immutable C <: mutable C`.
 //
 // A consuming `self` or `mut self` member moves the instance, so the receiver must own it and
-// its mutability does not matter. A borrowed receiver has nothing to move, so it is reported
-// as a ConsumingReceiverBorrowedError naming the member.
+// its mutability does not matter. An owned receiver is moved at the access, through
+// consumeReceiver. A borrowed receiver has nothing to move, so it is reported as a
+// ConsumingReceiverBorrowedError naming the member.
 //
 // recv is the un-stripped receiver, so it still carries the access it has to lend. A nil
 // self, which a static member and a property both have, is a no-op, as is a receiver that is
@@ -1323,7 +1324,9 @@ func (c *checker) checkReceiverMut(blame ast.Node, name string, recv soltype.Typ
 	if !isBorrowType(self.Type) {
 		if heldBorrow(recv) != nil {
 			c.report(&ConsumingReceiverBorrowedError{Name: name, Site: blame})
+			return
 		}
+		c.consumeReceiver(blame)
 		return
 	}
 	recvT := soltype.Type(inner)
