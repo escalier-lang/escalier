@@ -66,9 +66,10 @@ func TestStoreIntoOwnedParameter(t *testing.T) {
 			`,
 			want: nil,
 		},
-		// Reading p after the store makes both paths live at once, which is an aliasing
-		// hazard rather than a lifetime one. The exclusivity check reports it.
-		"ReadingAnOwnedParameterAfterAStoreConflicts": {
+		// Moving b out while p still reaches it through the store leaves p pointing at data the
+		// new owner controls. That is an aliasing hazard rather than a lifetime one, and the
+		// exclusivity check reports it.
+		"MovingTheStoredLocalAfterAStoreConflicts": {
 			src: ownedParamDecls + `
 				fn f(p: mut {peer: &mut {value: number}, spare: &mut {value: number}}) -> undefined {
 					val mut b = {value: 2}
@@ -77,7 +78,7 @@ func TestStoreIntoOwnedParameter(t *testing.T) {
 					touch(&mut p)
 				}
 			`,
-			want: []string{"12:14-12:15: cannot use 'b' while it is borrowed as mutable"},
+			want: []string{"12:14-12:15: cannot move 'b' while it is borrowed"},
 		},
 		// Moving the parameter out carries its alias with it. The component move re-anchors
 		// the graph, consuming b along with p, so the frame keeps no path to either.
@@ -121,9 +122,9 @@ func TestStoreIntoOwnedParameter(t *testing.T) {
 			`,
 			want: []string{"9:17-9:23: borrowed value 'b' does not live long enough to escape the function"},
 		},
-		// A field store creates the same borrow a call's store effect does, so reading the stored
+		// A field store creates the same borrow a call's store effect does, so moving the stored
 		// local while the receiver is still read reports the same conflict.
-		"ReadingAfterAFieldStoreConflicts": {
+		"MovingAfterAFieldStoreConflicts": {
 			src: `
 				declare fn touch<'d>(x: &'d mut {peer: &mut {value: number}}) -> undefined
 				fn f(p: mut {peer: &mut {value: number}}) -> undefined {
@@ -133,7 +134,7 @@ func TestStoreIntoOwnedParameter(t *testing.T) {
 					touch(&mut p)
 				}
 			`,
-			want: []string{"6:14-6:15: cannot use 'b' while it is borrowed as mutable"},
+			want: []string{"6:14-6:15: cannot move 'b' while it is borrowed"},
 		},
 		// A plain `T` parameter is owned too, and dies with the frame just as `mut T` does.
 		// Owned-immutable collapses to the bare inner, so the bridge records its concrete type

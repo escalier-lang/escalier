@@ -155,6 +155,31 @@ func TestBorrowExclusivity(t *testing.T) {
 			`,
 			want: nil,
 		},
+		// A move conflicts with an immutable borrow too. After `val y = x` the data belongs to y,
+		// and a still expects it to hold still.
+		"MoveWhileImmutablyBorrowed": {
+			src: exclusivityDecls + `
+				fn g() {
+					val mut x = {v: 1}
+					val a = &x
+					val y = x
+					readRead(a, a)
+				}
+			`,
+			want: []string{"10:14-10:15: cannot move 'x' while it is borrowed"},
+		},
+		// Once nothing reads the borrow again, its loan is over and the move is the only path.
+		"MoveAfterAnImmutableBorrowEndsOk": {
+			src: exclusivityDecls + `
+				fn g() {
+					val mut x = {v: 1}
+					val a = &x
+					readRead(a, a)
+					val y = x
+				}
+			`,
+			want: nil,
+		},
 		// A loan is live AT the statement that reads it, not only beyond it. b's last use is
 		// the call, and the fresh `&x` in the same call is a second view of x while b can
 		// still write. Asking only whether b outlives the call would miss this.
@@ -241,9 +266,10 @@ func TestStoreEffectLoans(t *testing.T) {
 			`,
 			want: []string{"14:20-14:22: cannot borrow 'b' as immutable while it is borrowed as mutable"},
 		},
-		// Reading the item directly reaches the same data the target can write through, which
-		// the loan-against-loan check does not see because a read is not a borrow.
-		"UseAfterAStore": {
+		// Moving the item out while the target still reaches it leaves the target pointing at
+		// data the new owner controls. The loan-against-loan check does not see this, because a
+		// move is not a borrow.
+		"MoveAfterAStore": {
 			src: storeEffectDecls + `
 				fn g(q: mut {value: number}, r: mut {value: number}) -> undefined {
 					val mut b = {value: 2}
@@ -253,7 +279,7 @@ func TestStoreEffectLoans(t *testing.T) {
 					touch(&mut a)
 				}
 			`,
-			want: []string{"14:14-14:15: cannot use 'b' while it is borrowed as mutable"},
+			want: []string{"14:14-14:15: cannot move 'b' while it is borrowed"},
 		},
 		// Nothing reads the target after the store, so its borrow of the item is dead and the
 		// item is reachable one way again. This is the same NLL rule a named borrow follows.
