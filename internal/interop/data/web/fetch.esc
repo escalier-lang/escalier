@@ -71,27 +71,27 @@ export declare interface Body {
 @js("Headers")
 export declare class Headers {
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/Headers/append) */
-    append(mut self, name: string, value: string) -> unknown,
+    append(&mut self, name: string, value: string) -> unknown,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/Headers/delete) */
-    delete(mut self, name: string) -> unknown,
+    delete(&mut self, name: string) -> unknown,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/Headers/get) */
-    get(self, name: string) -> string | null,
+    get(&self, name: string) -> string | null,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/Headers/getSetCookie) */
-    getSetCookie(self) -> mut Array<string>,
+    getSetCookie(&self) -> mut Array<string>,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/Headers/has) */
-    has(self, name: string) -> boolean,
+    has(&self, name: string) -> boolean,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/Headers/set) */
-    set(mut self, name: string, value: string) -> unknown,
-    forEach(self, callbackfn: fn (value: string, key: string, parent: Headers) -> unknown, thisArg?: unknown) -> unknown,
-    [Symbol.iterator](self) -> HeadersIterator<[string, string]>,
+    set(&mut self, name: string, value: string) -> unknown,
+    forEach(&self, callbackfn: fn (value: string, key: string, parent: Headers) -> unknown, thisArg?: unknown) -> unknown,
+    [Symbol.iterator](&self) -> HeadersIterator<[string, string]>,
     /** Returns an iterator allowing to go through all key/value pairs contained in this object. */
-    entries(self) -> HeadersIterator<[string, string]>,
+    entries(&self) -> HeadersIterator<[string, string]>,
     /** Returns an iterator allowing to go through all keys of the key/value pairs contained in this object. */
-    keys(self) -> HeadersIterator<string>,
+    keys(&self) -> HeadersIterator<string>,
     /** Returns an iterator allowing to go through all values of the key/value pairs contained in this object. */
-    values(self) -> HeadersIterator<string>,
+    values(&self) -> HeadersIterator<string>,
     static prototype: Headers,
-    constructor(mut self, init?: HeadersInit)
+    constructor(&mut self, init?: HeadersInit)
 }
 
 /**
@@ -180,9 +180,9 @@ export declare class Request implements Body {
      */
     readonly url: string,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/Request/clone) */
-    clone(self) -> Request,
+    clone(&self) -> Request,
     static prototype: Request,
-    constructor(mut self, input: RequestInfo | url.URL, init?: RequestInit)
+    constructor(&mut self, input: RequestInfo | url.URL, init?: RequestInit)
 }
 
 /**
@@ -207,9 +207,9 @@ export declare class Response implements Body {
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/Response/url) */
     readonly url: string,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/Response/clone) */
-    clone(self) -> Response,
+    clone(&self) -> Response,
     static prototype: Response,
-    constructor(mut self, body?: BodyInit | null, init?: ResponseInit),
+    constructor(&mut self, body?: BodyInit | null, init?: ResponseInit),
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/Response/error_static) */
     static error() -> Response,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/Response/json_static) */

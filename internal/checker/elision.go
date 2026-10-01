@@ -283,7 +283,7 @@ func (c *Checker) VerifyLifetimeCompatibility(
 }
 
 // selfParamLifetime returns the lifetime annotation on a method's
-// receiver, if any. The receiver is wrapped in MutType for `mut self`,
+// receiver, if any. The receiver is wrapped in MutType for `&mut self`,
 // so unwrap one level before reading the underlying TypeRefType's
 // Lifetime.
 func selfParamLifetime(fn *type_system.FuncType) type_system.Lifetime {

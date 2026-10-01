@@ -350,7 +350,7 @@ func TestInferGenIteration(t *testing.T) {
 			// iterating its result binds at what the body yields.
 			name: "GenMethodOnAClass",
 			src: `
-				class C { gen m(self) { yield 1 } }
+				class C { gen m(&self) { yield 1 } }
 				fn f(c: C) { for x in c.m() { return x } }
 			`,
 			want: `fn (c: C) -> 1`,
@@ -398,10 +398,10 @@ func TestInferYieldRequiresGenContext(t *testing.T) {
 		},
 		{
 			// `gen` is the marker, so a plain method whose body yields is rejected the
-			// way a plain function is. Writing `gen m(self)` is how a method opts in.
+			// way a plain function is. Writing `gen m(&self)` is how a method opts in.
 			name:     "YieldInAPlainMethod",
-			src:      `class C { m(self) { yield 1 } }`,
-			wantErrs: []string{"1:21-1:28: yield can only be used inside a generator function"},
+			src:      `class C { m(&self) { yield 1 } }`,
+			wantErrs: []string{"1:22-1:29: yield can only be used inside a generator function"},
 		},
 	})
 }
@@ -872,8 +872,8 @@ func TestInferGenWithoutYieldWarns(t *testing.T) {
 		{
 			// A `gen` method is measured the same way, blamed at the member.
 			name:     "GenMethodNeverYields",
-			src:      `class C { gen m(self) { return 1 } }`,
-			wantErrs: []string{"1:11-1:35: the body never yields, so this returns an empty Generator; add a `yield` or drop the `gen`"},
+			src:      `class C { gen m(&self) { return 1 } }`,
+			wantErrs: []string{"1:11-1:36: the body never yields, so this returns an empty Generator; add a `yield` or drop the `gen`"},
 		},
 	})
 

@@ -795,6 +795,10 @@ type FuncParam struct {
 	Pattern  Pat
 	Type     Type
 	Optional bool
+	// Consumes marks a method's `self` receiver written `self` or `mut self`, which moves
+	// the instance into the call. It is false for `&self` and `&mut self`, which borrow
+	// it, and for every ordinary parameter. Use ReceiverConsumes(fn) to read it.
+	Consumes bool
 }
 
 func (p *FuncParam) String() string {
@@ -815,7 +819,7 @@ type FuncType struct {
 	// SelfParam carries the implicit `self` receiver of a method when this
 	// FuncType belongs to a MethodElem/GetterElem/SetterElem. It is nil for
 	// plain functions and static methods. The receiver type lives in
-	// SelfParam.Type — wrapped in MutType for `mut self` — so receiver
+	// SelfParam.Type — wrapped in MutType for `&mut self` — so receiver
 	// lifetimes flow through the visitor / substitution / lifetime
 	// machinery the same way parameter lifetimes do. Use ReceiverIsMut(fn)
 	// to inspect mutability.
@@ -858,6 +862,7 @@ func (t *FuncType) Accept(v TypeVisitor) Type {
 				Pattern:  t.SelfParam.Pattern,
 				Type:     newSelfType,
 				Optional: t.SelfParam.Optional,
+				Consumes: t.SelfParam.Consumes,
 			}
 		}
 	}
@@ -948,13 +953,16 @@ func (t *FuncType) Equals(other Type) bool {
 		}
 		// Compare SelfParam — receiver presence and mutability is part
 		// of a method's identity. The MutType wrapper on the receiver
-		// type carries `mut self` vs `self`, so a structural equals on
+		// type carries `&mut self` vs `self`, so a structural equals on
 		// SelfParam.Type covers both.
 		if (t.SelfParam == nil) != (other.SelfParam == nil) {
 			return false
 		}
 		if t.SelfParam != nil {
 			if !equals(t.SelfParam.Type, other.SelfParam.Type) {
+				return false
+			}
+			if t.SelfParam.Consumes != other.SelfParam.Consumes {
 				return false
 			}
 			if t.SelfParam.Optional != other.SelfParam.Optional {
@@ -1115,7 +1123,7 @@ type SetterElem struct {
 }
 
 // ReceiverIsMut reports whether the function's `self` receiver is
-// `mut self`. Reads Fn.SelfParam (the source of truth); returns false
+// `&mut self`. Reads Fn.SelfParam (the source of truth); returns false
 // when the function is nil, has no receiver, or has a non-mut receiver.
 // Use this anywhere a method/getter/setter element's mutability needs
 // to be inspected.
@@ -1125,6 +1133,14 @@ func ReceiverIsMut(fn *FuncType) bool {
 	}
 	_, isMut := fn.SelfParam.Type.(*MutType)
 	return isMut
+}
+
+// ReceiverConsumes reports whether the function's `self` receiver is
+// `self` or `mut self`, which moves the instance into the call. It
+// returns false when the function is nil, has no receiver, or borrows
+// the instance through `&self` or `&mut self`.
+func ReceiverConsumes(fn *FuncType) bool {
+	return fn != nil && fn.SelfParam != nil && fn.SelfParam.Consumes
 }
 
 // NewSelfParam builds a FuncParam representing a `self` receiver of the
@@ -2733,7 +2749,7 @@ func equals(t1, t2 Type) bool {
 		return false
 	}
 	// Answering identity here terminates the walk on a type that reaches
-	// itself, which `interface I { m(self) -> undefined }` produces: the
+	// itself, which `interface I { m(&self) -> undefined }` produces: the
 	// TypeRefType for `I` holds an alias the receiver points back at.
 	if t1 == t2 {
 		return true

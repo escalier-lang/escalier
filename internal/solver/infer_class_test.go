@@ -65,7 +65,7 @@ func TestInferClassBasic(t *testing.T) {
 				class Point {
 					x: number,
 					y: number,
-					getX(self) -> number { return self.x },
+					getX(&self) -> number { return self.x },
 				}
 				val p = Point(1, 2)
 				val d = p.getX()
@@ -78,7 +78,7 @@ func TestInferClassBasic(t *testing.T) {
 				class Point {
 					x: number,
 					y: number,
-					constructor(mut self, x: number, y: number) {
+					constructor(&mut self, x: number, y: number) {
 						self.x = x
 						self.y = y
 					},
@@ -100,8 +100,8 @@ func TestInferClassBasic(t *testing.T) {
 			src: `
 				class Counter {
 					count: number,
-					constructor(mut self, count: number) { self.count = count },
-					increment(mut self) -> number { return self.count },
+					constructor(&mut self, count: number) { self.count = count },
+					increment(&mut self) -> number { return self.count },
 				}
 				val mut c = Counter(0)
 				val n = c.increment()
@@ -113,7 +113,7 @@ func TestInferClassBasic(t *testing.T) {
 			src: `
 				class Box {
 					v: number,
-					get value(self) -> number { return self.v },
+					get value(&self) -> number { return self.v },
 				}
 				val b = Box(3)
 				val x = b.value
@@ -350,9 +350,9 @@ func TestInferClassJoinMemberAccess(t *testing.T) {
 func TestInferClassNominalSubtype(t *testing.T) {
 	// base declares A, a subclass B, an unrelated Other, and a bounded Box<T: A>.
 	const base = `
-		class A { x: number, constructor(mut self) { self.x = 0 } }
-		class B extends A { constructor(mut self) { super() } }
-		class Other { y: number, constructor(mut self) { self.y = 0 } }
+		class A { x: number, constructor(&mut self) { self.x = 0 } }
+		class B extends A { constructor(&mut self) { super() } }
+		class Other { y: number, constructor(&mut self) { self.y = 0 } }
 		class Box<T: A> { value: T }
 	`
 	t.Run("same class satisfies the bound", func(t *testing.T) {
@@ -466,7 +466,7 @@ func TestInferClassObjectDestructure(t *testing.T) {
 // rather than silently dropping the edge.
 func TestInferClassNonClassSuper(t *testing.T) {
 	t.Run("extends a type parameter", func(t *testing.T) {
-		_, _, errs := inferSource(t, `class B<T> extends T { constructor(mut self) {} }`)
+		_, _, errs := inferSource(t, `class B<T> extends T { constructor(&mut self) {} }`)
 		require.Len(t, errs, 1)
 		require.Equal(t, "`T` does not name a class and cannot be extended or implemented.", errs[0].Message())
 	})
@@ -479,7 +479,7 @@ func TestInferClassNonClassSuper(t *testing.T) {
 		// A type parameter carries no type arguments, so `T<X>` is doubly ill-formed. The
 		// extends clause still requires a class, so the non-class binding is reported here
 		// rather than dropped silently.
-		_, _, errs := inferSource(t, `class B<T, X> extends T<X> { constructor(mut self) {} }`)
+		_, _, errs := inferSource(t, `class B<T, X> extends T<X> { constructor(&mut self) {} }`)
 		require.Len(t, errs, 1)
 		require.Equal(t, "`T` does not name a class and cannot be extended or implemented.", errs[0].Message())
 	})
@@ -491,16 +491,16 @@ func TestInferClassNonClassSuper(t *testing.T) {
 func TestInferClassExtendFinal(t *testing.T) {
 	t.Run("extending a final class is rejected", func(t *testing.T) {
 		_, _, errs := inferSource(t, `
-			final class A { x: number, constructor(mut self) { self.x = 0 } }
-			class B extends A { constructor(mut self) {} }
+			final class A { x: number, constructor(&mut self) { self.x = 0 } }
+			class B extends A { constructor(&mut self) {} }
 		`)
 		require.Len(t, errs, 1)
 		require.Equal(t, "Cannot extend `A`; it is a final class and has no subclasses.", errs[0].Message())
 	})
 	t.Run("extending a non-final class is allowed", func(t *testing.T) {
 		_, _, errs := inferSource(t, `
-			class A { x: number, constructor(mut self) { self.x = 0 } }
-			class B extends A { constructor(mut self) { super() } }
+			class A { x: number, constructor(&mut self) { self.x = 0 } }
+			class B extends A { constructor(&mut self) { super() } }
 		`)
 		require.Empty(t, errs)
 	})
@@ -546,11 +546,11 @@ func TestInferClassMutualRecursion(t *testing.T) {
 			src: `
 				class A {
 					b: B,
-					getB(self) { return self.b },
+					getB(&self) { return self.b },
 				}
 				class B {
 					a: A,
-					getA(self) { return self.a },
+					getA(&self) { return self.a },
 				}
 			`,
 			wantValues: map[string]string{
@@ -602,8 +602,8 @@ func TestInferClassMethodRecursion(t *testing.T) {
 			src: `
 				class Counter {
 					n: number,
-					getN(self) -> number { return self.n },
-					double(self) -> number { return self.getN() },
+					getN(&self) -> number { return self.n },
+					double(&self) -> number { return self.getN() },
 				}
 				val c = Counter(5)
 				val d = c.double()
@@ -617,8 +617,8 @@ func TestInferClassMethodRecursion(t *testing.T) {
 			src: `
 				class C {
 					n: number,
-					a(self) -> number { return self.b() },
-					b(self) -> number { return self.n },
+					a(&self) -> number { return self.b() },
+					b(&self) -> number { return self.n },
 				}
 				val c = C(1)
 				val r = c.a()
@@ -632,7 +632,7 @@ func TestInferClassMethodRecursion(t *testing.T) {
 			src: `
 				class C {
 					n: number,
-					loop(self, k: number) -> number { return self.loop(k) },
+					loop(&self, k: number) -> number { return self.loop(k) },
 				}
 			`,
 			wantValues: map[string]string{"C": "{new (n: number) -> C}"},
@@ -644,8 +644,8 @@ func TestInferClassMethodRecursion(t *testing.T) {
 			src: `
 				class C {
 					n: number,
-					ping(self, k: number) -> number { return self.pong(k) },
-					pong(self, k: number) -> number { return self.ping(k) },
+					ping(&self, k: number) -> number { return self.pong(k) },
+					pong(&self, k: number) -> number { return self.ping(k) },
 				}
 			`,
 			wantValues: map[string]string{"C": "{new (n: number) -> C}"},
@@ -657,8 +657,8 @@ func TestInferClassMethodRecursion(t *testing.T) {
 			src: `
 				class Box {
 					v: number,
-					get value(self) -> number { return self.v },
-					twice(self) -> number { return self.value },
+					get value(&self) -> number { return self.v },
+					twice(&self) -> number { return self.value },
 				}
 				val b = Box(3)
 				val x = b.twice()
@@ -672,8 +672,8 @@ func TestInferClassMethodRecursion(t *testing.T) {
 			src: `
 				class C {
 					n: number,
-					helper(self) -> number { return self.n },
-					update(mut self) -> number { return self.helper() },
+					helper(&self) -> number { return self.n },
+					update(&mut self) -> number { return self.helper() },
 				}
 			`,
 			wantValues: map[string]string{"C": "{new (n: number) -> C}"},
@@ -685,8 +685,8 @@ func TestInferClassMethodRecursion(t *testing.T) {
 			src: `
 				class C {
 					n: number,
-					f(self, {a, b}: {a: number, b: number}) -> number { return self.g(a) },
-					g(self, x: number) -> number { return x },
+					f(&self, {a, b}: {a: number, b: number}) -> number { return self.g(a) },
+					g(&self, x: number) -> number { return x },
 				}
 				val c = C(1)
 				val r = c.f({a: 1, b: 2})
@@ -700,10 +700,10 @@ func TestInferClassMethodRecursion(t *testing.T) {
 			src: `
 				class C {
 					n: number,
-					constructor(mut self, x: number) {
+					constructor(&mut self, x: number) {
 						self.n = x
 					},
-					getN(self) -> number { return self.n },
+					getN(&self) -> number { return self.n },
 				}
 				val c = C(4)
 				val g = c.getN()
@@ -726,8 +726,8 @@ func TestInferClassMutualRecursionRequiresAnnotation(t *testing.T) {
 	_, _, errs := inferSource(t, `
 		class C {
 			n: number,
-			ping(self, k: number) { return self.pong(k) },
-			pong(self, k: number) { return self.ping(k) },
+			ping(&self, k: number) { return self.pong(k) },
+			pong(&self, k: number) { return self.ping(k) },
 		}
 	`)
 	msgs := make([]string, len(errs))
@@ -749,8 +749,8 @@ func TestInferClassMutMethodFromImmutMethod(t *testing.T) {
 	_, _, errs := inferSource(t, `
 		class C {
 			n: number,
-			bump(mut self) -> number { return self.n },
-			peek(self) -> number { return self.bump() },
+			bump(&mut self) -> number { return self.n },
+			peek(&self) -> number { return self.bump() },
 		}
 	`)
 	require.Len(t, errs, 1)
@@ -765,10 +765,10 @@ func TestInferClassMutMethodFromMutMethod(t *testing.T) {
 	_, _, errs := inferSource(t, `
 		class C {
 			n: number,
-			bump(mut self) -> number { return self.n },
-			read(self) -> number { return self.n },
-			run(mut self) -> number { return self.bump() },
-			also(mut self) -> number { return self.read() },
+			bump(&mut self) -> number { return self.n },
+			read(&self) -> number { return self.n },
+			run(&mut self) -> number { return self.bump() },
+			also(&mut self) -> number { return self.read() },
 		}
 	`)
 	require.Empty(t, errs)
@@ -783,8 +783,8 @@ func TestInferClassMutGetterFromImmutMethod(t *testing.T) {
 	_, _, errs := inferSource(t, `
 		class C {
 			v: number,
-			get doubled(mut self) -> number { return self.v },
-			peek(self) -> number { return self.doubled },
+			get doubled(&mut self) -> number { return self.v },
+			peek(&self) -> number { return self.doubled },
 		}
 	`)
 	require.Len(t, errs, 1)
@@ -806,8 +806,8 @@ func TestInferClassGenericMethodReturnsTypeParam(t *testing.T) {
 	values, _, errs := inferSource(t, `
 		class Box<T> {
 			v: T,
-			read(self) { return self.v },
-			alias(self) { return self.read() },
+			read(&self) { return self.v },
+			alias(&self) { return self.read() },
 		}
 		val b = Box(5)
 		val x = b.read()
@@ -820,14 +820,14 @@ func TestInferClassGenericMethodReturnsTypeParam(t *testing.T) {
 
 // TestInferClassGenericGetterReturnsTypeParam checks the getter analogue of the method case:
 // a getter whose return flows from a class type parameter projects to the instance's argument.
-// `get first(self) { return self.v }` on `class Box<T>` reads `T`, so `b.first` for `b : Box<5>`
+// `get first(&self) { return self.v }` on `class Box<T>` reads `T`, so `b.first` for `b : Box<5>`
 // projects to `5`. The kept-flow coalesce keeps `T` symbolic through the getter's return var
 // the same way it does for a method return.
 func TestInferClassGenericGetterReturnsTypeParam(t *testing.T) {
 	values, _, errs := inferSource(t, `
 		class Box<T> {
 			v: T,
-			get first(self) { return self.v },
+			get first(&self) { return self.v },
 		}
 		val b = Box("hi")
 		val x = b.first
@@ -846,8 +846,8 @@ func TestInferClassGenericMixedMembers(t *testing.T) {
 	values, _, errs := inferSource(t, `
 		class Box<T> {
 			v: T,
-			read(self) { return self.v },
-			label(self) -> string { return "box" },
+			read(&self) { return self.v },
+			label(&self) -> string { return "box" },
 		}
 		val b = Box(5)
 		val r = b.read()
@@ -867,10 +867,10 @@ func TestInferClassInheritedMemberAccess(t *testing.T) {
 	values, _, errs := inferSource(t, `
 		class Animal {
 			name: string,
-			speak(self) -> string { return "..." },
+			speak(&self) -> string { return "..." },
 		}
 		class Dog extends Animal {
-			constructor(mut self) { super("rex") }
+			constructor(&mut self) { super("rex") }
 		}
 		val d = Dog()
 		val n = d.name
@@ -892,10 +892,10 @@ func TestInferClassInheritedMemberAccessMultiLevel(t *testing.T) {
 			base: number,
 		}
 		class Mid extends Base {
-			constructor(mut self) { super(0) }
+			constructor(&mut self) { super(0) }
 		}
 		class Leaf extends Mid {
-			constructor(mut self) { super() }
+			constructor(&mut self) { super() }
 		}
 		val leaf = Leaf()
 		val got = leaf.base
@@ -934,10 +934,10 @@ func TestInferClassInheritedMemberAccessCollidingVal(t *testing.T) {
 			x: number,
 		}
 		class B extends A {
-			constructor(mut self) { super(0) }
+			constructor(&mut self) { super(0) }
 		}
 		class C extends B {
-			constructor(mut self) { super() }
+			constructor(&mut self) { super() }
 		}
 		val c = C()
 		val x = c.x
@@ -964,7 +964,7 @@ func TestInferClassGenericSubGenericSuper(t *testing.T) {
 		}
 		class Dog<D> extends Animal<D> {
 			tag: D,
-			constructor(mut self, tag: D) {
+			constructor(&mut self, tag: D) {
 				super(tag)
 				self.tag = tag
 			}
@@ -990,7 +990,7 @@ func TestInferClassNonGenericSubGenericSuper(t *testing.T) {
 			food: A,
 		}
 		class Dog extends Animal<string> {
-			constructor(mut self) { super("bone") }
+			constructor(&mut self) { super("bone") }
 		}
 		val d = Dog()
 		val f = d.food
@@ -1008,8 +1008,8 @@ func TestInferClassGenericMemberParam(t *testing.T) {
 	values, _, errs := inferSource(t, `
 		class Box<T> {
 			v: T,
-			constructor(mut self, v: T) { self.v = v },
-			replace(mut self, next: T) { self.v = next },
+			constructor(&mut self, v: T) { self.v = v },
+			replace(&mut self, next: T) { self.v = next },
 		}
 		val b = Box(5)
 	`)
@@ -1073,7 +1073,7 @@ func TestInferClassVariance(t *testing.T) {
 	t.Run("contravariant method parameter rejects a widening", func(t *testing.T) {
 		_, _, errs := inferSource(t, `
 			class Consumer<T> {
-				accept(self, x: T) { },
+				accept(&self, x: T) { },
 			}
 			val narrow: Consumer<number> = Consumer()
 			val wide: Consumer<number | string> = narrow
@@ -1091,7 +1091,7 @@ func TestInferClassVariance(t *testing.T) {
 		// come back at the wrong type. The case below adds one and the widening stops.
 		_, _, errs := inferSource(t, `
 			class Sink<T> {
-				push(mut self, item: T) -> undefined { return undefined },
+				push(&mut self, item: T) -> undefined { return undefined },
 			}
 			fn widen(s: Sink<number>) -> Sink<number | string> { return s }
 			fn narrow(s: Sink<number | string>) -> Sink<number> { return s }
@@ -1107,7 +1107,7 @@ func TestInferClassVariance(t *testing.T) {
 		_, _, errs := inferSource(t, `
 			class Cell<T> {
 				slot: T,
-				take(mut self) -> T { return self.slot },
+				take(&mut self) -> T { return self.slot },
 			}
 			fn narrow(c: Cell<number | string>) -> Cell<number> { return c }
 		`)
@@ -1121,8 +1121,8 @@ func TestInferClassVariance(t *testing.T) {
 		_, _, errs := inferSource(t, `
 			class Slot<T> {
 				value: T,
-				read(self) -> T { return self.value },
-				write(mut self, v: T) -> undefined { return undefined },
+				read(&self) -> T { return self.value },
+				write(&mut self, v: T) -> undefined { return undefined },
 			}
 			fn widen(s: Slot<number>) -> Slot<number | string> { return s }
 		`)
@@ -1148,7 +1148,7 @@ func TestInferClassCovariance(t *testing.T) {
 		_, _, errs := inferSource(t, `
 			class Box<T> {
 				value: T,
-				read(self) -> T { return self.value },
+				read(&self) -> T { return self.value },
 			}
 			val wide: Box<number | string> = Box(5)
 		`)
@@ -1158,7 +1158,7 @@ func TestInferClassCovariance(t *testing.T) {
 		_, _, errs := inferSource(t, `
 			class Box<T> {
 				value: T,
-				get item(self) -> T { return self.value },
+				get item(&self) -> T { return self.value },
 			}
 			val wide: Box<number | string> = Box(5)
 		`)
@@ -1203,7 +1203,7 @@ func TestInferClassContravariance(t *testing.T) {
 	t.Run("method parameter occurrence narrows", func(t *testing.T) {
 		values, _, errs := inferSource(t, `
 			class Consumer<T> {
-				accept(self, x: T) { },
+				accept(&self, x: T) { },
 			}
 			val wide: Consumer<number | string> = Consumer()
 			val narrow: Consumer<number> = wide
@@ -1214,7 +1214,7 @@ func TestInferClassContravariance(t *testing.T) {
 	t.Run("setter occurrence narrows", func(t *testing.T) {
 		values, _, errs := inferSource(t, `
 			class Sink<T> {
-				set item(mut self, x: T) { },
+				set item(&mut self, x: T) { },
 			}
 			val wide: Sink<number | string> = Sink()
 			val narrow: Sink<number> = wide
@@ -1225,8 +1225,8 @@ func TestInferClassContravariance(t *testing.T) {
 	t.Run("each parameter of a multi-parameter class is contravariant", func(t *testing.T) {
 		values, _, errs := inferSource(t, `
 			class Sink2<A, B> {
-				a(self, x: A) { },
-				b(self, y: B) { },
+				a(&self, x: A) { },
+				b(&self, y: B) { },
 			}
 			val wide: Sink2<number | string, number | boolean> = Sink2()
 			val narrow: Sink2<number, boolean> = wide
@@ -1237,7 +1237,7 @@ func TestInferClassContravariance(t *testing.T) {
 	t.Run("narrowing flows through a function argument", func(t *testing.T) {
 		_, _, errs := inferSource(t, `
 			class Consumer<T> {
-				accept(self, x: T) { },
+				accept(&self, x: T) { },
 			}
 			fn feed(c: Consumer<number>) { }
 			val wide: Consumer<number | string> = Consumer()
@@ -1288,7 +1288,7 @@ func TestInferClassMutVariance(t *testing.T) {
 		// Rejecting this was the imprecision escalier-lang/escalier#870 reported.
 		_, _, errs := inferSource(t, `
 			class Consumer<T> {
-				accept(self, x: T) { },
+				accept(&self, x: T) { },
 			}
 			fn narrow(c: mut Consumer<number>) { }
 			fn wide(c: mut Consumer<number | string>) { narrow(c) }
@@ -1302,7 +1302,7 @@ func TestInferClassMutVariance(t *testing.T) {
 		// immutably.
 		_, _, errs := inferSource(t, `
 			class Consumer<T> {
-				accept(self, x: T) { },
+				accept(&self, x: T) { },
 			}
 			fn wide(c: mut Consumer<number | string>) { }
 			fn narrow(c: mut Consumer<number>) { wide(c) }
@@ -1340,7 +1340,7 @@ func TestInferClassMutVariance(t *testing.T) {
 		_, _, errs := inferSource(t, `
 			class Reader<T> {
 				readonly value: T,
-				read(self) -> T { return self.value },
+				read(&self) -> T { return self.value },
 			}
 			fn wide(r: mut Reader<number | string>) { }
 			fn narrow(r: mut Reader<number>) { wide(r) }
@@ -1353,7 +1353,7 @@ func TestInferClassMutVariance(t *testing.T) {
 		// `push(<number>)`, and the instance behind it takes a `number | string`.
 		_, _, errs := inferSource(t, `
 			class Sink<T> {
-				push(mut self, item: T) -> undefined { return undefined },
+				push(&mut self, item: T) -> undefined { return undefined },
 			}
 			fn narrow(s: mut Sink<number>) { }
 			fn wide(s: mut Sink<number | string>) { narrow(s) }
@@ -1365,7 +1365,7 @@ func TestInferClassMutVariance(t *testing.T) {
 		// `push("s")`, and the instance's `number`-only `push` cannot take it.
 		_, _, errs := inferSource(t, `
 			class Sink<T> {
-				push(mut self, item: T) -> undefined { return undefined },
+				push(&mut self, item: T) -> undefined { return undefined },
 			}
 			fn wide(s: mut Sink<number | string>) { }
 			fn narrow(s: mut Sink<number>) { wide(s) }
@@ -1381,8 +1381,8 @@ func TestInferClassMutVariance(t *testing.T) {
 		_, _, errs := inferSource(t, `
 			class Slot<T> {
 				value: T,
-				read(self) -> T { return self.value },
-				write(mut self, v: T) -> undefined { return undefined },
+				read(&self) -> T { return self.value },
+				write(&mut self, v: T) -> undefined { return undefined },
 			}
 			fn wide(s: mut Slot<number | string>) { }
 			fn narrow(s: mut Slot<number>) { wide(s) }
@@ -1398,8 +1398,8 @@ func TestInferClassMutVariance(t *testing.T) {
 		const src = `
 			class Prop<T> {
 				readonly v: T,
-				get item(self) -> T { return self.v },
-				set item(mut self, x: T) { },
+				get item(&self) -> T { return self.v },
+				set item(&mut self, x: T) { },
 			}
 		`
 		_, _, errs := inferSource(t, src+`
@@ -1421,7 +1421,7 @@ func TestInferClassMutVariance(t *testing.T) {
 		_, _, errs := inferSource(t, `
 			class Box<T> {
 				value: T,
-				read(self) -> T { return self.value },
+				read(&self) -> T { return self.value },
 			}
 			fn wide(b: mut Box<number | string>) { }
 			fn narrow(b: mut Box<number>) { wide(b) }
@@ -1438,11 +1438,11 @@ func TestInferClassMutVariance(t *testing.T) {
 		_, _, errs := inferSource(t, `
 			class Animal {
 				pos: {x: number},
-				constructor(mut self, pos: {x: number}) { self.pos = pos },
+				constructor(&mut self, pos: {x: number}) { self.pos = pos },
 			}
 			class Dog extends Animal {
 				breed: string,
-				constructor(mut self, breed: string) {
+				constructor(&mut self, breed: string) {
 					super({x: 0})
 					self.breed = breed
 				},
@@ -1459,11 +1459,11 @@ func TestInferClassMutVariance(t *testing.T) {
 		_, _, errs := inferSource(t, `
 			class Animal {
 				name: string,
-				constructor(mut self, name: string) { self.name = name },
+				constructor(&mut self, name: string) { self.name = name },
 			}
 			class Dog extends Animal {
 				breed: string,
-				constructor(mut self, name: string, breed: string) {
+				constructor(&mut self, name: string, breed: string) {
 					super(name)
 					self.breed = breed
 				},
@@ -1499,7 +1499,7 @@ func TestInferClassMutVariance(t *testing.T) {
 		// bare spelling accepts a few cases above.
 		_, _, errs := inferSource(t, `
 			class Consumer<T> {
-				accept(self, x: T) { },
+				accept(&self, x: T) { },
 			}
 			type CNum = Consumer<number>
 			fn narrow(c: mut CNum) { }
@@ -1516,7 +1516,7 @@ func TestInferClassMutVariance(t *testing.T) {
 		_, _, errs := inferSource(t, `
 			class Box<T> {
 				value: T,
-				read(self) -> T { return self.value },
+				read(&self) -> T { return self.value },
 			}
 			fn wide(b: Box<number | string>) { }
 			fn narrow(b: Box<number>) { wide(b) }
@@ -1547,7 +1547,7 @@ func TestInferClassVarianceModifiers(t *testing.T) {
 	t.Run("matching in modifier on a contravariant parameter checks", func(t *testing.T) {
 		_, _, errs := inferSource(t, `
 			class Consumer<in T> {
-				accept(self, x: T) { },
+				accept(&self, x: T) { },
 			}
 		`)
 		require.Empty(t, errs)
@@ -1571,7 +1571,7 @@ func TestInferClassErrors(t *testing.T) {
 			src: `
 				class C {
 					v: number,
-					set value(mut self, x: number) { self.v = x },
+					set value(&mut self, x: number) { self.v = x },
 				}
 				val c = C(0)
 				val r = c.value
@@ -1583,7 +1583,7 @@ func TestInferClassErrors(t *testing.T) {
 			src: `
 				class C {
 					v: number,
-					set value(mut self) { },
+					set value(&mut self) { },
 				}
 			`,
 			want: "Setter 'value' must declare exactly one value parameter; found 0.",
@@ -1593,7 +1593,7 @@ func TestInferClassErrors(t *testing.T) {
 			src: `
 				class C {
 					v: number,
-					set value(mut self, a: number, b: number) { },
+					set value(&mut self, a: number, b: number) { },
 				}
 			`,
 			want: "Setter 'value' must declare exactly one value parameter; found 2.",
@@ -1603,10 +1603,10 @@ func TestInferClassErrors(t *testing.T) {
 			src: `
 				class C {
 					v: number,
-					set value(self, x: number) { },
+					set value(&self, x: number) { },
 				}
 			`,
-			want: "Setter 'value' must declare a `mut self` receiver; writing through it mutates the instance.",
+			want: "Setter 'value' must declare a `&mut self` receiver; writing through it mutates the instance.",
 		},
 		{
 			name: "FieldInitializerNotAllowed",
@@ -1643,7 +1643,7 @@ func TestInferClassErrors(t *testing.T) {
 			src: `
 				class Animal<A> { food: A }
 				class Dog extends Animal<Bogus> {
-					constructor(mut self) { super(5) }
+					constructor(&mut self) { super(5) }
 				}
 			`,
 			want: "cannot find type `Bogus`",
@@ -1673,7 +1673,7 @@ func TestConstructorInitClean(t *testing.T) {
 				class Point {
 					x: number,
 					y: number,
-					constructor(mut self, x: number, y: number) {
+					constructor(&mut self, x: number, y: number) {
 						self.x = x
 						self.y = y
 					},
@@ -1686,7 +1686,7 @@ func TestConstructorInitClean(t *testing.T) {
 				class C {
 					x: number,
 					y?: number,
-					constructor(mut self, x: number) {
+					constructor(&mut self, x: number) {
 						self.x = x
 					},
 				}
@@ -1697,7 +1697,7 @@ func TestConstructorInitClean(t *testing.T) {
 			src: `
 				class C {
 					x: number,
-					constructor(mut self, cond: boolean) {
+					constructor(&mut self, cond: boolean) {
 						if cond {
 							self.x = 1
 						} else {
@@ -1713,7 +1713,7 @@ func TestConstructorInitClean(t *testing.T) {
 				class C {
 					x: number,
 					y: number,
-					constructor(mut self, x: number) {
+					constructor(&mut self, x: number) {
 						self.x = x
 						self.y = self.x
 					},
@@ -1726,8 +1726,8 @@ func TestConstructorInitClean(t *testing.T) {
 			src: `
 				class C {
 					x: number,
-					log(self) -> number { return self.x },
-					constructor(mut self, x: number) {
+					log(&self) -> number { return self.x },
+					constructor(&mut self, x: number) {
 						self.x = x
 						val r = self.log()
 					},
@@ -1741,8 +1741,8 @@ func TestConstructorInitClean(t *testing.T) {
 			src: `
 				class C {
 					x: number,
-					log(self) -> number { return self.x },
-					constructor(mut self, x: number) {
+					log(&self) -> number { return self.x },
+					constructor(&mut self, x: number) {
 						val f = self.log
 						self.x = x
 					},
@@ -1775,7 +1775,7 @@ func TestConstructorInitErrors(t *testing.T) {
 				class Point {
 					x: number,
 					y: number,
-					constructor(mut self, x: number) {
+					constructor(&mut self, x: number) {
 						self.x = x
 					},
 				}
@@ -1788,7 +1788,7 @@ func TestConstructorInitErrors(t *testing.T) {
 				class Point {
 					x: number,
 					y: number,
-					constructor(mut self) { },
+					constructor(&mut self) { },
 				}
 			`,
 			want: "Fields 'x', 'y' are not initialized on every path through the constructor.",
@@ -1798,7 +1798,7 @@ func TestConstructorInitErrors(t *testing.T) {
 			src: `
 				class C {
 					x: number,
-					constructor(mut self, cond: boolean) {
+					constructor(&mut self, cond: boolean) {
 						if cond {
 							self.x = 1
 						}
@@ -1813,7 +1813,7 @@ func TestConstructorInitErrors(t *testing.T) {
 				class C {
 					x: number,
 					y: number,
-					constructor(mut self, x: number) {
+					constructor(&mut self, x: number) {
 						self.y = self.x
 						self.x = x
 					},
@@ -1826,8 +1826,8 @@ func TestConstructorInitErrors(t *testing.T) {
 			src: `
 				class C {
 					x: number,
-					log(self) -> number { return self.x },
-					constructor(mut self, x: number) {
+					log(&self) -> number { return self.x },
+					constructor(&mut self, x: number) {
 						val r = self.log()
 						self.x = x
 					},
@@ -1841,8 +1841,8 @@ func TestConstructorInitErrors(t *testing.T) {
 				class C {
 					x: number,
 					y: number,
-					log(self) -> number { return self.x },
-					constructor(mut self) {
+					log(&self) -> number { return self.x },
+					constructor(&mut self) {
 						val r = self.log()
 						self.x = 1
 						self.y = 2
@@ -2025,8 +2025,8 @@ func TestInferMethodOverloadResolvesByArg(t *testing.T) {
 	values, _, errs := inferSource(t, `
 		class C {
 			n: number,
-			f(self, x: number) -> number { return x },
-			f(self, x: string) -> string { return x },
+			f(&self, x: number) -> number { return x },
+			f(&self, x: string) -> string { return x },
 		}
 		val c = C(0)
 		val a = c.f(1)
@@ -2045,8 +2045,8 @@ func TestInferMethodOverloadObjectArgFieldSubsumption(t *testing.T) {
 	values, _, errs := inferSource(t, `
 		class C {
 			n: number,
-			g(self, p: {x: number}) -> number { return p.x },
-			g(self, p: {x: number, y: number}) -> string { return "wide" },
+			g(&self, p: {x: number}) -> number { return p.x },
+			g(&self, p: {x: number, y: number}) -> string { return "wide" },
 		}
 		val c = C(0)
 		val r = c.g({x: 1, y: 2})
@@ -2063,8 +2063,8 @@ func TestInferMethodOverloadNoMatch(t *testing.T) {
 	_, _, errs := inferSource(t, `
 		class C {
 			n: number,
-			f(self, x: number) -> number { return x },
-			f(self, x: string) -> string { return x },
+			f(&self, x: number) -> number { return x },
+			f(&self, x: string) -> string { return x },
 		}
 		val c = C(0)
 		val r = c.f(true)
@@ -2084,9 +2084,9 @@ func TestInferMethodOverloadDeferredFallsBackToFirstMatch(t *testing.T) {
 	values, _, errs := inferSource(t, `
 		class C {
 			n: number,
-			f(self, x: number) -> number { return x },
-			f(self, x: string) -> string { return x },
-			run(self, x) -> number { return self.f(x) },
+			f(&self, x: number) -> number { return x },
+			f(&self, x: string) -> string { return x },
+			run(&self, x) -> number { return self.f(x) },
 		}
 		val c = C(0)
 		val r = c.run(1)
@@ -2105,14 +2105,14 @@ func TestInferMethodOverloadMixedReceiverRejected(t *testing.T) {
 	_, _, errs := inferSource(t, `
 		class C {
 			n: number,
-			f(self, x: number) -> number { return self.n },
-			f(mut self, x: string) -> string { return x },
-			peek(self) -> string { return self.f("hi") },
+			f(&self, x: number) -> number { return self.n },
+			f(&mut self, x: string) -> string { return x },
+			peek(&self) -> string { return self.f("hi") },
 		}
 	`)
 	require.Len(t, errs, 1)
 	require.Equal(t,
-		"Overloaded method 'f' must use the same `self` receiver mutability in every arm.",
+		"Overloaded method 'f' must use the same `self` receiver in every arm.",
 		errs[0].Message())
 }
 
@@ -2123,9 +2123,9 @@ func TestInferMethodOverloadUniformMutReceiverAccepted(t *testing.T) {
 	values, _, errs := inferSource(t, `
 		class C {
 			n: number,
-			f(mut self, x: number) -> number { return x },
-			f(mut self, x: string) -> string { return x },
-			run(mut self) -> string { return self.f("hi") },
+			f(&mut self, x: number) -> number { return x },
+			f(&mut self, x: string) -> string { return x },
+			run(&mut self) -> string { return self.f("hi") },
 		}
 		val mut c = C(0)
 		val r = c.f(1)
@@ -2150,7 +2150,7 @@ func TestInferClassMethodTypeParams(t *testing.T) {
 			name: "InstanceMethodBinderEnforcesItsBound",
 			src: `
 				class C {
-					pick<T: string>(self, x: T) -> T { return x },
+					pick<T: string>(&self, x: T) -> T { return x },
 				}
 				val c = C()
 				val r = c.pick(1)
@@ -2202,7 +2202,7 @@ func TestInferClassMethodTypeParamBounds(t *testing.T) {
 			name: "ArgumentInsideBound",
 			src: `
 				class C {
-					pick<T: string>(self, x: T) -> T { return x },
+					pick<T: string>(&self, x: T) -> T { return x },
 				}
 				val c = C()
 				val r = c.pick("a")
@@ -2212,7 +2212,7 @@ func TestInferClassMethodTypeParamBounds(t *testing.T) {
 			name: "ArgumentOutsideBound",
 			src: `
 				class C {
-					pick<T: string>(self, x: T) -> T { return x },
+					pick<T: string>(&self, x: T) -> T { return x },
 				}
 				val c = C()
 				val r = c.pick(1)
@@ -2223,7 +2223,7 @@ func TestInferClassMethodTypeParamBounds(t *testing.T) {
 			name: "UnboundedBinderAcceptsAnyArgument",
 			src: `
 				class C {
-					pick<T>(self, x: T) -> T { return x },
+					pick<T>(&self, x: T) -> T { return x },
 				}
 				val c = C()
 				val r = c.pick(1)
@@ -2238,7 +2238,7 @@ func TestInferClassMethodTypeParamBounds(t *testing.T) {
 			src: `
 				class C<U> {
 					v: U,
-					pick<T: U>(self, x: T) -> T { return x },
+					pick<T: U>(&self, x: T) -> T { return x },
 				}
 				val c: C<number> = C(1)
 				val r = c.pick(2)
@@ -2252,7 +2252,7 @@ func TestInferClassMethodTypeParamBounds(t *testing.T) {
 			src: `
 				class C<T> {
 					v: T,
-					pick<T>(self, x: T) -> T { return x },
+					pick<T>(&self, x: T) -> T { return x },
 				}
 				val c: C<number> = C(1)
 				val r = c.pick("a")
@@ -2276,7 +2276,7 @@ func TestInferClassMethodTypeParamBounds(t *testing.T) {
 func TestInferClassMethodTypeParamsInstantiatePerCall(t *testing.T) {
 	values, _, errs := inferSource(t, `
 		class C {
-			pick<T: string>(self, x: T) -> T { return x },
+			pick<T: string>(&self, x: T) -> T { return x },
 		}
 		val c = C()
 		val a = c.pick("a")
@@ -2304,7 +2304,7 @@ func TestInferMethodBodyInferredBoundMatchesTheFunctionForm(t *testing.T) {
 	`)
 	_, _, methodErrs := inferSource(t, callee+`
 		class C {
-			g<U>(self, u: U) -> U { return f(u) },
+			g<U>(&self, u: U) -> U { return f(u) },
 		}
 		val c = C()
 		val r = c.g(1)
@@ -2330,7 +2330,7 @@ func TestInferMethodSiblingBoundMatchesTheFunctionForm(t *testing.T) {
 	`)
 	_, _, methodErrs := inferSource(t, `
 		class C {
-			pair<A, B: A>(self, a: A, b: B) -> A { return a },
+			pair<A, B: A>(&self, a: A, b: B) -> A { return a },
 		}
 		val c = C()
 		val r = c.pair(1, "y")
@@ -2344,7 +2344,7 @@ func TestInferMethodSiblingBoundMatchesTheFunctionForm(t *testing.T) {
 	`)
 	_, _, boundedMethodErrs := inferSource(t, `
 		class C {
-			pair<A: number, B: A>(self, a: A, b: B) -> A { return a },
+			pair<A: number, B: A>(&self, a: A, b: B) -> A { return a },
 		}
 		val c = C()
 		val r = c.pair(1, "y")
@@ -2369,7 +2369,7 @@ func TestInferClassMethodTypeParamRendering(t *testing.T) {
 		{
 			name: "an instance method's bound",
 			src: `
-				class C { pick<T: string>(self, x: T) -> T { return x }, }
+				class C { pick<T: string>(&self, x: T) -> T { return x }, }
 				fn probe(c: C) { return c.pick }`,
 			binding: "probe",
 			want:    "fn (c: C) -> fn <T: string>(x: T) -> T",
@@ -2377,7 +2377,7 @@ func TestInferClassMethodTypeParamRendering(t *testing.T) {
 		{
 			name: "an unbounded binder",
 			src: `
-				class C { pick<T>(self, x: T) -> T { return x }, }
+				class C { pick<T>(&self, x: T) -> T { return x }, }
 				fn probe(c: C) { return c.pick }`,
 			binding: "probe",
 			want:    "fn (c: C) -> fn <T>(x: T) -> T",
@@ -2385,7 +2385,7 @@ func TestInferClassMethodTypeParamRendering(t *testing.T) {
 		{
 			name: "a bound naming the class's parameter",
 			src: `
-				class C<U> { v: U, pick<T: U>(self, x: T) -> T { return x }, }
+				class C<U> { v: U, pick<T: U>(&self, x: T) -> T { return x }, }
 				fn probe(c: C<number>) { return c.pick }`,
 			binding: "probe",
 			want:    "fn <T0>(c: C<number>) -> fn <T: number>(x: T) -> T",
@@ -2393,7 +2393,7 @@ func TestInferClassMethodTypeParamRendering(t *testing.T) {
 		{
 			name: "a signature mixing both binders",
 			src: `
-				class C<U> { v: U, map<T>(self, x: T) -> [T, U] { return [x, self.v] }, }
+				class C<U> { v: U, map<T>(&self, x: T) -> [T, U] { return [x, self.v] }, }
 				fn probe(c: C<number>) { return c.map }`,
 			binding: "probe",
 			want:    "fn (c: C<number>) -> fn <T>(x: T) -> [T, number]",
@@ -2422,8 +2422,8 @@ func TestInferOverloadedGenericMethod(t *testing.T) {
 	t.Run("one generic arm beside a plain one", func(t *testing.T) {
 		values, _, errs := inferSource(t, `
 			class C {
-				pick<T: string>(self, x: T) -> T { return x },
-				pick(self, a: number, b: number) -> number { return a },
+				pick<T: string>(&self, x: T) -> T { return x },
+				pick(&self, a: number, b: number) -> number { return a },
 			}
 			val c = C()
 			val a = c.pick("s")
@@ -2436,8 +2436,8 @@ func TestInferOverloadedGenericMethod(t *testing.T) {
 	t.Run("two generic arms", func(t *testing.T) {
 		values, _, errs := inferSource(t, `
 			class C {
-				pick<T: string>(self, x: T) -> T { return x },
-				pick<T: number>(self, x: T, y: T) -> T { return x },
+				pick<T: string>(&self, x: T) -> T { return x },
+				pick<T: number>(&self, x: T, y: T) -> T { return x },
 			}
 			val c = C()
 			val a = c.pick("s")
@@ -2450,8 +2450,8 @@ func TestInferOverloadedGenericMethod(t *testing.T) {
 	t.Run("a call matching no arm", func(t *testing.T) {
 		_, _, errs := inferSource(t, `
 			class C {
-				pick<T: string>(self, x: T) -> T { return x },
-				pick(self, a: number, b: number) -> number { return a },
+				pick<T: string>(&self, x: T) -> T { return x },
+				pick(&self, a: number, b: number) -> number { return a },
 			}
 			val c = C()
 			val r = c.pick(1)
@@ -2470,7 +2470,7 @@ func TestInferOverloadedGenericMethod(t *testing.T) {
 // panic rather than a diagnostic.
 func TestInferClassKeepsANestedCallbackBinder(t *testing.T) {
 	values, _, errs := inferSource(t, `class C {
-	apply(self, g: fn <V>(x: V) -> V, y: number) -> number { return g(y) },
+	apply(&self, g: fn <V>(x: V) -> V, y: number) -> number { return g(y) },
 }
 fn probe(c: C) { return c.apply }`)
 	require.Empty(t, messagesWithSpan(t, errs))
@@ -2488,8 +2488,8 @@ func TestInferGenericMethodBoundReachesASiblingCall(t *testing.T) {
 	t.Run("the callee is declared after the caller", func(t *testing.T) {
 		_, _, errs := inferSource(t, `
 			class C {
-				caller(self) -> number { return self.pick(1) },
-				pick<T: string>(self, x: T) -> T { return x },
+				caller(&self) -> number { return self.pick(1) },
+				pick<T: string>(&self, x: T) -> T { return x },
 			}
 		`)
 		require.Contains(t, errorMessagesOf(errs), want)
@@ -2497,8 +2497,8 @@ func TestInferGenericMethodBoundReachesASiblingCall(t *testing.T) {
 	t.Run("the callee is declared before the caller", func(t *testing.T) {
 		_, _, errs := inferSource(t, `
 			class C {
-				pick<T: string>(self, x: T) -> T { return x },
-				caller(self) -> number { return self.pick(1) },
+				pick<T: string>(&self, x: T) -> T { return x },
+				caller(&self) -> number { return self.pick(1) },
 			}
 		`)
 		require.Contains(t, errorMessagesOf(errs), want)
@@ -2506,8 +2506,8 @@ func TestInferGenericMethodBoundReachesASiblingCall(t *testing.T) {
 	t.Run("a sibling call inside the bound is accepted", func(t *testing.T) {
 		_, _, errs := inferSource(t, `
 			class C {
-				caller(self) -> string { return self.pick("a") },
-				pick<T: string>(self, x: T) -> T { return x },
+				caller(&self) -> string { return self.pick("a") },
+				pick<T: string>(&self, x: T) -> T { return x },
 			}
 		`)
 		require.Empty(t, messagesWithSpan(t, errs))
@@ -2521,7 +2521,7 @@ func TestInferAccessorTypeParamsGated(t *testing.T) {
 	t.Run("a getter", func(t *testing.T) {
 		_, _, errs := inferSource(t, `
 			class C {
-				get value<T>(self) -> number { return 1 },
+				get value<T>(&self) -> number { return 1 },
 			}
 		`)
 		require.Equal(t, []string{"Unsupported: TypeParam"}, errorMessagesOf(errs))
@@ -2530,7 +2530,7 @@ func TestInferAccessorTypeParamsGated(t *testing.T) {
 		_, _, errs := inferSource(t, `
 			class C {
 				x: number,
-				set value<T>(mut self, v: T) { self.x = 1 },
+				set value<T>(&mut self, v: T) { self.x = 1 },
 			}
 		`)
 		require.Equal(t,
@@ -2546,7 +2546,7 @@ func TestInferClassConstructorTypeParamsGated(t *testing.T) {
 	_, _, errs := inferSource(t, `
 		class C {
 			x: number,
-			constructor<T>(mut self, x: number) { self.x = x },
+			constructor<T>(&mut self, x: number) { self.x = x },
 		}
 	`)
 	var msgs []string
@@ -2563,8 +2563,8 @@ func TestInferClassConstructorTypeParamsGated(t *testing.T) {
 // different things.
 func TestInferClassConstructorOverloads(t *testing.T) {
 	const decl = "declare class Box {\n" +
-		"  constructor(mut self, n: number),\n" +
-		"  constructor(mut self, a: string, b: string),\n" +
+		"  constructor(&mut self, n: number),\n" +
+		"  constructor(&mut self, a: string, b: string),\n" +
 		"}\n"
 	const noMatch = "No matching overload for this call\n" +
 		"  fn (n: number) -> Box\n" +
@@ -2620,8 +2620,8 @@ func TestInferClassConstructorOverloads(t *testing.T) {
 // arms are, so the set is visible at a hover rather than collapsed to one arm.
 func TestInferClassConstructorOverloadsRender(t *testing.T) {
 	src := "declare class Box {\n" +
-		"  constructor(mut self, n: number),\n" +
-		"  constructor(mut self, a: string, b: string),\n" +
+		"  constructor(&mut self, n: number),\n" +
+		"  constructor(&mut self, a: string, b: string),\n" +
 		"}"
 	values, _, errs := inferSource(t, src)
 	require.Empty(t, errs)
@@ -2631,7 +2631,7 @@ func TestInferClassConstructorOverloadsRender(t *testing.T) {
 // A class declaring one constructor keeps the single-signature shape, so the arity lints and
 // the per-argument blame a direct call gives are unaffected by the overload path above.
 func TestInferClassSingleConstructorUnaffected(t *testing.T) {
-	src := "declare class Box {\n  constructor(mut self, n: number),\n}\nval v = Box(\"x\")"
+	src := "declare class Box {\n  constructor(&mut self, n: number),\n}\nval v = Box(\"x\")"
 	_, _, errs := inferSource(t, src)
 	require.Len(t, errs, 1)
 	require.Equal(t, `cannot constrain "x" <: number`, errs[0].Message())
@@ -2643,8 +2643,8 @@ func TestInferClassSingleConstructorUnaffected(t *testing.T) {
 // callee is not what runs here and the element check has to be made per arm.
 func TestInferClassConstructorOverloadWithARestArm(t *testing.T) {
 	const decl = "declare class Arr {\n" +
-		"  constructor(mut self, arrayLength: number),\n" +
-		"  constructor(mut self, ...items: mut Array<string>),\n" +
+		"  constructor(&mut self, arrayLength: number),\n" +
+		"  constructor(&mut self, ...items: mut Array<string>),\n" +
 		"}\n"
 	const noMatch = "No matching overload for this call\n" +
 		"  fn (arrayLength: number) -> Arr\n" +
@@ -2692,7 +2692,7 @@ func TestInferClassConstructorOverloadWithARestArm(t *testing.T) {
 // `Self` inside a class body names the class's own instance type, which is what a
 // builder-style return needs: a method handing back the receiver's own type writes `-> Self`
 // rather than repeating the class name and its arguments. `std/prelude.esc` writes
-// `fill(mut self, value: T, start?: number, end?: number) -> Self`.
+// `fill(&mut self, value: T, start?: number, end?: number) -> Self`.
 func TestInferClassSelfType(t *testing.T) {
 	tests := []struct {
 		name  string
@@ -2705,13 +2705,13 @@ func TestInferClassSelfType(t *testing.T) {
 			// `Self` inside `class Box<T>` is `Box<T>` and an instance's argument substitutes
 			// for `T` the way it does through any other reference to the class.
 			name:  "MethodReturnOnAGenericClass",
-			src:   "declare class Box<T> {\n  fill(mut self, value: T) -> Self,\n}\nfn g(b: mut Box<number>) -> Box<number> { return b.fill(1) }",
+			src:   "declare class Box<T> {\n  fill(&mut self, value: T) -> Self,\n}\nfn g(b: mut Box<number>) -> Box<number> { return b.fill(1) }",
 			which: "g",
 			want:  "fn (b: mut Box<number>) -> Box<number>",
 		},
 		{
 			name:  "MethodReturnOnANonGenericClass",
-			src:   "declare class Box {\n  copy(self) -> Self,\n}\nfn g(b: Box) -> Box { return b.copy() }",
+			src:   "declare class Box {\n  copy(&self) -> Self,\n}\nfn g(b: Box) -> Box { return b.copy() }",
 			which: "g",
 			want:  "fn (b: Box) -> Box",
 		},
@@ -2720,7 +2720,7 @@ func TestInferClassSelfType(t *testing.T) {
 			// covariant overall and stays legal. This is the position 176 of the tree's 242
 			// occurrences take, and it resolves at the receiver's class the way a return does.
 			name: "CallbackParameter",
-			src: "declare class Box {\n  each(self, cb: fn (arr: Self) -> boolean) -> number,\n}\n" +
+			src: "declare class Box {\n  each(&self, cb: fn (arr: Self) -> boolean) -> number,\n}\n" +
 				"fn g(b: Box) { return b.each }",
 			which: "g",
 			want:  "fn (b: Box) -> fn (cb: fn (arr: Box) -> boolean) -> number",
@@ -2751,25 +2751,25 @@ func TestInferClassSelfType(t *testing.T) {
 // The member keeps its shape after the report, so `a.eq(b)` draws no second diagnostic
 // cascading from this one.
 func TestInferSelfTypeInAParameterRejected(t *testing.T) {
-	const msg = "2:19-2:23: \"Self\" cannot be written in a direct parameter position; it denotes the " +
+	const msg = "2:20-2:24: \"Self\" cannot be written in a direct parameter position; it denotes the " +
 		"receiver's own class, so a subclass would demand an argument its superclass accepts — " +
 		"write the class by name instead"
 	t.Run("a direct parameter is rejected", func(t *testing.T) {
 		_, _, errs := inferSource(t,
-			"declare class Box {\n  eq(self, other: Self) -> boolean,\n}\n"+
+			"declare class Box {\n  eq(&self, other: Self) -> boolean,\n}\n"+
 				"fn g(a: Box, b: Box) -> boolean { return a.eq(b) }")
 		require.Equal(t, []string{msg}, messagesWithSpan(t, errs))
 	})
 	t.Run("writing the class by name is the way to say it", func(t *testing.T) {
 		values, _, errs := inferSource(t,
-			"declare class Box {\n  eq(self, other: Box) -> boolean,\n}\n"+
+			"declare class Box {\n  eq(&self, other: Box) -> boolean,\n}\n"+
 				"fn g(a: Box, b: Box) -> boolean { return a.eq(b) }")
 		require.Empty(t, errs)
 		require.Equal(t, "fn (a: Box, b: Box) -> boolean", values["g"])
 	})
 	t.Run("a callback parameter is not a parameter position for this rule", func(t *testing.T) {
 		_, _, errs := inferSource(t,
-			"declare class Box {\n  each(self, cb: fn (arr: Self) -> boolean) -> number,\n}")
+			"declare class Box {\n  each(&self, cb: fn (arr: Self) -> boolean) -> number,\n}")
 		require.Empty(t, errs)
 	})
 }
@@ -2785,9 +2785,9 @@ func TestInferSelfTypeInAParameterRejected(t *testing.T) {
 // `-> B` and pass.
 func TestInferSelfTypeInAnOverrideCheck(t *testing.T) {
 	chain := func(redeclared string) string {
-		return "declare class A {\n  m(self) -> Self,\n}\n" +
-			"declare class B extends A {\n  constructor(mut self),\n}\n" +
-			"declare class C extends B {\n  constructor(mut self),\n  m(self) -> " + redeclared + ",\n}"
+		return "declare class A {\n  m(&self) -> Self,\n}\n" +
+			"declare class B extends A {\n  constructor(&mut self),\n}\n" +
+			"declare class C extends B {\n  constructor(&mut self),\n  m(&self) -> " + redeclared + ",\n}"
 	}
 	t.Run("redeclaring at the receiving class is accepted", func(t *testing.T) {
 		_, _, errs := inferSource(t, chain("C"))
@@ -2796,16 +2796,16 @@ func TestInferSelfTypeInAnOverrideCheck(t *testing.T) {
 	t.Run("redeclaring at an intermediate class is a widening", func(t *testing.T) {
 		_, _, errs := inferSource(t, chain("B"))
 		require.Equal(t, []string{
-			"9:3-9:15: class `C` redeclares inherited member `m` with type `fn () -> B`, " +
+			"9:3-9:16: class `C` redeclares inherited member `m` with type `fn () -> B`, " +
 				"which is not compatible with `fn () -> C` declared by `A`",
 		}, messagesWithSpan(t, errs))
 	})
 	t.Run("one level behaves the same way", func(t *testing.T) {
 		_, _, errs := inferSource(t,
-			"declare class A {\n  m(self) -> Self,\n}\n"+
-				"declare class B extends A {\n  constructor(mut self),\n  m(self) -> A,\n}")
+			"declare class A {\n  m(&self) -> Self,\n}\n"+
+				"declare class B extends A {\n  constructor(&mut self),\n  m(&self) -> A,\n}")
 		require.Equal(t, []string{
-			"6:3-6:15: class `B` redeclares inherited member `m` with type `fn () -> A`, " +
+			"6:3-6:16: class `B` redeclares inherited member `m` with type `fn () -> A`, " +
 				"which is not compatible with `fn () -> B` declared by `A`",
 		}, messagesWithSpan(t, errs))
 	})
@@ -2824,7 +2824,7 @@ func TestInferSelfTypeOutsideAClassBody(t *testing.T) {
 // handle and stays excluded from the variance walk, which is what keeps the parameter from
 // collapsing to invariant.
 func TestInferSelfTypeVariance(t *testing.T) {
-	src := "declare class Box<T> {\n  fill(mut self, value: T) -> Self,\n}\nfn g(b: Box<5>) -> Box<number> { return b }"
+	src := "declare class Box<T> {\n  fill(&mut self, value: T) -> Self,\n}\nfn g(b: Box<5>) -> Box<number> { return b }"
 	_, _, errs := inferSource(t, src)
 	require.Empty(t, errs)
 }
@@ -2841,8 +2841,8 @@ func TestInferSelfTypeVariance(t *testing.T) {
 // the type back. The annotated `-> B` case is what fails once the substitution lands, which is
 // the signal that this comment is stale.
 func TestInferSelfTypeInAnInheritedMember(t *testing.T) {
-	const decl = "declare class A {\n  me(self) -> Self,\n}\n" +
-		"declare class B extends A {\n  constructor(mut self),\n  extra(self) -> number,\n}\n"
+	const decl = "declare class A {\n  me(&self) -> Self,\n}\n" +
+		"declare class B extends A {\n  constructor(&mut self),\n  extra(&self) -> number,\n}\n"
 
 	t.Run("InfersTheReceivingClass", func(t *testing.T) {
 		values, _, errs := inferSource(t, decl+"fn g(b: B) { return b.me() }")
@@ -2858,8 +2858,8 @@ func TestInferSelfTypeInAnInheritedMember(t *testing.T) {
 	t.Run("TheDeclaringClassStillReadsAsItself", func(t *testing.T) {
 		// A member declared `-> A` literally is NOT polymorphic, which is the distinction
 		// `Self` exists to draw. Reaching it through a B still yields A.
-		const literal = "declare class A {\n  me(self) -> A,\n}\n" +
-			"declare class B extends A {\n  constructor(mut self),\n}\n"
+		const literal = "declare class A {\n  me(&self) -> A,\n}\n" +
+			"declare class B extends A {\n  constructor(&mut self),\n}\n"
 		values, _, errs := inferSource(t, literal+"fn g(b: B) { return b.me() }")
 		require.Empty(t, errs)
 		require.Equal(t, "fn (b: B) -> A", values["g"])
@@ -2873,15 +2873,15 @@ func TestInferSelfTypeInAnInheritedMember(t *testing.T) {
 
 	t.Run("ResolvesAtTheReceiverTwoLevelsDown", func(t *testing.T) {
 		values, _, errs := inferSource(t, decl+
-			"declare class C extends B {\n  constructor(mut self),\n}\nfn g(c: C) { return c.me() }")
+			"declare class C extends B {\n  constructor(&mut self),\n}\nfn g(c: C) { return c.me() }")
 		require.Empty(t, errs)
 		require.Equal(t, "fn (c: C) -> C", values["g"])
 	})
 
 	t.Run("KeepsTheSubclassTypeArguments", func(t *testing.T) {
 		values, _, errs := inferSource(t,
-			"declare class Box<T> {\n  dup(self) -> Self,\n}\n"+
-				"declare class Pair<T> extends Box<T> {\n  constructor(mut self),\n}\n"+
+			"declare class Box<T> {\n  dup(&self) -> Self,\n}\n"+
+				"declare class Pair<T> extends Box<T> {\n  constructor(&mut self),\n}\n"+
 				"fn g(p: Pair<string>) { return p.dup() }")
 		require.Empty(t, errs)
 		require.Equal(t, "fn (p: Pair<string>) -> Pair<string>", values["g"])
@@ -2892,8 +2892,8 @@ func TestInferSelfTypeInAnInheritedMember(t *testing.T) {
 		// chain can end on a member only the subclass declares. Under the declaring-class
 		// reading `q.a()` would be a Q and `.r()` would not resolve.
 		_, _, errs := inferSource(t,
-			"declare class Q {\n  a(self) -> Self,\n  b(self) -> Self,\n}\n"+
-				"declare class R extends Q {\n  constructor(mut self),\n  r(self) -> number,\n}\n"+
+			"declare class Q {\n  a(&self) -> Self,\n  b(&self) -> Self,\n}\n"+
+				"declare class R extends Q {\n  constructor(&mut self),\n  r(&self) -> number,\n}\n"+
 				"fn g(r: R) -> number { return r.a().b().r() }")
 		require.Empty(t, errs)
 	})
@@ -2975,12 +2975,12 @@ func TestInferSelfTypeRejectsLifetimeArgs(t *testing.T) {
 	}{
 		{
 			name: "NoneDeclared",
-			src:  "declare class Box<T> {\n  m(self) -> Self<'a>,\n}",
+			src:  "declare class Box<T> {\n  m(&self) -> Self<'a>,\n}",
 			want: "class `Self` expects 0 lifetime arguments but got 1",
 		},
 		{
 			name: "MoreThanDeclared",
-			src:  "declare class Box<'a, T> {\n  m(self) -> Self<'a, 'a>,\n}",
+			src:  "declare class Box<'a, T> {\n  m(&self) -> Self<'a, 'a>,\n}",
 			want: "class `Self` expects 1 lifetime arguments but got 2",
 		},
 	}

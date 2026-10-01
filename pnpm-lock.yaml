@@ -105,11 +105,15 @@ importers:
 
   fixtures/bin_only: {}
 
+  fixtures/call_only_class: {}
+
   fixtures/class_field_name_collision: {}
 
   fixtures/class_inheritance: {}
 
   fixtures/class_inheritance_namespaces: {}
+
+  fixtures/class_overloaded_members: {}
 
   fixtures/class_with_computed_members: {}
 
@@ -209,9 +213,13 @@ importers:
 
   fixtures/operators: {}
 
+  fixtures/parse_error: {}
+
   fixtures/pattern_matching: {}
 
   fixtures/readonly_properties: {}
+
+  fixtures/stdlib_import_class_via_namespace: {}
 
   fixtures/stdlib_import_local: {}
 

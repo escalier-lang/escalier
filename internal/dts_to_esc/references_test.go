@@ -30,7 +30,7 @@ func TestTypeRefNamesReachesEverySlot(t *testing.T) {
 		{"AFieldAnnotation", `export declare class C { f: Target }`, "Target"},
 		{"AGenericArgument", `export declare class C { f: Box<Target> }`, "Target"},
 		{"AnExtendsClause", `export declare class C extends Target {}`, "Target"},
-		{"AMethodReturn", `export declare class C { m(self) -> Target }`, "Target"},
+		{"AMethodReturn", `export declare class C { m(&self) -> Target }`, "Target"},
 		{"AnAliasBody", `export type A = Target`, "Target"},
 		{"AFunctionParameter", `export declare fn f(x: Target) -> number`, "Target"},
 		{"AQualifiedHead", `export type A = Target.Inner`, "Target"},
@@ -90,7 +90,7 @@ func TestTypeRefNamesLeavesOutABoundTypeParameter(t *testing.T) {
 		src  string
 	}{
 		{"ADeclarationsOwn", `export declare class C<T> { f: T }`},
-		{"AClassMembers", "export declare class C {\n    m<U>(self, x: U) -> U\n}"},
+		{"AClassMembers", "export declare class C {\n    m<U>(&self, x: U) -> U\n}"},
 		{"AnInterfaceMembers", "export declare interface I {\n    m<U>(x: U) -> U\n}"},
 		{"AFunctionTypes", `export type A = fn <U>(x: U) -> U`},
 	}
@@ -107,7 +107,7 @@ func TestTypeRefNamesLeavesOutABoundTypeParameter(t *testing.T) {
 // after it, under the same name, is the declaration the package imports.
 func TestTypeRefNamesRecordsANameAMemberBinderShadowedEarlier(t *testing.T) {
 	refs := TypeRefNames(parseSource(t, "export declare class C {\n"+
-		"    m<U>(self, x: U) -> U,\n"+
+		"    m<U>(&self, x: U) -> U,\n"+
 		"    f: U\n"+
 		"}"))
 	require.Equal(t, []string{"U"}, refs.ToSlice())
@@ -123,7 +123,7 @@ func TestTypeRefNamesRecordsANameAMemberBinderShadowedEarlier(t *testing.T) {
 // that names nothing there.
 func TestAddImportHeadersLeavesABoundTypeParameterAlone(t *testing.T) {
 	const element = "export declare class Element {\n" +
-		"    closest<E: Element = Element>(mut self, selectors: string) -> E | null\n" +
+		"    closest<E: Element = Element>(&mut self, selectors: string) -> E | null\n" +
 		"}"
 	mods := map[string]*StandaloneModule{
 		"std:math": {Module: parseSource(t, `export declare val E: number`)},

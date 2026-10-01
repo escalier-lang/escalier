@@ -70,7 +70,7 @@ func TestInferExtractorPatExplicitConstructor(t *testing.T) {
 		_, _, errs := inferSource(t, `
 			class Celsius {
 				degrees: number,
-				constructor(mut self, label: string, degrees: number) {
+				constructor(&mut self, label: string, degrees: number) {
 					self.degrees = degrees
 				},
 			}
@@ -640,8 +640,8 @@ func TestInferMemberMixedObjectClassUnionReadsField(t *testing.T) {
 // a getter reads as the join of the getter return types.
 func TestInferMemberClassUnionReadsGetter(t *testing.T) {
 	values, _, errs := inferSource(t, `
-		class A { _v: number, get v(self) -> number { return self._v } }
-		class B { _v: string, get v(self) -> string { return self._v } }
+		class A { _v: number, get v(&self) -> number { return self._v } }
+		class B { _v: string, get v(&self) -> string { return self._v } }
 		fn f(p: A | B) {
 			return p.v
 		}
@@ -655,8 +655,8 @@ func TestInferMemberClassUnionReadsGetter(t *testing.T) {
 // with distinct signatures join into a union of function types.
 func TestInferMemberClassUnionReadsMethod(t *testing.T) {
 	values, _, errs := inferSource(t, `
-		class A { area(self) -> number { return 1 } }
-		class B { area(self, scale: number) -> string { return "x" } }
+		class A { area(&self) -> number { return 1 } }
+		class B { area(&self, scale: number) -> string { return "x" } }
 		fn f(p: A | B) {
 			return p.area
 		}
@@ -671,12 +671,12 @@ func TestInferMemberClassUnionReadsMethod(t *testing.T) {
 func TestInferMemberClassUnionReadsOverloadedMethod(t *testing.T) {
 	values, _, errs := inferSource(t, `
 		class A {
-			area(self, x: number) -> number { return x },
-			area(self, x: string) -> string { return x },
+			area(&self, x: number) -> number { return x },
+			area(&self, x: string) -> string { return x },
 		}
 		class B {
-			area(self, x: number) -> number { return x },
-			area(self, x: string) -> string { return x },
+			area(&self, x: number) -> number { return x },
+			area(&self, x: string) -> string { return x },
 		}
 		fn f(p: A | B) {
 			return p.area
@@ -705,7 +705,7 @@ func TestInferMemberClassUnionAbsentFieldErrors(t *testing.T) {
 // carries it as a property, so `p.v` reads `string | undefined`.
 func TestInferMemberClassUnionSetterOnlyReadsUndefined(t *testing.T) {
 	values, _, errs := inferSource(t, `
-		class A { _v: number, set v(mut self, x: number) { self._v = x } }
+		class A { _v: number, set v(&mut self, x: number) { self._v = x } }
 		class B { v: string }
 		fn f(p: A | B) {
 			return p.v
@@ -721,7 +721,7 @@ func TestInferMemberClassUnionSetterOnlyReadsUndefined(t *testing.T) {
 // fold `undefined` into the join.
 func TestInferMemberClassUnionAccessorPairReadsGetter(t *testing.T) {
 	values, _, errs := inferSource(t, `
-		class A { _v: number, set v(mut self, x: string) { }, get v(self) -> string { return "a" } }
+		class A { _v: number, set v(&mut self, x: string) { }, get v(&self) -> string { return "a" } }
 		class B { v: string }
 		fn f(p: A | B) {
 			return p.v
@@ -736,8 +736,8 @@ func TestInferMemberClassUnionAccessorPairReadsGetter(t *testing.T) {
 // missing-property error rather than binding as bare undefined (#886).
 func TestInferMemberClassUnionSetterOnlyEverywhereErrors(t *testing.T) {
 	_, _, errs := inferSource(t, `
-		class A { _v: number, set v(mut self, x: number) { self._v = x } }
-		class B { _w: string, set v(mut self, x: string) { self._w = x } }
+		class A { _v: number, set v(&mut self, x: number) { self._v = x } }
+		class B { _w: string, set v(&mut self, x: string) { self._w = x } }
 		fn f(p: A | B) {
 			return p.v
 		}

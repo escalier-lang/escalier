@@ -16,7 +16,7 @@
 // of Date passes through from lib.es5.d.ts unchanged.
 override declare global {
     declare class Date {
-        setHours(mut self, hours: number) -> number,
+        setHours(&mut self, hours: number) -> number,
     }
 }
 
@@ -24,7 +24,7 @@ override declare global {
 // overloads. A single override entry replaces all of them.
 override declare global {
     declare class Array<T> {
-        slice(self, start?: number, end?: number) -> Array<T>,
+        slice(&self, start?: number, end?: number) -> Array<T>,
     }
 }
 
@@ -32,8 +32,8 @@ override declare global {
 // override forms an overload set in the effective type.
 override declare global {
     declare class Foo {
-        bar(self, x: string) -> string,
-        bar(self, x: number) -> number,
+        bar(&self, x: string) -> string,
+        bar(&self, x: number) -> number,
     }
 }
 

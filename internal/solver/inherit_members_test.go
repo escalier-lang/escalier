@@ -21,11 +21,11 @@ func TestInferClassInheritedWholeBody(t *testing.T) {
 			src: `
 				class Animal {
 					name: string,
-					constructor(mut self, name: string) { self.name = name },
+					constructor(&mut self, name: string) { self.name = name },
 				}
 				class Dog extends Animal {
 					breed: string,
-					constructor(mut self, name: string, breed: string) {
+					constructor(&mut self, name: string, breed: string) {
 						super(name)
 						self.name = name
 						self.breed = breed
@@ -39,15 +39,15 @@ func TestInferClassInheritedWholeBody(t *testing.T) {
 			src: `
 				class Animal {
 					name: string,
-					constructor(mut self, name: string) { self.name = name },
+					constructor(&mut self, name: string) { self.name = name },
 				}
 				class Dog extends Animal {
-					constructor(mut self, name: string) {
+					constructor(&mut self, name: string) {
 						super(name)
 						self.name = name
 					},
-					rename(mut self, name: string) -> undefined { self.name = name },
-					read(self) -> string { return self.name },
+					rename(&mut self, name: string) -> undefined { self.name = name },
+					read(&self) -> string { return self.name },
 				}
 			`,
 			want: nil,
@@ -57,11 +57,11 @@ func TestInferClassInheritedWholeBody(t *testing.T) {
 			src: `
 				class Animal {
 					name: string,
-					constructor(mut self, name: string) { self.name = name },
+					constructor(&mut self, name: string) { self.name = name },
 				}
 				class Dog extends Animal {
 					breed: string,
-					constructor(mut self, breed: string) {
+					constructor(&mut self, breed: string) {
 						super("rex")
 						self.breed = breed
 					},
@@ -79,11 +79,11 @@ func TestInferClassInheritedWholeBody(t *testing.T) {
 			src: `
 				class Animal {
 					name: string,
-					constructor(mut self, name: string) { self.name = name },
+					constructor(&mut self, name: string) { self.name = name },
 				}
 				class Dog extends Animal {
 					breed: string,
-					constructor(mut self, breed: string) {
+					constructor(&mut self, breed: string) {
 						super("rex")
 						self.breed = breed
 					},
@@ -97,13 +97,13 @@ func TestInferClassInheritedWholeBody(t *testing.T) {
 			src: `
 				class Base {
 					base: number,
-					constructor(mut self) { self.base = 0 },
+					constructor(&mut self) { self.base = 0 },
 				}
 				class Mid extends Base {
-					constructor(mut self) { super() },
+					constructor(&mut self) { super() },
 				}
 				class Leaf extends Mid {
-					constructor(mut self) {
+					constructor(&mut self) {
 						super()
 						self.base = 1
 					},
@@ -117,13 +117,13 @@ func TestInferClassInheritedWholeBody(t *testing.T) {
 			src: `
 				class Base {
 					base: number,
-					constructor(mut self) { self.base = 0 },
+					constructor(&mut self) { self.base = 0 },
 				}
 				class Mid extends Base {
-					constructor(mut self) { super() },
+					constructor(&mut self) { super() },
 				}
 				class Leaf extends Mid {
-					constructor(mut self) {
+					constructor(&mut self) {
 						super()
 						self.base = 1
 					},
@@ -139,11 +139,11 @@ func TestInferClassInheritedWholeBody(t *testing.T) {
 			src: `
 				class Animal {
 					name: string,
-					constructor(mut self, name: string) { self.name = name },
-					m(self) -> number { return n },
+					constructor(&mut self, name: string) { self.name = name },
+					m(&self) -> number { return n },
 				}
 				class Dog extends Animal {
-					constructor(mut self, name: string) {
+					constructor(&mut self, name: string) {
 						super(name)
 						self.name = name
 					},
@@ -163,10 +163,10 @@ func TestInferClassInheritedWholeBody(t *testing.T) {
 			src: `
 				class Animal<A> {
 					food: A,
-					constructor(mut self, food: A) { self.food = food },
+					constructor(&mut self, food: A) { self.food = food },
 				}
 				class Dog extends Animal<string> {
-					constructor(mut self) {
+					constructor(&mut self) {
 						super("bone")
 						self.food = "bone"
 					},
@@ -181,10 +181,10 @@ func TestInferClassInheritedWholeBody(t *testing.T) {
 			src: `
 				class Animal<A> {
 					food: A,
-					constructor(mut self, food: A) { self.food = food },
+					constructor(&mut self, food: A) { self.food = food },
 				}
 				class Dog extends Animal<string> {
-					constructor(mut self) {
+					constructor(&mut self) {
 						super("bone")
 						self.food = 5
 					},
@@ -203,11 +203,11 @@ func TestInferClassInheritedWholeBody(t *testing.T) {
 			src: `
 				class Animal {
 					name: string,
-					constructor(mut self, name: string) { self.name = name },
+					constructor(&mut self, name: string) { self.name = name },
 				}
 				class Dog extends Animal {
 					name: string,
-					constructor(mut self, name: string) {
+					constructor(&mut self, name: string) {
 						super(name)
 						self.name = name
 					},
@@ -223,11 +223,11 @@ func TestInferClassInheritedWholeBody(t *testing.T) {
 			src: `
 				class Animal {
 					name: string,
-					constructor(mut self, name: string) { self.name = name },
+					constructor(&mut self, name: string) { self.name = name },
 				}
 				class Dog extends Animal {
 					breed: string,
-					constructor(mut self, breed: string) {
+					constructor(&mut self, breed: string) {
 						super("rex")
 						self.breed = breed
 					},

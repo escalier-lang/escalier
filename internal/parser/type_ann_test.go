@@ -54,7 +54,7 @@ func TestParseTypeAnnNoErrors(t *testing.T) {
 			input: "fn(x: number) -> boolean throws Error",
 		},
 		"ObjectMethodWithThrows": {
-			input: "{parse(self) -> number throws SyntaxError}",
+			input: "{parse(&self) -> number throws SyntaxError}",
 		},
 		"UnionType": {
 			input: "A | B | C",
@@ -269,28 +269,35 @@ func TestParseTypeAnnNoErrors(t *testing.T) {
 			input: "{f(x: number) -> string}",
 		},
 		"ObjectMethodWithReceiver": {
-			input: "{f(mut self, x: number) -> string}",
+			input: "{f(&mut self, x: number) -> string}",
+		},
+		// A receiver written without `&` consumes the instance.
+		"ObjectMethodWithConsumingReceiver": {
+			input: "{finish(self) -> string}",
+		},
+		"ObjectMethodWithMutableConsumingReceiver": {
+			input: "{drain(mut self, x: number) -> string}",
 		},
 		"ObjectMethodWithTypeParams": {
 			input: "{f<T>(x: T) -> T}",
 		},
 		"ObjectGetter": {
-			input: "{get a(self) -> number}",
+			input: "{get a(&self) -> number}",
 		},
 		// A setter yields nothing, so it writes no `-> R`, the way a class body declares one.
 		"ObjectSetter": {
-			input: "{set a(mut self, v: number)}",
+			input: "{set a(&mut self, v: number)}",
 		},
 		// The arrow still parses on a setter, so a hand-converted `.d.ts` accessor keeps it.
 		"ObjectSetterWithReturnType": {
-			input: "{set a(mut self, v: number) -> undefined}",
+			input: "{set a(&mut self, v: number) -> undefined}",
 		},
 		"ObjectGetterWithThrows": {
-			input: "{get a(self) -> number throws RangeError}",
+			input: "{get a(&self) -> number throws RangeError}",
 		},
 		// The clause follows the parameter list directly when a setter writes no arrow.
 		"ObjectSetterWithThrows": {
-			input: "{set a(mut self, v: number) throws RangeError}",
+			input: "{set a(&mut self, v: number) throws RangeError}",
 		},
 		"UnionOfFunctions": {
 			input: "(fn (x: number) -> string) | (fn (x: string) -> number)",
@@ -518,11 +525,11 @@ func TestObjTypeAnnElemSpans(t *testing.T) {
 		},
 		{
 			name: "a method, an accessor pair, and a rest spread",
-			src:  "type T = {m(self) -> number, get a(self) -> number, set a(mut self, v: number), ...Other}",
+			src:  "type T = {m(&self) -> number, get a(&self) -> number, set a(&mut self, v: number), ...Other}",
 			want: []string{
-				"m(self) -> number",
-				"get a(self) -> number",
-				"set a(mut self, v: number)",
+				"m(&self) -> number",
+				"get a(&self) -> number",
+				"set a(&mut self, v: number)",
 				"...Other",
 			},
 		},
@@ -580,12 +587,12 @@ func TestParseOptionalMethodTypeAnn(t *testing.T) {
 		"optional method":            "m?(x: number) -> string",
 		"required method":            "m(x: number) -> string",
 		"optional property":          "m?: fn (x: number) -> string",
-		"optional method with self":  "m?(self, x: number) -> string",
+		"optional method with self":  "m?(&self, x: number) -> string",
 		"no parameters":              "m?() -> string",
 		"named get":                  "get?(x: number) -> string",
 		"named set":                  "set?(x: number) -> string",
 		"keyword name":               "return?(x: number) -> string",
-		"accessor is still accessor": "get m(self) -> string",
+		"accessor is still accessor": "get m(&self) -> string",
 	}
 	for name, member := range members {
 		t.Run(name, func(t *testing.T) {

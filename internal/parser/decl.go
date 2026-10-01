@@ -630,10 +630,10 @@ func (p *Parser) classDecl(start ast.Location, export, declare, final bool) ast.
 // parseConstructorElem parses an explicit `constructor(...) { ... }` block.
 // The `constructor` token has not yet been consumed.
 //
-// Per the requirements, the constructor's first parameter must be `mut self`
-// (no type annotation). The remaining params follow after a comma. The
-// `mut self` is preserved as `ConstructorElem.MutSelf` and as `Fn.Params[0]`
-// for the body checker.
+// The constructor's first parameter must be `&mut self`, written without a
+// type annotation. The remaining params follow after a comma. The receiver is
+// preserved as `ConstructorElem.Receiver` and as `Fn.Params[0]` for the body
+// checker.
 func (p *Parser) parseConstructorElem(
 	start ast.Location,
 	token *Token,
@@ -668,10 +668,10 @@ func (p *Parser) parseConstructorElem(
 	} else {
 		p.lexer.consume() // consume '('
 
-		// Parse leading `mut self` / `self`. A lifetime on the receiver
-		// (`'a self`) is captured into receiver.Lifetime and reported by
-		// the checker (MutSelfHasLifetime); the parser stays silent so
-		// the user sees one diagnostic, not two.
+		// Parse the leading receiver. A lifetime on it, as in `&'a mut self`,
+		// is captured into receiver.Lifetime and reported by the checker as
+		// MutSelfHasLifetime. The parser stays silent so the user sees one
+		// diagnostic, not two.
 		selfStart := p.lexer.currentLoc()
 		receiver = p.selfReceiver()
 		if receiver == nil {
@@ -679,25 +679,33 @@ func (p *Parser) parseConstructorElem(
 			// param list as if `self` had been there.
 			p.reportError(
 				ast.Span{Start: selfStart, End: p.lexer.currentLoc(), SourceID: p.lexer.source.ID},
-				"constructors must declare `mut self` as their first parameter",
+				"constructors must declare `&mut self` as their first parameter",
 			)
-		} else if !receiver.Mut {
-			// `self` without `mut`.
+		} else if receiver.Consumes() {
+			// `self` or `mut self`. A constructor returns the instance it
+			// fills in, so it cannot take that instance.
 			p.reportError(
 				receiver.Span_,
-				"the `self` parameter of a constructor must be declared `mut self`",
+				"a constructor returns the instance it fills in, so it must borrow `self` as `&mut self` rather than consume it",
+			)
+		} else if !receiver.Mut {
+			// `&self`. A constructor fills in the instance it is handed, so
+			// it needs a mutable borrow of it.
+			p.reportError(
+				receiver.Span_,
+				"the `self` parameter of a constructor must be declared `&mut self`",
 			)
 		}
 
-		// `mut self : Self` — type annotation on self is not allowed.
+		// `&mut self: Self` — type annotation on self is not allowed.
 		if receiver != nil && p.lexer.peek().Type == Colon {
 			colonTok := p.lexer.peek()
 			p.lexer.consume() // consume ':'
 			_ = p.typeAnn()   // discard the annotation
-			p.reportError(colonTok.Span, "the `mut self` parameter cannot have a type annotation")
+			p.reportError(colonTok.Span, "the `&mut self` parameter cannot have a type annotation")
 		}
 
-		// Materialize the `mut self` parameter as the first entry in params
+		// Materialize the `&mut self` parameter as the first entry in params
 		// so downstream phases can read `Fn.Params[0]` uniformly. We skip
 		// this when no `self` token was found (receiver == nil); the error
 		// has already been reported, and inserting a phantom param here
@@ -976,7 +984,7 @@ modifiers_done:
 				params = parseDelimSeq(p, CloseParen, Comma, p.param)
 			}
 
-			// TODO(#506): report an error if `mut self` is not the first
+			// TODO(#506): report an error if `&mut self` is not the first
 			// param, if there isn't exactly one value param after it
 			// (instance), or if there isn't exactly one param (static).
 			p.expect(CloseParen, AlwaysConsume)
@@ -1013,8 +1021,8 @@ modifiers_done:
 		params := []*ast.Param{}
 		if isStatic {
 			// Static methods have no receiver. If the user wrote one
-			// anyway (`static foo(self)`, `static foo(mut self)`,
-			// `static foo<'a>('a self)`), report it — silently dropping
+			// anyway (`static foo(&self)`, `static foo(&mut self)`,
+			// `static foo<'a>(&'a self)`), report it — silently dropping
 			// would leave the user thinking `self` was meaningful.
 			if receiver != nil {
 				p.reportError(receiver.Span_, "static methods cannot have a `self` receiver")
@@ -1487,7 +1495,7 @@ func (p *Parser) parseCallableElem(start ast.Location) ast.ClassElem {
 		p.lexer.consume() // consume '('
 		// A call signature is reached through the class value rather than an instance, so
 		// `self` names nothing here. The receiver is read and reported rather than skipped,
-		// so `(self) -> T` says why instead of failing on the parameter list.
+		// so `(&self) -> T` says why instead of failing on the parameter list.
 		if receiver := p.selfReceiver(); receiver != nil {
 			p.reportError(receiver.Span_, "call signatures cannot have a `self` receiver")
 			if p.lexer.peek().Type == Comma {

@@ -35,7 +35,7 @@ func TestPatternMatchStructuralVsNominal(t *testing.T) {
 			input: `
 				class Circle {
 					radius: number,
-					get area(self) -> number { return 3.14159 * self.radius * self.radius },
+					get area(&self) -> number { return 3.14159 * self.radius * self.radius },
 				}
 
 				declare val circle: Circle

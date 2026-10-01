@@ -57,7 +57,7 @@ func (v *DefaultVisitor) ExitObjTypeAnnElem(e ObjTypeAnnElem) {}
 // EnterLifetimeAnn is offered a lifetime the source writes as a node: the `'a`
 // bound in `<'b: 'a>`, the `'a` in a borrow such as `mut 'a Point`, a lifetime
 // argument such as the `'a` in `Ref<'a, T>`, and a receiver's, as in
-// `mut 'a self`. A binder's own name is a string on the parameter rather than a
+// `&'a mut self`. A binder's own name is a string on the parameter rather than a
 // node, so `<'a>` alone reaches nothing.
 func (v *DefaultVisitor) EnterLifetimeAnn(l LifetimeAnnNode) bool { return true }
 func (v *DefaultVisitor) ExitLifetimeAnn(l LifetimeAnnNode)       {}

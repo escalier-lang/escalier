@@ -141,7 +141,7 @@ func TestLoadOverlay_Accepts(t *testing.T) {
 		{
 			name:      "replace restates the members it stands in for",
 			path:      "std/prelude.replace.esc",
-			body:      "export declare class Array<T> {\n    at(self, index: number) -> T,\n}\n",
+			body:      "export declare class Array<T> {\n    at(&self, index: number) -> T,\n}\n",
 			wantOp:    OverlayReplace,
 			wantPkg:   "std:prelude",
 			wantDecls: []string{"Array"},
@@ -173,7 +173,7 @@ func TestLoadOverlay_Accepts(t *testing.T) {
 		{
 			name:      "the web scheme resolves the same way as std",
 			path:      "web/fetch.replace.esc",
-			body:      "export declare interface Headers {\n    get(self, name: string) -> string | null,\n}\n",
+			body:      "export declare interface Headers {\n    get(&self, name: string) -> string | null,\n}\n",
 			wantOp:    OverlayReplace,
 			wantPkg:   "web:fetch",
 			wantDecls: []string{"Headers"},

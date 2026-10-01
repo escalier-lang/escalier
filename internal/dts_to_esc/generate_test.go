@@ -84,8 +84,8 @@ func TestGenerate_WritesTheTreeWithAHeader(t *testing.T) {
 @js("Array")
 export declare class Array<T> {
     length: number,
-    at(self, index: number) -> T | undefined,
-    constructor(mut self),
+    at(&self, index: number) -> T | undefined,
+    constructor(&mut self),
     static isArray(arg: unknown) -> boolean
 }
 
@@ -104,7 +104,7 @@ func TestGenerate_IsIdempotent(t *testing.T) {
 	libDir := seedLibDir(t, overlayLib)
 	overlayDir := seedOverlay(t, map[string]string{
 		"std/prelude.replace.esc": "export declare class Array<T> {\n" +
-			"    at(mut self, index: number) -> T,\n}\n",
+			"    at(&mut self, index: number) -> T,\n}\n",
 		"std/prelude.add.esc": "export declare interface ArrayLike<T> {\n" +
 			"    readonly first: T,\n}\n",
 	})

@@ -163,8 +163,8 @@ func (c *Checker) checkImplementsOne(
 
 	// Build a `Self` substitution that rewrites every reference to the
 	// interface (by name and via the literal `Self` alias) to a TypeRef
-	// for the class. Without this, methods like `clone(self) -> Self`
-	// would never match `clone(self) -> Class` because the two are
+	// for the class. Without this, methods like `clone(&self) -> Self`
+	// would never match `clone(&self) -> Class` because the two are
 	// distinct nominal types.
 	sub := buildSelfSubstitution(ctx, decl, ifaceName)
 
@@ -426,16 +426,20 @@ func (c *Checker) checkInterfaceElem(
 }
 
 // selfReceiverCompatible returns true when a class method's self receiver
-// satisfies the interface's. The receivers must agree exactly: an interface
-// declaring `mut self` is not satisfied by a class method declaring `self`
-// (the class loses mutation ability), and vice versa (the class would
-// require mutability the interface doesn't promise). A nil receiver (no
-// `self`, e.g. a static method) only matches another nil.
+// satisfies the interface's. The receivers must agree exactly. An interface
+// declaring `&mut self` is not satisfied by a class method declaring `&self`,
+// since the class loses mutation ability, and the reverse would require
+// mutability the interface doesn't promise. A class method consuming its
+// receiver does not satisfy one that borrows it, since a caller holding a
+// borrow could not call it, and the reverse would leave the instance usable
+// where the interface says it is gone. A nil receiver, as on a static
+// method, only matches another nil.
 func selfReceiverCompatible(ifaceFn, classFn *type_system.FuncType) bool {
 	if (ifaceFn.SelfParam == nil) != (classFn.SelfParam == nil) {
 		return false
 	}
-	return type_system.ReceiverIsMut(ifaceFn) == type_system.ReceiverIsMut(classFn)
+	return type_system.ReceiverIsMut(ifaceFn) == type_system.ReceiverIsMut(classFn) &&
+		type_system.ReceiverConsumes(ifaceFn) == type_system.ReceiverConsumes(classFn)
 }
 
 // setterArgType returns the value-input type of a setter signature.

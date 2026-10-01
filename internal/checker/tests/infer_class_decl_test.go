@@ -45,10 +45,10 @@ func TestCheckClassDeclNoErrors(t *testing.T) {
 				class Point {
 					x: number,
 					y: number,
-					length(self) {
+					length(&self) {
 						return sqrt(self.x * self.x + self.y * self.y)
 					},
-					add(self, other: Point) {
+					add(&self, other: Point) {
 						return Point(self.x + other.x, self.y + other.y)
 					},
 				}
@@ -64,7 +64,7 @@ func TestCheckClassDeclNoErrors(t *testing.T) {
 				"len":   "number",
 			},
 			expectedTypeAliases: map[string]string{
-				"Point": "{x: number, y: number, length(self) -> number, add(self, other: Point) -> Point}",
+				"Point": "{x: number, y: number, length(&self) -> number, add(&self, other: Point) -> Point}",
 			},
 		},
 		"ClassWithFluentMutatingMethods": {
@@ -73,12 +73,12 @@ func TestCheckClassDeclNoErrors(t *testing.T) {
 				class Point {
 					x: number,
 					y: number,
-					scale(mut self, factor: number) {
+					scale(&mut self, factor: number) {
 						self.x = self.x * factor
 						self.y = self.y * factor
 						return self
 					},
-					translate(mut self, dx: number, dy: number) {
+					translate(&mut self, dx: number, dy: number) {
 						self.x = self.x + dx
 						self.y = self.y + dy
 						return self
@@ -94,7 +94,7 @@ func TestCheckClassDeclNoErrors(t *testing.T) {
 				"q":     "mut Point",
 			},
 			expectedTypeAliases: map[string]string{
-				"Point": "{x: number, y: number, scale(mut self, factor: number) -> mut Point, translate(mut self, dx: number, dy: number) -> mut Point}",
+				"Point": "{x: number, y: number, scale(&mut self, factor: number) -> mut Point, translate(&mut self, dx: number, dy: number) -> mut Point}",
 			},
 		},
 		"SimpleDeclWithComputedMembers": {
@@ -103,10 +103,10 @@ func TestCheckClassDeclNoErrors(t *testing.T) {
 				val baz = "baz"
 				class Foo {
 					[bar]: number,
-					[baz](self) {
+					[baz](&self) {
 						return self[bar]
 					},
-					constructor(mut self, barVal: number = 42) {
+					constructor(&mut self, barVal: number = 42) {
 						self[bar] = barVal
 					}
 				}
@@ -121,7 +121,7 @@ func TestCheckClassDeclNoErrors(t *testing.T) {
 				"fooBaz": "number",
 			},
 			expectedTypeAliases: map[string]string{
-				"Foo": "{bar: number, baz(self) -> number}",
+				"Foo": "{bar: number, baz(&self) -> number}",
 			},
 		},
 		"ClassWithStaticMethod": {
@@ -152,7 +152,7 @@ func TestCheckClassDeclNoErrors(t *testing.T) {
 					static origin() {
 						return Point(0, 0)
 					},
-					length(self) {
+					length(&self) {
 						return self.x + self.y
 					},
 				}
@@ -168,14 +168,14 @@ func TestCheckClassDeclNoErrors(t *testing.T) {
 				"len":    "number",
 			},
 			expectedTypeAliases: map[string]string{
-				"Point": "{x: number, y: number, length(self) -> number}",
+				"Point": "{x: number, y: number, length(&self) -> number}",
 			},
 		},
 		"ClassWithInstanceGetter": {
 			input: `
 				class Circle {
 					radius: number,
-					get area(self) -> number {
+					get area(&self) -> number {
 						return 3.14 * self.radius * self.radius
 					},
 				}
@@ -189,14 +189,14 @@ func TestCheckClassDeclNoErrors(t *testing.T) {
 				"area":   "number",
 			},
 			expectedTypeAliases: map[string]string{
-				"Circle": "{radius: number, get area(self) -> number}",
+				"Circle": "{radius: number, get area(&self) -> number}",
 			},
 		},
 		"ClassWithInstanceSetter": {
 			input: `
 				class Temperature {
 					celsius: number,
-					set fahrenheit(mut self, value: number) {
+					set fahrenheit(&mut self, value: number) {
 						self.celsius = (value - 32) * 5 / 9
 					},
 				}
@@ -211,7 +211,7 @@ func TestCheckClassDeclNoErrors(t *testing.T) {
 				"temp":        "mut Temperature",
 			},
 			expectedTypeAliases: map[string]string{
-				"Temperature": "{celsius: number, set fahrenheit(mut self, value: number) -> undefined}",
+				"Temperature": "{celsius: number, set fahrenheit(&mut self, value: number) -> undefined}",
 			},
 		},
 		"ClassWithGetterAndSetter": {
@@ -220,10 +220,10 @@ func TestCheckClassDeclNoErrors(t *testing.T) {
 				class Person {
 					firstName: string,
 					lastName: string,
-					get fullName(self) -> string {
+					get fullName(&self) -> string {
 						return self.firstName ++ " " ++ self.lastName
 					},
-					set fullName(mut self, value: string) {
+					set fullName(&mut self, value: string) {
 						val parts = split(value, " ")
 						self.firstName = parts[0]
 						self.lastName = parts[1]
@@ -242,7 +242,7 @@ func TestCheckClassDeclNoErrors(t *testing.T) {
 				"name":   "string",
 			},
 			expectedTypeAliases: map[string]string{
-				"Person": "{firstName: string, lastName: string, get fullName(self) -> string, set fullName(mut self, value: string) -> undefined}",
+				"Person": "{firstName: string, lastName: string, get fullName(&self) -> string, set fullName(&mut self, value: string) -> undefined}",
 			},
 		},
 		"ClassWithStaticGetter": {
@@ -271,7 +271,7 @@ func TestCheckClassDeclNoErrors(t *testing.T) {
 					value: number,
 					static totalInstances: number = 0,
 					static defaultValue: number = 100,
-					constructor(mut self, initialValue: number) {
+					constructor(&mut self, initialValue: number) {
 						self.value = initialValue
 					},
 				}
@@ -314,7 +314,7 @@ func TestCheckClassDeclNoErrors(t *testing.T) {
 			input: `
 				class Box<T> {
 					value: T,
-					peek(self) -> T {
+					peek(&self) -> T {
 						return self.value
 					},
 				}
@@ -331,7 +331,7 @@ func TestCheckClassDeclNoErrors(t *testing.T) {
 			input: `
 				class Animal {
 					name: string,
-					speak(self) -> string {
+					speak(&self) -> string {
 						return "Animal speaks"
 					},
 				}
@@ -339,7 +339,7 @@ func TestCheckClassDeclNoErrors(t *testing.T) {
 				class Dog extends Animal {
 					name: string,
 					breed: string,
-					speak(self) -> string {
+					speak(&self) -> string {
 						return "Woof!"
 					},
 				}
@@ -362,8 +362,8 @@ func TestCheckClassDeclNoErrors(t *testing.T) {
 				"dogSound":    "string",
 			},
 			expectedTypeAliases: map[string]string{
-				"Animal": "{name: string, speak(self) -> string}",
-				"Dog":    "{breed: string, speak(self) -> string}",
+				"Animal": "{name: string, speak(&self) -> string}",
+				"Dog":    "{breed: string, speak(&self) -> string}",
 			},
 		},
 		"ClassWithExtendsAccessingParentMethods": {
@@ -371,7 +371,7 @@ func TestCheckClassDeclNoErrors(t *testing.T) {
 				class Vehicle {
 					make: string,
 					model: string,
-					getInfo(self) -> string {
+					getInfo(&self) -> string {
 						return self.make ++ " " ++ self.model
 					},
 				}
@@ -380,7 +380,7 @@ func TestCheckClassDeclNoErrors(t *testing.T) {
 					make: string,
 					model: string,
 					doors: number,
-					getFullInfo(self) -> string {
+					getFullInfo(&self) -> string {
 						return self.getInfo() ++ " (" ++ "doors" ++ ")"
 					},
 				}
@@ -401,8 +401,8 @@ func TestCheckClassDeclNoErrors(t *testing.T) {
 				"carDoors": "number",
 			},
 			expectedTypeAliases: map[string]string{
-				"Vehicle": "{make: string, model: string, getInfo(self) -> string}",
-				"Car":     "{doors: number, getFullInfo(self) -> string}",
+				"Vehicle": "{make: string, model: string, getInfo(&self) -> string}",
+				"Car":     "{doors: number, getFullInfo(&self) -> string}",
 			},
 		},
 		"ClassWithExtendsMultipleFields": {
@@ -448,7 +448,7 @@ func TestCheckClassDeclNoErrors(t *testing.T) {
 				class Circle extends Shape {
 					color: string,
 					radius: number,
-					get area(self) -> number {
+					get area(&self) -> number {
 						return 3.14 * self.radius * self.radius
 					},
 				}
@@ -466,7 +466,7 @@ func TestCheckClassDeclNoErrors(t *testing.T) {
 			},
 			expectedTypeAliases: map[string]string{
 				"Shape":  "{color: string}",
-				"Circle": "{radius: number, get area(self) -> number}",
+				"Circle": "{radius: number, get area(&self) -> number}",
 			},
 		},
 		"ClassWithExtendsIndexAccess": {
@@ -541,7 +541,7 @@ func TestCheckClassDeclNoErrors(t *testing.T) {
 				class ExtendedCounter extends Counter {
 					value: number,
 					step: number,
-					increment(mut self) {
+					increment(&mut self) {
 						self.value = self.value + self.step
 						return self
 					},
@@ -558,7 +558,7 @@ func TestCheckClassDeclNoErrors(t *testing.T) {
 			},
 			expectedTypeAliases: map[string]string{
 				"Counter":         "{value: number}",
-				"ExtendedCounter": "{step: number, increment(mut self) -> mut ExtendedCounter}",
+				"ExtendedCounter": "{step: number, increment(&mut self) -> mut ExtendedCounter}",
 			},
 		},
 		// TODO: Generic class inheritance requires type parameter substitution when accessing parent members
@@ -566,7 +566,7 @@ func TestCheckClassDeclNoErrors(t *testing.T) {
 			input: `
 				class Animal {
 					name: string,
-					makeSound(self) -> string {
+					makeSound(&self) -> string {
 						return "Some sound"
 					},
 				}
@@ -574,7 +574,7 @@ func TestCheckClassDeclNoErrors(t *testing.T) {
 				class Cat extends Animal {
 					name: string,
 					lives: number,
-					makeSound(self) -> string {
+					makeSound(&self) -> string {
 						return "Meow"
 					},
 				}
@@ -591,8 +591,8 @@ func TestCheckClassDeclNoErrors(t *testing.T) {
 				"catName": "string",
 			},
 			expectedTypeAliases: map[string]string{
-				"Animal": "{name: string, makeSound(self) -> string}",
-				"Cat":    "{lives: number, makeSound(self) -> string}",
+				"Animal": "{name: string, makeSound(&self) -> string}",
+				"Cat":    "{lives: number, makeSound(&self) -> string}",
 			},
 		},
 		// TODO: figure out how we want to handle static setters
@@ -611,7 +611,7 @@ func TestCheckClassDeclNoErrors(t *testing.T) {
 		// 		}
 		// 	`,
 		// 	expectedTypes: map[string]string{
-		// 		"GlobalState": "{new () -> GlobalState, set debugMode(mut self, value: boolean) -> undefined}",
+		// 		"GlobalState": "{new () -> GlobalState, set debugMode(&mut self, value: boolean) -> undefined}",
 		// 		"state":       "mut GlobalState",
 		// 	},
 		// 	expectedTypeAliases: map[string]string{
@@ -781,11 +781,11 @@ func TestCheckBodyLevelClassDeclNoErrors(t *testing.T) {
 					class Point {
 						x: number,
 						y: number,
-						constructor(mut self, x: number, y: number) {
+						constructor(&mut self, x: number, y: number) {
 							self.x = x
 							self.y = y
 						},
-						sum(self) {
+						sum(&self) {
 							return self.x + self.y
 						},
 					}
@@ -956,7 +956,7 @@ func TestCheckScriptLevelClassDeclNoErrors(t *testing.T) {
 			input: `
 				class Counter {
 					value: number,
-					inc(mut self) {
+					inc(&mut self) {
 						self.value = self.value + 1
 						return self
 					},
@@ -1018,7 +1018,7 @@ func TestGetterSetterPreservesSignatureContext(t *testing.T) {
 			input: `
 				class Box {
 					value: number,
-					get cast<T>(self) -> T {
+					get cast<T>(&self) -> T {
 						val x: T = self.value:T
 						return x
 					},
@@ -1029,7 +1029,7 @@ func TestGetterSetterPreservesSignatureContext(t *testing.T) {
 			input: `
 				class Box {
 					value: number,
-					set cast<T>(mut self, v: T) {
+					set cast<T>(&mut self, v: T) {
 						val x: T = v
 						val y: T = x
 					},
@@ -1041,7 +1041,7 @@ func TestGetterSetterPreservesSignatureContext(t *testing.T) {
 				fn make() {
 					class Box {
 						value: number,
-						get cast<T>(self) -> T {
+						get cast<T>(&self) -> T {
 							val x: T = self.value:T
 							return x
 						},
@@ -1055,7 +1055,7 @@ func TestGetterSetterPreservesSignatureContext(t *testing.T) {
 				fn make() {
 					class Box {
 						value: number,
-						set cast<T>(mut self, v: T) {
+						set cast<T>(&mut self, v: T) {
 							val x: T = v
 							val y: T = x
 						},
@@ -1074,7 +1074,7 @@ func TestGetterSetterPreservesSignatureContext(t *testing.T) {
 				fn make() {
 					class Box<T> {
 						value: T,
-						identity(self, x: T) -> T {
+						identity(&self, x: T) -> T {
 							val y: T = x
 							return y
 						},
@@ -1088,7 +1088,7 @@ func TestGetterSetterPreservesSignatureContext(t *testing.T) {
 				fn make() {
 					class Box<T> {
 						value: T,
-						get peek(self) -> T {
+						get peek(&self) -> T {
 							val y: T = self.value
 							return y
 						},
@@ -1102,7 +1102,7 @@ func TestGetterSetterPreservesSignatureContext(t *testing.T) {
 				fn make() {
 					class Box<T> {
 						value: T,
-						set poke(mut self, v: T) {
+						set poke(&mut self, v: T) {
 							val y: T = v
 							self.value = y
 						},
@@ -1152,7 +1152,7 @@ func TestBodyLevelGenericSelfReturnPreservesTypeArgs(t *testing.T) {
 	input := `
 		class Box<T> {
 			value: T,
-			identity(self) {
+			identity(&self) {
 				return self
 			},
 		}

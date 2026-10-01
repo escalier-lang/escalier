@@ -185,10 +185,10 @@ func (c *Checker) inferFuncTypeParams(
 // - a map of parameter bindings
 // - any errors encountered during inference
 // `recv`, when non-nil, makes this a method-shaped signature: SelfParam
-// is wired from `recv.Type` / `recv.MutSelf` and any `'a self` lifetime
+// is wired from `recv.Type` / `recv.MutSelf` and any `&'a self` lifetime
 // (`recv.LifetimeNode`) is resolved against the function's own scope
 // before the §9.7 class 1 unused-lifetime-params check runs — so a
-// `<'a>` referenced only by `'a self` participates in the "used" set.
+// `<'a>` referenced only by `&'a self` participates in the "used" set.
 // Pass nil for plain (non-method) functions.
 func (c *Checker) inferFuncSig(
 	ctx Context,
@@ -252,12 +252,12 @@ func (c *Checker) inferFuncSig(
 	errors = slices.Concat(errors, checkDeclaredVsActualLifetimes(t, node))
 
 	// Wire receiver (method-shaped callers only) before the unused-
-	// lifetime check so a `<'a>` referenced only by `'a self`
+	// lifetime check so a `<'a>` referenced only by `&'a self`
 	// participates in the "used" set.
 	if recv != nil {
 		selfLT, ltErrs := c.resolveLifetimeAnn(funcCtx.Scope, recv.LifetimeNode)
 		errors = slices.Concat(errors, ltErrs)
-		t.SelfParam = makeSelfParamWithLifetime(recv.Type, recv.MutSelf, selfLT)
+		t.SelfParam = makeSelfParamWithLifetime(recv.Type, recv.MutSelf, recv.Consumes, selfLT)
 	}
 
 	// §9.7 class 1: warn about declared `<'a>` clauses that no

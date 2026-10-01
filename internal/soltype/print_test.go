@@ -829,7 +829,7 @@ func TestPrintSchemeDeclaredNames(t *testing.T) {
 	})
 
 	t.Run("binders follow declaration order, not first appearance", func(t *testing.T) {
-		// class Pair<K, V> { …, constructor(mut self, v: V, k: K) { … } }. The constructor
+		// class Pair<K, V> { …, constructor(&mut self, v: V, k: K) { … } }. The constructor
 		// takes v first, so first appearance would order the binders V, K.
 		k := &TypeVarType{ID: 0, Level: 2}
 		v := &TypeVarType{ID: 1, Level: 2}

@@ -1085,10 +1085,9 @@ func (p *Parser) objTypeAnnElemInner() ast.ObjTypeAnnElem {
 	case OpenParen:
 		p.lexer.consume() // consume '(' or '?('
 
-		// Methods, getters, and setters all accept a leading `self` /
-		// `mut self` receiver (optionally with a lifetime: `'a self` /
-		// `mut 'a self`). Peel it off so it does not leak into
-		// `Fn.Params` as a regular parameter (#560).
+		// Methods, getters, and setters all accept a leading receiver such
+		// as `&self`, `&mut self`, `&'a self`, or `self`. Peel it off so it
+		// does not leak into `Fn.Params` as a regular parameter (#560).
 		receiver := p.selfReceiver()
 
 		params := []*ast.Param{}
@@ -1116,7 +1115,7 @@ func (p *Parser) objTypeAnnElemInner() ast.ObjTypeAnnElem {
 
 		// A method, getter, or setter signature inside an object type declares what it
 		// raises the same way a standalone function type does, as in
-		// `{parse(self) -> number throws SyntaxError}`.
+		// `{parse(&self) -> number throws SyntaxError}`.
 		throwsType := p.throwsClause()
 		if throwsType != nil {
 			endSpan = throwsType.Span()

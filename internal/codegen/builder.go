@@ -2326,7 +2326,7 @@ func (b *Builder) buildClassElems(inElems []ast.ClassElem, derived bool) ([]Clas
 				}
 				continue
 			}
-			// Strip Fn.Params[0] (the `mut self` receiver) — it is `this`
+			// Strip Fn.Params[0] (the `&mut self` receiver) — it is `this`
 			// at the JS level, not a callable parameter.
 			callableParams := e.Fn.Params
 			if len(callableParams) > 0 {

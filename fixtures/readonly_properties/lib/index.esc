@@ -33,7 +33,7 @@ fn tryUpdateImmutableProperties() {
 // Test readonly fields with explicit values
 class Counter {
     readonly value: number,
-    increment(mut self) {
+    increment(&mut self) {
         self.value = self.value + 1
     },
 }

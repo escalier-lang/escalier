@@ -618,7 +618,7 @@ func (c *checker) objectRestType(lvl int, node ast.Node, scrutinee, concrete sol
 // properties rather than the accessors the scrutinee declared.
 //
 //   - A getter is read once and its result stored, so it becomes a plain property at the
-//     getter's own type. `{x, ...rest}` over `{x: number, get y(self) -> string}` binds rest
+//     getter's own type. `{x, ...rest}` over `{x: number, get y(&self) -> string}` binds rest
 //     at `{y: string}`. The property is writable, since a write after the copy mutates the
 //     fresh object and never reaches the getter. A `throws` the getter declares is raised at
 //     the destructuring itself, so the stored property does not carry it.

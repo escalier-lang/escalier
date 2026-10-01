@@ -88,7 +88,7 @@ func TestPatternLevelMut_MutationBehavior(t *testing.T) {
 			input: `
 				class Counter {
 					count: number,
-					tick(mut self) -> number { self.count = self.count + 1 return self.count }
+					tick(&mut self) -> number { self.count = self.count + 1 return self.count }
 				}
 				fn test() {
 					val mut c = Counter(0)

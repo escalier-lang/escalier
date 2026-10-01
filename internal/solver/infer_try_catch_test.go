@@ -336,8 +336,8 @@ func TestInferTryCatchOverClassErrors(t *testing.T) {
 		{
 			name: "AnUnnamedClassMemberIsRethrown",
 			src: `
-				class FooError { msg: string, constructor(mut self, msg: string) { self.msg = msg } }
-				class BarError { msg: string, constructor(mut self, msg: string) { self.msg = msg } }
+				class FooError { msg: string, constructor(&mut self, msg: string) { self.msg = msg } }
+				class BarError { msg: string, constructor(&mut self, msg: string) { self.msg = msg } }
 				fn a() throws FooError | BarError { throw FooError("x") }
 				fn f() throws _ { try { a() } catch { FooError{msg} => msg } }
 			`,
@@ -348,8 +348,8 @@ func TestInferTryCatchOverClassErrors(t *testing.T) {
 			// than a property read against the whole caught union.
 			name: "AnArmDestructuresTheMemberItNames",
 			src: `
-				class FooError { msg: string, constructor(mut self, msg: string) { self.msg = msg } }
-				class BarError { code: number, constructor(mut self, code: number) { self.code = code } }
+				class FooError { msg: string, constructor(&mut self, msg: string) { self.msg = msg } }
+				class BarError { code: number, constructor(&mut self, code: number) { self.code = code } }
 				fn a() throws FooError | BarError { throw FooError("x") }
 				fn f() { try { a() } catch { FooError{msg} => { return msg }, e => { return 0 } } }
 			`,
@@ -366,9 +366,9 @@ func TestInferTryCatchSubtractsThroughSubtyping(t *testing.T) {
 	// base declares a root error class, a subclass of it, and an unrelated class, so a case
 	// can vary which of the three an arm names.
 	const base = `
-		class AppError { code: number, constructor(mut self) { self.code = 0 } }
-		class ParseError extends AppError { constructor(mut self) { super() } }
-		class OtherError { tag: string, constructor(mut self) { self.tag = "" } }
+		class AppError { code: number, constructor(&mut self) { self.code = 0 } }
+		class ParseError extends AppError { constructor(&mut self) { super() } }
+		class OtherError { tag: string, constructor(&mut self) { self.tag = "" } }
 	`
 	runThrowsCases(t, []throwsCase{
 		{
@@ -421,10 +421,10 @@ func TestInferTryCatchSubtractsThroughGenericClasses(t *testing.T) {
 	const base = `
 		class Failure<T> {
 			payload: T,
-			constructor(mut self, payload: T) { self.payload = payload }
+			constructor(&mut self, payload: T) { self.payload = payload }
 		}
 		class Timeout<T> extends Failure<T> {
-			constructor(mut self, payload: T) { super(payload) }
+			constructor(&mut self, payload: T) { super(payload) }
 		}
 	`
 	runThrowsCases(t, []throwsCase{

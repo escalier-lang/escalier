@@ -73,14 +73,33 @@ func TestMergeMethodOverloads_ReceiverMutMismatch(t *testing.T) {
 	mismatch, ok := errs[0].(OverloadReceiverMutMismatchError)
 	require.True(t, ok)
 	require.Equal(t, "swap", mismatch.Name)
-	require.Equal(t, "self", mismatch.FirstReceiver)
-	require.Equal(t, "mut self", mismatch.OtherReceiver)
+	require.Equal(t, "&self", mismatch.FirstReceiver)
+	require.Equal(t, "&mut self", mismatch.OtherReceiver)
 
 	// The first arm's shape survives; the mismatched arm is dropped.
 	require.Len(t, out, 1)
 	merged := out[0].(*type_system.MethodElem)
 	require.Len(t, merged.Signatures, 1)
 	require.False(t, type_system.ReceiverIsMut(merged.Signatures[0]))
+}
+
+// An arm that consumes its receiver disagrees with one that borrows it, even when the
+// two agree on mutability.
+func TestMergeMethodOverloads_ReceiverConsumeMismatch(t *testing.T) {
+	c := NewChecker(nil)
+	a := methodElemArm("swap", false, "a")
+	b := methodElemArm("swap", false, "b")
+	b.Signatures[0].SelfParam.Consumes = true
+	elems := []type_system.ObjTypeElem{a, b}
+
+	out, errs := c.MergeMethodOverloads(elems, ast.Span{})
+	require.Len(t, errs, 1)
+	mismatch, ok := errs[0].(OverloadReceiverMutMismatchError)
+	require.True(t, ok)
+	require.Equal(t, "&self", mismatch.FirstReceiver)
+	require.Equal(t, "self", mismatch.OtherReceiver)
+	require.Len(t, out, 1)
+	require.Len(t, out[0].(*type_system.MethodElem).Signatures, 1)
 }
 
 func TestMergeMethodOverloads_ReceiverMutMismatch_ReverseDirection(t *testing.T) {
@@ -94,8 +113,8 @@ func TestMergeMethodOverloads_ReceiverMutMismatch_ReverseDirection(t *testing.T)
 	mismatch, ok := errs[0].(OverloadReceiverMutMismatchError)
 	require.True(t, ok)
 	require.Equal(t, "swap", mismatch.Name)
-	require.Equal(t, "mut self", mismatch.FirstReceiver)
-	require.Equal(t, "self", mismatch.OtherReceiver)
+	require.Equal(t, "&mut self", mismatch.FirstReceiver)
+	require.Equal(t, "&self", mismatch.OtherReceiver)
 
 	// The first arm's `mut self` shape survives; the mismatched
 	// `self` arm is dropped.

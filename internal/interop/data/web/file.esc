@@ -27,17 +27,17 @@ export declare class Blob {
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/Blob/type) */
     readonly type: string,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/Blob/arrayBuffer) */
-    arrayBuffer(mut self) -> Promise<typed_arrays.ArrayBuffer>,
+    arrayBuffer(&mut self) -> Promise<typed_arrays.ArrayBuffer>,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/Blob/bytes) */
-    bytes(mut self) -> Promise<typed_arrays.Uint8Array>,
+    bytes(&mut self) -> Promise<typed_arrays.Uint8Array>,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/Blob/slice) */
-    slice(self, start?: number, end?: number, contentType?: string) -> Blob,
+    slice(&self, start?: number, end?: number, contentType?: string) -> Blob,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/Blob/stream) */
-    stream(mut self) -> streams.ReadableStream<typed_arrays.Uint8Array>,
+    stream(&mut self) -> streams.ReadableStream<typed_arrays.Uint8Array>,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/Blob/text) */
-    text(mut self) -> Promise<string>,
+    text(&mut self) -> Promise<string>,
     static prototype: Blob,
-    constructor(mut self, blobParts?: mut Array<BlobPart>, options?: BlobPropertyBag)
+    constructor(&mut self, blobParts?: mut Array<BlobPart>, options?: BlobPropertyBag)
 }
 
 /**
@@ -54,7 +54,7 @@ export declare class File extends Blob {
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/File/webkitRelativePath) */
     readonly webkitRelativePath: string,
     static prototype: File,
-    constructor(mut self, fileBits: mut Array<BlobPart>, fileName: string, options?: FilePropertyBag)
+    constructor(&mut self, fileBits: mut Array<BlobPart>, fileName: string, options?: FilePropertyBag)
 }
 
 /**
@@ -65,31 +65,31 @@ export declare class File extends Blob {
 @js("FormData")
 export declare class FormData {
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/FormData/append) */
-    append(mut self, name: string, value: string | Blob) -> unknown,
-    append(mut self, name: string, value: string) -> unknown,
-    append(mut self, name: string, blobValue: Blob, filename?: string) -> unknown,
+    append(&mut self, name: string, value: string | Blob) -> unknown,
+    append(&mut self, name: string, value: string) -> unknown,
+    append(&mut self, name: string, blobValue: Blob, filename?: string) -> unknown,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/FormData/delete) */
-    delete(mut self, name: string) -> unknown,
+    delete(&mut self, name: string) -> unknown,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/FormData/get) */
-    get(self, name: string) -> FormDataEntryValue | null,
+    get(&self, name: string) -> FormDataEntryValue | null,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/FormData/getAll) */
-    getAll(self, name: string) -> mut Array<FormDataEntryValue>,
+    getAll(&self, name: string) -> mut Array<FormDataEntryValue>,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/FormData/has) */
-    has(self, name: string) -> boolean,
+    has(&self, name: string) -> boolean,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/FormData/set) */
-    set(mut self, name: string, value: string | Blob) -> unknown,
-    set(mut self, name: string, value: string) -> unknown,
-    set(mut self, name: string, blobValue: Blob, filename?: string) -> unknown,
-    forEach(self, callbackfn: fn (value: FormDataEntryValue, key: string, parent: FormData) -> unknown, thisArg?: unknown) -> unknown,
-    [Symbol.iterator](self) -> FormDataIterator<[string, FormDataEntryValue]>,
+    set(&mut self, name: string, value: string | Blob) -> unknown,
+    set(&mut self, name: string, value: string) -> unknown,
+    set(&mut self, name: string, blobValue: Blob, filename?: string) -> unknown,
+    forEach(&self, callbackfn: fn (value: FormDataEntryValue, key: string, parent: FormData) -> unknown, thisArg?: unknown) -> unknown,
+    [Symbol.iterator](&self) -> FormDataIterator<[string, FormDataEntryValue]>,
     /** Returns an array of key, value pairs for every entry in the list. */
-    entries(self) -> FormDataIterator<[string, FormDataEntryValue]>,
+    entries(&self) -> FormDataIterator<[string, FormDataEntryValue]>,
     /** Returns a list of keys in the list. */
-    keys(self) -> FormDataIterator<string>,
+    keys(&self) -> FormDataIterator<string>,
     /** Returns a list of values in the list. */
-    values(self) -> FormDataIterator<FormDataEntryValue>,
+    values(&self) -> FormDataIterator<FormDataEntryValue>,
     static prototype: FormData,
-    constructor(mut self)
+    constructor(&mut self)
 }
 
 export declare type BlobPart = BufferSource | Blob | string

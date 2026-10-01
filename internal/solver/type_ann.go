@@ -289,7 +289,7 @@ type objAnnLowering struct {
 // ordered path. Which path an annotation takes decides how the elements are collected, not how
 // they are built.
 //
-// A written receiver does not reach the lowered element. The parser peels `self` / `mut self`
+// A written receiver does not reach the lowered element. The parser peels `&self` / `&mut self`
 // off into the member's Receiver so it never lands in Fn.Params, and subtyping compares a method
 // through callableView, which drops SelfParam. A receiver written here therefore describes the
 // shape without narrowing it, matching how it reads for a class method the annotation is checked
@@ -997,7 +997,7 @@ func restParamSlotShape(p *ast.Param, last bool) (ast.Pat, bool, bool) {
 		return rp.Pattern, false, p.Optional
 	case p.Optional:
 		// The recovery drops the `?` marker along with Rest. Keeping it would give the
-		// parameter an accept-set the source never asked for, so `m(self, ...xs?: Array<T>)`
+		// parameter an accept-set the source never asked for, so `m(&self, ...xs?: Array<T>)`
 		// would accept zero or one argument where its recovered signature accepts exactly one.
 		return rp.Pattern, false, false
 	default:

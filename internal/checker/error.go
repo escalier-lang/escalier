@@ -64,7 +64,10 @@ func (e InnerNonExhaustiveMatchError) isError()             {}
 func (e RedundantMatchCaseWarning) isError()                {}
 func (e NestedMutInParamError) isError()                    {}
 func (e MissingMutSelfParameterError) isError()             {}
+func (e ConstructorConsumesSelfError) isError()             {}
 func (e MissingSelfReceiverError) isError()                 {}
+func (e SetterReceiverError) isError()                      {}
+func (e GetterReceiverError) isError()                      {}
 func (e MultipleConstructorsNotYetSupportedError) isError() {}
 func (e ConstructorWithReturnTypeError) isError()           {}
 func (e PrivateConstructorNotYetSupportedError) isError()   {}
@@ -128,7 +131,10 @@ func (e NonExhaustiveMatchError) IsWarning() bool                  { return fals
 func (e InnerNonExhaustiveMatchError) IsWarning() bool             { return false }
 func (e RedundantMatchCaseWarning) IsWarning() bool                { return true }
 func (e MissingMutSelfParameterError) IsWarning() bool             { return false }
+func (e ConstructorConsumesSelfError) IsWarning() bool             { return false }
 func (e MissingSelfReceiverError) IsWarning() bool                 { return false }
+func (e SetterReceiverError) IsWarning() bool                      { return false }
+func (e GetterReceiverError) IsWarning() bool                      { return false }
 func (e MultipleConstructorsNotYetSupportedError) IsWarning() bool { return false }
 func (e ConstructorWithReturnTypeError) IsWarning() bool           { return false }
 func (e PrivateConstructorNotYetSupportedError) IsWarning() bool   { return false }
@@ -809,8 +815,8 @@ func (e InnerNonExhaustiveMatchError) Message() string {
 	return "Non-exhaustive match: " + memberStr + " is missing inner cases for " + strings.Join(names, ", ")
 }
 
-// MissingMutSelfParameterError is reported when a constructor's `mut self`
-// parameter is missing, not declared `mut`, or has a type annotation.
+// MissingMutSelfParameterError is reported when a constructor's `&mut self`
+// parameter is missing, is not a mutable borrow, or has a type annotation.
 //
 // TODO(#571): split this into one error type per `MutSelfReason` shape —
 // the four reasons share no structural template, and three of them are
@@ -821,7 +827,7 @@ type MissingMutSelfParameterError struct {
 }
 
 // MutSelfReason enumerates the specific shapes of a malformed
-// `mut self` receiver. Typed so the message switch in `Message()` is
+// `&mut self` receiver. Typed so the message switch in `Message()` is
 // exhaustive at compile time.
 type MutSelfReason int
 
@@ -838,21 +844,36 @@ func (e MissingMutSelfParameterError) Span() ast.Span {
 func (e MissingMutSelfParameterError) Message() string {
 	switch e.Reason {
 	case MutSelfMissing:
-		return "Constructors must declare `mut self` as their first parameter."
+		return "Constructors must declare `&mut self` as their first parameter."
 	case MutSelfNotMut:
-		return "The `self` parameter of a constructor must be declared `mut self`."
+		return "The `self` parameter of a constructor must be declared `&mut self`."
 	case MutSelfHasTypeAnnotation:
-		return "The `mut self` parameter cannot have a type annotation."
+		return "The `&mut self` parameter cannot have a type annotation."
 	case MutSelfHasLifetime:
 		return "Constructors cannot have a lifetime on `self`."
 	default:
-		return "Invalid `mut self` parameter on constructor."
+		return "Invalid `&mut self` parameter on constructor."
 	}
 }
 
-// ReceiverLifetimeOutsideMemberError is reported when a `'a self`
+// ConstructorConsumesSelfError is reported when a constructor declares a
+// consuming `self` or `mut self` receiver. A constructor returns the
+// instance it fills in, so it borrows that instance with `&mut self`
+// rather than taking it.
+type ConstructorConsumesSelfError struct {
+	span ast.Span
+}
+
+func (e ConstructorConsumesSelfError) Span() ast.Span {
+	return e.span
+}
+func (e ConstructorConsumesSelfError) Message() string {
+	return "A constructor returns the instance it fills in, so it must borrow `self` as `&mut self` rather than consume it."
+}
+
+// ReceiverLifetimeOutsideMemberError is reported when a `&'a self`
 // annotation appears on a method/getter/setter inside a structural
-// object-type annotation (e.g. `type X = { m('a self) -> 'a T }`).
+// object-type annotation (e.g. `type X = { m(&'a self) -> 'a T }`).
 // Such positions have no class/interface receiver type to attach the
 // lifetime to, so the annotation would be silently dropped — we
 // surface it explicitly instead.
@@ -880,6 +901,36 @@ func (e MissingSelfReceiverError) Span() ast.Span {
 }
 func (e MissingSelfReceiverError) Message() string {
 	return "Instance methods, getters, and setters must declare a `self` receiver as their first parameter."
+}
+
+// SetterReceiverError is reported when an instance setter declares a
+// receiver other than `&mut self`. Writing through a setter mutates the
+// instance, so a shared `&self` holds no mutable access to do it with,
+// and a consuming `self` or `mut self` would move the instance on every
+// write.
+type SetterReceiverError struct {
+	span ast.Span
+}
+
+func (e SetterReceiverError) Span() ast.Span {
+	return e.span
+}
+func (e SetterReceiverError) Message() string {
+	return "Setters must declare a `&mut self` receiver, since writing through one mutates the instance."
+}
+
+// GetterReceiverError is reported when an instance getter consumes its
+// receiver, declaring `self` or `mut self`. Reading a property leaves the
+// instance where it was, so a getter borrows it.
+type GetterReceiverError struct {
+	span ast.Span
+}
+
+func (e GetterReceiverError) Span() ast.Span {
+	return e.span
+}
+func (e GetterReceiverError) Message() string {
+	return "Getters must borrow their receiver with `&self` or `&mut self`, since reading through one leaves the instance in place."
 }
 
 type MultipleConstructorsNotYetSupportedError struct {

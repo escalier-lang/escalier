@@ -141,7 +141,7 @@ func (c *Checker) unifyIteratorNextReturn(ctx Context, t type_system.Type) (type
 		return nil, nil
 	}
 
-	// `.next()` is `mut self` (advancing the iterator mutates its
+	// `.next()` is `&mut self` (advancing the iterator mutates its
 	// cursor). The receiver `t` already arrives mut because
 	// stripIteratorReceiverPolarity wraps every [Symbol.iterator]()
 	// method's return type in MutType, so the iterator value

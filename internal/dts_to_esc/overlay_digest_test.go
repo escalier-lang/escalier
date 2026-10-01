@@ -26,7 +26,7 @@ declare function parseInt(string: string, radix?: number): number;
 // things a `replace` can stand in for.
 var replaceOverlay = map[string]string{
 	"std/prelude.replace.esc": "export declare class Array<T> {\n" +
-		"    at(self, index: number) -> T,\n}\n" +
+		"    at(&self, index: number) -> T,\n}\n" +
 		"export declare type ArrayLike<T> = { length: number }\n",
 }
 
@@ -53,7 +53,7 @@ func TestOverlayDigests_RecordWritesASidecarBesideTheReplaceFile(t *testing.T) {
     "decl": "Array",
     "member": "at",
     "kind": "method",
-    "digest": "fb2b83d0692345dc"
+    "digest": "c9db8416e83d24ce"
   },
   {
     "decl": "ArrayLike",
@@ -116,7 +116,7 @@ func TestOverlayDigests_ReportAnEntryTheOverlayNoLongerReplaces(t *testing.T) {
 	t.Parallel()
 	dir := seedOverlay(t, map[string]string{
 		"std/prelude.replace.esc": "export declare class Array<T> {\n" +
-			"    length: number,\n    at(self, index: number) -> T,\n}\n",
+			"    length: number,\n    at(&self, index: number) -> T,\n}\n",
 	})
 	_, err := applyOverlayIn(t, dir, overlayLib, true)
 	require.NoError(t, err)
@@ -166,8 +166,8 @@ func TestOverlayDigests_KeepAGetterAndASetterApart(t *testing.T) {
 	t.Parallel()
 	dir := seedOverlay(t, map[string]string{
 		"std/prelude.replace.esc": "export declare class Array<T> {\n" +
-			"    get size(self) -> number | undefined,\n" +
-			"    set size(mut self, v: number | undefined),\n}\n",
+			"    get size(&self) -> number | undefined,\n" +
+			"    set size(&mut self, v: number | undefined),\n}\n",
 	})
 	_, err := applyOverlayIn(t, dir, overlayKindLib, true)
 	require.NoError(t, err)
@@ -177,13 +177,13 @@ func TestOverlayDigests_KeepAGetterAndASetterApart(t *testing.T) {
     "decl": "Array",
     "member": "size",
     "kind": "getter",
-    "digest": "306eee11108848af"
+    "digest": "16a60375955d1095"
   },
   {
     "decl": "Array",
     "member": "size",
     "kind": "setter",
-    "digest": "6386e2949f3a0df2"
+    "digest": "c5fe9d3b9acb321e"
   }
 ]
 `))
@@ -218,7 +218,7 @@ func TestOverlayDigests_IgnoreADocCommentEdit(t *testing.T) {
 	t.Parallel()
 	dir := seedOverlay(t, map[string]string{
 		"std/prelude.replace.esc": "export declare class Array<T> {\n" +
-			"    at(self, index: number) -> T,\n}\n",
+			"    at(&self, index: number) -> T,\n}\n",
 	})
 	_, err := applyOverlayIn(t, dir, overlayDocLib, true)
 	require.NoError(t, err)

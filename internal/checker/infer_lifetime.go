@@ -1168,7 +1168,7 @@ func (c *Checker) InferConstructorLifetimes(
 	if ctorElem == nil || ctorElem.Fn == nil || ctorElem.Fn.Body == nil {
 		return
 	}
-	// The first AST param is `mut self`. The remaining params are the
+	// The first AST param is `&mut self`. The remaining params are the
 	// callable params and line up with `ctorFn.Params` (which
 	// `inferConstructorSig` populates by dropping `self`).
 	allCtorParams := ctorElem.Fn.Params
@@ -1195,7 +1195,7 @@ func (c *Checker) InferConstructorLifetimes(
 
 	// Build the per-leaf index from callable-param patterns × types so
 	// that destructured leaves are tracked individually (e.g. for
-	// `constructor(self, [a, b]: [...])` each of `a`, `b` gets its own
+	// `constructor(&mut self, [a, b]: [...])` each of `a`, `b` gets its own
 	// leaf). Lifetime allocation below still happens at the top-level
 	// param granularity, but per-leaf escape tracking lets the RHS
 	// alias-source tracing find the right binding.

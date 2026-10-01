@@ -214,8 +214,8 @@ func TestInferOverloadArmReportsASignatureErrorOnce(t *testing.T) {
 func TestInferOverloadedMemberKeepsItsArrayAnnotation(t *testing.T) {
 	values, _, errs := inferSource(t, `
 		declare class D {
-			constructor(mut self, xs: Array<number>),
-			constructor(mut self, a: string, b: string),
+			constructor(&mut self, xs: Array<number>),
+			constructor(&mut self, a: string, b: string),
 		}
 	`)
 	require.Empty(t, messagesWithSpan(t, errs))

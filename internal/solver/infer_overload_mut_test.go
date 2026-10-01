@@ -38,8 +38,8 @@ func TestInferOverloadOwnedMutArgument(t *testing.T) {
 		_, _, errs := inferSource(t, `
 			class C {
 				n: number,
-				m(self, a: mut {x: number}) -> number { return 1 },
-				m(self, a: mut {x: number}, b: number) -> number { return 2 },
+				m(&self, a: mut {x: number}) -> number { return 1 },
+				m(&self, a: mut {x: number}, b: number) -> number { return 2 },
 			}
 			val c = C(0)
 			val r = c.m({x: 1})
@@ -49,8 +49,8 @@ func TestInferOverloadOwnedMutArgument(t *testing.T) {
 	t.Run("constructor", func(t *testing.T) {
 		_, _, errs := inferSource(t, `
 			declare class Box {
-				constructor(mut self, a: mut {x: number}),
-				constructor(mut self, a: mut {x: number}, b: number),
+				constructor(&mut self, a: mut {x: number}),
+				constructor(&mut self, a: mut {x: number}, b: number),
 			}
 			val r = Box({x: 1})
 		`)

@@ -1,9 +1,9 @@
 class Foo {
     value: number,
-    constructor(mut self, value: number = 5) {
+    constructor(&mut self, value: number = 5) {
         self.value = value
     },
-    getValue<T>(self, defaultValue: T) -> number | T {
+    getValue<T>(&self, defaultValue: T) -> number | T {
         if self.value != 0 {
             return self.value
         } else {
@@ -13,10 +13,10 @@ class Foo {
     static addNums1(a: number, b: number) -> number {
         return a + b
     },
-    addStrs1<A: string, B: string>(self, a: A, b: B) {
+    addStrs1<A: string, B: string>(&self, a: A, b: B) {
         return Foo.addNums1(a, b) // error
     },
-    addNums2<A: number, B: number>(self, a: A, b: B) -> number {
+    addNums2<A: number, B: number>(&self, a: A, b: B) -> number {
         return Foo.addNums1(a, b) // okay
     },
     static addStrs3<A: string, B: string>(a: A, b: B) {

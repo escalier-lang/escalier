@@ -1121,8 +1121,8 @@ func TestInferIndexNamedTypeStaysSymbolic(t *testing.T) {
 			src: `
 				class C {
 					v: number,
-					set x(mut self, n: number) { self.v = n },
-					get x(self) -> number { return self.v },
+					set x(&mut self, n: number) { self.v = n },
+					get x(&self) -> number { return self.v },
 				}
 				type Result = C["x"]
 			`,

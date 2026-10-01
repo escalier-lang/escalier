@@ -62,7 +62,7 @@ func TestClassDeclDependencies(t *testing.T) {
 			input: `
 				type Result = {success: boolean}
 				class Processor {
-					process(self) -> Result {
+					process(&self) -> Result {
 						return {success: true}
 					}
 				}
@@ -85,7 +85,7 @@ func TestClassDeclDependencies(t *testing.T) {
 				type Error = {message: string}
 				class Child extends Base {
 					data: Data,
-					process(self) -> Error {
+					process(&self) -> Error {
 						return {message: "error"}
 					}
 				}
@@ -213,7 +213,7 @@ func TestClassMemberNameNoSpuriousDependency(t *testing.T) {
 			input: `
 				val process = 5
 				class Worker {
-					process(self) -> number {
+					process(&self) -> number {
 						return 1
 					}
 				}
@@ -226,7 +226,7 @@ func TestClassMemberNameNoSpuriousDependency(t *testing.T) {
 				val fullName = "n"
 				class Person {
 					firstName: string,
-					get fullName(self) -> string { return self.firstName },
+					get fullName(&self) -> string { return self.firstName },
 				}
 			`,
 			className:    "Person",
@@ -237,7 +237,7 @@ func TestClassMemberNameNoSpuriousDependency(t *testing.T) {
 				val fullName = "n"
 				class Person {
 					firstName: string,
-					set fullName(mut self, value: string) { self.firstName = value },
+					set fullName(&mut self, value: string) { self.firstName = value },
 				}
 			`,
 			className:    "Person",

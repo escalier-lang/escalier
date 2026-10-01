@@ -7,74 +7,95 @@ import (
 
 // makeSelfParamWithLifetime returns a FuncParam representing an implicit
 // `self` receiver for a method on `selfType`, optionally annotated with a
-// receiver lifetime. `mutSelf` is the AST-level mutability flag (nil = no
-// receiver, *false = `self`, *true = `mut self`); returns nil when there
-// is no receiver. `selfType` is the class/interface receiver TypeRefType
-// — shared across all methods of a class as `classSelfRef` — and a fresh
-// shallow clone is made here so that setting `.Lifetime` does not poison
-// sibling methods that declared a different (or no) receiver lifetime.
+// receiver lifetime. `mutSelf` marks a `&mut self` or `mut self` receiver,
+// and `consumes` marks a `self` or `mut self` receiver, which moves the
+// instance rather than borrowing it. `selfType` is the class or interface
+// receiver TypeRefType, which every method of a class shares as
+// `classSelfRef`. A fresh shallow clone is made here so that setting
+// `.Lifetime` does not poison sibling methods that declared a different
+// receiver lifetime or none.
 func makeSelfParamWithLifetime(
 	selfType *type_system.TypeRefType,
-	mutSelf *bool,
+	mutSelf bool,
+	consumes bool,
 	lifetime type_system.Lifetime,
 ) *type_system.FuncParam {
-	if mutSelf == nil || selfType == nil {
-		return nil
-	}
 	clone := *selfType
 	if lifetime != nil {
 		clone.Lifetime = lifetime
 	}
 	receiver := &clone
 	var t type_system.Type = receiver
-	if *mutSelf {
+	if mutSelf {
 		t = type_system.NewMutType(nil, receiver)
 	}
 	return &type_system.FuncParam{
-		Pattern: type_system.NewIdentPat("self"),
-		Type:    t,
+		Pattern:  type_system.NewIdentPat("self"),
+		Type:     t,
+		Consumes: consumes,
 	}
 }
 
+// checkGetterReceiver reports an instance getter that consumes its
+// receiver. A getter that writes no receiver is MissingSelfReceiverError's
+// to report, so it passes here.
+func checkGetterReceiver(elem *ast.GetterElem) []Error {
+	if elem.Receiver == nil || !elem.Receiver.Consumes() {
+		return nil
+	}
+	return []Error{GetterReceiverError{span: elem.Receiver.Span()}}
+}
+
+// checkSetterReceiver reports an instance setter whose receiver is not
+// `&mut self`. A setter that writes no receiver is
+// MissingSelfReceiverError's to report, so it passes here.
+func checkSetterReceiver(elem *ast.SetterElem) []Error {
+	recv := elem.Receiver
+	if recv == nil || (recv.Mut && !recv.Consumes()) {
+		return nil
+	}
+	return []Error{SetterReceiverError{span: recv.Span()}}
+}
+
 // buildMethodReceiver packages the receiver shape for inferFuncSig /
-// inferFuncTypeAnn. When `receiverType` is nil (e.g. a method-shaped
-// element inside a structural object-type annotation), there is no
-// receiver to attach a lifetime to — we surface a diagnostic rather
-// than silently drop `'a self`. Returns (nil, nil) for the no-receiver,
-// no-lifetime case so plain object-literal methods continue to work.
+// inferFuncTypeAnn. It returns nil when no receiver was written, so the
+// resulting FuncType gets no SelfParam. When `receiverType` is nil, as for
+// a method-shaped element inside a structural object-type annotation,
+// there is no receiver type to attach a lifetime to. A written `&'a self`
+// is reported there rather than silently dropped, and any other receiver
+// returns nil so plain object-literal methods continue to work.
 func buildMethodReceiver(
 	receiverType *type_system.TypeRefType,
 	astRecv *ast.MethodReceiver,
 ) (*methodReceiver, []Error) {
-	var mutSelf *bool
-	var lifetimeNode ast.LifetimeAnnNode
-	if astRecv != nil {
-		m := astRecv.Mut
-		mutSelf = &m
-		lifetimeNode = astRecv.Lifetime
+	if astRecv == nil {
+		return nil, nil
 	}
 	if receiverType == nil {
-		if lifetimeNode != nil {
-			return nil, []Error{ReceiverLifetimeOutsideMemberError{span: lifetimeNode.Span()}}
+		if astRecv.Lifetime != nil {
+			return nil, []Error{ReceiverLifetimeOutsideMemberError{span: astRecv.Lifetime.Span()}}
 		}
 		return nil, nil
 	}
 	return &methodReceiver{
 		Type:         receiverType,
-		MutSelf:      mutSelf,
-		LifetimeNode: lifetimeNode,
+		MutSelf:      astRecv.Mut,
+		Consumes:     astRecv.Consumes(),
+		LifetimeNode: astRecv.Lifetime,
 	}, nil
 }
 
 // methodReceiver bundles the bits inferFuncSig / inferFuncTypeAnn need
 // to wire a `self` receiver onto the resulting FuncType. Pass nil for
-// plain (non-method) callers; pass a populated value for class methods,
-// getters, setters, and interface method type-annotations. `Type` is
-// the class/interface-instance ref the method is attached to;
-// `LifetimeNode` is the optional `'a self` annotation (nil when absent).
+// plain functions and for members that wrote no receiver. `Type` is the
+// class/interface-instance ref the method is attached to. `MutSelf`
+// marks a `&mut self` or `mut self` receiver, and `Consumes` marks a
+// `self` or `mut self` receiver. `LifetimeNode` is the optional
+// `&'a self` annotation, nil when absent.
 type methodReceiver struct {
 	Type         *type_system.TypeRefType
-	MutSelf      *bool
+	MutSelf      bool
+	Consumes     bool
 	LifetimeNode ast.LifetimeAnnNode
 }
 
@@ -108,14 +129,14 @@ func setReceiverMut(fn *type_system.FuncType, mut bool) {
 //     arrive without a receiver representation.
 //
 //     Defaults:
-//     - MethodElem → `mut self`. TS .d.ts carries no receiver-mut
+//     - MethodElem → `&mut self`. TS .d.ts carries no receiver-mut
 //     annotation, so for any method we haven't positively classified
 //     we don't know whether it mutates. Defaulting to mut is the
 //     conservative choice (UpdateMethodMutability and
 //     mergeReadonlyVariant strip `mut` afterwards where the method
 //     is positively classified as non-mutating).
 //     - GetterElem → non-mut self.
-//     - SetterElem → `mut self`.
+//     - SetterElem → `&mut self`.
 //     Accessor shape is the tier-3 strong signal — reading state doesn't
 //     mutate; assignment does — so getters and setters get opposite
 //     defaults rather than both defaulting to mut.

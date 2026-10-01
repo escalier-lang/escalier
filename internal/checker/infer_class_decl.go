@@ -114,7 +114,7 @@ func (c *Checker) inferClassDecl(ctx Context, decl *ast.ClassDecl) []Error {
 
 	// `Self` names the class's own instance type inside its body, the way it
 	// already does inside an interface. The dts converter emits it on a fused
-	// class's methods, as in `add(mut self, value: T) -> Self` on `Set`.
+	// class's methods, as in `add(&mut self, value: T) -> Self` on `Set`.
 	declCtx.Scope.SetTypeAlias("Self", &type_system.TypeAlias{
 		Type:       classSelfRef,
 		TypeParams: []*type_system.TypeParam{},
@@ -207,6 +207,7 @@ func (c *Checker) inferClassDecl(ctx Context, decl *ast.ClassDecl) []Error {
 			if !elem.Static && elem.Receiver == nil {
 				errors = append(errors, MissingSelfReceiverError{span: elem.Span_})
 			}
+			errors = slices.Concat(errors, checkGetterReceiver(elem))
 			recv, recvErrs := buildMethodReceiver(classSelfRef, elem.Receiver)
 			errors = slices.Concat(errors, recvErrs)
 			funcType, sigCtx, _, sigErrors := c.inferFuncSig(
@@ -241,6 +242,7 @@ func (c *Checker) inferClassDecl(ctx Context, decl *ast.ClassDecl) []Error {
 			if !elem.Static && elem.Receiver == nil {
 				errors = append(errors, MissingSelfReceiverError{span: elem.Span_})
 			}
+			errors = slices.Concat(errors, checkSetterReceiver(elem))
 			recv, recvErrs := buildMethodReceiver(classSelfRef, elem.Receiver)
 			errors = slices.Concat(errors, recvErrs)
 			funcType, sigCtx, _, sigErrors := c.inferFuncSig(

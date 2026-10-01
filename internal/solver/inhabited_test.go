@@ -86,10 +86,10 @@ func TestNonReturningRecursionReported(t *testing.T) {
 			name: "a method is named in the diagnostic",
 			src: `
 				class Node {
-					grow(self) { return {next: self.grow()} },
+					grow(&self) { return {next: self.grow()} },
 				}
 			`,
-			want: []string{nonReturningMsg("3:6-3:47", "grow", "fn (self) -> {next: μX0.{next: X0}}")},
+			want: []string{nonReturningMsg("3:6-3:48", "grow", "fn (&self) -> {next: μX0.{next: X0}}")},
 		},
 		{
 			// A lambda inside a member body must not inherit the member's name, which is why
@@ -97,10 +97,10 @@ func TestNonReturningRecursionReported(t *testing.T) {
 			name: "a lambda inside a method keeps no member name",
 			src: `
 				class Node {
-					grow(self) { return {go: fn () { return {next: self.grow().go()} }} },
+					grow(&self) { return {go: fn () { return {next: self.grow().go()} }} },
 				}
 			`,
-			want: []string{nonReturningMsg("3:31-3:72", "", "fn () -> {next: μX0.{next: X0}}")},
+			want: []string{nonReturningMsg("3:32-3:73", "", "fn () -> {next: μX0.{next: X0}}")},
 		},
 	}
 	for _, tt := range tests {
@@ -205,7 +205,7 @@ func TestNonReturningRecursionAccepts(t *testing.T) {
 				declare fn cond() -> boolean
 				class Box<T> {
 					v: T,
-					grow(self) {
+					grow(&self) {
 						if cond() { return self.v }
 						return {next: self.grow()}
 					},

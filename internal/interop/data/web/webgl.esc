@@ -396,7 +396,7 @@ export declare interface WEBGL_multi_draw {
 @js("WebGL2RenderingContext")
 export declare class WebGL2RenderingContext implements WebGL2RenderingContextBase, WebGL2RenderingContextOverloads, WebGLRenderingContextBase {
     static prototype: WebGL2RenderingContext,
-    constructor(mut self),
+    constructor(&mut self),
     static readonly READ_BUFFER: 3074,
     static readonly UNPACK_ROW_LENGTH: 3314,
     static readonly UNPACK_SKIP_ROWS: 3315,
@@ -1538,7 +1538,7 @@ export declare class WebGLActiveInfo {
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/WebGLActiveInfo/type) */
     readonly type: GLenum,
     static prototype: WebGLActiveInfo,
-    constructor(mut self)
+    constructor(&mut self)
 }
 
 /**
@@ -1549,7 +1549,7 @@ export declare class WebGLActiveInfo {
 @js("WebGLBuffer")
 export declare class WebGLBuffer {
     static prototype: WebGLBuffer,
-    constructor(mut self)
+    constructor(&mut self)
 }
 
 /**
@@ -1562,7 +1562,7 @@ export declare class WebGLContextEvent extends Event {
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/WebGLContextEvent/statusMessage) */
     readonly statusMessage: string,
     static prototype: WebGLContextEvent,
-    constructor(mut self, type: string, eventInit?: WebGLContextEventInit)
+    constructor(&mut self, type: string, eventInit?: WebGLContextEventInit)
 }
 
 /**
@@ -1573,7 +1573,7 @@ export declare class WebGLContextEvent extends Event {
 @js("WebGLFramebuffer")
 export declare class WebGLFramebuffer {
     static prototype: WebGLFramebuffer,
-    constructor(mut self)
+    constructor(&mut self)
 }
 
 /**
@@ -1584,14 +1584,14 @@ export declare class WebGLFramebuffer {
 @js("WebGLProgram")
 export declare class WebGLProgram {
     static prototype: WebGLProgram,
-    constructor(mut self)
+    constructor(&mut self)
 }
 
 /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/WebGLQuery) */
 @js("WebGLQuery")
 export declare class WebGLQuery {
     static prototype: WebGLQuery,
-    constructor(mut self)
+    constructor(&mut self)
 }
 
 /**
@@ -1602,7 +1602,7 @@ export declare class WebGLQuery {
 @js("WebGLRenderbuffer")
 export declare class WebGLRenderbuffer {
     static prototype: WebGLRenderbuffer,
-    constructor(mut self)
+    constructor(&mut self)
 }
 
 /**
@@ -1613,7 +1613,7 @@ export declare class WebGLRenderbuffer {
 @js("WebGLRenderingContext")
 export declare class WebGLRenderingContext implements WebGLRenderingContextBase, WebGLRenderingContextOverloads {
     static prototype: WebGLRenderingContext,
-    constructor(mut self),
+    constructor(&mut self),
     static readonly DEPTH_BUFFER_BIT: 256,
     static readonly STENCIL_BUFFER_BIT: 1024,
     static readonly COLOR_BUFFER_BIT: 16384,
@@ -2569,7 +2569,7 @@ export declare interface WebGLRenderingContextOverloads {
 @js("WebGLSampler")
 export declare class WebGLSampler {
     static prototype: WebGLSampler,
-    constructor(mut self)
+    constructor(&mut self)
 }
 
 /**
@@ -2580,7 +2580,7 @@ export declare class WebGLSampler {
 @js("WebGLShader")
 export declare class WebGLShader {
     static prototype: WebGLShader,
-    constructor(mut self)
+    constructor(&mut self)
 }
 
 /**
@@ -2597,14 +2597,14 @@ export declare class WebGLShaderPrecisionFormat {
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/WebGLShaderPrecisionFormat/rangeMin) */
     readonly rangeMin: GLint,
     static prototype: WebGLShaderPrecisionFormat,
-    constructor(mut self)
+    constructor(&mut self)
 }
 
 /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/WebGLSync) */
 @js("WebGLSync")
 export declare class WebGLSync {
     static prototype: WebGLSync,
-    constructor(mut self)
+    constructor(&mut self)
 }
 
 /**
@@ -2615,14 +2615,14 @@ export declare class WebGLSync {
 @js("WebGLTexture")
 export declare class WebGLTexture {
     static prototype: WebGLTexture,
-    constructor(mut self)
+    constructor(&mut self)
 }
 
 /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/WebGLTransformFeedback) */
 @js("WebGLTransformFeedback")
 export declare class WebGLTransformFeedback {
     static prototype: WebGLTransformFeedback,
-    constructor(mut self)
+    constructor(&mut self)
 }
 
 /**
@@ -2633,14 +2633,14 @@ export declare class WebGLTransformFeedback {
 @js("WebGLUniformLocation")
 export declare class WebGLUniformLocation {
     static prototype: WebGLUniformLocation,
-    constructor(mut self)
+    constructor(&mut self)
 }
 
 /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/WebGLVertexArrayObject) */
 @js("WebGLVertexArrayObject")
 export declare class WebGLVertexArrayObject {
     static prototype: WebGLVertexArrayObject,
-    constructor(mut self)
+    constructor(&mut self)
 }
 
 /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/WebGLVertexArrayObject) */

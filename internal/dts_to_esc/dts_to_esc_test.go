@@ -877,8 +877,8 @@ func TestStandalone_RaiseParamOnAFusedClass(t *testing.T) {
 	require.NoError(t, err)
 	snaps.MatchInlineSnapshot(t, printed, snaps.Inline(`@js("Promise")
 export declare class Promise<T, E = never> {
-    then<R>(self, onfulfilled?: fn (value: T) -> R) -> Promise<R, E>,
-    constructor(mut self, executor: fn (resolve: fn (value: T) -> unknown) -> unknown),
+    then<R>(&self, onfulfilled?: fn (value: T) -> R) -> Promise<R, E>,
+    constructor(&mut self, executor: fn (resolve: fn (value: T) -> unknown) -> unknown),
     static readonly prototype: Promise<any>,
     static resolve<T>(value: T) -> Promise<T>
 }`))
@@ -1055,7 +1055,7 @@ declare var Iterator: IteratorConstructor;
 `,
 			ctors:    0,
 			statics:  []string{"static readonly prototype: Iterator<any>", "static from<T>(value: T) -> Iterator<T>"},
-			instance: []string{"next(mut self) -> T"},
+			instance: []string{"next(&mut self) -> T"},
 		},
 		{
 			// lib.es5.d.ts. `any[]` and `T[]` parse as an array type,
@@ -1080,7 +1080,7 @@ declare var Array: ArrayConstructor;
 `,
 			ctors:    2,
 			statics:  []string{"static isArray(arg: unknown) -> boolean"},
-			instance: []string{"push(mut self, ...items: Array<T>) -> number"},
+			instance: []string{"push(&mut self, ...items: Array<T>) -> number"},
 		},
 	}
 
@@ -1263,7 +1263,7 @@ declare var Foo: FooConstructor;
 	_, printed := convertSlice(t, slice)
 	snaps.MatchInlineSnapshot(t, printed, snaps.Inline(`@js("Foo")
 export declare class Foo {
-    next(mut self) -> string
+    next(&mut self) -> string
 }
 
 export declare interface Foo {
@@ -1315,9 +1315,9 @@ declare var AbortController: {
 			want: `@js("AbortController")
 export declare class AbortController {
     readonly signal: AbortSignal,
-    abort(mut self, reason?: unknown) -> unknown,
+    abort(&mut self, reason?: unknown) -> unknown,
     static prototype: AbortController,
-    constructor(mut self)
+    constructor(&mut self)
 }
 `,
 		},
@@ -1341,7 +1341,7 @@ declare var Response: {
 export declare class Response {
     readonly ok: boolean,
     static prototype: Response,
-    constructor(mut self, body?: string),
+    constructor(&mut self, body?: string),
     static error() -> Response
 }
 `,
@@ -1438,7 +1438,7 @@ export declare var Config: {
 // A fused DOM interface brings its accessors onto the class, and a
 // class setter has no return type in the grammar. Printing the
 // `undefined` the AST carries there emitted
-// `set style(mut self, v: string) -> undefined`, which does not
+// `set style(&mut self, v: string) -> undefined`, which does not
 // reparse. lib.dom.d.ts has hundreds of these.
 func TestStandalone_FusedSetterReparses(t *testing.T) {
 	const slice = `
@@ -1454,11 +1454,11 @@ declare var CSSFontFaceRule: {
 `
 	_, printed := convertSlice(t, slice)
 
-	require.Contains(t, printed, "get style(self) -> string",
+	require.Contains(t, printed, "get style(&self) -> string",
 		"a getter keeps its return type")
-	require.Contains(t, printed, "set style(mut self, v: string),",
+	require.Contains(t, printed, "set style(&mut self, v: string),",
 		"a setter has none")
-	require.NotContains(t, printed, "set style(mut self, v: string) -> undefined",
+	require.NotContains(t, printed, "set style(&mut self, v: string) -> undefined",
 		"the return the AST carries for the checker is not printed")
 
 	parsedDecls, parseErrs := parser.ParseDecls(context.Background(),
@@ -1634,7 +1634,7 @@ func TestStandalone_TrioKeepsEverySupertype(t *testing.T) {
 	snaps.MatchInlineSnapshot(t, printed, snaps.Inline(`@js("Element")
 export declare class Element extends Node implements ParentNode, Slottable {
     readonly tagName: string,
-    constructor(mut self)
+    constructor(&mut self)
 }`))
 }
 
@@ -1668,7 +1668,7 @@ func TestStandalone_TrioExtendsTheSupertypeThatIsAClass(t *testing.T) {
 	snaps.MatchInlineSnapshot(t, printed, snaps.Inline(`@js("Element")
 export declare class Element extends Node implements ParentNode {
     readonly tagName: string,
-    constructor(mut self)
+    constructor(&mut self)
 }`))
 }
 
@@ -1698,7 +1698,7 @@ func TestStandalone_TrioWithNoClassSupertypeExtendsNothing(t *testing.T) {
 	snaps.MatchInlineSnapshot(t, printed, snaps.Inline(`@js("CanvasRenderingContext2D")
 export declare class CanvasRenderingContext2D implements CanvasPath, CanvasText {
     readonly canvas: string,
-    constructor(mut self)
+    constructor(&mut self)
 }`))
 }
 
@@ -1737,7 +1737,7 @@ func TestStandalone_ASecondClassSupertypeIsDemotedAndRecorded(t *testing.T) {
 	snaps.MatchInlineSnapshot(t, printed, snaps.Inline(`@js("FontFaceSet")
 export declare class FontFaceSet extends EventTarget implements Collection {
     readonly ready: string,
-    constructor(mut self)
+    constructor(&mut self)
 }`))
 
 	require.Equal(t, []DemotedBase{
@@ -1817,7 +1817,7 @@ func TestStandalone_NestedTrioExtendsANestedClass(t *testing.T) {
 	snaps.MatchInlineSnapshot(t, printed, snaps.Inline(`@js("NS.Derived")
 export declare class Derived extends Base implements Mixin {
     readonly name: string,
-    constructor(mut self)
+    constructor(&mut self)
 }`))
 	require.Empty(t, mod.DemotedBases)
 }

@@ -26,38 +26,38 @@ func TestObjectOverloadMethodMeet(t *testing.T) {
 	}{
 		{
 			name: "two overload sets concatenate every arm of both",
-			in: "{a: number, foo(self, x: number) -> number, foo(self, x: string) -> string, ...} & " +
-				"{b: number, foo(self, x: boolean) -> boolean, foo(self, x: null) -> null, ...}",
-			want: "{a: number, b: number, foo(self, x: number) -> number; " +
-				"foo(self, x: string) -> string; foo(self, x: boolean) -> boolean; " +
-				"foo(self, x: null) -> null, ...}",
+			in: "{a: number, foo(&self, x: number) -> number, foo(&self, x: string) -> string, ...} & " +
+				"{b: number, foo(&self, x: boolean) -> boolean, foo(&self, x: null) -> null, ...}",
+			want: "{a: number, b: number, foo(&self, x: number) -> number; " +
+				"foo(&self, x: string) -> string; foo(&self, x: boolean) -> boolean; " +
+				"foo(&self, x: null) -> null, ...}",
 		},
 		{
 			name: "an arm both sides carry appears once",
-			in: "{a: number, foo(self, x: number) -> number, foo(self, x: string) -> string, ...} & " +
-				"{b: number, foo(self, x: number) -> number, ...}",
-			want: "{a: number, b: number, foo(self, x: number) -> number; " +
-				"foo(self, x: string) -> string, ...}",
+			in: "{a: number, foo(&self, x: number) -> number, foo(&self, x: string) -> string, ...} & " +
+				"{b: number, foo(&self, x: number) -> number, ...}",
+			want: "{a: number, b: number, foo(&self, x: number) -> number; " +
+				"foo(&self, x: string) -> string, ...}",
 		},
 		{
 			name: "sets of different lengths fuse",
-			in: "{a: number, foo(self, x: number) -> number, foo(self, x: string) -> string, ...} & " +
-				"{b: number, foo(self, x: boolean) -> boolean, ...}",
-			want: "{a: number, b: number, foo(self, x: number) -> number; " +
-				"foo(self, x: string) -> string; foo(self, x: boolean) -> boolean, ...}",
+			in: "{a: number, foo(&self, x: number) -> number, foo(&self, x: string) -> string, ...} & " +
+				"{b: number, foo(&self, x: boolean) -> boolean, ...}",
+			want: "{a: number, b: number, foo(&self, x: number) -> number; " +
+				"foo(&self, x: string) -> string; foo(&self, x: boolean) -> boolean, ...}",
 		},
 		{
 			name: "two single signatures that share a domain still fuse exactly, into one arm",
-			in: "{a: number, foo(self, x: number) -> number | string, ...} & " +
-				"{b: number, foo(self, x: number) -> string | boolean, ...}",
-			want: "{a: number, b: number, foo(self, x: number) -> string, ...}",
+			in: "{a: number, foo(&self, x: number) -> number | string, ...} & " +
+				"{b: number, foo(&self, x: number) -> string | boolean, ...}",
+			want: "{a: number, b: number, foo(&self, x: number) -> string, ...}",
 		},
 		{
 			name: "two single signatures with no exact fuse concatenate instead of keeping both atoms",
-			in: "{a: number, foo(self, x: number) -> number, ...} & " +
-				"{b: number, foo(self, x: string) -> string, ...}",
-			want: "{a: number, b: number, foo(self, x: number) -> number; " +
-				"foo(self, x: string) -> string, ...}",
+			in: "{a: number, foo(&self, x: number) -> number, ...} & " +
+				"{b: number, foo(&self, x: string) -> string, ...}",
+			want: "{a: number, b: number, foo(&self, x: number) -> number; " +
+				"foo(&self, x: string) -> string, ...}",
 		},
 	}
 	for _, tt := range tests {

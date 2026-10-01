@@ -113,7 +113,7 @@ func (c *checker) inferClassDecl(scope *Scope, lvl int, decl *ast.ClassDecl, ns 
 
 	// Bind `Self` to the class's own instance handle for the member walk below. A member
 	// signature names it for a builder-style return, where a method hands back the receiver's
-	// own type: `std/prelude.esc` writes `fill(mut self, value: T, start?: number, end?: number)
+	// own type: `std/prelude.esc` writes `fill(&mut self, value: T, start?: number, end?: number)
 	// -> Self`. The handle carries the class's own type-parameter vars as its arguments, so
 	// `Self` inside `class Box<T>` is `Box<T>` and an instance's argument substitutes for `T`
 	// the way it does through any other reference to the class.
@@ -177,7 +177,7 @@ func (c *checker) inferClassDecl(scope *Scope, lvl int, decl *ast.ClassDecl, ns 
 	// has no type-parameter vars, so its body coalesces fully. A generic class keeps its
 	// own type-parameter vars — and each method's own type parameters — symbolic so member
 	// lookup can substitute an instance's argument for them (B8): a plain freeze would
-	// collapse a member typed through `T`, such as `read(self) { self.v }`, to `never`
+	// collapse a member typed through `T`, such as `read(&self) { self.v }`, to `never`
 	// because the intermediate inference var's only bound is the still-unconstrained `T`.
 	// The class's own lifetime parameters are pinned through the freeze. A field such as
 	// `peer: &'a mut B` writes 'a once and in an output position, so the elision rule would
@@ -1044,13 +1044,16 @@ func (c *checker) buildMemberSigs(
 			}
 			c.checkSelfReceiver(name, elem, elem.Static, elem.Receiver)
 			stub := c.memberSigStub(lvl, elem.Fn)
-			stub.SelfParam = c.selfParam(elem.Receiver, elem.Static, self)
+			stub.SelfParam = c.selfParam(lvl, elem.Receiver, elem.Static, self)
 			method, arm := appendMethodSig(targetBody(body, static, elem.Static), name, stub, elem.Static)
 			// An overloaded method dispatches on its value arguments, so its arms must agree
-			// on receiver mutability. The receiver-mutability check reads only the first arm,
-			// so a later `mut self` arm reached from a plain-`self` body would otherwise slip
-			// past it. Reject the mixture here, where the offending arm has a span to blame.
-			if arm > 0 && selfParamMut(stub.SelfParam) != selfParamMut(method.Signatures[0].SelfParam) {
+			// on the receiver they take. The receiver check reads only the first arm, so a
+			// later `&mut self` arm reached from a `&self` body would otherwise slip past it,
+			// as would a consuming arm beside a borrowing one. Reject the mixture here, where
+			// the offending arm has a span to blame.
+			first := method.Signatures[0].SelfParam
+			if arm > 0 && (selfParamMut(stub.SelfParam) != selfParamMut(first) ||
+				selfParamConsumes(stub.SelfParam) != selfParamConsumes(first)) {
 				c.report(&MethodOverloadReceiverMismatchError{Name: name, Elem: elem})
 			}
 			pending = append(pending, pendingMember{
@@ -1067,10 +1070,15 @@ func (c *checker) buildMemberSigs(
 				continue
 			}
 			c.checkSelfReceiver(name, elem, elem.Static, elem.Receiver)
+			// A read leaves the instance where it was, so a getter must borrow it. A
+			// consuming receiver is reported and kept, so the body still checks.
+			if elem.Receiver != nil && elem.Receiver.Consumes() {
+				c.report(&GetterReceiverError{Name: name, Elem: elem})
+			}
 			stub := c.memberSigStub(lvl, elem.Fn)
 			getter := &soltype.GetterElem{
 				Name:      name,
-				SelfParam: c.selfParam(elem.Receiver, elem.Static, self),
+				SelfParam: c.selfParam(lvl, elem.Receiver, elem.Static, self),
 				Type:      stub.Ret,
 				Throws:    stub.Throws,
 			}
@@ -1090,11 +1098,11 @@ func (c *checker) buildMemberSigs(
 			}
 			c.checkSelfReceiver(name, elem, elem.Static, elem.Receiver)
 			// An instance setter mutates the instance, so it must hold mutable access to it.
-			// Report a plain `self` or shared `&self` receiver here, then keep the declared
+			// Report any receiver but `&mut self` here, then keep the declared
 			// receiver on the elem so a write through it draws only this one diagnostic. An
 			// absent receiver is checkSelfReceiver's to report, and a static setter has no
 			// instance to mutate.
-			if elem.Receiver != nil && !elem.Receiver.Mut {
+			if elem.Receiver != nil && (!elem.Receiver.Mut || elem.Receiver.Consumes()) {
 				c.report(&SetterReceiverError{Name: name, Elem: elem})
 			}
 			// A well-formed setter declares exactly one value parameter beyond `self` — the
@@ -1111,7 +1119,7 @@ func (c *checker) buildMemberSigs(
 			}
 			setter := &soltype.SetterElem{
 				Name:      name,
-				SelfParam: c.selfParam(elem.Receiver, elem.Static, self),
+				SelfParam: c.selfParam(lvl, elem.Receiver, elem.Static, self),
 				Param:     param,
 				Throws:    stub.Throws,
 			}
@@ -1218,8 +1226,8 @@ func (c *checker) checkSelfReceiver(name string, elem ast.ClassElem, static bool
 }
 
 // inferMemberFunc infers one member body via the shared inferFunc core, binding `self`
-// to the full instance body — owned-mutable for a `mut self` receiver — so field reads
-// and writes resolve through the record machinery and a sibling call resolves through the
+// to the full instance body in the form its receiver declares. Field reads and writes
+// resolve through the record machinery, and a sibling call resolves through the
 // pre-declared member signature. It returns the inferred FuncType, whose params and
 // return the caller links into the member's signature stub.
 func (c *checker) inferMemberFunc(
@@ -1233,7 +1241,7 @@ func (c *checker) inferMemberFunc(
 ) *soltype.FuncType {
 	memberScope := scope.Child()
 	if !static {
-		c.bindSelf(memberScope, recv, body)
+		c.bindSelf(memberScope, lvl, recv, body)
 	}
 	// generic is true for a method and false for a getter or setter. inferFunc reports a
 	// binder it is not allowed to resolve as an unsupported feature.
@@ -1257,27 +1265,33 @@ func appendMethodSig(obj *soltype.ObjectType, name string, sig *soltype.FuncType
 }
 
 // selfParam builds the SelfParam a member's signature carries, or nil for a static
-// member. A `mut self` receiver wraps the instance in an owned-mutable borrow; a plain
-// `self` carries the bare instance.
-func (c *checker) selfParam(recv *ast.MethodReceiver, static bool, self *soltype.ClassType) *soltype.FuncParam {
+// member. Its type is selfType's.
+func (c *checker) selfParam(lvl int, recv *ast.MethodReceiver, static bool, self *soltype.ClassType) *soltype.FuncParam {
 	if static || recv == nil {
 		return nil
 	}
-	return &soltype.FuncParam{Pattern: &soltype.IdentPat{Name: "self"}, Type: c.selfType(recv, self)}
+	return &soltype.FuncParam{Pattern: &soltype.IdentPat{Name: "self"}, Type: c.selfType(lvl, recv, self)}
 }
 
-// selfType returns the type the `self` binding takes in a member body: an
-// owned-mutable borrow of the instance for `mut self`, the bare instance otherwise.
-func (c *checker) selfType(recv *ast.MethodReceiver, self soltype.Type) soltype.Type {
-	if recv != nil && recv.Mut {
-		return soltype.NewRef(true, nil, self.(soltype.RefInner))
+// selfType returns the type a receiver gives the instance. A borrowed receiver is a borrow
+// of the instance with a fresh lifetime, so `&self` is `&Self` and `&mut self` is
+// `&mut Self`. A consuming receiver owns the instance, so `self` is the bare `Self` and
+// `mut self` is the owned-mutable `mut Self`. A member that wrote no receiver, which
+// checkSelfReceiver reports, takes the bare instance so its body still checks.
+func (c *checker) selfType(lvl int, recv *ast.MethodReceiver, self soltype.Type) soltype.Type {
+	inner := self.(soltype.RefInner)
+	if recv == nil {
+		return self
 	}
-	return self
+	if recv.Consumes() {
+		return soltype.NewRef(recv.Mut, nil, inner)
+	}
+	return soltype.NewRef(recv.Mut, c.ctx.freshLifetime(lvl), inner)
 }
 
-// selfParamMut reports whether a receiver grants mutable access to the instance. A `mut
-// self` receiver wraps the instance in an owned-mutable borrow, so its type is a mutable
-// RefType; a plain `self`, a shared `&self`, and a static member's absent receiver do not.
+// selfParamMut reports whether a receiver grants mutable access to the instance. A
+// `&mut self` or `mut self` receiver is a mutable RefType over the instance. A `&self` or
+// `self` receiver and a static member's absent receiver are not.
 func selfParamMut(sp *soltype.FuncParam) bool {
 	if sp == nil {
 		return false
@@ -1286,13 +1300,21 @@ func selfParamMut(sp *soltype.FuncParam) bool {
 	return ok && r.Mut
 }
 
+// selfParamConsumes reports whether a receiver moves the instance into the call. A `self` or
+// `mut self` receiver owns the instance, so its type carries no borrow lifetime. A `&self` or
+// `&mut self` receiver borrows it, and a static member's absent receiver takes nothing.
+func selfParamConsumes(sp *soltype.FuncParam) bool {
+	return sp != nil && !isBorrowType(sp.Type)
+}
+
 // bindSelf binds the `self` identifier in a member or constructor body scope to the full
 // instance body — fields and every method, getter, and setter. The view snapshots the
 // body's element slice while sharing each element pointer, so a field write such as
 // `self.x = v` refines the same field-type var the projected body reads, and a sibling
 // call `self.m()` resolves against the member signature the phase-1 pass installed on the
-// shared element. A `mut self` receiver wraps the view in an owned-mutable borrow so
-// field writes type-check; a plain `self` binds the bare view.
+// shared element. The view takes the receiver's own form through selfType, so `&mut self`
+// binds a mutable borrow that field writes type-check through and `self` binds the owned
+// view.
 //
 // A `self.field` read or write dispatches through the record subtyping machinery, whose
 // object arm threads the borrow and mutability rules field access needs: read-through-
@@ -1301,15 +1323,12 @@ func selfParamMut(sp *soltype.FuncParam) bool {
 // method member; valueProp intercepts it and resolves through member lookup instead. A
 // method's own receiver ownership is checked separately at the call site as a `receiver
 // <: SelfParam` constraint, not by this binding.
-func (c *checker) bindSelf(scope *Scope, recv *ast.MethodReceiver, body *soltype.ObjectType) {
+func (c *checker) bindSelf(scope *Scope, lvl int, recv *ast.MethodReceiver, body *soltype.ObjectType) {
 	// Snapshot the element slice, sharing each element pointer so a write through `self`
 	// refines the same field-type var the projected body reads and a sibling signature
 	// installed by the body pass shows through the shared pointer.
 	view := &soltype.ObjectType{Elems: append([]soltype.ObjTypeElem(nil), body.Elems...)}
-	var selfBody soltype.Type = view
-	if recv != nil && recv.Mut {
-		selfBody = soltype.NewRef(true, nil, view)
-	}
+	selfBody := c.selfType(lvl, recv, view)
 	scope.defineValue("self", ValueBinding{Schemes: []TypeScheme{monoScheme(selfBody)}})
 }
 
@@ -1487,8 +1506,8 @@ func (v *binderCollector) ExitType(t soltype.Type, _ soltype.Polarity) soltype.T
 //
 //	class Box<T> {
 //	    v: T,
-//	    read(self) { return self.v },
-//	    alias(self) { return self.read() },
+//	    read(&self) { return self.v },
+//	    alias(&self) { return self.read() },
 //	}
 //
 // T is the kept var t1. Reading `self.v` inside `read` constrains t1 <: t4, where t4 is
@@ -1558,7 +1577,7 @@ func coalesceThrows(
 // keep and flow are nil for a non-generic class, where coalesceKeeping reduces to a plain
 // coalesce. A generic class passes its type-parameter vars as keep — held symbolic instead of
 // inlined to their bounds — and the kept-flow map so a member typed through a class parameter,
-// such as `read(self) { self.v }` on `class Box<T>`, reads `T` rather than collapsing to
+// such as `read(&self) { self.v }` on `class Box<T>`, reads `T` rather than collapsing to
 // `never`, leaving `T` in place for projectClassMember to substitute at an instance's argument.
 func (c *checker) freezeClassBody(
 	obj *soltype.ObjectType,

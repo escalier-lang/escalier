@@ -79,8 +79,8 @@ func TestInferThrowsRequiresAClause(t *testing.T) {
 		},
 		{
 			name:     "ThrowInAClauselessMethod",
-			src:      `class C { m(self) { throw "x" } }`,
-			wantErrs: []string{`1:27-1:30: cannot constrain "x" <: never`},
+			src:      `class C { m(&self) { throw "x" } }`,
+			wantErrs: []string{`1:28-1:31: cannot constrain "x" <: never`},
 		},
 		{
 			// A clause on the ANNOTATION does not reach an un-annotated function
@@ -360,8 +360,8 @@ func TestInferThrowsOnClassMembers(t *testing.T) {
 			src: `
 				class Parser {
 					text: string,
-					constructor(mut self, text: string) { self.text = text },
-					parse(self) -> never throws string { throw "bad input" },
+					constructor(&mut self, text: string) { self.text = text },
+					parse(&self) -> never throws string { throw "bad input" },
 				}
 				fn f(p: Parser) throws _ { return p.parse() }
 			`,
@@ -372,7 +372,7 @@ func TestInferThrowsOnClassMembers(t *testing.T) {
 			src: `
 				class Counter {
 					n: number,
-					constructor(mut self, n: number) throws string { throw "bad count" },
+					constructor(&mut self, n: number) throws string { throw "bad count" },
 				}
 				fn f(n: number) throws _ { return Counter(n) }
 			`,
@@ -415,16 +415,16 @@ func TestInferThrowsOverDeclaredSignature(t *testing.T) {
 			// An accessor reads its clause the way a method does, so a getter that raises
 			// nothing draws the same warning a clause-less-body function draws.
 			name: "GetterClauseNoExceptionalExitReaches",
-			src:  `class C { v: number, get x(self) -> number throws string { return self.v } }`,
+			src:  `class C { v: number, get x(&self) -> number throws string { return self.v } }`,
 			wantErrs: []string{
-				"1:51-1:57: the body raises nothing, so the declared `throws string` is unreachable; drop the clause",
+				"1:52-1:58: the body raises nothing, so the declared `throws string` is unreachable; drop the clause",
 			},
 		},
 		{
 			name: "SetterClauseNoExceptionalExitReaches",
-			src:  `class C { v: number, set x(mut self, v: number) throws string { self.v = v } }`,
+			src:  `class C { v: number, set x(&mut self, v: number) throws string { self.v = v } }`,
 			wantErrs: []string{
-				"1:56-1:62: the body raises nothing, so the declared `throws string` is unreachable; drop the clause",
+				"1:57-1:63: the body raises nothing, so the declared `throws string` is unreachable; drop the clause",
 			},
 		},
 		{
@@ -486,7 +486,7 @@ const raisingGetterClass = `
 	class C {
 		v: number,
 		bad: boolean,
-		get x(self) -> number throws string { if self.bad { throw "boom" } return self.v },
+		get x(&self) -> number throws string { if self.bad { throw "boom" } return self.v },
 	}
 `
 
@@ -510,7 +510,7 @@ func TestInferThrowsFromAnAccessor(t *testing.T) {
 				class C {
 					v: number,
 					bad: boolean,
-					get x(self) -> number throws _ { if self.bad { throw "boom" } return self.v },
+					get x(&self) -> number throws _ { if self.bad { throw "boom" } return self.v },
 				}
 				fn f(c: C) -> number throws _ { return c.x }
 			`,
@@ -549,7 +549,7 @@ func TestInferThrowsFromAnAccessor(t *testing.T) {
 				class Box<T> {
 					v: T,
 					bad: boolean,
-					get item(self) -> T throws string { if self.bad { throw "boom" } return self.v },
+					get item(&self) -> T throws string { if self.bad { throw "boom" } return self.v },
 				}
 				fn f(b: Box<number>) -> number throws string { return b.item }
 			`,
@@ -560,8 +560,8 @@ func TestInferThrowsFromAnAccessor(t *testing.T) {
 			// the union of what they declare.
 			name: "UnionReceiverJoinsEveryMemberGetter",
 			src: `
-				class A { bad: boolean, get x(self) -> number throws string { if self.bad { throw "a" } return 1 } }
-				class B { bad: boolean, get x(self) -> number throws number { if self.bad { throw 2 } return 1 } }
+				class A { bad: boolean, get x(&self) -> number throws string { if self.bad { throw "a" } return 1 } }
+				class B { bad: boolean, get x(&self) -> number throws number { if self.bad { throw 2 } return 1 } }
 				fn f(c: A | B) -> number throws _ { return c.x }
 			`,
 			want: "fn (c: A | B) -> number throws number | string",
@@ -571,7 +571,7 @@ func TestInferThrowsFromAnAccessor(t *testing.T) {
 			// until the method is called, so a clause-less reader is fine.
 			name: "MethodValueReadIsNotAnExceptionalExit",
 			src: `
-				class C { m(self) throws string { throw "boom" } }
+				class C { m(&self) throws string { throw "boom" } }
 				fn f(c: C) { val g = c.m }
 			`,
 			want: "fn (c: C) -> undefined",
@@ -582,7 +582,7 @@ func TestInferThrowsFromAnAccessor(t *testing.T) {
 			name: "GetterHandlingItsCalleeInternallyRaisesNothing",
 			src: `
 				fn a() throws string { throw "boom" }
-				class C { get x(self) -> number { return try { a() } catch { e => 0 } } }
+				class C { get x(&self) -> number { return try { a() } catch { e => 0 } } }
 				fn f(c: C) -> number { return c.x }
 			`,
 			want: "fn (c: C) -> number",
@@ -597,21 +597,21 @@ func TestInferThrowsRejectsAnUndeclaredAccessorRaise(t *testing.T) {
 	runThrowsErrCases(t, []throwsErrCase{
 		{
 			name:     "ThrowInAClauselessGetter",
-			src:      `class C { v: number, get x(self) { throw "boom" } }`,
-			wantErrs: []string{`1:42-1:48: cannot constrain "boom" <: never`},
+			src:      `class C { v: number, get x(&self) { throw "boom" } }`,
+			wantErrs: []string{`1:43-1:49: cannot constrain "boom" <: never`},
 		},
 		{
 			name:     "ThrowInAClauselessSetter",
-			src:      `class C { v: number, set x(mut self, v: number) { throw "boom" } }`,
-			wantErrs: []string{`1:57-1:63: cannot constrain "boom" <: never`},
+			src:      `class C { v: number, set x(&mut self, v: number) { throw "boom" } }`,
+			wantErrs: []string{`1:58-1:64: cannot constrain "boom" <: never`},
 		},
 		{
 			name: "CallToAThrowingCalleeFromAClauselessGetter",
 			src: `
 				fn a() throws string { throw "boom" }
-				class C { v: number, get x(self) -> number { return a() } }
+				class C { v: number, get x(&self) -> number { return a() } }
 			`,
-			wantErrs: []string{"3:57-3:60: cannot constrain string <: never"},
+			wantErrs: []string{"3:58-3:61: cannot constrain string <: never"},
 		},
 		{
 			// The read is the exceptional exit, so the diagnostic blames the access
@@ -621,7 +621,7 @@ func TestInferThrowsRejectsAnUndeclaredAccessorRaise(t *testing.T) {
 				class C {
 					v: number,
 					bad: boolean,
-					get x(self) -> number throws string { if self.bad { throw "boom" } return self.v },
+					get x(&self) -> number throws string { if self.bad { throw "boom" } return self.v },
 				}
 				fn f(c: C) -> number { return c.x }
 			`,
@@ -633,11 +633,11 @@ func TestInferThrowsRejectsAnUndeclaredAccessorRaise(t *testing.T) {
 				class C {
 					v: number,
 					bad: boolean,
-					get x(self) -> number throws string { if self.bad { throw "boom" } return self.v },
-					m(self) -> number { return self.x },
+					get x(&self) -> number throws string { if self.bad { throw "boom" } return self.v },
+					m(&self) -> number { return self.x },
 				}
 			`,
-			wantErrs: []string{"6:33-6:39: cannot constrain string <: never"},
+			wantErrs: []string{"6:34-6:40: cannot constrain string <: never"},
 		},
 	})
 }
@@ -654,8 +654,8 @@ func TestInferThrowsAccessorReadResolution(t *testing.T) {
 				class A {
 					v: number,
 					bad: boolean,
-					set x(mut self, n: number) { self.v = n },
-					get x(self) -> number throws string { if self.bad { throw "a" } return self.v },
+					set x(&mut self, n: number) { self.v = n },
+					get x(&self) -> number throws string { if self.bad { throw "a" } return self.v },
 				}
 				fn f(c: A) -> number { return c.x }
 			`,
@@ -668,8 +668,8 @@ func TestInferThrowsAccessorReadResolution(t *testing.T) {
 				class A {
 					v: number,
 					bad: boolean,
-					set x(mut self, n: number) { self.v = n },
-					get x(self) -> number throws string { if self.bad { throw "a" } return self.v },
+					set x(&mut self, n: number) { self.v = n },
+					get x(&self) -> number throws string { if self.bad { throw "a" } return self.v },
 				}
 				class B { x: number }
 				fn f(c: A | B) -> number { return c.x }
@@ -683,7 +683,7 @@ func TestInferThrowsAccessorReadResolution(t *testing.T) {
 			// must not be reported as an undeclared raise on top of them.
 			name: "UnionMemberWithNoReadableObjectRaisesNothing",
 			src: `
-				class A { bad: boolean, get x(self) -> number throws string { if self.bad { throw "a" } return 1 } }
+				class A { bad: boolean, get x(&self) -> number throws string { if self.bad { throw "a" } return 1 } }
 				fn f(c: A | undefined) -> number { return c.x }
 			`,
 			wantErrs: []string{
@@ -734,8 +734,8 @@ func TestInferThrowsThroughAGetterRead(t *testing.T) {
 			src: `
 				class C {
 					bad: boolean,
-					get a(self) -> number throws string { if self.bad { throw "a" } return 1 },
-					get b(self) -> number throws number { if self.bad { throw 2 } return 1 },
+					get a(&self) -> number throws string { if self.bad { throw "a" } return 1 },
+					get b(&self) -> number throws number { if self.bad { throw 2 } return 1 },
 				}
 				fn f(c: C) -> number throws _ {
 					val p = c.a
@@ -758,7 +758,7 @@ func TestInferThrowsThroughAGetterRead(t *testing.T) {
 			src: raisingGetterClass + `
 				class D {
 					inner: C,
-					get y(self) -> number throws string { return self.inner.x },
+					get y(&self) -> number throws string { return self.inner.x },
 				}
 				fn f(d: D) -> number throws _ { return d.y }
 			`,
@@ -771,8 +771,8 @@ func TestInferThrowsThroughAGetterRead(t *testing.T) {
 			src: `
 				class C {
 					bad: boolean,
-					get x(self) -> number throws string { if self.bad { throw "boom" } return 1 },
-					m(self) -> number throws _ { return self.x },
+					get x(&self) -> number throws string { if self.bad { throw "boom" } return 1 },
+					m(&self) -> number throws _ { return self.x },
 				}
 				fn f(c: C) -> number throws _ { return c.m() }
 			`,
@@ -812,10 +812,10 @@ func TestInferThrowsThroughAGetterRead(t *testing.T) {
 			src: raisingGetterClass + `
 				class D {
 					inner: C,
-					get y(self) -> number { return self.inner.x },
+					get y(&self) -> number { return self.inner.x },
 				}
 			`,
-			wantErrs: []string{"10:37-10:49: cannot constrain string <: never"},
+			wantErrs: []string{"10:38-10:50: cannot constrain string <: never"},
 		},
 	})
 }
@@ -826,7 +826,7 @@ const raisingSetterClass = `
 	class C {
 		v: number,
 		bad: boolean,
-		set x(mut self, n: number) throws string { if self.bad { throw "boom" } self.v = n },
+		set x(&mut self, n: number) throws string { if self.bad { throw "boom" } self.v = n },
 	}
 `
 
@@ -855,8 +855,8 @@ func TestInferThrowsThroughASetterWrite(t *testing.T) {
 				class C {
 					v: number,
 					bad: boolean,
-					set x(mut self, n: number) throws string { if self.bad { throw "boom" } self.v = n },
-					m(mut self) throws _ { self.x = 5 },
+					set x(&mut self, n: number) throws string { if self.bad { throw "boom" } self.v = n },
+					m(&mut self) throws _ { self.x = 5 },
 				}
 				fn f(c: mut C) throws _ { c.m() }
 			`,
@@ -867,7 +867,7 @@ func TestInferThrowsThroughASetterWrite(t *testing.T) {
 			// way a non-throwing callee adds nothing at a call site.
 			name: "NonThrowingSetterWriteAddsNothing",
 			src: `
-				class C { v: number, set x(mut self, n: number) { self.v = n } }
+				class C { v: number, set x(&mut self, n: number) { self.v = n } }
 				fn f(c: mut C) { c.x = 5 }
 			`,
 			want: "fn (c: mut C) -> undefined",
@@ -896,11 +896,11 @@ func TestInferThrowsThroughASetterWrite(t *testing.T) {
 				class C {
 					v: number,
 					bad: boolean,
-					set x(mut self, n: number) throws string { if self.bad { throw "boom" } self.v = n },
-					m(mut self) { self.x = 5 },
+					set x(&mut self, n: number) throws string { if self.bad { throw "boom" } self.v = n },
+					m(&mut self) { self.x = 5 },
 				}
 			`,
-			wantErrs: []string{"6:20-6:30: cannot constrain string <: never"},
+			wantErrs: []string{"6:21-6:31: cannot constrain string <: never"},
 		},
 	})
 }

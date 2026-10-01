@@ -21,7 +21,7 @@ export class Point {
     x: number,
     /** The y coordinate. */
     y: number,
-    constructor(mut self, x: number, y: number) {
+    constructor(&mut self, x: number, y: number) {
         self.x = x
         self.y = y
     }

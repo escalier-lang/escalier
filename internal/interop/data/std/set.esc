@@ -9,71 +9,71 @@ export declare class Set<T> {
     /**
      * Appends a new element with a specified value to the end of the Set.
      */
-    add(mut self, value: T) -> Self,
-    clear(mut self) -> unknown,
+    add(&mut self, value: T) -> Self,
+    clear(&mut self) -> unknown,
     /**
      * Removes a specified value from the Set.
      * @returns Returns true if an element in the Set existed and has been removed, or false if the element does not exist.
      */
-    delete(mut self, value: T) -> boolean,
+    delete(&mut self, value: T) -> boolean,
     /**
      * Executes a provided function once per each value in the Set object, in insertion order.
      */
-    forEach(self, callbackfn: fn (value: T, value2: T, set: mut Set<T>) -> unknown, thisArg?: unknown) -> unknown,
+    forEach(&self, callbackfn: fn (value: T, value2: T, set: mut Set<T>) -> unknown, thisArg?: unknown) -> unknown,
     /**
      * @returns a boolean indicating whether an element with the specified value exists in the Set or not.
      */
-    has(self, value: T) -> boolean,
+    has(&self, value: T) -> boolean,
     /**
      * @returns the number of (unique) elements in Set.
      */
     readonly size: number,
     /** Iterates over values in the set. */
-    [Symbol.iterator](self) -> SetIterator<T>,
+    [Symbol.iterator](&self) -> SetIterator<T>,
     /**
      * Returns an iterable of [v,v] pairs for every value `v` in the set.
      */
-    entries(self) -> SetIterator<[T, T]>,
+    entries(&self) -> SetIterator<[T, T]>,
     /**
      * Despite its name, returns an iterable of the values in the set.
      */
-    keys(self) -> SetIterator<T>,
+    keys(&self) -> SetIterator<T>,
     /**
      * Returns an iterable of values in the set.
      */
-    values(self) -> SetIterator<T>,
+    values(&self) -> SetIterator<T>,
     readonly [Symbol.toStringTag]: string,
     /**
      * @returns a new Set containing all the elements in this Set and also all the elements in the argument.
      */
-    union<U>(self, other: ReadonlySetLike<U>) -> mut Set<T | U>,
+    union<U>(&self, other: ReadonlySetLike<U>) -> mut Set<T | U>,
     /**
      * @returns a new Set containing all the elements which are both in this Set and in the argument.
      */
-    intersection<U>(self, other: ReadonlySetLike<U>) -> mut Set<T & U>,
+    intersection<U>(&self, other: ReadonlySetLike<U>) -> mut Set<T & U>,
     /**
      * @returns a new Set containing all the elements in this Set which are not also in the argument.
      */
-    difference<U>(self, other: ReadonlySetLike<U>) -> mut Set<T>,
+    difference<U>(&self, other: ReadonlySetLike<U>) -> mut Set<T>,
     /**
      * @returns a new Set containing all the elements which are in either this Set or in the argument, but not in both.
      */
-    symmetricDifference<U>(self, other: ReadonlySetLike<U>) -> mut Set<T | U>,
+    symmetricDifference<U>(&self, other: ReadonlySetLike<U>) -> mut Set<T | U>,
     /**
      * @returns a boolean indicating whether all the elements in this Set are also in the argument.
      */
-    isSubsetOf(self, other: ReadonlySetLike<unknown>) -> boolean,
+    isSubsetOf(&self, other: ReadonlySetLike<unknown>) -> boolean,
     /**
      * @returns a boolean indicating whether all the elements in the argument are also in this Set.
      */
-    isSupersetOf(self, other: ReadonlySetLike<unknown>) -> boolean,
+    isSupersetOf(&self, other: ReadonlySetLike<unknown>) -> boolean,
     /**
      * @returns a boolean indicating whether this Set has no elements in common with the argument.
      */
-    isDisjointFrom(self, other: ReadonlySetLike<unknown>) -> boolean,
-    constructor(mut self, values?: Array<T> | null),
+    isDisjointFrom(&self, other: ReadonlySetLike<unknown>) -> boolean,
+    constructor(&mut self, values?: Array<T> | null),
     static readonly prototype: mut Set<any>,
-    constructor(mut self, iterable?: Iterable<T> | null),
+    constructor(&mut self, iterable?: Iterable<T> | null),
     static readonly [Symbol.species]: typeof Set
 }
 
@@ -82,20 +82,20 @@ export declare class WeakSet<T: weak_ref.WeakKey> {
     /**
      * Appends a new value to the end of the WeakSet.
      */
-    add(mut self, value: T) -> Self,
+    add(&mut self, value: T) -> Self,
     /**
      * Removes the specified element from the WeakSet.
      * @returns Returns true if the element existed and has been removed, or false if the element does not exist.
      */
-    delete(mut self, value: T) -> boolean,
+    delete(&mut self, value: T) -> boolean,
     /**
      * @returns a boolean indicating whether a value exists in the WeakSet or not.
      */
-    has(self, value: T) -> boolean,
+    has(&self, value: T) -> boolean,
     readonly [Symbol.toStringTag]: string,
-    constructor(mut self, values?: Array<T> | null),
+    constructor(&mut self, values?: Array<T> | null),
     static readonly prototype: WeakSet<weak_ref.WeakKey>,
-    constructor(mut self, iterable: Iterable<T>)
+    constructor(&mut self, iterable: Iterable<T>)
 }
 
 export declare interface SetIterator<T> extends IteratorObject<T, BuiltinIteratorReturn, unknown> {

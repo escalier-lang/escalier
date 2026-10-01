@@ -3,7 +3,7 @@
 export class Point {
     x: number,
     y: number,
-    constructor(mut self, x: number, y: number) {
+    constructor(&mut self, x: number, y: number) {
         self.x = x
         self.y = y
     },

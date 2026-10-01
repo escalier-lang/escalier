@@ -70,22 +70,22 @@ func TestParseLifetimeAnnotations(t *testing.T) {
 			input: `val f: fn<'a>(p: 'a Point) -> 'a Point = ref`,
 		},
 		"InterfaceMethodLifetimeParam": {
-			input: `interface Borrower { borrow<'a>(self, p: 'a Point) -> 'a Point }`,
+			input: `interface Borrower { borrow<'a>(&self, p: 'a Point) -> 'a Point }`,
 		},
 		"ClassMethodLifetimeParam": {
-			input: `class Box { borrow<'a>(self, p: 'a Point) -> 'a Point { return p } }`,
+			input: `class Box { borrow<'a>(&self, p: 'a Point) -> 'a Point { return p } }`,
 		},
 		"ClassMethodMutSelfLifetime": {
-			input: `class Container { setItem<'a>(mut 'a self, p: mut 'a Point) -> undefined { } }`,
+			input: `class Container { setItem<'a>(&'a mut self, p: mut 'a Point) -> undefined { } }`,
 		},
 		"ClassMethodSelfLifetime": {
-			input: `class View { peek<'a>('a self) -> 'a Point { return self.p } }`,
+			input: `class View { peek<'a>(&'a self) -> 'a Point { return self.p } }`,
 		},
 		"InterfaceMethodMutSelfLifetime": {
-			input: `interface Mutator { setItem<'a>(mut 'a self, p: mut 'a Point) -> undefined }`,
+			input: `interface Mutator { setItem<'a>(&'a mut self, p: mut 'a Point) -> undefined }`,
 		},
 		"InterfaceMethodSelfLifetime": {
-			input: `interface Viewer { peek<'a>('a self) -> 'a Point }`,
+			input: `interface Viewer { peek<'a>(&'a self) -> 'a Point }`,
 		},
 		"ClassWithLifetimeParam": {
 			input: `class Container<'a> { p: 'a Point }`,

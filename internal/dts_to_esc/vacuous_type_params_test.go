@@ -22,13 +22,13 @@ func TestElideVacuousTypeParams(t *testing.T) {
 		},
 		{
 			name: "AConstrainedParameterBecomesItsConstraint",
-			src:  `export declare class C { m<T: string>(self, v: T) -> boolean }`,
-			want: "m(self, v: string) -> boolean",
+			src:  `export declare class C { m<T: string>(&self, v: T) -> boolean }`,
+			want: "m(&self, v: string) -> boolean",
 		},
 		{
 			name: "AConstrainedParameterKeepsAWiderConstraint",
-			src:  `export declare class C { m<T: string | number>(self, v: T) -> boolean }`,
-			want: "m(self, v: string | number) -> boolean",
+			src:  `export declare class C { m<T: string | number>(&self, v: T) -> boolean }`,
+			want: "m(&self, v: string | number) -> boolean",
 		},
 		{
 			name: "AnObjectTypeMemberIsRewrittenToo",
@@ -53,19 +53,19 @@ func TestElideVacuousTypeParams(t *testing.T) {
 		// Left alone.
 		{
 			name: "AParameterUsedTwiceStays",
-			src:  `export declare class C { m<T>(self, v: T) -> T }`,
-			want: "m<T>(self, v: T) -> T",
+			src:  `export declare class C { m<T>(&self, v: T) -> T }`,
+			want: "m<T>(&self, v: T) -> T",
 		},
 		{
 			name: "AParameterUsedTwiceAmongTheParametersStays",
-			src:  `export declare class C { m<T>(self, a: T, b: T) -> boolean }`,
-			want: "m<T>(self, a: T, b: T) -> boolean",
+			src:  `export declare class C { m<T>(&self, a: T, b: T) -> boolean }`,
+			want: "m<T>(&self, a: T, b: T) -> boolean",
 		},
 		{
 			// Nothing infers it, but rewriting it changes what a call yields.
 			name: "AReturnOnlyParameterStays",
-			src:  `export declare class C { m<T>(self) -> T }`,
-			want: "m<T>(self) -> T",
+			src:  `export declare class C { m<T>(&self) -> T }`,
+			want: "m<T>(&self) -> T",
 		},
 		{
 			// Object.fromEntries. Its parameter is vacuous only because the
@@ -80,8 +80,8 @@ func TestElideVacuousTypeParams(t *testing.T) {
 			// `ReadonlySetLike<unknown>` is not a supertype of the
 			// `ReadonlySetLike<string>` a caller passes today.
 			name: "AnOccurrenceInsideATypeArgumentStays",
-			src:  `export declare class C<T> { difference<U>(self, other: SetLike<U>) -> C<T> }`,
-			want: "difference<U>(self, other: SetLike<U>) -> C<T>",
+			src:  `export declare class C<T> { difference<U>(&self, other: SetLike<U>) -> C<T> }`,
+			want: "difference<U>(&self, other: SetLike<U>) -> C<T>",
 		},
 		{
 			// A parameter of a callback parameter is contravariant, so widening it
@@ -92,8 +92,8 @@ func TestElideVacuousTypeParams(t *testing.T) {
 		},
 		{
 			name: "AParameterAnotherParameterConstrainsStays",
-			src:  `export declare class C { m<T, U: T>(self, v: T) -> U }`,
-			want: "m<T, U: T>(self, v: T) -> U",
+			src:  `export declare class C { m<T, U: T>(&self, v: T) -> U }`,
+			want: "m<T, U: T>(&self, v: T) -> U",
 		},
 		{
 			name: "AParameterUsedInAThrowsStays",

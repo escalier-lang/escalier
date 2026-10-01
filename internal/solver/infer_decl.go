@@ -161,7 +161,7 @@ func (c *checker) inferVarDeclInit(scope *Scope, lvl int, d *ast.VarDecl) (solty
 		// owned-mutable, the call twin of the fresh-literal upgrade below. An owned return
 		// type says the caller holds the only reference, so granting the binding mutable
 		// access aliases nothing, the same reasoning a fresh literal uses. Without this a
-		// `mut self` method would be unreachable on a value a factory just built and handed
+		// `&mut self` method would be unreachable on a value a factory just built and handed
 		// over, which is how a class with validation or a hidden constructor is written.
 		//
 		// The value is wrapped, not the variable the result arrives as. Wrapping the

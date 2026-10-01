@@ -304,14 +304,14 @@ func TestExplicitBorrowArgs(t *testing.T) {
 			`,
 			want: nil,
 		},
-		// The receiver of a method call keeps auto-borrowing. `bump(mut self)` names the mode
+		// The receiver of a method call keeps auto-borrowing. `bump(&mut self)` names the mode
 		// in the signature, and `c.bump()` has no second reading for a written borrow to
 		// disambiguate.
 		"MethodReceiverStillAutoBorrowsOk": {
 			src: `
 				class Counter {
 					n: number,
-					bump(mut self) -> undefined { self.n = 1 },
+					bump(&mut self) -> undefined { self.n = 1 },
 				}
 				fn g() {
 					val mut c = Counter(0)
@@ -326,7 +326,7 @@ func TestExplicitBorrowArgs(t *testing.T) {
 			src: `
 				class Holder {
 					v: number,
-					take(self, a: &{v: number}) -> undefined {},
+					take(&self, a: &{v: number}) -> undefined {},
 				}
 				fn g() {
 					val h = Holder(0)
@@ -565,7 +565,7 @@ func TestMutSelfIsAMutableStoreSource(t *testing.T) {
 	_, _, errs := inferSource(t, `
 		class Holder<'a> {
 			peer: &'a mut {value: number},
-			drain(mut self, out: &mut {slot: &'a mut {value: number}}) -> undefined { out.slot = self.peer },
+			drain(&mut self, out: &mut {slot: &'a mut {value: number}}) -> undefined { out.slot = self.peer },
 		}
 		declare fn touch<'e>(x: &'e mut {slot: &mut {value: number}}) -> undefined
 		fn build(p: mut {value: number}) -> undefined {

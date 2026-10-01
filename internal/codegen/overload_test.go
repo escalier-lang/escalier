@@ -46,8 +46,8 @@ func buildSource(t *testing.T, src string) string {
 func TestBuildOverloadedMethod(t *testing.T) {
 	got := buildSource(t, `
 		class Box {
-			grow(mut self, d: number) -> number { return d },
-			grow(mut self, d: number, e: number) -> number { return d + e },
+			grow(&mut self, d: number) -> number { return d },
+			grow(&mut self, d: number, e: number) -> number { return d + e },
 		}`)
 	require.Equal(t, `export class Box {
   grow(param0, param1) {
@@ -69,8 +69,8 @@ func TestBuildOverloadedConstructor(t *testing.T) {
 	got := buildSource(t, `
 		class Box {
 			x: number,
-			constructor(mut self, x: number) { self.x = x },
-			constructor(mut self, x: number, y: number) { self.x = x + y },
+			constructor(&mut self, x: number) { self.x = x },
+			constructor(&mut self, x: number, y: number) { self.x = x + y },
 		}`)
 	require.Equal(t, `export class Box {
   constructor(param0, param1) {
@@ -93,8 +93,8 @@ func TestBuildOverloadedConstructorInADerivedClass(t *testing.T) {
 		class Base { }
 		class Crate extends Base {
 			label: string,
-			constructor(mut self, label: string) { self.label = label },
-			constructor(mut self, label: string, extra: string) { self.label = label + extra },
+			constructor(&mut self, label: string) { self.label = label },
+			constructor(&mut self, label: string, extra: string) { self.label = label + extra },
 		}`)
 	require.Contains(t, got, `  constructor(param0, param1) {
     if (arguments.length === 2 && typeof param0 === "string" && typeof param1 === "string") {
@@ -117,8 +117,8 @@ func TestBuildOverloadedConstructorKeepsAWrittenSuperCall(t *testing.T) {
 		class Base { }
 		class Crate extends Base {
 			label: string,
-			constructor(mut self, label: string) { super()  self.label = label },
-			constructor(mut self, label: string, extra: string) { self.label = label + extra },
+			constructor(&mut self, label: string) { super()  self.label = label },
+			constructor(&mut self, label: string, extra: string) { self.label = label + extra },
 		}`)
 	require.Contains(t, got, `    } else if (arguments.length === 1 && typeof param0 === "string") {
       const label = param0;
@@ -133,10 +133,10 @@ func TestBuildUnoverloadedMembersAreUnchanged(t *testing.T) {
 	got := buildSource(t, `
 		class Box {
 			x: number,
-			constructor(mut self, x: number) { self.x = x },
-			area(self) -> number { return self.x },
-			get width(self) -> number { return self.x },
-			set width(mut self, w: number) { self.x = w },
+			constructor(&mut self, x: number) { self.x = x },
+			area(&self) -> number { return self.x },
+			get width(&self) -> number { return self.x },
+			set width(&mut self, w: number) { self.x = w },
 		}`)
 	require.Equal(t, `export class Box {
   constructor(temp1) {
@@ -161,7 +161,7 @@ func TestBuildUnoverloadedMembersAreUnchanged(t *testing.T) {
 func TestBuildOverloadedStaticAndInstanceMethodsStayApart(t *testing.T) {
 	got := buildSource(t, `
 		class Box {
-			of(self, x: number) -> number { return x },
+			of(&self, x: number) -> number { return x },
 			static of(x: number) -> number { return x },
 			static of(x: number, y: number) -> number { return x + y },
 		}`)
@@ -181,8 +181,8 @@ func TestBuildOverloadArmParameterDefault(t *testing.T) {
 	t.Run("a method", func(t *testing.T) {
 		got := buildSource(t, `
 			class Box {
-				grow(mut self, d: number = 5) -> number { return d },
-				grow(mut self, d: number, e: number) -> number { return d + e },
+				grow(&mut self, d: number = 5) -> number { return d },
+				grow(&mut self, d: number, e: number) -> number { return d + e },
 			}`)
 		require.Contains(t, got, `      const d = typeof param0 !== "undefined" ? param0 : 5;`)
 	})
@@ -203,8 +203,8 @@ func TestBuildOverloadArmParameterDefault(t *testing.T) {
 func TestBuildOverloadArmRestParameter(t *testing.T) {
 	got := buildSource(t, `
 		class Box {
-			grow(mut self, ...ds: Array<number>) -> number { return 1 },
-			grow(mut self, d: number, e: number) -> number { return d + e },
+			grow(&mut self, ...ds: Array<number>) -> number { return 1 },
+			grow(&mut self, d: number, e: number) -> number { return d + e },
 		}`)
 	require.Equal(t, `export class Box {
   grow(param0, param1) {
@@ -227,8 +227,8 @@ func TestBuildOverloadArmRestParameter(t *testing.T) {
 func TestBuildOverloadArmRestParameterAfterAFixedOne(t *testing.T) {
 	got := buildSource(t, `
 		class Box {
-			grow(mut self, label: string, ...ds: Array<number>) -> number { return 1 },
-			grow(mut self, d: number, e: number) -> number { return d + e },
+			grow(&mut self, label: string, ...ds: Array<number>) -> number { return 1 },
+			grow(&mut self, d: number, e: number) -> number { return d + e },
 		}`)
 	require.Equal(t, `export class Box {
   grow(param0, param1) {
@@ -253,9 +253,9 @@ func TestBuildOverloadArmRestParameterAfterAFixedOne(t *testing.T) {
 func TestBuildOverloadArmsTestArgumentCount(t *testing.T) {
 	got := buildSource(t, `
 		class Box {
-			grow(mut self) -> number { return 0 },
-			grow(mut self, d: number) -> number { return d },
-			grow(mut self, d?: number) -> number { return 1 },
+			grow(&mut self) -> number { return 0 },
+			grow(&mut self, d: number) -> number { return d },
+			grow(&mut self, d?: number) -> number { return 1 },
 		}`)
 	require.Equal(t, `export class Box {
   grow(param0) {
@@ -278,8 +278,8 @@ func TestBuildOverloadArmsTestArgumentCount(t *testing.T) {
 func TestBuildOverloadedMethodWithANumericKey(t *testing.T) {
 	got := buildSource(t, `
 		class Box {
-			1(mut self, d: number) -> number { return d },
-			1(mut self, d: number, e: number) -> number { return d + e },
+			1(&mut self, d: number) -> number { return d },
+			1(&mut self, d: number, e: number) -> number { return d + e },
 		}`)
 	require.Contains(t, got, `  1(param0, param1) {`)
 	require.Contains(t, got,
@@ -292,8 +292,8 @@ func TestBuildOverloadedMethodWithANumericKey(t *testing.T) {
 func TestBuildOverloadSetDropsABodylessArm(t *testing.T) {
 	got := buildSource(t, `
 		declare class Box {
-			grow(mut self, d: number) -> number,
-			grow(mut self, d: number, e: number) -> number,
+			grow(&mut self, d: number) -> number,
+			grow(&mut self, d: number, e: number) -> number,
 		}`)
 	require.Empty(t, got)
 }
@@ -333,8 +333,8 @@ func TestBuildOverloadGuardAcceptsAnOmittedSlot(t *testing.T) {
 func TestBuildOverloadTiedArmsKeepSourceOrder(t *testing.T) {
 	got := buildSource(t, `
 		class Box {
-			pick(mut self, a) { return 1 },
-			pick(mut self, b) { return 2 },
+			pick(&mut self, a) { return 1 },
+			pick(&mut self, b) { return 2 },
 		}`)
 	require.Contains(t, got, `    if (arguments.length === 1) {
       const a = param0;

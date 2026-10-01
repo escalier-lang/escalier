@@ -31,26 +31,49 @@ type ClassElem interface {
 }
 
 // MethodReceiver describes a `self` receiver on a method, getter, setter, or
-// constructor. A nil *MethodReceiver means no receiver was written — this
-// covers static members, getters/setters with an empty parameter list, and
-// also non-static instance methods that omit `self` (the checker reports
-// MissingSelfReceiverError for the latter).
+// constructor. A nil *MethodReceiver means no receiver was written. That covers
+// static members, getters and setters with an empty parameter list, and
+// non-static instance methods that omit `self`, which the checker reports as
+// MissingSelfReceiverError.
 //
-//	self           → &MethodReceiver{Mut: false}
-//	mut self       → &MethodReceiver{Mut: true}
-//	'a self        → &MethodReceiver{Mut: false, Lifetime: 'a}
-//	mut 'a self    → &MethodReceiver{Mut: true,  Lifetime: 'a}
+// A receiver either borrows the instance for the call or consumes it:
+//
+//	&self          → &MethodReceiver{Mode: BorrowReceiver}
+//	&mut self      → &MethodReceiver{Mode: BorrowReceiver, Mut: true}
+//	&'a self       → &MethodReceiver{Mode: BorrowReceiver, Lifetime: 'a}
+//	&'a mut self   → &MethodReceiver{Mode: BorrowReceiver, Mut: true, Lifetime: 'a}
+//	self           → &MethodReceiver{Mode: ConsumeReceiver}
+//	mut self       → &MethodReceiver{Mode: ConsumeReceiver, Mut: true}
+//
+// Only a borrow carries a lifetime. A consuming receiver moves the instance
+// into the call, so there is no loan for a lifetime to bound.
 type MethodReceiver struct {
+	Mode     ReceiverMode
 	Mut      bool
-	Lifetime LifetimeAnnNode // optional
+	Lifetime LifetimeAnnNode // optional, and only on a borrow
 	Span_    Span
 	commentSlots
 }
 
+// ReceiverMode says whether a method receiver borrows the instance or consumes
+// it. The zero value is a borrow, the form nearly every method takes.
+type ReceiverMode int
+
+const (
+	// BorrowReceiver is `&self` or `&mut self`. The caller keeps the instance.
+	BorrowReceiver ReceiverMode = iota
+	// ConsumeReceiver is `self` or `mut self`. The call moves the instance, so
+	// the caller cannot use it afterwards.
+	ConsumeReceiver
+)
+
+// Consumes reports whether the receiver moves the instance into the call.
+func (r *MethodReceiver) Consumes() bool { return r.Mode == ConsumeReceiver }
+
 func (r *MethodReceiver) Span() Span { return r.Span_ }
 
 // acceptReceiver visits the lifetime on a `self` receiver, the `'a` in
-// `mut 'a self`. A receiver holds no other node, and a nil one means the
+// `&'a mut self`. A receiver holds no other node, and a nil one means the
 // member wrote no receiver at all.
 //
 // The receiver sits beside the member's function rather than inside it, so the

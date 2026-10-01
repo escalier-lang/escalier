@@ -143,7 +143,7 @@ export declare class AuthenticatorAssertionResponse extends AuthenticatorRespons
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/AuthenticatorAssertionResponse/userHandle) */
     readonly userHandle: typed_arrays.ArrayBuffer | null,
     static prototype: AuthenticatorAssertionResponse,
-    constructor(mut self)
+    constructor(&mut self)
 }
 
 /**
@@ -156,15 +156,15 @@ export declare class AuthenticatorAttestationResponse extends AuthenticatorRespo
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/AuthenticatorAttestationResponse/attestationObject) */
     readonly attestationObject: typed_arrays.ArrayBuffer,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/AuthenticatorAttestationResponse/getAuthenticatorData) */
-    getAuthenticatorData(self) -> typed_arrays.ArrayBuffer,
+    getAuthenticatorData(&self) -> typed_arrays.ArrayBuffer,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/AuthenticatorAttestationResponse/getPublicKey) */
-    getPublicKey(self) -> typed_arrays.ArrayBuffer | null,
+    getPublicKey(&self) -> typed_arrays.ArrayBuffer | null,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/AuthenticatorAttestationResponse/getPublicKeyAlgorithm) */
-    getPublicKeyAlgorithm(self) -> COSEAlgorithmIdentifier,
+    getPublicKeyAlgorithm(&self) -> COSEAlgorithmIdentifier,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/AuthenticatorAttestationResponse/getTransports) */
-    getTransports(self) -> mut Array<string>,
+    getTransports(&self) -> mut Array<string>,
     static prototype: AuthenticatorAttestationResponse,
-    constructor(mut self)
+    constructor(&mut self)
 }
 
 /**
@@ -177,7 +177,7 @@ export declare class AuthenticatorResponse {
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/AuthenticatorResponse/clientDataJSON) */
     readonly clientDataJSON: typed_arrays.ArrayBuffer,
     static prototype: AuthenticatorResponse,
-    constructor(mut self)
+    constructor(&mut self)
 }
 
 /**
@@ -194,11 +194,11 @@ export declare class PublicKeyCredential extends credentials.Credential {
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/PublicKeyCredential/response) */
     readonly response: AuthenticatorResponse,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/PublicKeyCredential/getClientExtensionResults) */
-    getClientExtensionResults(self) -> AuthenticationExtensionsClientOutputs,
+    getClientExtensionResults(&self) -> AuthenticationExtensionsClientOutputs,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/PublicKeyCredential/toJSON) */
-    toJSON(self) -> PublicKeyCredentialJSON,
+    toJSON(&self) -> PublicKeyCredentialJSON,
     static prototype: PublicKeyCredential,
-    constructor(mut self),
+    constructor(&mut self),
     static getClientCapabilities() -> Promise<PublicKeyCredentialClientCapabilities>,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/PublicKeyCredential/isConditionalMediationAvailable_static) */
     static isConditionalMediationAvailable() -> Promise<boolean>,

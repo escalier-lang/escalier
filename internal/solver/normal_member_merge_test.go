@@ -21,35 +21,35 @@ func TestObjectMemberMeet(t *testing.T) {
 	}{
 		{
 			name: "objects sharing an identical method fuse their disjoint fields",
-			in:   "{a: number, foo(self) -> number, ...} & {b: number, foo(self) -> number, ...}",
-			want: "{a: number, b: number, foo(self) -> number, ...}",
+			in:   "{a: number, foo(&self) -> number, ...} & {b: number, foo(&self) -> number, ...}",
+			want: "{a: number, b: number, foo(&self) -> number, ...}",
 		},
 		{
 			name: "a shared method with agreeing domains meets its codomains",
-			in:   "{foo(self, x: number) -> number | string} & {foo(self, x: number) -> string | boolean}",
-			want: "{foo(self, x: number) -> string}",
+			in:   "{foo(&self, x: number) -> number | string} & {foo(&self, x: number) -> string | boolean}",
+			want: "{foo(&self, x: number) -> string}",
 		},
 		{
 			name: "a shared getter meets its returned value",
-			in:   "{get x(self) -> number | string} & {get x(self) -> string | boolean}",
-			want: "{get x(self) -> string}",
+			in:   "{get x(&self) -> number | string} & {get x(&self) -> string | boolean}",
+			want: "{get x(&self) -> string}",
 		},
 		{
 			name: "a shared setter with equal raises joins the value it accepts",
-			in:   "{set x(self, v: number) -> undefined} & {set x(self, v: string) -> undefined}",
-			want: "{set x(self, value: number | string)}",
+			in:   "{set x(&self, v: number) -> undefined} & {set x(&self, v: string) -> undefined}",
+			want: "{set x(&self, value: number | string)}",
 		},
 		{
 			name: "a shared setter with an equal written value meets its raises",
-			in: `{set x(self, v: number) -> undefined throws "a" | "b"} & ` +
-				`{set x(self, v: number) -> undefined throws "b" | "c"}`,
-			want: `{set x(self, value: number) throws "b"}`,
+			in: `{set x(&self, v: number) -> undefined throws "a" | "b"} & ` +
+				`{set x(&self, v: number) -> undefined throws "b" | "c"}`,
+			want: `{set x(&self, value: number) throws "b"}`,
 		},
 		{
 			name: "a shared setter differing in both value and raises keeps both atoms",
-			in: `{set x(self, v: number) -> undefined throws "a"} & ` +
-				`{set x(self, v: string) -> undefined throws "b"}`,
-			want: `{set x(self, value: number) throws "a"} & {set x(self, value: string) throws "b"}`,
+			in: `{set x(&self, v: number) -> undefined throws "a"} & ` +
+				`{set x(&self, v: string) -> undefined throws "b"}`,
+			want: `{set x(&self, value: number) throws "a"} & {set x(&self, value: string) throws "b"}`,
 		},
 		{
 			name: "a shared constructor joins its domain over a shared return",
@@ -58,30 +58,30 @@ func TestObjectMemberMeet(t *testing.T) {
 		},
 		{
 			name: "an identical overload set fuses without meeting the arms",
-			in: "{a: number, foo(self, x: number) -> number, foo(self, x: string) -> string, ...} & " +
-				"{b: number, foo(self, x: number) -> number, foo(self, x: string) -> string, ...}",
-			want: "{a: number, b: number, foo(self, x: number) -> number; foo(self, x: string) -> string, ...}",
+			in: "{a: number, foo(&self, x: number) -> number, foo(&self, x: string) -> string, ...} & " +
+				"{b: number, foo(&self, x: number) -> number, foo(&self, x: string) -> string, ...}",
+			want: "{a: number, b: number, foo(&self, x: number) -> number; foo(&self, x: string) -> string, ...}",
 		},
 		{
 			name: "an exact object meets an inexact one requiring a member it caps out: never",
-			in:   "{foo(self) -> number} & {bar(self) -> number, ...}",
+			in:   "{foo(&self) -> number} & {bar(&self) -> number, ...}",
 			want: "never",
 		},
 		{
 			name: "an exact object meeting an inexact subset closes the result",
-			in:   "{bar(self) -> number, foo(self) -> number} & {foo(self) -> number, ...}",
-			want: "{bar(self) -> number, foo(self) -> number}",
+			in:   "{bar(&self) -> number, foo(&self) -> number} & {foo(&self) -> number, ...}",
+			want: "{bar(&self) -> number, foo(&self) -> number}",
 		},
 		{
 			name: "two inexact objects meet a shared method and keep disjoint fields open",
-			in: "{a: number, foo(self) -> number | string, ...} & " +
-				"{b: number, foo(self) -> string | boolean, ...}",
-			want: "{a: number, b: number, foo(self) -> string, ...}",
+			in: "{a: number, foo(&self) -> number | string, ...} & " +
+				"{b: number, foo(&self) -> string | boolean, ...}",
+			want: "{a: number, b: number, foo(&self) -> string, ...}",
 		},
 		{
 			name: "a method and a property sharing a name keep both atoms",
-			in:   "{foo(self) -> number} & {foo: number}",
-			want: "{foo: number} & {foo(self) -> number}",
+			in:   "{foo(&self) -> number} & {foo: number}",
+			want: "{foo: number} & {foo(&self) -> number}",
 		},
 		{
 			name: "a readonly and a writable field of one name keep both atoms",
@@ -90,15 +90,15 @@ func TestObjectMemberMeet(t *testing.T) {
 		},
 		{
 			name: "an exact object meets an exact object lacking its method: never",
-			in:   "{foo(self) -> number} & {bar(self) -> number}",
+			in:   "{foo(&self) -> number} & {bar(&self) -> number}",
 			want: "never",
 		},
 		{
 			name: "a get/set accessor pair keeps both atoms unfused",
-			in: "{a: number, get x(self) -> number, set x(self, v: number) -> undefined} & " +
-				"{b: number, get x(self) -> number, set x(self, v: number) -> undefined}",
-			want: "{a: number, get x(self) -> number, set x(self, value: number)} & " +
-				"{b: number, get x(self) -> number, set x(self, value: number)}",
+			in: "{a: number, get x(&self) -> number, set x(&self, v: number) -> undefined} & " +
+				"{b: number, get x(&self) -> number, set x(&self, v: number) -> undefined}",
+			want: "{a: number, get x(&self) -> number, set x(&self, value: number)} & " +
+				"{b: number, get x(&self) -> number, set x(&self, value: number)}",
 		},
 	}
 	for _, tt := range tests {
@@ -118,33 +118,33 @@ func TestObjectMemberJoin(t *testing.T) {
 	}{
 		{
 			name: "objects agreeing but for one property widen it, keeping shared methods",
-			in:   "{x: number, foo(self) -> number} | {x: string, foo(self) -> number}",
-			want: "{foo(self) -> number, x: number | string}",
+			in:   "{x: number, foo(&self) -> number} | {x: string, foo(&self) -> number}",
+			want: "{foo(&self) -> number, x: number | string}",
 		},
 		{
 			name: "objects differing only in a getter widen it",
-			in:   "{get x(self) -> number, foo(self) -> number} | {get x(self) -> string, foo(self) -> number}",
-			want: "{foo(self) -> number, get x(self) -> number | string}",
+			in:   "{get x(&self) -> number, foo(&self) -> number} | {get x(&self) -> string, foo(&self) -> number}",
+			want: "{foo(&self) -> number, get x(&self) -> number | string}",
 		},
 		{
 			name: "two inexact objects differing in one property widen it and stay open",
-			in:   "{x: number, foo(self) -> number, ...} | {x: string, foo(self) -> number, ...}",
-			want: "{foo(self) -> number, x: number | string, ...}",
+			in:   "{x: number, foo(&self) -> number, ...} | {x: string, foo(&self) -> number, ...}",
+			want: "{foo(&self) -> number, x: number | string, ...}",
 		},
 		{
 			name: "a method-carrying object absorbs its own open version at the open one",
-			in:   "{foo(self) -> number} | {foo(self) -> number, ...}",
-			want: "{foo(self) -> number, ...}",
+			in:   "{foo(&self) -> number} | {foo(&self) -> number, ...}",
+			want: "{foo(&self) -> number, ...}",
 		},
 		{
 			name: "objects differing in a method keep both atoms",
-			in:   "{foo(self) -> number} | {foo(self) -> string}",
-			want: "{foo(self) -> number} | {foo(self) -> string}",
+			in:   "{foo(&self) -> number} | {foo(&self) -> string}",
+			want: "{foo(&self) -> number} | {foo(&self) -> string}",
 		},
 		{
 			name: "objects differing in a setter keep both atoms",
-			in:   "{set x(self, v: number) -> undefined} | {set x(self, v: string) -> undefined}",
-			want: "{set x(self, value: number)} | {set x(self, value: string)}",
+			in:   "{set x(&self, v: number) -> undefined} | {set x(&self, v: string) -> undefined}",
+			want: "{set x(&self, value: number)} | {set x(&self, value: string)}",
 		},
 		{
 			name: "objects differing in a constructor keep both atoms",

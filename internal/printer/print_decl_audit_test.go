@@ -76,10 +76,10 @@ func TestPrintDeclAudit_RoundTrip(t *testing.T) {
 		// --- declare interface (open / mergeable) ---
 		{"declare interface empty", `declare interface I {}`},
 		{"declare interface with prop", `declare interface I {x: number}`},
-		{"declare interface with method", `declare interface I {foo(self, x: number) -> boolean}`},
-		{"declare interface with mut self method", `declare interface I {foo(mut self, x: number) -> boolean}`},
-		{"declare interface with getter", `declare interface I {get foo(self) -> number}`},
-		{"declare interface with setter", `declare interface I {set foo(mut self, v: number) -> undefined}`},
+		{"declare interface with method", `declare interface I {foo(&self, x: number) -> boolean}`},
+		{"declare interface with mut self method", `declare interface I {foo(&mut self, x: number) -> boolean}`},
+		{"declare interface with getter", `declare interface I {get foo(&self) -> number}`},
+		{"declare interface with setter", `declare interface I {set foo(&mut self, v: number) -> undefined}`},
 		{"declare interface generic", `declare interface I<T> {value: T}`},
 		{"declare interface extends", `declare interface I extends Base {x: number}`},
 		{"export declare interface", `export declare interface I {x: number}`},
@@ -156,7 +156,7 @@ declare interface I {y: string}`
 // synthesized `self` that the parser stamps into Fn.Params[0].
 func TestPrintConstructor_NoDuplicateReceiver(t *testing.T) {
 	src := `class C {
-    constructor(mut self, x: number) {}
+    constructor(&mut self, x: number) {}
 }`
 	script := parseScript(t, src)
 	require.Len(t, script.Stmts, 1)
@@ -166,7 +166,7 @@ func TestPrintConstructor_NoDuplicateReceiver(t *testing.T) {
 	require.NoError(t, err)
 	require.NotContains(t, out, "mut self, self",
 		"constructor receiver and synthesized Params[0] both printed:\n%s", out)
-	require.Contains(t, out, "constructor(mut self, x: number)")
+	require.Contains(t, out, "constructor(&mut self, x: number)")
 }
 
 // TestPrintDeclAudit_DecoratorRejection pins the parser's rejection

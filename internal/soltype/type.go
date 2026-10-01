@@ -388,7 +388,7 @@ type MethodElem struct {
 	Optional bool
 }
 
-// GetterElem is a computed read property `get x(self) -> T`. Type is the value the
+// GetterElem is a computed read property `get x(&self) -> T`. Type is the value the
 // getter returns, read covariantly like a PropertyElem's Type. SelfParam is the
 // receiver of an instance getter and nil for a static getter, mirroring
 // FuncType.SelfParam.
@@ -410,7 +410,7 @@ func (e *GetterElem) ThrowsOrNever() Type {
 	return e.Throws
 }
 
-// SetterElem is a computed write property `set x(self, v: T)`. Param is the value the
+// SetterElem is a computed write property `set x(&mut self, v: T)`. Param is the value the
 // setter accepts, in write position, so it is read contravariantly. SelfParam is the
 // receiver of an instance setter and nil for a static setter, mirroring
 // FuncType.SelfParam.
@@ -689,7 +689,7 @@ func (o *ObjectType) Member(name string) (ObjTypeElem, bool) {
 
 // ReadMember returns the member a READ of name resolves to. When a getter and a
 // setter share the name, the getter is the half a read wants, so it wins over
-// declaration order. `class C { set x(mut self, n: number) {…}, get x(self) -> number
+// declaration order. `class C { set x(&mut self, n: number) {…}, get x(&self) -> number
 // {…} }` read through `c.x` therefore yields the getter's `number` rather than the
 // setter Member would return. Every other member kind resolves the same as Member.
 //
@@ -706,7 +706,7 @@ func (o *ObjectType) ReadMember(name string) (ObjTypeElem, bool) {
 
 // WriteMember returns the member a WRITE of name resolves to, the mirror of
 // ReadMember. When a getter and a setter share the name, the setter is the half a
-// write wants. `class C { get x(self) -> number {…}, set x(mut self, n: number) {…} }`
+// write wants. `class C { get x(&self) -> number {…}, set x(&mut self, n: number) {…} }`
 // written through `c.x = 5` therefore checks 5 against the setter's parameter rather
 // than against the getter Member would return.
 //
@@ -1211,7 +1211,7 @@ type RestSpreadType struct {
 
 // SelfType is a `Self` written inside a class member signature. It denotes the class the
 // RECEIVER belongs to rather than the class the member was declared in, so an inherited
-// `me(self) -> Self` on a `B extends A` yields `B` and not `A`. That is TypeScript's
+// `me(&self) -> Self` on a `B extends A` yields `B` and not `A`. That is TypeScript's
 // polymorphic `this` type, and it is what makes a builder-style API survive inheritance.
 //
 // It is a kind of its own rather than a marker on ClassType because the distinction has to

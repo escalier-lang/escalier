@@ -456,7 +456,7 @@ func TestMethodCallStoreEdge(t *testing.T) {
 		class Store {
 			tag: number,
 			put<'a, 'b>(
-				self,
+				&self,
 				target: &'b mut {peer: &'a mut {value: number}},
 				item: &'a mut {value: number},
 			) -> undefined {

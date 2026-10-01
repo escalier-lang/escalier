@@ -97,7 +97,7 @@ func TestInferScriptClass(t *testing.T) {
 		class Point {
 			x: number,
 			y: number,
-			getX(self) -> number { return self.x },
+			getX(&self) -> number { return self.x },
 		}
 		val p = Point(1, 2)
 		val px = p.x
@@ -380,7 +380,7 @@ func TestInferScriptInLib(t *testing.T) {
 				export class Point {
 					x: number,
 					y: number,
-					getX(self) -> number { return self.x },
+					getX(&self) -> number { return self.x },
 				}
 			`,
 			script: `

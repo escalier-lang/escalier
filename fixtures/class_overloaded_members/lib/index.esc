@@ -7,11 +7,11 @@ fn area(w: number, h: number) -> number { return w * h }
 class Box {
     x: number,
     y: number,
-    constructor(mut self, x: number, y: number) { self.x = x  self.y = y },
-    grow(mut self, d: number) -> number { return d },
-    grow(mut self, d: number, e: number) -> number { return d + e },
+    constructor(&mut self, x: number, y: number) { self.x = x  self.y = y },
+    grow(&mut self, d: number) -> number { return d },
+    grow(&mut self, d: number, e: number) -> number { return d + e },
     // A member declaring its name once keeps its ordinary lowering.
-    area(self) -> number { return self.x * self.y },
+    area(&self) -> number { return self.x * self.y },
     static of(x: number) -> number { return x },
     static of(x: number, y: number) -> number { return x + y },
 }

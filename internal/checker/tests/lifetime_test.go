@@ -878,7 +878,7 @@ func TestInferConstructorLifetimeTypes(t *testing.T) {
 			input: `
 				class C {
 					n: number,
-					constructor(mut self, p: mut {x: number}) {
+					constructor(&mut self, p: mut {x: number}) {
 						self.n = 0
 						if p.x < 0 {
 							self.n = 1
@@ -900,7 +900,7 @@ func TestInferConstructorLifetimeTypes(t *testing.T) {
 			input: `
 				class C {
 					n: number,
-					constructor(mut self, p: {x: number}) {
+					constructor(&mut self, p: {x: number}) {
 						self.n = p.x + 1
 					}
 				}
@@ -925,7 +925,7 @@ func TestInferConstructorLifetimeTypes(t *testing.T) {
 			input: `
 				class Pair {
 					items: [mut {x: number}, mut {x: number}],
-					constructor(mut self, a, b) {
+					constructor(&mut self, a, b) {
 						self.items = [a, b]
 					}
 				}
@@ -949,7 +949,7 @@ func TestInferConstructorLifetimeTypes(t *testing.T) {
 			input: `
 				class Pair {
 					items: [mut {x: number}, mut {x: number}],
-					constructor(mut self, a, b) {
+					constructor(&mut self, a, b) {
 						self.items = [a, b]
 					}
 				}
@@ -970,7 +970,7 @@ func TestInferConstructorLifetimeTypes(t *testing.T) {
 			input: `
 				class Wrap {
 					pair: {head: mut {x: number}, tail: mut {x: number}},
-					constructor(mut self, a, b) {
+					constructor(&mut self, a, b) {
 						self.pair = {head: a, tail: b}
 					}
 				}
@@ -992,7 +992,7 @@ func TestInferConstructorLifetimeTypes(t *testing.T) {
 			input: `
 				class Pair {
 					items: [mut {x: number}, mut {x: number}],
-					constructor(mut self, a: mut {x: number}, b: mut {x: number}) {
+					constructor(&mut self, a: mut {x: number}, b: mut {x: number}) {
 						self.items = [a, b]
 					}
 				}
@@ -1009,7 +1009,7 @@ func TestInferConstructorLifetimeTypes(t *testing.T) {
 			input: `
 				class Wrap {
 					pair: {head: mut {x: number}, tail: mut {x: number}},
-					constructor(mut self, a: mut {x: number}, b: mut {x: number}) {
+					constructor(&mut self, a: mut {x: number}, b: mut {x: number}) {
 						self.pair = {head: a, tail: b}
 					}
 				}
@@ -1032,7 +1032,7 @@ func TestInferConstructorLifetimeTypes(t *testing.T) {
 				}
 				class Pair {
 					items: [mut {x: number}, mut {x: number}],
-					constructor(mut self, a: mut {x: number}, b: mut {x: number}) {
+					constructor(&mut self, a: mut {x: number}, b: mut {x: number}) {
 						self.items = wrap(a, b)
 					}
 				}
@@ -1054,7 +1054,7 @@ func TestInferConstructorLifetimeTypes(t *testing.T) {
 				}
 				class Wrap {
 					pair: {head: mut {x: number}, tail: mut {x: number}},
-					constructor(mut self, a: mut {x: number}, b: mut {x: number}) {
+					constructor(&mut self, a: mut {x: number}, b: mut {x: number}) {
 						self.pair = wrap(a, b)
 					}
 				}
@@ -1074,7 +1074,7 @@ func TestInferConstructorLifetimeTypes(t *testing.T) {
 			input: `
 				class Pair {
 					items: [mut {x: number}, mut {x: number}],
-					constructor(mut self, a: mut {x: number}, b: mut {x: number}) {
+					constructor(&mut self, a: mut {x: number}, b: mut {x: number}) {
 						self["items"] = [a, b]
 					}
 				}
@@ -1091,7 +1091,7 @@ func TestInferConstructorLifetimeTypes(t *testing.T) {
 			input: `
 				class C {
 					a: mut {x: number},
-					constructor(mut self, [a, b]: [mut {x: number}, mut {x: number}]) {
+					constructor(&mut self, [a, b]: [mut {x: number}, mut {x: number}]) {
 						self.a = a
 					}
 				}
@@ -1110,7 +1110,7 @@ func TestInferConstructorLifetimeTypes(t *testing.T) {
 			input: `
 				class C {
 					p: mut {x: number},
-					get q(self) -> mut {x: number} { return self.p },
+					get q(&self) -> mut {x: number} { return self.p },
 				}
 			`,
 			expectedTypes: map[string]string{
@@ -1161,7 +1161,7 @@ func TestCtorCapturesViaWrappingCall(t *testing.T) {
 		fn wrap(x: mut {y: number}) -> mut {y: number} { return x }
 		class C {
 			f: mut {y: number},
-			constructor(mut self, p: mut {y: number}) {
+			constructor(&mut self, p: mut {y: number}) {
 				self.f = wrap(p)
 			}
 		}

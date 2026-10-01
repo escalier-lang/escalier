@@ -12,7 +12,7 @@ export declare class CompressionStream implements streams.GenericTransformStream
     readonly readable: streams.ReadableStream<typed_arrays.Uint8Array>,
     readonly writable: streams.WritableStream<BufferSource>,
     static prototype: CompressionStream,
-    constructor(mut self, format: CompressionFormat)
+    constructor(&mut self, format: CompressionFormat)
 }
 
 /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/DecompressionStream) */
@@ -21,7 +21,7 @@ export declare class DecompressionStream implements streams.GenericTransformStre
     readonly readable: streams.ReadableStream<typed_arrays.Uint8Array>,
     readonly writable: streams.WritableStream<BufferSource>,
     static prototype: DecompressionStream,
-    constructor(mut self, format: CompressionFormat)
+    constructor(&mut self, format: CompressionFormat)
 }
 
 export declare type CompressionFormat = "deflate" | "deflate-raw" | "gzip"

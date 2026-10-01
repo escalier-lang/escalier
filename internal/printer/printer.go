@@ -467,7 +467,7 @@ func (p *Printer) printClassElem(elem ast.ClassElem) {
 }
 
 // printMethodSig prints a method/getter/constructor signature
-// including an optional `self` / `mut self` receiver. It is parallel
+// including an optional `&self` / `&mut self` receiver. It is parallel
 // to printFuncSig but injects the receiver as the first parameter
 // inside the parentheses so the round-trip preserves it.
 func (p *Printer) printMethodSig(sig *ast.FuncSig, recv *ast.MethodReceiver) {
@@ -479,12 +479,12 @@ func (p *Printer) printMethodSig(sig *ast.FuncSig, recv *ast.MethodReceiver) {
 // parseClassElemInner in internal/parser/decl.go reads a throws clause
 // after the parameter list and nothing else, so the return is left out
 // even though the AST carries `undefined` there for the checker.
-// Printing it emits `set x(mut self, v: string) -> undefined`, which
+// Printing it emits `set x(&mut self, v: string) -> undefined`, which
 // does not reparse.
 //
 // The interface form is a separate path and keeps its return.
 // `SetterTypeAnn` prints one and the parser reads one, so
-// `set value(mut self, x: number) -> undefined` round-trips inside an
+// `set value(&mut self, x: number) -> undefined` round-trips inside an
 // `interface` body.
 func (p *Printer) printSetterSig(sig *ast.FuncSig, recv *ast.MethodReceiver) {
 	p.printMethodSigParts(sig, recv, false)
@@ -498,11 +498,7 @@ func (p *Printer) printMethodSigParts(sig *ast.FuncSig, recv *ast.MethodReceiver
 	first := true
 	params := sig.Params
 	if recv != nil {
-		if recv.Mut {
-			p.writeString("mut self")
-		} else {
-			p.writeString("self")
-		}
+		p.writeString(receiverText(recv))
 		first = false
 		// Constructors materialize the receiver as Params[0] so the body
 		// checker can read it uniformly. Skip it here so we don't print
@@ -539,18 +535,32 @@ func (p *Printer) printMethodSigParts(sig *ast.FuncSig, recv *ast.MethodReceiver
 }
 
 // annMemberReceiver returns the receiver text a member annotation prints, or "" for none. The
-// parser stores it on the elem rather than in Fn.Params, and a lifetime on it is not rendered,
-// matching printMethodSig. fallback covers a member that wrote no receiver: an accessor passes
-// `self` or `mut self`, which is what the `.d.ts` converter's output relies on, and a method
-// passes "".
+// parser stores it on the elem rather than in Fn.Params. fallback covers a member that wrote no
+// receiver. An accessor passes `&self` or `&mut self`, which is what the `.d.ts` converter's
+// output relies on, and a method passes "".
 func annMemberReceiver(recv *ast.MethodReceiver, fallback string) string {
 	if recv == nil {
 		return fallback
 	}
-	if recv.Mut {
-		return "mut self"
+	return receiverText(recv)
+}
+
+// receiverText renders a method receiver as it is written: `&self`, `&mut self`, `&'a self`,
+// `&'a mut self`, `self`, or `mut self`. The lifetime precedes `mut`, the order a borrow type
+// annotation such as `&'a mut T` takes.
+func receiverText(recv *ast.MethodReceiver) string {
+	var b strings.Builder
+	if !recv.Consumes() {
+		b.WriteString("&")
+		if lt, ok := recv.Lifetime.(*ast.LifetimeAnn); ok {
+			b.WriteString("'" + lt.Name + " ")
+		}
 	}
-	return "self"
+	if recv.Mut {
+		b.WriteString("mut ")
+	}
+	b.WriteString("self")
+	return b.String()
 }
 
 // printAnnMemberParams emits the parenthesized parameter list of a member annotation, leading
@@ -1574,12 +1584,12 @@ func (p *Printer) printObjTypeAnnElem(elem ast.ObjTypeAnnElem) {
 	case *ast.GetterTypeAnn:
 		p.writeString("get ")
 		p.printObjKey(e.Name)
-		p.printAnnMemberParams(annMemberReceiver(e.Receiver, "self"), nil)
+		p.printAnnMemberParams(annMemberReceiver(e.Receiver, "&self"), nil)
 		p.printReturnAndThrows(e.Fn.Return, e.Fn.Throws)
 	case *ast.SetterTypeAnn:
 		p.writeString("set ")
 		p.printObjKey(e.Name)
-		p.printAnnMemberParams(annMemberReceiver(e.Receiver, "mut self"), e.Fn.Params)
+		p.printAnnMemberParams(annMemberReceiver(e.Receiver, "&mut self"), e.Fn.Params)
 		p.printReturnAndThrows(e.Fn.Return, e.Fn.Throws)
 	case *ast.PropertyTypeAnn:
 		if e.Readonly {

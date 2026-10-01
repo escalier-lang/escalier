@@ -11,7 +11,7 @@ import "web:fetch"
 @js("WebAssembly.CompileError")
 export declare class CompileError extends error.Error {
     static prototype: CompileError,
-    constructor(mut self, message?: string),
+    constructor(&mut self, message?: string),
     (message?: string) -> CompileError
 }
 
@@ -19,9 +19,9 @@ export declare class CompileError extends error.Error {
 @js("WebAssembly.Global")
 export declare class Global<T: ValueType = ValueType> {
     value: ValueTypeMap[T],
-    valueOf(self) -> ValueTypeMap[T],
+    valueOf(&self) -> ValueTypeMap[T],
     static prototype: Global,
-    constructor(mut self, descriptor: GlobalDescriptor<T>, v?: ValueTypeMap[T])
+    constructor(&mut self, descriptor: GlobalDescriptor<T>, v?: ValueTypeMap[T])
 }
 
 /** [MDN Reference](https://developer.mozilla.org/docs/WebAssembly/JavaScript_interface/Instance) */
@@ -30,13 +30,13 @@ export declare class Instance {
     /** [MDN Reference](https://developer.mozilla.org/docs/WebAssembly/JavaScript_interface/Instance/exports) */
     readonly exports: Exports,
     static prototype: Instance,
-    constructor(mut self, module: Module, importObject?: Imports)
+    constructor(&mut self, module: Module, importObject?: Imports)
 }
 
 @js("WebAssembly.LinkError")
 export declare class LinkError extends error.Error {
     static prototype: LinkError,
-    constructor(mut self, message?: string),
+    constructor(&mut self, message?: string),
     (message?: string) -> LinkError
 }
 
@@ -46,16 +46,16 @@ export declare class Memory {
     /** [MDN Reference](https://developer.mozilla.org/docs/WebAssembly/JavaScript_interface/Memory/buffer) */
     readonly buffer: typed_arrays.ArrayBuffer,
     /** [MDN Reference](https://developer.mozilla.org/docs/WebAssembly/JavaScript_interface/Memory/grow) */
-    grow(mut self, delta: number) -> number,
+    grow(&mut self, delta: number) -> number,
     static prototype: Memory,
-    constructor(mut self, descriptor: MemoryDescriptor)
+    constructor(&mut self, descriptor: MemoryDescriptor)
 }
 
 /** [MDN Reference](https://developer.mozilla.org/docs/WebAssembly/JavaScript_interface/Module) */
 @js("WebAssembly.Module")
 export declare class Module {
     static prototype: Module,
-    constructor(mut self, bytes: BufferSource),
+    constructor(&mut self, bytes: BufferSource),
     /** [MDN Reference](https://developer.mozilla.org/docs/WebAssembly/JavaScript_interface/Module/customSections_static) */
     static customSections(moduleObject: Module, sectionName: string) -> mut Array<typed_arrays.ArrayBuffer>,
     /** [MDN Reference](https://developer.mozilla.org/docs/WebAssembly/JavaScript_interface/Module/exports_static) */
@@ -67,7 +67,7 @@ export declare class Module {
 @js("WebAssembly.RuntimeError")
 export declare class RuntimeError extends error.Error {
     static prototype: RuntimeError,
-    constructor(mut self, message?: string),
+    constructor(&mut self, message?: string),
     (message?: string) -> RuntimeError
 }
 
@@ -77,13 +77,13 @@ export declare class Table {
     /** [MDN Reference](https://developer.mozilla.org/docs/WebAssembly/JavaScript_interface/Table/length) */
     readonly length: number,
     /** [MDN Reference](https://developer.mozilla.org/docs/WebAssembly/JavaScript_interface/Table/get) */
-    get(self, index: number) -> any,
+    get(&self, index: number) -> any,
     /** [MDN Reference](https://developer.mozilla.org/docs/WebAssembly/JavaScript_interface/Table/grow) */
-    grow(mut self, delta: number, value?: unknown) -> number,
+    grow(&mut self, delta: number, value?: unknown) -> number,
     /** [MDN Reference](https://developer.mozilla.org/docs/WebAssembly/JavaScript_interface/Table/set) */
-    set(mut self, index: number, value?: unknown) -> unknown,
+    set(&mut self, index: number, value?: unknown) -> unknown,
     static prototype: Table,
-    constructor(mut self, descriptor: TableDescriptor, value?: unknown)
+    constructor(&mut self, descriptor: TableDescriptor, value?: unknown)
 }
 
 export declare interface GlobalDescriptor<T: ValueType = ValueType> {

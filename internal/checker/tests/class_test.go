@@ -23,10 +23,10 @@ func TestClassImplements(t *testing.T) {
 		"SingleInterface": {
 			input: `
 				interface Greeter {
-					greet(self) -> string,
+					greet(&self) -> string,
 				}
 				class Hello implements Greeter {
-					greet(self) -> string { return "hi" }
+					greet(&self) -> string { return "hi" }
 				}
 				val h = Hello()
 			`,
@@ -39,15 +39,15 @@ func TestClassImplements(t *testing.T) {
 					name: string,
 				}
 				interface Runnable {
-					run(self) -> string,
+					run(&self) -> string,
 				}
 				interface Barker {
-					bark(self) -> string,
+					bark(&self) -> string,
 				}
 				class Dog extends Animal implements Runnable, Barker {
-					constructor(mut self, name: string) { self.name = name },
-					run(self) -> string { return "running" },
-					bark(self) -> string { return "woof" },
+					constructor(&mut self, name: string) { self.name = name },
+					run(&self) -> string { return "running" },
+					bark(&self) -> string { return "woof" },
 				}
 				val d = Dog("Rex")
 			`,
@@ -85,7 +85,7 @@ func TestClassInheritedMemberAccess(t *testing.T) {
 					name: string,
 				}
 				class Dog extends Animal {
-					constructor(mut self) {}
+					constructor(&mut self) {}
 				}
 				val d = Dog()
 				val n = d.name
@@ -97,10 +97,10 @@ func TestClassInheritedMemberAccess(t *testing.T) {
 			input: `
 				class Animal {
 					name: string,
-					speak(self) -> string { return "..." },
+					speak(&self) -> string { return "..." },
 				}
 				class Dog extends Animal {
-					constructor(mut self) {}
+					constructor(&mut self) {}
 				}
 				val d = Dog()
 				val s = d.speak()
@@ -135,7 +135,7 @@ func TestClassImplementsConformance(t *testing.T) {
 		"MissingMember": {
 			input: `
 				interface Greeter {
-					greet(self) -> string,
+					greet(&self) -> string,
 				}
 				class Hello implements Greeter {}
 				val h = Hello()
@@ -147,10 +147,10 @@ func TestClassImplementsConformance(t *testing.T) {
 		"AllMembersSatisfied": {
 			input: `
 				interface Greeter {
-					greet(self) -> string,
+					greet(&self) -> string,
 				}
 				class Hello implements Greeter {
-					greet(self) -> string { return "hi" }
+					greet(&self) -> string { return "hi" }
 				}
 				val h = Hello()
 			`,
@@ -158,13 +158,13 @@ func TestClassImplementsConformance(t *testing.T) {
 		"InheritedMemberSatisfies": {
 			input: `
 				interface Runnable {
-					run(self) -> string,
+					run(&self) -> string,
 				}
 				class Animal {
-					run(self) -> string { return "moving" }
+					run(&self) -> string { return "moving" }
 				}
 				class Dog extends Animal implements Runnable {
-					constructor(mut self) {}
+					constructor(&mut self) {}
 				}
 				val d = Dog()
 			`,
@@ -172,10 +172,10 @@ func TestClassImplementsConformance(t *testing.T) {
 		"ReturnTypeMismatch": {
 			input: `
 				interface Greeter {
-					greet(self) -> string,
+					greet(&self) -> string,
 				}
 				class Hello implements Greeter {
-					greet(self) -> number { return 42 }
+					greet(&self) -> number { return 42 }
 				}
 				val h = Hello()
 			`,
@@ -186,10 +186,10 @@ func TestClassImplementsConformance(t *testing.T) {
 		"ParamTypeMismatch": {
 			input: `
 				interface Adder {
-					add(self, x: number) -> number,
+					add(&self, x: number) -> number,
 				}
 				class Bad implements Adder {
-					add(self, x: string) -> number { return 0 }
+					add(&self, x: string) -> number { return 0 }
 				}
 				val b = Bad()
 			`,
@@ -211,11 +211,11 @@ func TestClassImplementsConformance(t *testing.T) {
 		"SelfReturnType": {
 			input: `
 				interface Cloneable {
-					clone(self) -> Self,
+					clone(&self) -> Self,
 				}
 				class Box implements Cloneable {
 					value: number,
-					clone(self) -> Box { return Box(self.value) }
+					clone(&self) -> Box { return Box(self.value) }
 				}
 				val b = Box(1)
 			`,
@@ -223,10 +223,10 @@ func TestClassImplementsConformance(t *testing.T) {
 		"MutSelfRequiredButClassUsesSelf": {
 			input: `
 				interface Counter {
-					increment(mut self) -> number,
+					increment(&mut self) -> number,
 				}
 				class Bad implements Counter {
-					increment(self) -> number { return 0 }
+					increment(&self) -> number { return 0 }
 				}
 				val b = Bad()
 			`,
@@ -237,10 +237,10 @@ func TestClassImplementsConformance(t *testing.T) {
 		"SelfRequiredButClassUsesMutSelf": {
 			input: `
 				interface Reader {
-					read(self) -> number,
+					read(&self) -> number,
 				}
 				class Bad implements Reader {
-					read(mut self) -> number { return 0 }
+					read(&mut self) -> number { return 0 }
 				}
 				val b = Bad()
 			`,
@@ -248,13 +248,41 @@ func TestClassImplementsConformance(t *testing.T) {
 				"Class 'Bad' does not implement interface 'Reader': member 'read' self receiver does not match",
 			},
 		},
+		"ConsumingClassMethodAgainstBorrowingInterface": {
+			input: `
+				interface Reader {
+					read(&self) -> number,
+				}
+				class Bad implements Reader {
+					read(self) -> number { return 0 }
+				}
+				val b = Bad()
+			`,
+			expectedErrors: []string{
+				"Class 'Bad' does not implement interface 'Reader': member 'read' self receiver does not match",
+			},
+		},
+		"BorrowingClassMethodAgainstConsumingInterface": {
+			input: `
+				interface Closer {
+					close(mut self) -> number,
+				}
+				class Bad implements Closer {
+					close(&mut self) -> number { return 0 }
+				}
+				val b = Bad()
+			`,
+			expectedErrors: []string{
+				"Class 'Bad' does not implement interface 'Closer': member 'close' self receiver does not match",
+			},
+		},
 		"MutSelfMatches": {
 			input: `
 				interface Counter {
-					increment(mut self) -> number,
+					increment(&mut self) -> number,
 				}
 				class Good implements Counter {
-					increment(mut self) -> number { return 0 }
+					increment(&mut self) -> number { return 0 }
 				}
 				val g = Good()
 			`,
@@ -265,7 +293,7 @@ func TestClassImplementsConformance(t *testing.T) {
 					name: string,
 				}
 				class Bad implements HasName {
-					name(self) -> string { return "x" }
+					name(&self) -> string { return "x" }
 				}
 				val b = Bad()
 			`,
@@ -276,11 +304,11 @@ func TestClassImplementsConformance(t *testing.T) {
 		"InterfaceSetterWithMatchingReceiver": {
 			input: `
 				interface HasValue {
-					set value(mut self, x: number) -> undefined,
+					set value(&mut self, x: number) -> undefined,
 				}
 				class Box implements HasValue {
 					_value: number,
-					set value(mut self, x: number) { self._value = x },
+					set value(&mut self, x: number) { self._value = x },
 				}
 				val b = Box(0)
 			`,
@@ -291,11 +319,11 @@ func TestClassImplementsConformance(t *testing.T) {
 			// satisfy the iface contract.
 			input: `
 				interface HasValue {
-					set value(self, x: number) -> undefined,
+					set value(&self, x: number) -> undefined,
 				}
 				class Box implements HasValue {
 					_value: number,
-					set value(mut self, x: number) { self._value = x },
+					set value(&mut self, x: number) { self._value = x },
 				}
 				val b = Box(0)
 			`,
@@ -309,11 +337,11 @@ func TestClassImplementsConformance(t *testing.T) {
 			// this is valid.
 			input: `
 				interface CachedSize {
-					get size(mut self) -> number,
+					get size(&mut self) -> number,
 				}
 				class Container implements CachedSize {
 					_cache: number,
-					get size(mut self) -> number {
+					get size(&mut self) -> number {
 						self._cache = 1
 						return self._cache
 					},
@@ -327,11 +355,11 @@ func TestClassImplementsConformance(t *testing.T) {
 			// mutation from a read, so this is rejected.
 			input: `
 				interface ReadSize {
-					get size(self) -> number,
+					get size(&self) -> number,
 				}
 				class Container implements ReadSize {
 					_cache: number,
-					get size(mut self) -> number { return self._cache },
+					get size(&mut self) -> number { return self._cache },
 				}
 				val c = Container(0)
 			`,
@@ -356,10 +384,10 @@ func TestClassImplementsConformance(t *testing.T) {
 			// for the interface. This must be accepted.
 			input: `
 				interface Producer {
-					produce(self) -> number | string,
+					produce(&self) -> number | string,
 				}
 				class IntProducer implements Producer {
-					produce(self) -> number { return 1 }
+					produce(&self) -> number { return 1 }
 				}
 				val p = IntProducer()
 			`,
@@ -370,10 +398,10 @@ func TestClassImplementsConformance(t *testing.T) {
 			// `number` back, but the class might return a string.
 			input: `
 				interface Producer {
-					produce(self) -> number,
+					produce(&self) -> number,
 				}
 				class Bad implements Producer {
-					produce(self) -> number | string { return 1 }
+					produce(&self) -> number | string { return 1 }
 				}
 				val p = Bad()
 			`,
@@ -386,10 +414,10 @@ func TestClassImplementsConformance(t *testing.T) {
 			// promises callers can pass. This is contravariantly safe.
 			input: `
 				interface Sink {
-					accept(self, x: number) -> undefined,
+					accept(&self, x: number) -> undefined,
 				}
 				class Lenient implements Sink {
-					accept(self, x: number | string) -> undefined { return undefined }
+					accept(&self, x: number | string) -> undefined { return undefined }
 				}
 				val s = Lenient()
 			`,
@@ -397,11 +425,11 @@ func TestClassImplementsConformance(t *testing.T) {
 		"SetterArgTypeMismatch": {
 			input: `
 				interface HasValue {
-					set value(self, x: number) -> undefined,
+					set value(&self, x: number) -> undefined,
 				}
 				class Bad implements HasValue {
 					_value: string,
-					set value(mut self, x: string) { self._value = x },
+					set value(&mut self, x: string) { self._value = x },
 				}
 				val b = Bad("")
 			`,
@@ -412,10 +440,10 @@ func TestClassImplementsConformance(t *testing.T) {
 		"GetterReturnTypeMismatch": {
 			input: `
 				interface HasName {
-					get name(self) -> string,
+					get name(&self) -> string,
 				}
 				class Bad implements HasName {
-					get name(self) -> number { return 0 }
+					get name(&self) -> number { return 0 }
 				}
 				val b = Bad()
 			`,
@@ -426,13 +454,13 @@ func TestClassImplementsConformance(t *testing.T) {
 		"MultipleImplementsOneMissing": {
 			input: `
 				interface A {
-					a(self) -> number,
+					a(&self) -> number,
 				}
 				interface B {
-					b(self) -> number,
+					b(&self) -> number,
 				}
 				class Partial implements A, B {
-					a(self) -> number { return 1 }
+					a(&self) -> number { return 1 }
 				}
 				val p = Partial()
 			`,
@@ -457,7 +485,7 @@ func TestClassImplementsConformance(t *testing.T) {
 		"OptionalClassPropertyDoesNotSatisfyInterfaceGetter": {
 			input: `
 				interface HasName {
-					get name(self) -> string,
+					get name(&self) -> string,
 				}
 				class Person implements HasName {
 					name?: string,
@@ -471,7 +499,7 @@ func TestClassImplementsConformance(t *testing.T) {
 		"OptionalClassPropertyDoesNotSatisfyInterfaceSetter": {
 			input: `
 				interface HasValue {
-					set value(self, x: number) -> undefined,
+					set value(&self, x: number) -> undefined,
 				}
 				class Box implements HasValue {
 					value?: number,
@@ -567,10 +595,10 @@ func TestClassImplementsLifetimeConformance(t *testing.T) {
 			input: `
 				type Point = {x: number}
 				interface Borrower {
-					borrow<'a>(self, p: 'a Point) -> 'a Point,
+					borrow<'a>(&self, p: 'a Point) -> 'a Point,
 				}
 				class Forwarder implements Borrower {
-					borrow<'a>(self, p: 'a Point) -> 'a Point { return p }
+					borrow<'a>(&self, p: 'a Point) -> 'a Point { return p }
 				}
 				val f = Forwarder()
 			`,
@@ -582,7 +610,7 @@ func TestClassImplementsLifetimeConformance(t *testing.T) {
 				type Point = {x: number}
 				interface View<'a> {
 					value: 'a Point,
-					peek(self) -> 'a Point,
+					peek(&self) -> 'a Point,
 				}
 			`,
 		},
@@ -601,11 +629,11 @@ func TestClassImplementsLifetimeConformance(t *testing.T) {
 			input: `
 				type Point = {x: number}
 				interface Viewer {
-					peek<'a>('a self) -> 'a Point,
+					peek<'a>(&'a self) -> 'a Point,
 				}
 				class V implements Viewer {
 					p: Point,
-					peek<'a>('a self) -> 'a Point { return self.p }
+					peek<'a>(&'a self) -> 'a Point { return self.p }
 				}
 				val v = V({x: 0})
 			`,
@@ -617,11 +645,11 @@ func TestClassImplementsLifetimeConformance(t *testing.T) {
 			input: `
 				type Point = {x: number}
 				interface Viewer {
-					peek<'a>('a self) -> Point,
+					peek<'a>(&'a self) -> Point,
 				}
 				class V implements Viewer {
 					p: Point,
-					peek<'a>('a self) -> 'a Point { return self.p }
+					peek<'a>(&'a self) -> 'a Point { return self.p }
 				}
 				val v = V({x: 0})
 			`,
@@ -636,10 +664,10 @@ func TestClassImplementsLifetimeConformance(t *testing.T) {
 			input: `
 				type Point = {x: number}
 				interface Borrower {
-					borrow<'a>(self, p: 'a Point) -> Point,
+					borrow<'a>(&self, p: 'a Point) -> Point,
 				}
 				class AliasingImpl implements Borrower {
-					borrow<'a>(self, p: 'a Point) -> 'a Point { return p }
+					borrow<'a>(&self, p: 'a Point) -> 'a Point { return p }
 				}
 				val a = AliasingImpl()
 			`,
@@ -710,7 +738,7 @@ func TestClassMethodSelfParamPopulated(t *testing.T) {
 			input: `
 				class Box {
 					value: number,
-					read(self) -> number { return self.value }
+					read(&self) -> number { return self.value }
 				}
 			`,
 			className:  "Box",
@@ -720,8 +748,8 @@ func TestClassMethodSelfParamPopulated(t *testing.T) {
 			input: `
 				class Counter {
 					n: number,
-					constructor(mut self) { self.n = 0 },
-					bump(mut self) -> number {
+					constructor(&mut self) { self.n = 0 },
+					bump(&mut self) -> number {
 						self.n = self.n + 1
 						return self.n
 					}
@@ -747,7 +775,7 @@ func TestClassMethodSelfParamPopulated(t *testing.T) {
 			input: `
 				class Reader {
 					_value: number,
-					get value(self) -> number { return self._value }
+					get value(&self) -> number { return self._value }
 				}
 			`,
 			className:  "Reader",
@@ -757,8 +785,8 @@ func TestClassMethodSelfParamPopulated(t *testing.T) {
 			input: `
 				class Writer {
 					_value: number,
-					constructor(mut self) { self._value = 0 },
-					set value(mut self, x: number) { self._value = x }
+					constructor(&mut self) { self._value = 0 },
+					set value(&mut self, x: number) { self._value = x }
 				}
 			`,
 			className:  "Writer",
@@ -838,8 +866,8 @@ func TestClassMethodSelfLifetime(t *testing.T) {
 		type Point = {x: number}
 		class Container {
 			p: Point,
-			peek<'a>('a self) -> 'a Point { return self.p },
-			swap<'b>(mut 'b self, q: mut 'b Point) -> mut 'b Point { return q }
+			peek<'a>(&'a self) -> 'a Point { return self.p },
+			swap<'b>(&'b mut self, q: mut 'b Point) -> mut 'b Point { return q }
 		}
 	`
 	ns := mustInferAsModule(t, src)
@@ -894,7 +922,7 @@ func TestConstructorRejectsSelfLifetime(t *testing.T) {
 	src := `
 		class C {
 			n: number,
-			constructor(mut 'a self) { self.n = 0 }
+			constructor(&'a mut self) { self.n = 0 }
 		}
 	`
 	source := &ast.Source{ID: 0, Path: "input.esc", Contents: src}
@@ -924,6 +952,48 @@ func TestConstructorRejectsSelfLifetime(t *testing.T) {
 		assert.NotContains(t, pe.Message,
 			"constructors cannot have a lifetime on `self`",
 			"parser should not duplicate the checker's MutSelfHasLifetime diagnostic")
+	}
+}
+
+// TestConstructorRejectsConsumingSelf pins that a constructor declaring a
+// consuming receiver gets ConstructorConsumesSelfError rather than the
+// mutability diagnostic a `&self` constructor gets.
+func TestConstructorRejectsConsumingSelf(t *testing.T) {
+	tests := map[string]string{
+		"consuming":         "self",
+		"mutable consuming": "mut self",
+	}
+	for name, receiver := range tests {
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+			src := `
+				class C {
+					n: number,
+					constructor(` + receiver + `) { self.n = 0 }
+				}
+			`
+			source := &ast.Source{ID: 0, Path: "input.esc", Contents: src}
+			ctx, cancel := context.WithTimeout(context.Background(), 1*time.Second)
+			defer cancel()
+			// The parser reports the same mistake. The checker still sees the
+			// receiver it parsed, which is what this test pins.
+			module, _ := parser.ParseLibFiles(ctx, []*ast.Source{source})
+
+			c := NewChecker(ctx)
+			inferCtx := Context{Scope: Prelude(c)}
+			_, inferErrors := c.InferModule(inferCtx, module)
+
+			var msgs []string
+			for _, e := range inferErrors {
+				switch e.(type) {
+				case ConstructorConsumesSelfError, MissingMutSelfParameterError:
+					msgs = append(msgs, e.Message())
+				}
+			}
+			require.Equal(t, []string{
+				"A constructor returns the instance it fills in, so it must borrow `self` as `&mut self` rather than consume it.",
+			}, msgs)
+		})
 	}
 }
 
@@ -993,7 +1063,7 @@ func TestObjectTypeAnnRejectsReceiverLifetime(t *testing.T) {
 	src := `
 		type Point = {x: number}
 		type Viewer = {
-			peek<'a>('a self) -> 'a Point,
+			peek<'a>(&'a self) -> 'a Point,
 		}
 	`
 	source := &ast.Source{ID: 0, Path: "input.esc", Contents: src}
@@ -1257,7 +1327,7 @@ func TestDefaultMutabilityFromClass(t *testing.T) {
 			input: `
 				class Counter {
 					count: number,
-					increment(mut self) -> number { return self.count }
+					increment(&mut self) -> number { return self.count }
 				}
 				val c = Counter(0)
 			`,
@@ -1268,7 +1338,7 @@ func TestDefaultMutabilityFromClass(t *testing.T) {
 			input: `
 				class Counter {
 					count: number,
-					increment(mut self) -> number { return self.count }
+					increment(&mut self) -> number { return self.count }
 				}
 				val mut c = Counter(0)
 			`,
@@ -1279,7 +1349,7 @@ func TestDefaultMutabilityFromClass(t *testing.T) {
 			input: `
 				class Config {
 					host: string,
-					setHost(mut self, h: string) -> undefined {}
+					setHost(&mut self, h: string) -> undefined {}
 				}
 				val cfg = Config("localhost")
 			`,
@@ -1315,7 +1385,7 @@ func TestDeclareClassImplementsContributesMembers(t *testing.T) {
 		"MemberFromImplementedInterface": {
 			input: `
 				interface ParentNode {
-					querySelector(self, selectors: string) -> string,
+					querySelector(&self, selectors: string) -> string,
 				}
 				declare class Node {
 					nodeName: string,
@@ -1350,8 +1420,8 @@ func TestDeclareClassImplementsContributesMembers(t *testing.T) {
 		"OverloadedMemberFromImplementedInterface": {
 			input: `
 				interface CanvasDrawImage {
-					drawImage(self, dx: number, dy: number) -> string,
-					drawImage(self, dx: number, dy: number, dw: number) -> boolean,
+					drawImage(&self, dx: number, dy: number) -> string,
+					drawImage(&self, dx: number, dy: number, dw: number) -> boolean,
 				}
 				declare class CanvasRenderingContext2D implements CanvasDrawImage {}
 				declare fn makeContext() -> CanvasRenderingContext2D
@@ -1363,8 +1433,8 @@ func TestDeclareClassImplementsContributesMembers(t *testing.T) {
 		"TheSecondOverloadArmFromImplementedInterface": {
 			input: `
 				interface CanvasDrawImage {
-					drawImage(self, dx: number, dy: number) -> string,
-					drawImage(self, dx: number, dy: number, dw: number) -> boolean,
+					drawImage(&self, dx: number, dy: number) -> string,
+					drawImage(&self, dx: number, dy: number, dw: number) -> boolean,
 				}
 				declare class CanvasRenderingContext2D implements CanvasDrawImage {}
 				declare fn makeContext() -> CanvasRenderingContext2D
@@ -1376,10 +1446,10 @@ func TestDeclareClassImplementsContributesMembers(t *testing.T) {
 		"MemberFromTheSuperclassOfAnImplementedInterface": {
 			input: `
 				interface Animatable {
-					animate(self) -> boolean,
+					animate(&self) -> boolean,
 				}
 				interface ChildNode extends Animatable {
-					remove(self) -> undefined,
+					remove(&self) -> undefined,
 				}
 				declare class Element implements ChildNode {}
 				declare fn makeElement() -> Element
@@ -1431,7 +1501,7 @@ func TestDeclareClassImplementsConformance(t *testing.T) {
 		"MissingMemberIsInherited": {
 			input: `
 				interface ParentNode {
-					querySelector(self, selectors: string) -> string,
+					querySelector(&self, selectors: string) -> string,
 				}
 				declare class Element implements ParentNode {}
 			`,
@@ -1469,12 +1539,12 @@ func TestDeclareClassImplementsConformance(t *testing.T) {
 		"RestatedOverloadIsNotCompared": {
 			input: `
 				interface AbstractWorker {
-					addEventListener(self, name: string) -> undefined,
-					addEventListener(self, name: string, once: boolean) -> undefined,
+					addEventListener(&self, name: string) -> undefined,
+					addEventListener(&self, name: string, once: boolean) -> undefined,
 				}
 				declare class SharedWorker implements AbstractWorker {
-					addEventListener(self, name: string) -> undefined,
-					addEventListener(self, name: string, once: boolean) -> undefined,
+					addEventListener(&self, name: string) -> undefined,
+					addEventListener(&self, name: string, once: boolean) -> undefined,
 				}
 			`,
 		},
@@ -1567,7 +1637,7 @@ func TestDeclareClassImplementsConflicts(t *testing.T) {
 		"AgreeingMembersAreAccepted": {
 			input: `
 				interface ChildNode {
-					remove(self) -> undefined,
+					remove(&self) -> undefined,
 					nodeName: string,
 				}
 				interface ParentNode {
@@ -1669,7 +1739,7 @@ func TestDeclareClassImplementsConflicts(t *testing.T) {
 					nodeName: string,
 				}
 				interface ChildNode extends Animatable {
-					remove(self) -> undefined,
+					remove(&self) -> undefined,
 				}
 				interface ParentNode {
 					nodeName: number,
@@ -1750,16 +1820,16 @@ func TestNonDeclareClassTakesNoMembersFromImplements(t *testing.T) {
 	t.Parallel()
 	input := `
 		interface Greeter {
-			greet(self) -> string,
+			greet(&self) -> string,
 		}
 		class Hello implements Greeter {
-			greet(self) -> string { return "hi" },
+			greet(&self) -> string { return "hi" },
 		}
 		interface Extra {
-			bonus(self) -> string,
+			bonus(&self) -> string,
 		}
 		class Partial implements Extra {
-			bonus(self) -> string { return "b" },
+			bonus(&self) -> string { return "b" },
 		}
 		val h = Hello()
 		val g = h.greet()
@@ -1786,7 +1856,7 @@ func TestImplementsMeansConformanceWithoutDeclare(t *testing.T) {
 	t.Parallel()
 	body := `
 		interface ParentNode {
-			querySelector(self, selectors: string) -> string,
+			querySelector(&self, selectors: string) -> string,
 		}
 		%s class Element implements ParentNode {}
 	`
@@ -1829,7 +1899,7 @@ func TestImplementsMeansConformanceWithoutDeclare(t *testing.T) {
 
 // `Self` names the class's own instance type inside its body, the way it does
 // inside an interface. The dts converter emits it on a fused class's methods,
-// as in `add(mut self, value: T) -> Self` on `Set`, and it accounted for 228
+// as in `add(&mut self, value: T) -> Self` on `Set`, and it accounted for 228
 // of `web:dom`'s diagnostics (#1725).
 func TestSelfInAClassBody(t *testing.T) {
 	tests := map[string]struct {
@@ -1840,7 +1910,7 @@ func TestSelfInAClassBody(t *testing.T) {
 		"DeclareClassMethodReturningSelf": {
 			input: `
 				declare class Node {
-					cloneNode(self) -> Self,
+					cloneNode(&self) -> Self,
 				}
 				declare fn makeNode() -> Node
 				val cloned = makeNode().cloneNode()
@@ -1852,8 +1922,8 @@ func TestSelfInAClassBody(t *testing.T) {
 			input: `
 				class Builder {
 					count: number,
-					constructor(mut self) { self.count = 0 },
-					self_(self) -> Self { return self },
+					constructor(&mut self) { self.count = 0 },
+					self_(&self) -> Self { return self },
 				}
 				val b = Builder().self_()
 			`,
@@ -1866,7 +1936,7 @@ func TestSelfInAClassBody(t *testing.T) {
 			input: `
 				declare class Box<T> {
 					value: T,
-					clone(self) -> Self,
+					clone(&self) -> Self,
 				}
 				declare fn makeBox() -> Box<number>
 				val copied = makeBox().clone()
@@ -1895,7 +1965,7 @@ func TestSelfIsNotVisibleOutsideAClass(t *testing.T) {
 	t.Parallel()
 	errs := inferModuleErrors(t, `
 		declare class Node {
-			cloneNode(self) -> Self,
+			cloneNode(&self) -> Self,
 		}
 		declare fn stray() -> Self
 	`)
@@ -1913,7 +1983,7 @@ func TestClassCallSignature(t *testing.T) {
 		t.Parallel()
 		input := `
 			declare class Err {
-				constructor(mut self, message?: string),
+				constructor(&mut self, message?: string),
 				(message?: string) -> Err,
 				(message?: string, options?: number) -> Err,
 			}
@@ -1947,7 +2017,7 @@ func TestClassCallSignature(t *testing.T) {
 		t.Parallel()
 		errs := inferModuleErrors(t, `
 			class Foo {
-				constructor(mut self) {},
+				constructor(&mut self) {},
 				(x: number) -> string,
 			}
 		`)
@@ -1995,7 +2065,7 @@ func TestCallOnlyClassHasNoConstructor(t *testing.T) {
 		"BothKeepsTheConstructorFirst": {
 			input: `
 				declare class Wrapper {
-					constructor(mut self, value: number),
+					constructor(&mut self, value: number),
 					(value: number) -> string,
 				}
 			`,
@@ -2006,7 +2076,7 @@ func TestCallOnlyClassHasNoConstructor(t *testing.T) {
 		"BothConstructsOnAPlainCall": {
 			input: `
 				declare class Wrapper {
-					constructor(mut self, value: number),
+					constructor(&mut self, value: number),
 					(value: number) -> string,
 				}
 				val w = Wrapper(1)

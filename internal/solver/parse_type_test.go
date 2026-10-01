@@ -220,12 +220,12 @@ func objectToSoltype(t *testing.T, env map[string]soltype.Type, ta *ast.ObjectTy
 			fn := methodFuncToSoltype(t, env, e.Fn, e.Receiver)
 			elems = append(elems, &soltype.MethodElem{Name: objKeyNameReq(t, e.Name), Signatures: []*soltype.FuncType{fn}})
 		case *ast.GetterTypeAnn:
-			// A getter's Fn is `(self) -> T throws E`, so its return and throws are the
+			// A getter's Fn is `(&self) -> T throws E`, so its return and throws are the
 			// value read and what reading raises.
 			fn := methodFuncToSoltype(t, env, e.Fn, e.Receiver)
 			elems = append(elems, &soltype.GetterElem{Name: objKeyNameReq(t, e.Name), SelfParam: fn.SelfParam, Type: fn.Ret, Throws: fn.Throws})
 		case *ast.SetterTypeAnn:
-			// A setter's Fn is `(self, value: T) -> undefined throws E`, so its one value
+			// A setter's Fn is `(&self, value: T) -> undefined throws E`, so its one value
 			// parameter is what the setter accepts and its throws is what writing raises.
 			fn := methodFuncToSoltype(t, env, e.Fn, e.Receiver)
 			require.Len(t, fn.Params, 1, "parseType: a setter takes one value parameter")
@@ -302,17 +302,27 @@ func objKeyNameReq(t *testing.T, key ast.ObjKey) string {
 // methodFuncToSoltype lowers a method, getter, or setter signature, attaching the
 // `self` receiver the FuncTypeAnn does not carry. The receiver's type is the same
 // marker on every member, so two members compare equal on their receiver the way
-// two instance members of one class body do.
+// two instance members of one class body do. A `&self` receiver borrows the marker
+// at parseSelfLifetime, which every `&self` shares for the same reason. A consuming
+// `self` receiver takes the bare marker.
 func methodFuncToSoltype(t *testing.T, env map[string]soltype.Type, fnAnn *ast.FuncTypeAnn, recv *ast.MethodReceiver) *soltype.FuncType {
 	t.Helper()
 	fn := funcToSoltype(t, env, fnAnn)
 	if recv != nil {
 		require.False(t, recv.Mut, "parseType: mut receiver")
 		require.Nil(t, recv.Lifetime, "parseType: receiver lifetime")
-		fn.SelfParam = &soltype.FuncParam{Pattern: &soltype.IdentPat{Name: "self"}, Type: &soltype.ClassType{Name: "Self"}}
+		self := &soltype.ClassType{Name: "Self"}
+		var selfType soltype.Type = self
+		if !recv.Consumes() {
+			selfType = soltype.NewRef(false, parseSelfLifetime, self)
+		}
+		fn.SelfParam = &soltype.FuncParam{Pattern: &soltype.IdentPat{Name: "self"}, Type: selfType}
 	}
 	return fn
 }
+
+// parseSelfLifetime is the lifetime every `&self` receiver parseType builds borrows at.
+var parseSelfLifetime = &soltype.LifetimeVar{}
 
 // mergeMethodOverloads folds methods that repeat one name into a single MethodElem
 // whose Signatures slice carries every arm in source order, mirroring the production

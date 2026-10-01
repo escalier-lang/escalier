@@ -59,7 +59,7 @@ func TestInferClassLifetimeParams(t *testing.T) {
 			src: `
 				class Holder<'a> {
 					peer: &'a mut {value: number},
-					swap(mut self, p: &'a mut {value: number}) -> &'a mut {value: number} {
+					swap(&mut self, p: &'a mut {value: number}) -> &'a mut {value: number} {
 						self.peer = p
 						return self.peer
 					},
@@ -81,7 +81,7 @@ func TestInferClassLifetimeParams(t *testing.T) {
 			src: `
 				class Holder<'a> {
 					peer: &'a mut {value: number},
-					put(mut self, p: &'a mut {value: number}) -> undefined { self.peer = p },
+					put(&mut self, p: &'a mut {value: number}) -> undefined { self.peer = p },
 				}
 			`,
 			want: nil,
@@ -95,11 +95,11 @@ func TestInferClassLifetimeParams(t *testing.T) {
 			src: `
 				class Holder<'a> {
 					peer: &'a mut {value: number},
-					put(mut self, p: &'z mut {value: number}) -> undefined { },
+					put(&mut self, p: &'z mut {value: number}) -> undefined { },
 				}
 			`,
 			want: []string{
-				"4:24-4:26: lifetime 'z is used but not declared; add `<'z>` to the enclosing function signature",
+				"4:25-4:27: lifetime 'z is used but not declared; add `<'z>` to the enclosing function signature",
 			},
 			types: map[string]string{
 				"Holder": "<'a> {new (peer: &'a mut {value: number}) -> Holder<'a>}",
@@ -201,13 +201,13 @@ func TestClassLifetimeScopeIsTheDeclaredParameters(t *testing.T) {
 		class Holder<'a> {
 			peer: &'a mut {value: number},
 			other: &'z mut {value: number},
-			put(mut self, p: &'z mut {value: number}) -> undefined { },
+			put(&mut self, p: &'z mut {value: number}) -> undefined { },
 		}
 	`
 	_, _, errs := inferSource(t, src)
 	require.Equal(t, []string{
 		"4:12-4:14: lifetime 'z is used but not declared; did you mean 'a?",
-		"5:22-5:24: lifetime 'z is used but not declared; add `<'z>` to the enclosing function signature",
+		"5:23-5:25: lifetime 'z is used but not declared; add `<'z>` to the enclosing function signature",
 	}, messagesWithSpan(t, errs))
 }
 
@@ -311,12 +311,12 @@ func TestClassLifetimeBoundNameIsNotABinder(t *testing.T) {
 	src := `
 		class Holder<'a: 'b> {
 			peer: &'a mut {value: number},
-			put(mut self, p: &'b mut {value: number}) -> undefined { },
+			put(&mut self, p: &'b mut {value: number}) -> undefined { },
 		}
 	`
 	_, _, errs := inferSource(t, src)
 	require.Equal(t, []string{
-		"4:22-4:24: lifetime 'b is used but not declared; add `<'b>` to the enclosing function signature",
+		"4:23-4:25: lifetime 'b is used but not declared; add `<'b>` to the enclosing function signature",
 	}, messagesWithSpan(t, errs))
 }
 
@@ -340,7 +340,7 @@ func TestClassLifetimeShadowing(t *testing.T) {
 	const swapClass = `
 		class Holder<'a> {
 			peer: &'a mut {value: number},
-			swap<'b>(mut self, p: &'a mut {value: number}, q: &'b mut {value: number}) -> &'b mut {value: number} {
+			swap<'b>(&mut self, p: &'a mut {value: number}, q: &'b mut {value: number}) -> &'b mut {value: number} {
 				self.peer = p
 				return q
 			},
@@ -354,7 +354,7 @@ func TestClassLifetimeShadowing(t *testing.T) {
 			src: `
 				class Holder<'a> {
 					peer: &'a mut {value: number},
-					pick<'a>(self, p: &'a mut {value: number}) -> &'a mut {value: number} { return p },
+					pick<'a>(&self, p: &'a mut {value: number}) -> &'a mut {value: number} { return p },
 				}
 			` + pickCall,
 			want: "fn (h: Holder<'static>, o: &mut {value: number}) -> undefined",
@@ -363,7 +363,7 @@ func TestClassLifetimeShadowing(t *testing.T) {
 			src: `
 				class Holder<'a> {
 					peer: &'a mut {value: number},
-					pick<'b>(self, p: &'b mut {value: number}) -> &'b mut {value: number} { return p },
+					pick<'b>(&self, p: &'b mut {value: number}) -> &'b mut {value: number} { return p },
 				}
 			` + pickCall,
 			want: "fn (h: Holder<'static>, o: &mut {value: number}) -> undefined",

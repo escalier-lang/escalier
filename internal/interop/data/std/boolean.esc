@@ -5,7 +5,7 @@
 @js("Boolean")
 export declare class Boolean {
     /** Returns the primitive value of the specified object. */
-    valueOf(self) -> boolean,
+    valueOf(&self) -> boolean,
     (value?: unknown) -> boolean,
     static readonly prototype: Boolean
 }

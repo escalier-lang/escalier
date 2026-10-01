@@ -257,19 +257,19 @@ func TestInferMemberAssignSetter(t *testing.T) {
 	}{
 		{
 			name: "self receiver inside a mut self method",
-			src:  `class C { v: number, set x(mut self, n: number) { self.v = n }, m(mut self) { self.x = 5 } }`,
+			src:  `class C { v: number, set x(&mut self, n: number) { self.v = n }, m(&mut self) { self.x = 5 } }`,
 		},
 		{
 			name: "mut instance receiver",
 			src: `
-				class C { v: number, set x(mut self, n: number) { self.v = n } }
+				class C { v: number, set x(&mut self, n: number) { self.v = n } }
 				fn f(c: mut C) { c.x = 5 }
 			`,
 		},
 		{
 			name: "immutable instance receiver has no mut to lend",
 			src: `
-				class C { v: number, set x(mut self, n: number) { self.v = n } }
+				class C { v: number, set x(&mut self, n: number) { self.v = n } }
 				fn f(c: C) { c.x = 5 }
 			`,
 			want: []string{"3:18-3:21: cannot constrain immutable C <: mutable C"},
@@ -280,20 +280,20 @@ func TestInferMemberAssignSetter(t *testing.T) {
 			// declared receiver and the diagnostic belongs to the declaration.
 			name: "plain self setter is rejected at its declaration",
 			src: `
-				class C { set x(self, n: number) { } }
+				class C { set x(&self, n: number) { } }
 				fn f(c: C) { c.x = 5 }
 			`,
-			want: []string{"2:15-2:41: Setter 'x' must declare a `mut self` receiver; writing through it mutates the instance."},
+			want: []string{"2:15-2:42: Setter 'x' must declare a `&mut self` receiver; writing through it mutates the instance."},
 		},
 		{
 			name: "mut self setter reached from a plain self body",
-			src:  `class C { v: number, set x(mut self, n: number) { self.v = n }, m(self) { self.x = 5 } }`,
-			want: []string{"1:75-1:81: cannot constrain immutable C <: mutable C"},
+			src:  `class C { v: number, set x(&mut self, n: number) { self.v = n }, m(&self) { self.x = 5 } }`,
+			want: []string{"1:77-1:83: cannot constrain immutable C <: mutable C"},
 		},
 		{
 			name: "value is checked against the setter parameter",
 			src: `
-				class C { v: number, set x(mut self, n: number) { self.v = n } }
+				class C { v: number, set x(&mut self, n: number) { self.v = n } }
 				fn f(c: mut C) { c.x = "hi" }
 			`,
 			want: []string{`3:28-3:32: cannot constrain "hi" <: number`},
@@ -301,8 +301,8 @@ func TestInferMemberAssignSetter(t *testing.T) {
 		{
 			name: "inherited setter resolves through a subclass instance",
 			src: `
-				class C { v: number, set x(mut self, n: number) { self.v = n } }
-				class D extends C { constructor(mut self) { super(0) } }
+				class C { v: number, set x(&mut self, n: number) { self.v = n } }
+				class D extends C { constructor(&mut self) { super(0) } }
 				fn f(d: mut D) { d.x = 5 }
 			`,
 		},
@@ -311,15 +311,15 @@ func TestInferMemberAssignSetter(t *testing.T) {
 			src: `
 				class C {
 					v: number,
-					constructor(mut self) { self.v = 0 self.x = 5 },
-					set x(mut self, n: number) { self.v = n },
+					constructor(&mut self) { self.v = 0 self.x = 5 },
+					set x(&mut self, n: number) { self.v = n },
 				}
 			`,
 		},
 		{
 			name: "generic setter parameter projects the instance argument",
 			src: `
-				class Box<T> { v: T, set x(mut self, n: T) { self.v = n } }
+				class Box<T> { v: T, set x(&mut self, n: T) { self.v = n } }
 				fn f(b: mut Box<number>) { b.x = "hi" }
 			`,
 			want: []string{`3:38-3:42: cannot constrain "hi" <: number`},
@@ -362,8 +362,8 @@ func TestInferMemberAssignAccessorPair(t *testing.T) {
 			src: `
 				class C {
 					v: number,
-					set x(mut self, n: number) { self.v = n },
-					get x(self) -> number { return self.v },
+					set x(&mut self, n: number) { self.v = n },
+					get x(&self) -> number { return self.v },
 				}
 				fn f(c: mut C) -> number {
 					c.x = 5
@@ -376,8 +376,8 @@ func TestInferMemberAssignAccessorPair(t *testing.T) {
 			src: `
 				class C {
 					v: number,
-					get x(self) -> number { return self.v },
-					set x(mut self, n: number) { self.v = n },
+					get x(&self) -> number { return self.v },
+					set x(&mut self, n: number) { self.v = n },
 				}
 				fn f(c: mut C) -> number {
 					c.x = 5
@@ -405,15 +405,15 @@ func TestInferMemberAssignGetterOnly(t *testing.T) {
 		{
 			name: "instance receiver",
 			src: `
-				class C { v: number, get x(self) -> number { return self.v } }
+				class C { v: number, get x(&self) -> number { return self.v } }
 				fn f(c: mut C) { c.x = 5 }
 			`,
 			want: []string{"3:22-3:29: Property 'x' is read-only; it has a getter but no setter or field to write."},
 		},
 		{
 			name: "self receiver",
-			src:  `class C { v: number, get x(self) -> number { return self.v }, m(mut self) { self.x = 5 } }`,
-			want: []string{"1:77-1:87: Property 'x' is read-only; it has a getter but no setter or field to write."},
+			src:  `class C { v: number, get x(&self) -> number { return self.v }, m(&mut self) { self.x = 5 } }`,
+			want: []string{"1:79-1:89: Property 'x' is read-only; it has a getter but no setter or field to write."},
 		},
 		{
 			name: "static receiver",
@@ -440,8 +440,8 @@ func TestInferMemberAssignSetterValue(t *testing.T) {
 	values, _, errs := inferSource(t, `
 		class C {
 			v: number,
-			get x(self) -> string { return "s" },
-			set x(mut self, n: number) { self.v = n },
+			get x(&self) -> string { return "s" },
+			set x(&mut self, n: number) { self.v = n },
 		}
 		fn written(c: mut C) { return (c.x = 5) }
 		fn readBack(c: mut C) { c.x = 5
@@ -467,7 +467,7 @@ func TestInferMemberAssignSetterIndirectReceiver(t *testing.T) {
 		{
 			name: "call result",
 			src: `
-				class C { v: number, set x(mut self, n: number) { self.v = n } }
+				class C { v: number, set x(&mut self, n: number) { self.v = n } }
 				declare fn g(c: mut C) -> mut C
 				fn f(c: mut C) { g(c).x = 5 }
 			`,
@@ -475,7 +475,7 @@ func TestInferMemberAssignSetterIndirectReceiver(t *testing.T) {
 		{
 			name: "branch join",
 			src: `
-				class C { v: number, set x(mut self, n: number) { self.v = n } }
+				class C { v: number, set x(&mut self, n: number) { self.v = n } }
 				fn f(a: mut C, b: mut C, cond: boolean) { val r = if (cond) { a } else { b }
 					r.x = 5
 				}
@@ -487,7 +487,7 @@ func TestInferMemberAssignSetterIndirectReceiver(t *testing.T) {
 			// rejected exactly as the structural field-write path rejects it.
 			name: "branch join with one immutable arm",
 			src: `
-				class C { v: number, set x(mut self, n: number) { self.v = n } }
+				class C { v: number, set x(&mut self, n: number) { self.v = n } }
 				fn f(a: mut C, b: C, cond: boolean) { val r = if (cond) { a } else { b }
 					r.x = 5
 				}
@@ -497,7 +497,7 @@ func TestInferMemberAssignSetterIndirectReceiver(t *testing.T) {
 		{
 			name: "immutable call result",
 			src: `
-				class C { v: number, set x(mut self, n: number) { self.v = n } }
+				class C { v: number, set x(&mut self, n: number) { self.v = n } }
 				declare fn g(c: C) -> C
 				fn f(c: C) { g(c).x = 5 }
 			`,

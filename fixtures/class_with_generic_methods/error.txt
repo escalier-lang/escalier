@@ -1,11 +1,11 @@
 lib/index.esc:16:17: string cannot be assigned to number
 
-16:     addStrs1<A: string, B: string>(self, a: A, b: B) {
+16:     addStrs1<A: string, B: string>(&self, a: A, b: B) {
                     ^^^^^^
 
 lib/index.esc:16:28: string cannot be assigned to number
 
-16:     addStrs1<A: string, B: string>(self, a: A, b: B) {
+16:     addStrs1<A: string, B: string>(&self, a: A, b: B) {
                                ^^^^^^
 
 lib/index.esc:22:24: string cannot be assigned to number

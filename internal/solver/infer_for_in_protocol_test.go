@@ -42,7 +42,7 @@ func TestForInReadsTheIteratorProtocol(t *testing.T) {
 			// A class the program declares itself, which no rule knows anything about.
 			name: "AUserClassDeclaringTheMember",
 			src: `
-				declare class Seq { [Symbol.iterator](self) -> Iterator<boolean> }
+				declare class Seq { [Symbol.iterator](&self) -> Iterator<boolean> }
 				declare fn mk() -> Seq
 				fn use() { for x in mk() { return x } }
 			`,
@@ -127,7 +127,7 @@ func TestForInRejectsWhatDeclaresNoProtocolMember(t *testing.T) {
 			// there is no element to read.
 			name: "AMemberWithNoElementToRead",
 			src: `
-				declare class Seq { [Symbol.iterator](self) -> number }
+				declare class Seq { [Symbol.iterator](&self) -> number }
 				fn use(s: Seq) { for x in s { x } }
 			`,
 			want: "Seq is not iterable",
@@ -147,7 +147,7 @@ func TestForInRejectsWhatDeclaresNoProtocolMember(t *testing.T) {
 func TestForAwaitReadsTheAsyncMember(t *testing.T) {
 	t.Run("AnAsyncMemberAnswers", func(t *testing.T) {
 		values, _, errs := inferSource(t, `
-			declare class Stream { [Symbol.asyncIterator](self) -> AsyncIterator<string> }
+			declare class Stream { [Symbol.asyncIterator](&self) -> AsyncIterator<string> }
 			declare fn mk() -> Stream
 			async fn use() -> Promise<string> { for await x in mk() { return x } return "" }
 		`)
@@ -209,8 +209,8 @@ func TestForInReadsTheNullaryProtocolSignature(t *testing.T) {
 			name: "AnOverloadSetAnswersFromItsNullaryArm",
 			src: `
 				declare class Seq {
-					[Symbol.iterator](self, hint: string) -> Iterator<number>,
-					[Symbol.iterator](self) -> Iterator<boolean>,
+					[Symbol.iterator](&self, hint: string) -> Iterator<number>,
+					[Symbol.iterator](&self) -> Iterator<boolean>,
 				}
 				fn use(s: Seq) { for x in s { return x } }
 			`,
@@ -221,7 +221,7 @@ func TestForInReadsTheNullaryProtocolSignature(t *testing.T) {
 			// callable with none.
 			name: "AnOptionalParameterLeavesTheMemberCallable",
 			src: `
-				declare class Seq { [Symbol.iterator](self, hint?: string) -> Iterator<number> }
+				declare class Seq { [Symbol.iterator](&self, hint?: string) -> Iterator<number> }
 				fn use(s: Seq) { for x in s { return x } }
 			`,
 			want: "fn (s: Seq) -> number",
@@ -230,7 +230,7 @@ func TestForInReadsTheNullaryProtocolSignature(t *testing.T) {
 			// So does a rest parameter, which binds zero or more.
 			name: "ARestParameterLeavesTheMemberCallable",
 			src: `
-				declare class Seq { [Symbol.iterator](self, ...hints: Array<string>) -> Iterator<number> }
+				declare class Seq { [Symbol.iterator](&self, ...hints: Array<string>) -> Iterator<number> }
 				fn use(s: Seq) { for x in s { return x } }
 			`,
 			want: "fn (s: Seq) -> number",
@@ -249,7 +249,7 @@ func TestForInReadsTheNullaryProtocolSignature(t *testing.T) {
 // the element of a signature the iteration would never select.
 func TestForInRejectsAProtocolMemberDemandingAnArgument(t *testing.T) {
 	_, _, errs := inferSource(t, `
-		declare class Seq { [Symbol.iterator](self, hint: string) -> Iterator<number> }
+		declare class Seq { [Symbol.iterator](&self, hint: string) -> Iterator<number> }
 		fn use(s: Seq) { for x in s { x } }
 	`)
 	require.Equal(t, []string{"Seq is not iterable"}, errorMessagesOf(errs))
@@ -291,7 +291,7 @@ func TestYieldFromForwardsEveryProtocolSlot(t *testing.T) {
 			want: "fn (xs: Iterable<string, number, boolean>) -> Generator<string, number, boolean>",
 		},
 		{
-			// `Array` declares `[Symbol.iterator](self) -> Iterator<T>`, one argument, so
+			// `Array` declares `[Symbol.iterator](&self) -> Iterator<T>`, one argument, so
 			// only the element is stated and the delegation finishes with `undefined`.
 			name: "AnUnstatedSlotFallsBack",
 			src: `
@@ -317,7 +317,7 @@ func TestYieldFromForwardsEveryProtocolSlot(t *testing.T) {
 // something no source form spells.
 func TestADiagnosticNamesASymbolKeyedMemberAsWritten(t *testing.T) {
 	_, _, errs := inferSource(t, `
-		declare fn take(s: { [Symbol.iterator](self) -> number, ... }) -> number
+		declare fn take(s: { [Symbol.iterator](&self) -> number, ... }) -> number
 		val n = take({ a: 1 })
 	`)
 	require.Equal(t,
@@ -335,7 +335,7 @@ func TestForInRejectsAnOptionalProtocolMember(t *testing.T) {
 		{
 			name: "AnOptionalMethod",
 			src: `
-				declare fn mk() -> { [Symbol.iterator]?(self) -> Iterator<number> }
+				declare fn mk() -> { [Symbol.iterator]?(&self) -> Iterator<number> }
 				fn use() { for x in mk() { x } }
 			`,
 		},
@@ -363,7 +363,7 @@ func TestForInRejectsAnOptionalProtocolMember(t *testing.T) {
 func TestForInFollowsAnAliasThatRenamesAnIterator(t *testing.T) {
 	values, _, errs := inferSource(t, `
 		type Flip<A, B> = Iterator<B, A>
-		declare class Seq { [Symbol.iterator](self) -> Flip<number, string> }
+		declare class Seq { [Symbol.iterator](&self) -> Flip<number, string> }
 		fn use(s: Seq) { for x in s { return x } }
 	`)
 	require.Empty(t, errorMessagesOf(errs))
@@ -382,7 +382,7 @@ func TestYieldFromInAnAsyncBodyReadsTheAsyncMember(t *testing.T) {
 		{
 			name: "AnAsyncOnlyDelegate",
 			src: `
-				declare class Stream { [Symbol.asyncIterator](self) -> AsyncIterator<string> }
+				declare class Stream { [Symbol.asyncIterator](&self) -> AsyncIterator<string> }
 				async gen fn g(s: Stream) { yield from s }
 			`,
 			want: "fn (s: Stream) -> AsyncGenerator<string, undefined, unknown>",
@@ -416,7 +416,7 @@ func TestForInFollowsAnAliasChainWithoutLooping(t *testing.T) {
 			name: "AChainReachingTheIterator",
 			src: `
 				type Mid<T> = Iterator<T>
-				declare class Seq { [Symbol.iterator](self) -> Mid<number> }
+				declare class Seq { [Symbol.iterator](&self) -> Mid<number> }
 				fn use(s: Seq) { for x in s { return x } }
 			`,
 		},
@@ -424,7 +424,7 @@ func TestForInFollowsAnAliasChainWithoutLooping(t *testing.T) {
 			name: "AnAliasNamingItself",
 			src: `
 				type Loop<T> = Loop<T>
-				declare class Seq { [Symbol.iterator](self) -> Loop<number> }
+				declare class Seq { [Symbol.iterator](&self) -> Loop<number> }
 				fn use(s: Seq) { for x in s { return x } }
 			`,
 			want: []string{
@@ -438,7 +438,7 @@ func TestForInFollowsAnAliasChainWithoutLooping(t *testing.T) {
 			src: `
 				type A<T> = B<T>
 				type B<T> = A<T>
-				declare class Seq { [Symbol.iterator](self) -> A<number> }
+				declare class Seq { [Symbol.iterator](&self) -> A<number> }
 				fn use(s: Seq) { for x in s { return x } }
 			`,
 			want: []string{

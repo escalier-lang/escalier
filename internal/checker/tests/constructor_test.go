@@ -42,7 +42,7 @@ func TestInBodyConstructorBasic(t *testing.T) {
 		"NoExtraParams": {
 			input: `
 				class Foo {
-					constructor(mut self) {}
+					constructor(&mut self) {}
 				}
 				val f = Foo()
 			`,
@@ -55,7 +55,7 @@ func TestInBodyConstructorBasic(t *testing.T) {
 					x: number,
 					y: number,
 
-					constructor(mut self, x: number, y: number) {
+					constructor(&mut self, x: number, y: number) {
 						self.x = x
 						self.y = y
 					}
@@ -70,11 +70,11 @@ func TestInBodyConstructorBasic(t *testing.T) {
 				class Counter {
 					count: number,
 
-					constructor(mut self, count: number) {
+					constructor(&mut self, count: number) {
 						self.count = count
 					},
 
-					increment(mut self) -> number { return self.count }
+					increment(&mut self) -> number { return self.count }
 				}
 				val mut c = Counter(0)
 			`,
@@ -173,10 +173,10 @@ func TestConstructorErrors(t *testing.T) {
 			input: `
 				class Foo {
 					x: number,
-					constructor(mut self, x: number) {
+					constructor(&mut self, x: number) {
 						self.x = x
 					},
-					constructor(mut self) {
+					constructor(&mut self) {
 						self.x = 0
 					}
 				}
@@ -196,7 +196,7 @@ func TestConstructorErrors(t *testing.T) {
 			input: `
 				class Foo {
 					x: number,
-					private constructor(mut self, x: number) {
+					private constructor(&mut self, x: number) {
 						self.x = x
 					}
 				}
@@ -238,7 +238,7 @@ func TestConstructorOwnTypeParamsInScope(t *testing.T) {
 	input := `
 		class Foo<T> {
 			x: T,
-			constructor<U>(mut self, x: T, y: U) {
+			constructor<U>(&mut self, x: T, y: U) {
 				val z: U = y
 				self.x = x
 			}
@@ -257,10 +257,10 @@ func TestConstructorParamsDoNotLeakIntoMethods(t *testing.T) {
 	input := `
 		class Foo {
 			x: number,
-			constructor(mut self, secret: number) {
+			constructor(&mut self, secret: number) {
 				self.x = secret
 			},
-			leak(self) -> number {
+			leak(&self) -> number {
 				return secret
 			}
 		}
@@ -289,10 +289,10 @@ func TestConstructorParamsDoNotLeakIntoMethodParamDefaults(t *testing.T) {
 	input := `
 		class Foo {
 			x: number,
-			constructor(mut self, secret: number) {
+			constructor(&mut self, secret: number) {
 				self.x = secret
 			},
-			scaled(self, q: number = secret) -> number {
+			scaled(&self, q: number = secret) -> number {
 				return q
 			}
 		}
@@ -332,7 +332,7 @@ func TestConstructorInferredTypes(t *testing.T) {
 			input: `
 				class Foo {
 					x: number,
-					constructor(mut self, x: number) throws string {
+					constructor(&mut self, x: number) throws string {
 						if x < 0 {
 							throw "negative"
 						}
@@ -440,7 +440,7 @@ func TestOptionalFields(t *testing.T) {
 				class Box {
 					x: number,
 					note?: string,
-					constructor(mut self, x: number) {
+					constructor(&mut self, x: number) {
 						self.x = x
 					}
 				}
@@ -455,7 +455,7 @@ func TestOptionalFields(t *testing.T) {
 				class Box {
 					x: number,
 					note?: string,
-					constructor(mut self, x: number, tag: boolean) {
+					constructor(&mut self, x: number, tag: boolean) {
 						self.x = x
 						if tag {
 							self.note = "tagged"
@@ -520,7 +520,7 @@ func TestOptionalFields(t *testing.T) {
 }
 
 // Note on `mut self` / explicit-return-type validation: the surface
-// parser already rejects `constructor(self, ...)` /
+// parser already rejects `constructor(&self, ...)` /
 // `constructor(x: number)` / `constructor(...) -> T { ... }` at parse
 // time (see `internal/parser/decl.go`), so user-typed code never
 // reaches `validateConstructorSelf`. The checker-side validation

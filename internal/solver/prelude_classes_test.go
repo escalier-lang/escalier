@@ -29,10 +29,10 @@ func TestResolvePreludeClassesNeedNoImport(t *testing.T) {
 	c := preludeClassesOf(t, map[string]string{
 		"std/prelude.esc": `
 			export declare class Array<T> {
-				at(self, index: number) -> T | undefined,
+				at(&self, index: number) -> T | undefined,
 			}
 			export declare class Promise<T, E = never> {
-				catch<U>(self, onrejected: fn (reason: E) -> U) -> Promise<T | U>,
+				catch<U>(&self, onrejected: fn (reason: E) -> U) -> Promise<T | U>,
 			}
 		`,
 	})
@@ -84,8 +84,8 @@ func TestAPreludeMissingAClassIsReported(t *testing.T) {
 			// count answers a different question than the one they ask.
 			name: "AClassOfTheWrongArity",
 			files: map[string]string{"std/prelude.esc": `
-				export declare class Array<T, U> { at(self, index: number) -> T, tag(self) -> U }
-				export declare class Promise<T> { then<U>(self, f: fn (v: T) -> U) -> Promise<U> }
+				export declare class Array<T, U> { at(&self, index: number) -> T, tag(&self) -> U }
+				export declare class Promise<T> { then<U>(&self, f: fn (v: T) -> U) -> Promise<U> }
 			`},
 			want: []string{
 				"the standard library declares `Array` with 2 type parameter(s), but the checker reads 1",
@@ -119,7 +119,7 @@ func TestAMissingPreludeClassBlamesNoSpan(t *testing.T) {
 // arrayForPromiseTests is the `Array` a tree needs beside the `Promise` under test, so
 // the run reports nothing about a class these rows are not about.
 const arrayForPromiseTests = `
-export declare class Array<T> { at(self, index: number) -> T | undefined }
+export declare class Array<T> { at(&self, index: number) -> T | undefined }
 `
 
 // promiseOf carries the declaration's own parameter defaults, so what the printer elides
@@ -136,14 +136,14 @@ func TestPromiseOfFollowsTheDeclaredShape(t *testing.T) {
 			// The rejection slot defaults to `never` and holds `never`, an absence the
 			// reader is not owed.
 			name: "AnEmptySlotDefaultingToNeverIsElided",
-			decl: `export declare class Promise<T, E = never> { then<U>(self, f: fn (v: T) -> U) -> Promise<U, E> }`,
+			decl: `export declare class Promise<T, E = never> { then<U>(&self, f: fn (v: T) -> U) -> Promise<U, E> }`,
 			want: "fn () -> Promise<1>",
 		},
 		{
 			// `unknown` is what a reference omitting the argument would resolve to, so
 			// hiding the `never` this promise actually carries would misreport it.
 			name: "ASlotDefaultingToSomethingElseIsShown",
-			decl: `export declare class Promise<T, E = unknown> { then<U>(self, f: fn (v: T) -> U) -> Promise<U, E> }`,
+			decl: `export declare class Promise<T, E = unknown> { then<U>(&self, f: fn (v: T) -> U) -> Promise<U, E> }`,
 			want: "fn () -> Promise<1, never>",
 		},
 	}

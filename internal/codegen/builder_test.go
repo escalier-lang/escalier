@@ -427,8 +427,8 @@ Color.RGB = Color__RGB;`,
 		"ClassDecl_InstanceGetterReadsField": {
 			declSource: `class Circle {
 	radius: number,
-	constructor(mut self, radius: number) { self.radius = radius },
-	get area(self) -> number { return 3.14159 * self.radius * self.radius },
+	constructor(&mut self, radius: number) { self.radius = radius },
+	get area(&self) -> number { return 3.14159 * self.radius * self.radius },
 }`,
 			ns: "",
 			expected: `class Circle {
@@ -444,7 +444,7 @@ Color.RGB = Color__RGB;`,
 		"ClassDecl_StaticMethodSeparateScope": {
 			declSource: `class Foo {
 	x: number,
-	constructor(mut self, x: number) { self.x = x },
+	constructor(&mut self, x: number) { self.x = x },
 	static create(x: number) -> number { return x * 2 },
 }`,
 			ns: "",

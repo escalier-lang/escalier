@@ -556,8 +556,8 @@ func dedupeBy[T any](members []T, key func(T) (string, error)) ([]T, error) {
 // scope. `nonMutatingNames` is the set of member names that appear on
 // ReadonlyFoo — presence on the readonly twin is positive evidence the
 // member does not mutate, so post-processing flips those members'
-// receivers from `mut self` to `self` on the emitted class. Members on
-// Foo whose names are absent from this set are left as `mut self`.
+// receivers from `&mut self` to `self` on the emitted class. Members on
+// Foo whose names are absent from this set are left as `&mut self`.
 type readonlyTwin struct {
 	mutableName      string
 	readonlyName     string

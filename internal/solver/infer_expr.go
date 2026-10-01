@@ -1807,6 +1807,41 @@ func (c *checker) recordCallArgEffects(
 	c.recordCallStoreEdges(e, fn, recv, self, consumeRef)
 }
 
+// consumeReceiver moves the receiver of a member access that reaches a consuming `self` or
+// `mut self` member, recording the move at the access's statement. `c.finish()` on a local
+// `c` leaves `c` unusable afterwards, and so does reading `val f = c.finish`, since the bound
+// method holds the instance. A receiver that names no place, such as `make().finish()`, has
+// nothing to record.
+//
+// The move is recorded directly rather than through consumeOwned. consumeOwned moves only
+// an object, tuple, or owned RefType, and a receiver is a class instance, which the move
+// engine reads as neither. The member's signature names the consuming form, so the receiver
+// is known to be owned without that test.
+func (c *checker) consumeReceiver(access ast.Node) {
+	var recv ast.Expr
+	switch access := access.(type) {
+	case *ast.MemberExpr:
+		recv = access.Object
+	case *ast.IndexExpr:
+		recv = access.Object
+	default:
+		return
+	}
+	ref, ok := c.currentStmtRef()
+	if !ok || c.fn.cfg == nil {
+		return
+	}
+	p, ok := exprPlace(recv)
+	if !ok {
+		return
+	}
+	if c.fn.movedSources == nil {
+		c.fn.movedSources = set.NewSet[ast.Node]()
+	}
+	c.fn.movedSources.Add(recv)
+	c.recordMovePlace(p, recv, ref)
+}
+
 // ctorOverloadArms returns the signatures of an overloaded constructor when t reads as a class
 // value carrying one, and false otherwise. A class declaring a single constructor is not an
 // overload set, so it stays on the ordinary callee <: callShape path where resolveFunc reads
@@ -2276,7 +2311,7 @@ func (c *checker) inferAccessorAssign(
 	// checks are independent.
 	c.raiseAccessorThrows(lvl, e, setter.ThrowsOrNever())
 	errsBefore := len(c.errs)
-	c.checkReceiverMut(e.Left, recv, setter.SelfParam)
+	c.checkReceiverMut(e.Left, m.Prop.Name, recv, setter.SelfParam)
 	c.constrain(e.Right, source, setter.Param)
 	// A concretely owned parameter takes the value out of this frame, so the source
 	// binding is consumed and a later use of it is a use-after-move. This mirrors

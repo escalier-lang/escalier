@@ -988,7 +988,7 @@ func TestCheckModuleNoErrors(t *testing.T) {
 			input: `
 				class Box {
 					value: number,
-					getValue<T>(self, default: T) -> number | T {
+					getValue<T>(&self, default: T) -> number | T {
 						if self.value != 0 {
 							return self.value
 						} else {
@@ -1025,7 +1025,7 @@ func TestCheckModuleNoErrors(t *testing.T) {
 			input: `
 				class Box<T> {
 					value: T,
-					getValue<T>(self, default: T) -> number | T {
+					getValue<T>(&self, default: T) -> number | T {
 						if self.value != 0 {
 							return self.value
 						} else {
@@ -1048,7 +1048,7 @@ func TestCheckModuleNoErrors(t *testing.T) {
 		// 	input: `
 		// 		type MyArray<T> = {
 		// 			push(item: T) -> void,
-		// 			map<U>(self, mapFn: fn(elem: T, index: number) -> U) -> Array<U>,
+		// 			map<U>(&self, mapFn: fn(elem: T, index: number) -> U) -> Array<U>,
 		// 			length: number,
 		// 		}
 		// 		type MyArrayConstructor = {
@@ -1306,7 +1306,7 @@ func TestCheckModuleNoErrors(t *testing.T) {
 		"GenericMethodInClass": {
 			input: `
 				class Foo {
-					bar<T>(self, value: T) -> T {
+					bar<T>(&self, value: T) -> T {
 						return value
 					}
 				}

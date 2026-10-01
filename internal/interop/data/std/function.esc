@@ -17,28 +17,28 @@ export declare class Function {
      * A constructor function can control which objects are recognized as its instances by
      * 'instanceof' by overriding this method.
      */
-    [Symbol.hasInstance](self, value: unknown) -> boolean,
+    [Symbol.hasInstance](&self, value: unknown) -> boolean,
     /**
      * Calls the function, substituting the specified object for the this value of the function, and the specified array for the arguments of the function.
      * @param thisArg The object to be used as the this object.
      * @param argArray A set of arguments to be passed to the function.
      */
-    apply(self, this: Function, thisArg: unknown, argArray?: unknown) -> any,
+    apply(&self, this: Function, thisArg: unknown, argArray?: unknown) -> any,
     /**
      * Calls a method of an object, substituting another object for the current object.
      * @param thisArg The object to be used as the current object.
      * @param argArray A list of arguments to be passed to the method.
      */
-    call(self, this: Function, thisArg: unknown, ...argArray: mut Array<any>) -> any,
+    call(&self, this: Function, thisArg: unknown, ...argArray: mut Array<any>) -> any,
     /**
      * For a given function, creates a bound function that has the same body as the original function.
      * The this object of the bound function is associated with the specified object, and has the specified initial parameters.
      * @param thisArg An object to which the this keyword can refer inside the new function.
      * @param argArray A list of arguments to be passed to the new function.
      */
-    bind(self, this: Function, thisArg: unknown, ...argArray: mut Array<any>) -> any,
+    bind(&self, this: Function, thisArg: unknown, ...argArray: mut Array<any>) -> any,
     /** Returns a string representation of a function. */
-    toString(self) -> string,
+    toString(&self) -> string,
     prototype: any,
     readonly length: number,
     arguments: any,
@@ -48,7 +48,7 @@ export declare class Function {
      * Creates a new function.
      * @param args A list of arguments the function accepts.
      */
-    constructor(mut self, ...args: mut Array<string>),
+    constructor(&mut self, ...args: mut Array<string>),
     (...args: mut Array<string>) -> Function,
     static readonly prototype: Function
 }

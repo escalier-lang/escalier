@@ -32,7 +32,7 @@ func TestConstructorDefiniteAssignmentOK(t *testing.T) {
 			class Point {
 				x: number,
 				y: number,
-				constructor(mut self, x: number, y: number) {
+				constructor(&mut self, x: number, y: number) {
 					self.x = x
 					self.y = y
 				}
@@ -42,7 +42,7 @@ func TestConstructorDefiniteAssignmentOK(t *testing.T) {
 			class Email {
 				local: string,
 				domain: string,
-				constructor(mut self, raw: string) {
+				constructor(&mut self, raw: string) {
 					val parts = raw
 					self.local = parts
 					self.domain = parts
@@ -53,7 +53,7 @@ func TestConstructorDefiniteAssignmentOK(t *testing.T) {
 			class Range {
 				lo: number,
 				hi: number,
-				constructor(mut self, a: number, b: number) {
+				constructor(&mut self, a: number, b: number) {
 					if a < b {
 						self.lo = a
 						self.hi = b
@@ -67,7 +67,7 @@ func TestConstructorDefiniteAssignmentOK(t *testing.T) {
 		"ThrowingBranchExcusedFromAssignment": `
 			class Pos {
 				v: number,
-				constructor(mut self, x: number) throws string {
+				constructor(&mut self, x: number) throws string {
 					if x < 0 {
 						throw "negative"
 					}
@@ -85,7 +85,7 @@ func TestConstructorDefiniteAssignmentOK(t *testing.T) {
 			val k = "x"
 			class Foo {
 				x: number,
-				constructor(mut self, x: number) {
+				constructor(&mut self, x: number) {
 					self.x = x
 					val v = self[k]
 				}
@@ -96,7 +96,7 @@ func TestConstructorDefiniteAssignmentOK(t *testing.T) {
 			class Foo {
 				[k]: number,
 				name: string,
-				constructor(mut self, name: string, tag: number = 42) {
+				constructor(&mut self, name: string, tag: number = 42) {
 					self.name = name
 					self[k] = tag
 				}
@@ -107,7 +107,7 @@ func TestConstructorDefiniteAssignmentOK(t *testing.T) {
 				a: number,
 				b: number,
 				c: number,
-				constructor(mut self, x: number, y: number, z: number) {
+				constructor(&mut self, x: number, y: number, z: number) {
 					if x < 0 {
 						self.a = x
 						self.b = y
@@ -129,7 +129,7 @@ func TestConstructorDefiniteAssignmentOK(t *testing.T) {
 		"MatchOneArmThrows": `
 			class Foo {
 				v: number,
-				constructor(mut self, x: number) throws string {
+				constructor(&mut self, x: number) throws string {
 					match x {
 						0 => throw "zero",
 						_ => self.v = x,
@@ -140,18 +140,18 @@ func TestConstructorDefiniteAssignmentOK(t *testing.T) {
 		"MethodCallAfterAllInit": `
 			class Foo {
 				x: number,
-				constructor(mut self, x: number) {
+				constructor(&mut self, x: number) {
 					self.x = x
 					self.bump()
 				},
-				bump(self) -> number { return self.x }
+				bump(&self) -> number { return self.x }
 			}
 		`,
 		"PassSelfToExternalFnAfterAllInit": `
 			fn observe<T>(t: T) -> T { return t }
 			class Foo {
 				x: number,
-				constructor(mut self, x: number) {
+				constructor(&mut self, x: number) {
 					self.x = x
 					observe(self)
 				}
@@ -186,7 +186,7 @@ func TestConstructorDefiniteAssignmentOK(t *testing.T) {
 		"ReadonlyFieldCanBeInitialized": `
 			class Foo {
 				readonly x: number,
-				constructor(mut self, x: number) {
+				constructor(&mut self, x: number) {
 					self.x = x
 				}
 			}
@@ -212,7 +212,7 @@ func TestConstructorDefiniteAssignmentErrors(t *testing.T) {
 				class User {
 					name: string,
 					age: number,
-					constructor(mut self, name: string, age: number) {
+					constructor(&mut self, name: string, age: number) {
 						self.name = name
 					}
 				}
@@ -223,7 +223,7 @@ func TestConstructorDefiniteAssignmentErrors(t *testing.T) {
 			input: `
 				class User {
 					name: string,
-					constructor(mut self, name: string) {
+					constructor(&mut self, name: string) {
 						val n = self.name
 						self.name = name
 					}
@@ -236,7 +236,7 @@ func TestConstructorDefiniteAssignmentErrors(t *testing.T) {
 				class Range {
 					lo: number,
 					hi: number,
-					constructor(mut self, a: number, b: number) {
+					constructor(&mut self, a: number, b: number) {
 						self.lo = a
 						if a < b {
 							self.hi = b
@@ -250,7 +250,7 @@ func TestConstructorDefiniteAssignmentErrors(t *testing.T) {
 			input: `
 				class Foo {
 					x: number,
-					constructor(mut self, x: number) {
+					constructor(&mut self, x: number) {
 						val r = self
 						self.x = x
 					}
@@ -262,11 +262,11 @@ func TestConstructorDefiniteAssignmentErrors(t *testing.T) {
 			input: `
 				class Foo {
 					x: number,
-					constructor(mut self, x: number) {
+					constructor(&mut self, x: number) {
 						self.helper()
 						self.x = x
 					},
-					helper(self) -> number { return 0 }
+					helper(&self) -> number { return 0 }
 				}
 			`,
 			expected: "before all required fields",
@@ -275,7 +275,7 @@ func TestConstructorDefiniteAssignmentErrors(t *testing.T) {
 			input: `
 				class Foo {
 					x: number,
-					constructor(mut self, xs: Array<number>) {
+					constructor(&mut self, xs: Array<number>) {
 						for v in xs {
 							self.x = v
 						}
@@ -289,7 +289,7 @@ func TestConstructorDefiniteAssignmentErrors(t *testing.T) {
 				val k = "name"
 				class Foo {
 					name: string,
-					constructor(mut self, name: string) {
+					constructor(&mut self, name: string) {
 						val n = self[k]
 						self.name = name
 					}
@@ -303,7 +303,7 @@ func TestConstructorDefiniteAssignmentErrors(t *testing.T) {
 				class Foo {
 					name: string,
 					age: number,
-					constructor(mut self, name: string, age: number) {
+					constructor(&mut self, name: string, age: number) {
 						self[k] = name
 						self.age = age
 					}
@@ -316,7 +316,7 @@ func TestConstructorDefiniteAssignmentErrors(t *testing.T) {
 				fn observe<T>(t: T) -> T { return t }
 				class Foo {
 					x: number,
-					constructor(mut self, x: number) {
+					constructor(&mut self, x: number) {
 						observe(self)
 						self.x = x
 					}
@@ -328,7 +328,7 @@ func TestConstructorDefiniteAssignmentErrors(t *testing.T) {
 			input: `
 				class Foo {
 					x: number,
-					constructor(mut self, x: number) {
+					constructor(&mut self, x: number) {
 						return self
 					}
 				}
@@ -339,7 +339,7 @@ func TestConstructorDefiniteAssignmentErrors(t *testing.T) {
 			input: `
 				class Foo {
 					x: number,
-					constructor(mut self, x: number) {
+					constructor(&mut self, x: number) {
 						val r = try {
 							x
 						} catch {
@@ -363,7 +363,7 @@ func TestConstructorDefiniteAssignmentErrors(t *testing.T) {
 			input: `
 				class Foo {
 					readonly x: number,
-					constructor(mut self, x: number) {
+					constructor(&mut self, x: number) {
 						self.x = x
 						val f = fn () {
 							self.x = 0

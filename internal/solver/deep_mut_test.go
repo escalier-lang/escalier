@@ -347,7 +347,7 @@ var mutReceiverCarriers = []struct {
 			return `
 				class Box {
 					inner: {n: number},
-					constructor(mut self, inner: {n: number}) { self.inner = inner },
+					constructor(&mut self, inner: {n: number}) { self.inner = inner },
 				}
 				fn go(b: ` + m + `Box) -> number { b.inner.n = 1  return 0 }`
 		},
@@ -358,7 +358,7 @@ var mutReceiverCarriers = []struct {
 			return `
 				class Box {
 					inner: {n: number},
-					constructor(mut self, inner: {n: number}) { self.inner = inner },
+					constructor(&mut self, inner: {n: number}) { self.inner = inner },
 					grow(` + m + `self) { self.inner.n = 1 },
 				}`
 		},
@@ -395,7 +395,7 @@ func TestMutReceiverReachesAChainedField(t *testing.T) {
 	const src = `
 		class Inner {
 			b: {n: number},
-			constructor(mut self, b: {n: number}) { self.b = b },
+			constructor(&mut self, b: {n: number}) { self.b = b },
 		}
 		type Outer = {a: Inner}
 		fn go(c: %sOuter) -> number { c.a.b.n = 1  return 0 }`
@@ -436,7 +436,7 @@ func TestAClassFieldReadKeepsItsProjectionAndItsMiss(t *testing.T) {
 		values, _, errs := inferSource(t, `
 			class Box<T> {
 				inner: T,
-				constructor(mut self, inner: T) { self.inner = inner },
+				constructor(&mut self, inner: T) { self.inner = inner },
 			}
 			val b = Box({n: 1})
 			val r = b.inner`)
@@ -447,10 +447,10 @@ func TestAClassFieldReadKeepsItsProjectionAndItsMiss(t *testing.T) {
 		values, _, errs := inferSource(t, `
 			class Animal {
 				name: string,
-				constructor(mut self, name: string) { self.name = name },
+				constructor(&mut self, name: string) { self.name = name },
 			}
 			class Dog extends Animal {
-				constructor(mut self, name: string) { super(name) },
+				constructor(&mut self, name: string) { super(name) },
 			}
 			val d = Dog("rex")
 			val r = d.name`)
@@ -461,7 +461,7 @@ func TestAClassFieldReadKeepsItsProjectionAndItsMiss(t *testing.T) {
 		_, _, errs := inferSource(t, `
 			class Box {
 				n: number,
-				constructor(mut self, n: number) { self.n = n },
+				constructor(&mut self, n: number) { self.n = n },
 			}
 			val b = Box(1)
 			val r = b.nope`)
@@ -481,9 +481,9 @@ func TestMutSelfMethodNeedsAMutableReceiver(t *testing.T) {
 	const items = `
 		class Items {
 			n: number,
-			constructor(mut self, n: number) { self.n = n },
-			bump(mut self) { self.n = 1 },
-			read(self) -> number { return self.n },
+			constructor(&mut self, n: number) { self.n = n },
+			bump(&mut self) { self.n = 1 },
+			read(&self) -> number { return self.n },
 		}
 `
 	const want = "cannot constrain immutable Items <: mutable Items"
@@ -519,7 +519,7 @@ func TestMutSelfMethodNeedsAMutableReceiver(t *testing.T) {
 			src: items + `
 				class Config {
 					items: Items,
-					constructor(mut self, items: Items) { self.items = items },
+					constructor(&mut self, items: Items) { self.items = items },
 				}
 				fn go(c: mut Config) -> number { c.items.bump()  return 0 }`,
 		},
@@ -528,7 +528,7 @@ func TestMutSelfMethodNeedsAMutableReceiver(t *testing.T) {
 			src: items + `
 				class Config {
 					items: Items,
-					constructor(mut self, items: Items) { self.items = items },
+					constructor(&mut self, items: Items) { self.items = items },
 				}
 				fn go(c: Config) -> number { c.items.bump()  return 0 }`,
 			errs: []string{want},
@@ -538,8 +538,8 @@ func TestMutSelfMethodNeedsAMutableReceiver(t *testing.T) {
 			src: items + `
 				class Sub {
 					it: Items,
-					constructor(mut self, it: Items) { self.it = it },
-					go(mut self) { self.it.bump() },
+					constructor(&mut self, it: Items) { self.it = it },
+					go(&mut self) { self.it.bump() },
 				}`,
 		},
 		{
@@ -547,8 +547,8 @@ func TestMutSelfMethodNeedsAMutableReceiver(t *testing.T) {
 			src: items + `
 				class Sub {
 					it: Items,
-					constructor(mut self, it: Items) { self.it = it },
-					go(self) { self.it.bump() },
+					constructor(&mut self, it: Items) { self.it = it },
+					go(&self) { self.it.bump() },
 				}`,
 			errs: []string{want},
 		},
@@ -557,11 +557,11 @@ func TestMutSelfMethodNeedsAMutableReceiver(t *testing.T) {
 			src: `
 				class Base {
 					n: number,
-					constructor(mut self, n: number) { self.n = n },
-					bump(mut self) { self.n = 1 },
+					constructor(&mut self, n: number) { self.n = n },
+					bump(&mut self) { self.n = 1 },
 				}
 				class Derived extends Base {
-					constructor(mut self) { super(0) },
+					constructor(&mut self) { super(0) },
 				}
 				fn go(d: Derived) -> number { d.bump()  return 0 }`,
 			errs: []string{"cannot constrain immutable Base <: mutable Base"},
@@ -585,9 +585,9 @@ func TestOverloadedMutSelfMethodNeedsAMutableReceiver(t *testing.T) {
 	const src = `
 		class C {
 			n: number,
-			constructor(mut self, n: number) { self.n = n },
-			f(mut self, x: number) -> number { return x },
-			f(mut self, x: string) -> string { return x },
+			constructor(&mut self, n: number) { self.n = n },
+			f(&mut self, x: number) -> number { return x },
+			f(&mut self, x: string) -> string { return x },
 		}
 		val %s c = C(0)
 		val r = c.f(1)
@@ -617,8 +617,8 @@ func TestValMutUpgradesAnOwnedCallResult(t *testing.T) {
 	const counter = `
 		class Counter {
 			n: number,
-			constructor(mut self, n: number) { self.n = n },
-			bump(mut self) { self.n = 1 },
+			constructor(&mut self, n: number) { self.n = n },
+			bump(&mut self) { self.n = 1 },
 		}
 `
 	tests := []struct {
@@ -761,7 +761,7 @@ func TestMutReceiverFollowsAnAliasChain(t *testing.T) {
 			src: `
 				class Box {
 					inner: {n: number},
-					constructor(mut self, inner: {n: number}) { self.inner = inner },
+					constructor(&mut self, inner: {n: number}) { self.inner = inner },
 				}
 				type B1 = Box
 				type B2 = B1
@@ -809,7 +809,7 @@ func TestMutReceiverFollowsAnAliasChain(t *testing.T) {
 // The shape the committed stdlib tree writes, and the case #1554 needs before it can drop
 // the `mut` its fields carry: an interface whose field is a generic class carrying a
 // `mut self` mutator. `web:web_rtc` declares `certificates?: mut Array<RTCCertificate>`,
-// and `std:prelude` declares `push(mut self, ...items: mut Array<T>) -> number`.
+// and `std:prelude` declares `push(&mut self, ...items: mut Array<T>) -> number`.
 //
 // `config.certificates.push(cert)` exercises both halves of this change at once. The
 // receiver's mutability has to reach the field, and then satisfy `push`'s own `mut self`.
@@ -828,8 +828,8 @@ func TestMutSelfMethodOnAGenericFieldOfAnInterface(t *testing.T) {
 		export declare class RTCCertificate { expires: number }
 		export declare class List<T> {
 			length: number,
-			push(mut self, item: &T) -> number,
-			at(self, index: number) -> T,
+			push(&mut self, item: &T) -> number,
+			at(&self, index: number) -> T,
 		}
 		export declare interface RTCConfiguration {
 			certificates: List<RTCCertificate>,
@@ -985,8 +985,8 @@ func TestMutSelfMethodReachableOnAnOwnedCallResult(t *testing.T) {
 	const src = `
 		class Counter {
 			n: number,
-			constructor(mut self, n: number) { self.n = n },
-			bump(mut self) { self.n = 1 },
+			constructor(&mut self, n: number) { self.n = n },
+			bump(&mut self) { self.n = 1 },
 		}
 		fn make() -> Counter { return Counter(0) }
 		fn go() -> number { val %s d = make()  d.bump()  return 0 }`

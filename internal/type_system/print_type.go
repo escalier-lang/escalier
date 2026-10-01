@@ -390,7 +390,7 @@ func printPatternWithInlineTypesContext(pattern Pat, paramType Type, pt func(Typ
 }
 
 // printFuncSig prints a function signature body — generic params,
-// parameter list (optionally with a leading `self` / `mut self`),
+// parameter list (optionally with a leading `&self` / `&mut self`),
 // return type, and throws clause — after the caller-supplied
 // `header` (e.g. `"fn "` for bare function types, or a method name
 // for method-elem arms).
@@ -399,7 +399,7 @@ func printPatternWithInlineTypesContext(pattern Pat, paramType Type, pt func(Typ
 // function values pass false: even when the FuncType originated
 // from a method, the receiver is already bound at the use site
 // (`val f = obj.method`) and shouldn't resurface. Method-elem
-// arms pass true so that `self` / `mut self` appears in the
+// arms pass true so that `&self` / `&mut self` appears in the
 // printed signature.
 func printFuncSig(header string, fn *FuncType, includeSelf bool, pt func(Type) string) string {
 	result := header
@@ -431,10 +431,7 @@ func printFuncSig(header string, fn *FuncType, includeSelf bool, pt func(Type) s
 	result += "("
 	hasSelf := includeSelf && fn.SelfParam != nil
 	if hasSelf {
-		if ReceiverIsMut(fn) {
-			result += "mut "
-		}
-		result += "self"
+		result += printSelfReceiver(fn)
 	}
 	for i, param := range fn.Params {
 		if i > 0 || hasSelf {
@@ -578,16 +575,21 @@ func printObjectType(t *ObjectType, pt func(Type) string) string {
 	return result
 }
 
-// printSelfReceiver renders the leading `self` / `mut self` for a method,
-// getter, or setter. Returns "" when the receiver is absent.
+// printSelfReceiver renders the leading receiver for a method, getter, or
+// setter: `&self`, `&mut self`, `self`, or `mut self`. Returns "" when the
+// receiver is absent.
 func printSelfReceiver(fn *FuncType) string {
 	if fn == nil || fn.SelfParam == nil {
 		return ""
 	}
-	if ReceiverIsMut(fn) {
-		return "mut self"
+	prefix := "&"
+	if ReceiverConsumes(fn) {
+		prefix = ""
 	}
-	return "self"
+	if ReceiverIsMut(fn) {
+		return prefix + "mut self"
+	}
+	return prefix + "self"
 }
 
 func printTupleType(t *TupleType, pt func(Type) string) string {

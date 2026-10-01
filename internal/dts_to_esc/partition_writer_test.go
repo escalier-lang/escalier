@@ -585,10 +585,10 @@ declare var Array: ArrayConstructor;
 	snaps.MatchInlineSnapshot(t, printed, snaps.Inline(`@js("Array")
 export declare class Array<T> {
     length: number,
-    push(mut self, ...items: mut Array<T>) -> number,
-    concat(self, items: Array<T>) -> mut Array<T>,
-    readArr(mut self, items: Array<T>) -> unknown,
-    constructor(mut self),
+    push(&mut self, ...items: mut Array<T>) -> number,
+    concat(&self, items: Array<T>) -> mut Array<T>,
+    readArr(&mut self, items: Array<T>) -> unknown,
+    constructor(&mut self),
     static readonly prototype: mut Array<any>
 }`))
 
@@ -965,11 +965,11 @@ interface MapConstructor {
 	// two were, with every genuinely distinct overload kept.
 	snaps.MatchInlineSnapshot(t, printed, snaps.Inline(`@js("Map")
 export declare class Map<K, V> {
-    get(self, key: K) -> V | undefined,
-    keys(self) -> IterableIterator<K>,
-    constructor(mut self),
-    constructor(mut self, entries?: ReadonlyArray<[K, V]> | null),
-    constructor(mut self, iterable?: Iterable<[K, V]> | null)
+    get(&self, key: K) -> V | undefined,
+    keys(&self) -> IterableIterator<K>,
+    constructor(&mut self),
+    constructor(&mut self, entries?: ReadonlyArray<[K, V]> | null),
+    constructor(&mut self, iterable?: Iterable<[K, V]> | null)
 }`))
 }
 
@@ -1073,7 +1073,7 @@ declare global {
 	require.NoError(t, err)
 	snaps.MatchInlineSnapshot(t, printed, snaps.Inline(`@js("Iterator")
 export declare class Iterator<T, TReturn = any> {
-    next(mut self) -> T,
+    next(&mut self) -> T,
     static readonly prototype: Iterator<any>
 }
 `))

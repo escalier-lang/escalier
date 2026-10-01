@@ -26,7 +26,7 @@ func TestSelfReceiverStoreEdge(t *testing.T) {
 			src: `
 				class Holder<'a> {
 					peer: &'a mut {value: number},
-					put(mut self, p: &'a mut {value: number}) -> undefined { self.peer = p },
+					put(&mut self, p: &'a mut {value: number}) -> undefined { self.peer = p },
 				}
 
 				fn build(p: mut {value: number}, out: &mut {slot: &mut {value: number}}) {
@@ -49,7 +49,7 @@ func TestSelfReceiverStoreEdge(t *testing.T) {
 			src: `
 				class Holder<'a> {
 					peer: &'a mut {value: number},
-					put(mut self, p: &'a mut {value: number}) -> undefined { self.peer = p },
+					put(&mut self, p: &'a mut {value: number}) -> undefined { self.peer = p },
 				}
 
 				fn build<'x>(h: &mut Holder<'x>) -> undefined {
@@ -69,7 +69,7 @@ func TestSelfReceiverStoreEdge(t *testing.T) {
 			src: `
 				class Holder<'a> {
 					peer: &'a mut {value: number},
-					look(self, p: &'a mut {value: number}) -> undefined { },
+					look(&self, p: &'a mut {value: number}) -> undefined { },
 				}
 
 				fn build(p: mut {value: number}) -> &mut {value: number} {
@@ -92,7 +92,7 @@ func TestSelfReceiverStoreEdge(t *testing.T) {
 			src: `
 				class Holder<'a> {
 					peer: &'a mut {value: number},
-					put(mut self, p: &'a mut {value: number}) -> undefined { self.peer = p },
+					put(&mut self, p: &'a mut {value: number}) -> undefined { self.peer = p },
 				}
 
 				fn build(p: mut {value: number}, out: &mut {slot: &mut {value: number}}) {
@@ -132,7 +132,7 @@ func TestSelfReceiverIsAStoreSource(t *testing.T) {
 	_, _, errs := inferSource(t, `
 		class Holder<'a> {
 			peer: &'a mut {value: number},
-			drain(self, out: &mut {slot: &'a mut {value: number}}) -> undefined { out.slot = self.peer },
+			drain(&self, out: &mut {slot: &'a mut {value: number}}) -> undefined { out.slot = self.peer },
 		}
 
 		fn build(p: mut {value: number}, sink: &mut {slot: &mut {value: number}}) {

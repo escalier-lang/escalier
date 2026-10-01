@@ -186,7 +186,7 @@ func TestInferGenericDeclareFuncNotProducibilityChecked(t *testing.T) {
 func TestInferGenericMethodResolves(t *testing.T) {
 	values, _, errs := inferSource(t, `
 		class Box {
-			wrap<T>(self, x: T) -> T { return x }
+			wrap<T>(&self, x: T) -> T { return x }
 		}
 		fn probe(b: Box) { return b.wrap }
 	`)

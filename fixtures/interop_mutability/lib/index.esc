@@ -79,10 +79,10 @@ fn cannot_sort_immutable(xs: Array<number>) {
 
 class Cache {
     items: Array<number>,
-    getValue(self) {
+    getValue(&self) {
         return self.items.length
     },
-    getOrInsert(mut self, _key: string, default_: number) {
+    getOrInsert(&mut self, _key: string, default_: number) {
         return default_
     },
 }
@@ -103,16 +103,16 @@ fn cannot_get_or_insert_on_immutable(c: Cache) {
 // copy (clone), default-mutating (render).
 class Widget {
     name: string,
-    isReady(self) {
+    isReady(&self) {
         return true
     },
-    toJSON(self) {
+    toJSON(&self) {
         return self.name
     },
-    clone(self) {
+    clone(&self) {
         return Widget(self.name)
     },
-    render(mut self) {
+    render(&mut self) {
         self.name = ""
     },
 }

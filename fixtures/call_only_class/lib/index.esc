@@ -8,7 +8,7 @@ export val flag = boolean.Boolean(0)
 // emits the `new`.
 class Box {
     value: number,
-    constructor(mut self, value: number) {
+    constructor(&mut self, value: number) {
         self.value = value
     },
 }

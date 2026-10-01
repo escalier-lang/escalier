@@ -483,7 +483,7 @@ func TestAttachCommentsOnObjectTypeMembers(t *testing.T) {
 		},
 		{
 			name: "above a method",
-			src:  "type T = {\n    // about the method\n    m(self) -> number,\n}\n",
+			src:  "type T = {\n    // about the method\n    m(&self) -> number,\n}\n",
 			want: []string{"leading *ast.MethodTypeAnn // about the method"},
 		},
 		{

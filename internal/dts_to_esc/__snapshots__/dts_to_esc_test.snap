@@ -4,9 +4,9 @@
 @js("Boolean")
 export declare class Boolean {
     /** Returns the primitive value of the specified object. */
-    valueOf(self) -> boolean,
+    valueOf(&self) -> boolean,
     /** Constructs a new Boolean wrapper around a value. */
-    constructor(mut self, value?: unknown),
+    constructor(&mut self, value?: unknown),
     /** Coerces a value to a primitive boolean. */
     <T>(value?: T) -> boolean,
     /** The Boolean prototype object. */

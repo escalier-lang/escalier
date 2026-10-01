@@ -19,7 +19,7 @@ export declare class URL {
     hostname: string,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/URL/href) */
     href: string,
-    toString(self) -> string,
+    toString(&self) -> string,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/URL/origin) */
     readonly origin: string,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/URL/password) */
@@ -37,9 +37,9 @@ export declare class URL {
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/URL/username) */
     username: string,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/URL/toJSON) */
-    toJSON(self) -> string,
+    toJSON(&self) -> string,
     static prototype: URL,
-    constructor(mut self, url: string | URL, base?: string | URL),
+    constructor(&mut self, url: string | URL, base?: string | URL),
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/URL/canParse_static) */
     static canParse(url: string | URL, base?: string | URL) -> boolean,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/URL/createObjectURL_static) */
@@ -60,51 +60,51 @@ export declare class URLSearchParams {
      *
      * [MDN Reference](https://developer.mozilla.org/docs/Web/API/URLSearchParams/append)
      */
-    append(mut self, name: string, value: string) -> unknown,
+    append(&mut self, name: string, value: string) -> unknown,
     /**
      * Deletes the given search parameter, and its associated value, from the list of all search parameters.
      *
      * [MDN Reference](https://developer.mozilla.org/docs/Web/API/URLSearchParams/delete)
      */
-    delete(mut self, name: string, value?: string) -> unknown,
+    delete(&mut self, name: string, value?: string) -> unknown,
     /**
      * Returns the first value associated to the given search parameter.
      *
      * [MDN Reference](https://developer.mozilla.org/docs/Web/API/URLSearchParams/get)
      */
-    get(self, name: string) -> string | null,
+    get(&self, name: string) -> string | null,
     /**
      * Returns all the values association with a given search parameter.
      *
      * [MDN Reference](https://developer.mozilla.org/docs/Web/API/URLSearchParams/getAll)
      */
-    getAll(self, name: string) -> mut Array<string>,
+    getAll(&self, name: string) -> mut Array<string>,
     /**
      * Returns a Boolean indicating if such a search parameter exists.
      *
      * [MDN Reference](https://developer.mozilla.org/docs/Web/API/URLSearchParams/has)
      */
-    has(self, name: string, value?: string) -> boolean,
+    has(&self, name: string, value?: string) -> boolean,
     /**
      * Sets the value associated to a given search parameter to the given value. If there were several values, delete the others.
      *
      * [MDN Reference](https://developer.mozilla.org/docs/Web/API/URLSearchParams/set)
      */
-    set(mut self, name: string, value: string) -> unknown,
+    set(&mut self, name: string, value: string) -> unknown,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/URLSearchParams/sort) */
-    sort(mut self) -> unknown,
+    sort(&mut self) -> unknown,
     /** Returns a string containing a query string suitable for use in a URL. Does not include the question mark. */
-    toString(self) -> string,
-    forEach(self, callbackfn: fn (value: string, key: string, parent: URLSearchParams) -> unknown, thisArg?: unknown) -> unknown,
-    [Symbol.iterator](self) -> URLSearchParamsIterator<[string, string]>,
+    toString(&self) -> string,
+    forEach(&self, callbackfn: fn (value: string, key: string, parent: URLSearchParams) -> unknown, thisArg?: unknown) -> unknown,
+    [Symbol.iterator](&self) -> URLSearchParamsIterator<[string, string]>,
     /** Returns an array of key, value pairs for every entry in the search params. */
-    entries(self) -> URLSearchParamsIterator<[string, string]>,
+    entries(&self) -> URLSearchParamsIterator<[string, string]>,
     /** Returns a list of keys in the search params. */
-    keys(self) -> URLSearchParamsIterator<string>,
+    keys(&self) -> URLSearchParamsIterator<string>,
     /** Returns a list of values in the search params. */
-    values(self) -> URLSearchParamsIterator<string>,
+    values(&self) -> URLSearchParamsIterator<string>,
     static prototype: URLSearchParams,
-    constructor(mut self, init?: mut Array<mut Array<string>> | Record<string, string> | string | URLSearchParams)
+    constructor(&mut self, init?: mut Array<mut Array<string>> | Record<string, string> | string | URLSearchParams)
 }
 
 export declare interface URLSearchParamsIterator<T> extends IteratorObject<T, BuiltinIteratorReturn, unknown> {

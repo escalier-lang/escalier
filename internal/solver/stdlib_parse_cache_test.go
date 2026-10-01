@@ -17,7 +17,7 @@ func TestACachedModuleServesIndependentRuns(t *testing.T) {
 	t.Parallel()
 
 	dir := seedStdlib(t, withPreludeClasses(map[string]string{
-		"std/box.esc": `export declare class Box<T> { get(self) -> T }`,
+		"std/box.esc": `export declare class Box<T> { get(&self) -> T }`,
 	}))
 
 	// The two runs instantiate the same declaration at different arguments. A
@@ -66,7 +66,7 @@ func TestTheParseCacheServesASecondLoad(t *testing.T) {
 func TestTheParseCacheSharesAcrossPaths(t *testing.T) {
 	t.Parallel()
 
-	const pkg = `export declare class Box<T> { get(self) -> T }`
+	const pkg = `export declare class Box<T> { get(&self) -> T }`
 	first := seedStdlib(t, withPreludeClasses(map[string]string{"std/box.esc": pkg}))
 	second := seedStdlib(t, withPreludeClasses(map[string]string{"std/box.esc": pkg}))
 	require.NotEqual(t, first, second, "the two trees are different directories")

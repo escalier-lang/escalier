@@ -337,7 +337,7 @@ import "web:webgl"
 
 @js("HTMLCanvasElement")
 export declare class HTMLCanvasElement {
-    getContext(self, id: "webgl") -> webgl.WebGLRenderingContext,
+    getContext(&self, id: "webgl") -> webgl.WebGLRenderingContext,
 }
 `,
 		"web/webgl.esc": `
@@ -415,7 +415,7 @@ import "web:webgl"
 
 @js("HTMLCanvasElement")
 export declare class HTMLCanvasElement {
-    getContext(self, id: "webgl") -> webgl.WebGLRenderingContext,
+    getContext(&self, id: "webgl") -> webgl.WebGLRenderingContext,
 }
 `,
 		"web/webgl.esc": `
@@ -510,7 +510,7 @@ import "web:webgl"
 
 @js("HTMLCanvasElement")
 export declare class HTMLCanvasElement {
-    getContext(self, id: "webgl") -> webgl.WebGLRenderingContext,
+    getContext(&self, id: "webgl") -> webgl.WebGLRenderingContext,
 }
 `,
 		"web/webgl.esc": `
@@ -543,7 +543,7 @@ import "web:webgl"
 
 @js("HTMLCanvasElement")
 export declare class HTMLCanvasElement {
-    getContext(self, id: "webgl") -> webgl.WebGLRenderingContext,
+    getContext(&self, id: "webgl") -> webgl.WebGLRenderingContext,
 }
 `,
 		"web/webgl.esc": `
@@ -583,7 +583,7 @@ import "web:webgl"
 
 @js("HTMLCanvasElement")
 export declare class HTMLCanvasElement {
-    getContext(self, id: "webgl") -> webgl.WebGLRenderingContext,
+    getContext(&self, id: "webgl") -> webgl.WebGLRenderingContext,
 }
 `,
 		// webgl.esc parses its import line, then fails on the trailing
@@ -647,7 +647,7 @@ export type HTMLElementTagNameMap = {
 
 @js("Document")
 export declare class Document {
-    createElement<K: keyof HTMLElementTagNameMap>(self, tag: K) -> HTMLElementTagNameMap[K],
+    createElement<K: keyof HTMLElementTagNameMap>(&self, tag: K) -> HTMLElementTagNameMap[K],
 }
 `,
 	})
@@ -684,7 +684,7 @@ export type HTMLElementTagNameMap = {
 
 @js("Document")
 export declare class Document {
-    createElement<K: keyof HTMLElementTagNameMap>(self, tag: K) -> HTMLElementTagNameMap[K],
+    createElement<K: keyof HTMLElementTagNameMap>(&self, tag: K) -> HTMLElementTagNameMap[K],
 }
 `,
 	})
@@ -719,8 +719,8 @@ export declare class HTMLDivElement {}
 
 @js("Document")
 export declare class Document {
-    createElement(self, tag: "canvas") -> HTMLCanvasElement,
-    createElement(self, tag: "div") -> HTMLDivElement,
+    createElement(&self, tag: "canvas") -> HTMLCanvasElement,
+    createElement(&self, tag: "div") -> HTMLDivElement,
 }
 `,
 	})
@@ -764,8 +764,8 @@ export type HTMLElementEventMap = {
 
 @js("HTMLElement")
 export declare class HTMLElement {
-    addEventListener<K: keyof HTMLElementEventMap>(self, kind:K, listener: fn(ev:HTMLElementEventMap[K]) -> undefined) -> undefined,
-    addEventListener(self, kind:string, listener: fn(ev:Event) -> undefined) -> undefined,
+    addEventListener<K: keyof HTMLElementEventMap>(&self, kind:K, listener: fn(ev:HTMLElementEventMap[K]) -> undefined) -> undefined,
+    addEventListener(&self, kind:string, listener: fn(ev:Event) -> undefined) -> undefined,
 }
 `,
 	})
@@ -792,8 +792,8 @@ func TestStdlibImport_OverloadReceiverMutMismatch(t *testing.T) {
 		"web/dom.esc": `
 @js("Document")
 export declare class Document {
-    swap(self, tag: "a") -> number,
-    swap(mut self, tag: "b") -> number,
+    swap(&self, tag: "a") -> number,
+    swap(&mut self, tag: "b") -> number,
 }
 `,
 	})
@@ -805,7 +805,7 @@ import "web:dom"
 	require.Equal(t,
 		[]string{
 			"Method 'swap' overload arms disagree on receiver shape: " +
-				"first arm declares `self`, but a later arm declares `mut self`. " +
+				"first arm declares `&self`, but a later arm declares `&mut self`. " +
 				"All overload arms must share the same receiver shape.",
 		},
 		errorMessages(errs),
@@ -847,8 +847,8 @@ export type MathMLElementTagNameMap = {
 
 @js("Document")
 export declare class Document {
-    createElementNS<K: keyof SVGElementTagNameMap>(self, ns: "http://www.w3.org/2000/svg", qualifiedName: K) -> SVGElementTagNameMap[K],
-    createElementNS<K: keyof MathMLElementTagNameMap>(self, ns: "http://www.w3.org/1998/Math/MathML", qualifiedName: K) -> MathMLElementTagNameMap[K],
+    createElementNS<K: keyof SVGElementTagNameMap>(&self, ns: "http://www.w3.org/2000/svg", qualifiedName: K) -> SVGElementTagNameMap[K],
+    createElementNS<K: keyof MathMLElementTagNameMap>(&self, ns: "http://www.w3.org/1998/Math/MathML", qualifiedName: K) -> MathMLElementTagNameMap[K],
 }
 `,
 	})
@@ -950,7 +950,7 @@ func TestObjectTypeWithAnUnresolvableComputedKey(t *testing.T) {
 	_, errs := inferStdlibImportSource(t, `
 		declare val notASymbol: number
 		export declare interface Weird {
-			[notASymbol](self) -> string,
+			[notASymbol](&self) -> string,
 		}
 	`)
 	require.Equal(t, []string{"Invalid object key: number"}, errorMessages(errs))
