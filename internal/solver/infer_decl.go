@@ -477,9 +477,35 @@ func (c *checker) isUniquelyOwned(src ast.Expr) bool {
 		if c.acceptsBorrowLeaf(leaf) {
 			return true
 		}
-		t := c.info.TypeOf(leaf)
-		return !containsOwnedMut(t) && movesOwnedPlace(leaf, t)
+		// A class instance reaches a binding as a variable lower-bounded by the instance,
+		// because a constructor call yields a variable. Every value the leaf may hold must
+		// be an owned place move.
+		return everyLowerBound(c.info.TypeOf(leaf), func(t soltype.Type) bool {
+			return !containsOwnedMut(t) && c.movesOwnedPlace(leaf, t)
+		})
 	})
+}
+
+// everyLowerBound reports whether pred accepts every value t may hold: t itself, or each
+// lower bound of an unresolved variable. A variable with no lower bound holds no known
+// value and is rejected. A vacuous `v <: v` self-edge names no value and is skipped, the
+// same edge readCarrier drops.
+func everyLowerBound(t soltype.Type, pred func(soltype.Type) bool) bool {
+	v, isVar := t.(*soltype.TypeVarType)
+	if !isVar {
+		return pred(t)
+	}
+	sawBound := false
+	for _, lb := range v.LowerBounds {
+		if lb == soltype.Type(v) {
+			continue
+		}
+		if !pred(lb) {
+			return false
+		}
+		sawBound = true
+	}
+	return sawBound
 }
 
 // acceptsBorrowLeaf reports whether leaf is a borrow expression `&e`/`&mut e` that may sit in
@@ -694,7 +720,7 @@ func (c *checker) bindingMovesOwnedPlace(pat ast.Pat, init ast.Expr, initT solty
 	if _, ok := pat.(*ast.IdentPat); !ok {
 		return false
 	}
-	return movesOwnedPlace(init, initT)
+	return c.movesOwnedPlace(init, initT)
 }
 
 // movesOwnedPlace reports whether init names a uniquely-owned place whose value moves
@@ -704,11 +730,11 @@ func (c *checker) bindingMovesOwnedPlace(pat ast.Pat, init ast.Expr, initT solty
 // exprPlace fails outside a function body, where the rename pass has assigned no VarID, so
 // a move is confined to bodies where the move engine enforces the consume. This is the
 // place-move half of both bindingMovesOwnedPlace and the isUniquelyOwned leaf check.
-func movesOwnedPlace(init ast.Expr, initT soltype.Type) bool {
+func (c *checker) movesOwnedPlace(init ast.Expr, initT soltype.Type) bool {
 	if _, ok := exprPlace(init); !ok {
 		return false
 	}
-	return isConcreteOwned(initT)
+	return c.isConcreteOwned(initT)
 }
 
 // isOwnedMut reports whether t is an owned-mutable cell — a RefType with Mut set and a

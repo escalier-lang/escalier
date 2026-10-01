@@ -1622,7 +1622,7 @@ func (c *checker) consumeCallArgs(e *ast.CallExpr, fn *soltype.FuncType, ref liv
 			// argument is. A slot that is not an array of a concrete owned element moves
 			// nothing, the same conservative reading a fixed position takes.
 			elem, isArray := c.ctx.restSlotElem(fn.Params[i].Type)
-			if !isArray || !isConcreteOwned(elem) {
+			if !isArray || !c.isConcreteOwned(elem) {
 				return
 			}
 			for _, absorbed := range e.Args[i:] {
@@ -1631,7 +1631,7 @@ func (c *checker) consumeCallArgs(e *ast.CallExpr, fn *soltype.FuncType, ref liv
 			}
 			return
 		}
-		if !isConcreteOwned(fn.Params[i].Type) {
+		if !c.isConcreteOwned(fn.Params[i].Type) {
 			continue
 		}
 		c.consumeOwned(arg, c.info.TypeOf(arg), arg, ref)
@@ -1812,34 +1812,28 @@ func (c *checker) recordCallArgEffects(
 // `c` leaves `c` unusable afterwards, and so does reading `val f = c.finish`, since the bound
 // method holds the instance. A receiver that names no place, such as `make().finish()`, has
 // nothing to record.
-//
-// The move is recorded directly rather than through consumeOwned. consumeOwned moves only
-// an object, tuple, or owned RefType, and a receiver is a class instance, which the move
-// engine reads as neither. The member's signature names the consuming form, so the receiver
-// is known to be owned without that test.
 func (c *checker) consumeReceiver(access ast.Node) {
-	var recv ast.Expr
-	switch access := access.(type) {
-	case *ast.MemberExpr:
-		recv = access.Object
-	case *ast.IndexExpr:
-		recv = access.Object
-	default:
+	recv := accessReceiver(access)
+	if recv == nil {
 		return
 	}
 	ref, ok := c.currentStmtRef()
-	if !ok || c.fn.cfg == nil {
-		return
-	}
-	p, ok := exprPlace(recv)
 	if !ok {
 		return
 	}
-	if c.fn.movedSources == nil {
-		c.fn.movedSources = set.NewSet[ast.Node]()
+	c.consumeOwned(recv, c.info.TypeOf(recv), recv, ref)
+}
+
+// accessReceiver returns the object a member or index access reads from, or nil for any
+// other node.
+func accessReceiver(access ast.Node) ast.Expr {
+	switch access := access.(type) {
+	case *ast.MemberExpr:
+		return access.Object
+	case *ast.IndexExpr:
+		return access.Object
 	}
-	c.fn.movedSources.Add(recv)
-	c.recordMovePlace(p, recv, ref)
+	return nil
 }
 
 // ctorOverloadArms returns the signatures of an overloaded constructor when t reads as a class
@@ -2319,7 +2313,7 @@ func (c *checker) inferAccessorAssign(
 	// records against the assignment's statement, resolved from assignStmt rather than
 	// c.fn.currentStmt, which inferring the receiver and source may have overwritten with
 	// an inner branch statement. A rejected write records no move.
-	if c.fn != nil && len(c.errs) == errsBefore && isConcreteOwned(setter.Param) {
+	if c.fn != nil && len(c.errs) == errsBefore && c.isConcreteOwned(setter.Param) {
 		if ref, ok := c.fn.stmtToRef[assignStmt]; ok {
 			c.consumeOwned(e.Right, source, e.Right, ref)
 			c.recordEscapeSite(e.Right, ref)

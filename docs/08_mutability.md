@@ -69,7 +69,10 @@ checked at the call yet, so that call is currently accepted.
 A receiver written without `&` consumes the instance instead of borrowing it.
 Calling a `self` or `mut self` method moves the instance into the call, so the
 caller cannot use it afterwards. A consuming method cannot be called through a
-borrow, since a borrow has no instance to give up.
+borrow, since a borrow has no instance to give up. A `mut self` method can be
+called on an instance in an immutable binding, such as `val b = Builder([])`. The
+call moves the instance out of the binding, so nothing is left to observe the
+writes the method makes.
 
 ```esc
 class Builder {

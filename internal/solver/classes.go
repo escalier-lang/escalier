@@ -1308,9 +1308,8 @@ func strippedMethodSig(sig *soltype.FuncType) *soltype.FuncType {
 // A consuming `self` or `mut self` member moves the instance, so the receiver must also own
 // it. An owned receiver is moved at the access, through consumeReceiver. A borrowed receiver
 // has nothing to move, so it is reported as a ConsumingReceiverBorrowedError naming the
-// member. A `mut self` member still asks for a mutable receiver. Passing a class instance to
-// an owned parameter does not move it in the caller, so an immutable instance may still be
-// shared, and only a mutable binding vouches that nothing else reads it.
+// member. A uniquely owned receiver lends mutable access to a consuming member whatever its
+// own mutability, so `val c = C(1)` followed by `c.drain()` reaches a `mut self` drain.
 //
 // recv is the un-stripped receiver, so it still carries the access it has to lend. A nil
 // self, which a static member and a property both have, is a no-op, as is a receiver that is
@@ -1331,10 +1330,23 @@ func (c *checker) checkReceiverMut(blame ast.Node, name string, recv soltype.Typ
 		c.consumeReceiver(blame)
 	}
 	recvT := soltype.Type(inner)
-	if lendsMut(recv) {
+	if lendsMut(recv) || c.consumesUniquelyOwned(blame, self) {
 		recvT = soltype.NewRef(true, nil, inner)
 	}
 	c.constrain(blame, recvT, self.Type)
+}
+
+// consumesUniquelyOwned reports whether the member access access moves a receiver that
+// nothing else holds into a consuming `self`. self is the member's declared receiver.
+func (c *checker) consumesUniquelyOwned(access ast.Node, self *soltype.FuncParam) bool {
+	if isBorrowType(self.Type) {
+		return false
+	}
+	recv := accessReceiver(access)
+	// The move consumeReceiver records leaves the member the instance's only owner, so no
+	// alias is left to observe a write through `mut self`. isUniquelyOwned accepts the same
+	// receivers an owned-mutable argument accepts, the places consumeOwned moves.
+	return recv != nil && c.isUniquelyOwned(recv)
 }
 
 // heldBorrow returns the borrow recv holds, or nil when it holds none. It looks through a
