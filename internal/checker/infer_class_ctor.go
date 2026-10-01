@@ -35,8 +35,8 @@ func isValidJSIdentifier(s string) bool {
 }
 
 // ctorCallableParams returns the constructor's callable parameter list —
-// i.e. `Fn.Params` with the leading `mut self` receiver stripped when the
-// receiver is present. The `mut self` parameter is not part of how callers
+// i.e. `Fn.Params` with the leading `&mut self` receiver stripped when the
+// receiver is present. The `&mut self` parameter is not part of how callers
 // invoke `Foo(...)` and must not be passed to `inferFuncParams` or used to
 // compute callable arity. When `ctor.Receiver` is nil (a malformed
 // constructor missing its receiver), `Fn.Params[0]` is a real user
@@ -105,7 +105,7 @@ func validateConstructorSelf(ctor *ast.ConstructorElem) []Error {
 //     which already carries the class's type arguments). User-written
 //     return annotations are rejected via `ConstructorWithReturnTypeError`
 //     (see `validateConstructorSelf`) and ignored when building the type.
-//  2. The leading `mut self` parameter is stripped from the callable
+//  2. The leading `&mut self` parameter is stripped from the callable
 //     arity — it is not part of how callers invoke `Foo(...)`. The
 //     receiver shape is validated via `validateConstructorSelf`.
 //  3. Class-level type params remain in scope (via the caller's
@@ -114,7 +114,7 @@ func validateConstructorSelf(ctor *ast.ConstructorElem) []Error {
 //
 // The returned context is the constructor's own scope (with type params
 // in scope) so the caller can reuse it for body checking. Param
-// bindings cover the post-`mut self` parameters only; the caller is
+// bindings cover the post-`&mut self` parameters only; the caller is
 // responsible for adding `self` separately when the body is checked.
 func (c *Checker) inferConstructorSig(
 	declCtx Context,
@@ -136,7 +136,7 @@ func (c *Checker) inferConstructorSig(
 		ctorTypeParams = append(append([]*type_system.TypeParam{}, classTypeParams...), ctorLocalTypeParams...)
 	}
 
-	// (2) Skip Fn.Params[0] — the `mut self` receiver — when computing
+	// (2) Skip Fn.Params[0] — the `&mut self` receiver — when computing
 	// the callable arity.
 	params, paramBindings, paramErrors := c.inferFuncParams(ctorCtx, ctorCallableParams(ctor))
 	errors = slices.Concat(errors, paramErrors)
@@ -162,7 +162,7 @@ func (c *Checker) inferConstructorSig(
 	// constructor produces a receiver via its return type — there is no
 	// pre-existing receiver to bind. Callers invoke `C(args)`, not
 	// `instance.constructor(args)`. The validateConstructorSelf check
-	// above still enforces that the AST-level `mut self` is present.
+	// above still enforces that the AST-level `&mut self` is present.
 	return funcType, ctorCtx, paramBindings, errors
 }
 
@@ -201,7 +201,7 @@ func (c *Checker) synthesizeConstructorElem(decl *ast.ClassDecl) (*ast.Construct
 	errors := []Error{}
 	classSpan := decl.Name.Span()
 
-	// `mut self` synthesized at the class-name span so any diagnostics
+	// `&mut self` synthesized at the class-name span so any diagnostics
 	// produced against the synthesized constructor land on the header.
 	selfPat := ast.NewIdentPat("self", true /* mutable */, nil, nil, classSpan)
 	selfParam := &ast.Param{Pattern: selfPat, TypeAnn: nil, Optional: false}

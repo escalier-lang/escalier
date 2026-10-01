@@ -263,7 +263,7 @@ func (c *Checker) InferComponent(
 	// is the "callable" signature used for overload resolution (return
 	// type = Self instance type); `ParamBindings` was produced by
 	// `inferFuncParams` over the constructor's callable params (i.e.
-	// `Fn.Params[1:]`, skipping the leading `mut self`); `Ctx` is the
+	// `Fn.Params[1:]`, skipping the leading `&mut self`); `Ctx` is the
 	// constructor's own scope (carrying ctor-level type params, e.g. `U`
 	// in `constructor<U>(...)`) so the body-checking phase can resolve
 	// names introduced only by the constructor signature.
@@ -801,7 +801,7 @@ func (c *Checker) InferComponent(
 				retType := type_system.NewTypeRefType(nil, decl.Name.Name, typeAlias, typeArgs...)
 
 				// Build the constructor signature from the (single) in-body
-				// `ConstructorElem`. `inferConstructorSig` strips `mut self`,
+				// `ConstructorElem`. `inferConstructorSig` strips `&mut self`,
 				// fixes the return type to Self, and layers class+ctor type
 				// params. When synthesis above failed (subclass without an
 				// explicit constructor, computed-key field, etc.) there is
@@ -1451,7 +1451,7 @@ func (c *Checker) InferComponent(
 								// We use the name of the class as the type here to avoid
 								// a RecursiveUnificationError.
 								// TODO(#574): handle generic classes — we deliberately
-								// drop type args and the `'a self` lifetime here
+								// drop type args and the `&'a self` lifetime here
 								// because downstream codegen (MemberExpr →
 								// .bind(this) heuristic in builder.go) misclassifies
 								// stored function fields once self carries its type
@@ -1548,9 +1548,9 @@ func (c *Checker) InferComponent(
 								// note in the MethodElem case above for why the
 								// receiver is rebuilt here instead of reusing
 								// getterType.Fn.SelfParam.Type.
-								// A `mut self` getter (e.g. one that mutates a
+								// A `&mut self` getter (e.g. one that mutates a
 								// memoization cache) needs `self` typed as a
-								// `mut`; a plain `self` getter does not.
+								// `mut`; a `&self` getter does not.
 								isMutableSelf := type_system.ReceiverIsMut(getterType.Fn)
 								var t type_system.Type = type_system.NewTypeRefType(nil, decl.Name.Name, typeAlias)
 								if isMutableSelf {
@@ -1641,9 +1641,8 @@ func (c *Checker) InferComponent(
 								// receiver is rebuilt here instead of reusing
 								// setterType.Fn.SelfParam.Type.
 								// Mutability follows the user-written receiver.
-								// A setter that doesn't mutate `self` (e.g. one
-								// that forwards to an external sink) may declare
-								// just `set x(&self, …)`.
+								// checkSetterReceiver reports any receiver but
+								// `&mut self`, so a well-formed setter is mutable.
 								isMutableSelf := type_system.ReceiverIsMut(setterType.Fn)
 								var t type_system.Type = type_system.NewTypeRefType(nil, decl.Name.Name, typeAlias)
 								if isMutableSelf {

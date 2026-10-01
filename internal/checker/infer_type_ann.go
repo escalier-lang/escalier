@@ -302,7 +302,7 @@ func (c *Checker) inferTypeAnn(
 }
 
 // `recv`, when non-nil, makes this a method-shaped type-annotation:
-// SelfParam is wired and `'a self` is resolved before the §9.7 class 1
+// SelfParam is wired and `&'a self` is resolved before the §9.7 class 1
 // unused-lifetime-params check runs. Pass nil for plain (non-method)
 // callers — `inferTypeAnn` (FuncTypeAnn case), `CallableTypeAnn`, and
 // `ConstructorTypeAnn` all do.
@@ -378,7 +378,7 @@ func (c *Checker) inferFuncTypeAnn(
 	}
 
 	// Wire receiver (method-shaped callers only) before the unused-
-	// lifetime check so a `<'a>` referenced only by `'a self`
+	// lifetime check so a `<'a>` referenced only by `&'a self`
 	// participates in the "used" set.
 	if recv != nil {
 		selfLT, ltErrs := c.resolveLifetimeAnn(funcCtx.Scope, recv.LifetimeNode)
@@ -396,7 +396,7 @@ func (c *Checker) inferFuncTypeAnn(
 // inferObjectTypeAnn lowers an `ObjectTypeAnn` (interface body or
 // object-type literal) to an `ObjectType`. When `receiver` is non-nil,
 // methods/getters/setters get a `SelfParam` wired against it — and any
-// `'a self` annotation is resolved against the function's lifetime
+// `&'a self` annotation is resolved against the function's lifetime
 // params with fallback to the surrounding scope. Pass nil for
 // non-method contexts (object-type literals).
 func (c *Checker) inferObjectTypeAnn(

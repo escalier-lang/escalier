@@ -504,7 +504,7 @@ type IncompatibleOverrideError struct {
 //     writes through it;
 //   - an inherited required field is redeclared optional, while the superclass view still
 //     reads it as present;
-//   - an inherited member callable through a plain `self` is redeclared with a `mut self`
+//   - an inherited member callable through a `&self` is redeclared with a `&mut self`
 //     receiver, which an immutable superclass reference cannot reach.
 //
 // Member is the member's name, Class the subclass, SuperClass the ancestor that declares the

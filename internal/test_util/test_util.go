@@ -196,7 +196,7 @@ func applyMethodReceiver(fn *FuncType, recv *ast.MethodReceiver) {
 	// The receiver type itself is implicit (the enclosing class /
 	// interface). For the audit round-trip we just need a stable type
 	// here so ReceiverIsMut reads the right polarity; use a placeholder
-	// AnyType wrapped in MutType when the source said `mut self`.
+	// AnyType wrapped in MutType when the source said `&mut self`.
 	var recvType Type = NewAnyType(nil)
 	if recv.Mut {
 		recvType = NewMutType(nil, recvType)

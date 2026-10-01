@@ -160,7 +160,7 @@ func convertClassDecl(cctx *convertCtx, dc *dts_parser.ClassDecl) (*ast.ClassDec
 	}
 
 	// Convert class members. Any TS-side constructor becomes an in-body
-	// `ConstructorElem`. The `mut self` parameter is synthesized so
+	// `ConstructorElem`. The `&mut self` parameter is synthesized so
 	// downstream passes see the same shape as a user-written constructor.
 	var bodyElems []ast.ClassElem
 

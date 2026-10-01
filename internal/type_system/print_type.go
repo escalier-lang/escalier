@@ -390,7 +390,7 @@ func printPatternWithInlineTypesContext(pattern Pat, paramType Type, pt func(Typ
 }
 
 // printFuncSig prints a function signature body — generic params,
-// parameter list (optionally with a leading `self` / `mut self`),
+// parameter list (optionally with a leading `&self` / `&mut self`),
 // return type, and throws clause — after the caller-supplied
 // `header` (e.g. `"fn "` for bare function types, or a method name
 // for method-elem arms).

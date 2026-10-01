@@ -210,8 +210,8 @@ func modifierVariance(m ast.VarianceModifier) (Variance, bool) {
 //
 // A member an immutable reference cannot reach says nothing about the immutable view, so
 // it is walked into mut alone. Three members demand a mutable receiver: a write to a
-// non-`readonly` field, a setter, and a `mut self` method. An overloaded method is split
-// per signature, since one arm taking `mut self` says nothing about the arms that do not.
+// non-`readonly` field, a setter, and a `&mut self` method. An overloaded method is split
+// per signature, since one arm taking `&mut self` says nothing about the arms that do not.
 //
 // `Array<T>` is what this buys. Its `at(&self, index) -> T | undefined` puts T in an output
 // position and its `push(&mut self, item: T)` puts T in an input position. Folding both into
@@ -871,7 +871,7 @@ func (c *checker) projectedMember(lvl int, blame ast.Node, name string, recv, ca
 		c.errs = append(c.errs, err)
 		return pathResult{value: &soltype.ErrorType{}}, true
 	}
-	// A member declaring `mut self` needs mutable access to the instance, on an instance
+	// A member declaring `&mut self` needs mutable access to the instance, on an instance
 	// reached from outside the class as much as on the `self` classBodyMember serves. Both
 	// call the same check, so `c.bump()` and `self.bump()` answer the same way for the same
 	// receiver.
@@ -1366,7 +1366,7 @@ func heldBorrow(recv soltype.Type) *soltype.RefType {
 //
 // EVERY lower bound must be mutable, since each is a value the receiver may actually hold
 // at run time. A join of `mut C` and `C` lends no mutable access, because the branch taken
-// may be the immutable one. Reporting mutable off a single bound would accept a `mut self`
+// may be the immutable one. Reporting mutable off a single bound would accept a `&mut self`
 // setter write the structural field-write path rejects on the same receiver.
 func lendsMut(recv soltype.Type) bool {
 	switch recv := recv.(type) {
@@ -1409,7 +1409,7 @@ func memberSelfParam(member soltype.ObjTypeElem) *soltype.FuncParam {
 }
 
 // receiverClass returns the class instance a `self` receiver type names — the ClassType
-// directly for a plain `self`, or the ClassType inside the borrow for a `mut self` / `&self`
+// directly for a `&self`, or the ClassType inside the borrow for a `&mut self` / `&self`
 // receiver. It returns nil when the receiver is not a class instance.
 func receiverClass(t soltype.Type) soltype.RefInner {
 	switch t := t.(type) {

@@ -36,7 +36,7 @@ type expandSeen map[expandSeenKey]type_system.Type
 // a generic type alias. Used by lazyMemberLookup to cache per-property
 // substitution results (#461). The mode field separates getter-read results
 // from setter-write results so they are never confused. The receiverMut field
-// distinguishes lookups on mutable vs immutable receivers — `mut self` methods
+// distinguishes lookups on mutable vs immutable receivers — `&mut self` methods
 // and setters are hidden when the receiver is not definitely mutable.
 type memberCacheKey struct {
 	alias       unsafe.Pointer // TypeAlias pointer
@@ -1054,7 +1054,7 @@ func isMemberVisible(elem type_system.ObjTypeElem, mode AccessMode, receiverMut 
 		// the receiver's mutability.
 		//
 		//   - SetterElem is invisible: setters are write-only.
-		//   - MethodElem / GetterElem that require `mut self` are invisible on a
+		//   - MethodElem / GetterElem that require `&mut self` are invisible on a
 		//     non-mut receiver, since invoking them would launder mutation past
 		//     the `val` boundary the binding opted into.
 		//   - All other elements (PropertyElem, IndexSignatureElem, RestSpreadElem,
@@ -1230,11 +1230,11 @@ func (c *Checker) getSuperTypeAccess(
 // getObjectAccess handles property and index access on ObjectType.
 // mode controls getter/setter resolution: AccessRead uses getters, AccessWrite uses setters.
 // receiverMut indicates whether the receiver was wrapped in a definite `mut`;
-// when false, `mut self` methods and (in AccessWrite mode) setters are hidden,
+// when false, `&mut self` methods and (in AccessWrite mode) setters are hidden,
 // causing the lookup to fall through to the property-not-found path.
 func (c *Checker) getObjectAccess(objType *type_system.ObjectType, key MemberAccessKey, mode AccessMode, receiverMut bool, errors []Error) (type_system.Type, []Error) {
 	// Open objects are still being built up by inference; they only ever hold
-	// PropertyElems (no `mut self` methods), so the visibility filter has
+	// PropertyElems (no `&mut self` methods), so the visibility filter has
 	// nothing to do here. Treat as mutable to skip the filter and avoid any
 	// premature hiding before the open-object's mutability is finalized.
 	receiverMutForElems := receiverMut || objType.Open

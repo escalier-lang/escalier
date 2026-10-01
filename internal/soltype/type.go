@@ -410,7 +410,7 @@ func (e *GetterElem) ThrowsOrNever() Type {
 	return e.Throws
 }
 
-// SetterElem is a computed write property `set x(&self, v: T)`. Param is the value the
+// SetterElem is a computed write property `set x(&mut self, v: T)`. Param is the value the
 // setter accepts, in write position, so it is read contravariantly. SelfParam is the
 // receiver of an instance setter and nil for a static setter, mirroring
 // FuncType.SelfParam.

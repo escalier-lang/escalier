@@ -1226,8 +1226,8 @@ func (c *checker) checkSelfReceiver(name string, elem ast.ClassElem, static bool
 }
 
 // inferMemberFunc infers one member body via the shared inferFunc core, binding `self`
-// to the full instance body — owned-mutable for a `mut self` receiver — so field reads
-// and writes resolve through the record machinery and a sibling call resolves through the
+// to the full instance body in the form its receiver declares. Field reads and writes
+// resolve through the record machinery, and a sibling call resolves through the
 // pre-declared member signature. It returns the inferred FuncType, whose params and
 // return the caller links into the member's signature stub.
 func (c *checker) inferMemberFunc(
@@ -1274,9 +1274,9 @@ func (c *checker) selfParam(lvl int, recv *ast.MethodReceiver, static bool, self
 }
 
 // selfType returns the type a receiver gives the instance. A borrowed receiver is a borrow
-// of the instance with a fresh lifetime, so `&self` is `&Self` and `&mut self` is `&mut
-// Self`. A consuming receiver owns the instance, so `self` is the bare `Self` and `mut self`
-// is the owned-mutable `mut Self`. A member that wrote no receiver, which
+// of the instance with a fresh lifetime, so `&self` is `&Self` and `&mut self` is
+// `&mut Self`. A consuming receiver owns the instance, so `self` is the bare `Self` and
+// `mut self` is the owned-mutable `mut Self`. A member that wrote no receiver, which
 // checkSelfReceiver reports, takes the bare instance so its body still checks.
 func (c *checker) selfType(lvl int, recv *ast.MethodReceiver, self soltype.Type) soltype.Type {
 	inner := self.(soltype.RefInner)
@@ -1289,9 +1289,9 @@ func (c *checker) selfType(lvl int, recv *ast.MethodReceiver, self soltype.Type)
 	return soltype.NewRef(recv.Mut, c.ctx.freshLifetime(lvl), inner)
 }
 
-// selfParamMut reports whether a receiver grants mutable access to the instance. A `&mut
-// self` or `mut self` receiver is a mutable RefType over the instance. A `&self` or `self`
-// receiver and a static member's absent receiver are not.
+// selfParamMut reports whether a receiver grants mutable access to the instance. A
+// `&mut self` or `mut self` receiver is a mutable RefType over the instance. A `&self` or
+// `self` receiver and a static member's absent receiver are not.
 func selfParamMut(sp *soltype.FuncParam) bool {
 	if sp == nil {
 		return false

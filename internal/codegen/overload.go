@@ -328,7 +328,7 @@ func methodArms(siblings []ast.ClassElem) []overloadArm {
 }
 
 // constructorArms collects one constructor overload set into dispatch arms. Unlike a
-// method, a constructor carries its `mut self` receiver as Fn.Params[0], which is
+// method, a constructor carries its `&mut self` receiver as Fn.Params[0], which is
 // `this` at the JS level and not a callable parameter, so it is dropped here.
 //
 // Each arm gets its own synthesized `super()` when the class is derived and that arm

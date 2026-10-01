@@ -977,7 +977,7 @@ modifiers_done:
 				params = parseDelimSeq(p, CloseParen, Comma, p.param)
 			}
 
-			// TODO(#506): report an error if `mut self` is not the first
+			// TODO(#506): report an error if `&mut self` is not the first
 			// param, if there isn't exactly one value param after it
 			// (instance), or if there isn't exactly one param (static).
 			p.expect(CloseParen, AlwaysConsume)

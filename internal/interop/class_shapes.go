@@ -50,7 +50,7 @@ import (
 // Method `SelfParam` wiring is *not* done here. By the time this runs,
 // checker/prelude.go's `populateSelfParams` has already mutated every
 // method `*FuncType` in the namespace in place to attach a default
-// `mut self` SelfParam, and `UpdateMethodMutability` /
+// `&mut self` SelfParam, and `UpdateMethodMutability` /
 // `UpdateCollectionMutability` have stripped `mut` from individual
 // receivers positively classified as non-mutating. RecoverClassShapes
 // stores those `*FuncType` pointers verbatim — it neither sets

@@ -122,7 +122,7 @@ func (e LifetimeArgCountMismatchError) Message() string {
 // Implements §9.7 class 1. Runs as a *deferred* check: callers of
 // inferFuncSig / inferFuncTypeAnn must invoke this after wiring any
 // late-bound positions (SelfParam in particular). A `<'a>` referenced
-// only by `'a self` would otherwise be flagged as unused, since the
+// only by `&'a self` would otherwise be flagged as unused, since the
 // receiver is not present in `Params` at signature-inference time.
 func reportUnusedLifetimeParams(
 	fnType *type_system.FuncType,

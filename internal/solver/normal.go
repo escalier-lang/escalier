@@ -1687,7 +1687,7 @@ func (c *Context) meetObjElem(a, b soltype.ObjTypeElem) (soltype.ObjTypeElem, bo
 			return nil, false
 		}
 		// Two constructors meet through the same signature-set rule a method's do. There is
-		// no receiver to guard here: a constructor's `mut self` is consumed at the
+		// no receiver to guard here: a constructor's `&mut self` is consumed at the
 		// declaration and never reaches the stored signature, so every arm carries a nil
 		// SelfParam.
 		sigs, ok := c.fuseSignatureSets(a.Signatures, b.Signatures, meetCtorSig(c))

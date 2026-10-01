@@ -819,7 +819,7 @@ type FuncType struct {
 	// SelfParam carries the implicit `self` receiver of a method when this
 	// FuncType belongs to a MethodElem/GetterElem/SetterElem. It is nil for
 	// plain functions and static methods. The receiver type lives in
-	// SelfParam.Type — wrapped in MutType for `mut self` — so receiver
+	// SelfParam.Type — wrapped in MutType for `&mut self` — so receiver
 	// lifetimes flow through the visitor / substitution / lifetime
 	// machinery the same way parameter lifetimes do. Use ReceiverIsMut(fn)
 	// to inspect mutability.
@@ -953,7 +953,7 @@ func (t *FuncType) Equals(other Type) bool {
 		}
 		// Compare SelfParam — receiver presence and mutability is part
 		// of a method's identity. The MutType wrapper on the receiver
-		// type carries `mut self` vs `self`, so a structural equals on
+		// type carries `&mut self` vs `self`, so a structural equals on
 		// SelfParam.Type covers both.
 		if (t.SelfParam == nil) != (other.SelfParam == nil) {
 			return false
@@ -1123,7 +1123,7 @@ type SetterElem struct {
 }
 
 // ReceiverIsMut reports whether the function's `self` receiver is
-// `mut self`. Reads Fn.SelfParam (the source of truth); returns false
+// `&mut self`. Reads Fn.SelfParam (the source of truth); returns false
 // when the function is nil, has no receiver, or has a non-mut receiver.
 // Use this anywhere a method/getter/setter element's mutability needs
 // to be inspected.

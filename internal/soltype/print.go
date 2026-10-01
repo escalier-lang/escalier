@@ -1197,7 +1197,7 @@ func ShorthandOptionalMarker(mod MappedModifier) string {
 //   - a method renders `name(params) -> ret` per overload arm, arms joined by "; "
 //     so the arm boundary stays distinct from the outer ", " between members;
 //   - a getter renders `get name(&self) -> T`, or `get name() -> T` when static;
-//   - a setter renders `set name(&self, value: T)`, or `set name(value: T)` when static;
+//   - a setter renders `set name(&mut self, value: T)`, or `set name(value: T)` when static;
 //   - a constructor renders `new (params) -> ret`, the unnamed call signature of a
 //     class value.
 //

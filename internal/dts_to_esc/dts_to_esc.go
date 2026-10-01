@@ -1523,7 +1523,7 @@ func methodDeclOf(m *dts_parser.MethodSignature) *dts_parser.MethodDecl {
 }
 
 // constructSignatureToCtorElem builds a ConstructorElem from the trio's
-// `new (...)` signature. The synthesised `mut self` matches the receiver
+// `new (...)` signature. The synthesised `&mut self` matches the receiver
 // shape that convertClassDecl produces for a real ConstructorDecl.
 func constructSignatureToCtorElem(cs *dts_parser.ConstructSignature) (*ast.ConstructorElem, error) {
 	params, err := convertParams(cs.Params)

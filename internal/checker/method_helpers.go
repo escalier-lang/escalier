@@ -64,7 +64,7 @@ func checkSetterReceiver(elem *ast.SetterElem) []Error {
 // inferFuncTypeAnn. When `receiverType` is nil (e.g. a method-shaped
 // element inside a structural object-type annotation), there is no
 // receiver to attach a lifetime to — we surface a diagnostic rather
-// than silently drop `'a self`. Returns (nil, nil) for the no-receiver,
+// than silently drop `&'a self`. Returns (nil, nil) for the no-receiver,
 // no-lifetime case so plain object-literal methods continue to work.
 func buildMethodReceiver(
 	receiverType *type_system.TypeRefType,
@@ -137,14 +137,14 @@ func setReceiverMut(fn *type_system.FuncType, mut bool) {
 //     arrive without a receiver representation.
 //
 //     Defaults:
-//     - MethodElem → `mut self`. TS .d.ts carries no receiver-mut
+//     - MethodElem → `&mut self`. TS .d.ts carries no receiver-mut
 //     annotation, so for any method we haven't positively classified
 //     we don't know whether it mutates. Defaulting to mut is the
 //     conservative choice (UpdateMethodMutability and
 //     mergeReadonlyVariant strip `mut` afterwards where the method
 //     is positively classified as non-mutating).
 //     - GetterElem → non-mut self.
-//     - SetterElem → `mut self`.
+//     - SetterElem → `&mut self`.
 //     Accessor shape is the tier-3 strong signal — reading state doesn't
 //     mutate; assignment does — so getters and setters get opposite
 //     defaults rather than both defaulting to mut.

@@ -216,7 +216,7 @@ func mergeModules(target, source *ast.Module) {
 // applyMethodMutability classifies each MethodElem on objType using the
 // per-class override set first and the name-only interop heuristics as
 // the fall-through (issue #614). When neither source positively
-// classifies the method as non-mutating it keeps the default `mut self`
+// classifies the method as non-mutating it keeps the default `&mut self`
 // set by populateSelfParams. The override entries always win — they
 // encode known exceptions that the heuristics either miss or
 // mis-classify (e.g. String.replace, Console.clear).
@@ -294,7 +294,7 @@ func UpdateMethodMutability(ctx Context, namespace *type_system.Namespace) {
 
 				if it, ok := type_system.Prune(instTypeAlias.Type).(*type_system.ObjectType); ok {
 					// TypeScript .d.ts has no mut-self annotation, so
-					// methods default to `mut self` (set by
+					// methods default to `&mut self` (set by
 					// populateSelfParams). Apply per-interface overrides
 					// and, as a fall-through for any unlisted method,
 					// the name-only interop heuristics (#614).
@@ -354,8 +354,8 @@ func UpdateCollectionMutability(namespace *type_system.Namespace) {
 // mutable counterpart, e.g. ReadonlyArray and Array. Presence on the Readonly
 // variant is positive evidence that a method does not mutate, so methods that
 // appear on the readonly type get their receiver stripped of `mut` (overriding
-// the default `mut self` set by populateSelfParams). Methods unique to the
-// mutable type inherit the default `mut self` — the setReceiverMut call
+// the default `&mut self` set by populateSelfParams). Methods unique to the
+// mutable type inherit the default `&mut self` — the setReceiverMut call
 // in that branch is a no-op left for clarity. The merged element list is
 // shared between both type aliases so that lookups against either name
 // see the union.
@@ -453,7 +453,7 @@ func (c *Checker) initializeGlobalScope() {
 	}
 
 	// Wire SelfParam onto every .d.ts-loaded method first (default
-	// `mut self`, plus iterator-protocol fixups; see populateSelfParams),
+	// `&mut self`, plus iterator-protocol fixups; see populateSelfParams),
 	// then let the override passes strip `mut` from receivers positively
 	// classified as non-mutating by mutating SelfParam.Type in place.
 	populateSelfParams(globalNs)

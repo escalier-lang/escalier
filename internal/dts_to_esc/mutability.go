@@ -254,13 +254,13 @@ func ClassifyMethodByName(name string) (mut bool, ok bool) {
 }
 
 // MethodNames names the methods of one owner whose receiver an override marks
-// non-mutating. Membership means "strip `mut self`". There is no counterpart
+// non-mutating. Membership means "strip `&mut self`". There is no counterpart
 // set for marking a method mutating, because a `.d.ts` method carries
-// `mut self` by default and needs no entry to keep it.
+// `&mut self` by default and needs no entry to keep it.
 type MethodNames = set.Set[string]
 
 // ImmutableOwners names the types whose instance methods never take
-// `mut self`. Each wraps a JavaScript primitive, and a primitive is
+// `&mut self`. Each wraps a JavaScript primitive, and a primitive is
 // immutable at the language level.
 //
 // Naming the owner rather than its methods is what makes the rule hold
@@ -287,7 +287,7 @@ var ImmutableOwners = set.FromSlice([]string{
 //
 // Two readers consult it. `Classify` reads it at tier 4, beside the override
 // store of `internal/interop`, whose built-in subtree is still empty.
-// `checker.UpdateMethodMutability` reads it to strip `mut self` from the
+// `checker.UpdateMethodMutability` reads it to strip `&mut self` from the
 // `.d.ts`-loaded lib types. That second reader is why the entries a published
 // fact answers are still here: the prelude reads no fact, so an entry is what
 // carries the claim there. See planning/ecma-262/validation_diff.md.
@@ -326,7 +326,7 @@ var nonMutatingOverrides = map[string]MethodNames{
 	// `RegExp` needs no entry. `toString` sits on the well-known allow-list
 	// ClassifyMethodByName consults. `compile` mutates, and `exec` and `test`
 	// write `lastIndex` when the pattern is global or sticky, so all three
-	// keep the default `mut self`. `Symbol.search` and `Symbol.split` are
+	// keep the default `&mut self`. `Symbol.search` and `Symbol.split` are
 	// non-mutating per spec, and this string-keyed map cannot address a
 	// symbol-keyed member. See #620.
 	"Object": set.FromSlice([]string{
@@ -345,7 +345,7 @@ var nonMutatingOverrides = map[string]MethodNames{
 		// Attaching a handler appends to the promise's reaction lists,
 		// which is a write the specification makes and no reader can
 		// observe: nothing reachable through `Promise<T, E>` differs
-		// before and after. A `mut self` receiver would fail the ordinary
+		// before and after. A `&mut self` receiver would fail the ordinary
 		// use of a promise, since it demands unique mutable access to
 		// attach a handler at all. `val p = fetch(url)` could not call
 		// `p.then(…)`, and two consumers of one promise could not each

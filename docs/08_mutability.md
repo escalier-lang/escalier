@@ -31,7 +31,7 @@ val r: mut {x: number, y: number} = {x: 0, y: 0}
 
 This applies uniformly to object literals, tuple and array literals, and class
 instances. A class instance is immutable by default whether or not the class
-declares `mut self` methods:
+declares `&mut self` methods:
 
 ```esc
 class Counter {
@@ -57,14 +57,32 @@ class Counter {
 
 fn go() {
     val mut c = Counter(0)
-    c.incr()          // mut self — needs the mutable binding
-    return c.read()   // self — reads through either
+    c.incr()          // &mut self — needs the mutable binding
+    return c.read()   // &self — reads through either
 }
 ```
 
-A `mut self` method is meant to require a mutable binding, so calling `incr` on a
+A `&mut self` method is meant to require a mutable binding, so calling `incr` on a
 plain `val c = Counter(0)` should be an error. The receiver's mutability is not
 checked at the call yet, so that call is currently accepted.
+
+A receiver written without `&` consumes the instance instead of borrowing it.
+Calling a `self` or `mut self` method moves the instance into the call, so the
+caller cannot use it afterwards. A consuming method cannot be called through a
+borrow, since a borrow has no instance to give up.
+
+```esc
+class Builder {
+    parts: Array<string>,
+    finish(self) -> string { return self.parts.join("") },
+}
+
+fn go() {
+    val b = Builder([])
+    val s = b.finish()   // moves b
+    b.finish()           // error: use of moved value 'b'
+}
+```
 
 ## `mut` is deep and uniform
 

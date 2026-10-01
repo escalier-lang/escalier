@@ -329,7 +329,7 @@ func (r *refRewriter) qualifyRef(ref *ast.TypeRefTypeAnn, head *ast.Ident) bool 
 //
 // A mutable twin name here is left alone, naming the whole definition
 // rather than the immutable view of it. A definition holds both `self`
-// and `mut self` methods and extending it inherits all of them, so
+// and `&mut self` methods and extending it inherits all of them, so
 // `interface RegExpMatchArray extends Array<string>` gets every `Array`
 // member including `push`; whether a given instance may call it is
 // settled where that instance is bound. Reading the bare name as the

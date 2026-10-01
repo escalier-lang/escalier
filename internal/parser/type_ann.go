@@ -1085,10 +1085,9 @@ func (p *Parser) objTypeAnnElemInner() ast.ObjTypeAnnElem {
 	case OpenParen:
 		p.lexer.consume() // consume '(' or '?('
 
-		// Methods, getters, and setters all accept a leading `self` /
-		// `mut self` receiver (optionally with a lifetime: `'a self` /
-		// `mut 'a self`). Peel it off so it does not leak into
-		// `Fn.Params` as a regular parameter (#560).
+		// Methods, getters, and setters all accept a leading receiver such
+		// as `&self`, `&mut self`, `&'a self`, or `self`. Peel it off so it
+		// does not leak into `Fn.Params` as a regular parameter (#560).
 		receiver := p.selfReceiver()
 
 		params := []*ast.Param{}

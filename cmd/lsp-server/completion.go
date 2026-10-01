@@ -525,7 +525,7 @@ func completionsFromObjectType(obj *type_system.ObjectType, receiverMut bool) []
 			if elem.Name.Kind != type_system.StrObjTypeKeyKind {
 				continue
 			}
-			// Hide `mut self` methods on non-mut receivers.
+			// Hide `&mut self` methods on non-mut receivers.
 			// All arms share receiver mutability (enforced by
 			// MergeMethodOverloads); inspecting arm 0 is sufficient.
 			if !receiverMutForElems && type_system.ReceiverIsMut(elem.Signatures[0]) {
