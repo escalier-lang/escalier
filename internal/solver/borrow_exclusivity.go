@@ -347,6 +347,88 @@ func (c *checker) endLoansAt(holder liveness.VarID, base []placeSeg) {
 	}
 }
 
+// borrowSite is one borrow expression the walk inferred: the expression, the statement it sits
+// in, and the sequence the next loan would have taken when it was walked.
+type borrowSite struct {
+	borrow    *ast.BorrowExpr
+	ref       liveness.StmtRef
+	loanSeqAt int
+}
+
+// noteBorrowSite records a borrow expression as the walk infers it, for checkNestedBorrows to
+// read once every loan is recorded.
+func (c *checker) noteBorrowSite(e *ast.BorrowExpr) {
+	if c.fn == nil {
+		return
+	}
+	ref, ok := c.currentStmtRef()
+	if !ok {
+		return
+	}
+	c.fn.borrowSites = append(c.fn.borrowSites, borrowSite{borrow: e, ref: ref, loanSeqAt: c.fn.loanSeq + 1})
+}
+
+// checkNestedBorrows takes the loan of each borrow that is neither a binding's initializer nor
+// a call argument. The `&mut b` in `val t = {x: &mut b}` is one, and so is the one in
+// `return [a.spare, &mut b]`. Initializers and call arguments note their operand when they
+// record the loan. Any other borrow reaches here with its operand un-noted.
+//
+// Each such borrow notes its operand as the read that takes its loan, so the use check does not
+// count it as a second path to the data. The borrow is then weighed against the loans live at
+// its statement, the way a call argument is. A loan written later in the source is not live at
+// it yet, and one a reassignment ended before it no longer reaches anything. A pair reports
+// only when its mutability differs, so a nested `&mut b` beside a live mutable loan of b is
+// accepted and a nested `&b` beside one is not.
+//
+// The loan lasts for the borrow's own statement. A borrow inside a literal a binding holds
+// lives as long as that binding, which this does not track. Reading such a borrow back out of
+// the container is tracked in #1528.
+//
+// A borrow inside a returned expression that reported for reaching a local twice adds no
+// diagnostic. The return's report already names the pair.
+func (c *checker) checkNestedBorrows() {
+	if c.fn == nil {
+		return
+	}
+	if c.fn.loanReads == nil {
+		c.fn.loanReads = set.NewSet[ast.Node]()
+	}
+	for _, site := range c.fn.borrowSites {
+		operand := borrowOperand(site.borrow)
+		if c.fn.loanReads.Contains(operand) {
+			continue
+		}
+		place, ok := loanPlace(site.borrow)
+		if !ok {
+			continue
+		}
+		c.noteLoanRead(operand)
+		if slices.ContainsFunc(c.fn.sharedPathSpans, func(s ast.Span) bool {
+			return s.ContainsSpan(site.borrow.Span())
+		}) {
+			continue
+		}
+		fresh := loan{place: place, mut: site.borrow.Mut, ref: site.ref, node: site.borrow}
+		for _, held := range c.fn.loans {
+			if held.seq >= site.loanSeqAt {
+				continue
+			}
+			if held.endSeq != 0 && held.endSeq < site.loanSeqAt {
+				continue
+			}
+			// A store's loan begins once its call returns, so a borrow written in the same
+			// statement is compared by the call's own argument check instead.
+			if held.fromStore && held.ref == site.ref {
+				continue
+			}
+			if c.liveAt(held, site.ref) && conflicts(held, fresh) {
+				c.reportBorrowConflict(held, fresh)
+				break
+			}
+		}
+	}
+}
+
 // recordStoreEdgeLoan records the loan a call's store effect creates. `store(&mut p, &mut b)`
 // against a signature that writes its second argument into the first leaves p reaching b, so
 // from that point p holds a mutable borrow of b. An immutable borrow of b then conflicts with

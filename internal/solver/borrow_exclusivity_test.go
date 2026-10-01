@@ -183,6 +183,32 @@ func TestBorrowExclusivity(t *testing.T) {
 		// A loan is live AT the statement that reads it, not only beyond it. b's last use is
 		// the call, and the fresh `&x` in the same call is a second view of x while b can
 		// still write. Asking only whether b outlives the call would miss this.
+		// A borrow inside a literal takes its own loan rather than counting as a use of x. Two
+		// mutable borrows of x are allowed.
+		"MutableBorrowInALiteralBesideAMutableLoanOk": {
+			src: exclusivityDecls + `
+				fn g() {
+					val mut x = {v: 1}
+					val a = &mut x
+					val t = {y: &mut x}
+					write(a)
+				}
+			`,
+			want: nil,
+		},
+		// An immutable borrow inside a literal beside a live mutable loan is the pair that
+		// conflicts, and it reports as a borrow rather than as a use.
+		"ImmutableBorrowInALiteralBesideAMutableLoan": {
+			src: exclusivityDecls + `
+				fn g() {
+					val mut x = {v: 1}
+					val a = &mut x
+					val t = {y: &x}
+					write(a)
+				}
+			`,
+			want: []string{"10:18-10:20: cannot borrow 'x' as immutable while it is borrowed as mutable"},
+		},
 		"FreshBorrowBesideALoanOnItsLastUse": {
 			src: exclusivityDecls + `
 				fn g() {
@@ -450,6 +476,32 @@ func TestStoreEffectLoans(t *testing.T) {
 		},
 		// Nothing reads the target after the store, so its borrow of the item is dead and the
 		// item is reachable one way again. This is the same NLL rule a named borrow follows.
+		// A borrow in a returned literal takes its own loan, so the `&mut b` here is a second
+		// mutable borrow of b beside the store's loan, which is allowed.
+		"MutableBorrowInAReturnAfterAStoreOk": {
+			src: storeEffectDecls + `
+				fn g(q: mut {value: number}, r: mut {value: number}) -> [&mut {value: number}, &mut {value: number}] {
+					val mut b = {value: 2}
+					val mut a = {peer: &mut q, spare: &mut r}
+					store(&mut a, &mut b)
+					return [a.spare, &mut b]
+				}
+			`,
+			want: nil,
+		},
+		// The same holds for a borrow inside a literal a binding holds.
+		"MutableBorrowInALiteralAfterAStoreOk": {
+			src: storeEffectDecls + `
+				fn g(q: mut {value: number}, r: mut {value: number}) -> undefined {
+					val mut b = {value: 2}
+					val mut a = {peer: &mut q, spare: &mut r}
+					store(&mut a, &mut b)
+					val t = {x: &mut b}
+					touch(&mut a)
+				}
+			`,
+			want: nil,
+		},
 		"DeadTargetReleasesTheItemOk": {
 			src: storeEffectDecls + `
 				fn h(q: mut {value: number}, r: mut {value: number}) -> undefined {
