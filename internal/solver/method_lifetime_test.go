@@ -31,6 +31,21 @@ func TestMethodLifetimesPerCall(t *testing.T) {
 			want:  "fn <'a>(v: &'a View) -> &'a {x: number}",
 		},
 		{
+			name: "a receiver joined from two borrows ties both to the result",
+			src: `
+				class View {
+					p: {x: number},
+					peek<'a>(&'a self) -> &'a {x: number} { return &self.p },
+				}
+				fn read(a: &View, b: &View, k: boolean) {
+					val v = if k { a } else { b }
+					return v.peek()
+				}
+			`,
+			value: "read",
+			want:  "fn <'a: 'c, 'b: 'c, 'c: 'a & 'b>(a: &'a View, b: &'b View, k: boolean) -> &'c {x: number}",
+		},
+		{
 			name: "a mutable receiver's lifetime reaches the result",
 			src: `
 				class View {

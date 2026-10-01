@@ -698,8 +698,9 @@ func (c *Context) recordMethodLifetimes(obj *soltype.ObjectType, classLts set.Se
 // with the instance's argument. A freshened lifetime keeps its outlives bounds, rewritten
 // through the same copy.
 //
-// When recv holds a borrow and a signature's receiver borrows at a freshened lifetime, recv's
-// borrow must outlive it, which is what passing a borrow to a `&'a` parameter requires.
+// When recv holds a borrow and a signature's receiver borrows at a freshened lifetime, every
+// borrow recv may hold must outlive it, which is what passing a borrow to a `&'a` parameter
+// requires.
 // `v.peek()` on `v: &'r View` for `peek<'a>(&'a self) -> &'a T` then returns a borrow no
 // longer-lived than 'r. An owned receiver is borrowed for the call at the fresh lifetime, the
 // way `&v` is, so it adds no constraint.
@@ -710,7 +711,7 @@ func (c *checker) instantiateMethodLifetimes(lvl int, blame ast.Node, recv solty
 	if !ok || c.ctx.methodLifetimes == nil {
 		return member
 	}
-	held := heldBorrow(recv)
+	held := heldBorrows(recv)
 	sigs := make([]*soltype.FuncType, len(m.Signatures))
 	for i, sig := range m.Signatures {
 		f := &methodLtFreshener{lt: ltFreshener{ctx: c.ctx, lvl: lvl, only: c.ctx.methodLifetimes}}
@@ -719,7 +720,7 @@ func (c *checker) instantiateMethodLifetimes(lvl int, blame ast.Node, recv solty
 			inst = sig
 		}
 		sigs[i] = inst
-		if held == nil || inst.SelfParam == nil || inst == sig {
+		if len(held) == 0 || inst.SelfParam == nil || inst == sig {
 			continue
 		}
 		self, ok := inst.SelfParam.Type.(*soltype.RefType)
@@ -730,7 +731,9 @@ func (c *checker) instantiateMethodLifetimes(lvl int, blame ast.Node, recv solty
 			// Relate the two the way an argument relates to a `&'a` parameter. The borrow is
 			// read as shared, since checkReceiverMut has already answered whether the
 			// receiver lends the mutability the member asks for.
-			c.constrain(blame, held, soltype.NewRef(false, self.Lt, held.Inner))
+			for _, b := range held {
+				c.constrain(blame, b, soltype.NewRef(false, self.Lt, b.Inner))
+			}
 		}
 	}
 	cp := *m
