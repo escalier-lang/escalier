@@ -293,15 +293,16 @@ func isAccessor(elem soltype.ObjTypeElem) bool {
 	return false
 }
 
-// formWeakens reports whether a redeclared member promises less, or demands more, than the
-// inherited one in a way no subtype obligation covers:
+// formWeakens reports whether subElem, the member a class redeclares, is weaker than
+// superElem, the member it inherits, in a way the subtype comparison does not check. It
+// returns true when any of these holds:
 //
-//   - it is an optional field where the inherited one is required, so it may be absent while
-//     the superclass view reads it as always present;
-//   - it takes a mutable receiver where the inherited one takes a shared one, so an
-//     immutable superclass reference can no longer reach it;
-//   - it consumes its receiver where the inherited one borrows it, so a borrowed superclass
-//     reference can no longer reach it.
+//   - subElem is an optional field and superElem is a required one. The subclass field may
+//     be absent where the superclass says it is always present.
+//   - subElem takes a mutable receiver and superElem takes an immutable one. An immutable
+//     superclass reference can reach superElem but not subElem.
+//   - subElem consumes its receiver and superElem borrows it. A borrowed superclass
+//     reference can reach superElem but not subElem.
 func formWeakens(subElem, superElem soltype.ObjTypeElem) bool {
 	if isOptional(subElem) && !isOptional(superElem) {
 		return true
