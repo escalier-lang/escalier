@@ -575,18 +575,21 @@ func printObjectType(t *ObjectType, pt func(Type) string) string {
 	return result
 }
 
-// printSelfReceiver renders the leading `&self` / `&mut self` for a method,
-// getter, or setter. Returns "" when the receiver is absent. This checker
-// models every receiver as a borrow and tracks no moves, so a consuming
-// `self` or `mut self` receiver renders as the borrow of the same mutability.
+// printSelfReceiver renders the leading receiver for a method, getter, or
+// setter: `&self`, `&mut self`, `self`, or `mut self`. Returns "" when the
+// receiver is absent.
 func printSelfReceiver(fn *FuncType) string {
 	if fn == nil || fn.SelfParam == nil {
 		return ""
 	}
-	if ReceiverIsMut(fn) {
-		return "&mut self"
+	prefix := "&"
+	if ReceiverConsumes(fn) {
+		prefix = ""
 	}
-	return "&self"
+	if ReceiverIsMut(fn) {
+		return prefix + "mut self"
+	}
+	return prefix + "self"
 }
 
 func printTupleType(t *TupleType, pt func(Type) string) string {

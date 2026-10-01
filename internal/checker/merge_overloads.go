@@ -19,19 +19,20 @@ func declSpan(p provenance.Provenance) ast.Span {
 
 // OverloadReceiverMutMismatchError is reported when two same-named
 // method arms inside a single class / interface / declare-class /
-// declare-interface body declare different receiver shapes (one
-// `self`, the other `mut self`). Overload resolution dispatches on
-// argument shape only; allowing the receiver shape to vary across
-// arms would force callers to know the dispatch outcome before they
-// know whether the call needs a `mut` binding.
+// declare-interface body declare different receiver shapes, such as
+// one `&self` and the other `&mut self`, or one borrowing the instance
+// and the other consuming it. Overload resolution dispatches on argument
+// shape only. Letting the receiver shape vary across arms would force
+// callers to know the dispatch outcome before they know whether the call
+// needs a `mut` binding or gives up the instance.
 //
 // The mismatched arm is dropped from the merged signature; the first
 // arm's receiver shape wins. Subsequent reads of the method see only
 // the surviving arms.
 type OverloadReceiverMutMismatchError struct {
 	Name          string
-	FirstReceiver string // "self" or "mut self"
-	OtherReceiver string // "self" or "mut self"
+	FirstReceiver string // "&self", "&mut self", "self", or "mut self"
+	OtherReceiver string // "&self", "&mut self", "self", or "mut self"
 	span          ast.Span
 }
 
@@ -54,7 +55,7 @@ func (e OverloadReceiverMutMismatchError) Message() string {
 // untouched. A PropertyElem and a MethodElem sharing a name is a
 // pre-existing checker concern and is left alone here.
 //
-// Receiver mutability must be uniform across arms. A mismatched arm is
+// The receiver shape must be uniform across arms. A mismatched arm is
 // dropped from the merged signature (preserving the first arm's
 // receiver shape so downstream code still type-checks) and an
 // OverloadReceiverMutMismatchError is reported at `span`.
@@ -113,19 +114,19 @@ func (c *Checker) MergeMethodOverloads(elems []type_system.ObjTypeElem, span ast
 		// This pass runs pre-merge: every input MethodElem has exactly
 		// one arm. Inspecting Signatures[0] is always safe here.
 		firstSig := firstMe.Signatures[0]
-		firstMut := type_system.ReceiverIsMut(firstSig)
+		firstShape := receiverShapeLabel(firstSig)
 		arms := []*type_system.FuncType{firstSig}
 
 		for _, j := range idxs[1:] {
 			me := elems[j].(*type_system.MethodElem)
 			sig := me.Signatures[0]
-			armMut := type_system.ReceiverIsMut(sig)
+			armShape := receiverShapeLabel(sig)
 			dropIdx.Add(j)
-			if armMut != firstMut {
+			if armShape != firstShape {
 				errors = append(errors, OverloadReceiverMutMismatchError{
 					Name:          firstMe.Name.String(),
-					FirstReceiver: receiverShapeLabel(firstMut),
-					OtherReceiver: receiverShapeLabel(armMut),
+					FirstReceiver: firstShape,
+					OtherReceiver: armShape,
 					span:          armSpanOr(sig, span),
 				})
 				continue
@@ -165,9 +166,15 @@ func armSpanOr(sig *type_system.FuncType, fallback ast.Span) ast.Span {
 	return fallback
 }
 
-func receiverShapeLabel(mut bool) string {
-	if mut {
-		return "mut self"
+// receiverShapeLabel renders sig's receiver as it is written: `&self`,
+// `&mut self`, `self`, or `mut self`.
+func receiverShapeLabel(sig *type_system.FuncType) string {
+	label := "self"
+	if type_system.ReceiverIsMut(sig) {
+		label = "mut self"
 	}
-	return "self"
+	if !type_system.ReceiverConsumes(sig) {
+		label = "&" + label
+	}
+	return label
 }

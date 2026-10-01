@@ -241,6 +241,7 @@ func (c *Checker) inferClassDecl(ctx Context, decl *ast.ClassDecl) []Error {
 			if !elem.Static && elem.Receiver == nil {
 				errors = append(errors, MissingSelfReceiverError{span: elem.Span_})
 			}
+			errors = slices.Concat(errors, checkSetterReceiver(elem))
 			recv, recvErrs := buildMethodReceiver(classSelfRef, elem.Receiver)
 			errors = slices.Concat(errors, recvErrs)
 			funcType, sigCtx, _, sigErrors := c.inferFuncSig(

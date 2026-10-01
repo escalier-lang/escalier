@@ -640,6 +640,7 @@ func stripMutSelf(fn *type_system.FuncType) *type_system.FuncType {
 		Pattern:  fn.SelfParam.Pattern,
 		Type:     mt.Type,
 		Optional: fn.SelfParam.Optional,
+		Consumes: fn.SelfParam.Consumes,
 	}
 	return &cp
 }

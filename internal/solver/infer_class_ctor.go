@@ -67,12 +67,11 @@ func (c *checker) walkConstructorBody(scope *Scope, lvl int, self *soltype.Class
 	bodySig.Params = valueParams
 
 	ctorScope := scope.Child()
-	// A constructor's `self` is always owned-mutable so its body can assign fields,
-	// regardless of the class's default mutability. The constructor writes `&mut self`, but
-	// the instance it fills in is the one it returns, so the body owns it. It binds the
-	// `self` view, so a subclass constructor can assign a field it inherits.
-	owned := &ast.MethodReceiver{Mode: ast.ConsumeReceiver, Mut: true}
-	c.bindSelf(ctorScope, lvl+1, owned, c.ctx.selfView(self, body))
+	// A constructor's `self` is always a mutable borrow so its body can assign fields,
+	// regardless of the class's default mutability. The body hands the instance back to the
+	// caller, so it may not consume it, and a borrow keeps a consuming method out of reach.
+	// It binds the `self` view, so a subclass constructor can assign a field it inherits.
+	c.bindSelf(ctorScope, lvl+1, &ast.MethodReceiver{Mut: true}, c.ctx.selfView(self, body))
 
 	// Collect the body's `super(…)` calls while it is walked, so the rules about the body as
 	// a whole can be checked once every call is known. A class with no superclass still gets

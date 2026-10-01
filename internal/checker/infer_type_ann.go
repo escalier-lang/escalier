@@ -383,7 +383,7 @@ func (c *Checker) inferFuncTypeAnn(
 	if recv != nil {
 		selfLT, ltErrs := c.resolveLifetimeAnn(funcCtx.Scope, recv.LifetimeNode)
 		errors = slices.Concat(errors, ltErrs)
-		funcType.SelfParam = makeSelfParamWithLifetime(recv.Type, recv.MutSelf, selfLT)
+		funcType.SelfParam = makeSelfParamWithLifetime(recv.Type, recv.MutSelf, recv.Consumes, selfLT)
 	}
 
 	// §9.7 class 1: warn about declared `<'a>` clauses that no

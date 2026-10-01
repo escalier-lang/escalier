@@ -65,6 +65,7 @@ func (e RedundantMatchCaseWarning) isError()                {}
 func (e NestedMutInParamError) isError()                    {}
 func (e MissingMutSelfParameterError) isError()             {}
 func (e MissingSelfReceiverError) isError()                 {}
+func (e SetterReceiverError) isError()                      {}
 func (e MultipleConstructorsNotYetSupportedError) isError() {}
 func (e ConstructorWithReturnTypeError) isError()           {}
 func (e PrivateConstructorNotYetSupportedError) isError()   {}
@@ -129,6 +130,7 @@ func (e InnerNonExhaustiveMatchError) IsWarning() bool             { return fals
 func (e RedundantMatchCaseWarning) IsWarning() bool                { return true }
 func (e MissingMutSelfParameterError) IsWarning() bool             { return false }
 func (e MissingSelfReceiverError) IsWarning() bool                 { return false }
+func (e SetterReceiverError) IsWarning() bool                      { return false }
 func (e MultipleConstructorsNotYetSupportedError) IsWarning() bool { return false }
 func (e ConstructorWithReturnTypeError) IsWarning() bool           { return false }
 func (e PrivateConstructorNotYetSupportedError) IsWarning() bool   { return false }
@@ -880,6 +882,22 @@ func (e MissingSelfReceiverError) Span() ast.Span {
 }
 func (e MissingSelfReceiverError) Message() string {
 	return "Instance methods, getters, and setters must declare a `self` receiver as their first parameter."
+}
+
+// SetterReceiverError is reported when an instance setter declares a
+// receiver other than `&mut self`. Writing through a setter mutates the
+// instance, so a shared `&self` holds no mutable access to do it with,
+// and a consuming `self` or `mut self` would move the instance on every
+// write.
+type SetterReceiverError struct {
+	span ast.Span
+}
+
+func (e SetterReceiverError) Span() ast.Span {
+	return e.span
+}
+func (e SetterReceiverError) Message() string {
+	return "Setters must declare a `&mut self` receiver, since writing through one mutates the instance."
 }
 
 type MultipleConstructorsNotYetSupportedError struct {

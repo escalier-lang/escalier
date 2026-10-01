@@ -805,7 +805,7 @@ import "web:dom"
 	require.Equal(t,
 		[]string{
 			"Method 'swap' overload arms disagree on receiver shape: " +
-				"first arm declares `self`, but a later arm declares `mut self`. " +
+				"first arm declares `&self`, but a later arm declares `&mut self`. " +
 				"All overload arms must share the same receiver shape.",
 		},
 		errorMessages(errs),

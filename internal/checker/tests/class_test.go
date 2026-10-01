@@ -248,6 +248,34 @@ func TestClassImplementsConformance(t *testing.T) {
 				"Class 'Bad' does not implement interface 'Reader': member 'read' self receiver does not match",
 			},
 		},
+		"ConsumingClassMethodAgainstBorrowingInterface": {
+			input: `
+				interface Reader {
+					read(&self) -> number,
+				}
+				class Bad implements Reader {
+					read(self) -> number { return 0 }
+				}
+				val b = Bad()
+			`,
+			expectedErrors: []string{
+				"Class 'Bad' does not implement interface 'Reader': member 'read' self receiver does not match",
+			},
+		},
+		"BorrowingClassMethodAgainstConsumingInterface": {
+			input: `
+				interface Closer {
+					close(mut self) -> number,
+				}
+				class Bad implements Closer {
+					close(&mut self) -> number { return 0 }
+				}
+				val b = Bad()
+			`,
+			expectedErrors: []string{
+				"Class 'Bad' does not implement interface 'Closer': member 'close' self receiver does not match",
+			},
+		},
 		"MutSelfMatches": {
 			input: `
 				interface Counter {
