@@ -220,9 +220,9 @@ func TestBorrowExclusivity(t *testing.T) {
 			want: []string{"10:14-10:16: cannot borrow 'x' as immutable while it is borrowed as mutable"},
 		},
 		// A reassignment ends the binding's loan from that point on, and no further back. The
-		// read of x sits before it, while a still borrows x, so it reports even though a is
+		// move of x sits before it, while a still borrows x, so it reports even though a is
 		// repointed later in the body.
-		"AReassignmentDoesNotSilenceAnEarlierRead": {
+		"AReassignmentDoesNotSilenceAnEarlierMove": {
 			src: exclusivityDecls + `
 				fn g(x: mut {v: number}, y: mut {v: number}) -> undefined {
 					var a = &mut x
@@ -329,10 +329,10 @@ func TestStoreEffectLoans(t *testing.T) {
 			`,
 			want: []string{"16:14-16:15: cannot move 'b' while it is borrowed"},
 		},
-		// A read walked BEFORE the repoint went through the loan while it still held, so it
-		// keeps its diagnostic. The loan carries the sequence it ended at rather than leaving
-		// the list, which is what lets a later store leave an earlier read alone.
-		"AReadBeforeTheRepointKeepsItsDiagnostic": {
+		// A move walked BEFORE the repoint happened while the loan still held, so it keeps its
+		// diagnostic. The loan carries the sequence it ended at rather than leaving the list,
+		// which is what keeps a later store from silencing an earlier move.
+		"AMoveBeforeTheRepointKeepsItsDiagnostic": {
 			src: storeEffectDecls + `
 				fn h(q: mut {value: number}, r: mut {value: number}) -> undefined {
 					val mut b = {value: 2}
