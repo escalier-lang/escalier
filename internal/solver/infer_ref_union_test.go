@@ -36,7 +36,7 @@ func TestInferRefUnion(t *testing.T) {
 			// wrap rather than reporting an unsupported feature.
 			name: "owned-mutable union accepted",
 			src:  `fn f(p: mut ({a: number} | {b: number})) { return p }`,
-			want: "fn (p: mut ({a: number} | {b: number})) -> mut ({a: number} | {b: number})",
+			want: "fn (p: mut ({a: number} | {b: number})) -> {a: number} | {b: number}",
 		},
 		{
 			name: "immutable borrow over an intersection",

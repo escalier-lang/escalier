@@ -455,6 +455,15 @@ func (c *checker) inferFunc(scope *Scope, lvl int, sig ast.FuncSig, body *ast.Bl
 			bodyDiverges = true
 		} else {
 			ret = c.joinReturnPoints(node, lvl, collected)
+			// A return moves the value out of the frame, so the caller's own binding decides
+			// mutability. `val r = f()` freezes what it gets and `val mut r = f()` takes it
+			// mutably. Only the inferred type is frozen, so a written `-> mut T` still means it.
+			//
+			// The peel reads the joined type's shape, so a return still standing as an
+			// inference variable keeps its `mut`. #1505 covers those.
+			if sig.Return == nil {
+				ret = stripOwnedMut(ret)
+			}
 		}
 	}
 	// A declared `throws T` the body never uses obliges every caller to handle an

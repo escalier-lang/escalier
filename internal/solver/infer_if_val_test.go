@@ -460,7 +460,7 @@ func TestInferValElseJoinsInsideAMutLeaf(t *testing.T) {
 			return x
 		}`)
 	require.Empty(t, errs)
-	require.Equal(t, "fn (p: {x: {a: number}} | {y: string}) -> mut {a: number}", values["f"])
+	require.Equal(t, "fn (p: {x: {a: number}} | {y: string}) -> {a: number}", values["f"])
 }
 
 // A leaf's own type annotation fixes what the name binds at, so the fallback has to fit it

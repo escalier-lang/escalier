@@ -380,7 +380,7 @@ func TestForInBackEdgeBorrows(t *testing.T) {
 				}
 			`,
 			want:  nil,
-			types: map[string]string{"f": "fn (xs: [number]) -> mut {peer: {x: number}}"},
+			types: map[string]string{"f": "fn (xs: [number]) -> {peer: {x: number}}"},
 		},
 	}
 	for name, tc := range tests {
