@@ -7,6 +7,7 @@ import (
 	"sync"
 	"testing"
 
+	"github.com/escalier-lang/escalier/internal/set"
 	"github.com/gkampitakis/go-snaps/snaps"
 	"github.com/stretchr/testify/require"
 )
@@ -184,8 +185,9 @@ func TestFilterReportTallies(t *testing.T) {
 		guards[decision.Coercion]++
 	}
 	require.Equal(t, 4882, adjudicated)
-	require.Equal(t, 362, dropped)
+	require.Equal(t, 692, dropped)
 	require.Equal(t, map[string]int{
+		"RequireInternalSlot":    330,
 		"RequireObjectCoercible": 31,
 		"ThisBigIntValue":        2,
 		"ThisBooleanValue":       2,
@@ -280,7 +282,8 @@ func TestCoercionsRaiseOnTheirFirstArgument(t *testing.T) {
 			name, fn.Params[coercionGuardArg], throwSteps(fn)))
 	}
 
-	snaps.MatchInlineSnapshot(t, strings.Join(lines, "\n"), snaps.Inline(`RequireObjectCoercible(argument) raises at #5 TypeError
+	snaps.MatchInlineSnapshot(t, strings.Join(lines, "\n"), snaps.Inline(`RequireInternalSlot(O) raises at #2 TypeError, #5 TypeError
+RequireObjectCoercible(argument) raises at #5 TypeError
 ThisBigIntValue(value) raises at #12 TypeError
 ThisBooleanValue(value) raises at #12 TypeError
 ThisNumberValue(value) raises at #12 TypeError
@@ -369,4 +372,76 @@ func sortedStrings(names []string) []string {
 	sorted := append([]string(nil), names...)
 	sort.Strings(sorted)
 	return sorted
+}
+
+// Every class whose methods the `RequireInternalSlot` entry drops a site for,
+// with the operation the dropped chain enters through. The graph does not carry
+// the slot a call checks, so this list is the review: each line was read
+// against ECMA-262 as checking the slot its own class carries. `Map via
+// CreateMapIterator` is `Map.prototype.entries` reaching
+// `RequireInternalSlot(map, [[MapData]])` inside `CreateMapIterator`, with `map`
+// threaded from the receiver.
+//
+// A spec bump that adds a line here is the prompt to read the new method and
+// confirm the slot belongs to its receiver's class.
+func TestRequireInternalSlotDrops(t *testing.T) {
+	lines := set.NewSet[string]()
+	for _, decision := range testFilterReport(t).Dropped() {
+		if decision.Coercion != "RequireInternalSlot" {
+			continue
+		}
+		owner, _, _ := strings.Cut(strings.TrimPrefix(decision.Method, "get "), ".")
+		_, chain, _ := strings.Cut(decision.Site, "<- ")
+		entry, _, _ := strings.Cut(chain, "#")
+		lines.Add(owner + " via " + entry)
+	}
+
+	snaps.MatchInlineSnapshot(t, strings.Join(sortedStrings(lines.ToSlice()), "\n"), snaps.Inline(`ArrayBuffer via ArrayBufferCopyAndDetach
+ArrayBuffer via RequireInternalSlot
+AsyncGeneratorPrototype via AsyncGeneratorValidate
+DataView via GetViewValue
+DataView via RequireInternalSlot
+DataView via SetViewValue
+Date via RequireInternalSlot
+FinalizationRegistry via RequireInternalSlot
+GeneratorPrototype via GeneratorResume
+GeneratorPrototype via GeneratorResumeAbrupt
+IteratorHelperPrototype via GeneratorResume
+IteratorHelperPrototype via GeneratorResumeAbrupt
+IteratorHelperPrototype via RequireInternalSlot
+Map via CreateMapIterator
+Map via RequireInternalSlot
+MapIteratorPrototype via GeneratorResume
+RegExp via RegExpExec
+RegExp via RequireInternalSlot
+Set via CreateSetIterator
+Set via RequireInternalSlot
+SetIteratorPrototype via GeneratorResume
+SharedArrayBuffer via RequireInternalSlot
+StringIteratorPrototype via GeneratorResume
+TypedArray via RequireInternalSlot
+TypedArray via ValidateTypedArray
+WeakMap via RequireInternalSlot
+WeakRef via RequireInternalSlot
+WeakSet via RequireInternalSlot
+WrapForValidIteratorPrototype via RequireInternalSlot`))
+}
+
+// A getter that only checks its receiver's brand throws nothing for a
+// well-typed caller. `ArrayBuffer.prototype.slice` keeps the same check applied
+// to the object its species constructor returns, which no declaration types.
+func TestFilterDropsTheReceiverBrandCheckAlone(t *testing.T) {
+	require.Empty(t, analyzedFactOf(t, "get Map.prototype.size").Throws)
+
+	var kept []string
+	for _, decision := range testFilterReport(t).Decisions {
+		if decision.Method == "ArrayBuffer.prototype.slice" && decision.Coercion == "RequireInternalSlot" && !decision.Dropped {
+			kept = append(kept, decision.String())
+		}
+	}
+	require.Equal(t, []string{
+		"ArrayBuffer.prototype.slice: kept #34 TypeError <- RequireInternalSlot#2 [RequireInternalSlot, value untraced]",
+		"ArrayBuffer.prototype.slice: kept #34 TypeError <- RequireInternalSlot#5 [RequireInternalSlot, value untraced]",
+	}, kept)
+	require.Contains(t, analyzedFactOf(t, "ArrayBuffer.prototype.slice").Throws, "TypeError")
 }
