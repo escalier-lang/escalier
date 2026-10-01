@@ -64,6 +64,7 @@ func (e InnerNonExhaustiveMatchError) isError()             {}
 func (e RedundantMatchCaseWarning) isError()                {}
 func (e NestedMutInParamError) isError()                    {}
 func (e MissingMutSelfParameterError) isError()             {}
+func (e ConstructorConsumesSelfError) isError()             {}
 func (e MissingSelfReceiverError) isError()                 {}
 func (e SetterReceiverError) isError()                      {}
 func (e GetterReceiverError) isError()                      {}
@@ -130,6 +131,7 @@ func (e NonExhaustiveMatchError) IsWarning() bool                  { return fals
 func (e InnerNonExhaustiveMatchError) IsWarning() bool             { return false }
 func (e RedundantMatchCaseWarning) IsWarning() bool                { return true }
 func (e MissingMutSelfParameterError) IsWarning() bool             { return false }
+func (e ConstructorConsumesSelfError) IsWarning() bool             { return false }
 func (e MissingSelfReceiverError) IsWarning() bool                 { return false }
 func (e SetterReceiverError) IsWarning() bool                      { return false }
 func (e GetterReceiverError) IsWarning() bool                      { return false }
@@ -852,6 +854,21 @@ func (e MissingMutSelfParameterError) Message() string {
 	default:
 		return "Invalid `&mut self` parameter on constructor."
 	}
+}
+
+// ConstructorConsumesSelfError is reported when a constructor declares a
+// consuming `self` or `mut self` receiver. A constructor returns the
+// instance it fills in, so it borrows that instance with `&mut self`
+// rather than taking it.
+type ConstructorConsumesSelfError struct {
+	span ast.Span
+}
+
+func (e ConstructorConsumesSelfError) Span() ast.Span {
+	return e.span
+}
+func (e ConstructorConsumesSelfError) Message() string {
+	return "A constructor returns the instance it fills in, so it must borrow `self` as `&mut self` rather than consume it."
 }
 
 // ReceiverLifetimeOutsideMemberError is reported when a `&'a self`

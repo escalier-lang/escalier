@@ -69,7 +69,9 @@ func validateConstructorSelf(ctor *ast.ConstructorElem) []Error {
 	switch {
 	case ctor.Receiver == nil:
 		errors = append(errors, MissingMutSelfParameterError{Reason: MutSelfMissing, span: span})
-	case !ctor.Receiver.Mut || ctor.Receiver.Consumes():
+	case ctor.Receiver.Consumes():
+		errors = append(errors, ConstructorConsumesSelfError{span: span})
+	case !ctor.Receiver.Mut:
 		errors = append(errors, MissingMutSelfParameterError{Reason: MutSelfNotMut, span: span})
 	}
 

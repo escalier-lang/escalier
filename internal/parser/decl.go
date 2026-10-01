@@ -681,9 +681,16 @@ func (p *Parser) parseConstructorElem(
 				ast.Span{Start: selfStart, End: p.lexer.currentLoc(), SourceID: p.lexer.source.ID},
 				"constructors must declare `&mut self` as their first parameter",
 			)
-		} else if !receiver.Mut || receiver.Consumes() {
-			// `&self`, `self`, or `mut self`. A constructor fills in the
-			// instance it is handed, so it needs a mutable borrow of it.
+		} else if receiver.Consumes() {
+			// `self` or `mut self`. A constructor returns the instance it
+			// fills in, so it cannot take that instance.
+			p.reportError(
+				receiver.Span_,
+				"a constructor returns the instance it fills in, so it must borrow `self` as `&mut self` rather than consume it",
+			)
+		} else if !receiver.Mut {
+			// `&self`. A constructor fills in the instance it is handed, so
+			// it needs a mutable borrow of it.
 			p.reportError(
 				receiver.Span_,
 				"the `self` parameter of a constructor must be declared `&mut self`",

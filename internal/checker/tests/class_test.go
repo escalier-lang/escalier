@@ -955,6 +955,48 @@ func TestConstructorRejectsSelfLifetime(t *testing.T) {
 	}
 }
 
+// TestConstructorRejectsConsumingSelf pins that a constructor declaring a
+// consuming receiver gets ConstructorConsumesSelfError rather than the
+// mutability diagnostic a `&self` constructor gets.
+func TestConstructorRejectsConsumingSelf(t *testing.T) {
+	tests := map[string]string{
+		"consuming":         "self",
+		"mutable consuming": "mut self",
+	}
+	for name, receiver := range tests {
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+			src := `
+				class C {
+					n: number,
+					constructor(` + receiver + `) { self.n = 0 }
+				}
+			`
+			source := &ast.Source{ID: 0, Path: "input.esc", Contents: src}
+			ctx, cancel := context.WithTimeout(context.Background(), 1*time.Second)
+			defer cancel()
+			// The parser reports the same mistake. The checker still sees the
+			// receiver it parsed, which is what this test pins.
+			module, _ := parser.ParseLibFiles(ctx, []*ast.Source{source})
+
+			c := NewChecker(ctx)
+			inferCtx := Context{Scope: Prelude(c)}
+			_, inferErrors := c.InferModule(inferCtx, module)
+
+			var msgs []string
+			for _, e := range inferErrors {
+				switch e.(type) {
+				case ConstructorConsumesSelfError, MissingMutSelfParameterError:
+					msgs = append(msgs, e.Message())
+				}
+			}
+			require.Equal(t, []string{
+				"A constructor returns the instance it fills in, so it must borrow `self` as `&mut self` rather than consume it.",
+			}, msgs)
+		})
+	}
+}
+
 // TestInstanceMethodMissingSelfReceiver pins that a non-static class
 // method, getter, or setter that omits its `self` receiver produces a
 // MissingSelfReceiverError. The parser accepts the shape (so we still

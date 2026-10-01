@@ -1338,7 +1338,7 @@ func TestClassConstructorErrors(t *testing.T) {
 		"ConstructorSelfWithTypeAnnotation": {
 			input: `
 				class Foo {
-					constructor(mut self: Self, x: number) {
+					constructor(&mut self: Self, x: number) {
 						self.x = x
 					}
 				}

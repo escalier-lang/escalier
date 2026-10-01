@@ -4037,16 +4037,16 @@
                                 Pattern: &ast.IdentPat{
                                     Name: "self",
                                     Mutable: true,
-                                    span: 34-42,
+                                    span: 34-43,
                                 },
                             },
                             &ast.Param{
                                 Pattern: &ast.IdentPat{
                                     Name: "x",
-                                    span: 50-51,
+                                    span: 51-52,
                                 },
                                 TypeAnn: &ast.NumberTypeAnn{
-                                    span: 53-59,
+                                    span: 54-60,
                                 },
                             },
                         },
@@ -4058,39 +4058,38 @@
                                     Left: &ast.MemberExpr{
                                         Object: &ast.IdentExpr{
                                             Name: "self",
-                                            span: 69-73,
+                                            span: 70-74,
                                         },
                                         Prop: &ast.Ident{
                                             Name: "x",
-                                            span: 74-75,
+                                            span: 75-76,
                                         },
-                                        span: 69-75,
+                                        span: 70-76,
                                     },
                                     Op: "=",
                                     Right: &ast.IdentExpr{
                                         Name: "x",
-                                        span: 78-79,
+                                        span: 79-80,
                                     },
-                                    span: 69-79,
+                                    span: 70-80,
                                 },
-                                span: 69-79,
+                                span: 70-80,
                             },
                         },
-                        Span: 61-86,
+                        Span: 62-87,
                     },
-                    span: 22-86,
+                    span: 22-87,
                 },
                 Receiver: &ast.MethodReceiver{
-                    Mode: 1,
                     Mut: true,
-                    Span_: 34-42,
+                    Span_: 34-43,
                 },
-                Span_: 22-86,
+                Span_: 22-87,
             },
         },
-        span: 5-92,
+        span: 5-93,
     },
-    span: 5-92,
+    span: 5-93,
 }
 ---
 
@@ -4158,11 +4157,7 @@
 [TestClassConstructorErrors/ConstructorSelfWithTypeAnnotation - 2]
 []*parser.Error{
     &parser.Error{
-        Span: 34-42,
-        Message: "the `self` parameter of a constructor must be declared `&mut self`",
-    },
-    &parser.Error{
-        Span: 42-43,
+        Span: 43-44,
         Message: "the `&mut self` parameter cannot have a type annotation",
     },
 }

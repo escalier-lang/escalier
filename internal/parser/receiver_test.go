@@ -79,11 +79,11 @@ func TestParseReceiverDiagnostics(t *testing.T) {
 		},
 		"constructor with a consuming receiver": {
 			input:   "class Foo { constructor(self) {} }",
-			wantErr: "the `self` parameter of a constructor must be declared `&mut self`",
+			wantErr: "a constructor returns the instance it fills in, so it must borrow `self` as `&mut self` rather than consume it",
 		},
 		"constructor with a mutable consuming receiver": {
 			input:   "class Foo { constructor(mut self) {} }",
-			wantErr: "the `self` parameter of a constructor must be declared `&mut self`",
+			wantErr: "a constructor returns the instance it fills in, so it must borrow `self` as `&mut self` rather than consume it",
 		},
 		"constructor without a receiver": {
 			input:   "class Foo { constructor() {} }",
