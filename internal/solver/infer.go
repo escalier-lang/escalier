@@ -230,6 +230,14 @@ type checker struct {
 	// take the member's receiver as its own.
 	memberReceiver *ast.MethodReceiver
 
+	// memberSelf is set beside memberReceiver for an instance member, by inferMemberFunc, and
+	// carries what inferFunc needs to bind the member's `self` and build its SelfParam.
+	// inferFunc does both after opening the member's own named-lifetime scope, so `&'a self`
+	// shares its `'a` with the rest of the signature. It is nil for a constructor, which binds
+	// its own `self`, and for every function that is not a member. inferFunc reads and clears
+	// it on entry, so a lambda nested inside a member body binds no `self` of its own.
+	memberSelf *memberSelf
+
 	// pendingReturns holds every body-carrying function inferFunc has typed since the last
 	// checkCanReturn, each waiting to have its return type checked for a finite inhabitant. The
 	// check is queued rather than run on the spot because a recursive call resolves through a

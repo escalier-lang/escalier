@@ -212,10 +212,15 @@ func (c *checker) inferFunc(scope *Scope, lvl int, sig ast.FuncSig, body *ast.Bl
 	c.memberName = ""
 	recv := c.memberReceiver
 	c.memberReceiver = nil
+	// Take what inferMemberFunc left for binding this member's `self`, and clear it so a lambda
+	// nested in the body walked below binds no `self` of its own. It is nil for every function
+	// that is not an instance member, a constructor included, since a constructor binds its own.
+	member := c.memberSelf
+	c.memberSelf = nil
 	// Report any named lifetime the signature uses without binding it in its own `<…>`
 	// list, and the symmetric unused binder. Run before resolving the params so the scan
 	// reads the written names, not what namedLifetime has since interned.
-	c.checkLifetimeDeclarations(sig.LifetimeParams, sig.Params, sig.Return, sig.Throws)
+	c.checkLifetimeDeclarations(sig.LifetimeParams, recv, sig.Params, sig.Return, sig.Throws)
 	// Resolve a standalone function's type parameters into a child scope so a param or
 	// return annotation reads each `T` as one shared var. The var is minted above the
 	// generalization level, so value-binding generalization quantifies it into
@@ -237,6 +242,18 @@ func (c *checker) inferFunc(scope *Scope, lvl int, sig ast.FuncSig, body *ast.Bl
 		}
 	}
 	fnScope := declScope.Child()
+	// An instance member binds `self` in its own scope and carries the receiver as its
+	// SelfParam. Both borrow at one lifetime, which a written `&'a self` resolves here in
+	// the member's named-lifetime scope, so the body's `self` and the signature agree with
+	// every other `'a` the signature writes.
+	var selfParam *soltype.FuncParam
+	if member != nil {
+		lt := c.receiverLifetime(recv, lvl)
+		c.bindSelf(fnScope, recv, lt, member.body)
+		if recv != nil {
+			selfParam = receiverParam(recv, lt, member.class)
+		}
+	}
 	params := make([]*soltype.FuncParam, len(sig.Params))
 	// paramTypes maps each bound parameter name to its soltype, consumed by the M4
 	// G1 liveness pre-pass to seed parameter alias mutability.
@@ -560,7 +577,7 @@ func (c *checker) inferFunc(scope *Scope, lvl int, sig ast.FuncSig, body *ast.Bl
 	// inexact — it tolerates extra args when used as a callback (#677 §4.1), accept
 	// [required, ∞). Note exactness governs callback subtyping, not direct calls: an
 	// inexact value still rejects extras at a visible call site (the inferCall lint).
-	ft := &soltype.FuncType{Params: params, Ret: ret, Throws: throws, Inexact: sig.Inexact, TypeParams: typeParams}
+	ft := &soltype.FuncType{SelfParam: selfParam, Params: params, Ret: ret, Throws: throws, Inexact: sig.Inexact, TypeParams: typeParams}
 	// Record the function's own type against its node so a function flowing into a
 	// non-function requirement blames the function, and FuncArityMismatchError can
 	// carry a "defined here" related span. (For a named callee this raw FuncType is
