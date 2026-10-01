@@ -347,6 +347,26 @@ func TestReturnValueBorrows(t *testing.T) {
 			want:  nil,
 			types: map[string]string{"f": "fn <'a>(seed: &'a mut {value: number}) -> &'a mut {value: number}"},
 		},
+		// A local can leave the frame through another local's edges rather than by being
+		// borrowed directly. c goes out inside the literal argument through b, so the return is
+		// not the only path to it and takes no exemption. The report names that second path,
+		// since c's lifetime is not what breaks.
+		"ReturnOfALocalThatLeftThroughAnotherLocal": {
+			src: `
+				declare fn take(x: {slot: &mut {peer: &mut {value: number}}}) -> undefined
+				fn f() -> &mut {value: number} {
+					val mut c = {value: 0}
+					val mut b = {peer: &mut c}
+					take({slot: &mut b})
+					return &mut c
+				}
+			`,
+			want: []string{"7:13-7:19: 'c' leaves the function at another point too, so the return is not the only path to it"},
+			types: map[string]string{
+				"take": "fn (x: {slot: &mut {peer: &mut {value: number}}}) -> undefined",
+				"f":    "fn () -> &mut {value: number}",
+			},
+		},
 	}
 	for name, tc := range tests {
 		t.Run(name, func(t *testing.T) {

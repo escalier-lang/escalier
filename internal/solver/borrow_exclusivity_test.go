@@ -219,6 +219,21 @@ func TestBorrowExclusivity(t *testing.T) {
 			`,
 			want: []string{"10:14-10:16: cannot borrow 'x' as immutable while it is borrowed as mutable"},
 		},
+		// A reassignment ends the binding's loan from that point on, and no further back. The
+		// move of x sits before it, while a still borrows x, so it reports even though a is
+		// repointed later in the body.
+		"AReassignmentDoesNotSilenceAnEarlierMove": {
+			src: exclusivityDecls + `
+				fn g(x: mut {v: number}, y: mut {v: number}) -> undefined {
+					var a = &mut x
+					val w = x
+					write(a)
+					a = &mut y
+					write(a)
+				}
+			`,
+			want: []string{"9:14-9:15: cannot move 'x' while it is borrowed"},
+		},
 	}
 	for name, tc := range tests {
 		t.Run(name, func(t *testing.T) {
@@ -280,6 +295,56 @@ func TestStoreEffectLoans(t *testing.T) {
 				}
 			`,
 			want: []string{"14:14-14:15: cannot move 'b' while it is borrowed"},
+		},
+		// Repointing the field the store wrote to ends the loan there, so the item is reachable
+		// one way again. This is the loan side of the strong update the borrow graph makes on
+		// the same subtree.
+		"RepointingTheStoredFieldReleasesTheItemOk": {
+			src: storeEffectDecls + `
+				fn f(q: mut {value: number}, r: mut {value: number}) -> undefined {
+					val mut b = {value: 2}
+					val mut c = {value: 3}
+					val mut a = {peer: &mut q, spare: &mut r}
+					store(&mut a, &mut b)
+					a.peer = &mut c
+					val y = b
+					touch(&mut a)
+				}
+			`,
+			want: nil,
+		},
+		// A store into a SIBLING field leaves the loan at [peer] holding, since the update
+		// reaches only the field it writes.
+		"RepointingASiblingFieldKeepsTheLoan": {
+			src: storeEffectDecls + `
+				fn g(q: mut {value: number}, r: mut {value: number}) -> undefined {
+					val mut b = {value: 2}
+					val mut c = {value: 3}
+					val mut a = {peer: &mut q, spare: &mut r}
+					store(&mut a, &mut b)
+					a.spare = &mut c
+					val y = b
+					touch(&mut a)
+				}
+			`,
+			want: []string{"16:14-16:15: cannot move 'b' while it is borrowed"},
+		},
+		// A move walked BEFORE the repoint happened while the loan still held, so it keeps its
+		// diagnostic. The loan carries the sequence it ended at rather than leaving the list,
+		// which is what keeps a later store from silencing an earlier move.
+		"AMoveBeforeTheRepointKeepsItsDiagnostic": {
+			src: storeEffectDecls + `
+				fn h(q: mut {value: number}, r: mut {value: number}) -> undefined {
+					val mut b = {value: 2}
+					val mut c = {value: 3}
+					val mut a = {peer: &mut q, spare: &mut r}
+					store(&mut a, &mut b)
+					val y = b
+					a.peer = &mut c
+					touch(&mut a)
+				}
+			`,
+			want: []string{"15:14-15:15: cannot move 'b' while it is borrowed"},
 		},
 		// Nothing reads the target after the store, so its borrow of the item is dead and the
 		// item is reachable one way again. This is the same NLL rule a named borrow follows.

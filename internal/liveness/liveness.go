@@ -53,19 +53,6 @@ type LivenessInfo struct {
 // The DeclStmt for c is decomposed by the CFG builder into separate
 // branches. Its StmtRef points to the join block with StmtIdx -1,
 // so alias tracking checks liveness just before `a.x = 5`.
-// IsLiveBefore returns whether the given variable is live entering the statement at the given
-// position. A variable the statement itself reads is live before it and dead after it, so this
-// is the test for "still usable AT this point" where IsLiveAfter asks "still usable BEYOND it".
-//
-// A StmtIdx of -1 is the synthetic position before the block's first statement, which
-// IsLiveAfter documents; there the two questions coincide.
-func (l *LivenessInfo) IsLiveBefore(ref StmtRef, v VarID) bool {
-	if ref.StmtIdx < 0 {
-		return l.IsLiveAfter(ref, v)
-	}
-	return l.LiveBefore[ref.BlockID][ref.StmtIdx].Contains(v)
-}
-
 func (l *LivenessInfo) IsLiveAfter(ref StmtRef, v VarID) bool {
 	if ref.StmtIdx < 0 {
 		// Synthetic position before the block's first statement.
@@ -83,4 +70,17 @@ func (l *LivenessInfo) IsLiveAfter(ref StmtRef, v VarID) bool {
 		return false
 	}
 	return l.LiveAfter[ref.BlockID][ref.StmtIdx].Contains(v)
+}
+
+// IsLiveBefore returns whether the given variable is live entering the statement at the given
+// position. A variable the statement itself reads is live before it and dead after it, so this
+// is the test for "still usable AT this point" where IsLiveAfter asks "still usable BEYOND it".
+//
+// A StmtIdx of -1 is the synthetic position before the block's first statement, which
+// IsLiveAfter documents; there the two questions coincide.
+func (l *LivenessInfo) IsLiveBefore(ref StmtRef, v VarID) bool {
+	if ref.StmtIdx < 0 {
+		return l.IsLiveAfter(ref, v)
+	}
+	return l.LiveBefore[ref.BlockID][ref.StmtIdx].Contains(v)
 }
