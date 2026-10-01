@@ -100,6 +100,10 @@ type moveUse struct {
 	place movePlace
 	ref   liveness.StmtRef
 	node  ast.Node
+	// loanSeqAt is the sequence the next loan would have taken when this read was walked. The
+	// borrow exclusivity check weighs the read against the loans below it, so a borrow written
+	// later in the source, on the other arm of an `if` among others, does not reach back to it.
+	loanSeqAt int
 }
 
 // isBorrowType reports whether t is a borrow — a RefType carrying a lifetime.
@@ -372,7 +376,7 @@ func (c *checker) recordUse(e *ast.IdentExpr, t soltype.Type) {
 		return
 	}
 	p := movePlace{root: liveness.VarID(e.VarID)}
-	c.fn.useSites = append(c.fn.useSites, moveUse{place: p, ref: ref, node: e})
+	c.fn.useSites = append(c.fn.useSites, moveUse{place: p, ref: ref, node: e, loanSeqAt: c.fn.loanSeq + 1})
 }
 
 // recordMemberUse records a read of a field place so the use-after-move scan can
@@ -393,7 +397,7 @@ func (c *checker) recordMemberUse(e ast.Expr) {
 	if !ok {
 		return
 	}
-	c.fn.useSites = append(c.fn.useSites, moveUse{place: p, ref: ref, node: e})
+	c.fn.useSites = append(c.fn.useSites, moveUse{place: p, ref: ref, node: e, loanSeqAt: c.fn.loanSeq + 1})
 }
 
 // consumeOwned records a move of the owned place the source expression names, at the
@@ -571,11 +575,13 @@ func (c *checker) checkUseAfterMoves() {
 			info = liveness.AnalyzeMoves(c.fn.cfg, c.fn.moveSites)
 		}
 	}
+	reported := set.NewSet[ast.Node]()
 	for _, u := range c.fn.useSites {
 		state, movedID := c.movedConflict(info, u)
 		if state == liveness.NotMoved {
 			continue
 		}
+		reported.Add(u.node)
 		// The read place is a partial-move read when it is a strict ancestor of the
 		// moved place: reading the whole `pair` after `pair.a` moved exposes the moved
 		// field. ReadName then names the read; otherwise the read is the moved place
@@ -595,6 +601,10 @@ func (c *checker) checkUseAfterMoves() {
 			moveSite:    c.fn.moveNodes[movedID],
 		})
 	}
+	// Every loan is recorded by now, so a read of data a live borrow can write through is
+	// decided here rather than mid-walk. A read the loop above already reported is skipped, so
+	// one bad read yields one diagnostic.
+	c.checkUsesAgainstLoans(reported)
 	c.resolvePhaseTransitions(info)
 }
 

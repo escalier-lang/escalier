@@ -476,6 +476,10 @@ func (c *checker) recordCallStoreEdges(
 			// to what the target already holds rather than replacing it, since a signature says
 			// where a borrow lands and not whether the callee overwrites what was there.
 			c.addBorrowEdge(target.root, appendPath(target.path, edge.path), referent)
+			// The target reaches the referent from here on, so it holds a borrow of it that a
+			// second borrow or a read of the referent has to respect.
+			c.recordStoreEdgeLoan(storeLoanPlace(argExpr, referent, edge.direct),
+				storeSourceMut(fn, self, edge.arg), target.root, ref, argExpr)
 			recorded = true
 		}
 	}
@@ -543,6 +547,55 @@ func (c *checker) storedReferents(arg ast.Expr) []liveness.VarID {
 		out = append(out, referent)
 	}
 	return out
+}
+
+// storeSourceMut reports whether a write can go through what the store puts in the target. It
+// reads the SOURCE position, since that is the view the target ends up holding. A signature
+// storing a `&'a B` leaves the target able to read the item and not to write it, even though
+// the target itself is a mutable borrow.
+func storeSourceMut(fn *soltype.FuncType, self *soltype.FuncParam, arg int) bool {
+	if arg == selfIndex {
+		// A `mut self` receiver is a mutable RefType carrying no lifetime, the same shape an
+		// owned-mutable parameter takes. The lifetime test that rules a parameter out does not
+		// apply here, since the receiver is borrowed for the call rather than moved. This is
+		// the source-side twin of the test callStoreEdges makes when it classifies the
+		// receiver as a target.
+		if self == nil {
+			return false
+		}
+		ref, isRef := self.Type.(*soltype.RefType)
+		return isRef && ref.Mut
+	}
+	if arg < 0 || arg >= len(fn.Params) {
+		return false
+	}
+	param := fn.Params[arg]
+	if param == nil {
+		return false
+	}
+	mut, _ := paramBorrowMut(param.Type)
+	return mut
+}
+
+// storeLoanPlace returns the place the store puts in the target.
+//
+// A DIRECT store puts the argument's own referent there, so `store(&mut a, &mut b.inner)`
+// leaves the target reaching b.inner and nothing else of b. Reading the argument's place keeps
+// that field path, which a later borrow of the disjoint b.other is then compared against.
+//
+// An INDIRECT store puts what the argument HOLDS there, which the argument's own place does not
+// name, so the whole referent is the answer. The same applies when the argument names no place,
+// such as an inline carrier.
+func storeLoanPlace(argExpr ast.Expr, referent liveness.VarID, direct bool) movePlace {
+	whole := movePlace{root: referent}
+	if !direct {
+		return whole
+	}
+	p, ok := loanPlace(argExpr)
+	if !ok || p.root != referent {
+		return whole
+	}
+	return p
 }
 
 // storeExprAt returns the expression at store position i: the receiver at selfIndex, and the
