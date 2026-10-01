@@ -353,6 +353,18 @@ func TestStaticMethodRejectsSelfReceiver(t *testing.T) {
 			}`,
 			wantErr: "static methods cannot have a `self` receiver",
 		},
+		"static consuming self": {
+			input: `class Foo {
+				static bar(self) -> number { return 1 },
+			}`,
+			wantErr: "static methods cannot have a `self` receiver",
+		},
+		"static mutable consuming self": {
+			input: `class Foo {
+				static bar(mut self) -> number { return 1 },
+			}`,
+			wantErr: "static methods cannot have a `self` receiver",
+		},
 		"static 'a self": {
 			input: `class Foo {
 				static bar<'a>(&'a self) -> number { return 1 },

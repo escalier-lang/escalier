@@ -53,6 +53,49 @@ func TestParseMethodReceiverForms(t *testing.T) {
 	}
 }
 
+// TestParseMutableConsumingReceiverIsNotAParameter pins that `mut self` reads as a receiver
+// while `mut x` stays an ordinary mutable parameter. Both start with `mut`, so the receiver
+// probe has to give the tokens back when no `self` follows.
+func TestParseMutableConsumingReceiverIsNotAParameter(t *testing.T) {
+	tests := map[string]struct {
+		params      string
+		hasReceiver bool
+		paramNames  []string
+	}{
+		"mutable consuming receiver then a mutable parameter": {
+			params: "mut self, mut x: number", hasReceiver: true, paramNames: []string{"x"},
+		},
+		"mutable parameter and no receiver": {
+			params: "mut x: number", paramNames: []string{"x"},
+		},
+	}
+
+	for name, tc := range tests {
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+			script, messages := parseReceiverScript(t, "class Foo { bar("+tc.params+") -> number { return x } }")
+			require.Empty(t, messages)
+			method := findFirstMethodInScript(script)
+			require.NotNil(t, method)
+			if tc.hasReceiver {
+				require.NotNil(t, method.Receiver)
+				require.Equal(t, ast.ConsumeReceiver, method.Receiver.Mode)
+				require.True(t, method.Receiver.Mut)
+			} else {
+				require.Nil(t, method.Receiver)
+			}
+			names := make([]string, len(method.Fn.Params))
+			for i, p := range method.Fn.Params {
+				ip, ok := p.Pattern.(*ast.IdentPat)
+				require.True(t, ok)
+				require.True(t, ip.Mutable)
+				names[i] = ip.Name
+			}
+			require.Equal(t, tc.paramNames, names)
+		})
+	}
+}
+
 // TestParseReceiverDiagnostics pins the receivers the parser reports. A lifetime belongs on a
 // borrow, so writing one on a consuming receiver names the borrow it meant. A constructor fills
 // in the instance it is handed, so only `&mut self` is accepted there.

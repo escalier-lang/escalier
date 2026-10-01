@@ -723,6 +723,28 @@ func TestClassDeclarations(t *testing.T) {
 				}
 			`,
 		},
+		// A receiver written without `&` consumes the instance, as `self` and `mut self` do here.
+		"ClassWithConsumingReceivers": {
+			input: `
+				class Builder {
+					parts: Array<string>,
+					finish(self) -> string {
+						return self.parts.join("")
+					},
+					drain(mut self, sep: string) -> string {
+						return self.parts.join(sep)
+					},
+				}
+			`,
+		},
+		"DeclareClassWithConsumingReceivers": {
+			input: `
+				declare class Builder {
+					finish(self) -> string,
+					drain(mut self, sep: string) -> string,
+				}
+			`,
+		},
 		"ClassWithSuperCall": {
 			input: `
 				class Dog extends Animal {

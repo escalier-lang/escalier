@@ -271,6 +271,13 @@ func TestParseTypeAnnNoErrors(t *testing.T) {
 		"ObjectMethodWithReceiver": {
 			input: "{f(&mut self, x: number) -> string}",
 		},
+		// A receiver written without `&` consumes the instance.
+		"ObjectMethodWithConsumingReceiver": {
+			input: "{finish(self) -> string}",
+		},
+		"ObjectMethodWithMutableConsumingReceiver": {
+			input: "{drain(mut self, x: number) -> string}",
+		},
 		"ObjectMethodWithTypeParams": {
 			input: "{f<T>(x: T) -> T}",
 		},

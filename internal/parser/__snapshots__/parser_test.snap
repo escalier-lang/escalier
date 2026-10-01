@@ -6291,3 +6291,225 @@
     span: 5-90,
 }
 ---
+
+[TestClassDeclarations/ClassWithConsumingReceivers - 1]
+&ast.DeclStmt{
+    Decl: &ast.ClassDecl{
+        Name: &ast.Ident{
+            Name: "Builder",
+            span: 11-18,
+        },
+        Body: []ast.ClassElem{
+            &ast.FieldElem{
+                Name: &ast.IdentExpr{
+                    Name: "parts",
+                    span: 26-31,
+                },
+                Type: &ast.TypeRefTypeAnn{
+                    Name: &ast.Ident{
+                        Name: "Array",
+                        span: 33-38,
+                    },
+                    TypeArgs: []ast.TypeAnn{
+                        &ast.StringTypeAnn{
+                            span: 39-45,
+                        },
+                    },
+                    span: 33-46,
+                },
+                Span_: 26-46,
+            },
+            &ast.MethodElem{
+                Name: &ast.IdentExpr{
+                    Name: "finish",
+                    span: 53-59,
+                },
+                Fn: &ast.FuncExpr{
+                    FuncSig: ast.FuncSig{
+                        Return: &ast.StringTypeAnn{
+                            span: 69-75,
+                        },
+                    },
+                    Body: &ast.Block{
+                        Stmts: []ast.Stmt{
+                            &ast.ReturnStmt{
+                                Expr: &ast.CallExpr{
+                                    Callee: &ast.MemberExpr{
+                                        Object: &ast.MemberExpr{
+                                            Object: &ast.IdentExpr{
+                                                Name: "self",
+                                                span: 91-95,
+                                            },
+                                            Prop: &ast.Ident{
+                                                Name: "parts",
+                                                span: 96-101,
+                                            },
+                                            span: 91-101,
+                                        },
+                                        Prop: &ast.Ident{
+                                            Name: "join",
+                                            span: 102-106,
+                                        },
+                                        span: 91-106,
+                                    },
+                                    Args: []ast.Expr{
+                                        &ast.LiteralExpr{
+                                            Lit: &ast.StrLit{
+                                                span: 107-109,
+                                            },
+                                            span: 107-109,
+                                        },
+                                    },
+                                    span: 91-110,
+                                },
+                                span: 84-110,
+                            },
+                        },
+                        Span: 76-117,
+                    },
+                    span: 53-117,
+                },
+                Receiver: &ast.MethodReceiver{
+                    Mode: 1,
+                    Span_: 60-64,
+                },
+                Span_: 53-117,
+            },
+            &ast.MethodElem{
+                Name: &ast.IdentExpr{
+                    Name: "drain",
+                    span: 124-129,
+                },
+                Fn: &ast.FuncExpr{
+                    FuncSig: ast.FuncSig{
+                        Params: []*ast.Param{
+                            &ast.Param{
+                                Pattern: &ast.IdentPat{
+                                    Name: "sep",
+                                    span: 140-143,
+                                },
+                                TypeAnn: &ast.StringTypeAnn{
+                                    span: 145-151,
+                                },
+                            },
+                        },
+                        Return: &ast.StringTypeAnn{
+                            span: 156-162,
+                        },
+                    },
+                    Body: &ast.Block{
+                        Stmts: []ast.Stmt{
+                            &ast.ReturnStmt{
+                                Expr: &ast.CallExpr{
+                                    Callee: &ast.MemberExpr{
+                                        Object: &ast.MemberExpr{
+                                            Object: &ast.IdentExpr{
+                                                Name: "self",
+                                                span: 178-182,
+                                            },
+                                            Prop: &ast.Ident{
+                                                Name: "parts",
+                                                span: 183-188,
+                                            },
+                                            span: 178-188,
+                                        },
+                                        Prop: &ast.Ident{
+                                            Name: "join",
+                                            span: 189-193,
+                                        },
+                                        span: 178-193,
+                                    },
+                                    Args: []ast.Expr{
+                                        &ast.IdentExpr{
+                                            Name: "sep",
+                                            span: 194-197,
+                                        },
+                                    },
+                                    span: 178-198,
+                                },
+                                span: 171-198,
+                            },
+                        },
+                        Span: 163-205,
+                    },
+                    span: 124-205,
+                },
+                Receiver: &ast.MethodReceiver{
+                    Mode: 1,
+                    Mut: true,
+                    Span_: 130-138,
+                },
+                Span_: 124-205,
+            },
+        },
+        span: 5-212,
+    },
+    span: 5-212,
+}
+---
+
+[TestClassDeclarations/DeclareClassWithConsumingReceivers - 1]
+&ast.DeclStmt{
+    Decl: &ast.ClassDecl{
+        Name: &ast.Ident{
+            Name: "Builder",
+            span: 19-26,
+        },
+        Body: []ast.ClassElem{
+            &ast.MethodElem{
+                Name: &ast.IdentExpr{
+                    Name: "finish",
+                    span: 34-40,
+                },
+                Fn: &ast.FuncExpr{
+                    FuncSig: ast.FuncSig{
+                        Return: &ast.StringTypeAnn{
+                            span: 50-56,
+                        },
+                    },
+                    span: 34-56,
+                },
+                Receiver: &ast.MethodReceiver{
+                    Mode: 1,
+                    Span_: 41-45,
+                },
+                Span_: 34-56,
+            },
+            &ast.MethodElem{
+                Name: &ast.IdentExpr{
+                    Name: "drain",
+                    span: 63-68,
+                },
+                Fn: &ast.FuncExpr{
+                    FuncSig: ast.FuncSig{
+                        Params: []*ast.Param{
+                            &ast.Param{
+                                Pattern: &ast.IdentPat{
+                                    Name: "sep",
+                                    span: 79-82,
+                                },
+                                TypeAnn: &ast.StringTypeAnn{
+                                    span: 84-90,
+                                },
+                            },
+                        },
+                        Return: &ast.StringTypeAnn{
+                            span: 95-101,
+                        },
+                    },
+                    span: 63-101,
+                },
+                Receiver: &ast.MethodReceiver{
+                    Mode: 1,
+                    Mut: true,
+                    Span_: 69-77,
+                },
+                Span_: 63-101,
+            },
+        },
+        declare: true,
+        span: 5-108,
+    },
+    span: 5-108,
+}
+---

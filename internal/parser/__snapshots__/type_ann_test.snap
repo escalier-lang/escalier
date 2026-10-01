@@ -3140,3 +3140,69 @@
     },
 }
 ---
+
+[TestParseTypeAnnNoErrors/ObjectMethodWithMutableConsumingReceiver - 1]
+&ast.ObjectTypeAnn{
+    Elems: []ast.ObjTypeAnnElem{
+        &ast.MethodTypeAnn{
+            Name: &ast.IdentExpr{
+                Name: "drain",
+                span: 1-6,
+            },
+            Fn: &ast.FuncTypeAnn{
+                Params: []*ast.Param{
+                    &ast.Param{
+                        Pattern: &ast.IdentPat{
+                            Name: "x",
+                            span: 17-18,
+                        },
+                        TypeAnn: &ast.NumberTypeAnn{
+                            span: 20-26,
+                        },
+                    },
+                },
+                Return: &ast.StringTypeAnn{
+                    span: 31-37,
+                },
+                span: 6-37,
+            },
+            Receiver: &ast.MethodReceiver{
+                Mode: 1,
+                Mut: true,
+                Span_: 7-15,
+            },
+            elemSpan: ast.elemSpan{
+                span: 1-37,
+            },
+        },
+    },
+    span: 0-38,
+}
+---
+
+[TestParseTypeAnnNoErrors/ObjectMethodWithConsumingReceiver - 1]
+&ast.ObjectTypeAnn{
+    Elems: []ast.ObjTypeAnnElem{
+        &ast.MethodTypeAnn{
+            Name: &ast.IdentExpr{
+                Name: "finish",
+                span: 1-7,
+            },
+            Fn: &ast.FuncTypeAnn{
+                Return: &ast.StringTypeAnn{
+                    span: 17-23,
+                },
+                span: 7-23,
+            },
+            Receiver: &ast.MethodReceiver{
+                Mode: 1,
+                Span_: 8-12,
+            },
+            elemSpan: ast.elemSpan{
+                span: 1-23,
+            },
+        },
+    },
+    span: 0-24,
+}
+---
