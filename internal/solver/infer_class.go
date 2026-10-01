@@ -1241,7 +1241,7 @@ func (c *checker) inferMemberFunc(
 ) *soltype.FuncType {
 	memberScope := scope.Child()
 	if !static {
-		c.bindSelf(memberScope, lvl+1, recv, body)
+		c.bindSelf(memberScope, lvl, recv, body)
 	}
 	// generic is true for a method and false for a getter or setter. inferFunc reports a
 	// binder it is not allowed to resolve as an unsupported feature.
