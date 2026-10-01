@@ -1,36 +1,36 @@
 class Animal {
     name: string,
-    constructor(mut self, name: string) {
+    constructor(&mut self, name: string) {
         self.name = name
     },
-    speak(self) -> string {
+    speak(&self) -> string {
         return "..."
     },
-    describe(self) -> string {
+    describe(&self) -> string {
         return self.speak()
     },
 }
 
 class Dog extends Animal {
     breed: string,
-    constructor(mut self, name: string, breed: string) {
+    constructor(&mut self, name: string, breed: string) {
         super(name)
         self.breed = breed
     },
-    speak(self) -> string {
+    speak(&self) -> string {
         return "woof"
     },
 }
 
 class Puppy extends Animal {
-    constructor(mut self, named: boolean) {
+    constructor(&mut self, named: boolean) {
         if named {
             super("rex")
         } else {
             super("stray")
         }
     },
-    speak(self) -> string {
+    speak(&self) -> string {
         return "yip"
     },
 }

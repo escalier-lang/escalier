@@ -2,12 +2,12 @@ declare fn sqrt(x: number) -> number
 class Point {
     x: number,
     y: number,
-    scale(mut self, factor: number) {
+    scale(&mut self, factor: number) {
         self.x = self.x * factor
         self.y = self.y * factor
         return self
     },
-    translate(mut self, dx: number, dy: number) {
+    translate(&mut self, dx: number, dy: number) {
         self.x = self.x + dx
         self.y = self.y + dy
         return self

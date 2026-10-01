@@ -475,7 +475,7 @@ func (c *checker) checkUsesAgainstLoans(reported set.Set[ast.Node]) {
 // borrow is missing and this walk cannot wait for it.
 //
 // A method call's RECEIVER is not an argument and does not reach here. It keeps auto-borrowing,
-// because the method's signature already names the mode: `bump(mut self)` says the receiver is
+// because the method's signature already names the mode: `bump(&mut self)` says the receiver is
 // taken mutably, and `c.bump()` has no second reading for a written borrow to disambiguate.
 func (c *checker) checkExplicitBorrowArgs(e *ast.CallExpr, fn *soltype.FuncType) {
 	for i, arg := range e.Args {

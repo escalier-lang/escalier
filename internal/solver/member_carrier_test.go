@@ -35,7 +35,7 @@ func TestAMemberResolvesThroughAnAliasOrTypeof(t *testing.T) {
 		{
 			name: "AGetterBehindAnAlias",
 			src: `
-				type C = { get tag(self) -> string }
+				type C = { get tag(&self) -> string }
 				declare val c: C
 				val r = c.tag
 			`,
@@ -47,7 +47,7 @@ func TestAMemberResolvesThroughAnAliasOrTypeof(t *testing.T) {
 			// projected class body.
 			name: "AClassInstanceBehindAnAlias",
 			src: `
-				declare class K { m(self) -> number }
+				declare class K { m(&self) -> number }
 				type A = K
 				declare val k: A
 				val r = k.m()
@@ -58,7 +58,7 @@ func TestAMemberResolvesThroughAnAliasOrTypeof(t *testing.T) {
 		{
 			name: "AMemberThroughTypeofAValue",
 			src: `
-				declare class K { m(self) -> number }
+				declare class K { m(&self) -> number }
 				declare val k: K
 				declare val k2: typeof k
 				val r = k2.m()
@@ -95,7 +95,7 @@ func TestAMemberResolvesThroughAnAliasOrTypeof(t *testing.T) {
 			// inline `mut {…}` spelling of the same type does.
 			name: "AMethodBehindAnAliasNamingABorrow",
 			src: `
-				type M = mut { m(self) -> number }
+				type M = mut { m(&self) -> number }
 				declare val v: M
 				val r = v.m()
 			`,
@@ -108,7 +108,7 @@ func TestAMemberResolvesThroughAnAliasOrTypeof(t *testing.T) {
 			name: "OneAliasNameReachedTwiceAtDifferentArguments",
 			src: `
 				type Id<T> = T
-				declare val v: Id<Id<{ m(self) -> number }>>
+				declare val v: Id<Id<{ m(&self) -> number }>>
 				val r = v.m()
 			`,
 			binding: "r",
@@ -139,7 +139,7 @@ func TestAMemberResolvesThroughAnAliasOrTypeof(t *testing.T) {
 // than blamed on a property the object does not declare.
 func TestASetterWriteResolvesThroughAnAlias(t *testing.T) {
 	_, _, errs := inferSource(t, `
-		type C = { get v(self) -> number, set v(mut self, x: number) }
+		type C = { get v(&self) -> number, set v(&mut self, x: number) }
 		declare val c: mut C
 		fn f() { c.v = 5 }
 	`)

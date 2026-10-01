@@ -1081,16 +1081,16 @@
                                 Pattern: &ast.IdentPat{
                                     Name: "self",
                                     Mutable: true,
-                                    span: 58-66,
+                                    span: 58-67,
                                 },
                             },
                             &ast.Param{
                                 Pattern: &ast.IdentPat{
                                     Name: "x",
-                                    span: 68-69,
+                                    span: 69-70,
                                 },
                                 TypeAnn: &ast.NumberTypeAnn{
-                                    span: 71-77,
+                                    span: 72-78,
                                 },
                             },
                             &ast.Param{
@@ -1099,14 +1099,14 @@
                                     Default: &ast.LiteralExpr{
                                         Lit: &ast.StrLit{
                                             Value: "hi",
-                                            span: 91-95,
+                                            span: 92-96,
                                         },
-                                        span: 91-95,
+                                        span: 92-96,
                                     },
-                                    span: 79-95,
+                                    span: 80-96,
                                 },
                                 TypeAnn: &ast.StringTypeAnn{
-                                    span: 82-88,
+                                    span: 83-89,
                                 },
                             },
                         },
@@ -1118,60 +1118,60 @@
                                     Left: &ast.MemberExpr{
                                         Object: &ast.IdentExpr{
                                             Name: "self",
-                                            span: 104-108,
+                                            span: 105-109,
                                         },
                                         Prop: &ast.Ident{
                                             Name: "x",
-                                            span: 109-110,
+                                            span: 110-111,
                                         },
-                                        span: 104-110,
+                                        span: 105-111,
                                     },
                                     Op: "=",
                                     Right: &ast.IdentExpr{
                                         Name: "x",
-                                        span: 113-114,
+                                        span: 114-115,
                                     },
-                                    span: 104-114,
+                                    span: 105-115,
                                 },
-                                span: 104-114,
+                                span: 105-115,
                             },
                             &ast.ExprStmt{
                                 Expr: &ast.BinaryExpr{
                                     Left: &ast.MemberExpr{
                                         Object: &ast.IdentExpr{
                                             Name: "self",
-                                            span: 120-124,
+                                            span: 121-125,
                                         },
                                         Prop: &ast.Ident{
                                             Name: "y",
-                                            span: 125-126,
+                                            span: 126-127,
                                         },
-                                        span: 120-126,
+                                        span: 121-127,
                                     },
                                     Op: "=",
                                     Right: &ast.IdentExpr{
                                         Name: "y",
-                                        span: 129-130,
+                                        span: 130-131,
                                     },
-                                    span: 120-130,
+                                    span: 121-131,
                                 },
-                                span: 120-130,
+                                span: 121-131,
                             },
                         },
-                        Span: 97-136,
+                        Span: 98-137,
                     },
-                    span: 46-136,
+                    span: 46-137,
                 },
                 Receiver: &ast.MethodReceiver{
                     Mut: true,
-                    Span_: 58-66,
+                    Span_: 58-67,
                 },
-                Span_: 46-136,
+                Span_: 46-137,
             },
             &ast.MethodElem{
                 Name: &ast.IdentExpr{
                     Name: "foo",
-                    span: 142-145,
+                    span: 143-146,
                 },
                 Fn: &ast.FuncExpr{
                     FuncSig: ast.FuncSig{
@@ -1179,34 +1179,34 @@
                             &ast.Param{
                                 Pattern: &ast.IdentPat{
                                     Name: "a",
-                                    span: 152-153,
+                                    span: 154-155,
                                 },
                                 TypeAnn: &ast.NumberTypeAnn{
-                                    span: 155-161,
+                                    span: 157-163,
                                 },
                             },
                         },
                         Return: &ast.LitTypeAnn{
                             Lit: &ast.UndefinedLit{
-                                span: 166-175,
+                                span: 168-177,
                             },
-                            span: 166-175,
+                            span: 168-177,
                         },
                     },
                     Body: &ast.Block{
-                        Span: 176-178,
+                        Span: 178-180,
                     },
-                    span: 142-178,
+                    span: 143-180,
                 },
                 Receiver: &ast.MethodReceiver{
-                    Span_: 146-150,
+                    Span_: 147-152,
                 },
-                Span_: 142-178,
+                Span_: 143-180,
             },
         },
-        span: 0-184,
+        span: 0-186,
     },
-    span: 0-184,
+    span: 0-186,
 }
 ---
 
@@ -1329,9 +1329,9 @@
                         Return: &ast.TypeRefTypeAnn{
                             Name: &ast.Ident{
                                 Name: "T",
-                                span: 50-51,
+                                span: 51-52,
                             },
-                            span: 50-51,
+                            span: 51-52,
                         },
                     },
                     Body: &ast.Block{
@@ -1340,30 +1340,30 @@
                                 Expr: &ast.MemberExpr{
                                     Object: &ast.IdentExpr{
                                         Name: "self",
-                                        span: 66-70,
+                                        span: 67-71,
                                     },
                                     Prop: &ast.Ident{
                                         Name: "value",
-                                        span: 71-76,
+                                        span: 72-77,
                                     },
-                                    span: 66-76,
+                                    span: 67-77,
                                 },
-                                span: 59-76,
+                                span: 60-77,
                             },
                         },
-                        Span: 52-82,
+                        Span: 53-83,
                     },
-                    span: 33-82,
+                    span: 33-83,
                 },
                 Receiver: &ast.MethodReceiver{
-                    Span_: 41-45,
+                    Span_: 41-46,
                 },
-                Span_: 33-82,
+                Span_: 33-83,
             },
             &ast.SetterElem{
                 Name: &ast.IdentExpr{
                     Name: "foo",
-                    span: 92-95,
+                    span: 93-96,
                 },
                 Fn: &ast.FuncExpr{
                     FuncSig: ast.FuncSig{
@@ -1371,14 +1371,14 @@
                             &ast.Param{
                                 Pattern: &ast.IdentPat{
                                     Name: "value",
-                                    span: 106-111,
+                                    span: 108-113,
                                 },
                                 TypeAnn: &ast.TypeRefTypeAnn{
                                     Name: &ast.Ident{
                                         Name: "T",
-                                        span: 113-114,
+                                        span: 115-116,
                                     },
-                                    span: 113-114,
+                                    span: 115-116,
                                 },
                             },
                         },
@@ -1390,38 +1390,38 @@
                                     Left: &ast.MemberExpr{
                                         Object: &ast.IdentExpr{
                                             Name: "self",
-                                            span: 123-127,
+                                            span: 125-129,
                                         },
                                         Prop: &ast.Ident{
                                             Name: "value",
-                                            span: 128-133,
+                                            span: 130-135,
                                         },
-                                        span: 123-133,
+                                        span: 125-135,
                                     },
                                     Op: "=",
                                     Right: &ast.IdentExpr{
                                         Name: "value",
-                                        span: 136-141,
+                                        span: 138-143,
                                     },
-                                    span: 123-141,
+                                    span: 125-143,
                                 },
-                                span: 123-141,
+                                span: 125-143,
                             },
                         },
-                        Span: 116-147,
+                        Span: 118-149,
                     },
-                    span: 88-147,
+                    span: 89-149,
                 },
                 Receiver: &ast.MethodReceiver{
                     Mut: true,
-                    Span_: 96-104,
+                    Span_: 97-106,
                 },
-                Span_: 88-147,
+                Span_: 89-149,
             },
         },
-        span: 0-153,
+        span: 0-155,
     },
-    span: 0-153,
+    span: 0-155,
 }
 ---
 
@@ -1470,50 +1470,50 @@
                             &ast.Param{
                                 Pattern: &ast.IdentPat{
                                     Name: "callback",
-                                    span: 49-57,
+                                    span: 50-58,
                                 },
                                 TypeAnn: &ast.FuncTypeAnn{
                                     Params: []*ast.Param{
                                         &ast.Param{
                                             Pattern: &ast.IdentPat{
                                                 Name: "value",
-                                                span: 63-68,
+                                                span: 64-69,
                                             },
                                             TypeAnn: &ast.TypeRefTypeAnn{
                                                 Name: &ast.Ident{
                                                     Name: "T",
-                                                    span: 70-71,
+                                                    span: 71-72,
                                                 },
-                                                span: 70-71,
+                                                span: 71-72,
                                             },
                                         },
                                     },
                                     Return: &ast.TypeRefTypeAnn{
                                         Name: &ast.Ident{
                                             Name: "U",
-                                            span: 76-77,
+                                            span: 77-78,
                                         },
-                                        span: 76-77,
+                                        span: 77-78,
                                     },
-                                    span: 59-77,
+                                    span: 60-78,
                                 },
                             },
                         },
                         Return: &ast.TypeRefTypeAnn{
                             Name: &ast.Ident{
                                 Name: "Mapper",
-                                span: 82-88,
+                                span: 83-89,
                             },
                             TypeArgs: []ast.TypeAnn{
                                 &ast.TypeRefTypeAnn{
                                     Name: &ast.Ident{
                                         Name: "U",
-                                        span: 89-90,
+                                        span: 90-91,
                                     },
-                                    span: 89-90,
+                                    span: 90-91,
                                 },
                             },
-                            span: 82-91,
+                            span: 83-92,
                         },
                     },
                     Body: &ast.Block{
@@ -1522,48 +1522,48 @@
                                 Expr: &ast.CallExpr{
                                     Callee: &ast.IdentExpr{
                                         Name: "Mapper",
-                                        span: 106-112,
+                                        span: 107-113,
                                     },
                                     Args: []ast.Expr{
                                         &ast.CallExpr{
                                             Callee: &ast.IdentExpr{
                                                 Name: "callback",
-                                                span: 113-121,
+                                                span: 114-122,
                                             },
                                             Args: []ast.Expr{
                                                 &ast.MemberExpr{
                                                     Object: &ast.IdentExpr{
                                                         Name: "self",
-                                                        span: 122-126,
+                                                        span: 123-127,
                                                     },
                                                     Prop: &ast.Ident{
                                                         Name: "value",
-                                                        span: 127-132,
+                                                        span: 128-133,
                                                     },
-                                                    span: 122-132,
+                                                    span: 123-133,
                                                 },
                                             },
-                                            span: 113-133,
+                                            span: 114-134,
                                         },
                                     },
-                                    span: 106-134,
+                                    span: 107-135,
                                 },
-                                span: 99-134,
+                                span: 100-135,
                             },
                         },
-                        Span: 92-140,
+                        Span: 93-141,
                     },
-                    span: 36-140,
+                    span: 36-141,
                 },
                 Receiver: &ast.MethodReceiver{
-                    Span_: 43-47,
+                    Span_: 43-48,
                 },
-                Span_: 36-140,
+                Span_: 36-141,
             },
         },
-        span: 0-146,
+        span: 0-147,
     },
-    span: 0-146,
+    span: 0-147,
 }
 ---
 
@@ -1877,24 +1877,24 @@
                             &ast.Param{
                                 Pattern: &ast.IdentPat{
                                     Name: "a",
-                                    span: 101-102,
+                                    span: 102-103,
                                 },
                                 TypeAnn: &ast.NumberTypeAnn{
-                                    span: 104-110,
+                                    span: 105-111,
                                 },
                             },
                             &ast.Param{
                                 Pattern: &ast.IdentPat{
                                     Name: "b",
-                                    span: 112-113,
+                                    span: 113-114,
                                 },
                                 TypeAnn: &ast.NumberTypeAnn{
-                                    span: 115-121,
+                                    span: 116-122,
                                 },
                             },
                         },
                         Return: &ast.NumberTypeAnn{
-                            span: 126-132,
+                            span: 127-133,
                         },
                     },
                     Body: &ast.Block{
@@ -1903,31 +1903,31 @@
                                 Expr: &ast.BinaryExpr{
                                     Left: &ast.IdentExpr{
                                         Name: "a",
-                                        span: 147-148,
+                                        span: 148-149,
                                     },
                                     Op: "-",
                                     Right: &ast.IdentExpr{
                                         Name: "b",
-                                        span: 151-152,
+                                        span: 152-153,
                                     },
-                                    span: 147-152,
+                                    span: 148-153,
                                 },
-                                span: 140-152,
+                                span: 141-153,
                             },
                         },
-                        Span: 133-158,
+                        Span: 134-159,
                     },
-                    span: 91-158,
+                    span: 91-159,
                 },
                 Receiver: &ast.MethodReceiver{
-                    Span_: 95-99,
+                    Span_: 95-100,
                 },
-                Span_: 91-158,
+                Span_: 91-159,
             },
         },
-        span: 0-163,
+        span: 0-164,
     },
-    span: 0-163,
+    span: 0-164,
 }
 ---
 
@@ -1950,41 +1950,41 @@
                             &ast.Param{
                                 Pattern: &ast.IdentPat{
                                     Name: "url",
-                                    span: 42-45,
+                                    span: 43-46,
                                 },
                                 TypeAnn: &ast.StringTypeAnn{
-                                    span: 47-53,
+                                    span: 48-54,
                                 },
                             },
                         },
                         Return: &ast.TypeRefTypeAnn{
                             Name: &ast.Ident{
                                 Name: "Promise",
-                                span: 58-65,
+                                span: 59-66,
                             },
                             TypeArgs: []ast.TypeAnn{
                                 &ast.StringTypeAnn{
-                                    span: 66-72,
+                                    span: 67-73,
                                 },
                             },
-                            span: 58-73,
+                            span: 59-74,
                         },
                         Async: true,
                     },
                     Body: &ast.Block{
-                        Span: 74-101,
+                        Span: 75-102,
                     },
-                    span: 20-101,
+                    span: 20-102,
                 },
                 Receiver: &ast.MethodReceiver{
-                    Span_: 36-40,
+                    Span_: 36-41,
                 },
-                Span_: 20-101,
+                Span_: 20-102,
             },
         },
-        span: 0-107,
+        span: 0-108,
     },
-    span: 0-107,
+    span: 0-108,
 }
 ---
 
@@ -2053,40 +2053,40 @@
                                 Expr: &ast.LiteralExpr{
                                     Lit: &ast.NumLit{
                                         Value: 1,
-                                        span: 37-38,
+                                        span: 38-39,
                                     },
-                                    span: 37-38,
+                                    span: 38-39,
                                 },
-                                span: 30-38,
+                                span: 31-39,
                             },
                         },
-                        Span: 28-40,
+                        Span: 29-41,
                     },
-                    span: 18-40,
+                    span: 18-41,
                 },
                 Receiver: &ast.MethodReceiver{
-                    Span_: 22-26,
+                    Span_: 22-27,
                 },
-                Span_: 18-40,
+                Span_: 18-41,
             },
             &ast.MethodElem{
                 Name: &ast.IdentExpr{
                     Name: "bar",
-                    span: 52-55,
+                    span: 53-56,
                 },
                 Fn: &ast.FuncExpr{
                     FuncSig: ast.FuncSig{
                         Return: &ast.TypeRefTypeAnn{
                             Name: &ast.Ident{
                                 Name: "Promise",
-                                span: 65-72,
+                                span: 67-74,
                             },
                             TypeArgs: []ast.TypeAnn{
                                 &ast.NumberTypeAnn{
-                                    span: 73-79,
+                                    span: 75-81,
                                 },
                             },
-                            span: 65-80,
+                            span: 67-82,
                         },
                         Async: true,
                     },
@@ -2096,58 +2096,58 @@
                                 Expr: &ast.LiteralExpr{
                                     Lit: &ast.NumLit{
                                         Value: 2,
-                                        span: 90-91,
+                                        span: 92-93,
                                     },
-                                    span: 90-91,
+                                    span: 92-93,
                                 },
-                                span: 83-91,
+                                span: 85-93,
                             },
                         },
-                        Span: 81-93,
+                        Span: 83-95,
                     },
-                    span: 46-93,
+                    span: 47-95,
                 },
                 Receiver: &ast.MethodReceiver{
-                    Span_: 56-60,
+                    Span_: 57-62,
                 },
-                Span_: 46-93,
+                Span_: 47-95,
             },
             &ast.MethodElem{
                 Name: &ast.IdentExpr{
                     Name: "baz",
-                    span: 112-115,
+                    span: 114-117,
                 },
                 Fn: &ast.FuncExpr{
                     FuncSig: ast.FuncSig{
                         Return: &ast.TypeRefTypeAnn{
                             Name: &ast.Ident{
                                 Name: "Promise",
-                                span: 121-128,
+                                span: 123-130,
                             },
                             TypeArgs: []ast.TypeAnn{
                                 &ast.LitTypeAnn{
                                     Lit: &ast.UndefinedLit{
-                                        span: 129-138,
+                                        span: 131-140,
                                     },
-                                    span: 129-138,
+                                    span: 131-140,
                                 },
                             },
-                            span: 121-139,
+                            span: 123-141,
                         },
                         Async: true,
                     },
                     Body: &ast.Block{
-                        Span: 140-142,
+                        Span: 142-144,
                     },
-                    span: 99-142,
+                    span: 101-144,
                 },
                 Static: true,
-                Span_: 99-142,
+                Span_: 101-144,
             },
         },
-        span: 0-148,
+        span: 0-150,
     },
-    span: 0-148,
+    span: 0-150,
 }
 ---
 
@@ -2172,27 +2172,27 @@
                                 Expr: &ast.LiteralExpr{
                                     Lit: &ast.StrLit{
                                         Value: "hidden",
-                                        span: 49-57,
+                                        span: 50-58,
                                     },
-                                    span: 49-57,
+                                    span: 50-58,
                                 },
-                                span: 42-57,
+                                span: 43-58,
                             },
                         },
-                        Span: 40-59,
+                        Span: 41-60,
                     },
-                    span: 19-59,
+                    span: 19-60,
                 },
                 Receiver: &ast.MethodReceiver{
-                    Span_: 34-38,
+                    Span_: 34-39,
                 },
                 Private: true,
-                Span_: 19-59,
+                Span_: 19-60,
             },
             &ast.MethodElem{
                 Name: &ast.IdentExpr{
                     Name: "show",
-                    span: 65-69,
+                    span: 66-70,
                 },
                 Fn: &ast.FuncExpr{
                     FuncSig: ast.FuncSig{},
@@ -2203,32 +2203,32 @@
                                     Callee: &ast.MemberExpr{
                                         Object: &ast.IdentExpr{
                                             Name: "this",
-                                            span: 85-89,
+                                            span: 87-91,
                                         },
                                         Prop: &ast.Ident{
                                             Name: "reveal",
-                                            span: 90-96,
+                                            span: 92-98,
                                         },
-                                        span: 85-96,
+                                        span: 87-98,
                                     },
-                                    span: 85-98,
+                                    span: 87-100,
                                 },
-                                span: 78-98,
+                                span: 80-100,
                             },
                         },
-                        Span: 76-100,
+                        Span: 78-102,
                     },
-                    span: 65-100,
+                    span: 66-102,
                 },
                 Receiver: &ast.MethodReceiver{
-                    Span_: 70-74,
+                    Span_: 71-76,
                 },
-                Span_: 65-100,
+                Span_: 66-102,
             },
         },
-        span: 0-106,
+        span: 0-108,
     },
-    span: 0-106,
+    span: 0-108,
 }
 ---
 
@@ -2269,7 +2269,7 @@
                                 Pattern: &ast.IdentPat{
                                     Name: "self",
                                     Mutable: true,
-                                    span: 72-80,
+                                    span: 72-81,
                                 },
                             },
                             &ast.Param{
@@ -2278,15 +2278,15 @@
                                     Default: &ast.LiteralExpr{
                                         Lit: &ast.NumLit{
                                             Value: 1,
-                                            span: 97-98,
+                                            span: 98-99,
                                         },
-                                        span: 97-98,
+                                        span: 98-99,
                                     },
-                                    span: 82-98,
+                                    span: 83-99,
                                 },
                                 Optional: true,
                                 TypeAnn: &ast.NumberTypeAnn{
-                                    span: 88-94,
+                                    span: 89-95,
                                 },
                             },
                             &ast.Param{
@@ -2295,15 +2295,15 @@
                                     Default: &ast.LiteralExpr{
                                         Lit: &ast.NumLit{
                                             Value: 2,
-                                            span: 115-116,
+                                            span: 116-117,
                                         },
-                                        span: 115-116,
+                                        span: 116-117,
                                     },
-                                    span: 100-116,
+                                    span: 101-117,
                                 },
                                 Optional: true,
                                 TypeAnn: &ast.NumberTypeAnn{
-                                    span: 106-112,
+                                    span: 107-113,
                                 },
                             },
                         },
@@ -2315,60 +2315,60 @@
                                     Left: &ast.MemberExpr{
                                         Object: &ast.IdentExpr{
                                             Name: "self",
-                                            span: 125-129,
+                                            span: 126-130,
                                         },
                                         Prop: &ast.Ident{
                                             Name: "foo",
-                                            span: 130-133,
+                                            span: 131-134,
                                         },
-                                        span: 125-133,
+                                        span: 126-134,
                                     },
                                     Op: "=",
                                     Right: &ast.IdentExpr{
                                         Name: "foo",
-                                        span: 136-139,
+                                        span: 137-140,
                                     },
-                                    span: 125-139,
+                                    span: 126-140,
                                 },
-                                span: 125-139,
+                                span: 126-140,
                             },
                             &ast.ExprStmt{
                                 Expr: &ast.BinaryExpr{
                                     Left: &ast.MemberExpr{
                                         Object: &ast.IdentExpr{
                                             Name: "self",
-                                            span: 145-149,
+                                            span: 146-150,
                                         },
                                         Prop: &ast.Ident{
                                             Name: "bar",
-                                            span: 150-153,
+                                            span: 151-154,
                                         },
-                                        span: 145-153,
+                                        span: 146-154,
                                     },
                                     Op: "=",
                                     Right: &ast.IdentExpr{
                                         Name: "bar",
-                                        span: 156-159,
+                                        span: 157-160,
                                     },
-                                    span: 145-159,
+                                    span: 146-160,
                                 },
-                                span: 145-159,
+                                span: 146-160,
                             },
                         },
-                        Span: 118-165,
+                        Span: 119-166,
                     },
-                    span: 60-165,
+                    span: 60-166,
                 },
                 Receiver: &ast.MethodReceiver{
                     Mut: true,
-                    Span_: 72-80,
+                    Span_: 72-81,
                 },
-                Span_: 60-165,
+                Span_: 60-166,
             },
             &ast.MethodElem{
                 Name: &ast.IdentExpr{
                     Name: "baz",
-                    span: 179-182,
+                    span: 180-183,
                 },
                 Fn: &ast.FuncExpr{
                     FuncSig: ast.FuncSig{},
@@ -2378,31 +2378,31 @@
                                 Expr: &ast.MemberExpr{
                                     Object: &ast.IdentExpr{
                                         Name: "this",
-                                        span: 198-202,
+                                        span: 200-204,
                                     },
                                     Prop: &ast.Ident{
                                         Name: "foo",
-                                        span: 203-206,
+                                        span: 205-208,
                                     },
-                                    span: 198-206,
+                                    span: 200-208,
                                 },
-                                span: 191-206,
+                                span: 193-208,
                             },
                         },
-                        Span: 189-208,
+                        Span: 191-210,
                     },
-                    span: 171-208,
+                    span: 172-210,
                 },
                 Receiver: &ast.MethodReceiver{
-                    Span_: 183-187,
+                    Span_: 184-189,
                 },
                 Private: true,
-                Span_: 171-208,
+                Span_: 172-210,
             },
             &ast.MethodElem{
                 Name: &ast.IdentExpr{
                     Name: "qux",
-                    span: 214-217,
+                    span: 216-219,
                 },
                 Fn: &ast.FuncExpr{
                     FuncSig: ast.FuncSig{},
@@ -2412,30 +2412,30 @@
                                 Expr: &ast.MemberExpr{
                                     Object: &ast.IdentExpr{
                                         Name: "this",
-                                        span: 233-237,
+                                        span: 236-240,
                                     },
                                     Prop: &ast.Ident{
                                         Name: "bar",
-                                        span: 238-241,
+                                        span: 241-244,
                                     },
-                                    span: 233-241,
+                                    span: 236-244,
                                 },
-                                span: 226-241,
+                                span: 229-244,
                             },
                         },
-                        Span: 224-243,
+                        Span: 227-246,
                     },
-                    span: 214-243,
+                    span: 216-246,
                 },
                 Receiver: &ast.MethodReceiver{
-                    Span_: 218-222,
+                    Span_: 220-225,
                 },
-                Span_: 214-243,
+                Span_: 216-246,
             },
         },
-        span: 0-249,
+        span: 0-252,
     },
-    span: 0-249,
+    span: 0-252,
 }
 ---
 
@@ -2466,7 +2466,7 @@
                                 Pattern: &ast.IdentPat{
                                     Name: "self",
                                     Mutable: true,
-                                    span: 59-67,
+                                    span: 59-68,
                                 },
                             },
                             &ast.Param{
@@ -2475,14 +2475,14 @@
                                     Default: &ast.LiteralExpr{
                                         Lit: &ast.StrLit{
                                             Value: "shh",
-                                            span: 86-91,
+                                            span: 87-92,
                                         },
-                                        span: 86-91,
+                                        span: 87-92,
                                     },
-                                    span: 69-91,
+                                    span: 70-92,
                                 },
                                 TypeAnn: &ast.StringTypeAnn{
-                                    span: 77-83,
+                                    span: 78-84,
                                 },
                             },
                         },
@@ -2494,38 +2494,38 @@
                                     Left: &ast.MemberExpr{
                                         Object: &ast.IdentExpr{
                                             Name: "self",
-                                            span: 100-104,
+                                            span: 101-105,
                                         },
                                         Prop: &ast.Ident{
                                             Name: "secret",
-                                            span: 105-111,
+                                            span: 106-112,
                                         },
-                                        span: 100-111,
+                                        span: 101-112,
                                     },
                                     Op: "=",
                                     Right: &ast.IdentExpr{
                                         Name: "secret",
-                                        span: 114-120,
+                                        span: 115-121,
                                     },
-                                    span: 100-120,
+                                    span: 101-121,
                                 },
-                                span: 100-120,
+                                span: 101-121,
                             },
                         },
-                        Span: 93-126,
+                        Span: 94-127,
                     },
-                    span: 47-126,
+                    span: 47-127,
                 },
                 Receiver: &ast.MethodReceiver{
                     Mut: true,
-                    Span_: 59-67,
+                    Span_: 59-68,
                 },
-                Span_: 47-126,
+                Span_: 47-127,
             },
             &ast.MethodElem{
                 Name: &ast.IdentExpr{
                     Name: "reveal",
-                    span: 132-138,
+                    span: 133-139,
                 },
                 Fn: &ast.FuncExpr{
                     FuncSig: ast.FuncSig{},
@@ -2535,30 +2535,30 @@
                                 Expr: &ast.MemberExpr{
                                     Object: &ast.IdentExpr{
                                         Name: "this",
-                                        span: 154-158,
+                                        span: 156-160,
                                     },
                                     Prop: &ast.Ident{
                                         Name: "secret",
-                                        span: 159-165,
+                                        span: 161-167,
                                     },
-                                    span: 154-165,
+                                    span: 156-167,
                                 },
-                                span: 147-165,
+                                span: 149-167,
                             },
                         },
-                        Span: 145-167,
+                        Span: 147-169,
                     },
-                    span: 132-167,
+                    span: 133-169,
                 },
                 Receiver: &ast.MethodReceiver{
-                    Span_: 139-143,
+                    Span_: 140-145,
                 },
-                Span_: 132-167,
+                Span_: 133-169,
             },
         },
-        span: 0-173,
+        span: 0-175,
     },
-    span: 0-173,
+    span: 0-175,
 }
 ---
 
@@ -2589,7 +2589,7 @@
                                 Pattern: &ast.IdentPat{
                                     Name: "self",
                                     Mutable: true,
-                                    span: 59-67,
+                                    span: 59-68,
                                 },
                             },
                             &ast.Param{
@@ -2598,14 +2598,14 @@
                                     Default: &ast.LiteralExpr{
                                         Lit: &ast.StrLit{
                                             Value: "shh",
-                                            span: 86-91,
+                                            span: 87-92,
                                         },
-                                        span: 86-91,
+                                        span: 87-92,
                                     },
-                                    span: 69-91,
+                                    span: 70-92,
                                 },
                                 TypeAnn: &ast.StringTypeAnn{
-                                    span: 77-83,
+                                    span: 78-84,
                                 },
                             },
                         },
@@ -2617,38 +2617,38 @@
                                     Left: &ast.MemberExpr{
                                         Object: &ast.IdentExpr{
                                             Name: "self",
-                                            span: 100-104,
+                                            span: 101-105,
                                         },
                                         Prop: &ast.Ident{
                                             Name: "secret",
-                                            span: 105-111,
+                                            span: 106-112,
                                         },
-                                        span: 100-111,
+                                        span: 101-112,
                                     },
                                     Op: "=",
                                     Right: &ast.IdentExpr{
                                         Name: "secret",
-                                        span: 114-120,
+                                        span: 115-121,
                                     },
-                                    span: 100-120,
+                                    span: 101-121,
                                 },
-                                span: 100-120,
+                                span: 101-121,
                             },
                         },
-                        Span: 93-126,
+                        Span: 94-127,
                     },
-                    span: 47-126,
+                    span: 47-127,
                 },
                 Receiver: &ast.MethodReceiver{
                     Mut: true,
-                    Span_: 59-67,
+                    Span_: 59-68,
                 },
-                Span_: 47-126,
+                Span_: 47-127,
             },
             &ast.MethodElem{
                 Name: &ast.IdentExpr{
                     Name: "reveal",
-                    span: 140-146,
+                    span: 141-147,
                 },
                 Fn: &ast.FuncExpr{
                     FuncSig: ast.FuncSig{},
@@ -2658,31 +2658,31 @@
                                 Expr: &ast.MemberExpr{
                                     Object: &ast.IdentExpr{
                                         Name: "this",
-                                        span: 162-166,
+                                        span: 164-168,
                                     },
                                     Prop: &ast.Ident{
                                         Name: "secret",
-                                        span: 167-173,
+                                        span: 169-175,
                                     },
-                                    span: 162-173,
+                                    span: 164-175,
                                 },
-                                span: 155-173,
+                                span: 157-175,
                             },
                         },
-                        Span: 153-175,
+                        Span: 155-177,
                     },
-                    span: 132-175,
+                    span: 133-177,
                 },
                 Receiver: &ast.MethodReceiver{
-                    Span_: 147-151,
+                    Span_: 148-153,
                 },
                 Private: true,
-                Span_: 132-175,
+                Span_: 133-177,
             },
             &ast.MethodElem{
                 Name: &ast.IdentExpr{
                     Name: "show",
-                    span: 181-185,
+                    span: 183-187,
                 },
                 Fn: &ast.FuncExpr{
                     FuncSig: ast.FuncSig{},
@@ -2693,32 +2693,32 @@
                                     Callee: &ast.MemberExpr{
                                         Object: &ast.IdentExpr{
                                             Name: "this",
-                                            span: 201-205,
+                                            span: 204-208,
                                         },
                                         Prop: &ast.Ident{
                                             Name: "reveal",
-                                            span: 206-212,
+                                            span: 209-215,
                                         },
-                                        span: 201-212,
+                                        span: 204-215,
                                     },
-                                    span: 201-214,
+                                    span: 204-217,
                                 },
-                                span: 194-214,
+                                span: 197-217,
                             },
                         },
-                        Span: 192-216,
+                        Span: 195-219,
                     },
-                    span: 181-216,
+                    span: 183-219,
                 },
                 Receiver: &ast.MethodReceiver{
-                    Span_: 186-190,
+                    Span_: 188-193,
                 },
-                Span_: 181-216,
+                Span_: 183-219,
             },
         },
-        span: 0-222,
+        span: 0-225,
     },
-    span: 0-222,
+    span: 0-225,
 }
 ---
 
@@ -2843,10 +2843,10 @@
                             &ast.Param{
                                 Pattern: &ast.IdentPat{
                                     Name: "x",
-                                    span: 63-64,
+                                    span: 64-65,
                                 },
                                 TypeAnn: &ast.NumberTypeAnn{
-                                    span: 66-72,
+                                    span: 67-73,
                                 },
                             },
                         },
@@ -2858,37 +2858,37 @@
                                     Left: &ast.MemberExpr{
                                         Object: &ast.IdentExpr{
                                             Name: "self",
-                                            span: 76-80,
+                                            span: 77-81,
                                         },
                                         Prop: &ast.Ident{
                                             Name: "_value",
-                                            span: 81-87,
+                                            span: 82-88,
                                         },
-                                        span: 76-87,
+                                        span: 77-88,
                                     },
                                     Op: "=",
                                     Right: &ast.IdentExpr{
                                         Name: "x",
-                                        span: 90-91,
+                                        span: 91-92,
                                     },
-                                    span: 76-91,
+                                    span: 77-92,
                                 },
-                                span: 76-91,
+                                span: 77-92,
                             },
                         },
-                        Span: 74-93,
+                        Span: 75-94,
                     },
-                    span: 47-93,
+                    span: 47-94,
                 },
                 Receiver: &ast.MethodReceiver{
-                    Span_: 57-61,
+                    Span_: 57-62,
                 },
-                Span_: 47-93,
+                Span_: 47-94,
             },
         },
-        span: 0-99,
+        span: 0-100,
     },
-    span: 0-99,
+    span: 0-100,
 }
 ---
 
@@ -2919,7 +2919,7 @@
                 Fn: &ast.FuncExpr{
                     FuncSig: ast.FuncSig{
                         Return: &ast.NumberTypeAnn{
-                            span: 66-72,
+                            span: 67-73,
                         },
                     },
                     Body: &ast.Block{
@@ -2928,30 +2928,30 @@
                                 Expr: &ast.MemberExpr{
                                     Object: &ast.IdentExpr{
                                         Name: "self",
-                                        span: 82-86,
+                                        span: 83-87,
                                     },
                                     Prop: &ast.Ident{
                                         Name: "_value",
-                                        span: 87-93,
+                                        span: 88-94,
                                     },
-                                    span: 82-93,
+                                    span: 83-94,
                                 },
-                                span: 75-93,
+                                span: 76-94,
                             },
                         },
-                        Span: 73-95,
+                        Span: 74-96,
                     },
-                    span: 47-95,
+                    span: 47-96,
                 },
                 Receiver: &ast.MethodReceiver{
-                    Span_: 57-61,
+                    Span_: 57-62,
                 },
-                Span_: 47-95,
+                Span_: 47-96,
             },
             &ast.SetterElem{
                 Name: &ast.IdentExpr{
                     Name: "value",
-                    span: 105-110,
+                    span: 106-111,
                 },
                 Fn: &ast.FuncExpr{
                     FuncSig: ast.FuncSig{
@@ -2959,10 +2959,10 @@
                             &ast.Param{
                                 Pattern: &ast.IdentPat{
                                     Name: "x",
-                                    span: 117-118,
+                                    span: 119-120,
                                 },
                                 TypeAnn: &ast.NumberTypeAnn{
-                                    span: 120-126,
+                                    span: 122-128,
                                 },
                             },
                         },
@@ -2974,37 +2974,37 @@
                                     Left: &ast.MemberExpr{
                                         Object: &ast.IdentExpr{
                                             Name: "self",
-                                            span: 130-134,
+                                            span: 132-136,
                                         },
                                         Prop: &ast.Ident{
                                             Name: "_value",
-                                            span: 135-141,
+                                            span: 137-143,
                                         },
-                                        span: 130-141,
+                                        span: 132-143,
                                     },
                                     Op: "=",
                                     Right: &ast.IdentExpr{
                                         Name: "x",
-                                        span: 144-145,
+                                        span: 146-147,
                                     },
-                                    span: 130-145,
+                                    span: 132-147,
                                 },
-                                span: 130-145,
+                                span: 132-147,
                             },
                         },
-                        Span: 128-147,
+                        Span: 130-149,
                     },
-                    span: 101-147,
+                    span: 102-149,
                 },
                 Receiver: &ast.MethodReceiver{
-                    Span_: 111-115,
+                    Span_: 112-117,
                 },
-                Span_: 101-147,
+                Span_: 102-149,
             },
         },
-        span: 0-153,
+        span: 0-155,
     },
-    span: 0-153,
+    span: 0-155,
 }
 ---
 
@@ -3035,7 +3035,7 @@
                 Fn: &ast.FuncExpr{
                     FuncSig: ast.FuncSig{
                         Return: &ast.StringTypeAnn{
-                            span: 76-82,
+                            span: 77-83,
                         },
                     },
                     Body: &ast.Block{
@@ -3044,27 +3044,27 @@
                                 Expr: &ast.LiteralExpr{
                                     Lit: &ast.StrLit{
                                         Value: "shh",
-                                        span: 92-97,
+                                        span: 93-98,
                                     },
-                                    span: 92-97,
+                                    span: 93-98,
                                 },
-                                span: 85-97,
+                                span: 86-98,
                             },
                         },
-                        Span: 83-99,
+                        Span: 84-100,
                     },
-                    span: 48-99,
+                    span: 48-100,
                 },
                 Receiver: &ast.MethodReceiver{
-                    Span_: 67-71,
+                    Span_: 67-72,
                 },
                 Private: true,
-                Span_: 48-99,
+                Span_: 48-100,
             },
             &ast.SetterElem{
                 Name: &ast.IdentExpr{
                     Name: "secret",
-                    span: 117-123,
+                    span: 118-124,
                 },
                 Fn: &ast.FuncExpr{
                     FuncSig: ast.FuncSig{
@@ -3072,10 +3072,10 @@
                             &ast.Param{
                                 Pattern: &ast.IdentPat{
                                     Name: "x",
-                                    span: 130-131,
+                                    span: 132-133,
                                 },
                                 TypeAnn: &ast.StringTypeAnn{
-                                    span: 133-139,
+                                    span: 135-141,
                                 },
                             },
                         },
@@ -3087,38 +3087,38 @@
                                     Left: &ast.MemberExpr{
                                         Object: &ast.IdentExpr{
                                             Name: "self",
-                                            span: 143-147,
+                                            span: 145-149,
                                         },
                                         Prop: &ast.Ident{
                                             Name: "_secret",
-                                            span: 148-155,
+                                            span: 150-157,
                                         },
-                                        span: 143-155,
+                                        span: 145-157,
                                     },
                                     Op: "=",
                                     Right: &ast.IdentExpr{
                                         Name: "x",
-                                        span: 158-159,
+                                        span: 160-161,
                                     },
-                                    span: 143-159,
+                                    span: 145-161,
                                 },
-                                span: 143-159,
+                                span: 145-161,
                             },
                         },
-                        Span: 141-161,
+                        Span: 143-163,
                     },
-                    span: 105-161,
+                    span: 106-163,
                 },
                 Receiver: &ast.MethodReceiver{
-                    Span_: 124-128,
+                    Span_: 125-130,
                 },
                 Private: true,
-                Span_: 105-161,
+                Span_: 106-163,
             },
         },
-        span: 0-167,
+        span: 0-169,
     },
-    span: 0-167,
+    span: 0-169,
 }
 ---
 
@@ -3161,7 +3161,7 @@
                                 Pattern: &ast.IdentPat{
                                     Name: "self",
                                     Mutable: true,
-                                    span: 94-102,
+                                    span: 94-103,
                                 },
                             },
                             &ast.Param{
@@ -3170,14 +3170,14 @@
                                     Default: &ast.LiteralExpr{
                                         Lit: &ast.NumLit{
                                             Value: 1,
-                                            span: 117-118,
+                                            span: 118-119,
                                         },
-                                        span: 117-118,
+                                        span: 118-119,
                                     },
-                                    span: 104-118,
+                                    span: 105-119,
                                 },
                                 TypeAnn: &ast.NumberTypeAnn{
-                                    span: 108-114,
+                                    span: 109-115,
                                 },
                             },
                             &ast.Param{
@@ -3186,14 +3186,14 @@
                                     Default: &ast.LiteralExpr{
                                         Lit: &ast.StrLit{
                                             Value: "hello",
-                                            span: 138-145,
+                                            span: 139-146,
                                         },
-                                        span: 138-145,
+                                        span: 139-146,
                                     },
-                                    span: 120-145,
+                                    span: 121-146,
                                 },
                                 TypeAnn: &ast.StringTypeAnn{
-                                    span: 129-135,
+                                    span: 130-136,
                                 },
                             },
                         },
@@ -3205,60 +3205,60 @@
                                     Left: &ast.MemberExpr{
                                         Object: &ast.IdentExpr{
                                             Name: "self",
-                                            span: 154-158,
+                                            span: 155-159,
                                         },
                                         Prop: &ast.Ident{
                                             Name: "id",
-                                            span: 159-161,
+                                            span: 160-162,
                                         },
-                                        span: 154-161,
+                                        span: 155-162,
                                     },
                                     Op: "=",
                                     Right: &ast.IdentExpr{
                                         Name: "id",
-                                        span: 164-166,
+                                        span: 165-167,
                                     },
-                                    span: 154-166,
+                                    span: 155-167,
                                 },
-                                span: 154-166,
+                                span: 155-167,
                             },
                             &ast.ExprStmt{
                                 Expr: &ast.BinaryExpr{
                                     Left: &ast.MemberExpr{
                                         Object: &ast.IdentExpr{
                                             Name: "self",
-                                            span: 172-176,
+                                            span: 173-177,
                                         },
                                         Prop: &ast.Ident{
                                             Name: "message",
-                                            span: 177-184,
+                                            span: 178-185,
                                         },
-                                        span: 172-184,
+                                        span: 173-185,
                                     },
                                     Op: "=",
                                     Right: &ast.IdentExpr{
                                         Name: "message",
-                                        span: 187-194,
+                                        span: 188-195,
                                     },
-                                    span: 172-194,
+                                    span: 173-195,
                                 },
-                                span: 172-194,
+                                span: 173-195,
                             },
                         },
-                        Span: 147-200,
+                        Span: 148-201,
                     },
-                    span: 82-200,
+                    span: 82-201,
                 },
                 Receiver: &ast.MethodReceiver{
                     Mut: true,
-                    Span_: 94-102,
+                    Span_: 94-103,
                 },
-                Span_: 82-200,
+                Span_: 82-201,
             },
         },
-        span: 0-206,
+        span: 0-207,
     },
-    span: 0-206,
+    span: 0-207,
 }
 ---
 
@@ -3876,40 +3876,40 @@
                             &ast.Param{
                                 Pattern: &ast.IdentPat{
                                     Name: "x",
-                                    span: 28-29,
+                                    span: 29-30,
                                 },
                                 TypeAnn: &ast.NumberTypeAnn{
-                                    span: 31-37,
+                                    span: 32-38,
                                 },
                             },
                             &ast.Param{
                                 Pattern: &ast.IdentPat{
                                     Name: "y",
-                                    span: 39-40,
+                                    span: 40-41,
                                 },
                                 TypeAnn: &ast.NumberTypeAnn{
-                                    span: 42-48,
+                                    span: 43-49,
                                 },
                             },
                         },
                         Return: &ast.NumberTypeAnn{
-                            span: 53-59,
+                            span: 54-60,
                         },
-                        span: 21-59,
+                        span: 21-60,
                     },
                     Receiver: &ast.MethodReceiver{
-                        Span_: 22-26,
+                        Span_: 22-27,
                     },
                     elemSpan: ast.elemSpan{
-                        span: 18-59,
+                        span: 18-60,
                     },
                 },
             },
-            span: 16-61,
+            span: 16-62,
         },
-        span: 0-61,
+        span: 0-62,
     },
-    span: 0-61,
+    span: 0-62,
 }
 ---
 
@@ -3929,24 +3929,24 @@
                     },
                     Fn: &ast.FuncTypeAnn{
                         Return: &ast.NumberTypeAnn{
-                            span: 43-49,
+                            span: 44-50,
                         },
-                        span: 29-49,
+                        span: 29-50,
                     },
                     Receiver: &ast.MethodReceiver{
                         Mut: true,
-                        Span_: 30-38,
+                        Span_: 30-39,
                     },
                     elemSpan: ast.elemSpan{
-                        span: 20-49,
+                        span: 20-50,
                     },
                 },
             },
-            span: 18-51,
+            span: 18-52,
         },
-        span: 0-51,
+        span: 0-52,
     },
-    span: 0-51,
+    span: 0-52,
 }
 ---
 
@@ -3966,23 +3966,23 @@
                     },
                     Fn: &ast.FuncTypeAnn{
                         Return: &ast.StringTypeAnn{
-                            span: 35-41,
+                            span: 36-42,
                         },
-                        span: 25-41,
+                        span: 25-42,
                     },
                     Receiver: &ast.MethodReceiver{
-                        Span_: 26-30,
+                        Span_: 26-31,
                     },
                     elemSpan: ast.elemSpan{
-                        span: 20-41,
+                        span: 20-42,
                     },
                 },
             },
-            span: 18-43,
+            span: 18-44,
         },
-        span: 0-43,
+        span: 0-44,
     },
-    span: 0-43,
+    span: 0-44,
 }
 ---
 
@@ -4038,35 +4038,35 @@
                             &ast.Param{
                                 Pattern: &ast.IdentPat{
                                     Name: "x",
-                                    span: 41-42,
+                                    span: 42-43,
                                 },
                                 TypeAnn: &ast.NumberTypeAnn{
-                                    span: 44-50,
+                                    span: 45-51,
                                 },
                             },
                         },
                         Return: &ast.LitTypeAnn{
                             Lit: &ast.UndefinedLit{
-                                span: 55-64,
+                                span: 56-65,
                             },
-                            span: 55-64,
+                            span: 56-65,
                         },
-                        span: 30-64,
+                        span: 30-65,
                     },
                     Receiver: &ast.MethodReceiver{
                         Mut: true,
-                        Span_: 31-39,
+                        Span_: 31-40,
                     },
                     elemSpan: ast.elemSpan{
-                        span: 21-64,
+                        span: 21-65,
                     },
                 },
             },
-            span: 19-66,
+            span: 19-67,
         },
-        span: 0-66,
+        span: 0-67,
     },
-    span: 0-66,
+    span: 0-67,
 }
 ---
 
@@ -4086,23 +4086,23 @@
                     },
                     Fn: &ast.FuncTypeAnn{
                         Return: &ast.NumberTypeAnn{
-                            span: 36-42,
+                            span: 37-43,
                         },
-                        span: 26-42,
+                        span: 26-43,
                     },
                     Receiver: &ast.MethodReceiver{
-                        Span_: 27-31,
+                        Span_: 27-32,
                     },
                     elemSpan: ast.elemSpan{
-                        span: 18-42,
+                        span: 18-43,
                     },
                 },
             },
-            span: 16-44,
+            span: 16-45,
         },
-        span: 0-44,
+        span: 0-45,
     },
-    span: 0-44,
+    span: 0-45,
 }
 ---
 
@@ -4122,24 +4122,24 @@
                     },
                     Fn: &ast.FuncTypeAnn{
                         Return: &ast.NumberTypeAnn{
-                            span: 42-48,
+                            span: 43-49,
                         },
-                        span: 28-48,
+                        span: 28-49,
                     },
                     Receiver: &ast.MethodReceiver{
                         Mut: true,
-                        Span_: 29-37,
+                        Span_: 29-38,
                     },
                     elemSpan: ast.elemSpan{
-                        span: 19-48,
+                        span: 19-49,
                     },
                 },
             },
-            span: 17-50,
+            span: 17-51,
         },
-        span: 0-50,
+        span: 0-51,
     },
-    span: 0-50,
+    span: 0-51,
 }
 ---
 
@@ -4511,32 +4511,32 @@
                             &ast.Param{
                                 Pattern: &ast.IdentPat{
                                     Name: "x",
-                                    span: 36-37,
+                                    span: 37-38,
                                 },
                                 TypeAnn: &ast.TypeRefTypeAnn{
                                     Name: &ast.Ident{
                                         Name: "T",
-                                        span: 39-40,
+                                        span: 40-41,
                                     },
-                                    span: 39-40,
+                                    span: 40-41,
                                 },
                             },
                         },
                     },
                     Body: &ast.Block{
-                        Span: 42-45,
+                        Span: 43-46,
                     },
-                    span: 23-45,
+                    span: 23-46,
                 },
                 Receiver: &ast.MethodReceiver{
-                    Span_: 30-34,
+                    Span_: 30-35,
                 },
-                Span_: 23-45,
+                Span_: 23-46,
             },
         },
-        span: 0-47,
+        span: 0-48,
     },
-    span: 0-47,
+    span: 0-48,
 }
 ---
 
@@ -4949,28 +4949,28 @@
                                     Value: &ast.LiteralExpr{
                                         Lit: &ast.NumLit{
                                             Value: 1,
-                                            span: 38-39,
+                                            span: 39-40,
                                         },
-                                        span: 38-39,
+                                        span: 39-40,
                                     },
-                                    span: 32-39,
+                                    span: 33-40,
                                 },
-                                span: 32-39,
+                                span: 33-40,
                             },
                         },
-                        Span: 30-41,
+                        Span: 31-42,
                     },
-                    span: 14-41,
+                    span: 14-42,
                 },
                 Receiver: &ast.MethodReceiver{
-                    Span_: 24-28,
+                    Span_: 24-29,
                 },
-                Span_: 14-41,
+                Span_: 14-42,
             },
         },
-        span: 0-46,
+        span: 0-47,
     },
-    span: 0-46,
+    span: 0-47,
 }
 ---
 
@@ -4999,28 +4999,28 @@
                                     Value: &ast.AwaitExpr{
                                         Arg: &ast.IdentExpr{
                                             Name: "x",
-                                            span: 49-50,
+                                            span: 50-51,
                                         },
-                                        span: 43-50,
+                                        span: 44-51,
                                     },
-                                    span: 37-50,
+                                    span: 38-51,
                                 },
-                                span: 37-50,
+                                span: 38-51,
                             },
                         },
-                        Span: 35-52,
+                        Span: 36-53,
                     },
-                    span: 14-52,
+                    span: 14-53,
                 },
                 Receiver: &ast.MethodReceiver{
-                    Span_: 29-33,
+                    Span_: 29-34,
                 },
-                Span_: 14-52,
+                Span_: 14-53,
             },
         },
-        span: 0-57,
+        span: 0-58,
     },
-    span: 0-57,
+    span: 0-58,
 }
 ---
 

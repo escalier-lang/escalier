@@ -231,15 +231,15 @@ export declare class AudioData {
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/AudioData/timestamp) */
     readonly timestamp: number,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/AudioData/allocationSize) */
-    allocationSize(mut self, options: AudioDataCopyToOptions) -> number,
+    allocationSize(&mut self, options: AudioDataCopyToOptions) -> number,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/AudioData/clone) */
-    clone(self) -> AudioData,
+    clone(&self) -> AudioData,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/AudioData/close) */
-    close(mut self) -> unknown,
+    close(&mut self) -> unknown,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/AudioData/copyTo) */
-    copyTo(self, destination: AllowSharedBufferSource, options: AudioDataCopyToOptions) -> unknown,
+    copyTo(&self, destination: AllowSharedBufferSource, options: AudioDataCopyToOptions) -> unknown,
     static prototype: AudioData,
-    constructor(mut self, init: AudioDataInit)
+    constructor(&mut self, init: AudioDataInit)
 }
 
 export declare interface AudioDecoderEventMap {
@@ -260,21 +260,21 @@ export declare class AudioDecoder extends EventTarget {
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/AudioDecoder/state) */
     readonly state: CodecState,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/AudioDecoder/close) */
-    close(mut self) -> unknown,
+    close(&mut self) -> unknown,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/AudioDecoder/configure) */
-    configure(mut self, config: AudioDecoderConfig) -> unknown,
+    configure(&mut self, config: AudioDecoderConfig) -> unknown,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/AudioDecoder/decode) */
-    decode(mut self, chunk: EncodedAudioChunk) -> unknown,
+    decode(&mut self, chunk: EncodedAudioChunk) -> unknown,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/AudioDecoder/flush) */
-    flush(mut self) -> Promise<undefined>,
+    flush(&mut self) -> Promise<undefined>,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/AudioDecoder/reset) */
-    reset(mut self) -> unknown,
-    addEventListener<K: keyof AudioDecoderEventMap>(mut self, type: K, listener: fn (this: AudioDecoder, ev: AudioDecoderEventMap[K]) -> any, options?: boolean | AddEventListenerOptions) -> unknown,
-    addEventListener(mut self, type: string, listener: EventListenerOrEventListenerObject, options?: boolean | AddEventListenerOptions) -> unknown,
-    removeEventListener<K: keyof AudioDecoderEventMap>(mut self, type: K, listener: fn (this: AudioDecoder, ev: AudioDecoderEventMap[K]) -> any, options?: boolean | EventListenerOptions) -> unknown,
-    removeEventListener(mut self, type: string, listener: EventListenerOrEventListenerObject, options?: boolean | EventListenerOptions) -> unknown,
+    reset(&mut self) -> unknown,
+    addEventListener<K: keyof AudioDecoderEventMap>(&mut self, type: K, listener: fn (this: AudioDecoder, ev: AudioDecoderEventMap[K]) -> any, options?: boolean | AddEventListenerOptions) -> unknown,
+    addEventListener(&mut self, type: string, listener: EventListenerOrEventListenerObject, options?: boolean | AddEventListenerOptions) -> unknown,
+    removeEventListener<K: keyof AudioDecoderEventMap>(&mut self, type: K, listener: fn (this: AudioDecoder, ev: AudioDecoderEventMap[K]) -> any, options?: boolean | EventListenerOptions) -> unknown,
+    removeEventListener(&mut self, type: string, listener: EventListenerOrEventListenerObject, options?: boolean | EventListenerOptions) -> unknown,
     static prototype: AudioDecoder,
-    constructor(mut self, init: AudioDecoderInit),
+    constructor(&mut self, init: AudioDecoderInit),
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/AudioDecoder/isConfigSupported_static) */
     static isConfigSupported(config: AudioDecoderConfig) -> Promise<AudioDecoderSupport>
 }
@@ -297,21 +297,21 @@ export declare class AudioEncoder extends EventTarget {
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/AudioEncoder/state) */
     readonly state: CodecState,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/AudioEncoder/close) */
-    close(mut self) -> unknown,
+    close(&mut self) -> unknown,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/AudioEncoder/configure) */
-    configure(mut self, config: AudioEncoderConfig) -> unknown,
+    configure(&mut self, config: AudioEncoderConfig) -> unknown,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/AudioEncoder/encode) */
-    encode(mut self, data: AudioData) -> unknown,
+    encode(&mut self, data: AudioData) -> unknown,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/AudioEncoder/flush) */
-    flush(mut self) -> Promise<undefined>,
+    flush(&mut self) -> Promise<undefined>,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/AudioEncoder/reset) */
-    reset(mut self) -> unknown,
-    addEventListener<K: keyof AudioEncoderEventMap>(mut self, type: K, listener: fn (this: AudioEncoder, ev: AudioEncoderEventMap[K]) -> any, options?: boolean | AddEventListenerOptions) -> unknown,
-    addEventListener(mut self, type: string, listener: EventListenerOrEventListenerObject, options?: boolean | AddEventListenerOptions) -> unknown,
-    removeEventListener<K: keyof AudioEncoderEventMap>(mut self, type: K, listener: fn (this: AudioEncoder, ev: AudioEncoderEventMap[K]) -> any, options?: boolean | EventListenerOptions) -> unknown,
-    removeEventListener(mut self, type: string, listener: EventListenerOrEventListenerObject, options?: boolean | EventListenerOptions) -> unknown,
+    reset(&mut self) -> unknown,
+    addEventListener<K: keyof AudioEncoderEventMap>(&mut self, type: K, listener: fn (this: AudioEncoder, ev: AudioEncoderEventMap[K]) -> any, options?: boolean | AddEventListenerOptions) -> unknown,
+    addEventListener(&mut self, type: string, listener: EventListenerOrEventListenerObject, options?: boolean | AddEventListenerOptions) -> unknown,
+    removeEventListener<K: keyof AudioEncoderEventMap>(&mut self, type: K, listener: fn (this: AudioEncoder, ev: AudioEncoderEventMap[K]) -> any, options?: boolean | EventListenerOptions) -> unknown,
+    removeEventListener(&mut self, type: string, listener: EventListenerOrEventListenerObject, options?: boolean | EventListenerOptions) -> unknown,
     static prototype: AudioEncoder,
-    constructor(mut self, init: AudioEncoderInit),
+    constructor(&mut self, init: AudioEncoderInit),
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/AudioEncoder/isConfigSupported_static) */
     static isConfigSupported(config: AudioEncoderConfig) -> Promise<AudioEncoderSupport>
 }
@@ -328,9 +328,9 @@ export declare class EncodedAudioChunk {
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/EncodedAudioChunk/type) */
     readonly type: EncodedAudioChunkType,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/EncodedAudioChunk/copyTo) */
-    copyTo(self, destination: AllowSharedBufferSource) -> unknown,
+    copyTo(&self, destination: AllowSharedBufferSource) -> unknown,
     static prototype: EncodedAudioChunk,
-    constructor(mut self, init: EncodedAudioChunkInit)
+    constructor(&mut self, init: EncodedAudioChunkInit)
 }
 
 /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/EncodedVideoChunk) */
@@ -345,9 +345,9 @@ export declare class EncodedVideoChunk {
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/EncodedVideoChunk/type) */
     readonly type: EncodedVideoChunkType,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/EncodedVideoChunk/copyTo) */
-    copyTo(self, destination: AllowSharedBufferSource) -> unknown,
+    copyTo(&self, destination: AllowSharedBufferSource) -> unknown,
     static prototype: EncodedVideoChunk,
-    constructor(mut self, init: EncodedVideoChunkInit)
+    constructor(&mut self, init: EncodedVideoChunkInit)
 }
 
 /**
@@ -366,13 +366,13 @@ export declare class ImageDecoder {
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/ImageDecoder/type) */
     readonly type: string,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/ImageDecoder/close) */
-    close(mut self) -> unknown,
+    close(&mut self) -> unknown,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/ImageDecoder/decode) */
-    decode(mut self, options?: ImageDecodeOptions) -> Promise<ImageDecodeResult>,
+    decode(&mut self, options?: ImageDecodeOptions) -> Promise<ImageDecodeResult>,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/ImageDecoder/reset) */
-    reset(mut self) -> unknown,
+    reset(&mut self) -> unknown,
     static prototype: ImageDecoder,
-    constructor(mut self, init: ImageDecoderInit),
+    constructor(&mut self, init: ImageDecoderInit),
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/ImageDecoder/isTypeSupported_static) */
     static isTypeSupported(type: string) -> Promise<boolean>
 }
@@ -389,7 +389,7 @@ export declare class ImageTrack {
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/ImageTrack/selected) */
     selected: boolean,
     static prototype: ImageTrack,
-    constructor(mut self)
+    constructor(&mut self)
 }
 
 /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/ImageTrackList) */
@@ -403,9 +403,9 @@ export declare class ImageTrackList {
     readonly selectedIndex: number,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/ImageTrackList/selectedTrack) */
     readonly selectedTrack: ImageTrack | null,
-    [Symbol.iterator](self) -> ArrayIterator<ImageTrack>,
+    [Symbol.iterator](&self) -> ArrayIterator<ImageTrack>,
     static prototype: ImageTrackList,
-    constructor(mut self)
+    constructor(&mut self)
 }
 
 /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/VideoColorSpace) */
@@ -420,9 +420,9 @@ export declare class VideoColorSpace {
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/VideoColorSpace/transfer) */
     readonly transfer: VideoTransferCharacteristics | null,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/VideoColorSpace/toJSON) */
-    toJSON(self) -> VideoColorSpaceInit,
+    toJSON(&self) -> VideoColorSpaceInit,
     static prototype: VideoColorSpace,
-    constructor(mut self, init?: VideoColorSpaceInit)
+    constructor(&mut self, init?: VideoColorSpaceInit)
 }
 
 export declare interface VideoDecoderEventMap {
@@ -443,21 +443,21 @@ export declare class VideoDecoder extends EventTarget {
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/VideoDecoder/state) */
     readonly state: CodecState,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/VideoDecoder/close) */
-    close(mut self) -> unknown,
+    close(&mut self) -> unknown,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/VideoDecoder/configure) */
-    configure(mut self, config: VideoDecoderConfig) -> unknown,
+    configure(&mut self, config: VideoDecoderConfig) -> unknown,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/VideoDecoder/decode) */
-    decode(mut self, chunk: EncodedVideoChunk) -> unknown,
+    decode(&mut self, chunk: EncodedVideoChunk) -> unknown,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/VideoDecoder/flush) */
-    flush(mut self) -> Promise<undefined>,
+    flush(&mut self) -> Promise<undefined>,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/VideoDecoder/reset) */
-    reset(mut self) -> unknown,
-    addEventListener<K: keyof VideoDecoderEventMap>(mut self, type: K, listener: fn (this: VideoDecoder, ev: VideoDecoderEventMap[K]) -> any, options?: boolean | AddEventListenerOptions) -> unknown,
-    addEventListener(mut self, type: string, listener: EventListenerOrEventListenerObject, options?: boolean | AddEventListenerOptions) -> unknown,
-    removeEventListener<K: keyof VideoDecoderEventMap>(mut self, type: K, listener: fn (this: VideoDecoder, ev: VideoDecoderEventMap[K]) -> any, options?: boolean | EventListenerOptions) -> unknown,
-    removeEventListener(mut self, type: string, listener: EventListenerOrEventListenerObject, options?: boolean | EventListenerOptions) -> unknown,
+    reset(&mut self) -> unknown,
+    addEventListener<K: keyof VideoDecoderEventMap>(&mut self, type: K, listener: fn (this: VideoDecoder, ev: VideoDecoderEventMap[K]) -> any, options?: boolean | AddEventListenerOptions) -> unknown,
+    addEventListener(&mut self, type: string, listener: EventListenerOrEventListenerObject, options?: boolean | AddEventListenerOptions) -> unknown,
+    removeEventListener<K: keyof VideoDecoderEventMap>(&mut self, type: K, listener: fn (this: VideoDecoder, ev: VideoDecoderEventMap[K]) -> any, options?: boolean | EventListenerOptions) -> unknown,
+    removeEventListener(&mut self, type: string, listener: EventListenerOrEventListenerObject, options?: boolean | EventListenerOptions) -> unknown,
     static prototype: VideoDecoder,
-    constructor(mut self, init: VideoDecoderInit),
+    constructor(&mut self, init: VideoDecoderInit),
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/VideoDecoder/isConfigSupported_static) */
     static isConfigSupported(config: VideoDecoderConfig) -> Promise<VideoDecoderSupport>
 }
@@ -480,21 +480,21 @@ export declare class VideoEncoder extends EventTarget {
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/VideoEncoder/state) */
     readonly state: CodecState,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/VideoEncoder/close) */
-    close(mut self) -> unknown,
+    close(&mut self) -> unknown,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/VideoEncoder/configure) */
-    configure(mut self, config: VideoEncoderConfig) -> unknown,
+    configure(&mut self, config: VideoEncoderConfig) -> unknown,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/VideoEncoder/encode) */
-    encode(mut self, frame: VideoFrame, options?: VideoEncoderEncodeOptions) -> unknown,
+    encode(&mut self, frame: VideoFrame, options?: VideoEncoderEncodeOptions) -> unknown,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/VideoEncoder/flush) */
-    flush(mut self) -> Promise<undefined>,
+    flush(&mut self) -> Promise<undefined>,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/VideoEncoder/reset) */
-    reset(mut self) -> unknown,
-    addEventListener<K: keyof VideoEncoderEventMap>(mut self, type: K, listener: fn (this: VideoEncoder, ev: VideoEncoderEventMap[K]) -> any, options?: boolean | AddEventListenerOptions) -> unknown,
-    addEventListener(mut self, type: string, listener: EventListenerOrEventListenerObject, options?: boolean | AddEventListenerOptions) -> unknown,
-    removeEventListener<K: keyof VideoEncoderEventMap>(mut self, type: K, listener: fn (this: VideoEncoder, ev: VideoEncoderEventMap[K]) -> any, options?: boolean | EventListenerOptions) -> unknown,
-    removeEventListener(mut self, type: string, listener: EventListenerOrEventListenerObject, options?: boolean | EventListenerOptions) -> unknown,
+    reset(&mut self) -> unknown,
+    addEventListener<K: keyof VideoEncoderEventMap>(&mut self, type: K, listener: fn (this: VideoEncoder, ev: VideoEncoderEventMap[K]) -> any, options?: boolean | AddEventListenerOptions) -> unknown,
+    addEventListener(&mut self, type: string, listener: EventListenerOrEventListenerObject, options?: boolean | AddEventListenerOptions) -> unknown,
+    removeEventListener<K: keyof VideoEncoderEventMap>(&mut self, type: K, listener: fn (this: VideoEncoder, ev: VideoEncoderEventMap[K]) -> any, options?: boolean | EventListenerOptions) -> unknown,
+    removeEventListener(&mut self, type: string, listener: EventListenerOrEventListenerObject, options?: boolean | EventListenerOptions) -> unknown,
     static prototype: VideoEncoder,
-    constructor(mut self, init: VideoEncoderInit),
+    constructor(&mut self, init: VideoEncoderInit),
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/VideoEncoder/isConfigSupported_static) */
     static isConfigSupported(config: VideoEncoderConfig) -> Promise<VideoEncoderSupport>
 }
@@ -523,16 +523,16 @@ export declare class VideoFrame {
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/VideoFrame/visibleRect) */
     readonly visibleRect: dom.DOMRectReadOnly | null,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/VideoFrame/allocationSize) */
-    allocationSize(mut self, options?: VideoFrameCopyToOptions) -> number,
+    allocationSize(&mut self, options?: VideoFrameCopyToOptions) -> number,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/VideoFrame/clone) */
-    clone(self) -> VideoFrame,
+    clone(&self) -> VideoFrame,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/VideoFrame/close) */
-    close(mut self) -> unknown,
+    close(&mut self) -> unknown,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/VideoFrame/copyTo) */
-    copyTo(self, destination: AllowSharedBufferSource, options?: VideoFrameCopyToOptions) -> Promise<mut Array<PlaneLayout>>,
+    copyTo(&self, destination: AllowSharedBufferSource, options?: VideoFrameCopyToOptions) -> Promise<mut Array<PlaneLayout>>,
     static prototype: VideoFrame,
-    constructor(mut self, image: dom.CanvasImageSource, init?: VideoFrameInit),
-    constructor(mut self, data: AllowSharedBufferSource, init: VideoFrameBufferInit)
+    constructor(&mut self, image: dom.CanvasImageSource, init?: VideoFrameInit),
+    constructor(&mut self, data: AllowSharedBufferSource, init: VideoFrameBufferInit)
 }
 
 export declare interface AudioDataOutputCallback {

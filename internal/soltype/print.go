@@ -974,7 +974,7 @@ func (p *namedPrinter) printType(t Type) string {
 		return "unique symbol#" + strconv.Itoa(t.ID)
 	case *SelfType:
 		// A `Self` renders as the word the source wrote, not as the class it was declared in.
-		// That is the whole point of keeping it a kind of its own: `me(self) -> Self` on a
+		// That is the whole point of keeping it a kind of its own: `me(&self) -> Self` on a
 		// class A reads back as `-> Self` rather than `-> A`, so a reader can tell it means the
 		// receiver's class. A substituted member carries the receiver's ClassType instead and
 		// never reaches this arm.
@@ -1196,8 +1196,8 @@ func ShorthandOptionalMarker(mod MappedModifier) string {
 //   - a property renders `name: T` with the `readonly` and `?` markers;
 //   - a method renders `name(params) -> ret` per overload arm, arms joined by "; "
 //     so the arm boundary stays distinct from the outer ", " between members;
-//   - a getter renders `get name(self) -> T`, or `get name() -> T` when static;
-//   - a setter renders `set name(self, value: T)`, or `set name(value: T)` when static;
+//   - a getter renders `get name(&self) -> T`, or `get name() -> T` when static;
+//   - a setter renders `set name(&self, value: T)`, or `set name(value: T)` when static;
 //   - a constructor renders `new (params) -> ret`, the unnamed call signature of a
 //     class value.
 //
@@ -1334,7 +1334,7 @@ func (p *namedPrinter) printSelfReceiver(sp *FuncParam) string {
 // with a <...> quantifier prefix without byte-slicing the "fn " back off.
 //
 // A method's self receiver renders first as its shorthand, so an instance method
-// reads `(self, x: T) -> R` or `(mut self) -> R`. PR4 markers follow: an optional
+// reads `(&self, x: T) -> R` or `(&mut self) -> R`. PR4 markers follow: an optional
 // parameter renders as `x?: T`, and an INEXACT function renders a trailing `...`
 // entry (`fn (x: T, ...) -> R`) so the exactness it carries round-trips to surface
 // syntax. An exact function with no receiver renders with no marker.
@@ -1390,7 +1390,7 @@ func (p *namedPrinter) printFuncBody(t *FuncType) string {
 
 // printThrowsClause renders a signature's ` throws T` suffix, or the empty string when
 // there is nothing to raise. A member that raises nothing resolves to `never` and renders
-// no clause, so `fn () -> number` and `get x(self) -> number` stay the common forms. That
+// no clause, so `fn () -> number` and `get x(&self) -> number` stay the common forms. That
 // covers a coalesced throws variable nothing reached as well as a signature minted with no
 // clause at all. The clause needs no minimum precedence: it is last, so nothing can bind
 // across its right edge.

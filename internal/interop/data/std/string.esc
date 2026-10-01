@@ -14,7 +14,7 @@ export declare class String {
      * If there is no element at that position, the result is undefined.
      * If a valid UTF-16 surrogate pair does not begin at pos, the result is the code unit at pos.
      */
-    codePointAt(self, pos: number) -> number | undefined,
+    codePointAt(&self, pos: number) -> number | undefined,
     /**
      * Returns true if searchString appears as a substring of the result of converting this
      * object to a String, at one or more positions that are
@@ -22,118 +22,118 @@ export declare class String {
      * @param searchString search string
      * @param position If position is undefined, 0 is assumed, so as to search all of the String.
      */
-    includes(self, searchString: string, position?: number) -> boolean,
+    includes(&self, searchString: string, position?: number) -> boolean,
     /**
      * Returns true if the sequence of elements of searchString converted to a String is the
      * same as the corresponding elements of this object (converted to a String) starting at
      * endPosition – length(this). Otherwise returns false.
      */
-    endsWith(self, searchString: string, endPosition?: number) -> boolean,
+    endsWith(&self, searchString: string, endPosition?: number) -> boolean,
     /**
      * Returns the String value result of normalizing the string into the normalization form
      * named by form as specified in Unicode Standard Annex #15, Unicode Normalization Forms.
      * @param form Applicable values: "NFC", "NFD", "NFKC", or "NFKD", If not specified default
      * is "NFC"
      */
-    normalize(self, form: "NFC" | "NFD" | "NFKC" | "NFKD") -> string,
+    normalize(&self, form: "NFC" | "NFD" | "NFKC" | "NFKD") -> string,
     /**
      * Returns the String value result of normalizing the string into the normalization form
      * named by form as specified in Unicode Standard Annex #15, Unicode Normalization Forms.
      * @param form Applicable values: "NFC", "NFD", "NFKC", or "NFKD", If not specified default
      * is "NFC"
      */
-    normalize(self, form?: string) -> string,
+    normalize(&self, form?: string) -> string,
     /**
      * Returns a String value that is made from count copies appended together. If count is 0,
      * the empty string is returned.
      * @param count number of copies to append
      */
-    repeat(self, count: number) -> string,
+    repeat(&self, count: number) -> string,
     /**
      * Returns true if the sequence of elements of searchString converted to a String is the
      * same as the corresponding elements of this object (converted to a String) starting at
      * position. Otherwise returns false.
      */
-    startsWith(self, searchString: string, position?: number) -> boolean,
+    startsWith(&self, searchString: string, position?: number) -> boolean,
     /**
      * Returns an `<a>` HTML anchor element and sets the name attribute to the text value
      * @deprecated A legacy feature for browser compatibility
      * @param name
      */
-    anchor(self, name: string) -> string,
+    anchor(&self, name: string) -> string,
     /**
      * Returns a `<big>` HTML element
      * @deprecated A legacy feature for browser compatibility
      */
-    big(self) -> string,
+    big(&self) -> string,
     /**
      * Returns a `<blink>` HTML element
      * @deprecated A legacy feature for browser compatibility
      */
-    blink(self) -> string,
+    blink(&self) -> string,
     /**
      * Returns a `<b>` HTML element
      * @deprecated A legacy feature for browser compatibility
      */
-    bold(self) -> string,
+    bold(&self) -> string,
     /**
      * Returns a `<tt>` HTML element
      * @deprecated A legacy feature for browser compatibility
      */
-    fixed(self) -> string,
+    fixed(&self) -> string,
     /**
      * Returns a `<font>` HTML element and sets the color attribute value
      * @deprecated A legacy feature for browser compatibility
      */
-    fontcolor(self, color: string) -> string,
+    fontcolor(&self, color: string) -> string,
     /**
      * Returns a `<font>` HTML element and sets the size attribute value
      * @deprecated A legacy feature for browser compatibility
      */
-    fontsize(self, size: number) -> string,
+    fontsize(&self, size: number) -> string,
     /**
      * Returns a `<font>` HTML element and sets the size attribute value
      * @deprecated A legacy feature for browser compatibility
      */
-    fontsize(self, size: string) -> string,
+    fontsize(&self, size: string) -> string,
     /**
      * Returns an `<i>` HTML element
      * @deprecated A legacy feature for browser compatibility
      */
-    italics(self) -> string,
+    italics(&self) -> string,
     /**
      * Returns an `<a>` HTML element and sets the href attribute value
      * @deprecated A legacy feature for browser compatibility
      */
-    link(self, url: string) -> string,
+    link(&self, url: string) -> string,
     /**
      * Returns a `<small>` HTML element
      * @deprecated A legacy feature for browser compatibility
      */
-    small(self) -> string,
+    small(&self) -> string,
     /**
      * Returns a `<strike>` HTML element
      * @deprecated A legacy feature for browser compatibility
      */
-    strike(self) -> string,
+    strike(&self) -> string,
     /**
      * Returns a `<sub>` HTML element
      * @deprecated A legacy feature for browser compatibility
      */
-    sub(self) -> string,
+    sub(&self) -> string,
     /**
      * Returns a `<sup>` HTML element
      * @deprecated A legacy feature for browser compatibility
      */
-    sup(self) -> string,
+    sup(&self) -> string,
     /** Iterator */
-    [Symbol.iterator](self) -> StringIterator<string>,
+    [Symbol.iterator](&self) -> StringIterator<string>,
     /**
      * Matches a string or an object that supports being matched against, and returns an array
      * containing the results of that search, or null if no matches are found.
      * @param matcher An object that supports being matched against.
      */
-    match(self, matcher: {
+    match(&self, matcher: {
         [Symbol.match](string: string) -> regexp.RegExpMatchArray | null
     }) -> regexp.RegExpMatchArray | null,
     /**
@@ -141,7 +141,7 @@ export declare class String {
      * @param searchValue An object that supports searching for and replacing matches within a string.
      * @param replaceValue The replacement text.
      */
-    replace(self, searchValue: {
+    replace(&self, searchValue: {
         [Symbol.replace](string: string, replaceValue: string) -> string
     }, replaceValue: string) -> string,
     /**
@@ -149,14 +149,14 @@ export declare class String {
      * @param searchValue A object can search for and replace matches within a string.
      * @param replacer A function that returns the replacement text.
      */
-    replace(self, searchValue: {
+    replace(&self, searchValue: {
         [Symbol.replace](string: string, replacer: fn (substring: string, ...args: mut Array<any>) -> string) -> string
     }, replacer: fn (substring: string, ...args: mut Array<any>) -> string) -> string,
     /**
      * Finds the first substring match in a regular expression search.
      * @param searcher An object which supports searching within a string.
      */
-    search(self, searcher: {
+    search(&self, searcher: {
         [Symbol.search](string: string) -> number
     }) -> number,
     /**
@@ -164,7 +164,7 @@ export declare class String {
      * @param splitter An object that can split a string.
      * @param limit A value used to limit the number of elements returned in the array.
      */
-    split(self, splitter: {
+    split(&self, splitter: {
         [Symbol.split](string: string, limit?: number) -> mut Array<string>
     }, limit?: number) -> mut Array<string>,
     /**
@@ -178,7 +178,7 @@ export declare class String {
      *        If this string is too long, it will be truncated and the left-most part will be applied.
      *        The default value for this parameter is " " (U+0020).
      */
-    padStart(self, maxLength: number, fillString?: string) -> string,
+    padStart(&self, maxLength: number, fillString?: string) -> string,
     /**
      * Pads the current string with a given string (possibly repeated) so that the resulting string reaches a given length.
      * The padding is applied from the end (right) of the current string.
@@ -190,149 +190,149 @@ export declare class String {
      *        If this string is too long, it will be truncated and the left-most part will be applied.
      *        The default value for this parameter is " " (U+0020).
      */
-    padEnd(self, maxLength: number, fillString?: string) -> string,
+    padEnd(&self, maxLength: number, fillString?: string) -> string,
     /** Removes the trailing white space and line terminator characters from a string. */
-    trimEnd(self) -> string,
+    trimEnd(&self) -> string,
     /** Removes the leading white space and line terminator characters from a string. */
-    trimStart(self) -> string,
+    trimStart(&self) -> string,
     /**
      * Removes the leading white space and line terminator characters from a string.
      * @deprecated A legacy feature for browser compatibility. Use `trimStart` instead
      */
-    trimLeft(self) -> string,
+    trimLeft(&self) -> string,
     /**
      * Removes the trailing white space and line terminator characters from a string.
      * @deprecated A legacy feature for browser compatibility. Use `trimEnd` instead
      */
-    trimRight(self) -> string,
+    trimRight(&self) -> string,
     /**
      * Matches a string with a regular expression, and returns an iterable of matches
      * containing the results of that search.
      * @param regexp A variable name or string literal containing the regular expression pattern and flags.
      */
-    matchAll(self, regexp: regexp.RegExp) -> regexp.RegExpStringIterator<regexp.RegExpExecArray>,
+    matchAll(&self, regexp: regexp.RegExp) -> regexp.RegExpStringIterator<regexp.RegExpExecArray>,
     /** Converts all alphabetic characters to lowercase, taking into account the host environment's current locale. */
-    toLocaleLowerCase(self, locales?: intl.LocalesArgument) -> string,
+    toLocaleLowerCase(&self, locales?: intl.LocalesArgument) -> string,
     /** Returns a string where all alphabetic characters have been converted to uppercase, taking into account the host environment's current locale. */
-    toLocaleUpperCase(self, locales?: intl.LocalesArgument) -> string,
+    toLocaleUpperCase(&self, locales?: intl.LocalesArgument) -> string,
     /**
      * Determines whether two strings are equivalent in the current or specified locale.
      * @param that String to compare to target string
      * @param locales A locale string or array of locale strings that contain one or more language or locale tags. If you include more than one locale string, list them in descending order of priority so that the first entry is the preferred locale. If you omit this parameter, the default locale of the JavaScript runtime is used. This parameter must conform to BCP 47 standards; see the Intl.Collator object for details.
      * @param options An object that contains one or more properties that specify comparison options. see the Intl.Collator object for details.
      */
-    localeCompare(self, that: string, locales?: intl.LocalesArgument, options?: intl.CollatorOptions) -> number,
+    localeCompare(&self, that: string, locales?: intl.LocalesArgument, options?: intl.CollatorOptions) -> number,
     /**
      * Replace all instances of a substring in a string, using a regular expression or search string.
      * @param searchValue A string to search for.
      * @param replaceValue A string containing the text to replace for every successful match of searchValue in this string.
      */
-    replaceAll(self, searchValue: string | regexp.RegExp, replaceValue: string) -> string,
+    replaceAll(&self, searchValue: string | regexp.RegExp, replaceValue: string) -> string,
     /**
      * Replace all instances of a substring in a string, using a regular expression or search string.
      * @param searchValue A string to search for.
      * @param replacer A function that returns the replacement text.
      */
-    replaceAll(self, searchValue: string | regexp.RegExp, replacer: fn (substring: string, ...args: mut Array<any>) -> string) -> string,
+    replaceAll(&self, searchValue: string | regexp.RegExp, replacer: fn (substring: string, ...args: mut Array<any>) -> string) -> string,
     /**
      * Returns a new String consisting of the single UTF-16 code unit located at the specified index.
      * @param index The zero-based index of the desired code unit. A negative index will count back from the last item.
      */
-    at(self, index: number) -> string | undefined,
+    at(&self, index: number) -> string | undefined,
     /**
      * Returns true if all leading surrogates and trailing surrogates appear paired and in order.
      */
-    isWellFormed(self) -> boolean,
+    isWellFormed(&self) -> boolean,
     /**
      * Returns a string where all lone or out-of-order surrogates have been replaced by the Unicode replacement character (U+FFFD).
      */
-    toWellFormed(self) -> string,
+    toWellFormed(&self) -> string,
     /** Returns a string representation of a string. */
-    toString(self) -> string,
+    toString(&self) -> string,
     /**
      * Returns the character at the specified index.
      * @param pos The zero-based index of the desired character.
      */
-    charAt(self, pos: number) -> string,
+    charAt(&self, pos: number) -> string,
     /**
      * Returns the Unicode value of the character at the specified location.
      * @param index The zero-based index of the desired character. If there is no character at the specified index, NaN is returned.
      */
-    charCodeAt(self, index: number) -> number,
+    charCodeAt(&self, index: number) -> number,
     /**
      * Returns a string that contains the concatenation of two or more strings.
      * @param strings The strings to append to the end of the string.
      */
-    concat(self, ...strings: mut Array<string>) -> string,
+    concat(&self, ...strings: mut Array<string>) -> string,
     /**
      * Returns the position of the first occurrence of a substring.
      * @param searchString The substring to search for in the string
      * @param position The index at which to begin searching the String object. If omitted, search starts at the beginning of the string.
      */
-    indexOf(self, searchString: string, position?: number) -> number,
+    indexOf(&self, searchString: string, position?: number) -> number,
     /**
      * Returns the last occurrence of a substring in the string.
      * @param searchString The substring to search for.
      * @param position The index at which to begin searching. If omitted, the search begins at the end of the string.
      */
-    lastIndexOf(self, searchString: string, position?: number) -> number,
+    lastIndexOf(&self, searchString: string, position?: number) -> number,
     /**
      * Determines whether two strings are equivalent in the current locale.
      * @param that String to compare to target string
      */
-    localeCompare(self, that: string) -> number,
+    localeCompare(&self, that: string) -> number,
     /**
      * Matches a string with a regular expression, and returns an array containing the results of that search.
      * @param regexp A variable name or string literal containing the regular expression pattern and flags.
      */
-    match(self, regexp: string | regexp.RegExp) -> regexp.RegExpMatchArray | null,
+    match(&self, regexp: string | regexp.RegExp) -> regexp.RegExpMatchArray | null,
     /**
      * Replaces text in a string, using a regular expression or search string.
      * @param searchValue A string or regular expression to search for.
      * @param replaceValue A string containing the text to replace. When the {@linkcode searchValue} is a `RegExp`, all matches are replaced if the `g` flag is set (or only those matches at the beginning, if the `y` flag is also present). Otherwise, only the first match of {@linkcode searchValue} is replaced.
      */
-    replace(self, searchValue: string | regexp.RegExp, replaceValue: string) -> string,
+    replace(&self, searchValue: string | regexp.RegExp, replaceValue: string) -> string,
     /**
      * Replaces text in a string, using a regular expression or search string.
      * @param searchValue A string to search for.
      * @param replacer A function that returns the replacement text.
      */
-    replace(self, searchValue: string | regexp.RegExp, replacer: fn (substring: string, ...args: mut Array<any>) -> string) -> string,
+    replace(&self, searchValue: string | regexp.RegExp, replacer: fn (substring: string, ...args: mut Array<any>) -> string) -> string,
     /**
      * Finds the first substring match in a regular expression search.
      * @param regexp The regular expression pattern and applicable flags.
      */
-    search(self, regexp: string | regexp.RegExp) -> number,
+    search(&self, regexp: string | regexp.RegExp) -> number,
     /**
      * Returns a section of a string.
      * @param start The index to the beginning of the specified portion of stringObj.
      * @param end The index to the end of the specified portion of stringObj. The substring includes the characters up to, but not including, the character indicated by end.
      * If this value is not specified, the substring continues to the end of stringObj.
      */
-    slice(self, start?: number, end?: number) -> string,
+    slice(&self, start?: number, end?: number) -> string,
     /**
      * Split a string into substrings using the specified separator and return them as an array.
      * @param separator A string that identifies character or characters to use in separating the string. If omitted, a single-element array containing the entire string is returned.
      * @param limit A value used to limit the number of elements returned in the array.
      */
-    split(self, separator: string | regexp.RegExp, limit?: number) -> mut Array<string>,
+    split(&self, separator: string | regexp.RegExp, limit?: number) -> mut Array<string>,
     /**
      * Returns the substring at the specified location within a String object.
      * @param start The zero-based index number indicating the beginning of the substring.
      * @param end Zero-based index number indicating the end of the substring. The substring includes the characters up to, but not including, the character indicated by end.
      * If end is omitted, the characters from start through the end of the original string are returned.
      */
-    substring(self, start: number, end?: number) -> string,
+    substring(&self, start: number, end?: number) -> string,
     /** Converts all the alphabetic characters in a string to lowercase. */
-    toLowerCase(self) -> string,
+    toLowerCase(&self) -> string,
     /** Converts all alphabetic characters to lowercase, taking into account the host environment's current locale. */
-    toLocaleLowerCase(self, locales?: string | mut Array<string>) -> string,
+    toLocaleLowerCase(&self, locales?: string | mut Array<string>) -> string,
     /** Converts all the alphabetic characters in a string to uppercase. */
-    toUpperCase(self) -> string,
+    toUpperCase(&self) -> string,
     /** Returns a string where all alphabetic characters have been converted to uppercase, taking into account the host environment's current locale. */
-    toLocaleUpperCase(self, locales?: string | mut Array<string>) -> string,
+    toLocaleUpperCase(&self, locales?: string | mut Array<string>) -> string,
     /** Removes the leading and trailing white space and line terminator characters from a string. */
-    trim(self) -> string,
+    trim(&self) -> string,
     /** Returns the length of a String object. */
     readonly length: number,
     /**
@@ -341,16 +341,16 @@ export declare class String {
      * @param from The starting position of the desired substring. The index of the first character in the string is zero.
      * @param length The number of characters to include in the returned substring.
      */
-    substr(self, from: number, length?: number) -> string,
+    substr(&self, from: number, length?: number) -> string,
     /** Returns the primitive value of the specified object. */
-    valueOf(self) -> string,
+    valueOf(&self) -> string,
     /**
      * Determines whether two strings are equivalent in the current or specified locale.
      * @param that String to compare to target string
      * @param locales A locale string or array of locale strings that contain one or more language or locale tags. If you include more than one locale string, list them in descending order of priority so that the first entry is the preferred locale. If you omit this parameter, the default locale of the JavaScript runtime is used. This parameter must conform to BCP 47 standards; see the Intl.Collator object for details.
      * @param options An object that contains one or more properties that specify comparison options. see the Intl.Collator object for details.
      */
-    localeCompare(self, that: string, locales?: string | mut Array<string>, options?: intl.CollatorOptions) -> number,
+    localeCompare(&self, that: string, locales?: string | mut Array<string>, options?: intl.CollatorOptions) -> number,
     /**
      * Return the String value whose elements are, in order, the elements in the List elements.
      * If length is 0, the empty string is returned.

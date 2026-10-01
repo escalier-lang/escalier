@@ -113,7 +113,7 @@ func (c *checker) inferClassDecl(scope *Scope, lvl int, decl *ast.ClassDecl, ns 
 
 	// Bind `Self` to the class's own instance handle for the member walk below. A member
 	// signature names it for a builder-style return, where a method hands back the receiver's
-	// own type: `std/prelude.esc` writes `fill(mut self, value: T, start?: number, end?: number)
+	// own type: `std/prelude.esc` writes `fill(&mut self, value: T, start?: number, end?: number)
 	// -> Self`. The handle carries the class's own type-parameter vars as its arguments, so
 	// `Self` inside `class Box<T>` is `Box<T>` and an instance's argument substitutes for `T`
 	// the way it does through any other reference to the class.
@@ -177,7 +177,7 @@ func (c *checker) inferClassDecl(scope *Scope, lvl int, decl *ast.ClassDecl, ns 
 	// has no type-parameter vars, so its body coalesces fully. A generic class keeps its
 	// own type-parameter vars — and each method's own type parameters — symbolic so member
 	// lookup can substitute an instance's argument for them (B8): a plain freeze would
-	// collapse a member typed through `T`, such as `read(self) { self.v }`, to `never`
+	// collapse a member typed through `T`, such as `read(&self) { self.v }`, to `never`
 	// because the intermediate inference var's only bound is the still-unconstrained `T`.
 	// The class's own lifetime parameters are pinned through the freeze. A field such as
 	// `peer: &'a mut B` writes 'a once and in an output position, so the elision rule would
@@ -1044,7 +1044,7 @@ func (c *checker) buildMemberSigs(
 			}
 			c.checkSelfReceiver(name, elem, elem.Static, elem.Receiver)
 			stub := c.memberSigStub(lvl, elem.Fn)
-			stub.SelfParam = c.selfParam(elem.Receiver, elem.Static, self)
+			stub.SelfParam = c.selfParam(lvl, elem.Receiver, elem.Static, self)
 			method, arm := appendMethodSig(targetBody(body, static, elem.Static), name, stub, elem.Static)
 			// An overloaded method dispatches on its value arguments, so its arms must agree
 			// on receiver mutability. The receiver-mutability check reads only the first arm,
@@ -1070,7 +1070,7 @@ func (c *checker) buildMemberSigs(
 			stub := c.memberSigStub(lvl, elem.Fn)
 			getter := &soltype.GetterElem{
 				Name:      name,
-				SelfParam: c.selfParam(elem.Receiver, elem.Static, self),
+				SelfParam: c.selfParam(lvl, elem.Receiver, elem.Static, self),
 				Type:      stub.Ret,
 				Throws:    stub.Throws,
 			}
@@ -1111,7 +1111,7 @@ func (c *checker) buildMemberSigs(
 			}
 			setter := &soltype.SetterElem{
 				Name:      name,
-				SelfParam: c.selfParam(elem.Receiver, elem.Static, self),
+				SelfParam: c.selfParam(lvl, elem.Receiver, elem.Static, self),
 				Param:     param,
 				Throws:    stub.Throws,
 			}
@@ -1233,7 +1233,7 @@ func (c *checker) inferMemberFunc(
 ) *soltype.FuncType {
 	memberScope := scope.Child()
 	if !static {
-		c.bindSelf(memberScope, recv, body)
+		c.bindSelf(memberScope, lvl+1, recv, body)
 	}
 	// generic is true for a method and false for a getter or setter. inferFunc reports a
 	// binder it is not allowed to resolve as an unsupported feature.
@@ -1257,22 +1257,28 @@ func appendMethodSig(obj *soltype.ObjectType, name string, sig *soltype.FuncType
 }
 
 // selfParam builds the SelfParam a member's signature carries, or nil for a static
-// member. A `mut self` receiver wraps the instance in an owned-mutable borrow; a plain
-// `self` carries the bare instance.
-func (c *checker) selfParam(recv *ast.MethodReceiver, static bool, self *soltype.ClassType) *soltype.FuncParam {
+// member. Its type is selfType's.
+func (c *checker) selfParam(lvl int, recv *ast.MethodReceiver, static bool, self *soltype.ClassType) *soltype.FuncParam {
 	if static || recv == nil {
 		return nil
 	}
-	return &soltype.FuncParam{Pattern: &soltype.IdentPat{Name: "self"}, Type: c.selfType(recv, self)}
+	return &soltype.FuncParam{Pattern: &soltype.IdentPat{Name: "self"}, Type: c.selfType(lvl, recv, self)}
 }
 
-// selfType returns the type the `self` binding takes in a member body: an
-// owned-mutable borrow of the instance for `mut self`, the bare instance otherwise.
-func (c *checker) selfType(recv *ast.MethodReceiver, self soltype.Type) soltype.Type {
-	if recv != nil && recv.Mut {
-		return soltype.NewRef(true, nil, self.(soltype.RefInner))
+// selfType returns the type a receiver gives the instance. A borrowed receiver is a borrow
+// of the instance with a fresh lifetime, so `&self` is `&Self` and `&mut self` is `&mut
+// Self`. A consuming receiver owns the instance, so `self` is the bare `Self` and `mut self`
+// is the owned-mutable `mut Self`. A member that wrote no receiver, which
+// checkSelfReceiver reports, takes the bare instance so its body still checks.
+func (c *checker) selfType(lvl int, recv *ast.MethodReceiver, self soltype.Type) soltype.Type {
+	inner := self.(soltype.RefInner)
+	if recv == nil {
+		return self
 	}
-	return self
+	if recv.Consumes() {
+		return soltype.NewRef(recv.Mut, nil, inner)
+	}
+	return soltype.NewRef(recv.Mut, c.ctx.freshLifetime(lvl), inner)
 }
 
 // selfParamMut reports whether a receiver grants mutable access to the instance. A `mut
@@ -1291,8 +1297,9 @@ func selfParamMut(sp *soltype.FuncParam) bool {
 // body's element slice while sharing each element pointer, so a field write such as
 // `self.x = v` refines the same field-type var the projected body reads, and a sibling
 // call `self.m()` resolves against the member signature the phase-1 pass installed on the
-// shared element. A `mut self` receiver wraps the view in an owned-mutable borrow so
-// field writes type-check; a plain `self` binds the bare view.
+// shared element. The view takes the receiver's own form through selfType, so `&mut self`
+// binds a mutable borrow that field writes type-check through and `self` binds the owned
+// view.
 //
 // A `self.field` read or write dispatches through the record subtyping machinery, whose
 // object arm threads the borrow and mutability rules field access needs: read-through-
@@ -1301,15 +1308,12 @@ func selfParamMut(sp *soltype.FuncParam) bool {
 // method member; valueProp intercepts it and resolves through member lookup instead. A
 // method's own receiver ownership is checked separately at the call site as a `receiver
 // <: SelfParam` constraint, not by this binding.
-func (c *checker) bindSelf(scope *Scope, recv *ast.MethodReceiver, body *soltype.ObjectType) {
+func (c *checker) bindSelf(scope *Scope, lvl int, recv *ast.MethodReceiver, body *soltype.ObjectType) {
 	// Snapshot the element slice, sharing each element pointer so a write through `self`
 	// refines the same field-type var the projected body reads and a sibling signature
 	// installed by the body pass shows through the shared pointer.
 	view := &soltype.ObjectType{Elems: append([]soltype.ObjTypeElem(nil), body.Elems...)}
-	var selfBody soltype.Type = view
-	if recv != nil && recv.Mut {
-		selfBody = soltype.NewRef(true, nil, view)
-	}
+	selfBody := c.selfType(lvl, recv, view)
 	scope.defineValue("self", ValueBinding{Schemes: []TypeScheme{monoScheme(selfBody)}})
 }
 
@@ -1487,8 +1491,8 @@ func (v *binderCollector) ExitType(t soltype.Type, _ soltype.Polarity) soltype.T
 //
 //	class Box<T> {
 //	    v: T,
-//	    read(self) { return self.v },
-//	    alias(self) { return self.read() },
+//	    read(&self) { return self.v },
+//	    alias(&self) { return self.read() },
 //	}
 //
 // T is the kept var t1. Reading `self.v` inside `read` constrains t1 <: t4, where t4 is
@@ -1558,7 +1562,7 @@ func coalesceThrows(
 // keep and flow are nil for a non-generic class, where coalesceKeeping reduces to a plain
 // coalesce. A generic class passes its type-parameter vars as keep — held symbolic instead of
 // inlined to their bounds — and the kept-flow map so a member typed through a class parameter,
-// such as `read(self) { self.v }` on `class Box<T>`, reads `T` rather than collapsing to
+// such as `read(&self) { self.v }` on `class Box<T>`, reads `T` rather than collapsing to
 // `never`, leaving `T` in place for projectClassMember to substitute at an instance's argument.
 func (c *checker) freezeClassBody(
 	obj *soltype.ObjectType,

@@ -250,8 +250,8 @@ func TestInferBodyVariance(t *testing.T) {
 			wantMut: []Variance{Bivariant},
 		},
 		{
-			// The shape `Array<T>` has. `at(self, index) -> T | undefined` is an output
-			// position both views reach, and `push(mut self, item: T)` an input position
+			// The shape `Array<T>` has. `at(&self, index) -> T | undefined` is an output
+			// position both views reach, and `push(&mut self, item: T)` an input position
 			// only a mutable reference reaches. Folding the mutator into both views would
 			// measure T invariant and leave `Array<1> <: Array<number>` rejected.
 			name: "a mut self parameter drags a covariant return to invariant under mut only",

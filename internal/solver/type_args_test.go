@@ -465,7 +465,7 @@ func TestClassArityAcrossRemainingRefForms(t *testing.T) {
 		{name: "Extends", src: `
 			class Box<T> { value: T }
 			class Wrapper extends Box {
-				constructor(mut self) { super(0) },
+				constructor(&mut self) { super(0) },
 			}
 		`},
 		{name: "Implements", src: `
@@ -480,7 +480,7 @@ func TestClassArityAcrossRemainingRefForms(t *testing.T) {
 			class Box<T> { value: T }
 			class Holder {
 				boxed: Box<number>,
-				constructor(mut self, boxed: Box) { self.boxed = boxed },
+				constructor(&mut self, boxed: Box) { self.boxed = boxed },
 			}
 		`},
 		{name: "MethodReturn", src: `
@@ -541,7 +541,7 @@ func TestClassArityAcrossMixedComponent(t *testing.T) {
 		{name: "GenericClassFirst", src: `
 			class A<T> {
 				v: T,
-				make(self) -> number { return B(1, A(2)).x },
+				make(&self) -> number { return B(1, A(2)).x },
 			}
 			class B {
 				x: number,
@@ -555,7 +555,7 @@ func TestClassArityAcrossMixedComponent(t *testing.T) {
 			}
 			class A<T> {
 				v: T,
-				make(self) -> number { return B(1, A(2)).x },
+				make(&self) -> number { return B(1, A(2)).x },
 			}
 		`},
 	}
@@ -622,7 +622,7 @@ func TestClassTypeArgBounds(t *testing.T) {
 			src: `
 				class Box<T: string> { v?: T }
 				class Sub extends Box<number> {
-					constructor(mut self) { super() },
+					constructor(&mut self) { super() },
 				}
 			`,
 			want: []string{"cannot constrain number <: string"},
@@ -633,7 +633,7 @@ func TestClassTypeArgBounds(t *testing.T) {
 				class Box<T: string> { v: T }
 				class Holder {
 					x: number,
-					take(self, b: Box<number>) -> number { return self.x },
+					take(&self, b: Box<number>) -> number { return self.x },
 				}
 			`,
 			want: []string{"cannot constrain number <: string"},
@@ -752,10 +752,10 @@ func TestClassBoundConstructionNotDoubleReported(t *testing.T) {
 func TestEmptyNeverSlotIsElided(t *testing.T) {
 	const decls = `
 		declare class Task<T, E = never> {
-			run(self) -> T,
-			fail(self, reason: E) -> never,
+			run(&self) -> T,
+			fail(&self, reason: E) -> never,
 		}
-		declare class Box<T = number> { get(self) -> T }
+		declare class Box<T = number> { get(&self) -> T }
 	`
 	tests := []struct {
 		name string
@@ -802,8 +802,8 @@ func TestEmptyNeverSlotIsElided(t *testing.T) {
 func TestAClassHandleElidesItsOwnEmptySlot(t *testing.T) {
 	values, _, errs := inferSource(t, `
 		declare class Task<T, E = never> {
-			run(self) -> T,
-			fail(self, reason: E) -> never,
+			run(&self) -> T,
+			fail(&self, reason: E) -> never,
 		}
 	`)
 	require.Empty(t, errorMessagesOf(errs))

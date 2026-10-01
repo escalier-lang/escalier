@@ -73,9 +73,9 @@ func TestKeywordsNameClassMembers(t *testing.T) {
 		{"field", "declare class C {\n    %s: number\n}"},
 		{"static field", "declare class C {\n    static %s: number\n}"},
 		{"readonly field", "declare class C {\n    readonly %s: number\n}"},
-		{"method", "declare class C {\n    %s(self) -> number\n}"},
-		{"getter", "declare class C {\n    get %s(self) -> number\n}"},
-		{"setter", "declare class C {\n    set %s(mut self, v: number)\n}"},
+		{"method", "declare class C {\n    %s(&self) -> number\n}"},
+		{"getter", "declare class C {\n    get %s(&self) -> number\n}"},
+		{"setter", "declare class C {\n    set %s(&mut self, v: number)\n}"},
 	}
 	for _, form := range forms {
 		t.Run(form.name, func(t *testing.T) {
@@ -125,7 +125,7 @@ func TestFnAndNewNameClassMethods(t *testing.T) {
 	for _, keyword := range []string{"fn", "new"} {
 		t.Run(keyword, func(t *testing.T) {
 			t.Parallel()
-			src := fmt.Sprintf("declare class C {\n    %s(self) -> number\n}", keyword)
+			src := fmt.Sprintf("declare class C {\n    %s(&self) -> number\n}", keyword)
 			script, errors := parseScriptSrc(t, src)
 			require.Empty(t, errors)
 			decl := script.Stmts[0].(*ast.DeclStmt).Decl.(*ast.ClassDecl)
@@ -153,10 +153,10 @@ func TestABareParameterListOpensACallSignature(t *testing.T) {
 			{"a parameter list opens one", "declare class C {\n    () -> number\n}", &ast.CallableElem{}},
 			{"so does a type-parameter list", "declare class C {\n    <T>(v: T) -> T\n}", &ast.CallableElem{}},
 			// Every word keeps its meaning as a member name, since none is reserved.
-			{"fn names a method", "declare class C {\n    fn(self) -> number\n}", &ast.MethodElem{}},
-			{"callable names a method", "declare class C {\n    callable(self) -> number\n}", &ast.MethodElem{}},
+			{"fn names a method", "declare class C {\n    fn(&self) -> number\n}", &ast.MethodElem{}},
+			{"callable names a method", "declare class C {\n    callable(&self) -> number\n}", &ast.MethodElem{}},
 			{"callable names a field", "declare class C {\n    callable: number\n}", &ast.FieldElem{}},
-			{"constructor still opens a constructor", "class C {\n    constructor(mut self) {}\n}", &ast.ConstructorElem{}},
+			{"constructor still opens a constructor", "class C {\n    constructor(&mut self) {}\n}", &ast.ConstructorElem{}},
 		}
 		for _, tt := range tests {
 			t.Run(tt.name, func(t *testing.T) {
@@ -208,7 +208,7 @@ func TestAClassCallSignatureRejectsWhatItCannotCarry(t *testing.T) {
 	}{
 		{
 			name: "AReceiver",
-			src:  "declare class C {\n    (self) -> number\n}",
+			src:  "declare class C {\n    (&self) -> number\n}",
 			want: "call signatures cannot have a `self` receiver",
 		},
 		{

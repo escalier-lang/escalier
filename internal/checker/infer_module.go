@@ -552,7 +552,7 @@ func (c *Checker) InferComponent(
 
 				// `Self` names the class's own instance type inside its body, the way it
 				// already does inside an interface. The dts converter emits it on a fused
-				// class's methods, as in `add(mut self, value: T) -> Self` on `Set`.
+				// class's methods, as in `add(&mut self, value: T) -> Self` on `Set`.
 				declCtx.Scope.SetTypeAlias("Self", &type_system.TypeAlias{
 					Type:       classSelfRef,
 					TypeParams: []*type_system.TypeParam{},
@@ -1641,7 +1641,7 @@ func (c *Checker) InferComponent(
 								// Mutability follows the user-written receiver.
 								// A setter that doesn't mutate `self` (e.g. one
 								// that forwards to an external sink) may declare
-								// just `set x(self, …)`.
+								// just `set x(&self, …)`.
 								isMutableSelf := type_system.ReceiverIsMut(setterType.Fn)
 								var t type_system.Type = type_system.NewTypeRefType(nil, decl.Name.Name, typeAlias)
 								if isMutableSelf {

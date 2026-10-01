@@ -974,7 +974,7 @@ func TestUtilityTypeConstructorUtilitiesRejectClassReturningFactory(t *testing.T
 			src: `
 				class Point {
 					x: number,
-					constructor(mut self, x: number) { self.x = x },
+					constructor(&mut self, x: number) { self.x = x },
 				}
 				fn make(x: number) -> Point { return Point(x) }
 				type Result = InstanceType<typeof make>
@@ -996,7 +996,7 @@ func TestUtilityTypeInstanceTypeOfClass(t *testing.T) {
 			src: `
 				class Point {
 					x: number,
-					constructor(mut self, x: number) { self.x = x },
+					constructor(&mut self, x: number) { self.x = x },
 				}
 				type Result = InstanceType<typeof Point>
 			`,
@@ -1008,7 +1008,7 @@ func TestUtilityTypeInstanceTypeOfClass(t *testing.T) {
 				class Counter {
 					n: number,
 					static zero: number = 0,
-					constructor(mut self, n: number) { self.n = n },
+					constructor(&mut self, n: number) { self.n = n },
 				}
 				type Result = InstanceType<typeof Counter>
 			`,
@@ -1030,7 +1030,7 @@ func TestUtilityTypeConstructorParametersOfClass(t *testing.T) {
 				class Point {
 					x: number,
 					y: string,
-					constructor(mut self, x: number, y: string) {
+					constructor(&mut self, x: number, y: string) {
 						self.x = x
 						self.y = y
 					},
@@ -1047,7 +1047,7 @@ func TestUtilityTypeConstructorParametersOfClass(t *testing.T) {
 				class Counter {
 					n: number,
 					static zero: number = 0,
-					constructor(mut self, n: number) { self.n = n },
+					constructor(&mut self, n: number) { self.n = n },
 				}
 				type Result = ConstructorParameters<typeof Counter>
 			`,
@@ -1071,7 +1071,7 @@ func TestUtilityTypeConstructorParametersOfClass(t *testing.T) {
 			name: "NoParameters",
 			src: `
 				class Empty {
-					constructor(mut self) {},
+					constructor(&mut self) {},
 				}
 				type Result = ConstructorParameters<typeof Empty>
 			`,

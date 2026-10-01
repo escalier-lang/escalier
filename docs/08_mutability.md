@@ -36,23 +36,23 @@ declares `mut self` methods:
 ```esc
 class Counter {
     count: number,
-    constructor(mut self, count: number) { self.count = count },
-    increment(mut self) -> number { return self.count },
+    constructor(&mut self, count: number) { self.count = count },
+    increment(&mut self) -> number { return self.count },
 }
 
 val c = Counter(0)        // c: Counter — immutable
 val mut d = Counter(0)    // d: mut Counter
 ```
 
-A method declares its receiver's mutability in its own parameter list. `fn m(self)`
-reads and `fn m(mut self)` writes.
+A method declares its receiver's mutability in its own parameter list. `fn m(&self)`
+reads and `fn m(&mut self)` writes.
 
 ```esc
 class Counter {
     count: number,
-    constructor(mut self, count: number) { self.count = count },
-    incr(mut self) { self.count = self.count + 1 },
-    read(self) -> number { return self.count },
+    constructor(&mut self, count: number) { self.count = count },
+    incr(&mut self) { self.count = self.count + 1 },
+    read(&self) -> number { return self.count },
 }
 
 fn go() {

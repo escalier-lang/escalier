@@ -2733,7 +2733,7 @@ func equals(t1, t2 Type) bool {
 		return false
 	}
 	// Answering identity here terminates the walk on a type that reaches
-	// itself, which `interface I { m(self) -> undefined }` produces: the
+	// itself, which `interface I { m(&self) -> undefined }` produces: the
 	// TypeRefType for `I` holds an alias the receiver points back at.
 	if t1 == t2 {
 		return true

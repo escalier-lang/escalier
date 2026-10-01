@@ -21,10 +21,10 @@ func TestInferSuperCall(t *testing.T) {
 			src: `
 				class Animal {
 					legs: number,
-					constructor(mut self) { self.legs = 4 },
+					constructor(&mut self) { self.legs = 4 },
 				}
 				class Dog extends Animal {
-					constructor(mut self) { super() },
+					constructor(&mut self) { super() },
 				}
 			`,
 			want: nil,
@@ -34,10 +34,10 @@ func TestInferSuperCall(t *testing.T) {
 			src: `
 				class Animal {
 					name: string,
-					constructor(mut self, name: string) { self.name = name },
+					constructor(&mut self, name: string) { self.name = name },
 				}
 				class Dog extends Animal {
-					constructor(mut self, name: string) { super(name) },
+					constructor(&mut self, name: string) { super(name) },
 				}
 			`,
 			want: nil,
@@ -46,10 +46,10 @@ func TestInferSuperCall(t *testing.T) {
 			name: "MissingCall",
 			src: `
 				class Animal {
-					constructor(mut self) {},
+					constructor(&mut self) {},
 				}
 				class Dog extends Animal {
-					constructor(mut self) {},
+					constructor(&mut self) {},
 				}
 			`,
 			want: []string{
@@ -61,10 +61,10 @@ func TestInferSuperCall(t *testing.T) {
 			name: "CalledTwice",
 			src: `
 				class Animal {
-					constructor(mut self) {},
+					constructor(&mut self) {},
 				}
 				class Dog extends Animal {
-					constructor(mut self) {
+					constructor(&mut self) {
 						super()
 						super()
 					},
@@ -77,10 +77,10 @@ func TestInferSuperCall(t *testing.T) {
 			src: `
 				class Animal {
 					legs: number,
-					constructor(mut self, legs: number) { self.legs = legs },
+					constructor(&mut self, legs: number) { self.legs = legs },
 				}
 				class Dog extends Animal {
-					constructor(mut self, big: boolean) {
+					constructor(&mut self, big: boolean) {
 						if big {
 							super(8)
 						} else {
@@ -98,11 +98,11 @@ func TestInferSuperCall(t *testing.T) {
 			src: `
 				class Animal {
 					legs: number,
-					constructor(mut self, legs: number) { self.legs = legs },
+					constructor(&mut self, legs: number) { self.legs = legs },
 				}
 				class Dog extends Animal {
 					breed: string,
-					constructor(mut self, big: boolean, breed: string) {
+					constructor(&mut self, big: boolean, breed: string) {
 						if big {
 							super(8)
 						} else {
@@ -120,10 +120,10 @@ func TestInferSuperCall(t *testing.T) {
 			name: "OnlyInTheIfBranch",
 			src: `
 				class Animal {
-					constructor(mut self) {},
+					constructor(&mut self) {},
 				}
 				class Dog extends Animal {
-					constructor(mut self, early: boolean) {
+					constructor(&mut self, early: boolean) {
 						if early {
 							super()
 						}
@@ -140,10 +140,10 @@ func TestInferSuperCall(t *testing.T) {
 			name: "OnceInABranchAndOnceAfterIt",
 			src: `
 				class Animal {
-					constructor(mut self) {},
+					constructor(&mut self) {},
 				}
 				class Dog extends Animal {
-					constructor(mut self, early: boolean) {
+					constructor(&mut self, early: boolean) {
 						if early {
 							super()
 						}
@@ -160,10 +160,10 @@ func TestInferSuperCall(t *testing.T) {
 			src: `
 				class Animal {
 					legs: number,
-					constructor(mut self, legs: number) { self.legs = legs },
+					constructor(&mut self, legs: number) { self.legs = legs },
 				}
 				class Dog extends Animal {
-					constructor(mut self, bad: boolean) throws string {
+					constructor(&mut self, bad: boolean) throws string {
 						if bad {
 							throw "no"
 						}
@@ -180,11 +180,11 @@ func TestInferSuperCall(t *testing.T) {
 			src: `
 				class Animal {
 					legs: number,
-					constructor(mut self) { self.legs = 4 },
+					constructor(&mut self) { self.legs = 4 },
 				}
 				class Dog extends Animal {
 					breed: string,
-					constructor(mut self, breed: string) {
+					constructor(&mut self, breed: string) {
 						self.breed = breed
 						super()
 					},
@@ -200,11 +200,11 @@ func TestInferSuperCall(t *testing.T) {
 			src: `
 				class Animal {
 					name: string,
-					constructor(mut self, name: string) { self.name = name },
+					constructor(&mut self, name: string) { self.name = name },
 				}
 				class Dog extends Animal {
 					tag: string,
-					constructor(mut self) { super(self.tag) },
+					constructor(&mut self) { super(self.tag) },
 				}
 			`,
 			// The arguments run before the superclass constructor does, so a mention of
@@ -221,10 +221,10 @@ func TestInferSuperCall(t *testing.T) {
 			src: `
 				class Animal {
 					name: string,
-					constructor(mut self, name: string) { self.name = name },
+					constructor(&mut self, name: string) { self.name = name },
 				}
 				class Dog extends Animal {
-					constructor(mut self, Animal: number) { super(5) },
+					constructor(&mut self, Animal: number) { super(5) },
 				}
 			`,
 			// The superclass's value binding is read from the scope `Dog` is declared in, so
@@ -236,7 +236,7 @@ func TestInferSuperCall(t *testing.T) {
 			name: "ClassWithoutASuperclass",
 			src: `
 				class Animal {
-					constructor(mut self) { super() },
+					constructor(&mut self) { super() },
 				}
 			`,
 			want: []string{
@@ -247,8 +247,8 @@ func TestInferSuperCall(t *testing.T) {
 			name: "OutsideAConstructor",
 			src: `
 				class Animal {
-					constructor(mut self) {},
-					speak(self) -> undefined { super() },
+					constructor(&mut self) {},
+					speak(&self) -> undefined { super() },
 				}
 			`,
 			want: []string{"`super(…)` may only be called inside a constructor."},
@@ -262,10 +262,10 @@ func TestInferSuperCall(t *testing.T) {
 			src: `
 				class Animal {
 					name: string,
-					constructor(mut self, name: string) { self.name = name },
+					constructor(&mut self, name: string) { self.name = name },
 				}
 				class Dog extends Animal {
-					constructor(mut self) { super() },
+					constructor(&mut self) { super() },
 				}
 			`,
 			want: []string{"cannot constrain function of arity 1 <: function of arity 0"},
@@ -275,10 +275,10 @@ func TestInferSuperCall(t *testing.T) {
 			src: `
 				class Animal {
 					name: string,
-					constructor(mut self, name: string) { self.name = name },
+					constructor(&mut self, name: string) { self.name = name },
 				}
 				class Dog extends Animal {
-					constructor(mut self) { super(5) },
+					constructor(&mut self) { super(5) },
 				}
 			`,
 			want: []string{"cannot constrain 5 <: string"},
@@ -291,10 +291,10 @@ func TestInferSuperCall(t *testing.T) {
 			src: `
 				class Animal<A> {
 					food: A,
-					constructor(mut self, food: A) { self.food = food },
+					constructor(&mut self, food: A) { self.food = food },
 				}
 				class Dog extends Animal<string> {
-					constructor(mut self) { super(5) },
+					constructor(&mut self) { super(5) },
 				}
 			`,
 			want: []string{"cannot constrain 5 <: string"},
@@ -304,10 +304,10 @@ func TestInferSuperCall(t *testing.T) {
 			src: `
 				class Animal<A> {
 					food: A,
-					constructor(mut self, food: A) { self.food = food },
+					constructor(&mut self, food: A) { self.food = food },
 				}
 				class Dog<D> extends Animal<D> {
-					constructor(mut self, food: D) { super(food) },
+					constructor(&mut self, food: D) { super(food) },
 				}
 			`,
 			want: nil,

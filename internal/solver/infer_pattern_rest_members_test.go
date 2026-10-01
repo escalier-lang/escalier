@@ -23,7 +23,7 @@ func TestInferObjectRestConvertsAccessors(t *testing.T) {
 			// property at the getter's own type.
 			name: "GetterBecomesAProperty",
 			src: `
-				fn f(p: {x: number, get y(self) -> string}) {
+				fn f(p: {x: number, get y(&self) -> string}) {
 					val {x, ...rest} = p
 					return rest
 				}`,
@@ -34,7 +34,7 @@ func TestInferObjectRestConvertsAccessors(t *testing.T) {
 			// the copy stores. The name survives rather than being dropped.
 			name: "SetterOnlyBecomesUndefined",
 			src: `
-				fn f(p: {x: number, set y(mut self, v: string)}) {
+				fn f(p: {x: number, set y(&mut self, v: string)}) {
 					val {x, ...rest} = p
 					return rest
 				}`,
@@ -45,7 +45,7 @@ func TestInferObjectRestConvertsAccessors(t *testing.T) {
 			// collapses to the single property the getter's type gives.
 			name: "GetterAndSetterPairCollapse",
 			src: `
-				fn f(p: {x: number, get y(self) -> string, set y(mut self, v: string)}) {
+				fn f(p: {x: number, get y(&self) -> string, set y(&mut self, v: string)}) {
 					val {x, ...rest} = p
 					return rest
 				}`,
@@ -56,7 +56,7 @@ func TestInferObjectRestConvertsAccessors(t *testing.T) {
 			// property does not carry it.
 			name: "GetterThrowsIsNotStored",
 			src: `
-				fn f(p: {x: number, get y(self) -> string throws boolean}) {
+				fn f(p: {x: number, get y(&self) -> string throws boolean}) {
 					val {x, ...rest} = p
 					return rest
 				}`,
@@ -67,7 +67,7 @@ func TestInferObjectRestConvertsAccessors(t *testing.T) {
 			// leftover rather than flattening.
 			name: "MethodCarriesThrough",
 			src: `
-				fn f(p: {x: number, m(self, a: number) -> string}) {
+				fn f(p: {x: number, m(&self, a: number) -> string}) {
 					val {x, ...rest} = p
 					return rest
 				}`,
@@ -90,7 +90,7 @@ func TestInferObjectRestMembersStayUsable(t *testing.T) {
 		values, _, errs := inferSource(t, `
 			class Box {
 				v: number,
-				get doubled(self) -> number { return self.v },
+				get doubled(&self) -> number { return self.v },
 			}
 			fn f(b: Box) {
 				val {v, ...rest} = b
@@ -103,7 +103,7 @@ func TestInferObjectRestMembersStayUsable(t *testing.T) {
 
 	t.Run("a converted setter-only name reads undefined", func(t *testing.T) {
 		values, _, errs := inferSource(t, `
-			fn f(p: {x: number, set y(mut self, v: string)}) {
+			fn f(p: {x: number, set y(&mut self, v: string)}) {
 				val {x, ...rest} = p
 				return rest.y
 			}
@@ -116,7 +116,7 @@ func TestInferObjectRestMembersStayUsable(t *testing.T) {
 		values, _, errs := inferSource(t, `
 			class Box {
 				v: number,
-				set value(mut self, x: number) { self.v = x },
+				set value(&mut self, x: number) { self.v = x },
 			}
 			fn f(b: Box) {
 				val {v, ...rest} = b
@@ -131,8 +131,8 @@ func TestInferObjectRestMembersStayUsable(t *testing.T) {
 		values, _, errs := inferSource(t, `
 			class Box {
 				v: number,
-				get value(self) -> number { return self.v },
-				set value(mut self, x: number) { self.v = x },
+				get value(&self) -> number { return self.v },
+				set value(&mut self, x: number) { self.v = x },
 			}
 			fn f(b: Box) {
 				val {v, ...rest} = b
@@ -149,7 +149,7 @@ func TestInferObjectRestMembersStayUsable(t *testing.T) {
 		values, _, errs := inferSource(t, `
 			class Box {
 				v: number,
-				get doubled(self) -> number { return self.v },
+				get doubled(&self) -> number { return self.v },
 			}
 			fn f(b: Box) {
 				val {v, ...mut rest} = b
@@ -165,7 +165,7 @@ func TestInferObjectRestMembersStayUsable(t *testing.T) {
 		values, _, errs := inferSource(t, `
 			class Box {
 				v: number,
-				getV(self) -> number { return self.v },
+				getV(&self) -> number { return self.v },
 			}
 			fn f(b: Box) {
 				val {v, ...rest} = b
@@ -189,20 +189,20 @@ func TestInferObjectRestMembersStayUsable(t *testing.T) {
 func TestInferObjectPatternAccessorFieldGap(t *testing.T) {
 	t.Run("a getter field on an object type is reported missing", func(t *testing.T) {
 		_, _, errs := inferSource(t, `
-			fn f(p: {x: number, get y(self) -> string}) {
+			fn f(p: {x: number, get y(&self) -> string}) {
 				val {y} = p
 				return y
 			}
 		`)
 		require.Len(t, errs, 1)
-		require.Equal(t, "2:12-2:46: object is missing property: y", msgWithSpan(t, errs[0]))
+		require.Equal(t, "2:12-2:47: object is missing property: y", msgWithSpan(t, errs[0]))
 	})
 
 	t.Run("member access on the same shape succeeds", func(t *testing.T) {
 		values, _, errs := inferSource(t, `
 			class Box {
 				v: number,
-				get doubled(self) -> number { return self.v },
+				get doubled(&self) -> number { return self.v },
 			}
 			fn f(b: Box) { return b.doubled }
 		`)
@@ -214,7 +214,7 @@ func TestInferObjectPatternAccessorFieldGap(t *testing.T) {
 		values, _, errs := inferSource(t, `
 			class Box {
 				v: number,
-				get doubled(self) -> number { return self.v },
+				get doubled(&self) -> number { return self.v },
 			}
 			fn f(b: Box) {
 				val {doubled, ...rest} = b
@@ -230,7 +230,7 @@ func TestInferObjectPatternAccessorFieldGap(t *testing.T) {
 		values, _, errs := inferSource(t, `
 			class Box {
 				v: number,
-				set value(mut self, x: number) { self.v = x },
+				set value(&mut self, x: number) { self.v = x },
 			}
 			fn f(b: Box) {
 				val {value, ...rest} = b
@@ -248,8 +248,8 @@ func TestInferObjectPatternAccessorFieldGap(t *testing.T) {
 		values, _, errs := inferSource(t, `
 			class Box {
 				v: number,
-				get value(self) -> number { return self.v },
-				set value(mut self, x: number) { self.v = x },
+				get value(&self) -> number { return self.v },
+				set value(&mut self, x: number) { self.v = x },
 			}
 			fn f(b: Box) {
 				val {value, ...rest} = b
@@ -330,7 +330,7 @@ func TestInferObjectRestOnClassInstance(t *testing.T) {
 			src: `
 				class Box {
 					v: number,
-					get doubled(mut self) -> number { return self.v },
+					get doubled(&mut self) -> number { return self.v },
 				}
 				fn f(b: Box) {
 					val {v, ...rest} = b
@@ -370,7 +370,7 @@ func TestInferObjectRestOnClassInstance(t *testing.T) {
 			src: `
 				class Box {
 					v: number,
-					set value(mut self, x: number) { self.v = x },
+					set value(&mut self, x: number) { self.v = x },
 				}
 				fn f(b: Box) {
 					val {v, ...rest} = b
@@ -385,8 +385,8 @@ func TestInferObjectRestOnClassInstance(t *testing.T) {
 			src: `
 				class Box {
 					v: number,
-					get value(self) -> number { return self.v },
-					set value(mut self, x: number) { self.v = x },
+					get value(&self) -> number { return self.v },
+					set value(&mut self, x: number) { self.v = x },
 				}
 				fn f(b: Box) {
 					val {v, ...rest} = b
@@ -402,8 +402,8 @@ func TestInferObjectRestOnClassInstance(t *testing.T) {
 			src: `
 				class Box {
 					v: number,
-					get value(self) -> number { return self.v },
-					set value(mut self, x: number | string) { },
+					get value(&self) -> number { return self.v },
+					set value(&mut self, x: number | string) { },
 				}
 				fn f(b: Box) {
 					val {v, ...rest} = b
@@ -432,7 +432,7 @@ func TestInferObjectRestOnClassInstance(t *testing.T) {
 			src: `
 				class Box {
 					v: number,
-					set value(mut self, x: number) { self.v = x },
+					set value(&mut self, x: number) { self.v = x },
 				}
 				fn f(b: Box) {
 					return match b {
@@ -472,7 +472,7 @@ func TestInferObjectRestOnBorrowedInstanceWithSetter(t *testing.T) {
 	values, _, errs := inferSource(t, `
 		class Box {
 			v: {a: number},
-			set value(mut self, x: {a: number}) { self.v = x },
+			set value(&mut self, x: {a: number}) { self.v = x },
 		}
 		fn f(b: &mut Box) -> &mut {value: undefined, ...} {
 			val {v, ...rest} = b

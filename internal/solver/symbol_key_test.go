@@ -17,7 +17,7 @@ func TestSymbolKeyedMemberResolvesAndRendersBack(t *testing.T) {
 	}{
 		{
 			name: "AMethodKeyedOffASymbol",
-			src:  `type Seq = { [Symbol.iterator](self) -> number }`,
+			src:  `type Seq = { [Symbol.iterator](&self) -> number }`,
 			want: "{[Symbol.iterator]() -> number}",
 		},
 		{
@@ -34,13 +34,13 @@ func TestSymbolKeyedMemberResolvesAndRendersBack(t *testing.T) {
 			// Two symbols are two members, which is what the reserved spelling has to
 			// keep apart for the closed set to be sound.
 			name: "TwoSymbolsAreTwoMembers",
-			src:  `type Both = { [Symbol.iterator](self) -> number, [Symbol.asyncIterator](self) -> string }`,
+			src:  `type Both = { [Symbol.iterator](&self) -> number, [Symbol.asyncIterator](&self) -> string }`,
 			want: "{[Symbol.iterator]() -> number, [Symbol.asyncIterator]() -> string}",
 		},
 		{
 			// A symbol-keyed member sits beside an ordinary one under one object.
 			name: "BesideAnOrdinaryMember",
-			src:  `type Seq = { length: number, [Symbol.iterator](self) -> number }`,
+			src:  `type Seq = { length: number, [Symbol.iterator](&self) -> number }`,
 			want: "{length: number, [Symbol.iterator]() -> number}",
 		},
 	}
@@ -58,7 +58,7 @@ func TestSymbolKeyedMemberResolvesAndRendersBack(t *testing.T) {
 // The rendered form is the one the source wrote, so it parses back to the same type.
 // A quoted fallback such as `"@@iterator"` would name a different member.
 func TestARenderedSymbolKeyParsesBackToItself(t *testing.T) {
-	_, types, errs := inferSource(t, `type Seq = { [Symbol.iterator](self) -> number }`)
+	_, types, errs := inferSource(t, `type Seq = { [Symbol.iterator](&self) -> number }`)
 	require.Empty(t, errorMessagesOf(errs))
 
 	_, roundTripped, errs := inferSource(t, `type Seq = `+types["Seq"])
@@ -71,9 +71,9 @@ func TestARenderedSymbolKeyParsesBackToItself(t *testing.T) {
 func TestASymbolKeyedClassMemberSatisfiesTheMatchingObject(t *testing.T) {
 	_, _, errs := inferSource(t, `
 		declare class Seq {
-			[Symbol.iterator](self) -> number,
+			[Symbol.iterator](&self) -> number,
 		}
-		declare fn take(s: { [Symbol.iterator](self) -> number, ... }) -> number
+		declare fn take(s: { [Symbol.iterator](&self) -> number, ... }) -> number
 		declare fn mkSeq() -> Seq
 		val n = take(mkSeq())
 	`)
@@ -90,17 +90,17 @@ func TestAComputedKeyOutsideTheClosedSetIsUnsupported(t *testing.T) {
 	}{
 		{
 			name: "ASymbolPropertyThatIsNotWellKnown",
-			src:  `type Seq = { [Symbol.whatever](self) -> number }`,
+			src:  `type Seq = { [Symbol.whatever](&self) -> number }`,
 		},
 		{
 			// The receiver has to be `Symbol` itself. A member off anything else names
 			// no well-known symbol whatever the property is called.
 			name: "AnotherReceiverNamedLikeASymbol",
-			src:  `type Seq = { [Other.iterator](self) -> number }`,
+			src:  `type Seq = { [Other.iterator](&self) -> number }`,
 		},
 		{
 			name: "ABareIdentifierKey",
-			src:  `type Seq = { [k](self) -> number }`,
+			src:  `type Seq = { [k](&self) -> number }`,
 		},
 	}
 	for _, tt := range tests {

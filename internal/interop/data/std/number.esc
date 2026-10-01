@@ -11,35 +11,35 @@ export declare class Number {
      * @param locales A locale string, array of locale strings, Intl.Locale object, or array of Intl.Locale objects that contain one or more language or locale tags. If you include more than one locale string, list them in descending order of priority so that the first entry is the preferred locale. If you omit this parameter, the default locale of the JavaScript runtime is used.
      * @param options An object that contains one or more properties that specify comparison options.
      */
-    toLocaleString(self, locales?: intl.LocalesArgument, options?: intl.NumberFormatOptions) -> string,
+    toLocaleString(&self, locales?: intl.LocalesArgument, options?: intl.NumberFormatOptions) -> string,
     /**
      * Returns a string representation of an object.
      * @param radix Specifies a radix for converting numeric values to strings. This value is only used for numbers.
      */
-    toString(self, radix?: number) -> string,
+    toString(&self, radix?: number) -> string,
     /**
      * Returns a string representing a number in fixed-point notation.
      * @param fractionDigits Number of digits after the decimal point. Must be in the range 0 - 20, inclusive.
      */
-    toFixed(self, fractionDigits?: number) -> string,
+    toFixed(&self, fractionDigits?: number) -> string,
     /**
      * Returns a string containing a number represented in exponential notation.
      * @param fractionDigits Number of digits after the decimal point. Must be in the range 0 - 20, inclusive.
      */
-    toExponential(self, fractionDigits?: number) -> string,
+    toExponential(&self, fractionDigits?: number) -> string,
     /**
      * Returns a string containing a number represented either in exponential or fixed-point notation with a specified number of digits.
      * @param precision Number of significant digits. Must be in the range 1 - 21, inclusive.
      */
-    toPrecision(self, precision?: number) -> string,
+    toPrecision(&self, precision?: number) -> string,
     /** Returns the primitive value of the specified object. */
-    valueOf(self) -> number,
+    valueOf(&self) -> number,
     /**
      * Converts a number to a string by using the current or specified locale.
      * @param locales A locale string or array of locale strings that contain one or more language or locale tags. If you include more than one locale string, list them in descending order of priority so that the first entry is the preferred locale. If you omit this parameter, the default locale of the JavaScript runtime is used.
      * @param options An object that contains one or more properties that specify comparison options.
      */
-    toLocaleString(self, locales?: string | mut Array<string>, options?: intl.NumberFormatOptions) -> string,
+    toLocaleString(&self, locales?: string | mut Array<string>, options?: intl.NumberFormatOptions) -> string,
     /**
      * The value of Number.EPSILON is the difference between 1 and the smallest value greater than 1
      * that is representable as a Number value, which is approximately:

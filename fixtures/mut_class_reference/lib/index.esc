@@ -10,7 +10,7 @@ fn bump(c: mut Counter) {
 // just as it is through an immutable one: a wider consumer fills a narrower slot.
 class Consumer<T> {
     log: string,
-    accept(self, x: T) {
+    accept(&self, x: T) {
         return self.log
     },
 }

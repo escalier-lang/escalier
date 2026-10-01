@@ -286,7 +286,7 @@ func TestInferUnusedTypeParamOnClassAndEnum(t *testing.T) {
 		{
 			// So is a method parameter, which the `self` receiver alone would not be.
 			name: "ClassMethodWritesTheParameter",
-			src:  `class Hold<T> { put(self, v: T) -> number { return 1 } }`,
+			src:  `class Hold<T> { put(&self, v: T) -> number { return 1 } }`,
 		},
 		{
 			// So is a superclass type argument. `Base`'s field is optional so that its
@@ -296,7 +296,7 @@ func TestInferUnusedTypeParamOnClassAndEnum(t *testing.T) {
 			name: "ClassSuperWritesTheParameter",
 			src: `
 				class Base<T> { x?: T }
-				class Sub<T> extends Base<T> { constructor(mut self) { super() } }
+				class Sub<T> extends Base<T> { constructor(&mut self) { super() } }
 			`,
 		},
 		{
@@ -304,14 +304,14 @@ func TestInferUnusedTypeParamOnClassAndEnum(t *testing.T) {
 			name: "ClassImplementsWritesTheParameter",
 			src: `
 				class Marker<T> { m: T }
-				class Tag<T> implements Marker<T> { constructor(mut self) {} }
+				class Tag<T> implements Marker<T> { constructor(&mut self) {} }
 			`,
 		},
 		{
 			// So is a constructor parameter, which lives on the class's value binding rather
 			// than in either member object.
 			name: "ClassConstructorWritesTheParameter",
-			src:  `class Take<T> { x: number, constructor(mut self, v: T) { self.x = 1 } }`,
+			src:  `class Take<T> { x: number, constructor(&mut self, v: T) { self.x = 1 } }`,
 		},
 		{
 			// So is a constructor's `throws` clause. Every caller of the constructor has to
@@ -319,7 +319,7 @@ func TestInferUnusedTypeParamOnClassAndEnum(t *testing.T) {
 			name: "ClassConstructorThrowsTheParameter",
 			src: `
 				declare fn boom() throws number
-				class Boom<E> { x: number, constructor(mut self) throws E { self.x = 1
+				class Boom<E> { x: number, constructor(&mut self) throws E { self.x = 1
 			boom() } }
 			`,
 		},
@@ -405,7 +405,7 @@ func TestInferUnusedTypeParamSkipsARecoveredDeclaration(t *testing.T) {
 			// opens its window, so the rejected default's news reaches the warning through the
 			// shell rather than through that window. U is left with no default to be used at.
 			name: "ClassParameterWithAForwardDefault",
-			src:  `class Bad<T = U, U = number> { x: T, constructor(mut self) { self.x = 0 } }`,
+			src:  `class Bad<T = U, U = number> { x: T, constructor(&mut self) { self.x = 0 } }`,
 			want: []string{
 				"1:15-1:16: the default for type parameter `T` cannot reference `U`, " +
 					"which is declared after it",
@@ -414,14 +414,14 @@ func TestInferUnusedTypeParamSkipsARecoveredDeclaration(t *testing.T) {
 		{
 			// The same for a bound, the other position the pre-pass resolves.
 			name: "ClassParameterWithAnUnresolvableBound",
-			src:  `class Bad<T: Nope> { x: number, constructor(mut self) { self.x = 0 } }`,
+			src:  `class Bad<T: Nope> { x: number, constructor(&mut self) { self.x = 0 } }`,
 			want: []string{"1:14-1:18: cannot find type `Nope`"},
 		},
 		{
 			// A type parameter does not name a class, so the extends edge is dropped and the
 			// only occurrence of T goes with it.
 			name: "ClassExtendingATypeParameter",
-			src:  `class B<T> extends T { constructor(mut self) {} }`,
+			src:  `class B<T> extends T { constructor(&mut self) {} }`,
 			want: []string{
 				"1:20-1:21: `T` does not name a class and cannot be extended or implemented.",
 			},

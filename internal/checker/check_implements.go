@@ -163,8 +163,8 @@ func (c *Checker) checkImplementsOne(
 
 	// Build a `Self` substitution that rewrites every reference to the
 	// interface (by name and via the literal `Self` alias) to a TypeRef
-	// for the class. Without this, methods like `clone(self) -> Self`
-	// would never match `clone(self) -> Class` because the two are
+	// for the class. Without this, methods like `clone(&self) -> Self`
+	// would never match `clone(&self) -> Class` because the two are
 	// distinct nominal types.
 	sub := buildSelfSubstitution(ctx, decl, ifaceName)
 

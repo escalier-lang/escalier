@@ -36,8 +36,8 @@ func seedStdlib(t *testing.T, files map[string]string) string {
 // rather than a configuration to infer against, so every tree a test builds gets these
 // unless the test's subject is the prelude itself.
 const minimalPreludeClasses = `
-export declare class Array<T> { at(self, index: number) -> T | undefined }
-export declare class Promise<T, E = never> { then<U>(self, f: fn (v: T) -> U) -> Promise<U, E> }
+export declare class Array<T> { at(&self, index: number) -> T | undefined }
+export declare class Promise<T, E = never> { then<U>(&self, f: fn (v: T) -> U) -> Promise<U, E> }
 `
 
 // withPreludeClasses returns files with minimalPreludeClasses appended to its

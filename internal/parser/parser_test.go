@@ -288,7 +288,7 @@ func TestParseModuleNoErrors(t *testing.T) {
 			input: `
 				declare global {
 					declare class Date {
-						setHours(mut self, hours: number) -> number,
+						setHours(&mut self, hours: number) -> number,
 					}
 				}
 			`,
@@ -308,7 +308,7 @@ func TestParseModuleNoErrors(t *testing.T) {
 			`,
 		},
 		"OverrideDeclareClass": {
-			input: `override declare class Date { setHours(mut self, hours: number) -> number, }`,
+			input: `override declare class Date { setHours(&mut self, hours: number) -> number, }`,
 		},
 		"OverrideDeclareFn": {
 			input: `override declare fn pipe(x: number) -> number`,
@@ -717,7 +717,7 @@ func TestClassDeclarations(t *testing.T) {
 		"ClassWithExtends": {
 			input: `
 				class Dog extends Animal {
-					bark(self) {
+					bark(&self) {
 						return "Woof!"
 					}
 				}
@@ -727,7 +727,7 @@ func TestClassDeclarations(t *testing.T) {
 			input: `
 				class Dog extends Animal {
 					name: string,
-					constructor(mut self, name: string, tag: string) {
+					constructor(&mut self, name: string, tag: string) {
 						super(name)
 						self.name = tag
 					},
@@ -737,7 +737,7 @@ func TestClassDeclarations(t *testing.T) {
 		"ClassWithSuperCallNoArgs": {
 			input: `
 				class Dog extends Animal {
-					constructor(mut self) {
+					constructor(&mut self) {
 						super()
 					},
 				}
@@ -750,7 +750,7 @@ func TestClassDeclarations(t *testing.T) {
 		"ClassWithNegatedSuperCall": {
 			input: `
 				class Dog extends Animal {
-					constructor(mut self) {
+					constructor(&mut self) {
 						-super()
 					},
 				}
@@ -760,10 +760,10 @@ func TestClassDeclarations(t *testing.T) {
 			input: `
 				class Dog extends Animal {
 					name: string,
-					constructor(mut self, name: string) {
+					constructor(&mut self, name: string) {
 						self.name = name
 					},
-					bark(self) {
+					bark(&self) {
 						return "Woof!"
 					},
 				}
@@ -772,7 +772,7 @@ func TestClassDeclarations(t *testing.T) {
 		"GenericClassWithExtends": {
 			input: `
 				class Box<T> extends Container {
-					getValue(self) -> T {
+					getValue(&self) -> T {
 						return self.value
 					}
 				}
@@ -781,7 +781,7 @@ func TestClassDeclarations(t *testing.T) {
 		"ExportClassWithExtends": {
 			input: `
 				export class Manager extends Employee {
-					manage(self) {
+					manage(&self) {
 						return "Managing"
 					}
 				}
@@ -790,7 +790,7 @@ func TestClassDeclarations(t *testing.T) {
 		"DeclareClassWithExtends": {
 			input: `
 				declare class HTMLElement extends Element {
-					click(self),
+					click(&self),
 				}
 			`,
 		},
@@ -798,7 +798,7 @@ func TestClassDeclarations(t *testing.T) {
 			input: `
 				class SpecialBox<T> extends Box<T> {
 					value: T,
-					constructor(mut self, value: T) {
+					constructor(&mut self, value: T) {
 						self.value = value
 					},
 				}
@@ -807,7 +807,7 @@ func TestClassDeclarations(t *testing.T) {
 		"ClassWithImplements": {
 			input: `
 				class Dog implements Animal {
-					bark(self) {
+					bark(&self) {
 						return "Woof!"
 					}
 				}
@@ -816,7 +816,7 @@ func TestClassDeclarations(t *testing.T) {
 		"ClassWithMultipleImplements": {
 			input: `
 				class Dog implements Animal, Runnable {
-					bark(self) {
+					bark(&self) {
 						return "Woof!"
 					}
 				}
@@ -825,7 +825,7 @@ func TestClassDeclarations(t *testing.T) {
 		"ClassWithExtendsAndImplements": {
 			input: `
 				class Dog extends Canine implements Animal, Runnable {
-					bark(self) {
+					bark(&self) {
 						return "Woof!"
 					}
 				}
@@ -834,7 +834,7 @@ func TestClassDeclarations(t *testing.T) {
 		"ClassImplementsQualifiedAndGeneric": {
 			input: `
 				class MyList<T> implements Collections.Iterable<T>, Eq.Comparable<MyList<T>> {
-					len(self) -> number {
+					len(&self) -> number {
 						return 0
 					}
 				}
@@ -843,7 +843,7 @@ func TestClassDeclarations(t *testing.T) {
 		"ClassExtendsQualifiedName": {
 			input: `
 				class CustomButton extends UI.Button {
-					customMethod(self) {
+					customMethod(&self) {
 						return "custom"
 					}
 				}
@@ -852,7 +852,7 @@ func TestClassDeclarations(t *testing.T) {
 		"ClassWithConstructorNoParams": {
 			input: `
 				class Foo {
-					constructor(mut self) {}
+					constructor(&mut self) {}
 				}
 			`,
 		},
@@ -860,7 +860,7 @@ func TestClassDeclarations(t *testing.T) {
 			input: `
 				class Foo {
 					x: number,
-					constructor(mut self, x: number) {
+					constructor(&mut self, x: number) {
 						self.x = x
 					},
 				}
@@ -870,10 +870,10 @@ func TestClassDeclarations(t *testing.T) {
 			input: `
 				class Foo {
 					x: number,
-					constructor(mut self, x: number) {
+					constructor(&mut self, x: number) {
 						self.x = x
 					},
-					constructor(mut self) {
+					constructor(&mut self) {
 						self.x = 0
 					},
 				}
@@ -883,7 +883,7 @@ func TestClassDeclarations(t *testing.T) {
 			input: `
 				class Box<T> {
 					value: T,
-					constructor<U>(mut self, value: U) {
+					constructor<U>(&mut self, value: U) {
 						self.value = value
 					},
 				}
@@ -893,7 +893,7 @@ func TestClassDeclarations(t *testing.T) {
 			input: `
 				class Email {
 					addr: string,
-					constructor(mut self, addr: string) throws ValidationError {
+					constructor(&mut self, addr: string) throws ValidationError {
 						self.addr = addr
 					},
 				}
@@ -994,7 +994,7 @@ func TestClassElemDocs(t *testing.T) {
 		cls := parseClass(t, `
 			class Dog {
 				/** says hi */
-				bark(self) {
+				bark(&self) {
 					return "Woof!"
 				}
 			}
@@ -1010,7 +1010,7 @@ func TestClassElemDocs(t *testing.T) {
 		cls := parseClass(t, `
 			class Box {
 				/** the wrapped value */
-				get value(self) -> number {
+				get value(&self) -> number {
 					return 0
 				}
 			}
@@ -1026,7 +1026,7 @@ func TestClassElemDocs(t *testing.T) {
 		cls := parseClass(t, `
 			class Box {
 				/** replace the wrapped value */
-				set value(mut self, v: number) {}
+				set value(&mut self, v: number) {}
 			}
 		`)
 		require.Len(t, cls.Body, 1)
@@ -1041,7 +1041,7 @@ func TestClassElemDocs(t *testing.T) {
 			class Email {
 				addr: string,
 				/** make a new Email */
-				constructor(mut self, addr: string) {
+				constructor(&mut self, addr: string) {
 					self.addr = addr
 				},
 			}
@@ -1167,7 +1167,7 @@ func TestObjTypeAnnElemDocs(t *testing.T) {
 		iface := parseIface(t, `
 			interface Dog {
 				/** says hi */
-				bark(self) -> string
+				bark(&self) -> string
 			}
 		`)
 		require.Len(t, iface.TypeAnn.Elems, 1)
@@ -1181,7 +1181,7 @@ func TestObjTypeAnnElemDocs(t *testing.T) {
 		iface := parseIface(t, `
 			interface Sized {
 				/** the size */
-				get size(self) -> number
+				get size(&self) -> number
 			}
 		`)
 		require.Len(t, iface.TypeAnn.Elems, 1)
@@ -1195,7 +1195,7 @@ func TestObjTypeAnnElemDocs(t *testing.T) {
 		iface := parseIface(t, `
 			interface HasValue {
 				/** replace the value */
-				set value(mut self, x: number) -> undefined
+				set value(&mut self, x: number) -> undefined
 			}
 		`)
 		require.Len(t, iface.TypeAnn.Elems, 1)
@@ -1289,35 +1289,35 @@ func TestClassConstructorErrors(t *testing.T) {
 		"StaticConstructor": {
 			input: `
 				class Foo {
-					static constructor(mut self) {}
+					static constructor(&mut self) {}
 				}
 			`,
 		},
 		"AsyncConstructor": {
 			input: `
 				class Foo {
-					async constructor(mut self) {}
+					async constructor(&mut self) {}
 				}
 			`,
 		},
 		"GenConstructor": {
 			input: `
 				class Foo {
-					gen constructor(mut self) {}
+					gen constructor(&mut self) {}
 				}
 			`,
 		},
 		"GetConstructor": {
 			input: `
 				class Foo {
-					get constructor(mut self) {}
+					get constructor(&mut self) {}
 				}
 			`,
 		},
 		"ConstructorWithReturnType": {
 			input: `
 				class Foo {
-					constructor(mut self) -> number {}
+					constructor(&mut self) -> number {}
 				}
 			`,
 		},
@@ -1331,7 +1331,7 @@ func TestClassConstructorErrors(t *testing.T) {
 		"ConstructorSelfNotMut": {
 			input: `
 				class Foo {
-					constructor(self) {}
+					constructor(&self) {}
 				}
 			`,
 		},
@@ -1363,7 +1363,7 @@ func TestClassConstructorErrors(t *testing.T) {
 		"ImplementsFollowedByOpenBrace": {
 			input: `
 				class Foo implements {
-					bar(self) {}
+					bar(&self) {}
 				}
 			`,
 		},
@@ -1412,19 +1412,19 @@ func TestClassGenModifierErrors(t *testing.T) {
 			expectedErrors: []string{"fields cannot be generators"},
 		},
 		"GenGetter": {
-			input:          `class C { gen get value(self) -> number { return 1 } }`,
+			input:          `class C { gen get value(&self) -> number { return 1 } }`,
 			expectedErrors: []string{"getters and setters cannot be generators"},
 		},
 		"GenSetter": {
-			input:          `class C { gen set value(mut self, v: number) {} }`,
+			input:          `class C { gen set value(&mut self, v: number) {} }`,
 			expectedErrors: []string{"getters and setters cannot be generators"},
 		},
 		"GenMethod": {
-			input:          `class C { gen count(self) { yield 1 } }`,
+			input:          `class C { gen count(&self) { yield 1 } }`,
 			expectedErrors: nil,
 		},
 		"GenMethodWithTypeParams": {
-			input:          `class C { gen count<T>(self, x: T) { yield x } }`,
+			input:          `class C { gen count<T>(&self, x: T) { yield x } }`,
 			expectedErrors: nil,
 		},
 	}
@@ -1469,7 +1469,7 @@ func TestStatementRecovery(t *testing.T) {
 			input: "val x\nval y = 10",
 		},
 		"ClassExtendsMissingType": {
-			input: "class Foo extends { bar(self) { return 1 } }",
+			input: "class Foo extends { bar(&self) { return 1 } }",
 		},
 		"IncompleteFnDecl": {
 			input: "export fn\nval x = 1",

@@ -629,42 +629,78 @@ func (p *Parser) fnExpr(start ast.Location, async bool, gen bool) ast.Expr {
 
 // selfReceiver probes the upcoming tokens for one of:
 //
-//	self           → &MethodReceiver{Mut: false}
-//	mut self       → &MethodReceiver{Mut: true}
-//	'a self        → &MethodReceiver{Mut: false, Lifetime: 'a}
-//	mut 'a self    → &MethodReceiver{Mut: true,  Lifetime: 'a}
+//	&self          → &MethodReceiver{Mode: BorrowReceiver}
+//	&mut self      → &MethodReceiver{Mode: BorrowReceiver, Mut: true}
+//	&'a self       → &MethodReceiver{Mode: BorrowReceiver, Lifetime: 'a}
+//	&'a mut self   → &MethodReceiver{Mode: BorrowReceiver, Mut: true, Lifetime: 'a}
+//	self           → &MethodReceiver{Mode: ConsumeReceiver}
+//	mut self       → &MethodReceiver{Mode: ConsumeReceiver, Mut: true}
 //
-// Returns nil when the lookahead does not start a `self` receiver — the
-// lexer state is restored so the surrounding parser can take over (e.g.
-// parsing a regular `mut x` parameter, or reporting a stray `'a`).
+// The lifetime precedes `mut`, the same order a borrow type annotation such as
+// `&'a mut T` takes.
 //
-// Receiver lifetimes are single only — `('a | 'b) self` is intentionally
-// not recognised (lifetime unions only appear on return-position types
-// per the design).
+// It returns nil when the lookahead does not start a `self` receiver. The lexer
+// state is restored so the surrounding parser can take over, for example to
+// parse a regular `mut x` parameter or report a stray `'a`.
+//
+// A lifetime written on a consuming receiver, as in `'a self` or `mut 'a self`,
+// is reported, since only a borrow has a loan for a lifetime to bound. The
+// receiver comes back as the borrow the lifetime implies, so later passes see
+// one diagnostic rather than a cascade.
+//
+// Receiver lifetimes are single only. `&('a | 'b) self` is not recognised,
+// since lifetime unions only appear on return-position types.
 func (p *Parser) selfReceiver() *ast.MethodReceiver {
 	saved := p.lexer.saveState()
 	start := p.lexer.currentLoc()
 
+	mode := ast.ConsumeReceiver
+	if p.lexer.peek().Type == Ampersand {
+		p.lexer.consume()
+		mode = ast.BorrowReceiver
+	}
+
+	// A borrow writes its lifetime before `mut`. A consuming receiver takes no
+	// lifetime, but `mut 'a self` is read here too so the report below can name
+	// the borrow it meant.
+	lifetime := p.parseOptLifetimeAnn()
 	mut := false
 	if p.lexer.peek().Type == Mut {
 		p.lexer.consume()
 		mut = true
 	}
-
-	var lifetime ast.LifetimeAnnNode
-	if lt := p.lexer.peek(); lt.Type == Lifetime {
-		p.lexer.consume()
-		lifetime = ast.NewLifetimeAnn(lt.Value, lt.Span)
+	if lifetime == nil && mode == ast.ConsumeReceiver {
+		lifetime = p.parseOptLifetimeAnn()
 	}
 
-	if next := p.lexer.peek(); next.Type == Identifier && next.Value == "self" {
-		p.lexer.consume() // consume 'self'
-		span := ast.Span{Start: start, End: p.lexer.currentLoc(), SourceID: p.lexer.source.ID}
-		return &ast.MethodReceiver{Mut: mut, Lifetime: lifetime, Span_: span}
+	next := p.lexer.peek()
+	if next.Type != Identifier || next.Value != "self" {
+		p.lexer.restoreState(saved)
+		return nil
 	}
+	p.lexer.consume() // consume 'self'
+	span := ast.Span{Start: start, End: p.lexer.currentLoc(), SourceID: p.lexer.source.ID}
 
-	p.lexer.restoreState(saved)
-	return nil
+	if mode == ast.ConsumeReceiver && lifetime != nil {
+		want := "&" + lifetimeText(lifetime) + " self"
+		if mut {
+			want = "&" + lifetimeText(lifetime) + " mut self"
+		}
+		p.reportError(
+			span,
+			fmt.Sprintf("a lifetime belongs on a borrowed receiver, so write `%s`", want),
+		)
+		mode = ast.BorrowReceiver
+	}
+	return &ast.MethodReceiver{Mode: mode, Mut: mut, Lifetime: lifetime, Span_: span}
+}
+
+// lifetimeText renders a receiver lifetime the way it was written, such as `'a`.
+func lifetimeText(lt ast.LifetimeAnnNode) string {
+	if named, ok := lt.(*ast.LifetimeAnn); ok {
+		return "'" + named.Name
+	}
+	return "'_"
 }
 
 // canStartExpr returns true if the given token type can begin an expression.

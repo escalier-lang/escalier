@@ -22,7 +22,7 @@ func TestParseStmtNoErrors(t *testing.T) {
 			input: `class Foo {
 			    private readonly id: number,
 				readonly message: string,
-				constructor(mut self, id: number = 1, message: string = "hello") {
+				constructor(&mut self, id: number = 1, message: string = "hello") {
 					self.id = id
 					self.message = message
 				},
@@ -36,14 +36,14 @@ func TestParseStmtNoErrors(t *testing.T) {
 		"ClassWithSetter": {
 			input: `class Foo {
 			    private _value: number,
-				set value(self, x: number) { self._value = x },
+				set value(&self, x: number) { self._value = x },
 			}`,
 		},
 		"ClassWithGetterAndSetter": {
 			input: `class Foo {
 			    private _value: number,
-				get value(self) -> number { return self._value },
-				set value(self, x: number) { self._value = x },
+				get value(&self) -> number { return self._value },
+				set value(&self, x: number) { self._value = x },
 			}`,
 		},
 		"ClassWithStaticGetter": {
@@ -54,50 +54,50 @@ func TestParseStmtNoErrors(t *testing.T) {
 		"ClassWithPrivateGetterSetter": {
 			input: `class Foo {
 			    private _secret: string,
-				private get secret(self) -> string { return "shh" },
-				private set secret(self, x: string) { self._secret = x },
+				private get secret(&self) -> string { return "shh" },
+				private set secret(&self, x: string) { self._secret = x },
 			}`,
 		},
 		"ClassWithPrivateField": {
 			input: `class Secret {
 				private secret: string,
-				constructor(mut self, secret: string = "shh") {
+				constructor(&mut self, secret: string = "shh") {
 					self.secret = secret
 				},
-				reveal(self) { return this.secret },
+				reveal(&self) { return this.secret },
 			}`,
 		},
 		"ClassWithPrivateMethod": {
 			input: `class Secret {
-				private reveal(self) { return "hidden" },
-				show(self) { return this.reveal() },
+				private reveal(&self) { return "hidden" },
+				show(&self) { return this.reveal() },
 			}`,
 		},
 		"ClassWithPrivateFieldAndMethod": {
 			input: `class Secret {
 				private secret: string,
-				constructor(mut self, secret: string = "shh") {
+				constructor(&mut self, secret: string = "shh") {
 					self.secret = secret
 				},
-				private reveal(self) { return this.secret },
-				show(self) { return this.reveal() },
+				private reveal(&self) { return this.secret },
+				show(&self) { return this.reveal() },
 			}`,
 		},
 		"ClassWithMixedPrivateAndPublic": {
 			input: `class Mixed {
 				private foo: number,
 				bar: number,
-				constructor(mut self, foo?: number = 1, bar?: number = 2) {
+				constructor(&mut self, foo?: number = 1, bar?: number = 2) {
 					self.foo = foo
 					self.bar = bar
 				},
-				private baz(self) { return this.foo },
-				qux(self) { return this.bar },
+				private baz(&self) { return this.foo },
+				qux(&self) { return this.bar },
 			}`,
 		},
 		"ClassWithAsyncMethod": {
 			input: `class Asyncer {
-				async fetchData(self, url: string) -> Promise<string> {
+				async fetchData(&self, url: string) -> Promise<string> {
 					// fetch logic
 				},
 			}`,
@@ -111,18 +111,18 @@ func TestParseStmtNoErrors(t *testing.T) {
 		},
 		"ClassWithMixedAsyncAndSyncMethods": {
 			input: `class Mixed {
-				foo(self) { return 1 },
-				async bar(self) -> Promise<number> { return 2 },
+				foo(&self) { return 1 },
+				async bar(&self) -> Promise<number> { return 2 },
 				static async baz() -> Promise<undefined> {},
 			}`,
 		},
 		"GenericClass": {
 			input: `class Box<T> {
 				value: T,
-				get foo(self) -> T {
+				get foo(&self) -> T {
 					return self.value
 				},
-				set foo(mut self, value: T) {
+				set foo(&mut self, value: T) {
 					self.value = value
 				},
 			}`,
@@ -140,7 +140,7 @@ func TestParseStmtNoErrors(t *testing.T) {
 			input: "class Box<out T> { value: T }",
 		},
 		"GenericClassWithContravariantParam": {
-			input: "class Consumer<in T> { accept(self, x: T) { } }",
+			input: "class Consumer<in T> { accept(&self, x: T) { } }",
 		},
 		"GenericClassWithInvariantParam": {
 			input: "class Cell<in out T> { value: T }",
@@ -151,7 +151,7 @@ func TestParseStmtNoErrors(t *testing.T) {
 		"ClassWithGenericMethod": {
 			input: `class Mapper<T> {
 				value: T,
-				map<U>(self, callback: fn (value: T) -> U) -> Mapper<U> {
+				map<U>(&self, callback: fn (value: T) -> U) -> Mapper<U> {
 					return Mapper(callback(self.value))
 				},
 			}`,
@@ -169,11 +169,11 @@ func TestParseStmtNoErrors(t *testing.T) {
 			input: `class Baz {
 				x: number,
 				y: string,
-				constructor(mut self, x: number, y: string = "hi") {
+				constructor(&mut self, x: number, y: string = "hi") {
 					self.x = x
 					self.y = y
 				},
-				foo(self, a: number) -> undefined {},
+				foo(&self, a: number) -> undefined {},
 			}`,
 		},
 		"ClassWithStaticMethod": {
@@ -187,7 +187,7 @@ func TestParseStmtNoErrors(t *testing.T) {
 				static add(a: number, b: number) -> number {
 					return a + b
 				},
-				sub(self, a: number, b: number) -> number {
+				sub(&self, a: number, b: number) -> number {
 					return a - b
 				}
 			}`,
@@ -282,25 +282,25 @@ func TestParseStmtNoErrors(t *testing.T) {
 			input: "declare interface Global { version: string }",
 		},
 		"InterfaceDeclMethodWithSelf": {
-			input: "interface Greeter { greet(self) -> string }",
+			input: "interface Greeter { greet(&self) -> string }",
 		},
 		"InterfaceDeclMethodWithMutSelf": {
-			input: "interface Counter { increment(mut self) -> number }",
+			input: "interface Counter { increment(&mut self) -> number }",
 		},
 		"InterfaceDeclMethodWithSelfAndParams": {
-			input: "interface Adder { add(self, x: number, y: number) -> number }",
+			input: "interface Adder { add(&self, x: number, y: number) -> number }",
 		},
 		"InterfaceDeclMethodNoSelf": {
 			input: "interface Free { make() -> number }",
 		},
 		"InterfaceDeclGetterWithSelf": {
-			input: "interface Sized { get size(self) -> number }",
+			input: "interface Sized { get size(&self) -> number }",
 		},
 		"InterfaceDeclGetterWithMutSelf": {
-			input: "interface Cached { get value(mut self) -> number }",
+			input: "interface Cached { get value(&mut self) -> number }",
 		},
 		"InterfaceDeclSetterWithMutSelf": {
-			input: "interface HasValue { set value(mut self, x: number) -> undefined }",
+			input: "interface HasValue { set value(&mut self, x: number) -> undefined }",
 		},
 		"InterfaceDeclMethodWithLeadingMutParam": {
 			// Regression: mutSelf() must not strip a leading `mut` from a
@@ -356,12 +356,12 @@ func TestParseStmtNoErrors(t *testing.T) {
 		},
 		"ClassWithGenMethod": {
 			input: `class C {
-				gen count(self) { yield 1 }
+				gen count(&self) { yield 1 }
 			}`,
 		},
 		"ClassWithAsyncGenMethod": {
 			input: `class C {
-				async gen poll(self) { yield await x }
+				async gen poll(&self) { yield await x }
 			}`,
 		},
 		"AsyncGenFuncExpr": {

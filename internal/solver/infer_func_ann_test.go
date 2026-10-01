@@ -694,7 +694,7 @@ func TestInferFunctionTopType(t *testing.T) {
 // body's scope, which the annotation path never does, so it reaches the marker separately and
 // needs its own coverage.
 func TestInferRestParamDeclaration(t *testing.T) {
-	const cls = "declare class Box<T> {\n  push(mut self, ...items: mut Array<T>) -> number,\n}\n"
+	const cls = "declare class Box<T> {\n  push(&mut self, ...items: mut Array<T>) -> number,\n}\n"
 	tests := []struct {
 		name string
 		src  string
@@ -786,17 +786,17 @@ func TestInferRestParamMalformedOnAMember(t *testing.T) {
 	}{
 		{
 			name: "NotLast",
-			src:  "declare class Box {\n  m(self, ...xs: Array<number>, y: number) -> number,\n}",
+			src:  "declare class Box {\n  m(&self, ...xs: Array<number>, y: number) -> number,\n}",
 			want: "a rest parameter must be the last parameter of a function type",
 		},
 		{
 			name: "NoTypeAnnotation",
-			src:  "declare class Box {\n  m(self, ...xs) -> number,\n}",
+			src:  "declare class Box {\n  m(&self, ...xs) -> number,\n}",
 			want: "a rest parameter in a function type must have a type annotation",
 		},
 		{
 			name: "Optional",
-			src:  "declare class Box {\n  m(self, ...xs?: Array<number>) -> number,\n}",
+			src:  "declare class Box {\n  m(&self, ...xs?: Array<number>) -> number,\n}",
 			want: "a rest parameter cannot be marked optional",
 		},
 	}
@@ -815,8 +815,8 @@ func TestInferRestParamMalformedOnAMember(t *testing.T) {
 // callee is not what runs here and the element check has to be made per arm.
 func TestInferOverloadArmWithARestSlot(t *testing.T) {
 	const decl = "declare class Box {\n" +
-		"  m(self, n: number) -> number,\n" +
-		"  m(self, ...items: Array<string>) -> number,\n" +
+		"  m(&self, n: number) -> number,\n" +
+		"  m(&self, ...items: Array<string>) -> number,\n" +
 		"}\n"
 	const noMatch = "No matching overload for this call\n" +
 		"  fn (n: number) -> number\n" +

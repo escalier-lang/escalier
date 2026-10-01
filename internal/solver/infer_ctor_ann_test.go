@@ -173,7 +173,7 @@ func TestInferClassValueSatisfiesConstructorAnnotation(t *testing.T) {
 			`
 				class Point {
 					x: number,
-					constructor(mut self, x: number) { self.x = x },
+					constructor(&mut self, x: number) { self.x = x },
 				}
 				val ctor: {new (x: number) -> Point} = Point
 			`,
@@ -184,7 +184,7 @@ func TestInferClassValueSatisfiesConstructorAnnotation(t *testing.T) {
 				class Counter {
 					n: number,
 					static zero: number = 0,
-					constructor(mut self, n: number) { self.n = n },
+					constructor(&mut self, n: number) { self.n = n },
 				}
 				val ctor: {new (n: number) -> Counter, ...} = Counter
 			`,
@@ -204,7 +204,7 @@ func TestInferClassValueMissesConstructorTargetWithStatics(t *testing.T) {
 	_, _, errs := inferSource(t, `
 		class Point {
 			x: number,
-			constructor(mut self, x: number) { self.x = x },
+			constructor(&mut self, x: number) { self.x = x },
 		}
 		val ctor: {new (x: number) -> Point, origin: Point} = Point
 	`)

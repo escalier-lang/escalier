@@ -10,14 +10,14 @@ export declare class WeakRef<T: WeakKey> {
      * reclaimed.
      * In es2023 the value can be either a symbol or an object, in previous versions only object is permissible.
      */
-    deref(self) -> T | undefined,
+    deref(&self) -> T | undefined,
     static readonly prototype: WeakRef<any>,
     /**
      * Creates a WeakRef instance for the given target value.
      * In es2023 the value can be either a symbol or an object, in previous versions only object is permissible.
      * @param target The target value for the WeakRef instance.
      */
-    constructor(mut self, target: T)
+    constructor(&mut self, target: T)
 }
 
 @js("FinalizationRegistry")
@@ -32,20 +32,20 @@ export declare class FinalizationRegistry<T> {
      * @param unregisterToken The token to pass to the unregister method to unregister the target
      * value. If not provided, the target cannot be unregistered.
      */
-    register(mut self, target: WeakKey, heldValue: T, unregisterToken?: WeakKey) -> unknown,
+    register(&mut self, target: WeakKey, heldValue: T, unregisterToken?: WeakKey) -> unknown,
     /**
      * Unregisters a value from the registry.
      * In es2023 the value can be either a symbol or an object, in previous versions only object is permissible.
      * @param unregisterToken The token that was used as the unregisterToken argument when calling
      * register to register the target value.
      */
-    unregister(mut self, unregisterToken: WeakKey) -> boolean,
+    unregister(&mut self, unregisterToken: WeakKey) -> boolean,
     static readonly prototype: FinalizationRegistry<any>,
     /**
      * Creates a finalization registry with an associated cleanup callback
      * @param cleanupCallback The callback to call after a value in the registry has been reclaimed.
      */
-    constructor(mut self, cleanupCallback: fn (heldValue: T) -> unknown)
+    constructor(&mut self, cleanupCallback: fn (heldValue: T) -> unknown)
 }
 
 export declare interface WeakKeyTypes {

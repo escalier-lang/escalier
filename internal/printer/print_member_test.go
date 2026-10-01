@@ -26,23 +26,23 @@ func parseOneDecl(t *testing.T, src string) ast.Decl {
 func TestPrintClassElem(t *testing.T) {
 	t.Parallel()
 	decl := parseOneDecl(t, `declare class Foo<T> {
-    constructor(mut self, length: number),
+    constructor(&mut self, length: number),
     readonly length: number,
     static isFoo(value: unknown) -> boolean,
-    indexOf(self, item: T) -> number,
-    get first(self) -> T,
-    set first(mut self, value: T),
+    indexOf(&self, item: T) -> number,
+    get first(&self) -> T,
+    set first(&mut self, value: T),
 }`)
 	class, ok := decl.(*ast.ClassDecl)
 	require.True(t, ok)
 
 	expected := []string{
-		"constructor(mut self, length: number)",
+		"constructor(&mut self, length: number)",
 		"readonly length: number",
 		"static isFoo(value: unknown) -> boolean",
-		"indexOf(self, item: T) -> number",
-		"get first(self) -> T",
-		"set first(mut self, value: T)",
+		"indexOf(&self, item: T) -> number",
+		"get first(&self) -> T",
+		"set first(&mut self, value: T)",
 	}
 	require.Len(t, class.Body, len(expected))
 	for i, want := range expected {
@@ -70,8 +70,8 @@ func TestPrintObjTypeAnnElem(t *testing.T) {
 		"readonly length: number",
 		"name?: string",
 		"indexOf(item: T) -> number",
-		"get first(self) -> T",
-		"set first(mut self, value: T)",
+		"get first(&self) -> T",
+		"set first(&mut self, value: T)",
 	}
 	require.Len(t, iface.TypeAnn.Elems, len(expected))
 	for i, want := range expected {

@@ -50,7 +50,7 @@ func TestFuncTypeAcceptVisitsSelfParam(t *testing.T) {
 }
 
 // TestFuncTypeEqualsConsidersSelfParam pins that FuncType.Equals compares
-// SelfParam. Without this, a method's `(self) -> T` and `(mut self) -> T`
+// SelfParam. Without this, a method's `(&self) -> T` and `(&mut self) -> T`
 // FuncTypes are structurally equal — which would let normalization or
 // any equality-keyed cache silently merge them, dropping receiver-mutability
 // information from method-call typing.

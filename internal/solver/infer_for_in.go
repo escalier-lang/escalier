@@ -221,7 +221,7 @@ func (c *checker) protocolElem(t soltype.Type, symbol string) (soltype.Type, boo
 // hands back, and false when t declares no such member.
 //
 // It reads that member off t's member view and takes the arguments of what calling it
-// evaluates to. `Array<T>` declares `[Symbol.iterator](self) -> ArrayIterator<T>`, so the
+// evaluates to. `Array<T>` declares `[Symbol.iterator](&self) -> ArrayIterator<T>`, so the
 // lookup lands on that method and the arguments are the one `T` in its return.
 //
 // The slots are read by position rather than by calling the member, which keeps this to a
@@ -284,13 +284,13 @@ func (c *checker) iteratorReference(t soltype.Type) soltype.Type {
 
 // nullaryReturn returns what calling member with no arguments evaluates to, covering the
 // two ways the protocol member is written. A declaration writes it as a method,
-// `[Symbol.iterator](self) -> Iterator<T>`, and an object writes it as a property holding a
+// `[Symbol.iterator](&self) -> Iterator<T>`, and an object writes it as a property holding a
 // function.
 //
 // Iteration calls the member with no arguments, so a signature demanding one does not
 // answer and an overload set answers from the first arm that takes none. Reading arm zero
-// regardless would let `[Symbol.iterator](self, hint: string) -> Iterator<number>` beside
-// `[Symbol.iterator](self) -> Iterator<boolean>` report the element as `number`, where the
+// regardless would let `[Symbol.iterator](&self, hint: string) -> Iterator<number>` beside
+// `[Symbol.iterator](&self) -> Iterator<boolean>` report the element as `number`, where the
 // call a `for`-`in` makes selects the second arm. The receiver is not a parameter, since
 // the parser peels `self` into SelfParam, so an instance member's own arity is zero.
 //

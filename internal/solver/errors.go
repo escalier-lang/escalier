@@ -1498,7 +1498,7 @@ func (e *SelfTypeNameError) Message() string {
 }
 
 // SelfInInputPositionError fires when `Self` is written in a CONTRAVARIANT position of a class
-// member, which is a DIRECT parameter such as `eq(self, other: Self) -> boolean`. A parameter
+// member, which is a DIRECT parameter such as `eq(&self, other: Self) -> boolean`. A parameter
 // nested inside another parameter is not one, which is why the message says "direct": a `Self`
 // in a callback's own parameter list stays legal.
 //
@@ -1508,7 +1508,7 @@ func (e *SelfTypeNameError) Message() string {
 // really a B, whose `eq` demands a B. TypeScript has this hole and method bivariance hides it.
 //
 // A `Self` nested inside a callback parameter is contravariant twice, so it is covariant overall
-// and stays legal: `each(self, cb: fn (arr: Self) -> boolean)` reads `arr` at the receiver's
+// and stays legal: `each(&self, cb: fn (arr: Self) -> boolean)` reads `arr` at the receiver's
 // class. resolveScopedTypeRef counts the enclosing parameter positions and reports only the odd
 // counts.
 //
@@ -1812,7 +1812,7 @@ type spanned interface{ Span() ast.Span }
 
 // SetterArityError fires when a setter declares other than exactly one value parameter
 // beyond its `self` receiver. A setter's single parameter is the value being assigned,
-// so `set x(self)` and `set x(self, a, b)` are both malformed. The rule is the same for a
+// so `set x(&self)` and `set x(&self, a, b)` are both malformed. The rule is the same for a
 // class member and for a setter written in an object type annotation, so Elem is whichever
 // node the source wrote and carries the blame span.
 type SetterArityError struct {

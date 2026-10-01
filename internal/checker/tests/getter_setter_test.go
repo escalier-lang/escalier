@@ -20,7 +20,7 @@ func TestGetterSetterAccess(t *testing.T) {
 			input: `
 				class Circle {
 					radius: number,
-					get area(self) -> number {
+					get area(&self) -> number {
 						return 3.14 * self.radius * self.radius
 					},
 				}
@@ -33,7 +33,7 @@ func TestGetterSetterAccess(t *testing.T) {
 			input: `
 				class Circle {
 					radius: number,
-					get area(self) -> number {
+					get area(&self) -> number {
 						return 3.14 * self.radius * self.radius
 					},
 				}
@@ -43,7 +43,7 @@ func TestGetterSetterAccess(t *testing.T) {
 				}
 			`,
 			expectedErrors: []string{
-				"Unknown property 'area' in object type {radius: number, get area(self) -> number}",
+				"Unknown property 'area' in object type {radius: number, get area(&self) -> number}",
 				"100 cannot be assigned to undefined",
 			},
 		},
@@ -51,7 +51,7 @@ func TestGetterSetterAccess(t *testing.T) {
 			input: `
 				class Temperature {
 					celsius: number,
-					set fahrenheit(mut self, value: number) {
+					set fahrenheit(&mut self, value: number) {
 						self.celsius = (value - 32) * 5 / 9
 					},
 				}
@@ -66,7 +66,7 @@ func TestGetterSetterAccess(t *testing.T) {
 			input: `
 				class Temperature {
 					celsius: number,
-					set fahrenheit(mut self, value: number) {
+					set fahrenheit(&mut self, value: number) {
 						self.celsius = (value - 32) * 5 / 9
 					},
 				}
@@ -74,7 +74,7 @@ func TestGetterSetterAccess(t *testing.T) {
 				val f = temp.fahrenheit
 			`,
 			expectedErrors: []string{
-				"Unknown property 'fahrenheit' in object type {celsius: number, set fahrenheit(mut self, value: number) -> undefined}",
+				"Unknown property 'fahrenheit' in object type {celsius: number, set fahrenheit(&mut self, value: number) -> undefined}",
 			},
 		},
 		"ReadAndWriteWithBothGetterAndSetter": {
@@ -83,10 +83,10 @@ func TestGetterSetterAccess(t *testing.T) {
 				class Person {
 					firstName: string,
 					lastName: string,
-					get fullName(self) -> string {
+					get fullName(&self) -> string {
 						return self.firstName ++ " " ++ self.lastName
 					},
-					set fullName(mut self, value: string) {
+					set fullName(&mut self, value: string) {
 						val parts = split(value, " ")
 						self.firstName = parts[0]
 						self.lastName = parts[1]
@@ -104,7 +104,7 @@ func TestGetterSetterAccess(t *testing.T) {
 			input: `
 				class Base {
 					_v: number,
-					set value(mut self, v: number) {
+					set value(&mut self, v: number) {
 						self._v = v
 					},
 				}
@@ -119,7 +119,7 @@ func TestGetterSetterAccess(t *testing.T) {
 			input: `
 				class Base {
 					_v: number,
-					get value(self) -> number {
+					get value(&self) -> number {
 						return self._v
 					},
 				}
@@ -132,7 +132,7 @@ func TestGetterSetterAccess(t *testing.T) {
 			input: `
 				class Base {
 					_v: number,
-					set value(mut self, v: number) {
+					set value(&mut self, v: number) {
 						self._v = v
 					},
 				}
@@ -149,11 +149,11 @@ func TestGetterSetterAccess(t *testing.T) {
 			input: `
 				class A {
 					x: number,
-					set s(mut self, v: number) {},
+					set s(&mut self, v: number) {},
 				}
 				class B {
 					x: string,
-					set s(mut self, v: string) {},
+					set s(&mut self, v: string) {},
 				}
 				fn foo(u: A | B) {
 					val {x, s, ...rest} = u
@@ -171,10 +171,10 @@ func TestGetterSetterAccess(t *testing.T) {
 			input: `
 				class Box<T> {
 					value: T,
-					get contents(self) -> T {
+					get contents(&self) -> T {
 						return self.value
 					},
-					set contents(mut self, v: T) {
+					set contents(&mut self, v: T) {
 						self.value = v
 					},
 				}
@@ -194,7 +194,7 @@ func TestGetterSetterAccess(t *testing.T) {
 			input: `
 				class Counter {
 					_seen: number,
-					get next(mut self) -> number {
+					get next(&mut self) -> number {
 						self._seen = self._seen + 1
 						return self._seen
 					},
@@ -211,7 +211,7 @@ func TestGetterSetterAccess(t *testing.T) {
 			input: `
 				class Counter {
 					_seen: number,
-					get next(mut self) -> number {
+					get next(&mut self) -> number {
 						self._seen = self._seen + 1
 						return self._seen
 					},
@@ -220,7 +220,7 @@ func TestGetterSetterAccess(t *testing.T) {
 				val n = c.next
 			`,
 			expectedErrors: []string{
-				"Unknown property 'next' in object type {_seen: number, get next(mut self) -> number}",
+				"Unknown property 'next' in object type {_seen: number, get next(&mut self) -> number}",
 			},
 		},
 		// A `mut self` setter must remain visible during write lookup
@@ -232,7 +232,7 @@ func TestGetterSetterAccess(t *testing.T) {
 			input: `
 				class Counter {
 					_v: number,
-					set value(mut self, v: number) {
+					set value(&mut self, v: number) {
 						self._v = v
 					},
 				}
@@ -250,10 +250,10 @@ func TestGetterSetterAccess(t *testing.T) {
 			input: `
 				class Box<T> {
 					value: T,
-					get contents(self) -> T {
+					get contents(&self) -> T {
 						return self.value
 					},
-					set contents(mut self, v: T) {
+					set contents(&mut self, v: T) {
 						self.value = v
 					},
 				}

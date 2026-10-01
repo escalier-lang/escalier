@@ -21,11 +21,11 @@ func TestInferClassOverrideCompat(t *testing.T) {
 			src: `
 				class Animal {
 					pos: {x: number},
-					constructor(mut self, pos: {x: number}) { self.pos = pos },
+					constructor(&mut self, pos: {x: number}) { self.pos = pos },
 				}
 				class Dog extends Animal {
 					pos: {x: number, y: number},
-					constructor(mut self, pos: {x: number, y: number}) {
+					constructor(&mut self, pos: {x: number, y: number}) {
 						super({x: pos.x})
 						self.pos = pos
 					},
@@ -41,11 +41,11 @@ func TestInferClassOverrideCompat(t *testing.T) {
 			src: `
 				class Animal {
 					legs: number | undefined,
-					constructor(mut self, legs: number | undefined) { self.legs = legs },
+					constructor(&mut self, legs: number | undefined) { self.legs = legs },
 				}
 				class Dog extends Animal {
 					legs: number,
-					constructor(mut self, legs: number) {
+					constructor(&mut self, legs: number) {
 						super(legs)
 						self.legs = legs
 					},
@@ -63,11 +63,11 @@ func TestInferClassOverrideCompat(t *testing.T) {
 			src: `
 				class Animal {
 					legs: number,
-					constructor(mut self, legs: number) { self.legs = legs },
+					constructor(&mut self, legs: number) { self.legs = legs },
 				}
 				class Dog extends Animal {
 					legs: number,
-					constructor(mut self) {
+					constructor(&mut self) {
 						super(4)
 						self.legs = 4
 					},
@@ -80,12 +80,12 @@ func TestInferClassOverrideCompat(t *testing.T) {
 			src: `
 				class Animal {
 					legs: number,
-					constructor(mut self, legs: number) { self.legs = legs },
+					constructor(&mut self, legs: number) { self.legs = legs },
 				}
 				class Dog extends Animal {
 					legs: number,
 					name: string,
-					constructor(mut self) {
+					constructor(&mut self) {
 						super(4)
 						self.legs = 4
 						self.name = "Rex"
@@ -98,12 +98,12 @@ func TestInferClassOverrideCompat(t *testing.T) {
 			name: "MethodReturnNotCovariant",
 			src: `
 				class Animal {
-					constructor(mut self) {},
-					speak(self) -> string { return "..." },
+					constructor(&mut self) {},
+					speak(&self) -> string { return "..." },
 				}
 				class Dog extends Animal {
-					constructor(mut self) { super() },
-					speak(self) -> number { return 5 },
+					constructor(&mut self) { super() },
+					speak(&self) -> number { return 5 },
 				}
 			`,
 			// The two returns are unrelated rather than one widening the other, which
@@ -117,12 +117,12 @@ func TestInferClassOverrideCompat(t *testing.T) {
 			name: "MethodParamNotContravariant",
 			src: `
 				class Animal {
-					constructor(mut self) {},
-					eat(self, food: string | number) -> undefined { return undefined },
+					constructor(&mut self) {},
+					eat(&self, food: string | number) -> undefined { return undefined },
 				}
 				class Dog extends Animal {
-					constructor(mut self) { super() },
-					eat(self, food: string) -> undefined { return undefined },
+					constructor(&mut self) { super() },
+					eat(&self, food: string) -> undefined { return undefined },
 				}
 			`,
 			// Dog's parameter is a subtype of the one it inherits, so an `Animal` reference
@@ -136,12 +136,12 @@ func TestInferClassOverrideCompat(t *testing.T) {
 			name: "MethodWidenedParamIsAllowed",
 			src: `
 				class Animal {
-					constructor(mut self) {},
-					eat(self, food: string) -> undefined { return undefined },
+					constructor(&mut self) {},
+					eat(&self, food: string) -> undefined { return undefined },
 				}
 				class Dog extends Animal {
-					constructor(mut self) { super() },
-					eat(self, food: string | number) -> undefined { return undefined },
+					constructor(&mut self) { super() },
+					eat(&self, food: string | number) -> undefined { return undefined },
 				}
 			`,
 			// A parameter is contravariant, so a subclass may accept more than the inherited
@@ -152,12 +152,12 @@ func TestInferClassOverrideCompat(t *testing.T) {
 			name: "MethodWidenedReturn",
 			src: `
 				class Animal {
-					constructor(mut self) {},
-					speak(self) -> number { return 5 },
+					constructor(&mut self) {},
+					speak(&self) -> number { return 5 },
 				}
 				class Dog extends Animal {
-					constructor(mut self) { super() },
-					speak(self) -> number | string { return 5 },
+					constructor(&mut self) { super() },
+					speak(&self) -> number | string { return 5 },
 				}
 			`,
 			// A return is covariant, so widening it breaks the inherited promise: a caller
@@ -171,12 +171,12 @@ func TestInferClassOverrideCompat(t *testing.T) {
 			name: "MethodNarrowedReturnIsAllowed",
 			src: `
 				class Animal {
-					constructor(mut self) {},
-					speak(self) -> number | string { return 5 },
+					constructor(&mut self) {},
+					speak(&self) -> number | string { return 5 },
 				}
 				class Dog extends Animal {
-					constructor(mut self) { super() },
-					speak(self) -> number { return 5 },
+					constructor(&mut self) { super() },
+					speak(&self) -> number { return 5 },
 				}
 			`,
 			// Narrowing is the direction a return admits. A caller holding an `Animal` reads
@@ -187,12 +187,12 @@ func TestInferClassOverrideCompat(t *testing.T) {
 			name: "MethodOverriddenAtTheInheritedSignature",
 			src: `
 				class Animal {
-					constructor(mut self) {},
-					speak(self) -> string { return "..." },
+					constructor(&mut self) {},
+					speak(&self) -> string { return "..." },
 				}
 				class Dog extends Animal {
-					constructor(mut self) { super() },
-					speak(self) -> string { return "woof" },
+					constructor(&mut self) { super() },
+					speak(&self) -> string { return "woof" },
 				}
 			`,
 			// The ordinary override: a new body at the signature the superclass declares.
@@ -202,12 +202,12 @@ func TestInferClassOverrideCompat(t *testing.T) {
 			name: "MethodParamWidenedAndReturnNarrowed",
 			src: `
 				class Animal {
-					constructor(mut self) {},
-					pick(self, x: number) -> number | string { return x },
+					constructor(&mut self) {},
+					pick(&self, x: number) -> number | string { return x },
 				}
 				class Dog extends Animal {
-					constructor(mut self) { super() },
-					pick(self, x: number | string) -> number { return 5 },
+					constructor(&mut self) { super() },
+					pick(&self, x: number | string) -> number { return 5 },
 				}
 			`,
 			// Both admitted directions at once, which is the widest an override may move the
@@ -219,11 +219,11 @@ func TestInferClassOverrideCompat(t *testing.T) {
 			src: `
 				class Animal {
 					speak: string,
-					constructor(mut self) { self.speak = "..." },
+					constructor(&mut self) { self.speak = "..." },
 				}
 				class Dog extends Animal {
-					constructor(mut self) { super() },
-					speak(self) -> string { return "woof" },
+					constructor(&mut self) { super() },
+					speak(&self) -> string { return "woof" },
 				}
 			`,
 			want: []string{
@@ -236,14 +236,14 @@ func TestInferClassOverrideCompat(t *testing.T) {
 			src: `
 				class Animal {
 					legs: number,
-					constructor(mut self, legs: number) { self.legs = legs },
+					constructor(&mut self, legs: number) { self.legs = legs },
 				}
 				class Pet extends Animal {
-					constructor(mut self) { super(4) },
+					constructor(&mut self) { super(4) },
 				}
 				class Dog extends Pet {
 					legs: string,
-					constructor(mut self) {
+					constructor(&mut self) {
 						super()
 						self.legs = "four"
 					},
@@ -258,14 +258,14 @@ func TestInferClassOverrideCompat(t *testing.T) {
 			name: "GetterOverriddenAtANarrowerType",
 			src: `
 				class Animal {
-					constructor(mut self) {},
-					get p(self) -> number | string { return 4 },
-					set p(mut self, v: number | string) {},
+					constructor(&mut self) {},
+					get p(&self) -> number | string { return 4 },
+					set p(&mut self, v: number | string) {},
 				}
 				class Dog extends Animal {
-					constructor(mut self) { super() },
-					get p(self) -> number { return 4 },
-					set p(mut self, v: number | string) {},
+					constructor(&mut self) { super() },
+					get p(&self) -> number { return 4 },
+					set p(&mut self, v: number | string) {},
 				}
 			`,
 			// A read through `Animal` yields `number | string`, which Dog's getter narrows.
@@ -276,14 +276,14 @@ func TestInferClassOverrideCompat(t *testing.T) {
 			name: "SetterParamNarrowed",
 			src: `
 				class Animal {
-					constructor(mut self) {},
-					get p(self) -> number { return 4 },
-					set p(mut self, v: number | string) {},
+					constructor(&mut self) {},
+					get p(&self) -> number { return 4 },
+					set p(&mut self, v: number | string) {},
 				}
 				class Dog extends Animal {
-					constructor(mut self) { super() },
-					get p(self) -> number { return 4 },
-					set p(mut self, v: number) {},
+					constructor(&mut self) { super() },
+					get p(&self) -> number { return 4 },
+					set p(&mut self, v: number) {},
 				}
 			`,
 			// A write is contravariant, so narrowing the setter's parameter breaks the
@@ -297,14 +297,14 @@ func TestInferClassOverrideCompat(t *testing.T) {
 			name: "SetterParamWidenedIsAllowed",
 			src: `
 				class Animal {
-					constructor(mut self) {},
-					get p(self) -> number { return 4 },
-					set p(mut self, v: number) {},
+					constructor(&mut self) {},
+					get p(&self) -> number { return 4 },
+					set p(&mut self, v: number) {},
 				}
 				class Dog extends Animal {
-					constructor(mut self) { super() },
-					get p(self) -> number { return 4 },
-					set p(mut self, v: number | string) {},
+					constructor(&mut self) { super() },
+					get p(&self) -> number { return 4 },
+					set p(&mut self, v: number | string) {},
 				}
 			`,
 			// Widening is the direction a write admits. Every value an `Animal` reference
@@ -315,13 +315,13 @@ func TestInferClassOverrideCompat(t *testing.T) {
 			name: "OverridingOnlyTheGetterHalfDropsTheSetter",
 			src: `
 				class Animal {
-					constructor(mut self) {},
-					get p(self) -> number { return 4 },
-					set p(mut self, v: number) {},
+					constructor(&mut self) {},
+					get p(&self) -> number { return 4 },
+					set p(&mut self, v: number) {},
 				}
 				class Dog extends Animal {
-					constructor(mut self) { super() },
-					get p(self) -> number { return 4 },
+					constructor(&mut self) { super() },
+					get p(&self) -> number { return 4 },
 				}
 			`,
 			// Dog's getter shadows the whole pair rather than merging with it, so an
@@ -335,12 +335,12 @@ func TestInferClassOverrideCompat(t *testing.T) {
 			name: "AddingTheMissingAccessorHalfDropsTheInheritedOne",
 			src: `
 				class Animal {
-					constructor(mut self) {},
-					get legs(self) -> number { return 4 },
+					constructor(&mut self) {},
+					get legs(&self) -> number { return 4 },
 				}
 				class Dog extends Animal {
-					constructor(mut self) { super() },
-					set legs(mut self, v: number) {},
+					constructor(&mut self) { super() },
+					set legs(&mut self, v: number) {},
 				}
 			`,
 			// Reading `legs` off a Dog already reports that the property is write-only,
@@ -357,16 +357,16 @@ func TestInferClassOverrideCompat(t *testing.T) {
 			src: `
 				class Animal {
 					flag: boolean,
-					constructor(mut self, flag: boolean) { self.flag = flag },
-					get p(self) -> number { return 4 },
+					constructor(&mut self, flag: boolean) { self.flag = flag },
+					get p(&self) -> number { return 4 },
 				}
 				class Dog extends Animal {
 					flag: boolean,
-					constructor(mut self, flag: boolean) {
+					constructor(&mut self, flag: boolean) {
 						super(flag)
 						self.flag = flag
 					},
-					get p(self) -> number throws string {
+					get p(&self) -> number throws string {
 						if self.flag {
 							throw "x"
 						}
@@ -385,14 +385,14 @@ func TestInferClassOverrideCompat(t *testing.T) {
 			name: "OverloadSetInADifferentOrder",
 			src: `
 				class Animal {
-					constructor(mut self) {},
-					f(self, x: number) -> number { return x },
-					f(self, x: string) -> string { return x },
+					constructor(&mut self) {},
+					f(&self, x: number) -> number { return x },
+					f(&self, x: string) -> string { return x },
 				}
 				class Dog extends Animal {
-					constructor(mut self) { super() },
-					f(self, x: string) -> string { return x },
-					f(self, x: number) -> number { return x },
+					constructor(&mut self) { super() },
+					f(&self, x: string) -> string { return x },
+					f(&self, x: number) -> number { return x },
 				}
 			`,
 			// An overload set reads as the intersection of its arms, so the two classes
@@ -404,17 +404,17 @@ func TestInferClassOverrideCompat(t *testing.T) {
 			src: `
 				class Animal {
 					x: number,
-					constructor(mut self) { self.x = 0 },
-					f(self, a: number) -> undefined { return undefined },
+					constructor(&mut self) { self.x = 0 },
+					f(&self, a: number) -> undefined { return undefined },
 				}
 				class Dog extends Animal {
 					x: number,
-					constructor(mut self) {
+					constructor(&mut self) {
 						super()
 						self.x = 0
 					},
-					f(self, a: number) -> undefined { return undefined },
-					f(mut self, a: string) -> undefined { self.x = 1 },
+					f(&self, a: number) -> undefined { return undefined },
+					f(&mut self, a: string) -> undefined { self.x = 1 },
 				}
 			`,
 			// An arm disagreeing with its siblings on receiver mutability is rejected, yet the
@@ -432,16 +432,16 @@ func TestInferClassOverrideCompat(t *testing.T) {
 			src: `
 				class Animal {
 					x: number,
-					constructor(mut self) { self.x = 0 },
-					bump(self) -> undefined { return undefined },
+					constructor(&mut self) { self.x = 0 },
+					bump(&self) -> undefined { return undefined },
 				}
 				class Dog extends Animal {
 					x: number,
-					constructor(mut self) {
+					constructor(&mut self) {
 						super()
 						self.x = 0
 					},
-					bump(mut self) -> undefined { self.x = 1 },
+					bump(&mut self) -> undefined { self.x = 1 },
 				}
 			`,
 			// An immutable `Animal` reference can call `bump`, so a subclass cannot make the
@@ -455,12 +455,12 @@ func TestInferClassOverrideCompat(t *testing.T) {
 			name: "GetterOverriddenByAnOptionalField",
 			src: `
 				class Animal {
-					constructor(mut self) {},
-					get p(self) -> number { return 4 },
+					constructor(&mut self) {},
+					get p(&self) -> number { return 4 },
 				}
 				class Dog extends Animal {
 					p?: number,
-					constructor(mut self) { super() },
+					constructor(&mut self) { super() },
 				}
 			`,
 			// The `Animal` view reads `p` as always present, so a subclass cannot make it a
@@ -475,11 +475,11 @@ func TestInferClassOverrideCompat(t *testing.T) {
 			src: `
 				class Box<T> {
 					value: T,
-					constructor(mut self, value: T) { self.value = value },
+					constructor(&mut self, value: T) { self.value = value },
 				}
 				class StrBox<T> extends Box<T> {
 					value: string,
-					constructor(mut self, value: string, base: T) {
+					constructor(&mut self, value: string, base: T) {
 						super(base)
 						self.value = value
 					},
@@ -498,11 +498,11 @@ func TestInferClassOverrideCompat(t *testing.T) {
 			src: `
 				class Animal {
 					legs: number,
-					constructor(mut self, legs: number) { self.legs = legs },
+					constructor(&mut self, legs: number) { self.legs = legs },
 				}
 				class Dog extends Animal {
 					readonly legs: number,
-					constructor(mut self) { super(4) },
+					constructor(&mut self) { super(4) },
 				}
 			`,
 			// The `Animal` view still admits `a.legs = 5`, so a subclass cannot take the
@@ -519,11 +519,11 @@ func TestInferClassOverrideCompat(t *testing.T) {
 			src: `
 				class Animal {
 					legs: number,
-					constructor(mut self, legs: number) { self.legs = legs },
+					constructor(&mut self, legs: number) { self.legs = legs },
 				}
 				class Dog extends Animal {
 					legs?: number,
-					constructor(mut self) { super(4) },
+					constructor(&mut self) { super(4) },
 				}
 			`,
 			// The `Animal` view still reads `a.legs` as present, so a subclass cannot make
@@ -538,12 +538,12 @@ func TestInferClassOverrideCompat(t *testing.T) {
 			src: `
 				class Box<T> {
 					value: T,
-					constructor(mut self, value: T) { self.value = value },
+					constructor(&mut self, value: T) { self.value = value },
 				}
 				class LabelledBox<T> extends Box<T> {
 					value: T,
 					label: string,
-					constructor(mut self, value: T) {
+					constructor(&mut self, value: T) {
 						super(value)
 						self.value = value
 						self.label = "box"

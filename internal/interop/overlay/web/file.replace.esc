@@ -7,5 +7,5 @@
 // constructor, which is what the portable form costs. #1586 would let the
 // browser keep both.
 export declare class FormData {
-    constructor(mut self),
+    constructor(&mut self),
 }

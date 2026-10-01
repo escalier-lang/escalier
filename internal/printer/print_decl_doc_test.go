@@ -80,11 +80,11 @@ func TestPrintDeclDoc_OmitDocCommentsLeavesTheDocOut(t *testing.T) {
 
 	decl := parseOneDecl(t, "/** a point */\ndeclare class Point {\n"+
 		"    /** the abscissa */\n    x: number,\n"+
-		"    /** moves it */\n    move(mut self, dx: number) -> undefined\n}")
+		"    /** moves it */\n    move(&mut self, dx: number) -> undefined\n}")
 	out, err := Print(decl, opts)
 	require.NoError(t, err)
 	require.Equal(t, "declare class Point {\n    x: number,\n"+
-		"    move(mut self, dx: number) -> undefined\n}", out)
+		"    move(&mut self, dx: number) -> undefined\n}", out)
 
 	iface := parseOneDecl(t, "/** a point */\ninterface Point {\n"+
 		"    /** the abscissa */\n    x: number\n}")

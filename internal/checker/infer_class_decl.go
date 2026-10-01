@@ -114,7 +114,7 @@ func (c *Checker) inferClassDecl(ctx Context, decl *ast.ClassDecl) []Error {
 
 	// `Self` names the class's own instance type inside its body, the way it
 	// already does inside an interface. The dts converter emits it on a fused
-	// class's methods, as in `add(mut self, value: T) -> Self` on `Set`.
+	// class's methods, as in `add(&mut self, value: T) -> Self` on `Set`.
 	declCtx.Scope.SetTypeAlias("Self", &type_system.TypeAlias{
 		Type:       classSelfRef,
 		TypeParams: []*type_system.TypeParam{},

@@ -26,9 +26,9 @@ export declare interface PerformanceObserverInit {
 /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/EventCounts) */
 @js("EventCounts")
 export declare class EventCounts extends map.Map<string, number> {
-    forEach(self, callbackfn: fn (value: number, key: string, parent: EventCounts) -> unknown, thisArg?: unknown) -> unknown,
+    forEach(&self, callbackfn: fn (value: number, key: string, parent: EventCounts) -> unknown, thisArg?: unknown) -> unknown,
     static prototype: EventCounts,
-    constructor(mut self)
+    constructor(&mut self)
 }
 
 export declare interface PerformanceEventMap {
@@ -61,33 +61,33 @@ export declare class Performance extends EventTarget {
      */
     readonly timing: PerformanceTiming,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/Performance/clearMarks) */
-    clearMarks(mut self, markName?: string) -> unknown,
+    clearMarks(&mut self, markName?: string) -> unknown,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/Performance/clearMeasures) */
-    clearMeasures(mut self, measureName?: string) -> unknown,
+    clearMeasures(&mut self, measureName?: string) -> unknown,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/Performance/clearResourceTimings) */
-    clearResourceTimings(mut self) -> unknown,
+    clearResourceTimings(&mut self) -> unknown,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/Performance/getEntries) */
-    getEntries(self) -> PerformanceEntryList,
+    getEntries(&self) -> PerformanceEntryList,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/Performance/getEntriesByName) */
-    getEntriesByName(self, name: string, type?: string) -> PerformanceEntryList,
+    getEntriesByName(&self, name: string, type?: string) -> PerformanceEntryList,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/Performance/getEntriesByType) */
-    getEntriesByType(self, type: string) -> PerformanceEntryList,
+    getEntriesByType(&self, type: string) -> PerformanceEntryList,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/Performance/mark) */
-    mark(mut self, markName: string, markOptions?: PerformanceMarkOptions) -> PerformanceMark,
+    mark(&mut self, markName: string, markOptions?: PerformanceMarkOptions) -> PerformanceMark,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/Performance/measure) */
-    measure(mut self, measureName: string, startOrMeasureOptions?: string | PerformanceMeasureOptions, endMark?: string) -> PerformanceMeasure,
+    measure(&mut self, measureName: string, startOrMeasureOptions?: string | PerformanceMeasureOptions, endMark?: string) -> PerformanceMeasure,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/Performance/now) */
-    now(mut self) -> DOMHighResTimeStamp,
+    now(&mut self) -> DOMHighResTimeStamp,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/Performance/setResourceTimingBufferSize) */
-    setResourceTimingBufferSize(mut self, maxSize: number) -> unknown,
+    setResourceTimingBufferSize(&mut self, maxSize: number) -> unknown,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/Performance/toJSON) */
-    toJSON(self) -> any,
-    addEventListener<K: keyof PerformanceEventMap>(mut self, type: K, listener: fn (this: Performance, ev: PerformanceEventMap[K]) -> any, options?: boolean | AddEventListenerOptions) -> unknown,
-    addEventListener(mut self, type: string, listener: EventListenerOrEventListenerObject, options?: boolean | AddEventListenerOptions) -> unknown,
-    removeEventListener<K: keyof PerformanceEventMap>(mut self, type: K, listener: fn (this: Performance, ev: PerformanceEventMap[K]) -> any, options?: boolean | EventListenerOptions) -> unknown,
-    removeEventListener(mut self, type: string, listener: EventListenerOrEventListenerObject, options?: boolean | EventListenerOptions) -> unknown,
+    toJSON(&self) -> any,
+    addEventListener<K: keyof PerformanceEventMap>(&mut self, type: K, listener: fn (this: Performance, ev: PerformanceEventMap[K]) -> any, options?: boolean | AddEventListenerOptions) -> unknown,
+    addEventListener(&mut self, type: string, listener: EventListenerOrEventListenerObject, options?: boolean | AddEventListenerOptions) -> unknown,
+    removeEventListener<K: keyof PerformanceEventMap>(&mut self, type: K, listener: fn (this: Performance, ev: PerformanceEventMap[K]) -> any, options?: boolean | EventListenerOptions) -> unknown,
+    removeEventListener(&mut self, type: string, listener: EventListenerOrEventListenerObject, options?: boolean | EventListenerOptions) -> unknown,
     static prototype: Performance,
-    constructor(mut self)
+    constructor(&mut self)
 }
 
 /**
@@ -106,9 +106,9 @@ export declare class PerformanceEntry {
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/PerformanceEntry/startTime) */
     readonly startTime: DOMHighResTimeStamp,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/PerformanceEntry/toJSON) */
-    toJSON(self) -> any,
+    toJSON(&self) -> any,
     static prototype: PerformanceEntry,
-    constructor(mut self)
+    constructor(&mut self)
 }
 
 /**
@@ -121,7 +121,7 @@ export declare class PerformanceMark extends PerformanceEntry {
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/PerformanceMark/detail) */
     readonly detail: any,
     static prototype: PerformanceMark,
-    constructor(mut self, markName: string, markOptions?: PerformanceMarkOptions)
+    constructor(&mut self, markName: string, markOptions?: PerformanceMarkOptions)
 }
 
 /**
@@ -134,7 +134,7 @@ export declare class PerformanceMeasure extends PerformanceEntry {
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/PerformanceMeasure/detail) */
     readonly detail: any,
     static prototype: PerformanceMeasure,
-    constructor(mut self)
+    constructor(&mut self)
 }
 
 /**
@@ -162,13 +162,13 @@ export declare class PerformanceNavigation {
      *
      * [MDN Reference](https://developer.mozilla.org/docs/Web/API/PerformanceNavigation/toJSON)
      */
-    toJSON(self) -> any,
+    toJSON(&self) -> any,
     readonly TYPE_NAVIGATE: 0,
     readonly TYPE_RELOAD: 1,
     readonly TYPE_BACK_FORWARD: 2,
     readonly TYPE_RESERVED: 255,
     static prototype: PerformanceNavigation,
-    constructor(mut self),
+    constructor(&mut self),
     static readonly TYPE_NAVIGATE: 0,
     static readonly TYPE_RELOAD: 1,
     static readonly TYPE_BACK_FORWARD: 2,
@@ -203,22 +203,22 @@ export declare class PerformanceNavigationTiming extends PerformanceResourceTimi
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/PerformanceNavigationTiming/unloadEventStart) */
     readonly unloadEventStart: DOMHighResTimeStamp,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/PerformanceNavigationTiming/toJSON) */
-    toJSON(self) -> any,
+    toJSON(&self) -> any,
     static prototype: PerformanceNavigationTiming,
-    constructor(mut self)
+    constructor(&mut self)
 }
 
 /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/PerformanceObserver) */
 @js("PerformanceObserver")
 export declare class PerformanceObserver {
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/PerformanceObserver/disconnect) */
-    disconnect(mut self) -> unknown,
+    disconnect(&mut self) -> unknown,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/PerformanceObserver/observe) */
-    observe(mut self, options?: PerformanceObserverInit) -> unknown,
+    observe(&mut self, options?: PerformanceObserverInit) -> unknown,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/PerformanceObserver/takeRecords) */
-    takeRecords(mut self) -> PerformanceEntryList,
+    takeRecords(&mut self) -> PerformanceEntryList,
     static prototype: PerformanceObserver,
-    constructor(mut self, callback: PerformanceObserverCallback),
+    constructor(&mut self, callback: PerformanceObserverCallback),
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/PerformanceObserver/supportedEntryTypes_static) */
     static readonly supportedEntryTypes: Array<string>
 }
@@ -227,20 +227,20 @@ export declare class PerformanceObserver {
 @js("PerformanceObserverEntryList")
 export declare class PerformanceObserverEntryList {
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/PerformanceObserverEntryList/getEntries) */
-    getEntries(self) -> PerformanceEntryList,
+    getEntries(&self) -> PerformanceEntryList,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/PerformanceObserverEntryList/getEntriesByName) */
-    getEntriesByName(self, name: string, type?: string) -> PerformanceEntryList,
+    getEntriesByName(&self, name: string, type?: string) -> PerformanceEntryList,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/PerformanceObserverEntryList/getEntriesByType) */
-    getEntriesByType(self, type: string) -> PerformanceEntryList,
+    getEntriesByType(&self, type: string) -> PerformanceEntryList,
     static prototype: PerformanceObserverEntryList,
-    constructor(mut self)
+    constructor(&mut self)
 }
 
 /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/PerformancePaintTiming) */
 @js("PerformancePaintTiming")
 export declare class PerformancePaintTiming extends PerformanceEntry {
     static prototype: PerformancePaintTiming,
-    constructor(mut self)
+    constructor(&mut self)
 }
 
 /**
@@ -289,9 +289,9 @@ export declare class PerformanceResourceTiming extends PerformanceEntry {
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/PerformanceResourceTiming/workerStart) */
     readonly workerStart: DOMHighResTimeStamp,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/PerformanceResourceTiming/toJSON) */
-    toJSON(self) -> any,
+    toJSON(&self) -> any,
     static prototype: PerformanceResourceTiming,
-    constructor(mut self)
+    constructor(&mut self)
 }
 
 /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/PerformanceServerTiming) */
@@ -304,9 +304,9 @@ export declare class PerformanceServerTiming {
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/PerformanceServerTiming/name) */
     readonly name: string,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/PerformanceServerTiming/toJSON) */
-    toJSON(self) -> any,
+    toJSON(&self) -> any,
     static prototype: PerformanceServerTiming,
-    constructor(mut self)
+    constructor(&mut self)
 }
 
 /**
@@ -448,9 +448,9 @@ export declare class PerformanceTiming {
      *
      * [MDN Reference](https://developer.mozilla.org/docs/Web/API/PerformanceTiming/toJSON)
      */
-    toJSON(self) -> any,
+    toJSON(&self) -> any,
     static prototype: PerformanceTiming,
-    constructor(mut self)
+    constructor(&mut self)
 }
 
 export declare interface PerformanceObserverCallback {

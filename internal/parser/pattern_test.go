@@ -256,7 +256,7 @@ func TestParseMutSelfWithMutParam(t *testing.T) {
 		"mut self followed by mut p": {
 			input: `class Counter {
 				c: number,
-				bump(mut self, mut p: number) -> number { return self.c + p },
+				bump(&mut self, mut p: number) -> number { return self.c + p },
 			}`,
 			wantParamCount: 1,
 			wantMutSelf:    true,
@@ -265,7 +265,7 @@ func TestParseMutSelfWithMutParam(t *testing.T) {
 		"mut self followed by plain p": {
 			input: `class Counter {
 				c: number,
-				bump(mut self, p: number) -> number { return self.c + p },
+				bump(&mut self, p: number) -> number { return self.c + p },
 			}`,
 			wantParamCount: 1,
 			wantMutSelf:    true,
@@ -274,7 +274,7 @@ func TestParseMutSelfWithMutParam(t *testing.T) {
 		"plain self followed by mut p": {
 			input: `class Counter {
 				c: number,
-				peek(self, mut p: number) -> number { return self.c + p },
+				peek(&self, mut p: number) -> number { return self.c + p },
 			}`,
 			wantParamCount: 1,
 			wantMutSelf:    false,
@@ -283,7 +283,7 @@ func TestParseMutSelfWithMutParam(t *testing.T) {
 		"mut self followed by mut and plain mix": {
 			input: `class Counter {
 				c: number,
-				bump(mut self, mut p: number, q: number) -> number { return self.c + p + q },
+				bump(&mut self, mut p: number, q: number) -> number { return self.c + p + q },
 			}`,
 			wantParamCount: 2,
 			wantMutSelf:    true,
@@ -343,19 +343,19 @@ func TestStaticMethodRejectsSelfReceiver(t *testing.T) {
 	}{
 		"static plain self": {
 			input: `class Foo {
-				static bar(self) -> number { return 1 },
+				static bar(&self) -> number { return 1 },
 			}`,
 			wantErr: "static methods cannot have a `self` receiver",
 		},
 		"static mut self": {
 			input: `class Foo {
-				static bar(mut self) -> number { return 1 },
+				static bar(&mut self) -> number { return 1 },
 			}`,
 			wantErr: "static methods cannot have a `self` receiver",
 		},
 		"static 'a self": {
 			input: `class Foo {
-				static bar<'a>('a self) -> number { return 1 },
+				static bar<'a>(&'a self) -> number { return 1 },
 			}`,
 			wantErr: "static methods cannot have a `self` receiver",
 		},

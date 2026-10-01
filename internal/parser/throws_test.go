@@ -35,12 +35,12 @@ func TestParseThrowsClauseOnEverySignatureForm(t *testing.T) {
 		{"FnDeclWithoutReturnType", `fn f() throws string { throw "x" }`},
 		{"FnExprWithoutReturnType", `val f = fn () throws string { throw "x" }`},
 		{"DeclareFn", `declare fn f() -> number throws string`},
-		{"Method", `class C { m(self) -> number throws string { throw "x" } }`},
-		{"Getter", `class C { v: number, get x(self) -> number throws string { return self.v } }`},
-		{"Setter", `class C { v: number, set x(mut self, v: number) throws string { self.v = v } }`},
-		{"Constructor", `class C { constructor(mut self) throws string { throw "x" } }`},
+		{"Method", `class C { m(&self) -> number throws string { throw "x" } }`},
+		{"Getter", `class C { v: number, get x(&self) -> number throws string { return self.v } }`},
+		{"Setter", `class C { v: number, set x(&mut self, v: number) throws string { self.v = v } }`},
+		{"Constructor", `class C { constructor(&mut self) throws string { throw "x" } }`},
 		{"FuncTypeAnn", `type F = fn(x: number) -> number throws string`},
-		{"ObjectMethodSignature", `type T = {parse(self) -> number throws SyntaxError}`},
+		{"ObjectMethodSignature", `type T = {parse(&self) -> number throws SyntaxError}`},
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
@@ -71,6 +71,6 @@ func TestParseThrowsClauseMissingType(t *testing.T) {
 // second clause is consumed and discarded, and the first is the one that survives.
 func TestParseThrowsClauseOnBothSidesOfConstructorArrow(t *testing.T) {
 	require.Equal(t,
-		[]string{"1:47-1:49: constructors cannot declare a return type"},
-		parseThrowsSrc(t, `class C { constructor(mut self) throws string -> number throws boolean { } }`))
+		[]string{"1:48-1:50: constructors cannot declare a return type"},
+		parseThrowsSrc(t, `class C { constructor(&mut self) throws string -> number throws boolean { } }`))
 }

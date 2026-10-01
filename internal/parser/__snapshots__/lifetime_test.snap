@@ -500,47 +500,47 @@
                             &ast.Param{
                                 Pattern: &ast.IdentPat{
                                     Name: "p",
-                                    span: 38-39,
+                                    span: 39-40,
                                 },
                                 TypeAnn: &ast.TypeRefTypeAnn{
                                     Name: &ast.Ident{
                                         Name: "Point",
-                                        span: 44-49,
+                                        span: 45-50,
                                     },
                                     Lifetime: &ast.LifetimeAnn{
                                         Name: "a",
-                                        span: 41-43,
+                                        span: 42-44,
                                     },
-                                    span: 44-49,
+                                    span: 45-50,
                                 },
                             },
                         },
                         Return: &ast.TypeRefTypeAnn{
                             Name: &ast.Ident{
                                 Name: "Point",
-                                span: 57-62,
+                                span: 58-63,
                             },
                             Lifetime: &ast.LifetimeAnn{
                                 Name: "a",
-                                span: 54-56,
+                                span: 55-57,
                             },
-                            span: 57-62,
+                            span: 58-63,
                         },
-                        span: 31-62,
+                        span: 31-63,
                     },
                     Receiver: &ast.MethodReceiver{
-                        Span_: 32-36,
+                        Span_: 32-37,
                     },
                     elemSpan: ast.elemSpan{
-                        span: 21-62,
+                        span: 21-63,
                     },
                 },
             },
-            span: 19-64,
+            span: 19-65,
         },
-        span: 0-64,
+        span: 0-65,
     },
-    span: 0-64,
+    span: 0-65,
 }
 ---
 
@@ -569,31 +569,31 @@
                             &ast.Param{
                                 Pattern: &ast.IdentPat{
                                     Name: "p",
-                                    span: 29-30,
+                                    span: 30-31,
                                 },
                                 TypeAnn: &ast.TypeRefTypeAnn{
                                     Name: &ast.Ident{
                                         Name: "Point",
-                                        span: 35-40,
+                                        span: 36-41,
                                     },
                                     Lifetime: &ast.LifetimeAnn{
                                         Name: "a",
-                                        span: 32-34,
+                                        span: 33-35,
                                     },
-                                    span: 35-40,
+                                    span: 36-41,
                                 },
                             },
                         },
                         Return: &ast.TypeRefTypeAnn{
                             Name: &ast.Ident{
                                 Name: "Point",
-                                span: 48-53,
+                                span: 49-54,
                             },
                             Lifetime: &ast.LifetimeAnn{
                                 Name: "a",
-                                span: 45-47,
+                                span: 46-48,
                             },
-                            span: 48-53,
+                            span: 49-54,
                         },
                     },
                     Body: &ast.Block{
@@ -601,24 +601,24 @@
                             &ast.ReturnStmt{
                                 Expr: &ast.IdentExpr{
                                     Name: "p",
-                                    span: 63-64,
+                                    span: 64-65,
                                 },
-                                span: 56-64,
+                                span: 57-65,
                             },
                         },
-                        Span: 54-66,
+                        Span: 55-67,
                     },
-                    span: 12-66,
+                    span: 12-67,
                 },
                 Receiver: &ast.MethodReceiver{
-                    Span_: 23-27,
+                    Span_: 23-28,
                 },
-                Span_: 12-66,
+                Span_: 12-67,
             },
         },
-        span: 0-68,
+        span: 0-69,
     },
-    span: 0-68,
+    span: 0-69,
 }
 ---
 
@@ -954,13 +954,13 @@
                         Return: &ast.TypeRefTypeAnn{
                             Name: &ast.Ident{
                                 Name: "Point",
-                                span: 37-42,
+                                span: 38-43,
                             },
                             Lifetime: &ast.LifetimeAnn{
                                 Name: "a",
-                                span: 34-36,
+                                span: 35-37,
                             },
-                            span: 37-42,
+                            span: 38-43,
                         },
                     },
                     Body: &ast.Block{
@@ -969,34 +969,34 @@
                                 Expr: &ast.MemberExpr{
                                     Object: &ast.IdentExpr{
                                         Name: "self",
-                                        span: 52-56,
+                                        span: 53-57,
                                     },
                                     Prop: &ast.Ident{
                                         Name: "p",
-                                        span: 57-58,
+                                        span: 58-59,
                                     },
-                                    span: 52-58,
+                                    span: 53-59,
                                 },
-                                span: 45-58,
+                                span: 46-59,
                             },
                         },
-                        Span: 43-60,
+                        Span: 44-61,
                     },
-                    span: 13-60,
+                    span: 13-61,
                 },
                 Receiver: &ast.MethodReceiver{
                     Lifetime: &ast.LifetimeAnn{
                         Name: "a",
-                        span: 22-24,
+                        span: 23-25,
                     },
-                    Span_: 22-29,
+                    Span_: 22-30,
                 },
-                Span_: 13-60,
+                Span_: 13-61,
             },
         },
-        span: 0-62,
+        span: 0-63,
     },
-    span: 0-62,
+    span: 0-63,
 }
 ---
 
@@ -1024,33 +1024,33 @@
                         Return: &ast.TypeRefTypeAnn{
                             Name: &ast.Ident{
                                 Name: "Point",
-                                span: 43-48,
+                                span: 44-49,
                             },
                             Lifetime: &ast.LifetimeAnn{
                                 Name: "a",
-                                span: 40-42,
+                                span: 41-43,
                             },
-                            span: 43-48,
+                            span: 44-49,
                         },
-                        span: 27-48,
+                        span: 27-49,
                     },
                     Receiver: &ast.MethodReceiver{
                         Lifetime: &ast.LifetimeAnn{
                             Name: "a",
-                            span: 28-30,
+                            span: 29-31,
                         },
-                        Span_: 28-35,
+                        Span_: 28-36,
                     },
                     elemSpan: ast.elemSpan{
-                        span: 19-48,
+                        span: 19-49,
                     },
                 },
             },
-            span: 17-50,
+            span: 17-51,
         },
-        span: 0-50,
+        span: 0-51,
     },
-    span: 0-50,
+    span: 0-51,
 }
 ---
 
@@ -1079,50 +1079,50 @@
                             &ast.Param{
                                 Pattern: &ast.IdentPat{
                                     Name: "p",
-                                    span: 45-46,
+                                    span: 46-47,
                                 },
                                 TypeAnn: &ast.MutableTypeAnn{
                                     Target: &ast.TypeRefTypeAnn{
                                         Name: &ast.Ident{
                                             Name: "Point",
-                                            span: 55-60,
+                                            span: 56-61,
                                         },
                                         Lifetime: &ast.LifetimeAnn{
                                             Name: "a",
-                                            span: 52-54,
+                                            span: 53-55,
                                         },
-                                        span: 55-60,
+                                        span: 56-61,
                                     },
-                                    span: 55-60,
+                                    span: 56-61,
                                 },
                             },
                         },
                         Return: &ast.LitTypeAnn{
                             Lit: &ast.UndefinedLit{
-                                span: 65-74,
+                                span: 66-75,
                             },
-                            span: 65-74,
+                            span: 66-75,
                         },
-                        span: 31-74,
+                        span: 31-75,
                     },
                     Receiver: &ast.MethodReceiver{
                         Mut: true,
                         Lifetime: &ast.LifetimeAnn{
                             Name: "a",
-                            span: 36-38,
+                            span: 33-35,
                         },
-                        Span_: 32-43,
+                        Span_: 32-44,
                     },
                     elemSpan: ast.elemSpan{
-                        span: 20-74,
+                        span: 20-75,
                     },
                 },
             },
-            span: 18-76,
+            span: 18-77,
         },
-        span: 0-76,
+        span: 0-77,
     },
-    span: 0-76,
+    span: 0-77,
 }
 ---
 
@@ -1151,50 +1151,50 @@
                             &ast.Param{
                                 Pattern: &ast.IdentPat{
                                     Name: "p",
-                                    span: 43-44,
+                                    span: 44-45,
                                 },
                                 TypeAnn: &ast.MutableTypeAnn{
                                     Target: &ast.TypeRefTypeAnn{
                                         Name: &ast.Ident{
                                             Name: "Point",
-                                            span: 53-58,
+                                            span: 54-59,
                                         },
                                         Lifetime: &ast.LifetimeAnn{
                                             Name: "a",
-                                            span: 50-52,
+                                            span: 51-53,
                                         },
-                                        span: 53-58,
+                                        span: 54-59,
                                     },
-                                    span: 53-58,
+                                    span: 54-59,
                                 },
                             },
                         },
                         Return: &ast.LitTypeAnn{
                             Lit: &ast.UndefinedLit{
-                                span: 63-72,
+                                span: 64-73,
                             },
-                            span: 63-72,
+                            span: 64-73,
                         },
                     },
                     Body: &ast.Block{
-                        Span: 73-76,
+                        Span: 74-77,
                     },
-                    span: 18-76,
+                    span: 18-77,
                 },
                 Receiver: &ast.MethodReceiver{
                     Mut: true,
                     Lifetime: &ast.LifetimeAnn{
                         Name: "a",
-                        span: 34-36,
+                        span: 31-33,
                     },
-                    Span_: 30-41,
+                    Span_: 30-42,
                 },
-                Span_: 18-76,
+                Span_: 18-77,
             },
         },
-        span: 0-78,
+        span: 0-79,
     },
-    span: 0-78,
+    span: 0-79,
 }
 ---
 

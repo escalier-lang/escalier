@@ -399,7 +399,7 @@ func printPatternWithInlineTypesContext(pattern Pat, paramType Type, pt func(Typ
 // function values pass false: even when the FuncType originated
 // from a method, the receiver is already bound at the use site
 // (`val f = obj.method`) and shouldn't resurface. Method-elem
-// arms pass true so that `self` / `mut self` appears in the
+// arms pass true so that `&self` / `&mut self` appears in the
 // printed signature.
 func printFuncSig(header string, fn *FuncType, includeSelf bool, pt func(Type) string) string {
 	result := header
@@ -431,10 +431,7 @@ func printFuncSig(header string, fn *FuncType, includeSelf bool, pt func(Type) s
 	result += "("
 	hasSelf := includeSelf && fn.SelfParam != nil
 	if hasSelf {
-		if ReceiverIsMut(fn) {
-			result += "mut "
-		}
-		result += "self"
+		result += printSelfReceiver(fn)
 	}
 	for i, param := range fn.Params {
 		if i > 0 || hasSelf {
@@ -578,16 +575,18 @@ func printObjectType(t *ObjectType, pt func(Type) string) string {
 	return result
 }
 
-// printSelfReceiver renders the leading `self` / `mut self` for a method,
-// getter, or setter. Returns "" when the receiver is absent.
+// printSelfReceiver renders the leading `&self` / `&mut self` for a method,
+// getter, or setter. Returns "" when the receiver is absent. This checker
+// models every receiver as a borrow and tracks no moves, so a consuming
+// `self` or `mut self` receiver renders as the borrow of the same mutability.
 func printSelfReceiver(fn *FuncType) string {
 	if fn == nil || fn.SelfParam == nil {
 		return ""
 	}
 	if ReceiverIsMut(fn) {
-		return "mut self"
+		return "&mut self"
 	}
-	return "self"
+	return "&self"
 }
 
 func printTupleType(t *TupleType, pt func(Type) string) string {

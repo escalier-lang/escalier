@@ -1,6 +1,6 @@
 class C {
     msg: string | undefined,
-    constructor(mut self, msg?: string) {
+    constructor(&mut self, msg?: string) {
         self.msg = msg
     },
     static [Symbol.customMatcher](subject: C) -> [string | undefined] {

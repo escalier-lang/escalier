@@ -963,8 +963,8 @@ func (c *Checker) unifyMatched(ctx Context, t1, t2 type_system.Type, seen unifyS
 				// property name can be split across separate GetterElem (read)
 				// and SetterElem (write) elements, tracked in different maps.
 				// For example, given:
-				//   obj1 = { get x(self) -> number }  // Read["x"] exists, Write["x"] absent
-				//   obj2 = { set x(mut self, v: number) }  // Read["x"] absent, Write["x"] exists
+				//   obj1 = { get x(&self) -> number }  // Read["x"] exists, Write["x"] absent
+				//   obj2 = { set x(&mut self, v: number) }  // Read["x"] absent, Write["x"] exists
 				// A single check against namedElems1 (the read map) would see
 				// "x" already present in obj1 and skip the merge, losing obj2's
 				// setter. By checking read and write separately, the setter is

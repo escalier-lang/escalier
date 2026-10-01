@@ -1,9 +1,9 @@
 class Base {
     tag: string,
-    constructor(mut self) {
+    constructor(&mut self) {
         self.tag = "root"
     },
-    who(self) -> string {
+    who(&self) -> string {
         return "root base"
     },
 }

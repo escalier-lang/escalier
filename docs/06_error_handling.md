@@ -117,8 +117,8 @@ arm subtract more than the one type it spells: an arm naming a base class catche
 every value of a subclass, so the subclass member is subtracted too.
 
 ```esc
-class AppError { code: number, constructor(mut self) { self.code = 0 } }
-class ParseError extends AppError { constructor(mut self) { super() } }
+class AppError { code: number, constructor(&mut self) { self.code = 0 } }
+class ParseError extends AppError { constructor(&mut self) { super() } }
 ```
 
 An arm naming `AppError` also handles a raised `ParseError`. See
@@ -131,7 +131,7 @@ slot of the promise it returns, so its type is always `Promise<T, E>` and never
 carries a `throws` clause.
 
 ```esc
-class FetchError { url: string, constructor(mut self, url: string) { self.url = url } }
+class FetchError { url: string, constructor(&mut self, url: string) { self.url = url } }
 
 async fn fetchJSON(url: string) -> Promise<unknown, FetchError | SyntaxError> {
     val res = await fetch(url)

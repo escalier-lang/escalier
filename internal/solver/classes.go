@@ -213,8 +213,8 @@ func modifierVariance(m ast.VarianceModifier) (Variance, bool) {
 // non-`readonly` field, a setter, and a `mut self` method. An overloaded method is split
 // per signature, since one arm taking `mut self` says nothing about the arms that do not.
 //
-// `Array<T>` is what this buys. Its `at(self, index) -> T | undefined` puts T in an output
-// position and its `push(mut self, item: T)` puts T in an input position. Folding both into
+// `Array<T>` is what this buys. Its `at(&self, index) -> T | undefined` puts T in an output
+// position and its `push(&mut self, item: T)` puts T in an input position. Folding both into
 // immut would measure T invariant and leave `Array<1> <: Array<number>` rejected. Reading
 // `push` only where it can be called measures T covariant in immut and invariant in mut, so
 // the widening holds for an immutable array while `mut Array<1>` and `mut Array<number>` stay
@@ -297,7 +297,7 @@ func collapseVariance(pos, neg bool) Variance {
 // to that view.
 //
 // A setter is a write, so only a mutable reference reaches it. A method is split per
-// signature, since `find(self, …)` and `push(mut self, …)` on one name demand different
+// signature, since `find(&self, …)` and `push(&mut self, …)` on one name demand different
 // receivers and an overload set may hold both. Every other member is readable through
 // either view and goes to the immutable half whole.
 func splitByReceiverMut(elem soltype.ObjTypeElem) (immutPart, mutOnlyPart soltype.ObjTypeElem) {
@@ -912,7 +912,7 @@ func (c *checker) objectMember(lvl int, blame ast.Node, name string, carrier sol
 // falls through to the structural `{name: fieldVar}` requirement. That requirement is a
 // PropertyElem, so a method or getter under the name is reported as missing rather than read.
 //
-// A borrow an expansion uncovers is peeled, so `type M = mut {m(self) -> number}` reads the way
+// A borrow an expansion uncovers is peeled, so `type M = mut {m(&self) -> number}` reads the way
 // the inline spelling does. The walk is bounded rather than guarded by the names it has
 // expanded, because `type Id<T> = T` over `Id<Id<X>>` reaches one name twice at different
 // arguments and has to keep going. Running out returns the handle, which declines the lookup.
@@ -1008,7 +1008,7 @@ type memberLookup func(*soltype.ObjectType, string) (soltype.ObjTypeElem, bool)
 // method resolves `T` to, since both members were walked in one class scope. Substituting,
 // the way external access does for a concrete receiver like `Box<5>`, would be wrong here.
 //
-// A method whose return flows from a class type parameter — such as `read(self) { self.v }`
+// A method whose return flows from a class type parameter — such as `read(&self) { self.v }`
 // on `class Box<T>` — resolves to that parameter because freezeClassBody coalesces the
 // generic body while keeping the class's own type-parameter vars symbolic (B8), so `read`'s
 // stored return reads as `T` rather than collapsing to `never`. A self call keeps `T` symbolic
@@ -1048,7 +1048,7 @@ func projectClassMember(def *ClassDef, ct *soltype.ClassType, member soltype.Obj
 }
 
 // projectSelf resolves every `Self` in a member at recv, the class the RECEIVER belongs to.
-// That is what makes `Self` polymorphic: a member declared `me(self) -> Self` on A and reached
+// That is what makes `Self` polymorphic: a member declared `me(&self) -> Self` on A and reached
 // through a `B extends A` yields B, the way TypeScript's `this` type does.
 //
 // recv is threaded down from the access rather than taken from the declaring class, which is the

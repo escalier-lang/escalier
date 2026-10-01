@@ -113,7 +113,7 @@ fn f(p: Point) {
 class Point {
     x: number,
     y: number,
-    getX(self) -> number { return self.x },
+    getX(&self) -> number { return self.x },
 }
 
 val p = Point(1, 2)   // p: Point — no `new` keyword

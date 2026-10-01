@@ -69,7 +69,7 @@ func TestMutPrefixMutationBehavior(t *testing.T) {
 			input: `
 				class Counter {
 					count: number,
-					tick(mut self) -> number { self.count = self.count + 1 return self.count }
+					tick(&mut self) -> number { self.count = self.count + 1 return self.count }
 				}
 				fn test() {
 					val mut c = Counter(0)
@@ -81,7 +81,7 @@ func TestMutPrefixMutationBehavior(t *testing.T) {
 			input: `
 				class Counter {
 					count: number,
-					tick(mut self) -> number { self.count = self.count + 1 return self.count }
+					tick(&mut self) -> number { self.count = self.count + 1 return self.count }
 				}
 				fn test() {
 					val c = Counter(0)
@@ -107,7 +107,7 @@ func TestMutPrefixMutationBehavior(t *testing.T) {
 			input: `
 				class Counter {
 					count: number,
-					tick(mut self) -> number { self.count = self.count + 1 return self.count }
+					tick(&mut self) -> number { self.count = self.count + 1 return self.count }
 				}
 				fn callTick<T: Counter>(t: T) -> number {
 					return t.tick()
@@ -119,7 +119,7 @@ func TestMutPrefixMutationBehavior(t *testing.T) {
 			input: `
 				class Counter {
 					count: number,
-					tick(mut self) -> number { self.count = self.count + 1 return self.count }
+					tick(&mut self) -> number { self.count = self.count + 1 return self.count }
 				}
 				fn callTick<T: mut Counter>(t: T) -> number {
 					return t.tick()
@@ -130,7 +130,7 @@ func TestMutPrefixMutationBehavior(t *testing.T) {
 			input: `
 				class Counter {
 					count: number,
-					tick(mut self) -> number { self.count = self.count + 1 return self.count }
+					tick(&mut self) -> number { self.count = self.count + 1 return self.count }
 				}
 				type MutCounter = mut Counter
 				declare val c: MutCounter
@@ -141,7 +141,7 @@ func TestMutPrefixMutationBehavior(t *testing.T) {
 			input: `
 				class Counter {
 					count: number,
-					tick(mut self) -> number { self.count = self.count + 1 return self.count }
+					tick(&mut self) -> number { self.count = self.count + 1 return self.count }
 				}
 				type MutT<T> = mut T
 				declare val c: MutT<Counter>
@@ -152,7 +152,7 @@ func TestMutPrefixMutationBehavior(t *testing.T) {
 			input: `
 				class Counter {
 					count: number,
-					tick(mut self) -> number { self.count = self.count + 1 return self.count }
+					tick(&mut self) -> number { self.count = self.count + 1 return self.count }
 				}
 				type Alias<T> = T
 				declare val c: Alias<Counter>
@@ -164,7 +164,7 @@ func TestMutPrefixMutationBehavior(t *testing.T) {
 			input: `
 				class Counter {
 					count: number,
-					tick(mut self) -> number { self.count = self.count + 1 return self.count }
+					tick(&mut self) -> number { self.count = self.count + 1 return self.count }
 				}
 				type Identity<T> = T
 				declare val c: Identity<mut Counter>

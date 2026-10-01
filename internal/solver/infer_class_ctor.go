@@ -51,13 +51,13 @@ func (c *checker) synthesizeConstructor(self *soltype.ClassType, body *soltype.O
 // walkConstructorBody walks an explicit constructor's body with `self` bound to the
 // owned-mutable instance body, so `self.x = value` refines field x through the record
 // write machinery, and returns a callable signature: the constructor's value
-// parameters — the params after the leading `mut self` — returning the instance.
+// parameters — the params after the leading `&mut self` — returning the instance.
 //
 // After the body is walked it runs definite-assignment analysis so a required field
 // left unassigned on some path is a FieldNotInitializedError and a `self.f` read before
 // its assignment is a ReadBeforeInitError.
 func (c *checker) walkConstructorBody(scope *Scope, lvl int, self *soltype.ClassType, body *soltype.ObjectType, ctor *ast.ConstructorElem) *soltype.FuncType {
-	// The parser materializes `mut self` as Fn.Params[0]; the callable signature is
+	// The parser materializes `&mut self` as Fn.Params[0]; the callable signature is
 	// the params after it.
 	valueParams := ctor.Fn.Params
 	if ctor.Receiver != nil && len(valueParams) > 0 {
@@ -68,9 +68,11 @@ func (c *checker) walkConstructorBody(scope *Scope, lvl int, self *soltype.Class
 
 	ctorScope := scope.Child()
 	// A constructor's `self` is always owned-mutable so its body can assign fields,
-	// regardless of the class's default mutability. It binds the `self` view, so a subclass
-	// constructor can assign a field it inherits.
-	c.bindSelf(ctorScope, &ast.MethodReceiver{Mut: true}, c.ctx.selfView(self, body))
+	// regardless of the class's default mutability. The constructor writes `&mut self`, but
+	// the instance it fills in is the one it returns, so the body owns it. It binds the
+	// `self` view, so a subclass constructor can assign a field it inherits.
+	owned := &ast.MethodReceiver{Mode: ast.ConsumeReceiver, Mut: true}
+	c.bindSelf(ctorScope, lvl+1, owned, c.ctx.selfView(self, body))
 
 	// Collect the body's `super(…)` calls while it is walked, so the rules about the body as
 	// a whole can be checked once every call is known. A class with no superclass still gets

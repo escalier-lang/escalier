@@ -997,7 +997,7 @@ func restParamSlotShape(p *ast.Param, last bool) (ast.Pat, bool, bool) {
 		return rp.Pattern, false, p.Optional
 	case p.Optional:
 		// The recovery drops the `?` marker along with Rest. Keeping it would give the
-		// parameter an accept-set the source never asked for, so `m(self, ...xs?: Array<T>)`
+		// parameter an accept-set the source never asked for, so `m(&self, ...xs?: Array<T>)`
 		// would accept zero or one argument where its recovered signature accepts exactly one.
 		return rp.Pattern, false, false
 	default:

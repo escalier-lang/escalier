@@ -32,7 +32,7 @@ export declare class RegExp {
      * that search.
      * @param string A string to search within.
      */
-    [Symbol.match](mut self, string: string) -> RegExpMatchArray | null,
+    [Symbol.match](&mut self, string: string) -> RegExpMatchArray | null,
     /**
      * Replaces text in a string, using this regular expression.
      * @param string A String object or string literal whose contents matching against
@@ -40,21 +40,21 @@ export declare class RegExp {
      * @param replaceValue A String object or string literal containing the text to replace for every
      *                     successful match of this regular expression.
      */
-    [Symbol.replace](mut self, string: string, replaceValue: string) -> string,
+    [Symbol.replace](&mut self, string: string, replaceValue: string) -> string,
     /**
      * Replaces text in a string, using this regular expression.
      * @param string A String object or string literal whose contents matching against
      *               this regular expression will be replaced
      * @param replacer A function that returns the replacement text.
      */
-    [Symbol.replace](mut self, string: string, replacer: fn (substring: string, ...args: mut Array<any>) -> string) -> string,
+    [Symbol.replace](&mut self, string: string, replacer: fn (substring: string, ...args: mut Array<any>) -> string) -> string,
     /**
      * Finds the position beginning first substring match in a regular expression search
      * using this regular expression.
      *
      * @param string The string to search within.
      */
-    [Symbol.search](mut self, string: string) -> number,
+    [Symbol.search](&mut self, string: string) -> number,
     /**
      * Returns an array of substrings that were delimited by strings in the original input that
      * match against this regular expression.
@@ -67,7 +67,7 @@ export declare class RegExp {
      * @param limit if not undefined, the output array is truncated so that it contains no more
      * than 'limit' elements.
      */
-    [Symbol.split](self, string: string, limit?: number) -> mut Array<string>,
+    [Symbol.split](&self, string: string, limit?: number) -> mut Array<string>,
     /**
      * Returns a Boolean value indicating the state of the dotAll flag (s) used with a regular expression.
      * Default is false. Read-only.
@@ -78,7 +78,7 @@ export declare class RegExp {
      * containing the results of that search.
      * @param string A string to search within.
      */
-    [Symbol.matchAll](self, str: string) -> RegExpStringIterator<RegExpMatchArray>,
+    [Symbol.matchAll](&self, str: string) -> RegExpStringIterator<RegExpMatchArray>,
     /**
      * Returns a Boolean value indicating the state of the hasIndices flag (d) used with a regular expression.
      * Default is false. Read-only.
@@ -93,12 +93,12 @@ export declare class RegExp {
      * Executes a search on a string using a regular expression pattern, and returns an array containing the results of that search.
      * @param string The String object or string literal on which to perform the search.
      */
-    exec(mut self, string: string) -> RegExpExecArray | null,
+    exec(&mut self, string: string) -> RegExpExecArray | null,
     /**
      * Returns a Boolean value that indicates whether or not a pattern exists in a searched string.
      * @param string String on which to perform the search.
      */
-    test(mut self, string: string) -> boolean,
+    test(&mut self, string: string) -> boolean,
     /** Returns a copy of the text of the regular expression pattern. Read-only. The regExp argument is a Regular expression object. It can be a variable name or a literal. */
     readonly source: string,
     /** Returns a Boolean value indicating the state of the global flag (g) used with a regular expression. Default is false. Read-only. */
@@ -109,12 +109,12 @@ export declare class RegExp {
     readonly multiline: boolean,
     lastIndex: number,
     /** @deprecated A legacy feature for browser compatibility */
-    compile(mut self, pattern: string, flags?: string) -> Self,
-    constructor(mut self, pattern: RegExp | string, flags?: string),
+    compile(&mut self, pattern: string, flags?: string) -> Self,
+    constructor(&mut self, pattern: RegExp | string, flags?: string),
     (pattern: RegExp | string, flags?: string) -> RegExp,
     static readonly [Symbol.species]: typeof RegExp,
-    constructor(mut self, pattern: RegExp | string),
-    constructor(mut self, pattern: string, flags?: string),
+    constructor(&mut self, pattern: RegExp | string),
+    constructor(&mut self, pattern: string, flags?: string),
     (pattern: RegExp | string) -> RegExp,
     (pattern: string, flags?: string) -> RegExp,
     static readonly "prototype": RegExp,

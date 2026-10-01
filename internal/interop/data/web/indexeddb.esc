@@ -68,19 +68,19 @@ export declare class IDBCursor {
      *
      * [MDN Reference](https://developer.mozilla.org/docs/Web/API/IDBCursor/advance)
      */
-    advance(mut self, count: number) -> unknown,
+    advance(&mut self, count: number) -> unknown,
     /**
      * Advances the cursor to the next record in range.
      *
      * [MDN Reference](https://developer.mozilla.org/docs/Web/API/IDBCursor/continue)
      */
-    continue(mut self, key?: IDBValidKey) -> unknown,
+    continue(&mut self, key?: IDBValidKey) -> unknown,
     /**
      * Advances the cursor to the next record in range matching or after key and primaryKey. Throws an "InvalidAccessError" DOMException if the source is not an index.
      *
      * [MDN Reference](https://developer.mozilla.org/docs/Web/API/IDBCursor/continuePrimaryKey)
      */
-    continuePrimaryKey(mut self, key: IDBValidKey, primaryKey: IDBValidKey) -> unknown,
+    continuePrimaryKey(&mut self, key: IDBValidKey, primaryKey: IDBValidKey) -> unknown,
     /**
      * Delete the record pointed at by the cursor with a new value.
      *
@@ -88,7 +88,7 @@ export declare class IDBCursor {
      *
      * [MDN Reference](https://developer.mozilla.org/docs/Web/API/IDBCursor/delete)
      */
-    delete(mut self) -> IDBRequest<undefined>,
+    delete(&mut self) -> IDBRequest<undefined>,
     /**
      * Updated the record pointed at by the cursor with a new value.
      *
@@ -98,9 +98,9 @@ export declare class IDBCursor {
      *
      * [MDN Reference](https://developer.mozilla.org/docs/Web/API/IDBCursor/update)
      */
-    update(mut self, value: unknown) -> IDBRequest<IDBValidKey>,
+    update(&mut self, value: unknown) -> IDBRequest<IDBValidKey>,
     static prototype: IDBCursor,
-    constructor(mut self)
+    constructor(&mut self)
 }
 
 /**
@@ -117,7 +117,7 @@ export declare class IDBCursorWithValue extends IDBCursor {
      */
     readonly value: any,
     static prototype: IDBCursorWithValue,
-    constructor(mut self)
+    constructor(&mut self)
 }
 
 export declare interface IDBDatabaseEventMap {
@@ -163,7 +163,7 @@ export declare class IDBDatabase extends EventTarget {
      *
      * [MDN Reference](https://developer.mozilla.org/docs/Web/API/IDBDatabase/close)
      */
-    close(mut self) -> unknown,
+    close(&mut self) -> unknown,
     /**
      * Creates a new object store with the given name and options and returns a new IDBObjectStore.
      *
@@ -171,7 +171,7 @@ export declare class IDBDatabase extends EventTarget {
      *
      * [MDN Reference](https://developer.mozilla.org/docs/Web/API/IDBDatabase/createObjectStore)
      */
-    createObjectStore(mut self, name: string, options?: IDBObjectStoreParameters) -> IDBObjectStore,
+    createObjectStore(&mut self, name: string, options?: IDBObjectStoreParameters) -> IDBObjectStore,
     /**
      * Deletes the object store with the given name.
      *
@@ -179,25 +179,25 @@ export declare class IDBDatabase extends EventTarget {
      *
      * [MDN Reference](https://developer.mozilla.org/docs/Web/API/IDBDatabase/deleteObjectStore)
      */
-    deleteObjectStore(mut self, name: string) -> unknown,
+    deleteObjectStore(&mut self, name: string) -> unknown,
     /**
      * Returns a new transaction with the given mode ("readonly" or "readwrite") and scope which can be a single object store name or an array of names.
      *
      * [MDN Reference](https://developer.mozilla.org/docs/Web/API/IDBDatabase/transaction)
      */
-    transaction(mut self, storeNames: string | mut Array<string>, mode?: IDBTransactionMode, options?: IDBTransactionOptions) -> IDBTransaction,
-    addEventListener<K: keyof IDBDatabaseEventMap>(mut self, type: K, listener: fn (this: IDBDatabase, ev: IDBDatabaseEventMap[K]) -> any, options?: boolean | AddEventListenerOptions) -> unknown,
-    addEventListener(mut self, type: string, listener: EventListenerOrEventListenerObject, options?: boolean | AddEventListenerOptions) -> unknown,
-    removeEventListener<K: keyof IDBDatabaseEventMap>(mut self, type: K, listener: fn (this: IDBDatabase, ev: IDBDatabaseEventMap[K]) -> any, options?: boolean | EventListenerOptions) -> unknown,
-    removeEventListener(mut self, type: string, listener: EventListenerOrEventListenerObject, options?: boolean | EventListenerOptions) -> unknown,
+    transaction(&mut self, storeNames: string | mut Array<string>, mode?: IDBTransactionMode, options?: IDBTransactionOptions) -> IDBTransaction,
+    addEventListener<K: keyof IDBDatabaseEventMap>(&mut self, type: K, listener: fn (this: IDBDatabase, ev: IDBDatabaseEventMap[K]) -> any, options?: boolean | AddEventListenerOptions) -> unknown,
+    addEventListener(&mut self, type: string, listener: EventListenerOrEventListenerObject, options?: boolean | AddEventListenerOptions) -> unknown,
+    removeEventListener<K: keyof IDBDatabaseEventMap>(&mut self, type: K, listener: fn (this: IDBDatabase, ev: IDBDatabaseEventMap[K]) -> any, options?: boolean | EventListenerOptions) -> unknown,
+    removeEventListener(&mut self, type: string, listener: EventListenerOrEventListenerObject, options?: boolean | EventListenerOptions) -> unknown,
     /**
      * Returns a new transaction with the given mode ("readonly" or "readwrite") and scope which can be a single object store name or an array of names.
      *
      * [MDN Reference](https://developer.mozilla.org/docs/Web/API/IDBDatabase/transaction)
      */
-    transaction(mut self, storeNames: string | Iterable<string>, mode?: IDBTransactionMode, options?: IDBTransactionOptions) -> IDBTransaction,
+    transaction(&mut self, storeNames: string | Iterable<string>, mode?: IDBTransactionMode, options?: IDBTransactionOptions) -> IDBTransaction,
     static prototype: IDBDatabase,
-    constructor(mut self)
+    constructor(&mut self)
 }
 
 /**
@@ -214,23 +214,23 @@ export declare class IDBFactory {
      *
      * [MDN Reference](https://developer.mozilla.org/docs/Web/API/IDBFactory/cmp)
      */
-    cmp(mut self, first: unknown, second: unknown) -> number,
+    cmp(&mut self, first: unknown, second: unknown) -> number,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/IDBFactory/databases) */
-    databases(mut self) -> Promise<mut Array<IDBDatabaseInfo>>,
+    databases(&mut self) -> Promise<mut Array<IDBDatabaseInfo>>,
     /**
      * Attempts to delete the named database. If the database already exists and there are open connections that don't close in response to a versionchange event, the request will be blocked until all they close. If the request is successful request's result will be null.
      *
      * [MDN Reference](https://developer.mozilla.org/docs/Web/API/IDBFactory/deleteDatabase)
      */
-    deleteDatabase(mut self, name: string) -> IDBOpenDBRequest,
+    deleteDatabase(&mut self, name: string) -> IDBOpenDBRequest,
     /**
      * Attempts to open a connection to the named database with the current version, or 1 if it does not already exist. If the request is successful request's result will be the connection.
      *
      * [MDN Reference](https://developer.mozilla.org/docs/Web/API/IDBFactory/open)
      */
-    open(mut self, name: string, version?: number) -> IDBOpenDBRequest,
+    open(&mut self, name: string, version?: number) -> IDBOpenDBRequest,
     static prototype: IDBFactory,
-    constructor(mut self)
+    constructor(&mut self)
 }
 
 /**
@@ -265,7 +265,7 @@ export declare class IDBIndex {
      *
      * [MDN Reference](https://developer.mozilla.org/docs/Web/API/IDBIndex/count)
      */
-    count(self, query?: IDBValidKey | IDBKeyRange) -> IDBRequest<number>,
+    count(&self, query?: IDBValidKey | IDBKeyRange) -> IDBRequest<number>,
     /**
      * Retrieves the value of the first record matching the given key or key range in query.
      *
@@ -273,7 +273,7 @@ export declare class IDBIndex {
      *
      * [MDN Reference](https://developer.mozilla.org/docs/Web/API/IDBIndex/get)
      */
-    get(self, query: IDBValidKey | IDBKeyRange) -> IDBRequest<any>,
+    get(&self, query: IDBValidKey | IDBKeyRange) -> IDBRequest<any>,
     /**
      * Retrieves the values of the records matching the given key or key range in query (up to count if given).
      *
@@ -281,7 +281,7 @@ export declare class IDBIndex {
      *
      * [MDN Reference](https://developer.mozilla.org/docs/Web/API/IDBIndex/getAll)
      */
-    getAll(self, query?: IDBValidKey | IDBKeyRange | null, count?: number) -> IDBRequest<mut Array<any>>,
+    getAll(&self, query?: IDBValidKey | IDBKeyRange | null, count?: number) -> IDBRequest<mut Array<any>>,
     /**
      * Retrieves the keys of records matching the given key or key range in query (up to count if given).
      *
@@ -289,7 +289,7 @@ export declare class IDBIndex {
      *
      * [MDN Reference](https://developer.mozilla.org/docs/Web/API/IDBIndex/getAllKeys)
      */
-    getAllKeys(self, query?: IDBValidKey | IDBKeyRange | null, count?: number) -> IDBRequest<mut Array<IDBValidKey>>,
+    getAllKeys(&self, query?: IDBValidKey | IDBKeyRange | null, count?: number) -> IDBRequest<mut Array<IDBValidKey>>,
     /**
      * Retrieves the key of the first record matching the given key or key range in query.
      *
@@ -297,7 +297,7 @@ export declare class IDBIndex {
      *
      * [MDN Reference](https://developer.mozilla.org/docs/Web/API/IDBIndex/getKey)
      */
-    getKey(self, query: IDBValidKey | IDBKeyRange) -> IDBRequest<IDBValidKey | undefined>,
+    getKey(&self, query: IDBValidKey | IDBKeyRange) -> IDBRequest<IDBValidKey | undefined>,
     /**
      * Opens a cursor over the records matching query, ordered by direction. If query is null, all records in index are matched.
      *
@@ -305,7 +305,7 @@ export declare class IDBIndex {
      *
      * [MDN Reference](https://developer.mozilla.org/docs/Web/API/IDBIndex/openCursor)
      */
-    openCursor(mut self, query?: IDBValidKey | IDBKeyRange | null, direction?: IDBCursorDirection) -> IDBRequest<IDBCursorWithValue | null>,
+    openCursor(&mut self, query?: IDBValidKey | IDBKeyRange | null, direction?: IDBCursorDirection) -> IDBRequest<IDBCursorWithValue | null>,
     /**
      * Opens a cursor with key only flag set over the records matching query, ordered by direction. If query is null, all records in index are matched.
      *
@@ -313,9 +313,9 @@ export declare class IDBIndex {
      *
      * [MDN Reference](https://developer.mozilla.org/docs/Web/API/IDBIndex/openKeyCursor)
      */
-    openKeyCursor(mut self, query?: IDBValidKey | IDBKeyRange | null, direction?: IDBCursorDirection) -> IDBRequest<IDBCursor | null>,
+    openKeyCursor(&mut self, query?: IDBValidKey | IDBKeyRange | null, direction?: IDBCursorDirection) -> IDBRequest<IDBCursor | null>,
     static prototype: IDBIndex,
-    constructor(mut self)
+    constructor(&mut self)
 }
 
 /**
@@ -354,9 +354,9 @@ export declare class IDBKeyRange {
      *
      * [MDN Reference](https://developer.mozilla.org/docs/Web/API/IDBKeyRange/includes)
      */
-    includes(self, key: unknown) -> boolean,
+    includes(&self, key: unknown) -> boolean,
     static prototype: IDBKeyRange,
-    constructor(mut self),
+    constructor(&mut self),
     /**
      * Returns a new IDBKeyRange spanning from lower to upper. If lowerOpen is true, lower is not included in the range. If upperOpen is true, upper is not included in the range.
      *
@@ -431,7 +431,7 @@ export declare class IDBObjectStore {
      *
      * [MDN Reference](https://developer.mozilla.org/docs/Web/API/IDBObjectStore/add)
      */
-    add(mut self, value: unknown, key?: IDBValidKey) -> IDBRequest<IDBValidKey>,
+    add(&mut self, value: unknown, key?: IDBValidKey) -> IDBRequest<IDBValidKey>,
     /**
      * Deletes all records in store.
      *
@@ -439,7 +439,7 @@ export declare class IDBObjectStore {
      *
      * [MDN Reference](https://developer.mozilla.org/docs/Web/API/IDBObjectStore/clear)
      */
-    clear(mut self) -> IDBRequest<undefined>,
+    clear(&mut self) -> IDBRequest<undefined>,
     /**
      * Retrieves the number of records matching the given key or key range in query.
      *
@@ -447,7 +447,7 @@ export declare class IDBObjectStore {
      *
      * [MDN Reference](https://developer.mozilla.org/docs/Web/API/IDBObjectStore/count)
      */
-    count(self, query?: IDBValidKey | IDBKeyRange) -> IDBRequest<number>,
+    count(&self, query?: IDBValidKey | IDBKeyRange) -> IDBRequest<number>,
     /**
      * Creates a new index in store with the given name, keyPath and options and returns a new IDBIndex. If the keyPath and options define constraints that cannot be satisfied with the data already in store the upgrade transaction will abort with a "ConstraintError" DOMException.
      *
@@ -455,7 +455,7 @@ export declare class IDBObjectStore {
      *
      * [MDN Reference](https://developer.mozilla.org/docs/Web/API/IDBObjectStore/createIndex)
      */
-    createIndex(mut self, name: string, keyPath: string | mut Array<string>, options?: IDBIndexParameters) -> IDBIndex,
+    createIndex(&mut self, name: string, keyPath: string | mut Array<string>, options?: IDBIndexParameters) -> IDBIndex,
     /**
      * Deletes records in store with the given key or in the given key range in query.
      *
@@ -463,7 +463,7 @@ export declare class IDBObjectStore {
      *
      * [MDN Reference](https://developer.mozilla.org/docs/Web/API/IDBObjectStore/delete)
      */
-    delete(mut self, query: IDBValidKey | IDBKeyRange) -> IDBRequest<undefined>,
+    delete(&mut self, query: IDBValidKey | IDBKeyRange) -> IDBRequest<undefined>,
     /**
      * Deletes the index in store with the given name.
      *
@@ -471,7 +471,7 @@ export declare class IDBObjectStore {
      *
      * [MDN Reference](https://developer.mozilla.org/docs/Web/API/IDBObjectStore/deleteIndex)
      */
-    deleteIndex(mut self, name: string) -> unknown,
+    deleteIndex(&mut self, name: string) -> unknown,
     /**
      * Retrieves the value of the first record matching the given key or key range in query.
      *
@@ -479,7 +479,7 @@ export declare class IDBObjectStore {
      *
      * [MDN Reference](https://developer.mozilla.org/docs/Web/API/IDBObjectStore/get)
      */
-    get(self, query: IDBValidKey | IDBKeyRange) -> IDBRequest<any>,
+    get(&self, query: IDBValidKey | IDBKeyRange) -> IDBRequest<any>,
     /**
      * Retrieves the values of the records matching the given key or key range in query (up to count if given).
      *
@@ -487,7 +487,7 @@ export declare class IDBObjectStore {
      *
      * [MDN Reference](https://developer.mozilla.org/docs/Web/API/IDBObjectStore/getAll)
      */
-    getAll(self, query?: IDBValidKey | IDBKeyRange | null, count?: number) -> IDBRequest<mut Array<any>>,
+    getAll(&self, query?: IDBValidKey | IDBKeyRange | null, count?: number) -> IDBRequest<mut Array<any>>,
     /**
      * Retrieves the keys of records matching the given key or key range in query (up to count if given).
      *
@@ -495,7 +495,7 @@ export declare class IDBObjectStore {
      *
      * [MDN Reference](https://developer.mozilla.org/docs/Web/API/IDBObjectStore/getAllKeys)
      */
-    getAllKeys(self, query?: IDBValidKey | IDBKeyRange | null, count?: number) -> IDBRequest<mut Array<IDBValidKey>>,
+    getAllKeys(&self, query?: IDBValidKey | IDBKeyRange | null, count?: number) -> IDBRequest<mut Array<IDBValidKey>>,
     /**
      * Retrieves the key of the first record matching the given key or key range in query.
      *
@@ -503,9 +503,9 @@ export declare class IDBObjectStore {
      *
      * [MDN Reference](https://developer.mozilla.org/docs/Web/API/IDBObjectStore/getKey)
      */
-    getKey(self, query: IDBValidKey | IDBKeyRange) -> IDBRequest<IDBValidKey | undefined>,
+    getKey(&self, query: IDBValidKey | IDBKeyRange) -> IDBRequest<IDBValidKey | undefined>,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/IDBObjectStore/index) */
-    index(mut self, name: string) -> IDBIndex,
+    index(&mut self, name: string) -> IDBIndex,
     /**
      * Opens a cursor over the records matching query, ordered by direction. If query is null, all records in store are matched.
      *
@@ -513,7 +513,7 @@ export declare class IDBObjectStore {
      *
      * [MDN Reference](https://developer.mozilla.org/docs/Web/API/IDBObjectStore/openCursor)
      */
-    openCursor(mut self, query?: IDBValidKey | IDBKeyRange | null, direction?: IDBCursorDirection) -> IDBRequest<IDBCursorWithValue | null>,
+    openCursor(&mut self, query?: IDBValidKey | IDBKeyRange | null, direction?: IDBCursorDirection) -> IDBRequest<IDBCursorWithValue | null>,
     /**
      * Opens a cursor with key only flag set over the records matching query, ordered by direction. If query is null, all records in store are matched.
      *
@@ -521,7 +521,7 @@ export declare class IDBObjectStore {
      *
      * [MDN Reference](https://developer.mozilla.org/docs/Web/API/IDBObjectStore/openKeyCursor)
      */
-    openKeyCursor(mut self, query?: IDBValidKey | IDBKeyRange | null, direction?: IDBCursorDirection) -> IDBRequest<IDBCursor | null>,
+    openKeyCursor(&mut self, query?: IDBValidKey | IDBKeyRange | null, direction?: IDBCursorDirection) -> IDBRequest<IDBCursor | null>,
     /**
      * Adds or updates a record in store with the given value and key.
      *
@@ -533,7 +533,7 @@ export declare class IDBObjectStore {
      *
      * [MDN Reference](https://developer.mozilla.org/docs/Web/API/IDBObjectStore/put)
      */
-    put(mut self, value: unknown, key?: IDBValidKey) -> IDBRequest<IDBValidKey>,
+    put(&mut self, value: unknown, key?: IDBValidKey) -> IDBRequest<IDBValidKey>,
     /**
      * Creates a new index in store with the given name, keyPath and options and returns a new IDBIndex. If the keyPath and options define constraints that cannot be satisfied with the data already in store the upgrade transaction will abort with a "ConstraintError" DOMException.
      *
@@ -541,9 +541,9 @@ export declare class IDBObjectStore {
      *
      * [MDN Reference](https://developer.mozilla.org/docs/Web/API/IDBObjectStore/createIndex)
      */
-    createIndex(mut self, name: string, keyPath: string | Iterable<string>, options?: IDBIndexParameters) -> IDBIndex,
+    createIndex(&mut self, name: string, keyPath: string | Iterable<string>, options?: IDBIndexParameters) -> IDBIndex,
     static prototype: IDBObjectStore,
-    constructor(mut self)
+    constructor(&mut self)
 }
 
 export declare interface IDBOpenDBRequestEventMap extends IDBRequestEventMap {
@@ -562,12 +562,12 @@ export declare class IDBOpenDBRequest extends IDBRequest<IDBDatabase> {
     onblocked: (fn (this: IDBOpenDBRequest, ev: IDBVersionChangeEvent) -> any) | null,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/IDBOpenDBRequest/upgradeneeded_event) */
     onupgradeneeded: (fn (this: IDBOpenDBRequest, ev: IDBVersionChangeEvent) -> any) | null,
-    addEventListener<K: keyof IDBOpenDBRequestEventMap>(mut self, type: K, listener: fn (this: IDBOpenDBRequest, ev: IDBOpenDBRequestEventMap[K]) -> any, options?: boolean | AddEventListenerOptions) -> unknown,
-    addEventListener(mut self, type: string, listener: EventListenerOrEventListenerObject, options?: boolean | AddEventListenerOptions) -> unknown,
-    removeEventListener<K: keyof IDBOpenDBRequestEventMap>(mut self, type: K, listener: fn (this: IDBOpenDBRequest, ev: IDBOpenDBRequestEventMap[K]) -> any, options?: boolean | EventListenerOptions) -> unknown,
-    removeEventListener(mut self, type: string, listener: EventListenerOrEventListenerObject, options?: boolean | EventListenerOptions) -> unknown,
+    addEventListener<K: keyof IDBOpenDBRequestEventMap>(&mut self, type: K, listener: fn (this: IDBOpenDBRequest, ev: IDBOpenDBRequestEventMap[K]) -> any, options?: boolean | AddEventListenerOptions) -> unknown,
+    addEventListener(&mut self, type: string, listener: EventListenerOrEventListenerObject, options?: boolean | AddEventListenerOptions) -> unknown,
+    removeEventListener<K: keyof IDBOpenDBRequestEventMap>(&mut self, type: K, listener: fn (this: IDBOpenDBRequest, ev: IDBOpenDBRequestEventMap[K]) -> any, options?: boolean | EventListenerOptions) -> unknown,
+    removeEventListener(&mut self, type: string, listener: EventListenerOrEventListenerObject, options?: boolean | EventListenerOptions) -> unknown,
     static prototype: IDBOpenDBRequest,
-    constructor(mut self)
+    constructor(&mut self)
 }
 
 export declare interface IDBRequestEventMap {
@@ -616,12 +616,12 @@ export declare class IDBRequest<T = any> extends EventTarget {
      * [MDN Reference](https://developer.mozilla.org/docs/Web/API/IDBRequest/transaction)
      */
     readonly transaction: IDBTransaction | null,
-    addEventListener<K: keyof IDBRequestEventMap>(mut self, type: K, listener: fn (this: IDBRequest<T>, ev: IDBRequestEventMap[K]) -> any, options?: boolean | AddEventListenerOptions) -> unknown,
-    addEventListener(mut self, type: string, listener: EventListenerOrEventListenerObject, options?: boolean | AddEventListenerOptions) -> unknown,
-    removeEventListener<K: keyof IDBRequestEventMap>(mut self, type: K, listener: fn (this: IDBRequest<T>, ev: IDBRequestEventMap[K]) -> any, options?: boolean | EventListenerOptions) -> unknown,
-    removeEventListener(mut self, type: string, listener: EventListenerOrEventListenerObject, options?: boolean | EventListenerOptions) -> unknown,
+    addEventListener<K: keyof IDBRequestEventMap>(&mut self, type: K, listener: fn (this: IDBRequest<T>, ev: IDBRequestEventMap[K]) -> any, options?: boolean | AddEventListenerOptions) -> unknown,
+    addEventListener(&mut self, type: string, listener: EventListenerOrEventListenerObject, options?: boolean | AddEventListenerOptions) -> unknown,
+    removeEventListener<K: keyof IDBRequestEventMap>(&mut self, type: K, listener: fn (this: IDBRequest<T>, ev: IDBRequestEventMap[K]) -> any, options?: boolean | EventListenerOptions) -> unknown,
+    removeEventListener(&mut self, type: string, listener: EventListenerOrEventListenerObject, options?: boolean | EventListenerOptions) -> unknown,
     static prototype: IDBRequest,
-    constructor(mut self)
+    constructor(&mut self)
 }
 
 export declare interface IDBTransactionEventMap {
@@ -670,21 +670,21 @@ export declare class IDBTransaction extends EventTarget {
      *
      * [MDN Reference](https://developer.mozilla.org/docs/Web/API/IDBTransaction/abort)
      */
-    abort(mut self) -> unknown,
+    abort(&mut self) -> unknown,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/IDBTransaction/commit) */
-    commit(mut self) -> unknown,
+    commit(&mut self) -> unknown,
     /**
      * Returns an IDBObjectStore in the transaction's scope.
      *
      * [MDN Reference](https://developer.mozilla.org/docs/Web/API/IDBTransaction/objectStore)
      */
-    objectStore(mut self, name: string) -> IDBObjectStore,
-    addEventListener<K: keyof IDBTransactionEventMap>(mut self, type: K, listener: fn (this: IDBTransaction, ev: IDBTransactionEventMap[K]) -> any, options?: boolean | AddEventListenerOptions) -> unknown,
-    addEventListener(mut self, type: string, listener: EventListenerOrEventListenerObject, options?: boolean | AddEventListenerOptions) -> unknown,
-    removeEventListener<K: keyof IDBTransactionEventMap>(mut self, type: K, listener: fn (this: IDBTransaction, ev: IDBTransactionEventMap[K]) -> any, options?: boolean | EventListenerOptions) -> unknown,
-    removeEventListener(mut self, type: string, listener: EventListenerOrEventListenerObject, options?: boolean | EventListenerOptions) -> unknown,
+    objectStore(&mut self, name: string) -> IDBObjectStore,
+    addEventListener<K: keyof IDBTransactionEventMap>(&mut self, type: K, listener: fn (this: IDBTransaction, ev: IDBTransactionEventMap[K]) -> any, options?: boolean | AddEventListenerOptions) -> unknown,
+    addEventListener(&mut self, type: string, listener: EventListenerOrEventListenerObject, options?: boolean | AddEventListenerOptions) -> unknown,
+    removeEventListener<K: keyof IDBTransactionEventMap>(&mut self, type: K, listener: fn (this: IDBTransaction, ev: IDBTransactionEventMap[K]) -> any, options?: boolean | EventListenerOptions) -> unknown,
+    removeEventListener(&mut self, type: string, listener: EventListenerOrEventListenerObject, options?: boolean | EventListenerOptions) -> unknown,
     static prototype: IDBTransaction,
-    constructor(mut self)
+    constructor(&mut self)
 }
 
 /**
@@ -699,7 +699,7 @@ export declare class IDBVersionChangeEvent extends Event {
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/IDBVersionChangeEvent/oldVersion) */
     readonly oldVersion: number,
     static prototype: IDBVersionChangeEvent,
-    constructor(mut self, type: string, eventInitDict?: IDBVersionChangeEventInit)
+    constructor(&mut self, type: string, eventInitDict?: IDBVersionChangeEventInit)
 }
 
 export declare type IDBValidKey = number | string | date.Date | BufferSource | mut Array<IDBValidKey>

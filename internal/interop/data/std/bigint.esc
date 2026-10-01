@@ -84,11 +84,11 @@ export declare class BigInt {
      * Returns a string representation of an object.
      * @param radix Specifies a radix for converting numeric values to strings.
      */
-    toString(self, radix?: number) -> string,
+    toString(&self, radix?: number) -> string,
     /** Returns a string representation appropriate to the host environment's current locale. */
-    toLocaleString(self, locales?: intl.LocalesArgument, options?: BigIntToLocaleStringOptions) -> string,
+    toLocaleString(&self, locales?: intl.LocalesArgument, options?: BigIntToLocaleStringOptions) -> string,
     /** Returns the primitive value of the specified object. */
-    valueOf(self) -> bigint,
+    valueOf(&self) -> bigint,
     readonly [Symbol.toStringTag]: "BigInt",
     (value: bigint | boolean | number | string) -> bigint,
     static readonly prototype: BigInt,

@@ -48,7 +48,7 @@ func TestBindingsRenderSourceTypeParamNames(t *testing.T) {
 				class Pair<K, V> {
 					k: K,
 					v: V,
-					constructor(mut self, v: V, k: K) {
+					constructor(&mut self, v: V, k: K) {
 						self.v = v
 						self.k = k
 					},

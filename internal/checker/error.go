@@ -852,7 +852,7 @@ func (e MissingMutSelfParameterError) Message() string {
 
 // ReceiverLifetimeOutsideMemberError is reported when a `'a self`
 // annotation appears on a method/getter/setter inside a structural
-// object-type annotation (e.g. `type X = { m('a self) -> 'a T }`).
+// object-type annotation (e.g. `type X = { m(&'a self) -> 'a T }`).
 // Such positions have no class/interface receiver type to attach the
 // lifetime to, so the annotation would be silently dropped — we
 // surface it explicitly instead.

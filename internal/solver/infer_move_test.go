@@ -517,8 +517,8 @@ fn f() {
 		{
 			name: "OverloadedMethod",
 			src: `declare class Box {
-  m(self, a: {x: number}) -> number,
-  m(self, a: {x: number}, b: number) -> number,
+  m(&self, a: {x: number}) -> number,
+  m(&self, a: {x: number}, b: number) -> number,
 }
 fn f(b: Box) {
   val p = {x: 1}
@@ -530,8 +530,8 @@ fn f(b: Box) {
 		{
 			name: "OverloadedConstructor",
 			src: `declare class Box {
-  constructor(mut self, a: {x: number}),
-  constructor(mut self, a: {x: number}, b: number),
+  constructor(&mut self, a: {x: number}),
+  constructor(&mut self, a: {x: number}, b: number),
 }
 fn f() {
   val p = {x: 1}
@@ -545,8 +545,8 @@ fn f() {
 			// consumed. The no-match is the only diagnostic; the later read still stands.
 			name: "NoMatchingArmMovesNothing",
 			src: `declare class Box {
-  constructor(mut self, a: number),
-  constructor(mut self, a: number, b: number),
+  constructor(&mut self, a: number),
+  constructor(&mut self, a: number, b: number),
 }
 fn f() {
   val p = {x: 1}

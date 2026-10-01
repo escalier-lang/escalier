@@ -13,8 +13,8 @@ export declare class Array<T> {
      * @param thisArg If provided, it will be used as the this value for each invocation of
      * predicate. If it is not provided, undefined is used instead.
      */
-    find<S: T>(self, predicate: fn (value: T, index: number, obj: mut Array<T>) -> boolean, thisArg?: unknown) -> S | undefined,
-    find(self, predicate: fn (value: T, index: number, obj: mut Array<T>) -> unknown, thisArg?: unknown) -> T | undefined,
+    find<S: T>(&self, predicate: fn (value: T, index: number, obj: mut Array<T>) -> boolean, thisArg?: unknown) -> S | undefined,
+    find(&self, predicate: fn (value: T, index: number, obj: mut Array<T>) -> unknown, thisArg?: unknown) -> T | undefined,
     /**
      * Returns the index of the first element in the array where predicate is true, and -1
      * otherwise.
@@ -24,7 +24,7 @@ export declare class Array<T> {
      * @param thisArg If provided, it will be used as the this value for each invocation of
      * predicate. If it is not provided, undefined is used instead.
      */
-    findIndex(self, predicate: fn (value: T, index: number, obj: mut Array<T>) -> unknown, thisArg?: unknown) -> number,
+    findIndex(&self, predicate: fn (value: T, index: number, obj: mut Array<T>) -> unknown, thisArg?: unknown) -> number,
     /**
      * Changes all array elements from `start` to `end` index to a static `value` and returns the modified array
      * @param value value to fill array section with
@@ -33,7 +33,7 @@ export declare class Array<T> {
      * @param end index to stop filling the array at. If end is negative, it is treated as
      * length+end.
      */
-    fill(mut self, value: T, start?: number, end?: number) -> Self,
+    fill(&mut self, value: T, start?: number, end?: number) -> Self,
     /**
      * Returns the this object after copying a section of the array identified by start and end
      * to the same array starting at position target
@@ -43,7 +43,7 @@ export declare class Array<T> {
      * is treated as length+end.
      * @param end If not specified, length of the this object is used as its default value.
      */
-    copyWithin(mut self, target: number, start: number, end?: number) -> Self,
+    copyWithin(&mut self, target: number, start: number, end?: number) -> Self,
     /**
      * The options bag is an inexact object. TypeScript writes
      * `Intl.NumberFormatOptions & Intl.DateTimeFormatOptions`, and both of those
@@ -55,25 +55,25 @@ export declare class Array<T> {
      *
      * Change it in internal/interop/overlay/std/prelude.replace.esc.
      */
-    toLocaleString(self, locales: string | mut Array<string>, options?: {...}) -> string,
+    toLocaleString(&self, locales: string | mut Array<string>, options?: {...}) -> string,
     /**
      * Returns a string representation of an array. The elements are converted to string using their toLocaleString methods.
      */
-    toLocaleString(self) -> string,
+    toLocaleString(&self) -> string,
     /** Iterator */
-    [Symbol.iterator](self) -> ArrayIterator<T>,
+    [Symbol.iterator](&self) -> ArrayIterator<T>,
     /**
      * Returns an iterable of key, value pairs for every entry in the array
      */
-    entries(self) -> ArrayIterator<[number, T]>,
+    entries(&self) -> ArrayIterator<[number, T]>,
     /**
      * Returns an iterable of keys in the array
      */
-    keys(self) -> ArrayIterator<number>,
+    keys(&self) -> ArrayIterator<number>,
     /**
      * Returns an iterable of values in the array
      */
-    values(self) -> ArrayIterator<T>,
+    values(&self) -> ArrayIterator<T>,
     /**
      * Is an object whose properties have the value 'true'
      * when they will be absent when used in a 'with' statement.
@@ -86,7 +86,7 @@ export declare class Array<T> {
      * @param searchElement The element to search for.
      * @param fromIndex The position in this array at which to begin searching for searchElement.
      */
-    includes(self, searchElement: T, fromIndex?: number) -> boolean,
+    includes(&self, searchElement: T, fromIndex?: number) -> boolean,
     /**
      * Calls a defined callback function on each element of an array. Then, flattens the result into
      * a new array.
@@ -97,19 +97,19 @@ export declare class Array<T> {
      * @param thisArg An object to which the this keyword can refer in the callback function. If
      * thisArg is omitted, undefined is used as the this value.
      */
-    flatMap<U, This = undefined>(self, callback: fn (this: This, value: T, index: number, array: mut Array<T>) -> U | Array<U>, thisArg?: This) -> mut Array<U>,
+    flatMap<U, This = undefined>(&self, callback: fn (this: This, value: T, index: number, array: mut Array<T>) -> U | Array<U>, thisArg?: This) -> mut Array<U>,
     /**
      * Returns a new array with all sub-array elements concatenated into it recursively up to the
      * specified depth.
      *
      * @param depth The maximum recursion depth
      */
-    flat<A, D: number = 1>(self, this: A, depth?: D) -> mut Array<FlatArray<A, D>>,
+    flat<A, D: number = 1>(&self, this: A, depth?: D) -> mut Array<FlatArray<A, D>>,
     /**
      * Returns the item located at the specified index.
      * @param index The zero-based index of the desired code unit. A negative index will count back from the last item.
      */
-    at(self, index: number) -> T | undefined,
+    at(&self, index: number) -> T | undefined,
     /**
      * Returns the value of the last element in the array where predicate is true, and undefined
      * otherwise.
@@ -119,8 +119,8 @@ export declare class Array<T> {
      * @param thisArg If provided, it will be used as the this value for each invocation of
      * predicate. If it is not provided, undefined is used instead.
      */
-    findLast<S: T>(self, predicate: fn (value: T, index: number, array: mut Array<T>) -> boolean, thisArg?: unknown) -> S | undefined,
-    findLast(self, predicate: fn (value: T, index: number, array: mut Array<T>) -> unknown, thisArg?: unknown) -> T | undefined,
+    findLast<S: T>(&self, predicate: fn (value: T, index: number, array: mut Array<T>) -> boolean, thisArg?: unknown) -> S | undefined,
+    findLast(&self, predicate: fn (value: T, index: number, array: mut Array<T>) -> unknown, thisArg?: unknown) -> T | undefined,
     /**
      * Returns the index of the last element in the array where predicate is true, and -1
      * otherwise.
@@ -130,11 +130,11 @@ export declare class Array<T> {
      * @param thisArg If provided, it will be used as the this value for each invocation of
      * predicate. If it is not provided, undefined is used instead.
      */
-    findLastIndex(self, predicate: fn (value: T, index: number, array: mut Array<T>) -> unknown, thisArg?: unknown) -> number,
+    findLastIndex(&self, predicate: fn (value: T, index: number, array: mut Array<T>) -> unknown, thisArg?: unknown) -> number,
     /**
      * Returns a copy of an array with its elements reversed.
      */
-    toReversed(self) -> mut Array<T>,
+    toReversed(&self) -> mut Array<T>,
     /**
      * Returns a copy of an array with its elements sorted.
      * @param compareFn Function used to determine the order of the elements. It is expected to return
@@ -144,7 +144,7 @@ export declare class Array<T> {
      * [11, 2, 22, 1].toSorted((a, b) => a - b) // [1, 2, 11, 22]
      * ```
      */
-    toSorted(self, compareFn?: fn (a: T, b: T) -> number) -> mut Array<T>,
+    toSorted(&self, compareFn?: fn (a: T, b: T) -> number) -> mut Array<T>,
     /**
      * Copies an array and removes elements and, if necessary, inserts new elements in their place. Returns the copied array.
      * @param start The zero-based location in the array from which to start removing elements.
@@ -152,14 +152,14 @@ export declare class Array<T> {
      * @param items Elements to insert into the copied array in place of the deleted elements.
      * @returns The copied array.
      */
-    toSpliced(self, start: number, deleteCount: number, ...items: mut Array<T>) -> mut Array<T>,
+    toSpliced(&self, start: number, deleteCount: number, ...items: mut Array<T>) -> mut Array<T>,
     /**
      * Copies an array and removes elements while returning the remaining elements.
      * @param start The zero-based location in the array from which to start removing elements.
      * @param deleteCount The number of elements to remove.
      * @returns A copy of the original array with the remaining elements.
      */
-    toSpliced(self, start: number, deleteCount?: number) -> mut Array<T>,
+    toSpliced(&self, start: number, deleteCount?: number) -> mut Array<T>,
     /**
      * Copies an array, then overwrites the value at the provided index with the
      * given value. If the index is negative, then it replaces from the end
@@ -169,7 +169,7 @@ export declare class Array<T> {
      * @param value The value to write into the copied array.
      * @returns The copied array with the updated value.
      */
-    with(self, index: number, value: T) -> mut Array<T>,
+    with(&self, index: number, value: T) -> mut Array<T>,
     /**
      * Gets or sets the length of the array. This is a number one higher than the highest index in the array.
      */
@@ -177,44 +177,44 @@ export declare class Array<T> {
     /**
      * Returns a string representation of an array.
      */
-    toString(self) -> string,
+    toString(&self) -> string,
     /**
      * Removes the last element from an array and returns it.
      * If the array is empty, undefined is returned and the array is not modified.
      */
-    pop(mut self) -> T | undefined,
+    pop(&mut self) -> T | undefined,
     /**
      * Appends new elements to the end of an array, and returns the new length of the array.
      * @param items New elements to add to the array.
      */
-    push(mut self, ...items: mut Array<T>) -> number,
+    push(&mut self, ...items: mut Array<T>) -> number,
     /**
      * Combines two or more arrays.
      * This method returns a new array without modifying any existing arrays.
      * @param items Additional arrays and/or items to add to the end of the array.
      */
-    concat(self, ...items: mut Array<ConcatArray<T>>) -> mut Array<T>,
+    concat(&self, ...items: mut Array<ConcatArray<T>>) -> mut Array<T>,
     /**
      * Combines two or more arrays.
      * This method returns a new array without modifying any existing arrays.
      * @param items Additional arrays and/or items to add to the end of the array.
      */
-    concat(self, ...items: mut Array<T | ConcatArray<T>>) -> mut Array<T>,
+    concat(&self, ...items: mut Array<T | ConcatArray<T>>) -> mut Array<T>,
     /**
      * Adds all the elements of an array into a string, separated by the specified separator string.
      * @param separator A string used to separate one element of the array from the next in the resulting string. If omitted, the array elements are separated with a comma.
      */
-    join(self, separator?: string) -> string,
+    join(&self, separator?: string) -> string,
     /**
      * Reverses the elements in an array in place.
      * This method mutates the array and returns a reference to the same array.
      */
-    reverse(mut self) -> mut Array<T>,
+    reverse(&mut self) -> mut Array<T>,
     /**
      * Removes the first element from an array and returns it.
      * If the array is empty, undefined is returned and the array is not modified.
      */
-    shift(mut self) -> T | undefined,
+    shift(&mut self) -> T | undefined,
     /**
      * Returns a copy of a section of an array.
      * For both start and end, a negative index can be used to indicate an offset from the end of the array.
@@ -224,7 +224,7 @@ export declare class Array<T> {
      * @param end The end index of the specified portion of the array. This is exclusive of the element at the index 'end'.
      * If end is undefined, then the slice extends to the end of the array.
      */
-    slice(self, start?: number, end?: number) -> mut Array<T>,
+    slice(&self, start?: number, end?: number) -> mut Array<T>,
     /**
      * Sorts an array in place.
      * This method mutates the array and returns a reference to the same array.
@@ -235,14 +235,14 @@ export declare class Array<T> {
      * [11,2,22,1].sort((a, b) => a - b)
      * ```
      */
-    sort(mut self, compareFn?: fn (a: T, b: T) -> number) -> Self,
+    sort(&mut self, compareFn?: fn (a: T, b: T) -> number) -> Self,
     /**
      * Removes elements from an array and, if necessary, inserts new elements in their place, returning the deleted elements.
      * @param start The zero-based location in the array from which to start removing elements.
      * @param deleteCount The number of elements to remove.
      * @returns An array containing the elements that were deleted.
      */
-    splice(mut self, start: number, deleteCount?: number) -> mut Array<T>,
+    splice(&mut self, start: number, deleteCount?: number) -> mut Array<T>,
     /**
      * Removes elements from an array and, if necessary, inserts new elements in their place, returning the deleted elements.
      * @param start The zero-based location in the array from which to start removing elements.
@@ -250,24 +250,24 @@ export declare class Array<T> {
      * @param items Elements to insert into the array in place of the deleted elements.
      * @returns An array containing the elements that were deleted.
      */
-    splice(mut self, start: number, deleteCount: number, ...items: mut Array<T>) -> mut Array<T>,
+    splice(&mut self, start: number, deleteCount: number, ...items: mut Array<T>) -> mut Array<T>,
     /**
      * Inserts new elements at the start of an array, and returns the new length of the array.
      * @param items Elements to insert at the start of the array.
      */
-    unshift(mut self, ...items: mut Array<T>) -> number,
+    unshift(&mut self, ...items: mut Array<T>) -> number,
     /**
      * Returns the index of the first occurrence of a value in an array, or -1 if it is not present.
      * @param searchElement The value to locate in the array.
      * @param fromIndex The array index at which to begin the search. If fromIndex is omitted, the search starts at index 0.
      */
-    indexOf(self, searchElement: T, fromIndex?: number) -> number,
+    indexOf(&self, searchElement: T, fromIndex?: number) -> number,
     /**
      * Returns the index of the last occurrence of a specified value in an array, or -1 if it is not present.
      * @param searchElement The value to locate in the array.
      * @param fromIndex The array index at which to begin searching backward. If fromIndex is omitted, the search starts at the last index in the array.
      */
-    lastIndexOf(self, searchElement: T, fromIndex?: number) -> number,
+    lastIndexOf(&self, searchElement: T, fromIndex?: number) -> number,
     /**
      * Determines whether all the members of an array satisfy the specified test.
      * @param predicate A function that accepts up to three arguments. The every method calls
@@ -276,7 +276,7 @@ export declare class Array<T> {
      * @param thisArg An object to which the this keyword can refer in the predicate function.
      * If thisArg is omitted, undefined is used as the this value.
      */
-    every(self, predicate: fn (value: T, index: number, array: mut Array<T>) -> boolean, thisArg?: unknown) -> boolean,
+    every(&self, predicate: fn (value: T, index: number, array: mut Array<T>) -> boolean, thisArg?: unknown) -> boolean,
     /**
      * Determines whether all the members of an array satisfy the specified test.
      * @param predicate A function that accepts up to three arguments. The every method calls
@@ -285,7 +285,7 @@ export declare class Array<T> {
      * @param thisArg An object to which the this keyword can refer in the predicate function.
      * If thisArg is omitted, undefined is used as the this value.
      */
-    every(self, predicate: fn (value: T, index: number, array: mut Array<T>) -> unknown, thisArg?: unknown) -> boolean,
+    every(&self, predicate: fn (value: T, index: number, array: mut Array<T>) -> unknown, thisArg?: unknown) -> boolean,
     /**
      * Determines whether the specified callback function returns true for any element of an array.
      * @param predicate A function that accepts up to three arguments. The some method calls
@@ -294,57 +294,57 @@ export declare class Array<T> {
      * @param thisArg An object to which the this keyword can refer in the predicate function.
      * If thisArg is omitted, undefined is used as the this value.
      */
-    some(self, predicate: fn (value: T, index: number, array: mut Array<T>) -> unknown, thisArg?: unknown) -> boolean,
+    some(&self, predicate: fn (value: T, index: number, array: mut Array<T>) -> unknown, thisArg?: unknown) -> boolean,
     /**
      * Performs the specified action for each element in an array.
      * @param callbackfn A function that accepts up to three arguments. forEach calls the callbackfn function one time for each element in the array.
      * @param thisArg An object to which the this keyword can refer in the callbackfn function. If thisArg is omitted, undefined is used as the this value.
      */
-    forEach(self, callbackfn: fn (value: T, index: number, array: mut Array<T>) -> unknown, thisArg?: unknown) -> unknown,
+    forEach(&self, callbackfn: fn (value: T, index: number, array: mut Array<T>) -> unknown, thisArg?: unknown) -> unknown,
     /**
      * Calls a defined callback function on each element of an array, and returns an array that contains the results.
      * @param callbackfn A function that accepts up to three arguments. The map method calls the callbackfn function one time for each element in the array.
      * @param thisArg An object to which the this keyword can refer in the callbackfn function. If thisArg is omitted, undefined is used as the this value.
      */
-    map<U>(self, callbackfn: fn (value: T, index: number, array: mut Array<T>) -> U, thisArg?: unknown) -> mut Array<U>,
+    map<U>(&self, callbackfn: fn (value: T, index: number, array: mut Array<T>) -> U, thisArg?: unknown) -> mut Array<U>,
     /**
      * Returns the elements of an array that meet the condition specified in a callback function.
      * @param predicate A function that accepts up to three arguments. The filter method calls the predicate function one time for each element in the array.
      * @param thisArg An object to which the this keyword can refer in the predicate function. If thisArg is omitted, undefined is used as the this value.
      */
-    filter<S: T>(self, predicate: fn (value: T, index: number, array: mut Array<T>) -> boolean, thisArg?: unknown) -> mut Array<S>,
+    filter<S: T>(&self, predicate: fn (value: T, index: number, array: mut Array<T>) -> boolean, thisArg?: unknown) -> mut Array<S>,
     /**
      * Returns the elements of an array that meet the condition specified in a callback function.
      * @param predicate A function that accepts up to three arguments. The filter method calls the predicate function one time for each element in the array.
      * @param thisArg An object to which the this keyword can refer in the predicate function. If thisArg is omitted, undefined is used as the this value.
      */
-    filter(self, predicate: fn (value: T, index: number, array: mut Array<T>) -> unknown, thisArg?: unknown) -> mut Array<T>,
+    filter(&self, predicate: fn (value: T, index: number, array: mut Array<T>) -> unknown, thisArg?: unknown) -> mut Array<T>,
     /**
      * Calls the specified callback function for all the elements in an array. The return value of the callback function is the accumulated result, and is provided as an argument in the next call to the callback function.
      * @param callbackfn A function that accepts up to four arguments. The reduce method calls the callbackfn function one time for each element in the array.
      * @param initialValue If initialValue is specified, it is used as the initial value to start the accumulation. The first call to the callbackfn function provides this value as an argument instead of an array value.
      */
-    reduce(self, callbackfn: fn (previousValue: T, currentValue: T, currentIndex: number, array: mut Array<T>) -> T) -> T,
-    reduce(self, callbackfn: fn (previousValue: T, currentValue: T, currentIndex: number, array: mut Array<T>) -> T, initialValue: T) -> T,
+    reduce(&self, callbackfn: fn (previousValue: T, currentValue: T, currentIndex: number, array: mut Array<T>) -> T) -> T,
+    reduce(&self, callbackfn: fn (previousValue: T, currentValue: T, currentIndex: number, array: mut Array<T>) -> T, initialValue: T) -> T,
     /**
      * Calls the specified callback function for all the elements in an array. The return value of the callback function is the accumulated result, and is provided as an argument in the next call to the callback function.
      * @param callbackfn A function that accepts up to four arguments. The reduce method calls the callbackfn function one time for each element in the array.
      * @param initialValue If initialValue is specified, it is used as the initial value to start the accumulation. The first call to the callbackfn function provides this value as an argument instead of an array value.
      */
-    reduce<U>(self, callbackfn: fn (previousValue: U, currentValue: T, currentIndex: number, array: mut Array<T>) -> U, initialValue: U) -> U,
+    reduce<U>(&self, callbackfn: fn (previousValue: U, currentValue: T, currentIndex: number, array: mut Array<T>) -> U, initialValue: U) -> U,
     /**
      * Calls the specified callback function for all the elements in an array, in descending order. The return value of the callback function is the accumulated result, and is provided as an argument in the next call to the callback function.
      * @param callbackfn A function that accepts up to four arguments. The reduceRight method calls the callbackfn function one time for each element in the array.
      * @param initialValue If initialValue is specified, it is used as the initial value to start the accumulation. The first call to the callbackfn function provides this value as an argument instead of an array value.
      */
-    reduceRight(self, callbackfn: fn (previousValue: T, currentValue: T, currentIndex: number, array: mut Array<T>) -> T) -> T,
-    reduceRight(self, callbackfn: fn (previousValue: T, currentValue: T, currentIndex: number, array: mut Array<T>) -> T, initialValue: T) -> T,
+    reduceRight(&self, callbackfn: fn (previousValue: T, currentValue: T, currentIndex: number, array: mut Array<T>) -> T) -> T,
+    reduceRight(&self, callbackfn: fn (previousValue: T, currentValue: T, currentIndex: number, array: mut Array<T>) -> T, initialValue: T) -> T,
     /**
      * Calls the specified callback function for all the elements in an array, in descending order. The return value of the callback function is the accumulated result, and is provided as an argument in the next call to the callback function.
      * @param callbackfn A function that accepts up to four arguments. The reduceRight method calls the callbackfn function one time for each element in the array.
      * @param initialValue If initialValue is specified, it is used as the initial value to start the accumulation. The first call to the callbackfn function provides this value as an argument instead of an array value.
      */
-    reduceRight<U>(self, callbackfn: fn (previousValue: U, currentValue: T, currentIndex: number, array: mut Array<T>) -> U, initialValue: U) -> U,
+    reduceRight<U>(&self, callbackfn: fn (previousValue: U, currentValue: T, currentIndex: number, array: mut Array<T>) -> U, initialValue: U) -> U,
     /**
      * Creates an array from an array-like object.
      * @param arrayLike An array-like object to convert to an array.
@@ -375,9 +375,9 @@ export declare class Array<T> {
      */
     static from<T, U>(iterable: Iterable<T> | ArrayLike<T>, mapfn: fn (v: T, k: number) -> U, thisArg?: unknown) -> mut Array<U>,
     static readonly [Symbol.species]: typeof Array,
-    constructor(mut self, arrayLength?: number),
-    constructor(mut self, arrayLength: number),
-    constructor(mut self, ...items: mut Array<T>),
+    constructor(&mut self, arrayLength?: number),
+    constructor(&mut self, arrayLength: number),
+    constructor(&mut self, ...items: mut Array<T>),
     (arrayLength?: number) -> mut Array<any>,
     <T>(arrayLength: number) -> mut Array<T>,
     <T>(...items: mut Array<T>) -> mut Array<T>,
@@ -420,9 +420,9 @@ export declare type IteratorResult<T, TReturn = any> = IteratorYieldResult<T> | 
 
 @js("Iterator")
 export declare class Iterator<T, TReturn = any, TNext = any> {
-    next(mut self, ...value: [] | [TNext]) -> IteratorResult<T, TReturn>,
-    return(mut self, value?: TReturn) -> IteratorResult<T, TReturn>,
-    throw(mut self, e?: unknown) -> IteratorResult<T, TReturn>,
+    next(&mut self, ...value: [] | [TNext]) -> IteratorResult<T, TReturn>,
+    return(&mut self, value?: TReturn) -> IteratorResult<T, TReturn>,
+    throw(&mut self, e?: unknown) -> IteratorResult<T, TReturn>,
     /**
      * Creates a native iterator from an iterator or iterable object.
      * Returns its input if the input already inherits from the built-in Iterator class.
@@ -541,21 +541,21 @@ export declare class Promise<T, E = never> {
      * @param onfinally The callback to execute when the Promise is settled (fulfilled or rejected).
      * @returns A Promise for the completion of the callback.
      */
-    finally<F = never>(self, onfinally: fn () -> unknown throws F) -> Promise<T, E | F>,
+    finally<F = never>(&self, onfinally: fn () -> unknown throws F) -> Promise<T, E | F>,
     /**
      * Attaches callbacks for the resolution and/or rejection of the Promise.
      * @param onfulfilled The callback to execute when the Promise is resolved.
      * @param onrejected The callback to execute when the Promise is rejected.
      * @returns A Promise for the completion of which ever callback is executed.
      */
-    then<TResult1 = T, F = never>(self, onfulfilled: fn (value: T) -> TResult1 | PromiseLike<TResult1, F> throws F) -> Promise<TResult1, E | F>,
-    then<TResult1 = T, TResult2 = never, F = never, G = never>(self, onfulfilled: fn (value: T) -> TResult1 | PromiseLike<TResult1, F> throws F, onrejected: fn (reason: E) -> TResult2 | PromiseLike<TResult2, G> throws G) -> Promise<TResult1 | TResult2, F | G>,
+    then<TResult1 = T, F = never>(&self, onfulfilled: fn (value: T) -> TResult1 | PromiseLike<TResult1, F> throws F) -> Promise<TResult1, E | F>,
+    then<TResult1 = T, TResult2 = never, F = never, G = never>(&self, onfulfilled: fn (value: T) -> TResult1 | PromiseLike<TResult1, F> throws F, onrejected: fn (reason: E) -> TResult2 | PromiseLike<TResult2, G> throws G) -> Promise<TResult1 | TResult2, F | G>,
     /**
      * Attaches a callback for only the rejection of the Promise.
      * @param onrejected The callback to execute when the Promise is rejected.
      * @returns A Promise for the completion of the callback.
      */
-    catch<TResult = never, G = never>(self, onrejected: fn (reason: E) -> TResult | PromiseLike<TResult, G> throws G) -> Promise<T | TResult, G>,
+    catch<TResult = never, G = never>(&self, onrejected: fn (reason: E) -> TResult | PromiseLike<TResult, G> throws G) -> Promise<T | TResult, G>,
     /**
      * Creates a Promise that is resolved with an array of results when all of the provided Promises
      * resolve, or rejected when any Promise is rejected.
@@ -580,7 +580,7 @@ export declare class Promise<T, E = never> {
      * a resolve callback used to resolve the promise with a value or the result of another promise,
      * and a reject callback used to reject the promise with a provided reason or error.
      */
-    constructor(mut self, executor: fn (resolve: fn (value: T | PromiseLike<T>) -> unknown, reject: fn (reason?: E) -> unknown) -> unknown),
+    constructor(&mut self, executor: fn (resolve: fn (value: T | PromiseLike<T>) -> unknown, reject: fn (reason?: E) -> unknown) -> unknown),
     /**
      * Creates a Promise that is resolved with an array of results when all of the provided Promises
      * resolve, or rejected when any Promise is rejected.
@@ -679,16 +679,16 @@ export declare class Symbol {
     /**
      * Converts a Symbol object to a symbol.
      */
-    [Symbol.toPrimitive](self, hint: string) -> symbol,
+    [Symbol.toPrimitive](&self, hint: string) -> symbol,
     readonly [Symbol.toStringTag]: string,
     /**
      * Expose the [[Description]] internal slot of a symbol directly.
      */
     readonly description: string | undefined,
     /** Returns a string representation of an object. */
-    toString(self) -> string,
+    toString(&self) -> string,
     /** Returns the primitive value of the specified object. */
-    valueOf(self) -> symbol,
+    valueOf(&self) -> symbol,
     /**
      * A method that returns the default iterator for an object. Called by the semantics of the
      * for-of statement.

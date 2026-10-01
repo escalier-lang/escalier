@@ -1,6 +1,6 @@
 class Fix<A, B> {
     f: fn(f: fn(arg: A) -> B) -> fn(arg: A) -> B,
-    recurse(self, arg: A) -> B {
+    recurse(&self, arg: A) -> B {
         val g = self.f
         return g(self.recurse)(arg)
     },

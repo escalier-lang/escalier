@@ -3,7 +3,7 @@
     "decl": "Array",
     "member": "toLocaleString",
     "kind": "method",
-    "digest": "843e665dbe8582f3"
+    "digest": "7bffe5dcbefe46ae"
   },
   {
     "decl": "AsyncGenerator",
@@ -33,25 +33,25 @@
     "decl": "Promise",
     "member": "catch",
     "kind": "method",
-    "digest": "3763268b9467176f"
+    "digest": "55fe62bae3417007"
   },
   {
     "decl": "Promise",
     "member": "constructor",
     "kind": "constructor",
-    "digest": "456519da26d0db0b"
+    "digest": "c1b086f855a1cfa6"
   },
   {
     "decl": "Promise",
     "member": "finally",
     "kind": "method",
-    "digest": "2cef3bf8da94b7fc"
+    "digest": "424891642fc4509d"
   },
   {
     "decl": "Promise",
     "member": "then",
     "kind": "method",
-    "digest": "bcbaab6e20298969"
+    "digest": "9bac5ab2a622d1d9"
   },
   {
     "decl": "Promise",

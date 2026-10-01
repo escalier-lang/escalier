@@ -18,7 +18,7 @@ import (
 func TestInferUnionTupleRest(t *testing.T) {
 	const cls = `
 		declare class It<T> {
-			next(self, ...value: [] | [T]) -> number,
+			next(&self, ...value: [] | [T]) -> number,
 		}
 	`
 	call := func(body string) string {

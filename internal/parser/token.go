@@ -126,7 +126,7 @@ const (
 // two apart. `set(v: any) -> unknown` names a method `set` because `(` opens
 // its parameter list, where `set value(v: any)` marks an accessor because a
 // name follows instead. The same rule reads `from` as a parameter name in
-// `substr(mut self, from: number)`.
+// `substr(&mut self, from: number)`.
 func followsAName(tokenType TokenType) bool {
 	// nolint: exhaustive
 	switch tokenType {

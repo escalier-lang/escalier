@@ -33,19 +33,19 @@ export declare class Storage {
      *
      * [MDN Reference](https://developer.mozilla.org/docs/Web/API/Storage/clear)
      */
-    clear(mut self) -> unknown,
+    clear(&mut self) -> unknown,
     /**
      * Returns the current value associated with the given key, or null if the given key does not exist.
      *
      * [MDN Reference](https://developer.mozilla.org/docs/Web/API/Storage/getItem)
      */
-    getItem(self, key: string) -> string | null,
+    getItem(&self, key: string) -> string | null,
     /**
      * Returns the name of the nth key, or null if n is greater than or equal to the number of key/value pairs.
      *
      * [MDN Reference](https://developer.mozilla.org/docs/Web/API/Storage/key)
      */
-    key(mut self, index: number) -> string | null,
+    key(&mut self, index: number) -> string | null,
     /**
      * Removes the key/value pair with the given key, if a key/value pair with the given key exists.
      *
@@ -53,7 +53,7 @@ export declare class Storage {
      *
      * [MDN Reference](https://developer.mozilla.org/docs/Web/API/Storage/removeItem)
      */
-    removeItem(mut self, key: string) -> unknown,
+    removeItem(&mut self, key: string) -> unknown,
     /**
      * Sets the value of the pair identified by key to value, creating a new key/value pair if none existed for key previously.
      *
@@ -63,9 +63,9 @@ export declare class Storage {
      *
      * [MDN Reference](https://developer.mozilla.org/docs/Web/API/Storage/setItem)
      */
-    setItem(mut self, key: string, value: string) -> unknown,
+    setItem(&mut self, key: string, value: string) -> unknown,
     static prototype: Storage,
-    constructor(mut self)
+    constructor(&mut self)
 }
 
 /**
@@ -110,7 +110,7 @@ export declare class StorageEvent extends Event {
      *
      * [MDN Reference](https://developer.mozilla.org/docs/Web/API/StorageEvent/initStorageEvent)
      */
-    initStorageEvent(mut self, type: string, bubbles?: boolean, cancelable?: boolean, key?: string | null, oldValue?: string | null, newValue?: string | null, url?: string | url.URL, storageArea?: Storage | null) -> unknown,
+    initStorageEvent(&mut self, type: string, bubbles?: boolean, cancelable?: boolean, key?: string | null, oldValue?: string | null, newValue?: string | null, url?: string | url.URL, storageArea?: Storage | null) -> unknown,
     static prototype: StorageEvent,
-    constructor(mut self, type: string, eventInitDict?: StorageEventInit)
+    constructor(&mut self, type: string, eventInitDict?: StorageEventInit)
 }

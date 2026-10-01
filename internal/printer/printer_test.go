@@ -1064,15 +1064,15 @@ func TestPrintMemberTypeAnnotations(t *testing.T) {
 		{"method", "{f(x: number) -> string}", "{\n    f(x: number) -> string\n}"},
 		{"method with type params", "{f<T>(x: T) -> T}", "{\n    f<T>(x: T) -> T\n}"},
 		{"method throws", "{parse(x: string) -> number throws SyntaxError}", "{\n    parse(x: string) -> number throws SyntaxError\n}"},
-		{"getter", "{get a(self) -> number}", "{\n    get a(self) -> number\n}"},
-		{"method with receiver", "{f(mut self, x: number) -> string}", "{\n    f(mut self, x: number) -> string\n}"},
-		{"setter", "{set a(mut self, v: number)}", "{\n    set a(mut self, v: number)\n}"},
-		{"setter with plain receiver", "{set a(self, v: number)}", "{\n    set a(self, v: number)\n}"},
+		{"getter", "{get a(&self) -> number}", "{\n    get a(&self) -> number\n}"},
+		{"method with receiver", "{f(&mut self, x: number) -> string}", "{\n    f(&mut self, x: number) -> string\n}"},
+		{"setter", "{set a(&mut self, v: number)}", "{\n    set a(&mut self, v: number)\n}"},
+		{"setter with plain receiver", "{set a(&self, v: number)}", "{\n    set a(&self, v: number)\n}"},
 		// An accessor that writes no receiver still prints one, so the rendered form is the
 		// `.d.ts` converter's output rather than a byte-for-byte echo of the source.
-		{"getter without a receiver", "{get a() -> number}", "{\n    get a(self) -> number\n}"},
-		{"getter throws", "{get a(self) -> number throws RangeError}", "{\n    get a(self) -> number throws RangeError\n}"},
-		{"setter throws", "{set a(mut self, v: number) throws RangeError}", "{\n    set a(mut self, v: number) throws RangeError\n}"},
+		{"getter without a receiver", "{get a() -> number}", "{\n    get a(&self) -> number\n}"},
+		{"getter throws", "{get a(&self) -> number throws RangeError}", "{\n    get a(&self) -> number throws RangeError\n}"},
+		{"setter throws", "{set a(&mut self, v: number) throws RangeError}", "{\n    set a(&mut self, v: number) throws RangeError\n}"},
 		{
 			"beside a property",
 			"{f(x: number) -> string, origin: Point}",
@@ -2007,12 +2007,12 @@ func TestPrintObjectTypeElements(t *testing.T) {
 		{
 			"getter",
 			"{get value() -> number}",
-			"{\n    get value(self) -> number\n}",
+			"{\n    get value(&self) -> number\n}",
 		},
 		{
 			"setter",
 			"{set value(v: number) -> undefined}",
-			"{\n    set value(mut self, v: number) -> undefined\n}",
+			"{\n    set value(&mut self, v: number) -> undefined\n}",
 		},
 		// {
 		// 	"callable",
@@ -2262,18 +2262,18 @@ func TestPrintThrowsClause(t *testing.T) {
 		},
 		{
 			name:  "object method",
-			input: "{m(self) -> number throws SyntaxError}",
-			want:  "{\n    m(self) -> number throws SyntaxError\n}",
+			input: "{m(&self) -> number throws SyntaxError}",
+			want:  "{\n    m(&self) -> number throws SyntaxError\n}",
 		},
 		{
 			name:  "object getter",
-			input: "{get g(self) -> number throws string}",
-			want:  "{\n    get g(self) -> number throws string\n}",
+			input: "{get g(&self) -> number throws string}",
+			want:  "{\n    get g(&self) -> number throws string\n}",
 		},
 		{
 			name:  "object setter",
-			input: "{set s(mut self, v: number) -> undefined throws string}",
-			want:  "{\n    set s(mut self, v: number) -> undefined throws string\n}",
+			input: "{set s(&mut self, v: number) -> undefined throws string}",
+			want:  "{\n    set s(&mut self, v: number) -> undefined throws string\n}",
 		},
 		{
 			// An explicit `throws never` names the empty set of raised values, so it
@@ -2344,8 +2344,8 @@ func TestPrintRoundTripsConverterOutput(t *testing.T) {
 		{
 			// `Promise.prototype.catch` and `String.prototype.match`.
 			name:  "keyword method names",
-			input: "declare class C {\n    catch(self) -> undefined,\n    match(self) -> undefined\n}",
-			want:  "declare class C {\n    catch(self) -> undefined,\n    match(self) -> undefined\n}",
+			input: "declare class C {\n    catch(&self) -> undefined,\n    match(&self) -> undefined\n}",
+			want:  "declare class C {\n    catch(&self) -> undefined,\n    match(&self) -> undefined\n}",
 		},
 		{
 			// `Intl.NumberFormatOptionsStyleRegistry` has both.
@@ -2362,8 +2362,8 @@ func TestPrintRoundTripsConverterOutput(t *testing.T) {
 		},
 		{
 			name:  "get and set still mark accessors when a name follows",
-			input: "declare class C {\n    get x(self) -> number,\n    set x(mut self, v: number)\n}",
-			want:  "declare class C {\n    get x(self) -> number,\n    set x(mut self, v: number)\n}",
+			input: "declare class C {\n    get x(&self) -> number,\n    set x(&mut self, v: number)\n}",
+			want:  "declare class C {\n    get x(&self) -> number,\n    set x(&mut self, v: number)\n}",
 		},
 		{
 			// Every prototype carries a `constructor` property, which a

@@ -61,9 +61,9 @@ export declare class AbortController {
      *
      * [MDN Reference](https://developer.mozilla.org/docs/Web/API/AbortController/abort)
      */
-    abort(mut self, reason?: unknown) -> unknown,
+    abort(&mut self, reason?: unknown) -> unknown,
     static prototype: AbortController,
-    constructor(mut self)
+    constructor(&mut self)
 }
 
 export declare interface AbortSignalEventMap {
@@ -88,13 +88,13 @@ export declare class AbortSignal extends EventTarget {
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/AbortSignal/reason) */
     readonly reason: any,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/AbortSignal/throwIfAborted) */
-    throwIfAborted(mut self) -> unknown,
-    addEventListener<K: keyof AbortSignalEventMap>(mut self, type: K, listener: fn (this: AbortSignal, ev: AbortSignalEventMap[K]) -> any, options?: boolean | AddEventListenerOptions) -> unknown,
-    addEventListener(mut self, type: string, listener: EventListenerOrEventListenerObject, options?: boolean | AddEventListenerOptions) -> unknown,
-    removeEventListener<K: keyof AbortSignalEventMap>(mut self, type: K, listener: fn (this: AbortSignal, ev: AbortSignalEventMap[K]) -> any, options?: boolean | EventListenerOptions) -> unknown,
-    removeEventListener(mut self, type: string, listener: EventListenerOrEventListenerObject, options?: boolean | EventListenerOptions) -> unknown,
+    throwIfAborted(&mut self) -> unknown,
+    addEventListener<K: keyof AbortSignalEventMap>(&mut self, type: K, listener: fn (this: AbortSignal, ev: AbortSignalEventMap[K]) -> any, options?: boolean | AddEventListenerOptions) -> unknown,
+    addEventListener(&mut self, type: string, listener: EventListenerOrEventListenerObject, options?: boolean | AddEventListenerOptions) -> unknown,
+    removeEventListener<K: keyof AbortSignalEventMap>(&mut self, type: K, listener: fn (this: AbortSignal, ev: AbortSignalEventMap[K]) -> any, options?: boolean | EventListenerOptions) -> unknown,
+    removeEventListener(&mut self, type: string, listener: EventListenerOrEventListenerObject, options?: boolean | EventListenerOptions) -> unknown,
     static prototype: AbortSignal,
-    constructor(mut self),
+    constructor(&mut self),
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/AbortSignal/abort_static) */
     static abort(reason?: unknown) -> AbortSignal,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/AbortSignal/any_static) */
@@ -146,7 +146,7 @@ export declare class DOMException extends error.Error {
     readonly INVALID_NODE_TYPE_ERR: 24,
     readonly DATA_CLONE_ERR: 25,
     static prototype: DOMException,
-    constructor(mut self, message?: string, name?: string),
+    constructor(&mut self, message?: string, name?: string),
     static readonly INDEX_SIZE_ERR: 1,
     static readonly DOMSTRING_SIZE_ERR: 2,
     static readonly HIERARCHY_REQUEST_ERR: 3,
@@ -264,37 +264,37 @@ export declare class Event {
      *
      * [MDN Reference](https://developer.mozilla.org/docs/Web/API/Event/composedPath)
      */
-    composedPath(mut self) -> mut Array<EventTarget>,
+    composedPath(&mut self) -> mut Array<EventTarget>,
     /**
      * @deprecated
      *
      * [MDN Reference](https://developer.mozilla.org/docs/Web/API/Event/initEvent)
      */
-    initEvent(mut self, type: string, bubbles?: boolean, cancelable?: boolean) -> unknown,
+    initEvent(&mut self, type: string, bubbles?: boolean, cancelable?: boolean) -> unknown,
     /**
      * If invoked when the cancelable attribute value is true, and while executing a listener for the event with passive set to false, signals to the operation that caused event to be dispatched that it needs to be canceled.
      *
      * [MDN Reference](https://developer.mozilla.org/docs/Web/API/Event/preventDefault)
      */
-    preventDefault(mut self) -> unknown,
+    preventDefault(&mut self) -> unknown,
     /**
      * Invoking this method prevents event from reaching any registered event listeners after the current one finishes running and, when dispatched in a tree, also prevents event from reaching any other objects.
      *
      * [MDN Reference](https://developer.mozilla.org/docs/Web/API/Event/stopImmediatePropagation)
      */
-    stopImmediatePropagation(mut self) -> unknown,
+    stopImmediatePropagation(&mut self) -> unknown,
     /**
      * When dispatched in a tree, invoking this method prevents event from reaching any objects other than the current object.
      *
      * [MDN Reference](https://developer.mozilla.org/docs/Web/API/Event/stopPropagation)
      */
-    stopPropagation(mut self) -> unknown,
+    stopPropagation(&mut self) -> unknown,
     readonly NONE: 0,
     readonly CAPTURING_PHASE: 1,
     readonly AT_TARGET: 2,
     readonly BUBBLING_PHASE: 3,
     static prototype: Event,
-    constructor(mut self, type: string, eventInitDict?: EventInit),
+    constructor(&mut self, type: string, eventInitDict?: EventInit),
     static readonly NONE: 0,
     static readonly CAPTURING_PHASE: 1,
     static readonly AT_TARGET: 2,
@@ -333,21 +333,21 @@ export declare class EventTarget {
      *
      * [MDN Reference](https://developer.mozilla.org/docs/Web/API/EventTarget/addEventListener)
      */
-    addEventListener(mut self, type: string, callback: EventListenerOrEventListenerObject | null, options?: AddEventListenerOptions | boolean) -> unknown,
+    addEventListener(&mut self, type: string, callback: EventListenerOrEventListenerObject | null, options?: AddEventListenerOptions | boolean) -> unknown,
     /**
      * Dispatches a synthetic event event to target and returns true if either event's cancelable attribute value is false or its preventDefault() method was not invoked, and false otherwise.
      *
      * [MDN Reference](https://developer.mozilla.org/docs/Web/API/EventTarget/dispatchEvent)
      */
-    dispatchEvent(mut self, event: Event) -> boolean,
+    dispatchEvent(&mut self, event: Event) -> boolean,
     /**
      * Removes the event listener in target's event listener list with the same type, callback, and options.
      *
      * [MDN Reference](https://developer.mozilla.org/docs/Web/API/EventTarget/removeEventListener)
      */
-    removeEventListener(mut self, type: string, callback: EventListenerOrEventListenerObject | null, options?: EventListenerOptions | boolean) -> unknown,
+    removeEventListener(&mut self, type: string, callback: EventListenerOrEventListenerObject | null, options?: EventListenerOptions | boolean) -> unknown,
     static prototype: EventTarget,
-    constructor(mut self)
+    constructor(&mut self)
 }
 
 /**
@@ -388,7 +388,7 @@ export declare class MessageEvent<T = any> extends Event {
      */
     readonly source: null,
     static prototype: MessageEvent,
-    constructor(mut self, type: string, eventInitDict?: MessageEventInit<T>)
+    constructor(&mut self, type: string, eventInitDict?: MessageEventInit<T>)
 }
 
 /**
@@ -413,9 +413,9 @@ export declare class TextDecoder implements TextDecoderCommon {
      *
      * [MDN Reference](https://developer.mozilla.org/docs/Web/API/TextDecoder/decode)
      */
-    decode(mut self, input?: AllowSharedBufferSource, options?: TextDecodeOptions) -> string,
+    decode(&mut self, input?: AllowSharedBufferSource, options?: TextDecodeOptions) -> string,
     static prototype: TextDecoder,
-    constructor(mut self, label?: string, options?: TextDecoderOptions)
+    constructor(&mut self, label?: string, options?: TextDecoderOptions)
 }
 
 export declare interface TextDecoderCommon {
@@ -451,15 +451,15 @@ export declare class TextEncoder implements TextEncoderCommon {
      *
      * [MDN Reference](https://developer.mozilla.org/docs/Web/API/TextEncoder/encode)
      */
-    encode(mut self, input?: string) -> typed_arrays.Uint8Array,
+    encode(&mut self, input?: string) -> typed_arrays.Uint8Array,
     /**
      * Runs the UTF-8 encoder on source, stores the result of that operation into destination, and returns the progress made as an object wherein read is the number of converted code units of source and written is the number of bytes modified in destination.
      *
      * [MDN Reference](https://developer.mozilla.org/docs/Web/API/TextEncoder/encodeInto)
      */
-    encodeInto(mut self, source: string, destination: typed_arrays.Uint8Array) -> TextEncoderEncodeIntoResult,
+    encodeInto(&mut self, source: string, destination: typed_arrays.Uint8Array) -> TextEncoderEncodeIntoResult,
     static prototype: TextEncoder,
-    constructor(mut self)
+    constructor(&mut self)
 }
 
 export declare interface TextEncoderCommon {

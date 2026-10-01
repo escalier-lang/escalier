@@ -74,7 +74,7 @@ func carrierIsVar(t soltype.Type) bool {
 // member whose type flows from a class type parameter reads as that parameter once the
 // intermediate vars are inlined, but only if the parameter var survives and its inbound flow
 // is recovered. B8's freezeClassBody passes the class's own TypeParam vars — and each
-// method's own TypeParams vars — as keep, so `class Box<T> { read(self) { self.v } }` stores
+// method's own TypeParams vars — as keep, so `class Box<T> { read(&self) { self.v } }` stores
 // `read`'s return as `T` rather than collapsing the intermediate var to `never`.
 // projectClassMember then substitutes `T` for the instance's argument. A nil keep and nil
 // flow reduce it to the plain uniform-inlining coalesce.
@@ -1472,7 +1472,7 @@ func equalTypeWith(a, b soltype.Type, ctx *alphaCtx) bool {
 			}
 		}
 		// Receiver presence distinguishes an instance method from a static one, and the
-		// receiver type carries its mutability and borrow, so `(self) -> T`, `(mut self)
+		// receiver type carries its mutability and borrow, so `(&self) -> T`, `(&mut self)
 		// -> T`, and `() -> T` are all distinct.
 		if !equalSelfParam(a.SelfParam, b.SelfParam, ctx) {
 			return false

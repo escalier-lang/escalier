@@ -122,8 +122,8 @@ func TestInferTupleAnnotationSpreadRejectsAnIterable(t *testing.T) {
 	// #1564 tracks and one the spread rule under test has nothing to do with.
 	const seq = `
 		declare class Seq {
-			next(self) -> number,
-			[Symbol.iterator](self) -> Seq,
+			next(&self) -> number,
+			[Symbol.iterator](&self) -> Seq,
 		}
 	`
 	t.Run("the class itself", func(t *testing.T) {

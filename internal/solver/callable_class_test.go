@@ -82,7 +82,7 @@ func TestACallSignatureMakesAClassCallable(t *testing.T) {
 			name: "AConstructorBesideItStillConstructs",
 			src: `
 				declare class D {
-					constructor(mut self, n: number),
+					constructor(&mut self, n: number),
 					(n: number) -> string,
 					x: number,
 				}
@@ -151,7 +151,7 @@ func TestAFunctionTargetAsksCallabilityAndAnObjectTargetAsksForTheMember(t *test
 	t.Run("WithAConstructorBesideIt", func(t *testing.T) {
 		const decl = `
 			declare class D {
-				constructor(mut self, n: number),
+				constructor(&mut self, n: number),
 				(n: number) -> string,
 				x: number,
 			}

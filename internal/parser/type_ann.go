@@ -1116,7 +1116,7 @@ func (p *Parser) objTypeAnnElemInner() ast.ObjTypeAnnElem {
 
 		// A method, getter, or setter signature inside an object type declares what it
 		// raises the same way a standalone function type does, as in
-		// `{parse(self) -> number throws SyntaxError}`.
+		// `{parse(&self) -> number throws SyntaxError}`.
 		throwsType := p.throwsClause()
 		if throwsType != nil {
 			endSpan = throwsType.Span()

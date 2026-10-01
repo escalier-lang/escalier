@@ -378,7 +378,7 @@ func TestBuildTypeAnnFromSolFromSource(t *testing.T) {
 		"InexactObject": {"", "{x: number, ...}", "{x: number}"},
 		// A TypeScript overload set is one sibling declaration per arm.
 		"OverloadedMethod": {
-			"", "{m(self, x: number) -> number, m(self, x: string) -> string}",
+			"", "{m(&self, x: number) -> number, m(&self, x: string) -> string}",
 			"{m(x: number): number, m(x: string): string}",
 		},
 		"OverloadedCallable": {
@@ -422,16 +422,16 @@ func TestBuildTypeAnnFromSolFromSource(t *testing.T) {
 		// spelling, which renders back as a computed key.
 		"SymbolProperty": {"", "{[Symbol.iterator]: number}", "{[Symbol.iterator]: number}"},
 		// A method's `self` receiver is implicit in TypeScript, so it has no slot.
-		"Method": {"", "{m(self, x: number) -> string}", "{m(x: number): string}"},
+		"Method": {"", "{m(&self, x: number) -> string}", "{m(x: number): string}"},
 		// TypeScript carries a method's receiver implicitly and has no throws
 		// clause, so neither reaches the emitted signature.
 		"MethodSelfAndThrows": {
-			"", "{m(self, x: number) -> number throws string}", "{m(x: number): number}",
+			"", "{m(&self, x: number) -> number throws string}", "{m(x: number): number}",
 		},
-		"Getter": {"", "{get x(self) -> number}", "{get x(): number}"},
+		"Getter": {"", "{get x(&self) -> number}", "{get x(): number}"},
 		// TypeScript forbids a return type on a setter.
-		"Setter":         {"", "{set x(self, value: number)}", "{set x(value: number)}"},
-		"OptionalMethod": {"", "{m?(self) -> string}", "{m?(): string}"},
+		"Setter":         {"", "{set x(&self, value: number)}", "{set x(value: number)}"},
+		"OptionalMethod": {"", "{m?(&self) -> string}", "{m?(): string}"},
 		"Callable":       {"", "{(x: number) -> string}", "{(x: number): string}"},
 		"Constructor":    {"", "{new (x: number) -> string}", "{new (x: number): string}"},
 		"ObjectSpread":   {"type A = {x: number}", "{...A, y: string}", "{...A, y: string}"},
@@ -519,7 +519,7 @@ func TestBuildTypeAnnFromSolFromSource(t *testing.T) {
 		// TestBuildTypeAnnFromSolNominalRefs. The generator rows below reach the
 		// built-in former instead, which is the other way one is written.
 		"UserGenerator": {
-			"declare interface Generator<T, TReturn, TNext, E = never> { next(self) -> T }",
+			"declare interface Generator<T, TReturn, TNext, E = never> { next(&self) -> T }",
 			"Generator<number, string, boolean, string>",
 			"Generator<number, string, boolean, string>",
 		},
