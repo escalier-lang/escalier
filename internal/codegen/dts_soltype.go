@@ -599,8 +599,8 @@ func (v *solMappedKeyVisitor) ExitType(t soltype.Type, _ soltype.Polarity) solty
 }
 
 // mappedTypeAnn renders a mapped member as `[K in Keys]: V`. The
-// `if Check : Extends` filter is dropped, matching the type_system and AST
-// paths; lowering it to an `as` clause belongs with P4.3's goldens.
+// `if Check : Extends` filter is dropped, matching the type_system and AST paths.
+// Lowering it to an `as` clause is unimplemented on all three.
 func (b *solTypeAnnBuilder) mappedTypeAnn(elem *soltype.MappedElem) *MappedTypeAnn {
 	var nameTypeAnn TypeAnn
 	if elem.Name != nil {
@@ -740,8 +740,10 @@ func (b *solTypeAnnBuilder) bindInferredTypeParams(funcType *soltype.FuncType) [
 	params := make([]*TypeParam, len(bind))
 	for i, v := range bind {
 		var constraint TypeAnn
-		// Several bounds would meet to an intersection, a shape the twin never emitted
-		// and P4.3 has no golden for, so only a lone one renders.
+		// Several bounds would meet to an intersection, which the type_system twin
+		// never emitted. Emitting one while both checkers run would open a diff
+		// between them rather than close one, so only a lone bound renders. #1781
+		// carries the intersection form, after the flip.
 		if len(v.UpperBounds) == 1 {
 			// An `unknown` bound admits every type, so `T0 extends unknown` and `T0`
 			// are the same binder and the shorter one is written. The test is on the

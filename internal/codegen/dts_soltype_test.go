@@ -232,8 +232,9 @@ func TestBuildTypeAnnFromSolInferredTypeParams(t *testing.T) {
 		require.Equal(t, "<T0 extends string>(x: T0) => T0", renderSol(t, sig))
 	})
 
-	// Several bounds would meet to an intersection, a shape the type_system twin
-	// never emitted and P4.3 has no golden for, so the binder renders unbounded.
+	// Several bounds would meet to an intersection, which the type_system twin never
+	// emitted, so the binder renders unbounded while both checkers have to agree.
+	// #1781 carries the intersection form.
 	t.Run("SeveralBoundsRenderNoClause", func(t *testing.T) {
 		v := freshVar(1)
 		v.UpperBounds = []soltype.Type{solObj(solProp("a", solNum())), solObj(solProp("b", solStr()))}
