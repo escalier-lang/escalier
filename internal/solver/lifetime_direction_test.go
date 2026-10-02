@@ -26,7 +26,10 @@ func TestBorrowOutlivesItsDestination(t *testing.T) {
 		{
 			name: "returning a borrow does not prove the result's lifetime outlives it",
 			src:  `fn f<'a, 'b: 'a>(x: &'a {x: number}, y: &'b {x: number}) -> &'b {x: number} { return x }`,
-			want: []string{"1:10-1:16: declared lifetime bound 'b: 'a is not satisfied; the body does not make 'b outlive 'a"},
+			want: []string{
+				"1:10-1:16: declared lifetime bound 'b: 'a is not satisfied; the body does not make 'b outlive 'a",
+				"1:6-1:8: the body requires 'a to outlive 'b, but the signature does not declare it; add the bound 'a: 'b",
+			},
 		},
 		{
 			name: "each argument funneled into one lifetime parameter outlives the result",

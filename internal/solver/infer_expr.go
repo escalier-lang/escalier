@@ -580,6 +580,10 @@ func (c *checker) inferFunc(scope *Scope, lvl int, sig ast.FuncSig, body *ast.Bl
 	// The bound then solves like one a body would infer.
 	if hasBody {
 		c.checkDeclaredLifetimeBounds(sig.LifetimeParams, ft)
+		// The converse also holds: every relation the body imposes between the lifetimes
+		// the signature names must be one the signature declares, since callers read only
+		// the signature.
+		c.checkSignatureImpliesBodyLifetimes(sig, ft)
 		// A body-carrying generic function must actually produce every type parameter it
 		// declares in an output position. A bodyless `declare fn` asserts its signature
 		// with no body to check, so it is not verified here.
