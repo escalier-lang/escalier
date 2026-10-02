@@ -8,8 +8,11 @@ import (
 
 // checkSignatureImpliesBodyLifetimes reports each outlives relation a body imposes between
 // two lifetimes its function's own `<…>` list declares, or between one of them and
-// 'static, that the declared bounds do not imply. A caller reads only the signature, so a
-// relation the body needs and the signature leaves out is one no caller is held to.
+// 'static, that the declared bounds do not imply. Once a function names its lifetimes, the
+// written signature is the contract its callers are checked against, so a relation the
+// body needs and the written signature leaves out is one no caller is held to. A lifetime
+// the signature leaves unnamed is not checked here, because the relations the body imposes
+// on it go into the function's inferred type, where callers do see them.
 //
 // `fn f<'a, 'b>(x: &'a T, y: &'b T) -> &'b T { return x }` needs 'a to outlive 'b to return
 // x at 'b, and reports it. Writing `<'a: 'b, 'b>` declares it. Two lifetimes the body makes
