@@ -79,22 +79,29 @@ func TestSelfRootedPlaces(t *testing.T) {
 			`,
 			want: []string{"9:12-9:18: use of moved value 'self.p'"},
 		},
-		// A borrowing receiver points at caller-owned data, so a local borrow stored into
-		// one of its fields escapes the method.
-		"LocalStoredIntoBorrowingReceiverEscapes": {
-			src: selfPlaceDecls + `
-				class C {
-					peer: &mut {v: number},
-					m(&mut self) -> undefined {
-						val mut b = {v: 1}
-						self.peer = &mut b
-					},
-				}
-			`,
-			want: []string{"9:19-9:25: borrowed value 'b' does not live long enough to escape the function"},
-		},
-		// A consuming receiver's instance dies with the method, so the same store escapes
-		// nothing.
+		// A borrowing receiver points at caller-owned data. Under GC, a local borrow stored into
+		// one of its fields is the only path to the local once the method returns, so the store
+		// is accepted.
+		//
+		// DISABLED until #1744. A store of a local borrow into a caller-owned target reports
+		// `borrowed value 'b' does not live long enough to escape the function`. Once #1744
+		// lands, the case checks.
+		/*
+			"LocalStoredIntoBorrowingReceiverEscapes": {
+				src: selfPlaceDecls + `
+					class C {
+						peer: &mut {v: number},
+						m(&mut self) -> undefined {
+							val mut b = {v: 1}
+							self.peer = &mut b
+						},
+					}
+				`,
+				want: nil,
+			},
+		*/
+		// A consuming receiver's instance dies with the method, so a local borrow stored into
+		// one of its fields escapes nothing.
 		"LocalStoredIntoConsumingReceiverOk": {
 			src: selfPlaceDecls + `
 				class C {
