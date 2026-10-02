@@ -43,7 +43,7 @@ func TestMethodLifetimesPerCall(t *testing.T) {
 				}
 			`,
 			value: "read",
-			want:  "fn <'a: 'c, 'b: 'c, 'c: 'a & 'b>(a: &'a View, b: &'b View, k: boolean) -> &'c {x: number}",
+			want:  "fn <'a: 'c, 'b: 'c, 'c>(a: &'a View, b: &'b View, k: boolean) -> &'c {x: number}",
 		},
 		{
 			name: "a mutable receiver's lifetime reaches the result",
@@ -68,7 +68,7 @@ func TestMethodLifetimesPerCall(t *testing.T) {
 				fn second(p: &Pair, l: &{x: number}) { return p.pick(l) }
 			`,
 			value: "second",
-			want:  "fn <'a: 'c, 'b: 'c, 'c: 'a & 'b>(p: &'a Pair, l: &'b {x: number}) -> &'c {x: number}",
+			want:  "fn <'a: 'c, 'b: 'c, 'c>(p: &'a Pair, l: &'b {x: number}) -> &'c {x: number}",
 		},
 		{
 			name: "two calls in one body do not relate each other's arguments",
@@ -83,7 +83,7 @@ func TestMethodLifetimesPerCall(t *testing.T) {
 				}
 			`,
 			value: "both",
-			want: "fn <'a: 'c, 'b: 'c, 'c: 'a & 'b>(p: &Pair, a: &{x: number}, q: &'a Pair, b: &'b {x: number}) " +
+			want: "fn <'a: 'c, 'b: 'c, 'c>(p: &Pair, a: &{x: number}, q: &'a Pair, b: &'b {x: number}) " +
 				"-> &'c {x: number}",
 		},
 		{
@@ -107,7 +107,7 @@ func TestMethodLifetimesPerCall(t *testing.T) {
 				fn h(a: &{x: number}, b: &{x: number}) { return K.pick(a, b) }
 			`,
 			value: "h",
-			want:  "fn <'a: 'c, 'b: 'c, 'c: 'a & 'b>(a: &'a {x: number}, b: &'b {x: number}) -> &'c {x: number}",
+			want:  "fn <'a: 'c, 'b: 'c, 'c>(a: &'a {x: number}, b: &'b {x: number}) -> &'c {x: number}",
 		},
 		{
 			name: "a method read as a value is instantiated at the read",
