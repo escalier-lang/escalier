@@ -51,6 +51,11 @@ func (c *Checker) inferClassDecl(ctx Context, decl *ast.ClassDecl) []Error {
 
 	ctx.Scope.SetTypeAlias(decl.Name.Name, typeAlias)
 
+	// The alias is in scope by now, so a bound naming the class itself resolves. Each
+	// parameter's placeholder constraint and default is replaced by what the source wrote.
+	errors = slices.Concat(errors,
+		c.resolveDeclTypeParams(ctx, declCtx, decl.TypeParams, typeParams))
+
 	for _, typeParam := range typeParams {
 		var t type_system.Type = type_system.NewUnknownType(nil)
 		if typeParam.Constraint != nil {

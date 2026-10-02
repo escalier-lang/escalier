@@ -53,6 +53,24 @@ func TestADeclarationKeepsItsTypeParamBoundAndDefault(t *testing.T) {
 			name: "Box",
 			want: "T, E = string",
 		},
+		// A bound naming a sibling is resolved after that sibling, so the resolved list
+		// arrives in a different order from the declaration's. The two are paired by
+		// position, so one of them is reordered first.
+		"AClassBoundNamingASibling": {
+			input: `class Holder<T: U, U: {value: number}> { a: T, b: U }`,
+			name:  "Holder",
+			want:  "T: U, U: {value: number}",
+		},
+		"AnEnumDefaultNamingASibling": {
+			input: `
+				enum Box<T = U, U = string> {
+					Full(v: T),
+					Err(e: U),
+				}
+			`,
+			name: "Box",
+			want: "T = U, U = string",
+		},
 		// An alias and a function resolve their parameters directly rather than through a
 		// placeholder, so they are the control.
 		"AnAliasDefault": {

@@ -2098,31 +2098,8 @@ func (c *Checker) InferModule(ctx Context, m *ast.Module) (depGraph *dep_graph.D
 //     default from its annotation and reports the diagnostics that raises.
 //
 // A caller that pre-binds a declaration here resolves its real constraints and defaults
-// through resolveTypeParams and unifies the two lists through unifyTypeParams. Skipping
-// that leaves each placeholder unsolved, and an unsolved placeholder renders `unknown`.
-// resolveDeclTypeParams resolves the constraints and defaults a declaration wrote and
-// unifies them with the placeholders inferTypeParams minted for it, so the declaration's
-// stored parameters carry what the source said rather than an unsolved variable.
-//
-// placeholders is the list on the declaration's own type alias, which is what every later
-// reader consults, so unifying into it is what makes the resolved bound and default
-// reachable. The emitted `.d.ts` reads them, and an unsolved placeholder renders
-// `unknown`, so `class Holder<T: {value: number}>` would emit `<T extends unknown>`.
-func (c *Checker) resolveDeclTypeParams(
-	ctx Context,
-	declCtx Context,
-	astTypeParams []*ast.TypeParam,
-	placeholders []*type_system.TypeParam,
-) []Error {
-	if len(astTypeParams) == 0 {
-		return nil
-	}
-	// A child scope, so binding each parameter's name leaves the declaration's own scope
-	// alone. resolveTypeParams binds them for a sibling annotation to name.
-	resolved, errors := c.resolveTypeParams(ctx, declCtx.WithNewScope(), astTypeParams)
-	return slices.Concat(errors, c.unifyTypeParams(ctx, placeholders, resolved))
-}
-
+// through resolveDeclTypeParams. Skipping that leaves each placeholder unsolved, and an
+// unsolved placeholder renders `unknown`.
 func (c *Checker) inferTypeParams(astTypeParams []*ast.TypeParam) []*type_system.TypeParam {
 	// Sort type parameters topologically for processing (so constraints can reference earlier params)
 	sortedTypeParams := ast.SortTypeParamsTopologically(astTypeParams)
@@ -2152,6 +2129,46 @@ func (c *Checker) inferTypeParams(astTypeParams []*ast.TypeParam) []*type_system
 		typeParams[i] = typeParamMap[astParam.Name]
 	}
 	return typeParams
+}
+
+// resolveDeclTypeParams resolves the constraints and defaults a declaration wrote and
+// unifies them with the placeholders inferTypeParams minted for it, so the declaration's
+// stored parameters carry what the source said rather than an unsolved variable.
+//
+// placeholders is the list on the declaration's own type alias, which is what every later
+// reader consults, so unifying into it is what makes the resolved bound and default
+// reachable. The emitted `.d.ts` reads them, and an unsolved placeholder renders
+// `unknown`, so `class Holder<T: {value: number}>` would emit `<T extends unknown>`.
+func (c *Checker) resolveDeclTypeParams(
+	ctx Context,
+	declCtx Context,
+	astTypeParams []*ast.TypeParam,
+	placeholders []*type_system.TypeParam,
+) []Error {
+	if len(astTypeParams) == 0 {
+		return nil
+	}
+	// resolveTypeParams binds each parameter's name so a sibling's annotation can name it.
+	// It binds them in a child scope, which leaves the declaration's own scope alone.
+	resolved, errors := c.resolveTypeParams(ctx, declCtx.WithNewScope(), astTypeParams)
+
+	// resolveTypeParams returns its result in topological order, so a parameter whose
+	// bound names a sibling comes after that sibling. placeholders is in declaration
+	// order, and unifyTypeParams pairs the two lists by position. The resolved list is put
+	// back into declaration order so each bound reaches the parameter that carries it.
+	// Pairing the two orders instead stores `T: {value: number}, U: U` for
+	// `class Holder<T: U, U: {value: number}>`. #1796 is the helper returning sorted
+	// order, which retires this reorder.
+	byName := make(map[string]*type_system.TypeParam, len(resolved))
+	for _, tp := range resolved {
+		byName[tp.Name] = tp
+	}
+	inDeclOrder := make([]*type_system.TypeParam, len(astTypeParams))
+	for i, astParam := range astTypeParams {
+		inDeclOrder[i] = byName[astParam.Name]
+	}
+
+	return slices.Concat(errors, c.unifyTypeParams(ctx, placeholders, inDeclOrder))
 }
 
 // unifyTypeParams unifies the placeholder type parameters (with FreshVar constraints/defaults)
