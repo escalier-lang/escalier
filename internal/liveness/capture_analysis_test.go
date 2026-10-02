@@ -185,3 +185,63 @@ func TestAnalyzeCaptures_MultipleCaptures_SortedByVarID(t *testing.T) {
 	// which means reverse alphabetical in this case
 	require.Equal(t, "middle(immut), alpha(immut), zebra(immut)", formatCaptures(AnalyzeCaptures(funcExpr)))
 }
+
+// TestClosureCaptures covers ClosureCaptures, which counts captures a nested function makes
+// and counts a `&mut` borrow of a capture as a write.
+func TestClosureCaptures(t *testing.T) {
+	tests := map[string]struct {
+		src  string
+		want string
+	}{
+		"ReadOnly": {
+			src: `val x = {v: 1}
+			val f = fn() { x }`,
+			want: "x(immut)",
+		},
+		"FieldWrite": {
+			src: `val x = {v: 1}
+			val f = fn() { x.v = 5 }`,
+			want: "x(mut)",
+		},
+		"MutableBorrowIsAWrite": {
+			src: `val x = {v: 1}
+			val f = fn() { &mut x.v }`,
+			want: "x(mut)",
+		},
+		"ImmutableBorrowIsARead": {
+			src: `val x = {v: 1}
+			val f = fn() { &x }`,
+			want: "x(immut)",
+		},
+		"NestedReadCounts": {
+			src: `val x = {v: 1}
+			val f = fn() { val h = fn() { x } }`,
+			want: "x(immut)",
+		},
+		"NestedWriteCounts": {
+			src: `val x = {v: 1}
+			val f = fn() { val h = fn() { x.v = 5 } }`,
+			want: "x(mut)",
+		},
+		"NestedParameterShadowsTheCapture": {
+			src: `val x = {v: 1}
+			val f = fn() { val h = fn(x: {v: number}) { x.v = 5 } }`,
+			want: "[]",
+		},
+		"LocalOfTheClosureIsNotACapture": {
+			src: `val x = {v: 1}
+			val f = fn() {
+				val y = {v: 2}
+				val h = fn() { y.v = 5 }
+			}`,
+			want: "[]",
+		},
+	}
+	for name, tc := range tests {
+		t.Run(name, func(t *testing.T) {
+			closure := findFuncExpr(t, tc.src)
+			outer := map[string]VarID{"x": -1}
+			require.Equal(t, tc.want, formatCaptures(ClosureCaptures(closure, outer)))
+		})
+	}
+}
