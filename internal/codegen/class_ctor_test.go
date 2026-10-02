@@ -83,6 +83,84 @@ func TestEmitsTheImplicitConstructor(t *testing.T) {
   }
 }`,
 		},
+		{
+			name: "ANumericKeyIsReachedByIndex",
+			src:  `class Odd { 1: number }`,
+			want: `export class Odd {
+  constructor(temp1) {
+    const _field1 = temp1;
+    this[1] = _field1;
+  }
+}`,
+		},
+		// A reserved word cannot be bound, so the field takes a generated parameter
+		// even though its key is identifier-shaped.
+		{
+			name: "AReservedWordKeyIsReachedByIndex",
+			src:  `class Odd { "class": number }`,
+			want: `export class Odd {
+  constructor(temp1) {
+    const _field1 = temp1;
+    this["class"] = _field1;
+  }
+}`,
+		},
+		// A generated name is chosen around the names the fields bind directly, so
+		// `_field1` here goes to the second field.
+		{
+			name: "AGeneratedNameAvoidsADeclaredField",
+			src: `class Odd {
+				_field1: number,
+				"foo-bar": string,
+			}`,
+			want: `export class Odd {
+  constructor(temp1, temp2) {
+    const _field1 = temp1;
+    const _field2 = temp2;
+    this._field1 = _field1;
+    this["foo-bar"] = _field2;
+  }
+}`,
+		},
+		// An identifier key spelled like a reserved word is a valid property name and
+		// not a valid binding name, so only the parameter is renamed.
+		{
+			name: "AnIdentifierKeySpelledLikeAKeywordIsReachedByIndex",
+			src:  `class Odd { class: number }`,
+			want: `export class Odd {
+  constructor(temp1) {
+    const _field1 = temp1;
+    this["class"] = _field1;
+  }
+}`,
+		},
+		// A parameter named `self` would shadow the receiver, and codegen lowers every
+		// `self` to `this`, so the field would be assigned the instance.
+		{
+			name: "AFieldNamedSelfIsReachedByIndex",
+			src:  `class Odd { self: number }`,
+			want: `export class Odd {
+  constructor(temp1) {
+    const _field1 = temp1;
+    this["self"] = _field1;
+  }
+}`,
+		},
+		{
+			name: "TwoGeneratedNamesDoNotCollide",
+			src: `class Odd {
+				"a-b": number,
+				"c-d": string,
+			}`,
+			want: `export class Odd {
+  constructor(temp1, temp2) {
+    const _field1 = temp1;
+    const _field2 = temp2;
+    this["a-b"] = _field1;
+    this["c-d"] = _field2;
+  }
+}`,
+		},
 	}
 
 	for _, test := range tests {

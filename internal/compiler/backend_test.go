@@ -200,8 +200,8 @@ func TestCompileReportsTheSolverCodegenGap(t *testing.T) {
 
 // solverCodegenGap is the message the solver path reports for each file it emits.
 const solverCodegenGap = "ESCALIER_CHECKER=solver does not yet emit correct output for this file: " +
-	"a class emits with no constructor and no members, and the .d.ts does not yet match " +
-	"the one the old checker writes"
+	"a read of a function-typed field is bound to its receiver, and the .d.ts does not " +
+	"yet match the one the old checker writes"
 
 // countMessage returns how many of msgs equal want.
 func countMessage(msgs []string, want string) int {

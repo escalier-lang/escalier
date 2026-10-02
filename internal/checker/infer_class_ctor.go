@@ -13,7 +13,7 @@ import (
 // key leaves no parameter name to bind it to.
 //
 // JavaScript emission calls ast.ImplicitConstructor too, so the constructor this
-// installs and the one emission derives are the same element built the same way.
+// returns and the one emission derives are the same element built the same way.
 func synthesizedConstructorElem(decl *ast.ClassDecl) (*ast.ConstructorElem, []Error) {
 	synth, blocker := ast.ImplicitConstructor(decl)
 	if blocker != nil {
