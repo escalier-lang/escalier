@@ -17,9 +17,10 @@ import (
 //
 // A Builder with no JSTypes answers every question the way an untyped tree does, so
 // emission still runs and produces the plainest form of each construct. That is the
-// right answer for a unit test that builds an AST by hand and never infers it. It is
-// the wrong answer for a real compile, where a false here silently drops a `new`, a
-// `.bind`, or a null guard, so the compiler's entry points always supply one.
+// right answer for a test that builds an AST by hand and never infers it. It is the
+// wrong answer for a real compile, where a false here silently drops a `new`, a
+// `.bind`, or a null guard. NewBuilder takes an implementation, so a caller outside
+// this package cannot reach emission without one.
 type JSTypes interface {
 	// IsNominalTypeRef reports whether a type reference names a nominal type, which
 	// a pattern match tests with `x instanceof C` rather than by shape.

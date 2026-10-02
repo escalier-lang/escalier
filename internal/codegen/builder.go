@@ -28,10 +28,11 @@ type Builder struct {
 	jsTypes JSTypes
 }
 
-// SetJSTypes supplies the inferred-type oracle emission asks. The compiler's entry
-// points call it with the implementation belonging to whichever checker ran.
-func (b *Builder) SetJSTypes(t JSTypes) {
-	b.jsTypes = t
+// NewBuilder returns a Builder that answers the JSTypes questions through t, which is
+// the implementation belonging to whichever checker ran. A Builder built as
+// &Builder{} answers them as an untyped tree does, which JSTypes describes.
+func NewBuilder(t JSTypes) *Builder {
+	return &Builder{jsTypes: t}
 }
 
 func (b *Builder) NewTempId() string {
