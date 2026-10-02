@@ -197,16 +197,22 @@ func TestCheckFixturesOnSolver(t *testing.T) {
 		skips[skip.fixture] = skip
 	}
 
-	for fixture := range emitSkips {
+	comparedNames := set.NewSet[string]()
+	for _, artifact := range comparedArtifacts {
+		comparedNames.Add(artifact.name)
+	}
+	for held := range emitSkips {
 		// The same checks solverSkips gets. Without them a renamed or deleted fixture
 		// leaves behind an entry nothing reports as stale.
-		require.True(t, fixtures.Contains(fixture), "emitSkips names no such fixture")
-		require.False(t, disabled.Contains(fixture),
+		require.True(t, fixtures.Contains(held.fixture), "emitSkips names no such fixture")
+		require.False(t, disabled.Contains(held.fixture),
 			"a disabled fixture emits nothing to compare")
 		// A fixture the solver cannot check never reaches the comparison, so an entry
 		// here would be unreachable and would never be noticed as stale.
-		require.NotContains(t, skips, fixture,
+		require.NotContains(t, skips, held.fixture,
 			"this fixture is already held back from checking, so its output is never compared")
+		require.True(t, comparedNames.Contains(held.artifact),
+			"emitSkips names the artifact %q, which comparedArtifacts does not", held.artifact)
 	}
 
 	for _, entry := range entries {
@@ -364,34 +370,64 @@ func reportSolverSkipCauses(t *testing.T, runnable int) {
 		strings.Join(lines, "\n"))
 }
 
-// comparedArtifacts names the emitted files the two checkers have to agree on. The
-// `.d.ts` is left out while #1676 reconciles it; adding it here is what closes that
-// issue's gate.
+// comparedArtifacts names the emitted files the two checkers have to agree on.
 var comparedArtifacts = []struct {
 	name string
 	read func(compiler.CompUnitOutput) string
 }{
 	{"index.js", func(u compiler.CompUnitOutput) string { return u.JS }},
 	{"index.js.map", func(u compiler.CompUnitOutput) string { return u.SourceMap }},
+	{"index.d.ts", func(u compiler.CompUnitOutput) string { return u.DTS }},
 }
 
-// emitSkips are the fixtures whose emitted output still differs between the checkers,
-// with the cause each one waits on. A fixture checks on both and differs only in what
-// is written, so it stays in the run for its diagnostics and is held back here alone.
+// emitSkip names one fixture's one artifact, which is what a cause holds back. A
+// fixture whose `.d.ts` differs usually emits identical JavaScript, so holding the
+// whole fixture back would stop comparing output that already agrees.
+type emitSkip struct {
+	fixture  string
+	artifact string
+}
+
+// emitSkips are the fixture artifacts that still differ between the checkers, with the
+// cause each one waits on. A fixture checks on both and differs only in what is
+// written, so it stays in the run for its diagnostics and is held back here alone.
+//
+// The cause named is the one to clear first. A fixture can wait on more than one, and
+// an entry keeps logging until every fault behind it clears, so clearing a cause does
+// not always drop its entries.
 //
 // The entries are seeded from a run rather than predicted, and an entry that starts
 // agreeing fails, so the list burns down the way solverSkips does.
-var emitSkips = map[string]*solverSkipCause{
-	"class_with_static_members":   causeSynthesizedConstructor,
-	"extractor_arg_with_init":     causeSynthesizedConstructor,
-	"extractor_basic":             causeSynthesizedConstructor,
-	"extractor_inside_namespaces": causeSynthesizedConstructor,
-	"extractor_nested":            causeSynthesizedConstructor,
-	"fix_point_combinator":        causeSynthesizedConstructor,
-	"mut_class_reference":         causeSynthesizedConstructor,
+var emitSkips = map[emitSkip]*solverSkipCause{
+	{"class_with_static_members", "index.js"}:   causeSynthesizedConstructor,
+	{"extractor_arg_with_init", "index.js"}:     causeSynthesizedConstructor,
+	{"extractor_basic", "index.js"}:             causeSynthesizedConstructor,
+	{"extractor_inside_namespaces", "index.js"}: causeSynthesizedConstructor,
+	{"extractor_nested", "index.js"}:            causeSynthesizedConstructor,
+	{"fix_point_combinator", "index.js"}:        causeSynthesizedConstructor,
+	{"mut_class_reference", "index.js"}:         causeSynthesizedConstructor,
+
+	{"class_with_static_members", "index.js.map"}:   causeSynthesizedConstructor,
+	{"extractor_arg_with_init", "index.js.map"}:     causeSynthesizedConstructor,
+	{"extractor_basic", "index.js.map"}:             causeSynthesizedConstructor,
+	{"extractor_inside_namespaces", "index.js.map"}: causeSynthesizedConstructor,
+	{"extractor_nested", "index.js.map"}:            causeSynthesizedConstructor,
+	{"fix_point_combinator", "index.js.map"}:        causeSynthesizedConstructor,
+	{"mut_class_reference", "index.js.map"}:         causeSynthesizedConstructor,
+
+	{"enum", "index.d.ts"}:                        causeExtractorStaticSide,
+	{"extractor_arg_with_init", "index.d.ts"}:     causeExtractorStaticSide,
+	{"extractor_basic", "index.d.ts"}:             causeExtractorStaticSide,
+	{"extractor_inside_namespaces", "index.d.ts"}: causeExtractorStaticSide,
+	{"extractor_nested", "index.d.ts"}:            causeExtractorStaticSide,
+	{"generic_enum", "index.d.ts"}:                causeExtractorStaticSide,
+	{"fix_point_combinator", "index.d.ts"}:        causeClassCtorTypeParams,
+	{"mut_class_reference", "index.d.ts"}:         causeClassCtorTypeParams,
+	{"generalize", "index.d.ts"}:                  causeUnusedParamNotGeneralized,
+	{"type_ann_index_signature", "index.d.ts"}:    causeIndexSignatureOptional,
 }
 
-// causeSynthesizedConstructor is the one cause behind every entry in emitSkips.
+// causeSynthesizedConstructor is the cause behind every `index.js` entry in emitSkips.
 // internal/checker writes a ConstructorElem into the class's AST body during
 // inference, and codegen emits the constructor from that element. internal/solver
 // leaves the tree alone, so the class emits with no constructor and no members.
@@ -402,6 +438,45 @@ var causeSynthesizedConstructor = &solverSkipCause{
 	name:   "a constructor internal/checker synthesizes into the class body",
 	ticket: "#1771",
 }
+
+// The causes behind the `index.d.ts` entries, each triaged from the diff the artifact
+// comparison reports. #1676 is the issue that works them down.
+var (
+	// An extractor class's static type carries the `new` signature and no
+	// `[Symbol.customMatcher]` one, which says what a match against the class binds.
+	// An enum variant loses the constructor object too and renders as a plain
+	// function. What a match recovers is wrong as a result, not only the declaration
+	// describing it. `generic_enum` matches a `MyOption<number>` and reads the payload
+	// back as `never`.
+	causeExtractorStaticSide = &solverSkipCause{
+		name:   "the static side of an extractor or enum variant declaration",
+		ticket: "#1772",
+	}
+	// A class constructor's signature does not carry the class's declared type
+	// parameters. One a constructor argument mentions is rediscovered as an inferred
+	// variable and renamed to `T0`, and one no argument mentions coalesces to `never`,
+	// so `new <T>(log: string): Consumer<T>` emits as `new (log: string): Consumer<never>`.
+	causeClassCtorTypeParams = &solverSkipCause{
+		name:   "a class's declared type parameters on its constructor signature",
+		ticket: "#1773",
+	}
+	// A parameter the body never reads coalesces to `unknown` rather than becoming a
+	// type parameter, so `fn fst(a, b) { return a }` emits `<T0>(a: T0, b: unknown) => T0`
+	// where the twin emits `<T0, T1>(a: T0, b: T1) => T0`. The bound a call site imposes
+	// on a parameter is lost the same way.
+	causeUnusedParamNotGeneralized = &solverSkipCause{
+		name:   "generalizing a parameter the body never reads",
+		ticket: "#1774",
+	}
+	// An index signature over an uncountable key set loses its `?`, so
+	// `{[K: string]?: number}` emits `{[key: string]: number}`. No object has a field at
+	// every key of an infinite set, so the `?` is what makes a read off it
+	// `number | undefined`, and dropping it overstates what the declaration promises.
+	causeIndexSignatureOptional = &solverSkipCause{
+		name:   "the `?` on an index signature over an uncountable key set",
+		ticket: "#1775",
+	}
+)
 
 // requireSameEmittedOutput compiles sources under each checker and fails on any
 // difference in the artifacts comparedArtifacts names.
@@ -420,17 +495,18 @@ func requireSameEmittedOutput(t *testing.T, fixture string, sources []*ast.Sourc
 	require.Equal(t, unitNames(checkerOutput), unitNames(solverOutput),
 		"the two checkers emit the same set of compilation units")
 
-	cause, held := emitSkips[fixture]
+	// A held artifact that differed in any of the fixture's units is still held. A
+	// fixture with a `bin/` script emits a unit per script beside the library's, and
+	// keying the list by unit as well would make it name a path no reader of the
+	// fixture would think to look for.
+	differed := set.NewSet[string]()
 	for name, wantUnit := range checkerOutput.CompUnits {
 		gotUnit := solverOutput.CompUnits[name]
 		for _, artifact := range comparedArtifacts {
 			want, got := artifact.read(wantUnit), artifact.read(gotUnit)
-			if held {
-				// Re-compare rather than trusting the list, so clearing a cause forces
-				// its fixtures back into the comparison.
+			if _, held := emitSkips[emitSkip{fixture, artifact.name}]; held {
 				if want != got {
-					t.Logf("%s still differs: %s (%s)", artifact.name, cause.name, cause.ticket)
-					return
+					differed.Add(artifact.name)
 				}
 				continue
 			}
@@ -438,8 +514,21 @@ func requireSameEmittedOutput(t *testing.T, fixture string, sources []*ast.Sourc
 				"%s/%s differs between the checkers", name, artifact.name)
 		}
 	}
-	if held {
-		require.Fail(t, "this fixture's output now agrees; drop it from emitSkips")
+
+	// Re-compare rather than trusting the list, so clearing a cause forces its
+	// artifacts back into the comparison.
+	var waiting []string
+	for _, artifact := range comparedArtifacts {
+		cause, held := emitSkips[emitSkip{fixture, artifact.name}]
+		if !held {
+			continue
+		}
+		require.True(t, differed.Contains(artifact.name),
+			"%s now agrees between the checkers; drop it from emitSkips", artifact.name)
+		waiting = append(waiting, fmt.Sprintf("%s: %s (%s)", artifact.name, cause.name, cause.ticket))
+	}
+	if len(waiting) > 0 {
+		t.Logf("still differs:\n  %s", strings.Join(waiting, "\n  "))
 	}
 }
 
