@@ -15,32 +15,11 @@ import (
 //     expression. The caller in builder.go reads `expr.Owner` directly.
 //   - MemberExpr `math.sin` / `iterator.iteratorKey` whose property's
 //     binding owns a decl with `@js("Math.sin")` /
-//     `@js("Symbol.iterator")` lowers to the parsed JS expression (the
-//     receiver vanishes because @js carries the complete JS-runtime
-//     expression).
-
-// memberJSExpr returns the JS lowering for a MemberExpr whose receiver
-// resolves to a NamespaceType (the package binding under ?local).
-// The property's Binding in that namespace owns a decl whose
-// `@js("...")` decorator carries the lowering.
-func memberJSExpr(m *ast.MemberExpr) (string, bool) {
-	if m.Prop == nil {
-		return "", false
-	}
-	objType := m.Object.InferredType()
-	if objType == nil {
-		return "", false
-	}
-	nsType, ok := type_system.Prune(objType).(*type_system.NamespaceType)
-	if !ok || nsType.Namespace == nil {
-		return "", false
-	}
-	binding := nsType.Namespace.Values[m.Prop.Name]
-	if binding == nil {
-		return "", false
-	}
-	return jsExprFromOwner(binding.Owner)
-}
+//     `@js("Symbol.iterator")` lowers to the parsed JS expression. The
+//     receiver vanishes, because @js carries the complete JS-runtime
+//     expression. Each checker resolves the property to its binding
+//     differently, so JSTypes.MemberJSExpr is where that happens and
+//     jsExprFromOwner below is the half they share.
 
 // jsExprFromOwner reads the `@js("...")` decorator argument off a
 // binding's owning declaration. Returns ("", false) when the owner is

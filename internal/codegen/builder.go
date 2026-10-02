@@ -11,19 +11,27 @@ import (
 	"github.com/escalier-lang/escalier/internal/dep_graph"
 	"github.com/escalier-lang/escalier/internal/printer"
 	"github.com/escalier-lang/escalier/internal/set"
-	"github.com/escalier-lang/escalier/internal/type_system"
 )
 
 type Builder struct {
-	tempId          int
-	depGraph        *dep_graph.DepGraph
-	hasExtractor    bool
-	hasJsx          bool // tracks if _jsx is used
-	hasJsxs         bool // tracks if _jsxs is used
-	hasFragment     bool // tracks if _Fragment is used
-	isModule        bool
-	inBlockScope    bool
-	overloadDecls   map[string][]*ast.FuncDecl // Function name -> list of overload declarations
+	tempId        int
+	depGraph      *dep_graph.DepGraph
+	hasExtractor  bool
+	hasJsx        bool // tracks if _jsx is used
+	hasJsxs       bool // tracks if _jsxs is used
+	hasFragment   bool // tracks if _Fragment is used
+	isModule      bool
+	inBlockScope  bool
+	overloadDecls map[string][]*ast.FuncDecl // Function name -> list of overload declarations
+	// jsTypes answers what emission needs to know about inferred types. A nil field
+	// reads as noJSTypes through b.types(), which is what a hand-built AST wants.
+	jsTypes JSTypes
+}
+
+// SetJSTypes supplies the inferred-type oracle emission asks. The compiler's entry
+// points call it with the implementation belonging to whichever checker ran.
+func (b *Builder) SetJSTypes(t JSTypes) {
+	b.jsTypes = t
 }
 
 func (b *Builder) NewTempId() string {
@@ -1287,12 +1295,12 @@ func (b *Builder) buildTypeGuard(valueExpr Expr, typeAnn ast.TypeAnn) Expr {
 		return buildArrayIsArrayCheck(valueExpr, nil)
 	case *ast.TypeRefTypeAnn:
 		// A reference to a nominal type is tested with `instanceof` against the class
-		// name. nominalGuardName resolves the reference through its inferred type, either
+		// name. nominalGuardName reports whether the reference is nominal, either
 		// directly or through a type alias.
 		//
 		// TODO(#289): handle non-object types
 		// TODO(#289): handle structural object types
-		if typeName, nominal := nominalGuardName(t); nominal {
+		if typeName, nominal := b.nominalGuardName(t); nominal {
 			return NewBinaryExpr(
 				valueExpr,
 				InstanceOf,
@@ -1312,23 +1320,14 @@ func (b *Builder) buildTypeGuard(valueExpr Expr, typeAnn ast.TypeAnn) Expr {
 }
 
 // nominalGuardName returns the class name an `x instanceof C` guard tests for a
-// reference to a nominal type, and reports whether the reference is one. A reference
-// resolves through its inferred type, either directly or through a type alias.
-func nominalGuardName(t *ast.TypeRefTypeAnn) (string, bool) {
-	inferred := t.InferredType()
-	if inferred == nil {
+// reference to a nominal type, and reports whether the reference is one. The name
+// comes from the reference as written; only whether it is nominal comes from
+// inference.
+func (b *Builder) nominalGuardName(t *ast.TypeRefTypeAnn) (string, bool) {
+	if !b.types().IsNominalTypeRef(t) {
 		return "", false
 	}
-	pruned := type_system.Prune(inferred)
-	if typeRef, ok := pruned.(*type_system.TypeRefType); ok && typeRef.TypeAlias != nil {
-		if obj, ok := type_system.Prune(typeRef.TypeAlias.Type).(*type_system.ObjectType); ok && obj.Nominal {
-			return ast.QualIdentToString(t.Name), true
-		}
-	}
-	if obj, ok := pruned.(*type_system.ObjectType); ok && obj.Nominal {
-		return ast.QualIdentToString(t.Name), true
-	}
-	return "", false
+	return ast.QualIdentToString(t.Name), true
 }
 
 // isArrayTypeRef reports whether a reference is the `Array` the guard tests with
@@ -1370,19 +1369,13 @@ func (b *Builder) buildExpr(expr ast.Expr, parent ast.Expr) (Expr, []Stmt) {
 		argsExprs, argsStmts := b.buildExprs(expr.Args)
 		stmts := slices.Concat(calleeStmts, argsStmts)
 
-		// Check if the callee is a constructor by examining its inferred type
-		calleeType := expr.Callee.InferredType()
-		if objType, ok := calleeType.(*type_system.ObjectType); ok {
-			// Check if the object type has a constructor elem
-			for _, elem := range objType.Elems {
-				if _, isConstructor := elem.(*type_system.ConstructorElem); isConstructor {
-					return NewNewExpr(
-						calleeExpr,
-						argsExprs,
-						expr,
-					), stmts
-				}
-			}
+		// A callee carrying a constructor is called with `new`.
+		if b.types().CalleeConstructs(expr.Callee) {
+			return NewNewExpr(
+				calleeExpr,
+				argsExprs,
+				expr,
+			), stmts
 		}
 
 		return NewCallExpr(
@@ -1397,7 +1390,7 @@ func (b *Builder) buildExpr(expr ast.Expr, parent ast.Expr) (Expr, []Stmt) {
 		stmts := slices.Concat(objStmts, indexStmts)
 		return NewIndexExpr(objExpr, indexExpr, expr.OptChain, expr), stmts
 	case *ast.MemberExpr:
-		if jsExpr, ok := memberJSExpr(expr); ok {
+		if jsExpr, ok := b.types().MemberJSExpr(expr); ok {
 			// `math.sin` collapses to the @js-decorated declaration's
 			// argument (e.g. `Math.sin`). The original receiver doesn't
 			// participate in the lowered output, so we drop the
@@ -1423,8 +1416,7 @@ func (b *Builder) buildExpr(expr ast.Expr, parent ast.Expr) (Expr, []Stmt) {
 
 		member := NewMemberExpr(objExpr, propExpr, expr.OptChain, expr)
 		if _, ok := parent.(*ast.CallExpr); !ok {
-			t := expr.InferredType()
-			if _, ok := t.(*type_system.FuncType); ok {
+			if b.types().IsFunc(expr) {
 				// If the object is not already an IdentExpr, extract it to a temp variable
 				// to avoid duplicating complex expressions and running side-effects multiple times
 				var bindTargetExpr Expr
@@ -1682,46 +1674,26 @@ func (b *Builder) buildExpr(expr ast.Expr, parent ast.Expr) (Expr, []Stmt) {
 		// Generate the condition and binding statements for the pattern
 		condition, bindingStmts := b.buildPatternCondition(expr.Pattern, targetExpr)
 
-		// For if-val expressions, check if the target type is nullable and add null/undefined check
-		if expr.Target.InferredType() != nil {
-			targetType := type_system.Prune(expr.Target.InferredType())
-			if unionType, ok := targetType.(*type_system.UnionType); ok {
-				// Check if the union contains null or undefined
-				hasNull := false
-				hasUndefined := false
-				for _, t := range unionType.Types {
-					if litType, ok := type_system.Prune(t).(*type_system.LitType); ok {
-						if _, isNull := litType.Lit.(*type_system.NullLit); isNull {
-							hasNull = true
-						}
-						if _, isUndefined := litType.Lit.(*type_system.UndefinedLit); isUndefined {
-							hasUndefined = true
-						}
-					}
-				}
-
-				// Add null check if needed
-				if hasNull {
-					nullCheck := NewBinaryExpr(
-						targetExpr,
-						NotEqual,
-						NewLitExpr(NewNullLit(expr), expr),
-						expr,
-					)
-					condition = NewBinaryExpr(nullCheck, LogicalAnd, condition, expr)
-				}
-
-				// Add undefined check if needed
-				if hasUndefined {
-					undefinedCheck := NewBinaryExpr(
-						targetExpr,
-						NotEqual,
-						NewLitExpr(NewUndefinedLit(&ast.UndefinedLit{}), expr),
-						expr,
-					)
-					condition = NewBinaryExpr(undefinedCheck, LogicalAnd, condition, expr)
-				}
-			}
+		// A nullable target is guarded before its pattern is tested, so the binding
+		// the pattern introduces cannot read through a null or undefined value.
+		hasNull, hasUndefined := b.types().NullableArms(expr.Target)
+		if hasNull {
+			nullCheck := NewBinaryExpr(
+				targetExpr,
+				NotEqual,
+				NewLitExpr(NewNullLit(expr), expr),
+				expr,
+			)
+			condition = NewBinaryExpr(nullCheck, LogicalAnd, condition, expr)
+		}
+		if hasUndefined {
+			undefinedCheck := NewBinaryExpr(
+				targetExpr,
+				NotEqual,
+				NewLitExpr(NewUndefinedLit(&ast.UndefinedLit{}), expr),
+				expr,
+			)
+			condition = NewBinaryExpr(undefinedCheck, LogicalAnd, condition, expr)
 		}
 
 		// Build the consequent (then branch) with assignments to temp variable

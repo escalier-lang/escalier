@@ -180,6 +180,7 @@ func Compile(source *ast.Source) CompilerOutput {
 	// namespace := scope.Namespace
 
 	builder := &codegen.Builder{}
+	builder.SetJSTypes(result.jsTypes)
 	jsMod := builder.BuildScript(inMod)
 	// var decls []ast.Decl
 	// for _, d := range inMod.Stmts {
@@ -263,6 +264,7 @@ func CompilePackage(sources []*ast.Source) CompilerOutput {
 			// dep_graph.BuildDepGraph, so the emitter walks the declarations in the
 			// order inference typed them.
 			builder := &codegen.Builder{}
+			builder.SetJSTypes(lib.jsTypes)
 			jsMod := builder.BuildTopLevelDecls(lib.depGraph)
 
 			printer := codegen.NewPrinter()
@@ -370,6 +372,7 @@ func CompileScript(lib LibScope, source *ast.Source) CompilerOutput {
 	}
 
 	builder := &codegen.Builder{}
+	builder.SetJSTypes(result.jsTypes)
 	jsMod := builder.BuildScript(inMod)
 
 	// Collect used library symbols and add import statement if needed
