@@ -41,11 +41,6 @@ import (
 // What this does NOT cover: a path group holding more positions than edges when several edges
 // share it. Which position reaches which referent is unknown there, so the group is skipped
 // rather than guessed at.
-//
-// #1600: a borrow edge records no mutability, so a returned literal's element that is not a
-// written `&mut` counts as a path that does not write even when it holds a mutable borrow.
-// `return [a.peer, &mut b]` over `val a = {peer: &mut b}` is two writers, which Rule 3 allows,
-// and it reports as a mix. Closing that needs fieldBorrow to carry the borrow's mutability.
 
 // SharedReturnPathsError reports a returned value that reaches one local through a path that
 // writes and a path that reads.
@@ -163,10 +158,10 @@ func (c *checker) reportReachedTwice(reached []reachedPlace, blame ast.Expr) {
 // type as a variable the evaluator settles after this pass runs, which leaves the type walk
 // seeing one borrow where the literal has two.
 //
-// An element that is an explicit `&mut` marks its referents writable. Any other element counts
-// toward the reach without claiming a write, so a pair of written `&mut` elements is not
-// reported, a pair of reads is not reported, and a pair whose writability is unknown is reported
-// only when the other path is a written `&mut`.
+// Each reach carries whether a write can go through it, which elementReferents reads off the
+// borrow written in the element or off the edge it follows. `return [a.peer, &mut b]` over
+// `val a = {peer: &mut b}` is two writers and is not reported. Over `val a = {peer: &b}` it is
+// a writer and a reader, and it is.
 func (c *checker) reportLiteralSharedPaths(
 	e ast.Expr,
 	graph map[liveness.VarID][]fieldBorrow,
@@ -184,21 +179,11 @@ func (c *checker) reportLiteralSharedPaths(
 	default:
 		return false
 	}
-	// One reach per element, keeping the field path so two disjoint fields of one local stay
-	// apart. `[&mut b.x, &mut b.y]` names b twice and reaches nothing twice.
-	type reach struct {
-		place movePlace
-		mut   bool
-	}
-	var reaches []reach
+	// One reach per path an element takes, keeping the field path so two disjoint fields of one
+	// local stay apart. `[&mut b.x, &mut b.y]` names b twice and reaches nothing twice.
+	var reaches []elementReach
 	for _, elem := range elems {
-		mut := false
-		if borrow, isBorrow := elem.(*ast.BorrowExpr); isBorrow {
-			mut = borrow.Mut
-		}
-		for _, pl := range c.elementReferents(elem, graph) {
-			reaches = append(reaches, reach{place: pl, mut: mut})
-		}
+		reaches = append(reaches, c.elementReferents(elem, graph)...)
 	}
 	seen := set.NewSet[liveness.VarID]()
 	for i := range reaches {
@@ -232,44 +217,110 @@ func (c *checker) noteSharedPathReturn(blame ast.Expr) {
 	c.fn.sharedPathSpans = append(c.fn.sharedPathSpans, span)
 }
 
-// elementReferents returns the locals one element of a returned literal reaches.
+// elementReach is one path an element of a returned literal takes into a local: the place it
+// reaches and whether a write can go through it.
+type elementReach struct {
+	place movePlace
+	mut   bool
+}
+
+// elementReferents returns the paths one element of a returned literal takes into locals.
 //
-// A `&mut b` element reaches b outright, and whatever b itself borrows beyond that. A plain
-// place reaches only what its edges lead to: `a.peer` over `val a = {peer: &mut b}` reaches b,
-// not a. Reading a as the referent would miss the pair in `[a.peer, &mut b]`, where both
-// elements lead to the same b.
+// A `&mut b` element reaches b outright, with the mutability the borrow is written with, and
+// whatever b itself borrows beyond that. A plain place reaches only what its edges lead to:
+// `a.peer` over `val a = {peer: &mut b}` reaches b, not a. Reading a as the referent would miss
+// the pair in `[a.peer, &mut b]`, where both elements lead to the same b.
+//
+// A local reached through an edge takes that edge's mutability. A borrow field carries its own
+// mutability rather than the enclosing borrow's, so the last edge on the route decides.
 func (c *checker) elementReferents(
 	elem ast.Expr,
 	graph map[liveness.VarID][]fieldBorrow,
-) []movePlace {
-	var out []movePlace
-	reached := set.NewSet[liveness.VarID]()
+) []elementReach {
+	var out []elementReach
+	var pl movePlace
 	if borrow, isBorrow := elem.(*ast.BorrowExpr); isBorrow {
 		// The borrow names the place outright, field path and all, so `&mut b.x` reaches b.x.
 		if _, ok := c.isLocalReferent(borrow.Arg); !ok {
 			return nil
 		}
-		pl, ok := exprPlace(borrow.Arg)
-		if !ok || pl.root <= 0 {
+		p, ok := exprPlace(borrow.Arg)
+		if !ok || p.root <= 0 {
 			return nil
 		}
-		out = append(out, pl)
-		c.collectBorrowedFrom(pl.root, pl.path, reached, set.NewSet[liveness.VarID](), graph)
+		pl = p
+		out = append(out, elementReach{place: pl, mut: borrow.Mut})
 	} else {
-		pl, ok := exprPlace(elem)
-		if !ok || pl.root <= 0 {
+		p, ok := exprPlace(elem)
+		if !ok || p.root <= 0 {
 			return nil
 		}
-		c.collectBorrowedFrom(pl.root, pl.path, reached, set.NewSet[liveness.VarID](), graph)
+		pl = p
 	}
-	// An edge names the whole local it reaches, since fieldBorrow records no path within the
-	// referent. Those come back as whole-binding places.
-	ids := reached.ToSlice()
-	slices.Sort(ids)
-	for _, id := range ids {
-		out = append(out, movePlace{root: id})
+	var edges []fieldBorrow
+	collectEdgesFrom(pl.root, pl.path, set.NewSet[liveness.VarID](), graph, &edges)
+	// Each local comes back as a whole-binding place, once per mutability it is reached with.
+	// Sorting keeps the report order the same every run.
+	slices.SortFunc(edges, func(a, b fieldBorrow) int {
+		if a.referent != b.referent {
+			return int(a.referent) - int(b.referent)
+		}
+		if a.mut == b.mut {
+			return 0
+		}
+		if a.mut {
+			return 1
+		}
+		return -1
+	})
+	for _, e := range edges {
+		r := elementReach{place: movePlace{root: e.referent}, mut: e.mut}
+		if !slices.ContainsFunc(out, func(x elementReach) bool {
+			return x.mut == r.mut && placesEqual(x.place, r.place)
+		}) {
+			out = append(out, r)
+		}
 	}
 	return out
+}
+
+// collectEdgesFrom appends to out every edge reachable from root, starting with root's edges
+// on filter's field path and then following every edge of each referent reached. It walks the
+// same routes collectBorrowedFrom does and keeps each edge, so a caller can read the
+// mutability of the borrow each local is reached through. The seen set terminates borrow
+// cycles.
+func collectEdgesFrom(
+	root liveness.VarID,
+	filter []placeSeg,
+	seen set.Set[liveness.VarID],
+	graph map[liveness.VarID][]fieldBorrow,
+	out *[]fieldBorrow,
+) {
+	for _, edge := range graph[root] {
+		if !pathPrefixRelated(edge.path, filter) {
+			continue
+		}
+		*out = append(*out, edge)
+		collectAllEdgesFrom(edge.referent, seen, graph, out)
+	}
+}
+
+// collectAllEdgesFrom appends to out every edge reachable from node, following every edge
+// regardless of field path, the way collectAllFrom does for the locals alone.
+func collectAllEdgesFrom(
+	node liveness.VarID,
+	seen set.Set[liveness.VarID],
+	graph map[liveness.VarID][]fieldBorrow,
+	out *[]fieldBorrow,
+) {
+	if seen.Contains(node) {
+		return
+	}
+	seen.Add(node)
+	for _, edge := range graph[node] {
+		*out = append(*out, edge)
+		collectAllEdgesFrom(edge.referent, seen, graph, out)
+	}
 }
 
 // pathGroup is the borrow positions sharing one field path.

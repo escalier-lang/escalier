@@ -74,35 +74,41 @@ func TestSharedReturnPaths(t *testing.T) {
 			`,
 			want: []string{"5:13-5:14: returned value reaches 'b' through a mutable path and an immutable one"},
 		},
-		// DISABLED until #1600. The literal walk reads an element that is not a written `&mut`
-		// as a path that does not write, because a borrow edge records no mutability. These two
-		// cases report today for that reason. Once #1600 lands, a.peer reads as the mutable
-		// borrow it is, and both cases check.
-		/*
-			// The second repro in #1263. a.peer and `&mut b` both lead to b, and a holds a mutable
-			// borrow of b. The pair is two writers, and Rule 3 allows it.
-			"TupleReachesOneLocalTwice": {
-				src: `
-					fn build() -> [&mut {value: number}, &mut {value: number}] {
-						val mut b = {value: 2}
-						val mut a = {peer: &mut b}
-						return [a.peer, &mut b]
-					}
-				`,
-				want: nil,
-			},
-			// An object literal reaches the same pair through named fields.
-			"ObjectReachesOneLocalTwice": {
-				src: `
-					fn build() -> {p: &mut {value: number}, q: &mut {value: number}} {
-						val mut b = {value: 2}
-						val mut a = {peer: &mut b}
-						return {p: a.peer, q: &mut b}
-					}
-				`,
-				want: nil,
-			},
-		*/
+		// The second repro in #1263. a.peer and `&mut b` both lead to b, and a holds a mutable
+		// borrow of b. The pair is two writers, and Rule 3 allows it.
+		"TupleReachesOneLocalTwice": {
+			src: `
+				fn build() -> [&mut {value: number}, &mut {value: number}] {
+					val mut b = {value: 2}
+					val mut a = {peer: &mut b}
+					return [a.peer, &mut b]
+				}
+			`,
+			want: nil,
+		},
+		// An object literal reaches the same pair through named fields.
+		"ObjectReachesOneLocalTwice": {
+			src: `
+				fn build() -> {p: &mut {value: number}, q: &mut {value: number}} {
+					val mut b = {value: 2}
+					val mut a = {peer: &mut b}
+					return {p: a.peer, q: &mut b}
+				}
+			`,
+			want: nil,
+		},
+		// The same route with a holding an immutable borrow of b. a.peer is a reader and
+		// `&mut b` a writer, so the pair is a mix.
+		"FieldReadReachesOneLocalMutablyAndImmutably": {
+			src: `
+				fn build() -> [&{value: number}, &mut {value: number}] {
+					val mut b = {value: 2}
+					val mut a = {peer: &b}
+					return [a.peer, &mut b]
+				}
+			`,
+			want: []string{"5:13-5:29: returned value reaches 'b' through a mutable path and an immutable one"},
+		},
 		// Two readers see the same value, so nothing can disagree.
 		"TwoSharedPathsOk": {
 			src: `
@@ -150,11 +156,9 @@ func TestSharedReturnPaths(t *testing.T) {
 			`,
 			want: nil,
 		},
-		// DISABLED until #1600 and #1745. This case reports today for two reasons. The literal
-		// walk reads a.peer as a path that does not write, because a borrow edge records no
-		// mutability. That is #1600. With that report gone, the use check still flags the b in
-		// the returned `&mut b` as a use while a's store loan is live. That is #1745. Once both
-		// land, the case checks.
+		// DISABLED until #1745. The use check flags the b in the returned `&mut b` as a use while
+		// a's store loan is live, because a borrow inside a return is not noted as the read that
+		// takes its own loan. Once #1745 lands, the case checks.
 		/*
 			// The first repro in #1263, where a call's store effect is what aliases the two paths
 			// rather than an initializer. The store leaves a.peer reaching b, so the tuple hands
