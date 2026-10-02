@@ -481,6 +481,12 @@ type funcCtx struct {
 	// captureVarIDs holds the VarID of every local a closure's body captures. The pre-pass
 	// defines each as a parameter of the body, so each is in paramVarIDs too.
 	captureVarIDs set.Set[liveness.VarID]
+	// capturedLocals holds, for each closure written in this body, the locals of this body it
+	// captures that hold a reference-shaped value.
+	capturedLocals map[*ast.FuncExpr][]capturedLocal
+	// closureBindings maps each binding whose value is a closure written in this body to that
+	// closure. A reassignment of the binding removes its entry.
+	closureBindings map[liveness.VarID]*ast.FuncExpr
 	// escapeSites records every value flowing out of the frame that might carry a borrow
 	// of a function-local: a return value, a value stored into a parameter's field, and a
 	// consuming argument. The decision is deferred to a post-pass, resolveComponentEscapes,

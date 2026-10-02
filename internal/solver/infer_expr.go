@@ -2163,6 +2163,8 @@ func (c *checker) inferAssign(scope *Scope, lvl int, e *ast.BinaryExpr) soltype.
 			if c.fn != nil {
 				if ref, ok := c.fn.stmtToRef[assignStmt]; ok {
 					c.consumeAtGlobalWrite(e.Right, sourceT, e.Right, ref)
+					// A closure in permanent storage outlives every local it captures.
+					c.consumeEscapingCaptures(e.Right, ref)
 				}
 			}
 			// KNOWN GAP (#762): this store is accepted even though it is not sound in
@@ -2329,6 +2331,11 @@ func (c *checker) inferMemberAssign(scope *Scope, lvl int, e *ast.BinaryExpr, m 
 			// checkParamFieldStoreEscape applies only when the receiver is such a parameter,
 			// and records the store for the post-pass to decide.
 			c.checkParamFieldStoreEscape(m.Object, m.Prop.Name, e.Right, ref)
+			// The caller keeps the receiver, so a closure stored into it outlives the locals it
+			// captures. paramReferentOutlivesFrame is true for exactly such a receiver.
+			if rp, ok := exprPlace(m.Object); ok && rp.root > 0 && c.paramReferentOutlivesFrame(rp.root) {
+				c.consumeEscapingCaptures(e.Right, ref)
+			}
 			// A store into a LOCAL receiver's field records a borrow edge instead, rooted at
 			// the field. It does not escape until the receiver itself flows out, at which
 			// point the recorded edge is followed. `b.peer = &mut d` records b → d at [peer].

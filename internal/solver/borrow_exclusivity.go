@@ -318,6 +318,7 @@ func (c *checker) recordBorrowLoan(holder int, init ast.Expr, ref liveness.StmtR
 	// is the strong update the flow-sensitive borrow graph makes for the same statement.
 	c.dropLoansHeldBy(liveness.VarID(holder))
 	delete(c.fn.heldClosures, liveness.VarID(holder))
+	delete(c.fn.closureBindings, liveness.VarID(holder))
 	if closure, ok := init.(*ast.FuncExpr); ok {
 		// Each later call of the name, or call the name is passed to, takes the closure's
 		// capture loans for that call's statement.
@@ -327,6 +328,10 @@ func (c *checker) recordBorrowLoan(holder int, init ast.Expr, ref liveness.StmtR
 			}
 			c.fn.heldClosures[liveness.VarID(holder)] = closure
 		}
+		if c.fn.closureBindings == nil {
+			c.fn.closureBindings = map[liveness.VarID]*ast.FuncExpr{}
+		}
+		c.fn.closureBindings[liveness.VarID(holder)] = closure
 		return
 	}
 	borrow, ok := init.(*ast.BorrowExpr)
@@ -355,6 +360,8 @@ func (c *checker) recordBorrowLoan(holder int, init ast.Expr, ref liveness.StmtR
 type captureAccess struct {
 	root liveness.VarID
 	mut  bool
+	// t is the type of the captured local's binding.
+	t soltype.Type
 }
 
 // captureAccesses returns the locals of the current body that `closure` captures, resolving
@@ -372,19 +379,33 @@ func (c *checker) captureAccesses(scope *Scope, closure *ast.FuncExpr) []capture
 		if name, ok := c.fn.varIDNames[root]; !ok || name != capture.Name {
 			continue
 		}
-		out = append(out, captureAccess{root: root, mut: capture.IsMutable})
+		out = append(out, captureAccess{root: root, mut: capture.IsMutable, t: bindingType(b)})
 	}
 	return out
 }
 
-// recordCaptureLoans records the accesses `closure` makes to the locals it captures. A closure
-// in namedClosures has them saved for the calls of its name. Any other closure takes its
-// capture loans at its own statement, since the expression it sits in may call it there.
+// capturedLocal is a local of the current body that a closure captures, and the type of its
+// binding.
+type capturedLocal struct {
+	root liveness.VarID
+	t    soltype.Type
+}
+
+// recordCaptureLoans records the accesses `closure` makes to the locals it captures, and
+// records each such local in capturedLocals. A closure in namedClosures has its accesses saved
+// for the calls of its name. Any other closure takes its capture loans at its own statement,
+// since the expression it sits in may call it there.
 func (c *checker) recordCaptureLoans(scope *Scope, closure *ast.FuncExpr) {
 	if c.fn == nil {
 		return
 	}
 	accesses := c.captureAccesses(scope, closure)
+	for _, a := range accesses {
+		if c.fn.capturedLocals == nil {
+			c.fn.capturedLocals = map[*ast.FuncExpr][]capturedLocal{}
+		}
+		c.fn.capturedLocals[closure] = append(c.fn.capturedLocals[closure], capturedLocal{root: a.root, t: a.t})
+	}
 	if c.fn.namedClosures != nil && c.fn.namedClosures.Contains(closure) {
 		if c.fn.closureAccesses == nil {
 			c.fn.closureAccesses = map[*ast.FuncExpr][]captureAccess{}

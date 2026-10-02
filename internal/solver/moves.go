@@ -671,6 +671,33 @@ func (c *checker) consumeIntoLiteral(el ast.Expr, elemT soltype.Type, ref livene
 	c.consumeOwned(el, elemT, el, ref)
 }
 
+// consumeEscapingCaptures moves each owned local of the current body captured by the closure e
+// evaluates to, recording the move at ref. e is either a closure written in place or a name
+// bound to one. Any other e moves nothing. A capture holding a borrow is not moved, since a
+// borrow moves only at a module-level write.
+func (c *checker) consumeEscapingCaptures(e ast.Expr, ref liveness.StmtRef) {
+	if c.fn == nil || c.fn.cfg == nil {
+		return
+	}
+	var closure *ast.FuncExpr
+	switch e := e.(type) {
+	case *ast.FuncExpr:
+		closure = e
+	case *ast.IdentExpr:
+		if e.VarID > 0 {
+			closure = c.fn.closureBindings[liveness.VarID(e.VarID)]
+		}
+	}
+	if closure == nil {
+		return
+	}
+	for _, captured := range c.fn.capturedLocals[closure] {
+		if isOwnedMovable(captured.t) {
+			c.recordMovePlace(movePlace{root: captured.root}, e, ref)
+		}
+	}
+}
+
 // recordMovePlace consumes the place at the given program point, blaming moveNode. It
 // resolves the place to its lattice VarID, registers the mapping so the
 // use-after-move scan can recover the path for the prefix test, and records the move
