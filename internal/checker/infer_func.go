@@ -123,25 +123,38 @@ func (c *Checker) inferFuncParams(
 	return params, bindings, errors
 }
 
-// inferFuncTypeParams infers type parameters for functions and function expressions.
-// Unlike inferTypeParams, this version:
-// - Uses inferTypeAnn instead of FreshVar for constraints and defaults
-// - Sets provenance on constraint and default types
-// - Adds the type parameters to the function context scope
-// Returns the list of type parameters and any errors encountered.
-func (c *Checker) inferFuncTypeParams(
+// resolveTypeParams resolves each type parameter's constraint and default from the
+// annotation the source wrote, sets provenance on both, and binds the parameter's name in
+// funcCtx's scope so a sibling's annotation can name it. It returns the parameters and the
+// diagnostics resolving them raised.
+//
+// The parameters come back in declaration order. A caller pairing type arguments with
+// parameters pairs them by position, the quantifier prefix a signature renders follows the
+// list, and unifyTypeParams pairs this list against a placeholder list that is in
+// declaration order too.
+//
+// Every declaration carrying type parameters resolves them here: a function, a function
+// expression, a function type annotation, a constructor, a class, and an enum.
+//
+// inferTypeParams is the other half of the pair. It mints a fresh variable per constraint
+// and default rather than reading the annotation, which is what lets a declaration that
+// mentions a sibling be pre-bound before any annotation is resolved. A declaration
+// pre-bound that way reaches its real constraints and defaults by resolving them here and
+// unifying the two lists through unifyTypeParams.
+func (c *Checker) resolveTypeParams(
 	ctx Context,
 	funcCtx Context,
 	astTypeParams []*ast.TypeParam,
 ) ([]*type_system.TypeParam, []Error) {
 	errors := []Error{}
 
-	// Sort type parameters topologically so dependencies come first
+	// Resolve in topological order, so a bound naming a sibling resolves after that
+	// sibling and reaches the name it wrote rather than an undeclared one.
 	sortedTypeParams := ast.SortTypeParamsTopologically(astTypeParams)
 
-	typeParams := make([]*type_system.TypeParam, len(sortedTypeParams))
+	byName := make(map[string]*type_system.TypeParam, len(sortedTypeParams))
 
-	for i, tp := range sortedTypeParams {
+	for _, tp := range sortedTypeParams {
 		var defaultType type_system.Type
 		var constraintType type_system.Type
 		if tp.Default != nil {
@@ -161,7 +174,7 @@ func (c *Checker) inferFuncTypeParams(
 			Constraint: constraintType,
 			Default:    defaultType,
 		}
-		typeParams[i] = typeParam
+		byName[tp.Name] = typeParam
 
 		var t type_system.Type = type_system.NewUnknownType(nil)
 		if typeParam.Constraint != nil {
@@ -174,6 +187,12 @@ func (c *Checker) inferFuncTypeParams(
 		})
 	}
 
+	// Topological order is an internal step of the resolution above. The result is in
+	// declaration order, which this function's doc gives the reasons for.
+	typeParams := make([]*type_system.TypeParam, len(astTypeParams))
+	for i, astParam := range astTypeParams {
+		typeParams[i] = byName[astParam.Name]
+	}
 	return typeParams, errors
 }
 
@@ -209,7 +228,7 @@ func (c *Checker) inferFuncSig(
 	lifetimeParams := c.declareLifetimeParams(funcCtx.Scope, sig.LifetimeParams)
 
 	// Handle generic functions by creating type parameters
-	typeParams, typeParamErrors := c.inferFuncTypeParams(ctx, funcCtx, sig.TypeParams)
+	typeParams, typeParamErrors := c.resolveTypeParams(ctx, funcCtx, sig.TypeParams)
 	errors = slices.Concat(errors, typeParamErrors)
 
 	params, bindings, paramErrors := c.inferFuncParams(funcCtx, sig.Params)

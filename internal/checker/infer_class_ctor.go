@@ -131,7 +131,7 @@ func (c *Checker) inferConstructorSig(
 	// (3) Constructor-level type params (rare) are layered on top of the
 	// class's own type params; the class's params remain in scope via
 	// `declCtx`.
-	ctorLocalTypeParams, tpErrors := c.inferFuncTypeParams(declCtx, ctorCtx, ctor.Fn.TypeParams)
+	ctorLocalTypeParams, tpErrors := c.resolveTypeParams(declCtx, ctorCtx, ctor.Fn.TypeParams)
 	errors = slices.Concat(errors, tpErrors)
 	ctorTypeParams := classTypeParams
 	if len(ctorLocalTypeParams) > 0 {

@@ -323,7 +323,7 @@ func (c *Checker) inferFuncTypeAnn(
 	lifetimeParams := c.declareLifetimeParams(funcCtx.Scope, funcTypeAnn.LifetimeParams)
 
 	// Handle generic functions by creating type parameters
-	typeParams, typeParamErrors := c.inferFuncTypeParams(ctx, funcCtx, funcTypeAnn.TypeParams)
+	typeParams, typeParamErrors := c.resolveTypeParams(ctx, funcCtx, funcTypeAnn.TypeParams)
 	errors = slices.Concat(errors, typeParamErrors)
 
 	params := make([]*type_system.FuncParam, len(funcTypeAnn.Params))
