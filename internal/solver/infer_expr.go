@@ -1239,8 +1239,20 @@ func (c *checker) wrapBorrow(e *ast.BorrowExpr, lvl int, sub soltype.Type) solty
 	switch s := sub.(type) {
 	case *soltype.RefType:
 		inner = s.Inner
+	case *soltype.TypeVarType:
+		// A read of a `var` binding is a variable whose lower bound is the value it holds,
+		// `mut {x: number}` for `var mut q = {x: 0}`. The borrow wraps that value. Wrapping
+		// the variable itself would constrain it against a borrow of itself, so the value's
+		// immutable inner would reach the variable and then fail the `&mut` it now sits under.
+		// A variable that holds no known owned value, such as an unannotated parameter's, is
+		// wrapped as it is.
+		if carrier := c.ownedCarrier(s); carrier != nil {
+			inner = carrier
+		} else {
+			inner = s
+		}
 	case soltype.RefInner:
-		// ObjectType, TupleType, or TypeVarType — all valid borrow inners.
+		// ObjectType or TupleType, both valid borrow inners.
 		inner = s
 	default:
 		// A primitive, function, or promise is not a RefInner and has nothing
