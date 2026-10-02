@@ -714,7 +714,7 @@ func (c *checker) runLivenessPrePass(scope *Scope, astParams []*ast.Param, recv 
 	firstID := liveness.VarID(c.varIDCounter)
 	var captured []string
 	if closure != nil {
-		captured = c.collectClosureCaptures(scope, astParams, closure, outerBindings, firstID)
+		captured = c.collectClosureCaptures(scope, closure, outerBindings)
 		extraParams = append(extraParams, captured...)
 	}
 	renameResult := liveness.RenameFrom(astParams, *body, outerBindings, firstID, extraParams...)
@@ -772,12 +772,11 @@ func (c *checker) runLivenessPrePass(scope *Scope, astParams []*ast.Param, recv 
 // out. Every capture closure makes, module-level names included, is recorded for
 // closureCaptures to return.
 //
-// The captures are read off a rename of the body that defines no extra parameters, where a
-// captured name resolves to a negative VarID. The rename that follows overwrites those VarIDs.
-// firstID is where that second rename starts, so this one allocates nothing.
-func (c *checker) collectClosureCaptures(scope *Scope, astParams []*ast.Param, closure *ast.FuncExpr, outerBindings map[string]liveness.VarID, firstID liveness.VarID) []string {
-	liveness.RenameFrom(astParams, *closure.Body, outerBindings, firstID)
-	captures := liveness.AnalyzeCaptures(closure)
+// liveness.ClosureCaptures renames the closure's body and the bodies nested in it. The
+// pre-pass renames the closure's body again right after this, and each nested body is renamed
+// by its own pre-pass before the walk reaches it.
+func (c *checker) collectClosureCaptures(scope *Scope, closure *ast.FuncExpr, outerBindings map[string]liveness.VarID) []string {
+	captures := liveness.ClosureCaptures(closure, outerBindings)
 	if c.closureCaptureInfo == nil {
 		c.closureCaptureInfo = map[*ast.FuncExpr][]liveness.CaptureInfo{}
 	}

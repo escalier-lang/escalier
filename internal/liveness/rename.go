@@ -61,6 +61,9 @@ type renamer struct {
 	scope      *scope
 	errors     []RenameError
 	varIDNames map[VarID]string
+	// nested makes the walk rename the parameters and body of each function nested in the
+	// body, each in its own scope.
+	nested bool
 }
 
 func newRenamer(outerBindings map[string]VarID, firstID VarID) *renamer {
@@ -165,6 +168,18 @@ func RenameFrom(params []*ast.Param, body ast.Block, outerBindings map[string]Va
 	}
 }
 
+// renameNestedFunc renames a nested function's parameters and body in a scope of their own.
+func (r *renamer) renameNestedFunc(params []*ast.Param, body *ast.Block) {
+	r.pushScope()
+	defer r.popScope()
+	for _, param := range params {
+		r.renamePat(param.Pattern)
+	}
+	if body != nil {
+		r.renameBlock(*body)
+	}
+}
+
 // renameBlock processes a block of statements sequentially.
 func (r *renamer) renameBlock(block ast.Block) {
 	for _, stmt := range block.Stmts {
@@ -221,6 +236,9 @@ func (r *renamer) renameDecl(decl ast.Decl) {
 		}
 		// Don't recurse into the function body — it gets its own rename
 		// pass when inferFuncBody is called for it.
+		if r.nested {
+			r.renameNestedFunc(d.Params, d.Body)
+		}
 	case *ast.TypeDecl:
 		// Type declarations don't introduce variable bindings.
 	case *ast.InterfaceDecl:
@@ -295,6 +313,9 @@ func (r *renamer) renameExpr(expr ast.Expr) {
 		// Don't recurse into the function body — it gets its own rename
 		// pass. But we do NOT process parameters here either, since they
 		// belong to the inner function's scope.
+		if r.nested {
+			r.renameNestedFunc(e.Params, e.Body)
+		}
 	case *ast.CallExpr:
 		r.renameExpr(e.Callee)
 		for _, arg := range e.Args {
