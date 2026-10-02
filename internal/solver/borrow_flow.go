@@ -304,7 +304,7 @@ func unionEdges(a, b []fieldBorrow) []fieldBorrow {
 // immutable on the other, and keeping both edges keeps the writable one visible.
 func containsFieldBorrow(fieldBorrows []fieldBorrow, fb fieldBorrow) bool {
 	for _, x := range fieldBorrows {
-		if x.referent == fb.referent && x.mut == fb.mut && slices.Equal(x.path, fb.path) && slices.Equal(x.refPath, fb.refPath) {
+		if x.referent == fb.referent && x.mut == fb.mut && x.capture == fb.capture && slices.Equal(x.path, fb.path) && slices.Equal(x.refPath, fb.refPath) {
 			return true
 		}
 	}

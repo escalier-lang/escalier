@@ -81,8 +81,6 @@ func (c *checker) inferStmt(scope *Scope, lvl int, s ast.Stmt) soltype.Type {
 					// self-contained component the move re-anchors. checkReturnEscape records
 					// the return for the post-pass to decide.
 					c.checkReturnEscape(s.Expr, ref)
-					// A returned closure outlives the frame, and the locals it captures with it.
-					c.consumeEscapingCaptures(s.Expr, ref)
 				}
 			}
 		} else {

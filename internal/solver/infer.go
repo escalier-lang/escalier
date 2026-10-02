@@ -484,9 +484,12 @@ type funcCtx struct {
 	// capturedLocals holds, for each closure written in this body, the locals of this body it
 	// captures that hold a reference-shaped value.
 	capturedLocals map[*ast.FuncExpr][]capturedLocal
-	// closureBindings maps each binding whose value is a closure written in this body to that
-	// closure. A reassignment of the binding removes its entry.
-	closureBindings map[liveness.VarID]*ast.FuncExpr
+	// capturedTypes holds the binding type of every local in capturedLocals.
+	capturedTypes map[liveness.VarID]soltype.Type
+	// escapedClosureSites records each store whose value may carry a closure into storage that
+	// outlives the body: a module-level binding or a caller-owned object. The post-pass moves
+	// the locals those closures capture.
+	escapedClosureSites []escapeSite
 	// escapeSites records every value flowing out of the frame that might carry a borrow
 	// of a function-local: a return value, a value stored into a parameter's field, and a
 	// consuming argument. The decision is deferred to a post-pass, resolveComponentEscapes,

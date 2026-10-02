@@ -318,7 +318,6 @@ func (c *checker) recordBorrowLoan(holder int, init ast.Expr, ref liveness.StmtR
 	// is the strong update the flow-sensitive borrow graph makes for the same statement.
 	c.dropLoansHeldBy(liveness.VarID(holder))
 	delete(c.fn.heldClosures, liveness.VarID(holder))
-	delete(c.fn.closureBindings, liveness.VarID(holder))
 	if closure, ok := init.(*ast.FuncExpr); ok {
 		// Each later call of the name, or call the name is passed to, takes the closure's
 		// capture loans for that call's statement.
@@ -328,10 +327,6 @@ func (c *checker) recordBorrowLoan(holder int, init ast.Expr, ref liveness.StmtR
 			}
 			c.fn.heldClosures[liveness.VarID(holder)] = closure
 		}
-		if c.fn.closureBindings == nil {
-			c.fn.closureBindings = map[liveness.VarID]*ast.FuncExpr{}
-		}
-		c.fn.closureBindings[liveness.VarID(holder)] = closure
 		return
 	}
 	borrow, ok := init.(*ast.BorrowExpr)
@@ -384,11 +379,11 @@ func (c *checker) captureAccesses(scope *Scope, closure *ast.FuncExpr) []capture
 	return out
 }
 
-// capturedLocal is a local of the current body that a closure captures, and the type of its
-// binding.
+// capturedLocal is a local of the current body that a closure captures.
 type capturedLocal struct {
 	root liveness.VarID
-	t    soltype.Type
+	// mut says the closure writes the local.
+	mut bool
 }
 
 // recordCaptureLoans records the accesses `closure` makes to the locals it captures, and
@@ -404,7 +399,11 @@ func (c *checker) recordCaptureLoans(scope *Scope, closure *ast.FuncExpr) {
 		if c.fn.capturedLocals == nil {
 			c.fn.capturedLocals = map[*ast.FuncExpr][]capturedLocal{}
 		}
-		c.fn.capturedLocals[closure] = append(c.fn.capturedLocals[closure], capturedLocal{root: a.root, t: a.t})
+		c.fn.capturedLocals[closure] = append(c.fn.capturedLocals[closure], capturedLocal{root: a.root, mut: a.mut})
+		if c.fn.capturedTypes == nil {
+			c.fn.capturedTypes = map[liveness.VarID]soltype.Type{}
+		}
+		c.fn.capturedTypes[a.root] = a.t
 	}
 	if c.fn.namedClosures != nil && c.fn.namedClosures.Contains(closure) {
 		if c.fn.closureAccesses == nil {
