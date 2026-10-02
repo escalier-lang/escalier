@@ -94,7 +94,7 @@ func (c *Checker) inferClassDecl(ctx Context, decl *ast.ClassDecl) []Error {
 				span: decl.Name.Span(),
 			})
 		} else {
-			synth, synthErrors := c.synthesizeConstructorElem(decl)
+			synth, synthErrors := synthesizedConstructorElem(decl)
 			errors = slices.Concat(errors, synthErrors)
 			if synth != nil {
 				decl.Body = append([]ast.ClassElem{synth}, decl.Body...)

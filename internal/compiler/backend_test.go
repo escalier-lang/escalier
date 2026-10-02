@@ -426,10 +426,9 @@ func TestSolverEmitsDefinitionsForEveryFixture(t *testing.T) {
 // TestBothCheckersEmitTheSameJS asserts that a source exercising a type the emitter
 // reads emits identical JavaScript whichever checker ran.
 //
-// Only sources without a class declaration are compared. A class emits with no
-// constructor and no members on the solver path, tracked in #1771, so comparing one
-// would assert that gap rather than anything about the types read here. The fixture
-// harness holds seven fixtures back for the same reason.
+// A source whose class reads a function-typed field is left out. The solver binds such
+// a read to its receiver and the checker does not, which is #1782 rather than anything
+// about the types read here.
 func TestBothCheckersEmitTheSameJS(t *testing.T) {
 	tests := map[string]string{
 		"NullableIfValGuardsItsTarget": `
@@ -443,6 +442,27 @@ func TestBothCheckersEmitTheSameJS(t *testing.T) {
 		"MethodReferenceKeepsItsReceiver": `
 			declare val obj: {m: fn () -> number}
 			export val m = obj.m
+		`,
+		"ConstructorCallTakesNew": `
+			class Point { x: number, y: number }
+			export val p = Point(1, 2)
+		`,
+		"AClassDerivesItsConstructor": `
+			class Counter { count: number }
+			export val c = Counter(0)
+			export val n = c.count
+		`,
+		"APatternOnAClassTestsInstanceOf": `
+			class Point { x: number }
+			declare val v: unknown
+			export val hit = match v { p: Point => 1, _ => 0 }
+		`,
+		"AMethodReadOffSelfKeepsItsReceiver": `
+			class Counter {
+			    count: number,
+			    bump(&self) -> number { return self.count },
+			    handle(&self) -> fn () -> number { return self.bump },
+			}
 		`,
 	}
 
@@ -468,8 +488,9 @@ func TestBothCheckersEmitTheSameJS(t *testing.T) {
 // so `value instanceof Alias` throws a ReferenceError. An alias is therefore not
 // nominal for emission even though the class it stands for is.
 //
-// This asserts the absence of the guard rather than comparing the whole output, because
-// the source declares a class and so hits #1771.
+// The absence of the guard is asserted directly rather than left to the output
+// comparison above, because a comparison passes whether both emit the guard or neither
+// does, and emitting it is the fault.
 func TestAPatternOnAnAliasEmitsNoInstanceOfGuard(t *testing.T) {
 	sources := libSources(`
 		class Point { x: number }
