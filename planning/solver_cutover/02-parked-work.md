@@ -56,7 +56,7 @@ the resume points below.
 
 | Parked | Owner | Why it is safe to park |
 | --- | --- | --- |
-| `web:dom` ingestion and the eight packages behind it, roughly 2,500 diagnostics | builtins §7 | **not safe to park silently** — see below. `web:core` and `web:fetch` are P0's, and P1.5 keeps them ambient |
+| `web:dom` ingestion and the eight packages behind it, 2,707 diagnostics | builtins §7 | **not safe to park silently** — see below. `web:core` and `web:fetch` are P0's, and P1.5 keeps them ambient |
 | DOM-touching fixture migration | builtins §8 | `fixtures/async_await` is the only one, and P0 covers it by clearing `web:fetch` |
 | Per-file shape loading, the FR11 trigger map | builtins §9 | P1.5's ambient scope covers the reachability half; what is parked is loading lazily rather than loading the whole list per run |
 | Intrinsics, adaptive rendering, auto-import quick-fix | builtins §10 | tooling on top of a working checker |
@@ -105,7 +105,8 @@ import today.
 P1.5 rebuilds an ambient scope over the packages P0 clears, so the `std:*`
 surface and `web:core` plus `web:fetch` keep their old spellings. What it cannot
 cover is `web:dom` and the eight packages behind it, which sit at 2,707
-diagnostics. A program using `document` or an element type type-checks before P5
+diagnostics. #1650 halved the standalone `web:*` siblings and left that figure
+untouched, so the DOM mass is a separate problem from the one #1650 solved. A program using `document` or an element type type-checks before P5
 and does not after it.
 
 This is the one regression with fixture coverage, through `fetch` in

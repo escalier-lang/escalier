@@ -1,7 +1,26 @@
 # 00 — Current state
 
-Measured at `6c620c2`. Every number below is reproducible; the method is in
+Measured at `ac4f1e3`. Every number below is reproducible; the method is in
 §"How these numbers were taken".
+
+## What has landed from this plan
+
+Seven of the plan's pull requests are in, which moved most of the numbers below.
+
+| Phase | Issue | Pull request |
+| --- | --- | --- |
+| P0.1 — `bigint` type annotation | #1658 | #1688 |
+| P1.7a — binary operator walk | #1652 | #1686 |
+| P2.1 — solver API gaps | #1669 | #1689 |
+| P2.2 — checker-selection seam | #1670 | #1690 |
+| P2.3 — check-only fixture harness | #1671 | #1712 |
+| P4.1 — `soltype` type renderer | #1674 | #1691 |
+| P4.2 — declaration and namespace walk | #1675 | #1708 |
+
+Two landings from outside the plan also moved them. #1650 made a `declare`
+class's `implements` clause contribute members, which cut the standalone `web:*`
+siblings roughly in half. #1724 stopped the old checker segfaulting on a `web:*`
+import.
 
 ## What has landed
 
@@ -39,27 +58,31 @@ The committed tree under `internal/interop/data/` holds 48 pseudo-packages plus
 package reports includes everything it reaches. The prelude loads on every run,
 so its own 2 diagnostics are the floor.
 
-| Package | Diagnostics |
-| --- | --- |
-| `std:prelude` alone | 2 |
-| `std:async`, `std:boolean`, `std:console`, `std:disposable`, `std:error`, `std:iterator`, `std:json`, `std:math`, `std:regexp`, `std:url`, `std:weak_ref` | 2 |
-| `std:map`, `std:set` | 4 |
-| `std:decorators`, `std:function`, `std:object`, `std:reflect` | 6 |
-| `std:proxy` | 7 |
-| `std:date`, `std:intl`, `std:number` | 17 |
-| `std:string` | 18 |
-| `std:bigint` | 24 |
-| `std:typed_arrays` | 215 |
-| `web:core` and the ten standalone `web:*` siblings | 224–279 |
-| `web:dom` and the eight packages that reach it | 2,707 |
-| every package at once | 2,741 |
+| Package | Diagnostics | Was |
+| --- | --- | --- |
+| `std:prelude` alone | 2 | 2 |
+| `std:async`, `std:boolean`, `std:console`, `std:disposable`, `std:error`, `std:iterator`, `std:json`, `std:math`, `std:regexp`, `std:url`, `std:weak_ref` | 2 | 2 |
+| `std:map`, `std:set` | 4 | 4 |
+| `std:bigint`, `std:date`, `std:intl`, `std:number` | 5 | 17–24 |
+| `std:decorators`, `std:function`, `std:object`, `std:reflect`, `std:string` | 6 | 6–18 |
+| `std:proxy` | 7 | 7 |
+| `std:typed_arrays` | 85 | 215 |
+| `web:core` and the ten standalone `web:*` siblings | 94–148 | 224–279 |
+| `web:dom` and the eight packages that reach it | 2,707 | 2,707 |
+| every package at once | 2,733 | 2,741 |
 
-Eleven `std:*` packages are already clean, in the sense that they add nothing to
-the prelude's floor.
+Eleven `std:*` packages are clean, in the sense that they add nothing to the
+prelude's floor, and the rest of `std:*` is now within five of it except
+`std:typed_arrays`.
+
+The shape of the problem has changed since the first draft. `std:*` is one cause
+away from clean, and the standalone `web:*` siblings roughly halved when #1650
+landed. `web:dom` did not move at all, so the gap between the two halves of the
+web tree is now much wider than the gap between `std:*` and `web:core`.
 
 ## What the residual diagnostics actually are
 
-Across the whole tree, 2,397 of 2,741 are `cannot find type` and they concentrate
+Across the whole tree, 2,397 of 2,733 are `cannot find type` and they concentrate
 on five names:
 
 | Name | Occurrences |
@@ -70,13 +93,27 @@ on five names:
 | `Event` | 334 |
 | `Window` | 125 |
 
-All five are DOM types, so the bulk of the grind sits behind `web:dom`. The
-`std:*` half reduces to four root causes:
+All five are DOM types, so the bulk of the grind sits behind `web:dom`. None of
+the five moved when #1650 landed, which is why `web:dom` held at 2,707 while its
+standalone siblings halved.
 
-1. **`Unsupported: BigintTypeAnn`, 137 occurrences.** `internal/solver/type_ann.go`
-   has no arm for `*ast.BigintTypeAnn`. `internal/checker/infer_type_ann.go:99`
-   has one. Nearly all of these land in `std:typed_arrays` and `std:bigint`.
-2. **Unqualified sibling references in `std:typed_arrays`, 82 occurrences.**
+The rest of the tree, by kind:
+
+| Kind | Occurrences |
+| --- | --- |
+| `cannot find type` | 2,397 |
+| a reported type or class name, mostly arity and inheritance reports | 230 |
+| `owned-mutable field annotation is not allowed` | 68 |
+| `Unsupported: typeof of a name that is not a readable value` | 18 |
+| `cannot constrain string <: never` | 12 |
+| overload distinguishability, duplicate object key | 3 |
+
+The `std:*` half reduces to three root causes, down from four:
+
+1. ~~**`Unsupported: BigintTypeAnn`, 137 occurrences.**~~ Closed by #1688. This is
+   what took `std:typed_arrays` from 215 to 85 and the other `std:*` packages to
+   within five of the prelude floor.
+2. **Unqualified sibling references in `std:typed_arrays`, 83 occurrences.**
    `Int32Array`, `BigInt64Array`, `Uint8Array` and the rest fail to resolve bare
    while `typed_arrays.Uint8Array` resolves, so the generated file names a
    same-package sibling in a position the qualification pass does not rewrite.
@@ -96,7 +133,7 @@ All five are DOM types, so the bulk of the grind sits behind `web:dom`. The
    two overload-distinguishability reports, and a handful of inherited-member
    redeclarations.
 
-None of the four is a pseudo-package problem. Causes 1, 3, and 4 are confirmed
+None of the three is a pseudo-package problem. Causes 3 and 4 are confirmed
 solver gaps. Cause 2 is unresolved between the generator and the solver, and
 stays that way until a minimal reproduction says whether the bare name is
 emitted wrong by `internal/dts_to_esc/ref_rewrite.go` or looked up wrong by
@@ -130,10 +167,44 @@ So 18 of 73 fixtures need an added `import "std:…"` line, and most of the rest
 need nothing. `std:prelude` is ambient in the solver, which is what already
 covers `Array`, `Promise`, and `Symbol`.
 
+### The harness has replaced this estimate
+
+The table above was a prediction. #1712 landed the real harness, so there is now
+a measured answer in `cmd/escalier/solver_fixture_test.go`: **43 of the 72
+runnable fixtures check on the solver, 31 skip, none fail.** Two more carry a
+`DISABLED` marker and never ran on either checker.
+
+The skip list groups by root cause, ranked by how many fixtures each one frees:
+
+| Fixtures | Cause | Issue |
+| --- | --- | --- |
+| 6 | a global the ambient builtin scope will bind | #1666 |
+| 4 | a member read off a primitive, which needs its wrapper type | #1714 |
+| 3 | index expressions, computed keys, assignment to a member | #1715 |
+| 3 | rest and default sub-patterns in an extractor pattern | #1718 |
+| 2 | a bare reference to a namespace sibling | #1716 |
+| 2 | iteration and spreading an iterable | #1717 |
+| 2 | the gate requiring a subclass constructor to call `super(…)` | #1720 |
+| 1 | unary operators | #1653 |
+| 1 | template literals | #1654 |
+| 1 | typecast expressions | #1655 |
+| 1 | `do` expressions | #1656 |
+| 1 | a property read on a union whose arms do not all declare it | #1719 |
+| 1 | a generic in an `extends` clause without its type arguments | #1721 |
+| 1 | inference overflows the stack | #1695 |
+
+Eight of those causes — #1714 through #1721 — were not foreseen by this plan.
+They were seeded from the harness's first run rather than predicted, which is
+what P2.3 existed to produce.
+
+#1695 is the one entry the harness cannot even execute. A Go stack overflow is a
+fatal error rather than a panic, so it takes the test binary with it, and the
+harness skips that fixture without running it.
+
 **One fixture needs a `web:*` package.** `fixtures/async_await` calls `fetch` at
 four places and declares it nowhere. The old checker supplies it ambiently,
 because `internal/checker/prelude.go:529` appends `lib.dom.d.ts` to the global
-load. On the solver it comes only from `web:fetch`, which sits at 257
+load. On the solver it comes only from `web:fetch`, which sits at 127
 diagnostics because it reaches `web:core`. So the `std:` / `web:` split does not
 fall exactly on the fixture tree, and P0 has to carry `web:core` and `web:fetch`
 with it.
@@ -151,12 +222,12 @@ after P1.5 ride with the flip rather than preceding it.
 
 ## Expression forms the solver rejects
 
-Six expression forms report `UnsupportedNodeError`. Measured through
-`InferModuleAgainstStdlib` against the committed tree:
+Five expression forms report `UnsupportedNodeError`, down from six. Measured
+through `InferModuleAgainstStdlib` against the committed tree:
 
 | Form | Example | Report | Issue |
 | --- | --- | --- | --- |
-| binary operators | `1 + 2`, `1 < 2`, `true && false` | `Unsupported: BinaryExpr` | [#1652](https://github.com/escalier-lang/escalier/issues/1652) |
+| ~~binary operators~~ | `1 + 2`, `1 < 2`, `true && false` | closed by #1686 | [#1652](https://github.com/escalier-lang/escalier/issues/1652) |
 | unary operators | `-5`, `!true` | `Unsupported: UnaryExpr` | [#1653](https://github.com/escalier-lang/escalier/issues/1653) |
 | template literals | `` `hi` ``, tagged | `Unsupported: TemplateLitExpr`, `TaggedTemplateLitExpr` | [#1654](https://github.com/escalier-lang/escalier/issues/1654) |
 | typecast | `x : number` | `Unsupported: TypeCastExpr` | [#1655](https://github.com/escalier-lang/escalier/issues/1655) |
@@ -257,20 +328,33 @@ which is what P1.5 builds on.
 
 ### Compiler
 
-`internal/compiler/compiler.go` reaches the checker through **five**
-`checker.NewChecker` sites across six exported entry points: `CheckLib`,
-`CheckPackage`, `CheckBinScript`, `Compile`, `CompilePackage`, and
-`CompileScript`. The `00-overview.md` boundary analysis says three; it has grown
-since.
+**The seam is in.** #1690 replaced the five `checker.NewChecker` sites with a
+`backend` interface in `internal/compiler/backend.go`, implemented by
+`backend_checker.go` at 96 lines and `backend_solver.go` at 241.
+`ESCALIER_CHECKER=solver` selects the solver, and anything else, unset included,
+runs the old checker. A `Diagnostic` interface over span and message is what lets
+one output carry either checker's errors.
 
-`type_system.Namespace` also threads through the public signatures of
-`CheckBinScript`, `CompileScript`, and `collectUsedLibSymbols`. That is the
-`lib/` to `bin/` seam: a script is checked against the namespace the library
-module produced.
+The solver backend implements `checkLib` and `checkScript`, and emits `.d.ts`
+through `BuildDefinitionsFromSol`. It does **not** emit JavaScript yet; that is
+#1673, and `BuildTopLevelDecls` still reads the AST's `InferredType()`.
+
+What the seam had to work around was `type_system.Namespace` in the public
+signatures of `CheckBinScript`, `CompileScript`, and `collectUsedLibSymbols` —
+the `lib/` to `bin/` seam, where a script is checked against the namespace the
+library module produced.
 
 ### Codegen
 
-51 references to `type_system` or `InferredType()`, in four files:
+The `.d.ts` path has a `soltype` twin. #1691 and #1708 added
+`internal/codegen/dts_soltype.go` at 1,021 lines and `dts_decl_soltype.go` at
+611, beside the `type_system` originals rather than replacing them, so both
+checkers emit `.d.ts` today. `dts.go` keeps its 108 `type_system` references for
+the old path, and P7 is what removes them.
+
+What remains on the JavaScript side is 16 references in `builder.go` and 3 in
+`js_lowering.go`, plus 15 in `self_type_utils.go`, which serves the old `.d.ts`
+path alone. The original per-file counts, taken before any of this landed:
 
 | File | References | What they do |
 | --- | --- | --- |
@@ -299,14 +383,8 @@ of them in `completion.go`. `completion_test.go` holds 51 more.
 
 ## Gaps between the solver's API and the compiler's needs
 
-1. **No lib-scope argument on `InferScript`.** `InferScript(script, source)`
-   parents the script scope to the prelude. The compiler needs a script checked
-   against the library module's scope, which is what `CheckBinScript` and
-   `CompileScript` do with `libNS`.
-2. **`ModuleResult` does not carry the dep graph.** Codegen takes one.
-   `inferDepGraph` builds it internally from `dep_graph.BuildDepGraph(module)`,
-   which is deterministic and checker-agnostic, so the caller can rebuild it. A
-   field is cheaper than a second build.
+1. ~~**No lib-scope argument on `InferScript`.**~~ Closed by #1689.
+2. ~~**`ModuleResult` does not carry the dep graph.**~~ Closed by #1689.
 3. **No third-party `.d.ts` ingestion.** `bindImport` sends a non-scheme URI to
    `loadPackage`, which asks the run's `ModuleSource`. No `ModuleSource` in the
    tree routes `internal/resolver` to `dts_parser` to `dts_to_esc.ConvertModule`.
@@ -318,11 +396,13 @@ of them in `completion.go`. `completion_test.go` holds 51 more.
    194, with 3,126 lines of tests. `internal/codegen/jsx.go` emits it, so this
    is a shipped language feature with no solver implementation.
    `react_types.go` reaches `@types/react` through `internal/resolver`, so JSX
-   sits downstream of gap 3. No fixture uses JSX, so the P2 harness will not
-   surface this.
-5. **No solver path at any compiler entry point.** Nothing under
-   `internal/compiler/`, `internal/codegen/`, or `cmd/` names `solver` or
-   `soltype`.
+   sits downstream of gap 3. No fixture uses JSX, confirmed by running the
+   compiler's own `HasJSXSyntax` and `HasJSXSyntaxInScript` over all 90 fixture
+   sources, so the harness will not surface this.
+5. ~~**No solver path at any compiler entry point.**~~ Closed by #1690.
+
+So the two gaps left are the two capability regressions, and both are parked.
+See [02-parked-work.md](02-parked-work.md).
 
 ## How these numbers were taken
 
@@ -334,6 +414,15 @@ message holding a nested count, so the counter adds the nested lines. P1 turns
 this into the committed ledger test, so the table above becomes a checked-in
 baseline rather than a one-off.
 
-Coupling counts came from `grep -c 'type_system\.\|InferredType()'` per file and
-`grep -rn 'checker.NewChecker'`. Fixture name counts came from
-`grep -rlw '<name>' fixtures --include='*.esc'`.
+Coupling counts came from `grep -c 'type_system\.\|InferredType()'` per file.
+Fixture name counts came from `grep -rlw '<name>' fixtures --include='*.esc'`.
+
+The fixture pass and skip figures are not a measurement to repeat by hand any
+more. Run the harness:
+
+```sh
+go test ./cmd/escalier/ -run TestCheckFixturesOnSolver -v
+```
+
+The skip list in `cmd/escalier/solver_fixture_test.go` is the source of truth,
+and it fails when an entry starts passing, so it burns down rather than rotting.

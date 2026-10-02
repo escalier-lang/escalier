@@ -16,7 +16,7 @@ are nothing alike: `std:*` is four root causes from clean, and `web:*` carries
 roughly 2,500 diagnostics concentrated in DOM types.
 
 The split is near the line rather than on it. `web:core` is the shared floor
-under every `web:*` sibling at 224 diagnostics, and `fixtures/async_await` needs
+under every `web:*` sibling at 94 diagnostics, and `fixtures/async_await` needs
 `web:fetch`, which reaches it. So the prerequisite is `std:*` plus `web:core`
 plus `web:fetch`, and everything behind `web:dom` is not.
 
@@ -38,18 +38,28 @@ which is M11.5's parity baseline. P7 is what removes it.
 Rows are in execution order. Numbers were allocated as phases were added, so
 they do not read top to bottom; the "depends on" column is what binds.
 
-| Order | Phase | Pull requests | Issues | Depends on | Parallel within the phase |
+| Order | Phase | Issues | Landed | Depends on | Parallel within the phase |
 | --- | --- | --- | --- | --- | --- |
-| 1 | P1 — ledger | P1.1 | #1665 | — | one |
-| 2 | P0 — ingestion | P0.1 … P0.7 | #1658–#1664 | P1.1, softly | P0.1 to P0.6 all independent; P0.7 closes them |
-| 2 | P1.7 — expression walk | P1.7a … P1.7f | #1652–#1657 | P0 for P1.7f only | P1.7b follows P1.7a; c–f independent |
-| 2 | P4 — `.d.ts` emission | P4.1 … P4.3 | #1674–#1676 | P4.1 on nothing; P4.2 on P2.2 | sequential, but P4.1 starts on day one |
-| 3 | P1.5 — ambient builtins | P1.5a … P1.5c | #1666–#1668 | P0.1–P0.5, then P0.6 | sequential |
-| 4 | P2 — flag and harness | P2.1 … P2.3, then one per skip-list cause | #1669–#1672 | P1.5 and P1.7 for a useful skip list | sequential to P2.3, then parallel |
-| 5 | P3 — JS emission | P3 | #1673 | P2.3 | one |
-| 6 | P5 — flip | P5 | #1677 | P0.7, P1.5, P1.7, P2, P3, P4.3 | one, and atomic by design |
-| 7 | P6 — LSP | P6.1 … P6.5 | #1678–#1682 | P5 | P6.1 to P6.3 independent; P6.4 and P6.5 follow P6.3 |
-| 8 | P7 — deletion | P7.1 … P7.3 | #1683–#1685 | P6, and M11.5 for P7.2 | sequential |
+| 1 | P1 — ledger | #1665 | — | — | one |
+| 2 | P0 — ingestion | #1658–#1664 | #1658 | P1.1, softly | P0.1 to P0.6 all independent; P0.7 closes them |
+| 2 | P1.7 — expression walk | #1652–#1657 | #1652 | P0 for P1.7f only | c–f independent |
+| 2 | P4 — `.d.ts` emission | #1674–#1676 | #1674, #1675 | P4.3 on P4.2 and P2.3 | sequential |
+| 3 | P1.5 — ambient builtins | #1666–#1668 | — | P0.1–P0.5, then P0.6 | sequential |
+| 4 | P2 — flag and harness | #1669–#1672 | #1669, #1670, #1671 | — | #1672 is the burn-down |
+| 4 | P2.4 — skip-list causes | #1714–#1721 | — | #1671 | all eight independent |
+| 5 | P3 — JS emission | #1673 | — | P2.3 | one |
+| 6 | P5 — flip | #1677 | — | P0.7, P1.5, P1.7, P2, P3, P4.3 | one, and atomic by design |
+| 7 | P6 — LSP | #1678–#1682 | — | P5 | P6.1 to P6.3 independent; P6.4 and P6.5 follow P6.3 |
+| 8 | P7 — deletion | #1683–#1685 | — | P6, and M11.5 for P7.2 | sequential |
+
+**Seven have landed**, and #1671's harness turned P2.4 from one tracking issue
+into eight named causes, #1714 through #1721. Those were seeded from a real run
+rather than predicted, which is what P2.3 existed to produce. #1693 and #1695
+joined the milestone the same way, so it now holds 42 issues rather than 34.
+
+The two phases nothing else gates are **#1673** and **#1676**, both unblocked
+when #1671 and #1675 landed. Everything else on the way to #1677 runs through
+the skip list.
 
 Every pull request has an issue: #1652 through #1685, 34 of them. Each phase
 section below carries the number on its pull request's heading. #1672 is a
@@ -62,7 +72,8 @@ Four things are worth reading off this table before anything else.
 fixtures, so until that one pull request lands, nothing downstream can be
 measured: P2.3's skip list is the whole tree and P3's and P4.3's golden
 comparisons have nothing green to compare. It is also described as a
-near-mechanical port, which makes it the cheapest large unblock in the plan.
+cheap port of the operator schemes, which already landed, so what remained was
+the walk over them.
 
 **P1.1 is the first pull request of the plan.** It is the measurement harness,
 so each P0 pull request lands as a baseline reduction in one committed table
@@ -163,13 +174,14 @@ graph TD
     P61 & P62 & P65 --> P71
     M115 --> P72
 
-    classDef critical stroke-width:3px;
-    class P17a,P41 critical;
+    classDef landed fill:#eceff1,stroke:#90a4ae,stroke-dasharray:4 3,color:#000;
+    class P01,P17a,P21,P22,P23,P41,P42 landed;
 ```
 
-The dotted edges are soft. A P0 pull request can land without the ledger; it
-just lands without a number attached to it. P2.3 can land without P1.5 and P1.7;
-its skip list is then mostly noise.
+Nodes drawn dashed and grey have landed. The dotted edges are soft: a P0 pull
+request can land without the ledger, it just lands without a number attached to
+it. P2.3 landed ahead of P1.5 and P1.7, so its skip list carries their causes as
+entries rather than having been blocked by them.
 
 ---
 
@@ -186,7 +198,9 @@ actually are".
 
 **P0.1 [#1658](https://github.com/escalier-lang/escalier/issues/1658) — the `bigint` type annotation.** Add the `*ast.BigintTypeAnn` arm to
 `internal/solver/type_ann.go`, porting the shape from
-`internal/checker/infer_type_ann.go:99`. Clears 137 diagnostics. Three solver
+`internal/checker/infer_type_ann.go:99`. Cleared 137 diagnostics, which took
+`std:typed_arrays` from 215 to 85 and every other `std:*` package to within five
+of the prelude floor. **Landed as #1688.** Three solver
 tests assert the current `Unsupported: BigintTypeAnn` message and need updating:
 `infer_async_test.go:419` and `:434`, and `infer_throws_test.go:394`.
 
@@ -196,7 +210,8 @@ minimal reproduction first and let it say which side is wrong: the generator
 emitting the bare name, in `internal/dts_to_esc/ref_rewrite.go`, or the loader
 failing to search a group member's own namespace, in
 `internal/solver/stdlib_group_load.go`. If it is the generator, this pull request
-also regenerates the affected files. Clears 82 diagnostics.
+also regenerates the affected files. Clears 83 diagnostics, which is now the
+whole remaining `std:*` tail bar the prelude's own two.
 
 **P0.3 [#1660](https://github.com/escalier-lang/escalier/issues/1660) — a residual conditional against a type parameter's bound.**
 `export declare type Omit<T, K: keyof any> = Pick<T, Exclude<keyof T, K>>` at
@@ -225,10 +240,10 @@ generated output. Split further if the triage finds unrelated causes.
 `fixtures/async_await` calls `fetch`, which the old checker supplies ambiently
 from `lib.dom.d.ts` and the solver supplies only from `web:fetch`. `web:core` is
 the shared floor under every `web:*` sibling, so clearing it moves all ten at
-once and shrinks what P1 has to quarantine. Triage its 224 diagnostics before
-committing to this scope. If they turn out to be the DOM-name mass rather than a
-few root causes, the cheaper answer is to rewrite `fixtures/async_await` to
-declare its own `fetch` and move both packages to P1.
+once and shrinks what P1 has to quarantine. #1650 already took it from 224 to
+94, so triage what is left before committing to this scope. The escape hatch
+this phase reserved — rewrite `fixtures/async_await` to declare its own `fetch`
+and move both packages to P1 — looks less necessary at 94 than it did at 224.
 
 **P0.7 [#1664](https://github.com/escalier-lang/escalier/issues/1664) — the zero-diagnostic gate.** Replace the P1 ledger's rows for `std:*`,
 `web:core`, and `web:fetch` with a test that asserts an empty diagnostic list for
@@ -371,9 +386,10 @@ the same. Measured against the committed tree:
 | `do` expressions | `do { 5 }` | `Unsupported: DoExpr` |
 | regex literals | `/ab+c/` | `Unsupported: RegexLit` |
 
-Binary operators appear in 59 of the 73 fixtures, so without this phase P2.3's
-skip list is nearly the whole tree and says nothing useful. That is what makes
-this the critical path to the flip rather than a burn-down item.
+Binary operators appeared in 59 of the 73 fixtures, so until #1686 landed
+P2.3's skip list would have been nearly the whole tree. With it in, the harness
+checks 43 of 72 and skips 31, and the five remaining forms account for four of
+those skips. This phase stopped being the critical path when #1686 landed.
 
 **How it went unowned.** `m2-implementation-plan.md:199` lists `BinaryExpr` as in
 scope for M2. `m3-implementation-plan.md:1160` then defers it to a later pull
@@ -386,13 +402,15 @@ seeds every operator as a monomorphic scheme: `+ - * /` over `number`,
 `< > <= >=` to `boolean`, `== !=` over `unknown`, `&& ||` over `boolean`, `!`,
 and `++` over `string`. Nothing looks them up. The comment above it already
 asks for the `1 == 2 ⇒ boolean` regression test "when the operator/call walk
-lands", and `m2-implementation-plan.md:784` calls the port near-mechanical.
+lands". `m2-implementation-plan.md:784` calls the schemes a near-mechanical
+port, and that half is what already landed; the walk over them is new code,
+though it reuses the path `inferCall` runs.
 
 **P1.7a [#1652](https://github.com/escalier-lang/escalier/issues/1652) — the binary operator walk.** Resolve the operator name in scope,
 instantiate its scheme, constrain the operands, and yield the return type. This
 is the call path `inferCall` already runs, applied to an operator name instead of
 a callee expression. Add the regression test `prelude.go` asks for. Clears the
-59-fixture block on its own.
+59-fixture block on its own. **Landed as #1686.**
 
 **P1.7b [#1653](https://github.com/escalier-lang/escalier/issues/1653) — unary operators.** `!` already has a binding. Unary minus does not:
 the `-` in the table is the binary `number, number -> number` form, so this pull
@@ -465,12 +483,31 @@ list is `Unknown identifier: Math` and `Unsupported: BinaryExpr` rather than
 anything new.
 
 **P2.4 [#1672](https://github.com/escalier-lang/escalier/issues/1672) — burn the skip list down.** One pull request per cause, and they
-parallelize once P2.3 has named them. P1.7 clears the six expression forms that
-would otherwise dominate this list, so what lands here is whatever is left.
-Two further causes are known from the milestone plans and may or may not bite:
-M6 PR7, which is `if`-`val` and `val`-`else`, and M9 PR9f, which is regular-tree
-normalization. Expect statement and declaration forms too, since P1.7's audit
-covers expressions only.
+parallelize once P2.3 has named them.
+
+**P2.3 has now named them.** The harness seeded 29 skips across 14 causes, and
+eight of those causes were not in this plan:
+
+| Fixtures | Cause | Issue |
+| --- | --- | --- |
+| 6 | a global the ambient builtin scope will bind | #1666, already P1.5a |
+| 4 | a member read off a primitive, needing its wrapper type | #1714 |
+| 3 | index expressions, computed keys, assignment to a member | #1715 |
+| 3 | rest and default sub-patterns in an extractor pattern | #1718 |
+| 2 | a bare reference to a namespace sibling | #1716 |
+| 2 | iteration and spreading an iterable | #1717 |
+| 2 | the `super(…)` gate on a subclass constructor | #1720 |
+| 1 each | #1653, #1654, #1655, #1656 from P1.7, plus #1719, #1721, #1695 | |
+
+All eight of #1714 through #1721 are independent of each other. #1695 is the
+odd one: a stack overflow is fatal in Go, so the harness cannot run that fixture
+even to see whether it still fails, and it will take the language server down
+once P6 lands.
+
+The two causes this plan guessed at — M6 PR7's `if`-`val`, and M9 PR9f's
+regular-tree normalization — did not appear. The guess that statement and
+declaration forms would show up was right: the `super(…)` gate and the extractor
+patterns are both outside the expression walk P1.7 audited.
 
 **Gate.** The skip list is empty, or every remaining entry is a triaged intended
 improvement with a note naming why the divergence is right.
@@ -542,10 +579,17 @@ The `*FromAST` functions stay as they are. `buildObjTypeAnnElemFromAST`,
 and `astPatToPat` are roughly 184 lines already driven by the AST, so they are
 checker-agnostic and need no port.
 
+**Landed as #1691.** It went in as a new file, `internal/codegen/dts_soltype.go`
+at 1,021 lines, beside the `type_system` original rather than replacing it, so
+both checkers emit `.d.ts` while the cutover runs. P7 removes the old one.
+
 **P4.2 [#1675](https://github.com/escalier-lang/escalier/issues/1675) — the declaration and namespace walk.** Retarget `BuildDefinitions` at
 102 lines, `buildDeclStmt` at 519, `buildNamespaceDecl` at 44, and `findNamespace`
 at 19 onto the solver's `Scope` and `Namespace`, calling P4.1's renderer. Depends
 on P4.1 and on P2.2 for the seam that hands it solver results.
+
+**Landed as #1708**, as `internal/codegen/dts_decl_soltype.go` at 611 lines and
+`BuildDefinitionsFromSol`, which `backend_solver.go` calls.
 
 **P4.3 [#1676](https://github.com/escalier-lang/escalier/issues/1676) — golden reconciliation.** Extend the P2.3 harness to compare
 `build/lib/index.d.ts` across every fixture, and work the diffs down. Depends on
@@ -678,7 +722,7 @@ expected strings are hardcoded.
 
 Stated plainly so nobody reads P5 as "the migration is finished":
 
-- Everything behind `web:dom` ingests with roughly 2,500 diagnostics, so a
+- Everything behind `web:dom` ingests with 2,707 diagnostics, unmoved by #1650, so a
   program importing one of those packages gets a wall of noise, and P1.5 cannot
   put those names in the ambient scope either. A program writing `document` or
   `Element` today has nowhere to get them after the flip. The ledger from P1 is

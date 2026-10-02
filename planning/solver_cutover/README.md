@@ -14,10 +14,10 @@ the compiler's own path never touches.
 ## The strategy in one paragraph
 
 Split the library-ingestion prerequisite near the `std:` / `web:` line, and
-split the M12 flip from the M12 deletion. The `std:*` tree ingests with a
-handful of root causes left. The packages behind `web:dom` carry roughly ten
-times as many diagnostics, and one fixture depends on that half, through
-`web:fetch`. So the prerequisite is `std:*` plus `web:core` plus `web:fetch`.
+split the M12 flip from the M12 deletion. The `std:*` tree is one root cause
+from clean. The packages behind `web:dom` carry roughly thirty times as
+many diagnostics, and one fixture depends on that half, through `web:fetch`. So
+the prerequisite is `std:*` plus `web:core` plus `web:fetch`.
 Finish those, quarantine `web:dom` behind a ledger test that keeps it from
 rotting, rebuild an ambient scope over what is left so `Math.PI` and
 `console.log` still resolve without an import, and point the compiler at the
@@ -64,19 +64,34 @@ rather than a default:
 
 Pick before P2 starts, because the answer changes what the P2 harness covers.
 
+## Where this stands
+
+Seven of the plan's pull requests have landed, and the solver now checks **43 of
+the 72 runnable fixtures** with 31 skipped and none failing. #1712 replaced this
+plan's predictions about what the solver cannot do with a measured skip list in
+`cmd/escalier/solver_fixture_test.go`, which is the artifact to read before
+picking up work. Eight causes it found were not in this plan, filed as #1714
+through #1721.
+
+`std:*` is one root cause from clean, #1659. The standalone `web:*` siblings
+halved when #1650 landed. `web:dom` did not move.
+
 ## The shortest path to a measurable solver
 
 Two phases were added after the first draft, both found by asking what the old
 checker does that the solver does not. P1.7 fills six expression forms the
-solver rejects, binary operators among them. P1.5 rebuilds the ambient builtin
+solver rejected, binary operators among them, of which five remain. P1.5 rebuilds the ambient builtin
 surface. Until both land, running the solver over `fixtures/` reports nearly the
 whole tree as failing for reasons that say nothing about the migration, so no
 later phase can be measured.
 
-If only one thing starts today, make it
-[#1652](https://github.com/escalier-lang/escalier/issues/1652), the binary
-operator walk. It unblocks 59 of 73 fixtures, and the operator schemes it needs
-are already seeded in the solver's prelude.
+That advice named #1652 first, and it landed as #1686. What has no gate on it now
+is [#1673](https://github.com/escalier-lang/escalier/issues/1673) and
+[#1676](https://github.com/escalier-lang/escalier/issues/1676), the two codegen
+pull requests #1671 and #1675 unblocked. Everything else on the way to the flip
+runs through the skip list, where the largest single cause is still
+[#1666](https://github.com/escalier-lang/escalier/issues/1666) at six
+fixtures.
 
 ## The preservation rule
 
