@@ -465,6 +465,10 @@ type funcCtx struct {
 	// loans holds every borrow bound to a name in this body, in source order. The exclusivity
 	// check compares each new borrow against the ones still live. See borrow_exclusivity.go.
 	loans []loan
+	// fieldWrites maps each receiver expression of a member assignment to the place the
+	// assignment writes. checkUsesAgainstLoans reads it to tell a write through the owner from
+	// a read.
+	fieldWrites map[ast.Node]fieldWrite
 	// loanReads holds the expressions a borrow reads to take its loan. That read creates the
 	// borrow rather than being a second path to the data, so the use check skips it.
 	loanReads set.Set[ast.Node]

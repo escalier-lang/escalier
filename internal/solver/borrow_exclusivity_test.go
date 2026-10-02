@@ -209,6 +209,110 @@ func TestBorrowExclusivity(t *testing.T) {
 			`,
 			want: []string{"10:18-10:20: cannot borrow 'x' as immutable while it is borrowed as mutable"},
 		},
+		// The owner is one more path to the value. A read through it beside a live borrow of
+		// either kind sees nothing the borrow does not.
+		"ReadThroughOwnerBesideAMutableLoanOk": {
+			src: exclusivityDecls + `
+				fn g() {
+					val mut x = {v: 1}
+					val a = &mut x
+					val n = x.v
+					write(a)
+				}
+			`,
+			want: nil,
+		},
+		"ReadThroughOwnerBesideAnImmutableLoanOk": {
+			src: exclusivityDecls + `
+				fn g() {
+					val mut x = {v: 1}
+					val a = &x
+					val n = x.v
+					readRead(a, a)
+				}
+			`,
+			want: nil,
+		},
+		// A write through the owner beside a live mutable borrow is one more writer, which
+		// Rule 3 allows.
+		"WriteThroughOwnerBesideAMutableLoanOk": {
+			src: exclusivityDecls + `
+				fn g() {
+					val mut x = {v: 1}
+					val a = &mut x
+					x.v = 5
+					write(a)
+				}
+			`,
+			want: nil,
+		},
+		// The same write beside a live immutable borrow changes data the borrow expects to
+		// hold still.
+		"WriteThroughOwnerBesideAnImmutableLoan": {
+			src: exclusivityDecls + `
+				fn g() {
+					val mut x = {v: 1}
+					val a = &x
+					x.v = 5
+					readRead(a, a)
+				}
+			`,
+			want: []string{"10:6-10:9: cannot assign to 'x.v' while it is borrowed as immutable"},
+		},
+		// A write reaches only the field it names, so a borrow of a disjoint field is unaffected
+		// and a borrow of the field it writes into conflicts.
+		"WriteBesideAnImmutableLoanOfADisjointFieldOk": {
+			src: exclusivityDecls + `
+				fn g() {
+					val mut x = {a: {v: 1}, b: {v: 2}}
+					val r = &x.a
+					x.b.v = 5
+					readRead(r, r)
+				}
+			`,
+			want: nil,
+		},
+		"NestedWriteBesideAnImmutableLoanOfItsField": {
+			src: exclusivityDecls + `
+				fn g() {
+					val mut x = {a: {v: 1}, b: {v: 2}}
+					val r = &x.a
+					x.a.v = 5
+					readRead(r, r)
+				}
+			`,
+			want: []string{"10:6-10:11: cannot assign to 'x.a.v' while it is borrowed as immutable"},
+		},
+		// Reassigning the whole binding leaves each borrow pointing at the old object, which
+		// nothing writes through the owner anymore.
+		//
+		// DISABLED until #1762. A mutable borrow of a `var mut` binding reports a mutability
+		// mismatch, so this case reports at `&mut x` and at `write(a)`. Once #1762 lands, it
+		// checks.
+		/*
+			"ReassignBesideAMutableLoanOk": {
+				src: exclusivityDecls + `
+					fn g() {
+						var mut x = {v: 1}
+						val a = &mut x
+						x = {v: 2}
+						write(a)
+					}
+				`,
+				want: nil,
+			},
+		*/
+		"ReassignBesideAnImmutableLoanOk": {
+			src: exclusivityDecls + `
+				fn g() {
+					var mut x = {v: 1}
+					val a = &x
+					x = {v: 2}
+					readRead(a, a)
+				}
+			`,
+			want: nil,
+		},
 		"FreshBorrowBesideALoanOnItsLastUse": {
 			src: exclusivityDecls + `
 				fn g() {
@@ -386,7 +490,7 @@ const storeEffectDecls = `
 
 // TestStoreEffectLoans covers the borrow a call's store effect creates. A signature that writes
 // one argument into another leaves the target reaching the item, so the target holds a borrow
-// of it that a second borrow or a plain read has to respect.
+// of it that an immutable borrow or a move of the item has to respect.
 //
 // Each case keeps the target live past the read, since a loan lasts only as long as the binding
 // holding it. The last case drops that use to show the rule turning off.
@@ -497,6 +601,33 @@ func TestStoreEffectLoans(t *testing.T) {
 					val mut a = {peer: &mut q, spare: &mut r}
 					store(&mut a, &mut b)
 					val t = {x: &mut b}
+					touch(&mut a)
+				}
+			`,
+			want: nil,
+		},
+		// A read of the stored item through its owner beside the store's mutable loan sees
+		// nothing the loan does not.
+		"ReadOfTheItemAfterAStoreOk": {
+			src: storeEffectDecls + `
+				declare fn useNum(n: number) -> undefined
+				fn g(q: mut {value: number}, r: mut {value: number}) -> undefined {
+					val mut b = {value: 2}
+					val mut a = {peer: &mut q, spare: &mut r}
+					store(&mut a, &mut b)
+					useNum(b.value)
+					touch(&mut a)
+				}
+			`,
+			want: nil,
+		},
+		"FieldReadOfTheItemIntoABindingAfterAStoreOk": {
+			src: storeEffectDecls + `
+				fn g(q: mut {value: number}, r: mut {value: number}) -> undefined {
+					val mut b = {value: 2}
+					val mut a = {peer: &mut q, spare: &mut r}
+					store(&mut a, &mut b)
+					val n = b.value
 					touch(&mut a)
 				}
 			`,

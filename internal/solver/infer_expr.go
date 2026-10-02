@@ -2212,6 +2212,9 @@ func (c *checker) inferMemberAssign(scope *Scope, lvl int, e *ast.BinaryExpr, m 
 		return undefinedT
 	}
 	recv := c.inferWriteReceiver(scope, lvl, m.Object)
+	// The receiver's reads are part of this write, so the use check weighs them as a write to
+	// m rather than as reads of the receiver.
+	c.noteFieldWrite(m)
 	// An accessor named prop resolves here rather than through the structural requirement
 	// below, whose element is a PropertyElem. constrain's object arm matches the sub side
 	// with ObjectType.Prop, so an accessor would read there as a missing property.
