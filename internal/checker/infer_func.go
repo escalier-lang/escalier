@@ -147,6 +147,9 @@ func (c *Checker) resolveTypeParams(
 	astTypeParams []*ast.TypeParam,
 ) ([]*type_system.TypeParam, []Error) {
 	errors := []Error{}
+	errors = slices.Concat(errors, reportDuplicateTypeParams(astTypeParams))
+	forwardRefErrors, badDefaults := reportDefaultForwardRefs(astTypeParams)
+	errors = slices.Concat(errors, forwardRefErrors)
 
 	// Resolve in topological order, so a bound naming a sibling resolves after that
 	// sibling and reaches the name it wrote rather than an undeclared one.
@@ -157,7 +160,7 @@ func (c *Checker) resolveTypeParams(
 	for _, tp := range sortedTypeParams {
 		var defaultType type_system.Type
 		var constraintType type_system.Type
-		if tp.Default != nil {
+		if tp.Default != nil && !badDefaults.Contains(tp.Name) {
 			var defaultErrors []Error
 			defaultType, defaultErrors = c.inferTypeAnn(funcCtx, tp.Default)
 			defaultType.SetProvenance(&ast.NodeProvenance{Node: tp.Default})
@@ -189,11 +192,93 @@ func (c *Checker) resolveTypeParams(
 
 	// Topological order is an internal step of the resolution above. The result is in
 	// declaration order, which this function's doc gives the reasons for.
-	typeParams := make([]*type_system.TypeParam, len(astTypeParams))
-	for i, astParam := range astTypeParams {
-		typeParams[i] = byName[astParam.Name]
+	return typeParamsInDeclOrder(astTypeParams, byName), errors
+}
+
+// typeParamsInDeclOrder reads byName back out in the order astTypeParams declares, one
+// entry per distinct name.
+//
+// Declaration order is what a caller pairing type arguments with parameters needs, and what
+// the quantifier prefix a signature renders follows. The two producers of byName each walk
+// the parameters in a different order, so neither can build the result as it goes.
+//
+// A name declared twice takes one entry rather than two. The checker declares each
+// parameter's name in a scope, and a scope rejects a name it already holds, so a second
+// entry under one name would panic rather than be reported. resolveTypeParams reports the
+// duplicate, so the program is rejected either way and the entry that is dropped belongs to
+// a binder nothing could have referenced.
+func typeParamsInDeclOrder(
+	astTypeParams []*ast.TypeParam,
+	byName map[string]*type_system.TypeParam,
+) []*type_system.TypeParam {
+	typeParams := make([]*type_system.TypeParam, 0, len(astTypeParams))
+	seen := set.NewSet[string]()
+	for _, astParam := range astTypeParams {
+		if seen.Contains(astParam.Name) {
+			continue
+		}
+		seen.Add(astParam.Name)
+		typeParams = append(typeParams, byName[astParam.Name])
 	}
-	return typeParams, errors
+	return typeParams
+}
+
+// reportDuplicateTypeParams reports each parameter whose name an earlier one already took.
+// A reference to the name can only mean one of them, so the later binder is unreachable and
+// a caller has no way to say which parameter an argument fills.
+//
+// Only the later binder is reported, so `<T, T, T>` raises two errors rather than three.
+func reportDuplicateTypeParams(astTypeParams []*ast.TypeParam) []Error {
+	var errors []Error
+	seen := set.NewSet[string]()
+	for _, tp := range astTypeParams {
+		if seen.Contains(tp.Name) {
+			errors = append(errors, DuplicateTypeParamError{Name: tp.Name, Param: tp})
+			continue
+		}
+		seen.Add(tp.Name)
+	}
+	return errors
+}
+
+// reportDefaultForwardRefs reports each default that names its own parameter or one declared
+// after it. A reference omitting a trailing argument fills it from that parameter's default,
+// substituting the arguments before it, so a default can only name a parameter that already
+// has one.
+//
+// It also returns the names whose defaults it rejected. A caller leaves such a default
+// unresolved, since resolving one would report a second time that the name it reaches is
+// undeclared, which says nothing the first error did not.
+//
+// A name is reported once per default, so `<T = Pair<U, U>, U>` raises one error rather than
+// two.
+func reportDefaultForwardRefs(astTypeParams []*ast.TypeParam) ([]Error, set.Set[string]) {
+	var errors []Error
+	rejected := set.NewSet[string]()
+	for i, tp := range astTypeParams {
+		if tp.Default == nil {
+			continue
+		}
+		forbidden := set.NewSet[string]()
+		for _, later := range astTypeParams[i:] {
+			forbidden.Add(later.Name)
+		}
+		reported := set.NewSet[string]()
+		for _, ref := range ast.FreeTypeRefs(tp.Default) {
+			name := ast.QualIdentToString(ref.Name)
+			if !forbidden.Contains(name) || reported.Contains(name) {
+				continue
+			}
+			reported.Add(name)
+			errors = append(errors, TypeParamDefaultForwardRefError{
+				Ref: ref, Param: tp.Name, Target: name,
+			})
+		}
+		if reported.Len() > 0 {
+			rejected.Add(tp.Name)
+		}
+	}
+	return errors, rejected
 }
 
 // NOTE: A new context should be created before calling this function in order

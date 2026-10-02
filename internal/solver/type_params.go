@@ -18,6 +18,7 @@ import (
 // enum, and function-annotation paths all route through here.
 func (c *checker) resolveTypeParams(scope *Scope, lvl int, params []*ast.TypeParam) []*soltype.TypeParam {
 	c.reportRequiredAfterDefault(params)
+	c.reportDuplicateTypeParams(params)
 	out := make([]*soltype.TypeParam, len(params))
 	// Pass 1: mint each parameter's var. Nothing is declared yet, so pass 2 controls which
 	// siblings each default can see.
@@ -193,6 +194,25 @@ func (c *checker) reportRequiredAfterDefault(params []*ast.TypeParam) {
 	}
 }
 
+// reportDuplicateTypeParams reports each parameter whose name an earlier one already took.
+// A reference to the name can only mean one of them, so the later binder is unreachable and
+// a caller has no way to say which parameter an argument fills.
+//
+// Only the later binder is reported, so `<T, T, T>` raises two errors rather than three.
+// The declaration keeps every binder: resolveTypeParams mints a var per position, and a
+// reference to the name resolves to whichever one pass 2 declared last. The program is
+// rejected, so which one it reaches changes nothing a caller can observe.
+func (c *checker) reportDuplicateTypeParams(params []*ast.TypeParam) {
+	first := map[string]*ast.TypeParam{}
+	for _, p := range params {
+		if kept, taken := first[p.Name]; taken {
+			c.report(&DuplicateTypeParamError{Name: p.Name, Param: p, First: kept})
+			continue
+		}
+		first[p.Name] = p
+	}
+}
+
 // reportDefaultForwardRef reports each parameter params[i]'s default names that it may not,
 // params[i] itself or one declared after it, and returns whether it reported. A reference fills an
 // omitted argument from the default with the earlier arguments substituted in, as
@@ -209,10 +229,8 @@ func (c *checker) reportDefaultForwardRef(params []*ast.TypeParam, i int) bool {
 	for _, p := range params[i:] {
 		forbidden.Add(p.Name)
 	}
-	var scan typeParamRefScan
-	params[i].Default.Accept(&scan)
 	reported := set.NewSet[string]()
-	for _, ref := range scan.free {
+	for _, ref := range ast.FreeTypeRefs(params[i].Default) {
 		name := ast.QualIdentToString(ref.Name)
 		if !forbidden.Contains(name) || reported.Contains(name) {
 			continue
@@ -221,82 +239,6 @@ func (c *checker) reportDefaultForwardRef(params []*ast.TypeParam, i int) bool {
 		c.report(&TypeParamDefaultForwardRefError{Ref: ref, Param: params[i].Name, Target: name})
 	}
 	return reported.Len() > 0
-}
-
-// typeParamRefScan collects a type annotation's free references, the `Name` and `Name<…>`
-// references that no binder written inside the annotation declares. It tracks the region each
-// binder covers: a `fn <U>(…)` quantifier covers its function annotation, a mapped key covers the
-// object annotation holding it, and an `infer U` covers its conditional's Extends and Then
-// operands, matching where resolveCondTypeAnn declares the name.
-type typeParamRefScan struct {
-	ast.DefaultVisitor
-	scopes []set.Set[string]     // one name set per region the walk is inside, innermost last
-	free   []*ast.TypeRefTypeAnn // in traversal order, so a caller reports the leftmost
-}
-
-func (v *typeParamRefScan) EnterTypeAnn(t ast.TypeAnn) bool {
-	switch n := t.(type) {
-	case *ast.TypeRefTypeAnn:
-		if !v.shadowed(ast.QualIdentToString(n.Name)) {
-			v.free = append(v.free, n)
-		}
-	case *ast.FuncTypeAnn:
-		names := set.NewSet[string]()
-		for _, tp := range n.TypeParams {
-			names.Add(tp.Name)
-		}
-		v.push(names)
-	case *ast.ObjectTypeAnn:
-		// A mapped type is an object element rather than a type annotation of its own, so the
-		// walk reaches its key constraint, name, and value without entering the mapped node.
-		// Read the key binder off the element here and scope it to the object annotation.
-		names := set.NewSet[string]()
-		for _, elem := range n.Elems {
-			if mapped, ok := elem.(*ast.MappedTypeAnn); ok {
-				names.Add(mapped.TypeParam.Name)
-			}
-		}
-		v.push(names)
-	case *ast.CondTypeAnn:
-		// The four operands are walked here rather than by the shared descent, since an
-		// `infer U` clause covers only two of them. Check reads no capture, and a capture
-		// named again in Else is a free reference.
-		n.Check.Accept(v)
-		v.push(set.FromSlice(inferAnnNames(n.Extends)))
-		n.Extends.Accept(v)
-		n.Then.Accept(v)
-		v.pop()
-		n.Else.Accept(v)
-		return false
-	}
-	return true
-}
-
-// ExitTypeAnn closes the region opened on entering a function or object annotation. A
-// conditional pops its own region inside EnterTypeAnn, since it drives its operands itself.
-func (v *typeParamRefScan) ExitTypeAnn(t ast.TypeAnn) {
-	switch t.(type) {
-	case *ast.FuncTypeAnn, *ast.ObjectTypeAnn:
-		v.pop()
-	}
-}
-
-func (v *typeParamRefScan) push(names set.Set[string]) {
-	v.scopes = append(v.scopes, names)
-}
-
-func (v *typeParamRefScan) pop() {
-	v.scopes = v.scopes[:len(v.scopes)-1]
-}
-
-// shadowed reports whether any region the walk is inside declares name.
-func (v *typeParamRefScan) shadowed(name string) bool {
-	for _, names := range v.scopes {
-		if names.Contains(name) {
-			return true
-		}
-	}
-	return false
 }
 
 // checkTypeArgBounds reports a type argument that does not satisfy its parameter's declared

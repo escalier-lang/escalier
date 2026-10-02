@@ -4,7 +4,6 @@ import (
 	"fmt"
 
 	"github.com/escalier-lang/escalier/internal/ast"
-	"github.com/escalier-lang/escalier/internal/set"
 	"github.com/escalier-lang/escalier/internal/soltype"
 )
 
@@ -703,7 +702,7 @@ func (c *checker) resolveCondTypeAnn(scope *Scope, ta *ast.CondTypeAnn, lvl int)
 	// Declare each name the Extends operand introduces, so the clause that declares it and the Then
 	// branch's references to it resolve to one shared declaration.
 	condScope := scope
-	if names := inferAnnNames(ta.Extends); len(names) > 0 {
+	if names := ast.InferAnnNames(ta.Extends); len(names) > 0 {
 		condScope = scope.Child()
 		for _, name := range names {
 			condScope.defineType(name, TypeBinding{Type: c.ctx.freshInferDecl(name)})
@@ -783,31 +782,6 @@ func nakedTypeParamCheck(ann ast.TypeAnn, resolved soltype.Type) bool {
 	}
 	_, isVar := resolved.(*soltype.TypeVarType)
 	return isVar
-}
-
-// inferAnnNames returns the names the `infer U` clauses of one annotation subtree introduce, in
-// source order with duplicates collapsed. resolveCondTypeAnn reads its Extends operand's names to
-// bind them for the Then branch.
-func inferAnnNames(ta ast.TypeAnn) []string {
-	f := &inferAnnFinder{seen: set.NewSet[string]()}
-	ta.Accept(f)
-	return f.names
-}
-
-// inferAnnFinder is the AST visitor behind inferAnnNames. It collects each InferTypeAnn name it
-// reaches, skipping one it has already recorded so a name written twice binds once.
-type inferAnnFinder struct {
-	ast.DefaultVisitor
-	seen  set.Set[string]
-	names []string
-}
-
-func (f *inferAnnFinder) EnterTypeAnn(ta ast.TypeAnn) bool {
-	if it, ok := ta.(*ast.InferTypeAnn); ok && !f.seen.Contains(it.Name) {
-		f.seen.Add(it.Name)
-		f.names = append(f.names, it.Name)
-	}
-	return true
 }
 
 // resolveTypeOfTypeAnn lowers a `typeof v` query to a TypeofType residual: it resolves the value's

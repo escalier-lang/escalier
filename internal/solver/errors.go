@@ -2177,6 +2177,27 @@ func (e *UndeclaredLifetimeError) Message() string {
 	return msg
 }
 
+// DuplicateTypeParamError fires when a declaration's `<…>` list binds the same type
+// parameter name more than once, as in `<T, T>`. A reference to the name can only mean one
+// of them, so the repeat binds nothing a program can reach and a caller has no way to say
+// which parameter an argument fills. Name is the repeated name, Param the redundant binder
+// and the blame span, and First the kept binder, surfaced through Related.
+//
+// The message matches internal/checker's error of the same name, so the two checkers report
+// one thing.
+type DuplicateTypeParamError struct {
+	Name  string
+	Param *ast.TypeParam
+	First *ast.TypeParam
+}
+
+func (*DuplicateTypeParamError) isSolverError()        {}
+func (e *DuplicateTypeParamError) Span() ast.Span      { return e.Param.Span() }
+func (e *DuplicateTypeParamError) Related() []ast.Span { return []ast.Span{e.First.Span()} }
+func (e *DuplicateTypeParamError) Message() string {
+	return fmt.Sprintf("type parameter `%s` is declared more than once", e.Name)
+}
+
 // DuplicateLifetimeParamError fires when a signature's `<…>` list binds the same
 // lifetime name more than once, as in `<'a, 'a>`. The repeat binds nothing new and is
 // almost certainly a typo, so it is a hard error. Name is the repeated name without the

@@ -2122,13 +2122,7 @@ func (c *Checker) inferTypeParams(astTypeParams []*ast.TypeParam) []*type_system
 		}
 	}
 
-	// Build result in DECLARATION order (not sorted order)
-	// This is critical for correct substitution when the type is instantiated
-	typeParams := make([]*type_system.TypeParam, len(astTypeParams))
-	for i, astParam := range astTypeParams {
-		typeParams[i] = typeParamMap[astParam.Name]
-	}
-	return typeParams
+	return typeParamsInDeclOrder(astTypeParams, typeParamMap)
 }
 
 // resolveDeclTypeParams resolves the constraints and defaults a declaration wrote and

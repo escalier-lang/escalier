@@ -292,6 +292,9 @@ func (c *Checker) buildTypeParams(
 	selfTypeAlias *type_system.TypeAlias, // optional, pass nil for non-interface types
 ) TypeParamsResult {
 	var errors []Error
+	errors = slices.Concat(errors, reportDuplicateTypeParams(astTypeParams))
+	forwardRefErrors, badDefaults := reportDefaultForwardRefs(astTypeParams)
+	errors = slices.Concat(errors, forwardRefErrors)
 
 	// Sort type parameters topologically so dependencies come first for processing
 	sortedTypeParams := ast.SortTypeParamsTopologically(astTypeParams)
@@ -317,7 +320,7 @@ func (c *Checker) buildTypeParams(
 			constraintType, constraintErrors = c.inferTypeAnn(typeCtx, typeParam.Constraint)
 			errors = slices.Concat(errors, constraintErrors)
 		}
-		if typeParam.Default != nil {
+		if typeParam.Default != nil && !badDefaults.Contains(typeParam.Name) {
 			var defaultErrors []Error
 			defaultType, defaultErrors = c.inferTypeAnn(typeCtx, typeParam.Default)
 			errors = slices.Concat(errors, defaultErrors)
@@ -338,15 +341,8 @@ func (c *Checker) buildTypeParams(
 		typeCtx.Scope.SetTypeAlias(typeParam.Name, typeParamAlias)
 	}
 
-	// Build final typeParams in DECLARATION order (not sorted order)
-	// This is critical for correct substitution when the type is instantiated
-	typeParams := make([]*type_system.TypeParam, len(astTypeParams))
-	for i, astParam := range astTypeParams {
-		typeParams[i] = typeParamMap[astParam.Name]
-	}
-
 	return TypeParamsResult{
-		TypeParams: typeParams,
+		TypeParams: typeParamsInDeclOrder(astTypeParams, typeParamMap),
 		Ctx:        typeCtx,
 		Errors:     errors,
 	}
