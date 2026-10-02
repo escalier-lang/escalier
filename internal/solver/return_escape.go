@@ -882,7 +882,7 @@ type fieldBorrow struct {
 	// edge and `val a = {peer: &b}` an immutable one. A borrow field carries its own
 	// mutability, so an edge reached through another edge keeps its own answer.
 	mut bool
-	// capture marks an edge a closure's capture of referent records. `val f = fn () { b.v }`
+	// capture marks an edge recorded because a closure captures referent. `val f = fn () { b.v }`
 	// records f → b with capture set.
 	capture bool
 }
@@ -1076,11 +1076,12 @@ func (c *checker) recordBorrowEdges(destVarID int, init ast.Expr) {
 //     is a number, not a field name, and a spread merges its source's fields without naming
 //     them. The place model approximates a read of either to its container, so the borrow
 //     stays attributed to base.
+//   - A closure records a capture edge at base for each local it captures.
 //   - A place expression copies that place's edges, re-rooted under root at base.
-//   - Any other carrier, such as an if/else branch, contributes its inline borrows at base
-//     through borrowsIn.
+//   - Any other carrier, such as an if/else branch, contributes its inline borrows and the
+//     captures of its inline closures at base.
 //
-// The walk stops at a call or nested-function boundary.
+// The walk stops at a call boundary and does not enter a closure's body.
 func (c *checker) recordBorrowSources(root liveness.VarID, base []placeSeg, e ast.Expr) {
 	switch e := e.(type) {
 	case *ast.BorrowExpr:
@@ -1141,6 +1142,9 @@ func (c *checker) recordBorrowSources(root liveness.VarID, base []placeSeg, e as
 			if src, ok := c.localReferentPlace(b.Arg); ok && src.root != root {
 				c.addBorrowEdge(root, base, src.root, src.path, b.Mut)
 			}
+		}
+		for _, closure := range closuresIn(e) {
+			c.recordBorrowSources(root, base, closure)
 		}
 	}
 }

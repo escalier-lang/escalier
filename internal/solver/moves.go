@@ -685,7 +685,7 @@ func (c *checker) noteEscapedClosureSite(e ast.Expr, ref liveness.StmtRef) {
 // site noteEscapedClosureSite recorded, and reports whether it moved any. The closure is one
 // written inside the stored value or one the value reaches through the borrow graph at the
 // site, so a closure bound to a name, copied to another name, or chosen on a branch counts.
-// A capture holding a borrow is not moved, since a borrow moves only at a module-level write.
+// A capture holding a borrow is not moved.
 func (c *checker) consumeEscapedCaptures(flowBorrowGraph *flowBorrowGraph) bool {
 	moved := false
 	for _, es := range c.fn.escapedClosureSites {
