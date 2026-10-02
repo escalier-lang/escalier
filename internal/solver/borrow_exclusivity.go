@@ -386,16 +386,22 @@ type capturedLocal struct {
 	mut bool
 }
 
-// recordCaptureLoans records the accesses `closure` makes to the locals it captures, and
-// records each such local in capturedLocals. A closure in namedClosures has its accesses saved
-// for the calls of its name. Any other closure takes its capture loans at its own statement,
-// since the expression it sits in may call it there.
+// recordCaptureLoans records the accesses `closure` makes to the locals it captures, records
+// each such local in capturedLocals, and records the closure as a use of it. A closure in
+// namedClosures has its accesses saved for the calls of its name. Any other closure takes its
+// capture loans at its own statement, since the expression it sits in may call it there.
 func (c *checker) recordCaptureLoans(scope *Scope, closure *ast.FuncExpr) {
 	if c.fn == nil {
 		return
 	}
+	ref, hasRef := c.currentStmtRef()
 	accesses := c.captureAccesses(scope, closure)
 	for _, a := range accesses {
+		// Writing the closure reads the local, so capturing one that has moved is a use after
+		// the move.
+		if hasRef {
+			c.fn.useSites = append(c.fn.useSites, moveUse{place: movePlace{root: a.root}, ref: ref, node: closure, loanSeqAt: c.fn.loanSeq + 1})
+		}
 		if c.fn.capturedLocals == nil {
 			c.fn.capturedLocals = map[*ast.FuncExpr][]capturedLocal{}
 		}
@@ -412,8 +418,7 @@ func (c *checker) recordCaptureLoans(scope *Scope, closure *ast.FuncExpr) {
 		c.fn.closureAccesses[closure] = accesses
 		return
 	}
-	ref, ok := c.currentStmtRef()
-	if !ok {
+	if !hasRef {
 		return
 	}
 	for _, a := range accesses {
