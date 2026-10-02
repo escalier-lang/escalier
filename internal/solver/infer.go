@@ -65,6 +65,11 @@ type checker struct {
 	// is the unset sentinel, and negative ids mark non-local bindings.
 	varIDCounter int
 
+	// closureCaptureInfo holds the captures each closure's pre-pass found, keyed by the
+	// closure. The pre-pass defines a captured local as a parameter of the closure's body, so
+	// the closure's AST no longer marks it as captured once the pre-pass has run.
+	closureCaptureInfo map[*ast.FuncExpr][]liveness.CaptureInfo
+
 	// preludeNames caches the immutable prelude root scope's sorted value names so the
 	// liveness pre-pass collects them once instead of re-walking and re-sorting the
 	// prelude for every function body (M4 G1). preludeNamesRoot is the scope the cache
@@ -473,6 +478,9 @@ type funcCtx struct {
 	// paramVarIDs holds the VarID of every parameter leaf binding. A borrow of a
 	// parameter outlives the frame, so the escape check skips a referent in this set.
 	paramVarIDs set.Set[liveness.VarID]
+	// captureVarIDs holds the VarID of every local a closure's body captures. The pre-pass
+	// defines each as a parameter of the body, so each is in paramVarIDs too.
+	captureVarIDs set.Set[liveness.VarID]
 	// escapeSites records every value flowing out of the frame that might carry a borrow
 	// of a function-local: a return value, a value stored into a parameter's field, and a
 	// consuming argument. The decision is deferred to a post-pass, resolveComponentEscapes,

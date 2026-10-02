@@ -317,6 +317,12 @@ func (c *checker) recordBorrowLoan(holder int, init ast.Expr, ref liveness.StmtR
 	// through it. `var a = &mut x` followed by `a = &mut y` leaves no loan of x behind. This
 	// is the strong update the flow-sensitive borrow graph makes for the same statement.
 	c.dropLoansHeldBy(liveness.VarID(holder))
+	// A closure bound to a name holds its captures' loans for as long as the name is live,
+	// and a call of the closure reads the name.
+	if closure, ok := init.(*ast.FuncExpr); ok {
+		c.holdCaptureLoans(closure, liveness.VarID(holder))
+		return
+	}
 	borrow, ok := init.(*ast.BorrowExpr)
 	if !ok {
 		return
@@ -336,6 +342,53 @@ func (c *checker) recordBorrowLoan(holder int, init ast.Expr, ref liveness.StmtR
 	}
 	c.checkAgainstHeldLoans(fresh)
 	c.fn.loans = append(c.fn.loans, fresh)
+}
+
+// recordCaptureLoans records a loan of each local of the current body that closure captures,
+// after reporting any conflict with a loan already live. The loan reaches the whole captured
+// binding, and it is mutable when the closure writes the capture. It has no holder, so it
+// lasts for the closure's own statement until holdCaptureLoans binds it to a name.
+//
+// A capture whose type has value semantics takes no loan, since a closure holding a
+// primitive cannot see a later change to the binding it copied.
+func (c *checker) recordCaptureLoans(scope *Scope, closure *ast.FuncExpr) {
+	if c.fn == nil {
+		return
+	}
+	ref, ok := c.currentStmtRef()
+	if !ok {
+		return
+	}
+	for _, capture := range c.closureCaptures(closure) {
+		b, found := scope.GetValue(capture.Name)
+		if !found || b.VarID <= 0 || isValueType(bindingType(b)) {
+			continue
+		}
+		// A capture from a body further out is not tracked in this body's tables.
+		root := liveness.VarID(b.VarID)
+		if name, ok := c.fn.varIDNames[root]; !ok || name != capture.Name {
+			continue
+		}
+		fresh := loan{
+			place: movePlace{root: root},
+			mut:   capture.IsMutable,
+			ref:   ref,
+			node:  closure,
+			seq:   c.nextLoanSeq(),
+		}
+		c.checkAgainstHeldLoans(fresh)
+		c.fn.loans = append(c.fn.loans, fresh)
+	}
+}
+
+// holdCaptureLoans binds the loans recordCaptureLoans took for closure to holder.
+func (c *checker) holdCaptureLoans(closure *ast.FuncExpr, holder liveness.VarID) {
+	for i := range c.fn.loans {
+		l := &c.fn.loans[i]
+		if l.node == ast.Node(closure) && l.holder == 0 {
+			l.holder = holder
+		}
+	}
 }
 
 // dropLoansHeldBy ends the loans bound to holder, which a reassignment of that binding has made

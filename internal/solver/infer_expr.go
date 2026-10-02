@@ -178,6 +178,8 @@ func astKind(n any) string {
 func (c *checker) inferFuncExpr(scope *Scope, lvl int, e *ast.FuncExpr) soltype.Type {
 	t := c.inferFunc(scope, lvl, e.FuncSig, e.Body, e, true)
 	c.recordType(e, t)
+	// The closure borrows what it captures from the body it is written in.
+	c.recordCaptureLoans(scope, e)
 	return t
 }
 
@@ -439,9 +441,10 @@ func (c *checker) inferFunc(scope *Scope, lvl int, sig ast.FuncSig, body *ast.Bl
 		// parameter alias sets onto c.fn. recordParamVarIDs then copies each param's
 		// freshly-assigned VarID onto its binding so a closure capturing the param
 		// resolves to its alias set.
-		selfVarID := c.runLivenessPrePass(fnScope, sig.Params, recv, paramTypes, body)
+		closure, _ := node.(*ast.FuncExpr)
+		extraVarIDs := c.runLivenessPrePass(fnScope, sig.Params, recv, closure, paramTypes, body)
 		recordParamVarIDs(fnScope, sig.Params)
-		recordSelfVarID(fnScope, selfVarID)
+		recordExtraParamVarIDs(fnScope, extraVarIDs)
 		// Walk the body for type-checking and to collect its ReturnStmts; the
 		// block's TAIL value is intentionally discarded. Unlike a value-position
 		// block, where the last expression IS the block's value, a function body's
