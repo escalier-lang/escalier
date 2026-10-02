@@ -238,6 +238,11 @@ func TestCheckFixturesOnSolver(t *testing.T) {
 				return
 			}
 			require.Empty(t, diagnostics, "the package is expected to check cleanly")
+
+			// A package that checks on both is emitted by both, and the two outputs have
+			// to agree. Checking alone would miss a type the emitter reads to decide
+			// what to write, which is the whole class of fault #1673 closes.
+			requireSameEmittedOutput(t, entry.Name(), sources)
 		})
 	}
 
@@ -345,4 +350,94 @@ func reportSolverSkipCauses(t *testing.T, runnable int) {
 	t.Logf("the solver checks %d of %d fixtures; %d are held back by %d causes, %d of them unticketed:\n%s",
 		runnable-len(solverSkips), runnable, len(solverSkips), len(causes), unticketed.Len(),
 		strings.Join(lines, "\n"))
+}
+
+// comparedArtifacts names the emitted files the two checkers have to agree on. The
+// `.d.ts` is left out while #1676 reconciles it; adding it here is what closes that
+// issue's gate.
+var comparedArtifacts = []struct {
+	name string
+	read func(compiler.CompUnitOutput) string
+}{
+	{"index.js", func(u compiler.CompUnitOutput) string { return u.JS }},
+	{"index.js.map", func(u compiler.CompUnitOutput) string { return u.SourceMap }},
+}
+
+// emitSkips are the fixtures whose emitted output still differs between the checkers,
+// with the cause each one waits on. A fixture checks on both and differs only in what
+// is written, so it stays in the run for its diagnostics and is held back here alone.
+//
+// The entries are seeded from a run rather than predicted, and an entry that starts
+// agreeing fails, so the list burns down the way solverSkips does.
+var emitSkips = map[string]*solverSkipCause{
+	"class_with_static_members":   causeSynthesizedConstructor,
+	"extractor_arg_with_init":     causeSynthesizedConstructor,
+	"extractor_basic":             causeSynthesizedConstructor,
+	"extractor_inside_namespaces": causeSynthesizedConstructor,
+	"extractor_nested":            causeSynthesizedConstructor,
+	"fix_point_combinator":        causeSynthesizedConstructor,
+	"mut_class_reference":         causeSynthesizedConstructor,
+}
+
+// causeSynthesizedConstructor is the one cause behind every entry in emitSkips.
+// internal/checker writes a ConstructorElem into the class's AST body during
+// inference, and codegen emits the constructor from that element. internal/solver
+// leaves the tree alone, so the class emits with no constructor and no members.
+//
+// This is a coupling through the AST rather than through a node's type, so it is
+// outside the five read sites #1673 names.
+var causeSynthesizedConstructor = &solverSkipCause{
+	name:   "a constructor internal/checker synthesizes into the class body",
+	ticket: "#1771",
+}
+
+// requireSameEmittedOutput compiles sources under each checker and fails on any
+// difference in the artifacts comparedArtifacts names.
+//
+// The checker's output is the expectation rather than a committed golden, because what
+// is being asked is whether the two agree. A committed golden would also answer that,
+// at the cost of a second copy of every fixture's output to keep in step.
+func requireSameEmittedOutput(t *testing.T, fixture string, sources []*ast.Source) {
+	t.Helper()
+
+	solverOutput := compiler.CompilePackage(sources)
+	t.Setenv(compiler.CheckerEnvVar, "")
+	checkerOutput := compiler.CompilePackage(sources)
+	t.Setenv(compiler.CheckerEnvVar, compiler.CheckerSolver)
+
+	require.Equal(t, unitNames(checkerOutput), unitNames(solverOutput),
+		"the two checkers emit the same set of compilation units")
+
+	cause, held := emitSkips[fixture]
+	for name, wantUnit := range checkerOutput.CompUnits {
+		gotUnit := solverOutput.CompUnits[name]
+		for _, artifact := range comparedArtifacts {
+			want, got := artifact.read(wantUnit), artifact.read(gotUnit)
+			if held {
+				// Re-compare rather than trusting the list, so clearing a cause forces
+				// its fixtures back into the comparison.
+				if want != got {
+					t.Logf("%s still differs: %s (%s)", artifact.name, cause.name, cause.ticket)
+					return
+				}
+				continue
+			}
+			require.Equal(t, want, got,
+				"%s/%s differs between the checkers", name, artifact.name)
+		}
+	}
+	if held {
+		require.Fail(t, "this fixture's output now agrees; drop it from emitSkips")
+	}
+}
+
+// unitNames returns the compilation units an output holds, sorted, so a mismatch
+// reports which unit is missing rather than failing on map order.
+func unitNames(output compiler.CompilerOutput) []string {
+	names := make([]string, 0, len(output.CompUnits))
+	for name := range output.CompUnits {
+		names = append(names, name)
+	}
+	sort.Strings(names)
+	return names
 }

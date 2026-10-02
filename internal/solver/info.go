@@ -50,3 +50,25 @@ func (i *Info) NamespaceMemberDecl(n ast.Node) (ast.Decl, bool) {
 func (i *Info) setNamespaceMember(n ast.Node, decl ast.Decl) {
 	i.nsMembers[n] = decl
 }
+
+// ResolvedTypeOf returns the type recorded for n with any inference variable resolved
+// to the shape it settled on, or nil when none was recorded.
+//
+// TypeOf returns what the walk recorded at the moment it reached n, which for an
+// expression is usually an inference variable rather than a type a caller can switch
+// on. `val p = Point(5)` records the call as `t7`, not as the object carrying Point's
+// constructor. Resolving reads that variable's lower bounds, so the caller sees what
+// flows out of the expression.
+//
+// Resolve only once a run has finished. Reading a variable's bounds is sound at any
+// point, but constraints added afterwards would make an earlier answer stale, and a
+// caller that tests a value against a literal adds that literal as a further lower
+// bound. Everything asking this is downstream of inference, where no constraint is
+// left to add.
+func (i *Info) ResolvedTypeOf(n ast.Node) soltype.Type {
+	t := i.types[n]
+	if t == nil {
+		return nil
+	}
+	return groundedCarrier(t)
+}

@@ -46,6 +46,7 @@ func (solverBackend) checkLib(_ context.Context, module *ast.Module) libResult {
 		lib:         &solverLibScope{module: result},
 		depGraph:    result.DepGraph,
 		dts:         &solverDts{module: result},
+		jsTypes:     codegen.SolverJSTypes{Types: &solverSolTypes{info: result.Info, registry: result}},
 		diagnostics: append(dirErrs, diagnostics(result.Errors)...),
 		codegenGap:  &codegenGapError{span: moduleSpan(module)},
 	}
@@ -54,8 +55,9 @@ func (solverBackend) checkLib(_ context.Context, module *ast.Module) libResult {
 // checkScript infers script against the prelude alone.
 func (solverBackend) checkScript(_ context.Context, script *ast.Script) scriptResult {
 	dir, dirErrs := solverStdlibDir(scriptSpan(script))
-	_, _, errs := solver.InferScript(script, solver.StdlibSource(dir))
+	_, info, errs := solver.InferScript(script, solver.StdlibSource(dir))
 	return scriptResult{
+		jsTypes:     codegen.SolverJSTypes{Types: &solverSolTypes{info: info}},
 		diagnostics: append(dirErrs, diagnostics(errs)...),
 		codegenGap:  &codegenGapError{span: scriptSpan(script)},
 	}
@@ -75,6 +77,39 @@ func (e *codegenGapError) Message() string {
 		"codegen reads types internal/checker stamps onto the tree, so a constructor call, " +
 		"a method reference, and an `if val` guard are emitted wrongly, and the .d.ts does not " +
 		"yet match the one the old checker writes"
+}
+
+// solverSolTypes reads one module run for the questions JavaScript emission asks.
+// Info holds the per-node records and ModuleResult holds the registry a named class
+// or alias is keyed in, so both are reached through the run.
+type solverSolTypes struct {
+	// info holds the records for the file being emitted, which for a script is the
+	// script's own rather than the library's.
+	info *solver.Info
+	// registry answers what a named class or alias stands for. It is the run that
+	// declared the name, which for a script is the library it was checked against, and
+	// nil for a script checked against the prelude alone. A nil registry resolves no
+	// name, so an alias of a class reads as not nominal and its pattern is tested by
+	// shape instead of with `instanceof`.
+	registry *solver.ModuleResult
+}
+
+func (t *solverSolTypes) ResolvedTypeOf(n ast.Node) soltype.Type {
+	return t.info.ResolvedTypeOf(n)
+}
+
+func (t *solverSolTypes) NamespaceMemberDecl(n ast.Node) (ast.Decl, bool) {
+	return t.info.NamespaceMemberDecl(n)
+}
+
+// TypeBodyOf drops the type parameters TypeBody returns beside the body. Emission asks
+// only what kind of type a name stands for, which the body answers on its own.
+func (t *solverSolTypes) TypeBodyOf(name string) (soltype.Type, bool) {
+	if t.registry == nil {
+		return nil, false
+	}
+	body, _, ok := t.registry.TypeBody(name)
+	return body, ok
 }
 
 // solverDts renders the library's .d.ts from the module run, which holds the scope
@@ -186,8 +221,9 @@ type solverLibScope struct {
 // checkScript infers script against the library module's scope, so the script reads
 // the library's top-level declarations without importing them.
 func (l *solverLibScope) checkScript(_ context.Context, script *ast.Script) scriptResult {
-	_, _, errs := solver.InferScriptInLib(script, l.module)
+	_, info, errs := solver.InferScriptInLib(script, l.module)
 	return scriptResult{
+		jsTypes:     codegen.SolverJSTypes{Types: &solverSolTypes{info: info, registry: l.module}},
 		diagnostics: diagnostics(errs),
 		codegenGap:  &codegenGapError{span: scriptSpan(script)},
 	}
