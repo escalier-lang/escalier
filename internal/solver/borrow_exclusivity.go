@@ -352,10 +352,12 @@ type capturedLocal struct {
 }
 
 // recordCaptureLoans records a loan of each local of the current body that closure captures,
-// after reporting any conflict with a loan already live. Each such local is recorded in
-// capturedLocals too, and the closure is recorded as a use of it. The loan reaches the whole captured
+// after reporting any conflict with a loan already live. The loan reaches the whole captured
 // binding, and it is mutable when the closure writes the capture. It has no holder, so it
 // lasts for the closure's own statement until holdCaptureLoans binds it to a name.
+//
+// Each captured local is also recorded in capturedLocals, and the closure is recorded as a use
+// of it.
 //
 // A capture whose type has value semantics takes no loan, since a closure holding a
 // primitive cannot see a later change to the binding it copied.
