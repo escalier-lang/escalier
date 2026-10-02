@@ -22,9 +22,10 @@ import (
 //   - A class emits with no constructor and no members, because internal/checker
 //     writes a synthesized constructor into the class's AST body during inference and
 //     codegen emits it from there. Tracked in #1771.
-//   - The emitted .d.ts is rendered from soltype and does not yet match what the
-//     checker path writes for the same source. Reconciling the two is tracked in
-//     #1676, and #1697 through #1699 are renderer faults it will surface.
+//   - The emitted .d.ts is rendered from soltype and matches what the checker path
+//     writes for most but not all source. Reconciling the two is tracked in #1676,
+//     and the four causes behind the fixtures that still differ are #1772 through
+//     #1775.
 //   - The diagnostics include every package the run loaded, so a package that is
 //     itself clean still reports the two errors `std:prelude` carries. Tracked in
 //     #1664 for the errors themselves and #1696 for the file they are blamed on.

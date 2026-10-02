@@ -608,6 +608,29 @@ port.
 **Gate.** Every fixture's `build/lib/index.d.ts` is byte-identical, or its diff
 is triaged and recorded.
 
+**Measured.** The comparison is in place. Of the 72 runnable fixtures, 58 are
+expected to be accepted and so emit something to compare; the other 14 carry an
+`error.txt` and emit nothing. It reaches 30 of the 58 today, the ones that check
+cleanly on the solver, and the P2.4 causes hold the other 28 back. Twenty of the
+30 agree byte for byte. Ten differ, under four causes:
+
+| Cause | Ticket | Fixtures |
+| --- | --- | --- |
+| The static side of an extractor or enum variant declaration | [#1772](https://github.com/escalier-lang/escalier/issues/1772) | 6 |
+| A class's declared type parameters on its constructor signature | [#1773](https://github.com/escalier-lang/escalier/issues/1773) | 2 |
+| Generalizing a parameter the body never reads | [#1774](https://github.com/escalier-lang/escalier/issues/1774) | 1 |
+| The `?` on an index signature over an uncountable key set | [#1775](https://github.com/escalier-lang/escalier/issues/1775) | 1 |
+
+Two of the four are soundness faults rather than cosmetic ones. #1772 makes a
+match on an enum recover the wrong payload type, and #1775 drops the `?` that
+makes a read off an index signature `number | undefined`.
+[#1776](https://github.com/escalier-lang/escalier/issues/1776) is a fifth,
+smaller fault that no fixture waits on alone: a function returning no value
+emits `undefined` where the twin emits `void`.
+
+The 28 the solver cannot yet check are out of reach, so this count moves as the
+P2.4 causes clear and is a lower bound on the work #1676 names.
+
 **Not in scope.** The `@escalier-type` JSDoc round-tripping for exactness and
 the value-level `exact<T>(v)` lowering, both of which M10 owns and neither of
 which the current fixtures exercise.

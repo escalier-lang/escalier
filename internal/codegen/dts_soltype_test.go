@@ -241,6 +241,24 @@ func TestBuildTypeAnnFromSolInferredTypeParams(t *testing.T) {
 		require.Equal(t, "<T0>(x: T0) => T0", renderSol(t, sig))
 	})
 
+	// An `unknown` bound admits every type, so the clause it would write says nothing
+	// the bare binder does not.
+	t.Run("AnUnknownBoundRendersNoClause", func(t *testing.T) {
+		v := freshVar(1)
+		v.UpperBounds = []soltype.Type{&soltype.UnknownType{}}
+		sig := solFn([]*soltype.FuncParam{solParam("x", v)}, v)
+		require.Equal(t, "<T0>(x: T0) => T0", renderSol(t, sig))
+	})
+
+	// A bound that is itself a variable no signature can bind renders `unknown`, so it
+	// reaches the same test as a literal `unknown` bound.
+	t.Run("ABoundOnAnUnnameableVariableRendersNoClause", func(t *testing.T) {
+		v, bound := freshVar(1), freshVar(2)
+		v.UpperBounds = []soltype.Type{bound}
+		sig := solFn([]*soltype.FuncParam{solParam("x", v)}, v)
+		require.Equal(t, "<T0>(x: T0) => T0", renderSol(t, sig))
+	})
+
 	// A variable used by both the callback and the enclosing signature has no
 	// single nested signature holding every occurrence, so the enclosing one is
 	// the innermost that does.
