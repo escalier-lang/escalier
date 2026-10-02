@@ -454,10 +454,12 @@ Out of scope by design:
 
 Specified above but not yet enforced:
 
-- **Escaping closure captures**
-  ([#1267](https://github.com/escalier-lang/escalier/issues/1267)). Capturing a
-  value in a closure that escapes is specified as a move, but the checker does
-  not consume the captured binding today, so the later use goes unreported.
+- **Closures passed to a retaining function**
+  ([#1267](https://github.com/escalier-lang/escalier/issues/1267)). A closure
+  stored into module-level state, stored into a caller-owned object, or returned
+  moves the values it captures. A closure passed to a function that keeps it
+  does not. A function-typed parameter carries no lifetime, so the checker
+  cannot tell a callee that keeps the closure from one that only calls it.
 - **Element stores**
   ([#1268](https://github.com/escalier-lang/escalier/issues/1268)). `t[i] = x`
   is rejected as unsupported rather than treated as an escape.
