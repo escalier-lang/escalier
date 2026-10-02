@@ -8,12 +8,33 @@ import (
 	"github.com/escalier-lang/escalier/internal/soltype"
 )
 
-// resolveTypeAnn converts a supported type annotation into a soltype.Type,
-// returning ok=false with a `never` placeholder when the annotation is unsupported
-// so a caller can recover by keeping the type it already inferred. The level `lvl`
-// lets a supported wrapper with an unsupported inner recover that inner to a fresh
-// var at the right level.
+// resolveTypeAnn converts a supported type annotation into a soltype.Type and
+// records it in Info against the annotation node, returning ok=false with a `never`
+// placeholder when the annotation is unsupported so a caller can recover by keeping
+// the type it already inferred.
+//
+// The record is what lets a reader of a resolved program ask what an annotation
+// means. codegen asks in order to emit `x instanceof C` for a pattern annotated with
+// a nominal class, since the class name is in the annotation but whether it is
+// nominal is not. An editor asks in order to report the type under the cursor.
+//
+// Resolution is recursive, so a nested annotation is recorded as it is reached and
+// each node carries its own type rather than the outermost one's.
 func (c *checker) resolveTypeAnn(scope *Scope, ta ast.TypeAnn, lvl int) (soltype.Type, bool) {
+	t, ok := c.resolveTypeAnnType(scope, ta, lvl)
+	// An unsupported annotation resolved to a `never` placeholder standing for a type
+	// the walk could not read, which is not what the annotation means, so it is not
+	// recorded.
+	if ok && t != nil {
+		c.recordType(ta, t)
+	}
+	return t, ok
+}
+
+// resolveTypeAnnType is resolveTypeAnn's case analysis, split out so one place
+// records every arm's result. The level `lvl` lets a supported wrapper with an
+// unsupported inner recover that inner to a fresh var at the right level.
+func (c *checker) resolveTypeAnnType(scope *Scope, ta ast.TypeAnn, lvl int) (soltype.Type, bool) {
 	switch ta := ta.(type) {
 	case *ast.NumberTypeAnn:
 		return c.annPrim(ta, soltype.NumPrim), true

@@ -2459,6 +2459,19 @@ func bindingDecl(b ValueBinding) ast.Node {
 	return nil
 }
 
+// recordNamespaceMember notes that node read b through a namespace, so codegen can
+// reach the declaration that bound it. Only a declaration is recorded, because the
+// one thing asked of it is whether it carries an `@js("…")` decorator; a binding with
+// no source node, such as one the prelude seeded, records nothing.
+func (c *checker) recordNamespaceMember(node ast.Node, b ValueBinding) {
+	decl, ok := bindingDecl(b).(ast.Decl)
+	if !ok {
+		return
+	}
+	snapshotMapEntry(c, c.info.nsMembers, node)
+	c.info.setNamespaceMember(node, decl)
+}
+
 // inferTuple types a tuple literal as a soltype.TupleType of its element types
 // and records it in Info. Elements are typed left-to-right in the current scope.
 //
@@ -3058,6 +3071,7 @@ func (c *checker) resolveNamespaceMember(lvl int, node ast.Expr, ns *Namespace, 
 	if b, ok := ns.Values[name]; ok && len(b.Schemes) > 0 {
 		t := c.bindingValue(lvl, b)
 		c.recordType(node, t)
+		c.recordNamespaceMember(node, b)
 		return pathResult{value: t}
 	}
 	c.report(&UnknownNamespaceMemberError{Node: node, NS: ns, Name: name})

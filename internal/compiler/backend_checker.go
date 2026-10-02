@@ -34,6 +34,7 @@ func (checkerBackend) checkLib(ctx context.Context, module *ast.Module) libResul
 		lib:         &checkerLibScope{ns: inferCtx.Scope.Namespace},
 		depGraph:    depGraph,
 		dts:         &checkerDts{ns: inferCtx.Scope.Namespace},
+		jsTypes:     codegen.CheckerJSTypes{},
 		scope:       inferCtx.Scope,
 		fileScopes:  c.FileScopes,
 		diagnostics: diagnostics(typeErrors),
@@ -91,6 +92,7 @@ func inferScriptInScope(c *checker.Checker, scope *checker.Scope, script *ast.Sc
 	scriptScope, typeErrors := c.InferScript(inferCtx, script)
 	return scriptResult{
 		scope:       scriptScope,
+		jsTypes:     codegen.CheckerJSTypes{},
 		diagnostics: diagnostics(typeErrors),
 	}
 }

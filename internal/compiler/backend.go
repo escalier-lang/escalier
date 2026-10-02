@@ -86,6 +86,10 @@ type libResult struct {
 	// rather than converting to the other's. It is nil when the run produced no surface
 	// to render.
 	dts dtsEmitter
+	// jsTypes answers what JavaScript emission asks about the types this run inferred.
+	// It rides the result for the same reason dts does: each checker holds its results
+	// in its own representation and answers from that.
+	jsTypes codegen.JSTypes
 	// scope and fileScopes are the LSP's view of the module. Both are nil on the
 	// solver path, whose scopes have a different type; porting the LSP is a later
 	// phase of the cutover.
@@ -108,6 +112,8 @@ type scriptResult struct {
 	// scope is the LSP's view of the script, nil on the solver path for the reason
 	// libResult.scope gives.
 	scope *checker.Scope
+	// jsTypes is libResult.jsTypes for this script.
+	jsTypes codegen.JSTypes
 	// diagnostics are the script's type errors.
 	diagnostics []Diagnostic
 	// codegenGap is libResult.codegenGap for this script.

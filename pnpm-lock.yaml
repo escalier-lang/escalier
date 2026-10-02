@@ -223,8 +223,6 @@ importers:
 
   fixtures/stdlib_import_local: {}
 
-  fixtures/stdlib_import_single_class: {}
-
   fixtures/symbols: {}
 
   fixtures/template_literal_types: {}
