@@ -200,9 +200,8 @@ func TestCompileReportsTheSolverCodegenGap(t *testing.T) {
 
 // solverCodegenGap is the message the solver path reports for each file it emits.
 const solverCodegenGap = "ESCALIER_CHECKER=solver does not yet emit correct output for this file: " +
-	"codegen reads types internal/checker stamps onto the tree, so a constructor call, " +
-	"a method reference, and an `if val` guard are emitted wrongly, and the .d.ts does not " +
-	"yet match the one the old checker writes"
+	"a class emits with no constructor and no members, and the .d.ts does not yet match " +
+	"the one the old checker writes"
 
 // countMessage returns how many of msgs equal want.
 func countMessage(msgs []string, want string) int {
@@ -420,6 +419,72 @@ func TestSolverEmitsDefinitionsForEveryFixture(t *testing.T) {
 			useSolver(t)
 			out := CompilePackage(sources)
 			require.NotEmpty(t, out.CompUnits["lib/index"].DTS)
+		})
+	}
+}
+
+// TestBothCheckersEmitTheSameJS asserts that a source exercising a type the emitter
+// reads emits identical JavaScript whichever checker ran.
+//
+// Only sources without a class declaration are compared. A class emits with no
+// constructor and no members on the solver path, tracked in #1771, so comparing one
+// would assert that gap rather than anything about the types read here. The fixture
+// harness holds seven fixtures back for the same reason.
+func TestBothCheckersEmitTheSameJS(t *testing.T) {
+	tests := map[string]string{
+		"NullableIfValGuardsItsTarget": `
+			declare val maybe: number | undefined
+			export val got = if val n = maybe { n } else { 0 }
+		`,
+		"NonNullableIfValDoesNotGuard": `
+			declare val always: number
+			export val got = if val n = always { n } else { 0 }
+		`,
+		"MethodReferenceKeepsItsReceiver": `
+			declare val obj: {m: fn () -> number}
+			export val m = obj.m
+		`,
+	}
+
+	for name, source := range tests {
+		t.Run(name, func(t *testing.T) {
+			sources := libSources(source)
+
+			useChecker(t)
+			want := CompilePackage(sources).CompUnits["lib/index"].JS
+			useSolver(t)
+			got := CompilePackage(sources).CompUnits["lib/index"].JS
+
+			require.NotEmpty(t, want, "the checker emits something to compare against")
+			require.Equal(t, want, got, "the two checkers emit different JavaScript")
+		})
+	}
+}
+
+// TestAPatternOnAnAliasEmitsNoInstanceOfGuard asserts that neither checker emits an
+// `instanceof` guard for a pattern annotated with an alias of a class.
+//
+// The guard tests the name the annotation wrote. An alias declares no runtime binding,
+// so `value instanceof Alias` throws a ReferenceError. An alias is therefore not
+// nominal for emission even though the class it stands for is.
+//
+// This asserts the absence of the guard rather than comparing the whole output, because
+// the source declares a class and so hits #1771.
+func TestAPatternOnAnAliasEmitsNoInstanceOfGuard(t *testing.T) {
+	sources := libSources(`
+		class Point { x: number }
+		type Alias = Point
+		declare val v: unknown
+		export val hit = match v { p: Alias => 1, _ => 0 }
+	`)
+
+	for name, use := range map[string]func(*testing.T){"checker": useChecker, "solver": useSolver} {
+		t.Run(name, func(t *testing.T) {
+			use(t)
+			js := CompilePackage(sources).CompUnits["lib/index"].JS
+			require.NotEmpty(t, js)
+			require.NotContains(t, js, "instanceof Alias",
+				"an alias has no runtime binding, so the guard would throw a ReferenceError")
 		})
 	}
 }

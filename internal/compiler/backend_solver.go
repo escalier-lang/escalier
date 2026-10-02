@@ -19,10 +19,9 @@ import (
 // the checker path are each a later phase of the cutover, and this is the list to
 // read before trusting anything it produces:
 //
-//   - The emitted JavaScript can be wrong where codegen reads a node's inferred type,
-//     which only internal/checker stamps onto the tree. A constructor call loses its
-//     `new`, a method reference loses its `.bind`, and an `if val` loses its null
-//     guard, all without a diagnostic. Tracked in #1673.
+//   - A class emits with no constructor and no members, because internal/checker
+//     writes a synthesized constructor into the class's AST body during inference and
+//     codegen emits it from there. Tracked in #1771.
 //   - The emitted .d.ts is rendered from soltype and does not yet match what the
 //     checker path writes for the same source. Reconciling the two is tracked in
 //     #1676, and #1697 through #1699 are renderer faults it will surface.
@@ -46,7 +45,7 @@ func (solverBackend) checkLib(_ context.Context, module *ast.Module) libResult {
 		lib:         &solverLibScope{module: result},
 		depGraph:    result.DepGraph,
 		dts:         &solverDts{module: result},
-		jsTypes:     codegen.SolverJSTypes{Types: &solverSolTypes{info: result.Info, registry: result}},
+		jsTypes:     codegen.SolverJSTypes{Types: &solverSolTypes{info: result.Info}},
 		diagnostics: append(dirErrs, diagnostics(result.Errors)...),
 		codegenGap:  &codegenGapError{span: moduleSpan(module)},
 	}
@@ -74,9 +73,8 @@ func (e *codegenGapError) Span() ast.Span { return e.span }
 
 func (e *codegenGapError) Message() string {
 	return CheckerEnvVar + "=" + CheckerSolver + " does not yet emit correct output for this file: " +
-		"codegen reads types internal/checker stamps onto the tree, so a constructor call, " +
-		"a method reference, and an `if val` guard are emitted wrongly, and the .d.ts does not " +
-		"yet match the one the old checker writes"
+		"a class emits with no constructor and no members, and the .d.ts does not yet match " +
+		"the one the old checker writes"
 }
 
 // solverSolTypes reads one module run for the questions JavaScript emission asks.
@@ -86,12 +84,6 @@ type solverSolTypes struct {
 	// info holds the records for the file being emitted, which for a script is the
 	// script's own rather than the library's.
 	info *solver.Info
-	// registry answers what a named class or alias stands for. It is the run that
-	// declared the name, which for a script is the library it was checked against, and
-	// nil for a script checked against the prelude alone. A nil registry resolves no
-	// name, so an alias of a class reads as not nominal and its pattern is tested by
-	// shape instead of with `instanceof`.
-	registry *solver.ModuleResult
 }
 
 func (t *solverSolTypes) ResolvedTypeOf(n ast.Node) soltype.Type {
@@ -100,16 +92,6 @@ func (t *solverSolTypes) ResolvedTypeOf(n ast.Node) soltype.Type {
 
 func (t *solverSolTypes) NamespaceMemberDecl(n ast.Node) (ast.Decl, bool) {
 	return t.info.NamespaceMemberDecl(n)
-}
-
-// TypeBodyOf drops the type parameters TypeBody returns beside the body. Emission asks
-// only what kind of type a name stands for, which the body answers on its own.
-func (t *solverSolTypes) TypeBodyOf(name string) (soltype.Type, bool) {
-	if t.registry == nil {
-		return nil, false
-	}
-	body, _, ok := t.registry.TypeBody(name)
-	return body, ok
 }
 
 // solverDts renders the library's .d.ts from the module run, which holds the scope
@@ -223,7 +205,7 @@ type solverLibScope struct {
 func (l *solverLibScope) checkScript(_ context.Context, script *ast.Script) scriptResult {
 	_, info, errs := solver.InferScriptInLib(script, l.module)
 	return scriptResult{
-		jsTypes:     codegen.SolverJSTypes{Types: &solverSolTypes{info: info, registry: l.module}},
+		jsTypes:     codegen.SolverJSTypes{Types: &solverSolTypes{info: info}},
 		diagnostics: diagnostics(errs),
 		codegenGap:  &codegenGapError{span: scriptSpan(script)},
 	}

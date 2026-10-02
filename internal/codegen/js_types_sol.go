@@ -17,10 +17,6 @@ type SolTypes interface {
 	// NamespaceMemberDecl returns the declaration a namespace member read resolved
 	// to, and reports whether the node is such a read.
 	NamespaceMemberDecl(n ast.Node) (ast.Decl, bool)
-	// TypeBodyOf returns what a named class or alias stands for, and reports whether
-	// the name is registered. A `ClassType` and an `AliasType` carry a name rather
-	// than a body, so following one takes a registry lookup.
-	TypeBodyOf(name string) (soltype.Type, bool)
 }
 
 // SolverJSTypes answers from one internal/solver run.
@@ -29,29 +25,17 @@ type SolverJSTypes struct {
 }
 
 // IsNominalTypeRef reports whether the reference resolved to a class. A class is
-// nominal in soltype by being a ClassType at all, where type_system marks an object
-// type nominal with a flag, so there is no shape to inspect. An alias is followed to
-// what it stands for, so `type Alias = Point` is as nominal as `Point`.
+// nominal in soltype by being a `ClassType` at all, where type_system marks an object
+// type nominal with a flag, so there is no shape to inspect.
+//
+// An alias of a class answers false, even though the class it names is nominal. The
+// guard this feeds tests the name the annotation wrote, and an alias declares no
+// runtime binding to test against. Given `type B = Point`, a true here would emit
+// `value instanceof B` and throw a ReferenceError. internal/checker answers false for
+// an alias too, so the two agree.
 func (s SolverJSTypes) IsNominalTypeRef(t *ast.TypeRefTypeAnn) bool {
-	return s.isNominal(s.Types.ResolvedTypeOf(t))
-}
-
-// isNominal follows at most one alias. An alias of an alias is registered under the
-// name it ultimately stands for, so one step reaches the class.
-func (s SolverJSTypes) isNominal(t soltype.Type) bool {
-	switch t := t.(type) {
-	case *soltype.ClassType:
-		return true
-	case *soltype.AliasType:
-		body, ok := s.Types.TypeBodyOf(t.Name)
-		if !ok {
-			return false
-		}
-		_, isClass := body.(*soltype.ClassType)
-		return isClass
-	default:
-		return false
-	}
+	_, isClass := s.Types.ResolvedTypeOf(t).(*soltype.ClassType)
+	return isClass
 }
 
 // CalleeConstructs reports whether the callee's type carries a constructor. A class's

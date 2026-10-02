@@ -197,6 +197,18 @@ func TestCheckFixturesOnSolver(t *testing.T) {
 		skips[skip.fixture] = skip
 	}
 
+	for fixture := range emitSkips {
+		// The same checks solverSkips gets. Without them a renamed or deleted fixture
+		// leaves behind an entry nothing reports as stale.
+		require.True(t, fixtures.Contains(fixture), "emitSkips names no such fixture")
+		require.False(t, disabled.Contains(fixture),
+			"a disabled fixture emits nothing to compare")
+		// A fixture the solver cannot check never reaches the comparison, so an entry
+		// here would be unreachable and would never be noticed as stale.
+		require.NotContains(t, skips, fixture,
+			"this fixture is already held back from checking, so its output is never compared")
+	}
+
 	for _, entry := range entries {
 		if !entry.IsDir() {
 			continue
