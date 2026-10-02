@@ -974,6 +974,7 @@ func (c *checker) buildFieldSigs(scope *Scope, lvl int, decl *ast.ClassDecl, bod
 		}
 		fieldName, ok := objKeyName(field.Name)
 		if !ok {
+			c.reportUnsupported(field.Name)
 			continue
 		}
 		var fieldType soltype.Type
@@ -1043,6 +1044,7 @@ func (c *checker) buildMemberSigs(
 		case *ast.MethodElem:
 			name, ok := objKeyName(elem.Name)
 			if !ok {
+				c.reportUnsupported(elem.Name)
 				continue
 			}
 			c.checkSelfReceiver(name, elem, elem.Static, elem.Receiver)
@@ -1069,6 +1071,7 @@ func (c *checker) buildMemberSigs(
 		case *ast.GetterElem:
 			name, ok := objKeyName(elem.Name)
 			if !ok {
+				c.reportUnsupported(elem.Name)
 				continue
 			}
 			c.checkSelfReceiver(name, elem, elem.Static, elem.Receiver)
@@ -1097,6 +1100,7 @@ func (c *checker) buildMemberSigs(
 		case *ast.SetterElem:
 			name, ok := objKeyName(elem.Name)
 			if !ok {
+				c.reportUnsupported(elem.Name)
 				continue
 			}
 			c.checkSelfReceiver(name, elem, elem.Static, elem.Receiver)
@@ -1397,6 +1401,8 @@ func (c *checker) checkMethodRecursionAnnotations(decl *ast.ClassDecl) {
 		}
 		name, ok := objKeyName(m.Name)
 		if !ok {
+			// buildMemberSigs reports a key naming no member it can represent. This is a
+			// second walk over the same body, so reporting here would double it.
 			continue
 		}
 		byName[name] = append(byName[name], len(arms))
