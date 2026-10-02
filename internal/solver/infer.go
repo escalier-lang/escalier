@@ -223,6 +223,12 @@ type checker struct {
 	// non-returning-recursion diagnostic learns what to call it. inferFunc reads and clears it on
 	// entry, so a lambda nested inside a member body is not blamed under the member's name.
 	memberName string
+	// memberReceiver is the receiver of the class member or constructor whose body is about
+	// to be walked, set beside the `self` binding and consumed by the inferFunc call that walks
+	// the body. It is nil for a static member and for every function that is not a member.
+	// inferFunc reads and clears it on entry, so a lambda nested inside the body does not
+	// take the member's receiver as its own.
+	memberReceiver *ast.MethodReceiver
 
 	// pendingReturns holds every body-carrying function inferFunc has typed since the last
 	// checkCanReturn, each waiting to have its return type checked for a finite inhabitant. The

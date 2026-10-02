@@ -1,0 +1,117 @@
+package solver
+
+import (
+	"testing"
+
+	"github.com/stretchr/testify/require"
+)
+
+// selfPlaceDecls are the callees the receiver cases pass places to.
+const selfPlaceDecls = `
+	declare fn readWrite(a: &{v: number}, b: &mut {v: number}) -> undefined
+	declare fn take(x: {v: number}) -> undefined
+`
+
+// TestSelfRootedPlaces covers places rooted at a method's receiver. The liveness pre-pass
+// defines `self` as a parameter of the body, so `self.p` names a tracked place the way `s.p`
+// does for a parameter s. Each analysis built on places sees it: the exclusivity check, the
+// move check, and borrow-edge recording.
+func TestSelfRootedPlaces(t *testing.T) {
+	tests := map[string]struct {
+		src  string
+		want []string
+	}{
+		// An immutable and a mutable borrow of one receiver field conflict, through a
+		// borrowing receiver and a consuming one alike.
+		"BorrowingReceiverFieldBorrowedBothWays": {
+			src: selfPlaceDecls + `
+				class C {
+					p: {v: number},
+					m(&mut self) -> undefined { readWrite(&self.p, &mut self.p) },
+				}
+			`,
+			want: []string{"7:53-7:64: cannot borrow 'self.p' as mutable while it is borrowed as immutable"},
+		},
+		"ConsumingReceiverFieldBorrowedBothWays": {
+			src: selfPlaceDecls + `
+				class C {
+					p: {v: number},
+					m(mut self) -> undefined { readWrite(&self.p, &mut self.p) },
+				}
+			`,
+			want: []string{"7:52-7:63: cannot borrow 'self.p' as mutable while it is borrowed as immutable"},
+		},
+		// A constructor's receiver is a mutable borrow of the instance it fills in.
+		"ConstructorReceiverFieldBorrowedBothWays": {
+			src: selfPlaceDecls + `
+				class C {
+					p: {v: number},
+					constructor(&mut self, p: {v: number}) {
+						self.p = p
+						readWrite(&self.p, &mut self.p)
+					},
+				}
+			`,
+			want: []string{"9:26-9:37: cannot borrow 'self.p' as mutable while it is borrowed as immutable"},
+		},
+		// Disjoint fields of the receiver are two objects.
+		"DisjointReceiverFieldsOk": {
+			src: selfPlaceDecls + `
+				class C {
+					p: {v: number},
+					q: {v: number},
+					m(&mut self) -> undefined { readWrite(&self.p, &mut self.q) },
+				}
+			`,
+			want: nil,
+		},
+		// A consuming receiver owns the instance, so a field of it moves into an owned
+		// parameter and a second read is a use after the move.
+		"ConsumingReceiverFieldMovedTwice": {
+			src: selfPlaceDecls + `
+				class C {
+					p: {v: number},
+					m(self) -> undefined {
+						take(self.p)
+						take(self.p)
+					},
+				}
+			`,
+			want: []string{"9:12-9:18: use of moved value 'self.p'"},
+		},
+		// A borrowing receiver points at caller-owned data, so a local borrow stored into
+		// one of its fields escapes the method.
+		"LocalStoredIntoBorrowingReceiverEscapes": {
+			src: selfPlaceDecls + `
+				class C {
+					peer: &mut {v: number},
+					m(&mut self) -> undefined {
+						val mut b = {v: 1}
+						self.peer = &mut b
+					},
+				}
+			`,
+			want: []string{"9:19-9:25: borrowed value 'b' does not live long enough to escape the function"},
+		},
+		// A consuming receiver's instance dies with the method, so the same store escapes
+		// nothing.
+		"LocalStoredIntoConsumingReceiverOk": {
+			src: selfPlaceDecls + `
+				class C {
+					peer: &mut {v: number},
+					m(mut self) -> undefined {
+						val mut b = {v: 1}
+						self.peer = &mut b
+					},
+				}
+			`,
+			want: nil,
+		},
+	}
+	for name, tc := range tests {
+		t.Run(name, func(t *testing.T) {
+			_, _, errs := inferSource(t, tc.src)
+			require.Equal(t, tc.want, messagesWithSpan(t, errs))
+		})
+	}
+}
