@@ -1198,6 +1198,7 @@ func (c *checker) paramType(scope *Scope, p *ast.Param, lvl int) soltype.Type {
 // them to choose "borrow" over "move", as in `val q = &p` and `val q = &mut p`, so
 // the borrow leaves the source usable where a bare `val q = p` would consume it.
 func (c *checker) inferBorrow(scope *Scope, lvl int, e *ast.BorrowExpr) soltype.Type {
+	c.noteBorrowSite(e)
 	// PR 4. An explicit borrow of a field path takes the receiver-bounded
 	// lifetime of the implicit read at field granularity. The dispatch covers
 	// both `MemberExpr` and the constant-string `IndexExpr` form, so

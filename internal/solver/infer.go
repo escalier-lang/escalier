@@ -468,10 +468,15 @@ type funcCtx struct {
 	// loanReads holds the expressions a borrow reads to take its loan. That read creates the
 	// borrow rather than being a second path to the data, so the use check skips it.
 	loanReads set.Set[ast.Node]
+	// borrowSites holds every borrow expression the walk infers, in source order. Most take
+	// their loan where they are bound or passed. checkNestedBorrows reads this list to take
+	// the loan of each one that is neither, such as a borrow inside a literal or a return.
+	borrowSites []borrowSite
 	// sharedPathSpans holds the spans of the returned expressions reported for reaching a local
-	// twice. The use check skips a read INSIDE one of them, so a return that hands out two
-	// paths yields the diagnostic naming the return rather than a second one naming the read it
-	// contains. A read elsewhere in the body is unrelated and keeps its own diagnostic.
+	// twice. The use check skips a read INSIDE one of them, and checkNestedBorrows skips a borrow
+	// inside one. A return that hands out two paths then yields the diagnostic naming the return
+	// rather than a second one naming the read or borrow it contains. A read or borrow elsewhere
+	// in the body is unrelated and keeps its own diagnostic.
 	sharedPathSpans []ast.Span
 	// loanSeq is the last sequence number handed to a loan. Each loan takes the next one, so
 	// a read can name the loans that existed when it was walked without depending on their

@@ -603,7 +603,7 @@ func (c *checker) checkUseAfterMoves() {
 	if c.fn == nil || c.fn.cfg == nil {
 		return
 	}
-	if len(c.fn.useSites) == 0 && len(c.fn.moveSites) == 0 && len(c.fn.pendingTransitions) == 0 && len(c.fn.escapeSites) == 0 {
+	if len(c.fn.useSites) == 0 && len(c.fn.moveSites) == 0 && len(c.fn.pendingTransitions) == 0 && len(c.fn.escapeSites) == 0 && len(c.fn.borrowSites) == 0 {
 		return
 	}
 	info := liveness.AnalyzeMoves(c.fn.cfg, c.fn.moveSites)
@@ -644,7 +644,9 @@ func (c *checker) checkUseAfterMoves() {
 	}
 	// Every loan is recorded by now, so a read of data a live borrow can write through is
 	// decided here rather than mid-walk. A read the loop above already reported is skipped, so
-	// one bad read yields one diagnostic.
+	// one bad read yields one diagnostic. The nested borrows go first, because each one notes
+	// its operand as the read that takes its loan, and the use check skips those reads.
+	c.checkNestedBorrows()
 	c.checkUsesAgainstLoans(reported)
 	c.resolvePhaseTransitions(info)
 }
