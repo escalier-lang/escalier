@@ -468,6 +468,10 @@ type funcCtx struct {
 	// the consumed lattice is available. A self-contained connected component re-anchors
 	// and co-moves; anything else reports an EscapingBorrowError.
 	escapeSites []escapeSite
+	// callerStores holds each local a call's store effect writes into a caller-owned target,
+	// with the mutability of the borrow written. resolveComponentEscapes reads them as paths out
+	// of the frame beside the escape sites.
+	callerStores []callerStore
 	// loans holds every borrow bound to a name in this body, in source order. The exclusivity
 	// check compares each new borrow against the ones still live. See borrow_exclusivity.go.
 	loans []loan

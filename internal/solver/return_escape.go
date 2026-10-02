@@ -86,13 +86,13 @@ func (e *EscapingBorrowError) Message() string {
 }
 
 // ReturnedBorrowAlsoLeftError fires when a returned borrow names a local that leaves the frame
-// somewhere else too, so the return is not the only path to it. That is the condition #1264's
-// exemption rests on, and the reason it is denied here.
+// somewhere else too, and one of the two paths can write the local while the other cannot. A
+// store hands a path to the caller's object, and a consuming argument moves the local into the
+// callee. Two mutable paths are allowed under Rule 3.
 //
 // It is distinct from EscapingBorrowError because the local's lifetime is not the problem. A
 // return ends the frame, so a borrow leaving through it alone would be fine. What breaks is the
-// second path: a store hands one to the caller's object, and a consuming argument moves the
-// local into the callee.
+// second path disagreeing with the first about whether the local can change.
 type ReturnedBorrowAlsoLeftError struct {
 	// LocalName is the local reached twice, for the message.
 	LocalName string
@@ -108,6 +108,41 @@ func (e *ReturnedBorrowAlsoLeftError) Message() string {
 	return fmt.Sprintf("'%s' leaves the function at another point too, so the return is not the only path to it", e.LocalName)
 }
 
+// LeftMutablyAndImmutablyError reports a local that leaves the frame through a path that can
+// write it and a path that cannot, both outside a return. The caller then holds two views of one
+// value that disagree about whether it can change.
+type LeftMutablyAndImmutablyError struct {
+	// LocalName is the local that leaves twice, for the message.
+	LocalName string
+	// node is the later path out, and other the earlier one.
+	node  ast.Node
+	other ast.Span
+}
+
+func (*LeftMutablyAndImmutablyError) isSolverError()        {}
+func (e *LeftMutablyAndImmutablyError) Span() ast.Span      { return e.node.Span() }
+func (e *LeftMutablyAndImmutablyError) Related() []ast.Span { return []ast.Span{e.other} }
+func (e *LeftMutablyAndImmutablyError) Message() string {
+	return fmt.Sprintf("'%s' leaves the function through a mutable path and an immutable one", e.LocalName)
+}
+
+// callerStore is a call's store effect writing borrows of locals into a caller-owned target:
+// the locals written, whether a write can go through the stored borrow, and the argument the
+// borrow came from.
+type callerStore struct {
+	// paths maps each local the store reaches to whether a write can go through each path
+	// to it.
+	paths map[liveness.VarID][]bool
+	node  ast.Expr
+}
+
+// leavingPath is one path a local takes out of the frame outside a return: whether a write can
+// go through it, and the expression it leaves through.
+type leavingPath struct {
+	mut  bool
+	node ast.Expr
+}
+
 // escapeSite is one value flowing out of the frame whose escape decision is deferred to
 // resolveComponentEscapes. It holds the outgoing expression and the CFG point it leaves the
 // frame at. The expression doubles as the diagnostic blame and as the source whose carried
@@ -115,6 +150,14 @@ func (e *ReturnedBorrowAlsoLeftError) Message() string {
 type escapeSite struct {
 	expr    ast.Expr
 	stmtRef liveness.StmtRef
+	// intoCaller marks a value stored into a field of a caller-owned target, such as
+	// `p.peer = &mut b` with `p: &mut {…}`. It is a path out of the frame to weigh against
+	// the others, not an escape to decide on its own. target is the field it lands in.
+	intoCaller bool
+	target     movePlace
+	// superseded marks an intoCaller store a later store into the same field overwrote before
+	// the function could return, so the caller never sees what it wrote.
+	superseded bool
 	// isReturn marks a value leaving through a `return`, the one flow-out whose frame is
 	// gone afterwards. componentMoveCovers reads it to decide whether a bare borrow may
 	// re-anchor: nothing in the frame can reach the value again, so the borrow the caller
@@ -134,9 +177,15 @@ func (c *checker) resolveComponentEscapes(
 ) bool {
 	consumed := false
 	outOfFrame := c.localsLeavingOutsideAReturn(flowBorrowGraph)
+	c.reportMixedLeavingPaths(outOfFrame)
 	// Return index to the owned type its borrows strip to. Committed after every site is decided.
 	ownedReturns := map[int]soltype.Type{}
 	for _, es := range c.fn.escapeSites {
+		// A store into a caller-owned target is a path out of the frame, which outOfFrame and
+		// reportMixedLeavingPaths weigh. Under GC it leaves nothing dangling on its own.
+		if es.intoCaller {
+			continue
+		}
 		// The flow-sensitive borrow-edge graph at this site's program point. A borrow cleared by an
 		// earlier reassignment is gone here, and one set on a reaching branch is joined in. Passed
 		// explicitly to each escape helper so they read this per-point snapshot rather than the
@@ -183,7 +232,23 @@ func (c *checker) resolveComponentEscapes(
 		// other flow-out left behind, which is what the report names.
 		if es.isReturn {
 			reached := reachableLocals(escaping, fieldBorrowGraph)
-			if id, other, ok := leavesElsewhere(reached, outOfFrame); ok {
+			if _, _, ok := leavesElsewhere(reached, outOfFrame); ok {
+				// Every path out of one local agreeing on mutability is fine. Two writers are
+				// Rule 3, and GC keeps the local alive. The return then keeps its borrow type,
+				// since the caller is not the only holder. A local whose paths disagree is the
+				// one the report names.
+				id, other, mixed := mixedLeavingPath(c.leavingMuts(es.expr, fieldBorrowGraph), outOfFrame)
+				if !mixed {
+					// The return is still a value the caller receives, so two paths inside it that
+					// disagree about a local are reported as they would be for any return.
+					if idx, graph, root, ok := c.returnCarrier(es.expr, fieldBorrowGraph); ok {
+						c.reportSharedReturnPaths(c.fn.returns[idx], root, graph, es.expr)
+					}
+					continue
+				}
+				// The return names the two disagreeing paths, so a borrow conflict inside the same
+				// returned expression adds no second diagnostic for the one mistake.
+				c.noteReportedPathExpr(es.expr)
 				c.report(&ReturnedBorrowAlsoLeftError{
 					LocalName: c.varIDToName(id), node: es.expr, other: other.Span(),
 				})
@@ -194,60 +259,138 @@ func (c *checker) resolveComponentEscapes(
 	}
 	c.commitOwnedReturnTypes(ownedReturns)
 	c.fn.escapeSites = nil
+	c.fn.callerStores = nil
 	return consumed
 }
 
-// localsLeavingOutsideAReturn returns the function-locals that flow out somewhere other than a
-// return: a field store into a parameter, or a consuming argument. Both hand a path to the local
-// that outlives the frame, one to the caller's object and one to the callee.
+// localsLeavingOutsideAReturn returns the paths each function-local takes out of the frame other
+// than a return: a store into a caller-owned target, or a consuming argument. Each hands a path
+// to the local that outlives the frame, one to the caller's object and one to the callee. A path
+// records whether a write can go through it.
 //
 // A return's exemption rests on the frame being gone, so nothing can reach the local again. That
 // is false for a local already on this list, since the earlier flow-out left a path behind. In
 //
-//	fn f(p: mut {node: {peer: &mut B}}) {
+//	fn f(p: &mut {node: {peer: &B}}) {
 //		val mut b = {value: 0}
-//		p.node = {peer: &mut b}
+//		p.node = {peer: &b}
 //		return &mut b
 //	}
 //
-// the caller ends up holding b through p.node.peer AND through the return, which is two live
-// mutable paths to one value.
+// the caller ends up holding b through p.node.peer AND through the return. One path can write b
+// and the other cannot, which resolveComponentEscapes reports. Two mutable paths are allowed
+// under Rule 3.
 //
 // Every site is scanned before any is decided, so a store written after the return in the source
 // counts the same as one written before it.
-func (c *checker) localsLeavingOutsideAReturn(flowBorrowGraph *flowBorrowGraph) map[liveness.VarID]ast.Node {
-	out := map[liveness.VarID]ast.Node{}
+func (c *checker) localsLeavingOutsideAReturn(flowBorrowGraph *flowBorrowGraph) map[liveness.VarID][]leavingPath {
+	out := map[liveness.VarID][]leavingPath{}
 	for _, es := range c.fn.escapeSites {
-		if es.isReturn {
+		if es.isReturn || es.superseded {
 			continue
 		}
 		graph := flowBorrowGraph.fieldBorrowGraphBefore(es.stmtRef)
-		// Closed over the graph for the reason the return side closes its own set: a value
-		// flowing out reaches more than the locals it borrows directly, and a local it reaches
-		// only through another local's edges leaves the frame just the same.
-		leaving := reachableLocals(c.escapingLocalsOf(es.expr, graph), graph)
-		for _, id := range leaving.ToSlice() {
-			// The first site wins, so a local leaving twice blames the earliest one rather
-			// than whichever the walk reached last.
-			if _, seen := out[id]; !seen {
-				out[id] = es.expr
+		for id, muts := range c.leavingMuts(es.expr, graph) {
+			for _, mut := range muts {
+				out[id] = append(out[id], leavingPath{mut: mut, node: es.expr})
+			}
+		}
+	}
+	for _, cs := range c.fn.callerStores {
+		for id, muts := range cs.paths {
+			for _, mut := range muts {
+				out[id] = append(out[id], leavingPath{mut: mut, node: cs.node})
 			}
 		}
 	}
 	return out
 }
 
+// leavingMuts returns each function-local the value e reaches, with whether a write can go
+// through each path that reaches it. A borrow written in e reaches its local with the borrow's
+// own mutability. A local reached through an edge takes that edge's mutability, since a borrow
+// field carries its own mutability rather than the enclosing borrow's. A local reached by both
+// kinds of path lists both.
+//
+// It reaches the locals escapingLocalsOf does, closed over the graph the way reachableLocals
+// closes that set, so a local e reaches only through another local's edges is included.
+func (c *checker) leavingMuts(
+	e ast.Expr,
+	fieldBorrowGraph map[liveness.VarID][]fieldBorrow,
+) map[liveness.VarID][]bool {
+	out := map[liveness.VarID][]bool{}
+	if c.fn == nil || fieldBorrowGraph == nil || e == nil {
+		return out
+	}
+	for _, r := range c.reachedPlaces(e, fieldBorrowGraph) {
+		if !slices.Contains(out[r.place.root], r.mut) {
+			out[r.place.root] = append(out[r.place.root], r.mut)
+		}
+	}
+	return out
+}
+
+// reportMixedLeavingPaths reports each local that leaves the frame outside a return through a
+// path that can write it and one that cannot. Two paths of one mutability are allowed, two
+// writers under Rule 3 and two readers trivially. Locals are reported in VarID order.
+func (c *checker) reportMixedLeavingPaths(outOfFrame map[liveness.VarID][]leavingPath) {
+	ids := make([]liveness.VarID, 0, len(outOfFrame))
+	for id := range outOfFrame {
+		ids = append(ids, id)
+	}
+	slices.Sort(ids)
+	for _, id := range ids {
+		paths := outOfFrame[id]
+		for _, p := range paths[1:] {
+			if p.mut != paths[0].mut {
+				// The report names both paths, so a borrow conflict inside the later one adds no
+				// second diagnostic for the one mistake.
+				c.noteReportedPathExpr(p.node)
+				c.report(&LeftMutablyAndImmutablyError{
+					LocalName: c.varIDToName(id), node: p.node, other: paths[0].node.Span(),
+				})
+				break
+			}
+		}
+	}
+}
+
+// mixedLeavingPath returns the first local, in VarID order, that the returned value reaches and
+// that also leaves the frame elsewhere through a path whose mutability differs from one of the
+// return's paths to it. other is that path's expression. ok is false when every such local's
+// paths agree.
+func mixedLeavingPath(
+	returned map[liveness.VarID][]bool,
+	outOfFrame map[liveness.VarID][]leavingPath,
+) (liveness.VarID, ast.Expr, bool) {
+	ids := make([]liveness.VarID, 0, len(returned))
+	for id := range returned {
+		ids = append(ids, id)
+	}
+	slices.Sort(ids)
+	for _, id := range ids {
+		for _, p := range outOfFrame[id] {
+			for _, mut := range returned[id] {
+				if mut != p.mut {
+					return id, p.node, true
+				}
+			}
+		}
+	}
+	return 0, nil, false
+}
+
 // leavesElsewhere reports whether any local in reached also leaves the frame outside a return,
 // and returns the expression the first such one leaves through for the diagnostic's related span.
 func leavesElsewhere(
 	reached set.Set[liveness.VarID],
-	outOfFrame map[liveness.VarID]ast.Node,
+	outOfFrame map[liveness.VarID][]leavingPath,
 ) (liveness.VarID, ast.Node, bool) {
 	ids := reached.ToSlice()
 	slices.Sort(ids)
 	for _, id := range ids {
-		if other, ok := outOfFrame[id]; ok {
-			return id, other, true
+		if paths := outOfFrame[id]; len(paths) > 0 {
+			return id, paths[0].node, true
 		}
 	}
 	return 0, nil, false
@@ -293,9 +436,10 @@ func reachableLocals(
 // out then states what the caller actually holds. The outOfFrame test is what limits this to a
 // local the frame does not also send out another way.
 //
-// A store or a consuming argument leaves the frame running. The local a bare borrow names is
-// still reachable from the frame, so the value is not the caller's alone, and the aggregate
-// requirement stands.
+// A consuming argument leaves the frame running. The local a bare borrow names is still
+// reachable from the frame, so the value is not the callee's alone, and the aggregate
+// requirement stands. A store into a caller-owned target never reaches here, since
+// resolveComponentEscapes weighs it only as a path out of the frame.
 //
 // Two borrows of one local CAN leave together in a single returned value. The move accepts it,
 // and ownedReturnType then declines to re-type it, so both stay borrowed. Two writers are Rule
@@ -310,7 +454,7 @@ func reachableLocals(
 // container records it; see borrow_store.go.
 func (c *checker) componentMoveCovers(
 	es escapeSite, escaping set.Set[liveness.VarID],
-	outOfFrame map[liveness.VarID]ast.Node,
+	outOfFrame map[liveness.VarID][]leavingPath,
 	info *liveness.MoveInfo,
 	fieldBorrowGraph map[liveness.VarID][]fieldBorrow,
 ) bool {
@@ -745,11 +889,13 @@ func (c *checker) checkReturnEscape(retExpr ast.Expr, stmtRef liveness.StmtRef) 
 	c.recordEscapeSiteKind(retExpr, stmtRef, true)
 }
 
-// checkParamFieldStoreEscape handles a field store `recv.f = source`. Storing a value that
-// borrows a local into a BORROW parameter's field escapes, since the object that parameter
-// names belongs to the caller and outlives the frame. A store into a receiver that dies with
-// the frame, a local or an owned parameter, does not escape and is not tracked here.
-func (c *checker) checkParamFieldStoreEscape(recv, source ast.Expr, stmtRef liveness.StmtRef) {
+// recordCallerFieldStore handles a field store `recv.f = source` into a caller-owned
+// receiver, a borrow parameter or a borrowing method receiver. The object it names belongs to
+// the caller, so a local the source borrows reaches the caller through the stored field. The
+// store records that path for resolveComponentEscapes, and a loan of the borrowed place that
+// lasts for the rest of the body. A store into a receiver that dies with the frame, a local or
+// an owned parameter, is recordFieldStoreEdges's to record.
+func (c *checker) recordCallerFieldStore(recv ast.Expr, field string, source ast.Expr, stmtRef liveness.StmtRef) {
 	if c.fn == nil || c.fn.eagerBorrowGraph == nil {
 		return
 	}
@@ -757,14 +903,73 @@ func (c *checker) checkParamFieldStoreEscape(recv, source ast.Expr, stmtRef live
 	if !ok || rp.root <= 0 || !c.paramReferentOutlivesFrame(rp.root) {
 		return
 	}
-	c.recordEscapeSite(source, stmtRef)
+	base := appendSeg(rp.path, field)
+	target := movePlace{root: rp.root, path: base}
+	// A store into the same field earlier in this block is overwritten before the function can
+	// return, so the caller never sees it. One on another block may reach the return on a path
+	// that skips this store, so it stays.
+	for i := range c.fn.escapeSites {
+		es := &c.fn.escapeSites[i]
+		if es.intoCaller && placesEqual(es.target, target) &&
+			es.stmtRef.BlockID == stmtRef.BlockID && es.stmtRef.StmtIdx < stmtRef.StmtIdx {
+			es.superseded = true
+		}
+	}
+	c.fn.escapeSites = append(c.fn.escapeSites, escapeSite{expr: source, stmtRef: stmtRef, intoCaller: true, target: target})
+	// The store repoints the field, so a loan the field held before ends here.
+	c.endLoansAt(rp.root, base)
+	// The caller holds whatever the stored value reaches, so each local it reaches takes a loan
+	// held by the receiver.
+	for _, l := range c.storedLoans(source) {
+		c.recordStoreEdgeLoan(l.place, l.mut, rp.root, base, stmtRef, l.node)
+	}
+}
+
+// storedLoan is a loan a store into a caller-owned target leaves: the place reached, whether a
+// write can go through the path to it, and the expression the diagnostic blames.
+type storedLoan struct {
+	place movePlace
+	mut   bool
+	node  ast.Expr
+}
+
+// storedLoans returns the loans a store of source into a caller-owned target leaves, read off
+// the eager borrow graph at the store.
+func (c *checker) storedLoans(source ast.Expr) []storedLoan {
+	return c.reachedPlaces(source, c.fn.eagerBorrowGraph)
+}
+
+// reachedPlaces returns each place in a function-local the value e reaches, with whether a write
+// can go through the path to it. A borrow written in e keeps its field path, so `&mut b.x`
+// reaches b.x. A local reached through an edge, from that borrow's local or from e's own place,
+// is reached whole, with that edge's mutability. node is the expression a diagnostic about the
+// path blames: the borrow for a written borrow, and e for an edge.
+func (c *checker) reachedPlaces(e ast.Expr, fieldBorrowGraph map[liveness.VarID][]fieldBorrow) []storedLoan {
+	var out []storedLoan
+	var edges []fieldBorrow
+	for _, borrow := range borrowsIn(e) {
+		place, ok := c.localReferentPlace(borrow.Arg)
+		if !ok {
+			continue
+		}
+		out = append(out, storedLoan{place: place, mut: borrow.Mut, node: borrow})
+		collectAllEdgesFrom(place.root, set.NewSet[liveness.VarID](), fieldBorrowGraph, &edges)
+	}
+	if p, ok := exprPlace(e); ok && p.root > 0 {
+		collectEdgesFrom(p.root, p.path, set.NewSet[liveness.VarID](), fieldBorrowGraph, &edges)
+	}
+	for _, edge := range edges {
+		out = append(out, storedLoan{place: movePlace{root: edge.referent}, mut: edge.mut, node: e})
+	}
+	return out
 }
 
 // recordFieldStoreEdges records a borrow edge for a field store `recv.f = source` into a
 // receiver that dies with the frame, a local or an owned parameter, rooted at recv's place
 // extended by f. A store `b.peer = &mut d` records b → d at [peer], so a later flow-out of b
-// finds the borrow of d. Such a store does not escape until b itself flows out, unlike a store
-// into a BORROW parameter's field, which checkParamFieldStoreEscape reports at once. It is a
+// finds the borrow of d. Such a store does not leave the frame until b itself flows out, unlike
+// a store into a caller-owned receiver's field, which recordCallerFieldStore records as a path
+// out at once. It is a
 // strong update on the stored field's subtree: it clears the [f] subtree before recording, so
 // a repoint `b.peer = &mut e` after
 // `b.peer = &mut d` leaves only b → e at [peer] while a sibling edge b → x at [data] survives.

@@ -82,24 +82,48 @@ func TestSelfRootedPlaces(t *testing.T) {
 		// A borrowing receiver points at caller-owned data. Under GC, a local borrow stored into
 		// one of its fields is the only path to the local once the method returns, so the store
 		// is accepted.
-		//
-		// DISABLED until #1744. A store of a local borrow into a caller-owned target reports
-		// `borrowed value 'b' does not live long enough to escape the function`. Once #1744
-		// lands, the case checks.
-		/*
-			"LocalStoredIntoBorrowingReceiverEscapes": {
-				src: selfPlaceDecls + `
-					class C {
-						peer: &mut {v: number},
-						m(&mut self) -> undefined {
-							val mut b = {v: 1}
-							self.peer = &mut b
-						},
-					}
-				`,
-				want: nil,
-			},
-		*/
+		"LocalStoredIntoBorrowingReceiverOk": {
+			src: selfPlaceDecls + `
+				class C {
+					peer: &mut {v: number},
+					m(&mut self) -> undefined {
+						val mut b = {v: 1}
+						self.peer = &mut b
+					},
+				}
+			`,
+			want: nil,
+		},
+		// The caller keeps the receiver after the method returns, so the store's loan of b holds
+		// for the rest of the method and moving b reports.
+		"LocalMovedAfterAStoreIntoBorrowingReceiverConflicts": {
+			src: selfPlaceDecls + `
+				class C {
+					peer: &mut {v: number},
+					m(&mut self) -> undefined {
+						val mut b = {v: 1}
+						self.peer = &mut b
+						val y = b
+					},
+				}
+			`,
+			want: []string{"10:15-10:16: cannot move 'b' while it is borrowed"},
+		},
+		// A consuming receiver's instance belongs to the method, so its loan of b ends when the
+		// method stops reading self, and moving b afterwards checks.
+		"LocalMovedAfterAStoreIntoConsumingReceiverOk": {
+			src: selfPlaceDecls + `
+				class C {
+					peer: &mut {v: number},
+					m(mut self) -> undefined {
+						val mut b = {v: 1}
+						self.peer = &mut b
+						val y = b
+					},
+				}
+			`,
+			want: nil,
+		},
 		// A consuming receiver's instance dies with the method, so a local borrow stored into
 		// one of its fields escapes nothing.
 		"LocalStoredIntoConsumingReceiverOk": {

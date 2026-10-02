@@ -321,12 +321,13 @@ func TestForInBackEdgeBorrows(t *testing.T) {
 		want  []string
 		types map[string]string
 	}{
-		// A borrow repointed inside the loop reaches the loop merge alongside the
-		// pre-loop referent: with zero iterations a still borrows c, and after the body a
-		// borrows d, so the union at the exit escapes both locals.
+		// A borrow repointed inside the loop reaches the loop merge alongside the pre-loop
+		// referent. With zero iterations a still borrows c, and after the body a borrows d, so
+		// storing a into out at the exit hands the caller a mutable path to both. out.c and
+		// out.d disagree with them.
 		"ReassignInLoopUnionsAtMerge": {
 			src: `
-				fn f(xs: [number], out: &mut {slot: &mut {value: number}}) {
+				fn f(xs: [number], out: &mut {slot: &mut {value: number}, c: &{value: number}, d: &{value: number}}) {
 					val mut c = {value: 1}
 					val mut d = {value: 0}
 					var a = &mut c
@@ -334,22 +335,24 @@ func TestForInBackEdgeBorrows(t *testing.T) {
 						a = &mut d
 					}
 					out.slot = a
+					out.c = &c
+					out.d = &d
 				}
 			`,
 			want: []string{
-				`9:17-9:18: borrowed value 'c' does not live long enough to escape the function`,
-				`9:17-9:18: borrowed value 'd' does not live long enough to escape the function`,
+				"10:14-10:16: 'c' leaves the function through a mutable path and an immutable one",
+				"11:14-11:16: 'd' leaves the function through a mutable path and an immutable one",
 			},
-			types: map[string]string{"f": "fn (xs: [number], out: &mut {slot: &mut {value: number}}) -> undefined"},
+			types: map[string]string{"f": "fn (xs: [number], out: &mut {slot: &mut {value: number}, c: &{value: number}, d: &{value: number}}) -> undefined"},
 		},
-		// A whole-binding reassignment after the loop clears every referent the loop
-		// carried into it: `a = &mut d` replaces a's whole edge set, so storing a out
-		// escapes only d, not the c the loop body kept repointing to. This is
-		// clearEagerSubtree's unconditional kill clearing a referent that reaches the
+		// A whole-binding reassignment after the loop clears every referent the loop carried
+		// into it. `a = &mut d` replaces a's whole edge set, so storing a into out hands the
+		// caller a mutable path to d only, not to the c the loop body kept repointing to. This
+		// is clearEagerSubtree's unconditional kill clearing a referent that reaches the
 		// reassignment through the back edge.
 		"PostLoopReassignClearsLoopEdges": {
 			src: `
-				fn f(xs: [number], out: &mut {slot: &mut {value: number}}) {
+				fn f(xs: [number], out: &mut {slot: &mut {value: number}, c: &{value: number}, d: &{value: number}}) {
 					val mut c = {value: 1}
 					val mut d = {value: 0}
 					var a = &mut c
@@ -358,10 +361,12 @@ func TestForInBackEdgeBorrows(t *testing.T) {
 					}
 					a = &mut d
 					out.slot = a
+					out.c = &c
+					out.d = &d
 				}
 			`,
-			want:  []string{`10:17-10:18: borrowed value 'd' does not live long enough to escape the function`},
-			types: map[string]string{"f": "fn (xs: [number], out: &mut {slot: &mut {value: number}}) -> undefined"},
+			want:  []string{"12:14-12:16: 'd' leaves the function through a mutable path and an immutable one"},
+			types: map[string]string{"f": "fn (xs: [number], out: &mut {slot: &mut {value: number}, c: &{value: number}, d: &{value: number}}) -> undefined"},
 		},
 		// A field store inside the loop repoints only the stored field's subtree, so
 		// returning the carrier component-moves the stored local and re-anchors it in the

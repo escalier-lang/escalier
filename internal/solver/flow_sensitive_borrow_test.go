@@ -9,53 +9,61 @@ import (
 // TestFlowSensitiveBorrowEdges covers the flow-sensitive borrow-edge graph: a binding's
 // borrow edges are set where a borrow flows in, cleared at a reassignment, and joined by
 // union at CFG branch merges. A reassignment away from a borrow drops the replaced referent,
-// so it no longer over-reports as escaping, while a borrow set on one branch still reaches the
-// merge.
+// while a borrow set on one branch still reaches the merge.
+//
+// Each case stores the binding into a borrow parameter's field, which hands the caller a
+// mutable path to every local the binding borrows at that point. An immutable path to each
+// candidate local, stored beside it, then reports exactly the locals the graph holds there.
 func TestFlowSensitiveBorrowEdges(t *testing.T) {
 	tests := map[string]struct {
 		src   string
 		want  []string
 		types map[string]string
 	}{
-		// Reassigning a `var`'s borrow clears the replaced edge: `a = &mut d` after `a = &mut
-		// c` leaves only a → d, so storing a out escapes d alone. The stale c edge is cleared by
-		// the strong update, not carried forward, so it does not over-report as escaping.
+		// Reassigning a `var`'s borrow clears the replaced edge. `a = &mut d` after `a = &mut c`
+		// leaves only a → d, so storing a into out hands the caller a mutable path to d alone.
+		// The immutable paths out.c and out.d probe which locals that store reached. Only d
+		// leaves both mutably and immutably, since the strong update cleared the stale c edge.
 		"VarReassignClearsReplacedEdge": {
 			src: `
-				fn f(out: &mut {slot: &mut {value: number}}) {
+				fn f(out: &mut {slot: &mut {value: number}, c: &{value: number}, d: &{value: number}}) {
 					val mut c = {value: 1}
 					val mut d = {value: 0}
 					var a = &mut c
 					a = &mut d
 					out.slot = a
+					out.c = &c
+					out.d = &d
 				}
 			`,
-			want:  []string{"7:17-7:18: borrowed value 'd' does not live long enough to escape the function"},
-			types: map[string]string{"f": "fn (out: &mut {slot: &mut {value: number}}) -> undefined"},
+			want:  []string{"9:14-9:16: 'd' leaves the function through a mutable path and an immutable one"},
+			types: map[string]string{"f": "fn (out: &mut {slot: &mut {value: number}, c: &{value: number}, d: &{value: number}}) -> undefined"},
 		},
-		// A borrow set on only one branch reaches the merge: `a = &mut d` runs only when cond
-		// holds, but the union at the merge keeps a → d, so storing a out escapes d. The seed is
-		// a parameter, so the fall-through path carries no local edge and only d is reported.
+		// A borrow set on only one branch reaches the merge. `a = &mut d` runs only when cond
+		// holds, but the union at the merge keeps a → d, so storing a into out hands the caller
+		// a mutable path to d, which the immutable out.d then disagrees with. The seed is a
+		// parameter, so the fall-through path carries no local edge.
 		"BorrowSetOnOneBranchReachesMerge": {
 			src: `
-				fn f(seed: &mut {value: number}, cond: boolean, out: &mut {slot: &mut {value: number}}) {
+				fn f(seed: &mut {value: number}, cond: boolean, out: &mut {slot: &mut {value: number}, d: &{value: number}}) {
 					var a = seed
 					val mut d = {value: 0}
 					if cond {
 						a = &mut d
 					}
 					out.slot = a
+					out.d = &d
 				}
 			`,
-			want:  []string{"8:17-8:18: borrowed value 'd' does not live long enough to escape the function"},
-			types: map[string]string{"f": "fn (seed: &mut {value: number}, cond: boolean, out: &mut {slot: &mut {value: number}}) -> undefined"},
+			want:  []string{"9:14-9:16: 'd' leaves the function through a mutable path and an immutable one"},
+			types: map[string]string{"f": "fn (seed: &mut {value: number}, cond: boolean, out: &mut {slot: &mut {value: number}, d: &{value: number}}) -> undefined"},
 		},
-		// Disagreeing branches union their referents: the then-branch repoints a to d and the
-		// else-branch back to c, so the merge carries both a → c and a → d, and storing a out
-		// escapes both locals.
+		// Disagreeing branches union their referents. The then-branch repoints a to d and the
+		// else-branch back to c, so the merge carries both a → c and a → d. Storing a into out
+		// hands the caller a mutable path to both, which out.c and out.d disagree with.
 		"BranchesUnionReferents": {
 			src: `
-				fn f(cond: boolean, out: &mut {slot: &mut {value: number}}) {
+				fn f(cond: boolean, out: &mut {slot: &mut {value: number}, c: &{value: number}, d: &{value: number}}) {
 					val mut c = {value: 1}
 					val mut d = {value: 0}
 					var a = &mut c
@@ -65,13 +73,15 @@ func TestFlowSensitiveBorrowEdges(t *testing.T) {
 						a = &mut c
 					}
 					out.slot = a
+					out.c = &c
+					out.d = &d
 				}
 			`,
 			want: []string{
-				"11:17-11:18: borrowed value 'c' does not live long enough to escape the function",
-				"11:17-11:18: borrowed value 'd' does not live long enough to escape the function",
+				"12:14-12:16: 'c' leaves the function through a mutable path and an immutable one",
+				"13:14-13:16: 'd' leaves the function through a mutable path and an immutable one",
 			},
-			types: map[string]string{"f": "fn (cond: boolean, out: &mut {slot: &mut {value: number}}) -> undefined"},
+			types: map[string]string{"f": "fn (cond: boolean, out: &mut {slot: &mut {value: number}, c: &{value: number}, d: &{value: number}}) -> undefined"},
 		},
 	}
 	for name, tc := range tests {

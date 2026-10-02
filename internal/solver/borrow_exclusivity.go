@@ -266,10 +266,43 @@ func (c *checker) liveAt(l loan, ref liveness.StmtRef) bool {
 	if l.holder <= 0 {
 		return l.ref == ref
 	}
+	// A loan held by a caller-owned parameter stays with the caller once the function returns,
+	// so it holds at every statement the store can reach, whether or not the parameter is read
+	// again. A statement on a branch the store is not on is unaffected.
+	if c.paramReferentOutlivesFrame(l.holder) {
+		return c.stmtReaches(l.ref, ref)
+	}
 	if c.fn.liveness == nil {
 		return true
 	}
 	return c.fn.liveness.IsLiveBefore(ref, l.holder)
+}
+
+// stmtReaches reports whether control can flow from the statement at from to the statement at
+// to, counting to == from. A later statement in the same block is reached directly, and any
+// other is reached through the blocks from's block flows into, back edges included.
+func (c *checker) stmtReaches(from, to liveness.StmtRef) bool {
+	if from.BlockID == to.BlockID && to.StmtIdx >= from.StmtIdx {
+		return true
+	}
+	if c.fn == nil || c.fn.cfg == nil || from.BlockID < 0 || from.BlockID >= len(c.fn.cfg.Blocks) {
+		return true
+	}
+	seen := set.NewSet[int]()
+	pending := slices.Clone(c.fn.cfg.Blocks[from.BlockID].Successors)
+	for len(pending) > 0 {
+		b := pending[len(pending)-1]
+		pending = pending[:len(pending)-1]
+		if seen.Contains(b.ID) {
+			continue
+		}
+		seen.Add(b.ID)
+		if b.ID == to.BlockID {
+			return true
+		}
+		pending = append(pending, b.Successors...)
+	}
+	return false
 }
 
 // checkAgainstHeldLoans reports a conflict between fresh and any loan already live at fresh's

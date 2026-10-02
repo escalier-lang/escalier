@@ -2287,11 +2287,10 @@ func (c *checker) inferMemberAssign(scope *Scope, lvl int, e *ast.BinaryExpr, m 
 		// overwritten with an inner branch statement.
 		if ref, ok := c.fn.stmtToRef[assignStmt]; ok {
 			c.consumeOwned(e.Right, source, e.Right, ref)
-			// Storing a value that borrows a local into a parameter's field escapes, since
-			// the parameter's object outlives the frame and the stored local would dangle in
-			// the caller. checkParamFieldStoreEscape applies only when the receiver is a
-			// parameter, and records the store for the post-pass to decide.
-			c.checkParamFieldStoreEscape(m.Object, e.Right, ref)
+			// A store into a caller-owned receiver's field hands the caller a path to every
+			// local the value reaches. recordCallerFieldStore applies only to such a receiver,
+			// and records the path for the post-pass along with the receiver's loans.
+			c.recordCallerFieldStore(m.Object, m.Prop.Name, e.Right, ref)
 			// A store into a LOCAL receiver's field records a borrow edge instead, rooted at
 			// the field. It does not escape until the receiver itself flows out, at which
 			// point the recorded edge is followed. `b.peer = &mut d` records b → d at [peer].
