@@ -426,8 +426,22 @@ type occKey struct {
 // surfaces no extra occurrence. Each variable is then its own representative with
 // its own polarities, so the check is exactly PR1's per-variable both-polarities
 // test.
-func coalesceScheme(t soltype.Type, genLevel int) soltype.Type {
+func coalesceScheme(t soltype.Type, genLevel int, declared []*soltype.TypeParam) soltype.Type {
 	keep := funcTypeParamVars(t)
+	// A class, alias, or enum keeps its parameters in the Context registry rather than on a
+	// signature, so funcTypeParamVars finds none of them. Without them in keep each one
+	// merges with its own declared bound, and at a negative position that merge is an
+	// intersection: `class Holder<T: {value: number}> { peer: T }` would read back as
+	// `peer: T & {value: number}`.
+	for _, tp := range declared {
+		// Only a bounded parameter needs keeping. An unbounded one has no bound to merge
+		// with, and retaining it would stop a slot the display elides from eliding, so
+		// `declare class Task<T, E = never>` would read `<T, E = never> {new () -> Task<T, E>}`
+		// where its own handle renders `{new () -> Task<never>}`.
+		if tp.Constraint != nil {
+			keep.Add(tp.Var)
+		}
+	}
 	simp := simplifyScheme(t, genLevel, keep)
 	c := t.Accept(&schemeCoalescer{
 		simp:     simp,
@@ -765,6 +779,13 @@ func (c *checker) declaredTypeParams(t soltype.Type) []*soltype.TypeParam {
 				return c.declaredTypeParams(cls)
 			}
 			return nil
+		}
+	case *soltype.TypeVarType:
+		// A declaration's value is constrained into a binding var and the var is what
+		// generalizes, so the object is reached through the var's lower bounds. A display
+		// type has the var resolved already and takes the arms above.
+		if obj, ok := c.classValueCarrier(t); ok {
+			return c.declaredTypeParams(obj)
 		}
 	}
 	return nil

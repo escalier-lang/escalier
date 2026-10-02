@@ -33,6 +33,11 @@ type PolyScheme struct {
 	Level int
 	Body  soltype.Type
 
+	// declared holds the type parameters the declaration wrote, for a class, alias, or enum
+	// value. A function carries its own on each signature, so it leaves this nil. Coalescing
+	// reads it to keep each parameter symbolic rather than merging it with its bound.
+	declared []*soltype.TypeParam
+
 	// coalesced memoizes the display type. A Body is immutable after
 	// generalization. Later components instantiate fresh copies rather than
 	// constraining it. Because of that immutability, coalesceScheme's co-occurrence
@@ -52,7 +57,7 @@ func (*PolyScheme) isScheme() {}
 // goes stale.
 func (sc *PolyScheme) display() soltype.Type {
 	if sc.coalesced == nil {
-		sc.coalesced = coalesceScheme(sc.Body, sc.Level)
+		sc.coalesced = coalesceScheme(sc.Body, sc.Level, sc.declared)
 	}
 	return sc.coalesced
 }
@@ -486,7 +491,10 @@ func (f *freshener) freshenBounds(bounds []soltype.Type) []soltype.Type {
 // OPERATIVE body, so callers cannot pass extra fields (Policy A / B2). See its doc.
 func (c *checker) generalize(t soltype.Type, lvl int) TypeScheme {
 	c.sealUsageObjects(t, lvl)
-	sc := &PolyScheme{Level: lvl, Body: t}
+	// The declaration's own parameters are read from the raw body, where a class value's
+	// constructor return still names the class. Reading them before the display is sealed is
+	// what keeps them out of the merge coalescing would otherwise perform.
+	sc := &PolyScheme{Level: lvl, Body: t, declared: c.declaredTypeParams(t)}
 	// Seal the subsumed display now, while the ambient Context is available, so
 	// every later read sees the canonical type and an inferred `1 | number` renders `number`.
 	sc.coalesced = c.subsumeFinal(sc.display())
