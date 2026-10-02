@@ -19,6 +19,9 @@ import (
 func (c *checker) resolveTypeParams(scope *Scope, lvl int, params []*ast.TypeParam) []*soltype.TypeParam {
 	c.reportRequiredAfterDefault(params)
 	c.reportDuplicateTypeParams(params)
+	// Resolve one parameter per distinct name, so a reference's type arguments are matched
+	// against the count the names allow rather than the count of binders written.
+	params = ast.DistinctTypeParams(params)
 	out := make([]*soltype.TypeParam, len(params))
 	// Pass 1: mint each parameter's var. Nothing is declared yet, so pass 2 controls which
 	// siblings each default can see.
@@ -101,11 +104,13 @@ func arityOfParams(params []*soltype.TypeParam) typeParamArity {
 // arityOfParamDecls reads the argument-count range straight off a declaration's `<…>` clause,
 // before the parameters themselves are resolved. It counts the same two numbers
 // arityOfParams reads off the resolved list, since a parameter's `= …` clause is what makes it
-// optional and resolving the clause does not change whether it is there.
+// optional and resolving the clause does not change whether it is there. It counts one
+// parameter per distinct name, which is what resolveTypeParams resolves.
 func arityOfParamDecls(params []*ast.TypeParam) typeParamArity {
+	distinct := ast.DistinctTypeParams(params)
 	return typeParamArity{
-		Required: requiredArgCount(len(params), func(i int) bool { return params[i].Default != nil }),
-		Total:    len(params),
+		Required: requiredArgCount(len(distinct), func(i int) bool { return distinct[i].Default != nil }),
+		Total:    len(distinct),
 	}
 }
 
@@ -173,7 +178,9 @@ func (c *checker) resolveTypeArgs(
 // exactly the annotations that have to change. The default is kept rather than dropped, so a
 // reference that does write every argument still resolves against a full parameter list.
 func (c *checker) reportRequiredAfterDefault(params []*ast.TypeParam) {
-	required := arityOfParamDecls(params).Required
+	// Count over the list as written rather than through arityOfParamDecls, since the
+	// slicing below indexes that same list.
+	required := requiredArgCount(len(params), func(i int) bool { return params[i].Default != nil })
 	for i, p := range params[:required] {
 		if p.Default == nil {
 			continue
@@ -199,9 +206,6 @@ func (c *checker) reportRequiredAfterDefault(params []*ast.TypeParam) {
 // a caller has no way to say which parameter an argument fills.
 //
 // Only the later binder is reported, so `<T, T, T>` raises two errors rather than three.
-// The declaration keeps every binder: resolveTypeParams mints a var per position, and a
-// reference to the name resolves to whichever one pass 2 declared last. The program is
-// rejected, so which one it reaches changes nothing a caller can observe.
 func (c *checker) reportDuplicateTypeParams(params []*ast.TypeParam) {
 	first := map[string]*ast.TypeParam{}
 	for _, p := range params {

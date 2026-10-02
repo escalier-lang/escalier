@@ -293,6 +293,10 @@ func (c *Checker) buildTypeParams(
 ) TypeParamsResult {
 	var errors []Error
 	errors = slices.Concat(errors, reportDuplicateTypeParams(astTypeParams))
+	// Build one parameter per distinct name. A name's later binder is unreachable, so its
+	// annotations are dropped along with it and raise nothing of their own.
+	astTypeParams = ast.DistinctTypeParams(astTypeParams)
+
 	forwardRefErrors, badDefaults := reportDefaultForwardRefs(astTypeParams)
 	errors = slices.Concat(errors, forwardRefErrors)
 

@@ -62,7 +62,7 @@ func TestADeclarationKeepsItsTypeParamBoundAndDefault(t *testing.T) {
 			name:  "Holder",
 			want:  "T: U, U: {value: number}",
 		},
-		// A bound may name a later sibling, where a default may not: a default is filled
+		// A bound may name a later sibling, where a default may not. A default is filled
 		// in from the arguments before it, so it can only reach a parameter that already
 		// has one. A forward bound is therefore the only shape that makes resolution order
 		// differ from declaration order.

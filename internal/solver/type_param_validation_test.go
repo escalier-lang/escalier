@@ -34,6 +34,34 @@ func TestADuplicateTypeParamIsReported(t *testing.T) {
 	}
 }
 
+// TestADroppedDuplicateTypeParamRaisesNothingElse covers the annotations on the binder a
+// duplicate name drops, and the parameter count a reference to the declaration is matched
+// against.
+//
+// Both checkers resolve one parameter per distinct name, keeping the first binder. The
+// later binder is unreachable, so its constraint and default are dropped with it and raise
+// nothing of their own, and a reference writes one argument per distinct name.
+func TestADroppedDuplicateTypeParamRaisesNothingElse(t *testing.T) {
+	const want = "type parameter `T` is declared more than once"
+
+	tests := map[string]string{
+		// A bound or a default naming the duplicated name puts that name in its own
+		// dependency cycle, the shape that has no order satisfying every annotation.
+		"ASelfReferentialBound":   `declare fn g<T, T: T>(a: T) -> T`,
+		"ASelfReferentialDefault": `type Bad<T, T = T> = {v: T}`,
+		"AClassReference":         "class C<T, T> {\n\tv: T,\n}\ndeclare val c: C<number>",
+		"AnAliasReference":        "type A<T, T> = {v: T}\ndeclare val a: A<number>",
+		"AnEnumReference":         "enum E<T, T> {\n\tV(v: T),\n}\ndeclare val e: E<number>",
+	}
+
+	for name, src := range tests {
+		t.Run(name, func(t *testing.T) {
+			_, _, errs := inferSource(t, src)
+			require.Equal(t, []string{want}, errorMessagesOf(errs))
+		})
+	}
+}
+
 // TestOnlyTheLaterDuplicateTypeParamIsReported asserts that a name bound three times
 // raises two errors rather than three, so each error names a binder that could have been
 // written differently.

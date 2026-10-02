@@ -148,6 +148,10 @@ func (c *Checker) resolveTypeParams(
 ) ([]*type_system.TypeParam, []Error) {
 	errors := []Error{}
 	errors = slices.Concat(errors, reportDuplicateTypeParams(astTypeParams))
+	// Resolve one parameter per distinct name. A name's later binder is unreachable, so
+	// its annotations are dropped along with it and raise nothing of their own.
+	astTypeParams = ast.DistinctTypeParams(astTypeParams)
+
 	forwardRefErrors, badDefaults := reportDefaultForwardRefs(astTypeParams)
 	errors = slices.Concat(errors, forwardRefErrors)
 
@@ -195,29 +199,18 @@ func (c *Checker) resolveTypeParams(
 	return typeParamsInDeclOrder(astTypeParams, byName), errors
 }
 
-// typeParamsInDeclOrder reads byName back out in the order astTypeParams declares, one
-// entry per distinct name.
+// typeParamsInDeclOrder reads byName back out in the order astTypeParams declares. Pass
+// astTypeParams through ast.DistinctTypeParams first, so each name appears once.
 //
 // Declaration order is what a caller pairing type arguments with parameters needs, and what
 // the quantifier prefix a signature renders follows. The two producers of byName each walk
 // the parameters in a different order, so neither can build the result as it goes.
-//
-// A name declared twice takes one entry rather than two. The checker declares each
-// parameter's name in a scope, and a scope rejects a name it already holds, so a second
-// entry under one name would panic rather than be reported. resolveTypeParams reports the
-// duplicate, so the program is rejected either way and the entry that is dropped belongs to
-// a binder nothing could have referenced.
 func typeParamsInDeclOrder(
 	astTypeParams []*ast.TypeParam,
 	byName map[string]*type_system.TypeParam,
 ) []*type_system.TypeParam {
 	typeParams := make([]*type_system.TypeParam, 0, len(astTypeParams))
-	seen := set.NewSet[string]()
 	for _, astParam := range astTypeParams {
-		if seen.Contains(astParam.Name) {
-			continue
-		}
-		seen.Add(astParam.Name)
 		typeParams = append(typeParams, byName[astParam.Name])
 	}
 	return typeParams
