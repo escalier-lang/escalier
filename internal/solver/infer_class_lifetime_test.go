@@ -49,7 +49,7 @@ func TestInferClassLifetimeParams(t *testing.T) {
 			want: nil,
 			types: map[string]string{
 				"Holder": "<'a> {new (peer: &'a mut {value: number}) -> Holder<'a>}",
-				"read": "fn <'a, 'b: 'a>(h: Holder<'a>, other: &'b mut {value: number}) " +
+				"read": "fn <'a: 'b, 'b>(h: Holder<'a>, other: &'b mut {value: number}) " +
 					"-> &'b mut {value: number}",
 			},
 		},
