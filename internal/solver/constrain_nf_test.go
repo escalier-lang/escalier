@@ -18,7 +18,7 @@ import (
 // table an oracle. It measures the normal-form solver against truth rather than
 // against a guess.
 //
-// Two shapes are pinned, both drawn from planning/ml_struct/.
+// Two shapes are asserted, both drawn from planning/ml_struct/.
 //
 //  1. Arrow rows — an intersection of function types against a single function
 //     type. This is where a "merge the arms into one arrow" reading diverges from
@@ -112,7 +112,7 @@ func (v nfVerdict) String() string {
 
 // nfRow is one case of the corpus.
 type nfRow struct {
-	// name says which shape the row pins and titles its subtest.
+	// name says which shape the row asserts and titles its subtest.
 	name string
 	// sub and super are Escalier type annotations. They parse under one shared
 	// environment, so a name listed in tvars means the same variable in both.

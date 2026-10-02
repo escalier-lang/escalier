@@ -197,7 +197,7 @@ func TestPartitionLib_PinnedLibSet_RoutesConvertsAndWrites(t *testing.T) {
 // declaration per member and needs a plain identifier for both the
 // Escalier binding and the `@js(...)` path, so a member under a
 // computed key is dropped. AllowedSingletonKeyDrops names the drops
-// that are expected, and this test pins both directions over the whole
+// that are expected, and this test asserts both directions over the whole
 // pinned lib set: no member outside the list is dropped, and every
 // entry in the list is a drop that actually happens.
 //

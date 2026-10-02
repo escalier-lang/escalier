@@ -208,7 +208,7 @@ func TestTestRelations(t *testing.T) {
 // capturedBy asks the reverse of what specialize asks: whether an earlier test takes
 // every value of a later one, which is what makes the later branch unreachable. Getting
 // the direction wrong would drop a branch that can still run, so the wider-then-narrower
-// order is pinned here.
+// order is asserted here.
 func TestCapturedBy(t *testing.T) {
 	one := candidate{index: 0, test: &LitTest{Lit: ast.NewNumber(1, ast.Span{})}}
 	two := candidate{index: 1, test: &LitTest{Lit: ast.NewNumber(2, ast.Span{})}}

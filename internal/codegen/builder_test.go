@@ -720,7 +720,7 @@ let state__ui__isEnabled = true;`,
 	}
 }
 
-// TestBuildBorrowExpr_LowersToOperand pins that a `&p` or `&mut p` expression
+// TestBuildBorrowExpr_LowersToOperand asserts that a `&p` or `&mut p` expression
 // drops its borrow wrapper at codegen and emits the operand directly. JavaScript
 // has no borrow concept, so the affine layer must not survive into the runtime.
 func TestBuildBorrowExpr_LowersToOperand(t *testing.T) {
@@ -777,7 +777,7 @@ func TestBuildBorrowExpr_LowersToOperand(t *testing.T) {
 	}
 }
 
-// TestBuildValElse pins the lowering of a `val pat = init else { … }` binding: a
+// TestBuildValElse asserts the lowering of a `val pat = init else { … }` binding: a
 // temp-hoisted match guard whose else branch either diverges or assigns its tail
 // value back to the temp as a fallback, then the pattern's bindings read the temp.
 func TestBuildValElse(t *testing.T) {
@@ -873,7 +873,7 @@ func TestBuildValElse(t *testing.T) {
 	}
 }
 
-// TestBuildTryCatchRethrow pins which catch arms let a caught value escape, and pins that
+// TestBuildTryCatchRethrow asserts which catch arms let a caught value escape, and that
 // an arm which always runs is emitted without a test. A value no arm takes is re-raised, so
 // the emitted catch ends in `throw __error` unless some arm always runs. An arm always runs
 // when its pattern is a wildcard or an identifier and it carries no guard, which is the same
@@ -1518,7 +1518,7 @@ func TestBuildIndexSignatureKeyName(t *testing.T) {
 	}
 }
 
-// TestBuildTypeAnn_MultiMappedWithOverloadedMethod pins that the
+// TestBuildTypeAnn_MultiMappedWithOverloadedMethod asserts that the
 // dts.go intersection branch (≥2 MappedElems) still fans an
 // overloaded MethodElem out to one MethodTypeAnn per arm. Before
 // this path went through buildObjTypeAnnElems all but the first arm
@@ -1571,7 +1571,7 @@ func TestBuildTypeAnn_MultiMappedWithOverloadedMethod(t *testing.T) {
 	)
 }
 
-// TestBuildTypeAnn_MappedWithNamedProperty pins that a single mapped member sharing an object with
+// TestBuildTypeAnn_MappedWithNamedProperty asserts that a single mapped member sharing an object with
 // an ordinary property still splits into an intersection. TypeScript requires a mapped type to be
 // the sole member of its type literal, so emitting both into one literal produces the error
 // "A mapped type may not declare properties or methods" (TS7061) and the declaration file does not

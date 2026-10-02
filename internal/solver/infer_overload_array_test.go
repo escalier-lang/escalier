@@ -210,7 +210,7 @@ func TestInferOverloadArmReportsASignatureErrorOnce(t *testing.T) {
 }
 
 // An overloaded method and constructor are built by buildMemberSigs rather than by
-// the top-level pre-bind, so they never lost the annotation. This pins that.
+// the top-level pre-bind, so they never lost the annotation. This asserts that.
 func TestInferOverloadedMemberKeepsItsArrayAnnotation(t *testing.T) {
 	values, _, errs := inferSource(t, `
 		declare class D {

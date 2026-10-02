@@ -19,7 +19,7 @@ const exclusivityDecls = `
 // may not be reachable at the same time through a borrow that expects it to hold still. Two
 // borrows that agree, both mutable or both immutable, are allowed.
 //
-// Each case pins the full diagnostic, so the wording that says WHICH pair conflicts is part of
+// Each case asserts the full diagnostic, so the wording that says WHICH pair conflicts is part of
 // what is asserted. A case that should be accepted asserts no diagnostic at all.
 func TestBorrowExclusivity(t *testing.T) {
 	tests := map[string]struct {
@@ -611,7 +611,7 @@ func TestStoreEffectLoans(t *testing.T) {
 // mutability does not describe it. Reading it as immutable would let the target hold a writable
 // view while the check believed it held a read-only one.
 //
-// The later IMMUTABLE borrow of h is what pins this. It conflicts with a mutable loan and not
+// The later IMMUTABLE borrow of h is what exposes this. It conflicts with a mutable loan and not
 // with an immutable one, so the diagnostic appears only when the receiver was read as mutable.
 func TestMutSelfIsAMutableStoreSource(t *testing.T) {
 	_, _, errs := inferSource(t, `

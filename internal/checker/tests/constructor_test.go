@@ -311,7 +311,7 @@ func TestConstructorParamsDoNotLeakIntoMethodParamDefaults(t *testing.T) {
 		formatErrs(errs))
 }
 
-// TestConstructorInferredTypes is a table-based suite that pins the
+// TestConstructorInferredTypes is a table-based suite that asserts the
 // rendered type of every relevant value binding for a few constructor
 // scenarios:
 //

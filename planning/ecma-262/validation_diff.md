@@ -123,7 +123,7 @@ for it is §4 work rather than §6 work.
 
 Each is an entry in `nonMutatingOverrides` whose owner and member a published
 fact answers the same way. They come out with the prelude pass that reads them,
-per the sequencing note below. `TestCommittedGraphRedundantOverrides` pins the
+per the sequencing note below. `TestCommittedGraphRedundantOverrides` asserts the
 list so that deletion works from a checked set rather than a recomputed one,
 and it grows whenever an entry lands that the facts already answer. The names
 below are the list as §6 measured it.
@@ -188,7 +188,7 @@ only the one the facts lose to fails the build:
   written and one of the two sources is wrong.
   `TestCommittedGraphLeavesNoReceiverDisagreement` holds this at zero.
 - **`corrected`** — a heuristic contradicts the fact. The fact is what the
-  converter writes. `TestCommittedGraphCorrectedHeuristics` pins the list,
+  converter writes. `TestCommittedGraphCorrectedHeuristics` asserts the list,
   which is empty while the entries stand, since an entry answers every method
   whose heuristic a fact contradicts.
 
@@ -204,7 +204,7 @@ the exception.
 `Body`, `Console`, `Request`, and `Response` are `web:*` owners with no
 ECMA-262 algorithm, so no fact can ever address them. They wait on the WebIDL
 extractor. `String.substr` is an Annex B method the committed graph does not
-carry. `TestCommittedGraphOverridesWithNoFact` pins this list too. These are
+carry. `TestCommittedGraphOverridesWithNoFact` asserts this list too. These are
 the entries that survive M12: nothing in ECMA-262 addresses them, so they wait
 on the WebIDL extractor rather than on a spec fact.
 

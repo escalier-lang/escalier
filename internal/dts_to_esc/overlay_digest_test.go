@@ -38,7 +38,7 @@ func readDigests(t *testing.T, dir, rel string) string {
 	return string(contents)
 }
 
-// TestOverlayDigests_RecordWritesASidecarBesideTheReplaceFile pins the
+// TestOverlayDigests_RecordWritesASidecarBesideTheReplaceFile asserts the
 // file `dts_to_esc generate --update-digests` writes. Each entry
 // addresses one converted member or declaration and carries the digest
 // of its printed Escalier source.
@@ -97,7 +97,7 @@ func TestOverlayDigests_ReportAConvertedFormThatMoved(t *testing.T) {
 }
 
 // TestOverlayDigests_ReportAnUnrecordedReplace covers the first run
-// against a new overlay entry. Nothing pins what it stands in for yet,
+// against a new overlay entry. Nothing records what it stands in for yet,
 // so the run stops rather than forking silently.
 func TestOverlayDigests_ReportAnUnrecordedReplace(t *testing.T) {
 	t.Parallel()
@@ -111,7 +111,7 @@ func TestOverlayDigests_ReportAnUnrecordedReplace(t *testing.T) {
 
 // TestOverlayDigests_ReportAnEntryTheOverlayNoLongerReplaces keeps the
 // sidecar in step with the file beside it. An entry for a member the
-// overlay has stopped replacing pins a form nothing reads.
+// overlay has stopped replacing records a form nothing reads.
 func TestOverlayDigests_ReportAnEntryTheOverlayNoLongerReplaces(t *testing.T) {
 	t.Parallel()
 	dir := seedOverlay(t, map[string]string{

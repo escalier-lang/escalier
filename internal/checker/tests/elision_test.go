@@ -127,7 +127,7 @@ func TestLifetimeElision_DeclareFn(t *testing.T) {
 	}
 }
 
-// TestIsReferenceType pins down the classification used by elision —
+// TestIsReferenceType asserts the classification used by elision —
 // objects, tuples, and function types are reference types; primitives,
 // void, and never are not.
 func TestIsReferenceType(t *testing.T) {

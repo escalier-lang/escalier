@@ -753,7 +753,7 @@ func TestUtilityTypeFunctionBoundRejectsNonFunction(t *testing.T) {
 }
 
 // A bound on an alias's type parameter is checked at the reference, so an argument that fails it is
-// rejected there rather than substituted into the body. These cases pin that on the simplest alias
+// rejected there rather than substituted into the body. These cases assert that on the simplest alias
 // that can carry a bound. TestUtilityTypeFunctionBoundRejectsNonFunction covers the one bound the
 // corpus itself carries, `F: fn (...args: Array<_>) -> _`.
 func TestUtilityTypeAliasParameterConstraint(t *testing.T) {

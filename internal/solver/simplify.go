@@ -478,7 +478,7 @@ func simplifyScheme(body soltype.Type, genLevel int, keep set.Set[*soltype.TypeV
 // unconstrained α commits `number`, while an α carrying the lower bound `"hi"` fails
 // that trial and commits `string`.
 //
-// TestNegatedBoundReachesAVariable pins both. The literal stored form is faithful but
+// TestNegatedBoundReachesAVariable asserts both. The literal stored form is faithful but
 // unreadable. Narrowing a `string | number` against "not a string" coalesces to
 // `(string | number) & ~string`, where the user means `number`.
 //
@@ -516,7 +516,7 @@ func simplifyScheme(body soltype.Type, genLevel int, keep set.Set[*soltype.TypeV
 // A member carrying a free variable is left alone, on concreteMember's gate. That is
 // what keeps `T & ~Tag` over an abstract T intact. An inexact operand is weighed like
 // any other, since `A | B | ...` is top and nothing satisfies its complement.
-// TestOpenUnionIsTopForSubtypingOnly pins that reading.
+// TestOpenUnionIsTopForSubtypingOnly asserts that reading.
 func simplifyNegations(c *Context, members []soltype.Type) (kept []soltype.Type, changed, provedEmpty bool) {
 	out := slices.Clone(members)
 	// negIdx holds the position of each complement both rewrites can act on, and

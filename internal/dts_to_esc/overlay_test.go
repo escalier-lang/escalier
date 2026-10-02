@@ -33,7 +33,7 @@ func committedOverlay(t *testing.T) *Overlay {
 	return overlay
 }
 
-// TestCommittedRootDropFile_NamesEveryLanguagePolicyDrop pins the
+// TestCommittedRootDropFile_NamesEveryLanguagePolicyDrop asserts the
 // contents of internal/interop/overlay/drop.esc. The four groups below
 // are the whole-symbol drops §6.1 calls for, and none of them is a
 // per-package content decision.

@@ -6,7 +6,7 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-// TestReceiverModes pins what each receiver form does at a call. A `&self` or `&mut self`
+// TestReceiverModes asserts what each receiver form does at a call. A `&self` or `&mut self`
 // method borrows the instance for the call and leaves it usable. A `self` or `mut self`
 // method moves it, so a later use is a use-after-move, and it cannot be reached through a
 // borrow, which has no instance to give up.
@@ -165,7 +165,7 @@ func TestReceiverModes(t *testing.T) {
 	}
 }
 
-// TestReceiverModeAgreement pins the places two receivers of one member must agree on whether
+// TestReceiverModeAgreement asserts the places two receivers of one member must agree on whether
 // they borrow or consume the instance. Every overload arm must take the same receiver, a
 // setter must borrow mutably, and an override may not consume where the inherited member
 // borrows.

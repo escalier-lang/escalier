@@ -465,7 +465,7 @@ func TestPrintTypeAudit_NoSyntax(t *testing.T) {
 	}
 }
 
-// TestPrintType_OverloadedMethodSeparators pins the two separators used
+// TestPrintType_OverloadedMethodSeparators asserts the two separators used
 // when printing an object with an overloaded method alongside a sibling
 // element: arms are joined with "; " and outer elements with ", ", so a
 // reader can tell where one method's overload set ends and the next

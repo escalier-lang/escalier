@@ -220,10 +220,10 @@ func TestInferIfValAndValElse(t *testing.T) {
 
 // --- The walk over the normalized form ---
 //
-// The cases below pin what routing `if val` and `val … else` through the UCS IR is
+// The cases below assert what routing `if val` and `val … else` through the UCS IR is
 // responsible for: the scope each half runs in, the projections a nested pattern binds
 // through, and typing each half once. The types and messages the two forms produce are
-// pinned by TestInferIfValAndValElse above.
+// asserted by TestInferIfValAndValElse above.
 
 // A diagnostic from either form names the construct the user wrote. Lowering erases the
 // difference between `match`, `if val`, and `val … else`, so without the origin the IR
@@ -1047,7 +1047,7 @@ func TestInferNestedLeafAnnotations(t *testing.T) {
 // annotation cannot admit, so the chain below reaches `boolean` as a plain member list and
 // the negation simplifier in simplify.go is never reached. A solver that re-typed one
 // long-lived variable would instead accumulate `& ~string & ~number` on it and need that
-// simplifier to read `boolean` back out. These cases pin that the accumulating form never
+// simplifier to read `boolean` back out. These cases assert that the accumulating form never
 // arises, which is what keeps the simplifier's input small when a complement does show up
 // from somewhere else.
 //

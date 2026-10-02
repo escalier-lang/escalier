@@ -3423,7 +3423,7 @@ func TestInferMappedMemberMixedConstraint(t *testing.T) {
 // A residual object — one carrying a `...A` spread or a `[K]: V for K in Keys` member — reaches the
 // property-level walks that peel owned-mut cells, strip borrows, and compare key sets. None of those
 // has a settled property list to walk, so each treats the object as opaque. Asserting every member
-// is a property instead panics, which is what these shapes pin.
+// is a property instead panics, which is what these shapes assert.
 func TestInferResidualObjectSurvivesPropertyWalks(t *testing.T) {
 	tests := []struct {
 		name string
@@ -4124,7 +4124,7 @@ func TestInferUncountableKeysNotReportedWhileAbstract(t *testing.T) {
 
 // `keyof T` over a ground T is a countable key set even though it is written as an operator, so the
 // required form over it is legal. It expands to the fields the keys name rather than reporting a
-// RequiredUncountableKeysError, which the expanded form pins and an empty error list would not.
+// RequiredUncountableKeysError, which the expanded form asserts and an empty error list would not.
 func TestInferGroundKeyofIsCountable(t *testing.T) {
 	src := `
 		type Point = {x: number, y: string}

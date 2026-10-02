@@ -487,7 +487,7 @@ func TestTemplateMatcherRejectsAbstractInterp(t *testing.T) {
 // A `${number}` placeholder is decided by JavaScript's Number() coercion: a span conforms when it is
 // non-empty and Number(span) is finite. Each case drives a `val x: <template> = <literal>` binding, so
 // the whole matcher runs, and its `wantErr` is the verdict tsc 5.8 gives for that assignment, empty
-// when it type-checks and the reported message when it does not. The table pins Escalier to TypeScript
+// when it type-checks and the reported message when it does not. The table asserts Escalier to TypeScript
 // across the number grammar and the multidigit, greedy, and multi-placeholder cases.
 //
 // The grammar admits more than a `number` value's own `String()` form: a hex, octal, or binary

@@ -724,7 +724,7 @@ func TestValMutUpgradesAnOwnedCallResult(t *testing.T) {
 // unknown shape and losing its mutability.
 //
 // A cycle cannot reach the walk — the productivity check rejects `type A = A` and the
-// mutual pair at the declaration — so the case below pins that the walk terminates on one
+// mutual pair at the declaration — so the case below asserts that the walk terminates on one
 // rather than that it reports.
 func TestMutReceiverFollowsAnAliasChain(t *testing.T) {
 	tests := []struct {

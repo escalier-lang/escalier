@@ -412,7 +412,7 @@ func TestConstrainNominalVarianceDispatch(t *testing.T) {
 	})
 }
 
-// TestProjectClassBodyDoesNotMutateRegistry pins that projecting a class instance never
+// TestProjectClassBodyDoesNotMutateRegistry asserts that projecting a class instance never
 // writes back to the shared ClassDef.Body. A generic class whose body mentions none of
 // its type parameters projects through the substitution path, where ObjectType.Accept
 // returns the registry Body unchanged; setting the projected exactness must land on a
@@ -459,7 +459,7 @@ func nominalGraph() *Context {
 		Implements: []*soltype.ClassType{cls("Printable", false)},
 	})
 	// A class extending itself is not something the checker builds. Registering one here
-	// pins that the walk stops on a cyclic edge instead of recurring forever.
+	// asserts that the walk stops on a cyclic edge instead of recurring forever.
 	c.registerClass("Loop", &ClassDef{Supers: []*soltype.ClassType{cls("Loop", false)}})
 	// Pending is the shell the SCC pre-pass registers for a class in a mutually recursive
 	// component, before its `extends` clause is resolved. BelowPending sits under it, so a

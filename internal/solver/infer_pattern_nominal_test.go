@@ -59,7 +59,7 @@ func TestInferExtractorPatBindsArgs(t *testing.T) {
 
 // DISABLED until M7. An extractor pattern deconstructs through the class instance's
 // `[Symbol.customMatcher]` method, not its constructor. M5 has no symbol-keyed members, so
-// bindExtractorPat binds against constructor parameters as an interim. This case pins that
+// bindExtractorPat binds against constructor parameters as an interim. This case asserts that
 // interim by extracting `label`, a constructor parameter that is never stored on the
 // instance and so is not recoverable from an instance value. Under M7's `[Symbol.customMatcher]`
 // resolution, `Celsius` declares no custom matcher, so the match is rejected outright.

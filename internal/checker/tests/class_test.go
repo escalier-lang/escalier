@@ -579,7 +579,7 @@ func otherInferErrors(errs []Error) []Error {
 	return out
 }
 
-// TestClassImplementsLifetimeConformance pins the wiring of
+// TestClassImplementsLifetimeConformance asserts the wiring of
 // VerifyLifetimeCompatibility into the implements check. Each case
 // declares an interface method with explicit lifetime parameters and
 // a class method that either matches, is more conservative, or
@@ -721,7 +721,7 @@ func TestClassImplementsLifetimeConformance(t *testing.T) {
 	}
 }
 
-// TestClassMethodSelfParamPopulated pins that class method/getter/setter
+// TestClassMethodSelfParamPopulated asserts that class method/getter/setter
 // inference populates FuncType.SelfParam with a receiver whose type is
 // the class instance ref (wrapped in MutType for `mut self`). This is
 // the type-system-level invariant the checker relies on once
@@ -856,7 +856,7 @@ func TestClassMethodSelfParamPopulated(t *testing.T) {
 	}
 }
 
-// TestClassMethodSelfLifetime pins that an explicit `'a self` /
+// TestClassMethodSelfLifetime asserts that an explicit `'a self` /
 // `mut 'a self` annotation produces a `SelfParam.Type` carrying the
 // resolved LifetimeVar — and that two methods declaring their own
 // `<'a>` get independent receiver TypeRefType clones (regression
@@ -916,7 +916,7 @@ func TestClassMethodSelfLifetime(t *testing.T) {
 		"each method's receiver carries its own LifetimeVar")
 }
 
-// TestConstructorRejectsSelfLifetime pins that a constructor with a
+// TestConstructorRejectsSelfLifetime asserts that a constructor with a
 // lifetime on `self` produces the dedicated diagnostic.
 func TestConstructorRejectsSelfLifetime(t *testing.T) {
 	src := `
@@ -955,7 +955,7 @@ func TestConstructorRejectsSelfLifetime(t *testing.T) {
 	}
 }
 
-// TestConstructorRejectsConsumingSelf pins that a constructor declaring a
+// TestConstructorRejectsConsumingSelf asserts that a constructor declaring a
 // consuming receiver gets ConstructorConsumesSelfError rather than the
 // mutability diagnostic a `&self` constructor gets.
 func TestConstructorRejectsConsumingSelf(t *testing.T) {
@@ -976,7 +976,7 @@ func TestConstructorRejectsConsumingSelf(t *testing.T) {
 			ctx, cancel := context.WithTimeout(context.Background(), 1*time.Second)
 			defer cancel()
 			// The parser reports the same mistake. The checker still sees the
-			// receiver it parsed, which is what this test pins.
+			// receiver it parsed, which is what this test asserts.
 			module, _ := parser.ParseLibFiles(ctx, []*ast.Source{source})
 
 			c := NewChecker(ctx)
@@ -997,7 +997,7 @@ func TestConstructorRejectsConsumingSelf(t *testing.T) {
 	}
 }
 
-// TestInstanceMethodMissingSelfReceiver pins that a non-static class
+// TestInstanceMethodMissingSelfReceiver asserts that a non-static class
 // method, getter, or setter that omits its `self` receiver produces a
 // MissingSelfReceiverError. The parser accepts the shape (so we still
 // produce a usable AST), but the checker rejects it.
@@ -1055,7 +1055,7 @@ func TestInstanceMethodMissingSelfReceiver(t *testing.T) {
 	}
 }
 
-// TestObjectTypeAnnRejectsReceiverLifetime pins that `'a self` written
+// TestObjectTypeAnnRejectsReceiverLifetime asserts that `'a self` written
 // inside a structural object-type annotation (no class/interface
 // receiver to attach the lifetime to) produces a dedicated diagnostic
 // rather than being silently dropped.
@@ -1490,7 +1490,7 @@ func TestDeclareClassImplementsContributesMembers(t *testing.T) {
 	}
 }
 
-// TestDeclareClassImplementsConformance pins which `implements` failures a
+// TestDeclareClassImplementsConformance asserts which `implements` failures a
 // `declare` class still reports. A missing member is inherited rather than
 // an error; a restated one has to be assignable to the interface's.
 func TestDeclareClassImplementsConformance(t *testing.T) {

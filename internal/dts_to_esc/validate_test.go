@@ -134,7 +134,7 @@ func TestValidateReceivers(t *testing.T) {
 }
 
 // A fact claiming no receiver is dropped even when its spec name normalizes to
-// an instance member. The two are usually consistent, so this pins the guard
+// an instance member. The two are usually consistent, so this asserts the guard
 // that holds when they are not.
 //
 // `Demo.prototype.set` is that shape. comparableRef accepts the name, since it
@@ -214,7 +214,7 @@ func TestCommittedGraphCorrectedHeuristics(t *testing.T) {
 
 // The override entries the facts agree with. Each repeats what a published
 // fact already says, so each comes out when the M12 flip deletes the prelude
-// pass that is the table's one reader. The list is pinned so that deletion
+// pass that is the table's one reader. The list is asserted so that deletion
 // works from a checked set rather than a recomputed one.
 func TestCommittedGraphRedundantOverrides(t *testing.T) {
 	t.Parallel()

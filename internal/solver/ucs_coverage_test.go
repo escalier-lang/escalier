@@ -8,13 +8,13 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-// These cases pin the coverage check against the shapes normalization produces, which do
+// These cases assert the coverage check against the shapes normalization produces, which do
 // not line up one-to-one with the arms the user wrote. An arm can lose its own branch to a
 // copy inside an earlier branch's fallthrough, a guarded arm can truncate the top-level
 // split, and a nested pattern becomes a split of its own. The verdict has to come out the
 // same as reading the arms would give.
 //
-// The messages a non-exhaustive form reports are pinned in full by the pattern suites, by
+// The messages a non-exhaustive form reports are asserted in full by the pattern suites, by
 // TestMatchDiagnosticsNameTheMatch in ucs_walk_test.go, and by
 // TestNonExhaustiveMessageNamesWhatEscapes below.
 
@@ -528,7 +528,7 @@ func TestNonExhaustiveMessageNamesWhatEscapes(t *testing.T) {
 
 // Every clause of the message has a singular and a plural form, and the catch-all clause
 // combines with each of them. The sources above reach only some of those pairings, so these
-// rows build the error directly and pin the rest.
+// rows build the error directly and assert the rest.
 func TestNonExhaustiveMessagePluralForms(t *testing.T) {
 	tests := map[string]struct {
 		err  *NonExhaustiveMatchError

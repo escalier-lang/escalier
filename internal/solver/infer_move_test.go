@@ -503,7 +503,7 @@ func TestRestParamConsumesEveryArgument(t *testing.T) {
 		want []string
 	}{
 		{
-			// The gap this case pins. Where only a fixed position consumes its argument, both
+			// The gap this case asserts. Where only a fixed position consumes its argument, both
 			// reads below stand and a value the callee owns stays readable here.
 			name: "SecondGatheredArgumentIsMoved",
 			src: `fn store(...xs: Array<{x: number}>) -> number { return 1 }

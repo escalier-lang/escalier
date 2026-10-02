@@ -95,7 +95,7 @@ func TestInferClassBasic(t *testing.T) {
 		{
 			// `val mut` on a constructor call builds an owned-mutable instance, which is
 			// what a `mut self` method needs. A plain `val` binding cannot reach one, which
-			// TestMutSelfMethodNeedsAMutableReceiver pins.
+			// TestMutSelfMethodNeedsAMutableReceiver asserts.
 			name: "MutSelfMethod",
 			src: `
 				class Counter {
@@ -718,7 +718,7 @@ func TestInferClassMethodRecursion(t *testing.T) {
 	}
 }
 
-// TestInferClassMutualRecursionRequiresAnnotation pins the annotation gate: a pair of
+// TestInferClassMutualRecursionRequiresAnnotation asserts the annotation gate: a pair of
 // mutually recursive methods with no annotated return anywhere in the cycle cannot ground
 // its own return types, so every member of the cycle is reported. Annotating either
 // member breaks the cycle, which the positive test above covers.
@@ -774,7 +774,7 @@ func TestInferClassMutMethodFromMutMethod(t *testing.T) {
 	require.Empty(t, errs)
 }
 
-// TestInferClassMutGetterFromImmutMethod pins the receiver check for a getter member: a
+// TestInferClassMutGetterFromImmutMethod asserts the receiver check for a getter member: a
 // `mut self` getter read from a plain-`self` method is rejected for the same reason a
 // `mut self` method call is — the caller holds only a shared borrow. The getter carries its
 // receiver on GetterElem.SelfParam rather than a FuncType, so this exercises a distinct
@@ -2017,7 +2017,7 @@ func TestInferClassNamespaceQualified(t *testing.T) {
 	}
 }
 
-// TestInferMethodOverloadResolvesByArg pins method overload resolution (E1): a method
+// TestInferMethodOverloadResolvesByArg asserts method overload resolution (E1): a method
 // declared with two signatures resolves the arm whose parameter matches the argument, the
 // method analogue of a direct overloaded-function call. c.f(1) picks the number arm and
 // c.f("hi") the string arm, so the two reads take the two arms' distinct return types.
@@ -2096,7 +2096,7 @@ func TestInferMethodOverloadDeferredFallsBackToFirstMatch(t *testing.T) {
 		"an unconstrained argument defers to declaration-order first-match, pinning x to the first arm")
 }
 
-// TestInferMethodOverloadMixedReceiverRejected pins the receiver-mutability uniformity rule
+// TestInferMethodOverloadMixedReceiverRejected asserts the receiver-mutability uniformity rule
 // for overloaded methods: arms that disagree on their `self` receiver are rejected at
 // declaration. Overload resolution dispatches on the value arguments, and the
 // receiver-mutability check reads only the first arm, so a `mut self` arm reached from a
@@ -2668,7 +2668,7 @@ func TestInferClassConstructorOverloadWithARestArm(t *testing.T) {
 			src:  decl + `val v = Arr()`,
 		},
 		{
-			// The gap this case pins. An arm accepted with its element unchecked takes any
+			// The gap this case asserts. An arm accepted with its element unchecked takes any
 			// argument at all past the first, so the call resolves clean.
 			name: "RejectsAWrongElement",
 			src:  decl + `val v = Arr("x", true)`,

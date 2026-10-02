@@ -79,7 +79,7 @@ func TestRoute_Unmapped(t *testing.T) {
 	require.Equal(t, Package{}, got.Pkg)
 }
 
-// TestUnmappedError_MentionsSymbolSourceAndTable pins the fail-safe
+// TestUnmappedError_MentionsSymbolSourceAndTable asserts the fail-safe
 // message. It names both inputs a contributor can edit, since the drop
 // list is an overlay file rather than a table in this package.
 func TestUnmappedError_MentionsSymbolSourceAndTable(t *testing.T) {

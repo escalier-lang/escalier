@@ -19,7 +19,7 @@ func negRef(lt soltype.Lifetime) soltype.Type {
 // name takes two separate facts, a recovered dataflow position and the noElide set.
 //
 // The noElide set alone carries every row below, so none of them guards the position
-// correction. That is pinned by TestComplementedBorrowAssertsNoOutlivesRelation and
+// correction. That is asserted by TestComplementedBorrowAssertsNoOutlivesRelation and
 // TestComplementedBorrowGroupsLikeAnOrdinaryParam, where position decides which component
 // counts as output-reaching.
 func TestComplementedBorrowKeepsLifetimeName(t *testing.T) {
@@ -238,7 +238,7 @@ func TestComplementedBorrowAssertsNoOutlivesRelation(t *testing.T) {
 // componentParams gathers every kept param in a join's connected component, so a param
 // linked to the join only through an instantiation intermediary is still reported as a
 // source. That looseness is deliberate, since an intermediary is exactly how a call's
-// argument lifetime reaches the join it feeds. This test pins that a complemented borrow
+// argument lifetime reaches the join it feeds. This test asserts that a complemented borrow
 // meets it on the same footing as a plain one.
 //
 // The graph below wires `m` as an intermediary outliving `a` and `b`, and `j` as a

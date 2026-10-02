@@ -81,7 +81,7 @@ divergences. It has none. The arrow-intersection and record-union corpus is the
 verification, and every divergence between Escalier and MLscript in it is one
 where Escalier gives the sound answer and MLscript over-approximates to `unknown`.
 Escalier controls its own normalization and does not inherit the over-approximation,
-so these are blessed by design rather than open. The corpus pins them with the
+so these are blessed by design rather than open. The corpus asserts them with the
 sound verdict, and a port that inherited the widening would fail those rows.
 
 ## What is deferred

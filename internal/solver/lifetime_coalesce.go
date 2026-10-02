@@ -87,7 +87,7 @@ func coalesceLifetimes(t soltype.Type, pol soltype.Polarity, keepLts set.Set[*so
 // NegationType.Accept applies has to be undone before the polarity can be read as a
 // position. negTypeDepth below carries what that costs. The recovered position decides which
 // connected component counts as output-reaching, which in turn governs which lifetimes
-// survive elision and which outlives bounds ltOutlivesRelation asserts.
+// survive elision and which outlives bounds ltOutlivesRelation records.
 //
 // noElide exists because position alone is not enough. Two kinds of lifetime reach no
 // output and still have to keep their name.

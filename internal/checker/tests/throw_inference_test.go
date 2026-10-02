@@ -169,7 +169,7 @@ func TestThrowExpressionInference(t *testing.T) {
 	}
 }
 
-// TestNeverReturnInference pins the inferred *return* type (not the
+// TestNeverReturnInference asserts the inferred *return* type (not the
 // throws type) of functions whose bodies never fall through normally.
 // `inferFuncBody` should produce `never` — not `void` — when every
 // reachable path exits via `throw`/`return`/etc., so that a body like

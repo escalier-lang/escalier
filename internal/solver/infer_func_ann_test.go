@@ -742,7 +742,7 @@ func TestInferRestParamDeclaration(t *testing.T) {
 			src:  cls + `fn g(xs: mut Box<number>) -> number { return xs.push() }`,
 		},
 		{
-			// The gap this case pins. A member's slot that degrades to a positional parameter
+			// The gap this case asserts. A member's slot that degrades to a positional parameter
 			// demands the whole array, so the call is rejected for passing an element:
 			// `cannot constrain 1 <: Array<number>`.
 			name: "MethodSlotRejectsAWrongElement",
@@ -840,7 +840,7 @@ func TestInferOverloadArmWithARestSlot(t *testing.T) {
 			src:  decl + `fn g(b: Box) -> number { return b.m() }`,
 		},
 		{
-			// The gap this case pins. An arm accepted with its element unchecked takes any
+			// The gap this case asserts. An arm accepted with its element unchecked takes any
 			// argument at all past the first, so the call resolves clean.
 			name: "RejectsAWrongElement",
 			src:  decl + `fn g(b: Box) -> number { return b.m("x", true) }`,

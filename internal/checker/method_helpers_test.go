@@ -23,7 +23,7 @@ func makeMethodObjAlias(methodName string) *type_system.TypeAlias {
 	return &type_system.TypeAlias{Type: obj}
 }
 
-// TestPopulateSelfParamsRecursesIntoNestedNamespaces pins that the
+// TestPopulateSelfParamsRecursesIntoNestedNamespaces asserts that the
 // prelude SelfParam backfill walks child namespaces. .d.ts can define
 // types under a nested namespace (e.g. `Intl.Collator`); without
 // recursion those types' methods would silently miss SelfParam,
@@ -64,7 +64,7 @@ func TestPopulateSelfParamsRecursesIntoNestedNamespaces(t *testing.T) {
 	check(grandchild.Types["Leaf"], "leafMethod")
 }
 
-// TestPopulateSelfParamsGetterSetterDefaults pins the polarity for
+// TestPopulateSelfParamsGetterSetterDefaults asserts the polarity for
 // accessor elements: getters default to non-mut self (reading state
 // doesn't mutate) and setters default to mut self (assignment
 // mutates). Defaulting getters to mut would hide every .d.ts getter
@@ -96,7 +96,7 @@ func TestPopulateSelfParamsGetterSetterDefaults(t *testing.T) {
 	require.Truef(t, setterIsMut, "setter should default to mut self")
 }
 
-// TestStripMutSelfFromMethods pins the second-pass behaviour that
+// TestStripMutSelfFromMethods asserts the second-pass behaviour that
 // strips `mut self` from methods classified as non-mutating in the
 // per-interface overrides table. The post-#612 default for MethodElem
 // is `mut self`; without this pass any non-mutating method on a
@@ -163,7 +163,7 @@ func TestStripMutSelfFromMethods(t *testing.T) {
 	}
 }
 
-// TestUpdateMethodMutability_HeuristicFallthrough pins the fall-through
+// TestUpdateMethodMutability_HeuristicFallthrough asserts the fall-through
 // behaviour: a .d.ts-loaded method on a class with no entry in
 // dts_to_esc.NonMutatingOverrides still gets the name-only interop heuristics
 // applied, so `getFoo` on an unlisted class is classified non-mutating

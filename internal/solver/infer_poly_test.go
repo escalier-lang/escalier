@@ -10,7 +10,7 @@ import (
 // every top-level binding to a coalesced monotype; PR1 generalizes at the SCC
 // boundary so a polymorphic binding is instantiated fresh per use.
 //
-// Each test pins the rendered signature, exercising the printer's <T0, …> prefix.
+// Each test asserts the rendered signature, exercising the printer's <T0, …> prefix.
 // A render is COMPACT when the signature names the fewest type parameters it can,
 // with no two always-together variables left as separate parameters.
 //
@@ -27,7 +27,7 @@ import (
 func TestInferModuleTopLevelLetPolymorphism(t *testing.T) {
 	t.Run("render", func(t *testing.T) {
 		// Identity's param and return are the same variable, so its render is
-		// compact even before PR2 — this pins the <T0> quantifier prefix.
+		// compact even before PR2 — this asserts the <T0> quantifier prefix.
 		values, _, errs := inferSource(t, `fn id(x) { return x }`)
 		require.Empty(t, errs)
 		require.Equal(t, map[string]string{"id": "fn <T0>(x: T0) -> T0"}, values)

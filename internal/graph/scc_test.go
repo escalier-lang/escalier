@@ -84,7 +84,7 @@ func TestStronglyConnectedComponents(t *testing.T) {
 	}
 }
 
-// TestStronglyConnectedComponents_ReverseTopologicalOrder pins the ordering
+// TestStronglyConnectedComponents_ReverseTopologicalOrder asserts the ordering
 // contract: a component is emitted only after every component reachable from it.
 // The graph 1 → 2 → {3 ↔ 4} must emit {3,4}, then {2}, then {1}.
 func TestStronglyConnectedComponents_ReverseTopologicalOrder(t *testing.T) {

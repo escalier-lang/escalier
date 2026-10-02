@@ -63,7 +63,7 @@ func treeUnder(t *testing.T, root string) []string {
 	return out
 }
 
-// TestGenerate_WritesTheTreeWithAHeader pins what a run with an empty
+// TestGenerate_WritesTheTreeWithAHeader asserts what a run with an empty
 // overlay lays down. Every package file opens with the banner naming the
 // command that rewrites it, which is how a reader tells a generated file
 // from a hand-authored one without re-running the generator.

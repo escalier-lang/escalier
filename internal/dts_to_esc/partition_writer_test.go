@@ -659,7 +659,7 @@ interface String {
 }`))
 }
 
-// TestReportPartition_NamesDropsWithoutRoutedCounts pins both halves of
+// TestReportPartition_NamesDropsWithoutRoutedCounts asserts both halves of
 // the report's scope. Drops are named and sorted, and no package the run
 // routed to is counted: that number counts input statements, which trio
 // fusion and the overlay both move, so it reads as an output count it is
@@ -973,7 +973,7 @@ export declare class Map<K, V> {
 }`))
 }
 
-// TestDedupeBy_KeepsTheFirstOfEachKey pins the ordering contract.
+// TestDedupeBy_KeepsTheFirstOfEachKey asserts the ordering contract.
 // Members keep their declared order, and the survivor of a repeat is
 // the one that appeared first, so the doc the earlier lib file carried
 // is the one that reaches the output.

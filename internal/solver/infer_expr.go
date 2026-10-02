@@ -1738,7 +1738,7 @@ func (c *checker) upgradeCallShapeParams(
 		// use-after-move and the uniqueness holds past the call rather than only at it. That
 		// move is not ordered against this grant, so it would be a convention — it is a data
 		// dependency instead, since the place-move shape needs the same VarID the move engine
-		// needs, and TestInferOwnedMutUpgradeNeedsABackingMove pins the boundary.
+		// needs, and TestInferOwnedMutUpgradeNeedsABackingMove asserts the boundary.
 		//
 		// A borrow is sound for a different reason: the mutable view lets the container's
 		// field be repointed but grants no write to the referent, whose type stays invariant

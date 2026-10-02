@@ -19,7 +19,7 @@ import (
 // the body's recursive call flows through.
 //
 // The recursion is unguarded, so `f` cannot return and checkCanReturn rejects it. What this test
-// pins is that coalescing TERMINATES on the cyclic graph, which it has to do before any diagnostic
+// asserts is that coalescing TERMINATES on the cyclic graph, which it has to do before any diagnostic
 // can be reported at all.
 //
 // NOTE: a regression that bypasses the `seen` guard stack-overflows here, which

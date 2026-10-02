@@ -1088,7 +1088,7 @@ diagnostic — `if
 <unknown> { … }` reports only the `UnknownIdentifierError` (no trailing `cannot
 constrain never <: boolean`); `await <unknown>` inside an `async fn` reports only
 the unknown identifier; an unsupported RHS annotation reports only its
-unsupported-node error. Unit `constrain` tests pin `ErrorType` absorbing as **both**
+unsupported-node error. Unit `constrain` tests assert `ErrorType` absorbing as **both**
 LHS and RHS against every concrete and against a var. A value flowing through an
 error-typed binding produces no secondary errors. The existing blame / `requireBlame`
 suite passes unchanged once the redundant `ok=false`-skips are removed.

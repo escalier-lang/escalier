@@ -169,7 +169,7 @@ func TestPrintConstructor_NoDuplicateReceiver(t *testing.T) {
 	require.Contains(t, out, "constructor(&mut self, x: number)")
 }
 
-// TestPrintDeclAudit_DecoratorRejection pins the parser's rejection
+// TestPrintDeclAudit_DecoratorRejection asserts the parser's rejection
 // of decorators on decl kinds that have no runtime form. `@js` lowers
 // a *value*-binding reference; type aliases and interfaces don't
 // introduce value bindings, so attaching `@js` to them is
@@ -220,7 +220,7 @@ enum E { A, B }`,
 
 // TestPrintDeclAudit_KnownGaps documents declaration forms in the §1
 // scope that are intentionally not exercised by the round-trip suite.
-// Each entry pins the contract so a future change that accidentally
+// Each entry asserts the contract so a future change that accidentally
 // enables one of these forms is forced to update the docs.
 func TestPrintDeclAudit_KnownGaps(t *testing.T) {
 	t.Run("declare namespace intentionally out of scope", func(t *testing.T) {

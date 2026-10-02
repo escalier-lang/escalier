@@ -20,7 +20,7 @@ func spanText(src string, s ast.Span) string {
 
 // requireBlame asserts the sole error's span-prefixed message ("line:col-line:col:
 // message"), the source text its primary span covers, and the source text each
-// related span covers (in order). The golden span fixtures (§3.10) use it to pin
+// related span covers (in order). The golden span fixtures (§3.10) use it to assert
 // exact blame against real-parser spans.
 func requireBlame(t *testing.T, src string, errs []SolverError, msg, primary string, related ...string) {
 	t.Helper()
@@ -266,7 +266,7 @@ func TestConstraintKindsFallBackToSiteWhenUnrecorded(t *testing.T) {
 // checker.constrain stamps prov + the constraint node onto EVERY constraint-error
 // kind it forwards, so each error's Span() resolves to a real source span instead
 // of the zero span. The object errors (InexactIntoExactError, ExtraPropertyError,
-// OptionalPropertyError) were added in M4 A1; this pins that their switch arms
+// OptionalPropertyError) were added in M4 A1; this asserts that their switch arms
 // exist — a missing arm leaves prov/site nil and Span() degrades to 0:0. Exercised
 // directly through c.constrain because an exact-object sink is not reachable from
 // source until object annotations land (A3).

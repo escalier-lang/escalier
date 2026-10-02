@@ -156,7 +156,7 @@ func TestInferObjectPatternLeafTypeAnnAdopted(t *testing.T) {
 //
 // The scrutinee here cannot carry `z` at all, which #1053 argues should be a missing
 // property rather than a match. TestPathBinderDefaultedKeyBindsAgainstScrutineeWithoutTheField
-// in ucs_bind_test.go pins the same answer for the UCS IR path binder, so change the two
+// in ucs_bind_test.go asserts the same answer for the UCS IR path binder, so change the two
 // together.
 func TestInferObjectPatternLeafDefault(t *testing.T) {
 	values, _, errs := inferSource(t, `
@@ -378,7 +378,7 @@ func TestInferRestPatternBinds(t *testing.T) {
 }
 
 // A rest of a borrowed scrutinee is a borrow of the leftover, bounded by the
-// scrutinee's lifetime, the same projection the sibling leaves take. Each case pins the
+// scrutinee's lifetime, the same projection the sibling leaves take. Each case asserts the
 // rest against a borrow return annotation, so an owned or wrongly-mutable rest would
 // fail that constraint and acceptance confirms the projection. That is the same
 // technique TestDestructureMutBorrowLeafRendersBorrow uses, and for the same reason: a
@@ -651,7 +651,7 @@ func TestInferRestPatternTopLevelDestructure(t *testing.T) {
 //
 // Two more scrutinees reach the same bounded variable, both already reported as constraint
 // errors by the requirement the fixed prefix emits. TestInferTuplePatternRestFallbackGuards
-// below pins that recovery.
+// below asserts that recovery.
 func TestInferRestPatternUnknownScrutineeShape(t *testing.T) {
 	tests := []struct {
 		name string

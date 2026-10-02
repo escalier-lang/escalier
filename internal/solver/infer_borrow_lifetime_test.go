@@ -583,7 +583,7 @@ func TestInferBorrowOfNonBorrowableRejected(t *testing.T) {
 // receiver-bounded borrow, so the field can be moved out of the object (PR 7).
 // Here `pair.a` returns as the owned `{id: number}` and moves out of the frame,
 // where a borrow of a frame-local would be rejected as not living long enough. A
-// borrowed receiver still yields a borrow; the tests below pin that path.
+// borrowed receiver still yields a borrow; the tests below assert that path.
 func TestInferOwnedReceiverFieldReadIsOwned(t *testing.T) {
 	src := `fn f() -> {id: number} {
   val pair = {a: {id: 1}, b: {id: 2}}
@@ -690,7 +690,7 @@ func TestInferExplicitBorrowOfMemberSharesLifetime(t *testing.T) {
 // owned-mut object, so the mut requirement lowers via the RefType <: RefType
 // rule. The partial-moves work in PR 7 adds path-granular tracking that
 // leaves a disjoint sibling such as `obj.a` independently usable. This test
-// pins the typing rule only.
+// asserts the typing rule only.
 func TestInferExplicitMutBorrowOfMemberAcceptsMutReceiver(t *testing.T) {
 	src := `fn f(obj: &mut {a: {x: number}, b: {y: number}}) {
   return &mut obj.b

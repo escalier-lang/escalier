@@ -301,7 +301,7 @@ func TestBodyLetGeneralizationNegatives(t *testing.T) {
 		// `val id = fn(x) { return id(x) }` — recursive self-reference
 		// via `val` binding. The init is inferred before `id`'s binding
 		// is finalized, so `id` inside its own body resolves to `never`
-		// rather than the polymorphic outer binding. This pins the
+		// rather than the polymorphic outer binding. This asserts the
 		// current limitation; if the language later supports recursive
 		// `val` for function values, this test should move to the
 		// positive suite.

@@ -453,7 +453,7 @@ func TestPrintPrecedenceAndParentheses(t *testing.T) {
 	}
 }
 
-// TestPrintReceiverGrouping pins the parentheses the printer keeps around a receiver, the
+// TestPrintReceiverGrouping asserts the parentheses the printer keeps around a receiver, the
 // expression a call reads its callee from and the one an index or a member access reads
 // its object from. The AST records grouping in its tree shape and has no parenthesis node,
 // so dropping them names a different expression than the tree holds. Each case parses
@@ -515,7 +515,7 @@ func TestPrintReceiverGrouping(t *testing.T) {
 	}
 }
 
-// TestPrintTypeAnnGrouping pins the parentheses the type-annotation printer keeps. The
+// TestPrintTypeAnnGrouping asserts the parentheses the type-annotation printer keeps. The
 // AST records grouping in its tree shape and has no parenthesis node, so a member that
 // binds looser than the position it sits in has to be wrapped. Each case parses an
 // annotation and asserts the reprint reparses to the same tree.
@@ -582,7 +582,7 @@ func TestPrintTypeAnnGrouping(t *testing.T) {
 	}
 }
 
-// TestPrintCompact pins the one-line rendering. A caller that embeds a fragment inside a
+// TestPrintCompact asserts the one-line rendering. A caller that embeds a fragment inside a
 // line of its own output cannot use the multi-line form, because the printer's indentation
 // would collide with the caller's nesting. Statements carry no separator of their own, so
 // compact mode divides them with a semicolon. Everything else already carries a comma and
@@ -2323,7 +2323,7 @@ func TestPrintThrowsClause(t *testing.T) {
 // Every declaration the `.d.ts` converter emits has to parse back, because both
 // `check` and `regenerate` re-read the committed tree before diffing it. Each
 // case round-trips one construct the TypeScript lib surface produces. The input
-// is what the printer writes, so an exact match on the output pins both halves
+// is what the printer writes, so an exact match on the output asserts both halves
 // of the pair at once.
 func TestPrintRoundTripsConverterOutput(t *testing.T) {
 	opts := DefaultOptions()

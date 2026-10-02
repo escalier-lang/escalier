@@ -6,7 +6,7 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-// TestExitClosesTheExitedChannel pins that the `exit` notification wakes the
+// TestExitClosesTheExitedChannel asserts that the `exit` notification wakes the
 // serve loop in main. The loop parks on a select over this channel and the
 // connection's disconnect, so a handler that did not close it would leave the
 // process running until the client closed the pipe.
@@ -28,7 +28,7 @@ func TestExitClosesTheExitedChannel(t *testing.T) {
 	}
 }
 
-// TestExitIsIdempotent pins that a second notification does not panic. Closing
+// TestExitIsIdempotent asserts that a second notification does not panic. Closing
 // a closed channel is a runtime panic, and a client is free to send `exit`
 // more than once.
 func TestExitIsIdempotent(t *testing.T) {

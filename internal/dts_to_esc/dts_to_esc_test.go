@@ -96,7 +96,7 @@ func TestStandalone_BooleanTrio(t *testing.T) {
 	// class body carries the same Doc that the converter emitted, in
 	// the same order. Per-elem parity, not a blanket NotEmpty: if the
 	// converter ever emits a synthesized member without a JSDoc, this
-	// test should pin doc-parity, not require every member to have a
+	// test should assert doc-parity, not require every member to have a
 	// doc.
 	var converterClass, parsedClass *ast.ClassDecl
 	for _, d := range rootNS.Decls {
@@ -219,7 +219,7 @@ func TestStandalone_UnclassifiedMethodDefaultsToMut(t *testing.T) {
 		"name-classifier miss defaults to mut self (tier-7 parity)")
 }
 
-// qualifiedTrioBinding pins that a `declare var` whose type annotation
+// qualifiedTrioBinding asserts that a `declare var` whose type annotation
 // uses a *qualified* name (e.g. `SomeNs.FrobConstructor`) does not
 // participate in trio detection — even when a local `FrobConstructor`
 // interface exists by the same trailing identifier. The two are
@@ -543,7 +543,7 @@ func TestSingletonKeyLabel(t *testing.T) {
 	}
 }
 
-// sharedInterfaceSlice pins the negative case for the singleton flattener:
+// sharedInterfaceSlice asserts the negative case for the singleton flattener:
 // an interface referenced as a type by multiple vars is a shared shape,
 // not a singleton structure, and must NOT be flattened. The interface
 // survives as an InterfaceDecl carrying its member docs (issue #2 above).
@@ -663,7 +663,7 @@ func TestStandalone_MultilineDocsAndParamsPreserved(t *testing.T) {
 		"continuation lines must not carry the source's interior indent")
 	require.Contains(t, printed, "\n * @param ",
 		"@param continuation lines align to column 1 after normalization")
-	// And the doc opener sits at column 0 (line-start) — pinning the
+	// And the doc opener sits at column 0 (line-start) — asserting the
 	// re-indent target.
 	require.Contains(t, printed, "\n/**\n",
 		"/** sits at column 0 for top-level decls")
@@ -680,7 +680,7 @@ func printDecoratorArg(t *testing.T, dec *ast.Decorator) string {
 }
 
 // TypeScript's `void` has no single Escalier counterpart, so the converter reads it by
-// position. This pins all three readings on one converted declaration.
+// position. This asserts all three readings on one converted declaration.
 func TestStandalone_VoidLowersByPosition(t *testing.T) {
 	_, printed := convertSlice(t, `
 declare function f(x: void, p: Promise<void>, cb: (v: number) => void): void;
@@ -796,7 +796,7 @@ interface StringConstructor {
 declare var String: StringConstructor;
 `
 
-// TestStandalone_ImmutableOwnerReceivers pins the receivers on a
+// TestStandalone_ImmutableOwnerReceivers asserts the receivers on a
 // primitive wrapper. `strike` matches no heuristic prefix and `normalize`
 // matches a mutating one, so both reach `mut self` on the name-only
 // tiers. Neither can mutate a string. The constructor keeps `mut self`
@@ -1237,7 +1237,7 @@ export declare var widgetCount: number
 // `IteratorConstructor` plus the binding inside its `declare global`
 // block.
 //
-// The snapshot pins current behaviour, not the right answer. TypeScript
+// The snapshot asserts current behaviour, not the right answer. TypeScript
 // merges `interface Foo` into `class Foo`, so what this input means is
 // one class carrying `next` and `peek` as instance members and `from`
 // as a static. mergeDecls folds an interface into an interface and not

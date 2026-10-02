@@ -114,7 +114,7 @@ func TestConstrainNegation(t *testing.T) {
 	}
 }
 
-// TestConstrainNegationIntoVarRecordsBound pins what a complement in supertype
+// TestConstrainNegationIntoVarRecordsBound asserts what a complement in supertype
 // position does to a variable. The variable arms record it whole rather than
 // routing it through the normal-form layer, so the complement survives on the
 // bound list and coalescing renders it.
@@ -128,7 +128,7 @@ func TestConstrainNegationIntoVarRecordsBound(t *testing.T) {
 	require.Equal(t, "~string", soltype.Print(coalesce(a, soltype.Negative)))
 }
 
-// TestConstrainRecordsWeakestBoundOnVarCandidate pins what a goal the normal-form
+// TestConstrainRecordsWeakestBoundOnVarCandidate asserts what a goal the normal-form
 // layer settles on a supertype-side variable records under that variable. The goal asks
 // only for what the other supertype candidates leave uncovered:
 //
@@ -239,7 +239,7 @@ func TestConstrainRecordsWeakestBoundOnVarCandidate(t *testing.T) {
 	}
 }
 
-// TestConstrainVarCandidateOverAMultiAtomMeet pins what a supertype-side variable
+// TestConstrainVarCandidateOverAMultiAtomMeet asserts what a supertype-side variable
 // records when the subtype side holds several atoms that no fusion merged into one. Two
 // atoms fuse only when a single atom denotes their meet exactly, so a record met with an
 // arrow stays two atoms, and so do two arrows differing in both domain and codomain.
@@ -426,7 +426,7 @@ func TestConstrainIntersectionFusesBeforeComparing(t *testing.T) {
 	require.Empty(t, Messages(c.Constrain(sub, inexactObj(propElem("x", num()), propElem("y", str())))))
 }
 
-// TestConstrainArrowDecompositionRestrictions pins where the arrow decomposition
+// TestConstrainArrowDecompositionRestrictions asserts where the arrow decomposition
 // stops. It weighs one-parameter arrows only, so the same shape written with two
 // parameters is decided by the weaker rule that checks one arm at a time and is
 // rejected. A multi-parameter arrow's domain is a product of positions, and
@@ -473,7 +473,7 @@ func TestConstrainRecursiveListThroughNormalForm(t *testing.T) {
 	require.Empty(t, Messages((&Context{}).Constrain(list(4, "X1"), list(0, "X0"))))
 }
 
-// TestConstrainReportsOneDiagnosticPerFailure pins that a failure is reported
+// TestConstrainReportsOneDiagnosticPerFailure asserts that a failure is reported
 // once. The subtype below normalizes to two conjuncts, `{a: number, c: number}`
 // and `{b: number, c: number}`, and each fails against `string` the same way. The
 // constraint is settled by the first goal that fails, so the diagnostic does not

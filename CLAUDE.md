@@ -185,6 +185,13 @@ Those apply wherever they make sense and are simply irrelevant elsewhere.
 - Name the value, not the technique that produced it. Don't write "union-find"
   when you mean the merge classes it computed, or "the visitor" when you mean
   the walk's result. Refer to the thing the code hands around.
+- Say what a test asserts, not what it "pins". Write "TestFoo asserts that
+  `<clause>`" for a single check, "covers" for the range of cases a table walks,
+  and "exercises" for a fixture the test drives. Reserve "pin" for the
+  type-system operation that fixes a variable, a lifetime or a field, as in a
+  constraint that pins `v` to `'static`, and for a version or revision held
+  fixed. "asserts that" needs a full clause where "pins" took a noun phrase, so
+  reshape the sentence around the verb instead of swapping the word in place.
 - Backtick a word that carries both an ordinary meaning and a specialized one,
   whenever the specialized one is intended. Without the backticks a reader
   parses the sentence as plain prose and has to start over on reaching the code.

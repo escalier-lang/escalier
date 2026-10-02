@@ -35,7 +35,7 @@ func TestResolveTypeAnnForTest(t *testing.T) {
 	}
 }
 
-// TestResolveTypeAnnForTestPreludeName pins the name the prelude registers each
+// TestResolveTypeAnnForTestPreludeName asserts the name the prelude registers each
 // class under. It leads with the `import:<uri>.` package-key prefix, which a
 // consumer rendering the name has to account for: internal/codegen strips it,
 // since TypeScript cannot write one.
@@ -69,7 +69,7 @@ func TestResolveTypeAnnForTestRejectsUnparsableSource(t *testing.T) {
 	require.EqualError(t, err, "parsing the declarations: Expected identifier")
 }
 
-// TestResolveTypeAnnForTestRejectsEmptyAnnotation pins the third input fault.
+// TestResolveTypeAnnForTestRejectsEmptyAnnotation asserts the third input fault.
 // Whitespace or a comment parses without complaint and yields no annotation, so
 // the parse-error check alone would let it through to inference, where the
 // diagnostic names this helper's own binding.
@@ -91,7 +91,7 @@ func TestResolveTypeAnnForTestRejectsBindingNameCollision(t *testing.T) {
 			"the name this helper binds the annotation to; rename it")
 }
 
-// TestResolveTypeAnnForTestDeclsEndingInAComment pins the newline the helper puts
+// TestResolveTypeAnnForTestDeclsEndingInAComment asserts the newline the helper puts
 // between the caller's declarations and the binding it appends. Without it a
 // declarations block whose last line is a comment would swallow the binding, and
 // the annotation would resolve to nothing.

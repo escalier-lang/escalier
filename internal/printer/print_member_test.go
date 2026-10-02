@@ -110,7 +110,7 @@ func TestPrintMemberKeepsDoc(t *testing.T) {
 // take an interface, so a nil member is a caller bug rather than an
 // empty print.
 //
-// A typed nil is the case worth pinning. Every member variant is a
+// A typed nil is the case worth asserting. Every member variant is a
 // pointer type, so an interface can hold a nil `*ast.FieldElem`, which
 // a plain `== nil` test reports as non-nil. Without the reflect-based
 // guard the printer reaches the member's Doc method and panics.

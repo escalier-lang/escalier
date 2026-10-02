@@ -134,7 +134,7 @@ func TestPhase9_7_UndeclaredLifetime(t *testing.T) {
 	// signature scope for lifetime lookup — they are processed via a
 	// hoisting pass with a fresh context — so the inner's
 	// resolveSingleLifetime sees no enclosing lifetimes and produces a
-	// hard error. This test pins that behavior so a future change to the
+	// hard error. This test asserts that behavior so a future change to the
 	// scope chain (or to nested-fn handling) cannot silently regress it.
 	t.Run("nested_fn_without_clause_is_error_even_under_outer_clause", func(t *testing.T) {
 		errs := mustInferScriptAllErrors(t, `

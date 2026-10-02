@@ -18,7 +18,7 @@ func (v *recordingVisitor) EnterType(t Type) EnterResult {
 }
 func (v *recordingVisitor) ExitType(t Type) Type { return nil }
 
-// TestFuncTypeAcceptVisitsSelfParam pins that FuncType.Accept traverses
+// TestFuncTypeAcceptVisitsSelfParam asserts that FuncType.Accept traverses
 // SelfParam.Type so any visitor (substitution, lifetime walks, etc.)
 // sees the receiver's inner types. Without this, receiver-attached
 // lifetimes would be invisible to the lifetime substitution pass.
@@ -49,7 +49,7 @@ func TestFuncTypeAcceptVisitsSelfParam(t *testing.T) {
 		"FuncType.Accept must visit Return (regression check)")
 }
 
-// TestFuncTypeEqualsConsidersSelfParam pins that FuncType.Equals compares
+// TestFuncTypeEqualsConsidersSelfParam asserts that FuncType.Equals compares
 // SelfParam. Without this, a method's `(&self) -> T` and `(&mut self) -> T`
 // FuncTypes are structurally equal — which would let normalization or
 // any equality-keyed cache silently merge them, dropping receiver-mutability

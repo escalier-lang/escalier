@@ -1071,7 +1071,7 @@ interior, and 5210 unknown. The gate is
   discarded, and the method goes from withholding its receiver claim to
   `receiver: borrow`, `returns: fresh`. The incomplete builtins fall from 61 to
   60 and the classifiable ones rise from 433 to 434. No other tally moves.
-  `TestGraphComputedSlotWritesOnADeclaredParameter` pins the eight remaining
+  `TestGraphComputedSlotWritesOnADeclaredParameter` asserts the eight remaining
   writes of that shape, all in abstract operations, so a spec bump that gives
   one to a builtin fails there rather than costing that builtin its claim.
 
@@ -1506,9 +1506,9 @@ answer, they agreed on 215 and the three disagreements are all resolved, so
 override entries the report lists. Two findings shape the phases after this
 one.
 
-- **§7 (removal list).** `TestCommittedGraphRedundantOverrides` pins the
+- **§7 (removal list).** `TestCommittedGraphRedundantOverrides` asserts the
   entries a fact answers the same way, and
-  `TestCommittedGraphOverridesWithNoFact` pins the 37 no fact addresses. §7
+  `TestCommittedGraphOverridesWithNoFact` asserts the 37 no fact addresses. §7
   works from the two checked lists rather than recomputing them, and the
   first grows whenever an entry lands that the facts already answer. The 37
   are the `web:*` owners plus `String.substr`, an Annex B method the graph

@@ -9,7 +9,7 @@ import (
 
 // The normal-forms tests are isolated from constraint solving. Every case here
 // pushes a type into DNF or CNF and reads the result back, so nothing in this file
-// calls Constrain or records a bound. That keeps the module's behavior pinned
+// calls Constrain or records a bound. That checks the module's behavior
 // independently of the solver PR5 (#1062) grafts it into.
 //
 // A case states its input as an Escalier type annotation and its expected normal
@@ -336,7 +336,7 @@ func TestCNFRoundTrip(t *testing.T) {
 	}
 }
 
-// TestNegationRoundTrip pins how a complement normalizes. The `~` cases a reader
+// TestNegationRoundTrip asserts how a complement normalizes. The `~` cases a reader
 // should never see — a double negation and a complement of a lattice bound — are
 // gone by the time the form is read back.
 func TestNegationRoundTrip(t *testing.T) {
@@ -611,7 +611,7 @@ func TestComplementsKeepTheOpenMarker(t *testing.T) {
 		normDNF(c, newUnion(nil, []soltype.Type{not(closed), not(open)})))
 }
 
-// TestExactUnionNormalizesClosed pins that a union names its whole member set, so
+// TestExactUnionNormalizesClosed asserts that a union names its whole member set, so
 // normalization takes it apart into one conjunct per member and a meet distributes over
 // those members. `"a" | "b"` becomes two conjuncts.
 func TestExactUnionNormalizesClosed(t *testing.T) {
@@ -627,7 +627,7 @@ func TestExactUnionNormalizesClosed(t *testing.T) {
 // rather than through the module's entry points.
 //
 // meetAtoms and joinAtoms answer equal atoms before either of these runs, so the
-// case is unreachable in normal use. It is pinned anyway because getting it wrong
+// case is unreachable in normal use. It is asserted anyway because getting it wrong
 // is silent and severe: without the equality rule, `"hello"` met with `"hello"`
 // reads as two distinct literals of one family and collapses to `never`.
 func TestValueAtomsAnswerEqualAtoms(t *testing.T) {
@@ -790,7 +790,7 @@ func TestNominalAtomsStayDistinct(t *testing.T) {
 	})
 }
 
-// TestFuncMerge pins which intersected function atoms fuse into one arrow and
+// TestFuncMerge asserts which intersected function atoms fuse into one arrow and
 // which stay apart. The two fusing cases are exact. Keeping the rest apart is the
 // shape decision that lets PR5 (#1062) apply the Frisch-Castagna-Benzaken arrow
 // decomposition rather than inheriting MLscript's unsound merge —
@@ -1064,7 +1064,7 @@ func TestMkDeepNormalizesChildren(t *testing.T) {
 	}
 }
 
-// TestDeepNormalizeKeepsBorrows pins that normalizing a borrow's inner never
+// TestDeepNormalizeKeepsBorrows asserts that normalizing a borrow's inner never
 // costs the borrow its wrapper. soltype's visitor peels a `mut` whose rewritten
 // inner is not borrowable, which is right for coalescing and would silently drop
 // mutability here.

@@ -278,7 +278,7 @@ func collapseIntersection(pruned []soltype.Type, hadError bool) soltype.Type {
 // pass pre-sorts the input by compareType, so the iteration order is
 // canonical and newUnion([A, B]) and newUnion([B, A]) drop the same member
 // when A and B subsume each other but differ structurally. That is the
-// canonicalization contract the M6 plan asserts.
+// canonicalization contract the M6 plan states.
 func subsumeMembers(c *Context, parts []soltype.Type, drops func(c *Context, m, sibling soltype.Type) bool) []soltype.Type {
 	if len(parts) < 2 {
 		return parts

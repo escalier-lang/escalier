@@ -22,7 +22,7 @@ func nonReturningMsg(span, name, fn string) string {
 		"optional, or defer the recursive call behind a function or a Promise", span, subject, fn)
 }
 
-// TestNonReturningRecursionReported pins the diagnostic on the shapes that cannot return. In each
+// TestNonReturningRecursionReported asserts the diagnostic on the shapes that cannot return. In each
 // source every path to a leaf of the returned value runs through the recursive call again, so the
 // call overflows the stack instead of producing a value.
 func TestNonReturningRecursionReported(t *testing.T) {
@@ -111,7 +111,7 @@ func TestNonReturningRecursionReported(t *testing.T) {
 	}
 }
 
-// TestNonReturningRecursionAccepts pins the shapes checkCanReturn must leave alone. Each one
+// TestNonReturningRecursionAccepts asserts the shapes checkCanReturn must leave alone. Each one
 // either returns a finite value or fails to return for a reason this check is not about.
 func TestNonReturningRecursionAccepts(t *testing.T) {
 	tests := []struct {
@@ -187,7 +187,7 @@ func TestNonReturningRecursionAccepts(t *testing.T) {
 			// displays as `fn <T0>(x: T0) -> T0 | {next: T0}`. Reading the return alone through
 			// plain coalesce would render that arm `never`, the union constructor would drop it,
 			// and the base case would vanish. Annotating `x` gives the arm a concrete type, so
-			// only the unannotated form pins the retention checkCanReturn depends on.
+			// only the unannotated form exercises the retention checkCanReturn depends on.
 			name: "an unannotated parameter reaching the return is a base case",
 			src: `
 				declare fn cond() -> boolean
@@ -221,7 +221,7 @@ func TestNonReturningRecursionAccepts(t *testing.T) {
 	}
 }
 
-// TestFinitelyInhabited pins the predicate directly on hand-built types, which is the only way to
+// TestFinitelyInhabited asserts the predicate directly on hand-built types, which is the only way to
 // reach the shapes no inference path mints. An object literal never produces an optional property,
 // and no inferred function returns a borrow of a knot, so those two arms are covered here rather
 // than through source.

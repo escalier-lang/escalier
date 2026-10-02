@@ -277,7 +277,7 @@ func TestConstrainFunctionAcceptSet(t *testing.T) {
 	})
 }
 
-// TestAcceptSetRestParam pins the arity arithmetic for a typed rest param: it lifts
+// TestAcceptSetRestParam asserts the arity arithmetic for a typed rest param: it lifts
 // the upper bound to ∞ and never counts toward the required floor (#677 §4.2.3).
 func TestAcceptSetRestParam(t *testing.T) {
 	t.Run("fn(a, b, ...rest): required 2, upper unbounded", func(t *testing.T) {
@@ -528,7 +528,7 @@ func mutRef(inner soltype.RefInner) *soltype.RefType {
 	return &soltype.RefType{Mut: true, Inner: inner}
 }
 
-// TestConstrainDescribesRefOperand pins review finding 2: describe must NAME a
+// TestConstrainDescribesRefOperand covers review finding 2: describe must NAME a
 // RefType operand in a constraint failure, not render it as `?`. A non-borrowable
 // source (a primitive) against a mut-borrow target is not wrappable by the
 // bare <: RefType arm, so it falls through to CannotConstrainError carrying the
@@ -862,7 +862,7 @@ func TestConstrainObjectMethodMembers(t *testing.T) {
 	}
 }
 
-// TestConstrainConstructorObjectAsFunction pins that an object carrying a constructor
+// TestConstrainConstructorObjectAsFunction asserts that an object carrying a constructor
 // signature is a subtype of the matching function type, so a class value is usable where
 // a plain function is expected. The constructor's call signature is checked against the
 // function target with the ordinary function variance, extra static members are ignored,
@@ -1032,7 +1032,7 @@ func TestConstrainRef(t *testing.T) {
 
 // A borrow on either side of a constraint against a type VARIABLE records the WHOLE
 // borrow as a bound (peeling would drop its mutability), so the variable coalesces
-// back to the borrow. This pins the var-arm fall-through both directions.
+// back to the borrow. This asserts the var-arm fall-through both directions.
 func TestConstrainRefAgainstVar(t *testing.T) {
 	t.Run("RefType <: var records the borrow as a lower bound", func(t *testing.T) {
 		c := &Context{}
@@ -1207,7 +1207,7 @@ func TestConstrainExtrusionBothPolarities(t *testing.T) {
 	require.Equal(t, 0, retVar.Level)
 }
 
-// TestExtrudeThroughNegation pins the polarity a variable under a complement is extruded at.
+// TestExtrudeThroughNegation asserts the polarity a variable under a complement is extruded at.
 // extrude wires the fresh variable through the bound direction the polarity picks, an upper
 // bound in Positive position and a lower bound in Negative. The direction the original gains
 // therefore reads back the polarity the walk reached it at.

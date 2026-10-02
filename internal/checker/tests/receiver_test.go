@@ -7,7 +7,7 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-// TestReceiverFormsPrint pins how the checker renders each receiver form on a class's
+// TestReceiverFormsPrint asserts how the checker renders each receiver form on a class's
 // instance type. A borrow keeps its `&`, and a consuming receiver is written without one.
 func TestReceiverFormsPrint(t *testing.T) {
 	ns := mustInferAsModule(t, `
@@ -27,7 +27,7 @@ func TestReceiverFormsPrint(t *testing.T) {
 	)
 }
 
-// TestSetterReceiver pins that an instance setter must take `&mut self`. A shared borrow
+// TestSetterReceiver asserts that an instance setter must take `&mut self`. A shared borrow
 // cannot write, and a consuming receiver would move the instance on every write.
 func TestSetterReceiver(t *testing.T) {
 	const want = "Setters must declare a `&mut self` receiver, since writing through one mutates the instance."
@@ -60,7 +60,7 @@ func TestSetterReceiver(t *testing.T) {
 	}
 }
 
-// TestGetterReceiver pins that an instance getter must borrow its receiver, since reading a
+// TestGetterReceiver asserts that an instance getter must borrow its receiver, since reading a
 // property leaves the instance in place.
 func TestGetterReceiver(t *testing.T) {
 	const want = "Getters must borrow their receiver with `&self` or `&mut self`, since reading through one leaves the instance in place."
