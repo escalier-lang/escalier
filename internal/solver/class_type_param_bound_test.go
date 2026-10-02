@@ -80,3 +80,42 @@ func TestADeclaredFunctionBoundRendersOnItsBinder(t *testing.T) {
 	require.Empty(t, errorMessagesOf(errs))
 	require.Equal(t, "fn <T: {value: number}>(p: T) -> T", values["keep"])
 }
+
+// TestADeclaredBoundSurvivesASecondBinding asserts that a class value reached through
+// another binding renders its bounds the way the class's own binding does.
+//
+// A class keeps its parameters in the Context registry under the variables the
+// declaration minted, while a second binding holds a copy under variables of its own. The
+// bound is written in terms of the declaration's variables, so it is rewritten to the
+// copy's alongside the variable it belongs to. Without that it would name a variable no
+// binder in the print reaches, which renders as the `t0` leak anchor.
+func TestADeclaredBoundSurvivesASecondBinding(t *testing.T) {
+	tests := []struct {
+		name string
+		src  string
+	}{
+		{
+			name: "ABoundNamingItsOwnParameter",
+			src:  `class Holder<T: {next: T}> { peer: T }`,
+		},
+		{
+			name: "ABoundNamingASiblingParameter",
+			src:  `class Holder<T: {value: number}, U: {o: T}> { a: T, b: U }`,
+		},
+		{
+			name: "ABoundNamingAClassLifetime",
+			src:  `class Holder<'a, T: &'a {value: number}> { peer: T }`,
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			values, _, errs := inferSource(t, test.src+"\nval Alias = Holder")
+			require.Empty(t, errorMessagesOf(errs))
+			require.NotEmpty(t, values["Holder"])
+			require.Equal(t, values["Holder"], values["Alias"])
+			require.NotContains(t, values["Alias"], "t0",
+				"a variable no binder names renders as the leak anchor")
+		})
+	}
+}

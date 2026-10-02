@@ -536,3 +536,36 @@ func TestBothCheckersEmitTheSameDefinitionsForAnExtractor(t *testing.T) {
 		"the checker declares the matcher, so there is something to match against")
 	require.Equal(t, want, got, "the two checkers emit different definitions")
 }
+
+// TestTheSolverEmitsAClassTypeParameterBound asserts that a class's declared bound reaches
+// the emitted `.d.ts` as an `extends` clause.
+//
+// The clause is emitted from the parameter variable's upper-bound list, and that list
+// grows as constraints flow in, so a bounded parameter a method also reads can end up
+// carrying two. Emission writes a clause only for a lone bound, so the declared one has to
+// be the only one the display carries.
+//
+// internal/checker emits `<T extends unknown>` for both sources, which says nothing, so
+// this asserts what the solver emits rather than that the two agree.
+func TestTheSolverEmitsAClassTypeParameterBound(t *testing.T) {
+	tests := map[string]string{
+		"AParameterOnlyTheConstructorReads": `
+			class Holder<T: {value: number}> { peer: T }
+		`,
+		"AParameterAMethodAlsoReads": `
+			class Holder<T: {value: number}> {
+			    peer: T,
+			    get(&self) -> T { return self.peer },
+			}
+		`,
+	}
+
+	for name, src := range tests {
+		t.Run(name, func(t *testing.T) {
+			useSolver(t)
+			dts := CompilePackage(libSources(src)).CompUnits["lib/index"].DTS
+			require.Contains(t, dts,
+				"declare const Holder: {new <T0 extends {value: number}>(peer: T0): Holder<T0>};")
+		})
+	}
+}
