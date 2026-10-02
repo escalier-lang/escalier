@@ -123,13 +123,20 @@ func (c *Checker) inferFuncParams(
 	return params, bindings, errors
 }
 
-// inferFuncTypeParams infers type parameters for functions and function expressions.
-// Unlike inferTypeParams, this version:
-// - Uses inferTypeAnn instead of FreshVar for constraints and defaults
-// - Sets provenance on constraint and default types
-// - Adds the type parameters to the function context scope
-// Returns the list of type parameters and any errors encountered.
-func (c *Checker) inferFuncTypeParams(
+// resolveTypeParams resolves each type parameter's constraint and default from the
+// annotation the source wrote, sets provenance on both, and binds the parameter's name in
+// funcCtx's scope so a later sibling's annotation can name it. It returns the parameters
+// and the diagnostics resolving them raised.
+//
+// Every declaration carrying type parameters resolves them here: a function, a function
+// expression, a function type annotation, a constructor, a class, and an enum.
+//
+// inferTypeParams is the other half of the pair. It mints a fresh variable per constraint
+// and default rather than reading the annotation, which is what lets a declaration that
+// mentions a sibling be pre-bound before any annotation is resolved. A declaration
+// pre-bound that way reaches its real constraints and defaults by resolving them here and
+// unifying the two lists through unifyTypeParams.
+func (c *Checker) resolveTypeParams(
 	ctx Context,
 	funcCtx Context,
 	astTypeParams []*ast.TypeParam,
@@ -209,7 +216,7 @@ func (c *Checker) inferFuncSig(
 	lifetimeParams := c.declareLifetimeParams(funcCtx.Scope, sig.LifetimeParams)
 
 	// Handle generic functions by creating type parameters
-	typeParams, typeParamErrors := c.inferFuncTypeParams(ctx, funcCtx, sig.TypeParams)
+	typeParams, typeParamErrors := c.resolveTypeParams(ctx, funcCtx, sig.TypeParams)
 	errors = slices.Concat(errors, typeParamErrors)
 
 	params, bindings, paramErrors := c.inferFuncParams(funcCtx, sig.Params)
