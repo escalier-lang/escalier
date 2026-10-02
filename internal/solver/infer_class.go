@@ -1242,6 +1242,9 @@ func (c *checker) inferMemberFunc(
 	memberScope := scope.Child()
 	if !static {
 		c.bindSelf(memberScope, lvl, recv, body)
+		// The liveness pre-pass defines `self` as one of the body's parameters, so places
+		// rooted at the receiver are tracked like places rooted at a parameter.
+		c.memberReceiver = recv
 	}
 	// generic is true for a method and false for a getter or setter. inferFunc reports a
 	// binder it is not allowed to resolve as an unsupported feature.

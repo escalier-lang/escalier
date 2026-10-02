@@ -85,7 +85,7 @@ func (c *checker) inferScriptIn(scope *Scope, script *ast.Script) (*Scope, *Info
 	// enclosing context to restore, so the returned previous one is discarded.
 	scriptBody := &ast.Block{Stmts: script.Stmts, Span: script.Span()}
 	c.pushFuncCtx(false, nil, 0)
-	c.runLivenessPrePass(scope, nil, nil, scriptBody)
+	c.runLivenessPrePass(scope, nil, nil, nil, scriptBody)
 
 	// Walk the body through inferBlock, the same source-order statement walker a
 	// function body uses, at level 0. inferVarDecl types each initializer one level

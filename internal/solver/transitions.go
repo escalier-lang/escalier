@@ -714,7 +714,11 @@ func (c *checker) varIDToName(id liveness.VarID) string {
 //
 // Must be called after parameters are bound in scope (so outer-scope names resolve)
 // but before the body is walked.
-func (c *checker) runLivenessPrePass(scope *Scope, astParams []*ast.Param, paramTypes map[string]soltype.Type, body *ast.Block) {
+//
+// recv is the body's receiver, nil when the body has none. A receiver is not an entry in
+// astParams, so the rename pass defines `self` as an extra parameter of the body. The
+// returned VarID is the one it assigned to `self`, and 0 when there is no receiver.
+func (c *checker) runLivenessPrePass(scope *Scope, astParams []*ast.Param, recv *ast.MethodReceiver, paramTypes map[string]soltype.Type, body *ast.Block) liveness.VarID {
 	// Build outer bindings from the scope chain. Every value binding accessible from
 	// the current scope gets a negative VarID so the rename pass can distinguish
 	// local from non-local variables.
@@ -724,13 +728,15 @@ func (c *checker) runLivenessPrePass(scope *Scope, astParams []*ast.Param, param
 	// unique across every body in the run, then advance it past them. UniqueVarCount
 	// is the number of locals this body defined, so the next body starts just after.
 	//
-	// Every parameter is an explicit entry in astParams, including a method's `self`
-	// receiver — `self` is written in the signature and is only implicit at the call
-	// site. So the rename pass sees every parameter directly. RenameFrom's
-	// extraParamNames hook, for a binding injected into a body without a signature
-	// param, is unused here.
+	// A method's receiver is an ast.MethodReceiver on the function rather than an entry
+	// in astParams, so `self` reaches the rename pass through its extraParamNames hook.
+	// Without it every `self` in the body resolves as an outer name.
+	var extraParams []string
+	if recv != nil {
+		extraParams = []string{"self"}
+	}
 	firstID := liveness.VarID(c.varIDCounter)
-	renameResult := liveness.RenameFrom(astParams, *body, outerBindings, firstID)
+	renameResult := liveness.RenameFrom(astParams, *body, outerBindings, firstID, extraParams...)
 	c.varIDCounter += renameResult.UniqueVarCount
 
 	cfg := liveness.BuildCFG(*body)
@@ -745,6 +751,10 @@ func (c *checker) runLivenessPrePass(scope *Scope, astParams []*ast.Param, param
 	aliases := liveness.NewAliasTracker()
 	varIDTypes := map[liveness.VarID]soltype.Type{}
 	seedParamLeafAliases(astParams, paramTypes, aliases, varIDTypes)
+	selfVarID := renameResult.ExtraParamVarIDs["self"]
+	if selfVarID > 0 {
+		seedSelfAlias(scope, selfVarID, aliases, varIDTypes)
+	}
 
 	c.fn.liveness = livenessInfo
 	c.fn.aliases = aliases
@@ -762,6 +772,40 @@ func (c *checker) runLivenessPrePass(scope *Scope, astParams []*ast.Param, param
 	c.fn.borrowGens = map[liveness.StmtRef][]borrowAssign{}
 	c.fn.borrowDirty = set.NewSet[liveness.VarID]()
 	c.fn.paramVarIDs = collectParamVarIDs(astParams)
+	if selfVarID > 0 {
+		c.fn.paramVarIDs.Add(selfVarID)
+	}
+	return selfVarID
+}
+
+// seedSelfAlias seeds the alias tracker with the receiver's own alias set and records its
+// type into varIDTypes, the way seedParamLeafAliases does for a parameter leaf. The type is
+// the `self` binding bindSelf defined, so `&mut self` records a mutable borrow and `mut self`
+// an owned-mutable instance.
+func seedSelfAlias(scope *Scope, selfVarID liveness.VarID, aliases *liveness.AliasTracker, varIDTypes map[liveness.VarID]soltype.Type) {
+	mut := liveness.AliasImmutable
+	if b, found := scope.GetValue("self"); found {
+		if t := bindingType(b); t != nil {
+			if isMutableType(t) {
+				mut = liveness.AliasMutable
+			}
+			varIDTypes[selfVarID] = t
+		}
+	}
+	aliases.NewValue(selfVarID, mut)
+}
+
+// recordSelfVarID copies the receiver's VarID onto the `self` binding in fnScope, the way
+// recordParamVarIDs does for a parameter. selfVarID is 0 for a body with no receiver, which
+// records nothing.
+func recordSelfVarID(fnScope *Scope, selfVarID liveness.VarID) {
+	if selfVarID <= 0 {
+		return
+	}
+	if b, found := fnScope.GetValue("self"); found {
+		b.VarID = int(selfVarID)
+		fnScope.defineValue("self", b)
+	}
 }
 
 // collectParamVarIDs returns the VarID of every parameter leaf binding. The escape check

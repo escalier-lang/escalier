@@ -210,6 +210,8 @@ func (c *checker) inferFunc(scope *Scope, lvl int, sig ast.FuncSig, body *ast.Bl
 	// that is not a class member.
 	memberName := c.memberName
 	c.memberName = ""
+	recv := c.memberReceiver
+	c.memberReceiver = nil
 	// Report any named lifetime the signature uses without binding it in its own `<…>`
 	// list, and the symmetric unused binder. Run before resolving the params so the scan
 	// reads the written names, not what namedLifetime has since interned.
@@ -420,8 +422,9 @@ func (c *checker) inferFunc(scope *Scope, lvl int, sig ast.FuncSig, body *ast.Bl
 		// parameter alias sets onto c.fn. recordParamVarIDs then copies each param's
 		// freshly-assigned VarID onto its binding so a closure capturing the param
 		// resolves to its alias set.
-		c.runLivenessPrePass(fnScope, sig.Params, paramTypes, body)
+		selfVarID := c.runLivenessPrePass(fnScope, sig.Params, recv, paramTypes, body)
 		recordParamVarIDs(fnScope, sig.Params)
+		recordSelfVarID(fnScope, selfVarID)
 		// Walk the body for type-checking and to collect its ReturnStmts; the
 		// block's TAIL value is intentionally discarded. Unlike a value-position
 		// block, where the last expression IS the block's value, a function body's
