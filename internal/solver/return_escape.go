@@ -890,6 +890,10 @@ func (c *checker) paramReferentOutlivesFrame(root liveness.VarID) bool {
 	if c.fn == nil || !c.fn.paramVarIDs.Contains(root) {
 		return false
 	}
+	// A closure borrows what it captures, so the enclosing body owns it.
+	if c.fn.captureVarIDs.Contains(root) {
+		return true
+	}
 	if c.fn.varIDTypes == nil {
 		return true
 	}
