@@ -194,6 +194,32 @@ func TestEscapingClosureCapture(t *testing.T) {
 			`,
 			want: []string{"7:14-7:17: use of moved value 'p'"},
 		},
+		// The first store moves p, so the second closure captures a moved value.
+		"SecondEscapingClosureCapturesAMovedValue": {
+			src: `
+				var sink: fn () -> undefined = fn () {}
+				var sink2: fn () -> undefined = fn () {}
+				fn go() {
+					val mut p = {x: 1}
+					sink = fn () { p.x = 2 }
+					sink2 = fn () { p.x = 3 }
+				}
+			`,
+			want: []string{"7:14-7:31: use of moved value 'p'"},
+		},
+		// Each iteration's closure captures the p the previous iteration's store moved.
+		"EscapingClosureInALoopCapturesAMovedValue": {
+			src: `
+				var sink: fn () -> number = fn () { return 0 }
+				fn go(xs: Array<number>) {
+					val p = {x: 1}
+					for x in xs {
+						sink = fn () { return p.x }
+					}
+				}
+			`,
+			want: []string{"6:14-6:34: use of moved value 'p'"},
+		},
 	}
 	for name, tc := range tests {
 		t.Run(name, func(t *testing.T) {

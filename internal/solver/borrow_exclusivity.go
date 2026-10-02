@@ -353,7 +353,7 @@ type capturedLocal struct {
 
 // recordCaptureLoans records a loan of each local of the current body that closure captures,
 // after reporting any conflict with a loan already live. Each such local is recorded in
-// capturedLocals too. The loan reaches the whole captured
+// capturedLocals too, and the closure is recorded as a use of it. The loan reaches the whole captured
 // binding, and it is mutable when the closure writes the capture. It has no holder, so it
 // lasts for the closure's own statement until holdCaptureLoans binds it to a name.
 //
@@ -377,6 +377,9 @@ func (c *checker) recordCaptureLoans(scope *Scope, closure *ast.FuncExpr) {
 		if name, ok := c.fn.varIDNames[root]; !ok || name != capture.Name {
 			continue
 		}
+		// Writing the closure reads the local, so capturing one that has moved is a use after
+		// the move.
+		c.fn.useSites = append(c.fn.useSites, moveUse{place: movePlace{root: root}, ref: ref, node: closure, loanSeqAt: c.fn.loanSeq + 1})
 		if c.fn.capturedLocals == nil {
 			c.fn.capturedLocals = map[*ast.FuncExpr][]capturedLocal{}
 		}

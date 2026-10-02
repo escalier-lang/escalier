@@ -242,6 +242,18 @@ func TestClosureCapturedPlaces(t *testing.T) {
 			`,
 			want: []string{"10:14-10:36: cannot borrow 'x' as mutable while it is borrowed as immutable"},
 		},
+		// Writing a closure that captures a moved value reads the moved value.
+		"ClosureCapturingAMovedValue": {
+			src: captureDecls + `
+				fn g() {
+					val x = {v: 1}
+					take(x)
+					val f = fn () { readRead(&x, &x) }
+					f()
+				}
+			`,
+			want: []string{"10:14-10:40: use of moved value 'x'"},
+		},
 	}
 	for name, tc := range tests {
 		t.Run(name, func(t *testing.T) {
