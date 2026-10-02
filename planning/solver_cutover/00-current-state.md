@@ -38,14 +38,16 @@ would guess, because most milestone sections carry no status line.
 | M7 | landed | `aliases.go` |
 | M7.5 | landed as machinery; the data is the gap | `stdlib_import.go`, `stdlib_closure.go`, `package_load.go` |
 | M9 | landed except PR9f | `m9-implementation-plan.md` dependency graph; `typeops.go`, `generator.go` |
-| M8, M10, M11, M11.5, M12 | not started | no `soltype` or `solver` reference in `internal/compiler/`, `internal/codegen/`, or `cmd/` |
+| M8 | the fixture harness landed as #1712; the differential half is not built | `cmd/escalier/solver_fixture_test.go` |
+| M10 | `.d.ts` emission landed as #1691 and #1708; JavaScript emission is #1673 | `internal/codegen/dts_soltype.go`, `backend_solver.go` |
+| M11, M11.5, M12 | not started | no `solver` reference under `cmd/lsp-server/` |
 
 Size, non-test Go:
 
 | Package | Lines |
 | --- | --- |
-| `internal/solver` | 45,369 |
-| `internal/checker` | 28,374 |
+| `internal/solver` | 47,566 |
+| `internal/checker` | 28,860 |
 | `internal/type_system` | 7,946 |
 
 Tests: 139 files and 61,220 lines under `internal/solver`, against 43 files and
@@ -170,9 +172,10 @@ covers `Array`, `Promise`, and `Symbol`.
 ### The harness has replaced this estimate
 
 The table above was a prediction. #1712 landed the real harness, so there is now
-a measured answer in `cmd/escalier/solver_fixture_test.go`: **43 of the 72
-runnable fixtures check on the solver, 31 skip, none fail.** Two more carry a
-`DISABLED` marker and never ran on either checker.
+a measured answer in `cmd/escalier/solver_fixture_test.go`: of the 72 runnable
+fixtures, **43 check on the solver, 29 skip, and none fail.** Two of the 74
+directories under `fixtures/` carry a `DISABLED` marker and never ran on either
+checker, so `go test` reports 31 skips rather than 29.
 
 The skip list groups by root cause, ranked by how many fixtures each one frees:
 
@@ -238,27 +241,23 @@ All six parse cleanly, so these are inference gaps rather than syntax the
 language lacks. JSX is a seventh, covered separately under §"Gaps between the
 solver's API and the compiler's needs".
 
-Binary operators are the one that matters for sequencing. They appear in 59 of
-the 73 directories under `fixtures/` — `return a + b` in `func_decl`, `r + g + b`
-in `enum` — so until [#1652](https://github.com/escalier-lang/escalier/issues/1652)
-lands, a solver run over the fixture tree reports almost all of it as failing and
-every other gap is hidden behind that.
+Binary operators were the one that mattered for sequencing, and #1686 closed
+them. They appeared in 59 of the 73 directories under `fixtures/` — `return a + b`
+in `func_decl`, `r + g + b` in `enum` — so before that landed a solver run over
+the fixture tree reported almost all of it as failing and hid every other gap.
+The 43 passing fixtures above are what clearing it bought.
 
-The operator schemes themselves are already seeded. `addOperatorBindings` in
-`prelude.go:77` binds `+ - * /` over `number`, `< > <= >=` to `boolean`,
-`== !=` over `unknown`, `&& ||` over `boolean`, `!`, and `++` over `string`.
-Nothing looks them up. `infer.go:785` says so directly:
-
-```go
-// PR8 handles the ASSIGNMENT op only (`a = expr`); every other binary
-// operator (+, ==, &&, ++, …) needs the operator-scheme walk over the prelude
-// bindings, a separate unlanded PR, so it stays UnsupportedNodeError.
-```
+What made it a contained change was that the operator schemes were already
+seeded. `addOperatorBindings` in `prelude.go` binds `+ - * /` over `number`,
+`< > <= >=` to `boolean`, `== !=` over `unknown`, `&& ||` over `boolean`, `!`,
+and `++` over `string`. Nothing looked them up, and #1686 added the walk that
+does.
 
 **How six forms went unowned.** `m2-implementation-plan.md:199` lists
-`BinaryExpr` as in scope for M2 and calls the port near-mechanical at line 784.
-`m3-implementation-plan.md:1160` then defers it, and no later milestone picked it
-up. The other five appear in no milestone plan at all, because the M-series
+`BinaryExpr` as in scope for M2. Line 784 calls the operator *schemes* a
+near-mechanical port, which is the half that had already landed, so that sentence
+does not size the walk. `m3-implementation-plan.md:1160` then defers the walk,
+and no later milestone picked it up. The other five appear in no milestone plan at all, because the M-series
 tracks the type-system surface and treated the plain expression walk as M2 table
 stakes. P1.7's gate is a test over every `isExpr` implementor, so the next form
 cannot go unowned the same way.
@@ -424,5 +423,8 @@ more. Run the harness:
 go test ./cmd/escalier/ -run TestCheckFixturesOnSolver -v
 ```
 
-The skip list in `cmd/escalier/solver_fixture_test.go` is the source of truth,
-and it fails when an entry starts passing, so it burns down rather than rotting.
+The skip list in `cmd/escalier/solver_fixture_test.go` is the source of truth. It
+fails when a skipped fixture starts passing, so entries burn down rather than
+rotting, with one exception: the #1695 fixture is skipped before inference runs,
+because a Go stack overflow would take the test binary down. The harness cannot
+tell whether that one has recovered, so #1695 has to be checked by hand.

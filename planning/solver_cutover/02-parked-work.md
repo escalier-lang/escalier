@@ -132,8 +132,8 @@ The P1 ledger is what keeps its size visible.
 
 1. **Third-party `.d.ts` ingestion**, then **JSX** on top of it. They are the
    two regressions a port closes, so they go first, in that order.
-2. **`web:core` and the ten standalone `web:*` siblings.** They sit at 224 to
-   279 diagnostics, and `web:core` is the shared floor under all of them, so
+2. **`web:core` and the ten standalone `web:*` siblings.** They sit at 94 to
+   148 diagnostics, and `web:core` is the shared floor under all of them, so
    fixing `web:core` moves every sibling at once.
 3. **`web:dom`.** The five names in
    [00-current-state.md](00-current-state.md)§"What the residual diagnostics
