@@ -140,6 +140,60 @@ func TestEscapingClosureCapture(t *testing.T) {
 			`,
 			want: nil,
 		},
+		// f holds the capturing closure on one branch, so storing f may move p.
+		"StoreOfAClosureChosenOnABranchMayMoveTheCapture": {
+			src: `
+				var sink: fn () -> number = fn () { return 0 }
+				fn go(c: boolean) {
+					val p = {x: 1}
+					var f: fn () -> number = fn () { return 0 }
+					if c {
+						f = fn () { return p.x }
+					}
+					sink = f
+					val n = p.x
+				}
+			`,
+			want: []string{"10:14-10:17: use of moved value 'p'"},
+		},
+		// A copy of the closure's name carries its captures.
+		"StoreOfACopiedClosureMovesTheCapture": {
+			src: `
+				var sink: fn () -> number = fn () { return 0 }
+				fn go() {
+					val p = {x: 1}
+					val f = fn () { return p.x }
+					val g = f
+					sink = g
+					val n = p.x
+				}
+			`,
+			want: []string{"8:14-8:17: use of moved value 'p'"},
+		},
+		// A closure inside an object literal is part of the stored value.
+		"StoreOfAClosureInALiteralMovesTheCapture": {
+			src: `
+				fn go(out: &mut {o: {cb: fn () -> number}}) {
+					val p = {x: 1}
+					out.o = {cb: fn () { return p.x }}
+					val n = p.x
+				}
+			`,
+			want: []string{"5:14-5:17: use of moved value 'p'"},
+		},
+		// A closure that calls another closure carries what that closure captures.
+		"StoreOfAClosureCallingACapturingClosureMovesTheCapture": {
+			src: `
+				var sink: fn () -> number = fn () { return 0 }
+				fn go() {
+					val p = {x: 1}
+					val f = fn () { return p.x }
+					sink = fn () { return f() }
+					val n = p.x
+				}
+			`,
+			want: []string{"7:14-7:17: use of moved value 'p'"},
+		},
 	}
 	for name, tc := range tests {
 		t.Run(name, func(t *testing.T) {

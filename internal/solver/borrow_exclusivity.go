@@ -317,15 +317,10 @@ func (c *checker) recordBorrowLoan(holder int, init ast.Expr, ref liveness.StmtR
 	// through it. `var a = &mut x` followed by `a = &mut y` leaves no loan of x behind. This
 	// is the strong update the flow-sensitive borrow graph makes for the same statement.
 	c.dropLoansHeldBy(liveness.VarID(holder))
-	delete(c.fn.closureBindings, liveness.VarID(holder))
 	// A closure bound to a name holds its captures' loans for as long as the name is live,
 	// and a call of the closure reads the name.
 	if closure, ok := init.(*ast.FuncExpr); ok {
 		c.holdCaptureLoans(closure, liveness.VarID(holder))
-		if c.fn.closureBindings == nil {
-			c.fn.closureBindings = map[liveness.VarID]*ast.FuncExpr{}
-		}
-		c.fn.closureBindings[liveness.VarID(holder)] = closure
 		return
 	}
 	borrow, ok := init.(*ast.BorrowExpr)
@@ -349,11 +344,11 @@ func (c *checker) recordBorrowLoan(holder int, init ast.Expr, ref liveness.StmtR
 	c.fn.loans = append(c.fn.loans, fresh)
 }
 
-// capturedLocal is a local of the current body that a closure captures, and the type of its
-// binding.
+// capturedLocal is a local of the current body that a closure captures.
 type capturedLocal struct {
 	root liveness.VarID
-	t    soltype.Type
+	// mut says the closure writes the local.
+	mut bool
 }
 
 // recordCaptureLoans records a loan of each local of the current body that closure captures,
@@ -385,7 +380,11 @@ func (c *checker) recordCaptureLoans(scope *Scope, closure *ast.FuncExpr) {
 		if c.fn.capturedLocals == nil {
 			c.fn.capturedLocals = map[*ast.FuncExpr][]capturedLocal{}
 		}
-		c.fn.capturedLocals[closure] = append(c.fn.capturedLocals[closure], capturedLocal{root: root, t: bindingType(b)})
+		c.fn.capturedLocals[closure] = append(c.fn.capturedLocals[closure], capturedLocal{root: root, mut: capture.IsMutable})
+		if c.fn.capturedTypes == nil {
+			c.fn.capturedTypes = map[liveness.VarID]soltype.Type{}
+		}
+		c.fn.capturedTypes[root] = bindingType(b)
 		fresh := loan{
 			place: movePlace{root: root},
 			mut:   capture.IsMutable,
