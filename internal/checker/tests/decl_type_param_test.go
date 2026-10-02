@@ -53,9 +53,10 @@ func TestADeclarationKeepsItsTypeParamBoundAndDefault(t *testing.T) {
 			name: "Box",
 			want: "T, E = string",
 		},
-		// A bound naming a sibling is resolved after that sibling, so the resolved list
-		// arrives in a different order from the declaration's. The two are paired by
-		// position, so one of them is reordered first.
+		// A bound naming a sibling is resolved after that sibling, so resolution walks
+		// the parameters in an order the declaration did not write. Both lists reaching
+		// unifyTypeParams are in declaration order, which is what pairs each bound with
+		// the parameter that carries it.
 		"AClassBoundNamingASibling": {
 			input: `class Holder<T: U, U: {value: number}> { a: T, b: U }`,
 			name:  "Holder",
@@ -105,4 +106,52 @@ func renderTypeParams(tps []*type_system.TypeParam) string {
 		rendered[i] = s
 	}
 	return strings.Join(rendered, ", ")
+}
+
+// TestASignatureKeepsItsTypeParamOrder covers the order a signature's type parameters are
+// stored in when one's bound names a sibling.
+//
+// Resolving a bound that names a sibling requires that sibling to be resolved first, so
+// resolution walks the parameters in an order the declaration did not write. The stored
+// list comes back in declaration order, for the reasons resolveTypeParams' doc gives.
+func TestASignatureKeepsItsTypeParamOrder(t *testing.T) {
+	tests := map[string]struct {
+		input       string
+		bindingName string
+		want        string
+	}{
+		"AFunction": {
+			input:       `declare fn f<T: U, U: {value: number}>(a: T, b: U) -> T`,
+			bindingName: "f",
+			want:        "fn <T: U, U: {value: number}>(a: T, b: U) -> T",
+		},
+		"AFunctionTypeAnnotation": {
+			input:       `declare val g: fn <T: U, U: {value: number}>(a: T, b: U) -> T`,
+			bindingName: "g",
+			want:        "fn <T: U, U: {value: number}>(a: T, b: U) -> T",
+		},
+		// A constructor's own parameters follow the class's, so the class contributes `S`
+		// and the constructor contributes `T` and `U`.
+		"AConstructor": {
+			input: `
+				class Holder<S> {
+					peer: S,
+					constructor<T: U, U: {value: number}>(&mut self, s: S, a: T, b: U) {
+						self.peer = s
+					},
+				}
+			`,
+			bindingName: "Holder",
+			want:        "{new <S, T: U, U: {value: number}>(s: S, a: T, b: U) -> Holder<S>}",
+		},
+	}
+
+	for name, test := range tests {
+		t.Run(name, func(t *testing.T) {
+			ns := mustInferAsModule(t, test.input)
+			binding := ns.Values[test.bindingName]
+			require.NotNilf(t, binding, "no value named %q", test.bindingName)
+			require.Equal(t, test.want, binding.Type.String())
+		})
+	}
 }

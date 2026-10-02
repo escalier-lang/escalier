@@ -125,8 +125,13 @@ func (c *Checker) inferFuncParams(
 
 // resolveTypeParams resolves each type parameter's constraint and default from the
 // annotation the source wrote, sets provenance on both, and binds the parameter's name in
-// funcCtx's scope so a later sibling's annotation can name it. It returns the parameters
-// and the diagnostics resolving them raised.
+// funcCtx's scope so a sibling's annotation can name it. It returns the parameters and the
+// diagnostics resolving them raised.
+//
+// The parameters come back in declaration order. A caller pairing type arguments with
+// parameters pairs them by position, the quantifier prefix a signature renders follows the
+// list, and unifyTypeParams pairs this list against a placeholder list that is in
+// declaration order too.
 //
 // Every declaration carrying type parameters resolves them here: a function, a function
 // expression, a function type annotation, a constructor, a class, and an enum.
@@ -143,12 +148,13 @@ func (c *Checker) resolveTypeParams(
 ) ([]*type_system.TypeParam, []Error) {
 	errors := []Error{}
 
-	// Sort type parameters topologically so dependencies come first
+	// Resolve in topological order, so a bound naming a sibling resolves after that
+	// sibling and reaches the name it wrote rather than an undeclared one.
 	sortedTypeParams := ast.SortTypeParamsTopologically(astTypeParams)
 
-	typeParams := make([]*type_system.TypeParam, len(sortedTypeParams))
+	byName := make(map[string]*type_system.TypeParam, len(sortedTypeParams))
 
-	for i, tp := range sortedTypeParams {
+	for _, tp := range sortedTypeParams {
 		var defaultType type_system.Type
 		var constraintType type_system.Type
 		if tp.Default != nil {
@@ -168,7 +174,7 @@ func (c *Checker) resolveTypeParams(
 			Constraint: constraintType,
 			Default:    defaultType,
 		}
-		typeParams[i] = typeParam
+		byName[tp.Name] = typeParam
 
 		var t type_system.Type = type_system.NewUnknownType(nil)
 		if typeParam.Constraint != nil {
@@ -181,6 +187,12 @@ func (c *Checker) resolveTypeParams(
 		})
 	}
 
+	// Topological order is an internal step of the resolution above. The result is in
+	// declaration order, which this function's doc gives the reasons for.
+	typeParams := make([]*type_system.TypeParam, len(astTypeParams))
+	for i, astParam := range astTypeParams {
+		typeParams[i] = byName[astParam.Name]
+	}
 	return typeParams, errors
 }
 

@@ -2152,23 +2152,11 @@ func (c *Checker) resolveDeclTypeParams(
 	// It binds them in a child scope, which leaves the declaration's own scope alone.
 	resolved, errors := c.resolveTypeParams(ctx, declCtx.WithNewScope(), astTypeParams)
 
-	// resolveTypeParams returns its result in topological order, so a parameter whose
-	// bound names a sibling comes after that sibling. placeholders is in declaration
-	// order, and unifyTypeParams pairs the two lists by position. The resolved list is put
-	// back into declaration order so each bound reaches the parameter that carries it.
-	// Pairing the two orders instead stores `T: {value: number}, U: U` for
-	// `class Holder<T: U, U: {value: number}>`. #1796 is the helper returning sorted
-	// order, which retires this reorder.
-	byName := make(map[string]*type_system.TypeParam, len(resolved))
-	for _, tp := range resolved {
-		byName[tp.Name] = tp
-	}
-	inDeclOrder := make([]*type_system.TypeParam, len(astTypeParams))
-	for i, astParam := range astTypeParams {
-		inDeclOrder[i] = byName[astParam.Name]
-	}
-
-	return slices.Concat(errors, c.unifyTypeParams(ctx, placeholders, inDeclOrder))
+	// Both lists are in declaration order, which is what lets unifyTypeParams pair them by
+	// position. Pairing a sorted list against a declaration-order one attaches each bound
+	// to the wrong parameter, storing `T: {value: number}, U: U` for
+	// `class Holder<T: U, U: {value: number}>`.
+	return slices.Concat(errors, c.unifyTypeParams(ctx, placeholders, resolved))
 }
 
 // unifyTypeParams unifies the placeholder type parameters (with FreshVar constraints/defaults)
