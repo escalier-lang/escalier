@@ -163,7 +163,44 @@ func isOwnedMovable(t soltype.Type) bool {
 	if isBorrowType(t) {
 		return false
 	}
+	if v, ok := t.(*soltype.TypeVarType); ok && holdsOnlyValueTypes(v, set.NewSet[*soltype.TypeVarType]()) {
+		return false
+	}
 	return isReferenceShaped(t)
+}
+
+// holdsOnlyValueTypes reports whether every value v can hold is a value type, following
+// lower bounds that are themselves variables. A field read records its type as a variable
+// whose lower bound is the field's declared type, so in
+//
+//	val mut b = {v: 1}
+//	val n = b.v
+//
+// the type of `b.v` is a variable bounded below by `1`. Reading it copies the number and
+// moves nothing.
+//
+// A variable with no lower bound holds no known value. That is the case for a type
+// parameter's variable, so it keeps the conservative answer and stays movable. A variable
+// reached again on the same path is a cycle in the bound graph, and it answers false for
+// the same reason.
+func holdsOnlyValueTypes(v *soltype.TypeVarType, seen set.Set[*soltype.TypeVarType]) bool {
+	if len(v.LowerBounds) == 0 || seen.Contains(v) {
+		return false
+	}
+	seen.Add(v)
+	defer seen.Remove(v)
+	for _, lb := range v.LowerBounds {
+		if lbVar, ok := lb.(*soltype.TypeVarType); ok {
+			if !holdsOnlyValueTypes(lbVar, seen) {
+				return false
+			}
+			continue
+		}
+		if isReferenceShaped(lb) {
+			return false
+		}
+	}
+	return true
 }
 
 // placeSeg is one step of a movePlace path: a field reached from the place before it.

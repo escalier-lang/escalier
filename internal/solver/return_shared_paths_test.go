@@ -206,10 +206,10 @@ func TestSharedReturnPaths(t *testing.T) {
 			`,
 			want: nil,
 		},
-		// The subsumption covers only uses INSIDE the reported return. This move of b.v sits
+		// The subsumption covers only uses INSIDE the reported return. This read of b.v sits
 		// earlier in the body and conflicts with a's borrow on its own, so it keeps its
 		// diagnostic while the return keeps its own.
-		"AMoveOutsideTheReturnKeepsItsDiagnostic": {
+		"AReadOutsideTheReturnKeepsItsDiagnostic": {
 			src: `
 				declare fn write(a: &mut {v: number}) -> undefined
 				fn g() -> [&mut {v: number}, &{v: number}] {
@@ -222,9 +222,7 @@ func TestSharedReturnPaths(t *testing.T) {
 			`,
 			want: []string{
 				"8:13-8:25: returned value reaches 'b' through a mutable path and an immutable one",
-				"8:19-8:20: use of partially moved value 'b'; field 'b.v' was moved out",
-				"8:23-8:24: use of partially moved value 'b'; field 'b.v' was moved out",
-				"6:14-6:17: cannot move 'b.v' while it is borrowed",
+				"6:14-6:17: cannot use 'b.v' while it is borrowed as mutable",
 			},
 		},
 	}

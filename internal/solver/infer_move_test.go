@@ -28,6 +28,64 @@ func TestMoveSemantics(t *testing.T) {
 			`,
 			want: []string{"5:6-5:9: use of moved value 'p'"},
 		},
+		// A field of value type copies, so binding it moves nothing and the field and its
+		// object stay usable.
+		"ValueFieldReadTwiceOk": {
+			src: `
+				fn test() {
+					val mut b = {v: 1}
+					val n = b.v
+					val m = b.v
+				}
+			`,
+		},
+		"ValueFieldReadThenWholeObjectOk": {
+			src: `
+				fn test() -> {v: number} {
+					val mut b = {v: 1}
+					val n = b.v
+					return b
+				}
+			`,
+		},
+		"ValueFieldOfAnnotatedBindingOk": {
+			src: `
+				fn test() {
+					val mut b: {v: number} = {v: 1}
+					val n = b.v
+					val m = b.v
+				}
+			`,
+		},
+		"ValueFieldOfAParameterOk": {
+			src: `
+				fn test(b: mut {v: number}) -> undefined {
+					val n = b.v
+					val m = b.v
+				}
+			`,
+		},
+		// An object-typed field is owned, so binding it moves it out of its object.
+		"ObjectFieldReadTwiceMoves": {
+			src: `
+				fn test() {
+					val mut b = {v: {x: 1}}
+					val n = b.v
+					val m = b.v
+				}
+			`,
+			want: []string{"5:14-5:17: use of moved value 'b.v'"},
+		},
+		// A field typed by a type parameter may hold an owned object, so binding it moves it.
+		"TypeParameterFieldMoves": {
+			src: `
+				fn test<T>(b: {v: T}) -> [T, T] {
+					val n = b.v
+					return [n, b.v]
+				}
+			`,
+			want: []string{"4:17-4:20: use of moved value 'b.v'"},
+		},
 		// An explicit `&` borrow does not move the source.
 		"BorrowBindingKeepsSource": {
 			src: `
