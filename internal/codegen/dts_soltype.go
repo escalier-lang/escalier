@@ -740,14 +740,26 @@ func (b *solTypeAnnBuilder) bindInferredTypeParams(funcType *soltype.FuncType) [
 	params := make([]*TypeParam, len(bind))
 	for i, v := range bind {
 		var constraint TypeAnn
+		// Several bounds would meet to an intersection, a shape the twin never emitted
+		// and P4.3 has no golden for, so only a lone one renders.
 		if len(v.UpperBounds) == 1 {
-			// Several bounds would meet to an intersection, a shape the twin never
-			// emitted and P4.3 has no golden for, so only a lone one renders.
-			constraint = b.typeAnn(v.UpperBounds[0])
+			// An `unknown` bound admits every type, so `T0 extends unknown` and `T0`
+			// are the same binder and the shorter one is written. The test is on the
+			// rendered form rather than on the bound, because a bound that is itself a
+			// variable no signature can bind also renders `unknown`.
+			if rendered := b.typeAnn(v.UpperBounds[0]); !isUnknownTypeAnn(rendered) {
+				constraint = rendered
+			}
 		}
 		params[i] = &TypeParam{Name: b.typeParamNames[v], Constraint: constraint, Default: nil}
 	}
 	return params
+}
+
+// isUnknownTypeAnn reports whether the annotation is `unknown`.
+func isUnknownTypeAnn(t TypeAnn) bool {
+	_, unknown := t.(*UnknownTypeAnn)
+	return unknown
 }
 
 // claimTypeParamName hands out the next `T0`, `T1` no binder in this render has

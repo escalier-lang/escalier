@@ -532,15 +532,24 @@ expression's object a namespace. `js_lowering.go` also reads the AST's
 `BindingOwner` field, which P7 re-homes.
 
 The emitter is otherwise driven by the AST and the dep graph, which are
-checker-agnostic, so this is a narrow change rather than a port. That is why P3
-carries no sub-number: five call sites in two files is one pull request. Split it
-only if the golden comparison below turns up diffs that need their own
-investigation.
+checker-agnostic, so this is a narrow change rather than a port.
 
 **Depends on** P2.3, for a harness to compare against.
 
 **Gate.** Every fixture's `build/lib/index.js` and `index.js.map` is
 byte-identical under both checkers. Extend the P2 harness to compare them.
+
+**Landed.** The five questions went behind one interface, `JSTypes` in
+`internal/codegen/js_types.go`, which each checker implements over its own
+results. `internal/codegen/builder.go` now holds no `type_system` reference at
+all, down from 16.
+
+Seven fixtures still differ on `index.js` and `index.js.map`, all on one cause
+the five read sites do not cover: `internal/checker` writes a synthesized
+constructor into a class's AST body during inference and codegen emits it from
+there, so a class emits empty on the solver. That is
+[#1771](https://github.com/escalier-lang/escalier/issues/1771), a coupling
+through the AST rather than through a node's type.
 
 **Not in scope.** `.d.ts`. `self_type_utils.go`, which serves `.d.ts` alone.
 
@@ -598,6 +607,29 @@ port.
 
 **Gate.** Every fixture's `build/lib/index.d.ts` is byte-identical, or its diff
 is triaged and recorded.
+
+**Measured.** The comparison is in place. Of the 72 runnable fixtures, 58 are
+expected to be accepted and so emit something to compare; the other 14 carry an
+`error.txt` and emit nothing. It reaches 30 of the 58 today, the ones that check
+cleanly on the solver, and the P2.4 causes hold the other 28 back. Twenty of the
+30 agree byte for byte. Ten differ, under four causes:
+
+| Cause | Ticket | Fixtures |
+| --- | --- | --- |
+| The static side of an extractor or enum variant declaration | [#1772](https://github.com/escalier-lang/escalier/issues/1772) | 6 |
+| A class's declared type parameters on its constructor signature | [#1773](https://github.com/escalier-lang/escalier/issues/1773) | 2 |
+| Generalizing a parameter the body never reads | [#1774](https://github.com/escalier-lang/escalier/issues/1774) | 1 |
+| The `?` on an index signature over an uncountable key set | [#1775](https://github.com/escalier-lang/escalier/issues/1775) | 1 |
+
+Two of the four are soundness faults rather than cosmetic ones. #1772 makes a
+match on an enum recover the wrong payload type, and #1775 drops the `?` that
+makes a read off an index signature `number | undefined`.
+[#1776](https://github.com/escalier-lang/escalier/issues/1776) is a fifth,
+smaller fault that no fixture waits on alone: a function returning no value
+emits `undefined` where the twin emits `void`.
+
+The 28 the solver cannot yet check are out of reach, so this count moves as the
+P2.4 causes clear and is a lower bound on the work #1676 names.
 
 **Not in scope.** The `@escalier-type` JSDoc round-tripping for exactness and
 the value-level `exact<T>(v)` lowering, both of which M10 owns and neither of
