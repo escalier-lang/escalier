@@ -189,6 +189,55 @@ func TestInferValMutConstructedBorrowsMut(t *testing.T) {
 	require.Equal(t, "fn () -> {x: number}", values["f"])
 }
 
+// A `var mut` binding can be borrowed `&mut` the same way, before and after it is
+// reassigned. Reading the binding yields a type variable rather than the `mut {…}` the
+// `val mut` form reads, and the borrow still sees the owned-mutable value it holds.
+// A plain `var` holds an owned-immutable value, so its `&mut` is rejected.
+func TestInferVarBindingBorrowsMut(t *testing.T) {
+	tests := map[string]struct {
+		src  string
+		want []string
+	}{
+		"VarMutBorrowsMut": {
+			src: `fn f() {
+  var mut q = {x: 0}
+  val r = &mut q
+  r.x = 1
+}`,
+			want: nil,
+		},
+		"VarMutBorrowsMutAfterReassignment": {
+			src: `fn f() {
+  var mut q = {x: 0}
+  q = {x: 1}
+  val r = &mut q
+  r.x = 2
+}`,
+			want: nil,
+		},
+		"VarMutBorrowsImmutably": {
+			src: `fn f() {
+  var mut q = {x: 0}
+  val r = &q
+}`,
+			want: nil,
+		},
+		"PlainVarRejectsMutBorrow": {
+			src: `fn f() {
+  var q = {x: 0}
+  val r = &mut q
+}`,
+			want: []string{"3:11-3:17: cannot constrain immutable object <: mutable object"},
+		},
+	}
+	for name, tc := range tests {
+		t.Run(name, func(t *testing.T) {
+			_, _, errs := inferSource(t, tc.src)
+			require.Equal(t, tc.want, messagesWithSpan(t, errs))
+		})
+	}
+}
+
 // A `mut` binding of a primitive is unchanged: a primitive is a value type with no
 // interior mutability, so it is not wrapped in an owned-mutable borrow. A `val mut`
 // keeps the literal singleton, exactly as a plain `val` would.
