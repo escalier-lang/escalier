@@ -285,23 +285,17 @@ func TestBorrowExclusivity(t *testing.T) {
 		},
 		// Reassigning the whole binding leaves each borrow pointing at the old object, which
 		// nothing writes through the owner anymore.
-		//
-		// DISABLED until #1762. A mutable borrow of a `var mut` binding reports a mutability
-		// mismatch, so this case reports at `&mut x` and at `write(a)`. Once #1762 lands, it
-		// checks.
-		/*
-			"ReassignBesideAMutableLoanOk": {
-				src: exclusivityDecls + `
-					fn g() {
-						var mut x = {v: 1}
-						val a = &mut x
-						x = {v: 2}
-						write(a)
-					}
-				`,
-				want: nil,
-			},
-		*/
+		"ReassignBesideAMutableLoanOk": {
+			src: exclusivityDecls + `
+				fn g() {
+					var mut x = {v: 1}
+					val a = &mut x
+					x = {v: 2}
+					write(a)
+				}
+			`,
+			want: nil,
+		},
 		"ReassignBesideAnImmutableLoanOk": {
 			src: exclusivityDecls + `
 				fn g() {
