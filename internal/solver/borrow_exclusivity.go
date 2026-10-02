@@ -121,19 +121,20 @@ func (e *MoveWhileBorrowedError) Message() string {
 	return fmt.Sprintf("cannot move '%s' while it is borrowed", e.Place)
 }
 
-// BorrowedValueUseError reports a read of data a live borrow can write through.
-type BorrowedValueUseError struct {
-	// Place names the data read, `x` for a whole binding and `x.a` for a field.
+// BorrowedValueWriteError reports a field write through the owner while an immutable borrow of
+// the written data is live.
+type BorrowedValueWriteError struct {
+	// Place names the field written, `x.v` for `x.v = 5`.
 	Place  string
-	use    ast.Node
+	write  ast.Node
 	borrow ast.Span
 }
 
-func (*BorrowedValueUseError) isSolverError()        {}
-func (e *BorrowedValueUseError) Span() ast.Span      { return e.use.Span() }
-func (e *BorrowedValueUseError) Related() []ast.Span { return []ast.Span{e.borrow} }
-func (e *BorrowedValueUseError) Message() string {
-	return fmt.Sprintf("cannot use '%s' while it is borrowed as mutable", e.Place)
+func (*BorrowedValueWriteError) isSolverError()        {}
+func (e *BorrowedValueWriteError) Span() ast.Span      { return e.write.Span() }
+func (e *BorrowedValueWriteError) Related() []ast.Span { return []ast.Span{e.borrow} }
+func (e *BorrowedValueWriteError) Message() string {
+	return fmt.Sprintf("cannot assign to '%s' while it is borrowed as immutable", e.Place)
 }
 
 // ImplicitBorrowArgError reports an argument filling a `&` or `&mut` parameter without a borrow
@@ -429,6 +430,41 @@ func (c *checker) checkNestedBorrows() {
 	}
 }
 
+// fieldWrite is the field a member assignment writes: the place, and the assignment target the
+// diagnostic blames.
+type fieldWrite struct {
+	place  movePlace
+	target ast.Expr
+}
+
+// noteFieldWrite records that the receiver chain of a member assignment is a write to the
+// place the assignment targets. `x.a.v = 5` marks both `x.a` and `x` as writes to x.a.v,
+// since the use check may have recorded either as a use site.
+func (c *checker) noteFieldWrite(target *ast.MemberExpr) {
+	if c.fn == nil {
+		return
+	}
+	written, ok := exprPlace(target)
+	if !ok || written.root <= 0 {
+		return
+	}
+	if c.fn.fieldWrites == nil {
+		c.fn.fieldWrites = map[ast.Node]fieldWrite{}
+	}
+	var recv ast.Expr = target.Object
+	for recv != nil {
+		c.fn.fieldWrites[recv] = fieldWrite{place: written, target: target}
+		switch r := recv.(type) {
+		case *ast.MemberExpr:
+			recv = r.Object
+		case *ast.IndexExpr:
+			recv = r.Object
+		default:
+			recv = nil
+		}
+	}
+}
+
 // recordStoreEdgeLoan records the loan a call's store effect creates. `store(&mut p, &mut b)`
 // against a signature that writes its second argument into the first leaves p reaching b, so
 // from that point p holds a mutable borrow of b. An immutable borrow of b then conflicts with
@@ -465,13 +501,20 @@ func placesEqual(a, b movePlace) bool {
 	return a.root == b.root && slices.Equal(a.path, b.path)
 }
 
-// checkUsesAgainstLoans reports a use of data that a live mutable loan can write through. A use
-// here names the place directly, as in `val y = b` or `b.value`, rather than borrowing it. An
-// immutable loan never conflicts with a plain use, since nothing can write through it.
+// checkUsesAgainstLoans weighs each use of a place through its owner against the loans live at
+// it. A use names the place directly, as in `val y = b` or `b.value`, rather than borrowing it.
+// What it conflicts with depends on what the use does:
 //
-// A use that moves the place conflicts with every live loan of it, mutable or immutable. After
-// `val y = b` the data belongs to y, and a borrow taken from b would reach data its new owner
-// controls. That use reports as a move rather than as a plain use.
+//   - A read conflicts with no loan. The owner is one more path to the value. A live `&mut`
+//     already expects the value to change, and a live `&` sees no change from a read.
+//   - A field write, as in `x.v = 5`, conflicts with a live immutable loan of the written
+//     data, since the `&` holder expects it to hold still. Beside a live `&mut` it is one more
+//     writer, which Rule 3 of planning/lifetimes/requirements.md allows.
+//   - A move conflicts with every live loan, mutable or immutable. After `val y = b` the data
+//     belongs to y, and a borrow taken from b would reach data its new owner controls.
+//
+// Reassigning the whole binding is not a use of the old value, so it reaches none of these.
+// A borrow of the old value keeps pointing at it.
 //
 // A borrow is not a use for this check. The read a borrow performs to take its own loan is
 // skipped. `&mut b` reads b, and that read is what creates the loan rather than a second path
@@ -491,6 +534,16 @@ func (c *checker) checkUsesAgainstLoans(reported set.Set[ast.Node]) {
 	for _, u := range c.fn.useSites {
 		if c.fn.loanReads.Contains(u.node) || reported.Contains(u.node) {
 			continue
+		}
+		moved := c.fn.movedSources != nil && c.fn.movedSources.Contains(u.node)
+		write, isWrite := c.fn.fieldWrites[u.node]
+		if !moved && !isWrite {
+			continue
+		}
+		// A write blames the field it writes, which may sit below the receiver the use names.
+		place, blame := u.place, u.node
+		if isWrite && !moved {
+			place, blame = write.place, write.target
 		}
 		// A read INSIDE a returned expression already reported for reaching a local twice needs
 		// no second diagnostic. The return names where the two paths leave together, which is
@@ -514,8 +567,8 @@ func (c *checker) checkUsesAgainstLoans(reported set.Set[ast.Node]) {
 			if l.endSeq != 0 && l.endSeq < u.loanSeqAt {
 				continue
 			}
-			moved := c.fn.movedSources != nil && c.fn.movedSources.Contains(u.node)
-			if (!l.mut && !moved) || !c.liveAt(l, u.ref) || !placesOverlap(l.place, u.place) {
+			// A write conflicts only with an immutable loan. A move conflicts with any loan.
+			if (!moved && l.mut) || !c.liveAt(l, u.ref) || !placesOverlap(l.place, place) {
 				continue
 			}
 			// The call that declares a store is where its loan begins, so a read in that same
@@ -532,9 +585,9 @@ func (c *checker) checkUsesAgainstLoans(reported set.Set[ast.Node]) {
 					borrow: l.node.Span(),
 				})
 			} else {
-				c.report(&BorrowedValueUseError{
-					Place:  c.renderPlace(u.place),
-					use:    u.node,
+				c.report(&BorrowedValueWriteError{
+					Place:  c.renderPlace(place),
+					write:  blame,
 					borrow: l.node.Span(),
 				})
 			}

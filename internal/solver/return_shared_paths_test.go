@@ -193,22 +193,23 @@ func TestSharedReturnPaths(t *testing.T) {
 			`,
 			want: []string{"10:13-10:33: returned value reaches 'b' through a mutable path and an immutable one"},
 		},
-		// A plain read of b inside the same return conflicts with a's loan as a use. The
+		// A move of a field of b inside the same return conflicts with a's loan on its own. The
 		// return's diagnostic subsumes that one too.
-		"StoreAliasedMixedPathsWithAReadReportOnce": {
+		"StoreAliasedMixedPathsWithAMoveReportOnce": {
 			src: `
+				type T = {value: number, inner: {x: number}}
 				declare fn store<'a, 'b, 'c>(
-					target: &'c mut {peer: &'a mut {value: number}, spare: &'b mut {value: number}},
-					item: &'a mut {value: number},
+					target: &'c mut {peer: &'a mut T, spare: &'b mut T},
+					item: &'a mut T,
 				) -> undefined
-				fn build(p: mut {value: number}, q: mut {value: number}) -> [&{value: number}, &mut {value: number}, &mut {value: number}, number] {
-					val mut b = {value: 2}
+				fn build(p: mut T, q: mut T) -> [&T, &mut T, &mut T, {x: number}] {
+					val mut b = {value: 2, inner: {x: 1}}
 					val mut a = {peer: &mut p, spare: &mut q}
 					store(&mut a, &mut b)
-					return [&b, &mut b, a.peer, b.value]
+					return [&b, &mut b, a.peer, b.inner]
 				}
 			`,
-			want: []string{"10:13-10:42: returned value reaches 'b' through a mutable path and an immutable one"},
+			want: []string{"11:13-11:42: returned value reaches 'b' through a mutable path and an immutable one"},
 		},
 		// Two DISJOINT fields of one local are two objects, so neither path can observe the
 		// other's write. This is the returned-literal route, which compares the places its
@@ -222,24 +223,21 @@ func TestSharedReturnPaths(t *testing.T) {
 			`,
 			want: nil,
 		},
-		// The subsumption covers only uses INSIDE the reported return. This read of b.v sits
-		// earlier in the body and conflicts with a's borrow on its own, so it keeps its
-		// diagnostic while the return keeps its own.
-		"AReadOutsideTheReturnKeepsItsDiagnostic": {
+		// The subsumption covers only uses INSIDE the reported return. This write to b.v sits
+		// earlier in the body and conflicts with a's immutable borrow on its own, so it keeps
+		// its diagnostic while the return keeps its own.
+		"AWriteOutsideTheReturnKeepsItsDiagnostic": {
 			src: `
-				declare fn write(a: &mut {v: number}) -> undefined
+				declare fn read(a: &{v: number}) -> undefined
 				fn g() -> [&mut {v: number}, &{v: number}] {
 					val mut b = {v: 1}
-					var a = &mut b
-					val n = b.v
-					write(a)
+					var a = &b
+					b.v = 2
+					read(a)
 					return [&mut b, &b]
 				}
 			`,
-			want: []string{
-				"8:13-8:25: returned value reaches 'b' through a mutable path and an immutable one",
-				"6:14-6:17: cannot use 'b.v' while it is borrowed as mutable",
-			},
+			want: []string{"8:13-8:25: returned value reaches 'b' through a mutable path and an immutable one", "6:6-6:9: cannot assign to 'b.v' while it is borrowed as immutable"},
 		},
 	}
 	for name, tc := range tests {

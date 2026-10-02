@@ -642,9 +642,9 @@ func (c *checker) checkUseAfterMoves() {
 			moveSite:    c.fn.moveNodes[movedID],
 		})
 	}
-	// Every loan is recorded by now, so a read of data a live borrow can write through is
-	// decided here rather than mid-walk. A read the loop above already reported is skipped, so
-	// one bad read yields one diagnostic. The nested borrows go first, because each one notes
+	// Every loan is recorded by now, so a write or move through the owner beside a live borrow
+	// is decided here rather than mid-walk. A use the loop above already reported is skipped, so
+	// one bad use yields one diagnostic. The nested borrows go first, because each one notes
 	// its operand as the read that takes its loan, and the use check skips those reads.
 	c.checkNestedBorrows()
 	c.checkUsesAgainstLoans(reported)
