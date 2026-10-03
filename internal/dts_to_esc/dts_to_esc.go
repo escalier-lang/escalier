@@ -1366,7 +1366,7 @@ func fuseTrio(
 		if iface := info.merged; iface != nil {
 			// The merged members read the class's type parameter names, the same
 			// positional rename mergeDecls applies to a pair of interfaces.
-			renameTypeParams(iface, cls.TypeParams)
+			iface = withTypeParamsRenamed(iface, cls.TypeParams)
 			elems, err := interfaceMembersToClassElems(iface.Members, nsPath, className, facts, false /*static*/)
 			if err != nil {
 				return nil, err
