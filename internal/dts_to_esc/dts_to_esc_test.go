@@ -9,6 +9,7 @@ import (
 	"github.com/escalier-lang/escalier/internal/dts_parser"
 	"github.com/escalier-lang/escalier/internal/parser"
 	"github.com/escalier-lang/escalier/internal/printer"
+	"github.com/escalier-lang/escalier/internal/snapshot"
 	"github.com/gkampitakis/go-snaps/snaps"
 	"github.com/stretchr/testify/require"
 )
@@ -1513,6 +1514,74 @@ export declare class Foo {
 				&ast.Source{Path: "out.esc", Contents: printed, ID: 1})
 			require.Empty(t, parseErrs, "printed output parses")
 			require.Len(t, parsedDecls, 1)
+		})
+	}
+}
+
+// ConvertToStandaloneModule merges same-named declarations without modifying the
+// parsed module it is given. Each case merges declarations whose type parameter
+// names differ, so the rename that reads them against the first declaration's
+// parameters has to happen on a copy as well. Converting the module a second
+// time produces the same output as the first.
+func TestStandalone_ConversionLeavesItsInputUnchanged(t *testing.T) {
+	tests := map[string]string{
+		"InterfaceTrio": `
+interface Foo<T> {
+    a(): T;
+}
+
+interface Foo<U> {
+    b(): U;
+}
+
+interface FooConstructor {
+    make(): Foo<number>;
+}
+
+declare var Foo: FooConstructor;
+`,
+		"ClassAndInterface": `
+declare class Bar<T> {
+    x(): T;
+}
+
+interface Bar<U> {
+    y(): U;
+}
+`,
+		"Namespaces": `
+declare namespace NS {
+    interface Baz<T> {
+        a(): T;
+    }
+}
+
+declare namespace NS {
+    interface Baz<U> {
+        b(): U;
+    }
+}
+`,
+	}
+
+	for name, input := range tests {
+		t.Run(name, func(t *testing.T) {
+			source := &ast.Source{Path: "test.d.ts", Contents: input, ID: 0}
+			dtsModule, errs := dts_parser.NewDtsParser(source).ParseModule()
+			require.Empty(t, errs, "dts parse errors")
+			before := snapshot.String(dtsModule)
+
+			first, err := ConvertToStandaloneModule(dtsModule, nil)
+			require.NoError(t, err)
+			firstOut, err := RenderStandaloneModule(first)
+			require.NoError(t, err)
+			require.Equal(t, before, snapshot.String(dtsModule))
+
+			second, err := ConvertToStandaloneModule(dtsModule, nil)
+			require.NoError(t, err)
+			secondOut, err := RenderStandaloneModule(second)
+			require.NoError(t, err)
+			require.Equal(t, firstOut, secondOut)
 		})
 	}
 }
