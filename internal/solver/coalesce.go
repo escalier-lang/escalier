@@ -618,9 +618,18 @@ func (c *schemeCoalescer) displayBinder(v *soltype.TypeVarType) *soltype.TypeVar
 // binder needing neither cleanup below is omitted.
 //
 //  1. A bound naming a var in the binder's own merged class is dropped. Such a bound is
-//     the vacuous half of a mutual cycle `T <: β <: … <: T` and prints as `T: T0`.
-//     Dropping it also removes the artifact var β the printer would name T0. A concrete
-//     bound already sits on the binder, so nothing real is lost.
+//     the vacuous half of a mutual cycle `U <: β <: … <: U`, so it says nothing a reader
+//     can use, and a concrete bound already sits on the binder. Dropping it also removes
+//     β, which the printer would otherwise name and bind. An alias bound reaching a
+//     function's parameter is the shape that produces one:
+//
+//     type Box<T: string> = {v: T}
+//     fn f<U>(b: Box<U>) -> U { return b.v }
+//
+//     `f` renders `fn <U: string>(b: Box<U>) -> U` with this cleanup and
+//     `fn <T0, U: string & T0>(b: Box<U>) -> U` without it, where `T0` is the generated
+//     name β takes.
+//
 //  2. A parameter the declaration wrote carries exactly the bound the source gave it,
 //     whatever its upper-bound list accumulated. The list grows as constraints flow in,
 //     and only the declared bound is what callers have to satisfy. Reporting the list

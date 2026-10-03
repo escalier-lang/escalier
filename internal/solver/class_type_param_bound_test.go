@@ -119,3 +119,25 @@ func TestADeclaredBoundSurvivesASecondBinding(t *testing.T) {
 		})
 	}
 }
+
+// TestAVacuousSelfBoundIsDroppedFromTheBinder asserts that `f` renders
+// `fn <U: string>(b: Box<U>) -> U`.
+//
+// `Box`'s `T: string` reaches `U` through the parameter annotation, and the comparison
+// is a live constraint, so solving leaves `U` merged with an inference variable that
+// bounds it from the other side. That variable says nothing a caller can use, and
+// cleanBinderBounds drops both it and the bound naming it. Without that, `f` renders
+// `fn <T0, U: string & T0>(b: Box<U>) -> U`, with a binder for a variable the signature
+// has no other use for.
+//
+// This is the one shape in the repository that reaches cleanBinderBounds' same-class
+// cleanup, found by instrumenting the drop and running the suite.
+func TestAVacuousSelfBoundIsDroppedFromTheBinder(t *testing.T) {
+	values, _, errs := inferSource(t, `
+		type Box<T: string> = {v: T}
+		fn f<U>(b: Box<U>) -> U { return b.v }
+	`)
+
+	require.Empty(t, errorMessagesOf(errs))
+	require.Equal(t, "fn <U: string>(b: Box<U>) -> U", values["f"])
+}
