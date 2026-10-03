@@ -112,13 +112,13 @@ type solverDtsScope struct {
 	module *solver.ModuleResult
 }
 
-func (s *solverDtsScope) ValueType(name string) (soltype.Type, bool) {
+func (s *solverDtsScope) ValueType(name string) (soltype.Type, []*soltype.TypeParam, bool) {
 	binding, ok := s.module.Scope.OwnValue(name)
 	if !ok {
-		return nil, false
+		return nil, nil, false
 	}
-	t := binding.DisplayType()
-	return t, t != nil
+	t, params := binding.DisplayTypeWithDeclaredParams()
+	return t, params, t != nil
 }
 
 func (s *solverDtsScope) DeclaredType(name string) (soltype.Type, []*soltype.TypeParam, bool) {
@@ -144,13 +144,13 @@ type solverDtsNamespace struct {
 	ns     *solver.Namespace
 }
 
-func (s *solverDtsNamespace) ValueType(name string) (soltype.Type, bool) {
+func (s *solverDtsNamespace) ValueType(name string) (soltype.Type, []*soltype.TypeParam, bool) {
 	binding, ok := s.ns.Values[localName(name)]
 	if !ok {
-		return nil, false
+		return nil, nil, false
 	}
-	t := binding.DisplayType()
-	return t, t != nil
+	t, params := binding.DisplayTypeWithDeclaredParams()
+	return t, params, t != nil
 }
 
 func (s *solverDtsNamespace) DeclaredType(name string) (soltype.Type, []*soltype.TypeParam, bool) {

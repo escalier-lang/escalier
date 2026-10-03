@@ -545,6 +545,9 @@ func TestBothCheckersEmitTheSameDefinitionsForAnExtractor(t *testing.T) {
 // carrying two. Emission writes a clause only for a lone bound, so the declared one has to
 // be the only one the display carries.
 //
+// The clause is written on the constructor signature under the name the source gave the
+// parameter, since TypeScript has no generic `const` to hang a class's parameters on.
+//
 // internal/checker emits `<T extends unknown>` for both sources, which says nothing, so
 // this asserts what the solver emits rather than that the two agree.
 func TestTheSolverEmitsAClassTypeParameterBound(t *testing.T) {
@@ -565,7 +568,132 @@ func TestTheSolverEmitsAClassTypeParameterBound(t *testing.T) {
 			useSolver(t)
 			dts := CompilePackage(libSources(src)).CompUnits["lib/index"].DTS
 			require.Contains(t, dts,
-				"declare const Holder: {new <T0 extends {value: number}>(peer: T0): Holder<T0>};")
+				"declare const Holder: {new <T extends {value: number}>(peer: T): Holder<T>};")
 		})
 	}
+}
+
+// TestBothCheckersBindAClassTypeParamOnItsConstructor covers the type parameters a
+// generic class's emitted constructor signature writes.
+//
+// TypeScript has no generic `const`, so a class's parameters cannot be written beside the
+// value and each signature that uses one binds it. The declared name, bound, and default
+// reach that binder. A parameter no constructor argument mentions is bound too, since a
+// signature reading `new (log: string): Consumer<never>` constructs a `Consumer` that
+// accepts nothing.
+func TestBothCheckersBindAClassTypeParamOnItsConstructor(t *testing.T) {
+	tests := map[string]struct {
+		src  string
+		want string
+	}{
+		"AParameterTheConstructorReads": {
+			src:  `class Box<T> { value: T }`,
+			want: "declare const Box: {new <T>(value: T): Box<T>};",
+		},
+		// Nothing in the constructor's arguments mentions `T`, so only the return type
+		// has it. The binder still has to be written for `new Consumer("x")` to infer
+		// anything but `Consumer<never>`.
+		"AParameterNoArgumentMentions": {
+			src:  `class Consumer<T> { log: string }`,
+			want: "declare const Consumer: {new <T>(log: string): Consumer<T>};",
+		},
+		// The binders are positional, so `new Pair<string, number>` has to mean what
+		// `class Pair<A, B>` wrote even though the constructor takes `b` first.
+		"ParametersTheConstructorTakesOutOfOrder": {
+			src: `
+				class Pair<A, B> {
+				    b: B,
+				    a: A,
+				    constructor(&mut self, b: B, a: A) {
+				        self.b = b
+				        self.a = a
+				    },
+				}
+			`,
+			want: "declare const Pair: {new <A, B>(b: B, a: A): Pair<A, B>};",
+		},
+		"AParameterWithADefault": {
+			src: `
+				declare class Task<T, E = never> {
+				    run(&self) -> T,
+				    fail(&self, r: E) -> never,
+				}
+			`,
+			want: "declare const Task: {new <T, E = never>(): Task<T, E>};",
+		},
+		// A bound naming the parameter it constrains has to reach the same binder the
+		// signature writes, not the variable the declaration minted before the display
+		// copied it.
+		"AParameterItsOwnBoundNames": {
+			src:  `class Node<T: {next: T}> { v: T }`,
+			want: "declare const Node: {new <T extends {next: T}>(v: T): Node<T>};",
+		},
+		"AParameterASiblingsBoundNames": {
+			src:  `class P<A: {x: number}, B: A> { a: A, b: B }`,
+			want: "declare const P: {new <A extends {x: number}, B extends A>(a: A, b: B): P<A, B>};",
+		},
+		// A class with no parameters writes no binder, which is the control.
+		"AClassWithNoParameters": {
+			src:  `class Point { x: number, y: number }`,
+			want: "declare const Point: {new (x: number, y: number): Point};",
+		},
+	}
+
+	for name, test := range tests {
+		t.Run(name, func(t *testing.T) {
+			useChecker(t)
+			want := CompilePackage(libSources(test.src)).CompUnits["lib/index"].DTS
+			useSolver(t)
+			got := CompilePackage(libSources(test.src)).CompUnits["lib/index"].DTS
+
+			require.Contains(t, want, test.want)
+			require.Equal(t, want, got, "the two checkers emit different definitions")
+		})
+	}
+}
+
+// TestTheSolverDropsAClassTypeParamTwoSignaturesRead asserts that `Holder<T>`, whose
+// constructor and static member both read `T`, emits `unknown` in both positions.
+//
+// A binder has to cover every occurrence of the variable it binds, and the two signatures
+// sit side by side in one object type that TypeScript gives no binder of its own. The
+// parameter therefore binds on neither signature. internal/checker writes `T` anyway,
+// naming something nothing declares, so the two disagree. #1804 decides what to emit for
+// a class whose static member makes the class inexpressible.
+func TestTheSolverDropsAClassTypeParamTwoSignaturesRead(t *testing.T) {
+	useSolver(t)
+	dts := CompilePackage(libSources(`
+		class Holder<T: {value: number}> {
+		    peer: T,
+		    static s(x: T) -> number { return x.value },
+		}
+	`)).CompUnits["lib/index"].DTS
+
+	require.Contains(t, dts,
+		"declare const Holder: {new (peer: unknown): Holder<unknown>, s(x: unknown): number};")
+}
+
+// TestAGenericClassStaticSideIsSubsumed asserts that `Picker.pick`, whose body returns `n`
+// or `1`, emits `number` rather than `number | 1`.
+//
+// A class's static side is read through a display of its own, the one that holds every
+// declared parameter. Subsuming a union needs the ambient context, so it runs where that
+// display is built. Both displays are canonicalized the same way as a result.
+func TestAGenericClassStaticSideIsSubsumed(t *testing.T) {
+	src := `
+		class Picker<T> {
+		    v: T,
+		    static pick(flag: boolean, n: number) {
+		        if flag { return n } else { return 1 }
+		    },
+		}
+	`
+
+	useChecker(t)
+	want := CompilePackage(libSources(src)).CompUnits["lib/index"].DTS
+	useSolver(t)
+	got := CompilePackage(libSources(src)).CompUnits["lib/index"].DTS
+
+	require.Contains(t, want, "pick(flag: boolean, n: number): number}")
+	require.Equal(t, want, got, "the two checkers emit different definitions")
 }
