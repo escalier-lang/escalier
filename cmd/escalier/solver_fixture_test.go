@@ -64,9 +64,8 @@ var (
 		name:   "do expressions",
 		ticket: "#1656",
 	}
-	causeIndexAndComputed = &solverSkipCause{
-		name:   "index expressions, computed keys, and assignment to a member",
-		ticket: "#1715",
+	causeAnnotatedOwnedMutCall = &solverSkipCause{
+		name: "an annotated `mut` binding initialized from a call's owned result",
 	}
 	causeNamespaceMember = &solverSkipCause{
 		name:   "a bare reference to a namespace sibling",
@@ -123,11 +122,10 @@ var solverSkips = []solverSkip{
 	{"literals", causeUnaryOperators, "Unsupported: UnaryExpr"},
 	{"template_literals", causeTemplateLiterals, "Unsupported: TemplateLitExpr"},
 	{"generic_class", causeTypeCast, "Unsupported: TypeCastExpr"},
+	{"objects_with_computed_members", causeTypeCast, "Unsupported: TypeCastExpr"},
 	{"do", causeDoExpressions, "Unsupported: DoExpr"},
 
-	{"class_with_computed_members", causeIndexAndComputed, "Unsupported: assignment to a member or index"},
-	{"class_with_getter_setter", causeIndexAndComputed, "Unsupported: IndexExpr"},
-	{"objects_with_computed_members", causeIndexAndComputed, "Unsupported: ComputedKey"},
+	{"class_with_getter_setter", causeAnnotatedOwnedMutCall, "cannot constrain immutable Person <: mutable Person"},
 
 	{"namespace_bin_import", causeNamespaceMember, "Unknown identifier: Point"},
 	{"namespace_simple_same", causeNamespaceMember, "Unknown identifier: base"},

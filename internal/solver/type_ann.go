@@ -975,6 +975,15 @@ func (c *checker) restParamSlot(p *ast.Param, last bool) (ast.Pat, bool, bool) {
 	return pat, rest, optional
 }
 
+// paramDefault returns the default value a parameter written `x = value` carries, or nil
+// when it has none.
+func paramDefault(p *ast.Param) ast.Expr {
+	if ip, ok := p.Pattern.(*ast.IdentPat); ok {
+		return ip.Default
+	}
+	return nil
+}
+
 // restParamSlotShape reads the `...` marker off one written parameter without reporting,
 // returning the pattern to bind, whether the parameter is a well-formed rest slot, and the
 // optional marker to keep. last says whether p is the final parameter. restParamSlot layers
@@ -985,7 +994,8 @@ func (c *checker) restParamSlot(p *ast.Param, last bool) (ast.Pat, bool, bool) {
 func restParamSlotShape(p *ast.Param, last bool) (ast.Pat, bool, bool) {
 	rp, ok := p.Pattern.(*ast.RestPat)
 	if !ok {
-		return p.Pattern, false, p.Optional
+		// A parameter with a default value may be omitted, since the default fills it.
+		return p.Pattern, false, p.Optional || paramDefault(p) != nil
 	}
 	switch {
 	case !last, p.TypeAnn == nil:
