@@ -113,12 +113,25 @@ func TestInferDeclaredStaticBoundSatisfiedByEscape(t *testing.T) {
 	require.Equal(t, "fn (p: &'static mut {x: number}) -> undefined", values["cache"])
 }
 
-// A bare `<'a, 'b>` declares no bounds, so the check does nothing and the inferred join
-// still renders its bounds. This guards the common inferred-render path from a spurious
-// bound error.
-func TestInferNoDeclaredBoundStillRendersInferred(t *testing.T) {
-	values, _, errs := inferSource(t, `
+// TestInferUndeclaredJoinBoundsReport asserts that a body joining two named borrows into a
+// third named lifetime needs each source to outlive the result, and that a bare
+// `<'a, 'b, 'c>` declaring neither reports both.
+func TestInferUndeclaredJoinBoundsReport(t *testing.T) {
+	_, _, errs := inferSource(t, `
 		fn pick<'a, 'b, 'c>(p: &'a mut {x: number}, q: &'b mut {x: number}) -> &'c mut {x: number} {
+			if true { return p } else { return q }
+		}`)
+	require.Equal(t, []string{
+		"2:11-2:13: the body requires 'a to outlive 'c, but the signature does not declare it; add the bound 'a: 'c",
+		"2:15-2:17: the body requires 'b to outlive 'c, but the signature does not declare it; add the bound 'b: 'c",
+	}, messagesWithSpan(t, errs))
+}
+
+// TestInferDeclaredJoinBoundsRender asserts that the same join with both bounds declared
+// checks and renders them.
+func TestInferDeclaredJoinBoundsRender(t *testing.T) {
+	values, _, errs := inferSource(t, `
+		fn pick<'a: 'c, 'b: 'c, 'c>(p: &'a mut {x: number}, q: &'b mut {x: number}) -> &'c mut {x: number} {
 			if true { return p } else { return q }
 		}`)
 	require.Empty(t, errs)

@@ -2127,6 +2127,26 @@ func (e *LifetimeBoundNotSatisfiedError) Message() string {
 		e.Sub, e.Super, e.Sub, e.Super)
 }
 
+// LifetimeRelationUndeclaredError fires when a body imposes an outlives relation between two
+// lifetimes its signature declares, or between one of them and 'static, that the declared
+// bounds do not imply. `fn f<'a, 'b>(x: &'a T, y: &'b T) -> &'b T { return x }` needs 'a to
+// outlive 'b. Sub and Super are the two names without the leading `'`, and Super is
+// "static" for 'static. Param is Sub's binder, which the error blames.
+type LifetimeRelationUndeclaredError struct {
+	Sub   string
+	Super string
+	Param *ast.LifetimeParam
+}
+
+func (*LifetimeRelationUndeclaredError) isSolverError()        {}
+func (e *LifetimeRelationUndeclaredError) Span() ast.Span      { return e.Param.Span() }
+func (e *LifetimeRelationUndeclaredError) Related() []ast.Span { return nil }
+func (e *LifetimeRelationUndeclaredError) Message() string {
+	return fmt.Sprintf(
+		"the body requires '%s to outlive '%s, but the signature does not declare it; add the bound '%s: '%s",
+		e.Sub, e.Super, e.Sub, e.Super)
+}
+
 // UndeclaredLifetimeError fires when a signature uses a named lifetime that its own
 // `<…>` quantifier list does not bind. A `&'x` borrow or a bound's right-hand side
 // names `'x`, but no `<'x>` binder introduces it, so the name is a forgotten

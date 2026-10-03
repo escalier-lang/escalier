@@ -215,17 +215,17 @@ type ltAnalysis struct {
 	// `peer: &'a mut B` writes 'a once and in an output position, so the elision rule would
 	// drop it and leave the frozen body with nothing for an instance's argument to replace.
 	// Nil for every caller that pins nothing.
-	keepLts  set.Set[*soltype.LifetimeVar]
-	bs       *ltBoundSet  // condensed outlives graph; rep IDs collapse mutual-outlives cycles
-	comp     map[int]int  // representative ID -> connected-component leader ID in bs
-	posComps set.Set[int] // component leaders reaching a positive occurrence
+	keepLts       set.Set[*soltype.LifetimeVar]
+	outlivesGraph *ltBoundSet  // condensed outlives graph; rep IDs collapse mutual-outlives cycles
+	comp          map[int]int  // representative ID -> connected-component leader ID in outlivesGraph
+	posComps      set.Set[int] // component leaders reaching a positive occurrence
 }
 
 // newLtAnalysis builds the grouping from the structurally-occurring lifetime
 // variables. buildLtBoundSet walks each occurring variable's bounds in both
 // directions and condenses every mutual-outlives cycle to one representative, so the
-// grouping runs over a DAG. bs.weakComponents then labels each representative with its
-// connected component. A component leader is marked positive when any
+// grouping runs over a DAG. weakComponents then labels each representative with
+// its connected component. A component leader is marked positive when any
 // structurally-positive lifetime falls in it; that is what keeps a connected param
 // lifetime from being elided.
 //
@@ -240,8 +240,8 @@ func newLtAnalysis(
 	occ map[*soltype.LifetimeVar]occPolarity,
 	noElide set.Set[*soltype.LifetimeVar],
 ) *ltAnalysis {
-	bs := buildLtBoundSet(occ)
-	comp := bs.weakComponents()
+	graph := buildLtBoundSet(occ)
+	comp := graph.weakComponents()
 
 	posComps := set.NewSet[int]()
 	for v, pols := range occ {
@@ -250,10 +250,10 @@ func newLtAnalysis(
 		// both-polarity v still counts. A v that occurs positively reaches an output,
 		// so mark its component leader positive — kept reads this to gate elision.
 		if pols&occPos != 0 {
-			posComps.Add(comp[bs.repOf(v.ID)])
+			posComps.Add(comp[graph.repOf(v.ID)])
 		}
 	}
-	return &ltAnalysis{occ: occ, noElide: noElide, bs: bs, comp: comp, posComps: posComps}
+	return &ltAnalysis{occ: occ, noElide: noElide, outlivesGraph: graph, comp: comp, posComps: posComps}
 }
 
 // isParam reports whether v is a param lifetime: one that originates at a borrow
@@ -265,7 +265,7 @@ func (a *ltAnalysis) isParam(v *soltype.LifetimeVar) bool {
 // leaderOf maps a lifetime variable to its connected-component leader in the condensed
 // graph, mapping through the variable's representative first.
 func (a *ltAnalysis) leaderOf(v *soltype.LifetimeVar) int {
-	return a.comp[a.bs.repOf(v.ID)]
+	return a.comp[a.outlivesGraph.repOf(v.ID)]
 }
 
 // kept reports whether a param lifetime survives elision: its connected component
@@ -293,7 +293,7 @@ func (a *ltAnalysis) componentParams(v *soltype.LifetimeVar) []*soltype.Lifetime
 		if !a.isParam(p) || !a.kept(p) || forcedToStatic(p) {
 			continue
 		}
-		pr := a.bs.repOf(p.ID)
+		pr := a.outlivesGraph.repOf(p.ID)
 		if a.comp[pr] != leader {
 			continue
 		}
@@ -380,7 +380,7 @@ func ltOutlivesRelation(t soltype.Type, pol soltype.Polarity) (*ltAnalysis, []*s
 		return nil, nil, nil
 	}
 	a := newLtAnalysis(occ, noElide)
-	bs := a.bs
+	graph := a.outlivesGraph
 
 	survivors := slices.Collect(maps.Keys(occ))
 	sort.Slice(survivors, func(i, j int) bool { return survivors[i].ID < survivors[j].ID })
@@ -401,20 +401,20 @@ func ltOutlivesRelation(t soltype.Type, pol soltype.Polarity) (*ltAnalysis, []*s
 		}
 		reps := set.NewSet[int]()
 		for _, m := range members {
-			reps.Add(bs.repOf(m.ID))
+			reps.Add(graph.repOf(m.ID))
 		}
 		joinSources[w] = reps
 	}
 
 	outlives := func(u, w *soltype.LifetimeVar) bool {
-		if bs.repOf(u.ID) == bs.repOf(w.ID) {
+		if graph.repOf(u.ID) == graph.repOf(w.ID) {
 			return false
 		}
-		if bs.implies(u.ID, w.ID) {
+		if graph.implies(u.ID, w.ID) {
 			return true
 		}
 		reps, ok := joinSources[w]
-		return ok && reps.Contains(bs.repOf(u.ID))
+		return ok && reps.Contains(graph.repOf(u.ID))
 	}
 	return a, survivors, outlives
 }
@@ -428,7 +428,7 @@ func displayLtBounds(t soltype.Type, pol soltype.Polarity) map[*soltype.Lifetime
 	if outlives == nil {
 		return nil
 	}
-	bs := a.bs
+	graph := a.outlivesGraph
 
 	// edges materializes the full outlives relation among survivors once, so the
 	// transitive reduction below reads it rather than recomputing outlives.
@@ -456,7 +456,7 @@ func displayLtBounds(t soltype.Type, pol soltype.Polarity) map[*soltype.Lifetime
 			// it is not a genuine intermediate.
 			redundant := false
 			for _, w := range survivors {
-				if bs.repOf(w.ID) == bs.repOf(u.ID) || bs.repOf(w.ID) == bs.repOf(v.ID) {
+				if graph.repOf(w.ID) == graph.repOf(u.ID) || graph.repOf(w.ID) == graph.repOf(v.ID) {
 					continue
 				}
 				if edges[u].Contains(w) && edges[w].Contains(v) {
@@ -469,10 +469,10 @@ func displayLtBounds(t soltype.Type, pol soltype.Polarity) map[*soltype.Lifetime
 			}
 			// Two survivors sharing a representative name one lifetime, so keep only the
 			// first to reach it.
-			if seenRep.Contains(bs.repOf(v.ID)) {
+			if seenRep.Contains(graph.repOf(v.ID)) {
 				continue
 			}
-			seenRep.Add(bs.repOf(v.ID))
+			seenRep.Add(graph.repOf(v.ID))
 			direct = append(direct, v)
 		}
 		if len(direct) > 0 {
