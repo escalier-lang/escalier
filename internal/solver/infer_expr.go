@@ -265,6 +265,9 @@ func (c *checker) inferFunc(scope *Scope, lvl int, sig ast.FuncSig, body *ast.Bl
 		// FuncParam below.
 		pat, rest, optional := c.restParamSlot(p, i == len(sig.Params)-1)
 		pt := c.paramType(declScope, p, lvl)
+		// A caller fills the parameter, so the lower bounds the body sees are not all it
+		// can hold.
+		c.markOpenVar(pt)
 		// A generic function in parameter position is a rank-2 callback such as
 		// `g: <V>(x: V) -> V`. Its `<V>` binder is kept on the parameter's FuncType so a
 		// caller's argument is checked against it by skolemizing `V`, and a call to the
@@ -2350,7 +2353,7 @@ func (c *checker) inferIndexAssign(scope *Scope, lvl int, e *ast.BinaryExpr, ix 
 	}
 	// JavaScript evaluates the receiver before the key.
 	recv := c.inferWriteReceiver(scope, lvl, ix.Object)
-	if name, ok := c.indexKeyName(scope, lvl, ix); ok {
+	if name, ok := c.indexKeyName(scope, lvl, ix, recv); ok {
 		return c.inferFieldAssign(lvl, e, ix.Object, name, recv, source, assignStmt)
 	}
 	return c.inferElementAssign(lvl, e, ix, recv, source, assignStmt)
@@ -2436,7 +2439,8 @@ func (c *checker) inferElementAssign(lvl int, e *ast.BinaryExpr, ix *ast.IndexEx
 // elementSlots returns the types a write through access must fit, and whether the slot
 // is `readonly`. An array instance read at a numeric key has one slot, its element type.
 // A tuple read at a literal position has that element, and at `number` every element. An
-// object whose index signature covers the key has the signature's value. ok is false for
+// object whose index signature covers the key has the signature's value, plus each
+// property the key may name. ok is false for
 // any other receiver, which has no element to write, and for a receiver a borrow cannot
 // wrap.
 func (c *checker) elementSlots(access *soltype.IndexType) (slots []soltype.Type, readonly bool, ok bool) {
@@ -2463,11 +2467,44 @@ func (c *checker) elementSlots(access *soltype.IndexType) (slots []soltype.Type,
 			return t.Elems, false, true
 		}
 	case *soltype.ObjectType:
-		if sig, found := c.ctx.indexSignatureFor(t, access.Index, newSeenPairs()); found {
-			return []soltype.Type{sig.Value}, sig.Readonly == soltype.ModAdd, true
+		sig, found := c.ctx.indexSignatureFor(t, access.Index, newSeenPairs())
+		if !found {
+			return nil, false, false
 		}
+		slots, readonly = []soltype.Type{sig.Value}, sig.Readonly == soltype.ModAdd
+		// The key may also land on a property the object names, so the value has to fit
+		// that property too. `o[k] = 1` with `k: string` may write `o.a`.
+		for _, elem := range t.Elems {
+			prop, isProp := elem.(*soltype.PropertyElem)
+			if !isProp || !keyReaches(access.Index, prop.Name) {
+				continue
+			}
+			slots = append(slots, prop.Type)
+			readonly = readonly || prop.Readonly
+		}
+		return slots, readonly, true
 	}
 	return nil, false, false
+}
+
+// keyReaches reports whether a key of type key may name the member called name. A
+// string literal reaches the member it spells, a number literal the member its digits
+// spell, a primitive the members keySetCovers says it covers, and a union whatever one
+// of its members reaches.
+func keyReaches(key soltype.Type, name string) bool {
+	switch key := key.(type) {
+	case *soltype.UnionType:
+		for _, member := range key.Types {
+			if keyReaches(member, name) {
+				return true
+			}
+		}
+		return false
+	case *soltype.PrimType:
+		return keySetCovers(key, name)
+	}
+	keyName, ok := mappedKeyName(key)
+	return ok && keyName == name
 }
 
 // inferAccessorAssign types a write `recv.prop = source` that resolved to an accessor. A
@@ -3342,7 +3379,7 @@ func (c *checker) resolveIndexPath(scope *Scope, lvl int, e *ast.IndexExpr, objP
 		}
 		return c.resolveNamespaceMember(lvl, e, obj.ns, name)
 	}
-	name, ok := c.indexKeyName(scope, lvl, e)
+	name, ok := c.indexKeyName(scope, lvl, e, obj.value)
 	if ok {
 		if !objPos {
 			c.recordMemberUse(e)
@@ -3352,17 +3389,19 @@ func (c *checker) resolveIndexPath(scope *Scope, lvl int, e *ast.IndexExpr, objP
 	return c.dynamicIndexRead(e, obj.value, objPos)
 }
 
-// indexKeyName returns the property name an index key names, and false when the key
-// may name more than one. A string literal, a well-known symbol such as
-// `Symbol.iterator`, and an expression whose type is one string literal each name
-// one property. `val k = "a"` makes `obj[k]` read the property `a`.
+// indexKeyName returns the property name an index key names on a receiver of type recv,
+// and false when the key may name more than one. A string literal, a well-known symbol
+// such as `Symbol.iterator`, and an expression whose type is one string literal each
+// name one property. `val k = "a"` makes `obj[k]` read the property `a`.
 //
-// It infers e.Index unless the key is written as a literal, so a caller reads the key's
-// type afterwards from Info rather than inferring the key a second time.
+// A key whose type is one number literal names the property its digits spell, as
+// `{0: v}` stores under "0", unless the receiver is read by position. `t[0]` reads a
+// tuple's first element, which the structural property read would miss.
 //
-// A number key returns false even when it is a literal. `t[0]` reads a tuple by
-// position, which the structural property read would miss.
-func (c *checker) indexKeyName(scope *Scope, lvl int, e *ast.IndexExpr) (string, bool) {
+// It infers e.Index unless the key is a string literal or a well-known symbol, so a
+// caller reads the key's type afterwards from Info rather than inferring the key a
+// second time.
+func (c *checker) indexKeyName(scope *Scope, lvl int, e *ast.IndexExpr, recv soltype.Type) (string, bool) {
 	if name, ok := constStringKey(e.Index); ok {
 		return name, true
 	}
@@ -3373,7 +3412,32 @@ func (c *checker) indexKeyName(scope *Scope, lvl int, e *ast.IndexExpr) (string,
 	if !ok {
 		return "", false
 	}
-	return strLitName(key)
+	if name, ok := strLitName(key); ok {
+		return name, true
+	}
+	if name, ok := mappedKeyName(key); ok && !c.readsByPosition(recv) {
+		return name, true
+	}
+	return "", false
+}
+
+// readsByPosition reports whether a number key indexes recv by position rather than by
+// property name. A tuple and an array instance are read by position, and so is a
+// receiver boundValueType cannot read, which leaves the access to the evaluator. An
+// object or another class instance is read by name.
+func (c *checker) readsByPosition(recv soltype.Type) bool {
+	t, ok := c.boundValueType(recv)
+	if !ok {
+		return true
+	}
+	switch t := c.memberCarrier(peelBorrows(t)).(type) {
+	case *soltype.ObjectType:
+		return false
+	case *soltype.ClassType:
+		_, isArray := c.ctx.arrayElem(t)
+		return isArray
+	}
+	return true
 }
 
 // dynamicIndexRead resolves `recv[k]` for a key that names no single property, once
@@ -3433,9 +3497,9 @@ func (c *checker) indexAccess(e *ast.IndexExpr, recv soltype.Type) (*soltype.Ind
 // ok is false in three cases:
 //   - A variable on the way has no lower bound, so nothing has yet flowed in to say
 //     what it holds.
-//   - A variable on the way is an unannotated parameter's. A caller passes whatever
-//     its argument is, so the lower bounds the body sees, such as a default's, are not
-//     all the parameter can hold. `fn f(k = "a")` may be called as `f("b")`.
+//   - A variable on the way is in openVars, so its lower bounds are not all it can
+//     hold. An unannotated parameter is one, since `fn f(k = "a")` may be called as
+//     `f("b")`.
 //   - The bounds cycle back to a variable already being resolved.
 func (c *checker) boundValueType(t soltype.Type) (soltype.Type, bool) {
 	return c.boundValueTypeOnPath(t, set.NewSet[*soltype.TypeVarType]())
@@ -3448,7 +3512,7 @@ func (c *checker) boundValueTypeOnPath(t soltype.Type, onPath set.Set[*soltype.T
 	if !ok {
 		return t, true
 	}
-	if onPath.Contains(v) || c.isParamVar(v) {
+	if onPath.Contains(v) || (c.openVars != nil && c.openVars.Contains(v)) {
 		return nil, false
 	}
 	onPath.Add(v)
@@ -3474,11 +3538,16 @@ func (c *checker) boundValueTypeOnPath(t soltype.Type, onPath set.Set[*soltype.T
 	}
 }
 
-// isParamVar reports whether v is the variable inferFunc mints for an unannotated
-// parameter, which it records with ParamBinding provenance.
-func (c *checker) isParamVar(v *soltype.TypeVarType) bool {
-	origin, ok := c.prov[v].(FromAST)
-	return ok && origin.Kind == ParamBinding
+// markOpenVar adds t to openVars when t is a type variable, and does nothing otherwise.
+func (c *checker) markOpenVar(t soltype.Type) {
+	v, ok := t.(*soltype.TypeVarType)
+	if !ok {
+		return
+	}
+	if c.openVars == nil {
+		c.openVars = set.NewSet[*soltype.TypeVarType]()
+	}
+	c.openVars.Add(v)
 }
 
 // resolveNamespaceMember looks name up in ns directly and non-lexically — a
