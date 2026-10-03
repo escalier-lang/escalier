@@ -1288,9 +1288,8 @@ func (c *checker) buildFieldSigs(
 		if !ok {
 			continue
 		}
-		fieldName, ok := objKeyName(field.Name)
+		fieldName, ok := c.memberKeyName(scope, lvl, field.Name)
 		if !ok {
-			c.reportUnsupported(field.Name)
 			continue
 		}
 		var fieldType soltype.Type
@@ -1376,9 +1375,8 @@ func (c *checker) buildMemberSigs(
 	for _, elem := range decl.Body {
 		switch elem := elem.(type) {
 		case *ast.MethodElem:
-			name, ok := objKeyName(elem.Name)
+			name, ok := c.memberKeyName(scope, lvl, elem.Name)
 			if !ok {
-				c.reportUnsupported(elem.Name)
 				continue
 			}
 			c.checkSelfReceiver(name, elem, elem.Static, elem.Receiver)
@@ -1404,9 +1402,8 @@ func (c *checker) buildMemberSigs(
 				},
 			})
 		case *ast.GetterElem:
-			name, ok := objKeyName(elem.Name)
+			name, ok := c.memberKeyName(scope, lvl, elem.Name)
 			if !ok {
-				c.reportUnsupported(elem.Name)
 				continue
 			}
 			c.checkSelfReceiver(name, elem, elem.Static, elem.Receiver)
@@ -1435,9 +1432,8 @@ func (c *checker) buildMemberSigs(
 				},
 			})
 		case *ast.SetterElem:
-			name, ok := objKeyName(elem.Name)
+			name, ok := c.memberKeyName(scope, lvl, elem.Name)
 			if !ok {
-				c.reportUnsupported(elem.Name)
 				continue
 			}
 			c.checkSelfReceiver(name, elem, elem.Static, elem.Receiver)
@@ -1836,7 +1832,7 @@ func (c *checker) checkMethodRecursionAnnotations(decl *ast.ClassDecl) {
 		if !ok || m.Static || m.Fn.Body == nil {
 			continue
 		}
-		name, ok := objKeyName(m.Name)
+		name, ok := c.inferredKeyName(m.Name)
 		if !ok {
 			// buildMemberSigs reports a key naming no member it can represent. This is a
 			// second walk over the same body, so reporting here would double it.
@@ -2143,4 +2139,62 @@ func (c *checker) reportSelfTypeName(kind TypeDeclKind, name *ast.Ident) bool {
 	}
 	c.report(&SelfTypeNameError{Kind: kind, Name: name})
 	return true
+}
+
+// memberKeyName returns the name a class member's key gives it. A written name, a
+// string or number literal, and a well-known symbol such as `[Symbol.iterator]` each
+// name the member directly. Any other computed key `[k]` is inferred, and it names the
+// member its type spells when that type is one string or number literal. So
+// `val bar = "bar"` makes `[bar]: number` the field `bar`. A `Symbol.<name>` key naming no
+// well-known symbol is not inferred, since soltype has no member name for it. ok is false for a key naming
+// no single member, which is reported as unsupported unless inferring the key already
+// reported an error.
+func (c *checker) memberKeyName(scope *Scope, lvl int, key ast.ObjKey) (string, bool) {
+	if name, ok := objKeyName(key); ok {
+		return name, true
+	}
+	if computed, ok := key.(*ast.ComputedKey); ok && !isSymbolMemberKey(computed.Expr) {
+		errsBefore := len(c.errs)
+		c.inferExpr(scope, lvl, computed.Expr)
+		if name, ok := c.inferredKeyName(key); ok {
+			return name, true
+		}
+		if len(c.errs) > errsBefore {
+			// The key expression reported its own error, which already explains the key.
+			return "", false
+		}
+	}
+	c.reportUnsupported(key)
+	return "", false
+}
+
+// inferredKeyName returns the name a member key gives it, reading a computed key's type
+// from Info. It reports nothing, so a walk over a class body after memberKeyName has
+// inferred its keys reads the same names without inferring a key twice. ok is false for
+// a key naming no single member.
+func (c *checker) inferredKeyName(key ast.ObjKey) (string, bool) {
+	if name, ok := objKeyName(key); ok {
+		return name, true
+	}
+	computed, ok := key.(*ast.ComputedKey)
+	if !ok {
+		return "", false
+	}
+	return c.literalKeyName(computed.Expr)
+}
+
+// literalKeyName returns the property name an inferred key expression spells when its
+// type, read through its lower bounds, is one string or number literal. A number names
+// the digits it spells, as `{0: v}` stores under "0". ok is false for any other key and
+// for an expression Info holds no type for.
+func (c *checker) literalKeyName(key ast.Expr) (string, bool) {
+	t := c.info.TypeOf(key)
+	if t == nil {
+		return "", false
+	}
+	ground, ok := boundValueType(t)
+	if !ok {
+		return "", false
+	}
+	return mappedKeyName(ground)
 }

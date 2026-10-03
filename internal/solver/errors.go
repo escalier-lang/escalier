@@ -900,6 +900,15 @@ type DynamicNamespaceIndexError struct {
 	NS    *Namespace
 }
 
+// InvalidObjectKeyError fires when a computed key `[k]` in an object literal has a type
+// that cannot key a property. A property key is a string, a number, or a symbol, so a
+// key such as `true` or `{}` names no property. Key is the offending key expression,
+// which carries the blame span, and KeyType is its type.
+type InvalidObjectKeyError struct {
+	Key     ast.Expr
+	KeyType soltype.Type
+}
+
 // UnsupportedNodeError is the M2-subset guard: an AST node whose KIND is outside
 // the M2 walk's coverage (kind = astKind(Node)). Unlike BodyDeclNotAllowedError
 // this is a temporary scope gate, not a permanent language rule — later milestones
@@ -1270,6 +1279,7 @@ func (*UnknownIdentifierError) isSolverError()              {}
 func (*NamespaceUsedAsValueError) isSolverError()           {}
 func (*UnknownNamespaceMemberError) isSolverError()         {}
 func (*DynamicNamespaceIndexError) isSolverError()          {}
+func (*InvalidObjectKeyError) isSolverError()               {}
 func (*InvalidAssignmentTargetError) isSolverError()        {}
 func (*CannotAssignToImmutableError) isSolverError()        {}
 func (*TooManyArgsError) isSolverError()                    {}
@@ -2575,6 +2585,12 @@ func (e *DynamicNamespaceIndexError) Span() ast.Span      { return e.Index.Span(
 func (e *DynamicNamespaceIndexError) Related() []ast.Span { return nil }
 func (e *DynamicNamespaceIndexError) Message() string {
 	return "Namespace " + e.NS.Name + " can only be indexed by a constant string"
+}
+
+func (e *InvalidObjectKeyError) Span() ast.Span      { return e.Key.Span() }
+func (e *InvalidObjectKeyError) Related() []ast.Span { return nil }
+func (e *InvalidObjectKeyError) Message() string {
+	return "Invalid object key: " + soltype.Print(e.KeyType)
 }
 
 func (e *InvalidAssignmentTargetError) Span() ast.Span      { return e.Target.Span() }
