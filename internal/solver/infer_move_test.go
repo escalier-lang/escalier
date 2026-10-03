@@ -195,6 +195,39 @@ func TestMoveSemantics(t *testing.T) {
 			`,
 			want: []string{"9:6-9:9: use of moved value 'p'"},
 		},
+		// Destructuring moves each part it binds by value, the partial move a field read
+		// makes. b.x moves into x, so reading b whole afterwards reads a moved field.
+		"DestructuringMovesTheBoundField": {
+			src: `
+				fn f() {
+					val b = {x: {v: 1}, y: {v: 2}}
+					val {x} = b
+					val z = b
+				}
+			`,
+			want: []string{"5:14-5:15: use of partially moved value 'b'; field 'b.x' was moved out"},
+		},
+		// A field the pattern does not bind stays with b.
+		"DestructuringLeavesAnUnboundFieldUsable": {
+			src: `
+				fn f() {
+					val b = {x: {v: 1}, y: {v: 2}}
+					val {x} = b
+					val z = b.y
+				}
+			`,
+		},
+		// A tuple element has no field segment, so two leaves of one tuple move the tuple once.
+		"DestructuringATupleMovesItOnce": {
+			src: `
+				fn f() {
+					val b = [{v: 1}, {v: 2}]
+					val [x, y] = b
+					val z = b
+				}
+			`,
+			want: []string{"5:14-5:15: use of moved value 'b'"},
+		},
 		// A value moved on every branch is an unconditional use-after-move at a later
 		// read.
 		"BothBranchesUseAfterMove": {
