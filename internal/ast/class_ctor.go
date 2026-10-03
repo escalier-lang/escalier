@@ -46,18 +46,18 @@ func ImplicitConstructor(decl *ClassDecl) (*ConstructorElem, *FieldElem) {
 
 	// A name a computed key reads cannot also be a parameter, so it is settled first
 	// and the direct-name decision below consults it.
-	keyReads := keyReadNames(decl)
+	freeKeyNames := freeNamesInComputedKeys(decl)
 
 	// Collected before any parameter is built, so a generated name can avoid them.
 	// `class C { _field1: number, "a-b": string }` would otherwise bind `_field1`
 	// twice, a SyntaxError, and assign the first field's value to the second.
 	taken := set.NewSet[string]()
-	for name := range keyReads {
+	for name := range freeKeyNames {
 		taken.Add(name)
 	}
 	for _, bodyElem := range decl.Body {
 		if field, ok := bodyElem.(*FieldElem); ok && takesConstructorParam(field) {
-			if name, direct := directParamName(field.Name, keyReads); direct {
+			if name, direct := directParamName(field.Name, freeKeyNames); direct {
 				taken.Add(name)
 			}
 		}
@@ -76,7 +76,7 @@ func ImplicitConstructor(decl *ClassDecl) (*ConstructorElem, *FieldElem) {
 		var lhs Expr
 		selfRef := NewIdent(selfParamName, fieldSpan)
 
-		if name, direct := directParamName(field.Name, keyReads); direct {
+		if name, direct := directParamName(field.Name, freeKeyNames); direct {
 			paramName = name
 			lhs = NewMember(selfRef, NewIdentifier(name, fieldSpan), false, fieldSpan)
 		} else {
@@ -170,15 +170,15 @@ func stableKeyExpr(expr Expr) bool {
 // stableKeyExpr.
 const symbolGlobalName = "Symbol"
 
-// keyReadNames returns the names this class's computed keys read from the surrounding
-// scope. A parameter cannot bind one of them, since the constructor reads each key after
-// binding its parameters, and a parameter of that name would shadow what the key meant
-// where the class was defined.
+// freeNamesInComputedKeys returns the names this class's computed keys read from the
+// surrounding scope, the free names of those key expressions. A parameter cannot bind
+// one of them, since the constructor reads each key after binding its parameters, and a
+// parameter of that name would shadow what the key meant where the class was defined.
 //
 // Only a free name counts, so `[Symbol.iterator]` contributes `Symbol` and not
 // `iterator`. A property is a name on the object rather than a binding, so a field named
 // `iterator` shadows nothing and keeps its own parameter.
-func keyReadNames(decl *ClassDecl) set.Set[string] {
+func freeNamesInComputedKeys(decl *ClassDecl) set.Set[string] {
 	names := set.NewSet[string]()
 	for _, bodyElem := range decl.Body {
 		field, ok := bodyElem.(*FieldElem)
@@ -212,16 +212,16 @@ func takesConstructorParam(field *FieldElem) bool {
 // directParamName returns the parameter name a key binds under, and reports whether it
 // binds one at all. A key binds its own spelling, so `x: number` arrives in a parameter
 // named `x`. Four kinds bind none: a number, a computed expression, a name
-// canBindParamName rejects, and a name in keyReads. Such a field is assigned by index
-// under a generated name.
+// canBindParamName rejects, and a name in freeKeyNames. Such a field is assigned by
+// index under a generated name.
 //
-// keyReads holds the names this class's computed keys read. Binding one would shadow it
-// for the rest of the constructor, so `class C { k: number, [k]: string }` would store
-// the second field under the first field's value.
+// freeKeyNames comes from freeNamesInComputedKeys. Binding one of those names would
+// shadow it for the rest of the constructor, so `class C { k: number, [k]: string }`
+// would store the second field under the first field's value.
 //
 // An identifier key and a string key are held to the same test, since
 // `class C { class: … }` and `class C { "class": … }` name the same field.
-func directParamName(key ObjKey, keyReads set.Set[string]) (string, bool) {
+func directParamName(key ObjKey, freeKeyNames set.Set[string]) (string, bool) {
 	var name string
 	switch k := key.(type) {
 	case *IdentExpr:
@@ -231,7 +231,7 @@ func directParamName(key ObjKey, keyReads set.Set[string]) (string, bool) {
 	default:
 		return "", false
 	}
-	if !canBindParamName(name) || keyReads.Contains(name) {
+	if !canBindParamName(name) || freeKeyNames.Contains(name) {
 		return "", false
 	}
 	return name, true
