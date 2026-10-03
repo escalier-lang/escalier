@@ -94,6 +94,21 @@ func TestInferIndexRead(t *testing.T) {
 			src:      "val o = {a: 5, b: \"x\"}\nfn f(k = \"a\") { return o[k] }",
 			wantErrs: []string{"2:24-2:28: Unsupported: IndexExpr"},
 		},
+		{
+			name:     "KeyIsADestructuredParameterWithADefault",
+			src:      "val o = {a: 5, b: \"x\"}\nfn f({k = \"a\"}) { return o[k] }",
+			wantErrs: []string{"2:26-2:30: Unsupported: IndexExpr"},
+		},
+		{
+			name:     "KeyIsADestructuredLocalWithADefault",
+			src:      "val o = {a: 5, b: \"x\"}\nfn f(p) { val {k = \"a\"} = p\n return o[k] }",
+			wantErrs: []string{"3:9-3:13: Unsupported: IndexExpr"},
+		},
+		{
+			name: "NumberLiteralKeyOnAnObject",
+			src:  "val o = {[1]: \"one\"}\nval r = o[1]",
+			want: map[string]string{"r": `"one"`},
+		},
 	})
 }
 
@@ -209,6 +224,17 @@ class Foo {
 			wantErrs: []string{"4:42-4:51: Field 'self.bar' is read before it has been initialized."},
 		},
 		{
+			name: "NumberLiteralKey",
+			src: `val k = 0
+class Foo {
+    [k]: number,
+    constructor(&mut self, v: number) { self[k] = v }
+}
+val foo = Foo(5)
+val r = foo[k]`,
+			want: map[string]string{"r": "number"},
+		},
+		{
 			name:     "KeyOfAWideType",
 			src:      "declare val k: string\nclass Foo { [k]: number }",
 			wantErrs: []string{"2:14-2:15: Unsupported: ComputedKey"},
@@ -275,6 +301,12 @@ func TestInferAssignToMemberOrIndex(t *testing.T) {
 			name:     "IndexSignatureSlotOfTheWrongType",
 			src:      "fn f(d: mut {[K: string]?: number}, k: string) { d[k] = \"s\" }",
 			wantErrs: []string{`1:57-1:60: cannot constrain "s" <: number`},
+		},
+		{
+			// A `string` key may name `a` as well as a key the signature covers.
+			name:     "IndexSignatureKeyThatMayNameAProperty",
+			src:      "fn f(o: mut {[K: string]?: number, a: string}, k: string) { o[k] = 1 }",
+			wantErrs: []string{"1:68-1:69: cannot constrain 1 <: string"},
 		},
 		{
 			name:     "ReadonlyIndexSignature",

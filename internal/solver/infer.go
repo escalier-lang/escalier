@@ -70,6 +70,13 @@ type checker struct {
 	// the closure's AST no longer marks it as captured once the pre-pass has run.
 	closureCaptureInfo map[*ast.FuncExpr][]liveness.CaptureInfo
 
+	// openVars holds the variables whose lower bounds are not every value they hold: an
+	// unannotated parameter's, which a caller fills, and a binding with a default, which
+	// holds the default only when nothing else arrives. boundValueType declines to read
+	// one, so `fn f(k = "a")` does not make `o[k]` read `o.a`. It is nil until a variable
+	// is added.
+	openVars set.Set[*soltype.TypeVarType]
+
 	// preludeNames caches the immutable prelude root scope's sorted value names so the
 	// liveness pre-pass collects them once instead of re-walking and re-sorting the
 	// prelude for every function body (M4 G1). preludeNamesRoot is the scope the cache

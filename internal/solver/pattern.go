@@ -1194,6 +1194,9 @@ func (c *checker) applyLeafExtras(scope *Scope, lvl int, node ast.Node, leafType
 		present, narrowed := c.definedMembers(shape)
 		defT := c.inferExpr(scope, lvl, def)
 		c.constrain(def, defT, bound)
+		// The default is the value only when the field is absent, so it is not all the
+		// leaf can hold.
+		c.markOpenVar(bound)
 		if narrowed {
 			bound = newUnion(c.ctx, []soltype.Type{present, defT})
 		}
