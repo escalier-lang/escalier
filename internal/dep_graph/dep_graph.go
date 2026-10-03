@@ -88,45 +88,18 @@ type DepGraph struct {
 	// All namespace names in the module, indexed by NamespaceID.
 	Namespaces []string
 
-	// Imports holds, per namespace, the other namespaces of this module its
-	// imports reach. A reference that resolves to no binding by its own spelling
-	// is retried through it. BuildDepGraph leaves it nil.
-	Imports map[string]NamespaceImports
+	// ImportNamespaces maps a source id to the import bindings that file makes
+	// for packages merged into this module, each naming the namespace the
+	// package's declarations bind under. An entry keyed UnprefixedImport names a
+	// package whose members the file binds under their own names. It is nil for a
+	// module that merges no imported package.
+	ImportNamespaces map[int]map[string]string
 }
 
-// NamespaceImports is what one namespace's imports bind to other namespaces of
-// the same module. A merged package group parses each member under a namespace
-// of its own, so `import "web:streams"` in the `web__fetch` member names the
-// `web__streams` namespace, and the member writes `streams.ReadableStream` for
-// the binding keyed `web__streams.ReadableStream`.
-type NamespaceImports struct {
-	// Aliases maps the name an import binds to the namespace it names, so
-	// `streams` maps to `web__streams`.
-	Aliases map[string]string
-	// Unprefixed lists the namespaces whose members the imports bind under their
-	// own names, so a bare `AbortSignal` reaches `web__core.AbortSignal`.
-	Unprefixed []string
-}
-
-// importedNames returns the qualified names a reference spelled name may stand
-// for through the imports of namespace ns, in the order a lookup tries them.
-func (g *DepGraph) importedNames(ns string, name string) []string {
-	imports, ok := g.Imports[ns]
-	if !ok {
-		return nil
-	}
-	var out []string
-	if head, rest, dotted := strings.Cut(name, "."); dotted {
-		if target, aliased := imports.Aliases[head]; aliased {
-			out = append(out, target+"."+rest)
-		}
-		return out
-	}
-	for _, target := range imports.Unprefixed {
-		out = append(out, target+"."+name)
-	}
-	return out
-}
+// UnprefixedImport is the ImportNamespaces key for an import that binds its
+// package's members bare, the way `import "web:core"` binds `AbortSignal`. No
+// import binds a package under the empty name, so the key cannot collide.
+const UnprefixedImport = ""
 
 // NewDepGraph creates a new DepGraph with initialized empty maps.
 func NewDepGraph(namespaceMap []string) *DepGraph {
@@ -335,6 +308,31 @@ type DependencyVisitor struct {
 	Dependencies     btree.Set[BindingKey]      // Found dependencies
 	LocalScopes      []LocalScope               // Stack of local scopes
 	CurrentNamespace string                     // Current namespace being analyzed
+	// Imports maps the analyzed declaration's file's import bindings to the
+	// namespaces they stand for. See DepGraph.ImportNamespaces.
+	Imports map[string]string
+}
+
+// importedName rewrites a dotted name whose head is one of the file's import
+// bindings to the key the imported declaration binds under, so
+// `weak_ref.WeakKey` becomes `std__weak_ref.WeakKey` when the file's
+// `import "std:weak_ref"` stands for the `std__weak_ref` namespace. A bare name
+// is rewritten under the UnprefixedImport entry, so `AbortSignal` becomes
+// `web__core.AbortSignal`. It returns false for any other name.
+func (v *DependencyVisitor) importedName(name string) (string, bool) {
+	head, rest, dotted := strings.Cut(name, ".")
+	if !dotted {
+		ns, ok := v.Imports[UnprefixedImport]
+		if !ok {
+			return "", false
+		}
+		return ns + "." + name, true
+	}
+	ns, ok := v.Imports[head]
+	if !ok {
+		return "", false
+	}
+	return ns + "." + rest, true
 }
 
 // pushScope adds a new local scope
@@ -405,7 +403,15 @@ func (v *DependencyVisitor) addValueDependency(name string, expr *ast.IdentExpr)
 		return true
 	}
 
-	return v.addImportedDependency(name, ValueBindingKey)
+	if imported, ok := v.importedName(name); ok {
+		key := ValueBindingKey(imported)
+		if v.Graph.HasBinding(key) {
+			v.Dependencies.Insert(key)
+			return true
+		}
+	}
+
+	return false
 }
 
 // addTypeDependency adds a type dependency if it exists in the graph and is not shadowed locally
@@ -431,19 +437,17 @@ func (v *DependencyVisitor) addTypeDependency(typeName string) bool {
 		return true
 	}
 
-	return v.addImportedDependency(typeName, TypeBindingKey)
-}
-
-// addImportedDependency records the first binding the current namespace's
-// imports resolve name to, keyed by toKey, and reports whether it found one.
-func (v *DependencyVisitor) addImportedDependency(name string, toKey func(string) BindingKey) bool {
-	for _, qualified := range v.Graph.importedNames(v.CurrentNamespace, name) {
-		key := toKey(qualified)
+	// Last, a name reached through an import binding. The solver resolves a
+	// dotted name through namespace bindings after its flat keys, and this
+	// follows the same order.
+	if imported, ok := v.importedName(typeName); ok {
+		key := TypeBindingKey(imported)
 		if v.Graph.HasBinding(key) {
 			v.Dependencies.Insert(key)
 			return true
 		}
 	}
+
 	return false
 }
 
@@ -472,7 +476,12 @@ func (v *DependencyVisitor) addSuperclassValueDependency(typeName string) {
 		v.Dependencies.Insert(key)
 		return
 	}
-	v.addImportedDependency(typeName, ValueBindingKey)
+	if imported, ok := v.importedName(typeName); ok {
+		key := ValueBindingKey(imported)
+		if v.Graph.HasBinding(key) {
+			v.Dependencies.Insert(key)
+		}
+	}
 }
 
 // EnterStmt handles statements that introduce new scopes
@@ -707,6 +716,15 @@ func (v *DependencyVisitor) EnterTypeAnn(typeAnn ast.TypeAnn) bool {
 				v.Dependencies.Insert(key)
 				break
 			}
+
+			// Then through an import binding
+			if imported, ok := v.importedName(candidateName); ok {
+				key := ValueBindingKey(imported)
+				if v.Graph.HasBinding(key) {
+					v.Dependencies.Insert(key)
+					break
+				}
+			}
 		}
 		return true
 	case *ast.ObjectTypeAnn:
@@ -891,6 +909,7 @@ func FindDeclDependencies(key BindingKey, graph *DepGraph) btree.Set[BindingKey]
 			Dependencies:     btree.Set[BindingKey]{},
 			CurrentNamespace: currentNamespace,
 			LocalScopes:      make([]LocalScope, 0),
+			Imports:          graph.ImportNamespaces[decl.Span().SourceID],
 		}
 
 		// Create a scope for type parameters
@@ -1115,15 +1134,16 @@ func BuildDepGraph(module *ast.Module) *DepGraph {
 	return BuildDepGraphWithImports(module, nil)
 }
 
-// BuildDepGraphWithImports builds the dependency graph of a module whose
-// namespaces import one another, with imports describing what each namespace's
-// imports bind. A reference that names a binding through one of those imports
-// depends on that binding, so the walk infers it first.
-func BuildDepGraphWithImports(module *ast.Module, imports map[string]NamespaceImports) *DepGraph {
+// BuildDepGraphWithImports is BuildDepGraph for a module that merges imported
+// packages under namespaces of its own. imports maps a source id to that file's
+// import bindings, each naming the namespace its package binds under, so a
+// dotted reference through one records a dependency on the package's
+// declaration. See DepGraph.ImportNamespaces.
+func BuildDepGraphWithImports(module *ast.Module, imports map[int]map[string]string) *DepGraph {
 	// Collect all namespaces from the module
 	namespaceMap := collectNamespaces(module)
 	graph := NewDepGraph(namespaceMap)
-	graph.Imports = imports
+	graph.ImportNamespaces = imports
 
 	// Populate bindings by visiting all declarations
 	PopulateBindings(graph, module)

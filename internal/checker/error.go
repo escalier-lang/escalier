@@ -1,6 +1,7 @@
 package checker
 
 import (
+	"fmt"
 	"strconv"
 	"strings"
 
@@ -86,6 +87,8 @@ func (e TryInConstructorNotSupportedError) isError()        {}
 func (e ClassDoesNotImplementInterfaceError) isError()      {}
 func (e ConflictingInterfaceMembersError) isError()         {}
 func (e CallSignatureNeedsDeclareError) isError()           {}
+func (e TypeParamDefaultForwardRefError) isError()          {}
+func (e DuplicateTypeParamError) isError()                  {}
 func (e ReceiverLifetimeOutsideMemberError) isError()       {}
 func (e OverloadReceiverMutMismatchError) isError()         {}
 
@@ -142,6 +145,8 @@ func (e FieldInitializerNotAllowedError) IsWarning() bool          { return fals
 func (e StaticFieldMissingInitializerError) IsWarning() bool       { return false }
 func (e ComputedKeyFieldRequiresConstructorError) IsWarning() bool { return false }
 func (e SubclassConstructorRequiredError) IsWarning() bool         { return false }
+func (e TypeParamDefaultForwardRefError) IsWarning() bool          { return false }
+func (e DuplicateTypeParamError) IsWarning() bool                  { return false }
 func (e DivergingBodyNonNeverReturnError) IsWarning() bool         { return false }
 func (e FieldNotInitializedError) IsWarning() bool                 { return false }
 func (e ReadBeforeInitError) IsWarning() bool                      { return false }
@@ -1016,6 +1021,17 @@ func (e SubclassConstructorRequiredError) Message() string {
 	return "Subclasses must declare an explicit `constructor` block; constructor synthesis is not supported for classes with an `extends` clause."
 }
 
+// ComputedKeyFieldRequiresConstructorError is reported when a class declares no
+// constructor and a non-optional field's computed key is neither a variable nor a
+// property of `Symbol`. `[makeKey()]` and `[keys.k]` are both reported.
+//
+// A synthesized constructor reads the key once per construction, where JavaScript reads
+// a computed class-member key once, where the class is defined. The two agree only for a
+// key that gives the same value every time. A variable read qualifies because a computed
+// key's type names one property, and `Symbol.<name>` qualifies because a property of the
+// global `Symbol` is a data property. A property read off anything else may be a getter,
+// which is a call, so it needs a constructor the author writes. #1831 retires this by
+// evaluating the key once beside the class.
 type ComputedKeyFieldRequiresConstructorError struct {
 	span ast.Span
 }
@@ -1024,7 +1040,7 @@ func (e ComputedKeyFieldRequiresConstructorError) Span() ast.Span {
 	return e.span
 }
 func (e ComputedKeyFieldRequiresConstructorError) Message() string {
-	return "A class with a non-optional computed-key field cannot have a constructor synthesized; declare an explicit `constructor` block."
+	return "A field whose computed key is neither a variable nor a property of `Symbol` cannot have a constructor synthesized; declare an explicit `constructor` block."
 }
 
 // DivergingBodyNonNeverReturnError is reported when a function body
@@ -1087,4 +1103,47 @@ func (e CallSignatureNeedsDeclareError) Span() ast.Span {
 func (e CallSignatureNeedsDeclareError) Message() string {
 	return "Only a `declare` class can have a call signature, but class '" +
 		e.ClassName + "' has a body"
+}
+
+// TypeParamDefaultForwardRefError is reported when a type parameter's default names the
+// parameter itself or one declared after it, as `type Loop<T = T>` and
+// `type Pair<T = U, U = number>` do.
+//
+// A reference that omits a trailing argument fills it from that parameter's default,
+// substituting the arguments before it. A default is usable only when every parameter it
+// names already has an argument by then, which means only an earlier one.
+//
+// Ref is the offending reference, Param the parameter whose default holds it, and Target
+// the parameter it reaches. The message matches internal/solver's error of the same name,
+// so the two checkers report one thing.
+type TypeParamDefaultForwardRefError struct {
+	Ref    *ast.TypeRefTypeAnn
+	Param  string
+	Target string
+}
+
+func (e TypeParamDefaultForwardRefError) Span() ast.Span { return e.Ref.Span() }
+func (e TypeParamDefaultForwardRefError) Message() string {
+	if e.Param == e.Target {
+		return fmt.Sprintf("the default for type parameter `%s` cannot reference `%s` itself", e.Param, e.Target)
+	}
+	return fmt.Sprintf("the default for type parameter `%s` cannot reference `%s`, which is declared after it", e.Param, e.Target)
+}
+
+// DuplicateTypeParamError is reported when a declaration binds one type-parameter name
+// twice, as `fn f<T, T>(a: T) -> T` does.
+//
+// A reference to the name can only mean one of them, so the second binder is unreachable
+// and a caller has no way to say which parameter an argument fills.
+//
+// Name is the duplicated name and Param the later binder. The message matches
+// internal/solver's error of the same name, so the two checkers report one thing.
+type DuplicateTypeParamError struct {
+	Name  string
+	Param *ast.TypeParam
+}
+
+func (e DuplicateTypeParamError) Span() ast.Span { return e.Param.Span() }
+func (e DuplicateTypeParamError) Message() string {
+	return fmt.Sprintf("type parameter `%s` is declared more than once", e.Name)
 }

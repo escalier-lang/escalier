@@ -9,6 +9,7 @@ import (
 	"github.com/escalier-lang/escalier/internal/dts_parser"
 	"github.com/escalier-lang/escalier/internal/parser"
 	"github.com/escalier-lang/escalier/internal/printer"
+	"github.com/escalier-lang/escalier/internal/snapshot"
 	"github.com/gkampitakis/go-snaps/snaps"
 	"github.com/stretchr/testify/require"
 )
@@ -51,6 +52,16 @@ declare namespace JSON {
 }
 `
 
+// convertSlice converts one `.d.ts` slice and returns the module and its
+// rendered form.
+//
+// It runs ConvertToStandaloneModule, which is one stage of what `generate`
+// does. The passes that run after it on the real path do not run here, so a
+// member's mutability spelling, a twin name's rewrite and a repeated member's
+// removal are all absent from what this returns. That makes this the right
+// level for a recognition rule and the wrong level for asserting what a file
+// in the tree holds. The PartitionLib tests and the generated-tree check cover
+// the latter.
 func convertSlice(t *testing.T, input string) (*StandaloneModule, string) {
 	t.Helper()
 	source := &ast.Source{Path: "test.d.ts", Contents: input, ID: 0}
@@ -956,17 +967,16 @@ declare var Foo: Foo;
 			contains:   []string{"new (s: string) -> Foo", "bar() -> unknown"},
 		},
 		{
-			// TypeScript merges the two declarations, and a map keyed
-			// by name keeps only the last. The construct signature sits
-			// on the first, so reading one declaration per name misses
-			// it and flattens `bar` to a top-level decl.
+			// The two declarations reach conversion as one, and the
+			// construct signature the first carries survives the merge,
+			// so the pair is preserved rather than flattened.
 			//
 			// The `new` returns `HTMLElement` rather than `Foo` so that
-			// detectSingletons' own reference count does not decline
-			// the pair for an unrelated reason. This case has to fail
-			// when the construct-signature scan reads a single
-			// declaration, not merely when it is absent.
-			name: "construct signature on a merged declaration",
+			// detectSingletons' own reference count does not decline the
+			// pair for an unrelated reason. This case has to fail when
+			// the construct signature is lost, not merely when it is
+			// absent from the source.
+			name: "construct signature merged in from another declaration",
 			input: `
 interface Foo {
     new (s: string): HTMLElement;
@@ -976,9 +986,9 @@ interface Foo {
 }
 declare var Foo: Foo;
 `,
-			interfaces: 2,
+			interfaces: 1,
 			vars:       1,
-			contains:   []string{"new (s: string) -> HTMLElement"},
+			contains:   []string{"new (s: string) -> HTMLElement", "bar() -> unknown"},
 		},
 	}
 
@@ -1230,21 +1240,15 @@ export declare var widgetCount: number
 	require.Len(t, parsedDecls, 3)
 }
 
-// A trio whose instance name is already declared by a `declare class`
-// is left alone, so the converter does not add a second class beside
-// the one the source spells out. `lib.esnext.iterator.d.ts` writes
-// `Iterator` that way: an abstract class at module scope, and
-// `IteratorConstructor` plus the binding inside its `declare global`
-// block.
+// TypeScript merges a class with a same-named interface, so a name declared both
+// ways has one instance side: the class, with the interface's members folded in.
+// A `FooConstructor` and its binding then become the class's statics, the same
+// way they do for a name declared only as an interface.
 //
-// The snapshot asserts current behaviour, not the right answer. TypeScript
-// merges `interface Foo` into `class Foo`, so what this input means is
-// one class carrying `next` and `peek` as instance members and `from`
-// as a static. mergeDecls folds an interface into an interface and not
-// into a class, so the pair stays split whether or not the trio fuses,
-// and declining only keeps the split from getting wider. #1430 covers
-// the merge and takes this guard out with it.
-func TestStandalone_TrioDeclinedWhenNameIsAlreadyAClass(t *testing.T) {
+// `lib.esnext.iterator.d.ts` writes `Iterator` this way: an abstract class at
+// module scope, and `IteratorConstructor` plus the binding inside its
+// `declare global` block.
+func TestStandalone_ClassAbsorbsItsInterfaceAndConstructorSide(t *testing.T) {
 	const slice = `
 declare abstract class Foo {
     next(): string;
@@ -1263,25 +1267,466 @@ declare var Foo: FooConstructor;
 	_, printed := convertSlice(t, slice)
 	snaps.MatchInlineSnapshot(t, printed, snaps.Inline(`@js("Foo")
 export declare class Foo {
-    next(&mut self) -> string
+    next(&mut self) -> string,
+    peek(&mut self) -> string,
+    static from(s: string) -> Foo
 }
-
-export declare interface Foo {
-    peek() -> string
-}
-
-export declare interface FooConstructor {
-    from(s: string) -> Foo
-}
-
-@js("Foo")
-export declare var Foo: FooConstructor
 `))
 
 	parsedDecls, parseErrs := parser.ParseDecls(context.Background(),
 		&ast.Source{Path: "out.esc", Contents: printed, ID: 1})
 	require.Empty(t, parseErrs, "printed output parses")
-	require.Len(t, parsedDecls, 4)
+	require.Len(t, parsedDecls, 1)
+}
+
+// A class and a same-named interface merge whether or not a constructor side
+// exists. The class is what survives, wherever it stands relative to the
+// interface, since it carries what an interface cannot. The interface's members
+// read the class's type parameter names.
+func TestStandalone_ClassAbsorbsAnInterfaceDeclaredBeforeIt(t *testing.T) {
+	const slice = `
+interface Foo<T> {
+    peek(): T;
+}
+
+declare class Foo<U> {
+    constructor(value: U);
+    next(): U;
+}
+`
+	_, printed := convertSlice(t, slice)
+	snaps.MatchInlineSnapshot(t, printed, snaps.Inline(`@js("Foo")
+export declare class Foo<U> {
+    constructor(&mut self, value: U),
+    next(&mut self) -> U,
+    peek(&mut self) -> U
+}
+`))
+
+	parsedDecls, parseErrs := parser.ParseDecls(context.Background(),
+		&ast.Source{Path: "out.esc", Contents: printed, ID: 1})
+	require.Empty(t, parseErrs, "printed output parses")
+	require.Len(t, parsedDecls, 1)
+}
+
+// A `new` on an interface merged into a class says instances can themselves
+// construct, which is not the class's own constructor, so it is dropped. A call
+// signature there says instances are callable, which no class elem expresses,
+// so the pair stays split and the interface keeps it.
+func TestStandalone_ClassMergeSkipsInstanceSideSignatures(t *testing.T) {
+	tests := map[string]struct {
+		slice string
+		want  string
+	}{
+		"ConstructSignature": {
+			slice: `
+declare class Foo {
+    next(): string;
+}
+
+interface Foo {
+    new (s: string): Foo;
+    peek(): string;
+}
+`,
+			want: `@js("Foo")
+export declare class Foo {
+    next(&mut self) -> string,
+    peek(&mut self) -> string
+}
+`,
+		},
+		"CallSignature": {
+			slice: `
+declare class Foo {
+    next(): string;
+}
+
+interface Foo {
+    (s: string): string;
+}
+`,
+			want: `@js("Foo")
+export declare class Foo {
+    next(&mut self) -> string
+}
+
+export declare interface Foo {
+    (s: string) -> string
+}
+`,
+		},
+	}
+
+	for name, test := range tests {
+		t.Run(name, func(t *testing.T) {
+			_, printed := convertSlice(t, test.slice)
+			require.Equal(t, test.want, printed)
+		})
+	}
+}
+
+// Escalier's `Promise` and `Generator` take a raise parameter the TypeScript
+// declaration has no slot for. The parameter has to arrive whichever kind of
+// declaration declares the name, or the emitted arity would depend on whether
+// some other declaration happened to name it too.
+//
+// The pinned lib set declares these names as interfaces, so a class form
+// reaches the converter only through an input written by hand. A reference in
+// an instance member names `E`, and one in a static leaves the argument off,
+// since a static binds none of the class's type parameters.
+func TestStandalone_ClassTakesTheRaiseParameter(t *testing.T) {
+	tests := map[string]struct {
+		slice string
+		want  string
+	}{
+		"BareClass": {
+			slice: `
+declare class Promise<T> {
+    then(): Promise<T>;
+    static resolve(): Promise<void>;
+}
+`,
+			want: `@js("Promise")
+export declare class Promise<T, E = never> {
+    then(&self) -> Promise<T, E>,
+    static resolve() -> Promise<undefined>
+}
+`,
+		},
+		"ClassMergedWithAnInterface": {
+			slice: `
+declare class Promise<T> {
+    then(): Promise<T>;
+}
+
+interface Promise<T> {
+    finally(): Promise<T>;
+}
+`,
+			want: `@js("Promise")
+export declare class Promise<T, E = never> {
+    then(&self) -> Promise<T, E>,
+    finally(&self) -> Promise<T, E>
+}
+`,
+		},
+	}
+
+	for name, test := range tests {
+		t.Run(name, func(t *testing.T) {
+			_, printed := convertSlice(t, test.slice)
+			require.Equal(t, test.want, printed)
+
+			parsedDecls, parseErrs := parser.ParseDecls(context.Background(),
+				&ast.Source{Path: "out.esc", Contents: printed, ID: 1})
+			require.Empty(t, parseErrs, "printed output parses")
+			require.NotEmpty(t, parsedDecls)
+		})
+	}
+}
+
+// A name declared more than once reaches conversion as one declaration,
+// whichever kind of instance side it has. Without the merge, detectTrios
+// resolves each name through a single entry. The walk then emits a fused class
+// per matching statement, and the constructor side keeps only the last
+// declaration's members.
+//
+// PartitionLibWithOverlay merges each bucket before converting it, so the
+// generated tree reaches neither outcome. Merging inside the conversion means a
+// caller cannot reach one by skipping that step.
+func TestStandalone_SameNameDeclarationsConvertAsOne(t *testing.T) {
+	tests := map[string]struct {
+		slice string
+		want  string
+	}{
+		"InterfaceInstanceSide": {
+			slice: `
+interface Foo {
+    next(): string;
+}
+
+interface Foo {
+    peek(): string;
+}
+
+interface FooConstructor {
+    fromA(s: string): Foo;
+}
+
+interface FooConstructor {
+    fromB(s: string): Foo;
+}
+
+declare var Foo: FooConstructor;
+`,
+			want: `@js("Foo")
+export declare class Foo {
+    next(&mut self) -> string,
+    peek(&mut self) -> string,
+    static fromA(s: string) -> Foo,
+    static fromB(s: string) -> Foo
+}
+`,
+		},
+		"ClassInstanceSide": {
+			slice: `
+declare class Foo {
+    next(): string;
+}
+
+interface Foo {
+    peek(): string;
+}
+
+interface Foo {
+    poke(): string;
+}
+
+interface FooConstructor {
+    fromA(s: string): Foo;
+}
+
+interface FooConstructor {
+    fromB(s: string): Foo;
+}
+
+declare var Foo: FooConstructor;
+`,
+			want: `@js("Foo")
+export declare class Foo {
+    next(&mut self) -> string,
+    peek(&mut self) -> string,
+    poke(&mut self) -> string,
+    static fromA(s: string) -> Foo,
+    static fromB(s: string) -> Foo
+}
+`,
+		},
+	}
+
+	for name, test := range tests {
+		t.Run(name, func(t *testing.T) {
+			_, printed := convertSlice(t, test.slice)
+			require.Equal(t, test.want, printed)
+
+			parsedDecls, parseErrs := parser.ParseDecls(context.Background(),
+				&ast.Source{Path: "out.esc", Contents: printed, ID: 1})
+			require.Empty(t, parseErrs, "printed output parses")
+			require.Len(t, parsedDecls, 1)
+		})
+	}
+}
+
+// ConvertToStandaloneModule merges same-named declarations without modifying the
+// parsed module it is given. Each case merges declarations whose type parameter
+// names differ, so the rename that reads them against the first declaration's
+// parameters has to happen on a copy as well. Converting the module a second
+// time produces the same output as the first.
+func TestStandalone_ConversionLeavesItsInputUnchanged(t *testing.T) {
+	tests := map[string]string{
+		"InterfaceTrio": `
+interface Foo<T> {
+    a(): T;
+}
+
+interface Foo<U> {
+    b(): U;
+}
+
+interface FooConstructor {
+    make(): Foo<number>;
+}
+
+declare var Foo: FooConstructor;
+`,
+		"ClassAndInterface": `
+declare class Bar<T> {
+    x(): T;
+}
+
+interface Bar<U> {
+    y(): U;
+}
+`,
+		"Namespaces": `
+declare namespace NS {
+    interface Baz<T> {
+        a(): T;
+    }
+}
+
+declare namespace NS {
+    interface Baz<U> {
+        b(): U;
+    }
+}
+`,
+	}
+
+	for name, input := range tests {
+		t.Run(name, func(t *testing.T) {
+			source := &ast.Source{Path: "test.d.ts", Contents: input, ID: 0}
+			dtsModule, errs := dts_parser.NewDtsParser(source).ParseModule()
+			require.Empty(t, errs, "dts parse errors")
+			before := snapshot.String(dtsModule)
+
+			first, err := ConvertToStandaloneModule(dtsModule, nil)
+			require.NoError(t, err)
+			firstOut, err := RenderStandaloneModule(first)
+			require.NoError(t, err)
+			require.Equal(t, before, snapshot.String(dtsModule))
+
+			second, err := ConvertToStandaloneModule(dtsModule, nil)
+			require.NoError(t, err)
+			secondOut, err := RenderStandaloneModule(second)
+			require.NoError(t, err)
+			require.Equal(t, firstOut, secondOut)
+		})
+	}
+}
+
+// A merged interface's supertypes split the way an interface instance side's
+// do. One that converts to a class fills `extends` when the class writes none,
+// and the rest join `implements`. The class's own `extends` wins, so a merged
+// class supertype beside it is demoted and recorded.
+func TestStandalone_ClassTakesAMergedInterfacesSupertypes(t *testing.T) {
+	tests := map[string]struct {
+		slice   string
+		want    string
+		demoted []DemotedBase
+	}{
+		"InterfaceSupertype": {
+			slice: `
+interface Base {
+    id: number;
+}
+
+declare abstract class Foo {
+    next(): string;
+}
+
+interface Foo extends Base {
+    peek(): string;
+}
+`,
+			want: `export declare interface Base {
+    id: number
+}
+
+@js("Foo")
+export declare class Foo implements Base {
+    next(&mut self) -> string,
+    peek(&mut self) -> string
+}
+`,
+		},
+		"ClassSupertypeAndClassWritesNone": {
+			slice: `
+declare class Base {
+    id: number;
+}
+
+declare abstract class Foo {
+    next(): string;
+}
+
+interface Foo extends Base {
+    peek(): string;
+}
+`,
+			want: `@js("Base")
+export declare class Base {
+    id: number
+}
+
+@js("Foo")
+export declare class Foo extends Base {
+    next(&mut self) -> string,
+    peek(&mut self) -> string
+}
+`,
+		},
+		"ClassSupertypeAndClassWritesOne": {
+			slice: `
+declare class Base {
+    id: number;
+}
+
+declare class Other {
+    tag: string;
+}
+
+declare class Foo extends Other {
+    next(): string;
+}
+
+interface Foo extends Base {
+    peek(): string;
+}
+`,
+			want: `@js("Base")
+export declare class Base {
+    id: number
+}
+
+@js("Other")
+export declare class Other {
+    tag: string
+}
+
+@js("Foo")
+export declare class Foo extends Other implements Base {
+    next(&mut self) -> string,
+    peek(&mut self) -> string
+}
+`,
+			demoted: []DemotedBase{{Class: "Foo", Kept: "Other", Demoted: "Base"}},
+		},
+		// A supertype the class already names is not listed a second time.
+		"RestatedSupertypes": {
+			slice: `
+interface Mixin {
+    id: number;
+}
+
+declare class Base {
+    tag: string;
+}
+
+declare class Foo extends Base implements Mixin {
+    next(): string;
+}
+
+interface Foo extends Base, Mixin {
+    peek(): string;
+}
+`,
+			want: `export declare interface Mixin {
+    id: number
+}
+
+@js("Base")
+export declare class Base {
+    tag: string
+}
+
+@js("Foo")
+export declare class Foo extends Base implements Mixin {
+    next(&mut self) -> string,
+    peek(&mut self) -> string
+}
+`,
+		},
+	}
+
+	for name, test := range tests {
+		t.Run(name, func(t *testing.T) {
+			mod, printed := convertSlice(t, test.slice)
+			require.Equal(t, test.want, printed)
+			require.Equal(t, test.demoted, mod.DemotedBases)
+		})
+	}
 }
 
 // lib.dom.d.ts writes the constructor side inline on the binding rather

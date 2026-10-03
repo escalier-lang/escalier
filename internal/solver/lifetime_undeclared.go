@@ -29,7 +29,7 @@ import (
 //
 // Recovery is left to namedLifetime, which mints a fresh lifetime for an undeclared name
 // so the signature stays well-formed. This scan only reports; it changes no resolution.
-func (c *checker) checkLifetimeDeclarations(lifetimeParams []*ast.LifetimeParam, params []*ast.Param, ret, throws ast.TypeAnn) {
+func (c *checker) checkLifetimeDeclarations(lifetimeParams []*ast.LifetimeParam, recv *ast.MethodReceiver, params []*ast.Param, ret, throws ast.TypeAnn) {
 	// declared maps each binder name to its first binder node, the node the unused-binder
 	// scan blames. declaredOrder is the deduplicated first-appearance order, which drives
 	// deterministic suggestions and a single unused report per name even when a name is
@@ -55,6 +55,12 @@ func (c *checker) checkLifetimeDeclarations(lifetimeParams []*ast.LifetimeParam,
 	// Collect every named-lifetime use in the signature's borrows and bound right-hand
 	// sides.
 	var col lifetimeUseCollector
+	// A receiver's `&'a self` is a use like a parameter's `&'a T`.
+	if recv != nil {
+		if lt, ok := recv.Lifetime.(*ast.LifetimeAnn); ok {
+			col.uses = append(col.uses, lt)
+		}
+	}
 	for _, p := range params {
 		if p.TypeAnn != nil {
 			p.TypeAnn.Accept(&col)

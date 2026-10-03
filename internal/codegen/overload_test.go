@@ -16,6 +16,10 @@ import (
 // parser and codegen without the checker in between, which is what lets a class
 // declaring two constructors be exercised here — internal/checker still reports that
 // as unsupported, so such a class never reaches codegen through the build path.
+//
+// A class that declares no constructor still emits the one it gets implicitly, because
+// codegen derives that element from the declared fields rather than reading one a
+// checker installed. A fieldless class therefore emits an empty `constructor() {}`.
 func buildSource(t *testing.T, src string) string {
 	t.Helper()
 	ctx, cancel := context.WithTimeout(context.Background(), 1*time.Second)
@@ -50,6 +54,8 @@ func TestBuildOverloadedMethod(t *testing.T) {
 			grow(&mut self, d: number, e: number) -> number { return d + e },
 		}`)
 	require.Equal(t, `export class Box {
+  constructor() {
+  }
   grow(param0, param1) {
     if (arguments.length === 2 && typeof param0 === "number" && typeof param1 === "number") {
       const d = param0;
@@ -207,6 +213,8 @@ func TestBuildOverloadArmRestParameter(t *testing.T) {
 			grow(&mut self, d: number, e: number) -> number { return d + e },
 		}`)
 	require.Equal(t, `export class Box {
+  constructor() {
+  }
   grow(param0, param1) {
     if (arguments.length === 2 && typeof param0 === "number" && typeof param1 === "number") {
       const d = param0;
@@ -231,6 +239,8 @@ func TestBuildOverloadArmRestParameterAfterAFixedOne(t *testing.T) {
 			grow(&mut self, d: number, e: number) -> number { return d + e },
 		}`)
 	require.Equal(t, `export class Box {
+  constructor() {
+  }
   grow(param0, param1) {
     if (arguments.length >= 1 && typeof param0 === "string" && Array.prototype.every.call(arguments, function (elem, index) {
       return index < 1 || typeof elem === "number";
@@ -258,6 +268,8 @@ func TestBuildOverloadArmsTestArgumentCount(t *testing.T) {
 			grow(&mut self, d?: number) -> number { return 1 },
 		}`)
 	require.Equal(t, `export class Box {
+  constructor() {
+  }
   grow(param0) {
     if (arguments.length === 1 && typeof param0 === "number") {
       const d = param0;

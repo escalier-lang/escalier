@@ -6,6 +6,7 @@ import (
 	"maps"
 	"os"
 	"path/filepath"
+	"slices"
 	"sort"
 	"strings"
 
@@ -157,9 +158,10 @@ func PartitionLibWithOverlay(inputs []LibInput, overlay *Overlay) (*PartitionRes
 	return out, nil
 }
 
-// renameTypeParams rewrites decl's type-parameter names to keep, matched
-// by position, so decl's members and `extends` clause read against the
-// merged declaration's parameters.
+// withTypeParamsRenamed returns decl with its type-parameter names rewritten
+// to keep, matched by position, so its members and `extends` clause read
+// against the merged declaration's parameters. It returns decl itself when no
+// name differs, and otherwise a deep copy, so decl is never modified.
 //
 // Merged declarations of one interface may name their parameters
 // differently, and mergeDecls keeps the first's: `Iterator<T, TReturn,
@@ -171,7 +173,10 @@ func PartitionLibWithOverlay(inputs []LibInput, overlay *Overlay) (*PartitionRes
 // A parameter past keep's arity is left alone. Arity is equal across
 // every merged pair in the pinned corpus, and renaming past the end
 // would invent a binding rather than resolve one.
-func renameTypeParams(decl *dts_parser.InterfaceDecl, keep []*dts_parser.TypeParam) {
+func withTypeParamsRenamed(
+	decl *dts_parser.InterfaceDecl,
+	keep []*dts_parser.TypeParam,
+) *dts_parser.InterfaceDecl {
 	renames := map[string]string{}
 	for i, tp := range decl.TypeParams {
 		if i >= len(keep) || tp.Name.Name == keep[i].Name.Name {
@@ -180,8 +185,9 @@ func renameTypeParams(decl *dts_parser.InterfaceDecl, keep []*dts_parser.TypePar
 		renames[tp.Name.Name] = keep[i].Name.Name
 	}
 	if len(renames) == 0 {
-		return
+		return decl
 	}
+	decl = deepCopy(decl)
 	rename := func(t dts_parser.TypeAnn) {
 		walkTypeRefs(t, func(ref *dts_parser.TypeReference) {
 			id, ok := ref.Name.(*dts_parser.Ident)
@@ -194,12 +200,8 @@ func renameTypeParams(decl *dts_parser.InterfaceDecl, keep []*dts_parser.TypePar
 		})
 	}
 	for _, tp := range decl.TypeParams {
-		if tp.Constraint != nil {
-			rename(tp.Constraint)
-		}
-		if tp.Default != nil {
-			rename(tp.Default)
-		}
+		rename(tp.Constraint)
+		rename(tp.Default)
 	}
 	for _, ext := range decl.Extends {
 		rename(ext)
@@ -207,25 +209,36 @@ func renameTypeParams(decl *dts_parser.InterfaceDecl, keep []*dts_parser.TypePar
 	for _, m := range decl.Members {
 		walkInterfaceMemberTypes(m, rename)
 	}
+	return decl
 }
 
-// adoptTypeParamClauses copies a default or constraint from each parameter
-// in from to the parameter at the same position in keep, when the one in
-// keep has none. A default or constraint keep already has is left alone.
-// from must already use keep's parameter names, which is what
-// renameTypeParams arranges.
-func adoptTypeParamClauses(keep, from []*dts_parser.TypeParam) {
-	for i, tp := range from {
-		if i >= len(keep) {
-			return
+// withDefaultsFilled returns keep with each parameter that has no default
+// taking the default of the parameter in the same position of other. It
+// returns keep itself when other supplies nothing new, and never modifies
+// keep.
+//
+// TypeScript lets any one declaration of a merged interface give a parameter
+// its default. lib.es5.d.ts writes `Int32Array<TArrayBuffer extends
+// ArrayBufferLike = ArrayBufferLike>` and lib.es2015.core.d.ts writes the same
+// parameter with no default, so the merged parameter has to take it from
+// whichever declaration wrote it.
+func withDefaultsFilled(keep, other []*dts_parser.TypeParam) []*dts_parser.TypeParam {
+	var out []*dts_parser.TypeParam
+	for i, tp := range keep {
+		if tp.Default != nil || i >= len(other) || other[i].Default == nil {
+			continue
 		}
-		if keep[i].Constraint == nil {
-			keep[i].Constraint = tp.Constraint
+		if out == nil {
+			out = slices.Clone(keep)
 		}
-		if keep[i].Default == nil {
-			keep[i].Default = tp.Default
-		}
+		filled := *tp
+		filled.Default = other[i].Default
+		out[i] = &filled
 	}
+	if out == nil {
+		return keep
+	}
+	return out
 }
 
 // topLevelName returns the addressable name of a top-level statement,
@@ -366,9 +379,7 @@ func liftGlobals(stmts []dts_parser.Statement) []dts_parser.Statement {
 // NamespaceDecl entries collapse into a single NamespaceDecl whose
 // Statements is the concatenation (then recursively merged). The
 // first occurrence's doc, span, and type-params are kept; later
-// duplicates' metadata is dropped, except that a type parameter the
-// first occurrence leaves without a default or constraint takes the
-// one a later occurrence gives it. See adoptTypeParamClauses.
+// duplicates' metadata is dropped.
 //
 // This is how the converter handles the canonical TS-shipping pattern
 // where the *same* interface is declared across multiple `lib.*.d.ts`
@@ -403,6 +414,10 @@ func liftGlobals(stmts []dts_parser.Statement) []dts_parser.Statement {
 //
 // Statement order is preserved by keeping each merged entry at its
 // first occurrence's index.
+//
+// The statements passed in are left unmodified. A merged interface or
+// namespace is a new declaration in the result, so converting one parsed
+// module twice produces the same output both times.
 func mergeDecls(stmts []dts_parser.Statement) []dts_parser.Statement {
 	out := make([]dts_parser.Statement, 0, len(stmts))
 	ifaceIdx := make(map[string]int) // name → index into out
@@ -412,20 +427,17 @@ func mergeDecls(stmts []dts_parser.Statement) []dts_parser.Statement {
 		case *dts_parser.InterfaceDecl:
 			if i, ok := ifaceIdx[s.Name.Name]; ok {
 				existing := out[i].(*dts_parser.InterfaceDecl)
-				renameTypeParams(s, existing.TypeParams)
-				// TypeScript lets one declaration of a merged interface write a
-				// default the others omit. `lib.es2015.core.d.ts` declares
-				// `Uint8Array<TArrayBuffer extends ArrayBufferLike>` and sorts
-				// ahead of `lib.es5.d.ts`, which adds `= ArrayBufferLike`.
-				// Without this the merged class requires its argument.
-				adoptTypeParamClauses(existing.TypeParams, s.TypeParams)
-				existing.Members = append(existing.Members, s.Members...)
+				renamed := withTypeParamsRenamed(s, existing.TypeParams)
+				merged := *existing
+				merged.TypeParams = withDefaultsFilled(existing.TypeParams, renamed.TypeParams)
+				merged.Members = append(slices.Clone(existing.Members), renamed.Members...)
 				// Extends is concatenated without structural dedup. In
 				// practice, TS lib augmentation files add members, not
 				// extends clauses, so duplicates do not arise from the
 				// pinned corpus. If that ever changes, dedup here on a
 				// printed form of the TypeAnn.
-				existing.Extends = append(existing.Extends, s.Extends...)
+				merged.Extends = append(slices.Clone(existing.Extends), renamed.Extends...)
+				out[i] = &merged
 				continue
 			}
 			ifaceIdx[s.Name.Name] = len(out)
@@ -433,7 +445,9 @@ func mergeDecls(stmts []dts_parser.Statement) []dts_parser.Statement {
 		case *dts_parser.NamespaceDecl:
 			if i, ok := nsIdx[s.Name.Name]; ok {
 				existing := out[i].(*dts_parser.NamespaceDecl)
-				existing.Statements = append(existing.Statements, s.Statements...)
+				merged := *existing
+				merged.Statements = append(slices.Clone(existing.Statements), s.Statements...)
+				out[i] = &merged
 				continue
 			}
 			nsIdx[s.Name.Name] = len(out)
@@ -443,9 +457,11 @@ func mergeDecls(stmts []dts_parser.Statement) []dts_parser.Statement {
 		}
 	}
 	// Recursively merge inside namespaces.
-	for _, stmt := range out {
+	for i, stmt := range out {
 		if ns, ok := stmt.(*dts_parser.NamespaceDecl); ok {
-			ns.Statements = mergeDecls(ns.Statements)
+			merged := *ns
+			merged.Statements = mergeDecls(ns.Statements)
+			out[i] = &merged
 		}
 	}
 	return out
@@ -542,6 +558,13 @@ func convertFusedBucket(
 // signatures print identically and the fourth does not. Printing also
 // keeps the comparison off spans, which differ between two lib files
 // declaring the same signature.
+//
+// A field or property is keyed by its slot instead. It cannot overload, so a
+// second one of the same name is a restatement however it prints. TypeScript
+// requires the restated type to be identical, but two identical types can
+// still print differently. `formatMatcher` on `Intl.DateTimeFormatOptions` is
+// `"best fit" | "basic" | undefined` in lib.es5.d.ts and `"basic" | "best
+// fit" | "best fit" | undefined` in lib.es2021.intl.d.ts.
 func dedupeMembers(mod *StandaloneModule) error {
 	var err error
 	mod.Module.Namespaces.Scan(func(_ string, ns *ast.Namespace) bool {
@@ -549,6 +572,11 @@ func dedupeMembers(mod *StandaloneModule) error {
 			switch d := decl.(type) {
 			case *ast.ClassDecl:
 				d.Body, err = dedupeBy(d.Body, func(e ast.ClassElem) (string, error) {
+					if _, isField := e.(*ast.FieldElem); isField {
+						if slot, ok := classElemSlot(e); ok {
+							return fmt.Sprintf("%+v", slot), nil
+						}
+					}
 					return printer.PrintClassElem(e, printer.DefaultOptions())
 				})
 			case *ast.InterfaceDecl:
@@ -557,6 +585,11 @@ func dedupeMembers(mod *StandaloneModule) error {
 				}
 				d.TypeAnn.Elems, err = dedupeBy(d.TypeAnn.Elems,
 					func(e ast.ObjTypeAnnElem) (string, error) {
+						if _, isProp := e.(*ast.PropertyTypeAnn); isProp {
+							if slot, ok := objElemSlot(e); ok {
+								return fmt.Sprintf("%+v", slot), nil
+							}
+						}
 						return printer.PrintObjTypeAnnElem(e, printer.DefaultOptions())
 					})
 			}

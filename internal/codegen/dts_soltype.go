@@ -46,6 +46,12 @@ type solTypeAnnBuilder struct {
 	// recursiveNames maps a knot's binder id to the name its companion declares,
 	// so a reference back to the binder resolves to that name.
 	recursiveNames map[int]string
+	// signatureParams are the declaration's own type parameters, in declaration order,
+	// for a render where each signature writes the binders for the ones it holds. A
+	// class's parameters arrive here. TypeScript has no generic `const`, so
+	// `declare const Box: {new <T>(v: T): Box<T>}` binds `T` on the constructor rather
+	// than beside the value. bindOnSignatures fills this, and a nil slice binds nothing.
+	signatureParams []*soltype.TypeParam
 }
 
 // newSolTypeAnnBuilder returns a renderer for one declaration. typeParams are
@@ -85,6 +91,14 @@ func (b *solTypeAnnBuilder) bindTypeParams(typeParams []*soltype.TypeParam) {
 		}
 		b.typeParamNames[tp.Var] = tp.Name
 	}
+}
+
+// bindOnSignatures registers typeParams as the declaration's own, to be bound by whichever
+// signature in the rendered type holds every occurrence of one. It is the alternative to
+// newSolTypeAnnBuilder's typeParams argument, which treats a parameter as already bound by
+// the declaration being rendered.
+func (b *solTypeAnnBuilder) bindOnSignatures(typeParams []*soltype.TypeParam) {
+	b.signatureParams = typeParams
 }
 
 // render is the entry point for a whole type. Counting occurrences first is what
@@ -633,10 +647,17 @@ func (b *solTypeAnnBuilder) funcTypeToParams(funcType *soltype.FuncType) []*Para
 			// `...` on the binding itself.
 			pattern = NewRestPat(pattern, nil)
 		}
+		typeAnn := b.typeAnn(param.Type)
+		if fnType, ok := param.Type.(*soltype.FuncType); ok {
+			// A callback whose result the callee discards takes a `void` return,
+			// which TypeScript lets a caller fill with a function returning
+			// anything.
+			undefinedReturnAsVoid(typeAnn.(*FuncTypeAnn), fnType.Ret)
+		}
 		params[i] = &Param{
 			Pattern:  pattern,
 			Optional: param.Optional,
-			TypeAnn:  b.typeAnn(param.Type),
+			TypeAnn:  typeAnn,
 		}
 	}
 	return params
@@ -692,6 +713,14 @@ func (b *solTypeAnnBuilder) funcTypeAnn(funcType *soltype.FuncType) FuncTypeAnn 
 	}
 }
 
+// undefinedReturnAsVoid sets fn's return to `void` when ret, the return type fn
+// was rendered from, is `undefined`. Any other return is left as rendered.
+func undefinedReturnAsVoid(fn *FuncTypeAnn, ret soltype.Type) {
+	if _, ok := ret.(*soltype.UndefinedType); ok {
+		fn.Return = NewVoidTypeAnn(nil)
+	}
+}
+
 // declFuncTypeAnn renders funcType for a declaration that spells its signature out,
 // such as `declare function f<T0>(x: T0): T0`. render seeds the occurrence counts a
 // signature reads to tell a variable it fully contains from one it shares, and a
@@ -702,7 +731,11 @@ func (b *solTypeAnnBuilder) declFuncTypeAnn(funcType *soltype.FuncType) FuncType
 		b.typeParamNames = map[*soltype.TypeVarType]string{}
 	}
 	b.bindAt, b.varOrder = bindingSignatures(funcType)
-	return b.funcTypeAnn(funcType)
+	sig := b.funcTypeAnn(funcType)
+	// internal/checker emits `void` for a declared function that returns no
+	// value, and matching it keeps the two checkers' declarations identical.
+	undefinedReturnAsVoid(&sig, funcType.Ret)
+	return sig
 }
 
 // bindInferredTypeParams names the variables let-generalization retained, which
@@ -717,6 +750,11 @@ func (b *solTypeAnnBuilder) declFuncTypeAnn(funcType *soltype.FuncType) FuncType
 // second naming something TypeScript cannot see. Those stay `unknown`. See
 // #1697.
 func (b *solTypeAnnBuilder) bindInferredTypeParams(funcType *soltype.FuncType) []*TypeParam {
+	// A declared parameter comes first and in declaration order, since a call writing its
+	// type arguments fills the binders positionally and `new Pair<string, number>` has to
+	// mean what `class Pair<A, B>` wrote.
+	declared := b.bindDeclaredTypeParams(funcType)
+
 	var bind []*soltype.TypeVarType
 	for _, v := range b.varOrder {
 		if _, named := b.typeParamNames[v]; named {
@@ -728,7 +766,7 @@ func (b *solTypeAnnBuilder) bindInferredTypeParams(funcType *soltype.FuncType) [
 		bind = append(bind, v)
 	}
 	if len(bind) == 0 {
-		return nil
+		return declared
 	}
 
 	// Name the whole batch before rendering any constraint, so a bound naming a
@@ -754,6 +792,51 @@ func (b *solTypeAnnBuilder) bindInferredTypeParams(funcType *soltype.FuncType) [
 			}
 		}
 		params[i] = &TypeParam{Name: b.typeParamNames[v], Constraint: constraint, Default: nil}
+	}
+	return append(declared, params...)
+}
+
+// bindDeclaredTypeParams returns the binders funcType writes for the declaration's own
+// type parameters, the ones whose every occurrence it holds. Each carries the name, bound,
+// and default the source wrote.
+//
+// A parameter whose occurrences span two signatures is held by neither, so it stays
+// unnamed and renders `unknown`. An inferred variable in the same position does the same.
+func (b *solTypeAnnBuilder) bindDeclaredTypeParams(funcType *soltype.FuncType) []*TypeParam {
+	var bind []*soltype.TypeParam
+	for _, tp := range b.signatureParams {
+		if tp.Var == nil || tp.Name == "" {
+			continue
+		}
+		if _, named := b.typeParamNames[tp.Var]; named {
+			continue
+		}
+		if b.bindAt[tp.Var] != funcType {
+			continue
+		}
+		bind = append(bind, tp)
+	}
+	if len(bind) == 0 {
+		return nil
+	}
+
+	// Name the whole batch before rendering any bound or default, so one naming a sibling
+	// of the batch reads as that sibling's name.
+	for _, tp := range bind {
+		b.typeParamNames[tp.Var] = tp.Name
+	}
+
+	params := make([]*TypeParam, len(bind))
+	for i, tp := range bind {
+		var constraint TypeAnn
+		if tp.Constraint != nil {
+			constraint = b.typeAnn(tp.Constraint)
+		}
+		var defaultType TypeAnn
+		if tp.Default != nil {
+			defaultType = b.typeAnn(tp.Default)
+		}
+		params[i] = &TypeParam{Name: tp.Name, Constraint: constraint, Default: defaultType}
 	}
 	return params
 }

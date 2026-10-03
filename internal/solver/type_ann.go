@@ -4,7 +4,6 @@ import (
 	"fmt"
 
 	"github.com/escalier-lang/escalier/internal/ast"
-	"github.com/escalier-lang/escalier/internal/set"
 	"github.com/escalier-lang/escalier/internal/soltype"
 )
 
@@ -159,7 +158,7 @@ func (c *checker) resolveTypeAnnType(scope *Scope, ta ast.TypeAnn, lvl int) (sol
 	case *ast.IntersectionTypeAnn:
 		return c.resolveIntersectionTypeAnn(scope, ta, lvl)
 	case *ast.FuncTypeAnn:
-		return c.resolveFuncTypeAnn(scope, ta, lvl)
+		return c.resolveFuncTypeAnn(scope, ta, nil, lvl)
 	case *ast.KeyOfTypeAnn:
 		return c.resolveKeyOfTypeAnn(scope, ta, lvl)
 	case *ast.NegationTypeAnn:
@@ -329,7 +328,7 @@ func (l *objAnnLowering) lower(elem ast.ObjTypeAnnElem) (soltype.ObjTypeElem, bo
 			l.c.reportUnsupported(elem.Name)
 			return nil, true
 		}
-		sig := l.c.mustResolveFuncTypeAnn(l.scope, elem.Fn, l.lvl)
+		sig := l.c.mustResolveFuncTypeAnn(l.scope, elem.Fn, elem.Receiver, l.lvl)
 		return &soltype.MethodElem{
 			Name:       name,
 			Signatures: []*soltype.FuncType{sig},
@@ -344,7 +343,7 @@ func (l *objAnnLowering) lower(elem ast.ObjTypeAnnElem) (soltype.ObjTypeElem, bo
 		// The value read and what reading it raises both come from the one resolved
 		// signature. An absent `throws` clause leaves the signature's Throws nil, and nil is
 		// the `never` shorthand GetterElem uses too, so it carries over with no special case.
-		sig := l.c.mustResolveFuncTypeAnn(l.scope, elem.Fn, l.lvl)
+		sig := l.c.mustResolveFuncTypeAnn(l.scope, elem.Fn, elem.Receiver, l.lvl)
 		return &soltype.GetterElem{Name: name, Type: sig.Ret, Throws: sig.Throws}, true
 	case *ast.SetterTypeAnn:
 		name, ok := objKeyName(elem.Name)
@@ -352,7 +351,7 @@ func (l *objAnnLowering) lower(elem ast.ObjTypeAnnElem) (soltype.ObjTypeElem, bo
 			l.c.reportUnsupported(elem.Name)
 			return nil, true
 		}
-		sig := l.c.mustResolveFuncTypeAnn(l.scope, elem.Fn, l.lvl)
+		sig := l.c.mustResolveFuncTypeAnn(l.scope, elem.Fn, elem.Receiver, l.lvl)
 		// A well-formed setter declares exactly one value parameter beyond the receiver, the
 		// value being assigned. Report any other count and then build the element from the
 		// first parameter, or from `unknown` when there is none, so the object still carries a
@@ -372,13 +371,13 @@ func (l *objAnnLowering) lower(elem ast.ObjTypeAnnElem) (soltype.ObjTypeElem, bo
 		}
 		l.sawCtor = true
 		return &soltype.ConstructorElem{
-			Signatures: []*soltype.FuncType{l.c.mustResolveFuncTypeAnn(l.scope, elem.Fn, l.lvl)},
+			Signatures: []*soltype.FuncType{l.c.mustResolveFuncTypeAnn(l.scope, elem.Fn, nil, l.lvl)},
 		}, true
 	case *ast.CallableTypeAnn:
 		// An overloaded call signature is written as several `fn (…) -> T` members, the way
 		// TypeScript writes one. They are arms of one element, so the second and later ones
 		// extend the first rather than adding an element the object could not hold.
-		sig := l.c.mustResolveFuncTypeAnn(l.scope, elem.Fn, l.lvl)
+		sig := l.c.mustResolveFuncTypeAnn(l.scope, elem.Fn, nil, l.lvl)
 		if l.callable != nil {
 			l.callable.Signatures = append(l.callable.Signatures, sig)
 			return nil, true
@@ -404,8 +403,8 @@ func (l *objAnnLowering) lower(elem ast.ObjTypeAnnElem) (soltype.ObjTypeElem, bo
 // resolveFuncTypeAnn recovers every unsupported part of a signature to a fresh var, so it always
 // yields a FuncType and its ok result is always true. Anything else is a wiring bug rather than
 // a source error, so fail loudly instead of dropping the member.
-func (c *checker) mustResolveFuncTypeAnn(scope *Scope, ta *ast.FuncTypeAnn, lvl int) *soltype.FuncType {
-	fn, _ := c.resolveFuncTypeAnn(scope, ta, lvl)
+func (c *checker) mustResolveFuncTypeAnn(scope *Scope, ta *ast.FuncTypeAnn, recv *ast.MethodReceiver, lvl int) *soltype.FuncType {
+	fn, _ := c.resolveFuncTypeAnn(scope, ta, recv, lvl)
 	sig, isFunc := fn.(*soltype.FuncType)
 	if !isFunc {
 		panic(fmt.Sprintf("mustResolveFuncTypeAnn: signature resolved to %T, not *soltype.FuncType", fn))
@@ -612,11 +611,8 @@ func (c *checker) resolveIntersectionTypeAnn(scope *Scope, ta *ast.IntersectionT
 // not `"x"`. constrain reduces the residual when it checks a constraint against it. An unsupported
 // operand recovers to a fresh var, cascade-safe like the Promise<bad> recovery.
 //
-// `keyof any` resolves to `string | number | symbol`, the set of every property key. The
-// operand cannot go through resolveTypeAnn, which resolves `any` to `unknown`, and `keyof
-// unknown` is `never`. TypeScript gives the two different answers, and a lib bound such as
-// the `K: keyof any` of `type Record<K: keyof any, T>` relies on the wider one, so that
-// `Record<string, string>` satisfies it.
+// `keyof any` lowers eagerly to `string | number | symbol`, the key set TypeScript gives it. An
+// `any` operand resolves to `unknown`, whose `keyof` is `never`, so the residual would name no key.
 func (c *checker) resolveKeyOfTypeAnn(scope *Scope, ta *ast.KeyOfTypeAnn, lvl int) (soltype.Type, bool) {
 	if _, isAny := ta.Type.(*ast.AnyTypeAnn); isAny {
 		t := newUnion(c.ctx, []soltype.Type{
@@ -718,7 +714,7 @@ func (c *checker) resolveCondTypeAnn(scope *Scope, ta *ast.CondTypeAnn, lvl int)
 	// Declare each name the Extends operand introduces, so the clause that declares it and the Then
 	// branch's references to it resolve to one shared declaration.
 	condScope := scope
-	if names := inferAnnNames(ta.Extends); len(names) > 0 {
+	if names := ast.InferAnnNames(ta.Extends); len(names) > 0 {
 		condScope = scope.Child()
 		for _, name := range names {
 			condScope.defineType(name, TypeBinding{Type: c.ctx.freshInferDecl(name)})
@@ -798,31 +794,6 @@ func nakedTypeParamCheck(ann ast.TypeAnn, resolved soltype.Type) bool {
 	}
 	_, isVar := resolved.(*soltype.TypeVarType)
 	return isVar
-}
-
-// inferAnnNames returns the names the `infer U` clauses of one annotation subtree introduce, in
-// source order with duplicates collapsed. resolveCondTypeAnn reads its Extends operand's names to
-// bind them for the Then branch.
-func inferAnnNames(ta ast.TypeAnn) []string {
-	f := &inferAnnFinder{seen: set.NewSet[string]()}
-	ta.Accept(f)
-	return f.names
-}
-
-// inferAnnFinder is the AST visitor behind inferAnnNames. It collects each InferTypeAnn name it
-// reaches, skipping one it has already recorded so a name written twice binds once.
-type inferAnnFinder struct {
-	ast.DefaultVisitor
-	seen  set.Set[string]
-	names []string
-}
-
-func (f *inferAnnFinder) EnterTypeAnn(ta ast.TypeAnn) bool {
-	if it, ok := ta.(*ast.InferTypeAnn); ok && !f.seen.Contains(it.Name) {
-		f.seen.Add(it.Name)
-		f.names = append(f.names, it.Name)
-	}
-	return true
 }
 
 // resolveTypeOfTypeAnn lowers a `typeof v` query to a TypeofType residual: it resolves the value's
@@ -944,7 +915,7 @@ func (c *checker) resolveExactnessIntrinsic(scope *Scope, ta *ast.TypeRefTypeAnn
 func (c *checker) resolveTypeOfQualIdent(scope *Scope, ident ast.QualIdent) (soltype.Type, bool) {
 	switch id := ident.(type) {
 	case *ast.Ident:
-		if b, ok := scope.GetValue(id.Name); ok {
+		if b, ok := c.lookupValueBinding(scope, id.Name); ok {
 			// bindingType takes the scheme's coalesced concrete type, not a fresh inference
 			// var that would coalesce to unknown in a negative position such as the operand of
 			// `keyof typeof v`. The dep graph orders v first, so its scheme is final here; a
@@ -962,6 +933,26 @@ func (c *checker) resolveTypeOfQualIdent(scope *Scope, ident ast.QualIdent) (sol
 		return c.typeofMember(recv, id.Right.Name)
 	}
 	return nil, false
+}
+
+// lookupValueBinding resolves a bare value name, ranking its sources the way
+// lookupClassBinding ranks a type name's:
+//
+//  1. A binding between the reference and the module scope, such as a parameter.
+//  2. A sibling in the reference's own namespace, keyed `ns.Name`.
+//  3. Every other binding, through the plain lexical walk.
+//
+// Step 2 reads c.classNamespace, the namespace of the declaration being inferred.
+func (c *checker) lookupValueBinding(scope *Scope, name string) (ValueBinding, bool) {
+	if c.pkgURI != "" && c.moduleScope != nil && c.classNamespace != "" {
+		if b, ok := scope.getValueBefore(name, c.moduleScope); ok {
+			return b, true
+		}
+		if b, ok := c.moduleScope.OwnValue(declScopeKey(c.classNamespace, name)); ok {
+			return b, true
+		}
+	}
+	return scope.GetValue(name)
 }
 
 // typeofMember projects the named property off a `typeof p.x` receiver: it strips any borrow
@@ -1045,7 +1036,7 @@ func restParamSlotShape(p *ast.Param, last bool) (ast.Pat, bool, bool) {
 // soltype.FuncType, recovering an unsupported part to a fresh var so the shape survives. A
 // `<T>` list resolves through resolveTypeParams into a child scope, so a parameter, return,
 // or union member that names `T` reads the annotation's own quantified var.
-func (c *checker) resolveFuncTypeAnn(scope *Scope, ta *ast.FuncTypeAnn, lvl int) (soltype.Type, bool) {
+func (c *checker) resolveFuncTypeAnn(scope *Scope, ta *ast.FuncTypeAnn, recv *ast.MethodReceiver, lvl int) (soltype.Type, bool) {
 	// A function type annotation is its own quantifier scope, so give it its own
 	// named-lifetime map the way inferFunc does for a function body. Without this a
 	// nested `fn<'a: 'static>(…)` annotation would resolve `'a` to the enclosing
@@ -1067,7 +1058,7 @@ func (c *checker) resolveFuncTypeAnn(scope *Scope, ta *ast.FuncTypeAnn, lvl int)
 
 	// Report any named lifetime this annotation uses without binding it in its own `<…>`
 	// list, and the symmetric unused binder, before lowering its bounds interns the names.
-	c.checkLifetimeDeclarations(ta.LifetimeParams, ta.Params, ta.Return, ta.Throws)
+	c.checkLifetimeDeclarations(ta.LifetimeParams, recv, ta.Params, ta.Return, ta.Throws)
 	c.lowerLifetimeParamBounds(ta.LifetimeParams, lvl)
 
 	params := make([]*soltype.FuncParam, len(ta.Params))
@@ -1287,12 +1278,12 @@ func (c *checker) normalizeNestedBorrow(ta *ast.RefTypeAnn, outerLt soltype.Life
 }
 
 // resolveLifetimeAnn resolves the lifetime of a borrow annotation. A nil node is
-// an inferred borrow and mints a fresh lifetime. A named `'a` resolves to the
-// variable that name denotes.
+// an inferred borrow and mints a fresh lifetime. `'static` resolves to soltype.Static.
+// Any other named `'a` resolves to the variable that name denotes.
 func (c *checker) resolveLifetimeAnn(node ast.LifetimeAnnNode, lvl int) soltype.Lifetime {
 	switch n := node.(type) {
 	case *ast.LifetimeAnn:
-		return c.namedLifetime(n.Name, lvl)
+		return c.boundLifetime(n.Name, lvl)
 	default:
 		// A nil node, or any unexpected form, is an inferred borrow with a fresh lifetime.
 		return c.ctx.freshLifetime(lvl)

@@ -915,13 +915,13 @@ interface Iterator<T, TResult, TNext> extends IteratorObject<T, TResult, TNext> 
 	require.Contains(t, refs, "TReturn")
 }
 
-// TestMergeDecls_AdoptsTypeParamClausesALaterDeclWrites covers a merged
-// interface whose first declaration leaves a type parameter without a default or
-// a constraint that a later declaration writes. `lib.es2015.core.d.ts` declares
+// TestMergeDecls_AdoptsADefaultALaterDeclWrites covers a merged interface
+// whose first declaration leaves a type parameter without a default that a
+// later declaration writes. `lib.es2015.core.d.ts` declares
 // `Uint8Array<TArrayBuffer extends ArrayBufferLike>` and sorts ahead of
 // `lib.es5.d.ts`, which writes `= ArrayBufferLike`. Keeping the first
 // declaration's parameters alone made `TArrayBuffer` required.
-func TestMergeDecls_AdoptsTypeParamClausesALaterDeclWrites(t *testing.T) {
+func TestMergeDecls_AdoptsADefaultALaterDeclWrites(t *testing.T) {
 	t.Parallel()
 	tests := map[string]struct {
 		first, later string
@@ -931,11 +931,6 @@ func TestMergeDecls_AdoptsTypeParamClausesALaterDeclWrites(t *testing.T) {
 			first: `interface Box<T extends Base> { a: T; }`,
 			later: `interface Box<T extends Base = Base> { b: T; }`,
 			want:  []string{"T extends Base = Base"},
-		},
-		"AConstraint": {
-			first: `interface Box<T> { a: T; }`,
-			later: `interface Box<T extends Base> { b: T; }`,
-			want:  []string{"T extends Base"},
 		},
 		"ADefaultNamingARenamedParameter": {
 			first: `interface Pair<A, B> { a: A; }`,
@@ -1258,6 +1253,118 @@ func TestOrderLibInputs(t *testing.T) {
 				got = append(got, in.SourceFile)
 			}
 			require.Equal(t, test.want, got)
+		})
+	}
+}
+
+// TestConvertBuckets_MergedInterfaceShapes covers what merging an interface
+// declared across several lib files, and respelling it in Escalier's
+// vocabulary, does to the one declaration that comes out. The lib files are
+// read in the order each case lists them.
+func TestConvertBuckets_MergedInterfaceShapes(t *testing.T) {
+	t.Parallel()
+
+	type lib struct{ file, src string }
+	const arrayDecls = `
+interface ReadonlyArray<T> {
+    readonly length: number;
+}
+interface Array<T> {
+    length: number;
+}
+interface ArrayConstructor {
+    new <T>(): Array<T>;
+}
+declare var Array: ArrayConstructor;
+`
+	tests := map[string]struct {
+		libs []lib
+		want string
+	}{
+		// A property takes its mutability from the object holding it, so a
+		// mutable array in one keeps its bare name. A method's return is not
+		// a property and still takes `mut`.
+		"APropertyHoldsNoMutableTwin": {
+			libs: []lib{{"lib.es5.d.ts", arrayDecls + `
+interface ArrayLike<T> {
+    items: T[];
+    copy(): T[];
+}
+`}},
+			want: `export declare interface ArrayLike<T> {
+    items: Array<T>,
+    copy() -> mut Array<T>
+}`,
+		},
+		// TypeScript requires a restated property to have the same type, not
+		// the same spelling, so the first declaration is kept and the second
+		// dropped however the two print.
+		"ARestatedPropertyIsKeptOnce": {
+			libs: []lib{
+				{"lib.es5.d.ts", `
+interface ArrayLike<T> {
+    matcher?: "best fit" | "basic" | undefined;
+}
+`},
+				{"lib.es2021.intl.d.ts", `
+interface ArrayLike<T> {
+    matcher?: "basic" | "best fit" | "best fit" | undefined;
+}
+`},
+			},
+			want: `export declare interface ArrayLike<T> {
+    matcher?: "best fit" | "basic" | undefined
+}`,
+		},
+		// Any one declaration may give a parameter its default, so the merged
+		// parameter takes it from a declaration read after the first.
+		"ADefaultFromALaterDeclaration": {
+			libs: []lib{
+				{"lib.es2015.core.d.ts", `
+interface ArrayLike<T> {
+    at(i: number): T;
+}
+`},
+				{"lib.es5.d.ts", `
+interface ArrayLike<T = number> {
+    readonly length: number;
+}
+`},
+			},
+			want: `export declare interface ArrayLike<T = number> {
+    at(i: number) -> T,
+    readonly length: number
+}`,
+		},
+	}
+
+	for name, test := range tests {
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+			inputs := make([]LibInput, 0, len(test.libs))
+			for _, l := range test.libs {
+				inputs = append(inputs, parseLib(t, l.file, l.src))
+			}
+			res, err := PartitionLib(inputs)
+			require.NoError(t, err)
+			mods, err := ConvertBuckets(res, nil)
+			require.NoError(t, err)
+
+			var found *ast.InterfaceDecl
+			for _, mod := range mods {
+				mod.Module.Namespaces.Scan(func(_ string, ns *ast.Namespace) bool {
+					for _, decl := range ns.Decls {
+						if id, ok := decl.(*ast.InterfaceDecl); ok && id.Name.Name == "ArrayLike" {
+							found = id
+						}
+					}
+					return true
+				})
+			}
+			require.NotNil(t, found)
+			printed, err := printer.Print(found, printer.DefaultOptions())
+			require.NoError(t, err)
+			require.Equal(t, test.want, printed)
 		})
 	}
 }

@@ -21,7 +21,7 @@ export declare interface AudioDataInit {
     numberOfFrames: number,
     sampleRate: number,
     timestamp: number,
-    transfer?: mut Array<typed_arrays.ArrayBuffer>
+    transfer?: Array<typed_arrays.ArrayBuffer>
 }
 
 export declare interface AudioDecoderConfig {
@@ -68,7 +68,7 @@ export declare interface EncodedAudioChunkInit {
     data: AllowSharedBufferSource,
     duration?: number,
     timestamp: number,
-    transfer?: mut Array<typed_arrays.ArrayBuffer>,
+    transfer?: Array<typed_arrays.ArrayBuffer>,
     type: EncodedAudioChunkType
 }
 
@@ -103,7 +103,7 @@ export declare interface ImageDecoderInit {
     desiredHeight?: number,
     desiredWidth?: number,
     preferAnimation?: boolean,
-    transfer?: mut Array<typed_arrays.ArrayBuffer>,
+    transfer?: Array<typed_arrays.ArrayBuffer>,
     type: string
 }
 
@@ -194,7 +194,7 @@ export declare interface VideoFrameBufferInit {
     displayWidth?: number,
     duration?: number,
     format: VideoPixelFormat,
-    layout?: mut Array<PlaneLayout>,
+    layout?: Array<PlaneLayout>,
     timestamp: number,
     visibleRect?: dom.DOMRectInit
 }
@@ -202,7 +202,7 @@ export declare interface VideoFrameBufferInit {
 export declare interface VideoFrameCopyToOptions {
     colorSpace?: dom.PredefinedColorSpace,
     format?: VideoPixelFormat,
-    layout?: mut Array<PlaneLayout>,
+    layout?: Array<PlaneLayout>,
     rect?: dom.DOMRectInit
 }
 

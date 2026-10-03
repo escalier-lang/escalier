@@ -544,6 +544,21 @@ func (c *Context) evalTypeOperator(t soltype.Type, seen *seenPairs) (soltype.Typ
 	}
 }
 
+// condBranchesSatisfy reports whether the Then and Else branches of cond each satisfy super without
+// recording a bound on any variable. Each branch is trialled under a discarded probe, so the call
+// leaves no bound behind either way. A branch that reads an `infer` capture never satisfies super,
+// since nothing constrains against an InferType.
+func (c *Context) condBranchesSatisfy(cond *soltype.CondType, super soltype.Type, seen *seenPairs, mutCtx bool) bool {
+	for _, branch := range []soltype.Type{cond.Then, cond.Else} {
+		// A branch that holds only by binding a variable holds only for the instantiations that
+		// binding admits, and the branch may never be the one selected for them.
+		if ok, mutated := c.trialMutatesBounds(branch, super, seen, mutCtx); !ok || mutated {
+			return false
+		}
+	}
+	return true
+}
+
 // reduceResidual reduces a residual operator and reports its value, or ok=false when the reduction
 // stays symbolic — an operand that never ground, or an expanding alias truncated to a residual
 // that would re-expand without bound. The errs carry any diagnostic the reduction produced. seen is
@@ -584,6 +599,44 @@ func anyMemberResidual(u *soltype.UnionType) bool {
 		}
 	}
 	return false
+}
+
+// indexAccessUpperBound returns a ground type that holds every value of the residual access
+// `Target[Index]`. It replaces each operand that is a bounded type parameter with its bound and
+// reduces the access over the result. `T[number]` for `T: Array<string> | []` gives `string`, and
+// `[1, 2, 3][D]` for `D: number` gives `1 | 2 | 3`.
+//
+// It reports false when neither operand has a bound, or when the access over the bounds stays
+// residual or records a diagnostic.
+func (c *Context) indexAccessUpperBound(access *soltype.IndexType, seen *seenPairs) (soltype.Type, bool) {
+	target, targetBounded := paramUpperBound(access.Target)
+	index, indexBounded := paramUpperBound(access.Index)
+	if !targetBounded && !indexBounded {
+		return nil, false
+	}
+	widened := &soltype.IndexType{Target: target, Index: index, Inexact: access.Inexact}
+	reduced, errs, ok := c.reduceResidual(widened, seen)
+	if !ok || len(errs) > 0 {
+		return nil, false
+	}
+	return reduced, true
+}
+
+// paramUpperBound returns the declared bound of a type parameter t, which is the meet of an
+// inference variable's upper bounds or a skolem's `Upper`. It returns t and false when t is not a
+// type parameter or carries no bound.
+func paramUpperBound(t soltype.Type) (soltype.Type, bool) {
+	switch t := t.(type) {
+	case *soltype.TypeVarType:
+		if len(t.UpperBounds) > 0 {
+			return newIntersection(nil, t.UpperBounds), true
+		}
+	case *soltype.SkolemType:
+		if t.Upper != nil {
+			return t.Upper, true
+		}
+	}
+	return t, false
 }
 
 // maxUnwrapDepth caps how many type operators constrain may evaluate along one constraint path.
@@ -804,6 +857,27 @@ func (c *Context) constrain(sub, super soltype.Type, seen *seenPairs, mutCtx boo
 				defer c.popUnfoldingAlias(ref)
 			}
 			return c.constrainUnwrapped(sub, evaluated, seen, mutCtx)
+		}
+	}
+
+	// An indexed access whose target or index is a type parameter stays residual through the step
+	// above. Every value it denotes is also a value of the same access over the parameter's bound,
+	// so that bound access decides the constraint in its place. `T[number] <: number | string` for
+	// `T: Array<number | string> | []` holds because the access over the bound reduces to
+	// `number | string`. This runs ahead of the union-super rule below, which would otherwise
+	// compare that whole union against each member of the super on its own.
+	//
+	// A super that carries a residual of its own skips this step. Such a super may hold the
+	// access itself, as `T[number] | undefined` does, and only the inert residual arm in the
+	// structural switch matches that by identity.
+	if access, ok := sub.(*soltype.IndexType); ok {
+		if _, superIsVar := super.(*soltype.TypeVarType); !superIsVar && !containsResidualOp(super) {
+			if bound, ok := c.indexAccessUpperBound(access, seen); ok {
+				if c.unwrapDepth >= maxUnwrapDepth {
+					return []SolverError{&ExpansionLimitError{Sub: sub, Super: super}}
+				}
+				return c.constrainUnwrapped(bound, super, seen, mutCtx)
+			}
 		}
 	}
 
@@ -1421,9 +1495,10 @@ func (c *Context) constrain(sub, super soltype.Type, seen *seenPairs, mutCtx boo
 			//    `&p` expression.
 			switch {
 			case sub.Lt != nil && sup.Lt != nil:
-				// Both borrows carry a lifetime: relate them covariantly through the
-				// outlives lattice, mirroring the covariant read view on the inner.
-				c.constrainLt(sup.Lt, sub.Lt)
+				// Both borrows carry a lifetime. A borrow may only flow somewhere that
+				// lives no longer than it does, so the source's lifetime must outlive the
+				// destination's.
+				c.constrainLt(sub.Lt, sup.Lt)
 			case sub.Lt == nil && sup.Lt != nil:
 				// An owned source satisfies any borrow destination — no lifetime constraint.
 			case sub.Lt != nil && sup.Lt == nil:
@@ -1500,14 +1575,20 @@ func (c *Context) constrain(sub, super soltype.Type, seen *seenPairs, mutCtx boo
 		}
 	case *soltype.CondType:
 		// A conditional residual the pre-switch could not ground reaches here: a conditional over a
-		// type parameter, whose branch cannot be decided. constrain treats it inert, the same as the
-		// KeyofType and IndexType arms above — two residuals are compatible only when structurally
-		// identical, so a conditional against an equal conditional succeeds reflexively without
-		// recording a bound, and a residual against any other concrete fails. When super is a
-		// variable the case falls through to the superVar arm, which records the whole conditional as
-		// one lower bound, keeping the operator symbolic on the coalesced binding.
+		// type parameter, whose branch cannot be decided. A conditional against an equal conditional
+		// succeeds reflexively without recording a bound. When super is a variable the case falls
+		// through to the superVar arm, which records the whole conditional as one lower bound,
+		// keeping the operator symbolic on the coalesced binding.
 		if _, superIsVar := super.(*soltype.TypeVarType); !superIsVar {
 			if equalType(sub, super) {
+				return nil
+			}
+			// Whichever branch the conditional reduces to once its operands ground, the value is one
+			// of Then and Else. When both satisfy super outright, the constraint holds for every
+			// instantiation, so it need not wait for the reduction. `Omit` in `std:prelude` passes
+			// `Exclude<keyof T, K>` to `Pick`'s `K: keyof T` bound this way: its branches `never`
+			// and `keyof T` both satisfy `keyof T`.
+			if c.condBranchesSatisfy(sub, super, seen, mutCtx) {
 				return nil
 			}
 			return []SolverError{&CannotConstrainError{Sub: sub, Super: super}}

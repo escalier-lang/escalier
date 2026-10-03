@@ -19,7 +19,7 @@ export declare interface PerformanceMeasureOptions {
 
 export declare interface PerformanceObserverInit {
     buffered?: boolean,
-    entryTypes?: mut Array<string>,
+    entryTypes?: Array<string>,
     type?: string
 }
 

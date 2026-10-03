@@ -89,8 +89,8 @@ func (c *checker) bindPseudoPackageImport(fileScope *Scope, stmt *ast.ImportStmt
 		if ns, held := c.memberNamespaces[groupNamespace(uri)]; held {
 			fileScope.defineNamespace(stmt.LocalName(), ns)
 			// The namespace has no members to copy yet, so the scope reads them
-			// through it as the walk defines them. groupImports gives the dep
-			// graph the same edges, so a member is defined before a reader needs it.
+			// through it as the walk defines them. memberImportNamespaces gives the
+			// dep graph the same edges, so a member is defined before a reader needs it.
 			if uri == coreURI {
 				fileScope.defineUnprefixed(ns)
 			}

@@ -416,29 +416,133 @@ type occKey struct {
 // reduces, node for node, to coalesce(t, Positive), keeping every monomorphic
 // render unchanged.
 //
-// simplifyScheme (PR2) runs the co-occurrence analysis up front and hands the
-// coalescer the resulting merge classes, which it only reads. Distinct quantified
-// variables that always appear together resolve to one representative and so share
-// a single type parameter. That collapses outer's
-// `fn <T0, T1>(y: T0 & T1) -> [T0, T1]` to `fn <T0>(y: T0) -> [T0, T0]`.
+// simplifyScheme runs the co-occurrence analysis up front and hands the coalescer the
+// resulting merge classes, which it only reads. Distinct quantified variables that always
+// appear together resolve to one representative and so share a single type parameter:
+//
+//	val outer = fn (y) {
+//	    val getY = fn () { return y }
+//	    return [getY(), getY()]
+//	}
+//
+// `outer` renders `fn <T0>(y: T0) -> [T0, T0]`. Its parameter reaches both tuple
+// positions through two fresh result variables, so the three would render
+// `fn <T0, T1>(y: T0 & T1) -> [T0, T1]` were they not merged.
+// TestInferModuleInnerCapturesOuterParam covers it.
 //
 // The retain decision degenerates to PR1's when nothing merges and symmetrization
 // surfaces no extra occurrence. Each variable is then its own representative with
 // its own polarities, so the check is exactly PR1's per-variable both-polarities
 // test.
-func coalesceScheme(t soltype.Type, genLevel int) soltype.Type {
+func coalesceScheme(t soltype.Type, genLevel int, declared []*soltype.TypeParam) soltype.Type {
 	keep := funcTypeParamVars(t)
+	// A class, alias, or enum keeps its parameters in the Context registry rather than on a
+	// signature, so funcTypeParamVars finds none of them. Without them in keep each one
+	// merges with its own declared bound, and at a negative position that merge is an
+	// intersection: `class Holder<T: {value: number}> { peer: T }` would read back as
+	// `peer: T & {value: number}`.
+	for _, tp := range declared {
+		// Only a bounded parameter needs keeping. An unbounded one has no bound to merge
+		// with, and retaining it would stop a slot the display elides from eliding, so
+		// `declare class Task<T, E = never>` would read `<T, E = never> {new () -> Task<T, E>}`
+		// where its own handle renders `{new () -> Task<never>}`.
+		if tp.Constraint != nil {
+			keep.Add(tp.Var)
+		}
+	}
+	display, _ := coalesceSchemeKeeping(t, genLevel, declared, keep)
+	return display
+}
+
+// coalesceSchemeKeepingDeclared coalesces a scheme for display and holds every parameter
+// the declaration wrote symbolic, returning those parameters alongside under the variables
+// the display holds.
+//
+// coalesceScheme keeps only a bounded parameter, so a slot nothing in the body mentions
+// elides. `class Consumer<T> { log: string }` reads back there as
+// `{new (log: string) -> Consumer<never>}`, which is what a reader of the class's own
+// handle wants. A `.d.ts` renderer wants the opposite. TypeScript has no generic `const`,
+// so the constructor signature has to write `new <T>(log: string): Consumer<T>`, and a
+// parameter inlined to `never` leaves it nothing to bind.
+//
+// A caller names the returned parameters, so each one carries the variable the display
+// holds for it rather than the one the declaration minted. The two differ when a
+// parameter's bound needed a display copy, which cleanBinderBounds explains.
+func coalesceSchemeKeepingDeclared(
+	t soltype.Type,
+	genLevel int,
+	declared []*soltype.TypeParam,
+) (soltype.Type, []*soltype.TypeParam) {
+	keep := funcTypeParamVars(t)
+	for _, tp := range declared {
+		keep.Add(tp.Var)
+	}
+	return coalesceSchemeKeeping(t, genLevel, declared, keep)
+}
+
+// coalesceSchemeKeeping is the body the two entry points above share. keep names the
+// variables held symbolic rather than inlined to their bounds. The returned parameters are
+// declared's entries, re-pointed at the variables the display holds.
+func coalesceSchemeKeeping(
+	t soltype.Type,
+	genLevel int,
+	declared []*soltype.TypeParam,
+	keep set.Set[*soltype.TypeVarType],
+) (soltype.Type, []*soltype.TypeParam) {
 	simp := simplifyScheme(t, genLevel, keep)
+	cleaned := cleanBinderBounds(keep, simp, declared)
 	c := t.Accept(&schemeCoalescer{
 		simp:     simp,
 		genLevel: genLevel,
 		keep:     keep,
-		cleaned:  cleanBinderBounds(keep, simp),
+		cleaned:  cleaned,
 		seen:     set.NewSet[*soltype.TypeVarType](),
 	}, soltype.Positive)
 	c = bubbleOwnedMut(c) // #779: lift an owned-mut cell out of an immutable container
 	// A scheme display is always coalesced from the Positive root.
-	return coalesceLifetimes(c, soltype.Positive, nil) // D4: resolve borrow lifetimes to their display form
+	c = coalesceLifetimes(c, soltype.Positive, nil) // D4: resolve borrow lifetimes to their display form
+	return c, displayTypeParams(declared, cleaned)
+}
+
+// displayTypeParams copies each declared parameter onto the variable the display holds for
+// it, which cleaned names when the parameter's bounds needed a copy. Name, bound, and
+// default come from the declaration, so a caller renders what the source wrote.
+//
+// A bound or a default naming a parameter is rewritten the same way. `class P<A: {x: number}, B: A>`
+// renders `B extends A`, where an unrewritten reference to A's original variable would
+// leave `B extends unknown`. A parameter's bound naming the parameter itself goes through
+// the same rewrite, which is what `class Node<T: {next: T}>` needs.
+func displayTypeParams(
+	declared []*soltype.TypeParam,
+	cleaned map[*soltype.TypeVarType]*soltype.TypeVarType,
+) []*soltype.TypeParam {
+	if len(declared) == 0 {
+		return nil
+	}
+	toDisplay := &typeSubst{
+		types:     map[*soltype.TypeVarType]soltype.Type{},
+		lifetimes: map[*soltype.LifetimeVar]soltype.Lifetime{},
+	}
+	for _, tp := range declared {
+		if cv, ok := cleaned[tp.Var]; ok {
+			toDisplay.types[tp.Var] = cv
+		}
+	}
+	out := make([]*soltype.TypeParam, len(declared))
+	for i, tp := range declared {
+		cp := *tp
+		if cv, ok := cleaned[tp.Var]; ok {
+			cp.Var = cv
+		}
+		if cp.Constraint != nil {
+			cp.Constraint = toDisplay.apply(cp.Constraint)
+		}
+		if cp.Default != nil {
+			cp.Default = toDisplay.apply(cp.Default)
+		}
+		out[i] = &cp
+	}
+	return out
 }
 
 // funcTypeParamVars collects every generic function's own TypeParams binder var
@@ -503,8 +607,9 @@ type schemeCoalescer struct {
 	// coalescing. It is the value-path analogue of coalescer.keep for a class body.
 	keep set.Set[*soltype.TypeVarType]
 	// cleaned maps a binder var to a display copy whose bounds drop the same-class
-	// artifact vars merged into it, so the copy renders `<T>` rather than `<T0, T: T0>`.
-	// A binder with no such bound is absent here and keeps its original pointer.
+	// artifact vars merged into it. A binder with no such bound is absent here and keeps
+	// its original pointer. cleanBinderBounds has the source that produces one and both
+	// renderings.
 	cleaned map[*soltype.TypeVarType]*soltype.TypeVarType
 	seen    set.Set[*soltype.TypeVarType]
 	// mu is coalescer.mu's twin, keyed by the co-occurrence representative the seen-set uses.
@@ -521,7 +626,7 @@ func (c *schemeCoalescer) EnterType(t soltype.Type, pol soltype.Polarity) soltyp
 	// A generic function's own type-parameter var stays symbolic: return it unchanged so
 	// the declared quantifier survives rather than inlining a return-only param to never.
 	// A binder whose bounds folded away a same-class artifact renders through its cleaned
-	// copy so the vacuous `T: T0` constraint disappears.
+	// copy, which drops the vacuous half of the cycle cleanBinderBounds describes.
 	if c.keep.Contains(v) {
 		return soltype.EnterResult{Type: c.displayBinder(v), SkipChildren: true}
 	}
@@ -600,17 +705,46 @@ func (c *schemeCoalescer) displayBinder(v *soltype.TypeVarType) *soltype.TypeVar
 	return v
 }
 
-// cleanBinderBounds returns a display copy of each binder var whose bounds name a var
-// in its own merged class, with those same-class var bounds dropped. Such a bound is
-// the vacuous half of a mutual cycle `T <: β <: … <: T` and prints as `T: T0`; dropping
-// it also removes the artifact var β the printer would name T0. A concrete bound already
-// sits on the binder, so nothing real is lost. A binder needing no change is omitted.
-func cleanBinderBounds(keep set.Set[*soltype.TypeVarType], simp *schemeSimplification) map[*soltype.TypeVarType]*soltype.TypeVarType {
+// cleanBinderBounds returns a display copy of each binder var whose bounds need one. A
+// binder needing neither cleanup below is omitted.
+//
+//  1. A bound naming a var in the binder's own merged class is dropped. Such a bound is
+//     the vacuous half of a mutual cycle `U <: β <: … <: U`, so it says nothing a reader
+//     can use, and a concrete bound already sits on the binder. Dropping it also removes
+//     β, which the printer would otherwise name and bind. An alias bound reaching a
+//     function's parameter is the shape that produces one:
+//
+//     type Box<T: string> = {v: T}
+//     fn f<U>(b: Box<U>) -> U { return b.v }
+//
+//     `f` renders `fn <U: string>(b: Box<U>) -> U` with this cleanup and
+//     `fn <T0, U: string & T0>(b: Box<U>) -> U` without it, where `T0` is the generated
+//     name β takes.
+//
+//  2. A parameter the declaration wrote carries exactly the bound the source gave it,
+//     whatever its upper-bound list accumulated. The list grows as constraints flow in,
+//     and only the declared bound is what callers have to satisfy. Reporting the list
+//     would show a bound no caller is held to. `.d.ts` emission writes a clause only for
+//     a lone bound, so it would write none at all once the list holds two.
+func cleanBinderBounds(
+	keep set.Set[*soltype.TypeVarType],
+	simp *schemeSimplification,
+	declared []*soltype.TypeParam,
+) map[*soltype.TypeVarType]*soltype.TypeVarType {
+	declaredBound := map[*soltype.TypeVarType]soltype.Type{}
+	for _, tp := range declared {
+		if tp.Constraint != nil {
+			declaredBound[tp.Var] = tp.Constraint
+		}
+	}
 	out := map[*soltype.TypeVarType]*soltype.TypeVarType{}
 	for v := range keep {
 		rep := simp.rep(v)
 		up, upChanged := dropSameClassVars(v.UpperBounds, rep, simp)
 		lo, loChanged := dropSameClassVars(v.LowerBounds, rep, simp)
+		if bound, isDeclared := declaredBound[v]; isDeclared {
+			up, upChanged = []soltype.Type{bound}, true
+		}
 		if !upChanged && !loChanged {
 			continue
 		}
@@ -668,6 +802,27 @@ func (b ValueBinding) DisplayType() soltype.Type {
 	default:
 		return overloadDisplayType(b)
 	}
+}
+
+// DisplayTypeWithDeclaredParams returns the type b's name renders as, keeping every
+// parameter its declaration wrote as a variable, together with those parameters.
+//
+// DisplayType elides a parameter nothing in the body mentions, which is what a reader of
+// the declaration's own handle wants. A `.d.ts` renderer needs every one, since TypeScript
+// writes a class's parameters on its constructor signature. displayKeepingDeclared gives
+// the full reasons.
+//
+// A binding that declares no parameters, a function or an overload set among them, answers
+// exactly as DisplayType does with no parameters.
+func (b ValueBinding) DisplayTypeWithDeclaredParams() (soltype.Type, []*soltype.TypeParam) {
+	if len(b.Schemes) != 1 {
+		return b.DisplayType(), nil
+	}
+	sc, ok := b.Schemes[0].(*PolyScheme)
+	if !ok {
+		return b.DisplayType(), nil
+	}
+	return sc.displayKeepingDeclared()
 }
 
 // renderScheme renders a scheme to its Escalier type-annotation string, with a
@@ -745,11 +900,13 @@ func (c *checker) declaredTypeParams(t soltype.Type) []*soltype.TypeParam {
 	switch t := t.(type) {
 	case *soltype.ClassType:
 		if def, ok := c.ctx.classDef(t.Name); ok {
-			return paramsForArgs(def.TypeParams, t.TypeArgs)
+			subst := newTypeSubst(def.TypeParams, t.TypeArgs, def.LifetimeParams, t.LifetimeArgs)
+			return paramsForArgs(def.TypeParams, t.TypeArgs, subst)
 		}
 	case *soltype.AliasType:
 		if def, ok := c.ctx.aliasDef(t.Name); ok {
-			return paramsForArgs(def.TypeParams, t.TypeArgs)
+			subst := newTypeSubst(def.TypeParams, t.TypeArgs, def.LifetimeParams, t.LifetimeArgs)
+			return paramsForArgs(def.TypeParams, t.TypeArgs, subst)
 		}
 	case *soltype.ObjectType:
 		for _, elem := range t.Elems {
@@ -766,14 +923,22 @@ func (c *checker) declaredTypeParams(t soltype.Type) []*soltype.TypeParam {
 			}
 			return nil
 		}
+	case *soltype.TypeVarType:
+		// A declaration's value is constrained into a binding var and the var is what
+		// generalizes, so the object is reached through the var's lower bounds. A display
+		// type has the var resolved already and takes the arms above.
+		if obj, ok := c.classValueCarrier(t); ok {
+			return c.declaredTypeParams(obj)
+		}
 	}
 	return nil
 }
 
 // declaredLifetimeParams returns the lifetime parameters written by the declaration a display
 // type stands for, or nil when it stands for none. It is the lifetime-sort twin of
-// declaredTypeParams and reads the same three carriers: a class handle, an alias handle, and
-// the class-value object whose constructor returns the handle.
+// declaredTypeParams and reads three of the four carriers that one does: a class handle, an
+// alias handle, and the class-value object whose constructor returns the handle. It does not
+// read through a binding var, which only the pre-display lookup in generalize needs.
 func (c *checker) declaredLifetimeParams(t soltype.Type) []*soltype.LifetimeParam {
 	switch t := t.(type) {
 	case *soltype.ClassType:
@@ -837,19 +1002,36 @@ func ltParamsForArgs(lps []*soltype.LifetimeParam, args []soltype.Lifetime) []*s
 // `Box<5>` names nothing. So does a reference whose argument count does not match the
 // declaration's, which covers the argument-less handle an alias binds: `type Alias<T> = {v: T}`
 // renders its body under the declared variables.
-func paramsForArgs(tps []*soltype.TypeParam, args []soltype.Type) []*soltype.TypeParam {
+func paramsForArgs(tps []*soltype.TypeParam, args []soltype.Type, subst *typeSubst) []*soltype.TypeParam {
 	if len(args) != len(tps) {
 		return tps
 	}
 	out := make([]*soltype.TypeParam, len(tps))
 	for i, tp := range tps {
 		v, isVar := args[i].(*soltype.TypeVarType)
-		if !isVar || v == tp.Var {
+		if !isVar {
 			out[i] = tp
 			continue
 		}
 		cp := *tp
 		cp.Var = v
+		// A bound and a default are written in terms of the declaration's own parameters,
+		// so they are rewritten to this type's arguments alongside the variable they
+		// belong to. Leaving them would render a variable no binder in this print names,
+		// so `class Holder<T: {next: T}>` reached through a second binding would show
+		// `<T: {next: t0}>`.
+		//
+		// The rewrite runs even where the argument is the parameter's own variable, since
+		// a reference carries its type and lifetime arguments independently and a bound
+		// may name either. Rewriting the one sort while skipping the other would render a
+		// bound under the lifetime the declaration wrote rather than the one the
+		// reference passes.
+		if tp.Constraint != nil {
+			cp.Constraint = subst.apply(tp.Constraint)
+		}
+		if tp.Default != nil {
+			cp.Default = subst.apply(tp.Default)
+		}
 		out[i] = &cp
 	}
 	return out

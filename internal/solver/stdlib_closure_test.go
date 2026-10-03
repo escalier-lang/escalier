@@ -356,6 +356,64 @@ func TestAnAliasedIntraClosureImportBinds(t *testing.T) {
 	require.Equal(t, "Beta", soltype.Print(inferredValueType(t, res.Scope, "partner")))
 }
 
+// Inside a group every declaration binds under its member's namespace, so a
+// reference resolves only if it reaches that namespace. The cases cover a
+// sibling's alias reached through an import, which has to be inferred before
+// the declaration naming it, and a `typeof` naming the class it sits in.
+func TestAGroupMemberReachesItsNamespacedDeclarations(t *testing.T) {
+	t.Parallel()
+
+	tests := map[string]struct {
+		src   string
+		files map[string]string
+		value string
+		want  string
+	}{
+		"AnImportedSiblingAlias": {
+			src: `
+				import "std:alpha"
+				declare val k: alpha.Local
+				val key = k
+			`,
+			files: map[string]string{
+				"std/alpha.esc": `
+					import "std:beta"
+					export declare type Local = beta.Key
+				`,
+				"std/beta.esc": `export declare type Key = string | symbol`,
+			},
+			value: "key",
+			want:  "Local",
+		},
+		"ATypeofOfTheEnclosingClass": {
+			src: `
+				import "std:alpha"
+				val made = alpha.Box.species
+			`,
+			files: map[string]string{
+				"std/alpha.esc": `
+					import "std:beta"
+					export declare class Box {
+						static readonly species: typeof Box,
+					}
+				`,
+				"std/beta.esc": `export declare class Tag {}`,
+			},
+			value: "made",
+			want:  "typeof Box",
+		},
+	}
+
+	for name, test := range tests {
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+			res := inferAgainstCyclicStdlib(t, test.src, test.files)
+			require.Empty(t, errorMessagesOf(res.Errors))
+			require.Equal(t, test.want, soltype.Print(inferredValueType(t, res.Scope, test.value)))
+		})
+	}
+}
+
 // Two packages whose URIs derive one name load together. A member's declarations
 // land under a prefix carrying the scheme, so `std:url` and `web:url` are two
 // namespaces rather than one ambiguous name, and a closure may hold both.
@@ -465,6 +523,22 @@ func TestTheCommittedTreeLoadsItsCycles(t *testing.T) {
 		_, isCycle := e.(*ImportCycleError)
 		require.False(t, isCycle, "import cycle reported: %s", e.Message())
 	}
+}
+
+// `class Locale implements LocaleOptions` in the committed `std:intl` takes
+// `calendar` from the interface it implements, so the package loads with
+// nothing reported and the member reads at the interface's type.
+func TestTheCommittedLocaleTakesItsImplementedMembers(t *testing.T) {
+	t.Parallel()
+
+	res := InferModuleAgainstStdlib(parseModule(t, `
+		import "std:intl"
+		declare val locale: intl.Locale
+		val calendar = locale.calendar
+	`), committedTree)
+
+	require.Empty(t, errorMessagesOf(res.Errors))
+	require.Equal(t, "string | undefined", soltype.Print(inferredValueType(t, res.Scope, "calendar")))
 }
 
 // A closure holds what the roots reach and no more, which is what keeps a load
@@ -666,4 +740,81 @@ func TestASiblingInTheSameNamespaceOutranksARootDeclaration(t *testing.T) {
 	require.Empty(t, errorMessagesOf(res.Errors))
 	require.Equal(t, "string", soltype.Print(inferredValueType(t, res.Scope, "sibling")))
 	require.Equal(t, "number", soltype.Print(inferredValueType(t, res.Scope, "root")))
+}
+
+// A bare type name in a `fn` signature or a `val` annotation resolves a sibling
+// declared in the same group member.
+//
+// A merged group keys every declaration under its member's namespace, so
+// `alpha`'s `Box` is keyed `std__alpha.Box` and a bare `Box` reaches it only by
+// probing that namespace. A class body probes it for its own members, and these
+// rows cover the declarations beside the class. Each `read` names `Box`'s `n`,
+// so a `number` there says the annotation bound the sibling.
+func TestABareSiblingResolvesOutsideATypeDeclarationInAGroup(t *testing.T) {
+	t.Parallel()
+
+	tests := map[string]struct {
+		decls string
+		read  string
+	}{
+		"FuncSignature": {
+			decls: `export declare fn take(b: Box) -> Box`,
+			read:  `alpha.take(alpha.box).n`,
+		},
+		// A fully annotated overload set binds its arm signatures before any
+		// body, which is a separate walk from a lone function's.
+		"OverloadSignature": {
+			decls: `
+				export declare fn take(b: Box) -> Box
+				export declare fn take(b: Box, s: string) -> Box
+			`,
+			read: `alpha.take(alpha.box, "s").n`,
+		},
+		"ValAnnotation": {
+			decls: `export declare val other: Box`,
+			read:  `alpha.other.n`,
+		},
+	}
+
+	for name, test := range tests {
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+			res := inferAgainstCyclicStdlib(t, `
+				import "std:alpha"
+				val read = `+test.read+`
+			`, map[string]string{
+				"std/alpha.esc": `
+					import "std:beta"
+					export declare class Box { n: number }
+					export declare val box: Box
+				` + test.decls,
+				"std/beta.esc": `
+					import "std:alpha"
+					export declare class Peer { box: alpha.Box }
+				`,
+			})
+
+			require.Empty(t, errorMessagesOf(res.Errors))
+			require.Equal(t, "number", soltype.Print(inferredValueType(t, res.Scope, "read")))
+		})
+	}
+}
+
+// The committed `std:typed_arrays` resolves every name it declares.
+//
+// It loads in a group with `std:date` and `std:intl`, and its `Atomics` functions
+// name the typed array classes bare, as in
+// `fn wait(typedArray: Int32Array<ArrayBufferLike>, ...)`. The tree carries other
+// known diagnostics, so this asserts only that none of them is a missing type.
+func TestTheCommittedTypedArraysResolveTheirOwnNames(t *testing.T) {
+	t.Parallel()
+
+	res := InferModuleAgainstStdlib(parseModule(t, `
+		import "std:typed_arrays"
+		val x = 1
+	`), committedTree)
+
+	for _, msg := range errorMessagesOf(res.Errors) {
+		require.NotContains(t, msg, "cannot find type")
+	}
 }

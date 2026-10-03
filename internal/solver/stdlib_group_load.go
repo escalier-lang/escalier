@@ -141,7 +141,8 @@ func (c *checker) loadPackageGroup(group []string, span ast.Span) []SolverError 
 	defer func() { c.memberNamespaces = prevMembers }()
 
 	c.bindFileImports(scope, module)
-	c.inferDepGraph(scope, 0, module, dep_graph.BuildDepGraphWithImports(module, c.groupImports(module)))
+	c.inferDepGraph(scope, 0, module,
+		dep_graph.BuildDepGraphWithImports(module, memberImportNamespaces(module, c.activeGroup)))
 
 	errs := c.errs
 	c.errs = prevErrs
@@ -177,27 +178,27 @@ func (c *checker) loadPackageGroup(group []string, span ast.Span) []SolverError 
 	return nil
 }
 
-// groupImports returns what each member's imports of its siblings bind, keyed by
-// the member's namespace. It mirrors what bindPseudoPackageImport binds for an
-// import of a member of the active group: the namespace under the statement's
-// local name, and for `web:core` each of its members under its own name too.
-func (c *checker) groupImports(module *ast.Module) map[string]dep_graph.NamespaceImports {
-	out := map[string]dep_graph.NamespaceImports{}
+// memberImportNamespaces maps each file of a merged group to the imports it
+// writes for other members, each naming the namespace that member's
+// declarations bind under. `import "std:weak_ref"` in `std:map` maps `weak_ref`
+// to `std__weak_ref`. An import of a package outside the group is left out,
+// since its declarations are not in the module. An import of `web:core` also
+// maps dep_graph.UnprefixedImport, matching the bare bindings
+// bindPseudoPackageImport makes for it.
+func memberImportNamespaces(module *ast.Module, group set.Set[string]) map[int]map[string]string {
+	out := map[int]map[string]string{}
 	for _, file := range module.Files {
 		for _, stmt := range file.Imports {
-			uri := stmt.PackageName
-			if !c.activeGroup.Contains(uri) {
+			if !group.Contains(stmt.PackageName) {
 				continue
 			}
-			imports, seen := out[file.Namespace]
-			if !seen {
-				imports = dep_graph.NamespaceImports{Aliases: map[string]string{}}
+			if out[file.SourceID] == nil {
+				out[file.SourceID] = map[string]string{}
 			}
-			imports.Aliases[stmt.LocalName()] = groupNamespace(uri)
-			if uri == coreURI {
-				imports.Unprefixed = append(imports.Unprefixed, groupNamespace(uri))
+			out[file.SourceID][stmt.LocalName()] = groupNamespace(stmt.PackageName)
+			if stmt.PackageName == coreURI {
+				out[file.SourceID][dep_graph.UnprefixedImport] = groupNamespace(stmt.PackageName)
 			}
-			out[file.Namespace] = imports
 		}
 	}
 	return out

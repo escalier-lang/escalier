@@ -573,45 +573,6 @@ func TestInferKeyofAnnotationStaysSymbolic(t *testing.T) {
 	}
 }
 
-// `keyof any` is every property key, which is what lets a bound written `K: keyof any` admit
-// `string`. `keyof unknown` stays `never`, since `unknown` has no readable member.
-func TestInferKeyofAny(t *testing.T) {
-	tests := []struct {
-		name string
-		src  string
-		want map[string]string
-	}{
-		{
-			name: "IsEveryPropertyKey",
-			src:  `fn f(k: keyof any) { return k }`,
-			want: map[string]string{"f": "fn (k: number | string | symbol) -> number | string | symbol"},
-		},
-		{
-			name: "AdmitsAStringBoundArgument",
-			src: `
-				type Rec<K: keyof any, T> = {[P]: T for P in K}
-				fn get(r: Rec<string, number>) { return r }
-			`,
-			want: map[string]string{"get": "fn (r: Rec<string, number>) -> Rec<string, number>"},
-		},
-	}
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			values, _, errs := inferSource(t, tt.src)
-			require.Empty(t, errs)
-			for name, want := range tt.want {
-				require.Equal(t, want, values[name])
-			}
-		})
-	}
-
-	t.Run("KeyofUnknownIsNever", func(t *testing.T) {
-		nodes, ctx, errs := inferTypeNodes(t, `type Result = keyof unknown`)
-		require.Empty(t, errs)
-		require.Equal(t, "never", soltype.Print(expandResidual(ctx, nodes["Result"])))
-	})
-}
-
 // A nested `keyof keyof` stays symbolic in the stored type and, when reduced, terminates instead
 // of looping on the same shape. Over a type parameter it stays the `keyof keyof T` residual in the
 // signature; a ground `keyof keyof {a, b}` also stays symbolic in the stored type, and reducing it
@@ -630,6 +591,46 @@ func TestInferKeyofNested(t *testing.T) {
 		require.Equal(t, "keyof keyof {a: number, b: string}", soltype.Print(result))
 		require.Equal(t, "never", soltype.Print(expandResidual(ctx, result)))
 	})
+}
+
+// `keyof any` names every property key, `string | number | symbol`, while `keyof unknown` names
+// none. The cases cover the bare annotation and the `K: keyof any` bound prelude's `Record`
+// writes, which `PropertyKey` has to satisfy.
+func TestInferKeyofAny(t *testing.T) {
+	tests := []struct {
+		name  string
+		src   string
+		types map[string]string
+	}{
+		{
+			name:  "Annotation",
+			src:   `type K = keyof any`,
+			types: map[string]string{"K": "number | string | symbol"},
+		},
+		{
+			name: "BoundAdmitsEveryKeyKind",
+			src: `
+				type Rec<K: keyof any, T> = {[P: K]: T}
+				type PropertyKey = string | number | symbol
+				type Result = Rec<PropertyKey, unknown>
+			`,
+			types: map[string]string{"Result": "Rec<PropertyKey, unknown>"},
+		},
+		{
+			name:  "UnknownStaysEmpty",
+			src:   `type K = keyof unknown`,
+			types: map[string]string{"K": "keyof unknown"},
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			_, types, errs := inferSource(t, tt.src)
+			require.Empty(t, errs)
+			for name, want := range tt.types {
+				require.Equal(t, want, types[name])
+			}
+		})
+	}
 }
 
 // A rejected constraint whose subject is a `keyof` residual names it structurally in the
@@ -1364,6 +1365,93 @@ func TestInferIndexResidualErrorMessage(t *testing.T) {
 	require.Equal(t, `1:12-1:18: cannot constrain t1["a"] <: number`, msgWithSpan(t, errs[0]))
 }
 
+// An indexed access whose target or index is a bounded type parameter is checked through the
+// access over the bound. `T[number]` for `T: Array<number> | []` reads `number`, and
+// `[1, 2, 3][D]` for `D: number` reads `1 | 2 | 3`. The cases cover a parameter bounded by a union
+// of an array and a tuple, which is the bound `Promise.race` declares, and a tuple indexed by a
+// numeric parameter, which is the shape `FlatArray` declares. Each runs as a type argument checked
+// against an alias parameter's bound and as a function body checked against its return annotation.
+func TestInferIndexOverBoundedParam(t *testing.T) {
+	tests := []struct {
+		name    string
+		src     string
+		wantErr string // "" ⇒ expect no error
+	}{
+		{
+			name: "ArrayOrTupleTargetAccepted",
+			src: `
+				type N<X: number> = X
+				type F<T: Array<number> | []> = N<T[number]>
+			`,
+		},
+		{
+			name: "ArrayOrTupleTargetRejected",
+			src: `
+				type N<X: number> = X
+				type F<T: Array<string> | []> = N<T[number]>
+			`,
+			wantErr: "cannot constrain string <: number",
+		},
+		{
+			name: "ArrayOrNonEmptyTupleTargetRejected",
+			src: `
+				type N<X: number> = X
+				type F<T: Array<number> | [string]> = N<T[number]>
+			`,
+			wantErr: "cannot constrain string <: number",
+		},
+		{
+			name: "ArrayOrTupleTargetReturnAccepted",
+			src:  `fn f<T: Array<number> | []>(k: T[number]) -> number { return k }`,
+		},
+		{
+			name: "UnionElementIntoUnionAccepted",
+			src: `
+				type NS<X: number | string> = X
+				type F<T: Array<number | string> | []> = NS<T[number]>
+			`,
+		},
+		{
+			name: "UnionElementReturnAccepted",
+			src:  `fn f<T: Array<number | string> | []>(k: T[number]) -> number | string { return k }`,
+		},
+		{
+			name: "AccessIntoUnionHoldingItAccepted",
+			src:  `fn f<T: Array<number> | []>(k: T[number]) -> T[number] | undefined { return k }`,
+		},
+		{
+			name: "NumericIndexAccepted",
+			src: `
+				type N<X: number> = X
+				type F<D: number> = N<[1, 2, 3][D]>
+			`,
+		},
+		{
+			name: "NumericIndexRejected",
+			src: `
+				type N<X: number> = X
+				type F<D: number> = N<["a", 2, 3][D]>
+			`,
+			wantErr: `cannot constrain "a" <: number`,
+		},
+		{
+			name: "NumericIndexReturnAccepted",
+			src:  `fn f<D: number>(k: [1, 2, 3][D]) -> number { return k }`,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			_, _, errs := inferSource(t, tt.src)
+			if tt.wantErr == "" {
+				require.Empty(t, errs)
+				return
+			}
+			require.Len(t, errs, 1)
+			require.Equal(t, tt.wantErr, errs[0].Message())
+		})
+	}
+}
+
 // A tuple-spread annotation `[...P, x]` is stored as a residual and reduced by splicing each
 // spread operand's tuple in position once the operand grounds to a concrete tuple. Each case
 // asserts the stored `Result` renders the way the source wrote it, then asserts that reducing it
@@ -1863,6 +1951,71 @@ func TestInferCondResidualErrorMessage(t *testing.T) {
 	require.Len(t, errs, 1)
 	require.IsType(t, &CannotConstrainError{}, errs[0])
 	require.Equal(t, "1:12-1:51: cannot constrain if t1 : number { string } else { boolean } <: number", msgWithSpan(t, errs[0]))
+}
+
+// TestInferCondResidualAgainstBound covers a residual conditional passed as a type argument to a
+// bounded parameter. The argument satisfies the bound when both of its branches do without binding
+// a variable, so `MyOmit` below, the shape of `Omit` in `std:prelude`, checks cleanly before its
+// operands ground. A branch outside the bound, a branch that holds only by binding a parameter, and
+// a branch that reads an `infer` capture are each rejected.
+func TestInferCondResidualAgainstBound(t *testing.T) {
+	const pick = `
+		type MyPick<T, K: keyof T> = {[P]: T[P] for P in K}
+		type MyExclude<T, U> = if T : U { never } else { T }
+	`
+	tests := []struct {
+		name    string
+		src     string
+		wantErr string // "" ⇒ expect no error
+	}{
+		{
+			name: "BothBranchesWithinBound",
+			src: pick + `
+				type MyOmit<T, K> = MyPick<T, MyExclude<keyof T, K>>
+			`,
+		},
+		{
+			name: "BothBranchesWithinBoundInstantiated",
+			src: pick + `
+				type MyOmit<T, K> = MyPick<T, MyExclude<keyof T, K>>
+				val p: MyOmit<{a: number, b: string}, "a"> = {b: "x"}
+			`,
+		},
+		{
+			name: "ElseBranchOutsideBound",
+			src: pick + `
+				type Bad<T, K> = MyPick<T, if keyof T : K { never } else { string }>
+			`,
+			wantErr: "cannot constrain if keyof t4 : t5 { never } else { string } <: keyof t4",
+		},
+		{
+			name: "ThenBranchBindsParam",
+			src: `
+				type Box<X: string> = [X]
+				type Bad<T, U> = Box<if [T] : [U] { T } else { never }>
+			`,
+			wantErr: "cannot constrain if tuple : tuple { t2 } else { never } <: string",
+		},
+		{
+			name: "ThenBranchReadsInferCapture",
+			src: `
+				type Box<X: string> = [X]
+				type Bad<T> = Box<if T : [infer U] { U } else { "n" }>
+			`,
+			wantErr: `cannot constrain if t2 : tuple { U } else { "n" } <: string`,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			_, _, errs := inferSource(t, tt.src)
+			if tt.wantErr == "" {
+				require.Empty(t, errs)
+				return
+			}
+			require.Len(t, errs, 1)
+			require.Equal(t, tt.wantErr, errs[0].Message())
+		})
+	}
 }
 
 // An `infer U` clause outside a conditional's Extends operand names no matched position, so it

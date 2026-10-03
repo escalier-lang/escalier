@@ -411,16 +411,13 @@ func TestBuildDepGraphV2_Dependencies(t *testing.T) {
 }
 
 // TestBuildDepGraphWithImports covers a reference that names a binding of another
-// namespace through what its own namespace imports. `fetch/index.esc` lands its
+// namespace through what its own file imports. `fetch/index.esc` lands its
 // declarations in the `fetch` namespace, so `streams.Stream` written there means
 // `web__streams.Stream` only through the alias, and a bare `Signal` means
-// `web__core.Signal` only through the unprefixed import.
+// `web__core.Signal` only through the UnprefixedImport entry.
 func TestBuildDepGraphWithImports(t *testing.T) {
-	imports := map[string]NamespaceImports{
-		"fetch": {
-			Aliases:    map[string]string{"streams": "web__streams", "core": "web__core"},
-			Unprefixed: []string{"web__core"},
-		},
+	imports := map[int]map[string]string{
+		0: {"streams": "web__streams", "core": "web__core", UnprefixedImport: "web__core"},
 	}
 	tests := map[string]struct {
 		contents string

@@ -14,15 +14,20 @@ import (
 )
 
 type Builder struct {
-	tempId        int
-	depGraph      *dep_graph.DepGraph
-	hasExtractor  bool
-	hasJsx        bool // tracks if _jsx is used
-	hasJsxs       bool // tracks if _jsxs is used
-	hasFragment   bool // tracks if _Fragment is used
-	isModule      bool
-	inBlockScope  bool
-	overloadDecls map[string][]*ast.FuncDecl // Function name -> list of overload declarations
+	tempId int
+	// reservedTempNames are names NewTempId must not mint, because something the emitted
+	// code reads already binds them. A class whose computed key reads a name from the
+	// surrounding scope sets it for the span of that class, so a `temp<N>` parameter
+	// cannot shadow what the key meant. The zero value reserves nothing.
+	reservedTempNames set.Set[string]
+	depGraph          *dep_graph.DepGraph
+	hasExtractor      bool
+	hasJsx            bool // tracks if _jsx is used
+	hasJsxs           bool // tracks if _jsxs is used
+	hasFragment       bool // tracks if _Fragment is used
+	isModule          bool
+	inBlockScope      bool
+	overloadDecls     map[string][]*ast.FuncDecl // Function name -> list of overload declarations
 	// jsTypes answers what emission needs to know about inferred types. A nil field
 	// reads as noJSTypes through b.types(), which is what a hand-built AST wants.
 	jsTypes JSTypes
@@ -35,9 +40,16 @@ func NewBuilder(t JSTypes) *Builder {
 	return &Builder{jsTypes: t}
 }
 
+// NewTempId hands out the next `temp<N>` no name in reservedTempNames takes. It skips a
+// reserved name rather than failing, so the counter is the only state a caller needs.
 func (b *Builder) NewTempId() string {
-	b.tempId += 1
-	return "temp" + strconv.Itoa(b.tempId)
+	for {
+		b.tempId += 1
+		name := "temp" + strconv.Itoa(b.tempId)
+		if !b.reservedTempNames.Contains(name) {
+			return name
+		}
+	}
 }
 
 func (b *Builder) buildExprs(exprs []ast.Expr) ([]Expr, []Stmt) {
@@ -917,16 +929,34 @@ func (b *Builder) buildDeclWithNamespace(decl ast.Decl, nsName string) []Stmt {
 	case *ast.ClassDecl:
 		allStmts := []Stmt{}
 
-		// Every class has at most one in-body ConstructorElem (user-written
-		// or synthesized in Phase 2.7). buildClassElems emits the
-		// constructor JS from that element directly.
 		var superClass Expr
 		if d.Extends != nil {
 			if name, ok := b.superClassName(d.Extends, nsName); ok {
 				superClass = NewIdentExpr(name, "", d.Extends)
 			}
 		}
-		classElems, classStmts := b.buildClassElems(d.Body, superClass != nil)
+
+		// A class that declares no constructor still constructs its fields, so the
+		// implicit one is derived here rather than read back from the tree. Only
+		// internal/checker installs it during inference, so deriving it is what makes
+		// the emitted class the same whichever checker ran. It goes first so the
+		// constructor emits ahead of the members, where that install puts it.
+		//
+		// A computed key leaves no parameter name to bind, so no constructor is
+		// derived. Reporting that belongs to the checkers, so the field is dropped.
+		// A computed key reads a name from the surrounding scope, and the parameters this
+		// class emits are lowered to `temp<N>`, so one of those could shadow it.
+		// `class C { [temp1]: number }` over a `temp1` the key reads would otherwise store
+		// the field under the parameter's own value.
+		prevReserved := b.reservedTempNames
+		b.reservedTempNames = prevReserved.Union(ast.FreeNamesInComputedKeys(d))
+
+		elems := d.Body
+		if synth, _ := ast.ImplicitConstructor(d); synth != nil {
+			elems = append([]ast.ClassElem{synth}, d.Body...)
+		}
+		classElems, classStmts := b.buildClassElems(elems, superClass != nil)
+		b.reservedTempNames = prevReserved
 		allStmts = slices.Concat(allStmts, classStmts)
 
 		classDecl := &ClassDecl{

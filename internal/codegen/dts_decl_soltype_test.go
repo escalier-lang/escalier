@@ -13,6 +13,9 @@ type fakeSolNamespace struct {
 	values   map[string]soltype.Type
 	declared map[string]fakeDeclaredType
 	nested   map[string]*fakeSolNamespace
+	// valueParams are the type parameters ValueType reports beside a name's value type,
+	// which only a class declares. A case that leaves a name out here reports none.
+	valueParams map[string][]*soltype.TypeParam
 }
 
 // fakeDeclaredType is what a name's type declaration stands for, the pair
@@ -22,9 +25,12 @@ type fakeDeclaredType struct {
 	typeParams []*soltype.TypeParam
 }
 
-func (f *fakeSolNamespace) ValueType(name string) (soltype.Type, bool) {
+func (f *fakeSolNamespace) ValueType(name string) (soltype.Type, []*soltype.TypeParam, bool) {
 	t, ok := f.values[name]
-	return t, ok
+	if !ok {
+		return nil, nil, false
+	}
+	return t, f.valueParams[name], true
 }
 
 func (f *fakeSolNamespace) DeclaredType(name string) (soltype.Type, []*soltype.TypeParam, bool) {
@@ -127,6 +133,17 @@ func TestBuildDeclStmtFromSol(t *testing.T) {
 			// Rendering each alone would emit `(x: unknown) => unknown` and lose the
 			// link between the parameter and the return.
 			want: "export declare function id<T0>(x: T0): T0;\n",
+		},
+		{
+			name:   "FnReturningNoValueDeclaresAVoidReturn",
+			source: `export fn log(msg: string) { console.log(msg) }`,
+			ns: &fakeSolNamespace{
+				values: map[string]soltype.Type{
+					"log": solFn([]*soltype.FuncParam{solParam("msg", solStr())}, &soltype.UndefinedType{}),
+				},
+			},
+			isTopLevel: true,
+			want:       "export declare function log(msg: string): void;\n",
 		},
 		{
 			name:   "TypeAliasEmitsTheRegisteredBody",

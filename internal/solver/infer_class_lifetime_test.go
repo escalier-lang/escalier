@@ -35,21 +35,22 @@ func TestInferClassLifetimeParams(t *testing.T) {
 			},
 		},
 		// Returning the field at a DIFFERENT lifetime relates the two rather than passing
-		// silently, so the field's borrow is a real obligation on the caller. This is the
-		// case that fails vacuously when the class parameter is erased from the frozen body:
-		// with nothing there to relate, the function infers no bound at all. The structural
-		// twin `h: {peer: &'x mut B}` infers the identical signature.
+		// silently, so the field's borrow is a real obligation on the caller and the
+		// signature declares it. This is the case that fails vacuously when the class
+		// parameter is erased from the frozen body: with nothing there to relate, the
+		// declared bound would go unproven. The structural twin `h: {peer: &'x mut B}` infers
+		// the identical signature.
 		"FieldAtAnotherLifetimeInfersABound": {
 			src: `
 				class Holder<'a> { peer: &'a mut {value: number} }
-				fn read<'x, 'y>(h: Holder<'x>, other: &'y mut {value: number}) -> &'y mut {value: number} {
+				fn read<'x: 'y, 'y>(h: Holder<'x>, other: &'y mut {value: number}) -> &'y mut {value: number} {
 					return h.peer
 				}
 			`,
 			want: nil,
 			types: map[string]string{
 				"Holder": "<'a> {new (peer: &'a mut {value: number}) -> Holder<'a>}",
-				"read": "fn <'a, 'b: 'a>(h: Holder<'a>, other: &'b mut {value: number}) " +
+				"read": "fn <'a: 'b, 'b>(h: Holder<'a>, other: &'b mut {value: number}) " +
 					"-> &'b mut {value: number}",
 			},
 		},
@@ -166,7 +167,7 @@ func TestClassLifetimeSubtyping(t *testing.T) {
 		"ReturningAtALongerRegionForcesTheArgument": {
 			src: `
 				class Holder<'a> { peer: &'a mut {value: number} }
-				fn launder<'x>(h: Holder<'x>) -> Holder<'static> { return h }
+				fn launder<'x: 'static>(h: Holder<'x>) -> Holder<'static> { return h }
 			`,
 			want: "fn (h: Holder<'static>) -> Holder<'static>",
 		},
@@ -175,7 +176,7 @@ func TestClassLifetimeSubtyping(t *testing.T) {
 		"ConstructingAtALongerRegionForcesTheBorrow": {
 			src: `
 				class Holder<'a> { peer: &'a mut {value: number} }
-				fn launder<'x>(p: &'x mut {value: number}) -> Holder<'static> { return Holder(p) }
+				fn launder<'x: 'static>(p: &'x mut {value: number}) -> Holder<'static> { return Holder(p) }
 			`,
 			want: "fn (p: &'static mut {value: number}) -> Holder<'static>",
 		},
@@ -275,12 +276,15 @@ func TestClassLifetimeClauseErrors(t *testing.T) {
 // resolve inside the class's named-lifetime scope and the bound reaches the variable the
 // lifetime parameter carries rather than minting one of its own, which would render a bare
 // `&` with no name.
+//
+// The bound renders on the binder, which is what keeps `peer: T` reading as the source
+// wrote it rather than as the meet of `T` and its bound.
 func TestClassTypeParamBoundSeesTheClassLifetime(t *testing.T) {
 	src := `class Holder<'a, T: &'a {value: number}> { peer: T }`
 	values, _, errs := inferSource(t, src)
 	require.Empty(t, messagesWithSpan(t, errs))
 	require.Equal(t,
-		"<T, 'a> {new (peer: T & &'a {value: number}) -> Holder<'a, T>}",
+		"<T: &'a {value: number}, 'a> {new (peer: T) -> Holder<'a, T>}",
 		values["Holder"],
 	)
 }

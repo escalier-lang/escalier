@@ -524,7 +524,7 @@ func (c *Checker) InferComponent(
 							span: decl.Name.Span(),
 						})
 					} else {
-						synth, synthErrors := c.synthesizeConstructorElem(decl)
+						synth, synthErrors := synthesizedConstructorElem(decl)
 						errors = slices.Concat(errors, synthErrors)
 						if synth != nil {
 							// Prepend so the rest of the loop sees it like a
@@ -1272,9 +1272,8 @@ func (c *Checker) InferComponent(
 				unifyErrors := c.Unify(nsCtx, typeAlias.Type, enumUnionType)
 				errors = slices.Concat(errors, unifyErrors)
 
-				// Unify the type parameters
-				typeParamErrors := c.unifyTypeParams(nsCtx, typeAlias.TypeParams, typeParams)
-				errors = slices.Concat(errors, typeParamErrors)
+				errors = slices.Concat(errors, c.resolveDeclTypeParams(
+					nsCtx, declCtxMap[decl], decl.TypeParams, typeAlias.TypeParams))
 			case *ast.ClassDecl:
 				// TODO(#604): the definition body below is duplicated in
 				// infer_class_decl.go (body-level inferClassDecl). Extract a
@@ -1289,6 +1288,9 @@ func (c *Checker) InferComponent(
 
 				typeAlias := nsCtx.Scope.GetTypeAlias(decl.Name.Name)
 				instanceType := type_system.Prune(typeAlias.Type).(*type_system.ObjectType)
+
+				errors = slices.Concat(errors, c.resolveDeclTypeParams(
+					nsCtx, declCtxMap[decl], decl.TypeParams, typeAlias.TypeParams))
 
 				// Get the class binding to access static methods
 				classBinding := nsCtx.Scope.GetValue(decl.Name.Name)
@@ -2092,9 +2094,17 @@ func (c *Checker) InferModule(ctx Context, m *ast.Module) (depGraph *dep_graph.D
 // Note that this function:
 //   - does NOT add the inferred type parameters to any scope,
 //   - does NOT perform any constraint checking or error reporting, and
-//   - is NOT a replacement for inferFuncTypeParams, which is responsible for
-//     function-level generic parameter handling and associated diagnostics.
+//   - is NOT a replacement for resolveTypeParams, which resolves each constraint and
+//     default from its annotation and reports the diagnostics that raises.
+//
+// A caller that pre-binds a declaration here resolves its real constraints and defaults
+// through resolveDeclTypeParams. Skipping that leaves each placeholder unsolved, and an
+// unsolved placeholder renders `unknown`.
 func (c *Checker) inferTypeParams(astTypeParams []*ast.TypeParam) []*type_system.TypeParam {
+	// Mint one placeholder per distinct name, so this list lines up positionally with the
+	// one resolveTypeParams returns and unifyTypeParams pairs the two correctly.
+	astTypeParams = ast.DistinctTypeParams(astTypeParams)
+
 	// Sort type parameters topologically for processing (so constraints can reference earlier params)
 	sortedTypeParams := ast.SortTypeParamsTopologically(astTypeParams)
 
@@ -2116,13 +2126,35 @@ func (c *Checker) inferTypeParams(astTypeParams []*ast.TypeParam) []*type_system
 		}
 	}
 
-	// Build result in DECLARATION order (not sorted order)
-	// This is critical for correct substitution when the type is instantiated
-	typeParams := make([]*type_system.TypeParam, len(astTypeParams))
-	for i, astParam := range astTypeParams {
-		typeParams[i] = typeParamMap[astParam.Name]
+	return typeParamsInDeclOrder(astTypeParams, typeParamMap)
+}
+
+// resolveDeclTypeParams resolves the constraints and defaults a declaration wrote and
+// unifies them with the placeholders inferTypeParams minted for it, so the declaration's
+// stored parameters carry what the source said rather than an unsolved variable.
+//
+// placeholders is the list on the declaration's own type alias, which is what every later
+// reader consults, so unifying into it is what makes the resolved bound and default
+// reachable. The emitted `.d.ts` reads them, and an unsolved placeholder renders
+// `unknown`, so `class Holder<T: {value: number}>` would emit `<T extends unknown>`.
+func (c *Checker) resolveDeclTypeParams(
+	ctx Context,
+	declCtx Context,
+	astTypeParams []*ast.TypeParam,
+	placeholders []*type_system.TypeParam,
+) []Error {
+	if len(astTypeParams) == 0 {
+		return nil
 	}
-	return typeParams
+	// resolveTypeParams binds each parameter's name so a sibling's annotation can name it.
+	// It binds them in a child scope, which leaves the declaration's own scope alone.
+	resolved, errors := c.resolveTypeParams(ctx, declCtx.WithNewScope(), astTypeParams)
+
+	// Both lists are in declaration order, which is what lets unifyTypeParams pair them by
+	// position. Pairing a sorted list against a declaration-order one attaches each bound
+	// to the wrong parameter, storing `T: {value: number}, U: U` for
+	// `class Holder<T: U, U: {value: number}>`.
+	return slices.Concat(errors, c.unifyTypeParams(ctx, placeholders, resolved))
 }
 
 // unifyTypeParams unifies the placeholder type parameters (with FreshVar constraints/defaults)

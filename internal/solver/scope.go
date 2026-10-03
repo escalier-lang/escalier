@@ -240,6 +240,16 @@ func (s *Scope) getTypeBefore(name string, stop *Scope) (TypeBinding, bool) {
 	return TypeBinding{}, false
 }
 
+// getValueBefore is the value-sort counterpart of getTypeBefore.
+func (s *Scope) getValueBefore(name string, stop *Scope) (ValueBinding, bool) {
+	for cur := s; cur != nil && cur != stop; cur = cur.parent {
+		if b, ok := cur.values[name]; ok {
+			return b, true
+		}
+	}
+	return ValueBinding{}, false
+}
+
 // OwnNamespace resolves name in this scope's own namespace map, the namespace-sort
 // counterpart of OwnType.
 func (s *Scope) OwnNamespace(name string) (*Namespace, bool) {

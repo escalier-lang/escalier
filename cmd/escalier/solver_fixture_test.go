@@ -396,69 +396,54 @@ type emitSkip struct {
 // an entry keeps logging until every fault behind it clears, so clearing a cause does
 // not always drop its entries.
 //
+// Every entry but one names `index.d.ts`. The emitted source map agrees on every
+// fixture the comparison reaches.
+//
 // The entries are seeded from a run rather than predicted, and an entry that starts
 // agreeing fails, so the list burns down the way solverSkips does.
 var emitSkips = map[emitSkip]*solverSkipCause{
-	{"class_with_static_members", "index.js"}:   causeSynthesizedConstructor,
-	{"extractor_arg_with_init", "index.js"}:     causeSynthesizedConstructor,
-	{"extractor_basic", "index.js"}:             causeSynthesizedConstructor,
-	{"extractor_inside_namespaces", "index.js"}: causeSynthesizedConstructor,
-	{"extractor_nested", "index.js"}:            causeSynthesizedConstructor,
-	{"fix_point_combinator", "index.js"}:        causeSynthesizedConstructor,
-	{"mut_class_reference", "index.js"}:         causeSynthesizedConstructor,
+	{"fix_point_combinator", "index.js"}: causeFieldReadBound,
 
-	{"class_with_static_members", "index.js.map"}:   causeSynthesizedConstructor,
-	{"extractor_arg_with_init", "index.js.map"}:     causeSynthesizedConstructor,
-	{"extractor_basic", "index.js.map"}:             causeSynthesizedConstructor,
-	{"extractor_inside_namespaces", "index.js.map"}: causeSynthesizedConstructor,
-	{"extractor_nested", "index.js.map"}:            causeSynthesizedConstructor,
-	{"fix_point_combinator", "index.js.map"}:        causeSynthesizedConstructor,
-	{"mut_class_reference", "index.js.map"}:         causeSynthesizedConstructor,
-
-	{"enum", "index.d.ts"}:                        causeExtractorStaticSide,
-	{"extractor_arg_with_init", "index.d.ts"}:     causeExtractorStaticSide,
-	{"extractor_basic", "index.d.ts"}:             causeExtractorStaticSide,
-	{"extractor_inside_namespaces", "index.d.ts"}: causeExtractorStaticSide,
-	{"extractor_nested", "index.d.ts"}:            causeExtractorStaticSide,
-	{"generic_enum", "index.d.ts"}:                causeExtractorStaticSide,
-	{"fix_point_combinator", "index.d.ts"}:        causeClassCtorTypeParams,
-	{"mut_class_reference", "index.d.ts"}:         causeClassCtorTypeParams,
+	{"enum", "index.d.ts"}:                        causeEnumVariantValue,
+	{"generic_enum", "index.d.ts"}:                causeEnumVariantValue,
+	{"extractor_inside_namespaces", "index.d.ts"}: causeEnclosingNamespacePrefix,
+	{"extractor_arg_with_init", "index.d.ts"}:     causePatterns,
 	{"generalize", "index.d.ts"}:                  causeUnusedParamNotGeneralized,
 	{"type_ann_index_signature", "index.d.ts"}:    causeIndexSignatureOptional,
 }
 
-// causeSynthesizedConstructor is the cause behind every `index.js` entry in emitSkips.
-// internal/checker writes a ConstructorElem into the class's AST body during
-// inference, and codegen emits the constructor from that element. internal/solver
-// leaves the tree alone, so the class emits with no constructor and no members.
+// causeFieldReadBound is the one `index.js` entry's cause. Reading a field whose type
+// is a plain function emits `obj.f.bind(obj)` on the solver and `obj.f` on the checker.
+// A method read agrees on both, so the disagreement is only for a field, which declares
+// no receiver and so needs no binding.
 //
-// This is a coupling through the AST rather than through a node's type, so it is
-// outside the five read sites #1673 names.
-var causeSynthesizedConstructor = &solverSkipCause{
-	name:   "a constructor internal/checker synthesizes into the class body",
-	ticket: "#1771",
+// The right rule binds a read that resolved to a method and leaves a plain function
+// alone. The solver cannot answer that from the type, because member lookup yields the
+// value the read produces and that value carries no receiver, so it has to record
+// method-ness during the walk.
+var causeFieldReadBound = &solverSkipCause{
+	name:   "binding a field read whose type is a plain function",
+	ticket: "#1782",
 }
 
 // The causes behind the `index.d.ts` entries, each triaged from the diff the artifact
 // comparison reports. #1676 is the issue that works them down.
 var (
-	// An extractor class's static type carries the `new` signature and no
-	// `[Symbol.customMatcher]` one, which says what a match against the class binds.
-	// An enum variant loses the constructor object too and renders as a plain
-	// function. What a match recovers is wrong as a result, not only the declaration
-	// describing it. `generic_enum` matches a `MyOption<number>` and reads the payload
-	// back as `never`.
-	causeExtractorStaticSide = &solverSkipCause{
-		name:   "the static side of an extractor or enum variant declaration",
-		ticket: "#1772",
+	// An enum variant's value is a plain function rather than the object a class value
+	// takes, so it carries neither a constructor nor the `[Symbol.customMatcher]`
+	// signature a pattern reads. What a match recovers is wrong as a result, not only
+	// the declaration describing it. `generic_enum` matches a `MyOption<number>` and
+	// reads the payload back as `never`.
+	causeEnumVariantValue = &solverSkipCause{
+		name:   "an enum variant's value as a constructor object",
+		ticket: "#1784",
 	}
-	// A class constructor's signature does not carry the class's declared type
-	// parameters. One a constructor argument mentions is rediscovered as an inferred
-	// variable and renamed to `T0`, and one no argument mentions coalesces to `never`,
-	// so `new <T>(log: string): Consumer<T>` emits as `new (log: string): Consumer<never>`.
-	causeClassCtorTypeParams = &solverSkipCause{
-		name:   "a class's declared type parameters on its constructor signature",
-		ticket: "#1773",
+	// A reference to a type the enclosing namespace declares renders under its full
+	// path, so a member of `declare namespace MyEnum` reads `MyEnum.Color` where the
+	// twin writes `Color`. Both denote the same type.
+	causeEnclosingNamespacePrefix = &solverSkipCause{
+		name:   "the enclosing namespace's prefix on a reference",
+		ticket: "#1785",
 	}
 	// A parameter the body never reads coalesces to `unknown` rather than becoming a
 	// type parameter, so `fn fst(a, b) { return a }` emits `<T0>(a: T0, b: unknown) => T0`

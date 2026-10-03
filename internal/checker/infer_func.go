@@ -123,28 +123,48 @@ func (c *Checker) inferFuncParams(
 	return params, bindings, errors
 }
 
-// inferFuncTypeParams infers type parameters for functions and function expressions.
-// Unlike inferTypeParams, this version:
-// - Uses inferTypeAnn instead of FreshVar for constraints and defaults
-// - Sets provenance on constraint and default types
-// - Adds the type parameters to the function context scope
-// Returns the list of type parameters and any errors encountered.
-func (c *Checker) inferFuncTypeParams(
+// resolveTypeParams resolves each type parameter's constraint and default from the
+// annotation the source wrote, sets provenance on both, and binds the parameter's name in
+// funcCtx's scope so a sibling's annotation can name it. It returns the parameters and the
+// diagnostics resolving them raised.
+//
+// The parameters come back in declaration order. A caller pairing type arguments with
+// parameters pairs them by position, the quantifier prefix a signature renders follows the
+// list, and unifyTypeParams pairs this list against a placeholder list that is in
+// declaration order too.
+//
+// Every declaration carrying type parameters resolves them here: a function, a function
+// expression, a function type annotation, a constructor, a class, and an enum.
+//
+// inferTypeParams is the other half of the pair. It mints a fresh variable per constraint
+// and default rather than reading the annotation, which is what lets a declaration that
+// mentions a sibling be pre-bound before any annotation is resolved. A declaration
+// pre-bound that way reaches its real constraints and defaults by resolving them here and
+// unifying the two lists through unifyTypeParams.
+func (c *Checker) resolveTypeParams(
 	ctx Context,
 	funcCtx Context,
 	astTypeParams []*ast.TypeParam,
 ) ([]*type_system.TypeParam, []Error) {
 	errors := []Error{}
+	errors = slices.Concat(errors, reportDuplicateTypeParams(astTypeParams))
+	// Resolve one parameter per distinct name. A name's later binder is unreachable, so
+	// its annotations are dropped along with it and raise nothing of their own.
+	astTypeParams = ast.DistinctTypeParams(astTypeParams)
 
-	// Sort type parameters topologically so dependencies come first
+	forwardRefErrors, badDefaults := reportDefaultForwardRefs(astTypeParams)
+	errors = slices.Concat(errors, forwardRefErrors)
+
+	// Resolve in topological order, so a bound naming a sibling resolves after that
+	// sibling and reaches the name it wrote rather than an undeclared one.
 	sortedTypeParams := ast.SortTypeParamsTopologically(astTypeParams)
 
-	typeParams := make([]*type_system.TypeParam, len(sortedTypeParams))
+	byName := make(map[string]*type_system.TypeParam, len(sortedTypeParams))
 
-	for i, tp := range sortedTypeParams {
+	for _, tp := range sortedTypeParams {
 		var defaultType type_system.Type
 		var constraintType type_system.Type
-		if tp.Default != nil {
+		if tp.Default != nil && !badDefaults.Contains(tp.Name) {
 			var defaultErrors []Error
 			defaultType, defaultErrors = c.inferTypeAnn(funcCtx, tp.Default)
 			defaultType.SetProvenance(&ast.NodeProvenance{Node: tp.Default})
@@ -161,7 +181,7 @@ func (c *Checker) inferFuncTypeParams(
 			Constraint: constraintType,
 			Default:    defaultType,
 		}
-		typeParams[i] = typeParam
+		byName[tp.Name] = typeParam
 
 		var t type_system.Type = type_system.NewUnknownType(nil)
 		if typeParam.Constraint != nil {
@@ -174,7 +194,84 @@ func (c *Checker) inferFuncTypeParams(
 		})
 	}
 
-	return typeParams, errors
+	// Topological order is an internal step of the resolution above. The result is in
+	// declaration order, which this function's doc gives the reasons for.
+	return typeParamsInDeclOrder(astTypeParams, byName), errors
+}
+
+// typeParamsInDeclOrder reads byName back out in the order astTypeParams declares. Pass
+// astTypeParams through ast.DistinctTypeParams first, so each name appears once.
+//
+// Declaration order is what a caller pairing type arguments with parameters needs, and what
+// the quantifier prefix a signature renders follows. The two producers of byName each walk
+// the parameters in a different order, so neither can build the result as it goes.
+func typeParamsInDeclOrder(
+	astTypeParams []*ast.TypeParam,
+	byName map[string]*type_system.TypeParam,
+) []*type_system.TypeParam {
+	typeParams := make([]*type_system.TypeParam, 0, len(astTypeParams))
+	for _, astParam := range astTypeParams {
+		typeParams = append(typeParams, byName[astParam.Name])
+	}
+	return typeParams
+}
+
+// reportDuplicateTypeParams reports each parameter whose name an earlier one already took.
+// A reference to the name can only mean one of them, so the later binder is unreachable and
+// a caller has no way to say which parameter an argument fills.
+//
+// Only the later binder is reported, so `<T, T, T>` raises two errors rather than three.
+func reportDuplicateTypeParams(astTypeParams []*ast.TypeParam) []Error {
+	var errors []Error
+	seen := set.NewSet[string]()
+	for _, tp := range astTypeParams {
+		if seen.Contains(tp.Name) {
+			errors = append(errors, DuplicateTypeParamError{Name: tp.Name, Param: tp})
+			continue
+		}
+		seen.Add(tp.Name)
+	}
+	return errors
+}
+
+// reportDefaultForwardRefs reports each default that names its own parameter or one declared
+// after it. A reference omitting a trailing argument fills it from that parameter's default,
+// substituting the arguments before it, so a default can only name a parameter that already
+// has one.
+//
+// It also returns the names whose defaults it rejected. A caller leaves such a default
+// unresolved, since resolving one would report a second time that the name it reaches is
+// undeclared, which says nothing the first error did not.
+//
+// A name is reported once per default, so `<T = Pair<U, U>, U>` raises one error rather than
+// two.
+func reportDefaultForwardRefs(astTypeParams []*ast.TypeParam) ([]Error, set.Set[string]) {
+	var errors []Error
+	rejected := set.NewSet[string]()
+	for i, tp := range astTypeParams {
+		if tp.Default == nil {
+			continue
+		}
+		forbidden := set.NewSet[string]()
+		for _, later := range astTypeParams[i:] {
+			forbidden.Add(later.Name)
+		}
+		reported := set.NewSet[string]()
+		for _, ref := range ast.FreeTypeRefs(tp.Default) {
+			name := ast.QualIdentToString(ref.Name)
+			if !forbidden.Contains(name) || reported.Contains(name) {
+				continue
+			}
+			reported.Add(name)
+			errors = append(errors, TypeParamDefaultForwardRefError{
+				Ref: ref, Param: tp.Name, Target: name,
+			})
+		}
+		if reported.Len() > 0 {
+			rejected.Add(tp.Name)
+		}
+	}
+	return errors, rejected
 }
 
 // NOTE: A new context should be created before calling this function in order
@@ -209,7 +306,7 @@ func (c *Checker) inferFuncSig(
 	lifetimeParams := c.declareLifetimeParams(funcCtx.Scope, sig.LifetimeParams)
 
 	// Handle generic functions by creating type parameters
-	typeParams, typeParamErrors := c.inferFuncTypeParams(ctx, funcCtx, sig.TypeParams)
+	typeParams, typeParamErrors := c.resolveTypeParams(ctx, funcCtx, sig.TypeParams)
 	errors = slices.Concat(errors, typeParamErrors)
 
 	params, bindings, paramErrors := c.inferFuncParams(funcCtx, sig.Params)

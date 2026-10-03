@@ -2127,6 +2127,26 @@ func (e *LifetimeBoundNotSatisfiedError) Message() string {
 		e.Sub, e.Super, e.Sub, e.Super)
 }
 
+// LifetimeRelationUndeclaredError fires when a body imposes an outlives relation between two
+// lifetimes its signature declares, or between one of them and 'static, that the declared
+// bounds do not imply. `fn f<'a, 'b>(x: &'a T, y: &'b T) -> &'b T { return x }` needs 'a to
+// outlive 'b. Sub and Super are the two names without the leading `'`, and Super is
+// "static" for 'static. Param is Sub's binder, which the error blames.
+type LifetimeRelationUndeclaredError struct {
+	Sub   string
+	Super string
+	Param *ast.LifetimeParam
+}
+
+func (*LifetimeRelationUndeclaredError) isSolverError()        {}
+func (e *LifetimeRelationUndeclaredError) Span() ast.Span      { return e.Param.Span() }
+func (e *LifetimeRelationUndeclaredError) Related() []ast.Span { return nil }
+func (e *LifetimeRelationUndeclaredError) Message() string {
+	return fmt.Sprintf(
+		"the body requires '%s to outlive '%s, but the signature does not declare it; add the bound '%s: '%s",
+		e.Sub, e.Super, e.Sub, e.Super)
+}
+
 // UndeclaredLifetimeError fires when a signature uses a named lifetime that its own
 // `<…>` quantifier list does not bind. A `&'x` borrow or a bound's right-hand side
 // names `'x`, but no `<'x>` binder introduces it, so the name is a forgotten
@@ -2175,6 +2195,27 @@ func (e *UndeclaredLifetimeError) Message() string {
 		msg += "; add `<'" + e.Name + ">` to the signature's lifetime list"
 	}
 	return msg
+}
+
+// DuplicateTypeParamError fires when a declaration's `<…>` list binds the same type
+// parameter name more than once, as in `<T, T>`. A reference to the name can only mean one
+// of them, so the repeat binds nothing a program can reach and a caller has no way to say
+// which parameter an argument fills. Name is the repeated name, Param the redundant binder
+// and the blame span, and First the kept binder, surfaced through Related.
+//
+// The message matches internal/checker's error of the same name, so the two checkers report
+// one thing.
+type DuplicateTypeParamError struct {
+	Name  string
+	Param *ast.TypeParam
+	First *ast.TypeParam
+}
+
+func (*DuplicateTypeParamError) isSolverError()        {}
+func (e *DuplicateTypeParamError) Span() ast.Span      { return e.Param.Span() }
+func (e *DuplicateTypeParamError) Related() []ast.Span { return []ast.Span{e.First.Span()} }
+func (e *DuplicateTypeParamError) Message() string {
+	return fmt.Sprintf("type parameter `%s` is declared more than once", e.Name)
 }
 
 // DuplicateLifetimeParamError fires when a signature's `<…>` list binds the same

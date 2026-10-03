@@ -3,6 +3,7 @@ package solver
 import (
 	"math"
 
+	"github.com/escalier-lang/escalier/internal/ast"
 	"github.com/escalier-lang/escalier/internal/set"
 	"github.com/escalier-lang/escalier/internal/soltype"
 )
@@ -32,6 +33,18 @@ type PolyScheme struct {
 	Level int
 	Body  soltype.Type
 
+	// declared holds the type parameters the declaration wrote, for a class, alias, or enum
+	// value. A function carries its own on each signature, so it leaves this nil. Coalescing
+	// reads it to keep each parameter symbolic rather than merging it with its bound.
+	declared []*soltype.TypeParam
+
+	// keptDisplay holds the display in which every declared parameter is still a
+	// variable, and keptParams those parameters under the variables that display holds.
+	// generalize seals both, for the reason it gives. A scheme with no declared
+	// parameters leaves them nil, since its two displays would be the same type.
+	keptDisplay soltype.Type
+	keptParams  []*soltype.TypeParam
+
 	// coalesced memoizes the display type. A Body is immutable after
 	// generalization. Later components instantiate fresh copies rather than
 	// constraining it. Because of that immutability, coalesceScheme's co-occurrence
@@ -51,9 +64,27 @@ func (*PolyScheme) isScheme() {}
 // goes stale.
 func (sc *PolyScheme) display() soltype.Type {
 	if sc.coalesced == nil {
-		sc.coalesced = coalesceScheme(sc.Body, sc.Level)
+		sc.coalesced = coalesceScheme(sc.Body, sc.Level, sc.declared)
 	}
 	return sc.coalesced
+}
+
+// displayKeepingDeclared returns the scheme's display type with every parameter the
+// declaration wrote still a variable, together with those parameters named and carrying
+// the bound and default the source gave them.
+//
+// display() keeps only a bounded parameter, which is what a reader of the declaration's
+// own handle wants. `.d.ts` emission wants every one, since TypeScript binds a class's
+// parameters on its constructor signature and cannot bind one the display inlined away.
+// coalesceSchemeKeepingDeclared gives the two displays' full reasons.
+//
+// A scheme with no declared parameters has nothing to hold, so its two displays are the
+// same type and it answers with display() and no parameters.
+func (sc *PolyScheme) displayKeepingDeclared() (soltype.Type, []*soltype.TypeParam) {
+	if sc.keptDisplay == nil {
+		return sc.display(), nil
+	}
+	return sc.keptDisplay, sc.keptParams
 }
 
 // monoScheme wraps a raw type as a single-scheme value binding's scheme — the
@@ -272,11 +303,21 @@ type ltFreshener struct {
 	lim   int
 	lvl   int
 	cache map[*soltype.LifetimeVar]*soltype.LifetimeVar
+	// freshenSet, when set, replaces the level test. A LifetimeVar in it is freshened and
+	// every other lifetime is shared, whatever its level.
+	freshenSet set.Set[*soltype.LifetimeVar]
 }
 
 func (lf *ltFreshener) fresh(lt soltype.Lifetime) soltype.Lifetime {
 	lv, ok := lt.(*soltype.LifetimeVar)
-	if !ok || lv.Level <= lf.lim {
+	if !ok {
+		return lt
+	}
+	if lf.freshenSet != nil {
+		if !lf.freshenSet.Contains(lv) {
+			return lt
+		}
+	} else if lv.Level <= lf.lim {
 		return lt
 	}
 	if lf.cache == nil {
@@ -475,10 +516,19 @@ func (f *freshener) freshenBounds(bounds []soltype.Type) []soltype.Type {
 // OPERATIVE body, so callers cannot pass extra fields (Policy A / B2). See its doc.
 func (c *checker) generalize(t soltype.Type, lvl int) TypeScheme {
 	c.sealUsageObjects(t, lvl)
-	sc := &PolyScheme{Level: lvl, Body: t}
+	// The declaration's own parameters are read from the raw body, where a class value's
+	// constructor return still names the class. Reading them before the display is sealed is
+	// what keeps them out of the merge coalescing would otherwise perform.
+	sc := &PolyScheme{Level: lvl, Body: t, declared: c.declaredTypeParams(t)}
 	// Seal the subsumed display now, while the ambient Context is available, so
 	// every later read sees the canonical type and an inferred `1 | number` renders `number`.
 	sc.coalesced = c.subsumeFinal(sc.display())
+	// The second display is sealed here for the same reason, since subsuming needs the
+	// Context too and displayKeepingDeclared is read long after this returns.
+	if len(sc.declared) > 0 {
+		kept, params := coalesceSchemeKeepingDeclared(sc.Body, sc.Level, sc.declared)
+		sc.keptDisplay, sc.keptParams = c.subsumeFinal(kept), params
+	}
 	return sc
 }
 
@@ -596,4 +646,137 @@ func propagateOpen(vars map[int]*soltype.TypeVarType) {
 			}
 		}
 	}
+}
+
+// methodLtFreshener copies a method signature with the lifetimes lt selects replaced by fresh
+// ones, the lifetime-only counterpart of freshener. Type variables are shared, since a
+// method's own type parameters are instantiated per call through its TypeParams binder.
+type methodLtFreshener struct {
+	lt ltFreshener
+}
+
+func (f *methodLtFreshener) EnterType(t soltype.Type, _ soltype.Polarity) soltype.EnterResult {
+	if res, ok := freshenLifetimeFormer(t, &f.lt); ok {
+		return res
+	}
+	if _, isVar := t.(*soltype.TypeVarType); isVar {
+		return soltype.EnterResult{Type: t, SkipChildren: true}
+	}
+	return soltype.EnterResult{}
+}
+
+func (f *methodLtFreshener) ExitType(t soltype.Type, _ soltype.Polarity) soltype.Type { return t }
+
+// lifetimeCollector records every LifetimeVar a type writes: a borrow's lifetime, a class or
+// alias reference's lifetime arguments, a class's borrow lifetime, and a function's own
+// lifetime parameters. It does not descend into a type variable's bounds.
+type lifetimeCollector struct {
+	out set.Set[*soltype.LifetimeVar]
+}
+
+func (v *lifetimeCollector) add(lt soltype.Lifetime) {
+	if lv, ok := lt.(*soltype.LifetimeVar); ok {
+		v.out.Add(lv)
+	}
+}
+
+func (v *lifetimeCollector) EnterType(t soltype.Type, _ soltype.Polarity) soltype.EnterResult {
+	switch t := t.(type) {
+	case *soltype.RefType:
+		v.add(t.Lt)
+	case *soltype.ClassType:
+		v.add(t.Lt)
+		for _, a := range t.LifetimeArgs {
+			v.add(a)
+		}
+	case *soltype.AliasType:
+		for _, a := range t.LifetimeArgs {
+			v.add(a)
+		}
+	case *soltype.FuncType:
+		for _, lp := range t.LifetimeParams {
+			v.add(lp.Var)
+		}
+	case *soltype.TypeVarType:
+		return soltype.EnterResult{Type: t, SkipChildren: true}
+	}
+	return soltype.EnterResult{}
+}
+
+func (v *lifetimeCollector) ExitType(t soltype.Type, _ soltype.Polarity) soltype.Type { return t }
+
+// recordMethodLifetimes adds to methodLifetimes every lifetime a method signature in obj
+// writes, other than the class's own lifetime parameters in classLts. It runs once a class
+// body is frozen, so it records the lifetimes the member signatures settle on.
+func (c *Context) recordMethodLifetimes(obj *soltype.ObjectType, classLts set.Set[*soltype.LifetimeVar]) {
+	for _, e := range obj.Elems {
+		m, ok := e.(*soltype.MethodElem)
+		if !ok {
+			continue
+		}
+		for _, sig := range m.Signatures {
+			col := &lifetimeCollector{out: set.NewSet[*soltype.LifetimeVar]()}
+			sig.Accept(col, soltype.Positive)
+			for _, lv := range col.out.ToSlice() {
+				if classLts.Contains(lv) {
+					continue
+				}
+				if c.methodLifetimes == nil {
+					c.methodLifetimes = set.NewSet[*soltype.LifetimeVar]()
+				}
+				c.methodLifetimes.Add(lv)
+			}
+		}
+	}
+}
+
+// instantiateMethodLifetimes returns member with each signature's own lifetimes replaced by
+// fresh ones at lvl, so this access shares none of them with another call to the same
+// method. A lifetime the class declares is shared, since projection has already replaced it
+// with the instance's argument. A freshened lifetime keeps its outlives bounds, rewritten
+// through the same copy.
+//
+// When recv holds a borrow and a signature's receiver borrows at a freshened lifetime, every
+// borrow recv may hold must outlive that lifetime, as an argument passed to a `&'a`
+// parameter must. For `peek<'a>(&'a self) -> &'a T`, `v.peek()` on `v: &'r View` then
+// returns a borrow no longer-lived than 'r. An owned receiver is borrowed for the call at the
+// fresh lifetime, the way `&v` is, so it adds no constraint.
+//
+// A member other than a method is returned unchanged.
+func (c *checker) instantiateMethodLifetimes(lvl int, blame ast.Node, recv soltype.Type, member soltype.ObjTypeElem) soltype.ObjTypeElem {
+	m, ok := member.(*soltype.MethodElem)
+	if !ok || c.ctx.methodLifetimes == nil {
+		return member
+	}
+	held := heldBorrows(recv)
+	sigs := make([]*soltype.FuncType, len(m.Signatures))
+	for i, sig := range m.Signatures {
+		// Freshen exactly the lifetimes a method quantifies. A lifetime the class declares
+		// belongs to the instance and stays shared, whatever its level.
+		f := &methodLtFreshener{lt: ltFreshener{ctx: c.ctx, lvl: lvl, freshenSet: c.ctx.methodLifetimes}}
+		inst, ok := sig.Accept(f, soltype.Positive).(*soltype.FuncType)
+		if !ok {
+			inst = sig
+		}
+		sigs[i] = inst
+		if len(held) == 0 || inst.SelfParam == nil || inst == sig {
+			continue
+		}
+		self, ok := inst.SelfParam.Type.(*soltype.RefType)
+		if !ok || self.Lt == nil {
+			continue
+		}
+		if orig, ok := sig.SelfParam.Type.(*soltype.RefType); ok && orig.Lt != self.Lt {
+			// Constrain each held borrow against a shared borrow at the fresh lifetime, the
+			// check an argument passed to a `&'a` parameter goes through. Shared is enough
+			// here, since checkReceiverMut has already checked that the receiver lends the
+			// mutability the member asks for.
+			for _, b := range held {
+				c.constrain(blame, b, soltype.NewRef(false, self.Lt, b.Inner))
+			}
+		}
+	}
+	cp := *m
+	cp.Signatures = sigs
+	return &cp
 }
