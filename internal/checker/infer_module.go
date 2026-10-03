@@ -524,7 +524,7 @@ func (c *Checker) InferComponent(
 							span: decl.Name.Span(),
 						})
 					} else {
-						synth, synthErrors := c.synthesizeConstructorElem(decl)
+						synth, synthErrors := synthesizedConstructorElem(decl)
 						errors = slices.Concat(errors, synthErrors)
 						if synth != nil {
 							// Prepend so the rest of the loop sees it like a

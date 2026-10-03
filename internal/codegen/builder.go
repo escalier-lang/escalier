@@ -917,16 +917,26 @@ func (b *Builder) buildDeclWithNamespace(decl ast.Decl, nsName string) []Stmt {
 	case *ast.ClassDecl:
 		allStmts := []Stmt{}
 
-		// Every class has at most one in-body ConstructorElem (user-written
-		// or synthesized in Phase 2.7). buildClassElems emits the
-		// constructor JS from that element directly.
 		var superClass Expr
 		if d.Extends != nil {
 			if name, ok := b.superClassName(d.Extends, nsName); ok {
 				superClass = NewIdentExpr(name, "", d.Extends)
 			}
 		}
-		classElems, classStmts := b.buildClassElems(d.Body, superClass != nil)
+
+		// A class that declares no constructor still constructs its fields, so the
+		// implicit one is derived here rather than read back from the tree. Only
+		// internal/checker installs it during inference, so deriving it is what makes
+		// the emitted class the same whichever checker ran. It goes first so the
+		// constructor emits ahead of the members, where that install puts it.
+		//
+		// A computed key leaves no parameter name to bind, so no constructor is
+		// derived. Reporting that belongs to the checkers, so the field is dropped.
+		elems := d.Body
+		if synth, _ := ast.ImplicitConstructor(d); synth != nil {
+			elems = append([]ast.ClassElem{synth}, d.Body...)
+		}
+		classElems, classStmts := b.buildClassElems(elems, superClass != nil)
 		allStmts = slices.Concat(allStmts, classStmts)
 
 		classDecl := &ClassDecl{

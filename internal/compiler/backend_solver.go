@@ -19,9 +19,9 @@ import (
 // the checker path are each a later phase of the cutover, and this is the list to
 // read before trusting anything it produces:
 //
-//   - A class emits with no constructor and no members, because internal/checker
-//     writes a synthesized constructor into the class's AST body during inference and
-//     codegen emits it from there. Tracked in #1771.
+//   - Reading a field whose type is a plain function binds it to its receiver, so
+//     `self.f` emits `this.f.bind(this)` where the checker path emits `this.f`. A
+//     method read agrees on both. Tracked in #1782.
 //   - The emitted .d.ts is rendered from soltype and matches what the checker path
 //     writes for most but not all source. Reconciling the two is tracked in #1676,
 //     and the four causes behind the fixtures that still differ are #1772 through
@@ -74,8 +74,8 @@ func (e *codegenGapError) Span() ast.Span { return e.span }
 
 func (e *codegenGapError) Message() string {
 	return CheckerEnvVar + "=" + CheckerSolver + " does not yet emit correct output for this file: " +
-		"a class emits with no constructor and no members, and the .d.ts does not yet match " +
-		"the one the old checker writes"
+		"a read of a function-typed field is bound to its receiver, and the .d.ts does not " +
+		"yet match the one the old checker writes"
 }
 
 // solverSolTypes reads one module run for the questions JavaScript emission asks.
