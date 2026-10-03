@@ -247,7 +247,7 @@ func TestIfValAndValElseDiagnosticsNameTheirConstruct(t *testing.T) {
 		// A fault inside the consequent blames the consequent, not the whole `if val`.
 		"IfValConsequentFault": {
 			src:   `fn f(u: number | string) { return if val x: number = u { x.nope } else { 0 } }`,
-			want:  "1:58-1:64: cannot constrain number <: object",
+			want:  "1:58-1:64: object is missing property: nope",
 			blame: "x.nope",
 		},
 		// A `val … else` names its `else`: the fallback that does not fit the annotated
@@ -340,13 +340,14 @@ func TestInferValElseChecksTheFallbackAgainstThePattern(t *testing.T) {
 				}`,
 			want: "2:25-2:31: object is missing property: x",
 		},
-		// The fallback is not an object at all.
-		"FallbackIsNotAnObject": {
+		// The fallback is a number, whose wrapper `Number` declares no `x` for the pattern
+		// to read. The report underlines the number rather than the wrapper.
+		"FallbackIsAPrimitive": {
 			src: `fn f(p: {x: number} | {y: string}) {
 					val {x} = p else { 5 }
 					return x
 				}`,
-			want: "2:25-2:26: cannot constrain 5 <: object",
+			want: "2:25-2:26: object is missing property: x",
 		},
 	}
 

@@ -48,6 +48,11 @@ type Context struct {
 	// ordinary nominal rule. It is empty when the run resolved no `Promise`.
 	promiseClass string
 
+	// wrapperClasses maps each primitive to the class its members are read through,
+	// `Number` for `number` and `String` for `string`, resolved once per run by
+	// resolveWrapperClasses. A primitive with no entry reads no members.
+	wrapperClasses map[soltype.Prim]*soltype.ClassType
+
 	// lifetimeCounter mints the next LifetimeVar id (M4 D1). Lifetimes are a
 	// SECOND bounded sort solved by the same machinery as types: a fresh lifetime
 	// gets the next id here, its bounds are extended only through

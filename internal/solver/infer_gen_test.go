@@ -775,7 +775,7 @@ func TestInferGenNext(t *testing.T) {
 			`,
 			wantErrs: []string{
 				`3:64-3:71: cannot constrain Generator<t8, undefined, unknown> <: object`,
-				`3:64-3:71: cannot constrain 5 <: object`,
+				`3:67-3:71: object is missing property: next`,
 			},
 		},
 		{

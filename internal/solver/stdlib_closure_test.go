@@ -33,6 +33,29 @@ func TestTheClosureHoldsWhatTheRootsReach(t *testing.T) {
 	require.NotContains(t, closure, "std:solo", "no root reaches std:solo")
 }
 
+// A package the first closure holds keeps its group there, and the second closure's
+// groups lose it, since it is published before they load.
+func TestLayeredGroupsLeaveTheFirstClosureWhole(t *testing.T) {
+	t.Parallel()
+
+	base := PackageGroups{
+		"std:alpha": {"std:alpha", "std:beta"},
+		"std:beta":  {"std:alpha", "std:beta"},
+	}
+	over := PackageGroups{
+		"std:beta":  {"std:beta", "std:gamma", "std:delta"},
+		"std:gamma": {"std:beta", "std:gamma", "std:delta"},
+		"std:delta": {"std:beta", "std:gamma", "std:delta"},
+	}
+
+	require.Equal(t, PackageGroups{
+		"std:alpha": {"std:alpha", "std:beta"},
+		"std:beta":  {"std:alpha", "std:beta"},
+		"std:gamma": {"std:gamma", "std:delta"},
+		"std:delta": {"std:gamma", "std:delta"},
+	}, layerPackageGroups(base, over))
+}
+
 // A cycle is followed like any other edge. Nothing about it needs refusing: the
 // members load as one module, and the dep graph orders their declarations.
 func TestTheClosureFollowsACycle(t *testing.T) {

@@ -219,7 +219,17 @@ func sortedGroup(group []string) []string {
 // ModuleSource cannot supply: the closure a module's imports reach, and a
 // reader for the whole closure at once.
 func InferModuleAgainstStdlib(module *ast.Module, dir string) *ModuleResult {
-	groups, err := BuildPackageClosure(dir, pseudoPackageImportsOf(module))
+	// The run loads the wrapper packages before any import binds, whether or not a
+	// file names one. See resolveWrapperClasses. Their closure is a group of its own,
+	// so a package only the module's imports reach still loads with those imports and
+	// reports to the file that named it.
+	wrapperGroups, err := BuildPackageClosure(dir, wrapperPackageURIs())
+	var groups PackageGroups
+	if err == nil {
+		var importGroups PackageGroups
+		importGroups, err = BuildPackageClosure(dir, pseudoPackageImportsOf(module))
+		groups = layerPackageGroups(wrapperGroups, importGroups)
+	}
 	if err != nil {
 		// Nothing is known about what the imports reach, so every package loads
 		// alone. That is right for the tree a readable directory would have held
