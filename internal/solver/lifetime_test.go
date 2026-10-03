@@ -605,12 +605,12 @@ func TestProbeRollsBackLifetimeBoundFromRefArm(t *testing.T) {
 	p := c.openProbe()
 	errs := c.ctx.Constrain(sub, super)
 	require.Empty(t, errs, "two compatible mut borrows constrain cleanly")
-	// step 3 runs constrainLt(super.Lt, sub.Lt) = constrainLt(b, a): b gains a as an
-	// upper bound, a gains b as a lower bound.
-	require.Equal(t, []soltype.Lifetime{a}, b.UpperBounds)
-	require.Equal(t, []soltype.Lifetime{b}, a.LowerBounds)
+	// step 3 runs constrainLt(sub.Lt, super.Lt) = constrainLt(a, b): a gains b as an
+	// upper bound, b gains a as a lower bound.
+	require.Equal(t, []soltype.Lifetime{b}, a.UpperBounds)
+	require.Equal(t, []soltype.Lifetime{a}, b.LowerBounds)
 
 	c.closeProbe(p, false) // discard
-	require.Empty(t, b.UpperBounds, "the RefType arm's lifetime bound is rolled back on discard")
-	require.Empty(t, a.LowerBounds)
+	require.Empty(t, a.UpperBounds, "the RefType arm's lifetime bound is rolled back on discard")
+	require.Empty(t, b.LowerBounds)
 }

@@ -1421,9 +1421,10 @@ func (c *Context) constrain(sub, super soltype.Type, seen *seenPairs, mutCtx boo
 			//    `&p` expression.
 			switch {
 			case sub.Lt != nil && sup.Lt != nil:
-				// Both borrows carry a lifetime: relate them covariantly through the
-				// outlives lattice, mirroring the covariant read view on the inner.
-				c.constrainLt(sup.Lt, sub.Lt)
+				// Both borrows carry a lifetime. A borrow may only flow somewhere that
+				// lives no longer than it does, so the source's lifetime must outlive the
+				// destination's.
+				c.constrainLt(sub.Lt, sup.Lt)
 			case sub.Lt == nil && sup.Lt != nil:
 				// An owned source satisfies any borrow destination — no lifetime constraint.
 			case sub.Lt != nil && sup.Lt == nil:
