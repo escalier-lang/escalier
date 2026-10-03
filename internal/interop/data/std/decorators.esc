@@ -14,11 +14,7 @@ export declare type DecoratorContext = ClassDecoratorContext | ClassMemberDecora
 
 export declare type DecoratorMetadataObject = Record<PropertyKey, unknown> & {...}
 
-export declare type DecoratorMetadata = if typeof globalThis : {
-    Symbol: {
-        readonly metadata: symbol
-    }
-} { DecoratorMetadataObject } else { DecoratorMetadataObject | undefined }
+export declare type DecoratorMetadata = DecoratorMetadataObject
 
 /**
  * Context provided to a class decorator.
