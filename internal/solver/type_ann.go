@@ -610,7 +610,20 @@ func (c *checker) resolveIntersectionTypeAnn(scope *Scope, ta *ast.IntersectionT
 // annotation prints the way the source wrote it — `keyof {x: number}` renders `keyof {x: number}`,
 // not `"x"`. constrain reduces the residual when it checks a constraint against it. An unsupported
 // operand recovers to a fresh var, cascade-safe like the Promise<bad> recovery.
+//
+// `keyof any` is the one operand lowered eagerly, to `string | number | symbol`. An `any` operand
+// resolves to `unknown`, and `keyof unknown` is `never`, so keeping the residual would turn the
+// `K: keyof any` bound on prelude's `Record` into a bound no key satisfies.
 func (c *checker) resolveKeyOfTypeAnn(scope *Scope, ta *ast.KeyOfTypeAnn, lvl int) (soltype.Type, bool) {
+	if _, isAny := ta.Type.(*ast.AnyTypeAnn); isAny {
+		t := newUnion(c.ctx, []soltype.Type{
+			&soltype.PrimType{Prim: soltype.StrPrim},
+			&soltype.PrimType{Prim: soltype.NumPrim},
+			&soltype.PrimType{Prim: soltype.SymPrim},
+		})
+		c.recordProvForResult(t, ta, AnnotationType)
+		return t, true
+	}
 	operand, ok := c.resolveTypeAnn(scope, ta.Type, lvl)
 	if !ok {
 		operand = c.freshAt(lvl)
