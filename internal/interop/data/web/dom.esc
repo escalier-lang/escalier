@@ -84,7 +84,7 @@ export declare interface CanvasRenderingContext2DSettings {
 }
 
 export declare interface CaretPositionFromPointOptions {
-    shadowRoots?: mut Array<ShadowRoot>
+    shadowRoots?: Array<ShadowRoot>
 }
 
 export declare interface CheckVisibilityOptions {
@@ -336,7 +336,7 @@ export declare interface FontFaceDescriptors {
 }
 
 export declare interface FontFaceSetLoadEventInit extends EventInit {
-    fontfaces?: mut Array<FontFace>
+    fontfaces?: Array<FontFace>
 }
 
 export declare interface FormDataEventInit extends EventInit {
@@ -366,7 +366,7 @@ export declare interface GetAnimationsOptions {
 
 export declare interface GetHTMLOptions {
     serializableShadowRoots?: boolean,
-    shadowRoots?: mut Array<ShadowRoot>
+    shadowRoots?: Array<ShadowRoot>
 }
 
 export declare interface GetRootNodeOptions {
@@ -409,7 +409,7 @@ export declare interface InputEventInit extends UIEventInit {
     dataTransfer?: DataTransfer | null,
     inputType?: string,
     isComposing?: boolean,
-    targetRanges?: mut Array<StaticRange>
+    targetRanges?: Array<StaticRange>
 }
 
 export declare interface IntersectionObserverInit {
@@ -454,8 +454,8 @@ export declare interface LockInfo {
 }
 
 export declare interface LockManagerSnapshot {
-    held?: mut Array<LockInfo>,
-    pending?: mut Array<LockInfo>
+    held?: Array<LockInfo>,
+    pending?: Array<LockInfo>
 }
 
 export declare interface LockOptions {
@@ -522,13 +522,13 @@ export declare interface MediaKeyMessageEventInit extends EventInit {
 }
 
 export declare interface MediaKeySystemConfiguration {
-    audioCapabilities?: mut Array<MediaKeySystemMediaCapability>,
+    audioCapabilities?: Array<MediaKeySystemMediaCapability>,
     distinctiveIdentifier?: MediaKeysRequirement,
-    initDataTypes?: mut Array<string>,
+    initDataTypes?: Array<string>,
     label?: string,
     persistentState?: MediaKeysRequirement,
-    sessionTypes?: mut Array<string>,
-    videoCapabilities?: mut Array<MediaKeySystemMediaCapability>
+    sessionTypes?: Array<string>,
+    videoCapabilities?: Array<MediaKeySystemMediaCapability>
 }
 
 export declare interface MediaKeySystemMediaCapability {
@@ -544,7 +544,7 @@ export declare interface MediaKeysPolicy {
 export declare interface MediaMetadataInit {
     album?: string,
     artist?: string,
-    artwork?: mut Array<MediaImage>,
+    artwork?: Array<MediaImage>,
     title?: string
 }
 
@@ -586,17 +586,17 @@ export declare interface MediaStreamTrackEventInit extends EventInit {
 
 export declare interface MediaTrackCapabilities {
     aspectRatio?: DoubleRange,
-    autoGainControl?: mut Array<boolean>,
-    backgroundBlur?: mut Array<boolean>,
+    autoGainControl?: Array<boolean>,
+    backgroundBlur?: Array<boolean>,
     channelCount?: ULongRange,
     deviceId?: string,
     displaySurface?: string,
-    echoCancellation?: mut Array<boolean>,
-    facingMode?: mut Array<string>,
+    echoCancellation?: Array<boolean>,
+    facingMode?: Array<string>,
     frameRate?: DoubleRange,
     groupId?: string,
     height?: ULongRange,
-    noiseSuppression?: mut Array<boolean>,
+    noiseSuppression?: Array<boolean>,
     sampleRate?: ULongRange,
     sampleSize?: ULongRange,
     width?: ULongRange
@@ -621,7 +621,7 @@ export declare interface MediaTrackConstraintSet {
 }
 
 export declare interface MediaTrackConstraints extends MediaTrackConstraintSet {
-    advanced?: mut Array<MediaTrackConstraintSet>
+    advanced?: Array<MediaTrackConstraintSet>
 }
 
 export declare interface MediaTrackSettings {
@@ -674,7 +674,7 @@ export declare interface MouseEventInit extends EventModifierInit {
 
 export declare interface MutationObserverInit {
     /** Set to a list of attribute local names (without namespace) if not all attribute mutations need to be observed and attributes is true or omitted. */
-    attributeFilter?: mut Array<string>,
+    attributeFilter?: Array<string>,
     /** Set to true if attributes is true or omitted and target's attribute value before the mutation needs to be recorded. */
     attributeOldValue?: boolean,
     /** Set to true if mutations to target's attributes are to be observed. Can be omitted if attributeOldValue or attributeFilter is specified. */
@@ -737,12 +737,12 @@ export declare interface PictureInPictureEventInit extends EventInit {
 export declare interface PointerEventInit extends MouseEventInit {
     altitudeAngle?: number,
     azimuthAngle?: number,
-    coalescedEvents?: mut Array<PointerEvent>,
+    coalescedEvents?: Array<PointerEvent>,
     height?: number,
     isPrimary?: boolean,
     pointerId?: number,
     pointerType?: string,
-    predictedEvents?: mut Array<PointerEvent>,
+    predictedEvents?: Array<PointerEvent>,
     pressure?: number,
     tangentialPressure?: number,
     tiltX?: number,
@@ -791,7 +791,7 @@ export declare interface PropertyIndexedKeyframes {
 
 export declare interface ReportingObserverOptions {
     buffered?: boolean,
-    types?: mut Array<string>
+    types?: Array<string>
 }
 
 export declare interface ResizeObserverOptions {
@@ -842,7 +842,7 @@ export declare interface ShadowRootInit {
 }
 
 export declare interface ShareData {
-    files?: mut Array<file.File>,
+    files?: Array<file.File>,
     text?: string,
     title?: string,
     url?: string
@@ -873,7 +873,7 @@ export declare interface StorageEstimate {
 }
 
 export declare interface StructuredSerializeOptions {
-    transfer?: mut Array<Transferable>
+    transfer?: Array<Transferable>
 }
 
 export declare interface SubmitEventInit extends EventInit {
@@ -886,9 +886,9 @@ export declare interface ToggleEventInit extends EventInit {
 }
 
 export declare interface TouchEventInit extends EventModifierInit {
-    changedTouches?: mut Array<Touch>,
-    targetTouches?: mut Array<Touch>,
-    touches?: mut Array<Touch>
+    changedTouches?: Array<Touch>,
+    targetTouches?: Array<Touch>,
+    touches?: Array<Touch>
 }
 
 export declare interface TouchInit {
@@ -989,7 +989,7 @@ export declare interface WebTransportOptions {
     allowPooling?: boolean,
     congestionControl?: WebTransportCongestionControl,
     requireUnreliable?: boolean,
-    serverCertificateHashes?: mut Array<WebTransportHash>
+    serverCertificateHashes?: Array<WebTransportHash>
 }
 
 export declare interface WebTransportSendStreamOptions {
@@ -5323,7 +5323,7 @@ export declare interface DocumentOrShadowRoot {
      */
     readonly activeElement: Element | null,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/Document/adoptedStyleSheets) */
-    adoptedStyleSheets: mut Array<CSSStyleSheet>,
+    adoptedStyleSheets: Array<CSSStyleSheet>,
     /**
      * Returns document's fullscreen element.
      *
