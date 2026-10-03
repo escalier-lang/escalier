@@ -38,13 +38,18 @@ import (
 // program can write. Both retire with the real `unique symbol` kind.
 const wellKnownSymbolPrefix = "@@"
 
-// WellKnownSymbols is every symbol `Symbol` exposes as a property, the closed set the
-// reserved spelling assumes. A `Symbol.foo` outside it names no well-known symbol, so
-// a member keyed off one stays unsupported rather than resolving to a name two
-// different symbols could share.
+// WellKnownSymbols is the closed set of symbols the reserved spelling assumes. It holds
+// the symbols ECMAScript exposes as properties of `Symbol`, plus `customMatcher`. A
+// `Symbol.foo` outside the set names no well-known symbol, so a member keyed off one
+// stays unsupported rather than resolving to a name two different symbols could share.
+//
+// `customMatcher` comes from the pattern-matching proposal rather than from the
+// standard. It is in the set because a class declares what a match against it binds by
+// keying a static member off it, so an extractor class cannot be typed without it.
 var WellKnownSymbols = []string{
 	"asyncDispose",
 	"asyncIterator",
+	"customMatcher",
 	"dispose",
 	"hasInstance",
 	"isConcatSpreadable",

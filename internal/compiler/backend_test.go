@@ -509,3 +509,30 @@ func TestAPatternOnAnAliasEmitsNoInstanceOfGuard(t *testing.T) {
 		})
 	}
 }
+
+// TestBothCheckersEmitTheSameDefinitionsForAnExtractor asserts that a class usable in a
+// pattern declares the same static side in the emitted `.d.ts` whichever checker ran.
+//
+// A class is usable in a pattern by declaring `[Symbol.customMatcher]`, which says what
+// a match against it binds. soltype stores a member keyed off a well-known symbol under
+// a reserved spelling and takes the symbols it accepts from a closed set, so the member
+// reaches the type only because `customMatcher` is in that set.
+func TestBothCheckersEmitTheSameDefinitionsForAnExtractor(t *testing.T) {
+	sources := libSources(`
+		class C {
+		    msg: string,
+		    static [Symbol.customMatcher](subject: C) -> [string] {
+		        return [subject.msg]
+		    }
+		}
+	`)
+
+	useChecker(t)
+	want := CompilePackage(sources).CompUnits["lib/index"].DTS
+	useSolver(t)
+	got := CompilePackage(sources).CompUnits["lib/index"].DTS
+
+	require.Contains(t, want, "[Symbol.customMatcher](subject: C): [string]",
+		"the checker declares the matcher, so there is something to match against")
+	require.Equal(t, want, got, "the two checkers emit different definitions")
+}

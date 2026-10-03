@@ -404,12 +404,10 @@ type emitSkip struct {
 var emitSkips = map[emitSkip]*solverSkipCause{
 	{"fix_point_combinator", "index.js"}: causeFieldReadBound,
 
-	{"enum", "index.d.ts"}:                        causeExtractorStaticSide,
-	{"extractor_arg_with_init", "index.d.ts"}:     causeExtractorStaticSide,
-	{"extractor_basic", "index.d.ts"}:             causeExtractorStaticSide,
-	{"extractor_inside_namespaces", "index.d.ts"}: causeExtractorStaticSide,
-	{"extractor_nested", "index.d.ts"}:            causeExtractorStaticSide,
-	{"generic_enum", "index.d.ts"}:                causeExtractorStaticSide,
+	{"enum", "index.d.ts"}:                        causeEnumVariantValue,
+	{"generic_enum", "index.d.ts"}:                causeEnumVariantValue,
+	{"extractor_inside_namespaces", "index.d.ts"}: causeEnclosingNamespacePrefix,
+	{"extractor_arg_with_init", "index.d.ts"}:     causePatterns,
 	{"fix_point_combinator", "index.d.ts"}:        causeClassCtorTypeParams,
 	{"mut_class_reference", "index.d.ts"}:         causeClassCtorTypeParams,
 	{"generalize", "index.d.ts"}:                  causeUnusedParamNotGeneralized,
@@ -433,15 +431,21 @@ var causeFieldReadBound = &solverSkipCause{
 // The causes behind the `index.d.ts` entries, each triaged from the diff the artifact
 // comparison reports. #1676 is the issue that works them down.
 var (
-	// An extractor class's static type carries the `new` signature and no
-	// `[Symbol.customMatcher]` one, which says what a match against the class binds.
-	// An enum variant loses the constructor object too and renders as a plain
-	// function. What a match recovers is wrong as a result, not only the declaration
-	// describing it. `generic_enum` matches a `MyOption<number>` and reads the payload
-	// back as `never`.
-	causeExtractorStaticSide = &solverSkipCause{
-		name:   "the static side of an extractor or enum variant declaration",
-		ticket: "#1772",
+	// An enum variant's value is a plain function rather than the object a class value
+	// takes, so it carries neither a constructor nor the `[Symbol.customMatcher]`
+	// signature a pattern reads. What a match recovers is wrong as a result, not only
+	// the declaration describing it. `generic_enum` matches a `MyOption<number>` and
+	// reads the payload back as `never`.
+	causeEnumVariantValue = &solverSkipCause{
+		name:   "an enum variant's value as a constructor object",
+		ticket: "#1784",
+	}
+	// A reference to a type the enclosing namespace declares renders under its full
+	// path, so a member of `declare namespace MyEnum` reads `MyEnum.Color` where the
+	// twin writes `Color`. Both denote the same type.
+	causeEnclosingNamespacePrefix = &solverSkipCause{
+		name:   "the enclosing namespace's prefix on a reference",
+		ticket: "#1785",
 	}
 	// A class constructor's signature does not carry the class's declared type
 	// parameters. One a constructor argument mentions is rediscovered as an inferred
