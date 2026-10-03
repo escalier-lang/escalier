@@ -145,6 +145,7 @@ func (c *checker) checkConstructorInit(body *soltype.ObjectType, ctor *ast.Const
 
 	cfg := liveness.BuildCFG(*ctor.Fn.Body)
 	col := &initCollector{
+		c:        c,
 		fieldIDs: fieldIDs,
 		gens:     map[liveness.StmtRef]set.Set[liveness.VarID]{},
 	}
@@ -220,6 +221,7 @@ type initCall struct {
 // statement's expression is attributed to it.
 type initCollector struct {
 	ast.DefaultVisitor
+	c          *checker
 	currentRef liveness.StmtRef
 	fieldIDs   map[string]liveness.VarID
 	gens       map[liveness.StmtRef]set.Set[liveness.VarID]
@@ -250,10 +252,13 @@ func (col *initCollector) EnterExpr(e ast.Expr) bool {
 		return false
 	case *ast.BinaryExpr:
 		if e.Op == ast.Assign {
-			if name, ok := selfFieldName(e.Left); ok {
+			if name, ok := col.c.selfFieldName(e.Left); ok {
 				// The right side runs before the field is assigned, so scan it for reads
 				// first — `self.x = self.x` reads x before init — then mark x assigned.
-				// The write target itself is not a read, so the left side is not walked.
+				// The write target itself is not a read, so only a bracket key is walked.
+				if ix, isIndex := e.Left.(*ast.IndexExpr); isIndex {
+					ix.Index.Accept(col)
+				}
 				e.Right.Accept(col)
 				col.gen(name)
 				return false
@@ -275,19 +280,22 @@ func (col *initCollector) EnterExpr(e ast.Expr) bool {
 		// since the callee may read any of them. Record the call site and scan the
 		// arguments for reads, but not the `self.x` callee — it is a method reference,
 		// not a field read.
-		if _, ok := selfFieldName(e.Callee); ok {
+		if _, ok := col.c.selfFieldName(e.Callee); ok {
 			col.calls = append(col.calls, initCall{ref: col.currentRef, node: e})
 			for _, arg := range e.Args {
 				arg.Accept(col)
 			}
 			return false
 		}
-	case *ast.MemberExpr:
-		if name, ok := selfFieldName(e); ok {
+	case *ast.MemberExpr, *ast.IndexExpr:
+		if name, ok := col.c.selfFieldName(e); ok {
 			// Only a required field is tracked. A read of a method, getter, or optional
 			// field names no required field, so it is not a read-before-init.
 			if _, tracked := col.fieldIDs[name]; tracked {
 				col.reads = append(col.reads, initRead{field: name, ref: col.currentRef, node: e})
+			}
+			if ix, isIndex := e.(*ast.IndexExpr); isIndex {
+				ix.Index.Accept(col)
 			}
 			return false
 		}
@@ -295,26 +303,41 @@ func (col *initCollector) EnterExpr(e ast.Expr) bool {
 	return true
 }
 
-// selfFieldName returns the field name of a `self.f` member access: the property of a
-// non-optional-chain member whose object is the `self` identifier. It matches only the
-// dot form of *ast.MemberExpr. ok is false for `other.f`, whose object is not `self`,
-// and for a deeper path like `self.a.b`, whose object is `self.a` rather than `self`.
+// selfFieldName returns the field name a member access off the `self` identifier
+// names. The dot form `self.f` names f. The bracket form `self[k]` names the field its
+// key names: a string literal, a well-known symbol, or a key whose inferred type is one
+// string or number literal, so `self[k]` with `val k = "f"` names f.
 //
-// An index form such as `self[k]` or `self["x"]` is an *ast.IndexExpr, not a MemberExpr,
-// so it returns false and this pass tracks no field for it. That is sound today because
-// index assignment `self[...] = v` is unsupported: inferAssign rejects an index target
-// pending the Array and index types M7 brings, so no valid program initializes a field
-// through a bracket. If a constant-string index like `self["x"]` later becomes a
-// supported field write, this pass must recognize it — the way constStringKey resolves a
-// constant key for the move engine — to avoid a spurious FieldNotInitializedError.
-func selfFieldName(e ast.Expr) (string, bool) {
-	m, ok := e.(*ast.MemberExpr)
-	if !ok || m.OptChain || m.Prop == nil {
-		return "", false
+// ok is false when the access names no field of `self`:
+//   - `other.f`, whose object is not `self`;
+//   - a deeper path like `self.a.b`, whose object is `self.a` rather than `self`;
+//   - a bracket key naming no single field.
+//
+// It reads a key's type from Info, so it must run after the constructor body is walked.
+func (c *checker) selfFieldName(e ast.Expr) (string, bool) {
+	switch e := e.(type) {
+	case *ast.MemberExpr:
+		if e.OptChain || e.Prop == nil || !isSelfIdent(e.Object) {
+			return "", false
+		}
+		return e.Prop.Name, true
+	case *ast.IndexExpr:
+		if e.OptChain || !isSelfIdent(e.Object) {
+			return "", false
+		}
+		if name, ok := constStringKey(e.Index); ok {
+			return name, true
+		}
+		if name, ok := wellKnownSymbolMember(e.Index); ok {
+			return name, true
+		}
+		return c.literalKeyName(e.Index)
 	}
-	id, ok := m.Object.(*ast.IdentExpr)
-	if !ok || id.Name != "self" {
-		return "", false
-	}
-	return m.Prop.Name, true
+	return "", false
+}
+
+// isSelfIdent reports whether e is the bare `self` identifier.
+func isSelfIdent(e ast.Expr) bool {
+	id, ok := e.(*ast.IdentExpr)
+	return ok && id.Name == "self"
 }

@@ -264,14 +264,12 @@ func TestInferObjectSpread(t *testing.T) {
 	}
 }
 
-// A computed key ({[k]: v}) carries no static field name — M4.
-func TestInferObjectComputedKeyUnsupported(t *testing.T) {
-	c := newTestChecker()
-	computed := ast.NewProperty(ast.NewComputedKey(identExpr("k")), false, false, numExpr(1), testSpan())
-	got := c.inferExpr(NewScope(), 0, objExpr(computed))
-	require.Equal(t, "{}", render(got))
-	require.Len(t, c.errs, 1)
-	require.Equal(t, "Unsupported: ComputedKey", c.errs[0].Message())
+// A computed key whose type nothing has determined yet, such as an unannotated parameter
+// read only as a key, names no property and no index signature, so it stays unsupported.
+func TestInferObjectComputedKeyOfUnknownTypeUnsupported(t *testing.T) {
+	src := "fn f(k) { return {[k]: 1} }"
+	_, _, errs := inferSource(t, src)
+	requireBlame(t, src, errs, "1:20-1:21: Unsupported: ComputedKey", "k")
 }
 
 // --- MemberExpr ---

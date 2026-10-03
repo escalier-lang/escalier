@@ -800,6 +800,28 @@ func (c *checker) recordFieldStoreEdges(
 	}
 }
 
+// recordElementStoreEdges records a borrow edge for an element store `recv[k] = source`
+// into a receiver that dies with the frame, the element twin of recordFieldStoreEdges. A
+// dynamic key names no field segment, so the edge is rooted at recv's own place. The
+// update is weak: the store repoints one element the checker cannot name, so the edges
+// the receiver's other elements hold stay recorded.
+func (c *checker) recordElementStoreEdges(recv, source ast.Expr, stmtRef liveness.StmtRef) {
+	if c.fn == nil || c.fn.eagerBorrowGraph == nil {
+		return
+	}
+	rp, ok := exprPlace(recv)
+	if !ok || rp.root <= 0 || c.paramReferentOutlivesFrame(rp.root) {
+		return
+	}
+	c.recordBorrowSources(rp.root, rp.path, source)
+	c.flushBorrowDirty(stmtRef)
+	if borrow, ok := source.(*ast.BorrowExpr); ok {
+		if place, ok := loanPlace(borrow); ok {
+			c.recordStoreEdgeLoan(place, borrow.Mut, rp.root, rp.path, stmtRef, borrow)
+		}
+	}
+}
+
 // collectBorrowedFrom adds to out every function-local the read place rooted at root, with
 // field path filter, exposes through borrow edges.
 //
