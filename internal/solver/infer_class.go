@@ -108,7 +108,8 @@ func (c *checker) inferClassDecl(scope *Scope, lvl int, decl *ast.ClassDecl, ns 
 	// runs every ancestor has its own edge and its own body recorded, and the whole chain is
 	// walkable from here.
 	def.Supers = c.resolveClassSupers(declScope, lvl, decl)
-	def.Implements = c.resolveClassImplements(declScope, lvl, decl)
+	var structural []soltype.Type
+	def.Implements, structural = c.resolveClassImplements(declScope, lvl, decl)
 	def.EdgesPending = false
 
 	// Bind `Self` to the class's own instance handle for the member walk below. A member
@@ -145,6 +146,13 @@ func (c *checker) inferClassDecl(scope *Scope, lvl int, decl *ast.ClassDecl, ns 
 	c.checkClassBodyLifetimes(decl)
 	c.buildFieldSigs(bodyScope, lvl, decl, body, static)
 	pending := c.buildMemberSigs(bodyScope, lvl, decl, self, body, static)
+	// A `declare` class describes an object the runtime already provides, so its
+	// `implements` clause says which members it has rather than asking for them.
+	// The generated lib relies on this for every mixin a TypeScript interface named,
+	// such as `declare class Response implements Body`.
+	if decl.Declare() {
+		c.addImplementedMembers(def, self, structural)
+	}
 	// A mutually recursive method group with no annotated return cannot ground its own
 	// return types, so it is reported before any body runs. Reporting here, not during
 	// body inference, keeps the diagnostic off the inferred-never recovery.
@@ -634,18 +642,132 @@ func (c *checker) resolveClassSupers(scope *Scope, lvl int, decl *ast.ClassDecl)
 	return []*soltype.ClassType{ct}
 }
 
-// resolveClassImplements resolves a class's `implements` interfaces to their
-// ClassTypes, dropping any that do not resolve to a class. `implements` is a
-// conformance-only assertion the nominal subtype walk skips, so B1 records these on
-// ClassDef.Implements apart from Supers; the structural conformance check lands in C1.
-func (c *checker) resolveClassImplements(scope *Scope, lvl int, decl *ast.ClassDecl) []*soltype.ClassType {
-	var ifaces []*soltype.ClassType
+// resolveClassImplements resolves a class's `implements` clause. It returns each
+// target naming a class as its ClassType, and each target naming an interface or
+// another alias as the type that reference resolves to, in clause order.
+//
+// `implements` is a conformance-only assertion the nominal subtype walk skips, so B1
+// records the classes on ClassDef.Implements apart from Supers; the structural
+// conformance check lands in C1. An alias is a structural target with no ClassType
+// to record. One whose body is not an object is reported as NonClassSuperError, the
+// way a type parameter is.
+func (c *checker) resolveClassImplements(scope *Scope, lvl int, decl *ast.ClassDecl) ([]*soltype.ClassType, []soltype.Type) {
+	var classes []*soltype.ClassType
+	var structural []soltype.Type
 	for _, impl := range decl.Implements {
-		if ct := c.resolveClassRef(scope, impl, lvl); ct != nil {
-			ifaces = append(ifaces, ct)
+		if !c.namesAlias(scope, impl) {
+			if ct := c.resolveClassRef(scope, impl, lvl); ct != nil {
+				classes = append(classes, ct)
+			}
+			continue
+		}
+		target, ok := c.resolveTypeAnn(scope, impl, lvl)
+		if !ok {
+			continue
+		}
+		switch c.expandAliasChain(target).(type) {
+		case *soltype.ObjectType, *soltype.IntersectionType, *soltype.ErrorType:
+			// An ErrorType stands for an alias whose body has not resolved. Either that
+			// was already reported or the alias is a sibling still being inferred, so
+			// neither warrants a diagnostic here.
+			structural = append(structural, target)
+		default:
+			c.report(&NonClassSuperError{Ref: impl, Name: ast.QualIdentToString(impl.Name)})
 		}
 	}
-	return ifaces
+	return classes, structural
+}
+
+// namesAlias reports whether ref names an alias, which is what an `interface`
+// declaration binds as well as a `type` declaration.
+func (c *checker) namesAlias(scope *Scope, ref *ast.TypeRefTypeAnn) bool {
+	b, ok := c.lookupClassBinding(scope, ast.QualIdentToString(ref.Name))
+	if !ok {
+		return false
+	}
+	_, isAlias := b.Type.(*soltype.AliasType)
+	return isAlias
+}
+
+// addImplementedMembers appends to def.Body each member a structural `implements`
+// target declares under a name the class does not already have. targets are the
+// aliases resolveClassImplements returns, in clause order. A name the class
+// declares itself, or inherits through its `extends` chain, keeps the class's
+// member. When two targets declare one name, the first in the clause supplies it.
+// A getter and a setter of one name travel together, since both come from the
+// target that supplies the name.
+//
+// It must run after the class's own member signatures are in def.Body and before
+// the body is frozen.
+func (c *checker) addImplementedMembers(def *ClassDef, self *soltype.ClassType, targets []soltype.Type) {
+	claimed := set.NewSet[string]()
+	for _, elem := range def.Body.Elems {
+		claimed.Add(soltype.ObjElemName(elem))
+	}
+	for _, target := range targets {
+		supplied := set.NewSet[string]()
+		for _, elem := range c.aliasMembers(target, set.NewSet[string]()) {
+			name := soltype.ObjElemName(elem)
+			if name == "" || claimed.Contains(name) || c.inheritsMember(def, self, name) {
+				continue
+			}
+			def.Body.Elems = append(def.Body.Elems, elem)
+			supplied.Add(name)
+		}
+		claimed = claimed.Union(supplied)
+	}
+}
+
+// inheritsMember reports whether a class's superclass chain declares a member
+// called name, in either access half. def and self describe the class.
+func (c *checker) inheritsMember(def *ClassDef, self *soltype.ClassType, name string) bool {
+	for _, half := range []memberHalf{readHalf, writeHalf} {
+		if _, _, found := c.inheritedHalf(def, self, name, half); found {
+			return true
+		}
+	}
+	return false
+}
+
+// aliasMembers returns the members t carries when it is an object, an alias of
+// one, or an intersection of those, which is the shape an interface with an
+// `extends` clause binds to. Any other type carries no members.
+//
+// A later operand of an intersection replaces every member an earlier one
+// declares under the same name. inferInterfaceBody places the interface's own
+// members after its parents, so `interface B extends A {x: string}` reads its
+// own `x` over the one A declares. seen holds the alias names already expanded,
+// so an alias that reaches itself stops.
+func (c *checker) aliasMembers(t soltype.Type, seen set.Set[string]) []soltype.ObjTypeElem {
+	switch t := t.(type) {
+	case *soltype.ObjectType:
+		return t.Elems
+	case *soltype.AliasType:
+		if seen.Contains(t.Name) {
+			return nil
+		}
+		seen.Add(t.Name)
+		return c.aliasMembers(c.ctx.expandAlias(t), seen)
+	case *soltype.IntersectionType:
+		var out []soltype.ObjTypeElem
+		for _, operand := range t.Types {
+			members := c.aliasMembers(operand, seen)
+			replaced := set.NewSet[string]()
+			for _, elem := range members {
+				replaced.Add(soltype.ObjElemName(elem))
+			}
+			kept := out[:0:0]
+			for _, elem := range out {
+				if !replaced.Contains(soltype.ObjElemName(elem)) {
+					kept = append(kept, elem)
+				}
+			}
+			out = append(kept, members...)
+		}
+		return out
+	default:
+		return nil
+	}
 }
 
 // resolveClassRef resolves an `extends` or `implements` reference to its ClassType. The

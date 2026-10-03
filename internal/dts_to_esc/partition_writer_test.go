@@ -915,6 +915,66 @@ interface Iterator<T, TResult, TNext> extends IteratorObject<T, TResult, TNext> 
 	require.Contains(t, refs, "TReturn")
 }
 
+// TestMergeDecls_AdoptsADefaultALaterDeclWrites covers a merged interface
+// whose first declaration leaves a type parameter without a default that a
+// later declaration writes. `lib.es2015.core.d.ts` declares
+// `Uint8Array<TArrayBuffer extends ArrayBufferLike>` and sorts ahead of
+// `lib.es5.d.ts`, which writes `= ArrayBufferLike`. Keeping the first
+// declaration's parameters alone made `TArrayBuffer` required.
+func TestMergeDecls_AdoptsADefaultALaterDeclWrites(t *testing.T) {
+	t.Parallel()
+	tests := map[string]struct {
+		first, later string
+		want         []string
+	}{
+		"ADefault": {
+			first: `interface Box<T extends Base> { a: T; }`,
+			later: `interface Box<T extends Base = Base> { b: T; }`,
+			want:  []string{"T extends Base = Base"},
+		},
+		"ADefaultNamingARenamedParameter": {
+			first: `interface Pair<A, B> { a: A; }`,
+			later: `interface Pair<X, Y = X> { b: Y; }`,
+			want:  []string{"A", "B = A"},
+		},
+		"TheFirstDeclarationsOwnDefault": {
+			first: `interface Box<T = First> { a: T; }`,
+			later: `interface Box<T = Later> { b: T; }`,
+			want:  []string{"T = First"},
+		},
+	}
+	render := func(t *testing.T, ann dts_parser.TypeAnn) string {
+		ref, ok := ann.(*dts_parser.TypeReference)
+		require.True(t, ok, "expected a type reference, got %T", ann)
+		return typeRefName(ref)
+	}
+	for name, tt := range tests {
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+			a := parseLib(t, "lib.a.d.ts", tt.first)
+			b := parseLib(t, "lib.b.d.ts", tt.later)
+			merged := mergeDecls(append(
+				append([]dts_parser.Statement{}, a.Module.Statements...),
+				b.Module.Statements...))
+
+			require.Len(t, merged, 1)
+			iface := merged[0].(*dts_parser.InterfaceDecl)
+			got := make([]string, 0, len(iface.TypeParams))
+			for _, tp := range iface.TypeParams {
+				s := tp.Name.Name
+				if tp.Constraint != nil {
+					s += " extends " + render(t, tp.Constraint)
+				}
+				if tp.Default != nil {
+					s += " = " + render(t, tp.Default)
+				}
+				got = append(got, s)
+			}
+			require.Equal(t, tt.want, got)
+		})
+	}
+}
+
 // TestConvertBucket_DedupesRepeatedMembers covers what a lib file that
 // adds an overload does to a merged declaration. It restates the
 // signatures it is adding to, so `Map` arrives with two bare

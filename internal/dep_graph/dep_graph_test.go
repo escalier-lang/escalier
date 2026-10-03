@@ -8,6 +8,7 @@ import (
 	"github.com/escalier-lang/escalier/internal/ast"
 	"github.com/escalier-lang/escalier/internal/parser"
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
 
 func TestBuildDepGraphV2_SimpleBindings(t *testing.T) {
@@ -405,6 +406,72 @@ func TestBuildDepGraphV2_Dependencies(t *testing.T) {
 				assert.ElementsMatch(t, expectedDeps, actualDepsSlice,
 					"For key %s: expected deps %v, got %v", key, expectedDeps, actualDepsSlice)
 			}
+		})
+	}
+}
+
+// TestBuildDepGraphWithImports covers a reference that names a binding of another
+// namespace through what its own file imports. `fetch/index.esc` lands its
+// declarations in the `fetch` namespace, so `streams.Stream` written there means
+// `web__streams.Stream` only through the alias, and a bare `Signal` means
+// `web__core.Signal` only through the UnprefixedImport entry.
+func TestBuildDepGraphWithImports(t *testing.T) {
+	imports := map[int]map[string]string{
+		0: {"streams": "web__streams", "core": "web__core", UnprefixedImport: "web__core"},
+	}
+	tests := map[string]struct {
+		contents string
+		key      BindingKey
+		want     []BindingKey
+	}{
+		"AnAliasedQualifiedType": {
+			contents: `declare type Body = streams.Stream`,
+			key:      TypeBindingKey("fetch.Body"),
+			want:     []BindingKey{TypeBindingKey("web__streams.Stream")},
+		},
+		"AnUnprefixedBareType": {
+			contents: `declare type Init = {signal: Signal}`,
+			key:      TypeBindingKey("fetch.Init"),
+			want:     []BindingKey{TypeBindingKey("web__core.Signal")},
+		},
+		"AnUnprefixedSuperclass": {
+			contents: `declare class Request extends Signal {}`,
+			key:      ValueBindingKey("fetch.Request"),
+			want:     []BindingKey{TypeBindingKey("web__core.Signal"), ValueBindingKey("web__core.Signal")},
+		},
+		"AnUnprefixedValue": {
+			contents: `val s = Signal`,
+			key:      ValueBindingKey("fetch.s"),
+			want:     []BindingKey{ValueBindingKey("web__core.Signal")},
+		},
+		"AnOwnSiblingOutranksTheUnprefixedImport": {
+			contents: "declare type Signal = number\ndeclare type Init = {signal: Signal}",
+			key:      TypeBindingKey("fetch.Init"),
+			want:     []BindingKey{TypeBindingKey("fetch.Signal")},
+		},
+	}
+	for name, test := range tests {
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+
+			ctx, cancel := context.WithTimeout(context.Background(), 1*time.Second)
+			defer cancel()
+			module, errs := parser.ParseLibFiles(ctx, []*ast.Source{
+				{ID: 0, Path: "fetch/index.esc", Contents: test.contents},
+				{ID: 1, Path: "web__core/index.esc", Contents: `declare class Signal {}`},
+				{ID: 2, Path: "web__streams/index.esc", Contents: `declare class Stream {}`},
+			})
+			require.Empty(t, errs)
+
+			graph := BuildDepGraphWithImports(module, imports)
+
+			deps := graph.GetDeps(test.key)
+			got := make([]BindingKey, 0, deps.Len())
+			iter := deps.Iter()
+			for ok := iter.First(); ok; ok = iter.Next() {
+				got = append(got, iter.Key())
+			}
+			require.ElementsMatch(t, test.want, got)
 		})
 	}
 }

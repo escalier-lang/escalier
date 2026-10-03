@@ -182,7 +182,9 @@ func (c *checker) loadPackageGroup(group []string, span ast.Span) []SolverError 
 // writes for other members, each naming the namespace that member's
 // declarations bind under. `import "std:weak_ref"` in `std:map` maps `weak_ref`
 // to `std__weak_ref`. An import of a package outside the group is left out,
-// since its declarations are not in the module.
+// since its declarations are not in the module. An import of `web:core` also
+// maps dep_graph.UnprefixedImport, matching the bare bindings
+// bindPseudoPackageImport makes for it.
 func memberImportNamespaces(module *ast.Module, group set.Set[string]) map[int]map[string]string {
 	out := map[int]map[string]string{}
 	for _, file := range module.Files {
@@ -194,6 +196,9 @@ func memberImportNamespaces(module *ast.Module, group set.Set[string]) map[int]m
 				out[file.SourceID] = map[string]string{}
 			}
 			out[file.SourceID][stmt.LocalName()] = groupNamespace(stmt.PackageName)
+			if stmt.PackageName == coreURI {
+				out[file.SourceID][dep_graph.UnprefixedImport] = groupNamespace(stmt.PackageName)
+			}
 		}
 	}
 	return out

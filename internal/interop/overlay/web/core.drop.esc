@@ -5,3 +5,12 @@
 export declare interface MessageEvent {
     initMessageEvent: unknown,
 }
+
+// `DOMException` restates `message` and `name` as readonly, while the `Error` it
+// extends declares both writable. A subclass cannot take away a write its
+// superclass allows, and both members are `string` on either side, so
+// `DOMException` inherits `Error`'s instead.
+export declare interface DOMException {
+    message: unknown,
+    name: unknown,
+}
