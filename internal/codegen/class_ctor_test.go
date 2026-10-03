@@ -161,6 +161,121 @@ func TestEmitsTheImplicitConstructor(t *testing.T) {
   }
 }`,
 		},
+		// A computed key reads the expression the source wrote. A property read off a
+		// variable gives the same key every time, so reading it per construction is
+		// what reading it once would have given.
+		{
+			name: "AWellKnownSymbolKey",
+			src: `class Odd {
+				[Symbol.iterator]: number,
+			}`,
+			want: `export class Odd {
+  constructor(temp1) {
+    const _field1 = temp1;
+    this[Symbol.iterator] = _field1;
+  }
+}`,
+		},
+		// A bare variable read is the other stable shape, and the key's type is what
+		// pins its value.
+		{
+			name: "AVariableKey",
+			src: `declare val k: unique symbol
+			class Odd {
+				[k]: number,
+			}`,
+			want: `export class Odd {
+  constructor(temp1) {
+    const _field1 = temp1;
+    this[k] = _field1;
+  }
+}`,
+		},
+		// A field cannot bind a name one of the keys reads, or the key would see the
+		// parameter rather than what it meant where the class was defined. The field
+		// goes by index instead and the key reads the module's `k`.
+		{
+			name: "AFieldNamedByAKeyIsReachedByIndex",
+			src: `declare val k: unique symbol
+			class C {
+				k: number,
+				[k]: string,
+			}`,
+			want: `export class C {
+  constructor(temp1, temp2) {
+    const _field1 = temp1;
+    const _field2 = temp2;
+    this["k"] = _field1;
+    this[k] = _field2;
+  }
+}`,
+		},
+		// `[Symbol.iterator]` reads `Symbol` from the surrounding scope, so a field
+		// spelling it is reached by index too. A field named `iterator` is not, since
+		// the property is a name on the object rather than a binding the key reads.
+		{
+			name: "AFieldNamedSymbolIsReachedByIndex",
+			src: `class C {
+				Symbol: number,
+				[Symbol.iterator]: string,
+			}`,
+			want: `export class C {
+  constructor(temp1, temp2) {
+    const _field1 = temp1;
+    const _field2 = temp2;
+    this["Symbol"] = _field1;
+    this[Symbol.iterator] = _field2;
+  }
+}`,
+		},
+		{
+			name: "AFieldNamedForAKeysPropertyKeepsItsName",
+			src: `class C {
+				iterator: number,
+				[Symbol.iterator]: string,
+			}`,
+			want: `export class C {
+  constructor(temp1, temp2) {
+    const iterator = temp1;
+    const _field1 = temp2;
+    this.iterator = iterator;
+    this[Symbol.iterator] = _field1;
+  }
+}`,
+		},
+		// A parameter is lowered to `temp<N>`, so one of those cannot take a name a key
+		// reads either. The parameter skips to `temp2` and the key keeps the module's
+		// `temp1`.
+		{
+			name: "ALoweredParamAvoidsAKeysName",
+			src: `declare val temp1: unique symbol
+			class C {
+				[temp1]: number,
+			}`,
+			want: `export class C {
+  constructor(temp2) {
+    const _field1 = temp2;
+    this[temp1] = _field1;
+  }
+}`,
+		},
+		// A field whose key binds a name directly keeps it, so the generated names
+		// count only the fields that need one.
+		{
+			name: "AComputedKeyBesideADirectOne",
+			src: `class Odd {
+				plain: number,
+				[Symbol.iterator]: string,
+			}`,
+			want: `export class Odd {
+  constructor(temp1, temp2) {
+    const plain = temp1;
+    const _field1 = temp2;
+    this.plain = plain;
+    this[Symbol.iterator] = _field1;
+  }
+}`,
+		},
 	}
 
 	for _, test := range tests {
@@ -171,7 +286,7 @@ func TestEmitsTheImplicitConstructor(t *testing.T) {
 }
 
 // TestEmitsNoImplicitConstructor covers the classes that get none. A declared
-// constructor is emitted as written rather than joined by a second one, and the two
+// constructor is emitted as written rather than joined by a second one, and the four
 // shapes with no derivable constructor emit a body without one.
 func TestEmitsNoImplicitConstructor(t *testing.T) {
 	// A declared constructor is the one emitted, so the class carries exactly one.
@@ -212,11 +327,24 @@ func TestEmitsNoImplicitConstructor(t *testing.T) {
 			"only Base gets a derived constructor")
 	})
 
-	// A computed key leaves no parameter name to bind, so no constructor is derived.
-	// The checkers report that the class needs an explicit one.
-	t.Run("AComputedKeyFieldGetsNone", func(t *testing.T) {
-		got := buildSource(t, `class Odd {
-			[Symbol.iterator]: number,
+	// A key a call produces answers differently per call, so no constructor is derived
+	// and the checkers report that the class needs an explicit one. #1831 lifts this by
+	// evaluating the key once beside the class.
+	t.Run("AKeyFromACallGetsNone", func(t *testing.T) {
+		got := buildSource(t, `declare fn makeKey() -> unique symbol
+		class Odd {
+			[makeKey()]: number,
+		}`)
+		require.NotContains(t, got, "constructor")
+	})
+
+	// A property read off anything but `Symbol` may be a getter, which is a call this
+	// package cannot tell from a field, so it gets none for the same reason and is
+	// lifted by the same ticket.
+	t.Run("AKeyReadOffAnObjectGetsNone", func(t *testing.T) {
+		got := buildSource(t, `declare val keys: {get k(&self) -> unique symbol}
+		class Odd {
+			[keys.k]: number,
 		}`)
 		require.NotContains(t, got, "constructor")
 	})
