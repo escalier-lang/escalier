@@ -190,6 +190,8 @@ func (c *checker) inferClassDecl(scope *Scope, lvl int, decl *ast.ClassDecl, ns 
 	flow := keptFlowMap(keep)
 	c.freezeClassBody(body, keep, flow, keepLts)
 	c.freezeClassBody(static, keep, flow, keepLts)
+	c.ctx.recordMethodLifetimes(body, keepLts)
+	c.ctx.recordMethodLifetimes(static, keepLts)
 
 	// Freeze both per-parameter variance vectors once every member body has refined its
 	// signature, so the walk measures each type parameter at its final occurrences. The
@@ -1014,6 +1016,7 @@ type pendingMember struct {
 	fn     *ast.FuncExpr
 	name   string // the member's source name, which its own *ast.FuncExpr does not carry
 	recv   *ast.MethodReceiver
+	class  *soltype.ClassType
 	static bool
 	stub   *soltype.FuncType
 	apply  func(bodyFt *soltype.FuncType)
@@ -1057,10 +1060,9 @@ func (c *checker) buildMemberSigs(
 				c.report(&MethodOverloadReceiverMismatchError{Name: name, Elem: elem})
 			}
 			pending = append(pending, pendingMember{
-				fn: elem.Fn, name: name, recv: elem.Receiver, static: elem.Static, stub: stub,
+				fn: elem.Fn, name: name, recv: elem.Receiver, class: self, static: elem.Static, stub: stub,
 				generic: true,
 				apply: func(bodyFt *soltype.FuncType) {
-					bodyFt.SelfParam = stub.SelfParam
 					method.Signatures[arm] = bodyFt
 				},
 			})
@@ -1085,8 +1087,9 @@ func (c *checker) buildMemberSigs(
 			target := targetBody(body, static, elem.Static)
 			target.Elems = append(target.Elems, getter)
 			pending = append(pending, pendingMember{
-				fn: elem.Fn, name: name, recv: elem.Receiver, static: elem.Static, stub: stub,
+				fn: elem.Fn, name: name, recv: elem.Receiver, class: self, static: elem.Static, stub: stub,
 				apply: func(bodyFt *soltype.FuncType) {
+					getter.SelfParam = bodyFt.SelfParam
 					getter.Type = bodyFt.Ret
 					getter.Throws = bodyFt.Throws
 				},
@@ -1126,8 +1129,9 @@ func (c *checker) buildMemberSigs(
 			target := targetBody(body, static, elem.Static)
 			target.Elems = append(target.Elems, setter)
 			pending = append(pending, pendingMember{
-				fn: elem.Fn, name: name, recv: elem.Receiver, static: elem.Static, stub: stub,
+				fn: elem.Fn, name: name, recv: elem.Receiver, class: self, static: elem.Static, stub: stub,
 				apply: func(bodyFt *soltype.FuncType) {
+					setter.SelfParam = bodyFt.SelfParam
 					if len(bodyFt.Params) > 0 {
 						setter.Param = bodyFt.Params[0].Type
 					}
@@ -1147,7 +1151,7 @@ func (c *checker) inferMemberBodies(scope *Scope, lvl int, body *soltype.ObjectT
 		// Hand the member's name to the inferFunc call below, which sees only the member's
 		// *ast.FuncExpr and so cannot recover it. inferFunc takes and clears it.
 		c.memberName = m.name
-		bodyFt := c.inferMemberFunc(scope, lvl, m.fn, m.recv, m.static, m.generic, body)
+		bodyFt := c.inferMemberFunc(scope, lvl, m, body)
 		c.linkMemberSig(m.fn, bodyFt, m.stub)
 		m.apply(bodyFt)
 	}
@@ -1225,30 +1229,32 @@ func (c *checker) checkSelfReceiver(name string, elem ast.ClassElem, static bool
 	}
 }
 
-// inferMemberFunc infers one member body via the shared inferFunc core, binding `self`
-// to the full instance body in the form its receiver declares. Field reads and writes
-// resolve through the record machinery, and a sibling call resolves through the
-// pre-declared member signature. It returns the inferred FuncType, whose params and
-// return the caller links into the member's signature stub.
-func (c *checker) inferMemberFunc(
-	scope *Scope,
-	lvl int,
-	fn *ast.FuncExpr,
-	recv *ast.MethodReceiver,
-	static bool,
-	generic bool,
-	body *soltype.ObjectType,
-) *soltype.FuncType {
-	memberScope := scope.Child()
-	if !static {
-		c.bindSelf(memberScope, lvl, recv, body)
+// inferMemberFunc infers one member body via the shared inferFunc core. An instance
+// member's body binds `self` to the full instance body in the form its receiver declares,
+// so field reads and writes resolve through the record machinery and a sibling call
+// resolves through the pre-declared member signature. It returns the inferred FuncType,
+// whose params and return the caller links into the member's signature stub. An instance
+// member's FuncType carries the receiver as its SelfParam.
+func (c *checker) inferMemberFunc(scope *Scope, lvl int, m pendingMember, body *soltype.ObjectType) *soltype.FuncType {
+	if !m.static {
+		// inferFunc binds `self` once it has opened the member's named-lifetime scope, which
+		// `&'a self` resolves its `'a` in.
+		c.memberSelf = &memberSelf{class: m.class, body: body}
 		// The liveness pre-pass defines `self` as one of the body's parameters, so places
 		// rooted at the receiver are tracked like places rooted at a parameter.
-		c.memberReceiver = recv
+		c.memberReceiver = m.recv
 	}
 	// generic is true for a method and false for a getter or setter. inferFunc reports a
 	// binder it is not allowed to resolve as an unsupported feature.
-	return c.inferFunc(memberScope, lvl, fn.FuncSig, fn.Body, fn, generic)
+	return c.inferFunc(scope.Child(), lvl, m.fn.FuncSig, m.fn.Body, m.fn, m.generic)
+}
+
+// memberSelf is what inferFunc needs, beside the receiver memberReceiver carries, to bind
+// `self` in an instance member's body and to build the member's SelfParam. class is the
+// instance type the SelfParam borrows or owns, and body is the class body `self` views.
+type memberSelf struct {
+	class *soltype.ClassType
+	body  *soltype.ObjectType
 }
 
 // appendMethodSig installs a method signature under name, merging it into an existing
@@ -1267,29 +1273,50 @@ func appendMethodSig(obj *soltype.ObjectType, name string, sig *soltype.FuncType
 	return m, 0
 }
 
-// selfParam builds the SelfParam a member's signature carries, or nil for a static
-// member. Its type is selfType's.
+// selfParam builds the SelfParam a member's signature stub carries, or nil for a static
+// member. A borrowed receiver borrows at a fresh lifetime. The body pass replaces the stub,
+// and the signature it installs carries the lifetime the receiver names.
 func (c *checker) selfParam(lvl int, recv *ast.MethodReceiver, static bool, self *soltype.ClassType) *soltype.FuncParam {
 	if static || recv == nil {
 		return nil
 	}
-	return &soltype.FuncParam{Pattern: &soltype.IdentPat{Name: "self"}, Type: c.selfType(lvl, recv, self)}
+	lt := soltype.Lifetime(nil)
+	if !recv.Consumes() {
+		lt = c.ctx.freshLifetime(lvl)
+	}
+	return receiverParam(recv, lt, self)
 }
 
-// selfType returns the type a receiver gives the instance. A borrowed receiver is a borrow
-// of the instance with a fresh lifetime, so `&self` is `&Self` and `&mut self` is
-// `&mut Self`. A consuming receiver owns the instance, so `self` is the bare `Self` and
-// `mut self` is the owned-mutable `mut Self`. A member that wrote no receiver, which
-// checkSelfReceiver reports, takes the bare instance so its body still checks.
-func (c *checker) selfType(lvl int, recv *ast.MethodReceiver, self soltype.Type) soltype.Type {
-	inner := self.(soltype.RefInner)
-	if recv == nil {
-		return self
-	}
-	if recv.Consumes() {
+// receiverParam returns the SelfParam for recv over the instance type self, borrowing at lt
+// when recv is a borrow.
+func receiverParam(recv *ast.MethodReceiver, lt soltype.Lifetime, self soltype.RefInner) *soltype.FuncParam {
+	return &soltype.FuncParam{Pattern: &soltype.IdentPat{Name: "self"}, Type: receiverType(recv, lt, self)}
+}
+
+// receiverType returns the type a receiver gives the instance inner. A borrowed receiver
+// borrows inner at lt, so `&self` is `&Self` and `&mut self` is `&mut Self`. A consuming
+// receiver owns inner, so `self` is the bare `Self` and `mut self` is the owned-mutable
+// `mut Self`, and lt is ignored. A nil receiver, which checkSelfReceiver reports, takes the
+// bare inner.
+func receiverType(recv *ast.MethodReceiver, lt soltype.Lifetime, inner soltype.RefInner) soltype.Type {
+	switch {
+	case recv == nil:
+		return inner
+	case recv.Consumes():
 		return soltype.NewRef(recv.Mut, nil, inner)
 	}
-	return soltype.NewRef(recv.Mut, c.ctx.freshLifetime(lvl), inner)
+	return soltype.NewRef(recv.Mut, lt, inner)
+}
+
+// receiverLifetime returns the lifetime recv borrows at, resolved in the current
+// named-lifetime scope, so `&'a self` shares the variable every other `'a` in the signature
+// resolves to. A receiver that writes no lifetime borrows at a fresh one. A consuming or
+// absent receiver borrows nothing and returns nil.
+func (c *checker) receiverLifetime(recv *ast.MethodReceiver, lvl int) soltype.Lifetime {
+	if recv == nil || recv.Consumes() {
+		return nil
+	}
+	return c.resolveLifetimeAnn(recv.Lifetime, lvl)
 }
 
 // selfParamMut reports whether a receiver grants mutable access to the instance. A
@@ -1315,9 +1342,9 @@ func selfParamConsumes(sp *soltype.FuncParam) bool {
 // body's element slice while sharing each element pointer, so a field write such as
 // `self.x = v` refines the same field-type var the projected body reads, and a sibling
 // call `self.m()` resolves against the member signature the phase-1 pass installed on the
-// shared element. The view takes the receiver's own form through selfType, so `&mut self`
-// binds a mutable borrow that field writes type-check through and `self` binds the owned
-// view.
+// shared element. The view takes the receiver's own form through receiverType, borrowing
+// at lt, so `&mut self` binds a mutable borrow that field writes type-check through and
+// `self` binds the owned view.
 //
 // A `self.field` read or write dispatches through the record subtyping machinery, whose
 // object arm threads the borrow and mutability rules field access needs: read-through-
@@ -1326,12 +1353,12 @@ func selfParamConsumes(sp *soltype.FuncParam) bool {
 // method member; valueProp intercepts it and resolves through member lookup instead. A
 // method's own receiver ownership is checked separately at the call site as a `receiver
 // <: SelfParam` constraint, not by this binding.
-func (c *checker) bindSelf(scope *Scope, lvl int, recv *ast.MethodReceiver, body *soltype.ObjectType) {
+func (c *checker) bindSelf(scope *Scope, recv *ast.MethodReceiver, lt soltype.Lifetime, body *soltype.ObjectType) {
 	// Snapshot the element slice, sharing each element pointer so a write through `self`
 	// refines the same field-type var the projected body reads and a sibling signature
 	// installed by the body pass shows through the shared pointer.
 	view := &soltype.ObjectType{Elems: append([]soltype.ObjTypeElem(nil), body.Elems...)}
-	selfBody := c.selfType(lvl, recv, view)
+	selfBody := receiverType(recv, lt, view)
 	scope.defineValue("self", ValueBinding{Schemes: []TypeScheme{monoScheme(selfBody)}})
 }
 

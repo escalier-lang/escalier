@@ -876,7 +876,9 @@ func (c *checker) projectedMember(lvl int, blame ast.Node, name string, recv, ca
 	// call the same check, so `c.bump()` and `self.bump()` answer the same way for the same
 	// receiver.
 	c.checkReceiverMut(blame, name, recv, memberSelfParam(member))
-	return c.memberValue(lvl, blame, member), true
+	// Each access from outside the class gets its own copy of the method's lifetimes, the
+	// way a call to a free function instantiates the function's scheme.
+	return c.memberValue(lvl, blame, c.instantiateMethodLifetimes(lvl, blame, recv, member)), true
 }
 
 // objectMember resolves a read of a method, getter, or setter carried by a plain object type,
@@ -1324,7 +1326,7 @@ func (c *checker) checkReceiverMut(blame ast.Node, name string, recv soltype.Typ
 		return
 	}
 	if !isBorrowType(self.Type) {
-		if heldBorrow(recv) != nil {
+		if len(heldBorrows(recv)) > 0 {
 			c.report(&ConsumingReceiverBorrowedError{Name: name, Site: blame})
 			return
 		}
@@ -1337,22 +1339,25 @@ func (c *checker) checkReceiverMut(blame ast.Node, name string, recv soltype.Typ
 	c.constrain(blame, recvT, self.Type)
 }
 
-// heldBorrow returns the borrow recv holds, or nil when it holds none. It looks through a
-// binding var to its lower bounds the way lendsMut does, so `val q = p` over a borrowed p
-// still reads as a borrow at `q.finish()`. Any one borrowed bound is enough, since the
-// branch taken at run time may be that one.
-func heldBorrow(recv soltype.Type) *soltype.RefType {
+// heldBorrows returns every borrow recv may hold, or nil when it holds none. It looks
+// through a binding var to its lower bounds the way lendsMut does, so `val q = p` over a
+// borrowed p still reads as a borrow at `q.finish()`. A join such as
+// `val v = if k { a } else { b }` over two borrowed parameters holds both, since the branch
+// taken at run time may be either one.
+func heldBorrows(recv soltype.Type) []*soltype.RefType {
 	switch recv := recv.(type) {
 	case *soltype.RefType:
 		if recv.Lt != nil {
-			return recv
+			return []*soltype.RefType{recv}
 		}
 	case *soltype.TypeVarType:
+		var out []*soltype.RefType
 		for _, lb := range recv.LowerBounds {
 			if r, ok := lb.(*soltype.RefType); ok && r.Lt != nil {
-				return r
+				out = append(out, r)
 			}
 		}
+		return out
 	}
 	return nil
 }
@@ -1436,7 +1441,9 @@ func (c *checker) classValueMember(lvl int, blame ast.Node, name string, carrier
 	if !found {
 		return pathResult{}, false
 	}
-	return c.memberValue(lvl, blame, member), true
+	// A static method's lifetimes are instantiated per access the way an instance method's
+	// are. It has no receiver to relate.
+	return c.memberValue(lvl, blame, c.instantiateMethodLifetimes(lvl, blame, nil, member)), true
 }
 
 // classValueCarrier resolves a receiver to the class-value object it reads as: an object

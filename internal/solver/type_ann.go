@@ -158,7 +158,7 @@ func (c *checker) resolveTypeAnnType(scope *Scope, ta ast.TypeAnn, lvl int) (sol
 	case *ast.IntersectionTypeAnn:
 		return c.resolveIntersectionTypeAnn(scope, ta, lvl)
 	case *ast.FuncTypeAnn:
-		return c.resolveFuncTypeAnn(scope, ta, lvl)
+		return c.resolveFuncTypeAnn(scope, ta, nil, lvl)
 	case *ast.KeyOfTypeAnn:
 		return c.resolveKeyOfTypeAnn(scope, ta, lvl)
 	case *ast.NegationTypeAnn:
@@ -328,7 +328,7 @@ func (l *objAnnLowering) lower(elem ast.ObjTypeAnnElem) (soltype.ObjTypeElem, bo
 			l.c.reportUnsupported(elem.Name)
 			return nil, true
 		}
-		sig := l.c.mustResolveFuncTypeAnn(l.scope, elem.Fn, l.lvl)
+		sig := l.c.mustResolveFuncTypeAnn(l.scope, elem.Fn, elem.Receiver, l.lvl)
 		return &soltype.MethodElem{
 			Name:       name,
 			Signatures: []*soltype.FuncType{sig},
@@ -343,7 +343,7 @@ func (l *objAnnLowering) lower(elem ast.ObjTypeAnnElem) (soltype.ObjTypeElem, bo
 		// The value read and what reading it raises both come from the one resolved
 		// signature. An absent `throws` clause leaves the signature's Throws nil, and nil is
 		// the `never` shorthand GetterElem uses too, so it carries over with no special case.
-		sig := l.c.mustResolveFuncTypeAnn(l.scope, elem.Fn, l.lvl)
+		sig := l.c.mustResolveFuncTypeAnn(l.scope, elem.Fn, elem.Receiver, l.lvl)
 		return &soltype.GetterElem{Name: name, Type: sig.Ret, Throws: sig.Throws}, true
 	case *ast.SetterTypeAnn:
 		name, ok := objKeyName(elem.Name)
@@ -351,7 +351,7 @@ func (l *objAnnLowering) lower(elem ast.ObjTypeAnnElem) (soltype.ObjTypeElem, bo
 			l.c.reportUnsupported(elem.Name)
 			return nil, true
 		}
-		sig := l.c.mustResolveFuncTypeAnn(l.scope, elem.Fn, l.lvl)
+		sig := l.c.mustResolveFuncTypeAnn(l.scope, elem.Fn, elem.Receiver, l.lvl)
 		// A well-formed setter declares exactly one value parameter beyond the receiver, the
 		// value being assigned. Report any other count and then build the element from the
 		// first parameter, or from `unknown` when there is none, so the object still carries a
@@ -371,13 +371,13 @@ func (l *objAnnLowering) lower(elem ast.ObjTypeAnnElem) (soltype.ObjTypeElem, bo
 		}
 		l.sawCtor = true
 		return &soltype.ConstructorElem{
-			Signatures: []*soltype.FuncType{l.c.mustResolveFuncTypeAnn(l.scope, elem.Fn, l.lvl)},
+			Signatures: []*soltype.FuncType{l.c.mustResolveFuncTypeAnn(l.scope, elem.Fn, nil, l.lvl)},
 		}, true
 	case *ast.CallableTypeAnn:
 		// An overloaded call signature is written as several `fn (…) -> T` members, the way
 		// TypeScript writes one. They are arms of one element, so the second and later ones
 		// extend the first rather than adding an element the object could not hold.
-		sig := l.c.mustResolveFuncTypeAnn(l.scope, elem.Fn, l.lvl)
+		sig := l.c.mustResolveFuncTypeAnn(l.scope, elem.Fn, nil, l.lvl)
 		if l.callable != nil {
 			l.callable.Signatures = append(l.callable.Signatures, sig)
 			return nil, true
@@ -403,8 +403,8 @@ func (l *objAnnLowering) lower(elem ast.ObjTypeAnnElem) (soltype.ObjTypeElem, bo
 // resolveFuncTypeAnn recovers every unsupported part of a signature to a fresh var, so it always
 // yields a FuncType and its ok result is always true. Anything else is a wiring bug rather than
 // a source error, so fail loudly instead of dropping the member.
-func (c *checker) mustResolveFuncTypeAnn(scope *Scope, ta *ast.FuncTypeAnn, lvl int) *soltype.FuncType {
-	fn, _ := c.resolveFuncTypeAnn(scope, ta, lvl)
+func (c *checker) mustResolveFuncTypeAnn(scope *Scope, ta *ast.FuncTypeAnn, recv *ast.MethodReceiver, lvl int) *soltype.FuncType {
+	fn, _ := c.resolveFuncTypeAnn(scope, ta, recv, lvl)
 	sig, isFunc := fn.(*soltype.FuncType)
 	if !isFunc {
 		panic(fmt.Sprintf("mustResolveFuncTypeAnn: signature resolved to %T, not *soltype.FuncType", fn))
@@ -1004,7 +1004,7 @@ func restParamSlotShape(p *ast.Param, last bool) (ast.Pat, bool, bool) {
 // soltype.FuncType, recovering an unsupported part to a fresh var so the shape survives. A
 // `<T>` list resolves through resolveTypeParams into a child scope, so a parameter, return,
 // or union member that names `T` reads the annotation's own quantified var.
-func (c *checker) resolveFuncTypeAnn(scope *Scope, ta *ast.FuncTypeAnn, lvl int) (soltype.Type, bool) {
+func (c *checker) resolveFuncTypeAnn(scope *Scope, ta *ast.FuncTypeAnn, recv *ast.MethodReceiver, lvl int) (soltype.Type, bool) {
 	// A function type annotation is its own quantifier scope, so give it its own
 	// named-lifetime map the way inferFunc does for a function body. Without this a
 	// nested `fn<'a: 'static>(…)` annotation would resolve `'a` to the enclosing
@@ -1026,7 +1026,7 @@ func (c *checker) resolveFuncTypeAnn(scope *Scope, ta *ast.FuncTypeAnn, lvl int)
 
 	// Report any named lifetime this annotation uses without binding it in its own `<…>`
 	// list, and the symmetric unused binder, before lowering its bounds interns the names.
-	c.checkLifetimeDeclarations(ta.LifetimeParams, ta.Params, ta.Return, ta.Throws)
+	c.checkLifetimeDeclarations(ta.LifetimeParams, recv, ta.Params, ta.Return, ta.Throws)
 	c.lowerLifetimeParamBounds(ta.LifetimeParams, lvl)
 
 	params := make([]*soltype.FuncParam, len(ta.Params))
