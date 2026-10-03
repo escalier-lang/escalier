@@ -253,6 +253,10 @@ func PrintAsSchemeWith(
 	}
 	quantified := set.FromSlice(params)
 	var labels []string
+	// A declared parameter's binder carries its name here and its bound further down, once
+	// every name a bound could reach is registered. declaredAt records where each one's
+	// label sits so the bound can be appended to it in place.
+	declaredAt := map[int]*TypeParam{}
 	for _, tp := range declared {
 		if tp.Name == "" || !quantified.Contains(tp.Var) {
 			continue
@@ -260,6 +264,7 @@ func PrintAsSchemeWith(
 		if _, bound := p.names[tp.Var]; bound {
 			continue // one variable gets one binder, however many parameters point at it
 		}
+		declaredAt[len(labels)] = tp
 		labels = append(labels, p.bindTypeParam(tp.Var, tp.Name))
 	}
 	// Every remaining quantified variable takes a generated T0, T1, … in first-appearance
@@ -332,6 +337,20 @@ func PrintAsSchemeWith(
 		return Print(t)
 	}
 	p.ltNames = ltNames
+	// A declared parameter's bound renders here rather than beside its name, because a
+	// bound may name a sibling parameter or a lifetime and both are registered only now.
+	// `class Holder<'a, T: &'a {value: number}>` would otherwise drop the `'a`.
+	//
+	// Only the constraint the source wrote renders. The variable's accumulated upper
+	// bounds carry what a body forced, which is not what the declaration promises, and
+	// showing one would read as if the source had written it.
+	for i, tp := range declaredAt {
+		var bounds []Type
+		if tp.Constraint != nil {
+			bounds = []Type{tp.Constraint}
+		}
+		labels[i] += p.typeParamSuffix(bounds, tp.Default)
+	}
 	switch t.(type) {
 	case *ClassType, *AliasType:
 		// A class instance or alias reference already displays its parameters inline in its
@@ -1418,28 +1437,40 @@ func isNever(t Type) bool {
 func (p *namedPrinter) typeParamBinders(tps []*TypeParam) []string {
 	binders := make([]string, len(tps))
 	for i, tp := range tps {
-		s := p.printType(tp.Var) // the registered source name, else t{ID}
 		// The declared constraint wins where there is one. A substitution rewrites it and
 		// cannot rewrite the variable's upper-bound list, so reading the field is what
-		// renders `pick<T: U>` on a `C<number>` as `<T: number>`. The list is the fallback,
-		// carrying a bound a body forced or a prelude parameter was built with.
+		// renders `pick<T: U>` on a `C<number>` as `<T: number>`. The list is the
+		// fallback, carrying a bound a body forced or a prelude parameter was built with.
 		bounds := tp.Var.UpperBounds
 		if tp.Constraint != nil {
 			bounds = []Type{tp.Constraint}
 		}
-		if len(bounds) > 0 {
-			rendered := make([]string, len(bounds))
-			for j, b := range bounds {
-				rendered[j] = p.printType(b)
-			}
-			s += ": " + strings.Join(rendered, " & ")
-		}
-		if tp.Default != nil {
-			s += " = " + p.printType(tp.Default)
-		}
-		binders[i] = s
+		// printType gives the registered source name, else t{ID}.
+		binders[i] = p.printType(tp.Var) + p.typeParamSuffix(bounds, tp.Default)
 	}
 	return binders
+}
+
+// typeParamSuffix renders what follows a binder's name, which is `: Bound` for a bounded
+// parameter and ` = Default` for one with a default. A parameter with neither renders the
+// empty string, so a caller joins it to the name unconditionally. Several bounds meet, so
+// they join with ` & `.
+//
+// Every variable the bounds and the default name must be bound to its name first, since a
+// bound naming a sibling parameter renders that sibling's name.
+func (p *namedPrinter) typeParamSuffix(bounds []Type, dflt Type) string {
+	var s string
+	if len(bounds) > 0 {
+		rendered := make([]string, len(bounds))
+		for j, b := range bounds {
+			rendered[j] = p.printType(b)
+		}
+		s += ": " + strings.Join(rendered, " & ")
+	}
+	if dflt != nil {
+		s += " = " + p.printType(dflt)
+	}
+	return s
 }
 
 // nameLifetimeParams registers each lifetime parameter's variable under its source name
