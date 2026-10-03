@@ -647,6 +647,27 @@ func anyMemberResidual(u *soltype.UnionType) bool {
 	return false
 }
 
+// indexAccessUpperBound returns a ground type that holds every value of the residual access
+// `Target[Index]`. It replaces each operand that is a bounded type parameter with its bound and
+// reduces the access over the result. `T[number]` for `T: Array<string> | []` gives `string`, and
+// `[1, 2, 3][D]` for `D: number` gives `1 | 2 | 3`.
+//
+// It reports false when neither operand has a bound, or when the access over the bounds stays
+// residual or records a diagnostic.
+func (c *Context) indexAccessUpperBound(access *soltype.IndexType, seen *seenPairs) (soltype.Type, bool) {
+	target, targetBounded := paramUpperBound(access.Target)
+	index, indexBounded := paramUpperBound(access.Index)
+	if !targetBounded && !indexBounded {
+		return nil, false
+	}
+	widened := &soltype.IndexType{Target: target, Index: index, Inexact: access.Inexact}
+	reduced, errs, ok := c.reduceResidual(widened, seen)
+	if !ok || len(errs) > 0 {
+		return nil, false
+	}
+	return reduced, true
+}
+
 // maxUnwrapDepth caps how many type operators constrain may evaluate along one constraint path.
 // Almost every unwrap chain is a handful of steps and settles on its own. Three rules already close
 // the recursive ones: the reflexive shortcut settles a comparison between the same alias
@@ -865,6 +886,27 @@ func (c *Context) constrain(sub, super soltype.Type, seen *seenPairs, mutCtx boo
 				defer c.popUnfoldingAlias(ref)
 			}
 			return c.constrainUnwrapped(sub, evaluated, seen, mutCtx)
+		}
+	}
+
+	// An indexed access whose target or index is a type parameter stays residual through the step
+	// above. Every value it denotes is also a value of the same access over the parameter's bound,
+	// so that bound access decides the constraint in its place. `T[number] <: number | string` for
+	// `T: Array<number | string> | []` holds because the access over the bound reduces to
+	// `number | string`. This runs ahead of the union-super rule below, which would otherwise
+	// compare that whole union against each member of the super on its own.
+	//
+	// A super that carries a residual of its own skips this step. Such a super may hold the
+	// access itself, as `T[number] | undefined` does, and only the inert residual arm in the
+	// structural switch matches that by identity.
+	if access, ok := sub.(*soltype.IndexType); ok {
+		if _, superIsVar := super.(*soltype.TypeVarType); !superIsVar && !containsResidualOp(super) {
+			if bound, ok := c.indexAccessUpperBound(access, seen); ok {
+				if c.unwrapDepth >= maxUnwrapDepth {
+					return []SolverError{&ExpansionLimitError{Sub: sub, Super: super}}
+				}
+				return c.constrainUnwrapped(bound, super, seen, mutCtx)
+			}
 		}
 	}
 
