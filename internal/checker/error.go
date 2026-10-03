@@ -1021,6 +1021,14 @@ func (e SubclassConstructorRequiredError) Message() string {
 	return "Subclasses must declare an explicit `constructor` block; constructor synthesis is not supported for classes with an `extends` clause."
 }
 
+// ComputedKeyFieldRequiresConstructorError is reported when a class declares no
+// constructor and a non-optional field's computed key is neither a variable nor a
+// property of one, as `[makeKey()]` is.
+//
+// A synthesized constructor reads the key once per construction, where JavaScript reads
+// a computed class-member key once, where the class is defined. The two agree only for a
+// key that gives the same value every time, so any other key needs a constructor the
+// author writes.
 type ComputedKeyFieldRequiresConstructorError struct {
 	span ast.Span
 }
@@ -1029,7 +1037,7 @@ func (e ComputedKeyFieldRequiresConstructorError) Span() ast.Span {
 	return e.span
 }
 func (e ComputedKeyFieldRequiresConstructorError) Message() string {
-	return "A class with a non-optional computed-key field cannot have a constructor synthesized; declare an explicit `constructor` block."
+	return "A field whose computed key is neither a variable nor a property of one cannot have a constructor synthesized; declare an explicit `constructor` block."
 }
 
 // DivergingBodyNonNeverReturnError is reported when a function body

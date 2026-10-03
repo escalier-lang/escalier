@@ -183,14 +183,18 @@ func TestConstructorErrors(t *testing.T) {
 			`,
 			expected: []string{"Multiple constructors"},
 		},
+		// A key read per construction has to give what it gave when the class was
+		// defined. A call does not, so this one is rejected where `[k]` is synthesized.
 		"ComputedKeyRequiredFieldRejectsSynthesis": {
 			input: `
-				val k = "name"
+				declare fn makeKey() -> unique symbol
 				class Foo {
-					[k]: number,
+					[makeKey()]: number,
 				}
 			`,
-			expected: []string{"computed-key field"},
+			expected: []string{"A field whose computed key is neither a variable nor a " +
+				"property of one cannot have a constructor synthesized; declare an " +
+				"explicit `constructor` block."},
 		},
 		"PrivateConstructorRejected": {
 			input: `

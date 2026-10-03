@@ -697,3 +697,43 @@ func TestAGenericClassStaticSideIsSubsumed(t *testing.T) {
 	require.Contains(t, want, "pick(flag: boolean, n: number): number}")
 	require.Equal(t, want, got, "the two checkers emit different definitions")
 }
+
+// TestBothCheckersSynthesizeAComputedKeyConstructor asserts that a class whose only
+// field is keyed off `Symbol.iterator` emits the same constructor on both checkers.
+//
+// A variable key such as `[k]` is left out. soltype takes a computed key from a closed
+// set of well-known symbols, so internal/solver reports `Unsupported: ComputedKey` for
+// one and drops the field, which makes its `.d.ts` disagree even where the emitted
+// JavaScript matches. Comparing a shape one checker rejects says nothing, and
+// TestEmitsTheImplicitConstructor in internal/codegen covers what emission derives for
+// a variable key without running either checker.
+func TestBothCheckersSynthesizeAComputedKeyConstructor(t *testing.T) {
+	src := "class Odd {\n\t[Symbol.iterator]: number,\n}"
+
+	useChecker(t)
+	want := CompilePackage(libSources(src)).CompUnits["lib/index"].JS
+	useSolver(t)
+	got := CompilePackage(libSources(src)).CompUnits["lib/index"].JS
+
+	require.Contains(t, want, "this[Symbol.iterator] = _field1;")
+	require.Equal(t, want, got, "the two checkers emit different JavaScript")
+}
+
+// TestNeitherCheckerSynthesizesAKeyFromACall asserts that a class whose field key comes
+// from a call emits no constructor on either checker.
+//
+// `makeKey()` answers with a fresh symbol per call, so a constructor reading it per
+// construction would assign a property no reader can name. internal/checker reports that
+// the class needs an explicit constructor; internal/solver emits the same class without
+// one, which is #1715 rather than anything about this rule.
+func TestNeitherCheckerSynthesizesAKeyFromACall(t *testing.T) {
+	src := "declare fn makeKey() -> unique symbol\nclass Odd {\n\t[makeKey()]: number,\n}"
+
+	useChecker(t)
+	want := CompilePackage(libSources(src)).CompUnits["lib/index"].JS
+	useSolver(t)
+	got := CompilePackage(libSources(src)).CompUnits["lib/index"].JS
+
+	require.NotContains(t, want, "constructor")
+	require.Equal(t, want, got, "the two checkers emit different JavaScript")
+}

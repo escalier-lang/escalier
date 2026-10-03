@@ -20,9 +20,8 @@ const selfParamName = "self"
 // subclass, whose body would have to forward to `super(…)`.
 //
 // The second return names the field that blocked synthesis, which is a non-static field
-// with a computed key: no parameter name can be derived from an arbitrary key
-// expression. A caller that reports diagnostics says the class needs an explicit
-// constructor, and one that only emits code leaves it out.
+// whose computed key stableKeyExpr rejects. A caller that reports diagnostics says the
+// class needs an explicit constructor, and one that only emits code leaves it out.
 //
 // internal/checker and JavaScript emission both call this, which is what makes them
 // agree on what a class constructs.
@@ -45,13 +44,20 @@ func ImplicitConstructor(decl *ClassDecl) (*ConstructorElem, *FieldElem) {
 	params := []*Param{selfParam}
 	stmts := []Stmt{}
 
+	// A name a computed key reads cannot also be a parameter, so it is settled first
+	// and the direct-name decision below consults it.
+	keyReads := keyReadNames(decl)
+
 	// Collected before any parameter is built, so a generated name can avoid them.
 	// `class C { _field1: number, "a-b": string }` would otherwise bind `_field1`
 	// twice, a SyntaxError, and assign the first field's value to the second.
 	taken := set.NewSet[string]()
+	for name := range keyReads {
+		taken.Add(name)
+	}
 	for _, bodyElem := range decl.Body {
 		if field, ok := bodyElem.(*FieldElem); ok && takesConstructorParam(field) {
-			if name, direct := directParamName(field.Name); direct {
+			if name, direct := directParamName(field.Name, keyReads); direct {
 				taken.Add(name)
 			}
 		}
@@ -70,7 +76,7 @@ func ImplicitConstructor(decl *ClassDecl) (*ConstructorElem, *FieldElem) {
 		var lhs Expr
 		selfRef := NewIdent(selfParamName, fieldSpan)
 
-		if name, direct := directParamName(field.Name); direct {
+		if name, direct := directParamName(field.Name, keyReads); direct {
 			paramName = name
 			lhs = NewMember(selfRef, NewIdentifier(name, fieldSpan), false, fieldSpan)
 		} else {
@@ -86,9 +92,12 @@ func ImplicitConstructor(decl *ClassDecl) (*ConstructorElem, *FieldElem) {
 			case *NumLit:
 				keyExpr = NewLitExpr(NewNumber(k.Value, fieldSpan))
 			case *ComputedKey:
-				// Stop rather than emit a constructor that initializes only some of
-				// the fields.
-				return nil, field
+				if !stableKeyExpr(k.Expr) {
+					// Stop rather than emit a constructor that assigns the wrong
+					// property.
+					return nil, field
+				}
+				keyExpr = k.Expr
 			default:
 				panic("ImplicitConstructor: unexpected ObjKey variant")
 			}
@@ -125,6 +134,68 @@ func ImplicitConstructor(decl *ClassDecl) (*ConstructorElem, *FieldElem) {
 	}, nil
 }
 
+// stableKeyExpr reports whether reading expr again gives what it gave when the class was
+// defined. JavaScript evaluates a computed class-member key once, where the class is
+// defined, and the synthesized body reads it per construction, so only an expression
+// that cannot change between the two belongs there.
+//
+// Two shapes qualify. A variable read is pinned by the key's own type. A computed key
+// has to name one property, and a binding typed by a single literal or a `unique symbol`
+// has no second value to hold. `var k = Symbol()` widens to `symbol`, which is rejected
+// as a key before synthesis is reached.
+//
+// `Symbol.<name>` is the other, which is what `[Symbol.iterator]` writes. A property of
+// the global `Symbol` is a data property, so reading it runs no user code.
+//
+// Every other shape is left to a hand-written constructor, since reading it again can
+// answer differently. A call is the plainest case: `declare fn makeKey() -> unique
+// symbol` type-checks as a key and answers with a fresh symbol per call, so
+// `self[makeKey()] = v` would assign a property no reader can name. A property read off
+// anything else is excluded because a getter is a call this package cannot tell from a
+// field, which `declare val keys: {get k(&self) -> unique symbol}` makes `[keys.k]`.
+func stableKeyExpr(expr Expr) bool {
+	switch e := expr.(type) {
+	case *IdentExpr:
+		return true
+	case *MemberExpr:
+		obj, isIdent := e.Object.(*IdentExpr)
+		return !e.OptChain && e.Prop != nil && isIdent && obj.Name == symbolGlobalName
+	default:
+		return false
+	}
+}
+
+// symbolGlobalName is the global whose properties a computed key may read. See
+// stableKeyExpr.
+const symbolGlobalName = "Symbol"
+
+// keyReadNames returns the names a stable key expression reads. A parameter cannot bind
+// one of them, since the constructor reads the key after binding its parameters and a
+// parameter of that name would shadow what the key meant where the class was defined.
+//
+// The shapes are stableKeyExpr's: a variable read names itself, and `Symbol.<name>`
+// names `Symbol`.
+func keyReadNames(decl *ClassDecl) set.Set[string] {
+	names := set.NewSet[string]()
+	for _, bodyElem := range decl.Body {
+		field, ok := bodyElem.(*FieldElem)
+		if !ok || !takesConstructorParam(field) {
+			continue
+		}
+		key, computed := field.Name.(*ComputedKey)
+		if !computed || !stableKeyExpr(key.Expr) {
+			continue
+		}
+		if ident, isIdent := key.Expr.(*IdentExpr); isIdent {
+			names.Add(ident.Name)
+			continue
+		}
+		// stableKeyExpr admits only `Symbol.<name>` besides a variable read.
+		names.Add(symbolGlobalName)
+	}
+	return names
+}
+
 // takesConstructorParam reports whether a field's value arrives through a constructor
 // parameter. A static field belongs to the class rather than the instance. An optional
 // field defaults to `undefined`, and a parameter would force every caller to pass one.
@@ -134,12 +205,17 @@ func takesConstructorParam(field *FieldElem) bool {
 
 // directParamName returns the parameter name a key binds under, and reports whether it
 // binds one at all. A key binds its own spelling, so `x: number` arrives in a parameter
-// named `x`. A number, a computed expression, and a name canBindParamName rejects bind
-// none, and such a field is assigned by index under a generated name.
+// named `x`. Four kinds bind none: a number, a computed expression, a name
+// canBindParamName rejects, and a name in keyReads. Such a field is assigned by index
+// under a generated name.
+//
+// keyReads holds the names this class's computed keys read. Binding one would shadow it
+// for the rest of the constructor, so `class C { k: number, [k]: string }` would store
+// the second field under the first field's value.
 //
 // An identifier key and a string key are held to the same test, since
 // `class C { class: … }` and `class C { "class": … }` name the same field.
-func directParamName(key ObjKey) (string, bool) {
+func directParamName(key ObjKey, keyReads set.Set[string]) (string, bool) {
 	var name string
 	switch k := key.(type) {
 	case *IdentExpr:
@@ -149,7 +225,7 @@ func directParamName(key ObjKey) (string, bool) {
 	default:
 		return "", false
 	}
-	if !canBindParamName(name) {
+	if !canBindParamName(name) || keyReads.Contains(name) {
 		return "", false
 	}
 	return name, true
