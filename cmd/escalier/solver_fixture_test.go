@@ -72,10 +72,6 @@ var (
 		name:   "a bare reference to a namespace sibling",
 		ticket: "#1716",
 	}
-	causeSuperGate = &solverSkipCause{
-		name:   "the gate requiring a subclass constructor to call `super(…)`",
-		ticket: "#1720",
-	}
 	causeIteration = &solverSkipCause{
 		name:   "iteration and spreading an iterable",
 		ticket: "#1717",
@@ -83,10 +79,6 @@ var (
 	causePatterns = &solverSkipCause{
 		name:   "rest and default sub-patterns in an extractor pattern",
 		ticket: "#1718",
-	}
-	causeExtendsTypeArgs = &solverSkipCause{
-		name:   "a generic named in an `extends` clause without its type arguments",
-		ticket: "#1721",
 	}
 	causeUnionMember = &solverSkipCause{
 		name:   "a property read on a union whose arms do not all declare it",
@@ -140,17 +132,12 @@ var solverSkips = []solverSkip{
 	{"namespace_bin_import", causeNamespaceMember, "Unknown identifier: Point"},
 	{"namespace_simple_same", causeNamespaceMember, "Unknown identifier: base"},
 
-	{"class_field_name_collision", causeSuperGate, "A subclass constructor must call `super(…)`"},
-	{"class_inheritance_namespaces", causeSuperGate, "A subclass constructor must call `super(…)`"},
-
 	{"generators", causeIteration, "cannot spread t5 into a tuple"},
 	{"iterators", causeIteration, "string is not iterable"},
 
 	{"extractor_rest_arg", causePatterns, "extractor pattern `C` expects 3 arguments but got 2"},
 	{"extractor_with_defaults", causePatterns, "cannot constrain undefined <: string"},
 	{"pattern_matching", causePatterns, "object is missing property: area"},
-
-	{"interface", causeExtendsTypeArgs, "type alias `Box` expects 1 type argument but got 0"},
 
 	{"member_access", causeUnionMember, "the package is accepted, and error.txt records a rejection"},
 
@@ -404,12 +391,13 @@ type emitSkip struct {
 var emitSkips = map[emitSkip]*solverSkipCause{
 	{"fix_point_combinator", "index.js"}: causeFieldReadBound,
 
-	{"enum", "index.d.ts"}:                        causeEnumVariantValue,
-	{"generic_enum", "index.d.ts"}:                causeEnumVariantValue,
-	{"extractor_inside_namespaces", "index.d.ts"}: causeEnclosingNamespacePrefix,
-	{"extractor_arg_with_init", "index.d.ts"}:     causePatterns,
-	{"generalize", "index.d.ts"}:                  causeUnusedParamNotGeneralized,
-	{"type_ann_index_signature", "index.d.ts"}:    causeIndexSignatureOptional,
+	{"enum", "index.d.ts"}:                         causeEnumVariantValue,
+	{"generic_enum", "index.d.ts"}:                 causeEnumVariantValue,
+	{"extractor_inside_namespaces", "index.d.ts"}:  causeEnclosingNamespacePrefix,
+	{"class_inheritance_namespaces", "index.d.ts"}: causeEnclosingNamespacePrefix,
+	{"extractor_arg_with_init", "index.d.ts"}:      causePatterns,
+	{"generalize", "index.d.ts"}:                   causeUnusedParamNotGeneralized,
+	{"type_ann_index_signature", "index.d.ts"}:     causeIndexSignatureOptional,
 }
 
 // causeFieldReadBound is the one `index.js` entry's cause. Reading a field whose type
