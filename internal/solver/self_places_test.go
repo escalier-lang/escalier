@@ -82,24 +82,33 @@ func TestSelfRootedPlaces(t *testing.T) {
 		// A borrowing receiver points at caller-owned data. Under GC, a local borrow stored into
 		// one of its fields is the only path to the local once the method returns, so the store
 		// is accepted.
-		//
-		// DISABLED until #1744. A store of a local borrow into a caller-owned target reports
-		// `borrowed value 'b' does not live long enough to escape the function`. Once #1744
-		// lands, the case checks.
-		/*
-			"LocalStoredIntoBorrowingReceiverEscapes": {
-				src: selfPlaceDecls + `
-					class C {
-						peer: &mut {v: number},
-						m(&mut self) -> undefined {
-							val mut b = {v: 1}
-							self.peer = &mut b
-						},
-					}
-				`,
-				want: nil,
-			},
-		*/
+		"LocalStoredIntoBorrowingReceiverOk": {
+			src: selfPlaceDecls + `
+				class C {
+					peer: &mut {v: number},
+					m(&mut self) -> undefined {
+						val mut b = {v: 1}
+						self.peer = &mut b
+					},
+				}
+			`,
+			want: nil,
+		},
+		// The caller keeps reading the instance after the method returns, so the store's loan
+		// of b lasts to the end of the method. Moving b out afterwards conflicts with it.
+		"MovingALocalStoredIntoBorrowingReceiverConflicts": {
+			src: selfPlaceDecls + `
+				class C {
+					peer: &mut {v: number},
+					m(&mut self) -> undefined {
+						val mut b = {v: 1}
+						self.peer = &mut b
+						val y = b
+					},
+				}
+			`,
+			want: []string{"10:15-10:16: cannot move 'b' while it is borrowed"},
+		},
 		// A consuming receiver's instance dies with the method, so a local borrow stored into
 		// one of its fields escapes nothing.
 		"LocalStoredIntoConsumingReceiverOk": {
@@ -109,6 +118,21 @@ func TestSelfRootedPlaces(t *testing.T) {
 					m(mut self) -> undefined {
 						val mut b = {v: 1}
 						self.peer = &mut b
+					},
+				}
+			`,
+			want: nil,
+		},
+		// Reading the stored borrow back out of a consuming receiver and returning it hands the
+		// caller the only path to b, since the instance and the frame both end at the return.
+		"LocalStoredIntoConsumingReceiverAndReturnedOk": {
+			src: selfPlaceDecls + `
+				class Holder<'a> {
+					peer: &'a mut {value: number},
+					fill(mut self) -> &'a mut {value: number} {
+						val mut b = {value: 2}
+						self.peer = &mut b
+						return self.peer
 					},
 				}
 			`,
