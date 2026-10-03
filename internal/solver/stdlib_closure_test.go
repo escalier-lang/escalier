@@ -525,6 +525,22 @@ func TestTheCommittedTreeLoadsItsCycles(t *testing.T) {
 	}
 }
 
+// `class Locale implements LocaleOptions` in the committed `std:intl` takes
+// `calendar` from the interface it implements, so the package loads with
+// nothing reported and the member reads at the interface's type.
+func TestTheCommittedLocaleTakesItsImplementedMembers(t *testing.T) {
+	t.Parallel()
+
+	res := InferModuleAgainstStdlib(parseModule(t, `
+		import "std:intl"
+		declare val locale: intl.Locale
+		val calendar = locale.calendar
+	`), committedTree)
+
+	require.Empty(t, errorMessagesOf(res.Errors))
+	require.Equal(t, "string | undefined", soltype.Print(inferredValueType(t, res.Scope, "calendar")))
+}
+
 // A closure holds what the roots reach and no more, which is what keeps a load
 // proportional to the program rather than to the tree. `web:fetch` is portable
 // and names nothing in the browser tier.
