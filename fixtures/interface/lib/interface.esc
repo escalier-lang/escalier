@@ -45,8 +45,18 @@ export interface Comparable<T : number | string> {
     compareTo(other: T) -> number,
 }
 
-// Simple generic interface with extends (no type args in extends)
-export interface Container<T> extends Box {
+// Generic interface extending a generic interface, writing its type argument
+export interface Container<T> extends Box<string> {
     size: number,
     items: T,
+}
+
+// Generic interface whose type parameter declares a default
+export interface DefaultedBox<T = string> {
+    value: T,
+}
+
+// An `extends` clause may omit a type argument whose parameter declares a default
+export interface Labeled extends DefaultedBox {
+    label: string,
 }
