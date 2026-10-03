@@ -751,10 +751,9 @@ func (c *checker) lookupClassBinding(scope *Scope, name string) (TypeBinding, bo
 	// prelude's placeholder. Walking as far as the module scope and no further,
 	// then probing that scope's two keys in order, is what separates the four.
 	//
-	// Step 2 reads c.classNamespace, which is set only while a type declaration is
-	// being inferred. A `declare val outer: Point` inside a merged group therefore
-	// misses its sibling and reports `cannot find type Point`, since every key in
-	// that scope carries the member's namespace. #1626 covers it.
+	// Step 2 reads c.classNamespace, the namespace of the declaration being
+	// inferred. Inside a merged group every key in that scope carries the
+	// member's namespace, so step 2 is the only one that finds a sibling there.
 	if c.pkgURI != "" && c.moduleScope != nil {
 		if b, ok := scope.getTypeBefore(name, c.moduleScope); ok {
 			return b, true

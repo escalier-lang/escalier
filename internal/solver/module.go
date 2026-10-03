@@ -315,6 +315,10 @@ func (c *checker) inferComponent(
 		// lower bound below derives. A set with any un-annotated arm cannot be built
 		// body-free, so it takes the fused path instead.
 		if armDecls := annotatedOverloadArms(g, key); armDecls != nil {
+			// The arm signatures resolve their type annotations here, so a bare
+			// sibling name in them needs the key's namespace the way phase 2 does.
+			prevNS := c.classNamespace
+			c.classNamespace = g.GetNamespace(key)
 			sortArmDecls(module, armDecls)
 			arms := make([]overloadArm, len(armDecls))
 			schemes := make([]TypeScheme, len(armDecls))
@@ -340,6 +344,7 @@ func (c *checker) inferComponent(
 				arms[i] = overloadArm{decl: fd, t: sig}
 				schemes[i] = monoScheme(sig)
 			}
+			c.classNamespace = prevNS
 			bindings[key] = &componentBinding{arms: arms, bound: true, signatureBound: true}
 			scope.defineValue(key.Name(), ValueBinding{Schemes: schemes})
 			continue
@@ -514,7 +519,16 @@ func (c *checker) inferComponent(
 	}
 
 	// Phase 2: infer each declaration's definition and constrain it <: its var.
+	//
+	// Each key's namespace is set for the whole of its inference, so a bare type
+	// name in a `fn` signature or a `val` annotation probes its own namespace's
+	// sibling the way a class body does. In a merged group that probe is the only
+	// way a bare `Int32Array` written in `std:typed_arrays` reaches the class,
+	// because the scope keys it `std__typed_arrays.Int32Array`. A class value key
+	// overrides the namespace for its own body and puts it back on exit.
+	prevNS := c.classNamespace
 	for _, key := range component {
+		c.classNamespace = g.GetNamespace(key)
 		// Each top-level binding is its own named-lifetime scope, mirroring inferFunc.
 		// Two declarations that both write `&'a` get independent lifetimes rather than
 		// sharing one through a stale map. A function decl re-clears this inside inferFunc.
@@ -649,6 +663,7 @@ func (c *checker) inferComponent(
 			c.fuseOverloadArms(b)
 		}
 	}
+	c.classNamespace = prevNS
 
 	// Every definition in the component has been constrained into its binding var, which is what
 	// closes a recursive cycle, so coalescing a return type now yields the μ-knot that cycle
