@@ -61,10 +61,10 @@ func (c *checker) checkSignatureImpliesBodyLifetimes(sig ast.FuncSig, ft *soltyp
 	// renders also counts every parameter connected to a return-only lifetime as outliving
 	// it, which is a display rule and would report a bound the body does not need.
 	requires := func(sub, super *soltype.LifetimeVar) bool {
-		return a.bs.repOf(sub.ID) == a.bs.repOf(super.ID) || a.bs.implies(sub.ID, super.ID)
+		return a.outlivesGraph.implies(sub.ID, super.ID)
 	}
 	forcedStatic := func(v *soltype.LifetimeVar) bool {
-		return a.bs.static.Contains(a.bs.repOf(v.ID))
+		return a.outlivesGraph.static.Contains(a.outlivesGraph.repOf(v.ID))
 	}
 
 	// Compare every ordered pair of named lifetimes. Each relation the body requires must

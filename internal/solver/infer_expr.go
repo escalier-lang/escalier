@@ -631,7 +631,7 @@ func (c *checker) checkDeclaredLifetimeBounds(params []*ast.LifetimeParam, ft *s
 	// are the same variable, or when the solved graph proved them mutually outliving so
 	// they share an SCC representative.
 	sameLt := func(x, y *soltype.LifetimeVar) bool {
-		return a != nil && a.bs.repOf(x.ID) == a.bs.repOf(y.ID)
+		return a != nil && a.outlivesGraph.repOf(x.ID) == a.outlivesGraph.repOf(y.ID)
 	}
 	// staticForced reports whether the solved graph forces v to 'static, the escape
 	// constraint v <: 'static that records 'static as an upper bound. A lower-bound
@@ -639,7 +639,7 @@ func (c *checker) checkDeclaredLifetimeBounds(params []*ast.LifetimeParam, ft *s
 	// direction for this test. The bound set's static set reads upper bounds only, the
 	// same set implies consults.
 	staticForced := func(v *soltype.LifetimeVar) bool {
-		return a != nil && a.bs.static.Contains(a.bs.repOf(v.ID))
+		return a != nil && a.outlivesGraph.static.Contains(a.outlivesGraph.repOf(v.ID))
 	}
 	// proves reports whether the inferred relation proves 'sub outlives 'super. outlives is
 	// already transitive, so no further walk is needed here. implies reads reachability over
