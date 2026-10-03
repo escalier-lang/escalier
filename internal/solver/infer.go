@@ -70,11 +70,11 @@ type checker struct {
 	// the closure's AST no longer marks it as captured once the pre-pass has run.
 	closureCaptureInfo map[*ast.FuncExpr][]liveness.CaptureInfo
 
-	// openVars holds the variables whose lower bounds are not every value they hold: an
-	// unannotated parameter's, which a caller fills, and a binding with a default, which
-	// holds the default only when nothing else arrives. boundValueType declines to read
-	// one, so `fn f(k = "a")` does not make `o[k]` read `o.a`. It is nil until a variable
-	// is added.
+	// openVars holds the variables whose lower bounds do not cover every value they can
+	// hold. A parameter's variable is one, since a caller fills it. A pattern leaf with a
+	// default is another, since it holds the default only when the field is absent.
+	// boundValueType declines to read one, so `fn f(k = "a")` does not make `o[k]` read
+	// `o.a`. It is nil until a variable is added.
 	openVars set.Set[*soltype.TypeVarType]
 
 	// preludeNames caches the immutable prelude root scope's sorted value names so the

@@ -2141,14 +2141,15 @@ func (c *checker) reportSelfTypeName(kind TypeDeclKind, name *ast.Ident) bool {
 	return true
 }
 
-// memberKeyName returns the name a class member's key gives it. A written name, a
-// string or number literal, and a well-known symbol such as `[Symbol.iterator]` each
+// memberKeyName returns the name a class member's key gives the member. A written name,
+// a string or number literal, and a well-known symbol such as `[Symbol.iterator]` each
 // name the member directly. Any other computed key `[k]` is inferred, and it names the
 // member its type spells when that type is one string or number literal. So
-// `val bar = "bar"` makes `[bar]: number` the field `bar`. A `Symbol.<name>` key naming no
-// well-known symbol is not inferred, since soltype has no member name for it. ok is false for a key naming
-// no single member, which is reported as unsupported unless inferring the key already
-// reported an error.
+// `val bar = "bar"` makes `[bar]: number` the field `bar`.
+//
+// A `Symbol.<name>` key naming no well-known symbol is not inferred, since soltype has
+// no member name for it. ok is false for a key naming no single member. Such a key is
+// reported as unsupported unless inferring it already reported an error.
 func (c *checker) memberKeyName(scope *Scope, lvl int, key ast.ObjKey) (string, bool) {
 	if name, ok := objKeyName(key); ok {
 		return name, true
@@ -2168,8 +2169,8 @@ func (c *checker) memberKeyName(scope *Scope, lvl int, key ast.ObjKey) (string, 
 	return "", false
 }
 
-// inferredKeyName returns the name a member key gives it, reading a computed key's type
-// from Info. It reports nothing, so a walk over a class body after memberKeyName has
+// inferredKeyName returns the name a member key gives the member, reading a computed
+// key's type from Info. It reports nothing, so a walk over a class body after memberKeyName has
 // inferred its keys reads the same names without inferring a key twice. ok is false for
 // a key naming no single member.
 func (c *checker) inferredKeyName(key ast.ObjKey) (string, bool) {
