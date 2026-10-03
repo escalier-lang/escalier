@@ -472,9 +472,9 @@ func (c *checker) recordCallStoreEdges(
 			for _, referent := range ids {
 				place := storeLoanPlace(argExpr, referent, edge.direct)
 				escaping[edge.arg] = append(escaping[edge.arg], elementReach{place: place, mut: sourceMut})
-				// The caller reads the target after the call, so the loan lasts to the end of
-				// the function. A later move or conflicting borrow of the local is weighed
-				// against it, which is what keeps the stored borrow the only path to it.
+				// The target holds the loan while the body can still read it, so a move or
+				// conflicting borrow of the local that a later read through the target would
+				// see is weighed against it.
 				c.recordStoreEdgeLoan(place, sourceMut, target.root, targetPath, ref, argExpr)
 			}
 			escapeBlame[edge.arg] = argExpr
