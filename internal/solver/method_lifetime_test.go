@@ -6,7 +6,7 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-// TestMethodLifetimesPerCall pins that each call to a method gets its own copy of the
+// TestMethodLifetimesPerCall asserts that each call to a method gets its own copy of the
 // lifetimes the method quantifies, the way a call to a free function instantiates the
 // function's scheme. A wrapper that calls the method therefore infers the same signature as
 // one calling the equivalent free function. A lifetime the class declares belongs to the

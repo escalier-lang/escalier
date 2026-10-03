@@ -6,10 +6,10 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-// TestReceiverLifetimeDeclarations pins that a lifetime written on a receiver resolves in the
-// member's own lifetime scope. `&'a self` shares its `'a` with every other `'a` the signature
-// writes, it counts as a use of the binder that declares it, and it reports when nothing
-// declares it.
+// TestReceiverLifetimeDeclarations asserts that a lifetime written on a receiver resolves in
+// the member's own lifetime scope. `&'a self` shares its `'a` with every other `'a` the
+// signature writes, it counts as a use of the binder that declares it, and it reports when
+// nothing declares it.
 func TestReceiverLifetimeDeclarations(t *testing.T) {
 	tests := []struct {
 		name string
