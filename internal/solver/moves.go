@@ -709,10 +709,20 @@ func (c *checker) consumeEscapedCaptures(flowBorrowGraph *flowBorrowGraph) bool 
 		ids := captured.ToSlice()
 		slices.Sort(ids)
 		for _, id := range ids {
-			if isOwnedMovable(c.fn.capturedTypes[id]) {
-				c.recordMovePlace(movePlace{root: id}, es.expr, es.stmtRef)
-				moved = true
+			if !isOwnedMovable(c.fn.capturedTypes[id]) {
+				continue
 			}
+			// A store of an owned carrier into a caller-owned object can already have moved the
+			// capture at this site as part of the carrier's component, and a second move at one
+			// statement reads as a use after the first. The component move records the VarID
+			// alone, so the place is registered here for the use-after-move scan to find it.
+			place := movePlace{root: id}
+			if at := c.fn.moveSites[es.stmtRef]; at != nil && at.Contains(c.placeID(place)) {
+				c.fn.movePlaces[c.placeID(place)] = place
+				continue
+			}
+			c.recordMovePlace(place, es.expr, es.stmtRef)
+			moved = true
 		}
 	}
 	return moved
