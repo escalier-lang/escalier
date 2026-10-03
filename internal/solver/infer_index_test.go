@@ -87,6 +87,13 @@ func TestInferIndexRead(t *testing.T) {
 			src:      "fn f(o) { return o[0] }",
 			wantErrs: []string{"1:18-1:22: Unsupported: IndexExpr"},
 		},
+		{
+			// A caller may pass any key, so the default does not decide which property the
+			// read names.
+			name:     "KeyIsAParameterWithADefault",
+			src:      "val o = {a: 5, b: \"x\"}\nfn f(k = \"a\") { return o[k] }",
+			wantErrs: []string{"2:24-2:28: Unsupported: IndexExpr"},
+		},
 	})
 }
 
@@ -134,6 +141,32 @@ func TestInferComputedKey(t *testing.T) {
 			name: "ParameterKey",
 			src:  "fn f(k: string) { return {[k]: 1} }",
 			want: map[string]string{"f": "fn (k: string) -> {[K: string]?: 1}"},
+		},
+		{
+			// The key may replace the property written before it, so the property holds
+			// either value.
+			name: "KeyAfterAPropertyItMayReplace",
+			src:  "fn f(s: string) { val o = {a: \"x\", [s]: 1}\n return o.a }",
+			want: map[string]string{"f": `fn (s: string) -> 1 | "x"`},
+		},
+		{
+			// A property written after the key replaces whatever the key stored there.
+			name: "PropertyAfterAKey",
+			src:  "fn f(s: string) { val o = {[s]: 1, a: \"x\"}\n return o.a }",
+			want: map[string]string{"f": `fn (s: string) -> "x"`},
+		},
+		{
+			// A `number` key reaches only a property whose name spells a number.
+			name: "NumberKeyAfterProperties",
+			src:  "fn f(n: number) { return {a: \"x\", 1: true, [n]: 2} }",
+			want: map[string]string{"f": `fn (n: number) -> {a: "x", "1": 2 | true, [K: number]?: 2}`},
+		},
+		{
+			// A parameter's default is one value it may hold, not the only one, so the key
+			// names no single property.
+			name:     "UnannotatedParameterWithADefault",
+			src:      "fn f(k = \"a\") { return {[k]: 1} }",
+			wantErrs: []string{"1:26-1:27: Unsupported: ComputedKey"},
 		},
 	})
 }

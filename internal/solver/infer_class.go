@@ -2359,7 +2359,7 @@ func (c *checker) literalKeyName(key ast.Expr) (string, bool) {
 	if t == nil {
 		return "", false
 	}
-	ground, ok := boundValueType(t)
+	ground, ok := c.boundValueType(t)
 	if !ok {
 		return "", false
 	}
