@@ -541,6 +541,18 @@ func TestTheCommittedLocaleTakesItsImplementedMembers(t *testing.T) {
 	require.Equal(t, "string | undefined", soltype.Print(inferredValueType(t, res.Scope, "calendar")))
 }
 
+// `web:core` and `web:fetch` load from the committed tree with nothing reported.
+func TestTheCommittedCoreAndFetchLoadClean(t *testing.T) {
+	t.Parallel()
+
+	for _, uri := range []string{"web:core", "web:fetch"} {
+		t.Run(uri, func(t *testing.T) {
+			res := InferModuleAgainstStdlib(parseModule(t, "import \""+uri+"\"\nval x = 1\n"), committedTree)
+			require.Empty(t, errorMessagesOf(res.Errors))
+		})
+	}
+}
+
 // A closure holds what the roots reach and no more, which is what keeps a load
 // proportional to the program rather than to the tree. `web:fetch` is portable
 // and names nothing in the browser tier.
