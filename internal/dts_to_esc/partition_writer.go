@@ -193,11 +193,46 @@ func renameTypeParams(decl *dts_parser.InterfaceDecl, keep []*dts_parser.TypePar
 			}
 		})
 	}
+	for _, tp := range decl.TypeParams {
+		if tp.Constraint != nil {
+			rename(tp.Constraint)
+		}
+		if tp.Default != nil {
+			rename(tp.Default)
+		}
+	}
 	for _, ext := range decl.Extends {
 		rename(ext)
 	}
 	for _, m := range decl.Members {
 		walkInterfaceMemberTypes(m, rename)
+	}
+}
+
+// adoptTypeParamClauses gives each parameter in keep the default and
+// constraint its counterpart in from declares, matched by position, when
+// keep's parameter declares none. A clause keep already has stays as it
+// is. from must already read against keep's parameter names, which is
+// what renameTypeParams arranges.
+//
+// TypeScript lets one declaration of a merged interface carry a default
+// that the others omit. `lib.es5.d.ts` declares `Uint8Array<TArrayBuffer
+// extends ArrayBufferLike = ArrayBufferLike>`, and `lib.es2015.core.d.ts`
+// declares `Uint8Array<TArrayBuffer extends ArrayBufferLike>`. The
+// es2015 file sorts first, so keeping only its parameters makes
+// `TArrayBuffer` required, and a bare `Uint8Array` elsewhere in the
+// lib reads as a missing type argument.
+func adoptTypeParamClauses(keep, from []*dts_parser.TypeParam) {
+	for i, tp := range from {
+		if i >= len(keep) {
+			return
+		}
+		if keep[i].Constraint == nil {
+			keep[i].Constraint = tp.Constraint
+		}
+		if keep[i].Default == nil {
+			keep[i].Default = tp.Default
+		}
 	}
 }
 
@@ -339,7 +374,9 @@ func liftGlobals(stmts []dts_parser.Statement) []dts_parser.Statement {
 // NamespaceDecl entries collapse into a single NamespaceDecl whose
 // Statements is the concatenation (then recursively merged). The
 // first occurrence's doc, span, and type-params are kept; later
-// duplicates' metadata is dropped.
+// duplicates' metadata is dropped, except that a type parameter the
+// first occurrence leaves without a default or constraint takes the
+// one a later occurrence gives it. See adoptTypeParamClauses.
 //
 // This is how the converter handles the canonical TS-shipping pattern
 // where the *same* interface is declared across multiple `lib.*.d.ts`
@@ -384,6 +421,7 @@ func mergeDecls(stmts []dts_parser.Statement) []dts_parser.Statement {
 			if i, ok := ifaceIdx[s.Name.Name]; ok {
 				existing := out[i].(*dts_parser.InterfaceDecl)
 				renameTypeParams(s, existing.TypeParams)
+				adoptTypeParamClauses(existing.TypeParams, s.TypeParams)
 				existing.Members = append(existing.Members, s.Members...)
 				// Extends is concatenated without structural dedup. In
 				// practice, TS lib augmentation files add members, not
