@@ -1,5 +1,17 @@
 [
   {
+    "decl": "AbortSignal",
+    "member": "addEventListener",
+    "kind": "method",
+    "digest": "09433779049bba63"
+  },
+  {
+    "decl": "AbortSignal",
+    "member": "removeEventListener",
+    "kind": "method",
+    "digest": "eac1fc12bf2da550"
+  },
+  {
     "decl": "MessageEvent",
     "member": "ports",
     "kind": "field",

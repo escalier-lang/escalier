@@ -24,3 +24,15 @@ export declare interface MessageEventInit<T = any> {
     ports?: Array<unknown>,
     source?: null,
 }
+
+// `AbortSignal` restates the `addEventListener` and `removeEventListener` it
+// inherits from `EventTarget`, and the string-keyed arm drops the `null` that
+// `EventTarget` accepts for the listener. A subclass method has to accept what
+// the one it overrides accepts, so the arm takes `null` back. The runtime
+// method is `EventTarget`'s own, which does accept it.
+export declare class AbortSignal {
+    addEventListener<K: keyof AbortSignalEventMap>(&mut self, type: K, listener: fn (this: AbortSignal, ev: AbortSignalEventMap[K]) -> any, options?: boolean | AddEventListenerOptions) -> unknown,
+    addEventListener(&mut self, type: string, listener: null | EventListenerOrEventListenerObject, options?: boolean | AddEventListenerOptions) -> unknown,
+    removeEventListener<K: keyof AbortSignalEventMap>(&mut self, type: K, listener: fn (this: AbortSignal, ev: AbortSignalEventMap[K]) -> any, options?: boolean | EventListenerOptions) -> unknown,
+    removeEventListener(&mut self, type: string, listener: null | EventListenerOrEventListenerObject, options?: boolean | EventListenerOptions) -> unknown,
+}
