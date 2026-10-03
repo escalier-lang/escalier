@@ -117,12 +117,10 @@ func (e *MutabilityTransitionError) Message() string {
 // creates an independent copy, so alias tracking is unnecessary.
 //
 // Ported from check_transitions.go, which first calls type_system.Prune. There is no
-// equivalent here. The only caller, trackCapturedAliases, passes a binding's coalesced
-// display type, which carries no inference-variable indirection to prune. If such a
-// type ever surfaced as a bare *soltype.TypeVarType, it falls through to false and is
-// classified as a reference, so it is conservatively alias-tracked. That is sound.
-// Mis-seeing a value type as a reference can only add a spurious alias edge, never
-// drop a real transition, so it over-reports rather than under-reports.
+// equivalent here. Every caller passes a binding's coalesced display type, which carries
+// no inference-variable indirection to prune. A bare *soltype.TypeVarType falls through to
+// false and is classified as a reference. Mis-seeing a value type as a reference only adds
+// a spurious alias edge or loan, so it over-reports rather than under-reports.
 func isValueType(t soltype.Type) bool {
 	switch p := t.(type) {
 	case *soltype.PrimType, *soltype.LitType:
@@ -410,12 +408,10 @@ func (c *checker) trackAliasesForVarDecl(scope *Scope, decl *ast.VarDecl, bindin
 	}
 	c.trackAliasesForIdentPat(pat, bindingT, decl.Init, enclosingStmt, decl)
 
-	// Closure-capture aliasing. When the initializer is a FuncExpr, add the closure
-	// variable to each captured variable's alias set. A read-only capture of a
-	// mutable variable is a mut→immut transition that must be checked against live
-	// mutable aliases.
+	// When the initializer is a FuncExpr, add the closure variable to each captured
+	// variable's alias set.
 	if funcExpr, ok := decl.Init.(*ast.FuncExpr); ok && pat.VarID > 0 {
-		c.trackCapturedAliases(scope, funcExpr, liveness.VarID(pat.VarID), enclosingStmt, decl)
+		c.trackCapturedAliases(scope, funcExpr, liveness.VarID(pat.VarID))
 	}
 }
 
@@ -500,59 +496,32 @@ func (c *checker) trackAliasesForIdentPat(
 	}
 }
 
-// trackCapturedAliases adds the closure variable to the alias sets of each captured
-// variable from the enclosing scope, and checks the mutability transition each
-// capture induces. The captured variable's VarID and mutability both come from its
-// ValueBinding, the new-checker analogue of type_system.Binding.
-func (c *checker) trackCapturedAliases(
-	scope *Scope,
-	funcExpr *ast.FuncExpr,
-	closureVarID liveness.VarID,
-	enclosingStmt ast.Stmt,
-	node ast.Node,
-) {
+// trackCapturedAliases adds the closure variable to the alias sets of each variable the
+// closure captures from the current body. The alias is mutable when the closure writes the
+// capture. A capture's conflicts with other borrows are checked through the loan
+// recordCaptureLoans takes for it, not here.
+func (c *checker) trackCapturedAliases(scope *Scope, funcExpr *ast.FuncExpr, closureVarID liveness.VarID) {
 	if c.fn.aliases == nil {
 		return
 	}
-	captures := liveness.AnalyzeCaptures(funcExpr)
-	for _, capture := range captures {
-		// Look up the captured variable's binding in the enclosing scope. GetValue
-		// walks the scope chain and returns the innermost binding, so shadowing
-		// resolves to the name in scope at the capture site.
+	for _, capture := range c.closureCaptures(funcExpr) {
+		// GetValue returns the innermost binding, so shadowing resolves to the name in
+		// scope at the capture site.
 		b, found := scope.GetValue(capture.Name)
 		if !found || b.VarID <= 0 {
 			continue
 		}
-		// Cross-frame guard (M4 G1). A binding stores the VarID of the body that
-		// declared it. Module-wide numbering keeps those ids distinct across bodies, so
-		// they no longer collide, but a captured variable from an outer frame still does
-		// not appear in THIS frame's varIDNames or liveness tables. Track a capture only
-		// when its binding originated in this frame. That holds exactly when the current
-		// body's rename assigned b.VarID to this name. A capture from an outer frame
-		// reaches past its immediate enclosing function, so its liveness lives in another
-		// body's tables and cannot be queried here. Skipping is sound. It misses that
-		// transition rather than inventing one. The real cross-frame fix rides G2's
-		// lifetime-escape bridge; see the G2 note in m4-implementation-plan. This is
-		// unreachable today because a captured mutable is a borrow, which cannot yet be
-		// aliased into a local.
+		// A capture from a body further out has no entry in this body's alias or liveness
+		// tables. The current body's rename assigned b.VarID to this name exactly when the
+		// binding belongs to this body.
 		if name, ok := c.fn.varIDNames[liveness.VarID(b.VarID)]; !ok || name != capture.Name {
 			continue
 		}
-		// Primitives and literals have value semantics. Reassigning a captured
-		// primitive inside a closure can't affect other variables that copied the
-		// value, so alias tracking is unnecessary.
+		// A closure holding a primitive cannot see a later change to the binding it copied.
 		if isValueType(bindingType(b)) {
 			continue
 		}
-		enclosingVarID := liveness.VarID(b.VarID)
-		c.fn.aliases.AddAlias(closureVarID, enclosingVarID, aliasMutability(capture.IsMutable))
-		// The capture creates a (closure ← enclosing var) alias; check the transition it
-		// induces. The cross-frame guard above guarantees enclosingVarID resolves in this
-		// frame, so the helper's varIDToName(enclosingVarID) is capture.Name.
-		c.checkTransitionsAgainst(
-			[]liveness.VarID{enclosingVarID}, closureVarID,
-			c.varIDToName(closureVarID), capture.IsMutable, enclosingStmt, node, false,
-		)
+		c.fn.aliases.AddAlias(closureVarID, liveness.VarID(b.VarID), aliasMutability(capture.IsMutable))
 	}
 }
 
@@ -716,9 +685,16 @@ func (c *checker) varIDToName(id liveness.VarID) string {
 // but before the body is walked.
 //
 // recv is the body's receiver, nil when the body has none. A receiver is not an entry in
-// astParams, so the rename pass defines `self` as an extra parameter of the body. The
-// returned VarID is the one it assigned to `self`, and 0 when there is no receiver.
-func (c *checker) runLivenessPrePass(scope *Scope, astParams []*ast.Param, recv *ast.MethodReceiver, paramTypes map[string]soltype.Type, body *ast.Block) liveness.VarID {
+// astParams, so the rename pass defines `self` as an extra parameter of the body.
+//
+// closure is the function expression whose body this is, nil for any other body. Each local
+// it captures from an enclosing body is defined as an extra parameter of the body too, so a
+// place rooted at the capture is tracked inside the closure. The captures are recorded for
+// closureCaptures to return.
+//
+// The returned map holds the VarID the rename assigned to each extra parameter, keyed by
+// name: `self` and every captured local.
+func (c *checker) runLivenessPrePass(scope *Scope, astParams []*ast.Param, recv *ast.MethodReceiver, closure *ast.FuncExpr, paramTypes map[string]soltype.Type, body *ast.Block) map[string]liveness.VarID {
 	// Build outer bindings from the scope chain. Every value binding accessible from
 	// the current scope gets a negative VarID so the rename pass can distinguish
 	// local from non-local variables.
@@ -736,6 +712,11 @@ func (c *checker) runLivenessPrePass(scope *Scope, astParams []*ast.Param, recv 
 		extraParams = []string{"self"}
 	}
 	firstID := liveness.VarID(c.varIDCounter)
+	var captured []string
+	if closure != nil {
+		captured = c.collectClosureCaptures(scope, closure, outerBindings)
+		extraParams = append(extraParams, captured...)
+	}
 	renameResult := liveness.RenameFrom(astParams, *body, outerBindings, firstID, extraParams...)
 	c.varIDCounter += renameResult.UniqueVarCount
 
@@ -754,6 +735,12 @@ func (c *checker) runLivenessPrePass(scope *Scope, astParams []*ast.Param, recv 
 	selfVarID := renameResult.ExtraParamVarIDs["self"]
 	if selfVarID > 0 {
 		seedSelfAlias(scope, selfVarID, aliases, varIDTypes)
+	}
+	captureVarIDs := set.NewSet[liveness.VarID]()
+	for _, name := range captured {
+		id := renameResult.ExtraParamVarIDs[name]
+		seedBindingAlias(scope, name, id, aliases, varIDTypes)
+		captureVarIDs.Add(id)
 	}
 
 	c.fn.liveness = livenessInfo
@@ -775,7 +762,43 @@ func (c *checker) runLivenessPrePass(scope *Scope, astParams []*ast.Param, recv 
 	if selfVarID > 0 {
 		c.fn.paramVarIDs.Add(selfVarID)
 	}
-	return selfVarID
+	c.fn.paramVarIDs = c.fn.paramVarIDs.Union(captureVarIDs)
+	c.fn.captureVarIDs = captureVarIDs
+	return renameResult.ExtraParamVarIDs
+}
+
+// collectClosureCaptures returns the names of the locals closure captures from an enclosing
+// body, sorted. A name bound at module level or in the prelude carries no VarID and is left
+// out. Every capture closure makes, module-level names included, is recorded for
+// closureCaptures to return.
+//
+// liveness.ClosureCaptures renames the closure's body and the bodies nested in it. The
+// pre-pass renames the closure's body again right after this, and each nested body is renamed
+// by its own pre-pass before the walk reaches it.
+func (c *checker) collectClosureCaptures(scope *Scope, closure *ast.FuncExpr, outerBindings map[string]liveness.VarID) []string {
+	captures := liveness.ClosureCaptures(closure, outerBindings)
+	if c.closureCaptureInfo == nil {
+		c.closureCaptureInfo = map[*ast.FuncExpr][]liveness.CaptureInfo{}
+	}
+	c.closureCaptureInfo[closure] = captures
+	var names []string
+	for _, capture := range captures {
+		if b, found := scope.GetValue(capture.Name); found && b.VarID > 0 {
+			names = append(names, capture.Name)
+		}
+	}
+	slices.Sort(names)
+	return names
+}
+
+// closureCaptures returns the variables closure captures from enclosing scopes and whether it
+// writes each one. A closure whose body has been walked returns what its pre-pass recorded.
+// Any other closure is analyzed on the spot.
+func (c *checker) closureCaptures(closure *ast.FuncExpr) []liveness.CaptureInfo {
+	if captures, ok := c.closureCaptureInfo[closure]; ok {
+		return captures
+	}
+	return liveness.AnalyzeCaptures(closure)
 }
 
 // seedSelfAlias seeds the alias tracker with the receiver's own alias set and records its
@@ -783,28 +806,35 @@ func (c *checker) runLivenessPrePass(scope *Scope, astParams []*ast.Param, recv 
 // the `self` binding bindSelf defined, so `&mut self` records a mutable borrow and `mut self`
 // an owned-mutable instance.
 func seedSelfAlias(scope *Scope, selfVarID liveness.VarID, aliases *liveness.AliasTracker, varIDTypes map[liveness.VarID]soltype.Type) {
+	seedBindingAlias(scope, "self", selfVarID, aliases, varIDTypes)
+}
+
+// seedBindingAlias seeds the alias tracker with an alias set for id, the VarID the rename
+// assigned to name, and records the type of name's binding in scope into varIDTypes. The
+// alias set is mutable when that type is.
+func seedBindingAlias(scope *Scope, name string, id liveness.VarID, aliases *liveness.AliasTracker, varIDTypes map[liveness.VarID]soltype.Type) {
 	mut := liveness.AliasImmutable
-	if b, found := scope.GetValue("self"); found {
+	if b, found := scope.GetValue(name); found {
 		if t := bindingType(b); t != nil {
 			if isMutableType(t) {
 				mut = liveness.AliasMutable
 			}
-			varIDTypes[selfVarID] = t
+			varIDTypes[id] = t
 		}
 	}
-	aliases.NewValue(selfVarID, mut)
+	aliases.NewValue(id, mut)
 }
 
-// recordSelfVarID copies the receiver's VarID onto the `self` binding in fnScope, the way
-// recordParamVarIDs does for a parameter. selfVarID is 0 for a body with no receiver, which
-// records nothing.
-func recordSelfVarID(fnScope *Scope, selfVarID liveness.VarID) {
-	if selfVarID <= 0 {
-		return
-	}
-	if b, found := fnScope.GetValue("self"); found {
-		b.VarID = int(selfVarID)
-		fnScope.defineValue("self", b)
+// recordExtraParamVarIDs copies the VarID of each extra parameter the pre-pass defined onto
+// that name's binding, defining the copy in fnScope. The receiver's binding already lives in
+// fnScope. A captured local's binding lives in an enclosing scope, and copying it leaves the
+// enclosing body's VarID in place there.
+func recordExtraParamVarIDs(fnScope *Scope, ids map[string]liveness.VarID) {
+	for name, id := range ids {
+		if b, found := fnScope.GetValue(name); found {
+			b.VarID = int(id)
+			fnScope.defineValue(name, b)
+		}
 	}
 }
 
