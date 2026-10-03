@@ -463,7 +463,8 @@ func TestInferClassObjectDestructure(t *testing.T) {
 // TestInferClassNonClassSuper covers the C1 diagnostic for an `extends` or `implements`
 // clause naming something that is not a class. A class type parameter resolves to a
 // binding that is not a ClassType, so using it as a super reports NonClassSuperError
-// rather than silently dropping the edge.
+// rather than silently dropping the edge. An `implements` clause may name an interface,
+// so an alias there is resolved instead, and its body and type arguments are checked.
 func TestInferClassNonClassSuper(t *testing.T) {
 	t.Run("extends a type parameter", func(t *testing.T) {
 		_, _, errs := inferSource(t, `class B<T> extends T { constructor(&mut self) {} }`)
@@ -474,6 +475,22 @@ func TestInferClassNonClassSuper(t *testing.T) {
 		_, _, errs := inferSource(t, `class C<T> implements T {}`)
 		require.Len(t, errs, 1)
 		require.Equal(t, "`T` does not name a class and cannot be extended or implemented.", errs[0].Message())
+	})
+	t.Run("implements an alias of a primitive", func(t *testing.T) {
+		_, _, errs := inferSource(t, `
+			type N = number
+			class C implements N { constructor(&mut self) {} }
+		`)
+		require.Len(t, errs, 1)
+		require.Equal(t, "`N` does not name a class and cannot be extended or implemented.", errs[0].Message())
+	})
+	t.Run("implements an interface with too many type arguments", func(t *testing.T) {
+		_, _, errs := inferSource(t, `
+			interface Box<T> { value: T }
+			class C implements Box<number, string> { value: number, constructor(&mut self) { self.value = 0 } }
+		`)
+		require.Len(t, errs, 1)
+		require.Equal(t, "type alias `Box` expects 1 type argument but got 2", errs[0].Message())
 	})
 	t.Run("extends a type parameter applied to arguments", func(t *testing.T) {
 		// A type parameter carries no type arguments, so `T<X>` is doubly ill-formed. The

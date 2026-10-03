@@ -209,19 +209,11 @@ func renameTypeParams(decl *dts_parser.InterfaceDecl, keep []*dts_parser.TypePar
 	}
 }
 
-// adoptTypeParamClauses gives each parameter in keep the default and
-// constraint its counterpart in from declares, matched by position, when
-// keep's parameter declares none. A clause keep already has stays as it
-// is. from must already read against keep's parameter names, which is
-// what renameTypeParams arranges.
-//
-// TypeScript lets one declaration of a merged interface carry a default
-// that the others omit. `lib.es5.d.ts` declares `Uint8Array<TArrayBuffer
-// extends ArrayBufferLike = ArrayBufferLike>`, and `lib.es2015.core.d.ts`
-// declares `Uint8Array<TArrayBuffer extends ArrayBufferLike>`. The
-// es2015 file sorts first, so keeping only its parameters makes
-// `TArrayBuffer` required, and a bare `Uint8Array` elsewhere in the
-// lib reads as a missing type argument.
+// adoptTypeParamClauses copies a default or constraint from each parameter
+// in from to the parameter at the same position in keep, when the one in
+// keep has none. A default or constraint keep already has is left alone.
+// from must already use keep's parameter names, which is what
+// renameTypeParams arranges.
 func adoptTypeParamClauses(keep, from []*dts_parser.TypeParam) {
 	for i, tp := range from {
 		if i >= len(keep) {
@@ -421,6 +413,11 @@ func mergeDecls(stmts []dts_parser.Statement) []dts_parser.Statement {
 			if i, ok := ifaceIdx[s.Name.Name]; ok {
 				existing := out[i].(*dts_parser.InterfaceDecl)
 				renameTypeParams(s, existing.TypeParams)
+				// TypeScript lets one declaration of a merged interface write a
+				// default the others omit. `lib.es2015.core.d.ts` declares
+				// `Uint8Array<TArrayBuffer extends ArrayBufferLike>` and sorts
+				// ahead of `lib.es5.d.ts`, which adds `= ArrayBufferLike`.
+				// Without this the merged class requires its argument.
 				adoptTypeParamClauses(existing.TypeParams, s.TypeParams)
 				existing.Members = append(existing.Members, s.Members...)
 				// Extends is concatenated without structural dedup. In

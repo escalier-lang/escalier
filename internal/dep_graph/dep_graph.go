@@ -90,8 +90,7 @@ type DepGraph struct {
 
 	// Imports holds, per namespace, the other namespaces of this module its
 	// imports reach. A reference that resolves to no binding by its own spelling
-	// is retried through it. It is nil for a module whose imports name only other
-	// modules, which is every module BuildDepGraph builds.
+	// is retried through it. BuildDepGraph leaves it nil.
 	Imports map[string]NamespaceImports
 }
 
