@@ -611,9 +611,8 @@ func (c *checker) resolveIntersectionTypeAnn(scope *Scope, ta *ast.IntersectionT
 // not `"x"`. constrain reduces the residual when it checks a constraint against it. An unsupported
 // operand recovers to a fresh var, cascade-safe like the Promise<bad> recovery.
 //
-// `keyof any` is the one operand lowered eagerly, to `string | number | symbol`. An `any` operand
-// resolves to `unknown`, and `keyof unknown` is `never`, so keeping the residual would turn the
-// `K: keyof any` bound on prelude's `Record` into a bound no key satisfies.
+// `keyof any` lowers eagerly to `string | number | symbol`, the key set TypeScript gives it. An
+// `any` operand resolves to `unknown`, whose `keyof` is `never`, so the residual would name no key.
 func (c *checker) resolveKeyOfTypeAnn(scope *Scope, ta *ast.KeyOfTypeAnn, lvl int) (soltype.Type, bool) {
 	if _, isAny := ta.Type.(*ast.AnyTypeAnn); isAny {
 		t := newUnion(c.ctx, []soltype.Type{

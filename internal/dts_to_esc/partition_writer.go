@@ -561,10 +561,10 @@ func convertFusedBucket(
 //
 // A field or property is keyed by its slot instead. It cannot overload, so a
 // second one of the same name is a restatement however it prints. TypeScript
-// requires the restated type to be identical, which still lets it print
-// differently: `formatMatcher` on `Intl.DateTimeFormatOptions` is `"best fit"
-// | "basic" | undefined` in lib.es5.d.ts and `"basic" | "best fit" | "best
-// fit" | undefined` in lib.es2021.intl.d.ts.
+// requires the restated type to be identical, but two identical types can
+// still print differently. `formatMatcher` on `Intl.DateTimeFormatOptions` is
+// `"best fit" | "basic" | undefined` in lib.es5.d.ts and `"basic" | "best
+// fit" | "best fit" | undefined` in lib.es2021.intl.d.ts.
 func dedupeMembers(mod *StandaloneModule) error {
 	var err error
 	mod.Module.Namespaces.Scan(func(_ string, ns *ast.Namespace) bool {
