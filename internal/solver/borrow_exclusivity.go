@@ -178,6 +178,10 @@ type loan struct {
 	// seq orders this loan against the reads walked around it. It counts up and is never
 	// reused, so it survives the loan list changing shape, where a position would not.
 	seq int
+	// untilReturn marks a loan held by a caller-owned target, a borrow parameter or a borrowing
+	// receiver. The caller keeps reading that target after the call, so the loan lasts to the
+	// end of the function whether or not the body reads the target again.
+	untilReturn bool
 	// endSeq is the sequence at which a reassignment of the holder ended this loan, and 0 while
 	// it still holds. The loan stays in the list so a read walked BEFORE that point is still
 	// weighed against it; erasing it would let a later reassignment silence an earlier read.
@@ -263,6 +267,9 @@ func (c *checker) reportBorrowConflict(first, second loan) {
 // against. Asking IsLiveAfter would miss `readWrite(&x, b)`, where b's last use is the call
 // being checked.
 func (c *checker) liveAt(l loan, ref liveness.StmtRef) bool {
+	if l.untilReturn {
+		return true
+	}
 	if l.holder <= 0 {
 		return l.ref == ref
 	}
@@ -476,13 +483,18 @@ func (c *checker) noteFieldWrite(target *ast.MemberExpr) {
 //
 // place is the data the stored borrow reaches and target is the binding it lands in, so the
 // loan is a borrow of place held by target. It lasts as long as target is live, the same rule a
-// borrow bound to a name follows. targetPath is the field of target the borrow lands at, so a
-// later store into that field can end this loan and leave a sibling field's alone.
+// borrow bound to a name follows. A target whose referent belongs to the caller is the
+// exception, and its loan lasts to the end of the function. targetPath is the field of target
+// the borrow lands at, so a later store into that field can end this loan and leave a sibling
+// field's alone.
 func (c *checker) recordStoreEdgeLoan(place movePlace, mut bool, target liveness.VarID, targetPath []placeSeg, ref liveness.StmtRef, blame ast.Node) {
 	if c.fn == nil || target <= 0 || place.root <= 0 {
 		return
 	}
-	fresh := loan{place: place, mut: mut, holder: target, holderPath: targetPath, ref: ref, node: blame, fromStore: true, seq: c.nextLoanSeq()}
+	fresh := loan{
+		place: place, mut: mut, holder: target, holderPath: targetPath, ref: ref, node: blame,
+		fromStore: true, untilReturn: c.paramReferentOutlivesFrame(target), seq: c.nextLoanSeq(),
+	}
 	// One signature can write an argument into several positions of the target, so the same
 	// loan reaches here once per position. Recording it once keeps a later conflict to one
 	// diagnostic instead of one per position.

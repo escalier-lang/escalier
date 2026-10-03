@@ -490,11 +490,12 @@ type funcCtx struct {
 	// their loan where they are bound or passed. checkNestedBorrows reads this list to take
 	// the loan of each one that is neither, such as a borrow inside a literal or a return.
 	borrowSites []borrowSite
-	// sharedPathSpans holds the spans of the returned expressions reported for reaching a local
-	// twice. The use check skips a read INSIDE one of them, and checkNestedBorrows skips a borrow
-	// inside one. A return that hands out two paths then yields the diagnostic naming the return
-	// rather than a second one naming the read or borrow it contains. A read or borrow elsewhere
-	// in the body is unrelated and keeps its own diagnostic.
+	// sharedPathSpans holds the spans of the outgoing expressions reported for handing out a
+	// mutable and an immutable path to one local, whether inside one returned value or across
+	// two sites. The use check skips a read INSIDE one of them, and checkNestedBorrows skips a
+	// borrow inside one. Such an expression then yields the diagnostic naming where the paths
+	// leave rather than a second one naming the read or borrow it contains. A read or borrow
+	// elsewhere in the body is unrelated and keeps its own diagnostic.
 	sharedPathSpans []ast.Span
 	// loanSeq is the last sequence number handed to a loan. Each loan takes the next one, so
 	// a read can name the loans that existed when it was walked without depending on their
