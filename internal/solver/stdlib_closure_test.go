@@ -288,6 +288,64 @@ func TestAnAliasedIntraClosureImportBinds(t *testing.T) {
 	require.Equal(t, "Beta", soltype.Print(inferredValueType(t, res.Scope, "partner")))
 }
 
+// Inside a group every declaration binds under its member's namespace, so a
+// reference resolves only if it reaches that namespace. The cases cover a
+// sibling's alias reached through an import, which has to be inferred before
+// the declaration naming it, and a `typeof` naming the class it sits in.
+func TestAGroupMemberReachesItsNamespacedDeclarations(t *testing.T) {
+	t.Parallel()
+
+	tests := map[string]struct {
+		src   string
+		files map[string]string
+		value string
+		want  string
+	}{
+		"AnImportedSiblingAlias": {
+			src: `
+				import "std:alpha"
+				declare val k: alpha.Local
+				val key = k
+			`,
+			files: map[string]string{
+				"std/alpha.esc": `
+					import "std:beta"
+					export declare type Local = beta.Key
+				`,
+				"std/beta.esc": `export declare type Key = string | symbol`,
+			},
+			value: "key",
+			want:  "Local",
+		},
+		"ATypeofOfTheEnclosingClass": {
+			src: `
+				import "std:alpha"
+				val made = alpha.Box.species
+			`,
+			files: map[string]string{
+				"std/alpha.esc": `
+					import "std:beta"
+					export declare class Box {
+						static readonly species: typeof Box,
+					}
+				`,
+				"std/beta.esc": `export declare class Tag {}`,
+			},
+			value: "made",
+			want:  "typeof Box",
+		},
+	}
+
+	for name, test := range tests {
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+			res := inferAgainstCyclicStdlib(t, test.src, test.files)
+			require.Empty(t, errorMessagesOf(res.Errors))
+			require.Equal(t, test.want, soltype.Print(inferredValueType(t, res.Scope, test.value)))
+		})
+	}
+}
+
 // Two packages whose URIs derive one name load together. A member's declarations
 // land under a prefix carrying the scheme, so `std:url` and `web:url` are two
 // namespaces rather than one ambiguous name, and a closure may hold both.
