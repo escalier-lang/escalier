@@ -573,6 +573,45 @@ func TestInferKeyofAnnotationStaysSymbolic(t *testing.T) {
 	}
 }
 
+// `keyof any` is every property key, which is what lets a bound written `K: keyof any` admit
+// `string`. `keyof unknown` stays `never`, since `unknown` has no readable member.
+func TestInferKeyofAny(t *testing.T) {
+	tests := []struct {
+		name string
+		src  string
+		want map[string]string
+	}{
+		{
+			name: "IsEveryPropertyKey",
+			src:  `fn f(k: keyof any) { return k }`,
+			want: map[string]string{"f": "fn (k: number | string | symbol) -> number | string | symbol"},
+		},
+		{
+			name: "AdmitsAStringBoundArgument",
+			src: `
+				type Rec<K: keyof any, T> = {[P]: T for P in K}
+				fn get(r: Rec<string, number>) { return r }
+			`,
+			want: map[string]string{"get": "fn (r: Rec<string, number>) -> Rec<string, number>"},
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			values, _, errs := inferSource(t, tt.src)
+			require.Empty(t, errs)
+			for name, want := range tt.want {
+				require.Equal(t, want, values[name])
+			}
+		})
+	}
+
+	t.Run("KeyofUnknownIsNever", func(t *testing.T) {
+		nodes, ctx, errs := inferTypeNodes(t, `type Result = keyof unknown`)
+		require.Empty(t, errs)
+		require.Equal(t, "never", soltype.Print(expandResidual(ctx, nodes["Result"])))
+	})
+}
+
 // A nested `keyof keyof` stays symbolic in the stored type and, when reduced, terminates instead
 // of looping on the same shape. Over a type parameter it stays the `keyof keyof T` residual in the
 // signature; a ground `keyof keyof {a, b}` also stays symbolic in the stored type, and reducing it

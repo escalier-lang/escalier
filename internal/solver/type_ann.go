@@ -611,7 +611,22 @@ func (c *checker) resolveIntersectionTypeAnn(scope *Scope, ta *ast.IntersectionT
 // annotation prints the way the source wrote it — `keyof {x: number}` renders `keyof {x: number}`,
 // not `"x"`. constrain reduces the residual when it checks a constraint against it. An unsupported
 // operand recovers to a fresh var, cascade-safe like the Promise<bad> recovery.
+//
+// `keyof any` resolves to `string | number | symbol`, the set of every property key. The
+// operand cannot go through resolveTypeAnn, which resolves `any` to `unknown`, and `keyof
+// unknown` is `never`. TypeScript gives the two different answers, and a lib bound such as
+// the `K: keyof any` of `type Record<K: keyof any, T>` relies on the wider one, so that
+// `Record<string, string>` satisfies it.
 func (c *checker) resolveKeyOfTypeAnn(scope *Scope, ta *ast.KeyOfTypeAnn, lvl int) (soltype.Type, bool) {
+	if _, isAny := ta.Type.(*ast.AnyTypeAnn); isAny {
+		t := newUnion(c.ctx, []soltype.Type{
+			&soltype.PrimType{Prim: soltype.StrPrim},
+			&soltype.PrimType{Prim: soltype.NumPrim},
+			&soltype.PrimType{Prim: soltype.SymPrim},
+		})
+		c.recordProvForResult(t, ta, AnnotationType)
+		return t, true
+	}
 	operand, ok := c.resolveTypeAnn(scope, ta.Type, lvl)
 	if !ok {
 		operand = c.freshAt(lvl)
