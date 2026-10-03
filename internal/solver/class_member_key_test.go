@@ -13,6 +13,10 @@ import (
 // set, so a key outside that set names a member it cannot represent. Dropping such a
 // member silently is what let an extractor class type-check while losing the
 // `[Symbol.customMatcher]` signature a match against it reads.
+//
+// The table covers each element kind that reads a key: a field, a method, a getter, and
+// a setter. Each resolves its key on its own arm of buildFieldSigs or buildMemberSigs,
+// so one case per kind is what reaches every report site.
 func TestAClassMemberKeyedOffAnUnknownSymbolIsReported(t *testing.T) {
 	tests := map[string]string{
 		"AStaticMethod": `
@@ -31,6 +35,18 @@ func TestAClassMemberKeyedOffAnUnknownSymbolIsReported(t *testing.T) {
 		"AField": `
 			class C {
 				[Symbol.notAWellKnownSymbol]: number,
+			}
+		`,
+		"AGetter": `
+			class C {
+				msg: string,
+				get [Symbol.notAWellKnownSymbol](&self) -> string { return self.msg },
+			}
+		`,
+		"ASetter": `
+			class C {
+				msg: string,
+				set [Symbol.notAWellKnownSymbol](&mut self, v: string) { self.msg = v },
 			}
 		`,
 	}
