@@ -58,6 +58,36 @@ func TestInferSuperCall(t *testing.T) {
 			},
 		},
 		{
+			name: "MissingCallToAnImplicitConstructor",
+			src: `
+				class Animal {
+					legs: number,
+				}
+				class Dog extends Animal {
+					constructor(&mut self) {},
+				}
+			`,
+			// A superclass with no explicit constructor still has one, synthesized from its
+			// fields, and it is what assigns `legs`. Skipping it would leave `legs` unset.
+			want: []string{
+				"A subclass constructor must call `super(…)`; " +
+					"the members inherited from `Animal` do not exist until it does.",
+			},
+		},
+		{
+			// The synthesized constructor takes one parameter per required field, in declaration order.
+			name: "DelegatesToAnImplicitConstructor",
+			src: `
+				class Animal {
+					legs: number,
+				}
+				class Dog extends Animal {
+					constructor(&mut self) { super(4) },
+				}
+			`,
+			want: nil,
+		},
+		{
 			name: "CalledTwice",
 			src: `
 				class Animal {

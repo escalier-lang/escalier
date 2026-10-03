@@ -2,10 +2,14 @@ class A {
     x: number,
 }
 class B extends A {
-    constructor(&mut self) {}
+    constructor(&mut self) {
+        super(1)
+    },
 }
 class C extends B {
-    constructor(&mut self) {}
+    constructor(&mut self) {
+        super()
+    },
 }
 val c = C()
 val x = c.x
