@@ -465,7 +465,7 @@ func originsOf(p movePlace, origins map[liveness.VarID][]placeCopy) []movePlace 
 func (c *checker) localsLeavingOutsideAReturn(flowBorrowGraph *flowBorrowGraph) map[liveness.VarID][]outflowPath {
 	out := map[liveness.VarID][]outflowPath{}
 	for _, es := range c.fn.escapeSites {
-		if es.isReturn {
+		if es.isReturn || c.storeSuperseded(es) {
 			continue
 		}
 		graph := flowBorrowGraph.fieldBorrowGraphBefore(es.stmtRef)
@@ -475,6 +475,26 @@ func (c *checker) localsLeavingOutsideAReturn(flowBorrowGraph *flowBorrowGraph) 
 		}
 	}
 	return out
+}
+
+// storeSuperseded reports whether a later store into the same field of a caller-owned target
+// ended every loan the store es recorded. `p.r = &c; p.r = &d` leaves c unreachable through p.r,
+// so the first store hands the caller no path to c.
+func (c *checker) storeSuperseded(es escapeSite) bool {
+	if !es.callerOwned {
+		return false
+	}
+	found := false
+	for _, l := range c.fn.loans {
+		if !l.callerOwned || l.ref != es.stmtRef {
+			continue
+		}
+		if l.endSeq == 0 {
+			return false
+		}
+		found = true
+	}
+	return found
 }
 
 // reportMixedOutflows reports each local that two non-return sites hand out with different

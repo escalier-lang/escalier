@@ -238,6 +238,63 @@ func TestStoreIntoCallerOwnedTarget(t *testing.T) {
 				}
 			`,
 		},
+		// The store runs only when k holds, and the write only when it does not, so the write
+		// never meets the stored borrow even though p is read afterwards.
+		"StoreOnOneBranchLeavesTheOtherFreeOk": {
+			src: `
+				fn f(k: boolean, p: &mut {peer: &{value: number}}) {
+					val mut c = {value: 0}
+					if k {
+						p.peer = &c
+					} else {
+						c.value = 5
+					}
+					val z = p
+				}
+			`,
+		},
+		// The second store into p.peer replaces the first, so c reaches the caller through q
+		// alone and no immutable path to it is left.
+		"OverwrittenFieldStoreIsNoPathOk": {
+			src: `
+				fn f(p: &mut {peer: &{value: number}}, q: &mut {peer: &mut {value: number}}) {
+					val mut c = {value: 0}
+					val mut d = {value: 1}
+					p.peer = &c
+					p.peer = &d
+					q.peer = &mut c
+				}
+			`,
+		},
+		// a leaves through p.peer and the return, both mutable. c leaves immutably through take
+		// and mutably through the return, and the report names c alone.
+		"ReturnNamesTheLocalWhosePathsDisagree": {
+			src: `
+				declare fn take(x: {peer: &{value: number}}) -> undefined
+				fn f(p: &mut {peer: &mut {value: number}}) {
+					val mut a = {value: 0}
+					val mut c = {value: 1}
+					p.peer = &mut a
+					take({peer: &c})
+					val mut h = {x: &mut a, y: &mut c}
+					return &mut h
+				}
+			`,
+			want: []string{"9:13-9:19: 'c' leaves the function through a mutable path and an immutable one"},
+		},
+		// a's paths agree, which keeps the return's exemption, and the returned value's own two
+		// paths to e are still reported.
+		"ReturnWithAnAgreeingSharedLocalStillChecksItsOwnPaths": {
+			src: `
+				fn f(p: &mut {peer: &mut {value: number}}) -> [&mut {value: number}, &{value: number}, &mut {value: number}] {
+					val mut a = {value: 0}
+					val mut e = {value: 1}
+					p.peer = &mut a
+					return [&mut a, &e, &mut e]
+				}
+			`,
+			want: []string{"6:13-6:33: returned value reaches 'e' through a mutable path and an immutable one"},
+		},
 		// A later store into the same field repoints it, so b is no longer reachable through
 		// `p.r` and its loan ends there. Moving b before p is read again is fine.
 		"RepointingTheFieldEndsTheLoan": {

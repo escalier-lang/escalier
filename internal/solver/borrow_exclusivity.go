@@ -270,6 +270,11 @@ func (c *checker) reportBorrowConflict(first, second loan) {
 // against. Asking IsLiveAfter would miss `readWrite(&x, b)`, where b's last use is the call
 // being checked.
 func (c *checker) liveAt(l loan, ref liveness.StmtRef) bool {
+	// A store into a caller-owned target holds its loan only at the statements that run after
+	// it, so a statement on a branch the store is not on sees no loan.
+	if l.callerOwned && !c.stmtReaches(l.ref, ref) {
+		return false
+	}
 	// The caller can read a caller-owned target at any `await` or `yield`, so in a body that
 	// suspends, the loan outlives the body's own last read of the target.
 	if l.callerOwned && (c.fn.async || c.fn.gen) {
@@ -361,6 +366,34 @@ func (c *checker) endLoansAt(holder liveness.VarID, base []placeSeg) {
 // loan with a path to the exit that skips `ref` keeps holding.
 func (c *checker) endLoansAtPostDominating(holder liveness.VarID, base []placeSeg, ref liveness.StmtRef) {
 	c.endLoansWhere(holder, base, func(l loan) bool { return c.blockPostDominates(ref.BlockID, l.ref.BlockID) })
+}
+
+// stmtReaches reports whether the statement at to can run after the statement at from. That
+// holds for a later statement of the same block, and for any statement of a block the CFG reaches
+// from from's block.
+func (c *checker) stmtReaches(from, to liveness.StmtRef) bool {
+	if from.BlockID == to.BlockID && from.StmtIdx <= to.StmtIdx {
+		return true
+	}
+	cfg := c.fn.cfg
+	if cfg == nil || from.BlockID < 0 || from.BlockID >= len(cfg.Blocks) {
+		return true
+	}
+	seen := set.NewSet[int]()
+	pending := slices.Clone(cfg.Blocks[from.BlockID].Successors)
+	for len(pending) > 0 {
+		b := pending[len(pending)-1]
+		pending = pending[:len(pending)-1]
+		if b.ID == to.BlockID {
+			return true
+		}
+		if seen.Contains(b.ID) {
+			continue
+		}
+		seen.Add(b.ID)
+		pending = append(pending, b.Successors...)
+	}
+	return false
 }
 
 // blockPostDominates reports whether every path from block `from` to the CFG exit passes through
