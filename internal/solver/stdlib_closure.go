@@ -63,6 +63,30 @@ func BuildPackageClosure(dir string, roots []string) (PackageGroups, error) {
 	return groups, nil
 }
 
+// layerPackageGroups returns the groups of a run that loads every package base holds
+// before any package over holds. A package both hold keeps its group in base. Every
+// other package in over loads with the members of its over group that base does not
+// hold, since each of those is already published by the time the group loads.
+func layerPackageGroups(base, over PackageGroups) PackageGroups {
+	layered := make(PackageGroups, len(base)+len(over))
+	for uri, group := range base {
+		layered[uri] = group
+	}
+	for uri, group := range over {
+		if _, loadedFirst := base[uri]; loadedFirst {
+			continue
+		}
+		rest := make([]string, 0, len(group))
+		for _, member := range group {
+			if _, loadedFirst := base[member]; !loadedFirst {
+				rest = append(rest, member)
+			}
+		}
+		layered[uri] = rest
+	}
+	return layered
+}
+
 // reachable returns every URI the roots reach through edges, sorted, roots
 // included.
 func reachable(edges map[string][]string, roots []string) []string {

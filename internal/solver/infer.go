@@ -193,6 +193,12 @@ type checker struct {
 	// export and a file's import shadows both.
 	prelude *Scope
 
+	// stdlibVarCounter and stdlibSymbolCounter are where the next package loaded on
+	// behalf of the run draws its variable and unique-symbol ids from. See
+	// withStdlibCounters.
+	stdlibVarCounter    int
+	stdlibSymbolCounter int
+
 	// loadStack is the chain of package URIs currently being loaded, outermost
 	// first. loadPackage pushes before inferring a package and pops afterwards, so
 	// an import that re-enters a URI already on it has found a cycle and the stack
@@ -632,6 +638,9 @@ func newChecker() *checker {
 		prov:         Prov{},
 		varIDCounter: 1,
 		packages:     NewPackageRegistry(),
+
+		stdlibVarCounter:    preludeIDBase,
+		stdlibSymbolCounter: preludeIDBase,
 	}
 	c.ctx.fusionRecorder = c.recordFusionEdge
 	registerIteratorResultAliases(c.ctx)
@@ -666,6 +675,9 @@ func (c *checker) forScript(pkgURI string) *checker {
 		source:       c.source,
 		groupSource:  c.groupSource,
 		groups:       c.groups,
+
+		stdlibVarCounter:    c.stdlibVarCounter,
+		stdlibSymbolCounter: c.stdlibSymbolCounter,
 	}
 	// Point the recorder at the script, so a fusion its walk records lands in the
 	// script's Prov table rather than the module's.
