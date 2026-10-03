@@ -2785,6 +2785,10 @@ func (c *checker) inferObject(scope *Scope, lvl int, e *ast.ObjectExpr) soltype.
 			default:
 				sigKeys = append(sigKeys, keySet)
 				sigValues = append(sigValues, ft)
+				// The key may land on a property written before it and replace that value, so
+				// each such property may hold either. An optional field merged after it reads as
+				// that join, so `{a: "x", [s]: 1}` with `s: string` types `a` as `1 | "x"`.
+				operandElems = append(operandElems, overwrittenFields(operandElems, keySet, ft))
 			}
 			continue
 		}
@@ -2824,7 +2828,7 @@ func (c *checker) computedObjKey(key *ast.ComputedKey, keyT soltype.Type) (keyNa
 	if _, failed := keyT.(*soltype.ErrorType); failed {
 		return "", nil, false
 	}
-	ground, known := boundValueType(keyT)
+	ground, known := c.boundValueType(keyT)
 	if !known {
 		c.reportUnsupported(key)
 		return "", nil, false
@@ -2838,6 +2842,54 @@ func (c *checker) computedObjKey(key *ast.ComputedKey, keyT soltype.Type) (keyNa
 		return "", nil, false
 	}
 	return "", keys, true
+}
+
+// overwrittenFields returns one optional field of type value for each property in
+// operands whose name falls in keys. It is the operand a computed key over keys adds,
+// since that key may land on any of those properties.
+func overwrittenFields(operands [][]soltype.ObjTypeElem, keys, value soltype.Type) []soltype.ObjTypeElem {
+	names := set.NewSet[string]()
+	var out []soltype.ObjTypeElem
+	for _, elems := range operands {
+		for _, elem := range elems {
+			prop, isProp := elem.(*soltype.PropertyElem)
+			if !isProp || names.Contains(prop.Name) || !keySetCovers(keys, prop.Name) {
+				continue
+			}
+			name := prop.Name
+			names.Add(name)
+			out = append(out, &soltype.PropertyElem{Name: name, Type: value, Optional: true})
+		}
+	}
+	return out
+}
+
+// keySetCovers reports whether a member named name has a key in keys, a key set
+// propertyKeySet built. A `string` set covers every name but a reserved symbol member
+// name. A `number` set covers a name that spells a number the way JavaScript prints it,
+// such as "1". A `symbol` set covers a reserved symbol member name.
+func keySetCovers(keys soltype.Type, name string) bool {
+	_, isSymbol := soltype.SymbolOfMemberName(name)
+	switch keys := keys.(type) {
+	case *soltype.UnionType:
+		for _, member := range keys.Types {
+			if keySetCovers(member, name) {
+				return true
+			}
+		}
+		return false
+	case *soltype.PrimType:
+		switch keys.Prim {
+		case soltype.StrPrim:
+			return !isSymbol
+		case soltype.SymPrim:
+			return isSymbol
+		case soltype.NumPrim:
+			n, err := strconv.ParseFloat(name, 64)
+			return err == nil && strconv.FormatFloat(n, 'f', -1, 64) == name
+		}
+	}
+	return false
 }
 
 // propertyKeySet returns the primitive key set t falls in when t can key a property:
@@ -3317,7 +3369,7 @@ func (c *checker) indexKeyName(scope *Scope, lvl int, e *ast.IndexExpr) (string,
 	if name, ok := wellKnownSymbolMember(e.Index); ok {
 		return name, true
 	}
-	key, ok := boundValueType(c.inferExpr(scope, lvl, e.Index))
+	key, ok := c.boundValueType(c.inferExpr(scope, lvl, e.Index))
 	if !ok {
 		return "", false
 	}
@@ -3360,13 +3412,13 @@ func (c *checker) dynamicIndexRead(e *ast.IndexExpr, recv soltype.Type, objPos b
 // indexAccess builds the indexed access `Recv[Kt]` an index expression reads or
 // writes, with the receiver's borrow peeled and both operands read through their lower
 // bounds. The key's type is the one Info recorded for e.Index, so the key must already
-// be inferred. ok is false when either operand has no lower bound to read.
+// be inferred. ok is false when boundValueType cannot read either operand.
 func (c *checker) indexAccess(e *ast.IndexExpr, recv soltype.Type) (*soltype.IndexType, bool) {
-	target, ok := boundValueType(readCarrier(recv))
+	target, ok := c.boundValueType(recv)
 	if !ok {
 		return nil, false
 	}
-	key, ok := boundValueType(c.info.TypeOf(e.Index))
+	key, ok := c.boundValueType(c.info.TypeOf(e.Index))
 	if !ok {
 		return nil, false
 	}
@@ -3376,21 +3428,27 @@ func (c *checker) indexAccess(e *ast.IndexExpr, recv soltype.Type) (*soltype.Ind
 // boundValueType returns the type t holds as a value. That is t itself when t is not a
 // type variable, and otherwise the join of the variable's lower bounds, each resolved
 // the same way. A read of a binding is a variable bounded below by the binding's type,
-// so a read of `val k = "x"` resolves to `"x"`. ok is false when a variable on the way
-// has no lower bound, since nothing has yet flowed in to say what it holds, and when
-// the bounds cycle back to a variable already being resolved.
-func boundValueType(t soltype.Type) (soltype.Type, bool) {
-	return boundValueTypeOnPath(t, set.NewSet[*soltype.TypeVarType]())
+// so a read of `val k = "x"` resolves to `"x"`.
+//
+// ok is false in three cases:
+//   - A variable on the way has no lower bound, so nothing has yet flowed in to say
+//     what it holds.
+//   - A variable on the way is an unannotated parameter's. A caller passes whatever
+//     its argument is, so the lower bounds the body sees, such as a default's, are not
+//     all the parameter can hold. `fn f(k = "a")` may be called as `f("b")`.
+//   - The bounds cycle back to a variable already being resolved.
+func (c *checker) boundValueType(t soltype.Type) (soltype.Type, bool) {
+	return c.boundValueTypeOnPath(t, set.NewSet[*soltype.TypeVarType]())
 }
 
 // boundValueTypeOnPath is boundValueType with the variables being resolved on the
 // current path, so a cycle among lower bounds ends rather than recursing forever.
-func boundValueTypeOnPath(t soltype.Type, onPath set.Set[*soltype.TypeVarType]) (soltype.Type, bool) {
+func (c *checker) boundValueTypeOnPath(t soltype.Type, onPath set.Set[*soltype.TypeVarType]) (soltype.Type, bool) {
 	v, ok := t.(*soltype.TypeVarType)
 	if !ok {
 		return t, true
 	}
-	if onPath.Contains(v) {
+	if onPath.Contains(v) || c.isParamVar(v) {
 		return nil, false
 	}
 	onPath.Add(v)
@@ -3400,7 +3458,7 @@ func boundValueTypeOnPath(t soltype.Type, onPath set.Set[*soltype.TypeVarType]) 
 		if lb == soltype.Type(v) {
 			continue
 		}
-		m, ok := boundValueTypeOnPath(lb, onPath)
+		m, ok := c.boundValueTypeOnPath(lb, onPath)
 		if !ok {
 			return nil, false
 		}
@@ -3414,6 +3472,13 @@ func boundValueTypeOnPath(t soltype.Type, onPath set.Set[*soltype.TypeVarType]) 
 	default:
 		return newUnion(nil, members), true
 	}
+}
+
+// isParamVar reports whether v is the variable inferFunc mints for an unannotated
+// parameter, which it records with ParamBinding provenance.
+func (c *checker) isParamVar(v *soltype.TypeVarType) bool {
+	origin, ok := c.prov[v].(FromAST)
+	return ok && origin.Kind == ParamBinding
 }
 
 // resolveNamespaceMember looks name up in ns directly and non-lexically — a
