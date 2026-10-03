@@ -110,7 +110,17 @@ func convertStandaloneModule(
 	treeConsumedCtor map[string]string,
 	treeClassNames set.Set[string],
 ) (*StandaloneModule, error) {
-	stmts := liftGlobals(dtsModule.Statements)
+	// TypeScript merges same-named declarations, and every rule below reads one
+	// declaration per name. detectTrios resolves `FooConstructor` through a single
+	// entry, and the walk emits a fused class per matching statement. Merging here
+	// means a name declared twice cannot lose the first declaration's members or
+	// produce two classes.
+	//
+	// PartitionLibWithOverlay already merges each bucket, so this is a second pass
+	// there. mergeDecls leaves a module with one declaration per name unchanged,
+	// and running it after liftGlobals also reaches a declaration a
+	// `declare global` block contributes beside a same-named one at module scope.
+	stmts := mergeDecls(liftGlobals(dtsModule.Statements))
 	trios := detectTrios(stmts)
 	cctx := &convertCtx{
 		facts: facts,
@@ -260,12 +270,43 @@ func writeStandaloneModule(m *StandaloneModule, w io.Writer) error {
 // keeps track of the constructor interface and the `declare var` binding
 // so the main pass skips them.
 type trioInfo struct {
+	// instance is the `interface Foo` that declares the instance side, or nil
+	// when a `declare class Foo` declares it.
 	instance *dts_parser.InterfaceDecl
+	// instanceClass is the `declare class Foo` that declares the instance side,
+	// or nil. TypeScript merges a class with a same-named interface into one
+	// type, so when the source writes both, the class holds the instance side
+	// and `merged` carries what the interface adds to it.
+	instanceClass *dts_parser.ClassDecl
+	// merged is the `interface Foo` folded into instanceClass, or nil when the
+	// class has no same-named interface. ConvertToStandaloneModule merges
+	// same-named interfaces before detection, so there is at most one.
+	merged *dts_parser.InterfaceDecl
 	// ctorMembers is the constructor side, whichever form declared it:
 	// the members of a named `FooConstructor` interface, or those of
-	// the object type written inline on the binding.
+	// the object type written inline on the binding. It is empty when the
+	// name has no constructor side, which is how a class and a same-named
+	// interface with no `FooConstructor` reach fusion.
 	ctorMembers []dts_parser.InterfaceMember
 	binding     *dts_parser.VarDecl
+}
+
+// name returns the instance side's name, whichever kind of declaration
+// declared it.
+func (t *trioInfo) name() string {
+	if t.instanceClass != nil {
+		return t.instanceClass.Name.Name
+	}
+	return t.instance.Name.Name
+}
+
+// doc returns the JSDoc the fused class carries. The instance side is the one
+// users see and document, so the constructor interface's doc is dropped.
+func (t *trioInfo) doc() string {
+	if t.instanceClass != nil {
+		return t.instanceClass.Doc()
+	}
+	return t.instance.Doc()
 }
 
 // trioTable indexes trios by the instance type name. The constructor name
@@ -310,23 +351,34 @@ type trioTable struct {
 // already written the long way. Recognition was the only place the two
 // spellings had to be told apart.
 //
-// One shape is held back, and for a reason that is about the class
-// form rather than about recognition. A constructor interface with a
-// call signature and no `new` describes something callable and not
-// constructible, and fuseTrio has no class elem for a call signature,
-// so the fused class could be neither called nor constructed.
-// `SymbolConstructor` and `BigIntConstructor` are the two, and the
-// guard comes out when #1412 gives a class somewhere to hold one.
+// # The same rule at the type level
 //
-// This matches tryFuseTrio in internal/interop/class_shapes.go, which
-// has never gated on a construct signature.
+// internal/interop/class_shapes.go recognises the idiom a second time, over
+// inferred types rather than `.d.ts` statements, because the prelude reaches the
+// lib files through ConvertModule instead of this converter. The two state one
+// rule, checked against each other name by name:
 //
-// A name that a `declare class` already declares is left alone. That
-// is a backstop rather than the right answer. TypeScript merges an
-// interface into a same-named class and mergeDecls cannot, so the pair
-// stays split whatever this does. Declining only keeps the converter
-// from adding a second class beside the one the source spells out.
-// #1430 covers the merge.
+//   - The named constructor side is tryFuseTrio: `Types[Foo]`,
+//     `Types[FooConstructor]`, and `Values[Foo]` a reference resolving to that
+//     same alias. Like detectTrios, it does not read what the constructor side
+//     declares.
+//   - The constructor side written inline on the binding is tryFuseEscalierClass:
+//     `Values[Foo]` an object type carrying a construct signature, with
+//     `Types[Foo]` as the instance side. That matches constructorSide's
+//     requirement that an inline object type carry a `new` returning the
+//     instance.
+//
+// # A `declare class` on the instance side
+//
+// TypeScript merges a class with a same-named interface. The interface's
+// members join the class's instance side, and a `declare var` of that name
+// joins its static side. A name declared both ways therefore has one instance
+// side, the class, and the interface and the constructor side both fold into
+// it. The class is what survives because it carries what an interface cannot,
+// a constructor and an `implements` clause.
+//
+// A class with neither a same-named interface nor a constructor side is not a
+// trio and converts on its own.
 func detectTrios(stmts []dts_parser.Statement) *trioTable {
 	t := &trioTable{
 		byName:       make(map[string]*trioInfo),
@@ -334,9 +386,11 @@ func detectTrios(stmts []dts_parser.Statement) *trioTable {
 		consumedVar:  set.NewSet[string](),
 	}
 
+	// One declaration per name, since ConvertToStandaloneModule merges
+	// same-named interfaces, recursing into namespaces, before this runs.
 	interfaces := make(map[string]*dts_parser.InterfaceDecl)
 	vars := make(map[string]*dts_parser.VarDecl)
-	classes := set.NewSet[string]()
+	classes := make(map[string]*dts_parser.ClassDecl)
 	for _, stmt := range stmts {
 		switch s := stmt.(type) {
 		case *dts_parser.InterfaceDecl:
@@ -344,25 +398,27 @@ func detectTrios(stmts []dts_parser.Statement) *trioTable {
 		case *dts_parser.VarDecl:
 			vars[s.Name.Name] = s
 		case *dts_parser.ClassDecl:
-			classes.Add(s.Name.Name)
+			classes[s.Name.Name] = s
 		}
 	}
 
-	for name, inst := range interfaces {
-		// A `declare class Foo` already declares the name as a class.
-		// Fusing would emit a second one beside it. See #1430 for why
-		// the pair stays split either way.
-		if classes.Contains(name) {
-			continue
+	names := set.NewSet[string]()
+	for name := range interfaces {
+		names.Add(name)
+	}
+	for name := range classes {
+		names.Add(name)
+	}
+
+	for _, name := range names.ToSlice() {
+		var ctorMembers []dts_parser.InterfaceMember
+		var ctorName string
+		binding := vars[name]
+		if binding != nil {
+			ctorMembers, ctorName, _ = constructorSide(name, binding, interfaces)
 		}
-		v, hasVar := vars[name]
-		if !hasVar {
-			continue
-		}
-		ctorMembers, ctorName, ok := constructorSide(name, v, interfaces)
-		if !ok {
-			continue
-		}
+
+		inst := interfaces[name]
 		// An instance-side call signature says instances are callable. A class cannot say
 		// that: ast.CallableElem describes the class VALUE, which is what `Symbol("x")`
 		// calls, and there is no syntax for a callable instance. Fusing would drop the
@@ -372,18 +428,43 @@ func detectTrios(stmts []dts_parser.Statement) *trioTable {
 		// No trio in the pinned lib set reaches this. The 47 interfaces carrying an
 		// instance-side call signature are callbacks such as `EventListener`, none of which
 		// has a matching constructor interface and var. A converted third-party `.d.ts` can.
-		if hasCallSignature(inst.Members) {
+		if inst != nil && hasCallSignature(inst.Members) {
 			continue
 		}
-		t.byName[name] = &trioInfo{
-			instance:    inst,
-			ctorMembers: ctorMembers,
-			binding:     v,
+
+		if cls := classes[name]; cls != nil {
+			if inst == nil && ctorMembers == nil {
+				// Nothing folds into the class, so it converts on its own.
+				// Leaving it out of the table keeps every plain class off the
+				// fusion path.
+				continue
+			}
+			t.byName[name] = &trioInfo{
+				instanceClass: cls,
+				merged:        inst,
+				ctorMembers:   ctorMembers,
+				binding:       binding,
+			}
+		} else {
+			// Without a class the instance side is the interface, and the
+			// constructor side is what makes the pair a class rather than two
+			// declarations.
+			if ctorMembers == nil {
+				continue
+			}
+			t.byName[name] = &trioInfo{
+				instance:    inst,
+				ctorMembers: ctorMembers,
+				binding:     binding,
+			}
 		}
+
 		if ctorName != "" {
 			t.consumedCtor[ctorName] = name
 		}
-		t.consumedVar.Add(name)
+		if ctorMembers != nil {
+			t.consumedVar.Add(name)
+		}
 	}
 
 	return t
@@ -1070,16 +1151,18 @@ func convertStandaloneStmt(
 			return nil, nil
 		}
 		if info, ok := trios.byName[s.Name.Name]; ok {
+			// A `declare class` of this name holds the instance side, and the
+			// ClassDecl branch below emits the one class the pair produces.
+			if info.instanceClass != nil {
+				return nil, nil
+			}
 			classDecl, err := fuseTrio(cctx, info, nsPath, scopeClassNames)
 			if err != nil {
 				return nil, fmt.Errorf("fusing trio for %s: %w", s.Name.Name, err)
 			}
 			path := jsName(nsPath, s.Name.Name)
 			attachJSDecorator(classDecl, path)
-			// Trio class doc comes from the instance interface; the
-			// constructor interface's doc (if any) is dropped — the
-			// instance side is the one users see and document.
-			return []docDecl{{doc: info.instance.Doc(), path: path, decl: classDecl}}, nil
+			return []docDecl{{doc: info.doc(), path: path, decl: classDecl}}, nil
 		}
 		if singletons != nil {
 			if info, ok := singletons.byName[s.Name.Name]; ok {
@@ -1138,7 +1221,14 @@ func convertStandaloneStmt(
 		return []docDecl{{doc: s.Doc(), path: path, decl: decl}}, nil
 
 	case *dts_parser.ClassDecl:
-		decl, err := convertClassDecl(cctx, s)
+		var decl *ast.ClassDecl
+		var err error
+		if info, ok := trios.byName[s.Name.Name]; ok && info.instanceClass == s {
+			// A same-named interface and the constructor side fold into this class.
+			decl, err = fuseTrio(cctx, info, nsPath, scopeClassNames)
+		} else {
+			decl, err = convertClassDecl(cctx, s)
+		}
 		if err != nil {
 			return nil, err
 		}
@@ -1204,8 +1294,15 @@ func attachJSDecorator(decl ast.Decl, arg string) {
 }
 
 // fuseTrio synthesises a ClassDecl from a matched trio. Instance members
-// come from `info.instance` (always non-static); static members and the
+// come from the instance side and are never static. Static members and the
 // constructor come from `info.ctorMembers`.
+//
+// The instance side is either an `interface Foo`, whose members convert here,
+// or a `declare class Foo`, which convertClassDecl already turns into
+// everything the instance side needs. In the second case the same-named
+// interface in `info.merged` adds its members to what the class produced. That
+// is the merge TypeScript performs between a class and an interface of one
+// name.
 //
 // Mapping from interface members to class elems:
 //   - MethodSignature   → MethodElem (Static set per side; receiver from
@@ -1219,6 +1316,15 @@ func attachJSDecorator(decl ast.Decl, arg string) {
 //   - CallSignature → CallableElem, from the constructor side only. It is the bare-call
 //     form, `Boolean(x)`.
 //   - IndexSignature is skipped for the MVP — it has no direct class-elem mapping.
+//
+// A `new` on a merged interface is skipped too. It is a construct signature on
+// the instance type, saying instances of the class can themselves construct,
+// which is not the class's own constructor.
+//
+// The class's own `extends` wins over a merged interface's supertypes, since a
+// class states its superclass where an interface states types it widens. A
+// merged supertype that converts to a class fills `extends` only when the class
+// writes none.
 func fuseTrio(
 	cctx *convertCtx,
 	info *trioInfo,
@@ -1226,22 +1332,65 @@ func fuseTrio(
 	classNames set.Set[string],
 ) (*ast.ClassDecl, error) {
 	facts := cctx.facts
-	className := info.instance.Name.Name
-	typeParams, err := convertTypeParams(info.instance.TypeParams)
-	if err != nil {
-		return nil, fmt.Errorf("converting type parameters: %w", err)
-	}
+	className := info.name()
 
-	var body []ast.ClassElem
+	var (
+		typeParams  []*ast.TypeParam
+		body        []ast.ClassElem
+		extends     *ast.TypeRefTypeAnn
+		extendsName string
+		implements  []*ast.TypeRefTypeAnn
+		supertypes  []dts_parser.TypeAnn
+		// named holds the bare names the class's own clauses already list.
+		named    = set.NewSet[string]()
+		span     ast.Span
+		nameSpan ast.Span
+	)
 
-	for _, m := range info.instance.Members {
-		elem, err := interfaceMemberToClassElem(m, nsPath, className, facts, false /*static*/)
+	if cls := info.instanceClass; cls != nil {
+		decl, err := convertClassDecl(cctx, cls)
 		if err != nil {
 			return nil, err
 		}
-		if elem != nil {
-			body = append(body, elem)
+		typeParams, body = decl.TypeParams, decl.Body
+		extends, implements = decl.Extends, decl.Implements
+		if cls.Extends != nil {
+			extendsName = bareTypeRefName(cls.Extends)
+			named.Add(extendsName)
 		}
+		for _, impl := range cls.Implements {
+			named.Add(bareTypeRefName(impl))
+		}
+		span, nameSpan = decl.Span(), decl.Name.Span()
+
+		if iface := info.merged; iface != nil {
+			// The merged members read the class's type parameter names, the same
+			// positional rename mergeDecls applies to a pair of interfaces.
+			renameTypeParams(iface, cls.TypeParams)
+			elems, err := interfaceMembersToClassElems(iface.Members, nsPath, className, facts, false /*static*/)
+			if err != nil {
+				return nil, err
+			}
+			// convertClassDecl threaded the raise parameter through the class's own
+			// members, so only the members added here still need it.
+			if RaiseParamDecls.Contains(className) {
+				threadRaiseParamThrough(elems)
+			}
+			body = append(body, elems...)
+			supertypes = iface.Extends
+		}
+	} else {
+		var err error
+		typeParams, err = convertTypeParams(info.instance.TypeParams)
+		if err != nil {
+			return nil, fmt.Errorf("converting type parameters: %w", err)
+		}
+		body, err = interfaceMembersToClassElems(info.instance.Members, nsPath, className, facts, false /*static*/)
+		if err != nil {
+			return nil, err
+		}
+		supertypes = info.instance.Extends
+		span, nameSpan = convertSpan(info.instance.Span()), convertSpan(info.instance.Name.Span())
 	}
 
 	for _, m := range info.ctorMembers {
@@ -1268,10 +1417,7 @@ func fuseTrio(
 	// CanvasRenderingContext2D extends CanvasCompositing, ...` opens with a
 	// mixin and names no class at all. A `declare` class takes its members
 	// from both clauses, so the split loses none.
-	var extends *ast.TypeRefTypeAnn
-	var extendsName string
-	var implements []*ast.TypeRefTypeAnn
-	for _, superTypeAnn := range info.instance.Extends {
+	for _, superTypeAnn := range supertypes {
 		conv, err := convertTypeAnn(superTypeAnn)
 		if err != nil {
 			return nil, fmt.Errorf("converting extends: %w", err)
@@ -1285,6 +1431,12 @@ func fuseTrio(
 		// name. It lands in `implements`, which keeps its members. No
 		// supertype in the pinned lib set is written qualified.
 		name := bareTypeRefName(superTypeAnn)
+		// A merged interface may restate a supertype the class already names,
+		// as `declare class Foo extends Bar` beside `interface Foo extends Bar`
+		// does. Listing it again would read as a second base.
+		if name != "" && named.Contains(name) {
+			continue
+		}
 		if !classNames.Contains(name) {
 			implements = append(implements, ref)
 			continue
@@ -1306,13 +1458,15 @@ func fuseTrio(
 	// paths add it in decl.go; a trio fuses into a class, so `Promise`
 	// needs it here too. Without it the declaration reads `Promise<T>`
 	// while every raised use passes two arguments.
-	if RaiseParamDecls.Contains(className) {
-		typeParams = addRaiseParamToClass(
-			typeParams, body, convertSpan(info.instance.Span()))
+	//
+	// A class instance side already carries the parameter, which
+	// convertClassDecl appended, so only an interface instance side adds it.
+	if info.instanceClass == nil && RaiseParamDecls.Contains(className) {
+		typeParams = addRaiseParamToClass(typeParams, body, span)
 	}
 
 	return ast.NewClassDecl(
-		ast.NewIdentifier(className, convertSpan(info.instance.Name.Span())),
+		ast.NewIdentifier(className, nameSpan),
 		nil, // lifetime params
 		typeParams,
 		extends,
@@ -1321,8 +1475,30 @@ func fuseTrio(
 		true,  // export
 		true,  // declare
 		false, // final
-		convertSpan(info.instance.Span()),
+		span,
 	), nil
+}
+
+// interfaceMembersToClassElems converts every member of an interface that has
+// a class-elem counterpart, dropping the rest. The parameters mean what they
+// mean for interfaceMemberToClassElem.
+func interfaceMembersToClassElems(
+	members []dts_parser.InterfaceMember,
+	nsPath, className string,
+	facts *ReceiverFacts,
+	static bool,
+) ([]ast.ClassElem, error) {
+	var out []ast.ClassElem
+	for _, m := range members {
+		elem, err := interfaceMemberToClassElem(m, nsPath, className, facts, static)
+		if err != nil {
+			return nil, err
+		}
+		if elem != nil {
+			out = append(out, elem)
+		}
+	}
+	return out, nil
 }
 
 // interfaceMemberToClassElem converts an interface member to a class elem,
