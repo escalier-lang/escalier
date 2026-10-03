@@ -189,11 +189,11 @@ func (v *impliedOutlivesCollector) EnterTypeAnn(t ast.TypeAnn) bool {
 		// Keep descending, since a borrow nested inside implies bounds of its own.
 		return true
 	case *ast.FuncTypeAnn:
-		// A borrow inside a function annotation implies nothing, because no value of that
-		// borrow's type has to exist. `cb: fn(x: &'a &'b T)` passes a callback that accepts
-		// such a value, so nothing forces 'b to outlive 'a. A function annotation can also
-		// declare its own lifetimes, so a name inside it may not refer to the outer lifetime
-		// of the same name.
+		// A function annotation starts its own lifetime scope, so a name written inside it
+		// does not refer to the enclosing signature's lifetime of the same name. The walk
+		// would stop here even if it did, because a borrow inside a function annotation
+		// implies nothing. No value of that borrow's type has to exist. `cb: fn(x: &'a &'b T)`
+		// passes a callback that accepts such a value, so nothing forces 'b to outlive 'a.
 		return false
 	}
 	return true
