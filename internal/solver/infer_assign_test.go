@@ -224,13 +224,14 @@ fn f() { o.x = 6 }`
 	requireBlame(t, src, errs, "2:10-2:17: cannot constrain immutable object <: mutable object", "o.x = 6")
 }
 
-// An INDEX target (xs[i] = …) still needs Array and index types (M7), so it stays
-// an unsupported feature — distinct from a member target, which C3 now types.
-func TestInferAssignIndexTargetUnsupported(t *testing.T) {
+// An index target `xs[i] = …` writes an element, which needs a mutable receiver the
+// same way a member target does. `xs` is `val`-bound, so its tuple is immutable and the
+// write is rejected at the assignment.
+func TestInferAssignIndexTargetImmutable(t *testing.T) {
 	src := `val xs = [1, 2]
 fn f() { xs[0] = 6 }`
 	_, _, errs := inferSource(t, src)
-	requireBlame(t, src, errs, "2:10-2:15: Unsupported: assignment to a member or index", "xs[0]")
+	requireBlame(t, src, errs, "2:10-2:19: cannot constrain immutable tuple <: mutable tuple", "xs[0] = 6")
 }
 
 // An immutable target with an independently-broken source reports BOTH errors — they
