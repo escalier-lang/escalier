@@ -888,7 +888,7 @@ func paramsForArgs(tps []*soltype.TypeParam, args []soltype.Type, subst *typeSub
 	out := make([]*soltype.TypeParam, len(tps))
 	for i, tp := range tps {
 		v, isVar := args[i].(*soltype.TypeVarType)
-		if !isVar || v == tp.Var {
+		if !isVar {
 			out[i] = tp
 			continue
 		}
@@ -899,6 +899,12 @@ func paramsForArgs(tps []*soltype.TypeParam, args []soltype.Type, subst *typeSub
 		// belong to. Leaving them would render a variable no binder in this print names,
 		// so `class Holder<T: {next: T}>` reached through a second binding would show
 		// `<T: {next: t0}>`.
+		//
+		// The rewrite runs even where the argument is the parameter's own variable, since
+		// a reference carries its type and lifetime arguments independently and a bound
+		// may name either. Rewriting the one sort while skipping the other would render a
+		// bound under the lifetime the declaration wrote rather than the one the
+		// reference passes.
 		if tp.Constraint != nil {
 			cp.Constraint = subst.apply(tp.Constraint)
 		}
