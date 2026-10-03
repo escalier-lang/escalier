@@ -1325,6 +1325,93 @@ func TestInferIndexResidualErrorMessage(t *testing.T) {
 	require.Equal(t, `1:12-1:18: cannot constrain t1["a"] <: number`, msgWithSpan(t, errs[0]))
 }
 
+// An indexed access whose target or index is a bounded type parameter is checked through the
+// access over the bound. `T[number]` for `T: Array<number> | []` reads `number`, and
+// `[1, 2, 3][D]` for `D: number` reads `1 | 2 | 3`. The cases cover a parameter bounded by a union
+// of an array and a tuple, which is the bound `Promise.race` declares, and a tuple indexed by a
+// numeric parameter, which is the shape `FlatArray` declares. Each runs as a type argument checked
+// against an alias parameter's bound and as a function body checked against its return annotation.
+func TestInferIndexOverBoundedParam(t *testing.T) {
+	tests := []struct {
+		name    string
+		src     string
+		wantErr string // "" ⇒ expect no error
+	}{
+		{
+			name: "ArrayOrTupleTargetAccepted",
+			src: `
+				type N<X: number> = X
+				type F<T: Array<number> | []> = N<T[number]>
+			`,
+		},
+		{
+			name: "ArrayOrTupleTargetRejected",
+			src: `
+				type N<X: number> = X
+				type F<T: Array<string> | []> = N<T[number]>
+			`,
+			wantErr: "cannot constrain string <: number",
+		},
+		{
+			name: "ArrayOrNonEmptyTupleTargetRejected",
+			src: `
+				type N<X: number> = X
+				type F<T: Array<number> | [string]> = N<T[number]>
+			`,
+			wantErr: "cannot constrain string <: number",
+		},
+		{
+			name: "ArrayOrTupleTargetReturnAccepted",
+			src:  `fn f<T: Array<number> | []>(k: T[number]) -> number { return k }`,
+		},
+		{
+			name: "UnionElementIntoUnionAccepted",
+			src: `
+				type NS<X: number | string> = X
+				type F<T: Array<number | string> | []> = NS<T[number]>
+			`,
+		},
+		{
+			name: "UnionElementReturnAccepted",
+			src:  `fn f<T: Array<number | string> | []>(k: T[number]) -> number | string { return k }`,
+		},
+		{
+			name: "AccessIntoUnionHoldingItAccepted",
+			src:  `fn f<T: Array<number> | []>(k: T[number]) -> T[number] | undefined { return k }`,
+		},
+		{
+			name: "NumericIndexAccepted",
+			src: `
+				type N<X: number> = X
+				type F<D: number> = N<[1, 2, 3][D]>
+			`,
+		},
+		{
+			name: "NumericIndexRejected",
+			src: `
+				type N<X: number> = X
+				type F<D: number> = N<["a", 2, 3][D]>
+			`,
+			wantErr: `cannot constrain "a" <: number`,
+		},
+		{
+			name: "NumericIndexReturnAccepted",
+			src:  `fn f<D: number>(k: [1, 2, 3][D]) -> number { return k }`,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			_, _, errs := inferSource(t, tt.src)
+			if tt.wantErr == "" {
+				require.Empty(t, errs)
+				return
+			}
+			require.Len(t, errs, 1)
+			require.Equal(t, tt.wantErr, errs[0].Message())
+		})
+	}
+}
+
 // A tuple-spread annotation `[...P, x]` is stored as a residual and reduced by splicing each
 // spread operand's tuple in position once the operand grounds to a concrete tuple. Each case
 // asserts the stored `Result` renders the way the source wrote it, then asserts that reducing it
