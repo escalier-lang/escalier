@@ -2101,6 +2101,10 @@ func (c *Checker) InferModule(ctx Context, m *ast.Module) (depGraph *dep_graph.D
 // through resolveDeclTypeParams. Skipping that leaves each placeholder unsolved, and an
 // unsolved placeholder renders `unknown`.
 func (c *Checker) inferTypeParams(astTypeParams []*ast.TypeParam) []*type_system.TypeParam {
+	// Mint one placeholder per distinct name, so this list lines up positionally with the
+	// one resolveTypeParams returns and unifyTypeParams pairs the two correctly.
+	astTypeParams = ast.DistinctTypeParams(astTypeParams)
+
 	// Sort type parameters topologically for processing (so constraints can reference earlier params)
 	sortedTypeParams := ast.SortTypeParamsTopologically(astTypeParams)
 
@@ -2122,13 +2126,7 @@ func (c *Checker) inferTypeParams(astTypeParams []*ast.TypeParam) []*type_system
 		}
 	}
 
-	// Build result in DECLARATION order (not sorted order)
-	// This is critical for correct substitution when the type is instantiated
-	typeParams := make([]*type_system.TypeParam, len(astTypeParams))
-	for i, astParam := range astTypeParams {
-		typeParams[i] = typeParamMap[astParam.Name]
-	}
-	return typeParams
+	return typeParamsInDeclOrder(astTypeParams, typeParamMap)
 }
 
 // resolveDeclTypeParams resolves the constraints and defaults a declaration wrote and

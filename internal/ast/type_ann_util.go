@@ -1,5 +1,7 @@
 package ast
 
+import "github.com/escalier-lang/escalier/internal/set"
+
 // typeParamRefVisitor collects type parameter references in type annotations
 type typeParamRefVisitor struct {
 	DefaultVisitor
@@ -20,7 +22,17 @@ func (v *typeParamRefVisitor) EnterTypeAnn(typeAnn TypeAnn) bool {
 	return true
 }
 
-// sortTypeParamsTopologically sorts type parameters so that dependencies come before dependents
+// SortTypeParamsTopologically orders type parameters so that a parameter whose constraint
+// or default names a sibling comes after that sibling, letting a caller resolve each
+// annotation with every name it mentions already in scope.
+//
+// The result holds one entry per distinct name, keeping the first binder of a name the
+// declaration writes twice. A caller declares each name in a scope, and a scope rejects a
+// name it already holds, so a second entry under one name would panic rather than be
+// reported.
+//
+// A constraint or default that forms a cycle has no order that satisfies it, so the
+// parameters come back in declaration order.
 func SortTypeParamsTopologically(typeParams []*TypeParam) []*TypeParam {
 	if len(typeParams) <= 1 {
 		return typeParams
@@ -83,13 +95,32 @@ func SortTypeParamsTopologically(typeParams []*TypeParam) []*TypeParam {
 	for _, tp := range typeParams {
 		if !visited[tp.Name] {
 			if !visit(tp.Name) {
-				// Cycle detected, return original order
-				return typeParams
+				return DistinctTypeParams(typeParams)
 			}
 		}
 	}
 
 	return sorted
+}
+
+// DistinctTypeParams keeps the first parameter declared under each name, in declaration
+// order.
+//
+// A name declared twice can only be referenced as one parameter, so the later binder is
+// unreachable and nothing a caller writes can fill it. Both checkers resolve the distinct
+// names and report the duplicate separately, which keeps the parameter count a reference's
+// type arguments are matched against the same on either side.
+func DistinctTypeParams(typeParams []*TypeParam) []*TypeParam {
+	distinct := make([]*TypeParam, 0, len(typeParams))
+	seen := set.NewSet[string]()
+	for _, tp := range typeParams {
+		if seen.Contains(tp.Name) {
+			continue
+		}
+		seen.Add(tp.Name)
+		distinct = append(distinct, tp)
+	}
+	return distinct
 }
 
 // extractTypeParamRefs extracts all type parameter names referenced in a type annotation

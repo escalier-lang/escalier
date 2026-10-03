@@ -110,7 +110,7 @@ func TestTypeParamTopologicalSort(t *testing.T) {
 		},
 		"TypeDecl_WithDefaults": {
 			input: `
-				type WithDefaults<Bar: Baz = Baz, Baz: string = "hello"> = {
+				type WithDefaults<Bar: Baz, Baz: string = "hello"> = {
 					bar: Bar,
 					baz: Baz,
 				}
