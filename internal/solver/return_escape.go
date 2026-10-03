@@ -168,8 +168,9 @@ func (c *checker) resolveComponentEscapes(
 ) bool {
 	consumed := false
 	outOfFrame := c.localsLeavingOutsideAReturn(flowBorrowGraph)
-	// A local the non-return sites already hand out both ways is reported once here. Every
-	// site carrying it is left to that report rather than adding an escape on top.
+	// A local the non-return sites hand out through both a mutable and an immutable path is
+	// reported once here. Every site carrying it is left to that report rather than adding an
+	// escape on top.
 	mixed := c.reportMixedOutflows(outOfFrame)
 	// Return index to the owned type its borrows strip to. Committed after every site is decided.
 	ownedReturns := map[int]soltype.Type{}

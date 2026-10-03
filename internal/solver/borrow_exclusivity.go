@@ -357,12 +357,12 @@ func (c *checker) endLoansAtInBlock(holder liveness.VarID, base []placeSeg, ref 
 	c.endLoansWhere(holder, base, func(l loan) bool { return l.ref.BlockID == ref.BlockID })
 }
 
-// endLoansWhere ends the loans holder took at base or under it that keep accepts.
-func (c *checker) endLoansWhere(holder liveness.VarID, base []placeSeg, keep func(loan) bool) {
+// endLoansWhere ends each loan holder took at base or under it for which selects returns true.
+func (c *checker) endLoansWhere(holder liveness.VarID, base []placeSeg, selects func(loan) bool) {
 	ended := c.nextLoanSeq()
 	for i := range c.fn.loans {
 		l := &c.fn.loans[i]
-		if l.holder == holder && l.endSeq == 0 && pathHasPrefix(l.holderPath, base) && keep(*l) {
+		if l.holder == holder && l.endSeq == 0 && pathHasPrefix(l.holderPath, base) && selects(*l) {
 			l.endSeq = ended
 		}
 	}
