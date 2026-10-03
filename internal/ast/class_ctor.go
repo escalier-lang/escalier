@@ -170,12 +170,14 @@ func stableKeyExpr(expr Expr) bool {
 // stableKeyExpr.
 const symbolGlobalName = "Symbol"
 
-// keyReadNames returns the names a stable key expression reads. A parameter cannot bind
-// one of them, since the constructor reads the key after binding its parameters and a
-// parameter of that name would shadow what the key meant where the class was defined.
+// keyReadNames returns the names this class's computed keys read from the surrounding
+// scope. A parameter cannot bind one of them, since the constructor reads each key after
+// binding its parameters, and a parameter of that name would shadow what the key meant
+// where the class was defined.
 //
-// The shapes are stableKeyExpr's: a variable read names itself, and `Symbol.<name>`
-// names `Symbol`.
+// Only a free name counts, so `[Symbol.iterator]` contributes `Symbol` and not
+// `iterator`. A property is a name on the object rather than a binding, so a field named
+// `iterator` shadows nothing and keeps its own parameter.
 func keyReadNames(decl *ClassDecl) set.Set[string] {
 	names := set.NewSet[string]()
 	for _, bodyElem := range decl.Body {
@@ -187,12 +189,15 @@ func keyReadNames(decl *ClassDecl) set.Set[string] {
 		if !computed || !stableKeyExpr(key.Expr) {
 			continue
 		}
-		if ident, isIdent := key.Expr.(*IdentExpr); isIdent {
-			names.Add(ident.Name)
-			continue
+		switch keyExpr := key.Expr.(type) {
+		case *IdentExpr:
+			names.Add(keyExpr.Name)
+		case *MemberExpr:
+			// stableKeyExpr admits no deeper chain, so the object is the free name.
+			if obj, isIdent := keyExpr.Object.(*IdentExpr); isIdent {
+				names.Add(obj.Name)
+			}
 		}
-		// stableKeyExpr admits only `Symbol.<name>` besides a variable read.
-		names.Add(symbolGlobalName)
 	}
 	return names
 }

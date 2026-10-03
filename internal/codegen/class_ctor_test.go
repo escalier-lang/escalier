@@ -210,7 +210,9 @@ func TestEmitsTheImplicitConstructor(t *testing.T) {
   }
 }`,
 		},
-		// `Symbol` is read the same way, so a field spelling it is reached by index too.
+		// `[Symbol.iterator]` reads `Symbol` from the surrounding scope, so a field
+		// spelling it is reached by index too. A field named `iterator` is not, since
+		// the property is a name on the object rather than a binding the key reads.
 		{
 			name: "AFieldNamedSymbolIsReachedByIndex",
 			src: `class C {
@@ -223,6 +225,21 @@ func TestEmitsTheImplicitConstructor(t *testing.T) {
     const _field2 = temp2;
     this["Symbol"] = _field1;
     this[Symbol.iterator] = _field2;
+  }
+}`,
+		},
+		{
+			name: "AFieldNamedForAKeysPropertyKeepsItsName",
+			src: `class C {
+				iterator: number,
+				[Symbol.iterator]: string,
+			}`,
+			want: `export class C {
+  constructor(temp1, temp2) {
+    const iterator = temp1;
+    const _field1 = temp2;
+    this.iterator = iterator;
+    this[Symbol.iterator] = _field1;
   }
 }`,
 		},
