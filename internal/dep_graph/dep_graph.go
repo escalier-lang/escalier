@@ -87,6 +87,12 @@ type DepGraph struct {
 
 	// All namespace names in the module, indexed by NamespaceID.
 	Namespaces []string
+
+	// ImportNamespaces maps a source id to the import bindings that file makes
+	// for packages merged into this module, each naming the namespace the
+	// package's declarations bind under. It is nil for a module that merges no
+	// imported package.
+	ImportNamespaces map[int]map[string]string
 }
 
 // NewDepGraph creates a new DepGraph with initialized empty maps.
@@ -296,6 +302,26 @@ type DependencyVisitor struct {
 	Dependencies     btree.Set[BindingKey]      // Found dependencies
 	LocalScopes      []LocalScope               // Stack of local scopes
 	CurrentNamespace string                     // Current namespace being analyzed
+	// Imports maps the analyzed declaration's file's import bindings to the
+	// namespaces they stand for. See DepGraph.ImportNamespaces.
+	Imports map[string]string
+}
+
+// importedName rewrites a dotted name whose head is one of the file's import
+// bindings to the key the imported declaration binds under, so
+// `weak_ref.WeakKey` becomes `std__weak_ref.WeakKey` when the file's
+// `import "std:weak_ref"` stands for the `std__weak_ref` namespace. It returns
+// false for any other name.
+func (v *DependencyVisitor) importedName(name string) (string, bool) {
+	head, rest, dotted := strings.Cut(name, ".")
+	if !dotted {
+		return "", false
+	}
+	ns, ok := v.Imports[head]
+	if !ok {
+		return "", false
+	}
+	return ns + "." + rest, true
 }
 
 // pushScope adds a new local scope
@@ -392,6 +418,17 @@ func (v *DependencyVisitor) addTypeDependency(typeName string) bool {
 		return true
 	}
 
+	// Last, a name reached through an import binding. The solver resolves a
+	// dotted name through namespace bindings after its flat keys, and this
+	// follows the same order.
+	if imported, ok := v.importedName(typeName); ok {
+		key := TypeBindingKey(imported)
+		if v.Graph.HasBinding(key) {
+			v.Dependencies.Insert(key)
+			return true
+		}
+	}
+
 	return false
 }
 
@@ -418,6 +455,13 @@ func (v *DependencyVisitor) addSuperclassValueDependency(typeName string) {
 	key := ValueBindingKey(typeName)
 	if v.Graph.HasBinding(key) {
 		v.Dependencies.Insert(key)
+		return
+	}
+	if imported, ok := v.importedName(typeName); ok {
+		key := ValueBindingKey(imported)
+		if v.Graph.HasBinding(key) {
+			v.Dependencies.Insert(key)
+		}
 	}
 }
 
@@ -653,6 +697,15 @@ func (v *DependencyVisitor) EnterTypeAnn(typeAnn ast.TypeAnn) bool {
 				v.Dependencies.Insert(key)
 				break
 			}
+
+			// Then through an import binding
+			if imported, ok := v.importedName(candidateName); ok {
+				key := ValueBindingKey(imported)
+				if v.Graph.HasBinding(key) {
+					v.Dependencies.Insert(key)
+					break
+				}
+			}
 		}
 		return true
 	case *ast.ObjectTypeAnn:
@@ -837,6 +890,7 @@ func FindDeclDependencies(key BindingKey, graph *DepGraph) btree.Set[BindingKey]
 			Dependencies:     btree.Set[BindingKey]{},
 			CurrentNamespace: currentNamespace,
 			LocalScopes:      make([]LocalScope, 0),
+			Imports:          graph.ImportNamespaces[decl.Span().SourceID],
 		}
 
 		// Create a scope for type parameters
@@ -1058,9 +1112,19 @@ func appendBlockNamespaces(namespaces []string, prefix string, decl ast.Decl) []
 // BuildDepGraph builds a dependency graph for a module using the new BindingKey-based approach.
 // This is the main entry point for building the dependency graph.
 func BuildDepGraph(module *ast.Module) *DepGraph {
+	return BuildDepGraphWithImports(module, nil)
+}
+
+// BuildDepGraphWithImports is BuildDepGraph for a module that merges imported
+// packages under namespaces of its own. imports maps a source id to that file's
+// import bindings, each naming the namespace its package binds under, so a
+// dotted reference through one records a dependency on the package's
+// declaration. See DepGraph.ImportNamespaces.
+func BuildDepGraphWithImports(module *ast.Module, imports map[int]map[string]string) *DepGraph {
 	// Collect all namespaces from the module
 	namespaceMap := collectNamespaces(module)
 	graph := NewDepGraph(namespaceMap)
+	graph.ImportNamespaces = imports
 
 	// Populate bindings by visiting all declarations
 	PopulateBindings(graph, module)
