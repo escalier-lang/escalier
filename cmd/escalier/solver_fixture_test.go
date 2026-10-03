@@ -68,19 +68,11 @@ var (
 		name:   "index expressions, computed keys, and assignment to a member",
 		ticket: "#1715",
 	}
-	causeSuperGate = &solverSkipCause{
-		name:   "the gate requiring a subclass constructor to call `super(…)`",
-		ticket: "#1720",
-	}
 	// `fixtures/pattern_matching` also narrows an arm by an annotated nested leaf, which
 	// is #1956 and surfaces once this cause clears.
 	causeStructuralClassPattern = &solverSkipCause{
 		name:   "a structural pattern matched against a class instance",
 		ticket: "#1955",
-	}
-	causeExtendsTypeArgs = &solverSkipCause{
-		name:   "a generic named in an `extends` clause without its type arguments",
-		ticket: "#1721",
 	}
 	causeUnionMember = &solverSkipCause{
 		name:   "a property read on a union whose arms do not all declare it",
@@ -122,12 +114,7 @@ var solverSkips = []solverSkip{
 	{"class_with_getter_setter", causeIndexAndComputed, "Unsupported: IndexExpr"},
 	{"objects_with_computed_members", causeIndexAndComputed, "Unsupported: ComputedKey"},
 
-	{"class_field_name_collision", causeSuperGate, "A subclass constructor must call `super(…)`"},
-	{"class_inheritance_namespaces", causeSuperGate, "A subclass constructor must call `super(…)`"},
-
 	{"pattern_matching", causeStructuralClassPattern, "object is missing property: area"},
-
-	{"interface", causeExtendsTypeArgs, "type alias `Box` expects 1 type argument but got 0"},
 
 	{"try_catch", causeCaughtValue, "cannot constrain unknown <: string"},
 
@@ -381,11 +368,12 @@ type emitSkip struct {
 var emitSkips = map[emitSkip]*solverSkipCause{
 	{"fix_point_combinator", "index.js"}: causeFieldReadBound,
 
-	{"namespace_use_parent_symbol", "index.d.ts"}: causeAnyAsUnknown,
-	{"generalize", "index.d.ts"}:                  causeUnusedParamNotGeneralized,
-	{"type_ann_index_signature", "index.d.ts"}:    causeIndexSignatureOptional,
-	{"logging", "index.d.ts"}:                     causeUndefinedReturn,
-	{"grouping", "index.d.ts"}:                    causeUnionOrder,
+	{"namespace_use_parent_symbol", "index.d.ts"}:  causeAnyAsUnknown,
+	{"class_inheritance_namespaces", "index.d.ts"}: causeCheckerRootNamespacePrefix,
+	{"generalize", "index.d.ts"}:                   causeUnusedParamNotGeneralized,
+	{"type_ann_index_signature", "index.d.ts"}:     causeIndexSignatureOptional,
+	{"logging", "index.d.ts"}:                      causeUndefinedReturn,
+	{"grouping", "index.d.ts"}:                     causeUnionOrder,
 }
 
 // causeFieldReadBound is the cause of `fix_point_combinator`'s `index.js` entry. Reading a field whose type
@@ -428,6 +416,14 @@ var (
 	causeIndexSignatureOptional = &solverSkipCause{
 		name:   "the `?` on an index signature over an uncountable key set",
 		ticket: "#1775",
+	}
+	// A reference at the module root to a type a namespace declares emits without the
+	// namespace on the checker. With `class NsDerived` in `lib/geo/`, the root
+	// `val nsDerived = geo.NsDerived()` emits `nsDerived: NsDerived` on the checker,
+	// which names no type at the root, and `nsDerived: geo.NsDerived` on the solver.
+	// The fault is the checker's.
+	causeCheckerRootNamespacePrefix = &solverSkipCause{
+		name: "a root reference to a namespaced type, which the checker writes unqualified",
 	}
 	// A union renders its members in the solver's own order rather than the order the
 	// source wrote, so `A | B & C` emits `B & C | A`. Both denote the same type.
