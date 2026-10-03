@@ -148,12 +148,15 @@ func ImplicitConstructor(decl *ClassDecl) (*ConstructorElem, *FieldElem) {
 // the global `Symbol` is a data property, so reading it runs no user code.
 //
 // Every other shape is left to a hand-written constructor, since reading it again can
-// answer differently. #1831 removes the distinction by evaluating the key once beside
-// the class, after which every computed key gets a constructor and this goes away. A call is the plainest case: `declare fn makeKey() -> unique
+// answer differently. A call is the plainest case: `declare fn makeKey() -> unique
 // symbol` type-checks as a key and answers with a fresh symbol per call, so
 // `self[makeKey()] = v` would assign a property no reader can name. A property read off
-// anything else is excluded because a getter is a call this package cannot tell from a
-// field, which `declare val keys: {get k(&self) -> unique symbol}` makes `[keys.k]`.
+// anything but `Symbol` is excluded because a getter is a call this package cannot tell
+// from a field, which `declare val keys: {get k(&self) -> unique symbol}` makes
+// `[keys.k]`.
+//
+// #1831 removes the distinction by evaluating the key once beside the class, after which
+// every computed key gets a constructor and this goes away.
 func stableKeyExpr(expr Expr) bool {
 	switch e := expr.(type) {
 	case *IdentExpr:

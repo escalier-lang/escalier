@@ -1023,12 +1023,15 @@ func (e SubclassConstructorRequiredError) Message() string {
 
 // ComputedKeyFieldRequiresConstructorError is reported when a class declares no
 // constructor and a non-optional field's computed key is neither a variable nor a
-// property of one, as `[makeKey()]` is.
+// property of `Symbol`. `[makeKey()]` and `[keys.k]` are both reported.
 //
 // A synthesized constructor reads the key once per construction, where JavaScript reads
 // a computed class-member key once, where the class is defined. The two agree only for a
-// key that gives the same value every time, so any other key needs a constructor the
-// author writes. #1831 retires this by evaluating the key once beside the class.
+// key that gives the same value every time. A variable read qualifies because a computed
+// key's type names one property, and `Symbol.<name>` qualifies because a property of the
+// global `Symbol` is a data property. A property read off anything else may be a getter,
+// which is a call, so it needs a constructor the author writes. #1831 retires this by
+// evaluating the key once beside the class.
 type ComputedKeyFieldRequiresConstructorError struct {
 	span ast.Span
 }
@@ -1037,7 +1040,7 @@ func (e ComputedKeyFieldRequiresConstructorError) Span() ast.Span {
 	return e.span
 }
 func (e ComputedKeyFieldRequiresConstructorError) Message() string {
-	return "A field whose computed key is neither a variable nor a property of one cannot have a constructor synthesized; declare an explicit `constructor` block."
+	return "A field whose computed key is neither a variable nor a property of `Symbol` cannot have a constructor synthesized; declare an explicit `constructor` block."
 }
 
 // DivergingBodyNonNeverReturnError is reported when a function body

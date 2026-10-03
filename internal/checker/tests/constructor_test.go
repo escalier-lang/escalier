@@ -193,7 +193,7 @@ func TestConstructorErrors(t *testing.T) {
 				}
 			`,
 			expected: []string{"A field whose computed key is neither a variable nor a " +
-				"property of one cannot have a constructor synthesized; declare an " +
+				"property of `Symbol` cannot have a constructor synthesized; declare an " +
 				"explicit `constructor` block."},
 		},
 		"PrivateConstructorRejected": {
