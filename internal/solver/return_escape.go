@@ -182,11 +182,14 @@ type outflowPath struct {
 }
 
 // placeCopy is one place a binding takes its value from. dest is the binding that receives
-// it, src the place read, and expr the expression that reads it.
+// it and destPath the field of dest it lands in, empty for the whole binding. src is the place
+// read, and expr the expression that reads it. `val a = {x: b}` records dest a, destPath [x],
+// and src b.
 type placeCopy struct {
-	dest liveness.VarID
-	src  movePlace
-	expr ast.Expr
+	dest     liveness.VarID
+	destPath []placeSeg
+	src      movePlace
+	expr     ast.Expr
 }
 
 // resolveComponentEscapes decides every recorded escape site once the body is fully walked,
@@ -325,7 +328,7 @@ func (c *checker) siteReaches(es escapeSite, fieldBorrowGraph map[liveness.VarID
 	}
 	origins := c.movedOrigins()
 	for _, r := range slices.Clone(reaches) {
-		for _, o := range originsOf(r.place.root, origins) {
+		for _, o := range originsOf(r.place, origins) {
 			reaches = append(reaches, elementReach{place: o, mut: r.mut, owned: r.owned})
 		}
 	}
@@ -383,43 +386,40 @@ func (c *checker) reachesOf(e ast.Expr, fieldBorrowGraph map[liveness.VarID][]fi
 	return out
 }
 
-// movedOrigins maps each binding to the places whose data moved into it, keeping the copies in
+// movedOrigins maps each binding to the copies that moved data into it, keeping the copies in
 // placeCopies that movedSources records as moves. A copy of a borrow moves nothing, and its
 // borrow edges already say what it reaches.
-func (c *checker) movedOrigins() map[liveness.VarID][]movePlace {
-	out := map[liveness.VarID][]movePlace{}
+func (c *checker) movedOrigins() map[liveness.VarID][]placeCopy {
+	out := map[liveness.VarID][]placeCopy{}
 	if c.fn.movedSources == nil {
 		return out
 	}
 	for _, pc := range c.fn.placeCopies {
 		if c.fn.movedSources.Contains(pc.expr) {
-			out[pc.dest] = append(out[pc.dest], pc.src)
+			out[pc.dest] = append(out[pc.dest], pc)
 		}
 	}
 	return out
 }
 
-// originsOf returns every place whose data reaches root through a chain of moves. After `val q
-// = b` and `val r = q`, the origins of r are q and b. A place moved out of an origin's field
-// counts as moved out of the whole origin, which reaches more data than the move took.
-func originsOf(root liveness.VarID, origins map[liveness.VarID][]movePlace) []movePlace {
+// originsOf returns every place whose data reaches the place p through a chain of moves. After
+// `val q = b` and `val r = q`, the origins of r are q and b. A move lands in one field of its
+// destination, so a path through a different field does not reach it. After
+// `val a = {x: b, y: c}`, the origins of a.y are c alone.
+func originsOf(p movePlace, origins map[liveness.VarID][]placeCopy) []movePlace {
 	var out []movePlace
-	seen := set.FromSlice([]liveness.VarID{root})
-	pending := []liveness.VarID{root}
+	seen := set.NewSet[ast.Expr]()
+	pending := []movePlace{p}
 	for len(pending) > 0 {
-		id := pending[len(pending)-1]
+		at := pending[len(pending)-1]
 		pending = pending[:len(pending)-1]
-		for _, o := range origins[id] {
-			if seen.Contains(o.root) {
+		for _, pc := range origins[at.root] {
+			if seen.Contains(pc.expr) || !pathPrefixRelated(pc.destPath, at.path) {
 				continue
 			}
-			seen.Add(o.root)
-			if id == root {
-				out = append(out, o)
-			} else {
-				out = append(out, movePlace{root: o.root})
-			}
-			pending = append(pending, o.root)
+			seen.Add(pc.expr)
+			out = append(out, pc.src)
+			pending = append(pending, pc.src)
 		}
 	}
 	return out
@@ -1020,7 +1020,7 @@ func (c *checker) recordBorrowSources(root liveness.VarID, base []placeSeg, e as
 		// a.peer`. copyPlaceEdges transfers that binding's edges to root, re-rooted at base.
 		if p, ok := exprPlace(e); ok && p.root > 0 {
 			c.copyPlaceEdges(root, base, p)
-			c.fn.placeCopies = append(c.fn.placeCopies, placeCopy{dest: root, src: p, expr: e})
+			c.fn.placeCopies = append(c.fn.placeCopies, placeCopy{dest: root, destPath: base, src: p, expr: e})
 			return
 		}
 		// Any other carrier expression contributes its inline borrows of locals at base, as

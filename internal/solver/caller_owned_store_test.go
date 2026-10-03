@@ -59,6 +59,32 @@ func TestStoreIntoCallerOwnedTarget(t *testing.T) {
 			`,
 			want: []string{"6:13-6:14: 'p' leaves the function both as an owned value and through a borrow"},
 		},
+		// A move lands in one field of its destination. Returning a.y hands out c alone, so it
+		// does not meet the borrow of b that p.r holds.
+		"ReturningADisjointFieldOfTheMoveDestinationOk": {
+			src: `
+				fn f(p: &mut {r: &{v: number}}) -> {v: number} {
+					val b = {v: 1}
+					val c = {v: 2}
+					val a = {x: b, y: c}
+					p.r = &a.x
+					return a.y
+				}
+			`,
+		},
+		// A generator hands control back to the caller at each `yield`, so the caller can read
+		// p.r before the write that follows it.
+		"WritingAfterAYieldConflicts": {
+			src: `
+				gen fn f(p: &mut {r: &{value: number}}) {
+					val mut b = {value: 1}
+					p.r = &b
+					yield 1
+					b.value = 5
+				}
+			`,
+			want: []string{"6:6-6:13: cannot assign to 'b.value' while it is borrowed as immutable"},
+		},
 		// A mutable borrow of p taken after the store and never read changes nothing.
 		"BorrowingMutablyAfterAnImmutableStoreOk": {
 			src: `
