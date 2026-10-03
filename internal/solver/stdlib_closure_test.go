@@ -179,6 +179,74 @@ func TestACyclicTripleLoadsAndResolves(t *testing.T) {
 	require.Equal(t, "Beta", soltype.Print(inferredValueType(t, res.Scope, "next")))
 }
 
+// A member reaches what it imports from a sibling in every declaration kind,
+// not only in a class body. The qualified `streams.Stream` reads through the
+// import's namespace and the bare `Signal` through `web:core`'s unprefixed
+// binding. Each resolves only once the sibling's declaration is inferred, so
+// these cover the order the group walks its declarations in as much as the
+// lookup itself.
+func TestAGroupMemberReachesItsImportsFromEveryDeclarationKind(t *testing.T) {
+	t.Parallel()
+
+	files := map[string]string{
+		"web/core.esc": `
+			import "web:fetch"
+			export declare class Signal { readonly aborted: boolean }
+			export declare type Uses = fetch.Init
+		`,
+		"web/streams.esc": `
+			import "web:core"
+			import "web:fetch"
+			export declare class Stream { readonly locked: boolean, readonly signal: Signal }
+			export declare type Uses = fetch.Init
+		`,
+		"web/fetch.esc": `
+			import "web:core"
+			import "web:streams"
+			export declare interface Init { signal: Signal, body: streams.Stream }
+			export declare type Alias = {signal: Signal, body: streams.Stream}
+			export declare fn take(signal: Signal, body: streams.Stream) -> number
+			export declare val signal: Signal
+			export declare val body: streams.Stream
+		`,
+	}
+
+	tests := []struct {
+		name string
+		src  string
+		want string
+	}{
+		{
+			name: "AnInterfaceField",
+			src:  "declare val init: fetch.Init\nval got = [init.signal, init.body]",
+			want: "[Signal, Stream]",
+		},
+		{
+			name: "ATypeAlias",
+			src:  "declare val pair: fetch.Alias\nval got = [pair.signal, pair.body]",
+			want: "[Signal, Stream]",
+		},
+		{
+			name: "AFunctionSignature",
+			src:  "val got = fetch.take",
+			want: "fn (signal: Signal, body: Stream) -> number",
+		},
+		{
+			name: "AValueAnnotation",
+			src:  "val got = [fetch.signal, fetch.body]",
+			want: "[Signal, Stream]",
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			res := inferAgainstCyclicStdlib(t, "import \"web:fetch\"\n"+tt.src, files)
+
+			require.Empty(t, errorMessagesOf(res.Errors))
+			require.Equal(t, tt.want, soltype.Print(inferredValueType(t, res.Scope, "got")))
+		})
+	}
+}
+
 // An acyclic package still takes the single-package path, which the group map
 // leaves as a group of one.
 func TestAnAcyclicPackageStillLoadsAlone(t *testing.T) {

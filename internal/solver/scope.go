@@ -100,6 +100,10 @@ type Scope struct {
 	values     map[string]ValueBinding
 	types      map[string]TypeBinding
 	namespaces map[string]*Namespace
+	// unprefixed holds namespaces whose members this scope binds under their own
+	// names without copying them. GetValue and GetType consult them after this
+	// scope's own maps, so a member defined after the binding is still reached.
+	unprefixed []*Namespace
 	parent     *Scope
 	// onDefine, when set, is called with each name this scope binds, in either
 	// sort. The module scope of a run under inference sets it so a qualified
@@ -166,13 +170,24 @@ func (s *Scope) defineNamespace(name string, ns *Namespace) {
 	s.namespaces[name] = ns
 }
 
+// defineUnprefixed binds every member ns holds, now or later, under its own name
+// in this scope. See the unprefixed field.
+func (s *Scope) defineUnprefixed(ns *Namespace) {
+	s.unprefixed = append(s.unprefixed, ns)
+}
+
 // GetValue resolves name in the value sort by lexical lookup: this scope's own
-// map, then up the parent chain. The comma-ok form makes the not-found case
-// explicit at every call site.
+// map and its unprefixed namespaces, then up the parent chain. The comma-ok form
+// makes the not-found case explicit at every call site.
 func (s *Scope) GetValue(name string) (ValueBinding, bool) {
 	for cur := s; cur != nil; cur = cur.parent {
 		if b, ok := cur.values[name]; ok {
 			return b, true
+		}
+		for _, ns := range cur.unprefixed {
+			if b, ok := ns.Values[name]; ok {
+				return b, true
+			}
 		}
 	}
 	return ValueBinding{}, false
@@ -183,6 +198,11 @@ func (s *Scope) GetType(name string) (TypeBinding, bool) {
 	for cur := s; cur != nil; cur = cur.parent {
 		if b, ok := cur.types[name]; ok {
 			return b, true
+		}
+		for _, ns := range cur.unprefixed {
+			if b, ok := ns.Types[name]; ok {
+				return b, true
+			}
 		}
 	}
 	return TypeBinding{}, false
@@ -207,6 +227,10 @@ func (s *Scope) OwnValue(name string) (ValueBinding, bool) {
 // than the module scope, such as a type parameter or a name the file imported,
 // leaving the module scope to a probe that orders its keys itself. A nil stop
 // searches the whole chain.
+//
+// It does not read the unprefixed namespaces. Those rank below the module
+// scope's own keys, so a package member reaches its sibling before a name an
+// import binds bare, and GetType reads them once those keys have missed.
 func (s *Scope) getTypeBefore(name string, stop *Scope) (TypeBinding, bool) {
 	for cur := s; cur != nil && cur != stop; cur = cur.parent {
 		if b, ok := cur.types[name]; ok {

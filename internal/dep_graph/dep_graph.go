@@ -87,6 +87,46 @@ type DepGraph struct {
 
 	// All namespace names in the module, indexed by NamespaceID.
 	Namespaces []string
+
+	// Imports holds, per namespace, the other namespaces of this module its
+	// imports reach. A reference that resolves to no binding by its own spelling
+	// is retried through it. It is nil for a module whose imports name only other
+	// modules, which is every module BuildDepGraph builds.
+	Imports map[string]NamespaceImports
+}
+
+// NamespaceImports is what one namespace's imports bind to other namespaces of
+// the same module. A merged package group parses each member under a namespace
+// of its own, so `import "web:streams"` in the `web__fetch` member names the
+// `web__streams` namespace, and the member writes `streams.ReadableStream` for
+// the binding keyed `web__streams.ReadableStream`.
+type NamespaceImports struct {
+	// Aliases maps the name an import binds to the namespace it names, so
+	// `streams` maps to `web__streams`.
+	Aliases map[string]string
+	// Unprefixed lists the namespaces whose members the imports bind under their
+	// own names, so a bare `AbortSignal` reaches `web__core.AbortSignal`.
+	Unprefixed []string
+}
+
+// importedNames returns the qualified names a reference spelled name may stand
+// for through the imports of namespace ns, in the order a lookup tries them.
+func (g *DepGraph) importedNames(ns string, name string) []string {
+	imports, ok := g.Imports[ns]
+	if !ok {
+		return nil
+	}
+	var out []string
+	if head, rest, dotted := strings.Cut(name, "."); dotted {
+		if target, aliased := imports.Aliases[head]; aliased {
+			out = append(out, target+"."+rest)
+		}
+		return out
+	}
+	for _, target := range imports.Unprefixed {
+		out = append(out, target+"."+name)
+	}
+	return out
 }
 
 // NewDepGraph creates a new DepGraph with initialized empty maps.
@@ -366,7 +406,7 @@ func (v *DependencyVisitor) addValueDependency(name string, expr *ast.IdentExpr)
 		return true
 	}
 
-	return false
+	return v.addImportedDependency(name, ValueBindingKey)
 }
 
 // addTypeDependency adds a type dependency if it exists in the graph and is not shadowed locally
@@ -392,6 +432,19 @@ func (v *DependencyVisitor) addTypeDependency(typeName string) bool {
 		return true
 	}
 
+	return v.addImportedDependency(typeName, TypeBindingKey)
+}
+
+// addImportedDependency records the first binding the current namespace's
+// imports resolve name to, keyed by toKey, and reports whether it found one.
+func (v *DependencyVisitor) addImportedDependency(name string, toKey func(string) BindingKey) bool {
+	for _, qualified := range v.Graph.importedNames(v.CurrentNamespace, name) {
+		key := toKey(qualified)
+		if v.Graph.HasBinding(key) {
+			v.Dependencies.Insert(key)
+			return true
+		}
+	}
 	return false
 }
 
@@ -418,7 +471,9 @@ func (v *DependencyVisitor) addSuperclassValueDependency(typeName string) {
 	key := ValueBindingKey(typeName)
 	if v.Graph.HasBinding(key) {
 		v.Dependencies.Insert(key)
+		return
 	}
+	v.addImportedDependency(typeName, ValueBindingKey)
 }
 
 // EnterStmt handles statements that introduce new scopes
@@ -1058,9 +1113,18 @@ func appendBlockNamespaces(namespaces []string, prefix string, decl ast.Decl) []
 // BuildDepGraph builds a dependency graph for a module using the new BindingKey-based approach.
 // This is the main entry point for building the dependency graph.
 func BuildDepGraph(module *ast.Module) *DepGraph {
+	return BuildDepGraphWithImports(module, nil)
+}
+
+// BuildDepGraphWithImports builds the dependency graph of a module whose
+// namespaces import one another, with imports describing what each namespace's
+// imports bind. A reference that names a binding through one of those imports
+// depends on that binding, so the walk infers it first.
+func BuildDepGraphWithImports(module *ast.Module, imports map[string]NamespaceImports) *DepGraph {
 	// Collect all namespaces from the module
 	namespaceMap := collectNamespaces(module)
 	graph := NewDepGraph(namespaceMap)
+	graph.Imports = imports
 
 	// Populate bindings by visiting all declarations
 	PopulateBindings(graph, module)

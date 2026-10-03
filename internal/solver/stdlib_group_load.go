@@ -141,7 +141,7 @@ func (c *checker) loadPackageGroup(group []string, span ast.Span) []SolverError 
 	defer func() { c.memberNamespaces = prevMembers }()
 
 	c.bindFileImports(scope, module)
-	c.inferDepGraph(scope, 0, module, dep_graph.BuildDepGraph(module))
+	c.inferDepGraph(scope, 0, module, dep_graph.BuildDepGraphWithImports(module, c.groupImports(module)))
 
 	errs := c.errs
 	c.errs = prevErrs
@@ -175,6 +175,32 @@ func (c *checker) loadPackageGroup(group []string, span ast.Span) []SolverError 
 		}}
 	}
 	return nil
+}
+
+// groupImports returns what each member's imports of its siblings bind, keyed by
+// the member's namespace. It mirrors what bindPseudoPackageImport binds for an
+// import of a member of the active group: the namespace under the statement's
+// local name, and for `web:core` each of its members under its own name too.
+func (c *checker) groupImports(module *ast.Module) map[string]dep_graph.NamespaceImports {
+	out := map[string]dep_graph.NamespaceImports{}
+	for _, file := range module.Files {
+		for _, stmt := range file.Imports {
+			uri := stmt.PackageName
+			if !c.activeGroup.Contains(uri) {
+				continue
+			}
+			imports, seen := out[file.Namespace]
+			if !seen {
+				imports = dep_graph.NamespaceImports{Aliases: map[string]string{}}
+			}
+			imports.Aliases[stmt.LocalName()] = groupNamespace(uri)
+			if uri == coreURI {
+				imports.Unprefixed = append(imports.Unprefixed, groupNamespace(uri))
+			}
+			out[file.Namespace] = imports
+		}
+	}
+	return out
 }
 
 // sortedGroup returns a copy of group in sorted order, so a diagnostic and a
