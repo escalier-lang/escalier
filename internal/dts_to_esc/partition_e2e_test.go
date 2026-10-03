@@ -262,7 +262,10 @@ func TestPartitionLib_ConstructorlessTriosFuseIntoOneClass(t *testing.T) {
 	}
 
 	// `IteratorConstructor` declares neither a `new` nor a call signature, so
-	// `Iterator` is the one of the three that stays uncallable.
+	// `Iterator` is the one of the three that stays uncallable. That matches the
+	// runtime. MDN documents that calling `Iterator()` without `new` throws a
+	// TypeError, unlike `Symbol()` and `BigInt()`, which return a value.
+	// https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Global_Objects/Iterator/Iterator
 	require.Contains(t, callables, "Symbol")
 	require.Contains(t, callables, "BigInt")
 	require.NotContains(t, callables, "Iterator")
