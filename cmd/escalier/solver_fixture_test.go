@@ -408,8 +408,6 @@ var emitSkips = map[emitSkip]*solverSkipCause{
 	{"generic_enum", "index.d.ts"}:                causeEnumVariantValue,
 	{"extractor_inside_namespaces", "index.d.ts"}: causeEnclosingNamespacePrefix,
 	{"extractor_arg_with_init", "index.d.ts"}:     causePatterns,
-	{"fix_point_combinator", "index.d.ts"}:        causeClassCtorTypeParams,
-	{"mut_class_reference", "index.d.ts"}:         causeClassCtorTypeParams,
 	{"generalize", "index.d.ts"}:                  causeUnusedParamNotGeneralized,
 	{"type_ann_index_signature", "index.d.ts"}:    causeIndexSignatureOptional,
 }
@@ -446,14 +444,6 @@ var (
 	causeEnclosingNamespacePrefix = &solverSkipCause{
 		name:   "the enclosing namespace's prefix on a reference",
 		ticket: "#1785",
-	}
-	// A class constructor's signature does not carry the class's declared type
-	// parameters. One a constructor argument mentions is rediscovered as an inferred
-	// variable and renamed to `T0`, and one no argument mentions coalesces to `never`,
-	// so `new <T>(log: string): Consumer<T>` emits as `new (log: string): Consumer<never>`.
-	causeClassCtorTypeParams = &solverSkipCause{
-		name:   "a class's declared type parameters on its constructor signature",
-		ticket: "#1773",
 	}
 	// A parameter the body never reads coalesces to `unknown` rather than becoming a
 	// type parameter, so `fn fst(a, b) { return a }` emits `<T0>(a: T0, b: unknown) => T0`
