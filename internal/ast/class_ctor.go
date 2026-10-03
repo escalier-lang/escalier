@@ -46,7 +46,7 @@ func ImplicitConstructor(decl *ClassDecl) (*ConstructorElem, *FieldElem) {
 
 	// A name a computed key reads cannot also be a parameter, so it is settled first
 	// and the direct-name decision below consults it.
-	freeKeyNames := freeNamesInComputedKeys(decl)
+	freeKeyNames := FreeNamesInComputedKeys(decl)
 
 	// Collected before any parameter is built, so a generated name can avoid them.
 	// `class C { _field1: number, "a-b": string }` would otherwise bind `_field1`
@@ -173,15 +173,20 @@ func stableKeyExpr(expr Expr) bool {
 // stableKeyExpr.
 const symbolGlobalName = "Symbol"
 
-// freeNamesInComputedKeys returns the names this class's computed keys read from the
-// surrounding scope, the free names of those key expressions. A parameter cannot bind
-// one of them, since the constructor reads each key after binding its parameters, and a
-// parameter of that name would shadow what the key meant where the class was defined.
+// FreeNamesInComputedKeys returns the names this class's computed keys read from the
+// surrounding scope, the free names of those key expressions. No parameter the emitted
+// constructor binds may use one, since the constructor reads each key after binding its
+// parameters, and a parameter of that name would shadow what the key meant where the
+// class was defined.
+//
+// ImplicitConstructor keeps the names it chooses off this list. JavaScript emission has
+// its own, the `temp<N>` a lowered parameter takes, so it reads this to keep those off it
+// too.
 //
 // Only a free name counts, so `[Symbol.iterator]` contributes `Symbol` and not
 // `iterator`. A property is a name on the object rather than a binding, so a field named
 // `iterator` shadows nothing and keeps its own parameter.
-func freeNamesInComputedKeys(decl *ClassDecl) set.Set[string] {
+func FreeNamesInComputedKeys(decl *ClassDecl) set.Set[string] {
 	names := set.NewSet[string]()
 	for _, bodyElem := range decl.Body {
 		field, ok := bodyElem.(*FieldElem)
@@ -218,7 +223,7 @@ func takesConstructorParam(field *FieldElem) bool {
 // canBindParamName rejects, and a name in freeKeyNames. Such a field is assigned by
 // index under a generated name.
 //
-// freeKeyNames comes from freeNamesInComputedKeys. Binding one of those names would
+// freeKeyNames comes from FreeNamesInComputedKeys. Binding one of those names would
 // shadow it for the rest of the constructor, so `class C { k: number, [k]: string }`
 // would store the second field under the first field's value.
 //

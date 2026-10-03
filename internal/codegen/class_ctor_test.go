@@ -243,6 +243,22 @@ func TestEmitsTheImplicitConstructor(t *testing.T) {
   }
 }`,
 		},
+		// A parameter is lowered to `temp<N>`, so one of those cannot take a name a key
+		// reads either. The parameter skips to `temp2` and the key keeps the module's
+		// `temp1`.
+		{
+			name: "ALoweredParamAvoidsAKeysName",
+			src: `declare val temp1: unique symbol
+			class C {
+				[temp1]: number,
+			}`,
+			want: `export class C {
+  constructor(temp2) {
+    const _field1 = temp2;
+    this[temp1] = _field1;
+  }
+}`,
+		},
 		// A field whose key binds a name directly keeps it, so the generated names
 		// count only the fields that need one.
 		{
