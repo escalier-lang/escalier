@@ -412,6 +412,10 @@ type funcCtx struct {
 	// such as the b in `val y = b`. checkUsesAgainstLoans reads it to report a move of
 	// borrowed data as a move rather than as a plain use.
 	movedSources set.Set[ast.Node]
+	// placeCopies lists each place a binding takes its value from, such as the b in `val q = b`
+	// or in `a.peer = b`. movedOrigins keeps the ones movedSources says were moved, so the
+	// escape check can follow a local into the binding that owns its data afterwards.
+	placeCopies []placeCopy
 	// placeIDs assigns each field-level place one synthetic VarID (PR 7). A field-level
 	// place is a root binding plus a path of field segments, such as `pair.a`. The key is
 	// placeKey's encoding of the place, its root VarID followed by each segment's kind and
