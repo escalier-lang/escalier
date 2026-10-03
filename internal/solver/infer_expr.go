@@ -2365,12 +2365,14 @@ func (c *checker) inferIndexAssign(scope *Scope, lvl int, e *ast.BinaryExpr, ix 
 //
 //   - The receiver must be mutable. It is constrained against a `mut` borrow of its own
 //     type, so a write through an immutable `Array<number>` is rejected.
-//   - The slot must not be `readonly`. An index signature marked `readonly` is
-//     reported as a ReadonlyFieldError naming its key set.
-//   - The source must fit the slot. An array's slot is its element type, and a tuple's
-//     slot at a literal position is that element. A `number` key on a tuple may land on
-//     any position, so the source must fit every element. An index signature's slot is
-//     its value type, without the `undefined` a read of it adds.
+//   - The slot must not be `readonly`. A `readonly` index signature, or a `readonly`
+//     property the key may name, is reported as a ReadonlyFieldError naming the key's
+//     type.
+//   - The source must fit each slot elementSlots returns. An array's slot is its
+//     element type, and a tuple's slot at a literal position is that element. A
+//     `number` key on a tuple may land on any position, so the source must fit every
+//     element. An index signature's slot is its value type, without the `undefined` a
+//     read of it adds, and each property the key may name is a slot too.
 //
 // A key the receiver cannot be indexed by reports the error a read at that key reports.
 // A receiver or key whose type is not yet known, such as a parameter inferred from its
@@ -2440,9 +2442,8 @@ func (c *checker) inferElementAssign(lvl int, e *ast.BinaryExpr, ix *ast.IndexEx
 // is `readonly`. An array instance read at a numeric key has one slot, its element type.
 // A tuple read at a literal position has that element, and at `number` every element. An
 // object whose index signature covers the key has the signature's value, plus each
-// property the key may name. ok is false for
-// any other receiver, which has no element to write, and for a receiver a borrow cannot
-// wrap.
+// property the key may name. ok is false for any other receiver, which has no element
+// to write, and for a receiver a borrow cannot wrap.
 func (c *checker) elementSlots(access *soltype.IndexType) (slots []soltype.Type, readonly bool, ok bool) {
 	if _, isInner := access.Target.(soltype.RefInner); !isInner {
 		// The mutability gate wraps the receiver in a `mut` borrow, which only a RefInner fits.
@@ -3442,14 +3443,14 @@ func (c *checker) readsByPosition(recv soltype.Type) bool {
 
 // dynamicIndexRead resolves `recv[k]` for a key that names no single property, once
 // indexKeyName has inferred the key. It types the read as the indexed access
-// `Recv[Kt]` and reduces it with the evaluator type-level `T[K]` uses, so `d[k]`
+// `Recv[Kt]` and reduces it with the evaluator a type-level `T[K]` uses, so `d[k]`
 // agrees with `D[K]`. The reduction reads an array's element type, a tuple's element
 // at a literal position, and an object's index signature, and it reports a key the
 // receiver cannot be read at.
 //
-// The receiver and the key are each read through their lower bounds first, since a
-// read of a binding is a variable bounded below by the binding's type. A receiver with
-// no lower bound, such as a parameter whose type is inferred from its uses, stays
+// The receiver and the key are each read through boundValueType first, since a read of
+// a binding is a variable bounded below by the binding's type. An operand it cannot
+// read, such as a parameter whose type is inferred from its uses, leaves the read
 // unsupported.
 func (c *checker) dynamicIndexRead(e *ast.IndexExpr, recv soltype.Type, objPos bool) pathResult {
 	access, ok := c.indexAccess(e, recv)
