@@ -138,27 +138,13 @@ var shapeSkips = map[string]shapeSkip{
 		reason: "a callback parameter's `-> undefined` return emits `void`, which widens what the slot accepts",
 		ticket: "#1820",
 	},
-	"AGenericClass": {
-		reason: "a class's constructor signature renames its declared parameter to `T0`",
-		ticket: "#1773",
-	},
-	"AClassParamBound": {
-		reason: "a bounded class parameter reaches the constructor as `T0 & {value: number}` under a renamed binder",
-		ticket: "#1773",
-	},
-	"AClassParamDefault": {
-		reason: "a class parameter no constructor argument mentions coalesces to `never` instead of binding",
-		ticket: "#1773",
-	},
 	"AnEnum": {
-		reason: "a variant's value emits as a plain function rather than a constructor object, " +
-			"and carries no `[Symbol.customMatcher]` signature; #1784 covers the constructor object",
-		ticket: "#1772",
+		reason: "a variant's value emits as a plain function rather than a constructor object",
+		ticket: "#1784",
 	},
 	"AGenericEnum": {
-		reason: "a variant's value emits as a plain function rather than a constructor object, " +
-			"and carries no `[Symbol.customMatcher]` signature; #1784 covers the constructor object",
-		ticket: "#1772",
+		reason: "a variant's value emits as a plain function rather than a constructor object",
+		ticket: "#1784",
 	},
 	"AnOptionalIndexSig": {
 		reason: "an index signature over an uncountable key set loses its `?`",
@@ -167,10 +153,6 @@ var shapeSkips = map[string]shapeSkip{
 	"AClassGetterAndSetter": {
 		reason: "a setter's parameter name is lost, so it renders as `value`",
 		ticket: "#1823",
-	},
-	"ASymbolKeyedMember": {
-		reason: "a class's static side carries no `[Symbol.customMatcher]` signature",
-		ticket: "#1772",
 	},
 }
 
