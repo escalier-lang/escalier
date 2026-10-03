@@ -1826,6 +1826,71 @@ func TestInferCondResidualErrorMessage(t *testing.T) {
 	require.Equal(t, "1:12-1:51: cannot constrain if t1 : number { string } else { boolean } <: number", msgWithSpan(t, errs[0]))
 }
 
+// TestInferCondResidualAgainstBound covers a residual conditional passed as a type argument to a
+// bounded parameter. The argument satisfies the bound when both of its branches do without binding
+// a variable, so `MyOmit` below, the shape of `Omit` in `std:prelude`, checks cleanly before its
+// operands ground. A branch outside the bound, a branch that holds only by binding a parameter, and
+// a branch that reads an `infer` capture are each rejected.
+func TestInferCondResidualAgainstBound(t *testing.T) {
+	const pick = `
+		type MyPick<T, K: keyof T> = {[P]: T[P] for P in K}
+		type MyExclude<T, U> = if T : U { never } else { T }
+	`
+	tests := []struct {
+		name    string
+		src     string
+		wantErr string // "" ⇒ expect no error
+	}{
+		{
+			name: "BothBranchesWithinBound",
+			src: pick + `
+				type MyOmit<T, K> = MyPick<T, MyExclude<keyof T, K>>
+			`,
+		},
+		{
+			name: "BothBranchesWithinBoundInstantiated",
+			src: pick + `
+				type MyOmit<T, K> = MyPick<T, MyExclude<keyof T, K>>
+				val p: MyOmit<{a: number, b: string}, "a"> = {b: "x"}
+			`,
+		},
+		{
+			name: "ElseBranchOutsideBound",
+			src: pick + `
+				type Bad<T, K> = MyPick<T, if keyof T : K { never } else { string }>
+			`,
+			wantErr: "cannot constrain if keyof t4 : t5 { never } else { string } <: keyof t4",
+		},
+		{
+			name: "ThenBranchBindsParam",
+			src: `
+				type Box<X: string> = [X]
+				type Bad<T, U> = Box<if [T] : [U] { T } else { never }>
+			`,
+			wantErr: "cannot constrain if tuple : tuple { t2 } else { never } <: string",
+		},
+		{
+			name: "ThenBranchReadsInferCapture",
+			src: `
+				type Box<X: string> = [X]
+				type Bad<T> = Box<if T : [infer U] { U } else { "n" }>
+			`,
+			wantErr: `cannot constrain if t2 : tuple { U } else { "n" } <: string`,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			_, _, errs := inferSource(t, tt.src)
+			if tt.wantErr == "" {
+				require.Empty(t, errs)
+				return
+			}
+			require.Len(t, errs, 1)
+			require.Equal(t, tt.wantErr, errs[0].Message())
+		})
+	}
+}
+
 // An `infer U` clause outside a conditional's Extends operand names no matched position, so it
 // reports one UnsupportedFeatureError rather than resolving to a capture nothing ever fills. The
 // cases cover the positions an `infer` can be written in but never captures from: a plain
