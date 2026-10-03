@@ -90,10 +90,16 @@ type DepGraph struct {
 
 	// ImportNamespaces maps a source id to the import bindings that file makes
 	// for packages merged into this module, each naming the namespace the
-	// package's declarations bind under. It is nil for a module that merges no
-	// imported package.
+	// package's declarations bind under. An entry keyed UnprefixedImport names a
+	// package whose members the file binds under their own names. It is nil for a
+	// module that merges no imported package.
 	ImportNamespaces map[int]map[string]string
 }
+
+// UnprefixedImport is the ImportNamespaces key for an import that binds its
+// package's members bare, the way `import "web:core"` binds `AbortSignal`. No
+// import binds a package under the empty name, so the key cannot collide.
+const UnprefixedImport = ""
 
 // NewDepGraph creates a new DepGraph with initialized empty maps.
 func NewDepGraph(namespaceMap []string) *DepGraph {
@@ -310,12 +316,17 @@ type DependencyVisitor struct {
 // importedName rewrites a dotted name whose head is one of the file's import
 // bindings to the key the imported declaration binds under, so
 // `weak_ref.WeakKey` becomes `std__weak_ref.WeakKey` when the file's
-// `import "std:weak_ref"` stands for the `std__weak_ref` namespace. It returns
-// false for any other name.
+// `import "std:weak_ref"` stands for the `std__weak_ref` namespace. A bare name
+// is rewritten under the UnprefixedImport entry, so `AbortSignal` becomes
+// `web__core.AbortSignal`. It returns false for any other name.
 func (v *DependencyVisitor) importedName(name string) (string, bool) {
 	head, rest, dotted := strings.Cut(name, ".")
 	if !dotted {
-		return "", false
+		ns, ok := v.Imports[UnprefixedImport]
+		if !ok {
+			return "", false
+		}
+		return ns + "." + name, true
 	}
 	ns, ok := v.Imports[head]
 	if !ok {
@@ -390,6 +401,14 @@ func (v *DependencyVisitor) addValueDependency(name string, expr *ast.IdentExpr)
 		}
 		v.Dependencies.Insert(key)
 		return true
+	}
+
+	if imported, ok := v.importedName(name); ok {
+		key := ValueBindingKey(imported)
+		if v.Graph.HasBinding(key) {
+			v.Dependencies.Insert(key)
+			return true
+		}
 	}
 
 	return false
