@@ -1028,7 +1028,7 @@ func (e SubclassConstructorRequiredError) Message() string {
 // A synthesized constructor reads the key once per construction, where JavaScript reads
 // a computed class-member key once, where the class is defined. The two agree only for a
 // key that gives the same value every time, so any other key needs a constructor the
-// author writes.
+// author writes. #1831 retires this by evaluating the key once beside the class.
 type ComputedKeyFieldRequiresConstructorError struct {
 	span ast.Span
 }

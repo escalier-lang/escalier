@@ -295,7 +295,8 @@ func TestEmitsNoImplicitConstructor(t *testing.T) {
 	})
 
 	// A key a call produces answers differently per call, so no constructor is derived
-	// and the checkers report that the class needs an explicit one.
+	// and the checkers report that the class needs an explicit one. #1831 lifts this by
+	// evaluating the key once beside the class.
 	t.Run("AKeyFromACallGetsNone", func(t *testing.T) {
 		got := buildSource(t, `declare fn makeKey() -> unique symbol
 		class Odd {
@@ -305,7 +306,8 @@ func TestEmitsNoImplicitConstructor(t *testing.T) {
 	})
 
 	// A property read off anything but `Symbol` may be a getter, which is a call this
-	// package cannot tell from a field, so it gets none for the same reason.
+	// package cannot tell from a field, so it gets none for the same reason and is
+	// lifted by the same ticket.
 	t.Run("AKeyReadOffAnObjectGetsNone", func(t *testing.T) {
 		got := buildSource(t, `declare val keys: {get k(&self) -> unique symbol}
 		class Odd {
