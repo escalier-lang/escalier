@@ -2,6 +2,7 @@ package solver
 
 import (
 	"fmt"
+	"slices"
 	"strconv"
 	"strings"
 	"unicode"
@@ -648,6 +649,62 @@ func (c *checker) consumeIntoLiteral(el ast.Expr, elemT soltype.Type, ref livene
 	c.consumeOwned(el, elemT, el, ref)
 }
 
+// noteEscapedClosureSite records that the value e is stored at ref into storage that outlives
+// the body, for consumeEscapedCaptures to move the locals any closure in it captures.
+func (c *checker) noteEscapedClosureSite(e ast.Expr, ref liveness.StmtRef) {
+	if c.fn == nil || c.fn.cfg == nil {
+		return
+	}
+	c.fn.escapedClosureSites = append(c.fn.escapedClosureSites, escapeSite{expr: e, stmtRef: ref})
+}
+
+// consumeEscapedCaptures moves each owned local a closure captures when the closure reaches a
+// site noteEscapedClosureSite recorded, and reports whether it moved any. The closure is one
+// written inside the stored value or one the value reaches through the borrow graph at the
+// site, so a closure bound to a name, copied to another name, or chosen on a branch counts.
+// A capture holding a borrow is not moved.
+func (c *checker) consumeEscapedCaptures(flowBorrowGraph *flowBorrowGraph) bool {
+	moved := false
+	for _, es := range c.fn.escapedClosureSites {
+		graph := flowBorrowGraph.fieldBorrowGraphBefore(es.stmtRef)
+		captured := set.NewSet[liveness.VarID]()
+		var edges []fieldBorrow
+		for _, closure := range closuresIn(es.expr) {
+			for _, local := range c.fn.capturedLocals[closure] {
+				captured.Add(local.root)
+				collectAllEdgesFrom(local.root, set.NewSet[liveness.VarID](), graph, &edges)
+			}
+		}
+		if p, ok := exprPlace(es.expr); ok && p.root > 0 {
+			collectEdgesFrom(p.root, p.path, set.NewSet[liveness.VarID](), graph, &edges)
+		}
+		for _, edge := range edges {
+			if edge.capture {
+				captured.Add(edge.referent)
+			}
+		}
+		ids := captured.ToSlice()
+		slices.Sort(ids)
+		for _, id := range ids {
+			if !isOwnedMovable(c.fn.capturedTypes[id]) {
+				continue
+			}
+			// A store of an owned carrier into a caller-owned object can already have moved the
+			// capture at this site as part of the carrier's component, and a second move at one
+			// statement reads as a use after the first. The component move records the VarID
+			// alone, so the place is registered here for the use-after-move scan to find it.
+			place := movePlace{root: id}
+			if at := c.fn.moveSites[es.stmtRef]; at != nil && at.Contains(c.placeID(place)) {
+				c.fn.movePlaces[c.placeID(place)] = place
+				continue
+			}
+			c.recordMovePlace(place, es.expr, es.stmtRef)
+			moved = true
+		}
+	}
+	return moved
+}
+
 // recordMovePlace consumes the place at the given program point, blaming moveNode. It
 // resolves the place to its lattice VarID, registers the mapping so the
 // use-after-move scan can recover the path for the prefix test, and records the move
@@ -705,14 +762,14 @@ func (c *checker) checkUseAfterMoves() {
 	if c.fn == nil || c.fn.cfg == nil {
 		return
 	}
-	if len(c.fn.useSites) == 0 && len(c.fn.moveSites) == 0 && len(c.fn.pendingTransitions) == 0 && len(c.fn.escapeSites) == 0 && len(c.fn.borrowSites) == 0 {
+	if len(c.fn.useSites) == 0 && len(c.fn.moveSites) == 0 && len(c.fn.pendingTransitions) == 0 && len(c.fn.escapeSites) == 0 && len(c.fn.escapedClosureSites) == 0 && len(c.fn.borrowSites) == 0 {
 		return
 	}
 	info := liveness.AnalyzeMoves(c.fn.cfg, c.fn.moveSites)
 	// Decide deferred escapes against the move lattice and the flow-sensitive borrow-edge
 	// graph, then fold any component-move consumes back into moveSites and recompute, so a
 	// use after a co-moved local is caught.
-	if len(c.fn.escapeSites) > 0 {
+	if len(c.fn.escapeSites) > 0 || len(c.fn.escapedClosureSites) > 0 {
 		flowBorrowGraph := c.analyzeBorrows()
 		if c.resolveComponentEscapes(info, flowBorrowGraph) {
 			info = liveness.AnalyzeMoves(c.fn.cfg, c.fn.moveSites)

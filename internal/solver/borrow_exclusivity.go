@@ -344,10 +344,20 @@ func (c *checker) recordBorrowLoan(holder int, init ast.Expr, ref liveness.StmtR
 	c.fn.loans = append(c.fn.loans, fresh)
 }
 
+// capturedLocal is a local of the current body that a closure captures.
+type capturedLocal struct {
+	root liveness.VarID
+	// mut says the closure writes the local.
+	mut bool
+}
+
 // recordCaptureLoans records a loan of each local of the current body that closure captures,
 // after reporting any conflict with a loan already live. The loan reaches the whole captured
 // binding, and it is mutable when the closure writes the capture. It has no holder, so it
 // lasts for the closure's own statement until holdCaptureLoans binds it to a name.
+//
+// Each captured local is also recorded in capturedLocals, and the closure is recorded as a use
+// of it.
 //
 // A capture whose type has value semantics takes no loan, since a closure holding a
 // primitive cannot see a later change to the binding it copied.
@@ -369,6 +379,17 @@ func (c *checker) recordCaptureLoans(scope *Scope, closure *ast.FuncExpr) {
 		if name, ok := c.fn.varIDNames[root]; !ok || name != capture.Name {
 			continue
 		}
+		// Writing the closure reads the local, so capturing one that has moved is a use after
+		// the move.
+		c.fn.useSites = append(c.fn.useSites, moveUse{place: movePlace{root: root}, ref: ref, node: closure, loanSeqAt: c.fn.loanSeq + 1})
+		if c.fn.capturedLocals == nil {
+			c.fn.capturedLocals = map[*ast.FuncExpr][]capturedLocal{}
+		}
+		c.fn.capturedLocals[closure] = append(c.fn.capturedLocals[closure], capturedLocal{root: root, mut: capture.IsMutable})
+		if c.fn.capturedTypes == nil {
+			c.fn.capturedTypes = map[liveness.VarID]soltype.Type{}
+		}
+		c.fn.capturedTypes[root] = bindingType(b)
 		fresh := loan{
 			place: movePlace{root: root},
 			mut:   capture.IsMutable,
