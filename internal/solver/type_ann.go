@@ -610,7 +610,19 @@ func (c *checker) resolveIntersectionTypeAnn(scope *Scope, ta *ast.IntersectionT
 // annotation prints the way the source wrote it — `keyof {x: number}` renders `keyof {x: number}`,
 // not `"x"`. constrain reduces the residual when it checks a constraint against it. An unsupported
 // operand recovers to a fresh var, cascade-safe like the Promise<bad> recovery.
+//
+// `keyof any` lowers eagerly to `string | number | symbol`, the key set TypeScript gives it. An
+// `any` operand resolves to `unknown`, whose `keyof` is `never`, so the residual would name no key.
 func (c *checker) resolveKeyOfTypeAnn(scope *Scope, ta *ast.KeyOfTypeAnn, lvl int) (soltype.Type, bool) {
+	if _, isAny := ta.Type.(*ast.AnyTypeAnn); isAny {
+		t := newUnion(c.ctx, []soltype.Type{
+			&soltype.PrimType{Prim: soltype.StrPrim},
+			&soltype.PrimType{Prim: soltype.NumPrim},
+			&soltype.PrimType{Prim: soltype.SymPrim},
+		})
+		c.recordProvForResult(t, ta, AnnotationType)
+		return t, true
+	}
 	operand, ok := c.resolveTypeAnn(scope, ta.Type, lvl)
 	if !ok {
 		operand = c.freshAt(lvl)
@@ -903,7 +915,7 @@ func (c *checker) resolveExactnessIntrinsic(scope *Scope, ta *ast.TypeRefTypeAnn
 func (c *checker) resolveTypeOfQualIdent(scope *Scope, ident ast.QualIdent) (soltype.Type, bool) {
 	switch id := ident.(type) {
 	case *ast.Ident:
-		if b, ok := scope.GetValue(id.Name); ok {
+		if b, ok := c.lookupValueBinding(scope, id.Name); ok {
 			// bindingType takes the scheme's coalesced concrete type, not a fresh inference
 			// var that would coalesce to unknown in a negative position such as the operand of
 			// `keyof typeof v`. The dep graph orders v first, so its scheme is final here; a
@@ -921,6 +933,26 @@ func (c *checker) resolveTypeOfQualIdent(scope *Scope, ident ast.QualIdent) (sol
 		return c.typeofMember(recv, id.Right.Name)
 	}
 	return nil, false
+}
+
+// lookupValueBinding resolves a bare value name, ranking its sources the way
+// lookupClassBinding ranks a type name's:
+//
+//  1. A binding between the reference and the module scope, such as a parameter.
+//  2. A sibling in the reference's own namespace, keyed `ns.Name`.
+//  3. Every other binding, through the plain lexical walk.
+//
+// Step 2 reads c.classNamespace, the namespace of the declaration being inferred.
+func (c *checker) lookupValueBinding(scope *Scope, name string) (ValueBinding, bool) {
+	if c.pkgURI != "" && c.moduleScope != nil && c.classNamespace != "" {
+		if b, ok := scope.getValueBefore(name, c.moduleScope); ok {
+			return b, true
+		}
+		if b, ok := c.moduleScope.OwnValue(declScopeKey(c.classNamespace, name)); ok {
+			return b, true
+		}
+	}
+	return scope.GetValue(name)
 }
 
 // typeofMember projects the named property off a `typeof p.x` receiver: it strips any borrow

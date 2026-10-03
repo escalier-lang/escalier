@@ -19,9 +19,9 @@ export declare interface RTCCertificateExpiration {
 
 export declare interface RTCConfiguration {
     bundlePolicy?: RTCBundlePolicy,
-    certificates?: mut Array<RTCCertificate>,
+    certificates?: Array<RTCCertificate>,
     iceCandidatePoolSize?: number,
-    iceServers?: mut Array<RTCIceServer>,
+    iceServers?: Array<RTCIceServer>,
     iceTransportPolicy?: RTCIceTransportPolicy,
     rtcpMuxPolicy?: RTCRtcpMuxPolicy
 }
@@ -49,15 +49,15 @@ export declare interface RTCDtlsFingerprint {
 }
 
 export declare interface RTCEncodedAudioFrameMetadata {
-    contributingSources?: mut Array<number>,
+    contributingSources?: Array<number>,
     payloadType?: number,
     sequenceNumber?: number,
     synchronizationSource?: number
 }
 
 export declare interface RTCEncodedVideoFrameMetadata {
-    contributingSources?: mut Array<number>,
-    dependencies?: mut Array<number>,
+    contributingSources?: Array<number>,
+    dependencies?: Array<number>,
     frameId?: number,
     height?: number,
     payloadType?: number,
@@ -243,8 +243,8 @@ export declare interface RTCRtcpParameters {
 }
 
 export declare interface RTCRtpCapabilities {
-    codecs: mut Array<RTCRtpCodec>,
-    headerExtensions: mut Array<RTCRtpHeaderExtensionCapability>
+    codecs: Array<RTCRtpCodec>,
+    headerExtensions: Array<RTCRtpHeaderExtensionCapability>
 }
 
 export declare interface RTCRtpCodec {
@@ -289,8 +289,8 @@ export declare interface RTCRtpHeaderExtensionParameters {
 }
 
 export declare interface RTCRtpParameters {
-    codecs: mut Array<RTCRtpCodecParameters>,
-    headerExtensions: mut Array<RTCRtpHeaderExtensionParameters>,
+    codecs: Array<RTCRtpCodecParameters>,
+    headerExtensions: Array<RTCRtpHeaderExtensionParameters>,
     rtcp: RTCRtcpParameters
 }
 
@@ -298,7 +298,7 @@ export declare interface RTCRtpReceiveParameters extends RTCRtpParameters {}
 
 export declare interface RTCRtpSendParameters extends RTCRtpParameters {
     degradationPreference?: RTCDegradationPreference,
-    encodings: mut Array<RTCRtpEncodingParameters>,
+    encodings: Array<RTCRtpEncodingParameters>,
     transactionId: string
 }
 
@@ -313,8 +313,8 @@ export declare interface RTCRtpSynchronizationSource extends RTCRtpContributingS
 
 export declare interface RTCRtpTransceiverInit {
     direction?: RTCRtpTransceiverDirection,
-    sendEncodings?: mut Array<RTCRtpEncodingParameters>,
-    streams?: mut Array<dom.MediaStream>
+    sendEncodings?: Array<RTCRtpEncodingParameters>,
+    streams?: Array<dom.MediaStream>
 }
 
 export declare interface RTCSentRtpStreamStats extends RTCRtpStreamStats {
@@ -337,7 +337,7 @@ export declare interface RTCStats {
 
 export declare interface RTCTrackEventInit extends EventInit {
     receiver: RTCRtpReceiver,
-    streams?: mut Array<dom.MediaStream>,
+    streams?: Array<dom.MediaStream>,
     track: dom.MediaStreamTrack,
     transceiver: RTCRtpTransceiver
 }

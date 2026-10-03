@@ -54,7 +54,7 @@ export declare interface AudioTimestamp {
 export declare interface AudioWorkletNodeOptions extends AudioNodeOptions {
     numberOfInputs?: number,
     numberOfOutputs?: number,
-    outputChannelCount?: mut Array<number>,
+    outputChannelCount?: Array<number>,
     parameterData?: Record<string, number>,
     processorOptions?: any
 }
@@ -102,8 +102,8 @@ export declare interface GainOptions extends AudioNodeOptions {
 }
 
 export declare interface IIRFilterOptions extends AudioNodeOptions {
-    feedback: mut Array<number>,
-    feedforward: mut Array<number>
+    feedback: Array<number>,
+    feedforward: Array<number>
 }
 
 export declare interface MediaElementAudioSourceOptions {

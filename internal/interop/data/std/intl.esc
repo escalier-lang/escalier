@@ -72,7 +72,7 @@ export declare interface PluralRulesOptions {
 
 export declare interface ResolvedPluralRulesOptions {
     locale: string,
-    pluralCategories: mut Array<LDMLPluralRule>,
+    pluralCategories: Array<LDMLPluralRule>,
     type: PluralRuleType,
     minimumIntegerDigits: number,
     minimumFractionDigits: number,
@@ -415,7 +415,6 @@ export declare interface DateTimeFormatOptions {
     minute?: "numeric" | "2-digit" | undefined,
     second?: "numeric" | "2-digit" | undefined,
     timeZoneName?: "short" | "long" | "shortOffset" | "longOffset" | "shortGeneric" | "longGeneric" | undefined,
-    formatMatcher?: "best fit" | "basic" | undefined,
     hour12?: boolean | undefined,
     timeZone?: string | undefined
 }

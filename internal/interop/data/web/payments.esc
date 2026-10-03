@@ -29,9 +29,9 @@ export declare interface PaymentCurrencyAmount {
 }
 
 export declare interface PaymentDetailsBase {
-    displayItems?: mut Array<PaymentItem>,
-    modifiers?: mut Array<PaymentDetailsModifier>,
-    shippingOptions?: mut Array<PaymentShippingOption>
+    displayItems?: Array<PaymentItem>,
+    modifiers?: Array<PaymentDetailsModifier>,
+    shippingOptions?: Array<PaymentShippingOption>
 }
 
 export declare interface PaymentDetailsInit extends PaymentDetailsBase {
@@ -40,7 +40,7 @@ export declare interface PaymentDetailsInit extends PaymentDetailsBase {
 }
 
 export declare interface PaymentDetailsModifier {
-    additionalDisplayItems?: mut Array<PaymentItem>,
+    additionalDisplayItems?: Array<PaymentItem>,
     data?: any,
     supportedMethods: string,
     total?: PaymentItem

@@ -21,6 +21,6 @@ export declare class MessageEvent<T = any> {
 // carries the same two browser-typed members and takes the same retypes for the
 // same reasons.
 export declare interface MessageEventInit<T = any> {
-    ports?: mut Array<unknown>,
+    ports?: Array<unknown>,
     source?: null,
 }

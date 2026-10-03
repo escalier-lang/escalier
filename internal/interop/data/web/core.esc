@@ -25,7 +25,7 @@ export declare interface MessageEventInit<T = any> extends EventInit {
     data?: T,
     lastEventId?: string,
     origin?: string,
-    ports?: mut Array<unknown>,
+    ports?: Array<unknown>,
     source?: null
 }
 
