@@ -164,7 +164,11 @@ func impliedOutlives(sig ast.FuncSig) map[string][]string {
 
 // impliedOutlivesCollector records, for each named borrow it visits, an edge from every
 // lifetime its borrowed type writes to the borrow's own lifetime. It stops at a nested
-// function annotation, which owns its own lifetime scope.
+// function annotation for two reasons. A borrow inside one implies nothing, because no
+// value of that borrow's type has to exist. `cb: fn(x: &'a &'b T)` passes a callback that
+// accepts such a value, so nothing forces 'b to outlive 'a. A function annotation can also
+// declare its own lifetimes, so a name inside it may not refer to the outer lifetime of
+// the same name.
 type impliedOutlivesCollector struct {
 	ast.DefaultVisitor
 	out map[string][]string
