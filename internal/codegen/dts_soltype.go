@@ -685,11 +685,22 @@ func (b *solTypeAnnBuilder) funcTypeAnn(funcType *soltype.FuncType) FuncTypeAnn 
 	return FuncTypeAnn{
 		TypeParams: typeParams,
 		Params:     b.funcTypeToParams(funcType),
-		Return:     b.typeAnn(funcType.Ret),
+		Return:     b.returnTypeAnn(funcType.Ret),
 		Throws:     nil,
 		span:       nil,
 		source:     nil,
 	}
+}
+
+// returnTypeAnn renders a signature's return type. An `undefined` return renders
+// as `void`, and every other return type renders as typeAnn renders it.
+func (b *solTypeAnnBuilder) returnTypeAnn(ret soltype.Type) TypeAnn {
+	// internal/checker emits `void` for a function that returns no value, and
+	// matching it keeps the two checkers' declarations identical while both run.
+	if _, ok := ret.(*soltype.UndefinedType); ok {
+		return NewVoidTypeAnn(nil)
+	}
+	return b.typeAnn(ret)
 }
 
 // declFuncTypeAnn renders funcType for a declaration that spells its signature out,
