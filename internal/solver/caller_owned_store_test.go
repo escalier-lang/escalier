@@ -85,6 +85,104 @@ func TestStoreIntoCallerOwnedTarget(t *testing.T) {
 			`,
 			want: []string{"6:6-6:13: cannot assign to 'b.value' while it is borrowed as immutable"},
 		},
+		// Destructuring moves b.x into x, and returning x hands the caller data out.r still
+		// reads.
+		"ReturningADestructuredLeafOfTheStoredLocalConflicts": {
+			src: `
+				fn f(out: &mut {r: &{x: {v: number}}}) -> {v: number} {
+					val b = {x: {v: 1}}
+					out.r = &b
+					val {x} = b
+					return x
+				}
+			`,
+			want: []string{"6:13-6:14: 'b' leaves the function both as an owned value and through a borrow"},
+		},
+		// The same through a renaming pattern.
+		"ReturningARenamedDestructuredLeafConflicts": {
+			src: `
+				fn f(out: &mut {r: &{x: {v: number}}}) -> {v: number} {
+					val b = {x: {v: 1}}
+					out.r = &b
+					val {x: y} = b
+					return y
+				}
+			`,
+			want: []string{"6:13-6:14: 'b' leaves the function both as an owned value and through a borrow"},
+		},
+		// A tuple leaf moves the whole tuple, so returning it reaches what out.r reads.
+		"ReturningATupleLeafOfTheStoredLocalConflicts": {
+			src: `
+				fn f(out: &mut {r: &[{v: number}]}) -> {v: number} {
+					val b = [{v: 1}]
+					out.r = &b
+					val [y] = b
+					return y
+				}
+			`,
+			want: []string{"6:13-6:14: 'b' leaves the function both as an owned value and through a borrow"},
+		},
+		// out.r reads b.x, and the returned y owns b.y, which out.r does not reach.
+		"ReturningASiblingLeafOk": {
+			src: `
+				fn f(out: &mut {r: &{v: number}}) -> {v: number} {
+					val b = {x: {v: 1}, y: {v: 2}}
+					out.r = &b.x
+					val {x, y} = b
+					return y
+				}
+			`,
+		},
+		// Both leaves of one destructuring are traced, so gathering them into a returned
+		// literal still reaches the b.x that out.r reads.
+		"ReturningEveryLeafOfADestructuringConflicts": {
+			src: `
+				fn f(out: &mut {r: &{v: number}}) -> {p: {v: number}, q: {v: number}} {
+					val b = {x: {v: 1}, y: {v: 2}}
+					out.r = &b.x
+					val {x, y} = b
+					val a = {p: x, q: y}
+					return a
+				}
+			`,
+			want: []string{"7:13-7:14: 'b' leaves the function both as an owned value and through a borrow"},
+		},
+		// A rest element takes the fields the pattern does not name, here b.y, which out.r
+		// reads.
+		"ReturningARestElementConflicts": {
+			src: `
+				fn f(out: &mut {r: &{v: number}}) -> {y: {v: number}} {
+					val b = {x: {v: 1}, y: {v: 2}}
+					out.r = &b.y
+					val {x, ...rest} = b
+					return rest
+				}
+			`,
+			want: []string{"6:13-6:17: 'b' leaves the function both as an owned value and through a borrow"},
+		},
+		// The rest element does not take b.x, which x took, so returning it does not reach
+		// what out.r reads.
+		"ReturningARestElementWithoutTheStoredFieldOk": {
+			src: `
+				fn f(out: &mut {r: &{v: number}}) -> {y: {v: number}} {
+					val b = {x: {v: 1}, y: {v: 2}}
+					out.r = &b.x
+					val {x, ...rest} = b
+					return rest
+				}
+			`,
+		},
+		// A leaf that copies a borrow moves nothing, and its borrow edge says what it reaches.
+		"DestructuringABorrowLeafOk": {
+			src: `
+				fn f(out: &mut {r: &mut {value: number}}) {
+					val mut b = {value: 1}
+					val a = {peer: &mut b}
+					val {peer} = a
+					out.r = peer
+				}
+			`,
+		},
 		// A mutable borrow of p taken after the store and never read changes nothing.
 		"BorrowingMutablyAfterAnImmutableStoreOk": {
 			src: `

@@ -390,12 +390,13 @@ func (c *checker) reachesOf(e ast.Expr, fieldBorrowGraph map[liveness.VarID][]fi
 // movedOrigins maps each binding to the copies that moved data into it, keeping the copies in
 // placeCopies that movedSources records as moves. A copy of a borrow moves nothing, and its
 // borrow edges already say what it reaches.
-func (c *checker) movedOrigins() map[liveness.VarID][]placeCopy {
-	out := map[liveness.VarID][]placeCopy{}
+func (c *checker) movedOrigins() map[liveness.VarID][]*placeCopy {
+	out := map[liveness.VarID][]*placeCopy{}
 	if c.fn.movedSources == nil {
 		return out
 	}
-	for _, pc := range c.fn.placeCopies {
+	for i := range c.fn.placeCopies {
+		pc := &c.fn.placeCopies[i]
 		if c.fn.movedSources.Contains(pc.expr) {
 			out[pc.dest] = append(out[pc.dest], pc)
 		}
@@ -407,18 +408,20 @@ func (c *checker) movedOrigins() map[liveness.VarID][]placeCopy {
 // `val q = b` and `val r = q`, the origins of r are q and b. A move lands in one field of its
 // destination, so a path through a different field does not reach it. After
 // `val a = {x: b, y: c}`, the origins of a.y are c alone.
-func originsOf(p movePlace, origins map[liveness.VarID][]placeCopy) []movePlace {
+func originsOf(p movePlace, origins map[liveness.VarID][]*placeCopy) []movePlace {
 	var out []movePlace
-	seen := set.NewSet[ast.Expr]()
+	// One expression can feed several copies, as every leaf of a destructuring reads the same
+	// initializer, so each copy is followed once on its own.
+	seen := set.NewSet[*placeCopy]()
 	pending := []movePlace{p}
 	for len(pending) > 0 {
 		at := pending[len(pending)-1]
 		pending = pending[:len(pending)-1]
 		for _, pc := range origins[at.root] {
-			if seen.Contains(pc.expr) || !pathPrefixRelated(pc.destPath, at.path) {
+			if seen.Contains(pc) || !pathPrefixRelated(pc.destPath, at.path) {
 				continue
 			}
-			seen.Add(pc.expr)
+			seen.Add(pc)
 			out = append(out, pc.src)
 			pending = append(pending, pc.src)
 		}
