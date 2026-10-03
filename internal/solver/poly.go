@@ -273,10 +273,9 @@ type ltFreshener struct {
 	lim   int
 	lvl   int
 	cache map[*soltype.LifetimeVar]*soltype.LifetimeVar
-	// only, when set, replaces the level test. A LifetimeVar in it is freshened and every
-	// other lifetime is shared, whatever its level. instantiateMethodLifetimes uses it to
-	// freshen exactly the lifetimes a method quantifies.
-	only set.Set[*soltype.LifetimeVar]
+	// freshenSet, when set, replaces the level test. A LifetimeVar in it is freshened and
+	// every other lifetime is shared, whatever its level.
+	freshenSet set.Set[*soltype.LifetimeVar]
 }
 
 func (lf *ltFreshener) fresh(lt soltype.Lifetime) soltype.Lifetime {
@@ -284,8 +283,8 @@ func (lf *ltFreshener) fresh(lt soltype.Lifetime) soltype.Lifetime {
 	if !ok {
 		return lt
 	}
-	if lf.only != nil {
-		if !lf.only.Contains(lv) {
+	if lf.freshenSet != nil {
+		if !lf.freshenSet.Contains(lv) {
 			return lt
 		}
 	} else if lv.Level <= lf.lim {
@@ -713,7 +712,9 @@ func (c *checker) instantiateMethodLifetimes(lvl int, blame ast.Node, recv solty
 	held := heldBorrows(recv)
 	sigs := make([]*soltype.FuncType, len(m.Signatures))
 	for i, sig := range m.Signatures {
-		f := &methodLtFreshener{lt: ltFreshener{ctx: c.ctx, lvl: lvl, only: c.ctx.methodLifetimes}}
+		// Freshen exactly the lifetimes a method quantifies. A lifetime the class declares
+		// belongs to the instance and stays shared, whatever its level.
+		f := &methodLtFreshener{lt: ltFreshener{ctx: c.ctx, lvl: lvl, freshenSet: c.ctx.methodLifetimes}}
 		inst, ok := sig.Accept(f, soltype.Positive).(*soltype.FuncType)
 		if !ok {
 			inst = sig
