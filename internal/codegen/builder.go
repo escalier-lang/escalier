@@ -924,19 +924,14 @@ func (b *Builder) buildDeclWithNamespace(decl ast.Decl, nsName string) []Stmt {
 			}
 		}
 
-		// buildClassElems emits the constructor from the body's ConstructorElem. A class
-		// that declares none still constructs its fields, so the element it gets
-		// implicitly is derived here rather than read back from the tree.
-		// internal/checker installs the same element during inference and
-		// internal/solver leaves the tree alone, so deriving it is what makes the
-		// emitted class the same whichever checker ran.
+		// A class that declares no constructor still constructs its fields, so the
+		// implicit one is derived here rather than read back from the tree. Only
+		// internal/checker installs it during inference, so deriving it is what makes
+		// the emitted class the same whichever checker ran. It goes first so the
+		// constructor emits ahead of the members, where that install puts it.
 		//
-		// The element is prepended rather than appended so the constructor emits ahead
-		// of the members, which is where internal/checker's own install puts it.
-		//
-		// A field with a computed key leaves no parameter name to bind, so no
-		// constructor is derived and none is emitted. Reporting that belongs to the
-		// checkers, so the blocking field is dropped here.
+		// A computed key leaves no parameter name to bind, so no constructor is
+		// derived. Reporting that belongs to the checkers, so the field is dropped.
 		elems := d.Body
 		if synth, _ := ast.ImplicitConstructor(d); synth != nil {
 			elems = append([]ast.ClassElem{synth}, d.Body...)

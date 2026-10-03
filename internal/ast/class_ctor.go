@@ -13,19 +13,16 @@ const selfParamName = "self"
 
 // ImplicitConstructor returns the constructor a class that declares none gets: one
 // parameter per required instance field, in declaration order, each assigned into
-// `self`. A class with `class Point { x: number, y: number }` gets
+// `self`. `class Point { x: number, y: number }` gets
 // `constructor(&mut self, x: number, y: number) { self.x = x; self.y = y }`.
 //
-// The element is nil for a class that already declares a constructor, for a
-// `declare class`, and for a subclass, none of which get one. A subclass is excluded
-// because the synthesized body would have to forward to `super(…)`, so the checkers
-// require it to declare its own.
+// The element is nil for a class that declares a constructor, a `declare class`, and a
+// subclass, whose body would have to forward to `super(…)`.
 //
-// The second return names the field that blocked synthesis, and is non-nil only for a
-// non-static field with a computed key. No parameter name can be derived from an
-// arbitrary key expression, so the element is nil and the field is returned instead. A
-// caller that reports diagnostics says the class needs an explicit constructor, and a
-// caller that only emits code leaves the constructor out.
+// The second return names the field that blocked synthesis, which is a non-static field
+// with a computed key: no parameter name can be derived from an arbitrary key
+// expression. A caller that reports diagnostics says the class needs an explicit
+// constructor, and one that only emits code leaves it out.
 //
 // internal/checker and JavaScript emission both call this, which is what makes them
 // agree on what a class constructs.
@@ -41,17 +38,16 @@ func ImplicitConstructor(decl *ClassDecl) (*ConstructorElem, *FieldElem) {
 
 	classSpan := decl.Name.Span()
 
-	// `&mut self` is synthesized at the class-name span so any diagnostic produced
-	// against the synthesized constructor lands on the header.
+	// At the class-name span, so a diagnostic against the synthesized constructor
+	// lands on the header.
 	selfPat := NewIdentPat(selfParamName, true /* mutable */, nil, nil, classSpan)
 	selfParam := &Param{Pattern: selfPat, TypeAnn: nil, Optional: false}
 	params := []*Param{selfParam}
 	stmts := []Stmt{}
 
-	// Collect the names the fields bind directly before building any parameter, so a
-	// generated name can avoid them. `class C { _field1: number, "a-b": string }` would
-	// otherwise bind `_field1` twice, which is a SyntaxError, and assign the first
-	// field's value to the second.
+	// Collected before any parameter is built, so a generated name can avoid them.
+	// `class C { _field1: number, "a-b": string }` would otherwise bind `_field1`
+	// twice, a SyntaxError, and assign the first field's value to the second.
 	taken := set.NewSet[string]()
 	for _, bodyElem := range decl.Body {
 		if field, ok := bodyElem.(*FieldElem); ok && takesConstructorParam(field) {
@@ -70,8 +66,6 @@ func ImplicitConstructor(decl *ClassDecl) (*ConstructorElem, *FieldElem) {
 
 		fieldSpan := field.Span()
 
-		// paramName is the parameter the field's value arrives in, and lhs is the
-		// assignment target on `self`.
 		var paramName string
 		var lhs Expr
 		selfRef := NewIdent(selfParamName, fieldSpan)
@@ -80,23 +74,20 @@ func ImplicitConstructor(decl *ClassDecl) (*ConstructorElem, *FieldElem) {
 			paramName = name
 			lhs = NewMember(selfRef, NewIdentifier(name, fieldSpan), false, fieldSpan)
 		} else {
-			// A key that cannot also be a binding name takes a generated parameter and
-			// is assigned by index.
+			// A key that cannot bind a name is assigned by index instead.
 			var keyExpr Expr
 			switch k := field.Name.(type) {
 			case *IdentExpr:
-				// Reached by a key spelled like a reserved word or like the receiver.
-				// Such a key is a valid property name, so only the parameter it would
-				// have bound is renamed.
+				// A key spelled like a reserved word or like the receiver. It is a
+				// valid property name, so only its parameter is renamed.
 				keyExpr = NewLitExpr(NewString(k.Name, fieldSpan))
 			case *StrLit:
 				keyExpr = NewLitExpr(NewString(k.Value, fieldSpan))
 			case *NumLit:
 				keyExpr = NewLitExpr(NewNumber(k.Value, fieldSpan))
 			case *ComputedKey:
-				// A parameter name cannot be derived from an arbitrary key expression,
-				// so synthesis stops rather than producing a constructor that
-				// initializes only some of the fields.
+				// Stop rather than emit a constructor that initializes only some of
+				// the fields.
 				return nil, field
 			default:
 				panic("ImplicitConstructor: unexpected ObjKey variant")
@@ -135,23 +126,19 @@ func ImplicitConstructor(decl *ClassDecl) (*ConstructorElem, *FieldElem) {
 }
 
 // takesConstructorParam reports whether a field's value arrives through a constructor
-// parameter. A static field belongs to the class rather than to the instance, so it
-// takes none. An optional field defaults to `undefined` and may be assigned later, and
-// giving it a parameter would force every caller to pass one.
+// parameter. A static field belongs to the class rather than the instance. An optional
+// field defaults to `undefined`, and a parameter would force every caller to pass one.
 func takesConstructorParam(field *FieldElem) bool {
 	return !field.Static && !field.Optional
 }
 
-// directParamName returns the parameter name a key can bind under, and reports whether
-// it can bind one at all. A key binds its own spelling when the constructor can bind
-// that spelling, so `x: number` arrives in a parameter named `x`. A key that is a number
-// or a computed expression cannot, and neither can one spelled like a word JavaScript
-// reserves or like the receiver. Such a field is assigned by index under a generated
-// name.
+// directParamName returns the parameter name a key binds under, and reports whether it
+// binds one at all. A key binds its own spelling, so `x: number` arrives in a parameter
+// named `x`. A number, a computed expression, and a name canBindParamName rejects bind
+// none, and such a field is assigned by index under a generated name.
 //
-// An identifier key and a string key are held to the same test. `class C { class: … }`
-// and `class C { "class": … }` name the same field, so accepting one spelling and
-// rejecting the other would emit `const class = …` for the first.
+// An identifier key and a string key are held to the same test, since
+// `class C { class: … }` and `class C { "class": … }` name the same field.
 func directParamName(key ObjKey) (string, bool) {
 	var name string
 	switch k := key.(type) {
@@ -169,16 +156,14 @@ func directParamName(key ObjKey) (string, bool) {
 }
 
 // canBindParamName reports whether the synthesized constructor can bind a parameter
-// under this name. It accepts any Unicode letter, a digit, `_` and `$`, with the first
-// character constrained to a letter, `_`, or `$`.
+// under this name. It accepts a Unicode letter, a digit, `_` and `$`, with the first
+// character a letter, `_`, or `$`.
 //
-// A word JavaScript reserves is rejected, since the constructor binds each parameter
-// with `const <name> = …`. `class C { "class": number }` would otherwise emit
-// `const class = temp1`, which is a SyntaxError.
+// A reserved word is rejected because each parameter is bound with `const <name> = …`,
+// so `class C { "class": number }` would emit the SyntaxError `const class = temp1`.
 //
-// The receiver's name is rejected for a different reason. A parameter spelled `self`
-// would shadow the receiver, and codegen lowers every `self` to `this`. The assignment
-// in `class C { self: number }` would then read the instance rather than the argument.
+// The receiver's name is rejected because codegen lowers every `self` to `this`, so the
+// assignment in `class C { self: number }` would read the instance, not the argument.
 func canBindParamName(name string) bool {
 	if name == "" || name == selfParamName || jsBindingKeywords.Contains(name) {
 		return false
@@ -200,10 +185,9 @@ func canBindParamName(name string) bool {
 
 // jsBindingKeywords are the words JavaScript does not accept as a binding name.
 //
-// Emitted output is a module and so runs in strict mode, which is why the words
-// reserved only there are in the set, `let` and `static` among them. `arguments` and
-// `eval` are not reserved words and still cannot be bound in strict mode. `arguments`
-// also names the object an emitted overload dispatch reads.
+// Emitted output is a module and so runs in strict mode, which is why `let` and
+// `static` are here. `arguments` and `eval` are not reserved and still cannot be bound
+// in strict mode; `arguments` also names the object an emitted overload dispatch reads.
 var jsBindingKeywords = set.FromSlice([]string{
 	"arguments", "await", "break", "case", "catch", "class", "const", "continue",
 	"debugger", "default", "delete", "do", "else", "enum", "eval", "export", "extends",
