@@ -416,11 +416,19 @@ type occKey struct {
 // reduces, node for node, to coalesce(t, Positive), keeping every monomorphic
 // render unchanged.
 //
-// simplifyScheme (PR2) runs the co-occurrence analysis up front and hands the
-// coalescer the resulting merge classes, which it only reads. Distinct quantified
-// variables that always appear together resolve to one representative and so share
-// a single type parameter. That collapses outer's
-// `fn <T0, T1>(y: T0 & T1) -> [T0, T1]` to `fn <T0>(y: T0) -> [T0, T0]`.
+// simplifyScheme runs the co-occurrence analysis up front and hands the coalescer the
+// resulting merge classes, which it only reads. Distinct quantified variables that always
+// appear together resolve to one representative and so share a single type parameter:
+//
+//	val outer = fn (y) {
+//	    val getY = fn () { return y }
+//	    return [getY(), getY()]
+//	}
+//
+// `outer` renders `fn <T0>(y: T0) -> [T0, T0]`. Its parameter reaches both tuple
+// positions through two fresh result variables, so the three would render
+// `fn <T0, T1>(y: T0 & T1) -> [T0, T1]` were they not merged.
+// TestInferModuleInnerCapturesOuterParam covers it.
 //
 // The retain decision degenerates to PR1's when nothing merges and symmetrization
 // surfaces no extra occurrence. Each variable is then its own representative with
@@ -517,8 +525,9 @@ type schemeCoalescer struct {
 	// coalescing. It is the value-path analogue of coalescer.keep for a class body.
 	keep set.Set[*soltype.TypeVarType]
 	// cleaned maps a binder var to a display copy whose bounds drop the same-class
-	// artifact vars merged into it, so the copy renders `<T>` rather than `<T0, T: T0>`.
-	// A binder with no such bound is absent here and keeps its original pointer.
+	// artifact vars merged into it. A binder with no such bound is absent here and keeps
+	// its original pointer. cleanBinderBounds has the source that produces one and both
+	// renderings.
 	cleaned map[*soltype.TypeVarType]*soltype.TypeVarType
 	seen    set.Set[*soltype.TypeVarType]
 	// mu is coalescer.mu's twin, keyed by the co-occurrence representative the seen-set uses.
@@ -535,7 +544,7 @@ func (c *schemeCoalescer) EnterType(t soltype.Type, pol soltype.Polarity) soltyp
 	// A generic function's own type-parameter var stays symbolic: return it unchanged so
 	// the declared quantifier survives rather than inlining a return-only param to never.
 	// A binder whose bounds folded away a same-class artifact renders through its cleaned
-	// copy so the vacuous `T: T0` constraint disappears.
+	// copy, which drops the vacuous half of the cycle cleanBinderBounds describes.
 	if c.keep.Contains(v) {
 		return soltype.EnterResult{Type: c.displayBinder(v), SkipChildren: true}
 	}
