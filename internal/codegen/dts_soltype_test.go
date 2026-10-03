@@ -317,7 +317,7 @@ func TestBuildTypeAnnFromSolInferredTypeParams(t *testing.T) {
 			solProp("push", solFn([]*soltype.FuncParam{solParam("v", v)}, &soltype.UndefinedType{})),
 			solProp("pop", solFn(nil, v)),
 		)
-		require.Equal(t, "{push: (v: unknown) => void, pop: () => unknown}", renderSol(t, obj))
+		require.Equal(t, "{push: (v: unknown) => undefined, pop: () => unknown}", renderSol(t, obj))
 	})
 
 	// Every variable of a batch is named before any bound renders, so a bound
@@ -375,15 +375,24 @@ func TestBuildTypeAnnFromSolFromSource(t *testing.T) {
 		"Never":        {"", "never", "never"},
 		"Unknown":      {"", "unknown", "unknown"},
 
-		// A return of exactly `undefined` renders as `void`. An `undefined`
-		// parameter, property, or union member renders as `undefined`.
-		"UndefinedReturn":        {"", "fn (x: number) -> undefined", "(x: number) => void"},
+		// A callback parameter's `undefined` return renders as `void`. Every
+		// other `undefined` renders as `undefined`, including the return of a
+		// function type that is not a parameter's type.
+		"UndefinedReturn":        {"", "fn (x: number) -> undefined", "(x: number) => undefined"},
 		"UndefinedParam":         {"", "fn (x: undefined) -> number", "(x: undefined) => number"},
 		"UndefinedProp":          {"", "{x: undefined}", "{x: undefined}"},
 		"UndefinedInReturnUnion": {"", "fn () -> number | undefined", "() => number | undefined"},
 		"CallbackUndefinedReturn": {
 			"", "fn (cb: fn () -> undefined) -> number", "(cb: () => void) => number",
 		},
+		"CallbackUndefinedInReturnUnion": {
+			"", "fn (cb: fn () -> number | undefined) -> number", "(cb: () => number | undefined) => number",
+		},
+		"NestedCallbackUndefinedReturn": {
+			"", "fn (cb: fn (g: fn () -> undefined) -> undefined) -> number",
+			"(cb: (g: () => void) => void) => number",
+		},
+		"PropUndefinedReturn": {"", "{f: fn () -> undefined}", "{f: () => undefined}"},
 
 		"Tuple":        {"", "[number, string]", "[number, string]"},
 		"Union":        {"", "string | number", "number | string"},

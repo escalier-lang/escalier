@@ -129,6 +129,17 @@ func TestBuildDeclStmtFromSol(t *testing.T) {
 			want: "export declare function id<T0>(x: T0): T0;\n",
 		},
 		{
+			name:   "FnReturningNoValueDeclaresAVoidReturn",
+			source: `export fn log(msg: string) { console.log(msg) }`,
+			ns: &fakeSolNamespace{
+				values: map[string]soltype.Type{
+					"log": solFn([]*soltype.FuncParam{solParam("msg", solStr())}, &soltype.UndefinedType{}),
+				},
+			},
+			isTopLevel: true,
+			want:       "export declare function log(msg: string): void;\n",
+		},
+		{
 			name:   "TypeAliasEmitsTheRegisteredBody",
 			source: `export type Alias = string`,
 			ns: &fakeSolNamespace{

@@ -633,10 +633,17 @@ func (b *solTypeAnnBuilder) funcTypeToParams(funcType *soltype.FuncType) []*Para
 			// `...` on the binding itself.
 			pattern = NewRestPat(pattern, nil)
 		}
+		typeAnn := b.typeAnn(param.Type)
+		if fnType, ok := param.Type.(*soltype.FuncType); ok {
+			// A callback whose result the callee discards takes a `void` return,
+			// which TypeScript lets a caller fill with a function returning
+			// anything.
+			undefinedReturnAsVoid(typeAnn.(*FuncTypeAnn), fnType.Ret)
+		}
 		params[i] = &Param{
 			Pattern:  pattern,
 			Optional: param.Optional,
-			TypeAnn:  b.typeAnn(param.Type),
+			TypeAnn:  typeAnn,
 		}
 	}
 	return params
@@ -685,22 +692,19 @@ func (b *solTypeAnnBuilder) funcTypeAnn(funcType *soltype.FuncType) FuncTypeAnn 
 	return FuncTypeAnn{
 		TypeParams: typeParams,
 		Params:     b.funcTypeToParams(funcType),
-		Return:     b.returnTypeAnn(funcType.Ret),
+		Return:     b.typeAnn(funcType.Ret),
 		Throws:     nil,
 		span:       nil,
 		source:     nil,
 	}
 }
 
-// returnTypeAnn renders a signature's return type. An `undefined` return renders
-// as `void`, and every other return type renders as typeAnn renders it.
-func (b *solTypeAnnBuilder) returnTypeAnn(ret soltype.Type) TypeAnn {
-	// internal/checker emits `void` for a function that returns no value, and
-	// matching it keeps the two checkers' declarations identical while both run.
+// undefinedReturnAsVoid sets fn's return to `void` when ret, the return type fn
+// was rendered from, is `undefined`. Any other return is left as rendered.
+func undefinedReturnAsVoid(fn *FuncTypeAnn, ret soltype.Type) {
 	if _, ok := ret.(*soltype.UndefinedType); ok {
-		return NewVoidTypeAnn(nil)
+		fn.Return = NewVoidTypeAnn(nil)
 	}
-	return b.typeAnn(ret)
 }
 
 // declFuncTypeAnn renders funcType for a declaration that spells its signature out,
@@ -713,7 +717,11 @@ func (b *solTypeAnnBuilder) declFuncTypeAnn(funcType *soltype.FuncType) FuncType
 		b.typeParamNames = map[*soltype.TypeVarType]string{}
 	}
 	b.bindAt, b.varOrder = bindingSignatures(funcType)
-	return b.funcTypeAnn(funcType)
+	sig := b.funcTypeAnn(funcType)
+	// internal/checker emits `void` for a declared function that returns no
+	// value, and matching it keeps the two checkers' declarations identical.
+	undefinedReturnAsVoid(&sig, funcType.Ret)
+	return sig
 }
 
 // bindInferredTypeParams names the variables let-generalization retained, which
