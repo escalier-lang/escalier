@@ -187,8 +187,8 @@ func TestInferComputedKey(t *testing.T) {
 }
 
 // TestInferClassComputedKey covers a class member keyed by `[k]` where k's type is one
-// string literal. The member takes that name, so it is read back through `obj[k]` and
-// initialized through `self[k]`.
+// string or number literal. The member takes that name, so it is read back through
+// `obj[k]` and initialized through `self[k]`.
 func TestInferClassComputedKey(t *testing.T) {
 	runIndexCases(t, []indexCase{
 		{
