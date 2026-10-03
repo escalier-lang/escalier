@@ -2876,6 +2876,12 @@ func (c *checker) valueProp(lvl int, blame ast.Node, provNode ast.Node, name str
 	if res, ok := c.projectedMember(lvl, blame, name, recv, recvCarrier); ok {
 		return res
 	}
+	// A primitive receiver reads its methods off its wrapper class the same way, so
+	// `(1.5).toFixed(2)` resolves through `Number`. A field such as `s.length` declines
+	// here and takes the structural requirement below, which constrain boxes.
+	if res, ok := c.primitiveMember(lvl, blame, name, recv, recvCarrier); ok {
+		return res
+	}
 	// A `self` receiver inside a class body binds to the full instance object, which
 	// carries method, getter, and setter members alongside fields. A read of such a
 	// member resolves through member lookup here, since the structural field-requirement

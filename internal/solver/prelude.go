@@ -115,14 +115,28 @@ func (c *checker) preludeScope() *Scope {
 	c.prelude = sharedPrelude().Child()
 	c.bindPreludeExports(c.prelude)
 	c.resolvePreludeClasses()
+	c.resolveWrapperClasses()
 	return c.prelude
 }
 
 // preludeIDBase is the first id the prelude package's own inference draws, for both
 // the type-variable counter and the unique-symbol counter. It sits above any id a
 // program reaches, so the two never collide and each counter can be handed back to
-// the program untouched. See bindPreludeExports.
+// the program untouched. Each package loadStdlibPackage loads draws its ids from
+// where the prelude left off. See withStdlibCounters.
 const preludeIDBase = 1 << 20
+
+// withStdlibCounters runs load with the Context drawing variable and unique-symbol ids
+// from the run's stdlib counters, then hands the program's own counters back. The
+// stdlib counters start at preludeIDBase and keep their place between calls, so two
+// packages loaded this way never share an id.
+func (c *checker) withStdlibCounters(load func()) {
+	programVars, programSymbols := c.ctx.varCounter, c.ctx.symbolCounter
+	c.ctx.varCounter, c.ctx.symbolCounter = c.stdlibVarCounter, c.stdlibSymbolCounter
+	load()
+	c.stdlibVarCounter, c.stdlibSymbolCounter = c.ctx.varCounter, c.ctx.symbolCounter
+	c.ctx.varCounter, c.ctx.symbolCounter = programVars, programSymbols
+}
 
 // bindPreludeExports loads the prelude package and copies what it exports into
 // scope.
@@ -144,10 +158,9 @@ const preludeIDBase = 1 << 20
 // while this layer is still empty. See the `std:prelude` entry in
 // internal/dts_to_esc/partition.go.
 func (c *checker) bindPreludeExports(scope *Scope) {
-	programVars, programSymbols := c.ctx.varCounter, c.ctx.symbolCounter
-	c.ctx.varCounter, c.ctx.symbolCounter = preludeIDBase, preludeIDBase
-	ns, errs := c.loadPackage(preludeURI, ast.Span{})
-	c.ctx.varCounter, c.ctx.symbolCounter = programVars, programSymbols
+	var ns *Namespace
+	var errs []SolverError
+	c.withStdlibCounters(func() { ns, errs = c.loadPackage(preludeURI, ast.Span{}) })
 	if ns == nil {
 		return
 	}
