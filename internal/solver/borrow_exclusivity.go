@@ -182,6 +182,8 @@ type loan struct {
 	// receiver. It lasts while the body can still read the target, like any held loan. The
 	// caller reads the target only after the function returns, and by then nothing in the frame
 	// can change the stored local, so the loan has nothing to guard past the body's last read.
+	// An async or generator body hands control back to the caller at each `await` or `yield`
+	// while the frame still runs, so there the loan lasts to the end of the function.
 	callerOwned bool
 	// endSeq is the sequence at which a reassignment of the holder ended this loan, and 0 while
 	// it still holds. The loan stays in the list so a read walked BEFORE that point is still
@@ -268,6 +270,11 @@ func (c *checker) reportBorrowConflict(first, second loan) {
 // against. Asking IsLiveAfter would miss `readWrite(&x, b)`, where b's last use is the call
 // being checked.
 func (c *checker) liveAt(l loan, ref liveness.StmtRef) bool {
+	// The caller can read a caller-owned target at any `await` or `yield`, so in a body that
+	// suspends, the loan outlives the body's own last read of the target.
+	if l.callerOwned && (c.fn.async || c.fn.gen) {
+		return true
+	}
 	if l.holder <= 0 {
 		return l.ref == ref
 	}
