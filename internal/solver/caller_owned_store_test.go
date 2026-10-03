@@ -90,6 +90,37 @@ func TestStoreIntoCallerOwnedTarget(t *testing.T) {
 			`,
 			want: []string{"5:12-5:14: borrowed value 'b' does not live long enough to escape the function"},
 		},
+		// A store inside a loop runs again after the write that starts the next iteration, so
+		// the write changes b while the caller's p.r reads it. The loan check walks the body
+		// once and cannot see that order, so the store keeps reporting as an escape.
+		"StoreInsideALoopEscapes": {
+			src: `
+				fn f(p: &mut {r: &{value: number}}, xs: [number]) {
+					val mut b = {value: 1}
+					for x in xs {
+						b.value = x
+						p.r = &b
+					}
+				}
+			`,
+			want: []string{"6:13-6:15: borrowed value 'b' does not live long enough to escape the function"},
+		},
+		// A repoint on one branch leaves the earlier store in place on the other, so p.r may
+		// still read b when b is written. The earlier loan keeps holding.
+		"RepointingOnOneBranchKeepsTheLoan": {
+			src: `
+				fn f(p: &mut {r: &{value: number}}, cond: boolean) {
+					val mut b = {value: 1}
+					val e = {value: 2}
+					p.r = &b
+					if cond {
+						p.r = &e
+					}
+					b.value = 5
+				}
+			`,
+			want: []string{"9:6-9:13: cannot assign to 'b.value' while it is borrowed as immutable"},
+		},
 		// A later store into the same field repoints it, so b is no longer reachable through
 		// p.r and its loan ends there.
 		"RepointingTheFieldEndsTheLoan": {

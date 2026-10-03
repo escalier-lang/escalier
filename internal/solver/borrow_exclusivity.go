@@ -346,10 +346,23 @@ func (c *checker) dropLoansHeldBy(holder liveness.VarID) {
 // the sequence rather than erasing, so a read walked before the store is still weighed against
 // what the field held then.
 func (c *checker) endLoansAt(holder liveness.VarID, base []placeSeg) {
+	c.endLoansWhere(holder, base, func(loan) bool { return true })
+}
+
+// endLoansAtInBlock is endLoansAt limited to the loans taken in ref's basic block. Every
+// statement of a block runs once control enters it, so a store there always follows an earlier
+// store in the same block. A loan taken in another block may reach the end of the function
+// along a path that skips ref, so it keeps holding.
+func (c *checker) endLoansAtInBlock(holder liveness.VarID, base []placeSeg, ref liveness.StmtRef) {
+	c.endLoansWhere(holder, base, func(l loan) bool { return l.ref.BlockID == ref.BlockID })
+}
+
+// endLoansWhere ends the loans holder took at base or under it that keep accepts.
+func (c *checker) endLoansWhere(holder liveness.VarID, base []placeSeg, keep func(loan) bool) {
 	ended := c.nextLoanSeq()
 	for i := range c.fn.loans {
 		l := &c.fn.loans[i]
-		if l.holder == holder && l.endSeq == 0 && pathHasPrefix(l.holderPath, base) {
+		if l.holder == holder && l.endSeq == 0 && pathHasPrefix(l.holderPath, base) && keep(*l) {
 			l.endSeq = ended
 		}
 	}

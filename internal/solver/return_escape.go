@@ -445,12 +445,19 @@ func (c *checker) returnOutflowConflict(
 //   - No binding outside the stored locals still reaches one of them through a borrow edge
 //     after the store. A loan names the place written at the borrow site, so it does not see a
 //     second path through such a binding. A binding moved or dead by then does not count.
+//
+// A store inside a loop is not accepted. The loan check weighs a use only against the loans
+// walked before it, so a use earlier in the loop body would miss the loan the previous
+// iteration's store left behind.
 func (c *checker) callerOwnedStoreAccepted(
 	es escapeSite,
 	escaping set.Set[liveness.VarID],
 	info *liveness.MoveInfo,
 	fieldBorrowGraph map[liveness.VarID][]fieldBorrow,
 ) bool {
+	if c.stmtInLoop(es.stmtRef) {
+		return false
+	}
 	component := reachableLocals(escaping, fieldBorrowGraph)
 	for _, id := range component.ToSlice() {
 		if !c.hasCallerOwnedLoan(id, es.stmtRef) {
@@ -474,6 +481,30 @@ func (c *checker) callerOwnedStoreAccepted(
 		}
 	}
 	return true
+}
+
+// stmtInLoop reports whether the statement at ref can run again after it runs once, which holds
+// when its basic block reaches itself through the CFG.
+func (c *checker) stmtInLoop(ref liveness.StmtRef) bool {
+	if c.fn.cfg == nil || ref.BlockID < 0 || ref.BlockID >= len(c.fn.cfg.Blocks) {
+		return false
+	}
+	start := c.fn.cfg.Blocks[ref.BlockID]
+	seen := set.NewSet[int]()
+	pending := slices.Clone(start.Successors)
+	for len(pending) > 0 {
+		b := pending[len(pending)-1]
+		pending = pending[:len(pending)-1]
+		if b == start {
+			return true
+		}
+		if seen.Contains(b.ID) {
+			continue
+		}
+		seen.Add(b.ID)
+		pending = append(pending, b.Successors...)
+	}
+	return false
 }
 
 // hasCallerOwnedLoan reports whether a store at ref recorded a loan of id that lasts to the end
@@ -999,8 +1030,9 @@ func (c *checker) checkParamFieldStoreEscape(recv ast.Expr, field string, source
 	}
 	base := appendSeg(rp.path, field)
 	// The store repoints the field, so whatever an earlier store put there is unreachable
-	// through it.
-	c.endLoansAt(rp.root, base)
+	// through it. A loan from a store this one does not always follow, such as one before an
+	// `if` that holds this store, still reaches the caller on the path that skips the `if`.
+	c.endLoansAtInBlock(rp.root, base, stmtRef)
 	if c.escapesAsOwnedCarrier(source, c.fn.eagerBorrowGraph) {
 		c.recordEscapeSite(source, stmtRef)
 		return
