@@ -1031,9 +1031,9 @@ func (c *checker) checkParamFieldStoreEscape(recv ast.Expr, field string, source
 	}
 	base := appendSeg(rp.path, field)
 	// The store repoints the field, so whatever an earlier store put there is unreachable
-	// through it. A loan from a store this one does not always follow, such as one before an
-	// `if` that holds this store, still reaches the caller on the path that skips the `if`.
-	c.endLoansAtInBlock(rp.root, base, stmtRef)
+	// through it once every path out of the function runs this store. A loan from a store
+	// before an `if` that holds this one still reaches the caller on the path that skips it.
+	c.endLoansAtPostDominating(rp.root, base, stmtRef)
 	if c.escapesAsOwnedCarrier(source, c.fn.eagerBorrowGraph) {
 		c.recordEscapeSite(source, stmtRef)
 		return

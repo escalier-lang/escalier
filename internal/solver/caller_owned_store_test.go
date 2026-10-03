@@ -121,6 +121,23 @@ func TestStoreIntoCallerOwnedTarget(t *testing.T) {
 			`,
 			want: []string{"9:6-9:13: cannot assign to 'b.value' while it is borrowed as immutable"},
 		},
+		// A repoint after an `if` runs on every path out of f, so it ends the earlier loan even
+		// though the two stores sit in different blocks. Writing b afterwards is fine.
+		"RepointingAfterABranchEndsTheLoan": {
+			src: `
+				fn f(p: &mut {r: &{value: number}}, cond: boolean) {
+					val mut b = {value: 1}
+					val e = {value: 2}
+					var n = 0
+					p.r = &b
+					if cond {
+						n = 1
+					}
+					p.r = &e
+					b.value = 5
+				}
+			`,
+		},
 		// A later store into the same field repoints it, so b is no longer reachable through
 		// p.r and its loan ends there.
 		"RepointingTheFieldEndsTheLoan": {

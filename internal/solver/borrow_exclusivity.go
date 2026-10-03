@@ -349,12 +349,39 @@ func (c *checker) endLoansAt(holder liveness.VarID, base []placeSeg) {
 	c.endLoansWhere(holder, base, func(loan) bool { return true })
 }
 
-// endLoansAtInBlock is endLoansAt limited to the loans taken in ref's basic block. Every
-// statement of a block runs once control enters it, so a store there always follows an earlier
-// store in the same block. A loan taken in another block may reach the end of the function
-// along a path that skips ref, so it keeps holding.
-func (c *checker) endLoansAtInBlock(holder liveness.VarID, base []placeSeg, ref liveness.StmtRef) {
-	c.endLoansWhere(holder, base, func(l loan) bool { return l.ref.BlockID == ref.BlockID })
+// endLoansAtPostDominating is endLoansAt limited to the loans whose statement every path to the
+// end of the function leads through ref. That holds when ref's block post-dominates the loan's
+// block, meaning every path from the loan's block to the CFG exit passes through ref's block. A
+// loan with a path to the exit that skips ref keeps holding.
+func (c *checker) endLoansAtPostDominating(holder liveness.VarID, base []placeSeg, ref liveness.StmtRef) {
+	c.endLoansWhere(holder, base, func(l loan) bool { return c.blockPostDominates(ref.BlockID, l.ref.BlockID) })
+}
+
+// blockPostDominates reports whether every path from block from to the CFG exit passes through
+// block by. A block post-dominates itself.
+func (c *checker) blockPostDominates(by, from int) bool {
+	if by == from {
+		return true
+	}
+	cfg := c.fn.cfg
+	if cfg == nil || by < 0 || by >= len(cfg.Blocks) || from < 0 || from >= len(cfg.Blocks) {
+		return false
+	}
+	seen := set.NewSet[int]()
+	pending := []*liveness.BasicBlock{cfg.Blocks[from]}
+	for len(pending) > 0 {
+		b := pending[len(pending)-1]
+		pending = pending[:len(pending)-1]
+		if b.ID == by || seen.Contains(b.ID) {
+			continue
+		}
+		if b == cfg.Exit {
+			return false
+		}
+		seen.Add(b.ID)
+		pending = append(pending, b.Successors...)
+	}
+	return true
 }
 
 // endLoansWhere ends each loan holder took at base or under it for which selects returns true.
