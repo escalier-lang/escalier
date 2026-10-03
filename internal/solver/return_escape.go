@@ -27,9 +27,10 @@ import (
 // A `return` answers yes on its own. The frame does not survive it, so every local dies and
 // the borrow the caller receives is the only path left. A store or a consuming argument
 // leaves the frame running, so a bare borrow flowing out either of those still has a second
-// path through the local it names. A store into a caller-owned target is the exception. The
-// caller reads the target only after the return, so a use of the local in the frame changes
-// nothing it observes. The store's loan covers a later read through the target in the body,
+// path through the local it names. A store into a caller-owned target is the exception. In a
+// body that never suspends, the caller reads the target only after the return, so a use of the
+// local in the frame changes nothing it observes. An async or generator body keeps the store's
+// loan to the end of the function instead. The store's loan covers a later read through the target in the body,
 // and the outflow check covers a second path that outlives the frame. See
 // callerOwnedStoreAccepted. A consuming argument takes no such loan, and its bare borrow stays
 // an escape. See componentMoveCovers.
@@ -503,7 +504,7 @@ func firstMixedPair(as, bs []outflowPath) (outflowPath, outflowPath, bool) {
 	return outflowPath{}, outflowPath{}, false
 }
 
-// reportMixedOutflow reports that the local conflict names leaves through blame and through
+// reportMixedOutflow reports that local conflict.id leaves through blame and through
 // conflict.other with paths that disagree. A borrow inside blame then takes no second diagnostic
 // from the loan check.
 func (c *checker) reportMixedOutflow(conflict *outflowConflict, blame ast.Node) {
@@ -556,10 +557,11 @@ func (c *checker) returnOutflowConflict(
 }
 
 // callerOwnedStoreAccepted reports whether a store into a caller-owned target leaves the stored
-// borrow as the only path to each local it carries once the function returns. The caller reads
-// the target only after the return, so what it sees is the locals as the body leaves them. A
-// write in the body before then changes nothing the caller can observe. Three conditions make
-// the store sound:
+// borrow as the only path to each local it carries once the function returns. In a body that
+// never suspends, the caller reads the target only after the return, so what it sees is the
+// locals as the body leaves them, and a write in the body before then changes nothing it can
+// observe. A body that suspends keeps the store's loan to its end, which liveAt decides. Three
+// conditions make the store sound:
 //
 //   - Every local the store reaches has a loan the store recorded. The loan lasts while the
 //     body can still read the target, so a write or move that a later read through the target
