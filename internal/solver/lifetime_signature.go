@@ -29,11 +29,11 @@ import (
 func (c *checker) checkSignatureImpliesBodyLifetimes(sig ast.FuncSig, ft *soltype.FuncType) {
 	// Collect the lifetimes the `<…>` list names, in declaration order, with the variable
 	// each one resolved to. 'static, a repeated name, and a name with no variable are skipped.
-	params := sig.LifetimeParams
+	ltParams := sig.LifetimeParams
 	named := map[string]*soltype.LifetimeVar{}
 	binders := map[string]*ast.LifetimeParam{}
 	var order []string
-	for _, p := range params {
+	for _, p := range ltParams {
 		if p.Name == "static" {
 			continue
 		}
@@ -69,7 +69,7 @@ func (c *checker) checkSignatureImpliesBodyLifetimes(sig ast.FuncSig, ft *soltyp
 
 	// Compare every ordered pair of named lifetimes. Each relation the body requires must
 	// follow from the written bounds or the bounds the signature's types imply.
-	declared := declaredOutlives(params, impliedOutlives(sig))
+	declared := declaredOutlives(ltParams, impliedOutlives(sig))
 	for _, sub := range order {
 		subVar := named[sub]
 		if forcedStatic(subVar) {
@@ -109,16 +109,16 @@ func (d declaredLtBounds) implies(sub, super string) bool {
 	return ok && reach.Contains(super)
 }
 
-// declaredOutlives closes the bounds params declares, together with the implied bounds in
+// declaredOutlives closes the bounds ltParams declares, together with the implied bounds in
 // implied, into the relation each name outlives. implied maps a name to the names it
 // outlives directly.
-func declaredOutlives(params []*ast.LifetimeParam, implied map[string][]string) declaredLtBounds {
+func declaredOutlives(ltParams []*ast.LifetimeParam, implied map[string][]string) declaredLtBounds {
 	// Gather the direct edges from the implied bounds and the written ones.
 	direct := map[string][]string{}
 	for name, supers := range implied {
 		direct[name] = append(direct[name], supers...)
 	}
-	for _, p := range params {
+	for _, p := range ltParams {
 		for _, b := range p.Bounds {
 			direct[p.Name] = append(direct[p.Name], b.Name)
 		}
