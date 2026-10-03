@@ -485,6 +485,98 @@ func TestInferClassNonClassSuper(t *testing.T) {
 	})
 }
 
+// TestInferDeclareClassImplementsInterface covers an `implements` clause naming an interface. On
+// a `declare` class the interface supplies each member the class does not have through its own
+// body or its `extends` chain. A class with a body takes nothing from the clause, and neither
+// form reports the interface as a non-class.
+func TestInferDeclareClassImplementsInterface(t *testing.T) {
+	tests := []struct {
+		name string
+		src  string
+		want map[string]string
+	}{
+		{
+			name: "ContributesAMember",
+			src: `
+				interface Named { readonly name: string }
+				declare class Person implements Named { readonly age: number }
+				fn f(p: Person) { return p.name }
+			`,
+			want: map[string]string{"f": "fn (p: Person) -> string"},
+		},
+		{
+			name: "KeepsTheClassOwnMember",
+			src: `
+				interface HasId { readonly id: string | number }
+				declare class Row implements HasId { readonly id: number }
+				fn f(r: Row) { return r.id }
+			`,
+			want: map[string]string{"f": "fn (r: Row) -> number"},
+		},
+		{
+			name: "KeepsTheInheritedMember",
+			src: `
+				interface HasId { readonly id: string | number }
+				declare class Base { readonly id: number }
+				declare class Row extends Base implements HasId { constructor(&mut self) }
+				fn f(r: Row) { return r.id }
+			`,
+			want: map[string]string{"f": "fn (r: Row) -> number"},
+		},
+		{
+			name: "SubstitutesTheTypeArguments",
+			src: `
+				interface Box<T> { readonly value: T }
+				declare class NumBox implements Box<number> {}
+				fn f(b: NumBox) { return b.value }
+			`,
+			want: map[string]string{"f": "fn (b: NumBox) -> number"},
+		},
+		{
+			name: "ReadsAnExtendedInterface",
+			src: `
+				interface A { readonly x: number | string, readonly y: boolean }
+				interface B extends A { readonly x: number }
+				declare class C implements B {}
+				fn f(c: C) { return [c.x, c.y] }
+			`,
+			want: map[string]string{"f": "fn (c: C) -> [number, boolean]"},
+		},
+		{
+			name: "TheFirstInterfaceSuppliesASharedName",
+			src: `
+				interface First { readonly v: number }
+				interface Second { readonly v: string }
+				declare class C implements First, Second {}
+				fn f(c: C) { return c.v }
+			`,
+			want: map[string]string{"f": "fn (c: C) -> number"},
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			values, _, errs := inferSource(t, tt.src)
+			require.Empty(t, errs)
+			for name, want := range tt.want {
+				require.Equal(t, want, values[name])
+			}
+		})
+	}
+
+	t.Run("AClassWithABodyTakesNothing", func(t *testing.T) {
+		_, _, errs := inferSource(t, `
+			interface Named { readonly name: string }
+			class Person implements Named {
+				age: number,
+				constructor(&mut self) { self.age = 0 }
+			}
+			fn f(p: Person) { return p.name }
+		`)
+		require.Len(t, errs, 1)
+		require.Equal(t, "object is missing property: name", errs[0].Message())
+	})
+}
+
 // TestInferClassExtendFinal covers the rule that a final class cannot be a superclass:
 // a final class has no subclasses (exact-types §2.6), so an `extends` clause naming one
 // reports CannotExtendFinalClassError. A non-final superclass is unaffected.
