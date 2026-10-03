@@ -375,6 +375,25 @@ func TestBuildTypeAnnFromSolFromSource(t *testing.T) {
 		"Never":        {"", "never", "never"},
 		"Unknown":      {"", "unknown", "unknown"},
 
+		// A callback parameter's `undefined` return renders as `void`. Every
+		// other `undefined` renders as `undefined`, including the return of a
+		// function type that is not a parameter's type.
+		"UndefinedReturn":        {"", "fn (x: number) -> undefined", "(x: number) => undefined"},
+		"UndefinedParam":         {"", "fn (x: undefined) -> number", "(x: undefined) => number"},
+		"UndefinedProp":          {"", "{x: undefined}", "{x: undefined}"},
+		"UndefinedInReturnUnion": {"", "fn () -> number | undefined", "() => number | undefined"},
+		"CallbackUndefinedReturn": {
+			"", "fn (cb: fn () -> undefined) -> number", "(cb: () => void) => number",
+		},
+		"CallbackUndefinedInReturnUnion": {
+			"", "fn (cb: fn () -> number | undefined) -> number", "(cb: () => number | undefined) => number",
+		},
+		"NestedCallbackUndefinedReturn": {
+			"", "fn (cb: fn (g: fn () -> undefined) -> undefined) -> number",
+			"(cb: (g: () => void) => void) => number",
+		},
+		"PropUndefinedReturn": {"", "{f: fn () -> undefined}", "{f: () => undefined}"},
+
 		"Tuple":        {"", "[number, string]", "[number, string]"},
 		"Union":        {"", "string | number", "number | string"},
 		"Intersection": {"", "{a: number} & {b: string}", "{a: number} & {b: string}"},

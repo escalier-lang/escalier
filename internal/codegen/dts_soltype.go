@@ -633,10 +633,17 @@ func (b *solTypeAnnBuilder) funcTypeToParams(funcType *soltype.FuncType) []*Para
 			// `...` on the binding itself.
 			pattern = NewRestPat(pattern, nil)
 		}
+		typeAnn := b.typeAnn(param.Type)
+		if fnType, ok := param.Type.(*soltype.FuncType); ok {
+			// A callback whose result the callee discards takes a `void` return,
+			// which TypeScript lets a caller fill with a function returning
+			// anything.
+			undefinedReturnAsVoid(typeAnn.(*FuncTypeAnn), fnType.Ret)
+		}
 		params[i] = &Param{
 			Pattern:  pattern,
 			Optional: param.Optional,
-			TypeAnn:  b.typeAnn(param.Type),
+			TypeAnn:  typeAnn,
 		}
 	}
 	return params
@@ -692,6 +699,14 @@ func (b *solTypeAnnBuilder) funcTypeAnn(funcType *soltype.FuncType) FuncTypeAnn 
 	}
 }
 
+// undefinedReturnAsVoid sets fn's return to `void` when ret, the return type fn
+// was rendered from, is `undefined`. Any other return is left as rendered.
+func undefinedReturnAsVoid(fn *FuncTypeAnn, ret soltype.Type) {
+	if _, ok := ret.(*soltype.UndefinedType); ok {
+		fn.Return = NewVoidTypeAnn(nil)
+	}
+}
+
 // declFuncTypeAnn renders funcType for a declaration that spells its signature out,
 // such as `declare function f<T0>(x: T0): T0`. render seeds the occurrence counts a
 // signature reads to tell a variable it fully contains from one it shares, and a
@@ -702,7 +717,11 @@ func (b *solTypeAnnBuilder) declFuncTypeAnn(funcType *soltype.FuncType) FuncType
 		b.typeParamNames = map[*soltype.TypeVarType]string{}
 	}
 	b.bindAt, b.varOrder = bindingSignatures(funcType)
-	return b.funcTypeAnn(funcType)
+	sig := b.funcTypeAnn(funcType)
+	// internal/checker emits `void` for a declared function that returns no
+	// value, and matching it keeps the two checkers' declarations identical.
+	undefinedReturnAsVoid(&sig, funcType.Ret)
+	return sig
 }
 
 // bindInferredTypeParams names the variables let-generalization retained, which
