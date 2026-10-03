@@ -360,8 +360,8 @@ type trioTable struct {
 //
 //   - The named constructor side is tryFuseTrio: `Types[Foo]`,
 //     `Types[FooConstructor]`, and `Values[Foo]` a reference resolving to that
-//     same alias. It reads what the constructor side declares no more than this
-//     does.
+//     same alias. Like detectTrios, it does not read what the constructor side
+//     declares.
 //   - The constructor side written inline on the binding is tryFuseEscalierClass:
 //     `Values[Foo]` an object type carrying a construct signature, with
 //     `Types[Foo]` as the instance side. That matches constructorSide's
@@ -1341,8 +1341,10 @@ func fuseTrio(
 		extendsName string
 		implements  []*ast.TypeRefTypeAnn
 		supertypes  []dts_parser.TypeAnn
-		span        ast.Span
-		nameSpan    ast.Span
+		// named holds the bare names the class's own clauses already list.
+		named    = set.NewSet[string]()
+		span     ast.Span
+		nameSpan ast.Span
 	)
 
 	if cls := info.instanceClass; cls != nil {
@@ -1354,6 +1356,10 @@ func fuseTrio(
 		extends, implements = decl.Extends, decl.Implements
 		if cls.Extends != nil {
 			extendsName = bareTypeRefName(cls.Extends)
+			named.Add(extendsName)
+		}
+		for _, impl := range cls.Implements {
+			named.Add(bareTypeRefName(impl))
 		}
 		span, nameSpan = decl.Span(), decl.Name.Span()
 
@@ -1425,6 +1431,12 @@ func fuseTrio(
 		// name. It lands in `implements`, which keeps its members. No
 		// supertype in the pinned lib set is written qualified.
 		name := bareTypeRefName(superTypeAnn)
+		// A merged interface may restate a supertype the class already names,
+		// as `declare class Foo extends Bar` beside `interface Foo extends Bar`
+		// does. Listing it again would read as a second base.
+		if name != "" && named.Contains(name) {
+			continue
+		}
 		if !classNames.Contains(name) {
 			implements = append(implements, ref)
 			continue

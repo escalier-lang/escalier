@@ -1614,6 +1614,41 @@ export declare class Foo extends Other implements Base {
 `,
 			demoted: []DemotedBase{{Class: "Foo", Kept: "Other", Demoted: "Base"}},
 		},
+		// A supertype the class already names is not listed a second time.
+		"RestatedSupertypes": {
+			slice: `
+interface Mixin {
+    id: number;
+}
+
+declare class Base {
+    tag: string;
+}
+
+declare class Foo extends Base implements Mixin {
+    next(): string;
+}
+
+interface Foo extends Base, Mixin {
+    peek(): string;
+}
+`,
+			want: `export declare interface Mixin {
+    id: number
+}
+
+@js("Base")
+export declare class Base {
+    tag: string
+}
+
+@js("Foo")
+export declare class Foo extends Base implements Mixin {
+    next(&mut self) -> string,
+    peek(&mut self) -> string
+}
+`,
+		},
 	}
 
 	for name, test := range tests {
