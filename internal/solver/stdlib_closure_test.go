@@ -599,3 +599,80 @@ func TestASiblingInTheSameNamespaceOutranksARootDeclaration(t *testing.T) {
 	require.Equal(t, "string", soltype.Print(inferredValueType(t, res.Scope, "sibling")))
 	require.Equal(t, "number", soltype.Print(inferredValueType(t, res.Scope, "root")))
 }
+
+// A bare type name in a `fn` signature or a `val` annotation resolves a sibling
+// declared in the same group member.
+//
+// A merged group keys every declaration under its member's namespace, so
+// `alpha`'s `Box` is keyed `std__alpha.Box` and a bare `Box` reaches it only by
+// probing that namespace. A class body probes it for its own members, and these
+// rows cover the declarations beside the class. Each `read` names `Box`'s `n`,
+// so a `number` there says the annotation bound the sibling.
+func TestABareSiblingResolvesOutsideATypeDeclarationInAGroup(t *testing.T) {
+	t.Parallel()
+
+	tests := map[string]struct {
+		decls string
+		read  string
+	}{
+		"FuncSignature": {
+			decls: `export declare fn take(b: Box) -> Box`,
+			read:  `alpha.take(alpha.box).n`,
+		},
+		// A fully annotated overload set binds its arm signatures before any
+		// body, which is a separate walk from a lone function's.
+		"OverloadSignature": {
+			decls: `
+				export declare fn take(b: Box) -> Box
+				export declare fn take(b: Box, s: string) -> Box
+			`,
+			read: `alpha.take(alpha.box, "s").n`,
+		},
+		"ValAnnotation": {
+			decls: `export declare val other: Box`,
+			read:  `alpha.other.n`,
+		},
+	}
+
+	for name, test := range tests {
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+			res := inferAgainstCyclicStdlib(t, `
+				import "std:alpha"
+				val read = `+test.read+`
+			`, map[string]string{
+				"std/alpha.esc": `
+					import "std:beta"
+					export declare class Box { n: number }
+					export declare val box: Box
+				` + test.decls,
+				"std/beta.esc": `
+					import "std:alpha"
+					export declare class Peer { box: alpha.Box }
+				`,
+			})
+
+			require.Empty(t, errorMessagesOf(res.Errors))
+			require.Equal(t, "number", soltype.Print(inferredValueType(t, res.Scope, "read")))
+		})
+	}
+}
+
+// The committed `std:typed_arrays` resolves every name it declares.
+//
+// It loads in a group with `std:date` and `std:intl`, and its `Atomics` functions
+// name the typed array classes bare, as in
+// `fn wait(typedArray: Int32Array<ArrayBufferLike>, ...)`. The tree carries other
+// known diagnostics, so this asserts only that none of them is a missing type.
+func TestTheCommittedTypedArraysResolveTheirOwnNames(t *testing.T) {
+	t.Parallel()
+
+	res := InferModuleAgainstStdlib(parseModule(t, `
+		import "std:typed_arrays"
+		val x = 1
+	`), committedTree)
+
+	for _, msg := range errorMessagesOf(res.Errors) {
+		require.NotContains(t, msg, "cannot find type")
+	}
+}
