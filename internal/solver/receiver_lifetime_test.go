@@ -31,8 +31,9 @@ func TestReceiverLifetimeDeclarations(t *testing.T) {
 				}
 			`,
 		},
-		// The stored borrow is immutable, so writing c afterwards would change what out.r expects
-		// to hold still. The store's loan lasts to the end of f and reports it.
+		// The stored borrow is immutable, so writing c before f reads out again would change
+		// what out.r expects to hold still. The store's loan lasts while out is read and
+		// reports it.
 		{
 			name: "writing the instance after storing a borrow of it through the receiver's lifetime conflicts",
 			src: `
@@ -44,6 +45,7 @@ func TestReceiverLifetimeDeclarations(t *testing.T) {
 					val mut c = C({x: 1})
 					c.lend(out)
 					c.p = {x: 2}
+					val z = out
 				}
 			`,
 			want: []string{"9:6-9:9: cannot assign to 'c.p' while it is borrowed as immutable"},

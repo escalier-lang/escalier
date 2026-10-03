@@ -21,8 +21,8 @@ func TestSelfReceiverStoreEdge(t *testing.T) {
 		types map[string]string
 	}{
 		// The method call is the only thing that aliases h to b, and storing the field into out
-		// carries that borrow to the caller. The store into out takes a loan of b that lasts to
-		// the end of the function, so moving b afterwards reports.
+		// carries that borrow to the caller. The store into out takes a loan of b that lasts
+		// while out is read, so moving b before the read of out reports.
 		"StoreIntoALocalReceiverReachesTheCaller": {
 			src: `
 				class Holder<'a> {
@@ -36,6 +36,7 @@ func TestSelfReceiverStoreEdge(t *testing.T) {
 					h.put(&mut b)
 					out.slot = h.peer
 					val y = b
+					val z = out
 				}
 			`,
 			want: []string{"12:14-12:15: cannot move 'b' while it is borrowed"},
@@ -45,8 +46,9 @@ func TestSelfReceiverStoreEdge(t *testing.T) {
 			},
 		},
 		// A receiver the caller owns outlives the frame, so a borrow of a local written into
-		// it takes a loan that lasts to the end of the function rather than recording an edge.
-		// That is the same split a field store makes between a local and a parameter receiver.
+		// it takes a loan held by the receiver rather than recording an edge. That is the same
+		// split a field store makes between a local and a parameter receiver. Moving b before
+		// h is read again reports against the loan.
 		"StoreIntoAParameterReceiverLoansTheLocal": {
 			src: `
 				class Holder<'a> {
@@ -58,6 +60,7 @@ func TestSelfReceiverStoreEdge(t *testing.T) {
 					val mut b = {value: 2}
 					h.put(&mut b)
 					val y = b
+					val z = h
 				}
 			`,
 			want: []string{"10:14-10:15: cannot move 'b' while it is borrowed"},
@@ -104,6 +107,7 @@ func TestSelfReceiverStoreEdge(t *testing.T) {
 					h["put"](&mut b)
 					out.slot = h.peer
 					val y = b
+					val z = out
 				}
 			`,
 			want: []string{"12:14-12:15: cannot move 'b' while it is borrowed"},
@@ -146,6 +150,7 @@ func TestSelfReceiverIsAStoreSource(t *testing.T) {
 			h.drain(&mut o)
 			sink.slot = o.slot
 			val y = h
+			val z = sink
 		}
 	`)
 	require.Equal(t, []string{
@@ -183,6 +188,7 @@ func TestIndirectStoreIntoParameter(t *testing.T) {
 					val mut s = {held: &mut b}
 					drain(&mut s, o)
 					val y = b
+					val z = o
 				}
 			`,
 			want: []string{"11:14-11:15: cannot move 'b' while it is borrowed"},
@@ -200,6 +206,7 @@ func TestIndirectStoreIntoParameter(t *testing.T) {
 					val mut b = {value: 2}
 					drain(&{held: &mut b}, o)
 					val y = b
+					val z = o
 				}
 			`,
 			want: []string{"9:14-9:15: cannot move 'b' while it is borrowed"},
