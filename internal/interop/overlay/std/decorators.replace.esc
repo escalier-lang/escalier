@@ -1,0 +1,9 @@
+// TypeScript writes `DecoratorMetadata` as a conditional on `typeof globalThis`,
+// asking whether the global `Symbol` carries a `metadata` key. `globalThis` is
+// synthesized by the compiler rather than declared in any lib file, so the
+// converted alias names a value no package declares.
+//
+// The condition holds for the pinned lib set. lib.esnext.decorators.d.ts adds
+// `readonly metadata: unique symbol` to `SymbolConstructor`, and std:prelude
+// carries it on `Symbol`, so the alias is the `then` arm.
+export declare type DecoratorMetadata = DecoratorMetadataObject

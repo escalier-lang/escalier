@@ -531,6 +531,14 @@ func (r *refRewriter) rewriteObject(obj *ast.ObjectTypeAnn) {
 		case *ast.PropertyTypeAnn:
 			if e.Value != nil {
 				e.Value = r.rewrite(e.Value)
+				// A property takes its mutability from the object holding it, and
+				// a `mut` written directly on one is rejected. So a mutable twin
+				// keeps its bare name in this slot, and `pluralCategories:
+				// LDMLPluralRule[]` converts to `pluralCategories:
+				// Array<LDMLPluralRule>`.
+				if m, ok := e.Value.(*ast.MutableTypeAnn); ok {
+					e.Value = m.Target
+				}
 			}
 		case *ast.MappedTypeAnn:
 			if e.TypeParam != nil && e.TypeParam.Constraint != nil {

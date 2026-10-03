@@ -593,6 +593,46 @@ func TestInferKeyofNested(t *testing.T) {
 	})
 }
 
+// `keyof any` names every property key, `string | number | symbol`, while `keyof unknown` names
+// none. The cases cover the bare annotation and the `K: keyof any` bound prelude's `Record`
+// writes, which `PropertyKey` has to satisfy.
+func TestInferKeyofAny(t *testing.T) {
+	tests := []struct {
+		name  string
+		src   string
+		types map[string]string
+	}{
+		{
+			name:  "Annotation",
+			src:   `type K = keyof any`,
+			types: map[string]string{"K": "number | string | symbol"},
+		},
+		{
+			name: "BoundAdmitsEveryKeyKind",
+			src: `
+				type Rec<K: keyof any, T> = {[P: K]: T}
+				type PropertyKey = string | number | symbol
+				type Result = Rec<PropertyKey, unknown>
+			`,
+			types: map[string]string{"Result": "Rec<PropertyKey, unknown>"},
+		},
+		{
+			name:  "UnknownStaysEmpty",
+			src:   `type K = keyof unknown`,
+			types: map[string]string{"K": "keyof unknown"},
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			_, types, errs := inferSource(t, tt.src)
+			require.Empty(t, errs)
+			for name, want := range tt.types {
+				require.Equal(t, want, types[name])
+			}
+		})
+	}
+}
+
 // A rejected constraint whose subject is a `keyof` residual names it structurally in the
 // diagnostic — `cannot constrain keyof t1 <: number` rather than the bare `?` the default
 // describe arm would render — so the inert node stays legible in error messages. describe is
