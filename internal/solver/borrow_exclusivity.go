@@ -426,19 +426,25 @@ func (c *checker) recordCaptureLoans(scope *Scope, closure *ast.FuncExpr) {
 	}
 }
 
-// useHeldClosure takes the capture loans of the closure `e` names for the statement at `ref`,
-// and records a read of each captured local there. An expression other than a name bound to a
-// closure in namedClosures records nothing.
+// useHeldClosure takes the capture loans of the closure `expr` names for the statement at
+// `ref`, and records a read of each captured local there. The name can be bound to a closure in
+// namedClosures or hold capture edges copied from one. Any other expression records nothing.
 func (c *checker) useHeldClosure(expr ast.Expr, ref liveness.StmtRef) {
 	e, ok := expr.(*ast.IdentExpr)
 	if !ok || c.fn == nil || e.VarID <= 0 {
 		return
 	}
-	closure, ok := c.fn.heldClosures[liveness.VarID(e.VarID)]
-	if !ok {
-		return
+	id := liveness.VarID(e.VarID)
+	accesses := slices.Clone(c.fn.closureAccesses[c.fn.heldClosures[id]])
+	// A name a closure was copied into, as in `val h = f`, holds no closure of its own. It
+	// carries the closure's captures as capture edges in the borrow graph instead.
+	for _, edge := range c.fn.eagerBorrowGraph[id] {
+		if !edge.capture || slices.ContainsFunc(accesses, func(a captureAccess) bool { return a.root == edge.referent }) {
+			continue
+		}
+		accesses = append(accesses, captureAccess{root: edge.referent, mut: edge.mut, t: c.fn.capturedTypes[edge.referent]})
 	}
-	for _, a := range c.fn.closureAccesses[closure] {
+	for _, a := range accesses {
 		c.takeCaptureLoan(a, ref, e)
 		c.fn.useSites = append(c.fn.useSites, moveUse{place: movePlace{root: a.root}, ref: ref, node: e, loanSeqAt: c.fn.loanSeq + 1})
 	}

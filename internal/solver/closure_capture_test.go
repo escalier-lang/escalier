@@ -190,6 +190,34 @@ func TestClosureCapturedPlaces(t *testing.T) {
 				}
 			`,
 		},
+		// h holds f's closure, so calling h writes x beside the live `a`.
+		"CallOfACopiedWritingClosureBesideLiveBorrow": {
+			src: captureDecls + `
+				fn g() {
+					val mut x = {v: 1}
+					val a = &x
+					val f = fn () { x.v = 5 }
+					val h = f
+					h()
+					readRead(a, a)
+				}
+			`,
+			want: []string{"12:6-12:7: cannot borrow 'x' as mutable while it is borrowed as immutable"},
+		},
+		// Calling h reads x through f's closure, so a call after x moves is a use after the
+		// move.
+		"CallOfACopiedClosureAfterMovingTheCapture": {
+			src: captureDecls + `
+				fn g() {
+					val x = {v: 1}
+					val f = fn () { readRead(&x, &x) }
+					val h = f
+					take(x)
+					h()
+				}
+			`,
+			want: []string{"12:6-12:7: use of moved value 'x'"},
+		},
 		// A closure passed straight to a call holds its loans for the call's statement.
 		"ClosureArgumentHoldsItsLoanForTheCall": {
 			src: captureDecls + `
