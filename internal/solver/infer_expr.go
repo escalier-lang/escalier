@@ -1834,9 +1834,9 @@ func (c *checker) recordCallArgEffects(
 	c.consumeCallArgs(e, fn, consumeRef)
 	// Calling a closure runs its body, and a callee handed a closure may call it during the
 	// call. So the callee and each argument that names a closure access what it captures.
-	c.useHeldClosure(e.Callee, consumeRef)
+	c.useClosureCaptures(e.Callee, consumeRef)
 	for _, arg := range e.Args {
-		c.useHeldClosure(arg, consumeRef)
+		c.useClosureCaptures(arg, consumeRef)
 	}
 	// A borrow parameter takes a borrow, so the call has to write one. The receiver of a
 	// method call is not an argument and keeps auto-borrowing.

@@ -502,11 +502,6 @@ type funcCtx struct {
 	// its captures are weighed at each call of the name, and at each call the name is passed
 	// to, rather than where it is written.
 	namedClosures set.Set[*ast.FuncExpr]
-	// closureAccesses maps each closure in namedClosures to the locals it captures, resolved
-	// where the closure is written.
-	closureAccesses map[*ast.FuncExpr][]captureAccess
-	// heldClosures maps a local to the closure in namedClosures it is currently bound to.
-	heldClosures map[liveness.VarID]*ast.FuncExpr
 	// loans holds every borrow bound to a name in this body, in source order. The exclusivity
 	// check compares each new borrow against the ones still live. See borrow_exclusivity.go.
 	loans []loan

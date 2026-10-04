@@ -317,18 +317,6 @@ func (c *checker) recordBorrowLoan(holder int, init ast.Expr, ref liveness.StmtR
 	// through it. `var a = &mut x` followed by `a = &mut y` leaves no loan of x behind. This
 	// is the strong update the flow-sensitive borrow graph makes for the same statement.
 	c.dropLoansHeldBy(liveness.VarID(holder))
-	delete(c.fn.heldClosures, liveness.VarID(holder))
-	if closure, ok := init.(*ast.FuncExpr); ok {
-		// Each later call of the name, or call the name is passed to, takes the closure's
-		// capture loans for that call's statement.
-		if c.fn.namedClosures != nil && c.fn.namedClosures.Contains(closure) {
-			if c.fn.heldClosures == nil {
-				c.fn.heldClosures = map[liveness.VarID]*ast.FuncExpr{}
-			}
-			c.fn.heldClosures[liveness.VarID(holder)] = closure
-		}
-		return
-	}
 	borrow, ok := init.(*ast.BorrowExpr)
 	if !ok {
 		return
@@ -350,21 +338,28 @@ func (c *checker) recordBorrowLoan(holder int, init ast.Expr, ref liveness.StmtR
 	c.fn.loans = append(c.fn.loans, fresh)
 }
 
-// captureAccess is one local of the current body that a closure captures, and whether the
-// closure writes it.
-type captureAccess struct {
+// capturedLocal is a local of the current body that a closure captures.
+type capturedLocal struct {
 	root liveness.VarID
-	mut  bool
-	// t is the type of the captured local's binding.
-	t soltype.Type
+	// `mut` says the closure writes the local.
+	mut bool
 }
 
-// captureAccesses returns the locals of the current body that `closure` captures, resolving
-// each name in `scope`. A capture whose type has value semantics is left out, since a closure
-// holding a primitive cannot see a later change to the binding it copied. So is a capture
-// from a body further out, which this body's tables do not track.
-func (c *checker) captureAccesses(scope *Scope, closure *ast.FuncExpr) []captureAccess {
-	var out []captureAccess
+// recordCaptureLoans records each local of the current body that `closure` captures in
+// capturedLocals and capturedTypes, and records the closure as a use of it. A closure in
+// namedClosures takes no loan here, since the calls of its name take them. Any other closure
+// takes its capture loans at its own statement, since the expression it sits in may call it
+// there.
+//
+// A capture whose type has value semantics is left out, since a closure holding a primitive
+// cannot see a later change to the binding it copied. So is a capture from a body further
+// out, which this body's tables do not track.
+func (c *checker) recordCaptureLoans(scope *Scope, closure *ast.FuncExpr) {
+	if c.fn == nil {
+		return
+	}
+	ref, hasRef := c.currentStmtRef()
+	var captured []capturedLocal
 	for _, capture := range c.closureCaptures(closure) {
 		b, found := scope.GetValue(capture.Name)
 		if !found || b.VarID <= 0 || isValueType(bindingType(b)) {
@@ -374,79 +369,56 @@ func (c *checker) captureAccesses(scope *Scope, closure *ast.FuncExpr) []capture
 		if name, ok := c.fn.varIDNames[root]; !ok || name != capture.Name {
 			continue
 		}
-		out = append(out, captureAccess{root: root, mut: capture.IsMutable, t: bindingType(b)})
-	}
-	return out
-}
-
-// capturedLocal is a local of the current body that a closure captures.
-type capturedLocal struct {
-	root liveness.VarID
-	// `mut` says the closure writes the local.
-	mut bool
-}
-
-// recordCaptureLoans records the accesses `closure` makes to the locals it captures, records
-// each such local in capturedLocals, and records the closure as a use of it. A closure in
-// namedClosures has its accesses saved for the calls of its name. Any other closure takes its
-// capture loans at its own statement, since the expression it sits in may call it there.
-func (c *checker) recordCaptureLoans(scope *Scope, closure *ast.FuncExpr) {
-	if c.fn == nil {
-		return
-	}
-	ref, hasRef := c.currentStmtRef()
-	accesses := c.captureAccesses(scope, closure)
-	for _, a := range accesses {
 		// Writing the closure reads the local, so capturing one that has moved is a use after
 		// the move.
 		if hasRef {
-			c.fn.useSites = append(c.fn.useSites, moveUse{place: movePlace{root: a.root}, ref: ref, node: closure, loanSeqAt: c.fn.loanSeq + 1})
+			c.fn.useSites = append(c.fn.useSites, moveUse{place: movePlace{root: root}, ref: ref, node: closure, loanSeqAt: c.fn.loanSeq + 1})
 		}
-		if c.fn.capturedLocals == nil {
-			c.fn.capturedLocals = map[*ast.FuncExpr][]capturedLocal{}
-		}
-		c.fn.capturedLocals[closure] = append(c.fn.capturedLocals[closure], capturedLocal{root: a.root, mut: a.mut})
 		if c.fn.capturedTypes == nil {
 			c.fn.capturedTypes = map[liveness.VarID]soltype.Type{}
 		}
-		c.fn.capturedTypes[a.root] = a.t
+		c.fn.capturedTypes[root] = bindingType(b)
+		captured = append(captured, capturedLocal{root: root, mut: capture.IsMutable})
 	}
-	if c.fn.namedClosures != nil && c.fn.namedClosures.Contains(closure) {
-		if c.fn.closureAccesses == nil {
-			c.fn.closureAccesses = map[*ast.FuncExpr][]captureAccess{}
+	if len(captured) > 0 {
+		if c.fn.capturedLocals == nil {
+			c.fn.capturedLocals = map[*ast.FuncExpr][]capturedLocal{}
 		}
-		c.fn.closureAccesses[closure] = accesses
+		c.fn.capturedLocals[closure] = append(c.fn.capturedLocals[closure], captured...)
+	}
+	if !hasRef || (c.fn.namedClosures != nil && c.fn.namedClosures.Contains(closure)) {
 		return
 	}
-	if !hasRef {
-		return
-	}
-	for _, a := range accesses {
-		c.takeCaptureLoan(a, ref, closure)
+	for _, local := range captured {
+		c.takeCaptureLoan(local, ref, closure)
 	}
 }
 
-// useHeldClosure takes the capture loans of the closure `expr` names for the statement at
-// `ref`, and records a read of each captured local there. The name can be bound to a closure in
-// namedClosures or hold capture edges copied from one. Any other expression records nothing.
-func (c *checker) useHeldClosure(expr ast.Expr, ref liveness.StmtRef) {
+// useClosureCaptures takes the capture loans of the closure `expr` names for the statement at
+// `ref`, and records a read of each captured local there. The closure's captures are the
+// capture edges the name holds in the borrow graph, whether it was bound to the closure or
+// copied from a name that was. A local captured through several edges is taken once, as a
+// write when any edge writes it. Any expression other than a name records nothing.
+func (c *checker) useClosureCaptures(expr ast.Expr, ref liveness.StmtRef) {
 	e, ok := expr.(*ast.IdentExpr)
 	if !ok || c.fn == nil || e.VarID <= 0 {
 		return
 	}
-	id := liveness.VarID(e.VarID)
-	accesses := slices.Clone(c.fn.closureAccesses[c.fn.heldClosures[id]])
-	// A name a closure was copied into, as in `val h = f`, holds no closure of its own. It
-	// carries the closure's captures as capture edges in the borrow graph instead.
-	for _, edge := range c.fn.eagerBorrowGraph[id] {
-		if !edge.capture || slices.ContainsFunc(accesses, func(a captureAccess) bool { return a.root == edge.referent }) {
-			continue
+	writes := map[liveness.VarID]bool{}
+	for _, edge := range c.fn.eagerBorrowGraph[liveness.VarID(e.VarID)] {
+		if edge.capture {
+			writes[edge.referent] = writes[edge.referent] || edge.mut
 		}
-		accesses = append(accesses, captureAccess{root: edge.referent, mut: edge.mut, t: c.fn.capturedTypes[edge.referent]})
 	}
-	for _, a := range accesses {
-		c.takeCaptureLoan(a, ref, e)
-		c.fn.useSites = append(c.fn.useSites, moveUse{place: movePlace{root: a.root}, ref: ref, node: e, loanSeqAt: c.fn.loanSeq + 1})
+	roots := make([]liveness.VarID, 0, len(writes))
+	for root := range writes {
+		roots = append(roots, root)
+	}
+	// Sorting keeps the order of the loans, and so of any reports, the same from run to run.
+	slices.Sort(roots)
+	for _, root := range roots {
+		c.takeCaptureLoan(capturedLocal{root: root, mut: writes[root]}, ref, e)
+		c.fn.useSites = append(c.fn.useSites, moveUse{place: movePlace{root: root}, ref: ref, node: e, loanSeqAt: c.fn.loanSeq + 1})
 	}
 }
 
@@ -454,10 +426,10 @@ func (c *checker) useHeldClosure(expr ast.Expr, ref liveness.StmtRef) {
 // after reporting any conflict with a loan already live there. The loan has no holder, so it
 // lasts for that statement alone. It is mutable when the closure writes the capture. `node`
 // is what a conflict report blames.
-func (c *checker) takeCaptureLoan(a captureAccess, ref liveness.StmtRef, node ast.Node) {
+func (c *checker) takeCaptureLoan(local capturedLocal, ref liveness.StmtRef, node ast.Node) {
 	fresh := loan{
-		place: movePlace{root: a.root},
-		mut:   a.mut,
+		place: movePlace{root: local.root},
+		mut:   local.mut,
 		ref:   ref,
 		node:  node,
 		seq:   c.nextLoanSeq(),
