@@ -340,11 +340,12 @@ func (c *checker) dropLoansHeldBy(holder liveness.VarID) {
 	}
 }
 
-// endLoansAt ends the loans holder took at base or under it, which a store into that field has
-// made unreachable from here on. `b.peer = &mut e` after `b.peer = &mut d` ends the loan of d
-// while a loan at a sibling field such as [data] keeps holding. Like dropLoansHeldBy it marks
-// the sequence rather than erasing, so a read walked before the store is still weighed against
-// what the field held then.
+// endLoansAt ends the loans stored in holder's field base, or in a field nested inside it. A
+// store into that field replaces what it held, so those loans reach nothing from here on.
+// `b.peer = &mut e` after `b.peer = &mut d` ends the loan of d. A loan stored in b.peer.next
+// ends too, while one stored in the sibling field b.data keeps holding. Like dropLoansHeldBy,
+// it marks each loan with the sequence it ended at rather than erasing it, so a read walked
+// before the store is still weighed against what the field held then.
 func (c *checker) endLoansAt(holder liveness.VarID, base []placeSeg) {
 	c.endLoansWhere(holder, base, func(loan) bool { return true })
 }
@@ -384,7 +385,9 @@ func (c *checker) blockPostDominates(by, from int) bool {
 	return true
 }
 
-// endLoansWhere ends each loan holder took at base or under it for which selects returns true.
+// endLoansWhere ends each loan stored in holder's field base, or in a field nested inside it,
+// for which selects returns true. It marks each one with the sequence it ended at rather than
+// erasing it, so a read walked before that point is still weighed against the loan.
 func (c *checker) endLoansWhere(holder liveness.VarID, base []placeSeg, selects func(loan) bool) {
 	ended := c.nextLoanSeq()
 	for i := range c.fn.loans {
