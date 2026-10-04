@@ -396,6 +396,18 @@ func (c *checker) reachesOf(e ast.Expr, fieldBorrowGraph map[liveness.VarID][]fi
 			}
 		}
 	}
+	// A closure the expression carries reaches each local it captures, writable when the
+	// closure writes it, and whatever that local borrows in turn.
+	for _, closure := range closuresIn(e) {
+		for _, captured := range c.fn.capturedLocals[closure] {
+			out = append(out, elementReach{place: movePlace{root: captured.root}, mut: captured.mut})
+			var edges []fieldBorrow
+			collectAllEdgesFrom(captured.root, set.NewSet[liveness.VarID](), fieldBorrowGraph, &edges)
+			for _, edge := range edges {
+				out = append(out, elementReach{place: movePlace{root: edge.referent}, mut: edge.mut})
+			}
+		}
+	}
 	// A place the site moves out hands its data over by value. A parameter is left out, since
 	// the caller already holds whatever a borrow parameter reaches.
 	if c.fn.movedSources != nil && c.fn.movedSources.Contains(e) {
@@ -867,6 +879,9 @@ type fieldBorrow struct {
 	// edge and `val a = {peer: &b}` an immutable one. A borrow field carries its own
 	// mutability, so an edge reached through another edge keeps its own answer.
 	mut bool
+	// `capture` marks an edge recorded because a closure captures `referent`.
+	// `val f = fn () { b.v }` records f → b with `capture` set.
+	capture bool
 }
 
 // borrowCollector gathers the BorrowExprs an expression carries by value, riding the
@@ -877,20 +892,36 @@ type fieldBorrow struct {
 type borrowCollector struct {
 	*ast.DefaultVisitor
 	out *[]*ast.BorrowExpr
+	// `closures`, when set, gathers the closures the expression carries by value.
+	closures *[]*ast.FuncExpr
 }
 
 func (v *borrowCollector) EnterExpr(e ast.Expr) bool {
 	switch e := e.(type) {
 	case *ast.BorrowExpr:
 		*v.out = append(*v.out, e)
-	case *ast.CallExpr, *ast.TaggedTemplateLitExpr, *ast.FuncExpr:
+	case *ast.FuncExpr:
+		// A borrow inside a nested function belongs to that function's scope. The closure
+		// itself is part of the value, and what it captures is read from capturedLocals.
+		if v.closures != nil {
+			*v.closures = append(*v.closures, e)
+		}
+		return false
+	case *ast.CallExpr, *ast.TaggedTemplateLitExpr:
 		// A borrow written as a call argument is consumed or borrowed by that call, not
-		// carried out by its result, so `store(read(&mut b))` does not carry b. A borrow
-		// inside a nested function belongs to that function's scope. A borrow a result or
-		// closure genuinely captures is governed by the deferred closure-capture work.
+		// carried out by its result, so `store(read(&mut b))` does not carry b.
 		return false
 	}
 	return true
+}
+
+// closuresIn returns every closure the expression e carries by value, descending the way
+// borrowsIn does.
+func closuresIn(e ast.Expr) []*ast.FuncExpr {
+	var borrows []*ast.BorrowExpr
+	var found []*ast.FuncExpr
+	e.Accept(&borrowCollector{DefaultVisitor: &ast.DefaultVisitor{}, out: &borrows, closures: &found})
+	return found
 }
 
 // borrowsIn returns every BorrowExpr the expression e carries by value, descending through
@@ -989,6 +1020,11 @@ func (c *checker) escapingLocalsOf(
 			out.Add(referent)
 		}
 	}
+	for _, closure := range closuresIn(e) {
+		for _, captured := range c.fn.capturedLocals[closure] {
+			out.Add(captured.root)
+		}
+	}
 	if p, ok := exprPlace(e); ok && p.root > 0 {
 		c.collectBorrowedFrom(p.root, p.path, out, set.NewSet[liveness.VarID](), fieldBorrowGraph)
 	}
@@ -1000,7 +1036,11 @@ func (c *checker) escapingLocalsOf(
 // through the borrow. A duplicate edge with the same paths, referent and mutability is
 // ignored, so repeated walks keep one copy rather than accumulating identical edges.
 func (c *checker) addBorrowEdge(root liveness.VarID, path []placeSeg, referent liveness.VarID, refPath []placeSeg, mut bool) {
-	fb := fieldBorrow{path: path, referent: referent, refPath: refPath, mut: mut}
+	c.addEdge(root, fieldBorrow{path: path, referent: referent, refPath: refPath, mut: mut})
+}
+
+// addEdge records fb as an edge out of `root` in the eager graph, unless `root` already has it.
+func (c *checker) addEdge(root liveness.VarID, fb fieldBorrow) {
 	if containsFieldBorrow(c.fn.eagerBorrowGraph[root], fb) {
 		return
 	}
@@ -1024,20 +1064,21 @@ func (c *checker) recordBorrowEdges(destVarID int, init ast.Expr) {
 }
 
 // recordBorrowSources records the borrow edges the expression e contributes to the binding
-// root, at base, the field path reached so far:
+// `root`, at `base`, the field path reached so far:
 //
-//   - A direct `&mut b` of a local records an edge at base.
-//   - An object property descends with base extended by the property name.
-//   - A tuple element and a spread descend at base unchanged. A field path is a chain of
+//   - A direct `&mut b` of a local records an edge at `base`.
+//   - An object property descends with `base` extended by the property name.
+//   - A tuple element and a spread descend at `base` unchanged. A field path is a chain of
 //     named segments, and neither a tuple index nor a spread contributes one: a tuple index
 //     is a number, not a field name, and a spread merges its source's fields without naming
 //     them. The place model approximates a read of either to its container, so the borrow
-//     stays attributed to base.
-//   - A place expression copies that place's edges, re-rooted under root at base.
-//   - Any other carrier, such as an if/else branch, contributes its inline borrows at base
-//     through borrowsIn.
+//     stays attributed to `base`.
+//   - A closure records a capture edge at `base` for each local it captures.
+//   - A place expression copies that place's edges, re-rooted under `root` at `base`.
+//   - Any other carrier, such as an `if`/`else` branch, contributes its inline borrows and the
+//     captures of its inline closures at `base`.
 //
-// The walk stops at a call or nested-function boundary.
+// The walk stops at a call boundary and does not enter a closure's body.
 func (c *checker) recordBorrowSources(root liveness.VarID, base []placeSeg, e ast.Expr) {
 	switch e := e.(type) {
 	case *ast.BorrowExpr:
@@ -1075,7 +1116,13 @@ func (c *checker) recordBorrowSources(root liveness.VarID, base []placeSeg, e as
 		}
 	case *ast.ArraySpreadExpr:
 		c.recordBorrowSources(root, base, e.Value)
-	case *ast.CallExpr, *ast.TaggedTemplateLitExpr, *ast.FuncExpr:
+	case *ast.FuncExpr:
+		for _, captured := range c.fn.capturedLocals[e] {
+			if captured.root != root {
+				c.addEdge(root, fieldBorrow{path: base, referent: captured.root, mut: captured.mut, capture: true})
+			}
+		}
+	case *ast.CallExpr, *ast.TaggedTemplateLitExpr:
 		return
 	default:
 		// A place names another binding whose value e copies, as in `val a2 = a` or `val c =
@@ -1092,6 +1139,9 @@ func (c *checker) recordBorrowSources(root liveness.VarID, base []placeSeg, e as
 			if src, ok := c.localReferentPlace(b.Arg); ok && src.root != root {
 				c.addBorrowEdge(root, base, src.root, src.path, b.Mut)
 			}
+		}
+		for _, closure := range closuresIn(e) {
+			c.recordBorrowSources(root, base, closure)
 		}
 	}
 }
@@ -1114,7 +1164,7 @@ func (c *checker) copyPlaceEdges(root liveness.VarID, base []placeSeg, src moveP
 		if len(edge.path) > len(src.path) {
 			suffix = edge.path[len(src.path):]
 		}
-		c.addBorrowEdge(root, appendPath(base, suffix), edge.referent, edge.refPath, edge.mut)
+		c.addEdge(root, fieldBorrow{path: appendPath(base, suffix), referent: edge.referent, refPath: edge.refPath, mut: edge.mut, capture: edge.capture})
 	}
 }
 

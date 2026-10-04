@@ -70,6 +70,9 @@ type UseAfterMoveError struct {
 	// reaching the use (the MaybeMoved lattice state), false when every reaching
 	// path moved it (Moved).
 	Conditional bool
+	// Via names the module-level binding whose stored closure the call being blamed may run,
+	// when the read is that closure's write. It is empty otherwise.
+	Via string
 	// use is the read being rejected; it self-blames from here.
 	use ast.Node
 	// moveSite is the consume that moved the binding, used for the related span. It
@@ -89,6 +92,9 @@ func (e *UseAfterMoveError) Message() string {
 	if e.Partial {
 		return fmt.Sprintf("use of partially moved value '%s'; field '%s' was moved out", e.ReadName, e.Name)
 	}
+	if e.Via != "" {
+		return fmt.Sprintf("this call may run '%s', which writes '%s' after it was moved", e.Via, e.Name)
+	}
 	return fmt.Sprintf("use of moved value '%s'", e.Name)
 }
 
@@ -104,6 +110,10 @@ type moveUse struct {
 	// borrow exclusivity check weighs the read against the loans below it, so a borrow written
 	// later in the source, on the other arm of an `if` among others, does not reach back to it.
 	loanSeqAt int
+	// via names the module-level binding whose stored closure a call may run, for a read
+	// standing for that closure's write during the call. It is empty for a read the program
+	// writes.
+	via string
 }
 
 // isBorrowType reports whether t is a borrow — a RefType carrying a lifetime.
@@ -728,18 +738,21 @@ func (c *checker) checkUseAfterMoves() {
 	if c.fn == nil || c.fn.cfg == nil {
 		return
 	}
-	if len(c.fn.useSites) == 0 && len(c.fn.moveSites) == 0 && len(c.fn.pendingTransitions) == 0 && len(c.fn.escapeSites) == 0 && len(c.fn.borrowSites) == 0 {
+	if len(c.fn.useSites) == 0 && len(c.fn.moveSites) == 0 && len(c.fn.pendingTransitions) == 0 && len(c.fn.escapeSites) == 0 && len(c.fn.globalClosureStores) == 0 && len(c.fn.borrowSites) == 0 {
 		return
 	}
 	info := liveness.AnalyzeMoves(c.fn.cfg, c.fn.moveSites)
 	// Decide deferred escapes against the move lattice and the flow-sensitive borrow-edge
 	// graph, then fold any component-move consumes back into moveSites and recompute, so a
 	// use after a co-moved local is caught.
-	if len(c.fn.escapeSites) > 0 {
+	if len(c.fn.escapeSites) > 0 || len(c.fn.globalClosureStores) > 0 {
 		flowBorrowGraph := c.analyzeBorrows()
 		if c.resolveComponentEscapes(info, flowBorrowGraph) {
 			info = liveness.AnalyzeMoves(c.fn.cfg, c.fn.moveSites)
 		}
+		// These loans have to be in place before checkUsesAgainstLoans below weighs the
+		// body's writes and moves.
+		c.recordGlobalCaptureLoans(flowBorrowGraph)
 	}
 	reported := set.NewSet[ast.Node]()
 	for _, u := range c.fn.useSites {
@@ -763,6 +776,7 @@ func (c *checker) checkUseAfterMoves() {
 			ReadName:    readName,
 			Partial:     partial,
 			Conditional: state == liveness.MaybeMoved,
+			Via:         u.via,
 			use:         u.node,
 			moveSite:    c.fn.moveNodes[movedID],
 		})

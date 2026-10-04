@@ -481,6 +481,19 @@ type funcCtx struct {
 	// captureVarIDs holds the VarID of every local a closure's body captures. The pre-pass
 	// defines each as a parameter of the body, so each is in paramVarIDs too.
 	captureVarIDs set.Set[liveness.VarID]
+	// capturedLocals holds, for each closure written in this body, the locals of this body it
+	// captures that hold a reference-shaped value.
+	capturedLocals map[*ast.FuncExpr][]capturedLocal
+	// capturedTypes holds the binding type of every local in capturedLocals.
+	capturedTypes map[liveness.VarID]soltype.Type
+	// globalClosureStores records each store whose value may carry a closure into a
+	// module-level binding. The post-pass takes a loan of each local those closures write.
+	globalClosureStores []globalClosureStore
+	// callSites holds every call in this body, in source order.
+	callSites []callSite
+	// callArgLoans holds the borrows each call's arguments take for the call's parameters,
+	// keyed by the call. They last for the call's statement and are not in loans.
+	callArgLoans map[ast.Node][]loan
 	// escapeSites records every value flowing out of the frame that might carry a borrow
 	// of a function-local: a return value, a value stored into a parameter's field, and a
 	// consuming argument. The decision is deferred to a post-pass, resolveComponentEscapes,
@@ -488,16 +501,11 @@ type funcCtx struct {
 	// the consumed lattice is available. A self-contained connected component re-anchors
 	// and co-moves; anything else reports an EscapingBorrowError.
 	escapeSites []escapeSite
-	// namedClosures holds each closure written as the initializer of a local name, as in
-	// `val f = fn () { … }`. It reads or writes what it captures only when it is called, so
-	// its captures are weighed at each call of the name, and at each call the name is passed
-	// to, rather than where it is written.
+	// namedClosures holds each closure that takes no loan where it is written. One is the
+	// initializer of a local name, as in `val f = fn () { … }`, whose captures are weighed at
+	// each call of the name and each call the name is passed to. Another is stored into a
+	// module-level binding, whose captures are weighed at each call after the store.
 	namedClosures set.Set[*ast.FuncExpr]
-	// closureAccesses maps each closure in namedClosures to the locals it captures, resolved
-	// where the closure is written.
-	closureAccesses map[*ast.FuncExpr][]captureAccess
-	// heldClosures maps a local to the closure in namedClosures it is currently bound to.
-	heldClosures map[liveness.VarID]*ast.FuncExpr
 	// loans holds every borrow bound to a name in this body, in source order. The exclusivity
 	// check compares each new borrow against the ones still live. See borrow_exclusivity.go.
 	loans []loan

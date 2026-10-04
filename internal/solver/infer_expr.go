@@ -1484,6 +1484,10 @@ func (c *checker) inferCall(scope *Scope, lvl int, e *ast.CallExpr) soltype.Type
 	// overwrites c.fn.currentStmt, so reading the point afterward would record an
 	// argument move against an inner branch instead of this call's statement.
 	consumeRef, hasConsumeRef := c.currentStmtRef()
+	// A closure stored into a module-level binding may run during any call.
+	if hasConsumeRef {
+		c.noteCallSite(e, consumeRef)
+	}
 	callee := c.inferExpr(scope, lvl, e.Callee)
 	// A member callee whose type is an intersection of function arms is an overloaded
 	// method, since memberValue gathers a multi-signature method's arms into an
@@ -1834,9 +1838,9 @@ func (c *checker) recordCallArgEffects(
 	c.consumeCallArgs(e, fn, consumeRef)
 	// Calling a closure runs its body, and a callee handed a closure may call it during the
 	// call. So the callee and each argument that names a closure access what it captures.
-	c.useHeldClosure(e.Callee, consumeRef)
+	c.useClosureCaptures(e.Callee, consumeRef)
 	for _, arg := range e.Args {
-		c.useHeldClosure(arg, consumeRef)
+		c.useClosureCaptures(arg, consumeRef)
 	}
 	// A borrow parameter takes a borrow, so the call has to write one. The receiver of a
 	// method call is not an argument and keeps auto-borrowing.
@@ -2041,9 +2045,16 @@ func (c *checker) inferAssign(scope *Scope, lvl int, e *ast.BinaryExpr) soltype.
 		assignStmt = c.fn.currentStmt
 	}
 	if target, ok := e.Left.(*ast.IdentExpr); ok {
-		if closure, ok := e.Right.(*ast.FuncExpr); ok {
-			if b, found := scope.GetValue(target.Name); found && !b.ModuleLevel {
+		if b, found := scope.GetValue(target.Name); found {
+			if closure, ok := e.Right.(*ast.FuncExpr); ok && !b.ModuleLevel {
 				c.markNamedClosure(closure)
+			}
+			// A closure stored into a module-level binding runs only when something calls it,
+			// so its loans are taken at the calls after the store.
+			if b.ModuleLevel {
+				for _, closure := range closuresIn(e.Right) {
+					c.markNamedClosure(closure)
+				}
 			}
 		}
 	}
@@ -2163,6 +2174,9 @@ func (c *checker) inferAssign(scope *Scope, lvl int, e *ast.BinaryExpr) soltype.
 			if c.fn != nil {
 				if ref, ok := c.fn.stmtToRef[assignStmt]; ok {
 					c.consumeAtGlobalWrite(e.Right, sourceT, e.Right, ref)
+					// Anything can call a closure in a module-level binding from here on, so what
+					// it writes has to stay borrowed for the rest of the body.
+					c.noteGlobalClosureStore(target.Name, e.Right, ref)
 				}
 			}
 			// KNOWN GAP (#762): this store is accepted even though it is not sound in
@@ -2327,7 +2341,8 @@ func (c *checker) inferMemberAssign(scope *Scope, lvl int, e *ast.BinaryExpr, m 
 			// Storing a value that borrows a local into a borrow parameter's field hands the
 			// local to the caller, since the parameter's object outlives the frame.
 			// checkParamFieldStoreEscape applies only when the receiver is such a parameter,
-			// and records the store for the post-pass to decide.
+			// and records the store for the post-pass to decide. A closure in the value
+			// borrows what it captures, so it is weighed the same way and moves nothing.
 			c.checkParamFieldStoreEscape(m.Object, m.Prop.Name, e.Right, ref)
 			// A store into a LOCAL receiver's field records a borrow edge instead, rooted at
 			// the field. It does not escape until the receiver itself flows out, at which

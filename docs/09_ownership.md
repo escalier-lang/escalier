@@ -113,7 +113,7 @@ Escape is the single trigger for a move. An owned value moves when it flows into
 - a field or element of an object that outlives the source;
 - a `return`, since the value outlives the call frame;
 - an argument whose parameter the callee lets escape;
-- a closure that itself escapes, capturing the value.
+- a returned closure, capturing the value.
 
 The escaping-argument case is the one that depends on the callee's body rather
 than on its signature. `store` below writes its parameter into module-level
@@ -185,7 +185,7 @@ collected, so drops need no generated code.
 | Field or element store | Move when the container outlives the source, borrowed containers included |
 | `return` | Move, unless the value is a value type or an already-outliving borrow |
 | Function argument | Borrow for a `&` parameter, written `&`/`&mut` at the call; move for a bare owned one |
-| Closure capture | Move into an escaping closure, borrow into a local one; see below |
+| Closure capture | Move into a returned closure, borrow into any other; see [Closure captures](#closure-captures) |
 | Destructuring | Per part, following the same rules |
 | `match` arm bindings | Per part, consistent with destructuring |
 
@@ -218,6 +218,36 @@ val r: &{x: number} = q        // OK — narrowing a mutable view to a read-only
 
 val s = &p
 val t: &mut {x: number} = s    // ERROR: cannot constrain immutable object <: mutable object
+```
+
+### Closure captures
+
+A closure reads or writes what it captures only while its body runs. Where the
+closure goes decides how its captures are checked:
+
+- A closure that stays in the body borrows its captures. Each call of it, and
+  each call it is passed to, borrows them for that statement, mutably for a
+  capture it writes. A write to a captured value between two calls is fine.
+- A returned closure moves the owned values it captures, since nothing in the
+  frame can reach them after the return.
+- A closure stored into a caller-owned object, such as a field of a `&mut`
+  parameter, borrows its captures. The caller can only call it after the
+  function returns. The paths it hands the caller are checked like any stored
+  borrow, so a second path out that disagrees with it is reported.
+- A closure stored into module-level state can run during any later call. Each
+  call after the store mutably borrows the owned values the closure writes. A
+  value the closure only reads stays free.
+
+```esc
+var sink: fn () -> undefined = fn () {}
+declare fn readIt(a: &{x: number}) -> undefined
+
+fn go() {
+    val mut p = {x: 1}
+    sink = fn () { p.x = 2 }
+    val a = &p
+    readIt(a)   // ERROR: this call may run 'sink', which writes 'p' while it is borrowed as immutable
+}
 ```
 
 ## Partial moves
@@ -454,10 +484,12 @@ Out of scope by design:
 
 Specified above but not yet enforced:
 
-- **Escaping closure captures**
-  ([#1267](https://github.com/escalier-lang/escalier/issues/1267)). Capturing a
-  value in a closure that escapes is specified as a move, but the checker does
-  not consume the captured binding today, so the later use goes unreported.
+- **Closures passed to a retaining function**
+  ([#1267](https://github.com/escalier-lang/escalier/issues/1267)). A closure
+  passed to a function that keeps it is checked like one the function only
+  calls, so its captures are borrowed for the call alone. A function-typed
+  parameter carries no lifetime, so the checker cannot tell a callee that keeps
+  the closure from one that only calls it.
 - **Element stores**
   ([#1268](https://github.com/escalier-lang/escalier/issues/1268)). `t[i] = x`
   is rejected as unsupported rather than treated as an escape.
