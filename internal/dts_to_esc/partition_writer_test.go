@@ -669,7 +669,7 @@ func TestReportPartition_NamesDropsWithoutRoutedCounts(t *testing.T) {
 	res := &PartitionResult{
 		Buckets: map[string][]dts_parser.Statement{
 			"std:prelude": make([]dts_parser.Statement, 3),
-			"web:dom":   make([]dts_parser.Statement, 5),
+			"web:dom":     make([]dts_parser.Statement, 5),
 		},
 		Drops: []DropNote{
 			{Name: "globalThis", SourceFile: "lib.es5.d.ts"},
