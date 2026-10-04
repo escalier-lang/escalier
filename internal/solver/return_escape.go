@@ -297,9 +297,6 @@ func (c *checker) resolveComponentEscapes(
 		}
 		c.reportEscapingLocals(escaping, es.expr)
 	}
-	if c.consumeEscapedCaptures(flowBorrowGraph) {
-		consumed = true
-	}
 	c.commitOwnedReturnTypes(ownedReturns)
 	c.fn.escapeSites = nil
 	return consumed

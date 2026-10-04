@@ -2163,8 +2163,9 @@ func (c *checker) inferAssign(scope *Scope, lvl int, e *ast.BinaryExpr) soltype.
 			if c.fn != nil {
 				if ref, ok := c.fn.stmtToRef[assignStmt]; ok {
 					c.consumeAtGlobalWrite(e.Right, sourceT, e.Right, ref)
-					// A closure in permanent storage outlives every local it captures.
-					c.noteEscapedClosureSite(e.Right, ref)
+					// Anything can call a closure in a module-level binding from here on, so what
+					// it captures has to stay borrowed for the rest of the body.
+					c.noteGlobalClosureStore(e.Right, ref)
 				}
 			}
 			// KNOWN GAP (#762): this store is accepted even though it is not sound in

@@ -185,6 +185,10 @@ type loan struct {
 	// An async or generator body hands control back to the caller at each `await` or `yield`
 	// while the frame still runs, so there the loan lasts to the end of the function.
 	callerOwned bool
+	// global marks a loan a store into a module-level binding takes of a local a stored
+	// closure captures. Anything can call the closure once it is stored, so the loan holds at
+	// every statement the store reaches.
+	global bool
 	// endSeq is the sequence at which a reassignment of the holder ended this loan, and 0 while
 	// it still holds. The loan stays in the list so a read walked BEFORE that point is still
 	// weighed against it; erasing it would let a later reassignment silence an earlier read.
@@ -270,6 +274,9 @@ func (c *checker) reportBorrowConflict(first, second loan) {
 // against. Asking IsLiveAfter would miss `readWrite(&x, b)`, where b's last use is the call
 // being checked.
 func (c *checker) liveAt(l loan, ref liveness.StmtRef) bool {
+	if l.global {
+		return c.stmtReaches(l.ref, ref)
+	}
 	// A store into a caller-owned target holds its loan only at the statements that run after
 	// it, so a statement on a branch the store is not on sees no loan.
 	if l.callerOwned && !c.stmtReaches(l.ref, ref) {
@@ -893,4 +900,97 @@ func (c *checker) markNamedClosure(closure *ast.FuncExpr) {
 		c.fn.namedClosures = set.NewSet[*ast.FuncExpr]()
 	}
 	c.fn.namedClosures.Add(closure)
+}
+
+// globalClosureStore is a store into a module-level binding whose value may carry a closure.
+// seq is the loan sequence reserved for the store when it was walked, so the loans the
+// post-pass takes for it order against the reads and borrows around the store.
+type globalClosureStore struct {
+	expr ast.Expr
+	ref  liveness.StmtRef
+	seq  int
+}
+
+// noteGlobalClosureStore records that the value e is stored at `ref` into a module-level
+// binding, for recordGlobalCaptureLoans to take the loans its closures need.
+func (c *checker) noteGlobalClosureStore(e ast.Expr, ref liveness.StmtRef) {
+	if c.fn == nil || c.fn.cfg == nil {
+		return
+	}
+	c.fn.globalClosureStores = append(c.fn.globalClosureStores, globalClosureStore{expr: e, ref: ref, seq: c.nextLoanSeq()})
+}
+
+// recordGlobalCaptureLoans takes a global loan of each owned local a closure captures when the
+// closure reaches a store noteGlobalClosureStore recorded. The closure is one written inside
+// the stored value or one the value reaches through the borrow graph at the store, so a
+// closure bound to a name, copied to another name, or chosen on a branch counts. The loan is
+// mutable when any closure that reaches the store writes the local. A capture holding a borrow
+// takes no loan.
+//
+// It reports each conflict between such a loan and another loan of the same local. A loan
+// walked before the store conflicts when it is still live at the store. A loan walked after
+// the store conflicts when the store reaches its statement. The walk has already recorded both
+// kinds by the time this runs, so it checks them itself. checkUsesAgainstLoans weighs a later
+// write or move against the loan.
+func (c *checker) recordGlobalCaptureLoans(flowBorrowGraph *flowBorrowGraph) {
+	for _, store := range c.fn.globalClosureStores {
+		graph := flowBorrowGraph.fieldBorrowGraphBefore(store.ref)
+		writes := map[liveness.VarID]bool{}
+		var edges []fieldBorrow
+		for _, closure := range closuresIn(store.expr) {
+			for _, local := range c.fn.capturedLocals[closure] {
+				writes[local.root] = writes[local.root] || local.mut
+				collectAllEdgesFrom(local.root, set.NewSet[liveness.VarID](), graph, &edges)
+			}
+		}
+		if p, ok := exprPlace(store.expr); ok && p.root > 0 {
+			collectEdgesFrom(p.root, p.path, set.NewSet[liveness.VarID](), graph, &edges)
+		}
+		for _, edge := range edges {
+			if edge.capture {
+				writes[edge.referent] = writes[edge.referent] || edge.mut
+			}
+		}
+		roots := make([]liveness.VarID, 0, len(writes))
+		for root := range writes {
+			roots = append(roots, root)
+		}
+		// Sorting keeps the order of the loans, and so of any reports, the same from run to run.
+		slices.Sort(roots)
+		for _, root := range roots {
+			if !isOwnedMovable(c.fn.capturedTypes[root]) {
+				continue
+			}
+			fresh := loan{
+				place:  movePlace{root: root},
+				mut:    writes[root],
+				ref:    store.ref,
+				node:   store.expr,
+				seq:    store.seq,
+				global: true,
+			}
+			// A closure written in the store itself took a loan of the local at the store's
+			// statement while it was walked, and that loan was already checked against every
+			// loan live there.
+			checkedAtStore := slices.ContainsFunc(c.fn.loans, func(l loan) bool {
+				return l.ref == store.ref && l.place.root == root && l.mut == fresh.mut && l.seq < fresh.seq
+			})
+			for _, other := range c.fn.loans {
+				if !conflicts(other, fresh) {
+					continue
+				}
+				if other.seq < fresh.seq {
+					if checkedAtStore || (other.endSeq != 0 && other.endSeq < fresh.seq) {
+						continue
+					}
+					if c.liveAt(other, fresh.ref) {
+						c.reportBorrowConflict(other, fresh)
+					}
+				} else if c.liveAt(fresh, other.ref) {
+					c.reportBorrowConflict(fresh, other)
+				}
+			}
+			c.fn.loans = append(c.fn.loans, fresh)
+		}
+	}
 }
