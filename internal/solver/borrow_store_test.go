@@ -22,10 +22,10 @@ import (
 // field's own lifetime, and 'c is target's own borrow lifetime, so only peer takes the
 // stored borrow and spare is a sibling position the store must miss.
 //
-// The edge is observed by storing the target's borrowed field into a parameter's field and
-// then moving the local. The caller keeps reading that parameter after the call, so the store
-// takes a loan of every local the stored value borrows, and the loan lasts to the end of the
-// function. The move then conflicts with it, so the diagnostic names what the call aliased.
+// The edge is observed by storing the target's borrowed field into a parameter's field, moving
+// the local, and then reading the parameter. The store takes a loan of every local the stored
+// value borrows, held by the parameter while the body reads it. The move happens before that
+// read, so it conflicts with the loan and the diagnostic names what the call aliased.
 // Each case builds its target's fields from parameter borrows, which the graph exempts, so the
 // store call is the sole source of any edge to a local.
 func TestCallStoreEdge(t *testing.T) {
@@ -50,6 +50,7 @@ func TestCallStoreEdge(t *testing.T) {
 					store(&mut a, &mut b)
 					out.slot = a.peer
 					val y = b
+					val z = out
 				}
 			`,
 			want: []string{"12:14-12:15: cannot move 'b' while it is borrowed"},
@@ -99,6 +100,7 @@ func TestCallStoreEdge(t *testing.T) {
 					store(&mut a.inner, &mut b)
 					out.slot = a.inner.peer
 					val y = b
+					val z = out
 				}
 			`,
 			want: []string{"12:14-12:15: cannot move 'b' while it is borrowed"},
@@ -248,6 +250,7 @@ func TestCallStoreEdgePositions(t *testing.T) {
 					store(&mut a, &mut b)
 					out.slot = a.box
 					val y = b
+					val z = out
 				}
 			`,
 			want: []string{"12:14-12:15: cannot move 'b' while it is borrowed"},
@@ -269,6 +272,7 @@ func TestCallStoreEdgePositions(t *testing.T) {
 					store(&mut a, &mut b)
 					out.slot = a.peer
 					val y = b
+					val z = out
 				}
 			`,
 			want: []string{"9:14-9:15: cannot move 'b' while it is borrowed"},
@@ -292,6 +296,7 @@ func TestCallStoreEdgePositions(t *testing.T) {
 					store(&mut a, &b)
 					out.slot = a.peer
 					val y = b
+					val z = out
 				}
 			`,
 			want: []string{"11:14-11:15: cannot move 'b' while it is borrowed"},
@@ -321,6 +326,7 @@ func TestCallStoreEdgePositions(t *testing.T) {
 					store(&mut a, &mut b)
 					out.slot = a.peer
 					val y = b
+					val z = out
 				}
 			`,
 			want: []string{"6:29-6:35: object is missing property: value", "3:71-3:77: object has extra property: other", "11:14-11:15: cannot move 'b' while it is borrowed"},
@@ -344,6 +350,7 @@ func TestCallStoreEdgePositions(t *testing.T) {
 					store(&mut a, &{inner: &mut b})
 					out.slot = a.peer
 					val y = b
+					val z = out
 				}
 			`,
 			want: []string{"11:14-11:15: cannot move 'b' while it is borrowed"},
@@ -366,6 +373,7 @@ func TestCallStoreEdgePositions(t *testing.T) {
 					store(&mut a, &mut b)
 					out.slot = a.peers
 					val y = b
+					val z = out
 				}
 			`,
 			want: []string{"11:14-11:15: cannot move 'b' while it is borrowed"},
@@ -390,6 +398,7 @@ func TestCallStoreEdgePositions(t *testing.T) {
 					store(&mut a, &b)
 					out.slot = a.peer
 					val y = b
+					val z = out
 				}
 			`,
 			want: []string{"11:14-11:15: cannot move 'b' while it is borrowed"},
@@ -500,6 +509,7 @@ func TestMethodCallStoreEdge(t *testing.T) {
 					s.put(&mut a, &mut b)
 					out.slot = a.peer
 					val y = b
+					val z = out
 				}
 			`,
 			want:  []string{"18:14-18:15: cannot move 'b' while it is borrowed"},
@@ -669,9 +679,8 @@ func TestCallStoreEdgeNonStores(t *testing.T) {
 // call takes minutes; with it the walk stops early, and the store at the chain's leaf is
 // still found because the first path to reach it does so within budget.
 //
-// The observable is the loan the store records. The target is a borrow parameter, so the loan
-// lasts to the end of the function, and moving the stored local after the call reports
-// against it.
+// The observable is the loan the store records. The target holds it while the body reads the
+// target, so moving the stored local between the call and that read reports against it.
 func TestCallStoreEdgeAliasChainTerminates(t *testing.T) {
 	const depth = 16
 	var b strings.Builder
@@ -684,6 +693,7 @@ func TestCallStoreEdgeAliasChainTerminates(t *testing.T) {
 	b.WriteString("\tval mut b = {value: 2}\n")
 	b.WriteString("\tstore(t, &mut b)\n")
 	b.WriteString("\tval y = b\n")
+	b.WriteString("\tval z = t\n")
 	b.WriteString("}\n")
 
 	// Parsing stays on the test goroutine, since parseModule asserts through require and a
@@ -710,9 +720,8 @@ func TestCallStoreEdgeAliasChainTerminates(t *testing.T) {
 // the exact field path is unknown. Recording no store would drop the escape that borrow
 // raises, so the store lands at the whole target, which every field read through it follows.
 //
-// The observable is the loan the store records. The target is a borrow parameter, so the loan
-// lasts to the end of the function, and moving the stored local after the call reports
-// against it.
+// The observable is the loan the store records. The target holds it while the body reads the
+// target, so moving the stored local between the call and that read reports against it.
 func TestCallStoreEdgeTruncatedWalkStaysSound(t *testing.T) {
 	// One alias per level, each naming the next, with the borrow past maxAliasExpansionDepth.
 	depth := maxAliasExpansionDepth * 2
@@ -726,6 +735,7 @@ func TestCallStoreEdgeTruncatedWalkStaysSound(t *testing.T) {
 	b.WriteString("\tval mut b = {value: 2}\n")
 	b.WriteString("\tstore(t, &mut b)\n")
 	b.WriteString("\tval y = b\n")
+	b.WriteString("\tval z = t\n")
 	b.WriteString("}\n")
 
 	_, _, errs := inferSource(t, b.String())

@@ -178,10 +178,13 @@ type loan struct {
 	// seq orders this loan against the reads walked around it. It counts up and is never
 	// reused, so it survives the loan list changing shape, where a position would not.
 	seq int
-	// untilReturn marks a loan held by a caller-owned target, a borrow parameter or a borrowing
-	// receiver. The caller keeps reading that target after the call, so the loan lasts to the
-	// end of the function whether or not the body reads the target again.
-	untilReturn bool
+	// callerOwned marks a loan held by a caller-owned target, a borrow parameter or a borrowing
+	// receiver. It lasts while the body can still read the target, like any held loan. The
+	// caller reads the target only after the function returns, and by then nothing in the frame
+	// can change the stored local, so the loan has nothing to guard past the body's last read.
+	// An async or generator body hands control back to the caller at each `await` or `yield`
+	// while the frame still runs, so there the loan lasts to the end of the function.
+	callerOwned bool
 	// endSeq is the sequence at which a reassignment of the holder ended this loan, and 0 while
 	// it still holds. The loan stays in the list so a read walked BEFORE that point is still
 	// weighed against it; erasing it would let a later reassignment silence an earlier read.
@@ -267,7 +270,14 @@ func (c *checker) reportBorrowConflict(first, second loan) {
 // against. Asking IsLiveAfter would miss `readWrite(&x, b)`, where b's last use is the call
 // being checked.
 func (c *checker) liveAt(l loan, ref liveness.StmtRef) bool {
-	if l.untilReturn {
+	// A store into a caller-owned target holds its loan only at the statements that run after
+	// it, so a statement on a branch the store is not on sees no loan.
+	if l.callerOwned && !c.stmtReaches(l.ref, ref) {
+		return false
+	}
+	// The caller can read a caller-owned target at any `await` or `yield`, so in a body that
+	// suspends, the loan outlives the body's own last read of the target.
+	if l.callerOwned && (c.fn.async || c.fn.gen) {
 		return true
 	}
 	if l.holder <= 0 {
@@ -356,6 +366,34 @@ func (c *checker) endLoansAt(holder liveness.VarID, base []placeSeg) {
 // loan with a path to the exit that skips `ref` keeps holding.
 func (c *checker) endLoansAtPostDominating(holder liveness.VarID, base []placeSeg, ref liveness.StmtRef) {
 	c.endLoansWhere(holder, base, func(l loan) bool { return c.blockPostDominates(ref.BlockID, l.ref.BlockID) })
+}
+
+// stmtReaches reports whether the statement at `to` can run after the statement at `from`. That
+// holds for a later statement of the same block, and for any statement of a block the CFG reaches
+// from `from`'s block.
+func (c *checker) stmtReaches(from, to liveness.StmtRef) bool {
+	if from.BlockID == to.BlockID && from.StmtIdx <= to.StmtIdx {
+		return true
+	}
+	cfg := c.fn.cfg
+	if cfg == nil || from.BlockID < 0 || from.BlockID >= len(cfg.Blocks) {
+		return true
+	}
+	seen := set.NewSet[int]()
+	pending := slices.Clone(cfg.Blocks[from.BlockID].Successors)
+	for len(pending) > 0 {
+		b := pending[len(pending)-1]
+		pending = pending[:len(pending)-1]
+		if b.ID == to.BlockID {
+			return true
+		}
+		if seen.Contains(b.ID) {
+			continue
+		}
+		seen.Add(b.ID)
+		pending = append(pending, b.Successors...)
+	}
+	return false
 }
 
 // blockPostDominates reports whether every path from block `from` to the CFG exit passes through
@@ -534,17 +572,16 @@ func (c *checker) noteFieldWrite(target *ast.MemberExpr) {
 //
 // `place` is the data the stored borrow reaches and `target` is the binding it lands in, so the
 // loan is a borrow of `place` held by `target`. It lasts as long as `target` is live, the same rule a
-// borrow bound to a name follows. A target whose referent belongs to the caller is the
-// exception, and its loan lasts to the end of the function. targetPath is the field of `target`
-// the borrow lands at, so a later store into that field can end this loan and leave a sibling
-// field's alone.
+// borrow bound to a name follows, and that holds for a target whose referent belongs to the
+// caller as well. targetPath is the field of `target` the borrow lands at, so a later store into
+// that field can end this loan and leave a sibling field's alone.
 func (c *checker) recordStoreEdgeLoan(place movePlace, mut bool, target liveness.VarID, targetPath []placeSeg, ref liveness.StmtRef, blame ast.Node) {
 	if c.fn == nil || target <= 0 || place.root <= 0 {
 		return
 	}
 	fresh := loan{
 		place: place, mut: mut, holder: target, holderPath: targetPath, ref: ref, node: blame,
-		fromStore: true, untilReturn: c.paramReferentOutlivesFrame(target), seq: c.nextLoanSeq(),
+		fromStore: true, callerOwned: c.paramReferentOutlivesFrame(target), seq: c.nextLoanSeq(),
 	}
 	// One signature can write an argument into several positions of the target, so the same
 	// loan reaches here once per position. Recording it once keeps a later conflict to one

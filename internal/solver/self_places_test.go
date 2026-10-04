@@ -94,8 +94,8 @@ func TestSelfRootedPlaces(t *testing.T) {
 			`,
 			want: nil,
 		},
-		// The caller keeps reading the instance after the method returns, so the store's loan
-		// of b lasts to the end of the method. Moving b out afterwards conflicts with it.
+		// `self` holds the store's loan of b while the method reads `self`, so moving b out before
+		// that read conflicts with it.
 		"MovingALocalStoredIntoBorrowingReceiverConflicts": {
 			src: selfPlaceDecls + `
 				class C {
@@ -104,6 +104,7 @@ func TestSelfRootedPlaces(t *testing.T) {
 						val mut b = {v: 1}
 						self.peer = &mut b
 						val y = b
+						val z = self.peer.v
 					},
 				}
 			`,

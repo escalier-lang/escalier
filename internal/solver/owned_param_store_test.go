@@ -21,8 +21,8 @@ const ownedParamDecls = `
 //
 // Only a BORROW parameter names data the caller still holds. `&T` and `&mut T` reach an object
 // the caller keeps, so a borrow of a local written into one reaches the caller. The store takes
-// a loan of the local that lasts to the end of the function, which keeps the stored borrow the
-// only path to it. An owned parameter, `mut T` or plain `T`, is MOVED into the frame: the
+// a loan of the local that the parameter holds while the body reads it. An owned parameter,
+// `mut T` or plain `T`, is MOVED into the frame: the
 // caller gave up every handle at the call, and the value dies with the frame, so nothing
 // written into it outlives anything.
 //
@@ -58,15 +58,27 @@ func TestStoreIntoOwnedParameter(t *testing.T) {
 			`,
 			want: nil,
 		},
-		// The contrast. The caller keeps reading p after the call, so the loan the store takes
-		// lasts to the end of the function even though f never reads p again. Moving b out
-		// then conflicts with it.
+		// f never reads p after the store, so the caller is the next to see b. Moving b into a
+		// binding that dies with the frame changes nothing the caller can observe.
+		"MovingAfterAStoreIntoABorrowParameterOk": {
+			src: ownedParamDecls + `
+				fn f(p: &mut {peer: &mut {value: number}, spare: &mut {value: number}}) -> undefined {
+					val mut b = {value: 2}
+					store(&mut p, &mut b)
+					val y = b
+				}
+			`,
+			want: nil,
+		},
+		// The contrast. p holds the loan the store takes while f reads p, so moving b out
+		// before the read of p conflicts with it.
 		"MovingAfterAStoreIntoABorrowParameterConflicts": {
 			src: ownedParamDecls + `
 				fn f(p: &mut {peer: &mut {value: number}, spare: &mut {value: number}}) -> undefined {
 					val mut b = {value: 2}
 					store(&mut p, &mut b)
 					val y = b
+					val z = p
 				}
 			`,
 			want: []string{"12:14-12:15: cannot move 'b' while it is borrowed"},
@@ -79,6 +91,7 @@ func TestStoreIntoOwnedParameter(t *testing.T) {
 					val mut b = {value: 2}
 					store(&mut p, &mut b)
 					val r = &b
+					val z = p
 				}
 			`,
 			want: []string{"12:14-12:16: cannot borrow 'b' as immutable while it is borrowed as mutable"},
@@ -148,6 +161,7 @@ func TestStoreIntoOwnedParameter(t *testing.T) {
 					p.peer = &mut b
 					store(out, p.peer)
 					val y = b
+					val z = out
 				}
 			`,
 			want: []string{"10:14-10:15: cannot move 'b' while it is borrowed"},
