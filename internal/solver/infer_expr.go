@@ -178,6 +178,8 @@ func astKind(n any) string {
 func (c *checker) inferFuncExpr(scope *Scope, lvl int, e *ast.FuncExpr) soltype.Type {
 	t := c.inferFunc(scope, lvl, e.FuncSig, e.Body, e, true)
 	c.recordType(e, t)
+	// The closure reads or writes what it captures from the body it is written in.
+	c.recordCaptureLoans(scope, e)
 	return t
 }
 
@@ -439,9 +441,10 @@ func (c *checker) inferFunc(scope *Scope, lvl int, sig ast.FuncSig, body *ast.Bl
 		// parameter alias sets onto c.fn. recordParamVarIDs then copies each param's
 		// freshly-assigned VarID onto its binding so a closure capturing the param
 		// resolves to its alias set.
-		selfVarID := c.runLivenessPrePass(fnScope, sig.Params, recv, paramTypes, body)
+		closure, _ := node.(*ast.FuncExpr)
+		extraVarIDs := c.runLivenessPrePass(fnScope, sig.Params, recv, closure, paramTypes, body)
 		recordParamVarIDs(fnScope, sig.Params)
-		recordSelfVarID(fnScope, selfVarID)
+		recordExtraParamVarIDs(fnScope, extraVarIDs)
 		// Walk the body for type-checking and to collect its ReturnStmts; the
 		// block's TAIL value is intentionally discarded. Unlike a value-position
 		// block, where the last expression IS the block's value, a function body's
@@ -1829,6 +1832,12 @@ func (c *checker) recordCallArgEffects(
 		return
 	}
 	c.consumeCallArgs(e, fn, consumeRef)
+	// Calling a closure runs its body, and a callee handed a closure may call it during the
+	// call. So the callee and each argument that names a closure access what it captures.
+	c.useHeldClosure(e.Callee, consumeRef)
+	for _, arg := range e.Args {
+		c.useHeldClosure(arg, consumeRef)
+	}
 	// A borrow parameter takes a borrow, so the call has to write one. The receiver of a
 	// method call is not an argument and keeps auto-borrowing.
 	c.checkExplicitBorrowArgs(e, fn)
@@ -2030,6 +2039,13 @@ func (c *checker) inferAssign(scope *Scope, lvl int, e *ast.BinaryExpr) soltype.
 	var assignStmt ast.Stmt
 	if c.fn != nil {
 		assignStmt = c.fn.currentStmt
+	}
+	if target, ok := e.Left.(*ast.IdentExpr); ok {
+		if closure, ok := e.Right.(*ast.FuncExpr); ok {
+			if b, found := scope.GetValue(target.Name); found && !b.ModuleLevel {
+				c.markNamedClosure(closure)
+			}
+		}
 	}
 	sourceT := c.inferExpr(scope, lvl, e.Right)
 	// Record `undefined` on e up front as the recovery type. Every error path below

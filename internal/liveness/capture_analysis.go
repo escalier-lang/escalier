@@ -40,7 +40,36 @@ func AnalyzeCaptures(funcExpr *ast.FuncExpr) []CaptureInfo {
 		captures: make(map[VarID]CaptureInfo),
 	}
 	funcExpr.Body.Accept(v)
+	return v.sorted()
+}
 
+// ClosureCaptures returns the variables `closure` captures from enclosing scopes, sorted the
+// way AnalyzeCaptures sorts them. It differs from AnalyzeCaptures in two ways:
+//
+//   - A variable read or written only by a function nested in `closure` counts as captured,
+//     since calling `closure` can call the nested function.
+//   - A `&mut` borrow of a captured variable, or of a place rooted at one, counts as a write.
+//
+// outerBindings maps each name visible where `closure` is written to a negative VarID.
+// ClosureCaptures renames `closure`'s body and every body nested in it, so each body has to be
+// renamed again before anything reads its VarIDs.
+func ClosureCaptures(closure *ast.FuncExpr, outerBindings map[string]VarID) []CaptureInfo {
+	if closure.Body == nil {
+		return nil
+	}
+	r := newRenamer(outerBindings, 1)
+	r.nested = true
+	r.renameNestedFunc(closure.Params, closure.Body)
+	v := &captureVisitor{
+		captures: make(map[VarID]CaptureInfo),
+		nested:   true,
+	}
+	closure.Body.Accept(v)
+	return v.sorted()
+}
+
+// sorted returns the recorded captures ordered by VarID, then by name.
+func (v *captureVisitor) sorted() []CaptureInfo {
 	// Convert map to sorted slice for deterministic output.
 	result := make([]CaptureInfo, 0, len(v.captures))
 	for _, info := range v.captures {
@@ -62,6 +91,9 @@ func AnalyzeCaptures(funcExpr *ast.FuncExpr) []CaptureInfo {
 type captureVisitor struct {
 	ast.DefaultVisitor
 	captures map[VarID]CaptureInfo
+	// nested makes the walk descend into nested function bodies and count a `&mut` borrow
+	// of a capture as a write.
+	nested bool
 }
 
 // recordCapture records a read-only capture for an outer variable reference.
@@ -143,10 +175,15 @@ func (v *captureVisitor) EnterExpr(expr ast.Expr) bool {
 			return false // we already traversed the children
 		}
 		return true
+	case *ast.BorrowExpr:
+		if v.nested && e.Mut {
+			v.markMutableLHS(e.Arg)
+		}
+		return true
 	case *ast.FuncExpr:
 		// Don't recurse into nested function bodies — they get their own
 		// capture analysis when inferred.
-		return false
+		return v.nested
 	case *ast.JSXElementExpr:
 		// JSXElementExpr.Accept does not yet recurse into children/attrs
 		// (#490), so we walk them manually here.
@@ -166,7 +203,7 @@ func (v *captureVisitor) EnterExpr(expr ast.Expr) bool {
 func (v *captureVisitor) EnterDecl(decl ast.Decl) bool {
 	switch decl.(type) {
 	case *ast.FuncDecl:
-		return false
+		return v.nested
 	default:
 		return true
 	}

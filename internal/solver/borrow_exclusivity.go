@@ -317,6 +317,18 @@ func (c *checker) recordBorrowLoan(holder int, init ast.Expr, ref liveness.StmtR
 	// through it. `var a = &mut x` followed by `a = &mut y` leaves no loan of x behind. This
 	// is the strong update the flow-sensitive borrow graph makes for the same statement.
 	c.dropLoansHeldBy(liveness.VarID(holder))
+	delete(c.fn.heldClosures, liveness.VarID(holder))
+	if closure, ok := init.(*ast.FuncExpr); ok {
+		// Each later call of the name, or call the name is passed to, takes the closure's
+		// capture loans for that call's statement.
+		if c.fn.namedClosures != nil && c.fn.namedClosures.Contains(closure) {
+			if c.fn.heldClosures == nil {
+				c.fn.heldClosures = map[liveness.VarID]*ast.FuncExpr{}
+			}
+			c.fn.heldClosures[liveness.VarID(holder)] = closure
+		}
+		return
+	}
 	borrow, ok := init.(*ast.BorrowExpr)
 	if !ok {
 		return
@@ -333,6 +345,91 @@ func (c *checker) recordBorrowLoan(holder int, init ast.Expr, ref liveness.StmtR
 		ref:    ref,
 		node:   borrow,
 		seq:    c.nextLoanSeq(),
+	}
+	c.checkAgainstHeldLoans(fresh)
+	c.fn.loans = append(c.fn.loans, fresh)
+}
+
+// captureAccess is one local of the current body that a closure captures, and whether the
+// closure writes it.
+type captureAccess struct {
+	root liveness.VarID
+	mut  bool
+}
+
+// captureAccesses returns the locals of the current body that `closure` captures, resolving
+// each name in `scope`. A capture whose type has value semantics is left out, since a closure
+// holding a primitive cannot see a later change to the binding it copied. So is a capture
+// from a body further out, which this body's tables do not track.
+func (c *checker) captureAccesses(scope *Scope, closure *ast.FuncExpr) []captureAccess {
+	var out []captureAccess
+	for _, capture := range c.closureCaptures(closure) {
+		b, found := scope.GetValue(capture.Name)
+		if !found || b.VarID <= 0 || isValueType(bindingType(b)) {
+			continue
+		}
+		root := liveness.VarID(b.VarID)
+		if name, ok := c.fn.varIDNames[root]; !ok || name != capture.Name {
+			continue
+		}
+		out = append(out, captureAccess{root: root, mut: capture.IsMutable})
+	}
+	return out
+}
+
+// recordCaptureLoans records the accesses `closure` makes to the locals it captures. A closure
+// in namedClosures has them saved for the calls of its name. Any other closure takes its
+// capture loans at its own statement, since the expression it sits in may call it there.
+func (c *checker) recordCaptureLoans(scope *Scope, closure *ast.FuncExpr) {
+	if c.fn == nil {
+		return
+	}
+	accesses := c.captureAccesses(scope, closure)
+	if c.fn.namedClosures != nil && c.fn.namedClosures.Contains(closure) {
+		if c.fn.closureAccesses == nil {
+			c.fn.closureAccesses = map[*ast.FuncExpr][]captureAccess{}
+		}
+		c.fn.closureAccesses[closure] = accesses
+		return
+	}
+	ref, ok := c.currentStmtRef()
+	if !ok {
+		return
+	}
+	for _, a := range accesses {
+		c.takeCaptureLoan(a, ref, closure)
+	}
+}
+
+// useHeldClosure takes the capture loans of the closure `e` names for the statement at `ref`,
+// and records a read of each captured local there. An expression other than a name bound to a
+// closure in namedClosures records nothing.
+func (c *checker) useHeldClosure(expr ast.Expr, ref liveness.StmtRef) {
+	e, ok := expr.(*ast.IdentExpr)
+	if !ok || c.fn == nil || e.VarID <= 0 {
+		return
+	}
+	closure, ok := c.fn.heldClosures[liveness.VarID(e.VarID)]
+	if !ok {
+		return
+	}
+	for _, a := range c.fn.closureAccesses[closure] {
+		c.takeCaptureLoan(a, ref, e)
+		c.fn.useSites = append(c.fn.useSites, moveUse{place: movePlace{root: a.root}, ref: ref, node: e, loanSeqAt: c.fn.loanSeq + 1})
+	}
+}
+
+// takeCaptureLoan records a loan of the whole captured local for the statement at `ref`,
+// after reporting any conflict with a loan already live there. The loan has no holder, so it
+// lasts for that statement alone. It is mutable when the closure writes the capture. `node`
+// is what a conflict report blames.
+func (c *checker) takeCaptureLoan(a captureAccess, ref liveness.StmtRef, node ast.Node) {
+	fresh := loan{
+		place: movePlace{root: a.root},
+		mut:   a.mut,
+		ref:   ref,
+		node:  node,
+		seq:   c.nextLoanSeq(),
 	}
 	c.checkAgainstHeldLoans(fresh)
 	c.fn.loans = append(c.fn.loans, fresh)
@@ -781,4 +878,16 @@ func (c *checker) checkCallBorrowExclusivity(e *ast.CallExpr, fn *soltype.FuncTy
 	for _, a := range args {
 		c.checkAgainstHeldLoans(a)
 	}
+}
+
+// markNamedClosure adds `closure` to namedClosures. It must run before the closure is
+// inferred, since inferring it records its capture accesses.
+func (c *checker) markNamedClosure(closure *ast.FuncExpr) {
+	if c.fn == nil {
+		return
+	}
+	if c.fn.namedClosures == nil {
+		c.fn.namedClosures = set.NewSet[*ast.FuncExpr]()
+	}
+	c.fn.namedClosures.Add(closure)
 }
