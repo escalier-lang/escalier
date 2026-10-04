@@ -186,7 +186,7 @@ type loan struct {
 	// while the frame still runs, so there the loan lasts to the end of the function.
 	callerOwned bool
 	// global marks a loan a store into a module-level binding takes of a local a stored
-	// closure captures. Anything can call the closure once it is stored, so the loan holds at
+	// closure writes. Anything can call the closure once it is stored, so the loan holds at
 	// every statement the store reaches.
 	global bool
 	// endSeq is the sequence at which a reassignment of the holder ended this loan, and 0 while
@@ -920,12 +920,11 @@ func (c *checker) noteGlobalClosureStore(e ast.Expr, ref liveness.StmtRef) {
 	c.fn.globalClosureStores = append(c.fn.globalClosureStores, globalClosureStore{expr: e, ref: ref, seq: c.nextLoanSeq()})
 }
 
-// recordGlobalCaptureLoans takes a global loan of each owned local a closure captures when the
-// closure reaches a store noteGlobalClosureStore recorded. The closure is one written inside
-// the stored value or one the value reaches through the borrow graph at the store, so a
-// closure bound to a name, copied to another name, or chosen on a branch counts. The loan is
-// mutable when any closure that reaches the store writes the local. A capture holding a borrow
-// takes no loan.
+// recordGlobalCaptureLoans takes a mutable global loan of each owned local a closure writes
+// when the closure reaches a store noteGlobalClosureStore recorded. The closure is one written
+// inside the stored value or one the value reaches through the borrow graph at the store, so a
+// closure bound to a name, copied to another name, or chosen on a branch counts. A local the
+// closures only read takes no loan, and neither does a capture holding a borrow.
 //
 // It reports each conflict between such a loan and another loan of the same local. A loan
 // walked before the store conflicts when it is still live at the store. A loan walked after
@@ -958,12 +957,14 @@ func (c *checker) recordGlobalCaptureLoans(flowBorrowGraph *flowBorrowGraph) {
 		// Sorting keeps the order of the loans, and so of any reports, the same from run to run.
 		slices.Sort(roots)
 		for _, root := range roots {
-			if !isOwnedMovable(c.fn.capturedTypes[root]) {
+			// A closure that only reads the local needs it unchanged only while the closure
+			// runs, and the frame cannot write it then.
+			if !writes[root] || !isOwnedMovable(c.fn.capturedTypes[root]) {
 				continue
 			}
 			fresh := loan{
 				place:  movePlace{root: root},
-				mut:    writes[root],
+				mut:    true,
 				ref:    store.ref,
 				node:   store.expr,
 				seq:    store.seq,

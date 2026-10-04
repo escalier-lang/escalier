@@ -2164,7 +2164,7 @@ func (c *checker) inferAssign(scope *Scope, lvl int, e *ast.BinaryExpr) soltype.
 				if ref, ok := c.fn.stmtToRef[assignStmt]; ok {
 					c.consumeAtGlobalWrite(e.Right, sourceT, e.Right, ref)
 					// Anything can call a closure in a module-level binding from here on, so what
-					// it captures has to stay borrowed for the rest of the body.
+					// it writes has to stay borrowed for the rest of the body.
 					c.noteGlobalClosureStore(e.Right, ref)
 				}
 			}
