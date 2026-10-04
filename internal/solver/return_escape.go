@@ -415,6 +415,9 @@ func (c *checker) movedOrigins() map[liveness.VarID][]*placeCopy {
 		return out
 	}
 	for i := range c.fn.placeCopies {
+		// Point at the element in placeCopies rather than a copy of it. originsOf keys its
+		// `seen` set on these pointers to follow each copy once. A placeCopy holds slices, so
+		// it can't be a set key by value.
 		pc := &c.fn.placeCopies[i]
 		if c.fn.movedSources.Contains(pc.expr) {
 			out[pc.dest] = append(out[pc.dest], pc)
