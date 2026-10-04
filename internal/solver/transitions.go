@@ -687,7 +687,7 @@ func (c *checker) varIDToName(id liveness.VarID) string {
 // recv is the body's receiver, nil when the body has none. A receiver is not an entry in
 // astParams, so the rename pass defines `self` as an extra parameter of the body.
 //
-// closure is the function expression whose body this is, nil for any other body. Each local
+// `closure` is the function expression whose body this is, nil for any other body. Each local
 // it captures from an enclosing body is defined as an extra parameter of the body too, so a
 // place rooted at the capture is tracked inside the closure. The captures are recorded for
 // closureCaptures to return.
@@ -767,9 +767,9 @@ func (c *checker) runLivenessPrePass(scope *Scope, astParams []*ast.Param, recv 
 	return renameResult.ExtraParamVarIDs
 }
 
-// collectClosureCaptures returns the names of the locals closure captures from an enclosing
+// collectClosureCaptures returns the names of the locals `closure` captures from an enclosing
 // body, sorted. A name bound at module level or in the prelude carries no VarID and is left
-// out. Every capture closure makes, module-level names included, is recorded for
+// out. Every capture `closure` makes, module-level names included, is recorded for
 // closureCaptures to return.
 //
 // liveness.ClosureCaptures renames the closure's body and the bodies nested in it. The
@@ -791,7 +791,7 @@ func (c *checker) collectClosureCaptures(scope *Scope, closure *ast.FuncExpr, ou
 	return names
 }
 
-// closureCaptures returns the variables closure captures from enclosing scopes and whether it
+// closureCaptures returns the variables `closure` captures from enclosing scopes and whether it
 // writes each one. A closure whose body has been walked returns what its pre-pass recorded.
 // Any other closure is analyzed on the spot.
 func (c *checker) closureCaptures(closure *ast.FuncExpr) []liveness.CaptureInfo {
@@ -809,8 +809,8 @@ func seedSelfAlias(scope *Scope, selfVarID liveness.VarID, aliases *liveness.Ali
 	seedBindingAlias(scope, "self", selfVarID, aliases, varIDTypes)
 }
 
-// seedBindingAlias seeds the alias tracker with an alias set for id, the VarID the rename
-// assigned to name, and records the type of name's binding in scope into varIDTypes. The
+// seedBindingAlias seeds the alias tracker with an alias set for `id`, the VarID the rename
+// assigned to `name`, and records the type of `name`'s binding in `scope` into varIDTypes. The
 // alias set is mutable when that type is.
 func seedBindingAlias(scope *Scope, name string, id liveness.VarID, aliases *liveness.AliasTracker, varIDTypes map[liveness.VarID]soltype.Type) {
 	mut := liveness.AliasImmutable

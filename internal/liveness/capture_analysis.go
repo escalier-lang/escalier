@@ -43,15 +43,15 @@ func AnalyzeCaptures(funcExpr *ast.FuncExpr) []CaptureInfo {
 	return v.sorted()
 }
 
-// ClosureCaptures returns the variables closure captures from enclosing scopes, sorted the
+// ClosureCaptures returns the variables `closure` captures from enclosing scopes, sorted the
 // way AnalyzeCaptures sorts them. It differs from AnalyzeCaptures in two ways:
 //
-//   - A variable read or written only by a function nested in closure counts as captured,
-//     since calling closure can call the nested function.
+//   - A variable read or written only by a function nested in `closure` counts as captured,
+//     since calling `closure` can call the nested function.
 //   - A `&mut` borrow of a captured variable, or of a place rooted at one, counts as a write.
 //
-// outerBindings maps each name visible where closure is written to a negative VarID.
-// ClosureCaptures renames closure's body and every body nested in it, so each body has to be
+// outerBindings maps each name visible where `closure` is written to a negative VarID.
+// ClosureCaptures renames `closure`'s body and every body nested in it, so each body has to be
 // renamed again before anything reads its VarIDs.
 func ClosureCaptures(closure *ast.FuncExpr, outerBindings map[string]VarID) []CaptureInfo {
 	if closure.Body == nil {

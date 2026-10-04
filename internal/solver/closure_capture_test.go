@@ -22,7 +22,7 @@ func TestClosureCapturedPlaces(t *testing.T) {
 		want []string
 	}{
 		// A closure that writes x takes a mutable loan of it, which conflicts with the live
-		// immutable borrow a. The plain write is the same program without the closure.
+		// immutable borrow `a`. The plain write is the same program without the closure.
 		"WriteThroughCaptureBesideLiveBorrow": {
 			src: captureDecls + `
 				fn g() {

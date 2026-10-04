@@ -344,7 +344,7 @@ func (c *checker) recordBorrowLoan(holder int, init ast.Expr, ref liveness.StmtR
 	c.fn.loans = append(c.fn.loans, fresh)
 }
 
-// recordCaptureLoans records a loan of each local of the current body that closure captures,
+// recordCaptureLoans records a loan of each local of the current body that `closure` captures,
 // after reporting any conflict with a loan already live. The loan reaches the whole captured
 // binding, and it is mutable when the closure writes the capture. It has no holder, so it
 // lasts for the closure's own statement until holdCaptureLoans binds it to a name.
@@ -381,7 +381,7 @@ func (c *checker) recordCaptureLoans(scope *Scope, closure *ast.FuncExpr) {
 	}
 }
 
-// holdCaptureLoans binds the loans recordCaptureLoans took for closure to holder.
+// holdCaptureLoans binds the loans recordCaptureLoans took for `closure` to `holder`.
 func (c *checker) holdCaptureLoans(closure *ast.FuncExpr, holder liveness.VarID) {
 	for i := range c.fn.loans {
 		l := &c.fn.loans[i]
