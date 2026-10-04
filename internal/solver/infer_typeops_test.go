@@ -1897,9 +1897,6 @@ func TestInferCondResidualAgainstBound(t *testing.T) {
 				type Ok<T: "a" | 1> = Box<if T : string { T } else { "x" }>
 			`,
 		},
-		// The next two cases differ only in how the Check is written. Over a type parameter the
-		// conditional distributes, so the bound `"a" | 1` gives `"a" | "x"`, which is outside `"x"`.
-		// Over an alias it tests the whole union at once and reduces to `"x"`.
 		{
 			name: "BoundDistributesOutsideBound",
 			src: `
@@ -1907,14 +1904,6 @@ func TestInferCondResidualAgainstBound(t *testing.T) {
 				type Bad<T: "a" | 1> = Box<if T : string { T } else { "x" }>
 			`,
 			wantErr: `cannot constrain if t2 : string { t2 } else { "x" } <: "x"`,
-		},
-		{
-			name: "AliasCheckDoesNotDistribute",
-			src: `
-				type Box<X: "x"> = [X]
-				type A = "a" | 1
-				type Ok = Box<if A : string { A } else { "x" }>
-			`,
 		},
 		{
 			name: "BoundSelectsOutsideBound",
@@ -2203,6 +2192,17 @@ func TestInferCondDistribution(t *testing.T) {
 			name:         "WrittenUnionCheckDoesNotDistribute",
 			src:          `type Result = if number | string : number { "y" } else { "n" }`,
 			wantExpanded: `"n"`,
+		},
+		{
+			// An alias naming a union is not a type-parameter reference either, so the union decides
+			// as a whole and takes the Else branch. Distributing over the members would give
+			// `"a" | "x"`.
+			name: "AliasCheckDoesNotDistribute",
+			src: `
+				type A = "a" | 1
+				type Result = if A : string { A } else { "x" }
+			`,
+			wantExpanded: `"x"`,
 		},
 		{
 			// The parameter also appears in the Extends operand, so each member is tested against a
