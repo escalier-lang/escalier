@@ -331,6 +331,9 @@ func (c *checker) siteReaches(es escapeSite, fieldBorrowGraph map[liveness.VarID
 	if reaches == nil {
 		reaches = c.reachesOf(es.expr, fieldBorrowGraph)
 	}
+	// Extend each path to the places whose data moved into it. An origin keeps the path's
+	// mutability and ownership, since the caller reaches it the same way. The loop ranges over
+	// a copy so the appended origins are not extended a second time.
 	origins := c.movedOrigins()
 	for _, r := range slices.Clone(reaches) {
 		for _, o := range originsOf(r.place, origins) {
@@ -619,19 +622,27 @@ func (c *checker) callerOwnedStoreAccepted(
 	info *liveness.MoveInfo,
 	fieldBorrowGraph map[liveness.VarID][]fieldBorrow,
 ) bool {
+	// The first condition. The stored locals are the ones the site carries out plus every
+	// local they reach through the borrow graph, and each needs a loan from this store.
 	component := reachableLocals(escaping, fieldBorrowGraph)
 	for _, id := range component.ToSlice() {
 		if !c.hasCallerOwnedLoan(id, es.stmtRef) {
 			return false
 		}
 	}
+	// The second condition holds outright when the body never reads the target again.
 	if !c.storeTargetReadAfter(es.stmtRef) {
 		return true
 	}
+	// Record whether the store hands out each stored local as a writer or a reader, so an
+	// alias's edge can be compared against it.
 	stored := map[liveness.VarID]bool{}
 	for _, r := range c.siteReaches(es, fieldBorrowGraph) {
 		stored[r.place.root] = r.mut
 	}
+	// Look for a binding outside the stored locals with a borrow edge into one of them. A
+	// binding moved before the store or not live after it is skipped. Sorting the roots makes
+	// the first disagreeing alias, and so the report, the same from run to run.
 	roots := make([]liveness.VarID, 0, len(fieldBorrowGraph))
 	for root := range fieldBorrowGraph {
 		roots = append(roots, root)
@@ -647,6 +658,9 @@ func (c *checker) callerOwnedStoreAccepted(
 		if c.fn.liveness != nil && !c.fn.liveness.IsLiveAfter(es.stmtRef, root) {
 			continue
 		}
+		// An edge into a stored local whose mutability differs from the store's is the
+		// disagreement the second condition rules out. It is reported once, and the store
+		// counts as accepted so the escape check does not report it again.
 		for _, edge := range fieldBorrowGraph[root] {
 			storedMut, ok := stored[edge.referent]
 			if !ok || storedMut == edge.mut {
