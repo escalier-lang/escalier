@@ -364,24 +364,32 @@ func (c *checker) blockPostDominates(by, from int) bool {
 	if by == from {
 		return true
 	}
+	// Without a CFG, or with a block ID outside it, nothing is known about the paths, so the
+	// answer is the safe one. A caller then keeps the loan holding.
 	cfg := c.fn.cfg
 	if cfg == nil || by < 0 || by >= len(cfg.Blocks) || from < 0 || from >= len(cfg.Blocks) {
 		return false
 	}
+	// Walk forward from `from` depth-first and treat `by` as a wall. The walk never steps into
+	// `by` or past it, so any block it does reach has a path from `from` that avoids `by`.
 	seen := set.NewSet[int]()
 	pending := []*liveness.BasicBlock{cfg.Blocks[from]}
 	for len(pending) > 0 {
 		b := pending[len(pending)-1]
 		pending = pending[:len(pending)-1]
+		// A path into `by` passes through it, so it is no counterexample. A block already
+		// visited has had its successors queued once, which also stops the walk on a loop.
 		if b.ID == by || seen.Contains(b.ID) {
 			continue
 		}
+		// Reaching the exit means some path from `from` gets there without passing `by`.
 		if b == cfg.Exit {
 			return false
 		}
 		seen.Add(b.ID)
 		pending = append(pending, b.Successors...)
 	}
+	// The walk ran out of blocks without reaching the exit, so every path to it runs into `by`.
 	return true
 }
 
