@@ -264,6 +264,51 @@ func TestReturnValueBorrows(t *testing.T) {
 			want:  []string{"5:13-5:19: 'b' leaves the function through a mutable path and an immutable one"},
 			types: map[string]string{"f": "fn (p: &mut {node: {peer: &{value: number}}}) -> &mut {value: number}"},
 		},
+		// A borrow written in an `if`/`else` branch keeps the mutability it is written with.
+		// Both branches store `&mut b`, so both paths to b are mutable and the return is
+		// accepted as it is beside a plain mutable store.
+		"ReturnOfALocalAlsoStoredThroughAnIfElse": {
+			src: `
+				fn f(cond: boolean, p: &mut {node: {peer: &mut {value: number}}}) {
+					val mut b = {value: 0}
+					p.node = {peer: if cond { &mut b } else { &mut b }}
+					return &mut b
+				}
+			`,
+			want: nil,
+			types: map[string]string{
+				"f": "fn (cond: boolean, p: &mut {node: {peer: &mut {value: number}}}) -> &mut {value: number}",
+			},
+		},
+		// The same branches storing `&b` leave the caller reading b while the return writes it.
+		"ReturnOfALocalAlsoStoredImmutablyThroughAnIfElse": {
+			src: `
+				fn f(cond: boolean, p: &mut {node: {peer: &{value: number}}}) {
+					val mut b = {value: 0}
+					p.node = {peer: if cond { &b } else { &b }}
+					return &mut b
+				}
+			`,
+			want: []string{"5:13-5:19: 'b' leaves the function through a mutable path and an immutable one"},
+			types: map[string]string{
+				"f": "fn (cond: boolean, p: &mut {node: {peer: &{value: number}}}) -> &mut {value: number}",
+			},
+		},
+		// A return written as an `if`/`else` reaches b through each branch's borrow, so a mutable
+		// return beside a mutable store is accepted.
+		"IfElseReturnOfALocalAlsoStoredIntoAParam": {
+			src: `
+				fn f(cond: boolean, p: &mut {node: {peer: &mut {value: number}}}) {
+					val mut b = {value: 0}
+					p.node = {peer: &mut b}
+					return if cond { &mut b } else { &mut b }
+				}
+			`,
+			want: nil,
+			types: map[string]string{
+				"f": "fn (cond: boolean, p: &mut {node: {peer: &mut {value: number}}}) -> &mut {value: number}",
+			},
+		},
 		// A consuming argument leaves a second path behind too. Here the path belongs to the
 		// callee rather than the caller: an owned parameter takes the object and everything it
 		// reaches. Both paths to b are mutable, so the return is accepted the way it is beside a

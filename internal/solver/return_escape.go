@@ -263,8 +263,9 @@ func (c *checker) siteEscaping(es escapeSite, fieldBorrowGraph map[liveness.VarI
 }
 
 // siteReaches returns every path the site hands out to a local, with whether a write can go
-// through it. A local the site reaches without a known path, such as one carried by an `if`/`else`
-// branch, is listed once each way, so it disagrees with any other path to the same local.
+// through it. A local the site reaches without a known path, such as one behind a binding an
+// `if`/`else` branch yields, is listed once each way, so it disagrees with any other path to the
+// same local.
 func (c *checker) siteReaches(es escapeSite, fieldBorrowGraph map[liveness.VarID][]fieldBorrow) []elementReach {
 	// Start from the paths with a known place and mutability. A call store lists them on the
 	// site, and any other site derives them from its outgoing expression.
@@ -292,8 +293,10 @@ func (c *checker) siteReaches(es escapeSite, fieldBorrowGraph map[liveness.VarID
 }
 
 // reachesOf returns the paths the outgoing expression e takes into function-locals. An object or
-// tuple literal contributes each element's paths. Any other expression contributes the paths
-// elementReferents finds for it.
+// tuple literal contributes each element's paths. A place or a borrow contributes the paths
+// elementReferents finds for it. Any other expression, such as an `if`/`else`, contributes the
+// paths of each borrow borrowsIn finds in it, so `if c { &mut b } else { &b }` reaches b once
+// as a writer and once as a reader.
 func (c *checker) reachesOf(e ast.Expr, fieldBorrowGraph map[liveness.VarID][]fieldBorrow) []elementReach {
 	switch e := e.(type) {
 	case *ast.TupleExpr:
@@ -318,7 +321,15 @@ func (c *checker) reachesOf(e ast.Expr, fieldBorrowGraph map[liveness.VarID][]fi
 		}
 		return out
 	}
-	return c.elementReferents(e, fieldBorrowGraph)
+	out := c.elementReferents(e, fieldBorrowGraph)
+	if _, isBorrow := e.(*ast.BorrowExpr); !isBorrow {
+		if _, isPlace := exprPlace(e); !isPlace {
+			for _, b := range borrowsIn(e) {
+				out = append(out, c.elementReferents(b, fieldBorrowGraph)...)
+			}
+		}
+	}
+	return out
 }
 
 // localsLeavingOutsideAReturn returns the paths each function-local takes out of the frame

@@ -30,6 +30,27 @@ func TestStoreIntoCallerOwnedTarget(t *testing.T) {
 				}
 			`,
 		},
+		// A borrow stored through an `if`/`else` takes the same loan a plain store does.
+		"ImmutableStoreThroughAnIfElseOk": {
+			src: `
+				fn f(cond: boolean, out: &mut {r: &{x: number}}) {
+					val p = {x: 1}
+					out.r = if cond { &p } else { &p }
+				}
+			`,
+		},
+		// That loan conflicts with a later move of p the way a plain store's does.
+		"MovingAfterAnImmutableStoreThroughAnIfElseConflicts": {
+			src: `
+				fn f(cond: boolean, out: &mut {r: &{x: number}}) {
+					val p = {x: 1}
+					out.r = if cond { &p } else { &p }
+					val mut q = p
+					q.x = 2
+				}
+			`,
+			want: []string{"5:18-5:19: cannot move 'p' while it is borrowed"},
+		},
 		// Moving p into a mutable binding would let the frame write what `out.r` expects to hold
 		// still, so the move conflicts with the store's loan.
 		"MovingAfterAnImmutableStoreConflicts": {
