@@ -266,6 +266,8 @@ func (c *checker) siteEscaping(es escapeSite, fieldBorrowGraph map[liveness.VarI
 // through it. A local the site reaches without a known path, such as one carried by an `if`/`else`
 // branch, is listed once each way, so it disagrees with any other path to the same local.
 func (c *checker) siteReaches(es escapeSite, fieldBorrowGraph map[liveness.VarID][]fieldBorrow) []elementReach {
+	// Start from the paths with a known place and mutability. A call store lists them on the
+	// site, and any other site derives them from its outgoing expression.
 	reaches := es.reaches
 	if reaches == nil {
 		reaches = c.reachesOf(es.expr, fieldBorrowGraph)
@@ -274,6 +276,9 @@ func (c *checker) siteReaches(es escapeSite, fieldBorrowGraph map[liveness.VarID
 	for _, r := range reaches {
 		known.Add(r.place.root)
 	}
+	// Every local the site carries out, directly or through the borrow graph, that no known
+	// path covers is added as the whole local, once as a writer and once as a reader. Sorting
+	// the IDs keeps the order of the added paths stable from run to run.
 	ids := reachableLocals(c.siteEscaping(es, fieldBorrowGraph), fieldBorrowGraph).ToSlice()
 	slices.Sort(ids)
 	for _, id := range ids {
@@ -459,12 +464,16 @@ func (c *checker) callerOwnedStoreAccepted(
 	if c.stmtInLoop(es.stmtRef) {
 		return false
 	}
+	// The first condition. The stored locals are the ones the site carries out plus every
+	// local they reach through the borrow graph, and each needs a loan from this store.
 	component := reachableLocals(escaping, fieldBorrowGraph)
 	for _, id := range component.ToSlice() {
 		if !c.hasCallerOwnedLoan(id, es.stmtRef) {
 			return false
 		}
 	}
+	// The second condition. Look for a binding outside the stored locals with a borrow edge
+	// into them, skipping one that was moved before the store or is not live after it.
 	for root, edges := range fieldBorrowGraph {
 		if component.Contains(root) {
 			continue
