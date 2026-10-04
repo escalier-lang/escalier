@@ -478,8 +478,8 @@ func (c *checker) localsLeavingOutsideAReturn(flowBorrowGraph *flowBorrowGraph) 
 }
 
 // storeSuperseded reports whether a later store into the same field of a caller-owned target
-// ended every loan the store es recorded. `p.r = &c; p.r = &d` leaves c unreachable through p.r,
-// so the first store hands the caller no path to c.
+// ended every loan the store `es` recorded. `p.r = &c; p.r = &d` leaves c unreachable through
+// `p.r`, so the first store hands the caller no path to c.
 func (c *checker) storeSuperseded(es escapeSite) bool {
 	if !es.callerOwned {
 		return false
@@ -541,8 +541,8 @@ func firstMixedPair(as, bs []outflowPath) (outflowPath, outflowPath, bool) {
 }
 
 // reportMixedOutflow reports that local `conflict.id` leaves through `blame` and through
-// `conflict.other` with paths that disagree. A borrow inside `blame` then takes no second diagnostic
-// from the loan check.
+// `conflict.other` with paths that disagree. A borrow inside `blame` then takes no second
+// diagnostic from the loan check.
 func (c *checker) reportMixedOutflow(conflict *outflowConflict, blame ast.Node) {
 	if e, ok := blame.(ast.Expr); ok {
 		c.noteSharedPathBlame(e)
@@ -563,9 +563,9 @@ type outflowConflict struct {
 }
 
 // returnOutflowConflict compares the return expression `ret` against the paths outOfFrame records
-// for the locals it reaches. `reaches` is what `ret` hands out. `leaves` says some reached local also
-// leaves through another site. `conflict` names the local and the other site when one of those
-// paths disagrees with the return, and is nil otherwise.
+// for the locals it reaches. `reaches` is what `ret` hands out. `leaves` says some reached local
+// also leaves through another site. `conflict` names the local and the other site when one of
+// those paths disagrees with the return, and is `nil` otherwise.
 func (c *checker) returnOutflowConflict(
 	ret ast.Expr,
 	reaches []elementReach,

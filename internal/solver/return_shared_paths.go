@@ -223,7 +223,7 @@ func (c *checker) noteSharedPathBlame(blame ast.Expr) {
 type elementReach struct {
 	place movePlace
 	mut   bool
-	// owned says the path carries the place's data by value rather than borrowing it. The
+	// `owned` says the path carries the place's data by value rather than borrowing it. The
 	// receiver of an owned path can move or freeze the data, so it disagrees with every
 	// borrow of the same place, mutable or not.
 	owned bool

@@ -368,9 +368,9 @@ func (c *checker) endLoansAtPostDominating(holder liveness.VarID, base []placeSe
 	c.endLoansWhere(holder, base, func(l loan) bool { return c.blockPostDominates(ref.BlockID, l.ref.BlockID) })
 }
 
-// stmtReaches reports whether the statement at to can run after the statement at from. That
+// stmtReaches reports whether the statement at `to` can run after the statement at `from`. That
 // holds for a later statement of the same block, and for any statement of a block the CFG reaches
-// from from's block.
+// from `from`'s block.
 func (c *checker) stmtReaches(from, to liveness.StmtRef) bool {
 	if from.BlockID == to.BlockID && from.StmtIdx <= to.StmtIdx {
 		return true
@@ -573,7 +573,7 @@ func (c *checker) noteFieldWrite(target *ast.MemberExpr) {
 // `place` is the data the stored borrow reaches and `target` is the binding it lands in, so the
 // loan is a borrow of `place` held by `target`. It lasts as long as `target` is live, the same rule a
 // borrow bound to a name follows, and that holds for a target whose referent belongs to the
-// caller as well. targetPath is the field of target the borrow lands at, so a later store into
+// caller as well. targetPath is the field of `target` the borrow lands at, so a later store into
 // that field can end this loan and leave a sibling field's alone.
 func (c *checker) recordStoreEdgeLoan(place movePlace, mut bool, target liveness.VarID, targetPath []placeSeg, ref liveness.StmtRef, blame ast.Node) {
 	if c.fn == nil || target <= 0 || place.root <= 0 {

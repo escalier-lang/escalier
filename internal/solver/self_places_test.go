@@ -94,7 +94,7 @@ func TestSelfRootedPlaces(t *testing.T) {
 			`,
 			want: nil,
 		},
-		// self holds the store's loan of b while the method reads self, so moving b out before
+		// `self` holds the store's loan of b while the method reads `self`, so moving b out before
 		// that read conflicts with it.
 		"MovingALocalStoredIntoBorrowingReceiverConflicts": {
 			src: selfPlaceDecls + `
