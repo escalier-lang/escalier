@@ -67,7 +67,7 @@ export declare class RegExp {
      * @param limit if not undefined, the output array is truncated so that it contains no more
      * than 'limit' elements.
      */
-    [Symbol.split](&self, string: string, limit?: number) -> mut Array<string>,
+    [Symbol.split](&self, string: string, limit?: number) -> Array<string>,
     /**
      * Returns a Boolean value indicating the state of the dotAll flag (s) used with a regular expression.
      * Default is false. Read-only.

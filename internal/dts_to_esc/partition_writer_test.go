@@ -578,7 +578,7 @@ declare var Array: ArrayConstructor;
 	// holistically. The expected output covers:
 	//   - push(...items: T[]) → `mut Array<T>` (T[] desugared then wrapped)
 	//   - concat(items: ReadonlyArray<T>) → renamed to `Array<T>`;
-	//     return `T[]` wrapped to `mut Array<T>`
+	//     return `T[]` keeps the bare `Array<T>`, since the caller owns it
 	//   - readArr(readonly T[]) → desugared then renamed to `Array<T>`
 	printed, err := printer.Print(arrayClass, printer.DefaultOptions())
 	require.NoError(t, err)
@@ -586,7 +586,7 @@ declare var Array: ArrayConstructor;
 export declare class Array<T> {
     length: number,
     push(&mut self, ...items: mut Array<T>) -> number,
-    concat(&self, items: Array<T>) -> mut Array<T>,
+    concat(&self, items: Array<T>) -> Array<T>,
     readArr(&mut self, items: Array<T>) -> unknown,
     constructor(&mut self),
     static readonly prototype: mut Array<any>
@@ -654,7 +654,7 @@ interface String {
 	printed, err := printer.Print(str, printer.DefaultOptions())
 	require.NoError(t, err)
 	snaps.MatchInlineSnapshot(t, printed, snaps.Inline(`export declare interface String {
-    split(sep: string) -> mut Array<string>,
+    split(sep: string) -> Array<string>,
     join(parts: Array<string>) -> string
 }`))
 }
@@ -1221,19 +1221,23 @@ declare var Array: ArrayConstructor;
 		libs []lib
 		want string
 	}{
-		// A property takes its mutability from the object holding it, so a
-		// mutable array in one keeps its bare name. A method's return is not
-		// a property and still takes `mut`.
-		"APropertyHoldsNoMutableTwin": {
+		// A property takes its mutability from the object holding it, and a
+		// caller owns what a method returns, so a mutable array keeps its bare
+		// name in both slots. A parameter still takes `mut`.
+		"APropertyAndAReturnHoldNoMutableTwin": {
 			libs: []lib{{"lib.es5.d.ts", arrayDecls + `
 interface ArrayLike<T> {
     items: T[];
     copy(): T[];
+    find(): T[] | null;
+    fill(items: T[]): void;
 }
 `}},
 			want: `export declare interface ArrayLike<T> {
     items: Array<T>,
-    copy() -> mut Array<T>
+    copy() -> Array<T>,
+    find() -> Array<T> | null,
+    fill(items: mut Array<T>) -> unknown
 }`,
 		},
 		// TypeScript requires a restated property to have the same type, not

@@ -1180,7 +1180,7 @@ export declare interface Animatable {
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/Element/animate) */
     animate(keyframes: mut Array<Keyframe> | PropertyIndexedKeyframes | null, options?: number | KeyframeAnimationOptions) -> Animation,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/Element/getAnimations) */
-    getAnimations(options?: GetAnimationsOptions) -> mut Array<Animation>
+    getAnimations(options?: GetAnimationsOptions) -> Array<Animation>
 }
 
 export declare interface AnimationEventMap {
@@ -3348,7 +3348,7 @@ export declare class CSSStyleValue {
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/CSSStyleValue/parse_static) */
     static parse(property: string, cssText: string) -> CSSStyleValue,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/CSSStyleValue/parseAll_static) */
-    static parseAll(property: string, cssText: string) -> mut Array<CSSStyleValue>
+    static parseAll(property: string, cssText: string) -> Array<CSSStyleValue>
 }
 
 /**
@@ -3605,7 +3605,7 @@ export declare interface CanvasPathDrawingStyles {
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/CanvasRenderingContext2D/miterLimit) */
     miterLimit: number,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/CanvasRenderingContext2D/getLineDash) */
-    getLineDash() -> mut Array<number>,
+    getLineDash() -> Array<number>,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/CanvasRenderingContext2D/setLineDash) */
     setLineDash(segments: mut Array<number>) -> unknown,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/CanvasRenderingContext2D/setLineDash) */
@@ -5346,9 +5346,9 @@ export declare interface DocumentOrShadowRoot {
      * @param y The y-offset
      */
     elementFromPoint(x: number, y: number) -> Element | null,
-    elementsFromPoint(x: number, y: number) -> mut Array<Element>,
+    elementsFromPoint(x: number, y: number) -> Array<Element>,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/Document/getAnimations) */
-    getAnimations() -> mut Array<Animation>
+    getAnimations() -> Array<Animation>
 }
 
 /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/DocumentTimeline) */
@@ -5528,7 +5528,7 @@ export declare class Element extends Node implements ARIAMixin, Animatable, Chil
      *
      * [MDN Reference](https://developer.mozilla.org/docs/Web/API/Element/getAttributeNames)
      */
-    getAttributeNames(&self) -> mut Array<string>,
+    getAttributeNames(&self) -> Array<string>,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/Element/getAttributeNode) */
     getAttributeNode(&self, qualifiedName: string) -> Attr | null,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/Element/getAttributeNodeNS) */
@@ -9940,9 +9940,9 @@ export declare class HTMLSlotElement extends HTMLElement {
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/HTMLSlotElement/assign) */
     assign(&mut self, ...nodes: mut Array<Element | Text>) -> unknown,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/HTMLSlotElement/assignedElements) */
-    assignedElements(&mut self, options?: AssignedNodesOptions) -> mut Array<Element>,
+    assignedElements(&mut self, options?: AssignedNodesOptions) -> Array<Element>,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/HTMLSlotElement/assignedNodes) */
-    assignedNodes(&mut self, options?: AssignedNodesOptions) -> mut Array<Node>,
+    assignedNodes(&mut self, options?: AssignedNodesOptions) -> Array<Node>,
     addEventListener<K: keyof HTMLElementEventMap>(&mut self, type: K, listener: fn (this: HTMLSlotElement, ev: HTMLElementEventMap[K]) -> any, options?: boolean | AddEventListenerOptions) -> unknown,
     addEventListener(&mut self, type: string, listener: EventListenerOrEventListenerObject, options?: boolean | AddEventListenerOptions) -> unknown,
     removeEventListener<K: keyof HTMLElementEventMap>(&mut self, type: K, listener: fn (this: HTMLSlotElement, ev: HTMLElementEventMap[K]) -> any, options?: boolean | EventListenerOptions) -> unknown,
@@ -11091,7 +11091,7 @@ export declare class InputEvent extends UIEvent {
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/InputEvent/isComposing) */
     readonly isComposing: boolean,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/InputEvent/getTargetRanges) */
-    getTargetRanges(&self) -> mut Array<StaticRange>,
+    getTargetRanges(&self) -> Array<StaticRange>,
     static prototype: InputEvent,
     constructor(&mut self, type: string, eventInitDict?: InputEventInit)
 }
@@ -11114,7 +11114,7 @@ export declare class IntersectionObserver {
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/IntersectionObserver/observe) */
     observe(&mut self, target: Element) -> unknown,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/IntersectionObserver/takeRecords) */
-    takeRecords(&mut self) -> mut Array<IntersectionObserverEntry>,
+    takeRecords(&mut self) -> Array<IntersectionObserverEntry>,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/IntersectionObserver/unobserve) */
     unobserve(&mut self, target: Element) -> unknown,
     static prototype: IntersectionObserver,
@@ -11215,7 +11215,7 @@ export declare class KeyframeEffect extends AnimationEffect {
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/KeyframeEffect/target) */
     target: Element | null,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/KeyframeEffect/getKeyframes) */
-    getKeyframes(&self) -> mut Array<ComputedKeyframe>,
+    getKeyframes(&self) -> Array<ComputedKeyframe>,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/KeyframeEffect/setKeyframes) */
     setKeyframes(&mut self, keyframes: mut Array<Keyframe> | PropertyIndexedKeyframes | null) -> unknown,
     static prototype: KeyframeEffect,
@@ -11999,13 +11999,13 @@ export declare class MediaStream extends EventTarget {
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/MediaStream/clone) */
     clone(&self) -> MediaStream,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/MediaStream/getAudioTracks) */
-    getAudioTracks(&self) -> mut Array<MediaStreamTrack>,
+    getAudioTracks(&self) -> Array<MediaStreamTrack>,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/MediaStream/getTrackById) */
     getTrackById(&self, trackId: string) -> MediaStreamTrack | null,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/MediaStream/getTracks) */
-    getTracks(&self) -> mut Array<MediaStreamTrack>,
+    getTracks(&self) -> Array<MediaStreamTrack>,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/MediaStream/getVideoTracks) */
-    getVideoTracks(&self) -> mut Array<MediaStreamTrack>,
+    getVideoTracks(&self) -> Array<MediaStreamTrack>,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/MediaStream/removeTrack) */
     removeTrack(&mut self, track: MediaStreamTrack) -> unknown,
     addEventListener<K: keyof MediaStreamEventMap>(&mut self, type: K, listener: fn (this: MediaStream, ev: MediaStreamEventMap[K]) -> any, options?: boolean | AddEventListenerOptions) -> unknown,
@@ -12302,7 +12302,7 @@ export declare class MutationObserver {
      *
      * [MDN Reference](https://developer.mozilla.org/docs/Web/API/MutationObserver/takeRecords)
      */
-    takeRecords(&mut self) -> mut Array<MutationRecord>,
+    takeRecords(&mut self) -> Array<MutationRecord>,
     static prototype: MutationObserver,
     constructor(&mut self, callback: MutationCallback)
 }
@@ -12495,7 +12495,7 @@ export declare class Navigator implements NavigatorAutomationInformation, Naviga
      */
     canShare(&self, data?: ShareData) -> boolean,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/Navigator/getGamepads) */
-    getGamepads(&self) -> mut Array<Gamepad | null>,
+    getGamepads(&self) -> Array<Gamepad | null>,
     /**
      * Available only in secure contexts.
      *
@@ -13421,9 +13421,9 @@ export declare class PointerEvent extends MouseEvent {
      *
      * [MDN Reference](https://developer.mozilla.org/docs/Web/API/PointerEvent/getCoalescedEvents)
      */
-    getCoalescedEvents(&self) -> mut Array<PointerEvent>,
+    getCoalescedEvents(&self) -> Array<PointerEvent>,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/PointerEvent/getPredictedEvents) */
-    getPredictedEvents(&self) -> mut Array<PointerEvent>,
+    getPredictedEvents(&self) -> Array<PointerEvent>,
     static prototype: PointerEvent,
     constructor(&mut self, type: string, eventInitDict?: PointerEventInit)
 }
@@ -16100,7 +16100,7 @@ export declare class SpeechSynthesis extends EventTarget {
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/SpeechSynthesis/cancel) */
     cancel(&mut self) -> unknown,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/SpeechSynthesis/getVoices) */
-    getVoices(&self) -> mut Array<SpeechSynthesisVoice>,
+    getVoices(&self) -> Array<SpeechSynthesisVoice>,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/SpeechSynthesis/pause) */
     pause(&mut self) -> unknown,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/SpeechSynthesis/resume) */
@@ -16272,7 +16272,7 @@ export declare class StylePropertyMapReadOnly {
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/StylePropertyMapReadOnly/get) */
     get(&self, property: string) -> undefined | CSSStyleValue,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/StylePropertyMapReadOnly/getAll) */
-    getAll(&self, property: string) -> mut Array<CSSStyleValue>,
+    getAll(&self, property: string) -> Array<CSSStyleValue>,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/StylePropertyMapReadOnly/has) */
     has(&self, property: string) -> boolean,
     forEach(&self, callbackfn: fn (value: mut Array<CSSStyleValue>, key: string, parent: StylePropertyMapReadOnly) -> unknown, thisArg?: unknown) -> unknown,

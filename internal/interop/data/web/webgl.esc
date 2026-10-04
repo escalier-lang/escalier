@@ -219,7 +219,7 @@ export declare interface WEBGL_color_buffer_float {
 /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/WEBGL_compressed_texture_astc) */
 export declare interface WEBGL_compressed_texture_astc {
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/WEBGL_compressed_texture_astc/getSupportedProfiles) */
-    getSupportedProfiles() -> mut Array<string>,
+    getSupportedProfiles() -> Array<string>,
     readonly COMPRESSED_RGBA_ASTC_4x4_KHR: 37808,
     readonly COMPRESSED_RGBA_ASTC_5x4_KHR: 37809,
     readonly COMPRESSED_RGBA_ASTC_5x5_KHR: 37810,
@@ -1056,7 +1056,7 @@ export declare interface WebGL2RenderingContextBase {
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/WebGL2RenderingContext/getUniformBlockIndex) */
     getUniformBlockIndex(program: WebGLProgram, uniformBlockName: string) -> GLuint,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/WebGL2RenderingContext/getUniformIndices) */
-    getUniformIndices(program: WebGLProgram, uniformNames: mut Array<string>) -> mut Array<GLuint> | null,
+    getUniformIndices(program: WebGLProgram, uniformNames: mut Array<string>) -> Array<GLuint> | null,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/WebGL2RenderingContext/invalidateFramebuffer) */
     invalidateFramebuffer(target: GLenum, attachments: mut Array<GLenum>) -> unknown,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/WebGL2RenderingContext/invalidateSubFramebuffer) */
@@ -2029,7 +2029,7 @@ export declare interface WebGLRenderingContextBase {
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/WebGLRenderingContext/getActiveUniform) */
     getActiveUniform(program: WebGLProgram, index: GLuint) -> WebGLActiveInfo | null,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/WebGLRenderingContext/getAttachedShaders) */
-    getAttachedShaders(program: WebGLProgram) -> mut Array<WebGLShader> | null,
+    getAttachedShaders(program: WebGLProgram) -> Array<WebGLShader> | null,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/WebGLRenderingContext/getAttribLocation) */
     getAttribLocation(program: WebGLProgram, name: string) -> GLint,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/WebGLRenderingContext/getBufferParameter) */
@@ -2093,7 +2093,7 @@ export declare interface WebGLRenderingContextBase {
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/WebGLRenderingContext/getShaderSource) */
     getShaderSource(shader: WebGLShader) -> string | null,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/WebGLRenderingContext/getSupportedExtensions) */
-    getSupportedExtensions() -> mut Array<string> | null,
+    getSupportedExtensions() -> Array<string> | null,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/WebGLRenderingContext/getTexParameter) */
     getTexParameter(target: GLenum, pname: GLenum) -> any,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/WebGLRenderingContext/getUniform) */

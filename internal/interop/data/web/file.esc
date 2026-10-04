@@ -73,7 +73,7 @@ export declare class FormData {
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/FormData/get) */
     get(&self, name: string) -> FormDataEntryValue | null,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/FormData/getAll) */
-    getAll(&self, name: string) -> mut Array<FormDataEntryValue>,
+    getAll(&self, name: string) -> Array<FormDataEntryValue>,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/FormData/has) */
     has(&self, name: string) -> boolean,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/FormData/set) */

@@ -77,7 +77,7 @@ export declare class Headers {
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/Headers/get) */
     get(&self, name: string) -> string | null,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/Headers/getSetCookie) */
-    getSetCookie(&self) -> mut Array<string>,
+    getSetCookie(&self) -> Array<string>,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/Headers/has) */
     has(&self, name: string) -> boolean,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/Headers/set) */

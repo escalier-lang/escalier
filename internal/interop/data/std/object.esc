@@ -75,12 +75,12 @@ export declare class Object {
      * Returns an array of all symbol properties found directly on object o.
      * @param o Object to retrieve the symbols from.
      */
-    static getOwnPropertySymbols(o: unknown) -> mut Array<symbol>,
+    static getOwnPropertySymbols(o: unknown) -> Array<symbol>,
     /**
      * Returns the names of the enumerable string properties and methods of an object.
      * @param o Object that contains the properties and methods. This can be an object that you created or an existing Document Object Model (DOM) object.
      */
-    static keys(o: {...}) -> mut Array<string>,
+    static keys(o: {...}) -> Array<string>,
     /**
      * Returns true if the values are the same value, false otherwise.
      * @param value1 The first value.
@@ -97,22 +97,22 @@ export declare class Object {
      * Returns an array of values of the enumerable own properties of an object
      * @param o Object that contains the properties and methods. This can be an object that you created or an existing Document Object Model (DOM) object.
      */
-    static values<T>(o: {} | ArrayLike<T>) -> mut Array<T>,
+    static values<T>(o: {} | ArrayLike<T>) -> Array<T>,
     /**
      * Returns an array of values of the enumerable own properties of an object
      * @param o Object that contains the properties and methods. This can be an object that you created or an existing Document Object Model (DOM) object.
      */
-    static values(o: {...}) -> mut Array<any>,
+    static values(o: {...}) -> Array<any>,
     /**
      * Returns an array of key/values of the enumerable own properties of an object
      * @param o Object that contains the properties and methods. This can be an object that you created or an existing Document Object Model (DOM) object.
      */
-    static entries<T>(o: {} | ArrayLike<T>) -> mut Array<[string, T]>,
+    static entries<T>(o: {} | ArrayLike<T>) -> Array<[string, T]>,
     /**
      * Returns an array of key/values of the enumerable own properties of an object
      * @param o Object that contains the properties and methods. This can be an object that you created or an existing Document Object Model (DOM) object.
      */
-    static entries(o: {...}) -> mut Array<[string, any]>,
+    static entries(o: {...}) -> Array<[string, any]>,
     /**
      * Returns an object containing all own property descriptors of an object
      * @param o Object that contains the properties and methods. This can be an object that you created or an existing Document Object Model (DOM) object.
@@ -164,7 +164,7 @@ export declare class Object {
      * on that object, and are not inherited from the object's prototype. The properties of an object include both fields (objects) and functions.
      * @param o Object that contains the own properties.
      */
-    static getOwnPropertyNames(o: unknown) -> mut Array<string>,
+    static getOwnPropertyNames(o: unknown) -> Array<string>,
     /**
      * Creates an object that has the specified prototype or that has null prototype.
      * @param o Object to use as a prototype. May be null.

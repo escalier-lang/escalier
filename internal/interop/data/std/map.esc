@@ -57,7 +57,7 @@ export declare class Map<K, V> {
      * @param items An iterable.
      * @param keySelector A callback which will be invoked for each item in items.
      */
-    static groupBy<K, T>(items: Iterable<T>, keySelector: fn (item: T, index: number) -> K) -> mut Map<K, mut Array<T>>
+    static groupBy<K, T>(items: Iterable<T>, keySelector: fn (item: T, index: number) -> K) -> Map<K, mut Array<T>>
 }
 
 @js("WeakMap")

@@ -367,7 +367,7 @@ export declare class RTCCertificate {
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/RTCCertificate/expires) */
     readonly expires: dom.EpochTimeStamp,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/RTCCertificate/getFingerprints) */
-    getFingerprints(&self) -> mut Array<RTCDtlsFingerprint>,
+    getFingerprints(&self) -> Array<RTCDtlsFingerprint>,
     static prototype: RTCCertificate,
     constructor(&mut self)
 }
@@ -493,7 +493,7 @@ export declare class RTCDtlsTransport extends EventTarget {
     onstatechange: (fn (this: RTCDtlsTransport, ev: Event) -> any) | null,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/RTCDtlsTransport/state) */
     readonly state: RTCDtlsTransportState,
-    getRemoteCertificates(&self) -> mut Array<typed_arrays.ArrayBuffer>,
+    getRemoteCertificates(&self) -> Array<typed_arrays.ArrayBuffer>,
     addEventListener<K: keyof RTCDtlsTransportEventMap>(&mut self, type: K, listener: fn (this: RTCDtlsTransport, ev: RTCDtlsTransportEventMap[K]) -> any, options?: boolean | AddEventListenerOptions) -> unknown,
     addEventListener(&mut self, type: string, listener: EventListenerOrEventListenerObject, options?: boolean | AddEventListenerOptions) -> unknown,
     removeEventListener<K: keyof RTCDtlsTransportEventMap>(&mut self, type: K, listener: fn (this: RTCDtlsTransport, ev: RTCDtlsTransportEventMap[K]) -> any, options?: boolean | EventListenerOptions) -> unknown,
@@ -719,13 +719,13 @@ export declare class RTCPeerConnection extends EventTarget {
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/RTCPeerConnection/getConfiguration) */
     getConfiguration(&self) -> RTCConfiguration,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/RTCPeerConnection/getReceivers) */
-    getReceivers(&self) -> mut Array<RTCRtpReceiver>,
+    getReceivers(&self) -> Array<RTCRtpReceiver>,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/RTCPeerConnection/getSenders) */
-    getSenders(&self) -> mut Array<RTCRtpSender>,
+    getSenders(&self) -> Array<RTCRtpSender>,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/RTCPeerConnection/getStats) */
     getStats(&self, selector?: dom.MediaStreamTrack | null) -> Promise<RTCStatsReport>,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/RTCPeerConnection/getTransceivers) */
-    getTransceivers(&self) -> mut Array<RTCRtpTransceiver>,
+    getTransceivers(&self) -> Array<RTCRtpTransceiver>,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/RTCPeerConnection/removeTrack) */
     removeTrack(&mut self, sender: RTCRtpSender) -> unknown,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/RTCPeerConnection/restartIce) */
@@ -792,13 +792,13 @@ export declare class RTCRtpReceiver {
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/RTCRtpReceiver/transport) */
     readonly transport: RTCDtlsTransport | null,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/RTCRtpReceiver/getContributingSources) */
-    getContributingSources(&self) -> mut Array<RTCRtpContributingSource>,
+    getContributingSources(&self) -> Array<RTCRtpContributingSource>,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/RTCRtpReceiver/getParameters) */
     getParameters(&self) -> RTCRtpReceiveParameters,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/RTCRtpReceiver/getStats) */
     getStats(&self) -> Promise<RTCStatsReport>,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/RTCRtpReceiver/getSynchronizationSources) */
-    getSynchronizationSources(&self) -> mut Array<RTCRtpSynchronizationSource>,
+    getSynchronizationSources(&self) -> Array<RTCRtpSynchronizationSource>,
     static prototype: RTCRtpReceiver,
     constructor(&mut self),
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/RTCRtpReceiver/getCapabilities_static) */
