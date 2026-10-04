@@ -87,7 +87,8 @@ var (
 	// The solver requires an `async fn` to annotate its return as a `Promise`, where the
 	// checker reads `async fn f() -> string` as returning `Promise<string>`.
 	causeAsyncReturnAnnotation = &solverSkipCause{
-		name: "an `async fn` annotated with the type its promise resolves to",
+		name:   "an `async fn` annotated with the type its promise resolves to",
+		ticket: "#1849",
 	}
 )
 
@@ -451,7 +452,8 @@ var (
 	// A union keeps the order its members were written in on the checker and not on the
 	// solver, so `A | (B & C)` emits `B & C | A`. Both denote the same type.
 	causeUnionMemberOrder = &solverSkipCause{
-		name: "the order of a union's members in an emitted declaration",
+		name:   "the order of a union's members in an emitted declaration",
+		ticket: "#1850",
 	}
 )
 
