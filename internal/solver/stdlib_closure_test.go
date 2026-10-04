@@ -612,12 +612,15 @@ func TestABareSiblingResolvesOutsideATypeDeclarationInAGroup(t *testing.T) {
 	t.Parallel()
 
 	tests := map[string]struct {
-		decls string
-		read  string
+		decls  string
+		module string
 	}{
 		"FuncSignature": {
 			decls: `export declare fn take(b: Box) -> Box`,
-			read:  `alpha.take(alpha.box).n`,
+			module: `
+				import "std:alpha"
+				val read = alpha.take(alpha.box).n
+			`,
 		},
 		// A fully annotated overload set binds its arm signatures before any
 		// body, which is a separate walk from a lone function's.
@@ -626,21 +629,24 @@ func TestABareSiblingResolvesOutsideATypeDeclarationInAGroup(t *testing.T) {
 				export declare fn take(b: Box) -> Box
 				export declare fn take(b: Box, s: string) -> Box
 			`,
-			read: `alpha.take(alpha.box, "s").n`,
+			module: `
+				import "std:alpha"
+				val read = alpha.take(alpha.box, "s").n
+			`,
 		},
 		"ValAnnotation": {
 			decls: `export declare val other: Box`,
-			read:  `alpha.other.n`,
+			module: `
+				import "std:alpha"
+				val read = alpha.other.n
+			`,
 		},
 	}
 
 	for name, test := range tests {
 		t.Run(name, func(t *testing.T) {
 			t.Parallel()
-			res := inferAgainstCyclicStdlib(t, `
-				import "std:alpha"
-				val read = `+test.read+`
-			`, map[string]string{
+			res := inferAgainstCyclicStdlib(t, test.module, map[string]string{
 				"std/alpha.esc": `
 					import "std:beta"
 					export declare class Box { n: number }
