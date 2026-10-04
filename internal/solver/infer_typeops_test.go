@@ -1326,8 +1326,8 @@ func TestInferIndexResidualErrorMessage(t *testing.T) {
 }
 
 // An indexed access whose target or index is a bounded type parameter is checked through the
-// access over the bound. `T[number]` for `T: Array<number> | []` reads `number`, and
-// `[1, 2, 3][D]` for `D: number` reads `1 | 2 | 3`. The cases cover three bounds:
+// access over the bound. `T[number]` for `T: Array<string> | []` reads `string`, and
+// `["a", "b", "c"][D]` for `D: number` reads `"a" | "b" | "c"`. The cases cover three bounds:
 //
 //   - a parameter bounded by an array
 //   - a parameter bounded by a union of an array and a tuple, which is the bound `Promise.race`
@@ -1345,40 +1345,40 @@ func TestInferIndexOverBoundedParam(t *testing.T) {
 		{
 			name: "ArrayTargetAccepted",
 			src: `
-				type N<X: number> = X
-				type F<T: Array<number>> = N<T[number]>
+				type N<X: string> = X
+				type F<T: Array<string>> = N<T[number]>
 			`,
 		},
 		{
 			name: "ArrayTargetReturnAccepted",
-			src:  `fn f<T: Array<number>>(k: T[number]) -> number { return k }`,
+			src:  `fn f<T: Array<string>>(k: T[number]) -> string { return k }`,
 		},
 		{
 			name: "ArrayOrTupleTargetAccepted",
 			src: `
-				type N<X: number> = X
-				type F<T: Array<number> | []> = N<T[number]>
+				type N<X: string> = X
+				type F<T: Array<string> | []> = N<T[number]>
 			`,
 		},
 		{
 			name: "ArrayOrTupleTargetRejected",
 			src: `
-				type N<X: number> = X
-				type F<T: Array<string> | []> = N<T[number]>
+				type N<X: string> = X
+				type F<T: Array<number> | []> = N<T[number]>
 			`,
-			wantErr: "cannot constrain string <: number",
+			wantErr: "cannot constrain number <: string",
 		},
 		{
 			name: "ArrayOrNonEmptyTupleTargetRejected",
 			src: `
-				type N<X: number> = X
-				type F<T: Array<number> | [string]> = N<T[number]>
+				type N<X: string> = X
+				type F<T: Array<string> | [number]> = N<T[number]>
 			`,
-			wantErr: "cannot constrain string <: number",
+			wantErr: "cannot constrain number <: string",
 		},
 		{
 			name: "ArrayOrTupleTargetReturnAccepted",
-			src:  `fn f<T: Array<number> | []>(k: T[number]) -> number { return k }`,
+			src:  `fn f<T: Array<string> | []>(k: T[number]) -> string { return k }`,
 		},
 		{
 			name: "UnionElementIntoUnionAccepted",
@@ -1393,26 +1393,26 @@ func TestInferIndexOverBoundedParam(t *testing.T) {
 		},
 		{
 			name: "AccessIntoUnionHoldingItAccepted",
-			src:  `fn f<T: Array<number> | []>(k: T[number]) -> T[number] | undefined { return k }`,
+			src:  `fn f<T: Array<string> | []>(k: T[number]) -> T[number] | undefined { return k }`,
 		},
 		{
 			name: "NumericIndexAccepted",
 			src: `
-				type N<X: number> = X
-				type F<D: number> = N<[1, 2, 3][D]>
+				type N<X: string> = X
+				type F<D: number> = N<["a", "b", "c"][D]>
 			`,
 		},
 		{
 			name: "NumericIndexRejected",
 			src: `
-				type N<X: number> = X
-				type F<D: number> = N<["a", 2, 3][D]>
+				type N<X: string> = X
+				type F<D: number> = N<[1, "b", "c"][D]>
 			`,
-			wantErr: `cannot constrain "a" <: number`,
+			wantErr: `cannot constrain 1 <: string`,
 		},
 		{
 			name: "NumericIndexReturnAccepted",
-			src:  `fn f<D: number>(k: [1, 2, 3][D]) -> number { return k }`,
+			src:  `fn f<D: number>(k: ["a", "b", "c"][D]) -> string { return k }`,
 		},
 	}
 	for _, tt := range tests {
