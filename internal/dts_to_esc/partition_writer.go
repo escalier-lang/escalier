@@ -212,17 +212,27 @@ func withTypeParamsRenamed(
 	return decl
 }
 
-// withDefaultsFilled returns keep with each parameter that has no default
-// taking the default of the parameter in the same position of other. It
-// returns keep itself when other supplies nothing new, and never modifies
+// mergedTypeParams returns the type parameters of two merged declarations of
+// one interface. keep is the earlier declaration's list and other the later
+// one's, renamed to keep's names by withTypeParamsRenamed. The result is keep
+// with two additions from other:
+//
+//   - a parameter with no default takes the default of the parameter in the
+//     same position of other
+//   - each parameter of other past keep's arity is appended
+//
+// It returns keep itself when other supplies nothing new, and never modifies
 // keep.
 //
 // TypeScript lets any one declaration of a merged interface give a parameter
 // its default. lib.es5.d.ts writes `Int32Array<TArrayBuffer extends
 // ArrayBufferLike = ArrayBufferLike>` and lib.es2015.core.d.ts writes the same
 // parameter with no default, so the merged parameter has to take it from
-// whichever declaration wrote it.
-func withDefaultsFilled(keep, other []*dts_parser.TypeParam) []*dts_parser.TypeParam {
+// whichever declaration wrote it. TypeScript also lets one declaration add
+// trailing parameters that have defaults, as in `interface Box<T> {}` merged
+// with `interface Box<T, U = number> { value: U }`, and the later
+// declaration's members can name them.
+func mergedTypeParams(keep, other []*dts_parser.TypeParam) []*dts_parser.TypeParam {
 	var out []*dts_parser.TypeParam
 	for i, tp := range keep {
 		if tp.Default != nil || i >= len(other) || other[i].Default == nil {
@@ -234,6 +244,12 @@ func withDefaultsFilled(keep, other []*dts_parser.TypeParam) []*dts_parser.TypeP
 		filled := *tp
 		filled.Default = other[i].Default
 		out[i] = &filled
+	}
+	if len(other) > len(keep) {
+		if out == nil {
+			out = slices.Clone(keep)
+		}
+		out = append(out, other[len(keep):]...)
 	}
 	if out == nil {
 		return keep
@@ -429,7 +445,7 @@ func mergeDecls(stmts []dts_parser.Statement) []dts_parser.Statement {
 				existing := out[i].(*dts_parser.InterfaceDecl)
 				renamed := withTypeParamsRenamed(s, existing.TypeParams)
 				merged := *existing
-				merged.TypeParams = withDefaultsFilled(existing.TypeParams, renamed.TypeParams)
+				merged.TypeParams = mergedTypeParams(existing.TypeParams, renamed.TypeParams)
 				merged.Members = append(slices.Clone(existing.Members), renamed.Members...)
 				// Extends is concatenated without structural dedup. In
 				// practice, TS lib augmentation files add members, not

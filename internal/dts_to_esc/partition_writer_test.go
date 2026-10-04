@@ -1276,6 +1276,26 @@ interface ArrayLike<T = number> {
     readonly length: number
 }`,
 		},
+		// A later declaration may add a trailing parameter that has a default,
+		// and its members may name it, so the merged declaration keeps it.
+		"ATrailingParameterFromALaterDeclaration": {
+			libs: []lib{
+				{"lib.es5.d.ts", `
+interface ArrayLike<T> {
+    at(i: number): T;
+}
+`},
+				{"lib.es2015.core.d.ts", `
+interface ArrayLike<T, U = number> {
+    value: U;
+}
+`},
+			},
+			want: `export declare interface ArrayLike<T, U = number> {
+    at(i: number) -> T,
+    value: U
+}`,
+		},
 	}
 
 	for name, test := range tests {
