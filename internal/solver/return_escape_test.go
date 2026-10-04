@@ -230,13 +230,10 @@ func TestReturnValueBorrows(t *testing.T) {
 			types: map[string]string{"f": "fn <'a>(obj: {peer?: &'a mut {value: number}}) -> &'a mut {value: number}"},
 		},
 		// A local this frame also sends out another way is not the return's alone. The store
-		// puts a borrow of b in the caller's object, so the caller reaches b through p.node.peer
-		// and through the return, which is two live mutable paths to one value. The return
-		// takes no exemption and reports.
-		//
-		// The wording is what this case asserts. b's lifetime is not the problem, since the frame
-		// ends at the return and a borrow leaving through it alone would be fine. The store is,
-		// so the message names the second path rather than claiming b does not live long enough.
+		// puts a borrow of b in the caller's object, so the caller reaches b through `p.node.peer`
+		// and through the return. Both paths are mutable, which Rule 3 of
+		// planning/lifetimes/requirements.md allows, so the return is accepted. It keeps its
+		// borrow type, since the caller cannot own a value it also reaches through p.
 		"ReturnOfALocalAlsoStoredIntoAParam": {
 			src: `
 				fn f(p: &mut {node: {peer: &mut {value: number}}}) {
@@ -245,14 +242,77 @@ func TestReturnValueBorrows(t *testing.T) {
 					return &mut b
 				}
 			`,
-			want:  []string{"5:13-5:19: 'b' leaves the function at another point too, so the return is not the only path to it"},
+			want:  nil,
 			types: map[string]string{"f": "fn (p: &mut {node: {peer: &mut {value: number}}}) -> &mut {value: number}"},
 		},
-		// A consuming argument leaves a second path behind too, and returning the same local
-		// reports the same way. Here the path belongs to the callee rather than the caller: an
-		// owned parameter takes the object and everything it reaches, so `take` owns b from the
-		// call on. Writing the parameter as `&mut` would borrow b for the call alone and leave
-		// the return free, which is the contrast that makes the rule legible.
+		// The same store made through an immutable borrow leaves the caller reading b through
+		// `p.node.peer` while the return writes it. A write through the return would change what
+		// the stored path expects to hold still, so the pair is reported.
+		//
+		// The wording is what this case asserts. b's lifetime is not the problem, since the frame
+		// ends at the return and a borrow leaving through it alone would be fine. The two paths
+		// disagreeing is, so the message names them rather than claiming b does not live long
+		// enough.
+		"ReturnOfALocalAlsoStoredImmutablyIntoAParam": {
+			src: `
+				fn f(p: &mut {node: {peer: &{value: number}}}) {
+					val mut b = {value: 0}
+					p.node = {peer: &b}
+					return &mut b
+				}
+			`,
+			want:  []string{"5:13-5:19: 'b' leaves the function through a mutable path and an immutable one"},
+			types: map[string]string{"f": "fn (p: &mut {node: {peer: &{value: number}}}) -> &mut {value: number}"},
+		},
+		// A borrow written in an `if`/`else` branch keeps the mutability it is written with.
+		// Both branches store `&mut b`, so both paths to b are mutable and the return is
+		// accepted as it is beside a plain mutable store.
+		"ReturnOfALocalAlsoStoredThroughAnIfElse": {
+			src: `
+				fn f(cond: boolean, p: &mut {node: {peer: &mut {value: number}}}) {
+					val mut b = {value: 0}
+					p.node = {peer: if cond { &mut b } else { &mut b }}
+					return &mut b
+				}
+			`,
+			want: nil,
+			types: map[string]string{
+				"f": "fn (cond: boolean, p: &mut {node: {peer: &mut {value: number}}}) -> &mut {value: number}",
+			},
+		},
+		// The same branches storing `&b` leave the caller reading b while the return writes it.
+		"ReturnOfALocalAlsoStoredImmutablyThroughAnIfElse": {
+			src: `
+				fn f(cond: boolean, p: &mut {node: {peer: &{value: number}}}) {
+					val mut b = {value: 0}
+					p.node = {peer: if cond { &b } else { &b }}
+					return &mut b
+				}
+			`,
+			want: []string{"5:13-5:19: 'b' leaves the function through a mutable path and an immutable one"},
+			types: map[string]string{
+				"f": "fn (cond: boolean, p: &mut {node: {peer: &{value: number}}}) -> &mut {value: number}",
+			},
+		},
+		// A return written as an `if`/`else` reaches b through each branch's borrow, so a mutable
+		// return beside a mutable store is accepted.
+		"IfElseReturnOfALocalAlsoStoredIntoAParam": {
+			src: `
+				fn f(cond: boolean, p: &mut {node: {peer: &mut {value: number}}}) {
+					val mut b = {value: 0}
+					p.node = {peer: &mut b}
+					return if cond { &mut b } else { &mut b }
+				}
+			`,
+			want: nil,
+			types: map[string]string{
+				"f": "fn (cond: boolean, p: &mut {node: {peer: &mut {value: number}}}) -> &mut {value: number}",
+			},
+		},
+		// A consuming argument leaves a second path behind too. Here the path belongs to the
+		// callee rather than the caller: an owned parameter takes the object and everything it
+		// reaches. Both paths to b are mutable, so the return is accepted the way it is beside a
+		// mutable store, and it keeps its borrow type.
 		//
 		// #1539 covers the uses this move ought to reject and does not. A read or a re-borrow
 		// of b after the call is accepted today, where the same two after a plain argument move
@@ -266,14 +326,15 @@ func TestReturnValueBorrows(t *testing.T) {
 					return &mut b
 				}
 			`,
-			want: []string{"6:13-6:19: 'b' leaves the function at another point too, so the return is not the only path to it"},
+			want: nil,
 			types: map[string]string{
 				"take": "fn (x: {peer: &mut {value: number}}) -> undefined",
 				"f":    "fn () -> &mut {value: number}",
 			},
 		},
 		// A store of a DIFFERENT local leaves no path to this one, so the return keeps its
-		// exemption. This is the case the previous two must not over-report.
+		// exemption and owns its data. The previous cases keep their borrow type, and this one
+		// must not.
 		"ReturnOfALocalWhileAnotherIsStoredOut": {
 			src: `
 				fn f(p: mut {node: {peer: &mut {value: number}}}) {
@@ -349,8 +410,7 @@ func TestReturnValueBorrows(t *testing.T) {
 		},
 		// A local can leave the frame through another local's edges rather than by being
 		// borrowed directly. c goes out inside the literal argument through b, so the return is
-		// not the only path to it and takes no exemption. The report names that second path,
-		// since c's lifetime is not what breaks.
+		// not the only path to it. Both paths to c are mutable, so the return is accepted.
 		"ReturnOfALocalThatLeftThroughAnotherLocal": {
 			src: `
 				declare fn take(x: {slot: &mut {peer: &mut {value: number}}}) -> undefined
@@ -361,11 +421,43 @@ func TestReturnValueBorrows(t *testing.T) {
 					return &mut c
 				}
 			`,
-			want: []string{"7:13-7:19: 'c' leaves the function at another point too, so the return is not the only path to it"},
+			want: nil,
 			types: map[string]string{
 				"take": "fn (x: {slot: &mut {peer: &mut {value: number}}}) -> undefined",
 				"f":    "fn () -> &mut {value: number}",
 			},
+		},
+		// The same shape with b holding an immutable borrow of c sends c to the callee through
+		// a read-only path. The mutable return then disagrees with it, and the report names
+		// c, the local the two paths share.
+		"ReturnOfALocalThatLeftImmutablyThroughAnotherLocal": {
+			src: `
+				declare fn take(x: {slot: &mut {peer: &{value: number}}}) -> undefined
+				fn f() -> &mut {value: number} {
+					val mut c = {value: 0}
+					val mut b = {peer: &c}
+					take({slot: &mut b})
+					return &mut c
+				}
+			`,
+			want: []string{"7:13-7:19: 'c' leaves the function through a mutable path and an immutable one"},
+			types: map[string]string{
+				"take": "fn (x: {slot: &mut {peer: &{value: number}}}) -> undefined",
+				"f":    "fn () -> &mut {value: number}",
+			},
+		},
+		// An immutable borrow of a named local leaves as the only path to it, the same as a
+		// borrow of a temporary does. Nothing can write t after the frame ends, so the return
+		// owns its data.
+		"ReturnOfAnImmutableBorrowOfALocal": {
+			src: `
+				fn f() {
+					val t = {a: 1}
+					return &t
+				}
+			`,
+			want:  nil,
+			types: map[string]string{"f": "fn () -> {a: 1}"},
 		},
 	}
 	for name, tc := range tests {
@@ -379,25 +471,26 @@ func TestReturnValueBorrows(t *testing.T) {
 
 // TestEscapeAtStoreAndArgSites covers the other two flow-out sites: a field store
 // into a parameter, where the value flows into the caller's object, and a consuming
-// argument, where it flows into the callee. A borrow of a local that flows out either
-// way escapes, while a parameter borrow and a plain owned value do not. Each case also
-// asserts the inferred type of every function it declares.
+// argument, where it flows into the callee. Each case also asserts the inferred type of
+// every function it declares.
 func TestEscapeAtStoreAndArgSites(t *testing.T) {
 	tests := map[string]struct {
 		src   string
 		want  []string
 		types map[string]string
 	}{
-		// Storing a borrow of a local into a parameter's field escapes: the parameter's
-		// object outlives the frame, so the stored local would dangle in the caller.
-		"StoreLocalBorrowIntoParamField": {
+		// Storing a borrow of a local into a borrow parameter's field hands the local to the
+		// caller. The runtime is garbage collected, so b stays alive, and nothing in the frame
+		// reaches b after the store. The stored borrow is the only path to b once f returns,
+		// so the store is accepted.
+		"StoreLocalBorrowIntoParamFieldOk": {
 			src: `
 				fn f(p: &mut {peer: &mut {value: number}}) {
 					val mut b = {value: 0}
 					p.peer = &mut b
 				}
 			`,
-			want:  []string{"4:15-4:21: borrowed value 'b' does not live long enough to escape the function"},
+			want:  nil,
 			types: map[string]string{"f": "fn (p: &mut {peer: &mut {value: number}}) -> undefined"},
 		},
 		// Storing a parameter borrow into a parameter's field is sound: the stored borrow
@@ -416,8 +509,8 @@ func TestEscapeAtStoreAndArgSites(t *testing.T) {
 		// self-contained graph whose only borrowed local b is reached just through it, so the
 		// store re-anchors the component to the parameter's region and consumes b. No escape
 		// fires, and reading b afterward is a use-after-move. This is the owned-carrier twin of
-		// StoreLocalBorrowIntoParamField, where the bare borrow `&mut b` had no graph to
-		// re-anchor and escaped.
+		// StoreLocalBorrowIntoParamFieldOk, where the bare borrow `&mut b` has no graph to
+		// re-anchor and takes a loan of b instead.
 		"StoreCarrierIntoParamFieldMovesComponent": {
 			src: `
 				fn f(p: &mut {node: {peer: &mut {value: number}}}) {

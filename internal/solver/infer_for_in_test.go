@@ -343,10 +343,11 @@ func TestForInBackEdgeBorrows(t *testing.T) {
 			types: map[string]string{"f": "fn (xs: [number], out: &mut {slot: &mut {value: number}}) -> undefined"},
 		},
 		// A whole-binding reassignment after the loop clears every referent the loop
-		// carried into it: `a = &mut d` replaces a's whole edge set, so storing a out
-		// escapes only d, not the c the loop body kept repointing to. This is
-		// clearEagerSubtree's unconditional kill clearing a referent that reaches the
-		// reassignment through the back edge.
+		// carried into it: `a = &mut d` replaces `a`'s whole edge set, so storing `a` out hands
+		// only d to the caller, not the c the loop body kept repointing to. The store takes a
+		// loan of d alone, so a c edge left behind would carry c out with no loan and report
+		// it as escaping. This is clearEagerSubtree's unconditional kill clearing a referent
+		// that reaches the reassignment through the back edge.
 		"PostLoopReassignClearsLoopEdges": {
 			src: `
 				fn f(xs: [number], out: &mut {slot: &mut {value: number}}) {
@@ -360,7 +361,7 @@ func TestForInBackEdgeBorrows(t *testing.T) {
 					out.slot = a
 				}
 			`,
-			want:  []string{`10:17-10:18: borrowed value 'd' does not live long enough to escape the function`},
+			want:  nil,
 			types: map[string]string{"f": "fn (xs: [number], out: &mut {slot: &mut {value: number}}) -> undefined"},
 		},
 		// A field store inside the loop repoints only the stored field's subtree, so

@@ -411,10 +411,11 @@ func (c *checker) recordCallStoreEdges(
 		return
 	}
 	recorded := false
-	// A signature can write one argument into several positions of the target, so an escaping
-	// argument reaches the loop once per position. Collecting per argument and reporting after
-	// the loop keeps that to one diagnostic, blamed on the argument carrying the local.
-	escaping := map[int]set.Set[liveness.VarID]{}
+	// A signature can write one argument into several positions of the target, so an argument
+	// stored into a caller-owned target reaches the loop once per position. Collecting what it
+	// carries per argument and recording one escape site after the loop keeps that to one
+	// decision, blamed on the argument carrying the local.
+	escaping := map[int][]elementReach{}
 	// The expression each escaping position blames. A position is not always an argument index,
 	// so the blame node is captured alongside rather than looked up afterward.
 	escapeBlame := map[int]ast.Expr{}
@@ -426,8 +427,8 @@ func (c *checker) recordCallStoreEdges(
 		if !hasArg || !hasTarget {
 			continue
 		}
-		// Only a borrow of a function-local can dangle. An argument carrying none of those
-		// stores nothing the graph needs to know about.
+		// Only a borrow of a function-local can leave the frame. An argument carrying none of
+		// those stores nothing the graph needs to know about.
 		referents := c.storedReferents(argExpr)
 		if len(referents) == 0 {
 			// An argument that borrows no local outright may still REACH one through its own
@@ -445,29 +446,36 @@ func (c *checker) recordCallStoreEdges(
 			continue
 		}
 		// A BORROW parameter's referent belongs to the caller and outlives the frame, so a
-		// borrow of a local written into it dangles. An owned parameter is moved into the
-		// frame and dies with it, so it takes an edge like a local does. Reporting it here
-		// rather than recording an edge is what keeps the escape post-pass out of it. The
-		// callee borrows this argument instead of taking it, and the post-pass would weigh an
-		// owned-looking argument as a connected-component move and consume the locals it
-		// borrows.
+		// borrow of a local written into it leaves the frame. An owned parameter is moved into
+		// the frame and dies with it, so it takes an edge like a local does. The caller-owned
+		// target records no edge, which keeps the post-pass from weighing this argument as a
+		// connected-component move. The callee borrows the argument instead of taking it, so
+		// consuming the locals it borrows would be wrong.
 		if c.paramReferentOutlivesFrame(target.root) {
-			carried, seen := escaping[edge.arg]
-			if !seen {
-				carried = set.NewSet[liveness.VarID]()
-				escaping[edge.arg] = carried
-			}
-			// Which local dangles depends on the store. A direct store puts the argument's own
-			// referent into the target, so the argument's locals dangle. An indirect store puts
-			// what the argument HOLDS there, so the locals its borrow edges reach dangle and its
+			// Which local leaves depends on the store. A direct store puts the argument's own
+			// referent into the target, so the argument's locals leave. An indirect store puts
+			// what the argument HOLDS there, so the locals its borrow edges reach leave and its
 			// own root does not. A receiver holding only a parameter borrow writes nothing that
-			// can dangle.
+			// can leave.
+			carried := set.NewSet[liveness.VarID]()
 			if edge.direct {
 				for _, referent := range referents {
 					carried.Add(referent)
 				}
 			} else {
 				c.collectStoredLocals(argExpr, referents, carried)
+			}
+			sourceMut := storeSourceMut(fn, self, edge.arg)
+			targetPath := appendPath(target.path, edge.path)
+			ids := carried.ToSlice()
+			slices.Sort(ids)
+			for _, referent := range ids {
+				place := storeLoanPlace(argExpr, referent, edge.direct)
+				escaping[edge.arg] = append(escaping[edge.arg], elementReach{place: place, mut: sourceMut})
+				// The caller reads the target after the call, so the loan lasts to the end of
+				// the function. A later move or conflicting borrow of the local is weighed
+				// against it, which is what keeps the stored borrow the only path to it.
+				c.recordStoreEdgeLoan(place, sourceMut, target.root, targetPath, ref, argExpr)
 			}
 			escapeBlame[edge.arg] = argExpr
 			continue
@@ -492,11 +500,12 @@ func (c *checker) recordCallStoreEdges(
 			recorded = true
 		}
 	}
-	// Report in position order so a call with two escaping arguments reads left to right.
-	// selfIndex leads, since a receiver precedes the arguments in the source.
+	// Record in position order so a call with two escaping arguments reports left to right.
+	// selfIndex leads, since a receiver precedes the arguments in the source. The post-pass
+	// decides each one once the whole body's borrow edges are known.
 	for arg := selfIndex; arg < len(e.Args); arg++ {
-		if carried, ok := escaping[arg]; ok && carried.Len() > 0 {
-			c.reportEscapingLocals(carried, escapeBlame[arg])
+		if reaches, ok := escaping[arg]; ok && len(reaches) > 0 {
+			c.recordCallerOwnedStore(escapeBlame[arg], ref, reaches)
 		}
 	}
 	// The escape check reads the per-program-point graph rather than the eager one, so the
@@ -507,17 +516,17 @@ func (c *checker) recordCallStoreEdges(
 	}
 }
 
-// collectStoredLocals adds to out the function-locals an indirectly stored argument exposes,
+// collectStoredLocals adds to `out` the function-locals an indirectly stored argument exposes,
 // which is what the argument holds rather than its own root. `h.drain(out)` on a receiver
 // holding a borrow of a local writes that local into the caller's object, while a receiver
-// holding only a parameter borrow writes nothing that can dangle.
+// holding only a parameter borrow writes nothing that can leave the frame.
 //
 // An argument that names a place holds what its borrow edges reach. It reads the eager graph,
 // which is current for everything recorded ahead of this call in source order, so a borrow
 // the argument took earlier in the body is already there.
 //
 // An argument that builds its carrier inline, such as `&{held: &mut b}`, names no place and
-// so has no edges. It holds the borrows written into the carrier, which referents already
+// so has no edges. It holds the borrows written into the carrier, which `referents` already
 // carries — storedReferents falls back to the same scan for a non-place argument.
 //
 // A carrier the graph cannot see through holds nothing as far as this can tell, so nothing is
@@ -526,7 +535,7 @@ func (c *checker) recordCallStoreEdges(
 // `return s` has, and every other reader of the graph shares it — escapingLocalsOf answers
 // the same way. Reporting the argument's own root instead would close it at the cost of a
 // false positive on `val s = {held: &mut q}` for a parameter q, which carries nothing that
-// can dangle.
+// can leave the frame.
 func (c *checker) collectStoredLocals(arg ast.Expr, referents []liveness.VarID, out set.Set[liveness.VarID]) {
 	if p, isPlace := exprPlace(borrowOperand(arg)); isPlace && p.root > 0 {
 		c.collectBorrowedFrom(p.root, p.path, out, set.NewSet[liveness.VarID](), c.fn.eagerBorrowGraph)

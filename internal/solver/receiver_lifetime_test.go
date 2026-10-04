@@ -16,26 +16,38 @@ func TestReceiverLifetimeDeclarations(t *testing.T) {
 		src  string
 		want []string
 	}{
-		// DISABLED until #1744. The receiver's 'a ties out.r to a borrow of c, so the call
-		// stores that borrow into the caller's out. Nothing in f reaches c after the call, so
-		// out.r is the only path to it, and that path is immutable. The escape check reports
-		// it today because a store leaves the frame running. The case checks once a store
-		// that leaves as the only path to its value is accepted.
-		/*
-			{
-				name: "a borrow of the instance stored through the receiver's lifetime leaves as the only path to it",
-				src: `
-					class C {
-						p: {x: number},
-						lend<'a>(&'a self, out: &mut {r: &'a {x: number}}) -> undefined { out.r = &self.p },
-					}
-					fn f(out: &mut {r: &{x: number}}) {
-						val c = C({x: 1})
-						c.lend(out)
-					}
-				`,
-			},
-		*/
+		// The receiver's 'a ties `out.r` to a borrow of c, so the call stores that borrow into the
+		// caller's `out`. Nothing in f reaches c after the call, so `out.r` is the only path to it.
+		{
+			name: "a borrow of the instance stored through the receiver's lifetime leaves as the only path to it",
+			src: `
+				class C {
+					p: {x: number},
+					lend<'a>(&'a self, out: &mut {r: &'a {x: number}}) -> undefined { out.r = &self.p },
+				}
+				fn f(out: &mut {r: &{x: number}}) {
+					val c = C({x: 1})
+					c.lend(out)
+				}
+			`,
+		},
+		// The stored borrow is immutable, so writing c afterwards would change what `out.r` expects
+		// to hold still. The store's loan lasts to the end of f and reports it.
+		{
+			name: "writing the instance after storing a borrow of it through the receiver's lifetime conflicts",
+			src: `
+				class C {
+					p: {x: number},
+					lend<'a>(&'a self, out: &mut {r: &'a {x: number}}) -> undefined { out.r = &self.p },
+				}
+				fn f(out: &mut {r: &{x: number}}) {
+					val mut c = C({x: 1})
+					c.lend(out)
+					c.p = {x: 2}
+				}
+			`,
+			want: []string{"9:6-9:9: cannot assign to 'c.p' while it is borrowed as immutable"},
+		},
 		{
 			name: "a borrow stored at an unrelated lifetime does not escape",
 			src: `

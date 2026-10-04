@@ -145,7 +145,7 @@ func (c *checker) reportReachedTwice(reached []reachedPlace, blame ast.Expr) {
 	}
 	slices.Sort(shared)
 	for _, referent := range shared {
-		c.noteSharedPathReturn(blame)
+		c.noteSharedPathBlame(blame)
 		c.report(&SharedReturnPathsError{LocalName: c.varIDToName(referent), node: blame})
 	}
 }
@@ -199,17 +199,18 @@ func (c *checker) reportLiteralSharedPaths(
 				continue
 			}
 			seen.Add(root)
-			c.noteSharedPathReturn(e)
+			c.noteSharedPathBlame(e)
 			c.report(&SharedReturnPathsError{LocalName: c.varIDToName(root), node: e})
 		}
 	}
 	return true
 }
 
-// noteSharedPathReturn records the returned expression a shared-path report blamed, so the use
-// check does not add a second diagnostic naming a read this very expression contains. Only a
-// read inside it is covered, since a read elsewhere in the body is a separate fact.
-func (c *checker) noteSharedPathReturn(blame ast.Expr) {
+// noteSharedPathBlame records the outgoing expression a shared-path or mixed-outflow report
+// blamed, so the use check does not add a second diagnostic naming a read or borrow this very
+// expression contains. Only one inside it is covered, since a read elsewhere in the body is a
+// separate fact.
+func (c *checker) noteSharedPathBlame(blame ast.Expr) {
 	span := blame.Span()
 	if slices.ContainsFunc(c.fn.sharedPathSpans, func(s ast.Span) bool { return s == span }) {
 		return

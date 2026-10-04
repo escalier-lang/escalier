@@ -20,9 +20,10 @@ func TestSelfReceiverStoreEdge(t *testing.T) {
 		want  []string
 		types map[string]string
 	}{
-		// The method call is the only thing that aliases h to b, and reading the field back
-		// carries that borrow out of the frame.
-		"StoreIntoALocalReceiverEscapes": {
+		// The method call is the only thing that aliases h to b, and storing the field into `out`
+		// carries that borrow to the caller. The store into `out` takes a loan of b that lasts to
+		// the end of the function, so moving b afterwards reports.
+		"StoreIntoALocalReceiverReachesTheCaller": {
 			src: `
 				class Holder<'a> {
 					peer: &'a mut {value: number},
@@ -34,18 +35,19 @@ func TestSelfReceiverStoreEdge(t *testing.T) {
 					val mut h = Holder(&mut p)
 					h.put(&mut b)
 					out.slot = h.peer
+					val y = b
 				}
 			`,
-			want: []string{"11:17-11:23: borrowed value 'b' does not live long enough to escape the function"},
+			want: []string{"12:14-12:15: cannot move 'b' while it is borrowed"},
 			types: map[string]string{
 				"Holder": "<'a> {new (peer: &'a mut {value: number}) -> Holder<'a>}",
 				"build":  "fn (p: mut {value: number}, out: &mut {slot: &mut {value: number}}) -> undefined",
 			},
 		},
 		// A receiver the caller owns outlives the frame, so a borrow of a local written into
-		// it escapes at once rather than recording an edge, the same split a field store
-		// makes between a local and a parameter receiver.
-		"StoreIntoAParameterReceiverEscapes": {
+		// it takes a loan that lasts to the end of the function rather than recording an edge.
+		// That is the same split a field store makes between a local and a parameter receiver.
+		"StoreIntoAParameterReceiverLoansTheLocal": {
 			src: `
 				class Holder<'a> {
 					peer: &'a mut {value: number},
@@ -55,9 +57,10 @@ func TestSelfReceiverStoreEdge(t *testing.T) {
 				fn build<'x>(h: &mut Holder<'x>) -> undefined {
 					val mut b = {value: 2}
 					h.put(&mut b)
+					val y = b
 				}
 			`,
-			want: []string{"9:12-9:18: borrowed value 'b' does not live long enough to escape the function"},
+			want: []string{"10:14-10:15: cannot move 'b' while it is borrowed"},
 			types: map[string]string{
 				"Holder": "<'a> {new (peer: &'a mut {value: number}) -> Holder<'a>}",
 				"build":  "fn <'a>(h: &mut Holder<'a>) -> undefined",
@@ -100,9 +103,10 @@ func TestSelfReceiverStoreEdge(t *testing.T) {
 					val mut h = Holder(&mut p)
 					h["put"](&mut b)
 					out.slot = h.peer
+					val y = b
 				}
 			`,
-			want: []string{"11:17-11:23: borrowed value 'b' does not live long enough to escape the function"},
+			want: []string{"12:14-12:15: cannot move 'b' while it is borrowed"},
 			types: map[string]string{
 				"Holder": "<'a> {new (peer: &'a mut {value: number}) -> Holder<'a>}",
 				"build":  "fn (p: mut {value: number}, out: &mut {slot: &mut {value: number}}) -> undefined",
@@ -126,8 +130,8 @@ func TestSelfReceiverStoreEdge(t *testing.T) {
 //
 // The shared lifetime sits inside the receiver's type rather than being the receiver's own
 // borrow lifetime, so what lands in the target is whatever the receiver holds. Against the
-// local target here that is an edge from the target to the receiver, which a later flow-out
-// then follows.
+// local target here that is an edge from the target to the receiver. Storing the target's
+// field into `sink` then follows it and takes a loan of h, so moving h afterwards reports.
 func TestSelfReceiverIsAStoreSource(t *testing.T) {
 	_, _, errs := inferSource(t, `
 		class Holder<'a> {
@@ -141,23 +145,25 @@ func TestSelfReceiverIsAStoreSource(t *testing.T) {
 			val mut o = {slot: &mut p}
 			h.drain(&mut o)
 			sink.slot = o.slot
+			val y = h
 		}
 	`)
 	require.Equal(t, []string{
-		"12:16-12:22: borrowed value 'h' does not live long enough to escape the function",
+		"13:12-13:13: cannot move 'h' while it is borrowed",
 	}, messagesWithSpan(t, errs))
 }
 
-// TestIndirectStoreIntoParameterEscapes covers what escapes when the shared lifetime sits
+// TestIndirectStoreIntoParameter covers what leaves the frame when the shared lifetime sits
 // inside the stored argument rather than being the argument's own borrow lifetime. What
-// lands in the caller's object is what the argument HOLDS, so the locals its borrow edges
-// reach dangle and its own root does not.
+// lands in the caller's object is what the argument HOLDS, so the store takes a loan of the
+// locals its borrow edges reach and not of its own root. A move of such a local afterwards
+// reports against that loan.
 //
 // The signature here is a plain function rather than a method, since a class instance carries
 // no borrow edges: a borrow passed to a constructor is not recorded as an edge to its result.
 // The rule is the same either way, and TestSelfReceiverIsAStoreSource covers the method form
 // against a local target, where the edge is what a later flow-out follows.
-func TestIndirectStoreIntoParameterEscapes(t *testing.T) {
+func TestIndirectStoreIntoParameter(t *testing.T) {
 	const decl = `
 		declare fn drain<'a>(
 			src: &mut {held: &'a mut {value: number}},
@@ -168,22 +174,23 @@ func TestIndirectStoreIntoParameterEscapes(t *testing.T) {
 		src  string
 		want []string
 	}{
-		// s holds a borrow of the local b, so draining s into the caller's out leaves b
-		// dangling there.
-		"HoldingALocalEscapesIt": {
+		// s holds a borrow of the local b, so draining s into the caller's `out` hands b to the
+		// caller.
+		"HoldingALocalLoansIt": {
 			src: decl + `
 				fn build(o: &mut {slot: &mut {value: number}}) -> undefined {
 					val mut b = {value: 2}
 					val mut s = {held: &mut b}
 					drain(&mut s, o)
+					val y = b
 				}
 			`,
-			want: []string{"10:12-10:18: borrowed value 'b' does not live long enough to escape the function"},
+			want: []string{"11:14-11:15: cannot move 'b' while it is borrowed"},
 		},
 		// An argument that builds its carrier inline names no place and so has no borrow
 		// edges. What it holds is the borrows written into the carrier, found by the same
 		// scan the escape check runs over a returned value.
-		"HoldingALocalThroughAnInlineCarrierEscapesIt": {
+		"HoldingALocalThroughAnInlineCarrierLoansIt": {
 			src: `
 				declare fn drain<'a>(
 					src: &{held: &'a mut {value: number}},
@@ -192,9 +199,10 @@ func TestIndirectStoreIntoParameterEscapes(t *testing.T) {
 				fn build(o: &mut {slot: &mut {value: number}}) -> undefined {
 					val mut b = {value: 2}
 					drain(&{held: &mut b}, o)
+					val y = b
 				}
 			`,
-			want: []string{"8:12-8:27: borrowed value 'b' does not live long enough to escape the function"},
+			want: []string{"9:14-9:15: cannot move 'b' while it is borrowed"},
 		},
 		// s holds a borrow of a parameter, whose lifetime the caller supplied, so draining it
 		// writes nothing that can dangle. Reporting s here — the argument's own root, which a

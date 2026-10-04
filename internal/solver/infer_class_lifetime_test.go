@@ -424,7 +424,8 @@ func TestFuncAnnLifetimeShadowing(t *testing.T) {
 // TestClassLifetimeStoreEdge covers the payoff: a container whose element borrow is tied to
 // the receiver by a class lifetime parameter. The store lands at the whole `Holder`, since a
 // class lifetime argument names no field, so a borrow written into a Holder the caller owns
-// escapes the frame.
+// takes a loan of the local that lasts to the end of the function. Moving the local
+// afterwards reports against it.
 func TestClassLifetimeStoreEdge(t *testing.T) {
 	const decls = `
 		class Holder<'a> { peer: &'a mut {value: number} }
@@ -434,11 +435,12 @@ func TestClassLifetimeStoreEdge(t *testing.T) {
 		fn build(h: &mut Holder<'static>) -> undefined {
 			val mut b = {value: 2}
 			store(h, &mut b)
+			val y = b
 		}
 	`
 	values, _, errs := inferSource(t, src)
 	require.Equal(t, []string{
-		"7:13-7:19: borrowed value 'b' does not live long enough to escape the function",
+		"8:12-8:13: cannot move 'b' while it is borrowed",
 	}, messagesWithSpan(t, errs))
 	require.Equal(t,
 		"fn <'a>(target: &mut Holder<'a>, item: &'a mut {value: number}) -> undefined",
