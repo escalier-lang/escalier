@@ -228,6 +228,17 @@ func TestMoveSemantics(t *testing.T) {
 			`,
 			want: []string{"5:14-5:17: use of moved value 'b.y'"},
 		},
+		// A rest element moves every field the pattern does not name, not only the first.
+		"DestructuringARestElementMovesEachRemainingField": {
+			src: `
+				fn f() {
+					val b = {x: {v: 1}, y: {v: 2}, z: {v: 3}}
+					val {x, ...rest} = b
+					val n = b.z
+				}
+			`,
+			want: []string{"5:14-5:17: use of moved value 'b.z'"},
+		},
 		// A tuple rest element moves the tuple, as every tuple leaf does.
 		"DestructuringATupleRestMovesTheTuple": {
 			src: `

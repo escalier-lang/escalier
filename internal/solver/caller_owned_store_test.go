@@ -194,6 +194,68 @@ func TestStoreIntoCallerOwnedTarget(t *testing.T) {
 				}
 			`,
 		},
+		// A rest element that takes several fields traces each one back to b on its own.
+		// Here `rest` takes b.y and b.z, and `out.r` reads b.z.
+		"ReturningARestElementOfSeveralFieldsConflicts": {
+			src: `
+				fn f(out: &mut {r: &{v: number}}) -> {y: {v: number}, z: {v: number}} {
+					val b = {x: {v: 1}, y: {v: 2}, z: {v: 3}}
+					out.r = &b.z
+					val {x, ...rest} = b
+					return rest
+				}
+			`,
+			want: []string{"6:13-6:17: 'b' leaves the function both as an owned value and through a borrow"},
+		},
+		// `rest.z` holds the data moved out of b.z, which `out.r` reads.
+		"ReturningTheStoredFieldOfARestElementConflicts": {
+			src: `
+				fn f(out: &mut {r: &{v: number}}) -> {v: number} {
+					val b = {x: {v: 1}, y: {v: 2}, z: {v: 3}}
+					out.r = &b.z
+					val {x, ...rest} = b
+					return rest.z
+				}
+			`,
+			want: []string{"6:13-6:19: 'b' leaves the function both as an owned value and through a borrow"},
+		},
+		// `rest.y` holds the data moved out of b.y, which `out.r` does not reach.
+		"ReturningAnotherFieldOfARestElementOk": {
+			src: `
+				fn f(out: &mut {r: &{v: number}}) -> {v: number} {
+					val b = {x: {v: 1}, y: {v: 2}, z: {v: 3}}
+					out.r = &b.z
+					val {x, ...rest} = b
+					return rest.y
+				}
+			`,
+		},
+		// Storing the rest element into a second caller-owned object hands the caller b.z
+		// as owned data beside the borrow `out.r` holds.
+		"StoringARestElementConflicts": {
+			src: `
+				fn f(out: &mut {r: &{v: number}}, q: &mut {o: {y: {v: number}, z: {v: number}}}) {
+					val b = {x: {v: 1}, y: {v: 2}, z: {v: 3}}
+					out.r = &b.z
+					val {x, ...rest} = b
+					q.o = rest
+				}
+			`,
+			want: []string{"6:12-6:16: 'b' leaves the function both as an owned value and through a borrow"},
+		},
+		// Wrapping the rest element in a literal keeps the trace back to b.z.
+		"ReturningARestElementInsideALiteralConflicts": {
+			src: `
+				fn f(out: &mut {r: &{v: number}}) -> {w: {y: {v: number}, z: {v: number}}} {
+					val b = {x: {v: 1}, y: {v: 2}, z: {v: 3}}
+					out.r = &b.z
+					val {x, ...rest} = b
+					val a = {w: rest}
+					return a
+				}
+			`,
+			want: []string{"7:13-7:14: 'b' leaves the function both as an owned value and through a borrow"},
+		},
 		// A leaf that copies a borrow moves nothing, and its borrow edge says what it reaches.
 		"DestructuringABorrowLeafOk": {
 			src: `
