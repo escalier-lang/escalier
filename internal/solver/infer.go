@@ -491,6 +491,9 @@ type funcCtx struct {
 	globalClosureStores []globalClosureStore
 	// callSites holds every call in this body, in source order.
 	callSites []callSite
+	// callArgLoans holds the borrows each call's arguments take for the call's parameters,
+	// keyed by the call. They last for the call's statement and are not in loans.
+	callArgLoans map[ast.Node][]loan
 	// escapeSites records every value flowing out of the frame that might carry a borrow
 	// of a function-local: a return value, a value stored into a parameter's field, and a
 	// consuming argument. The decision is deferred to a post-pass, resolveComponentEscapes,

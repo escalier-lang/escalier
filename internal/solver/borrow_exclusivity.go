@@ -84,6 +84,11 @@ type BorrowAliasError struct {
 	// the one the error is blamed on, since it is where the program first holds two views.
 	FirstMut  bool
 	SecondMut bool
+	// FirstVia and SecondVia name the module-level binding whose stored closure a call may run,
+	// when the matching borrow is the write that closure makes during the call. They are empty
+	// for a borrow the program writes.
+	FirstVia  string
+	SecondVia string
 	node      ast.Node
 	first     ast.Span
 }
@@ -99,6 +104,12 @@ func (e *BorrowAliasError) Message() string {
 	if e.FirstPlace != e.Place {
 		held = fmt.Sprintf("'%s' is", e.FirstPlace)
 	}
+	if e.SecondVia != "" {
+		return fmt.Sprintf("this call may run '%s', which writes '%s' while %s borrowed as immutable", e.SecondVia, e.Place, held)
+	}
+	if e.FirstVia != "" {
+		return fmt.Sprintf("cannot borrow '%s' as immutable in a call that may run '%s', which writes it", e.Place, e.FirstVia)
+	}
 	if e.SecondMut {
 		return fmt.Sprintf("cannot borrow '%s' as mutable while %s borrowed as immutable", e.Place, held)
 	}
@@ -109,7 +120,10 @@ func (e *BorrowAliasError) Message() string {
 // `val y = b` the new owner y holds the data, and a borrow taken from b still points at it.
 type MoveWhileBorrowedError struct {
 	// Place names the data moved, `x` for a whole binding and `x.a` for a field.
-	Place  string
+	Place string
+	// Via names the module-level binding whose stored closure the call may run, when the borrow
+	// is the write that closure makes during the call, and is empty otherwise.
+	Via    string
 	move   ast.Node
 	borrow ast.Span
 }
@@ -118,6 +132,9 @@ func (*MoveWhileBorrowedError) isSolverError()        {}
 func (e *MoveWhileBorrowedError) Span() ast.Span      { return e.move.Span() }
 func (e *MoveWhileBorrowedError) Related() []ast.Span { return []ast.Span{e.borrow} }
 func (e *MoveWhileBorrowedError) Message() string {
+	if e.Via != "" {
+		return fmt.Sprintf("cannot move '%s' in a call that may run '%s', which writes it", e.Place, e.Via)
+	}
 	return fmt.Sprintf("cannot move '%s' while it is borrowed", e.Place)
 }
 
@@ -185,6 +202,9 @@ type loan struct {
 	// An async or generator body hands control back to the caller at each `await` or `yield`
 	// while the frame still runs, so there the loan lasts to the end of the function.
 	callerOwned bool
+	// via names the module-level binding whose stored closure a call may run, for a loan
+	// standing for the write that closure makes during the call. It is empty otherwise.
+	via string
 	// endSeq is the sequence at which a reassignment of the holder ended this loan, and 0 while
 	// it still holds. The loan stays in the list so a read walked BEFORE that point is still
 	// weighed against it; erasing it would let a later reassignment silence an earlier read.
@@ -256,6 +276,8 @@ func (c *checker) reportBorrowConflict(first, second loan) {
 		FirstPlace: c.renderPlace(first.place),
 		FirstMut:   first.mut,
 		SecondMut:  second.mut,
+		FirstVia:   first.via,
+		SecondVia:  second.via,
 		node:       second.node,
 		first:      first.node.Span(),
 	})
@@ -781,6 +803,7 @@ func (c *checker) checkUsesAgainstLoans(reported set.Set[ast.Node]) {
 			if moved {
 				c.report(&MoveWhileBorrowedError{
 					Place:  c.renderPlace(u.place),
+					Via:    l.via,
 					move:   u.node,
 					borrow: l.node.Span(),
 				})
@@ -881,6 +904,12 @@ func (c *checker) checkCallBorrowExclusivity(e *ast.CallExpr, fn *soltype.FuncTy
 	for _, a := range args {
 		c.checkAgainstHeldLoans(a)
 	}
+	if len(args) > 0 {
+		if c.fn.callArgLoans == nil {
+			c.fn.callArgLoans = map[ast.Node][]loan{}
+		}
+		c.fn.callArgLoans[e] = args
+	}
 }
 
 // markNamedClosure adds `closure` to namedClosures. It must run before the closure is
@@ -897,17 +926,19 @@ func (c *checker) markNamedClosure(closure *ast.FuncExpr) {
 
 // globalClosureStore is a store into a module-level binding whose value may carry a closure.
 type globalClosureStore struct {
+	// name is the module-level binding stored into.
+	name string
 	expr ast.Expr
 	ref  liveness.StmtRef
 }
 
-// noteGlobalClosureStore records that the value e is stored at `ref` into a module-level
-// binding, for recordGlobalCaptureLoans to find the locals its closures write.
-func (c *checker) noteGlobalClosureStore(e ast.Expr, ref liveness.StmtRef) {
+// noteGlobalClosureStore records that the value e is stored at `ref` into the module-level
+// binding `name`, for recordGlobalCaptureLoans to find the locals its closures write.
+func (c *checker) noteGlobalClosureStore(name string, e ast.Expr, ref liveness.StmtRef) {
 	if c.fn == nil || c.fn.cfg == nil {
 		return
 	}
-	c.fn.globalClosureStores = append(c.fn.globalClosureStores, globalClosureStore{expr: e, ref: ref})
+	c.fn.globalClosureStores = append(c.fn.globalClosureStores, globalClosureStore{name: name, expr: e, ref: ref})
 }
 
 // callSite is one call in the body, the statement it runs at, and the loan sequence reserved
@@ -980,7 +1011,7 @@ func (c *checker) recordGlobalCaptureLoans(flowBorrowGraph *flowBorrowGraph) {
 					continue
 				}
 				taken[i].Add(root)
-				c.takeCallLoan(movePlace{root: root}, call)
+				c.takeCallLoan(movePlace{root: root}, call, store.name)
 			}
 		}
 	}
@@ -988,8 +1019,15 @@ func (c *checker) recordGlobalCaptureLoans(flowBorrowGraph *flowBorrowGraph) {
 
 // takeCallLoan records a mutable loan of `place` for the statement `call` runs at, and a read
 // of `place` there, after reporting each conflict with another loan live at that statement.
-func (c *checker) takeCallLoan(place movePlace, call callSite) {
-	fresh := loan{place: place, mut: true, ref: call.ref, node: call.node, seq: call.seq}
+// `via` names the module-level binding whose closure the call may run, for the reports.
+func (c *checker) takeCallLoan(place movePlace, call callSite, via string) {
+	fresh := loan{place: place, mut: true, ref: call.ref, node: call.node, seq: call.seq, via: via}
+	// The call's own borrow arguments are live for as long as the call runs.
+	for _, arg := range c.fn.callArgLoans[call.node] {
+		if conflicts(arg, fresh) {
+			c.reportBorrowConflict(arg, fresh)
+		}
+	}
 	for _, other := range c.fn.loans {
 		if !conflicts(other, fresh) {
 			continue
@@ -1006,5 +1044,5 @@ func (c *checker) takeCallLoan(place movePlace, call callSite) {
 		}
 	}
 	c.fn.loans = append(c.fn.loans, fresh)
-	c.fn.useSites = append(c.fn.useSites, moveUse{place: place, ref: call.ref, node: call.node, loanSeqAt: call.seq + 1})
+	c.fn.useSites = append(c.fn.useSites, moveUse{place: place, ref: call.ref, node: call.node, loanSeqAt: call.seq + 1, via: via})
 }
