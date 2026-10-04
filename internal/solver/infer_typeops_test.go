@@ -1831,6 +1831,10 @@ func TestInferCondResidualErrorMessage(t *testing.T) {
 // a variable, so `MyOmit` below, the shape of `Omit` in `std:prelude`, checks cleanly before its
 // operands ground. A branch outside the bound, a branch that holds only by binding a parameter, and
 // a branch that reads an `infer` capture are each rejected.
+//
+// A distributive conditional over a bounded parameter also satisfies the bound when the same
+// conditional over the parameter's bound does. The `Bound*` cases cover that rule. A conditional
+// whose Check is not a bare parameter, or whose parameter has no bound, gets no such second chance.
 func TestInferCondResidualAgainstBound(t *testing.T) {
 	const pick = `
 		type MyPick<T, K: keyof T> = {[P]: T[P] for P in K}
@@ -1876,6 +1880,44 @@ func TestInferCondResidualAgainstBound(t *testing.T) {
 				type Bad<T> = Box<if T : [infer U] { U } else { "n" }>
 			`,
 			wantErr: `cannot constrain if t2 : tuple { U } else { "n" } <: string`,
+		},
+		{
+			name: "BoundSelectsWithinBound",
+			src: `
+				type Box<X: string> = [X]
+				type Ok<T: string> = Box<if T : string { T } else { number }>
+			`,
+		},
+		{
+			name: "BoundDistributesWithinBound",
+			src: `
+				type Box<X: string> = [X]
+				type Ok<T: "a" | 1> = Box<if T : string { T } else { "x" }>
+			`,
+		},
+		{
+			name: "BoundSelectsOutsideBound",
+			src: `
+				type Box<X: string> = [X]
+				type Bad<T: string | number> = Box<if T : string { T } else { number }>
+			`,
+			wantErr: "cannot constrain if t2 : string { t2 } else { number } <: string",
+		},
+		{
+			name: "NonDistributiveIgnoresBound",
+			src: `
+				type Box<X: string> = [X]
+				type Bad<T: string> = Box<if [T] : [string] { T } else { number }>
+			`,
+			wantErr: "cannot constrain if tuple : tuple { t2 } else { number } <: string",
+		},
+		{
+			name: "UnboundedParam",
+			src: `
+				type Box<X: string> = [X]
+				type Bad<T> = Box<if T : string { T } else { number }>
+			`,
+			wantErr: "cannot constrain if t2 : string { t2 } else { number } <: string",
 		},
 	}
 	for _, tt := range tests {
