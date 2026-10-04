@@ -144,6 +144,7 @@ func (c *checker) inferStmt(scope *Scope, lvl int, s ast.Stmt) soltype.Type {
 			c.inferDestructureDecl(scope, lvl, vd)
 			if c.fn != nil {
 				if ref, ok := c.fn.stmtToRef[s]; ok {
+					c.consumeDestructureLeaves(scope, vd.Pattern, vd.Init, ref)
 					c.flushBorrowDirty(ref)
 				}
 			}

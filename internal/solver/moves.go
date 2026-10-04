@@ -500,6 +500,131 @@ func (c *checker) consumeBindingInit(vd *ast.VarDecl, bindingT soltype.Type, stm
 	c.consumeOwned(vd.Init, c.info.TypeOf(vd.Init), vd.Init, ref)
 }
 
+// consumeDestructureLeaves moves out of an owned place initializer each part a destructuring
+// binds by value. `val {x, y} = b` moves b.x into x and b.y into y, the partial moves a field
+// read makes, so a later use of b.x is a use after move while b.z stays usable. A leaf typed
+// as a borrow or a value type takes nothing. A tuple leaf has no field segment, so it moves the
+// whole container, once however many leaves read it.
+//
+// An object rest element such as `...rest` takes the fields the pattern does not name. Its
+// binding's object type lists them, so each one moves into it. A rest binding whose type is
+// not a plain object type moves the whole place instead.
+//
+// Each moved part is also recorded as a placeCopy into its leaf, read by `init`, so the escape
+// check can trace a leaf that leaves the frame back to the data it owns.
+func (c *checker) consumeDestructureLeaves(scope *Scope, pat ast.Pat, init ast.Expr, ref liveness.StmtRef) {
+	if c.fn == nil || c.fn.cfg == nil || init == nil {
+		return
+	}
+	src, ok := exprPlace(init)
+	if !ok || src.root <= 0 || !isOwnedMovable(c.info.TypeOf(init)) {
+		return
+	}
+	m := &destructureMover{c: c, scope: scope, init: init, ref: ref, moved: set.NewSet[liveness.VarID]()}
+	m.walk(pat, src)
+}
+
+// destructureMover moves the parts of one owned initializer that a destructuring binds by
+// value. `scope` resolves the leaf bindings, and every move is recorded against `init` at
+// `ref`. `moved` holds the places already moved, so a container that several tuple leaves
+// read moves once.
+type destructureMover struct {
+	c     *checker
+	scope *Scope
+	init  ast.Expr
+	ref   liveness.StmtRef
+	moved set.Set[liveness.VarID]
+}
+
+// walk moves what pat binds by value out of the place `at`.
+func (m *destructureMover) walk(pat ast.Pat, at movePlace) {
+	switch pat := pat.(type) {
+	case *ast.IdentPat:
+		m.leaf(pat.Name, pat.VarID, at)
+	case *ast.ObjectPat:
+		for _, elem := range pat.Elems {
+			switch e := elem.(type) {
+			case *ast.ObjShorthandPat:
+				m.leaf(e.Key.Name, e.VarID, extendPlace(at, e.Key.Name))
+			case *ast.ObjKeyValuePat:
+				m.walk(e.Value, extendPlace(at, e.Key.Name))
+			case *ast.ObjRestPat:
+				m.rest(e.Pattern, at)
+			}
+		}
+	case *ast.TuplePat:
+		for _, elem := range pat.Elems {
+			m.walk(elem, at)
+		}
+	case *ast.RestPat:
+		m.walk(pat.Pattern, at)
+	}
+}
+
+// leaf moves the place `at` into the leaf binding `name` when that binding takes it by value.
+func (m *destructureMover) leaf(name string, varID int, at movePlace) {
+	if _, ok := m.ownedLeaf(name, varID); ok {
+		m.moveInto(liveness.VarID(varID), nil, at)
+	}
+}
+
+// rest moves into an object rest element the fields of `at` its binding's object type lists.
+// A rest binding whose type is not a plain object type takes the whole place. A rest element
+// that is itself a pattern is walked like any other.
+func (m *destructureMover) rest(pat ast.Pat, at movePlace) {
+	ident, ok := pat.(*ast.IdentPat)
+	if !ok {
+		m.walk(pat, at)
+		return
+	}
+	t, ok := m.ownedLeaf(ident.Name, ident.VarID)
+	if !ok {
+		return
+	}
+	dest := liveness.VarID(ident.VarID)
+	if ref, isRef := t.(*soltype.RefType); isRef {
+		t = ref.Inner
+	}
+	obj, isObj := t.(*soltype.ObjectType)
+	if !isObj {
+		m.moveInto(dest, nil, at)
+		return
+	}
+	for _, elem := range obj.Elems {
+		if prop, isProp := elem.(*soltype.PropertyElem); isProp {
+			m.moveInto(dest, appendSeg(nil, prop.Name), extendPlace(at, prop.Name))
+		}
+	}
+}
+
+// ownedLeaf returns the type of the leaf binding `name`, and `false` when the leaf takes
+// nothing by value.
+func (m *destructureMover) ownedLeaf(name string, varID int) (soltype.Type, bool) {
+	if varID <= 0 {
+		return nil, false
+	}
+	b, found := m.scope.GetValue(name)
+	if !found || !isOwnedMovable(bindingType(b)) {
+		return nil, false
+	}
+	return bindingType(b), true
+}
+
+// moveInto moves the place `at` into the leaf binding `dest`, landing at destPath within it.
+// It records the move once per place and a placeCopy for every call.
+func (m *destructureMover) moveInto(dest liveness.VarID, destPath []placeSeg, at movePlace) {
+	c := m.c
+	if id := c.placeID(at); !m.moved.Contains(id) {
+		m.moved.Add(id)
+		c.recordMovePlace(at, m.init, m.ref)
+	}
+	if c.fn.movedSources == nil {
+		c.fn.movedSources = set.NewSet[ast.Node]()
+	}
+	c.fn.movedSources.Add(m.init)
+	c.fn.placeCopies = append(c.fn.placeCopies, placeCopy{dest: dest, destPath: destPath, src: at, expr: m.init})
+}
+
 // consumeAtGlobalWrite consumes the source place of a module-level store. A store
 // into a 'static global permanently transfers the value, so it consumes the source
 // whether owned or a borrow — using the source afterward could mutate what the global
