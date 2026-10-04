@@ -8,10 +8,10 @@ import (
 
 // TestEscapingClosureCapture covers a closure that outlives the body it is written in. A returned
 // closure moves each owned local it captures, so a later use of the local reads a moved value.
-// One stored into a module-level binding mutably borrows each owned local it writes for the rest
-// of the body, since anything can call it from then on. A local it only reads stays free. One
-// stored into a caller-owned object borrows its captures, and the paths it hands the caller are
-// weighed like a stored borrow's. A closure that stays in the body borrows its captures too.
+// One stored into a module-level binding may run during any call after the store, so each such
+// call borrows the owned locals it writes. A local it only reads stays free. One stored into a
+// caller-owned object borrows its captures, and the paths it hands the caller are weighed like
+// a stored borrow's. A closure that stays in the body borrows its captures too.
 func TestEscapingClosureCapture(t *testing.T) {
 	tests := map[string]struct {
 		src  string
@@ -40,7 +40,7 @@ func TestEscapingClosureCapture(t *testing.T) {
 				}
 			`,
 		},
-		// Moving p hands it to an owner while a stored closure can still write it.
+		// take receives p as its owner, and may call sink, which writes p.
 		"MoveAfterStoringAWritingClosureIntoAGlobalConflicts": {
 			src: `
 				var sink: fn () -> undefined = fn () {}
@@ -65,7 +65,7 @@ func TestEscapingClosureCapture(t *testing.T) {
 				}
 			`,
 		},
-		// A closure that writes p borrows it mutably, so an immutable borrow of p conflicts.
+		// readIt may call sink, which writes p while readIt reads it through `a`.
 		"BorrowAfterStoringAWritingClosureIntoAGlobalConflicts": {
 			src: `
 				var sink: fn () -> undefined = fn () {}
@@ -77,9 +77,20 @@ func TestEscapingClosureCapture(t *testing.T) {
 					readIt(a)
 				}
 			`,
-			want: []string{"7:14-7:16: cannot borrow 'p' as immutable while it is borrowed as mutable"},
+			want: []string{"8:6-8:15: cannot borrow 'p' as mutable while it is borrowed as immutable"},
 		},
-		// The closure's loan starts at the store, so it meets an immutable borrow still live there.
+		// Nothing can call sink while `a` is in use, so the borrow is no conflict.
+		"UnusedBorrowAfterStoringAWritingClosureIntoAGlobalOk": {
+			src: `
+				var sink: fn () -> undefined = fn () {}
+				fn go() {
+					val mut p = {x: 1}
+					sink = fn () { p.x = 2 }
+					val a = &p
+				}
+			`,
+		},
+		// `a` is taken before the store and still in use at readIt, which may call sink.
 		"StoringAWritingClosureBesideALiveBorrowConflicts": {
 			src: `
 				var sink: fn () -> undefined = fn () {}
@@ -92,20 +103,22 @@ func TestEscapingClosureCapture(t *testing.T) {
 					readIt(a)
 				}
 			`,
-			want: []string{"8:13-8:14: cannot borrow 'p' as mutable while it is borrowed as immutable"},
+			want: []string{"9:6-9:15: cannot borrow 'p' as mutable while it is borrowed as immutable"},
 		},
 		// A name bound to a closure carries the closure's captures to the store.
 		"StoreOfABoundClosureIntoAGlobalBorrowsTheCapture": {
 			src: `
 				var sink: fn () -> undefined = fn () {}
+				declare fn readIt(a: &{x: number}) -> undefined
 				fn go() {
 					val mut p = {x: 1}
 					val f = fn () { p.x = 2 }
 					sink = f
 					val a = &p
+					readIt(a)
 				}
 			`,
-			want: []string{"7:14-7:16: cannot borrow 'p' as immutable while it is borrowed as mutable"},
+			want: []string{"9:6-9:15: cannot borrow 'p' as mutable while it is borrowed as immutable"},
 		},
 		// A returned closure moves p as the frame ends, so nothing reads p afterwards.
 		"ReturnOfAClosureLastInTheBodyOk": {
@@ -244,6 +257,7 @@ func TestEscapingClosureCapture(t *testing.T) {
 		"StoreOfAClosureChosenOnABranchMayBorrowTheCapture": {
 			src: `
 				var sink: fn () -> undefined = fn () {}
+				declare fn readIt(a: &{x: number}) -> undefined
 				fn go(c: boolean) {
 					val mut p = {x: 1}
 					var f: fn () -> undefined = fn () {}
@@ -252,48 +266,55 @@ func TestEscapingClosureCapture(t *testing.T) {
 					}
 					sink = f
 					val a = &p
+					readIt(a)
 				}
 			`,
-			want: []string{"10:14-10:16: cannot borrow 'p' as immutable while it is borrowed as mutable"},
+			want: []string{"12:6-12:15: cannot borrow 'p' as mutable while it is borrowed as immutable"},
 		},
 		// A copy of the closure's name carries its captures.
 		"StoreOfACopiedClosureBorrowsTheCapture": {
 			src: `
 				var sink: fn () -> undefined = fn () {}
+				declare fn readIt(a: &{x: number}) -> undefined
 				fn go() {
 					val mut p = {x: 1}
 					val f = fn () { p.x = 2 }
 					val g = f
 					sink = g
 					val a = &p
+					readIt(a)
 				}
 			`,
-			want: []string{"8:14-8:16: cannot borrow 'p' as immutable while it is borrowed as mutable"},
+			want: []string{"10:6-10:15: cannot borrow 'p' as mutable while it is borrowed as immutable"},
 		},
 		// A closure inside an object literal is part of the stored value.
 		"StoreOfAClosureInALiteralBorrowsTheCapture": {
 			src: `
 				var sink: {cb: fn () -> undefined} = {cb: fn () {}}
+				declare fn readIt(a: &{x: number}) -> undefined
 				fn go() {
 					val mut p = {x: 1}
 					sink = {cb: fn () { p.x = 2 }}
 					val a = &p
+					readIt(a)
 				}
 			`,
-			want: []string{"6:14-6:16: cannot borrow 'p' as immutable while it is borrowed as mutable"},
+			want: []string{"8:6-8:15: cannot borrow 'p' as mutable while it is borrowed as immutable"},
 		},
 		// A closure that calls another closure carries what that closure captures.
 		"StoreOfAClosureCallingACapturingClosureBorrowsTheCapture": {
 			src: `
 				var sink: fn () -> undefined = fn () {}
+				declare fn readIt(a: &{x: number}) -> undefined
 				fn go() {
 					val mut p = {x: 1}
 					val f = fn () { p.x = 2 }
 					sink = fn () { f() }
 					val a = &p
+					readIt(a)
 				}
 			`,
-			want: []string{"7:14-7:16: cannot borrow 'p' as immutable while it is borrowed as mutable"},
+			want: []string{"9:6-9:15: cannot borrow 'p' as mutable while it is borrowed as immutable"},
 		},
 		// Two stored closures that both write p are two writers, which Rule 3 of
 		// planning/lifetimes/requirements.md allows.
@@ -325,14 +346,16 @@ func TestEscapingClosureCapture(t *testing.T) {
 		"StoreOfAClosureFromAnIfElseBorrowsTheCapture": {
 			src: `
 				var sink: fn () -> undefined = fn () {}
+				declare fn readIt(a: &{x: number}) -> undefined
 				fn go(c: boolean) {
 					val mut p = {x: 1}
 					val f = if c { (fn () { p.x = 2 }) } else { (fn () {}) }
 					sink = f
 					val a = &p
+					readIt(a)
 				}
 			`,
-			want: []string{"7:14-7:16: cannot borrow 'p' as immutable while it is borrowed as mutable"},
+			want: []string{"9:6-9:15: cannot borrow 'p' as mutable while it is borrowed as immutable"},
 		},
 	}
 	for name, tc := range tests {

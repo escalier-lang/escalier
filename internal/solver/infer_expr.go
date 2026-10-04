@@ -1484,6 +1484,10 @@ func (c *checker) inferCall(scope *Scope, lvl int, e *ast.CallExpr) soltype.Type
 	// overwrites c.fn.currentStmt, so reading the point afterward would record an
 	// argument move against an inner branch instead of this call's statement.
 	consumeRef, hasConsumeRef := c.currentStmtRef()
+	// A closure stored into a module-level binding may run during any call.
+	if hasConsumeRef {
+		c.noteCallSite(e, consumeRef)
+	}
 	callee := c.inferExpr(scope, lvl, e.Callee)
 	// A member callee whose type is an intersection of function arms is an overloaded
 	// method, since memberValue gathers a multi-signature method's arms into an
@@ -2041,9 +2045,16 @@ func (c *checker) inferAssign(scope *Scope, lvl int, e *ast.BinaryExpr) soltype.
 		assignStmt = c.fn.currentStmt
 	}
 	if target, ok := e.Left.(*ast.IdentExpr); ok {
-		if closure, ok := e.Right.(*ast.FuncExpr); ok {
-			if b, found := scope.GetValue(target.Name); found && !b.ModuleLevel {
+		if b, found := scope.GetValue(target.Name); found {
+			if closure, ok := e.Right.(*ast.FuncExpr); ok && !b.ModuleLevel {
 				c.markNamedClosure(closure)
+			}
+			// A closure stored into a module-level binding runs only when something calls it,
+			// so its loans are taken at the calls after the store.
+			if b.ModuleLevel {
+				for _, closure := range closuresIn(e.Right) {
+					c.markNamedClosure(closure)
+				}
 			}
 		}
 	}
