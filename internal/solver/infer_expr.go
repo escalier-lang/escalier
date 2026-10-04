@@ -2329,13 +2329,9 @@ func (c *checker) inferMemberAssign(scope *Scope, lvl int, e *ast.BinaryExpr, m 
 			// Storing a value that borrows a local into a borrow parameter's field hands the
 			// local to the caller, since the parameter's object outlives the frame.
 			// checkParamFieldStoreEscape applies only when the receiver is such a parameter,
-			// and records the store for the post-pass to decide.
+			// and records the store for the post-pass to decide. A closure in the value
+			// borrows what it captures, so it is weighed the same way and moves nothing.
 			c.checkParamFieldStoreEscape(m.Object, m.Prop.Name, e.Right, ref)
-			// The caller keeps the receiver, so a closure stored into it outlives the locals it
-			// captures. paramReferentOutlivesFrame is `true` for exactly such a receiver.
-			if rp, ok := exprPlace(m.Object); ok && rp.root > 0 && c.paramReferentOutlivesFrame(rp.root) {
-				c.noteEscapedClosureSite(e.Right, ref)
-			}
 			// A store into a LOCAL receiver's field records a borrow edge instead, rooted at
 			// the field. It does not escape until the receiver itself flows out, at which
 			// point the recorded edge is followed. `b.peer = &mut d` records b → d at [peer].

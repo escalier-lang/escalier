@@ -672,8 +672,8 @@ func (c *checker) consumeIntoLiteral(el ast.Expr, elemT soltype.Type, ref livene
 	c.consumeOwned(el, elemT, el, ref)
 }
 
-// noteEscapedClosureSite records that the value e is stored at `ref` into storage that outlives
-// the body, for consumeEscapedCaptures to move the locals any closure in it captures.
+// noteEscapedClosureSite records that the value e is stored at `ref` into a module-level
+// binding, for consumeEscapedCaptures to move the locals any closure in it captures.
 func (c *checker) noteEscapedClosureSite(e ast.Expr, ref liveness.StmtRef) {
 	if c.fn == nil || c.fn.cfg == nil {
 		return
@@ -712,16 +712,7 @@ func (c *checker) consumeEscapedCaptures(flowBorrowGraph *flowBorrowGraph) bool 
 			if !isOwnedMovable(c.fn.capturedTypes[id]) {
 				continue
 			}
-			// A store of an owned carrier into a caller-owned object can already have moved the
-			// capture at this site as part of the carrier's component, and a second move at one
-			// statement reads as a use after the first. The component move records the VarID
-			// alone, so the place is registered here for the use-after-move scan to find it.
-			place := movePlace{root: id}
-			if at := c.fn.moveSites[es.stmtRef]; at != nil && at.Contains(c.placeID(place)) {
-				c.fn.movePlaces[c.placeID(place)] = place
-				continue
-			}
-			c.recordMovePlace(place, es.expr, es.stmtRef)
+			c.recordMovePlace(movePlace{root: id}, es.expr, es.stmtRef)
 			moved = true
 		}
 	}
