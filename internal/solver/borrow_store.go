@@ -516,7 +516,7 @@ func (c *checker) recordCallStoreEdges(
 	}
 }
 
-// collectStoredLocals adds to out the function-locals an indirectly stored argument exposes,
+// collectStoredLocals adds to `out` the function-locals an indirectly stored argument exposes,
 // which is what the argument holds rather than its own root. `h.drain(out)` on a receiver
 // holding a borrow of a local writes that local into the caller's object, while a receiver
 // holding only a parameter borrow writes nothing that can leave the frame.
@@ -526,7 +526,7 @@ func (c *checker) recordCallStoreEdges(
 // the argument took earlier in the body is already there.
 //
 // An argument that builds its carrier inline, such as `&{held: &mut b}`, names no place and
-// so has no edges. It holds the borrows written into the carrier, which referents already
+// so has no edges. It holds the borrows written into the carrier, which `referents` already
 // carries — storedReferents falls back to the same scan for a non-place argument.
 //
 // A carrier the graph cannot see through holds nothing as far as this can tell, so nothing is

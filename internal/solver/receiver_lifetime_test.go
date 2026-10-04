@@ -16,8 +16,8 @@ func TestReceiverLifetimeDeclarations(t *testing.T) {
 		src  string
 		want []string
 	}{
-		// The receiver's 'a ties out.r to a borrow of c, so the call stores that borrow into the
-		// caller's out. Nothing in f reaches c after the call, so out.r is the only path to it.
+		// The receiver's 'a ties `out.r` to a borrow of c, so the call stores that borrow into the
+		// caller's `out`. Nothing in f reaches c after the call, so `out.r` is the only path to it.
 		{
 			name: "a borrow of the instance stored through the receiver's lifetime leaves as the only path to it",
 			src: `
@@ -31,7 +31,7 @@ func TestReceiverLifetimeDeclarations(t *testing.T) {
 				}
 			`,
 		},
-		// The stored borrow is immutable, so writing c afterwards would change what out.r expects
+		// The stored borrow is immutable, so writing c afterwards would change what `out.r` expects
 		// to hold still. The store's loan lasts to the end of f and reports it.
 		{
 			name: "writing the instance after storing a borrow of it through the receiver's lifetime conflicts",

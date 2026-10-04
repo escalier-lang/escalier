@@ -35,7 +35,7 @@ func TestCallStoreEdge(t *testing.T) {
 		types map[string]string
 	}{
 		// The call is the only thing that aliases a to b, and storing a.peer into out carries
-		// that borrow into the caller's object. Without the store edge the store into out finds
+		// that borrow into the caller's object. Without the store edge the store into `out` finds
 		// no borrow under [peer], takes no loan of b, and the move reports nothing.
 		"StoredBorrowReachesTheCaller": {
 			src: `
@@ -84,8 +84,8 @@ func TestCallStoreEdge(t *testing.T) {
 			},
 		},
 		// The target's own place prefixes the store's field path, so storing into a field of
-		// the target records the edge at [inner, peer] and a store of that nested field into
-		// out follows it.
+		// the target records the edge at `[inner, peer]` and a store of that nested field into
+		// `out` follows it.
 		"StoreThroughTargetFieldPlace": {
 			src: `
 				declare fn store<'a, 'b, 'c>(
@@ -490,8 +490,8 @@ func TestMethodCallStoreEdge(t *testing.T) {
 		want  []string
 		types map[string]string
 	}{
-		// The method call is the only thing that aliases a to b, so storing a.peer out takes the
-		// loan of b it would take for the equivalent free function.
+		// The method call is the only thing that aliases `a` to b, so storing `a.peer` out takes
+		// the loan of b it would take for the equivalent free function.
 		"MethodStoreReachesTheCaller": {
 			src: decls + `
 				fn build(s: Store, p: mut {value: number}, out: &mut {slot: &mut {value: number}}) {

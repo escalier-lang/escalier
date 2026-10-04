@@ -30,7 +30,7 @@ func TestStoreIntoCallerOwnedTarget(t *testing.T) {
 				}
 			`,
 		},
-		// Moving p into a mutable binding would let the frame write what out.r expects to hold
+		// Moving p into a mutable binding would let the frame write what `out.r` expects to hold
 		// still, so the move conflicts with the store's loan.
 		"MovingAfterAnImmutableStoreConflicts": {
 			src: `
@@ -91,7 +91,7 @@ func TestStoreIntoCallerOwnedTarget(t *testing.T) {
 			want: []string{"5:12-5:14: borrowed value 'b' does not live long enough to escape the function"},
 		},
 		// A store inside a loop runs again after the write that starts the next iteration, so
-		// the write changes b while the caller's p.r reads it. The loan check walks the body
+		// the write changes b while the caller's `p.r` reads it. The loan check walks the body
 		// once and cannot see that order, so the store keeps reporting as an escape.
 		"StoreInsideALoopEscapes": {
 			src: `
@@ -105,7 +105,7 @@ func TestStoreIntoCallerOwnedTarget(t *testing.T) {
 			`,
 			want: []string{"6:13-6:15: borrowed value 'b' does not live long enough to escape the function"},
 		},
-		// A repoint on one branch leaves the earlier store in place on the other, so p.r may
+		// A repoint on one branch leaves the earlier store in place on the other, so `p.r` may
 		// still read b when b is written. The earlier loan keeps holding.
 		"RepointingOnOneBranchKeepsTheLoan": {
 			src: `
@@ -139,7 +139,7 @@ func TestStoreIntoCallerOwnedTarget(t *testing.T) {
 			`,
 		},
 		// A later store into the same field repoints it, so b is no longer reachable through
-		// p.r and its loan ends there.
+		// `p.r` and its loan ends there.
 		"RepointingTheFieldEndsTheLoan": {
 			src: `
 				fn f(p: &mut {r: &mut {value: number}}) {

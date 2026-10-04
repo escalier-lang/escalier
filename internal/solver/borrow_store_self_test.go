@@ -20,8 +20,8 @@ func TestSelfReceiverStoreEdge(t *testing.T) {
 		want  []string
 		types map[string]string
 	}{
-		// The method call is the only thing that aliases h to b, and storing the field into out
-		// carries that borrow to the caller. The store into out takes a loan of b that lasts to
+		// The method call is the only thing that aliases h to b, and storing the field into `out`
+		// carries that borrow to the caller. The store into `out` takes a loan of b that lasts to
 		// the end of the function, so moving b afterwards reports.
 		"StoreIntoALocalReceiverReachesTheCaller": {
 			src: `
@@ -131,7 +131,7 @@ func TestSelfReceiverStoreEdge(t *testing.T) {
 // The shared lifetime sits inside the receiver's type rather than being the receiver's own
 // borrow lifetime, so what lands in the target is whatever the receiver holds. Against the
 // local target here that is an edge from the target to the receiver. Storing the target's
-// field into sink then follows it and takes a loan of h, so moving h afterwards reports.
+// field into `sink` then follows it and takes a loan of h, so moving h afterwards reports.
 func TestSelfReceiverIsAStoreSource(t *testing.T) {
 	_, _, errs := inferSource(t, `
 		class Holder<'a> {
@@ -174,7 +174,7 @@ func TestIndirectStoreIntoParameter(t *testing.T) {
 		src  string
 		want []string
 	}{
-		// s holds a borrow of the local b, so draining s into the caller's out hands b to the
+		// s holds a borrow of the local b, so draining s into the caller's `out` hands b to the
 		// caller.
 		"HoldingALocalLoansIt": {
 			src: decl + `

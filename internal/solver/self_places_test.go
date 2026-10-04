@@ -123,10 +123,10 @@ func TestSelfRootedPlaces(t *testing.T) {
 			`,
 			want: nil,
 		},
-		// A consuming receiver hands the instance to the method, so nothing reads self.peer once
-		// fill returns. The returned borrow outlives the method, and it is the only path left to
+		// A consuming receiver hands the instance to the method, so nothing reads `self.peer` once
+		// `fill` returns. The returned borrow outlives the method, and it is the only path left to
 		// b. A borrow of the instance that the caller takes before the call can still read
-		// self.peer afterwards, a gap #1845 tracks.
+		// `self.peer` afterwards, a gap #1845 tracks.
 		"LocalStoredIntoConsumingReceiverAndReturnedOk": {
 			src: selfPlaceDecls + `
 				class Holder<'a> {

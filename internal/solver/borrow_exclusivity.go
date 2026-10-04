@@ -340,10 +340,10 @@ func (c *checker) dropLoansHeldBy(holder liveness.VarID) {
 	}
 }
 
-// endLoansAt ends the loans stored in holder's field base, or in a field nested inside it. A
+// endLoansAt ends the loans stored in `holder`'s field `base`, or in a field nested inside it. A
 // store into that field replaces what it held, so those loans reach nothing from here on.
-// `b.peer = &mut e` after `b.peer = &mut d` ends the loan of d. A loan stored in b.peer.next
-// ends too, while one stored in the sibling field b.data keeps holding. Like dropLoansHeldBy,
+// `b.peer = &mut e` after `b.peer = &mut d` ends the loan of d. A loan stored in `b.peer.next`
+// ends too, while one stored in the sibling field `b.data` keeps holding. Like dropLoansHeldBy,
 // it marks each loan with the sequence it ended at rather than erasing it, so a read walked
 // before the store is still weighed against what the field held then.
 func (c *checker) endLoansAt(holder liveness.VarID, base []placeSeg) {
@@ -351,15 +351,15 @@ func (c *checker) endLoansAt(holder liveness.VarID, base []placeSeg) {
 }
 
 // endLoansAtPostDominating is endLoansAt limited to the loans whose statement every path to the
-// end of the function leads through ref. That holds when ref's block post-dominates the loan's
-// block, meaning every path from the loan's block to the CFG exit passes through ref's block. A
-// loan with a path to the exit that skips ref keeps holding.
+// end of the function leads through `ref`. That holds when `ref`'s block post-dominates the loan's
+// block, meaning every path from the loan's block to the CFG exit passes through `ref`'s block. A
+// loan with a path to the exit that skips `ref` keeps holding.
 func (c *checker) endLoansAtPostDominating(holder liveness.VarID, base []placeSeg, ref liveness.StmtRef) {
 	c.endLoansWhere(holder, base, func(l loan) bool { return c.blockPostDominates(ref.BlockID, l.ref.BlockID) })
 }
 
-// blockPostDominates reports whether every path from block from to the CFG exit passes through
-// block by. A block post-dominates itself.
+// blockPostDominates reports whether every path from block `from` to the CFG exit passes through
+// block `by`. A block post-dominates itself.
 func (c *checker) blockPostDominates(by, from int) bool {
 	if by == from {
 		return true
@@ -385,8 +385,8 @@ func (c *checker) blockPostDominates(by, from int) bool {
 	return true
 }
 
-// endLoansWhere ends each loan stored in holder's field base, or in a field nested inside it,
-// for which selects returns true. It marks each one with the sequence it ended at rather than
+// endLoansWhere ends each loan stored in `holder`'s field `base`, or in a field nested inside it,
+// for which `selects` returns `true`. It marks each one with the sequence it ended at rather than
 // erasing it, so a read walked before that point is still weighed against the loan.
 func (c *checker) endLoansWhere(holder liveness.VarID, base []placeSeg, selects func(loan) bool) {
 	ended := c.nextLoanSeq()
@@ -524,10 +524,10 @@ func (c *checker) noteFieldWrite(target *ast.MemberExpr) {
 // view the target ends up holding. A signature storing a `&'a B` leaves the target able to read
 // the item and not to write it, even though the target itself is a mutable borrow.
 //
-// place is the data the stored borrow reaches and target is the binding it lands in, so the
-// loan is a borrow of place held by target. It lasts as long as target is live, the same rule a
+// `place` is the data the stored borrow reaches and `target` is the binding it lands in, so the
+// loan is a borrow of `place` held by `target`. It lasts as long as `target` is live, the same rule a
 // borrow bound to a name follows. A target whose referent belongs to the caller is the
-// exception, and its loan lasts to the end of the function. targetPath is the field of target
+// exception, and its loan lasts to the end of the function. targetPath is the field of `target`
 // the borrow lands at, so a later store into that field can end this loan and leave a sibling
 // field's alone.
 func (c *checker) recordStoreEdgeLoan(place movePlace, mut bool, target liveness.VarID, targetPath []placeSeg, ref liveness.StmtRef, blame ast.Node) {

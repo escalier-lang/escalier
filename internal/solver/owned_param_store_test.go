@@ -135,7 +135,7 @@ func TestStoreIntoOwnedParameter(t *testing.T) {
 		},
 		// An owned parameter takes borrow edges like a local, so an argument that reaches a
 		// local only through those edges still carries it into a caller-owned target. Here
-		// p.peer reaches b, and out is a borrow parameter, so storing into it takes a loan of
+		// p.peer reaches b, and `out` is a borrow parameter, so storing into it takes a loan of
 		// b. Moving b afterwards conflicts with that loan.
 		"AnOwnedParameterCarriesItsEdgesIntoAStore": {
 			src: `

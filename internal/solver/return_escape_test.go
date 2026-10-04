@@ -230,7 +230,7 @@ func TestReturnValueBorrows(t *testing.T) {
 			types: map[string]string{"f": "fn <'a>(obj: {peer?: &'a mut {value: number}}) -> &'a mut {value: number}"},
 		},
 		// A local this frame also sends out another way is not the return's alone. The store
-		// puts a borrow of b in the caller's object, so the caller reaches b through p.node.peer
+		// puts a borrow of b in the caller's object, so the caller reaches b through `p.node.peer`
 		// and through the return. Both paths are mutable, which Rule 3 of
 		// planning/lifetimes/requirements.md allows, so the return is accepted. It keeps its
 		// borrow type, since the caller cannot own a value it also reaches through p.
@@ -246,7 +246,7 @@ func TestReturnValueBorrows(t *testing.T) {
 			types: map[string]string{"f": "fn (p: &mut {node: {peer: &mut {value: number}}}) -> &mut {value: number}"},
 		},
 		// The same store made through an immutable borrow leaves the caller reading b through
-		// p.node.peer while the return writes it. A write through the return would change what
+		// `p.node.peer` while the return writes it. A write through the return would change what
 		// the stored path expects to hold still, so the pair is reported.
 		//
 		// The wording is what this case asserts. b's lifetime is not the problem, since the frame

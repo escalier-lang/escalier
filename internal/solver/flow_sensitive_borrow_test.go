@@ -17,10 +17,10 @@ func TestFlowSensitiveBorrowEdges(t *testing.T) {
 		want  []string
 		types map[string]string
 	}{
-		// Reassigning a `var`'s borrow clears the replaced edge: `a = &mut d` after `a = &mut
-		// c` leaves only a → d, so storing a out hands d alone to the caller. The store takes a
-		// loan of d alone, so a stale c edge carried forward would take c out with no loan and
-		// report it as escaping. The strong update clears it, so nothing reports.
+		// Reassigning a `var`'s borrow clears the replaced edge: `a = &mut d` after
+		// `a = &mut c` leaves only `a` → d, so storing `a` out hands d alone to the caller. The
+		// store takes a loan of d alone, so a stale c edge carried forward would take c out with
+		// no loan and report it as escaping. The strong update clears it, so nothing reports.
 		"VarReassignClearsReplacedEdge": {
 			src: `
 				fn f(out: &mut {slot: &mut {value: number}}) {
@@ -34,11 +34,11 @@ func TestFlowSensitiveBorrowEdges(t *testing.T) {
 			want:  nil,
 			types: map[string]string{"f": "fn (out: &mut {slot: &mut {value: number}}) -> undefined"},
 		},
-		// A borrow set on only one branch reaches the merge: `a = &mut d` runs only when cond
-		// holds, but the union at the merge keeps a → d, so storing a out hands d to the
-		// caller through a mutable path. Storing &d into view hands it out through an
-		// immutable one too, and the pair is reported. Without the merged edge only the view
-		// store would carry d, and nothing would pair with it. The seed is a parameter, so the
+		// A borrow set on only one branch reaches the merge: `a = &mut d` runs only when `cond`
+		// holds, but the union at the merge keeps `a` → d, so storing `a` out hands d to the
+		// caller through a mutable path. Storing `&d` into `view` hands it out through an
+		// immutable one too, and the pair is reported. Without the merged edge only the `view`
+		// store would carry d, and nothing would pair with it. `seed` is a parameter, so the
 		// fall-through path carries no local edge and only d is reported.
 		"BorrowSetOnOneBranchReachesMerge": {
 			src: `
@@ -58,11 +58,11 @@ func TestFlowSensitiveBorrowEdges(t *testing.T) {
 					"view: &mut {r: &{value: number}}) -> undefined",
 			},
 		},
-		// Disagreeing branches union their referents: the then-branch repoints a to d and the
-		// else-branch back to c, so the merge carries both a → c and a → d. The store into out
-		// takes its loans from the edges recorded when the walk reaches it, which follow the
-		// last branch walked and reach c alone. d has no loan to keep the stored borrow the only
-		// path to it, so storing a out reports both locals as escaping.
+		// Disagreeing branches union their referents: the then-branch repoints `a` to d and the
+		// `else` branch back to c, so the merge carries both `a` → c and `a` → d. The store into
+		// `out` takes its loans from the edges recorded when the walk reaches it, which follow
+		// the last branch walked and reach c alone. d has no loan to keep the stored borrow the
+		// only path to it, so storing `a` out reports both locals as escaping.
 		"BranchesUnionReferents": {
 			src: `
 				fn f(cond: boolean, out: &mut {slot: &mut {value: number}}) {

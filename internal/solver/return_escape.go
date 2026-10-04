@@ -104,7 +104,7 @@ func (e *EscapingBorrowError) Message() string {
 type MixedOutflowPathsError struct {
 	// LocalName is the local reached twice, for the message.
 	LocalName string
-	// node is the later of the two outgoing expressions, and other the earlier one.
+	// `node` is the later of the two outgoing expressions, and `other` the earlier one.
 	node  ast.Node
 	other ast.Span
 }
@@ -133,7 +133,7 @@ type escapeSite struct {
 	// a later use of the stored local in the frame is weighed against it.
 	// callerOwnedStoreAccepted reads the flag to accept a bare borrow the loan covers.
 	callerOwned bool
-	// reaches lists the places the site carries out and whether a write can go through each.
+	// `reaches` lists the places the site carries out and whether a write can go through each.
 	// A call store sets it, since what the callee stores comes from its signature rather than
 	// from the argument expression. Every other site leaves it nil, and siteReaches reads the
 	// expression instead.
@@ -160,7 +160,7 @@ type outflowPath struct {
 //     reported as that pair;
 //   - an ordinary escape, which is reported.
 //
-// It returns true when it consumed any co-moved local, so the caller knows to recompute the
+// It returns `true` when it consumed any co-moved local, so the caller knows to recompute the
 // lattice before the use-after-move scan reads it.
 func (c *checker) resolveComponentEscapes(
 	info *liveness.MoveInfo,
@@ -249,7 +249,7 @@ func (c *checker) resolveComponentEscapes(
 }
 
 // siteEscaping returns the function-locals the site carries out directly. A site that lists its
-// reaches carries their roots. Any other site carries what escapingLocalsOf finds in its
+// `reaches` carries their roots. Any other site carries what escapingLocalsOf finds in its
 // expression.
 func (c *checker) siteEscaping(es escapeSite, fieldBorrowGraph map[liveness.VarID][]fieldBorrow) set.Set[liveness.VarID] {
 	if es.reaches == nil {
@@ -263,7 +263,7 @@ func (c *checker) siteEscaping(es escapeSite, fieldBorrowGraph map[liveness.VarI
 }
 
 // siteReaches returns every path the site hands out to a local, with whether a write can go
-// through it. A local the site reaches without a known path, such as one carried by an if/else
+// through it. A local the site reaches without a known path, such as one carried by an `if`/`else`
 // branch, is listed once each way, so it disagrees with any other path to the same local.
 func (c *checker) siteReaches(es escapeSite, fieldBorrowGraph map[liveness.VarID][]fieldBorrow) []elementReach {
 	reaches := es.reaches
@@ -371,9 +371,9 @@ func (c *checker) reportMixedOutflows(outOfFrame map[liveness.VarID][]outflowPat
 	return reported
 }
 
-// firstMixedPair returns the first pair of paths, one from as and one from bs, that leave through
-// different expressions, reach overlapping data, and disagree about whether a write can go
-// through. The pair comes back with the path that starts earlier in the source first.
+// firstMixedPair returns the first pair of paths, one from `as` and one from `bs`, that leave
+// through different expressions, reach overlapping data, and disagree about whether a write can
+// go through. The pair comes back with the path that starts earlier in the source first.
 func firstMixedPair(as, bs []outflowPath) (outflowPath, outflowPath, bool) {
 	for _, a := range as {
 		for _, b := range bs {
@@ -389,8 +389,8 @@ func firstMixedPair(as, bs []outflowPath) (outflowPath, outflowPath, bool) {
 	return outflowPath{}, outflowPath{}, false
 }
 
-// reportMixedOutflow reports that local id leaves through blame and through other with paths
-// that disagree about whether it can change. A borrow inside blame then takes no second
+// reportMixedOutflow reports that local `id` leaves through `blame` and through `other` with paths
+// that disagree about whether it can change. A borrow inside `blame` then takes no second
 // diagnostic from the loan check.
 func (c *checker) reportMixedOutflow(id liveness.VarID, blame, other ast.Node) {
 	if e, ok := blame.(ast.Expr); ok {
@@ -406,8 +406,8 @@ type outflowConflict struct {
 	other ast.Node
 }
 
-// returnOutflowConflict compares the return es against the paths outOfFrame records for the
-// locals it reaches. leaves says some reached local also leaves through another site. conflict
+// returnOutflowConflict compares the return `es` against the paths outOfFrame records for the
+// locals it reaches. `leaves` says some reached local also leaves through another site. `conflict`
 // names the local and the other site when one of those paths disagrees with the return about
 // whether a write can go through, and is nil otherwise.
 func (c *checker) returnOutflowConflict(
@@ -484,7 +484,7 @@ func (c *checker) callerOwnedStoreAccepted(
 	return true
 }
 
-// stmtInLoop reports whether the statement at ref can run again after it runs once, which holds
+// stmtInLoop reports whether the statement at `ref` can run again after it runs once, which holds
 // when its basic block reaches itself through the CFG.
 func (c *checker) stmtInLoop(ref liveness.StmtRef) bool {
 	if c.fn.cfg == nil || ref.BlockID < 0 || ref.BlockID >= len(c.fn.cfg.Blocks) {
@@ -508,7 +508,7 @@ func (c *checker) stmtInLoop(ref liveness.StmtRef) bool {
 	return false
 }
 
-// hasCallerOwnedLoan reports whether a store at ref recorded a loan of id that lasts to the end
+// hasCallerOwnedLoan reports whether a store at `ref` recorded a loan of `id` that lasts to the end
 // of the function.
 func (c *checker) hasCallerOwnedLoan(id liveness.VarID, ref liveness.StmtRef) bool {
 	return slices.ContainsFunc(c.fn.loans, func(l loan) bool {
@@ -541,7 +541,7 @@ func reachableLocals(
 // componentMoveCovers reports whether the escape of es is a self-contained connected-component
 // move rather than an ordinary escape. It holds when two conditions are met:
 //
-//   - es carries an owned aggregate, or it is a return exemptAsReturn admits. An owned
+//   - `es` carries an owned aggregate, or it is a return exemptAsReturn admits. An owned
 //     aggregate has internal edges for the move to re-anchor. A bare borrow has none, so away
 //     from a return it stays an escape. A bare borrow is `&mut b`, a borrowed field, or a
 //     borrow-typed binding.
@@ -552,7 +552,7 @@ func reachableLocals(
 //     "dead" covers.
 //
 // A return needs no aggregate because the frame does not survive it. Every local dies with the
-// frame, so nothing in it reaches the value again. exemptAsReturn is false for a return whose
+// frame, so nothing in it reaches the value again. exemptAsReturn is `false` for a return whose
 // locals also leave through another site with a path that disagrees about whether they can
 // change.
 //
@@ -717,7 +717,7 @@ func borrowsIn(e ast.Expr) []*ast.BorrowExpr {
 	return found
 }
 
-// paramReferentOutlivesFrame reports whether root names a parameter whose referent belongs to
+// paramReferentOutlivesFrame reports whether `root` names a parameter whose referent belongs to
 // the caller and so survives the call.
 //
 // Only a BORROW parameter does. `&T` and `&mut T` name data the caller still holds, so a borrow
@@ -1003,7 +1003,7 @@ func (c *checker) checkReturnEscape(retExpr ast.Expr, stmtRef liveness.StmtRef) 
 }
 
 // recordCallerOwnedStore records a call store into a caller-owned target as an escape site.
-// reaches lists the places the callee stores and whether a write can go through each, which the
+// `reaches` lists the places the callee stores and whether a write can go through each, which the
 // store's signature decides.
 func (c *checker) recordCallerOwnedStore(e ast.Expr, stmtRef liveness.StmtRef, reaches []elementReach) {
 	if c.fn == nil || e == nil {
