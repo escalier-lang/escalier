@@ -382,7 +382,7 @@ func (c *checker) captureAccesses(scope *Scope, closure *ast.FuncExpr) []capture
 // capturedLocal is a local of the current body that a closure captures.
 type capturedLocal struct {
 	root liveness.VarID
-	// mut says the closure writes the local.
+	// `mut` says the closure writes the local.
 	mut bool
 }
 

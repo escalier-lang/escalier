@@ -2332,7 +2332,7 @@ func (c *checker) inferMemberAssign(scope *Scope, lvl int, e *ast.BinaryExpr, m 
 			// and records the store for the post-pass to decide.
 			c.checkParamFieldStoreEscape(m.Object, m.Prop.Name, e.Right, ref)
 			// The caller keeps the receiver, so a closure stored into it outlives the locals it
-			// captures. paramReferentOutlivesFrame is true for exactly such a receiver.
+			// captures. paramReferentOutlivesFrame is `true` for exactly such a receiver.
 			if rp, ok := exprPlace(m.Object); ok && rp.root > 0 && c.paramReferentOutlivesFrame(rp.root) {
 				c.noteEscapedClosureSite(e.Right, ref)
 			}

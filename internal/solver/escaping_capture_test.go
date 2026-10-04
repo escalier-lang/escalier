@@ -70,7 +70,7 @@ func TestEscapingClosureCapture(t *testing.T) {
 			`,
 			want: nil,
 		},
-		// The caller keeps out, so a closure stored into it outlives p.
+		// The caller keeps `out`, so a closure stored into it outlives p.
 		"StoreIntoABorrowParameterMovesTheCapture": {
 			src: `
 				fn go(out: &mut {cb: fn () -> number}) {
@@ -220,7 +220,7 @@ func TestEscapingClosureCapture(t *testing.T) {
 			`,
 			want: []string{"6:14-6:34: use of moved value 'p'"},
 		},
-		// A closure chosen by an if/else expression carries its captures to the store.
+		// A closure chosen by an `if`/`else` expression carries its captures to the store.
 		"StoreOfAClosureFromAnIfElseMovesTheCapture": {
 			src: `
 				var sink: fn () -> number = fn () { return 0 }

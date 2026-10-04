@@ -882,8 +882,8 @@ type fieldBorrow struct {
 	// edge and `val a = {peer: &b}` an immutable one. A borrow field carries its own
 	// mutability, so an edge reached through another edge keeps its own answer.
 	mut bool
-	// capture marks an edge recorded because a closure captures referent. `val f = fn () { b.v }`
-	// records f → b with capture set.
+	// `capture` marks an edge recorded because a closure captures `referent`.
+	// `val f = fn () { b.v }` records f → b with `capture` set.
 	capture bool
 }
 
@@ -895,7 +895,7 @@ type fieldBorrow struct {
 type borrowCollector struct {
 	*ast.DefaultVisitor
 	out *[]*ast.BorrowExpr
-	// closures, when set, gathers the closures the expression carries by value.
+	// `closures`, when set, gathers the closures the expression carries by value.
 	closures *[]*ast.FuncExpr
 }
 
@@ -1042,7 +1042,7 @@ func (c *checker) addBorrowEdge(root liveness.VarID, path []placeSeg, referent l
 	c.addEdge(root, fieldBorrow{path: path, referent: referent, refPath: refPath, mut: mut})
 }
 
-// addEdge records fb as an edge out of root in the eager graph, unless root already has it.
+// addEdge records fb as an edge out of `root` in the eager graph, unless `root` already has it.
 func (c *checker) addEdge(root liveness.VarID, fb fieldBorrow) {
 	if containsFieldBorrow(c.fn.eagerBorrowGraph[root], fb) {
 		return
@@ -1067,19 +1067,19 @@ func (c *checker) recordBorrowEdges(destVarID int, init ast.Expr) {
 }
 
 // recordBorrowSources records the borrow edges the expression e contributes to the binding
-// root, at base, the field path reached so far:
+// `root`, at `base`, the field path reached so far:
 //
-//   - A direct `&mut b` of a local records an edge at base.
-//   - An object property descends with base extended by the property name.
-//   - A tuple element and a spread descend at base unchanged. A field path is a chain of
+//   - A direct `&mut b` of a local records an edge at `base`.
+//   - An object property descends with `base` extended by the property name.
+//   - A tuple element and a spread descend at `base` unchanged. A field path is a chain of
 //     named segments, and neither a tuple index nor a spread contributes one: a tuple index
 //     is a number, not a field name, and a spread merges its source's fields without naming
 //     them. The place model approximates a read of either to its container, so the borrow
-//     stays attributed to base.
-//   - A closure records a capture edge at base for each local it captures.
-//   - A place expression copies that place's edges, re-rooted under root at base.
-//   - Any other carrier, such as an if/else branch, contributes its inline borrows and the
-//     captures of its inline closures at base.
+//     stays attributed to `base`.
+//   - A closure records a capture edge at `base` for each local it captures.
+//   - A place expression copies that place's edges, re-rooted under `root` at `base`.
+//   - Any other carrier, such as an `if`/`else` branch, contributes its inline borrows and the
+//     captures of its inline closures at `base`.
 //
 // The walk stops at a call boundary and does not enter a closure's body.
 func (c *checker) recordBorrowSources(root liveness.VarID, base []placeSeg, e ast.Expr) {

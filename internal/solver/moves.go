@@ -672,7 +672,7 @@ func (c *checker) consumeIntoLiteral(el ast.Expr, elemT soltype.Type, ref livene
 	c.consumeOwned(el, elemT, el, ref)
 }
 
-// noteEscapedClosureSite records that the value e is stored at ref into storage that outlives
+// noteEscapedClosureSite records that the value e is stored at `ref` into storage that outlives
 // the body, for consumeEscapedCaptures to move the locals any closure in it captures.
 func (c *checker) noteEscapedClosureSite(e ast.Expr, ref liveness.StmtRef) {
 	if c.fn == nil || c.fn.cfg == nil {
