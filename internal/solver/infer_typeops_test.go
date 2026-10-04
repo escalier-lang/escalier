@@ -1865,6 +1865,8 @@ func TestInferCondResidualAgainstBound(t *testing.T) {
 			`,
 			wantErr: "cannot constrain if keyof t4 : t5 { never } else { string } <: keyof t4",
 		},
+		// The Check is wrapped as `[T]` so the conditional does not distribute. Written bare, it is
+		// the `Extract` shape, which nativeDifference reduces to `T & U` before constrain sees it.
 		{
 			name: "ThenBranchBindsParam",
 			src: `
