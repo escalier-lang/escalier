@@ -443,7 +443,7 @@ func (c *checker) immutableTarget(target soltype.Type) (soltype.Type, bool) {
 // observe a write through that view — Rule 2 of the mutability-transition checker with an
 // empty alias set.
 //
-// Three cases show what it returns and why:
+// Four cases show what it returns and why:
 //
 //   - A syntactically fresh literal returns true. In `val m: mut {x} = {x: 1}` the literal
 //     is newly built and nothing else refers to it, so it is uniquely owned and granting it
@@ -454,6 +454,13 @@ func (c *checker) immutableTarget(target soltype.Type) (soltype.Type, bool) {
 //     consumes `cfg` and leaves `m` the sole owner, so again no live alias remains, and a
 //     later use of `cfg` is a use-after-move. exprPlace ties the place to a VarID, so this
 //     case holds only inside a function body where the move engine records the consume.
+//
+//   - A call whose return type is owned returns true. In `val m: mut Counter = make()` the
+//     callee kept nothing, so the caller holds the only reference to the result. It is the
+//     annotated twin of the `val mut m = make()` upgrade, and callReturnsOwned decides both.
+//     A call needs no consume, since its result is a temporary no place holds. A result
+//     that already holds an owned-mutable cell, as `g() -> mut {a: 1}` does, returns false
+//     for the covariance reason the next case gives.
 //
 //   - A literal wrapping an owned-mutable leaf returns false. In `{p: inner}` with
 //     `inner: mut {x: number}`, `inner` already holds a mutable cell. This one is NOT an
@@ -483,6 +490,9 @@ func (c *checker) isUniquelyOwned(src ast.Expr) bool {
 			return true
 		}
 		t := c.info.TypeOf(leaf)
+		if c.callReturnsOwned(leaf, t) {
+			return !resultContainsOwnedMut(t, set.NewSet[*soltype.TypeVarType]())
+		}
 		return !containsOwnedMut(t) && movesOwnedPlace(leaf, t)
 	})
 }
@@ -759,6 +769,28 @@ func containsOwnedMut(t soltype.Type) bool {
 	default:
 		return false
 	}
+}
+
+// resultContainsOwnedMut reports whether a value t may hold contains an owned-mutable cell.
+// It is containsOwnedMut extended through each type variable's lower bounds, which is the
+// form a call result reaches its destination in. seen holds the variables on the current
+// path, so a cycle in the bound graph ends the walk.
+func resultContainsOwnedMut(t soltype.Type, seen set.Set[*soltype.TypeVarType]) bool {
+	v, ok := t.(*soltype.TypeVarType)
+	if !ok {
+		return containsOwnedMut(t)
+	}
+	if seen.Contains(v) {
+		return false
+	}
+	seen.Add(v)
+	defer seen.Remove(v)
+	for _, lb := range v.LowerBounds {
+		if resultContainsOwnedMut(lb, seen) {
+			return true
+		}
+	}
+	return false
 }
 
 // isMutableIdentPat reports whether p is a simple identifier binding written with
