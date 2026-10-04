@@ -1327,16 +1327,32 @@ func TestInferIndexResidualErrorMessage(t *testing.T) {
 
 // An indexed access whose target or index is a bounded type parameter is checked through the
 // access over the bound. `T[number]` for `T: Array<number> | []` reads `number`, and
-// `[1, 2, 3][D]` for `D: number` reads `1 | 2 | 3`. The cases cover a parameter bounded by a union
-// of an array and a tuple, which is the bound `Promise.race` declares, and a tuple indexed by a
-// numeric parameter, which is the shape `FlatArray` declares. Each runs as a type argument checked
-// against an alias parameter's bound and as a function body checked against its return annotation.
+// `[1, 2, 3][D]` for `D: number` reads `1 | 2 | 3`. The cases cover three bounds:
+//
+//   - a parameter bounded by an array
+//   - a parameter bounded by a union of an array and a tuple, which is the bound `Promise.race`
+//     declares
+//   - a tuple indexed by a numeric parameter, which is the shape `FlatArray` declares
+//
+// Each runs as a type argument checked against an alias parameter's bound and as a function body
+// checked against its return annotation.
 func TestInferIndexOverBoundedParam(t *testing.T) {
 	tests := []struct {
 		name    string
 		src     string
 		wantErr string // "" ⇒ expect no error
 	}{
+		{
+			name: "ArrayTargetAccepted",
+			src: `
+				type N<X: number> = X
+				type F<T: Array<number>> = N<T[number]>
+			`,
+		},
+		{
+			name: "ArrayTargetReturnAccepted",
+			src:  `fn f<T: Array<number>>(k: T[number]) -> number { return k }`,
+		},
 		{
 			name: "ArrayOrTupleTargetAccepted",
 			src: `
