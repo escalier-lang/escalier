@@ -498,8 +498,8 @@ func (c *checker) trackAliasesForIdentPat(
 
 // trackCapturedAliases adds the closure variable to the alias sets of each variable the
 // closure captures from the current body. The alias is mutable when the closure writes the
-// capture. A capture's conflicts with other borrows are checked through the loan
-// recordCaptureLoans takes for it, not here.
+// capture. A capture's conflicts with other borrows are checked through the loans
+// takeCaptureLoan records for it, not here.
 func (c *checker) trackCapturedAliases(scope *Scope, funcExpr *ast.FuncExpr, closureVarID liveness.VarID) {
 	if c.fn.aliases == nil {
 		return

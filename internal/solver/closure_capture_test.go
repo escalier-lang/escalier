@@ -21,8 +21,9 @@ func TestClosureCapturedPlaces(t *testing.T) {
 		src  string
 		want []string
 	}{
-		// A closure that writes x takes a mutable loan of it, which conflicts with the live
-		// immutable borrow `a`. The plain write is the same program without the closure.
+		// Calling a closure that writes x takes a mutable loan of x for the call, which
+		// conflicts with the live immutable borrow `a`. The plain write is the same program
+		// without the closure.
 		"WriteThroughCaptureBesideLiveBorrow": {
 			src: captureDecls + `
 				fn g() {
@@ -33,7 +34,7 @@ func TestClosureCapturedPlaces(t *testing.T) {
 					readRead(a, a)
 				}
 			`,
-			want: []string{"10:14-10:31: cannot borrow 'x' as mutable while it is borrowed as immutable"},
+			want: []string{"11:6-11:7: cannot borrow 'x' as mutable while it is borrowed as immutable"},
 		},
 		"PlainWriteBesideLiveBorrow": {
 			src: captureDecls + `
@@ -87,7 +88,8 @@ func TestClosureCapturedPlaces(t *testing.T) {
 			`,
 			want: []string{"9:11-9:12: use of moved value 'x'"},
 		},
-		// A closure that only reads x takes an immutable loan, which sits beside a live `&`.
+		// Calling a closure that only reads x takes an immutable loan, which sits beside a live
+		// `&`.
 		"ReadThroughCaptureBesideLiveSharedBorrowOk": {
 			src: captureDecls + `
 				fn g() {
@@ -100,7 +102,7 @@ func TestClosureCapturedPlaces(t *testing.T) {
 			`,
 			want: nil,
 		},
-		// A closure that writes x takes a mutable loan, which sits beside a live `&mut`.
+		// Calling a closure that writes x takes a mutable loan, which sits beside a live `&mut`.
 		"WriteThroughCaptureBesideLiveMutableBorrowOk": {
 			src: captureDecls + `
 				fn g() {
@@ -113,8 +115,8 @@ func TestClosureCapturedPlaces(t *testing.T) {
 			`,
 			want: nil,
 		},
-		// f holds its loan of x while f is live, and the call after the move keeps it live.
-		"MoveWhileAClosureHoldsTheCapture": {
+		// Calling f reads x, so a call after x moves is a use after the move.
+		"CallAfterMovingTheCapture": {
 			src: captureDecls + `
 				fn g() {
 					val x = {v: 1}
@@ -123,9 +125,9 @@ func TestClosureCapturedPlaces(t *testing.T) {
 					f()
 				}
 			`,
-			want: []string{"10:11-10:12: cannot move 'x' while it is borrowed"},
+			want: []string{"11:6-11:7: use of moved value 'x'"},
 		},
-		// Once f is called for the last time its loan of x ends, so x can move.
+		// f reads x only while it runs, so x can move once the last call returns.
 		"MoveAfterTheClosureIsLastCalledOk": {
 			src: captureDecls + `
 				fn g() {
@@ -137,17 +139,56 @@ func TestClosureCapturedPlaces(t *testing.T) {
 			`,
 			want: nil,
 		},
-		// A write beside the immutable loan a reading closure holds conflicts with it.
-		"WriteWhileAClosureReadsTheCapture": {
+		// f reads x only while it runs, so a write between two calls is no conflict.
+		"WriteBetweenCallsOfAReadingClosureOk": {
 			src: captureDecls + `
 				fn g() {
 					val mut x = {v: 1}
 					val f = fn () { readRead(&x, &x) }
+					f()
 					x.v = 5
 					f()
 				}
 			`,
-			want: []string{"10:6-10:9: cannot assign to 'x.v' while it is borrowed as immutable"},
+		},
+		// Writing a closure that writes x takes no loan, so it can be written while `a` is
+		// live. The call comes after a's last read.
+		"WritingClosureCreatedBesideLiveBorrowOk": {
+			src: captureDecls + `
+				fn g() {
+					val mut x = {v: 1}
+					val a = &x
+					val f = fn () { x.v = 5 }
+					readRead(a, a)
+					f()
+				}
+			`,
+		},
+		// A callee handed f may call it, so passing f takes the loans a call of f takes.
+		"PassingAWritingClosureBesideLiveBorrow": {
+			src: captureDecls + `
+				declare fn call(f: fn () -> undefined) -> undefined
+				fn g() {
+					val mut x = {v: 1}
+					val a = &x
+					val f = fn () { x.v = 5 }
+					call(f)
+					readRead(a, a)
+				}
+			`,
+			want: []string{"12:11-12:12: cannot borrow 'x' as mutable while it is borrowed as immutable"},
+		},
+		// Copying f into another name calls nothing, so it takes no loan beside `a`.
+		"CopyingAWritingClosureBesideLiveBorrowOk": {
+			src: captureDecls + `
+				fn g() {
+					val mut x = {v: 1}
+					val a = &x
+					val f = fn () { x.v = 5 }
+					val h = f
+					readRead(a, a)
+				}
+			`,
 		},
 		// A closure passed straight to a call holds its loans for the call's statement.
 		"ClosureArgumentHoldsItsLoanForTheCall": {
@@ -212,10 +253,11 @@ func TestClosureCapturedPlaces(t *testing.T) {
 					readRead(a, a)
 				}
 			`,
-			want: []string{"10:14-13:7: cannot borrow 'x' as mutable while it is borrowed as immutable"},
+			want: []string{"14:6-14:7: cannot borrow 'x' as mutable while it is borrowed as immutable"},
 		},
-		// The outer closure holds a loan of x for what its nested closure reads.
-		"MoveWhileAClosureWithANestedReadHoldsTheCapture": {
+		// Calling the outer closure reads x through its nested closure, so a call after x
+		// moves is a use after the move.
+		"CallAfterMovingWhatANestedClosureReads": {
 			src: captureDecls + `
 				fn g() {
 					val x = {v: 1}
@@ -227,9 +269,9 @@ func TestClosureCapturedPlaces(t *testing.T) {
 					f()
 				}
 			`,
-			want: []string{"13:11-13:12: cannot move 'x' while it is borrowed"},
+			want: []string{"14:6-14:7: use of moved value 'x'"},
 		},
-		// A `&mut` borrow of x inside the closure makes its loan of x mutable.
+		// A `&mut` borrow of x inside the closure makes the loan a call takes mutable.
 		"MutableBorrowInClosureBesideLiveBorrow": {
 			src: captureDecls + `
 				fn g() {
@@ -240,7 +282,7 @@ func TestClosureCapturedPlaces(t *testing.T) {
 					readRead(a, a)
 				}
 			`,
-			want: []string{"10:14-10:36: cannot borrow 'x' as mutable while it is borrowed as immutable"},
+			want: []string{"11:6-11:7: cannot borrow 'x' as mutable while it is borrowed as immutable"},
 		},
 	}
 	for name, tc := range tests {

@@ -488,6 +488,16 @@ type funcCtx struct {
 	// the consumed lattice is available. A self-contained connected component re-anchors
 	// and co-moves; anything else reports an EscapingBorrowError.
 	escapeSites []escapeSite
+	// namedClosures holds each closure written as the initializer of a local name, as in
+	// `val f = fn () { … }`. It reads or writes what it captures only when it is called, so
+	// its captures are weighed at each call of the name, and at each call the name is passed
+	// to, rather than where it is written.
+	namedClosures set.Set[*ast.FuncExpr]
+	// closureAccesses maps each closure in namedClosures to the locals it captures, resolved
+	// where the closure is written.
+	closureAccesses map[*ast.FuncExpr][]captureAccess
+	// heldClosures maps a local to the closure in namedClosures it is currently bound to.
+	heldClosures map[liveness.VarID]*ast.FuncExpr
 	// loans holds every borrow bound to a name in this body, in source order. The exclusivity
 	// check compares each new borrow against the ones still live. See borrow_exclusivity.go.
 	loans []loan
