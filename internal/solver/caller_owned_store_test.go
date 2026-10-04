@@ -107,7 +107,7 @@ func TestStoreIntoCallerOwnedTarget(t *testing.T) {
 			`,
 			want: []string{"6:6-6:13: cannot assign to 'b.value' while it is borrowed as immutable"},
 		},
-		// Destructuring moves b.x into x, and returning x hands the caller data out.r still
+		// Destructuring moves b.x into x, and returning x hands the caller data `out.r` still
 		// reads.
 		"ReturningADestructuredLeafOfTheStoredLocalConflicts": {
 			src: `
@@ -132,7 +132,7 @@ func TestStoreIntoCallerOwnedTarget(t *testing.T) {
 			`,
 			want: []string{"6:13-6:14: 'b' leaves the function both as an owned value and through a borrow"},
 		},
-		// A tuple leaf moves the whole tuple, so returning it reaches what out.r reads.
+		// A tuple leaf moves the whole tuple, so returning it reaches what `out.r` reads.
 		"ReturningATupleLeafOfTheStoredLocalConflicts": {
 			src: `
 				fn f(out: &mut {r: &[{v: number}]}) -> {v: number} {
@@ -144,7 +144,7 @@ func TestStoreIntoCallerOwnedTarget(t *testing.T) {
 			`,
 			want: []string{"6:13-6:14: 'b' leaves the function both as an owned value and through a borrow"},
 		},
-		// out.r reads b.x, and the returned y owns b.y, which out.r does not reach.
+		// `out.r` reads b.x, and the returned y owns b.y, which `out.r` does not reach.
 		"ReturningASiblingLeafOk": {
 			src: `
 				fn f(out: &mut {r: &{v: number}}) -> {v: number} {
@@ -156,7 +156,7 @@ func TestStoreIntoCallerOwnedTarget(t *testing.T) {
 			`,
 		},
 		// Both leaves of one destructuring are traced, so gathering them into a returned
-		// literal still reaches the b.x that out.r reads.
+		// literal still reaches the b.x that `out.r` reads.
 		"ReturningEveryLeafOfADestructuringConflicts": {
 			src: `
 				fn f(out: &mut {r: &{v: number}}) -> {p: {v: number}, q: {v: number}} {
@@ -169,7 +169,7 @@ func TestStoreIntoCallerOwnedTarget(t *testing.T) {
 			`,
 			want: []string{"7:13-7:14: 'b' leaves the function both as an owned value and through a borrow"},
 		},
-		// A rest element takes the fields the pattern does not name, here b.y, which out.r
+		// A rest element takes the fields the pattern does not name, here b.y, which `out.r`
 		// reads.
 		"ReturningARestElementConflicts": {
 			src: `
@@ -183,7 +183,7 @@ func TestStoreIntoCallerOwnedTarget(t *testing.T) {
 			want: []string{"6:13-6:17: 'b' leaves the function both as an owned value and through a borrow"},
 		},
 		// The rest element does not take b.x, which x took, so returning it does not reach
-		// what out.r reads.
+		// what `out.r` reads.
 		"ReturningARestElementWithoutTheStoredFieldOk": {
 			src: `
 				fn f(out: &mut {r: &{v: number}}) -> {y: {v: number}} {
