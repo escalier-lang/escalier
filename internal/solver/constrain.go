@@ -896,9 +896,9 @@ func (c *Context) constrain(sub, super soltype.Type, seen *seenPairs, mutCtx boo
 	// `number | string`. This runs ahead of the union-super rule below, which would otherwise
 	// compare that whole union against each member of the super on its own.
 	//
-	// A super that carries a residual of its own skips this step. Such a super may hold the
-	// access itself, as `T[number] | undefined` does, and only the inert residual arm in the
-	// structural switch matches that by identity.
+	// A super that carries a residual of its own skips this step. Such a super may be the access
+	// itself, as a `T[number]` return type is, and only the inert residual arm in the structural
+	// switch matches that by identity.
 	if access, ok := sub.(*soltype.IndexType); ok {
 		if _, superIsVar := super.(*soltype.TypeVarType); !superIsVar && !containsResidualOp(super) {
 			if bound, ok := c.indexAccessUpperBound(access, seen); ok {

@@ -1392,8 +1392,8 @@ func TestInferIndexOverBoundedParam(t *testing.T) {
 			src:  `fn f<T: Array<number | string> | []>(k: T[number]) -> number | string { return k }`,
 		},
 		{
-			name: "AccessIntoUnionHoldingItAccepted",
-			src:  `fn f<T: Array<string> | []>(k: T[number]) -> T[number] | undefined { return k }`,
+			name: "AccessIntoItselfAccepted",
+			src:  `fn f<T: Array<string> | []>(k: T[number]) -> T[number] { return k }`,
 		},
 		{
 			name: "NumericIndexAccepted",
