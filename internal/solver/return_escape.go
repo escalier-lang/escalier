@@ -263,9 +263,10 @@ func (c *checker) siteEscaping(es escapeSite, fieldBorrowGraph map[liveness.VarI
 }
 
 // siteReaches returns every path the site hands out to a local, with whether a write can go
-// through it. A local the site reaches without a known path, such as one behind a binding an
-// `if`/`else` branch yields, is listed once each way, so it disagrees with any other path to the
-// same local.
+// through it. A local the site reaches only by following every borrow edge of a binding it
+// carries has no known path. After `val a = {x: {value: 1}, peer: &mut b}`, storing `&mut a.x`
+// reaches b that way. Such a local is listed once each way, so it disagrees with any other path
+// to the same local.
 func (c *checker) siteReaches(es escapeSite, fieldBorrowGraph map[liveness.VarID][]fieldBorrow) []elementReach {
 	// Start from the paths with a known place and mutability. A call store lists them on the
 	// site, and any other site derives them from its outgoing expression.
