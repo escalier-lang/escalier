@@ -1574,8 +1574,8 @@ func (e *SelfInInputPositionError) Span() ast.Span      { return e.Ref.Span() }
 func (e *SelfInInputPositionError) Related() []ast.Span { return nil }
 func (e *SelfInInputPositionError) isSolverError()      {}
 func (e *SelfInInputPositionError) Message() string {
-	return "\"Self\" cannot be written in a direct parameter position; it denotes the receiver's own class, " +
-		"so a subclass would demand an argument its superclass accepts — write the class by name instead"
+	return "\"Self\" cannot be a method parameter's type. It means the receiver's class, so a subclass " +
+		"would accept fewer arguments than its superclass. Write the class by name instead."
 }
 
 // RestParamNotLastError fires when a function type annotation writes a `...xs: T` parameter

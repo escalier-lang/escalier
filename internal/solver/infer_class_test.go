@@ -2896,9 +2896,8 @@ func TestInferClassSelfType(t *testing.T) {
 // The member keeps its shape after the report, so `a.eq(b)` draws no second diagnostic
 // cascading from this one.
 func TestInferSelfTypeInAParameterRejected(t *testing.T) {
-	const msg = "2:20-2:24: \"Self\" cannot be written in a direct parameter position; it denotes the " +
-		"receiver's own class, so a subclass would demand an argument its superclass accepts — " +
-		"write the class by name instead"
+	const msg = "2:20-2:24: \"Self\" cannot be a method parameter's type. It means the receiver's class, " +
+		"so a subclass would accept fewer arguments than its superclass. Write the class by name instead."
 	t.Run("a direct parameter is rejected", func(t *testing.T) {
 		_, _, errs := inferSource(t,
 			"declare class Box {\n  eq(&self, other: Self) -> boolean,\n}\n"+
@@ -3078,9 +3077,8 @@ func TestInferBorrowedReceiverInACallback(t *testing.T) {
 			name: "a direct parameter cannot borrow Self",
 			src:  `declare class Box { eq(&self, other: &Self) -> boolean }`,
 			want: []string{
-				"\"Self\" cannot be written in a direct parameter position; it denotes the " +
-					"receiver's own class, so a subclass would demand an argument its superclass " +
-					"accepts — write the class by name instead",
+				"\"Self\" cannot be a method parameter's type. It means the receiver's class, so a " +
+					"subclass would accept fewer arguments than its superclass. Write the class by name instead.",
 			},
 		},
 		{
