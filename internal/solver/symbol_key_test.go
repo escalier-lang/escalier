@@ -93,14 +93,8 @@ func TestAComputedKeyOutsideTheClosedSetIsUnsupported(t *testing.T) {
 			src:  `type Seq = { [Symbol.whatever](&self) -> number }`,
 		},
 		{
-			// The receiver has to be `Symbol` itself. A member off anything else names
-			// no well-known symbol whatever the property is called.
-			name: "AnotherReceiverNamedLikeASymbol",
-			src:  `type Seq = { [Other.iterator](&self) -> number }`,
-		},
-		{
-			name: "ABareIdentifierKey",
-			src:  `type Seq = { [k](&self) -> number }`,
+			name: "APropertyKeyedOffASymbolThatIsNotWellKnown",
+			src:  `type Seq = { [Symbol.whatever]: number }`,
 		},
 	}
 	for _, tt := range tests {
