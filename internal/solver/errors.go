@@ -902,8 +902,8 @@ type DynamicNamespaceIndexError struct {
 
 // InvalidObjectKeyError fires when a computed key `[k]` in an object literal has a type
 // that cannot key a property. A property key is a string, a number, or a symbol, so a
-// key such as `true` or `{}` names no property. Key is the offending key expression,
-// which carries the blame span, and KeyType is its type.
+// key such as `true` or `{}` names no property. `Key` is the offending key expression,
+// which carries the blame span, and `KeyType` is its type.
 type InvalidObjectKeyError struct {
 	Key     ast.Expr
 	KeyType soltype.Type

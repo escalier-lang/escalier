@@ -2606,11 +2606,11 @@ func (c *checker) inferElementAssign(lvl int, e *ast.BinaryExpr, ix *ast.IndexEx
 	return w
 }
 
-// elementSlots returns the types a write through access must fit, and whether the slot
+// elementSlots returns the types a write through `access` must fit, and whether the slot
 // is `readonly`. An array instance read at a numeric key has one slot, its element type.
 // A tuple read at a literal position has that element, and at `number` every element. An
 // object whose index signature covers the key has the signature's value, plus each
-// property the key may name. ok is false for any other receiver, which has no element
+// property the key may name. `ok` is false for any other receiver, which has no element
 // to write, and for a receiver a borrow cannot wrap.
 func (c *checker) elementSlots(access *soltype.IndexType) (slots []soltype.Type, readonly bool, ok bool) {
 	if _, isInner := access.Target.(soltype.RefInner); !isInner {
@@ -2656,7 +2656,7 @@ func (c *checker) elementSlots(access *soltype.IndexType) (slots []soltype.Type,
 	return nil, false, false
 }
 
-// keyReaches reports whether a key of type key may name the member called name. A
+// keyReaches reports whether a key of type `key` may name the member called `name`. A
 // string literal reaches the member it spells, a number literal the member its digits
 // spell, a primitive the members keySetCovers says it covers, and a union whatever one
 // of its members reaches.
@@ -3031,7 +3031,7 @@ func (c *checker) inferObject(scope *Scope, lvl int, e *ast.ObjectExpr) soltype.
 // keys an index signature for it covers. That set widens each literal to its primitive
 // and a unique symbol to `symbol`, so `"a" | "b"` covers `string`.
 //
-// ok is false when the key names nothing. A key that already failed has reported its
+// `ok` is false when the key names nothing. A key that already failed has reported its
 // own error. A key of a type that cannot key a property reports InvalidObjectKeyError,
 // and a key whose type is not yet known reports the key as unsupported.
 func (c *checker) computedObjKey(key *ast.ComputedKey, keyT soltype.Type) (keyName string, keySet soltype.Type, ok bool) {
@@ -3054,8 +3054,8 @@ func (c *checker) computedObjKey(key *ast.ComputedKey, keyT soltype.Type) (keyNa
 	return "", keys, true
 }
 
-// overwrittenFields returns one optional field of type value for each property in
-// operands whose name falls in keys. It is the operand a computed key over keys adds,
+// overwrittenFields returns one optional field of type `value` for each property in
+// `operands` whose name falls in `keys`. It is the operand a computed key over `keys` adds,
 // since that key may land on any of those properties.
 func overwrittenFields(operands [][]soltype.ObjTypeElem, keys, value soltype.Type) []soltype.ObjTypeElem {
 	names := set.NewSet[string]()
@@ -3074,7 +3074,7 @@ func overwrittenFields(operands [][]soltype.ObjTypeElem, keys, value soltype.Typ
 	return out
 }
 
-// keySetCovers reports whether a member named name has a key in keys, a key set
+// keySetCovers reports whether a member named `name` has a key in `keys`, a key set
 // propertyKeySet built. A `string` set covers every name but a reserved symbol member
 // name. A `number` set covers a name that spells a number the way JavaScript prints it,
 // such as "1". A `symbol` set covers a reserved symbol member name.
@@ -3104,7 +3104,7 @@ func keySetCovers(keys soltype.Type, name string) bool {
 
 // propertyKeySet returns the primitive key set t falls in when t can key a property:
 // `string`, `number`, or `symbol`, or a union of them for a union t. A literal widens
-// to its primitive and a unique symbol to `symbol`. ok is false when some part of t
+// to its primitive and a unique symbol to `symbol`. `ok` is false when some part of t
 // cannot key a property, such as `boolean` or an object.
 func propertyKeySet(t soltype.Type) (soltype.Type, bool) {
 	switch t := t.(type) {
@@ -3538,9 +3538,9 @@ func (c *checker) fieldReadBorrow(fieldVar *soltype.TypeVarType, recv soltype.Ty
 }
 
 // resolveIndexPath resolves `obj[index]`. A namespace object is indexed by a
-// constant string key, so Foo["bar"] is the bracket form of Foo.bar, while a dynamic
-// key such as Foo[k] is rejected. A value object indexed by a key that names one
-// property reads that property the way dot access does. obj["foo-bar"] is that form,
+// constant string key, so `Foo["bar"]` is the bracket form of `Foo.bar`, while a dynamic
+// key such as `Foo[k]` is rejected. A value object indexed by a key that names one
+// property reads that property the way dot access does. `obj["foo-bar"]` is that form,
 // and lets the source name a property whose key is not a valid identifier. Every other
 // key reads through dynamicIndexRead.
 func (c *checker) resolveIndexPath(scope *Scope, lvl int, e *ast.IndexExpr, objPos bool) pathResult {
@@ -3580,7 +3580,7 @@ func (c *checker) resolveIndexPath(scope *Scope, lvl int, e *ast.IndexExpr, objP
 // tuple's first element, which the structural property read would miss.
 //
 // It infers e.Index unless the key is a string literal or a well-known symbol, so a
-// caller reads the key's type afterwards from Info rather than inferring the key a
+// caller reads the key's type afterwards from `Info` rather than inferring the key a
 // second time.
 func (c *checker) indexKeyName(scope *Scope, lvl int, e *ast.IndexExpr, recv soltype.Type) (string, bool) {
 	if name, ok := constStringKey(e.Index); ok {
@@ -3656,8 +3656,8 @@ func (c *checker) dynamicIndexRead(e *ast.IndexExpr, recv soltype.Type, objPos b
 
 // indexAccess builds the indexed access `Recv[Kt]` an index expression reads or
 // writes, with the receiver's borrow peeled and both operands read through their lower
-// bounds. The key's type is the one Info recorded for e.Index, so the key must already
-// be inferred. ok is false when boundValueType cannot read either operand.
+// bounds. The key's type is the one `Info` recorded for `e.Index`, so the key must already
+// be inferred. `ok` is false when boundValueType cannot read either operand.
 func (c *checker) indexAccess(e *ast.IndexExpr, recv soltype.Type) (*soltype.IndexType, bool) {
 	target, ok := c.boundValueType(recv)
 	if !ok {
@@ -3676,7 +3676,7 @@ func (c *checker) indexAccess(e *ast.IndexExpr, recv soltype.Type) (*soltype.Ind
 // so a read of `val k = "x"` resolves to `"x"`. A widenable variable, the binding of an
 // unannotated `var`, resolves to its widened join, so `var k = x` resolves to `string`.
 //
-// ok is false in three cases:
+// `ok` is false in three cases:
 //   - A variable on the way has no lower bound, so nothing has yet flowed in to say
 //     what it holds.
 //   - A variable on the way is in openVars, so its lower bounds are not all it can
@@ -3820,7 +3820,7 @@ func wellKnownSymbolMember(key ast.Expr) (string, bool) {
 	return soltype.SymbolMemberName(member.Prop.Name)
 }
 
-// isSymbolMemberKey reports whether key is written `Symbol.<name>`, whether or not the
+// isSymbolMemberKey reports whether `key` is written `Symbol.<name>`, whether or not the
 // name is a well-known symbol. A computed key of that form outside the closed set names
 // a symbol soltype has no member name for, so a caller reports it rather than inferring
 // the key as an ordinary expression.
@@ -3829,7 +3829,7 @@ func isSymbolMemberKey(key ast.Expr) bool {
 	return ok
 }
 
-// symbolMemberKey returns key as a member access when it is written `Symbol.<name>`.
+// symbolMemberKey returns `key` as a member access when it is written `Symbol.<name>`.
 func symbolMemberKey(key ast.Expr) (*ast.MemberExpr, bool) {
 	member, isMember := key.(*ast.MemberExpr)
 	if !isMember || member.OptChain || member.Prop == nil {
@@ -5299,8 +5299,8 @@ func (c *checker) inferBlockOrExpr(scope *Scope, lvl int, b *ast.BlockOrExpr) (s
 	}
 }
 
-// paramDefaultSite is one parameter default waiting to be inferred. scope holds only the
-// bindings made before the parameter, and param is the parameter's type.
+// paramDefaultSite is one parameter default waiting to be inferred. `scope` holds only the
+// bindings made before the parameter, and `param` is the parameter's type.
 type paramDefaultSite struct {
 	def   ast.Expr
 	param soltype.Type
@@ -5315,7 +5315,7 @@ func (c *checker) inferParamDefaults(lvl int, defaults []paramDefaultSite) {
 	}
 }
 
-// snapshotScope returns a child of parent holding a copy of fnScope's own value bindings
+// snapshotScope returns a child of `parent` holding a copy of fnScope's own value bindings
 // as they stand now. A binding fnScope gains later is not visible through it.
 func snapshotScope(parent, fnScope *Scope) *Scope {
 	snap := parent.Child()

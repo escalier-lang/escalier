@@ -6,7 +6,7 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-// indexCase is one row of the index, computed-key, and assignment tables below. want
+// indexCase is one row of the index, computed-key, and assignment tables below. `want`
 // maps a top-level binding to its rendered type, and wantErrs lists every diagnostic
 // with its span, in report order.
 type indexCase struct {

@@ -308,12 +308,12 @@ func (col *initCollector) EnterExpr(e ast.Expr) bool {
 // key names: a string literal, a well-known symbol, or a key whose inferred type is one
 // string or number literal, so `self[k]` with `val k = "f"` names f.
 //
-// ok is false when the access names no field of `self`:
+// `ok` is false when the access names no field of `self`:
 //   - `other.f`, whose object is not `self`;
 //   - a deeper path like `self.a.b`, whose object is `self.a` rather than `self`;
 //   - a bracket key naming no single field.
 //
-// It reads a key's type from Info, so it must run after the constructor body is walked.
+// It reads a key's type from `Info`, so it must run after the constructor body is walked.
 func (c *checker) selfFieldName(e ast.Expr) (string, bool) {
 	switch e := e.(type) {
 	case *ast.MemberExpr:
