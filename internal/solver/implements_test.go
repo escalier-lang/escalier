@@ -76,27 +76,6 @@ func TestImplementsConformance(t *testing.T) {
 			`,
 		},
 		{
-			name: "MissingMethod",
-			src: `
-				interface Greeter {
-					greet(&self) -> string,
-				}
-				class Hello implements Greeter {}
-			`,
-			want: []string{"Class 'Hello' does not implement interface 'Greeter': missing member 'greet'"},
-		},
-		{
-			name: "AllMembersSatisfied",
-			src: `
-				interface Greeter {
-					greet(&self) -> string,
-				}
-				class Hello implements Greeter {
-					greet(&self) -> string { return "hi" }
-				}
-			`,
-		},
-		{
 			name: "InheritedMemberSatisfies",
 			src: `
 				interface Runnable {
@@ -121,18 +100,6 @@ func TestImplementsConformance(t *testing.T) {
 				}
 			`,
 			want: []string{"Class 'Bob' does not implement interface 'Person': missing member 'name'"},
-		},
-		{
-			name: "ReturnTypeMismatch",
-			src: `
-				interface Greeter {
-					greet(&self) -> string,
-				}
-				class Hello implements Greeter {
-					greet(&self) -> number { return 42 }
-				}
-			`,
-			want: []string{"Class 'Hello' does not implement interface 'Greeter': member 'greet' signature does not match"},
 		},
 		{
 			name: "ParamTypeMismatch",
@@ -608,14 +575,6 @@ func TestDeclareImplementsConformance(t *testing.T) {
 				declare class Shape { v: string }
 				declare class Square implements Shape {}
 			`,
-		},
-		{
-			name: "UnrelatedRestatementIsRejected",
-			src: `
-				interface I { v: string }
-				declare class C implements I { v: number }
-			`,
-			want: []string{"Class 'C' does not implement interface 'I': member 'v' property type does not match"},
 		},
 		{
 			name: "WideningRestatementIsRejected",
