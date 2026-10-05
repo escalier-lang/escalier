@@ -44,10 +44,38 @@ func TestIterationMembersMatchTheirSymbols(t *testing.T) {
 	require.Equal(t, async, AsyncIteratorSymbolMember)
 }
 
-// A symbol-keyed member renders as the computed key the source wrote, where an
-// ordinary name renders bare and a name that is no identifier is quoted.
+// A unique symbol's reserved name reads back as the id it was built from, and two ids
+// never share a name.
+func TestUniqueSymbolMemberNameRoundTrips(t *testing.T) {
+	for _, id := range []int{0, 7, 1 << 20} {
+		name := UniqueSymbolMemberName(id)
+		back, isUnique := UniqueSymbolOfMemberName(name)
+		require.True(t, isUnique, "%s should read back as a unique symbol", name)
+		require.Equal(t, id, back)
+		require.True(t, IsSymbolMemberName(name))
+
+		_, isWellKnown := SymbolOfMemberName(name)
+		require.False(t, isWellKnown, "%s should not read as a well-known symbol", name)
+	}
+	require.NotEqual(t, UniqueSymbolMemberName(1), UniqueSymbolMemberName(10))
+}
+
+// Only the canonical spelling of an id names a unique symbol, so one id has one name.
+func TestUniqueSymbolMemberNameRejectsOtherSpellings(t *testing.T) {
+	for _, name := range []string{"@@#", "@@#01", "@@#-1", "@@#+1", "@@#x", "@@ #1", "#1", "1"} {
+		_, isUnique := UniqueSymbolOfMemberName(name)
+		require.False(t, isUnique, "%q should not read as a unique symbol member", name)
+		require.False(t, IsSymbolMemberName(name), "%q should not read as a symbol member", name)
+	}
+}
+
+// A symbol-keyed member renders as a computed key, where an ordinary name renders bare
+// and a name that is no identifier is quoted. A unique symbol's key holds the symbol's
+// own rendering.
 func TestPrintObjectKeyNameRendersASymbolKey(t *testing.T) {
 	require.Equal(t, "[Symbol.iterator]", printObjectKeyName(IteratorSymbolMember))
+	require.Equal(t, "[unique symbol#3]", printObjectKeyName(UniqueSymbolMemberName(3)))
+	require.Equal(t, "[unique symbol#3]", DisplayMemberName(UniqueSymbolMemberName(3)))
 	require.Equal(t, "length", printObjectKeyName("length"))
 	require.Equal(t, `"a-b"`, printObjectKeyName("a-b"))
 }

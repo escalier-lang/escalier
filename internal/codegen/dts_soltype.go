@@ -52,6 +52,10 @@ type solTypeAnnBuilder struct {
 	// `declare const Box: {new <T>(v: T): Box<T>}` binds `T` on the constructor rather
 	// than beside the value. bindOnSignatures fills this, and a nil slice binds nothing.
 	signatureParams []*soltype.TypeParam
+	// symbolKeys maps a unique symbol's id to the name of a top-level value whose type is
+	// that symbol. TypeScript keys a member off a unique symbol by writing such a value in
+	// brackets, so `{[sym]: number}` needs `sym` in scope. A nil map names no symbol.
+	symbolKeys map[int]string
 }
 
 // newSolTypeAnnBuilder returns a renderer for one declaration. typeParams are
@@ -471,17 +475,25 @@ func (b *solTypeAnnBuilder) objectTypeAnn(t *soltype.ObjectType) TypeAnn {
 func (b *solTypeAnnBuilder) objTypeAnnElems(elem soltype.ObjTypeElem) []ObjTypeAnnElem {
 	switch elem := elem.(type) {
 	case *soltype.PropertyElem:
+		key, ok := b.objKeyFromSol(elem.Name)
+		if !ok {
+			return nil
+		}
 		return []ObjTypeAnnElem{&PropertyTypeAnn{
-			Name:     buildTypeAnnObjKeyFromSol(elem.Name),
+			Name:     key,
 			Optional: elem.Optional,
 			Readonly: elem.Readonly,
 			Value:    b.typeAnn(elem.Type),
 		}}
 	case *soltype.MethodElem:
+		key, ok := b.objKeyFromSol(elem.Name)
+		if !ok {
+			return nil
+		}
 		out := make([]ObjTypeAnnElem, len(elem.Signatures))
 		for i, fn := range elem.Signatures {
 			out[i] = &MethodTypeAnn{
-				Name:     buildTypeAnnObjKeyFromSol(elem.Name),
+				Name:     key,
 				Fn:       b.funcTypeAnn(fn),
 				Optional: elem.Optional,
 			}
@@ -502,8 +514,12 @@ func (b *solTypeAnnBuilder) objTypeAnnElems(elem soltype.ObjTypeElem) []ObjTypeA
 	case *soltype.GetterElem:
 		// soltype carries the value a getter returns rather than a signature, so
 		// the parameterless one TypeScript wants is built here.
+		key, ok := b.objKeyFromSol(elem.Name)
+		if !ok {
+			return nil
+		}
 		return []ObjTypeAnnElem{&GetterTypeAnn{
-			Name: buildTypeAnnObjKeyFromSol(elem.Name),
+			Name: key,
 			Fn: FuncTypeAnn{
 				TypeParams: nil,
 				Params:     nil,
@@ -516,8 +532,12 @@ func (b *solTypeAnnBuilder) objTypeAnnElems(elem soltype.ObjTypeElem) []ObjTypeA
 	case *soltype.SetterElem:
 		// TypeScript forbids a return type on a setter, so the printer drops the
 		// Return this fills in.
+		key, ok := b.objKeyFromSol(elem.Name)
+		if !ok {
+			return nil
+		}
 		return []ObjTypeAnnElem{&SetterTypeAnn{
-			Name: buildTypeAnnObjKeyFromSol(elem.Name),
+			Name: key,
 			Fn: FuncTypeAnn{
 				TypeParams: nil,
 				Params: []*Param{{
@@ -955,18 +975,35 @@ func commonPrefix(a, b []*soltype.FuncType) []*soltype.FuncType {
 	return a[:n]
 }
 
-// buildTypeAnnObjKeyFromSol renders a member name as an object key. soltype
-// stores one keyed off a well-known symbol under a reserved `@@name` spelling,
-// which renders back as `[Symbol.name]`. Every other name is a string literal,
-// which the printer emits bare when it is a valid identifier.
-func buildTypeAnnObjKeyFromSol(name string) ObjKey {
+// objKeyFromSol renders a member name as an object key. soltype stores a member
+// keyed off a symbol under a reserved spelling, which renders back as a computed key:
+//
+//   - A well-known symbol's `@@name` renders as `[Symbol.name]`.
+//   - A unique symbol's `@@#id` renders as `[sym]`, where `sym` is the name
+//     symbolKeys holds for that id.
+//
+// Every other name is a string literal, which the printer emits bare when it is a
+// valid identifier.
+//
+// `ok` is false for a unique symbol symbolKeys holds no name for, and the caller
+// leaves that member out. TypeScript has no key a declaration could write for a symbol
+// no value in scope holds, and an index signature over `symbol` in its place would
+// claim a value at every other symbol as well.
+func (b *solTypeAnnBuilder) objKeyFromSol(name string) (ObjKey, bool) {
 	if sym, isSymbol := soltype.SymbolOfMemberName(name); isSymbol {
 		return NewComputedKey(
 			NewMemberExpr(NewIdentExpr("Symbol", "", nil), NewIdentifier(sym, nil), false, nil),
 			nil,
-		)
+		), true
 	}
-	return NewStrLit(name, nil)
+	if id, isUnique := soltype.UniqueSymbolOfMemberName(name); isUnique {
+		symName, named := b.symbolKeys[id]
+		if !named {
+			return nil, false
+		}
+		return NewComputedKey(NewIdentExpr(symName, "", nil), nil), true
+	}
+	return NewStrLit(name, nil), true
 }
 
 // convertQualIdentFromSol splits a dotted reference such as `p.inner`, which

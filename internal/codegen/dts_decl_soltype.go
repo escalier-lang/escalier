@@ -70,6 +70,8 @@ func (b *Builder) BuildDefinitionsFromSol(
 	}
 	sort.Strings(namespaceNames)
 
+	b.solSymbolKeys = symbolKeysFromSol(depGraph, root, namespaceGroups[""])
+
 	// A class and an enum each hold a type binding and a value binding pointing at one
 	// declaration, so the walk would reach the declaration twice without this.
 	processedDecls := set.NewSet[ast.Decl]()
@@ -113,6 +115,50 @@ func (b *Builder) BuildDefinitionsFromSol(
 	}
 
 	return &Module{Stmts: stmts}
+}
+
+// symbolKeysFromSol maps each unique symbol a module-level `val` binds to that binding's
+// name, the map solTypeAnnBuilder.symbolKeys reads. `keys` holds the module's top-level
+// bindings in the order the dependency graph typed them. When two bindings hold one
+// symbol, the first one in that order names it.
+//
+// A binding inside a namespace block is left out. A declaration outside the block can
+// reach it only through the namespace's path, and only when the block exports it.
+func symbolKeysFromSol(depGraph *dep_graph.DepGraph, root SolNamespace, keys []dep_graph.BindingKey) map[int]string {
+	symbolKeys := map[int]string{}
+	for _, key := range keys {
+		for _, decl := range depGraph.GetDecls(key) {
+			varDecl, ok := decl.(*ast.VarDecl)
+			if !ok {
+				continue
+			}
+			names := ast.FindBindings(varDecl.Pattern).ToSlice()
+			sort.Strings(names)
+			for _, name := range names {
+				t, _, ok := root.ValueType(name)
+				if !ok {
+					continue
+				}
+				sym, ok := t.(*soltype.UniqueSymbolType)
+				if !ok {
+					continue
+				}
+				if _, named := symbolKeys[sym.ID]; !named {
+					symbolKeys[sym.ID] = name
+				}
+			}
+		}
+	}
+	return symbolKeys
+}
+
+// solRenderer returns a renderer for one declaration of the module
+// BuildDefinitionsFromSol is walking, which keys a member off a unique symbol through
+// the names symbolKeysFromSol found.
+func (b *Builder) solRenderer(preludePrefix, companionPrefix string, typeParams []*soltype.TypeParam) *solTypeAnnBuilder {
+	render := newSolTypeAnnBuilder(preludePrefix, companionPrefix, typeParams)
+	render.symbolKeys = b.solSymbolKeys
+	return render
 }
 
 // findNamespaceFromSol resolves a dotted namespace path against ns, one segment at a
@@ -180,7 +226,7 @@ func (b *Builder) buildVarDeclFromSol(
 			continue
 		}
 		localName := extractLocalName(name)
-		render := newSolTypeAnnBuilder(preludePrefix, localName, nil)
+		render := b.solRenderer(preludePrefix, localName, nil)
 
 		// A type mentioning `Self` renders `this`, which TypeScript accepts only inside an
 		// interface, so the binding's type moves into one and the binding refers to it.
@@ -266,7 +312,7 @@ func (b *Builder) buildFuncDeclFromSol(
 	}
 
 	localName := extractLocalName(decl.Name.Name)
-	render := newSolTypeAnnBuilder(preludePrefix, localName, nil)
+	render := b.solRenderer(preludePrefix, localName, nil)
 	sig := render.declFuncTypeAnn(funcType)
 
 	stmts := companionStmtsFromSol(render)
@@ -302,7 +348,7 @@ func (b *Builder) buildTypeDeclFromSol(
 		return nil
 	}
 	localName := extractLocalName(decl.Name.Name)
-	render := newSolTypeAnnBuilder(preludePrefix, localName, typeParams)
+	render := b.solRenderer(preludePrefix, localName, typeParams)
 	typeAnn := render.render(body)
 	declTypeParams := typeParamsFromSol(render, typeParams)
 
@@ -335,7 +381,7 @@ func (b *Builder) buildInterfaceDeclFromSol(
 		return nil
 	}
 	localName := extractLocalName(decl.Name.Name)
-	render := newSolTypeAnnBuilder(preludePrefix, localName, typeParams)
+	render := b.solRenderer(preludePrefix, localName, typeParams)
 	members, extends := interfacePartsFromSol(render.render(body))
 	declTypeParams := typeParamsFromSol(render, typeParams)
 
@@ -404,7 +450,7 @@ func (b *Builder) buildClassDeclFromSol(
 	// The two sides render under their own builders, and each seeds the names it mints
 	// from a prefix of its own. Both numbering from one prefix would let the instance
 	// type and the static side mint the same name for two different bodies.
-	instanceRender := newSolTypeAnnBuilder(preludePrefix, localName, typeParams)
+	instanceRender := b.solRenderer(preludePrefix, localName, typeParams)
 	instanceAnn := instanceRender.render(instance)
 	instanceTypeParams := typeParamsFromSol(instanceRender, typeParams)
 
@@ -427,7 +473,7 @@ func (b *Builder) buildClassDeclFromSol(
 	// The static side leaves the class's parameters for its constructor signature to
 	// bind. A `{new (value: T): Box<T>}` naming a `T` nothing binds is not valid
 	// TypeScript; the signature has to write `new <T>`.
-	staticRender := newSolTypeAnnBuilder(preludePrefix, localName+"_static", nil)
+	staticRender := b.solRenderer(preludePrefix, localName+"_static", nil)
 	staticRender.bindOnSignatures(staticParams)
 	staticAnn := staticRender.render(staticType)
 	stmts = append(stmts, companionStmtsFromSol(staticRender)...)
@@ -500,7 +546,7 @@ func (b *Builder) buildEnumDeclFromSol(
 	if !hasUnion || union == nil {
 		return stmts
 	}
-	render := newSolTypeAnnBuilder(preludePrefix, localName, typeParams)
+	render := b.solRenderer(preludePrefix, localName, typeParams)
 	unionAnn := render.render(union)
 	declTypeParams := typeParamsFromSol(render, typeParams)
 
@@ -533,7 +579,7 @@ func (b *Builder) buildEnumVariantFromSol(
 	var stmts []Stmt
 
 	if body, typeParams, ok := variantNS.DeclaredType(name); ok && body != nil {
-		render := newSolTypeAnnBuilder(preludePrefix, name, typeParams)
+		render := b.solRenderer(preludePrefix, name, typeParams)
 		typeAnn := render.render(body)
 		declTypeParams := typeParamsFromSol(render, typeParams)
 		stmts = append(stmts, companionStmtsFromSol(render)...)
@@ -556,7 +602,7 @@ func (b *Builder) buildEnumVariantFromSol(
 	if ctorType, _, ok := variantNS.ValueType(name); ok {
 		// A prefix of its own, so the variant's type and its constructor cannot mint one
 		// name for two bodies.
-		render := newSolTypeAnnBuilder(preludePrefix, name+"_ctor", nil)
+		render := b.solRenderer(preludePrefix, name+"_ctor", nil)
 		ctorAnn := render.render(ctorType)
 		stmts = append(stmts, companionStmtsFromSol(render)...)
 		stmts = append(stmts, &DeclStmt{

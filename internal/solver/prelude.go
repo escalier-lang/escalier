@@ -124,6 +124,7 @@ func (c *checker) preludeScope() *Scope {
 	c.prelude = sharedPrelude().Child()
 	c.bindPreludeExports(c.prelude)
 	c.resolvePreludeClasses()
+	c.resolveWellKnownSymbols()
 	return c.prelude
 }
 

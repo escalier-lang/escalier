@@ -1646,12 +1646,12 @@ func printPat(pat Pat) (string, bool) {
 // key (e.g. "a-b", a key that came from a string-literal property). This keeps
 // the rendered object parseable; an unquoted "a-b" would corrupt the type.
 //
-// A member keyed off a well-known symbol is stored under a reserved name and
-// rendered back as the computed key the source wrote, so `@@iterator` reads as
-// `[Symbol.iterator]`. That form re-parses as the same key, which the quoted
-// fallback would not.
+// A member keyed off a symbol is stored under a reserved name and rendered as a
+// computed key through DisplayMemberName. `@@iterator` reads as `[Symbol.iterator]`,
+// which re-parses as the same key where the quoted fallback would not. `@@#0` reads as
+// `[unique symbol#0]`, the same rendering the symbol's own type takes.
 func printObjectKeyName(name string) string {
-	if _, isSymbol := SymbolOfMemberName(name); isSymbol {
+	if IsSymbolMemberName(name) {
 		return DisplayMemberName(name)
 	}
 	if isIdent(name) {

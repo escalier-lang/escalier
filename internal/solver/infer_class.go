@@ -101,7 +101,7 @@ func (c *checker) inferClassDecl(scope *Scope, lvl int, decl *ast.ClassDecl, ns 
 		// `new Symbol()`, so having no constructor is what makes constructing it
 		// unrepresentable rather than merely discouraged.
 		if len(callFns) == 0 {
-			ctorFns = []*soltype.FuncType{c.synthesizeConstructor(self, body)}
+			ctorFns = []*soltype.FuncType{c.synthesizeConstructor(decl, self, body)}
 		}
 	}
 
@@ -1333,7 +1333,10 @@ type staticFieldInit struct {
 func (c *checker) checkFieldInits(scope *Scope, lvl int, decl *ast.ClassDecl, inits []staticFieldInit) {
 	for _, elem := range decl.Body {
 		if field, ok := elem.(*ast.FieldElem); ok && field.Value != nil && !field.Static {
-			c.report(&FieldInitializerNotAllowedError{Field: field})
+			// buildFieldSigs has inferred every key, so the name reads back without
+			// inferring the key again.
+			name, _ := c.inferredKeyName(field.Name)
+			c.report(&FieldInitializerNotAllowedError{Field: field, Name: name})
 		}
 	}
 	for _, init := range inits {
@@ -2143,9 +2146,10 @@ func (c *checker) reportSelfTypeName(kind TypeDeclKind, name *ast.Ident) bool {
 
 // memberKeyName returns the name a class member's key gives the member. A written name,
 // a string or number literal, and a well-known symbol such as `[Symbol.iterator]` each
-// name the member directly. Any other computed key `[k]` is inferred, and it names the
-// member its type spells when that type is one string or number literal. So
-// `val bar = "bar"` makes `[bar]: number` the field `bar`.
+// name the member directly. Any other computed key `[k]` is inferred, and it names a
+// member when its type is one string literal, one number literal, or one unique symbol.
+// So `val bar = "bar"` makes `[bar]: number` the field `bar`, and
+// `declare val sym: unique symbol` makes `[sym]: number` the field keyed off `sym`.
 //
 // A `Symbol.<name>` key naming no well-known symbol is not inferred, since soltype has
 // no member name for it. `ok` is false for a key naming no single member. Such a key is
@@ -2184,10 +2188,10 @@ func (c *checker) inferredKeyName(key ast.ObjKey) (string, bool) {
 	return c.literalKeyName(computed.Expr)
 }
 
-// literalKeyName returns the property name an inferred key expression spells when its
-// type, read through its lower bounds, is one string or number literal. A number names
-// the digits it spells, as `{0: v}` stores under "0". `ok` is false for any other key and
-// for an expression `Info` holds no type for.
+// literalKeyName returns the property name an inferred key expression names when its
+// type, read through its lower bounds, is one string literal, one number literal, or one
+// unique symbol. A number names the digits it spells, as `{0: v}` stores under "0". `ok`
+// is false for any other key and for an expression `Info` holds no type for.
 func (c *checker) literalKeyName(key ast.Expr) (string, bool) {
 	t := c.info.TypeOf(key)
 	if t == nil {
@@ -2197,5 +2201,5 @@ func (c *checker) literalKeyName(key ast.Expr) (string, bool) {
 	if !ok {
 		return "", false
 	}
-	return mappedKeyName(ground)
+	return c.ctx.mappedKeyName(ground)
 }

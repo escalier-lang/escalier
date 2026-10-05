@@ -1366,7 +1366,7 @@ type MethodOverloadReceiverMismatchError struct {
 func (e *MethodOverloadReceiverMismatchError) Span() ast.Span      { return e.Elem.Span() }
 func (e *MethodOverloadReceiverMismatchError) Related() []ast.Span { return nil }
 func (e *MethodOverloadReceiverMismatchError) Message() string {
-	return "Overloaded method '" + e.Name + "' must use the same `self` receiver in every arm."
+	return "Overloaded method '" + soltype.DisplayMemberName(e.Name) + "' must use the same `self` receiver in every arm."
 }
 
 // WriteOnlyPropertyError fires when a setter-only member is read, as in `val v =
@@ -1879,13 +1879,14 @@ func (e *DuplicateConstructorSignatureError) Message() string {
 // fields may use the initializer form.
 type FieldInitializerNotAllowedError struct {
 	Field *ast.FieldElem
+	// Name is the member name the field's key resolved to.
+	Name string
 }
 
 func (e *FieldInitializerNotAllowedError) Span() ast.Span      { return e.Field.Span() }
 func (e *FieldInitializerNotAllowedError) Related() []ast.Span { return nil }
 func (e *FieldInitializerNotAllowedError) Message() string {
-	name, _ := objKeyName(e.Field.Name)
-	return "Field '" + soltype.DisplayMemberName(name) + "' cannot have a `= expr` initializer; only static fields may use this form. Initialize instance fields in the constructor body."
+	return "Field '" + soltype.DisplayMemberName(e.Name) + "' cannot have a `= expr` initializer; only static fields may use this form. Initialize instance fields in the constructor body."
 }
 
 // SubclassConstructorRequiredError fires when a class with an `extends` clause
@@ -1941,7 +1942,7 @@ type SetterArityError struct {
 func (e *SetterArityError) Span() ast.Span      { return e.Elem.Span() }
 func (e *SetterArityError) Related() []ast.Span { return nil }
 func (e *SetterArityError) Message() string {
-	return "Setter '" + e.Name + "' must declare exactly one value parameter; found " + strconv.Itoa(e.Count) + "."
+	return "Setter '" + soltype.DisplayMemberName(e.Name) + "' must declare exactly one value parameter; found " + strconv.Itoa(e.Count) + "."
 }
 
 // GetterReceiverError fires when an instance getter consumes its receiver, declaring `self`
@@ -1955,7 +1956,7 @@ type GetterReceiverError struct {
 func (e *GetterReceiverError) Span() ast.Span      { return e.Elem.Span() }
 func (e *GetterReceiverError) Related() []ast.Span { return nil }
 func (e *GetterReceiverError) Message() string {
-	return "Getter '" + e.Name + "' must borrow its receiver with `&self` or `&mut self`; reading through it leaves the instance in place."
+	return "Getter '" + soltype.DisplayMemberName(e.Name) + "' must borrow its receiver with `&self` or `&mut self`; reading through it leaves the instance in place."
 }
 
 // SetterReceiverError fires when a setter in a class, an interface, or an object type declares
@@ -1978,7 +1979,7 @@ func invalidSetterReceiver(recv *ast.MethodReceiver) bool {
 func (e *SetterReceiverError) Span() ast.Span      { return e.Member.Span() }
 func (e *SetterReceiverError) Related() []ast.Span { return nil }
 func (e *SetterReceiverError) Message() string {
-	return "Setter '" + e.Name + "' must declare a `&mut self` receiver; writing through it mutates the instance."
+	return "Setter '" + soltype.DisplayMemberName(e.Name) + "' must declare a `&mut self` receiver; writing through it mutates the instance."
 }
 
 // ConsumingReceiverBorrowedError fires when a member that consumes its receiver, one declared
@@ -2011,7 +2012,7 @@ type RecursiveMethodAnnotationError struct {
 func (e *RecursiveMethodAnnotationError) Span() ast.Span      { return e.Elem.Span() }
 func (e *RecursiveMethodAnnotationError) Related() []ast.Span { return nil }
 func (e *RecursiveMethodAnnotationError) Message() string {
-	return "Mutually recursive method '" + e.Name + "' must declare a return type; the cycle " + strings.Join(e.Group, ", ") + " has no annotated return to ground it."
+	return "Mutually recursive method '" + soltype.DisplayMemberName(e.Name) + "' must declare a return type; the cycle " + strings.Join(displayMemberNames(e.Group), ", ") + " has no annotated return to ground it."
 }
 
 // FieldNotInitializedError fires when a constructor body has a reachable exit on
@@ -2026,9 +2027,9 @@ func (e *FieldNotInitializedError) Span() ast.Span      { return e.Ctor.Fn.Body.
 func (e *FieldNotInitializedError) Related() []ast.Span { return nil }
 func (e *FieldNotInitializedError) Message() string {
 	if len(e.FieldNames) == 1 {
-		return "Field '" + e.FieldNames[0] + "' is not initialized on every path through the constructor."
+		return "Field '" + soltype.DisplayMemberName(e.FieldNames[0]) + "' is not initialized on every path through the constructor."
 	}
-	return "Fields " + quoteJoin(e.FieldNames, "'") + " are not initialized on every path through the constructor."
+	return "Fields " + quoteJoin(displayMemberNames(e.FieldNames), "'") + " are not initialized on every path through the constructor."
 }
 
 // ReadBeforeInitError fires when a constructor reads `self.f` on a path where field
@@ -2041,7 +2042,7 @@ type ReadBeforeInitError struct {
 func (e *ReadBeforeInitError) Span() ast.Span      { return e.Read.Span() }
 func (e *ReadBeforeInitError) Related() []ast.Span { return nil }
 func (e *ReadBeforeInitError) Message() string {
-	return "Field 'self." + e.FieldName + "' is read before it has been initialized."
+	return "Field '" + selfMemberPath(e.FieldName) + "' is read before it has been initialized."
 }
 
 // MethodCallBeforeInitError fires when a constructor calls a method on `self` on a
@@ -2056,7 +2057,26 @@ type MethodCallBeforeInitError struct {
 func (e *MethodCallBeforeInitError) Span() ast.Span      { return e.Call.Span() }
 func (e *MethodCallBeforeInitError) Related() []ast.Span { return nil }
 func (e *MethodCallBeforeInitError) Message() string {
-	return "Cannot call a method on `self` before all required fields are initialized; missing " + quoteJoin(e.MissingFields, "'") + "."
+	return "Cannot call a method on `self` before all required fields are initialized; missing " + quoteJoin(displayMemberNames(e.MissingFields), "'") + "."
+}
+
+// displayMemberNames renders each member name the way soltype.DisplayMemberName does.
+func displayMemberNames(names []string) []string {
+	out := make([]string, len(names))
+	for i, name := range names {
+		out[i] = soltype.DisplayMemberName(name)
+	}
+	return out
+}
+
+// selfMemberPath renders a read of the member called `name` off `self` the way the
+// source writes it. An ordinary name reads `self.name`. A member keyed off a symbol reads
+// as an index, `self[Symbol.iterator]` or `self[unique symbol#0]`.
+func selfMemberPath(name string) string {
+	if soltype.IsSymbolMemberName(name) {
+		return "self" + soltype.DisplayMemberName(name)
+	}
+	return "self." + name
 }
 
 // quoteJoin renders names as a comma-separated list, each wrapped in quote, for a diagnostic that
@@ -2905,6 +2925,9 @@ func (e *OptionalPropertyError) Message() string {
 }
 
 func (e *UnknownObjectKeyError) Message() string {
+	if soltype.IsSymbolMemberName(e.Key) {
+		return fmt.Sprintf("object %s has no property %s", soltype.Print(e.Object), soltype.DisplayMemberName(e.Key))
+	}
 	return fmt.Sprintf("object %s has no property %q", soltype.Print(e.Object), e.Key)
 }
 
@@ -2987,7 +3010,7 @@ func (e *TypeParamNotProducibleError) Message() string {
 
 func (e *ConflictingImplementedMemberError) Message() string {
 	return fmt.Sprintf("class `%s` implements `%s` and `%s`, which declare `%s` differently: `%s` and `%s`",
-		e.Class, e.First, e.Second, e.Member, soltype.Print(e.FirstMember), soltype.Print(e.SecondMember))
+		e.Class, e.First, e.Second, soltype.DisplayMemberName(e.Member), soltype.Print(e.FirstMember), soltype.Print(e.SecondMember))
 }
 
 func (e *ClassDoesNotImplementInterfaceError) Message() string {
@@ -3001,12 +3024,12 @@ func (e *ClassDoesNotImplementInterfaceError) Message() string {
 
 func (e *IncompatibleOverrideError) Message() string {
 	return fmt.Sprintf("class `%s` redeclares inherited member `%s` with %s `%s`, which is not compatible with `%s` declared by `%s`",
-		e.Class, e.Member, e.Position, soltype.Print(e.SubType), soltype.Print(e.SuperType), e.SuperClass)
+		e.Class, soltype.DisplayMemberName(e.Member), e.Position, soltype.Print(e.SubType), soltype.Print(e.SuperType), e.SuperClass)
 }
 
 func (e *OverrideFormMismatchError) Message() string {
 	return fmt.Sprintf("class `%s` redeclares inherited member `%s` as %s, but `%s` declares it as %s",
-		e.Class, e.Member, e.Form, e.SuperClass, e.SuperForm)
+		e.Class, soltype.DisplayMemberName(e.Member), e.Form, e.SuperClass, e.SuperForm)
 }
 
 // describeBorrowInner renders the pointee of a borrow for a diagnostic. An immutable

@@ -53,6 +53,13 @@ type Context struct {
 	// same declarations. It is nil on a Context built outside newChecker.
 	packages *PackageRegistry
 
+	// wellKnownSymbolMembers maps the id of each well-known symbol the prelude declares,
+	// such as the type of `Symbol.iterator`, to the reserved member name the written key
+	// `[Symbol.iterator]` names. wellKnownSymbolTypes maps the other way, from that member
+	// name to the symbol. resolveWellKnownSymbols fills both once per run.
+	wellKnownSymbolMembers map[int]string
+	wellKnownSymbolTypes   map[string]*soltype.UniqueSymbolType
+
 	// arrayClass is the qualified class name the prelude's `Array` binds to, read
 	// off the prelude scope once per run. The subtyping and iteration rules that single an
 	// array out compare against it, so they cost a string comparison rather than a

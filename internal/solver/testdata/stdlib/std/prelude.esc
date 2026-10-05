@@ -46,3 +46,12 @@ export declare interface AsyncIterator<T, TReturn = undefined, TNext = unknown> 
 export declare interface AsyncIterable<T, TReturn = undefined, TNext = unknown> {
     [Symbol.asyncIterator](&self) -> AsyncIterator<T, TReturn, TNext>,
 }
+
+// The `Symbol` a `symbol` or `unique symbol` receiver reads its members through. The
+// members below are the ones the tests read.
+export declare class Symbol {
+    readonly description: string | undefined,
+    toString(&self) -> string,
+    // A well-known symbol, so a key typed by it names `[Symbol.iterator]`.
+    static readonly iterator: unique symbol,
+}

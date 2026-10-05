@@ -33,19 +33,71 @@ func (c *checker) walkConstructorBodies(
 // one and no call signature: a function taking one parameter per required instance field, in
 // declaration order, and returning the instance. An optional field is omitted, matching its
 // omission from the required set.
-func (c *checker) synthesizeConstructor(self *soltype.ClassType, body *soltype.ObjectType) *soltype.FuncType {
+//
+// Each parameter takes the name implicitConstructorParamNames reads for its field, and a field
+// it has no name for takes the field's own name.
+func (c *checker) synthesizeConstructor(decl *ast.ClassDecl, self *soltype.ClassType, body *soltype.ObjectType) *soltype.FuncType {
+	paramNames := c.implicitConstructorParamNames(decl)
 	var params []*soltype.FuncParam
 	for _, e := range body.Elems {
 		prop, ok := e.(*soltype.PropertyElem)
 		if !ok || prop.Optional {
 			continue
 		}
+		name, named := paramNames[prop.Name]
+		if !named {
+			name = prop.Name
+		}
 		params = append(params, &soltype.FuncParam{
-			Pattern: &soltype.IdentPat{Name: prop.Name},
+			Pattern: &soltype.IdentPat{Name: name},
 			Type:    prop.Type,
 		})
 	}
 	return &soltype.FuncType{Params: params, Ret: self}
+}
+
+// implicitConstructorParamNames maps each required instance field's member name to the
+// parameter ast.ImplicitConstructor binds its value under. A field whose key binds no name,
+// such as `[sym]` or `"a-b"`, arrives under a generated `_field<N>`, and the map holds that
+// name. The map is empty for a class ast.ImplicitConstructor builds no constructor for.
+//
+// It reads each computed key's member name from `Info`, so it must run after the class
+// body's keys are inferred.
+func (c *checker) implicitConstructorParamNames(decl *ast.ClassDecl) map[string]string {
+	names := map[string]string{}
+	synth, _ := ast.ImplicitConstructor(decl)
+	if synth == nil {
+		return names
+	}
+	// The first parameter is the `self` receiver. Each one after it belongs to the next
+	// required instance field in declaration order.
+	params := synth.Fn.Params[1:]
+	i := 0
+	for _, elem := range decl.Body {
+		field, ok := elem.(*ast.FieldElem)
+		if !ok || !ast.TakesConstructorParam(field) {
+			continue
+		}
+		if i >= len(params) {
+			break
+		}
+		param := params[i]
+		i++
+		paramName, ok := identPatName(param.Pattern)
+		if !ok {
+			continue
+		}
+		memberName, ok := c.inferredKeyName(field.Name)
+		if !ok {
+			continue
+		}
+		// A class that declares one member twice is reported elsewhere. The first
+		// declaration's parameter name is the one kept.
+		if _, named := names[memberName]; !named {
+			names[memberName] = paramName
+		}
+	}
+	return names
 }
 
 // walkConstructorBody walks an explicit constructor's body with `self` bound to the
@@ -306,7 +358,8 @@ func (col *initCollector) EnterExpr(e ast.Expr) bool {
 // selfFieldName returns the field name a member access off the `self` identifier
 // names. The dot form `self.f` names f. The bracket form `self[k]` names the field its
 // key names: a string literal, a well-known symbol, or a key whose inferred type is one
-// string or number literal, so `self[k]` with `val k = "f"` names f.
+// string literal, one number literal, or one unique symbol, so `self[k]` with
+// `val k = "f"` names f.
 //
 // `ok` is false when the access names no field of `self`:
 //   - `other.f`, whose object is not `self`;

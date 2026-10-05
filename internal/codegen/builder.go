@@ -31,6 +31,9 @@ type Builder struct {
 	// jsTypes answers what emission needs to know about inferred types. A nil field
 	// reads as noJSTypes through b.types(), which is what a hand-built AST wants.
 	jsTypes JSTypes
+	// solSymbolKeys maps a unique symbol's id to the top-level value that names it in the
+	// module BuildDefinitionsFromSol is emitting. See symbolKeysFromSol.
+	solSymbolKeys map[int]string
 }
 
 // NewBuilder returns a Builder that answers the JSTypes questions through t, which is

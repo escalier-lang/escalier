@@ -198,7 +198,7 @@ func TestKeyofSkipsTheUnnamedCallableMembers(t *testing.T) {
 		&soltype.ConstructorElem{Signatures: []*soltype.FuncType{{Ret: &soltype.PrimType{Prim: soltype.NumPrim}}}},
 		&soltype.PropertyElem{Name: "tag", Type: &soltype.PrimType{Prim: soltype.StrPrim}},
 	}}
-	require.Equal(t, `"tag"`, soltype.Print(keyofObjectNamed(obj)))
+	require.Equal(t, `"tag"`, soltype.Print((&Context{}).keyofObjectNamed(obj)))
 }
 
 // `static readonly [Symbol.species]: typeof Arr` is the shape trio fusion emits where the

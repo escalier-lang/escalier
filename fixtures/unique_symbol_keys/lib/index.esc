@@ -1,0 +1,8 @@
+declare val sym: unique symbol
+export class C {
+  [sym]: number,
+  get value(&self) -> number { return self[sym] },
+}
+export val c = C(5)
+export val r = c[sym]
+export fn store(c: mut C, v: number) { c[sym] = v }
