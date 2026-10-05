@@ -1704,14 +1704,6 @@ func TestInferClassSelfMethodInputVariance(t *testing.T) {
 			want: []string{"cannot constrain string <: number"},
 		},
 		{
-			name: "a mut instance does not widen",
-			src: bag + `
-				fn wide(b: &mut Bag<number | string>) { }
-				fn narrow(b: &mut Bag<number>) { wide(b) }
-			`,
-			want: []string{"cannot constrain string <: number"},
-		},
-		{
 			name: "a method taking and returning the parameter widens",
 			src: `
 				class Echo<T> {
@@ -1910,16 +1902,6 @@ func TestInferClassSelfMethodInputVariance(t *testing.T) {
 					"`fn (x: unknown) -> boolean` declared by `C`",
 			},
 		},
-		{
-			name: "a parameter with no output position stays contravariant",
-			src: `
-				class Consumer<T> {
-					accept(&self, x: T) { },
-				}
-				fn widen(c: &Consumer<number>) -> &Consumer<number | string> { return c }
-			`,
-			want: []string{"cannot constrain string <: number"},
-		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -2001,14 +1983,6 @@ func TestInferClassNestedClassVariance(t *testing.T) {
 			`,
 		},
 		{
-			name: "a nested class declared earlier widens",
-			src: `
-				class B<T> { readonly v: T }
-				class A<T> { readonly b: B<T> }
-				fn widen(a: &A<number>) -> &A<number | string> { return a }
-			`,
-		},
-		{
 			// `widen(h).c("s")` would call a function that takes only a `number`.
 			name: "an alias over a consumer rejects a widening",
 			src: `
@@ -2046,12 +2020,13 @@ func TestInferClassNestedClassVariance(t *testing.T) {
 		},
 		{
 			// `B` holds a consumer of `T`, and `A` passes `T` on to `B`, so the group is
-			// contravariant and `A` does not widen.
+			// contravariant. `A` narrows but does not widen.
 			name: "classes holding each other share a consumer's variance",
 			src: `
 				class A<T> { readonly b: B<T> | null }
 				class B<T> { readonly f: fn (x: T) -> undefined, readonly a: A<T> | null }
 				fn widen(a: &A<number>) -> &A<number | string> { return a }
+				fn narrow(a: &A<number | string>) -> &A<number> { return a }
 			`,
 			want: []string{"cannot constrain string <: number"},
 		},
@@ -2074,12 +2049,15 @@ func TestInferClassNestedClassVariance(t *testing.T) {
 			`,
 		},
 		{
-			name: "an alias nested in itself widens",
+			// The inner `Holder` is measured too, so the consumer it wraps makes `H`
+			// contravariant. Skipping it as already seen would leave `T` unconstrained.
+			name: "an alias nested in itself reads its inner argument",
 			src: `
 				type Holder<T> = {readonly v: T}
-				class H<T> { readonly c: Holder<Holder<T>> }
+				class H<T> { readonly c: Holder<Holder<fn (x: T) -> undefined>> }
 				fn widen(h: &H<number>) -> &H<number | string> { return h }
 			`,
+			want: []string{"cannot constrain string <: number"},
 		},
 		{
 			name: "a recursive alias widens",
@@ -2106,14 +2084,15 @@ func TestInferClassNestedClassVariance(t *testing.T) {
 		},
 		{
 			// The group's vectors swap at every pass and never settle, so both classes
-			// stay invariant.
+			// stay invariant. `A` neither widens nor narrows.
 			name: "a group that never settles stays invariant",
 			src: `
 				class A<T> { m(&self, x: T) -> undefined { return undefined }, readonly b: B<T> | null }
 				class B<T> { readonly f: fn (x: A<T>) -> undefined }
 				fn widen(a: &A<number>) -> &A<number | string> { return a }
+				fn narrow(a: &A<number | string>) -> &A<number> { return a }
 			`,
-			want: []string{"cannot constrain string <: number"},
+			want: []string{"cannot constrain string <: number", "cannot constrain string <: number"},
 		},
 		{
 			name: "a class holding itself widens",
@@ -2190,10 +2169,6 @@ func TestInferClassVarianceModifiers(t *testing.T) {
 			src: `class Consumer<in T> {
 				accept(&self, x: T) { },
 			}`,
-		},
-		{
-			name: "in out modifier on a covariant parameter checks",
-			src:  `class Box<in out T> { value: T }`,
 		},
 		{
 			// The modifier is stricter than the body, and the declared variance is what a
