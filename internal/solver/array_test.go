@@ -124,7 +124,12 @@ func TestIterationCallbacksBorrowTheReceiver(t *testing.T) {
 		want []string
 	}{
 		{
-			// Called with a `mut Array<number>`, this would push a string into it.
+			// The checker rejects this callback. A caller may pass a `mut Array<number>` to
+			// `widen`, because an immutable `Array` is covariant and `Array<number>` reads
+			// as `Array<number | string>`. If the callback could take `arr` as mutable, its
+			// `push("s")` would put a string into the caller's array of numbers. `forEach`
+			// hands the callback `&Self`, an immutable borrow of the receiver, and an
+			// immutable `Array` does not fit the callback's `mut` annotation.
 			name: "ArrayCallbackCannotWriteThroughAWidenedView",
 			src: `fn widen(xs: &Array<number | string>) {
 				xs.forEach(fn (v, i, arr: mut Array<number | string>) {
