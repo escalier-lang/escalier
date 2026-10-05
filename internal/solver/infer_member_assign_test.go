@@ -171,8 +171,12 @@ func TestInferMemberAssignAnnotatedMutWrongType(t *testing.T) {
 // A write into a declared field checks whenever the value fits the field's type. The field's
 // type may be wider than the value, as a union, an optional field or a literal union is, and
 // the receiver may be an object, a class instance or a borrow. A value outside the field's
-// type is still rejected, with one error blamed on the value.
+// type is still rejected, with one error blamed on the value. A write that resolves to a
+// setter takes the same rule against the setter's parameter, through its own path.
 func TestInferMemberAssignIntoAWiderDeclaredField(t *testing.T) {
+	setter := func(param string) string {
+		return "class C {\n_v: number,\nconstructor(&mut self) { self._v = 0 },\nget v(&self) -> number { return self._v },\nset v(&mut self, x: " + param + ") { self._v = 0 },\n}\n"
+	}
 	tests := []struct {
 		name    string
 		src     string
@@ -215,6 +219,14 @@ func TestInferMemberAssignIntoAWiderDeclaredField(t *testing.T) {
 			src:  "fn go() { val d: mut {x: number | string} = {x: 1}\nd.x = \"s\" }",
 		},
 		{
+			name: "a member of a setter's union parameter",
+			src:  setter("number | string") + `fn go(c: mut C) { c.v = "s" }`,
+		},
+		{
+			name: "a member of a setter's literal union parameter",
+			src:  setter(`"a" | "b"`) + `fn go(c: mut C) { c.v = "a" }`,
+		},
+		{
 			name:    "a value outside a union field",
 			src:     `fn go(d: mut {x: number | string}) { d.x = true }`,
 			wantErr: "cannot constrain true <: number | string",
@@ -222,6 +234,16 @@ func TestInferMemberAssignIntoAWiderDeclaredField(t *testing.T) {
 		{
 			name:    "a value outside a literal union field",
 			src:     `fn go(d: mut {x: "a" | "b"}) { d.x = "c" }`,
+			wantErr: `cannot constrain "c" <: "a" | "b"`,
+		},
+		{
+			name:    "a value outside a setter's union parameter",
+			src:     setter("number | string") + `fn go(c: mut C) { c.v = true }`,
+			wantErr: "cannot constrain true <: number | string",
+		},
+		{
+			name:    "a value outside a setter's literal union parameter",
+			src:     setter(`"a" | "b"`) + `fn go(c: mut C) { c.v = "c" }`,
 			wantErr: `cannot constrain "c" <: "a" | "b"`,
 		},
 		{
