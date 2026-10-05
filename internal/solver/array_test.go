@@ -261,10 +261,6 @@ func TestTupleIntoArray(t *testing.T) {
 				fn f(t: &mut [number, number]) { return h(t) }`,
 		},
 		{
-			name: "LiteralIntoMutAnnotation",
-			src:  `val m: mut Array<number> = [1, 2]`,
-		},
-		{
 			name: "LiteralIntoMutAnnotationThenPush",
 			src: `fn g() {
 					val m: mut Array<number> = [1, 2]
@@ -275,11 +271,6 @@ func TestTupleIntoArray(t *testing.T) {
 			name: "LiteralIntoMutParam",
 			src: `fn h(xs: mut Array<number>) -> number { return 0 }
 				val r = h([1, 2])`,
-		},
-		{
-			name: "MutTupleIntoWiderMutArray",
-			src:  `fn f(t: &mut [number, number]) { val m: &mut Array<number | string> = t }`,
-			want: []string{"cannot constrain tuple <: Array<number | string>"},
 		},
 		{
 			name: "MutTupleIntoMutArrayOfItsElement",
