@@ -525,8 +525,9 @@ func (c *Context) constrainBorrowedFieldRead(sub *soltype.RefType, req *soltype.
 // borrowedFieldType returns the type a field of type field reads as through borrow, or nil
 // for a field that reads as declared. An owned `mut` cell and an object, tuple, class
 // instance, or alias read as a borrow bounded by borrow's lifetime. A union reads member by
-// member. A field holding an immutable borrow reads as declared, and one holding a mutable
-// borrow is reborrowed immutably, since a borrow shared with others cannot lend a write.
+// member. A field holding an immutable borrow reads as declared. A field holding a mutable
+// borrow is reborrowed immutably whatever borrow's own mutability, so an immutable borrow
+// never lends a write.
 func borrowedFieldType(field soltype.Type, borrow *soltype.RefType) soltype.Type {
 	switch f := field.(type) {
 	case *soltype.RefType:

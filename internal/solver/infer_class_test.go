@@ -3058,8 +3058,8 @@ func TestInferBorrowedReceiverInACallback(t *testing.T) {
 			want: []string{"borrowed value t13 does not live long enough to satisfy object"},
 		},
 		{
-			// A shared borrow of `C` cannot lend the write its `&'a mut` field holds.
-			name: "a callback cannot write through a mutable borrow it reads through a shared one",
+			// An immutable borrow of `C` cannot lend the write its `&'a mut` field holds.
+			name: "a callback cannot write through a mutable borrow it reads through an immutable one",
 			src: `
 				class Box { v: number }
 				class C<'a> { readonly m: &'a mut Box }
