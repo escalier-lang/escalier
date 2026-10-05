@@ -79,3 +79,24 @@ func TestBorrowedReadForwardsToAVariableLowerBound(t *testing.T) {
 	n := read.req.Elems[0].(*soltype.PropertyElem).Type.(*soltype.TypeVarType)
 	require.Equal(t, []soltype.Type{num()}, n.LowerBounds)
 }
+
+// TestBorrowedReadWalksAVariableCycleOnce asserts that a cycle of variable lower bounds leading
+// back to the pointee gives each variable the read once. The concrete bound `{n: number}` the
+// cycle already holds is read, giving `n` the value `number`.
+func TestBorrowedReadWalksAVariableCycleOnce(t *testing.T) {
+	c := newTestChecker()
+	v := c.freshAt(0)
+	u := c.freshAt(0)
+	c.ctx.addLowerBound(v, u)
+	c.ctx.addLowerBound(u, v)
+	obj := &soltype.ObjectType{Elems: []soltype.ObjTypeElem{&soltype.PropertyElem{Name: "n", Type: num()}}}
+	c.ctx.addLowerBound(u, obj)
+	read := newBorrowedRead(c, 0)
+
+	errs := c.ctx.constrainBorrowedVarFieldRead(read.borrow, v, read.req, newSeenPairs())
+	require.Empty(t, errs)
+	require.Len(t, c.ctx.borrowedReads[v], 1)
+	require.Len(t, c.ctx.borrowedReads[u], 1)
+	n := read.req.Elems[0].(*soltype.PropertyElem).Type.(*soltype.TypeVarType)
+	require.Equal(t, []soltype.Type{num()}, n.LowerBounds)
+}

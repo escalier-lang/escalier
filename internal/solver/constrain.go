@@ -546,20 +546,21 @@ func (c *Context) constrainBorrowedVarFieldRead(sub *soltype.RefType, v *soltype
 	c.addBorrowedRead(v, read)
 	errs := c.constrain(v, shape, seen, false)
 	for _, lb := range existing {
-		errs = append(errs, c.readThroughLowerBound(read, lb, seen)...)
+		errs = append(errs, c.readThroughLowerBound(read, v, lb, seen)...)
 	}
 	return errs
 }
 
-// readThroughLowerBound reads r's requirement off lb, a lower bound of r's pointee. An object
-// or class instance is read under r's borrow, skipping a property lb lacks. A variable lower
-// bound takes r as its own pending read, so each concrete bound it has or gains is read too.
-func (c *Context) readThroughLowerBound(r borrowedRead, lb soltype.Type, seen *seenPairs) []SolverError {
-	return c.readThroughBound(r, lb, seen, set.NewSet[*soltype.TypeVarType]())
+// readThroughLowerBound reads r's requirement off lb, a lower bound of pointee, the variable
+// r is recorded against. An object or class instance is read under r's borrow, skipping a
+// property lb lacks. A variable lower bound takes r as its own pending read, so each concrete
+// bound it has or gains is read too.
+func (c *Context) readThroughLowerBound(r borrowedRead, pointee *soltype.TypeVarType, lb soltype.Type, seen *seenPairs) []SolverError {
+	return c.readThroughBound(r, lb, seen, set.FromSlice([]*soltype.TypeVarType{pointee}))
 }
 
-// readThroughBound is readThroughLowerBound with visited holding the variable lower bounds
-// already given r, so a cycle among them is walked once.
+// readThroughBound is readThroughLowerBound with visited holding the variables that already
+// hold r, so a cycle among variable lower bounds is walked once.
 func (c *Context) readThroughBound(r borrowedRead, lb soltype.Type, seen *seenPairs, visited set.Set[*soltype.TypeVarType]) []SolverError {
 	// A variable lower bound comes from a negative extrusion, which makes the fresh variable
 	// a lower bound of the pointee without making the pointee its upper bound. A concrete
@@ -1939,7 +1940,7 @@ func (c *Context) constrain(sub, super soltype.Type, seen *seenPairs, mutCtx boo
 				errs = append(errs, c.constrain(sub, ub, seen, false)...)
 			}
 			for _, r := range c.borrowedReads[superVar] {
-				errs = append(errs, c.readThroughLowerBound(r, sub, seen)...)
+				errs = append(errs, c.readThroughLowerBound(r, superVar, sub, seen)...)
 			}
 			return c.breadcrumbUnionCommit(errs, superVar)
 		}
