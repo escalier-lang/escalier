@@ -110,7 +110,7 @@ func (c *checker) loadStdlibPackage(uri string) *Namespace {
 
 // primitiveMember resolves a read of a method, getter, or setter off a primitive
 // receiver through the instance of its wrapper class, answering as projectedMember
-// answers for that instance. ok is false for any other receiver and for a member
+// answers for that instance. `ok` is false for any other receiver and for a member
 // projectedMember declines, such as a field.
 func (c *checker) primitiveMember(lvl int, blame ast.Node, name string, recv, carrier soltype.Type) (pathResult, bool) {
 	wrapper, ok := c.wrapperCarrier(carrier)
@@ -122,7 +122,7 @@ func (c *checker) primitiveMember(lvl int, blame ast.Node, name string, recv, ca
 
 // wrapperCarrier returns an instance of the standard-library class a primitive receiver
 // reads its methods from, such as `Number` for `5` or `number`, and `String` for `"a"`.
-// ok is false when the receiver is not a primitive.
+// `ok` is false when the receiver is not a primitive.
 //
 // A receiver can also be a type variable inference has not resolved yet. The types that
 // flow into such a variable are its lower bounds. The variable gets a class only when

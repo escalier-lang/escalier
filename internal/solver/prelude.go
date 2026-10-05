@@ -126,7 +126,7 @@ func (c *checker) preludeScope() *Scope {
 // where the prelude left off. See withStdlibCounters.
 const preludeIDBase = 1 << 20
 
-// withStdlibCounters runs load with the Context drawing variable and unique-symbol ids
+// withStdlibCounters runs `load` with the `Context` drawing variable and unique-symbol ids
 // from the run's stdlib counters, then hands the program's own counters back. The
 // stdlib counters start at preludeIDBase and keep their place between calls, so two
 // packages loaded this way never share an id.

@@ -2202,7 +2202,7 @@ func (c *Context) constrainUnionFieldRead(sub *soltype.UnionType, super soltype.
 
 // readCarrierObject returns the ObjectType a union member's fields are read through: a
 // structural object directly, a class instance's projected body, or the projected body of a
-// primitive's wrapper class. It returns ok=false for any other carrier, such as a bare type
+// primitive's wrapper class. It returns `ok` as false for any other carrier, such as a bare type
 // variable or `undefined`, so the field-read join falls back to the strict every-member rule
 // rather than reading a member off a value that carries none.
 func (c *Context) readCarrierObject(carrier soltype.Type) (*soltype.ObjectType, bool) {
@@ -2218,11 +2218,11 @@ func (c *Context) readCarrierObject(carrier soltype.Type) (*soltype.ObjectType, 
 	return nil, false
 }
 
-// constrainThroughWrapper checks a primitive, literal, or `unique symbol` sub against a
+// constrainThroughWrapper checks a primitive, literal, or `unique symbol` `sub` against a
 // field-read or destructure requirement by reading the required members from an instance of
-// sub's wrapper class. So `1.5` satisfies `{toFixed: β, ...}` because `Number` declares
-// `toFixed`. handled is false when super is not such a requirement or when the run declares
-// no wrapper class for sub. The caller then reports the mismatch it would have reported anyway.
+// `sub`'s wrapper class. So `1.5` satisfies `{toFixed: β, ...}` because `Number` declares
+// `toFixed`. `handled` is false when `super` is not such a requirement or when the run declares
+// no wrapper class for `sub`. The caller then reports the mismatch it would have reported anyway.
 //
 // The test is the shape isFieldReadReq checks, an inexact object whose every member type is
 // an inference variable. A primitive is not an object, so `number <: {...}` and

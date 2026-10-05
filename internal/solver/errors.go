@@ -132,9 +132,9 @@ type TupleLengthMismatchError struct {
 // inferMember); for member access it never fires, but it keeps blame off the zero
 // span.
 //
-// Primitive is the primitive, literal, or `unique symbol` the read was made on when its
-// members were read from its wrapper class, and nil otherwise. Sub is then the wrapper's
-// body, which no source node produced, so Span() blames Primitive ahead of it.
+// `Primitive` is the primitive, literal, or `unique symbol` the read was made on when its
+// members were read from its wrapper class, and nil otherwise. `Sub` is then the wrapper's
+// body, which no source node produced, so Span() blames `Primitive` ahead of it.
 type MissingPropertyError struct {
 	Sub, Super *soltype.ObjectType
 	Name       string
