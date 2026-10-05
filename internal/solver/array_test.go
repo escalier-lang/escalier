@@ -112,6 +112,97 @@ func TestArrayIsCovariantAndMutArrayIsNot(t *testing.T) {
 	}
 }
 
+// An iteration callback receives the collection as `&Self`, an immutable borrow of the
+// receiver. It can read the collection but neither change it nor keep it, and a widened
+// view of the collection cannot reach a write through it.
+func TestIterationCallbacksBorrowTheReceiver(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name string
+		src  string
+		want []string
+	}{
+		{
+			// Called with a `mut Array<number>`, this would push a string into it.
+			name: "ArrayCallbackCannotWriteThroughAWidenedView",
+			src: `fn widen(xs: Array<number | string>) {
+				xs.forEach(fn (v, i, arr: mut Array<number | string>) {
+					arr.push("s")
+					return 0
+				})
+			}`,
+			want: []string{"cannot constrain immutable Array<number | string> <: mutable Array<number | string>"},
+		},
+		{
+			name: "ArrayCallbackCannotMutateAnImmutableArray",
+			src: `fn f(xs: Array<number>) {
+				xs.forEach(fn (v, i, arr: mut Array<number>) {
+					arr.push(1)
+					return 0
+				})
+			}`,
+			want: []string{"cannot constrain immutable Array<number> <: mutable Array<number>"},
+		},
+		{
+			name: "SetCallbackCannotMutateTheSet",
+			src: `import "std:set"
+				fn f(xs: set.Set<number>) {
+					xs.forEach(fn (v, v2, s: mut set.Set<number>) {
+						s.add(1)
+						return 0
+					})
+				}`,
+			want: []string{"cannot constrain immutable Set<number> <: mutable Set<number>"},
+		},
+		{
+			// The callback claims it can keep the array, which a borrow does not allow.
+			name: "CallbackAnnotatedWithTheOwnedArrayIsRejected",
+			src: `fn f(xs: Array<number>) {
+				xs.forEach(fn (v: number, i: number, arr: Array<number>) { return 0 })
+			}`,
+			want: []string{"borrowed value Array<number> does not live long enough to satisfy owned Array<number>"},
+		},
+		{
+			name: "CallbackAnnotatedWithABorrowReadsTheArray",
+			src: `fn f(xs: Array<number>) {
+				xs.forEach(fn (v: number, i: number, arr: &Array<number>) { return arr.length })
+			}`,
+		},
+		{
+			name: "ArrayCallbackReadsTheArray",
+			src: `fn f(xs: Array<number>) -> number {
+				var n = 0
+				xs.forEach(fn (v, i, arr) {
+					n = arr.length
+					return 0
+				})
+				return n
+			}`,
+		},
+		{
+			name: "MapCallbackReadsTheArray",
+			src:  `fn f(xs: Array<number>) { val ys = xs.map(fn (v, i, arr) { return arr.length + v }) }`,
+		},
+		{
+			name: "SetCallbackReadsTheSet",
+			src: `import "std:set"
+				fn f(xs: set.Set<number>) { xs.forEach(fn (v, v2, s) { return s.size }) }`,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			res := InferModuleAgainstStdlib(parseModule(t, tt.src), committedTree)
+			if len(tt.want) == 0 {
+				require.Empty(t, errorMessagesOf(res.Errors))
+				return
+			}
+			require.Equal(t, tt.want, errorMessagesOf(res.Errors))
+		})
+	}
+}
+
 // A wrong element is rejected against the declaration's own signature, with the
 // message that signature produces.
 func TestArrayMethodRejectsAWrongElement(t *testing.T) {

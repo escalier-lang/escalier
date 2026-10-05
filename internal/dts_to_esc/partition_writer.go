@@ -553,6 +553,7 @@ func convertFusedBucket(
 	}
 	applyReadonlyTwinReceivers(mod, own)
 	rewriteReadonlyTwinRefs(mod, all)
+	borrowSelfInCallbacks(mod)
 	if err := dedupeMembers(mod); err != nil {
 		return nil, err
 	}

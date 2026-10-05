@@ -1751,7 +1751,7 @@ export declare class CSSNestedDeclarations extends CSSRule {
 export declare class CSSNumericArray {
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/CSSNumericArray/length) */
     readonly length: number,
-    forEach(&self, callbackfn: fn (value: CSSNumericValue, key: number, parent: CSSNumericArray) -> unknown, thisArg?: unknown) -> unknown,
+    forEach(&self, callbackfn: fn (value: CSSNumericValue, key: number, parent: &Self) -> unknown, thisArg?: unknown) -> unknown,
     [Symbol.iterator](&self) -> ArrayIterator<CSSNumericValue>,
     entries(&self) -> ArrayIterator<[number, CSSNumericValue]>,
     keys(&self) -> ArrayIterator<number>,
@@ -3383,7 +3383,7 @@ export declare class CSSTransformValue extends CSSStyleValue {
     readonly length: number,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/CSSTransformValue/toMatrix) */
     toMatrix(&self) -> DOMMatrix,
-    forEach(&self, callbackfn: fn (value: CSSTransformComponent, key: number, parent: CSSTransformValue) -> unknown, thisArg?: unknown) -> unknown,
+    forEach(&self, callbackfn: fn (value: CSSTransformComponent, key: number, parent: &Self) -> unknown, thisArg?: unknown) -> unknown,
     [Symbol.iterator](&self) -> ArrayIterator<CSSTransformComponent>,
     entries(&self) -> ArrayIterator<[number, CSSTransformComponent]>,
     keys(&self) -> ArrayIterator<number>,
@@ -3434,7 +3434,7 @@ export declare class CSSUnitValue extends CSSNumericValue {
 export declare class CSSUnparsedValue extends CSSStyleValue {
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/CSSUnparsedValue/length) */
     readonly length: number,
-    forEach(&self, callbackfn: fn (value: CSSUnparsedSegment, key: number, parent: CSSUnparsedValue) -> unknown, thisArg?: unknown) -> unknown,
+    forEach(&self, callbackfn: fn (value: CSSUnparsedSegment, key: number, parent: &Self) -> unknown, thisArg?: unknown) -> unknown,
     [Symbol.iterator](&self) -> ArrayIterator<CSSUnparsedSegment>,
     entries(&self) -> ArrayIterator<[number, CSSUnparsedSegment]>,
     keys(&self) -> ArrayIterator<number>,
@@ -3935,7 +3935,7 @@ export declare class CustomEvent<T = any> extends Event {
 /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/CustomStateSet) */
 @js("CustomStateSet")
 export declare class CustomStateSet extends set.Set<string> {
-    forEach(&self, callbackfn: fn (value: string, key: string, parent: CustomStateSet) -> unknown, thisArg?: unknown) -> unknown,
+    forEach(&self, callbackfn: fn (value: string, key: string, parent: &Self) -> unknown, thisArg?: unknown) -> unknown,
     static prototype: CustomStateSet,
     constructor(&mut self)
 }
@@ -4409,7 +4409,7 @@ export declare class DOMTokenList {
      * [MDN Reference](https://developer.mozilla.org/docs/Web/API/DOMTokenList/toggle)
      */
     toggle(&mut self, token: string, force?: boolean) -> boolean,
-    forEach(&self, callbackfn: fn (value: string, key: number, parent: DOMTokenList) -> unknown, thisArg?: unknown) -> unknown,
+    forEach(&self, callbackfn: fn (value: string, key: number, parent: &Self) -> unknown, thisArg?: unknown) -> unknown,
     [Symbol.iterator](&self) -> ArrayIterator<string>,
     entries(&self) -> ArrayIterator<[number, string]>,
     keys(&self) -> ArrayIterator<number>,
@@ -6127,7 +6127,7 @@ export declare class FontFaceSet extends EventTarget implements set.Set<FontFace
     check(&mut self, font: string, text?: string) -> boolean,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/FontFaceSet/load) */
     load(&mut self, font: string, text?: string) -> Promise<mut Array<FontFace>>,
-    forEach(&self, callbackfn: fn (value: FontFace, key: FontFace, parent: FontFaceSet) -> unknown, thisArg?: unknown) -> unknown,
+    forEach(&self, callbackfn: fn (value: FontFace, key: FontFace, parent: &Self) -> unknown, thisArg?: unknown) -> unknown,
     addEventListener<K: keyof FontFaceSetEventMap>(&mut self, type: K, listener: fn (this: FontFaceSet, ev: FontFaceSetEventMap[K]) -> any, options?: boolean | AddEventListenerOptions) -> unknown,
     addEventListener(&mut self, type: string, listener: EventListenerOrEventListenerObject, options?: boolean | AddEventListenerOptions) -> unknown,
     removeEventListener<K: keyof FontFaceSetEventMap>(&mut self, type: K, listener: fn (this: FontFaceSet, ev: FontFaceSetEventMap[K]) -> any, options?: boolean | EventListenerOptions) -> unknown,
@@ -10939,7 +10939,7 @@ export declare class Highlight extends set.Set<AbstractRange> {
     priority: number,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/Highlight/type) */
     type: HighlightType,
-    forEach(&self, callbackfn: fn (value: AbstractRange, key: AbstractRange, parent: Highlight) -> unknown, thisArg?: unknown) -> unknown,
+    forEach(&self, callbackfn: fn (value: AbstractRange, key: AbstractRange, parent: &Self) -> unknown, thisArg?: unknown) -> unknown,
     static prototype: Highlight,
     constructor(&mut self, ...initialRanges: mut Array<AbstractRange>)
 }
@@ -10947,7 +10947,7 @@ export declare class Highlight extends set.Set<AbstractRange> {
 /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/HighlightRegistry) */
 @js("HighlightRegistry")
 export declare class HighlightRegistry extends map.Map<string, Highlight> {
-    forEach(&self, callbackfn: fn (value: Highlight, key: string, parent: HighlightRegistry) -> unknown, thisArg?: unknown) -> unknown,
+    forEach(&self, callbackfn: fn (value: Highlight, key: string, parent: &Self) -> unknown, thisArg?: unknown) -> unknown,
     static prototype: HighlightRegistry,
     constructor(&mut self)
 }
@@ -11454,7 +11454,7 @@ export declare class MIDIInput extends MIDIPort {
  */
 @js("MIDIInputMap")
 export declare class MIDIInputMap extends map.Map<string, MIDIInput> {
-    forEach(&self, callbackfn: fn (value: MIDIInput, key: string, parent: MIDIInputMap) -> unknown, thisArg?: unknown) -> unknown,
+    forEach(&self, callbackfn: fn (value: MIDIInput, key: string, parent: &Self) -> unknown, thisArg?: unknown) -> unknown,
     static prototype: MIDIInputMap,
     constructor(&mut self)
 }
@@ -11498,7 +11498,7 @@ export declare class MIDIOutput extends MIDIPort {
  */
 @js("MIDIOutputMap")
 export declare class MIDIOutputMap extends map.Map<string, MIDIOutput> {
-    forEach(&self, callbackfn: fn (value: MIDIOutput, key: string, parent: MIDIOutputMap) -> unknown, thisArg?: unknown) -> unknown,
+    forEach(&self, callbackfn: fn (value: MIDIOutput, key: string, parent: &Self) -> unknown, thisArg?: unknown) -> unknown,
     static prototype: MIDIOutputMap,
     constructor(&mut self)
 }
@@ -11725,7 +11725,7 @@ export declare class MediaKeyStatusMap {
     get(&self, keyId: BufferSource) -> MediaKeyStatus | undefined,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/MediaKeyStatusMap/has) */
     has(&self, keyId: BufferSource) -> boolean,
-    forEach(&self, callbackfn: fn (value: MediaKeyStatus, key: BufferSource, parent: MediaKeyStatusMap) -> unknown, thisArg?: unknown) -> unknown,
+    forEach(&self, callbackfn: fn (value: MediaKeyStatus, key: BufferSource, parent: &Self) -> unknown, thisArg?: unknown) -> unknown,
     [Symbol.iterator](&self) -> MediaKeyStatusMapIterator<[BufferSource, MediaKeyStatus]>,
     entries(&self) -> MediaKeyStatusMapIterator<[BufferSource, MediaKeyStatus]>,
     keys(&self) -> MediaKeyStatusMapIterator<BufferSource>,
@@ -12924,7 +12924,7 @@ export declare class NodeList {
      * @param callbackfn  A function that accepts up to three arguments. forEach calls the callbackfn function one time for each element in the list.
      * @param thisArg  An object to which the this keyword can refer in the callbackfn function. If thisArg is omitted, undefined is used as the this value.
      */
-    forEach(&self, callbackfn: fn (value: Node, key: number, parent: NodeList) -> unknown, thisArg?: unknown) -> unknown,
+    forEach(&self, callbackfn: fn (value: Node, key: number, parent: &Self) -> unknown, thisArg?: unknown) -> unknown,
     [Symbol.iterator](&self) -> ArrayIterator<Node>,
     /** Returns an array of key, value pairs for every entry in the list. */
     entries(&self) -> ArrayIterator<[number, Node]>,
@@ -16275,7 +16275,7 @@ export declare class StylePropertyMapReadOnly {
     getAll(&self, property: string) -> Array<CSSStyleValue>,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/StylePropertyMapReadOnly/has) */
     has(&self, property: string) -> boolean,
-    forEach(&self, callbackfn: fn (value: mut Array<CSSStyleValue>, key: string, parent: StylePropertyMapReadOnly) -> unknown, thisArg?: unknown) -> unknown,
+    forEach(&self, callbackfn: fn (value: mut Array<CSSStyleValue>, key: string, parent: &Self) -> unknown, thisArg?: unknown) -> unknown,
     [Symbol.iterator](&self) -> StylePropertyMapReadOnlyIterator<[string, Iterable<CSSStyleValue>]>,
     entries(&self) -> StylePropertyMapReadOnlyIterator<[string, Iterable<CSSStyleValue>]>,
     keys(&self) -> StylePropertyMapReadOnlyIterator<string>,
@@ -17019,7 +17019,7 @@ export declare class ViewTransition {
 
 @js("ViewTransitionTypeSet")
 export declare class ViewTransitionTypeSet extends set.Set<string> {
-    forEach(&self, callbackfn: fn (value: string, key: string, parent: ViewTransitionTypeSet) -> unknown, thisArg?: unknown) -> unknown,
+    forEach(&self, callbackfn: fn (value: string, key: string, parent: &Self) -> unknown, thisArg?: unknown) -> unknown,
     static prototype: ViewTransitionTypeSet,
     constructor(&mut self)
 }

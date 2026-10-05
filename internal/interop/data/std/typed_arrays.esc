@@ -41,8 +41,8 @@ export declare class Int8Array<TArrayBuffer: ArrayBufferLike = ArrayBufferLike> 
      * @param thisArg If provided, it will be used as the this value for each invocation of
      * predicate. If it is not provided, undefined is used instead.
      */
-    findLast<S: number>(&self, predicate: fn (value: number, index: number, array: Self) -> boolean, thisArg?: unknown) -> S | undefined,
-    findLast(&self, predicate: fn (value: number, index: number, array: Self) -> unknown, thisArg?: unknown) -> number | undefined,
+    findLast<S: number>(&self, predicate: fn (value: number, index: number, array: &Self) -> boolean, thisArg?: unknown) -> S | undefined,
+    findLast(&self, predicate: fn (value: number, index: number, array: &Self) -> unknown, thisArg?: unknown) -> number | undefined,
     /**
      * Returns the index of the last element in the array where predicate is true, and -1
      * otherwise.
@@ -52,7 +52,7 @@ export declare class Int8Array<TArrayBuffer: ArrayBufferLike = ArrayBufferLike> 
      * @param thisArg If provided, it will be used as the this value for each invocation of
      * predicate. If it is not provided, undefined is used instead.
      */
-    findLastIndex(&self, predicate: fn (value: number, index: number, array: Self) -> unknown, thisArg?: unknown) -> number,
+    findLastIndex(&self, predicate: fn (value: number, index: number, array: &Self) -> unknown, thisArg?: unknown) -> number,
     /**
      * Copies the array and returns the copy with the elements in reverse order.
      */
@@ -110,7 +110,7 @@ export declare class Int8Array<TArrayBuffer: ArrayBufferLike = ArrayBufferLike> 
      * @param thisArg An object to which the this keyword can refer in the predicate function.
      * If thisArg is omitted, undefined is used as the this value.
      */
-    every(&self, predicate: fn (value: number, index: number, array: Self) -> unknown, thisArg?: unknown) -> boolean,
+    every(&self, predicate: fn (value: number, index: number, array: &Self) -> unknown, thisArg?: unknown) -> boolean,
     /**
      * Changes all array elements from `start` to `end` index to a static `value` and returns the modified array
      * @param value value to fill array section with
@@ -127,7 +127,7 @@ export declare class Int8Array<TArrayBuffer: ArrayBufferLike = ArrayBufferLike> 
      * @param thisArg An object to which the this keyword can refer in the predicate function.
      * If thisArg is omitted, undefined is used as the this value.
      */
-    filter(&self, predicate: fn (value: number, index: number, array: Self) -> any, thisArg?: unknown) -> Int8Array<ArrayBuffer>,
+    filter(&self, predicate: fn (value: number, index: number, array: &Self) -> any, thisArg?: unknown) -> Int8Array<ArrayBuffer>,
     /**
      * Returns the value of the first element in the array where predicate is true, and undefined
      * otherwise.
@@ -137,7 +137,7 @@ export declare class Int8Array<TArrayBuffer: ArrayBufferLike = ArrayBufferLike> 
      * @param thisArg If provided, it will be used as the this value for each invocation of
      * predicate. If it is not provided, undefined is used instead.
      */
-    find(&self, predicate: fn (value: number, index: number, obj: Self) -> boolean, thisArg?: unknown) -> number | undefined,
+    find(&self, predicate: fn (value: number, index: number, obj: &Self) -> boolean, thisArg?: unknown) -> number | undefined,
     /**
      * Returns the index of the first element in the array where predicate is true, and -1
      * otherwise.
@@ -147,7 +147,7 @@ export declare class Int8Array<TArrayBuffer: ArrayBufferLike = ArrayBufferLike> 
      * @param thisArg If provided, it will be used as the this value for each invocation of
      * predicate. If it is not provided, undefined is used instead.
      */
-    findIndex(&self, predicate: fn (value: number, index: number, obj: Self) -> boolean, thisArg?: unknown) -> number,
+    findIndex(&self, predicate: fn (value: number, index: number, obj: &Self) -> boolean, thisArg?: unknown) -> number,
     /**
      * Performs the specified action for each element in an array.
      * @param callbackfn A function that accepts up to three arguments. forEach calls the
@@ -155,7 +155,7 @@ export declare class Int8Array<TArrayBuffer: ArrayBufferLike = ArrayBufferLike> 
      * @param thisArg An object to which the this keyword can refer in the callbackfn function.
      * If thisArg is omitted, undefined is used as the this value.
      */
-    forEach(&self, callbackfn: fn (value: number, index: number, array: Self) -> unknown, thisArg?: unknown) -> unknown,
+    forEach(&self, callbackfn: fn (value: number, index: number, array: &Self) -> unknown, thisArg?: unknown) -> unknown,
     /**
      * Returns the index of the first occurrence of a value in an array.
      * @param searchElement The value to locate in the array.
@@ -188,7 +188,7 @@ export declare class Int8Array<TArrayBuffer: ArrayBufferLike = ArrayBufferLike> 
      * @param thisArg An object to which the this keyword can refer in the callbackfn function.
      * If thisArg is omitted, undefined is used as the this value.
      */
-    map(&self, callbackfn: fn (value: number, index: number, array: Self) -> number, thisArg?: unknown) -> Int8Array<ArrayBuffer>,
+    map(&self, callbackfn: fn (value: number, index: number, array: &Self) -> number, thisArg?: unknown) -> Int8Array<ArrayBuffer>,
     /**
      * Calls the specified callback function for all the elements in an array. The return value of
      * the callback function is the accumulated result, and is provided as an argument in the next
@@ -199,8 +199,8 @@ export declare class Int8Array<TArrayBuffer: ArrayBufferLike = ArrayBufferLike> 
      * the accumulation. The first call to the callbackfn function provides this value as an argument
      * instead of an array value.
      */
-    reduce(&self, callbackfn: fn (previousValue: number, currentValue: number, currentIndex: number, array: Self) -> number) -> number,
-    reduce(&self, callbackfn: fn (previousValue: number, currentValue: number, currentIndex: number, array: Self) -> number, initialValue: number) -> number,
+    reduce(&self, callbackfn: fn (previousValue: number, currentValue: number, currentIndex: number, array: &Self) -> number) -> number,
+    reduce(&self, callbackfn: fn (previousValue: number, currentValue: number, currentIndex: number, array: &Self) -> number, initialValue: number) -> number,
     /**
      * Calls the specified callback function for all the elements in an array. The return value of
      * the callback function is the accumulated result, and is provided as an argument in the next
@@ -211,7 +211,7 @@ export declare class Int8Array<TArrayBuffer: ArrayBufferLike = ArrayBufferLike> 
      * the accumulation. The first call to the callbackfn function provides this value as an argument
      * instead of an array value.
      */
-    reduce<U>(&self, callbackfn: fn (previousValue: U, currentValue: number, currentIndex: number, array: Self) -> U, initialValue: U) -> U,
+    reduce<U>(&self, callbackfn: fn (previousValue: U, currentValue: number, currentIndex: number, array: &Self) -> U, initialValue: U) -> U,
     /**
      * Calls the specified callback function for all the elements in an array, in descending order.
      * The return value of the callback function is the accumulated result, and is provided as an
@@ -222,8 +222,8 @@ export declare class Int8Array<TArrayBuffer: ArrayBufferLike = ArrayBufferLike> 
      * the accumulation. The first call to the callbackfn function provides this value as an
      * argument instead of an array value.
      */
-    reduceRight(&self, callbackfn: fn (previousValue: number, currentValue: number, currentIndex: number, array: Self) -> number) -> number,
-    reduceRight(&self, callbackfn: fn (previousValue: number, currentValue: number, currentIndex: number, array: Self) -> number, initialValue: number) -> number,
+    reduceRight(&self, callbackfn: fn (previousValue: number, currentValue: number, currentIndex: number, array: &Self) -> number) -> number,
+    reduceRight(&self, callbackfn: fn (previousValue: number, currentValue: number, currentIndex: number, array: &Self) -> number, initialValue: number) -> number,
     /**
      * Calls the specified callback function for all the elements in an array, in descending order.
      * The return value of the callback function is the accumulated result, and is provided as an
@@ -234,7 +234,7 @@ export declare class Int8Array<TArrayBuffer: ArrayBufferLike = ArrayBufferLike> 
      * the accumulation. The first call to the callbackfn function provides this value as an argument
      * instead of an array value.
      */
-    reduceRight<U>(&self, callbackfn: fn (previousValue: U, currentValue: number, currentIndex: number, array: Self) -> U, initialValue: U) -> U,
+    reduceRight<U>(&self, callbackfn: fn (previousValue: U, currentValue: number, currentIndex: number, array: &Self) -> U, initialValue: U) -> U,
     /**
      * Reverses the elements in an Array.
      */
@@ -259,7 +259,7 @@ export declare class Int8Array<TArrayBuffer: ArrayBufferLike = ArrayBufferLike> 
      * @param thisArg An object to which the this keyword can refer in the predicate function.
      * If thisArg is omitted, undefined is used as the this value.
      */
-    some(&self, predicate: fn (value: number, index: number, array: Self) -> unknown, thisArg?: unknown) -> boolean,
+    some(&self, predicate: fn (value: number, index: number, array: &Self) -> unknown, thisArg?: unknown) -> boolean,
     /**
      * Sorts an array.
      * @param compareFn Function used to determine the order of the elements. It is expected to return
@@ -367,8 +367,8 @@ export declare class Uint8Array<TArrayBuffer: ArrayBufferLike = ArrayBufferLike>
      * @param thisArg If provided, it will be used as the this value for each invocation of
      * predicate. If it is not provided, undefined is used instead.
      */
-    findLast<S: number>(&self, predicate: fn (value: number, index: number, array: Self) -> boolean, thisArg?: unknown) -> S | undefined,
-    findLast(&self, predicate: fn (value: number, index: number, array: Self) -> unknown, thisArg?: unknown) -> number | undefined,
+    findLast<S: number>(&self, predicate: fn (value: number, index: number, array: &Self) -> boolean, thisArg?: unknown) -> S | undefined,
+    findLast(&self, predicate: fn (value: number, index: number, array: &Self) -> unknown, thisArg?: unknown) -> number | undefined,
     /**
      * Returns the index of the last element in the array where predicate is true, and -1
      * otherwise.
@@ -378,7 +378,7 @@ export declare class Uint8Array<TArrayBuffer: ArrayBufferLike = ArrayBufferLike>
      * @param thisArg If provided, it will be used as the this value for each invocation of
      * predicate. If it is not provided, undefined is used instead.
      */
-    findLastIndex(&self, predicate: fn (value: number, index: number, array: Self) -> unknown, thisArg?: unknown) -> number,
+    findLastIndex(&self, predicate: fn (value: number, index: number, array: &Self) -> unknown, thisArg?: unknown) -> number,
     /**
      * Copies the array and returns the copy with the elements in reverse order.
      */
@@ -436,7 +436,7 @@ export declare class Uint8Array<TArrayBuffer: ArrayBufferLike = ArrayBufferLike>
      * @param thisArg An object to which the this keyword can refer in the predicate function.
      * If thisArg is omitted, undefined is used as the this value.
      */
-    every(&self, predicate: fn (value: number, index: number, array: Self) -> unknown, thisArg?: unknown) -> boolean,
+    every(&self, predicate: fn (value: number, index: number, array: &Self) -> unknown, thisArg?: unknown) -> boolean,
     /**
      * Changes all array elements from `start` to `end` index to a static `value` and returns the modified array
      * @param value value to fill array section with
@@ -453,7 +453,7 @@ export declare class Uint8Array<TArrayBuffer: ArrayBufferLike = ArrayBufferLike>
      * @param thisArg An object to which the this keyword can refer in the predicate function.
      * If thisArg is omitted, undefined is used as the this value.
      */
-    filter(&self, predicate: fn (value: number, index: number, array: Self) -> any, thisArg?: unknown) -> Uint8Array<ArrayBuffer>,
+    filter(&self, predicate: fn (value: number, index: number, array: &Self) -> any, thisArg?: unknown) -> Uint8Array<ArrayBuffer>,
     /**
      * Returns the value of the first element in the array where predicate is true, and undefined
      * otherwise.
@@ -463,7 +463,7 @@ export declare class Uint8Array<TArrayBuffer: ArrayBufferLike = ArrayBufferLike>
      * @param thisArg If provided, it will be used as the this value for each invocation of
      * predicate. If it is not provided, undefined is used instead.
      */
-    find(&self, predicate: fn (value: number, index: number, obj: Self) -> boolean, thisArg?: unknown) -> number | undefined,
+    find(&self, predicate: fn (value: number, index: number, obj: &Self) -> boolean, thisArg?: unknown) -> number | undefined,
     /**
      * Returns the index of the first element in the array where predicate is true, and -1
      * otherwise.
@@ -473,7 +473,7 @@ export declare class Uint8Array<TArrayBuffer: ArrayBufferLike = ArrayBufferLike>
      * @param thisArg If provided, it will be used as the this value for each invocation of
      * predicate. If it is not provided, undefined is used instead.
      */
-    findIndex(&self, predicate: fn (value: number, index: number, obj: Self) -> boolean, thisArg?: unknown) -> number,
+    findIndex(&self, predicate: fn (value: number, index: number, obj: &Self) -> boolean, thisArg?: unknown) -> number,
     /**
      * Performs the specified action for each element in an array.
      * @param callbackfn A function that accepts up to three arguments. forEach calls the
@@ -481,7 +481,7 @@ export declare class Uint8Array<TArrayBuffer: ArrayBufferLike = ArrayBufferLike>
      * @param thisArg An object to which the this keyword can refer in the callbackfn function.
      * If thisArg is omitted, undefined is used as the this value.
      */
-    forEach(&self, callbackfn: fn (value: number, index: number, array: Self) -> unknown, thisArg?: unknown) -> unknown,
+    forEach(&self, callbackfn: fn (value: number, index: number, array: &Self) -> unknown, thisArg?: unknown) -> unknown,
     /**
      * Returns the index of the first occurrence of a value in an array.
      * @param searchElement The value to locate in the array.
@@ -514,7 +514,7 @@ export declare class Uint8Array<TArrayBuffer: ArrayBufferLike = ArrayBufferLike>
      * @param thisArg An object to which the this keyword can refer in the callbackfn function.
      * If thisArg is omitted, undefined is used as the this value.
      */
-    map(&self, callbackfn: fn (value: number, index: number, array: Self) -> number, thisArg?: unknown) -> Uint8Array<ArrayBuffer>,
+    map(&self, callbackfn: fn (value: number, index: number, array: &Self) -> number, thisArg?: unknown) -> Uint8Array<ArrayBuffer>,
     /**
      * Calls the specified callback function for all the elements in an array. The return value of
      * the callback function is the accumulated result, and is provided as an argument in the next
@@ -525,8 +525,8 @@ export declare class Uint8Array<TArrayBuffer: ArrayBufferLike = ArrayBufferLike>
      * the accumulation. The first call to the callbackfn function provides this value as an argument
      * instead of an array value.
      */
-    reduce(&self, callbackfn: fn (previousValue: number, currentValue: number, currentIndex: number, array: Self) -> number) -> number,
-    reduce(&self, callbackfn: fn (previousValue: number, currentValue: number, currentIndex: number, array: Self) -> number, initialValue: number) -> number,
+    reduce(&self, callbackfn: fn (previousValue: number, currentValue: number, currentIndex: number, array: &Self) -> number) -> number,
+    reduce(&self, callbackfn: fn (previousValue: number, currentValue: number, currentIndex: number, array: &Self) -> number, initialValue: number) -> number,
     /**
      * Calls the specified callback function for all the elements in an array. The return value of
      * the callback function is the accumulated result, and is provided as an argument in the next
@@ -537,7 +537,7 @@ export declare class Uint8Array<TArrayBuffer: ArrayBufferLike = ArrayBufferLike>
      * the accumulation. The first call to the callbackfn function provides this value as an argument
      * instead of an array value.
      */
-    reduce<U>(&self, callbackfn: fn (previousValue: U, currentValue: number, currentIndex: number, array: Self) -> U, initialValue: U) -> U,
+    reduce<U>(&self, callbackfn: fn (previousValue: U, currentValue: number, currentIndex: number, array: &Self) -> U, initialValue: U) -> U,
     /**
      * Calls the specified callback function for all the elements in an array, in descending order.
      * The return value of the callback function is the accumulated result, and is provided as an
@@ -548,8 +548,8 @@ export declare class Uint8Array<TArrayBuffer: ArrayBufferLike = ArrayBufferLike>
      * the accumulation. The first call to the callbackfn function provides this value as an
      * argument instead of an array value.
      */
-    reduceRight(&self, callbackfn: fn (previousValue: number, currentValue: number, currentIndex: number, array: Self) -> number) -> number,
-    reduceRight(&self, callbackfn: fn (previousValue: number, currentValue: number, currentIndex: number, array: Self) -> number, initialValue: number) -> number,
+    reduceRight(&self, callbackfn: fn (previousValue: number, currentValue: number, currentIndex: number, array: &Self) -> number) -> number,
+    reduceRight(&self, callbackfn: fn (previousValue: number, currentValue: number, currentIndex: number, array: &Self) -> number, initialValue: number) -> number,
     /**
      * Calls the specified callback function for all the elements in an array, in descending order.
      * The return value of the callback function is the accumulated result, and is provided as an
@@ -560,7 +560,7 @@ export declare class Uint8Array<TArrayBuffer: ArrayBufferLike = ArrayBufferLike>
      * the accumulation. The first call to the callbackfn function provides this value as an argument
      * instead of an array value.
      */
-    reduceRight<U>(&self, callbackfn: fn (previousValue: U, currentValue: number, currentIndex: number, array: Self) -> U, initialValue: U) -> U,
+    reduceRight<U>(&self, callbackfn: fn (previousValue: U, currentValue: number, currentIndex: number, array: &Self) -> U, initialValue: U) -> U,
     /**
      * Reverses the elements in an Array.
      */
@@ -585,7 +585,7 @@ export declare class Uint8Array<TArrayBuffer: ArrayBufferLike = ArrayBufferLike>
      * @param thisArg An object to which the this keyword can refer in the predicate function.
      * If thisArg is omitted, undefined is used as the this value.
      */
-    some(&self, predicate: fn (value: number, index: number, array: Self) -> unknown, thisArg?: unknown) -> boolean,
+    some(&self, predicate: fn (value: number, index: number, array: &Self) -> unknown, thisArg?: unknown) -> boolean,
     /**
      * Sorts an array.
      * @param compareFn Function used to determine the order of the elements. It is expected to return
@@ -693,8 +693,8 @@ export declare class Uint8ClampedArray<TArrayBuffer: ArrayBufferLike = ArrayBuff
      * @param thisArg If provided, it will be used as the this value for each invocation of
      * predicate. If it is not provided, undefined is used instead.
      */
-    findLast<S: number>(&self, predicate: fn (value: number, index: number, array: Self) -> boolean, thisArg?: unknown) -> S | undefined,
-    findLast(&self, predicate: fn (value: number, index: number, array: Self) -> unknown, thisArg?: unknown) -> number | undefined,
+    findLast<S: number>(&self, predicate: fn (value: number, index: number, array: &Self) -> boolean, thisArg?: unknown) -> S | undefined,
+    findLast(&self, predicate: fn (value: number, index: number, array: &Self) -> unknown, thisArg?: unknown) -> number | undefined,
     /**
      * Returns the index of the last element in the array where predicate is true, and -1
      * otherwise.
@@ -704,7 +704,7 @@ export declare class Uint8ClampedArray<TArrayBuffer: ArrayBufferLike = ArrayBuff
      * @param thisArg If provided, it will be used as the this value for each invocation of
      * predicate. If it is not provided, undefined is used instead.
      */
-    findLastIndex(&self, predicate: fn (value: number, index: number, array: Self) -> unknown, thisArg?: unknown) -> number,
+    findLastIndex(&self, predicate: fn (value: number, index: number, array: &Self) -> unknown, thisArg?: unknown) -> number,
     /**
      * Copies the array and returns the copy with the elements in reverse order.
      */
@@ -762,7 +762,7 @@ export declare class Uint8ClampedArray<TArrayBuffer: ArrayBufferLike = ArrayBuff
      * @param thisArg An object to which the this keyword can refer in the predicate function.
      * If thisArg is omitted, undefined is used as the this value.
      */
-    every(&self, predicate: fn (value: number, index: number, array: Self) -> unknown, thisArg?: unknown) -> boolean,
+    every(&self, predicate: fn (value: number, index: number, array: &Self) -> unknown, thisArg?: unknown) -> boolean,
     /**
      * Changes all array elements from `start` to `end` index to a static `value` and returns the modified array
      * @param value value to fill array section with
@@ -779,7 +779,7 @@ export declare class Uint8ClampedArray<TArrayBuffer: ArrayBufferLike = ArrayBuff
      * @param thisArg An object to which the this keyword can refer in the predicate function.
      * If thisArg is omitted, undefined is used as the this value.
      */
-    filter(&self, predicate: fn (value: number, index: number, array: Self) -> any, thisArg?: unknown) -> Uint8ClampedArray<ArrayBuffer>,
+    filter(&self, predicate: fn (value: number, index: number, array: &Self) -> any, thisArg?: unknown) -> Uint8ClampedArray<ArrayBuffer>,
     /**
      * Returns the value of the first element in the array where predicate is true, and undefined
      * otherwise.
@@ -789,7 +789,7 @@ export declare class Uint8ClampedArray<TArrayBuffer: ArrayBufferLike = ArrayBuff
      * @param thisArg If provided, it will be used as the this value for each invocation of
      * predicate. If it is not provided, undefined is used instead.
      */
-    find(&self, predicate: fn (value: number, index: number, obj: Self) -> boolean, thisArg?: unknown) -> number | undefined,
+    find(&self, predicate: fn (value: number, index: number, obj: &Self) -> boolean, thisArg?: unknown) -> number | undefined,
     /**
      * Returns the index of the first element in the array where predicate is true, and -1
      * otherwise.
@@ -799,7 +799,7 @@ export declare class Uint8ClampedArray<TArrayBuffer: ArrayBufferLike = ArrayBuff
      * @param thisArg If provided, it will be used as the this value for each invocation of
      * predicate. If it is not provided, undefined is used instead.
      */
-    findIndex(&self, predicate: fn (value: number, index: number, obj: Self) -> boolean, thisArg?: unknown) -> number,
+    findIndex(&self, predicate: fn (value: number, index: number, obj: &Self) -> boolean, thisArg?: unknown) -> number,
     /**
      * Performs the specified action for each element in an array.
      * @param callbackfn A function that accepts up to three arguments. forEach calls the
@@ -807,7 +807,7 @@ export declare class Uint8ClampedArray<TArrayBuffer: ArrayBufferLike = ArrayBuff
      * @param thisArg An object to which the this keyword can refer in the callbackfn function.
      * If thisArg is omitted, undefined is used as the this value.
      */
-    forEach(&self, callbackfn: fn (value: number, index: number, array: Self) -> unknown, thisArg?: unknown) -> unknown,
+    forEach(&self, callbackfn: fn (value: number, index: number, array: &Self) -> unknown, thisArg?: unknown) -> unknown,
     /**
      * Returns the index of the first occurrence of a value in an array.
      * @param searchElement The value to locate in the array.
@@ -840,7 +840,7 @@ export declare class Uint8ClampedArray<TArrayBuffer: ArrayBufferLike = ArrayBuff
      * @param thisArg An object to which the this keyword can refer in the callbackfn function.
      * If thisArg is omitted, undefined is used as the this value.
      */
-    map(&self, callbackfn: fn (value: number, index: number, array: Self) -> number, thisArg?: unknown) -> Uint8ClampedArray<ArrayBuffer>,
+    map(&self, callbackfn: fn (value: number, index: number, array: &Self) -> number, thisArg?: unknown) -> Uint8ClampedArray<ArrayBuffer>,
     /**
      * Calls the specified callback function for all the elements in an array. The return value of
      * the callback function is the accumulated result, and is provided as an argument in the next
@@ -851,8 +851,8 @@ export declare class Uint8ClampedArray<TArrayBuffer: ArrayBufferLike = ArrayBuff
      * the accumulation. The first call to the callbackfn function provides this value as an argument
      * instead of an array value.
      */
-    reduce(&self, callbackfn: fn (previousValue: number, currentValue: number, currentIndex: number, array: Self) -> number) -> number,
-    reduce(&self, callbackfn: fn (previousValue: number, currentValue: number, currentIndex: number, array: Self) -> number, initialValue: number) -> number,
+    reduce(&self, callbackfn: fn (previousValue: number, currentValue: number, currentIndex: number, array: &Self) -> number) -> number,
+    reduce(&self, callbackfn: fn (previousValue: number, currentValue: number, currentIndex: number, array: &Self) -> number, initialValue: number) -> number,
     /**
      * Calls the specified callback function for all the elements in an array. The return value of
      * the callback function is the accumulated result, and is provided as an argument in the next
@@ -863,7 +863,7 @@ export declare class Uint8ClampedArray<TArrayBuffer: ArrayBufferLike = ArrayBuff
      * the accumulation. The first call to the callbackfn function provides this value as an argument
      * instead of an array value.
      */
-    reduce<U>(&self, callbackfn: fn (previousValue: U, currentValue: number, currentIndex: number, array: Self) -> U, initialValue: U) -> U,
+    reduce<U>(&self, callbackfn: fn (previousValue: U, currentValue: number, currentIndex: number, array: &Self) -> U, initialValue: U) -> U,
     /**
      * Calls the specified callback function for all the elements in an array, in descending order.
      * The return value of the callback function is the accumulated result, and is provided as an
@@ -874,8 +874,8 @@ export declare class Uint8ClampedArray<TArrayBuffer: ArrayBufferLike = ArrayBuff
      * the accumulation. The first call to the callbackfn function provides this value as an
      * argument instead of an array value.
      */
-    reduceRight(&self, callbackfn: fn (previousValue: number, currentValue: number, currentIndex: number, array: Self) -> number) -> number,
-    reduceRight(&self, callbackfn: fn (previousValue: number, currentValue: number, currentIndex: number, array: Self) -> number, initialValue: number) -> number,
+    reduceRight(&self, callbackfn: fn (previousValue: number, currentValue: number, currentIndex: number, array: &Self) -> number) -> number,
+    reduceRight(&self, callbackfn: fn (previousValue: number, currentValue: number, currentIndex: number, array: &Self) -> number, initialValue: number) -> number,
     /**
      * Calls the specified callback function for all the elements in an array, in descending order.
      * The return value of the callback function is the accumulated result, and is provided as an
@@ -886,7 +886,7 @@ export declare class Uint8ClampedArray<TArrayBuffer: ArrayBufferLike = ArrayBuff
      * the accumulation. The first call to the callbackfn function provides this value as an argument
      * instead of an array value.
      */
-    reduceRight<U>(&self, callbackfn: fn (previousValue: U, currentValue: number, currentIndex: number, array: Self) -> U, initialValue: U) -> U,
+    reduceRight<U>(&self, callbackfn: fn (previousValue: U, currentValue: number, currentIndex: number, array: &Self) -> U, initialValue: U) -> U,
     /**
      * Reverses the elements in an Array.
      */
@@ -911,7 +911,7 @@ export declare class Uint8ClampedArray<TArrayBuffer: ArrayBufferLike = ArrayBuff
      * @param thisArg An object to which the this keyword can refer in the predicate function.
      * If thisArg is omitted, undefined is used as the this value.
      */
-    some(&self, predicate: fn (value: number, index: number, array: Self) -> unknown, thisArg?: unknown) -> boolean,
+    some(&self, predicate: fn (value: number, index: number, array: &Self) -> unknown, thisArg?: unknown) -> boolean,
     /**
      * Sorts an array.
      * @param compareFn Function used to determine the order of the elements. It is expected to return
@@ -1019,8 +1019,8 @@ export declare class Int16Array<TArrayBuffer: ArrayBufferLike = ArrayBufferLike>
      * @param thisArg If provided, it will be used as the this value for each invocation of
      * predicate. If it is not provided, undefined is used instead.
      */
-    findLast<S: number>(&self, predicate: fn (value: number, index: number, array: Self) -> boolean, thisArg?: unknown) -> S | undefined,
-    findLast(&self, predicate: fn (value: number, index: number, array: Self) -> unknown, thisArg?: unknown) -> number | undefined,
+    findLast<S: number>(&self, predicate: fn (value: number, index: number, array: &Self) -> boolean, thisArg?: unknown) -> S | undefined,
+    findLast(&self, predicate: fn (value: number, index: number, array: &Self) -> unknown, thisArg?: unknown) -> number | undefined,
     /**
      * Returns the index of the last element in the array where predicate is true, and -1
      * otherwise.
@@ -1030,7 +1030,7 @@ export declare class Int16Array<TArrayBuffer: ArrayBufferLike = ArrayBufferLike>
      * @param thisArg If provided, it will be used as the this value for each invocation of
      * predicate. If it is not provided, undefined is used instead.
      */
-    findLastIndex(&self, predicate: fn (value: number, index: number, array: Self) -> unknown, thisArg?: unknown) -> number,
+    findLastIndex(&self, predicate: fn (value: number, index: number, array: &Self) -> unknown, thisArg?: unknown) -> number,
     /**
      * Copies the array and returns the copy with the elements in reverse order.
      */
@@ -1088,7 +1088,7 @@ export declare class Int16Array<TArrayBuffer: ArrayBufferLike = ArrayBufferLike>
      * @param thisArg An object to which the this keyword can refer in the predicate function.
      * If thisArg is omitted, undefined is used as the this value.
      */
-    every(&self, predicate: fn (value: number, index: number, array: Self) -> unknown, thisArg?: unknown) -> boolean,
+    every(&self, predicate: fn (value: number, index: number, array: &Self) -> unknown, thisArg?: unknown) -> boolean,
     /**
      * Changes all array elements from `start` to `end` index to a static `value` and returns the modified array
      * @param value value to fill array section with
@@ -1105,7 +1105,7 @@ export declare class Int16Array<TArrayBuffer: ArrayBufferLike = ArrayBufferLike>
      * @param thisArg An object to which the this keyword can refer in the predicate function.
      * If thisArg is omitted, undefined is used as the this value.
      */
-    filter(&self, predicate: fn (value: number, index: number, array: Self) -> any, thisArg?: unknown) -> Int16Array<ArrayBuffer>,
+    filter(&self, predicate: fn (value: number, index: number, array: &Self) -> any, thisArg?: unknown) -> Int16Array<ArrayBuffer>,
     /**
      * Returns the value of the first element in the array where predicate is true, and undefined
      * otherwise.
@@ -1115,7 +1115,7 @@ export declare class Int16Array<TArrayBuffer: ArrayBufferLike = ArrayBufferLike>
      * @param thisArg If provided, it will be used as the this value for each invocation of
      * predicate. If it is not provided, undefined is used instead.
      */
-    find(&self, predicate: fn (value: number, index: number, obj: Self) -> boolean, thisArg?: unknown) -> number | undefined,
+    find(&self, predicate: fn (value: number, index: number, obj: &Self) -> boolean, thisArg?: unknown) -> number | undefined,
     /**
      * Returns the index of the first element in the array where predicate is true, and -1
      * otherwise.
@@ -1125,7 +1125,7 @@ export declare class Int16Array<TArrayBuffer: ArrayBufferLike = ArrayBufferLike>
      * @param thisArg If provided, it will be used as the this value for each invocation of
      * predicate. If it is not provided, undefined is used instead.
      */
-    findIndex(&self, predicate: fn (value: number, index: number, obj: Self) -> boolean, thisArg?: unknown) -> number,
+    findIndex(&self, predicate: fn (value: number, index: number, obj: &Self) -> boolean, thisArg?: unknown) -> number,
     /**
      * Performs the specified action for each element in an array.
      * @param callbackfn A function that accepts up to three arguments. forEach calls the
@@ -1133,7 +1133,7 @@ export declare class Int16Array<TArrayBuffer: ArrayBufferLike = ArrayBufferLike>
      * @param thisArg An object to which the this keyword can refer in the callbackfn function.
      * If thisArg is omitted, undefined is used as the this value.
      */
-    forEach(&self, callbackfn: fn (value: number, index: number, array: Self) -> unknown, thisArg?: unknown) -> unknown,
+    forEach(&self, callbackfn: fn (value: number, index: number, array: &Self) -> unknown, thisArg?: unknown) -> unknown,
     /**
      * Returns the index of the first occurrence of a value in an array.
      * @param searchElement The value to locate in the array.
@@ -1166,7 +1166,7 @@ export declare class Int16Array<TArrayBuffer: ArrayBufferLike = ArrayBufferLike>
      * @param thisArg An object to which the this keyword can refer in the callbackfn function.
      * If thisArg is omitted, undefined is used as the this value.
      */
-    map(&self, callbackfn: fn (value: number, index: number, array: Self) -> number, thisArg?: unknown) -> Int16Array<ArrayBuffer>,
+    map(&self, callbackfn: fn (value: number, index: number, array: &Self) -> number, thisArg?: unknown) -> Int16Array<ArrayBuffer>,
     /**
      * Calls the specified callback function for all the elements in an array. The return value of
      * the callback function is the accumulated result, and is provided as an argument in the next
@@ -1177,8 +1177,8 @@ export declare class Int16Array<TArrayBuffer: ArrayBufferLike = ArrayBufferLike>
      * the accumulation. The first call to the callbackfn function provides this value as an argument
      * instead of an array value.
      */
-    reduce(&self, callbackfn: fn (previousValue: number, currentValue: number, currentIndex: number, array: Self) -> number) -> number,
-    reduce(&self, callbackfn: fn (previousValue: number, currentValue: number, currentIndex: number, array: Self) -> number, initialValue: number) -> number,
+    reduce(&self, callbackfn: fn (previousValue: number, currentValue: number, currentIndex: number, array: &Self) -> number) -> number,
+    reduce(&self, callbackfn: fn (previousValue: number, currentValue: number, currentIndex: number, array: &Self) -> number, initialValue: number) -> number,
     /**
      * Calls the specified callback function for all the elements in an array. The return value of
      * the callback function is the accumulated result, and is provided as an argument in the next
@@ -1189,7 +1189,7 @@ export declare class Int16Array<TArrayBuffer: ArrayBufferLike = ArrayBufferLike>
      * the accumulation. The first call to the callbackfn function provides this value as an argument
      * instead of an array value.
      */
-    reduce<U>(&self, callbackfn: fn (previousValue: U, currentValue: number, currentIndex: number, array: Self) -> U, initialValue: U) -> U,
+    reduce<U>(&self, callbackfn: fn (previousValue: U, currentValue: number, currentIndex: number, array: &Self) -> U, initialValue: U) -> U,
     /**
      * Calls the specified callback function for all the elements in an array, in descending order.
      * The return value of the callback function is the accumulated result, and is provided as an
@@ -1200,8 +1200,8 @@ export declare class Int16Array<TArrayBuffer: ArrayBufferLike = ArrayBufferLike>
      * the accumulation. The first call to the callbackfn function provides this value as an
      * argument instead of an array value.
      */
-    reduceRight(&self, callbackfn: fn (previousValue: number, currentValue: number, currentIndex: number, array: Self) -> number) -> number,
-    reduceRight(&self, callbackfn: fn (previousValue: number, currentValue: number, currentIndex: number, array: Self) -> number, initialValue: number) -> number,
+    reduceRight(&self, callbackfn: fn (previousValue: number, currentValue: number, currentIndex: number, array: &Self) -> number) -> number,
+    reduceRight(&self, callbackfn: fn (previousValue: number, currentValue: number, currentIndex: number, array: &Self) -> number, initialValue: number) -> number,
     /**
      * Calls the specified callback function for all the elements in an array, in descending order.
      * The return value of the callback function is the accumulated result, and is provided as an
@@ -1212,7 +1212,7 @@ export declare class Int16Array<TArrayBuffer: ArrayBufferLike = ArrayBufferLike>
      * the accumulation. The first call to the callbackfn function provides this value as an argument
      * instead of an array value.
      */
-    reduceRight<U>(&self, callbackfn: fn (previousValue: U, currentValue: number, currentIndex: number, array: Self) -> U, initialValue: U) -> U,
+    reduceRight<U>(&self, callbackfn: fn (previousValue: U, currentValue: number, currentIndex: number, array: &Self) -> U, initialValue: U) -> U,
     /**
      * Reverses the elements in an Array.
      */
@@ -1237,7 +1237,7 @@ export declare class Int16Array<TArrayBuffer: ArrayBufferLike = ArrayBufferLike>
      * @param thisArg An object to which the this keyword can refer in the predicate function.
      * If thisArg is omitted, undefined is used as the this value.
      */
-    some(&self, predicate: fn (value: number, index: number, array: Self) -> unknown, thisArg?: unknown) -> boolean,
+    some(&self, predicate: fn (value: number, index: number, array: &Self) -> unknown, thisArg?: unknown) -> boolean,
     /**
      * Sorts an array.
      * @param compareFn Function used to determine the order of the elements. It is expected to return
@@ -1345,8 +1345,8 @@ export declare class Uint16Array<TArrayBuffer: ArrayBufferLike = ArrayBufferLike
      * @param thisArg If provided, it will be used as the this value for each invocation of
      * predicate. If it is not provided, undefined is used instead.
      */
-    findLast<S: number>(&self, predicate: fn (value: number, index: number, array: Self) -> boolean, thisArg?: unknown) -> S | undefined,
-    findLast(&self, predicate: fn (value: number, index: number, array: Self) -> unknown, thisArg?: unknown) -> number | undefined,
+    findLast<S: number>(&self, predicate: fn (value: number, index: number, array: &Self) -> boolean, thisArg?: unknown) -> S | undefined,
+    findLast(&self, predicate: fn (value: number, index: number, array: &Self) -> unknown, thisArg?: unknown) -> number | undefined,
     /**
      * Returns the index of the last element in the array where predicate is true, and -1
      * otherwise.
@@ -1356,7 +1356,7 @@ export declare class Uint16Array<TArrayBuffer: ArrayBufferLike = ArrayBufferLike
      * @param thisArg If provided, it will be used as the this value for each invocation of
      * predicate. If it is not provided, undefined is used instead.
      */
-    findLastIndex(&self, predicate: fn (value: number, index: number, array: Self) -> unknown, thisArg?: unknown) -> number,
+    findLastIndex(&self, predicate: fn (value: number, index: number, array: &Self) -> unknown, thisArg?: unknown) -> number,
     /**
      * Copies the array and returns the copy with the elements in reverse order.
      */
@@ -1414,7 +1414,7 @@ export declare class Uint16Array<TArrayBuffer: ArrayBufferLike = ArrayBufferLike
      * @param thisArg An object to which the this keyword can refer in the predicate function.
      * If thisArg is omitted, undefined is used as the this value.
      */
-    every(&self, predicate: fn (value: number, index: number, array: Self) -> unknown, thisArg?: unknown) -> boolean,
+    every(&self, predicate: fn (value: number, index: number, array: &Self) -> unknown, thisArg?: unknown) -> boolean,
     /**
      * Changes all array elements from `start` to `end` index to a static `value` and returns the modified array
      * @param value value to fill array section with
@@ -1431,7 +1431,7 @@ export declare class Uint16Array<TArrayBuffer: ArrayBufferLike = ArrayBufferLike
      * @param thisArg An object to which the this keyword can refer in the predicate function.
      * If thisArg is omitted, undefined is used as the this value.
      */
-    filter(&self, predicate: fn (value: number, index: number, array: Self) -> any, thisArg?: unknown) -> Uint16Array<ArrayBuffer>,
+    filter(&self, predicate: fn (value: number, index: number, array: &Self) -> any, thisArg?: unknown) -> Uint16Array<ArrayBuffer>,
     /**
      * Returns the value of the first element in the array where predicate is true, and undefined
      * otherwise.
@@ -1441,7 +1441,7 @@ export declare class Uint16Array<TArrayBuffer: ArrayBufferLike = ArrayBufferLike
      * @param thisArg If provided, it will be used as the this value for each invocation of
      * predicate. If it is not provided, undefined is used instead.
      */
-    find(&self, predicate: fn (value: number, index: number, obj: Self) -> boolean, thisArg?: unknown) -> number | undefined,
+    find(&self, predicate: fn (value: number, index: number, obj: &Self) -> boolean, thisArg?: unknown) -> number | undefined,
     /**
      * Returns the index of the first element in the array where predicate is true, and -1
      * otherwise.
@@ -1451,7 +1451,7 @@ export declare class Uint16Array<TArrayBuffer: ArrayBufferLike = ArrayBufferLike
      * @param thisArg If provided, it will be used as the this value for each invocation of
      * predicate. If it is not provided, undefined is used instead.
      */
-    findIndex(&self, predicate: fn (value: number, index: number, obj: Self) -> boolean, thisArg?: unknown) -> number,
+    findIndex(&self, predicate: fn (value: number, index: number, obj: &Self) -> boolean, thisArg?: unknown) -> number,
     /**
      * Performs the specified action for each element in an array.
      * @param callbackfn A function that accepts up to three arguments. forEach calls the
@@ -1459,7 +1459,7 @@ export declare class Uint16Array<TArrayBuffer: ArrayBufferLike = ArrayBufferLike
      * @param thisArg An object to which the this keyword can refer in the callbackfn function.
      * If thisArg is omitted, undefined is used as the this value.
      */
-    forEach(&self, callbackfn: fn (value: number, index: number, array: Self) -> unknown, thisArg?: unknown) -> unknown,
+    forEach(&self, callbackfn: fn (value: number, index: number, array: &Self) -> unknown, thisArg?: unknown) -> unknown,
     /**
      * Returns the index of the first occurrence of a value in an array.
      * @param searchElement The value to locate in the array.
@@ -1492,7 +1492,7 @@ export declare class Uint16Array<TArrayBuffer: ArrayBufferLike = ArrayBufferLike
      * @param thisArg An object to which the this keyword can refer in the callbackfn function.
      * If thisArg is omitted, undefined is used as the this value.
      */
-    map(&self, callbackfn: fn (value: number, index: number, array: Self) -> number, thisArg?: unknown) -> Uint16Array<ArrayBuffer>,
+    map(&self, callbackfn: fn (value: number, index: number, array: &Self) -> number, thisArg?: unknown) -> Uint16Array<ArrayBuffer>,
     /**
      * Calls the specified callback function for all the elements in an array. The return value of
      * the callback function is the accumulated result, and is provided as an argument in the next
@@ -1503,8 +1503,8 @@ export declare class Uint16Array<TArrayBuffer: ArrayBufferLike = ArrayBufferLike
      * the accumulation. The first call to the callbackfn function provides this value as an argument
      * instead of an array value.
      */
-    reduce(&self, callbackfn: fn (previousValue: number, currentValue: number, currentIndex: number, array: Self) -> number) -> number,
-    reduce(&self, callbackfn: fn (previousValue: number, currentValue: number, currentIndex: number, array: Self) -> number, initialValue: number) -> number,
+    reduce(&self, callbackfn: fn (previousValue: number, currentValue: number, currentIndex: number, array: &Self) -> number) -> number,
+    reduce(&self, callbackfn: fn (previousValue: number, currentValue: number, currentIndex: number, array: &Self) -> number, initialValue: number) -> number,
     /**
      * Calls the specified callback function for all the elements in an array. The return value of
      * the callback function is the accumulated result, and is provided as an argument in the next
@@ -1515,7 +1515,7 @@ export declare class Uint16Array<TArrayBuffer: ArrayBufferLike = ArrayBufferLike
      * the accumulation. The first call to the callbackfn function provides this value as an argument
      * instead of an array value.
      */
-    reduce<U>(&self, callbackfn: fn (previousValue: U, currentValue: number, currentIndex: number, array: Self) -> U, initialValue: U) -> U,
+    reduce<U>(&self, callbackfn: fn (previousValue: U, currentValue: number, currentIndex: number, array: &Self) -> U, initialValue: U) -> U,
     /**
      * Calls the specified callback function for all the elements in an array, in descending order.
      * The return value of the callback function is the accumulated result, and is provided as an
@@ -1526,8 +1526,8 @@ export declare class Uint16Array<TArrayBuffer: ArrayBufferLike = ArrayBufferLike
      * the accumulation. The first call to the callbackfn function provides this value as an
      * argument instead of an array value.
      */
-    reduceRight(&self, callbackfn: fn (previousValue: number, currentValue: number, currentIndex: number, array: Self) -> number) -> number,
-    reduceRight(&self, callbackfn: fn (previousValue: number, currentValue: number, currentIndex: number, array: Self) -> number, initialValue: number) -> number,
+    reduceRight(&self, callbackfn: fn (previousValue: number, currentValue: number, currentIndex: number, array: &Self) -> number) -> number,
+    reduceRight(&self, callbackfn: fn (previousValue: number, currentValue: number, currentIndex: number, array: &Self) -> number, initialValue: number) -> number,
     /**
      * Calls the specified callback function for all the elements in an array, in descending order.
      * The return value of the callback function is the accumulated result, and is provided as an
@@ -1538,7 +1538,7 @@ export declare class Uint16Array<TArrayBuffer: ArrayBufferLike = ArrayBufferLike
      * the accumulation. The first call to the callbackfn function provides this value as an argument
      * instead of an array value.
      */
-    reduceRight<U>(&self, callbackfn: fn (previousValue: U, currentValue: number, currentIndex: number, array: Self) -> U, initialValue: U) -> U,
+    reduceRight<U>(&self, callbackfn: fn (previousValue: U, currentValue: number, currentIndex: number, array: &Self) -> U, initialValue: U) -> U,
     /**
      * Reverses the elements in an Array.
      */
@@ -1563,7 +1563,7 @@ export declare class Uint16Array<TArrayBuffer: ArrayBufferLike = ArrayBufferLike
      * @param thisArg An object to which the this keyword can refer in the predicate function.
      * If thisArg is omitted, undefined is used as the this value.
      */
-    some(&self, predicate: fn (value: number, index: number, array: Self) -> unknown, thisArg?: unknown) -> boolean,
+    some(&self, predicate: fn (value: number, index: number, array: &Self) -> unknown, thisArg?: unknown) -> boolean,
     /**
      * Sorts an array.
      * @param compareFn Function used to determine the order of the elements. It is expected to return
@@ -1671,8 +1671,8 @@ export declare class Int32Array<TArrayBuffer: ArrayBufferLike = ArrayBufferLike>
      * @param thisArg If provided, it will be used as the this value for each invocation of
      * predicate. If it is not provided, undefined is used instead.
      */
-    findLast<S: number>(&self, predicate: fn (value: number, index: number, array: Self) -> boolean, thisArg?: unknown) -> S | undefined,
-    findLast(&self, predicate: fn (value: number, index: number, array: Self) -> unknown, thisArg?: unknown) -> number | undefined,
+    findLast<S: number>(&self, predicate: fn (value: number, index: number, array: &Self) -> boolean, thisArg?: unknown) -> S | undefined,
+    findLast(&self, predicate: fn (value: number, index: number, array: &Self) -> unknown, thisArg?: unknown) -> number | undefined,
     /**
      * Returns the index of the last element in the array where predicate is true, and -1
      * otherwise.
@@ -1682,7 +1682,7 @@ export declare class Int32Array<TArrayBuffer: ArrayBufferLike = ArrayBufferLike>
      * @param thisArg If provided, it will be used as the this value for each invocation of
      * predicate. If it is not provided, undefined is used instead.
      */
-    findLastIndex(&self, predicate: fn (value: number, index: number, array: Self) -> unknown, thisArg?: unknown) -> number,
+    findLastIndex(&self, predicate: fn (value: number, index: number, array: &Self) -> unknown, thisArg?: unknown) -> number,
     /**
      * Copies the array and returns the copy with the elements in reverse order.
      */
@@ -1740,7 +1740,7 @@ export declare class Int32Array<TArrayBuffer: ArrayBufferLike = ArrayBufferLike>
      * @param thisArg An object to which the this keyword can refer in the predicate function.
      * If thisArg is omitted, undefined is used as the this value.
      */
-    every(&self, predicate: fn (value: number, index: number, array: Self) -> unknown, thisArg?: unknown) -> boolean,
+    every(&self, predicate: fn (value: number, index: number, array: &Self) -> unknown, thisArg?: unknown) -> boolean,
     /**
      * Changes all array elements from `start` to `end` index to a static `value` and returns the modified array
      * @param value value to fill array section with
@@ -1757,7 +1757,7 @@ export declare class Int32Array<TArrayBuffer: ArrayBufferLike = ArrayBufferLike>
      * @param thisArg An object to which the this keyword can refer in the predicate function.
      * If thisArg is omitted, undefined is used as the this value.
      */
-    filter(&self, predicate: fn (value: number, index: number, array: Self) -> any, thisArg?: unknown) -> Int32Array<ArrayBuffer>,
+    filter(&self, predicate: fn (value: number, index: number, array: &Self) -> any, thisArg?: unknown) -> Int32Array<ArrayBuffer>,
     /**
      * Returns the value of the first element in the array where predicate is true, and undefined
      * otherwise.
@@ -1767,7 +1767,7 @@ export declare class Int32Array<TArrayBuffer: ArrayBufferLike = ArrayBufferLike>
      * @param thisArg If provided, it will be used as the this value for each invocation of
      * predicate. If it is not provided, undefined is used instead.
      */
-    find(&self, predicate: fn (value: number, index: number, obj: Self) -> boolean, thisArg?: unknown) -> number | undefined,
+    find(&self, predicate: fn (value: number, index: number, obj: &Self) -> boolean, thisArg?: unknown) -> number | undefined,
     /**
      * Returns the index of the first element in the array where predicate is true, and -1
      * otherwise.
@@ -1777,7 +1777,7 @@ export declare class Int32Array<TArrayBuffer: ArrayBufferLike = ArrayBufferLike>
      * @param thisArg If provided, it will be used as the this value for each invocation of
      * predicate. If it is not provided, undefined is used instead.
      */
-    findIndex(&self, predicate: fn (value: number, index: number, obj: Self) -> boolean, thisArg?: unknown) -> number,
+    findIndex(&self, predicate: fn (value: number, index: number, obj: &Self) -> boolean, thisArg?: unknown) -> number,
     /**
      * Performs the specified action for each element in an array.
      * @param callbackfn A function that accepts up to three arguments. forEach calls the
@@ -1785,7 +1785,7 @@ export declare class Int32Array<TArrayBuffer: ArrayBufferLike = ArrayBufferLike>
      * @param thisArg An object to which the this keyword can refer in the callbackfn function.
      * If thisArg is omitted, undefined is used as the this value.
      */
-    forEach(&self, callbackfn: fn (value: number, index: number, array: Self) -> unknown, thisArg?: unknown) -> unknown,
+    forEach(&self, callbackfn: fn (value: number, index: number, array: &Self) -> unknown, thisArg?: unknown) -> unknown,
     /**
      * Returns the index of the first occurrence of a value in an array.
      * @param searchElement The value to locate in the array.
@@ -1818,7 +1818,7 @@ export declare class Int32Array<TArrayBuffer: ArrayBufferLike = ArrayBufferLike>
      * @param thisArg An object to which the this keyword can refer in the callbackfn function.
      * If thisArg is omitted, undefined is used as the this value.
      */
-    map(&self, callbackfn: fn (value: number, index: number, array: Self) -> number, thisArg?: unknown) -> Int32Array<ArrayBuffer>,
+    map(&self, callbackfn: fn (value: number, index: number, array: &Self) -> number, thisArg?: unknown) -> Int32Array<ArrayBuffer>,
     /**
      * Calls the specified callback function for all the elements in an array. The return value of
      * the callback function is the accumulated result, and is provided as an argument in the next
@@ -1829,8 +1829,8 @@ export declare class Int32Array<TArrayBuffer: ArrayBufferLike = ArrayBufferLike>
      * the accumulation. The first call to the callbackfn function provides this value as an argument
      * instead of an array value.
      */
-    reduce(&self, callbackfn: fn (previousValue: number, currentValue: number, currentIndex: number, array: Self) -> number) -> number,
-    reduce(&self, callbackfn: fn (previousValue: number, currentValue: number, currentIndex: number, array: Self) -> number, initialValue: number) -> number,
+    reduce(&self, callbackfn: fn (previousValue: number, currentValue: number, currentIndex: number, array: &Self) -> number) -> number,
+    reduce(&self, callbackfn: fn (previousValue: number, currentValue: number, currentIndex: number, array: &Self) -> number, initialValue: number) -> number,
     /**
      * Calls the specified callback function for all the elements in an array. The return value of
      * the callback function is the accumulated result, and is provided as an argument in the next
@@ -1841,7 +1841,7 @@ export declare class Int32Array<TArrayBuffer: ArrayBufferLike = ArrayBufferLike>
      * the accumulation. The first call to the callbackfn function provides this value as an argument
      * instead of an array value.
      */
-    reduce<U>(&self, callbackfn: fn (previousValue: U, currentValue: number, currentIndex: number, array: Self) -> U, initialValue: U) -> U,
+    reduce<U>(&self, callbackfn: fn (previousValue: U, currentValue: number, currentIndex: number, array: &Self) -> U, initialValue: U) -> U,
     /**
      * Calls the specified callback function for all the elements in an array, in descending order.
      * The return value of the callback function is the accumulated result, and is provided as an
@@ -1852,8 +1852,8 @@ export declare class Int32Array<TArrayBuffer: ArrayBufferLike = ArrayBufferLike>
      * the accumulation. The first call to the callbackfn function provides this value as an
      * argument instead of an array value.
      */
-    reduceRight(&self, callbackfn: fn (previousValue: number, currentValue: number, currentIndex: number, array: Self) -> number) -> number,
-    reduceRight(&self, callbackfn: fn (previousValue: number, currentValue: number, currentIndex: number, array: Self) -> number, initialValue: number) -> number,
+    reduceRight(&self, callbackfn: fn (previousValue: number, currentValue: number, currentIndex: number, array: &Self) -> number) -> number,
+    reduceRight(&self, callbackfn: fn (previousValue: number, currentValue: number, currentIndex: number, array: &Self) -> number, initialValue: number) -> number,
     /**
      * Calls the specified callback function for all the elements in an array, in descending order.
      * The return value of the callback function is the accumulated result, and is provided as an
@@ -1864,7 +1864,7 @@ export declare class Int32Array<TArrayBuffer: ArrayBufferLike = ArrayBufferLike>
      * the accumulation. The first call to the callbackfn function provides this value as an argument
      * instead of an array value.
      */
-    reduceRight<U>(&self, callbackfn: fn (previousValue: U, currentValue: number, currentIndex: number, array: Self) -> U, initialValue: U) -> U,
+    reduceRight<U>(&self, callbackfn: fn (previousValue: U, currentValue: number, currentIndex: number, array: &Self) -> U, initialValue: U) -> U,
     /**
      * Reverses the elements in an Array.
      */
@@ -1889,7 +1889,7 @@ export declare class Int32Array<TArrayBuffer: ArrayBufferLike = ArrayBufferLike>
      * @param thisArg An object to which the this keyword can refer in the predicate function.
      * If thisArg is omitted, undefined is used as the this value.
      */
-    some(&self, predicate: fn (value: number, index: number, array: Self) -> unknown, thisArg?: unknown) -> boolean,
+    some(&self, predicate: fn (value: number, index: number, array: &Self) -> unknown, thisArg?: unknown) -> boolean,
     /**
      * Sorts an array.
      * @param compareFn Function used to determine the order of the elements. It is expected to return
@@ -1997,8 +1997,8 @@ export declare class Uint32Array<TArrayBuffer: ArrayBufferLike = ArrayBufferLike
      * @param thisArg If provided, it will be used as the this value for each invocation of
      * predicate. If it is not provided, undefined is used instead.
      */
-    findLast<S: number>(&self, predicate: fn (value: number, index: number, array: Self) -> boolean, thisArg?: unknown) -> S | undefined,
-    findLast(&self, predicate: fn (value: number, index: number, array: Self) -> unknown, thisArg?: unknown) -> number | undefined,
+    findLast<S: number>(&self, predicate: fn (value: number, index: number, array: &Self) -> boolean, thisArg?: unknown) -> S | undefined,
+    findLast(&self, predicate: fn (value: number, index: number, array: &Self) -> unknown, thisArg?: unknown) -> number | undefined,
     /**
      * Returns the index of the last element in the array where predicate is true, and -1
      * otherwise.
@@ -2008,7 +2008,7 @@ export declare class Uint32Array<TArrayBuffer: ArrayBufferLike = ArrayBufferLike
      * @param thisArg If provided, it will be used as the this value for each invocation of
      * predicate. If it is not provided, undefined is used instead.
      */
-    findLastIndex(&self, predicate: fn (value: number, index: number, array: Self) -> unknown, thisArg?: unknown) -> number,
+    findLastIndex(&self, predicate: fn (value: number, index: number, array: &Self) -> unknown, thisArg?: unknown) -> number,
     /**
      * Copies the array and returns the copy with the elements in reverse order.
      */
@@ -2066,7 +2066,7 @@ export declare class Uint32Array<TArrayBuffer: ArrayBufferLike = ArrayBufferLike
      * @param thisArg An object to which the this keyword can refer in the predicate function.
      * If thisArg is omitted, undefined is used as the this value.
      */
-    every(&self, predicate: fn (value: number, index: number, array: Self) -> unknown, thisArg?: unknown) -> boolean,
+    every(&self, predicate: fn (value: number, index: number, array: &Self) -> unknown, thisArg?: unknown) -> boolean,
     /**
      * Changes all array elements from `start` to `end` index to a static `value` and returns the modified array
      * @param value value to fill array section with
@@ -2083,7 +2083,7 @@ export declare class Uint32Array<TArrayBuffer: ArrayBufferLike = ArrayBufferLike
      * @param thisArg An object to which the this keyword can refer in the predicate function.
      * If thisArg is omitted, undefined is used as the this value.
      */
-    filter(&self, predicate: fn (value: number, index: number, array: Self) -> any, thisArg?: unknown) -> Uint32Array<ArrayBuffer>,
+    filter(&self, predicate: fn (value: number, index: number, array: &Self) -> any, thisArg?: unknown) -> Uint32Array<ArrayBuffer>,
     /**
      * Returns the value of the first element in the array where predicate is true, and undefined
      * otherwise.
@@ -2093,7 +2093,7 @@ export declare class Uint32Array<TArrayBuffer: ArrayBufferLike = ArrayBufferLike
      * @param thisArg If provided, it will be used as the this value for each invocation of
      * predicate. If it is not provided, undefined is used instead.
      */
-    find(&self, predicate: fn (value: number, index: number, obj: Self) -> boolean, thisArg?: unknown) -> number | undefined,
+    find(&self, predicate: fn (value: number, index: number, obj: &Self) -> boolean, thisArg?: unknown) -> number | undefined,
     /**
      * Returns the index of the first element in the array where predicate is true, and -1
      * otherwise.
@@ -2103,7 +2103,7 @@ export declare class Uint32Array<TArrayBuffer: ArrayBufferLike = ArrayBufferLike
      * @param thisArg If provided, it will be used as the this value for each invocation of
      * predicate. If it is not provided, undefined is used instead.
      */
-    findIndex(&self, predicate: fn (value: number, index: number, obj: Self) -> boolean, thisArg?: unknown) -> number,
+    findIndex(&self, predicate: fn (value: number, index: number, obj: &Self) -> boolean, thisArg?: unknown) -> number,
     /**
      * Performs the specified action for each element in an array.
      * @param callbackfn A function that accepts up to three arguments. forEach calls the
@@ -2111,7 +2111,7 @@ export declare class Uint32Array<TArrayBuffer: ArrayBufferLike = ArrayBufferLike
      * @param thisArg An object to which the this keyword can refer in the callbackfn function.
      * If thisArg is omitted, undefined is used as the this value.
      */
-    forEach(&self, callbackfn: fn (value: number, index: number, array: Self) -> unknown, thisArg?: unknown) -> unknown,
+    forEach(&self, callbackfn: fn (value: number, index: number, array: &Self) -> unknown, thisArg?: unknown) -> unknown,
     /**
      * Returns the index of the first occurrence of a value in an array.
      * @param searchElement The value to locate in the array.
@@ -2144,7 +2144,7 @@ export declare class Uint32Array<TArrayBuffer: ArrayBufferLike = ArrayBufferLike
      * @param thisArg An object to which the this keyword can refer in the callbackfn function.
      * If thisArg is omitted, undefined is used as the this value.
      */
-    map(&self, callbackfn: fn (value: number, index: number, array: Self) -> number, thisArg?: unknown) -> Uint32Array<ArrayBuffer>,
+    map(&self, callbackfn: fn (value: number, index: number, array: &Self) -> number, thisArg?: unknown) -> Uint32Array<ArrayBuffer>,
     /**
      * Calls the specified callback function for all the elements in an array. The return value of
      * the callback function is the accumulated result, and is provided as an argument in the next
@@ -2155,8 +2155,8 @@ export declare class Uint32Array<TArrayBuffer: ArrayBufferLike = ArrayBufferLike
      * the accumulation. The first call to the callbackfn function provides this value as an argument
      * instead of an array value.
      */
-    reduce(&self, callbackfn: fn (previousValue: number, currentValue: number, currentIndex: number, array: Self) -> number) -> number,
-    reduce(&self, callbackfn: fn (previousValue: number, currentValue: number, currentIndex: number, array: Self) -> number, initialValue: number) -> number,
+    reduce(&self, callbackfn: fn (previousValue: number, currentValue: number, currentIndex: number, array: &Self) -> number) -> number,
+    reduce(&self, callbackfn: fn (previousValue: number, currentValue: number, currentIndex: number, array: &Self) -> number, initialValue: number) -> number,
     /**
      * Calls the specified callback function for all the elements in an array. The return value of
      * the callback function is the accumulated result, and is provided as an argument in the next
@@ -2167,7 +2167,7 @@ export declare class Uint32Array<TArrayBuffer: ArrayBufferLike = ArrayBufferLike
      * the accumulation. The first call to the callbackfn function provides this value as an argument
      * instead of an array value.
      */
-    reduce<U>(&self, callbackfn: fn (previousValue: U, currentValue: number, currentIndex: number, array: Self) -> U, initialValue: U) -> U,
+    reduce<U>(&self, callbackfn: fn (previousValue: U, currentValue: number, currentIndex: number, array: &Self) -> U, initialValue: U) -> U,
     /**
      * Calls the specified callback function for all the elements in an array, in descending order.
      * The return value of the callback function is the accumulated result, and is provided as an
@@ -2178,8 +2178,8 @@ export declare class Uint32Array<TArrayBuffer: ArrayBufferLike = ArrayBufferLike
      * the accumulation. The first call to the callbackfn function provides this value as an
      * argument instead of an array value.
      */
-    reduceRight(&self, callbackfn: fn (previousValue: number, currentValue: number, currentIndex: number, array: Self) -> number) -> number,
-    reduceRight(&self, callbackfn: fn (previousValue: number, currentValue: number, currentIndex: number, array: Self) -> number, initialValue: number) -> number,
+    reduceRight(&self, callbackfn: fn (previousValue: number, currentValue: number, currentIndex: number, array: &Self) -> number) -> number,
+    reduceRight(&self, callbackfn: fn (previousValue: number, currentValue: number, currentIndex: number, array: &Self) -> number, initialValue: number) -> number,
     /**
      * Calls the specified callback function for all the elements in an array, in descending order.
      * The return value of the callback function is the accumulated result, and is provided as an
@@ -2190,7 +2190,7 @@ export declare class Uint32Array<TArrayBuffer: ArrayBufferLike = ArrayBufferLike
      * the accumulation. The first call to the callbackfn function provides this value as an argument
      * instead of an array value.
      */
-    reduceRight<U>(&self, callbackfn: fn (previousValue: U, currentValue: number, currentIndex: number, array: Self) -> U, initialValue: U) -> U,
+    reduceRight<U>(&self, callbackfn: fn (previousValue: U, currentValue: number, currentIndex: number, array: &Self) -> U, initialValue: U) -> U,
     /**
      * Reverses the elements in an Array.
      */
@@ -2215,7 +2215,7 @@ export declare class Uint32Array<TArrayBuffer: ArrayBufferLike = ArrayBufferLike
      * @param thisArg An object to which the this keyword can refer in the predicate function.
      * If thisArg is omitted, undefined is used as the this value.
      */
-    some(&self, predicate: fn (value: number, index: number, array: Self) -> unknown, thisArg?: unknown) -> boolean,
+    some(&self, predicate: fn (value: number, index: number, array: &Self) -> unknown, thisArg?: unknown) -> boolean,
     /**
      * Sorts an array.
      * @param compareFn Function used to determine the order of the elements. It is expected to return
@@ -2323,8 +2323,8 @@ export declare class Float32Array<TArrayBuffer: ArrayBufferLike = ArrayBufferLik
      * @param thisArg If provided, it will be used as the this value for each invocation of
      * predicate. If it is not provided, undefined is used instead.
      */
-    findLast<S: number>(&self, predicate: fn (value: number, index: number, array: Self) -> boolean, thisArg?: unknown) -> S | undefined,
-    findLast(&self, predicate: fn (value: number, index: number, array: Self) -> unknown, thisArg?: unknown) -> number | undefined,
+    findLast<S: number>(&self, predicate: fn (value: number, index: number, array: &Self) -> boolean, thisArg?: unknown) -> S | undefined,
+    findLast(&self, predicate: fn (value: number, index: number, array: &Self) -> unknown, thisArg?: unknown) -> number | undefined,
     /**
      * Returns the index of the last element in the array where predicate is true, and -1
      * otherwise.
@@ -2334,7 +2334,7 @@ export declare class Float32Array<TArrayBuffer: ArrayBufferLike = ArrayBufferLik
      * @param thisArg If provided, it will be used as the this value for each invocation of
      * predicate. If it is not provided, undefined is used instead.
      */
-    findLastIndex(&self, predicate: fn (value: number, index: number, array: Self) -> unknown, thisArg?: unknown) -> number,
+    findLastIndex(&self, predicate: fn (value: number, index: number, array: &Self) -> unknown, thisArg?: unknown) -> number,
     /**
      * Copies the array and returns the copy with the elements in reverse order.
      */
@@ -2392,7 +2392,7 @@ export declare class Float32Array<TArrayBuffer: ArrayBufferLike = ArrayBufferLik
      * @param thisArg An object to which the this keyword can refer in the predicate function.
      * If thisArg is omitted, undefined is used as the this value.
      */
-    every(&self, predicate: fn (value: number, index: number, array: Self) -> unknown, thisArg?: unknown) -> boolean,
+    every(&self, predicate: fn (value: number, index: number, array: &Self) -> unknown, thisArg?: unknown) -> boolean,
     /**
      * Changes all array elements from `start` to `end` index to a static `value` and returns the modified array
      * @param value value to fill array section with
@@ -2409,7 +2409,7 @@ export declare class Float32Array<TArrayBuffer: ArrayBufferLike = ArrayBufferLik
      * @param thisArg An object to which the this keyword can refer in the predicate function.
      * If thisArg is omitted, undefined is used as the this value.
      */
-    filter(&self, predicate: fn (value: number, index: number, array: Self) -> any, thisArg?: unknown) -> Float32Array<ArrayBuffer>,
+    filter(&self, predicate: fn (value: number, index: number, array: &Self) -> any, thisArg?: unknown) -> Float32Array<ArrayBuffer>,
     /**
      * Returns the value of the first element in the array where predicate is true, and undefined
      * otherwise.
@@ -2419,7 +2419,7 @@ export declare class Float32Array<TArrayBuffer: ArrayBufferLike = ArrayBufferLik
      * @param thisArg If provided, it will be used as the this value for each invocation of
      * predicate. If it is not provided, undefined is used instead.
      */
-    find(&self, predicate: fn (value: number, index: number, obj: Self) -> boolean, thisArg?: unknown) -> number | undefined,
+    find(&self, predicate: fn (value: number, index: number, obj: &Self) -> boolean, thisArg?: unknown) -> number | undefined,
     /**
      * Returns the index of the first element in the array where predicate is true, and -1
      * otherwise.
@@ -2429,7 +2429,7 @@ export declare class Float32Array<TArrayBuffer: ArrayBufferLike = ArrayBufferLik
      * @param thisArg If provided, it will be used as the this value for each invocation of
      * predicate. If it is not provided, undefined is used instead.
      */
-    findIndex(&self, predicate: fn (value: number, index: number, obj: Self) -> boolean, thisArg?: unknown) -> number,
+    findIndex(&self, predicate: fn (value: number, index: number, obj: &Self) -> boolean, thisArg?: unknown) -> number,
     /**
      * Performs the specified action for each element in an array.
      * @param callbackfn A function that accepts up to three arguments. forEach calls the
@@ -2437,7 +2437,7 @@ export declare class Float32Array<TArrayBuffer: ArrayBufferLike = ArrayBufferLik
      * @param thisArg An object to which the this keyword can refer in the callbackfn function.
      * If thisArg is omitted, undefined is used as the this value.
      */
-    forEach(&self, callbackfn: fn (value: number, index: number, array: Self) -> unknown, thisArg?: unknown) -> unknown,
+    forEach(&self, callbackfn: fn (value: number, index: number, array: &Self) -> unknown, thisArg?: unknown) -> unknown,
     /**
      * Returns the index of the first occurrence of a value in an array.
      * @param searchElement The value to locate in the array.
@@ -2470,7 +2470,7 @@ export declare class Float32Array<TArrayBuffer: ArrayBufferLike = ArrayBufferLik
      * @param thisArg An object to which the this keyword can refer in the callbackfn function.
      * If thisArg is omitted, undefined is used as the this value.
      */
-    map(&self, callbackfn: fn (value: number, index: number, array: Self) -> number, thisArg?: unknown) -> Float32Array<ArrayBuffer>,
+    map(&self, callbackfn: fn (value: number, index: number, array: &Self) -> number, thisArg?: unknown) -> Float32Array<ArrayBuffer>,
     /**
      * Calls the specified callback function for all the elements in an array. The return value of
      * the callback function is the accumulated result, and is provided as an argument in the next
@@ -2481,8 +2481,8 @@ export declare class Float32Array<TArrayBuffer: ArrayBufferLike = ArrayBufferLik
      * the accumulation. The first call to the callbackfn function provides this value as an argument
      * instead of an array value.
      */
-    reduce(&self, callbackfn: fn (previousValue: number, currentValue: number, currentIndex: number, array: Self) -> number) -> number,
-    reduce(&self, callbackfn: fn (previousValue: number, currentValue: number, currentIndex: number, array: Self) -> number, initialValue: number) -> number,
+    reduce(&self, callbackfn: fn (previousValue: number, currentValue: number, currentIndex: number, array: &Self) -> number) -> number,
+    reduce(&self, callbackfn: fn (previousValue: number, currentValue: number, currentIndex: number, array: &Self) -> number, initialValue: number) -> number,
     /**
      * Calls the specified callback function for all the elements in an array. The return value of
      * the callback function is the accumulated result, and is provided as an argument in the next
@@ -2493,7 +2493,7 @@ export declare class Float32Array<TArrayBuffer: ArrayBufferLike = ArrayBufferLik
      * the accumulation. The first call to the callbackfn function provides this value as an argument
      * instead of an array value.
      */
-    reduce<U>(&self, callbackfn: fn (previousValue: U, currentValue: number, currentIndex: number, array: Self) -> U, initialValue: U) -> U,
+    reduce<U>(&self, callbackfn: fn (previousValue: U, currentValue: number, currentIndex: number, array: &Self) -> U, initialValue: U) -> U,
     /**
      * Calls the specified callback function for all the elements in an array, in descending order.
      * The return value of the callback function is the accumulated result, and is provided as an
@@ -2504,8 +2504,8 @@ export declare class Float32Array<TArrayBuffer: ArrayBufferLike = ArrayBufferLik
      * the accumulation. The first call to the callbackfn function provides this value as an
      * argument instead of an array value.
      */
-    reduceRight(&self, callbackfn: fn (previousValue: number, currentValue: number, currentIndex: number, array: Self) -> number) -> number,
-    reduceRight(&self, callbackfn: fn (previousValue: number, currentValue: number, currentIndex: number, array: Self) -> number, initialValue: number) -> number,
+    reduceRight(&self, callbackfn: fn (previousValue: number, currentValue: number, currentIndex: number, array: &Self) -> number) -> number,
+    reduceRight(&self, callbackfn: fn (previousValue: number, currentValue: number, currentIndex: number, array: &Self) -> number, initialValue: number) -> number,
     /**
      * Calls the specified callback function for all the elements in an array, in descending order.
      * The return value of the callback function is the accumulated result, and is provided as an
@@ -2516,7 +2516,7 @@ export declare class Float32Array<TArrayBuffer: ArrayBufferLike = ArrayBufferLik
      * the accumulation. The first call to the callbackfn function provides this value as an argument
      * instead of an array value.
      */
-    reduceRight<U>(&self, callbackfn: fn (previousValue: U, currentValue: number, currentIndex: number, array: Self) -> U, initialValue: U) -> U,
+    reduceRight<U>(&self, callbackfn: fn (previousValue: U, currentValue: number, currentIndex: number, array: &Self) -> U, initialValue: U) -> U,
     /**
      * Reverses the elements in an Array.
      */
@@ -2541,7 +2541,7 @@ export declare class Float32Array<TArrayBuffer: ArrayBufferLike = ArrayBufferLik
      * @param thisArg An object to which the this keyword can refer in the predicate function.
      * If thisArg is omitted, undefined is used as the this value.
      */
-    some(&self, predicate: fn (value: number, index: number, array: Self) -> unknown, thisArg?: unknown) -> boolean,
+    some(&self, predicate: fn (value: number, index: number, array: &Self) -> unknown, thisArg?: unknown) -> boolean,
     /**
      * Sorts an array.
      * @param compareFn Function used to determine the order of the elements. It is expected to return
@@ -2649,8 +2649,8 @@ export declare class Float64Array<TArrayBuffer: ArrayBufferLike = ArrayBufferLik
      * @param thisArg If provided, it will be used as the this value for each invocation of
      * predicate. If it is not provided, undefined is used instead.
      */
-    findLast<S: number>(&self, predicate: fn (value: number, index: number, array: Self) -> boolean, thisArg?: unknown) -> S | undefined,
-    findLast(&self, predicate: fn (value: number, index: number, array: Self) -> unknown, thisArg?: unknown) -> number | undefined,
+    findLast<S: number>(&self, predicate: fn (value: number, index: number, array: &Self) -> boolean, thisArg?: unknown) -> S | undefined,
+    findLast(&self, predicate: fn (value: number, index: number, array: &Self) -> unknown, thisArg?: unknown) -> number | undefined,
     /**
      * Returns the index of the last element in the array where predicate is true, and -1
      * otherwise.
@@ -2660,7 +2660,7 @@ export declare class Float64Array<TArrayBuffer: ArrayBufferLike = ArrayBufferLik
      * @param thisArg If provided, it will be used as the this value for each invocation of
      * predicate. If it is not provided, undefined is used instead.
      */
-    findLastIndex(&self, predicate: fn (value: number, index: number, array: Self) -> unknown, thisArg?: unknown) -> number,
+    findLastIndex(&self, predicate: fn (value: number, index: number, array: &Self) -> unknown, thisArg?: unknown) -> number,
     /**
      * Copies the array and returns the copy with the elements in reverse order.
      */
@@ -2718,7 +2718,7 @@ export declare class Float64Array<TArrayBuffer: ArrayBufferLike = ArrayBufferLik
      * @param thisArg An object to which the this keyword can refer in the predicate function.
      * If thisArg is omitted, undefined is used as the this value.
      */
-    every(&self, predicate: fn (value: number, index: number, array: Self) -> unknown, thisArg?: unknown) -> boolean,
+    every(&self, predicate: fn (value: number, index: number, array: &Self) -> unknown, thisArg?: unknown) -> boolean,
     /**
      * Changes all array elements from `start` to `end` index to a static `value` and returns the modified array
      * @param value value to fill array section with
@@ -2735,7 +2735,7 @@ export declare class Float64Array<TArrayBuffer: ArrayBufferLike = ArrayBufferLik
      * @param thisArg An object to which the this keyword can refer in the predicate function.
      * If thisArg is omitted, undefined is used as the this value.
      */
-    filter(&self, predicate: fn (value: number, index: number, array: Self) -> any, thisArg?: unknown) -> Float64Array<ArrayBuffer>,
+    filter(&self, predicate: fn (value: number, index: number, array: &Self) -> any, thisArg?: unknown) -> Float64Array<ArrayBuffer>,
     /**
      * Returns the value of the first element in the array where predicate is true, and undefined
      * otherwise.
@@ -2745,7 +2745,7 @@ export declare class Float64Array<TArrayBuffer: ArrayBufferLike = ArrayBufferLik
      * @param thisArg If provided, it will be used as the this value for each invocation of
      * predicate. If it is not provided, undefined is used instead.
      */
-    find(&self, predicate: fn (value: number, index: number, obj: Self) -> boolean, thisArg?: unknown) -> number | undefined,
+    find(&self, predicate: fn (value: number, index: number, obj: &Self) -> boolean, thisArg?: unknown) -> number | undefined,
     /**
      * Returns the index of the first element in the array where predicate is true, and -1
      * otherwise.
@@ -2755,7 +2755,7 @@ export declare class Float64Array<TArrayBuffer: ArrayBufferLike = ArrayBufferLik
      * @param thisArg If provided, it will be used as the this value for each invocation of
      * predicate. If it is not provided, undefined is used instead.
      */
-    findIndex(&self, predicate: fn (value: number, index: number, obj: Self) -> boolean, thisArg?: unknown) -> number,
+    findIndex(&self, predicate: fn (value: number, index: number, obj: &Self) -> boolean, thisArg?: unknown) -> number,
     /**
      * Performs the specified action for each element in an array.
      * @param callbackfn A function that accepts up to three arguments. forEach calls the
@@ -2763,7 +2763,7 @@ export declare class Float64Array<TArrayBuffer: ArrayBufferLike = ArrayBufferLik
      * @param thisArg An object to which the this keyword can refer in the callbackfn function.
      * If thisArg is omitted, undefined is used as the this value.
      */
-    forEach(&self, callbackfn: fn (value: number, index: number, array: Self) -> unknown, thisArg?: unknown) -> unknown,
+    forEach(&self, callbackfn: fn (value: number, index: number, array: &Self) -> unknown, thisArg?: unknown) -> unknown,
     /**
      * Returns the index of the first occurrence of a value in an array.
      * @param searchElement The value to locate in the array.
@@ -2796,7 +2796,7 @@ export declare class Float64Array<TArrayBuffer: ArrayBufferLike = ArrayBufferLik
      * @param thisArg An object to which the this keyword can refer in the callbackfn function.
      * If thisArg is omitted, undefined is used as the this value.
      */
-    map(&self, callbackfn: fn (value: number, index: number, array: Self) -> number, thisArg?: unknown) -> Float64Array<ArrayBuffer>,
+    map(&self, callbackfn: fn (value: number, index: number, array: &Self) -> number, thisArg?: unknown) -> Float64Array<ArrayBuffer>,
     /**
      * Calls the specified callback function for all the elements in an array. The return value of
      * the callback function is the accumulated result, and is provided as an argument in the next
@@ -2807,8 +2807,8 @@ export declare class Float64Array<TArrayBuffer: ArrayBufferLike = ArrayBufferLik
      * the accumulation. The first call to the callbackfn function provides this value as an argument
      * instead of an array value.
      */
-    reduce(&self, callbackfn: fn (previousValue: number, currentValue: number, currentIndex: number, array: Self) -> number) -> number,
-    reduce(&self, callbackfn: fn (previousValue: number, currentValue: number, currentIndex: number, array: Self) -> number, initialValue: number) -> number,
+    reduce(&self, callbackfn: fn (previousValue: number, currentValue: number, currentIndex: number, array: &Self) -> number) -> number,
+    reduce(&self, callbackfn: fn (previousValue: number, currentValue: number, currentIndex: number, array: &Self) -> number, initialValue: number) -> number,
     /**
      * Calls the specified callback function for all the elements in an array. The return value of
      * the callback function is the accumulated result, and is provided as an argument in the next
@@ -2819,7 +2819,7 @@ export declare class Float64Array<TArrayBuffer: ArrayBufferLike = ArrayBufferLik
      * the accumulation. The first call to the callbackfn function provides this value as an argument
      * instead of an array value.
      */
-    reduce<U>(&self, callbackfn: fn (previousValue: U, currentValue: number, currentIndex: number, array: Self) -> U, initialValue: U) -> U,
+    reduce<U>(&self, callbackfn: fn (previousValue: U, currentValue: number, currentIndex: number, array: &Self) -> U, initialValue: U) -> U,
     /**
      * Calls the specified callback function for all the elements in an array, in descending order.
      * The return value of the callback function is the accumulated result, and is provided as an
@@ -2830,8 +2830,8 @@ export declare class Float64Array<TArrayBuffer: ArrayBufferLike = ArrayBufferLik
      * the accumulation. The first call to the callbackfn function provides this value as an
      * argument instead of an array value.
      */
-    reduceRight(&self, callbackfn: fn (previousValue: number, currentValue: number, currentIndex: number, array: Self) -> number) -> number,
-    reduceRight(&self, callbackfn: fn (previousValue: number, currentValue: number, currentIndex: number, array: Self) -> number, initialValue: number) -> number,
+    reduceRight(&self, callbackfn: fn (previousValue: number, currentValue: number, currentIndex: number, array: &Self) -> number) -> number,
+    reduceRight(&self, callbackfn: fn (previousValue: number, currentValue: number, currentIndex: number, array: &Self) -> number, initialValue: number) -> number,
     /**
      * Calls the specified callback function for all the elements in an array, in descending order.
      * The return value of the callback function is the accumulated result, and is provided as an
@@ -2842,7 +2842,7 @@ export declare class Float64Array<TArrayBuffer: ArrayBufferLike = ArrayBufferLik
      * the accumulation. The first call to the callbackfn function provides this value as an argument
      * instead of an array value.
      */
-    reduceRight<U>(&self, callbackfn: fn (previousValue: U, currentValue: number, currentIndex: number, array: Self) -> U, initialValue: U) -> U,
+    reduceRight<U>(&self, callbackfn: fn (previousValue: U, currentValue: number, currentIndex: number, array: &Self) -> U, initialValue: U) -> U,
     /**
      * Reverses the elements in an Array.
      */
@@ -2867,7 +2867,7 @@ export declare class Float64Array<TArrayBuffer: ArrayBufferLike = ArrayBufferLik
      * @param thisArg An object to which the this keyword can refer in the predicate function.
      * If thisArg is omitted, undefined is used as the this value.
      */
-    some(&self, predicate: fn (value: number, index: number, array: Self) -> unknown, thisArg?: unknown) -> boolean,
+    some(&self, predicate: fn (value: number, index: number, array: &Self) -> unknown, thisArg?: unknown) -> boolean,
     /**
      * Sorts an array.
      * @param compareFn Function used to determine the order of the elements. It is expected to return
@@ -3451,7 +3451,7 @@ export declare class BigInt64Array<TArrayBuffer: ArrayBufferLike = ArrayBufferLi
      * @param thisArg An object to which the this keyword can refer in the predicate function.
      * If thisArg is omitted, undefined is used as the this value.
      */
-    every(&self, predicate: fn (value: bigint, index: number, array: BigInt64Array<TArrayBuffer>) -> boolean, thisArg?: unknown) -> boolean,
+    every(&self, predicate: fn (value: bigint, index: number, array: &Self) -> boolean, thisArg?: unknown) -> boolean,
     /**
      * Changes all array elements from `start` to `end` index to a static `value` and returns the modified array
      * @param value value to fill array section with
@@ -3468,7 +3468,7 @@ export declare class BigInt64Array<TArrayBuffer: ArrayBufferLike = ArrayBufferLi
      * @param thisArg An object to which the this keyword can refer in the predicate function.
      * If thisArg is omitted, undefined is used as the this value.
      */
-    filter(&self, predicate: fn (value: bigint, index: number, array: BigInt64Array<TArrayBuffer>) -> any, thisArg?: unknown) -> BigInt64Array<ArrayBuffer>,
+    filter(&self, predicate: fn (value: bigint, index: number, array: &Self) -> any, thisArg?: unknown) -> BigInt64Array<ArrayBuffer>,
     /**
      * Returns the value of the first element in the array where predicate is true, and undefined
      * otherwise.
@@ -3478,7 +3478,7 @@ export declare class BigInt64Array<TArrayBuffer: ArrayBufferLike = ArrayBufferLi
      * @param thisArg If provided, it will be used as the this value for each invocation of
      * predicate. If it is not provided, undefined is used instead.
      */
-    find(&self, predicate: fn (value: bigint, index: number, array: BigInt64Array<TArrayBuffer>) -> boolean, thisArg?: unknown) -> bigint | undefined,
+    find(&self, predicate: fn (value: bigint, index: number, array: &Self) -> boolean, thisArg?: unknown) -> bigint | undefined,
     /**
      * Returns the index of the first element in the array where predicate is true, and -1
      * otherwise.
@@ -3488,7 +3488,7 @@ export declare class BigInt64Array<TArrayBuffer: ArrayBufferLike = ArrayBufferLi
      * @param thisArg If provided, it will be used as the this value for each invocation of
      * predicate. If it is not provided, undefined is used instead.
      */
-    findIndex(&self, predicate: fn (value: bigint, index: number, array: BigInt64Array<TArrayBuffer>) -> boolean, thisArg?: unknown) -> number,
+    findIndex(&self, predicate: fn (value: bigint, index: number, array: &Self) -> boolean, thisArg?: unknown) -> number,
     /**
      * Performs the specified action for each element in an array.
      * @param callbackfn A function that accepts up to three arguments. forEach calls the
@@ -3496,7 +3496,7 @@ export declare class BigInt64Array<TArrayBuffer: ArrayBufferLike = ArrayBufferLi
      * @param thisArg An object to which the this keyword can refer in the callbackfn function.
      * If thisArg is omitted, undefined is used as the this value.
      */
-    forEach(&self, callbackfn: fn (value: bigint, index: number, array: BigInt64Array<TArrayBuffer>) -> unknown, thisArg?: unknown) -> unknown,
+    forEach(&self, callbackfn: fn (value: bigint, index: number, array: &Self) -> unknown, thisArg?: unknown) -> unknown,
     /**
      * Determines whether an array includes a certain element, returning true or false as appropriate.
      * @param searchElement The element to search for.
@@ -3535,7 +3535,7 @@ export declare class BigInt64Array<TArrayBuffer: ArrayBufferLike = ArrayBufferLi
      * @param thisArg An object to which the this keyword can refer in the callbackfn function.
      * If thisArg is omitted, undefined is used as the this value.
      */
-    map(&self, callbackfn: fn (value: bigint, index: number, array: BigInt64Array<TArrayBuffer>) -> bigint, thisArg?: unknown) -> BigInt64Array<ArrayBuffer>,
+    map(&self, callbackfn: fn (value: bigint, index: number, array: &Self) -> bigint, thisArg?: unknown) -> BigInt64Array<ArrayBuffer>,
     /**
      * Calls the specified callback function for all the elements in an array. The return value of
      * the callback function is the accumulated result, and is provided as an argument in the next
@@ -3546,7 +3546,7 @@ export declare class BigInt64Array<TArrayBuffer: ArrayBufferLike = ArrayBufferLi
      * the accumulation. The first call to the callbackfn function provides this value as an argument
      * instead of an array value.
      */
-    reduce(&self, callbackfn: fn (previousValue: bigint, currentValue: bigint, currentIndex: number, array: BigInt64Array<TArrayBuffer>) -> bigint) -> bigint,
+    reduce(&self, callbackfn: fn (previousValue: bigint, currentValue: bigint, currentIndex: number, array: &Self) -> bigint) -> bigint,
     /**
      * Calls the specified callback function for all the elements in an array. The return value of
      * the callback function is the accumulated result, and is provided as an argument in the next
@@ -3557,7 +3557,7 @@ export declare class BigInt64Array<TArrayBuffer: ArrayBufferLike = ArrayBufferLi
      * the accumulation. The first call to the callbackfn function provides this value as an argument
      * instead of an array value.
      */
-    reduce<U>(&self, callbackfn: fn (previousValue: U, currentValue: bigint, currentIndex: number, array: BigInt64Array<TArrayBuffer>) -> U, initialValue: U) -> U,
+    reduce<U>(&self, callbackfn: fn (previousValue: U, currentValue: bigint, currentIndex: number, array: &Self) -> U, initialValue: U) -> U,
     /**
      * Calls the specified callback function for all the elements in an array, in descending order.
      * The return value of the callback function is the accumulated result, and is provided as an
@@ -3568,7 +3568,7 @@ export declare class BigInt64Array<TArrayBuffer: ArrayBufferLike = ArrayBufferLi
      * the accumulation. The first call to the callbackfn function provides this value as an
      * argument instead of an array value.
      */
-    reduceRight(&self, callbackfn: fn (previousValue: bigint, currentValue: bigint, currentIndex: number, array: BigInt64Array<TArrayBuffer>) -> bigint) -> bigint,
+    reduceRight(&self, callbackfn: fn (previousValue: bigint, currentValue: bigint, currentIndex: number, array: &Self) -> bigint) -> bigint,
     /**
      * Calls the specified callback function for all the elements in an array, in descending order.
      * The return value of the callback function is the accumulated result, and is provided as an
@@ -3579,7 +3579,7 @@ export declare class BigInt64Array<TArrayBuffer: ArrayBufferLike = ArrayBufferLi
      * the accumulation. The first call to the callbackfn function provides this value as an argument
      * instead of an array value.
      */
-    reduceRight<U>(&self, callbackfn: fn (previousValue: U, currentValue: bigint, currentIndex: number, array: BigInt64Array<TArrayBuffer>) -> U, initialValue: U) -> U,
+    reduceRight<U>(&self, callbackfn: fn (previousValue: U, currentValue: bigint, currentIndex: number, array: &Self) -> U, initialValue: U) -> U,
     /** Reverses the elements in the array. */
     reverse(&mut self) -> Self,
     /**
@@ -3602,7 +3602,7 @@ export declare class BigInt64Array<TArrayBuffer: ArrayBufferLike = ArrayBufferLi
      * @param thisArg An object to which the this keyword can refer in the predicate function.
      * If thisArg is omitted, undefined is used as the this value.
      */
-    some(&self, predicate: fn (value: bigint, index: number, array: BigInt64Array<TArrayBuffer>) -> boolean, thisArg?: unknown) -> boolean,
+    some(&self, predicate: fn (value: bigint, index: number, array: &Self) -> boolean, thisArg?: unknown) -> boolean,
     /**
      * Sorts the array.
      * @param compareFn The function used to determine the order of the elements. If omitted, the elements are sorted in ascending order.
@@ -3639,8 +3639,8 @@ export declare class BigInt64Array<TArrayBuffer: ArrayBufferLike = ArrayBufferLi
      * @param thisArg If provided, it will be used as the this value for each invocation of
      * predicate. If it is not provided, undefined is used instead.
      */
-    findLast<S: bigint>(&self, predicate: fn (value: bigint, index: number, array: Self) -> boolean, thisArg?: unknown) -> S | undefined,
-    findLast(&self, predicate: fn (value: bigint, index: number, array: Self) -> unknown, thisArg?: unknown) -> bigint | undefined,
+    findLast<S: bigint>(&self, predicate: fn (value: bigint, index: number, array: &Self) -> boolean, thisArg?: unknown) -> S | undefined,
+    findLast(&self, predicate: fn (value: bigint, index: number, array: &Self) -> unknown, thisArg?: unknown) -> bigint | undefined,
     /**
      * Returns the index of the last element in the array where predicate is true, and -1
      * otherwise.
@@ -3650,7 +3650,7 @@ export declare class BigInt64Array<TArrayBuffer: ArrayBufferLike = ArrayBufferLi
      * @param thisArg If provided, it will be used as the this value for each invocation of
      * predicate. If it is not provided, undefined is used instead.
      */
-    findLastIndex(&self, predicate: fn (value: bigint, index: number, array: Self) -> unknown, thisArg?: unknown) -> number,
+    findLastIndex(&self, predicate: fn (value: bigint, index: number, array: &Self) -> unknown, thisArg?: unknown) -> number,
     /**
      * Copies the array and returns the copy with the elements in reverse order.
      */
@@ -3747,7 +3747,7 @@ export declare class BigUint64Array<TArrayBuffer: ArrayBufferLike = ArrayBufferL
      * @param thisArg An object to which the this keyword can refer in the predicate function.
      * If thisArg is omitted, undefined is used as the this value.
      */
-    every(&self, predicate: fn (value: bigint, index: number, array: BigUint64Array<TArrayBuffer>) -> boolean, thisArg?: unknown) -> boolean,
+    every(&self, predicate: fn (value: bigint, index: number, array: &Self) -> boolean, thisArg?: unknown) -> boolean,
     /**
      * Changes all array elements from `start` to `end` index to a static `value` and returns the modified array
      * @param value value to fill array section with
@@ -3764,7 +3764,7 @@ export declare class BigUint64Array<TArrayBuffer: ArrayBufferLike = ArrayBufferL
      * @param thisArg An object to which the this keyword can refer in the predicate function.
      * If thisArg is omitted, undefined is used as the this value.
      */
-    filter(&self, predicate: fn (value: bigint, index: number, array: BigUint64Array<TArrayBuffer>) -> any, thisArg?: unknown) -> BigUint64Array<ArrayBuffer>,
+    filter(&self, predicate: fn (value: bigint, index: number, array: &Self) -> any, thisArg?: unknown) -> BigUint64Array<ArrayBuffer>,
     /**
      * Returns the value of the first element in the array where predicate is true, and undefined
      * otherwise.
@@ -3774,7 +3774,7 @@ export declare class BigUint64Array<TArrayBuffer: ArrayBufferLike = ArrayBufferL
      * @param thisArg If provided, it will be used as the this value for each invocation of
      * predicate. If it is not provided, undefined is used instead.
      */
-    find(&self, predicate: fn (value: bigint, index: number, array: BigUint64Array<TArrayBuffer>) -> boolean, thisArg?: unknown) -> bigint | undefined,
+    find(&self, predicate: fn (value: bigint, index: number, array: &Self) -> boolean, thisArg?: unknown) -> bigint | undefined,
     /**
      * Returns the index of the first element in the array where predicate is true, and -1
      * otherwise.
@@ -3784,7 +3784,7 @@ export declare class BigUint64Array<TArrayBuffer: ArrayBufferLike = ArrayBufferL
      * @param thisArg If provided, it will be used as the this value for each invocation of
      * predicate. If it is not provided, undefined is used instead.
      */
-    findIndex(&self, predicate: fn (value: bigint, index: number, array: BigUint64Array<TArrayBuffer>) -> boolean, thisArg?: unknown) -> number,
+    findIndex(&self, predicate: fn (value: bigint, index: number, array: &Self) -> boolean, thisArg?: unknown) -> number,
     /**
      * Performs the specified action for each element in an array.
      * @param callbackfn A function that accepts up to three arguments. forEach calls the
@@ -3792,7 +3792,7 @@ export declare class BigUint64Array<TArrayBuffer: ArrayBufferLike = ArrayBufferL
      * @param thisArg An object to which the this keyword can refer in the callbackfn function.
      * If thisArg is omitted, undefined is used as the this value.
      */
-    forEach(&self, callbackfn: fn (value: bigint, index: number, array: BigUint64Array<TArrayBuffer>) -> unknown, thisArg?: unknown) -> unknown,
+    forEach(&self, callbackfn: fn (value: bigint, index: number, array: &Self) -> unknown, thisArg?: unknown) -> unknown,
     /**
      * Determines whether an array includes a certain element, returning true or false as appropriate.
      * @param searchElement The element to search for.
@@ -3831,7 +3831,7 @@ export declare class BigUint64Array<TArrayBuffer: ArrayBufferLike = ArrayBufferL
      * @param thisArg An object to which the this keyword can refer in the callbackfn function.
      * If thisArg is omitted, undefined is used as the this value.
      */
-    map(&self, callbackfn: fn (value: bigint, index: number, array: BigUint64Array<TArrayBuffer>) -> bigint, thisArg?: unknown) -> BigUint64Array<ArrayBuffer>,
+    map(&self, callbackfn: fn (value: bigint, index: number, array: &Self) -> bigint, thisArg?: unknown) -> BigUint64Array<ArrayBuffer>,
     /**
      * Calls the specified callback function for all the elements in an array. The return value of
      * the callback function is the accumulated result, and is provided as an argument in the next
@@ -3842,7 +3842,7 @@ export declare class BigUint64Array<TArrayBuffer: ArrayBufferLike = ArrayBufferL
      * the accumulation. The first call to the callbackfn function provides this value as an argument
      * instead of an array value.
      */
-    reduce(&self, callbackfn: fn (previousValue: bigint, currentValue: bigint, currentIndex: number, array: BigUint64Array<TArrayBuffer>) -> bigint) -> bigint,
+    reduce(&self, callbackfn: fn (previousValue: bigint, currentValue: bigint, currentIndex: number, array: &Self) -> bigint) -> bigint,
     /**
      * Calls the specified callback function for all the elements in an array. The return value of
      * the callback function is the accumulated result, and is provided as an argument in the next
@@ -3853,7 +3853,7 @@ export declare class BigUint64Array<TArrayBuffer: ArrayBufferLike = ArrayBufferL
      * the accumulation. The first call to the callbackfn function provides this value as an argument
      * instead of an array value.
      */
-    reduce<U>(&self, callbackfn: fn (previousValue: U, currentValue: bigint, currentIndex: number, array: BigUint64Array<TArrayBuffer>) -> U, initialValue: U) -> U,
+    reduce<U>(&self, callbackfn: fn (previousValue: U, currentValue: bigint, currentIndex: number, array: &Self) -> U, initialValue: U) -> U,
     /**
      * Calls the specified callback function for all the elements in an array, in descending order.
      * The return value of the callback function is the accumulated result, and is provided as an
@@ -3864,7 +3864,7 @@ export declare class BigUint64Array<TArrayBuffer: ArrayBufferLike = ArrayBufferL
      * the accumulation. The first call to the callbackfn function provides this value as an
      * argument instead of an array value.
      */
-    reduceRight(&self, callbackfn: fn (previousValue: bigint, currentValue: bigint, currentIndex: number, array: BigUint64Array<TArrayBuffer>) -> bigint) -> bigint,
+    reduceRight(&self, callbackfn: fn (previousValue: bigint, currentValue: bigint, currentIndex: number, array: &Self) -> bigint) -> bigint,
     /**
      * Calls the specified callback function for all the elements in an array, in descending order.
      * The return value of the callback function is the accumulated result, and is provided as an
@@ -3875,7 +3875,7 @@ export declare class BigUint64Array<TArrayBuffer: ArrayBufferLike = ArrayBufferL
      * the accumulation. The first call to the callbackfn function provides this value as an argument
      * instead of an array value.
      */
-    reduceRight<U>(&self, callbackfn: fn (previousValue: U, currentValue: bigint, currentIndex: number, array: BigUint64Array<TArrayBuffer>) -> U, initialValue: U) -> U,
+    reduceRight<U>(&self, callbackfn: fn (previousValue: U, currentValue: bigint, currentIndex: number, array: &Self) -> U, initialValue: U) -> U,
     /** Reverses the elements in the array. */
     reverse(&mut self) -> Self,
     /**
@@ -3898,7 +3898,7 @@ export declare class BigUint64Array<TArrayBuffer: ArrayBufferLike = ArrayBufferL
      * @param thisArg An object to which the this keyword can refer in the predicate function.
      * If thisArg is omitted, undefined is used as the this value.
      */
-    some(&self, predicate: fn (value: bigint, index: number, array: BigUint64Array<TArrayBuffer>) -> boolean, thisArg?: unknown) -> boolean,
+    some(&self, predicate: fn (value: bigint, index: number, array: &Self) -> boolean, thisArg?: unknown) -> boolean,
     /**
      * Sorts the array.
      * @param compareFn The function used to determine the order of the elements. If omitted, the elements are sorted in ascending order.
@@ -3935,8 +3935,8 @@ export declare class BigUint64Array<TArrayBuffer: ArrayBufferLike = ArrayBufferL
      * @param thisArg If provided, it will be used as the this value for each invocation of
      * predicate. If it is not provided, undefined is used instead.
      */
-    findLast<S: bigint>(&self, predicate: fn (value: bigint, index: number, array: Self) -> boolean, thisArg?: unknown) -> S | undefined,
-    findLast(&self, predicate: fn (value: bigint, index: number, array: Self) -> unknown, thisArg?: unknown) -> bigint | undefined,
+    findLast<S: bigint>(&self, predicate: fn (value: bigint, index: number, array: &Self) -> boolean, thisArg?: unknown) -> S | undefined,
+    findLast(&self, predicate: fn (value: bigint, index: number, array: &Self) -> unknown, thisArg?: unknown) -> bigint | undefined,
     /**
      * Returns the index of the last element in the array where predicate is true, and -1
      * otherwise.
@@ -3946,7 +3946,7 @@ export declare class BigUint64Array<TArrayBuffer: ArrayBufferLike = ArrayBufferL
      * @param thisArg If provided, it will be used as the this value for each invocation of
      * predicate. If it is not provided, undefined is used instead.
      */
-    findLastIndex(&self, predicate: fn (value: bigint, index: number, array: Self) -> unknown, thisArg?: unknown) -> number,
+    findLastIndex(&self, predicate: fn (value: bigint, index: number, array: &Self) -> unknown, thisArg?: unknown) -> number,
     /**
      * Copies the array and returns the copy with the elements in reverse order.
      */
@@ -4071,7 +4071,7 @@ export declare class Float16Array<TArrayBuffer: ArrayBufferLike = ArrayBufferLik
      * @param thisArg An object to which the this keyword can refer in the predicate function.
      * If thisArg is omitted, undefined is used as the this value.
      */
-    every(&self, predicate: fn (value: number, index: number, array: Self) -> unknown, thisArg?: unknown) -> boolean,
+    every(&self, predicate: fn (value: number, index: number, array: &Self) -> unknown, thisArg?: unknown) -> boolean,
     /**
      * Changes all array elements from `start` to `end` index to a static `value` and returns the modified array
      * @param value value to fill array section with
@@ -4088,7 +4088,7 @@ export declare class Float16Array<TArrayBuffer: ArrayBufferLike = ArrayBufferLik
      * @param thisArg An object to which the this keyword can refer in the predicate function.
      * If thisArg is omitted, undefined is used as the this value.
      */
-    filter(&self, predicate: fn (value: number, index: number, array: Self) -> any, thisArg?: unknown) -> Float16Array<ArrayBuffer>,
+    filter(&self, predicate: fn (value: number, index: number, array: &Self) -> any, thisArg?: unknown) -> Float16Array<ArrayBuffer>,
     /**
      * Returns the value of the first element in the array where predicate is true, and undefined
      * otherwise.
@@ -4098,7 +4098,7 @@ export declare class Float16Array<TArrayBuffer: ArrayBufferLike = ArrayBufferLik
      * @param thisArg If provided, it will be used as the this value for each invocation of
      * predicate. If it is not provided, undefined is used instead.
      */
-    find(&self, predicate: fn (value: number, index: number, obj: Self) -> boolean, thisArg?: unknown) -> number | undefined,
+    find(&self, predicate: fn (value: number, index: number, obj: &Self) -> boolean, thisArg?: unknown) -> number | undefined,
     /**
      * Returns the index of the first element in the array where predicate is true, and -1
      * otherwise.
@@ -4108,7 +4108,7 @@ export declare class Float16Array<TArrayBuffer: ArrayBufferLike = ArrayBufferLik
      * @param thisArg If provided, it will be used as the this value for each invocation of
      * predicate. If it is not provided, undefined is used instead.
      */
-    findIndex(&self, predicate: fn (value: number, index: number, obj: Self) -> boolean, thisArg?: unknown) -> number,
+    findIndex(&self, predicate: fn (value: number, index: number, obj: &Self) -> boolean, thisArg?: unknown) -> number,
     /**
      * Returns the value of the last element in the array where predicate is true, and undefined
      * otherwise.
@@ -4118,8 +4118,8 @@ export declare class Float16Array<TArrayBuffer: ArrayBufferLike = ArrayBufferLik
      * @param thisArg If provided, it will be used as the this value for each invocation of
      * predicate. If it is not provided, undefined is used instead.
      */
-    findLast<S: number>(&self, predicate: fn (value: number, index: number, array: Self) -> boolean, thisArg?: unknown) -> S | undefined,
-    findLast(&self, predicate: fn (value: number, index: number, array: Self) -> unknown, thisArg?: unknown) -> number | undefined,
+    findLast<S: number>(&self, predicate: fn (value: number, index: number, array: &Self) -> boolean, thisArg?: unknown) -> S | undefined,
+    findLast(&self, predicate: fn (value: number, index: number, array: &Self) -> unknown, thisArg?: unknown) -> number | undefined,
     /**
      * Returns the index of the last element in the array where predicate is true, and -1
      * otherwise.
@@ -4129,7 +4129,7 @@ export declare class Float16Array<TArrayBuffer: ArrayBufferLike = ArrayBufferLik
      * @param thisArg If provided, it will be used as the this value for each invocation of
      * predicate. If it is not provided, undefined is used instead.
      */
-    findLastIndex(&self, predicate: fn (value: number, index: number, array: Self) -> unknown, thisArg?: unknown) -> number,
+    findLastIndex(&self, predicate: fn (value: number, index: number, array: &Self) -> unknown, thisArg?: unknown) -> number,
     /**
      * Performs the specified action for each element in an array.
      * @param callbackfn A function that accepts up to three arguments. forEach calls the
@@ -4137,7 +4137,7 @@ export declare class Float16Array<TArrayBuffer: ArrayBufferLike = ArrayBufferLik
      * @param thisArg An object to which the this keyword can refer in the callbackfn function.
      * If thisArg is omitted, undefined is used as the this value.
      */
-    forEach(&self, callbackfn: fn (value: number, index: number, array: Self) -> unknown, thisArg?: unknown) -> unknown,
+    forEach(&self, callbackfn: fn (value: number, index: number, array: &Self) -> unknown, thisArg?: unknown) -> unknown,
     /**
      * Determines whether an array includes a certain element, returning true or false as appropriate.
      * @param searchElement The element to search for.
@@ -4176,7 +4176,7 @@ export declare class Float16Array<TArrayBuffer: ArrayBufferLike = ArrayBufferLik
      * @param thisArg An object to which the this keyword can refer in the callbackfn function.
      * If thisArg is omitted, undefined is used as the this value.
      */
-    map(&self, callbackfn: fn (value: number, index: number, array: Self) -> number, thisArg?: unknown) -> Float16Array<ArrayBuffer>,
+    map(&self, callbackfn: fn (value: number, index: number, array: &Self) -> number, thisArg?: unknown) -> Float16Array<ArrayBuffer>,
     /**
      * Calls the specified callback function for all the elements in an array. The return value of
      * the callback function is the accumulated result, and is provided as an argument in the next
@@ -4187,8 +4187,8 @@ export declare class Float16Array<TArrayBuffer: ArrayBufferLike = ArrayBufferLik
      * the accumulation. The first call to the callbackfn function provides this value as an argument
      * instead of an array value.
      */
-    reduce(&self, callbackfn: fn (previousValue: number, currentValue: number, currentIndex: number, array: Self) -> number) -> number,
-    reduce(&self, callbackfn: fn (previousValue: number, currentValue: number, currentIndex: number, array: Self) -> number, initialValue: number) -> number,
+    reduce(&self, callbackfn: fn (previousValue: number, currentValue: number, currentIndex: number, array: &Self) -> number) -> number,
+    reduce(&self, callbackfn: fn (previousValue: number, currentValue: number, currentIndex: number, array: &Self) -> number, initialValue: number) -> number,
     /**
      * Calls the specified callback function for all the elements in an array. The return value of
      * the callback function is the accumulated result, and is provided as an argument in the next
@@ -4199,7 +4199,7 @@ export declare class Float16Array<TArrayBuffer: ArrayBufferLike = ArrayBufferLik
      * the accumulation. The first call to the callbackfn function provides this value as an argument
      * instead of an array value.
      */
-    reduce<U>(&self, callbackfn: fn (previousValue: U, currentValue: number, currentIndex: number, array: Self) -> U, initialValue: U) -> U,
+    reduce<U>(&self, callbackfn: fn (previousValue: U, currentValue: number, currentIndex: number, array: &Self) -> U, initialValue: U) -> U,
     /**
      * Calls the specified callback function for all the elements in an array, in descending order.
      * The return value of the callback function is the accumulated result, and is provided as an
@@ -4210,8 +4210,8 @@ export declare class Float16Array<TArrayBuffer: ArrayBufferLike = ArrayBufferLik
      * the accumulation. The first call to the callbackfn function provides this value as an
      * argument instead of an array value.
      */
-    reduceRight(&self, callbackfn: fn (previousValue: number, currentValue: number, currentIndex: number, array: Self) -> number) -> number,
-    reduceRight(&self, callbackfn: fn (previousValue: number, currentValue: number, currentIndex: number, array: Self) -> number, initialValue: number) -> number,
+    reduceRight(&self, callbackfn: fn (previousValue: number, currentValue: number, currentIndex: number, array: &Self) -> number) -> number,
+    reduceRight(&self, callbackfn: fn (previousValue: number, currentValue: number, currentIndex: number, array: &Self) -> number, initialValue: number) -> number,
     /**
      * Calls the specified callback function for all the elements in an array, in descending order.
      * The return value of the callback function is the accumulated result, and is provided as an
@@ -4222,7 +4222,7 @@ export declare class Float16Array<TArrayBuffer: ArrayBufferLike = ArrayBufferLik
      * the accumulation. The first call to the callbackfn function provides this value as an argument
      * instead of an array value.
      */
-    reduceRight<U>(&self, callbackfn: fn (previousValue: U, currentValue: number, currentIndex: number, array: Self) -> U, initialValue: U) -> U,
+    reduceRight<U>(&self, callbackfn: fn (previousValue: U, currentValue: number, currentIndex: number, array: &Self) -> U, initialValue: U) -> U,
     /**
      * Reverses the elements in an Array.
      */
@@ -4247,7 +4247,7 @@ export declare class Float16Array<TArrayBuffer: ArrayBufferLike = ArrayBufferLik
      * @param thisArg An object to which the this keyword can refer in the predicate function.
      * If thisArg is omitted, undefined is used as the this value.
      */
-    some(&self, predicate: fn (value: number, index: number, array: Self) -> unknown, thisArg?: unknown) -> boolean,
+    some(&self, predicate: fn (value: number, index: number, array: &Self) -> unknown, thisArg?: unknown) -> boolean,
     /**
      * Sorts an array.
      * @param compareFn Function used to determine the order of the elements. It is expected to return

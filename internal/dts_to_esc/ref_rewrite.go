@@ -488,6 +488,11 @@ func (r *refRewriter) rewrite(t ast.TypeAnn) ast.TypeAnn {
 	case *ast.MutableTypeAnn:
 		tt.Target = r.rewrite(tt.Target)
 		return tt
+	case *ast.RefTypeAnn:
+		// borrowSelfInCallbacks writes `&Self`, and a pass that runs after it walks the
+		// borrow's pointee.
+		tt.Inner = r.rewrite(tt.Inner)
+		return tt
 	case *ast.RestSpreadTypeAnn:
 		tt.Value = r.rewrite(tt.Value)
 		return tt

@@ -82,7 +82,7 @@ export declare class Headers {
     has(&self, name: string) -> boolean,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/Headers/set) */
     set(&mut self, name: string, value: string) -> unknown,
-    forEach(&self, callbackfn: fn (value: string, key: string, parent: Headers) -> unknown, thisArg?: unknown) -> unknown,
+    forEach(&self, callbackfn: fn (value: string, key: string, parent: &Self) -> unknown, thisArg?: unknown) -> unknown,
     [Symbol.iterator](&self) -> HeadersIterator<[string, string]>,
     /** Returns an iterator allowing to go through all key/value pairs contained in this object. */
     entries(&self) -> HeadersIterator<[string, string]>,

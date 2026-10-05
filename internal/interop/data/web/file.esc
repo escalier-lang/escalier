@@ -80,7 +80,7 @@ export declare class FormData {
     set(&mut self, name: string, value: string | Blob) -> unknown,
     set(&mut self, name: string, value: string) -> unknown,
     set(&mut self, name: string, blobValue: Blob, filename?: string) -> unknown,
-    forEach(&self, callbackfn: fn (value: FormDataEntryValue, key: string, parent: FormData) -> unknown, thisArg?: unknown) -> unknown,
+    forEach(&self, callbackfn: fn (value: FormDataEntryValue, key: string, parent: &Self) -> unknown, thisArg?: unknown) -> unknown,
     [Symbol.iterator](&self) -> FormDataIterator<[string, FormDataEntryValue]>,
     /** Returns an array of key, value pairs for every entry in the list. */
     entries(&self) -> FormDataIterator<[string, FormDataEntryValue]>,
