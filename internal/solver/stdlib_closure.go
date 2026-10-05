@@ -63,10 +63,14 @@ func BuildPackageClosure(dir string, roots []string) (PackageGroups, error) {
 	return groups, nil
 }
 
-// layerPackageGroups returns the groups of a run that loads every package base holds
-// before any package over holds. A package both hold keeps its group in base. Every
-// other package in over loads with the members of its over group that base does not
-// hold, since each of those is already published by the time the group loads.
+// layerPackageGroups combines two sets of package groups for a run that loads every
+// package in base before any package in over. A group is the set of packages that load
+// together.
+//
+// A package that appears in both base and over keeps its group from base. A package
+// that appears only in over keeps its group from over, minus any package base already
+// holds. Those packages have already loaded by the time over's group loads, so the
+// group does not load them again.
 func layerPackageGroups(base, over PackageGroups) PackageGroups {
 	layered := make(PackageGroups, len(base)+len(over))
 	for uri, group := range base {
