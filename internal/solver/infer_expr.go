@@ -2951,7 +2951,8 @@ func (c *checker) valueProp(lvl int, blame ast.Node, provNode ast.Node, name str
 	}
 	// A primitive receiver reads its methods off its wrapper class the same way, so
 	// `(1.5).toFixed(2)` resolves through `Number`. A field such as `s.length` declines
-	// here and takes the structural requirement below, which constrain boxes.
+	// here and takes the structural requirement below, which constrain checks against the
+	// wrapper class.
 	if res, ok := c.primitiveMember(lvl, blame, name, recv, recvCarrier); ok {
 		return res
 	}

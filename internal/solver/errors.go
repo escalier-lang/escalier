@@ -132,13 +132,13 @@ type TupleLengthMismatchError struct {
 // inferMember); for member access it never fires, but it keeps blame off the zero
 // span.
 //
-// Boxed is the primitive, literal, or `unique symbol` the read was made on when its members
-// were read off a wrapper class, and nil otherwise. Sub is then the wrapper's body, which no
-// source node produced, so Span() blames Boxed ahead of it.
+// Primitive is the primitive, literal, or `unique symbol` the read was made on when its
+// members were read from its wrapper class, and nil otherwise. Sub is then the wrapper's
+// body, which no source node produced, so Span() blames Primitive ahead of it.
 type MissingPropertyError struct {
 	Sub, Super *soltype.ObjectType
 	Name       string
-	Boxed      soltype.Type
+	Primitive  soltype.Type
 	prov       NodeResolver // M2.5: type→node index (§3.5)
 	site       ast.Node     // M2.5: constraint node fallback when the property var has no entry
 }
@@ -609,8 +609,8 @@ func (e *MissingPropertyError) Related() []ast.Span { return relatedOf(e.prov, e
 
 // receivers returns the types that stand for the receiver, most specific first.
 func (e *MissingPropertyError) receivers() []soltype.Type {
-	if e.Boxed != nil {
-		return []soltype.Type{e.Boxed, e.Sub}
+	if e.Primitive != nil {
+		return []soltype.Type{e.Primitive, e.Sub}
 	}
 	return []soltype.Type{e.Sub}
 }

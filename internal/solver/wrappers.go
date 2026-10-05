@@ -8,11 +8,12 @@ import (
 // wrappers.go settles the class a primitive reads its members through.
 //
 // A primitive is not an object, so `(1.5).toFixed(2)` has no member to read off
-// `number` itself. JavaScript boxes the receiver into its wrapper object for the
-// read, and TypeScript types the read against the wrapper's interface. The solver
-// does the same with the class the standard library declares for each primitive.
-// A literal type boxes to the wrapper of its primitive, so `1.5` reads through
-// `Number` the way `number` does, and a `unique symbol` reads through `Symbol`.
+// `number` itself. At runtime JavaScript reads the method from the primitive's
+// wrapper object, such as `Number.prototype`, and TypeScript types the read against the
+// wrapper's interface. The solver does the same with the class the standard library
+// declares for each primitive. A literal type reads through the wrapper class of its
+// primitive, so `1.5` reads through `Number` the way `number` does, and a
+// `unique symbol` reads through `Symbol`.
 
 // primitiveWrapper names the class one primitive reads its members through and
 // the package that declares it.
@@ -50,9 +51,10 @@ func wrapperPackageURIs() []string {
 // through, loading every package that declares one.
 //
 // It runs once at the start of a run, beside resolvePreludeClasses and for the
-// same reason. The rule that boxes a primitive runs inside constraint solving, and
-// a package loaded from inside a speculation trial would have the bounds its
-// inference recorded truncated by a discard.
+// same reason. The rule that reads a primitive's members through its wrapper
+// class runs inside constraint solving, and a package loaded from inside a
+// speculation trial would have the bounds its inference recorded truncated by a
+// discard.
 //
 // A primitive whose wrapper the tree does not declare, or declares as something
 // other than a non-generic class, gets no entry and reads no members. That is a
@@ -111,11 +113,11 @@ func (c *checker) loadStdlibPackage(uri string) *Namespace {
 // answers for that instance. ok is false for any other receiver and for a member
 // projectedMember declines, such as a field.
 func (c *checker) primitiveMember(lvl int, blame ast.Node, name string, recv, carrier soltype.Type) (pathResult, bool) {
-	box, ok := c.wrapperCarrier(carrier)
+	wrapper, ok := c.wrapperCarrier(carrier)
 	if !ok {
 		return pathResult{}, false
 	}
-	return c.projectedMember(lvl, blame, name, recv, box)
+	return c.projectedMember(lvl, blame, name, recv, wrapper)
 }
 
 // wrapperCarrier returns an instance of the standard-library class a primitive receiver

@@ -105,8 +105,9 @@ func TestPrimitiveMemberReadsThroughItsWrapper(t *testing.T) {
 	}
 }
 
-// A member the wrapper does not declare is missing from the primitive. Boxing applies only
-// to a read, so a primitive still does not satisfy an object type written as an annotation.
+// A member the wrapper class does not declare is missing from the primitive. Only a member
+// read goes through the wrapper class, so a primitive still does not satisfy an object type
+// written as an annotation.
 func TestPrimitiveMemberRejections(t *testing.T) {
 	tests := []struct {
 		name string

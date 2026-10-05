@@ -1049,7 +1049,7 @@ func (c *Context) constrain(sub, super soltype.Type, seen *seenPairs, mutCtx boo
 			}
 			return []SolverError{&CannotConstrainError{Sub: sub, Super: sup}}
 		}
-		if errs, boxed := c.constrainBoxed(sub, super, seen, mutCtx); boxed {
+		if errs, handled := c.constrainThroughWrapper(sub, super, seen, mutCtx); handled {
 			return errs
 		}
 	case *soltype.LitType:
@@ -1071,7 +1071,7 @@ func (c *Context) constrain(sub, super soltype.Type, seen *seenPairs, mutCtx boo
 		if sup, ok := super.(*soltype.TemplateLitType); ok {
 			return c.constrainStrLitToTemplateLit(sub, sup)
 		}
-		if errs, boxed := c.constrainBoxed(sub, super, seen, mutCtx); boxed {
+		if errs, handled := c.constrainThroughWrapper(sub, super, seen, mutCtx); handled {
 			return errs
 		}
 	case *soltype.SkolemType:
@@ -1618,7 +1618,7 @@ func (c *Context) constrain(sub, super soltype.Type, seen *seenPairs, mutCtx boo
 			}
 			return []SolverError{&CannotConstrainError{Sub: sub, Super: sup}}
 		}
-		if errs, boxed := c.constrainBoxed(sub, super, seen, mutCtx); boxed {
+		if errs, handled := c.constrainThroughWrapper(sub, super, seen, mutCtx); handled {
 			return errs
 		}
 	case *soltype.NullType:
@@ -2212,36 +2212,36 @@ func (c *Context) readCarrierObject(carrier soltype.Type) (*soltype.ObjectType, 
 	case *soltype.ClassType:
 		return c.projectClassBody(t)
 	}
-	if box, ok := c.wrapperInstance(carrier); ok {
-		return c.projectClassBody(box)
+	if wrapper, ok := c.wrapperInstance(carrier); ok {
+		return c.projectClassBody(wrapper)
 	}
 	return nil, false
 }
 
-// constrainBoxed reads the members a field-read or destructure requirement names off the
-// wrapper class instance of a primitive, literal, or `unique symbol` sub, so `1.5` satisfies
-// `{toFixed: β, ...}` through `Number`. boxed is false when super is not such a requirement
-// or when the run declares no wrapper for sub. The caller then reports the mismatch it would
-// have reported anyway.
+// constrainThroughWrapper checks a primitive, literal, or `unique symbol` sub against a
+// field-read or destructure requirement by reading the required members from an instance of
+// sub's wrapper class. So `1.5` satisfies `{toFixed: β, ...}` because `Number` declares
+// `toFixed`. handled is false when super is not such a requirement or when the run declares
+// no wrapper class for sub. The caller then reports the mismatch it would have reported anyway.
 //
 // The test is the shape isFieldReadReq checks, an inexact object whose every member type is
 // an inference variable. A primitive is not an object, so `number <: {...}` and
 // `number <: {toFixed: fn () -> string, ...}` written as annotations stay rejected. An
-// annotation whose member types are themselves variables has the same shape and boxes, such
-// as `{valueOf: T, ...}` at a call that instantiates `T`.
-func (c *Context) constrainBoxed(sub, super soltype.Type, seen *seenPairs, mutCtx bool) (errs []SolverError, boxed bool) {
+// annotation whose member types are themselves variables has the same shape and is read
+// through the wrapper class too, such as `{valueOf: T, ...}` at a call that instantiates `T`.
+func (c *Context) constrainThroughWrapper(sub, super soltype.Type, seen *seenPairs, mutCtx bool) (errs []SolverError, handled bool) {
 	sup, isObj := super.(*soltype.ObjectType)
 	if !isObj || len(sup.Elems) == 0 || !isFieldReadReq(sup) {
 		return nil, false
 	}
-	box, ok := c.wrapperInstance(sub)
+	wrapper, ok := c.wrapperInstance(sub)
 	if !ok {
 		return nil, false
 	}
-	errs = c.constrain(box, sup, seen, mutCtx)
+	errs = c.constrain(wrapper, sup, seen, mutCtx)
 	for _, err := range errs {
 		if missing, isMissing := err.(*MissingPropertyError); isMissing && missing.Super == sup {
-			missing.Boxed = sub
+			missing.Primitive = sub
 		}
 	}
 	return errs, true

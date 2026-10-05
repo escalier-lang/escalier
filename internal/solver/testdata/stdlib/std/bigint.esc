@@ -1,5 +1,5 @@
-// The `BigInt` the solver's own tests box a `bigint` receiver into, a hand-written
-// stand-in for the committed `internal/interop/data/std/bigint.esc`.
+// The `BigInt` class the solver's own tests read a `bigint` receiver's members from,
+// a hand-written stand-in for the committed `internal/interop/data/std/bigint.esc`.
 export declare class BigInt {
     toString(&self, radix?: number) -> string,
     valueOf(&self) -> bigint,

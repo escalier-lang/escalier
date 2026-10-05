@@ -1,6 +1,6 @@
-// The `Number` the solver's own tests box a `number` receiver into, a hand-written
-// stand-in for the committed `internal/interop/data/std/number.esc`. The members
-// below are the ones the tests read.
+// The `Number` class the solver's own tests read a `number` receiver's members from,
+// a hand-written stand-in for the committed `internal/interop/data/std/number.esc`.
+// The members below are the ones the tests read.
 export declare class Number {
     toFixed(&self, fractionDigits?: number) -> string,
     toString(&self, radix?: number) -> string,
