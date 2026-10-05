@@ -184,7 +184,8 @@ func TestImplementsConformance(t *testing.T) {
 			want: []string{"Class 'Box' does not implement interface 'Cloneable': member 'clone' signature does not match"},
 		},
 		{
-			// A writable member matches exactly, which `Self` read as the interface would not.
+			// A writable member has to match exactly, so this passes only when `Self` reads as
+			// the class.
 			name: "SelfInAWritablePropertyReadsAsTheClass",
 			src: `
 				interface Linked {

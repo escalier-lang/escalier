@@ -77,10 +77,10 @@ func (c *checker) checkImplements(p pendingImplementsCheck) {
 		}
 		for i, elem := range members {
 			err := ic.check(elem)
-			// members reads every reference to the interface as the class, which is what
-			// `Self` means but not always what a name written in its place means. Given
+			// `members` reads every reference to the interface as the class. That is what
+			// `Self` means, but not always what the interface's name written out means. Given
 			// `interface Node { next: Node }`, a class field `next: Node` fits the member as
-			// written and not as read, so a member fitting either reading is accepted.
+			// written and not as `members` reads it, so a member fitting either is accepted.
 			if err != nil && written != nil && ic.check(written[i]) == nil {
 				continue
 			}
@@ -130,8 +130,8 @@ func (c *checker) classTargetMembers(ct, recv *soltype.ClassType) []soltype.ObjT
 // also returns the receiver each interface wrote for its methods and accessors.
 //
 // Inside an interface body `Self` resolves to a reference to that interface, and nothing
-// tells it apart from the interface's name written out. asSelf reads every reference to the
-// interface or to one it extends as recv, the implementing class. written leaves them as the
+// tells it apart from the interface's name written out. `asSelf` reads every reference to the
+// interface or to one it extends as recv, the implementing class. `written` leaves them as the
 // source wrote them. The two slices pair up by index.
 func (c *checker) aliasTargetMembers(
 	target soltype.Type,
@@ -149,10 +149,10 @@ func (c *checker) aliasTargetMembers(
 	return asSelf, written, receivers
 }
 
-// collectAliasReceivers adds to out the receiver each interface reachable from t wrote for its
-// methods and accessors. It visits an interface's parents before the interface itself, so a
-// member the interface redeclares replaces the receiver its parent wrote, the same precedence
-// aliasMembers gives the members. seen holds the alias names already visited.
+// collectAliasReceivers adds to `out` the receiver each interface reachable from t wrote for
+// its methods and accessors. It visits an interface's parents before the interface itself, so
+// a member the interface redeclares replaces the receiver its parent wrote. aliasMembers gives
+// the members the same precedence. `seen` holds the alias names already visited.
 func (c *checker) collectAliasReceivers(t soltype.Type, seen set.Set[string], out map[memberBlameKey]*ast.MethodReceiver) {
 	switch t := t.(type) {
 	case *soltype.AliasType:
@@ -192,13 +192,13 @@ func (s *aliasSelfSubst) ExitType(t soltype.Type, _ soltype.Polarity) soltype.Ty
 
 // implementsComparison compares the members of one `implements` entry against the class.
 //
-//   - view is the class's member view from implementingView.
-//   - rigid holds the class's type parameters as skolems.
-//   - receivers holds what an interface entry wrote for each method and accessor receiver.
+//   - `view` is the class's member view from implementingView.
+//   - `rigid` holds the class's type parameters as skolems.
+//   - `receivers` holds the receiver an interface entry wrote for each method and accessor.
 //     It is nil for a class entry, whose members carry their receivers themselves.
-//   - declare marks a `declare` class, where a member the class does not provide is taken
+//   - `declare` marks a `declare` class, where a member the class does not provide is taken
 //     from the entry rather than missing.
-//   - node is the clause entry a diagnostic points at.
+//   - `node` is the clause entry a diagnostic points at.
 type implementsComparison struct {
 	c         *checker
 	view      *soltype.ObjectType
@@ -377,16 +377,17 @@ func (ic implementsComparison) checkAccessorsAgainstField(ie *soltype.PropertyEl
 }
 
 // receiverMatches reports whether the class member's receiver takes the instance the same
-// way as the entry member's. ifaceSelf and classSelf are the two members' receivers. An
-// interface member carries none, so its receiver is read from ic.receivers instead, and a
-// member the table has no entry for is not compared.
+// way as the entry member's. ifaceSelf and classSelf are the two members' receivers. A member
+// lowered from an interface body carries no receiver, so its receiver is read from
+// ic.receivers instead. A member that table has no entry for is not compared.
 //
 // The receivers have to agree exactly:
 //
 //   - A `&mut self` member cannot stand in for a `&self` one, since a caller holding an
 //     immutable reference could not reach it.
-//   - A `&self` member cannot stand in for a `&mut self` one either. The two are one
-//     receiver form apart, and the entry is what callers were promised.
+//   - A `&self` member cannot stand in for a `&mut self` one either. The rule asks for
+//     agreement rather than for a receiver callers can always reach, the same rule the
+//     checker package applies.
 //   - A consuming `self` and a borrowing `&self` differ in whether the caller keeps the
 //     instance, which matters in both directions.
 //   - A member with no receiver only matches another with none.
@@ -403,13 +404,14 @@ func (ic implementsComparison) receiverMatches(ifaceElem soltype.ObjTypeElem, if
 	return want == paramReceiverForm(classSelf)
 }
 
-// receiverForm is how a member takes its instance. present is false for a member with no
-// receiver. mutBorrow marks `&mut self`, and consumes marks `self` and `mut self`.
+// receiverForm is how a member takes its instance. `present` is false for a member with no
+// receiver. mutBorrow marks `&mut self`, and `consumes` marks `self` and `mut self`.
 type receiverForm struct {
 	present, mutBorrow, consumes bool
 }
 
-// paramReceiverForm returns the form of a resolved receiver, nil for none.
+// paramReceiverForm returns the form of a resolved receiver. self is nil for a member with no
+// receiver.
 func paramReceiverForm(self *soltype.FuncParam) receiverForm {
 	return receiverForm{
 		present:   self != nil,
@@ -418,7 +420,8 @@ func paramReceiverForm(self *soltype.FuncParam) receiverForm {
 	}
 }
 
-// astReceiverForm returns the form of a written receiver, nil for none.
+// astReceiverForm returns the form of a written receiver. recv is nil for a member that wrote
+// none.
 func astReceiverForm(recv *ast.MethodReceiver) receiverForm {
 	if recv == nil {
 		return receiverForm{}
