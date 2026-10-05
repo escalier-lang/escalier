@@ -992,7 +992,7 @@ func (c *checker) recordGlobalCaptureLoans(flowBorrowGraph *flowBorrowGraph) {
 		for root, written := range writes {
 			// A closure that only reads the local needs it unchanged only while the closure
 			// runs, and the frame cannot write it then.
-			if written && isOwnedMovable(c.fn.capturedTypes[root]) {
+			if written && c.isOwnedMovable(c.fn.capturedTypes[root]) {
 				roots = append(roots, root)
 			}
 		}

@@ -443,7 +443,7 @@ func (c *checker) immutableTarget(target soltype.Type) (soltype.Type, bool) {
 // observe a write through that view — Rule 2 of the mutability-transition checker with an
 // empty alias set.
 //
-// Three cases show what it returns and why:
+// Four cases show what it returns and why:
 //
 //   - A syntactically fresh literal returns true. In `val m: mut {x} = {x: 1}` the literal
 //     is newly built and nothing else refers to it, so it is uniquely owned and granting it
@@ -454,6 +454,13 @@ func (c *checker) immutableTarget(target soltype.Type) (soltype.Type, bool) {
 //     consumes `cfg` and leaves `m` the sole owner, so again no live alias remains, and a
 //     later use of `cfg` is a use-after-move. exprPlace ties the place to a VarID, so this
 //     case holds only inside a function body where the move engine records the consume.
+//
+//   - A call whose return type is owned returns true. In `val m: mut Counter = make()` the
+//     callee kept nothing, so the caller holds the only reference to the result. It is the
+//     annotated twin of the `val mut m = make()` upgrade, and callReturnsOwned decides both.
+//     A call needs no consume, since its result is a temporary no place holds. A result
+//     that already holds an owned-mutable cell, as `g() -> mut {a: 1}` does, returns false
+//     for the covariance reason the next case gives.
 //
 //   - A literal wrapping an owned-mutable leaf returns false. In `{p: inner}` with
 //     `inner: mut {x: number}`, `inner` already holds a mutable cell. This one is NOT an
@@ -471,19 +478,30 @@ func (c *checker) immutableTarget(target soltype.Type) (soltype.Type, bool) {
 // reaches such a leaf nested inside a fresh literal, so `{p: cfg}` qualifies when `cfg` is a
 // dead owned variable even though the literal is not identifier-free.
 //
-// SOUNDNESS: every leaf this predicate admits must be consumed by the move engine, so a
-// later use of it is a use-after-move. That holds because movesOwnedPlace gates on
-// isConcreteOwned, a strict subset of the isOwnedMovable set consumeOwned moves at every
-// flow site, so the upgrade set is a subset of the consume set. Widening movesOwnedPlace
-// toward a place consumeOwned does not move would break this and grant a mutable view with
-// no backing move.
+// SOUNDNESS: every place leaf this predicate admits must be consumed by the move engine, so
+// a later use of it is a use-after-move. That holds because movesOwnedPlace admits two kinds
+// of type, and isOwnedMovable, the set consumeOwned moves at every flow site, holds both. One
+// is a concrete owned shape that isConcreteOwned accepts. The other is a variable that
+// ownedCarrier resolves to an owned value, which holds a reference shape and so is not one
+// holdsOnlyValueTypes excludes. Widening movesOwnedPlace toward a place consumeOwned does not
+// move would break this and grant a mutable view with no backing move.
 func (c *checker) isUniquelyOwned(src ast.Expr) bool {
 	return freshLiteralShape(src, func(leaf ast.Expr) bool {
 		if c.acceptsBorrowLeaf(leaf) {
 			return true
 		}
 		t := c.info.TypeOf(leaf)
-		return !containsOwnedMut(t) && movesOwnedPlace(leaf, t)
+		// A leaf that already holds an owned-mutable cell is not admitted. The upgrade checks
+		// the source against the target's covariant read view, which would widen that cell, so
+		// the source takes the strict mut<:mut path instead and the cell stays invariant. In
+		// `val d: mut {a: number} = g()` with `g() -> mut {a: 1}`, the read view would accept
+		// the `mut {a: 1}` cell as `{a: number}`. The cell can sit behind a type variable, as it
+		// does in a call result or in a local bound from one, so the check follows each
+		// variable's lower bounds rather than reading t's shape alone.
+		if resultContainsOwnedMut(t, set.NewSet[*soltype.TypeVarType]()) {
+			return false
+		}
+		return c.callReturnsOwned(leaf, t) || c.movesOwnedPlace(leaf, t)
 	})
 }
 
@@ -699,21 +717,30 @@ func (c *checker) bindingMovesOwnedPlace(pat ast.Pat, init ast.Expr, initT solty
 	if _, ok := pat.(*ast.IdentPat); !ok {
 		return false
 	}
-	return movesOwnedPlace(init, initT)
+	return c.movesOwnedPlace(init, initT)
 }
 
 // movesOwnedPlace reports whether init names a uniquely-owned place whose value moves
 // when it flows into an owning destination. A place is a binding or a field path, so
-// exprPlace succeeds on it. Its value moves when it is a concrete owned object, tuple, or owned
-// RefType. The move consumes the place and leaves the destination its sole owner.
-// exprPlace fails outside a function body, where the rename pass has assigned no VarID, so
-// a move is confined to bodies where the move engine enforces the consume. This is the
-// place-move half of both bindingMovesOwnedPlace and the isUniquelyOwned leaf check.
-func movesOwnedPlace(init ast.Expr, initT soltype.Type) bool {
+// exprPlace succeeds on it. Its value moves when it is a concrete owned object, tuple, class
+// instance, or owned RefType, or a variable every value of which is one. The move consumes
+// the place and leaves the destination its sole owner. exprPlace fails outside a function
+// body, where the rename pass has assigned no VarID, so a move is confined to bodies where
+// the move engine enforces the consume. This is the place-move half of both
+// bindingMovesOwnedPlace and the isUniquelyOwned leaf check.
+func (c *checker) movesOwnedPlace(init ast.Expr, initT soltype.Type) bool {
 	if _, ok := exprPlace(init); !ok {
 		return false
 	}
-	return isConcreteOwned(initT)
+	if c.isConcreteOwned(initT) {
+		return true
+	}
+	// A binding initialized from a call, as `val c = Counter(0)` is, holds a variable
+	// bounded by the call's result rather than the result itself. The move engine
+	// consumes such a variable, since isOwnedMovable counts every variable that may hold
+	// a reference shape, so accepting it here keeps the upgrade within what is consumed.
+	_, isVar := initT.(*soltype.TypeVarType)
+	return isVar && c.ownedCarrier(initT) != nil
 }
 
 // isOwnedMut reports whether t is an owned-mutable cell — a RefType with Mut set and a
@@ -758,6 +785,47 @@ func containsOwnedMut(t soltype.Type) bool {
 		return false
 	default:
 		return false
+	}
+}
+
+// resultContainsOwnedMut reports whether a value t may hold contains an owned-mutable cell.
+// It is containsOwnedMut extended through each type variable's lower bounds, at the top level
+// and inside an object or tuple. A call result reaches its destination as a variable, and a
+// callee with an inferred return type hands back an object or tuple whose fields are
+// variables too. seen holds the variables on the current path, so a cycle in the bound graph
+// ends the walk.
+func resultContainsOwnedMut(t soltype.Type, seen set.Set[*soltype.TypeVarType]) bool {
+	switch t := t.(type) {
+	case *soltype.TypeVarType:
+		if seen.Contains(t) {
+			return false
+		}
+		seen.Add(t)
+		defer seen.Remove(t)
+		for _, lb := range t.LowerBounds {
+			if resultContainsOwnedMut(lb, seen) {
+				return true
+			}
+		}
+		return false
+	case *soltype.ObjectType:
+		for _, e := range t.Elems {
+			// Only a plain property carries a type to look inside, as in containsOwnedMut.
+			prop, isProp := e.(*soltype.PropertyElem)
+			if isProp && resultContainsOwnedMut(prop.Type, seen) {
+				return true
+			}
+		}
+		return false
+	case *soltype.TupleType:
+		for _, e := range t.Elems {
+			if resultContainsOwnedMut(e, seen) {
+				return true
+			}
+		}
+		return false
+	default:
+		return containsOwnedMut(t)
 	}
 }
 

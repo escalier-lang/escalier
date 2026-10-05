@@ -718,6 +718,188 @@ func TestValMutUpgradesAnOwnedCallResult(t *testing.T) {
 	}
 }
 
+// An owned call result flows into an owned-mutable destination the same way a fresh literal
+// does, so an annotated `val d: mut C = f()` takes it as `val mut d = f()` does. The
+// destinations covered are a declaration's annotation, a `mut` parameter, a reassignment
+// and a `mut` return annotation. A borrow return is not owned and a variable is not
+// consumed at module level, so both are still rejected. A result that is an owned-mutable
+// cell, or holds one in a field of an inferred return type, keeps that cell invariant.
+func TestOwnedCallResultFlowsIntoAMutDestination(t *testing.T) {
+	const counter = `
+		class Counter {
+			n: number,
+			constructor(&mut self, n: number) { self.n = n },
+			bump(&mut self) { self.n = 1 },
+		}
+		declare fn shared() -> Counter
+`
+	tests := []struct {
+		name    string
+		src     string
+		wantErr string // "" ⇒ expect no error
+	}{
+		{
+			name: "a constructor call into an annotated binding",
+			src:  counter + "fn go() { val d: mut Counter = Counter(0)\nd.bump() }",
+		},
+		{
+			name: "a declared function into an annotated binding",
+			src:  counter + "fn go() { val d: mut Counter = shared()\nd.bump() }",
+		},
+		{
+			name: "a module-level annotated binding",
+			src:  counter + "val d: mut Counter = shared()",
+		},
+		{
+			name: "an owned object into an annotated binding",
+			src:  "declare fn obj() -> {x: number}\nfn go() { val d: mut {x: number} = obj()\nd.x = 2 }",
+		},
+		{
+			name: "an owned object into a wider annotated binding",
+			src:  "declare fn obj() -> {x: number}\nfn go() { val d: mut {x: number | string} = obj() }",
+		},
+		{
+			name: "a call into a `mut` parameter",
+			src:  counter + "fn take(c: mut Counter) { c.bump() }\nfn go() { take(shared()) }",
+		},
+		{
+			name: "a call reassigned into a `mut` binding",
+			src:  counter + "fn go() { var mut d = Counter(0)\nd = shared()\nd.bump() }",
+		},
+		{
+			name: "a call returned through a `mut` return annotation",
+			src:  counter + "fn make() -> mut Counter { return shared() }",
+		},
+		{
+			name: "a callee with an inferred return type",
+			src:  "fn make() { return {p: 1} }\nval d: mut {p: number} = make()",
+		},
+		{
+			name:    "a borrow return into an annotated binding",
+			src:     counter + "declare fn peek() -> &Counter\nval d: mut Counter = peek()",
+			wantErr: "cannot constrain immutable Counter <: mutable Counter",
+		},
+		{
+			name:    "a variable into an annotated binding",
+			src:     counter + "declare val c: Counter\nval d: mut Counter = c",
+			wantErr: "cannot constrain immutable Counter <: mutable Counter",
+		},
+		{
+			// The result is already an owned-mutable cell, so it takes the strict mut<:mut
+			// path, which keeps the cell's field invariant.
+			name:    "a call already returning `mut` keeps its cell invariant",
+			src:     "declare fn g() -> mut {a: 1}\nval d: mut {a: number} = g()",
+			wantErr: "cannot constrain number <: 1",
+		},
+		{
+			// The inferred return object's field is a variable whose lower bound is the cell.
+			name:    "a cell inside an inferred return object keeps its cell invariant",
+			src:     "declare fn cell() -> mut {x: number}\nfn make() { return {p: cell()} }\nval d: mut {p: {x: number | string}} = make()",
+			wantErr: "cannot constrain immutable object <: mutable object",
+		},
+		{
+			name:    "a cell inside an inferred return tuple keeps its cell invariant",
+			src:     "declare fn cell() -> mut {x: number}\nfn make() { return [cell(), 1] }\nval d: mut [{x: number | string}, number] = make()",
+			wantErr: "cannot constrain immutable tuple <: mutable tuple",
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			_, _, errs := inferSource(t, tt.src)
+			if tt.wantErr == "" {
+				require.Empty(t, errorMessagesOf(errs))
+				return
+			}
+			require.Equal(t, []string{tt.wantErr}, errorMessagesOf(errs))
+		})
+	}
+}
+
+// A class instance moves the way an object does, and so does a value whose type is an
+// interface or an alias naming one. Moving it out of a place consumes the place, so the move
+// may switch the value between immutable and mutable, and a later use of the place is a
+// use-after-move. A local bound from a constructor call moves too, though its type is a
+// variable bounded by the call's result. An alias naming a primitive copies, and a borrow is
+// not owned, so neither moves.
+func TestAClassOrAliasValueMovesLikeAnObject(t *testing.T) {
+	const counter = `
+		class Counter {
+			n: number,
+			constructor(&mut self, n: number) { self.n = n },
+			bump(&mut self) { self.n = 1 },
+		}
+`
+	tests := []struct {
+		name    string
+		src     string
+		wantErr string // "" ⇒ expect no error
+	}{
+		{
+			name: "a class parameter into an annotated binding",
+			src:  counter + "fn go(c: Counter) { val d: mut Counter = c\nd.bump() }",
+		},
+		{
+			name: "a class parameter into a `val mut` binding",
+			src:  counter + "fn go(c: Counter) { val mut d = c\nd.bump() }",
+		},
+		{
+			name: "a local bound from a constructor call into a `val mut` binding",
+			src:  counter + "fn go() { val c = Counter(0)\nval mut d = c\nd.bump() }",
+		},
+		{
+			name: "a local bound from a constructor call into an annotated binding",
+			src:  counter + "fn go() { val c = Counter(0)\nval d: mut Counter = c\nd.bump() }",
+		},
+		{
+			name: "an interface parameter into a `val mut` binding",
+			src:  "export declare interface I { n: number }\nfn go(c: I) { val mut d = c\nd.n = 2 }",
+		},
+		{
+			name: "an alias parameter into a `val mut` binding",
+			src:  "type A = {n: number}\nfn go(c: A) { val mut d = c\nd.n = 2 }",
+		},
+		{
+			name: "an alias naming a primitive copies",
+			src:  "type N = number\nfn go(c: N) { val d = c\nval e = c + 1 }",
+		},
+		{
+			name:    "a class parameter read after a move",
+			src:     counter + "fn go(c: Counter) { val d = c\nval e = c.n }",
+			wantErr: "use of moved value 'c'",
+		},
+		{
+			name:    "a class parameter read after passing it to an owned parameter",
+			src:     counter + "fn take(c: Counter) {}\nfn go(c: Counter) { take(c)\nval e = c.n }",
+			wantErr: "use of moved value 'c'",
+		},
+		{
+			name:    "a local read after it moved into a mutable binding",
+			src:     counter + "fn go() { val c = Counter(0)\nval mut d = c\nd.bump()\nval e = c.n }",
+			wantErr: "use of moved value 'c'",
+		},
+		{
+			name:    "an alias parameter read after a move",
+			src:     "type A = {n: number}\nfn go(c: A) { val d = c\nval e = c.n }",
+			wantErr: "use of moved value 'c'",
+		},
+		{
+			name:    "a borrow into an annotated binding",
+			src:     counter + "fn go(c: &Counter) { val d: mut Counter = c }",
+			wantErr: "cannot constrain immutable Counter <: mutable Counter",
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			_, _, errs := inferSource(t, tt.src)
+			if tt.wantErr == "" {
+				require.Empty(t, errorMessagesOf(errs))
+				return
+			}
+			require.Equal(t, []string{tt.wantErr}, errorMessagesOf(errs))
+		})
+	}
+}
+
 // An alias chain is followed to its end. expandAlias unfolds one level, so `type C2 = C1`
 // over `type C1 = Config` needs the walk to run twice before the field list appears. Only
 // the first hop resolved once, which left a receiver two aliases deep behaving like one of
