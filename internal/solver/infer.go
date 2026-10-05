@@ -264,6 +264,11 @@ type checker struct {
 	// so it is absent here and inferClassDecl resolves its own.
 	classShells map[*ast.ClassDecl]*classShell
 
+	// builtClassSigs holds the member signatures buildClassSigs built for a class, keyed by
+	// its declaration, so inferClassDecl walks the bodies against the elements other classes
+	// may already have read.
+	builtClassSigs map[*ast.ClassDecl]*classSigs
+
 	// superCtx is the `super(…)` state of the constructor body being walked, nil outside
 	// one. inferSuperCall reads it to know which superclass a call runs and to record the
 	// call, and walkConstructorBody checks what it collected once the body is done.

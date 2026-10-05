@@ -3981,3 +3981,127 @@ func TestInferSelfTypeRejectsLifetimeArgs(t *testing.T) {
 		})
 	}
 }
+
+// TestInferClassReadsLaterClassMember covers a method body reading a member of a class
+// declared later in the file. A reference to the later class depends only on its type
+// key, so the members it declares have to be readable before its own bodies are walked.
+func TestInferClassReadsLaterClassMember(t *testing.T) {
+	tests := []struct {
+		name     string
+		src      string
+		wantErrs []string
+	}{
+		{
+			name: "FieldRead",
+			src: `
+				class A { readonly b: B, get(&self) -> number { return self.b.n } }
+				class B { readonly n: number }
+			`,
+		},
+		{
+			name: "MethodCall",
+			src: `
+				class A { readonly b: B, get(&self) -> number { return self.b.m() } }
+				class B { m(&self) -> number { return 1 } }
+			`,
+		},
+		{
+			name: "GetterRead",
+			src: `
+				class A { readonly b: B, get(&self) -> number { return self.b.n } }
+				class B { get n(&self) -> number { return 1 } }
+			`,
+		},
+		{
+			name: "ParamRead",
+			src: `
+				class A { get(&self, b: B) -> number { return b.n } }
+				class B { readonly n: number }
+			`,
+		},
+		{
+			name: "MutualReads",
+			src: `
+				class A { readonly b: B, n: number, get(&self) -> number { return self.b.a.n } }
+				class B { readonly a: A, m(&self) -> number { return self.a.b.m() } }
+			`,
+		},
+		{
+			name: "InferredReturn",
+			src: `
+				class A { readonly b: B, get(&self) { return self.b.m() } }
+				class B { m(&self) -> number { return 1 } }
+				val x: number = A(B()).get()
+			`,
+		},
+		{
+			name: "InferredReturnFromInferredReturn",
+			src: `
+				class A { readonly b: B, get(&self) { return self.b.m() } }
+				class B { m(&self) { return 1 } }
+				val x: string = A(B()).get()
+			`,
+			wantErrs: []string{"cannot constrain 1 <: string"},
+		},
+		{
+			name: "InferredReturnMismatch",
+			src: `
+				class A { readonly b: B, get(&self) { return self.b.m() } }
+				class B { m(&self) -> number { return 1 } }
+				val x: string = A(B()).get()
+			`,
+			wantErrs: []string{"cannot constrain number <: string"},
+		},
+		{
+			// A and B each read the other, so neither body can be walked first. A's
+			// unannotated get reads B's m before B's bodies are walked, and sees m's
+			// annotated return.
+			name: "CycleInferredReturnMismatch",
+			src: `
+				class A {
+					readonly b: B,
+					get(&self) { return self.b.m() },
+					k(&self) -> number { return 1 },
+				}
+				class B {
+					readonly a: A,
+					m(&self) -> number { return 1 },
+					j(&self) { return self.a.k() },
+				}
+				fn f(a: A) -> string { return a.get() }
+			`,
+			wantErrs: []string{"cannot constrain number <: string"},
+		},
+		{
+			name: "MissingMember",
+			src: `
+				class A { readonly b: B, get(&self) -> number { return self.b.z } }
+				class B { readonly n: number }
+			`,
+			wantErrs: []string{"object is missing property: z"},
+		},
+		{
+			name: "MismatchedReturn",
+			src: `
+				class A { readonly b: B, get(&self) -> string { return self.b.m() } }
+				class B { m(&self) -> number { return 1 } }
+			`,
+			wantErrs: []string{"cannot constrain number <: string"},
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			_, _, errs := inferSource(t, test.src)
+			msgs := make([]string, len(errs))
+			for i, err := range errs {
+				msgs[i] = err.Message()
+			}
+			if test.wantErrs == nil {
+				require.Empty(t, msgs)
+				return
+			}
+			require.Equal(t, test.wantErrs, msgs)
+		})
+	}
+}

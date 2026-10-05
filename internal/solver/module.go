@@ -5,6 +5,7 @@ import (
 
 	"github.com/escalier-lang/escalier/internal/ast"
 	"github.com/escalier-lang/escalier/internal/dep_graph"
+	"github.com/escalier-lang/escalier/internal/graph"
 	"github.com/escalier-lang/escalier/internal/provenance"
 	"github.com/escalier-lang/escalier/internal/set"
 	"github.com/escalier-lang/escalier/internal/soltype"
@@ -189,7 +190,7 @@ func (c *checker) inferDepGraph(scope *Scope, lvl int, module *ast.Module, g *de
 	// once, memoized here on the first leaf reached. Each leaf component then
 	// constrains its own projected type into its binding var.
 	destructured := map[*ast.VarDecl]*moduleDestructure{}
-	for _, component := range g.Components {
+	for _, component := range classBodiesFirst(g) {
 		c.inferComponent(scope, lvl, module, g, component, handled, destructured)
 	}
 	// Every class is inferred, so each superclass edge and body is final. Check the members
@@ -210,6 +211,67 @@ func (c *checker) inferDepGraph(scope *Scope, lvl int, module *ast.Module, g *de
 		}
 		return true
 	})
+}
+
+// classBodiesFirst returns g.Components reordered so that a component naming a class's
+// type comes after the component holding that class's value key, wherever the dep graph
+// allows it. A reference such as `b: B` gives a dependency on B's type key only, while B's
+// member bodies are inferred at its value key. Inferring B's value key first lets a body
+// reading `b.m()` see m's inferred signature rather than an unrefined stub. The order
+// still puts every component after the components it depends on.
+//
+// The preferred edges are added beside the dep graph's own, and the strongly connected
+// components of the result are emitted in topological order. Components that only a
+// preferred edge joins into one cycle keep their original relative order.
+func classBodiesFirst(g *dep_graph.DepGraph) [][]dep_graph.BindingKey {
+	index := make(map[dep_graph.BindingKey]int)
+	for i, component := range g.Components {
+		for _, key := range component {
+			index[key] = i
+		}
+	}
+	nodes := make([]int, len(g.Components))
+	for i := range nodes {
+		nodes[i] = i
+	}
+	successors := func(i int) []int {
+		var out []int
+		for _, key := range g.Components[i] {
+			deps := g.GetDeps(key)
+			iter := deps.Iter()
+			for ok := iter.First(); ok; ok = iter.Next() {
+				dep := iter.Key()
+				if j, found := index[dep]; found && j != i {
+					out = append(out, j)
+				}
+				if dep.Kind() != dep_graph.DepKindType || !declaresClass(g, dep) {
+					continue
+				}
+				if j, found := index[dep_graph.ValueBindingKey(dep.Name())]; found && j != i {
+					out = append(out, j)
+				}
+			}
+		}
+		return out
+	}
+	ordered := make([][]dep_graph.BindingKey, 0, len(g.Components))
+	for _, group := range graph.StronglyConnectedComponents(nodes, successors) {
+		sort.Ints(group)
+		for _, i := range group {
+			ordered = append(ordered, g.Components[i])
+		}
+	}
+	return ordered
+}
+
+// declaresClass reports whether a class declaration contributes to key.
+func declaresClass(g *dep_graph.DepGraph, key dep_graph.BindingKey) bool {
+	for _, d := range g.GetDecls(key) {
+		if _, ok := d.(*ast.ClassDecl); ok {
+			return true
+		}
+	}
+	return false
 }
 
 // overloadArm is one collected arm of an overload set (PR6): a top-level FuncDecl's
@@ -502,6 +564,13 @@ func (c *checker) inferComponent(
 	// before its alias is marked would key it under its full arguments and keep that
 	// representative for the rest of the run, so the same type could hold two identities.
 	c.runDeferredArgBounds()
+	// Build each class's member signatures at its type key. A class whose method reads
+	// `self.b.n` depends only on the type key of `b`'s class, so that class's value key,
+	// where the member bodies are walked, can come later. Its fields and member stubs have
+	// to be on its ClassDef by the time any such body reads them.
+	for i, decl := range classDecls {
+		c.buildClassSigs(c.lookupScope(scope, decl), inner, decl, classNamespaces[i])
+	}
 
 	// Non-value keys such as type aliases are outside the M2 subset. Report each remaining
 	// contributing decl once as unsupported, skipping any already handled by a value key. A
