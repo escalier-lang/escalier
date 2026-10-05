@@ -59,15 +59,23 @@ func TestNegativeExtrusionCopiesBorrowedReads(t *testing.T) {
 	require.Equal(t, 0, soltype.LevelOf(c.ctx.borrowedReads[nv][0].req))
 }
 
-// TestBorrowedReadSkipsAVariableLowerBound asserts that reading through a pointee whose only
-// lower bound is a variable records the read and reports nothing.
-func TestBorrowedReadSkipsAVariableLowerBound(t *testing.T) {
+// TestBorrowedReadForwardsToAVariableLowerBound asserts that reading through a pointee whose
+// lower bound is a variable gives that variable the read too. A concrete bound the variable
+// gains later is then read, here giving the property `n` the value `number`.
+func TestBorrowedReadForwardsToAVariableLowerBound(t *testing.T) {
 	c := newTestChecker()
 	v := c.freshAt(0)
-	c.ctx.addLowerBound(v, c.freshAt(0))
+	u := c.freshAt(0)
+	c.ctx.addLowerBound(v, u)
 	read := newBorrowedRead(c, 0)
 
 	errs := c.ctx.constrainBorrowedVarFieldRead(read.borrow, v, read.req, newSeenPairs())
 	require.Empty(t, errs)
 	require.Len(t, c.ctx.borrowedReads[v], 1)
+	require.Len(t, c.ctx.borrowedReads[u], 1)
+
+	obj := &soltype.ObjectType{Elems: []soltype.ObjTypeElem{&soltype.PropertyElem{Name: "n", Type: num()}}}
+	require.Empty(t, c.ctx.Constrain(obj, u))
+	n := read.req.Elems[0].(*soltype.PropertyElem).Type.(*soltype.TypeVarType)
+	require.Equal(t, []soltype.Type{num()}, n.LowerBounds)
 }

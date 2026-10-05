@@ -553,10 +553,29 @@ func (c *Context) constrainBorrowedVarFieldRead(sub *soltype.RefType, v *soltype
 
 // readThroughLowerBound reads r's requirement off lb, a lower bound of r's pointee. An object
 // or class instance is read under r's borrow, skipping a property lb lacks. A variable lower
-// bound contributes nothing, since each concrete bound reaching it reaches the pointee as well.
+// bound takes r as its own pending read, so each concrete bound it has or gains is read too.
 func (c *Context) readThroughLowerBound(r borrowedRead, lb soltype.Type, seen *seenPairs) []SolverError {
-	if _, isVar := lb.(*soltype.TypeVarType); isVar {
-		return nil
+	return c.readThroughBound(r, lb, seen, set.NewSet[*soltype.TypeVarType]())
+}
+
+// readThroughBound is readThroughLowerBound with visited holding the variable lower bounds
+// already given r, so a cycle among them is walked once.
+func (c *Context) readThroughBound(r borrowedRead, lb soltype.Type, seen *seenPairs, visited set.Set[*soltype.TypeVarType]) []SolverError {
+	// A variable lower bound comes from a negative extrusion, which makes the fresh variable
+	// a lower bound of the pointee without making the pointee its upper bound. A concrete
+	// bound reaching the fresh variable later never reaches the pointee, so the variable
+	// keeps the read itself.
+	if v, isVar := lb.(*soltype.TypeVarType); isVar {
+		if visited.Contains(v) {
+			return nil
+		}
+		visited.Add(v)
+		c.addBorrowedRead(v, r)
+		var errs []SolverError
+		for _, nested := range v.LowerBounds {
+			errs = append(errs, c.readThroughBound(r, nested, seen, visited)...)
+		}
+		return errs
 	}
 	if ri, ok := lb.(soltype.RefInner); ok {
 		if errs, ok := c.constrainBorrowedFieldRead(&soltype.RefType{Mut: r.borrow.Mut, Lt: r.borrow.Lt, Inner: ri}, r.req, seen, true); ok {
