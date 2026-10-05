@@ -124,35 +124,37 @@ func isBorrowType(t soltype.Type) bool {
 	return ok && r.Lt != nil
 }
 
-// isReferenceShaped reports whether t is a reference-shaped value: an object, tuple,
-// borrow, owned RefType, or type-parameter variable. These are the values a move can
-// consume, so every read of one is recorded as a use to test against the consumed
-// lattice. Value types copy and are never consumed, so their reads are not tracked. A
-// value type is a primitive, a function, or a promise.
+// isReferenceShaped reports whether t is a reference-shaped value: an object, tuple, class
+// instance, borrow, owned RefType, or type-parameter variable. These are the values a move can
+// consume, so every read of one is recorded as a use to test against the consumed lattice.
+// Value types copy and are never consumed, so their reads are not tracked. A value type is a
+// primitive, a function, or a promise. An alias or interface is decided by what it names.
 //
 // A bare type variable counts here but is excluded by isConcreteOwned, so the two are
 // conservative in opposite directions on an unresolved variable. This side tracks the
 // read so a use-after-move is not missed if the variable resolves to a movable shape.
-func isReferenceShaped(t soltype.Type) bool {
-	switch t.(type) {
-	case *soltype.ObjectType, *soltype.TupleType, *soltype.RefType, *soltype.TypeVarType:
+func (c *checker) isReferenceShaped(t soltype.Type) bool {
+	switch c.expandAliasChain(t).(type) {
+	case *soltype.ObjectType, *soltype.TupleType, *soltype.ClassType, *soltype.RefType, *soltype.TypeVarType:
 		return true
 	}
 	return false
 }
 
 // isConcreteOwned reports whether t is a CONCRETE owned reference shape — an owned
-// object, tuple, or owned RefType — excluding a bare type variable. A consuming
-// parameter must be spelled as a concrete owned shape, so a fresh inference variable
-// for an unannotated parameter does not consume its argument.
+// object, tuple, class instance, or owned RefType — excluding a bare type variable. An alias
+// or interface is decided by what it names. A consuming parameter must be spelled as a
+// concrete owned shape, so a fresh inference variable for an unannotated parameter does not
+// consume its argument.
 //
 // Excluding the bare type variable is the opposite of isReferenceShaped, which includes
 // it, so the two are conservative in opposite directions on an unresolved variable. This
 // side consumes nothing it cannot confirm is owned, so the caller's argument is not
 // over-consumed if the variable resolves to a value type.
-func isConcreteOwned(t soltype.Type) bool {
+func (c *checker) isConcreteOwned(t soltype.Type) bool {
+	t = c.expandAliasChain(t)
 	switch t.(type) {
-	case *soltype.ObjectType, *soltype.TupleType:
+	case *soltype.ObjectType, *soltype.TupleType, *soltype.ClassType:
 		return true
 	case *soltype.RefType:
 		return !isBorrowType(t)
@@ -162,21 +164,21 @@ func isConcreteOwned(t soltype.Type) bool {
 
 // isOwnedMovable reports whether t is an owned reference-shaped value, the kind a
 // move at an owned destination consumes. Value types copy and borrows alias, so
-// neither moves at an owned site. An owned object, tuple, or owned-mutable RefType
-// moves, as does a bare type-parameter variable: generic code treats a `T` value as
+// neither moves at an owned site. An owned object, tuple, class instance, or owned-mutable
+// RefType moves, as does a bare type-parameter variable: generic code treats a `T` value as
 // non-duplicable, the conservative affine assumption that makes
 // `fn dup<T>(x: T) -> [T, T]` a double move.
 //
 // A borrow moves only when it escapes to a longer-lived region, which a module-level
 // write forces; that case is consumed through consumeAtGlobalWrite, not here.
-func isOwnedMovable(t soltype.Type) bool {
+func (c *checker) isOwnedMovable(t soltype.Type) bool {
 	if isBorrowType(t) {
 		return false
 	}
-	if v, ok := t.(*soltype.TypeVarType); ok && holdsOnlyValueTypes(v, set.NewSet[*soltype.TypeVarType]()) {
+	if v, ok := t.(*soltype.TypeVarType); ok && c.holdsOnlyValueTypes(v, set.NewSet[*soltype.TypeVarType]()) {
 		return false
 	}
-	return isReferenceShaped(t)
+	return c.isReferenceShaped(t)
 }
 
 // holdsOnlyValueTypes reports whether every value v can hold is a value type, following
@@ -193,7 +195,7 @@ func isOwnedMovable(t soltype.Type) bool {
 // parameter's variable, so it keeps the conservative answer and stays movable. A variable
 // reached again on the same path is a cycle in the bound graph, and it answers false for
 // the same reason.
-func holdsOnlyValueTypes(v *soltype.TypeVarType, seen set.Set[*soltype.TypeVarType]) bool {
+func (c *checker) holdsOnlyValueTypes(v *soltype.TypeVarType, seen set.Set[*soltype.TypeVarType]) bool {
 	if len(v.LowerBounds) == 0 || seen.Contains(v) {
 		return false
 	}
@@ -201,12 +203,12 @@ func holdsOnlyValueTypes(v *soltype.TypeVarType, seen set.Set[*soltype.TypeVarTy
 	defer seen.Remove(v)
 	for _, lb := range v.LowerBounds {
 		if lbVar, ok := lb.(*soltype.TypeVarType); ok {
-			if !holdsOnlyValueTypes(lbVar, seen) {
+			if !c.holdsOnlyValueTypes(lbVar, seen) {
 				return false
 			}
 			continue
 		}
-		if isReferenceShaped(lb) {
+		if c.isReferenceShaped(lb) {
 			return false
 		}
 	}
@@ -415,7 +417,7 @@ func (c *checker) recordUse(e *ast.IdentExpr, t soltype.Type) {
 	if c.fn == nil || c.fn.cfg == nil || e.VarID <= 0 {
 		return
 	}
-	if !isReferenceShaped(t) {
+	if !c.isReferenceShaped(t) {
 		return
 	}
 	ref, ok := c.currentStmtRef()
@@ -466,7 +468,7 @@ func (c *checker) consumeOwned(source ast.Expr, sourceT soltype.Type, moveNode a
 	if !ok {
 		return
 	}
-	if !isOwnedMovable(sourceT) {
+	if !c.isOwnedMovable(sourceT) {
 		return
 	}
 	if c.fn.movedSources == nil {
@@ -491,7 +493,7 @@ func (c *checker) movesSourceInto(source ast.Expr, destT soltype.Type) bool {
 	if _, ok := exprPlace(source); !ok {
 		return false
 	}
-	return isOwnedMovable(c.info.TypeOf(source))
+	return c.isOwnedMovable(c.info.TypeOf(source))
 }
 
 // consumeBindingInit moves the owned source a `val`/`var` initializer names into
@@ -527,7 +529,7 @@ func (c *checker) consumeDestructureLeaves(scope *Scope, pat ast.Pat, init ast.E
 		return
 	}
 	src, ok := exprPlace(init)
-	if !ok || src.root <= 0 || !isOwnedMovable(c.info.TypeOf(init)) {
+	if !ok || src.root <= 0 || !c.isOwnedMovable(c.info.TypeOf(init)) {
 		return
 	}
 	m := &destructureMover{c: c, scope: scope, init: init, ref: ref, moved: set.NewSet[liveness.VarID]()}
@@ -614,7 +616,7 @@ func (m *destructureMover) ownedLeaf(name string, varID int) (soltype.Type, bool
 		return nil, false
 	}
 	b, found := m.scope.GetValue(name)
-	if !found || !isOwnedMovable(bindingType(b)) {
+	if !found || !m.c.isOwnedMovable(bindingType(b)) {
 		return nil, false
 	}
 	return bindingType(b), true
@@ -648,7 +650,7 @@ func (c *checker) consumeAtGlobalWrite(source ast.Expr, sourceT soltype.Type, mo
 	if !ok {
 		return
 	}
-	if !isReferenceShaped(sourceT) {
+	if !c.isReferenceShaped(sourceT) {
 		return
 	}
 	c.recordMovePlace(p, moveNode, ref)

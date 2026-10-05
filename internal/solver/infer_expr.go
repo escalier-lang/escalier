@@ -1666,7 +1666,7 @@ func (c *checker) consumeCallArgs(e *ast.CallExpr, fn *soltype.FuncType, ref liv
 			// argument is. A slot that is not an array of a concrete owned element moves
 			// nothing, the same conservative reading a fixed position takes.
 			elem, isArray := c.ctx.restSlotElem(fn.Params[i].Type)
-			if !isArray || !isConcreteOwned(elem) {
+			if !isArray || !c.isConcreteOwned(elem) {
 				return
 			}
 			for _, absorbed := range e.Args[i:] {
@@ -1675,7 +1675,7 @@ func (c *checker) consumeCallArgs(e *ast.CallExpr, fn *soltype.FuncType, ref liv
 			}
 			return
 		}
-		if !isConcreteOwned(fn.Params[i].Type) {
+		if !c.isConcreteOwned(fn.Params[i].Type) {
 			continue
 		}
 		c.consumeOwned(arg, c.info.TypeOf(arg), arg, ref)
@@ -2390,7 +2390,7 @@ func (c *checker) inferAccessorAssign(
 	// records against the assignment's statement, resolved from assignStmt rather than
 	// c.fn.currentStmt, which inferring the receiver and source may have overwritten with
 	// an inner branch statement. A rejected write records no move.
-	if c.fn != nil && len(c.errs) == errsBefore && isConcreteOwned(setter.Param) {
+	if c.fn != nil && len(c.errs) == errsBefore && c.isConcreteOwned(setter.Param) {
 		if ref, ok := c.fn.stmtToRef[assignStmt]; ok {
 			c.consumeOwned(e.Right, source, e.Right, ref)
 			c.recordEscapeSite(e.Right, ref)

@@ -478,12 +478,13 @@ func (c *checker) immutableTarget(target soltype.Type) (soltype.Type, bool) {
 // reaches such a leaf nested inside a fresh literal, so `{p: cfg}` qualifies when `cfg` is a
 // dead owned variable even though the literal is not identifier-free.
 //
-// SOUNDNESS: every leaf this predicate admits must be consumed by the move engine, so a
-// later use of it is a use-after-move. That holds because movesOwnedPlace gates on
-// isConcreteOwned, a strict subset of the isOwnedMovable set consumeOwned moves at every
-// flow site, so the upgrade set is a subset of the consume set. Widening movesOwnedPlace
-// toward a place consumeOwned does not move would break this and grant a mutable view with
-// no backing move.
+// SOUNDNESS: every place leaf this predicate admits must be consumed by the move engine, so
+// a later use of it is a use-after-move. That holds because movesOwnedPlace admits two kinds
+// of type, and isOwnedMovable, the set consumeOwned moves at every flow site, holds both. One
+// is a concrete owned shape that isConcreteOwned accepts. The other is a variable that
+// ownedCarrier resolves to an owned value, which holds a reference shape and so is not one
+// holdsOnlyValueTypes excludes. Widening movesOwnedPlace toward a place consumeOwned does not
+// move would break this and grant a mutable view with no backing move.
 func (c *checker) isUniquelyOwned(src ast.Expr) bool {
 	return freshLiteralShape(src, func(leaf ast.Expr) bool {
 		if c.acceptsBorrowLeaf(leaf) {
@@ -493,7 +494,7 @@ func (c *checker) isUniquelyOwned(src ast.Expr) bool {
 		if c.callReturnsOwned(leaf, t) {
 			return !resultContainsOwnedMut(t, set.NewSet[*soltype.TypeVarType]())
 		}
-		return !containsOwnedMut(t) && movesOwnedPlace(leaf, t)
+		return !resultContainsOwnedMut(t, set.NewSet[*soltype.TypeVarType]()) && c.movesOwnedPlace(leaf, t)
 	})
 }
 
@@ -709,21 +710,30 @@ func (c *checker) bindingMovesOwnedPlace(pat ast.Pat, init ast.Expr, initT solty
 	if _, ok := pat.(*ast.IdentPat); !ok {
 		return false
 	}
-	return movesOwnedPlace(init, initT)
+	return c.movesOwnedPlace(init, initT)
 }
 
 // movesOwnedPlace reports whether init names a uniquely-owned place whose value moves
 // when it flows into an owning destination. A place is a binding or a field path, so
-// exprPlace succeeds on it. Its value moves when it is a concrete owned object, tuple, or owned
-// RefType. The move consumes the place and leaves the destination its sole owner.
-// exprPlace fails outside a function body, where the rename pass has assigned no VarID, so
-// a move is confined to bodies where the move engine enforces the consume. This is the
-// place-move half of both bindingMovesOwnedPlace and the isUniquelyOwned leaf check.
-func movesOwnedPlace(init ast.Expr, initT soltype.Type) bool {
+// exprPlace succeeds on it. Its value moves when it is a concrete owned object, tuple, class
+// instance, or owned RefType, or a variable every value of which is one. The move consumes
+// the place and leaves the destination its sole owner. exprPlace fails outside a function
+// body, where the rename pass has assigned no VarID, so a move is confined to bodies where
+// the move engine enforces the consume. This is the place-move half of both
+// bindingMovesOwnedPlace and the isUniquelyOwned leaf check.
+func (c *checker) movesOwnedPlace(init ast.Expr, initT soltype.Type) bool {
 	if _, ok := exprPlace(init); !ok {
 		return false
 	}
-	return isConcreteOwned(initT)
+	if c.isConcreteOwned(initT) {
+		return true
+	}
+	// A binding initialized from a call, as `val c = Counter(0)` is, holds a variable
+	// bounded by the call's result rather than the result itself. The move engine
+	// consumes such a variable, since isOwnedMovable counts every variable that may hold
+	// a reference shape, so accepting it here keeps the upgrade within what is consumed.
+	_, isVar := initT.(*soltype.TypeVarType)
+	return isVar && c.ownedCarrier(initT) != nil
 }
 
 // isOwnedMut reports whether t is an owned-mutable cell — a RefType with Mut set and a
