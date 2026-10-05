@@ -162,7 +162,7 @@ func TestInferComputedKey(t *testing.T) {
 		{
 			name: "UniqueSymbolKeyNamesAProperty",
 			src:  "declare val sym: unique symbol\nval o = {[sym]: 1}\nval r = o[sym]",
-			want: map[string]string{"o": "{[unique symbol#0]: 1}", "r": "1"},
+			want: map[string]string{"o": "{[sym]: 1}", "r": "1"},
 		},
 		{
 			name:     "KeyThatCannotKeyAProperty",
@@ -261,8 +261,8 @@ val r = foo[k]`,
 }
 
 // uniqueSymbolDecls declares the two unique symbols TestInferUniqueSymbolKey keys
-// members off. Every case below references `sym`, and in each one `sym` renders as
-// `unique symbol#0` and `other` as `unique symbol#1`.
+// members off. Every case below references `sym`. A key off either one renders as the
+// name of its declaration, `[sym]` or `[other]`.
 const uniqueSymbolDecls = "declare val sym: unique symbol\ndeclare val other: unique symbol\n"
 
 // TestInferUniqueSymbolKey covers a member keyed off a declared `unique symbol`. The
@@ -275,24 +275,24 @@ func TestInferUniqueSymbolKey(t *testing.T) {
 		{
 			name: "ReadAtTheSameSymbol",
 			src:  "val o = {a: \"x\", [sym]: 1}\nval r = o[sym]",
-			want: map[string]string{"o": `{a: "x", [unique symbol#0]: 1}`, "r": "1"},
+			want: map[string]string{"o": `{a: "x", [sym]: 1}`, "r": "1"},
 		},
 		{
 			name:     "ReadAtADifferentSymbol",
 			src:      "val o = {[sym]: 1}\nval r = o[other]",
-			wantErrs: []string{"4:11-4:16: object is missing property: [unique symbol#1]"},
+			wantErrs: []string{"4:11-4:16: object is missing property: [other]"},
 		},
 		{
 			name:     "ReadAtSymbolWithNoIndexSignature",
 			src:      "val o = {[sym]: 1}\nfn f(s: symbol) { return o[s] }",
-			wantErrs: []string{"4:26-4:30: object {[unique symbol#0]: 1} has no index signature to read a key of type symbol"},
+			wantErrs: []string{"4:26-4:30: object {[sym]: 1} has no index signature to read a key of type symbol"},
 		},
 		{
 			// `s` may be `sym`, so the value written under `s` may replace the one under
 			// `sym`.
 			name: "SymbolKeyAfterIt",
 			src:  "fn f(s: symbol) { val o = {[sym]: 1, [s]: \"x\"}\n return o }",
-			want: map[string]string{"f": `fn (s: symbol) -> {[unique symbol#0]: 1 | "x", [K: symbol]?: "x"}`},
+			want: map[string]string{"f": `fn (s: symbol) -> {[sym]: 1 | "x", [K: symbol]?: "x"}`},
 		},
 		{
 			// A string never equals a symbol, so a `string` key cannot replace it.
@@ -315,8 +315,8 @@ func TestInferUniqueSymbolKey(t *testing.T) {
 		{
 			// The string spelling the symbol's internal member name is a different key.
 			name:     "ReadAtAStringSpellingItsInternalName",
-			src:      "val o = {[sym]: 1}\nval r = o[\"@@#0\"]",
-			wantErrs: []string{`4:9-4:18: object {[unique symbol#0]: 1} has no index signature to read a key of type "@@#0"`},
+			src:      "val o = {[sym]: 1}\nval r = o[\"@@#0:sym\"]",
+			wantErrs: []string{`4:9-4:22: object {[sym]: 1} has no index signature to read a key of type "@@#0:sym"`},
 		},
 		{
 			// `Symbol.iterator` is a unique symbol the prelude declares, so a key typed by it
@@ -352,12 +352,12 @@ val g = C()[other]`,
 		{
 			name:     "WriteAtADifferentSymbol",
 			src:      "class C { [sym]: number }\nfn go(c: &mut C) { c[other] = 5 }",
-			wantErrs: []string{"4:20-4:32: object is missing property: [unique symbol#1]"},
+			wantErrs: []string{"4:20-4:32: object is missing property: [other]"},
 		},
 		{
 			name:     "WriteAtSymbolWithNoIndexSignature",
 			src:      "class C { [sym]: number }\nfn go(c: &mut C, s: symbol) { c[s] = 5 }",
-			wantErrs: []string{"4:31-4:35: object {[unique symbol#0]: number, ...} has no index signature to read a key of type symbol"},
+			wantErrs: []string{"4:31-4:35: object {[sym]: number, ...} has no index signature to read a key of type symbol"},
 		},
 		{
 			name:     "WriteThroughAnImmutableReceiver",
@@ -367,7 +367,7 @@ val g = C()[other]`,
 		{
 			name:     "FieldWithAnInitializer",
 			src:      "class C { [sym]: number = 5 }",
-			wantErrs: []string{"3:11-3:28: Field '[unique symbol#0]' cannot have a `= expr` initializer; only static fields may use this form. Initialize instance fields in the constructor body."},
+			wantErrs: []string{"3:11-3:28: Field '[sym]' cannot have a `= expr` initializer; only static fields may use this form. Initialize instance fields in the constructor body."},
 		},
 		{
 			name: "OverrideOfAnIncompatibleType",
@@ -377,17 +377,17 @@ class B extends A {
     constructor(&mut self) { super(1)
         self[sym] = "x" },
 }`,
-			wantErrs: []string{"5:5-5:18: class `B` redeclares inherited member `[unique symbol#0]` with type `string`, which is not compatible with `number` declared by `A`"},
+			wantErrs: []string{"5:5-5:18: class `B` redeclares inherited member `[sym]` with type `string`, which is not compatible with `number` declared by `A`"},
 		},
 		{
 			name:     "FieldLeftUninitialized",
 			src:      "class C { [sym]: number, constructor(&mut self) {} }",
-			wantErrs: []string{"3:49-3:51: Field '[unique symbol#0]' is not initialized on every path through the constructor."},
+			wantErrs: []string{"3:49-3:51: Field '[sym]' is not initialized on every path through the constructor."},
 		},
 		{
 			name:     "FieldReadBeforeItIsInitialized",
 			src:      "class C { [sym]: number, constructor(&mut self) { self[sym] = self[sym] } }",
-			wantErrs: []string{"3:63-3:72: Field 'self[unique symbol#0]' is read before it has been initialized."},
+			wantErrs: []string{"3:63-3:72: Field 'self[sym]' is read before it has been initialized."},
 		},
 	}
 	for i := range tests {

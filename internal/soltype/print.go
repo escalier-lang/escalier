@@ -45,6 +45,13 @@ func typePrec(t Type) int {
 		return precAtom
 	case *TypeofType:
 		return precPrefix
+	case *UniqueSymbolType:
+		// A symbol a declaration names renders `typeof sym`, which leads with a prefix the
+		// way a TypeofType does. One with no name renders as the atom `unique symbol#0`.
+		if t.Name != "" {
+			return precPrefix
+		}
+		return precAtom
 	case *CondType:
 		// `if C : E { T } else { E }` is self-delimiting — the leading `if` and trailing `}` bound
 		// it — so it binds like an atom and never needs outer parens, matching type_system's
@@ -127,7 +134,13 @@ func Print(t Type) string {
 // user-facing output but collapses `A.Point` and `B.Point` to one string. The solver forms
 // a collision-free canonical identity key from PrintQualified. It is not a surface form.
 func PrintQualified(t Type) string {
-	return (&namedPrinter{qualify: true}).printType(t)
+	return (&namedPrinter{qualify: true, symbolIDs: true}).printType(t)
+}
+
+// printIdentity renders a type like Print but shows every unique symbol by its id, the
+// form Equal compares.
+func printIdentity(t Type) string {
+	return (&namedPrinter{symbolIDs: true}).printType(t)
 }
 
 // ElisionMark stands for the subtree PrintElided dropped. It is U+2026, distinct from the `...`
@@ -729,6 +742,11 @@ type namedPrinter struct {
 	// name across namespaces stay distinct. PrintQualified sets it for identity-key use;
 	// plain Print leaves it false so user-facing output stays unqualified.
 	qualify bool
+	// symbolIDs renders a unique symbol as `unique symbol#0` and a key off it as
+	// `[unique symbol#0]`, even when the symbol carries the name of its declaration. Two
+	// declarations can share a name, so a rendering used as an identity key has to show
+	// the id. Plain Print leaves it false and shows the name.
+	symbolIDs bool
 	// maxDepth bounds how deep printType descends before it renders ElisionMark in place of a
 	// subtree. Zero, the value Print and PrintQualified leave, descends without limit. depth is
 	// the nesting of the node being rendered, counted from 0 at the root.
@@ -863,8 +881,8 @@ func (p *namedPrinter) printTypeMinPrec(t Type, minPrec int) string {
 //
 // An InferType renders as a name in both forms, `infer U` at the binder and a bare `U` at a
 // reference, and a TypeofType renders as the identifier it names rather than the value's type, so
-// both are leaves. A UniqueSymbolType renders as the kind and the id that tells two symbols apart,
-// `unique symbol#0`, and the id is the whole of what it carries, so it is one as well. A
+// both are leaves. A UniqueSymbolType renders as `typeof sym` or as `unique symbol#0`, and it
+// carries no type beneath it, so it is one as well. A
 // RecursiveVarType renders as its binder's name, so it is one too. A SelfType renders as the bare
 // word `Self` and carries no argument list, so it is a leaf as well: eliding it would replace the
 // spelling the source wrote with an ellipsis that says less. An alias or
@@ -1004,10 +1022,7 @@ func (p *namedPrinter) printType(t Type) string {
 		}
 		return "{" + strings.Join(elems, ", ") + "}"
 	case *UniqueSymbolType:
-		// A symbol has no written form, so the rendered one names the kind and the id that
-		// tells two apart. A reader comparing two rendered symbols is comparing the same
-		// thing the solver does.
-		return "unique symbol#" + strconv.Itoa(t.ID)
+		return p.printUniqueSymbol(t)
 	case *SelfType:
 		// A `Self` renders as the word the source wrote, not as the class it was declared in.
 		// That is the whole point of keeping it a kind of its own: `me(&self) -> Self` on a
@@ -1252,7 +1267,7 @@ func (p *namedPrinter) printObjElem(e ObjTypeElem) string {
 		if e.Readonly {
 			ro = "readonly "
 		}
-		return ro + printObjectKeyName(e.Name) + opt + ": " + p.printType(e.Type)
+		return ro + p.printObjectKey(e.Name) + opt + ": " + p.printType(e.Type)
 	case *MethodElem:
 		opt := ""
 		if e.Optional {
@@ -1260,7 +1275,7 @@ func (p *namedPrinter) printObjElem(e ObjTypeElem) string {
 		}
 		arms := make([]string, len(e.Signatures))
 		for i, sig := range e.Signatures {
-			arms[i] = printObjectKeyName(e.Name) + opt + p.printFuncTail(sig)
+			arms[i] = p.printObjectKey(e.Name) + opt + p.printFuncTail(sig)
 		}
 		return strings.Join(arms, "; ")
 	case *GetterElem:
@@ -1270,18 +1285,18 @@ func (p *namedPrinter) printObjElem(e ObjTypeElem) string {
 		}
 		clause := p.printThrowsClause(e.ThrowsOrNever())
 		if clause == "" {
-			return "get " + printObjectKeyName(e.Name) + "(" + recv + ") -> " + p.printType(e.Type)
+			return "get " + p.printObjectKey(e.Name) + "(" + recv + ") -> " + p.printType(e.Type)
 		}
 		// `-> R` is greedy, so a function-typed return is parenthesized once a clause
 		// follows it, the same bound printFuncBody puts on a signature's return.
-		return "get " + printObjectKeyName(e.Name) + "(" + recv + ") -> " +
+		return "get " + p.printObjectKey(e.Name) + "(" + recv + ") -> " +
 			p.printTypeMinPrec(e.Type, precUnion) + clause
 	case *SetterElem:
 		recv := ""
 		if e.SelfParam != nil {
 			recv = p.printSelfReceiver(e.SelfParam) + ", "
 		}
-		return "set " + printObjectKeyName(e.Name) + "(" + recv + "value: " + p.printType(e.Param) + ")" +
+		return "set " + p.printObjectKey(e.Name) + "(" + recv + "value: " + p.printType(e.Param) + ")" +
 			p.printThrowsClause(e.ThrowsOrNever())
 	case *ConstructorElem:
 		// A class value's constructor renders as the unnamed call signature
@@ -1648,8 +1663,8 @@ func printPat(pat Pat) (string, bool) {
 //
 // A member keyed off a symbol is stored under a reserved name and rendered as a
 // computed key through DisplayMemberName. `@@iterator` reads as `[Symbol.iterator]`,
-// which re-parses as the same key where the quoted fallback would not. `@@#0` reads as
-// `[unique symbol#0]`, the same rendering the symbol's own type takes.
+// which re-parses as the same key where the quoted fallback would not. A member keyed
+// off `declare val sym: unique symbol` reads as `[sym]`.
 func printObjectKeyName(name string) string {
 	if IsSymbolMemberName(name) {
 		return DisplayMemberName(name)
@@ -1658,6 +1673,29 @@ func printObjectKeyName(name string) string {
 		return name
 	}
 	return strconv.Quote(name)
+}
+
+// printObjectKey renders an object type's member name the way printObjectKeyName does,
+// except that under symbolIDs a member keyed off a unique symbol reads as
+// `[unique symbol#0]`, so two symbols that share a name render apart.
+func (p *namedPrinter) printObjectKey(name string) string {
+	if p.symbolIDs {
+		if sym, isUnique := UniqueSymbolOfMemberName(name); isUnique {
+			return "[" + p.printUniqueSymbol(sym) + "]"
+		}
+	}
+	return printObjectKeyName(name)
+}
+
+// printUniqueSymbol renders a unique symbol's own type. A symbol a declaration names
+// renders as the query TypeScript writes for it, so `declare val sym: unique symbol`
+// gives `typeof sym`. A symbol with no name, or any symbol under symbolIDs, renders as
+// the kind and the id that tells two apart, `unique symbol#0`.
+func (p *namedPrinter) printUniqueSymbol(t *UniqueSymbolType) string {
+	if t.Name != "" && !p.symbolIDs {
+		return "typeof " + t.Name
+	}
+	return "unique symbol#" + strconv.Itoa(t.ID)
 }
 
 // isIdent reports whether name is a valid Escalier identifier: non-empty, with a

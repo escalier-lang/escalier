@@ -3771,7 +3771,7 @@ func (c *checker) resolveNamespaceMember(lvl int, node ast.Expr, ns *Namespace, 
 //
 // A string spelling a unique symbol's reserved member name, such as `"@@#0"`, returns
 // false, the same rule keyMemberName applies to its type. `o["@@#0"]` therefore never
-// reads the member keyed off `unique symbol#0`.
+// reads a member keyed off a unique symbol.
 func constStringKey(e ast.Expr) (string, bool) {
 	if lit, ok := e.(*ast.LiteralExpr); ok {
 		if s, ok := lit.Lit.(*ast.StrLit); ok {

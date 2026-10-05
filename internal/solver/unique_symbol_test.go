@@ -137,3 +137,96 @@ func TestUniqueSymbolBehavesLikeALiteralOfItsPrimitive(t *testing.T) {
 			errorMessagesOf(errs))
 	})
 }
+
+// TestUniqueSymbolRendersByItsDeclaration covers how a unique symbol and a key off it
+// render. A symbol renders as `typeof` the path of the declaration that minted it, and a
+// key off it as that path in brackets. The path belongs to the declaration, so a read
+// through another binding renders the same. A symbol no declaration names renders by
+// its id.
+func TestUniqueSymbolRendersByItsDeclaration(t *testing.T) {
+	tests := []struct {
+		name     string
+		srcs     map[string]string
+		want     map[string]string
+		wantErrs []string
+	}{
+		{
+			name: "DeclaredVal",
+			srcs: map[string]string{"input.esc": "declare val sym: unique symbol\nval o = {[sym]: 1}"},
+			want: map[string]string{"sym": "typeof sym", "o": "{[sym]: 1}"},
+		},
+		{
+			name: "ReadThroughAnotherBinding",
+			srcs: map[string]string{"input.esc": "declare val sym: unique symbol\nval s2 = sym\nval o = {[s2]: 1}\nval r = o[sym]"},
+			want: map[string]string{"s2": "typeof sym", "o": "{[sym]: 1}", "r": "1"},
+		},
+		{
+			name: "TwoDistinctSymbols",
+			srcs: map[string]string{"input.esc": `declare val sym: unique symbol
+declare val other: unique symbol
+declare fn take(s: typeof sym) -> number
+val o = {[sym]: 1, [other]: "x"}
+val r = o[other]
+val n = take(other)`},
+			want:     map[string]string{"o": `{[sym]: 1, [other]: "x"}`, "r": `"x"`},
+			wantErrs: []string{"6:9-6:20: cannot constrain typeof other <: typeof sym"},
+		},
+		{
+			name:     "MissingPropertyNamesTheSymbol",
+			srcs:     map[string]string{"input.esc": "declare val sym: unique symbol\ndeclare val other: unique symbol\nval o = {[sym]: 1}\nval r = o[other]"},
+			wantErrs: []string{"4:11-4:16: object is missing property: [other]"},
+		},
+		{
+			name: "WriteToAReadonlyKey",
+			srcs: map[string]string{"input.esc": `declare val sym: unique symbol
+declare class C {
+    readonly [sym]: number,
+}
+fn go(c: &mut C) { c[sym] = 5 }`},
+			wantErrs: []string{"5:20-5:30: readonly field [sym] cannot satisfy a writable field requirement"},
+		},
+		{
+			name: "WellKnownSymbol",
+			srcs: map[string]string{"input.esc": "val o = {[Symbol.iterator]: 1}"},
+			want: map[string]string{"o": "{[Symbol.iterator]: 1}"},
+		},
+		{
+			name: "ClassStatic",
+			srcs: map[string]string{"input.esc": `declare class C {
+    static readonly key: unique symbol,
+}
+val k = C.key
+val o = {[C.key]: 1}`},
+			want: map[string]string{"k": "typeof C.key", "o": "{[C.key]: 1}"},
+		},
+		{
+			name: "Namespace",
+			srcs: map[string]string{
+				"keys/sym.esc": "export declare val sym: unique symbol",
+				"input.esc":    "val k = keys.sym\nval o = {[keys.sym]: 1}",
+			},
+			want: map[string]string{"k": "typeof keys.sym", "o": "{[keys.sym]: 1}"},
+		},
+		{
+			// An instance field is reached through a value rather than a declaration path,
+			// so its symbol has no name and renders by its id.
+			name: "NoDeclarationNamesIt",
+			srcs: map[string]string{"input.esc": `declare class D {
+    readonly key: unique symbol,
+}
+declare val d: D
+val k = d.key
+val o = {[d.key]: 1}`},
+			want: map[string]string{"k": "unique symbol#0", "o": "{[unique symbol#0]: 1}"},
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			values, _, errs := inferSources(t, tt.srcs)
+			require.Equal(t, tt.wantErrs, messagesWithSpan(t, errs))
+			for name, want := range tt.want {
+				require.Equal(t, want, values[name], name)
+			}
+		})
+	}
+}

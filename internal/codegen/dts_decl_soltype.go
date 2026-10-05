@@ -95,6 +95,7 @@ func (b *Builder) BuildDefinitionsFromSol(
 				}
 				processedDecls.Add(decl)
 
+				b.solInNamespace = namespace != ""
 				declStmts := b.buildDeclStmtFromSol(decl, declNS, preludePrefix, namespace == "")
 				namespaceStmts = append(namespaceStmts, declStmts...)
 			}
@@ -120,7 +121,9 @@ func (b *Builder) BuildDefinitionsFromSol(
 // symbolKeysFromSol maps each unique symbol a module-level `val` binds to that binding's
 // name, the map solTypeAnnBuilder.symbolKeys reads. `keys` holds the module's top-level
 // bindings in the order the dependency graph typed them. When two bindings hold one
-// symbol, the first one in that order names it.
+// symbol, the binding whose name the symbol carries names it, so `sym` names the symbol
+// `declare val sym: unique symbol` mints even when `val s2 = sym` holds it too.
+// Otherwise the first binding in that order names it.
 //
 // A binding inside a namespace block is left out. A declaration outside the block can
 // reach it only through the namespace's path, and only when the block exports it.
@@ -143,7 +146,7 @@ func symbolKeysFromSol(depGraph *dep_graph.DepGraph, root SolNamespace, keys []d
 				if !ok {
 					continue
 				}
-				if _, named := symbolKeys[sym.ID]; !named {
+				if _, named := symbolKeys[sym.ID]; !named || sym.Name == name {
 					symbolKeys[sym.ID] = name
 				}
 			}
@@ -158,6 +161,9 @@ func symbolKeysFromSol(depGraph *dep_graph.DepGraph, root SolNamespace, keys []d
 func (b *Builder) solRenderer(preludePrefix, companionPrefix string, typeParams []*soltype.TypeParam) *solTypeAnnBuilder {
 	render := newSolTypeAnnBuilder(preludePrefix, companionPrefix, typeParams)
 	render.symbolKeys = b.solSymbolKeys
+	// Inside a namespace block a member called `sym` shadows the root `sym`, so a
+	// `typeof sym` written there could name the member instead.
+	render.typeofSymbols = !b.solInNamespace
 	return render
 }
 
@@ -232,6 +238,11 @@ func (b *Builder) buildVarDeclFromSol(
 		// interface, so the binding's type moves into one and the binding refers to it.
 		// `val inc = counter.increment` on a method returning `Self` is such a binding.
 		typeAnn := render.render(bindingType)
+		// The binding that names a symbol declares it, so it writes `unique symbol`
+		// rather than the `typeof sym` that would refer to itself.
+		if sym, isSym := bindingType.(*soltype.UniqueSymbolType); isSym && isTopLevel && b.solSymbolKeys[sym.ID] == name {
+			typeAnn = NewUniqueSymbolTypeAnn(nil)
+		}
 		var selfStmts []Stmt
 		if containsSelfTypeFromSol(bindingType) {
 			ifaceName := "__" + localName + "_self__"

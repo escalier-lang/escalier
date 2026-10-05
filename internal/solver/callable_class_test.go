@@ -38,7 +38,7 @@ func TestACallSignatureMakesAClassCallable(t *testing.T) {
 				val it = Sym.iterator
 			`,
 			binding: "it",
-			want:    "unique symbol#0",
+			want:    "typeof Sym.iterator",
 		},
 		{
 			// `BooleanConstructor` writes `<T>(value?: T): boolean`, so a call signature

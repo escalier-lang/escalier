@@ -365,8 +365,11 @@ func (c *Context) freshVar(level int) *soltype.TypeVarType {
 // call answers a symbol distinct from every other, which is what the annotation means: two
 // declarations of `unique symbol` are two values, and nothing about either is written down
 // for a reader to compare instead.
-func (c *Context) freshSymbol() *soltype.UniqueSymbolType {
-	s := &soltype.UniqueSymbolType{ID: c.symbolCounter}
+//
+// `name` is the dotted path of the declaration the symbol belongs to, such as `sym` or
+// `C.key`, and is empty when no declaration names it. The symbol carries it for display.
+func (c *Context) freshSymbol(name string) *soltype.UniqueSymbolType {
+	s := &soltype.UniqueSymbolType{ID: c.symbolCounter, Name: name}
 	c.symbolCounter++
 	return s
 }

@@ -1008,7 +1008,7 @@ func (c *checker) destructurePattern(
 	handled.Add(d)
 	md := &moduleDestructure{leaves: map[string]destructureLeaf{}}
 	destructured[d] = md
-	initType, ok := c.inferVarDeclInit(scope, lvl, d)
+	initType, ok := c.inferVarDeclInit(scope, lvl, d, "")
 	if !ok {
 		return md // MissingInitializerError already reported, so md.ok stays false
 	}

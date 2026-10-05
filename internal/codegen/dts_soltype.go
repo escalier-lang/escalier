@@ -56,6 +56,9 @@ type solTypeAnnBuilder struct {
 	// that symbol. TypeScript keys a member off a unique symbol by writing such a value in
 	// brackets, so `{[sym]: number}` needs `sym` in scope. A nil map names no symbol.
 	symbolKeys map[int]string
+	// typeofSymbols, when true, renders a unique symbol that symbolKeys holds a name for as
+	// `typeof sym`. When it is false, every unique symbol renders as `unique symbol`.
+	typeofSymbols bool
 }
 
 // newSolTypeAnnBuilder returns a renderer for one declaration. typeParams are
@@ -158,6 +161,12 @@ func (b *solTypeAnnBuilder) typeAnn(t soltype.Type) TypeAnn {
 		// declaration built after a reported error cascades no second one.
 		return NewAnyTypeAnn(nil)
 	case *soltype.UniqueSymbolType:
+		// TypeScript reads a written `unique symbol` as a new symbol, so a type that
+		// reaches an existing one names the value holding it, `typeof sym`. A symbol no
+		// top-level value holds keeps the `unique symbol` spelling.
+		if name, named := b.symbolKeys[t.ID]; named && b.typeofSymbols {
+			return NewTypeOfTypeAnn(convertQualIdentFromSol(name))
+		}
 		return NewUniqueSymbolTypeAnn(nil)
 	case *soltype.SelfType:
 		// `Self` is the receiver's class, which TypeScript spells `this`. No rewrite
@@ -979,7 +988,7 @@ func commonPrefix(a, b []*soltype.FuncType) []*soltype.FuncType {
 // keyed off a symbol under a reserved spelling, which renders back as a computed key:
 //
 //   - A well-known symbol's `@@name` renders as `[Symbol.name]`.
-//   - A unique symbol's `@@#id` renders as `[sym]`, where `sym` is the name
+//   - A unique symbol's reserved spelling renders as `[sym]`, where `sym` is the name
 //     symbolKeys holds for that id.
 //
 // Every other name is a string literal, which the printer emits bare when it is a
@@ -996,8 +1005,8 @@ func (b *solTypeAnnBuilder) objKeyFromSol(name string) (ObjKey, bool) {
 			nil,
 		), true
 	}
-	if id, isUnique := soltype.UniqueSymbolOfMemberName(name); isUnique {
-		symName, named := b.symbolKeys[id]
+	if sym, isUnique := soltype.UniqueSymbolOfMemberName(name); isUnique {
+		symName, named := b.symbolKeys[sym.ID]
 		if !named {
 			return nil, false
 		}

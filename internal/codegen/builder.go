@@ -34,6 +34,9 @@ type Builder struct {
 	// solSymbolKeys maps a unique symbol's id to the top-level value that names it in the
 	// module BuildDefinitionsFromSol is emitting. See symbolKeysFromSol.
 	solSymbolKeys map[int]string
+	// solInNamespace is true while BuildDefinitionsFromSol emits the declarations of a
+	// namespace block rather than the module root.
+	solInNamespace bool
 }
 
 // NewBuilder returns a Builder that answers the JSTypes questions through t, which is

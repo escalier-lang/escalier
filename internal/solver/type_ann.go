@@ -30,6 +30,28 @@ func (c *checker) resolveTypeAnn(scope *Scope, ta ast.TypeAnn, lvl int) (soltype
 	return t, ok
 }
 
+// resolveDeclaredTypeAnn resolves the annotation a declaration writes for the value it
+// binds, where `name` is that value's dotted path, such as `sym` or `C.key`. A bare
+// `unique symbol` annotation mints a symbol carrying `name`, so
+// `declare val sym: unique symbol` renders as `typeof sym`. Every other annotation
+// resolves as resolveTypeAnn resolves it. An empty `name` mints an unnamed symbol.
+func (c *checker) resolveDeclaredTypeAnn(scope *Scope, ta ast.TypeAnn, lvl int, name string) (soltype.Type, bool) {
+	if usa, ok := ta.(*ast.UniqueSymbolTypeAnn); ok {
+		t := c.mintSymbol(usa, name)
+		c.recordType(usa, t)
+		return t, true
+	}
+	return c.resolveTypeAnn(scope, ta, lvl)
+}
+
+// mintSymbol mints the symbol a `unique symbol` annotation names, carrying `name` for
+// display, and records the annotation as its provenance.
+func (c *checker) mintSymbol(ta *ast.UniqueSymbolTypeAnn, name string) *soltype.UniqueSymbolType {
+	t := c.ctx.freshSymbol(name)
+	c.recordProv(t, ta, AnnotationType)
+	return t
+}
+
 // resolveTypeAnnType is resolveTypeAnn's case analysis, split out so one place
 // records every arm's result. The level `lvl` lets a supported wrapper with an
 // unsupported inner recover that inner to a fresh var at the right level.
@@ -49,9 +71,11 @@ func (c *checker) resolveTypeAnnType(scope *Scope, ta ast.TypeAnn, lvl int) (sol
 		// Each written `unique symbol` names its own symbol, so the annotation mints one
 		// rather than resolving to a shared type. Two references to the declaration that
 		// carries it share the symbol because they share the resolved type.
-		t := c.ctx.freshSymbol()
-		c.recordProv(t, ta, AnnotationType)
-		return t, true
+		//
+		// A `unique symbol` reached here has no declaration name at hand. A declaration
+		// that types its own value with one resolves it through resolveDeclaredTypeAnn,
+		// which names the symbol.
+		return c.mintSymbol(ta, ""), true
 	case *ast.NeverTypeAnn:
 		// `never` is the bottom of the lattice, the empty type. A mapped type's key-remapping
 		// expression names it to drop a field, `{[if K : "id" { never } else { K }]: … }`, which is

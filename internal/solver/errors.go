@@ -2071,7 +2071,7 @@ func displayMemberNames(names []string) []string {
 
 // selfMemberPath renders a read of the member called `name` off `self` the way the
 // source writes it. An ordinary name reads `self.name`. A member keyed off a symbol reads
-// as an index, `self[Symbol.iterator]` or `self[unique symbol#0]`.
+// as an index, `self[Symbol.iterator]` or `self[sym]`.
 func selfMemberPath(name string) string {
 	if soltype.IsSymbolMemberName(name) {
 		return "self" + soltype.DisplayMemberName(name)
@@ -3086,7 +3086,7 @@ func (e *ReadonlyFieldError) Message() string {
 func (e *ReadonlyFieldSubtypeError) Span() ast.Span      { return spanOfNode(e.site) }
 func (e *ReadonlyFieldSubtypeError) Related() []ast.Span { return nil }
 func (e *ReadonlyFieldSubtypeError) Message() string {
-	return fmt.Sprintf("readonly field %s cannot satisfy a writable field requirement", e.Field)
+	return fmt.Sprintf("readonly field %s cannot satisfy a writable field requirement", soltype.DisplayMemberName(e.Field))
 }
 
 // describe renders a RAW, uncoalesced type for in-flight error messages (t0,

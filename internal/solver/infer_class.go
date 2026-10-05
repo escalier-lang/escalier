@@ -1294,7 +1294,14 @@ func (c *checker) buildFieldSigs(
 		}
 		var fieldType soltype.Type
 		if field.Type != nil {
-			if t, ok := c.resolveTypeAnn(scope, field.Type, lvl); ok {
+			// A static field is reached as `C.key`, so a `unique symbol` it declares is
+			// named that way. An instance field and a field under a computed or quoted key
+			// have no such path, and the symbol stays unnamed.
+			symName := ""
+			if ident, isIdent := field.Name.(*ast.IdentExpr); isIdent && field.Static {
+				symName = declScopeKey(c.classNamespace, decl.Name.Name) + "." + ident.Name
+			}
+			if t, ok := c.resolveDeclaredTypeAnn(scope, field.Type, lvl, symName); ok {
 				fieldType = t
 			} else {
 				fieldType = c.freshAt(lvl)
