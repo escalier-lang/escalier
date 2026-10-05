@@ -41,7 +41,7 @@ func TestAnnKeyNamesOneMember(t *testing.T) {
 		{
 			name:   "UniqueSymbol",
 			src:    "declare val sym: unique symbol\nfn f(o: &{[sym]: number}) { return o[sym] }",
-			values: map[string]string{"f": "fn (o: &{[unique symbol#0]: number}) -> number"},
+			values: map[string]string{"f": "fn (o: &{[sym]: number}) -> number"},
 		},
 		{
 			name:  "StringLiteral",
@@ -73,7 +73,7 @@ func TestAnnKeyNamesOneMember(t *testing.T) {
 		{
 			name:  "NamespaceMember",
 			src:   "namespace N { declare val s: unique symbol }\ntype T = {[N.s]: number}",
-			types: map[string]string{"T": "{[unique symbol#0]: number}"},
+			types: map[string]string{"T": "{[N.s]: number}"},
 		},
 		{
 			name:  "MemberOfAValue",
@@ -111,12 +111,12 @@ func TestAnnKeyNamesOneMember(t *testing.T) {
 			name: "KeyTypedThroughATypeofQuery",
 			src: "declare val sym: unique symbol\n" +
 				"fn f(s: typeof sym) {\n  val o: {[s]: number} = {[sym]: 1}\n  return o\n}",
-			values: map[string]string{"f": "fn (s: typeof sym) -> {[unique symbol#0]: number}"},
+			values: map[string]string{"f": "fn (s: typeof sym) -> {[sym]: number}"},
 		},
 		{
 			name:  "MethodKey",
 			src:   "declare val sym: unique symbol\ntype T = {[sym](&self) -> number}",
-			types: map[string]string{"T": "{[unique symbol#0]() -> number}"},
+			types: map[string]string{"T": "{[sym]() -> number}"},
 		},
 		{
 			name:  "GetterKey",
