@@ -10,6 +10,12 @@ export declare interface MessageEvent {
 // extends declares both writable. A subclass cannot take away a write its
 // superclass allows, and both members are `string` on either side, so
 // `DOMException` inherits `Error`'s instead.
+//
+// This entry is a stopgap that departs from the platform. At runtime both
+// members are getter-only accessors, so a write through a `mut DOMException`,
+// or through a `mut Error` holding one, throws in strict mode, and the types
+// accept it. #1857 lets a subclass narrow a field to readonly and rejects only
+// its `mut` upcast, after which this entry is removed.
 export declare interface DOMException {
     message: unknown,
     name: unknown,
