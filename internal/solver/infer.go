@@ -102,15 +102,16 @@ type checker struct {
 	// declaration's scope and out of a sibling signature's.
 	declLifetimes map[string]*soltype.LifetimeVar
 
-	// classNamespace is the dep_graph namespace of the class declaration currently
-	// being inferred, empty at the root namespace and outside any class body.
-	// inferClassDecl sets it on entry and restores it on exit. A class-body type
-	// reference resolves through it first, so a bare `Point` written inside a class in
-	// namespace `Geometry` finds the sibling `Geometry.Point` before falling back to a
-	// root-namespace `Point`, mirroring dep_graph's qualified-first dependency
-	// resolution. The class registry and every ClassType handle are keyed by the
-	// namespace-qualified name, so this reconstructs the qualified key a bare reference
-	// omits.
+	// classNamespace is the dep_graph namespace of the module-level declaration
+	// currently being inferred, empty at the root namespace and outside any
+	// declaration. Each type declaration sets it around its own body, and
+	// inferComponent sets it around each value key, which covers a `fn` signature
+	// and a `val` annotation. A type reference resolves through it first, so a bare
+	// `Point` written in namespace `Geometry` finds the sibling `Geometry.Point`
+	// before falling back to a root-namespace `Point`, mirroring dep_graph's
+	// qualified-first dependency resolution. The class registry and every ClassType
+	// handle are keyed by the namespace-qualified name, so this reconstructs the
+	// qualified key a bare reference omits.
 	classNamespace string
 
 	// selfClass is the handle `Self` names inside the class body being walked, nil outside
