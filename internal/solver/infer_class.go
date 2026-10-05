@@ -151,7 +151,7 @@ func (c *checker) inferClassDecl(scope *Scope, lvl int, decl *ast.ClassDecl, ns 
 	// The generated lib relies on this for every mixin a TypeScript interface named,
 	// such as `declare class Response implements Body`.
 	if decl.Declare() {
-		c.addImplementedMembers(def, self, structural)
+		c.addImplementedMembers(decl, def, self, structural)
 	}
 	// A mutually recursive method group with no annotated return cannot ground its own
 	// return types, so it is reported before any body runs. Reporting here, not during
@@ -693,28 +693,63 @@ func (c *checker) namesAlias(scope *Scope, ref *ast.TypeRefTypeAnn) bool {
 // target declares under a name the class does not already have. targets are the
 // aliases resolveClassImplements returns, in clause order. A name the class
 // declares itself, or inherits through its `extends` chain, keeps the class's
-// member. When two targets declare one name, the first in the clause supplies it.
-// A getter and a setter of one name travel together, since both come from the
-// target that supplies the name.
+// member. A getter and a setter of one name travel together, since both come from
+// the target that supplies the name.
+//
+// When two targets declare one name the class does not have, the first in the clause
+// supplies it, and a later target whose members under that name differ is reported as
+// a ConflictingImplementedMemberError. A later target that declares them identically
+// adds nothing.
 //
 // It must run after the class's own member signatures are in def.Body and before
 // the body is frozen.
-func (c *checker) addImplementedMembers(def *ClassDef, self *soltype.ClassType, targets []soltype.Type) {
-	claimed := set.NewSet[string]()
+func (c *checker) addImplementedMembers(decl *ast.ClassDecl, def *ClassDef, self *soltype.ClassType, targets []soltype.Type) {
+	own := set.NewSet[string]()
 	for _, elem := range def.Body.Elems {
-		claimed.Add(soltype.ObjElemName(elem))
+		own.Add(soltype.ObjElemName(elem))
 	}
+	type supplier struct {
+		target soltype.Type
+		elems  []soltype.ObjTypeElem
+	}
+	suppliers := map[string]supplier{}
 	for _, target := range targets {
-		supplied := set.NewSet[string]()
+		byName := map[string][]soltype.ObjTypeElem{}
+		var order []string
 		for _, elem := range c.aliasMembers(target, set.NewSet[string]()) {
 			name := soltype.ObjElemName(elem)
-			if name == "" || claimed.Contains(name) || c.inheritsMember(def, self, name) {
+			if name == "" || own.Contains(name) || c.inheritsMember(def, self, name) {
 				continue
 			}
-			def.Body.Elems = append(def.Body.Elems, elem)
-			supplied.Add(name)
+			if _, seen := byName[name]; !seen {
+				order = append(order, name)
+			}
+			byName[name] = append(byName[name], elem)
 		}
-		claimed = claimed.Union(supplied)
+		for _, name := range order {
+			elems := byName[name]
+			first, taken := suppliers[name]
+			if !taken {
+				suppliers[name] = supplier{target: target, elems: elems}
+				def.Body.Elems = append(def.Body.Elems, elems...)
+				continue
+			}
+			// TypeScript rejects an interface that extends two others declaring one name
+			// differently, and the generated lib writes that interface as this clause.
+			firstT := &soltype.ObjectType{Elems: first.elems}
+			laterT := &soltype.ObjectType{Elems: elems}
+			if !equalType(firstT, laterT) {
+				c.report(&ConflictingImplementedMemberError{
+					Class:        decl.Name.Name,
+					Member:       name,
+					First:        soltype.Print(first.target),
+					FirstMember:  firstT,
+					Second:       soltype.Print(target),
+					SecondMember: laterT,
+					Node:         decl.Name,
+				})
+			}
+		}
 	}
 }
 

@@ -560,14 +560,26 @@ func TestInferDeclareClassImplementsInterface(t *testing.T) {
 			want: map[string]string{"f": "fn (c: C) -> [number, boolean]"},
 		},
 		{
-			name: "TheFirstInterfaceSuppliesASharedName",
+			name: "TwoInterfacesDeclareASharedNameIdentically",
 			src: `
 				interface First { readonly v: number }
-				interface Second { readonly v: string }
+				interface Second { readonly v: number }
 				declare class C implements First, Second {}
 				fn f(c: C) { return c.v }
 			`,
 			want: map[string]string{"f": "fn (c: C) -> number"},
+		},
+		{
+			// The two methods differ only in their type parameter's name, so they declare the
+			// same member.
+			name: "TwoInterfacesDeclareAGenericMethodIdentically",
+			src: `
+				interface First { id<T>(self, x: T) -> T }
+				interface Second { id<U>(self, x: U) -> U }
+				declare class C implements First, Second {}
+				fn f(c: C) { return c.id(1) }
+			`,
+			want: map[string]string{"f": "fn (c: C) -> 1"},
 		},
 	}
 	for _, tt := range tests {
@@ -592,6 +604,23 @@ func TestInferDeclareClassImplementsInterface(t *testing.T) {
 		require.Len(t, errs, 1)
 		require.Equal(t, "object is missing property: name", errs[0].Message())
 	})
+}
+
+// Two interfaces in a `declare` class's `implements` clause that declare one name differently
+// are reported when the class does not declare or inherit that name. TypeScript rejects the same
+// conflict in an interface that extends both, which is how the generated lib writes it. The first
+// interface still supplies the member, so a read of it keeps a type.
+func TestInferDeclareClassImplementsConflictingInterfaces(t *testing.T) {
+	values, _, errs := inferSource(t, `
+		interface First { readonly v: number }
+		interface Second { readonly v: string }
+		declare class C implements First, Second {}
+		fn f(c: C) { return c.v }
+	`)
+	require.Equal(t, []string{
+		"class `C` implements `First` and `Second`, which declare `v` differently: `{readonly v: number}` and `{readonly v: string}`",
+	}, errorMessagesOf(errs))
+	require.Equal(t, "fn (c: C) -> number", values["f"])
 }
 
 // TestInferClassExtendFinal covers the rule that a final class cannot be a superclass:

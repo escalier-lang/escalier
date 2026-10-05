@@ -484,6 +484,21 @@ type TypeParamNotProducibleError struct {
 // types the override rule compared, subclass first. Position says which of a member's types
 // those are. It is "type" for the value the member carries and "throws type" for what
 // reaching the member may raise. Node is the redeclaring member's source.
+// ConflictingImplementedMemberError fires when two interfaces in a class's `implements`
+// clause declare a member under one name differently, and the class neither declares nor
+// inherits that name. Only a `declare` class takes members from its `implements` clause,
+// so only one reaches this. FirstMember and SecondMember hold each interface's members
+// under the name, as an object type.
+type ConflictingImplementedMemberError struct {
+	Class        string
+	Member       string
+	First        string
+	FirstMember  soltype.Type
+	Second       string
+	SecondMember soltype.Type
+	Node         ast.Node
+}
+
 type IncompatibleOverrideError struct {
 	Member     string
 	Class      string
@@ -552,6 +567,8 @@ func (*VarianceMismatchError) isSolverError()        {}
 func (*TypeParamNotProducibleError) isSolverError()  {}
 func (*IncompatibleOverrideError) isSolverError()    {}
 func (*OverrideFormMismatchError) isSolverError()    {}
+
+func (*ConflictingImplementedMemberError) isSolverError() {}
 
 // --- Per-operand blame (§3.5): each constraint kind follows its operands through
 // Prov on demand, falling back to its own site (where it keeps one) ---
@@ -719,6 +736,9 @@ func (e *TypeParamNotProducibleError) Related() []ast.Span { return nil }
 
 // Both override diagnostics blame the redeclaring member's source, degrading to the zero
 // span when the class declares the name in a form that carries no node of its own.
+func (e *ConflictingImplementedMemberError) Span() ast.Span      { return spanOfNode(e.Node) }
+func (e *ConflictingImplementedMemberError) Related() []ast.Span { return nil }
+
 func (e *IncompatibleOverrideError) Span() ast.Span      { return spanOfNode(e.Node) }
 func (e *IncompatibleOverrideError) Related() []ast.Span { return nil }
 
@@ -2844,6 +2864,11 @@ func (e *VarianceMismatchError) Message() string {
 func (e *TypeParamNotProducibleError) Message() string {
 	return fmt.Sprintf("the body forces type parameter `%s` to `%s`, so it cannot stand for an arbitrary type",
 		e.Name, describe(e.Floor))
+}
+
+func (e *ConflictingImplementedMemberError) Message() string {
+	return fmt.Sprintf("class `%s` implements `%s` and `%s`, which declare `%s` differently: `%s` and `%s`",
+		e.Class, e.First, e.Second, e.Member, soltype.Print(e.FirstMember), soltype.Print(e.SecondMember))
 }
 
 func (e *IncompatibleOverrideError) Message() string {
