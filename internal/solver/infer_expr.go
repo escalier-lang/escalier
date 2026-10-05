@@ -273,6 +273,9 @@ func (c *checker) inferFunc(scope *Scope, lvl int, sig ast.FuncSig, body *ast.Bl
 	// paramTypes maps each bound parameter name to its soltype, consumed by the M4
 	// G1 liveness pre-pass to seed parameter alias mutability.
 	paramTypes := make(map[string]soltype.Type, len(sig.Params))
+	// defaults holds each parameter default until the body's context is open, so a raise
+	// or a use inside one belongs to this function.
+	var defaults []paramDefaultSite
 	for i, p := range sig.Params {
 		// A `...xs: Array<E>` parameter binds the slot rather than one argument. restParamSlot
 		// unwraps the marker to the pattern underneath and reports the forms that cannot carry
@@ -314,10 +317,9 @@ func (c *checker) inferFunc(scope *Scope, lvl int, sig ast.FuncSig, body *ast.Bl
 				c.recordProv(pt, pat, ParamBinding)
 			}
 			if def := paramDefault(p); def != nil {
-				// The default fills the parameter when the caller omits it, so it must fit the
-				// parameter's type. It is inferred before the parameter is bound, since a default
-				// sees only the parameters ahead of it.
-				c.constrain(def, c.inferExpr(fnScope, lvl, def), pt)
+				// A default sees only the parameters ahead of it, so it is inferred later in a
+				// scope holding just the bindings made so far.
+				defaults = append(defaults, paramDefaultSite{def: def, param: pt, scope: snapshotScope(declScope, fnScope)})
 			}
 			// A parameter binding never generalizes — its var is fixed for the body — so
 			// it is a MonoScheme; instantiate returns pt unchanged at every use.
@@ -428,6 +430,10 @@ func (c *checker) inferFunc(scope *Scope, lvl int, sig ast.FuncSig, body *ast.Bl
 		}
 	}
 
+	if body == nil {
+		// A bodyless signature has no context to open, so its defaults are inferred here.
+		c.inferParamDefaults(lvl, defaults)
+	}
 	var ret soltype.Type = &soltype.UndefinedType{}
 	// collected holds each return point's type and retExprs its operand, in source order.
 	// inferStmt appends to both at every ReturnStmt, so they have the same length.
@@ -487,6 +493,9 @@ func (c *checker) inferFunc(scope *Scope, lvl int, sig ast.FuncSig, body *ast.Bl
 			c.fn.yieldNext = gen.next
 			c.fn.nextDeclared = gen.ann != nil
 		}
+		// A default runs when the function is called, so it is inferred inside this context,
+		// where a raise reaches this function's throws sink.
+		c.inferParamDefaults(lvl, defaults)
 		// M4 G1: run the liveness pre-pass before walking the body so mutability
 		// transitions are checked. It renames the body's variable nodes (writing the
 		// VarIDs DetermineAliasSource and the alias tracker read) and seeds the
@@ -3664,7 +3673,8 @@ func (c *checker) indexAccess(e *ast.IndexExpr, recv soltype.Type) (*soltype.Ind
 // boundValueType returns the type t holds as a value. That is t itself when t is not a
 // type variable, and otherwise the join of the variable's lower bounds, each resolved
 // the same way. A read of a binding is a variable bounded below by the binding's type,
-// so a read of `val k = "x"` resolves to `"x"`.
+// so a read of `val k = "x"` resolves to `"x"`. A widenable variable, the binding of an
+// unannotated `var`, resolves to its widened join, so `var k = x` resolves to `string`.
 //
 // ok is false in three cases:
 //   - A variable on the way has no lower bound, so nothing has yet flowed in to say
@@ -3700,14 +3710,20 @@ func (c *checker) boundValueTypeOnPath(t soltype.Type, onPath set.Set[*soltype.T
 		}
 		members = append(members, m)
 	}
+	var joined soltype.Type
 	switch len(members) {
 	case 0:
 		return nil, false
 	case 1:
-		return members[0], true
+		joined = members[0]
 	default:
-		return newUnion(nil, members), true
+		joined = newUnion(nil, members)
 	}
+	// An unannotated `var` initialized through another binding keeps the literal in its
+	// lower bounds, though a reassignment may store any value of that literal's primitive.
+	// Widening matches the type coalescing displays, so `val x = "a"; var k = x` reads
+	// as `string` here rather than `"a"`.
+	return widenVar(v, soltype.Positive, joined), true
 }
 
 // markOpenVar adds t to openVars when t is a type variable, and does nothing otherwise.
@@ -5281,4 +5297,30 @@ func (c *checker) inferBlockOrExpr(scope *Scope, lvl int, b *ast.BlockOrExpr) (s
 	default:
 		return &soltype.UndefinedType{}, false
 	}
+}
+
+// paramDefaultSite is one parameter default waiting to be inferred. scope holds only the
+// bindings made before the parameter, and param is the parameter's type.
+type paramDefaultSite struct {
+	def   ast.Expr
+	param soltype.Type
+	scope *Scope
+}
+
+// inferParamDefaults infers each default in its own scope and constrains it against its
+// parameter's type, since the default fills the parameter when a caller omits it.
+func (c *checker) inferParamDefaults(lvl int, defaults []paramDefaultSite) {
+	for _, d := range defaults {
+		c.constrain(d.def, c.inferExpr(d.scope, lvl, d.def), d.param)
+	}
+}
+
+// snapshotScope returns a child of parent holding a copy of fnScope's own value bindings
+// as they stand now. A binding fnScope gains later is not visible through it.
+func snapshotScope(parent, fnScope *Scope) *Scope {
+	snap := parent.Child()
+	for name, b := range fnScope.bindings() {
+		snap.defineValue(name, b)
+	}
+	return snap
 }
