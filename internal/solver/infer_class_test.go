@@ -471,6 +471,11 @@ func TestInferClassNonClassSuper(t *testing.T) {
 		require.Len(t, errs, 1)
 		require.Equal(t, "`T` does not name a class and cannot be extended or implemented.", errs[0].Message())
 	})
+	t.Run("extends an interface", func(t *testing.T) {
+		_, _, errs := inferSource(t, "interface I { x: number }\nclass C extends I { constructor(&mut self) {} }")
+		require.Len(t, errs, 1)
+		require.Equal(t, "`I` does not name a class and cannot be extended or implemented.", errs[0].Message())
+	})
 	t.Run("implements a type parameter", func(t *testing.T) {
 		_, _, errs := inferSource(t, `class C<T> implements T {}`)
 		require.Len(t, errs, 1)

@@ -25,9 +25,8 @@ import (
 //
 //   - A source one checker rejects. Comparing the degraded output two different recovery
 //     paths produce says nothing about emission. `class D extends B` without an explicit
-//     constructor is one, which internal/checker rejects and #1720 covers, and
-//     `class C implements I` over an interface is another, which internal/solver rejects
-//     and #1825 covers. shapeDiagnostics enforces this rather than leaving it to a reader.
+//     constructor is one, which internal/checker rejects and #1720 covers.
+//     shapeDiagnostics enforces this rather than leaving it to a reader.
 //   - A borrow anywhere in a type. internal/checker panics with `unknown type: <error>`
 //     when one reaches emission, #1805, and a panic takes the test binary down rather
 //     than failing the one case.
@@ -69,6 +68,7 @@ var declarationShapes = map[string]string{
 	"AnOverloadedMethod":    "declare class C {\n\tm(&self, x: number) -> number,\n\tm(&self, x: string) -> string,\n}",
 	"ASymbolKeyedMember": "class C {\n\tmsg: string,\n\tstatic [Symbol.customMatcher](subject: C) -> [string] {\n" +
 		"\t\treturn [subject.msg]\n\t}\n}",
+	"AClassImplements": "interface I {\n\tx: number,\n}\nclass C implements I {\n\tx: number,\n}",
 	"AClassExtends": "class B {\n\tx: number,\n\tconstructor(&mut self, x: number) { self.x = x },\n}\n" +
 		"class D extends B {\n\ty: number,\n\tconstructor(&mut self, x: number, y: number) {\n" +
 		"\t\tsuper(x)\n\t\tself.y = y\n\t},\n}",
