@@ -464,7 +464,7 @@ func TestInferBorrowAliasEscapingOwnedReturnRejected(t *testing.T) {
 }`
 	_, _, errs := inferSource(t, src)
 	require.Equal(t, []string{
-		"1:30-1:41: borrowed value object does not live long enough to satisfy object",
+		"1:30-1:41: borrowed value object does not live long enough to satisfy owned object",
 	}, messagesWithSpan(t, errs))
 }
 

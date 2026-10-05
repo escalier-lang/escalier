@@ -460,6 +460,101 @@ func (c *Context) constrainTupleIntoArray(sub *soltype.TupleType, super, elemT s
 	return errs
 }
 
+// constrainBorrowedFieldRead reads each property a field-read requirement names off the
+// pointee of sub, a borrow carrying a lifetime, and constrains the read into the property's
+// variable. A field holding an object, a tuple, a class instance, or an owned `mut` cell
+// reads as a borrow bounded by sub's lifetime, the rule fieldReadBorrow applies to a member
+// read off an annotated borrow. So `x.inner` off `x: &C` cannot outlive `x`. Any other member
+// reads as the object arm reads it.
+//
+// A union pointee is read member by member, each member contributing its own read. It
+// returns ok=false when the pointee, or a member of a union pointee, is neither an object
+// nor a class instance. The caller then reports the borrow as escaping, which is what a
+// pointee whose shape is still a variable reaches.
+func (c *Context) constrainBorrowedFieldRead(sub *soltype.RefType, req *soltype.ObjectType, seen *seenPairs) ([]SolverError, bool) {
+	inner := c.peelTransparent(sub.Inner)
+	if union, ok := inner.(*soltype.UnionType); ok {
+		var errs []SolverError
+		for _, member := range union.Types {
+			ri, ok := member.(soltype.RefInner)
+			if !ok {
+				return nil, false
+			}
+			memberErrs, ok := c.constrainBorrowedFieldRead(&soltype.RefType{Mut: sub.Mut, Lt: sub.Lt, Inner: ri}, req, seen)
+			if !ok {
+				return nil, false
+			}
+			errs = append(errs, memberErrs...)
+		}
+		return errs, true
+	}
+	var obj *soltype.ObjectType
+	switch inner := inner.(type) {
+	case *soltype.ObjectType:
+		obj = inner
+	case *soltype.ClassType:
+		body, ok := c.projectClassBody(inner)
+		if !ok {
+			return nil, false
+		}
+		obj = body
+	default:
+		return nil, false
+	}
+	var errs []SolverError
+	for _, elem := range req.Elems {
+		want := elem.(*soltype.PropertyElem)
+		prop, found := obj.Prop(want.Name)
+		var read soltype.Type
+		if found {
+			read = borrowedFieldType(prop.Type, sub)
+		}
+		if read == nil {
+			single := &soltype.ObjectType{Elems: []soltype.ObjTypeElem{want}, Inexact: true}
+			errs = append(errs, c.constrain(obj, single, seen, false)...)
+			continue
+		}
+		if prop.Optional {
+			read = &soltype.UnionType{Types: []soltype.Type{read, &soltype.UndefinedType{}}}
+		}
+		errs = append(errs, c.constrain(read, want.Type, seen, false)...)
+	}
+	return errs, true
+}
+
+// borrowedFieldType returns the type a field of type field reads as through borrow, or nil
+// for a field that reads as declared. An owned `mut` cell and an object, tuple, class
+// instance, or alias read as a borrow bounded by borrow's lifetime. A union reads member by
+// member. A field holding an immutable borrow reads as declared, and one holding a mutable
+// borrow is reborrowed immutably, since a borrow shared with others cannot lend a write.
+func borrowedFieldType(field soltype.Type, borrow *soltype.RefType) soltype.Type {
+	switch f := field.(type) {
+	case *soltype.RefType:
+		if f.Lt == nil {
+			return &soltype.RefType{Mut: f.Mut, Lt: borrow.Lt, Inner: f.Inner}
+		}
+		if f.Mut {
+			return &soltype.RefType{Mut: false, Lt: f.Lt, Inner: f.Inner}
+		}
+	case *soltype.ObjectType, *soltype.TupleType, *soltype.ClassType, *soltype.AliasType:
+		return &soltype.RefType{Mut: borrow.Mut, Lt: borrow.Lt, Inner: f.(soltype.RefInner)}
+	case *soltype.UnionType:
+		members := make([]soltype.Type, len(f.Types))
+		changed := false
+		for i, member := range f.Types {
+			members[i] = member
+			if read := borrowedFieldType(member, borrow); read != nil {
+				members[i] = read
+				changed = true
+			}
+		}
+		if changed {
+			return &soltype.UnionType{Types: members}
+		}
+	}
+	return nil
+}
+
 // peelTransparent resolves t through the wrappers that merely name another type, an alias
 // and a recursive μ-knot, so a caller dispatching on t's kind sees the type the name
 // stands for. The unwrap is bounded by maxUnwrapDepth, since an alias whose body names
@@ -1598,6 +1693,17 @@ func (c *Context) constrain(sub, super soltype.Type, seen *seenPairs, mutCtx boo
 		// var arm so the WHOLE borrow is recorded as a bound — peeling there would drop
 		// its mutability.
 		if _, superIsVar := super.(*soltype.TypeVarType); !superIsVar {
+			// A field-read requirement reads through the borrow rather than storing it. An
+			// unannotated callback parameter reaches here when a borrow flows into it, as
+			// `arr` does in `xs.each(fn (v, arr) { return arr.length })`.
+			if req, ok := super.(*soltype.ObjectType); ok && isFieldReadReq(req) {
+				if sub.Lt == nil {
+					return c.constrain(sub.Inner, super, seen, false)
+				}
+				if errs, ok := c.constrainBorrowedFieldRead(sub, req, seen); ok {
+					return errs
+				}
+			}
 			if sub.Lt != nil {
 				// Emit BorrowEscapeError only when the peeled inner satisfies super, so
 				// the lifetime is the blocker; otherwise surface the inner's mismatch.

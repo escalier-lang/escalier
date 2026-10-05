@@ -2919,6 +2919,197 @@ func TestInferSelfTypeInAParameterRejected(t *testing.T) {
 	})
 }
 
+// TestInferBorrowedReceiverInACallback covers a callback parameter that borrows the receiver,
+// written `&Self` or with the class by name. An unannotated callback parameter takes the borrow
+// from the signature, so the callback reads through it and cannot keep it. `&Self` reads at
+// the receiver's own class, a subclass for a subclass instance.
+func TestInferBorrowedReceiverInACallback(t *testing.T) {
+	t.Parallel()
+
+	const coll = `
+		declare class Coll<T> {
+			each(&self, cb: fn (v: T, arr: &Self) -> unknown) -> unknown,
+			push(&mut self, v: T) -> number,
+			readonly length: number,
+		}
+	`
+	const named = `
+		declare class Named<T> {
+			each(&self, cb: fn (v: T, arr: &Named<T>) -> unknown) -> unknown,
+			push(&mut self, v: T) -> number,
+			readonly length: number,
+		}
+	`
+	tests := []struct {
+		name string
+		src  string
+		want []string
+	}{
+		{
+			name: "a callback reads through a borrowed self",
+			src: coll + `
+				fn f(xs: Coll<number>) { xs.each(fn (v, arr) { return arr.length }) }
+			`,
+		},
+		{
+			name: "a borrowed self reads at the subclass",
+			src: coll + `
+				declare class Sub extends Coll<number> {
+					constructor(&mut self),
+					readonly extra: number,
+				}
+				fn f(s: Sub) { s.each(fn (v, arr) { return arr.extra }) }
+			`,
+		},
+		{
+			name: "a callback cannot keep a borrowed self",
+			src: coll + `
+				fn f(s: Coll<number>) -> Coll<number> | undefined {
+					var keep: Coll<number> | undefined = undefined
+					s.each(fn (v, arr) {
+						keep = arr
+						return 0
+					})
+					return keep
+				}
+			`,
+			want: []string{
+				"borrowed value Coll<number> does not live long enough to satisfy undefined | Coll<number>",
+			},
+		},
+		{
+			// `x.inner` reads as a borrow bounded by `x`, so it cannot be kept either.
+			name: "a callback cannot keep a field it reads through a borrow",
+			src: `
+				class Box { v: number }
+				class C {
+					readonly inner: mut Box,
+					each(&self, cb: fn (c: &C) -> undefined) -> undefined { return undefined },
+				}
+				fn f(c: C, keep: mut Array<mut Box>) {
+					c.each(fn (x) {
+						keep.push(x.inner)
+						return undefined
+					})
+				}
+			`,
+			want: []string{"borrowed value mut Box does not live long enough to satisfy owned mut Box"},
+		},
+		{
+			name: "a callback reads a field's field through a borrow",
+			src: `
+				class Box { v: number }
+				class C {
+					readonly inner: mut Box,
+					readonly n: number,
+					each(&self, cb: fn (c: &C) -> undefined) -> undefined { return undefined },
+				}
+				fn f(c: C) -> number {
+					var total = 0
+					c.each(fn (x) {
+						total = x.n + x.inner.v
+						return undefined
+					})
+					return total
+				}
+			`,
+		},
+		{
+			name: "a callback reads a field through a borrowed union",
+			src: `
+				class A { readonly n: number }
+				class B { readonly n: number }
+				declare fn each(cb: fn (x: &(A | B)) -> unknown) -> unknown
+				fn f() { each(fn (x) { return x.n }) }
+			`,
+		},
+		{
+			name: "a callback cannot keep a nullable field it reads through a borrow",
+			src: `
+				class Box { v: number }
+				class C {
+					readonly inner: mut Box | null,
+					each(&self, cb: fn (c: &C) -> undefined) -> undefined { return undefined },
+				}
+				fn f(c: C, keep: mut Array<mut Box | null>) {
+					c.each(fn (x) {
+						keep.push(x.inner)
+						return undefined
+					})
+				}
+			`,
+			want: []string{"cannot constrain mut Box <: mut Box | null"},
+		},
+		{
+			// The pointee is still a variable when `x.inner` is read, so no field is known
+			// to bound and the borrow is reported as escaping.
+			name: "a callback cannot keep a field it reads through a borrowed variable",
+			src: `
+				class Box { v: number }
+				class C { readonly inner: mut Box }
+				declare fn each<T>(v: &T, cb: fn (x: &T) -> undefined) -> undefined
+				fn f(c: C, keep: mut Array<mut Box>) {
+					each(&c, fn (x) {
+						keep.push(x.inner)
+						return undefined
+					})
+				}
+			`,
+			want: []string{"borrowed value t13 does not live long enough to satisfy object"},
+		},
+		{
+			// A shared borrow of `C` cannot lend the write its `&'a mut` field holds.
+			name: "a callback cannot write through a mutable borrow it reads through a shared one",
+			src: `
+				class Box { v: number }
+				class C<'a> { readonly m: &'a mut Box }
+				declare fn each<'a>(c: C<'a>, cb: fn (x: &C<'a>) -> undefined) -> undefined
+				fn f(c: C<'static>) {
+					each(c, fn (x) {
+						val p = x.m
+						p.v = 5
+						return undefined
+					})
+				}
+			`,
+			want: []string{"cannot constrain immutable Box <: mutable object"},
+		},
+		{
+			name: "a direct parameter cannot borrow Self",
+			src:  `declare class Box { eq(&self, other: &Self) -> boolean }`,
+			want: []string{
+				"\"Self\" cannot be written in a direct parameter position; it denotes the " +
+					"receiver's own class, so a subclass would demand an argument its superclass " +
+					"accepts — write the class by name instead",
+			},
+		},
+		{
+			name: "a callback reads through a borrow written by name",
+			src: named + `
+				fn f(xs: Named<number>) { xs.each(fn (v, arr) { return arr.length }) }
+			`,
+		},
+		{
+			name: "a callback cannot call a mutating method through a borrow",
+			src: named + `
+				fn f(xs: Named<number>) { xs.each(fn (v, arr) { return arr.push(1) }) }
+			`,
+			want: []string{"object is missing property: push"},
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			_, _, errs := inferSource(t, tt.src)
+			if len(tt.want) == 0 {
+				require.Empty(t, errorMessagesOf(errs))
+				return
+			}
+			require.Equal(t, tt.want, errorMessagesOf(errs))
+		})
+	}
+}
+
 // The override check reads an inherited member as the declaring class offers it TO the class
 // redeclaring it, so a `-> Self` member is compared at that class however many levels up it was
 // declared. The walk climbs one superclass at a time, and reading `Self` at the class the walk

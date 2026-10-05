@@ -2965,8 +2965,14 @@ func concreteBoundOf(v *soltype.TypeVarType) (soltype.Type, bool) {
 }
 
 func (e *BorrowEscapeError) Message() string {
-	return fmt.Sprintf("borrowed value %s does not live long enough to satisfy %s",
-		describe(e.Sub), describe(e.Super))
+	sub, super := describe(e.Sub), describe(e.Super)
+	// A borrow and the owned value it points at print alike, so the destination is named as
+	// owned when the two would otherwise read the same. A callback annotated
+	// `arr: Array<number>` where the signature lends `&Self` is that case.
+	if sub == super {
+		super = "owned " + super
+	}
+	return fmt.Sprintf("borrowed value %s does not live long enough to satisfy %s", sub, super)
 }
 
 func (e *MutFieldError) Span() ast.Span      { return e.Ann.Span() }
