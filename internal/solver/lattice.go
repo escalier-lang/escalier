@@ -274,6 +274,11 @@ func collapseIntersection(pruned []soltype.Type, hadError bool) soltype.Type {
 // constraint, so dropping one would silently lose a distinct lifetime the
 // signature quantifies over. Gating on the lifetime sort keeps both borrows.
 //
+// A member naming an alias whose body is still being built is left alone too.
+// Comparing against such an alias expands it to the ErrorType a nil Body yields,
+// and ErrorType absorbs. In `interface L { next: L | undefined }` the trial
+// `undefined <: L` would then succeed and drop `undefined` from the field.
+//
 // When two members mutually subsume, the survivor must be deterministic. The
 // pass pre-sorts the input by compareType, so the iteration order is
 // canonical and newUnion([A, B]) and newUnion([B, A]) drop the same member
@@ -286,10 +291,11 @@ func subsumeMembers(c *Context, parts []soltype.Type, drops func(c *Context, m, 
 	parts = append([]soltype.Type(nil), parts...)
 	sortTypes(parts)
 	// hasVar[i] is true when member i still carries a free type or lifetime
-	// variable, so it is skipped by the concrete gate below.
+	// variable or names an alias under construction, so it is skipped by the
+	// concrete gate below.
 	hasVar := make([]bool, len(parts))
 	for i, p := range parts {
-		hasVar[i] = !concreteMember(p)
+		hasVar[i] = !concreteMember(p) || namesAliasIn(p, c.buildingAliases)
 	}
 	dropped := set.NewSet[int]()
 	for i, a := range parts {
@@ -333,6 +339,38 @@ func subtypeHolds(c *Context, sub, super soltype.Type) bool {
 func concreteMember(t soltype.Type) bool {
 	return !soltype.HasTypeVar(t) && !soltype.HasLifetimeVar(t)
 }
+
+// namesAliasIn reports whether t contains a reference to an alias whose qualified
+// name is in names. It reads t alone and expands no alias. An empty names returns
+// false without walking t.
+func namesAliasIn(t soltype.Type, names set.Set[string]) bool {
+	if names.Len() == 0 {
+		return false
+	}
+	s := &aliasNameSeeker{names: names}
+	t.Accept(s, soltype.Positive)
+	return s.found
+}
+
+// aliasNameSeeker is the read-only visitor behind namesAliasIn. It stops
+// descending once it has found a reference.
+type aliasNameSeeker struct {
+	names set.Set[string]
+	found bool
+}
+
+func (s *aliasNameSeeker) EnterType(t soltype.Type, _ soltype.Polarity) soltype.EnterResult {
+	if s.found {
+		return soltype.EnterResult{SkipChildren: true}
+	}
+	if at, ok := t.(*soltype.AliasType); ok && s.names.Contains(at.Name) {
+		s.found = true
+		return soltype.EnterResult{SkipChildren: true}
+	}
+	return soltype.EnterResult{}
+}
+
+func (s *aliasNameSeeker) ExitType(t soltype.Type, _ soltype.Polarity) soltype.Type { return t }
 
 // unionDrops returns true when union member m should be dropped because the
 // sibling subsumes it. The check is m <: sibling.
