@@ -462,8 +462,10 @@ func (c *Context) constrainTupleIntoArray(sub *soltype.TupleType, super, elemT s
 
 // constrainBorrowedFieldRead reads each property req names off the pointee of sub, a borrow
 // with a lifetime, and constrains each read into the property's variable in req. It returns
-// ok=false when the pointee is not an object, a class instance, or a union of those.
-func (c *Context) constrainBorrowedFieldRead(sub *soltype.RefType, req *soltype.ObjectType, seen *seenPairs) ([]SolverError, bool) {
+// ok=false when the pointee is not an object, a class instance, a type variable, or a union
+// of those. With skipMissing set, a property the pointee lacks is skipped rather than
+// reported.
+func (c *Context) constrainBorrowedFieldRead(sub *soltype.RefType, req *soltype.ObjectType, seen *seenPairs, skipMissing bool) ([]SolverError, bool) {
 	inner := c.peelTransparent(sub.Inner)
 	// A union pointee is read member by member under the same borrow. Each member's read
 	// joins into the property's variable.
@@ -474,13 +476,17 @@ func (c *Context) constrainBorrowedFieldRead(sub *soltype.RefType, req *soltype.
 			if !ok {
 				return nil, false
 			}
-			memberErrs, ok := c.constrainBorrowedFieldRead(&soltype.RefType{Mut: sub.Mut, Lt: sub.Lt, Inner: ri}, req, seen)
+			memberErrs, ok := c.constrainBorrowedFieldRead(&soltype.RefType{Mut: sub.Mut, Lt: sub.Lt, Inner: ri}, req, seen, skipMissing)
 			if !ok {
 				return nil, false
 			}
 			errs = append(errs, memberErrs...)
 		}
 		return errs, true
+	}
+	// A pointee whose shape is not known yet is read off each lower bound it gains.
+	if v, ok := inner.(*soltype.TypeVarType); ok {
+		return c.constrainBorrowedVarFieldRead(sub, v, req, seen), true
 	}
 	// A class instance is read through its body, projected at the instance's arguments so a
 	// field typed `T` reads as the argument. Any other pointee is left to the caller, which
@@ -493,6 +499,9 @@ func (c *Context) constrainBorrowedFieldRead(sub *soltype.RefType, req *soltype.
 	for _, elem := range req.Elems {
 		want := elem.(*soltype.PropertyElem)
 		prop, found := obj.Prop(want.Name)
+		if !found && skipMissing {
+			continue
+		}
 		// A field holding an object, a tuple, a class instance, or an owned `mut` cell reads
 		// as a borrow bounded by sub's lifetime, so `x.inner` off `x: &C` cannot outlive `x`.
 		// fieldReadBorrow applies the same rule to a member read off an annotated borrow.
@@ -514,6 +523,54 @@ func (c *Context) constrainBorrowedFieldRead(sub *soltype.RefType, req *soltype.
 		errs = append(errs, c.constrain(read, want.Type, seen, false)...)
 	}
 	return errs, true
+}
+
+// constrainBorrowedVarFieldRead reads a field-read requirement off sub, a borrow whose pointee
+// v is still a type variable. Each property is read off every concrete lower bound v has now,
+// and off every one it gains later. A property's value is the union of those reads, so a v
+// that never gains a concrete lower bound reads as `never`.
+//
+// v is also constrained against the requirement's shape, with a fresh variable standing for
+// each property. The shape reports any property a lower bound lacks, and it reads each lower
+// bound the ordinary way.
+func (c *Context) constrainBorrowedVarFieldRead(sub *soltype.RefType, v *soltype.TypeVarType, req *soltype.ObjectType, seen *seenPairs) []SolverError {
+	shapeElems := make([]soltype.ObjTypeElem, len(req.Elems))
+	for i, elem := range req.Elems {
+		shapeElems[i] = &soltype.PropertyElem{Name: elem.(*soltype.PropertyElem).Name, Type: c.freshVar(v.Level)}
+	}
+	shape := &soltype.ObjectType{Elems: shapeElems, Inexact: true}
+	// The lower bounds v has now are read here. Any bound added after the read is recorded
+	// is read by the variable arm of constrain, so the two sets do not overlap.
+	existing := v.LowerBounds
+	read := borrowedRead{borrow: sub, req: req, shape: shape}
+	c.addBorrowedRead(v, read)
+	errs := c.constrain(v, shape, seen, false)
+	for _, lb := range existing {
+		errs = append(errs, c.readThroughLowerBound(read, lb, seen)...)
+	}
+	return errs
+}
+
+// readThroughLowerBound reads r's requirement off lb, a lower bound of r's pointee. An object
+// or class instance is read under r's borrow, skipping a property lb lacks. A variable lower
+// bound contributes nothing, since each concrete bound reaching it reaches the pointee as well.
+func (c *Context) readThroughLowerBound(r borrowedRead, lb soltype.Type, seen *seenPairs) []SolverError {
+	if _, isVar := lb.(*soltype.TypeVarType); isVar {
+		return nil
+	}
+	if ri, ok := lb.(soltype.RefInner); ok {
+		if errs, ok := c.constrainBorrowedFieldRead(&soltype.RefType{Mut: r.borrow.Mut, Lt: r.borrow.Lt, Inner: ri}, r.req, seen, true); ok {
+			return errs
+		}
+	}
+	// The borrow rule cannot read a lower bound such as a borrow, an intersection, or a union
+	// with `null`. The shape constraint has already read it the ordinary way and reported its
+	// errors, so its property variables are passed on to the read.
+	var errs []SolverError
+	for i, elem := range r.req.Elems {
+		errs = append(errs, c.constrain(r.shape.Elems[i].(*soltype.PropertyElem).Type, elem.(*soltype.PropertyElem).Type, seen, false)...)
+	}
+	return errs
 }
 
 // borrowedFieldType returns the type a field of type field reads as through borrow, or nil
@@ -1695,7 +1752,7 @@ func (c *Context) constrain(sub, super soltype.Type, seen *seenPairs, mutCtx boo
 				if sub.Lt == nil {
 					return c.constrain(sub.Inner, super, seen, false)
 				}
-				if errs, ok := c.constrainBorrowedFieldRead(sub, req, seen); ok {
+				if errs, ok := c.constrainBorrowedFieldRead(sub, req, seen, false); ok {
 					return errs
 				}
 			}
@@ -1861,6 +1918,9 @@ func (c *Context) constrain(sub, super soltype.Type, seen *seenPairs, mutCtx boo
 			var errs []SolverError
 			for _, ub := range superVar.UpperBounds {
 				errs = append(errs, c.constrain(sub, ub, seen, false)...)
+			}
+			for _, r := range c.borrowedReads[superVar] {
+				errs = append(errs, c.readThroughLowerBound(r, sub, seen)...)
 			}
 			return c.breadcrumbUnionCommit(errs, superVar)
 		}
@@ -2867,6 +2927,17 @@ func (e *extruder) EnterType(t soltype.Type, pol soltype.Polarity) soltype.Enter
 		e.c.addLowerBound(v, nv)
 		for _, ub := range v.UpperBounds {
 			e.c.addUpperBound(nv, ub.Accept(e, pol))
+		}
+		// nv is a lower bound of v, but v is not an upper bound of nv. A concrete bound that
+		// later reaches nv therefore never reaches v, so nv takes v's pending borrowed reads
+		// the way it takes v's upper bounds.
+		for _, r := range e.c.borrowedReads[v] {
+			extruded := (&soltype.RefType{Mut: r.borrow.Mut, Lt: r.borrow.Lt, Inner: r.req}).Accept(e, pol).(*soltype.RefType)
+			e.c.addBorrowedRead(nv, borrowedRead{
+				borrow: extruded,
+				req:    extruded.Inner.(*soltype.ObjectType),
+				shape:  r.shape.Accept(e, pol).(*soltype.ObjectType),
+			})
 		}
 	}
 	return soltype.EnterResult{Type: nv, SkipChildren: true}

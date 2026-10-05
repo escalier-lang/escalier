@@ -3587,8 +3587,8 @@ func TestInferBorrowedReceiverInACallback(t *testing.T) {
 			want: []string{"cannot constrain mut Box <: mut Box | null"},
 		},
 		{
-			// The pointee is still a variable when `x.inner` is read, so no field is known
-			// to bound and the borrow is reported as escaping.
+			// `T` is still a variable when `x.inner` is read, but `c` has already given it
+			// the lower bound `C`. The field is read off `C` as a borrow bounded by `x`.
 			name: "a callback cannot keep a field it reads through a borrowed variable",
 			src: `
 				class Box { v: number }
@@ -3601,7 +3601,119 @@ func TestInferBorrowedReceiverInACallback(t *testing.T) {
 					})
 				}
 			`,
-			want: []string{"cannot use borrowed &t13 as owned object"},
+			want: []string{"cannot use borrowed &mut Box as owned mut Box"},
+		},
+		{
+			name: "a callback reads a field's field through a borrowed variable",
+			src: `
+				class Box { v: number }
+				class C { readonly inner: mut Box }
+				declare fn each<T>(v: &T, cb: fn (x: &T) -> undefined) -> undefined
+				fn f(c: &C) -> number {
+					var total = 0
+					each(c, fn (x) {
+						total = x.inner.v
+						return undefined
+					})
+					return total
+				}
+			`,
+		},
+		{
+			// The callback is inferred before `c` reaches `T`. The read waits for that lower
+			// bound and then reads off it.
+			name: "a callback reads through a borrowed variable bound after it",
+			src: `
+				class Box { v: number }
+				class C { readonly inner: mut Box }
+				declare fn each<T>(cb: fn (x: &T) -> undefined, v: &T) -> undefined
+				fn f(c: &C) -> number {
+					var total = 0
+					each(fn (x) {
+						total = x.inner.v
+						return undefined
+					}, c)
+					return total
+				}
+			`,
+		},
+		{
+			name: "a callback cannot keep a field it reads through a borrowed variable bound after it",
+			src: `
+				class Box { v: number }
+				class C { readonly inner: mut Box }
+				declare fn each<T>(cb: fn (x: &T) -> undefined, v: &T) -> undefined
+				fn f(c: &C, keep: &mut Array<mut Box>) {
+					each(fn (x) {
+						keep.push(x.inner)
+						return undefined
+					}, c)
+				}
+			`,
+			want: []string{"cannot use borrowed &mut Box as owned mut Box"},
+		},
+		{
+			// `a` and `b` each give `T` a lower bound, so `x.n` reads as `number | string`
+			// and does not fit `total`.
+			name: "a read through a borrowed variable joins every lower bound",
+			src: `
+				class A { readonly n: number }
+				class B { readonly n: string }
+				declare fn each<T>(a: &T, cb: fn (x: &T) -> undefined, b: &T) -> undefined
+				fn f(a: &A, b: &B) -> number {
+					var total = 0
+					each(a, fn (x) {
+						total = x.n
+						return undefined
+					}, b)
+					return total
+				}
+			`,
+			want: []string{"cannot constrain string <: number"},
+		},
+		{
+			// `T`'s lower bound is the borrow `&C`, which is read through its own lifetime.
+			name: "a read through a borrowed variable whose lower bound is a borrow",
+			src: `
+				class C { readonly n: number }
+				declare fn each<T>(v: T, cb: fn (x: &T) -> undefined) -> undefined
+				fn f(c: &C) {
+					each(c, fn (x) {
+						val b: boolean = x.n
+						return undefined
+					})
+				}
+			`,
+			want: []string{"cannot constrain number <: boolean"},
+		},
+		{
+			name: "a read through a borrowed variable whose lower bound may be null",
+			src: `
+				class C { readonly n: number }
+				declare fn each<T>(v: &T, cb: fn (x: &T) -> undefined) -> undefined
+				fn f(c: &(C | null)) {
+					each(c, fn (x) {
+						val b: number = x.n
+						return undefined
+					})
+				}
+			`,
+			want: []string{"cannot constrain null <: object"},
+		},
+		{
+			// The missing property is reported once, by the shape `T` is checked against.
+			name: "a callback reads a missing field through a borrowed variable",
+			src: `
+				class C { readonly n: number }
+				declare fn each<T>(v: &T, cb: fn (x: &T) -> undefined) -> undefined
+				fn f(c: &C) {
+					each(c, fn (x) {
+						val m = x.missing
+						return undefined
+					})
+				}
+			`,
+			want: []string{"object is missing property: missing"},
 		},
 		{
 			// An immutable borrow of `C` cannot lend the write its `&'a mut` field holds.
