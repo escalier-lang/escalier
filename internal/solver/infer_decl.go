@@ -772,25 +772,44 @@ func containsOwnedMut(t soltype.Type) bool {
 }
 
 // resultContainsOwnedMut reports whether a value t may hold contains an owned-mutable cell.
-// It is containsOwnedMut extended through each type variable's lower bounds, which is the
-// form a call result reaches its destination in. seen holds the variables on the current
-// path, so a cycle in the bound graph ends the walk.
+// It is containsOwnedMut extended through each type variable's lower bounds, at the top level
+// and inside an object or tuple. A call result reaches its destination as a variable, and a
+// callee with an inferred return type hands back an object or tuple whose fields are
+// variables too. seen holds the variables on the current path, so a cycle in the bound graph
+// ends the walk.
 func resultContainsOwnedMut(t soltype.Type, seen set.Set[*soltype.TypeVarType]) bool {
-	v, ok := t.(*soltype.TypeVarType)
-	if !ok {
+	switch t := t.(type) {
+	case *soltype.TypeVarType:
+		if seen.Contains(t) {
+			return false
+		}
+		seen.Add(t)
+		defer seen.Remove(t)
+		for _, lb := range t.LowerBounds {
+			if resultContainsOwnedMut(lb, seen) {
+				return true
+			}
+		}
+		return false
+	case *soltype.ObjectType:
+		for _, e := range t.Elems {
+			// Only a plain property carries a type to look inside, as in containsOwnedMut.
+			prop, isProp := e.(*soltype.PropertyElem)
+			if isProp && resultContainsOwnedMut(prop.Type, seen) {
+				return true
+			}
+		}
+		return false
+	case *soltype.TupleType:
+		for _, e := range t.Elems {
+			if resultContainsOwnedMut(e, seen) {
+				return true
+			}
+		}
+		return false
+	default:
 		return containsOwnedMut(t)
 	}
-	if seen.Contains(v) {
-		return false
-	}
-	seen.Add(v)
-	defer seen.Remove(v)
-	for _, lb := range v.LowerBounds {
-		if resultContainsOwnedMut(lb, seen) {
-			return true
-		}
-	}
-	return false
 }
 
 // isMutableIdentPat reports whether p is a simple identifier binding written with

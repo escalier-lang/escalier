@@ -722,8 +722,8 @@ func TestValMutUpgradesAnOwnedCallResult(t *testing.T) {
 // does, so an annotated `val d: mut C = f()` takes it as `val mut d = f()` does. The
 // destinations covered are a declaration's annotation, a `mut` parameter, a reassignment
 // and a `mut` return annotation. A borrow return is not owned and a variable is not
-// consumed at module level, so both are still rejected, and a result that is already an
-// owned-mutable cell keeps that cell invariant.
+// consumed at module level, so both are still rejected. A result that is an owned-mutable
+// cell, or holds one in a field of an inferred return type, keeps that cell invariant.
 func TestOwnedCallResultFlowsIntoAMutDestination(t *testing.T) {
 	const counter = `
 		class Counter {
@@ -771,6 +771,10 @@ func TestOwnedCallResultFlowsIntoAMutDestination(t *testing.T) {
 			src:  counter + "fn make() -> mut Counter { return shared() }",
 		},
 		{
+			name: "a callee with an inferred return type",
+			src:  "fn make() { return {p: 1} }\nval d: mut {p: number} = make()",
+		},
+		{
 			name:    "a borrow return into an annotated binding",
 			src:     counter + "declare fn peek() -> &Counter\nval d: mut Counter = peek()",
 			wantErr: "cannot constrain immutable Counter <: mutable Counter",
@@ -786,6 +790,17 @@ func TestOwnedCallResultFlowsIntoAMutDestination(t *testing.T) {
 			name:    "a call already returning `mut` keeps its cell invariant",
 			src:     "declare fn g() -> mut {a: 1}\nval d: mut {a: number} = g()",
 			wantErr: "cannot constrain number <: 1",
+		},
+		{
+			// The inferred return object's field is a variable whose lower bound is the cell.
+			name:    "a cell inside an inferred return object keeps its cell invariant",
+			src:     "declare fn cell() -> mut {x: number}\nfn make() { return {p: cell()} }\nval d: mut {p: {x: number | string}} = make()",
+			wantErr: "cannot constrain immutable object <: mutable object",
+		},
+		{
+			name:    "a cell inside an inferred return tuple keeps its cell invariant",
+			src:     "declare fn cell() -> mut {x: number}\nfn make() { return [cell(), 1] }\nval d: mut [{x: number | string}, number] = make()",
+			wantErr: "cannot constrain immutable tuple <: mutable tuple",
 		},
 	}
 	for _, tt := range tests {
