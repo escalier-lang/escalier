@@ -1,6 +1,9 @@
 package solver
 
 import (
+	"slices"
+	"sync"
+
 	"github.com/escalier-lang/escalier/internal/ast"
 	"github.com/escalier-lang/escalier/internal/set"
 	"github.com/escalier-lang/escalier/internal/soltype"
@@ -63,6 +66,29 @@ func (c *checker) queueInheritedMemberCheck(def *ClassDef, self *soltype.ClassTy
 	c.pendingOverrides = append(c.pendingOverrides, pendingOverrideCheck{def: def, self: self, decl: decl})
 }
 
+// settleQueuedVariance settles every class whose variance was provisional when its body was
+// inferred, then reports the declared modifiers each final measurement rejects, and clears
+// the queue. The module and script drivers call it once, after the last declaration is
+// inferred and before checkQueuedInheritedMembers, which reads the settled vectors.
+//
+// A class still provisional after settling sits on a cycle of classes that each name the
+// next, so none of them measures final. It keeps Invariant throughout, which is sound, and
+// no modifier is checked against it.
+func (c *checker) settleQueuedVariance() {
+	pending := c.provisionalVariance
+	c.provisionalVariance = nil
+	for _, def := range pending {
+		def.varianceTriedAt = -1
+		c.ctx.settleVariance(def)
+		if def.varianceProvisional {
+			continue
+		}
+		for _, mismatch := range def.varianceMismatches {
+			c.report(mismatch)
+		}
+	}
+}
+
 // checkQueuedInheritedMembers runs every queued override check and clears the queue. The
 // module and script drivers call it once, after the last declaration is inferred.
 func (c *checker) checkQueuedInheritedMembers() {
@@ -93,6 +119,9 @@ func (c *checker) checkInheritedMembers(def *ClassDef, self *soltype.ClassType, 
 	}
 	blame := instanceMemberNodes(decl)
 	rigid := c.ctx.skolemizeClassParams(def)
+	// Most classes override no method an ancestor widens, so the ancestors are walked on the
+	// first override that could need them.
+	wideningOnce := sync.OnceValue(func() []wideningAncestor { return c.wideningAncestors(def, self) })
 	checked := set.NewSet[string]()
 	for _, elem := range def.Body.Elems {
 		name := soltype.ObjElemName(elem)
@@ -100,7 +129,7 @@ func (c *checker) checkInheritedMembers(def *ClassDef, self *soltype.ClassType, 
 			continue
 		}
 		checked.Add(name)
-		c.checkOverriddenName(def, self, name, blame, rigid)
+		c.checkOverriddenName(def, self, name, blame, rigid, wideningOnce)
 	}
 }
 
@@ -117,12 +146,17 @@ func (c *checker) checkInheritedMembers(def *ClassDef, self *soltype.ClassType, 
 //
 // Every form check runs before any type comparison, so a member whose form disagrees is
 // reported as a form mismatch rather than through whichever comparison it happens to fail.
+//
+// widening returns the ancestors wideningAncestors returns for the class. A method one of
+// them declares is also read at that ancestor's widest instance, and the override has to
+// fit that reading too.
 func (c *checker) checkOverriddenName(
 	def *ClassDef,
 	self *soltype.ClassType,
 	name string,
 	blame map[memberBlameKey]ast.Node,
 	rigid *typeSubst,
+	widening func() []wideningAncestor,
 ) {
 	var goals []subtypeGoal
 	for _, half := range []memberHalf{readHalf, writeHalf} {
@@ -148,6 +182,17 @@ func (c *checker) checkOverriddenName(
 			return
 		}
 		goals = append(goals, halfGoals(subHalf, superHalf, half, owner)...)
+		if _, isMethod := superHalf.(*soltype.MethodElem); half != readHalf || !isMethod {
+			continue
+		}
+		// An ancestor's covariance lets an instance of this class be read as that ancestor
+		// at a wider argument, and a caller holding that view passes the method what the
+		// wider argument admits. The override has to accept that too.
+		for _, anc := range widening() {
+			if widest, ok := widestMethod(anc, self, name); ok {
+				goals = append(goals, valueGoal(subHalf, widest, half, anc.instance))
+			}
+		}
 	}
 	for _, goal := range goals {
 		// The trial rolls its bounds back, so measuring an override records nothing on the
@@ -177,20 +222,27 @@ func (c *checker) checkOverriddenName(
 // since a `throws` flows out to the caller. Each goal carries the members it came from, so a
 // rejection is rendered against the half that produced it.
 func halfGoals(subElem, superElem soltype.ObjTypeElem, half memberHalf, owner *soltype.ClassType) []subtypeGoal {
-	value := subtypeGoal{
-		shownSub: halfType(subElem, half), shownSuper: halfType(superElem, half),
-		position: "type", subElem: subElem, owner: owner,
-	}
-	value.sub, value.super = value.shownSub, value.shownSuper
-	if half == writeHalf {
-		value.sub, value.super = value.shownSuper, value.shownSub
-	}
+	value := valueGoal(subElem, superElem, half, owner)
 	throws := subtypeGoal{
 		shownSub: elemThrows(subElem), shownSuper: elemThrows(superElem),
 		position: "throws type", subElem: subElem, owner: owner,
 	}
 	throws.sub, throws.super = throws.shownSub, throws.shownSuper
 	return []subtypeGoal{value, throws}
+}
+
+// valueGoal returns the obligation a redeclared member owes the inherited member for the
+// value one access half carries, covariant for a read and contravariant for a write.
+func valueGoal(subElem, superElem soltype.ObjTypeElem, half memberHalf, owner *soltype.ClassType) subtypeGoal {
+	goal := subtypeGoal{
+		shownSub: halfType(subElem, half), shownSuper: halfType(superElem, half),
+		position: "type", subElem: subElem, owner: owner,
+	}
+	goal.sub, goal.super = goal.shownSub, goal.shownSuper
+	if half == writeHalf {
+		goal.sub, goal.super = goal.shownSuper, goal.shownSub
+	}
+	return goal
 }
 
 // inheritedHalf finds the member on def's superclass chain that serves one access half of
@@ -245,6 +297,215 @@ func (c *checker) inheritedHalfWalk(
 		}
 	}
 	return nil, nil, false
+}
+
+// wideningAncestor is an ancestor on a class's `extends` chain that an instance of the
+// class can be read as at a wider argument, through the ancestor's CovariantInputs.
+type wideningAncestor struct {
+	def *ClassDef
+	// instance is the ancestor at the arguments the class reaches it at.
+	instance *soltype.ClassType
+	// widest is instance with each widened position at its parameter's bound.
+	widest *soltype.ClassType
+}
+
+// wideningAncestors returns every ancestor of def that an instance of def can be read as at
+// a wider argument in a position CovariantInputs marks. widestInstance decides the widest
+// such reading. self is def's own instance handle.
+//
+// A position whose argument is one of def's own type parameters is left alone when that
+// parameter is unbounded and no class between def and the ancestor holds a consumer of it.
+// An override taking it is then as generic in it as the ancestor's method. The classes
+// checked are def itself, read through its StorageVariance, and each class the walk passes
+// on the way up, through consumedVars. `class Keyed<U> extends Bag<U> { key: fn (x: U) ->
+// number }` holds one, so its position is widened for Keyed and for every subclass of
+// Keyed passing its own parameter on.
+func (c *checker) wideningAncestors(def *ClassDef, self *soltype.ClassType) []wideningAncestor {
+	keep := set.NewSet[*soltype.TypeVarType]()
+	for i, tp := range def.TypeParams {
+		if tp.Constraint != nil || i >= len(def.StorageVariance) {
+			continue
+		}
+		if v := def.StorageVariance[i]; v == Covariant || v == Bivariant {
+			keep.Add(tp.Var)
+		}
+	}
+	var found []wideningAncestor
+	visited := set.NewSet[string]()
+	var walk func(sub *ClassDef, subInstance *soltype.ClassType, keep set.Set[*soltype.TypeVarType])
+	walk = func(sub *ClassDef, subInstance *soltype.ClassType, keep set.Set[*soltype.TypeVarType]) {
+		for _, superType := range sub.Supers {
+			instance := substituteSuperArgs(sub, subInstance, superType)
+			if visited.Contains(instance.Name) {
+				continue
+			}
+			visited.Add(instance.Name)
+			ancestor, ok := c.ctx.classDef(instance.Name)
+			if !ok || ancestor.Body == nil {
+				continue
+			}
+			c.ctx.settleVariance(ancestor)
+			if widest, ok := widestInstance(ancestor, instance, keep); ok {
+				found = append(found, wideningAncestor{def: ancestor, instance: instance, widest: widest})
+			}
+			walk(ancestor, instance, keep.Difference(c.consumedVars(ancestor, instance, keep)))
+		}
+	}
+	walk(def, self, keep)
+	return found
+}
+
+// consumedVars returns the vars in vars that def's storage takes as input when def is
+// reached as instance. Each of instance's arguments is read at the variance def's
+// StorageVariance gives its position, so a var nested in an argument counts by the polarity
+// it lands at. A position with no measured entry reads as Invariant.
+func (c *checker) consumedVars(def *ClassDef, instance *soltype.ClassType, vars set.Set[*soltype.TypeVarType]) set.Set[*soltype.TypeVarType] {
+	list := vars.ToSlice()
+	targets := make(map[*soltype.TypeVarType]int, len(list))
+	for i, v := range list {
+		targets[v] = i
+	}
+	visitor := &varianceVisitor{
+		targets:     targets,
+		pos:         make([]bool, len(list)),
+		neg:         make([]bool, len(list)),
+		aliasBody:   c.ctx.aliasBody,
+		aliasesSeen: set.NewSet[string](),
+		argVariance: func(ct *soltype.ClassType, mutable bool) []Variance {
+			nested, ok := c.ctx.settledClassDef(ct.Name)
+			if !ok {
+				return nil
+			}
+			if mutable {
+				return nested.MutVariance
+			}
+			return nested.Variance
+		},
+	}
+	for j, arg := range instance.TypeArgs {
+		v := Invariant
+		if j < len(def.StorageVariance) {
+			v = def.StorageVariance[j]
+		}
+		switch v {
+		case Covariant:
+			arg.Accept(visitor, soltype.Positive)
+		case Contravariant:
+			arg.Accept(visitor, soltype.Negative)
+		case Invariant:
+			arg.Accept(visitor, soltype.Positive)
+			arg.Accept(visitor, soltype.Negative)
+		}
+	}
+	consumed := set.NewSet[*soltype.TypeVarType]()
+	for i, v := range list {
+		if visitor.neg[i] {
+			consumed.Add(v)
+		}
+	}
+	return consumed
+}
+
+// widestInstance returns the widest instance of def that instance can be read as. Each
+// argument position Variance measures Covariant or Bivariant is replaced by its parameter's
+// bound, except a position whose argument is in keep. Every other position keeps instance's
+// argument. It returns ok=false when no position CovariantInputs marks is replaced, since
+// only such a position lets a widened view pass a method something an override may reject.
+//
+// A bound may name another parameter, as `U` does in `class C<T, U: T>`. A covariant `T`
+// widens in the same view that widens `U`, so a bound is read at the widest arguments
+// rather than at instance's. Each replaced position starts at `unknown` and is re-read from
+// its bound until no position changes. A bound naming its own parameter, as `T: Cmp<T>`
+// does, grows at every pass and never settles. Such a position stays `unknown`, the widest
+// argument there is.
+func widestInstance(def *ClassDef, instance *soltype.ClassType, keep set.Set[*soltype.TypeVarType]) (*soltype.ClassType, bool) {
+	var widen []int
+	widensMarked := false
+	for i := range def.TypeParams {
+		if i >= len(instance.TypeArgs) || i >= len(def.Variance) {
+			continue
+		}
+		if v := def.Variance[i]; v != Covariant && v != Bivariant {
+			continue
+		}
+		if tv, ok := instance.TypeArgs[i].(*soltype.TypeVarType); ok && keep.Contains(tv) {
+			continue
+		}
+		widen = append(widen, i)
+		if i < len(def.CovariantInputs) && def.CovariantInputs[i] {
+			widensMarked = true
+		}
+	}
+	if !widensMarked {
+		return nil, false
+	}
+	widest := *instance
+	widest.TypeArgs = slices.Clone(instance.TypeArgs)
+	for _, i := range widen {
+		widest.TypeArgs[i] = &soltype.UnknownType{}
+	}
+	settled := false
+	// A chain of bounds each naming the next settles within one pass per parameter.
+	for range len(def.TypeParams) + 1 {
+		current := widest
+		current.TypeArgs = slices.Clone(widest.TypeArgs)
+		settled = true
+		for _, i := range widen {
+			widest.TypeArgs[i] = paramBound(def, &current, i)
+			if soltype.PrintQualified(widest.TypeArgs[i]) != soltype.PrintQualified(current.TypeArgs[i]) {
+				settled = false
+			}
+		}
+		if settled {
+			break
+		}
+	}
+	if !settled {
+		// Keep each position whose bound stops changing and widen the rest to `unknown`.
+		next := widest
+		next.TypeArgs = slices.Clone(widest.TypeArgs)
+		for _, i := range widen {
+			if soltype.PrintQualified(paramBound(def, &next, i)) != soltype.PrintQualified(widest.TypeArgs[i]) {
+				widest.TypeArgs[i] = &soltype.UnknownType{}
+			}
+		}
+	}
+	return &widest, true
+}
+
+// paramBound returns the bound of def's i'th type parameter at instance's arguments, or
+// `unknown` for an unbounded parameter.
+func paramBound(def *ClassDef, instance *soltype.ClassType, i int) soltype.Type {
+	bound := def.TypeParams[i].Constraint
+	if bound == nil {
+		return &soltype.UnknownType{}
+	}
+	return bound.Accept(newClassSubst(def, instance), soltype.Positive)
+}
+
+// widestMethod returns the arms taking an immutable receiver of the method anc declares
+// under name, read at anc.widest. Every `Self` in them resolves at recv. It returns ok=false
+// when anc declares no method under name or none of its arms takes an immutable receiver.
+func widestMethod(anc wideningAncestor, recv *soltype.ClassType, name string) (soltype.ObjTypeElem, bool) {
+	member, found := declaredHalf(anc.def.Body, name, readHalf)
+	if !found {
+		return nil, false
+	}
+	method, ok := member.(*soltype.MethodElem)
+	if !ok {
+		return nil, false
+	}
+	var arms []*soltype.FuncType
+	for _, sig := range method.Signatures {
+		if !mutReceiver(sig.SelfParam) {
+			arms = append(arms, sig)
+		}
+	}
+	if len(arms) == 0 {
+		return nil, false
+	}
+	immutArms := &soltype.MethodElem{Name: method.Name, Signatures: arms, Static: method.Static, Optional: method.Optional}
+	return projectClassMember(anc.def, anc.widest, projectSelf(anc.def, recv, immutArms)), true
 }
 
 // declaredHalf returns the member of obj that serves one access half of name, or found=false

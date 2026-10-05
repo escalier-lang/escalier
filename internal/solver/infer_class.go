@@ -217,7 +217,25 @@ func (c *checker) inferClassDecl(scope *Scope, lvl int, decl *ast.ClassDecl, ns 
 	// inference; the nominal rule reads the measured variance from here on (C2). Which of
 	// the two vectors it reads depends on the mutability of the reference the constraint
 	// sits under.
-	def.Variance, def.MutVariance = c.inferVariance(def, decl)
+	//
+	// A class this body names may not be inferred yet, since a type reference orders only
+	// that class's identity ahead of this one. The measurement is then provisional and is
+	// settled once that class is measured.
+	def.varianceSelf, def.varianceDecl = self.Name, decl
+	c.ctx.measureVariance(def)
+	def.varianceMeasured = true
+	if def.varianceProvisional {
+		// The last class of a group that waits on itself completes the group here, since
+		// nothing it waits on settles alone.
+		c.ctx.settleVarianceGroup(def)
+	}
+	if def.varianceProvisional {
+		c.provisionalVariance = append(c.provisionalVariance, def)
+	} else {
+		for _, mismatch := range def.varianceMismatches {
+			c.report(mismatch)
+		}
+	}
 
 	// Queue this class for the override check the driver runs once every class is inferred.
 	// The nominal subtype rule decides `Dog <: Animal` on the `extends` edge alone, so that

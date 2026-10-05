@@ -80,6 +80,11 @@ type Context struct {
 	// overwritten but never removed for scope exit.
 	classes map[string]*ClassDef
 
+	// measuredClasses counts the classes whose variance measureVariance has made final. A
+	// provisional class records the count it was measured at and measures again only once
+	// the count moves.
+	measuredClasses int
+
 	// aliases is the type-alias registry, the transparent-alias twin of classes. It holds
 	// each alias's Body and level, keyed by the alias's dep_graph-qualified name, the same
 	// string stored in soltype.AliasType.Name. preBindAlias writes an entry per `type` decl,
@@ -251,6 +256,22 @@ func (c *Context) registerAlias(name string, def *AliasDef) {
 func (c *Context) classDef(name string) (*ClassDef, bool) {
 	def, ok := c.classes[name]
 	return def, ok
+}
+
+// settledClassDef returns the registered ClassDef for a qualified class name once its
+// variance is final, settling a provisional one first. It returns ok=false when no such
+// class is registered, its body is still being inferred, or its variance stays
+// provisional.
+func (c *Context) settledClassDef(name string) (*ClassDef, bool) {
+	def, ok := c.classes[name]
+	if !ok || !def.varianceMeasured {
+		return nil, false
+	}
+	c.settleVariance(def)
+	if def.varianceProvisional {
+		return nil, false
+	}
+	return def, true
 }
 
 // registerClass inserts def under a qualified class name, allocating the registry
