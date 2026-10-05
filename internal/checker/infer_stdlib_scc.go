@@ -259,8 +259,7 @@ func (c *Checker) loadStdlibSCC(sccURIs []string, span ast.Span) []Error {
 				span:    span,
 			}}
 		}
-		sourceID := c.stdlibNextSourceID
-		c.stdlibNextSourceID++
+		sourceID := c.allocStdlibSourceID()
 		// Path is `<pkg>/index.esc` so deriveNamespaceFromPath yields
 		// `<pkg>` — that's the namespace key declarations from this file
 		// land under in mod.Namespaces, and also the binding-key prefix

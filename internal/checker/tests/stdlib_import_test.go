@@ -95,6 +95,127 @@ func TestStdlibImport_ExplicitLocalFlag(t *testing.T) {
 	require.Empty(t, errorMessages(errs))
 }
 
+// TestStdlibImport_BorrowInTheStdlibTreeReadsAsItsPointee covers a borrow in a file loaded
+// from the stdlib tree, which reads as the type or value it borrows since this checker has
+// no borrow semantics. The tree lends an iteration callback the receiver as `&Self`. The
+// cases load the borrow through each path a stdlib file takes:
+//   - a package loaded on its own, `std:coll`, and `std:lend` with a borrow expression;
+//   - a package that loads another before its own declarations, `std:wrap`;
+//   - a pair of packages importing each other, `std:ping` and `std:pong`, loaded together.
+//
+// A borrow in user source is still reported, including in a file that loads a stdlib
+// package first.
+func TestStdlibImport_BorrowInTheStdlibTreeReadsAsItsPointee(t *testing.T) {
+	tree := map[string]string{
+		"std/coll.esc": `@js("Coll")
+		export declare class Coll<T> {
+			each(&self, cb: fn (v: T, arr: &Self) -> unknown) -> unknown,
+			first(&self, from: &Coll<T>) -> T,
+			readonly length: number,
+		}
+		`,
+		"std/lend.esc": `@js("lend")
+		export fn lend(x: {a: number}) -> {a: number} { return &x }
+		`,
+		"std/wrap.esc": `import "std:coll"
+		@js("Wrap")
+		export declare class Wrap<T> {
+			each(&self, cb: fn (v: T, w: &Self) -> unknown) -> unknown,
+			readonly inner: coll.Coll<T>,
+		}
+		`,
+		"std/ping.esc": `import "std:pong"
+		@js("Ping")
+		export declare class Ping {
+			each(&self, cb: fn (p: &Self) -> unknown) -> unknown,
+			readonly other: pong.Pong,
+		}
+		`,
+		"std/pong.esc": `import "std:ping"
+		@js("Pong")
+		export declare class Pong {
+			each(&self, cb: fn (p: &Self) -> unknown) -> unknown,
+			readonly other: ping.Ping | null,
+		}
+		`,
+	}
+	tests := []struct {
+		name string
+		src  string
+		want []string
+	}{
+		{
+			name: "a callback reads the borrowed receiver",
+			src: `
+				import "std:coll"
+				fn f(xs: coll.Coll<number>) -> number {
+					xs.each(fn (v, arr) { return arr.length })
+					return xs.first(xs)
+				}
+			`,
+		},
+		{
+			// `arr` reads as `Coll<number>`, so its `length` is a `number`.
+			name: "a borrowed receiver reads at its class",
+			src: `
+				import "std:coll"
+				fn f(xs: coll.Coll<number>) {
+					xs.each(fn (v, arr) {
+						val s: string = arr.length
+						return 0
+					})
+				}
+			`,
+			want: []string{"number is not assignable to string for property length. Property length was inferred from access at 110-116"},
+		},
+		{
+			name: "a stdlib borrow expression reads as its operand",
+			src: `
+				import "std:lend"
+				val y: {a: number} = lend.lend({a: 1})
+			`,
+		},
+		{
+			name: "a package loading another reads its own borrow",
+			src: `
+				import "std:wrap"
+				fn f(w: wrap.Wrap<number>) { w.each(fn (v, x) { return x.inner.length }) }
+			`,
+		},
+		{
+			name: "packages importing each other read their borrows",
+			src: `
+				import "std:ping"
+				fn f(p: ping.Ping) { p.each(fn (q) { return q.other }) }
+			`,
+		},
+		{
+			name: "a user borrow after a stdlib import is reported",
+			src: `
+				import "std:coll"
+				fn g(x: &{a: number}) -> number { return 0 }
+			`,
+			want: []string{"borrows are unsupported in the legacy checker"},
+		},
+		{
+			name: "a user borrow is reported",
+			src:  `fn g(x: &{a: number}) -> number { return 0 }`,
+			want: []string{"borrows are unsupported in the legacy checker"},
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Setenv("ESCALIER_STDLIB_DIR", makeCustomStdlibDir(t, tree))
+			_, errs := inferStdlibImportSource(t, tt.src)
+			if len(tt.want) == 0 {
+				require.Empty(t, errorMessages(errs))
+				return
+			}
+			require.Equal(t, tt.want, errorMessages(errs))
+		})
+	}
+}
+
 func TestStdlibImport_UnknownScheme(t *testing.T) {
 	_, errs := inferStdlibImportSource(t, `import "foo:bar"`)
 	require.Len(t, errs, 1)

@@ -240,10 +240,22 @@ func (c *Checker) inferTypeAnn(
 		t = type_system.NewMutType(provenance, targetType)
 	case *ast.RefTypeAnn:
 		// Borrow annotations carry affine/move semantics that only the
-		// SimpleSub-based checker implements. The legacy HM checker never
-		// meets one in normal operation, since no existing source uses
-		// borrow syntax. Report cleanly rather than panicking on the
-		// default arm so a stray `&T` can't crash the CLI or LSP.
+		// SimpleSub-based checker implements.
+		if c.fromStdlibTree(typeAnn.Span()) {
+			// The stdlib tree is written for the SimpleSub-based checker, and it lends an
+			// iteration callback the receiver as `&Self`. Without borrow semantics the
+			// closest reading is the type the borrow points at, kept mutable for `&mut`. A
+			// lifetime has nothing to attach to here and is dropped.
+			innerType, innerErrors := c.inferTypeAnn(ctx, typeAnn.Inner)
+			errors = slices.Concat(errors, innerErrors)
+			t = innerType
+			if typeAnn.Mut {
+				t = type_system.NewMutType(provenance, innerType)
+			}
+			break
+		}
+		// User source reports a borrow cleanly rather than panicking on the default arm,
+		// so a stray `&T` can't crash the CLI or LSP.
 		errors = append(errors, &BorrowUnsupportedError{span: typeAnn.Span()})
 		t = type_system.NewErrorType(provenance)
 	case *ast.TemplateLitTypeAnn:

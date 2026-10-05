@@ -282,8 +282,7 @@ func (c *Checker) loadStdlibPackage(uri, filePath string, span ast.Span) (*type_
 		}}
 	}
 
-	sourceID := c.stdlibNextSourceID
-	c.stdlibNextSourceID++
+	sourceID := c.allocStdlibSourceID()
 	source := &ast.Source{
 		ID: sourceID,
 		// Strip the directory off so deriveNamespaceFromPath returns ""

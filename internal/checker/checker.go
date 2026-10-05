@@ -57,6 +57,10 @@ type Checker struct {
 	// (which start at 0 and grow with the file count).
 	stdlibNextSourceID int
 
+	// stdlibSourceIDs holds every SourceID allocated to a file read from the stdlib data
+	// tree. fromStdlibTree reads it.
+	stdlibSourceIDs set.Set[int]
+
 	// activeSCC names the URIs currently being loaded as a single
 	// merged module (set during loadStdlibSCC, cleared after).
 	// Intra-SCC imports skip file-scope binding so the merged module's
@@ -82,7 +86,22 @@ func NewChecker(ctx context.Context) *Checker {
 		substCache:            make(expandSeen),
 		memberCache:           make(memberCache),
 		stdlibNextSourceID:    1 << 20, // 1,048,576 — well above any plausible user source ID
+		stdlibSourceIDs:       set.NewSet[int](),
 	}
+}
+
+// allocStdlibSourceID returns a fresh SourceID for a file read from the stdlib data tree
+// and records it as one.
+func (c *Checker) allocStdlibSourceID() int {
+	id := c.stdlibNextSourceID
+	c.stdlibNextSourceID++
+	c.stdlibSourceIDs.Add(id)
+	return id
+}
+
+// fromStdlibTree reports whether span lies in a file read from the stdlib data tree.
+func (c *Checker) fromStdlibTree(span ast.Span) bool {
+	return c.stdlibSourceIDs.Contains(span.SourceID)
 }
 
 // checkTimeout panics with a TypeCheckTimeoutError if the checker's context
