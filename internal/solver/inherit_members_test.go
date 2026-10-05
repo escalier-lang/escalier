@@ -190,12 +190,11 @@ func TestInferClassInheritedWholeBody(t *testing.T) {
 					},
 				}
 			`,
-			// A `mut self` field write is invariant, so a rejected one reports both
-			// directions. That is what an own field of the wrong type reports too, so the
-			// inherited field behaves exactly like a declared one.
+			// The write is checked against the inherited field's type at the superclass's
+			// argument, `string`. That is what an own field of the wrong type reports too,
+			// so the inherited field behaves exactly like a declared one.
 			want: []string{
-				"cannot constrain string <: number",
-				"cannot constrain number <: string",
+				"cannot constrain 5 <: string",
 			},
 		},
 		{

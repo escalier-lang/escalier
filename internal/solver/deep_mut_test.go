@@ -756,7 +756,7 @@ func TestOwnedCallResultFlowsIntoAMutDestination(t *testing.T) {
 		},
 		{
 			name: "an owned object into a wider annotated binding",
-			src:  "declare fn obj() -> {x: number}\nfn go() { val d: mut {x: number | string} = obj() }",
+			src:  "declare fn obj() -> {x: number}\nfn go() { val d: mut {x: number | string} = obj()\nd.x = \"s\" }",
 		},
 		{
 			name: "a call into a `mut` parameter",
