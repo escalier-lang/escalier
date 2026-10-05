@@ -293,6 +293,18 @@ func subsumeMembers(c *Context, parts []soltype.Type, drops func(c *Context, m, 
 	// hasVar[i] is true when member i still carries a free type or lifetime
 	// variable or names an alias under construction, so it is skipped by the
 	// concrete gate below.
+	//
+	// Skipping only the members that name an alias under construction keeps
+	// the guard narrow. The rest of the union still gets pruned, which is how
+	// deferArgBounds handles the same hazard for bound checks. Two broader
+	// fixes were set aside:
+	//   - Deferring all subsumption until every body is filled would need a
+	//     second pass that rewrites each stored body. checkProductive and the
+	//     phantom-param passes would read unnormalized unions in between.
+	//   - Making an unfilled alias fail every check instead of absorbing would
+	//     change the answer for every early reader of a shell, not just this
+	//     one. A failed trial is only safe here, where it means "keep the
+	//     member".
 	hasVar := make([]bool, len(parts))
 	for i, p := range parts {
 		hasVar[i] = !concreteMember(p) || namesAliasIn(p, c.buildingAliases)
