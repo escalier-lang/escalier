@@ -184,15 +184,28 @@ records that comment attachment is 74% of that, all of it in one linear scan in
 `ast.(*nodeIndex).enclosing`, and it has not landed.
 
 The warm figure is what closure size costs per inference run, and at 380ms
-against 43ms it is the constraint on any repartitioning. It was not: the same
-benchmark on the closed stack's tree two weeks earlier read 46ms warm and 951ms
-cold. Warm moved further than cold while the tree got smaller, which points at
-inference rather than at volume, and `main` has since taken 65 commits including
-the closure-capture and ownership work. Nothing has bisected it.
+against 43ms it is the constraint on any repartitioning.
 
-This also vindicates a number this document previously called unreliable. #1631
-recorded 4.4s cold for `web:dom` entering `web:fetch`'s closure, and 4.45s is
-what `main` costs for the whole tree now.
+An earlier draft of this section compared those numbers against 46ms warm and
+951ms cold and concluded that whole-tree load was cheap. Both halves of that were
+wrong.
+
+The 46ms came from a benchmark that measured less than it claimed.
+`committedPackageURIs` derives a root URI by trimming `.esc` from the file name,
+so `dom.window.esc` yields `web:dom.window`, which matches no partition entry,
+and `reachable` skips a root it has no edges for. On the branch those figures
+came from, 15 of 25 `web/` files carried such a suffix, so "every package"
+resolved 10 of them and reported a number anyway. #1862 covers it.
+
+And warm has genuinely regressed, by 1.5x rather than the 8x the bad baseline
+implied. Probing the 65 commits between 6c620c22 and 06b28c81 puts almost all of
+it in one step, 282ms to 413ms at 6c447c63, which added 177 lines to
+`internal/solver/infer_class.go`. #1861 covers it, with the profile: 21% in
+`inferClassDecl`, 21% in `constrain`, 21% in `trialUnderProbe` and 29% in garbage
+collection.
+
+So #1631's 4.4s was right. It is what the whole tree costs, and the figure this
+document called unreliable was the only correct measurement of the three.
 
 ### 3.9 A global is reachable only through a scope class
 
@@ -570,6 +583,8 @@ window program can reach is a window package.
 | #1644 | moving `MessagePort` and `Transferable` into `web:core` |
 | #1645 | the converted tree declares constructors that throw |
 | #1646 | a type guard on an alias to a class matches every value |
+| #1861 | warm whole-tree inference regressed 1.5x, bisected to #1841 |
+| #1862 | the closure benchmark silently measures fewer packages than it claims |
 
 #1644 was filed before the mechanism in section 2.3 was understood. Its stated
 blocker, that a `Transferable` in `web:core` naming `OffscreenCanvas` would fail

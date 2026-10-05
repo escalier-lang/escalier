@@ -243,15 +243,14 @@ Re-measure before §2.1 and after. N4.
 size costs per inference run, and at nine times the one-package case it is the
 constraint on §2.1.
 
-It was not. The same benchmark on the closed stack's tree two weeks earlier read
-46ms warm and 951ms cold, so warm has moved eight times while the tree got
-smaller. That points at inference rather than volume, and `main` has taken 65
-commits since including the closure-capture and ownership work. Bisecting it is
-worth doing before §2.1, because a repartitioning measured against a regressed
-baseline will look cheaper than it is.
+Two corrections to earlier figures, both in §3.8 of `requirements.md`. The 46ms
+warm baseline this plan once cited came from a benchmark that silently dropped 15
+of 25 packages, which is #1862. And warm has regressed 1.5x since 6c620c22,
+almost all of it at 6c447c63, which is #1861. Resolve #1861 before §2.1, because
+a repartition measured against a regressed baseline looks cheaper than it is.
 
-This also settles #1631's 4.4s, which §3.8 of `requirements.md` previously called
-unreliable. It reproduces: 4.45s is what the whole tree costs on `main` now.
+#1631's 4.4s, which this plan previously proposed to reproduce or retire,
+reproduces. It is what the whole tree costs.
 
 `BenchmarkStdlibClosureLoad` in `internal/solver/stdlib_load_bench_test.go` is
 the harness. #1643 has not landed and moves the cold baseline when it does, so
