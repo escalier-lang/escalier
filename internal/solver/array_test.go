@@ -204,3 +204,127 @@ func TestArrayIsReportedWithoutAStdlib(t *testing.T) {
 	}, errorMessagesOf(c.errs))
 	require.Empty(t, c.ctx.arrayClass)
 }
+
+// A tuple fills `Array<E>` when every element it carries fits E. A `...P` spread contributes
+// P's elements, and an inexact tuple may carry any trailing element. A `mut` tuple never fills
+// a `mut Array<E>`, since a push through the array changes a length the tuple fixes. A fresh
+// literal still reaches a `mut Array<E>` destination, because nothing else holds it.
+func TestTupleIntoArray(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name string
+		src  string
+		want []string
+	}{
+		{
+			name: "LiteralIntoAnnotation",
+			src:  `val x: Array<number> = [1, 2]`,
+		},
+		{
+			name: "LiteralIntoParam",
+			src: `fn f(xs: Array<number>) -> number { return 0 }
+				val y = f([1, 2])`,
+		},
+		{
+			name: "EmptyLiteral",
+			src:  `val x: Array<number> = []`,
+		},
+		{
+			name: "WrongElement",
+			src:  `val x: Array<string> = [1, 2]`,
+			want: []string{
+				"cannot constrain 1 <: string",
+				"cannot constrain 2 <: string",
+			},
+		},
+		{
+			name: "SpreadElementFits",
+			src: `fn h(xs: Array<number>) -> number { return 0 }
+				fn f(t: [number, ...Array<number>]) { return h(t) }`,
+		},
+		{
+			name: "LeadingElementBeforeSpreadDoesNotFit",
+			src: `fn h(xs: Array<number>) -> number { return 0 }
+				fn f(t: [string, ...Array<number>]) { return h(t) }`,
+			want: []string{"cannot constrain string <: number"},
+		},
+		{
+			name: "InexactTuple",
+			src: `fn h(xs: Array<number>) -> number { return 0 }
+				fn f(t: [number, ...]) { return h(t) }`,
+			want: []string{"cannot constrain unknown <: number"},
+		},
+		{
+			name: "MutTupleThroughAnImmutableView",
+			src: `fn h(xs: Array<number>) -> number { return 0 }
+				fn f(t: mut [number, number]) { return h(t) }`,
+		},
+		{
+			name: "LiteralIntoMutAnnotation",
+			src:  `val m: mut Array<number> = [1, 2]`,
+		},
+		{
+			name: "LiteralIntoMutAnnotationThenPush",
+			src: `fn g() {
+					val m: mut Array<number> = [1, 2]
+					m.push(3)
+				}`,
+		},
+		{
+			name: "LiteralIntoMutParam",
+			src: `fn h(xs: mut Array<number>) -> number { return 0 }
+				val r = h([1, 2])`,
+		},
+		{
+			name: "MutTupleIntoWiderMutArray",
+			src:  `fn f(t: mut [number, number]) { val m: mut Array<number | string> = t }`,
+			want: []string{"cannot constrain tuple <: Array<number | string>"},
+		},
+		{
+			name: "MutTupleIntoMutArrayOfItsElement",
+			src: `fn h(xs: mut Array<number>) -> number { return 0 }
+				fn f(t: mut [number, number]) { return h(t) }`,
+			want: []string{"cannot constrain tuple <: Array<number>"},
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			_, _, errs := inferSource(t, tt.src)
+			if len(tt.want) == 0 {
+				require.Empty(t, errorMessagesOf(errs))
+				return
+			}
+			require.Equal(t, tt.want, errorMessagesOf(errs))
+		})
+	}
+}
+
+// `Promise.race` and `Promise.any` bound their parameter by `[] | Array<unknown>`, so an array
+// literal of promises reaches them through the tuple-into-`Array` rule. The cases load the real
+// standard library, since the test prelude declares neither method.
+func TestPromiseCombinatorsAcceptAnArrayLiteral(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name string
+		src  string
+	}{
+		{
+			name: "Race",
+			src:  `val p = Promise.race([Promise.resolve(1), Promise.resolve(2)])`,
+		},
+		{
+			name: "Any",
+			src:  `val p = Promise.any([Promise.resolve(1), Promise.resolve("a")])`,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			res := InferModuleAgainstStdlib(parseModule(t, tt.src), committedTree)
+			require.Empty(t, errorMessagesOf(res.Errors))
+		})
+	}
+}
