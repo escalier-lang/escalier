@@ -237,6 +237,7 @@ intersection.
 
 **F6. A global is reached through a package binding.** Every member of a
 `*GlobalScope` class is a top-level declaration in the package owning its family.
+F14 is what keeps this readable for the globals that land in `web:core`.
 A worker program calls `worker.importScripts(...)` after importing
 `web:worker`, and no program is handed a scope object to read members off.
 
@@ -336,6 +337,46 @@ per-environment declarations under F5. That puts the event maps themselves in
 `web:core`'s reach, and they are in `web:dom` and `web:worker` today, so the maps
 move with the functions or `web:core` imports the packages holding them.
 
+**F14. `web:core` is ambient rather than imported.** Its declarations are
+injected into scope the way `std:prelude`'s are, so a program writes
+`setTimeout(...)` and `Event` without naming a package. `import "web:core"` stays
+legal as a redundant no-op, which is how the generated tree and existing code
+migrate without a flag day.
+
+This removes a special case rather than adding one. `web:core` already binds its
+exports unprefixed, which `coreURI` exists to arrange in three places:
+`internal/dts_to_esc/import_header.go:33`, the same file at line 222 where the
+comment reads "The prelude and `web:core` are skipped, since both bind their
+exports unprefixed", and `internal/solver/imports.go:105`. The code already
+groups the two; this finishes it and the exception goes.
+
+It also decides F6's ergonomics. F6 moves a global out of a scope class and into
+a package, which on its own means a file that sets a timer has to import
+`web:core` first — worse than the global it replaces. Ambient makes the hoisted
+globals read like globals again.
+
+**The boundary needs stating, because the obvious justification proves too
+much.** `Document` and `Element` are as ambient at runtime as `Event` is, so
+"ambient on the platform" would pull `web:dom` in too. What earns `web:core` the
+prelude is that it is small and portable: 24 declarations, all on every
+environment, against `std:prelude`'s existing 44. A package that is large, or
+that only some environments have, stays an import however ambient the runtime
+makes it.
+
+**The condition is vacuous today and is written down anyway.** The intent is that
+`web:core` is ambient when the target is a web platform, which every environment
+in F10's vocabulary is. There is no non-web platform to contrast with until the
+non-goals change, so the injection is unconditional for now. The platform axis
+above the environment is what the condition would need, and it does not exist.
+
+Two consequences to carry. `Event`, `DOMException` and `MessageEvent` are
+plausible names in user code, and shadowing 24 more ambient names makes a
+diagnostic such as "Event is not assignable to Event" reachable, so the message
+has to distinguish the two. And `docs/03_imports.md` draws a line between
+shape-loading, which is additive and never satisfies a named reference, and a
+named reference, which requires the import; 24 declarations cross that line and
+the text has to say so.
+
 ### 4.2 Non-functional
 
 **N1. One fact, one place.** Where a declaration exists is a property of the
@@ -356,6 +397,12 @@ and each entry says why it exists.
 `BenchmarkStdlibClosureLoad`. #1643 covers the separate finding that comment
 attachment is 74% of cold load.
 
+F14 complicates this. #1567 caches one prelude across runs, and F5 makes
+`web:core`'s content differ by environment, since `location` is a `Location` or a
+`WorkerLocation` and `onmessage` has three forms. So the prelude becomes nine
+things keyed by environment, and the cache has to be keyed the same way. That is
+work on top of #1567 and it lowers the hit rate a single shared prelude gets.
+
 **N5. A hoisted global compiles to a bare reference.** Codegen emits
 `importScripts(...)`, never a member access on a scope object, since no such
 object is in scope.
@@ -369,6 +416,11 @@ environment rules land in `internal/solver`, and the fixture suite that exercise
 `internal/checker` is not being backported. So the fixtures for this work are
 copies written against the new imports, and the existing ones keep running
 unchanged against the old path.
+
+**N8. The ambient name set is pinned.** F14 makes `web:core`'s membership decide
+what every file has in scope, where today it decides which package holds a
+declaration. A test asserts the set of ambient names, so adding one is a
+deliberate edit rather than a side effect of moving a declaration.
 
 ### 4.3 Phases
 
@@ -391,6 +443,7 @@ family compile correctly and the requirements marked for it hold.
 | F11 worklets as targets | — | — | ✅ |
 | F12 entrypoint environments in `package.json` | ✅ | extend | extend |
 | F13 event listeners in `web:core` | ✅ | extend | extend |
+| F14 `web:core` ambient | ✅ | extend | extend |
 | N1 one fact, one place | ✅ | — | — |
 | N2 importable as a unit | partial | ✅ | ✅ |
 | N3 derived claims | ✅ | — | — |
@@ -398,6 +451,7 @@ family compile correctly and the requirements marked for it hold.
 | N5 bare reference | ✅ | extend | extend |
 | N6 scope classes as types | ✅ | extend | extend |
 | N7 new fixtures | ✅ | extend | extend |
+| N8 ambient name set pinned | ✅ | — | — |
 
 ✅ lands in that phase. "extend" means the phase applies an existing mechanism to
 more environments without changing it. "partial" means the phase does as much as
