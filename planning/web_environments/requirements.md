@@ -577,8 +577,9 @@ window program can reach is a window package.
 | issue | relation |
 | --- | --- |
 | #1613 | per-arm availability for `MessageEvent.source` |
-| #1614 | retiring the package-to-tier machinery, done in #1631 |
-| #1641, #1642 | per-environment source files, of which the file-name rule is the stdlib half |
+| #1614 | retiring the package-to-tier machinery, attempted in #1631 and still open |
+| #1641, #1642 | per-environment source files |
+| #1586 | the tier is per package where availability is per declaration |
 | #1643 | comment attachment dominates cold load |
 | #1644 | moving `MessagePort` and `Transferable` into `web:core` |
 | #1645 | the converted tree declares constructors that throw |
@@ -586,8 +587,9 @@ window program can reach is a window package.
 | #1861 | warm whole-tree inference regressed 1.5x, bisected to #1841 |
 | #1862 | the closure benchmark silently measures fewer packages than it claims |
 
-#1644 was filed before the mechanism in section 2.3 was understood. Its stated
-blocker, that a `Transferable` in `web:core` naming `OffscreenCanvas` would fail
-`CheckEnvs`, does not hold, because `OffscreenCanvas` is unannotated and therefore
-already on every environment. `worker.worker.esc:74` already names
-`dom.Transferable` and the committed tree passes.
+#1644's blocker section was wrong when filed and has been corrected. It claimed
+that a `Transferable` in `web:core` naming `OffscreenCanvas` would fail the
+environment check. The check it named no longer exists on `main`, and even in the
+tree it was written against the claim did not hold, because an unannotated
+declaration was available in every environment. The blocker is reachability: a
+worker cannot import the packages the arms live in.
