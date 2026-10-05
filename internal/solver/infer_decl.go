@@ -491,10 +491,17 @@ func (c *checker) isUniquelyOwned(src ast.Expr) bool {
 			return true
 		}
 		t := c.info.TypeOf(leaf)
-		if c.callReturnsOwned(leaf, t) {
-			return !resultContainsOwnedMut(t, set.NewSet[*soltype.TypeVarType]())
+		// A leaf that already holds an owned-mutable cell is not admitted. The upgrade checks
+		// the source against the target's covariant read view, which would widen that cell, so
+		// the source takes the strict mut<:mut path instead and the cell stays invariant. In
+		// `val d: mut {a: number} = g()` with `g() -> mut {a: 1}`, the read view would accept
+		// the `mut {a: 1}` cell as `{a: number}`. The cell can sit behind a type variable, as it
+		// does in a call result or in a local bound from one, so the check follows each
+		// variable's lower bounds rather than reading t's shape alone.
+		if resultContainsOwnedMut(t, set.NewSet[*soltype.TypeVarType]()) {
+			return false
 		}
-		return !resultContainsOwnedMut(t, set.NewSet[*soltype.TypeVarType]()) && c.movesOwnedPlace(leaf, t)
+		return c.callReturnsOwned(leaf, t) || c.movesOwnedPlace(leaf, t)
 	})
 }
 
