@@ -1,5 +1,25 @@
 # Requirements: Web environments and package organization
 
+## 0. What this document describes
+
+Sections 2 and 3 were written against the first environment system, the stack of
+PRs #1628 through #1635. Those were closed without merging, so `main` no longer
+has what they describe: the `@env` decorator and the annotations in the tree, the
+`internal/dts_to_esc/env*.go` files, `CheckEnvs`, `DeclEnvs`, the file-name
+suffix convention behind `web/dom.window.esc`, and the `web:worker` package. The
+`web/` directory holds 24 packages, none with a suffix.
+
+Read those two sections as the record of why the requirements say what they say,
+not as a description of the current tree. The requirements in section 4 and the
+phases in 4.3 are current, and `implementation_plan.md` opens with what `main`
+holds now.
+
+Two of the problems recorded below are fixed. #1648 landed, so an interface with
+several supertypes converts to a class that `implements` the rest, which §3 of
+`hoisted/README.md` depended on. And there is no file name left to make a claim
+about its contents, so N1 is satisfied by the current tree rather than by a
+change to it, and open question 1 is moot.
+
 ## 1. Problem statement
 
 A web declaration exists on some set of runtimes. A page has the DOM, a dedicated
