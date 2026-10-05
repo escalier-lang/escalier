@@ -101,6 +101,7 @@ func (c *checker) inferScriptIn(scope *Scope, script *ast.Script) (*Scope, *Info
 	// Every class the script declares is inferred, so each superclass edge and body is
 	// final. Check the members each subclass redeclares against the ones they override.
 	c.checkQueuedInheritedMembers()
+	c.checkQueuedImplements()
 	// Every function expression the script wrote has been typed, so each one's return type is
 	// final. Report each function whose return type no finite value inhabits.
 	c.checkCanReturn()

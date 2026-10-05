@@ -251,7 +251,7 @@ func TestClassLifetimeClauseErrors(t *testing.T) {
 		// walks.
 		"ReferenceArgumentOnImplements": {
 			src: `
-				class Shape<'b> { v: &'b mut {value: number} }
+				class Shape<'b> { v?: &'b mut {value: number} }
 				class Sub<'a> implements Shape<'z> { peer: &'a mut {value: number} }
 			`,
 			want: []string{"3:36-3:38: lifetime 'z is used but not declared; did you mean 'a?"},

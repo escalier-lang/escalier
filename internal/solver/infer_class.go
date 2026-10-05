@@ -108,8 +108,15 @@ func (c *checker) inferClassDecl(scope *Scope, lvl int, decl *ast.ClassDecl, ns 
 	// runs every ancestor has its own edge and its own body recorded, and the whole chain is
 	// walkable from here.
 	def.Supers = c.resolveClassSupers(declScope, lvl, decl)
+	implemented := c.resolveClassImplements(declScope, lvl, decl)
 	var structural []soltype.Type
-	def.Implements, structural = c.resolveClassImplements(declScope, lvl, decl)
+	for _, target := range implemented {
+		if target.class != nil {
+			def.Implements = append(def.Implements, target.class)
+		} else {
+			structural = append(structural, target.alias)
+		}
+	}
 	def.EdgesPending = false
 
 	// Bind `Self` to the class's own instance handle for the member walk below. A member
@@ -146,6 +153,9 @@ func (c *checker) inferClassDecl(scope *Scope, lvl int, decl *ast.ClassDecl, ns 
 	c.checkClassBodyLifetimes(decl)
 	c.buildFieldSigs(bodyScope, lvl, decl, body, static)
 	pending := c.buildMemberSigs(bodyScope, lvl, decl, self, body, static)
+	// The `implements` check compares each entry against what the class wrote, so the names
+	// are taken before the clause below adds the entry's own members to a `declare` class.
+	ownNames := memberNames(body)
 	// A `declare` class describes an object the runtime already provides, so its
 	// `implements` clause says which members it has rather than asking for them.
 	// The generated lib relies on this for every mixin a TypeScript interface named,
@@ -214,6 +224,9 @@ func (c *checker) inferClassDecl(scope *Scope, lvl int, decl *ast.ClassDecl, ns 
 	// check is what keeps a subclass from contradicting the edge with a member typed
 	// unrelated to the one it inherits.
 	c.queueInheritedMemberCheck(def, self, decl)
+	// Queue the `implements` check for the same reason. It reads the members the class
+	// inherits, so every ancestor has to be final first.
+	c.queueImplementsCheck(def, self, decl, implemented, ownNames)
 
 	if quiet() && paramsClean {
 		c.reportUnusedTypeParams(typeParams, decl.TypeParams, classDeclTypes(def, ctorFns, callFns))
@@ -642,22 +655,28 @@ func (c *checker) resolveClassSupers(scope *Scope, lvl int, decl *ast.ClassDecl)
 	return []*soltype.ClassType{ct}
 }
 
-// resolveClassImplements resolves a class's `implements` clause. It returns each
-// target naming a class as its ClassType, and each target naming an interface or
-// another alias as the type that reference resolves to, in clause order.
+// implementsTarget is one entry of a class's `implements` clause, resolved. Exactly one of
+// class and alias is set: class when the entry names a class, and alias when it names an
+// interface or another alias.
+type implementsTarget struct {
+	ref   *ast.TypeRefTypeAnn
+	class *soltype.ClassType
+	alias soltype.Type
+}
+
+// resolveClassImplements resolves a class's `implements` clause, returning one target per
+// entry that resolves, in clause order.
 //
-// `implements` is a conformance-only assertion the nominal subtype walk skips, so B1
-// records the classes on ClassDef.Implements apart from Supers; the structural
-// conformance check lands in C1. An alias is a structural target with no ClassType
-// to record. One whose body is not an object is reported as NonClassSuperError, the
-// way a type parameter is.
-func (c *checker) resolveClassImplements(scope *Scope, lvl int, decl *ast.ClassDecl) ([]*soltype.ClassType, []soltype.Type) {
-	var classes []*soltype.ClassType
-	var structural []soltype.Type
+// `implements` is a conformance-only assertion the nominal subtype walk skips, so the class
+// targets are recorded on ClassDef.Implements apart from Supers. An alias is a structural
+// target with no ClassType to record. One whose body is not an object is reported as
+// NonClassSuperError, the way a type parameter is.
+func (c *checker) resolveClassImplements(scope *Scope, lvl int, decl *ast.ClassDecl) []implementsTarget {
+	var targets []implementsTarget
 	for _, impl := range decl.Implements {
 		if !c.namesAlias(scope, impl) {
 			if ct := c.resolveClassRef(scope, impl, lvl); ct != nil {
-				classes = append(classes, ct)
+				targets = append(targets, implementsTarget{ref: impl, class: ct})
 			}
 			continue
 		}
@@ -670,12 +689,12 @@ func (c *checker) resolveClassImplements(scope *Scope, lvl int, decl *ast.ClassD
 			// An ErrorType stands for an alias whose body has not resolved. Either that
 			// was already reported or the alias is a sibling still being inferred, so
 			// neither warrants a diagnostic here.
-			structural = append(structural, target)
+			targets = append(targets, implementsTarget{ref: impl, alias: target})
 		default:
 			c.report(&NonClassSuperError{Ref: impl, Name: ast.QualIdentToString(impl.Name)})
 		}
 	}
-	return classes, structural
+	return targets
 }
 
 // namesAlias reports whether ref names an alias, which is what an `interface`
@@ -691,7 +710,7 @@ func (c *checker) namesAlias(scope *Scope, ref *ast.TypeRefTypeAnn) bool {
 
 // addImplementedMembers appends to def.Body each member a structural `implements`
 // target declares under a name the class does not already have. targets are the
-// aliases resolveClassImplements returns, in clause order. A name the class
+// alias targets resolveClassImplements returns, in clause order. A name the class
 // declares itself, or inherits through its `extends` chain, keeps the class's
 // member. A getter and a setter of one name travel together, since both come from
 // the target that supplies the name.
@@ -958,6 +977,13 @@ func (c *checker) resolveScopedTypeRef(scope *Scope, ref *ast.TypeRefTypeAnn, lv
 	b, ok := c.lookupClassBinding(scope, name)
 	if !ok {
 		return nil, false
+	}
+	// `Self` inside an interface body binds the interface's own handle, which already carries
+	// its type-parameter vars, so it resolves to the binding directly for the reason the class
+	// shorthand below does. Routing it through buildAliasInstance would report a bare `Self`
+	// in `interface Box<T>` as missing its argument.
+	if name == selfTypeName && len(ref.TypeArgs) == 0 && c.selfAlias != nil && b.Type == soltype.Type(c.selfAlias) {
+		return c.selfAlias, true
 	}
 	// An alias reference routes through buildAliasInstance whether or not it supplies
 	// arguments, so a generic alias referenced bare still reports an arity mismatch and a

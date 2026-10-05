@@ -57,6 +57,12 @@ type AliasDef struct {
 	// alias path, so this is what lets its arity diagnostics name it an enum. It is false for
 	// an alias a `type` declaration wrote.
 	Enum bool
+
+	// Receivers holds the receiver each method, getter, and setter of an `interface` body
+	// writes, nil for a member that writes none. Lowering a member to its object type drops
+	// the receiver, so this is where the `implements` check reads it. It is nil for an alias
+	// a `type` declaration wrote.
+	Receivers map[memberBlameKey]*ast.MethodReceiver
 }
 
 // expandAlias unfolds an alias reference to its registered AliasDef Body, the shared

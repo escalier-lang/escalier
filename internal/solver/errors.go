@@ -499,6 +499,19 @@ type ConflictingImplementedMemberError struct {
 	Node         ast.Node
 }
 
+// ClassDoesNotImplementInterfaceError fires when a class does not provide a member an entry
+// of its `implements` clause declares, or provides it in a form the entry does not accept.
+// Class is the class, Interface the entry as written, and Member the member's name. Reason is
+// "missing" for an absent member and otherwise says how the class's member disagrees. Node is
+// the clause entry.
+type ClassDoesNotImplementInterfaceError struct {
+	Class     string
+	Interface string
+	Member    string
+	Reason    string
+	Node      ast.Node
+}
+
 type IncompatibleOverrideError struct {
 	Member     string
 	Class      string
@@ -568,7 +581,8 @@ func (*TypeParamNotProducibleError) isSolverError()  {}
 func (*IncompatibleOverrideError) isSolverError()    {}
 func (*OverrideFormMismatchError) isSolverError()    {}
 
-func (*ConflictingImplementedMemberError) isSolverError() {}
+func (*ConflictingImplementedMemberError) isSolverError()   {}
+func (*ClassDoesNotImplementInterfaceError) isSolverError() {}
 
 // --- Per-operand blame (§3.5): each constraint kind follows its operands through
 // Prov on demand, falling back to its own site (where it keeps one) ---
@@ -738,6 +752,9 @@ func (e *TypeParamNotProducibleError) Related() []ast.Span { return nil }
 // span when the class declares the name in a form that carries no node of its own.
 func (e *ConflictingImplementedMemberError) Span() ast.Span      { return spanOfNode(e.Node) }
 func (e *ConflictingImplementedMemberError) Related() []ast.Span { return nil }
+
+func (e *ClassDoesNotImplementInterfaceError) Span() ast.Span      { return spanOfNode(e.Node) }
+func (e *ClassDoesNotImplementInterfaceError) Related() []ast.Span { return nil }
 
 func (e *IncompatibleOverrideError) Span() ast.Span      { return spanOfNode(e.Node) }
 func (e *IncompatibleOverrideError) Related() []ast.Span { return nil }
@@ -2869,6 +2886,15 @@ func (e *TypeParamNotProducibleError) Message() string {
 func (e *ConflictingImplementedMemberError) Message() string {
 	return fmt.Sprintf("class `%s` implements `%s` and `%s`, which declare `%s` differently: `%s` and `%s`",
 		e.Class, e.First, e.Second, e.Member, soltype.Print(e.FirstMember), soltype.Print(e.SecondMember))
+}
+
+func (e *ClassDoesNotImplementInterfaceError) Message() string {
+	if e.Reason == "missing" {
+		return fmt.Sprintf("Class '%s' does not implement interface '%s': missing member '%s'",
+			e.Class, e.Interface, e.Member)
+	}
+	return fmt.Sprintf("Class '%s' does not implement interface '%s': member '%s' %s",
+		e.Class, e.Interface, e.Member, e.Reason)
 }
 
 func (e *IncompatibleOverrideError) Message() string {
