@@ -463,7 +463,8 @@ func TestInferClassObjectDestructure(t *testing.T) {
 // TestInferClassNonClassSuper covers the C1 diagnostic for an `extends` or `implements`
 // clause naming something that is not a class. A class type parameter resolves to a
 // binding that is not a ClassType, so using it as a super reports NonClassSuperError
-// rather than silently dropping the edge.
+// rather than silently dropping the edge. An `implements` clause may name an interface,
+// so an alias there is resolved instead, and its body and type arguments are checked.
 func TestInferClassNonClassSuper(t *testing.T) {
 	t.Run("extends a type parameter", func(t *testing.T) {
 		_, _, errs := inferSource(t, `class B<T> extends T { constructor(&mut self) {} }`)
@@ -475,6 +476,22 @@ func TestInferClassNonClassSuper(t *testing.T) {
 		require.Len(t, errs, 1)
 		require.Equal(t, "`T` does not name a class and cannot be extended or implemented.", errs[0].Message())
 	})
+	t.Run("implements an alias of a primitive", func(t *testing.T) {
+		_, _, errs := inferSource(t, `
+			type N = number
+			class C implements N { constructor(&mut self) {} }
+		`)
+		require.Len(t, errs, 1)
+		require.Equal(t, "`N` does not name a class and cannot be extended or implemented.", errs[0].Message())
+	})
+	t.Run("implements an interface with too many type arguments", func(t *testing.T) {
+		_, _, errs := inferSource(t, `
+			interface Box<T> { value: T }
+			class C implements Box<number, string> { value: number, constructor(&mut self) { self.value = 0 } }
+		`)
+		require.Len(t, errs, 1)
+		require.Equal(t, "type alias `Box` expects 1 type argument but got 2", errs[0].Message())
+	})
 	t.Run("extends a type parameter applied to arguments", func(t *testing.T) {
 		// A type parameter carries no type arguments, so `T<X>` is doubly ill-formed. The
 		// extends clause still requires a class, so the non-class binding is reported here
@@ -483,6 +500,127 @@ func TestInferClassNonClassSuper(t *testing.T) {
 		require.Len(t, errs, 1)
 		require.Equal(t, "`T` does not name a class and cannot be extended or implemented.", errs[0].Message())
 	})
+}
+
+// TestInferDeclareClassImplementsInterface covers an `implements` clause naming an interface. On
+// a `declare` class the interface supplies each member the class does not have through its own
+// body or its `extends` chain. A class with a body takes nothing from the clause, and neither
+// form reports the interface as a non-class.
+func TestInferDeclareClassImplementsInterface(t *testing.T) {
+	tests := []struct {
+		name string
+		src  string
+		want map[string]string
+	}{
+		{
+			name: "ContributesAMember",
+			src: `
+				interface Named { readonly name: string }
+				declare class Person implements Named { readonly age: number }
+				fn f(p: Person) { return p.name }
+			`,
+			want: map[string]string{"f": "fn (p: Person) -> string"},
+		},
+		{
+			name: "KeepsTheClassOwnMember",
+			src: `
+				interface HasId { readonly id: string | number }
+				declare class Row implements HasId { readonly id: number }
+				fn f(r: Row) { return r.id }
+			`,
+			want: map[string]string{"f": "fn (r: Row) -> number"},
+		},
+		{
+			name: "KeepsTheInheritedMember",
+			src: `
+				interface HasId { readonly id: string | number }
+				declare class Base { readonly id: number }
+				declare class Row extends Base implements HasId { constructor(&mut self) }
+				fn f(r: Row) { return r.id }
+			`,
+			want: map[string]string{"f": "fn (r: Row) -> number"},
+		},
+		{
+			name: "SubstitutesTheTypeArguments",
+			src: `
+				interface Box<T> { readonly value: T }
+				declare class NumBox implements Box<number> {}
+				fn f(b: NumBox) { return b.value }
+			`,
+			want: map[string]string{"f": "fn (b: NumBox) -> number"},
+		},
+		{
+			name: "ReadsAnExtendedInterface",
+			src: `
+				interface A { readonly x: number | string, readonly y: boolean }
+				interface B extends A { readonly x: number }
+				declare class C implements B {}
+				fn f(c: C) { return [c.x, c.y] }
+			`,
+			want: map[string]string{"f": "fn (c: C) -> [number, boolean]"},
+		},
+		{
+			name: "TwoInterfacesDeclareASharedNameIdentically",
+			src: `
+				interface First { readonly v: number }
+				interface Second { readonly v: number }
+				declare class C implements First, Second {}
+				fn f(c: C) { return c.v }
+			`,
+			want: map[string]string{"f": "fn (c: C) -> number"},
+		},
+		{
+			// The two methods differ only in their type parameter's name, so they declare the
+			// same member.
+			name: "TwoInterfacesDeclareAGenericMethodIdentically",
+			src: `
+				interface First { id<T>(self, x: T) -> T }
+				interface Second { id<U>(self, x: U) -> U }
+				declare class C implements First, Second {}
+				fn f(c: C) { return c.id(1) }
+			`,
+			want: map[string]string{"f": "fn (c: C) -> 1"},
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			values, _, errs := inferSource(t, tt.src)
+			require.Empty(t, errs)
+			for name, want := range tt.want {
+				require.Equal(t, want, values[name])
+			}
+		})
+	}
+
+	t.Run("AClassWithABodyTakesNothing", func(t *testing.T) {
+		_, _, errs := inferSource(t, `
+			interface Named { readonly name: string }
+			class Person implements Named {
+				age: number,
+				constructor(&mut self) { self.age = 0 }
+			}
+			fn f(p: Person) { return p.name }
+		`)
+		require.Len(t, errs, 1)
+		require.Equal(t, "object is missing property: name", errs[0].Message())
+	})
+}
+
+// Two interfaces in a `declare` class's `implements` clause that declare one name differently
+// are reported when the class does not declare or inherit that name. TypeScript rejects the same
+// conflict in an interface that extends both, which is how the generated lib writes it. The first
+// interface still supplies the member, so a read of it keeps a type.
+func TestInferDeclareClassImplementsConflictingInterfaces(t *testing.T) {
+	values, _, errs := inferSource(t, `
+		interface First { readonly v: number }
+		interface Second { readonly v: string }
+		declare class C implements First, Second {}
+		fn f(c: C) { return c.v }
+	`)
+	require.Equal(t, []string{
+		"class `C` implements `First` and `Second`, which declare `v` differently: `{readonly v: number}` and `{readonly v: string}`",
+	}, errorMessagesOf(errs))
+	require.Equal(t, "fn (c: C) -> number", values["f"])
 }
 
 // TestInferClassExtendFinal covers the rule that a final class cannot be a superclass:

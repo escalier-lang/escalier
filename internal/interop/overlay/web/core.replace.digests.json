@@ -1,5 +1,17 @@
 [
   {
+    "decl": "EventTarget",
+    "member": "addEventListener",
+    "kind": "method",
+    "digest": "215bcf0633fc2fe9"
+  },
+  {
+    "decl": "EventTarget",
+    "member": "removeEventListener",
+    "kind": "method",
+    "digest": "f0ef615621d4dd9a"
+  },
+  {
     "decl": "MessageEvent",
     "member": "ports",
     "kind": "field",

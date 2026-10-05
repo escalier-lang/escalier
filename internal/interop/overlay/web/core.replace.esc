@@ -24,3 +24,16 @@ export declare interface MessageEventInit<T = any> {
     ports?: Array<unknown>,
     source?: null,
 }
+
+// `EventTarget` accepts `null` for the listener of `addEventListener` and
+// `removeEventListener`, as the DOM spec declares it. A `null` listener does
+// nothing: both algorithms return at once when they see it. Accepting it only
+// lets a mistake through silently, so the overlay drops it.
+//
+// Every subclass that restates these methods, `AbortSignal` among them,
+// already leaves `null` out. With `EventTarget` matching, each restatement
+// accepts what the method it overrides accepts.
+export declare class EventTarget {
+    addEventListener(&mut self, type: string, callback: EventListenerOrEventListenerObject, options?: AddEventListenerOptions | boolean) -> unknown,
+    removeEventListener(&mut self, type: string, callback: EventListenerOrEventListenerObject, options?: EventListenerOptions | boolean) -> unknown,
+}
