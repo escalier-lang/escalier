@@ -238,11 +238,21 @@ leaves the existing ones running unchanged against the old path.
 
 Re-measure before §2.1 and after. N4.
 
-#1631 recorded 268ms warm and 4.4s cold for `web:dom` entering `web:fetch`'s
-closure. Both exceed what loading the entire tree cost at the time, 46ms warm
-and 951ms cold, so the figure is unreliable and it is the evidence the current
-partition rests on. Either reproduce it or retire it.
+`main` at 06b28c81 costs 43ms warm and 810ms cold for `web:fetch` alone, and
+380ms warm and 4.45s cold for every package. The warm figure is what closure
+size costs per inference run, and at nine times the one-package case it is the
+constraint on §2.1.
+
+It was not. The same benchmark on the closed stack's tree two weeks earlier read
+46ms warm and 951ms cold, so warm has moved eight times while the tree got
+smaller. That points at inference rather than volume, and `main` has taken 65
+commits since including the closure-capture and ownership work. Bisecting it is
+worth doing before §2.1, because a repartitioning measured against a regressed
+baseline will look cheaper than it is.
+
+This also settles #1631's 4.4s, which §3.8 of `requirements.md` previously called
+unreliable. It reproduces: 4.45s is what the whole tree costs on `main` now.
 
 `BenchmarkStdlibClosureLoad` in `internal/solver/stdlib_load_bench_test.go` is
-the harness. #1643 moves the cold baseline once it lands, so record which side
-of it each measurement was taken on.
+the harness. #1643 has not landed and moves the cold baseline when it does, so
+record which side of it each measurement was taken on.

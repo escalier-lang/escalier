@@ -1,92 +1,97 @@
 # Requirements: Web environments and package organization
 
-## 0. What this document describes
+## 0. History
 
-Sections 2 and 3 were written against the first environment system, the stack of
-PRs #1628 through #1635. Those were closed without merging, so `main` no longer
-has what they describe: the `@env` decorator and the annotations in the tree, the
-`internal/dts_to_esc/env*.go` files, `CheckEnvs`, `DeclEnvs`, the file-name
-suffix convention behind `web/dom.window.esc`, and the `web:worker` package. The
-`web/` directory holds 24 packages, none with a suffix.
+An earlier environment system, the stack of PRs #1628 through #1635, was closed
+without merging. `main` has none of it: no `@env` decorator and no annotations,
+no `internal/dts_to_esc/env*.go`, no `CheckEnvs` or `DeclEnvs`, no environment
+vocabulary, no file-name suffix convention, and no `web:worker` package. What it
+has instead is the package-level tier rank that stack was replacing, described in
+section 2.
 
-Read those two sections as the record of why the requirements say what they say,
-not as a description of the current tree. The requirements in section 4 and the
-phases in 4.3 are current, and `implementation_plan.md` opens with what `main`
-holds now.
+So this is a greenfield design rather than a revision, and two problems the
+earlier work hit no longer apply. #1648 landed, so an interface with several
+supertypes converts to a class that `implements` the rest, which the merged
+`Navigator` in `hoisted/README.md` depends on. And no file name claims anything
+about its contents any more, so N1 holds on the current tree and open question 1
+is moot.
 
-Two of the problems recorded below are fixed. #1648 landed, so an interface with
-several supertypes converts to a class that `implements` the rest, which §3 of
-`hoisted/README.md` depended on. And there is no file name left to make a claim
-about its contents, so N1 is satisfied by the current tree rather than by a
-change to it, and open question 1 is moot.
+Sections 2 and 3 describe `main` at 06b28c81. `implementation_plan.md` opens
+with the same inventory from the implementer's side.
 
 ## 1. Problem statement
 
-A web declaration exists on some set of runtimes. A page has the DOM, a dedicated
-worker has a different surface, and a service worker has a third. The tree states
-that fact in several places, and the statements disagree with each other.
+A web declaration exists on some set of global scopes. A page has the DOM, a
+dedicated worker has a different surface, a shared worker a third, a service
+worker a fourth, and the four worklets more. Nothing in the tree records which,
+and the one mechanism that comes close measures a different thing.
 
-The disagreement surfaced while working the `web:worker` stack, PRs #1628 through
-#1635. Each individual problem below looked local at the time. Together they say
-the model needs restating rather than patching.
+The tier rank in section 2 answers how many runtimes ship a package, which is the
+question of whether code runs off the browser at all. Every global scope inside a
+browser is one tier, so the rank cannot distinguish them, and portability is a
+total order where global scopes are not. Section 3 is what that costs.
 
 ## 2. What the tree does today
 
-### 2.1 Three ideas share one vocabulary
+### 2.1 One rank per package, ordered by portability
 
-The names `window`, `dedicated_worker`, `shared_worker` and `service_worker` are
-used for three different questions, and nothing keeps the answers aligned.
+`internal/dts_to_esc/tier.go` gives each pseudo-package a `Tier`, and the four
+values form a total order:
 
-1. **Where a declaration exists.** `@env` on a declaration, absent meaning every
-   environment.
-2. **What a package file's name claims.** `web/dom.window.esc` against
-   `web/fetch.esc`.
-3. **Which packages a program may import.** Stated in prose in
-   `docs/03_imports.md`, for example that a page cannot import `web:worker`.
+| tier | value | what it promises |
+| --- | --- | --- |
+| `TierLanguage` | -1 | wherever ECMAScript is. Every `std:*` package. |
+| `TierCore` | 0 | every runtime implementing the WinterTC minimum common API. |
+| `TierPortable` | 1 | every non-browser WinterTC runtime, and the browser. |
+| `TierBrowser` | 2 | a browser alone. |
 
-Only the first is enforced.
+`webTiers` assigns one to each of the 24 `web:*` packages. Nine are portable,
+including `web:fetch`, `web:url`, `web:streams` and `web:websocket`. Ten are
+browser, including `web:dom`, `web:workers`, `web:service_worker`,
+`web:indexeddb` and `web:webgl`. `web:core` is the only core package.
 
-### 2.2 How a declaration gets its environments
+### 2.2 The check is on import edges, and runs in the converter
 
-`declEnvsFrom` in `internal/dts_to_esc/env_table.go` answers in order:
+`CheckTiers` at `internal/dts_to_esc/import_header.go:116` reports every import
+edge whose target sits above its source. A portable package may name a core one
+and not a browser one.
 
-1. `declEnvOverrides`, a hand-written map, currently empty.
-2. `DeclEnvsFromLibs`, which reads the set of TypeScript lib files that declared
-   the name.
-3. `packageFileEnvs`, read from the package file's name.
-4. Every environment.
+It has one caller, `internal/dts_to_esc/generate.go:138`. Like the system before
+it, it validates the generated tree against itself at conversion time. The
+compiler pipeline has no notion of a tier, so none of it reaches a user program.
 
-The lib set answers first for anything the libs declared, which is nearly
-everything. `AnnotateEnvs` then stamps `@env` on a declaration whose set is
-narrower than every environment, and leaves an every-environment declaration
-bare.
+### 2.3 `web:core` binds unprefixed
 
-### 2.3 What the file name actually governs
+`coreURI` at `internal/dts_to_esc/import_header.go:33` and
+`internal/solver/imports.go:94` make `web:core` the one package whose exports an
+importer binds without a qualifier, which is why `web:dom` writes `EventTarget`
+rather than `core.EventTarget`. The comment at `import_header.go:222` groups it
+with `std:prelude` as the two packages that do this.
 
-The file name is a fallback, reached only for a package no lib contributed to. It
-never enters the reference check. `CheckEnvs` and `checkModuleEnvs` read
-`DeclEnvs`, which consults the declaration's own decorator and nothing else.
+### 2.4 What the axis measures
 
-### 2.4 Where the check runs
+A tier answers "how many runtimes ship this", and the values order because that
+is a nesting: language ⊃ core ⊃ portable ⊃ browser. The axis is the WinterTC
+question, whether a package exists off the browser at all.
 
-`CheckEnvs` has one caller, `internal/dts_to_esc/generate.go:143`. It validates
-the generated tree against itself at conversion time. The compiler pipeline has no
-notion of an environment at all, so none of this reaches a user program.
+It says nothing about which global scope inside a browser has a declaration. A
+page, a dedicated worker and a service worker are all "the browser", so all three
+collapse into `TierBrowser` together.
 
 ## 3. Observed problems
 
-### 3.1 A file name reads as a claim it does not make
+### 3.1 The tier axis cannot express a global scope
 
-`internal/interop/data/web/dom.window.esc` holds 1195 top-level declarations. 931
-carry `@env("window")`. The remaining 264 carry nothing, which means every
-environment.
+Portability is a total order and global scopes are not. A page has `document`, a
+dedicated worker has `importScripts`, a service worker has `clients`, and no two
+of those three contain each other. There is no rank that puts them in sequence,
+so the mechanism that works for Node-versus-browser cannot be extended to
+window-versus-worker by adding values to it.
 
-`WindowOrWorkerGlobalScope` is one of them, and it is correct: both
-`lib.dom.d.ts` and `lib.webworker.d.ts` declare it, as they do `DOMRectInit`,
-`ImageBitmapOptions` and `EventSourceInit`. A reader who takes the `.window`
-suffix as a statement about the file's contents is misled about 22% of them.
+`web:workers` and `web:service_worker` are both `TierBrowser`, which is correct
+about the browser and silent about everything this document is for.
 
-### 3.2 A worker cannot name the types it receives
+### 3.2 A worker has no surface at all
 
 A page transfers an `OffscreenCanvas` to a worker:
 
@@ -96,83 +101,98 @@ worker.postMessage({ canvas: offscreen }, [offscreen])
 ```
 
 The worker receives a real `OffscreenCanvas` and draws on it. To type the handler
-it must name `OffscreenCanvas`, which is declared at
-`internal/interop/data/web/dom.window.esc:13419`, inside a package a worker is not
-meant to import. The same holds for everything `getContext` returns:
+it has to name `OffscreenCanvas`, which is in `web:dom`, a browser-tier package
+describing a page.
 
-```
-getContext(self, contextId: "2d", options?: unknown) -> OffscreenCanvasRenderingContext2D | null,
-getContext(self, contextId: "bitmaprenderer", options?: unknown) -> ImageBitmapRenderingContext | null,
-getContext(self, contextId: "webgl", options?: unknown) -> webgl.WebGLRenderingContext | null,
-```
+That is the smaller half. The worker-only surface is not in the tree at all.
+`importScripts`, `WorkerLocation`, `FetchEvent`, `ExtendableMessageEvent` and
+`Clients` have zero occurrences under `internal/interop/data/`, and
+`WorkerGlobalScope`, `DedicatedWorkerGlobalScope`, `SharedWorkerGlobalScope` and
+`ServiceWorkerGlobalScope` are not declared anywhere. `web:workers` holds
+`Worker` and `SharedWorker`, the handles a page constructs, and nothing a worker
+runs inside.
 
-`lib.webworker.d.ts` declares every one of those, along with `Path2D`,
-`CanvasGradient`, `CanvasPattern`, `TextMetrics` and `ImageData`. The platform
-supports the program. The packaging does not.
+So a worker program cannot name what it receives, and cannot name its own
+globals either.
 
-### 3.3 Nothing enforces package environments on user code
+### 3.3 Nothing enforces a tier on user code
 
-A worker can `import "web:dom"` today and it typechecks. The rule that forbids it
-exists only as prose.
+`CheckTiers` has one caller and it is the converter. A program can import
+`web:dom` and `web:workers` together, or import `web:dom` from code meant for a
+worker, and nothing reports it.
 
 ### 3.4 A program has no target environment
 
 Nothing records which runtime a program is compiled for. Any rule that resolves a
 name differently per environment, or rejects an import, has nowhere to read the
-answer from.
+answer from. `escalier.toml` holds a project name and `package.json` holds
+`main` and `bin`; neither says where the code runs.
 
 ### 3.5 The partition cuts across environments
 
 `webPackages` in `internal/dts_to_esc/partition.go` groups declarations by API
-family. Environments cut across those families, so a package is not importable as
-a unit. `web:dom` mixes the 931 window-only declarations with the 264 portable
-ones, and the canvas surface a worker needs sits among them.
+family, and environments cut across those families. `OffscreenCanvas`,
+`ImageBitmap`, `MessagePort` and `Path2D` are in `web:dom` with `Document` and
+`Element`, though the first four exist in every worker and the last two in none.
+A package is therefore not usable as a unit by any environment but a page.
 
-### 3.6 The environment vocabulary is both finer and coarser than the platform
+### 3.6 Availability is per package, where the facts are per declaration
 
-The tree distinguishes four environments where the platform has nine, and
-`lib.webworker.d.ts` is a single file covering three of them, so it cannot
-express the difference either. Every per-worker-kind fact in the repository comes
-from a 24-entry hand-written table at `internal/dts_to_esc/env_table.go:91-121`.
+`TierPortable`'s own doc comment says the promise is per package and not per
+name, and #1586 measured the gap against Node 22: `web:file` is portable but
+`FileList` and `FileReader` are not, and `web:performance` is portable but five
+of its timing interfaces are not.
 
-`vocabulary.md` sets out the nine and what matching them costs. WebIDL answers
-both halves: `[Exposed]` per interface, and `[Global=...]` for the scopes an
-`Exposed` value resolves against.
-
-This matters for `Transferable`, whose arms are not uniformly available. Six of
-the sixteen transferable interfaces are `Exposed=(DedicatedWorker, Window)` and
-are absent from shared and service workers. The two libs declare `Transferable`
-identically, so the converter sees no difference and cannot derive the split.
-
-`transferable.md` in this folder works the case through in full, against
-`@webref/idl`.
+The same coarseness will bite harder on the environment axis, because the source
+data is coarse too. `lib.webworker.d.ts` is one file covering dedicated, shared
+and service workers, so it cannot distinguish them. WebIDL can, through
+`[Exposed]` and `[Global=...]`, and `vocabulary.md` and `transferable.md` are
+built from it.
 
 ### 3.7 Per-arm availability has no representation
 
-`MessageEvent.source` is `WindowProxy | MessagePort | ServiceWorker` in a page,
-`Client | ServiceWorker | MessagePort` in a service worker, and `null` elsewhere.
-`internal/interop/overlay/web/core.replace.esc` retypes it to `null` and retypes
-`ports` to `Array<unknown>`, which is the only expressible answer today and costs
-every program the real types. #1613 tracks this.
+`internal/interop/overlay/web/core.replace.esc` still retypes
+`MessageEvent.source` to `null` and `ports` to `Array<unknown>`, and its comment
+still reasons in tiers:
 
-`WindowProxy` is a further wrinkle. `lib.dom.d.ts:29419` declares it as
+> `source` is a `WindowProxy`, a `MessagePort` or a `ServiceWorker` in the
+> browser and always null off it, so `null` is what every portable runtime
+> reports.
+
+Every program pays the narrowed types so that one declaration can serve every
+tier. `url.replace.esc` suppresses the `MediaSource` overload of
+`URL.createObjectURL` for the same reason. #1613 tracks this.
+
+`WindowProxy` is a further wrinkle. `lib.dom.d.ts` declares it as
 `type WindowProxy = Window`, a type alias, so no realm has a `WindowProxy`
 binding. Narrowing it means testing `Window`, which a worker genuinely lacks.
 
 ### 3.8 Load cost is charged per closure but paid per tree
 
 `BuildPackageClosure` puts every reachable package into one group, so any edge
-into `web:dom` pulls the whole tree into every program's closure. Measured with
-`BenchmarkStdlibClosureLoad` on the committed tree:
+into `web:dom` pulls the whole tree into every program's closure. Measured on
+`main` at 06b28c81 with `BenchmarkStdlibClosureLoad`:
 
 | | warm | cold |
 | --- | --- | --- |
-| `web:fetch` alone | 28ms | 850ms |
-| every package | 46ms | 951ms |
+| `web:fetch` alone | 43ms | 810ms |
+| every package | 380ms | 4.45s |
 
-Cold barely moves because `buildPackageGraph` parses every file in the tree to
-read its import header, reached or not. Closure size costs about 18ms of warm
-inference per run, not the seconds earlier estimates suggested.
+Cold is dominated by something other than closure size: `buildPackageGraph`
+parses every file in the tree to read its import header, reached or not. #1643
+records that comment attachment is 74% of that, all of it in one linear scan in
+`ast.(*nodeIndex).enclosing`, and it has not landed.
+
+The warm figure is what closure size costs per inference run, and at 380ms
+against 43ms it is the constraint on any repartitioning. It was not: the same
+benchmark on the closed stack's tree two weeks earlier read 46ms warm and 951ms
+cold. Warm moved further than cold while the tree got smaller, which points at
+inference rather than at volume, and `main` has since taken 65 commits including
+the closure-capture and ownership work. Nothing has bisected it.
+
+This also vindicates a number this document previously called unreliable. #1631
+recorded 4.4s cold for `web:dom` entering `web:fetch`'s closure, and 4.45s is
+what `main` costs for the whole tree now.
 
 ### 3.9 A global is reachable only through a scope class
 
@@ -180,34 +200,21 @@ Escalier does not give a program the global object. Declarations are organized
 into packages and imported under a namespace binding, so a page calls
 `fetch(...)` after `import "web:fetch"` rather than reading it off a global.
 
-The `*GlobalScope` classes do not follow that. Each one describes what a runtime
-puts in scope, and the tree carries them as classes whose members a program has no
-way to reach:
+`Window` and `WindowOrWorkerGlobalScope` do not follow that. Both are in
+`web/dom.esc` as ordinary declarations whose members a program has no way to
+reach, so a page cannot call `alert`, read `innerWidth` or set `onclick`. The
+declarations exist and describe the runtime correctly, and nothing can name them.
 
-```
-export declare class WorkerGlobalScope extends EventTarget {
-    readonly location: WorkerLocation,
-    readonly navigator: WorkerNavigator,
-    onerror: (fn (this: WorkerGlobalScope, ev: dom.ErrorEvent) -> any) | null,
-    readonly self: WorkerGlobalScope & typeof globalThis,
-    importScripts(mut self, ...urls: mut Array<string | url.URL>) -> unknown,
-    ...
-}
-```
-
-A worker program cannot call `importScripts`, read `location`, or set
-`onerror`. The declarations exist and describe the runtime correctly, and nothing
-can name them.
-
-Three members of `web:worker` are already hoisted by hand, `importScripts`,
-`onrtctransform` and `fonts`, so the shape is established but applied
-inconsistently. `web:fetch` shows the target form, a top-level declaration
-carrying the global's own name:
+`web:fetch` shows the target form, a top-level declaration carrying the global's
+own name:
 
 ```
 @js("fetch")
 export declare fn fetch(input: RequestInfo | url.URL, init?: RequestInit) -> Promise<Response>
 ```
+
+`std:console` does the same with `@js("console")` on a `declare var`. So the
+shape is established in two packages and applied to none of the scope classes.
 
 ## 4. Requirements
 
