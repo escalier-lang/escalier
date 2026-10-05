@@ -1693,21 +1693,21 @@ func TestInferClassSelfMethodInputVariance(t *testing.T) {
 		{
 			name: "an immutable instance widens",
 			src: bag + `
-				fn widen(b: Bag<number>) -> Bag<number | string> { return b }
+				fn widen(b: &Bag<number>) -> &Bag<number | string> { return b }
 			`,
 		},
 		{
 			name: "an immutable instance does not narrow",
 			src: bag + `
-				fn narrow(b: Bag<number | string>) -> Bag<number> { return b }
+				fn narrow(b: &Bag<number | string>) -> &Bag<number> { return b }
 			`,
 			want: []string{"cannot constrain string <: number"},
 		},
 		{
 			name: "a mut instance does not widen",
 			src: bag + `
-				fn wide(b: mut Bag<number | string>) { }
-				fn narrow(b: mut Bag<number>) { wide(b) }
+				fn wide(b: &mut Bag<number | string>) { }
+				fn narrow(b: &mut Bag<number>) { wide(b) }
 			`,
 			want: []string{"cannot constrain string <: number"},
 		},
@@ -1717,7 +1717,7 @@ func TestInferClassSelfMethodInputVariance(t *testing.T) {
 				class Echo<T> {
 					echo(&self, x: T) -> T { return x },
 				}
-				fn widen(e: Echo<number>) -> Echo<number | string> { return e }
+				fn widen(e: &Echo<number>) -> &Echo<number | string> { return e }
 			`,
 		},
 		{
@@ -1804,8 +1804,8 @@ func TestInferClassSelfMethodInputVariance(t *testing.T) {
 					},
 					contains(&self, x: U) -> boolean { return self.key(x) > 0 },
 				}
-				fn probe(b: Bag<number | string>) -> boolean { return b.contains(42) }
-				fn go(k: Keyed<string>) -> boolean { return probe(k) }
+				fn probe(b: &Bag<number | string>) -> boolean { return b.contains(42) }
+				fn go(k: &Keyed<string>) -> boolean { return probe(k) }
 			`,
 			want: []string{
 				"class `Keyed` redeclares inherited member `contains` with type " +
@@ -1916,7 +1916,7 @@ func TestInferClassSelfMethodInputVariance(t *testing.T) {
 				class Consumer<T> {
 					accept(&self, x: T) { },
 				}
-				fn widen(c: Consumer<number>) -> Consumer<number | string> { return c }
+				fn widen(c: &Consumer<number>) -> &Consumer<number | string> { return c }
 			`,
 			want: []string{"cannot constrain string <: number"},
 		},
@@ -1960,7 +1960,7 @@ func TestInferClassNestedClassVariance(t *testing.T) {
 					readonly sink: Sink<T>,
 					put(&self, x: T) -> undefined { return self.sink.put(x) },
 				}
-				fn widen(w: W<number>) -> W<number | string> { return w }
+				fn widen(w: &W<number>) -> &W<number | string> { return w }
 			`,
 			want: []string{"cannot constrain string <: number"},
 		},
@@ -1970,14 +1970,14 @@ func TestInferClassNestedClassVariance(t *testing.T) {
 				class W<T> {
 					readonly sink: Sink<T>,
 				}
-				fn narrow(w: W<number | string>) -> W<number> { return w }
+				fn narrow(w: &W<number | string>) -> &W<number> { return w }
 			`,
 		},
 		{
 			name: "a covariant nested class widens",
 			src: `
 				class Bag<T> { readonly items: Array<T> }
-				fn widen(b: Bag<number>) -> Bag<number | string> { return b }
+				fn widen(b: &Bag<number>) -> &Bag<number | string> { return b }
 			`,
 		},
 		{
@@ -1986,8 +1986,8 @@ func TestInferClassNestedClassVariance(t *testing.T) {
 			name: "a nested class in a readonly field is invariant through mut",
 			src: `
 				class Bag<T> { readonly items: Array<T> }
-				fn wide(b: mut Bag<number | string>) { }
-				fn narrow(b: mut Bag<number>) { wide(b) }
+				fn wide(b: &mut Bag<number | string>) { }
+				fn narrow(b: &mut Bag<number>) { wide(b) }
 			`,
 			want: []string{"cannot constrain string <: number"},
 		},
@@ -1997,7 +1997,7 @@ func TestInferClassNestedClassVariance(t *testing.T) {
 			src: `
 				class A<T> { readonly b: B<T> }
 				class B<T> { readonly v: T }
-				fn widen(a: A<number>) -> A<number | string> { return a }
+				fn widen(a: &A<number>) -> &A<number | string> { return a }
 			`,
 		},
 		{
@@ -2005,7 +2005,7 @@ func TestInferClassNestedClassVariance(t *testing.T) {
 			src: `
 				class B<T> { readonly v: T }
 				class A<T> { readonly b: B<T> }
-				fn widen(a: A<number>) -> A<number | string> { return a }
+				fn widen(a: &A<number>) -> &A<number | string> { return a }
 			`,
 		},
 		{
@@ -2014,7 +2014,7 @@ func TestInferClassNestedClassVariance(t *testing.T) {
 			src: `
 				type Consumer<T> = fn (x: T) -> undefined
 				class H<T> { readonly c: Consumer<T> }
-				fn widen(h: H<number>) -> H<number | string> { return h }
+				fn widen(h: &H<number>) -> &H<number | string> { return h }
 			`,
 			want: []string{"cannot constrain string <: number"},
 		},
@@ -2023,7 +2023,7 @@ func TestInferClassNestedClassVariance(t *testing.T) {
 			src: `
 				type Holder<T> = {readonly v: T}
 				class H<T> { readonly c: Holder<T> }
-				fn widen(h: H<number>) -> H<number | string> { return h }
+				fn widen(h: &H<number>) -> &H<number | string> { return h }
 			`,
 		},
 		{
@@ -2032,8 +2032,8 @@ func TestInferClassNestedClassVariance(t *testing.T) {
 			src: `
 				class Box<T> { value: T }
 				class H<'a, T> { readonly r: &'a Box<T> }
-				fn wide(h: mut H<'static, number>) { }
-				fn narrow(h: mut H<'static, 1>) { wide(h) }
+				fn wide(h: &mut H<'static, number>) { }
+				fn narrow(h: &mut H<'static, 1>) { wide(h) }
 			`,
 		},
 		{
@@ -2041,7 +2041,7 @@ func TestInferClassNestedClassVariance(t *testing.T) {
 			src: `
 				class A<T> { readonly v: T, readonly b: B<T> | null }
 				class B<T> { readonly w: T, readonly a: A<T> | null }
-				fn widen(a: A<number>) -> A<number | string> { return a }
+				fn widen(a: &A<number>) -> &A<number | string> { return a }
 			`,
 		},
 		{
@@ -2051,7 +2051,7 @@ func TestInferClassNestedClassVariance(t *testing.T) {
 			src: `
 				class A<T> { readonly b: B<T> | null }
 				class B<T> { readonly f: fn (x: T) -> undefined, readonly a: A<T> | null }
-				fn widen(a: A<number>) -> A<number | string> { return a }
+				fn widen(a: &A<number>) -> &A<number | string> { return a }
 			`,
 			want: []string{"cannot constrain string <: number"},
 		},
@@ -2078,7 +2078,7 @@ func TestInferClassNestedClassVariance(t *testing.T) {
 			src: `
 				type Holder<T> = {readonly v: T}
 				class H<T> { readonly c: Holder<Holder<T>> }
-				fn widen(h: H<number>) -> H<number | string> { return h }
+				fn widen(h: &H<number>) -> &H<number | string> { return h }
 			`,
 		},
 		{
@@ -2086,7 +2086,7 @@ func TestInferClassNestedClassVariance(t *testing.T) {
 			src: `
 				type List<T> = {readonly head: T, readonly tail: List<T> | null}
 				class H<T> { readonly c: List<T> }
-				fn widen(h: H<number>) -> H<number | string> { return h }
+				fn widen(h: &H<number>) -> &H<number | string> { return h }
 			`,
 		},
 		{
@@ -2100,7 +2100,7 @@ func TestInferClassNestedClassVariance(t *testing.T) {
 					readonly h: Holder<T> | null,
 				}
 				class Holder<T> { readonly c: Cell<T> }
-				fn widen(h: Holder<number>) -> Holder<number | string> { return h }
+				fn widen(h: &Holder<number>) -> &Holder<number | string> { return h }
 			`,
 			want: []string{"cannot constrain string <: number"},
 		},
@@ -2111,7 +2111,7 @@ func TestInferClassNestedClassVariance(t *testing.T) {
 			src: `
 				class A<T> { m(&self, x: T) -> undefined { return undefined }, readonly b: B<T> | null }
 				class B<T> { readonly f: fn (x: A<T>) -> undefined }
-				fn widen(a: A<number>) -> A<number | string> { return a }
+				fn widen(a: &A<number>) -> &A<number | string> { return a }
 			`,
 			want: []string{"cannot constrain string <: number"},
 		},
@@ -2122,7 +2122,7 @@ func TestInferClassNestedClassVariance(t *testing.T) {
 					readonly head: T,
 					readonly tail: List<T> | undefined,
 				}
-				fn widen(l: List<number>) -> List<number | string> { return l }
+				fn widen(l: &List<number>) -> &List<number | string> { return l }
 			`,
 		},
 	}
@@ -2150,7 +2150,7 @@ func TestInferClassVarianceAcrossNamespaces(t *testing.T) {
 		"bar/h.esc": `export type H<T> = {readonly f: fn (x: T) -> undefined}`,
 		"input.esc": `
 			class C<T> { readonly a: foo.H<T>, readonly b: bar.H<T> }
-			fn widen(c: C<number>) -> C<number | string> { return c }
+			fn widen(c: &C<number>) -> &C<number | string> { return c }
 		`,
 	}))
 	require.Equal(t, []string{"cannot constrain string <: number"}, errorMessagesOf(errs))
@@ -2203,7 +2203,7 @@ func TestInferClassVarianceModifiers(t *testing.T) {
 				readonly v: T,
 				has(&self, x: T) -> boolean { return false },
 			}
-			fn widen(c: C<number>) -> C<number | string> { return c }`,
+			fn widen(c: &C<number>) -> &C<number | string> { return c }`,
 			want: []string{"cannot constrain string <: number"},
 		},
 		{

@@ -137,7 +137,7 @@ func TestCommittedCollectionsAreCovariantAndMutOnesAreNot(t *testing.T) {
 		{
 			name: "ArrayWidensIntoAParameter",
 			src: `declare val a: Array<number>
-				fn f(xs: Array<number | string>) -> number { return 0 }
+				fn f(xs: &Array<number | string>) -> number { return 0 }
 				val r = f(a)`,
 		},
 		{
