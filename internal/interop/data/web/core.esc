@@ -25,7 +25,7 @@ export declare interface MessageEventInit<T = any> extends EventInit {
     data?: T,
     lastEventId?: string,
     origin?: string,
-    ports?: mut Array<unknown>,
+    ports?: Array<unknown>,
     source?: null
 }
 
@@ -264,7 +264,7 @@ export declare class Event {
      *
      * [MDN Reference](https://developer.mozilla.org/docs/Web/API/Event/composedPath)
      */
-    composedPath(&mut self) -> mut Array<EventTarget>,
+    composedPath(&mut self) -> Array<EventTarget>,
     /**
      * @deprecated
      *

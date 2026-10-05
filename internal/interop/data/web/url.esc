@@ -78,7 +78,7 @@ export declare class URLSearchParams {
      *
      * [MDN Reference](https://developer.mozilla.org/docs/Web/API/URLSearchParams/getAll)
      */
-    getAll(&self, name: string) -> mut Array<string>,
+    getAll(&self, name: string) -> Array<string>,
     /**
      * Returns a Boolean indicating if such a search parameter exists.
      *

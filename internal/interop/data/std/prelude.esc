@@ -97,14 +97,14 @@ export declare class Array<T> {
      * @param thisArg An object to which the this keyword can refer in the callback function. If
      * thisArg is omitted, undefined is used as the this value.
      */
-    flatMap<U, This = undefined>(&self, callback: fn (this: This, value: T, index: number, array: mut Array<T>) -> U | Array<U>, thisArg?: This) -> mut Array<U>,
+    flatMap<U, This = undefined>(&self, callback: fn (this: This, value: T, index: number, array: mut Array<T>) -> U | Array<U>, thisArg?: This) -> Array<U>,
     /**
      * Returns a new array with all sub-array elements concatenated into it recursively up to the
      * specified depth.
      *
      * @param depth The maximum recursion depth
      */
-    flat<A, D: number = 1>(&self, this: A, depth?: D) -> mut Array<FlatArray<A, D>>,
+    flat<A, D: number = 1>(&self, this: A, depth?: D) -> Array<FlatArray<A, D>>,
     /**
      * Returns the item located at the specified index.
      * @param index The zero-based index of the desired code unit. A negative index will count back from the last item.
@@ -134,7 +134,7 @@ export declare class Array<T> {
     /**
      * Returns a copy of an array with its elements reversed.
      */
-    toReversed(&self) -> mut Array<T>,
+    toReversed(&self) -> Array<T>,
     /**
      * Returns a copy of an array with its elements sorted.
      * @param compareFn Function used to determine the order of the elements. It is expected to return
@@ -144,7 +144,7 @@ export declare class Array<T> {
      * [11, 2, 22, 1].toSorted((a, b) => a - b) // [1, 2, 11, 22]
      * ```
      */
-    toSorted(&self, compareFn?: fn (a: T, b: T) -> number) -> mut Array<T>,
+    toSorted(&self, compareFn?: fn (a: T, b: T) -> number) -> Array<T>,
     /**
      * Copies an array and removes elements and, if necessary, inserts new elements in their place. Returns the copied array.
      * @param start The zero-based location in the array from which to start removing elements.
@@ -152,14 +152,14 @@ export declare class Array<T> {
      * @param items Elements to insert into the copied array in place of the deleted elements.
      * @returns The copied array.
      */
-    toSpliced(&self, start: number, deleteCount: number, ...items: mut Array<T>) -> mut Array<T>,
+    toSpliced(&self, start: number, deleteCount: number, ...items: mut Array<T>) -> Array<T>,
     /**
      * Copies an array and removes elements while returning the remaining elements.
      * @param start The zero-based location in the array from which to start removing elements.
      * @param deleteCount The number of elements to remove.
      * @returns A copy of the original array with the remaining elements.
      */
-    toSpliced(&self, start: number, deleteCount?: number) -> mut Array<T>,
+    toSpliced(&self, start: number, deleteCount?: number) -> Array<T>,
     /**
      * Copies an array, then overwrites the value at the provided index with the
      * given value. If the index is negative, then it replaces from the end
@@ -169,7 +169,7 @@ export declare class Array<T> {
      * @param value The value to write into the copied array.
      * @returns The copied array with the updated value.
      */
-    with(&self, index: number, value: T) -> mut Array<T>,
+    with(&self, index: number, value: T) -> Array<T>,
     /**
      * Gets or sets the length of the array. This is a number one higher than the highest index in the array.
      */
@@ -193,13 +193,13 @@ export declare class Array<T> {
      * This method returns a new array without modifying any existing arrays.
      * @param items Additional arrays and/or items to add to the end of the array.
      */
-    concat(&self, ...items: mut Array<ConcatArray<T>>) -> mut Array<T>,
+    concat(&self, ...items: mut Array<ConcatArray<T>>) -> Array<T>,
     /**
      * Combines two or more arrays.
      * This method returns a new array without modifying any existing arrays.
      * @param items Additional arrays and/or items to add to the end of the array.
      */
-    concat(&self, ...items: mut Array<T | ConcatArray<T>>) -> mut Array<T>,
+    concat(&self, ...items: mut Array<T | ConcatArray<T>>) -> Array<T>,
     /**
      * Adds all the elements of an array into a string, separated by the specified separator string.
      * @param separator A string used to separate one element of the array from the next in the resulting string. If omitted, the array elements are separated with a comma.
@@ -209,7 +209,7 @@ export declare class Array<T> {
      * Reverses the elements in an array in place.
      * This method mutates the array and returns a reference to the same array.
      */
-    reverse(&mut self) -> mut Array<T>,
+    reverse(&mut self) -> Array<T>,
     /**
      * Removes the first element from an array and returns it.
      * If the array is empty, undefined is returned and the array is not modified.
@@ -224,7 +224,7 @@ export declare class Array<T> {
      * @param end The end index of the specified portion of the array. This is exclusive of the element at the index 'end'.
      * If end is undefined, then the slice extends to the end of the array.
      */
-    slice(&self, start?: number, end?: number) -> mut Array<T>,
+    slice(&self, start?: number, end?: number) -> Array<T>,
     /**
      * Sorts an array in place.
      * This method mutates the array and returns a reference to the same array.
@@ -242,7 +242,7 @@ export declare class Array<T> {
      * @param deleteCount The number of elements to remove.
      * @returns An array containing the elements that were deleted.
      */
-    splice(&mut self, start: number, deleteCount?: number) -> mut Array<T>,
+    splice(&mut self, start: number, deleteCount?: number) -> Array<T>,
     /**
      * Removes elements from an array and, if necessary, inserts new elements in their place, returning the deleted elements.
      * @param start The zero-based location in the array from which to start removing elements.
@@ -250,7 +250,7 @@ export declare class Array<T> {
      * @param items Elements to insert into the array in place of the deleted elements.
      * @returns An array containing the elements that were deleted.
      */
-    splice(&mut self, start: number, deleteCount: number, ...items: mut Array<T>) -> mut Array<T>,
+    splice(&mut self, start: number, deleteCount: number, ...items: mut Array<T>) -> Array<T>,
     /**
      * Inserts new elements at the start of an array, and returns the new length of the array.
      * @param items Elements to insert at the start of the array.
@@ -306,19 +306,19 @@ export declare class Array<T> {
      * @param callbackfn A function that accepts up to three arguments. The map method calls the callbackfn function one time for each element in the array.
      * @param thisArg An object to which the this keyword can refer in the callbackfn function. If thisArg is omitted, undefined is used as the this value.
      */
-    map<U>(&self, callbackfn: fn (value: T, index: number, array: mut Array<T>) -> U, thisArg?: unknown) -> mut Array<U>,
+    map<U>(&self, callbackfn: fn (value: T, index: number, array: mut Array<T>) -> U, thisArg?: unknown) -> Array<U>,
     /**
      * Returns the elements of an array that meet the condition specified in a callback function.
      * @param predicate A function that accepts up to three arguments. The filter method calls the predicate function one time for each element in the array.
      * @param thisArg An object to which the this keyword can refer in the predicate function. If thisArg is omitted, undefined is used as the this value.
      */
-    filter<S: T>(&self, predicate: fn (value: T, index: number, array: mut Array<T>) -> boolean, thisArg?: unknown) -> mut Array<S>,
+    filter<S: T>(&self, predicate: fn (value: T, index: number, array: mut Array<T>) -> boolean, thisArg?: unknown) -> Array<S>,
     /**
      * Returns the elements of an array that meet the condition specified in a callback function.
      * @param predicate A function that accepts up to three arguments. The filter method calls the predicate function one time for each element in the array.
      * @param thisArg An object to which the this keyword can refer in the predicate function. If thisArg is omitted, undefined is used as the this value.
      */
-    filter(&self, predicate: fn (value: T, index: number, array: mut Array<T>) -> unknown, thisArg?: unknown) -> mut Array<T>,
+    filter(&self, predicate: fn (value: T, index: number, array: mut Array<T>) -> unknown, thisArg?: unknown) -> Array<T>,
     /**
      * Calls the specified callback function for all the elements in an array. The return value of the callback function is the accumulated result, and is provided as an argument in the next call to the callback function.
      * @param callbackfn A function that accepts up to four arguments. The reduce method calls the callbackfn function one time for each element in the array.
@@ -349,38 +349,38 @@ export declare class Array<T> {
      * Creates an array from an array-like object.
      * @param arrayLike An array-like object to convert to an array.
      */
-    static from<T>(arrayLike: ArrayLike<T>) -> mut Array<T>,
+    static from<T>(arrayLike: ArrayLike<T>) -> Array<T>,
     /**
      * Creates an array from an iterable object.
      * @param arrayLike An array-like object to convert to an array.
      * @param mapfn A mapping function to call on every element of the array.
      * @param thisArg Value of 'this' used to invoke the mapfn.
      */
-    static from<T, U>(arrayLike: ArrayLike<T>, mapfn: fn (v: T, k: number) -> U, thisArg?: unknown) -> mut Array<U>,
+    static from<T, U>(arrayLike: ArrayLike<T>, mapfn: fn (v: T, k: number) -> U, thisArg?: unknown) -> Array<U>,
     /**
      * Returns a new array from a set of elements.
      * @param items A set of elements to include in the new array object.
      */
-    static of<T>(...items: mut Array<T>) -> mut Array<T>,
+    static of<T>(...items: mut Array<T>) -> Array<T>,
     /**
      * Creates an array from an iterable object.
      * @param iterable An iterable object to convert to an array.
      */
-    static from<T>(iterable: Iterable<T> | ArrayLike<T>) -> mut Array<T>,
+    static from<T>(iterable: Iterable<T> | ArrayLike<T>) -> Array<T>,
     /**
      * Creates an array from an iterable object.
      * @param iterable An iterable object to convert to an array.
      * @param mapfn A mapping function to call on every element of the array.
      * @param thisArg Value of 'this' used to invoke the mapfn.
      */
-    static from<T, U>(iterable: Iterable<T> | ArrayLike<T>, mapfn: fn (v: T, k: number) -> U, thisArg?: unknown) -> mut Array<U>,
+    static from<T, U>(iterable: Iterable<T> | ArrayLike<T>, mapfn: fn (v: T, k: number) -> U, thisArg?: unknown) -> Array<U>,
     static readonly [Symbol.species]: typeof Array,
     constructor(&mut self, arrayLength?: number),
     constructor(&mut self, arrayLength: number),
     constructor(&mut self, ...items: mut Array<T>),
-    (arrayLength?: number) -> mut Array<any>,
-    <T>(arrayLength: number) -> mut Array<T>,
-    <T>(...items: mut Array<T>) -> mut Array<T>,
+    (arrayLength?: number) -> Array<any>,
+    <T>(arrayLength: number) -> Array<T>,
+    <T>(...items: mut Array<T>) -> Array<T>,
     static isArray(arg: unknown) -> boolean,
     static readonly prototype: mut Array<any>,
     /**
@@ -490,7 +490,7 @@ export declare interface IteratorObject<T, TReturn = unknown, TNext = unknown> e
     /**
      * Creates a new array from the values yielded by this iterator.
      */
-    toArray() -> mut Array<T>,
+    toArray() -> Array<T>,
     /**
      * Performs the specified action for each element in the iterator.
      * @param callbackfn A function that accepts up to two arguments. forEach calls the callbackfn function one time for each element in the iterator.
@@ -848,7 +848,7 @@ export declare type OmitThisParameter<T> = if unknown : ThisParameterType<T> { T
 export declare interface ConcatArray<T> {
     readonly length: number,
     join(separator?: string) -> string,
-    slice(start?: number, end?: number) -> mut Array<T>
+    slice(start?: number, end?: number) -> Array<T>
 }
 
 export declare interface PromiseLike<T, E = never> {

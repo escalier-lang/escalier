@@ -97,7 +97,7 @@ export declare fn isExtensible(target: {...}) -> boolean
  * @param target Object that contains the own properties.
  */
 @js("Reflect.ownKeys")
-export declare fn ownKeys(target: {...}) -> mut Array<string | symbol>
+export declare fn ownKeys(target: {...}) -> Array<string | symbol>
 
 /**
  * Prevents the addition of new properties to an object.

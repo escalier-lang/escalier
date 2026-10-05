@@ -578,7 +578,7 @@ declare var Array: ArrayConstructor;
 	// holistically. The expected output covers:
 	//   - push(...items: T[]) → `mut Array<T>` (T[] desugared then wrapped)
 	//   - concat(items: ReadonlyArray<T>) → renamed to `Array<T>`;
-	//     return `T[]` wrapped to `mut Array<T>`
+	//     return `T[]` keeps the bare `Array<T>`, since the caller owns it
 	//   - readArr(readonly T[]) → desugared then renamed to `Array<T>`
 	printed, err := printer.Print(arrayClass, printer.DefaultOptions())
 	require.NoError(t, err)
@@ -586,7 +586,7 @@ declare var Array: ArrayConstructor;
 export declare class Array<T> {
     length: number,
     push(&mut self, ...items: mut Array<T>) -> number,
-    concat(&self, items: Array<T>) -> mut Array<T>,
+    concat(&self, items: Array<T>) -> Array<T>,
     readArr(&mut self, items: Array<T>) -> unknown,
     constructor(&mut self),
     static readonly prototype: mut Array<any>
@@ -654,7 +654,7 @@ interface String {
 	printed, err := printer.Print(str, printer.DefaultOptions())
 	require.NoError(t, err)
 	snaps.MatchInlineSnapshot(t, printed, snaps.Inline(`export declare interface String {
-    split(sep: string) -> mut Array<string>,
+    split(sep: string) -> Array<string>,
     join(parts: Array<string>) -> string
 }`))
 }
@@ -669,7 +669,7 @@ func TestReportPartition_NamesDropsWithoutRoutedCounts(t *testing.T) {
 	res := &PartitionResult{
 		Buckets: map[string][]dts_parser.Statement{
 			"std:prelude": make([]dts_parser.Statement, 3),
-			"web:dom":   make([]dts_parser.Statement, 5),
+			"web:dom":     make([]dts_parser.Statement, 5),
 		},
 		Drops: []DropNote{
 			{Name: "globalThis", SourceFile: "lib.es5.d.ts"},
@@ -1193,6 +1193,142 @@ func TestOrderLibInputs(t *testing.T) {
 				got = append(got, in.SourceFile)
 			}
 			require.Equal(t, test.want, got)
+		})
+	}
+}
+
+// TestConvertBuckets_MergedInterfaceShapes covers what merging an interface
+// declared across several lib files, and respelling it in Escalier's
+// vocabulary, does to the one declaration that comes out. The lib files are
+// read in the order each case lists them.
+func TestConvertBuckets_MergedInterfaceShapes(t *testing.T) {
+	t.Parallel()
+
+	type lib struct{ file, src string }
+	const arrayDecls = `
+interface ReadonlyArray<T> {
+    readonly length: number;
+}
+interface Array<T> {
+    length: number;
+}
+interface ArrayConstructor {
+    new <T>(): Array<T>;
+}
+declare var Array: ArrayConstructor;
+`
+	tests := map[string]struct {
+		libs []lib
+		want string
+	}{
+		// A property takes its mutability from the object holding it, and a
+		// caller owns what a method returns, so a mutable array keeps its bare
+		// name in both slots. A parameter still takes `mut`.
+		"APropertyAndAReturnHoldNoMutableTwin": {
+			libs: []lib{{"lib.es5.d.ts", arrayDecls + `
+interface ArrayLike<T> {
+    items: T[];
+    copy(): T[];
+    find(): T[] | null;
+    fill(items: T[]): void;
+}
+`}},
+			want: `export declare interface ArrayLike<T> {
+    items: Array<T>,
+    copy() -> Array<T>,
+    find() -> Array<T> | null,
+    fill(items: mut Array<T>) -> unknown
+}`,
+		},
+		// TypeScript requires a restated property to have the same type, not
+		// the same spelling, so the first declaration is kept and the second
+		// dropped however the two print.
+		"ARestatedPropertyIsKeptOnce": {
+			libs: []lib{
+				{"lib.es5.d.ts", `
+interface ArrayLike<T> {
+    matcher?: "best fit" | "basic" | undefined;
+}
+`},
+				{"lib.es2021.intl.d.ts", `
+interface ArrayLike<T> {
+    matcher?: "basic" | "best fit" | "best fit" | undefined;
+}
+`},
+			},
+			want: `export declare interface ArrayLike<T> {
+    matcher?: "best fit" | "basic" | undefined
+}`,
+		},
+		// Any one declaration may give a parameter its default, so the merged
+		// parameter takes it from a declaration read after the first.
+		"ADefaultFromALaterDeclaration": {
+			libs: []lib{
+				{"lib.es2015.core.d.ts", `
+interface ArrayLike<T> {
+    at(i: number): T;
+}
+`},
+				{"lib.es5.d.ts", `
+interface ArrayLike<T = number> {
+    readonly length: number;
+}
+`},
+			},
+			want: `export declare interface ArrayLike<T = number> {
+    at(i: number) -> T,
+    readonly length: number
+}`,
+		},
+		// A later declaration may add a trailing parameter that has a default,
+		// and its members may name it, so the merged declaration keeps it.
+		"ATrailingParameterFromALaterDeclaration": {
+			libs: []lib{
+				{"lib.es5.d.ts", `
+interface ArrayLike<T> {
+    at(i: number): T;
+}
+`},
+				{"lib.es2015.core.d.ts", `
+interface ArrayLike<T, U = number> {
+    value: U;
+}
+`},
+			},
+			want: `export declare interface ArrayLike<T, U = number> {
+    at(i: number) -> T,
+    value: U
+}`,
+		},
+	}
+
+	for name, test := range tests {
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+			inputs := make([]LibInput, 0, len(test.libs))
+			for _, l := range test.libs {
+				inputs = append(inputs, parseLib(t, l.file, l.src))
+			}
+			res, err := PartitionLib(inputs)
+			require.NoError(t, err)
+			mods, err := ConvertBuckets(res, nil)
+			require.NoError(t, err)
+
+			var found *ast.InterfaceDecl
+			for _, mod := range mods {
+				mod.Module.Namespaces.Scan(func(_ string, ns *ast.Namespace) bool {
+					for _, decl := range ns.Decls {
+						if id, ok := decl.(*ast.InterfaceDecl); ok && id.Name.Name == "ArrayLike" {
+							found = id
+						}
+					}
+					return true
+				})
+			}
+			require.NotNil(t, found)
+			printed, err := printer.Print(found, printer.DefaultOptions())
+			require.NoError(t, err)
+			require.Equal(t, test.want, printed)
 		})
 	}
 }

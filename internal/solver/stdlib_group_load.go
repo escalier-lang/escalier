@@ -141,7 +141,8 @@ func (c *checker) loadPackageGroup(group []string, span ast.Span) []SolverError 
 	defer func() { c.memberNamespaces = prevMembers }()
 
 	c.bindFileImports(scope, module)
-	c.inferDepGraph(scope, 0, module, dep_graph.BuildDepGraph(module))
+	c.inferDepGraph(scope, 0, module,
+		dep_graph.BuildDepGraphWithImports(module, memberImportNamespaces(module, c.activeGroup)))
 
 	errs := c.errs
 	c.errs = prevErrs
@@ -175,6 +176,27 @@ func (c *checker) loadPackageGroup(group []string, span ast.Span) []SolverError 
 		}}
 	}
 	return nil
+}
+
+// memberImportNamespaces maps each file of a merged group to the imports it
+// writes for other members, each naming the namespace that member's
+// declarations bind under. `import "std:weak_ref"` in `std:map` maps `weak_ref`
+// to `std__weak_ref`. An import of a package outside the group is left out,
+// since its declarations are not in the module.
+func memberImportNamespaces(module *ast.Module, group set.Set[string]) map[int]map[string]string {
+	out := map[int]map[string]string{}
+	for _, file := range module.Files {
+		for _, stmt := range file.Imports {
+			if !group.Contains(stmt.PackageName) {
+				continue
+			}
+			if out[file.SourceID] == nil {
+				out[file.SourceID] = map[string]string{}
+			}
+			out[file.SourceID][stmt.LocalName()] = groupNamespace(stmt.PackageName)
+		}
+	}
+	return out
 }
 
 // sortedGroup returns a copy of group in sorted order, so a diagnostic and a

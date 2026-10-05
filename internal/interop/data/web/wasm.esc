@@ -57,11 +57,11 @@ export declare class Module {
     static prototype: Module,
     constructor(&mut self, bytes: BufferSource),
     /** [MDN Reference](https://developer.mozilla.org/docs/WebAssembly/JavaScript_interface/Module/customSections_static) */
-    static customSections(moduleObject: Module, sectionName: string) -> mut Array<typed_arrays.ArrayBuffer>,
+    static customSections(moduleObject: Module, sectionName: string) -> Array<typed_arrays.ArrayBuffer>,
     /** [MDN Reference](https://developer.mozilla.org/docs/WebAssembly/JavaScript_interface/Module/exports_static) */
-    static exports(moduleObject: Module) -> mut Array<ModuleExportDescriptor>,
+    static exports(moduleObject: Module) -> Array<ModuleExportDescriptor>,
     /** [MDN Reference](https://developer.mozilla.org/docs/WebAssembly/JavaScript_interface/Module/imports_static) */
-    static imports(moduleObject: Module) -> mut Array<ModuleImportDescriptor>
+    static imports(moduleObject: Module) -> Array<ModuleImportDescriptor>
 }
 
 @js("WebAssembly.RuntimeError")

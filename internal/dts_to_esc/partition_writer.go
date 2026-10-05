@@ -199,6 +199,10 @@ func withTypeParamsRenamed(
 			}
 		})
 	}
+	for _, tp := range decl.TypeParams {
+		rename(tp.Constraint)
+		rename(tp.Default)
+	}
 	for _, ext := range decl.Extends {
 		rename(ext)
 	}
@@ -206,6 +210,51 @@ func withTypeParamsRenamed(
 		walkInterfaceMemberTypes(m, rename)
 	}
 	return decl
+}
+
+// mergedTypeParams returns the type parameters of two merged declarations of
+// one interface. keep is the earlier declaration's list and other the later
+// one's, renamed to keep's names by withTypeParamsRenamed. The result is keep
+// with two additions from other:
+//
+//   - a parameter with no default takes the default of the parameter in the
+//     same position of other
+//   - each parameter of other past keep's arity is appended
+//
+// It returns keep itself when other supplies nothing new, and never modifies
+// keep.
+//
+// TypeScript lets any one declaration of a merged interface give a parameter
+// its default. lib.es5.d.ts writes `Int32Array<TArrayBuffer extends
+// ArrayBufferLike = ArrayBufferLike>` and lib.es2015.core.d.ts writes the same
+// parameter with no default, so the merged parameter has to take it from
+// whichever declaration wrote it. TypeScript also lets one declaration add
+// trailing parameters that have defaults, as in `interface Box<T> {}` merged
+// with `interface Box<T, U = number> { value: U }`, and the later
+// declaration's members can name them.
+func mergedTypeParams(keep, other []*dts_parser.TypeParam) []*dts_parser.TypeParam {
+	var out []*dts_parser.TypeParam
+	for i, tp := range keep {
+		if tp.Default != nil || i >= len(other) || other[i].Default == nil {
+			continue
+		}
+		if out == nil {
+			out = slices.Clone(keep)
+		}
+		filled := *tp
+		filled.Default = other[i].Default
+		out[i] = &filled
+	}
+	if len(other) > len(keep) {
+		if out == nil {
+			out = slices.Clone(keep)
+		}
+		out = append(out, other[len(keep):]...)
+	}
+	if out == nil {
+		return keep
+	}
+	return out
 }
 
 // topLevelName returns the addressable name of a top-level statement,
@@ -396,6 +445,7 @@ func mergeDecls(stmts []dts_parser.Statement) []dts_parser.Statement {
 				existing := out[i].(*dts_parser.InterfaceDecl)
 				renamed := withTypeParamsRenamed(s, existing.TypeParams)
 				merged := *existing
+				merged.TypeParams = mergedTypeParams(existing.TypeParams, renamed.TypeParams)
 				merged.Members = append(slices.Clone(existing.Members), renamed.Members...)
 				// Extends is concatenated without structural dedup. In
 				// practice, TS lib augmentation files add members, not
@@ -524,6 +574,13 @@ func convertFusedBucket(
 // signatures print identically and the fourth does not. Printing also
 // keeps the comparison off spans, which differ between two lib files
 // declaring the same signature.
+//
+// A field or property is keyed by its slot instead. It cannot overload, so a
+// second one of the same name is a restatement however it prints. TypeScript
+// requires the restated type to be identical, but two identical types can
+// still print differently. `formatMatcher` on `Intl.DateTimeFormatOptions` is
+// `"best fit" | "basic" | undefined` in lib.es5.d.ts and `"basic" | "best
+// fit" | "best fit" | undefined` in lib.es2021.intl.d.ts.
 func dedupeMembers(mod *StandaloneModule) error {
 	var err error
 	mod.Module.Namespaces.Scan(func(_ string, ns *ast.Namespace) bool {
@@ -531,6 +588,11 @@ func dedupeMembers(mod *StandaloneModule) error {
 			switch d := decl.(type) {
 			case *ast.ClassDecl:
 				d.Body, err = dedupeBy(d.Body, func(e ast.ClassElem) (string, error) {
+					if _, isField := e.(*ast.FieldElem); isField {
+						if slot, ok := classElemSlot(e); ok {
+							return fmt.Sprintf("%+v", slot), nil
+						}
+					}
 					return printer.PrintClassElem(e, printer.DefaultOptions())
 				})
 			case *ast.InterfaceDecl:
@@ -539,6 +601,11 @@ func dedupeMembers(mod *StandaloneModule) error {
 				}
 				d.TypeAnn.Elems, err = dedupeBy(d.TypeAnn.Elems,
 					func(e ast.ObjTypeAnnElem) (string, error) {
+						if _, isProp := e.(*ast.PropertyTypeAnn); isProp {
+							if slot, ok := objElemSlot(e); ok {
+								return fmt.Sprintf("%+v", slot), nil
+							}
+						}
 						return printer.PrintObjTypeAnnElem(e, printer.DefaultOptions())
 					})
 			}

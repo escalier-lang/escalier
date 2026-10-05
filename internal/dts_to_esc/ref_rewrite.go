@@ -231,7 +231,9 @@ func (r *refRewriter) rewriteFuncSig(sig *ast.FuncSig) {
 		}
 	}
 	if sig.Return != nil {
-		sig.Return = r.rewrite(sig.Return)
+		// A caller owns what a function returns and can bind it mutably with
+		// `val mut`, so a mutable twin keeps its bare name in this slot.
+		sig.Return = stripTopLevelMut(r.rewrite(sig.Return))
 	}
 	if sig.Throws != nil {
 		sig.Throws = r.rewrite(sig.Throws)
@@ -442,7 +444,9 @@ func (r *refRewriter) rewrite(t ast.TypeAnn) ast.TypeAnn {
 			}
 		}
 		if tt.Return != nil {
-			tt.Return = r.rewrite(tt.Return)
+			// A caller owns what a function returns and can bind it mutably with
+			// `val mut`, so a mutable twin keeps its bare name in this slot.
+			tt.Return = stripTopLevelMut(r.rewrite(tt.Return))
 		}
 		if tt.Throws != nil {
 			tt.Throws = r.rewrite(tt.Throws)
@@ -515,6 +519,24 @@ func (r *refRewriter) rewrite(t ast.TypeAnn) ast.TypeAnn {
 	}
 }
 
+// stripTopLevelMut returns t with a `mut` removed from its top level and from
+// each member of a top-level union, so `mut Array<T> | null` becomes
+// `Array<T> | null`. A `mut` nested deeper, as in `Promise<mut Array<T>>`,
+// is left in place.
+func stripTopLevelMut(t ast.TypeAnn) ast.TypeAnn {
+	switch tt := t.(type) {
+	case *ast.MutableTypeAnn:
+		return tt.Target
+	case *ast.UnionTypeAnn:
+		for i, member := range tt.Types {
+			if m, ok := member.(*ast.MutableTypeAnn); ok {
+				tt.Types[i] = m.Target
+			}
+		}
+	}
+	return t
+}
+
 func (r *refRewriter) rewriteObject(obj *ast.ObjectTypeAnn) {
 	for _, elem := range obj.Elems {
 		switch e := elem.(type) {
@@ -531,6 +553,14 @@ func (r *refRewriter) rewriteObject(obj *ast.ObjectTypeAnn) {
 		case *ast.PropertyTypeAnn:
 			if e.Value != nil {
 				e.Value = r.rewrite(e.Value)
+				// A property takes its mutability from the object holding it, and
+				// a `mut` written directly on one is rejected. So a mutable twin
+				// keeps its bare name in this slot, and `pluralCategories:
+				// LDMLPluralRule[]` converts to `pluralCategories:
+				// Array<LDMLPluralRule>`.
+				if m, ok := e.Value.(*ast.MutableTypeAnn); ok {
+					e.Value = m.Target
+				}
 			}
 		case *ast.MappedTypeAnn:
 			if e.TypeParam != nil && e.TypeParam.Constraint != nil {
@@ -573,7 +603,9 @@ func (r *refRewriter) rewriteFnTypeAnn(fn *ast.FuncTypeAnn) {
 		}
 	}
 	if fn.Return != nil {
-		fn.Return = r.rewrite(fn.Return)
+		// A caller owns what a function returns and can bind it mutably with
+		// `val mut`, so a mutable twin keeps its bare name in this slot.
+		fn.Return = stripTopLevelMut(r.rewrite(fn.Return))
 	}
 	if fn.Throws != nil {
 		fn.Throws = r.rewrite(fn.Throws)

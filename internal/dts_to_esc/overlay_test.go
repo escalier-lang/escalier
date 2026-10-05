@@ -65,11 +65,11 @@ func TestCommittedRootDropFile_NamesEveryLanguagePolicyDrop(t *testing.T) {
 func TestLoadOverlay_ReadsOperationAndPackageFromTheFilename(t *testing.T) {
 	t.Parallel()
 	dir := seedOverlay(t, map[string]string{
-		"README.md":             "not an overlay file\n",
-		"drop.esc":              "export declare val eval\n",
-		"std/set.add.esc":       "export declare interface ReadonlySetLike {\n    readonly size: number,\n}\n",
+		"README.md":               "not an overlay file\n",
+		"drop.esc":                "export declare val eval\n",
+		"std/set.add.esc":         "export declare interface ReadonlySetLike {\n    readonly size: number,\n}\n",
 		"std/prelude.replace.esc": "export declare interface Array<T> {\n    length: number,\n}\n",
-		"std/date.drop.esc":     "export declare interface Date {\n    getYear: unknown,\n}\n",
+		"std/date.drop.esc":       "export declare interface Date {\n    getYear: unknown,\n}\n",
 	})
 
 	overlay, err := LoadOverlay(dir)
