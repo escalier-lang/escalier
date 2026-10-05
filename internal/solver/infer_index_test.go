@@ -76,6 +76,13 @@ func TestInferIndexRead(t *testing.T) {
 			want: map[string]string{"r": "5"},
 		},
 		{
+			// `k` holds "a" only until `g` reassigns it, so the key reads as `string` rather
+			// than naming `a`.
+			name:     "KeyFromAVarInitializedThroughABinding",
+			src:      "val x = \"a\"\nvar k = x\nval o = {a: 5, b: true}\nval r = o[k]\nfn g() { k = \"b\" }",
+			wantErrs: []string{"4:9-4:13: object {a: 5, b: true} has no index signature to read a key of type string"},
+		},
+		{
 			name:     "NoIndexSignature",
 			src:      "declare val o: {a: number}\nfn f(k: string) { return o[k] }",
 			wantErrs: []string{"2:26-2:30: object {a: number} has no index signature to read a key of type string"},
@@ -121,6 +128,13 @@ func TestInferComputedKey(t *testing.T) {
 			name: "StringLiteralKeyNamesAProperty",
 			src:  "val k = \"x\"\nval o = {a: true, [k]: 5}\nval r = o[k]",
 			want: map[string]string{"o": "{a: true, x: 5}", "r": "5"},
+		},
+		{
+			// `k` holds "a" only until `g` reassigns it, so the key adds an index signature
+			// rather than naming `a`.
+			name: "KeyFromAVarInitializedThroughABinding",
+			src:  "val x = \"a\"\nvar k = x\nval o = {[k]: 5}\nfn g() { k = \"b\" }",
+			want: map[string]string{"o": "{[K: string]?: 5}"},
 		},
 		{
 			name: "NumberLiteralKeyNamesAProperty",
@@ -360,6 +374,22 @@ func TestInferParamDefault(t *testing.T) {
 			name: "DefaultReadsAnEarlierParameter",
 			src:  "fn g(a: number, b: number = a) { return b }",
 			want: map[string]string{"g": "fn (a: number, b?: number) -> number"},
+		},
+		{
+			name:     "DefaultDoesNotSeeALaterParameter",
+			src:      "fn g(a: number, b: number = c, c: number = 1) { return b }",
+			wantErrs: []string{"1:29-1:30: Unknown identifier: c"},
+		},
+		{
+			// The default runs when `g` is called, so its raise is one of `g`'s.
+			name: "DefaultRaisesThroughTheFunction",
+			src:  "declare fn boom() -> number throws string\nfn g(v: number = boom()) throws string { return v }",
+			want: map[string]string{"g": "fn (v?: number) -> number throws string"},
+		},
+		{
+			name:     "DefaultRaisesFromAFunctionThatDeclaresNone",
+			src:      "declare fn boom() -> number throws string\nfn g(v: number = boom()) { return v }",
+			wantErrs: []string{"2:18-2:24: cannot constrain string <: never"},
 		},
 	})
 }
