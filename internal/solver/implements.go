@@ -69,14 +69,22 @@ func (c *checker) checkImplements(p pendingImplementsCheck) {
 			ifaceName: ast.QualIdentToString(target.ref.Name),
 			node:      target.ref,
 		}
-		var members []soltype.ObjTypeElem
+		var members, written []soltype.ObjTypeElem
 		if target.class != nil {
 			members = c.classTargetMembers(target.class, p.self)
 		} else {
-			members, ic.receivers = c.aliasTargetMembers(target.alias, p.self)
+			members, written, ic.receivers = c.aliasTargetMembers(target.alias, p.self)
 		}
-		for _, elem := range members {
-			if err := ic.check(elem); err != nil {
+		for i, elem := range members {
+			err := ic.check(elem)
+			// members reads every reference to the interface as the class, which is what
+			// `Self` means but not always what a name written in its place means. Given
+			// `interface Node { next: Node }`, a class field `next: Node` fits the member as
+			// written and not as read, so a member fitting either reading is accepted.
+			if err != nil && written != nil && ic.check(written[i]) == nil {
+				continue
+			}
+			if err != nil {
 				c.report(err)
 			}
 		}
@@ -118,25 +126,27 @@ func (c *checker) classTargetMembers(ct, recv *soltype.ClassType) []soltype.ObjT
 }
 
 // aliasTargetMembers returns every member an `implements` entry naming an interface or alias
-// declares, including the ones the interface's `extends` clause names, along with the
-// receiver each interface wrote for its methods and accessors.
+// declares, including the ones the interface's `extends` clause names, in two readings. It
+// also returns the receiver each interface wrote for its methods and accessors.
 //
-// Inside an interface body `Self` resolves to a reference to that interface. Every reference
-// to the interface or to one it extends is therefore read as recv, the implementing class.
+// Inside an interface body `Self` resolves to a reference to that interface, and nothing
+// tells it apart from the interface's name written out. asSelf reads every reference to the
+// interface or to one it extends as recv, the implementing class. written leaves them as the
+// source wrote them. The two slices pair up by index.
 func (c *checker) aliasTargetMembers(
 	target soltype.Type,
 	recv *soltype.ClassType,
-) ([]soltype.ObjTypeElem, map[memberBlameKey]*ast.MethodReceiver) {
+) (asSelf, written []soltype.ObjTypeElem, receivers map[memberBlameKey]*ast.MethodReceiver) {
 	expanded := set.NewSet[string]()
-	members := c.aliasMembers(target, expanded)
+	written = c.aliasMembers(target, expanded)
 	subst := &aliasSelfSubst{names: expanded, recv: recv}
-	out := make([]soltype.ObjTypeElem, len(members))
-	for i, elem := range members {
-		out[i] = soltype.AcceptObjElem(elem, subst, soltype.Positive)
+	asSelf = make([]soltype.ObjTypeElem, len(written))
+	for i, elem := range written {
+		asSelf[i] = soltype.AcceptObjElem(elem, subst, soltype.Positive)
 	}
-	receivers := map[memberBlameKey]*ast.MethodReceiver{}
+	receivers = map[memberBlameKey]*ast.MethodReceiver{}
 	c.collectAliasReceivers(target, set.NewSet[string](), receivers)
-	return out, receivers
+	return asSelf, written, receivers
 }
 
 // collectAliasReceivers adds to out the receiver each interface reachable from t wrote for its
@@ -245,6 +255,9 @@ func (ic implementsComparison) check(ifaceElem soltype.ObjTypeElem) SolverError 
 				return ic.mismatch(name, "signature does not match")
 			}
 		case *soltype.PropertyElem:
+			if ce.Optional {
+				return ic.mismatch(name, "property is optional but interface requires it")
+			}
 			if !ic.fits(ce.Type, methodReadType(ie)) {
 				return ic.mismatch(name, "property does not satisfy method signature")
 			}
@@ -283,6 +296,9 @@ func (ic implementsComparison) check(ifaceElem soltype.ObjTypeElem) SolverError 
 			if ce.Optional {
 				return ic.mismatch(name, "property is optional but interface requires it")
 			}
+			if ce.Readonly {
+				return ic.readonlyMismatch(name)
+			}
 			if !ic.fits(ie.Param, ce.Type) {
 				return ic.mismatch(name, "property type does not match setter")
 			}
@@ -290,12 +306,20 @@ func (ic implementsComparison) check(ifaceElem soltype.ObjTypeElem) SolverError 
 			return ic.mismatch(name, "is not a setter or property")
 		}
 	case *soltype.PropertyElem:
+		if getter, ok := classElem.(*soltype.GetterElem); ok {
+			return ic.checkAccessorsAgainstField(ie, getter)
+		}
 		ce, ok := classElem.(*soltype.PropertyElem)
 		if !ok {
 			return ic.mismatch(name, "member is not a property")
 		}
 		if ce.Optional && !ie.Optional {
 			return ic.mismatch(name, "property is optional but interface requires it")
+		}
+		if ce.Readonly && !ie.Readonly {
+			if err := ic.readonlyMismatch(name); err != nil {
+				return err
+			}
 		}
 		if !ic.fits(ce.Type, ie.Type) {
 			return ic.mismatch(name, "property type does not match")
@@ -308,6 +332,48 @@ func (ic implementsComparison) check(ifaceElem soltype.ObjTypeElem) SolverError 
 		}
 	}
 	return nil
+}
+
+// readonlyMismatch returns the mismatch for a class member that cannot be written standing in
+// for an entry member that can, or nil on a `declare` class.
+//
+// A `declare` class describes an object the runtime already provides, and TypeScript lets
+// such a class narrow an implemented member to readonly. The generated lib carries classes
+// that do: `declare class ByteLengthQueuingStrategy implements QueuingStrategy<…>` declares
+// `readonly highWaterMark: number` where the interface declares `highWaterMark?: number`.
+func (ic implementsComparison) readonlyMismatch(name string) SolverError {
+	if ic.declare {
+		return nil
+	}
+	return ic.mismatch(name, "is readonly but interface lets it be written")
+}
+
+// checkAccessorsAgainstField compares an entry's field against the getter the class declares
+// under its name, together with the setter when the field is writable. A read through the
+// entry reaches the getter, so its type has to fit the field's and its receiver has to be
+// `&self`, since reading a field takes no mutable reference. A write reaches the setter, so
+// the field's type has to fit the setter's parameter. The two halves are checked separately,
+// so a getter and setter whose types differ still stand in for a field whose type lies
+// between them.
+func (ic implementsComparison) checkAccessorsAgainstField(ie *soltype.PropertyElem, getter *soltype.GetterElem) SolverError {
+	name := ie.Name
+	if paramReceiverForm(getter.SelfParam) != (receiverForm{present: true}) {
+		return ic.mismatch(name, "self receiver does not match")
+	}
+	if !ic.fits(getter.Type, ie.Type) {
+		return ic.mismatch(name, "getter return type does not match")
+	}
+	if ie.Readonly {
+		return nil
+	}
+	setter, ok := ic.view.WriteMember(name)
+	if s, isSetter := setter.(*soltype.SetterElem); ok && isSetter {
+		if !ic.fits(ie.Type, s.Param) {
+			return ic.mismatch(name, "setter argument type does not match")
+		}
+		return nil
+	}
+	return ic.readonlyMismatch(name)
 }
 
 // receiverMatches reports whether the class member's receiver takes the instance the same

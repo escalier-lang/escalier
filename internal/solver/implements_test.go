@@ -196,6 +196,19 @@ func TestImplementsConformance(t *testing.T) {
 			`,
 		},
 		{
+			// The interface names itself rather than writing `Self`, so a field typed as the
+			// interface fits.
+			name: "ReferenceToTheInterfaceByName",
+			src: `
+				interface Linked {
+					next: Linked,
+				}
+				class Node implements Linked {
+					next: Linked,
+				}
+			`,
+		},
+		{
 			name: "MutSelfRequiredButClassUsesSelf",
 			src: `
 				interface Counter {
@@ -265,6 +278,93 @@ func TestImplementsConformance(t *testing.T) {
 				}
 			`,
 			want: []string{"Class 'Bad' does not implement interface 'HasName': member 'name' member is not a property"},
+		},
+		{
+			name: "OptionalPropertyDoesNotSatisfyMethod",
+			src: `
+				interface I {
+					m(&self) -> number,
+				}
+				class C implements I {
+					m?: fn () -> number,
+				}
+			`,
+			want: []string{"Class 'C' does not implement interface 'I': member 'm' property is optional but interface requires it"},
+		},
+		{
+			// A read through the interface reaches the getter and a write reaches the setter.
+			name: "AccessorPairSatisfiesWritableProperty",
+			src: `
+				interface HasX {
+					x: number,
+				}
+				class C implements HasX {
+					_x: number,
+					get x(&self) -> number { return self._x },
+					set x(&mut self, v: number) { self._x = v },
+				}
+			`,
+		},
+		{
+			name: "GetterSatisfiesReadonlyProperty",
+			src: `
+				interface HasX {
+					readonly x: number,
+				}
+				class C implements HasX {
+					get x(&self) -> number { return 1 },
+				}
+			`,
+		},
+		{
+			name: "GetterAloneDoesNotSatisfyWritableProperty",
+			src: `
+				interface HasX {
+					x: number,
+				}
+				class C implements HasX {
+					get x(&self) -> number { return 1 },
+				}
+			`,
+			want: []string{"Class 'C' does not implement interface 'HasX': member 'x' is readonly but interface lets it be written"},
+		},
+		{
+			name: "AccessorPairWithANarrowerSetterIsRejected",
+			src: `
+				interface HasX {
+					x: number | string,
+				}
+				class C implements HasX {
+					_x: number,
+					get x(&self) -> number { return self._x },
+					set x(&mut self, v: number) { self._x = v },
+				}
+			`,
+			want: []string{"Class 'C' does not implement interface 'HasX': member 'x' setter argument type does not match"},
+		},
+		{
+			name: "ReadonlyFieldDoesNotSatisfyWritableProperty",
+			src: `
+				interface HasX {
+					x: number,
+				}
+				class C implements HasX {
+					readonly x: number,
+				}
+			`,
+			want: []string{"Class 'C' does not implement interface 'HasX': member 'x' is readonly but interface lets it be written"},
+		},
+		{
+			name: "ReadonlyFieldDoesNotSatisfySetter",
+			src: `
+				interface HasX {
+					set x(&mut self, v: number) -> undefined,
+				}
+				class C implements HasX {
+					readonly x: number,
+				}
+			`,
+			want: []string{"Class 'C' does not implement interface 'HasX': member 'x' is readonly but interface lets it be written"},
 		},
 		{
 			name: "InterfaceSetterWithMatchingReceiver",
@@ -568,6 +668,20 @@ func TestDeclareImplementsConformance(t *testing.T) {
 				}
 			`,
 			want: []string{"Class 'MessagePort' does not implement interface 'MessageEventTarget': member 'onmessage' is a mutable property, so its type has to match the interface's exactly"},
+		},
+		{
+			// TypeScript accepts this, and the generated lib's `ByteLengthQueuingStrategy`
+			// restates `QueuingStrategy`'s `highWaterMark` this way. A class with a body is
+			// rejected, as ReadonlyFieldDoesNotSatisfyWritableProperty covers.
+			name: "ReadonlyRestatementOfAWritableMemberIsAccepted",
+			src: `
+				interface QueuingStrategy {
+					highWaterMark?: number,
+				}
+				declare class ByteLengthQueuingStrategy implements QueuingStrategy {
+					readonly highWaterMark: number,
+				}
+			`,
 		},
 		{
 			name: "RestatingAMutableMemberExactlyIsAccepted",
