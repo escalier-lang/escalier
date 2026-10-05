@@ -223,7 +223,7 @@ func TestTupleIntoArray(t *testing.T) {
 		},
 		{
 			name: "LiteralIntoParam",
-			src: `fn f(xs: Array<number>) -> number { return 0 }
+			src: `fn f(xs: &Array<number>) -> number { return 0 }
 				val y = f([1, 2])`,
 		},
 		{
@@ -240,25 +240,25 @@ func TestTupleIntoArray(t *testing.T) {
 		},
 		{
 			name: "SpreadElementFits",
-			src: `fn h(xs: Array<number>) -> number { return 0 }
-				fn f(t: [number, ...Array<number>]) { return h(t) }`,
+			src: `fn h(xs: &Array<number>) -> number { return 0 }
+				fn f(t: &[number, ...Array<number>]) { return h(t) }`,
 		},
 		{
 			name: "LeadingElementBeforeSpreadDoesNotFit",
-			src: `fn h(xs: Array<number>) -> number { return 0 }
-				fn f(t: [string, ...Array<number>]) { return h(t) }`,
+			src: `fn h(xs: &Array<number>) -> number { return 0 }
+				fn f(t: &[string, ...Array<number>]) { return h(t) }`,
 			want: []string{"cannot constrain string <: number"},
 		},
 		{
 			name: "InexactTuple",
-			src: `fn h(xs: Array<number>) -> number { return 0 }
-				fn f(t: [number, ...]) { return h(t) }`,
+			src: `fn h(xs: &Array<number>) -> number { return 0 }
+				fn f(t: &[number, ...]) { return h(t) }`,
 			want: []string{"cannot constrain unknown <: number"},
 		},
 		{
 			name: "MutTupleThroughAnImmutableView",
-			src: `fn h(xs: Array<number>) -> number { return 0 }
-				fn f(t: mut [number, number]) { return h(t) }`,
+			src: `fn h(xs: &Array<number>) -> number { return 0 }
+				fn f(t: &mut [number, number]) { return h(t) }`,
 		},
 		{
 			name: "LiteralIntoMutAnnotation",
@@ -278,13 +278,13 @@ func TestTupleIntoArray(t *testing.T) {
 		},
 		{
 			name: "MutTupleIntoWiderMutArray",
-			src:  `fn f(t: mut [number, number]) { val m: mut Array<number | string> = t }`,
+			src:  `fn f(t: &mut [number, number]) { val m: &mut Array<number | string> = t }`,
 			want: []string{"cannot constrain tuple <: Array<number | string>"},
 		},
 		{
 			name: "MutTupleIntoMutArrayOfItsElement",
-			src: `fn h(xs: mut Array<number>) -> number { return 0 }
-				fn f(t: mut [number, number]) { return h(t) }`,
+			src: `fn h(xs: &mut Array<number>) -> number { return 0 }
+				fn f(t: &mut [number, number]) { return h(t) }`,
 			want: []string{"cannot constrain tuple <: Array<number>"},
 		},
 	}
