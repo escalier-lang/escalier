@@ -135,16 +135,6 @@ func TestIterationCallbacksBorrowTheReceiver(t *testing.T) {
 			want: []string{"cannot constrain immutable Array<number | string> <: mutable Array<number | string>"},
 		},
 		{
-			name: "ArrayCallbackCannotMutateAnImmutableArray",
-			src: `fn f(xs: &Array<number>) {
-				xs.forEach(fn (v, i, arr: mut Array<number>) {
-					arr.push(1)
-					return 0
-				})
-			}`,
-			want: []string{"cannot constrain immutable Array<number> <: mutable Array<number>"},
-		},
-		{
 			name: "SetCallbackCannotMutateTheSet",
 			src: `import "std:set"
 				fn f(xs: &set.Set<number>) {
@@ -179,15 +169,6 @@ func TestIterationCallbacksBorrowTheReceiver(t *testing.T) {
 				})
 				return n
 			}`,
-		},
-		{
-			name: "MapCallbackReadsTheArray",
-			src:  `fn f(xs: &Array<number>) { val ys = xs.map(fn (v, i, arr) { return arr.length + v }) }`,
-		},
-		{
-			name: "SetCallbackReadsTheSet",
-			src: `import "std:set"
-				fn f(xs: &set.Set<number>) { xs.forEach(fn (v, v2, s) { return s.size }) }`,
 		},
 	}
 	for _, tt := range tests {

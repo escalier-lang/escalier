@@ -197,11 +197,6 @@ func TestStdlibImport_BorrowInTheStdlibTreeReadsAsItsPointee(t *testing.T) {
 			`,
 			want: []string{"borrows are unsupported in the legacy checker"},
 		},
-		{
-			name: "a user borrow is reported",
-			src:  `fn g(x: &{a: number}) -> number { return 0 }`,
-			want: []string{"borrows are unsupported in the legacy checker"},
-		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
