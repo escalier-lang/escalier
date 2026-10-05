@@ -151,6 +151,10 @@ func TestInferComputedKey(t *testing.T) {
 			},
 		},
 		{
+			// JavaScript converts a number key to a string, so the two keys can name the same
+			// property. With `s = "1"` and `n = 1`, the object is `{"1": "x"}` and `o[s]`
+			// reads `"x"`. Separate signatures `{[K: string]?: 5, [K: number]?: "x"}` would
+			// claim `5` there, so both keys share one signature whose value joins theirs.
 			name: "SeveralKeysShareOneSignature",
 			src:  "declare val s: string\ndeclare val n: number\nval o = {[s]: 5, [n]: \"x\"}",
 			want: map[string]string{"o": `{[K: number | string]?: 5 | "x"}`},
