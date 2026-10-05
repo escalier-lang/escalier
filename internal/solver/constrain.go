@@ -1701,7 +1701,7 @@ func (c *Context) constrain(sub, super soltype.Type, seen *seenPairs, mutCtx boo
 			}
 			if sub.Lt != nil {
 				// Emit BorrowEscapeError only when the peeled inner satisfies super, so
-				// the lifetime is the blocker; otherwise surface the inner's mismatch.
+				// being a borrow is the only blocker; otherwise surface the inner's mismatch.
 				if innerErrs := c.trialUnderProbe(sub.Inner, super); hasHardError(innerErrs) {
 					return innerErrs
 				}

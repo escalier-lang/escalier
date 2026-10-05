@@ -368,7 +368,7 @@ func TestMoveSemantics(t *testing.T) {
 				}
 			`,
 			want: []string{
-				"2:13-2:29: borrowed value mut object does not live long enough to satisfy object",
+				"2:13-2:29: cannot use borrowed &mut object as owned object",
 			},
 		},
 		// Moving one field out of an owned object consumes only that field. The

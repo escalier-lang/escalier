@@ -283,17 +283,16 @@ func TestConstrainUnionSuperPreservesBorrowEscape(t *testing.T) {
 	errs := c.Constrain(borrow, super)
 	require.Len(t, errs, 1)
 	require.Equal(t,
-		"borrowed value object does not live long enough to satisfy number | object",
+		"cannot use borrowed &object as owned number | object",
 		errs[0].Message())
 }
 
 // TestBorrowEscapePromotionByPeeledInner asserts the firing condition for both the
 // single-trial RefType arm and the union-level promotion. BorrowEscapeError is
 // emitted only when peeling the borrow's inner would have satisfied the
-// destination — when the lifetime is the genuine blocker. When the inner is
-// itself a shape mismatch, the clearer shape error surfaces instead, so
-// "does not live long enough" never blames the lifetime for a mismatch that
-// extending it could not fix.
+// destination, so being a borrow is the only thing wrong with the value. When the
+// inner is itself a shape mismatch, the shape error surfaces instead. An owned
+// value of that shape would fail the same way.
 func TestBorrowEscapePromotionByPeeledInner(t *testing.T) {
 	// A fresh immutable borrow of `{x: number}` with a lifetime, rebuilt per
 	// case so trials never share bound state across the table.
@@ -317,7 +316,7 @@ func TestBorrowEscapePromotionByPeeledInner(t *testing.T) {
 			// Inner {x: number} <: {x: number} succeeds — the lifetime IS the blocker.
 			name:  "non-union shape match keeps BorrowEscape",
 			super: func() soltype.Type { return exactObj(propElem("x", num())) },
-			want:  "borrowed value object does not live long enough to satisfy owned object",
+			want:  "cannot use borrowed &object as owned object",
 		},
 		{
 			// Every union branch is a shape mismatch — the lifetime is incidental.
@@ -331,7 +330,7 @@ func TestBorrowEscapePromotionByPeeledInner(t *testing.T) {
 			super: func() soltype.Type {
 				return newUnion(nil, []soltype.Type{num(), exactObj(propElem("x", num()))})
 			},
-			want: "borrowed value object does not live long enough to satisfy number | object",
+			want: "cannot use borrowed &object as owned number | object",
 		},
 	}
 

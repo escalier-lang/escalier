@@ -105,7 +105,7 @@ fn f(p: &mut {x: number}) {
 }`
 	_, _, errs := inferSource(t, src)
 	require.Equal(t, []string{
-		"4:9-4:25: borrowed value mut object does not live long enough to satisfy object",
+		"4:9-4:25: cannot use borrowed &mut object as owned object",
 	}, messagesWithSpan(t, errs))
 }
 
@@ -464,7 +464,7 @@ func TestInferBorrowAliasEscapingOwnedReturnRejected(t *testing.T) {
 }`
 	_, _, errs := inferSource(t, src)
 	require.Equal(t, []string{
-		"1:30-1:41: borrowed value object does not live long enough to satisfy owned object",
+		"1:30-1:41: cannot use borrowed &object as owned object",
 	}, messagesWithSpan(t, errs))
 }
 

@@ -223,7 +223,7 @@ func TestIterationCallbacksBorrowTheReceiver(t *testing.T) {
 			src: `fn f(xs: &Array<number>) {
 				xs.forEach(fn (v: number, i: number, arr: Array<number>) { return 0 })
 			}`,
-			want: []string{"borrowed value Array<number> does not live long enough to satisfy owned Array<number>"},
+			want: []string{"cannot use borrowed &Array<number> as owned Array<number>"},
 		},
 		{
 			name: "CallbackAnnotatedWithABorrowReadsTheArray",
