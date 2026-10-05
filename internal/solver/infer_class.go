@@ -1357,6 +1357,8 @@ type pendingMember struct {
 	// method may. A getter and a setter have no call site that could instantiate a binder,
 	// so one written there is reported as unsupported.
 	generic bool
+	// seeded marks a stub whose return var seedStubReturn bounded by the declared return.
+	seeded bool
 }
 
 // buildMemberSigs is phase 1 of the member walk. It appends a signature stub for every
@@ -1382,7 +1384,7 @@ func (c *checker) buildMemberSigs(
 			c.checkSelfReceiver(name, elem, elem.Static, elem.Receiver)
 			stub := c.memberSigStub(scope, lvl, elem.Fn)
 			stub.SelfParam = c.selfParam(lvl, elem.Receiver, elem.Static, self)
-			c.seedStubReturn(scope, lvl, elem.Fn, stub)
+			seeded := c.seedStubReturn(scope, lvl, elem.Fn, stub)
 			method, arm := appendMethodSig(targetBody(body, static, elem.Static), name, stub, elem.Static)
 			// An overloaded method dispatches on its value arguments, so its arms must agree
 			// on the receiver they take. The receiver check reads only the first arm, so a
@@ -1396,7 +1398,7 @@ func (c *checker) buildMemberSigs(
 			}
 			pending = append(pending, pendingMember{
 				fn: elem.Fn, name: name, recv: elem.Receiver, class: self, static: elem.Static, stub: stub,
-				generic: true,
+				generic: true, seeded: seeded,
 				apply: func(bodyFt *soltype.FuncType) {
 					method.Signatures[arm] = bodyFt
 				},
@@ -1414,7 +1416,7 @@ func (c *checker) buildMemberSigs(
 				c.report(&GetterReceiverError{Name: name, Elem: elem})
 			}
 			stub := c.memberSigStub(scope, lvl, elem.Fn)
-			c.seedStubReturn(scope, lvl, elem.Fn, stub)
+			seeded := c.seedStubReturn(scope, lvl, elem.Fn, stub)
 			getter := &soltype.GetterElem{
 				Name:      name,
 				SelfParam: c.selfParam(lvl, elem.Receiver, elem.Static, self),
@@ -1425,6 +1427,7 @@ func (c *checker) buildMemberSigs(
 			target.Elems = append(target.Elems, getter)
 			pending = append(pending, pendingMember{
 				fn: elem.Fn, name: name, recv: elem.Receiver, class: self, static: elem.Static, stub: stub,
+				seeded: seeded,
 				apply: func(bodyFt *soltype.FuncType) {
 					getter.SelfParam = bodyFt.SelfParam
 					getter.Type = bodyFt.Ret
@@ -1490,7 +1493,7 @@ func (c *checker) inferMemberBodies(scope *Scope, lvl int, body *soltype.ObjectT
 		// *ast.FuncExpr and so cannot recover it. inferFunc takes and clears it.
 		c.memberName = m.name
 		bodyFt := c.inferMemberFunc(scope, lvl, m, body)
-		c.linkMemberSig(m.fn, bodyFt, m.stub)
+		c.linkMemberSig(m.fn, bodyFt, m.stub, m.seeded)
 		m.apply(bodyFt)
 	}
 }
@@ -1499,7 +1502,10 @@ func (c *checker) inferMemberBodies(scope *Scope, lvl int, body *soltype.ObjectT
 // `bodyFt <: stub` direction grounds both parameters (contravariant, so a sibling call's
 // argument flows stub → body) and the return (covariant, so the body's return flows body →
 // stub); SelfParam lives on the element and is not compared here.
-func (c *checker) linkMemberSig(node ast.Node, bodyFt, stub *soltype.FuncType) {
+//
+// seeded marks a stub whose return var seedStubReturn already bounded by the declared
+// return type. The body's return is then linked against `unknown` rather than that var.
+func (c *checker) linkMemberSig(node ast.Node, bodyFt, stub *soltype.FuncType, seeded bool) {
 	callable := func(ft *soltype.FuncType) *soltype.FuncType {
 		return &soltype.FuncType{Params: ft.Params, Ret: ft.Ret, Throws: ft.Throws, Inexact: ft.Inexact}
 	}
@@ -1513,7 +1519,14 @@ func (c *checker) linkMemberSig(node ast.Node, bodyFt, stub *soltype.FuncType) {
 	if len(bodyFt.TypeParams) > 0 {
 		bodyFt = c.ctx.instantiateFuncBinder(bodyFt, bodyFt.TypeParams[0].Var.Level)
 	}
-	c.constrain(node, callable(bodyFt), callable(stub))
+	target := callable(stub)
+	// The body pass checks a seeded member's return against the declaration the var is
+	// already bounded by. Linking the body's return into the var would add a second lower
+	// bound, and a read of the var would report one mismatch twice.
+	if seeded {
+		target.Ret = &soltype.UnknownType{}
+	}
+	c.constrain(node, callable(bodyFt), target)
 }
 
 // memberSigStub builds a member's signature stub. It has one value parameter per parameter
@@ -1588,37 +1601,42 @@ func (c *checker) stubParamType(scope *Scope, lvl int, fn *ast.FuncExpr, p *ast.
 
 // seedStubReturn adds a member's annotated return type as a lower bound on its stub's
 // return var, so a read of the stub before the member's body is walked sees the declared
-// type. A member that quantifies parameters of its own, is async or a generator, or
-// returns a type carrying a lifetime keeps the bare var. Each of those resolves its return
-// against state only the body pass sets up. The annotation resolves again in the body
-// pass, which reports any diagnostic it raises, so the ones raised here are dropped.
-func (c *checker) seedStubReturn(scope *Scope, lvl int, fn *ast.FuncExpr, stub *soltype.FuncType) {
+// type. It reports whether it bounded the var.
+//
+// A member keeps the fresh return var when it quantifies parameters of its own, is async
+// or a generator, or returns a type that mentions a borrow, a lifetime, or a type variable.
+// The body pass resolves each of those against state it sets up itself. The annotation
+// resolves again in the body pass, which reports any diagnostic it raises, so the ones
+// raised here are dropped.
+func (c *checker) seedStubReturn(scope *Scope, lvl int, fn *ast.FuncExpr, stub *soltype.FuncType) bool {
 	sig := fn.FuncSig
 	if sig.Return == nil || len(sig.TypeParams) > 0 || len(sig.LifetimeParams) > 0 || sig.Async || sig.Gen {
-		return
+		return false
 	}
 	errsLen := len(c.errs)
 	ret, ok := c.resolveTypeAnn(scope, sig.Return, lvl)
 	c.errs = c.errs[:errsLen]
 	if !ok {
-		return
+		return false
 	}
-	finder := &lifetimeFinder{}
+	finder := &openTypeFinder{}
 	ret.Accept(finder, soltype.Positive)
 	if finder.found {
-		return
+		return false
 	}
 	c.constrain(fn, ret, stub.Ret)
+	return true
 }
 
-// lifetimeFinder records whether a type mentions a borrow or a lifetime argument.
-type lifetimeFinder struct {
+// openTypeFinder records whether a type mentions a borrow, a lifetime argument, or a type
+// variable.
+type openTypeFinder struct {
 	found bool
 }
 
-func (v *lifetimeFinder) EnterType(t soltype.Type, _ soltype.Polarity) soltype.EnterResult {
+func (v *openTypeFinder) EnterType(t soltype.Type, _ soltype.Polarity) soltype.EnterResult {
 	switch t := t.(type) {
-	case *soltype.RefType:
+	case *soltype.RefType, *soltype.TypeVarType:
 		v.found = true
 	case *soltype.ClassType:
 		v.found = v.found || len(t.LifetimeArgs) > 0 || t.Lt != nil
@@ -1628,7 +1646,7 @@ func (v *lifetimeFinder) EnterType(t soltype.Type, _ soltype.Polarity) soltype.E
 	return soltype.EnterResult{}
 }
 
-func (v *lifetimeFinder) ExitType(t soltype.Type, _ soltype.Polarity) soltype.Type { return t }
+func (v *openTypeFinder) ExitType(t soltype.Type, _ soltype.Polarity) soltype.Type { return t }
 
 // targetBody selects the static or instance body for a member.
 func targetBody(body, static *soltype.ObjectType, isStatic bool) *soltype.ObjectType {

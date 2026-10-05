@@ -4073,6 +4073,17 @@ func TestInferClassReadsLaterClassMember(t *testing.T) {
 			wantErrs: []string{"cannot constrain number <: string"},
 		},
 		{
+			// f and B depend on each other, so f reads m's stub before B's bodies are
+			// walked. The mismatch is reported once.
+			name: "FuncReadsStubInCycle",
+			src: `
+				fn f(b: B) { return b.m() }
+				class B { m(&self) -> number { return 1 }, n(&self, b: B) { return f(b) } }
+				fn g(b: B) -> string { return f(b) }
+			`,
+			wantErrs: []string{"cannot constrain number <: string"},
+		},
+		{
 			name: "MissingMember",
 			src: `
 				class A { readonly b: B, get(&self) -> number { return self.b.z } }
