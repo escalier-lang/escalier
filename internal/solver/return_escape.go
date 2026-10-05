@@ -1285,7 +1285,7 @@ func (c *checker) checkParamFieldStoreEscape(recv ast.Expr, field string, source
 }
 
 // checkParamElementStoreEscape records an element store `recv[k] = source` into a BORROW
-// parameter's element as an escape of source. The key names no single field, so the store
+// parameter's element as an escape of `source`. The key names no single field, so the store
 // cannot end the loans an earlier store left in one slot. A store into a receiver that dies
 // with the frame is not tracked here.
 func (c *checker) checkParamElementStoreEscape(recv, source ast.Expr, stmtRef liveness.StmtRef) {

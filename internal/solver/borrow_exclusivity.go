@@ -656,8 +656,8 @@ type fieldWrite struct {
 }
 
 // noteFieldWrite records that the receiver chain of a member or index assignment is a
-// write to the place the assignment targets. target is the assignment's left side and
-// object is its receiver. `x.a.v = 5` marks both `x.a` and `x` as writes to x.a.v,
+// write to the place the assignment targets. `target` is the assignment's left side and
+// `object` is its receiver. `x.a.v = 5` marks both `x.a` and `x` as writes to `x.a.v`,
 // since the use check may have recorded either as a use site.
 func (c *checker) noteFieldWrite(target, object ast.Expr) {
 	if c.fn == nil {
