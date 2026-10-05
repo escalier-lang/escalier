@@ -92,6 +92,14 @@ type DepGraph struct {
 	// for packages merged into this module, each naming the namespace the
 	// package's declarations bind under. It is nil for a module that merges no
 	// imported package.
+	//
+	// A module merges imported packages when pseudo-packages that import each
+	// other in a cycle load as one group, as `std:map`, `std:set` and
+	// `std:weak_ref` do. Each member's declarations bind under a namespace of
+	// their own, so `weak_ref.WeakKey` in `std:map` names the declaration keyed
+	// `std__weak_ref.WeakKey`. The file's import binding `weak_ref` is not a
+	// namespace of the module, so without this map the reference records no
+	// dependency. internal/solver/stdlib_group_load.go builds it.
 	ImportNamespaces map[int]map[string]string
 }
 
