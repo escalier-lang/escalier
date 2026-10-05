@@ -460,19 +460,13 @@ func (c *Context) constrainTupleIntoArray(sub *soltype.TupleType, super, elemT s
 	return errs
 }
 
-// constrainBorrowedFieldRead reads each property a field-read requirement names off the
-// pointee of sub, a borrow carrying a lifetime, and constrains the read into the property's
-// variable. A field holding an object, a tuple, a class instance, or an owned `mut` cell
-// reads as a borrow bounded by sub's lifetime, the rule fieldReadBorrow applies to a member
-// read off an annotated borrow. So `x.inner` off `x: &C` cannot outlive `x`. Any other member
-// reads as the object arm reads it.
-//
-// A union pointee is read member by member, each member contributing its own read. It
-// returns ok=false when the pointee, or a member of a union pointee, is neither an object
-// nor a class instance. The caller then reports the borrow as escaping, which is what a
-// pointee whose shape is still a variable reaches.
+// constrainBorrowedFieldRead reads each property req names off the pointee of sub, a borrow
+// with a lifetime, and constrains each read into the property's variable in req. It returns
+// ok=false when the pointee is not an object, a class instance, or a union of those.
 func (c *Context) constrainBorrowedFieldRead(sub *soltype.RefType, req *soltype.ObjectType, seen *seenPairs) ([]SolverError, bool) {
 	inner := c.peelTransparent(sub.Inner)
+	// A union pointee is read member by member under the same borrow. Each member's read
+	// joins into the property's variable.
 	if union, ok := inner.(*soltype.UnionType); ok {
 		var errs []SolverError
 		for _, member := range union.Types {
@@ -488,6 +482,8 @@ func (c *Context) constrainBorrowedFieldRead(sub *soltype.RefType, req *soltype.
 		}
 		return errs, true
 	}
+	// A class instance is read through its body, projected at the instance's arguments so a
+	// field typed `T` reads as the argument.
 	var obj *soltype.ObjectType
 	switch inner := inner.(type) {
 	case *soltype.ObjectType:
@@ -499,16 +495,23 @@ func (c *Context) constrainBorrowedFieldRead(sub *soltype.RefType, req *soltype.
 		}
 		obj = body
 	default:
+		// The caller reports the borrow as escaping.
 		return nil, false
 	}
 	var errs []SolverError
 	for _, elem := range req.Elems {
 		want := elem.(*soltype.PropertyElem)
 		prop, found := obj.Prop(want.Name)
+		// A field holding an object, a tuple, a class instance, or an owned `mut` cell reads
+		// as a borrow bounded by sub's lifetime, so `x.inner` off `x: &C` cannot outlive `x`.
+		// fieldReadBorrow applies the same rule to a member read off an annotated borrow.
 		var read soltype.Type
 		if found {
 			read = borrowedFieldType(prop.Type, sub)
 		}
+		// A missing property, and a field such as a `number` that is copied rather than
+		// borrowed, go through the ordinary object arm. It reports the missing property or
+		// reads the field as declared.
 		if read == nil {
 			single := &soltype.ObjectType{Elems: []soltype.ObjTypeElem{want}, Inexact: true}
 			errs = append(errs, c.constrain(obj, single, seen, false)...)
