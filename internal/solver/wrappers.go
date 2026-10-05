@@ -118,17 +118,21 @@ func (c *checker) primitiveMember(lvl int, blame ast.Node, name string, recv, ca
 	return c.projectedMember(lvl, blame, name, recv, box)
 }
 
-// wrapperCarrier returns the wrapper instance a receiver reads its members through:
-// the receiver's own wrapper, or the one wrapper every lower bound of an unresolved
-// variable boxes to. A variable with no lower bounds, or with one that boxes to
-// another wrapper or to none, has no single wrapper to read through.
+// wrapperCarrier returns an instance of the standard-library class a primitive receiver
+// reads its methods from, such as `Number` for `5` or `number`, and `String` for `"a"`.
+// ok is false when the receiver is not a primitive.
 //
-// Every bound has to box, unlike soleLowerBound, which skips a bound its pick
-// declines. A variable bounded by both `5` and a generator would otherwise read
-// `next` off `Number` alone and drop the generator's half of the read.
+// A receiver can also be a type variable inference has not resolved yet. The types that
+// flow into such a variable are its lower bounds. The variable gets a class only when
+// every lower bound is a primitive and they all read from the same class. A variable
+// with no lower bounds, or with one that is not a primitive, gets no class.
+//
+// soleLowerBound, by contrast, skips any lower bound its check rejects. Skipping would be
+// wrong here. A variable that holds either `5` or a generator would then read `next`
+// from `Number` alone and miss the generator's own `next`.
 func (c *checker) wrapperCarrier(carrier soltype.Type) (*soltype.ClassType, bool) {
-	if box, ok := c.ctx.wrapperInstance(c.memberCarrier(carrier)); ok {
-		return box, true
+	if wrapper, ok := c.ctx.wrapperInstance(c.memberCarrier(carrier)); ok {
+		return wrapper, true
 	}
 	v, isVar := carrier.(*soltype.TypeVarType)
 	if !isVar {
@@ -139,11 +143,11 @@ func (c *checker) wrapperCarrier(carrier soltype.Type) (*soltype.ClassType, bool
 		if lb == soltype.Type(v) {
 			continue
 		}
-		box, ok := c.ctx.wrapperInstance(c.memberCarrier(lb))
-		if !ok || (found != nil && box.Name != found.Name) {
+		wrapper, ok := c.ctx.wrapperInstance(c.memberCarrier(lb))
+		if !ok || (found != nil && wrapper.Name != found.Name) {
 			return nil, false
 		}
-		found = box
+		found = wrapper
 	}
 	return found, found != nil
 }
