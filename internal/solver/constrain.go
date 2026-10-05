@@ -483,19 +483,10 @@ func (c *Context) constrainBorrowedFieldRead(sub *soltype.RefType, req *soltype.
 		return errs, true
 	}
 	// A class instance is read through its body, projected at the instance's arguments so a
-	// field typed `T` reads as the argument.
-	var obj *soltype.ObjectType
-	switch inner := inner.(type) {
-	case *soltype.ObjectType:
-		obj = inner
-	case *soltype.ClassType:
-		body, ok := c.projectClassBody(inner)
-		if !ok {
-			return nil, false
-		}
-		obj = body
-	default:
-		// The caller reports the borrow as escaping.
+	// field typed `T` reads as the argument. Any other pointee is left to the caller, which
+	// reports the borrow as escaping.
+	obj, ok := c.readCarrierObject(inner)
+	if !ok {
 		return nil, false
 	}
 	var errs []SolverError
@@ -2281,6 +2272,8 @@ func (c *Context) constrainUnionFieldRead(sub *soltype.UnionType, super soltype.
 	members := make([]*soltype.ObjectType, 0, len(sub.Types))
 	for _, m := range sub.Types {
 		obj, ok := c.readCarrierObject(soltype.CarrierOf(m))
+		// A member with no fields to read, such as a primitive or a bare type variable, sends
+		// the read back to the strict rule that every member must carry the property.
 		if !ok {
 			return nil, false
 		}
@@ -2319,10 +2312,9 @@ func (c *Context) constrainUnionFieldRead(sub *soltype.UnionType, super soltype.
 	return errs, true
 }
 
-// readCarrierObject returns the ObjectType a union member's fields are read through: a
-// structural object directly, or a class instance's projected body. It returns ok=false for
-// any other carrier — a primitive, a bare type variable — so the field-read join falls back to
-// the strict every-member rule rather than reading a member off a value that carries none.
+// readCarrierObject returns the ObjectType a carrier's fields are read through. That is a
+// structural object itself, or a class instance's body projected at its arguments. It returns
+// ok=false for any other carrier, such as a primitive or a type variable.
 func (c *Context) readCarrierObject(carrier soltype.Type) (*soltype.ObjectType, bool) {
 	switch t := carrier.(type) {
 	case *soltype.ObjectType:
