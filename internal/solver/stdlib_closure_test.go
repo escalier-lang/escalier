@@ -1,6 +1,8 @@
 package solver
 
 import (
+	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/escalier-lang/escalier/internal/soltype"
@@ -574,13 +576,35 @@ func TestTheCommittedEventTargetRejectsANullListener(t *testing.T) {
 	}
 }
 
-// `web:core` and `web:fetch` load from the committed tree with nothing reported.
-func TestTheCommittedCoreAndFetchLoadClean(t *testing.T) {
+// Every `std:*` package, plus `web:core` and `web:fetch`, loads from the
+// committed tree with nothing reported.
+//
+// The `std:*` rows come from the files under `std/`, so a package added to
+// the tree joins the gate without an edit here. The empty-import row covers the
+// prelude, which every run loads.
+func TestTheCommittedTreeLoadsCleanForStdAndWebFetch(t *testing.T) {
 	t.Parallel()
 
-	for _, uri := range []string{"web:core", "web:fetch"} {
-		t.Run(uri, func(t *testing.T) {
-			res := InferModuleAgainstStdlib(parseModule(t, "import \""+uri+"\"\nval x = 1\n"), committedTree)
+	files, err := filepath.Glob(filepath.Join(committedTree, "std", "*.esc"))
+	require.NoError(t, err)
+	require.NotEmpty(t, files)
+
+	uris := []string{"", "web:core", "web:fetch"}
+	for _, file := range files {
+		pkg := strings.TrimSuffix(filepath.Base(file), ".esc")
+		if pkg != "prelude" {
+			uris = append(uris, "std:"+pkg)
+		}
+	}
+
+	for _, uri := range uris {
+		name, src := "prelude", "val x = 1\n"
+		if uri != "" {
+			name, src = uri, "import \""+uri+"\"\n"+src
+		}
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+			res := InferModuleAgainstStdlib(parseModule(t, src), committedTree)
 			require.Empty(t, errorMessagesOf(res.Errors))
 		})
 	}
