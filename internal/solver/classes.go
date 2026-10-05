@@ -2,6 +2,7 @@ package solver
 
 import (
 	"fmt"
+	"maps"
 	"slices"
 
 	"github.com/escalier-lang/escalier/internal/ast"
@@ -283,9 +284,13 @@ func (c *Context) settleVarianceGroup(def *ClassDef) {
 			}
 		}
 	}
+	// A pass reads the vectors earlier members stored in the same pass, so the members are
+	// measured in a fixed order. Otherwise map order could change whether a group settles.
+	names := slices.Sorted(maps.Keys(group))
 	env := &groupVarianceEnv{ctx: c, assumed: map[string]*ClassDef{}}
 	params := 0
-	for name, member := range group {
+	for _, name := range names {
+		member := group[name]
 		n := len(member.TypeParams)
 		params += n
 		env.assumed[name] = &ClassDef{Variance: uniformVariance(n, Bivariant), MutVariance: uniformVariance(n, Bivariant)}
@@ -299,7 +304,8 @@ func (c *Context) settleVarianceGroup(def *ClassDef) {
 	measured := map[string]measuredVariance{}
 	for range 4*params + 1 {
 		changed := false
-		for name, member := range group {
+		for _, name := range names {
+			member := group[name]
 			m := inferBodyVariance(member, name, env)
 			if m.incomplete {
 				return
@@ -315,8 +321,8 @@ func (c *Context) settleVarianceGroup(def *ClassDef) {
 			}
 		}
 		if !changed {
-			for name, member := range group {
-				c.storeFinalVariance(member, measured[name])
+			for _, name := range names {
+				c.storeFinalVariance(group[name], measured[name])
 			}
 			return
 		}
