@@ -53,18 +53,20 @@ func TestImplementsConformance(t *testing.T) {
 			want: []string{"Class 'Mistyped' does not implement interface 'I': member 'v' property type does not match"},
 		},
 		{
-			name: "MissingMemberOfAClass",
+			// An instance of `Square` is not assignable to the unrelated class `Shape`, so
+			// the clause would promise a relation the checker never grants.
+			name: "AClassCannotImplementAClass",
 			src: `
 				class Shape { v: string, constructor(&mut self) { self.v = "" } }
-				class Missing implements Shape { constructor(&mut self) {} }
+				class Square implements Shape { v: string, constructor(&mut self) { self.v = "" } }
 			`,
-			want: []string{"Class 'Missing' does not implement interface 'Shape': missing member 'v'"},
+			want: []string{"`Shape` is a class, and only a `declare class` may name a class in `implements`. Implement an interface instead."},
 		},
 		{
 			name: "MistypedMemberOfAClass",
 			src: `
 				class Shape { v: string, constructor(&mut self) { self.v = "" } }
-				class Mistyped implements Shape { v: number, constructor(&mut self) { self.v = 1 } }
+				declare class Mistyped implements Shape { v: number }
 			`,
 			want: []string{"Class 'Mistyped' does not implement interface 'Shape': member 'v' property type does not match"},
 		},
@@ -72,7 +74,7 @@ func TestImplementsConformance(t *testing.T) {
 			name: "MemberOfAClassSatisfied",
 			src: `
 				class Shape { v: string, constructor(&mut self) { self.v = "" } }
-				class Square implements Shape { v: string, constructor(&mut self) { self.v = "" } }
+				declare class Square implements Shape { v: string }
 			`,
 		},
 		{

@@ -304,7 +304,7 @@ func TestInferUnusedTypeParamOnClassAndEnum(t *testing.T) {
 			name: "ClassImplementsWritesTheParameter",
 			src: `
 				class Marker<T> { m?: T }
-				class Tag<T> implements Marker<T> { constructor(&mut self) {} }
+				declare class Tag<T> implements Marker<T> { constructor(&mut self) }
 			`,
 		},
 		{

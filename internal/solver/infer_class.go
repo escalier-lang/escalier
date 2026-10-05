@@ -668,16 +668,26 @@ type implementsTarget struct {
 // entry that resolves, in clause order.
 //
 // `implements` is a conformance-only assertion the nominal subtype walk skips, so the class
-// targets are recorded on ClassDef.Implements apart from Supers. An alias is a structural
-// target with no ClassType to record. One whose body is not an object is reported as
-// NonClassSuperError, the way a type parameter is.
+// targets are recorded on ClassDef.Implements apart from Supers. Only a `declare` class may
+// name a class, and any other class reports ImplementsClassError for it. An alias is a
+// structural target with no ClassType to record. One whose body is not an object is reported
+// as NonClassSuperError, the way a type parameter is.
 func (c *checker) resolveClassImplements(scope *Scope, lvl int, decl *ast.ClassDecl) []implementsTarget {
 	var targets []implementsTarget
 	for _, impl := range decl.Implements {
 		if !c.namesAlias(scope, impl) {
-			if ct := c.resolveClassRef(scope, impl, lvl); ct != nil {
-				targets = append(targets, implementsTarget{ref: impl, class: ct})
+			ct := c.resolveClassRef(scope, impl, lvl)
+			if ct == nil {
+				continue
 			}
+			// A `declare` class describes a JavaScript value whose .d.ts may name a class in
+			// `implements`, as TypeScript allows. A class written in Escalier implements
+			// interfaces only.
+			if !decl.Declare() {
+				c.report(&ImplementsClassError{Ref: impl, Name: ast.QualIdentToString(impl.Name)})
+				continue
+			}
+			targets = append(targets, implementsTarget{ref: impl, class: ct})
 			continue
 		}
 		target, ok := c.resolveTypeAnn(scope, impl, lvl)

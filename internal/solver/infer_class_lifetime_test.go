@@ -252,9 +252,9 @@ func TestClassLifetimeClauseErrors(t *testing.T) {
 		"ReferenceArgumentOnImplements": {
 			src: `
 				class Shape<'b> { v?: &'b mut {value: number} }
-				class Sub<'a> implements Shape<'z> { peer: &'a mut {value: number} }
+				declare class Sub<'a> implements Shape<'z> { peer: &'a mut {value: number} }
 			`,
-			want: []string{"3:36-3:38: lifetime 'z is used but not declared; did you mean 'a?"},
+			want: []string{"3:44-3:46: lifetime 'z is used but not declared; did you mean 'a?"},
 		},
 		// A name bound twice binds nothing new. Without the report the two would share one
 		// variable, silently equating a caller's two distinct arguments.

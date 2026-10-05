@@ -435,6 +435,15 @@ type NonClassSuperError struct {
 	Name string
 }
 
+// ImplementsClassError fires when a class that is not `declare` names a class in its
+// `implements` clause. A class instance is not assignable to an unrelated class, so the
+// clause would promise a subtype relation the checker never grants. Ref carries the blame
+// span and Name the rendered reference.
+type ImplementsClassError struct {
+	Ref  *ast.TypeRefTypeAnn
+	Name string
+}
+
 // CannotExtendFinalClassError fires when an `extends` clause names a final class. A
 // final class has no subclasses (exact-types §2.6), so it cannot be a superclass. Ref
 // carries the blame span and Name the rendered reference.
@@ -575,6 +584,7 @@ func (*BorrowEscapeError) isSolverError()            {}
 func (*ClassIntoExactObjectError) isSolverError()    {}
 func (*StructuralIntoClassError) isSolverError()     {}
 func (*NonClassSuperError) isSolverError()           {}
+func (*ImplementsClassError) isSolverError()         {}
 func (*CannotExtendFinalClassError) isSolverError()  {}
 func (*VarianceMismatchError) isSolverError()        {}
 func (*TypeParamNotProducibleError) isSolverError()  {}
@@ -738,6 +748,9 @@ func (e *StructuralIntoClassError) Related() []ast.Span { return relatedOf(e.pro
 
 func (e *NonClassSuperError) Span() ast.Span      { return e.Ref.Span() }
 func (e *NonClassSuperError) Related() []ast.Span { return nil }
+
+func (e *ImplementsClassError) Span() ast.Span      { return e.Ref.Span() }
+func (e *ImplementsClassError) Related() []ast.Span { return nil }
 
 func (e *CannotExtendFinalClassError) Span() ast.Span      { return e.Ref.Span() }
 func (e *CannotExtendFinalClassError) Related() []ast.Span { return nil }
@@ -2863,6 +2876,10 @@ func (e *ClassIntoExactObjectError) Message() string {
 
 func (e *StructuralIntoClassError) Message() string {
 	return fmt.Sprintf("cannot constrain object <: class %s", describe(e.Super))
+}
+
+func (e *ImplementsClassError) Message() string {
+	return fmt.Sprintf("`%s` is a class, and only a `declare class` may name a class in `implements`. Implement an interface instead.", e.Name)
 }
 
 func (e *NonClassSuperError) Message() string {
