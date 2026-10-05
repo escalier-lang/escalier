@@ -1406,7 +1406,7 @@ func (c *Context) constrain(sub, super soltype.Type, seen *seenPairs, mutCtx boo
 					// receiver's mutability and ownership, and this path has no receiver
 					// binding to check, so such a method stays missing here.
 					if member, found := sub.ReadMember(superProp.Name); found && fieldRead {
-						if method, isMethod := member.(*soltype.MethodElem); isMethod && borrowsSelfShared(method) {
+						if method, isMethod := member.(*soltype.MethodElem); isMethod && borrowsSelfImmut(method) {
 							errs = append(errs, c.constrain(methodReadType(method), superProp.Type, seen, mutCtx)...)
 							continue
 						}
@@ -2395,9 +2395,9 @@ func methodReadType(elem *soltype.MethodElem) soltype.Type {
 	return &soltype.IntersectionType{Types: arms}
 }
 
-// borrowsSelfShared reports whether every signature of a method either declares no
+// borrowsSelfImmut reports whether every signature of a method either declares no
 // receiver or takes it as an immutable borrow, as `&self` does.
-func borrowsSelfShared(method *soltype.MethodElem) bool {
+func borrowsSelfImmut(method *soltype.MethodElem) bool {
 	for _, sig := range method.Signatures {
 		if sig.SelfParam == nil {
 			continue
