@@ -1309,6 +1309,9 @@ func (c *Context) constrain(sub, super soltype.Type, seen *seenPairs, mutCtx boo
 			}
 			return []SolverError{&CannotConstrainError{Sub: sub, Super: sup}}
 		}
+		if errs, handled := c.constrainThroughWrapper(sub, super, seen, mutCtx); handled {
+			return errs
+		}
 	case *soltype.LitType:
 		if sup, ok := super.(*soltype.LitType); ok {
 			if sub.Equal(sup) {
@@ -1327,6 +1330,9 @@ func (c *Context) constrain(sub, super soltype.Type, seen *seenPairs, mutCtx boo
 		}
 		if sup, ok := super.(*soltype.TemplateLitType); ok {
 			return c.constrainStrLitToTemplateLit(sub, sup)
+		}
+		if errs, handled := c.constrainThroughWrapper(sub, super, seen, mutCtx); handled {
+			return errs
 		}
 	case *soltype.SkolemType:
 		// A skolem is a subtype of the same skolem and of its declared upper bound, so an
@@ -1653,6 +1659,21 @@ func (c *Context) constrain(sub, super soltype.Type, seen *seenPairs, mutCtx boo
 						errs = append(errs, c.constrain(subIdx.Value, superProp.Type, seen, mutCtx)...)
 						continue
 					}
+					// A field read of a method yields the method's receiver-stripped
+					// signature, the value a direct `p.m` read yields. This is what lets a
+					// receiver solved after the read, such as a callback parameter a
+					// `number` later flows into, read `toFixed` off `Number`.
+					//
+					// Only a method borrowing its receiver immutably reads this way. The
+					// direct read checks a `&mut self` or `self` method against the
+					// receiver's mutability and ownership, and this path has no receiver
+					// binding to check, so such a method stays missing here.
+					if member, found := sub.ReadMember(superProp.Name); found && fieldRead {
+						if method, isMethod := member.(*soltype.MethodElem); isMethod && borrowsSelfImmut(method) {
+							errs = append(errs, c.constrain(methodReadType(method), superProp.Type, seen, mutCtx)...)
+							continue
+						}
+					}
 					if !superProp.Optional {
 						errs = append(errs, &MissingPropertyError{Sub: sub, Super: sup, Name: superProp.Name})
 					}
@@ -1870,6 +1891,9 @@ func (c *Context) constrain(sub, super soltype.Type, seen *seenPairs, mutCtx boo
 				return nil
 			}
 			return []SolverError{&CannotConstrainError{Sub: sub, Super: sup}}
+		}
+		if errs, handled := c.constrainThroughWrapper(sub, super, seen, mutCtx); handled {
+			return errs
 		}
 	case *soltype.NullType:
 		// `null` relates only to itself, the twin of the UndefinedType arm above. It is
@@ -2493,8 +2517,9 @@ func (c *Context) constrainUnionFieldRead(sub *soltype.UnionType, super soltype.
 }
 
 // readCarrierObject returns the ObjectType a carrier's fields are read through. That is a
-// structural object itself, or a class instance's body projected at its arguments. It returns
-// ok=false for any other carrier, such as a primitive or a type variable.
+// structural object itself, a class instance's body projected at its arguments, or the
+// projected body of a primitive's wrapper class. It returns `ok` as false for any other
+// carrier, such as a type variable or `undefined`.
 func (c *Context) readCarrierObject(carrier soltype.Type) (*soltype.ObjectType, bool) {
 	switch t := carrier.(type) {
 	case *soltype.ObjectType:
@@ -2502,7 +2527,39 @@ func (c *Context) readCarrierObject(carrier soltype.Type) (*soltype.ObjectType, 
 	case *soltype.ClassType:
 		return c.projectClassBody(t)
 	}
+	if wrapper, ok := c.wrapperInstance(carrier); ok {
+		return c.projectClassBody(wrapper)
+	}
 	return nil, false
+}
+
+// constrainThroughWrapper checks a primitive, literal, or `unique symbol` `sub` against a
+// field-read or destructure requirement by reading the required members from an instance of
+// `sub`'s wrapper class. So `1.5` satisfies `{toFixed: β, ...}` because `Number` declares
+// `toFixed`. `handled` is false when `super` is not such a requirement or when the run declares
+// no wrapper class for `sub`. The caller then reports the mismatch it would have reported anyway.
+//
+// The test is the shape isFieldReadReq checks, an inexact object whose every member type is
+// an inference variable. A primitive is not an object, so `number <: {...}` and
+// `number <: {toFixed: fn () -> string, ...}` written as annotations stay rejected. An
+// annotation whose member types are themselves variables has the same shape and is read
+// through the wrapper class too, such as `{valueOf: T, ...}` at a call that instantiates `T`.
+func (c *Context) constrainThroughWrapper(sub, super soltype.Type, seen *seenPairs, mutCtx bool) (errs []SolverError, handled bool) {
+	sup, isObj := super.(*soltype.ObjectType)
+	if !isObj || len(sup.Elems) == 0 || !isFieldReadReq(sup) {
+		return nil, false
+	}
+	wrapper, ok := c.wrapperInstance(sub)
+	if !ok {
+		return nil, false
+	}
+	errs = c.constrain(wrapper, sup, seen, mutCtx)
+	for _, err := range errs {
+		if missing, isMissing := err.(*MissingPropertyError); isMissing && missing.Super == sup {
+			missing.Primitive = sub
+		}
+	}
+	return errs, true
 }
 
 // memberReadContribution reports what reading `name` off one union member yields for the
@@ -2651,6 +2708,21 @@ func methodReadType(elem *soltype.MethodElem) soltype.Type {
 		arms[i] = callableView(sig)
 	}
 	return &soltype.IntersectionType{Types: arms}
+}
+
+// borrowsSelfImmut reports whether every signature of a method either declares no
+// receiver or takes it as an immutable borrow, as `&self` does.
+func borrowsSelfImmut(method *soltype.MethodElem) bool {
+	for _, sig := range method.Signatures {
+		if sig.SelfParam == nil {
+			continue
+		}
+		ref, isRef := sig.SelfParam.Type.(*soltype.RefType)
+		if !isRef || ref.Mut || ref.Lt == nil {
+			return false
+		}
+	}
+	return true
 }
 
 // decidingSignatures returns the arms of the unnamed callable member an object answers a call

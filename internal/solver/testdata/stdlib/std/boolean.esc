@@ -1,0 +1,6 @@
+// The `Boolean` class the solver's own tests read a `boolean` receiver's members
+// from, a hand-written stand-in for the committed
+// `internal/interop/data/std/boolean.esc`.
+export declare class Boolean {
+    valueOf(&self) -> boolean,
+}

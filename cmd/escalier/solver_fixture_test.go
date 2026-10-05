@@ -44,10 +44,6 @@ var (
 		name:   "a global the ambient builtin scope will bind",
 		ticket: "#1666",
 	}
-	causePrimitiveMember = &solverSkipCause{
-		name:   "a member read off a primitive, which needs its wrapper type",
-		ticket: "#1714",
-	}
 	causeUnaryOperators = &solverSkipCause{
 		name:   "unary operators",
 		ticket: "#1653",
@@ -88,6 +84,12 @@ var (
 		name:   "inference overflows the stack",
 		ticket: "#1695",
 	}
+	// The solver requires an `async fn` to annotate its return as a `Promise`, where the
+	// checker reads `async fn f() -> string` as returning `Promise<string>`.
+	causeAsyncReturnAnnotation = &solverSkipCause{
+		name:   "an `async fn` annotated with the type its promise resolves to",
+		ticket: "#1849",
+	}
 )
 
 // solverSkip is one fixture the solver cannot yet check, with the cause it waits on
@@ -115,11 +117,9 @@ var solverSkips = []solverSkip{
 	{"namespace_use_parent_symbol", causeAmbientScope, "cannot find type `Function`"},
 	{"try_catch", causeAmbientScope, "Unknown identifier: Error"},
 
-	{"function_overloading", causePrimitiveMember, "cannot constrain number <: object"},
-	{"function_overloading_with_deps", causePrimitiveMember, "cannot constrain number <: object"},
-	{"grouping", causePrimitiveMember, "cannot constrain number <: object"},
-	{"if_val", causePrimitiveMember, "cannot constrain number <: object"},
+	{"function_overloading", causeAsyncReturnAnnotation, "async function return type must be a Promise; write Promise<...> or Promise<_>"},
 
+	{"if_val", causeUnaryOperators, "Unsupported: UnaryExpr"},
 	{"literals", causeUnaryOperators, "Unsupported: UnaryExpr"},
 	{"template_literals", causeTemplateLiterals, "Unsupported: TemplateLitExpr"},
 	{"generic_class", causeTypeCast, "Unsupported: TypeCastExpr"},
@@ -397,6 +397,7 @@ var emitSkips = map[emitSkip]*solverSkipCause{
 	{"extractor_arg_with_init", "index.d.ts"}:      causePatterns,
 	{"generalize", "index.d.ts"}:                   causeUnusedParamNotGeneralized,
 	{"type_ann_index_signature", "index.d.ts"}:     causeIndexSignatureOptional,
+	{"grouping", "index.d.ts"}:                     causeUnionMemberOrder,
 }
 
 // causeFieldReadBound is the one `index.js` entry's cause. Reading a field whose type
@@ -447,6 +448,12 @@ var (
 	causeIndexSignatureOptional = &solverSkipCause{
 		name:   "the `?` on an index signature over an uncountable key set",
 		ticket: "#1775",
+	}
+	// A union keeps the order its members were written in on the checker and not on the
+	// solver, so `A | (B & C)` emits `B & C | A`. Both denote the same type.
+	causeUnionMemberOrder = &solverSkipCause{
+		name:   "the order of a union's members in an emitted declaration",
+		ticket: "#1850",
 	}
 )
 
