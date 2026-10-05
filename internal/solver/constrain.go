@@ -589,9 +589,32 @@ func (c *Context) distributiveCondUpperBound(cond *soltype.CondType, seen *seenP
 }
 
 // paramUpperBound returns the declared bound of a type parameter t, which is the meet of an
-// inference variable's upper bounds or a skolem's `Upper`. It returns t and false when t is not a
-// type parameter or carries no bound.
+// inference variable's upper bounds or a skolem's `Upper`. When that bound is itself a bounded
+// type parameter, it follows the chain to the first bound that is not, so `U` in
+// `<T: Array<string>, U: T>` gives `Array<string>`. A chain that cycles stops at the parameter
+// it reached twice. It returns t and false when t is not a type parameter or carries no bound.
 func paramUpperBound(t soltype.Type) (soltype.Type, bool) {
+	bound, ok := directParamUpperBound(t)
+	if !ok {
+		return t, false
+	}
+	seen := set.NewSet[soltype.Type]()
+	seen.Add(t)
+	for !seen.Contains(bound) {
+		next, ok := directParamUpperBound(bound)
+		if !ok {
+			break
+		}
+		seen.Add(bound)
+		bound = next
+	}
+	return bound, true
+}
+
+// directParamUpperBound returns the declared bound of a type parameter t without following a
+// bound that is another parameter. It returns t and false when t is not a type parameter or
+// carries no bound.
+func directParamUpperBound(t soltype.Type) (soltype.Type, bool) {
 	switch t := t.(type) {
 	case *soltype.TypeVarType:
 		if len(t.UpperBounds) > 0 {

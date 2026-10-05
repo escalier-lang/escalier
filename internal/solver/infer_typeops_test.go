@@ -1334,6 +1334,8 @@ func TestInferIndexResidualErrorMessage(t *testing.T) {
 //     declares
 //   - a tuple indexed by a numeric parameter, which is the shape `FlatArray` declares
 //
+// A parameter bounded by another parameter is checked through the end of that chain.
+//
 // Each runs as a type argument checked against an alias parameter's bound and as a function body
 // checked against its return annotation.
 func TestInferIndexOverBoundedParam(t *testing.T) {
@@ -1409,6 +1411,42 @@ func TestInferIndexOverBoundedParam(t *testing.T) {
 				type F<D: number> = N<[1, "b", "c"][D]>
 			`,
 			wantErr: `cannot constrain 1 <: string`,
+		},
+		{
+			// A parameter bounded by another parameter is checked through the end of the chain.
+			name: "ChainedTargetAccepted",
+			src: `
+				type N<X: string> = X
+				type F<T: Array<string>, U: T> = N<U[number]>
+			`,
+		},
+		{
+			name: "ChainedTargetReturnAccepted",
+			src:  `fn f<T: Array<string>, U: T>(k: U[number]) -> string { return k }`,
+		},
+		{
+			name: "ChainedTargetRejected",
+			src: `
+				type N<X: string> = X
+				type F<T: Array<number>, U: T> = N<U[number]>
+			`,
+			wantErr: "cannot constrain number <: string",
+		},
+		{
+			name: "ChainedIndexAccepted",
+			src: `
+				type N<X: string> = X
+				type F<D: number, E: D> = N<["a", "b"][E]>
+			`,
+		},
+		{
+			// A cycle of bounds names no type to check through, so the access stays residual.
+			name: "CyclicBoundsRejected",
+			src: `
+				type N<X: string> = X
+				type F<T: U, U: T> = N<T[number]>
+			`,
+			wantErr: "cannot constrain t2[number] <: string",
 		},
 		{
 			name: "NumericIndexReturnAccepted",
@@ -2023,6 +2061,13 @@ func TestInferCondResidualAgainstBound(t *testing.T) {
 				type Bad<T: string> = Box<if [T] : [string] { T } else { number }>
 			`,
 			wantErr: "cannot constrain if tuple : tuple { t2 } else { number } <: string",
+		},
+		{
+			name: "BoundChainSelectsWithinBound",
+			src: `
+				type Box<X: string> = [X]
+				type Ok<T: string, U: T> = Box<if U : string { U } else { number }>
+			`,
 		},
 		{
 			name: "UnboundedParam",
