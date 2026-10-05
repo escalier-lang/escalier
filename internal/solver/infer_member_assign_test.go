@@ -159,15 +159,87 @@ func TestInferMemberAssignAnnotatedMutObject(t *testing.T) {
 	require.Equal(t, "fn (obj: mut {x: number, y: string}) -> undefined", values["f"])
 }
 
-// The named field stays invariant: storing a string into a number field of an
-// annotated mut object is rejected in both directions (the read view number <:
-// string and the write-back string <: number), so the relaxation is width-only.
+// A write into a declared field is checked against the field's type, so storing a string
+// into a number field of an annotated mut object reports one error, blamed on the value.
 func TestInferMemberAssignAnnotatedMutWrongType(t *testing.T) {
 	_, _, errs := inferSource(t, "fn f(obj: mut {x: number, y: string}) { obj.x = \"bad\" }")
 	require.Equal(t, []string{
-		"1:41-1:54: cannot constrain number <: string",
-		"1:41-1:54: cannot constrain string <: number",
+		`1:49-1:54: cannot constrain "bad" <: number`,
 	}, messagesWithSpan(t, errs))
+}
+
+// A write into a declared field checks whenever the value fits the field's type. The field's
+// type may be wider than the value, as a union, an optional field or a literal union is, and
+// the receiver may be an object, a class instance or a borrow. A value outside the field's
+// type is still rejected, with one error blamed on the value.
+func TestInferMemberAssignIntoAWiderDeclaredField(t *testing.T) {
+	tests := []struct {
+		name    string
+		src     string
+		wantErr string // "" ⇒ expect no error
+	}{
+		{
+			name: "a member of a union field",
+			src:  `fn go(d: mut {x: number | string}) { d.x = "s" }`,
+		},
+		{
+			name: "the other member of a union field",
+			src:  `fn go(d: mut {x: number | string}) { d.x = 5 }`,
+		},
+		{
+			name: "undefined into a union with undefined",
+			src:  `fn go(d: mut {x: string | undefined}) { d.x = undefined }`,
+		},
+		{
+			name: "a value into an optional field",
+			src:  `fn go(d: mut {x?: string}) { d.x = "s" }`,
+		},
+		{
+			name: "undefined into an optional field",
+			src:  `fn go(d: mut {x?: string}) { d.x = undefined }`,
+		},
+		{
+			name: "a member of a literal union field",
+			src:  `fn go(d: mut {x: "a" | "b"}) { d.x = "a" }`,
+		},
+		{
+			name: "through a mutable borrow",
+			src:  `fn go(d: &mut {x: number | string}) { d.x = "s" }`,
+		},
+		{
+			name: "into a class instance's union field",
+			src:  "class C { x: number | string }\nfn go(c: mut C) { c.x = \"s\" }",
+		},
+		{
+			name: "into an annotated binding's union field",
+			src:  "fn go() { val d: mut {x: number | string} = {x: 1}\nd.x = \"s\" }",
+		},
+		{
+			name:    "a value outside a union field",
+			src:     `fn go(d: mut {x: number | string}) { d.x = true }`,
+			wantErr: "cannot constrain true <: number | string",
+		},
+		{
+			name:    "a value outside a literal union field",
+			src:     `fn go(d: mut {x: "a" | "b"}) { d.x = "c" }`,
+			wantErr: `cannot constrain "c" <: "a" | "b"`,
+		},
+		{
+			name:    "an immutable receiver",
+			src:     `fn go(d: {x: number | string}) { d.x = "s" }`,
+			wantErr: "cannot constrain immutable object <: mutable object",
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			_, _, errs := inferSource(t, tt.src)
+			if tt.wantErr == "" {
+				require.Empty(t, errorMessagesOf(errs))
+				return
+			}
+			require.Equal(t, []string{tt.wantErr}, errorMessagesOf(errs))
+		})
+	}
 }
 
 // Writing a field absent from an EXACT annotated mut object still errors: the read
@@ -212,17 +284,16 @@ func TestInferMemberAssignClassReceiver(t *testing.T) {
 			`,
 		},
 		{
-			// The written field stays invariant through a class receiver exactly as it
-			// does through an object receiver, so a string into a number field is
-			// rejected in both the read view and the write-back.
-			name: "mut receiver rejects a wrongly-typed write in both directions",
+			// A class receiver's field is declared, as an object receiver's is, so a
+			// string into a number field is checked against the field's type and
+			// reports one error on the value.
+			name: "mut receiver rejects a wrongly-typed write",
 			src: `
 				class C { v: number }
 				fn f(c: mut C) { c.v = "bad" }
 			`,
 			want: []string{
-				"3:22-3:33: cannot constrain number <: string",
-				"3:22-3:33: cannot constrain string <: number",
+				`3:28-3:33: cannot constrain "bad" <: number`,
 			},
 		},
 		{

@@ -147,7 +147,6 @@ var solverSkips = []solverSkip{
 	{"iterators", causeIteration, "string is not iterable"},
 
 	{"extractor_rest_arg", causePatterns, "extractor pattern `C` expects 3 arguments but got 2"},
-	{"extractor_with_defaults", causePatterns, "cannot constrain undefined <: string"},
 	{"pattern_matching", causePatterns, "object is missing property: area"},
 
 	{"interface", causeExtendsTypeArgs, "type alias `Box` expects 1 type argument but got 0"},

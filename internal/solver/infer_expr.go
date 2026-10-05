@@ -2250,6 +2250,10 @@ func (c *checker) inferAssign(scope *Scope, lvl int, e *ast.BinaryExpr) soltype.
 // receiver is itself a mutation — a later write may store any number — mirroring
 // the `var`-binding widening (B3).
 //
+// A receiver that declares prop, as an annotated object or a class instance does, takes
+// the requirement at the field's declared type instead. The source is then constrained
+// against that type on its own, and an optional field also accepts `undefined`.
+//
 // The write requirement carries a fresh lifetime (D2): a mut-borrow receiver of
 // any lifetime is accepted (the fresh var imposes no obligation), and an owned
 // receiver satisfies the borrow destination by the RefType rule.
@@ -2295,9 +2299,11 @@ func (c *checker) inferMemberAssign(scope *Scope, lvl int, e *ast.BinaryExpr, m 
 	// receiver's carrier. An owned-mutable field arises only through inference, since #779
 	// rejects the annotation, so no source program reaches this branch today. The guard
 	// keeps the field write consistent for when one does.
+	upgraded := false
 	if recvObj, ok := soltype.CarrierOf(recv).(*soltype.ObjectType); ok {
 		if prop, ok := recvObj.Prop(m.Prop.Name); ok && c.constrainAgainstImmutableTarget(e.Right, e.Right, source, prop.Type) {
 			w = prop.Type
+			upgraded = true
 		}
 	}
 	// Catch a readonly write at the assignment site so the diagnostic blames it
@@ -2311,6 +2317,22 @@ func (c *checker) inferMemberAssign(scope *Scope, lvl int, e *ast.BinaryExpr, m 
 			return w
 		}
 	}
+	errsBefore := len(c.errs)
+	reqField := &soltype.PropertyElem{Name: m.Prop.Name, Type: w}
+	// A receiver that declares the field takes the write against the declared type. The
+	// requirement below pins its field invariant, which suits a receiver whose field type
+	// the write is inferring, but against a declared field it would also demand that the
+	// field type fit inside the written value. A union field never does, so
+	// `d.x = "s"` into `x: number | string` would fail. The source is checked against
+	// the declared type instead, and the requirement carries that type, so it asks only
+	// that the receiver be mutable and hold the field.
+	if declared, ok := c.declaredWriteField(m.Prop.Name, recv); ok {
+		// The upgrade above already constrained the source against this field.
+		if !upgraded {
+			c.constrain(e.Right, source, writableFieldType(declared))
+		}
+		reqField = &soltype.PropertyElem{Name: m.Prop.Name, Type: declared.Type, Optional: declared.Optional}
+	}
 	req := &soltype.RefType{
 		Mut: true,
 		// A fresh lifetime imposes no obligation on the receiver (D2): constrainLt
@@ -2319,11 +2341,10 @@ func (c *checker) inferMemberAssign(scope *Scope, lvl int, e *ast.BinaryExpr, m 
 		// nil lifetime would instead reject a borrow receiver as an escape.
 		Lt: c.ctx.freshLifetime(lvl),
 		Inner: &soltype.ObjectType{
-			Elems:   []soltype.ObjTypeElem{&soltype.PropertyElem{Name: m.Prop.Name, Type: w}},
+			Elems:   []soltype.ObjTypeElem{reqField},
 			Inexact: true, // "must accept a write to this field," not a full shape
 		},
 	}
-	errsBefore := len(c.errs)
 	c.constrain(e, recv, req)
 	c.recordWritten(recv, m.Prop.Name, w)
 	// M4 G1: when the written value aliases a variable, merge the receiver's and the
@@ -2354,6 +2375,27 @@ func (c *checker) inferMemberAssign(scope *Scope, lvl int, e *ast.BinaryExpr, m 
 	// `undefined` recovery type inferAssign recorded on e before dispatching here.
 	c.recordType(e, w)
 	return w
+}
+
+// declaredWriteField returns the field named name that recv declares, when recv is an object
+// or class instance whose shape is known. It reports false for a receiver whose shape is still
+// being inferred, and for a member that is not a plain property.
+func (c *checker) declaredWriteField(name string, recv soltype.Type) (*soltype.PropertyElem, bool) {
+	member, found := c.writeMember(name, readCarrier(recv))
+	if !found {
+		return nil, false
+	}
+	prop, ok := member.(*soltype.PropertyElem)
+	return prop, ok
+}
+
+// writableFieldType returns the type a write to prop may store. An optional field may also
+// be set to `undefined`, matching the `T | undefined` a read of it yields.
+func writableFieldType(prop *soltype.PropertyElem) soltype.Type {
+	if !prop.Optional {
+		return prop.Type
+	}
+	return newUnion(nil, []soltype.Type{prop.Type, &soltype.UndefinedType{}})
 }
 
 // inferAccessorAssign types a write `recv.prop = source` that resolved to an accessor. A

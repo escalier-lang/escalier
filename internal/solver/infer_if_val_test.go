@@ -103,8 +103,7 @@ func TestInferIfValAndValElse(t *testing.T) {
 				}
 			}`,
 			wantErrs: []string{
-				"4:6-4:17: cannot constrain number <: string",
-				"4:6-4:17: cannot constrain string <: number",
+				`4:13-4:17: cannot constrain "hi" <: number`,
 			},
 		},
 		{
