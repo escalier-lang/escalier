@@ -126,7 +126,7 @@ func TestIterationCallbacksBorrowTheReceiver(t *testing.T) {
 		{
 			// Called with a `mut Array<number>`, this would push a string into it.
 			name: "ArrayCallbackCannotWriteThroughAWidenedView",
-			src: `fn widen(xs: Array<number | string>) {
+			src: `fn widen(xs: &Array<number | string>) {
 				xs.forEach(fn (v, i, arr: mut Array<number | string>) {
 					arr.push("s")
 					return 0
@@ -136,7 +136,7 @@ func TestIterationCallbacksBorrowTheReceiver(t *testing.T) {
 		},
 		{
 			name: "ArrayCallbackCannotMutateAnImmutableArray",
-			src: `fn f(xs: Array<number>) {
+			src: `fn f(xs: &Array<number>) {
 				xs.forEach(fn (v, i, arr: mut Array<number>) {
 					arr.push(1)
 					return 0
@@ -147,7 +147,7 @@ func TestIterationCallbacksBorrowTheReceiver(t *testing.T) {
 		{
 			name: "SetCallbackCannotMutateTheSet",
 			src: `import "std:set"
-				fn f(xs: set.Set<number>) {
+				fn f(xs: &set.Set<number>) {
 					xs.forEach(fn (v, v2, s: mut set.Set<number>) {
 						s.add(1)
 						return 0
@@ -158,20 +158,20 @@ func TestIterationCallbacksBorrowTheReceiver(t *testing.T) {
 		{
 			// The callback claims it can keep the array, which a borrow does not allow.
 			name: "CallbackAnnotatedWithTheOwnedArrayIsRejected",
-			src: `fn f(xs: Array<number>) {
+			src: `fn f(xs: &Array<number>) {
 				xs.forEach(fn (v: number, i: number, arr: Array<number>) { return 0 })
 			}`,
 			want: []string{"borrowed value Array<number> does not live long enough to satisfy owned Array<number>"},
 		},
 		{
 			name: "CallbackAnnotatedWithABorrowReadsTheArray",
-			src: `fn f(xs: Array<number>) {
+			src: `fn f(xs: &Array<number>) {
 				xs.forEach(fn (v: number, i: number, arr: &Array<number>) { return arr.length })
 			}`,
 		},
 		{
 			name: "ArrayCallbackReadsTheArray",
-			src: `fn f(xs: Array<number>) -> number {
+			src: `fn f(xs: &Array<number>) -> number {
 				var n = 0
 				xs.forEach(fn (v, i, arr) {
 					n = arr.length
@@ -182,12 +182,12 @@ func TestIterationCallbacksBorrowTheReceiver(t *testing.T) {
 		},
 		{
 			name: "MapCallbackReadsTheArray",
-			src:  `fn f(xs: Array<number>) { val ys = xs.map(fn (v, i, arr) { return arr.length + v }) }`,
+			src:  `fn f(xs: &Array<number>) { val ys = xs.map(fn (v, i, arr) { return arr.length + v }) }`,
 		},
 		{
 			name: "SetCallbackReadsTheSet",
 			src: `import "std:set"
-				fn f(xs: set.Set<number>) { xs.forEach(fn (v, v2, s) { return s.size }) }`,
+				fn f(xs: &set.Set<number>) { xs.forEach(fn (v, v2, s) { return s.size }) }`,
 		},
 	}
 	for _, tt := range tests {
