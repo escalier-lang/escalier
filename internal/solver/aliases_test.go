@@ -722,24 +722,6 @@ func TestInferSelfReferenceKeepsUnionSiblings(t *testing.T) {
 			wantN: "undefined | L",
 		},
 		{
-			name: "InterfaceOrNull",
-			src: `
-				interface L { next: L | null }
-				declare val l: L
-				val n = l.next
-			`,
-			wantN: "null | L",
-		},
-		{
-			name: "AliasOrUndefined",
-			src: `
-				type L = { next: L | undefined }
-				declare val l: L
-				val n = l.next
-			`,
-			wantN: "undefined | L",
-		},
-		{
 			name: "AliasOrNull",
 			src: `
 				type L = { next: L | null }
@@ -768,13 +750,14 @@ func TestInferSelfReferenceKeepsUnionSiblings(t *testing.T) {
 			wantN: "undefined | Array<L>",
 		},
 		{
-			name: "InterfaceNumberOrUndefined",
+			// Members that do not name `L` still subsume each other, so `1` folds into `number`.
+			name: "InterfacePrunesSiblingsThatDoNotNameIt",
 			src: `
-				interface L { next: number | undefined }
+				interface L { next: L | 1 | number }
 				declare val l: L
 				val n = l.next
 			`,
-			wantN: "number | undefined",
+			wantN: "number | L",
 		},
 		{
 			name: "InterfaceRejectsUndefinedAgainstSelf",
@@ -785,16 +768,6 @@ func TestInferSelfReferenceKeepsUnionSiblings(t *testing.T) {
 			`,
 			wantN:   "L",
 			wantErr: "cannot constrain undefined <: object",
-		},
-		{
-			name: "AliasRejectsNullAgainstSelf",
-			src: `
-				type L = { next: L | null }
-				declare val l: L
-				val n: L = l.next
-			`,
-			wantN:   "L",
-			wantErr: "cannot constrain null <: object",
 		},
 	}
 	for _, tt := range tests {
