@@ -25,14 +25,15 @@ export declare interface MessageEventInit<T = any> {
     source?: null,
 }
 
-// `AbortSignal` restates the `addEventListener` and `removeEventListener` it
-// inherits from `EventTarget`, and the string-keyed arm drops the `null` that
-// `EventTarget` accepts for the listener. A subclass method has to accept what
-// the one it overrides accepts, so the arm takes `null` back. The runtime
-// method is `EventTarget`'s own, which does accept it.
-export declare class AbortSignal {
-    addEventListener<K: keyof AbortSignalEventMap>(&mut self, type: K, listener: fn (this: AbortSignal, ev: AbortSignalEventMap[K]) -> any, options?: boolean | AddEventListenerOptions) -> unknown,
-    addEventListener(&mut self, type: string, listener: null | EventListenerOrEventListenerObject, options?: boolean | AddEventListenerOptions) -> unknown,
-    removeEventListener<K: keyof AbortSignalEventMap>(&mut self, type: K, listener: fn (this: AbortSignal, ev: AbortSignalEventMap[K]) -> any, options?: boolean | EventListenerOptions) -> unknown,
-    removeEventListener(&mut self, type: string, listener: null | EventListenerOrEventListenerObject, options?: boolean | EventListenerOptions) -> unknown,
+// `EventTarget` accepts `null` for the listener of `addEventListener` and
+// `removeEventListener`, as the DOM spec declares it. A `null` listener does
+// nothing: both algorithms return at once when they see it. Accepting it only
+// lets a mistake through silently, so the overlay drops it.
+//
+// Every subclass that restates these methods, `AbortSignal` among them,
+// already leaves `null` out. With `EventTarget` matching, each restatement
+// accepts what the method it overrides accepts.
+export declare class EventTarget {
+    addEventListener(&mut self, type: string, callback: EventListenerOrEventListenerObject, options?: AddEventListenerOptions | boolean) -> unknown,
+    removeEventListener(&mut self, type: string, callback: EventListenerOrEventListenerObject, options?: EventListenerOptions | boolean) -> unknown,
 }

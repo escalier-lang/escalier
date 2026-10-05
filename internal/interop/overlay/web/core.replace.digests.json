@@ -1,15 +1,15 @@
 [
   {
-    "decl": "AbortSignal",
+    "decl": "EventTarget",
     "member": "addEventListener",
     "kind": "method",
-    "digest": "09433779049bba63"
+    "digest": "215bcf0633fc2fe9"
   },
   {
-    "decl": "AbortSignal",
+    "decl": "EventTarget",
     "member": "removeEventListener",
     "kind": "method",
-    "digest": "eac1fc12bf2da550"
+    "digest": "f0ef615621d4dd9a"
   },
   {
     "decl": "MessageEvent",

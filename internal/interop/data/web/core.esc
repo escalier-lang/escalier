@@ -90,9 +90,9 @@ export declare class AbortSignal extends EventTarget {
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/AbortSignal/throwIfAborted) */
     throwIfAborted(&mut self) -> unknown,
     addEventListener<K: keyof AbortSignalEventMap>(&mut self, type: K, listener: fn (this: AbortSignal, ev: AbortSignalEventMap[K]) -> any, options?: boolean | AddEventListenerOptions) -> unknown,
-    addEventListener(&mut self, type: string, listener: null | EventListenerOrEventListenerObject, options?: boolean | AddEventListenerOptions) -> unknown,
+    addEventListener(&mut self, type: string, listener: EventListenerOrEventListenerObject, options?: boolean | AddEventListenerOptions) -> unknown,
     removeEventListener<K: keyof AbortSignalEventMap>(&mut self, type: K, listener: fn (this: AbortSignal, ev: AbortSignalEventMap[K]) -> any, options?: boolean | EventListenerOptions) -> unknown,
-    removeEventListener(&mut self, type: string, listener: null | EventListenerOrEventListenerObject, options?: boolean | EventListenerOptions) -> unknown,
+    removeEventListener(&mut self, type: string, listener: EventListenerOrEventListenerObject, options?: boolean | EventListenerOptions) -> unknown,
     static prototype: AbortSignal,
     constructor(&mut self),
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/AbortSignal/abort_static) */
@@ -329,7 +329,7 @@ export declare class EventTarget {
      *
      * [MDN Reference](https://developer.mozilla.org/docs/Web/API/EventTarget/addEventListener)
      */
-    addEventListener(&mut self, type: string, callback: EventListenerOrEventListenerObject | null, options?: AddEventListenerOptions | boolean) -> unknown,
+    addEventListener(&mut self, type: string, callback: EventListenerOrEventListenerObject, options?: AddEventListenerOptions | boolean) -> unknown,
     /**
      * Dispatches a synthetic event event to target and returns true if either event's cancelable attribute value is false or its preventDefault() method was not invoked, and false otherwise.
      *
@@ -341,7 +341,7 @@ export declare class EventTarget {
      *
      * [MDN Reference](https://developer.mozilla.org/docs/Web/API/EventTarget/removeEventListener)
      */
-    removeEventListener(&mut self, type: string, callback: EventListenerOrEventListenerObject | null, options?: EventListenerOptions | boolean) -> unknown,
+    removeEventListener(&mut self, type: string, callback: EventListenerOrEventListenerObject, options?: EventListenerOptions | boolean) -> unknown,
     static prototype: EventTarget,
     constructor(&mut self)
 }

@@ -541,6 +541,39 @@ func TestTheCommittedLocaleTakesItsImplementedMembers(t *testing.T) {
 	require.Equal(t, "string | undefined", soltype.Print(inferredValueType(t, res.Scope, "calendar")))
 }
 
+// The committed `EventTarget` takes a listener but not `null`. The DOM spec accepts `null`
+// and does nothing with it, and the overlay drops it so the mistake is reported.
+func TestTheCommittedEventTargetRejectsANullListener(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name    string
+		src     string
+		wantErr string // "" ⇒ expect no error
+	}{
+		{
+			name: "a listener",
+			src:  "import \"web:core\"\nfn go(t: mut core.EventTarget, l: core.EventListenerOrEventListenerObject) { t.addEventListener(\"x\", l) }",
+		},
+		{
+			name:    "null",
+			src:     "import \"web:core\"\nfn go(t: mut core.EventTarget) { t.addEventListener(\"x\", null) }",
+			wantErr: "cannot constrain null <: object",
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			res := InferModuleAgainstStdlib(parseModule(t, tt.src), committedTree)
+			if tt.wantErr == "" {
+				require.Empty(t, errorMessagesOf(res.Errors))
+				return
+			}
+			require.Equal(t, []string{tt.wantErr}, errorMessagesOf(res.Errors))
+		})
+	}
+}
+
 // `web:core` and `web:fetch` load from the committed tree with nothing reported.
 func TestTheCommittedCoreAndFetchLoadClean(t *testing.T) {
 	t.Parallel()
