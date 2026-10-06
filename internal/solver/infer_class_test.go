@@ -1674,8 +1674,16 @@ func TestInferClassMutVariance(t *testing.T) {
 // input and that the class also gives an output position. The method cannot store what it
 // takes into the instance, so the output decides and the immutable view is covariant. A
 // field write still makes the mutable view invariant, and a parameter with no output
-// position stays contravariant. A subclass override of such a method has to accept
-// `unknown` there, since a wider view of the subclass instance can pass anything.
+// position stays contravariant.
+//
+// Keeping such a class covariant lets `Bag<number>` widen to `Bag<number | string>`, so
+// a subclass instance can be reached through a view wider than the one it extends. An
+// override of the method is therefore checked against the ancestor's method at the widest
+// instance the subclass can be read as, not at the arguments its `extends` clause writes.
+// Each covariant argument there is its parameter's bound, or `unknown` for an unbounded
+// parameter. That is why the expected messages below name `fn (x: unknown) -> boolean`
+// where the `extends` clause says `Bag<number>`. Making the parameter invariant instead
+// would keep the override check at `Bag<number>`, but it would also stop the widening.
 func TestInferClassSelfMethodInputVariance(t *testing.T) {
 	t.Parallel()
 
@@ -1713,8 +1721,9 @@ func TestInferClassSelfMethodInputVariance(t *testing.T) {
 			`,
 		},
 		{
-			// `widen(NumBag())` is a `Bag<number | string>` whose `contains("s")` would run
-			// this override, so the override has to accept whatever a wider view can pass.
+			// `NumBag` extends `Bag<number>`, but it can be read as `Bag<unknown>`. Through
+			// that view `contains("s")` would run this override, which compares a string
+			// with `>`. The override is checked against `Bag<unknown>`'s `contains`.
 			name: "an override narrowing a covariant input is rejected",
 			src: bag + `
 				class NumBag extends Bag<number> {
@@ -1729,6 +1738,7 @@ func TestInferClassSelfMethodInputVariance(t *testing.T) {
 			},
 		},
 		{
+			// The override matches `Bag<unknown>`'s `contains`, the widest view of `AnyBag`.
 			name: "an override accepting any input is allowed",
 			src: bag + `
 				class AnyBag extends Bag<number> {
@@ -1738,6 +1748,9 @@ func TestInferClassSelfMethodInputVariance(t *testing.T) {
 			`,
 		},
 		{
+			// `U` is unbounded and nothing in `Bag2` consumes it, so the override is as
+			// generic in `U` as `Bag`'s method is in `T`. A wider view passes a wider `U`,
+			// and the override is checked at `Bag<U>` rather than `Bag<unknown>`.
 			name: "a generic override keeps its parameter",
 			src: bag + `
 				class Bag2<U> extends Bag<U> {
@@ -1806,6 +1819,9 @@ func TestInferClassSelfMethodInputVariance(t *testing.T) {
 			},
 		},
 		{
+			// Writing `x` into `sink` makes `Logged` invariant in `U`. The override is
+			// no longer generic in the way the widening needs, so it is checked at
+			// `Bag<unknown>`.
 			name: "a generic override storing its parameter in a mut field is rejected",
 			src: bag + `
 				class Logged<U> extends Bag<U> {
@@ -1842,6 +1858,8 @@ func TestInferClassSelfMethodInputVariance(t *testing.T) {
 			`,
 		},
 		{
+			// The widest view of `One` is `NBag<number>`, so the override has to accept
+			// every `number`, not just `1`.
 			name: "an override narrower than the parameter's bound is rejected",
 			src: `
 				class NBag<T: number> {
