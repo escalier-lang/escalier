@@ -126,7 +126,7 @@ func TestCommittedCollectionsAreCovariantAndMutOnesAreNot(t *testing.T) {
 	}{
 		{
 			name: "ArrayWidensIntoAUnion",
-			src: `fn f(a: &Array<number>) { val b: &Array<number | string> = a }`,
+			src:  `fn f(a: &Array<number>) { val b: &Array<number | string> = a }`,
 		},
 		{
 			name: "ArrayWidensIntoAParameter",
@@ -135,12 +135,12 @@ func TestCommittedCollectionsAreCovariantAndMutOnesAreNot(t *testing.T) {
 		},
 		{
 			name: "ArrayOfAnUnrelatedElementIsRejectedOnce",
-			src: `fn f(a: &Array<string>) { val b: &Array<number> = a }`,
+			src:  `fn f(a: &Array<string>) { val b: &Array<number> = a }`,
 			want: []string{"cannot constrain string <: number"},
 		},
 		{
 			name: "MutArrayDoesNotWiden",
-			src: `fn f(a: &mut Array<number>) { val b: &mut Array<number | string> = a }`,
+			src:  `fn f(a: &mut Array<number>) { val b: &mut Array<number | string> = a }`,
 			want: []string{"cannot constrain string <: number"},
 		},
 		{
