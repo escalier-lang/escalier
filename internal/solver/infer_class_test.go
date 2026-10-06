@@ -2035,6 +2035,19 @@ func TestInferClassNestedClassVariance(t *testing.T) {
 			`,
 		},
 		{
+			// A write such as `h.r.value = 2` goes through `&'a mut Box<T>`, so `T` is invariant. Even an
+			// immutable `&H` reaches the mutable borrow the field holds and cannot widen.
+			name: "a mutable borrow in a field is invariant",
+			src: `
+				class Box<T> { value: T }
+				class H<'a, T> { readonly r: &'a mut Box<T> }
+				fn wide(h: &mut H<'static, number>) { }
+				fn narrow(h: &mut H<'static, 1>) { wide(h) }
+				fn widen(h: &H<'static, 1>) -> &H<'static, number> { return h }
+			`,
+			want: []string{"cannot constrain number <: 1", "cannot constrain number <: 1"},
+		},
+		{
 			name: "classes holding each other widen together",
 			src: `
 				class A<T> { readonly v: T, readonly b: B<T> | null }
