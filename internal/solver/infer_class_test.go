@@ -2035,8 +2035,9 @@ func TestInferClassNestedClassVariance(t *testing.T) {
 			`,
 		},
 		{
-			// A write such as `h.r.value = 2` goes through `&'a mut Box<T>`, so `T` is invariant. Even an
-			// immutable `&H` reaches the mutable borrow the field holds and cannot widen.
+			// A write such as `h.r.value = 2` goes through `&'a mut Box<T>`, so `T` is
+			// invariant. Even an immutable `&H` reaches the mutable borrow the field holds
+			// and cannot widen.
 			name: "a mutable borrow in a field is invariant",
 			src: `
 				class Box<T> { value: T }
