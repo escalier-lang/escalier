@@ -1797,8 +1797,14 @@ func TestInferClassSelfMethodInputVariance(t *testing.T) {
 			},
 		},
 		{
-			// `go` hands `probe` a `Keyed<string>` as a `Bag<number | string>`, so
-			// `contains(42)` would reach `self.key`, which takes only a `string`.
+			// `Keyed<string>` is a `Bag<string>` through its `extends` clause, and `Bag` is
+			// covariant, so `Keyed<string>` is also a `Bag<number | string>`. That is how
+			// `go` hands `k` to `probe`. `Keyed<string>` is not a `Keyed<number | string>`,
+			// since the `key` field makes `Keyed` invariant in `U`, but the `Bag` view is
+			// enough. Through it `contains(42)` runs this override, which passes `42` to
+			// `self.key`, a function that takes only a `string`. Every subtype relation
+			// here holds, so the checker rejects the override, the one place that assumes
+			// `x` is a `U`.
 			name: "a generic override holding a consumer of its parameter is rejected",
 			src: bag + `
 				class Keyed<U> extends Bag<U> {
