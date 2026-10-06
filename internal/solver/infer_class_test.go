@@ -1949,7 +1949,7 @@ func TestInferClassNestedClassVariance(t *testing.T) {
 	const sink = `
 		class Sink<T> {
 			readonly f: fn (x: T) -> undefined,
-			put(&self, x: T) -> undefined { return self.f(x) },
+			feed(&self, x: T) -> undefined { return self.f(x) },
 		}
 	`
 	tests := []struct {
@@ -1958,13 +1958,13 @@ func TestInferClassNestedClassVariance(t *testing.T) {
 		want []string
 	}{
 		{
-			// `W<number>` read as `W<number | string>` would let `put("s")` reach a
+			// `W<number>` read as `W<number | string>` would let `feed("s")` reach a
 			// `Sink<number>` whose `f` takes only a `number`.
 			name: "a contravariant nested class rejects a widening",
 			src: sink + `
 				class W<T> {
 					readonly sink: Sink<T>,
-					put(&self, x: T) -> undefined { return self.sink.put(x) },
+					feed(&self, x: T) -> undefined { return self.sink.feed(x) },
 				}
 				fn widen(w: &W<number>) -> &W<number | string> { return w }
 			`,
