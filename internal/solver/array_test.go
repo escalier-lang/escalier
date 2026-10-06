@@ -126,51 +126,43 @@ func TestCommittedCollectionsAreCovariantAndMutOnesAreNot(t *testing.T) {
 	}{
 		{
 			name: "ArrayWidensIntoAUnion",
-			src: `declare val a: Array<number>
-				val b: Array<number | string> = a`,
+			src: `fn f(a: &Array<number>) { val b: &Array<number | string> = a }`,
 		},
 		{
 			name: "ArrayWidensIntoAParameter",
-			src: `declare val a: Array<number>
-				fn f(xs: &Array<number | string>) -> number { return 0 }
-				val r = f(a)`,
+			src: `fn f(xs: &Array<number | string>) -> number { return 0 }
+				fn g(a: &Array<number>) -> number { return f(a) }`,
 		},
 		{
 			name: "ArrayOfAnUnrelatedElementIsRejectedOnce",
-			src: `declare val a: Array<string>
-				val b: Array<number> = a`,
+			src: `fn f(a: &Array<string>) { val b: &Array<number> = a }`,
 			want: []string{"cannot constrain string <: number"},
 		},
 		{
 			name: "MutArrayDoesNotWiden",
-			src: `declare val a: mut Array<number>
-				val b: mut Array<number | string> = a`,
+			src: `fn f(a: &mut Array<number>) { val b: &mut Array<number | string> = a }`,
 			want: []string{"cannot constrain string <: number"},
 		},
 		{
 			name: "SetWidens",
 			src: `import "std:set"
-				declare val a: set.Set<number>
-				val b: set.Set<number | string> = a`,
+				fn f(a: &set.Set<number>) { val b: &set.Set<number | string> = a }`,
 		},
 		{
 			name: "MutSetDoesNotWiden",
 			src: `import "std:set"
-				declare val a: mut set.Set<number>
-				val b: mut set.Set<number | string> = a`,
+				fn f(a: &mut set.Set<number>) { val b: &mut set.Set<number | string> = a }`,
 			want: []string{"cannot constrain string <: number"},
 		},
 		{
 			name: "MapWidensInBothParameters",
 			src: `import "std:map"
-				declare val a: map.Map<"k", number>
-				val b: map.Map<string, number | string> = a`,
+				fn f(a: &map.Map<"k", number>) { val b: &map.Map<string, number | string> = a }`,
 		},
 		{
 			name: "MutMapDoesNotWiden",
 			src: `import "std:map"
-				declare val a: mut map.Map<string, number>
-				val b: mut map.Map<string, number | string> = a`,
+				fn f(a: &mut map.Map<string, number>) { val b: &mut map.Map<string, number | string> = a }`,
 			want: []string{"cannot constrain string <: number"},
 		},
 	}

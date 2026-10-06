@@ -1830,9 +1830,9 @@ func TestInferClassSelfMethodInputVariance(t *testing.T) {
 			// `Bag<unknown>`.
 			name: "a generic override storing its parameter in a mut field is rejected",
 			src: bag + `
-				class Logged<U> extends Bag<U> {
-					sink: mut Array<U>,
-					constructor(&mut self, sink: mut Array<U>) {
+				class Logged<'a, U> extends Bag<U> {
+					sink: &'a mut Array<U>,
+					constructor(&mut self, sink: &'a mut Array<U>) {
 						super([])
 						self.sink = sink
 					},
