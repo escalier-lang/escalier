@@ -6,11 +6,24 @@ import (
 	"github.com/escalier-lang/escalier/internal/soltype"
 )
 
-// memberImpls holds the implementation signature of each method overload set in a class
-// declaration that has one, split by side the way the class body and its static view are.
+// memberImpls holds the implementation of each method overload set in a class declaration
+// that has one. arms holds the implementation arms as the declaration writes them, and
+// instance and static hold their signatures, split by side the way the class body and its
+// static view are.
 type memberImpls struct {
+	arms     set.Set[*ast.MethodElem]
 	instance *soltype.ObjectType
 	static   *soltype.ObjectType
+}
+
+// newMemberImpls returns the memberImpls for decl with every implementation arm found and
+// no signature recorded yet.
+func newMemberImpls(decl *ast.ClassDecl) memberImpls {
+	return memberImpls{
+		arms:     implementationArms(decl),
+		instance: &soltype.ObjectType{},
+		static:   &soltype.ObjectType{},
+	}
 }
 
 // implementationArms returns the implementation arm of every method overload set decl
@@ -60,10 +73,9 @@ func (c *checker) checkImplementations(def *ClassDef, decl *ast.ClassDecl, body,
 		return
 	}
 	rigid := c.ctx.skolemizeClassParams(def)
-	implArms := implementationArms(decl)
 	for _, member := range decl.Body {
 		elem, ok := member.(*ast.MethodElem)
-		if !ok || !implArms.Contains(elem) {
+		if !ok || !impls.arms.Contains(elem) {
 			continue
 		}
 		name, _ := objKeyName(elem.Name)

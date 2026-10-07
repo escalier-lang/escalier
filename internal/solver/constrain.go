@@ -2664,10 +2664,10 @@ func (c *Context) instantiateFuncBinder(ft *soltype.FuncType, lvl int) *soltype.
 	sub := newTypeSubst(ft.TypeParams, args, nil, nil)
 	for i, tp := range ft.TypeParams {
 		nvs[i].LowerBounds = acceptBounds(tp.Var.LowerBounds, sub)
-		// Read the declared bound so an instance's substitution reaches it. Copying the
-		// variable's own list would leave `U: T` naming the class's `T`, and a call would then
-		// record its argument on that class variable.
-		nvs[i].UpperBounds = acceptBounds(tp.DeclaredUpperBounds(), sub)
+		// Read the declared bound from Constraint so an instance's substitution reaches it.
+		// The variable's first bound would leave `U: T` naming the class's `T`, and a call
+		// would then record its argument on that class variable.
+		nvs[i].UpperBounds = acceptBounds(tp.AllUpperBounds(), sub)
 	}
 	return substFuncBinder(ft, sub)
 }

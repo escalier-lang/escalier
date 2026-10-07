@@ -354,7 +354,7 @@ func (s *skolemizer) EnterType(t soltype.Type, pol soltype.Polarity) soltype.Ent
 		for _, tp := range t.TypeParams {
 			sk := s.subst[tp.Var]
 			if sk.Upper == nil {
-				sk.Upper = s.skolemizeBound(tp.Var.UpperBounds)
+				sk.Upper = s.skolemizeBound(tp.DeclaredUpperBounds())
 			}
 		}
 		cp := *t

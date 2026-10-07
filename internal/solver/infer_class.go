@@ -152,7 +152,7 @@ func (c *checker) inferClassDecl(scope *Scope, lvl int, decl *ast.ClassDecl, ns 
 	ctors := collectConstructors(decl)
 	c.checkClassBodyLifetimes(decl)
 	c.buildFieldSigs(bodyScope, lvl, decl, body, static)
-	impls := memberImpls{instance: &soltype.ObjectType{}, static: &soltype.ObjectType{}}
+	impls := newMemberImpls(decl)
 	pending := c.buildMemberSigs(bodyScope, lvl, decl, self, body, static, impls)
 	// The `implements` check compares each entry against what the class wrote, so the names
 	// are taken before the clause below adds the entry's own members to a `declare` class.
@@ -214,9 +214,11 @@ func (c *checker) inferClassDecl(scope *Scope, lvl int, decl *ast.ClassDecl, ns 
 	if len(impls.instance.Elems) > 0 {
 		def.Impls = impls.instance
 	}
-	c.checkImplementations(def, decl, body, static, impls)
 	c.ctx.recordMethodLifetimes(body, keepLts)
 	c.ctx.recordMethodLifetimes(static, keepLts)
+	c.ctx.recordMethodLifetimes(impls.instance, keepLts)
+	c.ctx.recordMethodLifetimes(impls.static, keepLts)
+	c.checkImplementations(def, decl, body, static, impls)
 
 	// Freeze both per-parameter variance vectors once every member body has refined its
 	// signature, so the walk measures each type parameter at its final occurrences. The
@@ -1257,7 +1259,6 @@ func (c *checker) buildMemberSigs(
 	impls memberImpls,
 ) []pendingMember {
 	var pending []pendingMember
-	implArms := implementationArms(decl)
 	for _, elem := range decl.Body {
 		switch elem := elem.(type) {
 		case *ast.MethodElem:
@@ -1269,7 +1270,7 @@ func (c *checker) buildMemberSigs(
 			c.checkSelfReceiver(name, elem, elem.Static, elem.Receiver)
 			stub := c.memberSigStub(lvl, elem.Fn)
 			stub.SelfParam = c.selfParam(lvl, elem.Receiver, elem.Static, self)
-			if implArms.Contains(elem) {
+			if impls.arms.Contains(elem) {
 				// An implementation stays off the body a caller reads. Its body is still
 				// inferred against its own signature, and checkImplementations compares
 				// that signature with the set's bodiless ones.

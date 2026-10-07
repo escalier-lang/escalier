@@ -259,3 +259,47 @@ func TestAMethodImplementationIsCheckedApartFromItsSignatures(t *testing.T) {
 		})
 	}
 }
+
+// TestAnOverrideDiagnosticPointsAtTheArmItRejects asserts that a rejection of what a
+// widened view runs points at the implementation, and a rejection of what callers see
+// points at a signature, whichever order the arms are written in.
+func TestAnOverrideDiagnosticPointsAtTheArmItRejects(t *testing.T) {
+	tests := []struct {
+		name string
+		src  string
+		want []string
+	}{
+		{
+			name: "TheImplementationWrittenFirst",
+			src: bagSrc + `class NumBag extends Bag<number> {
+constructor(&mut self) { super([1]) },
+contains(&self, x: number | string) -> boolean { return false },
+contains(&self, x: number) -> boolean,
+}`,
+			want: []string{
+				"8:1-8:64: class `NumBag` redeclares inherited member `contains` with type " +
+					"`fn (x: number | string) -> boolean`, which is not compatible with " +
+					"`fn (x: unknown) -> boolean` declared by `Bag`",
+			},
+		},
+		{
+			name: "ASignatureWrittenBeforeTheImplementation",
+			src: bagSrc + `class NumBag extends Bag<number> {
+constructor(&mut self) { super([1]) },
+contains(&self, x: 1) -> boolean,
+contains(&self, x: unknown) -> boolean { return false },
+}`,
+			want: []string{
+				"8:1-8:33: class `NumBag` redeclares inherited member `contains` with type " +
+					"`fn (x: 1) -> boolean`, which is not compatible with " +
+					"`fn (x: number) -> boolean` declared by `Bag`",
+			},
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			_, _, errs := inferSource(t, tt.src)
+			require.Equal(t, tt.want, messagesWithSpan(t, errs))
+		})
+	}
+}

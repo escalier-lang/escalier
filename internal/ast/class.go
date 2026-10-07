@@ -194,7 +194,7 @@ func (m *MethodElem) Span() Span { return m.Span_ }
 // is a bodiless signature:
 //
 //	contains(&self, x: number) -> boolean,
-//	contains(&self, x: unknown) -> boolean { return typeof x == "number" },
+//	contains(&self, x: unknown) -> boolean { return false },
 //
 // Callers see the bodiless signatures. The implementation is the arm the runtime runs. arms
 // holds one overload set, the same-named arms that are all static or all instance members.

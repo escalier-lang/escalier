@@ -2177,6 +2177,7 @@ func (b *Builder) buildClassElems(inElems []ast.ClassElem, derived bool) ([]Clas
 	var allStmts []Stmt
 
 	overloads := groupOverloadableElems(inElems)
+	impls := methodImplementations(overloads)
 
 	for _, elem := range inElems {
 		switch e := elem.(type) {
@@ -2217,8 +2218,9 @@ func (b *Builder) buildClassElems(inElems []ast.ClassElem, derived bool) ([]Clas
 			// overloading, and a duplicate member name is legal there with the last
 			// definition winning, so emitting one member per arm would drop every arm
 			// but the last without a word.
-			siblings := overloads[methodGroupKey(e)]
-			if impl := ast.ImplementationArm(methodElems(siblings)); impl != nil {
+			key := methodGroupKey(e)
+			siblings := overloads[key]
+			if impl := impls[key]; impl != nil {
 				// The bodiless arms are signatures for the checker alone, so only the
 				// implementation emits, as an ordinary method with nothing to dispatch.
 				if impl != e {

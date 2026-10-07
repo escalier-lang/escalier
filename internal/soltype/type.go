@@ -336,6 +336,21 @@ func (tp *TypeParam) DeclaredUpperBounds() []Type {
 	return tp.Var.UpperBounds
 }
 
+// AllUpperBounds returns every upper bound an instantiation of tp has to respect. That is
+// the declared constraint followed by the bounds a body forced. Given `fn f<A: string>`,
+// the body of `fn g<U: number | string>(u: U) { return f(u) }` adds `string` to U's list.
+//
+// resolveTypeParams records the constraint as the variable's first upper bound. Accept
+// rewrites Constraint and not the list, so after a substitution the first bound is read
+// from Constraint and the rest from the list.
+func (tp *TypeParam) AllUpperBounds() []Type {
+	bounds := tp.Var.UpperBounds
+	if tp.Constraint == nil || len(bounds) == 0 || bounds[0] == tp.Constraint {
+		return bounds
+	}
+	return append([]Type{tp.Constraint}, bounds[1:]...)
+}
+
 // LifetimeParam is one quantified lifetime parameter, the lifetime-sort analogue of TypeParam,
 // shared by a function's or class's own lifetime params such as `fn get<'a>` and `class Ref<'a, T>`.
 // Var is minted one level deeper and freshened per use; Bounds are the outlives constraints, where

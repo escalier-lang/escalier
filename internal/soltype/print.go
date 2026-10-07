@@ -575,8 +575,8 @@ func freeTypeVars(t Type) []*TypeVarType {
 			for _, tp := range t.TypeParams {
 				seen.Add(tp.Var)
 			}
-			// Walk the bound the binder renders, so a variable that only a substituted-away
-			// bound names is not counted free.
+			// Walk the bound the binder renders. On a `C<number>`, `m<U: T>` renders as
+			// `U: number`, so C's `T` left on the variable's own list is not counted free.
 			for _, tp := range t.TypeParams {
 				for _, b := range tp.DeclaredUpperBounds() {
 					walk(b)

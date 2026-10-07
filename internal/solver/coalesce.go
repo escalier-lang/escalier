@@ -1624,13 +1624,13 @@ func equalTypeWith(a, b soltype.Type, ctx *alphaCtx) bool {
 		}
 		if len(a.TypeParams) > 0 {
 			// Bind the two functions' type parameters positionally, then compare each
-			// one's constraint (its variable's upper bounds) and default under that
+			// one's upper bounds and default under that
 			// binding. Binding all of them first lets a later parameter's constraint or
 			// default reference an earlier one.
 			ctx.bindTypeParams(a.TypeParams, b.TypeParams)
 			for i := range a.TypeParams {
 				at, bt := a.TypeParams[i], b.TypeParams[i]
-				if !equalTypeSliceWith(at.Var.UpperBounds, bt.Var.UpperBounds, ctx) {
+				if !equalTypeSliceWith(at.AllUpperBounds(), bt.AllUpperBounds(), ctx) {
 					return false
 				}
 				if (at.Default == nil) != (bt.Default == nil) {
