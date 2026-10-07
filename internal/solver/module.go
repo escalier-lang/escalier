@@ -221,8 +221,10 @@ func (c *checker) inferDepGraph(scope *Scope, lvl int, module *ast.Module, g *de
 // still puts every component after the components it depends on.
 //
 // The preferred edges are added beside the dep graph's own, and the strongly connected
-// components of the result are emitted in topological order. Components that only a
-// preferred edge joins into one cycle keep their original relative order.
+// components of the result are emitted in topological order. Components that a preferred
+// edge joins into one cycle are merged into one component, keeping their keys in their
+// original relative order. A reader of B in such a cycle is then generalized together
+// with B's value key, after linkMemberSig has bounded the member stubs the reader saw.
 func classBodiesFirst(g *dep_graph.DepGraph) [][]dep_graph.BindingKey {
 	index := make(map[dep_graph.BindingKey]int)
 	for i, component := range g.Components {
@@ -257,9 +259,15 @@ func classBodiesFirst(g *dep_graph.DepGraph) [][]dep_graph.BindingKey {
 	ordered := make([][]dep_graph.BindingKey, 0, len(g.Components))
 	for _, group := range graph.StronglyConnectedComponents(nodes, successors) {
 		sort.Ints(group)
-		for _, i := range group {
-			ordered = append(ordered, g.Components[i])
+		if len(group) == 1 {
+			ordered = append(ordered, g.Components[group[0]])
+			continue
 		}
+		var merged []dep_graph.BindingKey
+		for _, i := range group {
+			merged = append(merged, g.Components[i]...)
+		}
+		ordered = append(ordered, merged)
 	}
 	return ordered
 }

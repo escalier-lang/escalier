@@ -4116,3 +4116,45 @@ func TestInferClassReadsLaterClassMember(t *testing.T) {
 		})
 	}
 }
+
+// TestInferReaderOfLaterClassMemberType covers a function reading a member of a class it
+// forms a cycle with. f and g are inferred with B's value key, so the type each is
+// generalized at includes what B's method body returns.
+func TestInferReaderOfLaterClassMemberType(t *testing.T) {
+	tests := []struct {
+		name       string
+		src        string
+		wantValues map[string]string
+	}{
+		{
+			name: "ReaderChainBeforeMember",
+			src: `
+				fn f(b: B) { return b.m() }
+				fn g(b: B) { return f(b) }
+				class B { m(&self) { return 1 }, n(&self, b: B) { return g(b) } }
+			`,
+			wantValues: map[string]string{
+				"f": "fn (b: B) -> 1",
+				"g": "fn (b: B) -> 1",
+			},
+		},
+		{
+			name: "ReaderChainBeforeGetter",
+			src: `
+				fn f(b: B) { return b.v }
+				fn g(b: B) { return f(b) }
+				class B { get v(&self) { return "s" }, n(&self, b: B) { return g(b) } }
+			`,
+			wantValues: map[string]string{
+				"f": `fn (b: B) -> "s"`,
+				"g": `fn (b: B) -> "s"`,
+			},
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			classValues(t, test.src, test.wantValues, nil)
+		})
+	}
+}
