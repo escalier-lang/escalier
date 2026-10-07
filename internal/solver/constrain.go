@@ -2640,11 +2640,11 @@ func (c *Context) skolemizeParams(params []*soltype.TypeParam) *typeSubst {
 	}
 	sub := newTypeSubst(params, args, nil, nil)
 	for i, tp := range params {
-		// resolveTypeParams records at most one upper bound per parameter, itself an
+		// DeclaredUpperBounds yields at most one bound for a resolved parameter, itself an
 		// IntersectionType for a `<T: A & B>` bound, so the first bound is the whole declared
 		// constraint.
-		if len(tp.Var.UpperBounds) > 0 {
-			sks[i].Upper = tp.Var.UpperBounds[0].Accept(sub, soltype.Positive)
+		if bounds := tp.DeclaredUpperBounds(); len(bounds) > 0 {
+			sks[i].Upper = bounds[0].Accept(sub, soltype.Positive)
 		}
 	}
 	return sub
@@ -2664,7 +2664,10 @@ func (c *Context) instantiateFuncBinder(ft *soltype.FuncType, lvl int) *soltype.
 	sub := newTypeSubst(ft.TypeParams, args, nil, nil)
 	for i, tp := range ft.TypeParams {
 		nvs[i].LowerBounds = acceptBounds(tp.Var.LowerBounds, sub)
-		nvs[i].UpperBounds = acceptBounds(tp.Var.UpperBounds, sub)
+		// Read the declared bound so an instance's substitution reaches it. Copying the
+		// variable's own list would leave `U: T` naming the class's `T`, and a call would then
+		// record its argument on that class variable.
+		nvs[i].UpperBounds = acceptBounds(tp.DeclaredUpperBounds(), sub)
 	}
 	return substFuncBinder(ft, sub)
 }

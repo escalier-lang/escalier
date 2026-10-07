@@ -147,6 +147,14 @@ func TestInferBodyVariance(t *testing.T) {
 		}
 		return &soltype.MethodElem{Name: name, Signatures: []*soltype.FuncType{sig}}
 	}
+	// boundedSelfMethod builds `name<U: tv>(&self, x: U) -> ret`, a method whose own binder
+	// is bounded by the class's type parameter.
+	boundedSelfMethod := func(name, cls string, tv *soltype.TypeVarType, ret soltype.Type) *soltype.MethodElem {
+		u := &soltype.TypeVarType{ID: 2, UpperBounds: []soltype.Type{tv}}
+		m := selfMethod(name, cls, tv, u, ret)
+		m.Signatures[0].TypeParams = []*soltype.TypeParam{{Name: "U", Var: u, Constraint: tv}}
+		return m
+	}
 	// oneParam builds a single-type-parameter ClassDef so each case shares one var
 	// pointer between the TypeParams entry and the body, matching how inferClassDecl
 	// threads the same *TypeVarType through both.
@@ -374,6 +382,39 @@ func TestInferBodyVariance(t *testing.T) {
 			}),
 			want:    []Variance{Bivariant},
 			wantMut: []Variance{Contravariant},
+		},
+		{
+			// `m<U: T>(&self, x: U) -> boolean`. A binder's upper bound is an input
+			// position, so the bound alone makes `T` contravariant.
+			name: "a parameter only a method binder's bound names is contravariant",
+			def: oneParam(func(tv *soltype.TypeVarType) (*soltype.ObjectType, []*soltype.ClassType) {
+				return exactObj(boundedSelfMethod("m", "C", tv, boolT())), nil
+			}),
+			want:    []Variance{Contravariant},
+			wantMut: []Variance{Contravariant},
+		},
+		{
+			// `m<U: T>(&self, x: U) -> T`. The bound is an input to a `&self` method, so it
+			// counts the way `echo(&self, x: T) -> T` does. The return keeps `T` covariant
+			// and the bound marks it as a covariant input.
+			name: "a method binder's bound beside a return is a covariant input",
+			def: oneParam(func(tv *soltype.TypeVarType) (*soltype.ObjectType, []*soltype.ClassType) {
+				return exactObj(boundedSelfMethod("m", "C", tv, tv)), nil
+			}),
+			want:       []Variance{Covariant},
+			wantMut:    []Variance{Covariant},
+			wantInputs: []bool{true},
+		},
+		{
+			// `m<U: T>(&mut self, x: U)` is a mutator, whose inputs always count.
+			name: "a mut self method binder's bound beside a field is invariant",
+			def: oneParam(func(tv *soltype.TypeVarType) (*soltype.ObjectType, []*soltype.ClassType) {
+				m := boundedSelfMethod("m", "C", tv, boolT())
+				m.Signatures[0].SelfParam.Type = mutRef(&soltype.ClassType{Name: "C", TypeArgs: []soltype.Type{tv}})
+				return exactObj(readonlyProp("value", tv), m), nil
+			}),
+			want:    []Variance{Covariant},
+			wantMut: []Variance{Invariant},
 		},
 		{
 			name: "parameter reaching a super is invariant",

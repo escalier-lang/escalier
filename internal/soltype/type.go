@@ -320,6 +320,22 @@ type TypeParam struct {
 	Constraint Type // nil ⇒ unbounded
 }
 
+// DeclaredUpperBounds returns tp's upper bounds as its binder states them. That is the
+// declared Constraint when there is one, and the variable's upper-bound list otherwise. The
+// list is the fallback for a binder resolveTypeParams did not build, such as a prelude
+// parameter built with its bound already on the variable.
+//
+// The field and the list can disagree once a substitution has rewritten the binder. Accept
+// rewrites Constraint but leaves the variable's bound list alone, so on a `C<number>` the
+// method binder `m<U: T>` has a Constraint of `number` while its variable's list still names
+// C's own `T`.
+func (tp *TypeParam) DeclaredUpperBounds() []Type {
+	if tp.Constraint != nil {
+		return []Type{tp.Constraint}
+	}
+	return tp.Var.UpperBounds
+}
+
 // LifetimeParam is one quantified lifetime parameter, the lifetime-sort analogue of TypeParam,
 // shared by a function's or class's own lifetime params such as `fn get<'a>` and `class Ref<'a, T>`.
 // Var is minted one level deeper and freshened per use; Bounds are the outlives constraints, where

@@ -3080,7 +3080,7 @@ func TestInferClassMethodTypeParamRendering(t *testing.T) {
 				class C<U> { v: U, pick<T: U>(&self, x: T) -> T { return x }, }
 				fn probe(c: C<number>) { return c.pick }`,
 			binding: "probe",
-			want:    "fn <T0>(c: C<number>) -> fn <T: number>(x: T) -> T",
+			want:    "fn (c: C<number>) -> fn <T: number>(x: T) -> T",
 		},
 		{
 			name: "a signature mixing both binders",

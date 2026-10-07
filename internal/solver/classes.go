@@ -801,6 +801,26 @@ func (v *varianceVisitor) EnterType(t soltype.Type, pol soltype.Polarity) soltyp
 			t.Accept(v.withMutable(false), pol)
 			return soltype.EnterResult{SkipChildren: true}
 		}
+		if len(t.TypeParams) == 0 {
+			break
+		}
+		// A binder's upper bound limits what a caller may pass for it, so it is an input
+		// position and reads at the opposite polarity of the function. `T` in
+		// `m<U: T>(&self, x: U)` takes input the way it does in `m(&self, x: T)`. A default
+		// fills an argument the caller omits, so it reads at the function's own polarity.
+		// Accept walks both at the function's polarity, so the binders are walked here and
+		// the rest of the signature is handed back to Accept without them.
+		for _, tp := range t.TypeParams {
+			for _, b := range tp.DeclaredUpperBounds() {
+				b.Accept(v, pol.Flip())
+			}
+			if tp.Default != nil {
+				tp.Default.Accept(v, pol)
+			}
+		}
+		bare := *t
+		bare.TypeParams = nil
+		return soltype.EnterResult{Type: &bare}
 	case *soltype.AliasType:
 		// An alias stands for its body, so the body is what decides the polarity each
 		// argument lands at. A reference with no body to read, or one past maxAliasDepth,
