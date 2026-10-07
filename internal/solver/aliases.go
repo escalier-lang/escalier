@@ -71,15 +71,26 @@ type AliasDef struct {
 // returns the stored Body directly. An unregistered reference yields an ErrorType so it
 // absorbs.
 func (c *Context) expandAlias(ref *soltype.AliasType) soltype.Type {
-	def, ok := c.aliasDef(ref.Name)
-	if !ok || def.Body == nil {
+	body, ok := c.aliasBody(ref)
+	if !ok {
 		return &soltype.ErrorType{}
 	}
+	return body
+}
+
+// aliasBody returns the body an alias reference stands for, its TypeArgs substituted for
+// the AliasDef's type-parameter vars, or ok=false when the alias is not registered or its
+// body is not resolved yet.
+func (c *Context) aliasBody(ref *soltype.AliasType) (soltype.Type, bool) {
+	def, ok := c.aliasDef(ref.Name)
+	if !ok || def.Body == nil {
+		return nil, false
+	}
 	if len(def.TypeParams) == 0 && len(def.LifetimeParams) == 0 {
-		return def.Body
+		return def.Body, true
 	}
 	subst := newTypeSubst(def.TypeParams, ref.TypeArgs, def.LifetimeParams, ref.LifetimeArgs)
-	return def.Body.Accept(subst, soltype.Positive)
+	return def.Body.Accept(subst, soltype.Positive), true
 }
 
 // aliasShell carries an alias's pre-bound state from preBindAlias to inferAliasBody: the

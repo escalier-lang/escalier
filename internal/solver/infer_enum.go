@@ -117,9 +117,12 @@ func (c *checker) preBindEnum(scope *Scope, lvl int, decl *ast.EnumDecl, ns stri
 			Arity:       arityOfParams(typeParams),
 			Variance:    make([]Variance, len(typeParams)),
 			MutVariance: make([]Variance, len(typeParams)),
-			Body:        &soltype.ObjectType{},
-			Static:      &soltype.ObjectType{},
-			Level:       lvl - 1,
+			// A variant's Invariant vectors are final, so a class holding one measures
+			// against them rather than waiting on a measurement that never comes.
+			varianceMeasured: true,
+			Body:             &soltype.ObjectType{},
+			Static:           &soltype.ObjectType{},
+			Level:            lvl - 1,
 		})
 		c.recordType(variant.Name, vt)
 		variants = append(variants, variant)

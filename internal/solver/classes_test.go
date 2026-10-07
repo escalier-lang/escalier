@@ -104,6 +104,18 @@ func TestConstrainNominalArgVariance(t *testing.T) {
 	})
 }
 
+// stubVarianceEnv settles the classes it maps by name and registers no alias.
+type stubVarianceEnv map[string]*ClassDef
+
+func (env stubVarianceEnv) settledClassDef(name string) (*ClassDef, bool) {
+	def, ok := env[name]
+	return def, ok
+}
+
+func (stubVarianceEnv) aliasBody(*soltype.AliasType) (soltype.Type, bool) {
+	return nil, false
+}
+
 // TestInferBodyVariance covers C2's per-parameter variance measurement over a
 // hand-built class body, so each occurrence shape is isolated: a field is an output
 // position (covariant), a method value parameter is an input position (contravariant),
@@ -115,7 +127,14 @@ func TestConstrainNominalArgVariance(t *testing.T) {
 // mutable view, and they differ where a member an immutable reference cannot reach adds a
 // position only the mutable view has: a non-`readonly` field's write, a setter, and a
 // `mut self` method.
+//
+// The one other class settled is `Box<T>`, measured the way `class Box<T> { value: T }`
+// measures: covariant immutably and invariant through `mut`.
 func TestInferBodyVariance(t *testing.T) {
+	settled := stubVarianceEnv{"Box": {
+		Variance:    []Variance{Covariant},
+		MutVariance: []Variance{Invariant},
+	}}
 	// selfMethod builds a method whose receiver is the class instance at its own type
 	// parameter, plus one value parameter and a return, so the walk sees a genuine `self`
 	// it must exclude.
@@ -162,6 +181,11 @@ func TestInferBodyVariance(t *testing.T) {
 		def     *ClassDef
 		want    []Variance
 		wantMut []Variance
+		// wantInputs is the expected CovariantInputs vector. nil stands for no parameter
+		// marked.
+		wantInputs []bool
+		// self is the class name the body's own references carry.
+		self string
 	}{
 		{
 			name: "field only is covariant, and invariant under mut",
@@ -188,11 +212,55 @@ func TestInferBodyVariance(t *testing.T) {
 			wantMut: []Variance{Contravariant},
 		},
 		{
-			name: "field and parameter together are invariant",
+			// `accept` takes a `&self` receiver, so it cannot write the `T` it takes into
+			// `value`. Only the field write does that, and only the mutable view has it.
+			name: "a field and a self method parameter are covariant, and invariant under mut",
 			def: oneParam(func(tv *soltype.TypeVarType) (*soltype.ObjectType, []*soltype.ClassType) {
 				return exactObj(
 					propElem("value", tv),
 					selfMethod("accept", "Cell", tv, tv, &soltype.UndefinedType{}),
+				), nil
+			}),
+			want:       []Variance{Covariant},
+			wantMut:    []Variance{Invariant},
+			wantInputs: []bool{true},
+		},
+		{
+			// The `T` passed to `echo` can leave only through `echo`'s own return.
+			name: "a self method taking and returning the parameter is covariant",
+			def: oneParam(func(tv *soltype.TypeVarType) (*soltype.ObjectType, []*soltype.ClassType) {
+				return exactObj(selfMethod("echo", "Echo", tv, tv, tv)), nil
+			}),
+			want:       []Variance{Covariant},
+			wantMut:    []Variance{Covariant},
+			wantInputs: []bool{true},
+		},
+		{
+			// A `readonly` field cannot store the `T` either, so it gives `T` an output
+			// position and nothing more.
+			name: "a readonly field and a self method parameter are covariant in both views",
+			def: oneParam(func(tv *soltype.TypeVarType) (*soltype.ObjectType, []*soltype.ClassType) {
+				return exactObj(
+					readonlyProp("value", tv),
+					selfMethod("includes", "Bag", tv, tv, boolT()),
+				), nil
+			}),
+			want:       []Variance{Covariant},
+			wantMut:    []Variance{Covariant},
+			wantInputs: []bool{true},
+		},
+		{
+			// A field whose type takes `T` as input can hold a consumer the instance was
+			// built with, so its input position counts whatever the methods do.
+			name: "a field holding a consumer of the parameter is invariant beside a return",
+			def: oneParam(func(tv *soltype.TypeVarType) (*soltype.ObjectType, []*soltype.ClassType) {
+				consumer := &soltype.FuncType{
+					Params: []*soltype.FuncParam{{Pattern: &soltype.IdentPat{Name: "x"}, Type: tv}},
+					Ret:    &soltype.UndefinedType{},
+				}
+				return exactObj(
+					readonlyProp("sink", consumer),
+					selfMethod("get", "Hub", tv, num(), tv),
 				), nil
 			}),
 			want:    []Variance{Invariant},
@@ -208,13 +276,18 @@ func TestInferBodyVariance(t *testing.T) {
 		},
 		{
 			// The shape a `-> Self` return resolves to: the return is the class's own handle,
-			// carrying its type-parameter vars as arguments. That is an output position like
-			// any other return, so it measures covariant. The receiver holds the same handle
-			// and is still excluded, which is what keeps this from collapsing to invariant.
+			// carrying its type-parameter vars as arguments. It passes T on at the variance
+			// being solved for, which the `readonly` field makes covariant. The receiver
+			// holds the same handle and is still excluded, which is what keeps this from
+			// collapsing to invariant.
 			name: "method returning the class's own handle is covariant despite the self receiver",
+			self: "Box",
 			def: oneParam(func(tv *soltype.TypeVarType) (*soltype.ObjectType, []*soltype.ClassType) {
 				self := &soltype.ClassType{Name: "Box", TypeArgs: []soltype.Type{tv}}
-				return exactObj(selfMethod("fill", "Box", tv, num(), self)), nil
+				return exactObj(
+					readonlyProp("value", tv),
+					selfMethod("fill", "Box", tv, num(), self),
+				), nil
 			}),
 			want:    []Variance{Covariant},
 			wantMut: []Variance{Covariant},
@@ -314,9 +387,14 @@ func TestInferBodyVariance(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			immut, mut := inferBodyVariance(tt.def)
-			require.Equal(t, tt.want, immut)
-			require.Equal(t, tt.wantMut, mut)
+			m := inferBodyVariance(tt.def, tt.self, settled)
+			require.Equal(t, tt.want, m.immut)
+			require.Equal(t, tt.wantMut, m.mut)
+			wantInputs := tt.wantInputs
+			if wantInputs == nil {
+				wantInputs = make([]bool, len(tt.want))
+			}
+			require.Equal(t, wantInputs, m.covariantInputs)
 		})
 	}
 }

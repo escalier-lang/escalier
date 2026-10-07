@@ -194,6 +194,7 @@ func (c *checker) inferDepGraph(scope *Scope, lvl int, module *ast.Module, g *de
 	}
 	// Every class is inferred, so each superclass edge and body is final. Check the members
 	// each subclass redeclares against the ones they override.
+	c.settleQueuedVariance()
 	c.checkQueuedInheritedMembers()
 	c.checkQueuedImplements()
 	// Reconcile against the source: BuildDepGraph only produces binding keys for

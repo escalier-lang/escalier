@@ -112,6 +112,73 @@ func TestArrayIsCovariantAndMutArrayIsNot(t *testing.T) {
 	}
 }
 
+// The committed `Array` keeps the variance the test prelude's does, and so do `Set` and `Map`.
+// Their `&self` methods also take an element, as `includes(&self, searchElement: T)` and
+// `has(&self, value: T)` do. Those methods cannot store the element, so an immutable view stays
+// covariant. A `mut` view also reaches `push`, `add`, and `set`, which keeps it invariant.
+func TestCommittedCollectionsAreCovariantAndMutOnesAreNot(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name string
+		src  string
+		want []string
+	}{
+		{
+			name: "ArrayWidensIntoAUnion",
+			src:  `fn f(a: &Array<number>) { val b: &Array<number | string> = a }`,
+		},
+		{
+			name: "ArrayWidensIntoAParameter",
+			src: `fn f(xs: &Array<number | string>) -> number { return 0 }
+				fn g(a: &Array<number>) -> number { return f(a) }`,
+		},
+		{
+			name: "ArrayOfAnUnrelatedElementIsRejectedOnce",
+			src:  `fn f(a: &Array<string>) { val b: &Array<number> = a }`,
+			want: []string{"cannot constrain string <: number"},
+		},
+		{
+			name: "MutArrayDoesNotWiden",
+			src:  `fn f(a: &mut Array<number>) { val b: &mut Array<number | string> = a }`,
+			want: []string{"cannot constrain string <: number"},
+		},
+		{
+			name: "SetWidens",
+			src: `import "std:set"
+				fn f(a: &set.Set<number>) { val b: &set.Set<number | string> = a }`,
+		},
+		{
+			name: "MutSetDoesNotWiden",
+			src: `import "std:set"
+				fn f(a: &mut set.Set<number>) { val b: &mut set.Set<number | string> = a }`,
+			want: []string{"cannot constrain string <: number"},
+		},
+		{
+			name: "MapWidensInBothParameters",
+			src: `import "std:map"
+				fn f(a: &map.Map<"k", number>) { val b: &map.Map<string, number | string> = a }`,
+		},
+		{
+			name: "MutMapDoesNotWiden",
+			src: `import "std:map"
+				fn f(a: &mut map.Map<string, number>) { val b: &mut map.Map<string, number | string> = a }`,
+			want: []string{"cannot constrain string <: number"},
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			res := InferModuleAgainstStdlib(parseModule(t, tt.src), committedTree)
+			if len(tt.want) == 0 {
+				require.Empty(t, errorMessagesOf(res.Errors))
+				return
+			}
+			require.Equal(t, tt.want, errorMessagesOf(res.Errors))
+		})
+	}
+}
+
 // An iteration callback receives the collection as `&Self`, an immutable borrow of the
 // receiver. It can read the collection but neither change it nor keep it, and a widened
 // view of the collection cannot reach a write through it.

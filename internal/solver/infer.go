@@ -279,6 +279,11 @@ type checker struct {
 	// be checked against the members its clause names. It is queued for the reason
 	// pendingOverrides is.
 	pendingImplements []pendingImplementsCheck
+
+	// provisionalVariance holds every class whose variance was provisional when its body was
+	// inferred. settleQueuedVariance settles each once every class is inferred, and reports
+	// the declared modifiers its final variance rejects.
+	provisionalVariance []*ClassDef
 }
 
 // classShell carries the state preBindClassTypeParams resolved for one class declaration.
