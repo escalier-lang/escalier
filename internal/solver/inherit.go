@@ -31,8 +31,8 @@ type subtypeGoal struct {
 	owner                *soltype.ClassType
 }
 
-// memberBlameKey names one instance member of a class declaration, so a diagnostic can be
-// blamed on the source it was written at. A getter and a setter may share a name, so the
+// memberBlameKey names one instance member of a class or interface declaration, so what the
+// source wrote for it can be found again. A getter and a setter may share a name, so the
 // setter half is keyed apart from every other kind.
 type memberBlameKey struct {
 	name   string

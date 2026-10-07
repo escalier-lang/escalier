@@ -32,10 +32,10 @@ func TestInferMemberTypeAnnRoundTrip(t *testing.T) {
 		},
 		{"Getter", `type Result = {get a(&self) -> number}`, "{get a() -> number}"},
 		// A setter returns nothing, so it writes no `-> R`, the way a class body declares one.
-		{"Setter", `type Result = {set a(&self, v: number)}`, "{set a(value: number)}"},
+		{"Setter", `type Result = {set a(&mut self, v: number)}`, "{set a(value: number)}"},
 		{
 			"GetterAndSetter",
-			`type Result = {get a(&self) -> number, set a(&self, v: number)}`,
+			`type Result = {get a(&self) -> number, set a(&mut self, v: number)}`,
 			"{get a() -> number, set a(value: number)}",
 		},
 		{
@@ -151,17 +151,17 @@ func TestInferAccessorTypeAnnThrowsRoundTrip(t *testing.T) {
 		},
 		{
 			"Setter",
-			`type Result = {set a(&self, v: number) throws string}`,
+			`type Result = {set a(&mut self, v: number) throws string}`,
 			"{set a(value: number) throws string}",
 		},
 		{
 			"SetterWithReturnType",
-			`type Result = {set a(&self, v: number) -> undefined throws string}`,
+			`type Result = {set a(&mut self, v: number) -> undefined throws string}`,
 			"{set a(value: number) throws string}",
 		},
 		{
 			"Pair",
-			`type Result = {get a(&self) -> number throws string, set a(&self, v: number) throws boolean}`,
+			`type Result = {get a(&self) -> number throws string, set a(&mut self, v: number) throws boolean}`,
 			"{get a() -> number throws string, set a(value: number) throws boolean}",
 		},
 		{"NoClause", `type Result = {get a(&self) -> number}`, "{get a() -> number}"},
@@ -311,7 +311,7 @@ func TestInferAnnMemberRead(t *testing.T) {
 		{
 			name: "SetterOnlyNameIsWriteOnly",
 			src: `
-				declare fn make() -> {set a(&self, v: number), ...}
+				declare fn make() -> {set a(&mut self, v: number), ...}
 				val n = make().a
 			`,
 			want: []string{"3:13-3:21: Property 'a' is write-only; it has a setter but no getter or field to read."},
@@ -382,7 +382,7 @@ func TestInferAnnAccessorReadRaises(t *testing.T) {
 		{
 			name: "SetterWriteRaisesUndeclared",
 			src: `
-				declare fn make() -> mut {set a(&self, v: number) throws string, ...}
+				declare fn make() -> mut {set a(&mut self, v: number) throws string, ...}
 				fn g() { var o = make() o.a = 5 }
 			`,
 			want: []string{"3:29-3:36: cannot constrain string <: never"},
@@ -408,7 +408,7 @@ func TestInferAnnSetterWrite(t *testing.T) {
 		{
 			name: "Write",
 			src: `
-				declare fn make() -> mut {set a(&self, v: number), ...}
+				declare fn make() -> mut {set a(&mut self, v: number), ...}
 				fn g() { var o = make() o.a = 5 }
 			`,
 			want: nil,
@@ -416,7 +416,7 @@ func TestInferAnnSetterWrite(t *testing.T) {
 		{
 			name: "WrittenValueIsChecked",
 			src: `
-				declare fn make() -> mut {set a(&self, v: number), ...}
+				declare fn make() -> mut {set a(&mut self, v: number), ...}
 				fn g() { var o = make() o.a = "nope" }
 			`,
 			want: []string{`3:35-3:41: cannot constrain "nope" <: number`},
@@ -432,7 +432,7 @@ func TestInferAnnSetterWrite(t *testing.T) {
 		{
 			name: "PairWritesThenReads",
 			src: `
-				declare fn make() -> mut {get a(&self) -> number, set a(&self, v: number), ...}
+				declare fn make() -> mut {get a(&self) -> number, set a(&mut self, v: number), ...}
 				fn g() -> number { var o = make() o.a = 5 return o.a }
 			`,
 			want: nil,
@@ -479,8 +479,8 @@ func TestInferMemberTypeAnnDeduplicates(t *testing.T) {
 		},
 		{
 			name: "TwoSetters",
-			src:  `type Result = {set a(&self, v: number), set a(&self, v: string)}`,
-			want: []string{"1:45-1:46: An object type may declare 'a' only once."},
+			src:  `type Result = {set a(&mut self, v: number), set a(&mut self, v: string)}`,
+			want: []string{"1:49-1:50: An object type may declare 'a' only once."},
 			obj:  "{set a(value: string)}",
 		},
 		{
@@ -500,8 +500,8 @@ func TestInferMemberTypeAnnDeduplicates(t *testing.T) {
 			// together and lands at the getter's position. One member is written twice, so one
 			// error is reported however many earlier members it supersedes.
 			name: "PropertyDisplacesBothHalves",
-			src:  `type Result = {get a(&self) -> number, set a(&self, v: number), b: boolean, a: string}`,
-			want: []string{"1:77-1:78: An object type may declare 'a' only once."},
+			src:  `type Result = {get a(&self) -> number, set a(&mut self, v: number), b: boolean, a: string}`,
+			want: []string{"1:81-1:82: An object type may declare 'a' only once."},
 			obj:  "{a: string, b: boolean}",
 		},
 		{
@@ -509,13 +509,13 @@ func TestInferMemberTypeAnnDeduplicates(t *testing.T) {
 			// property's write falls free rather than staying pointed at the getter, so the
 			// setter lands beside it and adds no second error.
 			name: "GetterThenSetterOverAProperty",
-			src:  `type Result = {a: number, get a(&self) -> string, set a(&self, v: string)}`,
+			src:  `type Result = {a: number, get a(&self) -> string, set a(&mut self, v: string)}`,
 			want: []string{"1:31-1:32: An object type may declare 'a' only once."},
 			obj:  "{get a() -> string, set a(value: string)}",
 		},
 		{
 			name: "AccessorPairCoexists",
-			src:  `type Result = {get a(&self) -> number, set a(&self, v: number)}`,
+			src:  `type Result = {get a(&self) -> number, set a(&mut self, v: number)}`,
 			want: nil,
 			obj:  "{get a() -> number, set a(value: number)}",
 		},
@@ -556,13 +556,13 @@ func TestInferSetterTypeAnnArity(t *testing.T) {
 	}{
 		{
 			name: "NoValueParam",
-			src:  `type Result = {set a(&self)}`,
+			src:  `type Result = {set a(&mut self)}`,
 			want: []string{"1:20-1:21: Setter 'a' must declare exactly one value parameter; found 0."},
 			obj:  "{set a(value: unknown)}",
 		},
 		{
 			name: "TwoValueParams",
-			src:  `type Result = {set a(&self, v: number, w: string)}`,
+			src:  `type Result = {set a(&mut self, v: number, w: string)}`,
 			want: []string{"1:20-1:21: Setter 'a' must declare exactly one value parameter; found 2."},
 			obj:  "{set a(value: number)}",
 		},
@@ -572,6 +572,46 @@ func TestInferSetterTypeAnnArity(t *testing.T) {
 			nodes, _, errs := inferTypeNodes(t, tt.src)
 			require.Equal(t, tt.want, messagesWithSpan(t, errs))
 			require.Equal(t, tt.obj, soltype.Print(nodes["Result"]))
+		})
+	}
+}
+
+// TestInferSetterTypeAnnReceiver covers the receiver a setter in an object type may declare.
+// A setter writes through its receiver, so the class rule applies here too. Only `&mut self`
+// is accepted, and an annotation may also leave the receiver out.
+func TestInferSetterTypeAnnReceiver(t *testing.T) {
+	tests := []struct {
+		name string
+		src  string
+		want []string
+	}{
+		{
+			name: "MutBorrow",
+			src:  `type Result = {set a(&mut self, v: number)}`,
+		},
+		{
+			name: "NoReceiver",
+			src:  `type Result = {set a(v: number)}`,
+		},
+		{
+			name: "ImmutableBorrow",
+			src:  `type Result = {set a(&self, v: number)}`,
+			want: []string{"1:16-1:39: Setter 'a' must declare a `&mut self` receiver; writing through it mutates the instance."},
+		},
+		{
+			name: "Consuming",
+			src:  `type Result = {set a(mut self, v: number)}`,
+			want: []string{"1:16-1:42: Setter 'a' must declare a `&mut self` receiver; writing through it mutates the instance."},
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			_, _, errs := inferTypeNodes(t, tt.src)
+			if len(tt.want) == 0 {
+				require.Empty(t, messagesWithSpan(t, errs))
+				return
+			}
+			require.Equal(t, tt.want, messagesWithSpan(t, errs))
 		})
 	}
 }

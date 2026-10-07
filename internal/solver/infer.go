@@ -121,6 +121,13 @@ type checker struct {
 	// `Self` still resolves as an ordinary class reference with its own arity check.
 	selfClass *soltype.ClassType
 
+	// selfAlias is the handle `Self` names inside the interface body being walked, nil outside
+	// any interface body. inferInterfaceBody sets it and binds `Self` to it, the way
+	// inferClassDecl does selfClass. It is the interface's own alias at its own type-parameter
+	// vars, so `clone(&self) -> Self` reads as the interface. The `implements` check replaces it
+	// with the implementing class.
+	selfAlias *soltype.AliasType
+
 	// inputDepth counts how many parameter positions enclose the annotation being resolved, so
 	// a `Self` can be judged by the variance of where it was written. Each parameter position
 	// flips the variance, so an odd depth is contravariant and an even one covariant: a method's
@@ -267,6 +274,11 @@ type checker struct {
 	// rather than run inside inferClassDecl because a subclass can be inferred before its
 	// superclass. queueInheritedMemberCheck spells that ordering out.
 	pendingOverrides []pendingOverrideCheck
+
+	// pendingImplements holds every class carrying an `implements` clause, each waiting to
+	// be checked against the members its clause names. It is queued for the reason
+	// pendingOverrides is.
+	pendingImplements []pendingImplementsCheck
 }
 
 // classShell carries the state preBindClassTypeParams resolved for one class declaration.

@@ -351,6 +351,11 @@ func (l *objAnnLowering) lower(elem ast.ObjTypeAnnElem) (soltype.ObjTypeElem, bo
 			l.c.reportUnsupported(elem.Name)
 			return nil, true
 		}
+		// A setter writes through its receiver, so one written here has to be `&mut self`,
+		// the rule a class setter follows.
+		if invalidSetterReceiver(elem.Receiver) {
+			l.c.report(&SetterReceiverError{Name: name, Member: elem})
+		}
 		sig := l.c.mustResolveFuncTypeAnn(l.scope, elem.Fn, elem.Receiver, l.lvl)
 		// A well-formed setter declares exactly one value parameter beyond the receiver, the
 		// value being assigned. Report any other count and then build the element from the

@@ -303,8 +303,8 @@ func TestInferUnusedTypeParamOnClassAndEnum(t *testing.T) {
 			// So is an `implements` type argument, the only position T occupies here.
 			name: "ClassImplementsWritesTheParameter",
 			src: `
-				class Marker<T> { m: T }
-				class Tag<T> implements Marker<T> { constructor(&mut self) {} }
+				class Marker<T> { m?: T }
+				declare class Tag<T> implements Marker<T> { constructor(&mut self) }
 			`,
 		},
 		{

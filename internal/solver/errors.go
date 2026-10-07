@@ -435,6 +435,15 @@ type NonClassSuperError struct {
 	Name string
 }
 
+// ImplementsClassError fires when a class that is not `declare` names a class in its
+// `implements` clause. A class instance is not assignable to an unrelated class, so the
+// clause would promise a subtype relation the checker never grants. Ref carries the blame
+// span and Name the rendered reference.
+type ImplementsClassError struct {
+	Ref  *ast.TypeRefTypeAnn
+	Name string
+}
+
 // CannotExtendFinalClassError fires when an `extends` clause names a final class. A
 // final class has no subclasses (exact-types §2.6), so it cannot be a superclass. Ref
 // carries the blame span and Name the rendered reference.
@@ -497,6 +506,19 @@ type ConflictingImplementedMemberError struct {
 	Second       string
 	SecondMember soltype.Type
 	Node         ast.Node
+}
+
+// ClassDoesNotImplementInterfaceError fires when a class does not provide a member an entry
+// of its `implements` clause declares, or provides it in a form the entry does not accept.
+// Class is the class, Interface the entry as written, and Member the member's name. Reason is
+// "missing" for an absent member and otherwise says how the class's member disagrees. Node is
+// the clause entry.
+type ClassDoesNotImplementInterfaceError struct {
+	Class     string
+	Interface string
+	Member    string
+	Reason    string
+	Node      ast.Node
 }
 
 type IncompatibleOverrideError struct {
@@ -562,13 +584,15 @@ func (*BorrowEscapeError) isSolverError()            {}
 func (*ClassIntoExactObjectError) isSolverError()    {}
 func (*StructuralIntoClassError) isSolverError()     {}
 func (*NonClassSuperError) isSolverError()           {}
+func (*ImplementsClassError) isSolverError()         {}
 func (*CannotExtendFinalClassError) isSolverError()  {}
 func (*VarianceMismatchError) isSolverError()        {}
 func (*TypeParamNotProducibleError) isSolverError()  {}
 func (*IncompatibleOverrideError) isSolverError()    {}
 func (*OverrideFormMismatchError) isSolverError()    {}
 
-func (*ConflictingImplementedMemberError) isSolverError() {}
+func (*ConflictingImplementedMemberError) isSolverError()   {}
+func (*ClassDoesNotImplementInterfaceError) isSolverError() {}
 
 // --- Per-operand blame (§3.5): each constraint kind follows its operands through
 // Prov on demand, falling back to its own site (where it keeps one) ---
@@ -725,6 +749,9 @@ func (e *StructuralIntoClassError) Related() []ast.Span { return relatedOf(e.pro
 func (e *NonClassSuperError) Span() ast.Span      { return e.Ref.Span() }
 func (e *NonClassSuperError) Related() []ast.Span { return nil }
 
+func (e *ImplementsClassError) Span() ast.Span      { return e.Ref.Span() }
+func (e *ImplementsClassError) Related() []ast.Span { return nil }
+
 func (e *CannotExtendFinalClassError) Span() ast.Span      { return e.Ref.Span() }
 func (e *CannotExtendFinalClassError) Related() []ast.Span { return nil }
 
@@ -738,6 +765,9 @@ func (e *TypeParamNotProducibleError) Related() []ast.Span { return nil }
 // span when the class declares the name in a form that carries no node of its own.
 func (e *ConflictingImplementedMemberError) Span() ast.Span      { return spanOfNode(e.Node) }
 func (e *ConflictingImplementedMemberError) Related() []ast.Span { return nil }
+
+func (e *ClassDoesNotImplementInterfaceError) Span() ast.Span      { return spanOfNode(e.Node) }
+func (e *ClassDoesNotImplementInterfaceError) Related() []ast.Span { return nil }
 
 func (e *IncompatibleOverrideError) Span() ast.Span      { return spanOfNode(e.Node) }
 func (e *IncompatibleOverrideError) Related() []ast.Span { return nil }
@@ -1863,17 +1893,24 @@ func (e *GetterReceiverError) Message() string {
 	return "Getter '" + e.Name + "' must borrow its receiver with `&self` or `&mut self`; reading through it leaves the instance in place."
 }
 
-// SetterReceiverError fires when an instance setter declares a receiver other than `&mut
-// self`. Writing through a setter mutates the instance, so a shared `&self` receiver holds no
-// mutable access to do it with. A consuming `self` or `mut self` receiver would move the
-// instance on every write. A static setter has no instance to mutate and declares no
-// receiver, so it never reaches this.
+// SetterReceiverError fires when a setter in a class, an interface, or an object type declares
+// a receiver other than `&mut self`. Writing through a setter mutates the instance, so a shared
+// `&self` receiver holds no mutable access to do it with. A consuming `self` or `mut self`
+// receiver would move the instance on every write. A static setter has no instance to mutate
+// and declares no receiver, so it never reaches this. Member is the setter's declaration.
 type SetterReceiverError struct {
-	Name string
-	Elem *ast.SetterElem
+	Name   string
+	Member ast.Node
 }
 
-func (e *SetterReceiverError) Span() ast.Span      { return e.Elem.Span() }
+// invalidSetterReceiver reports whether recv is a written receiver a setter cannot declare.
+// An absent receiver is not one, since whether a member may omit it depends on where it is
+// declared.
+func invalidSetterReceiver(recv *ast.MethodReceiver) bool {
+	return recv != nil && (!recv.Mut || recv.Consumes())
+}
+
+func (e *SetterReceiverError) Span() ast.Span      { return e.Member.Span() }
 func (e *SetterReceiverError) Related() []ast.Span { return nil }
 func (e *SetterReceiverError) Message() string {
 	return "Setter '" + e.Name + "' must declare a `&mut self` receiver; writing through it mutates the instance."
@@ -2848,6 +2885,10 @@ func (e *StructuralIntoClassError) Message() string {
 	return fmt.Sprintf("cannot constrain object <: class %s", describe(e.Super))
 }
 
+func (e *ImplementsClassError) Message() string {
+	return fmt.Sprintf("`%s` is a class, and only a `declare class` may name a class in `implements`. Implement an interface instead.", e.Name)
+}
+
 func (e *NonClassSuperError) Message() string {
 	return fmt.Sprintf("`%s` does not name a class and cannot be extended or implemented.", e.Name)
 }
@@ -2869,6 +2910,15 @@ func (e *TypeParamNotProducibleError) Message() string {
 func (e *ConflictingImplementedMemberError) Message() string {
 	return fmt.Sprintf("class `%s` implements `%s` and `%s`, which declare `%s` differently: `%s` and `%s`",
 		e.Class, e.First, e.Second, e.Member, soltype.Print(e.FirstMember), soltype.Print(e.SecondMember))
+}
+
+func (e *ClassDoesNotImplementInterfaceError) Message() string {
+	if e.Reason == "missing" {
+		return fmt.Sprintf("Class '%s' does not implement interface '%s': missing member '%s'",
+			e.Class, e.Interface, e.Member)
+	}
+	return fmt.Sprintf("Class '%s' does not implement interface '%s': member '%s' %s",
+		e.Class, e.Interface, e.Member, e.Reason)
 }
 
 func (e *IncompatibleOverrideError) Message() string {

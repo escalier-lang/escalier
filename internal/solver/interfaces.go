@@ -129,6 +129,20 @@ func (c *checker) inferInterfaceBody(sh *interfaceShell) {
 	// the other.
 	b := newObjElemBuilder(0)
 	var parents []soltype.Type
+
+	// Bind `Self` to the interface's own handle for the member bodies, so a member such as
+	// `clone(&self) -> Self` resolves. The binding sits in a child scope that the `extends`
+	// references below do not see, since `Self` there would name the interface being built.
+	selfAlias := &soltype.AliasType{
+		Name:     sh.qname,
+		TypeArgs: typeParamVars(sh.def.TypeParams),
+		Defaults: paramDefaults(sh.def.TypeParams),
+	}
+	bodyScope := sh.declScope.Child()
+	bodyScope.defineType(selfTypeName, TypeBinding{Type: selfAlias})
+	savedSelfAlias := c.selfAlias
+	c.selfAlias = selfAlias
+	defer func() { c.selfAlias = savedSelfAlias }()
 	for _, decl := range sh.decls {
 		for _, ext := range decl.Extends {
 			if parent, ok := c.resolveTypeAnn(sh.declScope, ext, sh.lvl); ok {
@@ -140,7 +154,8 @@ func (c *checker) inferInterfaceBody(sh *interfaceShell) {
 		if decl.TypeAnn == nil {
 			continue
 		}
-		resolved, ok := c.resolveObjectTypeAnn(sh.declScope, decl.TypeAnn, sh.lvl)
+		recordInterfaceReceivers(sh.def, decl.TypeAnn)
+		resolved, ok := c.resolveObjectTypeAnn(bodyScope, decl.TypeAnn, sh.lvl)
 		if !ok {
 			continue
 		}
@@ -169,6 +184,40 @@ func (c *checker) inferInterfaceBody(sh *interfaceShell) {
 	// built is named rather than read. That is what lets `interface A {b: B}` and
 	// `interface B extends A {x}` resolve each other.
 	sh.def.Body = &soltype.IntersectionType{Types: append(parents, own)}
+}
+
+// recordInterfaceReceivers stores on def the receiver each method, getter, and setter in body
+// writes. A later declaration of a name replaces an earlier one's entry.
+func recordInterfaceReceivers(def *AliasDef, body *ast.ObjectTypeAnn) {
+	for _, elem := range body.Elems {
+		var key ast.ObjKey
+		var recv *ast.MethodReceiver
+		setter := false
+		switch elem := elem.(type) {
+		case *ast.MethodTypeAnn:
+			key, recv = elem.Name, elem.Receiver
+		case *ast.GetterTypeAnn:
+			key, recv = elem.Name, elem.Receiver
+		case *ast.SetterTypeAnn:
+			// A receiver no setter may declare is already reported where the body is
+			// lowered. Leaving it unrecorded keeps `implements` from comparing against it and
+			// reporting the same mistake again on each implementing class.
+			if invalidSetterReceiver(elem.Receiver) {
+				continue
+			}
+			key, recv, setter = elem.Name, elem.Receiver, true
+		default:
+			continue
+		}
+		name, ok := objKeyName(key)
+		if !ok {
+			continue
+		}
+		if def.Receivers == nil {
+			def.Receivers = map[memberBlameKey]*ast.MethodReceiver{}
+		}
+		def.Receivers[memberBlameKey{name: name, setter: setter}] = recv
+	}
 }
 
 // typeParamMismatch reports whether a later declaration's type parameters can

@@ -470,7 +470,7 @@ func TestClassArityAcrossRemainingRefForms(t *testing.T) {
 		`},
 		{name: "Implements", src: `
 			class Box<T> { value: T }
-			class Wrapper implements Box { value: number }
+			declare class Wrapper implements Box { value: number }
 		`},
 		{name: "TypeParamBound", src: `
 			class Box<T> { value: T }

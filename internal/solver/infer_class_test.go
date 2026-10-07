@@ -601,8 +601,10 @@ func TestInferDeclareClassImplementsInterface(t *testing.T) {
 			}
 			fn f(p: Person) { return p.name }
 		`)
-		require.Len(t, errs, 1)
-		require.Equal(t, "object is missing property: name", errs[0].Message())
+		require.Equal(t, []string{
+			"object is missing property: name",
+			"Class 'Person' does not implement interface 'Named': missing member 'name'",
+		}, errorMessagesOf(errs))
 	})
 }
 
