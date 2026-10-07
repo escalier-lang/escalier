@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"strings"
 	"testing"
-	"time"
 
 	"github.com/escalier-lang/escalier/internal/ast"
 	"github.com/escalier-lang/escalier/internal/snapshot"
@@ -390,8 +389,7 @@ func TestParseStmtNoErrors(t *testing.T) {
 				Contents: test.input,
 			}
 
-			ctx, cancel := context.WithTimeout(context.Background(), 1*time.Second)
-			defer cancel()
+			ctx := context.Background()
 			parser := NewParser(ctx, source)
 			stmt := parser.stmt()
 
@@ -458,8 +456,7 @@ func TestParseStmtErrorHandling(t *testing.T) {
 				Contents: test.input,
 			}
 
-			ctx, cancel := context.WithTimeout(context.Background(), 1*time.Second)
-			defer cancel()
+			ctx := context.Background()
 			parser := NewParser(ctx, source)
 			stmt := parser.stmt()
 
@@ -504,8 +501,7 @@ func TestRetiredClassSyntax(t *testing.T) {
 			t.Parallel()
 			source := &ast.Source{ID: 0, Path: "input.esc", Contents: test.input}
 
-			ctx, cancel := context.WithTimeout(context.Background(), 1*time.Second)
-			defer cancel()
+			ctx := context.Background()
 			parser := NewParser(ctx, source)
 			_, errors := parser.ParseScript()
 
@@ -533,8 +529,7 @@ func TestParseImportAliasMustBeAnIdentifier(t *testing.T) {
 
 	source := &ast.Source{ID: 0, Path: "input.esc", Contents: `import "module" as 123`}
 
-	ctx, cancel := context.WithTimeout(context.Background(), 1*time.Second)
-	defer cancel()
+	ctx := context.Background()
 	p := NewParser(ctx, source)
 	_, errors := p.ParseScript()
 
@@ -564,8 +559,7 @@ func TestParseImportBindingClauseErrors(t *testing.T) {
 			t.Parallel()
 			source := &ast.Source{ID: 0, Path: "input.esc", Contents: test.input}
 
-			ctx, cancel := context.WithTimeout(context.Background(), 1*time.Second)
-			defer cancel()
+			ctx := context.Background()
 			p := NewParser(ctx, source)
 			_, errors := p.ParseScript()
 

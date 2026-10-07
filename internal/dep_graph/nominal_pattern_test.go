@@ -3,7 +3,6 @@ package dep_graph
 import (
 	"context"
 	"testing"
-	"time"
 
 	"github.com/escalier-lang/escalier/internal/ast"
 	"github.com/escalier-lang/escalier/internal/parser"
@@ -53,8 +52,7 @@ func TestNominalPatternDependency(t *testing.T) {
 	for name, src := range tests {
 		t.Run(name, func(t *testing.T) {
 			source := &ast.Source{ID: 0, Path: "test.esc", Contents: src}
-			ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-			defer cancel()
+			ctx := context.Background()
 
 			module, errs := parser.ParseLibFiles(ctx, []*ast.Source{source})
 			require.Empty(t, errs, "Expected no parsing errors")

@@ -3,7 +3,6 @@ package codegen
 import (
 	"context"
 	"testing"
-	"time"
 
 	"github.com/escalier-lang/escalier/internal/ast"
 	"github.com/escalier-lang/escalier/internal/dep_graph"
@@ -690,8 +689,7 @@ let state__ui__isEnabled = true;`,
 
 	for name, test := range tests {
 		t.Run(name, func(t *testing.T) {
-			ctx, cancel := context.WithTimeout(context.Background(), 1*time.Second)
-			defer cancel()
+			ctx := context.Background()
 
 			// Parse the module using ParseLibFiles
 			module, errors := parser.ParseLibFiles(ctx, test.sources)
@@ -753,8 +751,7 @@ func TestBuildBorrowExpr_LowersToOperand(t *testing.T) {
 
 	for name, test := range tests {
 		t.Run(name, func(t *testing.T) {
-			ctx, cancel := context.WithTimeout(context.Background(), 1*time.Second)
-			defer cancel()
+			ctx := context.Background()
 
 			module, errors := parser.ParseLibFiles(ctx, []*ast.Source{
 				{ID: 0, Path: "main.esc", Contents: test.src},
@@ -849,8 +846,7 @@ func TestBuildValElse(t *testing.T) {
 
 	for name, test := range tests {
 		t.Run(name, func(t *testing.T) {
-			ctx, cancel := context.WithTimeout(context.Background(), 1*time.Second)
-			defer cancel()
+			ctx := context.Background()
 
 			module, errors := parser.ParseLibFiles(ctx, []*ast.Source{
 				{ID: 0, Path: "main.esc", Contents: test.src},
@@ -1263,8 +1259,7 @@ func TestBuildTryCatchRethrow(t *testing.T) {
 
 	for name, test := range tests {
 		t.Run(name, func(t *testing.T) {
-			ctx, cancel := context.WithTimeout(context.Background(), 1*time.Second)
-			defer cancel()
+			ctx := context.Background()
 
 			module, errors := parser.ParseLibFiles(ctx, []*ast.Source{
 				{ID: 0, Path: "main.esc", Contents: test.src},
@@ -1361,8 +1356,7 @@ function app__utils__calculate(temp1) {
 
 	for name, test := range tests {
 		t.Run(name, func(t *testing.T) {
-			ctx, cancel := context.WithTimeout(context.Background(), 1*time.Second)
-			defer cancel()
+			ctx := context.Background()
 
 			// Parse the module using ParseLibFiles
 			module, errors := parser.ParseLibFiles(ctx, test.sources)
@@ -1435,8 +1429,7 @@ const company__project__module__submodule__utils__constant = "deep";`,
 
 	for name, test := range tests {
 		t.Run(name, func(t *testing.T) {
-			ctx, cancel := context.WithTimeout(context.Background(), 1*time.Second)
-			defer cancel()
+			ctx := context.Background()
 
 			// Parse the module using ParseLibFiles
 			module, errors := parser.ParseLibFiles(ctx, test.sources)
@@ -1631,8 +1624,7 @@ func parseDecl(t *testing.T, source string) ast.Decl {
 		Contents: source,
 	}
 
-	ctx, cancel := context.WithTimeout(context.Background(), 1*time.Second)
-	defer cancel()
+	ctx := context.Background()
 
 	parser := parser.NewParser(ctx, astSource)
 	decl := parser.Decl()

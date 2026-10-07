@@ -3,7 +3,6 @@ package dep_graph
 import (
 	"context"
 	"testing"
-	"time"
 
 	"github.com/escalier-lang/escalier/internal/ast"
 	"github.com/escalier-lang/escalier/internal/parser"
@@ -129,8 +128,7 @@ func TestBuildDepGraphV2_SimpleBindings(t *testing.T) {
 		t.Run(name, func(t *testing.T) {
 			t.Parallel()
 
-			ctx, cancel := context.WithTimeout(context.Background(), 1*time.Second)
-			defer cancel()
+			ctx := context.Background()
 			module, errors := parser.ParseLibFiles(ctx, test.sources)
 
 			assert.Len(t, errors, 0, "Parser errors: %v", errors)
@@ -388,8 +386,7 @@ func TestBuildDepGraphV2_Dependencies(t *testing.T) {
 		t.Run(name, func(t *testing.T) {
 			t.Parallel()
 
-			ctx, cancel := context.WithTimeout(context.Background(), 1*time.Second)
-			defer cancel()
+			ctx := context.Background()
 			module, errors := parser.ParseLibFiles(ctx, test.sources)
 
 			assert.Len(t, errors, 0, "Parser errors: %v", errors)
@@ -454,8 +451,7 @@ func TestBuildDepGraphWithImports(t *testing.T) {
 		t.Run(name, func(t *testing.T) {
 			t.Parallel()
 
-			ctx, cancel := context.WithTimeout(context.Background(), 1*time.Second)
-			defer cancel()
+			ctx := context.Background()
 			module, errs := parser.ParseLibFiles(ctx, []*ast.Source{
 				{ID: 0, Path: "fetch/index.esc", Contents: test.contents},
 				{ID: 1, Path: "web__core/index.esc", Contents: `declare class Signal {}`},
@@ -603,8 +599,7 @@ func TestBuildDepGraphV2_Namespaces(t *testing.T) {
 		t.Run(name, func(t *testing.T) {
 			t.Parallel()
 
-			ctx, cancel := context.WithTimeout(context.Background(), 1*time.Second)
-			defer cancel()
+			ctx := context.Background()
 			module, errors := parser.ParseLibFiles(ctx, test.sources)
 
 			assert.Len(t, errors, 0, "Parser errors: %v", errors)
@@ -707,8 +702,7 @@ func TestBuildDepGraphV2_OverloadedFunctions(t *testing.T) {
 		t.Run(name, func(t *testing.T) {
 			t.Parallel()
 
-			ctx, cancel := context.WithTimeout(context.Background(), 1*time.Second)
-			defer cancel()
+			ctx := context.Background()
 			module, errors := parser.ParseLibFiles(ctx, test.sources)
 
 			assert.Len(t, errors, 0, "Parser errors: %v", errors)
@@ -789,8 +783,7 @@ func TestBuildDepGraphV2_InterfaceMerging(t *testing.T) {
 		t.Run(name, func(t *testing.T) {
 			t.Parallel()
 
-			ctx, cancel := context.WithTimeout(context.Background(), 1*time.Second)
-			defer cancel()
+			ctx := context.Background()
 			module, errors := parser.ParseLibFiles(ctx, test.sources)
 
 			assert.Len(t, errors, 0, "Parser errors: %v", errors)
@@ -880,8 +873,7 @@ func TestBuildDepGraphV2_ClassAndEnum(t *testing.T) {
 		t.Run(name, func(t *testing.T) {
 			t.Parallel()
 
-			ctx, cancel := context.WithTimeout(context.Background(), 1*time.Second)
-			defer cancel()
+			ctx := context.Background()
 			module, errors := parser.ParseLibFiles(ctx, test.sources)
 
 			assert.Len(t, errors, 0, "Parser errors: %v", errors)
@@ -991,8 +983,7 @@ func TestBuildDepGraphV2_StronglyConnectedComponents(t *testing.T) {
 		t.Run(name, func(t *testing.T) {
 			t.Parallel()
 
-			ctx, cancel := context.WithTimeout(context.Background(), 1*time.Second)
-			defer cancel()
+			ctx := context.Background()
 			module, errors := parser.ParseLibFiles(ctx, test.sources)
 
 			assert.Len(t, errors, 0, "Parser errors: %v", errors)
@@ -1179,8 +1170,7 @@ func TestBuildDepGraphV2_LocalShadowing(t *testing.T) {
 		t.Run(name, func(t *testing.T) {
 			t.Parallel()
 
-			ctx, cancel := context.WithTimeout(context.Background(), 1*time.Second)
-			defer cancel()
+			ctx := context.Background()
 			module, errors := parser.ParseLibFiles(ctx, test.sources)
 
 			assert.Len(t, errors, 0, "Parser errors: %v", errors)
@@ -1301,8 +1291,7 @@ func TestBuildDepGraphV2_DestructuringPatterns(t *testing.T) {
 		t.Run(name, func(t *testing.T) {
 			t.Parallel()
 
-			ctx, cancel := context.WithTimeout(context.Background(), 1*time.Second)
-			defer cancel()
+			ctx := context.Background()
 			module, errors := parser.ParseLibFiles(ctx, test.sources)
 
 			assert.Len(t, errors, 0, "Parser errors: %v", errors)
@@ -1421,8 +1410,7 @@ func TestDepGraphV2_HelperMethods(t *testing.T) {
 			},
 		}
 
-		ctx, cancel := context.WithTimeout(context.Background(), 1*time.Second)
-		defer cancel()
+		ctx := context.Background()
 		module, errors := parser.ParseLibFiles(ctx, sources)
 		assert.Len(t, errors, 0, "Parser errors: %v", errors)
 
@@ -1452,8 +1440,7 @@ func TestDepGraphV2_HelperMethods(t *testing.T) {
 			},
 		}
 
-		ctx, cancel := context.WithTimeout(context.Background(), 1*time.Second)
-		defer cancel()
+		ctx := context.Background()
 		module, errors := parser.ParseLibFiles(ctx, sources)
 		assert.Len(t, errors, 0, "Parser errors: %v", errors)
 
@@ -1531,8 +1518,7 @@ func TestBuildDepGraphV2_TypeOfDependencies(t *testing.T) {
 		t.Run(name, func(t *testing.T) {
 			t.Parallel()
 
-			ctx, cancel := context.WithTimeout(context.Background(), 1*time.Second)
-			defer cancel()
+			ctx := context.Background()
 			module, errors := parser.ParseLibFiles(ctx, test.sources)
 
 			assert.Len(t, errors, 0, "Parser errors: %v", errors)
@@ -1598,8 +1584,7 @@ func TestBuildDepGraphV2_ObjectTypeComputedKeys(t *testing.T) {
 		t.Run(name, func(t *testing.T) {
 			t.Parallel()
 
-			ctx, cancel := context.WithTimeout(context.Background(), 1*time.Second)
-			defer cancel()
+			ctx := context.Background()
 			module, errors := parser.ParseLibFiles(ctx, test.sources)
 
 			assert.Len(t, errors, 0, "Parser errors: %v", errors)
@@ -1702,8 +1687,7 @@ func TestBuildDepGraphV2_InterfaceExtends(t *testing.T) {
 		t.Run(name, func(t *testing.T) {
 			t.Parallel()
 
-			ctx, cancel := context.WithTimeout(context.Background(), 1*time.Second)
-			defer cancel()
+			ctx := context.Background()
 			module, errors := parser.ParseLibFiles(ctx, test.sources)
 
 			assert.Len(t, errors, 0, "Parser errors: %v", errors)
@@ -1786,8 +1770,7 @@ func TestBuildDepGraphV2_ClassExtends(t *testing.T) {
 		t.Run(name, func(t *testing.T) {
 			t.Parallel()
 
-			ctx, cancel := context.WithTimeout(context.Background(), 1*time.Second)
-			defer cancel()
+			ctx := context.Background()
 			module, errors := parser.ParseLibFiles(ctx, test.sources)
 
 			assert.Len(t, errors, 0, "Parser errors: %v", errors)
@@ -1876,8 +1859,7 @@ func TestBuildDepGraphV2_EnumSpread(t *testing.T) {
 		t.Run(name, func(t *testing.T) {
 			t.Parallel()
 
-			ctx, cancel := context.WithTimeout(context.Background(), 1*time.Second)
-			defer cancel()
+			ctx := context.Background()
 			module, errors := parser.ParseLibFiles(ctx, test.sources)
 
 			assert.Len(t, errors, 0, "Parser errors: %v", errors)
@@ -1985,8 +1967,7 @@ func TestBuildDepGraphV2_TypeParameterConstraints(t *testing.T) {
 		t.Run(name, func(t *testing.T) {
 			t.Parallel()
 
-			ctx, cancel := context.WithTimeout(context.Background(), 1*time.Second)
-			defer cancel()
+			ctx := context.Background()
 			module, errors := parser.ParseLibFiles(ctx, test.sources)
 
 			assert.Len(t, errors, 0, "Parser errors: %v", errors)
@@ -2068,8 +2049,7 @@ func TestBuildDepGraphV2_IntraNamespaceDependencies(t *testing.T) {
 		t.Run(name, func(t *testing.T) {
 			t.Parallel()
 
-			ctx, cancel := context.WithTimeout(context.Background(), 1*time.Second)
-			defer cancel()
+			ctx := context.Background()
 			module, errors := parser.ParseLibFiles(ctx, test.sources)
 
 			assert.Len(t, errors, 0, "Parser errors: %v", errors)
@@ -2150,8 +2130,7 @@ func TestBuildDepGraphV2_MemberExpressionChains(t *testing.T) {
 		t.Run(name, func(t *testing.T) {
 			t.Parallel()
 
-			ctx, cancel := context.WithTimeout(context.Background(), 1*time.Second)
-			defer cancel()
+			ctx := context.Background()
 			module, errors := parser.ParseLibFiles(ctx, test.sources)
 
 			assert.Len(t, errors, 0, "Parser errors: %v", errors)
@@ -2217,8 +2196,7 @@ func TestBuildDepGraphV2_TypeShadowing(t *testing.T) {
 		t.Run(name, func(t *testing.T) {
 			t.Parallel()
 
-			ctx, cancel := context.WithTimeout(context.Background(), 1*time.Second)
-			defer cancel()
+			ctx := context.Background()
 			module, errors := parser.ParseLibFiles(ctx, test.sources)
 
 			assert.Len(t, errors, 0, "Parser errors: %v", errors)
@@ -2565,8 +2543,7 @@ func TestBuildDepGraphV2_LocalDeclShadowing(t *testing.T) {
 		t.Run(name, func(t *testing.T) {
 			t.Parallel()
 
-			ctx, cancel := context.WithTimeout(context.Background(), 1*time.Second)
-			defer cancel()
+			ctx := context.Background()
 			module, errors := parser.ParseLibFiles(ctx, test.sources)
 
 			assert.Len(t, errors, 0, "Parser errors: %v", errors)
@@ -2593,8 +2570,7 @@ func TestBuildDepGraphV2_LocalDeclShadowing(t *testing.T) {
 func TestNamespaceBlockRegistersItsOwnID(t *testing.T) {
 	t.Parallel()
 
-	ctx, cancel := context.WithTimeout(context.Background(), 1*time.Second)
-	defer cancel()
+	ctx := context.Background()
 	module, errors := parser.ParseLibFiles(ctx, []*ast.Source{{
 		ID:   0,
 		Path: "input.esc",

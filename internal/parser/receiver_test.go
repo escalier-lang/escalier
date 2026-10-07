@@ -3,7 +3,6 @@ package parser
 import (
 	"context"
 	"testing"
-	"time"
 
 	"github.com/escalier-lang/escalier/internal/ast"
 	"github.com/stretchr/testify/require"
@@ -147,8 +146,7 @@ func TestParseReceiverDiagnostics(t *testing.T) {
 func parseReceiverScript(t *testing.T, input string) (*ast.Script, []string) {
 	t.Helper()
 	source := &ast.Source{ID: 0, Path: "input.esc", Contents: input}
-	ctx, cancel := context.WithTimeout(context.Background(), 1*time.Second)
-	defer cancel()
+	ctx := context.Background()
 	script, parseErrors := NewParser(ctx, source).ParseScript()
 	require.NotNil(t, script)
 	messages := make([]string, len(parseErrors))

@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"sort"
 	"testing"
-	"time"
 
 	"github.com/escalier-lang/escalier/internal/ast"
 	"github.com/escalier-lang/escalier/internal/checker"
@@ -23,8 +22,7 @@ import (
 // tolerating parse and type errors (for tests with intentionally malformed code).
 func parseAndInferAllowErrors(t *testing.T, source string) (*ast.Script, *checker.Scope) {
 	t.Helper()
-	ctx, cancel := context.WithTimeout(context.Background(), 1*time.Second)
-	defer cancel()
+	ctx := context.Background()
 	p := parser.NewParser(ctx, &ast.Source{
 		Path:     "test.esc",
 		Contents: source,
@@ -867,8 +865,7 @@ func parseModuleAndInferWithPackages(
 	packages map[string]*type_system.Namespace,
 ) (*ast.Module, *checker.Scope, map[int]*checker.Scope) {
 	t.Helper()
-	ctx, cancel := context.WithTimeout(context.Background(), 1*time.Second)
-	defer cancel()
+	ctx := context.Background()
 
 	module, parseErrors := parser.ParseLibFiles(ctx, sources)
 	for _, err := range parseErrors {

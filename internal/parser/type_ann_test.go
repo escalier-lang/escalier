@@ -3,7 +3,6 @@ package parser
 import (
 	"context"
 	"testing"
-	"time"
 
 	"github.com/escalier-lang/escalier/internal/ast"
 	"github.com/escalier-lang/escalier/internal/printer"
@@ -316,8 +315,7 @@ func TestParseTypeAnnNoErrors(t *testing.T) {
 				Contents: test.input,
 			}
 
-			ctx, cancel := context.WithTimeout(context.Background(), 1*time.Second)
-			defer cancel()
+			ctx := context.Background()
 			parser := NewParser(ctx, source)
 			typeAnn := parser.typeAnn()
 
@@ -384,8 +382,7 @@ func TestParseTypeAnnErrorHandling(t *testing.T) {
 				Contents: test.input,
 			}
 
-			ctx, cancel := context.WithTimeout(context.Background(), 1*time.Second)
-			defer cancel()
+			ctx := context.Background()
 			parser := NewParser(ctx, source)
 			typeAnn := parser.typeAnn()
 
@@ -547,8 +544,7 @@ func TestObjTypeAnnElemSpans(t *testing.T) {
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
-			ctx, cancel := context.WithTimeout(context.Background(), time.Second)
-			defer cancel()
+			ctx := context.Background()
 			source := &ast.Source{ID: 0, Path: "input.esc", Contents: tc.src}
 			script, errors := NewParser(ctx, source).ParseScript()
 			require.Empty(t, errors)

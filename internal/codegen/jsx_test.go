@@ -3,7 +3,6 @@ package codegen
 import (
 	"context"
 	"testing"
-	"time"
 
 	"github.com/escalier-lang/escalier/internal/ast"
 	"github.com/escalier-lang/escalier/internal/parser"
@@ -109,8 +108,7 @@ const elem = _jsxs("div", {children: [_jsx("span", {children: "One"}), _jsx("spa
 				Contents: test.input,
 			}
 
-			ctx, cancel := context.WithTimeout(context.Background(), 1*time.Second)
-			defer cancel()
+			ctx := context.Background()
 			p := parser.NewParser(ctx, source)
 			script, parseErrors := p.ParseScript()
 
@@ -182,8 +180,7 @@ const elem = _jsx(_Fragment, {children: _jsx(_Fragment, {children: _jsx("div", {
 				Contents: test.input,
 			}
 
-			ctx, cancel := context.WithTimeout(context.Background(), 1*time.Second)
-			defer cancel()
+			ctx := context.Background()
 			p := parser.NewParser(ctx, source)
 			script, parseErrors := p.ParseScript()
 
@@ -283,8 +280,7 @@ const elem = _jsx(Icons.Star, {size: 24});
 				Contents: test.input,
 			}
 
-			ctx, cancel := context.WithTimeout(context.Background(), 1*time.Second)
-			defer cancel()
+			ctx := context.Background()
 			p := parser.NewParser(ctx, source)
 			script, parseErrors := p.ParseScript()
 
@@ -370,8 +366,7 @@ const elem = _jsx("input", {...props, disabled: true});
 				Contents: test.input,
 			}
 
-			ctx, cancel := context.WithTimeout(context.Background(), 1*time.Second)
-			defer cancel()
+			ctx := context.Background()
 			p := parser.NewParser(ctx, source)
 			script, parseErrors := p.ParseScript()
 

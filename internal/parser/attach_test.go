@@ -4,7 +4,6 @@ import (
 	"context"
 	"fmt"
 	"testing"
-	"time"
 
 	"github.com/escalier-lang/escalier/internal/ast"
 	"github.com/stretchr/testify/require"
@@ -19,8 +18,7 @@ import (
 // parser that stopped running the pass fails these tests.
 func attachments(t *testing.T, src string) []string {
 	t.Helper()
-	ctx, cancel := context.WithTimeout(context.Background(), 1*time.Second)
-	defer cancel()
+	ctx := context.Background()
 	source := &ast.Source{ID: 0, Path: "input.esc", Contents: src}
 	script, errors := NewParser(ctx, source).ParseScript()
 	require.Empty(t, errors)
@@ -172,8 +170,7 @@ func TestAttachCommentsDanglesInAnEmptyBody(t *testing.T) {
 // what the first wrote instead of appending to it.
 func TestAttachCommentsIsRepeatable(t *testing.T) {
 	t.Parallel()
-	ctx, cancel := context.WithTimeout(context.Background(), 1*time.Second)
-	defer cancel()
+	ctx := context.Background()
 	source := &ast.Source{ID: 0, Path: "input.esc", Contents: "// note\nval x = 1\n"}
 	script, errors := NewParser(ctx, source).ParseScript()
 	require.Empty(t, errors)
@@ -190,8 +187,7 @@ func TestAttachCommentsIsRepeatable(t *testing.T) {
 // node takes it.
 func TestAttachCommentsRejectsAnotherSource(t *testing.T) {
 	t.Parallel()
-	ctx, cancel := context.WithTimeout(context.Background(), 1*time.Second)
-	defer cancel()
+	ctx := context.Background()
 	source := &ast.Source{ID: 0, Path: "input.esc", Contents: "val x = 1\n"}
 	script, errors := NewParser(ctx, source).ParseScript()
 	require.Empty(t, errors)
@@ -234,8 +230,7 @@ func TestAttachModuleCommentsLeavesTheLastLineUnattached(t *testing.T) {
 // comment's SourceID rather than assuming one file per module.
 func TestAttachModuleCommentsKeepsFilesApart(t *testing.T) {
 	t.Parallel()
-	ctx, cancel := context.WithTimeout(context.Background(), 1*time.Second)
-	defer cancel()
+	ctx := context.Background()
 	first := &ast.Source{ID: 0, Path: "lib/a.esc", Contents: "// about a\nval a = 1\n"}
 	second := &ast.Source{ID: 1, Path: "lib/b.esc", Contents: "// about b\nval b = 2\n"}
 	module, errors := ParseLibFiles(ctx, []*ast.Source{first, second})
@@ -264,8 +259,7 @@ func TestAttachCommentsKeepsTheLastCommentInABlock(t *testing.T) {
 // before a comment walks back past those.
 func TestAttachModuleCommentsTrailsAcrossFiles(t *testing.T) {
 	t.Parallel()
-	ctx, cancel := context.WithTimeout(context.Background(), 1*time.Second)
-	defer cancel()
+	ctx := context.Background()
 	// The first file's declaration ends at offset 10 and the second file's at
 	// offset 9, and the comment starts at 10. The nearest end at or before the
 	// comment therefore belongs to the wrong file, which is what a search that

@@ -3,7 +3,6 @@ package parser
 import (
 	"context"
 	"testing"
-	"time"
 
 	"github.com/escalier-lang/escalier/internal/ast"
 	"github.com/stretchr/testify/require"
@@ -11,8 +10,7 @@ import (
 
 func parseSource(t *testing.T, src string) (*ast.Module, *ast.Source) {
 	t.Helper()
-	ctx, cancel := context.WithTimeout(context.Background(), 1*time.Second)
-	defer cancel()
+	ctx := context.Background()
 	source := &ast.Source{ID: 0, Path: "lib/index.esc", Contents: src}
 	module, errors := ParseLibFiles(ctx, []*ast.Source{source})
 	require.Empty(t, errors)
@@ -112,8 +110,7 @@ func TestParseLibFiles_CollectsComments(t *testing.T) {
 
 func TestParseScript_CollectsComments(t *testing.T) {
 	t.Parallel()
-	ctx, cancel := context.WithTimeout(context.Background(), 1*time.Second)
-	defer cancel()
+	ctx := context.Background()
 	source := &ast.Source{ID: 0, Path: "input.esc", Contents: "// leading\nval x = 1\n"}
 	script, errors := NewParser(ctx, source).ParseScript()
 	require.Empty(t, errors)

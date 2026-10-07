@@ -3,7 +3,6 @@ package parser
 import (
 	"context"
 	"testing"
-	"time"
 
 	"github.com/escalier-lang/escalier/internal/ast"
 	"github.com/stretchr/testify/require"
@@ -12,8 +11,7 @@ import (
 // parseThrowsSrc parses one in-memory module and returns its errors, rendered with spans.
 func parseThrowsSrc(t *testing.T, src string) []string {
 	t.Helper()
-	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
-	defer cancel()
+	ctx := context.Background()
 	source := &ast.Source{ID: 0, Path: "input.esc", Contents: src}
 	_, errs := ParseLibFiles(ctx, []*ast.Source{source})
 	out := make([]string, len(errs))

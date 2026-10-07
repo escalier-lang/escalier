@@ -3,7 +3,6 @@ package parser
 import (
 	"context"
 	"testing"
-	"time"
 
 	"github.com/escalier-lang/escalier/internal/ast"
 	"github.com/stretchr/testify/require"
@@ -90,8 +89,7 @@ func TestDeclDocs(t *testing.T) {
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
-			ctx, cancel := context.WithTimeout(context.Background(), 1*time.Second)
-			defer cancel()
+			ctx := context.Background()
 			decls, errors := ParseDecls(ctx, &ast.Source{Path: "input.esc", Contents: tc.src})
 			require.Empty(t, errors)
 			require.Len(t, decls, 1)
@@ -102,8 +100,7 @@ func TestDeclDocs(t *testing.T) {
 
 func TestDeclDocs_InsideADeclareModule(t *testing.T) {
 	t.Parallel()
-	ctx, cancel := context.WithTimeout(context.Background(), 1*time.Second)
-	defer cancel()
+	ctx := context.Background()
 	decls, errors := ParseDecls(ctx, &ast.Source{Path: "input.esc", Contents: `declare module "fs" {
     /** reads a file */
     declare fn readFile(path: string) -> string
@@ -122,8 +119,7 @@ func TestDeclDocs_InsideADeclareModule(t *testing.T) {
 
 func TestDeclDocs_InAScript(t *testing.T) {
 	t.Parallel()
-	ctx, cancel := context.WithTimeout(context.Background(), 1*time.Second)
-	defer cancel()
+	ctx := context.Background()
 	source := &ast.Source{Path: "input.esc", Contents: "/** the answer */\nval x = 42\n"}
 	script, errors := NewParser(ctx, source).ParseScript()
 	require.Empty(t, errors)

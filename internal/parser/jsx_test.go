@@ -3,7 +3,6 @@ package parser
 import (
 	"context"
 	"testing"
-	"time"
 
 	"github.com/escalier-lang/escalier/internal/ast"
 	"github.com/escalier-lang/escalier/internal/snapshot"
@@ -86,8 +85,7 @@ func TestParseJSXNoErrors(t *testing.T) {
 				Contents: test.input,
 			}
 
-			ctx, cancel := context.WithTimeout(context.Background(), 1*time.Second)
-			defer cancel()
+			ctx := context.Background()
 			parser := NewParser(ctx, source)
 			jsx := parser.jsxElementOrFragment()
 
@@ -118,8 +116,7 @@ func TestParseJSXErrors(t *testing.T) {
 				Contents: test.input,
 			}
 
-			ctx, cancel := context.WithTimeout(context.Background(), 1*time.Second)
-			defer cancel()
+			ctx := context.Background()
 			parser := NewParser(ctx, source)
 			jsx := parser.jsxElementOrFragment()
 

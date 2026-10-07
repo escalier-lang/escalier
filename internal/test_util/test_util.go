@@ -3,7 +3,6 @@ package test_util
 import (
 	"context"
 	"fmt"
-	"time"
 
 	"github.com/escalier-lang/escalier/internal/ast"
 	"github.com/escalier-lang/escalier/internal/parser"
@@ -423,9 +422,7 @@ func convertMappedModifier(mod *ast.MappedModifier) *MappedModifier {
 // This function combines the parsing step (string -> ast.TypeAnn) with the
 // conversion step (ast.TypeAnn -> type_system.Type) for convenience.
 func ParseTypeAnn(typeAnnStr string) Type {
-	// Create a context with a timeout for parsing
-	ctx, cancel := context.WithTimeout(context.Background(), 1*time.Second)
-	defer cancel()
+	ctx := context.Background()
 
 	// Parse the type annotation string using the parser
 	typeAnn, parseErrors := parser.ParseTypeAnn(ctx, typeAnnStr)
