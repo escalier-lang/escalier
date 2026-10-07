@@ -124,6 +124,13 @@ type Context struct {
 	// makes the inner ask fall back to the plain expansion instead. See regular.go.
 	knotting bool
 
+	// buildingAliases holds the qualified names of the aliases and interfaces whose bodies
+	// inferComponent is resolving. Until the window closes, such an alias may still have a nil
+	// Body, which expandAlias reads as an absorbing ErrorType, and its productivity and phantom
+	// marks are not set. subsumeMembers leaves out of every comparison a member that names one.
+	// It is nil outside that window.
+	buildingAliases set.Set[string]
+
 	// muBinderCount numbers the μ-variables the regular-tree check has minted, so two aliases whose
 	// knots are composed into one type carry distinct binders. coalesce numbers its own binders per
 	// walk instead, since the knots one walk produces are numbered together.

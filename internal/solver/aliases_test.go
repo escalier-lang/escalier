@@ -701,3 +701,85 @@ func TestInferGenericTypeAliasBoundUnderConditional(t *testing.T) {
 	_, _, errs := inferSource(t, src)
 	require.Empty(t, errs)
 }
+
+// TestInferSelfReferenceKeepsUnionSiblings asserts that a union naming the type being
+// declared keeps its other members. The union is built while the declaration's own body
+// is still nil, so it must not be compared against that reference.
+func TestInferSelfReferenceKeepsUnionSiblings(t *testing.T) {
+	tests := []struct {
+		name    string
+		src     string
+		wantN   string
+		wantErr string
+	}{
+		{
+			name: "InterfaceOrUndefined",
+			src: `
+				interface L { next: L | undefined }
+				declare val l: L
+				val n = l.next
+			`,
+			wantN: "undefined | L",
+		},
+		{
+			name: "AliasOrNull",
+			src: `
+				type L = { next: L | null }
+				declare val l: L
+				val n = l.next
+			`,
+			wantN: "null | L",
+		},
+		{
+			name: "MutualAliasesOrUndefined",
+			src: `
+				type A = { b: B | undefined }
+				type B = { a: A | undefined }
+				declare val b: B
+				val n = b.a
+			`,
+			wantN: "undefined | A",
+		},
+		{
+			name: "InterfaceArrayOrUndefined",
+			src: `
+				interface L { next: Array<L> | undefined }
+				declare val l: L
+				val n = l.next
+			`,
+			wantN: "undefined | Array<L>",
+		},
+		{
+			// Members that do not name `L` still subsume each other, so `1` folds into `number`.
+			name: "InterfacePrunesSiblingsThatDoNotNameIt",
+			src: `
+				interface L { next: L | 1 | number }
+				declare val l: L
+				val n = l.next
+			`,
+			wantN: "number | L",
+		},
+		{
+			name: "InterfaceRejectsUndefinedAgainstSelf",
+			src: `
+				interface L { next: L | undefined }
+				declare val l: L
+				val n: L = l.next
+			`,
+			wantN:   "L",
+			wantErr: "cannot constrain undefined <: object",
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			values, _, errs := inferSource(t, tt.src)
+			require.Equal(t, tt.wantN, values["n"])
+			if tt.wantErr == "" {
+				require.Empty(t, errs)
+				return
+			}
+			require.Len(t, errs, 1)
+			require.Equal(t, tt.wantErr, errs[0].Message())
+		})
+	}
+}

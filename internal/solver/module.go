@@ -452,6 +452,18 @@ func (c *checker) inferComponent(
 	// inside them is queued rather than run against a half-built sibling. Do not convert this
 	// to a defer, because a check queued after runDeferredArgBounds would never be replayed.
 	c.deferArgBounds = true
+	// Every alias and interface body below resolves while some sibling's Body is still nil and
+	// before checkProductive and markPhantomParams mark any of them, so a union over a reference
+	// to one keeps every member it wrote. The window closes once the marks are set.
+	prevBuilding := c.ctx.buildingAliases
+	building := set.NewSet[string]()
+	for _, sh := range aliasShells {
+		building.Add(sh.qname)
+	}
+	for _, sh := range interfaceShells {
+		building.Add(sh.qname)
+	}
+	c.ctx.buildingAliases = building
 	// Resolve each class's type parameters now that every class, enum, and alias identity in
 	// the component is registered, so a bound naming a sibling resolves. A class body waits
 	// for the class's value key, but the parameter list a reference reads — the defaults it
@@ -483,6 +495,7 @@ func (c *checker) inferComponent(
 	c.checkProductive(aliasShells)
 	markPhantomParams(aliasShells)
 	c.reportPhantomParams(aliasShells)
+	c.ctx.buildingAliases = prevBuilding
 	// The deferred bound comparisons run last, after the marks are in place. Each one goes
 	// through constrain, which interns an alias operand's canonical identity, and internAlias
 	// drops the arguments of phantom parameters when it renders that key. Interning a reference
