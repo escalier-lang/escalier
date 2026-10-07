@@ -199,6 +199,12 @@ func recordInterfaceReceivers(def *AliasDef, body *ast.ObjectTypeAnn) {
 		case *ast.GetterTypeAnn:
 			key, recv = elem.Name, elem.Receiver
 		case *ast.SetterTypeAnn:
+			// A receiver no setter may declare is already reported where the body is
+			// lowered. Leaving it unrecorded keeps `implements` from comparing against it and
+			// reporting the same mistake again on each implementing class.
+			if invalidSetterReceiver(elem.Receiver) {
+				continue
+			}
 			key, recv, setter = elem.Name, elem.Receiver, true
 		default:
 			continue

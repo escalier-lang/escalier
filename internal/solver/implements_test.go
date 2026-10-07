@@ -349,9 +349,10 @@ func TestImplementsConformance(t *testing.T) {
 			`,
 		},
 		{
-			// The interface promises the setter can be called on an immutable receiver, and
-			// the class needs a mutable one.
-			name: "SetterMutSelfMismatch",
+			// A setter writes through its receiver, so the interface's `&self` setter is
+			// rejected where it is declared. `Box` is not also reported as failing to
+			// implement it.
+			name: "InterfaceSetterTakingAnImmutableReceiver",
 			src: `
 				interface HasValue {
 					set value(&self, x: number) -> undefined,
@@ -361,7 +362,7 @@ func TestImplementsConformance(t *testing.T) {
 					set value(&mut self, x: number) { self._value = x },
 				}
 			`,
-			want: []string{"Class 'Box' does not implement interface 'HasValue': member 'value' self receiver does not match"},
+			want: []string{"Setter 'value' must declare a `&mut self` receiver; writing through it mutates the instance."},
 		},
 		{
 			name: "SetterArgTypeMismatch",

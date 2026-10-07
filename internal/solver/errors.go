@@ -1893,17 +1893,24 @@ func (e *GetterReceiverError) Message() string {
 	return "Getter '" + e.Name + "' must borrow its receiver with `&self` or `&mut self`; reading through it leaves the instance in place."
 }
 
-// SetterReceiverError fires when an instance setter declares a receiver other than `&mut
-// self`. Writing through a setter mutates the instance, so a shared `&self` receiver holds no
-// mutable access to do it with. A consuming `self` or `mut self` receiver would move the
-// instance on every write. A static setter has no instance to mutate and declares no
-// receiver, so it never reaches this.
+// SetterReceiverError fires when a setter in a class, an interface, or an object type declares
+// a receiver other than `&mut self`. Writing through a setter mutates the instance, so a shared
+// `&self` receiver holds no mutable access to do it with. A consuming `self` or `mut self`
+// receiver would move the instance on every write. A static setter has no instance to mutate
+// and declares no receiver, so it never reaches this. Member is the setter's declaration.
 type SetterReceiverError struct {
-	Name string
-	Elem *ast.SetterElem
+	Name   string
+	Member ast.Node
 }
 
-func (e *SetterReceiverError) Span() ast.Span      { return e.Elem.Span() }
+// invalidSetterReceiver reports whether recv is a written receiver a setter cannot declare.
+// An absent receiver is not one, since whether a member may omit it depends on where it is
+// declared.
+func invalidSetterReceiver(recv *ast.MethodReceiver) bool {
+	return recv != nil && (!recv.Mut || recv.Consumes())
+}
+
+func (e *SetterReceiverError) Span() ast.Span      { return e.Member.Span() }
 func (e *SetterReceiverError) Related() []ast.Span { return nil }
 func (e *SetterReceiverError) Message() string {
 	return "Setter '" + e.Name + "' must declare a `&mut self` receiver; writing through it mutates the instance."

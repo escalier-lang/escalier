@@ -468,7 +468,7 @@ func TestBuildTypeAnnFromSolFromSource(t *testing.T) {
 		},
 		"Getter": {"", "{get x(&self) -> number}", "{get x(): number}"},
 		// TypeScript forbids a return type on a setter.
-		"Setter":         {"", "{set x(&self, value: number)}", "{set x(value: number)}"},
+		"Setter":         {"", "{set x(&mut self, value: number)}", "{set x(value: number)}"},
 		"OptionalMethod": {"", "{m?(&self) -> string}", "{m?(): string}"},
 		"Callable":       {"", "{(x: number) -> string}", "{(x: number): string}"},
 		"Constructor":    {"", "{new (x: number) -> string}", "{new (x: number): string}"},

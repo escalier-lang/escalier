@@ -1301,8 +1301,8 @@ func (c *checker) buildMemberSigs(
 			// receiver on the elem so a write through it draws only this one diagnostic. An
 			// absent receiver is checkSelfReceiver's to report, and a static setter has no
 			// instance to mutate.
-			if elem.Receiver != nil && (!elem.Receiver.Mut || elem.Receiver.Consumes()) {
-				c.report(&SetterReceiverError{Name: name, Elem: elem})
+			if invalidSetterReceiver(elem.Receiver) {
+				c.report(&SetterReceiverError{Name: name, Member: elem})
 			}
 			// A well-formed setter declares exactly one value parameter beyond `self` — the
 			// value being assigned. Report a paramless or multi-parameter setter, then still
