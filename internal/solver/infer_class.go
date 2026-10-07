@@ -1558,7 +1558,8 @@ func selfParamConsumes(sp *soltype.FuncParam) bool {
 // call `self.m()` resolves against the member signature the phase-1 pass installed on the
 // shared element. The view takes the receiver's own form through receiverType, borrowing
 // at lt, so `&mut self` binds a mutable borrow that field writes type-check through and
-// `self` binds the owned view.
+// `self` binds the owned view. The view is registered as an instance of class, so `self`
+// flows into a parameter typed with that class or one of its superclasses.
 //
 // A `self.field` read or write dispatches through the record subtyping machinery, whose
 // object arm threads the borrow and mutability rules field access needs: read-through-
@@ -1567,11 +1568,12 @@ func selfParamConsumes(sp *soltype.FuncParam) bool {
 // method member; valueProp intercepts it and resolves through member lookup instead. A
 // method's own receiver ownership is checked separately at the call site as a `receiver
 // <: SelfParam` constraint, not by this binding.
-func (c *checker) bindSelf(scope *Scope, recv *ast.MethodReceiver, lt soltype.Lifetime, body *soltype.ObjectType) {
+func (c *checker) bindSelf(scope *Scope, recv *ast.MethodReceiver, lt soltype.Lifetime, class *soltype.ClassType, body *soltype.ObjectType) {
 	// Snapshot the element slice, sharing each element pointer so a write through `self`
 	// refines the same field-type var the projected body reads and a sibling signature
 	// installed by the body pass shows through the shared pointer.
 	view := &soltype.ObjectType{Elems: append([]soltype.ObjTypeElem(nil), body.Elems...)}
+	c.ctx.registerSelfView(view, class)
 	selfBody := receiverType(recv, lt, view)
 	scope.defineValue("self", ValueBinding{Schemes: []TypeScheme{monoScheme(selfBody)}})
 }

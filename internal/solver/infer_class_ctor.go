@@ -72,7 +72,7 @@ func (c *checker) walkConstructorBody(scope *Scope, lvl int, self *soltype.Class
 	// caller, so it may not consume it, and a borrow keeps a consuming method out of reach.
 	// It binds the `self` view, so a subclass constructor can assign a field it inherits.
 	ctorRecv := &ast.MethodReceiver{Mut: true}
-	c.bindSelf(ctorScope, ctorRecv, c.ctx.freshLifetime(lvl), c.ctx.selfView(self, body))
+	c.bindSelf(ctorScope, ctorRecv, c.ctx.freshLifetime(lvl), self, c.ctx.selfView(self, body))
 	// The liveness pre-pass defines `self` as one of the body's parameters, so places rooted
 	// at the instance under construction are tracked like places rooted at a parameter.
 	c.memberReceiver = ctorRecv

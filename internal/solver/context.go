@@ -80,6 +80,12 @@ type Context struct {
 	// overwritten but never removed for scope exit.
 	classes map[string]*ClassDef
 
+	// selfViews maps each object `self` binds to inside a member or constructor body to the
+	// class instance it stands for. bindSelf writes an entry per binding. The constrain rule
+	// for an object flowing into a class reads it, so `self` is an instance of its own class
+	// wherever that class is expected, as in `f(self)` for `fn f(b: B)`.
+	selfViews map[*soltype.ObjectType]*soltype.ClassType
+
 	// measuredClasses counts the classes whose variance measureVariance has made final. A
 	// provisional class records the count it was measured at and measures again only once
 	// the count moves.
@@ -296,6 +302,15 @@ func (c *Context) registerClass(name string, def *ClassDef) {
 	c.classes[name] = def
 }
 
+// registerSelfView records that view is the object `self` binds to for an instance of class,
+// allocating the map on first use.
+func (c *Context) registerSelfView(view *soltype.ObjectType, class *soltype.ClassType) {
+	if c.selfViews == nil {
+		c.selfViews = map[*soltype.ObjectType]*soltype.ClassType{}
+	}
+	c.selfViews[view] = class
+}
+
 // forgetKeyPrefix drops every registration whose qualified name starts with prefix,
 // along with the two caches keyed off those names.
 //
@@ -314,6 +329,11 @@ func (c *Context) forgetKeyPrefix(prefix string) {
 		if strings.HasPrefix(name, prefix) {
 			delete(c.aliases, name)
 			delete(c.uniformKnots, name)
+		}
+	}
+	for view, class := range c.selfViews {
+		if strings.HasPrefix(class.Name, prefix) {
+			delete(c.selfViews, view)
 		}
 	}
 	// An interned alias reference keys on its rendered form, which spells the alias

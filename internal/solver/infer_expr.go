@@ -251,7 +251,7 @@ func (c *checker) inferFunc(scope *Scope, lvl int, sig ast.FuncSig, body *ast.Bl
 	var selfParam *soltype.FuncParam
 	if member != nil {
 		lt := c.receiverLifetime(recv, lvl)
-		c.bindSelf(fnScope, recv, lt, member.body)
+		c.bindSelf(fnScope, recv, lt, member.class, member.body)
 		if recv != nil {
 			selfParam = receiverParam(recv, lt, member.class)
 		}

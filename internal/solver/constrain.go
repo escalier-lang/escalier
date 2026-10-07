@@ -1666,6 +1666,11 @@ func (c *Context) constrain(sub, super soltype.Type, seen *seenPairs, mutCtx boo
 		// field. A ClassType super is concrete, so intercept it here rather than letting it
 		// fall through to the var arms.
 		if sup, ok := super.(*soltype.ClassType); ok {
+			// The object `self` binds to in a member body is an instance of its class, so it
+			// takes the nominal rule the class instance itself would.
+			if class, isSelf := c.selfViews[sub]; isSelf {
+				return c.constrainNominal(class, sup, seen, mutCtx)
+			}
 			return []SolverError{&StructuralIntoClassError{Sub: sub, Super: sup}}
 		}
 	case *soltype.ClassType:

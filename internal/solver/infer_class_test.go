@@ -377,6 +377,86 @@ func TestInferClassNominalSubtype(t *testing.T) {
 	})
 }
 
+// TestInferClassSelfIsInstance covers passing `self` where its own class or a superclass
+// is expected. Inside a member body `self` binds to an object view of the class body, and
+// that view takes the nominal rule its class would, so `f(self)` checks against
+// `fn f(b: &B)` the way passing a `B` instance does.
+func TestInferClassSelfIsInstance(t *testing.T) {
+	tests := []struct {
+		name    string
+		src     string
+		wantErr string
+	}{
+		{
+			name: "borrowed self into a borrowed parameter",
+			src: `
+				declare fn f(b: &B) -> number
+				class B { m(&self) -> number { return 1 }, n(&self) { return f(self) } }
+			`,
+		},
+		{
+			name: "owned self into an owned parameter",
+			src: `
+				declare fn f(b: B) -> number
+				class B { m(&self) -> number { return 1 }, n(self) { return f(self) } }
+			`,
+		},
+		{
+			name: "mutable constructor self into a borrowed parameter",
+			src: `
+				declare fn f(b: &B) -> number
+				class B { x: number, constructor(&mut self) {
+					self.x = 0
+					f(self)
+				}  }
+			`,
+		},
+		{
+			name: "subclass self into a superclass parameter",
+			src: `
+				declare fn f(a: &A) -> number
+				class A { constructor(&mut self) {} }
+				class B extends A { constructor(&mut self) { super() }, n(&self) { return f(self) } }
+			`,
+		},
+		{
+			name: "generic class self into a parameter at its own arguments",
+			src: `
+				declare fn f<T>(b: &Box<T>) -> T
+				class Box<T> { value: T, get(&self) -> T { return f(self) } }
+			`,
+		},
+		{
+			name: "self into an unrelated class parameter rejects",
+			src: `
+				declare fn f(b: &B) -> number
+				class B { m(&self) -> number { return 1 } }
+				class A { n(&self) { return f(self) } }
+			`,
+			wantErr: "cannot constrain A <: B",
+		},
+		{
+			name: "borrowed self into an owned parameter rejects",
+			src: `
+				fn f(b: B) -> number { return 1 }
+				class B { m(&self) -> number { return 1 }, n(&self) { return f(self) } }
+			`,
+			wantErr: "cannot use borrowed &object as owned B",
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			_, _, errs := inferSource(t, tt.src)
+			if tt.wantErr == "" {
+				require.Empty(t, errs)
+				return
+			}
+			require.Len(t, errs, 1)
+			require.Equal(t, tt.wantErr, errs[0].Message())
+		})
+	}
+}
+
 // TestInferClassIntoObject covers C1's target-dispatched class-vs-object rule reached
 // from source through an object type annotation, which resolves today even though a
 // bare class name in annotation position does not. A class instance flows into an inexact
