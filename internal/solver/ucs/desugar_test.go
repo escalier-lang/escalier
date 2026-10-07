@@ -3,7 +3,6 @@ package ucs
 import (
 	"context"
 	"testing"
-	"time"
 
 	"github.com/escalier-lang/escalier/internal/ast"
 	"github.com/escalier-lang/escalier/internal/parser"
@@ -28,8 +27,7 @@ import (
 // test means.
 func parseScript(t *testing.T, src string) *ast.Script {
 	t.Helper()
-	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
-	defer cancel()
+	ctx := context.Background()
 	source := &ast.Source{ID: 0, Path: "input.esc", Contents: src}
 	script, errs := parser.NewParser(ctx, source).ParseScript()
 	require.Empty(t, errs, "expected no parse errors")

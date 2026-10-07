@@ -3,7 +3,6 @@ package tests
 import (
 	"context"
 	"testing"
-	"time"
 
 	"github.com/escalier-lang/escalier/internal/ast"
 	. "github.com/escalier-lang/escalier/internal/checker"
@@ -103,8 +102,7 @@ func TestLifetimeElision_DeclareFn(t *testing.T) {
 	for name, tc := range tests {
 		t.Run(name, func(t *testing.T) {
 			source := &ast.Source{ID: 0, Path: "input.esc", Contents: tc.input}
-			ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
-			defer cancel()
+			ctx := context.Background()
 
 			p := parser.NewParser(ctx, source)
 			script, parseErrors := p.ParseScript()

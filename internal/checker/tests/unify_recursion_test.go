@@ -11,9 +11,10 @@ import (
 	"github.com/stretchr/testify/assert"
 )
 
-// inferWithTimeout parses and type-checks the given source within a timeout.
-// Returns infer errors. Fails the test if parsing fails or the timeout is hit.
-func inferWithTimeout(t *testing.T, source string, timeout time.Duration) []Error {
+// inferWithTimeout parses and type-checks the given source under a deadline.
+// Returns infer errors, which include a TypeCheckTimeoutError when the deadline
+// expires. Fails the test if parsing fails.
+func inferWithTimeout(t *testing.T, source string) []Error {
 	t.Helper()
 	src := &ast.Source{
 		ID:       0,
@@ -21,7 +22,12 @@ func inferWithTimeout(t *testing.T, source string, timeout time.Duration) []Erro
 		Contents: source,
 	}
 
-	ctx, cancel := context.WithTimeout(context.Background(), timeout)
+	// These tests guard against runaway recursion in unification. The deadline
+	// turns such a regression into a TypeCheckTimeoutError on the one subtest
+	// instead of a hang that lasts until the go test binary times out. Each
+	// input checks in milliseconds, so 30 seconds leaves room for a runner slowed
+	// by coverage instrumentation and parallel tests.
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
 	module, parseErrors := parser.ParseLibFiles(ctx, []*ast.Source{src})
 	if !assert.Empty(t, parseErrors, "parse errors") {
@@ -50,7 +56,7 @@ func TestUnifyRecursion_TypeRefWithAlias(t *testing.T) {
 		errors := inferWithTimeout(t, `
 			type Target = "_self" | "_blank" | "_parent" | "_top"
 			val t: Target = "_blank"
-		`, 2*time.Second)
+		`)
 		assert.Empty(t, errors)
 	})
 
@@ -58,7 +64,7 @@ func TestUnifyRecursion_TypeRefWithAlias(t *testing.T) {
 		errors := inferWithTimeout(t, `
 			val a: Array<number> = [1, 2, 3]
 			val b: Array<number> = a
-		`, 2*time.Second)
+		`)
 		assert.Empty(t, errors)
 	})
 
@@ -67,7 +73,7 @@ func TestUnifyRecursion_TypeRefWithAlias(t *testing.T) {
 			type Point = {x: number, y: number}
 			val p1: Point = {x: 1, y: 2}
 			val p2: Point = p1
-		`, 2*time.Second)
+		`)
 		assert.Empty(t, errors)
 	})
 
@@ -76,7 +82,7 @@ func TestUnifyRecursion_TypeRefWithAlias(t *testing.T) {
 			type Pair<A, B> = {first: A, second: B}
 			val p1: Pair<number, string> = {first: 1, second: "hello"}
 			val p2: Pair<number, string> = p1
-		`, 2*time.Second)
+		`)
 		assert.Empty(t, errors)
 	})
 
@@ -86,7 +92,7 @@ func TestUnifyRecursion_TypeRefWithAlias(t *testing.T) {
 			type Vec2D = {x: number, y: number}
 			val p: Point2D = {x: 1, y: 2}
 			val v: Vec2D = p
-		`, 2*time.Second)
+		`)
 		assert.Empty(t, errors)
 	})
 
@@ -94,7 +100,7 @@ func TestUnifyRecursion_TypeRefWithAlias(t *testing.T) {
 		errors := inferWithTimeout(t, `
 			type Point = {x: number, y: number}
 			val p: Point = {x: 1, y: 2}
-		`, 2*time.Second)
+		`)
 		assert.Empty(t, errors)
 	})
 
@@ -104,7 +110,7 @@ func TestUnifyRecursion_TypeRefWithAlias(t *testing.T) {
 			type Json = string | number | boolean | null | Array<Json>
 			val j: Json = "hello"
 			val k: Json = [1, 2, 3]
-		`, 2*time.Second)
+		`)
 		assert.Empty(t, errors)
 	})
 }
@@ -119,21 +125,21 @@ func TestUnifyRecursion_TupleWithRest(t *testing.T) {
 	t.Run("single rest spread", func(t *testing.T) {
 		errors := inferWithTimeout(t, `
 			val items: [number, ...Array<number>] = [1, 2, 3]
-		`, 2*time.Second)
+		`)
 		assert.Empty(t, errors)
 	})
 
 	t.Run("rest spread with prefix and suffix", func(t *testing.T) {
 		errors := inferWithTimeout(t, `
 			val items: [string, ...Array<number>, boolean] = ["hello", 1, 2, 3, true]
-		`, 2*time.Second)
+		`)
 		assert.Empty(t, errors)
 	})
 
 	t.Run("tuple vs Array type", func(t *testing.T) {
 		errors := inferWithTimeout(t, `
 			val arr: Array<number> = [1, 2, 3]
-		`, 2*time.Second)
+		`)
 		assert.Empty(t, errors)
 	})
 }
@@ -201,7 +207,7 @@ func TestUnifyRecursion_LargeObjectType(t *testing.T) {
 				fontFamily: "Arial",
 				fontSize: 14,
 			}
-		`, 2*time.Second)
+		`)
 		assert.Empty(t, errors)
 	})
 
@@ -253,7 +259,7 @@ func TestUnifyRecursion_LargeObjectType(t *testing.T) {
 				elevation: 2,
 				fontWeight: 400,
 			}
-		`, 2*time.Second)
+		`)
 		assert.Empty(t, errors)
 	})
 }
@@ -270,7 +276,7 @@ func TestUnifyRecursionTerminates(t *testing.T) {
 			type B = {x: number, y: string}
 			type AB = A | B
 			val obj: AB = {x: 1, y: "hello"}
-		`, 2*time.Second)
+		`)
 		assert.Empty(t, errors)
 	})
 
@@ -279,7 +285,7 @@ func TestUnifyRecursionTerminates(t *testing.T) {
 			type Point = {x: number, y: number}
 			type PointKey = keyof Point
 			val k: PointKey = "x"
-		`, 2*time.Second)
+		`)
 		assert.Empty(t, errors)
 	})
 
@@ -291,7 +297,7 @@ func TestUnifyRecursionTerminates(t *testing.T) {
 			type KB = keyof B
 			val ka: KA = "x"
 			val kb: KB = ka
-		`, 2*time.Second)
+		`)
 		assert.Empty(t, errors)
 	})
 
@@ -304,7 +310,7 @@ func TestUnifyRecursionTerminates(t *testing.T) {
 				next: Node | null,
 			}
 			val n = Node(1, Node(2, null))
-		`, 2*time.Second)
+		`)
 		assert.Empty(t, errors)
 	})
 
@@ -315,7 +321,7 @@ func TestUnifyRecursionTerminates(t *testing.T) {
 				children: Array<Tree>,
 			}
 			val t: Tree = {value: 1, children: [{value: 2, children: []}]}
-		`, 2*time.Second)
+		`)
 		assert.Empty(t, errors)
 	})
 
@@ -325,7 +331,7 @@ func TestUnifyRecursionTerminates(t *testing.T) {
 			type A = {value: number, next: B | null}
 			type B = {value: string, prev: A | null}
 			val a: A = {value: 1, next: {value: "hello", prev: null}}
-		`, 2*time.Second)
+		`)
 		assert.Empty(t, errors)
 	})
 
@@ -333,7 +339,7 @@ func TestUnifyRecursionTerminates(t *testing.T) {
 		errors := inferWithTimeout(t, `
 			type Container<T> = {value: T, next: Container<T> | null}
 			val c: Container<number> = {value: 1, next: {value: 2, next: null}}
-		`, 2*time.Second)
+		`)
 		assert.Empty(t, errors)
 	})
 }

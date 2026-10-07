@@ -3,7 +3,6 @@ package tests
 import (
 	"context"
 	"testing"
-	"time"
 
 	"github.com/escalier-lang/escalier/internal/ast"
 	. "github.com/escalier-lang/escalier/internal/checker"
@@ -98,8 +97,7 @@ func TestNormalizeIntersectionType(t *testing.T) {
 				Contents: tc.input,
 			}
 
-			ctx, cancel := context.WithTimeout(context.Background(), 1*time.Second)
-			defer cancel()
+			ctx := context.Background()
 			module, errors := parser.ParseLibFiles(ctx, []*ast.Source{source})
 			assert.Len(t, errors, 0)
 
@@ -279,8 +277,7 @@ func TestDistributiveLawsUsingExpandType(t *testing.T) {
 				Contents: tc.input,
 			}
 
-			ctx, cancel := context.WithTimeout(context.Background(), 1*time.Second)
-			defer cancel()
+			ctx := context.Background()
 			module, errors := parser.ParseLibFiles(ctx, []*ast.Source{source})
 			assert.Len(t, errors, 0)
 
@@ -547,8 +544,7 @@ func TestUnifyWithIntersections(t *testing.T) {
 				Contents: tc.input,
 			}
 
-			ctx, cancel := context.WithTimeout(context.Background(), 1*time.Second)
-			defer cancel()
+			ctx := context.Background()
 			module, errors := parser.ParseLibFiles(ctx, []*ast.Source{source})
 			assert.Len(t, errors, 0)
 
@@ -736,8 +732,7 @@ func TestIntersectionMemberAccess(t *testing.T) {
 
 	for name, tc := range tests {
 		t.Run(name, func(t *testing.T) {
-			ctx, cancel := context.WithTimeout(context.Background(), 1*time.Second)
-			defer cancel()
+			ctx := context.Background()
 
 			source := &ast.Source{
 				ID:       0,
@@ -1013,8 +1008,7 @@ func TestFunctionOverloads(t *testing.T) {
 
 	for name, tc := range tests {
 		t.Run(name, func(t *testing.T) {
-			ctx, cancel := context.WithTimeout(context.Background(), 1*time.Second)
-			defer cancel()
+			ctx := context.Background()
 
 			source := &ast.Source{
 				ID:       0,

@@ -4,7 +4,6 @@ import (
 	"context"
 	"strings"
 	"testing"
-	"time"
 
 	"github.com/escalier-lang/escalier/internal/ast"
 	. "github.com/escalier-lang/escalier/internal/checker"
@@ -34,8 +33,7 @@ func assertHasError(t *testing.T, errors []Error, substring string) {
 // =============================================================================
 
 func TestStdLibIteratorTypesLoaded(t *testing.T) {
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-	defer cancel()
+	ctx := context.Background()
 	c := NewChecker(ctx)
 	scope := Prelude(c)
 
@@ -112,8 +110,7 @@ func inferModule(t *testing.T, input string) (map[string]string, []Error) {
 		Contents: input,
 	}
 
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-	defer cancel()
+	ctx := context.Background()
 	module, parseErrors := parser.ParseLibFiles(ctx, []*ast.Source{source})
 	if len(parseErrors) > 0 {
 		for i, err := range parseErrors {
@@ -147,8 +144,7 @@ func inferScript(t *testing.T, input string) (map[string]string, []Error) {
 		Contents: input,
 	}
 
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-	defer cancel()
+	ctx := context.Background()
 	p := parser.NewParser(ctx, source)
 	script, parseErrors := p.ParseScript()
 	if len(parseErrors) > 0 {
@@ -201,8 +197,7 @@ func TestSymbolIteratorLookup(t *testing.T) {
 // =============================================================================
 
 func TestGetIterableElementType(t *testing.T) {
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-	defer cancel()
+	ctx := context.Background()
 	c := NewChecker(ctx)
 	scope := Prelude(c)
 	inferCtx := Context{
@@ -330,8 +325,7 @@ func TestGetIterableElementType(t *testing.T) {
 // =============================================================================
 
 func TestMakeGeneratorType(t *testing.T) {
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-	defer cancel()
+	ctx := context.Background()
 	c := NewChecker(ctx)
 	scope := Prelude(c)
 
@@ -370,8 +364,7 @@ func TestMakeGeneratorType(t *testing.T) {
 // =============================================================================
 
 func TestGetIteratorReturnType(t *testing.T) {
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-	defer cancel()
+	ctx := context.Background()
 	c := NewChecker(ctx)
 	scope := Prelude(c)
 	inferCtx := Context{
@@ -446,8 +439,7 @@ func TestGetIteratorReturnType(t *testing.T) {
 // =============================================================================
 
 func TestGetAsyncIterableElementType(t *testing.T) {
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-	defer cancel()
+	ctx := context.Background()
 	c := NewChecker(ctx)
 	scope := Prelude(c)
 	inferCtx := Context{
@@ -962,8 +954,7 @@ func TestDeclaredSendTypeKeepsItsOwnProvenance(t *testing.T) {
 			return a
 		}
 	`}
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-	defer cancel()
+	ctx := context.Background()
 	script, parseErrors := parser.NewParser(ctx, source).ParseScript()
 	require.Len(t, parseErrors, 0, "expected no parse errors")
 

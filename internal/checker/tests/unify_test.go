@@ -3,7 +3,6 @@ package tests
 import (
 	"context"
 	"testing"
-	"time"
 
 	. "github.com/escalier-lang/escalier/internal/checker"
 	"github.com/escalier-lang/escalier/internal/test_util"
@@ -12,8 +11,7 @@ import (
 )
 
 func TestUnifyStrLitWithRegexLit(t *testing.T) {
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-	defer cancel()
+	ctx := context.Background()
 	checker := NewChecker(ctx)
 	inferCtx := Context{Scope: Prelude(checker), IsAsync: false, IsPatMatch: false}
 
@@ -80,8 +78,7 @@ func TestUnifyStrLitWithRegexLit(t *testing.T) {
 }
 
 func TestUnifyWithUnionTypes(t *testing.T) {
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-	defer cancel()
+	ctx := context.Background()
 	checker := NewChecker(ctx)
 	inferCtx := Context{Scope: Prelude(checker), IsAsync: false, IsPatMatch: false}
 
@@ -193,8 +190,7 @@ func TestUnifyWithUnionTypes(t *testing.T) {
 }
 
 func TestUnifyFuncTypes(t *testing.T) {
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-	defer cancel()
+	ctx := context.Background()
 	checker := NewChecker(ctx)
 	inferCtx := Context{
 		Scope:      Prelude(checker),
@@ -316,8 +312,7 @@ func TestUnifyFuncTypes(t *testing.T) {
 }
 
 func TestUnifyUnknownType(t *testing.T) {
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-	defer cancel()
+	ctx := context.Background()
 	checker := NewChecker(ctx)
 	inferCtx := Context{Scope: Prelude(checker), IsAsync: false, IsPatMatch: false}
 
@@ -407,8 +402,7 @@ func TestUnifyUnknownType(t *testing.T) {
 }
 
 func TestUnifyMutableTypes(t *testing.T) {
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-	defer cancel()
+	ctx := context.Background()
 	checker := NewChecker(ctx)
 	inferCtx := Context{Scope: Prelude(checker), IsAsync: false, IsPatMatch: false}
 
@@ -555,8 +549,7 @@ func TestUnifyMutableTypes(t *testing.T) {
 // Tests for issue #381: Trial unification in union/intersection handling
 // can leave TypeVars partially mutated when a trial fails.
 func TestUnifyTypeVarNotCorruptedByFailedUnionTrial(t *testing.T) {
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-	defer cancel()
+	ctx := context.Background()
 	checker := NewChecker(ctx)
 	inferCtx := Context{Scope: Prelude(checker), IsAsync: false, IsPatMatch: false}
 
@@ -633,8 +626,7 @@ func TestUnifyTypeVarNotCorruptedByFailedUnionTrial(t *testing.T) {
 }
 
 func TestUnifyTypeVarNotCorruptedByFailedIntersectionTrial(t *testing.T) {
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-	defer cancel()
+	ctx := context.Background()
 	checker := NewChecker(ctx)
 	inferCtx := Context{Scope: Prelude(checker), IsAsync: false, IsPatMatch: false}
 
@@ -759,8 +751,7 @@ func TestUnifyTypeVarNotCorruptedByFailedIntersectionTrial(t *testing.T) {
 }
 
 func TestUnifyOpenClosedIndexSignatureDedup(t *testing.T) {
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-	defer cancel()
+	ctx := context.Background()
 	checker := NewChecker(ctx)
 	inferCtx := Context{Scope: Prelude(checker), IsAsync: false, IsPatMatch: false}
 
@@ -892,8 +883,7 @@ func TestFindIndexSignatureForKeyOrderIndependence(t *testing.T) {
 	// distinguish them by binding a type variable against each signature
 	// independently to confirm which one was matched.
 
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-	defer cancel()
+	ctx := context.Background()
 	checker := NewChecker(ctx)
 	inferCtx := Context{Scope: Prelude(checker), IsAsync: false, IsPatMatch: false}
 

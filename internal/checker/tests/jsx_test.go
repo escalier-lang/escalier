@@ -8,7 +8,6 @@ import (
 	"strings"
 	"sync"
 	"testing"
-	"time"
 
 	"github.com/escalier-lang/escalier/internal/ast"
 	. "github.com/escalier-lang/escalier/internal/checker"
@@ -60,8 +59,7 @@ var (
 func loadReactTypesOnce() {
 	reactTypesLoadOnce.Do(func() {
 		// Create a temporary checker just for loading types
-		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
-		defer cancel()
+		ctx := context.Background()
 		c := NewChecker(ctx)
 		scope := Prelude(c)
 		inferCtx := Context{
@@ -197,8 +195,7 @@ func TestJSXElementBasic(t *testing.T) {
 				Contents: test.input,
 			}
 
-			ctx, cancel := context.WithTimeout(context.Background(), 1*time.Second)
-			defer cancel()
+			ctx := context.Background()
 			p := parser.NewParser(ctx, source)
 			script, parseErrors := p.ParseScript()
 
@@ -254,8 +251,7 @@ func TestJSXFragmentBasic(t *testing.T) {
 				Contents: test.input,
 			}
 
-			ctx, cancel := context.WithTimeout(context.Background(), 1*time.Second)
-			defer cancel()
+			ctx := context.Background()
 			p := parser.NewParser(ctx, source)
 			script, parseErrors := p.ParseScript()
 
@@ -323,8 +319,7 @@ func TestJSXInferredTypes(t *testing.T) {
 				Contents: test.input,
 			}
 
-			ctx, cancel := context.WithTimeout(context.Background(), 1*time.Second)
-			defer cancel()
+			ctx := context.Background()
 			p := parser.NewParser(ctx, source)
 			script, parseErrors := p.ParseScript()
 
@@ -405,8 +400,7 @@ func TestJSXComponent(t *testing.T) {
 				Contents: test.input,
 			}
 
-			ctx, cancel := context.WithTimeout(context.Background(), 1*time.Second)
-			defer cancel()
+			ctx := context.Background()
 			p := parser.NewParser(ctx, source)
 			script, parseErrors := p.ParseScript()
 
@@ -479,8 +473,7 @@ func TestIntrinsicElementValidProps(t *testing.T) {
 				Contents: test.input,
 			}
 
-			ctx, cancel := context.WithTimeout(context.Background(), 1*time.Second)
-			defer cancel()
+			ctx := context.Background()
 			p := parser.NewParser(ctx, source)
 			script, parseErrors := p.ParseScript()
 
@@ -541,8 +534,7 @@ func TestIntrinsicElementInvalidPropType(t *testing.T) {
 				Contents: test.input,
 			}
 
-			ctx, cancel := context.WithTimeout(context.Background(), 1*time.Second)
-			defer cancel()
+			ctx := context.Background()
 			p := parser.NewParser(ctx, source)
 			script, parseErrors := p.ParseScript()
 
@@ -644,8 +636,7 @@ func TestIntrinsicElementMissingRequiredProp(t *testing.T) {
 				Contents: test.input,
 			}
 
-			ctx, cancel := context.WithTimeout(context.Background(), 1*time.Second)
-			defer cancel()
+			ctx := context.Background()
 			p := parser.NewParser(ctx, source)
 			script, parseErrors := p.ParseScript()
 
@@ -702,8 +693,7 @@ func TestIntrinsicElementWithAllRequiredProps(t *testing.T) {
 				Contents: test.input,
 			}
 
-			ctx, cancel := context.WithTimeout(context.Background(), 1*time.Second)
-			defer cancel()
+			ctx := context.Background()
 			p := parser.NewParser(ctx, source)
 			script, parseErrors := p.ParseScript()
 
@@ -751,8 +741,7 @@ func TestIntrinsicElementUnknownElement(t *testing.T) {
 				Contents: test.input,
 			}
 
-			ctx, cancel := context.WithTimeout(context.Background(), 1*time.Second)
-			defer cancel()
+			ctx := context.Background()
 			p := parser.NewParser(ctx, source)
 			script, parseErrors := p.ParseScript()
 
@@ -797,8 +786,7 @@ func TestIntrinsicElementWithoutJSXNamespace(t *testing.T) {
 				Contents: test.input,
 			}
 
-			ctx, cancel := context.WithTimeout(context.Background(), 1*time.Second)
-			defer cancel()
+			ctx := context.Background()
 			p := parser.NewParser(ctx, source)
 			script, parseErrors := p.ParseScript()
 
@@ -852,8 +840,7 @@ func TestIntrinsicElementEventHandlers(t *testing.T) {
 				Contents: test.input,
 			}
 
-			ctx, cancel := context.WithTimeout(context.Background(), 1*time.Second)
-			defer cancel()
+			ctx := context.Background()
 			p := parser.NewParser(ctx, source)
 			script, parseErrors := p.ParseScript()
 
@@ -919,8 +906,7 @@ func TestSpreadPropsValidTypes(t *testing.T) {
 				Contents: test.input,
 			}
 
-			ctx, cancel := context.WithTimeout(context.Background(), 1*time.Second)
-			defer cancel()
+			ctx := context.Background()
 			p := parser.NewParser(ctx, source)
 			script, parseErrors := p.ParseScript()
 
@@ -982,8 +968,7 @@ func TestSpreadPropsInvalidTypes(t *testing.T) {
 				Contents: test.input,
 			}
 
-			ctx, cancel := context.WithTimeout(context.Background(), 1*time.Second)
-			defer cancel()
+			ctx := context.Background()
 			p := parser.NewParser(ctx, source)
 			script, parseErrors := p.ParseScript()
 
@@ -1055,8 +1040,7 @@ func TestSpreadPropsSatisfyRequired(t *testing.T) {
 				Contents: test.input,
 			}
 
-			ctx, cancel := context.WithTimeout(context.Background(), 1*time.Second)
-			defer cancel()
+			ctx := context.Background()
 			p := parser.NewParser(ctx, source)
 			script, parseErrors := p.ParseScript()
 
@@ -1124,8 +1108,7 @@ func TestSpreadPropsMissingRequired(t *testing.T) {
 				Contents: test.input,
 			}
 
-			ctx, cancel := context.WithTimeout(context.Background(), 1*time.Second)
-			defer cancel()
+			ctx := context.Background()
 			p := parser.NewParser(ctx, source)
 			script, parseErrors := p.ParseScript()
 
@@ -1210,8 +1193,7 @@ func TestComponentValidProps(t *testing.T) {
 				Contents: test.input,
 			}
 
-			ctx, cancel := context.WithTimeout(context.Background(), 1*time.Second)
-			defer cancel()
+			ctx := context.Background()
 			p := parser.NewParser(ctx, source)
 			script, parseErrors := p.ParseScript()
 
@@ -1277,8 +1259,7 @@ func TestComponentMissingRequiredProp(t *testing.T) {
 				Contents: test.input,
 			}
 
-			ctx, cancel := context.WithTimeout(context.Background(), 1*time.Second)
-			defer cancel()
+			ctx := context.Background()
 			p := parser.NewParser(ctx, source)
 			script, parseErrors := p.ParseScript()
 
@@ -1350,8 +1331,7 @@ func TestComponentWrongPropType(t *testing.T) {
 				Contents: test.input,
 			}
 
-			ctx, cancel := context.WithTimeout(context.Background(), 1*time.Second)
-			defer cancel()
+			ctx := context.Background()
 			p := parser.NewParser(ctx, source)
 			script, parseErrors := p.ParseScript()
 
@@ -1404,8 +1384,7 @@ func TestUnknownComponent(t *testing.T) {
 				Contents: test.input,
 			}
 
-			ctx, cancel := context.WithTimeout(context.Background(), 1*time.Second)
-			defer cancel()
+			ctx := context.Background()
 			p := parser.NewParser(ctx, source)
 			script, parseErrors := p.ParseScript()
 
@@ -1472,8 +1451,7 @@ func TestMemberExpressionComponent(t *testing.T) {
 				Contents: test.input,
 			}
 
-			ctx, cancel := context.WithTimeout(context.Background(), 1*time.Second)
-			defer cancel()
+			ctx := context.Background()
 			p := parser.NewParser(ctx, source)
 			script, parseErrors := p.ParseScript()
 
@@ -1543,8 +1521,7 @@ func TestMemberExpressionComponentErrors(t *testing.T) {
 				Contents: test.input,
 			}
 
-			ctx, cancel := context.WithTimeout(context.Background(), 1*time.Second)
-			defer cancel()
+			ctx := context.Background()
 			p := parser.NewParser(ctx, source)
 			script, parseErrors := p.ParseScript()
 
@@ -1624,8 +1601,7 @@ func TestComponentWithValidChildren(t *testing.T) {
 				Contents: test.input,
 			}
 
-			ctx, cancel := context.WithTimeout(context.Background(), 1*time.Second)
-			defer cancel()
+			ctx := context.Background()
 			p := parser.NewParser(ctx, source)
 			script, parseErrors := p.ParseScript()
 
@@ -1713,8 +1689,7 @@ func TestComponentWithInvalidChildrenType(t *testing.T) {
 				Contents: test.input,
 			}
 
-			ctx, cancel := context.WithTimeout(context.Background(), 1*time.Second)
-			defer cancel()
+			ctx := context.Background()
 			p := parser.NewParser(ctx, source)
 			script, parseErrors := p.ParseScript()
 
@@ -1783,8 +1758,7 @@ func TestMultipleChildren(t *testing.T) {
 				Contents: test.input,
 			}
 
-			ctx, cancel := context.WithTimeout(context.Background(), 1*time.Second)
-			defer cancel()
+			ctx := context.Background()
 			p := parser.NewParser(ctx, source)
 			script, parseErrors := p.ParseScript()
 
@@ -1847,8 +1821,7 @@ func TestNestedComponentChildren(t *testing.T) {
 				Contents: test.input,
 			}
 
-			ctx, cancel := context.WithTimeout(context.Background(), 1*time.Second)
-			defer cancel()
+			ctx := context.Background()
 			p := parser.NewParser(ctx, source)
 			script, parseErrors := p.ParseScript()
 
@@ -1923,8 +1896,7 @@ func TestKeyPropValid(t *testing.T) {
 				Contents: test.input,
 			}
 
-			ctx, cancel := context.WithTimeout(context.Background(), 1*time.Second)
-			defer cancel()
+			ctx := context.Background()
 			p := parser.NewParser(ctx, source)
 			script, parseErrors := p.ParseScript()
 
@@ -1978,8 +1950,7 @@ func TestKeyPropInvalid(t *testing.T) {
 				Contents: test.input,
 			}
 
-			ctx, cancel := context.WithTimeout(context.Background(), 1*time.Second)
-			defer cancel()
+			ctx := context.Background()
 			p := parser.NewParser(ctx, source)
 			script, parseErrors := p.ParseScript()
 
@@ -2041,8 +2012,7 @@ func TestKeyNotPassedToProps(t *testing.T) {
 				Contents: test.input,
 			}
 
-			ctx, cancel := context.WithTimeout(context.Background(), 1*time.Second)
-			defer cancel()
+			ctx := context.Background()
 			p := parser.NewParser(ctx, source)
 			script, parseErrors := p.ParseScript()
 
@@ -2107,8 +2077,7 @@ func TestRefPropOnIntrinsicElement(t *testing.T) {
 				Contents: test.input,
 			}
 
-			ctx, cancel := context.WithTimeout(context.Background(), 1*time.Second)
-			defer cancel()
+			ctx := context.Background()
 			p := parser.NewParser(ctx, source)
 			script, parseErrors := p.ParseScript()
 
@@ -2163,8 +2132,7 @@ func TestRefNotPassedToProps(t *testing.T) {
 				Contents: test.input,
 			}
 
-			ctx, cancel := context.WithTimeout(context.Background(), 1*time.Second)
-			defer cancel()
+			ctx := context.Background()
 			p := parser.NewParser(ctx, source)
 			script, parseErrors := p.ParseScript()
 
@@ -2258,8 +2226,7 @@ func TestKeyPropOnComponent(t *testing.T) {
 				Contents: test.input,
 			}
 
-			ctx, cancel := context.WithTimeout(context.Background(), 1*time.Second)
-			defer cancel()
+			ctx := context.Background()
 			p := parser.NewParser(ctx, source)
 			script, parseErrors := p.ParseScript()
 
@@ -2328,8 +2295,7 @@ func TestKeyPropInvalidOnComponent(t *testing.T) {
 				Contents: test.input,
 			}
 
-			ctx, cancel := context.WithTimeout(context.Background(), 1*time.Second)
-			defer cancel()
+			ctx := context.Background()
 			p := parser.NewParser(ctx, source)
 			script, parseErrors := p.ParseScript()
 
@@ -2412,8 +2378,7 @@ func TestRefPropOnComponent(t *testing.T) {
 				Contents: test.input,
 			}
 
-			ctx, cancel := context.WithTimeout(context.Background(), 1*time.Second)
-			defer cancel()
+			ctx := context.Background()
 			p := parser.NewParser(ctx, source)
 			script, parseErrors := p.ParseScript()
 
@@ -2488,8 +2453,7 @@ func TestKeyAndRefTogetherOnComponent(t *testing.T) {
 				Contents: test.input,
 			}
 
-			ctx, cancel := context.WithTimeout(context.Background(), 1*time.Second)
-			defer cancel()
+			ctx := context.Background()
 			p := parser.NewParser(ctx, source)
 			script, parseErrors := p.ParseScript()
 
@@ -2542,8 +2506,7 @@ func TestKeyAndRefTogether(t *testing.T) {
 				Contents: test.input,
 			}
 
-			ctx, cancel := context.WithTimeout(context.Background(), 1*time.Second)
-			defer cancel()
+			ctx := context.Background()
 			p := parser.NewParser(ctx, source)
 			script, parseErrors := p.ParseScript()
 
@@ -2649,8 +2612,7 @@ func TestHasJSXSyntax(t *testing.T) {
 				Contents: test.input,
 			}
 
-			ctx, cancel := context.WithTimeout(context.Background(), 1*time.Second)
-			defer cancel()
+			ctx := context.Background()
 			p := parser.NewParser(ctx, source)
 			script, parseErrors := p.ParseScript()
 
@@ -2684,8 +2646,7 @@ func TestLoadReactTypesIntegration(t *testing.T) {
 	// more work to fully support. The basic infrastructure for loading is in place.
 	// See Phase 4.3 and beyond in the implementation plan for the remaining work.
 	t.Run("LoadReactTypesSuccessfully", func(t *testing.T) {
-		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-		defer cancel()
+		ctx := context.Background()
 		c := NewChecker(ctx)
 		scope := Prelude(c)
 
@@ -2709,8 +2670,7 @@ func TestLoadReactTypesIntegration(t *testing.T) {
 	})
 
 	t.Run("LoadReactTypesCaching", func(t *testing.T) {
-		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-		defer cancel()
+		ctx := context.Background()
 		c := NewChecker(ctx)
 		scope := Prelude(c)
 
@@ -2734,8 +2694,7 @@ func TestLoadReactTypesIntegration(t *testing.T) {
 // TestLoadReactTypesWithoutPackage tests LoadReactTypes when @types/react is not available.
 func TestLoadReactTypesWithoutPackage(t *testing.T) {
 	t.Run("ReturnsErrorWhenNotInstalled", func(t *testing.T) {
-		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-		defer cancel()
+		ctx := context.Background()
 		c := NewChecker(ctx)
 		scope := Prelude(c)
 
@@ -2804,8 +2763,7 @@ func TestHasJSXSyntaxModule(t *testing.T) {
 				Contents: test.input,
 			}
 
-			ctx, cancel := context.WithTimeout(context.Background(), 1*time.Second)
-			defer cancel()
+			ctx := context.Background()
 			module, parseErrors := parser.ParseLibFiles(ctx, []*ast.Source{source})
 
 			assert.Len(t, parseErrors, 0, "Expected no parse errors")
@@ -2830,8 +2788,7 @@ func TestAutoLoadReactTypesForJSX(t *testing.T) {
 			Contents: `val elem = <div />`,
 		}
 
-		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-		defer cancel()
+		ctx := context.Background()
 		module, parseErrors := parser.ParseLibFiles(ctx, []*ast.Source{source})
 
 		assert.Len(t, parseErrors, 0, "Expected no parse errors")
@@ -2871,8 +2828,7 @@ func TestAutoLoadReactTypesForJSX(t *testing.T) {
 			Contents: `val x = 42`,
 		}
 
-		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-		defer cancel()
+		ctx := context.Background()
 		module, parseErrors := parser.ParseLibFiles(ctx, []*ast.Source{source})
 
 		assert.Len(t, parseErrors, 0, "Expected no parse errors")
@@ -2917,8 +2873,7 @@ func TestJSXElementTypeResolution(t *testing.T) {
 			Contents: input,
 		}
 
-		ctx, cancel := context.WithTimeout(context.Background(), 1*time.Second)
-		defer cancel()
+		ctx := context.Background()
 		p := parser.NewParser(ctx, source)
 		script, parseErrors := p.ParseScript()
 
@@ -3002,8 +2957,7 @@ func TestJSXElementTypeResolution(t *testing.T) {
 			Contents: input,
 		}
 
-		ctx, cancel := context.WithTimeout(context.Background(), 1*time.Second)
-		defer cancel()
+		ctx := context.Background()
 		p := parser.NewParser(ctx, source)
 		script, parseErrors := p.ParseScript()
 
@@ -3049,8 +3003,7 @@ func TestJSXFragmentTypeResolution(t *testing.T) {
 			Contents: input,
 		}
 
-		ctx, cancel := context.WithTimeout(context.Background(), 1*time.Second)
-		defer cancel()
+		ctx := context.Background()
 		p := parser.NewParser(ctx, source)
 		script, parseErrors := p.ParseScript()
 

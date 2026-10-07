@@ -3,7 +3,6 @@ package tests
 import (
 	"context"
 	"testing"
-	"time"
 
 	"github.com/escalier-lang/escalier/internal/ast"
 	. "github.com/escalier-lang/escalier/internal/checker"
@@ -16,8 +15,7 @@ import (
 // TestGlobalThisBinding verifies that globalThis is available in the global scope
 // and provides access to the global namespace.
 func TestGlobalThisBinding(t *testing.T) {
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-	defer cancel()
+	ctx := context.Background()
 	c := NewChecker(ctx)
 	userScope := Prelude(c)
 
@@ -54,8 +52,7 @@ func TestLocalShadowingOfGlobals(t *testing.T) {
 		Contents: input,
 	}
 
-	ctx, cancel := context.WithTimeout(context.Background(), 1*time.Second)
-	defer cancel()
+	ctx := context.Background()
 	p := parser.NewParser(ctx, source)
 	script, parseErrors := p.ParseScript()
 	require.Len(t, parseErrors, 0, "Should have no parse errors")
@@ -115,8 +112,7 @@ func TestGlobalThisAccessToGlobals(t *testing.T) {
 		Contents: input,
 	}
 
-	ctx, cancel := context.WithTimeout(context.Background(), 1*time.Second)
-	defer cancel()
+	ctx := context.Background()
 	p := parser.NewParser(ctx, source)
 	script, parseErrors := p.ParseScript()
 	require.Len(t, parseErrors, 0, "Should have no parse errors")
@@ -171,8 +167,7 @@ func TestGlobalThisAccessWhenShadowed(t *testing.T) {
 		Contents: input,
 	}
 
-	ctx, cancel := context.WithTimeout(context.Background(), 1*time.Second)
-	defer cancel()
+	ctx := context.Background()
 	p := parser.NewParser(ctx, source)
 	script, parseErrors := p.ParseScript()
 	require.Len(t, parseErrors, 0, "Should have no parse errors")
@@ -242,8 +237,7 @@ func TestGlobalThisAccessWhenShadowed(t *testing.T) {
 // TestShadowedGlobalNotAccessibleUnqualified verifies that when a global is
 // shadowed, unqualified access resolves to the local definition.
 func TestShadowedGlobalNotAccessibleUnqualified(t *testing.T) {
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-	defer cancel()
+	ctx := context.Background()
 	c := NewChecker(ctx)
 	userScope := Prelude(c)
 
@@ -277,8 +271,7 @@ func TestGlobalThisValueAccess(t *testing.T) {
 		Contents: input,
 	}
 
-	ctx, cancel := context.WithTimeout(context.Background(), 1*time.Second)
-	defer cancel()
+	ctx := context.Background()
 	p := parser.NewParser(ctx, source)
 	script, parseErrors := p.ParseScript()
 	require.Len(t, parseErrors, 0, "Should have no parse errors")

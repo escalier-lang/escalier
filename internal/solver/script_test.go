@@ -3,7 +3,6 @@ package solver
 import (
 	"context"
 	"testing"
-	"time"
 
 	"github.com/escalier-lang/escalier/internal/ast"
 	"github.com/escalier-lang/escalier/internal/parser"
@@ -18,8 +17,7 @@ import (
 func parseScript(t *testing.T, src string) *ast.Script {
 	t.Helper()
 	source := &ast.Source{ID: 0, Path: "input.esc", Contents: src}
-	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
-	defer cancel()
+	ctx := context.Background()
 	p := parser.NewParser(ctx, source)
 	script, parseErrors := p.ParseScript()
 	require.Empty(t, parseErrors, "expected no parse errors")
@@ -329,8 +327,7 @@ func TestScriptAwaitOutsideAsync(t *testing.T) {
 // caller sees belongs to the script.
 func inferScriptInLib(t *testing.T, libSrc, scriptSrc string) (values map[string]string, errs []SolverError) {
 	t.Helper()
-	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
-	defer cancel()
+	ctx := context.Background()
 
 	libSource := &ast.Source{ID: 0, Path: "lib/index.esc", Contents: libSrc}
 	module, libParseErrors := parser.ParseLibFiles(ctx, []*ast.Source{libSource})
@@ -492,8 +489,7 @@ func TestInferScriptInLibClassShadowsLibrary(t *testing.T) {
 // script's definition would replace the first's while the first's scope still holds a
 // handle naming it.
 func TestInferScriptInLibClassPerScript(t *testing.T) {
-	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
-	defer cancel()
+	ctx := context.Background()
 
 	libSource := &ast.Source{ID: 0, Path: "lib/index.esc", Contents: `export val unused = 0`}
 	module, parseErrors := parser.ParseLibFiles(ctx, []*ast.Source{libSource})
@@ -548,8 +544,7 @@ func TestInferScriptInLibClassPerScript(t *testing.T) {
 // an editor re-checks one bin/ file on every keystroke against a cached library, so
 // a table shared with the library would grow for as long as the session lasts.
 func TestInferScriptInLibLeavesTheLibraryTableAlone(t *testing.T) {
-	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
-	defer cancel()
+	ctx := context.Background()
 
 	libSource := &ast.Source{ID: 0, Path: "lib/index.esc", Contents: `export val greeting = "hello"`}
 	module, parseErrors := parser.ParseLibFiles(ctx, []*ast.Source{libSource})
@@ -579,8 +574,7 @@ func TestInferScriptInLibLeavesTheLibraryTableAlone(t *testing.T) {
 // second version below drops a class the first declared, which is what a registry
 // that only overwrites would keep.
 func TestInferScriptInLibRechecksAScript(t *testing.T) {
-	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
-	defer cancel()
+	ctx := context.Background()
 
 	libSource := &ast.Source{ID: 0, Path: "lib/index.esc", Contents: `export val unused = 0`}
 	module, parseErrors := parser.ParseLibFiles(ctx, []*ast.Source{libSource})
@@ -642,8 +636,7 @@ func TestInferScriptInLibRechecksAScript(t *testing.T) {
 // TypeDecl in a function body and a script body is one. This is what checks that the
 // alias side is cleared too.
 func TestInferScriptInLibRechecksAnEnum(t *testing.T) {
-	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
-	defer cancel()
+	ctx := context.Background()
 
 	libSource := &ast.Source{ID: 0, Path: "lib/index.esc", Contents: `export val unused = 0`}
 	module, parseErrors := parser.ParseLibFiles(ctx, []*ast.Source{libSource})

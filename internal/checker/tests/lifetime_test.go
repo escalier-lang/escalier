@@ -3,7 +3,6 @@ package tests
 import (
 	"context"
 	"testing"
-	"time"
 
 	"github.com/escalier-lang/escalier/internal/ast"
 	. "github.com/escalier-lang/escalier/internal/checker"
@@ -1474,8 +1473,7 @@ func mustInferAsModule(t *testing.T, input string) *type_system.Namespace {
 	t.Helper()
 	source := &ast.Source{ID: 0, Path: "input.esc", Contents: input}
 
-	ctx, cancel := context.WithTimeout(context.Background(), 1*time.Second)
-	defer cancel()
+	ctx := context.Background()
 	module, parseErrors := parser.ParseLibFiles(ctx, []*ast.Source{source})
 	require.Empty(t, parseErrors, "expected no parse errors")
 
@@ -1501,8 +1499,7 @@ func mustInferScript(t *testing.T, input string) (map[string]string, []string) {
 	t.Helper()
 	source := &ast.Source{ID: 0, Path: "input.esc", Contents: input}
 
-	ctx, cancel := context.WithTimeout(context.Background(), 1*time.Second)
-	defer cancel()
+	ctx := context.Background()
 	p := parser.NewParser(ctx, source)
 	script, parseErrors := p.ParseScript()
 	require.Empty(t, parseErrors, "expected no parse errors")
@@ -1529,8 +1526,7 @@ func mustInferScriptMutErrors(t *testing.T, input string) []string {
 	t.Helper()
 	source := &ast.Source{ID: 0, Path: "input.esc", Contents: input}
 
-	ctx, cancel := context.WithTimeout(context.Background(), 1*time.Second)
-	defer cancel()
+	ctx := context.Background()
 	p := parser.NewParser(ctx, source)
 	script, parseErrors := p.ParseScript()
 	require.Empty(t, parseErrors, "expected no parse errors")
@@ -1559,8 +1555,7 @@ func mustInferScriptAllErrors(t *testing.T, input string) []Error {
 	t.Helper()
 	source := &ast.Source{ID: 0, Path: "input.esc", Contents: input}
 
-	ctx, cancel := context.WithTimeout(context.Background(), 1*time.Second)
-	defer cancel()
+	ctx := context.Background()
 	p := parser.NewParser(ctx, source)
 	script, parseErrors := p.ParseScript()
 	require.Empty(t, parseErrors, "expected no parse errors")

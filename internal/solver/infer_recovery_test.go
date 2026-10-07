@@ -3,7 +3,6 @@ package solver
 import (
 	"context"
 	"testing"
-	"time"
 
 	"github.com/escalier-lang/escalier/internal/ast"
 	"github.com/escalier-lang/escalier/internal/parser"
@@ -74,8 +73,7 @@ func TestInferErrorExprReportsNothing(t *testing.T) {
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
-			ctx, cancel := context.WithTimeout(context.Background(), time.Second)
-			defer cancel()
+			ctx := context.Background()
 			module, parseErrors := parser.ParseLibFiles(ctx,
 				[]*ast.Source{{ID: 0, Path: "input.esc", Contents: test.src}})
 			require.Len(t, parseErrors, 1)

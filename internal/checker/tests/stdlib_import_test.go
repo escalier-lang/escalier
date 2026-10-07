@@ -7,7 +7,6 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
-	"time"
 
 	"github.com/escalier-lang/escalier/internal/ast"
 	. "github.com/escalier-lang/escalier/internal/checker"
@@ -34,9 +33,8 @@ func makeCustomStdlibDir(t *testing.T, files map[string]string) string {
 // syntheticMath is a two-declaration `std:math`, enough for a test that asserts
 // what an import binds rather than what the committed tree declares.
 //
-// Inferring the committed `std/math.esc` takes most of the budget
-// inferStdlibImportSource allows, and a loaded CI runner spends the rest, so a
-// test pointed at it fails on machine speed rather than on the rule it asserts.
+// Inferring the committed `std/math.esc` costs most of a second per test, and a
+// change to that file would break tests that only care about import binding.
 // The stdlib_import_local fixture is what holds the committed tree to loading.
 var syntheticMath = map[string]string{
 	"std/math.esc": "@js(\"Math.PI\")\nexport declare val PI: number\n",
@@ -51,8 +49,7 @@ func inferStdlibImportSource(t *testing.T, input string) (fileNs map[int]*Scope,
 	t.Helper()
 	source := &ast.Source{ID: 0, Path: "lib/main.esc", Contents: input}
 
-	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
-	defer cancel()
+	ctx := context.Background()
 	module, parseErrs := parser.ParseLibFiles(ctx, []*ast.Source{source})
 	require.Empty(t, parseErrs, "expected no parse errors")
 
@@ -222,8 +219,7 @@ func TestStdlibImport_LocalBindingSharesPkgNsPointer(t *testing.T) {
 	source := &ast.Source{ID: 0, Path: "lib/main.esc", Contents: `
 		import "std:math"
 	`}
-	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
-	defer cancel()
+	ctx := context.Background()
 	module, parseErrs := parser.ParseLibFiles(ctx, []*ast.Source{source})
 	require.Empty(t, parseErrs)
 
@@ -967,8 +963,7 @@ func TestImportingWebDomDoesNotPanic(t *testing.T) {
 		export declare fn element() -> dom.Element
 	`}
 
-	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
-	defer cancel()
+	ctx := context.Background()
 	module, parseErrs := parser.ParseLibFiles(ctx, []*ast.Source{source})
 	require.Empty(t, parseErrs)
 

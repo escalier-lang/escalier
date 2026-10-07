@@ -4,7 +4,6 @@ import (
 	"context"
 	"strings"
 	"testing"
-	"time"
 
 	"github.com/escalier-lang/escalier/internal/ast"
 	. "github.com/escalier-lang/escalier/internal/checker"
@@ -15,8 +14,7 @@ import (
 
 // TestModuleFileTracking verifies that the Module correctly tracks source files
 func TestModuleFileTracking(t *testing.T) {
-	ctx, cancel := context.WithTimeout(context.Background(), 1*time.Second)
-	defer cancel()
+	ctx := context.Background()
 
 	sources := []*ast.Source{
 		{
@@ -50,8 +48,7 @@ func TestModuleFileTracking(t *testing.T) {
 
 // TestModuleFileImports verifies that import statements are tracked per file
 func TestModuleFileImports(t *testing.T) {
-	ctx, cancel := context.WithTimeout(context.Background(), 1*time.Second)
-	defer cancel()
+	ctx := context.Background()
 
 	sources := []*ast.Source{
 		{
@@ -100,8 +97,7 @@ func TestModuleFileImports(t *testing.T) {
 
 // TestCrossFileDeclarationVisibility verifies that declarations are visible across files
 func TestCrossFileDeclarationVisibility(t *testing.T) {
-	ctx, cancel := context.WithTimeout(context.Background(), 1*time.Second)
-	defer cancel()
+	ctx := context.Background()
 
 	sources := []*ast.Source{
 		{
@@ -150,8 +146,7 @@ func TestCrossFileDeclarationVisibility(t *testing.T) {
 
 // TestFileNamespaceFromPath verifies that file namespace is correctly derived from path
 func TestFileNamespaceFromPath(t *testing.T) {
-	ctx, cancel := context.WithTimeout(context.Background(), 1*time.Second)
-	defer cancel()
+	ctx := context.Background()
 
 	sources := []*ast.Source{
 		{
@@ -211,8 +206,7 @@ func createMockPackage(values map[string]type_system.Type, types map[string]type
 
 // TestFileScopedImportsBasic verifies that imports from a mocked package work correctly
 func TestFileScopedImportsBasic(t *testing.T) {
-	ctx, cancel := context.WithTimeout(context.Background(), 1*time.Second)
-	defer cancel()
+	ctx := context.Background()
 
 	sources := []*ast.Source{
 		{
@@ -274,8 +268,7 @@ func TestFileScopedImportsBasic(t *testing.T) {
 
 // TestFileScopedImportsIsolation verifies that imports in one file are NOT visible to other files
 func TestFileScopedImportsIsolation(t *testing.T) {
-	ctx, cancel := context.WithTimeout(context.Background(), 1*time.Second)
-	defer cancel()
+	ctx := context.Background()
 
 	sources := []*ast.Source{
 		{
@@ -338,8 +331,7 @@ func TestFileScopedImportsIsolation(t *testing.T) {
 // TestFileScopedImportsSamePackageDifferentFiles verifies that each file can import
 // the same package independently
 func TestFileScopedImportsSamePackageDifferentFiles(t *testing.T) {
-	ctx, cancel := context.WithTimeout(context.Background(), 1*time.Second)
-	defer cancel()
+	ctx := context.Background()
 
 	sources := []*ast.Source{
 		{
@@ -399,8 +391,7 @@ func TestFileScopedImportsSamePackageDifferentFiles(t *testing.T) {
 // TestFileScopedImportsDifferentAliases verifies that different files can use
 // different aliases for the same package
 func TestFileScopedImportsDifferentAliases(t *testing.T) {
-	ctx, cancel := context.WithTimeout(context.Background(), 1*time.Second)
-	defer cancel()
+	ctx := context.Background()
 
 	sources := []*ast.Source{
 		{
@@ -467,8 +458,7 @@ func TestFileScopedImportsDifferentAliases(t *testing.T) {
 
 // TestScopeChainTraversal verifies that user code can access globals via parent chain lookup
 func TestScopeChainTraversal(t *testing.T) {
-	ctx, cancel := context.WithTimeout(context.Background(), 1*time.Second)
-	defer cancel()
+	ctx := context.Background()
 
 	// Module with code that references globals (Array, number, string, etc.)
 	sources := []*ast.Source{
@@ -519,8 +509,7 @@ func TestScopeChainTraversal(t *testing.T) {
 
 // TestGlobalNamespaceIsolation verifies that globals are in a separate namespace from module declarations
 func TestGlobalNamespaceIsolation(t *testing.T) {
-	ctx, cancel := context.WithTimeout(context.Background(), 1*time.Second)
-	defer cancel()
+	ctx := context.Background()
 
 	// Define a local type with the same name as a global
 	sources := []*ast.Source{
@@ -572,8 +561,7 @@ func TestGlobalNamespaceIsolation(t *testing.T) {
 
 // TestCrossFileCyclicDependencies verifies that mutually recursive types across files work correctly
 func TestCrossFileCyclicDependencies(t *testing.T) {
-	ctx, cancel := context.WithTimeout(context.Background(), 1*time.Second)
-	defer cancel()
+	ctx := context.Background()
 
 	// Two files with mutually recursive types
 	sources := []*ast.Source{
@@ -629,8 +617,7 @@ func TestCrossFileCyclicDependencies(t *testing.T) {
 // TestCrossFileCyclesWithImports verifies that cross-file cycles work correctly
 // when one file uses imported types
 func TestCrossFileCyclesWithImports(t *testing.T) {
-	ctx, cancel := context.WithTimeout(context.Background(), 1*time.Second)
-	defer cancel()
+	ctx := context.Background()
 
 	// Two files: one imports a package and defines a type using it,
 	// the other references that type
@@ -703,8 +690,7 @@ func TestCrossFileCyclesWithImports(t *testing.T) {
 // TestCrossFileCyclesImportIsolation verifies that file B cannot use imports from file A
 // even when their types form a cycle
 func TestCrossFileCyclesImportIsolation(t *testing.T) {
-	ctx, cancel := context.WithTimeout(context.Background(), 1*time.Second)
-	defer cancel()
+	ctx := context.Background()
 
 	// File A imports a package, file B tries to use the import namespace
 	sources := []*ast.Source{

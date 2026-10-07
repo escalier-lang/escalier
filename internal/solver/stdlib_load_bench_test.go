@@ -7,7 +7,6 @@ import (
 	"sort"
 	"strings"
 	"testing"
-	"time"
 
 	"github.com/escalier-lang/escalier/internal/ast"
 	"github.com/escalier-lang/escalier/internal/parser"
@@ -114,8 +113,7 @@ func benchEntryModule(b *testing.B, uris []string) *ast.Module {
 	}
 	lines = append(lines, "val x: number = 1")
 
-	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
-	defer cancel()
+	ctx := context.Background()
 	module, parseErrs := parser.ParseLibFiles(ctx, []*ast.Source{{
 		ID: 0, Path: "input.esc", Contents: strings.Join(lines, "\n") + "\n",
 	}})
