@@ -301,16 +301,10 @@ type MutabilityMismatchError struct {
 	site       ast.Node     // M2.5: constraint node fallback
 }
 
-// BorrowEscapeError fires when a borrow outlives the destination it flows into: a borrowed
-// value (Lt != nil) constrained against an owned destination (Lt == nil), either a bare
-// supertype or a RefType super with no lifetime. The firing path is INERT in C2 —
-// every RefType carries Lt == nil until the lifetime sort lands (D1) and borrows
-// originate (D2) — so the struct is wired now and exercised from D2.
-//
-// It is intentionally UNTESTED until then, and currently unconstructible: soltype.Lifetime
-// has no concrete implementors, so no non-nil Lt exists to drive any firing branch.
-// The Message format and the describe-the-whole-borrow choice are first observed in
-// D2; coverage of Message/Span/Related is deferred to that PR.
+// BorrowEscapeError fires when a borrow flows into an owned destination. Sub is the borrow,
+// a RefType whose Lt is set. Super is the destination, which is a bare type, a union, or a
+// RefType whose Lt is nil. Every borrow is rejected there, whatever its lifetime, so the
+// error names the ownership mismatch rather than a lifetime that is too short.
 type BorrowEscapeError struct {
 	Sub   *soltype.RefType
 	Super soltype.Type
@@ -2965,14 +2959,9 @@ func concreteBoundOf(v *soltype.TypeVarType) (soltype.Type, bool) {
 }
 
 func (e *BorrowEscapeError) Message() string {
-	sub, super := describe(e.Sub), describe(e.Super)
-	// A borrow and the owned value it points at print alike, so the destination is named as
-	// owned when the two would otherwise read the same. A callback annotated
-	// `arr: Array<number>` where the signature lends `&Self` is that case.
-	if sub == super {
-		super = "owned " + super
-	}
-	return fmt.Sprintf("borrowed value %s does not live long enough to satisfy %s", sub, super)
+	// describe renders a borrow without its `&`, so the prefix is added here. Without it
+	// `&Array<number>` flowing into `Array<number>` would print the same type twice.
+	return fmt.Sprintf("cannot use borrowed &%s as owned %s", describe(e.Sub), describe(e.Super))
 }
 
 func (e *MutFieldError) Span() ast.Span      { return e.Ann.Span() }
@@ -3208,10 +3197,9 @@ func describe(t soltype.Type) string {
 		return t.DisplayName()
 	case *soltype.RefType:
 		// A borrow renders with its `mut` prefix over the nominal inner (`mut object`),
-		// recursing like the Promise arm. The lifetime is deliberately NOT rendered: D2
-		// attaches lifetimes, so Lt may be non-nil here, but a raw `'l{id}` in a
-		// diagnostic is noise. Naming lands in D4; until then an escape message reads
-		// `mut object` without naming which borrow escaped.
+		// recursing like the Promise arm. Neither the `&` nor the lifetime is rendered.
+		// A raw `'l{id}` in a diagnostic is noise. A message that has to tell a borrow
+		// from an owned value adds the `&` itself, as BorrowEscapeError.Message does.
 		prefix := ""
 		if t.Mut {
 			prefix = "mut "

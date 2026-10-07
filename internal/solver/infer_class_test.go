@@ -3520,7 +3520,7 @@ func TestInferBorrowedReceiverInACallback(t *testing.T) {
 				}
 			`,
 			want: []string{
-				"borrowed value Coll<number> does not live long enough to satisfy undefined | Coll<number>",
+				"cannot use borrowed &Coll<number> as owned undefined | Coll<number>",
 			},
 		},
 		{
@@ -3539,7 +3539,7 @@ func TestInferBorrowedReceiverInACallback(t *testing.T) {
 					})
 				}
 			`,
-			want: []string{"borrowed value mut Box does not live long enough to satisfy owned mut Box"},
+			want: []string{"cannot use borrowed &mut Box as owned mut Box"},
 		},
 		{
 			name: "a callback reads a field's field through a borrow",
@@ -3601,7 +3601,7 @@ func TestInferBorrowedReceiverInACallback(t *testing.T) {
 					})
 				}
 			`,
-			want: []string{"borrowed value t13 does not live long enough to satisfy object"},
+			want: []string{"cannot use borrowed &t13 as owned object"},
 		},
 		{
 			// An immutable borrow of `C` cannot lend the write its `&'a mut` field holds.
