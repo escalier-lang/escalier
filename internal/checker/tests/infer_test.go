@@ -4864,6 +4864,30 @@ func TestInterfaceMerging(t *testing.T) {
 				"email":  "string",
 			},
 		},
+		"MergeKeepsEarlierSupertypes": {
+			input: `
+				interface Named {
+					name: string,
+				}
+
+				interface Person extends Named {
+					age: number,
+				}
+
+				interface Person {
+					email: string,
+				}
+
+				declare val person: Person
+
+				val name = person.name
+				val email = person.email
+			`,
+			expectedTypes: map[string]string{
+				"name":  "string",
+				"email": "string",
+			},
+		},
 		"MultipleMerges": {
 			input: `
 				interface Animal {

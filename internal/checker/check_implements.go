@@ -177,8 +177,9 @@ func (c *Checker) checkImplementsOne(
 }
 
 // collectInterfaceElems returns every member an implemented entry declares:
-// its own, and those it takes from its supertypes and mixins. A redeclared
-// member shadows the inherited one, and `seen` stops a cycle in the graph.
+// its own, and those it takes from its superclass and included types. A
+// redeclared member shadows the inherited one, and `seen` stops a cycle in
+// the graph.
 func (c *Checker) collectInterfaceElems(
 	ctx Context,
 	ifaceObj *type_system.ObjectType,
@@ -197,7 +198,7 @@ func (c *Checker) collectInterfaceElems(
 		}
 	}
 
-	for _, superRef := range slices.Concat(ifaceObj.Extends, ifaceObj.Mixins) {
+	for _, superRef := range ifaceObj.MemberSources() {
 		expanded, expandErrors := c.expandTypeRef(ctx, superRef)
 		if len(expandErrors) > 0 {
 			continue
@@ -456,8 +457,8 @@ func setterArgType(fn *type_system.FuncType) type_system.Type {
 // against, which is what member lookup resolves the name to.
 //
 // On a `declare` class that is the class body and the superclass chain, and
-// not the mixins: those are the interfaces being checked, and walking them
-// would compare a member with itself. Elsewhere any inherited member
+// not the included types. Those are the interfaces being checked, and walking
+// them would compare a member with itself. Elsewhere any inherited member
 // satisfies the interface, so the search walks everything.
 func (c *Checker) findClassElem(
 	ctx Context,
@@ -475,31 +476,30 @@ func (c *Checker) findClassElem(
 		}
 	}
 
-	for _, superRef := range classObj.Extends {
-		expanded, expandErrors := c.expandTypeRef(ctx, superRef)
-		if len(expandErrors) > 0 {
-			continue
-		}
-		superObj, ok := type_system.Prune(expanded).(*type_system.ObjectType)
-		if !ok {
-			continue
-		}
-		if elem := findElemByKey(ctx, c, superObj, key); elem != nil {
-			return elem
-		}
+	if classObj.Extends == nil {
+		return nil
 	}
-	return nil
+	expanded, expandErrors := c.expandTypeRef(ctx, classObj.Extends)
+	if len(expandErrors) > 0 {
+		return nil
+	}
+	superObj, ok := type_system.Prune(expanded).(*type_system.ObjectType)
+	if !ok {
+		return nil
+	}
+	return findElemByKey(ctx, c, superObj, key)
 }
 
 // findElemByKey looks for a non-callable element with the given key on
-// objType, walking its supertypes and mixins to find inherited members.
+// objType, walking its superclass and included types to find inherited
+// members.
 func findElemByKey(ctx Context, c *Checker, objType *type_system.ObjectType, key type_system.ObjTypeKey) type_system.ObjTypeElem {
 	for _, elem := range objType.Elems {
 		if k, ok := elemKey(elem); ok && k == key {
 			return elem
 		}
 	}
-	for _, ext := range slices.Concat(objType.Extends, objType.Mixins) {
+	for _, ext := range objType.MemberSources() {
 		expanded, _ := c.expandTypeRef(ctx, ext)
 		if parent, ok := type_system.Prune(expanded).(*type_system.ObjectType); ok {
 			if found := findElemByKey(ctx, c, parent, key); found != nil {

@@ -1058,6 +1058,7 @@ type ObjTypeElem interface {
 
 type CallableElem struct{ Fn *FuncType }
 type ConstructorElem struct{ Fn *FuncType }
+
 // MethodElem is a method member of an object type.
 //
 // Signatures carries the method's callable arms. A non-
@@ -1113,6 +1114,7 @@ func (m *MethodElem) AsType() Type {
 		return NewIntersectionType(nil, arms...)
 	}
 }
+
 type GetterElem struct {
 	Name ObjTypeKey
 	Fn   *FuncType
@@ -1390,28 +1392,29 @@ func (r *RestSpreadElem) Accept(v TypeVisitor) ObjTypeElem {
 }
 
 type ObjectType struct {
-	ID         int
-	Elems      []ObjTypeElem
-	Exact      bool // Can't be true if any of Interface, Implements, Mixins, or Extends are true
-	Immutable  bool // true for `#{...}`, false for `{...}`
-	Mutable    bool // true for `mut {...}`, false for `{...}`
-	Nominal    bool // true for classes
-	Interface  bool
-	// Extends holds the types this one derives from. A class has at most one
-	// entry, its superclass. An interface has one per supertype it names.
-	Extends []*TypeRefType
+	ID        int
+	Elems     []ObjTypeElem
+	Exact     bool // Can't be true if Interface is true, Extends is set, or Implements or Includes is non-empty
+	Immutable bool // true for `#{...}`, false for `{...}`
+	Mutable   bool // true for `mut {...}`, false for `{...}`
+	Nominal   bool // true for classes
+	Interface bool
+	// Extends is the superclass a class derives from. Only a class has one.
+	// The supertypes an interface names go in Includes, because they give the
+	// interface their members and record no derivation.
+	Extends *TypeRefType
 	// Implements holds the interfaces a class declares it satisfies. They are
 	// checked against the class, and contribute nothing to it.
 	Implements []*TypeRefType
-	// Mixins holds the types whose members this one has without deriving from
-	// them. Member lookup walks them after Extends, so a member either
-	// declares is reachable, but nothing here is a supertype.
+	// Includes holds the types whose members this one has without deriving
+	// from them. An interface's supertypes go here. Member lookup walks them
+	// after Extends, so a member either declares is reachable.
 	//
-	// A `declare` class records its `implements` interfaces in both lists. The
-	// clause means two things there: the interfaces are checked against the
-	// class, and their members become the class's. See checkImplements in
-	// internal/checker.
-	Mixins []*TypeRefType
+	// A `declare` class records its `implements` interfaces in both
+	// Implements and Includes. The clause means two things there: the
+	// interfaces are checked against the class, and their members become the
+	// class's. See checkImplements in internal/checker.
+	Includes []*TypeRefType
 	// NOTE: the value type is ast.Expr, but we can't use that here because it
 	// would cause a cycle between type_system and ast packages.
 	// Maps symbols used as keys to the ast.Expr that was used as the computed
@@ -1442,7 +1445,7 @@ func NewObjectType(provenance Provenance, elems []ObjTypeElem) *ObjectType {
 		Interface:    false,
 		Extends:      nil,
 		Implements:   nil,
-		Mixins:       nil,
+		Includes:     nil,
 		SymbolKeyMap: nil,
 		provenance:   provenance,
 	}
@@ -1459,10 +1462,19 @@ func NewNominalObjectType(provenance Provenance, elems []ObjTypeElem) *ObjectTyp
 		Interface:    false,
 		Extends:      nil,
 		Implements:   nil,
-		Mixins:       nil,
+		Includes:     nil,
 		SymbolKeyMap: nil,
 		provenance:   provenance,
 	}
+}
+
+// MemberSources returns the types whose members t has besides its own Elems.
+// Extends comes first when it is set, followed by Includes in order.
+func (t *ObjectType) MemberSources() []*TypeRefType {
+	if t.Extends == nil {
+		return t.Includes
+	}
+	return append([]*TypeRefType{t.Extends}, t.Includes...)
 }
 
 func (t *ObjectType) Accept(v TypeVisitor) Type {
@@ -1478,10 +1490,14 @@ func (t *ObjectType) Accept(v TypeVisitor) Type {
 	}
 
 	newElems, elemsChanged := CowAcceptElems(t.Elems, v)
-	newExtends, extendsChanged := CowAcceptTypeRefs(t.Extends, v)
+	newExtends := t.Extends
+	if t.Extends != nil {
+		newExtends = t.Extends.Accept(v).(*TypeRefType)
+	}
+	extendsChanged := newExtends != t.Extends
 	newImplements, implementsChanged := CowAcceptTypeRefs(t.Implements, v)
-	newMixins, mixinsChanged := CowAcceptTypeRefs(t.Mixins, v)
-	changed := elemsChanged || extendsChanged || implementsChanged || mixinsChanged
+	newIncludes, includesChanged := CowAcceptTypeRefs(t.Includes, v)
+	changed := elemsChanged || extendsChanged || implementsChanged || includesChanged
 
 	var result *ObjectType = t
 	if changed {
@@ -1494,7 +1510,7 @@ func (t *ObjectType) Accept(v TypeVisitor) Type {
 		result.Interface = t.Interface
 		result.Extends = newExtends
 		result.Implements = newImplements
-		result.Mixins = newMixins
+		result.Includes = newIncludes
 		result.SymbolKeyMap = t.SymbolKeyMap
 		result.Open = t.Open
 		result.MatchedUnionMembers = t.MatchedUnionMembers
@@ -1528,13 +1544,11 @@ func (t *ObjectType) Equals(other Type) bool {
 		}
 		// Lifetime equality is not checked — see TypeRefType.Equals.
 		// Compare Extends
-		if len(t.Extends) != len(other.Extends) {
+		if (t.Extends == nil) != (other.Extends == nil) {
 			return false
 		}
-		for i := range t.Extends {
-			if !equals(t.Extends[i], other.Extends[i]) {
-				return false
-			}
+		if t.Extends != nil && !equals(t.Extends, other.Extends) {
+			return false
 		}
 		// Compare Implements
 		if len(t.Implements) != len(other.Implements) {
@@ -1545,12 +1559,12 @@ func (t *ObjectType) Equals(other Type) bool {
 				return false
 			}
 		}
-		// Compare Mixins
-		if len(t.Mixins) != len(other.Mixins) {
+		// Compare Includes
+		if len(t.Includes) != len(other.Includes) {
 			return false
 		}
-		for i := range t.Mixins {
-			if !equals(t.Mixins[i], other.Mixins[i]) {
+		for i := range t.Includes {
+			if !equals(t.Includes[i], other.Includes[i]) {
 				return false
 			}
 		}

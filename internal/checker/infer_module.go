@@ -782,7 +782,7 @@ func (c *Checker) InferComponent(
 
 					if extendsType != nil {
 						if typeRef, ok := type_system.Prune(extendsType).(*type_system.TypeRefType); ok {
-							objType.Extends = []*type_system.TypeRefType{typeRef}
+							objType.Extends = typeRef
 						}
 					}
 				}

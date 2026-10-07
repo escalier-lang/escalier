@@ -405,7 +405,9 @@ func (c *Checker) inferInterface(
 	objType, typeErrors := c.inferObjectTypeAnn(typeCtx, decl.TypeAnn, selfType)
 	errors = slices.Concat(errors, typeErrors)
 
-	// Infer the Extends clause if present
+	// The supertypes an interface's `extends` clause names give it their
+	// members. They go in Includes, since Extends holds only a class's
+	// superclass.
 	if decl.Extends != nil {
 		var extendsTypes []*type_system.TypeRefType
 		for _, extends := range decl.Extends {
@@ -428,7 +430,7 @@ func (c *Checker) inferInterface(
 				}
 			}
 		}
-		objType.Extends = extendsTypes
+		objType.Includes = extendsTypes
 	}
 
 	objType.Interface = true
@@ -476,6 +478,7 @@ func (c *Checker) inferInterface(
 			// Merge the elements from the new interface into the existing one
 			mergedElems := append(existingObjType.Elems, objType.Elems...)
 			objType.Elems = mergedElems
+			objType.Includes = slices.Concat(existingObjType.Includes, objType.Includes)
 			objType.ID = existingObjType.ID
 			// Preserve other flags
 			objType.Exact = existingObjType.Exact
