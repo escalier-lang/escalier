@@ -246,6 +246,12 @@ func (c *Checker) inferExpr(ctx Context, expr ast.Expr) (type_system.Type, []Err
 			}}
 		}
 	case *ast.BorrowExpr:
+		if c.fromStdlibTree(expr.Span()) {
+			// The stdlib tree is written for the SimpleSub-based checker. Without borrow
+			// semantics a borrow there reads as its operand, as a borrow annotation does.
+			exprType, errors = c.inferExpr(ctx, expr.Arg)
+			break
+		}
 		// Affine semantics is a new-checker-only feature. The legacy checker
 		// degrades gracefully with the same diagnostic shape as a borrow type
 		// annotation. Returning ErrorType rather than Never keeps the operand

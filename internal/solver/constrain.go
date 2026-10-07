@@ -460,6 +460,96 @@ func (c *Context) constrainTupleIntoArray(sub *soltype.TupleType, super, elemT s
 	return errs
 }
 
+// constrainBorrowedFieldRead reads each property req names off the pointee of sub, a borrow
+// with a lifetime, and constrains each read into the property's variable in req. It returns
+// ok=false when the pointee is not an object, a class instance, or a union of those.
+func (c *Context) constrainBorrowedFieldRead(sub *soltype.RefType, req *soltype.ObjectType, seen *seenPairs) ([]SolverError, bool) {
+	inner := c.peelTransparent(sub.Inner)
+	// A union pointee is read member by member under the same borrow. Each member's read
+	// joins into the property's variable.
+	if union, ok := inner.(*soltype.UnionType); ok {
+		var errs []SolverError
+		for _, member := range union.Types {
+			ri, ok := member.(soltype.RefInner)
+			if !ok {
+				return nil, false
+			}
+			memberErrs, ok := c.constrainBorrowedFieldRead(&soltype.RefType{Mut: sub.Mut, Lt: sub.Lt, Inner: ri}, req, seen)
+			if !ok {
+				return nil, false
+			}
+			errs = append(errs, memberErrs...)
+		}
+		return errs, true
+	}
+	// A class instance is read through its body, projected at the instance's arguments so a
+	// field typed `T` reads as the argument. Any other pointee is left to the caller, which
+	// reports the borrow as escaping.
+	obj, ok := c.readCarrierObject(inner)
+	if !ok {
+		return nil, false
+	}
+	var errs []SolverError
+	for _, elem := range req.Elems {
+		want := elem.(*soltype.PropertyElem)
+		prop, found := obj.Prop(want.Name)
+		// A field holding an object, a tuple, a class instance, or an owned `mut` cell reads
+		// as a borrow bounded by sub's lifetime, so `x.inner` off `x: &C` cannot outlive `x`.
+		// fieldReadBorrow applies the same rule to a member read off an annotated borrow.
+		var read soltype.Type
+		if found {
+			read = borrowedFieldType(prop.Type, sub)
+		}
+		// A missing property, and a field such as a `number` that is copied rather than
+		// borrowed, go through the ordinary object arm. It reports the missing property or
+		// reads the field as declared.
+		if read == nil {
+			single := &soltype.ObjectType{Elems: []soltype.ObjTypeElem{want}, Inexact: true}
+			errs = append(errs, c.constrain(obj, single, seen, false)...)
+			continue
+		}
+		if prop.Optional {
+			read = &soltype.UnionType{Types: []soltype.Type{read, &soltype.UndefinedType{}}}
+		}
+		errs = append(errs, c.constrain(read, want.Type, seen, false)...)
+	}
+	return errs, true
+}
+
+// borrowedFieldType returns the type a field of type field reads as through borrow, or nil
+// for a field that reads as declared. An owned `mut` cell and an object, tuple, class
+// instance, or alias read as a borrow bounded by borrow's lifetime. A union reads member by
+// member. A field holding an immutable borrow reads as declared. A field holding a mutable
+// borrow is reborrowed immutably whatever borrow's own mutability, so an immutable borrow
+// never lends a write.
+func borrowedFieldType(field soltype.Type, borrow *soltype.RefType) soltype.Type {
+	switch f := field.(type) {
+	case *soltype.RefType:
+		if f.Lt == nil {
+			return &soltype.RefType{Mut: f.Mut, Lt: borrow.Lt, Inner: f.Inner}
+		}
+		if f.Mut {
+			return &soltype.RefType{Mut: false, Lt: f.Lt, Inner: f.Inner}
+		}
+	case *soltype.ObjectType, *soltype.TupleType, *soltype.ClassType, *soltype.AliasType:
+		return &soltype.RefType{Mut: borrow.Mut, Lt: borrow.Lt, Inner: f.(soltype.RefInner)}
+	case *soltype.UnionType:
+		members := make([]soltype.Type, len(f.Types))
+		changed := false
+		for i, member := range f.Types {
+			members[i] = member
+			if read := borrowedFieldType(member, borrow); read != nil {
+				members[i] = read
+				changed = true
+			}
+		}
+		if changed {
+			return &soltype.UnionType{Types: members}
+		}
+	}
+	return nil
+}
+
 // peelTransparent resolves t through the wrappers that merely name another type, an alias
 // and a recursive μ-knot, so a caller dispatching on t's kind sees the type the name
 // stands for. The unwrap is bounded by maxUnwrapDepth, since an alias whose body names
@@ -1598,6 +1688,17 @@ func (c *Context) constrain(sub, super soltype.Type, seen *seenPairs, mutCtx boo
 		// var arm so the WHOLE borrow is recorded as a bound — peeling there would drop
 		// its mutability.
 		if _, superIsVar := super.(*soltype.TypeVarType); !superIsVar {
+			// A field-read requirement reads through the borrow rather than storing it. An
+			// unannotated callback parameter reaches here when a borrow flows into it, as
+			// `arr` does in `xs.each(fn (v, arr) { return arr.length })`.
+			if req, ok := super.(*soltype.ObjectType); ok && isFieldReadReq(req) {
+				if sub.Lt == nil {
+					return c.constrain(sub.Inner, super, seen, false)
+				}
+				if errs, ok := c.constrainBorrowedFieldRead(sub, req, seen); ok {
+					return errs
+				}
+			}
 			if sub.Lt != nil {
 				// Emit BorrowEscapeError only when the peeled inner satisfies super, so
 				// the lifetime is the blocker; otherwise surface the inner's mismatch.
@@ -2171,6 +2272,8 @@ func (c *Context) constrainUnionFieldRead(sub *soltype.UnionType, super soltype.
 	members := make([]*soltype.ObjectType, 0, len(sub.Types))
 	for _, m := range sub.Types {
 		obj, ok := c.readCarrierObject(soltype.CarrierOf(m))
+		// A member with no fields to read, such as a primitive or a bare type variable, sends
+		// the read back to the strict rule that every member must carry the property.
 		if !ok {
 			return nil, false
 		}
@@ -2209,10 +2312,9 @@ func (c *Context) constrainUnionFieldRead(sub *soltype.UnionType, super soltype.
 	return errs, true
 }
 
-// readCarrierObject returns the ObjectType a union member's fields are read through: a
-// structural object directly, or a class instance's projected body. It returns ok=false for
-// any other carrier — a primitive, a bare type variable — so the field-read join falls back to
-// the strict every-member rule rather than reading a member off a value that carries none.
+// readCarrierObject returns the ObjectType a carrier's fields are read through. That is a
+// structural object itself, or a class instance's body projected at its arguments. It returns
+// ok=false for any other carrier, such as a primitive or a type variable.
 func (c *Context) readCarrierObject(carrier soltype.Type) (*soltype.ObjectType, bool) {
 	switch t := carrier.(type) {
 	case *soltype.ObjectType:

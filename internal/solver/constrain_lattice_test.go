@@ -317,7 +317,7 @@ func TestBorrowEscapePromotionByPeeledInner(t *testing.T) {
 			// Inner {x: number} <: {x: number} succeeds — the lifetime IS the blocker.
 			name:  "non-union shape match keeps BorrowEscape",
 			super: func() soltype.Type { return exactObj(propElem("x", num())) },
-			want:  "borrowed value object does not live long enough to satisfy object",
+			want:  "borrowed value object does not live long enough to satisfy owned object",
 		},
 		{
 			// Every union branch is a shape mismatch — the lifetime is incidental.

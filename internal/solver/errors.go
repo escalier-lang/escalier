@@ -1574,8 +1574,8 @@ func (e *SelfInInputPositionError) Span() ast.Span      { return e.Ref.Span() }
 func (e *SelfInInputPositionError) Related() []ast.Span { return nil }
 func (e *SelfInInputPositionError) isSolverError()      {}
 func (e *SelfInInputPositionError) Message() string {
-	return "\"Self\" cannot be written in a direct parameter position; it denotes the receiver's own class, " +
-		"so a subclass would demand an argument its superclass accepts — write the class by name instead"
+	return "\"Self\" cannot be a method parameter's type. It means the receiver's class, so a subclass " +
+		"would accept fewer arguments than its superclass. Write the class by name instead."
 }
 
 // RestParamNotLastError fires when a function type annotation writes a `...xs: T` parameter
@@ -2965,8 +2965,14 @@ func concreteBoundOf(v *soltype.TypeVarType) (soltype.Type, bool) {
 }
 
 func (e *BorrowEscapeError) Message() string {
-	return fmt.Sprintf("borrowed value %s does not live long enough to satisfy %s",
-		describe(e.Sub), describe(e.Super))
+	sub, super := describe(e.Sub), describe(e.Super)
+	// A borrow and the owned value it points at print alike, so the destination is named as
+	// owned when the two would otherwise read the same. A callback annotated
+	// `arr: Array<number>` where the signature lends `&Self` is that case.
+	if sub == super {
+		super = "owned " + super
+	}
+	return fmt.Sprintf("borrowed value %s does not live long enough to satisfy %s", sub, super)
 }
 
 func (e *MutFieldError) Span() ast.Span      { return e.Ann.Span() }

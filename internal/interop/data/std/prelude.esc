@@ -13,8 +13,8 @@ export declare class Array<T> {
      * @param thisArg If provided, it will be used as the this value for each invocation of
      * predicate. If it is not provided, undefined is used instead.
      */
-    find<S: T>(&self, predicate: fn (value: T, index: number, obj: mut Array<T>) -> boolean, thisArg?: unknown) -> S | undefined,
-    find(&self, predicate: fn (value: T, index: number, obj: mut Array<T>) -> unknown, thisArg?: unknown) -> T | undefined,
+    find<S: T>(&self, predicate: fn (value: T, index: number, obj: &Self) -> boolean, thisArg?: unknown) -> S | undefined,
+    find(&self, predicate: fn (value: T, index: number, obj: &Self) -> unknown, thisArg?: unknown) -> T | undefined,
     /**
      * Returns the index of the first element in the array where predicate is true, and -1
      * otherwise.
@@ -24,7 +24,7 @@ export declare class Array<T> {
      * @param thisArg If provided, it will be used as the this value for each invocation of
      * predicate. If it is not provided, undefined is used instead.
      */
-    findIndex(&self, predicate: fn (value: T, index: number, obj: mut Array<T>) -> unknown, thisArg?: unknown) -> number,
+    findIndex(&self, predicate: fn (value: T, index: number, obj: &Self) -> unknown, thisArg?: unknown) -> number,
     /**
      * Changes all array elements from `start` to `end` index to a static `value` and returns the modified array
      * @param value value to fill array section with
@@ -97,7 +97,7 @@ export declare class Array<T> {
      * @param thisArg An object to which the this keyword can refer in the callback function. If
      * thisArg is omitted, undefined is used as the this value.
      */
-    flatMap<U, This = undefined>(&self, callback: fn (this: This, value: T, index: number, array: mut Array<T>) -> U | Array<U>, thisArg?: This) -> Array<U>,
+    flatMap<U, This = undefined>(&self, callback: fn (this: This, value: T, index: number, array: &Self) -> U | Array<U>, thisArg?: This) -> Array<U>,
     /**
      * Returns a new array with all sub-array elements concatenated into it recursively up to the
      * specified depth.
@@ -119,8 +119,8 @@ export declare class Array<T> {
      * @param thisArg If provided, it will be used as the this value for each invocation of
      * predicate. If it is not provided, undefined is used instead.
      */
-    findLast<S: T>(&self, predicate: fn (value: T, index: number, array: mut Array<T>) -> boolean, thisArg?: unknown) -> S | undefined,
-    findLast(&self, predicate: fn (value: T, index: number, array: mut Array<T>) -> unknown, thisArg?: unknown) -> T | undefined,
+    findLast<S: T>(&self, predicate: fn (value: T, index: number, array: &Self) -> boolean, thisArg?: unknown) -> S | undefined,
+    findLast(&self, predicate: fn (value: T, index: number, array: &Self) -> unknown, thisArg?: unknown) -> T | undefined,
     /**
      * Returns the index of the last element in the array where predicate is true, and -1
      * otherwise.
@@ -130,7 +130,7 @@ export declare class Array<T> {
      * @param thisArg If provided, it will be used as the this value for each invocation of
      * predicate. If it is not provided, undefined is used instead.
      */
-    findLastIndex(&self, predicate: fn (value: T, index: number, array: mut Array<T>) -> unknown, thisArg?: unknown) -> number,
+    findLastIndex(&self, predicate: fn (value: T, index: number, array: &Self) -> unknown, thisArg?: unknown) -> number,
     /**
      * Returns a copy of an array with its elements reversed.
      */
@@ -276,7 +276,7 @@ export declare class Array<T> {
      * @param thisArg An object to which the this keyword can refer in the predicate function.
      * If thisArg is omitted, undefined is used as the this value.
      */
-    every(&self, predicate: fn (value: T, index: number, array: mut Array<T>) -> boolean, thisArg?: unknown) -> boolean,
+    every(&self, predicate: fn (value: T, index: number, array: &Self) -> boolean, thisArg?: unknown) -> boolean,
     /**
      * Determines whether all the members of an array satisfy the specified test.
      * @param predicate A function that accepts up to three arguments. The every method calls
@@ -285,7 +285,7 @@ export declare class Array<T> {
      * @param thisArg An object to which the this keyword can refer in the predicate function.
      * If thisArg is omitted, undefined is used as the this value.
      */
-    every(&self, predicate: fn (value: T, index: number, array: mut Array<T>) -> unknown, thisArg?: unknown) -> boolean,
+    every(&self, predicate: fn (value: T, index: number, array: &Self) -> unknown, thisArg?: unknown) -> boolean,
     /**
      * Determines whether the specified callback function returns true for any element of an array.
      * @param predicate A function that accepts up to three arguments. The some method calls
@@ -294,57 +294,57 @@ export declare class Array<T> {
      * @param thisArg An object to which the this keyword can refer in the predicate function.
      * If thisArg is omitted, undefined is used as the this value.
      */
-    some(&self, predicate: fn (value: T, index: number, array: mut Array<T>) -> unknown, thisArg?: unknown) -> boolean,
+    some(&self, predicate: fn (value: T, index: number, array: &Self) -> unknown, thisArg?: unknown) -> boolean,
     /**
      * Performs the specified action for each element in an array.
      * @param callbackfn A function that accepts up to three arguments. forEach calls the callbackfn function one time for each element in the array.
      * @param thisArg An object to which the this keyword can refer in the callbackfn function. If thisArg is omitted, undefined is used as the this value.
      */
-    forEach(&self, callbackfn: fn (value: T, index: number, array: mut Array<T>) -> unknown, thisArg?: unknown) -> unknown,
+    forEach(&self, callbackfn: fn (value: T, index: number, array: &Self) -> unknown, thisArg?: unknown) -> unknown,
     /**
      * Calls a defined callback function on each element of an array, and returns an array that contains the results.
      * @param callbackfn A function that accepts up to three arguments. The map method calls the callbackfn function one time for each element in the array.
      * @param thisArg An object to which the this keyword can refer in the callbackfn function. If thisArg is omitted, undefined is used as the this value.
      */
-    map<U>(&self, callbackfn: fn (value: T, index: number, array: mut Array<T>) -> U, thisArg?: unknown) -> Array<U>,
+    map<U>(&self, callbackfn: fn (value: T, index: number, array: &Self) -> U, thisArg?: unknown) -> Array<U>,
     /**
      * Returns the elements of an array that meet the condition specified in a callback function.
      * @param predicate A function that accepts up to three arguments. The filter method calls the predicate function one time for each element in the array.
      * @param thisArg An object to which the this keyword can refer in the predicate function. If thisArg is omitted, undefined is used as the this value.
      */
-    filter<S: T>(&self, predicate: fn (value: T, index: number, array: mut Array<T>) -> boolean, thisArg?: unknown) -> Array<S>,
+    filter<S: T>(&self, predicate: fn (value: T, index: number, array: &Self) -> boolean, thisArg?: unknown) -> Array<S>,
     /**
      * Returns the elements of an array that meet the condition specified in a callback function.
      * @param predicate A function that accepts up to three arguments. The filter method calls the predicate function one time for each element in the array.
      * @param thisArg An object to which the this keyword can refer in the predicate function. If thisArg is omitted, undefined is used as the this value.
      */
-    filter(&self, predicate: fn (value: T, index: number, array: mut Array<T>) -> unknown, thisArg?: unknown) -> Array<T>,
+    filter(&self, predicate: fn (value: T, index: number, array: &Self) -> unknown, thisArg?: unknown) -> Array<T>,
     /**
      * Calls the specified callback function for all the elements in an array. The return value of the callback function is the accumulated result, and is provided as an argument in the next call to the callback function.
      * @param callbackfn A function that accepts up to four arguments. The reduce method calls the callbackfn function one time for each element in the array.
      * @param initialValue If initialValue is specified, it is used as the initial value to start the accumulation. The first call to the callbackfn function provides this value as an argument instead of an array value.
      */
-    reduce(&self, callbackfn: fn (previousValue: T, currentValue: T, currentIndex: number, array: mut Array<T>) -> T) -> T,
-    reduce(&self, callbackfn: fn (previousValue: T, currentValue: T, currentIndex: number, array: mut Array<T>) -> T, initialValue: T) -> T,
+    reduce(&self, callbackfn: fn (previousValue: T, currentValue: T, currentIndex: number, array: &Self) -> T) -> T,
+    reduce(&self, callbackfn: fn (previousValue: T, currentValue: T, currentIndex: number, array: &Self) -> T, initialValue: T) -> T,
     /**
      * Calls the specified callback function for all the elements in an array. The return value of the callback function is the accumulated result, and is provided as an argument in the next call to the callback function.
      * @param callbackfn A function that accepts up to four arguments. The reduce method calls the callbackfn function one time for each element in the array.
      * @param initialValue If initialValue is specified, it is used as the initial value to start the accumulation. The first call to the callbackfn function provides this value as an argument instead of an array value.
      */
-    reduce<U>(&self, callbackfn: fn (previousValue: U, currentValue: T, currentIndex: number, array: mut Array<T>) -> U, initialValue: U) -> U,
+    reduce<U>(&self, callbackfn: fn (previousValue: U, currentValue: T, currentIndex: number, array: &Self) -> U, initialValue: U) -> U,
     /**
      * Calls the specified callback function for all the elements in an array, in descending order. The return value of the callback function is the accumulated result, and is provided as an argument in the next call to the callback function.
      * @param callbackfn A function that accepts up to four arguments. The reduceRight method calls the callbackfn function one time for each element in the array.
      * @param initialValue If initialValue is specified, it is used as the initial value to start the accumulation. The first call to the callbackfn function provides this value as an argument instead of an array value.
      */
-    reduceRight(&self, callbackfn: fn (previousValue: T, currentValue: T, currentIndex: number, array: mut Array<T>) -> T) -> T,
-    reduceRight(&self, callbackfn: fn (previousValue: T, currentValue: T, currentIndex: number, array: mut Array<T>) -> T, initialValue: T) -> T,
+    reduceRight(&self, callbackfn: fn (previousValue: T, currentValue: T, currentIndex: number, array: &Self) -> T) -> T,
+    reduceRight(&self, callbackfn: fn (previousValue: T, currentValue: T, currentIndex: number, array: &Self) -> T, initialValue: T) -> T,
     /**
      * Calls the specified callback function for all the elements in an array, in descending order. The return value of the callback function is the accumulated result, and is provided as an argument in the next call to the callback function.
      * @param callbackfn A function that accepts up to four arguments. The reduceRight method calls the callbackfn function one time for each element in the array.
      * @param initialValue If initialValue is specified, it is used as the initial value to start the accumulation. The first call to the callbackfn function provides this value as an argument instead of an array value.
      */
-    reduceRight<U>(&self, callbackfn: fn (previousValue: U, currentValue: T, currentIndex: number, array: mut Array<T>) -> U, initialValue: U) -> U,
+    reduceRight<U>(&self, callbackfn: fn (previousValue: U, currentValue: T, currentIndex: number, array: &Self) -> U, initialValue: U) -> U,
     /**
      * Creates an array from an array-like object.
      * @param arrayLike An array-like object to convert to an array.

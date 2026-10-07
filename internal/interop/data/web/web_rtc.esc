@@ -911,7 +911,7 @@ export declare class RTCSessionDescription {
 /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/RTCStatsReport) */
 @js("RTCStatsReport")
 export declare class RTCStatsReport extends map.Map<string, any> {
-    forEach(&self, callbackfn: fn (value: any, key: string, parent: RTCStatsReport) -> unknown, thisArg?: unknown) -> unknown,
+    forEach(&self, callbackfn: fn (value: any, key: string, parent: &Self) -> unknown, thisArg?: unknown) -> unknown,
     static prototype: RTCStatsReport,
     constructor(&mut self)
 }
