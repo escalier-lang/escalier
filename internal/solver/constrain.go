@@ -561,6 +561,10 @@ func (c *Context) readThroughLowerBound(r borrowedRead, pointee *soltype.TypeVar
 
 // readThroughBound is readThroughLowerBound with visited holding the variables that already
 // hold r, so a cycle among variable lower bounds is walked once.
+//
+// A union lower bound with a `null` or `undefined` member falls back to the shape's property
+// variables, so its fields read as declared rather than as borrows. Optional chaining will
+// produce such bounds, and #1888 tracks stripping the nullish members before the read.
 func (c *Context) readThroughBound(r borrowedRead, lb soltype.Type, seen *seenPairs, visited set.Set[*soltype.TypeVarType]) []SolverError {
 	// A variable lower bound comes from a negative extrusion, which makes the fresh variable
 	// a lower bound of the pointee without making the pointee its upper bound. A concrete
