@@ -189,6 +189,32 @@ func (m *MethodElem) Accept(v Visitor) {
 }
 func (m *MethodElem) Span() Span { return m.Span_ }
 
+// ImplementationArm returns the implementation of a method overload set, or nil when the set
+// has none. A set has an implementation when exactly one arm has a body and every other arm
+// is a bodiless signature:
+//
+//	contains(&self, x: number) -> boolean,
+//	contains(&self, x: unknown) -> boolean { return false },
+//
+// Callers see the bodiless signatures. The implementation is the arm the runtime runs. arms
+// holds one overload set, the same-named arms that are all static or all instance members.
+func ImplementationArm(arms []*MethodElem) *MethodElem {
+	var impl *MethodElem
+	for _, arm := range arms {
+		if arm.Fn == nil || arm.Fn.Body == nil {
+			continue
+		}
+		if impl != nil {
+			return nil
+		}
+		impl = arm
+	}
+	if len(arms) < 2 {
+		return nil
+	}
+	return impl
+}
+
 // GetterElem represents a getter in a class.
 type GetterElem struct {
 	declDoc

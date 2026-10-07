@@ -152,7 +152,8 @@ func (c *checker) inferClassDecl(scope *Scope, lvl int, decl *ast.ClassDecl, ns 
 	ctors := collectConstructors(decl)
 	c.checkClassBodyLifetimes(decl)
 	c.buildFieldSigs(bodyScope, lvl, decl, body, static)
-	pending := c.buildMemberSigs(bodyScope, lvl, decl, self, body, static)
+	impls := newMemberImpls(decl)
+	pending := c.buildMemberSigs(bodyScope, lvl, decl, self, body, static, impls)
 	// The `implements` check compares each entry against what the class wrote, so the names
 	// are taken before the clause below adds the entry's own members to a `declare` class.
 	ownNames := memberNames(body)
@@ -204,12 +205,20 @@ func (c *checker) inferClassDecl(scope *Scope, lvl int, decl *ast.ClassDecl, ns 
 	// The keep set reads the members as well as the class's own `<…>` list, so a non-generic
 	// class carrying a generic method still keeps that method's parameters. An empty set
 	// coalesces everything.
-	keep := classKeepVars(typeParams, body, static)
+	keep := classKeepVars(typeParams, body, static, impls.instance, impls.static)
 	flow := keptFlowMap(keep)
 	c.freezeClassBody(body, keep, flow, keepLts)
 	c.freezeClassBody(static, keep, flow, keepLts)
+	c.freezeClassBody(impls.instance, keep, flow, keepLts)
+	c.freezeClassBody(impls.static, keep, flow, keepLts)
+	if len(impls.instance.Elems) > 0 {
+		def.Impls = impls.instance
+	}
 	c.ctx.recordMethodLifetimes(body, keepLts)
 	c.ctx.recordMethodLifetimes(static, keepLts)
+	c.ctx.recordMethodLifetimes(impls.instance, keepLts)
+	c.ctx.recordMethodLifetimes(impls.static, keepLts)
+	c.checkImplementations(def, decl, body, static, impls)
 
 	// Freeze both per-parameter variance vectors once every member body has refined its
 	// signature, so the walk measures each type parameter at its final occurrences. The
@@ -1247,6 +1256,7 @@ func (c *checker) buildMemberSigs(
 	decl *ast.ClassDecl,
 	self *soltype.ClassType,
 	body, static *soltype.ObjectType,
+	impls memberImpls,
 ) []pendingMember {
 	var pending []pendingMember
 	for _, elem := range decl.Body {
@@ -1260,6 +1270,20 @@ func (c *checker) buildMemberSigs(
 			c.checkSelfReceiver(name, elem, elem.Static, elem.Receiver)
 			stub := c.memberSigStub(lvl, elem.Fn)
 			stub.SelfParam = c.selfParam(lvl, elem.Receiver, elem.Static, self)
+			if impls.arms.Contains(elem) {
+				// An implementation stays off the body a caller reads. Its body is still
+				// inferred against its own signature, and checkImplementations compares
+				// that signature with the set's bodiless ones.
+				impl, _ := appendMethodSig(targetBody(impls.instance, impls.static, elem.Static), name, stub, elem.Static)
+				pending = append(pending, pendingMember{
+					fn: elem.Fn, name: name, recv: elem.Receiver, class: self, static: elem.Static, stub: stub,
+					generic: true,
+					apply: func(bodyFt *soltype.FuncType) {
+						impl.Signatures[0] = bodyFt
+					},
+				})
+				continue
+			}
 			method, arm := appendMethodSig(targetBody(body, static, elem.Static), name, stub, elem.Static)
 			// An overloaded method dispatches on its value arguments, so its arms must agree
 			// on the receiver they take. The receiver check reads only the first arm, so a

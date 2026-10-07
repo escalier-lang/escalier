@@ -122,6 +122,13 @@ type ClassDef struct {
 	// rule read it.
 	Body *soltype.ObjectType
 
+	// Impls holds the implementation of each instance method whose overload set has one,
+	// as ast.ImplementationArm finds it. Each MethodElem carries the one implementation
+	// signature. Body holds only the bodiless signatures a caller sees, so the
+	// implementation is reached only by the checks that read the method the runtime runs.
+	// It is nil for a class with no such method.
+	Impls *soltype.ObjectType
+
 	// Static is the constructor-plus-static-member view — the value side of the dual
 	// binding. B1 stores static members here for later phases; the callable
 	// constructor itself is the value binding's FuncType.

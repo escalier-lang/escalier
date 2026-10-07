@@ -32,14 +32,18 @@ type subtypeGoal struct {
 	position             string
 	subElem              soltype.ObjTypeElem
 	owner                *soltype.ClassType
+	// impl marks a goal whose sub side is the method's implementation rather than the
+	// signatures its callers see, so a rejection points at the implementation.
+	impl bool
 }
 
 // memberBlameKey names one instance member of a class or interface declaration, so what the
 // source wrote for it can be found again. A getter and a setter may share a name, so the
-// setter half is keyed apart from every other kind.
+// setter half is keyed apart from every other kind, and so is a method's implementation.
 type memberBlameKey struct {
 	name   string
 	setter bool
+	impl   bool
 }
 
 // pendingOverrideCheck is one subclass waiting to have its members checked against the ones
@@ -187,10 +191,20 @@ func (c *checker) checkOverriddenName(
 		}
 		// An ancestor's covariance lets an instance of this class be read as that ancestor
 		// at a wider argument, and a caller holding that view passes the method what the
-		// wider argument admits. The override has to accept that too.
+		// wider argument admits. The override has to accept that too. Such a call runs the
+		// method's implementation whatever signature the class declares for its own callers,
+		// so an implementation is what has to accept it.
+		runs, isImpl := subHalf, false
+		if def.Impls != nil {
+			if impl, ok := declaredHalf(def.Impls, name, readHalf); ok {
+				runs, isImpl = impl, true
+			}
+		}
 		for _, anc := range widening() {
 			if widest, ok := widestMethod(anc, self, name); ok {
-				goals = append(goals, valueGoal(subHalf, widest, half, anc.instance))
+				goal := valueGoal(runs, widest, half, anc.instance)
+				goal.impl = isImpl
+				goals = append(goals, goal)
 			}
 		}
 	}
@@ -199,6 +213,10 @@ func (c *checker) checkOverriddenName(
 		// types the class registered.
 		if !hasHardError(c.ctx.trialUnderProbe(rigid.apply(goal.sub), rigid.apply(goal.super))) {
 			continue
+		}
+		node := overrideBlame(blame, name, goal.subElem)
+		if goal.impl {
+			node = blame[memberBlameKey{name: name, impl: true}]
 		}
 		c.report(&IncompatibleOverrideError{
 			Member:     name,
@@ -210,7 +228,7 @@ func (c *checker) checkOverriddenName(
 			// variable id.
 			SubType:   rigid.apply(goal.shownSub),
 			SuperType: rigid.apply(goal.shownSuper),
-			Node:      overrideBlame(blame, name, goal.subElem),
+			Node:      node,
 		})
 		return // one diagnostic per member, whichever obligation rejected first
 	}
@@ -706,17 +724,21 @@ func overrideBlame(blame map[memberBlameKey]ast.Node, name string, elem soltype.
 // instanceMemberNodes maps each instance member a class declaration writes to the node that
 // declares it, so an override diagnostic points at the member rather than the whole class. A
 // static member is left out, since `extends` relates instances.
+//
+// A method's implementation is keyed apart from its signatures, so a diagnostic about what
+// callers see points at a signature.
 func instanceMemberNodes(decl *ast.ClassDecl) map[memberBlameKey]ast.Node {
 	nodes := map[memberBlameKey]ast.Node{}
+	implArms := implementationArms(decl)
 	for _, elem := range decl.Body {
 		var key ast.ObjKey
 		var static bool
-		setter := false
+		setter, impl := false, false
 		switch elem := elem.(type) {
 		case *ast.FieldElem:
 			key, static = elem.Name, elem.Static
 		case *ast.MethodElem:
-			key, static = elem.Name, elem.Static
+			key, static, impl = elem.Name, elem.Static, implArms.Contains(elem)
 		case *ast.GetterElem:
 			key, static = elem.Name, elem.Static
 		case *ast.SetterElem:
@@ -725,7 +747,7 @@ func instanceMemberNodes(decl *ast.ClassDecl) map[memberBlameKey]ast.Node {
 			continue
 		}
 		if name, ok := objKeyName(key); ok && !static {
-			nodes[memberBlameKey{name: name, setter: setter}] = elem
+			nodes[memberBlameKey{name: name, setter: setter, impl: impl}] = elem
 		}
 	}
 	return nodes

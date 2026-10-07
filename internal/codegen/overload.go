@@ -302,6 +302,26 @@ func groupOverloadableElems(inElems []ast.ClassElem) map[string][]ast.ClassElem 
 	return groups
 }
 
+// methodImplementations returns the implementation arm of each method overload set in
+// groups, keyed the way groupOverloadableElems keys the set. A set with no implementation
+// has no entry.
+func methodImplementations(groups map[string][]ast.ClassElem) map[string]*ast.MethodElem {
+	impls := map[string]*ast.MethodElem{}
+	for key, siblings := range groups {
+		if key == constructorGroupKey {
+			continue
+		}
+		arms := make([]*ast.MethodElem, len(siblings))
+		for i, sibling := range siblings {
+			arms[i] = sibling.(*ast.MethodElem)
+		}
+		if impl := ast.ImplementationArm(arms); impl != nil {
+			impls[key] = impl
+		}
+	}
+	return impls
+}
+
 // methodArms collects one method overload set into dispatch arms. A method's receiver
 // lives on MethodElem.Receiver rather than in Fn.Params, so every parameter here is a
 // value parameter and `this` needs no dispatch position.

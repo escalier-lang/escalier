@@ -310,6 +310,25 @@ func TestBuildOverloadSetDropsABodylessArm(t *testing.T) {
 	require.Empty(t, got)
 }
 
+// A set of bodiless signatures beside one implementation emits the implementation as an
+// ordinary method. The signatures carry no code, so there is nothing to dispatch between.
+func TestBuildMethodImplementationEmitsAPlainMethod(t *testing.T) {
+	got := buildSource(t, `
+		class Bag {
+			contains(&self, x: number) -> boolean,
+			contains(&self, x: string) -> boolean,
+			contains(&self, x: unknown) -> boolean { return true },
+		}`)
+	require.Equal(t, `export class Bag {
+  constructor() {
+  }
+  contains(temp1) {
+    const x = temp1;
+    return true;
+  }
+}`, got)
+}
+
 // A parameter the caller may leave out accepts an absent slot. The slot holds
 // `undefined`, which no type guard admits, so an arm written `fn f(x: number = 5)`
 // would otherwise be passed over for the call `f()` that is exactly its own and the
