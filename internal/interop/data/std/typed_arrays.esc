@@ -32,16 +32,6 @@ export declare class Int8Array<TArrayBuffer: ArrayBufferLike = ArrayBufferLike> 
      * @param index The zero-based index of the desired code unit. A negative index will count back from the last item.
      */
     at(&self, index: number) -> number | undefined,
-    /**
-     * Returns the value of the last element in the array where predicate is true, and undefined
-     * otherwise.
-     * @param predicate findLast calls predicate once for each element of the array, in descending
-     * order, until it finds one where predicate returns true. If such an element is found, findLast
-     * immediately returns that element value. Otherwise, findLast returns undefined.
-     * @param thisArg If provided, it will be used as the this value for each invocation of
-     * predicate. If it is not provided, undefined is used instead.
-     */
-    findLast<S: number>(&self, predicate: fn (value: number, index: number, array: &Self) -> boolean, thisArg?: unknown) -> S | undefined,
     findLast(&self, predicate: fn (value: number, index: number, array: &Self) -> unknown, thisArg?: unknown) -> number | undefined,
     /**
      * Returns the index of the last element in the array where predicate is true, and -1
@@ -358,16 +348,6 @@ export declare class Uint8Array<TArrayBuffer: ArrayBufferLike = ArrayBufferLike>
      * @param index The zero-based index of the desired code unit. A negative index will count back from the last item.
      */
     at(&self, index: number) -> number | undefined,
-    /**
-     * Returns the value of the last element in the array where predicate is true, and undefined
-     * otherwise.
-     * @param predicate findLast calls predicate once for each element of the array, in descending
-     * order, until it finds one where predicate returns true. If such an element is found, findLast
-     * immediately returns that element value. Otherwise, findLast returns undefined.
-     * @param thisArg If provided, it will be used as the this value for each invocation of
-     * predicate. If it is not provided, undefined is used instead.
-     */
-    findLast<S: number>(&self, predicate: fn (value: number, index: number, array: &Self) -> boolean, thisArg?: unknown) -> S | undefined,
     findLast(&self, predicate: fn (value: number, index: number, array: &Self) -> unknown, thisArg?: unknown) -> number | undefined,
     /**
      * Returns the index of the last element in the array where predicate is true, and -1
@@ -684,16 +664,6 @@ export declare class Uint8ClampedArray<TArrayBuffer: ArrayBufferLike = ArrayBuff
      * @param index The zero-based index of the desired code unit. A negative index will count back from the last item.
      */
     at(&self, index: number) -> number | undefined,
-    /**
-     * Returns the value of the last element in the array where predicate is true, and undefined
-     * otherwise.
-     * @param predicate findLast calls predicate once for each element of the array, in descending
-     * order, until it finds one where predicate returns true. If such an element is found, findLast
-     * immediately returns that element value. Otherwise, findLast returns undefined.
-     * @param thisArg If provided, it will be used as the this value for each invocation of
-     * predicate. If it is not provided, undefined is used instead.
-     */
-    findLast<S: number>(&self, predicate: fn (value: number, index: number, array: &Self) -> boolean, thisArg?: unknown) -> S | undefined,
     findLast(&self, predicate: fn (value: number, index: number, array: &Self) -> unknown, thisArg?: unknown) -> number | undefined,
     /**
      * Returns the index of the last element in the array where predicate is true, and -1
@@ -1010,16 +980,6 @@ export declare class Int16Array<TArrayBuffer: ArrayBufferLike = ArrayBufferLike>
      * @param index The zero-based index of the desired code unit. A negative index will count back from the last item.
      */
     at(&self, index: number) -> number | undefined,
-    /**
-     * Returns the value of the last element in the array where predicate is true, and undefined
-     * otherwise.
-     * @param predicate findLast calls predicate once for each element of the array, in descending
-     * order, until it finds one where predicate returns true. If such an element is found, findLast
-     * immediately returns that element value. Otherwise, findLast returns undefined.
-     * @param thisArg If provided, it will be used as the this value for each invocation of
-     * predicate. If it is not provided, undefined is used instead.
-     */
-    findLast<S: number>(&self, predicate: fn (value: number, index: number, array: &Self) -> boolean, thisArg?: unknown) -> S | undefined,
     findLast(&self, predicate: fn (value: number, index: number, array: &Self) -> unknown, thisArg?: unknown) -> number | undefined,
     /**
      * Returns the index of the last element in the array where predicate is true, and -1
@@ -1336,16 +1296,6 @@ export declare class Uint16Array<TArrayBuffer: ArrayBufferLike = ArrayBufferLike
      * @param index The zero-based index of the desired code unit. A negative index will count back from the last item.
      */
     at(&self, index: number) -> number | undefined,
-    /**
-     * Returns the value of the last element in the array where predicate is true, and undefined
-     * otherwise.
-     * @param predicate findLast calls predicate once for each element of the array, in descending
-     * order, until it finds one where predicate returns true. If such an element is found, findLast
-     * immediately returns that element value. Otherwise, findLast returns undefined.
-     * @param thisArg If provided, it will be used as the this value for each invocation of
-     * predicate. If it is not provided, undefined is used instead.
-     */
-    findLast<S: number>(&self, predicate: fn (value: number, index: number, array: &Self) -> boolean, thisArg?: unknown) -> S | undefined,
     findLast(&self, predicate: fn (value: number, index: number, array: &Self) -> unknown, thisArg?: unknown) -> number | undefined,
     /**
      * Returns the index of the last element in the array where predicate is true, and -1
@@ -1662,16 +1612,6 @@ export declare class Int32Array<TArrayBuffer: ArrayBufferLike = ArrayBufferLike>
      * @param index The zero-based index of the desired code unit. A negative index will count back from the last item.
      */
     at(&self, index: number) -> number | undefined,
-    /**
-     * Returns the value of the last element in the array where predicate is true, and undefined
-     * otherwise.
-     * @param predicate findLast calls predicate once for each element of the array, in descending
-     * order, until it finds one where predicate returns true. If such an element is found, findLast
-     * immediately returns that element value. Otherwise, findLast returns undefined.
-     * @param thisArg If provided, it will be used as the this value for each invocation of
-     * predicate. If it is not provided, undefined is used instead.
-     */
-    findLast<S: number>(&self, predicate: fn (value: number, index: number, array: &Self) -> boolean, thisArg?: unknown) -> S | undefined,
     findLast(&self, predicate: fn (value: number, index: number, array: &Self) -> unknown, thisArg?: unknown) -> number | undefined,
     /**
      * Returns the index of the last element in the array where predicate is true, and -1
@@ -1988,16 +1928,6 @@ export declare class Uint32Array<TArrayBuffer: ArrayBufferLike = ArrayBufferLike
      * @param index The zero-based index of the desired code unit. A negative index will count back from the last item.
      */
     at(&self, index: number) -> number | undefined,
-    /**
-     * Returns the value of the last element in the array where predicate is true, and undefined
-     * otherwise.
-     * @param predicate findLast calls predicate once for each element of the array, in descending
-     * order, until it finds one where predicate returns true. If such an element is found, findLast
-     * immediately returns that element value. Otherwise, findLast returns undefined.
-     * @param thisArg If provided, it will be used as the this value for each invocation of
-     * predicate. If it is not provided, undefined is used instead.
-     */
-    findLast<S: number>(&self, predicate: fn (value: number, index: number, array: &Self) -> boolean, thisArg?: unknown) -> S | undefined,
     findLast(&self, predicate: fn (value: number, index: number, array: &Self) -> unknown, thisArg?: unknown) -> number | undefined,
     /**
      * Returns the index of the last element in the array where predicate is true, and -1
@@ -2314,16 +2244,6 @@ export declare class Float32Array<TArrayBuffer: ArrayBufferLike = ArrayBufferLik
      * @param index The zero-based index of the desired code unit. A negative index will count back from the last item.
      */
     at(&self, index: number) -> number | undefined,
-    /**
-     * Returns the value of the last element in the array where predicate is true, and undefined
-     * otherwise.
-     * @param predicate findLast calls predicate once for each element of the array, in descending
-     * order, until it finds one where predicate returns true. If such an element is found, findLast
-     * immediately returns that element value. Otherwise, findLast returns undefined.
-     * @param thisArg If provided, it will be used as the this value for each invocation of
-     * predicate. If it is not provided, undefined is used instead.
-     */
-    findLast<S: number>(&self, predicate: fn (value: number, index: number, array: &Self) -> boolean, thisArg?: unknown) -> S | undefined,
     findLast(&self, predicate: fn (value: number, index: number, array: &Self) -> unknown, thisArg?: unknown) -> number | undefined,
     /**
      * Returns the index of the last element in the array where predicate is true, and -1
@@ -2640,16 +2560,6 @@ export declare class Float64Array<TArrayBuffer: ArrayBufferLike = ArrayBufferLik
      * @param index The zero-based index of the desired code unit. A negative index will count back from the last item.
      */
     at(&self, index: number) -> number | undefined,
-    /**
-     * Returns the value of the last element in the array where predicate is true, and undefined
-     * otherwise.
-     * @param predicate findLast calls predicate once for each element of the array, in descending
-     * order, until it finds one where predicate returns true. If such an element is found, findLast
-     * immediately returns that element value. Otherwise, findLast returns undefined.
-     * @param thisArg If provided, it will be used as the this value for each invocation of
-     * predicate. If it is not provided, undefined is used instead.
-     */
-    findLast<S: number>(&self, predicate: fn (value: number, index: number, array: &Self) -> boolean, thisArg?: unknown) -> S | undefined,
     findLast(&self, predicate: fn (value: number, index: number, array: &Self) -> unknown, thisArg?: unknown) -> number | undefined,
     /**
      * Returns the index of the last element in the array where predicate is true, and -1
@@ -3630,16 +3540,6 @@ export declare class BigInt64Array<TArrayBuffer: ArrayBufferLike = ArrayBufferLi
      * @param index The zero-based index of the desired code unit. A negative index will count back from the last item.
      */
     at(&self, index: number) -> bigint | undefined,
-    /**
-     * Returns the value of the last element in the array where predicate is true, and undefined
-     * otherwise.
-     * @param predicate findLast calls predicate once for each element of the array, in descending
-     * order, until it finds one where predicate returns true. If such an element is found, findLast
-     * immediately returns that element value. Otherwise, findLast returns undefined.
-     * @param thisArg If provided, it will be used as the this value for each invocation of
-     * predicate. If it is not provided, undefined is used instead.
-     */
-    findLast<S: bigint>(&self, predicate: fn (value: bigint, index: number, array: &Self) -> boolean, thisArg?: unknown) -> S | undefined,
     findLast(&self, predicate: fn (value: bigint, index: number, array: &Self) -> unknown, thisArg?: unknown) -> bigint | undefined,
     /**
      * Returns the index of the last element in the array where predicate is true, and -1
@@ -3926,16 +3826,6 @@ export declare class BigUint64Array<TArrayBuffer: ArrayBufferLike = ArrayBufferL
      * @param index The zero-based index of the desired code unit. A negative index will count back from the last item.
      */
     at(&self, index: number) -> bigint | undefined,
-    /**
-     * Returns the value of the last element in the array where predicate is true, and undefined
-     * otherwise.
-     * @param predicate findLast calls predicate once for each element of the array, in descending
-     * order, until it finds one where predicate returns true. If such an element is found, findLast
-     * immediately returns that element value. Otherwise, findLast returns undefined.
-     * @param thisArg If provided, it will be used as the this value for each invocation of
-     * predicate. If it is not provided, undefined is used instead.
-     */
-    findLast<S: bigint>(&self, predicate: fn (value: bigint, index: number, array: &Self) -> boolean, thisArg?: unknown) -> S | undefined,
     findLast(&self, predicate: fn (value: bigint, index: number, array: &Self) -> unknown, thisArg?: unknown) -> bigint | undefined,
     /**
      * Returns the index of the last element in the array where predicate is true, and -1
@@ -4109,16 +3999,6 @@ export declare class Float16Array<TArrayBuffer: ArrayBufferLike = ArrayBufferLik
      * predicate. If it is not provided, undefined is used instead.
      */
     findIndex(&self, predicate: fn (value: number, index: number, obj: &Self) -> boolean, thisArg?: unknown) -> number,
-    /**
-     * Returns the value of the last element in the array where predicate is true, and undefined
-     * otherwise.
-     * @param predicate findLast calls predicate once for each element of the array, in descending
-     * order, until it finds one where predicate returns true. If such an element is found, findLast
-     * immediately returns that element value. Otherwise, findLast returns undefined.
-     * @param thisArg If provided, it will be used as the this value for each invocation of
-     * predicate. If it is not provided, undefined is used instead.
-     */
-    findLast<S: number>(&self, predicate: fn (value: number, index: number, array: &Self) -> boolean, thisArg?: unknown) -> S | undefined,
     findLast(&self, predicate: fn (value: number, index: number, array: &Self) -> unknown, thisArg?: unknown) -> number | undefined,
     /**
      * Returns the index of the last element in the array where predicate is true, and -1

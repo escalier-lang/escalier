@@ -105,6 +105,7 @@ func Generate(opts GenerateOptions) (*GenerateResult, error) {
 	if err != nil {
 		return nil, err
 	}
+	dropGuardOverloads(inputs)
 
 	partition, err := PartitionLibWithOverlay(inputs, overlay)
 	if err != nil {

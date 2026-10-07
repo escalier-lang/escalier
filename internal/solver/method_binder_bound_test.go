@@ -81,6 +81,91 @@ func TestAMethodBinderBoundReadsAtTheInstance(t *testing.T) {
 	}
 }
 
+// TestAMethodBinderBoundIsAnInputPosition covers how a method binder's bound counts toward
+// its class's variance. A bound limits what a caller may pass for the binder, so the class
+// parameter it names sits in an input position.
+func TestAMethodBinderBoundIsAnInputPosition(t *testing.T) {
+	tests := []struct {
+		name string
+		src  string
+		errs []string
+	}{
+		{
+			// The bound is the only place T appears, so C is contravariant and does not
+			// widen.
+			name: "ABoundAloneBlocksWidening",
+			src: `
+				class C<T> {
+					m<U: T>(&self, x: U) -> boolean { return false },
+				}
+				fn widen(c: &C<number>) -> &C<number | string> { return c }
+			`,
+			errs: []string{"cannot constrain string <: number"},
+		},
+		{
+			name: "ABoundAloneAllowsNarrowing",
+			src: `
+				class C<T> {
+					m<U: T>(&self, x: U) -> boolean { return false },
+				}
+				fn narrow(c: &C<number | string>) -> &C<number> { return c }
+			`,
+		},
+		{
+			// The issue's example. The field returns T and the bound takes it, so C is
+			// invariant and a `C<number>` cannot be read as a `C<number | string>`.
+			name: "ABoundBesideAFieldBlocksWidening",
+			src: `
+				class C<T> {
+					v: Array<T>,
+					m<U: T>(&self, x: U) -> boolean { return false },
+				}
+				fn widen(c: &C<number>) -> &C<number | string> { return c }
+				class Sub extends C<number> {
+					constructor(&mut self) { super([1]) },
+					m<U: number>(&self, x: U) -> boolean { return x > 1 },
+				}
+			`,
+			errs: []string{"cannot constrain string <: number"},
+		},
+		{
+			name: "ABoundBesideAReturnBlocksWidening",
+			src: `
+				class C<T> {
+					m<U: T>(&self, x: U) -> T { return x },
+				}
+				fn widen(c: &C<number>) -> &C<number | string> { return c }
+			`,
+			errs: []string{"cannot constrain string <: number"},
+		},
+		{
+			// An invariant C has no wider view, so an override at C's own argument is
+			// compatible.
+			name: "AnOverrideAtTheInstanceArgumentIsCompatible",
+			src: `
+				class C<T> {
+					v: Array<T>,
+					m<U: T>(&self, x: U) -> boolean { return false },
+				}
+				class Sub extends C<number> {
+					constructor(&mut self) { super([1]) },
+					m<U: number>(&self, x: U) -> boolean { return x > 1 },
+				}
+			`,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			_, _, errs := inferSource(t, tt.src)
+			if tt.errs == nil {
+				require.Empty(t, errorMessagesOf(errs))
+				return
+			}
+			require.Equal(t, tt.errs, errorMessagesOf(errs))
+		})
+	}
+}
+
 // TestABodyForcedBinderBoundIsEnforcedAtACall asserts that a call honors a bound the body
 // forced on a binder beside the one it declares. `f(u)` forces `U` below `f`'s `string`, so
 // `g(5)` has to pass `5` as a string too.
