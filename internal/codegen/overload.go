@@ -302,6 +302,16 @@ func groupOverloadableElems(inElems []ast.ClassElem) map[string][]ast.ClassElem 
 	return groups
 }
 
+// methodElems returns one method overload set as the MethodElems groupOverloadableElems
+// collected it from.
+func methodElems(siblings []ast.ClassElem) []*ast.MethodElem {
+	out := make([]*ast.MethodElem, len(siblings))
+	for i, sibling := range siblings {
+		out[i] = sibling.(*ast.MethodElem)
+	}
+	return out
+}
+
 // methodArms collects one method overload set into dispatch arms. A method's receiver
 // lives on MethodElem.Receiver rather than in Fn.Params, so every parameter here is a
 // value parameter and `this` needs no dispatch position.

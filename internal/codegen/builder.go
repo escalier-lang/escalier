@@ -2217,7 +2217,14 @@ func (b *Builder) buildClassElems(inElems []ast.ClassElem, derived bool) ([]Clas
 			// overloading, and a duplicate member name is legal there with the last
 			// definition winning, so emitting one member per arm would drop every arm
 			// but the last without a word.
-			if siblings := overloads[methodGroupKey(e)]; len(siblings) > 1 {
+			siblings := overloads[methodGroupKey(e)]
+			if impl := ast.ImplementationArm(methodElems(siblings)); impl != nil {
+				// The bodiless arms are signatures for the checker alone, so only the
+				// implementation emits, as an ordinary method with nothing to dispatch.
+				if impl != e {
+					continue
+				}
+			} else if len(siblings) > 1 {
 				// Every arm reaches here, so the later ones leave the emitting to the first.
 				if siblings[0] != elem {
 					continue

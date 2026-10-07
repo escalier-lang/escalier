@@ -1279,6 +1279,7 @@ func (*MixedOwnershipError) isSolverError()                 {}
 func (*MutLeafThroughSharedBorrowError) isSolverError()     {}
 func (*MissingSelfReceiverError) isSolverError()            {}
 func (*MethodOverloadReceiverMismatchError) isSolverError() {}
+func (*IncompatibleImplementationError) isSolverError()     {}
 func (*DuplicateObjectMemberError) isSolverError()          {}
 func (*DuplicateConstructorSignatureError) isSolverError()  {}
 func (*FieldInitializerNotAllowedError) isSolverError()     {}
@@ -1337,6 +1338,30 @@ func (e *MethodOverloadReceiverMismatchError) Span() ast.Span      { return e.El
 func (e *MethodOverloadReceiverMismatchError) Related() []ast.Span { return nil }
 func (e *MethodOverloadReceiverMismatchError) Message() string {
 	return "Overloaded method '" + e.Name + "' must use the same `self` receiver in every arm."
+}
+
+// IncompatibleImplementationError fires when a method's implementation cannot stand in for
+// one of the bodiless signatures declared beside it, as in
+//
+//	contains(&self, x: number) -> boolean,
+//	contains(&self, x: string) -> boolean { return false },
+//
+// A call checked against a signature runs the implementation, so the implementation has to
+// be a subtype of each signature. ImplType and SignatureType are the two compared, with the
+// `self` receiver dropped. Node is the implementation.
+type IncompatibleImplementationError struct {
+	Member        string
+	Class         string
+	ImplType      soltype.Type
+	SignatureType soltype.Type
+	Node          ast.Node
+}
+
+func (e *IncompatibleImplementationError) Span() ast.Span      { return spanOfNode(e.Node) }
+func (e *IncompatibleImplementationError) Related() []ast.Span { return nil }
+func (e *IncompatibleImplementationError) Message() string {
+	return fmt.Sprintf("the implementation of `%s` in class `%s` has type `%s`, which is not compatible with its signature `%s`",
+		e.Member, e.Class, soltype.Print(e.ImplType), soltype.Print(e.SignatureType))
 }
 
 // WriteOnlyPropertyError fires when a setter-only member is read, as in `val v =

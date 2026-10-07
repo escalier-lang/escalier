@@ -187,10 +187,18 @@ func (c *checker) checkOverriddenName(
 		}
 		// An ancestor's covariance lets an instance of this class be read as that ancestor
 		// at a wider argument, and a caller holding that view passes the method what the
-		// wider argument admits. The override has to accept that too.
+		// wider argument admits. The override has to accept that too. Such a call runs the
+		// method's implementation whatever signature the class declares for its own callers,
+		// so an implementation is what has to accept it.
+		runs := subHalf
+		if def.Impls != nil {
+			if impl, ok := declaredHalf(def.Impls, name, readHalf); ok {
+				runs = impl
+			}
+		}
 		for _, anc := range widening() {
 			if widest, ok := widestMethod(anc, self, name); ok {
-				goals = append(goals, valueGoal(subHalf, widest, half, anc.instance))
+				goals = append(goals, valueGoal(runs, widest, half, anc.instance))
 			}
 		}
 	}
