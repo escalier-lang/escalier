@@ -131,6 +131,12 @@ type Context struct {
 	// It is nil outside that window.
 	buildingAliases set.Set[string]
 
+	// borrowedReads holds, per type variable, the field reads made through a borrow whose
+	// pointee is that variable. Each lower bound the variable gains is read under every
+	// entry's borrow. addBorrowedRead appends to it and constrainBorrowedVarFieldRead
+	// explains the rule.
+	borrowedReads map[*soltype.TypeVarType][]borrowedRead
+
 	// muBinderCount numbers the μ-variables the regular-tree check has minted, so two aliases whose
 	// knots are composed into one type carry distinct binders. coalesce numbers its own binders per
 	// walk instead, since the knots one walk produces are numbered together.
@@ -485,6 +491,29 @@ func (c *Context) addLowerBound(v *soltype.TypeVarType, t soltype.Type) {
 func (c *Context) addUpperBound(v *soltype.TypeVarType, t soltype.Type) {
 	c.recordMutation(v)
 	v.UpperBounds = append(v.UpperBounds, t)
+}
+
+// borrowedRead is a field-read requirement made through a borrow whose pointee is a type
+// variable. borrow carries the mutability and lifetime the read is bounded by. shape is the
+// requirement the variable itself is constrained against. It names the same properties as
+// req, each with a fresh variable that every lower bound's ordinary read flows into.
+type borrowedRead struct {
+	borrow *soltype.RefType
+	req    *soltype.ObjectType
+	shape  *soltype.ObjectType
+}
+
+// addBorrowedRead records r against v in borrowedReads. Under an open probe a discard
+// removes the entry again, as it truncates a bound list.
+func (c *Context) addBorrowedRead(v *soltype.TypeVarType, r borrowedRead) {
+	if c.borrowedReads == nil {
+		c.borrowedReads = map[*soltype.TypeVarType][]borrowedRead{}
+	}
+	prev := len(c.borrowedReads[v])
+	c.borrowedReads[v] = append(c.borrowedReads[v], r)
+	if c.probe != nil {
+		c.probe.onRollback(func() { c.borrowedReads[v] = c.borrowedReads[v][:prev] })
+	}
 }
 
 // recordMutation snapshots v's bound-list lengths in the active probe, if any,
