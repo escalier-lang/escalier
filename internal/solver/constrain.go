@@ -390,11 +390,12 @@ func (c *Context) Constrain(sub, super soltype.Type) []SolverError {
 // needsResidualWriteBack reports whether a mutable borrow's inner needs an explicit
 // contravariant write view in the RefType arm. A mutable borrow makes its inner
 // invariant, so both a read view and a write view have to be checked. Some arms derive
-// the write view themselves from the mut-context flag, and those need no residual. Three
+// the write view themselves from the mut-context flag, and those need no residual. Four
 // arms do:
 //
 //   - object/object and tuple/tuple, which pin each named field or element the flag marks
 //     writable;
+//   - tuple/`Array`, which rejects every pair the flag marks writable;
 //   - class/class, whose nominal walk dispatches each type argument by the class's
 //     mutable-view variance vector;
 //   - class/object, which projects the class body and hands the flag to the object arm.
@@ -418,8 +419,11 @@ func (c *Context) needsResidualWriteBack(sub, sup soltype.Type) bool {
 		_, ok := sup.(*soltype.ObjectType)
 		return !ok
 	case *soltype.TupleType:
-		_, ok := sup.(*soltype.TupleType)
-		return !ok
+		if _, ok := sup.(*soltype.TupleType); ok {
+			return false
+		}
+		_, isArray := c.arrayElem(sup)
+		return !isArray
 	case *soltype.ClassType:
 		switch sup.(type) {
 		case *soltype.ClassType, *soltype.ObjectType:
@@ -428,6 +432,32 @@ func (c *Context) needsResidualWriteBack(sub, sup soltype.Type) bool {
 		return true
 	}
 	return true
+}
+
+// constrainTupleIntoArray constrains a tuple against an instance of `Array` whose element is
+// elemT. Each element must fit elemT, and so must every element a `...P` spread contributes,
+// which is checked by constraining P against the whole array. An inexact tuple may carry any
+// trailing element, so `unknown` must fit elemT as well.
+//
+// Under a mutable view the pair is rejected outright. A write through `mut Array<E>` can push
+// an element or change the length, which no tuple type admits, so no element choice makes
+// `mut [A, B] <: mut Array<E>` sound.
+func (c *Context) constrainTupleIntoArray(sub *soltype.TupleType, super, elemT soltype.Type, seen *seenPairs, mutCtx bool) []SolverError {
+	if mutCtx {
+		return []SolverError{&CannotConstrainError{Sub: sub, Super: super}}
+	}
+	var errs []SolverError
+	for _, elem := range sub.Elems {
+		if spread, ok := elem.(*soltype.RestSpreadType); ok {
+			errs = append(errs, c.constrain(spread.Operand, super, seen, false)...)
+			continue
+		}
+		errs = append(errs, c.constrain(elem, elemT, seen, false)...)
+	}
+	if sub.Inexact {
+		errs = append(errs, c.constrain(&soltype.UnknownType{}, elemT, seen, false)...)
+	}
+	return errs
 }
 
 // peelTransparent resolves t through the wrappers that merely name another type, an alias
@@ -1218,6 +1248,9 @@ func (c *Context) constrain(sub, super soltype.Type, seen *seenPairs, mutCtx boo
 		// to `never`, matching TypeScript, while `InstanceType<typeof Point>` still reads the
 		// instance off the class value.
 	case *soltype.TupleType:
+		if elemT, ok := c.arrayElem(super); ok {
+			return c.constrainTupleIntoArray(sub, super, elemT, seen, mutCtx)
+		}
 		if tupleHasSpread(sub) || tupleHasSpread(super) {
 			// One side carries an unreduced `...P` spread the pre-switch could not ground: a spread
 			// over a type parameter, or an expanding recursive alias. constrain treats such a tuple
