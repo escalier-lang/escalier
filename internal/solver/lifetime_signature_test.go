@@ -42,6 +42,7 @@ func TestSignatureImpliesBodyLifetimes(t *testing.T) {
 			want: []string{
 				"1:10-1:12: the body requires 'b to outlive 'a, but the signature does not declare it; add the bound 'b: 'a",
 				"1:10-1:12: the body requires 'b to outlive 'c, but the signature does not declare it; add the bound 'b: 'c",
+				"1:14-1:16: the body requires 'c to outlive 'a, but the signature does not declare it; add the bound 'c: 'a",
 			},
 		},
 		{

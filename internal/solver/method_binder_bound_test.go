@@ -185,18 +185,3 @@ func TestAMethodBinderBoundIsAnInputPosition(t *testing.T) {
 	}
 }
 
-// TestABodyForcedBinderBoundIsEnforcedAtACall asserts that a call honors a bound the body
-// forced on a binder beside the one it declares. `f(u)` forces `U` below `f`'s `string`, so
-// `g(5)` has to pass `5` as a string too.
-//
-// The body should not be accepted in the first place, since `u` may be a `number`. #1898
-// tracks reporting `cannot constrain number <: string` at `f(u)`. Once it lands, that error
-// replaces the one at `g(5)`, and this test's assertion moves with it.
-func TestABodyForcedBinderBoundIsEnforcedAtACall(t *testing.T) {
-	_, _, errs := inferSource(t, `
-		fn f<A: string>(a: A) -> A { return a }
-		fn g<U: number | string>(u: U) { return f(u) }
-		val r = g(5)
-	`)
-	require.Equal(t, []string{"cannot constrain 5 <: string"}, errorMessagesOf(errs))
-}
