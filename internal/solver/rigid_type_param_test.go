@@ -42,9 +42,11 @@ func TestABodyIsCheckedForEveryInstantiation(t *testing.T) {
 			errs: []string{"2:29-2:33: cannot constrain U <: string"},
 		},
 		{
-			name: "AnOperatorNarrowingTheBound",
-			src:  `fn g<U: number | string>(u: U) -> boolean { return u > 1 }`,
-			errs: []string{"1:52-1:53: cannot constrain string <: number"},
+			name:    "AnOperatorNarrowingTheBound",
+			src:     `fn g<U: number | string>(u: U) -> boolean { return u > 1 }`,
+			binding: "g",
+			want:    "fn <U: number | string>(u: U) -> boolean",
+			errs:    []string{"1:52-1:53: cannot constrain string <: number"},
 		},
 		{
 			name: "AMemberReadOnAnUnboundedParameter",
