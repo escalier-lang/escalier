@@ -184,4 +184,3 @@ func TestAMethodBinderBoundIsAnInputPosition(t *testing.T) {
 		})
 	}
 }
-

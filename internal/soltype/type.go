@@ -339,7 +339,7 @@ func (tp *TypeParam) DeclaredUpperBounds() []Type {
 // AllUpperBounds returns every upper bound an instantiation of tp has to respect. That is
 // the declared constraint followed by what the signature and the body added. A type
 // reference in the signature adds the bound it imposes, as `-> Box<U>` adds `string` for
-// `class Box<T: string>`. A body adds the variables it links the parameter to: given
+// `class Box<T: string>`. A body adds the variables it links the parameter to. Given
 // `fn f<A: string>`, the body of `fn g<U: string>(u: U) { return f(u) }` links `U` to the
 // variable `f(u)` instantiates `A` to.
 //

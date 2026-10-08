@@ -425,22 +425,17 @@ func (c *checker) inferFunc(scope *Scope, lvl int, sig ast.FuncSig, body *ast.Bl
 	hasBody := body != nil
 	// A sync return annotation resolves before the body, so a bound a type reference in it
 	// puts on a type parameter, as `-> Box<U>` does for `class Box<T: string>`, is one the
-	// body can rely on.
+	// body can rely on. A call to the function is checked against that bound too.
 	var retAnnT soltype.Type
 	retAnnOK := false
 	if sig.Return != nil && !sig.Async && !sig.Gen {
 		retAnnT, retAnnOK = c.resolveTypeAnn(declScope, sig.Return, lvl)
 	}
-	// asRigid runs a check of the body with the function's own type parameters rigid, so
-	// the body has to work for every instantiation the declared bounds allow. Resolving the
-	// signature stays outside it. A bound a signature's type reference puts on a parameter,
-	// as `-> Box<U>` does for `class Box<T: string>`, is checked where the function is called.
-	asRigid := func(check func()) { check() }
+	// The body has to work for every instantiation its type parameters' bounds allow, so
+	// those parameters are rigid while it is walked and checked against the return
+	// annotation. Nothing after that constrains a parameter from the sub side.
 	if hasBody && len(typeParams) > 0 {
-		asRigid = func(check func()) {
-			defer c.ctx.holdTypeParamsRigid(typeParams)()
-			check()
-		}
+		defer c.ctx.holdTypeParamsRigid(typeParams)()
 	}
 	if hasBody {
 		// PR3: open a fresh function context so every ReturnStmt encountered while
@@ -470,7 +465,7 @@ func (c *checker) inferFunc(scope *Scope, lvl int, sig ast.FuncSig, body *ast.Bl
 		// last expression is NOT an implicit return — only an explicit `return`
 		// produces the function's value. This mirrors the old checker's
 		// inferFuncBody.
-		asRigid(func() { c.inferBlock(fnScope, lvl, body) })
+		c.inferBlock(fnScope, lvl, body)
 		// With the whole body walked, every move site is recorded, so the consumed
 		// lattice is complete. Replay the recorded reads against it to report
 		// use-after-move. This runs before popFuncCtx restores the outer context, since
@@ -564,7 +559,7 @@ func (c *checker) inferFunc(scope *Scope, lvl int, sig ast.FuncSig, body *ast.Bl
 			// Only constrain when there IS a body, for the reason the non-async arm
 			// below spells out.
 			if hasBody {
-				asRigid(func() { c.constrain(node, ret, asyncInner) }) // body <: declared inner
+				c.constrain(node, ret, asyncInner) // body <: declared inner
 			}
 			ret = asyncAnnT
 			throws = nil
@@ -581,9 +576,7 @@ func (c *checker) inferFunc(scope *Scope, lvl int, sig ast.FuncSig, body *ast.Bl
 			// function simply adopts the annotation (constraining the synthetic `undefined`
 			// would raise a spurious `undefined <: T`).
 			if hasBody {
-				asRigid(func() {
-					c.constrainReturnAgainstAnnotation(node, returnsUniquelyOwned, ret, annT) // body <: declared return
-				})
+				c.constrainReturnAgainstAnnotation(node, returnsUniquelyOwned, ret, annT) // body <: declared return
 				// No caller can observe an annotated return the body never reaches, so warn
 				// and point at the annotation. A body that diverges into `never` on purpose
 				// writes `-> never`, which is what it delivers and so is not flagged.

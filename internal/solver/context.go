@@ -29,10 +29,17 @@ type Context struct {
 	varCounter int
 
 	// rigidParams holds the type parameters of each generic declaration whose body is being
-	// inferred, keyed by variable. constrain reads such a parameter through its skolem when
-	// it is the sub side of a constraint, so the body has to work for every instantiation
-	// the parameter's bounds allow. holdTypeParamsRigid fills it.
+	// inferred, keyed by variable. constrain checks such a parameter on the sub side of a
+	// constraint against its bounds alone, so the body has to work for every instantiation
+	// those bounds allow. Against a type, it reads the parameter as its skolem, an opaque
+	// type that satisfies a constraint only through the parameter's bounds.
+	// holdTypeParamsRigid fills it.
 	rigidParams map[*soltype.TypeVarType]*rigidParam
+
+	// rigidSkolems maps the skolem each rigid parameter has been read as back to the
+	// parameter's variable. constrain reads such a skolem as its parameter again when it
+	// meets a variable, so a skolem never becomes a variable's bound.
+	rigidSkolems map[*soltype.SkolemType]*soltype.TypeVarType
 
 	// symbolCounter mints the id a `unique symbol` annotation carries. Each written
 	// annotation is its own symbol, so the counter advances per annotation rather than
@@ -352,15 +359,13 @@ func (c *Context) freshSymbol() *soltype.UniqueSymbolType {
 	return s
 }
 
-// freshSkolem mints a distinct rigid type parameter carrying the given source name. It
-// draws from the same counter as freshVar so every skolem has a unique ID, which is what
-// keeps two parameters `T` and `U` from unifying.
 // rigidParam is one entry of Context.rigidParams. bounds are the upper bounds the
 // parameter's variable carried when it became rigid. That is its declared constraint and
 // any bound a type reference in the signature put on it. A link the body records afterward
 // is not a bound the body may rely on, so it is left out. The skolem is minted on first
 // use, so a parameter the body never constrains from the sub side mints nothing.
 type rigidParam struct {
+	v      *soltype.TypeVarType
 	name   string
 	bounds []soltype.Type
 	sk     *soltype.SkolemType
@@ -370,12 +375,16 @@ type rigidParam struct {
 func (c *Context) holdTypeParamsRigid(params []*soltype.TypeParam) (release func()) {
 	if c.rigidParams == nil {
 		c.rigidParams = map[*soltype.TypeVarType]*rigidParam{}
+		c.rigidSkolems = map[*soltype.SkolemType]*soltype.TypeVarType{}
 	}
 	for _, tp := range params {
-		c.rigidParams[tp.Var] = &rigidParam{name: tp.Name, bounds: slices.Clone(tp.AllUpperBounds())}
+		c.rigidParams[tp.Var] = &rigidParam{v: tp.Var, name: tp.Name, bounds: slices.Clone(tp.AllUpperBounds())}
 	}
 	return func() {
 		for _, tp := range params {
+			if sk := c.rigidParams[tp.Var].sk; sk != nil {
+				delete(c.rigidSkolems, sk)
+			}
 			delete(c.rigidParams, tp.Var)
 		}
 	}
@@ -389,6 +398,7 @@ func (c *Context) rigidSkolem(rp *rigidParam) *soltype.SkolemType {
 		return rp.sk
 	}
 	rp.sk = c.freshSkolem(rp.name)
+	c.rigidSkolems[rp.sk] = rp.v
 	switch len(rp.bounds) {
 	case 0:
 	case 1:
@@ -399,6 +409,9 @@ func (c *Context) rigidSkolem(rp *rigidParam) *soltype.SkolemType {
 	return rp.sk
 }
 
+// freshSkolem mints a distinct rigid type parameter carrying the given source name. It
+// draws from the same counter as freshVar so every skolem has a unique ID, which is what
+// keeps two parameters `T` and `U` from unifying.
 func (c *Context) freshSkolem(name string) *soltype.SkolemType {
 	s := &soltype.SkolemType{ID: c.varCounter, Name: name}
 	c.varCounter++

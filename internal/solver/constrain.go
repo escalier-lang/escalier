@@ -1070,15 +1070,24 @@ func (c *Context) constrain(sub, super soltype.Type, seen *seenPairs, mutCtx boo
 		}
 	}
 
-	// A rigid type parameter on the sub side stands for every type its bounds allow.
+	// A rigid type parameter on the sub side stands for every type its bounds allow. It is
+	// read as its skolem against a type and stays a variable against a variable, so a skolem
+	// that meets a variable is read as its parameter again.
+	if sk, ok := sub.(*soltype.SkolemType); ok {
+		if v, rigid := c.rigidSkolems[sk]; rigid {
+			if _, superIsVar := super.(*soltype.TypeVarType); superIsVar {
+				return c.constrain(v, super, seen, mutCtx)
+			}
+		}
+	}
 	if subVar, ok := sub.(*soltype.TypeVarType); ok {
 		if rp, rigid := c.rigidParams[subVar]; rigid {
 			superVar, superIsVar := super.(*soltype.TypeVarType)
 			switch {
 			case !superIsVar:
-				return c.constrainRigidParam(subVar, rp, super, seen, mutCtx)
+				return c.constrain(c.rigidSkolem(rp), super, seen, mutCtx)
 			case c.rigidParams[superVar] == nil:
-				return c.constrainRigidParamIntoVar(subVar, superVar, seen)
+				return c.constrainRigidParamIntoVar(subVar, superVar, seen, mutCtx)
 			}
 		}
 	}
@@ -1967,55 +1976,41 @@ func (c *Context) constrain(sub, super soltype.Type, seen *seenPairs, mutCtx boo
 	return []SolverError{&CannotConstrainError{Sub: sub, Super: super}}
 }
 
-// constrainRigidParam checks `v <: super` for the rigid type parameter v that rp holds,
-// when super is not a variable. v is read as its skolem, which satisfies super only through
-// v's bounds. A union naming v itself holds as it is.
-func (c *Context) constrainRigidParam(
-	v *soltype.TypeVarType,
-	rp *rigidParam,
-	super soltype.Type,
-	seen *seenPairs,
-	mutCtx bool,
-) []SolverError {
-	if u, isUnion := super.(*soltype.UnionType); isUnion {
-		for _, member := range u.Types {
-			if member == soltype.Type(v) {
-				return nil
-			}
-		}
-	}
-	return c.constrain(c.rigidSkolem(rp), super, seen, mutCtx)
-}
-
 // constrainRigidParamIntoVar checks `v <: superVar` for a rigid type parameter v and a
 // variable that is not one.
 //
 // It records v as a lower bound of superVar and checks v against each upper bound superVar
-// carries. An upper bound superVar gains later reaches v the same way, through
-// propagation. Each check reads v through constrainRigidParam, so a bound v's own bounds do
-// not satisfy is reported at the use that introduced it.
+// carries, as the variable arm of constrain does for any lower bound. An upper bound
+// superVar gains later reaches v the same way, through propagation. Each check reads v as
+// its skolem, so a bound v's own bounds do not satisfy is reported at the use that
+// introduced it.
 //
-// When the checks pass, it also records superVar as an upper bound of v, as the ordinary
-// variable arm does. Instantiating the function copies v's upper bounds, which is how a
-// call's argument reaches what the body built from v. A failed check leaves the link out,
-// so each call does not report the body's error a second time.
-func (c *Context) constrainRigidParamIntoVar(v, superVar *soltype.TypeVarType, seen *seenPairs) []SolverError {
+// When the checks pass, it also records superVar as an upper bound of v. Instantiating the
+// function copies v's upper bounds, which is how a call's argument reaches what the body
+// built from v. A failed check leaves the link out, so each call does not report the body's
+// error a second time.
+func (c *Context) constrainRigidParamIntoVar(v, superVar *soltype.TypeVarType, seen *seenPairs, mutCtx bool) []SolverError {
 	if superVar.Level > v.Level {
-		return c.constrain(v, c.extrude(superVar, soltype.Negative, v.Level, map[extrudeKey]*soltype.TypeVarType{}), seen, false)
+		return c.constrain(v, c.extrude(superVar, soltype.Negative, v.Level, map[extrudeKey]*soltype.TypeVarType{}), seen, mutCtx)
 	}
 	c.addLowerBound(superVar, v)
 	var errs []SolverError
 	for _, ub := range superVar.UpperBounds {
 		errs = append(errs, c.constrain(v, ub, seen, false)...)
 	}
+	for _, r := range c.borrowedReads[superVar] {
+		errs = append(errs, c.readThroughLowerBound(r, superVar, v, seen)...)
+	}
+	errs = c.breadcrumbUnionCommit(errs, superVar)
 	if hasHardError(errs) {
 		return errs
 	}
 	c.addUpperBound(v, superVar)
+	var lowerErrs []SolverError
 	for _, lb := range v.LowerBounds {
-		errs = append(errs, c.constrain(lb, superVar, seen, false)...)
+		lowerErrs = append(lowerErrs, c.constrain(lb, superVar, seen, false)...)
 	}
-	return c.breadcrumbUnionCommit(errs, v)
+	return append(errs, c.breadcrumbUnionCommit(lowerErrs, v)...)
 }
 
 // constrainStrLitToStringIntrinsic checks a string-literal sub against a residual string-operator

@@ -80,6 +80,28 @@ func TestABodyIsCheckedForEveryInstantiation(t *testing.T) {
 			errs: []string{"3:9-3:13: cannot constrain number <: string"},
 		},
 		{
+			name: "AGeneratorBody",
+			src: `gen fn g<U: number>(u: U) -> Generator<number, string, undefined> {
+	yield 1
+	return u
+}`,
+			errs: []string{"1:13-1:19: cannot constrain number <: string"},
+		},
+		{
+			// A union written through an alias still names U, so returning a U fits it.
+			name: "AnAliasOfAUnionNamingTheParameter",
+			src: `type Maybe<T> = T | null
+fn g<U>(u: U) -> Maybe<U> { return u }`,
+			binding: "g",
+			want:    "fn <U>(u: U) -> Maybe<U>",
+		},
+		{
+			name:    "AUnionNamingABoundingSibling",
+			src:     `fn g<U, T: U>(t: T) -> U | null { return t }`,
+			binding: "g",
+			want:    "fn <U, T: U>(t: T) -> U | null",
+		},
+		{
 			// A recursive call instantiates the function afresh, so it is checked like any
 			// other call.
 			name:    "ARecursiveCall",

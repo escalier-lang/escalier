@@ -39,6 +39,7 @@ func TestSignatureImpliesBodyLifetimes(t *testing.T) {
 				val k: &'a {x: number} = w
 				return y
 			}`,
+			// `val k: &'a {x: number} = w` with `w: &'c` requires 'c to outlive 'a as well.
 			want: []string{
 				"1:10-1:12: the body requires 'b to outlive 'a, but the signature does not declare it; add the bound 'b: 'a",
 				"1:10-1:12: the body requires 'b to outlive 'c, but the signature does not declare it; add the bound 'b: 'c",
