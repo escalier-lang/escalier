@@ -650,8 +650,8 @@ func (c *Checker) collectPropsFromType(
 			}
 		}
 
-		// Recursively collect properties from extended interfaces and mixins
-		for _, ref := range slices.Concat(typ.Extends, typ.Mixins) {
+		// Recursively collect properties from the superclass and included types
+		for _, ref := range typ.MemberSources() {
 			c.collectPropsFromType(ctx, ref, expectedProps, requiredProps)
 		}
 

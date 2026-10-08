@@ -316,7 +316,7 @@ func (c *Checker) inferClassDecl(ctx Context, decl *ast.ClassDecl) []Error {
 		errors = slices.Concat(errors, extendsErrors)
 		if extendsType != nil {
 			if typeRef, ok := type_system.Prune(extendsType).(*type_system.TypeRefType); ok {
-				objType.Extends = []*type_system.TypeRefType{typeRef}
+				objType.Extends = typeRef
 			}
 		}
 	}
@@ -726,7 +726,7 @@ func (c *Checker) inferClassDecl(ctx Context, decl *ast.ClassDecl) []Error {
 
 // resolveImplements records the class's `implements` interfaces on its object
 // type. A `declare` class also takes its members from them, so they go in
-// objType.Mixins as well. See checkImplements.
+// objType.Includes as well. See checkImplements.
 func (c *Checker) resolveImplements(
 	ctx Context,
 	decl *ast.ClassDecl,
@@ -746,9 +746,9 @@ func (c *Checker) resolveImplements(
 	objType.Implements = implementsTypes
 	if decl.Declare() {
 		// Both lists, because the clause means two things on a `declare`
-		// class: Implements is what the class is checked against, Mixins is
+		// class: Implements is what the class is checked against, Includes is
 		// what member lookup walks for the members it contributes.
-		objType.Mixins = implementsTypes
+		objType.Includes = implementsTypes
 	}
 	return errors
 }

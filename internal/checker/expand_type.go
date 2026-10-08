@@ -1189,9 +1189,10 @@ func (c *Checker) lazyMemberLookup(ctx Context, t *type_system.TypeRefType, name
 	return memberType, true
 }
 
-// getSuperTypeAccess looks the key up on each of objType's supertypes and then
-// its mixins, and returns the first that has it. A key missing from one entry
-// is still found on a later one, and a supertype outranks a mixin.
+// getSuperTypeAccess looks the key up on objType's superclass and then on each
+// of its included types, and returns the first that has it. A key missing
+// from one entry is still found on a later one, and the superclass outranks
+// an included type.
 //
 // The errors returned alongside name each entry that did not resolve to an
 // object type. The caller reports those whether or not the key was found.
@@ -1202,7 +1203,7 @@ func (c *Checker) getSuperTypeAccess(
 	receiverMut bool,
 ) (type_system.Type, bool, []Error) {
 	var errors []Error
-	for _, extendsTypeRef := range slices.Concat(objType.Extends, objType.Mixins) {
+	for _, extendsTypeRef := range objType.MemberSources() {
 		extendsType := type_system.Type(extendsTypeRef)
 
 		if typeRef, ok := type_system.Prune(extendsType).(*type_system.TypeRefType); ok {

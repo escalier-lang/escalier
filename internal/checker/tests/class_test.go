@@ -1814,7 +1814,7 @@ func TestDeclareClassImplementsConflicts(t *testing.T) {
 }
 
 // A class with a body is checked against its `implements` interfaces but
-// takes no members from them, which is what keeps Implements and Mixins
+// takes no members from them, which is what keeps Implements and Includes
 // apart on the object type. Only a `declare` class fills both.
 func TestNonDeclareClassTakesNoMembersFromImplements(t *testing.T) {
 	t.Parallel()
