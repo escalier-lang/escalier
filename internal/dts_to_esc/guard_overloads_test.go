@@ -33,6 +33,24 @@ func TestDropGuardOverloads(t *testing.T) {
 			want: []string{"find"},
 		},
 		{
+			// A same-named overload taking something other than a callback is a different
+			// call, so the guard overload is the only one that takes a predicate.
+			name: "AGuardArmBesideAnUnrelatedOverloadIsKept",
+			src: `interface Array<T> {
+				choose<S extends T>(predicate: (value: T) => value is S): S;
+				choose(index: number): T;
+			}`,
+			want: []string{"choose", "choose"},
+		},
+		{
+			name: "AGuardArmBesideAPlainArmOfAnotherArityIsKept",
+			src: `interface Array<T> {
+				filter<S extends T>(predicate: (value: T) => value is S): S[];
+				filter(predicate: (value: T) => unknown, thisArg: unknown): T[];
+			}`,
+			want: []string{"filter", "filter"},
+		},
+		{
 			name: "ALoneGuardArmIsKept",
 			src: `interface Array<T> {
 				filter<S extends T>(predicate: (value: T) => value is S): S[];

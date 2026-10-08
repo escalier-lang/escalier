@@ -1,6 +1,8 @@
 package dts_to_esc
 
 import (
+	"slices"
+
 	"github.com/escalier-lang/escalier/internal/dts_parser"
 )
 
@@ -62,19 +64,20 @@ func dropGuardOverloadsIn(stmts []dts_parser.Statement) []dts_parser.Statement {
 }
 
 // dropGuardMembers returns members without its guard overloads. method returns a member's
-// name and its signature, or a nil signature for a member that is not a method. An arm is
-// dropped only when another method of the same name remains, so a declaration never loses
-// the member whole.
+// name and its signature, or a nil signature for a member that is not a method. A guard
+// overload is dropped only when a plain overload of the same name covers it, as
+// coversGuard decides, so every call the guard overload took still has an overload.
 func dropGuardMembers[M any](members []M, method func(M) (string, *dts_parser.MethodSignature)) []M {
-	plain := map[string]int{}
+	plain := map[string][]*dts_parser.MethodSignature{}
 	for _, m := range members {
 		if name, sig := method(m); sig != nil && name != "" && !isGuardOverload(sig) {
-			plain[name]++
+			plain[name] = append(plain[name], sig)
 		}
 	}
 	kept := members[:0:0]
 	for _, m := range members {
-		if name, sig := method(m); sig != nil && name != "" && plain[name] > 0 && isGuardOverload(sig) {
+		if name, sig := method(m); sig != nil && name != "" && isGuardOverload(sig) &&
+			slices.ContainsFunc(plain[name], func(p *dts_parser.MethodSignature) bool { return coversGuard(p, sig) }) {
 			continue
 		}
 		kept = append(kept, m)
@@ -85,25 +88,69 @@ func dropGuardMembers[M any](members []M, method func(M) (string, *dts_parser.Me
 // isGuardOverload reports whether sig takes a callback whose return is a type guard on one
 // of sig's own type parameters, as `predicate: (value: T) => value is S` is on `S`.
 func isGuardOverload(sig *dts_parser.MethodSignature) bool {
-	for _, tp := range sig.TypeParams {
-		for _, p := range sig.Params {
-			if guardsOn(p.Type, tp.Name.Name) {
-				return true
-			}
+	for _, p := range sig.Params {
+		if guardsOnOwnParam(sig, p.Type) {
+			return true
 		}
 	}
 	return false
 }
 
+// guardsOnOwnParam reports whether t is a type-guard callback on one of sig's own type
+// parameters.
+func guardsOnOwnParam(sig *dts_parser.MethodSignature, t dts_parser.TypeAnn) bool {
+	for _, tp := range sig.TypeParams {
+		if guardsOn(t, tp.Name.Name) {
+			return true
+		}
+	}
+	return false
+}
+
+// coversGuard reports whether plain takes the calls the guard overload guard takes, in the
+// shape TypeScript pairs them:
+//
+//	filter<S extends T>(predicate: (value: T) => value is S): S[];
+//	filter(predicate: (value: T) => unknown): T[];
+//
+// The two take the same number of parameters, and wherever guard takes a guard callback,
+// plain takes a callback of the same arity. A callback returning `unknown` accepts any
+// predicate, so plain then accepts every argument guard did.
+func coversGuard(plain, guard *dts_parser.MethodSignature) bool {
+	if len(plain.Params) != len(guard.Params) {
+		return false
+	}
+	for i, gp := range guard.Params {
+		if !guardsOnOwnParam(guard, gp.Type) {
+			continue
+		}
+		gf, pf := funcType(gp.Type), funcType(plain.Params[i].Type)
+		if gf == nil || pf == nil || len(gf.Params) != len(pf.Params) {
+			return false
+		}
+	}
+	return true
+}
+
+// funcType returns t as a function type, looking through parentheses, or nil when t is
+// not one.
+func funcType(t dts_parser.TypeAnn) *dts_parser.FunctionType {
+	switch t := t.(type) {
+	case *dts_parser.ParenthesizedType:
+		return funcType(t.Type)
+	case *dts_parser.FunctionType:
+		return t
+	}
+	return nil
+}
+
 // guardsOn reports whether t is a function type, possibly parenthesized, whose return is
 // a `value is X` guard with X naming name.
 func guardsOn(t dts_parser.TypeAnn, name string) bool {
-	switch t := t.(type) {
-	case *dts_parser.ParenthesizedType:
-		return guardsOn(t.Type, name)
-	case *dts_parser.FunctionType:
-		pred, ok := t.ReturnType.(*dts_parser.TypePredicate)
-		return ok && !pred.Asserts && pred.Type != nil && countTypeRefsInTypeAnn(pred.Type, name) > 0
+	f := funcType(t)
+	if f == nil {
+		return false
 	}
-	return false
+	pred, ok := f.ReturnType.(*dts_parser.TypePredicate)
+	return ok && !pred.Asserts && pred.Type != nil && countTypeRefsInTypeAnn(pred.Type, name) > 0
 }
