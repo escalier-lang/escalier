@@ -394,12 +394,30 @@ func TestInferBodyVariance(t *testing.T) {
 			wantMut: []Variance{Contravariant},
 		},
 		{
-			// `m<U: T>(&self, x: U) -> T`. A caller picks `U` against the bound, so unlike
-			// the value parameter of `echo(&self, x: T) -> T` the bound counts even though the
-			// return gives `T` an output position.
-			name: "a method binder's bound beside a return is invariant",
+			// `m<U: T>(&self, x: U) -> T`, the shape `Array.filter<S: T>` has. The bound is an
+			// input to a `&self` method, so it counts the way `echo(&self, x: T) -> T` does. The
+			// return keeps `T` covariant and the bound marks it as a covariant input.
+			name: "a self method binder's bound beside a return is a covariant input",
 			def: oneParam(func(tv *soltype.TypeVarType) (*soltype.ObjectType, []*soltype.ClassType) {
 				return exactObj(boundedSelfMethod("m", "C", tv, tv)), nil
+			}),
+			want:       []Variance{Covariant},
+			wantMut:    []Variance{Covariant},
+			wantInputs: []bool{true},
+		},
+		{
+			// `readonly f: <U: T>(x: U) -> T`. A field's input positions always count, so a
+			// generic function held in one takes `T` in through its bound and gives it back
+			// through its return.
+			name: "a held function's binder bound beside its return is invariant",
+			def: oneParam(func(tv *soltype.TypeVarType) (*soltype.ObjectType, []*soltype.ClassType) {
+				u := &soltype.TypeVarType{ID: 2, UpperBounds: []soltype.Type{tv}}
+				held := &soltype.FuncType{
+					TypeParams: []*soltype.TypeParam{{Name: "U", Var: u, Constraint: tv}},
+					Params:     []*soltype.FuncParam{{Pattern: &soltype.IdentPat{Name: "x"}, Type: u}},
+					Ret:        tv,
+				}
+				return exactObj(readonlyProp("f", held)), nil
 			}),
 			want:    []Variance{Invariant},
 			wantMut: []Variance{Invariant},

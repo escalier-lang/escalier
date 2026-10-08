@@ -590,21 +590,12 @@ func measureBodyVariance(def *ClassDef, selfName string, env varianceEnv, assume
 	//     non-mutating methods.
 	//   - readerRef: the non-mutating methods, whose input positions count only for a
 	//     parameter with no output position.
-	//   - boundRef: the binder bounds of the non-mutating methods.
 	//   - mutOnlyRef: the members only a mutable reference reaches.
 	//   - superRef: the `extends` arguments.
 	fieldRef := newVisitor(false)
 	mutFieldRef := newVisitor(true)
 	otherRef := newVisitor(false)
 	readerRef := newVisitor(false)
-	boundRef := newVisitor(false)
-	// A reader's own value parameters count only for a parameter with no output position,
-	// because the reader cannot store what it is passed. A binder bound gets no such
-	// exemption. A caller picks the binder's argument against the bound, so through a
-	// `C<number | string>` view of a `C<number>` it can pick `U` as `string` for
-	// `m<U: T>(&self, x: U)`. An override declared at `C<number>` would then run on a
-	// string. readerRef therefore sends its binder bounds to boundRef, which counts in full.
-	readerRef.boundRef = boundRef
 	mutOnlyRef := newVisitor(false)
 	superRef := newVisitor(false)
 	if def.Body != nil {
@@ -639,14 +630,14 @@ func measureBodyVariance(def *ClassDef, selfName string, env varianceEnv, assume
 		}
 	}
 	for i := range n {
-		ownPos := fieldRef.pos[i] || otherRef.pos[i] || readerRef.pos[i] || boundRef.pos[i]
+		ownPos := fieldRef.pos[i] || otherRef.pos[i] || readerRef.pos[i]
 		readerNeg := readerRef.neg[i] && !ownPos
-		ownNeg := fieldRef.neg[i] || otherRef.neg[i] || readerNeg || boundRef.neg[i]
+		ownNeg := fieldRef.neg[i] || otherRef.neg[i] || readerNeg
 		m.storage[i] = collapseVariance(fieldRef.pos[i] || otherRef.pos[i], fieldRef.neg[i] || otherRef.neg[i])
 		m.immut[i] = collapseVariance(ownPos || superRef.pos[i], ownNeg || superRef.neg[i])
 		m.mut[i] = collapseVariance(
-			mutFieldRef.pos[i] || otherRef.pos[i] || readerRef.pos[i] || boundRef.pos[i] || mutOnlyRef.pos[i] || superRef.pos[i],
-			mutFieldRef.neg[i] || otherRef.neg[i] || readerNeg || boundRef.neg[i] || mutOnlyRef.neg[i] || superRef.neg[i],
+			mutFieldRef.pos[i] || otherRef.pos[i] || readerRef.pos[i] || mutOnlyRef.pos[i] || superRef.pos[i],
+			mutFieldRef.neg[i] || otherRef.neg[i] || readerNeg || mutOnlyRef.neg[i] || superRef.neg[i],
 		)
 		m.covariantInputs[i] = readerRef.neg[i] && m.immut[i] == Covariant
 	}
@@ -770,9 +761,6 @@ type varianceVisitor struct {
 	// aliasDepth counts the alias bodies the walk is inside. A recursive alias whose
 	// arguments grow at each level never repeats a key, and this bounds it.
 	aliasDepth int
-	// boundRef records what a generic function's binder bounds and defaults name. A nil
-	// boundRef records them into this visitor's own vectors.
-	boundRef *varianceVisitor
 }
 
 // maxAliasDepth bounds how many alias bodies a variance walk enters inside one another.
@@ -822,16 +810,12 @@ func (v *varianceVisitor) EnterType(t soltype.Type, pol soltype.Polarity) soltyp
 		// fills an argument the caller omits, so it reads at the function's own polarity.
 		// Accept walks both at the function's polarity, so the binders are walked here and
 		// the rest of the signature is handed back to Accept without them.
-		sink := v
-		if v.boundRef != nil {
-			sink = v.boundRef
-		}
 		for _, tp := range t.TypeParams {
 			for _, b := range tp.DeclaredUpperBounds() {
-				b.Accept(sink, pol.Flip())
+				b.Accept(v, pol.Flip())
 			}
 			if tp.Default != nil {
-				tp.Default.Accept(sink, pol)
+				tp.Default.Accept(v, pol)
 			}
 		}
 		bare := *t

@@ -112,9 +112,10 @@ func TestAMethodBinderBoundIsAnInputPosition(t *testing.T) {
 			`,
 		},
 		{
-			// The issue's example. The field returns T and the bound takes it, so C is
-			// invariant and a `C<number>` cannot be read as a `C<number | string>`.
-			name: "ABoundBesideAFieldBlocksWidening",
+			// The issue's example. The field returns T, so C stays covariant and widens. The
+			// bound marks T as a covariant input, so an override has to accept what the
+			// widest view passes, and Sub's narrower bound is rejected.
+			name: "ANarrowOverrideOfABoundedReaderIsRejected",
 			src: `
 				class C<T> {
 					v: Array<T>,
@@ -126,32 +127,46 @@ func TestAMethodBinderBoundIsAnInputPosition(t *testing.T) {
 					m<U: number>(&self, x: U) -> boolean { return x > 1 },
 				}
 			`,
-			errs: []string{"cannot constrain string <: number"},
+			errs: []string{
+				"class `Sub` redeclares inherited member `m` with type `fn <U: number>(x: U) -> boolean`, " +
+					"which is not compatible with `fn <U: unknown>(x: U) -> boolean` declared by `C`",
+			},
 		},
 		{
-			name: "ABoundBesideAReturnBlocksWidening",
+			name: "AnOverrideAcceptingTheWidestBoundIsCompatible",
+			src: `
+				class C<T> {
+					v: Array<T>,
+					m<U: T>(&self, x: U) -> boolean { return false },
+				}
+				class Sub extends C<number> {
+					constructor(&mut self) { super([1]) },
+					m<U>(&self, x: U) -> boolean { return false },
+				}
+			`,
+		},
+		{
+			// The shape `Array.filter<S: T>` has. The return gives T an output position, so a
+			// `&self` method's bound leaves C covariant.
+			name: "ABoundBesideAReturnWidens",
 			src: `
 				class C<T> {
 					m<U: T>(&self, x: U) -> T { return x },
 				}
 				fn widen(c: &C<number>) -> &C<number | string> { return c }
 			`,
-			errs: []string{"cannot constrain string <: number"},
 		},
 		{
-			// An invariant C has no wider view, so an override at C's own argument is
-			// compatible.
-			name: "AnOverrideAtTheInstanceArgumentIsCompatible",
+			// A field's input positions always count, so a generic function held in one makes
+			// C invariant.
+			name: "AHeldFunctionsBoundBlocksWidening",
 			src: `
 				class C<T> {
-					v: Array<T>,
-					m<U: T>(&self, x: U) -> boolean { return false },
+					readonly f: fn <U: T>(x: U) -> T,
 				}
-				class Sub extends C<number> {
-					constructor(&mut self) { super([1]) },
-					m<U: number>(&self, x: U) -> boolean { return x > 1 },
-				}
+				fn widen(c: &C<number>) -> &C<number | string> { return c }
 			`,
+			errs: []string{"cannot constrain string <: number"},
 		},
 	}
 	for _, tt := range tests {
