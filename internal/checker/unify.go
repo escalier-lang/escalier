@@ -8,6 +8,7 @@ import (
 	"unsafe"
 
 	"github.com/escalier-lang/escalier/internal/ast"
+	"github.com/escalier-lang/escalier/internal/set"
 	"github.com/escalier-lang/escalier/internal/type_system"
 )
 
@@ -921,12 +922,14 @@ func (c *Checker) unifyMatched(ctx Context, t1, t2 type_system.Type, seen unifyS
 
 			errors := []Error{}
 
-			collected1 := collectObjElemTypes(obj1, true)
+			// A member reached through a superclass or an included type
+			// counts toward assignability, so both sides include them.
+			collected1 := c.collectAllElemTypes(ctx, obj1)
 			namedElems1 := collected1.Read
 			keys1 := collected1.Keys
 			restTypes1 := collected1.RestTypes
 
-			collected2 := collectObjElemTypes(obj2, true)
+			collected2 := c.collectAllElemTypes(ctx, obj2)
 			namedElems2 := collected2.Read
 			keys2 := collected2.Keys
 			restTypes2 := collected2.RestTypes
@@ -3133,6 +3136,22 @@ type collectedElemTypes struct {
 // separate Read and Write maps. RestSpreadElem values are collected separately
 // in RestTypes.
 func collectObjElemTypes(obj *type_system.ObjectType, collectOrigElems bool) collectedElemTypes {
+	return collectElemTypes(obj.Elems, collectOrigElems)
+}
+
+// collectAllElemTypes extracts named property types from every member obj
+// has, including those collectAllElems finds through its superclass and
+// included types. It records the original elems in OrigRead and OrigWrite.
+func (c *Checker) collectAllElemTypes(ctx Context, obj *type_system.ObjectType) collectedElemTypes {
+	if obj.Extends == nil && len(obj.Includes) == 0 {
+		return collectObjElemTypes(obj, true)
+	}
+	return collectElemTypes(c.collectAllElems(ctx, obj, set.NewSet[*type_system.ObjectType]()), true)
+}
+
+// collectElemTypes extracts named property types from elems the same way
+// collectObjElemTypes does for an ObjectType's Elems.
+func collectElemTypes(elems []type_system.ObjTypeElem, collectOrigElems bool) collectedElemTypes {
 	result := collectedElemTypes{
 		Read:  make(map[type_system.ObjTypeKey]type_system.Type),
 		Write: make(map[type_system.ObjTypeKey]type_system.Type),
@@ -3142,7 +3161,7 @@ func collectObjElemTypes(obj *type_system.ObjectType, collectOrigElems bool) col
 		result.OrigWrite = make(map[type_system.ObjTypeKey]type_system.ObjTypeElem)
 	}
 	seen := make(map[type_system.ObjTypeKey]bool)
-	for _, elem := range obj.Elems {
+	for _, elem := range elems {
 		switch elem := elem.(type) {
 		case *type_system.PropertyElem:
 			propType := elem.Value

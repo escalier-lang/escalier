@@ -77,7 +77,7 @@ func (c *Checker) checkContributedConflicts(
 			continue
 		}
 		ifaceName := type_system.QualIdentToString(ifaceRef.Name)
-		for _, ifaceElem := range c.collectInterfaceElems(ctx, ifaceObj, set.NewSet[*type_system.ObjectType]()) {
+		for _, ifaceElem := range c.collectAllElems(ctx, ifaceObj, set.NewSet[*type_system.ObjectType]()) {
 			key, ok := elemKey(ifaceElem)
 			if !ok {
 				continue
@@ -169,28 +169,28 @@ func (c *Checker) checkImplementsOne(
 	sub := buildSelfSubstitution(ctx, decl, ifaceName)
 
 	var errors []Error
-	for _, ifaceElem := range c.collectInterfaceElems(ctx, ifaceObj, set.NewSet[*type_system.ObjectType]()) {
+	for _, ifaceElem := range c.collectAllElems(ctx, ifaceObj, set.NewSet[*type_system.ObjectType]()) {
 		errors = slices.Concat(errors,
 			c.checkInterfaceElem(ctx, classObj, ifaceElem, className, ifaceName, sub, span, decl.Declare()))
 	}
 	return errors
 }
 
-// collectInterfaceElems returns every member an implemented entry declares:
-// its own, and those it takes from its superclass and included types. A
-// redeclared member shadows the inherited one, and `seen` stops a cycle in
-// the graph.
-func (c *Checker) collectInterfaceElems(
+// collectAllElems returns every member objType has: its own, and those it
+// takes from its superclass and included types. A member that objType or an
+// earlier entry in MemberSources declares shadows every inherited member with
+// the same key. `seen` stops a cycle in the graph.
+func (c *Checker) collectAllElems(
 	ctx Context,
-	ifaceObj *type_system.ObjectType,
+	objType *type_system.ObjectType,
 	seen set.Set[*type_system.ObjectType],
 ) []type_system.ObjTypeElem {
-	if seen.Contains(ifaceObj) {
+	if seen.Contains(objType) {
 		return nil
 	}
-	seen.Add(ifaceObj)
+	seen.Add(objType)
 
-	elems := slices.Clone(ifaceObj.Elems)
+	elems := slices.Clone(objType.Elems)
 	declared := set.NewSet[type_system.ObjTypeKey]()
 	for _, elem := range elems {
 		if key, ok := elemKey(elem); ok {
@@ -198,7 +198,7 @@ func (c *Checker) collectInterfaceElems(
 		}
 	}
 
-	for _, superRef := range ifaceObj.MemberSources() {
+	for _, superRef := range objType.MemberSources() {
 		expanded, expandErrors := c.expandTypeRef(ctx, superRef)
 		if len(expandErrors) > 0 {
 			continue
@@ -207,15 +207,22 @@ func (c *Checker) collectInterfaceElems(
 		if !ok {
 			continue
 		}
-		for _, elem := range c.collectInterfaceElems(ctx, superObj, seen) {
+		// Shadowing is checked against the keys declared before this
+		// supertype, so a getter and setter pair or a method's overloads
+		// all come through together.
+		var superKeys []type_system.ObjTypeKey
+		for _, elem := range c.collectAllElems(ctx, superObj, seen) {
 			key, ok := elemKey(elem)
 			if ok && declared.Contains(key) {
 				continue
 			}
 			if ok {
-				declared.Add(key)
+				superKeys = append(superKeys, key)
 			}
 			elems = append(elems, elem)
+		}
+		for _, key := range superKeys {
+			declared.Add(key)
 		}
 	}
 	return elems

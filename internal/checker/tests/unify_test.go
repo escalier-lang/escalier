@@ -9,6 +9,7 @@ import (
 	"github.com/escalier-lang/escalier/internal/test_util"
 	"github.com/escalier-lang/escalier/internal/type_system"
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
 
 func TestUnifyStrLitWithRegexLit(t *testing.T) {
@@ -1053,4 +1054,138 @@ func TestFindIndexSignatureForKeyOrderIndependence(t *testing.T) {
 		errors := checker.Unify(inferCtx, obj1, obj2)
 		assert.NotEmpty(t, errors, "cross-object check should work regardless of which side has the numeric sig")
 	})
+}
+
+// TestUnifyInheritedMembers covers object assignability when the source type
+// reaches a member through an interface's `extends` clause or a `declare`
+// class's `implements` clause rather than declaring it.
+func TestUnifyInheritedMembers(t *testing.T) {
+	tests := map[string]struct {
+		input          string
+		expectedErrors []string
+	}{
+		"MemberFromSupertype": {
+			input: `
+				interface Disposable {
+					dispose(self) -> undefined,
+				}
+				interface IteratorObject extends Disposable {
+					next(self) -> number,
+				}
+				declare fn makeIter() -> IteratorObject
+				export fn takesDisposable(d: Disposable) -> undefined {}
+
+				export val ok = makeIter().dispose()
+				export val passed = takesDisposable(makeIter())
+			`,
+		},
+		"MemberFromTwoLevelsOfSupertypes": {
+			input: `
+				interface Named {
+					name: string,
+				}
+				interface Pet extends Named {
+					owner: string,
+				}
+				interface Dog extends Pet {
+					breed: string,
+				}
+				declare fn makeDog() -> Dog
+				export fn takesNamed(n: {name: string}) -> undefined {}
+
+				export val passed = takesNamed(makeDog())
+			`,
+		},
+		"MemberFromGenericSupertype": {
+			input: `
+				interface Box<T> {
+					value: T,
+				}
+				interface StrBox extends Box<string> {
+					label: string,
+				}
+				declare fn makeBox() -> StrBox
+				export fn takesStrValue(b: {value: string}) -> undefined {}
+				export fn takesNumValue(b: {value: number}) -> undefined {}
+
+				export val passed = takesStrValue(makeBox())
+				export val failed = takesNumValue(makeBox())
+			`,
+			expectedErrors: []string{
+				"string cannot be assigned to number",
+			},
+		},
+		"MemberFromImplementedInterfaceOnDeclareClass": {
+			input: `
+				interface ParentNode {
+					childCount: number,
+				}
+				declare class Element implements ParentNode {}
+				declare fn makeElement() -> Element
+				export fn takesCount(p: {childCount: number}) -> undefined {}
+
+				export val passed = takesCount(makeElement())
+			`,
+		},
+		// A supertype's getter and setter share a key. Both have to come
+		// through for the target's setter to find a writable member.
+		"GetterAndSetterFromSupertype": {
+			input: `
+				interface Base {
+					get x(self) -> number,
+					set x(mut self, v: number) -> undefined,
+				}
+				interface Derived extends Base {}
+				declare fn makeDerived() -> Derived
+				export fn takesSetter(s: {set x(mut self, v: number) -> undefined}) -> undefined {}
+
+				export val passed = takesSetter(makeDerived())
+			`,
+		},
+		"RedeclaredMemberShadowsInheritedOne": {
+			input: `
+				interface Base {
+					id: string | number,
+				}
+				interface Derived extends Base {
+					id: number,
+				}
+				declare fn makeDerived() -> Derived
+				export fn takesStrId(b: {id: string}) -> undefined {}
+
+				export val failed = takesStrId(makeDerived())
+			`,
+			expectedErrors: []string{
+				"number cannot be assigned to string",
+			},
+		},
+		"MemberMissingFromEverySupertype": {
+			input: `
+				interface Disposable {
+					dispose(self) -> undefined,
+				}
+				interface IteratorObject extends Disposable {
+					next(self) -> number,
+				}
+				declare fn makeIter() -> IteratorObject
+				export fn takesClose(c: {close: number}) -> undefined {}
+
+				export val failed = takesClose(makeIter())
+			`,
+			expectedErrors: []string{
+				"Key not found in object: close in {next(self) -> number}",
+			},
+		},
+	}
+
+	for name, test := range tests {
+		t.Run(name, func(t *testing.T) {
+			errs := inferModuleErrors(t, test.input)
+			var actual []string
+			for _, e := range errs {
+				actual = append(actual, e.Message())
+			}
+			require.Equal(t, test.expectedErrors, actual)
+		})
+	}
 }
