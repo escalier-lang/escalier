@@ -1284,11 +1284,11 @@ func (c *Context) constrain(sub, super soltype.Type, seen *seenPairs, mutCtx boo
 		}
 	}
 
-	// A skolem on the super side admits a type through its declared lower bound. `B >: T`
+	// A skolem on the super side admits a type through its declared lower bound. `where T: B`
 	// promises that every instantiation of B is a supertype of T, so a T, or anything below
 	// T, is a B. The bound is tried under a probe and taken only when it holds. When it does
 	// not, the arms below decide the pair. They still admit the skolem itself, a sibling
-	// whose own upper bound reaches it, as `U` does in `<B >: number, U: B>`, and an
+	// whose own upper bound reaches it, as `U` does in `<B, U: B> where number: B`, and an
 	// intersection naming it. Anything else they report against B rather than against the
 	// bound. A variable sub records the skolem as a bound in the variable arm below.
 	if sup, ok := super.(*soltype.SkolemType); ok && sup.Lower != nil {
@@ -2764,7 +2764,7 @@ func (c *Context) instantiateFuncBinder(ft *soltype.FuncType, lvl int) *soltype.
 	sub := newTypeSubst(ft.TypeParams, args, nil, nil)
 	for i, tp := range ft.TypeParams {
 		// Read each declared bound from its field so an instance's substitution reaches it.
-		// The variable's first bound would leave `U: T` or `B >: T` naming the class's `T`,
+		// The variable's first bound would leave `U: T` or `where T: B` naming the class's `T`,
 		// and a call would then record its argument on that class variable.
 		nvs[i].LowerBounds = acceptBounds(tp.AllLowerBounds(), sub)
 		nvs[i].UpperBounds = acceptBounds(tp.AllUpperBounds(), sub)

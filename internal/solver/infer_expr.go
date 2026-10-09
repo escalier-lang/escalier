@@ -441,7 +441,7 @@ func (c *checker) inferFunc(scope *Scope, lvl int, sig ast.FuncSig, body *ast.Bl
 	// signatureFloors counts each parameter's lower bounds as the resolved signature left
 	// them, so checkTypeParamsProducible reads only what the body adds. A type reference in
 	// the signature records a bound live, as `b: Box<T>` records `number` on `T` for
-	// `class Box<B >: number>`, and a declared `>:` bound is seeded the same way.
+	// `class Box<B> where number: B`, and a declared lower bound is seeded the same way.
 	signatureFloors := make(map[*soltype.TypeVarType]int, len(typeParams))
 	for _, tp := range typeParams {
 		signatureFloors[tp.Var] = len(tp.Var.LowerBounds)
@@ -450,7 +450,7 @@ func (c *checker) inferFunc(scope *Scope, lvl int, sig ast.FuncSig, body *ast.Bl
 		// A type forced into a parameter from below is left to checkTypeParamsProducible,
 		// which names the parameter and the type the body forced. A binder with a declared
 		// lower bound is rigid from below regardless, so `return 1` against `-> B` with
-		// `B >: number` is checked against the bound rather than recorded as a floor.
+		// `where number: B` is checked against the bound rather than recorded as a floor.
 		defer c.ctx.holdTypeParamsRigid(typeParams, false)()
 	}
 	if hasBody {

@@ -16,8 +16,8 @@ import (
 // which has no expected type to check against. The annotation form instead checks the body
 // against a skolemized annotation in constrainInitAgainstAnnotation. node supplies the blame
 // span. signatureFloors counts each parameter's lower bounds as the signature left them. A
-// declared `B >: number` is one, and so is the `number` a parameter `b: Box<T>` records on `T`
-// for `class Box<B >: number>`. Those are the caller's promise rather than the body's doing,
+// declared `where number: B` is one, and so is the `number` a parameter `b: Box<T>` records on
+// `T` for `class Box<B> where number: B`. Those are the caller's promise rather than the body's doing,
 // so the walk skips them. It also skips a floor the body derived that one of them already
 // admits. Reading `b.v` derives that same `number` again.
 func (c *checker) checkTypeParamsProducible(node ast.Node, ft *soltype.FuncType, signatureFloors map[*soltype.TypeVarType]int) {

@@ -335,14 +335,11 @@ func TestTypeParamBoundCycle(t *testing.T) {
 			errs: []string{"type parameter `T` is bounded above by itself"},
 		},
 		{
+			// `where B: B` would record an upper bound, so the self lower bound reaches `B`
+			// through a union member.
 			name: "LowerSelf",
-			src:  `fn f<B >: B>() -> B { return 1 }`,
+			src:  `fn f<B>() -> B where B | 1: B { return 1 }`,
 			errs: []string{"type parameter `B` is bounded below by itself"},
-		},
-		{
-			name: "LowerMutual",
-			src:  `fn f<A >: B, B >: A>() -> A { return 1 }`,
-			errs: []string{"type parameter `A` is bounded below by itself through `B`"},
 		},
 		{
 			// `constrain` reaches each member of an intersection on its own, so the chain
@@ -360,7 +357,7 @@ func TestTypeParamBoundCycle(t *testing.T) {
 		},
 		{
 			name: "ThroughALowerUnion",
-			src:  `fn f<A >: B | 1, B >: A>() -> A { return 1 }`,
+			src:  `fn f<A, B>() -> A where B | 1: A, A | 1: B { return 1 }`,
 			errs: []string{"type parameter `A` is bounded below by itself through `B`"},
 		},
 		{
@@ -380,7 +377,7 @@ func TestTypeParamBoundCycle(t *testing.T) {
 		{
 			// Each direction is its own cycle, reported on its own.
 			name: "BothDirections",
-			src:  `fn f<T >: U: U, U >: T: T>(x: T) -> boolean { return x > 1 }`,
+			src:  `fn f<T: U, U: T>(x: T) -> boolean where U | 1: T, T | 1: U { return x > 1 }`,
 			errs: []string{
 				"type parameter `T` is bounded above by itself through `U`",
 				"type parameter `T` is bounded below by itself through `U`",
@@ -426,10 +423,11 @@ func TestTypeParamBoundCycle(t *testing.T) {
 			errs: []string{"cannot constrain Cmp<U> <: number"},
 		},
 		{
-			// `T <: U` and `U >: T` say the same thing, and neither chain returns to its start.
+			// `T <: U` and `T | 1 <: U` say the same thing, and neither chain returns to its
+			// start.
 			name: "OppositeDirectionsAreNotACycle",
-			src:  `fn f<T: U, U >: T>(x: T) -> U { return x }`,
-			want: "fn <T: U, U >: T>(x: T) -> U",
+			src:  `fn f<T: U, U>(x: T) -> U where T | 1: U { return x }`,
+			want: "fn <T: U, U>(x: T) -> U where T | 1: U",
 		},
 	}
 	for _, tt := range tests {

@@ -29,7 +29,8 @@ func parseAndPrint(t *testing.T, src string) (string, []string) {
 	return strings.Join(printed, "\n"), msgs
 }
 
-// TestParseAdjacentGreaterThanPairs covers `>:` and `>=` read from two adjacent tokens. The
+// TestParseAdjacentGreaterThanPairs covers `>=` read from two adjacent tokens, and `>:`
+// recognized the same way so a lower bound written on a binder gets its own error. The
 // lexer keeps `>` a token of its own, so a type's closing `>` may be followed by `:` or `=`
 // without the pair fusing into one operator.
 func TestParseAdjacentGreaterThanPairs(t *testing.T) {
@@ -40,18 +41,12 @@ func TestParseAdjacentGreaterThanPairs(t *testing.T) {
 		want string
 		errs []string
 	}{
-		{name: "ALowerBoundOnAFunction", src: "declare fn f<B >: T>(x: B) -> B"},
 		{
-			name: "ALowerBoundOnAMethod",
-			src: `class Bag<T> {
-    contains<B >: T>(&self, x: B) -> boolean {
-        return false
-    }
-}`,
+			name: "ALowerBoundOnABinder",
+			src:  "declare fn f<B >: T>(x: B) -> B",
+			want: "declare fn f<B>(x: B) -> B where T: B",
+			errs: []string{"lower bounds are written in a where clause, as where T: B"},
 		},
-		// A binder writes its lower bound, then its upper bound, then its default.
-		{name: "ALowerBoundAnUpperBoundAndADefault", src: "type A<B >: T: Base = D> = B"},
-		{name: "ALowerBoundNamingALaterSibling", src: "type A<B >: T, T> = B"},
 		{
 			// A spaced pair is not the operator. The `>` closes the list and the `:` after
 			// it is unexpected.
@@ -98,24 +93,6 @@ func TestParseAdjacentGreaterThanPairs(t *testing.T) {
 	}
 }
 
-// TestALowerBoundIsCarriedOnTheTypeParam asserts that `>:` fills TypeParam.LowerBound and
-// leaves Constraint to the `:` after it.
-func TestALowerBoundIsCarriedOnTheTypeParam(t *testing.T) {
-	decls, errs := ParseDecls(context.Background(), &ast.Source{ID: 0, Path: "t.esc", Contents: "type A<B >: T: Base> = B"})
-	require.Empty(t, errs)
-	require.Len(t, decls, 1)
-	decl, ok := decls[0].(*ast.TypeDecl)
-	require.True(t, ok)
-	require.Len(t, decl.TypeParams, 1)
-	tp := decl.TypeParams[0]
-	lower, err := printer.Print(tp.LowerBound, printer.DefaultOptions())
-	require.NoError(t, err)
-	require.Equal(t, "T", lower)
-	upper, err := printer.Print(tp.UpperBound, printer.DefaultOptions())
-	require.NoError(t, err)
-	require.Equal(t, "Base", upper)
-}
-
 // TestJSXTextStartingWithAColon asserts that JSX text right after a tag's `>` still lexes as
 // text when it starts with `:`.
 func TestJSXTextStartingWithAColon(t *testing.T) {
@@ -130,19 +107,4 @@ func TestJSXTextStartingWithAColon(t *testing.T) {
 	text, ok := elem.Children[0].(*ast.JSXText)
 	require.True(t, ok)
 	require.Equal(t, ": hello", text.Value)
-}
-
-// TestALowerBoundNamingALaterSiblingSortsAfterIt asserts that SortTypeParamsTopologically
-// reads a lower bound, so `B` in `<B >: T, T>` is ordered after the `T` it names.
-func TestALowerBoundNamingALaterSiblingSortsAfterIt(t *testing.T) {
-	decls, errs := ParseDecls(context.Background(), &ast.Source{ID: 0, Path: "t.esc", Contents: "type A<B >: T, T> = B"})
-	require.Empty(t, errs)
-	require.Len(t, decls, 1)
-	decl, ok := decls[0].(*ast.TypeDecl)
-	require.True(t, ok)
-	var names []string
-	for _, tp := range ast.SortTypeParamsTopologically(decl.TypeParams) {
-		names = append(names, tp.Name)
-	}
-	require.Equal(t, []string{"T", "B"}, names)
 }

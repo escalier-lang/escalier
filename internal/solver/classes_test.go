@@ -394,7 +394,7 @@ func TestInferBodyVariance(t *testing.T) {
 			wantMut: []Variance{Contravariant},
 		},
 		{
-			// `m<B >: T>(&self, x: B) -> boolean`. A binder's lower bound is an output position,
+			// `m<B>(&self, x: B) -> boolean where T: B`. A binder's lower bound is an output position,
 			// so `T` is covariant by the ordinary rule and no reader exemption marks it.
 			name: "a parameter only a method binder's lower bound names is covariant",
 			def: oneParam(func(tv *soltype.TypeVarType) (*soltype.ObjectType, []*soltype.ClassType) {

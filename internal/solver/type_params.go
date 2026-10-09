@@ -13,7 +13,7 @@ import (
 // Pass 2 resolves each parameter's default and then declares that parameter, so a default reads
 // only the earlier siblings, the ones instantiation can substitute for it. Pass 3 resolves each
 // lower bound into its var's lower bound and each upper bound into its var's upper bound against
-// the full list, so a forward `<T: U, U>`, an F-bound `<T: Foo<T>>` and a `<B >: T, T>` all
+// the full list, so a forward `<T: U, U>`, an F-bound `<T: Foo<T>>` and a `<B> where Box<T>: B` all
 // resolve. A bound chain that reaches its own parameter, as `<T: U, U: T>` does, resolves too
 // and is then reported by reportBoundCycles. Pass 4 checks each default and each lower bound
 // against its own parameter's upper bound. The result stays in declaration order, and the alias,
@@ -61,7 +61,7 @@ func (c *checker) resolveTypeParams(scope *Scope, lvl int, params []*ast.TypePar
 	c.reportBoundCycles(params, out)
 	// Pass 4: check each default and each lower bound against its own parameter's
 	// upper bound, and each default against its lower bound. `<T: string = number>`,
-	// `<B >: string: number>` and `<B >: number = string>` are each rejected at the
+	// `<B: number> where string: B` and `<B = string> where number: B` are each rejected at the
 	// declaration. A default fills the argument at every use site that omits it, so a
 	// default outside either bound would supply an argument the bound forbids. A lower bound
 	// above the upper bound leaves no type the parameter could be. This runs as its own pass
@@ -89,7 +89,7 @@ func (c *checker) resolveTypeParams(scope *Scope, lvl int, params []*ast.TypePar
 
 // reportBoundCycles reports each type parameter whose bound chain reaches the parameter
 // itself through bare parameters of the same list, in either direction. `<T: U, U: T>` is
-// one such chain and `<B >: B>` another. A chain steps from a parameter to the parameters its
+// one such chain and `<B> where B | 1: B` another. A chain steps from a parameter to the parameters its
 // bound is. That is the bound itself when it is a parameter, or each parameter among the
 // members of a union or an intersection at any depth, since `constrain` reaches each member
 // of either on its own. A transparent alias is read as its body, so `type Same<X> = X`
@@ -380,7 +380,7 @@ func (c *checker) reportDefaultForwardRef(params []*ast.TypeParam, i int) bool {
 
 // checkTypeArgBounds reports a type argument that does not satisfy its parameter's declared
 // bounds, so `class Box<T: string>` and `type Box<T: string>` both reject `Box<number>`, and
-// `type Widen<B >: string>` rejects `Widen<number>`. Every generic class, enum, and alias
+// `type Widen<B> where string: B` rejects `Widen<number>`. Every generic class, enum, and alias
 // reference routes through here. Arguments are substituted into each bound first, which lets a
 // bound name a sibling as the `B: A` of `<A, B: A>` does. The comparison is live rather than a
 // discarded trial, so a variable argument carries the bound to its instantiation.

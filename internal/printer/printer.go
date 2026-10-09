@@ -315,6 +315,7 @@ func (p *Printer) printClassDecl(decl *ast.ClassDecl) {
 			p.printTypeAnn(impl)
 		}
 	}
+	p.printWhereClause(decl.TypeParams)
 
 	if len(decl.Body) == 0 {
 		p.writeString(" {}")
@@ -528,10 +529,11 @@ func (p *Printer) printMethodSigParts(sig *ast.FuncSig, recv *ast.MethodReceiver
 	p.writeString(")")
 	if withReturn {
 		p.printReturnAndThrows(sig.Return, sig.Throws)
-		return
+	} else {
+		// printReturnAndThrows with a nil return emits the throws clause alone.
+		p.printReturnAndThrows(nil, sig.Throws)
 	}
-	// printReturnAndThrows with a nil return emits the throws clause alone.
-	p.printReturnAndThrows(nil, sig.Throws)
+	p.printWhereClause(sig.TypeParams)
 }
 
 // annMemberReceiver returns the receiver text a member annotation prints, or "" for none. The
@@ -713,6 +715,7 @@ func (p *Printer) printTypeDecl(decl *ast.TypeDecl) {
 	if len(decl.TypeParams) > 0 {
 		p.printTypeParams(decl.TypeParams)
 	}
+	p.printWhereClause(decl.TypeParams)
 
 	p.writeString(" = ")
 	p.printTypeAnn(decl.TypeAnn)
@@ -743,6 +746,7 @@ func (p *Printer) printInterfaceDecl(decl *ast.InterfaceDecl) {
 			p.printTypeAnn(ext)
 		}
 	}
+	p.printWhereClause(decl.TypeParams)
 
 	p.space()
 	p.printTypeAnn(decl.TypeAnn)
@@ -762,6 +766,7 @@ func (p *Printer) printEnumDecl(decl *ast.EnumDecl) {
 	if len(decl.TypeParams) > 0 {
 		p.printTypeParams(decl.TypeParams)
 	}
+	p.printWhereClause(decl.TypeParams)
 
 	p.writeString(" {")
 	p.newline()
@@ -1302,6 +1307,7 @@ func (p *Printer) printFuncSig(sig *ast.FuncSig) {
 	p.writeString(")")
 
 	p.printReturnAndThrows(sig.Return, sig.Throws)
+	p.printWhereClause(sig.TypeParams)
 }
 
 func (p *Printer) printBlock(block *ast.Block) {
@@ -1581,6 +1587,7 @@ func (p *Printer) printObjTypeAnnElem(elem ast.ObjTypeAnnElem) {
 		p.printGenericParams(e.Fn.LifetimeParams, e.Fn.TypeParams)
 		p.printAnnMemberParams(annMemberReceiver(e.Receiver, ""), e.Fn.Params)
 		p.printReturnAndThrows(e.Fn.Return, e.Fn.Throws)
+		p.printWhereClause(e.Fn.TypeParams)
 	case *ast.GetterTypeAnn:
 		p.writeString("get ")
 		p.printObjKey(e.Name)
@@ -1876,6 +1883,7 @@ func (p *Printer) printFuncTypeAnnParams(typ *ast.FuncTypeAnn) {
 	p.writeString(")")
 
 	p.printReturnAndThrows(typ.Return, typ.Throws)
+	p.printWhereClause(typ.TypeParams)
 }
 
 func (p *Printer) printTemplateLitTypeAnn(typ *ast.TemplateLitTypeAnn) {
@@ -1956,21 +1964,47 @@ func (p *Printer) printVarianceModifier(v ast.VarianceModifier) {
 }
 
 // printTypeParam prints one binder of a `<…>` list: its variance modifier, its name, and
-// then its lower bound, upper bound and default where it writes them.
+// then its inline upper bound and default where it writes them. A lower bound, and an upper
+// bound the source wrote in a `where` clause, print through printWhereClause instead.
 func (p *Printer) printTypeParam(tp *ast.TypeParam) {
 	p.printVarianceModifier(tp.Variance)
 	p.writeString(tp.Name)
-	if tp.LowerBound != nil {
-		p.writeString(" >: ")
-		p.printTypeAnn(tp.LowerBound)
-	}
-	if tp.UpperBound != nil {
+	if tp.UpperBound != nil && !tp.UpperBoundInWhere {
 		p.writeString(": ")
 		p.printTypeAnn(tp.UpperBound)
 	}
 	if tp.Default != nil {
 		p.writeString(" = ")
 		p.printTypeAnn(tp.Default)
+	}
+}
+
+// printWhereClause emits ` where R, …` for the bounds a `where` clause carries: every
+// lower bound, as `Lower: P`, and each upper bound the source wrote in the clause rather
+// than on the binder, as `P: Upper`. It writes nothing when no parameter has either. The
+// clause follows the signature or the declaration header, so a caller emits it after the
+// return and throws clause or before the body.
+func (p *Printer) printWhereClause(params []*ast.TypeParam) {
+	first := true
+	relation := func(sub func(), super func()) {
+		if first {
+			p.writeString(" where ")
+		} else {
+			p.writeString(", ")
+		}
+		first = false
+		sub()
+		p.writeString(": ")
+		super()
+	}
+	for _, tp := range params {
+		name := func() { p.writeString(tp.Name) }
+		if tp.UpperBound != nil && tp.UpperBoundInWhere {
+			relation(name, func() { p.printTypeAnn(tp.UpperBound) })
+		}
+		if tp.LowerBound != nil {
+			relation(func() { p.printTypeAnn(tp.LowerBound) }, name)
+		}
 	}
 }
 

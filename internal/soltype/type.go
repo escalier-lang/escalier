@@ -47,7 +47,7 @@ type TypeVarType struct {
 // of an inference var it flows into, and of its declared upper bound. ID keeps two
 // parameters `T` and `U` distinct; Name is the source name for diagnostics and the printer;
 // Upper is the declared upper bound (`<U: T>`), nil when unbounded. Lower is the declared
-// lower bound (`<B >: T>`), nil when there is none. Every instantiation of `B` is a supertype
+// lower bound (`<B> … where T: B`), nil when there is none. Every instantiation of `B` is a supertype
 // of `T`, so a type below Lower is a subtype of the skolem, where no other type apart from
 // the skolem itself is.
 type SkolemType struct {
@@ -318,10 +318,10 @@ func (t *FuncType) ThrowsOrNever() Type {
 // because a parameter written with no `:` clause declares nothing. Read UpperBound, not
 // Var.UpperBounds, to answer what the source wrote.
 //
-// LowerBound is the declared lower bound, the `T` of `B >: T`, seeded as Var's first lower
+// LowerBound is the declared lower bound, the `T` of `where T: B`, seeded as Var's first lower
 // bound the way UpperBound is seeded as its first upper bound. Every instantiation of B is a
 // supertype of T, so a T flows into a B wherever a B is expected. It is nil for a binder with
-// no `>:` clause. Read it, not Var.LowerBounds, to answer what the source wrote, since the
+// no such relation. Read it, not Var.LowerBounds, to answer what the source wrote, since the
 // list also carries what a body forced into the variable.
 type TypeParam struct {
 	Name       string

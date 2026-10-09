@@ -839,7 +839,7 @@ func (v *varianceVisitor) EnterType(t soltype.Type, pol soltype.Polarity) soltyp
 		// position and reads at the opposite polarity of the function. `T` in
 		// `m<U: T>(&self, x: U)` takes input the way it does in `m(&self, x: T)`. A binder's
 		// lower bound is what the caller's choice has to admit, so it is an output position
-		// and reads at the function's own polarity. `T` in `m<B >: T>(&self, x: B)` leaves
+		// and reads at the function's own polarity. `T` in `m<B>(&self, x: B) where T: B` leaves
 		// the class covariant, since a wider `T` only widens what a caller may pass. A default
 		// fills an argument the caller omits, so it reads at the function's own polarity too.
 		// Accept walks all three at the function's polarity, so the binders are walked here

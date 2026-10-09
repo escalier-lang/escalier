@@ -184,12 +184,11 @@ fn g<U>(u: U) -> Maybe<U> { return u }`,
 			errs: []string{"3:31-3:32: cannot constrain T <: U"},
 		},
 		{
-			// A declared lower bound never implies its converse, so `B >: T` does not let a
-			// `B` stand where a `T` is expected. #1887 keeps this rejection once the solver
-			// reads the bound.
+			// A declared bound never implies its converse, so `where T: B` does not let a
+			// `B` stand where a `T` is expected.
 			name: "ALowerBoundedParameterIsNotItsBound",
-			src:  `fn f<B >: T, T>(x: B, y: T) -> T { return x }`,
-			errs: []string{"1:43-1:44: cannot constrain B <: T"},
+			src:  `fn f<B, T>(x: B, y: T) -> T where T: B { return x }`,
+			errs: []string{"1:49-1:50: cannot constrain B <: T"},
 		},
 		{
 			// The failing sub is `x`'s type, which names `T` inside `Cmp`.
@@ -228,11 +227,12 @@ val n: number = f(s, 5)`,
 			want:    "fn <T: Sink<U>, U>(x: T, d: U) -> U",
 		},
 		{
-			// The declared lower bound is what `T <: B` follows from.
-			name:    "ALowerBoundRelatesSiblings",
-			src:     `fn f<B >: T, T>(x: B, y: T) -> B { return y }`,
+			// The declared relation is what `T <: B` follows from. Naming two parameters, it
+			// is recorded as `T`'s upper bound and renders on `T`'s binder.
+			name:    "AWhereRelationRelatesSiblings",
+			src:     `fn f<B, T>(x: B, y: T) -> B where T: B { return y }`,
 			binding: "f",
-			want:    "fn <B >: T, T>(x: B, y: T) -> B",
+			want:    "fn <B, T: B>(x: B, y: T) -> B",
 		},
 		{
 			name: "TwoMethodParametersRelated",

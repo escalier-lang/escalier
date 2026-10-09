@@ -252,6 +252,10 @@ func (p *Parser) funcTypeAnnTail(keyword *Token) *ast.FuncTypeAnn {
 		endSpan = throwsType.Span()
 	}
 
+	if end, ok := p.whereClause(typeParams); ok {
+		endSpan = ast.NewSpan(endSpan.Start, end, p.lexer.source.ID)
+	}
+
 	fnAnn := ast.NewFuncTypeAnn(
 		lifetimeParams,
 		typeParams,
@@ -1121,6 +1125,10 @@ func (p *Parser) objTypeAnnElemInner() ast.ObjTypeAnnElem {
 			endSpan = throwsType.Span()
 		}
 
+		if end, ok := p.whereClause(typeParams); ok {
+			endSpan = ast.NewSpan(endSpan.Start, end, p.lexer.source.ID)
+		}
+
 		fnTypeAnn := ast.NewFuncTypeAnn(
 			lifetimeParams,
 			typeParams,
@@ -1184,10 +1192,13 @@ func (p *Parser) typeParam(allowVariance bool) *ast.TypeParam {
 	var upperBound ast.TypeAnn
 	var default_ ast.TypeAnn
 
-	// A lower bound is written `>:` with no space between the two characters. Inside a
-	// binder list nothing else puts `>` and then `:` after a name, so a spaced `> :` is
-	// left to close the list and fails there.
+	// A lower bound has no binder spelling. It is written in a `where` clause with the
+	// parameter on the right, as `where T: B`. Inside a binder list nothing else puts `>`
+	// and then `:` after a name, so an adjacent pair here is a lower bound written where
+	// Scala puts it. It is reported and still read, so the rest of the declaration parses.
 	if p.adjacentPair(GreaterThan, Colon) {
+		p.reportError(ast.MergeSpans(p.lexer.peek().Span, p.lexer.peek2().Span),
+			"lower bounds are written in a where clause, as where T: B")
 		p.lexer.consume() // consume '>'
 		p.lexer.consume() // consume ':'
 		lowerBound = p.typeAnnRequired()

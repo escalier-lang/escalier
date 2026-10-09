@@ -344,12 +344,20 @@ func PrintAsSchemeWith(
 	// Only the bounds the source wrote render. The variable's accumulated bounds carry
 	// what a body forced, which is not what the declaration promises, and showing one
 	// would read as if the source had written it.
-	for i, tp := range declaredAt {
+	// labeled lists the declared parameters that got a label, in label order, for the
+	// `where` clause.
+	var labeled []*TypeParam
+	for i := range labels {
+		tp, ok := declaredAt[i]
+		if !ok {
+			continue
+		}
+		labeled = append(labeled, tp)
 		var bounds []Type
 		if tp.UpperBound != nil {
 			bounds = []Type{tp.UpperBound}
 		}
-		labels[i] += p.typeParamSuffix(tp.DeclaredLowerBounds(), bounds, tp.Default)
+		labels[i] += p.typeParamSuffix(bounds, tp.Default)
 	}
 	switch t.(type) {
 	case *ClassType, *AliasType:
@@ -378,15 +386,19 @@ func PrintAsSchemeWith(
 		binders = append(binders, p.typeParamBinders(ft.TypeParams)...)
 		binders = append(binders, p.lifetimeParamBinders(ft.LifetimeParams)...)
 		binders = append(binders, ltLabels...)
-		return "fn <" + strings.Join(binders, ", ") + ">" + p.printFuncBody(ft)
+		// The scheme's declared parameters and the function's own share one clause, so a
+		// lower bound on either renders once, after the signature.
+		where := p.whereClause(append(append([]*TypeParam{}, labeled...), ft.TypeParams...))
+		return "fn <" + strings.Join(binders, ", ") + ">" + p.printFuncBody(ft, where)
 	}
 	prefix := "<" + strings.Join(append(labels, ltLabels...), ", ") + ">"
 	// The prefix binds the WHOLE body, and a body joined by `|` or `&` needs parens to
 	// say so. `<'a, 'b> &'a T | &'b T` reads as though the prefix covered the first
 	// member alone, which would leave 'b bound by nothing. A body that is one atom or
 	// one prefix form cannot be split by a following operator, so it needs none: the
-	// class-constructor rendering stays `<T> {new (value: T) -> Node<T>}`.
-	return prefix + " " + p.printTypeMinPrec(t, precPrefix)
+	// class-constructor rendering stays `<T> {new (value: T) -> Node<T>}`. A declared
+	// parameter's lower bound follows the body as a `where` clause.
+	return prefix + " " + p.printTypeMinPrec(t, precPrefix) + p.whereClause(labeled)
 }
 
 // declaredLtsFirst returns free with the lifetimes a declaration names moved to the front, in
@@ -1373,15 +1385,17 @@ func (p *namedPrinter) printFuncTail(t *FuncType) string {
 	if len(binders) > 0 {
 		prefix = "<" + strings.Join(binders, ", ") + ">"
 	}
-	return prefix + p.printFuncBody(t)
+	return prefix + p.printFuncBody(t, p.whereClause(t.TypeParams))
 }
 
 // printFuncBody renders the "(receiver, params) -> ret" portion with NO quantifier
 // prefix, so a caller that emits its own combined prefix — PrintAsSchemeWith merging
 // scheme-bound variables with the function's own type parameters — does not render the
 // type parameters twice. The body may reference the type parameters, so a caller must
-// register their names with nameTypeParams first.
-func (p *namedPrinter) printFuncBody(t *FuncType) string {
+// register their names with nameTypeParams first. where is the rendered `where` clause
+// the caller built from the binders in scope, or the empty string, and it follows the
+// throws clause.
+func (p *namedPrinter) printFuncBody(t *FuncType, where string) string {
 	ps := make([]string, 0, len(t.Params)+2)
 	if t.SelfParam != nil {
 		ps = append(ps, p.printSelfReceiver(t.SelfParam))
@@ -1400,8 +1414,9 @@ func (p *namedPrinter) printFuncBody(t *FuncType) string {
 	if t.Inexact {
 		ps = append(ps, "...")
 	}
-	// A `throws T` clause renders after the return type, matching the surface syntax.
-	clause := p.printThrowsClause(t.ThrowsOrNever())
+	// A `throws T` clause renders after the return type, matching the surface syntax, and
+	// a `where` clause after that.
+	clause := p.printThrowsClause(t.ThrowsOrNever()) + where
 	if clause == "" {
 		return "(" + strings.Join(ps, ", ") + ") -> " + p.printType(t.Ret)
 	}
@@ -1410,6 +1425,23 @@ func (p *namedPrinter) printFuncBody(t *FuncType) string {
 	// function's. precUnion bounds a function type and nothing else, precFunc being the
 	// only precedence below it.
 	return "(" + strings.Join(ps, ", ") + ") -> " + p.printTypeMinPrec(t.Ret, precUnion) + clause
+}
+
+// whereClause renders ` where L: P, …` with one relation per parameter of tps that has a
+// declared lower bound, or the empty string when none has. Several lower bounds on one
+// parameter are a union and join with ` | `. Every variable the bounds name must be bound
+// to its name first, as for typeParamSuffix.
+func (p *namedPrinter) whereClause(tps []*TypeParam) string {
+	var relations []string
+	for _, tp := range tps {
+		if lowers := tp.DeclaredLowerBounds(); len(lowers) > 0 {
+			relations = append(relations, p.joinTypes(lowers, " | ")+": "+p.printType(tp.Var))
+		}
+	}
+	if len(relations) == 0 {
+		return ""
+	}
+	return " where " + strings.Join(relations, ", ")
 }
 
 // printThrowsClause renders a signature's ` throws T` suffix, or the empty string when
@@ -1432,10 +1464,9 @@ func isNever(t Type) bool {
 }
 
 // typeParamBinders renders each type parameter as a binder string — `U`, `U: T` for an
-// upper bound, `U >: T` for a lower bound, `U = D` for a default, or `U >: L: T = D` for all
-// three — without the surrounding `<>`. The upper bound is the parameter's
-// DeclaredUpperBounds and the lower bound its DeclaredLowerBounds. Several
-// bounds render joined by ` & `. The parameters must be bound first, through
+// upper bound, `U = D` for a default, or `U: T = D` for both — without the surrounding
+// `<>`. The upper bound is the parameter's DeclaredUpperBounds. Several bounds render joined
+// by ` & `. A lower bound renders in the `where` clause instead, through whereClause. The parameters must be bound first, through
 // bindTypeParams. Each binder then renders under its own name, and a binder whose bound
 // or default names a sibling parameter renders that name too. Callers that build a
 // combined quantifier prefix, such as PrintAsSchemeWith, join these with the scheme's
@@ -1445,24 +1476,21 @@ func (p *namedPrinter) typeParamBinders(tps []*TypeParam) []string {
 	for i, tp := range tps {
 		// Reading the declared bound is what renders `pick<T: U>` on a `C<number>` as
 		// `<T: number>`. printType gives the registered source name, else t{ID}.
-		binders[i] = p.printType(tp.Var) + p.typeParamSuffix(tp.DeclaredLowerBounds(), tp.DeclaredUpperBounds(), tp.Default)
+		binders[i] = p.printType(tp.Var) + p.typeParamSuffix(tp.DeclaredUpperBounds(), tp.Default)
 	}
 	return binders
 }
 
-// typeParamSuffix renders what follows a binder's name, which is ` >: Lower` for a lower
-// bound, `: Bound` for an upper bound and ` = Default` for a default, in that order. A
-// parameter with none renders the empty string, so a caller joins it to the name
-// unconditionally. Several upper bounds are an intersection and join with ` & `. Several
-// lower bounds are a union and join with ` | `.
+// typeParamSuffix renders what follows a binder's name, which is `: Bound` for an upper
+// bound and ` = Default` for a default, in that order. A parameter with neither renders the
+// empty string, so a caller joins it to the name unconditionally. Several upper bounds are
+// an intersection and join with ` & `. A lower bound renders in the `where` clause after
+// the signature, through whereClause.
 //
 // Every variable the bounds and the default name must be bound to its name first, since a
 // bound naming a sibling parameter renders that sibling's name.
-func (p *namedPrinter) typeParamSuffix(lowers, bounds []Type, dflt Type) string {
+func (p *namedPrinter) typeParamSuffix(bounds []Type, dflt Type) string {
 	var s string
-	if len(lowers) > 0 {
-		s += " >: " + p.joinTypes(lowers, " | ")
-	}
 	if len(bounds) > 0 {
 		s += ": " + p.joinTypes(bounds, " & ")
 	}
