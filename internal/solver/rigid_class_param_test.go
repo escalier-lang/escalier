@@ -8,8 +8,8 @@ import (
 
 // TestAMemberBodyIsCheckedForEveryClassArgument covers a member or constructor body using its
 // class's type parameter in a way only some instances allow. The class's parameters are rigid
-// while the bodies are inferred, so such a use is reported where it is written. A method's own binder
-// that meets the class's parameter is compared through its own bounds.
+// while the bodies are inferred, so such a use is reported where it is written. A method's own
+// binder that meets the class's parameter is compared through its own bounds.
 func TestAMemberBodyIsCheckedForEveryClassArgument(t *testing.T) {
 	// bag declares a method generic in its own binder, which an override must keep generic.
 	const bag = `class Bag<T> {

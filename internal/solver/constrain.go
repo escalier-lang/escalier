@@ -1090,11 +1090,11 @@ func (c *Context) constrain(sub, super soltype.Type, seen *seenPairs, mutCtx boo
 			case superRp == nil:
 				return c.constrainRigidParamIntoVar(subVar, superVar, seen, mutCtx)
 			case superRp.group != rp.group:
-				// A parameter of one declaration meeting a parameter of an enclosing one, as a
-				// method's `B` meets its class's `U` in `(self.key)(x)` with `x: B` and
-				// `key: fn (x: U) -> number`, compares the two as skolems. The inner
-				// declaration's signature cannot state a bound on the outer parameter, so the
-				// relation has to follow from the inner parameter's own bounds.
+				// A parameter of one declaration meeting a parameter of an enclosing one is
+				// compared skolem to skolem, so the relation has to follow from the inner
+				// parameter's own bounds. In `(self.key)(x)` with `x: B` and
+				// `key: fn (x: U) -> number`, a method's `B` meets its class's `U`. That
+				// holds for `contains<B: U>` and fails for `contains<B>`.
 				return c.constrain(c.rigidSkolem(rp), c.rigidSkolem(superRp), seen, mutCtx)
 			}
 		}
