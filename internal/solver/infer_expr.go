@@ -407,6 +407,9 @@ func (c *checker) inferFunc(scope *Scope, lvl int, sig ast.FuncSig, body *ast.Bl
 	}
 
 	var ret soltype.Type = &soltype.UndefinedType{}
+	// collected holds each return point's type and retExprs its operand, in source order.
+	// inferStmt appends to both at every ReturnStmt, so they have the same length.
+	var collected []soltype.Type
 	var retExprs []ast.Expr
 	returnsUniquelyOwned := false
 	// bodyDiverges records that every path through the body left along the exceptional
@@ -484,7 +487,7 @@ func (c *checker) inferFunc(scope *Scope, lvl int, sig ast.FuncSig, body *ast.Bl
 		if gen != nil {
 			gen.delegateNexts = c.fn.delegateNexts
 		}
-		collected := c.popFuncCtx(saved)
+		collected = c.popFuncCtx(saved)
 		// A body with no `return` that always leaves along the exceptional edge reaches
 		// no normal exit, so it produces `never`, not the `undefined` a fall-through body
 		// produces. Without this `fn f() -> number { throw Error("no") }` would report
@@ -502,6 +505,22 @@ func (c *checker) inferFunc(scope *Scope, lvl int, sig ast.FuncSig, body *ast.Bl
 			// inference variable keeps its `mut`. #1505 covers those.
 			if sig.Return == nil {
 				ret = stripOwnedMut(ret)
+			}
+		}
+	}
+	// Each return operand is checked against the annotation at its own site. A failure is
+	// blamed through its sub type's provenance when the site contains that node, and at
+	// the site otherwise. A skolem standing for a rigid parameter has no provenance, so a
+	// `return t` that fails against `-> U` is blamed at `t` rather than at the whole
+	// declaration. A bare `return` and a body with no return point are checked at the
+	// declaration.
+	points := []returnPoint{{site: node, t: ret}}
+	if len(collected) > 0 {
+		points = make([]returnPoint, len(collected))
+		for i, t := range collected {
+			points[i] = returnPoint{site: node, t: t}
+			if retExprs[i] != nil {
+				points[i].site = retExprs[i]
 			}
 		}
 	}
@@ -551,7 +570,7 @@ func (c *checker) inferFunc(scope *Scope, lvl int, sig ast.FuncSig, body *ast.Bl
 	// stays `never`. Iterating or delegating is what advances it, and those sites read the
 	// slot back into their enclosing sink.
 	if sig.Gen {
-		ret = c.genReturn(node, gen, returnsUniquelyOwned, ret, throws, hasBody)
+		ret = c.genReturn(node, gen, returnsUniquelyOwned, points, ret, throws, hasBody)
 		throws = nil
 	} else if sig.Async {
 		// The async arm also moves the body's throws. An `async fn` rejects its promise
@@ -561,7 +580,9 @@ func (c *checker) inferFunc(scope *Scope, lvl int, sig ast.FuncSig, body *ast.Bl
 			// Only constrain when there IS a body, for the reason the non-async arm
 			// below spells out.
 			if hasBody {
-				c.constrain(node, ret, asyncInner) // body <: declared inner
+				for _, p := range points {
+					c.constrain(p.site, p.t, asyncInner) // body <: declared inner
+				}
 			}
 			ret = asyncAnnT
 			throws = nil
@@ -578,7 +599,9 @@ func (c *checker) inferFunc(scope *Scope, lvl int, sig ast.FuncSig, body *ast.Bl
 			// function simply adopts the annotation (constraining the synthetic `undefined`
 			// would raise a spurious `undefined <: T`).
 			if hasBody {
-				c.constrainReturnAgainstAnnotation(node, returnsUniquelyOwned, ret, annT) // body <: declared return
+				for _, p := range points {
+					c.constrainReturnAgainstAnnotation(p.site, returnsUniquelyOwned, p.t, annT) // body <: declared return
+				}
 				// No caller can observe an annotated return the body never reaches, so warn
 				// and point at the annotation. A body that diverges into `never` on purpose
 				// writes `-> never`, which is what it delivers and so is not flagged.
@@ -716,6 +739,13 @@ func (c *checker) checkDeclaredLifetimeBounds(params []*ast.LifetimeParam, ft *s
 			}
 		}
 	}
+}
+
+// returnPoint is one return operand's type and the node a check of it against the
+// function's annotation blames. site is the operand, or the function when there is none.
+type returnPoint struct {
+	site ast.Node
+	t    soltype.Type
 }
 
 // joinReturnPoints builds a function's return type from the ReturnStmt types
@@ -1159,14 +1189,17 @@ func (c *checker) resolveGenSinks(scope *Scope, node ast.Node, sig ast.FuncSig, 
 
 // genReturn computes a `gen fn`'s external return type, always a generator, since
 // calling one returns a generator object rather than the body's value. A matching
-// annotation IS that type, with the body's return constrained against its `Ret` slot.
-// Otherwise the inferred pieces are wrapped, with what the body raises going in the
-// generator's Throws. A bodyless `declare gen fn` wraps `unknown` rather than the
-// synthetic `undefined`, which would signal that it returns nothing.
-func (c *checker) genReturn(node ast.Node, gs *genSinks, returnsUniquelyOwned bool, bodyType, throws soltype.Type, hasBody bool) soltype.Type {
+// annotation IS that type, with each return point constrained against its `Ret` slot at
+// the point's own site. Otherwise the inferred pieces are wrapped, bodyType in the `Ret`
+// slot and what the body raises in the generator's Throws. A bodyless `declare gen fn`
+// wraps `unknown` rather than the synthetic `undefined`, which would signal that it
+// returns nothing.
+func (c *checker) genReturn(node ast.Node, gs *genSinks, returnsUniquelyOwned bool, points []returnPoint, bodyType, throws soltype.Type, hasBody bool) soltype.Type {
 	if gs.ann != nil {
 		if hasBody {
-			c.constrainReturnAgainstAnnotation(node, returnsUniquelyOwned, bodyType, gs.ann.Ret) // body <: declared Ret
+			for _, p := range points {
+				c.constrainReturnAgainstAnnotation(p.site, returnsUniquelyOwned, p.t, gs.ann.Ret) // body <: declared Ret
+			}
 		}
 		return gs.ann
 	}

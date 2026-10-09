@@ -1089,12 +1089,15 @@ func (c *Context) constrain(sub, super soltype.Type, seen *seenPairs, mutCtx boo
 				return c.constrain(c.rigidSkolem(rp), super, seen, mutCtx)
 			case superRp == nil:
 				return c.constrainRigidParamIntoVar(subVar, superVar, seen, mutCtx)
-			case superRp.group != rp.group:
-				// A parameter of one declaration meeting a parameter of an enclosing one is
-				// compared skolem to skolem, so the relation has to follow from the inner
-				// parameter's own bounds. In `(self.key)(x)` with `x: B` and
+			default:
+				// Two rigid parameters are compared skolem to skolem, so the relation has to
+				// follow from the sub side's declared bounds. The arm covers a parameter of
+				// one declaration meeting a parameter of an enclosing one, and two parameters
+				// of the same declaration. In `(self.key)(x)` with `x: B` and
 				// `key: fn (x: U) -> number`, a method's `B` meets its class's `U`. That
-				// holds for `contains<B: U>` and fails for `contains<B>`.
+				// relation holds for `contains<B: U>` and fails for `contains<B>`. In
+				// `fn h<U, T>(t: T) -> U { return t }`, `T` meets its sibling `U` and fails,
+				// since the signature states no relation between them.
 				return c.constrain(c.rigidSkolem(rp), c.rigidSkolem(superRp), seen, mutCtx)
 			}
 		}

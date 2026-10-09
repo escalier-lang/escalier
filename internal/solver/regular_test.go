@@ -279,7 +279,7 @@ func TestConstrainRegularAliasChecksTheLapAboveTheKnot(t *testing.T) {
 	`)
 	require.Equal(t, []string{
 		nonReturningMsg("3:6-3:10", "node", `fn () -> {a: "c", b: μX0.{a: "c", b: X0}}`),
-		`4:3-4:42: cannot constrain "c" <: never`,
+		`4:34-4:40: cannot constrain "c" <: never`,
 	}, messagesWithSpan(t, errs))
 }
 
@@ -297,7 +297,7 @@ func TestConstrainRegularAliasStillReportsAMismatch(t *testing.T) {
 	`)
 	require.Equal(t, []string{
 		nonReturningMsg("3:6-3:10", "node", `fn () -> {a: "wrong", b: μX0.{a: "wrong", b: X0}}`),
-		`4:3-4:47: cannot constrain "wrong" <: "c"`,
+		`4:39-4:45: cannot constrain "wrong" <: "c"`,
 	}, messagesWithSpan(t, errs))
 }
 
@@ -326,8 +326,8 @@ func TestConstrainNonRegularAliasStillReachesTheBudget(t *testing.T) {
 		fn use() -> Nest<string> { return make() }
 	`)
 	require.Equal(t, []string{
-		"4:3-4:45: cannot constrain number <: string",
-		"4:3-4:45: comparing two instantiations of `Nest` reached the limit of 200 type-operator " +
+		"4:37-4:43: cannot constrain number <: string",
+		"4:37-4:43: comparing two instantiations of `Nest` reached the limit of 200 type-operator " +
 			"expansions and was cut off; either the two sides recurse without ever repeating a pair " +
 			"the check can close on, or their alias chains run deeper than the limit unfolds",
 	}, messagesWithSpan(t, errs))
@@ -356,7 +356,7 @@ func TestConstrainRegularAliasKeepsAReductionDiagnostic(t *testing.T) {
 	`)
 	require.Equal(t, []string{
 		nonReturningMsg("3:6-3:10", "node", `fn () -> {a: "c", e: 1, b: μX0.{a: "c", e: 1, b: X0}}`),
-		`4:3-4:47: object {x: number} has no property "z"`,
+		`4:39-4:45: object {x: number} has no property "z"`,
 	}, messagesWithSpan(t, errs))
 }
 

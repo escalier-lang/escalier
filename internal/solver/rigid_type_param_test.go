@@ -92,7 +92,7 @@ class C {
 	yield 1
 	return u
 }`,
-			errs: []string{"1:13-1:19: cannot constrain number <: string"},
+			errs: []string{"3:9-3:10: cannot constrain number <: string"},
 		},
 		{
 			// A union written through an alias still names U, so returning a U fits it.
@@ -117,12 +117,79 @@ fn g<U>(u: U) -> Maybe<U> { return u }`,
 			want:    "fn <U: number>(u: U) -> U",
 		},
 		{
-			// A relation between two of the declaration's own parameters is one the
-			// signature can state, so it is recorded rather than reported.
+			// A relation between two of the declaration's own parameters has to follow from
+			// the bounds the signature states, as `fn g<U, T: U>` does and this one does not.
+			// The return operand is what carries the unrelated parameter, so it is blamed.
 			name:    "TwoOwnParametersRelated",
 			src:     `fn h<U, T>(t: T) -> U { return t }`,
 			binding: "h",
+			want:    "fn <U, T>(t: T) -> U",
+			errs:    []string{"1:32-1:33: cannot constrain T <: U"},
+		},
+		{
+			// The same relation forced through a local's annotation is blamed at the
+			// initializer.
+			name: "TwoOwnParametersRelatedThroughALocal",
+			src: `fn h<U, T>(t: T) -> U {
+	val u: U = t
+	return u
+}`,
+			errs: []string{"2:13-2:14: cannot constrain T <: U"},
+		},
+		{
+			// A declared bound between the two is what the relation has to follow from.
+			name:    "TwoOwnParametersRelatedByADeclaredBound",
+			src:     `fn h<U, T: U>(t: T) -> U { return t }`,
+			binding: "h",
 			want:    "fn <U, T: U>(t: T) -> U",
+		},
+		{
+			// Each return point is blamed on its own.
+			name: "TwoOwnParametersRelatedAtTwoReturns",
+			src: `fn h<U, T>(t: T, c: boolean) -> U {
+	if c {
+		return t
+	} else {
+		return t
+	}
+}`,
+			errs: []string{
+				"3:10-3:11: cannot constrain T <: U",
+				"5:10-5:11: cannot constrain T <: U",
+			},
+		},
+		{
+			name: "TwoOwnParametersRelatedInAGenerator",
+			src: `gen fn g<U, T>(t: T) -> Generator<number, U, undefined> {
+	yield 1
+	return t
+}`,
+			errs: []string{"3:9-3:10: cannot constrain T <: U"},
+		},
+		{
+			name: "TwoOwnParametersRelatedInAnAsyncFunction",
+			src: `async fn h<U, T>(t: T) -> Promise<U> {
+	return t
+}`,
+			errs: []string{"2:9-2:10: cannot constrain T <: U"},
+		},
+		{
+			// A class's parameters are held rigid across its member bodies, so two of them
+			// meet the same way a function's do.
+			name: "TwoClassParametersRelated",
+			src: `class C<T, U> {
+	t: T,
+	f(&self, t: T) -> U { return t },
+}`,
+			errs: []string{"3:31-3:32: cannot constrain T <: U"},
+		},
+		{
+			name: "TwoMethodParametersRelated",
+			src: `class C<T> {
+	t: T,
+	m<A, B>(&self, a: A) -> B { return a },
+}`,
+			errs: []string{"3:37-3:38: cannot constrain A <: B"},
 		},
 	}
 	for _, tt := range tests {

@@ -361,7 +361,7 @@ func TestInferPromiseErrAnnotationVariance(t *testing.T) {
 					return p
 				}
 			`,
-			wantErrs: []string{`2:35-2:38: cannot constrain "b" <: "a"`},
+			wantErrs: []string{`3:13-3:14: cannot constrain "b" <: "a"`},
 		},
 	})
 }
