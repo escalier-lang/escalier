@@ -46,6 +46,9 @@ loop:
 
 		token := p.lexer.peek()
 		var nextOp ast.BinaryOp
+		// fused is set for an operator written as two adjacent tokens, whose second token
+		// is consumed along with the first.
+		fused := false
 
 		// nolint: exhaustive
 		switch token.Type {
@@ -71,8 +74,12 @@ loop:
 			nextOp = ast.LessThanEqual
 		case GreaterThan:
 			nextOp = ast.GreaterThan
-		case GreaterThanEqual:
-			nextOp = ast.GreaterThanEqual
+			// The lexer emits `>=` as `>` and `=`, since a type's closing `>` may be
+			// followed by an `=`. Adjacent, the two are one operator.
+			if p.adjacentPair(GreaterThan, Equal) {
+				nextOp = ast.GreaterThanEqual
+				fused = true
+			}
 		case AmpersandAmpersand:
 			nextOp = ast.LogicalAnd
 		case PipePipe:
@@ -91,6 +98,9 @@ loop:
 		}
 
 		p.lexer.consume()
+		if fused {
+			p.lexer.consume()
+		}
 
 		if !ops.IsEmpty() {
 			if ast.Precedence[ops.Peek()] >= ast.Precedence[nextOp] {

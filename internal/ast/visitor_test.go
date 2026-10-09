@@ -396,7 +396,7 @@ var declSpan = Span{Start: Location{Offset: 0}, End: Location{Offset: 1}, Source
 // typeParam builds a `<T: number = string>` binder, whose constraint and
 // default are the two type slots a quantifier list contributes to the walk.
 func typeParam(name string) *TypeParam {
-	tp := NewTypeParam(name, NewNumberTypeAnn(declSpan), NewStringTypeAnn(declSpan), declSpan)
+	tp := NewTypeParam(name, nil, NewNumberTypeAnn(declSpan), NewStringTypeAnn(declSpan), declSpan)
 	return &tp
 }
 

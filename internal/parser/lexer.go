@@ -142,7 +142,7 @@ func (lexer *Lexer) isRegexContext() bool {
 	// After these tokens, / starts a regex
 	case OpenParen, OpenBracket, OpenBrace, Comma, Colon, Question,
 		Equal, EqualEqual, NotEqual, LessThan, LessThanEqual,
-		GreaterThan, GreaterThanEqual, Plus, PlusPlus, Minus, Asterisk,
+		GreaterThan, Plus, PlusPlus, Minus, Asterisk,
 		Ampersand, AmpersandAmpersand, Pipe, PipePipe, Bang,
 		Return, If, Else, Match, Try, Catch, Throw,
 		Arrow, FatArrow:
@@ -332,12 +332,10 @@ func (lexer *Lexer) next() *Token {
 			token = NewToken(LessThan, "<", lexer.spanBetween(startOffset, endOffset))
 		}
 	case '>':
-		if startOffset+1 < len(lexer.source.Contents) && lexer.source.Contents[startOffset+1] == '=' {
-			endOffset++
-			token = NewToken(GreaterThanEqual, ">=", lexer.spanBetween(startOffset, endOffset))
-		} else {
-			token = NewToken(GreaterThan, ">", lexer.spanBetween(startOffset, endOffset))
-		}
+		// `>` is never fused with what follows. A type's closing `>` may be followed by
+		// `=` or `:`, as in `val x: Array<number>= [1]`, so the parser recognizes `>=`
+		// and `>:` from two adjacent tokens where it expects one.
+		token = NewToken(GreaterThan, ">", lexer.spanBetween(startOffset, endOffset))
 	case '|':
 		if startOffset+1 < len(lexer.source.Contents) && lexer.source.Contents[startOffset+1] == '|' {
 			endOffset++

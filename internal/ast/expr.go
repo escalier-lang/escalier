@@ -403,7 +403,9 @@ const (
 // of a constraint or default, so a diagnostic about the parameter can point at
 // the declaration that introduced it.
 type TypeParam struct {
-	Name       string
+	Name string
+	// LowerBound is the type written after `>:`, as `T` in `B >: T`. nil ⇒ none.
+	LowerBound TypeAnn
 	Constraint TypeAnn
 	Default    TypeAnn
 	Variance   VarianceModifier
@@ -411,8 +413,8 @@ type TypeParam struct {
 	commentSlots
 }
 
-func NewTypeParam(name string, constraint, defaultType TypeAnn, span Span) TypeParam {
-	return TypeParam{Name: name, Constraint: constraint, Default: defaultType, span: span}
+func NewTypeParam(name string, lowerBound, constraint, defaultType TypeAnn, span Span) TypeParam {
+	return TypeParam{Name: name, LowerBound: lowerBound, Constraint: constraint, Default: defaultType, span: span}
 }
 
 func (t *TypeParam) Span() Span { return t.span }

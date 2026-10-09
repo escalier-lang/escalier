@@ -1960,6 +1960,10 @@ func (p *Printer) printTypeParams(params []*ast.TypeParam) {
 	for i, param := range params {
 		p.printVarianceModifier(param.Variance)
 		p.writeString(param.Name)
+		if param.LowerBound != nil {
+			p.writeString(" >: ")
+			p.printTypeAnn(param.LowerBound)
+		}
 		if param.Constraint != nil {
 			p.writeString(": ")
 			p.printTypeAnn(param.Constraint)
@@ -2006,6 +2010,10 @@ func (p *Printer) printGenericParams(lifetimeParams []*ast.LifetimeParam, typePa
 	for i, tp := range typeParams {
 		p.printVarianceModifier(tp.Variance)
 		p.writeString(tp.Name)
+		if tp.LowerBound != nil {
+			p.writeString(" >: ")
+			p.printTypeAnn(tp.LowerBound)
+		}
 		if tp.Constraint != nil {
 			p.writeString(": ")
 			p.printTypeAnn(tp.Constraint)

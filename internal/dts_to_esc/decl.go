@@ -364,7 +364,7 @@ var RaiseParamDecls = set.FromSlice([]string{
 // reaches the type it evaluates to.
 func addRaiseParam(typeParams []*ast.TypeParam, body ast.Node, declSpan ast.Span) []*ast.TypeParam {
 	body.Accept(&raiseParamVisitor{})
-	param := ast.NewTypeParam(raiseParamName, nil, ast.NewNeverTypeAnn(synthSpan()), declSpan)
+	param := ast.NewTypeParam(raiseParamName, nil, nil, ast.NewNeverTypeAnn(synthSpan()), declSpan)
 	return append(typeParams, &param)
 }
 
@@ -382,7 +382,7 @@ func addRaiseParamToClass(
 	declSpan ast.Span,
 ) []*ast.TypeParam {
 	threadRaiseParamThrough(body)
-	param := ast.NewTypeParam(raiseParamName, nil, ast.NewNeverTypeAnn(synthSpan()), declSpan)
+	param := ast.NewTypeParam(raiseParamName, nil, nil, ast.NewNeverTypeAnn(synthSpan()), declSpan)
 	return append(typeParams, &param)
 }
 

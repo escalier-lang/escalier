@@ -45,7 +45,6 @@ const (
 	Gen
 	Get
 	GreaterThan
-	GreaterThanEqual
 	Identifier
 	If
 	Lifetime
