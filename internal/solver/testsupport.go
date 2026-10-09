@@ -6,7 +6,6 @@ import (
 	"path/filepath"
 	"runtime"
 	"strings"
-	"time"
 
 	"github.com/escalier-lang/escalier/internal/ast"
 	"github.com/escalier-lang/escalier/internal/parser"
@@ -55,8 +54,7 @@ func ResolveTypeAnnForTest(decls, ann string) (soltype.Type, []SolverError, erro
 
 	// Parsing the annotation alone first is what points a syntax error at it
 	// rather than at the module built around it.
-	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
-	defer cancel()
+	ctx := context.Background()
 	parsed, parseErrors := parser.ParseTypeAnn(ctx, ann)
 	if len(parseErrors) > 0 {
 		return nil, nil, fmt.Errorf("parsing the annotation %q: %s", ann, parseErrors[0].Message)

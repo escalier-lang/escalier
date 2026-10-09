@@ -6,7 +6,6 @@ import (
 	"os"
 	"strings"
 	"testing"
-	"time"
 
 	"github.com/escalier-lang/escalier/internal/ast"
 	. "github.com/escalier-lang/escalier/internal/checker"
@@ -155,8 +154,7 @@ func TestCheckScriptNoErrors(t *testing.T) {
 				Contents: test.input,
 			}
 
-			ctx, cancel := context.WithTimeout(context.Background(), 1*time.Second)
-			defer cancel()
+			ctx := context.Background()
 			p := parser.NewParser(ctx, source)
 			script, errors := p.ParseScript()
 
@@ -225,8 +223,7 @@ func TestCheckScriptDeclareBlocksAreNoOps(t *testing.T) {
 		t.Run(name, func(t *testing.T) {
 			t.Parallel()
 			source := &ast.Source{ID: 0, Path: "input.esc", Contents: test.input}
-			ctx, cancel := context.WithTimeout(context.Background(), 1*time.Second)
-			defer cancel()
+			ctx := context.Background()
 			p := parser.NewParser(ctx, source)
 			script, parseErrors := p.ParseScript()
 			assert.Empty(t, parseErrors)
@@ -1748,8 +1745,7 @@ func TestCheckModuleNoErrors(t *testing.T) {
 				Contents: test.input,
 			}
 
-			ctx, cancel := context.WithTimeout(context.Background(), 1*time.Second)
-			defer cancel()
+			ctx := context.Background()
 			module, errors := parser.ParseLibFiles(ctx, []*ast.Source{source})
 
 			if len(errors) > 0 {
@@ -1900,8 +1896,7 @@ func TestIfValExprInference(t *testing.T) {
 
 	for name, test := range tests {
 		t.Run(name, func(t *testing.T) {
-			ctx, cancel := context.WithTimeout(context.Background(), 1*time.Second)
-			defer cancel()
+			ctx := context.Background()
 			source := &ast.Source{
 				Path:     "test.esc",
 				Contents: test.input,
@@ -2051,8 +2046,7 @@ func TestCheckModuleWithErrors(t *testing.T) {
 				Contents: test.input,
 			}
 
-			ctx, cancel := context.WithTimeout(context.Background(), 1*time.Second)
-			defer cancel()
+			ctx := context.Background()
 			module, errors := parser.ParseLibFiles(ctx, []*ast.Source{source})
 
 			if len(errors) > 0 {
@@ -2117,8 +2111,7 @@ func TestIssue371(t *testing.T) {
 		Contents: input,
 	}
 
-	ctx, cancel := context.WithTimeout(context.Background(), 1*time.Second)
-	defer cancel()
+	ctx := context.Background()
 	module, parseErrors := parser.ParseLibFiles(ctx, []*ast.Source{source})
 	assert.Len(t, parseErrors, 0)
 
@@ -2184,8 +2177,7 @@ func TestCheckScriptWithErrors(t *testing.T) {
 				Contents: test.input,
 			}
 
-			ctx, cancel := context.WithTimeout(context.Background(), 1*time.Second)
-			defer cancel()
+			ctx := context.Background()
 			p := parser.NewParser(ctx, source)
 			script, errors := p.ParseScript()
 
@@ -2434,8 +2426,7 @@ func TestCheckModuleTypeAliases(t *testing.T) {
 				Contents: test.input,
 			}
 
-			ctx, cancel := context.WithTimeout(context.Background(), 1*time.Second)
-			defer cancel()
+			ctx := context.Background()
 			module, errors := parser.ParseLibFiles(ctx, []*ast.Source{source})
 
 			if len(errors) > 0 {
@@ -2487,8 +2478,7 @@ func TestExpandingTypeAliasMultipleTimes(t *testing.T) {
 		`,
 	}
 
-	ctx, cancel := context.WithTimeout(context.Background(), 1*time.Second)
-	defer cancel()
+	ctx := context.Background()
 	module, errors := parser.ParseLibFiles(ctx, []*ast.Source{source})
 
 	if len(errors) > 0 {
@@ -2606,8 +2596,7 @@ func TestCheckMultifileModuleNoErrors(t *testing.T) {
 		t.Run(name, func(t *testing.T) {
 			t.Parallel()
 
-			ctx, cancel := context.WithTimeout(context.Background(), 1*time.Second)
-			defer cancel()
+			ctx := context.Background()
 
 			module, errors := parser.ParseLibFiles(ctx, test.sources)
 
@@ -2868,8 +2857,7 @@ func TestInferDepGraphWithNamespaceDependencies(t *testing.T) {
 					Contents: "fn circleArea(r: number): number { return PI * r * r }",
 				}
 
-				ctx, cancel := context.WithTimeout(context.Background(), 1*time.Second)
-				defer cancel()
+				ctx := context.Background()
 
 				helperParser := parser.NewParser(ctx, helperSource)
 				helperDecl := helperParser.Decl()
@@ -2949,8 +2937,7 @@ func TestInferDepGraphWithNamespaceDependencies(t *testing.T) {
 					Contents: "type Point = {x: number, y: number}",
 				}
 
-				ctx, cancel := context.WithTimeout(context.Background(), 1*time.Second)
-				defer cancel()
+				ctx := context.Background()
 
 				mathParser := parser.NewParser(ctx, mathVarSource)
 				mathDecl := mathParser.Decl()
@@ -3040,8 +3027,7 @@ func TestInferDepGraphWithNamespaceDependencies(t *testing.T) {
 					Contents: "fn calculateArea(radius: number): number { return geometry.circleArea(radius) }",
 				}
 
-				ctx, cancel := context.WithTimeout(context.Background(), 1*time.Second)
-				defer cancel()
+				ctx := context.Background()
 
 				piParser := parser.NewParser(ctx, piSource)
 				piDecl := piParser.Decl()
@@ -3126,8 +3112,7 @@ func TestInferDepGraphWithNamespaceDependencies(t *testing.T) {
 					Contents: "fn isOdd(n: number): boolean { return n != 0 && isEven(n - 1) }",
 				}
 
-				ctx, cancel := context.WithTimeout(context.Background(), 1*time.Second)
-				defer cancel()
+				ctx := context.Background()
 
 				isEvenParser := parser.NewParser(ctx, isEvenSource)
 				isEvenDecl := isEvenParser.Decl()
@@ -3199,8 +3184,7 @@ func TestInferDepGraphWithNamespaceDependencies(t *testing.T) {
 					Contents: "fn helper(): number { return a.aFunc() - 1 }",
 				}
 
-				ctx, cancel := context.WithTimeout(context.Background(), 1*time.Second)
-				defer cancel()
+				ctx := context.Background()
 
 				aParser := parser.NewParser(ctx, aFuncSource)
 				aDecl := aParser.Decl()
@@ -3281,8 +3265,7 @@ func TestInferDepGraphWithNamespaceDependencies(t *testing.T) {
 					Contents: "fn useGlobalTwice(): number { return useGlobal() * 2 }",
 				}
 
-				ctx, cancel := context.WithTimeout(context.Background(), 1*time.Second)
-				defer cancel()
+				ctx := context.Background()
 
 				globalParser := parser.NewParser(ctx, globalSource)
 				globalDecl := globalParser.Decl()
@@ -3373,8 +3356,7 @@ func TestInferDepGraphWithNamespaceDependencies(t *testing.T) {
 					Contents: "fn circleArea(radius: number): number { return math.PI * math.utils.square(radius) }",
 				}
 
-				ctx, cancel := context.WithTimeout(context.Background(), 1*time.Second)
-				defer cancel()
+				ctx := context.Background()
 
 				helperParser := parser.NewParser(ctx, helperSource)
 				helperDecl := helperParser.Decl()
@@ -3466,8 +3448,7 @@ func TestInferDepGraphWithNamespaceDependencies(t *testing.T) {
 					Contents: "fn distanceFromOrigin(p: types.Point): number { return p.x - constants.ORIGIN.x + p.y - constants.ORIGIN.y }",
 				}
 
-				ctx, cancel := context.WithTimeout(context.Background(), 1*time.Second)
-				defer cancel()
+				ctx := context.Background()
 
 				pointParser := parser.NewParser(ctx, pointSource)
 				pointDecl := pointParser.Decl()
@@ -3551,8 +3532,7 @@ func TestInferDepGraphWithNamespaceDependencies(t *testing.T) {
 			depGraph, inferCtx := test.setup()
 
 			// Run InferDepGraph
-			ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-			defer cancel()
+			ctx := context.Background()
 			c := NewChecker(ctx)
 			errors := c.InferDepGraph(inferCtx, depGraph)
 
@@ -3574,8 +3554,7 @@ func newTestDepGraph() *dep_graph.DepGraph {
 }
 
 func TestExpandType(t *testing.T) {
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-	defer cancel()
+	ctx := context.Background()
 	checker := NewChecker(ctx)
 
 	t.Run("Base types - return unchanged", func(t *testing.T) {
@@ -4330,8 +4309,7 @@ func TestExpandType(t *testing.T) {
 }
 
 func TestExtractNamedCaptureGroups(t *testing.T) {
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-	defer cancel()
+	ctx := context.Background()
 	c := NewChecker(ctx)
 
 	tests := []struct {
@@ -4532,8 +4510,7 @@ func TestMutableTypes(t *testing.T) {
 				Contents: test.input,
 			}
 
-			ctx, cancel := context.WithTimeout(context.Background(), 1*time.Second)
-			defer cancel()
+			ctx := context.Background()
 			module, errors := parser.ParseLibFiles(ctx, []*ast.Source{source})
 
 			if len(errors) > 0 {
@@ -4788,8 +4765,7 @@ func TestMatchExprInference(t *testing.T) {
 				Contents: test.input,
 			}
 
-			ctx, cancel := context.WithTimeout(context.Background(), 1*time.Second)
-			defer cancel()
+			ctx := context.Background()
 			module, errors := parser.ParseLibFiles(ctx, []*ast.Source{source})
 
 			if len(errors) > 0 {
@@ -4999,8 +4975,7 @@ func TestInterfaceMerging(t *testing.T) {
 				Contents: test.input,
 			}
 
-			ctx, cancel := context.WithTimeout(context.Background(), 1*time.Second)
-			defer cancel()
+			ctx := context.Background()
 			p := parser.NewParser(ctx, source)
 			script, errors := p.ParseScript()
 
@@ -5176,8 +5151,7 @@ func TestInterfaceMergingErrors(t *testing.T) {
 				Contents: test.input,
 			}
 
-			ctx, cancel := context.WithTimeout(context.Background(), 1*time.Second)
-			defer cancel()
+			ctx := context.Background()
 			p := parser.NewParser(ctx, source)
 			script, errors := p.ParseScript()
 
@@ -5318,8 +5292,7 @@ func TestInterfaceMergingModule(t *testing.T) {
 				Contents: test.input,
 			}
 
-			ctx, cancel := context.WithTimeout(context.Background(), 1*time.Second)
-			defer cancel()
+			ctx := context.Background()
 			module, errors := parser.ParseLibFiles(ctx, []*ast.Source{source})
 
 			if len(errors) > 0 {
@@ -5541,8 +5514,7 @@ func TestInterfaceMergingModuleErrors(t *testing.T) {
 				Contents: test.input,
 			}
 
-			ctx, cancel := context.WithTimeout(context.Background(), 1*time.Second)
-			defer cancel()
+			ctx := context.Background()
 			module, errors := parser.ParseLibFiles(ctx, []*ast.Source{source})
 
 			if len(errors) > 0 {

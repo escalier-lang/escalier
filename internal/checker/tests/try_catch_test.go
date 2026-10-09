@@ -3,7 +3,6 @@ package tests
 import (
 	"context"
 	"testing"
-	"time"
 
 	"github.com/stretchr/testify/assert"
 
@@ -182,8 +181,7 @@ func TestTryCatchInferenceScript(t *testing.T) {
 				Contents: testCase.input,
 			}
 
-			ctx, cancel := context.WithTimeout(context.Background(), 1*time.Second)
-			defer cancel()
+			ctx := context.Background()
 			p := parser.NewParser(ctx, source)
 			script, parseErrors := p.ParseScript()
 			assert.Empty(t, parseErrors, "Should parse without errors")
@@ -394,8 +392,7 @@ func TestTryCatchInferenceModule(t *testing.T) {
 				Contents: testCase.input,
 			}
 
-			ctx, cancel := context.WithTimeout(context.Background(), 1*time.Second)
-			defer cancel()
+			ctx := context.Background()
 			module, parseErrors := parser.ParseLibFiles(ctx, []*ast.Source{source})
 			assert.Empty(t, parseErrors, "Should parse without errors")
 

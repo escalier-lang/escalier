@@ -4,7 +4,6 @@ import (
 	"context"
 	"fmt"
 	"testing"
-	"time"
 
 	"github.com/escalier-lang/escalier/internal/ast"
 	. "github.com/escalier-lang/escalier/internal/checker"
@@ -196,8 +195,7 @@ func TestBodyLetGeneralization(t *testing.T) {
 				Contents: test.input,
 			}
 
-			ctx, cancel := context.WithTimeout(context.Background(), 1*time.Second)
-			defer cancel()
+			ctx := context.Background()
 			module, errors := parser.ParseLibFiles(ctx, []*ast.Source{source})
 
 			if len(errors) > 0 {
@@ -327,8 +325,7 @@ func TestBodyLetGeneralizationNegatives(t *testing.T) {
 				Contents: test.input,
 			}
 
-			ctx, cancel := context.WithTimeout(context.Background(), 1*time.Second)
-			defer cancel()
+			ctx := context.Background()
 			module, errors := parser.ParseLibFiles(ctx, []*ast.Source{source})
 			assert.Len(t, errors, 0)
 

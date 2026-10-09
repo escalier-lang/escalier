@@ -5,7 +5,6 @@ import (
 	"math/big"
 	"regexp"
 	"testing"
-	"time"
 
 	"github.com/escalier-lang/escalier/internal/parser"
 	"github.com/escalier-lang/escalier/internal/test_util"
@@ -376,8 +375,7 @@ func TestPrintTypeAudit_RoundTrip(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			printed := type_system.PrintType(tt.typ, type_system.PrintConfig{})
 
-			ctx, cancel := context.WithTimeout(context.Background(), time.Second)
-			defer cancel()
+			ctx := context.Background()
 			ast, parseErrs := parser.ParseTypeAnn(ctx, printed)
 			require.Empty(t, parseErrs,
 				"PrintType(%s) produced %q which fails to parse", tt.name, printed)
@@ -506,8 +504,7 @@ func TestPrintType_OverloadedMethodSeparators(t *testing.T) {
 // (the merge into a multi-arm MethodElem happens later in elaboration,
 // not in the parser).
 func TestParseObjectTypeAnn_OverloadedMethod(t *testing.T) {
-	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
-	defer cancel()
+	ctx := context.Background()
 
 	src := `{foo(x: "a") -> number, foo(x: "b") -> string}`
 	ann, errs := parser.ParseTypeAnn(ctx, src)

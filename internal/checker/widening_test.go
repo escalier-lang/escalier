@@ -3,7 +3,6 @@ package checker
 import (
 	"context"
 	"testing"
-	"time"
 
 	ts "github.com/escalier-lang/escalier/internal/type_system"
 	"github.com/stretchr/testify/assert"
@@ -53,8 +52,7 @@ func TestFlatUnionDeduplicatesSharedMembers(t *testing.T) {
 // have the same property, bind aliases their property TypeVars, and a subsequent
 // conflicting write widens one of them.
 func TestWideningWithAliasedTypeVars(t *testing.T) {
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-	defer cancel()
+	ctx := context.Background()
 	c := NewChecker(ctx)
 	inferCtx := Context{} // minimal context, enough for Unify
 

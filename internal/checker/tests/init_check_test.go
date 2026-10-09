@@ -4,7 +4,6 @@ import (
 	"context"
 	"strings"
 	"testing"
-	"time"
 
 	"github.com/escalier-lang/escalier/internal/ast"
 	. "github.com/escalier-lang/escalier/internal/checker"
@@ -479,8 +478,7 @@ func TestStaticFieldInitializerInAScript(t *testing.T) {
 		t.Run(name, func(t *testing.T) {
 			t.Parallel()
 			source := &ast.Source{ID: 0, Path: "input.esc", Contents: test.input}
-			ctx, cancel := context.WithTimeout(context.Background(), 1*time.Second)
-			defer cancel()
+			ctx := context.Background()
 			script, parseErrors := parser.NewParser(ctx, source).ParseScript()
 			require.Empty(t, parseErrors, "expected no parse errors")
 

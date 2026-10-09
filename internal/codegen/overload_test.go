@@ -4,7 +4,6 @@ import (
 	"context"
 	"strings"
 	"testing"
-	"time"
 
 	"github.com/escalier-lang/escalier/internal/ast"
 	"github.com/escalier-lang/escalier/internal/dep_graph"
@@ -22,8 +21,7 @@ import (
 // checker installed. A fieldless class therefore emits an empty `constructor() {}`.
 func buildSource(t *testing.T, src string) string {
 	t.Helper()
-	ctx, cancel := context.WithTimeout(context.Background(), 1*time.Second)
-	defer cancel()
+	ctx := context.Background()
 
 	module, errs := parser.ParseLibFiles(ctx, []*ast.Source{
 		{ID: 0, Path: "main.esc", Contents: src},

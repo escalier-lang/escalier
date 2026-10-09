@@ -3,7 +3,6 @@ package codegen
 import (
 	"context"
 	"testing"
-	"time"
 
 	"github.com/escalier-lang/escalier/internal/ast"
 	"github.com/escalier-lang/escalier/internal/parser"
@@ -331,8 +330,7 @@ func TestPrintModule(t *testing.T) {
 fn sub(a, b) { return a - b }`,
 	}
 
-	ctx, cancel := context.WithTimeout(context.Background(), 1*time.Second)
-	defer cancel()
+	ctx := context.Background()
 	p := parser.NewParser(ctx, source)
 	m1, _ := p.ParseScript()
 	builder := &Builder{

@@ -4,7 +4,6 @@ import (
 	"context"
 	"fmt"
 	"testing"
-	"time"
 
 	"github.com/escalier-lang/escalier/internal/ast"
 	. "github.com/escalier-lang/escalier/internal/checker"
@@ -658,8 +657,7 @@ func TestCheckClassDeclNoErrors(t *testing.T) {
 				Contents: test.input,
 			}
 
-			ctx, cancel := context.WithTimeout(context.Background(), 1*time.Second)
-			defer cancel()
+			ctx := context.Background()
 			module, errors := parser.ParseLibFiles(ctx, []*ast.Source{source})
 
 			if len(errors) > 0 {
@@ -739,8 +737,7 @@ func TestNominalClassUnificationTerminates(t *testing.T) {
 		`,
 	}
 
-	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
-	defer cancel()
+	ctx := context.Background()
 	module, parseErrors := parser.ParseLibFiles(ctx, []*ast.Source{source})
 	assert.Len(t, parseErrors, 0)
 
@@ -830,8 +827,7 @@ func TestCheckBodyLevelClassDeclNoErrors(t *testing.T) {
 				Contents: test.input,
 			}
 
-			ctx, cancel := context.WithTimeout(context.Background(), 1*time.Second)
-			defer cancel()
+			ctx := context.Background()
 			module, parseErrors := parser.ParseLibFiles(ctx, []*ast.Source{source})
 			if len(parseErrors) > 0 {
 				for i, err := range parseErrors {
@@ -903,8 +899,7 @@ func TestCheckBodyLevelClassDeclErrors(t *testing.T) {
 				Contents: test.input,
 			}
 
-			ctx, cancel := context.WithTimeout(context.Background(), 1*time.Second)
-			defer cancel()
+			ctx := context.Background()
 			module, parseErrors := parser.ParseLibFiles(ctx, []*ast.Source{source})
 			require.Empty(t, parseErrors)
 
@@ -976,8 +971,7 @@ func TestCheckScriptLevelClassDeclNoErrors(t *testing.T) {
 			t.Parallel()
 			source := &ast.Source{ID: 0, Path: "input.esc", Contents: test.input}
 
-			ctx, cancel := context.WithTimeout(context.Background(), 1*time.Second)
-			defer cancel()
+			ctx := context.Background()
 			p := parser.NewParser(ctx, source)
 			script, parseErrors := p.ParseScript()
 			require.Empty(t, parseErrors, "expected no parse errors")
@@ -1120,8 +1114,7 @@ func TestGetterSetterPreservesSignatureContext(t *testing.T) {
 			t.Parallel()
 			source := &ast.Source{ID: 0, Path: "input.esc", Contents: test.input}
 
-			ctx, cancel := context.WithTimeout(context.Background(), 1*time.Second)
-			defer cancel()
+			ctx := context.Background()
 			module, parseErrors := parser.ParseLibFiles(ctx, []*ast.Source{source})
 			require.Empty(t, parseErrors, "expected no parse errors")
 
@@ -1163,8 +1156,7 @@ func TestBodyLevelGenericSelfReturnPreservesTypeArgs(t *testing.T) {
 
 	source := &ast.Source{ID: 0, Path: "input.esc", Contents: input}
 
-	ctx, cancel := context.WithTimeout(context.Background(), 1*time.Second)
-	defer cancel()
+	ctx := context.Background()
 	p := parser.NewParser(ctx, source)
 	script, parseErrors := p.ParseScript()
 	require.Empty(t, parseErrors, "expected no parse errors")

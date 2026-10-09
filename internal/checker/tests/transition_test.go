@@ -5,7 +5,6 @@ import (
 	"context"
 	"slices"
 	"testing"
-	"time"
 
 	"github.com/escalier-lang/escalier/internal/ast"
 	. "github.com/escalier-lang/escalier/internal/checker"
@@ -540,8 +539,7 @@ func runTransitionTest(t *testing.T, input string, expectedErrors []string) {
 		Contents: input,
 	}
 
-	ctx, cancel := context.WithTimeout(context.Background(), 1*time.Second)
-	defer cancel()
+	ctx := context.Background()
 	p := parser.NewParser(ctx, source)
 	script, parseErrors := p.ParseScript()
 

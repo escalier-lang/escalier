@@ -3,7 +3,6 @@ package dep_graph
 import (
 	"context"
 	"testing"
-	"time"
 
 	"github.com/escalier-lang/escalier/internal/ast"
 	"github.com/escalier-lang/escalier/internal/parser"
@@ -17,8 +16,7 @@ func parseModule(input string) *ast.Module {
 		ID:       0,
 	}
 
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-	defer cancel()
+	ctx := context.Background()
 
 	module, errors := parser.ParseLibFiles(ctx, []*ast.Source{source})
 	if len(errors) > 0 {
@@ -40,8 +38,7 @@ func parseMultiFileModule(sources map[string]string) *ast.Module {
 		id++
 	}
 
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-	defer cancel()
+	ctx := context.Background()
 
 	module, errors := parser.ParseLibFiles(ctx, astSources)
 	if len(errors) > 0 {

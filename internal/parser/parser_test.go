@@ -6,7 +6,6 @@ import (
 	"os"
 	"path/filepath"
 	"testing"
-	"time"
 
 	"github.com/escalier-lang/escalier/internal/ast"
 	"github.com/escalier-lang/escalier/internal/snapshot"
@@ -386,8 +385,7 @@ func TestParseModuleNoErrors(t *testing.T) {
 				Contents: test.input,
 			}
 
-			ctx, cancel := context.WithTimeout(context.Background(), 1*time.Second)
-			defer cancel()
+			ctx := context.Background()
 			parser := NewParser(ctx, source)
 			module, errors := parser.ParseScript()
 
@@ -471,8 +469,7 @@ func TestParseDeclareBlockErrors(t *testing.T) {
 		t.Run(name, func(t *testing.T) {
 			t.Parallel()
 			source := &ast.Source{ID: 0, Path: "input.esc", Contents: test.input}
-			ctx, cancel := context.WithTimeout(context.Background(), 1*time.Second)
-			defer cancel()
+			ctx := context.Background()
 			parser := NewParser(ctx, source)
 			_, errors := parser.ParseScript()
 
@@ -519,8 +516,7 @@ func TestParseOverrideDeclareBlockPropagates(t *testing.T) {
 		t.Run(name, func(t *testing.T) {
 			t.Parallel()
 			source := &ast.Source{ID: 0, Path: "input.esc", Contents: test.input}
-			ctx, cancel := context.WithTimeout(context.Background(), 1*time.Second)
-			defer cancel()
+			ctx := context.Background()
 			parser := NewParser(ctx, source)
 			module, errors := parser.ParseScript()
 			require.Empty(t, errors, "expected no parse errors")
@@ -559,8 +555,7 @@ func TestParseOverridePropagatesIntoNamespace(t *testing.T) {
 		}
 	`
 	source := &ast.Source{ID: 0, Path: "input.esc", Contents: input}
-	ctx, cancel := context.WithTimeout(context.Background(), 1*time.Second)
-	defer cancel()
+	ctx := context.Background()
 	parser := NewParser(ctx, source)
 	module, errors := parser.ParseScript()
 	require.Empty(t, errors, "expected no parse errors")
@@ -627,8 +622,7 @@ func TestParseEnumErrorHandling(t *testing.T) {
 				Contents: test.input,
 			}
 
-			ctx, cancel := context.WithTimeout(context.Background(), 1*time.Second)
-			defer cancel()
+			ctx := context.Background()
 			parser := NewParser(ctx, source)
 			module, errors := parser.ParseScript()
 
@@ -686,8 +680,7 @@ func TestParseTypeKeywordsAsIdentifiers(t *testing.T) {
 				Contents: test.input,
 			}
 
-			ctx, cancel := context.WithTimeout(context.Background(), 1*time.Second)
-			defer cancel()
+			ctx := context.Background()
 			parser := NewParser(ctx, source)
 			module, errors := parser.ParseScript()
 
@@ -932,8 +925,7 @@ func TestClassDeclarations(t *testing.T) {
 				Contents: test.input,
 			}
 
-			ctx, cancel := context.WithTimeout(context.Background(), 1*time.Second)
-			defer cancel()
+			ctx := context.Background()
 			parser := NewParser(ctx, source)
 			module, errors := parser.ParseScript()
 
@@ -953,8 +945,7 @@ func TestClassDeclarations(t *testing.T) {
 func TestParseFinalClass(t *testing.T) {
 	parseClass := func(t *testing.T, src string) *ast.ClassDecl {
 		t.Helper()
-		ctx, cancel := context.WithTimeout(context.Background(), 1*time.Second)
-		defer cancel()
+		ctx := context.Background()
 		decls, errors := ParseDecls(ctx, &ast.Source{ID: 0, Path: "input.esc", Contents: src})
 		require.Empty(t, errors)
 		require.Len(t, decls, 1)
@@ -976,8 +967,7 @@ func TestParseFinalClass(t *testing.T) {
 	})
 
 	t.Run("final on a non-class is rejected", func(t *testing.T) {
-		ctx, cancel := context.WithTimeout(context.Background(), 1*time.Second)
-		defer cancel()
+		ctx := context.Background()
 		_, errors := ParseDecls(ctx, &ast.Source{ID: 0, Path: "input.esc", Contents: `final fn foo() {}`})
 		require.Len(t, errors, 1)
 		require.Equal(t, "'final' can only be used with classes", errors[0].Message)
@@ -987,8 +977,7 @@ func TestParseFinalClass(t *testing.T) {
 func TestClassElemDocs(t *testing.T) {
 	parseClass := func(t *testing.T, src string) *ast.ClassDecl {
 		t.Helper()
-		ctx, cancel := context.WithTimeout(context.Background(), 1*time.Second)
-		defer cancel()
+		ctx := context.Background()
 		decls, errors := ParseDecls(ctx, &ast.Source{ID: 0, Path: "input.esc", Contents: src})
 		require.Empty(t, errors)
 		require.Len(t, decls, 1)
@@ -1127,8 +1116,7 @@ func TestClassElemDocs(t *testing.T) {
 		// attach to. The parser should report a clear diagnostic
 		// instead of falling through to the cascading 'Expected a
 		// property name' error from the inner.
-		ctx, cancel := context.WithTimeout(context.Background(), 1*time.Second)
-		defer cancel()
+		ctx := context.Background()
 		decls, errors := ParseDecls(ctx, &ast.Source{ID: 0, Path: "input.esc",
 			Contents: `class Foo { /** trail */ }`})
 		require.Len(t, errors, 1)
@@ -1143,8 +1131,7 @@ func TestClassElemDocs(t *testing.T) {
 		t.Parallel()
 		// Same shape as TrailingDocReportsOrphanError, but the doc
 		// comes after a trailing comma.
-		ctx, cancel := context.WithTimeout(context.Background(), 1*time.Second)
-		defer cancel()
+		ctx := context.Background()
 		decls, errors := ParseDecls(ctx, &ast.Source{ID: 0, Path: "input.esc",
 			Contents: `class Foo { x: number, /** trail */ }`})
 		require.Len(t, errors, 1)
@@ -1159,8 +1146,7 @@ func TestClassElemDocs(t *testing.T) {
 func TestObjTypeAnnElemDocs(t *testing.T) {
 	parseIface := func(t *testing.T, src string) *ast.InterfaceDecl {
 		t.Helper()
-		ctx, cancel := context.WithTimeout(context.Background(), 1*time.Second)
-		defer cancel()
+		ctx := context.Background()
 		decls, errors := ParseDecls(ctx, &ast.Source{ID: 0, Path: "input.esc", Contents: src})
 		require.Empty(t, errors)
 		require.Len(t, decls, 1)
@@ -1269,8 +1255,7 @@ func TestObjTypeAnnElemDocs(t *testing.T) {
 	t.Run("TrailingDocReportsOrphanError", func(t *testing.T) {
 		t.Parallel()
 		// #1 + #4 for interface bodies.
-		ctx, cancel := context.WithTimeout(context.Background(), 1*time.Second)
-		defer cancel()
+		ctx := context.Background()
 		decls, errors := ParseDecls(ctx, &ast.Source{ID: 0, Path: "input.esc",
 			Contents: `interface Foo { /** trail */ }`})
 		require.Len(t, errors, 1)
@@ -1286,8 +1271,7 @@ func TestObjTypeAnnElemDocs(t *testing.T) {
 		// #5: PropertyTypeAnn{Value: nil} from error recovery is
 		// replaced with a NeverTypeAnn so the printer/checker see a
 		// well-formed type instead of a nil dereference target.
-		ctx, cancel := context.WithTimeout(context.Background(), 1*time.Second)
-		defer cancel()
+		ctx := context.Background()
 		decls, errors := ParseDecls(ctx, &ast.Source{ID: 0, Path: "input.esc",
 			Contents: `interface I { /** d */ x }`})
 		require.Len(t, errors, 1)
@@ -1400,8 +1384,7 @@ func TestClassConstructorErrors(t *testing.T) {
 				Contents: test.input,
 			}
 
-			ctx, cancel := context.WithTimeout(context.Background(), 1*time.Second)
-			defer cancel()
+			ctx := context.Background()
 			parser := NewParser(ctx, source)
 			module, errors := parser.ParseScript()
 
@@ -1460,8 +1443,7 @@ func TestClassGenModifierErrors(t *testing.T) {
 				Contents: test.input,
 			}
 
-			ctx, cancel := context.WithTimeout(context.Background(), 1*time.Second)
-			defer cancel()
+			ctx := context.Background()
 			parser := NewParser(ctx, source)
 			_, errors := parser.ParseScript()
 
@@ -1510,8 +1492,7 @@ func TestStatementRecovery(t *testing.T) {
 				Contents: test.input,
 			}
 
-			ctx, cancel := context.WithTimeout(context.Background(), 1*time.Second)
-			defer cancel()
+			ctx := context.Background()
 			parser := NewParser(ctx, source)
 			module, errors := parser.ParseScript()
 

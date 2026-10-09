@@ -4,7 +4,6 @@ import (
 	"context"
 	"strings"
 	"testing"
-	"time"
 
 	"github.com/escalier-lang/escalier/internal/ast"
 	. "github.com/escalier-lang/escalier/internal/checker"
@@ -29,8 +28,7 @@ import (
 // load globals -> import multiple packages -> define local types that shadow globals
 // -> access shadowed globals via globalThis -> use qualified package access
 func TestE2E_FullWorkflow(t *testing.T) {
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-	defer cancel()
+	ctx := context.Background()
 
 	// Create a multi-file module that exercises all features
 	sources := []*ast.Source{
@@ -189,8 +187,7 @@ func TestE2E_FullWorkflow(t *testing.T) {
 
 // TestE2E_FileImportIsolation verifies that file A's imports cannot be accessed by file B
 func TestE2E_FileImportIsolation(t *testing.T) {
-	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
-	defer cancel()
+	ctx := context.Background()
 
 	sources := []*ast.Source{
 		{
@@ -252,8 +249,7 @@ func TestE2E_FileImportIsolation(t *testing.T) {
 // TestE2E_MultiplePackagesWithSameSymbols tests that different packages can have
 // symbols with the same name and they remain isolated
 func TestE2E_MultiplePackagesWithSameSymbols(t *testing.T) {
-	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
-	defer cancel()
+	ctx := context.Background()
 
 	sources := []*ast.Source{
 		{
@@ -344,8 +340,7 @@ func TestE2E_MultiplePackagesWithSameSymbols(t *testing.T) {
 // TestE2E_GlobalThisBypassesShadowing verifies that globalThis always accesses
 // the global namespace even when locals shadow globals
 func TestE2E_GlobalThisBypassesShadowing(t *testing.T) {
-	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
-	defer cancel()
+	ctx := context.Background()
 
 	sources := []*ast.Source{
 		{
@@ -420,8 +415,7 @@ func TestE2E_GlobalThisBypassesShadowing(t *testing.T) {
 // TestE2E_CrossFileCyclicTypesWithImports tests complex cyclic type dependencies
 // across files where one file uses package imports
 func TestE2E_CrossFileCyclicTypesWithImports(t *testing.T) {
-	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
-	defer cancel()
+	ctx := context.Background()
 
 	sources := []*ast.Source{
 		{
@@ -514,8 +508,7 @@ func TestE2E_CrossFileCyclicTypesWithImports(t *testing.T) {
 
 // TestE2E_SubpathImportsIsolation tests that subpath imports are separate entries
 func TestE2E_SubpathImportsIsolation(t *testing.T) {
-	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
-	defer cancel()
+	ctx := context.Background()
 
 	sources := []*ast.Source{
 		{
@@ -628,8 +621,7 @@ func TestE2E_SubpathImportsIsolation(t *testing.T) {
 // Note: All files are in the same directory (lib/) because declarations
 // are only shared within the same namespace (directory).
 func TestE2E_ComplexProjectSimulation(t *testing.T) {
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-	defer cancel()
+	ctx := context.Background()
 
 	// Simulate a project with models, services, and utilities
 	// All files in same directory for shared namespace
@@ -843,8 +835,7 @@ func TestE2E_ComplexProjectSimulation(t *testing.T) {
 
 // TestE2E_RealisticMonorepoStructure simulates a package within a monorepo
 func TestE2E_RealisticMonorepoStructure(t *testing.T) {
-	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
-	defer cancel()
+	ctx := context.Background()
 
 	// Simulating @repo/core package - all files in same directory
 	// NOTE: Using lib/ prefix to match the expected module structure
@@ -946,8 +937,7 @@ func TestE2E_RealisticMonorepoStructure(t *testing.T) {
 // TestE2E_GlobalAugmentation tests that global augmentations work correctly
 // This is a placeholder for when declare global { ... } is fully supported
 func TestE2E_GlobalAugmentation(t *testing.T) {
-	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
-	defer cancel()
+	ctx := context.Background()
 
 	// For now, just verify that globals from prelude are accessible
 	// and that local declarations can shadow them

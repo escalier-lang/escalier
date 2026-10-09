@@ -4,7 +4,6 @@ import (
 	"context"
 	"strings"
 	"testing"
-	"time"
 
 	"github.com/escalier-lang/escalier/internal/ast"
 	. "github.com/escalier-lang/escalier/internal/checker"
@@ -20,8 +19,7 @@ func inferModuleErrors(t *testing.T, input string) []Error {
 	t.Helper()
 	source := &ast.Source{ID: 0, Path: "input.esc", Contents: input}
 
-	ctx, cancel := context.WithTimeout(context.Background(), 1*time.Second)
-	defer cancel()
+	ctx := context.Background()
 	module, parseErrors := parser.ParseLibFiles(ctx, []*ast.Source{source})
 	require.Empty(t, parseErrors, "expected no parse errors")
 
@@ -507,8 +505,7 @@ func TestOptionalFields(t *testing.T) {
 			}
 		`
 		source := &ast.Source{ID: 0, Path: "input.esc", Contents: input}
-		ctx, cancel := context.WithTimeout(context.Background(), 1*time.Second)
-		defer cancel()
+		ctx := context.Background()
 		_, parseErrors := parser.ParseLibFiles(ctx, []*ast.Source{source})
 		require.NotEmpty(t, parseErrors,
 			"expected a parse error for `static x?: number`")

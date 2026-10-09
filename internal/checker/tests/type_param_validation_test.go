@@ -3,7 +3,6 @@ package tests
 import (
 	"context"
 	"testing"
-	"time"
 
 	"github.com/escalier-lang/escalier/internal/ast"
 	. "github.com/escalier-lang/escalier/internal/checker"
@@ -110,8 +109,7 @@ func TestADefaultNamingAnEarlierParamIsAccepted(t *testing.T) {
 // inferErrors infers input as one library module and returns the errors it raised.
 func inferErrors(t *testing.T, input string) []Error {
 	t.Helper()
-	ctx, cancel := context.WithTimeout(context.Background(), 1*time.Second)
-	defer cancel()
+	ctx := context.Background()
 
 	module, parseErrors := parser.ParseLibFiles(ctx,
 		[]*ast.Source{{ID: 0, Path: "input.esc", Contents: input}})

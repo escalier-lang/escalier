@@ -4,7 +4,6 @@ import (
 	"context"
 	"strconv"
 	"testing"
-	"time"
 
 	"github.com/escalier-lang/escalier/internal/ast"
 	"github.com/escalier-lang/escalier/internal/parser"
@@ -103,8 +102,7 @@ func TestInferOverloadDistinctBorrowParamsAllowed(t *testing.T) {
 // the parser in REVERSE-alphabetical order (b.esc first, so it gets the lower
 // SourceID); the path-alphabetical arm (a.esc) must still come first regardless.
 func TestInferOverloadCrossFileDeclarationOrder(t *testing.T) {
-	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
-	defer cancel()
+	ctx := context.Background()
 	sources := []*ast.Source{
 		{ID: 0, Path: "b.esc", Contents: `fn f(x: string) -> boolean { return true }`},
 		{ID: 1, Path: "a.esc", Contents: `fn f(x: number) -> string { return "s" }

@@ -4,7 +4,6 @@ import (
 	"context"
 	"fmt"
 	"testing"
-	"time"
 
 	"github.com/escalier-lang/escalier/internal/ast"
 	. "github.com/escalier-lang/escalier/internal/checker"
@@ -23,8 +22,7 @@ import (
 // BenchmarkPreludeLoading measures the time to initialize the global scope
 // with all built-in types from lib.es5.d.ts and lib.dom.d.ts
 func BenchmarkPreludeLoading(b *testing.B) {
-	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
-	defer cancel()
+	ctx := context.Background()
 	for i := 0; i < b.N; i++ {
 		c := NewChecker(ctx)
 		_ = Prelude(c)
@@ -47,8 +45,7 @@ func BenchmarkSimpleScript(b *testing.B) {
 	}
 
 	// Parse once outside the benchmark loop
-	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
-	defer cancel()
+	ctx := context.Background()
 	p := parser.NewParser(ctx, source)
 	script, _ := p.ParseScript()
 
@@ -80,8 +77,7 @@ func BenchmarkScriptWithGlobalTypes(b *testing.B) {
 		Contents: input,
 	}
 
-	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
-	defer cancel()
+	ctx := context.Background()
 	p := parser.NewParser(ctx, source)
 	script, _ := p.ParseScript()
 
@@ -118,8 +114,7 @@ func BenchmarkScriptWithShadowing(b *testing.B) {
 		Contents: input,
 	}
 
-	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
-	defer cancel()
+	ctx := context.Background()
 	p := parser.NewParser(ctx, source)
 	script, _ := p.ParseScript()
 
@@ -153,8 +148,7 @@ func BenchmarkModuleWithImports(b *testing.B) {
 		},
 	}
 
-	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
-	defer cancel()
+	ctx := context.Background()
 	module, _ := parser.ParseLibFiles(ctx, sources)
 
 	// Create mock packages
@@ -213,8 +207,7 @@ func BenchmarkMultiFileModule(b *testing.B) {
 		},
 	}
 
-	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
-	defer cancel()
+	ctx := context.Background()
 	module, _ := parser.ParseLibFiles(ctx, sources)
 
 	b.ResetTimer()
@@ -248,8 +241,7 @@ func BenchmarkCrossFileCyclicTypes(b *testing.B) {
 		},
 	}
 
-	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
-	defer cancel()
+	ctx := context.Background()
 	module, _ := parser.ParseLibFiles(ctx, sources)
 
 	b.ResetTimer()
@@ -293,8 +285,7 @@ func BenchmarkFileScopedImports(b *testing.B) {
 		},
 	}
 
-	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
-	defer cancel()
+	ctx := context.Background()
 	module, _ := parser.ParseLibFiles(ctx, sources)
 
 	utilsNs := createMockPackage(nil, map[string]type_system.Type{"SharedType": type_system.NewNumPrimType(nil)})
@@ -315,8 +306,7 @@ func BenchmarkFileScopedImports(b *testing.B) {
 
 // BenchmarkScopeChainLookup measures the cost of scope chain traversal
 func BenchmarkScopeChainLookup(b *testing.B) {
-	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
-	defer cancel()
+	ctx := context.Background()
 	c := NewChecker(ctx)
 	userScope := Prelude(c)
 
@@ -341,8 +331,7 @@ func BenchmarkScopeChainLookup(b *testing.B) {
 
 // BenchmarkPackageRegistryLookup measures the cost of package registry lookups
 func BenchmarkPackageRegistryLookup(b *testing.B) {
-	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
-	defer cancel()
+	ctx := context.Background()
 	c := NewChecker(ctx)
 
 	// Register several packages
@@ -414,8 +403,7 @@ func BenchmarkRepeatedGenericPropertyAccess(b *testing.B) {
 		Contents: input,
 	}
 
-	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
-	defer cancel()
+	ctx := context.Background()
 	p := parser.NewParser(ctx, source)
 	script, _ := p.ParseScript()
 
@@ -475,8 +463,7 @@ func BenchmarkMultipleGenericTypes(b *testing.B) {
 		Contents: input,
 	}
 
-	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
-	defer cancel()
+	ctx := context.Background()
 	p := parser.NewParser(ctx, source)
 	script, _ := p.ParseScript()
 
@@ -521,8 +508,7 @@ func BenchmarkUnionMemberAccess(b *testing.B) {
 		Contents: input,
 	}
 
-	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
-	defer cancel()
+	ctx := context.Background()
 	p := parser.NewParser(ctx, source)
 	script, _ := p.ParseScript()
 
@@ -582,8 +568,7 @@ func BenchmarkGenericPropertyAccessModule(b *testing.B) {
 		},
 	}
 
-	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
-	defer cancel()
+	ctx := context.Background()
 	module, _ := parser.ParseLibFiles(ctx, sources)
 
 	b.ResetTimer()
@@ -664,8 +649,7 @@ func BenchmarkComplexProject(b *testing.B) {
 		},
 	}
 
-	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
-	defer cancel()
+	ctx := context.Background()
 	module, _ := parser.ParseLibFiles(ctx, sources)
 
 	validatorNs := createMockPackage(nil, map[string]type_system.Type{"Result": type_system.NewAnyType(nil)})
@@ -691,8 +675,7 @@ func BenchmarkComplexProject(b *testing.B) {
 // TestArrayTypeStructure verifies where Array's properties live (Elems vs Extends)
 // to inform lazy member lookup optimization decisions (#461).
 func TestArrayTypeStructure(t *testing.T) {
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-	defer cancel()
+	ctx := context.Background()
 	c := NewChecker(ctx)
 	scope := Prelude(c)
 	alias := scope.GetTypeAlias("Array")

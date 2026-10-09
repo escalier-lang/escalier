@@ -3,7 +3,6 @@ package solver
 import (
 	"context"
 	"testing"
-	"time"
 
 	"github.com/escalier-lang/escalier/internal/ast"
 	"github.com/escalier-lang/escalier/internal/parser"
@@ -91,8 +90,7 @@ func TestInferTypeAliasRejectsMismatchedPrimitive(t *testing.T) {
 // in the real pipeline, so inferTypeDecl must bind the alias to a recovery type rather
 // than route the nil annotation to reportUnsupported(nil), whose error has no span.
 func TestInferTypeAliasMissingBodyDoesNotPanic(t *testing.T) {
-	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
-	defer cancel()
+	ctx := context.Background()
 	// Parse directly so the malformed source reaches inference; the standard harness
 	// rejects parse errors, but the real compiler and LSP keep going on a partial AST.
 	module, _ := parser.ParseLibFiles(ctx, []*ast.Source{

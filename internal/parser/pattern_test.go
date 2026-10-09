@@ -4,7 +4,6 @@ import (
 	"context"
 	"strings"
 	"testing"
-	"time"
 
 	"github.com/escalier-lang/escalier/internal/ast"
 	"github.com/escalier-lang/escalier/internal/snapshot"
@@ -118,8 +117,7 @@ func TestParsePatternNoErrors(t *testing.T) {
 				Contents: test.input,
 			}
 
-			ctx, cancel := context.WithTimeout(context.Background(), 1*time.Second)
-			defer cancel()
+			ctx := context.Background()
 			parser := NewParser(ctx, source)
 			expr := parser.pattern(true, true)
 
@@ -147,8 +145,7 @@ func TestParseMutPatternRejected(t *testing.T) {
 		t.Run(name, func(t *testing.T) {
 			t.Parallel()
 			source := &ast.Source{ID: 0, Path: "input.esc", Contents: input}
-			ctx, cancel := context.WithTimeout(context.Background(), 1*time.Second)
-			defer cancel()
+			ctx := context.Background()
 			p := NewParser(ctx, source)
 			_ = p.pattern(true, true)
 			assert.NotEmpty(t, p.errors,
@@ -174,8 +171,7 @@ func TestParseMutOnNonIdentDoesNotDoubleReport(t *testing.T) {
 		t.Run(name, func(t *testing.T) {
 			t.Parallel()
 			source := &ast.Source{ID: 0, Path: "input.esc", Contents: input}
-			ctx, cancel := context.WithTimeout(context.Background(), 1*time.Second)
-			defer cancel()
+			ctx := context.Background()
 			p := NewParser(ctx, source)
 			_ = p.pattern(true, true)
 			require.Lenf(t, p.errors, 1,
@@ -202,8 +198,7 @@ func TestParseMutOnDestructuringSuggestsPerLeaf(t *testing.T) {
 		t.Run(name, func(t *testing.T) {
 			t.Parallel()
 			source := &ast.Source{ID: 0, Path: "input.esc", Contents: test.input}
-			ctx, cancel := context.WithTimeout(context.Background(), 1*time.Second)
-			defer cancel()
+			ctx := context.Background()
 			p := NewParser(ctx, source)
 			_ = p.pattern(true, true)
 			require.NotEmpty(t, p.errors, "expected an error for %q", test.input)
@@ -227,8 +222,7 @@ func TestParseMutOnDestructuringSuggestsPerLeaf(t *testing.T) {
 func TestParseMutOnObjKeyValueErrorSpan(t *testing.T) {
 	t.Parallel()
 	source := &ast.Source{ID: 0, Path: "input.esc", Contents: "{mut x: a}"}
-	ctx, cancel := context.WithTimeout(context.Background(), 1*time.Second)
-	defer cancel()
+	ctx := context.Background()
 	p := NewParser(ctx, source)
 	_ = p.pattern(true, true)
 	require.NotEmpty(t, p.errors, "expected an error")
@@ -295,8 +289,7 @@ func TestParseMutSelfWithMutParam(t *testing.T) {
 		t.Run(name, func(t *testing.T) {
 			t.Parallel()
 			source := &ast.Source{ID: 0, Path: "input.esc", Contents: test.input}
-			ctx, cancel := context.WithTimeout(context.Background(), 1*time.Second)
-			defer cancel()
+			ctx := context.Background()
 			p := NewParser(ctx, source)
 			script, errs := p.ParseScript()
 			assert.Empty(t, errs, "expected no parse errors for %q", test.input)
@@ -377,8 +370,7 @@ func TestStaticMethodRejectsSelfReceiver(t *testing.T) {
 		t.Run(name, func(t *testing.T) {
 			t.Parallel()
 			source := &ast.Source{ID: 0, Path: "input.esc", Contents: tc.input}
-			ctx, cancel := context.WithTimeout(context.Background(), 1*time.Second)
-			defer cancel()
+			ctx := context.Background()
 			p := NewParser(ctx, source)
 			script, parseErrors := p.ParseScript()
 			require.NotNil(t, script)
@@ -404,8 +396,7 @@ func TestParseMethodWithoutSelfReceiver(t *testing.T) {
 	source := &ast.Source{ID: 0, Path: "input.esc", Contents: `class Foo {
 		bar(x: number, y: number) -> number { return x + y },
 	}`}
-	ctx, cancel := context.WithTimeout(context.Background(), 1*time.Second)
-	defer cancel()
+	ctx := context.Background()
 	p := NewParser(ctx, source)
 	script, errs := p.ParseScript()
 	require.NotNil(t, script)

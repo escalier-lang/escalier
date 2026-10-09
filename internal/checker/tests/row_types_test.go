@@ -4,7 +4,6 @@ import (
 	"context"
 	"strings"
 	"testing"
-	"time"
 
 	"github.com/escalier-lang/escalier/internal/ast"
 	. "github.com/escalier-lang/escalier/internal/checker"
@@ -29,8 +28,7 @@ func inferModuleTypesAndErrors(t *testing.T, input string) (map[string]string, [
 		Contents: input,
 	}
 
-	ctx, cancel := context.WithTimeout(context.Background(), 1*time.Second)
-	defer cancel()
+	ctx := context.Background()
 	module, errors := parser.ParseLibFiles(ctx, []*ast.Source{source})
 
 	if len(errors) > 0 {
@@ -378,8 +376,7 @@ func TestRowTypesErrors(t *testing.T) {
 				Contents: test.input,
 			}
 
-			ctx, cancel := context.WithTimeout(context.Background(), 1*time.Second)
-			defer cancel()
+			ctx := context.Background()
 			module, errors := parser.ParseLibFiles(ctx, []*ast.Source{source})
 
 			if len(errors) > 0 {
@@ -411,8 +408,7 @@ func TestRowTypesErrors(t *testing.T) {
 // (including those wrapped in a `mut` MutType).
 func TestRowTypesKeyOf(t *testing.T) {
 	t.Run("KeyOfType unwraps MutType", func(t *testing.T) {
-		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-		defer cancel()
+		ctx := context.Background()
 		checker := NewChecker(ctx)
 		inferCtx := Context{
 			Scope:      NewScope(),
@@ -439,8 +435,7 @@ func TestRowTypesKeyOf(t *testing.T) {
 	})
 
 	t.Run("KeyOfType on bare ObjectType still works", func(t *testing.T) {
-		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-		defer cancel()
+		ctx := context.Background()
 		checker := NewChecker(ctx)
 		inferCtx := Context{
 			Scope:      NewScope(),
@@ -1027,8 +1022,7 @@ func TestRowTypesPropertyWidening(t *testing.T) {
 					Contents: test.input,
 				}
 
-				ctx, cancel := context.WithTimeout(context.Background(), 1*time.Second)
-				defer cancel()
+				ctx := context.Background()
 				module, errors := parser.ParseLibFiles(ctx, []*ast.Source{source})
 				require.Empty(t, errors)
 

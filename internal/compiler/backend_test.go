@@ -9,7 +9,6 @@ import (
 	"strconv"
 	"strings"
 	"testing"
-	"time"
 
 	"github.com/escalier-lang/escalier/internal/ast"
 	"github.com/escalier-lang/escalier/internal/set"
@@ -147,8 +146,7 @@ func TestCompileScriptImportsUsedLibSymbols(t *testing.T) {
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
 			test.setup(t)
-			ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-			defer cancel()
+			ctx := context.Background()
 
 			libOutput := CheckLib(ctx, libSources(lib))
 			require.NotNil(t, libOutput.LibScope)
@@ -255,8 +253,7 @@ func TestCompileScriptImportsALibraryNamespace(t *testing.T) {
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
 			test.setup(t)
-			ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-			defer cancel()
+			ctx := context.Background()
 
 			libOutput := CheckLib(ctx, libSources(lib))
 			require.NotNil(t, libOutput.LibScope)

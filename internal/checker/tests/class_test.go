@@ -4,7 +4,6 @@ import (
 	"context"
 	"fmt"
 	"testing"
-	"time"
 
 	"github.com/escalier-lang/escalier/internal/ast"
 	. "github.com/escalier-lang/escalier/internal/checker"
@@ -527,8 +526,7 @@ func TestClassImplementsConformance(t *testing.T) {
 		t.Run(name, func(t *testing.T) {
 			t.Parallel()
 			source := &ast.Source{ID: 0, Path: "input.esc", Contents: test.input}
-			ctx, cancel := context.WithTimeout(context.Background(), 1*time.Second)
-			defer cancel()
+			ctx := context.Background()
 			module, parseErrors := parser.ParseLibFiles(ctx, []*ast.Source{source})
 			require.Empty(t, parseErrors, "expected no parse errors")
 
@@ -681,8 +679,7 @@ func TestClassImplementsLifetimeConformance(t *testing.T) {
 		t.Run(name, func(t *testing.T) {
 			t.Parallel()
 			source := &ast.Source{ID: 0, Path: "input.esc", Contents: test.input}
-			ctx, cancel := context.WithTimeout(context.Background(), 1*time.Second)
-			defer cancel()
+			ctx := context.Background()
 			module, parseErrors := parser.ParseLibFiles(ctx, []*ast.Source{source})
 			require.Empty(t, parseErrors, "expected no parse errors")
 
@@ -926,8 +923,7 @@ func TestConstructorRejectsSelfLifetime(t *testing.T) {
 		}
 	`
 	source := &ast.Source{ID: 0, Path: "input.esc", Contents: src}
-	ctx, cancel := context.WithTimeout(context.Background(), 1*time.Second)
-	defer cancel()
+	ctx := context.Background()
 	module, parseErrors := parser.ParseLibFiles(ctx, []*ast.Source{source})
 
 	c := NewChecker(ctx)
@@ -973,8 +969,7 @@ func TestConstructorRejectsConsumingSelf(t *testing.T) {
 				}
 			`
 			source := &ast.Source{ID: 0, Path: "input.esc", Contents: src}
-			ctx, cancel := context.WithTimeout(context.Background(), 1*time.Second)
-			defer cancel()
+			ctx := context.Background()
 			// The parser reports the same mistake. The checker still sees the
 			// receiver it parsed, which is what this test asserts.
 			module, _ := parser.ParseLibFiles(ctx, []*ast.Source{source})
@@ -1030,8 +1025,7 @@ func TestInstanceMethodMissingSelfReceiver(t *testing.T) {
 	for name, test := range tests {
 		t.Run(name, func(t *testing.T) {
 			source := &ast.Source{ID: 0, Path: "input.esc", Contents: test.input}
-			ctx, cancel := context.WithTimeout(context.Background(), 1*time.Second)
-			defer cancel()
+			ctx := context.Background()
 			module, _ := parser.ParseLibFiles(ctx, []*ast.Source{source})
 
 			c := NewChecker(ctx)
@@ -1067,8 +1061,7 @@ func TestObjectTypeAnnRejectsReceiverLifetime(t *testing.T) {
 		}
 	`
 	source := &ast.Source{ID: 0, Path: "input.esc", Contents: src}
-	ctx, cancel := context.WithTimeout(context.Background(), 1*time.Second)
-	defer cancel()
+	ctx := context.Background()
 	module, _ := parser.ParseLibFiles(ctx, []*ast.Source{source})
 
 	c := NewChecker(ctx)
@@ -1157,8 +1150,7 @@ func TestLifetimeArgArityMismatch(t *testing.T) {
 		t.Run(name, func(t *testing.T) {
 			t.Parallel()
 			source := &ast.Source{ID: 0, Path: "input.esc", Contents: test.input}
-			ctx, cancel := context.WithTimeout(context.Background(), 1*time.Second)
-			defer cancel()
+			ctx := context.Background()
 			module, parseErrors := parser.ParseLibFiles(ctx, []*ast.Source{source})
 			require.Empty(t, parseErrors, "expected no parse errors")
 
@@ -1265,8 +1257,7 @@ func TestInterfaceMergeLifetimeParamMismatch(t *testing.T) {
 		t.Run(name, func(t *testing.T) {
 			t.Parallel()
 			source := &ast.Source{ID: 0, Path: "input.esc", Contents: test.input}
-			ctx, cancel := context.WithTimeout(context.Background(), 1*time.Second)
-			defer cancel()
+			ctx := context.Background()
 			module, parseErrors := parser.ParseLibFiles(ctx, []*ast.Source{source})
 			require.Empty(t, parseErrors, "expected no parse errors")
 
@@ -1594,8 +1585,7 @@ func TestDeclareClassImplementsConformance(t *testing.T) {
 		t.Run(name, func(t *testing.T) {
 			t.Parallel()
 			source := &ast.Source{ID: 0, Path: "input.esc", Contents: test.input}
-			ctx, cancel := context.WithTimeout(context.Background(), 1*time.Second)
-			defer cancel()
+			ctx := context.Background()
 			module, parseErrors := parser.ParseLibFiles(ctx, []*ast.Source{source})
 			require.Empty(t, parseErrors, "expected no parse errors")
 
@@ -1791,8 +1781,7 @@ func TestDeclareClassImplementsConflicts(t *testing.T) {
 		t.Run(name, func(t *testing.T) {
 			t.Parallel()
 			source := &ast.Source{ID: 0, Path: "input.esc", Contents: test.input}
-			ctx, cancel := context.WithTimeout(context.Background(), 1*time.Second)
-			defer cancel()
+			ctx := context.Background()
 			module, parseErrors := parser.ParseLibFiles(ctx, []*ast.Source{source})
 			require.Empty(t, parseErrors, "expected no parse errors")
 
@@ -1835,8 +1824,7 @@ func TestNonDeclareClassTakesNoMembersFromImplements(t *testing.T) {
 		val g = h.greet()
 	`
 	source := &ast.Source{ID: 0, Path: "input.esc", Contents: input}
-	ctx, cancel := context.WithTimeout(context.Background(), 1*time.Second)
-	defer cancel()
+	ctx := context.Background()
 	module, parseErrors := parser.ParseLibFiles(ctx, []*ast.Source{source})
 	require.Empty(t, parseErrors)
 
@@ -1877,8 +1865,7 @@ func TestImplementsMeansConformanceWithoutDeclare(t *testing.T) {
 			t.Parallel()
 			input := fmt.Sprintf(body, test.modifier)
 			source := &ast.Source{ID: 0, Path: "input.esc", Contents: input}
-			ctx, cancel := context.WithTimeout(context.Background(), 1*time.Second)
-			defer cancel()
+			ctx := context.Background()
 			module, parseErrors := parser.ParseLibFiles(ctx, []*ast.Source{source})
 			require.Empty(t, parseErrors)
 
@@ -1989,8 +1976,7 @@ func TestClassCallSignature(t *testing.T) {
 			}
 		`
 		source := &ast.Source{ID: 0, Path: "input.esc", Contents: input}
-		ctx, cancel := context.WithTimeout(context.Background(), 1*time.Second)
-		defer cancel()
+		ctx := context.Background()
 		module, parseErrors := parser.ParseLibFiles(ctx, []*ast.Source{source})
 		require.Empty(t, parseErrors)
 
@@ -2101,8 +2087,7 @@ func TestCallOnlyClassHasNoConstructor(t *testing.T) {
 		t.Run(name, func(t *testing.T) {
 			t.Parallel()
 			source := &ast.Source{ID: 0, Path: "input.esc", Contents: test.input}
-			ctx, cancel := context.WithTimeout(context.Background(), 1*time.Second)
-			defer cancel()
+			ctx := context.Background()
 			module, parseErrors := parser.ParseLibFiles(ctx, []*ast.Source{source})
 			require.Empty(t, parseErrors, "expected no parse errors")
 

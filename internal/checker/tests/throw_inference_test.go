@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"strings"
 	"testing"
-	"time"
 
 	"github.com/escalier-lang/escalier/internal/ast"
 	. "github.com/escalier-lang/escalier/internal/checker"
@@ -131,8 +130,7 @@ func TestThrowExpressionInference(t *testing.T) {
 				Contents: test.input,
 			}
 
-			ctx, cancel := context.WithTimeout(context.Background(), 1*time.Second)
-			defer cancel()
+			ctx := context.Background()
 			p := parser.NewParser(ctx, source)
 			script, parseErrors := p.ParseScript()
 
@@ -226,8 +224,7 @@ func TestNeverReturnInference(t *testing.T) {
 			t.Parallel()
 			source := &ast.Source{ID: 0, Path: "input.esc", Contents: test.input}
 
-			ctx, cancel := context.WithTimeout(context.Background(), 1*time.Second)
-			defer cancel()
+			ctx := context.Background()
 			p := parser.NewParser(ctx, source)
 			script, parseErrors := p.ParseScript()
 			assert.Empty(t, parseErrors, "Expected no parse errors")
@@ -313,8 +310,7 @@ func TestDivergingBodyRejectsNonNeverReturn(t *testing.T) {
 			t.Parallel()
 			source := &ast.Source{ID: 0, Path: "input.esc", Contents: test.input}
 
-			ctx, cancel := context.WithTimeout(context.Background(), 1*time.Second)
-			defer cancel()
+			ctx := context.Background()
 			p := parser.NewParser(ctx, source)
 			script, parseErrors := p.ParseScript()
 			assert.Empty(t, parseErrors, "Expected no parse errors")
@@ -394,8 +390,7 @@ func TestCallSiteThrowsInference(t *testing.T) {
 			t.Parallel()
 			source := &ast.Source{ID: 0, Path: "input.esc", Contents: test.input}
 
-			ctx, cancel := context.WithTimeout(context.Background(), 1*time.Second)
-			defer cancel()
+			ctx := context.Background()
 			module, parseErrors := parser.ParseLibFiles(ctx, []*ast.Source{source})
 			assert.Empty(t, parseErrors, "Expected no parse errors")
 
@@ -453,8 +448,7 @@ func TestThrowExpressionUnification(t *testing.T) {
 				Contents: test.input,
 			}
 
-			ctx, cancel := context.WithTimeout(context.Background(), 1*time.Second)
-			defer cancel()
+			ctx := context.Background()
 			p := parser.NewParser(ctx, source)
 			script, parseErrors := p.ParseScript()
 

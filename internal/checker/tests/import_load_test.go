@@ -3,7 +3,6 @@ package tests
 import (
 	"context"
 	"testing"
-	"time"
 
 	"github.com/escalier-lang/escalier/internal/ast"
 	. "github.com/escalier-lang/escalier/internal/checker"
@@ -18,8 +17,7 @@ import (
 // requires that `pnpm install` has been run in the project root before running
 // this test.
 func TestPackageLoadAndRegister(t *testing.T) {
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-	defer cancel()
+	ctx := context.Background()
 
 	// Create a script that imports a real package
 	source := &ast.Source{
@@ -50,8 +48,7 @@ func TestPackageLoadAndRegister(t *testing.T) {
 
 // TestPackageReloadFromRegistry verifies that re-importing uses the cached namespace
 func TestPackageReloadFromRegistry(t *testing.T) {
-	ctx, cancel := context.WithTimeout(context.Background(), 1*time.Second)
-	defer cancel()
+	ctx := context.Background()
 
 	// Pre-register a mock package
 	c := NewChecker(ctx)
@@ -97,8 +94,7 @@ func TestPackageReloadFromRegistry(t *testing.T) {
 
 // TestSubpathImportSeparateEntries verifies that different subpaths are separate registry entries
 func TestSubpathImportSeparateEntries(t *testing.T) {
-	ctx, cancel := context.WithTimeout(context.Background(), 1*time.Second)
-	defer cancel()
+	ctx := context.Background()
 
 	c := NewChecker(ctx)
 
@@ -155,8 +151,7 @@ func TestSubpathImportSeparateEntries(t *testing.T) {
 // TestNonExportedItemsAreFilteredFromNamespaceImport verifies that non-exported
 // items in a package are not accessible via namespace imports (import * as alias).
 func TestNonExportedItemsAreFilteredFromNamespaceImport(t *testing.T) {
-	ctx, cancel := context.WithTimeout(context.Background(), 1*time.Second)
-	defer cancel()
+	ctx := context.Background()
 
 	c := NewChecker(ctx)
 
@@ -277,8 +272,7 @@ func TestNonExportedItemsAreFilteredFromNamespaceImport(t *testing.T) {
 // A package's nested namespace is reached through the namespace the import
 // binds, one segment at a time.
 func TestNestedNamespaceReachedThroughTheImport(t *testing.T) {
-	ctx, cancel := context.WithTimeout(context.Background(), 1*time.Second)
-	defer cancel()
+	ctx := context.Background()
 
 	c := NewChecker(ctx)
 

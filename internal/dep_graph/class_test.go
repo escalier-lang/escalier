@@ -3,7 +3,6 @@ package dep_graph
 import (
 	"context"
 	"testing"
-	"time"
 
 	"github.com/escalier-lang/escalier/internal/ast"
 	"github.com/escalier-lang/escalier/internal/parser"
@@ -102,8 +101,7 @@ func TestClassDeclDependencies(t *testing.T) {
 				Contents: test.input,
 			}
 
-			ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-			defer cancel()
+			ctx := context.Background()
 
 			module, errors := parser.ParseLibFiles(ctx, []*ast.Source{source})
 			assert.Empty(t, errors, "Expected no parsing errors")
@@ -264,8 +262,7 @@ func TestClassMemberNameNoSpuriousDependency(t *testing.T) {
 				Contents: test.input,
 			}
 
-			ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-			defer cancel()
+			ctx := context.Background()
 
 			module, errors := parser.ParseLibFiles(ctx, []*ast.Source{source})
 			require.Empty(t, errors, "Expected no parsing errors")

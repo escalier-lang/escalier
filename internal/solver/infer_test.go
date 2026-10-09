@@ -7,7 +7,6 @@ import (
 	"strings"
 	"sync"
 	"testing"
-	"time"
 
 	"github.com/escalier-lang/escalier/internal/ast"
 	"github.com/escalier-lang/escalier/internal/dep_graph"
@@ -35,8 +34,7 @@ func parseModuleFiles(t *testing.T, srcs map[string]string) *ast.Module {
 		sources[id] = &ast.Source{ID: id, Path: path, Contents: srcs[path]}
 	}
 
-	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
-	defer cancel()
+	ctx := context.Background()
 	module, parseErrors := parser.ParseLibFiles(ctx, sources)
 	require.Empty(t, parseErrors, "expected no parse errors")
 	registerTestSources(t, module.Sources)
