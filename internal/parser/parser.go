@@ -65,8 +65,8 @@ func NewParser(ctx context.Context, source *ast.Source) *Parser {
 }
 
 // adjacentPair reports whether the next two tokens are first and second with nothing
-// between them, as `>` and `=` are in `a >= b` and are not in `a > = b`. It reads the pair
-// as one operator where the lexer keeps the two characters apart.
+// between them, as `>` and `=` are in `a >= b` and are not in `a > = b`. It consumes
+// neither token.
 func (p *Parser) adjacentPair(first, second TokenType) bool {
 	if p.lexer.peek().Type != first {
 		return false

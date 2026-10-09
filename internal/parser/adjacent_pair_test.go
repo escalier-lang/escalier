@@ -2,6 +2,7 @@ package parser
 
 import (
 	"context"
+	"strings"
 	"testing"
 
 	"github.com/escalier-lang/escalier/internal/ast"
@@ -19,16 +20,13 @@ func parseAndPrint(t *testing.T, src string) (string, []string) {
 	for _, e := range errs {
 		msgs = append(msgs, e.Message)
 	}
-	out := ""
+	printed := make([]string, len(decls))
 	for i, d := range decls {
-		printed, err := printer.Print(d, printer.DefaultOptions())
+		out, err := printer.Print(d, printer.DefaultOptions())
 		require.NoError(t, err)
-		if i > 0 {
-			out += "\n"
-		}
-		out += printed
+		printed[i] = out
 	}
-	return out, msgs
+	return strings.Join(printed, "\n"), msgs
 }
 
 // TestParseAdjacentGreaterThanPairs covers `>:` and `>=` read from two adjacent tokens. The
@@ -105,6 +103,7 @@ func TestParseAdjacentGreaterThanPairs(t *testing.T) {
 func TestALowerBoundIsCarriedOnTheTypeParam(t *testing.T) {
 	decls, errs := ParseDecls(context.Background(), &ast.Source{ID: 0, Path: "t.esc", Contents: "type A<B >: T: Base> = B"})
 	require.Empty(t, errs)
+	require.Len(t, decls, 1)
 	decl, ok := decls[0].(*ast.TypeDecl)
 	require.True(t, ok)
 	require.Len(t, decl.TypeParams, 1)
@@ -122,6 +121,7 @@ func TestALowerBoundIsCarriedOnTheTypeParam(t *testing.T) {
 func TestJSXTextStartingWithAColon(t *testing.T) {
 	decls, errs := ParseDecls(context.Background(), &ast.Source{ID: 0, Path: "t.esc", Contents: "val e = <b>: hello</b>"})
 	require.Empty(t, errs)
+	require.Len(t, decls, 1)
 	decl, ok := decls[0].(*ast.VarDecl)
 	require.True(t, ok)
 	elem, ok := decl.Init.(*ast.JSXElementExpr)
@@ -137,6 +137,7 @@ func TestJSXTextStartingWithAColon(t *testing.T) {
 func TestALowerBoundNamingALaterSiblingSortsAfterIt(t *testing.T) {
 	decls, errs := ParseDecls(context.Background(), &ast.Source{ID: 0, Path: "t.esc", Contents: "type A<B >: T, T> = B"})
 	require.Empty(t, errs)
+	require.Len(t, decls, 1)
 	decl, ok := decls[0].(*ast.TypeDecl)
 	require.True(t, ok)
 	var names []string
