@@ -1,9 +1,0 @@
-// TypeScript has no lower bound, so a `>:` binder is emitted with no `extends` clause.
-type Widen<B >: string> = B
-
-class Bag<T> {
-    items: Array<T>,
-    contains<B >: T>(&self, x: B) -> boolean { return false },
-}
-
-declare fn first<B >: number>(xs: Array<B>) -> B
