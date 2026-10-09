@@ -480,6 +480,8 @@ func TestBuildTypeAnnFromSolFromSource(t *testing.T) {
 		"ConstrainedAndDefaultedTypeParam": {
 			"", `fn <T: string = "a">(x: T) -> T`, `<T extends string = "a">(x: T) => T`,
 		},
+		// TypeScript has no lower bound, so a `>:` binder is emitted with no clause.
+		"LowerBoundedTypeParam": {"", "fn <B >: number>(x: B) -> B", "<B>(x: B) => B"},
 		// A rest element inside a destructuring pattern, and an object pattern's
 		// own rest, which soltype carries in a field of its own rather than among
 		// the named fields.

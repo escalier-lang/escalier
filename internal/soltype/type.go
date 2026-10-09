@@ -46,11 +46,15 @@ type TypeVarType struct {
 // nominally and no concrete type is a subtype of it. A skolem is a subtype only of itself,
 // of an inference var it flows into, and of its declared upper bound. ID keeps two
 // parameters `T` and `U` distinct; Name is the source name for diagnostics and the printer;
-// Upper is the declared constraint (`<U: T>`), nil when unconstrained.
+// Upper is the declared constraint (`<U: T>`), nil when unconstrained. Lower is the declared
+// lower bound (`<B >: T>`), nil when there is none. Every instantiation of `B` is a supertype
+// of `T`, so a type below Lower is a subtype of the skolem, where no other type apart from
+// the skolem itself is.
 type SkolemType struct {
 	ID    int
 	Name  string
 	Upper Type
+	Lower Type
 }
 
 // BoundsAt returns the bounds relevant to a polarity: lowers in Positive
@@ -313,11 +317,18 @@ func (t *FuncType) ThrowsOrNever() Type {
 // unbounded U, which puts an inferred bound at index 0. Constraint stays nil for that U,
 // because a parameter written with no `:` clause declares nothing. Read Constraint, not
 // Var.UpperBounds, to answer what the source wrote.
+//
+// LowerBound is the declared lower bound, the `T` of `B >: T`, seeded as Var's first lower
+// bound the way Constraint is seeded as its first upper bound. Every instantiation of B is a
+// supertype of T, so a T flows into a B wherever a B is expected. It is nil for a binder with
+// no `>:` clause. Read it, not Var.LowerBounds, to answer what the source wrote, since the
+// list also carries what a body forced into the variable.
 type TypeParam struct {
 	Name       string
 	Var        *TypeVarType
 	Default    Type // nil ⇒ required
 	Constraint Type // nil ⇒ unbounded
+	LowerBound Type // nil ⇒ none
 }
 
 // DeclaredUpperBounds returns tp's upper bounds as its binder states them. That is the
@@ -352,6 +363,28 @@ func (tp *TypeParam) AllUpperBounds() []Type {
 		return bounds
 	}
 	return append([]Type{tp.Constraint}, bounds[1:]...)
+}
+
+// DeclaredLowerBounds returns tp's lower bounds as its binder states them, the declared
+// LowerBound alone or nothing. The variable's lower-bound list is no fallback, since every
+// entry it carries beyond the declared bound is a type the body forced into the parameter.
+func (tp *TypeParam) DeclaredLowerBounds() []Type {
+	if tp.LowerBound != nil {
+		return []Type{tp.LowerBound}
+	}
+	return nil
+}
+
+// AllLowerBounds returns every lower bound an instantiation of tp starts from. That is the
+// declared lower bound followed by what the signature and the body added, the lower twin of
+// AllUpperBounds. resolveTypeParams records the declared bound as the variable's first lower
+// bound, and after a substitution it is read from LowerBound and the rest from the list.
+func (tp *TypeParam) AllLowerBounds() []Type {
+	bounds := tp.Var.LowerBounds
+	if tp.LowerBound == nil || len(bounds) == 0 || bounds[0] == tp.LowerBound {
+		return bounds
+	}
+	return append([]Type{tp.LowerBound}, bounds[1:]...)
 }
 
 // LifetimeParam is one quantified lifetime parameter, the lifetime-sort analogue of TypeParam,

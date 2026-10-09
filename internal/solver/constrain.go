@@ -1284,6 +1284,21 @@ func (c *Context) constrain(sub, super soltype.Type, seen *seenPairs, mutCtx boo
 		}
 	}
 
+	// A skolem on the super side admits a type through its declared lower bound. `B >: T`
+	// promises that every instantiation of B is a supertype of T, so a T, or anything below
+	// T, is a B. The bound is tried under a probe and taken only when it holds. When it does
+	// not, the arms below decide the pair. They still admit the skolem itself, a sibling
+	// whose own upper bound reaches it, as `U` does in `<B >: number, U: B>`, and an
+	// intersection naming it. Anything else they report against B rather than against the
+	// bound. A variable sub records the skolem as a bound in the variable arm below.
+	if sup, ok := super.(*soltype.SkolemType); ok && sup.Lower != nil {
+		if _, subIsVar := sub.(*soltype.TypeVarType); !subIsVar {
+			if !hasHardError(c.trialUnderProbeSeen(sub, sup.Lower, seen.Clone())) {
+				return c.constrain(sub, sup.Lower, seen, mutCtx)
+			}
+		}
+	}
+
 	// Structural cases first; fall through to the variable cases when a side
 	// that didn't match here is a TypeVarType.
 	switch sub := sub.(type) {
@@ -2709,9 +2724,10 @@ func (c *Context) skolemizeFuncBinder(ft *soltype.FuncType) *soltype.FuncType {
 // parameter list yields an empty substitution rather than nil, so a caller can apply the
 // result unconditionally.
 //
-// Each parameter's declared constraint becomes its skolem's upper bound, seeded through the
-// same substitution so a bound naming a sibling reaches that sibling's skolem. A function's
-// own binder and a class's own parameters are skolemized alike.
+// Each parameter's declared constraint becomes its skolem's upper bound and its declared
+// lower bound the skolem's lower bound, each seeded through the same substitution so a bound
+// naming a sibling reaches that sibling's skolem. A function's own binder and a class's own
+// parameters are skolemized alike.
 func (c *Context) skolemizeParams(params []*soltype.TypeParam) *typeSubst {
 	sks := make([]*soltype.SkolemType, len(params))
 	args := make([]soltype.Type, len(params))
@@ -2726,6 +2742,9 @@ func (c *Context) skolemizeParams(params []*soltype.TypeParam) *typeSubst {
 		// constraint.
 		if bounds := tp.DeclaredUpperBounds(); len(bounds) > 0 {
 			sks[i].Upper = bounds[0].Accept(sub, soltype.Positive)
+		}
+		if lowers := tp.DeclaredLowerBounds(); len(lowers) > 0 {
+			sks[i].Lower = lowers[0].Accept(sub, soltype.Positive)
 		}
 	}
 	return sub
@@ -2744,10 +2763,10 @@ func (c *Context) instantiateFuncBinder(ft *soltype.FuncType, lvl int) *soltype.
 	}
 	sub := newTypeSubst(ft.TypeParams, args, nil, nil)
 	for i, tp := range ft.TypeParams {
-		nvs[i].LowerBounds = acceptBounds(tp.Var.LowerBounds, sub)
-		// Read the declared bound from Constraint so an instance's substitution reaches it.
-		// The variable's first bound would leave `U: T` naming the class's `T`, and a call
-		// would then record its argument on that class variable.
+		// Read each declared bound from its field so an instance's substitution reaches it.
+		// The variable's first bound would leave `U: T` or `B >: T` naming the class's `T`,
+		// and a call would then record its argument on that class variable.
+		nvs[i].LowerBounds = acceptBounds(tp.AllLowerBounds(), sub)
 		nvs[i].UpperBounds = acceptBounds(tp.AllUpperBounds(), sub)
 	}
 	return substFuncBinder(ft, sub)

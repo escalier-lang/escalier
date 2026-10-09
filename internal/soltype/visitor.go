@@ -547,15 +547,15 @@ func acceptParams(ps []*FuncParam, v TypeVisitor, pol Polarity) ([]*FuncParam, b
 }
 
 // acceptTypeParams rewrites each type parameter's binding variable, its default, and its
-// declared constraint, so a rewriting visitor copies all three. The main such visitor is
+// declared bounds, so a rewriting visitor copies all four. The main such visitor is
 // freshenAbove. The binding variable is visited as a Type and must stay a *TypeVarType.
 // freshenAbove replaces it with a fresh variable whose bounds it has already freshened, so
-// the constraint carried as the variable's upper bound rides along on the copy. The
-// Constraint field is the same type reachable through a second path, and it is rewritten
-// here so the copy's field and the copy's variable agree. The default is visited
-// covariantly and may reference the variable or an earlier parameter, which Accept
-// rewrites through the visitor's cache. Copy-on-write mirrors acceptParams. A changed
-// parameter gets a fresh *TypeParam and unchanged ones keep their pointer.
+// the bounds carried on the variable ride along on the copy. The Constraint and LowerBound
+// fields are the same types reachable through a second path, and they are rewritten here so
+// the copy's fields and the copy's variable agree. The default is visited covariantly and
+// may reference the variable or an earlier parameter, which Accept rewrites through the
+// visitor's cache. Copy-on-write mirrors acceptParams. A changed parameter gets a fresh
+// *TypeParam and unchanged ones keep their pointer.
 func acceptTypeParams(tps []*TypeParam, v TypeVisitor, pol Polarity) ([]*TypeParam, bool) {
 	out := tps
 	changed := false
@@ -569,12 +569,16 @@ func acceptTypeParams(tps []*TypeParam, v TypeVisitor, pol Polarity) ([]*TypePar
 		if cons != nil {
 			cons = cons.Accept(v, pol)
 		}
-		if nv != tp.Var || def != tp.Default || cons != tp.Constraint {
+		lower := tp.LowerBound
+		if lower != nil {
+			lower = lower.Accept(v, pol)
+		}
+		if nv != tp.Var || def != tp.Default || cons != tp.Constraint || lower != tp.LowerBound {
 			if !changed {
 				out = append([]*TypeParam(nil), tps...)
 				changed = true
 			}
-			out[i] = &TypeParam{Name: tp.Name, Var: nv, Default: def, Constraint: cons}
+			out[i] = &TypeParam{Name: tp.Name, Var: nv, Default: def, Constraint: cons, LowerBound: lower}
 		}
 	}
 	return out, changed

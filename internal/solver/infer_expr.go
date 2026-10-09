@@ -437,9 +437,20 @@ func (c *checker) inferFunc(scope *Scope, lvl int, sig ast.FuncSig, body *ast.Bl
 	// The body has to work for every instantiation its type parameters' bounds allow, so
 	// those parameters are rigid while it is walked and checked against the return
 	// annotation. Nothing after that constrains a parameter from the sub side.
+	//
+	// signatureFloors counts each parameter's lower bounds as the resolved signature left
+	// them, so checkTypeParamsProducible reads only what the body adds. A type reference in
+	// the signature records a bound live, as `b: Box<T>` records `number` on `T` for
+	// `class Box<B >: number>`, and a declared `>:` bound is seeded the same way.
+	signatureFloors := make(map[*soltype.TypeVarType]int, len(typeParams))
+	for _, tp := range typeParams {
+		signatureFloors[tp.Var] = len(tp.Var.LowerBounds)
+	}
 	if hasBody && len(typeParams) > 0 {
 		// A type forced into a parameter from below is left to checkTypeParamsProducible,
-		// which names the parameter and the type the body forced.
+		// which names the parameter and the type the body forced. A binder with a declared
+		// lower bound is rigid from below regardless, so `return 1` against `-> B` with
+		// `B >: number` is checked against the bound rather than recorded as a floor.
 		defer c.ctx.holdTypeParamsRigid(typeParams, false)()
 	}
 	if hasBody {
@@ -646,7 +657,7 @@ func (c *checker) inferFunc(scope *Scope, lvl int, sig ast.FuncSig, body *ast.Bl
 		// A body-carrying generic function must actually produce every type parameter it
 		// declares in an output position. A bodyless `declare fn` asserts its signature
 		// with no body to check, so it is not verified here.
-		c.checkTypeParamsProducible(node, ft)
+		c.checkTypeParamsProducible(node, ft, signatureFloors)
 	} else {
 		c.lowerLifetimeParamBounds(sig.LifetimeParams, lvl)
 	}

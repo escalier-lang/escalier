@@ -446,7 +446,7 @@ func coalesceScheme(t soltype.Type, genLevel int, declared []*soltype.TypeParam)
 		// with, and retaining it would stop a slot the display elides from eliding, so
 		// `declare class Task<T, E = never>` would read `<T, E = never> {new () -> Task<T, E>}`
 		// where its own handle renders `{new () -> Task<never>}`.
-		if tp.Constraint != nil {
+		if tp.Constraint != nil || tp.LowerBound != nil {
 			keep.Add(tp.Var)
 		}
 	}
@@ -536,6 +536,9 @@ func displayTypeParams(
 		}
 		if cp.Constraint != nil {
 			cp.Constraint = toDisplay.apply(cp.Constraint)
+		}
+		if cp.LowerBound != nil {
+			cp.LowerBound = toDisplay.apply(cp.LowerBound)
 		}
 		if cp.Default != nil {
 			cp.Default = toDisplay.apply(cp.Default)
@@ -732,9 +735,13 @@ func cleanBinderBounds(
 	declared []*soltype.TypeParam,
 ) map[*soltype.TypeVarType]*soltype.TypeVarType {
 	declaredBound := map[*soltype.TypeVarType]soltype.Type{}
+	declaredLower := map[*soltype.TypeVarType]soltype.Type{}
 	for _, tp := range declared {
 		if tp.Constraint != nil {
 			declaredBound[tp.Var] = tp.Constraint
+		}
+		if tp.LowerBound != nil {
+			declaredLower[tp.Var] = tp.LowerBound
 		}
 	}
 	out := map[*soltype.TypeVarType]*soltype.TypeVarType{}
@@ -744,6 +751,9 @@ func cleanBinderBounds(
 		lo, loChanged := dropSameClassVars(v.LowerBounds, rep, simp)
 		if bound, isDeclared := declaredBound[v]; isDeclared {
 			up, upChanged = []soltype.Type{bound}, true
+		}
+		if bound, isDeclared := declaredLower[v]; isDeclared {
+			lo, loChanged = []soltype.Type{bound}, true
 		}
 		if !upChanged && !loChanged {
 			continue
@@ -1028,6 +1038,9 @@ func paramsForArgs(tps []*soltype.TypeParam, args []soltype.Type, subst *typeSub
 		// reference passes.
 		if tp.Constraint != nil {
 			cp.Constraint = subst.apply(tp.Constraint)
+		}
+		if tp.LowerBound != nil {
+			cp.LowerBound = subst.apply(tp.LowerBound)
 		}
 		if tp.Default != nil {
 			cp.Default = subst.apply(tp.Default)
@@ -1631,6 +1644,9 @@ func equalTypeWith(a, b soltype.Type, ctx *alphaCtx) bool {
 			for i := range a.TypeParams {
 				at, bt := a.TypeParams[i], b.TypeParams[i]
 				if !equalTypeSliceWith(at.AllUpperBounds(), bt.AllUpperBounds(), ctx) {
+					return false
+				}
+				if !equalTypeSliceWith(at.AllLowerBounds(), bt.AllLowerBounds(), ctx) {
 					return false
 				}
 				if (at.Default == nil) != (bt.Default == nil) {
