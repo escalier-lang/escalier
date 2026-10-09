@@ -1466,6 +1466,12 @@ func (c *checker) stubParamType(scope *Scope, lvl int, fn *ast.FuncExpr, p *ast.
 		return c.freshAt(lvl)
 	}
 	errsLen := len(c.errs)
+	// c.namedLifetimes maps each lifetime name in scope to its variable, and resolving an
+	// annotation that writes a name not in it, such as the `'a` of `x: &'a T`, adds an
+	// entry. Here the map is the class's own, since the member's signature has not opened a
+	// scope of its own yet. The annotation is resolved against a copy, and the class's map
+	// is put back afterward. A name the member binds then still resolves in the body pass
+	// to the variable that pass mints for it, rather than to one minted here.
 	savedNamedLts := c.namedLifetimes
 	c.namedLifetimes = maps.Clone(savedNamedLts)
 	t := c.paramType(scope, p, lvl)
