@@ -404,6 +404,19 @@ func TestTypeParamBoundCycle(t *testing.T) {
 			`,
 		},
 		{
+			// Following an F-bound replaces `T <: X` with `Cmp<U> <: X`, which consumes a `Cmp`
+			// from `X` or fails, so the chain closes only against the infinite unfolding
+			// `Cmp<Cmp<…>>`. `T` is below that tree, so closing there is right where closing a
+			// bare chain is not.
+			name: "FBoundClosesOnlyAgainstItsUnfolding",
+			src: `
+				class Cmp<X> { value: X }
+				type Rec = Cmp<Rec>
+				fn f<T: Cmp<U>, U: Cmp<T>>(x: T) -> Rec { return x }
+			`,
+			want: "fn <T: Cmp<U>, U: Cmp<T>>(x: T) -> Rec",
+		},
+		{
 			// `T <: U` and `U >: T` say the same thing, and neither chain returns to its start.
 			name: "OppositeDirectionsAreNotACycle",
 			src:  `fn f<T: U, U >: T>(x: T) -> U { return x }`,
