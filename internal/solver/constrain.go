@@ -1083,12 +1083,31 @@ func (c *Context) constrain(sub, super soltype.Type, seen *seenPairs, mutCtx boo
 	if subVar, ok := sub.(*soltype.TypeVarType); ok {
 		if rp, rigid := c.rigidParams[subVar]; rigid {
 			superVar, superIsVar := super.(*soltype.TypeVarType)
+			superRp := c.rigidParams[superVar]
 			switch {
 			case !superIsVar:
 				return c.constrain(c.rigidSkolem(rp), super, seen, mutCtx)
-			case c.rigidParams[superVar] == nil:
+			case superRp == nil:
 				return c.constrainRigidParamIntoVar(subVar, superVar, seen, mutCtx)
+			case superRp.group != rp.group:
+				// A parameter of one declaration meeting a parameter of an enclosing one is
+				// compared skolem to skolem, so the relation has to follow from the inner
+				// parameter's own bounds. In `(self.key)(x)` with `x: B` and
+				// `key: fn (x: U) -> number`, a method's `B` meets its class's `U`. That
+				// holds for `contains<B: U>` and fails for `contains<B>`.
+				return c.constrain(c.rigidSkolem(rp), c.rigidSkolem(superRp), seen, mutCtx)
 			}
+		}
+	}
+	// On the super side, a parameter held rigid from below takes a type with no variables in
+	// it only as its skolem, so `return 5` against `-> U` is reported at the return. A type
+	// with a variable in it is recorded on the parameter as before. That variable may still
+	// be inferred to the parameter itself, as an unannotated `p` is by
+	// `fn g<U>(u: U, p) -> U { return p }`, and a skolem recorded on it would reach the
+	// signature.
+	if superVar, ok := super.(*soltype.TypeVarType); ok {
+		if rp, rigid := c.rigidParams[superVar]; rigid && rp.fromBelow && len(typeVarsIn(sub)) == 0 {
+			return c.constrain(sub, c.rigidSkolem(rp), seen, mutCtx)
 		}
 	}
 

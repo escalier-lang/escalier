@@ -435,7 +435,9 @@ func (c *checker) inferFunc(scope *Scope, lvl int, sig ast.FuncSig, body *ast.Bl
 	// those parameters are rigid while it is walked and checked against the return
 	// annotation. Nothing after that constrains a parameter from the sub side.
 	if hasBody && len(typeParams) > 0 {
-		defer c.ctx.holdTypeParamsRigid(typeParams)()
+		// A type forced into a parameter from below is left to checkTypeParamsProducible,
+		// which names the parameter and the type the body forced.
+		defer c.ctx.holdTypeParamsRigid(typeParams, false)()
 	}
 	if hasBody {
 		// PR3: open a fresh function context so every ReturnStmt encountered while

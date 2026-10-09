@@ -318,7 +318,7 @@ func TestInferUnusedTypeParamOnClassAndEnum(t *testing.T) {
 			// handle what it declares, so the parameter naming it is doing work.
 			name: "ClassConstructorThrowsTheParameter",
 			src: `
-				declare fn boom() throws number
+				declare fn boom<X>() throws X
 				class Boom<E> { x: number, constructor(&mut self) throws E { self.x = 1
 			boom() } }
 			`,
@@ -405,7 +405,7 @@ func TestInferUnusedTypeParamSkipsARecoveredDeclaration(t *testing.T) {
 			// opens its window, so the rejected default's news reaches the warning through the
 			// shell rather than through that window. U is left with no default to be used at.
 			name: "ClassParameterWithAForwardDefault",
-			src:  `class Bad<T = U, U = number> { x: T, constructor(&mut self) { self.x = 0 } }`,
+			src:  `class Bad<T = U, U = number> { x: T, constructor(&mut self, x: T) { self.x = x } }`,
 			want: []string{
 				"1:15-1:16: the default for type parameter `T` cannot reference `U`, " +
 					"which is declared after it",
