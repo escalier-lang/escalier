@@ -157,8 +157,12 @@ func TestAMethodBinderBoundIsAnInputPosition(t *testing.T) {
 			`,
 		},
 		{
-			// A field's input positions always count, so a generic function held in one makes
-			// C invariant.
+			// Unlike the method in ABoundBesideAReturnWidens, the held function is whatever the
+			// constructor was given. It can close over state fixed to the instance's argument,
+			// such as a `fn (x) { log.push(x) return x }` over a `log: Array<number>`. Read
+			// through a widened `C<number | string>`, `f("s")` would push a string into
+			// `log`. Nothing checks the stored function the way the override check checks a
+			// method, so the field's input position counts and C is invariant.
 			name: "AHeldFunctionsBoundBlocksWidening",
 			src: `
 				class C<T> {

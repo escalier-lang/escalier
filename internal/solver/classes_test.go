@@ -406,9 +406,10 @@ func TestInferBodyVariance(t *testing.T) {
 			wantInputs: []bool{true},
 		},
 		{
-			// `readonly f: <U: T>(x: U) -> T`. A field's input positions always count, so a
-			// generic function held in one takes `T` in through its bound and gives it back
-			// through its return.
+			// `readonly f: <U: T>(x: U) -> T`. A field holds whatever function the constructor
+			// was given, which can close over state fixed to the instance's argument and store
+			// what it is passed there. So unlike a `&self` method's, its input positions always
+			// count. It takes `T` in through its bound and gives it back through its return.
 			name: "a held function's binder bound beside its return is invariant",
 			def: oneParam(func(tv *soltype.TypeVarType) (*soltype.ObjectType, []*soltype.ClassType) {
 				u := &soltype.TypeVarType{ID: 2, UpperBounds: []soltype.Type{tv}}
