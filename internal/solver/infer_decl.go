@@ -373,10 +373,10 @@ func (s *skolemizer) EnterType(t soltype.Type, pol soltype.Polarity) soltype.Ent
 
 func (s *skolemizer) ExitType(t soltype.Type, _ soltype.Polarity) soltype.Type { return t }
 
-// skolemizeBound resolves a type parameter's declared constraint into its skolem's Upper,
+// skolemizeBound resolves a type parameter's declared upper bound into its skolem's Upper,
 // substituting a sibling parameter for that sibling's skolem. resolveTypeParams records at
-// most one constraint per parameter, itself an IntersectionType for a `<T: A & B>` bound, so
-// an unconstrained parameter returns nil and any constraint is the single skolemized bound.
+// most one upper bound per parameter, itself an IntersectionType for a `<T: A & B>` bound, so
+// an unbounded parameter returns nil and any bound is the single skolemized bound.
 func (s *skolemizer) skolemizeBound(bounds []soltype.Type) soltype.Type {
 	if len(bounds) == 0 {
 		return nil

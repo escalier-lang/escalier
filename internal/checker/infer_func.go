@@ -170,10 +170,10 @@ func (c *Checker) resolveTypeParams(
 			defaultType.SetProvenance(&ast.NodeProvenance{Node: tp.Default})
 			errors = slices.Concat(errors, defaultErrors)
 		}
-		if tp.Constraint != nil {
+		if tp.UpperBound != nil {
 			var constraintErrors []Error
-			constraintType, constraintErrors = c.inferTypeAnn(funcCtx, tp.Constraint)
-			constraintType.SetProvenance(&ast.NodeProvenance{Node: tp.Constraint})
+			constraintType, constraintErrors = c.inferTypeAnn(funcCtx, tp.UpperBound)
+			constraintType.SetProvenance(&ast.NodeProvenance{Node: tp.UpperBound})
 			errors = slices.Concat(errors, constraintErrors)
 		}
 		typeParam := &type_system.TypeParam{

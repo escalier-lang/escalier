@@ -95,8 +95,8 @@ func typeAnnToType(typeAnn ast.TypeAnn) Type {
 			typeParams = make([]*TypeParam, len(ta.TypeParams))
 			for i, tp := range ta.TypeParams {
 				var constraint Type
-				if tp.Constraint != nil {
-					constraint = typeAnnToType(tp.Constraint)
+				if tp.UpperBound != nil {
+					constraint = typeAnnToType(tp.UpperBound)
 				}
 				var defaultType Type
 				if tp.Default != nil {

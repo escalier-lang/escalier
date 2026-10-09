@@ -12,11 +12,11 @@ import (
 // since a default and a bound need opposite visibility. Pass 1 mints one fresh var per parameter.
 // Pass 2 resolves each parameter's default and then declares that parameter, so a default reads
 // only the earlier siblings, the ones instantiation can substitute for it. Pass 3 resolves each
-// lower bound into its var's lower bound and each constraint into its var's upper bound against
+// lower bound into its var's lower bound and each upper bound into its var's upper bound against
 // the full list, so a forward `<T: U, U>`, an F-bound `<T: Foo<T>>` and a `<B >: T, T>` all
 // resolve. A bound chain that reaches its own parameter, as `<T: U, U: T>` does, resolves too
 // and is then reported by reportBoundCycles. Pass 4 checks each default and each lower bound
-// against its own parameter's constraint. The result stays in declaration order, and the alias,
+// against its own parameter's upper bound. The result stays in declaration order, and the alias,
 // class, enum, and function-annotation paths all route through here.
 func (c *checker) resolveTypeParams(scope *Scope, lvl int, params []*ast.TypeParam) []*soltype.TypeParam {
 	c.reportRequiredAfterDefault(params)
@@ -40,7 +40,7 @@ func (c *checker) resolveTypeParams(scope *Scope, lvl int, params []*ast.TypePar
 		}
 		scope.defineType(p.Name, TypeBinding{Type: out[i].Var})
 	}
-	// Pass 3: resolve each lower bound into its var's lower bound and each constraint into
+	// Pass 3: resolve each lower bound into its var's lower bound and each upper bound into
 	// its var's upper bound, now that every sibling name is in scope. Each is also kept on
 	// its own field, where later solving cannot overwrite it. The var's bound lists grow as
 	// constraints flow in, so a reader that wants what the source wrote reads the field.
@@ -51,20 +51,20 @@ func (c *checker) resolveTypeParams(scope *Scope, lvl int, params []*ast.TypePar
 				out[i].LowerBound = lt
 			}
 		}
-		if p.Constraint != nil {
-			if ct, ok := c.resolveTypeAnn(scope, p.Constraint, lvl); ok {
+		if p.UpperBound != nil {
+			if ct, ok := c.resolveTypeAnn(scope, p.UpperBound, lvl); ok {
 				c.ctx.addUpperBound(out[i].Var, ct)
-				out[i].Constraint = ct
+				out[i].UpperBound = ct
 			}
 		}
 	}
 	c.reportBoundCycles(params, out)
 	// Pass 4: check each default and each lower bound against its own parameter's
-	// constraint, and each default against its lower bound. `<T: string = number>`,
+	// upper bound, and each default against its lower bound. `<T: string = number>`,
 	// `<B >: string: number>` and `<B >: number = string>` are each rejected at the
 	// declaration. A default fills the argument at every use site that omits it, so a
 	// default outside either bound would supply an argument the bound forbids. A lower bound
-	// above the constraint leaves no type the parameter could be. This runs as its own pass
+	// above the upper bound leaves no type the parameter could be. This runs as its own pass
 	// because a bound is not resolved until pass 3, after the default it is compared against.
 	//
 	// Each comparison is trialed under a probe rather than run live, so any bound it appends
@@ -74,14 +74,14 @@ func (c *checker) resolveTypeParams(scope *Scope, lvl int, params []*ast.TypePar
 	// and leaves T carrying number as a lower bound, a claim that T must accept number that
 	// the source never wrote.
 	for i, p := range params {
-		if out[i].Default != nil && out[i].Constraint != nil {
-			c.blameConstraintErrors(p.Default, c.ctx.trialUnderProbe(out[i].Default, out[i].Constraint))
+		if out[i].Default != nil && out[i].UpperBound != nil {
+			c.blameConstraintErrors(p.Default, c.ctx.trialUnderProbe(out[i].Default, out[i].UpperBound))
 		}
 		if out[i].Default != nil && out[i].LowerBound != nil {
 			c.blameConstraintErrors(p.Default, c.ctx.trialUnderProbe(out[i].LowerBound, out[i].Default))
 		}
-		if out[i].LowerBound != nil && out[i].Constraint != nil {
-			c.blameConstraintErrors(p.LowerBound, c.ctx.trialUnderProbe(out[i].LowerBound, out[i].Constraint))
+		if out[i].LowerBound != nil && out[i].UpperBound != nil {
+			c.blameConstraintErrors(p.LowerBound, c.ctx.trialUnderProbe(out[i].LowerBound, out[i].UpperBound))
 		}
 	}
 	return out
@@ -107,7 +107,7 @@ func (c *checker) reportBoundCycles(decls []*ast.TypeParam, params []*soltype.Ty
 	for i, p := range params {
 		index[p.Var] = i
 	}
-	upper := func(p *soltype.TypeParam) []int { return c.boundSteps(p.Constraint, index) }
+	upper := func(p *soltype.TypeParam) []int { return c.boundSteps(p.UpperBound, index) }
 	lower := func(p *soltype.TypeParam) []int { return c.boundSteps(p.LowerBound, index) }
 	for _, direction := range []struct {
 		steps func(*soltype.TypeParam) []int
@@ -391,7 +391,7 @@ func (c *checker) checkTypeArgBounds(
 	ltArgs []soltype.Lifetime,
 	ref *ast.TypeRefTypeAnn,
 ) {
-	bounded := func(p *soltype.TypeParam) bool { return p.Constraint != nil || p.LowerBound != nil }
+	bounded := func(p *soltype.TypeParam) bool { return p.UpperBound != nil || p.LowerBound != nil }
 	if !slices.ContainsFunc(params, bounded) {
 		// Every parameter is unbounded, so there is nothing to compare and no substitution to
 		// build. This is the common shape for a generic alias.
@@ -418,9 +418,9 @@ func (c *checker) checkTypeArgBounds(
 		// Read each declared bound from the parameter rather than from its var's lists. A
 		// `<T: A & B>` bound resolves to one IntersectionType, so this is the whole of what
 		// the source wrote, and it cannot be displaced by a bound solving inferred.
-		if p.Constraint != nil {
-			bound := p.Constraint.Accept(subst, soltype.Positive)
-			if !fromDefault || bound != p.Constraint {
+		if p.UpperBound != nil {
+			bound := p.UpperBound.Accept(subst, soltype.Positive)
+			if !fromDefault || bound != p.UpperBound {
 				c.constrainTypeArg(site, args[i], bound)
 			}
 		}

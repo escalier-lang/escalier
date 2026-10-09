@@ -323,7 +323,7 @@ type wideningAncestor struct {
 func (c *checker) wideningAncestors(def *ClassDef, self *soltype.ClassType) []wideningAncestor {
 	keep := set.NewSet[*soltype.TypeVarType]()
 	for i, tp := range def.TypeParams {
-		if tp.Constraint != nil || i >= len(def.StorageVariance) {
+		if tp.UpperBound != nil || i >= len(def.StorageVariance) {
 			continue
 		}
 		if v := def.StorageVariance[i]; v == Covariant || v == Bivariant {
@@ -476,7 +476,7 @@ func widestInstance(def *ClassDef, instance *soltype.ClassType, keep set.Set[*so
 // paramBound returns the bound of def's i'th type parameter at instance's arguments, or
 // `unknown` for an unbounded parameter.
 func paramBound(def *ClassDef, instance *soltype.ClassType, i int) soltype.Type {
-	bound := def.TypeParams[i].Constraint
+	bound := def.TypeParams[i].UpperBound
 	if bound == nil {
 		return &soltype.UnknownType{}
 	}

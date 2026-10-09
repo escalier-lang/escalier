@@ -78,10 +78,10 @@ func elideVacuousIn(sig sigParts) {
 		}
 		elsewhere += countTypeParamRefs(sig.ret, tp.Name)
 		elsewhere += countTypeParamRefs(sig.throws, tp.Name)
-		elsewhere += countTypeParamRefs(tp.Constraint, tp.Name)
+		elsewhere += countTypeParamRefs(tp.UpperBound, tp.Name)
 		for _, other := range *sig.typeParams {
 			if other != tp {
-				elsewhere += countTypeParamRefs(other.Constraint, tp.Name)
+				elsewhere += countTypeParamRefs(other.UpperBound, tp.Name)
 				elsewhere += countTypeParamRefs(other.Default, tp.Name)
 			}
 		}
@@ -90,7 +90,7 @@ func elideVacuousIn(sig sigParts) {
 			continue
 		}
 
-		replacement := tp.Constraint
+		replacement := tp.UpperBound
 		if replacement == nil {
 			replacement = ast.NewUnknownTypeAnn(ast.Span{})
 		}
@@ -138,7 +138,7 @@ func (c *typeRefCounter) EnterTypeAnn(t ast.TypeAnn) bool {
 	// binding, so they are counted.
 	if fn, ok := t.(*ast.FuncTypeAnn); ok && bindsTypeParam(fn.TypeParams, c.name) {
 		for _, tp := range fn.TypeParams {
-			c.count += countTypeParamRefs(tp.Constraint, c.name)
+			c.count += countTypeParamRefs(tp.UpperBound, c.name)
 			c.count += countTypeParamRefs(tp.Default, c.name)
 		}
 		return false

@@ -22,7 +22,7 @@ func (v *typeParamRefVisitor) EnterTypeAnn(typeAnn TypeAnn) bool {
 	return true
 }
 
-// SortTypeParamsTopologically orders type parameters so that a parameter whose constraint
+// SortTypeParamsTopologically orders type parameters so that a parameter whose bound
 // or default names a sibling comes after that sibling, letting a caller resolve each
 // annotation with every name it mentions already in scope.
 //
@@ -31,7 +31,7 @@ func (v *typeParamRefVisitor) EnterTypeAnn(typeAnn TypeAnn) bool {
 // name it already holds, so a second entry under one name would panic rather than be
 // reported.
 //
-// A constraint or default that forms a cycle has no order that satisfies it, so the
+// A bound or default that forms a cycle has no order that satisfies it, so the
 // parameters come back in declaration order.
 func SortTypeParamsTopologically(typeParams []*TypeParam) []*TypeParam {
 	if len(typeParams) <= 1 {
@@ -51,8 +51,8 @@ func SortTypeParamsTopologically(typeParams []*TypeParam) []*TypeParam {
 		if tp.LowerBound != nil {
 			tpDeps = append(tpDeps, extractTypeParamRefs(tp.LowerBound, typeParamNames)...)
 		}
-		if tp.Constraint != nil {
-			tpDeps = append(tpDeps, extractTypeParamRefs(tp.Constraint, typeParamNames)...)
+		if tp.UpperBound != nil {
+			tpDeps = append(tpDeps, extractTypeParamRefs(tp.UpperBound, typeParamNames)...)
 		}
 		if tp.Default != nil {
 			tpDeps = append(tpDeps, extractTypeParamRefs(tp.Default, typeParamNames)...)

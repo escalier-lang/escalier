@@ -1181,7 +1181,7 @@ func (p *Parser) typeParam(allowVariance bool) *ast.TypeParam {
 	end := token.Span.End
 
 	var lowerBound ast.TypeAnn
-	var constraint ast.TypeAnn
+	var upperBound ast.TypeAnn
 	var default_ ast.TypeAnn
 
 	// A lower bound is written `>:` with no space between the two characters. Inside a
@@ -1198,9 +1198,9 @@ func (p *Parser) typeParam(allowVariance bool) *ast.TypeParam {
 
 	if p.lexer.peek().Type == Colon {
 		p.lexer.consume() // consume ':'
-		constraint = p.typeAnnRequired()
-		if constraint != nil {
-			end = constraint.Span().End
+		upperBound = p.typeAnnRequired()
+		if upperBound != nil {
+			end = upperBound.Span().End
 		}
 	}
 
@@ -1212,7 +1212,7 @@ func (p *Parser) typeParam(allowVariance bool) *ast.TypeParam {
 		}
 	}
 
-	typeParam := ast.NewTypeParam(name, lowerBound, constraint, default_, ast.NewSpan(start, end, p.lexer.source.ID))
+	typeParam := ast.NewTypeParam(name, lowerBound, upperBound, default_, ast.NewSpan(start, end, p.lexer.source.ID))
 	typeParam.Variance = variance
 	return &typeParam
 }

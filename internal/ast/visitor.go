@@ -62,15 +62,15 @@ func (v *DefaultVisitor) ExitObjTypeAnnElem(e ObjTypeAnnElem) {}
 func (v *DefaultVisitor) EnterLifetimeAnn(l LifetimeAnnNode) bool { return true }
 func (v *DefaultVisitor) ExitLifetimeAnn(l LifetimeAnnNode)       {}
 
-// acceptTypeParams visits the constraint and default of each binder in a `<…>`
+// acceptTypeParams visits the bounds and default of each binder in a `<…>`
 // quantifier list, which is the whole of what a type parameter contributes.
 func acceptTypeParams(v Visitor, params []*TypeParam) {
 	for _, tp := range params {
 		if tp.LowerBound != nil {
 			tp.LowerBound.Accept(v)
 		}
-		if tp.Constraint != nil {
-			tp.Constraint.Accept(v)
+		if tp.UpperBound != nil {
+			tp.UpperBound.Accept(v)
 		}
 		if tp.Default != nil {
 			tp.Default.Accept(v)

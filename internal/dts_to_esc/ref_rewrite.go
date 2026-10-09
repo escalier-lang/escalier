@@ -242,8 +242,8 @@ func (r *refRewriter) rewriteFuncSig(sig *ast.FuncSig) {
 
 func (r *refRewriter) rewriteTypeParams(tps []*ast.TypeParam) {
 	for _, tp := range tps {
-		if tp.Constraint != nil {
-			tp.Constraint = r.rewrite(tp.Constraint)
+		if tp.UpperBound != nil {
+			tp.UpperBound = r.rewrite(tp.UpperBound)
 		}
 		if tp.Default != nil {
 			tp.Default = r.rewrite(tp.Default)

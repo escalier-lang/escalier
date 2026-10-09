@@ -273,7 +273,7 @@ func typeParamMentions(params []*soltype.TypeParam, body []soltype.Type) (inBody
 	onBinder := make([]bool, len(params))
 	for j, p := range params {
 		clear(onBinder)
-		occurrences(slots, []soltype.Type{p.LowerBound, p.Constraint, p.Default}, onBinder)
+		occurrences(slots, []soltype.Type{p.LowerBound, p.UpperBound, p.Default}, onBinder)
 		onBinder[j] = false
 		for i, occurs := range onBinder {
 			inSibling[i] = inSibling[i] || occurs

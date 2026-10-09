@@ -111,7 +111,7 @@ func TestALowerBoundIsCarriedOnTheTypeParam(t *testing.T) {
 	lower, err := printer.Print(tp.LowerBound, printer.DefaultOptions())
 	require.NoError(t, err)
 	require.Equal(t, "T", lower)
-	upper, err := printer.Print(tp.Constraint, printer.DefaultOptions())
+	upper, err := printer.Print(tp.UpperBound, printer.DefaultOptions())
 	require.NoError(t, err)
 	require.Equal(t, "Base", upper)
 }

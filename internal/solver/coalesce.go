@@ -446,7 +446,7 @@ func coalesceScheme(t soltype.Type, genLevel int, declared []*soltype.TypeParam)
 		// with, and retaining it would stop a slot the display elides from eliding, so
 		// `declare class Task<T, E = never>` would read `<T, E = never> {new () -> Task<T, E>}`
 		// where its own handle renders `{new () -> Task<never>}`.
-		if tp.Constraint != nil || tp.LowerBound != nil {
+		if tp.UpperBound != nil || tp.LowerBound != nil {
 			keep.Add(tp.Var)
 		}
 	}
@@ -534,8 +534,8 @@ func displayTypeParams(
 		if cv, ok := cleaned[tp.Var]; ok {
 			cp.Var = cv
 		}
-		if cp.Constraint != nil {
-			cp.Constraint = toDisplay.apply(cp.Constraint)
+		if cp.UpperBound != nil {
+			cp.UpperBound = toDisplay.apply(cp.UpperBound)
 		}
 		if cp.LowerBound != nil {
 			cp.LowerBound = toDisplay.apply(cp.LowerBound)
@@ -737,8 +737,8 @@ func cleanBinderBounds(
 	declaredBound := map[*soltype.TypeVarType]soltype.Type{}
 	declaredLower := map[*soltype.TypeVarType]soltype.Type{}
 	for _, tp := range declared {
-		if tp.Constraint != nil {
-			declaredBound[tp.Var] = tp.Constraint
+		if tp.UpperBound != nil {
+			declaredBound[tp.Var] = tp.UpperBound
 		}
 		if tp.LowerBound != nil {
 			declaredLower[tp.Var] = tp.LowerBound
@@ -1036,8 +1036,8 @@ func paramsForArgs(tps []*soltype.TypeParam, args []soltype.Type, subst *typeSub
 		// may name either. Rewriting the one sort while skipping the other would render a
 		// bound under the lifetime the declaration wrote rather than the one the
 		// reference passes.
-		if tp.Constraint != nil {
-			cp.Constraint = subst.apply(tp.Constraint)
+		if tp.UpperBound != nil {
+			cp.UpperBound = subst.apply(tp.UpperBound)
 		}
 		if tp.LowerBound != nil {
 			cp.LowerBound = subst.apply(tp.LowerBound)
@@ -1638,7 +1638,7 @@ func equalTypeWith(a, b soltype.Type, ctx *alphaCtx) bool {
 		if len(a.TypeParams) > 0 {
 			// Bind the two functions' type parameters positionally, then compare each
 			// one's upper bounds and default under that
-			// binding. Binding all of them first lets a later parameter's constraint or
+			// binding. Binding all of them first lets a later parameter's bound or
 			// default reference an earlier one.
 			ctx.bindTypeParams(a.TypeParams, b.TypeParams)
 			for i := range a.TypeParams {

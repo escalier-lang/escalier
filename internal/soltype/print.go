@@ -346,8 +346,8 @@ func PrintAsSchemeWith(
 	// would read as if the source had written it.
 	for i, tp := range declaredAt {
 		var bounds []Type
-		if tp.Constraint != nil {
-			bounds = []Type{tp.Constraint}
+		if tp.UpperBound != nil {
+			bounds = []Type{tp.UpperBound}
 		}
 		labels[i] += p.typeParamSuffix(tp.DeclaredLowerBounds(), bounds, tp.Default)
 	}
@@ -524,7 +524,7 @@ func (c *ltVarCollector) EnterType(t Type, _ Polarity) EnterResult {
 		// variables seen up front to exclude every use in the receiver, params, and
 		// return. An outlives bound may reference an outer free lifetime, collected
 		// after the binders are marked so the bound's own parameter lifetimes stay
-		// excluded, mirroring freeTypeVars' treatment of a type parameter's constraint.
+		// excluded, mirroring freeTypeVars' treatment of a type parameter's upper bound.
 		// c.add skips lifetime if it's already in c.seen.
 		for _, lp := range t.LifetimeParams {
 			c.seen.Add(lp.Var)
@@ -1431,19 +1431,19 @@ func isNever(t Type) bool {
 	return never
 }
 
-// typeParamBinders renders each type parameter as a binder string — `U`, `U: T` for a
-// constraint, `U >: T` for a lower bound, `U = D` for a default, or `U >: L: T = D` for all
-// three — without the surrounding `<>`. The constraint is the parameter's
+// typeParamBinders renders each type parameter as a binder string — `U`, `U: T` for an
+// upper bound, `U >: T` for a lower bound, `U = D` for a default, or `U >: L: T = D` for all
+// three — without the surrounding `<>`. The upper bound is the parameter's
 // DeclaredUpperBounds and the lower bound its DeclaredLowerBounds. Several
 // bounds render joined by ` & `. The parameters must be bound first, through
-// bindTypeParams. Each binder then renders under its own name, and a binder whose constraint
+// bindTypeParams. Each binder then renders under its own name, and a binder whose bound
 // or default names a sibling parameter renders that name too. Callers that build a
 // combined quantifier prefix, such as PrintAsSchemeWith, join these with the scheme's
 // free variables and lifetimes into one list.
 func (p *namedPrinter) typeParamBinders(tps []*TypeParam) []string {
 	binders := make([]string, len(tps))
 	for i, tp := range tps {
-		// Reading the declared constraint is what renders `pick<T: U>` on a `C<number>` as
+		// Reading the declared bound is what renders `pick<T: U>` on a `C<number>` as
 		// `<T: number>`. printType gives the registered source name, else t{ID}.
 		binders[i] = p.printType(tp.Var) + p.typeParamSuffix(tp.DeclaredLowerBounds(), tp.DeclaredUpperBounds(), tp.Default)
 	}

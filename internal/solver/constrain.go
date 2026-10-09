@@ -2724,7 +2724,7 @@ func (c *Context) skolemizeFuncBinder(ft *soltype.FuncType) *soltype.FuncType {
 // parameter list yields an empty substitution rather than nil, so a caller can apply the
 // result unconditionally.
 //
-// Each parameter's declared constraint becomes its skolem's upper bound and its declared
+// Each parameter's declared upper bound becomes its skolem's upper bound and its declared
 // lower bound the skolem's lower bound, each seeded through the same substitution so a bound
 // naming a sibling reaches that sibling's skolem. A function's own binder and a class's own
 // parameters are skolemized alike.
@@ -2739,7 +2739,7 @@ func (c *Context) skolemizeParams(params []*soltype.TypeParam) *typeSubst {
 	for i, tp := range params {
 		// DeclaredUpperBounds yields at most one bound for a resolved parameter, itself an
 		// IntersectionType for a `<T: A & B>` bound, so the first bound is the whole declared
-		// constraint.
+		// upper bound.
 		if bounds := tp.DeclaredUpperBounds(); len(bounds) > 0 {
 			sks[i].Upper = bounds[0].Accept(sub, soltype.Positive)
 		}

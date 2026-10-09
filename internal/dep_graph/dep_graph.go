@@ -840,7 +840,7 @@ func (v *DependencyVisitor) EnterClassElem(elem ast.ClassElem) bool {
 	return false
 }
 
-// processTypeParams handles type parameters by adding them to scope and visiting constraints
+// processTypeParams adds each type parameter to scope and visits its bounds and default.
 func (v *DependencyVisitor) processTypeParams(typeParams []*ast.TypeParam) {
 	sortedTypeParams := ast.SortTypeParamsTopologically(typeParams)
 
@@ -852,8 +852,8 @@ func (v *DependencyVisitor) processTypeParams(typeParams []*ast.TypeParam) {
 			if tp.LowerBound != nil {
 				tp.LowerBound.Accept(v)
 			}
-			if tp.Constraint != nil {
-				tp.Constraint.Accept(v)
+			if tp.UpperBound != nil {
+				tp.UpperBound.Accept(v)
 			}
 			if tp.Default != nil {
 				tp.Default.Accept(v)

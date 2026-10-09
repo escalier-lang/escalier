@@ -319,9 +319,9 @@ func (c *Checker) buildTypeParams(
 	for _, typeParam := range sortedTypeParams {
 		var constraintType type_system.Type
 		var defaultType type_system.Type
-		if typeParam.Constraint != nil {
+		if typeParam.UpperBound != nil {
 			var constraintErrors []Error
-			constraintType, constraintErrors = c.inferTypeAnn(typeCtx, typeParam.Constraint)
+			constraintType, constraintErrors = c.inferTypeAnn(typeCtx, typeParam.UpperBound)
 			errors = slices.Concat(errors, constraintErrors)
 		}
 		if typeParam.Default != nil && !badDefaults.Contains(typeParam.Name) {

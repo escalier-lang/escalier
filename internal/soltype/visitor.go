@@ -565,7 +565,7 @@ func acceptTypeParams(tps []*TypeParam, v TypeVisitor, pol Polarity) ([]*TypePar
 		if def != nil {
 			def = def.Accept(v, pol)
 		}
-		cons := tp.Constraint
+		cons := tp.UpperBound
 		if cons != nil {
 			cons = cons.Accept(v, pol)
 		}
@@ -573,12 +573,12 @@ func acceptTypeParams(tps []*TypeParam, v TypeVisitor, pol Polarity) ([]*TypePar
 		if lower != nil {
 			lower = lower.Accept(v, pol)
 		}
-		if nv != tp.Var || def != tp.Default || cons != tp.Constraint || lower != tp.LowerBound {
+		if nv != tp.Var || def != tp.Default || cons != tp.UpperBound || lower != tp.LowerBound {
 			if !changed {
 				out = append([]*TypeParam(nil), tps...)
 				changed = true
 			}
-			out[i] = &TypeParam{Name: tp.Name, Var: nv, Default: def, Constraint: cons, LowerBound: lower}
+			out[i] = &TypeParam{Name: tp.Name, Var: nv, Default: def, UpperBound: cons, LowerBound: lower}
 		}
 	}
 	return out, changed

@@ -2113,8 +2113,8 @@ func (c *Checker) inferTypeParams(astTypeParams []*ast.TypeParam) []*type_system
 	for _, typeParam := range sortedTypeParams {
 		var constraintType type_system.Type
 		var defaultType type_system.Type
-		if typeParam.Constraint != nil {
-			constraintType = c.FreshVar(&ast.NodeProvenance{Node: typeParam.Constraint})
+		if typeParam.UpperBound != nil {
+			constraintType = c.FreshVar(&ast.NodeProvenance{Node: typeParam.UpperBound})
 		}
 		if typeParam.Default != nil {
 			defaultType = c.FreshVar(&ast.NodeProvenance{Node: typeParam.Default})
