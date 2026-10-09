@@ -338,7 +338,7 @@ type TypeParam struct {
 //
 // The field and the list can disagree once a substitution has rewritten the binder. Accept
 // rewrites UpperBound but leaves the variable's bound list alone, so on a `C<number>` the
-// method binder `m<U: T>` has an UpperBound of `number` while its variable's list still names
+// method binder `m<U: T>` has an UpperBound field of `number` while its variable's list still names
 // C's own `T`.
 func (tp *TypeParam) DeclaredUpperBounds() []Type {
 	if tp.UpperBound != nil {
