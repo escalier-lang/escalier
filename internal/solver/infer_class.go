@@ -268,8 +268,10 @@ func (c *checker) inferClassBodies(
 	// class's parameters are rigid while the bodies are inferred. A member's signature is
 	// linked to its stub inside the same window, since a sibling call recorded against the
 	// stub reaches the parameters through that link.
+	// A class has no counterpart to checkTypeParamsProducible, so its parameters are rigid
+	// from below too, and `self.v = 5` with `v: U` is reported at the write.
 	if len(typeParams) > 0 {
-		defer c.ctx.holdTypeParamsRigid(typeParams)()
+		defer c.ctx.holdTypeParamsRigid(typeParams, true)()
 	}
 	c.inferMemberBodies(scope, lvl, c.ctx.selfView(self, body), pending)
 	callFns = c.inferCallSignatures(scope, lvl, decl)

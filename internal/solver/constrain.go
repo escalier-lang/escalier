@@ -1099,6 +1099,17 @@ func (c *Context) constrain(sub, super soltype.Type, seen *seenPairs, mutCtx boo
 			}
 		}
 	}
+	// On the super side, a parameter held rigid from below takes a type with no variables in
+	// it only as its skolem, so `return 5` against `-> U` is reported at the return. A type
+	// with a variable in it is recorded on the parameter as before. That variable may still
+	// be inferred to the parameter itself, as an unannotated `p` is by
+	// `fn g<U>(u: U, p) -> U { return p }`, and a skolem recorded on it would reach the
+	// signature.
+	if superVar, ok := super.(*soltype.TypeVarType); ok {
+		if rp, rigid := c.rigidParams[superVar]; rigid && rp.fromBelow && len(typeVarsIn(sub)) == 0 {
+			return c.constrain(sub, c.rigidSkolem(rp), seen, mutCtx)
+		}
+	}
 
 	// An alias, a `typeof` query, a `keyof`, an indexed access `T[K]`, and a conditional are
 	// transparent for checking: evaluate the outermost operator to the type it stands for and

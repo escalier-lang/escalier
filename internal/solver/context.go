@@ -377,18 +377,22 @@ type rigidParam struct {
 	// group identifies the holdTypeParamsRigid call that made the parameter rigid, and so
 	// the declaration the parameter belongs to.
 	group int
+	// fromBelow marks a parameter that is also rigid on the super side of a constraint, so a
+	// type flowing into it is checked against its skolem.
+	fromBelow bool
 }
 
 // holdTypeParamsRigid makes params rigid for constrain until the returned function runs.
-// params are the type parameters of one declaration.
-func (c *Context) holdTypeParamsRigid(params []*soltype.TypeParam) (release func()) {
+// params are the type parameters of one declaration. fromBelow makes them rigid on the
+// super side of a constraint as well as the sub side.
+func (c *Context) holdTypeParamsRigid(params []*soltype.TypeParam, fromBelow bool) (release func()) {
 	if c.rigidParams == nil {
 		c.rigidParams = map[*soltype.TypeVarType]*rigidParam{}
 		c.rigidSkolems = map[*soltype.SkolemType]*soltype.TypeVarType{}
 	}
 	c.rigidGroups++
 	for _, tp := range params {
-		c.rigidParams[tp.Var] = &rigidParam{v: tp.Var, name: tp.Name, bounds: slices.Clone(tp.AllUpperBounds()), group: c.rigidGroups}
+		c.rigidParams[tp.Var] = &rigidParam{v: tp.Var, name: tp.Name, bounds: slices.Clone(tp.AllUpperBounds()), group: c.rigidGroups, fromBelow: fromBelow}
 	}
 	return func() {
 		for _, tp := range params {

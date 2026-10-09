@@ -112,6 +112,32 @@ class Leaf<V> extends Keyed<V> {
 			errs: []string{"5:19-5:20: cannot constrain U <: number"},
 		},
 		{
+			name: "AReturnForcingAValueIntoTheClassParameter",
+			src: `class C<U> {
+	v: U,
+	m(&self) -> U { return 5 },
+}`,
+			errs: []string{"3:25-3:26: cannot constrain 5 <: U"},
+		},
+		{
+			name: "AConstructorWritingAValueIntoTheClassParameter",
+			src: `class C<U> {
+	v: U,
+	constructor(&mut self) { self.v = 5 },
+}`,
+			errs: []string{"3:36-3:37: cannot constrain 5 <: U"},
+		},
+		{
+			// p is inferred, so it may still be inferred to U.
+			name: "AnInferredParameterFlowingIntoTheClassParameter",
+			src: `class C<U> {
+	v: U,
+	put(&mut self, p) { self.v = p },
+}`,
+			binding: "C",
+			want:    "<U> {new (v: U) -> C<U>}",
+		},
+		{
 			// A body that only moves the class's parameter around works for every instance.
 			name: "AMethodMovingTheClassParameter",
 			src: `class Box<T> {
