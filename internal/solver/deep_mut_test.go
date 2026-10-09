@@ -151,7 +151,7 @@ fn f(obj: mut {readonly a: number}) { sink(obj) }`
 	t.Run("return: readonly source as writable return", func(t *testing.T) {
 		src := "fn f(obj: mut {readonly a: number}) -> mut {a: number} { return obj }"
 		_, _, errs := inferSource(t, src)
-		require.Equal(t, []string{"1:1-1:70: readonly field a cannot satisfy a writable field requirement"}, messagesWithSpan(t, errs))
+		require.Equal(t, []string{"1:65-1:68: readonly field a cannot satisfy a writable field requirement"}, messagesWithSpan(t, errs))
 	})
 	t.Run("call: writable source into readonly param is fine", func(t *testing.T) {
 		src := `fn sink(o: mut {readonly a: number}) {}

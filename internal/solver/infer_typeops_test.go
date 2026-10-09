@@ -642,7 +642,7 @@ func TestInferKeyofResidualErrorMessage(t *testing.T) {
 	_, _, errs := inferSource(t, `fn f<T>(k: keyof T) -> number { return k }`)
 	require.Len(t, errs, 1)
 	require.IsType(t, &CannotConstrainError{}, errs[0])
-	require.Equal(t, "1:12-1:19: cannot constrain keyof t1 <: number", msgWithSpan(t, errs[0]))
+	require.Equal(t, "1:40-1:41: cannot constrain keyof t1 <: number", msgWithSpan(t, errs[0]))
 }
 
 // Checking a value against `keyof` of a non-productive recursive alias terminates instead of
@@ -1362,7 +1362,7 @@ func TestInferIndexResidualErrorMessage(t *testing.T) {
 	_, _, errs := inferSource(t, `fn f<T>(k: T["a"]) -> number { return k }`)
 	require.Len(t, errs, 1)
 	require.IsType(t, &CannotConstrainError{}, errs[0])
-	require.Equal(t, `1:12-1:18: cannot constrain t1["a"] <: number`, msgWithSpan(t, errs[0]))
+	require.Equal(t, `1:39-1:40: cannot constrain t1["a"] <: number`, msgWithSpan(t, errs[0]))
 }
 
 // An indexed access whose target or index is a bounded type parameter is checked through the
@@ -2004,7 +2004,7 @@ func TestInferCondResidualErrorMessage(t *testing.T) {
 	_, _, errs := inferSource(t, `fn f<T>(k: if T : number { string } else { boolean }) -> number { return k }`)
 	require.Len(t, errs, 1)
 	require.IsType(t, &CannotConstrainError{}, errs[0])
-	require.Equal(t, "1:12-1:51: cannot constrain if t1 : number { string } else { boolean } <: number", msgWithSpan(t, errs[0]))
+	require.Equal(t, "1:74-1:75: cannot constrain if t1 : number { string } else { boolean } <: number", msgWithSpan(t, errs[0]))
 }
 
 // TestInferCondResidualAgainstBound covers a residual conditional passed as a type argument to a
