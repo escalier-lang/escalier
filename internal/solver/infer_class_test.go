@@ -261,7 +261,7 @@ func TestInferClassGeneric(t *testing.T) {
 }
 
 // TestInferClassCrossParamBounds covers B4: a type-parameter bound may reference any sibling
-// parameter — forward, mutual, or through a generic class. Each case resolves its
+// parameter — forward, or through a generic class. Each case resolves its
 // cross-parameter references without reporting `an unknown-type error`, because the
 // shared resolveTypeParams declares every parameter in scope before resolving any bound, so a
 // bound reading a later-declared sibling finds it already in scope. A default is restricted
@@ -269,7 +269,6 @@ func TestInferClassGeneric(t *testing.T) {
 func TestInferClassCrossParamBounds(t *testing.T) {
 	srcs := map[string]string{
 		"ForwardConstraint": `class C<T: U, U> { value: T }`,
-		"MutualConstraint":  `class C<T: U, U: T> { value: T }`,
 		"EarlierDefault":    `class C<T, U = T> { value: U }`,
 		// The referenced class Cmp is declared before Foo so its instance type is in scope
 		// when Foo's bounds resolve. Resolving `Cmp<U>` / `Cmp<T>` combines the two-pass

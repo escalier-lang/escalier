@@ -1305,6 +1305,7 @@ func (*RestParamNotLastError) isSolverError()               {}
 func (*RestParamNeedsTypeError) isSolverError()             {}
 func (*OptionalRestParamError) isSolverError()              {}
 func (*TypeParamDefaultForwardRefError) isSolverError()     {}
+func (*TypeParamBoundCycleError) isSolverError()            {}
 func (*TypeParamRequiredAfterDefaultError) isSolverError()  {}
 func (*NotProductiveAliasError) isSolverError()             {}
 func (*ExpansionLimitError) isSolverError()                 {}
@@ -1635,6 +1636,46 @@ func (e *TypeParamDefaultForwardRefError) Message() string {
 		return fmt.Sprintf("the default for type parameter `%s` cannot reference `%s` itself", e.Param, e.Target)
 	}
 	return fmt.Sprintf("the default for type parameter `%s` cannot reference `%s`, which is declared after it", e.Param, e.Target)
+}
+
+// TypeParamBoundCycleError fires when a type parameter's bound chain reaches the parameter
+// itself through bare parameters of its own list, as `<T: U, U: T>` and `<B >: B>` do. Such a
+// chain names no type the parameter is bounded by, and following it while a body is checked
+// would close on the pair it started from. Param is the parameter the cycle is reported at,
+// Through the parameters the chain passes on its way back, in order, and Lower whether the
+// chain runs through lower bounds rather than upper ones.
+type TypeParamBoundCycleError struct {
+	Param   *ast.TypeParam
+	Through []*ast.TypeParam
+	Lower   bool
+}
+
+func (e *TypeParamBoundCycleError) Span() ast.Span { return e.Param.Span() }
+func (e *TypeParamBoundCycleError) Related() []ast.Span {
+	spans := make([]ast.Span, len(e.Through))
+	for i, p := range e.Through {
+		spans[i] = p.Span()
+	}
+	return spans
+}
+func (e *TypeParamBoundCycleError) Message() string {
+	side := "above"
+	if e.Lower {
+		side = "below"
+	}
+	msg := fmt.Sprintf("type parameter `%s` is bounded %s by itself", e.Param.Name, side)
+	quoted := make([]string, len(e.Through))
+	for i, p := range e.Through {
+		quoted[i] = "`" + p.Name + "`"
+	}
+	switch len(quoted) {
+	case 0:
+		return msg
+	case 1:
+		return msg + " through " + quoted[0]
+	default:
+		return msg + " through " + strings.Join(quoted[:len(quoted)-1], ", ") + " and " + quoted[len(quoted)-1]
+	}
 }
 
 // TypeParamRequiredAfterDefaultError fires when a type parameter with a default is declared

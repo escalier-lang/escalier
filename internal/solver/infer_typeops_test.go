@@ -1380,9 +1380,10 @@ func TestInferIndexResidualErrorMessage(t *testing.T) {
 // checked against its return annotation.
 func TestInferIndexOverBoundedParam(t *testing.T) {
 	tests := []struct {
-		name    string
-		src     string
-		wantErr string // "" ⇒ expect no error
+		name string
+		src  string
+		// wantErrs is every diagnostic in order. nil expects none.
+		wantErrs []string
 	}{
 		{
 			name: "ArrayTargetAccepted",
@@ -1408,7 +1409,7 @@ func TestInferIndexOverBoundedParam(t *testing.T) {
 				type N<X: string> = X
 				type F<T: Array<number> | []> = N<T[number]>
 			`,
-			wantErr: "cannot constrain number <: string",
+			wantErrs: []string{"cannot constrain number <: string"},
 		},
 		{
 			name: "ArrayOrNonEmptyTupleTargetRejected",
@@ -1416,7 +1417,7 @@ func TestInferIndexOverBoundedParam(t *testing.T) {
 				type N<X: string> = X
 				type F<T: Array<string> | [number]> = N<T[number]>
 			`,
-			wantErr: "cannot constrain number <: string",
+			wantErrs: []string{"cannot constrain number <: string"},
 		},
 		{
 			name: "ArrayOrTupleTargetReturnAccepted",
@@ -1450,7 +1451,7 @@ func TestInferIndexOverBoundedParam(t *testing.T) {
 				type N<X: string> = X
 				type F<D: number> = N<[1, "b", "c"][D]>
 			`,
-			wantErr: `cannot constrain 1 <: string`,
+			wantErrs: []string{`cannot constrain 1 <: string`},
 		},
 		{
 			// A parameter bounded by another parameter is checked through the end of the chain.
@@ -1470,7 +1471,7 @@ func TestInferIndexOverBoundedParam(t *testing.T) {
 				type N<X: string> = X
 				type F<T: Array<number>, U: T> = N<U[number]>
 			`,
-			wantErr: "cannot constrain number <: string",
+			wantErrs: []string{"cannot constrain number <: string"},
 		},
 		{
 			name: "ChainedIndexAccepted",
@@ -1481,12 +1482,16 @@ func TestInferIndexOverBoundedParam(t *testing.T) {
 		},
 		{
 			// A cycle of bounds names no type to check through, so the access stays residual.
+			// The cycle itself is reported at the declaration as well.
 			name: "CyclicBoundsRejected",
 			src: `
 				type N<X: string> = X
 				type F<T: U, U: T> = N<T[number]>
 			`,
-			wantErr: "cannot constrain t2[number] <: string",
+			wantErrs: []string{
+				"type parameter `T` is bounded above by itself through `U`",
+				"cannot constrain t2[number] <: string",
+			},
 		},
 		{
 			name: "NumericIndexReturnAccepted",
@@ -1496,12 +1501,11 @@ func TestInferIndexOverBoundedParam(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			_, _, errs := inferSource(t, tt.src)
-			if tt.wantErr == "" {
+			if tt.wantErrs == nil {
 				require.Empty(t, errs)
 				return
 			}
-			require.Len(t, errs, 1)
-			require.Equal(t, tt.wantErr, errs[0].Message())
+			require.Equal(t, tt.wantErrs, errorMessagesOf(errs))
 		})
 	}
 }

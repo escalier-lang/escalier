@@ -72,12 +72,13 @@ func TestTypeParamDefaultForwardRef(t *testing.T) {
 				val p: Pair = {a: 1, b: 2}
 			`,
 		},
-		// A bound is not substituted positionally, so a mutual F-bound keeps resolving.
+		// A bound is not substituted positionally, so a mutual F-bound keeps resolving. A
+		// bare mutual bound is a cycle, which TestTypeParamBoundCycle covers.
 		{
 			name: "MutualBoundAccepted",
 			src: `
-				type Pair<T: U, U: T> = {a: T, b: U}
-				val p: Pair<number, number> = {a: 1, b: 2}
+				type Box<X> = {v: X}
+				type Pair<T: Box<U>, U: Box<T>> = {a: T, b: U}
 			`,
 		},
 		// The nested `fn <U>(…)` quantifier declares its own `U`, so the `U` inside it reads
@@ -304,6 +305,122 @@ func TestTypeParamDefaultOutsideBoundReportedOnce(t *testing.T) {
 				msgs = append(msgs, e.Message())
 			}
 			require.Equal(t, tt.want, msgs)
+		})
+	}
+}
+
+// TestTypeParamBoundCycle covers a bound chain that reaches its own parameter through bare
+// parameters of the same list. Such a chain names no type the parameter is bounded by, and
+// the body check would close on it the way it closes a recursive type, so `x > 1` with
+// `x: T` would check under `<T: U, U: T>`. The chain is reported at the declaration, once
+// per cycle, in either direction. A bound that reaches a sibling through a type's structure,
+// as the F-bound `<T: Cmp<U>, U: Cmp<T>>` does, is not a cycle, and neither is a pair of
+// bounds in opposite directions.
+func TestTypeParamBoundCycle(t *testing.T) {
+	tests := []struct {
+		name string
+		src  string
+		// want is the rendered type of `f` when the case declares one.
+		want string
+		errs []string
+	}{
+		{
+			name: "UpperMutual",
+			src:  `fn f<T: U, U: T>(x: T) -> boolean { return x > 1 }`,
+			errs: []string{"type parameter `T` is bounded above by itself through `U`"},
+		},
+		{
+			name: "UpperSelf",
+			src:  `fn f<T: T>(x: T) -> boolean { return x > 1 }`,
+			errs: []string{"type parameter `T` is bounded above by itself"},
+		},
+		{
+			name: "LowerSelf",
+			src:  `fn f<B >: B>() -> B { return 1 }`,
+			errs: []string{"type parameter `B` is bounded below by itself"},
+		},
+		{
+			name: "LowerMutual",
+			src:  `fn f<A >: B, B >: A>() -> A { return 1 }`,
+			errs: []string{"type parameter `A` is bounded below by itself through `B`"},
+		},
+		{
+			// `constrain` reaches each member of an intersection on its own, so the chain
+			// runs through the `U` member.
+			name: "ThroughAnIntersection",
+			src:  `fn f<T: U & {a: number}, U: T>(x: T) -> boolean { return x > 1 }`,
+			errs: []string{"type parameter `T` is bounded above by itself through `U`"},
+		},
+		{
+			// `U | number <: number` needs `U <: number`, which the chain closes on, so the
+			// `number` member would satisfy the whole bound.
+			name: "ThroughAUnion",
+			src:  `fn f<T: U | number, U: T | number>(x: T) -> boolean { return x > 1 }`,
+			errs: []string{"type parameter `T` is bounded above by itself through `U`"},
+		},
+		{
+			name: "ThroughALowerUnion",
+			src:  `fn f<A >: B | 1, B >: A>() -> A { return 1 }`,
+			errs: []string{"type parameter `A` is bounded below by itself through `B`"},
+		},
+		{
+			name: "ThroughANestedUnion",
+			src:  `fn f<T: (U | number) & {a: number}, U: T>(x: T) -> boolean { return x > 1 }`,
+			errs: []string{"type parameter `T` is bounded above by itself through `U`"},
+		},
+		{
+			// A transparent alias is read as its body, which is the bare `U`.
+			name: "ThroughAnAlias",
+			src: `
+				type Same<X> = X
+				fn f<T: Same<U>, U: T>(x: T) -> boolean { return x > 1 }
+			`,
+			errs: []string{"type parameter `T` is bounded above by itself through `U`"},
+		},
+		{
+			// Each direction is its own cycle, reported on its own.
+			name: "BothDirections",
+			src:  `fn f<T >: U: U, U >: T: T>(x: T) -> boolean { return x > 1 }`,
+			errs: []string{
+				"type parameter `T` is bounded above by itself through `U`",
+				"type parameter `T` is bounded below by itself through `U`",
+			},
+		},
+		{
+			name: "ThreeLong",
+			src:  `class C<T: U, U: V, V: T> { value: T }`,
+			errs: []string{"type parameter `T` is bounded above by itself through `U` and `V`"},
+		},
+		{
+			name: "AliasMutual",
+			src:  `type P<T: U, U: T> = {a: T}`,
+			errs: []string{"type parameter `T` is bounded above by itself through `U`"},
+		},
+		{
+			name: "FBoundIsNotACycle",
+			src: `
+				class Cmp<X> { value: X }
+				class Foo<T: Cmp<U>, U: Cmp<T>> { value: T }
+			`,
+		},
+		{
+			// `T <: U` and `U >: T` say the same thing, and neither chain returns to its start.
+			name: "OppositeDirectionsAreNotACycle",
+			src:  `fn f<T: U, U >: T>(x: T) -> U { return x }`,
+			want: "fn <T: U, U >: T>(x: T) -> U",
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			values, _, errs := inferSource(t, tt.src)
+			if tt.errs == nil {
+				require.Empty(t, errorMessagesOf(errs))
+			} else {
+				require.Equal(t, tt.errs, errorMessagesOf(errs))
+			}
+			if tt.want != "" {
+				require.Equal(t, tt.want, values["f"])
+			}
 		})
 	}
 }
