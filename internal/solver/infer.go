@@ -776,6 +776,7 @@ func (c *checker) blameConstraintErrors(n ast.Node, errs []SolverError) {
 		switch err := e.(type) {
 		case *CannotConstrainError:
 			err.prov, err.site = c.prov, n
+			err.shownSub, err.shownSuper = c.ctx.nameRigidParams(err.Sub), c.ctx.nameRigidParams(err.Super)
 		case *ExpansionLimitError:
 			err.prov, err.site = c.prov, n
 		case *AmbiguousUnionCommitWarning:

@@ -64,6 +64,12 @@ type CannotConstrainError struct {
 	Sub, Super soltype.Type
 	prov       NodeResolver // M2.5: type→node index; assigned after Constrain returns (§3.5)
 	site       ast.Node     // M2.5: the constraint node n — the use, the fallback when Sub has no entry
+	// shownSub and shownSuper are the operands as the message renders them, each a copy of
+	// Sub or Super with every rigid type parameter's variable under the parameter's name.
+	// blameConstraintErrors assigns them, and nil leaves the operand itself to render. Sub
+	// and Super stay as `constrain` produced them, since Span resolves blame through their
+	// identity.
+	shownSub, shownSuper soltype.Type
 
 	// commitUnion and commitVar breadcrumb a failure back to a union-super trial that pinned a
 	// var. After `"hi" <: (T | number)` commits T, a later use of T as number fails here while
@@ -2768,7 +2774,14 @@ func (e *AsyncThrowsClauseError) Message() string {
 }
 
 func (e *CannotConstrainError) Message() string {
-	msg := fmt.Sprintf("cannot constrain %s <: %s", describe(e.Sub), describe(e.Super))
+	sub, super := e.Sub, e.Super
+	if e.shownSub != nil {
+		sub = e.shownSub
+	}
+	if e.shownSuper != nil {
+		super = e.shownSuper
+	}
+	msg := fmt.Sprintf("cannot constrain %s <: %s", describe(sub), describe(super))
 	if e.commitUnion != nil {
 		// An earlier value committed the e.commitVar branch of e.commitUnion, pinning that
 		// var. This later use forces an incompatible bound onto the same var, so the

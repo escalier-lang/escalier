@@ -417,6 +417,15 @@ func TestTypeParamBoundCycle(t *testing.T) {
 			want: "fn <T: Cmp<U>, U: Cmp<T>>(x: T) -> Rec",
 		},
 		{
+			// Two laps peel two `Cmp`s off the super and the third lap meets `number`.
+			name: "FBoundFailsOnceTheSuperRunsOut",
+			src: `
+				class Cmp<X> { value: X }
+				fn f<T: Cmp<U>, U: Cmp<T>>(x: T) -> Cmp<Cmp<number>> { return x }
+			`,
+			errs: []string{"cannot constrain Cmp<U> <: number"},
+		},
+		{
 			// `T <: U` and `U >: T` say the same thing, and neither chain returns to its start.
 			name: "OppositeDirectionsAreNotACycle",
 			src:  `fn f<T: U, U >: T>(x: T) -> U { return x }`,

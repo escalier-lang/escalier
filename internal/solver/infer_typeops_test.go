@@ -635,14 +635,13 @@ func TestInferKeyofAny(t *testing.T) {
 
 // A rejected constraint whose subject is a `keyof` residual names it structurally in the
 // diagnostic — `cannot constrain keyof t1 <: number` rather than the bare `?` the default
-// describe arm would render — so the inert node stays legible in error messages. describe is
-// the raw mid-constrain renderer, so the operand shows as the raw var `t1` rather than the
-// param name `T` the coalesced printer would use.
+// describe arm would render — so the inert node stays legible in error messages. The operand
+// names `T` as the declaration wrote it, since a rigid parameter renders under its name.
 func TestInferKeyofResidualErrorMessage(t *testing.T) {
 	_, _, errs := inferSource(t, `fn f<T>(k: keyof T) -> number { return k }`)
 	require.Len(t, errs, 1)
 	require.IsType(t, &CannotConstrainError{}, errs[0])
-	require.Equal(t, "1:40-1:41: cannot constrain keyof t1 <: number", msgWithSpan(t, errs[0]))
+	require.Equal(t, "1:40-1:41: cannot constrain keyof T <: number", msgWithSpan(t, errs[0]))
 }
 
 // Checking a value against `keyof` of a non-productive recursive alias terminates instead of
@@ -1355,14 +1354,14 @@ func TestInferIndexReductionError(t *testing.T) {
 }
 
 // A rejected constraint whose subject is an indexed-access residual names it structurally in the
-// diagnostic — `cannot constrain t1["a"] <: number` rather than the bare `?` the default describe
-// arm would render — so the inert node stays legible. describe is the raw mid-constrain renderer,
-// so the target shows as the raw var `t1` rather than the coalesced printer's param name `T`.
+// diagnostic — `cannot constrain T["a"] <: number` rather than the bare `?` the default describe
+// arm would render — so the inert node stays legible. The target names `T` as the declaration
+// wrote it, since a rigid parameter renders under its name.
 func TestInferIndexResidualErrorMessage(t *testing.T) {
 	_, _, errs := inferSource(t, `fn f<T>(k: T["a"]) -> number { return k }`)
 	require.Len(t, errs, 1)
 	require.IsType(t, &CannotConstrainError{}, errs[0])
-	require.Equal(t, `1:39-1:40: cannot constrain t1["a"] <: number`, msgWithSpan(t, errs[0]))
+	require.Equal(t, `1:39-1:40: cannot constrain T["a"] <: number`, msgWithSpan(t, errs[0]))
 }
 
 // An indexed access whose target or index is a bounded type parameter is checked through the
@@ -2008,7 +2007,7 @@ func TestInferCondResidualErrorMessage(t *testing.T) {
 	_, _, errs := inferSource(t, `fn f<T>(k: if T : number { string } else { boolean }) -> number { return k }`)
 	require.Len(t, errs, 1)
 	require.IsType(t, &CannotConstrainError{}, errs[0])
-	require.Equal(t, "1:74-1:75: cannot constrain if t1 : number { string } else { boolean } <: number", msgWithSpan(t, errs[0]))
+	require.Equal(t, "1:74-1:75: cannot constrain if T : number { string } else { boolean } <: number", msgWithSpan(t, errs[0]))
 }
 
 // TestInferCondResidualAgainstBound covers a residual conditional passed as a type argument to a
@@ -3710,7 +3709,7 @@ func TestInferTwoMappedMembersBindIndependently(t *testing.T) {
 	`)
 	require.Len(t, errs, 1)
 	require.Equal(t,
-		"cannot constrain {[K: keyof t1]: t1[K], [K: keyof t2]: t2[K]} <: {[K: keyof t2]: t2[K], [K: keyof t1]: t1[K]}",
+		"cannot constrain {[K: keyof T]: T[K], [K: keyof U]: U[K]} <: {[K: keyof U]: U[K], [K: keyof T]: T[K]}",
 		errs[0].Message())
 }
 
@@ -3777,17 +3776,17 @@ func TestInferMappedTypeErrorNamesModifiers(t *testing.T) {
 		{
 			name: "AddOptional",
 			src:  `fn f<T>(x: {[K]: T[K] for K in keyof T}) -> {[K]?: T[K] for K in keyof T} { return x }`,
-			want: "cannot constrain {[K: keyof t1]: t1[K]} <: {[K: keyof t1]?: t1[K]}",
+			want: "cannot constrain {[K: keyof T]: T[K]} <: {[K: keyof T]?: T[K]}",
 		},
 		{
 			name: "RemoveOptional",
 			src:  `fn f<T>(x: {[K]: T[K] for K in keyof T}) -> {[K]-?: T[K] for K in keyof T} { return x }`,
-			want: "cannot constrain {[K: keyof t1]: t1[K]} <: {[K: keyof t1]-?: t1[K]}",
+			want: "cannot constrain {[K: keyof T]: T[K]} <: {[K: keyof T]-?: T[K]}",
 		},
 		{
 			name: "AddReadonly",
 			src:  `fn f<T>(x: {[K]: T[K] for K in keyof T}) -> {readonly [K]: T[K] for K in keyof T} { return x }`,
-			want: "cannot constrain {[K: keyof t1]: t1[K]} <: {readonly [K: keyof t1]: t1[K]}",
+			want: "cannot constrain {[K: keyof T]: T[K]} <: {readonly [K: keyof T]: T[K]}",
 		},
 	}
 	for _, tt := range tests {
