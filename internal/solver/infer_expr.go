@@ -514,13 +514,13 @@ func (c *checker) inferFunc(scope *Scope, lvl int, sig ast.FuncSig, body *ast.Bl
 	// `return t` that fails against `-> U` is blamed at `t` rather than at the whole
 	// declaration. A bare `return` and a body with no return point are checked at the
 	// declaration.
-	points := []returnPoint{{site: node, t: ret}}
+	returnPoints := []returnPoint{{site: node, t: ret}}
 	if len(collected) > 0 {
-		points = make([]returnPoint, len(collected))
+		returnPoints = make([]returnPoint, len(collected))
 		for i, t := range collected {
-			points[i] = returnPoint{site: node, t: t}
+			returnPoints[i] = returnPoint{site: node, t: t}
 			if retExprs[i] != nil {
-				points[i].site = retExprs[i]
+				returnPoints[i].site = retExprs[i]
 			}
 		}
 	}
@@ -570,7 +570,7 @@ func (c *checker) inferFunc(scope *Scope, lvl int, sig ast.FuncSig, body *ast.Bl
 	// stays `never`. Iterating or delegating is what advances it, and those sites read the
 	// slot back into their enclosing sink.
 	if sig.Gen {
-		ret = c.genReturn(node, gen, returnsUniquelyOwned, points, ret, throws, hasBody)
+		ret = c.genReturn(node, gen, returnsUniquelyOwned, returnPoints, ret, throws, hasBody)
 		throws = nil
 	} else if sig.Async {
 		// The async arm also moves the body's throws. An `async fn` rejects its promise
@@ -580,8 +580,8 @@ func (c *checker) inferFunc(scope *Scope, lvl int, sig ast.FuncSig, body *ast.Bl
 			// Only constrain when there IS a body, for the reason the non-async arm
 			// below spells out.
 			if hasBody {
-				for _, p := range points {
-					c.constrain(p.site, p.t, asyncInner) // body <: declared inner
+				for _, rp := range returnPoints {
+					c.constrain(rp.site, rp.t, asyncInner) // body <: declared inner
 				}
 			}
 			ret = asyncAnnT
@@ -599,8 +599,8 @@ func (c *checker) inferFunc(scope *Scope, lvl int, sig ast.FuncSig, body *ast.Bl
 			// function simply adopts the annotation (constraining the synthetic `undefined`
 			// would raise a spurious `undefined <: T`).
 			if hasBody {
-				for _, p := range points {
-					c.constrainReturnAgainstAnnotation(p.site, returnsUniquelyOwned, p.t, annT) // body <: declared return
+				for _, rp := range returnPoints {
+					c.constrainReturnAgainstAnnotation(rp.site, returnsUniquelyOwned, rp.t, annT) // body <: declared return
 				}
 				// No caller can observe an annotated return the body never reaches, so warn
 				// and point at the annotation. A body that diverges into `never` on purpose
@@ -1194,11 +1194,11 @@ func (c *checker) resolveGenSinks(scope *Scope, node ast.Node, sig ast.FuncSig, 
 // slot and what the body raises in the generator's Throws. A bodyless `declare gen fn`
 // wraps `unknown` rather than the synthetic `undefined`, which would signal that it
 // returns nothing.
-func (c *checker) genReturn(node ast.Node, gs *genSinks, returnsUniquelyOwned bool, points []returnPoint, bodyType, throws soltype.Type, hasBody bool) soltype.Type {
+func (c *checker) genReturn(node ast.Node, gs *genSinks, returnsUniquelyOwned bool, returnPoints []returnPoint, bodyType, throws soltype.Type, hasBody bool) soltype.Type {
 	if gs.ann != nil {
 		if hasBody {
-			for _, p := range points {
-				c.constrainReturnAgainstAnnotation(p.site, returnsUniquelyOwned, p.t, gs.ann.Ret) // body <: declared Ret
+			for _, rp := range returnPoints {
+				c.constrainReturnAgainstAnnotation(rp.site, returnsUniquelyOwned, rp.t, gs.ann.Ret) // body <: declared Ret
 			}
 		}
 		return gs.ann
