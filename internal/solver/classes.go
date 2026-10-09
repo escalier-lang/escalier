@@ -629,6 +629,37 @@ func measureBodyVariance(def *ClassDef, selfName string, env varianceEnv, assume
 			arg.Accept(superRef, soltype.Negative)
 		}
 	}
+	// The reader exemption. A non-mutating method's input positions are set aside for a
+	// parameter that already has an output position in the immutable view, so a class such
+	// as `class Bag<T> { readonly items: Array<T>, contains(&self, x: T) -> boolean }` stays
+	// covariant. readerNeg reports whether a reader's input position still counts for the
+	// parameter.
+	//
+	// Setting them aside is safe because a wider argument has nowhere to go:
+	//   - The method cannot store it. Its receiver gives it no write access to the instance,
+	//     and nothing outside the method can be typed by the class's parameter.
+	//   - What the method returns is read at the view's own argument, so a value the wider
+	//     argument admits comes back typed as the wider argument.
+	//   - An override in a subclass could still rely on the narrower argument. covariantInputs
+	//     marks the parameter, so the override check also reads the method at the class's
+	//     widest instance and rejects such an override.
+	//
+	// The exemption covers, for a method whose receiver is `&self` or `self`:
+	//   - its value parameters, as `x: T` in `contains(&self, x: T)`;
+	//   - its own binders' upper bounds, as `T` in `m<U: T>(&self, x: U) -> T`.
+	//
+	// It does not cover the positions below, which count in full:
+	//   - every position of a method whose receiver is `&mut self` or `mut self`, and of a
+	//     setter. These count toward the mutable view alone, since an immutable reference
+	//     cannot reach them, and there they make a parameter they take and return invariant.
+	//   - a field's input positions, including those of a function the field holds. The
+	//     function is whatever the constructor was given, and it can close over state fixed
+	//     to the instance's argument.
+	//   - the write a mutable reference makes to a field that is not `readonly`.
+	//   - the `extends` arguments, which superRef marks in both directions.
+	//
+	// A parameter with no output position in the immutable view keeps its readers' input
+	// positions, so `m<U: T>(&self, x: U) -> boolean` alone makes T contravariant.
 	for i := range n {
 		ownPos := fieldRef.pos[i] || otherRef.pos[i] || readerRef.pos[i]
 		readerNeg := readerRef.neg[i] && !ownPos
@@ -801,6 +832,26 @@ func (v *varianceVisitor) EnterType(t soltype.Type, pol soltype.Polarity) soltyp
 			t.Accept(v.withMutable(false), pol)
 			return soltype.EnterResult{SkipChildren: true}
 		}
+		if len(t.TypeParams) == 0 {
+			break
+		}
+		// A binder's upper bound limits what a caller may pass for it, so it is an input
+		// position and reads at the opposite polarity of the function. `T` in
+		// `m<U: T>(&self, x: U)` takes input the way it does in `m(&self, x: T)`. A default
+		// fills an argument the caller omits, so it reads at the function's own polarity.
+		// Accept walks both at the function's polarity, so the binders are walked here and
+		// the rest of the signature is handed back to Accept without them.
+		for _, tp := range t.TypeParams {
+			for _, b := range tp.DeclaredUpperBounds() {
+				b.Accept(v, pol.Flip())
+			}
+			if tp.Default != nil {
+				tp.Default.Accept(v, pol)
+			}
+		}
+		bare := *t
+		bare.TypeParams = nil
+		return soltype.EnterResult{Type: &bare}
 	case *soltype.AliasType:
 		// An alias stands for its body, so the body is what decides the polarity each
 		// argument lands at. A reference with no body to read, or one past maxAliasDepth,

@@ -81,6 +81,110 @@ func TestAMethodBinderBoundReadsAtTheInstance(t *testing.T) {
 	}
 }
 
+// TestAMethodBinderBoundIsAnInputPosition covers how a method binder's bound counts toward
+// its class's variance. A bound limits what a caller may pass for the binder, so the class
+// parameter it names sits in an input position.
+func TestAMethodBinderBoundIsAnInputPosition(t *testing.T) {
+	tests := []struct {
+		name string
+		src  string
+		errs []string
+	}{
+		{
+			// The bound is the only place T appears, so C is contravariant and does not
+			// widen.
+			name: "ABoundAloneBlocksWidening",
+			src: `
+				class C<T> {
+					m<U: T>(&self, x: U) -> boolean { return false },
+				}
+				fn widen(c: &C<number>) -> &C<number | string> { return c }
+			`,
+			errs: []string{"cannot constrain string <: number"},
+		},
+		{
+			name: "ABoundAloneAllowsNarrowing",
+			src: `
+				class C<T> {
+					m<U: T>(&self, x: U) -> boolean { return false },
+				}
+				fn narrow(c: &C<number | string>) -> &C<number> { return c }
+			`,
+		},
+		{
+			// The issue's example. The field returns T, so C stays covariant and widens. The
+			// bound marks T as a covariant input, so an override has to accept what the
+			// widest view passes, and Sub's narrower bound is rejected.
+			name: "ANarrowOverrideOfABoundedReaderIsRejected",
+			src: `
+				class C<T> {
+					v: Array<T>,
+					m<U: T>(&self, x: U) -> boolean { return false },
+				}
+				fn widen(c: &C<number>) -> &C<number | string> { return c }
+				class Sub extends C<number> {
+					constructor(&mut self) { super([1]) },
+					m<U: number>(&self, x: U) -> boolean { return x > 1 },
+				}
+			`,
+			errs: []string{
+				"class `Sub` redeclares inherited member `m` with type `fn <U: number>(x: U) -> boolean`, " +
+					"which is not compatible with `fn <U: unknown>(x: U) -> boolean` declared by `C`",
+			},
+		},
+		{
+			name: "AnOverrideAcceptingTheWidestBoundIsCompatible",
+			src: `
+				class C<T> {
+					v: Array<T>,
+					m<U: T>(&self, x: U) -> boolean { return false },
+				}
+				class Sub extends C<number> {
+					constructor(&mut self) { super([1]) },
+					m<U>(&self, x: U) -> boolean { return false },
+				}
+			`,
+		},
+		{
+			// The shape `Array.filter<S: T>` has. The return gives T an output position, so a
+			// `&self` method's bound leaves C covariant.
+			name: "ABoundBesideAReturnWidens",
+			src: `
+				class C<T> {
+					m<U: T>(&self, x: U) -> T { return x },
+				}
+				fn widen(c: &C<number>) -> &C<number | string> { return c }
+			`,
+		},
+		{
+			// Unlike the method in ABoundBesideAReturnWidens, the held function is whatever the
+			// constructor was given. It can close over state fixed to the instance's argument,
+			// such as a `fn (x) { log.push(x) return x }` over a `log: Array<number>`. Read
+			// through a widened `C<number | string>`, `f("s")` would push a string into
+			// `log`. Nothing checks the stored function the way the override check checks a
+			// method, so the field's input position counts and C is invariant.
+			name: "AHeldFunctionsBoundBlocksWidening",
+			src: `
+				class C<T> {
+					readonly f: fn <U: T>(x: U) -> T,
+				}
+				fn widen(c: &C<number>) -> &C<number | string> { return c }
+			`,
+			errs: []string{"cannot constrain string <: number"},
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			_, _, errs := inferSource(t, tt.src)
+			if tt.errs == nil {
+				require.Empty(t, errorMessagesOf(errs))
+				return
+			}
+			require.Equal(t, tt.errs, errorMessagesOf(errs))
+		})
+	}
+}
+
 // TestABodyForcedBinderBoundIsEnforcedAtACall asserts that a call honors a bound the body
 // forced on a binder beside the one it declares. `f(u)` forces `U` below `f`'s `string`, so
 // `g(5)` has to pass `5` as a string too.
