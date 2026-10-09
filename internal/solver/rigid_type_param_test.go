@@ -184,6 +184,26 @@ fn g<U>(u: U) -> Maybe<U> { return u }`,
 			errs: []string{"3:31-3:32: cannot constrain T <: U"},
 		},
 		{
+			// A declared lower bound never implies its converse, so `B >: T` does not let a
+			// `B` stand where a `T` is expected. #1887 keeps this rejection once the solver
+			// reads the bound.
+			name: "ALowerBoundedParameterIsNotItsBound",
+			src:  `fn f<B >: T, T>(x: B, y: T) -> T { return x }`,
+			errs: []string{"1:43-1:44: cannot constrain B <: T"},
+		},
+		// DISABLED until #1887. The solver does not read a `>:` bound yet, so `T <: B` is
+		// reported at `y` although the signature declares it. Once #1887 seeds the rigid
+		// skolem with the declared lower bound, the relation follows from it and this checks.
+		// The rendering below is a guess at the printer's form; confirm it when re-enabling.
+		/*
+			{
+				name:    "ALowerBoundRelatesSiblings",
+				src:     `fn f<B >: T, T>(x: B, y: T) -> B { return y }`,
+				binding: "f",
+				want:    "fn <B >: T, T>(x: B, y: T) -> B",
+			},
+		*/
+		{
 			name: "TwoMethodParametersRelated",
 			src: `class C<T> {
 	t: T,
