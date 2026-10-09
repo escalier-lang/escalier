@@ -575,8 +575,10 @@ func freeTypeVars(t Type) []*TypeVarType {
 			for _, tp := range t.TypeParams {
 				seen.Add(tp.Var)
 			}
+			// Walk the bound the binder renders. On a `C<number>`, `m<U: T>` renders as
+			// `U: number`, so C's `T` left on the variable's own list is not counted free.
 			for _, tp := range t.TypeParams {
-				for _, b := range tp.Var.UpperBounds {
+				for _, b := range tp.DeclaredUpperBounds() {
 					walk(b)
 				}
 				if tp.Default != nil {
@@ -1428,8 +1430,8 @@ func isNever(t Type) bool {
 
 // typeParamBinders renders each type parameter as a binder string — `U`, `U: T` for a
 // constraint, `U = D` for a default, or `U: T = D` for both — without the surrounding
-// `<>`. The constraint is the parameter variable's upper bound. A variable with several
-// upper bounds renders them joined by ` & `. The parameters must be bound first, through
+// `<>`. The constraint is the parameter's DeclaredUpperBounds. Several
+// bounds render joined by ` & `. The parameters must be bound first, through
 // bindTypeParams. Each binder then renders under its own name, and a binder whose constraint
 // or default names a sibling parameter renders that name too. Callers that build a
 // combined quantifier prefix, such as PrintAsSchemeWith, join these with the scheme's
@@ -1437,16 +1439,9 @@ func isNever(t Type) bool {
 func (p *namedPrinter) typeParamBinders(tps []*TypeParam) []string {
 	binders := make([]string, len(tps))
 	for i, tp := range tps {
-		// The declared constraint wins where there is one. A substitution rewrites it and
-		// cannot rewrite the variable's upper-bound list, so reading the field is what
-		// renders `pick<T: U>` on a `C<number>` as `<T: number>`. The list is the
-		// fallback, carrying a bound a body forced or a prelude parameter was built with.
-		bounds := tp.Var.UpperBounds
-		if tp.Constraint != nil {
-			bounds = []Type{tp.Constraint}
-		}
-		// printType gives the registered source name, else t{ID}.
-		binders[i] = p.printType(tp.Var) + p.typeParamSuffix(bounds, tp.Default)
+		// Reading the declared constraint is what renders `pick<T: U>` on a `C<number>` as
+		// `<T: number>`. printType gives the registered source name, else t{ID}.
+		binders[i] = p.printType(tp.Var) + p.typeParamSuffix(tp.DeclaredUpperBounds(), tp.Default)
 	}
 	return binders
 }
