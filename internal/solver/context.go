@@ -41,6 +41,11 @@ type Context struct {
 	// meets a variable, so a skolem never becomes a variable's bound.
 	rigidSkolems map[*soltype.SkolemType]*soltype.TypeVarType
 
+	// rigidGroups counts the holdTypeParamsRigid calls made so far. Each call's parameters
+	// share a group, so constrain can tell two parameters of one declaration from parameters
+	// of two declarations nested in each other.
+	rigidGroups int
+
 	// symbolCounter mints the id a `unique symbol` annotation carries. Each written
 	// annotation is its own symbol, so the counter advances per annotation rather than
 	// per name, and two references to one declaration share an id because they share the
@@ -369,16 +374,21 @@ type rigidParam struct {
 	name   string
 	bounds []soltype.Type
 	sk     *soltype.SkolemType
+	// group identifies the holdTypeParamsRigid call that made the parameter rigid, and so
+	// the declaration the parameter belongs to.
+	group int
 }
 
 // holdTypeParamsRigid makes params rigid for constrain until the returned function runs.
+// params are the type parameters of one declaration.
 func (c *Context) holdTypeParamsRigid(params []*soltype.TypeParam) (release func()) {
 	if c.rigidParams == nil {
 		c.rigidParams = map[*soltype.TypeVarType]*rigidParam{}
 		c.rigidSkolems = map[*soltype.SkolemType]*soltype.TypeVarType{}
 	}
+	c.rigidGroups++
 	for _, tp := range params {
-		c.rigidParams[tp.Var] = &rigidParam{v: tp.Var, name: tp.Name, bounds: slices.Clone(tp.AllUpperBounds())}
+		c.rigidParams[tp.Var] = &rigidParam{v: tp.Var, name: tp.Name, bounds: slices.Clone(tp.AllUpperBounds()), group: c.rigidGroups}
 	}
 	return func() {
 		for _, tp := range params {

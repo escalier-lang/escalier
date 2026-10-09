@@ -171,7 +171,7 @@ func (c *checker) inferClassDecl(scope *Scope, lvl int, decl *ast.ClassDecl, ns 
 	// inherited member is reachable through `self`. Phase 1 has appended every own member by
 	// now, so the view is complete, and it shares each own element pointer so phase 2's
 	// signature installs and field refinements still land on the registered body.
-	c.inferMemberBodies(bodyScope, lvl, c.ctx.selfView(self, body), pending)
+	c.inferMemberBodies(bodyScope, lvl, c.ctx.selfView(self, body), typeParams, pending)
 	callFns := c.inferCallSignatures(bodyScope, lvl, decl)
 	ctorFns := c.walkConstructorBodies(bodyScope, lvl, self, body, ctors)
 	if len(ctorFns) == 0 {
@@ -1360,12 +1360,23 @@ func (c *checker) buildMemberSigs(
 // inferMemberBodies is phase 2 of the member walk: it walks each member body, links the
 // inferred signature into its stub so a sibling that read the stub grounds through the
 // bound graph, then installs the real signature onto the stored element.
-func (c *checker) inferMemberBodies(scope *Scope, lvl int, body *soltype.ObjectType, pending []pendingMember) {
+func (c *checker) inferMemberBodies(
+	scope *Scope,
+	lvl int,
+	body *soltype.ObjectType,
+	classParams []*soltype.TypeParam,
+	pending []pendingMember,
+) {
 	for _, m := range pending {
 		// Hand the member's name to the inferFunc call below, which sees only the member's
 		// *ast.FuncExpr and so cannot recover it. inferFunc takes and clears it.
 		c.memberName = m.name
+		// A member body has to work for every argument an instance may give the class, so
+		// the class's parameters are rigid while it is inferred. Linking the inferred
+		// signature to its stub below compares the member with itself and stays outside.
+		release := c.ctx.holdTypeParamsRigid(classParams)
 		bodyFt := c.inferMemberFunc(scope, lvl, m, body)
+		release()
 		c.linkMemberSig(m.fn, bodyFt, m.stub)
 		m.apply(bodyFt)
 	}
