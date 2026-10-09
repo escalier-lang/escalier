@@ -284,9 +284,9 @@ func TestConstrainRegularAliasChecksTheLapAboveTheKnot(t *testing.T) {
 }
 
 // Normalizing does not make the comparison blind: a value that disagrees with the knot's body is
-// still rejected. The mismatch is reported twice, once for each unfolding the comparison makes. The
+// still rejected. The comparison reaches the mismatch on two unfoldings and reports it once. The
 // first unfolding runs on the alias's expansion and the second on the knot, since evalTypeOperator
-// waits for the second before substituting one. Without the normalization the same source reports
+// waits for the second before substituting one. Without the normalization the same source reaches
 // the mismatch once per lap until maxUnwrapDepth cuts the walk off, roughly two hundred times, and
 // then adds two ExpansionLimitErrors on top.
 func TestConstrainRegularAliasStillReportsAMismatch(t *testing.T) {
@@ -297,7 +297,6 @@ func TestConstrainRegularAliasStillReportsAMismatch(t *testing.T) {
 	`)
 	require.Equal(t, []string{
 		nonReturningMsg("3:6-3:10", "node", `fn () -> {a: "wrong", b: μX0.{a: "wrong", b: X0}}`),
-		`4:3-4:47: cannot constrain "wrong" <: "c"`,
 		`4:3-4:47: cannot constrain "wrong" <: "c"`,
 	}, messagesWithSpan(t, errs))
 }

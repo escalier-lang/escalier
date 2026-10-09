@@ -760,7 +760,18 @@ func (c *checker) constrain(n ast.Node, source, target soltype.Type) {
 // caller that runs the engine directly — the checking-mode probe in
 // constrainInitAgainstAnnotation — assigns blame the same way. See constrain's doc for how
 // Span()/Related() then resolve per-operand blame through Prov on demand.
+//
+// An error with the same span and message as one already accumulated from errs is dropped.
 func (c *checker) blameConstraintErrors(n ast.Node, errs []SolverError) {
+	// One constraint can fail the same way along two paths. Given `fn f<A: string>` and
+	// `fn g<U: string>(u: U) { return f(u) }`, the call `g(5)` checks `5` against U's
+	// declared `string` and again against `f`'s `A`, which the body linked U to and
+	// which is bounded by `string` too.
+	type diagnostic struct {
+		span ast.Span
+		msg  string
+	}
+	reported := set.NewSet[diagnostic]()
 	for _, e := range errs {
 		switch err := e.(type) {
 		case *CannotConstrainError:
@@ -810,6 +821,11 @@ func (c *checker) blameConstraintErrors(n ast.Node, errs []SolverError) {
 		case *ReadonlyFieldSubtypeError:
 			err.site = n
 		}
+		d := diagnostic{span: e.Span(), msg: e.Message()}
+		if reported.Contains(d) {
+			continue
+		}
+		reported.Add(d)
 		c.errs = append(c.errs, e)
 	}
 }
