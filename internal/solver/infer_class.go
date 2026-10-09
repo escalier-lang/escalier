@@ -1263,9 +1263,9 @@ type pendingMember struct {
 	generic bool
 }
 
-// buildMemberSigs is phase 1 of the member walk: it appends a signature stub — fresh vars
-// for each parameter and the return, correct in arity but not yet refined — for every
-// method, getter, and setter, so a sibling call resolves before any body is walked. A
+// buildMemberSigs is phase 1 of the member walk. It appends a signature stub for every
+// method, getter, and setter, so a sibling call resolves before any body is walked.
+// memberSigStub describes what a stub holds. A
 // non-static instance member missing its `self` receiver is reported here.
 func (c *checker) buildMemberSigs(
 	scope *Scope,
@@ -1284,7 +1284,7 @@ func (c *checker) buildMemberSigs(
 				continue
 			}
 			c.checkSelfReceiver(name, elem, elem.Static, elem.Receiver)
-			stub := c.memberSigStub(lvl, elem.Fn)
+			stub := c.memberSigStub(scope, lvl, elem.Fn)
 			stub.SelfParam = c.selfParam(lvl, elem.Receiver, elem.Static, self)
 			method, arm := appendMethodSig(targetBody(body, static, elem.Static), name, stub, elem.Static)
 			// An overloaded method dispatches on its value arguments, so its arms must agree
@@ -1316,7 +1316,7 @@ func (c *checker) buildMemberSigs(
 			if elem.Receiver != nil && elem.Receiver.Consumes() {
 				c.report(&GetterReceiverError{Name: name, Elem: elem})
 			}
-			stub := c.memberSigStub(lvl, elem.Fn)
+			stub := c.memberSigStub(scope, lvl, elem.Fn)
 			getter := &soltype.GetterElem{
 				Name:      name,
 				SelfParam: c.selfParam(lvl, elem.Receiver, elem.Static, self),
@@ -1355,7 +1355,7 @@ func (c *checker) buildMemberSigs(
 			if len(elem.Fn.Params) != 1 {
 				c.report(&SetterArityError{Name: name, Elem: elem, Count: len(elem.Fn.Params)})
 			}
-			stub := c.memberSigStub(lvl, elem.Fn)
+			stub := c.memberSigStub(scope, lvl, elem.Fn)
 			var param soltype.Type = &soltype.UnknownType{}
 			if len(stub.Params) > 0 {
 				param = stub.Params[0].Type
@@ -1418,12 +1418,12 @@ func (c *checker) linkMemberSig(node ast.Node, bodyFt, stub *soltype.FuncType) {
 	c.constrain(node, callable(bodyFt), callable(stub))
 }
 
-// memberSigStub builds a member's signature stub: one fresh var per value parameter,
-// preserving arity, parameter names, and optionality, plus a fresh return var and a fresh
-// throws var. A sibling access reads the stub before the body pass installs the real
+// memberSigStub builds a member's signature stub. It has one value parameter per parameter
+// the member writes, keeping its name, optionality, and the type stubParamType gives it, plus
+// a fresh return var and a fresh throws var. A sibling access reads the stub before the body pass installs the real
 // signature, so the throws var is what carries a raising member's throws to a call or a
 // getter read inside the same class.
-func (c *checker) memberSigStub(lvl int, fn *ast.FuncExpr) *soltype.FuncType {
+func (c *checker) memberSigStub(scope *Scope, lvl int, fn *ast.FuncExpr) *soltype.FuncType {
 	params := make([]*soltype.FuncParam, len(fn.Params))
 	for i, p := range fn.Params {
 		// Read the `...` marker off the parameter without reporting, so a malformed rest
@@ -1432,15 +1432,15 @@ func (c *checker) memberSigStub(lvl int, fn *ast.FuncExpr) *soltype.FuncType {
 		// and a rest slot and a positional parameter accept different argument counts.
 		pat, rest, optional := restParamSlotShape(p, i == len(fn.Params)-1)
 		// A destructuring parameter has no single name, so the stub uses a positional
-		// placeholder. It never surfaces: the stub carries arity and fresh-var types only,
-		// and the body pass installs the real signature, whose inferFunc binds the pattern.
+		// placeholder. It never surfaces, since the body pass installs the real signature,
+		// whose inferFunc binds the pattern.
 		name, ok := identPatName(pat)
 		if !ok {
 			name = fmt.Sprintf("arg%d", i)
 		}
 		params[i] = &soltype.FuncParam{
 			Pattern:  &soltype.IdentPat{Name: name},
-			Type:     c.freshAt(lvl),
+			Type:     c.stubParamType(scope, lvl, fn, p),
 			Optional: optional,
 			Rest:     rest,
 		}
@@ -1451,6 +1451,35 @@ func (c *checker) memberSigStub(lvl int, fn *ast.FuncExpr) *soltype.FuncType {
 		Throws:  c.freshAt(lvl),
 		Inexact: fn.FuncSig.Inexact,
 	}
+}
+
+// stubParamType returns the type a member's signature stub gives its parameter p. That is
+// p's annotation, resolved in scope, when the member quantifies no type parameters of its own
+// and the annotation resolves without a diagnostic to a type that carries no lifetime. It is
+// a fresh variable otherwise. Resolving here reports nothing and leaves the named lifetimes
+// as they were, since the body pass resolves the annotation again and reports from there.
+func (c *checker) stubParamType(scope *Scope, lvl int, fn *ast.FuncExpr, p *ast.Param) soltype.Type {
+	// A member's own type parameters are bound only by the body pass, so an annotation
+	// naming one cannot resolve here. A bodyless member is a declaration, and nothing in its
+	// class calls it before the body pass installs its signature.
+	if p.TypeAnn == nil || len(fn.TypeParams) > 0 || fn.Body == nil {
+		return c.freshAt(lvl)
+	}
+	errsLen := len(c.errs)
+	savedNamedLts := c.namedLifetimes
+	c.namedLifetimes = maps.Clone(savedNamedLts)
+	t := c.paramType(scope, p, lvl)
+	c.namedLifetimes = savedNamedLts
+	resolved := len(c.errs) == errsLen
+	c.errs = c.errs[:errsLen]
+	// A lifetime resolved here would be a different variable from the one the body pass
+	// resolves the same annotation to, and linking the two signatures would relate them.
+	lts := &lifetimeCollector{out: set.NewSet[*soltype.LifetimeVar]()}
+	t.Accept(lts, soltype.Positive)
+	if !resolved || lts.out.Len() > 0 {
+		return c.freshAt(lvl)
+	}
+	return t
 }
 
 // targetBody selects the static or instance body for a member.

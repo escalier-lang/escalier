@@ -35,7 +35,7 @@ class Keyed<U> extends Bag<U> {
 		super(items)
 		self.key = key
 	},
-	contains<B>(&self, x: B) -> number { return (self.key)(x) },
+	contains<B>(&self, x: B) -> number { return self.key(x) },
 }
 fn probe(b: &Bag<string>) -> number { return b.contains(42) }
 val k = Keyed(["a"], fn (s: string) -> number { return 1 })
@@ -43,7 +43,7 @@ val r = probe(&k)
 val mm = k.contains`,
 			binding: "mm",
 			want:    "fn <B>(x: B) -> number",
-			errs:    []string{"11:47-11:59: cannot constrain B <: U"},
+			errs:    []string{"11:46-11:57: cannot constrain B <: U"},
 		},
 		{
 			// Leaf reaches key through Keyed, at Leaf's own V.
@@ -63,9 +63,9 @@ class Leaf<V> extends Keyed<V> {
 	constructor(&mut self, items: Array<V>, key: fn (x: V) -> number) {
 		super(items, key)
 	},
-	contains<B>(&self, x: B) -> number { return (self.key)(x) },
+	contains<B>(&self, x: B) -> number { return self.key(x) },
 }`,
-			errs: []string{"16:47-16:59: cannot constrain B <: V"},
+			errs: []string{"16:46-16:57: cannot constrain B <: V"},
 		},
 		{
 			// A binder bounded by the class's parameter may be passed on. The override check
@@ -81,10 +81,10 @@ class Keyed<U> extends Bag<U> {
 		super(items)
 		self.key = key
 	},
-	contains<B: U>(&self, x: B) -> number { return (self.key)(x) },
+	contains<B: U>(&self, x: B) -> number { return self.key(x) },
 }`,
 			errs: []string{
-				"11:2-11:64: class `Keyed` redeclares inherited member `contains` with type " +
+				"11:2-11:62: class `Keyed` redeclares inherited member `contains` with type " +
 					"`fn <B: U>(x: B) -> number`, which is not compatible with `fn <B>(x: B) -> number` " +
 					"declared by `Bag`",
 			},
@@ -93,7 +93,7 @@ class Keyed<U> extends Bag<U> {
 			name: "ABinderBoundedByTheClassParameter",
 			src: `class Keyed<U> {
 	key: fn (x: U) -> number,
-	apply<B: U>(&self, x: B) -> number { return (self.key)(x) },
+	apply<B: U>(&self, x: B) -> number { return self.key(x) },
 }`,
 		},
 		{
@@ -105,16 +105,16 @@ class Keyed<U> extends Bag<U> {
 			errs: []string{"3:37-3:38: cannot constrain U <: number"},
 		},
 		{
-			// a passes x to b before b's body is inferred, so the call is recorded against b's
-			// signature stub. The `number` b takes reaches U when b's signature is linked to
-			// that stub, which is where the error points.
+			// a calls b before b's body is inferred, so the call is checked against b's
+			// signature stub. The stub already takes the `number` b's annotation names, so the
+			// error points at the call.
 			name: "AForwardCallToASibling",
 			src: `class C<U> {
 	v: U,
 	a(&self, x: U) -> number { return self.b(x) },
 	b(&self, y: number) -> number { return y },
 }`,
-			errs: []string{"4:2-4:44: cannot constrain U <: number"},
+			errs: []string{"3:36-3:45: cannot constrain U <: number"},
 		},
 		{
 			name: "AConstructorBody",
