@@ -11,20 +11,6 @@ import (
 // while the bodies are inferred, so such a use is reported where it is written. A method's own
 // binder that meets the class's parameter is compared through its own bounds.
 func TestAMemberBodyIsCheckedForEveryClassArgument(t *testing.T) {
-	// bag declares a method generic in its own binder, which an override must keep generic.
-	const bag = `class Bag<T> {
-	items: Array<T>,
-	contains<B>(&self, x: B) -> number { return 0 },
-}
-`
-	// keyed extends bag and holds a function that takes only the class's own parameter.
-	const keyed = `class Keyed<U> extends Bag<U> {
-	key: fn (x: U) -> number,
-	constructor(&mut self, items: Array<U>, key: fn (x: U) -> number) {
-		super(items)
-		self.key = key
-	},
-`
 	tests := []struct {
 		name string
 		src  string
@@ -35,11 +21,21 @@ func TestAMemberBodyIsCheckedForEveryClassArgument(t *testing.T) {
 		errs    []string
 	}{
 		{
-			// Bag's contains promises to take any B, so an override passing x on to a function
-			// that takes only a U is rejected in its body. The override then has no forced
-			// bound left to leak into the method's value type.
+			// Bag's contains promises to take any B, and Keyed holds a key that takes only a U.
+			// An override passing x on to key is rejected in its body. The override then has
+			// no forced bound left to leak into the method's value type.
 			name: "AnOverrideNarrowingItsBinderToTheClassParameter",
-			src: bag + keyed + `	contains<B>(&self, x: B) -> number { return (self.key)(x) },
+			src: `class Bag<T> {
+	items: Array<T>,
+	contains<B>(&self, x: B) -> number { return 0 },
+}
+class Keyed<U> extends Bag<U> {
+	key: fn (x: U) -> number,
+	constructor(&mut self, items: Array<U>, key: fn (x: U) -> number) {
+		super(items)
+		self.key = key
+	},
+	contains<B>(&self, x: B) -> number { return (self.key)(x) },
 }
 fn probe(b: &Bag<string>) -> number { return b.contains(42) }
 val k = Keyed(["a"], fn (s: string) -> number { return 1 })
@@ -52,7 +48,17 @@ val mm = k.contains`,
 		{
 			// Leaf reaches key through Keyed, at Leaf's own V.
 			name: "AnOverrideTwoLevelsDown",
-			src: bag + keyed + `}
+			src: `class Bag<T> {
+	items: Array<T>,
+	contains<B>(&self, x: B) -> number { return 0 },
+}
+class Keyed<U> extends Bag<U> {
+	key: fn (x: U) -> number,
+	constructor(&mut self, items: Array<U>, key: fn (x: U) -> number) {
+		super(items)
+		self.key = key
+	},
+}
 class Leaf<V> extends Keyed<V> {
 	constructor(&mut self, items: Array<V>, key: fn (x: V) -> number) {
 		super(items, key)
@@ -65,7 +71,17 @@ class Leaf<V> extends Keyed<V> {
 			// A binder bounded by the class's parameter may be passed on. The override check
 			// still rejects the narrower bound against Bag's unbounded B.
 			name: "AnOverrideBoundingItsBinderByTheClassParameter",
-			src: bag + keyed + `	contains<B: U>(&self, x: B) -> number { return (self.key)(x) },
+			src: `class Bag<T> {
+	items: Array<T>,
+	contains<B>(&self, x: B) -> number { return 0 },
+}
+class Keyed<U> extends Bag<U> {
+	key: fn (x: U) -> number,
+	constructor(&mut self, items: Array<U>, key: fn (x: U) -> number) {
+		super(items)
+		self.key = key
+	},
+	contains<B: U>(&self, x: B) -> number { return (self.key)(x) },
 }`,
 			errs: []string{
 				"11:2-11:64: class `Keyed` redeclares inherited member `contains` with type " +
