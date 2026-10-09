@@ -48,6 +48,9 @@ func SortTypeParamsTopologically(typeParams []*TypeParam) []*TypeParam {
 	deps := make(map[string][]string)
 	for _, tp := range typeParams {
 		var tpDeps []string
+		if tp.LowerBound != nil {
+			tpDeps = append(tpDeps, extractTypeParamRefs(tp.LowerBound, typeParamNames)...)
+		}
 		if tp.Constraint != nil {
 			tpDeps = append(tpDeps, extractTypeParamRefs(tp.Constraint, typeParamNames)...)
 		}

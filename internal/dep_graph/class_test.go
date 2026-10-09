@@ -48,6 +48,15 @@ func TestClassDeclDependencies(t *testing.T) {
 			`,
 			expected: []string{"Serializable"},
 		},
+		"ClassWithTypeParamLowerBound": {
+			input: `
+				type Item = string
+				class DataClass<T >: Item> {
+					value: T,
+				}
+			`,
+			expected: []string{"Item"},
+		},
 		"ClassWithFieldTypes": {
 			input: `
 				type Point = {x: number, y: number}

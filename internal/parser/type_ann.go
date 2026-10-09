@@ -1180,8 +1180,21 @@ func (p *Parser) typeParam(allowVariance bool) *ast.TypeParam {
 	}
 	end := token.Span.End
 
+	var lowerBound ast.TypeAnn
 	var constraint ast.TypeAnn
 	var default_ ast.TypeAnn
+
+	// A lower bound is written `>:` with no space between the two characters. Inside a
+	// binder list nothing else puts `>` and then `:` after a name, so a spaced `> :` is
+	// left to close the list and fails there.
+	if p.adjacentPair(GreaterThan, Colon) {
+		p.lexer.consume() // consume '>'
+		p.lexer.consume() // consume ':'
+		lowerBound = p.typeAnnRequired()
+		if lowerBound != nil {
+			end = lowerBound.Span().End
+		}
+	}
 
 	if p.lexer.peek().Type == Colon {
 		p.lexer.consume() // consume ':'
@@ -1199,7 +1212,7 @@ func (p *Parser) typeParam(allowVariance bool) *ast.TypeParam {
 		}
 	}
 
-	typeParam := ast.NewTypeParam(name, constraint, default_, ast.NewSpan(start, end, p.lexer.source.ID))
+	typeParam := ast.NewTypeParam(name, lowerBound, constraint, default_, ast.NewSpan(start, end, p.lexer.source.ID))
 	typeParam.Variance = variance
 	return &typeParam
 }

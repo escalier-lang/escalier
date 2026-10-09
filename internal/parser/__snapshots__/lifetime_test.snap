@@ -3,7 +3,7 @@
 []*parser.Token{
     &parser.Token{
         Span: 0-2,
-        Type: 43,
+        Type: 42,
         Value: "a",
     },
 }
@@ -13,17 +13,17 @@
 []*parser.Token{
     &parser.Token{
         Span: 0-2,
-        Type: 43,
+        Type: 42,
         Value: "a",
     },
     &parser.Token{
         Span: 3-10,
-        Type: 43,
+        Type: 42,
         Value: "static",
     },
     &parser.Token{
         Span: 11-14,
-        Type: 43,
+        Type: 42,
         Value: "b1",
     },
 }
@@ -33,12 +33,12 @@
 []*parser.Token{
     &parser.Token{
         Span: 0-1,
-        Type: 52,
+        Type: 51,
         Value: "<",
     },
     &parser.Token{
         Span: 1-3,
-        Type: 43,
+        Type: 42,
         Value: "a",
     },
     &parser.Token{
@@ -48,7 +48,7 @@
     },
     &parser.Token{
         Span: 5-7,
-        Type: 43,
+        Type: 42,
         Value: "b",
     },
     &parser.Token{
@@ -58,7 +58,7 @@
     },
     &parser.Token{
         Span: 9-10,
-        Type: 41,
+        Type: 40,
         Value: "T",
     },
     &parser.Token{
@@ -73,17 +73,17 @@
 []*parser.Token{
     &parser.Token{
         Span: 0-3,
-        Type: 58,
+        Type: 57,
         Value: "mut",
     },
     &parser.Token{
         Span: 4-6,
-        Type: 43,
+        Type: 42,
         Value: "a",
     },
     &parser.Token{
         Span: 7-12,
-        Type: 41,
+        Type: 40,
         Value: "Point",
     },
 }
@@ -93,22 +93,22 @@
 []*parser.Token{
     &parser.Token{
         Span: 0-1,
-        Type: 67,
+        Type: 66,
         Value: "(",
     },
     &parser.Token{
         Span: 1-3,
-        Type: 43,
+        Type: 42,
         Value: "a",
     },
     &parser.Token{
         Span: 4-5,
-        Type: 68,
+        Type: 67,
         Value: "|",
     },
     &parser.Token{
         Span: 6-8,
-        Type: 43,
+        Type: 42,
         Value: "b",
     },
     &parser.Token{

@@ -1955,19 +1955,29 @@ func (p *Printer) printVarianceModifier(v ast.VarianceModifier) {
 	}
 }
 
+// printTypeParam prints one binder of a `<…>` list: its variance modifier, its name, and
+// then its lower bound, upper bound and default where it writes them.
+func (p *Printer) printTypeParam(tp *ast.TypeParam) {
+	p.printVarianceModifier(tp.Variance)
+	p.writeString(tp.Name)
+	if tp.LowerBound != nil {
+		p.writeString(" >: ")
+		p.printTypeAnn(tp.LowerBound)
+	}
+	if tp.Constraint != nil {
+		p.writeString(": ")
+		p.printTypeAnn(tp.Constraint)
+	}
+	if tp.Default != nil {
+		p.writeString(" = ")
+		p.printTypeAnn(tp.Default)
+	}
+}
+
 func (p *Printer) printTypeParams(params []*ast.TypeParam) {
 	p.writeString("<")
 	for i, param := range params {
-		p.printVarianceModifier(param.Variance)
-		p.writeString(param.Name)
-		if param.Constraint != nil {
-			p.writeString(": ")
-			p.printTypeAnn(param.Constraint)
-		}
-		if param.Default != nil {
-			p.writeString(" = ")
-			p.printTypeAnn(param.Default)
-		}
+		p.printTypeParam(param)
 		if i < len(params)-1 {
 			p.writeString(", ")
 		}
@@ -2004,16 +2014,7 @@ func (p *Printer) printGenericParams(lifetimeParams []*ast.LifetimeParam, typePa
 		}
 	}
 	for i, tp := range typeParams {
-		p.printVarianceModifier(tp.Variance)
-		p.writeString(tp.Name)
-		if tp.Constraint != nil {
-			p.writeString(": ")
-			p.printTypeAnn(tp.Constraint)
-		}
-		if tp.Default != nil {
-			p.writeString(" = ")
-			p.printTypeAnn(tp.Default)
-		}
+		p.printTypeParam(tp)
 		if i < len(typeParams)-1 {
 			p.writeString(", ")
 		}

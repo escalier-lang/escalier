@@ -849,6 +849,9 @@ func (v *DependencyVisitor) processTypeParams(typeParams []*ast.TypeParam) {
 		for _, tp := range sortedTypeParams {
 			currentScope.TypeBindings.Add(tp.Name)
 
+			if tp.LowerBound != nil {
+				tp.LowerBound.Accept(v)
+			}
 			if tp.Constraint != nil {
 				tp.Constraint.Accept(v)
 			}

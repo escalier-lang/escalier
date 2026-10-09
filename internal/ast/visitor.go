@@ -66,6 +66,9 @@ func (v *DefaultVisitor) ExitLifetimeAnn(l LifetimeAnnNode)       {}
 // quantifier list, which is the whole of what a type parameter contributes.
 func acceptTypeParams(v Visitor, params []*TypeParam) {
 	for _, tp := range params {
+		if tp.LowerBound != nil {
+			tp.LowerBound.Accept(v)
+		}
 		if tp.Constraint != nil {
 			tp.Constraint.Accept(v)
 		}
