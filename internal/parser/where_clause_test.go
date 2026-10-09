@@ -116,6 +116,32 @@ where A: number, B: number {
 			src:  "type A<P, Q> where P: Q = P",
 		},
 		{name: "AnUpperAndALowerBoundOnOneParameter", src: "type A<B> where B: Base, T: B = B"},
+		{name: "AClauseBesideAnInlineBoundAndADefault", src: "type A<B: Base = D> where T: B = B"},
+		// A union or intersection the source wrote is a single bound, so a second relation
+		// on the parameter groups it rather than extending it.
+		{name: "AWrittenUnionIsOneUpperBound", src: "type A<T> where T: X | Y, T: Z = T", want: "type A<T> where T: (X | Y) & Z = T"},
+		{name: "AWrittenIntersectionIsOneLowerBound", src: "type A<T> where X & Y: T, Z: T = T", want: "type A<T> where X & Y | Z: T = T"},
+		{name: "AParenthesizedLeftSide", src: "type A<T> where (X | Y): T = T", want: "type A<T> where X | Y: T = T"},
+		{
+			// A function type with no parameters of its own leaves the clause to the
+			// signature it is the return of, and the printer parenthesizes that return.
+			name: "AClauseAfterAFunctionTypedReturn",
+			src:  "declare fn f<B>(x: B) -> fn (y: B) -> boolean where number: B",
+			want: "declare fn f<B>(x: B) -> (fn (y: B) -> boolean) where number: B",
+		},
+		{
+			// A generic function type takes a clause that follows it, so the enclosing
+			// signature parenthesizes the return to keep its own.
+			name: "AParenthesizedGenericReturnKeepsTheOuterClause",
+			src:  "declare fn f<B>(x: B) -> (fn<V> (v: V) -> V) where number: B",
+		},
+		{name: "AGenericReturnTakesTheClause", src: "declare val f: fn () -> fn<V> (v: V) -> V where number: V"},
+		{
+			name: "ALifetimeRelation",
+			src:  "declare fn f<'a, T>(x: &'a T) -> &'a T where 'a: 'static, number: T",
+			want: "declare fn f<'a, T>(x: &'a T) -> &'a T where number: T",
+			errs: []string{"lifetime bounds are written on the lifetime binder, as <'a: 'b>"},
+		},
 		{name: "ALifetimeBoundKeepsItsColon", src: "declare fn f<'a, 'b: 'a>(x: &'a number) -> &'b number"},
 		{name: "WhereAsAParameterName", src: "declare fn f(where: number) -> number"},
 		{
@@ -126,10 +152,12 @@ where A: number, B: number {
 			errs: []string{"a where clause relation must name a type parameter of this declaration on one side"},
 		},
 		{
-			name: "ARelationMissingItsColon",
+			// A `where` is a clause only when a type and a `:` follow it, so one with no
+			// relation is an unexpected identifier where the declaration wanted `=`.
+			name: "AWhereWithoutARelationIsNotAClause",
 			src:  "type A<T> where T = T",
 			want: "type A<T> = T",
-			errs: []string{"Expected : after the left side of a where clause relation"},
+			errs: []string{"Expected = but got identifier", "Unexpected token", "Unexpected token", "Unexpected token"},
 		},
 		{
 			// A lower bound written on the binder, where Scala puts it, is reported and still

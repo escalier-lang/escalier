@@ -1465,12 +1465,14 @@ func isNever(t Type) bool {
 
 // typeParamBinders renders each type parameter as a binder string — `U`, `U: T` for an
 // upper bound, `U = D` for a default, or `U: T = D` for both — without the surrounding
-// `<>`. The upper bound is the parameter's DeclaredUpperBounds. Several bounds render joined
-// by ` & `. A lower bound renders in the `where` clause instead, through whereClause. The parameters must be bound first, through
-// bindTypeParams. Each binder then renders under its own name, and a binder whose bound
-// or default names a sibling parameter renders that name too. Callers that build a
-// combined quantifier prefix, such as PrintAsSchemeWith, join these with the scheme's
-// free variables and lifetimes into one list.
+// `<>`. The upper bound is the parameter's DeclaredUpperBounds, and several render joined
+// by ` & `. A lower bound renders in the `where` clause instead, through whereClause.
+//
+// The parameters must be bound first, through bindTypeParams. Each binder then renders
+// under its own name, and a binder whose bound or default names a sibling parameter
+// renders that name too. Callers that build a combined quantifier prefix, such as
+// PrintAsSchemeWith, join these with the scheme's free variables and lifetimes into one
+// list.
 func (p *namedPrinter) typeParamBinders(tps []*TypeParam) []string {
 	binders := make([]string, len(tps))
 	for i, tp := range tps {

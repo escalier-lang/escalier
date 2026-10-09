@@ -47,9 +47,9 @@ type TypeVarType struct {
 // of an inference var it flows into, and of its declared upper bound. ID keeps two
 // parameters `T` and `U` distinct; Name is the source name for diagnostics and the printer;
 // Upper is the declared upper bound (`<U: T>`), nil when unbounded. Lower is the declared
-// lower bound (`<B> … where T: B`), nil when there is none. Every instantiation of `B` is a supertype
-// of `T`, so a type below Lower is a subtype of the skolem, where no other type apart from
-// the skolem itself is.
+// lower bound, the `T` of `where T: B`, nil when there is none. Every instantiation of `B`
+// is a supertype of `T`, so a type below Lower is a subtype of the skolem, where no other
+// type apart from the skolem itself is.
 type SkolemType struct {
 	ID    int
 	Name  string

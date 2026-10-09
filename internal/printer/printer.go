@@ -528,10 +528,10 @@ func (p *Printer) printMethodSigParts(sig *ast.FuncSig, recv *ast.MethodReceiver
 	}
 	p.writeString(")")
 	if withReturn {
-		p.printReturnAndThrows(sig.Return, sig.Throws)
+		p.printReturnAndThrows(sig.Return, sig.Throws, hasWhereRelations(sig.TypeParams))
 	} else {
 		// printReturnAndThrows with a nil return emits the throws clause alone.
-		p.printReturnAndThrows(nil, sig.Throws)
+		p.printReturnAndThrows(nil, sig.Throws, false)
 	}
 	p.printWhereClause(sig.TypeParams)
 }
@@ -596,8 +596,9 @@ func (p *Printer) printAnnMemberParams(recv string, params []*ast.Param) {
 // form renders the pair alike. A nil ret emits no arrow, and neither a nil nor a `never`
 // throws emits a clause. `-> R` is greedy, so a function-typed return is parenthesized
 // once a clause follows it — `fn () -> (fn () -> number) throws string` — or the clause
-// re-reads as the inner function's. soltype's printFuncBody does the same.
-func (p *Printer) printReturnAndThrows(ret ast.TypeAnn, throws ast.TypeAnn) {
+// re-reads as the inner function's. whereFollows says the caller emits a `where` clause
+// next, which parenthesizes the return the same way. soltype's printFuncBody does the same.
+func (p *Printer) printReturnAndThrows(ret ast.TypeAnn, throws ast.TypeAnn, whereFollows bool) {
 	clause := throws
 	if _, isNever := throws.(*ast.NeverTypeAnn); isNever {
 		clause = nil
@@ -605,7 +606,7 @@ func (p *Printer) printReturnAndThrows(ret ast.TypeAnn, throws ast.TypeAnn) {
 	if ret != nil {
 		p.writeString(" -> ")
 		_, retIsFunc := ret.(*ast.FuncTypeAnn)
-		if retIsFunc && clause != nil {
+		if retIsFunc && (clause != nil || whereFollows) {
 			p.writeString("(")
 			p.printTypeAnn(ret)
 			p.writeString(")")
@@ -1306,7 +1307,7 @@ func (p *Printer) printFuncSig(sig *ast.FuncSig) {
 	}
 	p.writeString(")")
 
-	p.printReturnAndThrows(sig.Return, sig.Throws)
+	p.printReturnAndThrows(sig.Return, sig.Throws, hasWhereRelations(sig.TypeParams))
 	p.printWhereClause(sig.TypeParams)
 }
 
@@ -1586,18 +1587,18 @@ func (p *Printer) printObjTypeAnnElem(elem ast.ObjTypeAnnElem) {
 		}
 		p.printGenericParams(e.Fn.LifetimeParams, e.Fn.TypeParams)
 		p.printAnnMemberParams(annMemberReceiver(e.Receiver, ""), e.Fn.Params)
-		p.printReturnAndThrows(e.Fn.Return, e.Fn.Throws)
+		p.printReturnAndThrows(e.Fn.Return, e.Fn.Throws, hasWhereRelations(e.Fn.TypeParams))
 		p.printWhereClause(e.Fn.TypeParams)
 	case *ast.GetterTypeAnn:
 		p.writeString("get ")
 		p.printObjKey(e.Name)
 		p.printAnnMemberParams(annMemberReceiver(e.Receiver, "&self"), nil)
-		p.printReturnAndThrows(e.Fn.Return, e.Fn.Throws)
+		p.printReturnAndThrows(e.Fn.Return, e.Fn.Throws, false)
 	case *ast.SetterTypeAnn:
 		p.writeString("set ")
 		p.printObjKey(e.Name)
 		p.printAnnMemberParams(annMemberReceiver(e.Receiver, "&mut self"), e.Fn.Params)
-		p.printReturnAndThrows(e.Fn.Return, e.Fn.Throws)
+		p.printReturnAndThrows(e.Fn.Return, e.Fn.Throws, false)
 	case *ast.PropertyTypeAnn:
 		if e.Readonly {
 			p.writeString("readonly ")
@@ -1882,7 +1883,7 @@ func (p *Printer) printFuncTypeAnnParams(typ *ast.FuncTypeAnn) {
 	}
 	p.writeString(")")
 
-	p.printReturnAndThrows(typ.Return, typ.Throws)
+	p.printReturnAndThrows(typ.Return, typ.Throws, hasWhereRelations(typ.TypeParams))
 	p.printWhereClause(typ.TypeParams)
 }
 
@@ -1977,6 +1978,16 @@ func (p *Printer) printTypeParam(tp *ast.TypeParam) {
 		p.writeString(" = ")
 		p.printTypeAnn(tp.Default)
 	}
+}
+
+// hasWhereRelations reports whether printWhereClause would write a clause for params.
+func hasWhereRelations(params []*ast.TypeParam) bool {
+	for _, tp := range params {
+		if tp.LowerBound != nil || (tp.UpperBound != nil && tp.UpperBoundInWhere) {
+			return true
+		}
+	}
+	return false
 }
 
 // printWhereClause emits ` where R, …` for the bounds a `where` clause carries: every

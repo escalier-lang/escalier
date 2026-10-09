@@ -252,8 +252,14 @@ func (p *Parser) funcTypeAnnTail(keyword *Token) *ast.FuncTypeAnn {
 		endSpan = throwsType.Span()
 	}
 
-	if end, ok := p.whereClause(typeParams); ok {
-		endSpan = ast.NewSpan(endSpan.Start, end, p.lexer.source.ID)
+	// A function type with no parameters of its own has nothing a clause could bound, so a
+	// clause after it belongs to the signature this type is the return of. A function type
+	// with parameters takes the clause, and the enclosing signature parenthesizes such a
+	// return to keep a clause of its own, as it does ahead of a throws clause.
+	if len(typeParams) > 0 {
+		if end, ok := p.whereClause(typeParams); ok {
+			endSpan = ast.NewSpan(endSpan.Start, end, p.lexer.source.ID)
+		}
 	}
 
 	fnAnn := ast.NewFuncTypeAnn(
