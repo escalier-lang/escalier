@@ -241,9 +241,9 @@ export declare class AudioBufferSourceNode extends AudioScheduledSourceNode {
     readonly playbackRate: AudioParam,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/AudioBufferSourceNode/start) */
     start(&mut self, when?: number, offset?: number, duration?: number) -> unknown,
-    addEventListener<K: keyof AudioScheduledSourceNodeEventMap>(&mut self, type: K, listener: fn (this: AudioBufferSourceNode, ev: AudioScheduledSourceNodeEventMap[K]) -> any, options?: boolean | AddEventListenerOptions) -> unknown,
+    addEventListener<K <: keyof AudioScheduledSourceNodeEventMap>(&mut self, type: K, listener: fn (this: AudioBufferSourceNode, ev: AudioScheduledSourceNodeEventMap[K]) -> any, options?: boolean | AddEventListenerOptions) -> unknown,
     addEventListener(&mut self, type: string, listener: EventListenerOrEventListenerObject, options?: boolean | AddEventListenerOptions) -> unknown,
-    removeEventListener<K: keyof AudioScheduledSourceNodeEventMap>(&mut self, type: K, listener: fn (this: AudioBufferSourceNode, ev: AudioScheduledSourceNodeEventMap[K]) -> any, options?: boolean | EventListenerOptions) -> unknown,
+    removeEventListener<K <: keyof AudioScheduledSourceNodeEventMap>(&mut self, type: K, listener: fn (this: AudioBufferSourceNode, ev: AudioScheduledSourceNodeEventMap[K]) -> any, options?: boolean | EventListenerOptions) -> unknown,
     removeEventListener(&mut self, type: string, listener: EventListenerOrEventListenerObject, options?: boolean | EventListenerOptions) -> unknown,
     static prototype: AudioBufferSourceNode,
     constructor(&mut self, context: BaseAudioContext, options?: AudioBufferSourceOptions)
@@ -274,9 +274,9 @@ export declare class AudioContext extends BaseAudioContext {
     resume(&mut self) -> Promise<undefined>,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/AudioContext/suspend) */
     suspend(&mut self) -> Promise<undefined>,
-    addEventListener<K: keyof BaseAudioContextEventMap>(&mut self, type: K, listener: fn (this: AudioContext, ev: BaseAudioContextEventMap[K]) -> any, options?: boolean | AddEventListenerOptions) -> unknown,
+    addEventListener<K <: keyof BaseAudioContextEventMap>(&mut self, type: K, listener: fn (this: AudioContext, ev: BaseAudioContextEventMap[K]) -> any, options?: boolean | AddEventListenerOptions) -> unknown,
     addEventListener(&mut self, type: string, listener: EventListenerOrEventListenerObject, options?: boolean | AddEventListenerOptions) -> unknown,
-    removeEventListener<K: keyof BaseAudioContextEventMap>(&mut self, type: K, listener: fn (this: AudioContext, ev: BaseAudioContextEventMap[K]) -> any, options?: boolean | EventListenerOptions) -> unknown,
+    removeEventListener<K <: keyof BaseAudioContextEventMap>(&mut self, type: K, listener: fn (this: AudioContext, ev: BaseAudioContextEventMap[K]) -> any, options?: boolean | EventListenerOptions) -> unknown,
     removeEventListener(&mut self, type: string, listener: EventListenerOrEventListenerObject, options?: boolean | EventListenerOptions) -> unknown,
     static prototype: AudioContext,
     constructor(&mut self, contextOptions?: AudioContextOptions)
@@ -457,9 +457,9 @@ export declare class AudioScheduledSourceNode extends AudioNode {
     start(&mut self, when?: number) -> unknown,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/AudioScheduledSourceNode/stop) */
     stop(&mut self, when?: number) -> unknown,
-    addEventListener<K: keyof AudioScheduledSourceNodeEventMap>(&mut self, type: K, listener: fn (this: AudioScheduledSourceNode, ev: AudioScheduledSourceNodeEventMap[K]) -> any, options?: boolean | AddEventListenerOptions) -> unknown,
+    addEventListener<K <: keyof AudioScheduledSourceNodeEventMap>(&mut self, type: K, listener: fn (this: AudioScheduledSourceNode, ev: AudioScheduledSourceNodeEventMap[K]) -> any, options?: boolean | AddEventListenerOptions) -> unknown,
     addEventListener(&mut self, type: string, listener: EventListenerOrEventListenerObject, options?: boolean | AddEventListenerOptions) -> unknown,
-    removeEventListener<K: keyof AudioScheduledSourceNodeEventMap>(&mut self, type: K, listener: fn (this: AudioScheduledSourceNode, ev: AudioScheduledSourceNodeEventMap[K]) -> any, options?: boolean | EventListenerOptions) -> unknown,
+    removeEventListener<K <: keyof AudioScheduledSourceNodeEventMap>(&mut self, type: K, listener: fn (this: AudioScheduledSourceNode, ev: AudioScheduledSourceNodeEventMap[K]) -> any, options?: boolean | EventListenerOptions) -> unknown,
     removeEventListener(&mut self, type: string, listener: EventListenerOrEventListenerObject, options?: boolean | EventListenerOptions) -> unknown,
     static prototype: AudioScheduledSourceNode,
     constructor(&mut self)
@@ -493,9 +493,9 @@ export declare class AudioWorkletNode extends AudioNode {
     readonly parameters: AudioParamMap,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/AudioWorkletNode/port) */
     readonly port: dom.MessagePort,
-    addEventListener<K: keyof AudioWorkletNodeEventMap>(&mut self, type: K, listener: fn (this: AudioWorkletNode, ev: AudioWorkletNodeEventMap[K]) -> any, options?: boolean | AddEventListenerOptions) -> unknown,
+    addEventListener<K <: keyof AudioWorkletNodeEventMap>(&mut self, type: K, listener: fn (this: AudioWorkletNode, ev: AudioWorkletNodeEventMap[K]) -> any, options?: boolean | AddEventListenerOptions) -> unknown,
     addEventListener(&mut self, type: string, listener: EventListenerOrEventListenerObject, options?: boolean | AddEventListenerOptions) -> unknown,
-    removeEventListener<K: keyof AudioWorkletNodeEventMap>(&mut self, type: K, listener: fn (this: AudioWorkletNode, ev: AudioWorkletNodeEventMap[K]) -> any, options?: boolean | EventListenerOptions) -> unknown,
+    removeEventListener<K <: keyof AudioWorkletNodeEventMap>(&mut self, type: K, listener: fn (this: AudioWorkletNode, ev: AudioWorkletNodeEventMap[K]) -> any, options?: boolean | EventListenerOptions) -> unknown,
     removeEventListener(&mut self, type: string, listener: EventListenerOrEventListenerObject, options?: boolean | EventListenerOptions) -> unknown,
     static prototype: AudioWorkletNode,
     constructor(&mut self, context: BaseAudioContext, name: string, options?: AudioWorkletNodeOptions)
@@ -568,9 +568,9 @@ export declare class BaseAudioContext extends EventTarget {
     createWaveShaper(&mut self) -> WaveShaperNode,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/BaseAudioContext/decodeAudioData) */
     decodeAudioData(&mut self, audioData: typed_arrays.ArrayBuffer, successCallback?: DecodeSuccessCallback | null, errorCallback?: DecodeErrorCallback | null) -> Promise<AudioBuffer>,
-    addEventListener<K: keyof BaseAudioContextEventMap>(&mut self, type: K, listener: fn (this: BaseAudioContext, ev: BaseAudioContextEventMap[K]) -> any, options?: boolean | AddEventListenerOptions) -> unknown,
+    addEventListener<K <: keyof BaseAudioContextEventMap>(&mut self, type: K, listener: fn (this: BaseAudioContext, ev: BaseAudioContextEventMap[K]) -> any, options?: boolean | AddEventListenerOptions) -> unknown,
     addEventListener(&mut self, type: string, listener: EventListenerOrEventListenerObject, options?: boolean | AddEventListenerOptions) -> unknown,
-    removeEventListener<K: keyof BaseAudioContextEventMap>(&mut self, type: K, listener: fn (this: BaseAudioContext, ev: BaseAudioContextEventMap[K]) -> any, options?: boolean | EventListenerOptions) -> unknown,
+    removeEventListener<K <: keyof BaseAudioContextEventMap>(&mut self, type: K, listener: fn (this: BaseAudioContext, ev: BaseAudioContextEventMap[K]) -> any, options?: boolean | EventListenerOptions) -> unknown,
     removeEventListener(&mut self, type: string, listener: EventListenerOrEventListenerObject, options?: boolean | EventListenerOptions) -> unknown,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/BaseAudioContext/createIIRFilter) */
     createIIRFilter(&mut self, feedforward: Iterable<number>, feedback: Iterable<number>) -> IIRFilterNode,
@@ -630,9 +630,9 @@ export declare class ChannelSplitterNode extends AudioNode {
 export declare class ConstantSourceNode extends AudioScheduledSourceNode {
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/ConstantSourceNode/offset) */
     readonly offset: AudioParam,
-    addEventListener<K: keyof AudioScheduledSourceNodeEventMap>(&mut self, type: K, listener: fn (this: ConstantSourceNode, ev: AudioScheduledSourceNodeEventMap[K]) -> any, options?: boolean | AddEventListenerOptions) -> unknown,
+    addEventListener<K <: keyof AudioScheduledSourceNodeEventMap>(&mut self, type: K, listener: fn (this: ConstantSourceNode, ev: AudioScheduledSourceNodeEventMap[K]) -> any, options?: boolean | AddEventListenerOptions) -> unknown,
     addEventListener(&mut self, type: string, listener: EventListenerOrEventListenerObject, options?: boolean | AddEventListenerOptions) -> unknown,
-    removeEventListener<K: keyof AudioScheduledSourceNodeEventMap>(&mut self, type: K, listener: fn (this: ConstantSourceNode, ev: AudioScheduledSourceNodeEventMap[K]) -> any, options?: boolean | EventListenerOptions) -> unknown,
+    removeEventListener<K <: keyof AudioScheduledSourceNodeEventMap>(&mut self, type: K, listener: fn (this: ConstantSourceNode, ev: AudioScheduledSourceNodeEventMap[K]) -> any, options?: boolean | EventListenerOptions) -> unknown,
     removeEventListener(&mut self, type: string, listener: EventListenerOrEventListenerObject, options?: boolean | EventListenerOptions) -> unknown,
     static prototype: ConstantSourceNode,
     constructor(&mut self, context: BaseAudioContext, options?: ConstantSourceOptions)
@@ -784,9 +784,9 @@ export declare class OfflineAudioContext extends BaseAudioContext {
     startRendering(&mut self) -> Promise<AudioBuffer>,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/OfflineAudioContext/suspend) */
     suspend(&mut self, suspendTime: number) -> Promise<undefined>,
-    addEventListener<K: keyof OfflineAudioContextEventMap>(&mut self, type: K, listener: fn (this: OfflineAudioContext, ev: OfflineAudioContextEventMap[K]) -> any, options?: boolean | AddEventListenerOptions) -> unknown,
+    addEventListener<K <: keyof OfflineAudioContextEventMap>(&mut self, type: K, listener: fn (this: OfflineAudioContext, ev: OfflineAudioContextEventMap[K]) -> any, options?: boolean | AddEventListenerOptions) -> unknown,
     addEventListener(&mut self, type: string, listener: EventListenerOrEventListenerObject, options?: boolean | AddEventListenerOptions) -> unknown,
-    removeEventListener<K: keyof OfflineAudioContextEventMap>(&mut self, type: K, listener: fn (this: OfflineAudioContext, ev: OfflineAudioContextEventMap[K]) -> any, options?: boolean | EventListenerOptions) -> unknown,
+    removeEventListener<K <: keyof OfflineAudioContextEventMap>(&mut self, type: K, listener: fn (this: OfflineAudioContext, ev: OfflineAudioContextEventMap[K]) -> any, options?: boolean | EventListenerOptions) -> unknown,
     removeEventListener(&mut self, type: string, listener: EventListenerOrEventListenerObject, options?: boolean | EventListenerOptions) -> unknown,
     static prototype: OfflineAudioContext,
     constructor(&mut self, contextOptions: OfflineAudioContextOptions),
@@ -808,9 +808,9 @@ export declare class OscillatorNode extends AudioScheduledSourceNode {
     type: OscillatorType,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/OscillatorNode/setPeriodicWave) */
     setPeriodicWave(&mut self, periodicWave: PeriodicWave) -> unknown,
-    addEventListener<K: keyof AudioScheduledSourceNodeEventMap>(&mut self, type: K, listener: fn (this: OscillatorNode, ev: AudioScheduledSourceNodeEventMap[K]) -> any, options?: boolean | AddEventListenerOptions) -> unknown,
+    addEventListener<K <: keyof AudioScheduledSourceNodeEventMap>(&mut self, type: K, listener: fn (this: OscillatorNode, ev: AudioScheduledSourceNodeEventMap[K]) -> any, options?: boolean | AddEventListenerOptions) -> unknown,
     addEventListener(&mut self, type: string, listener: EventListenerOrEventListenerObject, options?: boolean | AddEventListenerOptions) -> unknown,
-    removeEventListener<K: keyof AudioScheduledSourceNodeEventMap>(&mut self, type: K, listener: fn (this: OscillatorNode, ev: AudioScheduledSourceNodeEventMap[K]) -> any, options?: boolean | EventListenerOptions) -> unknown,
+    removeEventListener<K <: keyof AudioScheduledSourceNodeEventMap>(&mut self, type: K, listener: fn (this: OscillatorNode, ev: AudioScheduledSourceNodeEventMap[K]) -> any, options?: boolean | EventListenerOptions) -> unknown,
     removeEventListener(&mut self, type: string, listener: EventListenerOrEventListenerObject, options?: boolean | EventListenerOptions) -> unknown,
     static prototype: OscillatorNode,
     constructor(&mut self, context: BaseAudioContext, options?: OscillatorOptions)
@@ -902,9 +902,9 @@ export declare class ScriptProcessorNode extends AudioNode {
      * [MDN Reference](https://developer.mozilla.org/docs/Web/API/ScriptProcessorNode/audioprocess_event)
      */
     onaudioprocess: (fn (this: ScriptProcessorNode, ev: AudioProcessingEvent) -> any) | null,
-    addEventListener<K: keyof ScriptProcessorNodeEventMap>(&mut self, type: K, listener: fn (this: ScriptProcessorNode, ev: ScriptProcessorNodeEventMap[K]) -> any, options?: boolean | AddEventListenerOptions) -> unknown,
+    addEventListener<K <: keyof ScriptProcessorNodeEventMap>(&mut self, type: K, listener: fn (this: ScriptProcessorNode, ev: ScriptProcessorNodeEventMap[K]) -> any, options?: boolean | AddEventListenerOptions) -> unknown,
     addEventListener(&mut self, type: string, listener: EventListenerOrEventListenerObject, options?: boolean | AddEventListenerOptions) -> unknown,
-    removeEventListener<K: keyof ScriptProcessorNodeEventMap>(&mut self, type: K, listener: fn (this: ScriptProcessorNode, ev: ScriptProcessorNodeEventMap[K]) -> any, options?: boolean | EventListenerOptions) -> unknown,
+    removeEventListener<K <: keyof ScriptProcessorNodeEventMap>(&mut self, type: K, listener: fn (this: ScriptProcessorNode, ev: ScriptProcessorNodeEventMap[K]) -> any, options?: boolean | EventListenerOptions) -> unknown,
     removeEventListener(&mut self, type: string, listener: EventListenerOrEventListenerObject, options?: boolean | EventListenerOptions) -> unknown,
     static prototype: ScriptProcessorNode,
     constructor(&mut self)

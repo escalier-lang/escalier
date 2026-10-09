@@ -127,13 +127,13 @@ func TestParseStmtNoErrors(t *testing.T) {
 			}`,
 		},
 		"GenericClassWithConstrainedType": {
-			input: `class Pair<T: number, U: string> {
+			input: `class Pair<T <: number, U <: string> {
 				first: T,
 				second: U,
 			}`,
 		},
 		"GenericClassWithDefaultType": {
-			input: "class Response<T: any = string> { data: T }",
+			input: "class Response<T <: any = string> { data: T }",
 		},
 		"GenericClassWithCovariantParam": {
 			input: "class Box<out T> { value: T }",
@@ -145,7 +145,7 @@ func TestParseStmtNoErrors(t *testing.T) {
 			input: "class Cell<in out T> { value: T }",
 		},
 		"GenericClassWithVarianceAndConstraint": {
-			input: "class Box<out T: number> { value: T }",
+			input: "class Box<out T <: number> { value: T }",
 		},
 		"ClassWithGenericMethod": {
 			input: `class Mapper<T> {
@@ -244,10 +244,10 @@ func TestParseStmtNoErrors(t *testing.T) {
 			input: "type MyType<T> = Array<T>",
 		},
 		"TypeDeclWithMultipleTypeParams": {
-			input: "type MyType<T, U: string> = { first: T, second: U }",
+			input: "type MyType<T, U <: string> = { first: T, second: U }",
 		},
 		"TypeDeclWithConstrainedTypeParams": {
-			input: "type MyType<T: number, U: string = string> = T | U",
+			input: "type MyType<T <: number, U <: string = string> = T | U",
 		},
 		"TypeDeclWithComments": {
 			input: `type MyType = Foo

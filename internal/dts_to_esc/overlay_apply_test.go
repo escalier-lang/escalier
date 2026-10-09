@@ -822,7 +822,7 @@ export declare interface ArrayLike<T> {
     readonly length: number
 }
 `, renderPackage(t, overlayModules(t, map[string]string{
-		"std/prelude.replace.esc": "export declare class Array<T: unknown> {\n" +
+		"std/prelude.replace.esc": "export declare class Array<T <: unknown> {\n" +
 			"    at(&self, index: number) -> T,\n}\n",
 	}), "std:prelude"))
 }

@@ -439,7 +439,7 @@ func coalesceScheme(t soltype.Type, genLevel int, declared []*soltype.TypeParam)
 	// A class, alias, or enum keeps its parameters in the Context registry rather than on a
 	// signature, so funcTypeParamVars finds none of them. Without them in keep each one
 	// merges with its own declared bound, and at a negative position that merge is an
-	// intersection: `class Holder<T: {value: number}> { peer: T }` would read back as
+	// intersection: `class Holder<T <: {value: number}> { peer: T }` would read back as
 	// `peer: T & {value: number}`.
 	for _, tp := range declared {
 		// Only a bounded parameter needs keeping. An unbounded one has no bound to merge
@@ -508,10 +508,10 @@ func coalesceSchemeKeeping(
 // it, which cleaned names when the parameter's bounds needed a copy. Name, bound, and
 // default come from the declaration, so a caller renders what the source wrote.
 //
-// A bound or a default naming a parameter is rewritten the same way. `class P<A: {x: number}, B: A>`
+// A bound or a default naming a parameter is rewritten the same way. `class P<A <: {x: number}, B <: A>`
 // renders `B extends A`, where an unrewritten reference to A's original variable would
 // leave `B extends unknown`. A parameter's bound naming the parameter itself goes through
-// the same rewrite, which is what `class Node<T: {next: T}>` needs.
+// the same rewrite, which is what `class Node<T <: {next: T}>` needs.
 func displayTypeParams(
 	declared []*soltype.TypeParam,
 	cleaned map[*soltype.TypeVarType]*soltype.TypeVarType,
@@ -717,11 +717,11 @@ func (c *schemeCoalescer) displayBinder(v *soltype.TypeVarType) *soltype.TypeVar
 //     β, which the printer would otherwise name and bind. An alias bound reaching a
 //     function's parameter is the shape that produces one:
 //
-//     type Box<T: string> = {v: T}
+//     type Box<T <: string> = {v: T}
 //     fn f<U>(b: Box<U>) -> U { return b.v }
 //
-//     `f` renders `fn <U: string>(b: Box<U>) -> U` with this cleanup and
-//     `fn <T0, U: string & T0>(b: Box<U>) -> U` without it, where `T0` is the generated
+//     `f` renders `fn <U <: string>(b: Box<U>) -> U` with this cleanup and
+//     `fn <T0, U <: string & T0>(b: Box<U>) -> U` without it, where `T0` is the generated
 //     name β takes.
 //
 //  2. A parameter the declaration wrote carries exactly the bound the source gave it,
@@ -1028,8 +1028,8 @@ func paramsForArgs(tps []*soltype.TypeParam, args []soltype.Type, subst *typeSub
 		// A bound and a default are written in terms of the declaration's own parameters,
 		// so they are rewritten to this type's arguments alongside the variable they
 		// belong to. Leaving them would render a variable no binder in this print names,
-		// so `class Holder<T: {next: T}>` reached through a second binding would show
-		// `<T: {next: t0}>`.
+		// so `class Holder<T <: {next: T}>` reached through a second binding would show
+		// `<T <: {next: t0}>`.
 		//
 		// The rewrite runs even where the argument is the parameter's own variable, since
 		// a reference carries its type and lifetime arguments independently and a bound

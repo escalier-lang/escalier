@@ -163,7 +163,7 @@ export declare class Crypto {
      */
     readonly subtle: SubtleCrypto,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/Crypto/getRandomValues) */
-    getRandomValues<T: typed_arrays.ArrayBufferView | null>(&self, array: T) -> T,
+    getRandomValues<T <: typed_arrays.ArrayBufferView | null>(&self, array: T) -> T,
     /**
      * Available only in secure contexts.
      *

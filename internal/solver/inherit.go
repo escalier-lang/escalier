@@ -412,10 +412,10 @@ func (c *checker) consumedVars(def *ClassDef, instance *soltype.ClassType, vars 
 // argument. It returns ok=false when no position CovariantInputs marks is replaced, since
 // only such a position lets a widened view pass a method something an override may reject.
 //
-// A bound may name another parameter, as `U` does in `class C<T, U: T>`. A covariant `T`
+// A bound may name another parameter, as `U` does in `class C<T, U <: T>`. A covariant `T`
 // widens in the same view that widens `U`, so a bound is read at the widest arguments
 // rather than at instance's. Each replaced position starts at `unknown` and is re-read from
-// its bound until no position changes. A bound naming its own parameter, as `T: Cmp<T>`
+// its bound until no position changes. A bound naming its own parameter, as `T <: Cmp<T>`
 // does, grows at every pass and never settles. Such a position stays `unknown`, the widest
 // argument there is.
 func widestInstance(def *ClassDef, instance *soltype.ClassType, keep set.Set[*soltype.TypeVarType]) (*soltype.ClassType, bool) {

@@ -16,9 +16,9 @@ export declare interface WorkerOptions {
 export declare interface AbstractWorker {
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/ServiceWorker/error_event) */
     onerror: (fn (this: AbstractWorker, ev: dom.ErrorEvent) -> any) | null,
-    addEventListener<K: keyof dom.AbstractWorkerEventMap>(type: K, listener: fn (this: AbstractWorker, ev: dom.AbstractWorkerEventMap[K]) -> any, options?: boolean | AddEventListenerOptions) -> unknown,
+    addEventListener<K <: keyof dom.AbstractWorkerEventMap>(type: K, listener: fn (this: AbstractWorker, ev: dom.AbstractWorkerEventMap[K]) -> any, options?: boolean | AddEventListenerOptions) -> unknown,
     addEventListener(type: string, listener: EventListenerOrEventListenerObject, options?: boolean | AddEventListenerOptions) -> unknown,
-    removeEventListener<K: keyof dom.AbstractWorkerEventMap>(type: K, listener: fn (this: AbstractWorker, ev: dom.AbstractWorkerEventMap[K]) -> any, options?: boolean | EventListenerOptions) -> unknown,
+    removeEventListener<K <: keyof dom.AbstractWorkerEventMap>(type: K, listener: fn (this: AbstractWorker, ev: dom.AbstractWorkerEventMap[K]) -> any, options?: boolean | EventListenerOptions) -> unknown,
     removeEventListener(type: string, listener: EventListenerOrEventListenerObject, options?: boolean | EventListenerOptions) -> unknown
 }
 
@@ -31,9 +31,9 @@ export declare class SharedWorker extends EventTarget implements AbstractWorker 
      * [MDN Reference](https://developer.mozilla.org/docs/Web/API/SharedWorker/port)
      */
     readonly port: dom.MessagePort,
-    addEventListener<K: keyof dom.AbstractWorkerEventMap>(&mut self, type: K, listener: fn (this: SharedWorker, ev: dom.AbstractWorkerEventMap[K]) -> any, options?: boolean | AddEventListenerOptions) -> unknown,
+    addEventListener<K <: keyof dom.AbstractWorkerEventMap>(&mut self, type: K, listener: fn (this: SharedWorker, ev: dom.AbstractWorkerEventMap[K]) -> any, options?: boolean | AddEventListenerOptions) -> unknown,
     addEventListener(&mut self, type: string, listener: EventListenerOrEventListenerObject, options?: boolean | AddEventListenerOptions) -> unknown,
-    removeEventListener<K: keyof dom.AbstractWorkerEventMap>(&mut self, type: K, listener: fn (this: SharedWorker, ev: dom.AbstractWorkerEventMap[K]) -> any, options?: boolean | EventListenerOptions) -> unknown,
+    removeEventListener<K <: keyof dom.AbstractWorkerEventMap>(&mut self, type: K, listener: fn (this: SharedWorker, ev: dom.AbstractWorkerEventMap[K]) -> any, options?: boolean | EventListenerOptions) -> unknown,
     removeEventListener(&mut self, type: string, listener: EventListenerOrEventListenerObject, options?: boolean | EventListenerOptions) -> unknown,
     static prototype: SharedWorker,
     constructor(&mut self, scriptURL: string | url.URL, options?: string | WorkerOptions)
@@ -61,9 +61,9 @@ export declare class Worker extends EventTarget implements AbstractWorker, dom.M
      * [MDN Reference](https://developer.mozilla.org/docs/Web/API/Worker/terminate)
      */
     terminate(&mut self) -> unknown,
-    addEventListener<K: keyof WorkerEventMap>(&mut self, type: K, listener: fn (this: Worker, ev: WorkerEventMap[K]) -> any, options?: boolean | AddEventListenerOptions) -> unknown,
+    addEventListener<K <: keyof WorkerEventMap>(&mut self, type: K, listener: fn (this: Worker, ev: WorkerEventMap[K]) -> any, options?: boolean | AddEventListenerOptions) -> unknown,
     addEventListener(&mut self, type: string, listener: EventListenerOrEventListenerObject, options?: boolean | AddEventListenerOptions) -> unknown,
-    removeEventListener<K: keyof WorkerEventMap>(&mut self, type: K, listener: fn (this: Worker, ev: WorkerEventMap[K]) -> any, options?: boolean | EventListenerOptions) -> unknown,
+    removeEventListener<K <: keyof WorkerEventMap>(&mut self, type: K, listener: fn (this: Worker, ev: WorkerEventMap[K]) -> any, options?: boolean | EventListenerOptions) -> unknown,
     removeEventListener(&mut self, type: string, listener: EventListenerOrEventListenerObject, options?: boolean | EventListenerOptions) -> unknown,
     static prototype: Worker,
     constructor(&mut self, scriptURL: string | url.URL, options?: WorkerOptions)

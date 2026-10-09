@@ -41,7 +41,7 @@ export interface Manager extends Person, Employee {
 }
 
 // Generic interface with constraints
-export interface Comparable<T : number | string> {
+export interface Comparable<T <: number | string> {
     compareTo(other: T) -> number,
 }
 

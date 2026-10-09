@@ -427,7 +427,7 @@ func (c *checker) inferFunc(scope *Scope, lvl int, sig ast.FuncSig, body *ast.Bl
 	throws := declaredThrows
 	hasBody := body != nil
 	// A sync return annotation resolves before the body, so a bound a type reference in it
-	// puts on a type parameter, as `-> Box<U>` does for `class Box<T: string>`, is one the
+	// puts on a type parameter, as `-> Box<U>` does for `class Box<T <: string>`, is one the
 	// body can rely on. A call to the function is checked against that bound too.
 	var retAnnT soltype.Type
 	retAnnOK := false

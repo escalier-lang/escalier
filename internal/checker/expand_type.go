@@ -920,7 +920,7 @@ func (c *Checker) getMemberTypeImpl(ctx Context, objType type_system.Type, key M
 		return c.getIntersectionAccess(ctx, t, key, mode, receiverMut, errors)
 	case *type_system.TypeVarType:
 		// TODO(#389): Check t.Constraint before synthesizing an open object.
-		// Constrained type variables (e.g. `<T: {name: string}>`) should resolve
+		// Constrained type variables (e.g. `<T <: {name: string}>`) should resolve
 		// properties from their constraint first. Currently this only works for
 		// unannotated parameters where Constraint == nil.
 

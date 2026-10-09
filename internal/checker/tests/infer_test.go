@@ -794,12 +794,12 @@ func TestCheckModuleNoErrors(t *testing.T) {
 		},
 		"InferredConstraintsFromGenericCall": {
 			input: `
-				fn fstNum<A: number, B: number>(a: A, b: B) -> A { return a }
+				fn fstNum<A <: number, B <: number>(a: A, b: B) -> A { return a }
 				fn fstNumWrapper(a, b) { return fstNum(a, b) }
 			`,
 			expectedTypes: map[string]string{
-				"fstNum":        "fn <A: number, B: number>(a: A, b: B) -> A",
-				"fstNumWrapper": "fn <T0: number, T1: number>(a: T0, b: T1) -> T0",
+				"fstNum":        "fn <A <: number, B <: number>(a: A, b: B) -> A",
+				"fstNumWrapper": "fn <T0 <: number, T1 <: number>(a: T0, b: T1) -> T0",
 			},
 		},
 		"GeneralizeAvoidNameCollision": {
@@ -971,13 +971,13 @@ func TestCheckModuleNoErrors(t *testing.T) {
 		},
 		"GenericFunctionWithConstraint": {
 			input: `
-				val fst = fn<A: number, B: number>(a: A, b: B) -> A {
+				val fst = fn<A <: number, B <: number>(a: A, b: B) -> A {
 					return a
 				}
 				val a = fst(5, 10)
 			`,
 			expectedTypes: map[string]string{
-				"fst": "fn <A: number, B: number>(a: A, b: B) -> A",
+				"fst": "fn <A <: number, B <: number>(a: A, b: B) -> A",
 				"a":   "5",
 			},
 		},

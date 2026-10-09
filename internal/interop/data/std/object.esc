@@ -46,7 +46,7 @@ export declare class Object {
      * @param target The target object to copy to.
      * @param source The source object from which to copy properties.
      */
-    static assign<T: {...}, U>(target: T, source: U) -> T & U,
+    static assign<T <: {...}, U>(target: T, source: U) -> T & U,
     /**
      * Copy the values of all of the enumerable own properties from one or more source objects to a
      * target object. Returns the target object.
@@ -54,7 +54,7 @@ export declare class Object {
      * @param source1 The first source object from which to copy properties.
      * @param source2 The second source object from which to copy properties.
      */
-    static assign<T: {...}, U, V>(target: T, source1: U, source2: V) -> T & U & V,
+    static assign<T <: {...}, U, V>(target: T, source1: U, source2: V) -> T & U & V,
     /**
      * Copy the values of all of the enumerable own properties from one or more source objects to a
      * target object. Returns the target object.
@@ -63,7 +63,7 @@ export declare class Object {
      * @param source2 The second source object from which to copy properties.
      * @param source3 The third source object from which to copy properties.
      */
-    static assign<T: {...}, U, V, W>(target: T, source1: U, source2: V, source3: W) -> T & U & V & W,
+    static assign<T <: {...}, U, V, W>(target: T, source1: U, source2: V, source3: W) -> T & U & V & W,
     /**
      * Copy the values of all of the enumerable own properties from one or more source objects to a
      * target object. Returns the target object.
@@ -141,7 +141,7 @@ export declare class Object {
      * @param items An iterable.
      * @param keySelector A callback which will be invoked for each item in items.
      */
-    static groupBy<K: PropertyKey, T>(items: Iterable<T>, keySelector: fn (item: T, index: number) -> K) -> Partial<Record<K, mut Array<T>>>,
+    static groupBy<K <: PropertyKey, T>(items: Iterable<T>, keySelector: fn (item: T, index: number) -> K) -> Partial<Record<K, mut Array<T>>>,
     constructor(&mut self, value?: unknown),
     () -> any,
     (value: unknown) -> any,
@@ -198,12 +198,12 @@ export declare class Object {
      * Prevents the modification of existing property attributes and values, and prevents the addition of new properties.
      * @param f Object on which to lock the attributes.
      */
-    static freeze<T: function.Function>(f: T) -> T,
+    static freeze<T <: function.Function>(f: T) -> T,
     /**
      * Prevents the modification of existing property attributes and values, and prevents the addition of new properties.
      * @param o Object on which to lock the attributes.
      */
-    static freeze<T: {}>(o: T) -> Readonly<T>,
+    static freeze<T <: {}>(o: T) -> Readonly<T>,
     /**
      * Prevents the modification of existing property attributes and values, and prevents the addition of new properties.
      * @param o Object on which to lock the attributes.

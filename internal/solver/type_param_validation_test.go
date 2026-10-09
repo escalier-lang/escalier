@@ -47,7 +47,7 @@ func TestADroppedDuplicateTypeParamRaisesNothingElse(t *testing.T) {
 	tests := map[string]string{
 		// A bound or a default naming the duplicated name puts that name in its own
 		// dependency cycle, the shape that has no order satisfying every annotation.
-		"ASelfReferentialBound":   `declare fn g<T, T: T>(a: T) -> T`,
+		"ASelfReferentialBound":   `declare fn g<T, T <: T>(a: T) -> T`,
 		"ASelfReferentialDefault": `type Bad<T, T = T> = {v: T}`,
 		"AClassReference":         "class C<T, T> {\n\tv: T,\n}\ndeclare val c: C<number>",
 		"AnAliasReference":        "type A<T, T> = {v: T}\ndeclare val a: A<number>",

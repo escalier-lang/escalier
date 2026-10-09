@@ -225,7 +225,7 @@ func recordInterfaceReceivers(def *AliasDef, body *ast.ObjectTypeAnn) {
 //
 // The first declaration's list is the one every body resolves against, so a later
 // declaration writing a bound or a default is writing something nothing reads.
-// Rejecting that is what stops `Box<T: string>` and `Box<T: number>` merging under
+// Rejecting that is what stops `Box<T <: string>` and `Box<T <: number>` merging under
 // whichever came first.
 func typeParamMismatch(first, later []*ast.TypeParam) (string, bool) {
 	if len(first) != len(later) {

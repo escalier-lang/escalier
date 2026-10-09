@@ -42,7 +42,7 @@ func TestClassDeclDependencies(t *testing.T) {
 		"ClassWithTypeParamConstraints": {
 			input: `
 				type Serializable = {serialize: fn() -> string}
-				class DataClass<T: Serializable> {
+				class DataClass<T <: Serializable> {
 					value: T,
 				}
 			`,

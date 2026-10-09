@@ -17,7 +17,7 @@ export declare class DisposableStack {
      * @param value The resource to add. `null` and `undefined` will not be added, but will be returned.
      * @returns The provided {@link value}.
      */
-    use<T: Disposable | null | undefined>(&mut self, value: T) -> T,
+    use<T <: Disposable | null | undefined>(&mut self, value: T) -> T,
     /**
      * Adds a value and associated disposal callback as a resource to the stack.
      * @param value The value to add.
@@ -81,7 +81,7 @@ export declare class AsyncDisposableStack {
      * @param value The resource to add. `null` and `undefined` will not be added, but will be returned.
      * @returns The provided {@link value}.
      */
-    use<T: AsyncDisposable | Disposable | null | undefined>(&mut self, value: T) -> T,
+    use<T <: AsyncDisposable | Disposable | null | undefined>(&mut self, value: T) -> T,
     /**
      * Adds a value and associated disposal callback as a resource to the stack.
      * @param value The value to add.

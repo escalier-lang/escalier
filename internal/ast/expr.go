@@ -394,10 +394,10 @@ const (
 )
 
 // TypeParam is a type binder in a <…> quantifier list. UpperBound is the bound
-// the type must satisfy. In <T: U>, T <: U, read "T is a subtype of U". The ':'
-// here means subtyping, not the outliving ':' of a LifetimeParam bound. A
+// the type must satisfy. In <T <: U>, T <: U, read "T is a subtype of U". The
+// `<:` is subtyping, where the `:` of a LifetimeParam bound is outlives. A
 // binder is a type or a lifetime, never both, so the two never mix on one
-// binder and the checker picks the relation from the binder's sort. Variance is
+// binder and the parser picks the operator from the binder's sort. Variance is
 // the optional `in`/`out`/`in out` declaration-site modifier. span covers the
 // whole binder. It runs from the variance modifier or the name through the end
 // of a bound or default, so a diagnostic about the parameter can point at
@@ -406,7 +406,7 @@ type TypeParam struct {
 	Name string
 	// LowerBound is the type written after `>:`, as `T` in `B >: T`. nil ⇒ none.
 	LowerBound TypeAnn
-	// UpperBound is the type written after `:`, as `U` in `T: U`. nil ⇒ unbounded.
+	// UpperBound is the type written after `<:`, as `U` in `T <: U`. nil ⇒ unbounded.
 	UpperBound TypeAnn
 	Default    TypeAnn
 	Variance   VarianceModifier

@@ -737,18 +737,18 @@ func TestInferLifetimeTypes(t *testing.T) {
 		// place to attach the borrow.
 		"ConstrainedTypeParam_FirstOfTwo": {
 			input: `
-				fn first<T: {x: number}>(p: mut T, other: mut T) -> mut T { return p }
+				fn first<T <: {x: number}>(p: mut T, other: mut T) -> mut T { return p }
 			`,
 			expectedTypes: map[string]string{
-				"first": "fn <'a, T: {x: number}>(p: mut 'a T, other: mut T) -> mut 'a T",
+				"first": "fn <'a, T <: {x: number}>(p: mut 'a T, other: mut T) -> mut 'a T",
 			},
 		},
 		"ConstrainedTypeParam_Identity": {
 			input: `
-				fn id<T: {x: number}>(p: mut T) -> mut T { return p }
+				fn id<T <: {x: number}>(p: mut T) -> mut T { return p }
 			`,
 			expectedTypes: map[string]string{
-				"id": "fn <'a, T: {x: number}>(p: mut 'a T) -> mut 'a T",
+				"id": "fn <'a, T <: {x: number}>(p: mut 'a T) -> mut 'a T",
 			},
 		},
 		// Regression guard for the pre-Phase-10 behavior: an unbounded
@@ -766,20 +766,20 @@ func TestInferLifetimeTypes(t *testing.T) {
 		// carries a lifetime.
 		"ConstrainedTypeParam_TupleBound": {
 			input: `
-				fn id<T: [number, number]>(p: mut T) -> mut T { return p }
+				fn id<T <: [number, number]>(p: mut T) -> mut T { return p }
 			`,
 			expectedTypes: map[string]string{
-				"id": "fn <'a, T: [number, number]>(p: mut 'a T) -> mut 'a T",
+				"id": "fn <'a, T <: [number, number]>(p: mut 'a T) -> mut 'a T",
 			},
 		},
 		// Primitive-bound constraint: the constraint is not lifetime-
 		// bearing, so the type parameter stays unannotated.
 		"ConstrainedTypeParam_PrimitiveBound": {
 			input: `
-				fn id<T: number>(p: mut T) -> mut T { return p }
+				fn id<T <: number>(p: mut T) -> mut T { return p }
 			`,
 			expectedTypes: map[string]string{
-				"id": "fn <T: number>(p: mut T) -> mut T",
+				"id": "fn <T <: number>(p: mut T) -> mut T",
 			},
 		},
 		// Alias-bound constraint: the bound is a TypeRefType pointing
@@ -789,10 +789,10 @@ func TestInferLifetimeTypes(t *testing.T) {
 		"ConstrainedTypeParam_AliasBound": {
 			input: `
 				type Point = {x: number}
-				fn id<T: Point>(p: mut T) -> mut T { return p }
+				fn id<T <: Point>(p: mut T) -> mut T { return p }
 			`,
 			expectedTypes: map[string]string{
-				"id": "fn <'a, T: Point>(p: mut 'a T) -> mut 'a T",
+				"id": "fn <'a, T <: Point>(p: mut 'a T) -> mut 'a T",
 			},
 		},
 		// Alias-bound constraint where the alias body is itself a
@@ -801,10 +801,10 @@ func TestInferLifetimeTypes(t *testing.T) {
 		"ConstrainedTypeParam_AliasBound_Primitive": {
 			input: `
 				type Num = number
-				fn id<T: Num>(p: mut T) -> mut T { return p }
+				fn id<T <: Num>(p: mut T) -> mut T { return p }
 			`,
 			expectedTypes: map[string]string{
-				"id": "fn <T: Num>(p: mut T) -> mut T",
+				"id": "fn <T <: Num>(p: mut T) -> mut T",
 			},
 		},
 		// Class-instance constraint: every legal instantiation of T
@@ -812,10 +812,10 @@ func TestInferLifetimeTypes(t *testing.T) {
 		"ConstrainedTypeParam_ClassInstanceBound": {
 			input: `
 				class Point { x: number, y: number }
-				fn id<T: Point>(p: mut T) -> mut T { return p }
+				fn id<T <: Point>(p: mut T) -> mut T { return p }
 			`,
 			expectedTypes: map[string]string{
-				"id": "fn <'a, T: Point>(p: mut 'a T) -> mut 'a T",
+				"id": "fn <'a, T <: Point>(p: mut 'a T) -> mut 'a T",
 			},
 		},
 	}
@@ -1434,7 +1434,7 @@ func TestCallSite_GenericMut_UnboundedTypeParam(t *testing.T) {
 func TestCallSite_GenericMut_ConstrainedTypeParam(t *testing.T) {
 	t.Parallel()
 	mutErrors := mustInferScriptMutErrors(t, `
-		fn id<T: {x: number}>(p: mut T) -> mut T { return p }
+		fn id<T <: {x: number}>(p: mut T) -> mut T { return p }
 		fn test() {
 			val p: mut {x: number} = {x: 0}
 			val r: mut {x: number} = id(p)
@@ -1444,7 +1444,7 @@ func TestCallSite_GenericMut_ConstrainedTypeParam(t *testing.T) {
 	assert.Empty(t, mutErrors)
 }
 
-// `first<T: {x: number}>(p, other) -> p` lifetime-links only `p` to the
+// `first<T <: {x: number}>(p, other) -> p` lifetime-links only `p` to the
 // return. After the call, the unrelated argument `q` (passed as
 // `other`) must be free to be frozen to an immutable binding even
 // while the result still holds mutable access — i.e. `q` is not
@@ -1452,7 +1452,7 @@ func TestCallSite_GenericMut_ConstrainedTypeParam(t *testing.T) {
 func TestCallSite_FirstGeneric_OtherArgNotLinked(t *testing.T) {
 	t.Parallel()
 	mutErrors := mustInferScriptMutErrors(t, `
-		fn first<T: {x: number}>(p: mut T, other: mut T) -> mut T { return p }
+		fn first<T <: {x: number}>(p: mut T, other: mut T) -> mut T { return p }
 		fn test() {
 			val p: mut {x: number} = {x: 0}
 			val q: mut {x: number} = {x: 1}

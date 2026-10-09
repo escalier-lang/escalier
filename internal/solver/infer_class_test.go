@@ -245,7 +245,7 @@ func TestInferClassGeneric(t *testing.T) {
 		{
 			name: "ConstraintSatisfied",
 			src: `
-				class Box<T: number> { value: T }
+				class Box<T <: number> { value: T }
 				val b = Box(5)
 				val v = b.value
 			`,
@@ -268,7 +268,7 @@ func TestInferClassGeneric(t *testing.T) {
 // where a bound is not; TestTypeParamDefaultForwardRef covers that.
 func TestInferClassCrossParamBounds(t *testing.T) {
 	srcs := map[string]string{
-		"ForwardConstraint": `class C<T: U, U> { value: T }`,
+		"ForwardConstraint": `class C<T <: U, U> { value: T }`,
 		"EarlierDefault":    `class C<T, U = T> { value: U }`,
 		// The referenced class Cmp is declared before Foo so its instance type is in scope
 		// when Foo's bounds resolve. Resolving `Cmp<U>` / `Cmp<T>` combines the two-pass
@@ -277,7 +277,7 @@ func TestInferClassCrossParamBounds(t *testing.T) {
 		// (planning/simple_sub/m5-implementation-plan.md).
 		"MutualFBound": `
 			class Cmp<X> { value: X }
-			class Foo<T: Cmp<U>, U: Cmp<T>> { value: T }
+			class Foo<T <: Cmp<U>, U <: Cmp<T>> { value: T }
 		`,
 	}
 	for name, src := range srcs {
@@ -289,13 +289,13 @@ func TestInferClassCrossParamBounds(t *testing.T) {
 }
 
 // TestInferClassForwardBoundEnforced shows a forward reference resolves to a real bound,
-// not just a parsed placeholder. `<T: U, U: number>` chains T's bound through the
+// not just a parsed placeholder. `<T <: U, U <: number>` chains T's bound through the
 // later-declared U to number, so a construction whose argument violates it is rejected and
 // one that satisfies it checks clean and infers the argument at both positions.
 func TestInferClassForwardBoundEnforced(t *testing.T) {
 	t.Run("Violated", func(t *testing.T) {
 		_, _, errs := inferSource(t, `
-			class Box<T: U, U: number> { value: T }
+			class Box<T <: U, U <: number> { value: T }
 			val b = Box("hi")
 		`)
 		require.Len(t, errs, 1)
@@ -303,7 +303,7 @@ func TestInferClassForwardBoundEnforced(t *testing.T) {
 	})
 	t.Run("Satisfied", func(t *testing.T) {
 		values, _, errs := inferSource(t, `
-			class Box<T: U, U: number> { value: T }
+			class Box<T <: U, U <: number> { value: T }
 			val b = Box(5)
 		`)
 		require.Empty(t, errs)
@@ -344,15 +344,15 @@ func TestInferClassJoinMemberAccess(t *testing.T) {
 
 // TestInferClassNominalSubtype covers C1's nominal constrain rule reached from source
 // through a type-parameter bound, the one class-typed constraint target source can
-// produce before M7's general TypeRef resolution. `class Box<T: A>` makes a construction
+// produce before M7's general TypeRef resolution. `class Box<T <: A>` makes a construction
 // `Box(arg)` constrain `arg <: A`, so the argument exercises each leg of the rule.
 func TestInferClassNominalSubtype(t *testing.T) {
-	// base declares A, a subclass B, an unrelated Other, and a bounded Box<T: A>.
+	// base declares A, a subclass B, an unrelated Other, and a bounded Box<T <: A>.
 	const base = `
 		class A { x: number, constructor(&mut self) { self.x = 0 } }
 		class B extends A { constructor(&mut self) { super() } }
 		class Other { y: number, constructor(&mut self) { self.y = 0 } }
-		class Box<T: A> { value: T }
+		class Box<T <: A> { value: T }
 	`
 	t.Run("same class satisfies the bound", func(t *testing.T) {
 		values, _, errs := inferSource(t, base+`val b = Box(A())`)
@@ -1763,7 +1763,7 @@ func TestInferClassSelfMethodInputVariance(t *testing.T) {
 			// in the way the widening needs.
 			name: "a bounded generic override narrowing a covariant input is rejected",
 			src: bag + `
-				class NumBag2<U: number> extends Bag<U> {
+				class NumBag2<U <: number> extends Bag<U> {
 					constructor(&mut self, items: Array<U>) { super(items) },
 					contains(&self, x: U) -> boolean { return x > 1 },
 				}
@@ -1852,7 +1852,7 @@ func TestInferClassSelfMethodInputVariance(t *testing.T) {
 			// a `number` and nothing wider.
 			name: "an override is widened to the parameter's bound",
 			src: `
-				class NBag<T: number> {
+				class NBag<T <: number> {
 					readonly v: T,
 					has(&self, x: T) -> boolean { return false },
 				}
@@ -1867,7 +1867,7 @@ func TestInferClassSelfMethodInputVariance(t *testing.T) {
 			// every `number`, not just `1`.
 			name: "an override narrower than the parameter's bound is rejected",
 			src: `
-				class NBag<T: number> {
+				class NBag<T <: number> {
 					readonly v: T,
 					has(&self, x: T) -> boolean { return false },
 				}
@@ -1909,7 +1909,7 @@ func TestInferClassSelfMethodInputVariance(t *testing.T) {
 			// with it.
 			name: "a bound naming a covariant parameter widens with it",
 			src: `
-				class C<T, U: T> {
+				class C<T, U <: T> {
 					readonly t: T,
 					readonly u: U,
 					has(&self, x: U) -> boolean { return false },
@@ -2315,7 +2315,7 @@ func TestInferClassErrors(t *testing.T) {
 		{
 			name: "ConstraintViolated",
 			src: `
-				class Box<T: number> { value: T }
+				class Box<T <: number> { value: T }
 				val b = Box("hi")
 			`,
 			want: `cannot constrain "hi" <: number`,
@@ -2841,7 +2841,7 @@ func TestInferClassMethodTypeParams(t *testing.T) {
 			name: "InstanceMethodBinderEnforcesItsBound",
 			src: `
 				class C {
-					pick<T: string>(&self, x: T) -> T { return x },
+					pick<T <: string>(&self, x: T) -> T { return x },
 				}
 				val c = C()
 				val r = c.pick(1)
@@ -2852,7 +2852,7 @@ func TestInferClassMethodTypeParams(t *testing.T) {
 			name: "StaticMethodBinderEnforcesItsBound",
 			src: `
 				class C {
-					static pick<T: string>(x: T) -> T { return x },
+					static pick<T <: string>(x: T) -> T { return x },
 				}
 				val r = C.pick(1)
 			`,
@@ -2861,7 +2861,7 @@ func TestInferClassMethodTypeParams(t *testing.T) {
 		{
 			name: "ClassBinderStillEnforcesItsBound",
 			src: `
-				class C<U: number> {
+				class C<U <: number> {
 					v: U,
 				}
 				val c = C("z")
@@ -2881,7 +2881,7 @@ func TestInferClassMethodTypeParams(t *testing.T) {
 	}
 }
 
-// A method's `<T: string>` enforces its bound at the call the same way a generic
+// A method's `<T <: string>` enforces its bound at the call the same way a generic
 // function's does, since both route their binder through resolveTypeParams.
 func TestInferClassMethodTypeParamBounds(t *testing.T) {
 	tests := []struct {
@@ -2893,7 +2893,7 @@ func TestInferClassMethodTypeParamBounds(t *testing.T) {
 			name: "ArgumentInsideBound",
 			src: `
 				class C {
-					pick<T: string>(&self, x: T) -> T { return x },
+					pick<T <: string>(&self, x: T) -> T { return x },
 				}
 				val c = C()
 				val r = c.pick("a")
@@ -2903,7 +2903,7 @@ func TestInferClassMethodTypeParamBounds(t *testing.T) {
 			name: "ArgumentOutsideBound",
 			src: `
 				class C {
-					pick<T: string>(&self, x: T) -> T { return x },
+					pick<T <: string>(&self, x: T) -> T { return x },
 				}
 				val c = C()
 				val r = c.pick(1)
@@ -2929,7 +2929,7 @@ func TestInferClassMethodTypeParamBounds(t *testing.T) {
 			src: `
 				class C<U> {
 					v: U,
-					pick<T: U>(&self, x: T) -> T { return x },
+					pick<T <: U>(&self, x: T) -> T { return x },
 				}
 				val c: C<number> = C(1)
 				val r = c.pick(2)
@@ -2967,7 +2967,7 @@ func TestInferClassMethodTypeParamBounds(t *testing.T) {
 func TestInferClassMethodTypeParamsInstantiatePerCall(t *testing.T) {
 	values, _, errs := inferSource(t, `
 		class C {
-			pick<T: string>(&self, x: T) -> T { return x },
+			pick<T <: string>(&self, x: T) -> T { return x },
 		}
 		val c = C()
 		val a = c.pick("a")
@@ -2983,7 +2983,7 @@ func TestInferClassMethodTypeParamsInstantiatePerCall(t *testing.T) {
 // `string`, and `U` is unbounded, so `f(u)` reports. The call `g(1)` is checked against
 // the declared bound alone and reports nothing more.
 func TestInferMethodBodyInferredBoundMatchesTheFunctionForm(t *testing.T) {
-	const callee = "fn f<A: string>(a: A) -> A { return a }\n"
+	const callee = "fn f<A <: string>(a: A) -> A { return a }\n"
 	const want = "cannot constrain U <: string"
 
 	_, _, fnErrs := inferSource(t, callee+`
@@ -3006,19 +3006,19 @@ func TestInferMethodBodyInferredBoundMatchesTheFunctionForm(t *testing.T) {
 // binder's variable, so constraining `"y" <: B` propagates to `"y" <: A`. `A` is itself
 // an inference variable with no upper bound, so the argument joins the `1` that `a`
 // contributed and `A` solves to `1 | "y"`. The bound has nothing to fail against.
-// Bounding `A` in turn, as `<A: number, B: A>`, gives that propagation something to
+// Bounding `A` in turn, as `<A <: number, B <: A>`, gives that propagation something to
 // reach. The second pair below writes it that way and the argument is rejected.
 //
 // The two forms are written side by side here so the parity is what the test asserts
 // rather than the behavior of either alone.
 func TestInferMethodSiblingBoundMatchesTheFunctionForm(t *testing.T) {
 	_, _, fnErrs := inferSource(t, `
-		fn pair<A, B: A>(a: A, b: B) -> A { return a }
+		fn pair<A, B <: A>(a: A, b: B) -> A { return a }
 		val r = pair(1, "y")
 	`)
 	_, _, methodErrs := inferSource(t, `
 		class C {
-			pair<A, B: A>(&self, a: A, b: B) -> A { return a },
+			pair<A, B <: A>(&self, a: A, b: B) -> A { return a },
 		}
 		val c = C()
 		val r = c.pair(1, "y")
@@ -3027,12 +3027,12 @@ func TestInferMethodSiblingBoundMatchesTheFunctionForm(t *testing.T) {
 	require.Equal(t, messagesWithSpan(t, fnErrs), messagesWithSpan(t, methodErrs))
 
 	_, _, boundedFnErrs := inferSource(t, `
-		fn pair<A: number, B: A>(a: A, b: B) -> A { return a }
+		fn pair<A <: number, B <: A>(a: A, b: B) -> A { return a }
 		val r = pair(1, "y")
 	`)
 	_, _, boundedMethodErrs := inferSource(t, `
 		class C {
-			pair<A: number, B: A>(&self, a: A, b: B) -> A { return a },
+			pair<A <: number, B <: A>(&self, a: A, b: B) -> A { return a },
 		}
 		val c = C()
 		val r = c.pair(1, "y")
@@ -3045,7 +3045,7 @@ func TestInferMethodSiblingBoundMatchesTheFunctionForm(t *testing.T) {
 // The signature a caller reads carries the binder under its written name and the bound
 // the source declared. linkMemberSig records `T <: stubReturn` for a method returning
 // `T`, so the binder's variable also collects the stub's return variable; the freeze
-// drops it, which is what keeps `<T>` from rendering as `<T: T0>` and stops that stray
+// drops it, which is what keeps `<T>` from rendering as `<T <: T0>` and stops that stray
 // variable from being quantified onto the class value as a phantom parameter.
 func TestInferClassMethodTypeParamRendering(t *testing.T) {
 	tests := []struct {
@@ -3057,10 +3057,10 @@ func TestInferClassMethodTypeParamRendering(t *testing.T) {
 		{
 			name: "an instance method's bound",
 			src: `
-				class C { pick<T: string>(&self, x: T) -> T { return x }, }
+				class C { pick<T <: string>(&self, x: T) -> T { return x }, }
 				fn probe(c: C) { return c.pick }`,
 			binding: "probe",
-			want:    "fn (c: C) -> fn <T: string>(x: T) -> T",
+			want:    "fn (c: C) -> fn <T <: string>(x: T) -> T",
 		},
 		{
 			name: "an unbounded binder",
@@ -3073,10 +3073,10 @@ func TestInferClassMethodTypeParamRendering(t *testing.T) {
 		{
 			name: "a bound naming the class's parameter",
 			src: `
-				class C<U> { v: U, pick<T: U>(&self, x: T) -> T { return x }, }
+				class C<U> { v: U, pick<T <: U>(&self, x: T) -> T { return x }, }
 				fn probe(c: C<number>) { return c.pick }`,
 			binding: "probe",
-			want:    "fn (c: C<number>) -> fn <T: number>(x: T) -> T",
+			want:    "fn (c: C<number>) -> fn <T <: number>(x: T) -> T",
 		},
 		{
 			name: "a signature mixing both binders",
@@ -3089,9 +3089,9 @@ func TestInferClassMethodTypeParamRendering(t *testing.T) {
 		{
 			// The class value carries the static member, and no phantom binder beside it.
 			name:    "a static method on the class value",
-			src:     `class C { static pick<T: string>(x: T) -> T { return x }, }`,
+			src:     `class C { static pick<T <: string>(x: T) -> T { return x }, }`,
 			binding: "C",
-			want:    "{new () -> C, pick<T: string>(x: T) -> T}",
+			want:    "{new () -> C, pick<T <: string>(x: T) -> T}",
 		},
 	}
 	for _, tt := range tests {
@@ -3110,7 +3110,7 @@ func TestInferOverloadedGenericMethod(t *testing.T) {
 	t.Run("one generic arm beside a plain one", func(t *testing.T) {
 		values, _, errs := inferSource(t, `
 			class C {
-				pick<T: string>(&self, x: T) -> T { return x },
+				pick<T <: string>(&self, x: T) -> T { return x },
 				pick(&self, a: number, b: number) -> number { return a },
 			}
 			val c = C()
@@ -3124,8 +3124,8 @@ func TestInferOverloadedGenericMethod(t *testing.T) {
 	t.Run("two generic arms", func(t *testing.T) {
 		values, _, errs := inferSource(t, `
 			class C {
-				pick<T: string>(&self, x: T) -> T { return x },
-				pick<T: number>(&self, x: T, y: T) -> T { return x },
+				pick<T <: string>(&self, x: T) -> T { return x },
+				pick<T <: number>(&self, x: T, y: T) -> T { return x },
 			}
 			val c = C()
 			val a = c.pick("s")
@@ -3138,7 +3138,7 @@ func TestInferOverloadedGenericMethod(t *testing.T) {
 	t.Run("a call matching no arm", func(t *testing.T) {
 		_, _, errs := inferSource(t, `
 			class C {
-				pick<T: string>(&self, x: T) -> T { return x },
+				pick<T <: string>(&self, x: T) -> T { return x },
 				pick(&self, a: number, b: number) -> number { return a },
 			}
 			val c = C()
@@ -3146,7 +3146,7 @@ func TestInferOverloadedGenericMethod(t *testing.T) {
 		`)
 		require.Equal(t,
 			[]string{"7:12-7:21: No matching overload for this call\n" +
-				"  fn <T: string>(x: T) -> T\n" +
+				"  fn <T <: string>(x: T) -> T\n" +
 				"  fn (a: number, b: number) -> number"},
 			messagesWithSpan(t, errs))
 	})
@@ -3177,7 +3177,7 @@ func TestInferGenericMethodBoundReachesASiblingCall(t *testing.T) {
 		_, _, errs := inferSource(t, `
 			class C {
 				caller(&self) -> number { return self.pick(1) },
-				pick<T: string>(&self, x: T) -> T { return x },
+				pick<T <: string>(&self, x: T) -> T { return x },
 			}
 		`)
 		require.Contains(t, errorMessagesOf(errs), want)
@@ -3185,7 +3185,7 @@ func TestInferGenericMethodBoundReachesASiblingCall(t *testing.T) {
 	t.Run("the callee is declared before the caller", func(t *testing.T) {
 		_, _, errs := inferSource(t, `
 			class C {
-				pick<T: string>(&self, x: T) -> T { return x },
+				pick<T <: string>(&self, x: T) -> T { return x },
 				caller(&self) -> number { return self.pick(1) },
 			}
 		`)
@@ -3195,7 +3195,7 @@ func TestInferGenericMethodBoundReachesASiblingCall(t *testing.T) {
 		_, _, errs := inferSource(t, `
 			class C {
 				caller(&self) -> string { return self.pick("a") },
-				pick<T: string>(&self, x: T) -> T { return x },
+				pick<T <: string>(&self, x: T) -> T { return x },
 			}
 		`)
 		require.Empty(t, messagesWithSpan(t, errs))

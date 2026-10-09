@@ -116,7 +116,7 @@ type refRewriter struct {
 	flattenedQualifiers map[string]string
 	// bound counts the type parameters in scope by name, so a reference to one
 	// takes no qualifier. `std:math` declares a top-level `E`, so
-	// `closest<E: Element = Element>(…) -> E | null` would otherwise return
+	// `closest<E <: Element = Element>(…) -> E | null` would otherwise return
 	// `math.E`.
 	//
 	// Only the qualifier consults it. The other rules are keyed by names the tree

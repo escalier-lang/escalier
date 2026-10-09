@@ -21,16 +21,16 @@ func TestADeclaredTypeParamBoundRendersOnItsBinder(t *testing.T) {
 	}{
 		{
 			name: "OnAConstructorParameter",
-			src:  `class Holder<T: {value: number}> { peer: T }`,
-			want: "<T: {value: number}> {new (peer: T) -> Holder<T>}",
+			src:  `class Holder<T <: {value: number}> { peer: T }`,
+			want: "<T <: {value: number}> {new (peer: T) -> Holder<T>}",
 		},
 		{
 			name: "OnAStaticMember",
-			src: `class Holder<T: {value: number}> {
+			src: `class Holder<T <: {value: number}> {
 				v: number,
 				static s(x: T) -> number { return 1 },
 			}`,
-			want: "<T: {value: number}> {new (v: number) -> Holder<T>, s(x: T) -> number}",
+			want: "<T <: {value: number}> {new (v: number) -> Holder<T>, s(x: T) -> number}",
 		},
 		// An unbounded parameter has no bound to merge with, so it renders as it always
 		// did and the slot its handle elides keeps eliding.
@@ -41,16 +41,16 @@ func TestADeclaredTypeParamBoundRendersOnItsBinder(t *testing.T) {
 		},
 		{
 			name: "ABoundBesideADefault",
-			src:  `class Holder<T: {value: number} = {value: number}> { peer: T }`,
-			want: "<T: {value: number} = {value: number}> {new (peer: T) -> Holder<T>}",
+			src:  `class Holder<T <: {value: number} = {value: number}> { peer: T }`,
+			want: "<T <: {value: number} = {value: number}> {new (peer: T) -> Holder<T>}",
 		},
 		// Two bounds meet, so the binder joins them.
 		{
 			name: "TwoBoundsJoin",
-			src: `class Holder<T: {a: number} & {b: string}> {
+			src: `class Holder<T <: {a: number} & {b: string}> {
 				peer: T,
 			}`,
-			want: "<T: {a: number} & {b: string}> {new (peer: T) -> Holder<T>}",
+			want: "<T <: {a: number} & {b: string}> {new (peer: T) -> Holder<T>}",
 		},
 	}
 
@@ -67,7 +67,7 @@ func TestADeclaredTypeParamBoundRendersOnItsBinder(t *testing.T) {
 // after every binder is named rather than beside its own. The guard for that ordering is
 // TestClassTypeParamBoundSeesTheClassLifetime, whose bound names the class's lifetime
 // parameter. A bound naming a sibling TYPE parameter cannot serve as the guard, because
-// the display merges two parameters one of which bounds the other: `class Holder<T, U: T>`
+// the display merges two parameters one of which bounds the other: `class Holder<T, U <: T>`
 // renders `<T> {new (first: T, second: T) -> Holder<T, T>}` while accepting a
 // `Holder<number, 1>`. That is #1789.
 
@@ -76,9 +76,9 @@ func TestADeclaredTypeParamBoundRendersOnItsBinder(t *testing.T) {
 // from the type and need no registry lookup. The class cases above are what that path
 // does not cover.
 func TestADeclaredFunctionBoundRendersOnItsBinder(t *testing.T) {
-	values, _, errs := inferSource(t, `declare fn keep<T: {value: number}>(p: T) -> T`)
+	values, _, errs := inferSource(t, `declare fn keep<T <: {value: number}>(p: T) -> T`)
 	require.Empty(t, errorMessagesOf(errs))
-	require.Equal(t, "fn <T: {value: number}>(p: T) -> T", values["keep"])
+	require.Equal(t, "fn <T <: {value: number}>(p: T) -> T", values["keep"])
 }
 
 // TestADeclaredBoundSurvivesASecondBinding asserts that a class value reached through
@@ -96,15 +96,15 @@ func TestADeclaredBoundSurvivesASecondBinding(t *testing.T) {
 	}{
 		{
 			name: "ABoundNamingItsOwnParameter",
-			src:  `class Holder<T: {next: T}> { peer: T }`,
+			src:  `class Holder<T <: {next: T}> { peer: T }`,
 		},
 		{
 			name: "ABoundNamingASiblingParameter",
-			src:  `class Holder<T: {value: number}, U: {o: T}> { a: T, b: U }`,
+			src:  `class Holder<T <: {value: number}, U <: {o: T}> { a: T, b: U }`,
 		},
 		{
 			name: "ABoundNamingAClassLifetime",
-			src:  `class Holder<'a, T: &'a {value: number}> { peer: T }`,
+			src:  `class Holder<'a, T <: &'a {value: number}> { peer: T }`,
 		},
 	}
 
@@ -121,23 +121,23 @@ func TestADeclaredBoundSurvivesASecondBinding(t *testing.T) {
 }
 
 // TestAVacuousSelfBoundIsDroppedFromTheBinder asserts that `f` renders
-// `fn <U: string>(b: Box<U>) -> U`.
+// `fn <U <: string>(b: Box<U>) -> U`.
 //
 // `Box`'s `T: string` reaches `U` through the parameter annotation, and the comparison
 // is a live constraint, so solving leaves `U` merged with an inference variable that
 // bounds it from the other side. That variable says nothing a caller can use, and
 // cleanBinderBounds drops both it and the bound naming it. Without that, `f` renders
-// `fn <T0, U: string & T0>(b: Box<U>) -> U`, with a binder for a variable the signature
+// `fn <T0, U <: string & T0>(b: Box<U>) -> U`, with a binder for a variable the signature
 // has no other use for.
 //
 // This is the one shape in the repository that reaches cleanBinderBounds' same-class
 // cleanup, found by instrumenting the drop and running the suite.
 func TestAVacuousSelfBoundIsDroppedFromTheBinder(t *testing.T) {
 	values, _, errs := inferSource(t, `
-		type Box<T: string> = {v: T}
+		type Box<T <: string> = {v: T}
 		fn f<U>(b: Box<U>) -> U { return b.v }
 	`)
 
 	require.Empty(t, errorMessagesOf(errs))
-	require.Equal(t, "fn <U: string>(b: Box<U>) -> U", values["f"])
+	require.Equal(t, "fn <U <: string>(b: Box<U>) -> U", values["f"])
 }

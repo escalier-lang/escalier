@@ -29,10 +29,11 @@ func parseAndPrint(t *testing.T, src string) (string, []string) {
 	return strings.Join(printed, "\n"), msgs
 }
 
-// TestParseAdjacentGreaterThanPairs covers `>:` and `>=` read from two adjacent tokens. The
-// lexer keeps `>` a token of its own, so a type's closing `>` may be followed by `:` or `=`
-// without the pair fusing into one operator.
-func TestParseAdjacentGreaterThanPairs(t *testing.T) {
+// TestParseAdjacentPairs covers `>:`, `<:` and `>=` read from two adjacent tokens. The
+// lexer keeps `>` and `<` tokens of their own, so a type's closing `>` may be followed by
+// `:` or `=` without the pair fusing into one operator, and `<:` cannot be mistaken for a
+// type argument list.
+func TestParseAdjacentPairs(t *testing.T) {
 	tests := []struct {
 		name string
 		src  string
@@ -40,6 +41,31 @@ func TestParseAdjacentGreaterThanPairs(t *testing.T) {
 		want string
 		errs []string
 	}{
+		{name: "AnUpperBoundOnAFunction", src: "declare fn f<T <: U>(x: T) -> T"},
+		{
+			name: "AnUpperBoundOnAClass",
+			src: `class Box<T <: Shape> {
+    v: T
+}`,
+		},
+		{name: "AnUpperBoundNamingAGenericType", src: "type A<T <: Foo<U>, U> = T"},
+		{
+			// A bare `:` is the outlives operator of a lifetime binder, so on a type binder it
+			// is an error that names `<:`. The bound is still read, so the rest parses.
+			name: "ABareColonOnATypeParameter",
+			src:  "type A<T: U> = T",
+			want: "type A<T <: U> = T",
+			errs: []string{"expected <: before a type parameter's upper bound"},
+		},
+		{
+			// A spaced pair is not the operator. The `<` is unexpected where the list wants
+			// `,` or `>`.
+			name: "ASpacedUpperBound",
+			src:  "type A<T < : U> = T",
+			want: "type A<T> = U",
+			errs: []string{"Expected > but got <", "Expected = but got :", "Unexpected token", "Unexpected token", "Unexpected token", "Unexpected token"},
+		},
+		{name: "ALifetimeOutlivesBoundKeepsTheColon", src: "declare fn f<'a, 'b: 'a>(x: &'a number) -> &'b number"},
 		{name: "ALowerBoundOnAFunction", src: "declare fn f<B >: T>(x: B) -> B"},
 		{
 			name: "ALowerBoundOnAMethod",
@@ -50,7 +76,10 @@ func TestParseAdjacentGreaterThanPairs(t *testing.T) {
 }`,
 		},
 		// A binder writes its lower bound, then its upper bound, then its default.
-		{name: "ALowerBoundAnUpperBoundAndADefault", src: "type A<B >: T: Base = D> = B"},
+		{name: "ALowerBoundAnUpperBoundAndADefault", src: "type A<B >: T <: Base = D> = B"},
+		// The `<` after a lower bound's name is the upper-bound operator, not a type argument
+		// list opening on that name.
+		{name: "ALowerBoundNamingAGenericTypeBeforeAnUpperBound", src: "type A<B >: Foo<T> <: Base, T> = B"},
 		{name: "ALowerBoundNamingALaterSibling", src: "type A<B >: T, T> = B"},
 		{
 			// A spaced pair is not the operator. The `>` closes the list and the `:` after
@@ -99,9 +128,9 @@ func TestParseAdjacentGreaterThanPairs(t *testing.T) {
 }
 
 // TestALowerBoundIsCarriedOnTheTypeParam asserts that `>:` fills TypeParam.LowerBound and
-// leaves Constraint to the `:` after it.
+// leaves UpperBound to the `<:` after it.
 func TestALowerBoundIsCarriedOnTheTypeParam(t *testing.T) {
-	decls, errs := ParseDecls(context.Background(), &ast.Source{ID: 0, Path: "t.esc", Contents: "type A<B >: T: Base> = B"})
+	decls, errs := ParseDecls(context.Background(), &ast.Source{ID: 0, Path: "t.esc", Contents: "type A<B >: T <: Base> = B"})
 	require.Empty(t, errs)
 	require.Len(t, decls, 1)
 	decl, ok := decls[0].(*ast.TypeDecl)

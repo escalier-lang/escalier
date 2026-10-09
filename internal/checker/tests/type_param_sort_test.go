@@ -18,7 +18,7 @@ func TestTypeParamTopologicalSort(t *testing.T) {
 	}{
 		"TypeDecl_OutOfOrder": {
 			input: `
-				type Foo<Bar: Baz, Baz: string> = {
+				type Foo<Bar <: Baz, Baz <: string> = {
 					bar: Bar,
 					baz: Baz,
 				}
@@ -29,7 +29,7 @@ func TestTypeParamTopologicalSort(t *testing.T) {
 		},
 		"TypeDecl_ChainDependency": {
 			input: `
-				type Chain<C: B, B: A, A: string> = {
+				type Chain<C <: B, B <: A, A <: string> = {
 					a: A,
 					b: B,
 					c: C,
@@ -41,7 +41,7 @@ func TestTypeParamTopologicalSort(t *testing.T) {
 		},
 		"TypeDecl_MultipleDependencies": {
 			input: `
-				type Multi<D: B | C, C: A, B: A, A: string> = {
+				type Multi<D <: B | C, C <: A, B <: A, A <: string> = {
 					a: A,
 					b: B,
 					c: C,
@@ -66,7 +66,7 @@ func TestTypeParamTopologicalSort(t *testing.T) {
 		},
 		"Interface_OutOfOrder": {
 			input: `
-				interface IFoo<Bar: Baz, Baz: string> {
+				interface IFoo<Bar <: Baz, Baz <: string> {
 					bar: Bar,
 					baz: Baz,
 				}
@@ -77,7 +77,7 @@ func TestTypeParamTopologicalSort(t *testing.T) {
 		},
 		"Interface_ChainDependency": {
 			input: `
-				interface IChain<C: B, B: A, A: string> {
+				interface IChain<C <: B, B <: A, A <: string> {
 					a: A,
 					b: B,
 					c: C,
@@ -89,27 +89,27 @@ func TestTypeParamTopologicalSort(t *testing.T) {
 		},
 		"FuncDecl_OutOfOrder": {
 			input: `
-				fn identity<Bar: Baz, Baz: string>(x: Bar) -> Bar {
+				fn identity<Bar <: Baz, Baz <: string>(x: Bar) -> Bar {
 					return x
 				}
 			`,
 			expectedTypes: map[string]string{
-				"identity": "<Bar: Baz, Baz: string>(x: Bar) -> Bar",
+				"identity": "<Bar <: Baz, Baz <: string>(x: Bar) -> Bar",
 			},
 		},
 		"FuncDecl_ChainDependency": {
 			input: `
-				fn convert<C: B, B: A, A: string>(x: C) -> A {
+				fn convert<C <: B, B <: A, A <: string>(x: C) -> A {
 					return x
 				}
 			`,
 			expectedTypes: map[string]string{
-				"convert": "<C: B, B: A, A: string>(x: C) -> A",
+				"convert": "<C <: B, B <: A, A <: string>(x: C) -> A",
 			},
 		},
 		"TypeDecl_WithDefaults": {
 			input: `
-				type WithDefaults<Bar: Baz, Baz: string = "hello"> = {
+				type WithDefaults<Bar <: Baz, Baz <: string = "hello"> = {
 					bar: Bar,
 					baz: Baz,
 				}
@@ -121,10 +121,10 @@ func TestTypeParamTopologicalSort(t *testing.T) {
 		"TypeDecl_ComplexConstraints": {
 			input: `
 				type Complex<
-					D: {x: C},
-					C: B | "literal",
-					B: A,
-					A: string | number
+					D <: {x: C},
+					C <: B | "literal",
+					B <: A,
+					A <: string | number
 				> = {
 					value: D,
 				}
@@ -193,7 +193,7 @@ func TestTypeParamCyclicDependency(t *testing.T) {
 	}{
 		"SelfReference": {
 			input: `
-				type Recursive<T: T> = {
+				type Recursive<T <: T> = {
 					value: T,
 				}
 			`,
@@ -202,7 +202,7 @@ func TestTypeParamCyclicDependency(t *testing.T) {
 		},
 		"MutualReference": {
 			input: `
-				type Mutual<A: B, B: A> = {
+				type Mutual<A <: B, B <: A> = {
 					a: A,
 					b: B,
 				}
@@ -212,7 +212,7 @@ func TestTypeParamCyclicDependency(t *testing.T) {
 		},
 		"ThreeWayCycle": {
 			input: `
-				type Cycle<A: B, B: C, C: A> = {
+				type Cycle<A <: B, B <: C, C <: A> = {
 					a: A,
 					b: B,
 					c: C,
@@ -252,7 +252,7 @@ func TestTypeParamCyclicDependency(t *testing.T) {
 			}
 			// shouldSucceed here means "the topological sort detects the
 			// cycle and preserves original order without panicking" — not
-			// "inference is error-free". Cyclic constraints (e.g. `T<T: T>`)
+			// "inference is error-free". Cyclic constraints (e.g. `T<T <: T>`)
 			// are inherently meaningless and inference does produce
 			// diagnostics; the contract this test asserts is that the sort and
 			// module construction survive the cycle. We intentionally
@@ -273,7 +273,7 @@ func TestTypeParamSortingWithUsage(t *testing.T) {
 	}{
 		"UseTypeWithOutOfOrderParams": {
 			input: `
-				type Foo<Bar: Baz, Baz: string> = {
+				type Foo<Bar <: Baz, Baz <: string> = {
 					bar: Bar,
 					baz: Baz,
 				}
@@ -286,7 +286,7 @@ func TestTypeParamSortingWithUsage(t *testing.T) {
 		},
 		"CallFunctionWithOutOfOrderParams": {
 			input: `
-				fn identity<Bar: Baz, Baz: string>(x: Bar) -> Bar {
+				fn identity<Bar <: Baz, Baz <: string>(x: Bar) -> Bar {
 					return x
 				}
 
@@ -298,7 +298,7 @@ func TestTypeParamSortingWithUsage(t *testing.T) {
 		},
 		"ChainedTypeUsage": {
 			input: `
-				type Chain<C: B, B: A, A: string> = {
+				type Chain<C <: B, B <: A, A <: string> = {
 					value: C,
 				}
 

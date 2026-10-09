@@ -20,7 +20,7 @@ export declare type DecoratorMetadata = DecoratorMetadataObject
  * Context provided to a class decorator.
  * @template Class The type of the decorated class associated with this context.
  */
-export declare interface ClassDecoratorContext<Class: fn (...args: any) -> any = fn (...args: any) -> any> {
+export declare interface ClassDecoratorContext<Class <: fn (...args: any) -> any = fn (...args: any) -> any> {
     /** The kind of element that was decorated. */
     readonly kind: "class",
     /** The name of the decorated class. */
@@ -52,7 +52,7 @@ export declare interface ClassDecoratorContext<Class: fn (...args: any) -> any =
  * the type of the constructor. For a non-static class element, this will be the type of the instance.
  * @template Value The type of the decorated class method.
  */
-export declare interface ClassMethodDecoratorContext<This = unknown, Value: fn (this: This, ...args: any) -> any = fn (this: This, ...args: any) -> any> {
+export declare interface ClassMethodDecoratorContext<This = unknown, Value <: fn (this: This, ...args: any) -> any = fn (this: This, ...args: any) -> any> {
     /** The kind of class element that was decorated. */
     readonly kind: "method",
     /** The name of the decorated class element. */

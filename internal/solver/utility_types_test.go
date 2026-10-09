@@ -76,8 +76,8 @@ const utilityTypeDecls = `
 	type Record<Ks, V> = {[K: Ks]: V}
 	type Exclude<U, V> = if U : V { never } else { U }
 	type Extract<U, V> = if U : V { U } else { never }
-	type ReturnType<F: fn (...args: Array<_>) -> _> = if F : fn (...args: Array<_>) -> infer R { R } else { never }
-	type Parameters<F: fn (...args: Array<_>) -> _> = if F : fn (...args: infer P) -> _ { P } else { never }
+	type ReturnType<F <: fn (...args: Array<_>) -> _> = if F : fn (...args: Array<_>) -> infer R { R } else { never }
+	type Parameters<F <: fn (...args: Array<_>) -> _> = if F : fn (...args: infer P) -> _ { P } else { never }
 	type NonNullable<T> = if T : null | undefined { never } else { T }
 	type ConstructorParameters<C> = if C : {new (...args: infer P) -> unknown, ...} { P } else { never }
 	type InstanceType<C> = if C : {new (...args: Array<_>) -> infer R, ...} { R } else { never }
@@ -764,11 +764,11 @@ func TestUtilityTypeAliasParameterConstraint(t *testing.T) {
 	}{
 		{
 			name: "AcceptsBoundedArgument",
-			src:  `type Box<T: string> = {v: T}` + "\n" + `type Result = Box<"a">`,
+			src:  `type Box<T <: string> = {v: T}` + "\n" + `type Result = Box<"a">`,
 		},
 		{
 			name:    "RejectsUnboundedArgument",
-			src:     `type Box<T: string> = {v: T}` + "\n" + `type Result = Box<number>`,
+			src:     `type Box<T <: string> = {v: T}` + "\n" + `type Result = Box<number>`,
 			wantErr: "cannot constrain number <: string",
 		},
 		{
@@ -781,11 +781,11 @@ func TestUtilityTypeAliasParameterConstraint(t *testing.T) {
 			// A bound naming an earlier sibling is checked against the argument that filled it, so
 			// `B` is compared against `string` rather than against `A`'s var.
 			name: "SiblingBoundAccepts",
-			src:  `type P<A: string, B: A> = [A, B]` + "\n" + `type Result = P<string, "a">`,
+			src:  `type P<A <: string, B <: A> = [A, B]` + "\n" + `type Result = P<string, "a">`,
 		},
 		{
 			name:    "SiblingBoundRejects",
-			src:     `type P<A: string, B: A> = [A, B]` + "\n" + `type Result = P<string, number>`,
+			src:     `type P<A <: string, B <: A> = [A, B]` + "\n" + `type Result = P<string, number>`,
 			wantErr: "cannot constrain number <: string",
 		},
 	}

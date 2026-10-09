@@ -204,7 +204,7 @@ func (c *checker) reportPhantomParams(shells []*aliasShell) {
 		inBody, inSibling := typeParamMentions(params, []soltype.Type{sh.def.Body})
 		for i, p := range params {
 			// A parameter a sibling's bound or default mentions is doing work the body cannot
-			// show, so `type Foo<T, U: T> = {x: U}` warns about neither. markPhantomParams
+			// show, so `type Foo<T, U <: T> = {x: U}` warns about neither. markPhantomParams
 			// still marks T phantom, since the argument reaches the denoted type through U's
 			// slot rather than T's.
 			if inSibling[i] {
@@ -258,7 +258,7 @@ func (c *checker) reportUnusedTypeParams(
 
 // typeParamMentions reports where each of a declaration's type parameters occurs: inBody for one
 // the body writes, inSibling for one another parameter's bound or default writes. A parameter's
-// own bound does not count, so the T an F-bound `<T: Foo<T>>` writes is not a use of T.
+// own bound does not count, so the T an F-bound `<T <: Foo<T>>` writes is not a use of T.
 func typeParamMentions(params []*soltype.TypeParam, body []soltype.Type) (inBody, inSibling []bool) {
 	slots := map[*soltype.TypeVarType]int{}
 	for i, p := range params {

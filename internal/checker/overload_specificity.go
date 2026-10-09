@@ -122,9 +122,9 @@ func (c *Checker) sortOverloadArms(arms []*type_system.FuncType) []*type_system.
 // the relation is incomparable.
 //
 // Owned type-param references are resolved to their upper bound:
-// `<K: C>` substitutes C, `<T>` (unbounded or constrained to never)
+// `<K <: C>` substitutes C, `<T>` (unbounded or constrained to never)
 // is treated as top. This makes bounded generics rank ahead of
-// unbounded ones at the same position — `<K: string>(x: K)` beats
+// unbounded ones at the same position — `<K <: string>(x: K)` beats
 // `<T>(x: T)` because `string <: top` — while two unbounded TP refs
 // at the same position simply skip (no information). Rule 3 still
 // runs separately to order concrete-vs-generic at positions where
@@ -241,8 +241,8 @@ func isOwnedTypeParamRef(t type_system.Type, ownTP set.Set[string]) bool {
 // effectiveParamType resolves an owned type-param reference to its
 // upper bound for specificity comparison. Returns isTop=true when
 // the referenced param is unbounded (so the position ranges over all
-// types). For a bounded `<K: C>`, returns (false, C) — substituting
-// the constraint lets `<K: string>(x: K)` rank ahead of `<T>(x: T)`
+// types). For a bounded `<K <: C>`, returns (false, C) — substituting
+// the constraint lets `<K <: string>(x: K)` rank ahead of `<T>(x: T)`
 // just as `(x: string)` would. For any non-owned-TP type, returns
 // the input unchanged.
 func effectiveParamType(

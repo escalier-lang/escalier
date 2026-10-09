@@ -280,11 +280,11 @@ func TestClassLifetimeClauseErrors(t *testing.T) {
 // The bound renders on the binder, which is what keeps `peer: T` reading as the source
 // wrote it rather than as the meet of `T` and its bound.
 func TestClassTypeParamBoundSeesTheClassLifetime(t *testing.T) {
-	src := `class Holder<'a, T: &'a {value: number}> { peer: T }`
+	src := `class Holder<'a, T <: &'a {value: number}> { peer: T }`
 	values, _, errs := inferSource(t, src)
 	require.Empty(t, messagesWithSpan(t, errs))
 	require.Equal(t,
-		"<T: &'a {value: number}, 'a> {new (peer: T) -> Holder<'a, T>}",
+		"<T <: &'a {value: number}, 'a> {new (peer: T) -> Holder<'a, T>}",
 		values["Holder"],
 	)
 }

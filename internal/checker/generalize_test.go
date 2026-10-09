@@ -71,7 +71,7 @@ func TestGeneralizeFuncType_TypeVarDefaultWithNestedTypeVar(t *testing.T) {
 
 func TestGeneralizeFuncType_FuncTypeParamConstraintWithTypeVar(t *testing.T) {
 	// A param is a FuncType whose type param has a constraint containing
-	// an unresolved type var: fn(f: fn<U: T>() -> U) where T is unresolved.
+	// an unresolved type var: fn(f: fn<U <: T>() -> U) where T is unresolved.
 	tvT := ts.NewTypeVarType(nil, 1) // unresolved
 
 	innerFuncType := ts.NewFuncType(

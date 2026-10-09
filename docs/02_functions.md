@@ -67,7 +67,7 @@ have a default after `=`.
 ```esc
 fn id<T>(x: T) -> T { return x }
 fn first<T>(x: T, y: T) -> T { return x }
-fn call<F: fn (x: number) -> number>(f: F) -> number { return f(1) }
+fn call<F <: fn (x: number) -> number>(f: F) -> number { return f(1) }
 fn parse<T = string>(x: T) -> T { return x }
 ```
 

@@ -78,7 +78,7 @@ export declare class Set<T> {
 }
 
 @js("WeakSet")
-export declare class WeakSet<T: weak_ref.WeakKey> {
+export declare class WeakSet<T <: weak_ref.WeakKey> {
     /**
      * Appends a new value to the end of the WeakSet.
      */

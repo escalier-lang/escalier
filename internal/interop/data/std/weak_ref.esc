@@ -3,7 +3,7 @@
 // derived facts, and the overlay. Change one of those and re-run.
 
 @js("WeakRef")
-export declare class WeakRef<T: WeakKey> {
+export declare class WeakRef<T <: WeakKey> {
     readonly [Symbol.toStringTag]: "WeakRef",
     /**
      * Returns the WeakRef instance's target value, or undefined if the target value has been

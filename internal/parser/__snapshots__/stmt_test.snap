@@ -888,9 +888,9 @@
             &ast.TypeParam{
                 Name: "U",
                 UpperBound: &ast.StringTypeAnn{
-                    span: 18-24,
+                    span: 20-26,
                 },
-                span: 15-24,
+                span: 15-26,
             },
         },
         TypeAnn: &ast.ObjectTypeAnn{
@@ -898,41 +898,41 @@
                 &ast.PropertyTypeAnn{
                     Name: &ast.IdentExpr{
                         Name: "first",
-                        span: 30-35,
+                        span: 32-37,
                     },
                     Value: &ast.TypeRefTypeAnn{
                         Name: &ast.Ident{
                             Name: "T",
-                            span: 37-38,
+                            span: 39-40,
                         },
-                        span: 37-38,
+                        span: 39-40,
                     },
                     elemSpan: ast.elemSpan{
-                        span: 30-38,
+                        span: 32-40,
                     },
                 },
                 &ast.PropertyTypeAnn{
                     Name: &ast.IdentExpr{
                         Name: "second",
-                        span: 40-46,
+                        span: 42-48,
                     },
                     Value: &ast.TypeRefTypeAnn{
                         Name: &ast.Ident{
                             Name: "U",
-                            span: 48-49,
+                            span: 50-51,
                         },
-                        span: 48-49,
+                        span: 50-51,
                     },
                     elemSpan: ast.elemSpan{
-                        span: 40-49,
+                        span: 42-51,
                     },
                 },
             },
-            span: 28-51,
+            span: 30-53,
         },
-        span: 0-51,
+        span: 0-53,
     },
-    span: 0-51,
+    span: 0-53,
 }
 ---
 
@@ -982,19 +982,19 @@
             &ast.TypeParam{
                 Name: "T",
                 UpperBound: &ast.NumberTypeAnn{
-                    span: 15-21,
+                    span: 17-23,
                 },
-                span: 12-21,
+                span: 12-23,
             },
             &ast.TypeParam{
                 Name: "U",
                 UpperBound: &ast.StringTypeAnn{
-                    span: 26-32,
+                    span: 30-36,
                 },
                 Default: &ast.StringTypeAnn{
-                    span: 35-41,
+                    span: 39-45,
                 },
-                span: 23-41,
+                span: 25-45,
             },
         },
         TypeAnn: &ast.UnionTypeAnn{
@@ -1002,23 +1002,23 @@
                 &ast.TypeRefTypeAnn{
                     Name: &ast.Ident{
                         Name: "T",
-                        span: 45-46,
-                    },
-                    span: 45-46,
-                },
-                &ast.TypeRefTypeAnn{
-                    Name: &ast.Ident{
-                        Name: "U",
                         span: 49-50,
                     },
                     span: 49-50,
                 },
+                &ast.TypeRefTypeAnn{
+                    Name: &ast.Ident{
+                        Name: "U",
+                        span: 53-54,
+                    },
+                    span: 53-54,
+                },
             },
-            span: 45-50,
+            span: 49-54,
         },
-        span: 0-50,
+        span: 0-54,
     },
-    span: 0-50,
+    span: 0-54,
 }
 ---
 
@@ -1578,33 +1578,33 @@
             &ast.TypeParam{
                 Name: "T",
                 UpperBound: &ast.AnyTypeAnn{
-                    span: 18-21,
+                    span: 20-23,
                 },
                 Default: &ast.StringTypeAnn{
-                    span: 24-30,
+                    span: 26-32,
                 },
-                span: 15-30,
+                span: 15-32,
             },
         },
         Body: []ast.ClassElem{
             &ast.FieldElem{
                 Name: &ast.IdentExpr{
                     Name: "data",
-                    span: 34-38,
+                    span: 36-40,
                 },
                 Type: &ast.TypeRefTypeAnn{
                     Name: &ast.Ident{
                         Name: "T",
-                        span: 40-41,
+                        span: 42-43,
                     },
-                    span: 40-41,
+                    span: 42-43,
                 },
-                Span_: 34-41,
+                Span_: 36-43,
             },
         },
-        span: 0-43,
+        span: 0-45,
     },
-    span: 0-43,
+    span: 0-45,
 }
 ---
 
@@ -1619,51 +1619,51 @@
             &ast.TypeParam{
                 Name: "T",
                 UpperBound: &ast.NumberTypeAnn{
-                    span: 14-20,
+                    span: 16-22,
                 },
-                span: 11-20,
+                span: 11-22,
             },
             &ast.TypeParam{
                 Name: "U",
                 UpperBound: &ast.StringTypeAnn{
-                    span: 25-31,
+                    span: 29-35,
                 },
-                span: 22-31,
+                span: 24-35,
             },
         },
         Body: []ast.ClassElem{
             &ast.FieldElem{
                 Name: &ast.IdentExpr{
                     Name: "first",
-                    span: 39-44,
+                    span: 43-48,
                 },
                 Type: &ast.TypeRefTypeAnn{
                     Name: &ast.Ident{
                         Name: "T",
-                        span: 46-47,
+                        span: 50-51,
                     },
-                    span: 46-47,
+                    span: 50-51,
                 },
-                Span_: 39-47,
+                Span_: 43-51,
             },
             &ast.FieldElem{
                 Name: &ast.IdentExpr{
                     Name: "second",
-                    span: 53-59,
+                    span: 57-63,
                 },
                 Type: &ast.TypeRefTypeAnn{
                     Name: &ast.Ident{
                         Name: "U",
-                        span: 61-62,
+                        span: 65-66,
                     },
-                    span: 61-62,
+                    span: 65-66,
                 },
-                Span_: 53-62,
+                Span_: 57-66,
             },
         },
-        span: 0-68,
+        span: 0-72,
     },
-    span: 0-68,
+    span: 0-72,
 }
 ---
 
@@ -4457,31 +4457,31 @@
             &ast.TypeParam{
                 Name: "T",
                 UpperBound: &ast.NumberTypeAnn{
-                    span: 17-23,
+                    span: 19-25,
                 },
                 Variance: 1,
-                span: 10-23,
+                span: 10-25,
             },
         },
         Body: []ast.ClassElem{
             &ast.FieldElem{
                 Name: &ast.IdentExpr{
                     Name: "value",
-                    span: 27-32,
+                    span: 29-34,
                 },
                 Type: &ast.TypeRefTypeAnn{
                     Name: &ast.Ident{
                         Name: "T",
-                        span: 34-35,
+                        span: 36-37,
                     },
-                    span: 34-35,
+                    span: 36-37,
                 },
-                Span_: 27-35,
+                Span_: 29-37,
             },
         },
-        span: 0-37,
+        span: 0-39,
     },
-    span: 0-37,
+    span: 0-39,
 }
 ---
 

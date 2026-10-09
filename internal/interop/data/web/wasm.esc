@@ -17,7 +17,7 @@ export declare class CompileError extends error.Error {
 
 /** [MDN Reference](https://developer.mozilla.org/docs/WebAssembly/JavaScript_interface/Global) */
 @js("WebAssembly.Global")
-export declare class Global<T: ValueType = ValueType> {
+export declare class Global<T <: ValueType = ValueType> {
     value: ValueTypeMap[T],
     valueOf(&self) -> ValueTypeMap[T],
     static prototype: Global,
@@ -86,7 +86,7 @@ export declare class Table {
     constructor(&mut self, descriptor: TableDescriptor, value?: unknown)
 }
 
-export declare interface GlobalDescriptor<T: ValueType = ValueType> {
+export declare interface GlobalDescriptor<T <: ValueType = ValueType> {
     mutable?: boolean,
     value: T
 }

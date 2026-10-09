@@ -610,7 +610,7 @@ func TestInferKeyofAny(t *testing.T) {
 		{
 			name: "BoundAdmitsEveryKeyKind",
 			src: `
-				type Rec<K: keyof any, T> = {[P: K]: T}
+				type Rec<K <: keyof any, T> = {[P: K]: T}
 				type PropertyKey = string | number | symbol
 				type Result = Rec<PropertyKey, unknown>
 			`,
@@ -1387,68 +1387,68 @@ func TestInferIndexOverBoundedParam(t *testing.T) {
 		{
 			name: "ArrayTargetAccepted",
 			src: `
-				type N<X: string> = X
-				type F<T: Array<string>> = N<T[number]>
+				type N<X <: string> = X
+				type F<T <: Array<string>> = N<T[number]>
 			`,
 		},
 		{
 			name: "ArrayTargetReturnAccepted",
-			src:  `fn f<T: Array<string>>(k: T[number]) -> string { return k }`,
+			src:  `fn f<T <: Array<string>>(k: T[number]) -> string { return k }`,
 		},
 		{
 			name: "ArrayOrTupleTargetAccepted",
 			src: `
-				type N<X: string> = X
-				type F<T: Array<string> | []> = N<T[number]>
+				type N<X <: string> = X
+				type F<T <: Array<string> | []> = N<T[number]>
 			`,
 		},
 		{
 			name: "ArrayOrTupleTargetRejected",
 			src: `
-				type N<X: string> = X
-				type F<T: Array<number> | []> = N<T[number]>
+				type N<X <: string> = X
+				type F<T <: Array<number> | []> = N<T[number]>
 			`,
 			wantErrs: []string{"cannot constrain number <: string"},
 		},
 		{
 			name: "ArrayOrNonEmptyTupleTargetRejected",
 			src: `
-				type N<X: string> = X
-				type F<T: Array<string> | [number]> = N<T[number]>
+				type N<X <: string> = X
+				type F<T <: Array<string> | [number]> = N<T[number]>
 			`,
 			wantErrs: []string{"cannot constrain number <: string"},
 		},
 		{
 			name: "ArrayOrTupleTargetReturnAccepted",
-			src:  `fn f<T: Array<string> | []>(k: T[number]) -> string { return k }`,
+			src:  `fn f<T <: Array<string> | []>(k: T[number]) -> string { return k }`,
 		},
 		{
 			name: "UnionElementIntoUnionAccepted",
 			src: `
-				type NS<X: number | string> = X
-				type F<T: Array<number | string> | []> = NS<T[number]>
+				type NS<X <: number | string> = X
+				type F<T <: Array<number | string> | []> = NS<T[number]>
 			`,
 		},
 		{
 			name: "UnionElementReturnAccepted",
-			src:  `fn f<T: Array<number | string> | []>(k: T[number]) -> number | string { return k }`,
+			src:  `fn f<T <: Array<number | string> | []>(k: T[number]) -> number | string { return k }`,
 		},
 		{
 			name: "AccessIntoItselfAccepted",
-			src:  `fn f<T: Array<string> | []>(k: T[number]) -> T[number] { return k }`,
+			src:  `fn f<T <: Array<string> | []>(k: T[number]) -> T[number] { return k }`,
 		},
 		{
 			name: "NumericIndexAccepted",
 			src: `
-				type N<X: string> = X
-				type F<D: number> = N<["a", "b", "c"][D]>
+				type N<X <: string> = X
+				type F<D <: number> = N<["a", "b", "c"][D]>
 			`,
 		},
 		{
 			name: "NumericIndexRejected",
 			src: `
-				type N<X: string> = X
-				type F<D: number> = N<[1, "b", "c"][D]>
+				type N<X <: string> = X
+				type F<D <: number> = N<[1, "b", "c"][D]>
 			`,
 			wantErrs: []string{`cannot constrain 1 <: string`},
 		},
@@ -1456,27 +1456,27 @@ func TestInferIndexOverBoundedParam(t *testing.T) {
 			// A parameter bounded by another parameter is checked through the end of the chain.
 			name: "ChainedTargetAccepted",
 			src: `
-				type N<X: string> = X
-				type F<T: Array<string>, U: T> = N<U[number]>
+				type N<X <: string> = X
+				type F<T <: Array<string>, U <: T> = N<U[number]>
 			`,
 		},
 		{
 			name: "ChainedTargetReturnAccepted",
-			src:  `fn f<T: Array<string>, U: T>(k: U[number]) -> string { return k }`,
+			src:  `fn f<T <: Array<string>, U <: T>(k: U[number]) -> string { return k }`,
 		},
 		{
 			name: "ChainedTargetRejected",
 			src: `
-				type N<X: string> = X
-				type F<T: Array<number>, U: T> = N<U[number]>
+				type N<X <: string> = X
+				type F<T <: Array<number>, U <: T> = N<U[number]>
 			`,
 			wantErrs: []string{"cannot constrain number <: string"},
 		},
 		{
 			name: "ChainedIndexAccepted",
 			src: `
-				type N<X: string> = X
-				type F<D: number, E: D> = N<["a", "b"][E]>
+				type N<X <: string> = X
+				type F<D <: number, E <: D> = N<["a", "b"][E]>
 			`,
 		},
 		{
@@ -1484,8 +1484,8 @@ func TestInferIndexOverBoundedParam(t *testing.T) {
 			// The cycle itself is reported at the declaration as well.
 			name: "CyclicBoundsRejected",
 			src: `
-				type N<X: string> = X
-				type F<T: U, U: T> = N<T[number]>
+				type N<X <: string> = X
+				type F<T <: U, U <: T> = N<T[number]>
 			`,
 			wantErrs: []string{
 				"type parameter `T` is bounded above by itself through `U`",
@@ -1494,7 +1494,7 @@ func TestInferIndexOverBoundedParam(t *testing.T) {
 		},
 		{
 			name: "NumericIndexReturnAccepted",
-			src:  `fn f<D: number>(k: ["a", "b", "c"][D]) -> string { return k }`,
+			src:  `fn f<D <: number>(k: ["a", "b", "c"][D]) -> string { return k }`,
 		},
 	}
 	for _, tt := range tests {
@@ -1603,16 +1603,16 @@ func TestInferTupleSpreadReduction(t *testing.T) {
 }
 
 // A tuple-spread residual over a type parameter renders symbolically in a function signature and
-// round-trips from parameter to return: `fn f<T: Array<string>>(x: [...T, number]) -> [...T, number]
+// round-trips from parameter to return: `fn f<T <: Array<string>>(x: [...T, number]) -> [...T, number]
 // { return x }` keeps `[...T, number]` on both positions. The reflexive
 // `[...T, number] <: [...T, number]` from `return x` succeeds inertly by structural equality on the
 // residual, since the abstract operand never grounds. T is bounded by an array so the spread operand
 // is one a spread could splice; the bound does not make it ground.
 func TestInferTupleSpreadSignatureStaysSymbolic(t *testing.T) {
 	values, _, errs := inferSource(t,
-		`fn f<T: Array<string>>(x: [...T, number]) -> [...T, number] { return x }`)
+		`fn f<T <: Array<string>>(x: [...T, number]) -> [...T, number] { return x }`)
 	require.Empty(t, errs)
-	require.Equal(t, "fn <T: Array<string>>(x: [...T, number]) -> [...T, number]", values["f"])
+	require.Equal(t, "fn <T <: Array<string>>(x: [...T, number]) -> [...T, number]", values["f"])
 }
 
 // constrain reduces a ground tuple-spread annotation to the spliced tuple to check satisfaction,
@@ -1740,7 +1740,7 @@ func TestInferTupleSpreadGroundsWithResidualElements(t *testing.T) {
 // call site.
 func TestInferTupleSpreadOverTypeParamStaysInert(t *testing.T) {
 	_, _, errs := inferSource(t, `
-		fn f<T: Array<string>>(x: [...T, number]) -> number { return 1 }
+		fn f<T <: Array<string>>(x: [...T, number]) -> number { return 1 }
 		val r = f([1])
 	`)
 	require.Len(t, errs, 1)
@@ -1802,7 +1802,7 @@ func TestInferKeyofIndexOverSpreadTuple(t *testing.T) {
 		{
 			// keyof over an abstract spread operand stays symbolic.
 			name:         "KeyofAbstractSpread",
-			src:          `fn f<T: Array<string>>(k: keyof [...T, boolean]) {}`,
+			src:          `fn f<T <: Array<string>>(k: keyof [...T, boolean]) {}`,
 			wantSymbolic: "keyof [...T, boolean]",
 		},
 		{
@@ -1820,7 +1820,7 @@ func TestInferKeyofIndexOverSpreadTuple(t *testing.T) {
 				values, _, errs := inferSource(t, tt.src)
 				require.Empty(t, errs)
 				require.Equal(t,
-					"fn <T: Array<string>>(k: "+tt.wantSymbolic+") -> undefined", values["f"])
+					"fn <T <: Array<string>>(k: "+tt.wantSymbolic+") -> undefined", values["f"])
 				return
 			}
 			nodes, ctx, errs := inferTypeNodes(t, tt.src)
@@ -2021,7 +2021,7 @@ func TestInferCondResidualErrorMessage(t *testing.T) {
 // whose Check is not a bare parameter, or whose parameter has no bound, gets no such second chance.
 func TestInferCondResidualAgainstBound(t *testing.T) {
 	const pick = `
-		type MyPick<T, K: keyof T> = {[P]: T[P] for P in K}
+		type MyPick<T, K <: keyof T> = {[P]: T[P] for P in K}
 		type MyExclude<T, U> = if T : U { never } else { T }
 	`
 	tests := []struct {
@@ -2054,7 +2054,7 @@ func TestInferCondResidualAgainstBound(t *testing.T) {
 		{
 			name: "ThenBranchBindsParam",
 			src: `
-				type Box<X: string> = [X]
+				type Box<X <: string> = [X]
 				type Bad<T, U> = Box<if [T] : [U] { T } else { never }>
 			`,
 			wantErr: "cannot constrain if tuple : tuple { t2 } else { never } <: string",
@@ -2062,7 +2062,7 @@ func TestInferCondResidualAgainstBound(t *testing.T) {
 		{
 			name: "ThenBranchReadsInferCapture",
 			src: `
-				type Box<X: string> = [X]
+				type Box<X <: string> = [X]
 				type Bad<T> = Box<if T : [infer U] { U } else { "n" }>
 			`,
 			wantErr: `cannot constrain if t2 : tuple { U } else { "n" } <: string`,
@@ -2070,52 +2070,52 @@ func TestInferCondResidualAgainstBound(t *testing.T) {
 		{
 			name: "BoundSelectsWithinBound",
 			src: `
-				type Box<X: string> = [X]
-				type Ok<T: string> = Box<if T : string { T } else { number }>
+				type Box<X <: string> = [X]
+				type Ok<T <: string> = Box<if T : string { T } else { number }>
 			`,
 		},
 		{
 			name: "BoundDistributesWithinBound",
 			src: `
-				type Box<X: string> = [X]
-				type Ok<T: "a" | 1> = Box<if T : string { T } else { "x" }>
+				type Box<X <: string> = [X]
+				type Ok<T <: "a" | 1> = Box<if T : string { T } else { "x" }>
 			`,
 		},
 		{
 			name: "BoundDistributesOutsideBound",
 			src: `
-				type Box<X: "x"> = [X]
-				type Bad<T: "a" | 1> = Box<if T : string { T } else { "x" }>
+				type Box<X <: "x"> = [X]
+				type Bad<T <: "a" | 1> = Box<if T : string { T } else { "x" }>
 			`,
 			wantErr: `cannot constrain if t2 : string { t2 } else { "x" } <: "x"`,
 		},
 		{
 			name: "BoundSelectsOutsideBound",
 			src: `
-				type Box<X: string> = [X]
-				type Bad<T: string | number> = Box<if T : string { T } else { number }>
+				type Box<X <: string> = [X]
+				type Bad<T <: string | number> = Box<if T : string { T } else { number }>
 			`,
 			wantErr: "cannot constrain if t2 : string { t2 } else { number } <: string",
 		},
 		{
 			name: "NonDistributiveIgnoresBound",
 			src: `
-				type Box<X: string> = [X]
-				type Bad<T: string> = Box<if [T] : [string] { T } else { number }>
+				type Box<X <: string> = [X]
+				type Bad<T <: string> = Box<if [T] : [string] { T } else { number }>
 			`,
 			wantErr: "cannot constrain if tuple : tuple { t2 } else { number } <: string",
 		},
 		{
 			name: "BoundChainSelectsWithinBound",
 			src: `
-				type Box<X: string> = [X]
-				type Ok<T: string, U: T> = Box<if U : string { U } else { number }>
+				type Box<X <: string> = [X]
+				type Ok<T <: string, U <: T> = Box<if U : string { U } else { number }>
 			`,
 		},
 		{
 			name: "UnboundedParam",
 			src: `
-				type Box<X: string> = [X]
+				type Box<X <: string> = [X]
 				type Bad<T> = Box<if T : string { T } else { number }>
 			`,
 			wantErr: "cannot constrain if t2 : string { t2 } else { number } <: string",

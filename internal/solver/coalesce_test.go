@@ -751,7 +751,7 @@ func TestEqualTypeObjectMembers(t *testing.T) {
 // equal, but a differing parameter type, constraint, or default is not. This is the
 // equality dedup relies on when it folds equal class-value bounds.
 func TestEqualTypeConstructorElem(t *testing.T) {
-	// value builds `{new <U: bound = def>(x: U) -> U, count: number}`, whose constructor
+	// value builds `{new <U <: bound = def>(x: U) -> U, count: number}`, whose constructor
 	// parameter is the bound type parameter U, so two values differing only in U's var id
 	// are alpha-equal. A parameter's identity is its position, not its var id.
 	value := func(id int, bound, def soltype.Type) *soltype.ObjectType {

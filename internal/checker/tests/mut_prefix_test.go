@@ -108,7 +108,7 @@ func TestMutPrefixMutationBehavior(t *testing.T) {
 					count: number,
 					tick(&mut self) -> number { self.count = self.count + 1 return self.count }
 				}
-				fn callTick<T: Counter>(t: T) -> number {
+				fn callTick<T <: Counter>(t: T) -> number {
 					return t.tick()
 				}
 			`,
@@ -120,7 +120,7 @@ func TestMutPrefixMutationBehavior(t *testing.T) {
 					count: number,
 					tick(&mut self) -> number { self.count = self.count + 1 return self.count }
 				}
-				fn callTick<T: mut Counter>(t: T) -> number {
+				fn callTick<T <: mut Counter>(t: T) -> number {
 					return t.tick()
 				}
 			`,

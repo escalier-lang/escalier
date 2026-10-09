@@ -13,16 +13,16 @@ class Foo {
     static addNums1(a: number, b: number) -> number {
         return a + b
     },
-    addStrs1<A: string, B: string>(&self, a: A, b: B) {
+    addStrs1<A <: string, B <: string>(&self, a: A, b: B) {
         return Foo.addNums1(a, b) // error
     },
-    addNums2<A: number, B: number>(&self, a: A, b: B) -> number {
+    addNums2<A <: number, B <: number>(&self, a: A, b: B) -> number {
         return Foo.addNums1(a, b) // okay
     },
-    static addStrs3<A: string, B: string>(a: A, b: B) {
+    static addStrs3<A <: string, B <: string>(a: A, b: B) {
         return Foo.addNums1(a, b) // error
     },
-    static addNums4<A: number, B: number>(a: A, b: B) -> number {
+    static addNums4<A <: number, B <: number>(a: A, b: B) -> number {
         return Foo.addNums1(a, b) // okay
     },
 }

@@ -88,7 +88,7 @@ func (c *checker) inferClassDecl(scope *Scope, lvl int, decl *ast.ClassDecl, ns 
 	self, def := c.getOrCreateClass(scope, decl, ns)
 	// Populate the type-param-derived fields the pre-pass left empty. This is the second
 	// phase: the pre-pass registers a bare identity so forward references resolve, and
-	// this call — running once every sibling is registered, so a bound like `<T: Sibling>`
+	// this call — running once every sibling is registered, so a bound like `<T <: Sibling>`
 	// resolves — fills in the resolved type params. The handle carries the class's own
 	// type-parameter vars as its arguments.
 	self.TypeArgs = typeParamVars(typeParams)
@@ -463,7 +463,7 @@ func (c *checker) classDeclScope(scope *Scope, lvl int, decl *ast.ClassDecl) (*S
 // independent of a sibling's, and the scope is kept so inferClassDecl can install it around
 // the body and have every `&'a` there share one variable.
 //
-// The type parameters resolve first, inside that scope, so a bound written `<'a, T: &'a X>`
+// The type parameters resolve first, inside that scope, so a bound written `<'a, T <: &'a X>`
 // reaches the same variable the `'a` parameter carries rather than minting one of its own.
 // preBindAlias orders the two the same way.
 func (c *checker) resolveClassParams(scope *Scope, lvl int, decl *ast.ClassDecl, sh *classShell) {

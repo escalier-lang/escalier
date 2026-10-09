@@ -150,29 +150,29 @@ func TestInferOverloadPathsAgreeOnAnArrayParameter(t *testing.T) {
 		unannotated["g"])
 }
 
-// An arm's own `<T: C>` constraint records an upper bound on the parameter's var
+// An arm's own `<T <: C>` constraint records an upper bound on the parameter's var
 // while the signature is built. The pre-bind's probe used to discard that bound, so
 // an arm rendered as a bare `<T>` and its constraint enforced nothing.
 func TestInferOverloadArmKeepsItsTypeParamBound(t *testing.T) {
 	t.Run("the bound is rendered", func(t *testing.T) {
 		values, _, errs := inferSource(t, `
-			declare fn g<T: number>(xs: T) -> number
+			declare fn g<T <: number>(xs: T) -> number
 			declare fn g(a: string, b: string) -> string
 		`)
 		require.Empty(t, messagesWithSpan(t, errs))
 		require.Equal(t,
-			"(fn <T: number>(xs: T) -> number) & (fn (a: string, b: string) -> string)",
+			"(fn <T <: number>(xs: T) -> number) & (fn (a: string, b: string) -> string)",
 			values["g"])
 	})
 	t.Run("the bound is enforced", func(t *testing.T) {
 		_, _, errs := inferSource(t, `
-			declare fn g<T: number>(xs: T) -> number
+			declare fn g<T <: number>(xs: T) -> number
 			declare fn g(a: string, b: string) -> string
 			fn call(s: string) -> number { return g(s) }
 		`)
 		require.Equal(t,
 			[]string{"4:42-4:46: No matching overload for this call\n" +
-				"  fn <T: number>(xs: T) -> number\n" +
+				"  fn <T <: number>(xs: T) -> number\n" +
 				"  fn (a: string, b: string) -> string"},
 			messagesWithSpan(t, errs))
 	})
@@ -197,7 +197,7 @@ func TestInferOverloadArmReportsASignatureErrorOnce(t *testing.T) {
 	}{
 		{name: "parameter annotation", arm: "fn g(xs: NoSuchType) -> number { return 1 }"},
 		{name: "return annotation", arm: "fn g(xs: number) -> NoSuchType { return 1 }"},
-		{name: "type parameter bound", arm: "fn g<T: NoSuchType>(xs: T) -> number { return 1 }"},
+		{name: "type parameter bound", arm: "fn g<T <: NoSuchType>(xs: T) -> number { return 1 }"},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {

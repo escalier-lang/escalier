@@ -646,7 +646,7 @@ func measureBodyVariance(def *ClassDef, selfName string, env varianceEnv, assume
 	//
 	// The exemption covers, for a method whose receiver is `&self` or `self`:
 	//   - its value parameters, as `x: T` in `contains(&self, x: T)`;
-	//   - its own binders' upper bounds, as `T` in `m<U: T>(&self, x: U) -> T`.
+	//   - its own binders' upper bounds, as `T` in `m<U <: T>(&self, x: U) -> T`.
 	//
 	// It does not cover the positions below, which count in full:
 	//   - every position of a method whose receiver is `&mut self` or `mut self`, and of a
@@ -659,7 +659,7 @@ func measureBodyVariance(def *ClassDef, selfName string, env varianceEnv, assume
 	//   - the `extends` arguments, which superRef marks in both directions.
 	//
 	// A parameter with no output position in the immutable view keeps its readers' input
-	// positions, so `m<U: T>(&self, x: U) -> boolean` alone makes T contravariant.
+	// positions, so `m<U <: T>(&self, x: U) -> boolean` alone makes T contravariant.
 	for i := range n {
 		ownPos := fieldRef.pos[i] || otherRef.pos[i] || readerRef.pos[i]
 		readerNeg := readerRef.neg[i] && !ownPos
@@ -837,7 +837,7 @@ func (v *varianceVisitor) EnterType(t soltype.Type, pol soltype.Polarity) soltyp
 		}
 		// A binder's upper bound limits what a caller may pass for it, so it is an input
 		// position and reads at the opposite polarity of the function. `T` in
-		// `m<U: T>(&self, x: U)` takes input the way it does in `m(&self, x: T)`. A binder's
+		// `m<U <: T>(&self, x: U)` takes input the way it does in `m(&self, x: T)`. A binder's
 		// lower bound is what the caller's choice has to admit, so it is an output position
 		// and reads at the function's own polarity. `T` in `m<B >: T>(&self, x: B)` leaves
 		// the class covariant, since a wider `T` only widens what a caller may pass. A default

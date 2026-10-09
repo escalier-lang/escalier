@@ -123,8 +123,8 @@ func TestInferPhantomParamWarns(t *testing.T) {
 			// A parameter's own bound is not a use of it, so an F-bound leaves the parameter
 			// unused when the body does not write it.
 			name: "ParameterOccursOnlyInItsOwnBound",
-			src:  `type Rec<T: {a: T}> = number`,
-			want: []string{"1:10-1:19: type parameter T is declared but never used"},
+			src:  `type Rec<T <: {a: T}> = number`,
+			want: []string{"1:10-1:21: type parameter T is declared but never used"},
 		},
 		{
 			// The recursive reference hands `{b: T}` to the next unfolding forever, so T occurs in
@@ -189,7 +189,7 @@ func TestInferPhantomParamStaysSilent(t *testing.T) {
 			// T is marked phantom, since no argument reaches the denoted type through T's slot.
 			// It bounds U, so `Foo<number, 1>` and `Foo<string, 1>` differ in what they accept.
 			name: "ParameterBoundsASibling",
-			src:  `type Foo<T, U: T> = {x: U}`,
+			src:  `type Foo<T, U <: T> = {x: U}`,
 		},
 		{
 			// T is marked phantom for the same reason and supplies U's default, so `Pair<number>`
@@ -326,7 +326,7 @@ func TestInferUnusedTypeParamOnClassAndEnum(t *testing.T) {
 		{
 			// A sibling's bound is a use, the same exemption the alias tier makes.
 			name: "ClassParameterBoundsASibling",
-			src:  `class Pair<T, U: T> { x: U }`,
+			src:  `class Pair<T, U <: T> { x: U }`,
 		},
 		{
 			// As is a sibling's default.
@@ -391,8 +391,8 @@ func TestInferUnusedTypeParamSkipsARecoveredDeclaration(t *testing.T) {
 			// U's own reason to exist. The parameter list resolves before the body, so both
 			// warnings would land had preBindAlias not opened its own window.
 			name: "AliasParameterWithAnUnresolvableBound",
-			src:  `type Foo<T, U: Nope<T>> = number`,
-			want: []string{"1:16-1:23: cannot find type `Nope`"},
+			src:  `type Foo<T, U <: Nope<T>> = number`,
+			want: []string{"1:18-1:25: cannot find type `Nope`"},
 		},
 		{
 			// The same for a default, which is the other position resolveTypeParams fills.
@@ -414,8 +414,8 @@ func TestInferUnusedTypeParamSkipsARecoveredDeclaration(t *testing.T) {
 		{
 			// The same for a bound, the other position the pre-pass resolves.
 			name: "ClassParameterWithAnUnresolvableBound",
-			src:  `class Bad<T: Nope> { x: number, constructor(&mut self) { self.x = 0 } }`,
-			want: []string{"1:14-1:18: cannot find type `Nope`"},
+			src:  `class Bad<T <: Nope> { x: number, constructor(&mut self) { self.x = 0 } }`,
+			want: []string{"1:16-1:20: cannot find type `Nope`"},
 		},
 		{
 			// A type parameter does not name a class, so the extends edge is dropped and the

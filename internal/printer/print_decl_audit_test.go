@@ -52,7 +52,7 @@ func TestPrintDeclAudit_RoundTrip(t *testing.T) {
 		{"declare fn rest param", `declare fn f(...args: Array<number>) -> undefined`},
 		{"declare fn with throws", `declare fn f() -> undefined throws Error`},
 		{"declare fn type param", `declare fn f<T>(x: T) -> T`},
-		{"declare fn constrained type param", `declare fn f<T: string>(x: T) -> T`},
+		{"declare fn constrained type param", `declare fn f<T <: string>(x: T) -> T`},
 		{"export declare fn", `export declare fn f(x: number) -> string`},
 
 		// --- declare type ---
@@ -88,11 +88,11 @@ func TestPrintDeclAudit_RoundTrip(t *testing.T) {
 		{"declare class empty", `declare class C {}`},
 		{"declare class generic", `declare class C<T> {}`},
 		{"declare class extends", `declare class C extends Base {}`},
-		{"declare class constrained generic", `declare class C<T: string> {}`},
+		{"declare class constrained generic", `declare class C<T <: string> {}`},
 		{"declare class covariant param", `declare class C<out T> {}`},
 		{"declare class contravariant param", `declare class C<in T> {}`},
 		{"declare class invariant param", `declare class C<in out T> {}`},
-		{"declare class variant constrained param", `declare class C<out T: string> {}`},
+		{"declare class variant constrained param", `declare class C<out T <: string> {}`},
 		{"export declare class", `export declare class C {}`},
 		{"final class", `final class C {}`},
 		{"export final class", `export final class C {}`},

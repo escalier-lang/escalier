@@ -1894,7 +1894,7 @@ func TestBuildDepGraphV2_TypeParameterConstraints(t *testing.T) {
 						interface Serializable {
 							serialize() -> string,
 						}
-						type Container<T: Serializable> = {value: T}
+						type Container<T <: Serializable> = {value: T}
 					`,
 				},
 			},
@@ -1915,7 +1915,7 @@ func TestBuildDepGraphV2_TypeParameterConstraints(t *testing.T) {
 						interface Named {
 							name: string,
 						}
-						type Entity<T: Identifiable, U: Named> = {item: T, label: U}
+						type Entity<T <: Identifiable, U <: Named> = {item: T, label: U}
 					`,
 				},
 			},
@@ -1950,7 +1950,7 @@ func TestBuildDepGraphV2_TypeParameterConstraints(t *testing.T) {
 						interface Comparable {
 							compareTo(other: Comparable) -> number,
 						}
-						fn sort<T: Comparable>(items: Array<T>) -> Array<T> {
+						fn sort<T <: Comparable>(items: Array<T>) -> Array<T> {
 							return items
 						}
 					`,

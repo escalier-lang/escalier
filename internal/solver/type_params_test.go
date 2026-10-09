@@ -78,7 +78,7 @@ func TestTypeParamDefaultForwardRef(t *testing.T) {
 			name: "MutualBoundAccepted",
 			src: `
 				type Box<X> = {v: X}
-				type Pair<T: Box<U>, U: Box<T>> = {a: T, b: U}
+				type Pair<T <: Box<U>, U <: Box<T>> = {a: T, b: U}
 			`,
 		},
 		// The nested `fn <U>(…)` quantifier declares its own `U`, so the `U` inside it reads
@@ -103,7 +103,7 @@ func TestTypeParamDefaultForwardRef(t *testing.T) {
 		{
 			name: "InferClauseShadowsAccepted",
 			src: `
-				type Pick<T = if [number] : [infer U] { U } else { never }, U = string> = {a: T, b: U}
+				type Pick<T = if [number]: [infer U] { U } else { never }, U = string> = {a: T, b: U}
 			`,
 		},
 		// A default that reaches two later parameters names both, so one pass over the reported
@@ -142,7 +142,7 @@ func TestTypeParamDefaultForwardRef(t *testing.T) {
 		{
 			name: "InferClauseDoesNotShadowElseBranch",
 			src: `
-				type Bad<T = if [number] : [infer U] { number } else { U }, U = unknown> = {t: T, u: U}
+				type Bad<T = if [number]: [infer U] { number } else { U }, U = unknown> = {t: T, u: U}
 			`,
 			want: []string{"the default for type parameter `T` cannot reference `U`, which is declared after it"},
 		},
@@ -204,38 +204,38 @@ func TestTypeParamDefaultAgainstBound(t *testing.T) {
 	}{
 		{
 			name: "ClassDefaultOutsideBound",
-			src:  `class Box<T: string = number> { value: T }`,
+			src:  `class Box<T <: string = number> { value: T }`,
 			want: []string{"cannot constrain number <: string"},
 		},
 		{
 			name: "ClassDefaultInsideBound",
-			src:  `class Box<T: string = "hi"> { value: T }`,
+			src:  `class Box<T <: string = "hi"> { value: T }`,
 		},
 		{
 			name: "AliasDefaultOutsideBound",
-			src:  `type Box<T: string = number> = {value: T}`,
+			src:  `type Box<T <: string = number> = {value: T}`,
 			want: []string{"cannot constrain number <: string"},
 		},
 		{
 			name: "EnumDefaultOutsideBound",
-			src:  `enum Opt<T: string = number> { Some(value: T), None }`,
+			src:  `enum Opt<T <: string = number> { Some(value: T), None }`,
 			want: []string{"cannot constrain number <: string"},
 		},
 		{
 			name: "FuncDefaultOutsideBound",
-			src:  `fn id<T: string = number>(x: T) -> T { return x }`,
+			src:  `fn id<T <: string = number>(x: T) -> T { return x }`,
 			want: []string{"cannot constrain number <: string"},
 		},
 		{
 			name: "BoundNamesEarlierSibling",
-			src:  `class Box<U: string, T: U = number> { value: T }`,
+			src:  `class Box<U <: string, T <: U = number> { value: T }`,
 			want: []string{"cannot constrain number <: string"},
 		},
 		{
 			// The default sits before the required U, so the ordering rule reports it too;
 			// the bound comparison still runs and reports independently.
 			name: "BoundNamesLaterSibling",
-			src:  `class Box<T: U = number, U: string> { value: T }`,
+			src:  `class Box<T <: U = number, U <: string> { value: T }`,
 			want: []string{
 				"the default for type parameter `T` can never be used, since `U` is declared after it and has no default",
 				"cannot constrain number <: string",
@@ -268,13 +268,13 @@ func TestTypeParamDefaultOutsideBoundReportedOnce(t *testing.T) {
 	}{
 		{
 			name: "NoUseSite",
-			src:  `type Box<T: string = number> = {v: T}`,
+			src:  `type Box<T <: string = number> = {v: T}`,
 			want: []string{"cannot constrain number <: string"},
 		},
 		{
 			name: "TwoUseSitesOmitTheArgument",
 			src: `
-				type Box<T: string = number> = {v: T}
+				type Box<T <: string = number> = {v: T}
 				val a: Box = {v: 1}
 				val b: Box = {v: 2}
 			`,
@@ -283,7 +283,7 @@ func TestTypeParamDefaultOutsideBoundReportedOnce(t *testing.T) {
 		{
 			name: "BoundNamesSiblingSoUseSiteStillChecks",
 			src: `
-				type P<A, B: A = number> = [A, B]
+				type P<A, B <: A = number> = [A, B]
 				val p: P<string> = ["a", 1]
 			`,
 			want: []string{"cannot constrain number <: string"},
@@ -291,7 +291,7 @@ func TestTypeParamDefaultOutsideBoundReportedOnce(t *testing.T) {
 		{
 			name: "DefaultNamesSiblingSoUseSiteStillChecks",
 			src: `
-				type Pair<T, U: string = T> = [T, U]
+				type Pair<T, U <: string = T> = [T, U]
 				val p: Pair<number> = [1, 1]
 			`,
 			want: []string{"cannot constrain number <: string"},
@@ -312,9 +312,9 @@ func TestTypeParamDefaultOutsideBoundReportedOnce(t *testing.T) {
 // TestTypeParamBoundCycle covers a bound chain that reaches its own parameter through bare
 // parameters of the same list. Such a chain names no type the parameter is bounded by, and
 // the body check would close on it the way it closes a recursive type, so `x > 1` with
-// `x: T` would check under `<T: U, U: T>`. The chain is reported at the declaration, once
+// `x: T` would check under `<T <: U, U <: T>`. The chain is reported at the declaration, once
 // per cycle, in either direction. A bound that reaches a sibling through a type's structure,
-// as the F-bound `<T: Cmp<U>, U: Cmp<T>>` does, is not a cycle, and neither is a pair of
+// as the F-bound `<T <: Cmp<U>, U <: Cmp<T>>` does, is not a cycle, and neither is a pair of
 // bounds in opposite directions.
 func TestTypeParamBoundCycle(t *testing.T) {
 	tests := []struct {
@@ -326,12 +326,12 @@ func TestTypeParamBoundCycle(t *testing.T) {
 	}{
 		{
 			name: "UpperMutual",
-			src:  `fn f<T: U, U: T>(x: T) -> boolean { return x > 1 }`,
+			src:  `fn f<T <: U, U <: T>(x: T) -> boolean { return x > 1 }`,
 			errs: []string{"type parameter `T` is bounded above by itself through `U`"},
 		},
 		{
 			name: "UpperSelf",
-			src:  `fn f<T: T>(x: T) -> boolean { return x > 1 }`,
+			src:  `fn f<T <: T>(x: T) -> boolean { return x > 1 }`,
 			errs: []string{"type parameter `T` is bounded above by itself"},
 		},
 		{
@@ -348,14 +348,14 @@ func TestTypeParamBoundCycle(t *testing.T) {
 			// `constrain` reaches each member of an intersection on its own, so the chain
 			// runs through the `U` member.
 			name: "ThroughAnIntersection",
-			src:  `fn f<T: U & {a: number}, U: T>(x: T) -> boolean { return x > 1 }`,
+			src:  `fn f<T <: U & {a: number}, U <: T>(x: T) -> boolean { return x > 1 }`,
 			errs: []string{"type parameter `T` is bounded above by itself through `U`"},
 		},
 		{
 			// `U | number <: number` needs `U <: number`, which the chain closes on, so the
 			// `number` member would satisfy the whole bound.
 			name: "ThroughAUnion",
-			src:  `fn f<T: U | number, U: T | number>(x: T) -> boolean { return x > 1 }`,
+			src:  `fn f<T <: U | number, U <: T | number>(x: T) -> boolean { return x > 1 }`,
 			errs: []string{"type parameter `T` is bounded above by itself through `U`"},
 		},
 		{
@@ -365,7 +365,7 @@ func TestTypeParamBoundCycle(t *testing.T) {
 		},
 		{
 			name: "ThroughANestedUnion",
-			src:  `fn f<T: (U | number) & {a: number}, U: T>(x: T) -> boolean { return x > 1 }`,
+			src:  `fn f<T <: (U | number) & {a: number}, U <: T>(x: T) -> boolean { return x > 1 }`,
 			errs: []string{"type parameter `T` is bounded above by itself through `U`"},
 		},
 		{
@@ -373,14 +373,14 @@ func TestTypeParamBoundCycle(t *testing.T) {
 			name: "ThroughAnAlias",
 			src: `
 				type Same<X> = X
-				fn f<T: Same<U>, U: T>(x: T) -> boolean { return x > 1 }
+				fn f<T <: Same<U>, U <: T>(x: T) -> boolean { return x > 1 }
 			`,
 			errs: []string{"type parameter `T` is bounded above by itself through `U`"},
 		},
 		{
 			// Each direction is its own cycle, reported on its own.
 			name: "BothDirections",
-			src:  `fn f<T >: U: U, U >: T: T>(x: T) -> boolean { return x > 1 }`,
+			src:  `fn f<T >: U <: U, U >: T <: T>(x: T) -> boolean { return x > 1 }`,
 			errs: []string{
 				"type parameter `T` is bounded above by itself through `U`",
 				"type parameter `T` is bounded below by itself through `U`",
@@ -388,19 +388,19 @@ func TestTypeParamBoundCycle(t *testing.T) {
 		},
 		{
 			name: "ThreeLong",
-			src:  `class C<T: U, U: V, V: T> { value: T }`,
+			src:  `class C<T <: U, U <: V, V <: T> { value: T }`,
 			errs: []string{"type parameter `T` is bounded above by itself through `U` and `V`"},
 		},
 		{
 			name: "AliasMutual",
-			src:  `type P<T: U, U: T> = {a: T}`,
+			src:  `type P<T <: U, U <: T> = {a: T}`,
 			errs: []string{"type parameter `T` is bounded above by itself through `U`"},
 		},
 		{
 			name: "FBoundIsNotACycle",
 			src: `
 				class Cmp<X> { value: X }
-				class Foo<T: Cmp<U>, U: Cmp<T>> { value: T }
+				class Foo<T <: Cmp<U>, U <: Cmp<T>> { value: T }
 			`,
 		},
 		{
@@ -412,24 +412,24 @@ func TestTypeParamBoundCycle(t *testing.T) {
 			src: `
 				class Cmp<X> { value: X }
 				type Rec = Cmp<Rec>
-				fn f<T: Cmp<U>, U: Cmp<T>>(x: T) -> Rec { return x }
+				fn f<T <: Cmp<U>, U <: Cmp<T>>(x: T) -> Rec { return x }
 			`,
-			want: "fn <T: Cmp<U>, U: Cmp<T>>(x: T) -> Rec",
+			want: "fn <T <: Cmp<U>, U <: Cmp<T>>(x: T) -> Rec",
 		},
 		{
 			// Two laps peel two `Cmp`s off the super and the third lap meets `number`.
 			name: "FBoundFailsOnceTheSuperRunsOut",
 			src: `
 				class Cmp<X> { value: X }
-				fn f<T: Cmp<U>, U: Cmp<T>>(x: T) -> Cmp<Cmp<number>> { return x }
+				fn f<T <: Cmp<U>, U <: Cmp<T>>(x: T) -> Cmp<Cmp<number>> { return x }
 			`,
 			errs: []string{"cannot constrain Cmp<U> <: number"},
 		},
 		{
 			// `T <: U` and `U >: T` say the same thing, and neither chain returns to its start.
 			name: "OppositeDirectionsAreNotACycle",
-			src:  `fn f<T: U, U >: T>(x: T) -> U { return x }`,
-			want: "fn <T: U, U >: T>(x: T) -> U",
+			src:  `fn f<T <: U, U >: T>(x: T) -> U { return x }`,
+			want: "fn <T <: U, U >: T>(x: T) -> U",
 		},
 	}
 	for _, tt := range tests {

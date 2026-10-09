@@ -24,33 +24,33 @@ func TestABodyIsCheckedForEveryInstantiation(t *testing.T) {
 			// f accepts only strings, so passing it a `U` that may be a number is the use
 			// under test.
 			name: "ACallNarrowingTheBound",
-			src: `fn f<A: string>(a: A) -> A { return a }
-fn g<U: number | string>(u: U) { return f(u) }`,
+			src: `fn f<A <: string>(a: A) -> A { return a }
+fn g<U <: number | string>(u: U) { return f(u) }`,
 			binding: "g",
-			want:    "fn <U: number | string>(u: U) -> U",
-			errs:    []string{"2:41-2:45: cannot constrain number <: string"},
+			want:    "fn <U <: number | string>(u: U) -> U",
+			errs:    []string{"2:43-2:47: cannot constrain number <: string"},
 		},
 		{
 			// The body's use is reported once, at the use. A caller is checked against the
 			// declared bound alone.
 			name: "ACallerReadsOnlyTheDeclaredBound",
-			src: `fn f<A: string>(a: A) -> A { return a }
-fn g<U: number | string>(u: U) { return f(u) }
+			src: `fn f<A <: string>(a: A) -> A { return a }
+fn g<U <: number | string>(u: U) { return f(u) }
 val r = g(5)`,
-			errs: []string{"2:41-2:45: cannot constrain number <: string"},
+			errs: []string{"2:43-2:47: cannot constrain number <: string"},
 		},
 		{
 			name: "AnUnboundedParameterPassedOn",
-			src: `fn f<A: string>(a: A) -> A { return a }
+			src: `fn f<A <: string>(a: A) -> A { return a }
 fn g<U>(u: U) -> U { return f(u) }`,
 			errs: []string{"2:29-2:33: cannot constrain U <: string"},
 		},
 		{
 			name:    "AnOperatorNarrowingTheBound",
-			src:     `fn g<U: number | string>(u: U) -> boolean { return u > 1 }`,
+			src:     `fn g<U <: number | string>(u: U) -> boolean { return u > 1 }`,
 			binding: "g",
-			want:    "fn <U: number | string>(u: U) -> boolean",
-			errs:    []string{"1:52-1:53: cannot constrain string <: number"},
+			want:    "fn <U <: number | string>(u: U) -> boolean",
+			errs:    []string{"1:54-1:55: cannot constrain string <: number"},
 		},
 		{
 			name: "AMemberReadOnAnUnboundedParameter",
@@ -59,36 +59,36 @@ fn g<U>(u: U) -> U { return f(u) }`,
 		},
 		{
 			name: "AMemberReadTheBoundLacks",
-			src:  `fn g<U: {b: string}>(u: U) -> number { return u.a }`,
-			errs: []string{"1:49-1:50: object is missing property: a"},
+			src:  `fn g<U <: {b: string}>(u: U) -> number { return u.a }`,
+			errs: []string{"1:51-1:52: object is missing property: a"},
 		},
 		{
 			name:    "AMemberReadTheBoundHas",
-			src:     `fn g<U: {a: number}>(u: U) -> number { return u.a }`,
+			src:     `fn g<U <: {a: number}>(u: U) -> number { return u.a }`,
 			binding: "g",
-			want:    "fn <U: {a: number}>(u: U) -> number",
+			want:    "fn <U <: {a: number}>(u: U) -> number",
 		},
 		{
 			name: "AMethodBody",
-			src: `fn f<A: string>(a: A) -> A { return a }
+			src: `fn f<A <: string>(a: A) -> A { return a }
 class C {
-	g<U: number | string>(&self, u: U) -> U { return f(u) },
+	g<U <: number | string>(&self, u: U) -> U { return f(u) },
 }`,
-			errs: []string{"3:51-3:55: cannot constrain number <: string"},
+			errs: []string{"3:53-3:57: cannot constrain number <: string"},
 		},
 		{
 			// The inner function holds its own parameter rigid while its body is inferred,
 			// and the outer one's stays rigid around it.
 			name: "ANestedGenericFunction",
-			src: `fn g<U: number>(u: U) {
-	val h = fn <V: string>(v: V) -> V { return v }
+			src: `fn g<U <: number>(u: U) {
+	val h = fn <V <: string>(v: V) -> V { return v }
 	return h(u)
 }`,
 			errs: []string{"3:9-3:13: cannot constrain number <: string"},
 		},
 		{
 			name: "AGeneratorBody",
-			src: `gen fn g<U: number>(u: U) -> Generator<number, string, undefined> {
+			src: `gen fn g<U <: number>(u: U) -> Generator<number, string, undefined> {
 	yield 1
 	return u
 }`,
@@ -104,21 +104,21 @@ fn g<U>(u: U) -> Maybe<U> { return u }`,
 		},
 		{
 			name:    "AUnionNamingABoundingSibling",
-			src:     `fn g<U, T: U>(t: T) -> U | null { return t }`,
+			src:     `fn g<U, T <: U>(t: T) -> U | null { return t }`,
 			binding: "g",
-			want:    "fn <U, T: U>(t: T) -> U | null",
+			want:    "fn <U, T <: U>(t: T) -> U | null",
 		},
 		{
 			// A recursive call instantiates the function afresh, so it is checked like any
 			// other call.
 			name:    "ARecursiveCall",
-			src:     `fn g<U: number>(u: U) -> U { return g(u) }`,
+			src:     `fn g<U <: number>(u: U) -> U { return g(u) }`,
 			binding: "g",
-			want:    "fn <U: number>(u: U) -> U",
+			want:    "fn <U <: number>(u: U) -> U",
 		},
 		{
 			// A relation between two of the declaration's own parameters has to follow from
-			// the bounds the signature states, as `fn g<U, T: U>` does and this one does not.
+			// the bounds the signature states, as `fn g<U, T <: U>` does and this one does not.
 			// The return operand is what carries the unrelated parameter, so it is blamed.
 			name:    "TwoOwnParametersRelated",
 			src:     `fn h<U, T>(t: T) -> U { return t }`,
@@ -139,9 +139,9 @@ fn g<U>(u: U) -> Maybe<U> { return u }`,
 		{
 			// A declared bound between the two is what the relation has to follow from.
 			name:    "TwoOwnParametersRelatedByADeclaredBound",
-			src:     `fn h<U, T: U>(t: T) -> U { return t }`,
+			src:     `fn h<U, T <: U>(t: T) -> U { return t }`,
 			binding: "h",
-			want:    "fn <U, T: U>(t: T) -> U",
+			want:    "fn <U, T <: U>(t: T) -> U",
 		},
 		{
 			// Each return point is blamed on its own.
@@ -211,8 +211,8 @@ class C<T> {
 			// The failing sub is `T`'s whole bound, which names its sibling `U`.
 			name: "ABoundNamingASiblingRendersTheSibling",
 			src: `class Cmp<X> { value: X }
-fn f<T: Cmp<U>, U>(x: T) -> boolean { return x > 1 }`,
-			errs: []string{"2:46-2:47: cannot constrain Cmp<U> <: number"},
+fn f<T <: Cmp<U>, U>(x: T) -> boolean { return x > 1 }`,
+			errs: []string{"2:48-2:49: cannot constrain Cmp<U> <: number"},
 		},
 		{
 			// Naming is for display only. Checking `g(x)` meets `U`'s variable inside `T`'s
@@ -221,11 +221,11 @@ fn f<T: Cmp<U>, U>(x: T) -> boolean { return x > 1 }`,
 			name: "ASiblingInABoundsInputPositionStaysAParameter",
 			src: `type Sink<X> = {set: fn (x: X) -> number}
 fn g<X>(s: Sink<X>, d: X) -> X { return d }
-fn f<T: Sink<U>, U>(x: T, d: U) -> U { return g(x, d) }
+fn f<T <: Sink<U>, U>(x: T, d: U) -> U { return g(x, d) }
 val s: Sink<number> = {set: fn (x: number) -> number { return 1 }}
 val n: number = f(s, 5)`,
 			binding: "f",
-			want:    "fn <T: Sink<U>, U>(x: T, d: U) -> U",
+			want:    "fn <T <: Sink<U>, U>(x: T, d: U) -> U",
 		},
 		{
 			// The declared lower bound is what `T <: B` follows from.

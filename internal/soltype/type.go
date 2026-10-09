@@ -46,7 +46,7 @@ type TypeVarType struct {
 // nominally and no concrete type is a subtype of it. A skolem is a subtype only of itself,
 // of an inference var it flows into, and of its declared upper bound. ID keeps two
 // parameters `T` and `U` distinct; Name is the source name for diagnostics and the printer;
-// Upper is the declared upper bound (`<U: T>`), nil when unbounded. Lower is the declared
+// Upper is the declared upper bound (`<U <: T>`), nil when unbounded. Lower is the declared
 // lower bound (`<B >: T>`), nil when there is none. Every instantiation of `B` is a supertype
 // of `T`, so a type below Lower is a subtype of the skolem, where no other type apart from
 // the skolem itself is.
@@ -303,7 +303,7 @@ func (t *FuncType) ThrowsOrNever() Type {
 // describe their generics the same way. Var is the quantified inference variable that
 // stands for the parameter. It is minted one level deeper than the enclosing binding
 // and freshened per use by freshenAbove, rather than a named parameter resolved by a
-// substitution pass. The declared upper bound is seeded as Var's upper bound. `<U: T>` sets
+// substitution pass. The declared upper bound is seeded as Var's upper bound. `<U <: T>` sets
 // Var.UpperBounds to [T], so constrain and freshenAbove enforce and copy it with no new
 // machinery. Default is the type filled in when a type argument is omitted. It is nil
 // when the parameter is required. Type-argument resolution reads it, and constraint
@@ -313,7 +313,7 @@ func (t *FuncType) ThrowsOrNever() Type {
 // UpperBound is that same declared bound kept where solving cannot overwrite it. A
 // variable's upper-bound list grows whenever a constraint flows into the variable, so
 // Var.UpperBounds[0] is the declared bound only for a parameter that solving has not
-// touched. `fn g<U>(u: U) { f(u) }` calling `fn f<A: string>(a: A)` appends string to the
+// touched. `fn g<U>(u: U) { f(u) }` calling `fn f<A <: string>(a: A)` appends string to the
 // unbounded U, which puts an inferred bound at index 0. UpperBound stays nil for that U,
 // because a parameter written with no `:` clause declares nothing. Read UpperBound, not
 // Var.UpperBounds, to answer what the source wrote.
@@ -338,7 +338,7 @@ type TypeParam struct {
 //
 // The field and the list can disagree once a substitution has rewritten the binder. Accept
 // rewrites UpperBound but leaves the variable's bound list alone, so on a `C<number>` the
-// method binder `m<U: T>` has an UpperBound field of `number` while its variable's list still names
+// method binder `m<U <: T>` has an UpperBound field of `number` while its variable's list still names
 // C's own `T`.
 func (tp *TypeParam) DeclaredUpperBounds() []Type {
 	if tp.UpperBound != nil {
@@ -350,8 +350,8 @@ func (tp *TypeParam) DeclaredUpperBounds() []Type {
 // AllUpperBounds returns every upper bound an instantiation of tp has to respect. That is
 // the declared bound followed by what the signature and the body added. A type
 // reference in the signature adds the bound it imposes, as `-> Box<U>` adds `string` for
-// `class Box<T: string>`. A body adds the variables it links the parameter to. Given
-// `fn f<A: string>`, the body of `fn g<U: string>(u: U) { return f(u) }` links `U` to the
+// `class Box<T <: string>`. A body adds the variables it links the parameter to. Given
+// `fn f<A <: string>`, the body of `fn g<U <: string>(u: U) { return f(u) }` links `U` to the
 // variable `f(u)` instantiates `A` to.
 //
 // resolveTypeParams records the declared bound as the variable's first upper bound. Accept

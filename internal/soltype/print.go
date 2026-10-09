@@ -339,7 +339,7 @@ func PrintAsSchemeWith(
 	p.ltNames = ltNames
 	// A declared parameter's bound renders here rather than beside its name, because a
 	// bound may name a sibling parameter or a lifetime and both are registered only now.
-	// `class Holder<'a, T: &'a {value: number}>` would otherwise drop the `'a`.
+	// `class Holder<'a, T <: &'a {value: number}>` would otherwise drop the `'a`.
 	//
 	// Only the bounds the source wrote render. The variable's accumulated bounds carry
 	// what a body forced, which is not what the declaration promises, and showing one
@@ -575,7 +575,7 @@ func freeTypeVars(t Type) []*TypeVarType {
 			for _, tp := range t.TypeParams {
 				seen.Add(tp.Var)
 			}
-			// Walk the bounds the binder renders. On a `C<number>`, `m<U: T>` renders as
+			// Walk the bounds the binder renders. On a `C<number>`, `m<U <: T>` renders as
 			// `U: number`, so C's `T` left on the variable's own list is not counted free.
 			for _, tp := range t.TypeParams {
 				for _, b := range tp.DeclaredLowerBounds() {
@@ -1431,8 +1431,8 @@ func isNever(t Type) bool {
 	return never
 }
 
-// typeParamBinders renders each type parameter as a binder string — `U`, `U: T` for an
-// upper bound, `U >: T` for a lower bound, `U = D` for a default, or `U >: L: T = D` for all
+// typeParamBinders renders each type parameter as a binder string — `U`, `U <: T` for an
+// upper bound, `U >: T` for a lower bound, `U = D` for a default, or `U >: L <: T = D` for all
 // three — without the surrounding `<>`. The upper bound is the parameter's
 // DeclaredUpperBounds and the lower bound its DeclaredLowerBounds. Several
 // bounds render joined by ` & `. The parameters must be bound first, through
@@ -1443,8 +1443,8 @@ func isNever(t Type) bool {
 func (p *namedPrinter) typeParamBinders(tps []*TypeParam) []string {
 	binders := make([]string, len(tps))
 	for i, tp := range tps {
-		// Reading the declared bound is what renders `pick<T: U>` on a `C<number>` as
-		// `<T: number>`. printType gives the registered source name, else t{ID}.
+		// Reading the declared bound is what renders `pick<T <: U>` on a `C<number>` as
+		// `<T <: number>`. printType gives the registered source name, else t{ID}.
 		binders[i] = p.printType(tp.Var) + p.typeParamSuffix(tp.DeclaredLowerBounds(), tp.DeclaredUpperBounds(), tp.Default)
 	}
 	return binders
@@ -1464,7 +1464,7 @@ func (p *namedPrinter) typeParamSuffix(lowers, bounds []Type, dflt Type) string 
 		s += " >: " + p.joinTypes(lowers, " | ")
 	}
 	if len(bounds) > 0 {
-		s += ": " + p.joinTypes(bounds, " & ")
+		s += " <: " + p.joinTypes(bounds, " & ")
 	}
 	if dflt != nil {
 		s += " = " + p.printType(dflt)

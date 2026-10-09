@@ -5,7 +5,7 @@
 import "std:function"
 import "std:object"
 
-export declare interface ProxyHandler<T: {...}> {
+export declare interface ProxyHandler<T <: {...}> {
     /**
      * A trap method for a function call.
      * @param target The original callable object which is being proxied.
@@ -91,11 +91,11 @@ export declare interface ProxyConstructor {
      * @param target A target object to wrap with Proxy.
      * @param handler An object whose properties define the behavior of Proxy when an operation is attempted on it.
      */
-    revocable<T: {...}>(target: T, handler: ProxyHandler<T>) -> {
+    revocable<T <: {...}>(target: T, handler: ProxyHandler<T>) -> {
         proxy: T,
         revoke: fn () -> unknown
     },
-    new<T: {...}> (target: T, handler: ProxyHandler<T>) -> T
+    new<T <: {...}> (target: T, handler: ProxyHandler<T>) -> T
 }
 
 @js("Proxy")

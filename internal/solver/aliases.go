@@ -119,7 +119,7 @@ type aliasShell struct {
 	def *AliasDef
 	// paramsClean is true when preBindAlias resolved the alias's `<…>` list with no
 	// diagnostic. A bound or default that fails to resolve is left nil, taking the
-	// occurrences it held with it, so `type Foo<T, U: Nope<T>> = number` keeps no record
+	// occurrences it held with it, so `type Foo<T, U <: Nope<T>> = number` keeps no record
 	// that U's bound wrote T.
 	paramsClean bool
 	// declClean is paramsClean and the same answer for the body, the errorWindow rule

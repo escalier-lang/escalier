@@ -55,11 +55,11 @@ func TestInferGenericFuncDecl(t *testing.T) {
 		},
 		{
 			// A bounded parameter keeps its bound on the quantifier but not on the use
-			// site, so `x` reads as `T` while `<T: number>` carries the constraint.
+			// site, so `x` reads as `T` while `<T <: number>` carries the constraint.
 			name: "BoundedParam",
-			src:  `fn first<T: number>(x: T) -> T { return x }`,
+			src:  `fn first<T <: number>(x: T) -> T { return x }`,
 			want: map[string]string{
-				"first": "fn <T: number>(x: T) -> T",
+				"first": "fn <T <: number>(x: T) -> T",
 			},
 		},
 		{

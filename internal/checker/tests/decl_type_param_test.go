@@ -22,7 +22,7 @@ func TestADeclarationKeepsItsTypeParamBoundAndDefault(t *testing.T) {
 		want  string
 	}{
 		"AClassBound": {
-			input: `class Holder<T: {value: number}> { peer: T }`,
+			input: `class Holder<T <: {value: number}> { peer: T }`,
 			name:  "Holder",
 			want:  "T: {value: number}",
 		},
@@ -39,7 +39,7 @@ func TestADeclarationKeepsItsTypeParamBoundAndDefault(t *testing.T) {
 		// A default outside the bound is rejected at the declaration, so the two have to
 		// agree here.
 		"AClassBoundAndDefault": {
-			input: `class Holder<T: {value: number} = {value: number}> { peer: T }`,
+			input: `class Holder<T <: {value: number} = {value: number}> { peer: T }`,
 			name:  "Holder",
 			want:  "T: {value: number} = {value: number}",
 		},
@@ -58,7 +58,7 @@ func TestADeclarationKeepsItsTypeParamBoundAndDefault(t *testing.T) {
 		// unifyTypeParams are in declaration order, which is what pairs each bound with
 		// the parameter that carries it.
 		"AClassBoundNamingASibling": {
-			input: `class Holder<T: U, U: {value: number}> { a: T, b: U }`,
+			input: `class Holder<T <: U, U <: {value: number}> { a: T, b: U }`,
 			name:  "Holder",
 			want:  "T: U, U: {value: number}",
 		},
@@ -68,7 +68,7 @@ func TestADeclarationKeepsItsTypeParamBoundAndDefault(t *testing.T) {
 		// differ from declaration order.
 		"AnEnumBoundNamingASibling": {
 			input: `
-				enum Box<T: U, U: {value: number}> {
+				enum Box<T <: U, U <: {value: number}> {
 					Full(v: T),
 					Err(e: U),
 				}
@@ -125,14 +125,14 @@ func TestASignatureKeepsItsTypeParamOrder(t *testing.T) {
 		want        string
 	}{
 		"AFunction": {
-			input:       `declare fn f<T: U, U: {value: number}>(a: T, b: U) -> T`,
+			input:       `declare fn f<T <: U, U <: {value: number}>(a: T, b: U) -> T`,
 			bindingName: "f",
-			want:        "fn <T: U, U: {value: number}>(a: T, b: U) -> T",
+			want:        "fn <T <: U, U <: {value: number}>(a: T, b: U) -> T",
 		},
 		"AFunctionTypeAnnotation": {
-			input:       `declare val g: fn <T: U, U: {value: number}>(a: T, b: U) -> T`,
+			input:       `declare val g: fn <T <: U, U <: {value: number}>(a: T, b: U) -> T`,
 			bindingName: "g",
-			want:        "fn <T: U, U: {value: number}>(a: T, b: U) -> T",
+			want:        "fn <T <: U, U <: {value: number}>(a: T, b: U) -> T",
 		},
 		// A constructor's own parameters follow the class's, so the class contributes `S`
 		// and the constructor contributes `T` and `U`.
@@ -140,13 +140,13 @@ func TestASignatureKeepsItsTypeParamOrder(t *testing.T) {
 			input: `
 				class Holder<S> {
 					peer: S,
-					constructor<T: U, U: {value: number}>(&mut self, s: S, a: T, b: U) {
+					constructor<T <: U, U <: {value: number}>(&mut self, s: S, a: T, b: U) {
 						self.peer = s
 					},
 				}
 			`,
 			bindingName: "Holder",
-			want:        "{new <S, T: U, U: {value: number}>(s: S, a: T, b: U) -> Holder<S>}",
+			want:        "{new <S, T <: U, U <: {value: number}>(s: S, a: T, b: U) -> Holder<S>}",
 		},
 	}
 

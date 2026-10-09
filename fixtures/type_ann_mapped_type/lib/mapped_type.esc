@@ -1,8 +1,8 @@
-type MyPick<T, K: keyof T> = {[P]: T[P] for P in K}
+type MyPick<T, K <: keyof T> = {[P]: T[P] for P in K}
 type MyPartial<T> = {[P]?: T[P] for P in keyof T}
 type MyRequired<T> = {[P]-?: T[P] for P in keyof T}
 type MyReadonly<T> = {readonly [P]: T[P] for P in keyof T}
-type MyRecord<K: keyof any, T> = {[P]: T for P in K}
+type MyRecord<K <: keyof any, T> = {[P]: T for P in K}
 
 type Obj = {a: number, b: string, c: boolean}
 
@@ -29,7 +29,7 @@ val username1 = record.username
 
 type MyExclude<T, U> = if T : U { never } else { T }
 type MyExtract<T, U> = if T : U { T } else { never }
-type MyOmit<T, K: keyof any> = MyPick<T, MyExclude<keyof T, K>>
+type MyOmit<T, K <: keyof any> = MyPick<T, MyExclude<keyof T, K>>
 
 declare val obj4: MyOmit<Obj, "b">
 val a4 = obj4.a

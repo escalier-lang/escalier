@@ -247,8 +247,8 @@ func TestPrintRoundTrips(t *testing.T) {
 }
 
 // A generic function renders its own quantified type parameters as a `<...>` prefix:
-// `<U>` bare, `<U: T>` for a constraint carried as the parameter variable's upper
-// bound, `<U = D>` for a default, and `<U: T = D>` for both. A use of the parameter in
+// `<U>` bare, `<U <: T>` for a constraint carried as the parameter variable's upper
+// bound, `<U = D>` for a default, and `<U <: T = D>` for both. A use of the parameter in
 // the params or return renders under its source name rather than the raw t{ID} form.
 func TestPrintGenericFunc(t *testing.T) {
 	// tparam builds a type parameter and a fresh variable to stand for it, so each case
@@ -279,7 +279,7 @@ func TestPrintGenericFunc(t *testing.T) {
 				tp, u := tparam("U", numP(), nil)
 				return &FuncType{TypeParams: []*TypeParam{tp}, Params: []*FuncParam{identP("x", u)}, Ret: u}
 			},
-			want: "fn <U: number>(x: U) -> U",
+			want: "fn <U <: number>(x: U) -> U",
 		},
 		{
 			name: "defaulted type parameter",
@@ -295,7 +295,7 @@ func TestPrintGenericFunc(t *testing.T) {
 				tp, u := tparam("U", numP(), strP())
 				return &FuncType{TypeParams: []*TypeParam{tp}, Params: []*FuncParam{identP("x", u)}, Ret: u}
 			},
-			want: "fn <U: number = string>(x: U) -> U",
+			want: "fn <U <: number = string>(x: U) -> U",
 		},
 		{
 			// A generic higher-order signature: the parameter appears inside a nested

@@ -75,50 +75,50 @@
         &ast.TypeParam{
             Name: "T",
             UpperBound: &ast.NumberTypeAnn{
-                span: 6-12,
+                span: 8-14,
             },
-            span: 3-12,
+            span: 3-14,
         },
         &ast.TypeParam{
             Name: "U",
             UpperBound: &ast.StringTypeAnn{
-                span: 17-23,
+                span: 21-27,
             },
-            span: 14-23,
+            span: 16-27,
         },
     },
     Params: []*ast.Param{
         &ast.Param{
             Pattern: &ast.IdentPat{
                 Name: "x",
-                span: 25-26,
+                span: 29-30,
             },
             TypeAnn: &ast.TypeRefTypeAnn{
                 Name: &ast.Ident{
                     Name: "T",
-                    span: 28-29,
+                    span: 32-33,
                 },
-                span: 28-29,
+                span: 32-33,
             },
         },
         &ast.Param{
             Pattern: &ast.IdentPat{
                 Name: "y",
-                span: 31-32,
+                span: 35-36,
             },
             TypeAnn: &ast.TypeRefTypeAnn{
                 Name: &ast.Ident{
                     Name: "U",
-                    span: 34-35,
+                    span: 38-39,
                 },
-                span: 34-35,
+                span: 38-39,
             },
         },
     },
     Return: &ast.BooleanTypeAnn{
-        span: 40-47,
+        span: 44-51,
     },
-    span: 0-47,
+    span: 0-51,
 }
 ---
 

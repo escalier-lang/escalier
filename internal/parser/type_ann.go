@@ -1196,7 +1196,19 @@ func (p *Parser) typeParam(allowVariance bool) *ast.TypeParam {
 		}
 	}
 
-	if p.lexer.peek().Type == Colon {
+	// An upper bound is written `<:`, the mirror of `>:`, so the two bounds around a
+	// parameter read as the two subtyping relations: `B >: T <: Base`. A bare `:` is the
+	// outlives bound of a lifetime parameter and the annotation of a value, so on a type
+	// parameter it is an error that names the operator meant.
+	if p.adjacentPair(LessThan, Colon) {
+		p.lexer.consume() // consume '<'
+		p.lexer.consume() // consume ':'
+		upperBound = p.typeAnnRequired()
+		if upperBound != nil {
+			end = upperBound.Span().End
+		}
+	} else if p.lexer.peek().Type == Colon {
+		p.reportError(p.lexer.peek().Span, "expected <: before a type parameter's upper bound")
 		p.lexer.consume() // consume ':'
 		upperBound = p.typeAnnRequired()
 		if upperBound != nil {
@@ -1259,7 +1271,10 @@ func (p *Parser) peekSecondIsTypeParamName() bool {
 // implements) can avoid a post-hoc type assertion on the TypeAnn interface.
 func (p *Parser) parseTypeRef(firstToken *Token) *ast.TypeRefTypeAnn {
 	qualIdent := p.parseQualifiedIdent(firstToken)
-	if p.lexer.peek().Type == LessThan {
+	// A `<` directly followed by `:` is the upper-bound operator of the binder this
+	// reference is the lower bound of, as `T` in `<B >: T <: Base>`, never a type
+	// argument list.
+	if p.lexer.peek().Type == LessThan && !p.adjacentPair(LessThan, Colon) {
 		p.lexer.consume() // consume '<'
 		// Each angle-bracket arg can be a bare lifetime (`'a`, `'static`)
 		// or a type annotation (which may itself carry a lifetime prefix

@@ -14,7 +14,7 @@ fn snd(a, b) {
     return b
 }
 
-fn fstNum<A: number, B: number>(a: A, b: B) -> A { return a }
+fn fstNum<A <: number, B <: number>(a: A, b: B) -> A { return a }
 fn fstNumWrapper(a, b) { return fstNum(a, b) }
 
 val sum = add(1, 2)

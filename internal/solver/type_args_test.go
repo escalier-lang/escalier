@@ -319,7 +319,7 @@ func TestTypeParamDefaultAtReference(t *testing.T) {
 		{
 			name: "ClassBoundedDefault",
 			src: `
-				class Box<T: number = 5> { value: T }
+				class Box<T <: number = 5> { value: T }
 				declare fn f() -> Box
 			`,
 			want: "fn () -> Box<5>",
@@ -474,7 +474,7 @@ func TestClassArityAcrossRemainingRefForms(t *testing.T) {
 		`},
 		{name: "TypeParamBound", src: `
 			class Box<T> { value: T }
-			class Holder<U: Box> { value: U }
+			class Holder<U <: Box> { value: U }
 		`},
 		{name: "ConstructorParam", src: `
 			class Box<T> { value: T }
@@ -570,7 +570,7 @@ func TestClassArityAcrossMixedComponent(t *testing.T) {
 }
 
 // TestClassTypeArgBounds covers the bound a generic class declares on a type parameter,
-// `class Box<T: string>`. A reference supplying an argument outside the bound is rejected at
+// `class Box<T <: string>`. A reference supplying an argument outside the bound is rejected at
 // the reference, and one inside it is accepted. Every reference form routes through
 // buildClassInstance, so a self-reference in the class's own body is checked the same way an
 // annotation elsewhere is. A bound may name a sibling parameter, so the reference's own
@@ -584,7 +584,7 @@ func TestClassTypeArgBounds(t *testing.T) {
 		{
 			name: "ArgumentOutsideBound",
 			src: `
-				class Box<T: string> { v: T }
+				class Box<T <: string> { v: T }
 				fn take(b: Box<number>) -> number { return 1 }
 			`,
 			want: []string{"cannot constrain number <: string"},
@@ -592,7 +592,7 @@ func TestClassTypeArgBounds(t *testing.T) {
 		{
 			name: "ArgumentInsideBound",
 			src: `
-				class Box<T: string> { v: T }
+				class Box<T <: string> { v: T }
 				fn take(b: Box<"a">) -> number { return 1 }
 			`,
 		},
@@ -605,12 +605,12 @@ func TestClassTypeArgBounds(t *testing.T) {
 		},
 		{
 			name: "SelfReferenceInFieldChecked",
-			src:  `class Box<T: string> { v: T, other: Box<number> }`,
+			src:  `class Box<T <: string> { v: T, other: Box<number> }`,
 			want: []string{"cannot constrain number <: string"},
 		},
 		{
 			name: "SelfReferenceInFieldSatisfied",
-			src:  `class Box<T: string> { v: T, other: Box<"a"> }`,
+			src:  `class Box<T <: string> { v: T, other: Box<"a"> }`,
 		},
 		{
 			name: "ExtendsEdgeChecked",
@@ -620,7 +620,7 @@ func TestClassTypeArgBounds(t *testing.T) {
 			// time, since no value fits both the `number` the edge names and the `string` the
 			// bound demands.
 			src: `
-				class Box<T: string> { v?: T }
+				class Box<T <: string> { v?: T }
 				class Sub extends Box<number> {
 					constructor(&mut self) { super() },
 				}
@@ -630,7 +630,7 @@ func TestClassTypeArgBounds(t *testing.T) {
 		{
 			name: "MethodParamChecked",
 			src: `
-				class Box<T: string> { v: T }
+				class Box<T <: string> { v: T }
 				class Holder {
 					x: number,
 					take(&self, b: Box<number>) -> number { return self.x },
@@ -641,7 +641,7 @@ func TestClassTypeArgBounds(t *testing.T) {
 		{
 			name: "SiblingBoundViolated",
 			src: `
-				class P<A, B: A> { a: A, b: B }
+				class P<A, B <: A> { a: A, b: B }
 				fn take(p: P<string, 1>) -> number { return 1 }
 			`,
 			want: []string{"cannot constrain 1 <: string"},
@@ -649,14 +649,14 @@ func TestClassTypeArgBounds(t *testing.T) {
 		{
 			name: "SiblingBoundSatisfied",
 			src: `
-				class P<A, B: A> { a: A, b: B }
+				class P<A, B <: A> { a: A, b: B }
 				fn take(p: P<number, 1>) -> number { return 1 }
 			`,
 		},
 		{
 			name: "IntersectionBound",
 			src: `
-				class Box<T: string & "a"> { v: T }
+				class Box<T <: string & "a"> { v: T }
 				fn take(b: Box<"b">) -> number { return 1 }
 			`,
 			want: []string{`cannot constrain "b" <: "a"`},
@@ -665,7 +665,7 @@ func TestClassTypeArgBounds(t *testing.T) {
 			name: "CrossClassBoundChecked",
 			src: `
 				class Animal { name: string }
-				class Pen<T: Animal> { pet: T }
+				class Pen<T <: Animal> { pet: T }
 				fn take(p: Pen<number>) -> number { return 1 }
 			`,
 			want: []string{"cannot constrain number <: Animal"},
@@ -690,7 +690,7 @@ func TestClassTypeArgBounds(t *testing.T) {
 // the violation still reports.
 func TestClassBoundDefersForUnfilledAliasSibling(t *testing.T) {
 	src := `
-		class Box<T: string> { v: T }
+		class Box<T <: string> { v: T }
 		type A = {b: Box<number>, other: Other}
 		type Other = {a?: A}
 	`
@@ -707,14 +707,14 @@ func TestClassBoundDefersForUnfilledAliasSibling(t *testing.T) {
 func TestClassBoundForwardingFn(t *testing.T) {
 	t.Run("DeclarationAloneClean", func(t *testing.T) {
 		_, _, errs := inferSource(t, `
-			class Box<T: string> { v: T }
+			class Box<T <: string> { v: T }
 			fn g<U>(u: U) -> Box<U> { return Box(u) }
 		`)
 		require.Empty(t, errs)
 	})
 	t.Run("CallInsideBound", func(t *testing.T) {
 		_, _, errs := inferSource(t, `
-			class Box<T: string> { v: T }
+			class Box<T <: string> { v: T }
 			fn g<U>(u: U) -> Box<U> { return Box(u) }
 			val b = g("a")
 		`)
@@ -722,7 +722,7 @@ func TestClassBoundForwardingFn(t *testing.T) {
 	})
 	t.Run("CallOutsideBound", func(t *testing.T) {
 		_, _, errs := inferSource(t, `
-			class Box<T: string> { v: T }
+			class Box<T <: string> { v: T }
 			fn g<U>(u: U) -> Box<U> { return Box(u) }
 			val b = g(1)
 		`)
@@ -733,12 +733,12 @@ func TestClassBoundForwardingFn(t *testing.T) {
 
 // TestClassBoundConstructionNotDoubleReported guards the seam between the two enforcement
 // paths. A construction's argument flows into the parameter var, whose upper bound is the
-// declared constraint, so `Box(1)` against `class Box<T: string>` reports through inference.
+// declared constraint, so `Box(1)` against `class Box<T <: string>` reports through inference.
 // The reference check covers annotations only, so a construction with no annotation reports
 // exactly once.
 func TestClassBoundConstructionNotDoubleReported(t *testing.T) {
 	_, _, errs := inferSource(t, `
-		class Box<T: string> { v: T }
+		class Box<T <: string> { v: T }
 		val b = Box(1)
 	`)
 	require.Len(t, errs, 1)

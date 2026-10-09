@@ -129,7 +129,7 @@ func TestAttachComments(t *testing.T) {
 		},
 		{
 			name: "a comment before a type parameter's bound leads that bound",
-			src:  "fn f<T: /* bound */ number>() {\n    return 1\n}\n",
+			src:  "fn f<T <: /* bound */ number>() {\n    return 1\n}\n",
 			want: []string{"leading *ast.NumberTypeAnn /* bound */"},
 		},
 		{

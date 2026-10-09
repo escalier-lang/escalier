@@ -763,8 +763,8 @@ func (c *checker) constrain(n ast.Node, source, target soltype.Type) {
 //
 // An error with the same span and message as one already accumulated from errs is dropped.
 func (c *checker) blameConstraintErrors(n ast.Node, errs []SolverError) {
-	// One constraint can fail the same way along two paths. Given `fn f<A: string>` and
-	// `fn g<U: string>(u: U) { return f(u) }`, the call `g(5)` checks `5` against U's
+	// One constraint can fail the same way along two paths. Given `fn f<A <: string>` and
+	// `fn g<U <: string>(u: U) { return f(u) }`, the call `g(5)` checks `5` against U's
 	// declared `string` and again against `f`'s `A`, which the body linked U to and
 	// which is bounded by `string` too.
 	type diagnostic struct {

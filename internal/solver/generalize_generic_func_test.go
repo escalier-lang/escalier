@@ -8,7 +8,7 @@ import (
 )
 
 // Value-binding generalization keeps a generic FuncType's own TypeParams binder vars
-// symbolic, so it renders `fn <T>(x: T) -> T` rather than `fn <T0, T: T0>(x: T) -> T`,
+// symbolic, so it renders `fn <T>(x: T) -> T` rather than `fn <T0, T <: T0>(x: T) -> T`,
 // and a type parameter used only in the return stays valid instead of inlining to never.
 func TestGeneralizeRetainsFuncTypeParams(t *testing.T) {
 	tests := []struct {
@@ -65,7 +65,7 @@ func TestGeneralizeRetainsFuncTypeParams(t *testing.T) {
 					Ret:        vT,
 				}
 			},
-			want: "fn <T: number>(x: T) -> T",
+			want: "fn <T <: number>(x: T) -> T",
 		},
 		{
 			name: "two distinct params",

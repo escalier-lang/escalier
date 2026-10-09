@@ -81,11 +81,11 @@ class Keyed<U> extends Bag<U> {
 		super(items)
 		self.key = key
 	},
-	contains<B: U>(&self, x: B) -> number { return self.key(x) },
+	contains<B <: U>(&self, x: B) -> number { return self.key(x) },
 }`,
 			errs: []string{
-				"11:2-11:62: class `Keyed` redeclares inherited member `contains` with type " +
-					"`fn <B: U>(x: B) -> number`, which is not compatible with `fn <B>(x: B) -> number` " +
+				"11:2-11:64: class `Keyed` redeclares inherited member `contains` with type " +
+					"`fn <B <: U>(x: B) -> number`, which is not compatible with `fn <B>(x: B) -> number` " +
 					"declared by `Bag`",
 			},
 		},
@@ -93,7 +93,7 @@ class Keyed<U> extends Bag<U> {
 			name: "ABinderBoundedByTheClassParameter",
 			src: `class Keyed<U> {
 	key: fn (x: U) -> number,
-	apply<B: U>(&self, x: B) -> number { return self.key(x) },
+	apply<B <: U>(&self, x: B) -> number { return self.key(x) },
 }`,
 		},
 		{

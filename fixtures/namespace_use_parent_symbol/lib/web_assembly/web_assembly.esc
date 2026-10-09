@@ -1,4 +1,4 @@
-interface GlobalDescriptor<T: ValueType = ValueType> {
+interface GlobalDescriptor<T <: ValueType = ValueType> {
     mutable?: boolean,
     value: T,
 }

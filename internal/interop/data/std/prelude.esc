@@ -13,7 +13,7 @@ export declare class Array<T> {
      * @param thisArg If provided, it will be used as the this value for each invocation of
      * predicate. If it is not provided, undefined is used instead.
      */
-    find<S: T>(&self, predicate: fn (value: T, index: number, obj: &Self) -> boolean, thisArg?: unknown) -> S | undefined,
+    find<S <: T>(&self, predicate: fn (value: T, index: number, obj: &Self) -> boolean, thisArg?: unknown) -> S | undefined,
     find(&self, predicate: fn (value: T, index: number, obj: &Self) -> unknown, thisArg?: unknown) -> T | undefined,
     /**
      * Returns the index of the first element in the array where predicate is true, and -1
@@ -104,7 +104,7 @@ export declare class Array<T> {
      *
      * @param depth The maximum recursion depth
      */
-    flat<A, D: number = 1>(&self, this: A, depth?: D) -> Array<FlatArray<A, D>>,
+    flat<A, D <: number = 1>(&self, this: A, depth?: D) -> Array<FlatArray<A, D>>,
     /**
      * Returns the item located at the specified index.
      * @param index The zero-based index of the desired code unit. A negative index will count back from the last item.
@@ -119,7 +119,7 @@ export declare class Array<T> {
      * @param thisArg If provided, it will be used as the this value for each invocation of
      * predicate. If it is not provided, undefined is used instead.
      */
-    findLast<S: T>(&self, predicate: fn (value: T, index: number, array: &Self) -> boolean, thisArg?: unknown) -> S | undefined,
+    findLast<S <: T>(&self, predicate: fn (value: T, index: number, array: &Self) -> boolean, thisArg?: unknown) -> S | undefined,
     findLast(&self, predicate: fn (value: T, index: number, array: &Self) -> unknown, thisArg?: unknown) -> T | undefined,
     /**
      * Returns the index of the last element in the array where predicate is true, and -1
@@ -312,7 +312,7 @@ export declare class Array<T> {
      * @param predicate A function that accepts up to three arguments. The filter method calls the predicate function one time for each element in the array.
      * @param thisArg An object to which the this keyword can refer in the predicate function. If thisArg is omitted, undefined is used as the this value.
      */
-    filter<S: T>(&self, predicate: fn (value: T, index: number, array: &Self) -> boolean, thisArg?: unknown) -> Array<S>,
+    filter<S <: T>(&self, predicate: fn (value: T, index: number, array: &Self) -> boolean, thisArg?: unknown) -> Array<S>,
     /**
      * Returns the elements of an array that meet the condition specified in a callback function.
      * @param predicate A function that accepts up to three arguments. The filter method calls the predicate function one time for each element in the array.
@@ -453,7 +453,7 @@ export declare interface IteratorObject<T, TReturn = unknown, TNext = unknown> e
      * Creates an iterator whose values are those from this iterator for which the provided predicate returns true.
      * @param predicate A function that accepts up to two arguments to be used to test values from the underlying iterator.
      */
-    filter<S: T>(predicate: fn (value: T, index: number) -> boolean) -> IteratorObject<S, undefined, unknown>,
+    filter<S <: T>(predicate: fn (value: T, index: number) -> boolean) -> IteratorObject<S, undefined, unknown>,
     /**
      * Creates an iterator whose values are those from this iterator for which the provided predicate returns true.
      * @param predicate A function that accepts up to two arguments to be used to test values from the underlying iterator.
@@ -517,7 +517,7 @@ export declare interface IteratorObject<T, TReturn = unknown, TNext = unknown> e
      * order, until it finds one where predicate returns true. If such an element is found, find
      * immediately returns that element value. Otherwise, find returns undefined.
      */
-    find<S: T>(predicate: fn (value: T, index: number) -> boolean) -> S | undefined,
+    find<S <: T>(predicate: fn (value: T, index: number) -> boolean) -> S | undefined,
     find(predicate: fn (value: T, index: number) -> unknown) -> T | undefined,
     readonly [Symbol.toStringTag]: string
 }
@@ -587,7 +587,7 @@ export declare class Promise<T, E = never> {
      * @param values An array of Promises.
      * @returns A new Promise.
      */
-    static all<T: Array<unknown> | []>(values: T) -> Promise<{
+    static all<T <: Array<unknown> | []>(values: T) -> Promise<{
         -readonly [P]: Awaited<T[P]> for P in keyof T
     }>,
     /**
@@ -596,7 +596,7 @@ export declare class Promise<T, E = never> {
      * @param values An array of Promises.
      * @returns A new Promise.
      */
-    static race<T: Array<unknown> | []>(values: T) -> Promise<Awaited<T[number]>>,
+    static race<T <: Array<unknown> | []>(values: T) -> Promise<Awaited<T[number]>>,
     /**
      * Creates a new rejected promise for the provided reason.
      * @param reason The reason the promise was rejected.
@@ -627,7 +627,7 @@ export declare class Promise<T, E = never> {
      * @param values An array of Promises.
      * @returns A new Promise.
      */
-    static allSettled<T: Array<unknown> | []>(values: T) -> Promise<{
+    static allSettled<T <: Array<unknown> | []>(values: T) -> Promise<{
         -readonly [P]: PromiseSettledResult<Awaited<T[P]>> for P in keyof T
     }>,
     /**
@@ -642,7 +642,7 @@ export declare class Promise<T, E = never> {
      * @param values An array or iterable of Promises.
      * @returns A new Promise.
      */
-    static any<T: Array<unknown> | []>(values: T) -> Promise<Awaited<T[number]>>,
+    static any<T <: Array<unknown> | []>(values: T) -> Promise<Awaited<T[number]>>,
     /**
      * The any function returns a promise that is fulfilled by the first given promise to be fulfilled, or rejected with an AggregateError containing an array of rejection reasons if all of the given promises are rejected. It resolves all elements of the passed iterable to promises as it runs this algorithm.
      * @param values An array or iterable of Promises.
@@ -671,7 +671,7 @@ export declare class Promise<T, E = never> {
      * - Already rejected, if the callback synchronously throws an error.
      * - Asynchronously fulfilled or rejected, if the callback returns a promise.
      */
-    static try<T, U: mut Array<unknown>>(callbackFn: fn (...args: U) -> T | PromiseLike<T>, ...args: U) -> Promise<Awaited<T>>
+    static try<T, U <: mut Array<unknown>>(callbackFn: fn (...args: U) -> T | PromiseLike<T>, ...args: U) -> Promise<Awaited<T>>
 }
 
 @js("Symbol")
@@ -810,7 +810,7 @@ export declare interface AsyncIteratorObject<T, TReturn = unknown, TNext = unkno
     [Symbol.asyncIterator]() -> AsyncIteratorObject<T, TReturn, TNext>
 }
 
-export declare type FlatArray<Arr, Depth: number> = {
+export declare type FlatArray<Arr, Depth <: number> = {
     done: Arr,
     recur: if Arr : Array<infer InnerArr> { FlatArray<InnerArr, [-1, 0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20][Depth]> } else { Arr }
 }[if Depth : -1 { "done" } else { "recur" }]
@@ -898,14 +898,14 @@ export declare type Readonly<T> = {
 /**
  * From T, pick a set of properties whose keys are in the union K
  */
-export declare type Pick<T, K: keyof T> = {
+export declare type Pick<T, K <: keyof T> = {
     [P]: T[P] for P in K
 }
 
 /**
  * Construct a type with a set of properties K of type T
  */
-export declare type Record<K: keyof any, T> = {
+export declare type Record<K <: keyof any, T> = {
     [P]: T for P in K
 }
 
@@ -922,7 +922,7 @@ export declare type Extract<T, U> = if T : U { T } else { never }
 /**
  * Construct a type with the properties of T except for those in type K.
  */
-export declare type Omit<T, K: keyof any> = Pick<T, Exclude<keyof T, K>>
+export declare type Omit<T, K <: keyof any> = Pick<T, Exclude<keyof T, K>>
 
 /**
  * Exclude null and undefined from T
@@ -932,22 +932,22 @@ export declare type NonNullable<T> = T & ~(undefined | null)
 /**
  * Obtain the parameters of a function type in a tuple
  */
-export declare type Parameters<T: fn (...args: any) -> any> = if T : fn (...args: infer P) -> any { P } else { never }
+export declare type Parameters<T <: fn (...args: any) -> any> = if T : fn (...args: infer P) -> any { P } else { never }
 
 /**
  * Obtain the parameters of a constructor function type in a tuple
  */
-export declare type ConstructorParameters<T: fn (...args: any) -> any> = if T : fn (...args: infer P) -> any { P } else { never }
+export declare type ConstructorParameters<T <: fn (...args: any) -> any> = if T : fn (...args: infer P) -> any { P } else { never }
 
 /**
  * Obtain the return type of a function type
  */
-export declare type ReturnType<T: fn (...args: any) -> any> = if T : fn (...args: any) -> infer R { R } else { any }
+export declare type ReturnType<T <: fn (...args: any) -> any> = if T : fn (...args: any) -> infer R { R } else { any }
 
 /**
  * Obtain the return type of a constructor function type
  */
-export declare type InstanceType<T: fn (...args: any) -> any> = if T : fn (...args: any) -> infer R { R } else { any }
+export declare type InstanceType<T <: fn (...args: any) -> any> = if T : fn (...args: any) -> infer R { R } else { any }
 
 /**
  * Marker for contextual 'this' type

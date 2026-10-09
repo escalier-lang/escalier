@@ -259,7 +259,7 @@ func TestInterfaceTypeParamMismatchReports(t *testing.T) {
 		},
 		{
 			name: "ALaterBound",
-			src:  "declare interface Box<T> { v: T }\ndeclare interface Box<T: string> { w: T }",
+			src:  "declare interface Box<T> { v: T }\ndeclare interface Box<T <: string> { w: T }",
 			want: []string{"declarations of interface Box must agree on their type parameters: only the first declaration may write a bound"},
 		},
 		{
@@ -275,7 +275,7 @@ func TestInterfaceTypeParamMismatchReports(t *testing.T) {
 			// The bound belongs to the first declaration, which is the one that may write
 			// it, so the group merges and both members land.
 			name: "ABoundOnTheFirstDeclarationIsKept",
-			src:  "declare interface Box<T: string> { v: T }\ndeclare interface Box<T> { w: T }",
+			src:  "declare interface Box<T <: string> { v: T }\ndeclare interface Box<T> { w: T }",
 		},
 	}
 	for _, tt := range tests {

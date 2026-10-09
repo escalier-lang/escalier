@@ -37,7 +37,7 @@ var declarationShapes = map[string]string{
 	"AFunction":               `declare fn f(x: number) -> string`,
 	"AFunctionWithABody":      "fn f(x: number) -> string {\n\treturn \"a\"\n}",
 	"AGenericFunction":        `declare fn f<T>(x: T) -> T`,
-	"AGenericFunctionBound":   `declare fn f<T: {value: number}>(x: T) -> number`,
+	"AGenericFunctionBound":   `declare fn f<T <: {value: number}>(x: T) -> number`,
 	"AGenericFunctionDefault": `declare fn f<T = string>(x: T) -> T`,
 	// Both emitters drop the `?`, #1826, so this agrees on output a consumer cannot
 	// tell from AFunction's. It still asserts they drop it the same way.
@@ -56,7 +56,7 @@ var declarationShapes = map[string]string{
 
 	"AClass":                "class C {\n\tx: number,\n\ty: string,\n}",
 	"AGenericClass":         "class Box<T> {\n\tvalue: T,\n}",
-	"AClassParamBound":      "class Holder<T: {value: number}> {\n\tpeer: T,\n}",
+	"AClassParamBound":      "class Holder<T <: {value: number}> {\n\tpeer: T,\n}",
 	"AClassParamDefault":    "declare class Task<T, E = never> {\n\trun(&self) -> T,\n\tfail(&self, r: E) -> never,\n}",
 	"AClassMethod":          "class C {\n\tv: number,\n\tread(&self) -> number { return self.v },\n}",
 	"AClassGetterAndSetter": "class C {\n\tv: number,\n\tget val(&self) -> number { return self.v },\n\tset val(&mut self, n: number) { self.v = n },\n}",
@@ -78,7 +78,7 @@ var declarationShapes = map[string]string{
 
 	"AnAlias":            `type A = {x: number}`,
 	"AGenericAlias":      `type A<T> = {v: T}`,
-	"AnAliasBound":       `type A<T: {value: number}> = {v: T}`,
+	"AnAliasBound":       `type A<T <: {value: number}> = {v: T}`,
 	"AnAliasDefault":     `type A<T = string> = {v: T}`,
 	"AUnion":             `type A = number | string | undefined`,
 	"AnIntersection":     `type A = {x: number} & {y: string}`,

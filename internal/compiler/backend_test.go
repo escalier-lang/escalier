@@ -550,10 +550,10 @@ func TestBothCheckersEmitTheSameDefinitionsForAnExtractor(t *testing.T) {
 func TestTheSolverEmitsAClassTypeParameterBound(t *testing.T) {
 	tests := map[string]string{
 		"AParameterOnlyTheConstructorReads": `
-			class Holder<T: {value: number}> { peer: T }
+			class Holder<T <: {value: number}> { peer: T }
 		`,
 		"AParameterAMethodAlsoReads": `
-			class Holder<T: {value: number}> {
+			class Holder<T <: {value: number}> {
 			    peer: T,
 			    get(&self) -> T { return self.peer },
 			}
@@ -622,11 +622,11 @@ func TestBothCheckersBindAClassTypeParamOnItsConstructor(t *testing.T) {
 		// signature writes, not the variable the declaration minted before the display
 		// copied it.
 		"AParameterItsOwnBoundNames": {
-			src:  `class Node<T: {next: T}> { v: T }`,
+			src:  `class Node<T <: {next: T}> { v: T }`,
 			want: "declare const Node: {new <T extends {next: T}>(v: T): Node<T>};",
 		},
 		"AParameterASiblingsBoundNames": {
-			src:  `class P<A: {x: number}, B: A> { a: A, b: B }`,
+			src:  `class P<A <: {x: number}, B <: A> { a: A, b: B }`,
 			want: "declare const P: {new <A extends {x: number}, B extends A>(a: A, b: B): P<A, B>};",
 		},
 		// A class with no parameters writes no binder, which is the control.
@@ -660,7 +660,7 @@ func TestBothCheckersBindAClassTypeParamOnItsConstructor(t *testing.T) {
 func TestTheSolverDropsAClassTypeParamTwoSignaturesRead(t *testing.T) {
 	useSolver(t)
 	dts := CompilePackage(libSources(`
-		class Holder<T: {value: number}> {
+		class Holder<T <: {value: number}> {
 		    peer: T,
 		    static s(x: T) -> number { return x.value },
 		}

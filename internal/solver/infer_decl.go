@@ -375,7 +375,7 @@ func (s *skolemizer) ExitType(t soltype.Type, _ soltype.Polarity) soltype.Type {
 
 // skolemizeBound resolves a type parameter's declared upper bound into its skolem's Upper,
 // substituting a sibling parameter for that sibling's skolem. resolveTypeParams records at
-// most one upper bound per parameter, itself an IntersectionType for a `<T: A & B>` bound, so
+// most one upper bound per parameter, itself an IntersectionType for a `<T <: A & B>` bound, so
 // an unbounded parameter returns nil and any bound is the single skolemized bound.
 func (s *skolemizer) skolemizeBound(bounds []soltype.Type) soltype.Type {
 	if len(bounds) == 0 {

@@ -329,7 +329,7 @@ func (c *checker) inferComponent(
 				// which re-derives the signature while checking the body — stays the
 				// single reporter of any signature error.
 				//
-				// The probe COMMITS. A written `<T: C>` constraint records an upper bound on
+				// The probe COMMITS. A written `<T <: C>` constraint records an upper bound on
 				// the parameter's var, and a discard would truncate it, leaving the arm with
 				// a bare `<T>` that enforces nothing. Committing keeps that bound and costs
 				// nothing else, since the arm is fully annotated and its signature is

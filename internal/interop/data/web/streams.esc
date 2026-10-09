@@ -213,7 +213,7 @@ export declare class ReadableStream<R = any> {
 @js("ReadableStreamBYOBReader")
 export declare class ReadableStreamBYOBReader implements ReadableStreamGenericReader {
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/ReadableStreamBYOBReader/read) */
-    read<T: typed_arrays.ArrayBufferView>(&mut self, view: T) -> Promise<ReadableStreamReadResult<T>>,
+    read<T <: typed_arrays.ArrayBufferView>(&mut self, view: T) -> Promise<ReadableStreamReadResult<T>>,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/ReadableStreamBYOBReader/releaseLock) */
     releaseLock(&mut self) -> unknown,
     static prototype: ReadableStreamBYOBReader,

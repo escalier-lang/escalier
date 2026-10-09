@@ -205,8 +205,9 @@ Aliases may be recursive and mutually recursive across files. The dependency
 graph orders declarations, so an alias may reference one written later in the
 source.
 
-Lifetime parameters are written in the same list, `<'a>`, and optionally bounded
-with `'a: 'b`. Functions, classes, interfaces, and type aliases may all take
+A type parameter takes an upper bound with `<:`, as `<T <: Shape>`, and a lower
+bound with `>:`, as `<B >: T>`. Lifetime parameters are written in the same list,
+`<'a>`, and optionally bounded with `'a: 'b`. Functions, classes, interfaces, and type aliases may all take
 them; enums may not. See [Ownership](09_ownership.md).
 
 ```esc
@@ -251,7 +252,7 @@ capture is dropped, which is how a pattern names only the position it cares
 about.
 
 ```esc
-type ReturnType<F: fn (...args: Array<_>) -> _> =
+type ReturnType<F <: fn (...args: Array<_>) -> _> =
     if F : fn (...args: Array<_>) -> infer R { R } else { never }
 ```
 

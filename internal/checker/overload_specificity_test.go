@@ -117,7 +117,7 @@ func TestCompareOverloadArms(t *testing.T) {
 		{
 			// Bounded TP substitutes its constraint; unbounded TP is top.
 			// `string <: top` and not vice versa, so bounded wins.
-			name: "bounded <K: string> beats unbounded <T>",
+			name: "bounded <K <: string> beats unbounded <T>",
 			a: mkFn(
 				[]*type_system.TypeParam{{Name: "K", Constraint: str}},
 				[]*type_system.FuncParam{mkParam(type_system.NewTypeRefType(nil, "K", nil))},
@@ -131,7 +131,7 @@ func TestCompareOverloadArms(t *testing.T) {
 		{
 			// Never constraint is treated as unbounded, matching the
 			// pre-§4.6 comparator's behavior.
-			name: "<K: never> ties with <T> (both treated as top)",
+			name: "<K <: never> ties with <T> (both treated as top)",
 			a: mkFn(
 				[]*type_system.TypeParam{{Name: "K", Constraint: type_system.NewNeverType(nil)}},
 				[]*type_system.FuncParam{mkParam(type_system.NewTypeRefType(nil, "K", nil))},
@@ -145,7 +145,7 @@ func TestCompareOverloadArms(t *testing.T) {
 		{
 			// Two bounded TPs compare by their constraints.
 			// `"canvas" <: string` so the canvas-bounded arm wins.
-			name: "<K: \"canvas\"> beats <L: string>",
+			name: "<K <: \"canvas\"> beats <L <: string>",
 			a: mkFn(
 				[]*type_system.TypeParam{{Name: "K", Constraint: canvasLit}},
 				[]*type_system.FuncParam{mkParam(type_system.NewTypeRefType(nil, "K", nil))},

@@ -420,7 +420,7 @@ func printFuncSig(header string, fn *FuncType, includeSelf bool, pt func(Type) s
 			first = false
 			result += param.Name
 			if param.Constraint != nil {
-				result += ": " + pt(param.Constraint)
+				result += " <: " + pt(param.Constraint)
 			}
 			if param.Default != nil {
 				result += " = " + pt(param.Default)

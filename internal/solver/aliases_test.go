@@ -385,7 +385,7 @@ func TestInferGenericTypeAliasArityErrors(t *testing.T) {
 }
 
 // TestInferGenericTypeAliasParamBounds covers the bound a generic alias declares on a type
-// parameter, `type Box<T: string>`. A reference supplying an argument outside the bound is
+// parameter, `type Box<T <: string>`. A reference supplying an argument outside the bound is
 // rejected at the reference, and one inside it is accepted. A bound may name a sibling
 // parameter, so the reference's own arguments are substituted into the bound before the
 // comparison, and an argument filled from a parameter's default is checked the same way.
@@ -398,7 +398,7 @@ func TestInferGenericTypeAliasParamBounds(t *testing.T) {
 		{
 			name: "ArgumentOutsideBound",
 			src: `
-				type Box<T: string> = {v: T}
+				type Box<T <: string> = {v: T}
 				val b: Box<number> = {v: 1}
 			`,
 			want: []string{"cannot constrain number <: string"},
@@ -406,7 +406,7 @@ func TestInferGenericTypeAliasParamBounds(t *testing.T) {
 		{
 			name: "ArgumentInsideBound",
 			src: `
-				type Box<T: string> = {v: T}
+				type Box<T <: string> = {v: T}
 				val b: Box<"a"> = {v: "a"}
 			`,
 		},
@@ -421,7 +421,7 @@ func TestInferGenericTypeAliasParamBounds(t *testing.T) {
 		{
 			name: "IntersectionBound",
 			src: `
-				type Box<T: string & "a"> = {v: T}
+				type Box<T <: string & "a"> = {v: T}
 				val b: Box<"b"> = {v: "b"}
 			`,
 			want: []string{`cannot constrain "b" <: "a"`},
@@ -429,14 +429,14 @@ func TestInferGenericTypeAliasParamBounds(t *testing.T) {
 		{
 			name: "SiblingBoundSatisfied",
 			src: `
-				type P<A, B: A> = [A, B]
+				type P<A, B <: A> = [A, B]
 				val p: P<number, 1> = [1, 1]
 			`,
 		},
 		{
 			name: "SiblingBoundViolated",
 			src: `
-				type P<A, B: A> = [A, B]
+				type P<A, B <: A> = [A, B]
 				val p: P<string, 1> = ["a", 1]
 			`,
 			want: []string{"cannot constrain 1 <: string"},
@@ -444,7 +444,7 @@ func TestInferGenericTypeAliasParamBounds(t *testing.T) {
 		{
 			name: "DefaultedArgumentChecked",
 			src: `
-				type Pair<T, U: string = T> = [T, U]
+				type Pair<T, U <: string = T> = [T, U]
 				val p: Pair<number> = [1, 1]
 			`,
 			want: []string{"cannot constrain number <: string"},
@@ -452,7 +452,7 @@ func TestInferGenericTypeAliasParamBounds(t *testing.T) {
 		{
 			name: "AliasBodyReferenceChecked",
 			src: `
-				type Box<T: string> = {v: T}
+				type Box<T <: string> = {v: T}
 				type Outer = Box<number>
 			`,
 			want: []string{"cannot constrain number <: string"},
@@ -474,7 +474,7 @@ func TestInferGenericTypeAliasParamBounds(t *testing.T) {
 // offending type argument in the reference rather than at the alias declaration. In
 // `val b: Box<number>` the reported span covers `number`.
 func TestInferGenericTypeAliasParamBoundBlamesArgument(t *testing.T) {
-	src := "type Box<T: string> = {v: T}\nval b: Box<number> = {v: 1}"
+	src := "type Box<T <: string> = {v: T}\nval b: Box<number> = {v: 1}"
 	_, _, errs := inferSource(t, src)
 	require.Len(t, errs, 1)
 	require.Equal(t, "cannot constrain number <: string", errs[0].Message())
@@ -494,7 +494,7 @@ func TestInferGenericTypeAliasParamBoundReportedOncePerReference(t *testing.T) {
 		{
 			name: "TwoBadReferences",
 			src: `
-				type Box<T: string> = {v: T}
+				type Box<T <: string> = {v: T}
 				val a: Box<number> = {v: 1}
 				val b: Box<boolean> = {v: true}
 			`,
@@ -506,7 +506,7 @@ func TestInferGenericTypeAliasParamBoundReportedOncePerReference(t *testing.T) {
 		{
 			name: "RecursiveAlias",
 			src: `
-				type List<T: string> = {head: T, tail?: List<T>}
+				type List<T <: string> = {head: T, tail?: List<T>}
 				val l: List<number> = {head: 1}
 			`,
 			want: []string{"cannot constrain number <: string"},
@@ -537,7 +537,7 @@ func TestTypeParamBoundEnforcedInEveryPosition(t *testing.T) {
 		{
 			name: "GenericFunctionDeclaration",
 			src: `
-				fn f<A: string>(a: A) -> A { return a }
+				fn f<A <: string>(a: A) -> A { return a }
 				val x = f(5)
 			`,
 			want: "cannot constrain 5 <: string",
@@ -545,7 +545,7 @@ func TestTypeParamBoundEnforcedInEveryPosition(t *testing.T) {
 		{
 			name: "GenericFunctionAnnotation",
 			src: `
-				val g: fn<A: string>(a: A) -> A = fn (a) { return a }
+				val g: fn<A <: string>(a: A) -> A = fn (a) { return a }
 				val x = g(5)
 			`,
 			want: "cannot constrain 5 <: string",
@@ -553,7 +553,7 @@ func TestTypeParamBoundEnforcedInEveryPosition(t *testing.T) {
 		{
 			name: "ClassReference",
 			src: `
-				class Box<T: string> { value: T }
+				class Box<T <: string> { value: T }
 				val b = Box(1)
 			`,
 			want: "cannot constrain 1 <: string",
@@ -582,14 +582,14 @@ func TestInferGenericTypeAliasBoundOnVariableArgument(t *testing.T) {
 		{
 			name: "ForwardingDeclarationIsQuiet",
 			src: `
-				type Box<T: string> = {v: T}
+				type Box<T <: string> = {v: T}
 				fn g<U>(u: U) -> Box<U> { return {v: u} }
 			`,
 		},
 		{
 			name: "InstantiationReportsThroughReturn",
 			src: `
-				type Box<T: string> = {v: T}
+				type Box<T <: string> = {v: T}
 				fn g<U>(u: U) -> Box<U> { return {v: u} }
 				val x = g(1)
 			`,
@@ -598,7 +598,7 @@ func TestInferGenericTypeAliasBoundOnVariableArgument(t *testing.T) {
 		{
 			name: "InstantiationReportsThroughParameter",
 			src: `
-				type Box<T: string> = {v: T}
+				type Box<T <: string> = {v: T}
 				fn f<U>(b: Box<U>) -> U { return b.v }
 				val x = f({v: 1})
 			`,
@@ -607,7 +607,7 @@ func TestInferGenericTypeAliasBoundOnVariableArgument(t *testing.T) {
 		{
 			name: "InstantiationReportsThroughClassField",
 			src: `
-				type Box<T: string> = {v: T}
+				type Box<T <: string> = {v: T}
 				class C<U> { b: Box<U> }
 				val c = C({v: 1})
 			`,
@@ -640,7 +640,7 @@ func TestInferGenericTypeAliasBoundOnSiblingAliasArgument(t *testing.T) {
 		{
 			name: "SelfRecursiveArgument",
 			src: `
-				type Box<T: string> = {v: T}
+				type Box<T <: string> = {v: T}
 				type A = {b: Box<A>}
 			`,
 			want: []string{"cannot constrain object <: string"},
@@ -648,7 +648,7 @@ func TestInferGenericTypeAliasBoundOnSiblingAliasArgument(t *testing.T) {
 		{
 			name: "MutuallyRecursiveArgument",
 			src: `
-				type Box<T: string> = {v: T}
+				type Box<T <: string> = {v: T}
 				type A = {b: Box<B>}
 				type B = A
 			`,
@@ -657,7 +657,7 @@ func TestInferGenericTypeAliasBoundOnSiblingAliasArgument(t *testing.T) {
 		{
 			name: "NonRecursiveSiblingArgument",
 			src: `
-				type Box<T: string> = {v: T}
+				type Box<T <: string> = {v: T}
 				type B = {x: number}
 				type A = {b: Box<B>}
 			`,
@@ -666,7 +666,7 @@ func TestInferGenericTypeAliasBoundOnSiblingAliasArgument(t *testing.T) {
 		{
 			name: "SatisfiedSiblingArgument",
 			src: `
-				type Box<T: string> = {v: T}
+				type Box<T <: string> = {v: T}
 				type S = "a"
 				type A = {b: Box<S>}
 			`,
@@ -691,7 +691,7 @@ func TestInferGenericTypeAliasBoundOnSiblingAliasArgument(t *testing.T) {
 // is number, so reading the variable's bounds would reject a well-typed program.
 func TestInferGenericTypeAliasBoundUnderConditional(t *testing.T) {
 	src := `
-		type Box<T: string> = {v: T}
+		type Box<T <: string> = {v: T}
 		type X<T> = if T : string { Box<T> } else { number }
 		val a: X<number> = 1
 		val b: X<"a"> = {v: "a"}

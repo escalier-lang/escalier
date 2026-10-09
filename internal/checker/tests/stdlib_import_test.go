@@ -759,7 +759,7 @@ export type HTMLElementTagNameMap = {
 
 @js("Document")
 export declare class Document {
-    createElement<K: keyof HTMLElementTagNameMap>(&self, tag: K) -> HTMLElementTagNameMap[K],
+    createElement<K <: keyof HTMLElementTagNameMap>(&self, tag: K) -> HTMLElementTagNameMap[K],
 }
 `,
 	})
@@ -796,7 +796,7 @@ export type HTMLElementTagNameMap = {
 
 @js("Document")
 export declare class Document {
-    createElement<K: keyof HTMLElementTagNameMap>(&self, tag: K) -> HTMLElementTagNameMap[K],
+    createElement<K <: keyof HTMLElementTagNameMap>(&self, tag: K) -> HTMLElementTagNameMap[K],
 }
 `,
 	})
@@ -876,7 +876,7 @@ export type HTMLElementEventMap = {
 
 @js("HTMLElement")
 export declare class HTMLElement {
-    addEventListener<K: keyof HTMLElementEventMap>(&self, kind:K, listener: fn(ev:HTMLElementEventMap[K]) -> undefined) -> undefined,
+    addEventListener<K <: keyof HTMLElementEventMap>(&self, kind:K, listener: fn(ev:HTMLElementEventMap[K]) -> undefined) -> undefined,
     addEventListener(&self, kind:string, listener: fn(ev:Event) -> undefined) -> undefined,
 }
 `,
@@ -959,8 +959,8 @@ export type MathMLElementTagNameMap = {
 
 @js("Document")
 export declare class Document {
-    createElementNS<K: keyof SVGElementTagNameMap>(&self, ns: "http://www.w3.org/2000/svg", qualifiedName: K) -> SVGElementTagNameMap[K],
-    createElementNS<K: keyof MathMLElementTagNameMap>(&self, ns: "http://www.w3.org/1998/Math/MathML", qualifiedName: K) -> MathMLElementTagNameMap[K],
+    createElementNS<K <: keyof SVGElementTagNameMap>(&self, ns: "http://www.w3.org/2000/svg", qualifiedName: K) -> SVGElementTagNameMap[K],
+    createElementNS<K <: keyof MathMLElementTagNameMap>(&self, ns: "http://www.w3.org/1998/Math/MathML", qualifiedName: K) -> MathMLElementTagNameMap[K],
 }
 `,
 	})

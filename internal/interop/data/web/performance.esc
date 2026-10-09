@@ -82,9 +82,9 @@ export declare class Performance extends EventTarget {
     setResourceTimingBufferSize(&mut self, maxSize: number) -> unknown,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/Performance/toJSON) */
     toJSON(&self) -> any,
-    addEventListener<K: keyof PerformanceEventMap>(&mut self, type: K, listener: fn (this: Performance, ev: PerformanceEventMap[K]) -> any, options?: boolean | AddEventListenerOptions) -> unknown,
+    addEventListener<K <: keyof PerformanceEventMap>(&mut self, type: K, listener: fn (this: Performance, ev: PerformanceEventMap[K]) -> any, options?: boolean | AddEventListenerOptions) -> unknown,
     addEventListener(&mut self, type: string, listener: EventListenerOrEventListenerObject, options?: boolean | AddEventListenerOptions) -> unknown,
-    removeEventListener<K: keyof PerformanceEventMap>(&mut self, type: K, listener: fn (this: Performance, ev: PerformanceEventMap[K]) -> any, options?: boolean | EventListenerOptions) -> unknown,
+    removeEventListener<K <: keyof PerformanceEventMap>(&mut self, type: K, listener: fn (this: Performance, ev: PerformanceEventMap[K]) -> any, options?: boolean | EventListenerOptions) -> unknown,
     removeEventListener(&mut self, type: string, listener: EventListenerOrEventListenerObject, options?: boolean | EventListenerOptions) -> unknown,
     static prototype: Performance,
     constructor(&mut self)

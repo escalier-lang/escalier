@@ -809,7 +809,7 @@ func TestInferTuplePatternRestFallbackGuards(t *testing.T) {
 			// the stdlib tree writes, so the spread operand itself is legal.
 			name: "SpreadOverTypeParamNeverSplices",
 			src: `
-				fn f<P: Array<number>>(t: [number, ...P]) {
+				fn f<P <: Array<number>>(t: [number, ...P]) {
 					val [a, ...rest] = t
 					return rest
 				}`,

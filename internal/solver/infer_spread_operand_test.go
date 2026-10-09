@@ -40,15 +40,15 @@ func TestInferTupleAnnotationSpreadRejectsANonList(t *testing.T) {
 		},
 		{
 			name: "a type parameter bounded by a non-list",
-			src:  "declare fn g<T: number>(...args: [...T, string]) -> number",
-			want: "1:35-1:39: cannot spread T into a tuple",
+			src:  "declare fn g<T <: number>(...args: [...T, string]) -> number",
+			want: "1:37-1:41: cannot spread T into a tuple",
 		},
 		{
 			// `unknown` says no more about T than no bound at all, so the two report alike.
 			// A bound written `any` resolves to `unknown` and lands on this row.
 			name: "a type parameter bounded by unknown",
-			src:  "declare fn g<T: unknown>(...args: [...T, string]) -> number",
-			want: "1:36-1:40: cannot spread T into a tuple",
+			src:  "declare fn g<T <: unknown>(...args: [...T, string]) -> number",
+			want: "1:38-1:42: cannot spread T into a tuple",
 		},
 		{
 			name: "an alias naming a primitive",
@@ -82,11 +82,11 @@ type Ok = [...Pair, boolean]`,
 		},
 		{
 			name: "a type parameter bounded by an array",
-			src:  "declare fn k<T: Array<number>>(...args: [...T, string]) -> number",
+			src:  "declare fn k<T <: Array<number>>(...args: [...T, string]) -> number",
 		},
 		{
 			name: "a type parameter bounded by a tuple",
-			src:  "declare fn k<T: [number, string]>(x: [...T, boolean]) -> number",
+			src:  "declare fn k<T <: [number, string]>(x: [...T, boolean]) -> number",
 		},
 		{
 			// Two of these spread side by side is the shape `Function.bind` is declared
@@ -94,13 +94,13 @@ type Ok = [...Pair, boolean]`,
 			// committed tree writes. The tree spells the element `any`, which resolves to
 			// the `unknown` written here.
 			name: "a type parameter bounded by an owned-mutable array",
-			src:  "declare fn h<A: mut Array<unknown>, B: mut Array<unknown>>(x: [...A, ...B]) -> number",
+			src:  "declare fn h<A <: mut Array<unknown>, B <: mut Array<unknown>>(x: [...A, ...B]) -> number",
 		},
 		{
 			// A union of tuples is how an optional argument is spelled in a rest
 			// position, and the rest rules distribute it into per-member candidates.
 			name: "a union of tuples",
-			src:  "declare fn u<T: [] | [number]>(x: [...T, boolean]) -> number",
+			src:  "declare fn u<T <: [] | [number]>(x: [...T, boolean]) -> number",
 		},
 	}
 	for _, tt := range tests {
@@ -136,10 +136,10 @@ func TestInferTupleAnnotationSpreadRejectsAnIterable(t *testing.T) {
 	})
 	t.Run("a type parameter bounded by it", func(t *testing.T) {
 		_, _, errs := inferSource(t, seq+`
-		declare fn f<T: Seq>(x: [...T, string]) -> number
+		declare fn f<T <: Seq>(x: [...T, string]) -> number
 	`)
 		require.Equal(t,
-			[]string{"7:28-7:32: cannot spread T into a tuple"},
+			[]string{"7:30-7:34: cannot spread T into a tuple"},
 			messagesWithSpan(t, errs))
 	})
 }
@@ -154,7 +154,7 @@ func TestInferTupleAnnotationSpreadAcceptsAnUndecidableOperand(t *testing.T) {
 		{
 			name: "a conditional",
 			src: `type Pick<T> = if T : number { [number] } else { [string] }
-declare fn f<T: number>(x: [...Pick<T>, boolean]) -> number`,
+declare fn f<T <: number>(x: [...Pick<T>, boolean]) -> number`,
 		},
 		{
 			name: "an indexed access",

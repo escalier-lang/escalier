@@ -86,7 +86,7 @@ func TestInferGenericFuncAnnotation(t *testing.T) {
 		// The type parameter reaches both a parameter and the return, so it is retained in
 		// both positions. The initializer's own inference var links to a fresh instance
 		// rather than the declared `T`, so it renders `fn <T>(x: T) -> T`, not the
-		// double-quantified `fn <T0, T: T0>(x: T) -> T`.
+		// double-quantified `fn <T0, T <: T0>(x: T) -> T`.
 		{
 			name: "parameter and return",
 			src:  `val f: fn<T>(x: T) -> T = fn (x) { return x }`,
@@ -262,21 +262,21 @@ func TestInferGenericFuncAnnotationChecksAcceptsPolymorphicBody(t *testing.T) {
 	}
 }
 
-// A declared constraint `<U: T>` makes the skolem for `U` a subtype of the skolem for `T`,
+// A declared constraint `<U <: T>` makes the skolem for `U` a subtype of the skolem for `T`,
 // so a body that returns a `U` where the annotation promises `T` is accepted. Reversing the
 // direction is still rejected, since the bound gives `U <: T`, not `T <: U`.
 func TestInferGenericFuncAnnotationChecksBoundedParam(t *testing.T) {
 	t.Run("BoundedParamReachesReturn", func(t *testing.T) {
-		values, _, errs := inferSource(t, `val f: fn<T, U: T>(x: U) -> T = fn (x) { return x }`)
+		values, _, errs := inferSource(t, `val f: fn<T, U <: T>(x: U) -> T = fn (x) { return x }`)
 		require.Empty(t, errs)
-		require.Equal(t, "fn <T, U: T>(x: U) -> T", values["f"])
+		require.Equal(t, "fn <T, U <: T>(x: U) -> T", values["f"])
 	})
 	t.Run("BoundDirectionIsOneWay", func(t *testing.T) {
-		values, _, errs := inferSource(t, `val f: fn<T, U: T>(x: T) -> U = fn (x) { return x }`)
+		values, _, errs := inferSource(t, `val f: fn<T, U <: T>(x: T) -> U = fn (x) { return x }`)
 		require.Len(t, errs, 1)
 		require.IsType(t, &CannotConstrainError{}, errs[0])
-		require.Equal(t, "1:33-1:52: cannot constrain T <: U", msgWithSpan(t, errs[0]))
-		require.Equal(t, "fn <T, U: T>(x: T) -> U", values["f"])
+		require.Equal(t, "1:35-1:54: cannot constrain T <: U", msgWithSpan(t, errs[0]))
+		require.Equal(t, "fn <T, U <: T>(x: T) -> U", values["f"])
 	})
 }
 

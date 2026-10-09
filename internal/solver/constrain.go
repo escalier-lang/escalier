@@ -792,7 +792,7 @@ func (c *Context) distributiveCondUpperBound(cond *soltype.CondType, seen *seenP
 // paramUpperBound returns the declared bound of a type parameter t, which is the meet of an
 // inference variable's upper bounds or a skolem's `Upper`. When that bound is itself a bounded
 // type parameter, it follows the chain to the first bound that is not, so `U` in
-// `<T: Array<string>, U: T>` gives `Array<string>`. A chain that cycles stops at the parameter
+// `<T <: Array<string>, U <: T>` gives `Array<string>`. A chain that cycles stops at the parameter
 // it reached twice. It returns t and false when t is not a type parameter or carries no bound.
 func paramUpperBound(t soltype.Type) (soltype.Type, bool) {
 	bound, ok := directParamUpperBound(t)
@@ -873,8 +873,8 @@ func anyMemberResidual(u *soltype.UnionType) bool {
 
 // indexAccessUpperBound returns a ground type that holds every value of the residual access
 // `Target[Index]`. It replaces each operand that is a bounded type parameter with its bound and
-// reduces the access over the result. `T[number]` for `T: Array<string> | []` gives `string`, and
-// `[1, 2, 3][D]` for `D: number` gives `1 | 2 | 3`.
+// reduces the access over the result. `T[number]` for `T <: Array<string> | []` gives `string`, and
+// `[1, 2, 3][D]` for `D <: number` gives `1 | 2 | 3`.
 //
 // It reports false when neither operand has a bound, or when the access over the bounds stays
 // residual or records a diagnostic.
@@ -1060,7 +1060,7 @@ func (c *Context) constrain(sub, super soltype.Type, seen *seenPairs, mutCtx boo
 
 	// A variable constrained against itself is reflexively true, so it records
 	// nothing. Without this guard the self-edge `T <: T` lands in the variable's own
-	// upper bounds and renders as `fn <T: T>(x: T) -> T`. A generic function whose
+	// upper bounds and renders as `fn <T <: T>(x: T) -> T`. A generic function whose
 	// body flows a parameter straight into a same-typed return annotation, such as
 	// `fn id<T>(x: T) -> T { return x }`, constrains the inferred return `T` against
 	// the annotated return `T` and hits exactly this.
@@ -1095,7 +1095,7 @@ func (c *Context) constrain(sub, super soltype.Type, seen *seenPairs, mutCtx boo
 				// one declaration meeting a parameter of an enclosing one, and two parameters
 				// of the same declaration. In `(self.key)(x)` with `x: B` and
 				// `key: fn (x: U) -> number`, a method's `B` meets its class's `U`. That
-				// relation holds for `contains<B: U>` and fails for `contains<B>`. In
+				// relation holds for `contains<B <: U>` and fails for `contains<B>`. In
 				// `fn h<U, T>(t: T) -> U { return t }`, `T` meets its sibling `U` and fails,
 				// since the signature states no relation between them.
 				return c.constrain(c.rigidSkolem(rp), c.rigidSkolem(superRp), seen, mutCtx)
@@ -1160,7 +1160,7 @@ func (c *Context) constrain(sub, super soltype.Type, seen *seenPairs, mutCtx boo
 	// An indexed access whose target or index is a type parameter stays residual through the step
 	// above. Every value it denotes is also a value of the same access over the parameter's bound,
 	// so that bound access decides the constraint in its place. `T[number] <: number | string` for
-	// `T: Array<number | string> | []` holds because the access over the bound reduces to
+	// `T <: Array<number | string> | []` holds because the access over the bound reduces to
 	// `number | string`. This runs ahead of the union-super rule below, which would otherwise
 	// compare that whole union against each member of the super on its own.
 	//
@@ -1288,7 +1288,7 @@ func (c *Context) constrain(sub, super soltype.Type, seen *seenPairs, mutCtx boo
 	// promises that every instantiation of B is a supertype of T, so a T, or anything below
 	// T, is a B. The bound is tried under a probe and taken only when it holds. When it does
 	// not, the arms below decide the pair. They still admit the skolem itself, a sibling
-	// whose own upper bound reaches it, as `U` does in `<B >: number, U: B>`, and an
+	// whose own upper bound reaches it, as `U` does in `<B >: number, U <: B>`, and an
 	// intersection naming it. Anything else they report against B rather than against the
 	// bound. A variable sub records the skolem as a bound in the variable arm below.
 	if sup, ok := super.(*soltype.SkolemType); ok && sup.Lower != nil {
@@ -1330,7 +1330,7 @@ func (c *Context) constrain(sub, super soltype.Type, seen *seenPairs, mutCtx boo
 		}
 	case *soltype.SkolemType:
 		// A skolem is a subtype of the same skolem and of its declared upper bound, so an
-		// unconstrained `T` fails against `number` or a distinct `U`, while a `<U: T>` skolem
+		// unconstrained `T` fails against `number` or a distinct `U`, while a `<U <: T>` skolem
 		// satisfies `T`. When super is a var the case falls through to the superVar arm, which
 		// records the skolem as a lower bound so it propagates through the var. A union super
 		// is handled by the exists rule above, so `T <: T | number` succeeds before here.
@@ -2738,7 +2738,7 @@ func (c *Context) skolemizeParams(params []*soltype.TypeParam) *typeSubst {
 	sub := newTypeSubst(params, args, nil, nil)
 	for i, tp := range params {
 		// DeclaredUpperBounds yields at most one bound for a resolved parameter, itself an
-		// IntersectionType for a `<T: A & B>` bound, so the first bound is the whole declared
+		// IntersectionType for a `<T <: A & B>` bound, so the first bound is the whole declared
 		// upper bound.
 		if bounds := tp.DeclaredUpperBounds(); len(bounds) > 0 {
 			sks[i].Upper = bounds[0].Accept(sub, soltype.Positive)
@@ -2764,7 +2764,7 @@ func (c *Context) instantiateFuncBinder(ft *soltype.FuncType, lvl int) *soltype.
 	sub := newTypeSubst(ft.TypeParams, args, nil, nil)
 	for i, tp := range ft.TypeParams {
 		// Read each declared bound from its field so an instance's substitution reaches it.
-		// The variable's first bound would leave `U: T` or `B >: T` naming the class's `T`,
+		// The variable's first bound would leave `U <: T` or `B >: T` naming the class's `T`,
 		// and a call would then record its argument on that class variable.
 		nvs[i].LowerBounds = acceptBounds(tp.AllLowerBounds(), sub)
 		nvs[i].UpperBounds = acceptBounds(tp.AllUpperBounds(), sub)

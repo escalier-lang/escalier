@@ -61,8 +61,8 @@ func TestLowerBoundedBinder(t *testing.T) {
 		{
 			// `U`'s own bound reaches `B`, which the lower bound neither helps nor hinders.
 			name: "a sibling bounded above by the binder flows into it",
-			src:  `fn f<B >: number, U: B>(u: U) -> B { return u }`,
-			want: map[string]string{"f": "fn <B >: number, U: B>(u: U) -> B"},
+			src:  `fn f<B >: number, U <: B>(u: U) -> B { return u }`,
+			want: map[string]string{"f": "fn <B >: number, U <: B>(u: U) -> B"},
 		},
 		{
 			name: "a sibling flows into the binder it bounds",
@@ -104,7 +104,7 @@ func TestLowerBoundedBinder(t *testing.T) {
 		},
 		{
 			name: "a lower bound above the constraint is rejected",
-			src:  `fn f<B >: string: number>(x: B) -> B { return x }`,
+			src:  `fn f<B >: string <: number>(x: B) -> B { return x }`,
 			errs: []string{"cannot constrain string <: number"},
 		},
 		{
@@ -123,8 +123,8 @@ func TestLowerBoundedBinder(t *testing.T) {
 		},
 		{
 			name: "both bounds and a default render in order",
-			src:  `class Box<B >: number: number | string = number> { v: B }`,
-			want: map[string]string{"Box": "<B >: number: number | string = number> {new (v: B) -> Box<B>}"},
+			src:  `class Box<B >: number <: number | string = number> { v: B }`,
+			want: map[string]string{"Box": "<B >: number <: number | string = number> {new (v: B) -> Box<B>}"},
 		},
 		{
 			// `T` occurs only in the lower bound, which counts as a use.

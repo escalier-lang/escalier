@@ -478,7 +478,7 @@ func TestBuildTypeAnnFromSolFromSource(t *testing.T) {
 		"SeveralParams": {"", "fn (x: number, y: string) -> boolean", "(x: number, y: string) => boolean"},
 		"GenericFunc":   {"", "fn <T>(x: T) -> T", "<T>(x: T) => T"},
 		"ConstrainedAndDefaultedTypeParam": {
-			"", `fn <T: string = "a">(x: T) -> T`, `<T extends string = "a">(x: T) => T`,
+			"", `fn <T <: string = "a">(x: T) -> T`, `<T extends string = "a">(x: T) => T`,
 		},
 		// TypeScript has no lower bound, so a `>:` binder is emitted with no clause.
 		"LowerBoundedTypeParam": {"", "fn <B >: number>(x: B) -> B", "<B>(x: B) => B"},

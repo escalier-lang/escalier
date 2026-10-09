@@ -7,7 +7,7 @@ import (
 )
 
 // TestAMethodBinderBoundReadsAtTheInstance covers a method binder bounded by its class's
-// type parameter, as `U` is in `m<U: T>`, reached through an instance. The bound reads at
+// type parameter, as `U` is in `m<U <: T>`, reached through an instance. The bound reads at
 // the instance's argument, so on a `C<number>` it is `U: number`.
 func TestAMethodBinderBoundReadsAtTheInstance(t *testing.T) {
 	// C is invariant in T, because `sink` takes a T and `v` returns one. That keeps the
@@ -16,14 +16,14 @@ func TestAMethodBinderBoundReadsAtTheInstance(t *testing.T) {
 		class C<T> {
 			v: Array<T>,
 			sink: fn (x: T) -> undefined,
-			m<U: T>(&self, x: U) -> boolean { return false },
+			m<U <: T>(&self, x: U) -> boolean { return false },
 		}
 		val b: C<number> = C([1], fn (x: number) { return undefined })
 	`
 	const sub = `
 		class Sub extends C<number> {
 			constructor(&mut self) { super([1], fn (x: number) { return undefined }) },
-			m<U: number>(&self, x: U) -> boolean { return x > 1 },
+			m<U <: number>(&self, x: U) -> boolean { return x > 1 },
 		}
 	`
 	tests := []struct {
@@ -50,7 +50,7 @@ func TestAMethodBinderBoundReadsAtTheInstance(t *testing.T) {
 			name:    "TheMethodValueNamesNoClassVariable",
 			src:     class + `val t = b.m`,
 			binding: "t",
-			want:    "fn <U: number>(x: U) -> boolean",
+			want:    "fn <U <: number>(x: U) -> boolean",
 		},
 		{
 			name: "AnOverrideAfterARejectedCallIsCompatible",
@@ -96,7 +96,7 @@ func TestAMethodBinderBoundIsAnInputPosition(t *testing.T) {
 			name: "ABoundAloneBlocksWidening",
 			src: `
 				class C<T> {
-					m<U: T>(&self, x: U) -> boolean { return false },
+					m<U <: T>(&self, x: U) -> boolean { return false },
 				}
 				fn widen(c: &C<number>) -> &C<number | string> { return c }
 			`,
@@ -106,7 +106,7 @@ func TestAMethodBinderBoundIsAnInputPosition(t *testing.T) {
 			name: "ABoundAloneAllowsNarrowing",
 			src: `
 				class C<T> {
-					m<U: T>(&self, x: U) -> boolean { return false },
+					m<U <: T>(&self, x: U) -> boolean { return false },
 				}
 				fn narrow(c: &C<number | string>) -> &C<number> { return c }
 			`,
@@ -119,17 +119,17 @@ func TestAMethodBinderBoundIsAnInputPosition(t *testing.T) {
 			src: `
 				class C<T> {
 					v: Array<T>,
-					m<U: T>(&self, x: U) -> boolean { return false },
+					m<U <: T>(&self, x: U) -> boolean { return false },
 				}
 				fn widen(c: &C<number>) -> &C<number | string> { return c }
 				class Sub extends C<number> {
 					constructor(&mut self) { super([1]) },
-					m<U: number>(&self, x: U) -> boolean { return x > 1 },
+					m<U <: number>(&self, x: U) -> boolean { return x > 1 },
 				}
 			`,
 			errs: []string{
-				"class `Sub` redeclares inherited member `m` with type `fn <U: number>(x: U) -> boolean`, " +
-					"which is not compatible with `fn <U: unknown>(x: U) -> boolean` declared by `C`",
+				"class `Sub` redeclares inherited member `m` with type `fn <U <: number>(x: U) -> boolean`, " +
+					"which is not compatible with `fn <U <: unknown>(x: U) -> boolean` declared by `C`",
 			},
 		},
 		{
@@ -137,7 +137,7 @@ func TestAMethodBinderBoundIsAnInputPosition(t *testing.T) {
 			src: `
 				class C<T> {
 					v: Array<T>,
-					m<U: T>(&self, x: U) -> boolean { return false },
+					m<U <: T>(&self, x: U) -> boolean { return false },
 				}
 				class Sub extends C<number> {
 					constructor(&mut self) { super([1]) },
@@ -146,12 +146,12 @@ func TestAMethodBinderBoundIsAnInputPosition(t *testing.T) {
 			`,
 		},
 		{
-			// The shape `Array.filter<S: T>` has. The return gives T an output position, so a
+			// The shape `Array.filter<S <: T>` has. The return gives T an output position, so a
 			// `&self` method's bound leaves C covariant.
 			name: "ABoundBesideAReturnWidens",
 			src: `
 				class C<T> {
-					m<U: T>(&self, x: U) -> T { return x },
+					m<U <: T>(&self, x: U) -> T { return x },
 				}
 				fn widen(c: &C<number>) -> &C<number | string> { return c }
 			`,
@@ -166,7 +166,7 @@ func TestAMethodBinderBoundIsAnInputPosition(t *testing.T) {
 			name: "AHeldFunctionsBoundBlocksWidening",
 			src: `
 				class C<T> {
-					readonly f: fn <U: T>(x: U) -> T,
+					readonly f: fn <U <: T>(x: U) -> T,
 				}
 				fn widen(c: &C<number>) -> &C<number | string> { return c }
 			`,
@@ -191,12 +191,12 @@ func TestAMethodBinderBoundIsAnInputPosition(t *testing.T) {
 // is how `g("a")` returns `"a"`.
 func TestABodyUseWithinTheDeclaredBoundReachesTheCaller(t *testing.T) {
 	values, _, errs := inferSource(t, `
-		fn f<A: string>(a: A) -> A { return a }
-		fn g<U: string>(u: U) { return f(u) }
+		fn f<A <: string>(a: A) -> A { return a }
+		fn g<U <: string>(u: U) { return f(u) }
 		val r = g("a")
 	`)
 	require.Empty(t, errorMessagesOf(errs))
-	require.Equal(t, "fn <U: string>(u: U) -> U", values["g"])
+	require.Equal(t, "fn <U <: string>(u: U) -> U", values["g"])
 	require.Equal(t, `"a"`, values["r"])
 }
 
@@ -204,8 +204,8 @@ func TestABodyUseWithinTheDeclaredBoundReachesTheCaller(t *testing.T) {
 // paths reports it once. `g(5)` checks `5` against U's declared `string` and again against
 // `f`'s `A`, which `f(u)` linked U to and which is bounded by `string` too.
 func TestACallBreakingALinkedBoundReportsOnce(t *testing.T) {
-	_, _, errs := inferSource(t, `fn f<A: string>(a: A) -> A { return a }
-fn g<U: string>(u: U) { return f(u) }
+	_, _, errs := inferSource(t, `fn f<A <: string>(a: A) -> A { return a }
+fn g<U <: string>(u: U) { return f(u) }
 val r = g(5)`)
 	require.Equal(t, []string{"3:11-3:12: cannot constrain 5 <: string"}, messagesWithSpan(t, errs))
 }

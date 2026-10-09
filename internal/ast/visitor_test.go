@@ -393,7 +393,7 @@ func TestObjectTypeAnn_Accept_SkipsMemberChildren(t *testing.T) {
 // None of them reads a position, so one span serves all of them.
 var declSpan = Span{Start: Location{Offset: 0}, End: Location{Offset: 1}, SourceID: 0}
 
-// typeParam builds a `<T: number = string>` binder, whose constraint and
+// typeParam builds a `<T <: number = string>` binder, whose constraint and
 // default are the two type slots a quantifier list contributes to the walk.
 func typeParam(name string) *TypeParam {
 	tp := NewTypeParam(name, nil, NewNumberTypeAnn(declSpan), NewStringTypeAnn(declSpan), declSpan)
@@ -411,7 +411,7 @@ func lifetimeParam(name, bound string) *LifetimeParam {
 // function declaration walks its `throws` clause too.
 //
 // A visitor answering "what does this declaration name" reads `class
-// Box<T: Target>` through this walk, so `Target` is reachable only if the
+// Box<T <: Target>` through this walk, so `Target` is reachable only if the
 // constraint is in it.
 func TestDeclAccept_WalksTheQuantifierList(t *testing.T) {
 	name := NewIdentifier("D", declSpan)

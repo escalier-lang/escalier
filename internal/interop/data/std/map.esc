@@ -61,7 +61,7 @@ export declare class Map<K, V> {
 }
 
 @js("WeakMap")
-export declare class WeakMap<K: weak_ref.WeakKey, V> {
+export declare class WeakMap<K <: weak_ref.WeakKey, V> {
     /**
      * Removes the specified element from the WeakMap.
      * @returns true if the element was successfully removed, or false if it was not present.

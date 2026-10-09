@@ -2136,7 +2136,7 @@ func (c *Checker) inferTypeParams(astTypeParams []*ast.TypeParam) []*type_system
 // placeholders is the list on the declaration's own type alias, which is what every later
 // reader consults, so unifying into it is what makes the resolved bound and default
 // reachable. The emitted `.d.ts` reads them, and an unsolved placeholder renders
-// `unknown`, so `class Holder<T: {value: number}>` would emit `<T extends unknown>`.
+// `unknown`, so `class Holder<T <: {value: number}>` would emit `<T extends unknown>`.
 func (c *Checker) resolveDeclTypeParams(
 	ctx Context,
 	declCtx Context,
@@ -2153,7 +2153,7 @@ func (c *Checker) resolveDeclTypeParams(
 	// Both lists are in declaration order, which is what lets unifyTypeParams pair them by
 	// position. Pairing a sorted list against a declaration-order one attaches each bound
 	// to the wrong parameter, storing `T: {value: number}, U: U` for
-	// `class Holder<T: U, U: {value: number}>`.
+	// `class Holder<T <: U, U <: {value: number}>`.
 	return slices.Concat(errors, c.unifyTypeParams(ctx, placeholders, resolved))
 }
 

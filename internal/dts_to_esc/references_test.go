@@ -36,9 +36,9 @@ func TestTypeRefNamesReachesEverySlot(t *testing.T) {
 		{"AQualifiedHead", `export type A = Target.Inner`, "Target"},
 
 		// The four slots the walk skips.
-		{"AClassTypeParamConstraint", `export declare class C<T: Target> {}`, "Target"},
+		{"AClassTypeParamConstraint", `export declare class C<T <: Target> {}`, "Target"},
 		{"AClassTypeParamDefault", `export declare class C<T = Target> {}`, "Target"},
-		{"AnAliasTypeParamConstraint", `export type A<T: Target> = T`, "Target"},
+		{"AnAliasTypeParamConstraint", `export type A<T <: Target> = T`, "Target"},
 		{"AFunctionThrows", `export declare fn f() -> number throws Target`, "Target"},
 	}
 
@@ -123,7 +123,7 @@ func TestTypeRefNamesRecordsANameAMemberBinderShadowedEarlier(t *testing.T) {
 // that names nothing there.
 func TestAddImportHeadersLeavesABoundTypeParameterAlone(t *testing.T) {
 	const element = "export declare class Element {\n" +
-		"    closest<E: Element = Element>(&mut self, selectors: string) -> E | null\n" +
+		"    closest<E <: Element = Element>(&mut self, selectors: string) -> E | null\n" +
 		"}"
 	mods := map[string]*StandaloneModule{
 		"std:math": {Module: parseSource(t, `export declare val E: number`)},

@@ -1483,7 +1483,7 @@ func typeCarriesLifetime(t type_system.Type) bool {
 // boundCarriesLifetime is the constraint-walking variant of
 // typeCarriesLifetime. Unlike the general check, it expands non-type-
 // param TypeRefType bounds to their alias body so that a constraint
-// like `T: Num` (where `type Num = number`) resolves to its primitive
+// like `T <: Num` (where `type Num = number`) resolves to its primitive
 // body and reports false. Outside the constraint walk we keep the
 // conservative "TypeRefType always carries a lifetime" rule because
 // real reference shapes (classes, parameterized aliases over objects)
