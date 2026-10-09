@@ -6,9 +6,9 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-// TestAMemberBodyIsCheckedForEveryClassArgument covers a member body using its class's type
-// parameter in a way only some instances allow. The class's parameters are rigid while the
-// body is inferred, so such a use is reported where it is written. A method's own binder
+// TestAMemberBodyIsCheckedForEveryClassArgument covers a member or constructor body using its
+// class's type parameter in a way only some instances allow. The class's parameters are rigid
+// while the bodies are inferred, so such a use is reported where it is written. A method's own binder
 // that meets the class's parameter is compared through its own bounds.
 func TestAMemberBodyIsCheckedForEveryClassArgument(t *testing.T) {
 	// bag declares a method generic in its own binder, which an override must keep generic.
@@ -87,6 +87,29 @@ class Leaf<V> extends Keyed<V> {
 	m(&self, x: U) -> boolean { return x > 1 },
 }`,
 			errs: []string{"3:37-3:38: cannot constrain U <: number"},
+		},
+		{
+			// a passes x to b before b's body is inferred, so the call is recorded against b's
+			// signature stub. The `number` b takes reaches U when b's signature is linked to
+			// that stub, which is where the error points.
+			name: "AForwardCallToASibling",
+			src: `class C<U> {
+	v: U,
+	a(&self, x: U) -> number { return self.b(x) },
+	b(&self, y: number) -> number { return y },
+}`,
+			errs: []string{"4:2-4:44: cannot constrain U <: number"},
+		},
+		{
+			name: "AConstructorBody",
+			src: `class C<U> {
+	v: U,
+	constructor(&mut self, v: U) {
+		self.v = v
+		val n: number = v
+	},
+}`,
+			errs: []string{"5:19-5:20: cannot constrain U <: number"},
 		},
 		{
 			// A body that only moves the class's parameter around works for every instance.
