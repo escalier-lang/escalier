@@ -11,8 +11,6 @@ import (
 // parameter as rigid, so such a use is reported where it is written, and the signature
 // keeps only the bound the declaration states.
 func TestABodyIsCheckedForEveryInstantiation(t *testing.T) {
-	// f accepts only strings, so passing it a `U` that may be a number is the use under test.
-	const f = "fn f<A: string>(a: A) -> A { return a }\n"
 	tests := []struct {
 		name string
 		src  string
@@ -23,8 +21,11 @@ func TestABodyIsCheckedForEveryInstantiation(t *testing.T) {
 		errs    []string
 	}{
 		{
-			name:    "ACallNarrowingTheBound",
-			src:     f + `fn g<U: number | string>(u: U) { return f(u) }`,
+			// f accepts only strings, so passing it a `U` that may be a number is the use
+			// under test.
+			name: "ACallNarrowingTheBound",
+			src: `fn f<A: string>(a: A) -> A { return a }
+fn g<U: number | string>(u: U) { return f(u) }`,
 			binding: "g",
 			want:    "fn <U: number | string>(u: U) -> U",
 			errs:    []string{"2:41-2:45: cannot constrain number <: string"},
@@ -33,12 +34,15 @@ func TestABodyIsCheckedForEveryInstantiation(t *testing.T) {
 			// The body's use is reported once, at the use. A caller is checked against the
 			// declared bound alone.
 			name: "ACallerReadsOnlyTheDeclaredBound",
-			src:  f + "fn g<U: number | string>(u: U) { return f(u) }\nval r = g(5)",
+			src: `fn f<A: string>(a: A) -> A { return a }
+fn g<U: number | string>(u: U) { return f(u) }
+val r = g(5)`,
 			errs: []string{"2:41-2:45: cannot constrain number <: string"},
 		},
 		{
 			name: "AnUnboundedParameterPassedOn",
-			src:  f + `fn g<U>(u: U) -> U { return f(u) }`,
+			src: `fn f<A: string>(a: A) -> A { return a }
+fn g<U>(u: U) -> U { return f(u) }`,
 			errs: []string{"2:29-2:33: cannot constrain U <: string"},
 		},
 		{
@@ -66,7 +70,8 @@ func TestABodyIsCheckedForEveryInstantiation(t *testing.T) {
 		},
 		{
 			name: "AMethodBody",
-			src: f + `class C {
+			src: `fn f<A: string>(a: A) -> A { return a }
+class C {
 	g<U: number | string>(&self, u: U) -> U { return f(u) },
 }`,
 			errs: []string{"3:51-3:55: cannot constrain number <: string"},
