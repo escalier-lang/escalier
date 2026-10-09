@@ -423,6 +423,20 @@ func (c *checker) inferFunc(scope *Scope, lvl int, sig ast.FuncSig, body *ast.Bl
 	// when there was not. Nil means the function raises nothing.
 	throws := declaredThrows
 	hasBody := body != nil
+	// A sync return annotation resolves before the body, so a bound a type reference in it
+	// puts on a type parameter, as `-> Box<U>` does for `class Box<T: string>`, is one the
+	// body can rely on. A call to the function is checked against that bound too.
+	var retAnnT soltype.Type
+	retAnnOK := false
+	if sig.Return != nil && !sig.Async && !sig.Gen {
+		retAnnT, retAnnOK = c.resolveTypeAnn(declScope, sig.Return, lvl)
+	}
+	// The body has to work for every instantiation its type parameters' bounds allow, so
+	// those parameters are rigid while it is walked and checked against the return
+	// annotation. Nothing after that constrains a parameter from the sub side.
+	if hasBody && len(typeParams) > 0 {
+		defer c.ctx.holdTypeParamsRigid(typeParams)()
+	}
 	if hasBody {
 		// PR3: open a fresh function context so every ReturnStmt encountered while
 		// walking the body lands in our own returns list (a nested fn inside this
@@ -557,7 +571,7 @@ func (c *checker) inferFunc(scope *Scope, lvl int, sig ast.FuncSig, body *ast.Bl
 			throws = nil
 		}
 	} else if sig.Return != nil {
-		if annT, ok := c.resolveTypeAnn(declScope, sig.Return, lvl); ok {
+		if annT, ok := retAnnT, retAnnOK; ok {
 			// Only constrain the body when there IS one; a bodyless (declare/ambient)
 			// function simply adopts the annotation (constraining the synthetic `undefined`
 			// would raise a spurious `undefined <: T`).

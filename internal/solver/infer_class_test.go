@@ -2979,16 +2979,13 @@ func TestInferClassMethodTypeParamsInstantiatePerCall(t *testing.T) {
 	require.Equal(t, `"b"`, values["b"])
 }
 
-// A bound a BODY forces is enforced at the call, for a method as for a generic function.
-// What the body records is a link, not the bound itself. Calling `f` inside `g` freshens
-// `f`'s binder to a variable carrying `string`, then records `U <:` that variable. `U`
-// never gains `string` of its own, so `g` still renders as `fn <U>(u: U) -> U` and its
-// declared constraint stays empty. The call instantiates the whole chain and propagates
-// `1` along it, reaching `1 <: string`. A rule reading only the declared constraint would
-// see `U` unbounded and lose this.
+// A body that narrows its own type parameter is reported in the body, for a method as for a
+// generic function. Calling `f` inside `g` freshens `f`'s binder to a variable carrying
+// `string`, and `U` is unbounded, so `f(u)` reports. The call `g(1)` is checked against
+// the declared bound alone and reports nothing more.
 func TestInferMethodBodyInferredBoundMatchesTheFunctionForm(t *testing.T) {
 	const callee = "fn f<A: string>(a: A) -> A { return a }\n"
-	const want = "cannot constrain 1 <: string"
+	const want = "cannot constrain U <: string"
 
 	_, _, fnErrs := inferSource(t, callee+`
 		fn g<U>(u: U) -> U { return f(u) }

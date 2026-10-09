@@ -1,6 +1,7 @@
 package solver
 
 import (
+	"slices"
 	"strings"
 
 	"github.com/escalier-lang/escalier/internal/set"
@@ -26,6 +27,19 @@ import (
 // append would silently survive a Discard and corrupt committed state).
 type Context struct {
 	varCounter int
+
+	// rigidParams holds the type parameters of each generic declaration whose body is being
+	// inferred, keyed by variable. constrain checks such a parameter on the sub side of a
+	// constraint against its bounds alone, so the body has to work for every instantiation
+	// those bounds allow. Against a type, it reads the parameter as its skolem, an opaque
+	// type that satisfies a constraint only through the parameter's bounds.
+	// holdTypeParamsRigid fills it.
+	rigidParams map[*soltype.TypeVarType]*rigidParam
+
+	// rigidSkolems maps the skolem each rigid parameter has been read as back to the
+	// parameter's variable. constrain reads such a skolem as its parameter again when it
+	// meets a variable, so a skolem never becomes a variable's bound.
+	rigidSkolems map[*soltype.SkolemType]*soltype.TypeVarType
 
 	// symbolCounter mints the id a `unique symbol` annotation carries. Each written
 	// annotation is its own symbol, so the counter advances per annotation rather than
@@ -343,6 +357,56 @@ func (c *Context) freshSymbol() *soltype.UniqueSymbolType {
 	s := &soltype.UniqueSymbolType{ID: c.symbolCounter}
 	c.symbolCounter++
 	return s
+}
+
+// rigidParam is one entry of Context.rigidParams. bounds are the upper bounds the
+// parameter's variable carried when it became rigid. That is its declared constraint and
+// any bound a type reference in the signature put on it. A link the body records afterward
+// is not a bound the body may rely on, so it is left out. The skolem is minted on first
+// use, so a parameter the body never constrains from the sub side mints nothing.
+type rigidParam struct {
+	v      *soltype.TypeVarType
+	name   string
+	bounds []soltype.Type
+	sk     *soltype.SkolemType
+}
+
+// holdTypeParamsRigid makes params rigid for constrain until the returned function runs.
+func (c *Context) holdTypeParamsRigid(params []*soltype.TypeParam) (release func()) {
+	if c.rigidParams == nil {
+		c.rigidParams = map[*soltype.TypeVarType]*rigidParam{}
+		c.rigidSkolems = map[*soltype.SkolemType]*soltype.TypeVarType{}
+	}
+	for _, tp := range params {
+		c.rigidParams[tp.Var] = &rigidParam{v: tp.Var, name: tp.Name, bounds: slices.Clone(tp.AllUpperBounds())}
+	}
+	return func() {
+		for _, tp := range params {
+			if sk := c.rigidParams[tp.Var].sk; sk != nil {
+				delete(c.rigidSkolems, sk)
+			}
+			delete(c.rigidParams, tp.Var)
+		}
+	}
+}
+
+// rigidSkolem returns the skolem a rigid parameter is read as, whose upper bound meets
+// rp.bounds. The bounds stay unsubstituted, so a bound naming a sibling parameter is read
+// through that sibling's skolem in turn.
+func (c *Context) rigidSkolem(rp *rigidParam) *soltype.SkolemType {
+	if rp.sk != nil {
+		return rp.sk
+	}
+	rp.sk = c.freshSkolem(rp.name)
+	c.rigidSkolems[rp.sk] = rp.v
+	switch len(rp.bounds) {
+	case 0:
+	case 1:
+		rp.sk.Upper = rp.bounds[0]
+	default:
+		rp.sk.Upper = &soltype.IntersectionType{Types: rp.bounds}
+	}
+	return rp.sk
 }
 
 // freshSkolem mints a distinct rigid type parameter carrying the given source name. It

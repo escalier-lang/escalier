@@ -185,18 +185,27 @@ func TestAMethodBinderBoundIsAnInputPosition(t *testing.T) {
 	}
 }
 
-// TestABodyForcedBinderBoundIsEnforcedAtACall asserts that a call honors a bound the body
-// forced on a binder beside the one it declares. `f(u)` forces `U` below `f`'s `string`, so
-// `g(5)` has to pass `5` as a string too.
-//
-// The body should not be accepted in the first place, since `u` may be a `number`. #1898
-// tracks reporting `cannot constrain number <: string` at `f(u)`. Once it lands, that error
-// replaces the one at `g(5)`, and this test's assertion moves with it.
-func TestABodyForcedBinderBoundIsEnforcedAtACall(t *testing.T) {
-	_, _, errs := inferSource(t, `
+// TestABodyUseWithinTheDeclaredBoundReachesTheCaller asserts that a body passing its own
+// type parameter on within the declared bound is accepted, and that a call's argument flows
+// through to the result. `f(u)` links `U` to the variable `f` instantiates `A` to. The link
+// is how `g("a")` returns `"a"`.
+func TestABodyUseWithinTheDeclaredBoundReachesTheCaller(t *testing.T) {
+	values, _, errs := inferSource(t, `
 		fn f<A: string>(a: A) -> A { return a }
-		fn g<U: number | string>(u: U) { return f(u) }
-		val r = g(5)
+		fn g<U: string>(u: U) { return f(u) }
+		val r = g("a")
 	`)
-	require.Equal(t, []string{"cannot constrain 5 <: string"}, errorMessagesOf(errs))
+	require.Empty(t, errorMessagesOf(errs))
+	require.Equal(t, "fn <U: string>(u: U) -> U", values["g"])
+	require.Equal(t, `"a"`, values["r"])
+}
+
+// TestACallBreakingALinkedBoundReportsOnce asserts that a call failing the same bound along two
+// paths reports it once. `g(5)` checks `5` against U's declared `string` and again against
+// `f`'s `A`, which `f(u)` linked U to and which is bounded by `string` too.
+func TestACallBreakingALinkedBoundReportsOnce(t *testing.T) {
+	_, _, errs := inferSource(t, `fn f<A: string>(a: A) -> A { return a }
+fn g<U: string>(u: U) { return f(u) }
+val r = g(5)`)
+	require.Equal(t, []string{"3:11-3:12: cannot constrain 5 <: string"}, messagesWithSpan(t, errs))
 }
