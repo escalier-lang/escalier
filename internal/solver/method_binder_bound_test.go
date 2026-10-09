@@ -184,3 +184,18 @@ func TestAMethodBinderBoundIsAnInputPosition(t *testing.T) {
 		})
 	}
 }
+
+// TestABodyUseWithinTheDeclaredBoundReachesTheCaller asserts that a body passing its own
+// type parameter on within the declared bound is accepted, and that a call's argument flows
+// through to the result. `f(u)` links `U` to the variable `f` instantiates `A` to. The link
+// is how `g("a")` returns `"a"`.
+func TestABodyUseWithinTheDeclaredBoundReachesTheCaller(t *testing.T) {
+	values, _, errs := inferSource(t, `
+		fn f<A: string>(a: A) -> A { return a }
+		fn g<U: string>(u: U) { return f(u) }
+		val r = g("a")
+	`)
+	require.Empty(t, errorMessagesOf(errs))
+	require.Equal(t, "fn <U: string>(u: U) -> U", values["g"])
+	require.Equal(t, `"a"`, values["r"])
+}
