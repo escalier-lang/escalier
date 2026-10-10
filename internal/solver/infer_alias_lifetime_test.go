@@ -196,12 +196,13 @@ func TestAliasFuncBodySeesTheAliasLifetime(t *testing.T) {
 }
 
 // TestAliasFuncBodyBinderShadows covers a body that rebinds the alias's name. The nested
-// binder wins, so its `'a` is a lifetime of its own and the alias's parameter reaches nothing
-// in the body — the shadowing rule a class member follows.
+// binder wins, so its `'a` is a lifetime of its own, rendered on the function type that binds
+// it, and the alias's parameter reaches nothing in the body. A class member follows the same
+// shadowing rule.
 func TestAliasFuncBodyBinderShadows(t *testing.T) {
 	_, types, errs := inferSource(t,
 		`type Box<'a> = fn <'a>(x: &'a {v: number}) -> &'a {v: number}`,
 	)
 	require.Empty(t, messagesWithSpan(t, errs))
-	require.Equal(t, "fn (x: &{v: number}) -> &{v: number}", types["Box"])
+	require.Equal(t, "fn <'a>(x: &'a {v: number}) -> &'a {v: number}", types["Box"])
 }

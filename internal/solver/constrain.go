@@ -1347,17 +1347,11 @@ func (c *Context) constrain(sub, super soltype.Type, seen *seenPairs, mutCtx boo
 		if sup, ok := super.(*soltype.FuncType); ok {
 			// Higher-rank subtyping: skolemize a super quantifier, instantiate a sub one, then
 			// re-enter. Contravariant param recursion swaps the sides, so polarity needs no flag.
-			if len(sup.TypeParams) > 0 {
+			if quantified(sup) {
 				return c.constrain(sub, c.skolemizeFuncBinder(sup), seen, mutCtx)
 			}
-			if len(sub.TypeParams) > 0 {
-				return c.constrain(c.instantiateFuncBinder(sub, sub.TypeParams[0].Var.Level), sup, seen, mutCtx)
-			}
-			// A lifetime binder on either side is dropped rather than skolemized or
-			// instantiated. Lifetimes are solved by the outlives constraints the borrows
-			// record, so the signature at the binder's own variables is what is compared.
-			if len(sup.LifetimeParams) > 0 || len(sub.LifetimeParams) > 0 {
-				return c.constrain(withoutLifetimeBinder(sub), withoutLifetimeBinder(sup), seen, mutCtx)
+			if quantified(sub) {
+				return c.constrain(c.instantiateFuncBinder(sub, binderLevel(sub)), sup, seen, mutCtx)
 			}
 			// A tuple-typed rest param on either side expands to one positional param per element,
 			// so a written rest param works as a value-level type and not only as a pattern. The
@@ -2697,29 +2691,36 @@ func overloadReadType(sigs []*soltype.FuncType) soltype.Type {
 }
 
 // callableView returns a method signature as the callable value a member read yields:
-// the signature with its receiver and lifetime binder dropped, since a method value binds no
-// `self` and its lifetimes are instantiated by the access that reads it. It is the subtyping
-// counterpart of memberValue's method projection.
+// the signature with its receiver dropped, since `p.m` binds the receiver and returns a
+// function of the remaining parameters. Both binders stay, since each call instantiates
+// them. The receiver's own ownership is checked separately at member access as a
+// `receiver <: SelfParam` constraint. memberValue and the subtyping rule for a method
+// element both read it.
 func callableView(ft *soltype.FuncType) *soltype.FuncType {
 	return &soltype.FuncType{
-		Params:     ft.Params,
-		Ret:        ft.Ret,
-		Throws:     ft.Throws,
-		Inexact:    ft.Inexact,
-		TypeParams: ft.TypeParams,
+		Params:         ft.Params,
+		Ret:            ft.Ret,
+		Throws:         ft.Throws,
+		Inexact:        ft.Inexact,
+		TypeParams:     ft.TypeParams,
+		LifetimeParams: ft.LifetimeParams,
 	}
 }
 
-// withoutLifetimeBinder returns ft with its own lifetime parameters dropped, or ft itself when
-// it has none. The lifetimes stay as the variables the binder named, so the result is the
-// signature at one choice of them.
-func withoutLifetimeBinder(ft *soltype.FuncType) *soltype.FuncType {
-	if len(ft.LifetimeParams) == 0 {
-		return ft
+// quantified reports whether ft carries a binder of either sort, which a call instantiates
+// and a subtype check instantiates on the sub side.
+func quantified(ft *soltype.FuncType) bool {
+	return len(ft.TypeParams) > 0 || len(ft.LifetimeParams) > 0
+}
+
+// binderLevel returns the level ft's binder variables were minted at, read from the first
+// type parameter or, for a lifetime-only binder, the first lifetime parameter. ft must be
+// quantified.
+func binderLevel(ft *soltype.FuncType) int {
+	if len(ft.TypeParams) > 0 {
+		return ft.TypeParams[0].Var.Level
 	}
-	cp := *ft
-	cp.LifetimeParams = nil
-	return &cp
+	return ft.LifetimeParams[0].Var.Level
 }
 
 // isNeverType reports whether t is `never`, the bottom of the subtype lattice.
@@ -2731,9 +2732,15 @@ func isNeverType(t soltype.Type) bool {
 // skolemizeFuncBinder replaces ft's own type parameters with fresh skolems, so a term checked
 // against ft as a supertype must satisfy it for every instantiation. `<T>(x: T) -> T` becomes
 // `(x: sk) -> sk` for a fresh skolem sk, which `fn (x) { return 5 }` fails but a polymorphic
-// identity satisfies.
+// identity satisfies. Its lifetime parameters become fresh variables carrying their declared
+// bounds, which absorb what the check records without touching the declared binder. Nothing
+// holds them rigid, so a term that works for one choice of them passes.
 func (c *Context) skolemizeFuncBinder(ft *soltype.FuncType) *soltype.FuncType {
-	return substFuncBinder(ft, c.skolemizeParams(ft.TypeParams))
+	sub := c.skolemizeParams(ft.TypeParams)
+	for i, lt := range c.freshLifetimeArgs(ft, binderLevel(ft)) {
+		sub.lifetimes[ft.LifetimeParams[i].Var] = lt
+	}
+	return substFuncBinder(ft, sub)
 }
 
 // skolemizeParams mints one fresh skolem per parameter and returns the substitution replacing
@@ -2768,10 +2775,12 @@ func (c *Context) skolemizeParams(params []*soltype.TypeParam) *typeSubst {
 	return sub
 }
 
-// instantiateFuncBinder replaces ft's own type parameters with fresh inference vars at lvl, so
-// the sub side of a subtype check picks the instantiation. Each fresh var carries its bounds.
-// For example a call `cb(5)` instantiates `cb: <T>(x: T) -> T` to `(x: T0) -> T0` for a fresh
-// var T0, which `5` then binds, so a later `cb("hi")` gets its own T1 rather than reusing T0.
+// instantiateFuncBinder replaces ft's own type parameters and lifetime parameters with fresh
+// inference vars at lvl, so the sub side of a subtype check picks the instantiation. Each
+// fresh var carries its bounds. For example a call `cb(5)` instantiates `cb: <T>(x: T) -> T`
+// to `(x: T0) -> T0` for a fresh var T0, which `5` then binds, so a later `cb("hi")` gets its
+// own T1 rather than reusing T0. A lifetime parameter is instantiated the same way, so two
+// calls of one `<'a>(x: &'a T) -> &'a T` relate each argument to its own result.
 func (c *Context) instantiateFuncBinder(ft *soltype.FuncType, lvl int) *soltype.FuncType {
 	nvs := make([]*soltype.TypeVarType, len(ft.TypeParams))
 	args := make([]soltype.Type, len(ft.TypeParams))
@@ -2779,7 +2788,7 @@ func (c *Context) instantiateFuncBinder(ft *soltype.FuncType, lvl int) *soltype.
 		nvs[i] = c.freshVar(lvl)
 		args[i] = nvs[i]
 	}
-	sub := newTypeSubst(ft.TypeParams, args, nil, nil)
+	sub := newTypeSubst(ft.TypeParams, args, ft.LifetimeParams, c.freshLifetimeArgs(ft, lvl))
 	for i, tp := range ft.TypeParams {
 		// Read each declared bound from its field so an instance's substitution reaches it.
 		// The variable's first bound would leave `U: T` or `where T: B` naming the class's `T`,
@@ -2788,6 +2797,34 @@ func (c *Context) instantiateFuncBinder(ft *soltype.FuncType, lvl int) *soltype.
 		nvs[i].UpperBounds = acceptBounds(tp.AllUpperBounds(), sub)
 	}
 	return substFuncBinder(ft, sub)
+}
+
+// freshLifetimeArgs mints a fresh lifetime at lvl for each of ft's lifetime parameters and
+// returns them in the parameters' order, or nil when ft has none. Each carries the bounds its
+// parameter declares and nothing else, rewritten so a bound naming a sibling parameter names
+// the sibling's fresh lifetime. The relations a body established were checked against the
+// declared bounds, and what an access recorded against a receiver was fixed at the access,
+// so the binder variable's own inference state is not copied. Minting the lifetimes rather
+// than exposing the binder's keeps a declared signature shared by several sites, as an alias
+// body is, from carrying one site's constraints into another's.
+func (c *Context) freshLifetimeArgs(ft *soltype.FuncType, lvl int) []soltype.Lifetime {
+	if len(ft.LifetimeParams) == 0 {
+		return nil
+	}
+	fresh := make([]*soltype.LifetimeVar, len(ft.LifetimeParams))
+	lts := make([]soltype.Lifetime, len(ft.LifetimeParams))
+	for i, lp := range ft.LifetimeParams {
+		fresh[i] = c.freshLifetime(lvl)
+		fresh[i].Join = lp.Var.Join
+		lts[i] = fresh[i]
+	}
+	sub := newTypeSubst(nil, nil, ft.LifetimeParams, lts)
+	for i, lp := range ft.LifetimeParams {
+		for _, b := range lp.Bounds {
+			fresh[i].UpperBounds = append(fresh[i].UpperBounds, sub.lifetime(b))
+		}
+	}
+	return lts
 }
 
 // substFuncBinder rebuilds ft with sub applied to its parameters and return and its own

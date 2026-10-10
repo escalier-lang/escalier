@@ -1750,11 +1750,11 @@ func (c *checker) memberValue(lvl int, blame ast.Node, member soltype.ObjTypeEle
 			out = &soltype.ErrorType{}
 		case 1:
 			c.recordMethodSelfParam(blame, m.Signatures[0].SelfParam)
-			out = strippedMethodSig(m.Signatures[0])
+			out = callableView(m.Signatures[0])
 		default:
 			arms := make([]soltype.Type, len(m.Signatures))
 			for i, sig := range m.Signatures {
-				arms[i] = strippedMethodSig(sig)
+				arms[i] = callableView(sig)
 			}
 			out = &soltype.IntersectionType{Types: arms}
 		}
@@ -1859,20 +1859,6 @@ func (c *checker) recordMethodSelfParam(blame ast.Node, self *soltype.FuncParam)
 		c.methodSelfParams = map[ast.Node]*soltype.FuncParam{}
 	}
 	c.methodSelfParams[blame] = self
-}
-
-// strippedMethodSig returns a method signature as a plain callable, its SelfParam and
-// lifetime binder dropped, since `p.m` binds the receiver and returns a function of the
-// remaining parameters over the lifetimes the access instantiated. The receiver's own
-// ownership is checked separately at member access as a `receiver <: SelfParam` constraint.
-func strippedMethodSig(sig *soltype.FuncType) *soltype.FuncType {
-	return &soltype.FuncType{
-		Params:     sig.Params,
-		Ret:        sig.Ret,
-		Throws:     sig.Throws,
-		Inexact:    sig.Inexact,
-		TypeParams: sig.TypeParams,
-	}
 }
 
 // checkReceiverMut rejects a member reached through a receiver that cannot give it the access
