@@ -824,8 +824,8 @@ func renderSchemeWith(
 
 // renderValueBinding renders a value binding's scheme under the source parameter names of the
 // declaration it came from, both sorts, so `class Node<T> {value: T}` binds a value that
-// renders `<T> {new (value: T) -> Node<T>}` and `class Pair<'x, 'y>` keeps 'x and 'y rather
-// than taking the generated 'a and 'b.
+// renders `{new <T>(value: T) -> Node<T>}` and `class Pair<'x, 'y>` renders its constructor
+// under `<'x, 'y>` rather than the generated 'a and 'b.
 func (c *checker) renderValueBinding(s TypeScheme) string {
 	return renderSchemeWith(s, c.declaredTypeParams, c.declaredLifetimeParams)
 }

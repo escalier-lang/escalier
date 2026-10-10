@@ -78,6 +78,37 @@ func TestClassValueBindsItsParametersOnEachSignature(t *testing.T) {
 			}`,
 			errs: []string{"static member `f` names type parameter `T`, which belongs to instances of `Holder`"},
 		},
+		{
+			// A lifetime parameter is bound on the constructor the way a type parameter is,
+			// and a static stands outside it the same way.
+			name: "a lifetime parameter is bound on the constructor",
+			src: `class Holder<'a> {
+				peer: &'a mut {value: number},
+				static count(n: number) -> number { return n },
+			}`,
+			class: "Holder",
+			want:  "{new <'a>(peer: &'a mut {value: number}) -> Holder<'a>, count(n: number) -> number}",
+		},
+		{
+			name: "a static method naming a class lifetime is reported",
+			src: `class Holder<'a> {
+				peer: &'a mut {value: number},
+				static s(p: &'a mut {value: number}) -> number { return 1 },
+			}`,
+			errs: []string{"static member `s` names lifetime parameter `'a`, which belongs to instances of `Holder`"},
+		},
+		{
+			// The static's own lifetime is a different variable from the class's, whatever it
+			// is called. A method's lifetime is quantified by the value's scheme and freshened
+			// per access, so it renders in the prefix under a generated name.
+			name: "a static declaring its own lifetime is not reported",
+			src: `class Holder<'a> {
+				peer: &'a mut {value: number},
+				static s<'a>(p: &'a mut {value: number}) -> &'a mut {value: number} { return p },
+			}`,
+			class: "Holder",
+			want:  "<'b> {new <'a>(peer: &'a mut {value: number}) -> Holder<'a>, s(p: &'b mut {value: number}) -> &'b mut {value: number}}",
+		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {

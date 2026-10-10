@@ -165,36 +165,40 @@ func (c *checker) inferClassDecl(scope *Scope, lvl int, decl *ast.ClassDecl, ns 
 		c.reportUnusedTypeParams(typeParams, decl.TypeParams, classDeclTypes(def, ctorFns, callFns))
 	}
 
-	// The class's parameters are the binder of every constructor and call signature, so a
-	// construction instantiates them the way a generic function's call does and the class
-	// value is monomorphic in them. A static member is reached through that value, where no
-	// instance supplies an argument, so one that names a parameter is reported.
-	bindClassParams(ctorFns, typeParams)
-	bindClassParams(callFns, typeParams)
-	c.reportStaticsNamingClassParams(decl, static, typeParams)
+	// The class's parameters, both sorts, are the binder of every constructor and call
+	// signature, so a construction instantiates them the way a generic function's call does
+	// and the class value is monomorphic in them. A static member is reached through that
+	// value, where no instance supplies an argument, so one that names a parameter is
+	// reported.
+	bindClassParams(ctorFns, typeParams, shell.lifetimeParams)
+	bindClassParams(callFns, typeParams, shell.lifetimeParams)
+	c.reportStaticsNamingClassParams(decl, static, typeParams, shell.lifetimeParams)
 
 	return c.classValue(self, ctorFns, callFns, static), &ast.NodeProvenance{Node: decl}, true
 }
 
-// bindClassParams gives each signature in fns the class's type parameters as its own binder.
-// The signatures share the declaration's TypeParam values, so a bound a substitution reads
-// through the binder is the one the class resolved.
-func bindClassParams(fns []*soltype.FuncType, typeParams []*soltype.TypeParam) {
-	if len(typeParams) == 0 {
-		return
-	}
+// bindClassParams gives each signature in fns the class's type parameters and lifetime
+// parameters as its own binder. The signatures share the declaration's TypeParam values, so
+// a bound a substitution reads through the binder is the one the class resolved.
+func bindClassParams(fns []*soltype.FuncType, typeParams []*soltype.TypeParam, lifetimeParams []*soltype.LifetimeParam) {
 	for _, fn := range fns {
-		fn.TypeParams = typeParams
+		if len(typeParams) > 0 {
+			fn.TypeParams = typeParams
+		}
+		if len(lifetimeParams) > 0 {
+			fn.LifetimeParams = lifetimeParams
+		}
 	}
 }
 
 // reportStaticsNamingClassParams reports each static element of decl whose own type in
-// static names one of typeParams. A field is read through its type, a method arm through
-// its signature, a getter through its type and a setter through its parameter, so a
-// getter beside a setter and each arm of an overloaded method are judged on their own. One
-// report per element names the first parameter found, in declaration order.
-func (c *checker) reportStaticsNamingClassParams(decl *ast.ClassDecl, static *soltype.ObjectType, typeParams []*soltype.TypeParam) {
-	if len(typeParams) == 0 {
+// static names one of typeParams or one of lifetimeParams. A field is read through its type,
+// a method arm through its signature, a getter through its type and a setter through its
+// parameter, so a getter beside a setter and each arm of an overloaded method are judged on
+// their own. One report per element names the first parameter found, type parameters in
+// declaration order before lifetime parameters.
+func (c *checker) reportStaticsNamingClassParams(decl *ast.ClassDecl, static *soltype.ObjectType, typeParams []*soltype.TypeParam, lifetimeParams []*soltype.LifetimeParam) {
+	if len(typeParams) == 0 && len(lifetimeParams) == 0 {
 		return
 	}
 	slots := map[*soltype.TypeVarType]int{}
@@ -202,6 +206,10 @@ func (c *checker) reportStaticsNamingClassParams(decl *ast.ClassDecl, static *so
 		slots[tp.Var] = i
 	}
 	found := make([]bool, len(typeParams))
+	classLts := map[*soltype.LifetimeVar]string{}
+	for _, lp := range lifetimeParams {
+		classLts[lp.Var] = lp.Name
+	}
 	// arms counts the static method arms seen under each name, which is the index of the
 	// next arm's signature, since appendMethodSig keeps arms in declaration order.
 	arms := map[string]int{}
@@ -238,15 +246,39 @@ func (c *checker) reportStaticsNamingClassParams(decl *ast.ClassDecl, static *so
 		}
 		clear(found)
 		occurrences(slots, []soltype.Type{memberType}, found)
+		reported := false
 		for i, hit := range found {
 			if hit {
 				c.report(&StaticMemberNamesClassParamError{
 					Class: decl.Name.Name, Member: name, Param: typeParams[i].Name, Node: elem,
 				})
+				reported = true
 				break
 			}
 		}
+		if reported {
+			continue
+		}
+		if lt, ok := namedClassLifetime(memberType, classLts); ok {
+			c.report(&StaticMemberNamesClassLifetimeError{
+				Class: decl.Name.Name, Member: name, Lifetime: lt, Node: elem,
+			})
+		}
 	}
+}
+
+// namedClassLifetime returns the name of the first of classLts that t writes, or ok=false
+// when it writes none. A lifetime a nested signature binds as its own parameter is a
+// different variable from the class's, so a static declaring its own `'a` is not reported.
+func namedClassLifetime(t soltype.Type, classLts map[*soltype.LifetimeVar]string) (name string, ok bool) {
+	col := &lifetimeCollector{out: set.NewSet[*soltype.LifetimeVar]()}
+	t.Accept(col, soltype.Positive)
+	for _, lv := range col.out.ToSlice() {
+		if n, isClass := classLts[lv]; isClass {
+			return n, true
+		}
+	}
+	return "", false
 }
 
 // staticMemberType returns the type static holds for the element elem declares under name:
