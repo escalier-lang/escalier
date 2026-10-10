@@ -1,0 +1,1 @@
+{"version":3,"file":"./index.js","sources":["../../lib/index.esc"],"sourcesContent":["declare val sym: unique symbol\nval k = \"a\"\nval n = 1\nexport type T = {[k]: number, [n]: string, [sym]: boolean}\nexport val o: {[k]: number} = {a: 1}\n"],"names":[],"mappings":"aACI,AAAA,IAAI;aACJ,AAAA,IAAI;aAEG,AAAA,IAAmB,CAAC,GAAG"}

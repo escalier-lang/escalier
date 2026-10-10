@@ -939,6 +939,16 @@ const (
 	uniqueSymbolElsewhere
 )
 
+// InvalidTypeKeyError fires when a computed key `[k]` in an object type annotation names
+// no single member. Such a key must have the type of one string literal, one number
+// literal, or one unique symbol, so `{[k]: number}` with `k: string` is rejected rather
+// than read as an index signature. `Key` is the offending key expression, which carries
+// the blame span. `KeyType` is its type, and nil when the key's type is not known.
+type InvalidTypeKeyError struct {
+	Key     ast.Expr
+	KeyType soltype.Type
+}
+
 // UnsupportedNodeError is the M2-subset guard: an AST node whose KIND is outside
 // the M2 walk's coverage (kind = astKind(Node)). Unlike BodyDeclNotAllowedError
 // this is a temporary scope gate, not a permanent language rule — later milestones
@@ -1311,6 +1321,7 @@ func (*UnknownNamespaceMemberError) isSolverError()         {}
 func (*DynamicNamespaceIndexError) isSolverError()          {}
 func (*InvalidObjectKeyError) isSolverError()               {}
 func (*UniqueSymbolPositionError) isSolverError()           {}
+func (*InvalidTypeKeyError) isSolverError()                 {}
 func (*InvalidAssignmentTargetError) isSolverError()        {}
 func (*CannotAssignToImmutableError) isSolverError()        {}
 func (*TooManyArgsError) isSolverError()                    {}
@@ -2657,6 +2668,16 @@ func (e *UniqueSymbolPositionError) Message() string {
 	default:
 		return "A `unique symbol` type is only allowed on a `val` declaration, a `static readonly` class field, or a `readonly` property."
 	}
+}
+
+func (e *InvalidTypeKeyError) Span() ast.Span      { return e.Key.Span() }
+func (e *InvalidTypeKeyError) Related() []ast.Span { return nil }
+func (e *InvalidTypeKeyError) Message() string {
+	const msg = "A computed key in an object type must be a string literal, number literal, or unique symbol"
+	if e.KeyType == nil {
+		return msg
+	}
+	return msg + ", not " + soltype.Print(e.KeyType)
 }
 
 func (e *InvalidAssignmentTargetError) Span() ast.Span      { return e.Target.Span() }

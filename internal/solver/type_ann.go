@@ -390,9 +390,8 @@ func (l *objAnnLowering) lower(elem ast.ObjTypeAnnElem) (soltype.ObjTypeElem, bo
 		}
 		return &soltype.PropertyElem{Name: name, Type: ft, Optional: elem.Optional, Readonly: elem.Readonly}, true
 	case *ast.MethodTypeAnn:
-		name, ok := objKeyName(elem.Name)
+		name, ok := l.c.annKeyName(l.scope, elem.Name)
 		if !ok {
-			l.c.reportUnsupported(elem.Name)
 			return nil, true
 		}
 		sig := l.c.mustResolveFuncTypeAnn(l.scope, elem.Fn, elem.Receiver, l.lvl)
@@ -402,9 +401,8 @@ func (l *objAnnLowering) lower(elem ast.ObjTypeAnnElem) (soltype.ObjTypeElem, bo
 			Optional:   elem.Optional,
 		}, true
 	case *ast.GetterTypeAnn:
-		name, ok := objKeyName(elem.Name)
+		name, ok := l.c.annKeyName(l.scope, elem.Name)
 		if !ok {
-			l.c.reportUnsupported(elem.Name)
 			return nil, true
 		}
 		// The value read and what reading it raises both come from the one resolved
@@ -413,9 +411,8 @@ func (l *objAnnLowering) lower(elem ast.ObjTypeAnnElem) (soltype.ObjTypeElem, bo
 		sig := l.c.mustResolveFuncTypeAnn(l.scope, elem.Fn, elem.Receiver, l.lvl)
 		return &soltype.GetterElem{Name: name, Type: sig.Ret, Throws: sig.Throws}, true
 	case *ast.SetterTypeAnn:
-		name, ok := objKeyName(elem.Name)
+		name, ok := l.c.annKeyName(l.scope, elem.Name)
 		if !ok {
-			l.c.reportUnsupported(elem.Name)
 			return nil, true
 		}
 		// A setter writes through its receiver, so one written here has to be `&mut self`,
@@ -566,16 +563,16 @@ func mappedModifier(m *ast.MappedModifier) soltype.MappedModifier {
 }
 
 // resolveObjectProperty lowers one `name: T` / `name?: T` property annotation to its name and
-// resolved field type. It reports false only when the property key is not a static name. A missing
-// or unsupported value annotation recovers to a fresh var, keeping the object shape cascade-safe,
-// mirroring the Promise<bad> recovery. Shared by the spread-free and spread-carrying paths.
+// resolved field type. It reports false only when the property key names no single member, which
+// annKeyName has reported. A missing or unsupported value annotation recovers to a fresh var,
+// keeping the object shape cascade-safe, mirroring the Promise<bad> recovery. Shared by the
+// spread-free and spread-carrying paths.
 //
 // `owner` is the dotted path of the value the enclosing object describes, as
 // resolveOwnedObjectTypeAnn describes it.
 func (c *checker) resolveObjectProperty(scope *Scope, prop *ast.PropertyTypeAnn, lvl int, owner string) (string, soltype.Type, bool) {
-	name, ok := objKeyName(prop.Name)
+	name, ok := c.annKeyName(scope, prop.Name)
 	if !ok {
-		c.reportUnsupported(prop.Name)
 		return "", nil, false
 	}
 	var ft soltype.Type = c.freshAt(lvl)
@@ -609,6 +606,139 @@ func (c *checker) resolveObjectProperty(scope *Scope, prop *ast.PropertyTypeAnn,
 		}
 	}
 	return name, ft, true
+}
+
+// annKeyName returns the name of the member a key in an object type annotation declares. A
+// written name, a string or number literal, and a well-known symbol written `Symbol.<name>`
+// name the member directly. Any other computed key `[k]` names the member its type selects,
+// and that type must be one string literal, one number literal, or one unique symbol. So
+// `val k = "a"` makes `{[k]: number}` the object `{a: number}`, and
+// `declare val sym: unique symbol` makes `{[sym]: number}` an object whose one member is
+// keyed off `sym`.
+//
+// `ok` is false for a key naming no single member, and the key has been reported. A key of
+// any other type reports InvalidTypeKeyError rather than becoming an index signature, the
+// rule TypeScript applies to a type literal.
+func (c *checker) annKeyName(scope *Scope, key ast.ObjKey) (string, bool) {
+	if name, ok := objKeyName(key); ok {
+		return name, true
+	}
+	computed, ok := key.(*ast.ComputedKey)
+	if !ok || isSymbolMemberKey(computed.Expr) {
+		// A string key spelling a reserved symbol member name, or a `Symbol.<name>` key
+		// naming no well-known symbol. The object-literal walk reports both the same way.
+		c.reportUnsupported(key)
+		return "", false
+	}
+	path := c.resolveAnnKeyPath(scope, computed.Expr)
+	switch {
+	case path.err:
+		return "", false
+	case path.ns != nil:
+		c.report(&NamespaceUsedAsValueError{Node: computed.Expr, NS: path.ns})
+		return "", false
+	}
+	bound, known := c.boundValueType(path.value)
+	if !known {
+		c.report(&InvalidTypeKeyError{Key: computed.Expr})
+		return "", false
+	}
+	// A key's type may be written through an alias or a `typeof` query, as with
+	// `fn f(s: typeof sym)`, so it is expanded to the type it stands for before it is read.
+	ground := newTypeEvaluator(c.ctx, newSeenPairs()).groundOperand(bound)
+	if lit, isLit := ground.(*soltype.LitType); isLit {
+		if s, isStr := lit.Lit.(*soltype.StrLit); isStr && soltype.IsSymbolMemberName(s.Value) {
+			// A string spelling a reserved symbol member name is declined, the rule
+			// objKeyName applies to a written string key.
+			c.reportUnsupported(key)
+			return "", false
+		}
+	}
+	if name, ok := c.ctx.mappedKeyName(ground); ok {
+		return name, true
+	}
+	c.report(&InvalidTypeKeyError{Key: computed.Expr, KeyType: ground})
+	return "", false
+}
+
+// resolveAnnKeyPath resolves the expression of a computed key in an object type annotation to
+// the value or namespace it names. A string, number, or boolean literal resolves to its literal
+// type. A name resolves to its binding's type. A member `a.b` reads `b` off what `a` resolves
+// to, which is either a value or a namespace. Any other expression reports InvalidTypeKeyError,
+// as does a member a value does not have. Every failure is reported, and the result's `err` is
+// set.
+//
+// A name is read from its binding rather than inferred, so resolving a key records no use of the
+// binding and instantiates no fresh variables. The dep graph orders a binding a key names before
+// the annotation that names it. The binding's type is therefore final here, unless the binding
+// and the annotation belong to one declaration group.
+func (c *checker) resolveAnnKeyPath(scope *Scope, e ast.Expr) pathResult {
+	switch e := e.(type) {
+	case *ast.LiteralExpr:
+		if t, ok := c.litTypeOf(e.Lit); ok {
+			return pathResult{value: t}
+		}
+	case *ast.IdentExpr:
+		if b, ok := c.lookupValueBinding(scope, e.Name); ok {
+			if t := annKeyBindingType(b); t != nil {
+				return pathResult{value: t}
+			}
+		}
+		if ns, ok := scope.GetNamespace(e.Name); ok {
+			return pathResult{ns: ns}
+		}
+		c.report(&UnknownIdentifierError{Ident: e})
+		return pathResult{err: true}
+	case *ast.MemberExpr:
+		if e.OptChain || e.Prop == nil {
+			break
+		}
+		obj := c.resolveAnnKeyPath(scope, e.Object)
+		switch {
+		case obj.err:
+			return obj
+		case obj.ns != nil:
+			return c.annKeyNamespaceMember(e, obj.ns)
+		}
+		if t, ok := c.typeofMember(obj.value, e.Prop.Name); ok {
+			return pathResult{value: t}
+		}
+	}
+	c.report(&InvalidTypeKeyError{Key: e})
+	return pathResult{err: true}
+}
+
+// annKeyNamespaceMember reads the member `e` names off the namespace `ns`, the namespace step of
+// resolveAnnKeyPath. A nested namespace resolves to that namespace, and a value resolves to its
+// binding's type. An absent member reports UnknownNamespaceMemberError and sets `err`.
+func (c *checker) annKeyNamespaceMember(e *ast.MemberExpr, ns *Namespace) pathResult {
+	name := e.Prop.Name
+	if nested, ok := ns.Nested[name]; ok {
+		return pathResult{ns: nested}
+	}
+	if b, ok := ns.Values[name]; ok {
+		if t := annKeyBindingType(b); t != nil {
+			return pathResult{value: t}
+		}
+	}
+	c.report(&UnknownNamespaceMemberError{Node: e, NS: ns, Name: name})
+	return pathResult{err: true}
+}
+
+// annKeyBindingType returns the type of the binding `b`, and nil when `b` has no scheme. A
+// monomorphic binding returns its type without coalescing it, so an inference variable comes
+// back as itself. annKeyName then reads that variable through boundValueType, which joins only
+// the lower bounds the variable has gathered. A variable with none yet counts as unknown rather
+// than as the `never` coalescing would give it. The binding of `val k: T["a"] = 1` has none
+// while `type T = {[k]: number}` resolves, since the two form one declaration group.
+func annKeyBindingType(b ValueBinding) soltype.Type {
+	if len(b.Schemes) == 0 {
+		return nil
+	}
+	if mono, ok := b.Schemes[0].(*MonoScheme); ok {
+		return mono.Ty
+	}
+	return schemeType(b.Schemes[0])
 }
 
 // resolveTupleTypeAnn lowers a tuple type annotation to a soltype.TupleType, honoring the trailing

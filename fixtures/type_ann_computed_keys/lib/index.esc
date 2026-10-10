@@ -1,0 +1,5 @@
+declare val sym: unique symbol
+val k = "a"
+val n = 1
+export type T = {[k]: number, [n]: string, [sym]: boolean}
+export val o: {[k]: number} = {a: 1}
