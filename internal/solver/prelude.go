@@ -91,8 +91,17 @@ func addOperatorBindings(s *Scope) {
 	define(opFunc(boolean(), unknown(), unknown()), "==", "!=")
 	define(opFunc(boolean(), boolean(), boolean()), "&&", "||")
 	define(opFunc(boolean(), boolean()), "!")
+	define(opFunc(num(), num()), unaryMinusOp, unaryPlusOp)
 	define(opFunc(str(), str(), str()), "++")
 }
+
+// unaryMinusOp and unaryPlusOp are the names the prefix `-` and `+` bind under. The
+// binary `-` and `+` take the bare symbols, and the space keeps a prefix name from
+// being an identifier a program could declare.
+const (
+	unaryMinusOp = "unary -"
+	unaryPlusOp  = "unary +"
+)
 
 // preludeURI is the package whose exports every scope starts from. Its
 // declarations are the types the checker's own rules name, so `await e`

@@ -145,3 +145,50 @@ func TestInferBinaryNilOperandDoesNotPanic(t *testing.T) {
 	require.Len(t, c.errs, 1)
 	require.Equal(t, "Unsupported: BinaryExpr", c.errs[0].Message())
 }
+
+// --- Unary operator application ---
+
+// A prefix operator yields the return type its signature declares. A prefix `-`
+// written on a numeric literal yields the negated literal instead.
+func TestInferUnaryYieldsDeclaredReturn(t *testing.T) {
+	tests := []struct {
+		name string
+		src  string
+		want string
+	}{
+		{name: "NegatedLiteral", src: `val x = -5`, want: "-5"},
+		{name: "NegatedIdentifier", src: "declare val n: number\nval x = -n", want: "number"},
+		{name: "NegatedGroup", src: `val x = -(1 + 2)`, want: "number"},
+		{name: "Plus", src: "declare val n: number\nval x = +n", want: "number"},
+		{name: "LogicalNot", src: `val x = !true`, want: "boolean"},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			values, _, errs := inferSource(t, test.src)
+			require.Empty(t, errs)
+			require.Equal(t, test.want, values["x"])
+		})
+	}
+}
+
+// The prefix and binary `-` bind under different names, so one source applies both
+// and each checks its own arity.
+func TestInferUnaryMinusBesideBinaryMinus(t *testing.T) {
+	values, _, errs := inferSource(t, `fn f(a, b) { return a - -b }`)
+	require.Empty(t, errs)
+	require.Equal(t, "fn (a: number, b: number) -> number", values["f"])
+}
+
+// A rejected operand blames the operand, not the whole expression.
+func TestInferUnaryRejectedOperandBlamesOperand(t *testing.T) {
+	t.Run("negation", func(t *testing.T) {
+		src := `val x = -"a"`
+		_, _, errs := inferSource(t, src)
+		requireBlame(t, src, errs, `1:10-1:13: cannot constrain "a" <: number`, `"a"`)
+	})
+	t.Run("logical not", func(t *testing.T) {
+		src := `val x = !5`
+		_, _, errs := inferSource(t, src)
+		requireBlame(t, src, errs, "1:10-1:11: cannot constrain 5 <: boolean", "5")
+	})
+}

@@ -953,6 +953,8 @@ func (c *checker) inferExpr(scope *Scope, lvl int, e ast.Expr) soltype.Type {
 		return c.inferYield(scope, lvl, e)
 	case *ast.TryCatchExpr:
 		return c.inferTryCatch(scope, lvl, e)
+	case *ast.UnaryExpr:
+		return c.inferUnary(scope, lvl, e)
 	case *ast.BinaryExpr:
 		// `a = expr` writes to a place. Every other operator applies a signature the
 		// prelude binds under the operator's name.
