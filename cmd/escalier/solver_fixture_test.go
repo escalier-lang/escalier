@@ -44,9 +44,9 @@ var (
 		name:   "a global the ambient builtin scope will bind",
 		ticket: "#1666",
 	}
-	causePrimitiveMember = &solverSkipCause{
-		name:   "a member read off a primitive, which needs its wrapper type",
-		ticket: "#1714",
+	causeAsyncResolvedReturn = &solverSkipCause{
+		name:   "an `async fn` annotating the resolved type rather than `Promise<T>`",
+		ticket: "#1849",
 	}
 	causeUnaryOperators = &solverSkipCause{
 		name:   "unary operators",
@@ -117,12 +117,10 @@ type solverSkip struct {
 var solverSkips = []solverSkip{
 	{"async_await", causeAmbientScope, "Unknown identifier: fetch"},
 
-	{"function_overloading", causePrimitiveMember, "cannot constrain number <: object"},
-	{"function_overloading_with_deps", causePrimitiveMember, "cannot constrain number <: object"},
-	{"grouping", causePrimitiveMember, "cannot constrain number <: object"},
-	{"if_val", causePrimitiveMember, "cannot constrain number <: object"},
+	{"function_overloading", causeAsyncResolvedReturn, "async function return type must be a Promise; write Promise<...> or Promise<_>"},
 
 	{"class_with_fluent_mutating_methods", causeUnaryOperators, "Unsupported: UnaryExpr"},
+	{"if_val", causeUnaryOperators, "Unsupported: UnaryExpr"},
 	{"literals", causeUnaryOperators, "Unsupported: UnaryExpr"},
 	{"template_literals", causeTemplateLiterals, "Unsupported: TemplateLitExpr"},
 	{"generic_class", causeTypeCast, "Unsupported: TypeCastExpr"},
@@ -404,6 +402,7 @@ var emitSkips = map[emitSkip]*solverSkipCause{
 	{"generalize", "index.d.ts"}:                  causeUnusedParamNotGeneralized,
 	{"type_ann_index_signature", "index.d.ts"}:    causeIndexSignatureOptional,
 	{"logging", "index.d.ts"}:                     causeUndefinedReturn,
+	{"grouping", "index.d.ts"}:                    causeUnionOrder,
 }
 
 // causeFieldReadBound is the cause of `fix_point_combinator`'s `index.js` entry. Reading a field whose type
@@ -454,6 +453,12 @@ var (
 	causeIndexSignatureOptional = &solverSkipCause{
 		name:   "the `?` on an index signature over an uncountable key set",
 		ticket: "#1775",
+	}
+	// A union renders its members in the solver's own order rather than the order the
+	// source wrote, so `A | B & C` emits `B & C | A`. Both denote the same type.
+	causeUnionOrder = &solverSkipCause{
+		name:   "a union's written member order",
+		ticket: "#1850",
 	}
 	// A function whose written return is `undefined` emits `void`, so
 	// `fn main() -> undefined` emits `main(): void` where the twin writes
