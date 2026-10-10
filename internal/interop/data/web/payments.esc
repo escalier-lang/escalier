@@ -190,10 +190,10 @@ export declare class PaymentRequest extends EventTarget {
     canMakePayment(&self) -> Promise<boolean>,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/PaymentRequest/show) */
     show(&mut self, detailsPromise?: PaymentDetailsUpdate | PromiseLike<PaymentDetailsUpdate>) -> Promise<PaymentResponse>,
-    addEventListener<K: keyof PaymentRequestEventMap>(&mut self, type: K, listener: fn (this: PaymentRequest, ev: PaymentRequestEventMap[K]) -> any, options?: boolean | AddEventListenerOptions) -> unknown,
-    addEventListener(&mut self, type: string, listener: EventListenerOrEventListenerObject, options?: boolean | AddEventListenerOptions) -> unknown,
-    removeEventListener<K: keyof PaymentRequestEventMap>(&mut self, type: K, listener: fn (this: PaymentRequest, ev: PaymentRequestEventMap[K]) -> any, options?: boolean | EventListenerOptions) -> unknown,
-    removeEventListener(&mut self, type: string, listener: EventListenerOrEventListenerObject, options?: boolean | EventListenerOptions) -> unknown,
+    addEventListener<K: keyof PaymentRequestEventMap>(&mut self, type: K, listener: fn (this: PaymentRequest, ev: PaymentRequestEventMap[K]) -> any, options?: boolean | AddEventListenerOptions) -> undefined,
+    addEventListener(&mut self, type: string, listener: EventListenerOrEventListenerObject, options?: boolean | AddEventListenerOptions) -> undefined,
+    removeEventListener<K: keyof PaymentRequestEventMap>(&mut self, type: K, listener: fn (this: PaymentRequest, ev: PaymentRequestEventMap[K]) -> any, options?: boolean | EventListenerOptions) -> undefined,
+    removeEventListener(&mut self, type: string, listener: EventListenerOrEventListenerObject, options?: boolean | EventListenerOptions) -> undefined,
     static prototype: PaymentRequest,
     constructor(&mut self, methodData: mut Array<PaymentMethodData>, details: PaymentDetailsInit, options?: PaymentOptions)
 }
@@ -207,7 +207,7 @@ export declare class PaymentRequest extends EventTarget {
 @js("PaymentRequestUpdateEvent")
 export declare class PaymentRequestUpdateEvent extends Event {
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/PaymentRequestUpdateEvent/updateWith) */
-    updateWith(&mut self, detailsPromise: PaymentDetailsUpdate | PromiseLike<PaymentDetailsUpdate>) -> unknown,
+    updateWith(&mut self, detailsPromise: PaymentDetailsUpdate | PromiseLike<PaymentDetailsUpdate>) -> undefined,
     static prototype: PaymentRequestUpdateEvent,
     constructor(&mut self, type: string, eventInitDict?: PaymentRequestUpdateEventInit)
 }
@@ -248,10 +248,10 @@ export declare class PaymentResponse extends EventTarget {
     retry(&mut self, errorFields?: PaymentValidationErrors) -> Promise<undefined>,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/PaymentResponse/toJSON) */
     toJSON(&self) -> any,
-    addEventListener<K: keyof PaymentResponseEventMap>(&mut self, type: K, listener: fn (this: PaymentResponse, ev: PaymentResponseEventMap[K]) -> any, options?: boolean | AddEventListenerOptions) -> unknown,
-    addEventListener(&mut self, type: string, listener: EventListenerOrEventListenerObject, options?: boolean | AddEventListenerOptions) -> unknown,
-    removeEventListener<K: keyof PaymentResponseEventMap>(&mut self, type: K, listener: fn (this: PaymentResponse, ev: PaymentResponseEventMap[K]) -> any, options?: boolean | EventListenerOptions) -> unknown,
-    removeEventListener(&mut self, type: string, listener: EventListenerOrEventListenerObject, options?: boolean | EventListenerOptions) -> unknown,
+    addEventListener<K: keyof PaymentResponseEventMap>(&mut self, type: K, listener: fn (this: PaymentResponse, ev: PaymentResponseEventMap[K]) -> any, options?: boolean | AddEventListenerOptions) -> undefined,
+    addEventListener(&mut self, type: string, listener: EventListenerOrEventListenerObject, options?: boolean | AddEventListenerOptions) -> undefined,
+    removeEventListener<K: keyof PaymentResponseEventMap>(&mut self, type: K, listener: fn (this: PaymentResponse, ev: PaymentResponseEventMap[K]) -> any, options?: boolean | EventListenerOptions) -> undefined,
+    removeEventListener(&mut self, type: string, listener: EventListenerOrEventListenerObject, options?: boolean | EventListenerOptions) -> undefined,
     static prototype: PaymentResponse,
     constructor(&mut self)
 }

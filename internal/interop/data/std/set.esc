@@ -10,7 +10,7 @@ export declare class Set<T> {
      * Appends a new element with a specified value to the end of the Set.
      */
     add(&mut self, value: T) -> Self,
-    clear(&mut self) -> unknown,
+    clear(&mut self) -> undefined,
     /**
      * Removes a specified value from the Set.
      * @returns Returns true if an element in the Set existed and has been removed, or false if the element does not exist.
@@ -19,7 +19,7 @@ export declare class Set<T> {
     /**
      * Executes a provided function once per each value in the Set object, in insertion order.
      */
-    forEach(&self, callbackfn: fn (value: T, value2: T, set: &Self) -> unknown, thisArg?: unknown) -> unknown,
+    forEach(&self, callbackfn: fn (value: T, value2: T, set: &Self) -> unknown, thisArg?: unknown) -> undefined,
     /**
      * @returns a boolean indicating whether an element with the specified value exists in the Set or not.
      */

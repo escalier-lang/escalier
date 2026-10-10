@@ -47,7 +47,7 @@ export declare class URL {
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/URL/parse_static) */
     static parse(url: string | URL, base?: string | URL) -> URL | null,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/URL/revokeObjectURL_static) */
-    static revokeObjectURL(url: string) -> unknown
+    static revokeObjectURL(url: string) -> undefined
 }
 
 /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/URLSearchParams) */
@@ -60,13 +60,13 @@ export declare class URLSearchParams {
      *
      * [MDN Reference](https://developer.mozilla.org/docs/Web/API/URLSearchParams/append)
      */
-    append(&mut self, name: string, value: string) -> unknown,
+    append(&mut self, name: string, value: string) -> undefined,
     /**
      * Deletes the given search parameter, and its associated value, from the list of all search parameters.
      *
      * [MDN Reference](https://developer.mozilla.org/docs/Web/API/URLSearchParams/delete)
      */
-    delete(&mut self, name: string, value?: string) -> unknown,
+    delete(&mut self, name: string, value?: string) -> undefined,
     /**
      * Returns the first value associated to the given search parameter.
      *
@@ -90,12 +90,12 @@ export declare class URLSearchParams {
      *
      * [MDN Reference](https://developer.mozilla.org/docs/Web/API/URLSearchParams/set)
      */
-    set(&mut self, name: string, value: string) -> unknown,
+    set(&mut self, name: string, value: string) -> undefined,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/URLSearchParams/sort) */
-    sort(&mut self) -> unknown,
+    sort(&mut self) -> undefined,
     /** Returns a string containing a query string suitable for use in a URL. Does not include the question mark. */
     toString(&self) -> string,
-    forEach(&self, callbackfn: fn (value: string, key: string, parent: &Self) -> unknown, thisArg?: unknown) -> unknown,
+    forEach(&self, callbackfn: fn (value: string, key: string, parent: &Self) -> unknown, thisArg?: unknown) -> undefined,
     [Symbol.iterator](&self) -> URLSearchParamsIterator<[string, string]>,
     /** Returns an array of key, value pairs for every entry in the search params. */
     entries(&self) -> URLSearchParamsIterator<[string, string]>,

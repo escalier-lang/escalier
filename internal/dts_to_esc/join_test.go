@@ -333,11 +333,10 @@ func returnsFrom(t *testing.T, src string) string {
 // A primitive return is owned, so the join reads whether each overload
 // declares one. A union counts only when every member is primitive.
 //
-// Two of the refusals are worth reading off the list. A type reference may
-// name an alias that expands to primitives, and resolving it needs the checker
-// the join does without. TypeScript's `void` arrives as `unknown`, since
-// convertReturnTypeAnn lowers it that way, and `unknown` also holds every
-// object.
+// A type reference is refused, since it may name an alias that expands to
+// primitives and resolving it needs the checker the join does without. A
+// required method's `void` return arrives as `undefined`, so it counts as
+// primitive.
 func TestCollectDeclarationsReadsPrimitiveReturns(t *testing.T) {
 	t.Parallel()
 
@@ -378,7 +377,7 @@ instance Sample.ref (-)
 instance Sample.list (-)
 instance Sample.anything (-)
 instance Sample.unk (-)
-instance Sample.nothing (-)`))
+instance Sample.nothing (primitive)`))
 }
 
 // The gate on settlement: a return the ECMA-262 walk could not read settles as
@@ -389,8 +388,8 @@ instance Sample.nothing (-)`))
 // lowers `localeCompare`'s two argument coercions and stops, because the
 // comparison itself is implementation-defined. Each `DataView` accessor hands
 // back a value read out of a Data Block, which resolves to no origin the walk
-// can name. The setter is the one that stays unsettled, since its `void`
-// return reaches the join as `unknown`.
+// can name. The setter's `void` return reaches the join as `undefined`, so it
+// settles too.
 func TestPrimitiveReturnsSettleUnnamedReturns(t *testing.T) {
 	t.Parallel()
 
@@ -430,8 +429,8 @@ interface DataView {
 	snaps.MatchInlineSnapshot(t, strings.Join(lines, "\n"), snaps.Inline(`instance String.localeCompare: receiver:borrow returns:unknown settled:owned
 instance DataView.getFloat64: receiver:borrow returns:unknown settled:owned
 instance DataView.getUint8: receiver:borrow returns:unknown settled:owned
-instance DataView.setFloat64: receiver:mutBorrow returns:unknown
-settled 3, left 1`))
+instance DataView.setFloat64: receiver:mutBorrow returns:unknown settled:owned
+settled 4, left 0`))
 }
 
 // The join is the §5 gate: every std:* method the converter emits either

@@ -587,7 +587,7 @@ export declare class Array<T> {
     length: number,
     push(&mut self, ...items: mut Array<T>) -> number,
     concat(&self, items: Array<T>) -> Array<T>,
-    readArr(&mut self, items: Array<T>) -> unknown,
+    readArr(&mut self, items: Array<T>) -> undefined,
     constructor(&mut self),
     static readonly prototype: mut Array<any>
 }`))
@@ -1297,7 +1297,7 @@ interface ArrayLike<T> {
     items: Array<T>,
     copy() -> Array<T>,
     find() -> Array<T> | null,
-    fill(items: mut Array<T>) -> unknown
+    fill(items: mut Array<T>) -> undefined
 }`,
 		},
 		// TypeScript requires a restated property to have the same type, not

@@ -67,14 +67,14 @@ declare var Array: ArrayConstructor;
 		}
 	}
 	require.Equal(t, map[string]string{
-		"Array.forEach":      "forEach(&self, callbackfn: fn (value: T, index: number, array: &Self) -> unknown) -> unknown",
-		"Coll.each":          "each(&mut self, callbackfn: fn (value: T, coll: &Self) -> unknown) -> unknown",
-		"Coll.eachOrNull":    "eachOrNull(&mut self, callbackfn: (fn (value: T, coll: &Self) -> unknown) | null) -> unknown",
-		"Coll.eachOther":     "eachOther(&mut self, callbackfn: fn (coll: Coll<number>) -> unknown) -> unknown",
-		"Coll.eachShadowed":  "eachShadowed<T>(&mut self, callbackfn: fn (value: T, coll: Coll<T>) -> unknown) -> unknown",
-		"Coll.eachInOptions": "eachInOptions(&mut self, options: {\n    callbackfn: fn (coll: &Self) -> unknown\n}) -> unknown",
-		"Coll.eachThis":      "eachThis(&mut self, callbackfn: fn (value: T, coll: &Self) -> unknown) -> unknown",
-		"Coll.merge":         "merge(&mut self, other: Coll<T>) -> unknown",
-		"Coll.on":            "on(&mut self, listener: fn (this: Coll<T>, ev: number) -> unknown) -> unknown",
+		"Array.forEach":      "forEach(&self, callbackfn: fn (value: T, index: number, array: &Self) -> unknown) -> undefined",
+		"Coll.each":          "each(&mut self, callbackfn: fn (value: T, coll: &Self) -> unknown) -> undefined",
+		"Coll.eachOrNull":    "eachOrNull(&mut self, callbackfn: (fn (value: T, coll: &Self) -> unknown) | null) -> undefined",
+		"Coll.eachOther":     "eachOther(&mut self, callbackfn: fn (coll: Coll<number>) -> unknown) -> undefined",
+		"Coll.eachShadowed":  "eachShadowed<T>(&mut self, callbackfn: fn (value: T, coll: Coll<T>) -> unknown) -> undefined",
+		"Coll.eachInOptions": "eachInOptions(&mut self, options: {\n    callbackfn: fn (coll: &Self) -> unknown\n}) -> undefined",
+		"Coll.eachThis":      "eachThis(&mut self, callbackfn: fn (value: T, coll: &Self) -> unknown) -> undefined",
+		"Coll.merge":         "merge(&mut self, other: Coll<T>) -> undefined",
+		"Coll.on":            "on(&mut self, listener: fn (this: Coll<T>, ev: number) -> unknown) -> undefined",
 	}, got)
 }

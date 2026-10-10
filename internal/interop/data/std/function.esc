@@ -98,19 +98,19 @@ export declare interface NewableFunction extends Function {
      * Calls the function with the specified object as the this value and the elements of specified array as the arguments.
      * @param thisArg The object to be used as the this object.
      */
-    apply<T>(this: fn () -> T, thisArg: T) -> unknown,
+    apply<T>(this: fn () -> T, thisArg: T) -> undefined,
     /**
      * Calls the function with the specified object as the this value and the elements of specified array as the arguments.
      * @param thisArg The object to be used as the this object.
      * @param args An array of argument values to be passed to the function.
      */
-    apply<T, A: mut Array<any>>(this: fn (...args: A) -> T, thisArg: T, args: A) -> unknown,
+    apply<T, A: mut Array<any>>(this: fn (...args: A) -> T, thisArg: T, args: A) -> undefined,
     /**
      * Calls the function with the specified object as the this value and the specified rest arguments as the arguments.
      * @param thisArg The object to be used as the this object.
      * @param args Argument values to be passed to the function.
      */
-    call<T, A: mut Array<any>>(this: fn (...args: A) -> T, thisArg: T, ...args: A) -> unknown,
+    call<T, A: mut Array<any>>(this: fn (...args: A) -> T, thisArg: T, ...args: A) -> undefined,
     /**
      * For a given function, creates a bound function that has the same body as the original function.
      * The this object of the bound function is associated with the specified object, and has the specified initial parameters.

@@ -1,15 +1,21 @@
 [
   {
+    "decl": "EventListenerObject",
+    "member": "handleEvent",
+    "kind": "method",
+    "digest": "766d0e57280a4922"
+  },
+  {
     "decl": "EventTarget",
     "member": "addEventListener",
     "kind": "method",
-    "digest": "215bcf0633fc2fe9"
+    "digest": "a735e21b8a512d67"
   },
   {
     "decl": "EventTarget",
     "member": "removeEventListener",
     "kind": "method",
-    "digest": "f0ef615621d4dd9a"
+    "digest": "34a472703f80ffd1"
   },
   {
     "decl": "MessageEvent",

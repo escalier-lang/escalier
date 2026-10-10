@@ -20,6 +20,12 @@
     "digest": "12428e1afa5d2542"
   },
   {
+    "decl": "Disposable",
+    "member": "Symbol.dispose",
+    "kind": "method",
+    "digest": "e91e7001e3ee6bd8"
+  },
+  {
     "decl": "Generator",
     "member": "throw",
     "kind": "method",
