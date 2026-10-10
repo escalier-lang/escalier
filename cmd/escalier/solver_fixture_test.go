@@ -64,10 +64,6 @@ var (
 	causeShadowedTypeParam = &solverSkipCause{
 		name: "a fixture returning the class's `T` where a method's own `T` shadows it",
 	}
-	causeIndexAndComputed = &solverSkipCause{
-		name:   "index expressions, computed keys, and assignment to a member",
-		ticket: "#1715",
-	}
 	causeIteration = &solverSkipCause{
 		name:   "iteration and spreading an iterable",
 		ticket: "#1717",
@@ -111,10 +107,6 @@ var solverSkips = []solverSkip{
 	{"generic_class", causeShadowedTypeParam, "cannot constrain T <: T | number"},
 	{"template_literals", causeScriptDecls, "Declaration not allowed in function body: TypeDecl"},
 	{"if_val", causeIfValNullish, "cannot constrain null <: number"},
-
-	{"class_with_computed_members", causeIndexAndComputed, "Unsupported: assignment to a member or index"},
-	{"class_with_getter_setter", causeIndexAndComputed, "Unsupported: IndexExpr"},
-	{"objects_with_computed_members", causeIndexAndComputed, "Unsupported: ComputedKey"},
 
 	{"generators", causeIteration, "cannot spread t5 into a tuple"},
 	{"iterators", causeIteration, "string is not iterable"},
