@@ -31,17 +31,30 @@ func (c *checker) resolveTypeAnn(scope *Scope, ta ast.TypeAnn, lvl int) (soltype
 }
 
 // resolveDeclaredTypeAnn resolves the annotation a declaration writes for the value it
-// binds, where `name` is that value's dotted path, such as `sym` or `C.key`. A bare
-// `unique symbol` annotation mints a symbol carrying `name`, so
-// `declare val sym: unique symbol` renders as `typeof sym`. Every other annotation
-// resolves as resolveTypeAnn resolves it. An empty `name` mints an unnamed symbol.
-func (c *checker) resolveDeclaredTypeAnn(scope *Scope, ta ast.TypeAnn, lvl int, name string) (soltype.Type, bool) {
+// binds, where `name` is that value's dotted path, such as `sym` or `C.key`, and
+// `position` is the kind of declaration. A bare `unique symbol` annotation in an allowed
+// position mints a symbol carrying `name`, so `declare val sym: unique symbol` renders as
+// `typeof sym`. In any other position it reports UniqueSymbolPositionError and resolves
+// to `symbol`. Every other annotation resolves as resolveTypeAnn resolves it. An empty
+// `name` mints an unnamed symbol.
+func (c *checker) resolveDeclaredTypeAnn(scope *Scope, ta ast.TypeAnn, lvl int, name string, position uniqueSymbolPosition) (soltype.Type, bool) {
 	if usa, ok := ta.(*ast.UniqueSymbolTypeAnn); ok {
+		if position != uniqueSymbolAllowed {
+			return c.rejectUniqueSymbol(usa, position), true
+		}
 		t := c.mintSymbol(usa, name)
 		c.recordType(usa, t)
 		return t, true
 	}
 	return c.resolveTypeAnn(scope, ta, lvl)
+}
+
+// rejectUniqueSymbol reports a `unique symbol` annotation written in `position` and
+// returns `symbol`, the type the value still has, so readers of the binding see a symbol
+// rather than a cascade of errors.
+func (c *checker) rejectUniqueSymbol(ta *ast.UniqueSymbolTypeAnn, position uniqueSymbolPosition) soltype.Type {
+	c.report(&UniqueSymbolPositionError{Ann: ta, Position: position})
+	return c.annPrim(ta, soltype.SymPrim)
 }
 
 // mintSymbol mints the symbol a `unique symbol` annotation names, carrying `name` for
@@ -68,14 +81,11 @@ func (c *checker) resolveTypeAnnType(scope *Scope, ta ast.TypeAnn, lvl int) (sol
 	case *ast.BigintTypeAnn:
 		return c.annPrim(ta, soltype.BigIntPrim), true
 	case *ast.UniqueSymbolTypeAnn:
-		// Each written `unique symbol` names its own symbol, so the annotation mints one
-		// rather than resolving to a shared type. Two references to the declaration that
-		// carries it share the symbol because they share the resolved type.
-		//
-		// A `unique symbol` reached here has no declaration name at hand. A declaration
-		// that types its own value with one resolves it through resolveDeclaredTypeAnn,
-		// which names the symbol.
-		return c.mintSymbol(ta, ""), true
+		// A `val` declaration or a `static readonly` field that types its own value with
+		// `unique symbol` resolves it through resolveDeclaredTypeAnn. Any `unique symbol`
+		// reached here sits in a position that more than one value can reach, such as a
+		// parameter or a member of an object type, so it cannot name one symbol.
+		return c.rejectUniqueSymbol(ta, uniqueSymbolElsewhere), true
 	case *ast.NeverTypeAnn:
 		// `never` is the bottom of the lattice, the empty type. A mapped type's key-remapping
 		// expression names it to drop a field, `{[if K : "id" { never } else { K }]: … }`, which is

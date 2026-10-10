@@ -1295,13 +1295,20 @@ func (c *checker) buildFieldSigs(
 		var fieldType soltype.Type
 		if field.Type != nil {
 			// A static field is reached as `C.key`, so a `unique symbol` it declares is
-			// named that way. An instance field and a field under a computed or quoted key
-			// have no such path, and the symbol stays unnamed.
+			// named that way. A field under a computed or quoted key has no such path, and
+			// its symbol stays unnamed.
 			symName := ""
 			if ident, isIdent := field.Name.(*ast.IdentExpr); isIdent && field.Static {
 				symName = declScopeKey(c.classNamespace, decl.Name.Name) + "." + ident.Name
 			}
-			if t, ok := c.resolveDeclaredTypeAnn(scope, field.Type, lvl, symName); ok {
+			// A `static readonly` field holds one value, reached as `C.key`. Any other field
+			// has one value per instance or may be reassigned, so it cannot carry a
+			// `unique symbol`.
+			position := uniqueSymbolAllowed
+			if !field.Static || !field.Readonly {
+				position = uniqueSymbolOnField
+			}
+			if t, ok := c.resolveDeclaredTypeAnn(scope, field.Type, lvl, symName, position); ok {
 				fieldType = t
 			} else {
 				fieldType = c.freshAt(lvl)

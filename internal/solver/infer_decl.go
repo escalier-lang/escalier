@@ -100,7 +100,7 @@ func (c *checker) inferModuleValElse(scope *Scope, lvl int, d *ast.VarDecl, ns s
 	switch {
 	case d.TypeAnn != nil:
 		// An annotated narrowing pins the binding; a non-diverging fallback must fit it.
-		narrowed, resolved := c.resolveDeclaredTypeAnn(scope, d.TypeAnn, lvl, declScopeKey(ns, ip.Name))
+		narrowed, resolved := c.resolveDeclaredTypeAnn(scope, d.TypeAnn, lvl, declScopeKey(ns, ip.Name), varDeclSymbolPosition(d))
 		if !resolved {
 			narrowed = initType
 		} else {
@@ -153,7 +153,7 @@ func (c *checker) inferVarDeclInit(scope *Scope, lvl int, d *ast.VarDecl, ns str
 	}
 	if d.Init == nil {
 		if d.Declare() && d.TypeAnn != nil {
-			t, resolved := c.resolveDeclaredTypeAnn(scope, d.TypeAnn, lvl, symName)
+			t, resolved := c.resolveDeclaredTypeAnn(scope, d.TypeAnn, lvl, symName, varDeclSymbolPosition(d))
 			if !resolved {
 				// The annotation reported its own diagnostic. Recover to a fresh var so
 				// every reader of the binding constrains against something rather than
@@ -253,7 +253,7 @@ func (c *checker) inferVarDeclInit(scope *Scope, lvl int, d *ast.VarDecl, ns str
 		// placeholder, so constraining `initT <: never` would cascade a spurious
 		// error and adopting `never` would poison the binding. Keep the inferred
 		// initializer type instead (error recovery).
-		if annT, ok := c.resolveDeclaredTypeAnn(scope, d.TypeAnn, lvl, symName); ok {
+		if annT, ok := c.resolveDeclaredTypeAnn(scope, d.TypeAnn, lvl, symName, varDeclSymbolPosition(d)); ok {
 			annT = c.constrainInitAgainstAnnotation(d.Init, initT, annT)
 			c.checkExcessLiteralMembers(d.Init, initT, annT)
 			initT = annT
@@ -1110,4 +1110,14 @@ func (c *checker) inferFuncDecl(scope *Scope, lvl int, d *ast.FuncDecl) (soltype
 	// its declared lifetime bounds instead of checking them against a body.
 	t := c.inferFunc(scope, lvl, d.FuncSig, d.Body, d, true)
 	return t, &ast.NodeProvenance{Node: d}
+}
+
+// varDeclSymbolPosition returns the position a `unique symbol` annotation on `d` sits in.
+// A `val` holds one value for its whole life, so it may carry a `unique symbol`. A `var`
+// may be reassigned and may not.
+func varDeclSymbolPosition(d *ast.VarDecl) uniqueSymbolPosition {
+	if d.Kind == ast.VarKind {
+		return uniqueSymbolOnVar
+	}
+	return uniqueSymbolAllowed
 }

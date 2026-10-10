@@ -909,6 +909,32 @@ type InvalidObjectKeyError struct {
 	KeyType soltype.Type
 }
 
+// UniqueSymbolPositionError fires when a `unique symbol` type is written where it cannot
+// name one symbol. A `unique symbol` annotation creates a symbol, so it is allowed only
+// where exactly one value carries it: a `val` declaration and a `static readonly` class
+// field. `Ann` is the annotation, which carries the blame span, and `Position` says
+// which rule it broke.
+type UniqueSymbolPositionError struct {
+	Ann      ast.TypeAnn
+	Position uniqueSymbolPosition
+}
+
+// uniqueSymbolPosition names the declaration a `unique symbol` annotation types, which
+// decides whether the annotation is allowed there.
+type uniqueSymbolPosition int
+
+const (
+	// uniqueSymbolAllowed is a `val` declaration or a `static readonly` class field.
+	uniqueSymbolAllowed uniqueSymbolPosition = iota
+	// uniqueSymbolOnVar is a `var` declaration, which may later hold a different symbol.
+	uniqueSymbolOnVar
+	// uniqueSymbolOnField is a class field that is not both `static` and `readonly`.
+	uniqueSymbolOnField
+	// uniqueSymbolElsewhere is any other position, such as a parameter, a return type, or
+	// a member of an object type.
+	uniqueSymbolElsewhere
+)
+
 // UnsupportedNodeError is the M2-subset guard: an AST node whose KIND is outside
 // the M2 walk's coverage (kind = astKind(Node)). Unlike BodyDeclNotAllowedError
 // this is a temporary scope gate, not a permanent language rule — later milestones
@@ -1280,6 +1306,7 @@ func (*NamespaceUsedAsValueError) isSolverError()           {}
 func (*UnknownNamespaceMemberError) isSolverError()         {}
 func (*DynamicNamespaceIndexError) isSolverError()          {}
 func (*InvalidObjectKeyError) isSolverError()               {}
+func (*UniqueSymbolPositionError) isSolverError()           {}
 func (*InvalidAssignmentTargetError) isSolverError()        {}
 func (*CannotAssignToImmutableError) isSolverError()        {}
 func (*TooManyArgsError) isSolverError()                    {}
@@ -2611,6 +2638,19 @@ func (e *InvalidObjectKeyError) Span() ast.Span      { return e.Key.Span() }
 func (e *InvalidObjectKeyError) Related() []ast.Span { return nil }
 func (e *InvalidObjectKeyError) Message() string {
 	return "Invalid object key: " + soltype.Print(e.KeyType)
+}
+
+func (e *UniqueSymbolPositionError) Span() ast.Span      { return e.Ann.Span() }
+func (e *UniqueSymbolPositionError) Related() []ast.Span { return nil }
+func (e *UniqueSymbolPositionError) Message() string {
+	switch e.Position {
+	case uniqueSymbolOnVar:
+		return "A binding whose type is `unique symbol` must be declared with `val`."
+	case uniqueSymbolOnField:
+		return "A class field whose type is `unique symbol` must be `static` and `readonly`."
+	default:
+		return "A `unique symbol` type is only allowed on a `val` declaration or a `static readonly` class field."
+	}
 }
 
 func (e *InvalidAssignmentTargetError) Span() ast.Span      { return e.Target.Span() }

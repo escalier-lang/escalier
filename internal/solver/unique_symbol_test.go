@@ -12,37 +12,37 @@ import (
 func TestUniqueSymbol(t *testing.T) {
 	const decl = `
 		declare class C {
-			readonly a: unique symbol,
-			readonly b: unique symbol,
+			static readonly a: unique symbol,
+			static readonly b: unique symbol,
 		}
 	`
 	t.Run("EveryOneIsASymbol", func(t *testing.T) {
 		values, _, errs := inferSource(t, decl+`
 			declare fn take(s: symbol) -> number
-			fn use(c: C) { return take(c.a) }
+			fn use() { return take(C.a) }
 		`)
 		require.Empty(t, errorMessagesOf(errs))
-		require.Equal(t, "fn (c: C) -> number", values["use"])
+		require.Equal(t, "fn () -> number", values["use"])
 	})
 
 	t.Run("OneReachesItself", func(t *testing.T) {
 		values, _, errs := inferSource(t, decl+`
-			declare fn takeA(s: C["a"]) -> number
-			fn use(c: C) { return takeA(c.a) }
+			declare fn takeA(s: typeof C.a) -> number
+			fn use() { return takeA(C.a) }
 		`)
 		require.Empty(t, errorMessagesOf(errs))
-		require.Equal(t, "fn (c: C) -> number", values["use"])
+		require.Equal(t, "fn () -> number", values["use"])
 	})
 
 	// Two declarations are two values however they read, so nothing weaker than identity
 	// relates them. The report names each under the id that tells them apart.
 	t.Run("TwoDistinctOnesAreUnrelated", func(t *testing.T) {
 		_, _, errs := inferSource(t, decl+`
-			declare fn takeA(s: C["a"]) -> number
-			fn use(c: C) { return takeA(c.b) }
+			declare fn takeA(s: typeof C.a) -> number
+			fn use() { return takeA(C.b) }
 		`)
 		require.Equal(t,
-			[]string{"cannot constrain unique symbol#1 <: unique symbol#0"},
+			[]string{"cannot constrain typeof C.b <: typeof C.a"},
 			errorMessagesOf(errs))
 	})
 
@@ -50,11 +50,11 @@ func TestUniqueSymbol(t *testing.T) {
 	// subtyping runs one way only.
 	t.Run("ASymbolIsNotAParticularOne", func(t *testing.T) {
 		_, _, errs := inferSource(t, decl+`
-			declare fn takeA(s: C["a"]) -> number
+			declare fn takeA(s: typeof C.a) -> number
 			fn use(s: symbol) { return takeA(s) }
 		`)
 		require.Equal(t,
-			[]string{"cannot constrain symbol <: unique symbol#0"},
+			[]string{"cannot constrain symbol <: typeof C.a"},
 			errorMessagesOf(errs))
 	})
 }
@@ -79,22 +79,21 @@ func TestUniqueSymbolIsALeafKeyedOnItsID(t *testing.T) {
 	require.NotEqual(t, typeKindOrder(first), typeKindOrder(&soltype.PrimType{Prim: soltype.SymPrim}))
 }
 
-// `std:prelude` reaches the well-known symbols through `declare var Symbol:
-// SymbolConstructor`, so a member off that binding is the particular symbol the
-// constructor declares rather than the whole `symbol` primitive.
+// `std:prelude` declares the well-known symbols as `static readonly` fields of `Symbol`, so a
+// member read off the class is the particular symbol the field declares rather than the
+// whole `symbol` primitive.
 func TestAWellKnownSymbolReachesItsOwnType(t *testing.T) {
 	values, _, errs := inferSource(t, `
-		declare class SymbolConstructor {
-			readonly iterator: unique symbol,
-			readonly asyncIterator: unique symbol,
+		declare class Symbol {
+			static readonly iterator: unique symbol,
+			static readonly asyncIterator: unique symbol,
 		}
-		declare var Symbol: SymbolConstructor
 		val it = Symbol.iterator
 		val asyncIt = Symbol.asyncIterator
 	`)
 	require.Empty(t, errorMessagesOf(errs))
-	require.Equal(t, "unique symbol#0", values["it"])
-	require.Equal(t, "unique symbol#1", values["asyncIt"])
+	require.Equal(t, "typeof Symbol.iterator", values["it"])
+	require.Equal(t, "typeof Symbol.asyncIterator", values["asyncIt"])
 }
 
 // A unique symbol names one particular symbol the way a literal names one particular
@@ -102,10 +101,9 @@ func TestAWellKnownSymbolReachesItsOwnType(t *testing.T) {
 func TestUniqueSymbolBehavesLikeALiteralOfItsPrimitive(t *testing.T) {
 	const decl = `
 		declare class C {
-			readonly a: unique symbol,
-			readonly b: unique symbol,
+			static readonly a: unique symbol,
+			static readonly b: unique symbol,
 		}
-		declare val c: C
 	`
 
 	// A `var` holding one widens to `symbol` so it can later hold another, the way
@@ -113,8 +111,8 @@ func TestUniqueSymbolBehavesLikeALiteralOfItsPrimitive(t *testing.T) {
 	t.Run("AVarHoldingOneWidensToSymbol", func(t *testing.T) {
 		values, _, errs := inferSource(t, decl+`
 			fn f() {
-				var s = c.a
-				s = c.b
+				var s = C.a
+				s = C.b
 				return s
 			}
 		`)
@@ -128,7 +126,7 @@ func TestUniqueSymbolBehavesLikeALiteralOfItsPrimitive(t *testing.T) {
 		_, _, errs := inferSource(t, decl+`
 			fn f(s: symbol) {
 				return match s {
-					x: C["a"] => 1
+					x: typeof C.a => 1
 				}
 			}
 		`)
@@ -207,22 +205,87 @@ val o = {[C.key]: 1}`},
 			},
 			want: map[string]string{"k": "typeof keys.sym", "o": "{[keys.sym]: 1}"},
 		},
-		{
-			// An instance field is reached through a value rather than a declaration path,
-			// so its symbol has no name and renders by its id.
-			name: "NoDeclarationNamesIt",
-			srcs: map[string]string{"input.esc": `declare class D {
-    readonly key: unique symbol,
-}
-declare val d: D
-val k = d.key
-val o = {[d.key]: 1}`},
-			want: map[string]string{"k": "unique symbol#0", "o": "{[unique symbol#0]: 1}"},
-		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			values, _, errs := inferSources(t, tt.srcs)
+			require.Equal(t, tt.wantErrs, messagesWithSpan(t, errs))
+			for name, want := range tt.want {
+				require.Equal(t, want, values[name], name)
+			}
+		})
+	}
+}
+
+// TestUniqueSymbolPosition covers where a `unique symbol` annotation may be written. It
+// names one symbol, so it is allowed only where exactly one value carries it: a `val`
+// declaration and a `static readonly` class field. Anywhere else the annotation is
+// reported and the value is typed `symbol`.
+func TestUniqueSymbolPosition(t *testing.T) {
+	const elsewhere = "A `unique symbol` type is only allowed on a `val` declaration or a `static readonly` class field."
+	const field = "A class field whose type is `unique symbol` must be `static` and `readonly`."
+	tests := []struct {
+		name     string
+		src      string
+		want     map[string]string
+		wantErrs []string
+	}{
+		{
+			name: "DeclaredVal",
+			src:  "declare val sym: unique symbol",
+			want: map[string]string{"sym": "typeof sym"},
+		},
+		{
+			name: "StaticReadonlyField",
+			src:  "declare class C { static readonly key: unique symbol }\nval k = C.key",
+			want: map[string]string{"k": "typeof C.key"},
+		},
+		{
+			name:     "Var",
+			src:      "declare var sym: unique symbol",
+			want:     map[string]string{"sym": "symbol"},
+			wantErrs: []string{"1:18-1:31: A binding whose type is `unique symbol` must be declared with `val`."},
+		},
+		{
+			// Each instance can hold a different symbol, so no one symbol is the field's type.
+			name:     "InstanceField",
+			src:      "declare class D { readonly key: unique symbol }\ndeclare val d: &D\nval k = d.key",
+			want:     map[string]string{"k": "symbol"},
+			wantErrs: []string{"1:33-1:46: " + field},
+		},
+		{
+			name:     "StaticFieldThatIsNotReadonly",
+			src:      "declare class D { static key: unique symbol }\nval k = D.key",
+			want:     map[string]string{"k": "symbol"},
+			wantErrs: []string{"1:31-1:44: " + field},
+		},
+		{
+			name:     "Parameter",
+			src:      "fn f(s: unique symbol) { return s }",
+			want:     map[string]string{"f": "fn (s: symbol) -> symbol"},
+			wantErrs: []string{"1:9-1:22: " + elsewhere},
+		},
+		{
+			name:     "ReturnType",
+			src:      "declare fn f() -> unique symbol",
+			want:     map[string]string{"f": "fn () -> symbol"},
+			wantErrs: []string{"1:19-1:32: " + elsewhere},
+		},
+		{
+			name:     "MemberOfAnObjectType",
+			src:      "declare val o: {readonly key: unique symbol}",
+			want:     map[string]string{"o": "{readonly key: symbol}"},
+			wantErrs: []string{"1:31-1:44: " + elsewhere},
+		},
+		{
+			name:     "TypeAlias",
+			src:      "type S = unique symbol",
+			wantErrs: []string{"1:10-1:23: " + elsewhere},
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			values, _, errs := inferSource(t, tt.src)
 			require.Equal(t, tt.wantErrs, messagesWithSpan(t, errs))
 			for name, want := range tt.want {
 				require.Equal(t, want, values[name], name)
