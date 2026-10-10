@@ -1887,6 +1887,9 @@ func (c *checker) inferCallArgs(scope *Scope, lvl int, e *ast.CallExpr) []soltyp
 	args := make([]soltype.Type, len(e.Args))
 	for i, a := range e.Args {
 		args[i] = c.inferExpr(scope, lvl, a)
+		if preset, ok := c.argTypes[a]; ok {
+			args[i] = preset
+		}
 	}
 	return args
 }
