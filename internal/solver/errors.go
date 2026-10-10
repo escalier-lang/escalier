@@ -459,11 +459,17 @@ type CannotExtendFinalClassError struct {
 // is rejected rather than silently overriding it. Name is the parameter, Declared the
 // modifier's variance, Inferred the variance measured from the body, and Class the blame
 // node.
+//
+// LowerBounded is the form the message suggests for an `out` parameter that a method with
+// an immutable receiver takes as a value parameter. For `accept(&self, x: T)` it is
+// `accept<B>(&self, x: B) where T: B`, which moves `T` to an output position. It is empty
+// when no such method takes the parameter, and the message then carries no hint.
 type VarianceMismatchError struct {
-	Name     string
-	Declared Variance
-	Inferred Variance
-	Class    ast.Node
+	Name         string
+	Declared     Variance
+	Inferred     Variance
+	Class        ast.Node
+	LowerBounded string
 }
 
 // TypeParamNotProducibleError fires when a body-carrying generic function declares a type
@@ -2947,8 +2953,13 @@ func (e *CannotExtendFinalClassError) Message() string {
 }
 
 func (e *VarianceMismatchError) Message() string {
-	return fmt.Sprintf("type parameter `%s` is declared %s but is actually %s",
+	msg := fmt.Sprintf("type parameter `%s` is declared %s but is actually %s",
 		e.Name, e.Declared, e.Inferred)
+	if e.LowerBounded != "" {
+		msg += fmt.Sprintf("; a lower-bounded binder, `%s`, moves `%s` out of the input position",
+			e.LowerBounded, e.Name)
+	}
+	return msg
 }
 
 func (e *TypeParamNotProducibleError) Message() string {

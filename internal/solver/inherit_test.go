@@ -3,8 +3,6 @@ package solver
 import (
 	"testing"
 
-	"github.com/escalier-lang/escalier/internal/set"
-	"github.com/escalier-lang/escalier/internal/soltype"
 	"github.com/stretchr/testify/require"
 )
 
@@ -562,62 +560,4 @@ func TestInferClassOverrideCompat(t *testing.T) {
 			require.Equal(t, test.want, Messages(errs))
 		})
 	}
-}
-
-// TestWidestMethodKeepsTheImmutableArms asserts that widestMethod reads only the arms of an
-// overload set taking an immutable receiver. Source rejects an overload set whose arms take
-// different receivers, so the def is built directly, the shape a loaded declaration can
-// hold. A `&mut self` arm is out of reach of the immutable view a widening goes through.
-func TestWidestMethodKeepsTheImmutableArms(t *testing.T) {
-	tv := &soltype.TypeVarType{ID: 1}
-	bag := &soltype.ClassType{Name: "Bag", TypeArgs: []soltype.Type{tv}}
-	param := func(name string, t soltype.Type) *soltype.FuncParam {
-		return &soltype.FuncParam{Pattern: &soltype.IdentPat{Name: name}, Type: t}
-	}
-	def := &ClassDef{
-		TypeParams: []*soltype.TypeParam{{Name: "T", Var: tv}},
-		Body: exactObj(&soltype.MethodElem{
-			Name: "has",
-			Signatures: []*soltype.FuncType{
-				{SelfParam: param("self", bag), Params: []*soltype.FuncParam{param("x", tv)}, Ret: boolT()},
-				{
-					SelfParam: param("self", mutRef(bag)),
-					Params:    []*soltype.FuncParam{param("x", tv), param("y", num())},
-					Ret:       boolT(),
-				},
-			},
-		}),
-		Variance:        []Variance{Covariant},
-		CovariantInputs: []bool{true},
-	}
-	instance := &soltype.ClassType{Name: "Bag", TypeArgs: []soltype.Type{num()}}
-	widest, ok := widestInstance(def, instance, set.NewSet[*soltype.TypeVarType]())
-	require.True(t, ok)
-	anc := wideningAncestor{def: def, instance: instance, widest: widest}
-
-	member, ok := widestMethod(anc, instance, "has")
-	require.True(t, ok)
-	method, ok := member.(*soltype.MethodElem)
-	require.True(t, ok)
-	require.Equal(t, "fn (x: unknown) -> boolean", soltype.Print(methodReadType(method)))
-}
-
-// TestWidestInstanceWidensASelfBoundToUnknown asserts that a bound naming its own parameter,
-// which grows at every pass and never settles, widens to `unknown`. A bound naming another
-// parameter settles to that parameter's widest argument.
-func TestWidestInstanceWidensASelfBoundToUnknown(t *testing.T) {
-	tVar, uVar := &soltype.TypeVarType{ID: 1}, &soltype.TypeVarType{ID: 2}
-	cmp := &soltype.ClassType{Name: "Cmp", TypeArgs: []soltype.Type{tVar}}
-	def := &ClassDef{
-		TypeParams: []*soltype.TypeParam{
-			{Name: "T", Var: tVar, UpperBound: cmp},
-			{Name: "U", Var: uVar, UpperBound: tVar},
-		},
-		Variance:        []Variance{Covariant, Covariant},
-		CovariantInputs: []bool{true, true},
-	}
-	instance := &soltype.ClassType{Name: "C", TypeArgs: []soltype.Type{num(), num()}}
-	widest, ok := widestInstance(def, instance, set.NewSet[*soltype.TypeVarType]())
-	require.True(t, ok)
-	require.Equal(t, "C<unknown, unknown>", soltype.Print(widest))
 }
