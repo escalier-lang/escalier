@@ -95,6 +95,23 @@ func (c *checker) inferUnary(scope *Scope, lvl int, e *ast.UnaryExpr) soltype.Ty
 	return fn.Ret
 }
 
+// inferTypeCast types `expr : T`. The operand is constrained against the resolved
+// annotation at the operand's own node, and the cast yields the annotation, so
+// `5 : number` is `number` rather than `5`. An annotation that does not resolve has
+// already been reported, and the cast yields the recovery sentinel.
+func (c *checker) inferTypeCast(scope *Scope, lvl int, e *ast.TypeCastExpr) soltype.Type {
+	argT := c.inferExpr(scope, lvl, e.Expr)
+	annT, ok := c.resolveTypeAnn(scope, e.TypeAnn, lvl)
+	if !ok {
+		t := soltype.Type(&soltype.ErrorType{})
+		c.recordType(e, t)
+		return t
+	}
+	c.constrain(e.Expr, argT, annT)
+	c.recordType(e, annT)
+	return annT
+}
+
 // operatorSignature resolves an operator's value binding to the signature an
 // application of it checks against. op is the operator's name as
 // addOperatorBindings binds it. arity is the number of operands the application
