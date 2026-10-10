@@ -730,8 +730,13 @@ func (c *checker) instantiateMethodLifetimes(lvl int, blame ast.Node, recv solty
 		if !ok {
 			inst = sig
 		}
+		freshened := inst != sig
+		// The access instantiates the method's own lifetime binder, the way a call
+		// instantiates a type binder, so the value the access yields is a plain arrow over
+		// the fresh lifetimes rather than a quantified one.
+		inst = withoutLifetimeBinder(inst)
 		sigs[i] = inst
-		if len(held) == 0 || inst.SelfParam == nil || inst == sig {
+		if len(held) == 0 || inst.SelfParam == nil || !freshened {
 			continue
 		}
 		self, ok := inst.SelfParam.Type.(*soltype.RefType)

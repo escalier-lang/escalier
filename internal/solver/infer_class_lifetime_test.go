@@ -3,6 +3,7 @@ package solver
 import (
 	"testing"
 
+	"github.com/escalier-lang/escalier/internal/soltype"
 	"github.com/stretchr/testify/require"
 )
 
@@ -447,4 +448,126 @@ func TestClassLifetimeStoreEdge(t *testing.T) {
 		"fn <'a>(target: &mut Holder<'a>, item: &'a mut {value: number}) -> undefined",
 		values["store"],
 	)
+}
+
+// TestMethodLifetimeBindersRenderOnTheMethod covers a method's own `<'a>` list as the binder
+// of its signature. The class body renders each method's lifetime under that method's own
+// `<…>`, and a binder the body elides, because the lifetime connects nothing, is dropped with
+// its uses.
+func TestMethodLifetimeBindersRenderOnTheMethod(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name  string
+		src   string
+		class string
+		want  string
+	}{
+		{
+			name: "a borrowing receiver binds the method's lifetime",
+			src: `class View {
+				p: {x: number},
+				peek<'a>(&'a self) -> &'a {x: number} { return &self.p },
+			}`,
+			class: "View",
+			want:  "{p: {x: number}, peek<'a>(&'a self) -> &'a {x: number}}",
+		},
+		{
+			name: "a lifetime connecting nothing drops with its binder",
+			src: `class View {
+				p: {x: number},
+				m<'a>(&self, q: &'a {x: number}) -> number { return 1 },
+			}`,
+			class: "View",
+			want:  "{p: {x: number}, m(&self, q: &{x: number}) -> number}",
+		},
+		{
+			name: "a lifetime written at two parameters keeps its binder",
+			src: `class View {
+				p: {x: number},
+				same<'a>(&self, a: &'a {x: number}, b: &'a {x: number}) -> number { return 1 },
+			}`,
+			class: "View",
+			want:  "{p: {x: number}, same<'a>(&self, a: &'a {x: number}, b: &'a {x: number}) -> number}",
+		},
+		{
+			// The borrow's lifetime elides, but the class argument still writes the variable, so
+			// the binder stays with it.
+			name: "a lifetime a class argument writes keeps its binder",
+			src: `class Holder<'a> { peer: &'a mut {value: number} }
+			class Util {
+				p: {x: number},
+				m<'b>(&self, h: Holder<'b>) -> number { return 1 },
+			}`,
+			class: "Util",
+			want:  "{p: {x: number}, m<'b>(&self, h: Holder<'b>) -> number}",
+		},
+		{
+			// The returned borrow is the class's `'a`, so the method's `'b` resolves to the
+			// class lifetime and binds nothing of its own.
+			name: "a method lifetime resolving to the class lifetime drops its binder",
+			src: `class Holder<'a> {
+				peer: &'a mut {value: number},
+				pick<'b>(&self) -> &'b {value: number} { return self.peer },
+			}`,
+			class: "Holder",
+			want:  "{peer: &mut {value: number}, pick(&self) -> &{value: number}}",
+		},
+		{
+			// `'b` resolves to `'a`, so it is dropped as a duplicate and `'a`'s bound on it,
+			// which would read `'a: 'a`, goes with it.
+			name: "a bound resolving to the parameter itself is dropped",
+			src: `class View {
+				p: {x: number},
+				m<'a: 'b, 'b>(&self, x: &'a {x: number}) -> &'b {x: number} { return x },
+			}`,
+			class: "View",
+			want:  "{p: {x: number}, m<'a>(&self, x: &'a {x: number}) -> &'a {x: number}}",
+		},
+		{
+			// `'b` is written only on the right of a bound, so no position interned it and
+			// the walk never recorded it. It binds nothing, and the bound naming it goes too. A
+			// body would be reported for not establishing the bound, so the method is declared.
+			name: "a name written only as a bound binds nothing",
+			src: `declare class View {
+				p: {x: number},
+				m<'a: 'b, 'b>(&self, x: &'a {x: number}) -> &'a {x: number},
+			}`,
+			class: "View",
+			want:  "{p: {x: number}, m<'a>(&self, x: &'a {x: number}) -> &'a {x: number}}",
+		},
+		{
+			name: "a method lifetime beside a class lifetime binds on the method alone",
+			src: `class Holder<'a> {
+				peer: &'a mut {value: number},
+				pick<'b>(&self, q: &'b {value: number}) -> &'b {value: number} { return q },
+			}`,
+			class: "Holder",
+			want:  "{peer: &mut {value: number}, pick<'b>(&self, q: &'b {value: number}) -> &'b {value: number}}",
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			res := InferModuleWithSource(parseModule(t, tt.src), testStdlibSource())
+			require.Empty(t, errorMessagesOf(res.Errors))
+			body, _, ok := res.TypeBody(tt.class)
+			require.True(t, ok)
+			require.Equal(t, tt.want, soltype.Print(body))
+		})
+	}
+}
+
+// TestAccessorLifetimeBinderIsUnsupported asserts that a getter declaring a lifetime binder is
+// reported the way one declaring a type binder is. An accessor has no call site to instantiate
+// a binder from.
+func TestAccessorLifetimeBinderIsUnsupported(t *testing.T) {
+	t.Parallel()
+
+	src := `class View {
+		p: {x: number},
+		get first<'a>(&'a self) -> &'a {x: number} { return &self.p },
+	}`
+	_, _, errs := inferSource(t, src)
+	require.Equal(t, []string{"Unsupported: LifetimeParam"}, errorMessagesOf(errs))
 }

@@ -438,7 +438,7 @@ func (c *checker) inferComponent(
 				// registers to truncate them, which is why errsLen is taken here.
 				p := c.openProbe()
 				errsLen := len(c.errs)
-				sig := c.inferFunc(c.lookupScope(scope, fd), inner, fd.FuncSig, nil, fd, true)
+				sig := c.inferFunc(c.lookupScope(scope, fd), inner, fd.FuncSig, nil, fd, true, false)
 				c.closeProbe(p, true)
 				c.errs = c.errs[:errsLen]
 				arms[i] = overloadArm{decl: fd, t: sig}
@@ -667,7 +667,7 @@ func (c *checker) inferComponent(
 			for _, arm := range b.arms {
 				handled.Add(arm.decl)
 				b.sources = append(b.sources, &ast.NodeProvenance{Node: arm.decl})
-				c.inferFunc(c.lookupScope(scope, arm.decl), inner, arm.decl.FuncSig, arm.decl.Body, arm.decl, true)
+				c.inferFunc(c.lookupScope(scope, arm.decl), inner, arm.decl.FuncSig, arm.decl.Body, arm.decl, true, false)
 			}
 			continue
 		}

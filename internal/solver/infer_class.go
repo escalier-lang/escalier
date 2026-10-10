@@ -1,6 +1,7 @@
 package solver
 
 import (
+	"slices"
 	"strings"
 
 	"fmt"
@@ -177,16 +178,18 @@ func (c *checker) inferClassDecl(scope *Scope, lvl int, decl *ast.ClassDecl, ns 
 	return c.classValue(self, ctorFns, callFns, static), &ast.NodeProvenance{Node: decl}, true
 }
 
-// bindClassParams gives each signature in fns the class's type parameters and lifetime
-// parameters as its own binder. The signatures share the declaration's TypeParam values, so
-// a bound a substitution reads through the binder is the one the class resolved.
+// bindClassParams puts the class's type parameters and lifetime parameters at the front of
+// each signature's binder in fns, ahead of any parameters the signature declares itself, so
+// `declare class F<T> { <U>(x: U) -> T }` carries `<T, U>`. The signatures share the
+// declaration's TypeParam values, so a bound a substitution reads through the binder is the
+// one the class resolved.
 func bindClassParams(fns []*soltype.FuncType, typeParams []*soltype.TypeParam, lifetimeParams []*soltype.LifetimeParam) {
 	for _, fn := range fns {
 		if len(typeParams) > 0 {
-			fn.TypeParams = typeParams
+			fn.TypeParams = slices.Concat(typeParams, fn.TypeParams)
 		}
 		if len(lifetimeParams) > 0 {
-			fn.LifetimeParams = lifetimeParams
+			fn.LifetimeParams = slices.Concat(lifetimeParams, fn.LifetimeParams)
 		}
 	}
 }
@@ -858,6 +861,22 @@ func (c *checker) nestedLifetimeScope(own []*ast.LifetimeParam) map[string]*solt
 	return out
 }
 
+// signatureLifetimeParams returns the binder a class member's or call signature's own `<…>`
+// list declares, one parameter per name signatureLifetimeNames reports, read after the
+// signature's positions are resolved. Each parameter's variable is the one those positions
+// interned under its name, so the binder and the body agree.
+func (c *checker) signatureLifetimeParams(lvl int, own []*ast.LifetimeParam) []*soltype.LifetimeParam {
+	var out []*soltype.LifetimeParam
+	for _, bound := range c.signatureLifetimeNames(own) {
+		var bounds []soltype.Lifetime
+		for _, b := range bound.param.Bounds {
+			bounds = append(bounds, c.boundLifetime(b.Name, lvl))
+		}
+		out = append(out, &soltype.LifetimeParam{Name: "'" + bound.param.Name, Var: bound.v, Bounds: bounds})
+	}
+	return out
+}
+
 // classKeepLifetimes returns the lifetime variables a class's own parameters carry, the set
 // freezeClassBody pins so a member holding one keeps it under the parameter's name. It is nil
 // for a class that quantifies no lifetime, where the freeze has nothing to pin.
@@ -1356,7 +1375,7 @@ func (c *checker) inferCallSignatures(scope *Scope, lvl int, decl *ast.ClassDecl
 			c.report(&CallSignatureRequiresDeclareError{Elem: call, Decl: decl})
 			continue
 		}
-		sigs = append(sigs, c.inferFunc(scope.Child(), lvl, call.Fn.FuncSig, nil, call, true))
+		sigs = append(sigs, c.inferFunc(scope.Child(), lvl, call.Fn.FuncSig, nil, call, true, true))
 	}
 	return sigs
 }
@@ -1827,7 +1846,7 @@ func (c *checker) inferMemberFunc(scope *Scope, lvl int, m pendingMember, body *
 	}
 	// generic is true for a method and false for a getter or setter. inferFunc reports a
 	// binder it is not allowed to resolve as an unsupported feature.
-	return c.inferFunc(scope.Child(), lvl, m.fn.FuncSig, m.fn.Body, m.fn, m.generic)
+	return c.inferFunc(scope.Child(), lvl, m.fn.FuncSig, m.fn.Body, m.fn, m.generic, true)
 }
 
 // memberSelf is what inferFunc needs, beside the receiver memberReceiver carries, to bind

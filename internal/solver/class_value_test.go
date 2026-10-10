@@ -90,6 +90,35 @@ func TestClassValueBindsItsParametersOnEachSignature(t *testing.T) {
 			want:  "{new <'a>(peer: &'a mut {value: number}) -> Holder<'a>, count(n: number) -> number}",
 		},
 		{
+			// The class's parameters lead the binder and the signature's own follow, so both
+			// are instantiated at the call.
+			name: "a call signature keeps its own binder behind the class's",
+			src: `declare class F<T> {
+				<U>(x: U, t: T) -> T
+			}`,
+			class: "F",
+			want:  "{<T, U>(x: U, t: T) -> T}",
+		},
+		{
+			name: "a call signature binds its own lifetime",
+			src: `declare class G {
+				<'a>(x: &'a {x: number}) -> &'a {x: number}
+			}`,
+			class: "G",
+			want:  "{<'a>(x: &'a {x: number}) -> &'a {x: number}}",
+		},
+		{
+			// The static's binder claims 'a, so the free lifetime the other static leaves in
+			// the value takes the next name rather than colliding with it.
+			name: "a free lifetime skips a name a static's binder claims",
+			src: `class Util {
+				static s<'a>(p: &'a {x: number}) -> &'a {x: number} { return p },
+				static t(q: &{x: number}) -> &{x: number} { return q },
+			}`,
+			class: "Util",
+			want:  "<'b> {new () -> Util, s<'a>(p: &'a {x: number}) -> &'a {x: number}, t(q: &'b {x: number}) -> &'b {x: number}}",
+		},
+		{
 			name: "a static method naming a class lifetime is reported",
 			src: `class Holder<'a> {
 				peer: &'a mut {value: number},
@@ -97,23 +126,18 @@ func TestClassValueBindsItsParametersOnEachSignature(t *testing.T) {
 			}`,
 			errs: []string{"static member `s` names lifetime parameter `'a`, which belongs to instances of `Holder`"},
 		},
-		// DISABLED until #1927, which records a method's lifetime parameters as its own binder.
-		// Until then inferFunc leaves the static's `'a` free in the value and the printer hoists
-		// it to the prefix under a generated name, rendering `<'b> {new …, s(p: &'b mut …)}`.
-		/*
-			{
-				// The static's own lifetime is a different variable from the class's, whatever it
-				// is called, so nothing is reported, and it is the static's own binder, so each
-				// signature renders its `'a` under its own `<…>`.
-				name: "a static declaring its own lifetime is not reported",
-				src: `class Holder<'a> {
-					peer: &'a mut {value: number},
-					static s<'a>(p: &'a mut {value: number}) -> &'a mut {value: number} { return p },
-				}`,
-				class: "Holder",
-				want:  "{new <'a>(peer: &'a mut {value: number}) -> Holder<'a>, s<'a>(p: &'a mut {value: number}) -> &'a mut {value: number}}",
-			},
-		*/
+		{
+			// The static's own lifetime is a different variable from the class's, whatever it
+			// is called, so nothing is reported, and it is the static's own binder, so each
+			// signature renders its `'a` under its own `<…>`.
+			name: "a static declaring its own lifetime is not reported",
+			src: `class Holder<'a> {
+				peer: &'a mut {value: number},
+				static s<'a>(p: &'a mut {value: number}) -> &'a mut {value: number} { return p },
+			}`,
+			class: "Holder",
+			want:  "{new <'a>(peer: &'a mut {value: number}) -> Holder<'a>, s<'a>(p: &'a mut {value: number}) -> &'a mut {value: number}}",
+		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -155,6 +179,14 @@ func TestConstructionInstantiatesTheClassBinder(t *testing.T) {
 			src: `class Box<B: number> { v: B }
 				val b = Box("s")`,
 			errs: []string{`2:17-2:20: cannot constrain "s" <: number`},
+		},
+		{
+			// The call signature's own lifetime binder is dropped at the call, so the
+			// argument's borrow flows through the signature at the binder's variable.
+			name: "a call signature's lifetime binder is instantiated by the call",
+			src: `declare class G { <'a>(x: &'a {x: number}) -> &'a {x: number} }
+				fn f(q: &{x: number}) -> &{x: number} { return G(q) }`,
+			want: map[string]string{"f": "fn <'a>(q: &'a {x: number}) -> &'a {x: number}"},
 		},
 		{
 			// The written `Box<string>` fails the bound at the annotation, and the

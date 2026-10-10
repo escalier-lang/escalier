@@ -258,6 +258,32 @@ func newLtAnalysis(
 
 // isParam reports whether v is a param lifetime: one that originates at a borrow
 // parameter and so occurs in a negative position. Only param lifetimes are named.
+// occurs reports whether the walk recorded v anywhere in the type. A variable it did not
+// record has no component, so the other lookups must not be asked about it.
+func (a *ltAnalysis) occurs(v *soltype.LifetimeVar) bool {
+	_, ok := a.occ[v]
+	return ok
+}
+
+// occurring returns lts without any variable the walk did not record, and whether one was
+// removed. It returns lts itself when none is, and nil rather than an empty slice when all
+// are.
+func (a *ltAnalysis) occurring(lts []soltype.Lifetime) ([]soltype.Lifetime, bool) {
+	var out []soltype.Lifetime
+	removed := false
+	for _, lt := range lts {
+		if lv, isVar := lt.(*soltype.LifetimeVar); isVar && !a.occurs(lv) {
+			removed = true
+			continue
+		}
+		out = append(out, lt)
+	}
+	if !removed {
+		return lts, false
+	}
+	return out, true
+}
+
 func (a *ltAnalysis) isParam(v *soltype.LifetimeVar) bool {
 	return a.occ[v]&occNeg != 0
 }
@@ -495,6 +521,14 @@ func (r *ltRewriter) EnterType(t soltype.Type, pol soltype.Polarity) soltype.Ent
 
 func (r *ltRewriter) ExitType(t soltype.Type, _ soltype.Polarity) soltype.Type {
 	switch t := t.(type) {
+	case *soltype.FuncType:
+		lps, changed := r.resolveLtParams(t)
+		if !changed {
+			return t
+		}
+		cp := *t
+		cp.LifetimeParams = lps
+		return &cp
 	case *soltype.ClassType:
 		args, changed := r.resolveArgs(t.LifetimeArgs)
 		if !changed {
@@ -560,6 +594,96 @@ func (r *ltRewriter) resolveArgs(args []soltype.Lifetime) ([]soltype.Lifetime, b
 		changed = true
 	}
 	return out, changed
+}
+
+// resolveLtParams resolves a signature's own lifetime parameters against the receiver,
+// parameters, return and throws the walk has rewritten, so the binder keeps agreeing with the
+// uses. A parameter stays, under its resolved variable, when one of those positions still
+// writes that variable. It goes when the walk never recorded it, when the body elided every
+// use, when it resolved to 'static, when it resolved to a pinned lifetime other than its own,
+// which the enclosing declaration binds, or when an earlier parameter resolved to the same
+// variable. A bound on a variable the walk never recorded is dropped, the rest resolve the way
+// a reference's arguments do, and one that resolves to the parameter itself is dropped. The
+// second result reports whether anything changed, and nil-for-empty is preserved.
+func (r *ltRewriter) resolveLtParams(t *soltype.FuncType) ([]*soltype.LifetimeParam, bool) {
+	if len(t.LifetimeParams) == 0 {
+		return t.LifetimeParams, false
+	}
+	written := signatureLifetimes(t)
+	out := make([]*soltype.LifetimeParam, 0, len(t.LifetimeParams))
+	kept := set.NewSet[*soltype.LifetimeVar]()
+	changed := false
+	for _, lp := range t.LifetimeParams {
+		if !r.a.occurs(lp.Var) {
+			changed = true
+			continue
+		}
+		lv := lp.Var
+		if resolved, elide := r.a.resolveLt(lp.Var); !elide {
+			v, isVar := resolved.(*soltype.LifetimeVar)
+			if !isVar {
+				changed = true
+				continue
+			}
+			lv = v
+		}
+		if !written.Contains(lv) || (lv != lp.Var && r.a.keepLts.Contains(lv)) || kept.Contains(lv) {
+			changed = true
+			continue
+		}
+		kept.Add(lv)
+		bounds, unknownDropped := r.a.occurring(lp.Bounds)
+		bounds, boundsChanged := r.resolveArgs(bounds)
+		bounds, selfDropped := withoutLifetime(bounds, lv)
+		if lv == lp.Var && !unknownDropped && !boundsChanged && !selfDropped {
+			out = append(out, lp)
+			continue
+		}
+		changed = true
+		out = append(out, &soltype.LifetimeParam{Name: lp.Name, Var: lv, Bounds: bounds})
+	}
+	if !changed {
+		return t.LifetimeParams, false
+	}
+	if len(out) == 0 {
+		return nil, true
+	}
+	return out, true
+}
+
+// signatureLifetimes returns every lifetime variable t's receiver, parameters, return and
+// throws write. The binder itself is left out, so a parameter nothing else names is absent.
+func signatureLifetimes(t *soltype.FuncType) set.Set[*soltype.LifetimeVar] {
+	col := &lifetimeCollector{out: set.NewSet[*soltype.LifetimeVar]()}
+	if t.SelfParam != nil {
+		t.SelfParam.Type.Accept(col, soltype.Negative)
+	}
+	for _, p := range t.Params {
+		p.Type.Accept(col, soltype.Negative)
+	}
+	t.Ret.Accept(col, soltype.Positive)
+	if t.Throws != nil {
+		t.Throws.Accept(col, soltype.Positive)
+	}
+	return col.out
+}
+
+// withoutLifetime returns bounds without any entry equal to lt, and whether one was removed.
+// It returns bounds itself when none is, and nil rather than an empty slice when all are.
+func withoutLifetime(bounds []soltype.Lifetime, lt soltype.Lifetime) ([]soltype.Lifetime, bool) {
+	var out []soltype.Lifetime
+	removed := false
+	for _, b := range bounds {
+		if b == lt {
+			removed = true
+			continue
+		}
+		out = append(out, b)
+	}
+	if !removed {
+		return bounds, false
+	}
+	return out, true
 }
 
 // forcedToStatic reports whether a lifetime variable has 'static among its bounds,

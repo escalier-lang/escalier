@@ -460,21 +460,33 @@ func typeParamName(i int) string {
 	return "T" + strconv.Itoa(i)
 }
 
-// ownLifetimeParamNames returns the source names a function's own lifetime parameters
-// claim in the quantifier prefix, so the free-lifetime naming can avoid colliding with
-// them. It is non-empty only for a FuncType that declares lifetime parameters; every
-// other type reserves nothing.
+// ownLifetimeParamNames returns the source names the lifetime parameters of every signature
+// in t claim, so the free-lifetime naming can avoid colliding with them. A class value's
+// method `s<'a>(…)` renders its binder under 'a, so a free lifetime of the value takes 'b.
 func ownLifetimeParamNames(t Type) set.Set[string] {
-	names := set.NewSet[string]()
+	c := &ltParamNameCollector{names: set.NewSet[string]()}
+	t.Accept(c, Positive)
+	return c.names
+}
+
+// ltParamNameCollector gathers the source names of every FuncType's lifetime parameters in
+// a type. It rewrites nothing.
+type ltParamNameCollector struct {
+	names set.Set[string]
+}
+
+func (c *ltParamNameCollector) EnterType(t Type, _ Polarity) EnterResult {
 	if ft, ok := t.(*FuncType); ok {
 		for _, lp := range ft.LifetimeParams {
 			if lp.Name != "" {
-				names.Add(lp.Name)
+				c.names.Add(lp.Name)
 			}
 		}
 	}
-	return names
+	return EnterResult{}
 }
+
+func (c *ltParamNameCollector) ExitType(t Type, _ Polarity) Type { return t }
 
 // lifetimeParamName is the surface name for the i-th quantified lifetime parameter:
 // 'a, 'b, …, 'z, 'aa, 'ab, … in Excel-style base-26, so a borrow renders as
@@ -1379,7 +1391,7 @@ func (p *namedPrinter) printFuncTail(t *FuncType) string {
 	// released on the way out and a sibling signature is free to reuse them.
 	scoped := p.bindTypeParams(t.TypeParams)
 	defer p.releaseNames(scoped)
-	p.nameLifetimeParams(t.LifetimeParams)
+	defer p.scopeLifetimeNames(t.LifetimeParams)()
 	binders := append(p.typeParamBinders(t.TypeParams), p.lifetimeParamBinders(t.LifetimeParams)...)
 	prefix := ""
 	if len(binders) > 0 {
@@ -1526,6 +1538,40 @@ func (p *namedPrinter) nameLifetimeParams(lps []*LifetimeParam) {
 	for _, lp := range lps {
 		if lp.Name != "" {
 			p.ltNames[lp.Var] = lp.Name
+		}
+	}
+}
+
+// scopeLifetimeNames registers each parameter's name the way nameLifetimeParams does and
+// returns the call that puts back whatever each variable was named before. A signature's own
+// lifetime parameters are then in scope only inside it, the way releaseNames scopes its type
+// parameters, and a variable an enclosing prefix named keeps that name afterwards.
+func (p *namedPrinter) scopeLifetimeNames(lps []*LifetimeParam) func() {
+	if len(lps) == 0 {
+		return func() {}
+	}
+	type prior struct {
+		name string
+		had  bool
+	}
+	saved := make(map[*LifetimeVar]prior, len(lps))
+	for _, lp := range lps {
+		if lp.Name == "" {
+			continue
+		}
+		if _, done := saved[lp.Var]; !done {
+			name, had := p.ltNames[lp.Var]
+			saved[lp.Var] = prior{name: name, had: had}
+		}
+	}
+	p.nameLifetimeParams(lps)
+	return func() {
+		for v, was := range saved {
+			if was.had {
+				p.ltNames[v] = was.name
+			} else {
+				delete(p.ltNames, v)
+			}
 		}
 	}
 }
