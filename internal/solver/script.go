@@ -120,6 +120,7 @@ func (c *checker) inferScriptIn(scope *Scope, script *ast.Script) (*Scope, *Info
 	// Every function expression the script wrote has been typed, so each one's return type is
 	// final. Report each function whose return type no finite value inhabits.
 	c.checkCanReturn()
+	c.checkRigidLifetimes()
 
 	return scope, c.info, c.errs
 }

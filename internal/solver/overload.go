@@ -58,6 +58,7 @@ func (c *checker) resolveOverload(lvl int, b ValueBinding, args []soltype.Type, 
 		// FromInstantiation Prov entries, which snapshotProv records only when a probe is
 		// active. This upholds the guarantee that a losing trial leaves no Info or Prov
 		// entries.
+		queued := len(c.ctx.pendingRigidLts)
 		p := c.openProbe()
 		arm, ok := c.instantiate(b.Schemes[idx], lvl).(*soltype.FuncType)
 		if !ok {
@@ -86,6 +87,7 @@ func (c *checker) resolveOverload(lvl int, b ValueBinding, args []soltype.Type, 
 			// tryOverloadArm runs the error-returning engine, so a warning the winning arm
 			// accepted with never reached c.errs. Blame it at the call so the winner's survive.
 			c.blameConstraintErrors(call, diags)
+			c.siteRigidLifetimeChecks(call, queued)
 			// Only the winning arm's throws reaches the caller, so a set whose other arms raise
 			// contributes nothing here. The trial's shape carried a fresh throws variable to
 			// keep dispatch off the caller's clause, so the real edge is wired now that an arm
