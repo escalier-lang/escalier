@@ -2645,7 +2645,7 @@ func (c *checker) elementSlots(access *soltype.IndexType) (slots []soltype.Type,
 		// that property too. `o[k] = 1` with `k: string` may write `o.a`.
 		for _, elem := range t.Elems {
 			prop, isProp := elem.(*soltype.PropertyElem)
-			if !isProp || !keyReaches(access.Index, prop.Name) {
+			if !isProp || !c.ctx.keyReaches(access.Index, prop.Name) {
 				continue
 			}
 			slots = append(slots, prop.Type)
@@ -2658,13 +2658,13 @@ func (c *checker) elementSlots(access *soltype.IndexType) (slots []soltype.Type,
 
 // keyReaches reports whether a key of type `key` may name the member called `name`. A
 // string literal reaches the member it spells, a number literal the member its digits
-// spell, a primitive the members keySetCovers says it covers, and a union whatever one
-// of its members reaches.
-func keyReaches(key soltype.Type, name string) bool {
+// spell, and a unique symbol the member keyed off it. A primitive reaches the members
+// keySetCovers says it covers, and a union reaches whatever one of its members reaches.
+func (c *Context) keyReaches(key soltype.Type, name string) bool {
 	switch key := key.(type) {
 	case *soltype.UnionType:
 		for _, member := range key.Types {
-			if keyReaches(member, name) {
+			if c.keyReaches(member, name) {
 				return true
 			}
 		}
@@ -2672,7 +2672,7 @@ func keyReaches(key soltype.Type, name string) bool {
 	case *soltype.PrimType:
 		return keySetCovers(key, name)
 	}
-	keyName, ok := mappedKeyName(key)
+	keyName, ok := c.mappedKeyName(key)
 	return ok && keyName == name
 }
 
@@ -2910,9 +2910,10 @@ func (c *checker) inferTuple(scope *Scope, lvl int, e *ast.TupleExpr) soltype.Ty
 // operand object's fields in, following the same left-to-right rule the type-level
 // operator applies.
 //
-// A computed key `{[k]: v}` whose type is one string or number literal names a property
-// the way a written key does, so `val k = "a"` makes `{[k]: 1}` the object `{a: 1}`. Any
-// other key may name more than one property. Such a key contributes to an index
+// A computed key `{[k]: v}` whose type is one string literal, one number literal, or one
+// unique symbol names a property the way a written key does, so `val k = "a"` makes
+// `{[k]: 1}` the object `{a: 1}`. Any other key may name more than one property. Such a
+// key contributes to an index
 // signature over its widened key set instead, so `{[k]: 1}` with `k: string` is
 // `{[K: string]?: 1}`. Every such key in one literal feeds one signature, whose key set
 // and value are the unions of what each key contributes.
@@ -3026,10 +3027,11 @@ func (c *checker) inferObject(scope *Scope, lvl int, e *ast.ObjectExpr) soltype.
 }
 
 // computedObjKey reads what a computed object-literal key `[k]` names, given keyT, the
-// type inferred for k. A key whose type is one string or number literal names the
-// property keyName, and keySet is nil. Any other legal key returns keySet, the set of
-// keys an index signature for it covers. That set widens each literal to its primitive
-// and a unique symbol to `symbol`, so `"a" | "b"` covers `string`.
+// type inferred for k. A key whose type is one string literal, one number literal, or
+// one unique symbol names the property keyName, and keySet is nil. Any other legal key
+// returns keySet, the set of keys an index signature for it covers. That set widens each
+// literal to its primitive and a unique symbol to `symbol`, so `"a" | "b"` covers
+// `string`.
 //
 // `ok` is false when the key names nothing. A key that already failed has reported its
 // own error. A key of a type that cannot key a property reports InvalidObjectKeyError,
@@ -3043,7 +3045,7 @@ func (c *checker) computedObjKey(key *ast.ComputedKey, keyT soltype.Type) (keyNa
 		c.reportUnsupported(key)
 		return "", nil, false
 	}
-	if name, isLit := mappedKeyName(ground); isLit {
+	if name, isLit := c.ctx.mappedKeyName(ground); isLit {
 		return name, nil, true
 	}
 	keys, legal := propertyKeySet(ground)
@@ -3077,9 +3079,10 @@ func overwrittenFields(operands [][]soltype.ObjTypeElem, keys, value soltype.Typ
 // keySetCovers reports whether a member named `name` has a key in `keys`, a key set
 // propertyKeySet built. A `string` set covers every name but a reserved symbol member
 // name. A `number` set covers a name that spells a number the way JavaScript prints it,
-// such as "1". A `symbol` set covers a reserved symbol member name.
+// such as "1". A `symbol` set covers a reserved symbol member name, whether a
+// well-known symbol or a unique symbol keys the member.
 func keySetCovers(keys soltype.Type, name string) bool {
-	_, isSymbol := soltype.SymbolOfMemberName(name)
+	isSymbol := soltype.IsSymbolMemberName(name)
 	switch keys := keys.(type) {
 	case *soltype.UnionType:
 		for _, member := range keys.Types {
@@ -3104,7 +3107,8 @@ func keySetCovers(keys soltype.Type, name string) bool {
 
 // propertyKeySet returns the primitive key set t falls in when t can key a property:
 // `string`, `number`, or `symbol`, or a union of them for a union t. A literal widens
-// to its primitive and a unique symbol to `symbol`. `ok` is false when some part of t
+// to its primitive and a unique symbol to `symbol`, so a key whose type is the union of
+// `"a"` and a unique symbol covers `string | symbol`. `ok` is false when some part of t
 // cannot key a property, such as `boolean` or an object.
 func propertyKeySet(t soltype.Type) (soltype.Type, bool) {
 	switch t := t.(type) {
@@ -3572,8 +3576,10 @@ func (c *checker) resolveIndexPath(scope *Scope, lvl int, e *ast.IndexExpr, objP
 
 // indexKeyName returns the property name an index key names on a receiver of type recv,
 // and false when the key may name more than one. A string literal, a well-known symbol
-// such as `Symbol.iterator`, and an expression whose type is one string literal each
-// name one property. `val k = "a"` makes `obj[k]` read the property `a`.
+// such as `Symbol.iterator`, and an expression whose type is one string literal or one
+// unique symbol each name one property. `val k = "a"` makes `obj[k]` read the property
+// `a`, and `declare val sym: unique symbol` makes `obj[sym]` read the property keyed
+// off `sym`.
 //
 // A key whose type is one number literal names the property its digits spell, as
 // `{0: v}` stores under "0", unless the receiver is read by position. `t[0]` reads a
@@ -3593,10 +3599,10 @@ func (c *checker) indexKeyName(scope *Scope, lvl int, e *ast.IndexExpr, recv sol
 	if !ok {
 		return "", false
 	}
-	if name, ok := strLitName(key); ok {
+	if name, ok := c.ctx.keyMemberName(key); ok {
 		return name, true
 	}
-	if name, ok := mappedKeyName(key); ok && !c.readsByPosition(recv) {
+	if name, ok := c.ctx.mappedKeyName(key); ok && !c.readsByPosition(recv) {
 		return name, true
 	}
 	return "", false
@@ -3762,9 +3768,16 @@ func (c *checker) resolveNamespaceMember(lvl int, node ast.Expr, ns *Namespace, 
 // constStringKey reads a statically-constant string index key. Only a string
 // literal qualifies — Foo["bar"]; a numeric, identifier, or otherwise dynamic key
 // returns false so the caller can reject it.
+//
+// A string spelling a unique symbol's reserved member name, such as `"@@#0"`, returns
+// false, the same rule keyMemberName applies to its type. `o["@@#0"]` therefore never
+// reads a member keyed off a unique symbol.
 func constStringKey(e ast.Expr) (string, bool) {
 	if lit, ok := e.(*ast.LiteralExpr); ok {
 		if s, ok := lit.Lit.(*ast.StrLit); ok {
+			if _, reserved := soltype.UniqueSymbolOfMemberName(s.Value); reserved {
+				return "", false
+			}
 			return s.Value, true
 		}
 	}
@@ -3780,10 +3793,11 @@ func constStringKey(e ast.Expr) (string, bool) {
 // reserved member name that symbol is stored under. See internal/soltype/symbol_key.go
 // for the spelling and what it stands in for.
 //
-// A string key spelling that reserved name is declined rather than stored, since two
-// keys resolving to one member would let `{"@@iterator": f}` answer an iterator lookup
-// and render as `[Symbol.iterator]`. Nothing else claims the spelling, so declining it
-// costs no program a member it could otherwise declare. A key naming a member under a
+// A string key spelling a reserved name is declined rather than stored, since two keys
+// resolving to one member would let `{"@@iterator": f}` answer an iterator lookup and
+// render as `[Symbol.iterator]`. That holds for a unique symbol's reserved name, such as
+// `"@@#0"`, as well. Nothing else claims the spellings, so declining them costs no
+// program a member it could otherwise declare. A key naming a member under a
 // computed expression is not supported, and returns false so the caller can raise a
 // structured error.
 func objKeyName(k ast.ObjKey) (string, bool) {
@@ -3791,7 +3805,7 @@ func objKeyName(k ast.ObjKey) (string, bool) {
 	case *ast.IdentExpr:
 		return k.Name, true
 	case *ast.StrLit:
-		if _, reserved := soltype.SymbolOfMemberName(k.Value); reserved {
+		if soltype.IsSymbolMemberName(k.Value) {
 			return "", false
 		}
 		return k.Value, true

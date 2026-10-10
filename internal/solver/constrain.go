@@ -1660,7 +1660,7 @@ func (c *Context) constrain(sub, super soltype.Type, seen *seenPairs, mutCtx boo
 							continue
 						}
 					}
-					if subIdx, has := c.indexSignatureFor(sub, strLitKey(superProp.Name), seen); has {
+					if subIdx, has := c.indexSignatureFor(sub, c.memberKeyType(superProp.Name), seen); has {
 						// The sub declares no field under this name, but an index signature whose
 						// key set accepts the name supplies it. The key may still be absent at
 						// runtime, which makes the signature's contribution optional and puts this
@@ -1736,7 +1736,7 @@ func (c *Context) constrain(sub, super soltype.Type, seen *seenPairs, mutCtx boo
 					if _, ok := sup.Prop(subProp.Name); ok {
 						continue
 					}
-					if _, absorbed := c.indexSignatureFor(sup, strLitKey(subProp.Name), seen); absorbed {
+					if _, absorbed := c.indexSignatureFor(sup, c.memberKeyType(subProp.Name), seen); absorbed {
 						continue
 					}
 					errs = append(errs, &ExtraPropertyError{Sub: sub, Super: sup, Name: subProp.Name})
@@ -2621,7 +2621,7 @@ func (c *Context) constrainIntoIndexSignature(sub, sup *soltype.ObjectType, supe
 			if _, declared := sup.Prop(subElem.Name); declared {
 				continue
 			}
-			if !c.condExtends(strLitKey(subElem.Name), superIdx.Keys, seen) {
+			if !c.condExtends(c.memberKeyType(subElem.Name), superIdx.Keys, seen) {
 				continue
 			}
 			errs = append(errs, c.constrain(subElem.Type, superIdx.Value, seen, mutCtx)...) // covariant read view

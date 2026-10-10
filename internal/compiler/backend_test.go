@@ -724,3 +724,82 @@ func TestNeitherCheckerSynthesizesAKeyFromACall(t *testing.T) {
 	require.NotContains(t, want, "constructor")
 	require.Equal(t, want, got, "the two checkers emit different JavaScript")
 }
+
+// TestTheSolverEmitsASymbolAPropertyDeclares covers the `.d.ts` the solver emits for a
+// unique symbol a `readonly` property declares. The `val` the symbol is named after holds
+// it at the path TypeScript writes, so a type naming the symbol reads `typeof i.key` and a
+// key off it reads `[i.key]`. The property that declares the symbol keeps `unique symbol`.
+//
+// internal/checker writes each such key as a string, so this asserts what the solver emits
+// rather than that the two agree.
+func TestTheSolverEmitsASymbolAPropertyDeclares(t *testing.T) {
+	tests := []struct {
+		name string
+		src  string
+		want string
+	}{
+		{
+			name: "Interface",
+			src: `declare interface I { readonly key: unique symbol }
+declare val i: I
+export val k = i.key
+export val o = {[i.key]: 1}`,
+			want: `declare interface I {
+  readonly key: unique symbol;
+}
+declare const i: I;
+export declare const k: typeof i.key;
+export declare const o: {[i.key]: 1};
+`,
+		},
+		{
+			name: "InterfaceThatExtends",
+			src: `declare interface Base { x: number }
+declare interface I extends Base { readonly key: unique symbol }
+declare val i: I
+export val o = {[i.key]: 1}`,
+			want: `declare interface Base {
+  x: number;
+}
+declare interface I extends Base {
+  readonly key: unique symbol;
+}
+declare const i: I;
+export declare const o: {[i.key]: 1};
+`,
+		},
+		{
+			name: "ObjectTypeAlias",
+			src: `type T = {readonly tag: unique symbol}
+declare val t: T
+export val o = {[t.tag]: "x"}`,
+			want: `declare type T = {readonly tag: unique symbol};
+declare const t: T;
+export declare const o: {[t.tag]: "x"};
+`,
+		},
+		{
+			name: "InlineObjectType",
+			src: `declare val inline: {readonly key: unique symbol}
+export val o = {[inline.key]: true}`,
+			want: `declare const inline: {readonly key: unique symbol};
+export declare const o: {[inline.key]: true};
+`,
+		},
+		{
+			name: "NestedReadonlyProperty",
+			src: `declare val n: {readonly a: {readonly b: unique symbol}}
+export val k = n.a.b`,
+			want: `declare const n: {readonly a: {readonly b: unique symbol}};
+export declare const k: typeof n.a.b;
+`,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			useSolver(t)
+			dts := CompilePackage(libSources(tt.src)).CompUnits["lib/index"].DTS
+			require.Equal(t, tt.want, dts)
+		})
+	}
+}

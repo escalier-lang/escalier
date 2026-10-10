@@ -33,9 +33,9 @@ func (c *checker) inferDeclDef(scope *Scope, lvl int, d ast.Decl, ns string) (so
 	switch d := d.(type) {
 	case *ast.VarDecl:
 		if d.Else != nil {
-			return c.inferModuleValElse(scope, lvl, d)
+			return c.inferModuleValElse(scope, lvl, d, ns)
 		}
-		initType, ok := c.inferVarDeclInit(scope, lvl, d)
+		initType, ok := c.inferVarDeclInit(scope, lvl, d, ns)
 		if !ok {
 			return nil, nil, false
 		}
@@ -78,7 +78,7 @@ func (c *checker) inferDeclDef(scope *Scope, lvl int, d ast.Decl, ns string) (so
 // `return` reports ReturnOutsideFunctionError on its own, since module scope has no
 // enclosing function. Only a single identifier is bound at module scope; module-level
 // destructuring is deferred, mirroring the plain `val`/`var` path.
-func (c *checker) inferModuleValElse(scope *Scope, lvl int, d *ast.VarDecl) (soltype.Type, provenance.Provenance, bool) {
+func (c *checker) inferModuleValElse(scope *Scope, lvl int, d *ast.VarDecl, ns string) (soltype.Type, provenance.Provenance, bool) {
 	if d.Init == nil {
 		c.report(&MissingInitializerError{Decl: d})
 		return nil, nil, false
@@ -100,7 +100,7 @@ func (c *checker) inferModuleValElse(scope *Scope, lvl int, d *ast.VarDecl) (sol
 	switch {
 	case d.TypeAnn != nil:
 		// An annotated narrowing pins the binding; a non-diverging fallback must fit it.
-		narrowed, resolved := c.resolveTypeAnn(scope, d.TypeAnn, lvl)
+		narrowed, resolved := c.resolveDeclaredTypeAnn(scope, d.TypeAnn, lvl, declScopeKey(ns, ip.Name), varDeclSymbolPosition(d))
 		if !resolved {
 			narrowed = initType
 		} else {
@@ -139,10 +139,23 @@ func (c *checker) inferModuleValElse(scope *Scope, lvl int, d *ast.VarDecl) (sol
 // Every other initializer-free form reports MissingInitializerError and binds nothing. A
 // plain `val x` names a value nothing writes, and an ambient decl with no annotation names
 // one nothing describes.
-func (c *checker) inferVarDeclInit(scope *Scope, lvl int, d *ast.VarDecl) (soltype.Type, bool) {
+//
+// `ns` is the dep_graph namespace the declaration sits in, empty at the root and in a
+// function body. A `unique symbol` annotation on a single-name binding mints a symbol
+// named by `ns` and the binding's name, so `declare val sym: unique symbol` inside
+// namespace `Keys` renders as `typeof Keys.sym`. An object type annotation names the
+// symbols its `readonly` properties mint after that path, as resolveDeclaredTypeAnn
+// describes.
+func (c *checker) inferVarDeclInit(scope *Scope, lvl int, d *ast.VarDecl, ns string) (soltype.Type, bool) {
+	// A destructuring pattern binds no single name, so a symbol its annotation mints stays
+	// unnamed.
+	symName := ""
+	if name, ok := varName(d); ok {
+		symName = declScopeKey(ns, name)
+	}
 	if d.Init == nil {
 		if d.Declare() && d.TypeAnn != nil {
-			t, resolved := c.resolveTypeAnn(scope, d.TypeAnn, lvl)
+			t, resolved := c.resolveDeclaredTypeAnn(scope, d.TypeAnn, lvl, symName, varDeclSymbolPosition(d))
 			if !resolved {
 				// The annotation reported its own diagnostic. Recover to a fresh var so
 				// every reader of the binding constrains against something rather than
@@ -242,7 +255,7 @@ func (c *checker) inferVarDeclInit(scope *Scope, lvl int, d *ast.VarDecl) (solty
 		// placeholder, so constraining `initT <: never` would cascade a spurious
 		// error and adopting `never` would poison the binding. Keep the inferred
 		// initializer type instead (error recovery).
-		if annT, ok := c.resolveTypeAnn(scope, d.TypeAnn, lvl); ok {
+		if annT, ok := c.resolveDeclaredTypeAnn(scope, d.TypeAnn, lvl, symName, varDeclSymbolPosition(d)); ok {
 			annT = c.constrainInitAgainstAnnotation(d.Init, initT, annT)
 			c.checkExcessLiteralMembers(d.Init, initT, annT)
 			initT = annT
@@ -940,7 +953,7 @@ func (c *checker) checkExcessLiteralMembers(e ast.Expr, sub, annT soltype.Type) 
 // so there is no pre-binding or binding var; the SCC driver owns the recursive top-level
 // path (see inferDeclDef). ok=false when there is no initializer.
 func (c *checker) inferVarDecl(scope *Scope, lvl int, d *ast.VarDecl) (ValueBinding, bool) {
-	initType, ok := c.inferVarDeclInit(scope, lvl+1, d)
+	initType, ok := c.inferVarDeclInit(scope, lvl+1, d, "")
 	if !ok {
 		return ValueBinding{}, false
 	}
@@ -997,7 +1010,7 @@ func (c *checker) inferVarDecl(scope *Scope, lvl int, d *ast.VarDecl) (ValueBind
 // is checked. This is the per-leaf analogue of the IdentPat path's VarID copy
 // plus trackAliasesForVarDecl.
 func (c *checker) inferDestructureDecl(scope *Scope, lvl int, d *ast.VarDecl) {
-	initType, ok := c.inferVarDeclInit(scope, lvl, d)
+	initType, ok := c.inferVarDeclInit(scope, lvl, d, "")
 	if !ok {
 		return
 	}
@@ -1099,4 +1112,14 @@ func (c *checker) inferFuncDecl(scope *Scope, lvl int, d *ast.FuncDecl) (soltype
 	// its declared lifetime bounds instead of checking them against a body.
 	t := c.inferFunc(scope, lvl, d.FuncSig, d.Body, d, true)
 	return t, &ast.NodeProvenance{Node: d}
+}
+
+// varDeclSymbolPosition returns the position a `unique symbol` annotation on `d` sits in.
+// A `val` holds one value for its whole life, so it may carry a `unique symbol`. A `var`
+// may be reassigned and may not.
+func varDeclSymbolPosition(d *ast.VarDecl) uniqueSymbolPosition {
+	if d.Kind == ast.VarKind {
+		return uniqueSymbolOnVar
+	}
+	return uniqueSymbolAllowed
 }

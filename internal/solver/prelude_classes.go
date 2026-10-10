@@ -38,6 +38,55 @@ func (c *checker) resolvePreludeClasses() {
 	c.ctx.promiseClass = c.preludeClass(promiseClassName, promiseTypeParams)
 }
 
+// symbolValueName is the prelude value whose members are the well-known symbols.
+const symbolValueName = "Symbol"
+
+// resolveWellKnownSymbols records the unique symbol the prelude declares for each
+// well-known symbol, such as the type of `Symbol.iterator`, in the Context's
+// wellKnownSymbolMembers and wellKnownSymbolTypes.
+//
+// A key whose type is one of these symbols names the member the written key
+// `[Symbol.iterator]` names, so it must be resolved before any key is. A prelude that
+// declares no `Symbol` value, or no unique symbol under a well-known name, records
+// nothing for it, and such a key names the member its id spells.
+func (c *checker) resolveWellKnownSymbols() {
+	c.ctx.wellKnownSymbolMembers = map[int]string{}
+	c.ctx.wellKnownSymbolTypes = map[string]*soltype.UniqueSymbolType{}
+	b, found := c.preludeScope().OwnValue(symbolValueName)
+	if !found || b.IsOverloaded() || len(b.Schemes) == 0 {
+		return
+	}
+	// Reading the binding and its members may mint variables. They come from the library
+	// counters, so the program's own variables number from where they would without this.
+	c.withLibCounters(func() {
+		symbolValue := c.bindingValue(0, b)
+		for _, sym := range soltype.WellKnownSymbols {
+			c.recordWellKnownSymbol(sym, symbolValue)
+		}
+	})
+}
+
+// recordWellKnownSymbol records the unique symbol `symbolValue` holds under the
+// well-known name `sym`, when it holds one.
+func (c *checker) recordWellKnownSymbol(sym string, symbolValue soltype.Type) {
+	member, found := c.readMember(sym, symbolValue)
+	if !found {
+		return
+	}
+	prop, isProp := member.(*soltype.PropertyElem)
+	if !isProp {
+		return
+	}
+	symType, isUnique := prop.Type.(*soltype.UniqueSymbolType)
+	if !isUnique {
+		return
+	}
+	// SymbolMemberName accepts every name in WellKnownSymbols.
+	name, _ := soltype.SymbolMemberName(sym)
+	c.ctx.wellKnownSymbolMembers[symType.ID] = name
+	c.ctx.wellKnownSymbolTypes[name] = symType
+}
+
 // The type-parameter count each class has to declare for the rules that read it to
 // mean anything. `Array<T>` gives the element a rest parameter absorbs into, and
 // `Promise<T, E>` the value an `await` yields beside what it may reject with.
@@ -200,3 +249,15 @@ func (e *MissingPreludeClassError) Message() string {
 func (e *MissingPreludeClassError) Span() ast.Span      { return ast.Span{} }
 func (e *MissingPreludeClassError) Related() []ast.Span { return nil }
 func (e *MissingPreludeClassError) isSolverError()      {}
+
+// withLibCounters runs `load` with the Context drawing variable and unique-symbol ids from
+// the library counters, then hands the program's own counters back. The library counters
+// keep their place between calls, so ids drawn this way never repeat one the prelude or an
+// ambient package drew.
+func (c *checker) withLibCounters(load func()) {
+	programVars, programSymbols := c.ctx.varCounter, c.ctx.symbolCounter
+	c.ctx.varCounter, c.ctx.symbolCounter = c.libVarCounter, c.libSymbolCounter
+	load()
+	c.libVarCounter, c.libSymbolCounter = c.ctx.varCounter, c.ctx.symbolCounter
+	c.ctx.varCounter, c.ctx.symbolCounter = programVars, programSymbols
+}

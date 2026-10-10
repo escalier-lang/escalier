@@ -173,6 +173,11 @@ type checker struct {
 	// walk defines it. It is nil outside a walk.
 	nsIndex map[string]*Namespace
 
+	// symbolOwners maps each type key name of the module under inference to the path of
+	// the value that names the unique symbols the type declares. See symbolOwners in
+	// symbol_owner.go. It is nil outside a walk.
+	symbolOwners map[string]string
+
 	// fileScopes holds one scope per file of the module being inferred, keyed by
 	// source id, each carrying that file's import bindings.
 	fileScopes map[int]*Scope

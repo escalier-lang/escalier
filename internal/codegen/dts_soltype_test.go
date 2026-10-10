@@ -863,20 +863,66 @@ func TestContainsSelfTypeFromSol(t *testing.T) {
 	}
 }
 
-func TestBuildTypeAnnObjKeyFromSol(t *testing.T) {
-	t.Run("OrdinaryName", func(t *testing.T) {
-		key, ok := buildTypeAnnObjKeyFromSol("x").(*StrLit)
-		require.True(t, ok, "an ordinary name renders as a string literal")
-		require.Equal(t, "x", key.Value)
-	})
+// TestObjKeyFromSol covers each kind of member name objKeyFromSol renders. The builder
+// knows `sym` as the value holding `unique symbol#3` and nothing for `unique symbol#4`.
+func TestObjKeyFromSol(t *testing.T) {
+	builder := newSolTypeAnnBuilder(solPreludePrefix, "t", nil)
+	builder.symbolKeys = map[int]string{3: "sym"}
 
-	t.Run("WellKnownSymbol", func(t *testing.T) {
-		key, ok := buildTypeAnnObjKeyFromSol(soltype.AsyncIteratorSymbolMember).(*ComputedKey)
-		require.True(t, ok, "a symbol-keyed member renders as a computed key")
-		printer := NewPrinter()
-		printer.PrintExpr(key.Expr)
-		require.Equal(t, "Symbol.asyncIterator", printer.Output)
-	})
+	tests := []struct {
+		name   string
+		member string
+		want   string
+	}{
+		{name: "OrdinaryName", member: "x", want: "{x: number}"},
+		{name: "WellKnownSymbol", member: soltype.AsyncIteratorSymbolMember, want: "{[Symbol.asyncIterator]: number}"},
+		{name: "UniqueSymbolNamedByAValue", member: soltype.UniqueSymbolMemberName(&soltype.UniqueSymbolType{ID: 3, Name: "sym"}), want: "{[sym]: number}"},
+		{name: "UniqueSymbolNoValueNames", member: soltype.UniqueSymbolMemberName(&soltype.UniqueSymbolType{ID: 4}), want: "{}"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			printer := NewPrinter()
+			printer.PrintTypeAnn(builder.render(solObj(solProp(tt.member, solNum()))))
+			require.Equal(t, tt.want, printer.Output)
+		})
+	}
+}
+
+// TestUniqueSymbolTypeFromSol covers how a unique symbol renders in type position. The
+// builder knows `sym` as the value holding the symbol with id 3, so that symbol renders
+// as `typeof sym`. Nothing holds the symbol with id 4, so it keeps `unique symbol`.
+func TestUniqueSymbolTypeFromSol(t *testing.T) {
+	builder := newSolTypeAnnBuilder(solPreludePrefix, "t", nil)
+	builder.symbolKeys = map[int]string{3: "sym"}
+	builder.typeofSymbols = true
+
+	tests := []struct {
+		name string
+		typ  soltype.Type
+		want string
+	}{
+		{name: "HeldByAValue", typ: &soltype.UniqueSymbolType{ID: 3, Name: "sym"}, want: "typeof sym"},
+		{
+			name: "HeldByAValueInsideATuple",
+			typ:  &soltype.TupleType{Elems: []soltype.Type{&soltype.UniqueSymbolType{ID: 3, Name: "sym"}}},
+			want: "[typeof sym]",
+		},
+		{name: "HeldByNoValue", typ: &soltype.UniqueSymbolType{ID: 4, Name: "C.key"}, want: "unique symbol"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			printer := NewPrinter()
+			printer.PrintTypeAnn(builder.render(tt.typ))
+			require.Equal(t, tt.want, printer.Output)
+		})
+	}
+
+	// A declaration inside a namespace block may sit beside a member that shadows `sym`,
+	// so its renderer writes no `typeof`.
+	builder.typeofSymbols = false
+	printer := NewPrinter()
+	printer.PrintTypeAnn(builder.render(&soltype.UniqueSymbolType{ID: 3, Name: "sym"}))
+	require.Equal(t, "unique symbol", printer.Output)
 }
 
 func TestConvertQualIdentFromSol(t *testing.T) {

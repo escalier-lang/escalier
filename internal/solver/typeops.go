@@ -453,12 +453,6 @@ func (c *Context) indexSignatureFor(obj *soltype.ObjectType, key soltype.Type, s
 	return nil, false
 }
 
-// strLitKey builds the string-literal type that names a property, so a lookup keyed by a property
-// name can be probed against an index signature's key set the same way a written key is.
-func strLitKey(name string) soltype.Type {
-	return &soltype.LitType{Lit: &soltype.StrLit{Value: name}}
-}
-
 func condOperandGround(t soltype.Type) bool {
 	return !containsFreeVar(t) && !containsResidualOp(t)
 }
@@ -825,7 +819,7 @@ func (e *typeEvaluator) expandMapped(t *soltype.MappedElem) (reduced *soltype.Ma
 	// marker below, so `{[K]: V for K in keyof {x: X, y: Y, ...}}` expands to `{x: V, y: V, ...}`.
 	srcInexact := false
 	if src, si, isKeyof := e.mappedKeyofSource(t.Keys); isKeyof {
-		keys = keyofObjectNamed(src)
+		keys = e.ctx.keyofObjectNamed(src)
 		srcInexact = si
 	}
 	if !condOperandGround(keys) {
@@ -945,7 +939,7 @@ func mergeMappedField(earlier, later *soltype.PropertyElem) *soltype.PropertyEle
 //
 // Each emitted field takes its `readonly` and `?` markers from mappedMarkers.
 func (e *typeEvaluator) mappedFields(t *soltype.MappedElem, key soltype.Type, source *soltype.ObjectType, homomorphic bool) ([]*soltype.PropertyElem, bool) {
-	name, ok := mappedKeyName(key)
+	name, ok := e.ctx.mappedKeyName(key)
 	if !ok {
 		return nil, false
 	}
@@ -987,7 +981,7 @@ func (e *typeEvaluator) remappedNames(t *soltype.MappedElem, key soltype.Type) (
 		if _, dropped := member.(*soltype.NeverType); dropped {
 			continue
 		}
-		name, ok := mappedKeyName(member)
+		name, ok := e.ctx.mappedKeyName(member)
 		if !ok {
 			return nil, false
 		}
@@ -1235,24 +1229,25 @@ func (e *typeEvaluator) keyofObject(obj *soltype.ObjectType) soltype.Type {
 	if obj.Inexact {
 		return &soltype.PrimType{Prim: soltype.StrPrim}
 	}
-	return keyofObjectNamed(obj)
+	return e.ctx.keyofObjectNamed(obj)
 }
 
-// keyofObjectNamed unions an object's property, getter, and setter names as string-literal types.
+// keyofObjectNamed unions an object's property, getter, and setter keys, each the type memberKeyType
+// returns for its name.
 // An empty projection collapses to `never`, the union identity newUnion returns for no members.
 // It reads only the named keys, so keyofObject uses it for an exact object and expandMapped reads
 // the named keys of a `keyof T` mapped-type constraint through it, keeping those keys whatever the
 // object's exactness.
-func keyofObjectNamed(obj *soltype.ObjectType) soltype.Type {
+func (c *Context) keyofObjectNamed(obj *soltype.ObjectType) soltype.Type {
 	keys := make([]soltype.Type, 0, len(obj.Elems))
 	for _, elem := range obj.Elems {
 		switch elem := elem.(type) {
 		case *soltype.PropertyElem:
-			keys = append(keys, strLitType(elem.Name))
+			keys = append(keys, c.memberKeyType(elem.Name))
 		case *soltype.GetterElem:
-			keys = append(keys, strLitType(elem.Name))
+			keys = append(keys, c.memberKeyType(elem.Name))
 		case *soltype.SetterElem:
-			keys = append(keys, strLitType(elem.Name))
+			keys = append(keys, c.memberKeyType(elem.Name))
 		}
 	}
 	return newUnion(nil, keys)
@@ -1548,22 +1543,23 @@ func (e *typeEvaluator) reduceIndexAlias(op *soltype.AliasType, index soltype.Ty
 	})
 }
 
-// indexObject reduces `obj[key]` for a ground object. A string-literal key selects the named
-// member's read type, which is a property's or getter's declared type or a method's callable value.
-// A declared member always holds a value, so that read carries no `undefined`.
+// indexObject reduces `obj[key]` for a ground object. A string-literal or unique-symbol key selects
+// the member keyMemberName names, and the read is that member's read type. That is a property's or
+// getter's declared type or a method's callable value. A declared member always holds a value, so
+// that read carries no `undefined`.
 //
 // A key that names no declared member falls to the object's index signature, which covers every key
 // of its key set. That read is `Value | undefined`, since the signature says the key may be present
 // rather than that it is. An object with no index signature instead records an UnknownObjectKeyError
 // and reduces to the error sentinel.
 //
-// A key that is not a string literal, such as the bare `string` primitive, names no single member.
+// Any other key, such as the bare `string` primitive, names no single member.
 // It reads through the index signature the same way. Without one, a ground key of that shape can
 // never name a member, so it records a NoIndexSignatureError. A key that has not grounded may still
 // reduce to a literal, so the access stays symbolic instead.
 func (e *typeEvaluator) indexObject(obj *soltype.ObjectType, index soltype.Type, inexact bool) soltype.Type {
 	hasIdx := len(obj.IndexSignatures()) > 0
-	name, ok := strLitName(index)
+	name, ok := e.ctx.keyMemberName(index)
 	if !ok {
 		if hasIdx {
 			return e.indexSignatureRead(obj, index, inexact)
@@ -1907,27 +1903,48 @@ func mapFirstRune(s string, f func(rune) rune) string {
 	return string(f(r)) + s[size:]
 }
 
-// strLitName returns the property name a string-literal index selects, and false for any other
-// type. Object keys are strings, so only a StrLit names a member.
-func strLitName(t soltype.Type) (string, bool) {
-	if lit, ok := t.(*soltype.LitType); ok {
-		if s, ok := lit.Lit.(*soltype.StrLit); ok {
-			return s.Value, true
+// keyMemberName returns the name of the one member a key type selects, and false for any other
+// type. A string literal selects the member it spells. A unique symbol selects the member keyed
+// off it, which is stored under a reserved name soltype's symbol_key.go spells:
+//
+//   - A well-known symbol the prelude declares, such as the type of `Symbol.iterator`, selects
+//     the member `[Symbol.iterator]`, so `val it = Symbol.iterator` makes `o[it]` read the
+//     same member `o[Symbol.iterator]` does.
+//   - Any other unique symbol selects the member spelled by its id and its name.
+//
+// A string literal spelling a unique symbol's reserved name returns false, so the string `"@@#0"`
+// never reaches the member `[unique symbol#0]`. Nor does `"@@#0:sym"` reach `[sym]`.
+func (c *Context) keyMemberName(t soltype.Type) (string, bool) {
+	switch t := t.(type) {
+	case *soltype.LitType:
+		s, ok := t.Lit.(*soltype.StrLit)
+		if !ok {
+			return "", false
 		}
+		if _, reserved := soltype.UniqueSymbolOfMemberName(s.Value); reserved {
+			return "", false
+		}
+		return s.Value, true
+	case *soltype.UniqueSymbolType:
+		if name, isWellKnown := c.wellKnownSymbolMembers[t.ID]; isWellKnown {
+			return name, true
+		}
+		return soltype.UniqueSymbolMemberName(t), true
 	}
 	return "", false
 }
 
-// mappedKeyName returns the field name a mapped type's key emits. A string literal names one
-// directly; a number literal names the digits it spells, as `{0: v}` stores under "0". Separate from
-// strLitName because `T[0]` reads a tuple positionally, so that number must not be coerced.
-func mappedKeyName(t soltype.Type) (string, bool) {
+// mappedKeyName returns the field name a mapped type's key emits. A string literal or a unique
+// symbol names one the way keyMemberName reads it, and a number literal names the digits it spells,
+// as `{0: v}` stores under "0". Separate from keyMemberName because `T[0]` reads a tuple
+// positionally, so that number must not be coerced.
+func (c *Context) mappedKeyName(t soltype.Type) (string, bool) {
 	if lit, ok := t.(*soltype.LitType); ok {
 		if n, ok := lit.Lit.(*soltype.NumLit); ok {
 			return strconv.FormatFloat(n.Value, 'f', -1, 64), true
 		}
 	}
-	return strLitName(t)
+	return c.keyMemberName(t)
 }
 
 // isResidualOp reports whether t is an unreduced type-level operator at its top level. That is a
@@ -1989,10 +2006,24 @@ func isRestSpread(t soltype.Type) bool {
 	return ok
 }
 
-// strLitType builds the string-literal type for one key name, the form a projected object or
-// tuple key takes in a `keyof` union.
+// strLitType builds the string-literal type whose value is `name`.
 func strLitType(name string) soltype.Type {
 	return &soltype.LitType{Lit: &soltype.StrLit{Value: name}}
+}
+
+// memberKeyType returns the key type that names the member called `name`, the inverse of
+// keyMemberName. A member keyed off a unique symbol returns that symbol. That includes a
+// well-known symbol the prelude declares, so `[Symbol.iterator]` returns the type of
+// `Symbol.iterator`. Every other member returns its name as a string literal, and so does a
+// well-known symbol in a run whose prelude declares no type for it.
+func (c *Context) memberKeyType(name string) soltype.Type {
+	if sym, isUnique := soltype.UniqueSymbolOfMemberName(name); isUnique {
+		return sym
+	}
+	if sym, isWellKnown := c.wellKnownSymbolTypes[name]; isWellKnown {
+		return sym
+	}
+	return strLitType(name)
 }
 
 // containsResidualOp reports whether t holds any unreduced type-level operator node: a `keyof`, an

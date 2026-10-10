@@ -53,6 +53,13 @@ type Context struct {
 	// same declarations. It is nil on a Context built outside newChecker.
 	packages *PackageRegistry
 
+	// wellKnownSymbolMembers maps the id of each well-known symbol the prelude declares,
+	// such as the type of `Symbol.iterator`, to the reserved member name the written key
+	// `[Symbol.iterator]` names. wellKnownSymbolTypes maps the other way, from that member
+	// name to the symbol. resolveWellKnownSymbols fills both once per run.
+	wellKnownSymbolMembers map[int]string
+	wellKnownSymbolTypes   map[string]*soltype.UniqueSymbolType
+
 	// arrayClass is the qualified class name the prelude's `Array` binds to, read
 	// off the prelude scope once per run. The subtyping and iteration rules that single an
 	// array out compare against it, so they cost a string comparison rather than a
@@ -358,8 +365,11 @@ func (c *Context) freshVar(level int) *soltype.TypeVarType {
 // call answers a symbol distinct from every other, which is what the annotation means: two
 // declarations of `unique symbol` are two values, and nothing about either is written down
 // for a reader to compare instead.
-func (c *Context) freshSymbol() *soltype.UniqueSymbolType {
-	s := &soltype.UniqueSymbolType{ID: c.symbolCounter}
+//
+// `name` is the dotted path a program reads the symbol through, such as `sym`, `C.key`, or
+// `i.key`, and is empty when no such path exists. The symbol carries it for display.
+func (c *Context) freshSymbol(name string) *soltype.UniqueSymbolType {
+	s := &soltype.UniqueSymbolType{ID: c.symbolCounter, Name: name}
 	c.symbolCounter++
 	return s
 }

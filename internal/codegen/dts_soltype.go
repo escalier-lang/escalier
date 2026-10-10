@@ -52,6 +52,19 @@ type solTypeAnnBuilder struct {
 	// `declare const Box: {new <T>(v: T): Box<T>}` binds `T` on the constructor rather
 	// than beside the value. bindOnSignatures fills this, and a nil slice binds nothing.
 	signatureParams []*soltype.TypeParam
+	// symbolKeys maps a unique symbol's id to the name of a top-level value whose type is
+	// that symbol. TypeScript keys a member off a unique symbol by writing such a value in
+	// brackets, so `{[sym]: number}` needs `sym` in scope. A nil map names no symbol.
+	symbolKeys map[int]string
+	// typeofSymbols, when true, renders a unique symbol that symbolKeys holds a name for as
+	// `typeof sym`. When it is false, every unique symbol renders as `unique symbol`.
+	typeofSymbols bool
+	// symbolDeclarers maps the id of a unique symbol a property declares to the object
+	// type holding that property. That property renders the symbol as `unique symbol`,
+	// since it is the declaration a `typeof i.key` elsewhere refers to. The object is
+	// compared by pointer. An alias or interface body is the one object its declaration
+	// stores, so the declaration renders that same pointer. A nil map names no declarer.
+	symbolDeclarers map[int]*soltype.ObjectType
 }
 
 // newSolTypeAnnBuilder returns a renderer for one declaration. typeParams are
@@ -154,6 +167,12 @@ func (b *solTypeAnnBuilder) typeAnn(t soltype.Type) TypeAnn {
 		// declaration built after a reported error cascades no second one.
 		return NewAnyTypeAnn(nil)
 	case *soltype.UniqueSymbolType:
+		// TypeScript reads a written `unique symbol` as a new symbol, so a type that
+		// reaches an existing one names the value holding it, `typeof sym`. A symbol no
+		// top-level value holds keeps the `unique symbol` spelling.
+		if name, named := b.symbolKeys[t.ID]; named && b.typeofSymbols {
+			return NewTypeOfTypeAnn(convertQualIdentFromSol(name))
+		}
 		return NewUniqueSymbolTypeAnn(nil)
 	case *soltype.SelfType:
 		// `Self` is the receiver's class, which TypeScript spells `this`. No rewrite
@@ -448,6 +467,10 @@ func (b *solTypeAnnBuilder) objectTypeAnn(t *soltype.ObjectType) TypeAnn {
 			mappedAnns = append(mappedAnns, NewObjectTypeAnn(b.objTypeAnnElems(mapped)))
 			continue
 		}
+		if decl, declares := b.symbolDeclaration(t, elem); declares {
+			otherElems = append(otherElems, decl)
+			continue
+		}
 		otherElems = append(otherElems, b.objTypeAnnElems(elem)...)
 	}
 
@@ -465,23 +488,56 @@ func (b *solTypeAnnBuilder) objectTypeAnn(t *soltype.ObjectType) TypeAnn {
 	return NewObjectTypeAnn(otherElems)
 }
 
+// symbolDeclaration returns the `readonly key: unique symbol` property `elem` emits when
+// it is the property of `obj` that declares a unique symbol, and false for any other
+// element. Rendering that symbol as `typeof i.key` would make the declaration refer to
+// itself, which TypeScript rejects as circular.
+func (b *solTypeAnnBuilder) symbolDeclaration(obj *soltype.ObjectType, elem soltype.ObjTypeElem) (ObjTypeAnnElem, bool) {
+	prop, isProp := elem.(*soltype.PropertyElem)
+	if !isProp {
+		return nil, false
+	}
+	sym, isSym := prop.Type.(*soltype.UniqueSymbolType)
+	if !isSym || b.symbolDeclarers[sym.ID] != obj {
+		return nil, false
+	}
+	key, ok := b.objKeyFromSol(prop.Name)
+	if !ok {
+		return nil, false
+	}
+	return &PropertyTypeAnn{
+		Name:     key,
+		Optional: prop.Optional,
+		Readonly: prop.Readonly,
+		Value:    NewUniqueSymbolTypeAnn(nil),
+	}, true
+}
+
 // objTypeAnnElems lowers one soltype ObjTypeElem to the elements it emits. A
 // TypeScript overload set is one sibling declaration per arm, so a method,
 // constructor, or call signature fans out; one with no arm emits nothing.
 func (b *solTypeAnnBuilder) objTypeAnnElems(elem soltype.ObjTypeElem) []ObjTypeAnnElem {
 	switch elem := elem.(type) {
 	case *soltype.PropertyElem:
+		key, ok := b.objKeyFromSol(elem.Name)
+		if !ok {
+			return nil
+		}
 		return []ObjTypeAnnElem{&PropertyTypeAnn{
-			Name:     buildTypeAnnObjKeyFromSol(elem.Name),
+			Name:     key,
 			Optional: elem.Optional,
 			Readonly: elem.Readonly,
 			Value:    b.typeAnn(elem.Type),
 		}}
 	case *soltype.MethodElem:
+		key, ok := b.objKeyFromSol(elem.Name)
+		if !ok {
+			return nil
+		}
 		out := make([]ObjTypeAnnElem, len(elem.Signatures))
 		for i, fn := range elem.Signatures {
 			out[i] = &MethodTypeAnn{
-				Name:     buildTypeAnnObjKeyFromSol(elem.Name),
+				Name:     key,
 				Fn:       b.funcTypeAnn(fn),
 				Optional: elem.Optional,
 			}
@@ -502,8 +558,12 @@ func (b *solTypeAnnBuilder) objTypeAnnElems(elem soltype.ObjTypeElem) []ObjTypeA
 	case *soltype.GetterElem:
 		// soltype carries the value a getter returns rather than a signature, so
 		// the parameterless one TypeScript wants is built here.
+		key, ok := b.objKeyFromSol(elem.Name)
+		if !ok {
+			return nil
+		}
 		return []ObjTypeAnnElem{&GetterTypeAnn{
-			Name: buildTypeAnnObjKeyFromSol(elem.Name),
+			Name: key,
 			Fn: FuncTypeAnn{
 				TypeParams: nil,
 				Params:     nil,
@@ -516,8 +576,12 @@ func (b *solTypeAnnBuilder) objTypeAnnElems(elem soltype.ObjTypeElem) []ObjTypeA
 	case *soltype.SetterElem:
 		// TypeScript forbids a return type on a setter, so the printer drops the
 		// Return this fills in.
+		key, ok := b.objKeyFromSol(elem.Name)
+		if !ok {
+			return nil
+		}
 		return []ObjTypeAnnElem{&SetterTypeAnn{
-			Name: buildTypeAnnObjKeyFromSol(elem.Name),
+			Name: key,
 			Fn: FuncTypeAnn{
 				TypeParams: nil,
 				Params: []*Param{{
@@ -955,18 +1019,46 @@ func commonPrefix(a, b []*soltype.FuncType) []*soltype.FuncType {
 	return a[:n]
 }
 
-// buildTypeAnnObjKeyFromSol renders a member name as an object key. soltype
-// stores one keyed off a well-known symbol under a reserved `@@name` spelling,
-// which renders back as `[Symbol.name]`. Every other name is a string literal,
-// which the printer emits bare when it is a valid identifier.
-func buildTypeAnnObjKeyFromSol(name string) ObjKey {
+// objKeyFromSol renders a member name as an object key. soltype stores a member
+// keyed off a symbol under a reserved spelling, which renders back as a computed key:
+//
+//   - A well-known symbol's `@@name` renders as `[Symbol.name]`.
+//   - A unique symbol's reserved spelling renders as `[sym]`, where `sym` is the name
+//     symbolKeys holds for that id.
+//
+// Every other name is a string literal, which the printer emits bare when it is a
+// valid identifier.
+//
+// `ok` is false for a unique symbol symbolKeys holds no name for, and the caller
+// leaves that member out. TypeScript has no key a declaration could write for a symbol
+// no value in scope holds, and an index signature over `symbol` in its place would
+// claim a value at every other symbol as well.
+func (b *solTypeAnnBuilder) objKeyFromSol(name string) (ObjKey, bool) {
 	if sym, isSymbol := soltype.SymbolOfMemberName(name); isSymbol {
 		return NewComputedKey(
 			NewMemberExpr(NewIdentExpr("Symbol", "", nil), NewIdentifier(sym, nil), false, nil),
 			nil,
-		)
+		), true
 	}
-	return NewStrLit(name, nil)
+	if sym, isUnique := soltype.UniqueSymbolOfMemberName(name); isUnique {
+		symName, named := b.symbolKeys[sym.ID]
+		if !named {
+			return nil, false
+		}
+		return NewComputedKey(qualifiedExprFromSol(symName), nil), true
+	}
+	return NewStrLit(name, nil), true
+}
+
+// qualifiedExprFromSol splits a dotted value path such as `i.key`, which soltype carries
+// as one string, into the member expression that reads it.
+func qualifiedExprFromSol(path string) Expr {
+	parts := strings.Split(path, ".")
+	var expr Expr = NewIdentExpr(parts[0], "", nil)
+	for _, part := range parts[1:] {
+		expr = NewMemberExpr(expr, NewIdentifier(part, nil), false, nil)
+	}
+	return expr
 }
 
 // convertQualIdentFromSol splits a dotted reference such as `p.inner`, which
