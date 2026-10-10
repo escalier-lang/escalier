@@ -910,10 +910,10 @@ type InvalidObjectKeyError struct {
 }
 
 // UniqueSymbolPositionError fires when a `unique symbol` type is written where it cannot
-// name one symbol. A `unique symbol` annotation creates a symbol, so it is allowed only
-// where exactly one value carries it: a `val` declaration and a `static readonly` class
-// field. `Ann` is the annotation, which carries the blame span, and `Position` says
-// which rule it broke.
+// name one symbol. A `unique symbol` annotation creates a symbol, so it is allowed only on
+// a declaration that cannot be reassigned: a `val` declaration, a `static readonly` class
+// field, and a `readonly` property of an interface or object type. `Ann` is the
+// annotation, which carries the blame span, and `Position` says which rule it broke.
 type UniqueSymbolPositionError struct {
 	Ann      ast.TypeAnn
 	Position uniqueSymbolPosition
@@ -924,14 +924,18 @@ type UniqueSymbolPositionError struct {
 type uniqueSymbolPosition int
 
 const (
-	// uniqueSymbolAllowed is a `val` declaration or a `static readonly` class field.
+	// uniqueSymbolAllowed is a `val` declaration, a `static readonly` class field, or a
+	// `readonly` property of an interface or object type.
 	uniqueSymbolAllowed uniqueSymbolPosition = iota
 	// uniqueSymbolOnVar is a `var` declaration, which may later hold a different symbol.
 	uniqueSymbolOnVar
 	// uniqueSymbolOnField is a class field that is not both `static` and `readonly`.
 	uniqueSymbolOnField
+	// uniqueSymbolOnProperty is a property of an interface or object type that is not
+	// `readonly`.
+	uniqueSymbolOnProperty
 	// uniqueSymbolElsewhere is any other position, such as a parameter, a return type, or
-	// a member of an object type.
+	// a type alias.
 	uniqueSymbolElsewhere
 )
 
@@ -2648,8 +2652,10 @@ func (e *UniqueSymbolPositionError) Message() string {
 		return "A binding whose type is `unique symbol` must be declared with `val`."
 	case uniqueSymbolOnField:
 		return "A class field whose type is `unique symbol` must be `static` and `readonly`."
+	case uniqueSymbolOnProperty:
+		return "A property whose type is `unique symbol` must be `readonly`."
 	default:
-		return "A `unique symbol` type is only allowed on a `val` declaration or a `static readonly` class field."
+		return "A `unique symbol` type is only allowed on a `val` declaration, a `static readonly` class field, or a `readonly` property."
 	}
 }
 

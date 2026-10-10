@@ -218,11 +218,12 @@ val o = {[C.key]: 1}`},
 }
 
 // TestUniqueSymbolPosition covers where a `unique symbol` annotation may be written. It
-// names one symbol, so it is allowed only where exactly one value carries it: a `val`
-// declaration and a `static readonly` class field. Anywhere else the annotation is
-// reported and the value is typed `symbol`.
+// names one symbol, so it is allowed only on a declaration that cannot be reassigned: a
+// `val` declaration, a `static readonly` class field, and a `readonly` property of an
+// interface or object type. Anywhere else the annotation is reported and the value is typed
+// `symbol`.
 func TestUniqueSymbolPosition(t *testing.T) {
-	const elsewhere = "A `unique symbol` type is only allowed on a `val` declaration or a `static readonly` class field."
+	const elsewhere = "A `unique symbol` type is only allowed on a `val` declaration, a `static readonly` class field, or a `readonly` property."
 	const field = "A class field whose type is `unique symbol` must be `static` and `readonly`."
 	tests := []struct {
 		name     string
@@ -272,10 +273,20 @@ func TestUniqueSymbolPosition(t *testing.T) {
 			wantErrs: []string{"1:19-1:32: " + elsewhere},
 		},
 		{
-			name:     "MemberOfAnObjectType",
-			src:      "declare val o: {readonly key: unique symbol}",
-			want:     map[string]string{"o": "{readonly key: symbol}"},
-			wantErrs: []string{"1:31-1:44: " + elsewhere},
+			name: "ReadonlyPropertyOfAnObjectType",
+			src:  "declare val o: {readonly key: unique symbol}\nval k = o.key",
+			want: map[string]string{"k": "unique symbol#0"},
+		},
+		{
+			name: "ReadonlyPropertyOfAnInterface",
+			src:  "declare interface I { readonly key: unique symbol }\ndeclare val i: I\nval k = i.key\nval o = {[i.key]: 1}",
+			want: map[string]string{"k": "unique symbol#0", "o": "{[unique symbol#0]: 1}"},
+		},
+		{
+			name:     "PropertyThatIsNotReadonly",
+			src:      "declare val o: {key: unique symbol}",
+			want:     map[string]string{"o": "{key: symbol}"},
+			wantErrs: []string{"1:22-1:35: A property whose type is `unique symbol` must be `readonly`."},
 		},
 		{
 			name:     "TypeAlias",

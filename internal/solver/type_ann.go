@@ -81,10 +81,10 @@ func (c *checker) resolveTypeAnnType(scope *Scope, ta ast.TypeAnn, lvl int) (sol
 	case *ast.BigintTypeAnn:
 		return c.annPrim(ta, soltype.BigIntPrim), true
 	case *ast.UniqueSymbolTypeAnn:
-		// A `val` declaration or a `static readonly` field that types its own value with
-		// `unique symbol` resolves it through resolveDeclaredTypeAnn. Any `unique symbol`
-		// reached here sits in a position that more than one value can reach, such as a
-		// parameter or a member of an object type, so it cannot name one symbol.
+		// A `val` declaration, a `static readonly` field, or a `readonly` property that types
+		// its own value with `unique symbol` resolves it through resolveDeclaredTypeAnn. Any
+		// `unique symbol` reached here sits in a position that more than one value can
+		// reach, such as a parameter or a type alias, so it cannot name one symbol.
 		return c.rejectUniqueSymbol(ta, uniqueSymbolElsewhere), true
 	case *ast.NeverTypeAnn:
 		// `never` is the bottom of the lattice, the empty type. A mapped type's key-remapping
@@ -554,7 +554,14 @@ func (c *checker) resolveObjectProperty(scope *Scope, prop *ast.PropertyTypeAnn,
 			c.report(&MutFieldError{Ann: mta})
 			value = mta.Target
 		}
-		if t, ok := c.resolveTypeAnn(scope, value, lvl); ok {
+		// A `readonly` property cannot be reassigned, so it may carry a `unique symbol`, as
+		// `SymbolConstructor`'s `readonly iterator: unique symbol` does in TypeScript. The
+		// property has no declaration path to name the symbol by.
+		position := uniqueSymbolAllowed
+		if !prop.Readonly {
+			position = uniqueSymbolOnProperty
+		}
+		if t, ok := c.resolveDeclaredTypeAnn(scope, value, lvl, "", position); ok {
 			ft = t
 		}
 	}
