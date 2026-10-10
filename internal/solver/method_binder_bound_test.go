@@ -10,8 +10,7 @@ import (
 // type parameter, as `U` is in `m<U: T>`, reached through an instance. The bound reads at
 // the instance's argument, so on a `C<number>` it is `U: number`.
 func TestAMethodBinderBoundReadsAtTheInstance(t *testing.T) {
-	// C is invariant in T, because `sink` takes a T and `v` returns one. That keeps the
-	// widest-instance override check out of these cases.
+	// C is invariant in T, because `sink` takes a T and `v` returns one.
 	const class = `
 		class C<T> {
 			v: Array<T>,
@@ -112,28 +111,34 @@ func TestAMethodBinderBoundIsAnInputPosition(t *testing.T) {
 			`,
 		},
 		{
-			// The issue's example. The field returns T, so C stays covariant and widens. The
-			// bound marks T as a covariant input, so an override has to accept what the
-			// widest view passes, and Sub's narrower bound is rejected.
-			name: "ANarrowOverrideOfABoundedReaderIsRejected",
+			// The field returns T and the bound takes it, so C is invariant and does not widen.
+			name: "ABoundBesideAFieldBlocksWidening",
 			src: `
 				class C<T> {
 					v: Array<T>,
 					m<U: T>(&self, x: U) -> boolean { return false },
 				}
 				fn widen(c: &C<number>) -> &C<number | string> { return c }
+			`,
+			errs: []string{"cannot constrain string <: number"},
+		},
+		{
+			// `C<number>` does not widen, so the override is checked at `U: number`, the bound
+			// the `extends` clause gives the inherited method.
+			name: "AnOverrideAtTheExtendsBoundIsCompatible",
+			src: `
+				class C<T> {
+					v: Array<T>,
+					m<U: T>(&self, x: U) -> boolean { return false },
+				}
 				class Sub extends C<number> {
 					constructor(&mut self) { super([1]) },
 					m<U: number>(&self, x: U) -> boolean { return x > 1 },
 				}
 			`,
-			errs: []string{
-				"class `Sub` redeclares inherited member `m` with type `fn <U: number>(x: U) -> boolean`, " +
-					"which is not compatible with `fn <U: unknown>(x: U) -> boolean` declared by `C`",
-			},
 		},
 		{
-			name: "AnOverrideAcceptingTheWidestBoundIsCompatible",
+			name: "AnOverrideWithAWiderBoundIsCompatible",
 			src: `
 				class C<T> {
 					v: Array<T>,
@@ -146,23 +151,19 @@ func TestAMethodBinderBoundIsAnInputPosition(t *testing.T) {
 			`,
 		},
 		{
-			// The shape `Array.filter<S: T>` has. The return gives T an output position, so a
-			// `&self` method's bound leaves C covariant.
-			name: "ABoundBesideAReturnWidens",
+			// The return gives T an output position and the bound an input position, so C is
+			// invariant.
+			name: "ABoundBesideAReturnBlocksWidening",
 			src: `
 				class C<T> {
 					m<U: T>(&self, x: U) -> T { return x },
 				}
 				fn widen(c: &C<number>) -> &C<number | string> { return c }
 			`,
+			errs: []string{"cannot constrain string <: number"},
 		},
 		{
-			// Unlike the method in ABoundBesideAReturnWidens, the held function is whatever the
-			// constructor was given. It can close over state fixed to the instance's argument,
-			// such as a `fn (x) { log.push(x) return x }` over a `log: Array<number>`. Read
-			// through a widened `C<number | string>`, `f("s")` would push a string into
-			// `log`. Nothing checks the stored function the way the override check checks a
-			// method, so the field's input position counts and C is invariant.
+			// A held function's binder bound is an input position the way a method's is.
 			name: "AHeldFunctionsBoundBlocksWidening",
 			src: `
 				class C<T> {
