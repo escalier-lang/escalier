@@ -53,6 +53,20 @@ func TestEscapingClosureCapture(t *testing.T) {
 			`,
 			want: []string{"7:11-7:12: cannot move 'p' in a call that may run 'sink', which writes it"},
 		},
+		// A direct call to an overloaded name may run sink as much as any other call.
+		"MoveIntoAnOverloadAfterStoringAWritingClosureIntoAGlobalConflicts": {
+			src: `
+				var sink: fn () -> undefined = fn () {}
+				declare fn take(x: {x: number}) -> undefined
+				declare fn take(x: string) -> undefined
+				fn go() {
+					val mut p = {x: 1}
+					sink = fn () { p.x = 2 }
+					take(p)
+				}
+			`,
+			want: []string{"8:11-8:12: cannot move 'p' in a call that may run 'sink', which writes it"},
+		},
 		// A closure that only reads p does not keep p from moving.
 		"MoveAfterStoringAReadingClosureIntoAGlobalOk": {
 			src: `

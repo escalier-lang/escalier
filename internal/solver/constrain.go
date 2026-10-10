@@ -2675,7 +2675,7 @@ func decidingSignatures(obj *soltype.ObjectType) []*soltype.FuncType {
 // receiver in its callable signature. An empty set reads as the error sentinel.
 //
 // This is the lattice's reading, which is what an assignment and a `super(…)` call take. A
-// direct call picks one arm instead, through inferArmOverloadCall.
+// direct call picks one arm instead, through resolveOverload.
 func overloadReadType(sigs []*soltype.FuncType) soltype.Type {
 	switch len(sigs) {
 	case 0:

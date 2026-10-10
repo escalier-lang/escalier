@@ -1549,24 +1549,64 @@ func (c *checker) inferCall(scope *Scope, lvl int, e *ast.CallExpr) soltype.Type
 // holds takes that type rather than being inferred. A nil preset infers every
 // argument.
 func (c *checker) inferCallWithArgTypes(scope *Scope, lvl int, e *ast.CallExpr, preset map[ast.Expr]soltype.Type) soltype.Type {
-	// PR6: a DIRECT call to an overloaded name resolves against the overload set via
-	// resolveOverload, a phase distinct from constrain — so the disjunction stays out of
-	// the lattice. A call through an intermediate binding (`g = f; g(x)`) doesn't match
-	// here; it routes through the value-position intersection (constrain's
-	// IntersectionType arm) instead.
-	if ident, ok := e.Callee.(*ast.IdentExpr); ok {
-		if b, found := c.lookupValueBinding(scope, ident.Name); found && b.IsOverloaded() {
-			return c.inferOverloadedCall(scope, lvl, e, b, preset)
-		}
-	}
-	// Resolve the enclosing statement's CFG point before inferring the callee or
-	// arguments. Inferring a child that contains statements, such as an `if` argument,
-	// overwrites c.fn.currentStmt, so reading the point afterward would record an
-	// argument move against an inner branch instead of this call's statement.
+	// Every call runs these steps in this order:
+	//
+	//  1. Read the enclosing statement's CFG point and note the call site.
+	//  2. Resolve the callee. A bare name bound to an overload set resolves to the set,
+	//     and any other callee is inferred.
+	//  3. Type the arguments.
+	//  4. Apply the arguments, to the arm an overload set picks or to the one signature.
+	//  5. Record the argument effects of the signature they were applied to.
+	//
+	// The CFG point comes first because inferring a child that contains statements, such
+	// as an `if` argument, overwrites c.fn.currentStmt. Reading it afterward would record
+	// an argument move against an inner branch instead of this call's statement. The
+	// callee comes before the arguments so moves and borrows record in evaluation order.
+	// In `obj.m(take(obj))` the receiver read comes before the move.
 	consumeRef, hasConsumeRef := c.currentStmtRef()
 	// A closure stored into a module-level binding may run during any call.
 	if hasConsumeRef {
 		c.noteCallSite(e, consumeRef)
+	}
+	target := c.inferCallTarget(scope, lvl, e)
+	args := c.inferCallArgs(scope, lvl, e, preset)
+	var ret soltype.Type
+	var fn *soltype.FuncType
+	if target.overloads != nil {
+		ret, fn = c.resolveOverload(lvl, *target.overloads, args, e)
+	} else {
+		ret, fn = c.applyCallShape(lvl, e, target.callee, target.fn, args)
+	}
+	c.recordCallArgEffects(e, fn, consumeRef, hasConsumeRef)
+	c.recordType(e, ret)
+	return ret
+}
+
+// callTarget is what a call applies its arguments to. overloads is non-nil when the
+// callee carries several signatures, and the call picks one of them. Otherwise callee is
+// the inferred callee, and fn is its single signature, or nil when that is not yet known.
+type callTarget struct {
+	overloads *ValueBinding
+	callee    soltype.Type
+	fn        *soltype.FuncType
+}
+
+// inferCallTarget resolves e's callee and returns what the call applies its arguments to.
+// It infers none of the arguments.
+func (c *checker) inferCallTarget(scope *Scope, lvl int, e *ast.CallExpr) callTarget {
+	// A direct call to an overloaded name resolves against the overload set through
+	// resolveOverload, a phase distinct from constrain, so the disjunction stays out of
+	// the lattice. A call through an intermediate binding, as in `g = f; g(x)`, does not
+	// match here. It reaches the IntersectionType arm of constrain instead.
+	//
+	// The callee's display type is recorded for Info through overloadDisplayType, which
+	// coalesces the schemes rather than instantiating them. resolveOverload does the only
+	// per-arm instantiation the call needs.
+	if ident, ok := e.Callee.(*ast.IdentExpr); ok {
+		if b, found := c.lookupValueBinding(scope, ident.Name); found && b.IsOverloaded() {
+			c.recordType(e.Callee, overloadDisplayType(b))
+			return callTarget{overloads: &b}
+		}
 	}
 	callee := c.inferExpr(scope, lvl, e.Callee)
 	// A member callee whose type is an intersection of function arms is an overloaded
@@ -1579,7 +1619,7 @@ func (c *checker) inferCallWithArgTypes(scope *Scope, lvl int, e *ast.CallExpr, 
 	// constrain.
 	if _, isMember := e.Callee.(*ast.MemberExpr); isMember {
 		if arms, ok := funcIntersectionArms(callee); ok {
-			return c.inferArmOverloadCall(scope, lvl, e, arms, preset, consumeRef, hasConsumeRef)
+			return armsTarget(arms)
 		}
 	}
 	// A class value whose constructor is overloaded resolves through the arms its
@@ -1587,7 +1627,7 @@ func (c *checker) inferCallWithArgTypes(scope *Scope, lvl int, e *ast.CallExpr, 
 	// `Array(1, 2, 3)` select different arms, so the set is weighed per arm rather than
 	// folded into one callee <: callShape constraint.
 	if arms, ok := c.ctorOverloadArms(callee); ok {
-		return c.inferArmOverloadCall(scope, lvl, e, arms, preset, consumeRef, hasConsumeRef)
+		return armsTarget(arms)
 	}
 	// Instantiate a generic callee so each call binds its type parameters independently. A
 	// rank-2 callback param is an unfreshened MonoScheme, so this keeps its `T` per-call.
@@ -1608,16 +1648,36 @@ func (c *checker) inferCallWithArgTypes(scope *Scope, lvl int, e *ast.CallExpr, 
 			// `i.next()` and `i.next(v)`, and rejects a wrong `v` against the element rather
 			// than against the slot. Routing here rather than into a single callee <: callShape
 			// constraint keeps that choice where choosing belongs.
-			return c.inferArmOverloadCall(scope, lvl, e, cands, preset, consumeRef, hasConsumeRef)
+			return armsTarget(cands)
 		}
 		fn = cands[0]
 	}
-	// These are the CALL SHAPE's parameters, built from the argument types — not the callee's,
-	// which is what the older name `demand` suggested. The constraint below is
+	if !resolved {
+		fn = nil
+	}
+	return callTarget{callee: callee, fn: fn}
+}
+
+// armsTarget returns a call target that picks one of arms, each wrapped as a monomorphic
+// scheme so resolveOverload trials it the way it trials a named overload set's arms.
+func armsTarget(arms []*soltype.FuncType) callTarget {
+	schemes := make([]TypeScheme, len(arms))
+	for i, arm := range arms {
+		schemes[i] = &MonoScheme{Ty: arm}
+	}
+	return callTarget{overloads: &ValueBinding{Schemes: schemes}}
+}
+
+// applyCallShape applies args to callee, whose single signature is fn, or nil when that is
+// not yet known. It returns the call's type and fn.
+func (c *checker) applyCallShape(lvl int, e *ast.CallExpr, callee soltype.Type, fn *soltype.FuncType, args []soltype.Type) (soltype.Type, *soltype.FuncType) {
+	resolved := fn != nil
+	// These are the CALL SHAPE's parameters, built from the argument types, not the callee's.
+	// The constraint below is
 	// `callee <: callShape`, and under #677's accept-set reading the callee is the side that
 	// demands arguments while the call shape is the side that provides them.
-	callShapeParams := make([]*soltype.FuncParam, len(e.Args))
-	for i, t := range c.inferCallArgs(scope, lvl, e, preset) {
+	callShapeParams := make([]*soltype.FuncParam, len(args))
+	for i, t := range args {
 		callShapeParams[i] = &soltype.FuncParam{Type: t}
 	}
 	res := c.freshAt(lvl)
@@ -1692,12 +1752,11 @@ func (c *checker) inferCallWithArgTypes(scope *Scope, lvl int, e *ast.CallExpr, 
 	// concrete arity faults are owned by the lints above — resolves its blame to the call.
 	c.recordProv(callShape, e, CallShape)
 	c.constrain(e, callee, callShape)
-	if resolved {
-		c.constrain(e, fn.Ret, res)
-		c.recordCallArgEffects(e, fn, consumeRef, hasConsumeRef)
+	if !resolved {
+		return res, nil
 	}
-	c.recordType(e, res)
-	return res
+	c.constrain(e, fn.Ret, res)
+	return res, fn
 }
 
 // calleeReceiver returns the receiver a method call is made through and the `self` parameter
@@ -1766,51 +1825,6 @@ func (c *checker) consumeCallArgs(e *ast.CallExpr, fn *soltype.FuncType, ref liv
 		// consuming, so the isConcreteOwned gate above skips it.
 		c.recordEscapeSite(arg, ref)
 	}
-}
-
-// inferOverloadedCall types a direct call to an overloaded name (PR6). It infers
-// the types of the arguments, records the callee's overload type for Info, and
-// resolves the call through resolveOverload, which trials each arm under a probe
-// and commits the winner. No constraint is emitted against the SET as a whole: an
-// overload set is chosen from rather than checked whole, and each trial builds the
-// same call shape the ordinary path builds and constrains its own candidate against
-// it. The TooManyArgs and NotEnoughArgs lints don't apply – arity is settled by that
-// per-arm constraint, and a no-match becomes a NoMatchingOverloadError.
-func (c *checker) inferOverloadedCall(scope *Scope, lvl int, e *ast.CallExpr, b ValueBinding, preset map[ast.Expr]soltype.Type) soltype.Type {
-	// Read the statement point before the arguments are inferred, for the reason inferCall
-	// gives: an argument containing statements overwrites the current one.
-	consumeRef, hasConsumeRef := c.currentStmtRef()
-	args := c.inferCallArgs(scope, lvl, e, preset)
-	// Record the callee's display type for Info (hover) via overloadDisplayType, which
-	// coalesces the schemes rather than instantiating them — resolveOverload below does
-	// the (only) per-arm instantiation needed to type the call.
-	c.recordType(e.Callee, overloadDisplayType(b))
-	ret, winner := c.resolveOverload(lvl, b, args, e)
-	c.recordCallArgEffects(e, winner, consumeRef, hasConsumeRef)
-	c.recordType(e, ret)
-	return ret
-}
-
-// inferArmOverloadCall types a call whose callee carries several signatures rather than one:
-// an overloaded method reached through a member callee, such as `p.m(args)`, or an
-// overloaded constructor reached through a class value, such as `Array(3)`. It infers the
-// arguments, then resolves one arm through resolveOverload — the same machinery a direct
-// overloaded-name call uses, driven by the arms wrapped as monomorphic schemes. Like
-// inferOverloadedCall it emits no constraint against the set as a whole, since choosing an
-// arm is what resolution does, and a no-match becomes a NoMatchingOverloadError.
-func (c *checker) inferArmOverloadCall(
-	scope *Scope, lvl int, e *ast.CallExpr, arms []*soltype.FuncType,
-	preset map[ast.Expr]soltype.Type, consumeRef liveness.StmtRef, hasConsumeRef bool,
-) soltype.Type {
-	args := c.inferCallArgs(scope, lvl, e, preset)
-	schemes := make([]TypeScheme, len(arms))
-	for i, arm := range arms {
-		schemes[i] = &MonoScheme{Ty: arm}
-	}
-	ret, winner := c.resolveOverload(lvl, ValueBinding{Schemes: schemes}, args, e)
-	c.recordCallArgEffects(e, winner, consumeRef, hasConsumeRef)
-	c.recordType(e, ret)
-	return ret
 }
 
 // upgradeCallShapeParams applies the immutable→mutable argument upgrade across a call shape's
@@ -1909,8 +1923,8 @@ func (c *checker) inferCallArgs(scope *Scope, lvl int, e *ast.CallExpr, preset m
 // recordCallArgEffects moves the arguments a call consumes, records the borrow edges its
 // signature stores, and checks its borrow arguments against each other, through consumeCallArgs,
 // recordCallStoreEdges and checkCallBorrowExclusivity. It is the ONE place both call paths run
-// those three, against whichever signature the call resolved to: the shape inferCall read off
-// the callee, or the arm resolveOverload picked. Keeping them here is what stops one path from
+// those three, against whichever signature the call resolved to. That is the single signature
+// inferCallTarget read off the callee, or the arm resolveOverload picked. Keeping them here is what stops one path from
 // forgetting them, which is how #1508 came about.
 //
 // fn is nil when no arm accepted the call. Nothing is moved then, since no signature says which
@@ -2040,8 +2054,8 @@ func funcIntersectionArms(t soltype.Type) ([]*soltype.FuncType, bool) {
 // An OVERLOADED constructor yields nothing here, the same as an overloaded method, whose
 // value reads as an intersection this never sees a single FuncType in. No one arm is the
 // callee, so the arity lints and the argument upgrade have nothing to read. Such a call never
-// reaches them anyway: inferCall routes it to inferArmOverloadCall, which picks an arm and
-// owns both checks itself.
+// reaches them anyway: inferCallTarget hands its arms to resolveOverload, which picks an arm
+// and owns both checks itself.
 func resolveFunc(t soltype.Type) (*soltype.FuncType, bool) {
 	switch t := t.(type) {
 	case *soltype.FuncType:
@@ -2074,9 +2088,9 @@ func resolveFunc(t soltype.Type) (*soltype.FuncType, bool) {
 // so the call signature is the only way to make one.
 //
 // Whichever member decides, it decides whether or not it is overloaded. An overloaded one
-// yields nothing here, since no single arm is the callee and inferCall routes such a call to
-// inferArmOverloadCall instead. Falling through to the other member would check the call
-// against a signature the caller did not name.
+// yields nothing here, since no single arm is the callee and inferCallTarget hands such a
+// call's arms to resolveOverload instead. Falling through to the other member would check
+// the call against a signature the caller did not name.
 func soleCallableSignature(t *soltype.ObjectType) (*soltype.FuncType, bool) {
 	if ctor, ok := t.Constructor(); ok {
 		if len(ctor.Signatures) == 1 {
