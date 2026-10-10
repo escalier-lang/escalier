@@ -395,22 +395,28 @@ const (
 
 // TypeParam is a type binder in a <…> quantifier list. UpperBound is the bound
 // the type must satisfy. In <T: U>, T <: U, read "T is a subtype of U". The ':'
-// here means subtyping, not the outliving ':' of a LifetimeParam bound. A
-// binder is a type or a lifetime, never both, so the two never mix on one
-// binder and the checker picks the relation from the binder's sort. Variance is
-// the optional `in`/`out`/`in out` declaration-site modifier. span covers the
-// whole binder. It runs from the variance modifier or the name through the end
-// of a bound or default, so a diagnostic about the parameter can point at
-// the declaration that introduced it.
+// of a LifetimeParam bound reads the same way, with the longer lifetime the
+// subtype. A binder is a type or a lifetime, never both, so the two never mix
+// on one binder and the checker picks the relation from the binder's sort.
+// Variance is the optional `in`/`out`/`in out` declaration-site modifier.
+// span covers the whole binder. It runs from the variance modifier or the name
+// through the end of an inline bound or default, so a diagnostic about the
+// parameter can point at the declaration that introduced it. A bound a `where`
+// clause writes keeps the clause relation's span.
 type TypeParam struct {
 	Name string
-	// LowerBound is the type written after `>:`, as `T` in `B >: T`. nil ⇒ none.
+	// LowerBound is the left side of a `where X: P` relation on this parameter P.
+	// nil ⇒ none.
 	LowerBound TypeAnn
-	// UpperBound is the type written after `:`, as `U` in `T: U`. nil ⇒ unbounded.
+	// UpperBound is the type written after `:` on the binder, as `U` in `T: U`, or
+	// the right side of a `where T: U` relation. nil ⇒ unbounded.
 	UpperBound TypeAnn
-	Default    TypeAnn
-	Variance   VarianceModifier
-	span       Span
+	// UpperBoundInWhere reports that UpperBound was written in a `where` clause rather
+	// than on the binder, so the printer puts it back in the clause.
+	UpperBoundInWhere bool
+	Default           TypeAnn
+	Variance          VarianceModifier
+	span              Span
 	commentSlots
 }
 

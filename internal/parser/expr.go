@@ -618,6 +618,7 @@ func (p *Parser) fnExpr(start ast.Location, async bool, gen bool) ast.Expr {
 	}
 
 	throwsType := p.throwsClause()
+	p.whereClause(typeParams)
 
 	body := p.block()
 	end := body.Span.End

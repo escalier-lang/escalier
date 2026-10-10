@@ -1645,9 +1645,10 @@ func (e *TypeParamDefaultForwardRefError) Message() string {
 }
 
 // TypeParamBoundCycleError fires when a type parameter's bound chain reaches the parameter
-// itself through bare parameters of its own list, as `<T: U, U: T>` and `<B >: B>` do. Such a
-// chain names no type the parameter is bounded by, and following it while a body is checked
-// would close on the pair it started from. Param is the parameter the cycle is reported at,
+// itself through bare parameters of its own list, as `<T: U, U: T>` does above and two lower
+// bounds whose members name each other's parameter do below. Such a chain names no type the
+// parameter is bounded by, and following it while a body is checked would close on the pair
+// it started from. Param is the parameter the cycle is reported at,
 // Through the parameters the chain passes on its way back, in order, and Lower whether the
 // chain runs through lower bounds rather than upper ones.
 type TypeParamBoundCycleError struct {

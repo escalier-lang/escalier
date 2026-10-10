@@ -252,6 +252,16 @@ func (p *Parser) funcTypeAnnTail(keyword *Token) *ast.FuncTypeAnn {
 		endSpan = throwsType.Span()
 	}
 
+	// A function type with no parameters of its own has nothing a clause could bound, so a
+	// clause after it belongs to the signature this type is the return of. A function type
+	// with parameters takes the clause, and the enclosing signature parenthesizes such a
+	// return to keep a clause of its own, as it does ahead of a throws clause.
+	if len(typeParams) > 0 {
+		if end, ok := p.whereClause(typeParams); ok {
+			endSpan = ast.NewSpan(endSpan.Start, end, p.lexer.source.ID)
+		}
+	}
+
 	fnAnn := ast.NewFuncTypeAnn(
 		lifetimeParams,
 		typeParams,
@@ -1121,6 +1131,10 @@ func (p *Parser) objTypeAnnElemInner() ast.ObjTypeAnnElem {
 			endSpan = throwsType.Span()
 		}
 
+		if end, ok := p.whereClause(typeParams); ok {
+			endSpan = ast.NewSpan(endSpan.Start, end, p.lexer.source.ID)
+		}
+
 		fnTypeAnn := ast.NewFuncTypeAnn(
 			lifetimeParams,
 			typeParams,
@@ -1180,22 +1194,11 @@ func (p *Parser) typeParam(allowVariance bool) *ast.TypeParam {
 	}
 	end := token.Span.End
 
-	var lowerBound ast.TypeAnn
 	var upperBound ast.TypeAnn
 	var default_ ast.TypeAnn
 
-	// A lower bound is written `>:` with no space between the two characters. Inside a
-	// binder list nothing else puts `>` and then `:` after a name, so a spaced `> :` is
-	// left to close the list and fails there.
-	if p.adjacentPair(GreaterThan, Colon) {
-		p.lexer.consume() // consume '>'
-		p.lexer.consume() // consume ':'
-		lowerBound = p.typeAnnRequired()
-		if lowerBound != nil {
-			end = lowerBound.Span().End
-		}
-	}
-
+	// A binder writes only an upper bound and a default. A lower bound is written in a
+	// `where` clause with the parameter on the right, as `where T: B`.
 	if p.lexer.peek().Type == Colon {
 		p.lexer.consume() // consume ':'
 		upperBound = p.typeAnnRequired()
@@ -1212,7 +1215,7 @@ func (p *Parser) typeParam(allowVariance bool) *ast.TypeParam {
 		}
 	}
 
-	typeParam := ast.NewTypeParam(name, lowerBound, upperBound, default_, ast.NewSpan(start, end, p.lexer.source.ID))
+	typeParam := ast.NewTypeParam(name, nil, upperBound, default_, ast.NewSpan(start, end, p.lexer.source.ID))
 	typeParam.Variance = variance
 	return &typeParam
 }

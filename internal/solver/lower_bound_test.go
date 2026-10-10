@@ -6,7 +6,7 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-// TestLowerBoundedBinder covers a type parameter written with a `>:` lower bound: how a call
+// TestLowerBoundedBinder covers a type parameter bounded below by a `where` clause: how a call
 // instantiates it, what a body may do with it, how it renders, and how its bound is checked
 // against a type argument, a default, a constraint and a later interface declaration.
 func TestLowerBoundedBinder(t *testing.T) {
@@ -15,7 +15,7 @@ func TestLowerBoundedBinder(t *testing.T) {
 	const bag = `
 		class Bag<T> {
 			items: Array<T>,
-			contains<B >: T>(&self, x: B) -> boolean { return false },
+			contains<B>(&self, x: B) -> boolean where T: B { return false },
 		}
 	`
 	tests := []struct {
@@ -33,12 +33,12 @@ func TestLowerBoundedBinder(t *testing.T) {
 				val r = b.contains("s")
 				val m = b.contains
 			`,
-			want: map[string]string{"r": "boolean", "m": "fn <B >: number>(x: B) -> boolean"},
+			want: map[string]string{"r": "boolean", "m": "fn <B>(x: B) -> boolean where number: B"},
 		},
 		{
 			name: "a return starts from the bound",
 			src: `
-				fn pick<B >: number>(x: B) -> B { return x }
+				fn pick<B>(x: B) -> B where number: B { return x }
 				val r = pick("s")
 				val n = pick(1)
 			`,
@@ -47,12 +47,12 @@ func TestLowerBoundedBinder(t *testing.T) {
 		{
 			// Every instantiation of `B` is a supertype of `number`, so a number is a `B`.
 			name: "a body returns a value below the bound",
-			src:  `fn f<B >: number>() -> B { return 1 }`,
-			want: map[string]string{"f": "fn <B >: number>() -> B"},
+			src:  `fn f<B>() -> B where number: B { return 1 }`,
+			want: map[string]string{"f": "fn <B>() -> B where number: B"},
 		},
 		{
 			name: "a body cannot flow a value above the bound into the binder",
-			src: `fn f<B >: number>(x: B) -> B {
+			src: `fn f<B>(x: B) -> B where number: B {
 				val y: B = "s"
 				return y
 			}`,
@@ -61,29 +61,24 @@ func TestLowerBoundedBinder(t *testing.T) {
 		{
 			// `U`'s own bound reaches `B`, which the lower bound neither helps nor hinders.
 			name: "a sibling bounded above by the binder flows into it",
-			src:  `fn f<B >: number, U: B>(u: U) -> B { return u }`,
-			want: map[string]string{"f": "fn <B >: number, U: B>(u: U) -> B"},
+			src:  `fn f<B, U: B>(u: U) -> B where number: B { return u }`,
+			want: map[string]string{"f": "fn <B, U: B>(u: U) -> B where number: B"},
 		},
 		{
+			// `where U: T` names two parameters, so it records `T` as `U`'s upper bound.
 			name: "a sibling flows into the binder it bounds",
-			src:  `fn f<T >: U, U>(u: U) -> T { return u }`,
-			want: map[string]string{"f": "fn <T >: U, U>(u: U) -> T"},
-		},
-		{
-			// `1` reaches `U` through `T`'s bound, and `U` admits only what its caller chose.
-			name: "a value below a sibling-bounded binder is rejected",
-			src:  `fn f<T >: U, U>() -> T { return 1 }`,
-			errs: []string{"cannot constrain 1 <: T"},
+			src:  `fn f<T, U>(u: U) -> T where U: T { return u }`,
+			want: map[string]string{"f": "fn <T, U: T>(u: U) -> T"},
 		},
 		{
 			name: "an intersection naming the binder flows into it",
-			src:  `fn f<B >: number>(x: B & {tag: string}) -> B { return x }`,
-			want: map[string]string{"f": "fn <B >: number>(x: B & {tag: string}) -> B"},
+			src:  `fn f<B>(x: B & {tag: string}) -> B where number: B { return x }`,
+			want: map[string]string{"f": "fn <B>(x: B & {tag: string}) -> B where number: B"},
 		},
 		{
 			// `h("s")` is a variable until the call resolves it, and the bound is checked then.
 			name: "a value reaching the binder through a variable is checked when it resolves",
-			src: `fn f<B >: number>(h: fn <V>(v: V) -> V) -> B {
+			src: `fn f<B>(h: fn <V>(v: V) -> V) -> B where number: B {
 				return h("s")
 			}`,
 			errs: []string{`cannot constrain "s" <: B`},
@@ -92,30 +87,30 @@ func TestLowerBoundedBinder(t *testing.T) {
 			// `b: Box<T>` records `number` on `T` while the signature resolves. That floor is the
 			// signature's, so the body is not reported for forcing it.
 			name: "a bound a type reference records is not a floor the body forced",
-			src: `class Box<B >: number> { v: B }
+			src: `class Box<B> where number: B { v: B }
 				fn g<T>(b: Box<T>) -> T { return b.v }`,
 			want: map[string]string{"g": "fn <T>(b: Box<T>) -> T"},
 		},
 		{
 			// A lower bound says what flows into `B`, not what `B` is, so `x` is not a number.
 			name: "a body cannot read the binder as its bound",
-			src:  `fn f<B >: number>(x: B) -> boolean { return x > 1 }`,
+			src:  `fn f<B>(x: B) -> boolean where number: B { return x > 1 }`,
 			errs: []string{"cannot constrain B <: number"},
 		},
 		{
 			name: "a lower bound above the constraint is rejected",
-			src:  `fn f<B >: string: number>(x: B) -> B { return x }`,
+			src:  `fn f<B: number>(x: B) -> B where string: B { return x }`,
 			errs: []string{"cannot constrain string <: number"},
 		},
 		{
 			name: "a default below the lower bound is rejected",
-			src:  `class Box<B >: number = string> { v: B }`,
+			src:  `class Box<B = string> where number: B { v: B }`,
 			errs: []string{"cannot constrain number <: string"},
 		},
 		{
 			name: "a type argument is checked against the lower bound",
 			src: `
-				type Widen<B >: string> = B
+				type Widen<B> where string: B = B
 				val ok: Widen<number | string> = 1
 				val bad: Widen<number> = 1
 			`,
@@ -123,15 +118,15 @@ func TestLowerBoundedBinder(t *testing.T) {
 		},
 		{
 			name: "both bounds and a default render in order",
-			src:  `class Box<B >: number: number | string = number> { v: B }`,
-			want: map[string]string{"Box": "<B >: number: number | string = number> {new (v: B) -> Box<B>}"},
+			src:  `class Box<B: number | string = number> where number: B { v: B }`,
+			want: map[string]string{"Box": "<B: number | string = number> {new (v: B) -> Box<B>} where number: B"},
 		},
 		{
 			// `T` occurs only in the lower bound, which counts as a use.
 			name: "a parameter named only in a lower bound is used",
 			src: `
 				class C<T> {
-					m<B >: T>(&self, x: B) -> boolean { return false },
+					m<B>(&self, x: B) -> boolean where T: B { return false },
 				}
 			`,
 		},
@@ -139,7 +134,7 @@ func TestLowerBoundedBinder(t *testing.T) {
 			name: "a later interface declaration may not add a lower bound",
 			src: `
 				interface Box<T> { v: T }
-				interface Box<T >: number> { w: T }
+				interface Box<T> where number: T { w: T }
 			`,
 			errs: []string{"declarations of interface Box must agree on their type parameters: only the first declaration may write a bound"},
 		},
@@ -171,7 +166,7 @@ func TestInferClassLowerBoundedMethod(t *testing.T) {
 	const bag = `
 		class Bag<T> {
 			items: Array<T>,
-			contains<B >: T>(&self, x: B) -> boolean { return false },
+			contains<B>(&self, x: B) -> boolean where T: B { return false },
 		}
 	`
 	tests := []struct {
@@ -197,7 +192,7 @@ func TestInferClassLowerBoundedMethod(t *testing.T) {
 			name: "a parameter only a lower bound names widens",
 			src: `
 				class Sink<T> {
-					emit<B >: T>(&self, x: B) -> boolean { return false },
+					emit<B>(&self, x: B) -> boolean where T: B { return false },
 				}
 				fn widen(s: &Sink<number>) -> &Sink<number | string> { return s }
 			`,
@@ -216,7 +211,7 @@ func TestInferClassLowerBoundedMethod(t *testing.T) {
 			want: []string{
 				"class `NumBag` redeclares inherited member `contains` with type " +
 					"`fn (x: number) -> boolean`, which is not compatible with " +
-					"`fn <B >: number>(x: B) -> boolean` declared by `Bag`",
+					"`fn <B>(x: B) -> boolean where number: B` declared by `Bag`",
 			},
 		},
 		{
@@ -224,7 +219,7 @@ func TestInferClassLowerBoundedMethod(t *testing.T) {
 			src: bag + `
 				class NumBag extends Bag<number> {
 					constructor(&mut self) { super([1]) },
-					contains<B >: number>(&self, x: B) -> boolean { return false },
+					contains<B>(&self, x: B) -> boolean where number: B { return false },
 				}
 			`,
 		},
@@ -234,7 +229,7 @@ func TestInferClassLowerBoundedMethod(t *testing.T) {
 			src: bag + `
 				class NumBag extends Bag<number> {
 					constructor(&mut self) { super([1]) },
-					contains<B >: number>(&self, x: B) -> boolean { return x > 1 },
+					contains<B>(&self, x: B) -> boolean where number: B { return x > 1 },
 				}
 			`,
 			want: []string{"cannot constrain B <: number"},
@@ -258,7 +253,7 @@ func TestInferClassLowerBoundedMethod(t *testing.T) {
 						super(items)
 						self.key = key
 					},
-					contains<B >: U>(&self, x: B) -> boolean { return (self.key)(x) > 0 },
+					contains<B>(&self, x: B) -> boolean where U: B { return (self.key)(x) > 0 },
 				}
 			`,
 			want: []string{"cannot constrain B <: U"},

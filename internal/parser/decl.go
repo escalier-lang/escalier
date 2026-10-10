@@ -608,6 +608,10 @@ func (p *Parser) classDecl(start ast.Location, export, declare, final bool) ast.
 		token = p.lexer.peek()
 	}
 
+	if _, ok := p.whereClause(typeParams); ok {
+		token = p.lexer.peek()
+	}
+
 	// Parse class body
 	if token.Type != OpenBrace {
 		p.reportError(token.Span, "Expected '{' to start class body")
@@ -1049,6 +1053,7 @@ modifiers_done:
 		}
 
 		throwsType := p.throwsClause()
+		p.whereClause(typeParams)
 
 		// Optionally parse block
 		var body *ast.Block
@@ -1285,6 +1290,9 @@ func (p *Parser) fnDecl(start ast.Location, export bool, declare bool, async boo
 	if throwsType != nil {
 		end = throwsType.Span().End
 	}
+	if whereEnd, ok := p.whereClause(typeParams); ok {
+		end = whereEnd
+	}
 
 	// A `declare fn` has no body, so leave it nil. Only a non-declare function parses a
 	// block, and every FuncDecl.Body consumer already guards nil for the declare case.
@@ -1321,6 +1329,7 @@ func (p *Parser) typeDecl(start ast.Location, export bool, declare bool) ast.Dec
 	// Parse optional lifetime and type parameters, so `type Ref<'a, T> = &'a T` binds both
 	// the lifetime parameter 'a and the type parameter T.
 	lifetimeParams, typeParams := p.maybeLifetimeAndTypeParams(false)
+	p.whereClause(typeParams)
 
 	p.expect(Equal, AlwaysConsume)
 
@@ -1374,6 +1383,8 @@ func (p *Parser) interfaceDecl(start ast.Location, export bool, declare bool) as
 			extends = append(extends, typeRefType)
 		}
 	}
+
+	p.whereClause(typeParams)
 
 	// Parse the object type body (interface body)
 	token = p.lexer.peek()
@@ -1457,6 +1468,7 @@ func (p *Parser) enumDecl(start ast.Location, export bool, declare bool) ast.Dec
 
 	// Parse optional type parameters
 	typeParams := p.maybeTypeParams()
+	p.whereClause(typeParams)
 
 	// Expect opening brace
 	token = p.lexer.peek()
@@ -1514,6 +1526,7 @@ func (p *Parser) parseCallableElem(start ast.Location) ast.ClassElem {
 		returnType = p.typeAnn()
 	}
 	throwsType := p.throwsClause()
+	p.whereClause(typeParams)
 
 	// A body is read and reported rather than left for the next element to trip on. A call
 	// signature declares a shape, so only a `declare class` may carry one.

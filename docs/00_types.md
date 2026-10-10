@@ -205,6 +205,17 @@ Aliases may be recursive and mutually recursive across files. The dependency
 graph orders declarations, so an alias may reference one written later in the
 source.
 
+A type parameter takes an upper bound on its binder, as `<T: Shape>`, or in a
+`where` clause after the signature or the declaration header. A relation `X: Y` in
+the clause says `X` is a subtype of `Y`, so a parameter on the right is bounded
+below: `contains<B>(&self, x: B) -> boolean where T: B` accepts any `B` that a
+`T` can flow into. Several relations are separated by commas.
+
+```esc
+fn fstNum<A, B>(a: A, b: B) -> A where A: number, B: number { return a }
+type Widen<B> where string: B = B
+```
+
 Lifetime parameters are written in the same list, `<'a>`, and optionally bounded
 with `'a: 'b`. Functions, classes, interfaces, and type aliases may all take
 them; enums may not. See [Ownership](09_ownership.md).

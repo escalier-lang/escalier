@@ -51,7 +51,7 @@ func TestClassDeclDependencies(t *testing.T) {
 		"ClassWithTypeParamLowerBound": {
 			input: `
 				type Item = string
-				class DataClass<T >: Item> {
+				class DataClass<T> where Item: T {
 					value: T,
 				}
 			`,
