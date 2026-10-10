@@ -55,9 +55,8 @@ var (
 	causeIfValNullish = &solverSkipCause{
 		name: "an `if val` identifier or object pattern narrowing `null` and `undefined` out of its scrutinee",
 	}
-	causeTemplateLiterals = &solverSkipCause{
-		name:   "template literals",
-		ticket: "#1654",
+	causeScriptDecls = &solverSkipCause{
+		name: "a `type` or `declare fn` declaration at the top level of a script",
 	}
 	causeTypeCast = &solverSkipCause{
 		name:   "typecast expressions",
@@ -123,9 +122,9 @@ var solverSkips = []solverSkip{
 	{"function_overloading", causeAsyncResolvedReturn, "async function return type must be a Promise; write Promise<...> or Promise<_>"},
 
 	{"literals", causeRegexTypeAnn, "Unsupported: LitTypeAnn"},
+	{"template_literals", causeScriptDecls, "Declaration not allowed in function body: TypeDecl"},
 	{"if_val", causeIfValNullish, "cannot constrain null <: number"},
 
-	{"template_literals", causeTemplateLiterals, "Unsupported: TemplateLitExpr"},
 	{"generic_class", causeTypeCast, "Unsupported: TypeCastExpr"},
 	{"do", causeDoExpressions, "Unsupported: DoExpr"},
 
