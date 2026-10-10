@@ -1600,6 +1600,17 @@ func (c *checker) inferCallWithArgTypes(scope *Scope, lvl int, e *ast.CallExpr, 
 	// rest yields one shape per member. It runs after the generic instantiation above so a shape
 	// carries the call's own type-parameter bindings rather than the binder's.
 	fn, resolved := resolveFunc(callee)
+	// A class value's constructor carries the class's parameters as its own binder, and the
+	// value reaches here as an object or as a variable bounded by one, so the instantiation
+	// above did not reach it. Each construction binds the parameters afresh here, and the
+	// instantiated signature stands in for the callee from now on. Constraining the object
+	// itself would instantiate the binder a second time through the object arm, and the
+	// result would then carry two instances of the class that no member lookup could pick
+	// between.
+	if resolved && len(fn.TypeParams) > 0 {
+		fn = c.ctx.instantiateFuncBinder(fn, lvl)
+		callee = fn
+	}
 	if resolved {
 		cands := c.ctx.callCandidates(fn, newSeenPairs())
 		if len(cands) > 1 {

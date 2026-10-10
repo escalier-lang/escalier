@@ -434,23 +434,22 @@ type occKey struct {
 // surfaces no extra occurrence. Each variable is then its own representative with
 // its own polarities, so the check is exactly PR1's per-variable both-polarities
 // test.
-func coalesceScheme(t soltype.Type, genLevel int, declared []*soltype.TypeParam) soltype.Type {
+func coalesceScheme(t soltype.Type, genLevel int, declared []*soltype.TypeParam, declaredLts []*soltype.LifetimeParam) soltype.Type {
 	keep := funcTypeParamVars(t)
-	// A class, alias, or enum keeps its parameters in the Context registry rather than on a
-	// signature, so funcTypeParamVars finds none of them. Without them in keep each one
-	// merges with its own declared bound, and at a negative position that merge is an
-	// intersection: `class Holder<T: {value: number}> { peer: T }` would read back as
-	// `peer: T & {value: number}`.
+	// A class carries its parameters on its constructor and call signatures, so
+	// funcTypeParamVars finds them there. An alias or enum keeps its parameters in the
+	// Context registry rather than on a signature, so funcTypeParamVars finds none of them.
+	// Without them in keep each one merges with its own declared bound, and at a negative
+	// position that merge is an intersection: an alias parameter `T: {value: number}` written
+	// at a parameter would read back as `T & {value: number}`.
 	for _, tp := range declared {
 		// Only a bounded parameter needs keeping. An unbounded one has no bound to merge
-		// with, and retaining it would stop a slot the display elides from eliding, so
-		// `declare class Task<T, E = never>` would read `<T, E = never> {new () -> Task<T, E>}`
-		// where its own handle renders `{new () -> Task<never>}`.
+		// with, and retaining it would stop a slot the display elides from eliding.
 		if tp.UpperBound != nil || tp.LowerBound != nil {
 			keep.Add(tp.Var)
 		}
 	}
-	display, _ := coalesceSchemeKeeping(t, genLevel, declared, keep)
+	display, _ := coalesceSchemeKeeping(t, genLevel, declared, declaredLts, keep)
 	return display
 }
 
@@ -472,21 +471,25 @@ func coalesceSchemeKeepingDeclared(
 	t soltype.Type,
 	genLevel int,
 	declared []*soltype.TypeParam,
+	declaredLts []*soltype.LifetimeParam,
 ) (soltype.Type, []*soltype.TypeParam) {
 	keep := funcTypeParamVars(t)
 	for _, tp := range declared {
 		keep.Add(tp.Var)
 	}
-	return coalesceSchemeKeeping(t, genLevel, declared, keep)
+	return coalesceSchemeKeeping(t, genLevel, declared, declaredLts, keep)
 }
 
 // coalesceSchemeKeeping is the body the two entry points above share. keep names the
-// variables held symbolic rather than inlined to their bounds. The returned parameters are
+// variables held symbolic rather than inlined to their bounds. declaredLts are the lifetime
+// parameters the declaration wrote, which render under their own names wherever they occur
+// rather than being elided or renamed by the lifetime pass. The returned parameters are
 // declared's entries, re-pointed at the variables the display holds.
 func coalesceSchemeKeeping(
 	t soltype.Type,
 	genLevel int,
 	declared []*soltype.TypeParam,
+	declaredLts []*soltype.LifetimeParam,
 	keep set.Set[*soltype.TypeVarType],
 ) (soltype.Type, []*soltype.TypeParam) {
 	simp := simplifyScheme(t, genLevel, keep)
@@ -500,7 +503,10 @@ func coalesceSchemeKeeping(
 	}, soltype.Positive)
 	c = bubbleOwnedMut(c) // #779: lift an owned-mut cell out of an immutable container
 	// A scheme display is always coalesced from the Positive root.
-	c = coalesceLifetimes(c, soltype.Positive, nil) // D4: resolve borrow lifetimes to their display form
+	// D4: resolve borrow lifetimes to their display form. A declared lifetime parameter is
+	// pinned, so a class's `'a` keeps its name in a constructor binder's bound as well as in
+	// the instance the constructor returns.
+	c = coalesceLifetimes(c, soltype.Positive, classKeepLifetimes(declaredLts))
 	return c, displayTypeParams(declared, cleaned)
 }
 
@@ -734,26 +740,22 @@ func cleanBinderBounds(
 	simp *schemeSimplification,
 	declared []*soltype.TypeParam,
 ) map[*soltype.TypeVarType]*soltype.TypeVarType {
-	declaredBound := map[*soltype.TypeVarType]soltype.Type{}
-	declaredLower := map[*soltype.TypeVarType]soltype.Type{}
+	declaredAt := map[*soltype.TypeVarType]*soltype.TypeParam{}
 	for _, tp := range declared {
-		if tp.UpperBound != nil {
-			declaredBound[tp.Var] = tp.UpperBound
-		}
-		if tp.LowerBound != nil {
-			declaredLower[tp.Var] = tp.LowerBound
-		}
+		declaredAt[tp.Var] = tp
 	}
 	out := map[*soltype.TypeVarType]*soltype.TypeVarType{}
 	for v := range keep {
 		rep := simp.rep(v)
 		up, upChanged := dropSameClassVars(v.UpperBounds, rep, simp)
 		lo, loChanged := dropSameClassVars(v.LowerBounds, rep, simp)
-		if bound, isDeclared := declaredBound[v]; isDeclared {
-			up, upChanged = []soltype.Type{bound}, true
-		}
-		if bound, isDeclared := declaredLower[v]; isDeclared {
-			lo, loChanged = []soltype.Type{bound}, true
+		// A declared parameter shows the bounds its binder wrote and nothing else. Its
+		// variable also carries what the bodies linked it to, such as the return variable of
+		// a method that reads a field typed by it, and a binder rendering from the variable's
+		// list would show those as bounds the source never wrote.
+		if tp, isDeclared := declaredAt[v]; isDeclared {
+			up, upChanged = declaredBounds(tp.UpperBound), true
+			lo, loChanged = declaredBounds(tp.LowerBound), true
 		}
 		if !upChanged && !loChanged {
 			continue
@@ -764,6 +766,14 @@ func cleanBinderBounds(
 		out[v] = &cp
 	}
 	return out
+}
+
+// declaredBounds returns the one-entry list a declared bound stands for, or nil for none.
+func declaredBounds(bound soltype.Type) []soltype.Type {
+	if bound == nil {
+		return nil
+	}
+	return []soltype.Type{bound}
 }
 
 // dropSameClassVars returns bounds with every var whose class representative is rep
@@ -946,9 +956,9 @@ func (c *checker) declaredTypeParams(t soltype.Type) []*soltype.TypeParam {
 
 // declaredLifetimeParams returns the lifetime parameters written by the declaration a display
 // type stands for, or nil when it stands for none. It is the lifetime-sort twin of
-// declaredTypeParams and reads three of the four carriers that one does: a class handle, an
-// alias handle, and the class-value object whose constructor returns the handle. It does not
-// read through a binding var, which only the pre-display lookup in generalize needs.
+// declaredTypeParams and reads the same four carriers: a class handle, an alias handle, the
+// class-value object whose constructor returns the handle, and the binding var that object
+// is constrained into before generalization.
 func (c *checker) declaredLifetimeParams(t soltype.Type) []*soltype.LifetimeParam {
 	switch t := t.(type) {
 	case *soltype.ClassType:
@@ -973,6 +983,10 @@ func (c *checker) declaredLifetimeParams(t soltype.Type) []*soltype.LifetimePara
 				return c.declaredLifetimeParams(cls)
 			}
 			return nil
+		}
+	case *soltype.TypeVarType:
+		if obj, ok := c.classValueCarrier(t); ok {
+			return c.declaredLifetimeParams(obj)
 		}
 	}
 	return nil

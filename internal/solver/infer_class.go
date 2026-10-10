@@ -165,7 +165,108 @@ func (c *checker) inferClassDecl(scope *Scope, lvl int, decl *ast.ClassDecl, ns 
 		c.reportUnusedTypeParams(typeParams, decl.TypeParams, classDeclTypes(def, ctorFns, callFns))
 	}
 
+	// The class's parameters are the binder of every constructor and call signature, so a
+	// construction instantiates them the way a generic function's call does and the class
+	// value is monomorphic in them. A static member is reached through that value, where no
+	// instance supplies an argument, so one that names a parameter is reported.
+	bindClassParams(ctorFns, typeParams)
+	bindClassParams(callFns, typeParams)
+	c.reportStaticsNamingClassParams(decl, static, typeParams)
+
 	return c.classValue(self, ctorFns, callFns, static), &ast.NodeProvenance{Node: decl}, true
+}
+
+// bindClassParams gives each signature in fns the class's type parameters as its own binder.
+// The signatures share the declaration's TypeParam values, so a bound a substitution reads
+// through the binder is the one the class resolved.
+func bindClassParams(fns []*soltype.FuncType, typeParams []*soltype.TypeParam) {
+	if len(typeParams) == 0 {
+		return
+	}
+	for _, fn := range fns {
+		fn.TypeParams = typeParams
+	}
+}
+
+// reportStaticsNamingClassParams reports each static member whose type names one of the
+// class's type parameters. A parameter stands for an instance's argument and is bound by the
+// constructor, so a static member, which is reached through the class value with no instance
+// in hand, has nothing to read it as. A generic static declares a binder of its own instead,
+// as `static pick<U: string>(x: U)` does. One report per member names the first parameter
+// found, in declaration order.
+func (c *checker) reportStaticsNamingClassParams(decl *ast.ClassDecl, static *soltype.ObjectType, typeParams []*soltype.TypeParam) {
+	if len(typeParams) == 0 {
+		return
+	}
+	slots := map[*soltype.TypeVarType]int{}
+	for i, tp := range typeParams {
+		slots[tp.Var] = i
+	}
+	found := make([]bool, len(typeParams))
+	for _, elem := range decl.Body {
+		var key ast.ObjKey
+		var isStatic bool
+		var node ast.Node
+		switch e := elem.(type) {
+		case *ast.FieldElem:
+			key, isStatic, node = e.Name, e.Static, e
+		case *ast.MethodElem:
+			key, isStatic, node = e.Name, e.Static, e
+		case *ast.GetterElem:
+			key, isStatic, node = e.Name, e.Static, e
+		case *ast.SetterElem:
+			key, isStatic, node = e.Name, e.Static, e
+		default:
+			continue
+		}
+		if !isStatic {
+			continue
+		}
+		name, ok := objKeyName(key)
+		if !ok {
+			continue
+		}
+		clear(found)
+		occurrences(slots, staticMemberTypes(static, name), found)
+		for i, hit := range found {
+			if hit {
+				c.report(&StaticMemberNamesClassParamError{
+					Class: decl.Name.Name, Member: name, Param: typeParams[i].Name, Node: node,
+				})
+				break
+			}
+		}
+	}
+}
+
+// staticMemberTypes returns every type the static member called name declares: a field's
+// type, each signature of a method, a getter's type and a setter's parameter. A method
+// signature is walked whole, so a binder of its own bounded by a class parameter counts.
+func staticMemberTypes(static *soltype.ObjectType, name string) []soltype.Type {
+	var out []soltype.Type
+	for _, elem := range static.Elems {
+		switch e := elem.(type) {
+		case *soltype.PropertyElem:
+			if e.Name == name {
+				out = append(out, e.Type)
+			}
+		case *soltype.MethodElem:
+			if e.Name == name {
+				for _, sig := range e.Signatures {
+					out = append(out, sig)
+				}
+			}
+		case *soltype.GetterElem:
+			if e.Name == name {
+				out = append(out, e.Type)
+			}
+		case *soltype.SetterElem:
+			if e.Name == name {
+				out = append(out, e.Param)
+			}
+		}
+	}
+	return out
 }
 
 // inferClassBodies infers every body a class declaration writes: the members in pending,
@@ -390,17 +491,24 @@ func classDeclTypes(def *ClassDef, ctors, calls []*soltype.FuncType) []soltype.T
 	// stripSelfReceiver drops a method's. The return is the class's own handle, minted with
 	// every type-parameter var as an argument, so walking it would mark them all; `never`
 	// stands in because it is a leaf that names nothing.
+	// A signature's binder is cleared as well, once the class's parameters have been bound
+	// on it. Visiting a binder reaches its variable, which would count every parameter as
+	// used. This runs before bindClassParams, so the clear is a no-op on the first pass
+	// and what keeps a later caller honest.
 	for _, fn := range ctors {
 		bare := *fn
 		bare.SelfParam = nil
 		bare.Ret = &soltype.NeverType{}
+		bare.TypeParams = nil
 		out = append(out, &bare)
 	}
 	// A call signature is the class's value binding too, and its return is its own rather
-	// than the class handle, so it is walked whole. A parameter written only in
-	// `(v: T) -> T` is reached here and nowhere else.
+	// than the class handle, so it is walked whole apart from the binder. A parameter
+	// written only in `(v: T) -> T` is reached here and nowhere else.
 	for _, fn := range calls {
-		out = append(out, fn)
+		bare := *fn
+		bare.TypeParams = nil
+		out = append(out, &bare)
 	}
 	// Appended one at a time, since Go does not spread a slice of a concrete type into a
 	// slice of the interface it satisfies.

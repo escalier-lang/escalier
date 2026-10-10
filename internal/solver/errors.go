@@ -2377,6 +2377,27 @@ func (e *UnusedTypeParamError) Message() string {
 	return "type parameter " + e.Name + " is declared but never used"
 }
 
+// StaticMemberNamesClassParamError fires when a static member's type names one of its class's
+// type parameters. The parameters are the binder of the constructor and stand for an
+// instance's arguments, and a static member is reached through the class value, where no
+// instance supplies them. `class Holder<T> { static s(x: T) -> number }` reports `s`. A
+// generic static declares a binder of its own instead. Class is the class's source name,
+// Member the static member's, Param the parameter's, and Node the member's declaration.
+type StaticMemberNamesClassParamError struct {
+	Class  string
+	Member string
+	Param  string
+	Node   ast.Node
+}
+
+func (*StaticMemberNamesClassParamError) isSolverError()        {}
+func (e *StaticMemberNamesClassParamError) Span() ast.Span      { return e.Node.Span() }
+func (e *StaticMemberNamesClassParamError) Related() []ast.Span { return nil }
+func (e *StaticMemberNamesClassParamError) Message() string {
+	return fmt.Sprintf("static member `%s` names type parameter `%s`, which belongs to instances of `%s`",
+		e.Member, e.Param, e.Class)
+}
+
 // UnreachableTypeParamError fires when a type alias's body mentions a `<T>` binder, but no
 // argument passed to it can appear in the type an instantiation denotes. Every instantiation
 // of the alias is then one type, so a caller who writes an argument there says nothing by

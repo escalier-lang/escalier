@@ -395,7 +395,7 @@ func (b *Builder) buildClassDeclFromSol(
 	if !ok || instance == nil {
 		return nil
 	}
-	staticType, staticParams, ok := ns.ValueType(decl.Name.Name)
+	staticType, _, ok := ns.ValueType(decl.Name.Name)
 	if !ok {
 		return nil
 	}
@@ -424,11 +424,10 @@ func (b *Builder) buildClassDeclFromSol(
 		source: nil,
 	})
 
-	// The static side leaves the class's parameters for its constructor signature to
-	// bind. A `{new (value: T): Box<T>}` naming a `T` nothing binds is not valid
-	// TypeScript; the signature has to write `new <T>`.
+	// The static side binds the class's parameters on each constructor and call signature,
+	// which carry them as their own binder, so the value renders
+	// `{new <T>(value: T): Box<T>}` and the `T` is bound where TypeScript needs it.
 	staticRender := newSolTypeAnnBuilder(preludePrefix, localName+"_static", nil)
-	staticRender.bindOnSignatures(staticParams)
 	staticAnn := staticRender.render(staticType)
 	stmts = append(stmts, companionStmtsFromSol(staticRender)...)
 	return append(stmts, &DeclStmt{

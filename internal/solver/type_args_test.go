@@ -524,7 +524,7 @@ func TestMutuallyRecursiveGenericClassesResolve(t *testing.T) {
 		class Tail<T> { node: Node<T> }
 	`)
 	require.Empty(t, errs)
-	require.Equal(t, "<T> {new (value: T, tail: Tail<T>) -> Node<T>}", values["Node"])
+	require.Equal(t, "{new <T>(value: T, tail: Tail<T>) -> Node<T>}", values["Node"])
 }
 
 // TestClassArityAcrossMixedComponent covers a dep_graph component holding both sorts of key. A
@@ -795,11 +795,11 @@ func TestEmptyNeverSlotIsElided(t *testing.T) {
 	}
 }
 
-// A class's own handle carries the same defaults a reference to it does, so the
-// constructor the class value exposes renders its return the way a written reference
-// renders. Without them `Task` would read as `{new () -> Task<never, never>}` beside a
-// `Task<number>` a reference renders, one type shown two ways.
-func TestAClassHandleElidesItsOwnEmptySlot(t *testing.T) {
+// TestAClassValueBindsEveryParameterOnItsConstructor asserts that the constructor
+// signature carries each of the class's parameters with its default, whether or not a
+// field or a signature position names it, so a caller writing `Task<number>` fills the
+// same binder the value shows.
+func TestAClassValueBindsEveryParameterOnItsConstructor(t *testing.T) {
 	values, _, errs := inferSource(t, `
 		declare class Task<T, E = never> {
 			run(&self) -> T,
@@ -807,5 +807,5 @@ func TestAClassHandleElidesItsOwnEmptySlot(t *testing.T) {
 		}
 	`)
 	require.Empty(t, errorMessagesOf(errs))
-	require.Equal(t, "{new () -> Task<never>}", values["Task"])
+	require.Equal(t, "{new <T, E = never>() -> Task<T, E>}", values["Task"])
 }

@@ -284,7 +284,7 @@ func TestClassTypeParamBoundSeesTheClassLifetime(t *testing.T) {
 	values, _, errs := inferSource(t, src)
 	require.Empty(t, messagesWithSpan(t, errs))
 	require.Equal(t,
-		"<T: &'a {value: number}, 'a> {new (peer: T) -> Holder<'a, T>}",
+		"<'a> {new <T: &'a {value: number}>(peer: T) -> Holder<'a, T>}",
 		values["Holder"],
 	)
 }

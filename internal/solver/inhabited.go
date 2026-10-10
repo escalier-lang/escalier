@@ -85,7 +85,7 @@ func (c *checker) checkCanReturn() {
 	pending := c.pendingReturns
 	c.pendingReturns = nil
 	for _, p := range pending {
-		display, isFunc := coalesceScheme(p.fn, p.genLevel, nil).(*soltype.FuncType)
+		display, isFunc := coalesceScheme(p.fn, p.genLevel, nil, nil).(*soltype.FuncType)
 		if !isFunc || finitelyInhabited(display.Ret) {
 			continue
 		}
