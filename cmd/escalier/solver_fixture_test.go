@@ -48,9 +48,12 @@ var (
 		name:   "an `async fn` annotating the resolved type rather than `Promise<T>`",
 		ticket: "#1849",
 	}
-	causeUnaryOperators = &solverSkipCause{
-		name:   "unary operators",
-		ticket: "#1653",
+	causeRegexTypeAnn = &solverSkipCause{
+		name:   "a regex literal written as a type annotation",
+		ticket: "#1693",
+	}
+	causeIfValNullish = &solverSkipCause{
+		name: "an `if val` identifier or object pattern narrowing `null` and `undefined` out of its scrutinee",
 	}
 	causeTemplateLiterals = &solverSkipCause{
 		name:   "template literals",
@@ -119,9 +122,9 @@ var solverSkips = []solverSkip{
 
 	{"function_overloading", causeAsyncResolvedReturn, "async function return type must be a Promise; write Promise<...> or Promise<_>"},
 
-	{"class_with_fluent_mutating_methods", causeUnaryOperators, "Unsupported: UnaryExpr"},
-	{"if_val", causeUnaryOperators, "Unsupported: UnaryExpr"},
-	{"literals", causeUnaryOperators, "Unsupported: UnaryExpr"},
+	{"literals", causeRegexTypeAnn, "Unsupported: LitTypeAnn"},
+	{"if_val", causeIfValNullish, "cannot constrain null <: number"},
+
 	{"template_literals", causeTemplateLiterals, "Unsupported: TemplateLitExpr"},
 	{"generic_class", causeTypeCast, "Unsupported: TypeCastExpr"},
 	{"do", causeDoExpressions, "Unsupported: DoExpr"},

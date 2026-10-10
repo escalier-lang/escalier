@@ -50,6 +50,51 @@ func (c *checker) inferBinary(scope *Scope, lvl int, e *ast.BinaryExpr) soltype.
 	return fn.Ret
 }
 
+// inferUnary types a prefix operator application `op arg`. It resolves the
+// operator's signature the way inferBinary does, constrains the operand against its
+// one parameter, and yields the signature's return type. `!b` constrains
+// `b <: boolean` and yields `boolean`.
+//
+// A prefix `-` written directly on a numeric literal yields the negated literal, so
+// `-5` infers `-5` the way `5` infers `5`.
+func (c *checker) inferUnary(scope *Scope, lvl int, e *ast.UnaryExpr) soltype.Type {
+	// The parser substitutes ast.NewError for a missing operand, so a nil one only
+	// comes from a hand-built AST.
+	if e.Arg == nil {
+		return c.reportUnsupported(e)
+	}
+	if e.Op == ast.UnaryMinus {
+		if lit, ok := e.Arg.(*ast.LiteralExpr); ok {
+			if num, ok := lit.Lit.(*ast.NumLit); ok {
+				t := &soltype.LitType{Lit: &soltype.NumLit{Value: -num.Value}}
+				c.recordType(lit, &soltype.LitType{Lit: &soltype.NumLit{Value: num.Value}})
+				c.recordType(e, t)
+				return t
+			}
+		}
+	}
+	argT := c.inferExpr(scope, lvl, e.Arg)
+
+	var op string
+	switch e.Op {
+	case ast.UnaryMinus:
+		op = unaryMinusOp
+	case ast.UnaryPlus:
+		op = unaryPlusOp
+	case ast.LogicalNot:
+		op = "!"
+	}
+	fn, ok := c.operatorSignature(scope, lvl, op, 1)
+	if !ok {
+		return c.reportUnsupported(e)
+	}
+	// The operand is constrained at its own node, so a rejected operand blames it.
+	c.constrain(e.Arg, argT, fn.Params[0].Type)
+	// As in inferBinary, the shared return type carries no provenance.
+	c.recordType(e, fn.Ret)
+	return fn.Ret
+}
+
 // operatorSignature resolves an operator's value binding to the signature an
 // application of it checks against. op is the operator's name as
 // addOperatorBindings binds it. arity is the number of operands the application
