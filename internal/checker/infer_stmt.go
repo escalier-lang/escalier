@@ -331,7 +331,7 @@ func (c *Checker) buildTypeParams(
 		}
 		typeParamMap[typeParam.Name] = &type_system.TypeParam{
 			Name:       typeParam.Name,
-			Constraint: constraintType,
+			UpperBound: constraintType,
 			Default:    defaultType,
 		}
 

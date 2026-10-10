@@ -213,9 +213,9 @@ func typeParamBounds(fn *type_system.FuncType) map[string]type_system.Type {
 	out := make(map[string]type_system.Type, len(fn.TypeParams))
 	for _, tp := range fn.TypeParams {
 		var bound type_system.Type
-		if tp.Constraint != nil {
-			if _, isNever := type_system.Prune(tp.Constraint).(*type_system.NeverType); !isNever {
-				bound = type_system.Prune(tp.Constraint)
+		if tp.UpperBound != nil {
+			if _, isNever := type_system.Prune(tp.UpperBound).(*type_system.NeverType); !isNever {
+				bound = type_system.Prune(tp.UpperBound)
 			}
 		}
 		out[tp.Name] = bound

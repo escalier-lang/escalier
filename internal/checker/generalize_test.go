@@ -35,7 +35,7 @@ func TestGeneralizeFuncType_TypeVarConstraintWithNestedTypeVar(t *testing.T) {
 	assert.Equal(t, "T0", funcType.TypeParams[0].Name)
 	assert.Equal(t, "T1", funcType.TypeParams[1].Name)
 	// T0's constraint should be Array<T1>
-	constraint, ok := funcType.TypeParams[0].Constraint.(*ts.TypeRefType)
+	constraint, ok := funcType.TypeParams[0].UpperBound.(*ts.TypeRefType)
 	assert.True(t, ok, "constraint should be a TypeRefType")
 	assert.Equal(t, "Array", ts.QualIdentToString(constraint.Name))
 	assert.Len(t, constraint.TypeArgs, 1)
@@ -76,7 +76,7 @@ func TestGeneralizeFuncType_FuncTypeParamConstraintWithTypeVar(t *testing.T) {
 
 	innerFuncType := ts.NewFuncType(
 		nil,
-		[]*ts.TypeParam{{Name: "U", Constraint: tvT}},
+		[]*ts.TypeParam{{Name: "U", UpperBound: tvT}},
 		[]*ts.FuncParam{},
 		ts.NewUnknownType(nil),
 		ts.NewNeverType(nil),
@@ -234,7 +234,7 @@ func TestSimplifyRecursiveCycles_ReachesViaFuncTypeParams(t *testing.T) {
 	cyclic := ts.NewUnionType(nil, tvLeaf, selfRefTV).(*ts.UnionType)
 	selfRefTV.Instance = cyclic
 
-	existingTP := &ts.TypeParam{Name: "U", Constraint: cyclic}
+	existingTP := &ts.TypeParam{Name: "U", UpperBound: cyclic}
 	funcType := ts.NewFuncType(
 		nil,
 		[]*ts.TypeParam{existingTP},

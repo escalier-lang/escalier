@@ -104,7 +104,7 @@ func typeAnnToType(typeAnn ast.TypeAnn) Type {
 				}
 				typeParams[i] = &TypeParam{
 					Name:       tp.Name,
-					Constraint: constraint,
+					UpperBound: constraint,
 					Default:    defaultType,
 				}
 			}

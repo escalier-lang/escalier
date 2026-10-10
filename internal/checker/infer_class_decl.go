@@ -58,8 +58,8 @@ func (c *Checker) inferClassDecl(ctx Context, decl *ast.ClassDecl) []Error {
 
 	for _, typeParam := range typeParams {
 		var t type_system.Type = type_system.NewUnknownType(nil)
-		if typeParam.Constraint != nil {
-			t = typeParam.Constraint
+		if typeParam.UpperBound != nil {
+			t = typeParam.UpperBound
 		}
 		declCtx.Scope.SetTypeAlias(typeParam.Name, &type_system.TypeAlias{
 			Type:        t,

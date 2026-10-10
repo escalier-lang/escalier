@@ -119,7 +119,7 @@ func TestCompareOverloadArms(t *testing.T) {
 			// `string <: top` and not vice versa, so bounded wins.
 			name: "bounded <K: string> beats unbounded <T>",
 			a: mkFn(
-				[]*type_system.TypeParam{{Name: "K", Constraint: str}},
+				[]*type_system.TypeParam{{Name: "K", UpperBound: str}},
 				[]*type_system.FuncParam{mkParam(type_system.NewTypeRefType(nil, "K", nil))},
 			),
 			b: mkFn(
@@ -133,7 +133,7 @@ func TestCompareOverloadArms(t *testing.T) {
 			// pre-§4.6 comparator's behavior.
 			name: "<K: never> ties with <T> (both treated as top)",
 			a: mkFn(
-				[]*type_system.TypeParam{{Name: "K", Constraint: type_system.NewNeverType(nil)}},
+				[]*type_system.TypeParam{{Name: "K", UpperBound: type_system.NewNeverType(nil)}},
 				[]*type_system.FuncParam{mkParam(type_system.NewTypeRefType(nil, "K", nil))},
 			),
 			b: mkFn(
@@ -147,11 +147,11 @@ func TestCompareOverloadArms(t *testing.T) {
 			// `"canvas" <: string` so the canvas-bounded arm wins.
 			name: "<K: \"canvas\"> beats <L: string>",
 			a: mkFn(
-				[]*type_system.TypeParam{{Name: "K", Constraint: canvasLit}},
+				[]*type_system.TypeParam{{Name: "K", UpperBound: canvasLit}},
 				[]*type_system.FuncParam{mkParam(type_system.NewTypeRefType(nil, "K", nil))},
 			),
 			b: mkFn(
-				[]*type_system.TypeParam{{Name: "L", Constraint: str}},
+				[]*type_system.TypeParam{{Name: "L", UpperBound: str}},
 				[]*type_system.FuncParam{mkParam(type_system.NewTypeRefType(nil, "L", nil))},
 			),
 			want: aMoreSpecific,

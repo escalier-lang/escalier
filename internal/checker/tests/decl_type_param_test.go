@@ -101,8 +101,8 @@ func renderTypeParams(tps []*type_system.TypeParam) string {
 	rendered := make([]string, len(tps))
 	for i, tp := range tps {
 		s := tp.Name
-		if tp.Constraint != nil {
-			s += ": " + tp.Constraint.String()
+		if tp.UpperBound != nil {
+			s += ": " + tp.UpperBound.String()
 		}
 		if tp.Default != nil {
 			s += " = " + tp.Default.String()

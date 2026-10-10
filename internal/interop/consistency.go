@@ -137,10 +137,10 @@ func funcSignatureEquivalent(a, b *type_system.FuncType) (field string, ok bool)
 	}
 	for i := range a.TypeParams {
 		ap, bp := a.TypeParams[i], b.TypeParams[i]
-		if (ap.Constraint == nil) != (bp.Constraint == nil) {
+		if (ap.UpperBound == nil) != (bp.UpperBound == nil) {
 			return fmt.Sprintf("typeParam[%d]/constraint", i), false
 		}
-		if ap.Constraint != nil && !ap.Constraint.Equals(bp.Constraint) {
+		if ap.UpperBound != nil && !ap.UpperBound.Equals(bp.UpperBound) {
 			return fmt.Sprintf("typeParam[%d]/constraint", i), false
 		}
 		if (ap.Default == nil) != (bp.Default == nil) {
