@@ -12,15 +12,28 @@ import (
 func inferAgainstTree(t *testing.T, src string) (map[string]string, []string) {
 	t.Helper()
 	res := InferModuleAgainstStdlib(parseModule(t, src), benchTree)
-	values := map[string]string{}
-	for name, b := range res.Scope.values {
-		values[name] = res.checker.renderValueBinding(b.Schemes[0])
-	}
 	msgs := make([]string, len(res.Errors))
 	for i, e := range res.Errors {
 		msgs[i] = e.Message()
 	}
-	return values, msgs
+	return renderedValues(res), msgs
+}
+
+// inferAgainstTreeWithSpans is inferAgainstTree with each error rendered as
+// "line:col-line:col: message", the form msgWithSpan produces.
+func inferAgainstTreeWithSpans(t *testing.T, src string) (map[string]string, []string) {
+	t.Helper()
+	res := InferModuleAgainstStdlib(parseModule(t, src), benchTree)
+	return renderedValues(res), messagesWithSpan(t, res.Errors)
+}
+
+// renderedValues renders each top-level value binding of res by name.
+func renderedValues(res *ModuleResult) map[string]string {
+	values := map[string]string{}
+	for name, b := range res.Scope.values {
+		values[name] = res.checker.renderValueBinding(b.Schemes[0])
+	}
+	return values
 }
 
 // TestAmbientBuiltinsResolveWithoutImport covers the three ambient binding rules. A

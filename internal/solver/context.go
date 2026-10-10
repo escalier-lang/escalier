@@ -48,6 +48,11 @@ type Context struct {
 	symbolCounter int
 	probe         *Probe
 
+	// packages holds the surface of every package this run has loaded. A run
+	// shares one registry, so two modules importing the same package read the
+	// same declarations. It is nil on a Context built outside newChecker.
+	packages *PackageRegistry
+
 	// arrayClass is the qualified class name the prelude's `Array` binds to, read
 	// off the prelude scope once per run. The subtyping and iteration rules that single an
 	// array out compare against it, so they cost a string comparison rather than a

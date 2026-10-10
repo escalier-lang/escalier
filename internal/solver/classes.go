@@ -1422,7 +1422,7 @@ func (c *checker) primitiveWrapper(t soltype.Type) (*soltype.ClassType, bool) {
 func (c *checker) sharedPrimitiveWrapper(ts []soltype.Type) (*soltype.ClassType, bool) {
 	var found *soltype.ClassType
 	for _, t := range ts {
-		ct, ok := c.ownPrimitiveWrapper(t)
+		ct, ok := c.ctx.ownPrimitiveWrapper(t)
 		if union, isUnion := t.(*soltype.UnionType); isUnion {
 			ct, ok = c.sharedPrimitiveWrapper(union.Types)
 		}
@@ -1435,8 +1435,11 @@ func (c *checker) sharedPrimitiveWrapper(ts []soltype.Type) (*soltype.ClassType,
 }
 
 // ownPrimitiveWrapper is primitiveWrapper for t itself, without reading into a union
-// or a variable's bounds.
-func (c *checker) ownPrimitiveWrapper(t soltype.Type) (*soltype.ClassType, bool) {
+// or a variable's bounds. It returns false on a Context that holds no package registry.
+func (c *Context) ownPrimitiveWrapper(t soltype.Type) (*soltype.ClassType, bool) {
+	if c.packages == nil {
+		return nil, false
+	}
 	var prim soltype.Prim
 	switch t := t.(type) {
 	case *soltype.PrimType:

@@ -113,7 +113,7 @@ func (c *checker) loadPackageGroup(group []string, span ast.Span) []SolverError 
 	}
 
 	for _, uri := range group {
-		c.packages.markLoading(uri, paths[uri])
+		c.ctx.packages.markLoading(uri, paths[uri])
 	}
 	c.loadStack = append(c.loadStack, group...)
 
@@ -164,7 +164,7 @@ func (c *checker) loadPackageGroup(group []string, span ast.Span) []SolverError 
 			member = newNamespace(uri)
 		}
 		member.Name = uri
-		c.packages.publish(uri, member)
+		c.ctx.packages.publish(uri, member)
 	}
 
 	if len(errs) > 0 {

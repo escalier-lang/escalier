@@ -137,9 +137,14 @@ type TupleLengthMismatchError struct {
 // types are coalesced/annotation-minted (and therefore not recorded by
 // inferMember); for member access it never fires, but it keeps blame off the zero
 // span.
+//
+// `Primitive` is the primitive, literal, or `unique symbol` the read was made on when its
+// members were read from its wrapper class, and nil otherwise. `Sub` is then the wrapper's
+// body, which no source node produced, so Span() and Related() consult `Primitive` ahead of it.
 type MissingPropertyError struct {
 	Sub, Super *soltype.ObjectType
 	Name       string
+	Primitive  soltype.Type
 	prov       NodeResolver // M2.5: type→node index (§3.5)
 	site       ast.Node     // M2.5: constraint node fallback when the property var has no entry
 }
@@ -617,14 +622,22 @@ func (e *MissingPropertyError) Span() ast.Span {
 	// else the site. The property-var arm is the only one reachable from member
 	// access (which always records it); the receiver/site arms cover the concrete
 	// object <: object case where the property type may be unrecorded.
-	ops := make([]soltype.Type, 0, 2)
+	ops := make([]soltype.Type, 0, 3)
 	if p, ok := e.Super.Prop(e.Name); ok {
 		ops = append(ops, p.Type)
 	}
-	ops = append(ops, e.Sub)
+	ops = append(ops, e.receivers()...)
 	return spanOfFirst(e.prov, e.site, ops...)
 }
-func (e *MissingPropertyError) Related() []ast.Span { return relatedOf(e.prov, e.Sub) } // the receiver
+func (e *MissingPropertyError) Related() []ast.Span { return relatedOf(e.prov, e.receivers()...) }
+
+// receivers returns the types that stand for the receiver, most specific first.
+func (e *MissingPropertyError) receivers() []soltype.Type {
+	if e.Primitive != nil {
+		return []soltype.Type{e.Primitive, e.Sub}
+	}
+	return []soltype.Type{e.Sub}
+}
 
 func (e *InexactTupleIntoExactError) Span() ast.Span {
 	return spanOf(e.prov, e.Sub, e.site)

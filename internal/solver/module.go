@@ -147,7 +147,7 @@ func inferModuleWithGroups(
 		Scope:      scope,
 		FileScopes: fileScopes,
 		Info:       c.info,
-		Packages:   c.packages,
+		Packages:   c.ctx.packages,
 		DepGraph:   g,
 		Errors:     c.errs,
 		checker:    c,

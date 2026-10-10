@@ -170,11 +170,6 @@ type checker struct {
 	// source id, each carrying that file's import bindings.
 	fileScopes map[int]*Scope
 
-	// packages holds the surface of every package this run has loaded. A run
-	// shares one registry, so two modules importing the same package read the
-	// same declarations.
-	packages *PackageRegistry
-
 	// source resolves a package URI to the module to infer for it. A run given no
 	// source reports every import as unresolved rather than loading anything.
 	source ModuleSource
@@ -691,11 +686,10 @@ func (c *checker) popFuncCtx(saved *funcCtx) []soltype.Type {
 // method returns.
 func newChecker() *checker {
 	c := &checker{
-		ctx:          &Context{},
+		ctx:          &Context{packages: NewPackageRegistry()},
 		info:         NewInfo(),
 		prov:         Prov{},
 		varIDCounter: 1,
-		packages:     NewPackageRegistry(),
 	}
 	c.ctx.fusionRecorder = c.recordFusionEdge
 	registerIteratorResultAliases(c.ctx)
@@ -726,7 +720,6 @@ func (c *checker) forScript(pkgURI string) *checker {
 		prov:         maps.Clone(c.prov),
 		varIDCounter: c.varIDCounter,
 		prelude:      c.prelude,
-		packages:     c.packages,
 		source:       c.source,
 		groupSource:  c.groupSource,
 		groups:       c.groups,
