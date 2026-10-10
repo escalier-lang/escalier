@@ -3,6 +3,7 @@ package solver
 import (
 	"testing"
 
+	"github.com/escalier-lang/escalier/internal/set"
 	"github.com/escalier-lang/escalier/internal/soltype"
 	"github.com/stretchr/testify/require"
 )
@@ -451,9 +452,9 @@ func TestClassLifetimeStoreEdge(t *testing.T) {
 }
 
 // TestMethodLifetimeBindersRenderOnTheMethod covers a method's own `<'a>` list as the binder
-// of its signature. The class body, printed under the class's own parameter names, renders
-// each method's lifetime under that method's own `<…>`, and a binder the body elides, because
-// the lifetime connects nothing, is dropped with its uses.
+// of its signature. The class body, printed with the class's own parameters as its quantifier
+// prefix, renders each method's lifetime under that method's own `<…>`, and a binder the body
+// elides, because the lifetime connects nothing, is dropped with its uses.
 func TestMethodLifetimeBindersRenderOnTheMethod(t *testing.T) {
 	t.Parallel()
 
@@ -511,7 +512,7 @@ func TestMethodLifetimeBindersRenderOnTheMethod(t *testing.T) {
 				pick<'b>(&self) -> &'b {value: number} { return self.peer },
 			}`,
 			class: "Holder",
-			want:  "{peer: &'a mut {value: number}, pick(&self) -> &'a {value: number}}",
+			want:  "<'a> {peer: &'a mut {value: number}, pick(&self) -> &'a {value: number}}",
 		},
 		{
 			// `'b` resolves to `'a`, so it is dropped as a duplicate and `'a`'s bound on it,
@@ -543,7 +544,7 @@ func TestMethodLifetimeBindersRenderOnTheMethod(t *testing.T) {
 				pick<'b>(&self, q: &'b {value: number}) -> &'b {value: number} { return q },
 			}`,
 			class: "Holder",
-			want:  "{peer: &'a mut {value: number}, pick<'b>(&self, q: &'b {value: number}) -> &'b {value: number}}",
+			want:  "<'a> {peer: &'a mut {value: number}, pick<'b>(&self, q: &'b {value: number}) -> &'b {value: number}}",
 		},
 	}
 	for _, tt := range tests {
@@ -553,9 +554,7 @@ func TestMethodLifetimeBindersRenderOnTheMethod(t *testing.T) {
 			require.Empty(t, errorMessagesOf(res.Errors))
 			def, ok := res.checker.ctx.classDef(tt.class)
 			require.True(t, ok)
-			// The body holds the variables the class's `<…>` clause binds, which plain Print
-			// has no names for, so the class's parameters are named as the source wrote them.
-			require.Equal(t, tt.want, soltype.PrintWithDeclaredParams(def.Body, def.TypeParams, def.LifetimeParams))
+			require.Equal(t, tt.want, printClassBody(def))
 		})
 	}
 }
@@ -572,4 +571,18 @@ func TestAccessorLifetimeBinderIsUnsupported(t *testing.T) {
 	}`
 	_, _, errs := inferSource(t, src)
 	require.Equal(t, []string{"Unsupported: LifetimeParam"}, errorMessagesOf(errs))
+}
+
+// printClassBody renders def's instance body as a scheme quantified by the class's own
+// parameters, so `class Holder<'a> { peer: &'a mut {value: number} }` prints
+// `<'a> {peer: &'a mut {value: number}}`. The body holds the variables the class's `<…>`
+// clause binds, which plain Print has no names for, and a method's own lifetimes are bound on
+// the method, so the prefix names the class's parameters alone.
+func printClassBody(def *ClassDef) string {
+	declared := set.NewSet[*soltype.TypeVarType]()
+	for _, tp := range def.TypeParams {
+		declared.Add(tp.Var)
+	}
+	isParam := func(v *soltype.TypeVarType) bool { return declared.Contains(v) }
+	return soltype.PrintAsSchemeWith(def.Body, isParam, displayLtBounds(def.Body, soltype.Positive), def.TypeParams, def.LifetimeParams)
 }
