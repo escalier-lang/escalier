@@ -359,30 +359,51 @@ func (c *Context) freshSymbol() *soltype.UniqueSymbolType {
 	return s
 }
 
-// rigidParam is one entry of Context.rigidParams. bounds are the upper bounds the
-// parameter's variable carried when it became rigid. That is its declared constraint and
-// any bound a type reference in the signature put on it. A link the body records afterward
-// is not a bound the body may rely on, so it is left out. The skolem is minted on first
-// use, so a parameter the body never constrains from the sub side mints nothing.
+// rigidParam is one entry of Context.rigidParams. bounds are the upper bounds and lowers
+// the lower bounds the parameter's variable carried when it became rigid. That is its
+// declared bounds and any bound a type reference in the signature put on it. A link the
+// body records afterward is not a bound the body may rely on, so it is left out. The skolem
+// is minted on first use, so a parameter the body never constrains from the sub side mints
+// nothing.
 type rigidParam struct {
 	v      *soltype.TypeVarType
 	name   string
 	bounds []soltype.Type
+	lowers []soltype.Type
 	sk     *soltype.SkolemType
 	// fromBelow marks a parameter that is also rigid on the super side of a constraint, so a
-	// type flowing into it is checked against its skolem.
+	// type flowing into it is checked against its skolem. A parameter with a declared lower
+	// bound is always marked, since the skolem's lower bound is what decides such a type, and
+	// so is a parameter a sibling's lower bound names, since a type reaching the sibling
+	// through that bound reaches it too.
 	fromBelow bool
 }
 
 // holdTypeParamsRigid makes params rigid for constrain until the returned function runs.
-// fromBelow makes them rigid on the super side of a constraint as well as the sub side.
+// fromBelow makes them rigid on the super side of a constraint as well as the sub side. A
+// parameter with a declared lower bound, or one a sibling's lower bound names, is rigid on
+// the super side either way. In `fn f<T >: U, U>() -> T { return 1 }` the `1` reaches `U`
+// through `T`'s bound, and only `U`'s skolem rejects it.
 func (c *Context) holdTypeParamsRigid(params []*soltype.TypeParam, fromBelow bool) (release func()) {
 	if c.rigidParams == nil {
 		c.rigidParams = map[*soltype.TypeVarType]*rigidParam{}
 		c.rigidSkolems = map[*soltype.SkolemType]*soltype.TypeVarType{}
 	}
+	namedInLower := set.NewSet[*soltype.TypeVarType]()
 	for _, tp := range params {
-		c.rigidParams[tp.Var] = &rigidParam{v: tp.Var, name: tp.Name, bounds: slices.Clone(tp.AllUpperBounds()), fromBelow: fromBelow}
+		if tp.LowerBound != nil {
+			for _, v := range typeVarsIn(tp.LowerBound) {
+				namedInLower.Add(v)
+			}
+		}
+	}
+	for _, tp := range params {
+		c.rigidParams[tp.Var] = &rigidParam{
+			v: tp.Var, name: tp.Name,
+			bounds:    slices.Clone(tp.AllUpperBounds()),
+			lowers:    slices.Clone(tp.AllLowerBounds()),
+			fromBelow: fromBelow || tp.LowerBound != nil || namedInLower.Contains(tp.Var),
+		}
 	}
 	return func() {
 		for _, tp := range params {
@@ -395,8 +416,8 @@ func (c *Context) holdTypeParamsRigid(params []*soltype.TypeParam, fromBelow boo
 }
 
 // rigidSkolem returns the skolem a rigid parameter is read as, whose upper bound meets
-// rp.bounds. The bounds stay unsubstituted, so a bound naming a sibling parameter is read
-// through that sibling's skolem in turn.
+// rp.bounds and whose lower bound joins rp.lowers. The bounds stay unsubstituted, so a
+// bound naming a sibling parameter is read through that sibling's skolem in turn.
 func (c *Context) rigidSkolem(rp *rigidParam) *soltype.SkolemType {
 	if rp.sk != nil {
 		return rp.sk
@@ -409,6 +430,13 @@ func (c *Context) rigidSkolem(rp *rigidParam) *soltype.SkolemType {
 		rp.sk.Upper = rp.bounds[0]
 	default:
 		rp.sk.Upper = &soltype.IntersectionType{Types: rp.bounds}
+	}
+	switch len(rp.lowers) {
+	case 0:
+	case 1:
+		rp.sk.Lower = rp.lowers[0]
+	default:
+		rp.sk.Lower = &soltype.UnionType{Types: rp.lowers}
 	}
 	return rp.sk
 }

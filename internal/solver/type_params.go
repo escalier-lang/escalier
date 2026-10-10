@@ -12,10 +12,11 @@ import (
 // since a default and a bound need opposite visibility. Pass 1 mints one fresh var per parameter.
 // Pass 2 resolves each parameter's default and then declares that parameter, so a default reads
 // only the earlier siblings, the ones instantiation can substitute for it. Pass 3 resolves each
-// constraint into its var's upper bound against the full list, so a forward `<T: U, U>`, a mutual
-// `<T: U, U: T>`, and an F-bound `<T: Foo<T>>` all resolve. Pass 4 checks each default against
-// its own parameter's constraint. The result stays in declaration order, and the alias, class,
-// enum, and function-annotation paths all route through here.
+// lower bound into its var's lower bound and each constraint into its var's upper bound against
+// the full list, so a forward `<T: U, U>`, a mutual `<T: U, U: T>`, an F-bound `<T: Foo<T>>` and
+// a `<B >: T, T>` all resolve. Pass 4 checks each default and each lower bound against its own
+// parameter's constraint. The result stays in declaration order, and the alias, class, enum, and
+// function-annotation paths all route through here.
 func (c *checker) resolveTypeParams(scope *Scope, lvl int, params []*ast.TypeParam) []*soltype.TypeParam {
 	c.reportRequiredAfterDefault(params)
 	c.reportDuplicateTypeParams(params)
@@ -38,36 +39,48 @@ func (c *checker) resolveTypeParams(scope *Scope, lvl int, params []*ast.TypePar
 		}
 		scope.defineType(p.Name, TypeBinding{Type: out[i].Var})
 	}
-	// Pass 3: resolve each constraint into its var's upper bound, now that every sibling name
-	// is in scope.
+	// Pass 3: resolve each lower bound into its var's lower bound and each constraint into
+	// its var's upper bound, now that every sibling name is in scope. Each is also kept on
+	// its own field, where later solving cannot overwrite it. The var's bound lists grow as
+	// constraints flow in, so a reader that wants what the source wrote reads the field.
 	for i, p := range params {
-		if p.Constraint == nil {
-			continue
+		if p.LowerBound != nil {
+			if lt, ok := c.resolveTypeAnn(scope, p.LowerBound, lvl); ok {
+				c.ctx.addLowerBound(out[i].Var, lt)
+				out[i].LowerBound = lt
+			}
 		}
-		if ct, ok := c.resolveTypeAnn(scope, p.Constraint, lvl); ok {
-			c.ctx.addUpperBound(out[i].Var, ct)
-			// Keep the declared constraint where later solving cannot overwrite it. The var's
-			// upper-bound list grows as constraints flow in, so a reader that wants what the
-			// source wrote reads this field instead.
-			out[i].Constraint = ct
+		if p.Constraint != nil {
+			if ct, ok := c.resolveTypeAnn(scope, p.Constraint, lvl); ok {
+				c.ctx.addUpperBound(out[i].Var, ct)
+				out[i].Constraint = ct
+			}
 		}
 	}
-	// Pass 4: check each default against its own parameter's bound, so `<T: string = number>`
-	// is rejected at the declaration. A default fills the argument at every use site that
-	// omits it, so a default outside the bound would supply an argument the bound forbids.
-	// This runs as its own pass because a bound is not resolved until pass 3, after the
-	// default it is compared against.
+	// Pass 4: check each default and each lower bound against its own parameter's
+	// constraint, and each default against its lower bound. `<T: string = number>`,
+	// `<B >: string: number>` and `<B >: number = string>` are each rejected at the
+	// declaration. A default fills the argument at every use site that omits it, so a
+	// default outside either bound would supply an argument the bound forbids. A lower bound
+	// above the constraint leaves no type the parameter could be. This runs as its own pass
+	// because a bound is not resolved until pass 3, after the default it is compared against.
+	//
+	// Each comparison is trialed under a probe rather than run live, so any bound it appends
+	// is rolled back. A default is a fully resolved type with nothing left to infer, so a
+	// live comparison would gain it nothing. It would cost something when the bound names a
+	// sibling parameter. Running `<T, U: T = number>` live compares number against T's var
+	// and leaves T carrying number as a lower bound, a claim that T must accept number that
+	// the source never wrote.
 	for i, p := range params {
-		if out[i].Default == nil || out[i].Constraint == nil {
-			continue
+		if out[i].Default != nil && out[i].Constraint != nil {
+			c.blameConstraintErrors(p.Default, c.ctx.trialUnderProbe(out[i].Default, out[i].Constraint))
 		}
-		// Trial the comparison under a probe rather than running it live, so any bound it
-		// appends is rolled back. A default is a fully resolved type with nothing left to
-		// infer, so a live comparison would gain it nothing. It would cost something when the
-		// bound names a sibling parameter. Running `<T, U: T = number>` live compares number
-		// against T's var and leaves T carrying number as a lower bound, a claim that T must
-		// accept number that the source never wrote.
-		c.blameConstraintErrors(p.Default, c.ctx.trialUnderProbe(out[i].Default, out[i].Constraint))
+		if out[i].Default != nil && out[i].LowerBound != nil {
+			c.blameConstraintErrors(p.Default, c.ctx.trialUnderProbe(out[i].LowerBound, out[i].Default))
+		}
+		if out[i].LowerBound != nil && out[i].Constraint != nil {
+			c.blameConstraintErrors(p.LowerBound, c.ctx.trialUnderProbe(out[i].LowerBound, out[i].Constraint))
+		}
 	}
 	return out
 }
@@ -246,11 +259,11 @@ func (c *checker) reportDefaultForwardRef(params []*ast.TypeParam, i int) bool {
 }
 
 // checkTypeArgBounds reports a type argument that does not satisfy its parameter's declared
-// bound, so `class Box<T: string>` and `type Box<T: string>` both reject `Box<number>`. Every
-// generic class, enum, and alias reference routes through here. Arguments are substituted into
-// the bound first, which lets a bound name a sibling as the `B: A` of `<A, B: A>` does. The
-// comparison is live rather than a discarded trial, so a variable argument carries the bound to
-// its instantiation.
+// bounds, so `class Box<T: string>` and `type Box<T: string>` both reject `Box<number>`, and
+// `type Widen<B >: string>` rejects `Widen<number>`. Every generic class, enum, and alias
+// reference routes through here. Arguments are substituted into each bound first, which lets a
+// bound name a sibling as the `B: A` of `<A, B: A>` does. The comparison is live rather than a
+// discarded trial, so a variable argument carries the bound to its instantiation.
 func (c *checker) checkTypeArgBounds(
 	params []*soltype.TypeParam,
 	args []soltype.Type,
@@ -258,7 +271,7 @@ func (c *checker) checkTypeArgBounds(
 	ltArgs []soltype.Lifetime,
 	ref *ast.TypeRefTypeAnn,
 ) {
-	bounded := func(p *soltype.TypeParam) bool { return p.Constraint != nil }
+	bounded := func(p *soltype.TypeParam) bool { return p.Constraint != nil || p.LowerBound != nil }
 	if !slices.ContainsFunc(params, bounded) {
 		// Every parameter is unbounded, so there is nothing to compare and no substitution to
 		// build. This is the common shape for a generic alias.
@@ -269,33 +282,45 @@ func (c *checker) checkTypeArgBounds(
 		if !bounded(p) {
 			continue
 		}
-		// Read the declared constraint from the parameter rather than from its var's upper
-		// bounds. A `<T: A & B>` bound resolves to one IntersectionType, so this is the whole
-		// of what the source wrote, and it cannot be displaced by a bound solving inferred.
-		bound := p.Constraint.Accept(subst, soltype.Positive)
-		if i >= len(ref.TypeArgs) && bound == p.Constraint && args[i] == p.Default {
-			// This argument came from the parameter's default, and substitution moved neither the
-			// bound nor the default, so both read here exactly as they do at the declaration where
-			// resolveTypeParams already compared them. Repeating it would file the same diagnostic
-			// once per reference. A moved bound, `<A, B: A = number>`, or a moved default,
-			// `<T, U: string = T>`, is still checked, since only the reference knows what the
-			// comparison is between.
-			continue
-		}
 		// Blame the written argument. A trailing argument filled from its parameter's default
 		// has no node of its own, so the blame falls back to the whole reference.
 		var site ast.Node = ref
 		if i < len(ref.TypeArgs) {
 			site = ref.TypeArgs[i]
 		}
-		if c.deferArgBounds {
-			c.deferredArgBounds = append(c.deferredArgBounds, deferredArgBound{
-				arg: args[i], bound: bound, site: site,
-			})
-			continue
+		// An argument that came from the parameter's default is skipped when substitution
+		// moved neither the bound nor the default, since both then read here exactly as they
+		// do at the declaration where resolveTypeParams already compared them. Repeating it
+		// would file the same diagnostic once per reference. A moved bound, as in
+		// `<A, B: A = number>`, or a moved default, as in `<T, U: string = T>`, is still
+		// checked, since only the reference knows what the comparison is between.
+		fromDefault := i >= len(ref.TypeArgs) && args[i] == p.Default
+		// Read each declared bound from the parameter rather than from its var's lists. A
+		// `<T: A & B>` bound resolves to one IntersectionType, so this is the whole of what
+		// the source wrote, and it cannot be displaced by a bound solving inferred.
+		if p.Constraint != nil {
+			bound := p.Constraint.Accept(subst, soltype.Positive)
+			if !fromDefault || bound != p.Constraint {
+				c.constrainTypeArg(site, args[i], bound)
+			}
 		}
-		c.constrain(site, args[i], bound)
+		if p.LowerBound != nil {
+			lower := p.LowerBound.Accept(subst, soltype.Positive)
+			if !fromDefault || lower != p.LowerBound {
+				c.constrainTypeArg(site, lower, args[i])
+			}
+		}
 	}
+}
+
+// constrainTypeArg runs one of checkTypeArgBounds' comparisons, sub <: super, or queues it
+// while the component's bodies are nil.
+func (c *checker) constrainTypeArg(site ast.Node, sub, super soltype.Type) {
+	if c.deferArgBounds {
+		c.deferredArgBounds = append(c.deferredArgBounds, deferredArgBound{sub: sub, super: super, site: site})
+		return
+	}
+	c.constrain(site, sub, super)
 }
 
 // runDeferredArgBounds replays and clears the checks checkTypeArgBounds queued while the
@@ -304,6 +329,6 @@ func (c *checker) runDeferredArgBounds() {
 	pending := c.deferredArgBounds
 	c.deferredArgBounds = nil
 	for _, p := range pending {
-		c.constrain(p.site, p.arg, p.bound)
+		c.constrain(p.site, p.sub, p.super)
 	}
 }

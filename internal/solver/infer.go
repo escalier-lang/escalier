@@ -309,8 +309,8 @@ type classShell struct {
 // the enclosing dep_graph component finished resolving its bodies. site is the node the
 // resulting diagnostic blames, the written type argument where there is one.
 type deferredArgBound struct {
-	arg   soltype.Type
-	bound soltype.Type
+	sub   soltype.Type
+	super soltype.Type
 	site  ast.Node
 }
 

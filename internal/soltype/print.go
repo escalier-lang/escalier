@@ -341,15 +341,15 @@ func PrintAsSchemeWith(
 	// bound may name a sibling parameter or a lifetime and both are registered only now.
 	// `class Holder<'a, T: &'a {value: number}>` would otherwise drop the `'a`.
 	//
-	// Only the constraint the source wrote renders. The variable's accumulated upper
-	// bounds carry what a body forced, which is not what the declaration promises, and
-	// showing one would read as if the source had written it.
+	// Only the bounds the source wrote render. The variable's accumulated bounds carry
+	// what a body forced, which is not what the declaration promises, and showing one
+	// would read as if the source had written it.
 	for i, tp := range declaredAt {
 		var bounds []Type
 		if tp.Constraint != nil {
 			bounds = []Type{tp.Constraint}
 		}
-		labels[i] += p.typeParamSuffix(bounds, tp.Default)
+		labels[i] += p.typeParamSuffix(tp.DeclaredLowerBounds(), bounds, tp.Default)
 	}
 	switch t.(type) {
 	case *ClassType, *AliasType:
@@ -575,9 +575,12 @@ func freeTypeVars(t Type) []*TypeVarType {
 			for _, tp := range t.TypeParams {
 				seen.Add(tp.Var)
 			}
-			// Walk the bound the binder renders. On a `C<number>`, `m<U: T>` renders as
+			// Walk the bounds the binder renders. On a `C<number>`, `m<U: T>` renders as
 			// `U: number`, so C's `T` left on the variable's own list is not counted free.
 			for _, tp := range t.TypeParams {
+				for _, b := range tp.DeclaredLowerBounds() {
+					walk(b)
+				}
 				for _, b := range tp.DeclaredUpperBounds() {
 					walk(b)
 				}
@@ -1429,8 +1432,9 @@ func isNever(t Type) bool {
 }
 
 // typeParamBinders renders each type parameter as a binder string — `U`, `U: T` for a
-// constraint, `U = D` for a default, or `U: T = D` for both — without the surrounding
-// `<>`. The constraint is the parameter's DeclaredUpperBounds. Several
+// constraint, `U >: T` for a lower bound, `U = D` for a default, or `U >: L: T = D` for all
+// three — without the surrounding `<>`. The constraint is the parameter's
+// DeclaredUpperBounds and the lower bound its DeclaredLowerBounds. Several
 // bounds render joined by ` & `. The parameters must be bound first, through
 // bindTypeParams. Each binder then renders under its own name, and a binder whose constraint
 // or default names a sibling parameter renders that name too. Callers that build a
@@ -1441,31 +1445,40 @@ func (p *namedPrinter) typeParamBinders(tps []*TypeParam) []string {
 	for i, tp := range tps {
 		// Reading the declared constraint is what renders `pick<T: U>` on a `C<number>` as
 		// `<T: number>`. printType gives the registered source name, else t{ID}.
-		binders[i] = p.printType(tp.Var) + p.typeParamSuffix(tp.DeclaredUpperBounds(), tp.Default)
+		binders[i] = p.printType(tp.Var) + p.typeParamSuffix(tp.DeclaredLowerBounds(), tp.DeclaredUpperBounds(), tp.Default)
 	}
 	return binders
 }
 
-// typeParamSuffix renders what follows a binder's name, which is `: Bound` for a bounded
-// parameter and ` = Default` for one with a default. A parameter with neither renders the
-// empty string, so a caller joins it to the name unconditionally. Several bounds meet, so
-// they join with ` & `.
+// typeParamSuffix renders what follows a binder's name, which is ` >: Lower` for a lower
+// bound, `: Bound` for an upper bound and ` = Default` for a default, in that order. A
+// parameter with none renders the empty string, so a caller joins it to the name
+// unconditionally. Several upper bounds are an intersection and join with ` & `. Several
+// lower bounds are a union and join with ` | `.
 //
 // Every variable the bounds and the default name must be bound to its name first, since a
 // bound naming a sibling parameter renders that sibling's name.
-func (p *namedPrinter) typeParamSuffix(bounds []Type, dflt Type) string {
+func (p *namedPrinter) typeParamSuffix(lowers, bounds []Type, dflt Type) string {
 	var s string
+	if len(lowers) > 0 {
+		s += " >: " + p.joinTypes(lowers, " | ")
+	}
 	if len(bounds) > 0 {
-		rendered := make([]string, len(bounds))
-		for j, b := range bounds {
-			rendered[j] = p.printType(b)
-		}
-		s += ": " + strings.Join(rendered, " & ")
+		s += ": " + p.joinTypes(bounds, " & ")
 	}
 	if dflt != nil {
 		s += " = " + p.printType(dflt)
 	}
 	return s
+}
+
+// joinTypes renders each type and joins the results with sep.
+func (p *namedPrinter) joinTypes(types []Type, sep string) string {
+	rendered := make([]string, len(types))
+	for j, t := range types {
+		rendered[j] = p.printType(t)
+	}
+	return strings.Join(rendered, sep)
 }
 
 // nameLifetimeParams registers each lifetime parameter's variable under its source name

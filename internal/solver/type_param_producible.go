@@ -14,8 +14,13 @@ import (
 // and forcedConcreteFloor finds a concrete floor the body forced onto it. `fn id<T>(x: T)
 // -> T` records none and stays valid. inferFunc calls this for a standalone declaration,
 // which has no expected type to check against. The annotation form instead checks the body
-// against a skolemized annotation in constrainInitAgainstAnnotation. node supplies the blame span.
-func (c *checker) checkTypeParamsProducible(node ast.Node, ft *soltype.FuncType) {
+// against a skolemized annotation in constrainInitAgainstAnnotation. node supplies the blame
+// span. signatureFloors counts each parameter's lower bounds as the signature left them. A
+// declared `B >: number` is one, and so is the `number` a parameter `b: Box<T>` records on `T`
+// for `class Box<B >: number>`. Those are the caller's promise rather than the body's doing,
+// so the walk skips them. It also skips a floor the body derived that one of them already
+// admits. Reading `b.v` derives that same `number` again.
+func (c *checker) checkTypeParamsProducible(node ast.Node, ft *soltype.FuncType, signatureFloors map[*soltype.TypeVarType]int) {
 	if len(ft.TypeParams) == 0 {
 		return
 	}
@@ -28,7 +33,16 @@ func (c *checker) checkTypeParamsProducible(node ast.Node, ft *soltype.FuncType)
 		if !output.Contains(tp.Var) {
 			continue
 		}
-		if floor, ok := forcedConcreteFloor(tp.Var, paramVars); ok {
+		fromSignature := tp.Var.LowerBounds[:min(signatureFloors[tp.Var], len(tp.Var.LowerBounds))]
+		admitted := func(b soltype.Type) bool {
+			for _, pre := range fromSignature {
+				if b == pre || !hasHardError(c.ctx.trialUnderProbe(b, pre)) {
+					return true
+				}
+			}
+			return false
+		}
+		if floor, ok := forcedConcreteFloor(tp.Var, admitted, paramVars); ok {
 			c.report(&TypeParamNotProducibleError{Name: tp.Name, Floor: floor, Node: node})
 		}
 	}
@@ -84,8 +98,9 @@ func (v *polarityVarVisitor) ExitType(t soltype.Type, _ soltype.Polarity) soltyp
 // `A <: T` and `B <: T`, so an independently concrete branch such as the `number` in
 // `T | number` is a forced floor even when a sibling branch is the caller's own `T`. A
 // branch that mentions a declared type-param var carries the caller's choice and is not
-// forced. The seen set keeps a cyclic bound graph terminating.
-func forcedConcreteFloor(root *soltype.TypeVarType, paramVars set.Set[*soltype.TypeVarType]) (soltype.Type, bool) {
+// forced. The seen set keeps a cyclic bound graph terminating. A lower bound of root that
+// admitted reports true is one the signature already promised, so it is skipped.
+func forcedConcreteFloor(root *soltype.TypeVarType, admitted func(soltype.Type) bool, paramVars set.Set[*soltype.TypeVarType]) (soltype.Type, bool) {
 	seen := set.NewSet[*soltype.TypeVarType]()
 	var walkVar func(v *soltype.TypeVarType) (soltype.Type, bool)
 	var walkBound func(b soltype.Type) (soltype.Type, bool)
@@ -118,6 +133,9 @@ func forcedConcreteFloor(root *soltype.TypeVarType, paramVars set.Set[*soltype.T
 		}
 		seen.Add(v)
 		for _, b := range v.LowerBounds {
+			if v == root && admitted(b) {
+				continue
+			}
 			if floor, found := walkBound(b); found {
 				return floor, true
 			}

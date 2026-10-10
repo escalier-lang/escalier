@@ -394,6 +394,19 @@ func TestInferBodyVariance(t *testing.T) {
 			wantMut: []Variance{Contravariant},
 		},
 		{
+			// `m<B >: T>(&self, x: B) -> boolean`. A binder's lower bound is an output position,
+			// so `T` is covariant by the ordinary rule and no reader exemption marks it.
+			name: "a parameter only a method binder's lower bound names is covariant",
+			def: oneParam(func(tv *soltype.TypeVarType) (*soltype.ObjectType, []*soltype.ClassType) {
+				b := &soltype.TypeVarType{ID: 2, LowerBounds: []soltype.Type{tv}}
+				m := selfMethod("m", "C", tv, b, boolT())
+				m.Signatures[0].TypeParams = []*soltype.TypeParam{{Name: "B", Var: b, LowerBound: tv}}
+				return exactObj(m), nil
+			}),
+			want:    []Variance{Covariant},
+			wantMut: []Variance{Covariant},
+		},
+		{
 			// `m<U: T>(&self, x: U) -> T`, the shape `Array.filter<S: T>` has. The bound is an
 			// input to a `&self` method, so it counts the way `echo(&self, x: T) -> T` does. The
 			// return keeps `T` covariant and the bound marks it as a covariant input.

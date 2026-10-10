@@ -356,6 +356,9 @@ func (s *skolemizer) EnterType(t soltype.Type, pol soltype.Polarity) soltype.Ent
 			if sk.Upper == nil {
 				sk.Upper = s.skolemizeBound(tp.DeclaredUpperBounds())
 			}
+			if sk.Lower == nil {
+				sk.Lower = s.skolemizeBound(tp.DeclaredLowerBounds())
+			}
 		}
 		cp := *t
 		cp.TypeParams = nil
