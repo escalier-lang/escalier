@@ -381,9 +381,9 @@ type rigidParam struct {
 
 // holdTypeParamsRigid makes params rigid for constrain until the returned function runs.
 // fromBelow makes them rigid on the super side of a constraint as well as the sub side. A
-// parameter with a declared lower bound, or one a sibling's lower bound names, is rigid on
-// the super side either way. In `fn f<T, U>() -> T where U | 2: T { return 1 }` the `1`
-// reaches `U | 2` through `T`'s bound, and only `U`'s skolem rejects it.
+// parameter with a declared lower bound, or one a sibling's lower bound names, as `U` in
+// `where Box<U>: T`, is rigid on the super side either way, so a value that reaches it
+// through that bound meets its skolem rather than binding it.
 func (c *Context) holdTypeParamsRigid(params []*soltype.TypeParam, fromBelow bool) (release func()) {
 	if c.rigidParams == nil {
 		c.rigidParams = map[*soltype.TypeVarType]*rigidParam{}

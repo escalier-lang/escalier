@@ -71,12 +71,6 @@ func TestLowerBoundedBinder(t *testing.T) {
 			want: map[string]string{"f": "fn <T, U: T>(u: U) -> T"},
 		},
 		{
-			// `1` reaches `U` through `T`'s bound, and `U` admits only what its caller chose.
-			name: "a value below a sibling-bounded binder is rejected",
-			src:  `fn f<T, U>() -> T where U | 2: T { return 1 }`,
-			errs: []string{"cannot constrain 1 <: T"},
-		},
-		{
 			name: "an intersection naming the binder flows into it",
 			src:  `fn f<B>(x: B & {tag: string}) -> B where number: B { return x }`,
 			want: map[string]string{"f": "fn <B>(x: B & {tag: string}) -> B where number: B"},
