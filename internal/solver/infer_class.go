@@ -27,9 +27,9 @@ import (
 // reference to a sibling defined later in the group resolves before its body is inferred.
 // A class reached without a pre-bound pair mints and registers one here.
 //
-// The member walk is two-phase: every field, method, getter, and setter signature is
-// appended to the body first, then each body is walked with `self` bound to the full
-// body. So a method calling another method of the same class resolves through the
+// The member walk is two-phase. classSigsOf appends every field, method, getter, and
+// setter signature to the body first, then each body is walked with `self` bound to the
+// full body. So a method calling another method of the same class resolves through the
 // pre-declared sibling signature, whether self-recursive, mutually recursive, or a
 // forward call to a member declared later.
 //
@@ -37,141 +37,58 @@ import (
 // lookup reads concrete member types. A generic body keeps its parameter vars symbolic
 // for per-instance projection.
 func (c *checker) inferClassDecl(scope *Scope, lvl int, decl *ast.ClassDecl, ns string) (soltype.Type, provenance.Provenance, bool) {
-	// A class-body type reference resolves against the class's own namespace first, so a
-	// bare sibling reference such as `start: Point` inside a class in namespace
-	// `Geometry` finds `Geometry.Point`. Save and restore around the walk, since a class
-	// is only ever inferred at top level.
+	sigs := c.classSigsOf(scope, lvl, decl, ns)
+	self, def, shell := sigs.self, sigs.def, sigs.shell
+	typeParams := shell.typeParams
+	body := def.Body
+	static := def.Static
+
 	prevNS := c.classNamespace
 	c.classNamespace = ns
 	defer func() { c.classNamespace = prevNS }()
 
-	c.reportSelfTypeName(ClassDeclKind, decl.Name)
-
-	// This window covers the body. A class in an SCC component resolved its parameters in the
-	// module pre-pass, before this point, so a diagnostic drawn by a bound or a default is
-	// carried on the shell instead and both are consulted before the unused warning is
-	// reported.
+	// This window covers the body. The signatures and the class parameters may have been
+	// built before this point, each under a window of its own, so both outcomes are
+	// consulted before the unused warning is reported.
 	quiet := c.errorWindow()
-
-	// The class's type parameters and the scope its body resolves in, taken from the module
-	// SCC pre-pass when there was one and resolved here when there was not.
 	paramsClean := c.classParamsClean(decl)
-	declScope, shell := c.classDeclScope(scope, lvl, decl)
-	typeParams := shell.typeParams
 
-	// A member signature may write the class's `'a` without binding it itself. inferFunc and
-	// resolveFuncTypeAnn seed each nested signature's own scope from this map, so the `&'a`
-	// they resolve reaches the variable the class parameter carries rather than minting one
-	// of its own. It holds the declared parameters and nothing else: the shell's map is
-	// written only by resolveClassLifetimeParams, and every reader below copies before
-	// minting, so an undeclared name a field writes cannot intern itself as a class binder.
+	// Install the same lifetime scopes and `Self` class the signatures were built under, so a
+	// `&'a` a member body writes reaches the variable its signature holds.
 	savedClassLts := c.declLifetimes
 	c.declLifetimes = shell.namedLts
 	defer func() { c.declLifetimes = savedClassLts }()
-
-	// Resolve the body under a copy of that scope, so a `&'a` written in a field reaches the
-	// class parameter while a name the body mints stays out of the shell's map. A class is
-	// only ever inferred at top level, so saving and restoring is enough to keep the scope
-	// from leaking into a sibling declaration.
 	savedNamedLts := c.namedLifetimes
-	c.namedLifetimes = maps.Clone(shell.namedLts)
+	c.namedLifetimes = sigs.namedLts
 	defer func() { c.namedLifetimes = savedNamedLts }()
-
-	// The instance's nominal identity and its heavy ClassDef. getOrCreateClass returns
-	// the pair the SCC pre-pass registered for this class — an empty shell it minted
-	// before any type params were resolved, so that a sibling in the same recursive group
-	// resolves a forward reference to this class through the shared handle (B2). A class
-	// reached without a pre-registered shell mints and registers one here. The registry,
-	// the minted handle, and the scope type binding are all keyed by the namespace-
-	// qualified name, so two sibling `class Point` declarations in different namespaces
-	// stay distinct.
-	self, def := c.getOrCreateClass(scope, decl, ns)
-	// Populate the type-param-derived fields the pre-pass left empty. This is the second
-	// phase: the pre-pass registers a bare identity so forward references resolve, and
-	// this call — running once every sibling is registered, so a bound like `<T: Sibling>`
-	// resolves — fills in the resolved type params. The handle carries the class's own
-	// type-parameter vars as its arguments.
-	self.TypeArgs = typeParamVars(typeParams)
-	self.Defaults = paramDefaults(typeParams)
-	self.LifetimeArgs = lifetimeParamVars(shell.lifetimeParams)
-	def.Level = lvl - 1
-	def.TypeParams = typeParams
-	def.LifetimeParams = shell.lifetimeParams
-	def.Variance = make([]Variance, len(typeParams))
-	def.MutVariance = make([]Variance, len(typeParams))
-	body := def.Body
-	static := def.Static
-	c.recordType(decl.Name, self)
-
-	// Resolve the declared extends edge and implements interfaces so C1 can walk and
-	// check them. A subclass's value key depends on its superclass's, so by the time this
-	// runs every ancestor has its own edge and its own body recorded, and the whole chain is
-	// walkable from here.
-	def.Supers = c.resolveClassSupers(declScope, lvl, decl)
-	implemented := c.resolveClassImplements(declScope, lvl, decl)
-	var structural []soltype.Type
-	for _, target := range implemented {
-		if target.class != nil {
-			def.Implements = append(def.Implements, target.class)
-		} else {
-			structural = append(structural, target.alias)
-		}
-	}
-	def.EdgesPending = false
-
-	// Bind `Self` to the class's own instance handle for the member walk below. A member
-	// signature names it for a builder-style return, where a method hands back the receiver's
-	// own type: `std/prelude.esc` writes `fill(&mut self, value: T, start?: number, end?: number)
-	// -> Self`. The handle carries the class's own type-parameter vars as its arguments, so
-	// `Self` inside `class Box<T>` is `Box<T>` and an instance's argument substitutes for `T`
-	// the way it does through any other reference to the class.
-	//
-	// The binding sits in a child of the declaration scope, so it covers the fields, the
-	// member signatures, the member bodies, and the constructors, and does not reach the
-	// `extends` and `implements` references resolved above. Those name the classes this one is
-	// built from, where `Self` would be circular.
-	//
-	// This binds `Self` to the DECLARING class, so an inherited member reads it at that class
-	// rather than at the subclass reaching it. #1520 carries the polymorphic reading, where a
-	// `-> Self` inherited from a superclass yields the receiver's own class. It needs `Self`
-	// kept distinct in the stored signature, which this binding does not do: once resolved, a
-	// written `Self` and a written reference to the class are the same handle, so no later pass
-	// can tell them apart. A distinct soltype kind is the shape that issue settles on.
-	bodyScope := declScope.Child()
-	bodyScope.defineType(selfTypeName, TypeBinding{Type: self})
 	savedSelfClass := c.selfClass
 	c.selfClass = self
 	defer func() { c.selfClass = savedSelfClass }()
 
-	// Two-phase member walk (B3). Phase 1 appends a signature element for every field,
-	// method, getter, and setter to the instance or static body before any body is
-	// inferred. Phase 2 then walks each method, getter, setter, and the constructor body
-	// with `self` bound to the full body, so a call between two methods of the same class
-	// resolves through the pre-declared sibling signature — self-recursive, mutually
-	// recursive, or a forward call to a member declared later.
+	bodyScope := sigs.bodyScope
 	ctors := collectConstructors(decl)
-	c.checkClassBodyLifetimes(decl)
-	c.buildFieldSigs(bodyScope, lvl, decl, body, static)
-	pending := c.buildMemberSigs(bodyScope, lvl, decl, self, body, static)
+	c.checkFieldInits(bodyScope, lvl, decl, sigs.fieldInits)
 	// The `implements` check compares each entry against what the class wrote, so the names
 	// are taken before the clause below adds the entry's own members to a `declare` class.
 	ownNames := memberNames(body)
 	// A `declare` class describes an object the runtime already provides, so its
 	// `implements` clause says which members it has rather than asking for them.
 	// The generated lib relies on this for every mixin a TypeScript interface named,
-	// such as `declare class Response implements Body`.
+	// such as `declare class Response implements Body`. A member the class inherits
+	// keeps the superclass's version, so this runs at the value key, which depends on
+	// the superclass's value key and so sees its finished body.
 	if decl.Declare() {
-		c.addImplementedMembers(decl, def, self, structural)
+		c.addImplementedMembers(decl, def, self, sigs.structural)
 	}
 	// A mutually recursive method group with no annotated return cannot ground its own
 	// return types, so it is reported before any body runs. Reporting here, not during
 	// body inference, keeps the diagnostic off the inferred-never recovery.
 	c.checkMethodRecursionAnnotations(decl)
 	// A member body walks against the `self` view rather than the class's own body, so an
-	// inherited member is reachable through `self`. Phase 1 has appended every own member by
-	// now, so the view is complete, and it shares each own element pointer so phase 2's
-	// signature installs and field refinements still land on the registered body.
-	callFns, ctorFns := c.inferClassBodies(bodyScope, lvl, self, body, typeParams, decl, pending, ctors)
+	// inherited member is reachable through `self`. Every own member signature is in the
+	// body by now, so the view is complete, and it shares each own element pointer so the
+	// signature installs and field refinements below still land on the registered body.
+	callFns, ctorFns := c.inferClassBodies(bodyScope, lvl, self, body, typeParams, decl, sigs.pending, ctors)
 	if len(ctorFns) == 0 {
 		// A subclass must declare its own constructor to call `super`, so a missing one is
 		// reported here and the synthesis below stands in for recovery.
@@ -242,9 +159,9 @@ func (c *checker) inferClassDecl(scope *Scope, lvl int, decl *ast.ClassDecl, ns 
 	c.queueInheritedMemberCheck(def, self, decl)
 	// Queue the `implements` check for the same reason. It reads the members the class
 	// inherits, so every ancestor has to be final first.
-	c.queueImplementsCheck(def, self, decl, implemented, ownNames)
+	c.queueImplementsCheck(def, self, decl, sigs.implemented, ownNames)
 
-	if quiet() && paramsClean {
+	if quiet() && sigs.clean && paramsClean {
 		c.reportUnusedTypeParams(typeParams, decl.TypeParams, classDeclTypes(def, ctorFns, callFns))
 	}
 
@@ -277,6 +194,168 @@ func (c *checker) inferClassBodies(
 	callFns = c.inferCallSignatures(scope, lvl, decl)
 	ctorFns = c.walkConstructorBodies(scope, lvl, self, body, ctors)
 	return callFns, ctorFns
+}
+
+// classSigs is what the signature phase of a class declaration produces and the body
+// phase in inferClassDecl reads back.
+type classSigs struct {
+	self  *soltype.ClassType
+	def   *ClassDef
+	shell *classShell
+	// bodyScope is the declaration scope with `Self` bound, which every member resolves in.
+	bodyScope *Scope
+	// namedLts is the named-lifetime scope the fields resolved in, seeded from the class's
+	// own parameters.
+	namedLts map[string]*soltype.LifetimeVar
+	// pending holds one entry per method, getter, and setter whose body is still to walk.
+	pending []pendingMember
+	// implemented holds every resolved `implements` entry, and structural holds the ones
+	// that name an alias rather than a class.
+	implemented []implementsTarget
+	structural  []soltype.Type
+	// fieldInits holds each static field whose initializer is still to infer.
+	fieldInits []staticFieldInit
+	// clean records that building the signatures reported no diagnostic.
+	clean bool
+}
+
+// classSigsOf returns the signatures buildClassSigs built for decl, building them now when
+// nothing has yet.
+func (c *checker) classSigsOf(scope *Scope, lvl int, decl *ast.ClassDecl, ns string) *classSigs {
+	if sigs, ok := c.builtClassSigs[decl]; ok {
+		return sigs
+	}
+	return c.buildClassSigs(scope, lvl, decl, ns)
+}
+
+// buildClassSigs fills a class's ClassDef with everything but the member bodies. That is
+// the resolved type parameters, the `extends` and `implements` edges, a PropertyElem per
+// field, and a signature stub per method, getter, and setter. The result is cached for
+// classSigsOf. It must run after every type a member annotation names is bound.
+func (c *checker) buildClassSigs(scope *Scope, lvl int, decl *ast.ClassDecl, ns string) *classSigs {
+	// A class-body type reference resolves against the class's own namespace first, so a
+	// bare sibling reference such as `start: Point` inside a class in namespace
+	// `Geometry` finds `Geometry.Point`. Save and restore around the walk, since a class
+	// is only ever inferred at top level.
+	prevNS := c.classNamespace
+	c.classNamespace = ns
+	defer func() { c.classNamespace = prevNS }()
+
+	c.reportSelfTypeName(ClassDeclKind, decl.Name)
+
+	quiet := c.errorWindow()
+
+	// The class's type parameters and the scope its body resolves in, taken from the module
+	// SCC pre-pass when there was one and resolved here when there was not.
+	declScope, shell := c.classDeclScope(scope, lvl, decl)
+	typeParams := shell.typeParams
+
+	// A member signature may write the class's `'a` without binding it itself. inferFunc and
+	// resolveFuncTypeAnn seed each nested signature's own scope from this map, so the `&'a`
+	// they resolve reaches the variable the class parameter carries rather than minting one
+	// of its own. It holds the declared parameters and nothing else: the shell's map is
+	// written only by resolveClassLifetimeParams, and every reader below copies before
+	// minting, so an undeclared name a field writes cannot intern itself as a class binder.
+	savedClassLts := c.declLifetimes
+	c.declLifetimes = shell.namedLts
+	defer func() { c.declLifetimes = savedClassLts }()
+
+	// Resolve the body under a copy of that scope, so a `&'a` written in a field reaches the
+	// class parameter while a name the body mints stays out of the shell's map. A class is
+	// only ever inferred at top level, so saving and restoring is enough to keep the scope
+	// from leaking into a sibling declaration.
+	savedNamedLts := c.namedLifetimes
+	namedLts := maps.Clone(shell.namedLts)
+	c.namedLifetimes = namedLts
+	defer func() { c.namedLifetimes = savedNamedLts }()
+
+	// The instance's nominal identity and its heavy ClassDef. getOrCreateClass returns
+	// the pair the SCC pre-pass registered for this class — an empty shell it minted
+	// before any type params were resolved, so that a sibling in the same recursive group
+	// resolves a forward reference to this class through the shared handle (B2). A class
+	// reached without a pre-registered shell mints and registers one here. The registry,
+	// the minted handle, and the scope type binding are all keyed by the namespace-
+	// qualified name, so two sibling `class Point` declarations in different namespaces
+	// stay distinct.
+	self, def := c.getOrCreateClass(scope, decl, ns)
+	// Populate the type-param-derived fields the pre-pass left empty. This is the second
+	// phase: the pre-pass registers a bare identity so forward references resolve, and
+	// this call — running once every sibling is registered, so a bound like `<T: Sibling>`
+	// resolves — fills in the resolved type params. The handle carries the class's own
+	// type-parameter vars as its arguments.
+	self.TypeArgs = typeParamVars(typeParams)
+	self.Defaults = paramDefaults(typeParams)
+	self.LifetimeArgs = lifetimeParamVars(shell.lifetimeParams)
+	def.Level = lvl - 1
+	def.TypeParams = typeParams
+	def.LifetimeParams = shell.lifetimeParams
+	def.Variance = make([]Variance, len(typeParams))
+	def.MutVariance = make([]Variance, len(typeParams))
+	c.recordType(decl.Name, self)
+
+	// Resolve the declared extends edge and implements interfaces so C1 can walk and
+	// check them. Resolving an edge reads only the target's identity and parameters,
+	// which its type key binds, and this class's keys depend on that type key.
+	def.Supers = c.resolveClassSupers(declScope, lvl, decl)
+	implemented := c.resolveClassImplements(declScope, lvl, decl)
+	var structural []soltype.Type
+	for _, target := range implemented {
+		if target.class != nil {
+			def.Implements = append(def.Implements, target.class)
+		} else {
+			structural = append(structural, target.alias)
+		}
+	}
+	def.EdgesPending = false
+
+	// Bind `Self` to the class's own instance handle for the member walk below. A member
+	// signature names it for a builder-style return, where a method hands back the receiver's
+	// own type: `std/prelude.esc` writes `fill(&mut self, value: T, start?: number, end?: number)
+	// -> Self`. The handle carries the class's own type-parameter vars as its arguments, so
+	// `Self` inside `class Box<T>` is `Box<T>` and an instance's argument substitutes for `T`
+	// the way it does through any other reference to the class.
+	//
+	// The binding sits in a child of the declaration scope, so it covers the fields, the
+	// member signatures, the member bodies, and the constructors, and does not reach the
+	// `extends` and `implements` references resolved above. Those name the classes this one is
+	// built from, where `Self` would be circular.
+	//
+	// This binds `Self` to the DECLARING class, so an inherited member reads it at that class
+	// rather than at the subclass reaching it. #1520 carries the polymorphic reading, where a
+	// `-> Self` inherited from a superclass yields the receiver's own class. It needs `Self`
+	// kept distinct in the stored signature, which this binding does not do: once resolved, a
+	// written `Self` and a written reference to the class are the same handle, so no later pass
+	// can tell them apart. A distinct soltype kind is the shape that issue settles on.
+	bodyScope := declScope.Child()
+	bodyScope.defineType(selfTypeName, TypeBinding{Type: self})
+	savedSelfClass := c.selfClass
+	c.selfClass = self
+	defer func() { c.selfClass = savedSelfClass }()
+
+	// Phase 1 of the two-phase member walk (B3). It appends a signature element for every
+	// field, method, getter, and setter to the instance or static body before any body is
+	// inferred. inferClassDecl walks the bodies afterwards.
+	c.checkClassBodyLifetimes(decl)
+	fieldInits := c.buildFieldSigs(bodyScope, lvl, decl, def.Body, def.Static)
+	pending := c.buildMemberSigs(bodyScope, lvl, decl, self, def.Body, def.Static)
+
+	sigs := &classSigs{
+		self:        self,
+		def:         def,
+		shell:       shell,
+		bodyScope:   bodyScope,
+		namedLts:    namedLts,
+		pending:     pending,
+		implemented: implemented,
+		structural:  structural,
+		fieldInits:  fieldInits,
+		clean:       quiet(),
+	}
+	if c.builtClassSigs == nil {
+		c.builtClassSigs = map[*ast.ClassDecl]*classSigs{}
+	}
+	c.builtClassSigs[decl] = sigs
+	return sigs
 }
 
 // classDeclTypes returns every type a class declaration writes, so a walk over them covers each
@@ -1198,11 +1277,12 @@ func (c *checker) checkClassBodyLifetimes(decl *ast.ClassDecl) {
 }
 
 // buildFieldSigs adds one PropertyElem per field to the instance or static body,
-// resolving each field's annotation or minting a fresh var when it is unannotated. An
-// instance field carrying an initializer is rejected — instance fields are set in the
-// constructor — while a static field's initializer is inferred and checked against the
-// field's declared type.
-func (c *checker) buildFieldSigs(scope *Scope, lvl int, decl *ast.ClassDecl, body, static *soltype.ObjectType) {
+// resolving each field's annotation or minting a fresh var when it is unannotated.
+// It returns each static field carrying an initializer, for checkFieldInits.
+func (c *checker) buildFieldSigs(
+	scope *Scope, lvl int, decl *ast.ClassDecl, body, static *soltype.ObjectType,
+) []staticFieldInit {
+	var inits []staticFieldInit
 	for _, elem := range decl.Body {
 		field, ok := elem.(*ast.FieldElem)
 		if !ok {
@@ -1223,16 +1303,6 @@ func (c *checker) buildFieldSigs(scope *Scope, lvl int, decl *ast.ClassDecl, bod
 		} else {
 			fieldType = c.freshAt(lvl)
 		}
-		if field.Value != nil {
-			if field.Static {
-				// A static field's initializer must fit its declared type, so
-				// `static x: number = "hi"` is rejected.
-				initType := c.inferExpr(scope, lvl, field.Value)
-				c.constrain(field.Value, initType, fieldType)
-			} else {
-				c.report(&FieldInitializerNotAllowedError{Field: field})
-			}
-		}
 		prop := &soltype.PropertyElem{
 			Name:     fieldName,
 			Type:     fieldType,
@@ -1241,9 +1311,35 @@ func (c *checker) buildFieldSigs(scope *Scope, lvl int, decl *ast.ClassDecl, bod
 		}
 		if field.Static {
 			static.Elems = append(static.Elems, prop)
+			if field.Value != nil {
+				inits = append(inits, staticFieldInit{field: field, prop: prop})
+			}
 		} else {
 			body.Elems = append(body.Elems, prop)
 		}
+	}
+	return inits
+}
+
+// staticFieldInit pairs a static field carrying an initializer with the PropertyElem
+// buildFieldSigs added for it.
+type staticFieldInit struct {
+	field *ast.FieldElem
+	prop  *soltype.PropertyElem
+}
+
+// checkFieldInits infers each static field's initializer in inits and checks it against
+// the field's type, so `static x: number = "hi"` is rejected. It reports every instance
+// field carrying an initializer, since instance fields are set in the constructor.
+func (c *checker) checkFieldInits(scope *Scope, lvl int, decl *ast.ClassDecl, inits []staticFieldInit) {
+	for _, elem := range decl.Body {
+		if field, ok := elem.(*ast.FieldElem); ok && field.Value != nil && !field.Static {
+			c.report(&FieldInitializerNotAllowedError{Field: field})
+		}
+	}
+	for _, init := range inits {
+		initType := c.inferExpr(scope, lvl, init.field.Value)
+		c.constrain(init.field.Value, initType, init.prop.Type)
 	}
 }
 
@@ -1261,6 +1357,8 @@ type pendingMember struct {
 	// method may. A getter and a setter have no call site that could instantiate a binder,
 	// so one written there is reported as unsupported.
 	generic bool
+	// seeded marks a stub whose return var seedStubReturn bounded by the declared return.
+	seeded bool
 }
 
 // buildMemberSigs is phase 1 of the member walk. It appends a signature stub for every
@@ -1286,6 +1384,7 @@ func (c *checker) buildMemberSigs(
 			c.checkSelfReceiver(name, elem, elem.Static, elem.Receiver)
 			stub := c.memberSigStub(scope, lvl, elem.Fn)
 			stub.SelfParam = c.selfParam(lvl, elem.Receiver, elem.Static, self)
+			seeded := c.seedStubReturn(scope, lvl, elem.Fn, stub)
 			method, arm := appendMethodSig(targetBody(body, static, elem.Static), name, stub, elem.Static)
 			// An overloaded method dispatches on its value arguments, so its arms must agree
 			// on the receiver they take. The receiver check reads only the first arm, so a
@@ -1299,7 +1398,7 @@ func (c *checker) buildMemberSigs(
 			}
 			pending = append(pending, pendingMember{
 				fn: elem.Fn, name: name, recv: elem.Receiver, class: self, static: elem.Static, stub: stub,
-				generic: true,
+				generic: true, seeded: seeded,
 				apply: func(bodyFt *soltype.FuncType) {
 					method.Signatures[arm] = bodyFt
 				},
@@ -1317,6 +1416,7 @@ func (c *checker) buildMemberSigs(
 				c.report(&GetterReceiverError{Name: name, Elem: elem})
 			}
 			stub := c.memberSigStub(scope, lvl, elem.Fn)
+			seeded := c.seedStubReturn(scope, lvl, elem.Fn, stub)
 			getter := &soltype.GetterElem{
 				Name:      name,
 				SelfParam: c.selfParam(lvl, elem.Receiver, elem.Static, self),
@@ -1327,6 +1427,7 @@ func (c *checker) buildMemberSigs(
 			target.Elems = append(target.Elems, getter)
 			pending = append(pending, pendingMember{
 				fn: elem.Fn, name: name, recv: elem.Receiver, class: self, static: elem.Static, stub: stub,
+				seeded: seeded,
 				apply: func(bodyFt *soltype.FuncType) {
 					getter.SelfParam = bodyFt.SelfParam
 					getter.Type = bodyFt.Ret
@@ -1392,7 +1493,7 @@ func (c *checker) inferMemberBodies(scope *Scope, lvl int, body *soltype.ObjectT
 		// *ast.FuncExpr and so cannot recover it. inferFunc takes and clears it.
 		c.memberName = m.name
 		bodyFt := c.inferMemberFunc(scope, lvl, m, body)
-		c.linkMemberSig(m.fn, bodyFt, m.stub)
+		c.linkMemberSig(m.fn, bodyFt, m.stub, m.seeded)
 		m.apply(bodyFt)
 	}
 }
@@ -1401,7 +1502,10 @@ func (c *checker) inferMemberBodies(scope *Scope, lvl int, body *soltype.ObjectT
 // `bodyFt <: stub` direction grounds both parameters (contravariant, so a sibling call's
 // argument flows stub → body) and the return (covariant, so the body's return flows body →
 // stub); SelfParam lives on the element and is not compared here.
-func (c *checker) linkMemberSig(node ast.Node, bodyFt, stub *soltype.FuncType) {
+//
+// seeded marks a stub whose return var seedStubReturn already bounded by the declared
+// return type. The body's return is then linked against `unknown` rather than that var.
+func (c *checker) linkMemberSig(node ast.Node, bodyFt, stub *soltype.FuncType, seeded bool) {
 	callable := func(ft *soltype.FuncType) *soltype.FuncType {
 		return &soltype.FuncType{Params: ft.Params, Ret: ft.Ret, Throws: ft.Throws, Inexact: ft.Inexact}
 	}
@@ -1415,7 +1519,14 @@ func (c *checker) linkMemberSig(node ast.Node, bodyFt, stub *soltype.FuncType) {
 	if len(bodyFt.TypeParams) > 0 {
 		bodyFt = c.ctx.instantiateFuncBinder(bodyFt, bodyFt.TypeParams[0].Var.Level)
 	}
-	c.constrain(node, callable(bodyFt), callable(stub))
+	target := callable(stub)
+	// The body pass checks a seeded member's return against the declaration the var is
+	// already bounded by. Linking the body's return into the var would add a second lower
+	// bound, and a read of the var would report one mismatch twice.
+	if seeded {
+		target.Ret = &soltype.UnknownType{}
+	}
+	c.constrain(node, callable(bodyFt), target)
 }
 
 // memberSigStub builds a member's signature stub. It has one value parameter per parameter
@@ -1487,6 +1598,55 @@ func (c *checker) stubParamType(scope *Scope, lvl int, fn *ast.FuncExpr, p *ast.
 	}
 	return t
 }
+
+// seedStubReturn adds a member's annotated return type as a lower bound on its stub's
+// return var, so a read of the stub before the member's body is walked sees the declared
+// type. It reports whether it bounded the var.
+//
+// A member keeps the fresh return var when it quantifies parameters of its own, is async
+// or a generator, or returns a type that mentions a borrow, a lifetime, or a type variable.
+// The body pass resolves each of those against state it sets up itself. The annotation
+// resolves again in the body pass, which reports any diagnostic it raises, so the ones
+// raised here are dropped.
+func (c *checker) seedStubReturn(scope *Scope, lvl int, fn *ast.FuncExpr, stub *soltype.FuncType) bool {
+	sig := fn.FuncSig
+	if sig.Return == nil || len(sig.TypeParams) > 0 || len(sig.LifetimeParams) > 0 || sig.Async || sig.Gen {
+		return false
+	}
+	errsLen := len(c.errs)
+	ret, ok := c.resolveTypeAnn(scope, sig.Return, lvl)
+	c.errs = c.errs[:errsLen]
+	if !ok {
+		return false
+	}
+	finder := &openTypeFinder{}
+	ret.Accept(finder, soltype.Positive)
+	if finder.found {
+		return false
+	}
+	c.constrain(fn, ret, stub.Ret)
+	return true
+}
+
+// openTypeFinder records whether a type mentions a borrow, a lifetime argument, or a type
+// variable.
+type openTypeFinder struct {
+	found bool
+}
+
+func (v *openTypeFinder) EnterType(t soltype.Type, _ soltype.Polarity) soltype.EnterResult {
+	switch t := t.(type) {
+	case *soltype.RefType, *soltype.TypeVarType:
+		v.found = true
+	case *soltype.ClassType:
+		v.found = v.found || len(t.LifetimeArgs) > 0 || t.Lt != nil
+	case *soltype.AliasType:
+		v.found = v.found || len(t.LifetimeArgs) > 0
+	}
+	return soltype.EnterResult{}
+}
+
+func (v *openTypeFinder) ExitType(t soltype.Type, _ soltype.Polarity) soltype.Type { return t }
 
 // targetBody selects the static or instance body for a member.
 func targetBody(body, static *soltype.ObjectType, isStatic bool) *soltype.ObjectType {

@@ -5,6 +5,7 @@ import (
 
 	"github.com/escalier-lang/escalier/internal/ast"
 	"github.com/escalier-lang/escalier/internal/dep_graph"
+	"github.com/escalier-lang/escalier/internal/graph"
 	"github.com/escalier-lang/escalier/internal/provenance"
 	"github.com/escalier-lang/escalier/internal/set"
 	"github.com/escalier-lang/escalier/internal/soltype"
@@ -189,7 +190,27 @@ func (c *checker) inferDepGraph(scope *Scope, lvl int, module *ast.Module, g *de
 	// once, memoized here on the first leaf reached. Each leaf component then
 	// constrains its own projected type into its binding var.
 	destructured := map[*ast.VarDecl]*moduleDestructure{}
-	for _, component := range g.Components {
+	// The walk visits a class's value key before the declarations that read its members.
+	// Those declarations depend only on the class's type key, so g.Components alone may
+	// place them first.
+	//
+	// A class's type key builds a signature stub for every method before any body is
+	// inferred. An unannotated method's stub has no return type yet. Its return is a fresh
+	// variable, which gets bounds only when linkMemberSig runs after the value key infers
+	// that method's body. seedStubReturn fills the stub from an annotated return, so only
+	// unannotated returns are at risk.
+	//
+	// Inside one class the stubs are enough. A method reading a sibling's stub return adds
+	// constraints to that variable, and the class's types are finalized only after all its
+	// bodies run. A reader outside the class is finalized when its own component is
+	// generalized. If that happens before the class's value key, the stub return still has
+	// no bounds and the reader fixes it at `never`. In this example `f` would bind as
+	// `fn (b: B) -> never`, and a caller assigning `f(b)` to a `string` would check with
+	// no error.
+	//
+	//	fn f(b: B) { return b.m() }
+	//	class B { m(&self) { return 1 } }
+	for _, component := range classBodiesFirst(g) {
 		c.inferComponent(scope, lvl, module, g, component, handled, destructured)
 	}
 	// Every class is inferred, so each superclass edge and body is final. Check the members
@@ -210,6 +231,78 @@ func (c *checker) inferDepGraph(scope *Scope, lvl int, module *ast.Module, g *de
 		}
 		return true
 	})
+}
+
+// classBodiesFirst returns g.Components reordered so that a component naming a class's
+// type comes after the component holding that class's value key, wherever the dep graph
+// allows it. Every component still comes after the components it depends on. Components
+// that cannot be ordered that way are merged into one component, with their keys in their
+// original relative order.
+func classBodiesFirst(g *dep_graph.DepGraph) [][]dep_graph.BindingKey {
+	index := make(map[dep_graph.BindingKey]int)
+	for i, component := range g.Components {
+		for _, key := range component {
+			index[key] = i
+		}
+	}
+	nodes := make([]int, len(g.Components))
+	for i := range nodes {
+		nodes[i] = i
+	}
+	// successors returns the components component i must come after. That is each
+	// component holding one of its dependencies, plus a preferred edge to the value key of
+	// each class whose type key it depends on. A reference such as `b: B` depends on B's
+	// type key only, while B's member bodies are inferred at its value key.
+	successors := func(i int) []int {
+		var out []int
+		for _, key := range g.Components[i] {
+			deps := g.GetDeps(key)
+			iter := deps.Iter()
+			for ok := iter.First(); ok; ok = iter.Next() {
+				dep := iter.Key()
+				if j, found := index[dep]; found && j != i {
+					out = append(out, j)
+				}
+				if dep.Kind() != dep_graph.DepKindType || !declaresClass(g, dep) {
+					continue
+				}
+				if j, found := index[dep_graph.ValueBindingKey(dep.Name())]; found && j != i {
+					out = append(out, j)
+				}
+			}
+		}
+		return out
+	}
+	// The strongly connected components of the components plus the preferred edges come
+	// back in topological order. A group of more than one is a cycle that only preferred
+	// edges close, since each original component is already a cycle of real edges. Such a
+	// group is inferred as one component, so a reader of B in it is generalized together
+	// with B's value key, after linkMemberSig has bounded the member stubs the reader saw.
+	// Sorting the indices keeps the original order, which respects every real dependency.
+	ordered := make([][]dep_graph.BindingKey, 0, len(g.Components))
+	for _, group := range graph.StronglyConnectedComponents(nodes, successors) {
+		sort.Ints(group)
+		if len(group) == 1 {
+			ordered = append(ordered, g.Components[group[0]])
+			continue
+		}
+		var merged []dep_graph.BindingKey
+		for _, i := range group {
+			merged = append(merged, g.Components[i]...)
+		}
+		ordered = append(ordered, merged)
+	}
+	return ordered
+}
+
+// declaresClass reports whether a class declaration contributes to key.
+func declaresClass(g *dep_graph.DepGraph, key dep_graph.BindingKey) bool {
+	for _, d := range g.GetDecls(key) {
+		if _, ok := d.(*ast.ClassDecl); ok {
+			return true
+		}
+	}
+	return false
 }
 
 // overloadArm is one collected arm of an overload set (PR6): a top-level FuncDecl's
@@ -502,6 +595,13 @@ func (c *checker) inferComponent(
 	// before its alias is marked would key it under its full arguments and keep that
 	// representative for the rest of the run, so the same type could hold two identities.
 	c.runDeferredArgBounds()
+	// Build each class's member signatures at its type key. A class whose method reads
+	// `self.b.n` depends only on the type key of `b`'s class, so that class's value key,
+	// where the member bodies are walked, can come later. Its fields and member stubs have
+	// to be on its ClassDef by the time any such body reads them.
+	for i, decl := range classDecls {
+		c.buildClassSigs(c.lookupScope(scope, decl), inner, decl, classNamespaces[i])
+	}
 
 	// Non-value keys such as type aliases are outside the M2 subset. Report each remaining
 	// contributing decl once as unsupported, skipping any already handled by a value key. A
