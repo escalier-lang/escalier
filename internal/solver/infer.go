@@ -106,8 +106,8 @@ type checker struct {
 	// currently being inferred, empty at the root namespace and outside any
 	// declaration. Each type declaration sets it around its own body, and
 	// inferComponent sets it around each value key, which covers a `fn` signature
-	// and a `val` annotation. A type reference resolves through it first, so a bare
-	// `Point` written in namespace `Geometry` finds the sibling `Geometry.Point`
+	// and a `val` annotation. A type or value reference resolves through it first, so
+	// a bare `Point` written in namespace `Geometry` finds the sibling `Geometry.Point`
 	// before falling back to a root-namespace `Point`, mirroring dep_graph's
 	// qualified-first dependency resolution. The class registry and every ClassType
 	// handle are keyed by the namespace-qualified name, so this reconstructs the

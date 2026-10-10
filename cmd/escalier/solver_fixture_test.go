@@ -68,10 +68,6 @@ var (
 		name:   "index expressions, computed keys, and assignment to a member",
 		ticket: "#1715",
 	}
-	causeNamespaceMember = &solverSkipCause{
-		name:   "a bare reference to a namespace sibling",
-		ticket: "#1716",
-	}
 	causeSuperGate = &solverSkipCause{
 		name:   "the gate requiring a subclass constructor to call `super(…)`",
 		ticket: "#1720",
@@ -127,9 +123,6 @@ var solverSkips = []solverSkip{
 	{"class_with_computed_members", causeIndexAndComputed, "Unsupported: assignment to a member or index"},
 	{"class_with_getter_setter", causeIndexAndComputed, "Unsupported: IndexExpr"},
 	{"objects_with_computed_members", causeIndexAndComputed, "Unsupported: ComputedKey"},
-
-	{"namespace_bin_import", causeNamespaceMember, "Unknown identifier: Point"},
-	{"namespace_simple_same", causeNamespaceMember, "Unknown identifier: base"},
 
 	{"class_field_name_collision", causeSuperGate, "A subclass constructor must call `super(…)`"},
 	{"class_inheritance_namespaces", causeSuperGate, "A subclass constructor must call `super(…)`"},
@@ -396,6 +389,7 @@ var emitSkips = map[emitSkip]*solverSkipCause{
 	{"generic_enum", "index.d.ts"}:                causeEnumVariantValue,
 	{"extractor_inside_namespaces", "index.d.ts"}: causeEnclosingNamespacePrefix,
 	{"namespace_use_parent_symbol", "index.d.ts"}: causeEnclosingNamespacePrefix,
+	{"namespace_bin_import", "index.d.ts"}:        causeEnclosingNamespacePrefix,
 	{"extractor_arg_with_init", "index.d.ts"}:     causePatterns,
 	{"generalize", "index.d.ts"}:                  causeUnusedParamNotGeneralized,
 	{"type_ann_index_signature", "index.d.ts"}:    causeIndexSignatureOptional,

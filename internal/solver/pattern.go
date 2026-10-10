@@ -835,13 +835,13 @@ func (c *checker) extractorCtor(scope *Scope, lvl int, qi ast.QualIdent) (*solty
 }
 
 // resolveQualValue resolves a qualified identifier to its value binding. A bare name
-// resolves by lexical lookup. A member name `Foo.bar` resolves its left through the
+// resolves through lookupValueBinding. A member name `Foo.bar` resolves its left through the
 // namespace sort, then reads the member from that namespace's own value map, the same
 // non-lexical member resolution resolvePath uses for a member-access expression.
 func (c *checker) resolveQualValue(scope *Scope, qi ast.QualIdent) (ValueBinding, bool) {
 	switch q := qi.(type) {
 	case *ast.Ident:
-		return scope.GetValue(q.Name)
+		return c.lookupValueBinding(scope, q.Name)
 	case *ast.Member:
 		ns, ok := c.resolveQualNamespace(scope, q.Left)
 		if !ok {
