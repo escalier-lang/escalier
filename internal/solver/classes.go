@@ -1387,6 +1387,83 @@ func (c *checker) projectedMember(lvl int, blame ast.Node, name string, recv, ca
 	return c.memberValue(lvl, blame, c.instantiateMethodLifetimes(lvl, blame, recv, member)), true
 }
 
+// primitiveWrappers names, for each primitive, the class the standard library declares
+// for its values and the package that declares it.
+var primitiveWrappers = map[soltype.Prim]struct{ uri, name string }{
+	soltype.NumPrim:    {"std:number", "Number"},
+	soltype.StrPrim:    {"std:string", "String"},
+	soltype.BoolPrim:   {"std:boolean", "Boolean"},
+	soltype.BigIntPrim: {"std:bigint", "BigInt"},
+	soltype.SymPrim:    {preludeURI, "Symbol"},
+}
+
+// primitiveWrapper returns an instance of the wrapper class for t when t is a
+// primitive, a literal of one, or a unique symbol. A union, and a variable's lower
+// bounds, resolve when every member maps to the same wrapper. It returns false for
+// any other type, and for a primitive whose wrapper's package the run has not loaded.
+func (c *checker) primitiveWrapper(t soltype.Type) (*soltype.ClassType, bool) {
+	v, isVar := t.(*soltype.TypeVarType)
+	if !isVar {
+		return c.sharedPrimitiveWrapper([]soltype.Type{t})
+	}
+	var bounds []soltype.Type
+	for _, lb := range v.LowerBounds {
+		// A vacuous `v <: v` self-edge names no value the variable holds.
+		if lb != soltype.Type(v) {
+			bounds = append(bounds, lb)
+		}
+	}
+	return c.sharedPrimitiveWrapper(bounds)
+}
+
+// sharedPrimitiveWrapper returns the wrapper class every type in ts maps to, reading
+// into a union's members. It returns false when ts is empty or when two members map
+// to different classes or to none.
+func (c *checker) sharedPrimitiveWrapper(ts []soltype.Type) (*soltype.ClassType, bool) {
+	var found *soltype.ClassType
+	for _, t := range ts {
+		ct, ok := c.ownPrimitiveWrapper(t)
+		if union, isUnion := t.(*soltype.UnionType); isUnion {
+			ct, ok = c.sharedPrimitiveWrapper(union.Types)
+		}
+		if !ok || (found != nil && ct != found) {
+			return nil, false
+		}
+		found = ct
+	}
+	return found, found != nil
+}
+
+// ownPrimitiveWrapper is primitiveWrapper for t itself, without reading into a union
+// or a variable's bounds.
+func (c *checker) ownPrimitiveWrapper(t soltype.Type) (*soltype.ClassType, bool) {
+	var prim soltype.Prim
+	switch t := t.(type) {
+	case *soltype.PrimType:
+		prim = t.Prim
+	case *soltype.LitType:
+		prim = primOf(t.Lit)
+	case *soltype.UniqueSymbolType:
+		prim = soltype.SymPrim
+	default:
+		return nil, false
+	}
+	wrapper, ok := primitiveWrappers[prim]
+	if !ok {
+		return nil, false
+	}
+	ns, ok := c.packages.Lookup(wrapper.uri)
+	if !ok || ns == nil {
+		return nil, false
+	}
+	b, ok := ns.Types[wrapper.name]
+	if !ok {
+		return nil, false
+	}
+	ct, isClass := b.Type.(*soltype.ClassType)
+	return ct, isClass
+}
+
 // objectMember resolves a read of a method, getter, or setter carried by a plain object type,
 // the members an object type annotation declares. It is the structural twin of
 // projectedMember, which does the same for a class instance.
