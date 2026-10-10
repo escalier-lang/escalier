@@ -192,11 +192,21 @@ func (c *checker) inferDepGraph(scope *Scope, lvl int, module *ast.Module, g *de
 	destructured := map[*ast.VarDecl]*moduleDestructure{}
 	// The walk visits a class's value key before the declarations that read its members.
 	// Those declarations depend only on the class's type key, so g.Components alone may
-	// place them first. Before the value key, a member read sees only the signature stub
-	// built at the type key, and an unannotated return in that stub is a variable with no
-	// bounds yet. A reader whose type is generalized then fixes that return at `never`.
-	// In this example `f` would bind as `fn (b: B) -> never`, and a caller assigning
-	// `f(b)` to a `string` would check with no error.
+	// place them first.
+	//
+	// A class's type key builds a signature stub for every method before any body is
+	// inferred. An unannotated method's stub has no return type yet. Its return is a fresh
+	// variable, which gets bounds only when linkMemberSig runs after the value key infers
+	// that method's body. seedStubReturn fills the stub from an annotated return, so only
+	// unannotated returns are at risk.
+	//
+	// Inside one class the stubs are enough. A method reading a sibling's stub return adds
+	// constraints to that variable, and the class's types are finalized only after all its
+	// bodies run. A reader outside the class is finalized when its own component is
+	// generalized. If that happens before the class's value key, the stub return still has
+	// no bounds and the reader fixes it at `never`. In this example `f` would bind as
+	// `fn (b: B) -> never`, and a caller assigning `f(b)` to a `string` would check with
+	// no error.
 	//
 	//	fn f(b: B) { return b.m() }
 	//	class B { m(&self) { return 1 } }
