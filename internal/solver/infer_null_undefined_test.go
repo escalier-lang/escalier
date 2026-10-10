@@ -285,10 +285,10 @@ func TestInferUndefinedReturnAnnotationOverADivergingBody(t *testing.T) {
 // would need a return type distinct from `undefined`, since `fn () -> number` must never
 // satisfy `fn () -> undefined`.
 //
-// A `.d.ts` callback slot does not land here. Interop reads TypeScript's `void` by
-// position: a return becomes `unknown` and everything else becomes `undefined`, so
-// `xs.forEach((x) => x.trim())` meets the permissive `-> unknown` rather than this arm.
-// See convertReturnTypeAnn in internal/dts_to_esc/helper.go.
+// A `.d.ts` callback slot does not land here. Interop lowers the `void` return of a
+// function the program supplies to `unknown`, so `xs.forEach((x) => x.trim())` meets the
+// permissive `-> unknown` rather than this arm. See convertReturnVoidAsUnknown in
+// internal/dts_to_esc/helper.go.
 func TestInferUndefinedCallbackReturnIsInvariant(t *testing.T) {
 	src := `
 		declare fn each(cb: fn() -> undefined) -> undefined

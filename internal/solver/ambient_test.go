@@ -44,8 +44,11 @@ func TestAmbientBuiltinsResolveWithoutImport(t *testing.T) {
 		},
 		{
 			name: "BarePathValue",
-			src:  `val logged = console.log("hello")`,
-			want: map[string]string{"logged": "unknown"},
+			src: `
+				val logged = console.log("hello")
+				val nothing: undefined = console.log("again")
+			`,
+			want: map[string]string{"logged": "undefined"},
 		},
 		{
 			name: "BarePathFunction",

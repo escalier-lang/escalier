@@ -11,7 +11,7 @@ export declare class DisposableStack {
     /**
      * Disposes each resource in the stack in the reverse order that they were added.
      */
-    dispose(&mut self) -> unknown,
+    dispose(&mut self) -> undefined,
     /**
      * Adds a disposable resource to the stack, returning the resource.
      * @param value The resource to add. `null` and `undefined` will not be added, but will be returned.
@@ -29,7 +29,7 @@ export declare class DisposableStack {
     /**
      * Adds a callback to be invoked when the stack is disposed.
      */
-    defer(&mut self, onDispose: fn () -> unknown) -> unknown,
+    defer(&mut self, onDispose: fn () -> unknown) -> undefined,
     /**
      * Move all resources out of this stack and into a new `DisposableStack`, and marks this stack as disposed.
      * @example
@@ -60,7 +60,7 @@ export declare class DisposableStack {
      * ```
      */
     move(&mut self) -> DisposableStack,
-    [Symbol.dispose](&mut self) -> unknown,
+    [Symbol.dispose](&mut self) -> undefined,
     readonly [Symbol.toStringTag]: string,
     constructor(&mut self),
     static readonly prototype: DisposableStack
@@ -93,7 +93,7 @@ export declare class AsyncDisposableStack {
     /**
      * Adds a callback to be invoked when the stack is disposed.
      */
-    defer(&mut self, onDisposeAsync: fn () -> PromiseLike<undefined> | undefined) -> unknown,
+    defer(&mut self, onDisposeAsync: fn () -> PromiseLike<undefined> | undefined) -> undefined,
     /**
      * Move all resources out of this stack and into a new `DisposableStack`, and marks this stack as disposed.
      * @example

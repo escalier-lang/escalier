@@ -142,3 +142,11 @@ export declare type BuiltinIteratorReturn = undefined
 // value the union rejects, so the intersection subtracts exactly the two
 // members TypeScript means to exclude, primitives included.
 export declare type NonNullable<T> = T & ~(undefined | null)
+
+// A program implements `Disposable` itself, in a class whose instances it hands
+// to `using` or a `DisposableStack`. The runtime calls `[Symbol.dispose]` and
+// discards what it returns, so the return is `unknown` and a body returning a
+// value still implements it.
+export declare interface Disposable {
+    [Symbol.dispose]() -> unknown
+}

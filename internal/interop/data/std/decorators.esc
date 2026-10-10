@@ -42,7 +42,7 @@ export declare interface ClassDecoratorContext<Class: fn (...args: any) -> any =
      * class MyElement {}
      * ```
      */
-    addInitializer(initializer: fn (this: Class) -> unknown) -> unknown,
+    addInitializer(initializer: fn (this: Class) -> unknown) -> undefined,
     readonly metadata: DecoratorMetadata
 }
 
@@ -99,7 +99,7 @@ export declare interface ClassMethodDecoratorContext<This = unknown, Value: fn (
      * }
      * ```
      */
-    addInitializer(initializer: fn (this: This) -> unknown) -> unknown,
+    addInitializer(initializer: fn (this: This) -> unknown) -> undefined,
     readonly metadata: DecoratorMetadata
 }
 
@@ -137,7 +137,7 @@ export declare interface ClassGetterDecoratorContext<This = unknown, Value = unk
      * static initializers are run (when decorating a `static` element), or before instance
      * initializers are run (when decorating a non-`static` element).
      */
-    addInitializer(initializer: fn (this: This) -> unknown) -> unknown,
+    addInitializer(initializer: fn (this: This) -> unknown) -> undefined,
     readonly metadata: DecoratorMetadata
 }
 
@@ -168,14 +168,14 @@ export declare interface ClassSetterDecoratorContext<This = unknown, Value = unk
          * @example
          * context.access.set(instance, value);
          */
-        set(object: This, value: Value) -> unknown
+        set(object: This, value: Value) -> undefined
     },
     /**
      * Adds a callback to be invoked either after static methods are defined but before
      * static initializers are run (when decorating a `static` element), or before instance
      * initializers are run (when decorating a non-`static` element).
      */
-    addInitializer(initializer: fn (this: This) -> unknown) -> unknown,
+    addInitializer(initializer: fn (this: This) -> unknown) -> undefined,
     readonly metadata: DecoratorMetadata
 }
 
@@ -213,13 +213,13 @@ export declare interface ClassAccessorDecoratorContext<This = unknown, Value = u
          * @example
          * context.access.set(instance, value);
          */
-        set(object: This, value: Value) -> unknown
+        set(object: This, value: Value) -> undefined
     },
     /**
      * Adds a callback to be invoked immediately after the auto `accessor` being
      * decorated is initialized (regardless if the `accessor` is `static` or not).
      */
-    addInitializer(initializer: fn (this: This) -> unknown) -> unknown,
+    addInitializer(initializer: fn (this: This) -> unknown) -> undefined,
     readonly metadata: DecoratorMetadata
 }
 
@@ -242,7 +242,7 @@ export declare interface ClassAccessorDecoratorTarget<This, Value> {
      * @example
      * target.set.call(instance, value);
      */
-    set(this: This, value: Value) -> unknown
+    set(this: This, value: Value) -> undefined
 }
 
 /**
@@ -295,12 +295,12 @@ export declare interface ClassFieldDecoratorContext<This = unknown, Value = unkn
         /**
          * Sets the value of the field on the provided object.
          */
-        set(object: This, value: Value) -> unknown
+        set(object: This, value: Value) -> undefined
     },
     /**
      * Adds a callback to be invoked immediately after the field being decorated
      * is initialized (regardless if the field is `static` or not).
      */
-    addInitializer(initializer: fn (this: This) -> unknown) -> unknown,
+    addInitializer(initializer: fn (this: This) -> unknown) -> undefined,
     readonly metadata: DecoratorMetadata
 }

@@ -34,6 +34,14 @@ export declare interface MessageEventInit<T = any> {
 // already leaves `null` out. With `EventTarget` matching, each restatement
 // accepts what the method it overrides accepts.
 export declare class EventTarget {
-    addEventListener(&mut self, type: string, callback: EventListenerOrEventListenerObject, options?: AddEventListenerOptions | boolean) -> unknown,
-    removeEventListener(&mut self, type: string, callback: EventListenerOrEventListenerObject, options?: EventListenerOptions | boolean) -> unknown,
+    addEventListener(&mut self, type: string, callback: EventListenerOrEventListenerObject, options?: AddEventListenerOptions | boolean) -> undefined,
+    removeEventListener(&mut self, type: string, callback: EventListenerOrEventListenerObject, options?: EventListenerOptions | boolean) -> undefined,
+}
+
+// A program implements `EventListenerObject` itself, as the object it passes to
+// `addEventListener`. The runtime calls `handleEvent` and discards what it
+// returns, so the return is `unknown` and a body returning a value still
+// implements it.
+export declare interface EventListenerObject {
+    handleEvent(object: Event) -> unknown,
 }

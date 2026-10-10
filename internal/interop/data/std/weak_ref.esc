@@ -32,7 +32,7 @@ export declare class FinalizationRegistry<T> {
      * @param unregisterToken The token to pass to the unregister method to unregister the target
      * value. If not provided, the target cannot be unregistered.
      */
-    register(&mut self, target: WeakKey, heldValue: T, unregisterToken?: WeakKey) -> unknown,
+    register(&mut self, target: WeakKey, heldValue: T, unregisterToken?: WeakKey) -> undefined,
     /**
      * Unregisters a value from the registry.
      * In es2023 the value can be either a symbol or an object, in previous versions only object is permissible.

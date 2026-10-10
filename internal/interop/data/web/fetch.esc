@@ -71,9 +71,9 @@ export declare interface Body {
 @js("Headers")
 export declare class Headers {
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/Headers/append) */
-    append(&mut self, name: string, value: string) -> unknown,
+    append(&mut self, name: string, value: string) -> undefined,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/Headers/delete) */
-    delete(&mut self, name: string) -> unknown,
+    delete(&mut self, name: string) -> undefined,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/Headers/get) */
     get(&self, name: string) -> string | null,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/Headers/getSetCookie) */
@@ -81,8 +81,8 @@ export declare class Headers {
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/Headers/has) */
     has(&self, name: string) -> boolean,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/Headers/set) */
-    set(&mut self, name: string, value: string) -> unknown,
-    forEach(&self, callbackfn: fn (value: string, key: string, parent: &Self) -> unknown, thisArg?: unknown) -> unknown,
+    set(&mut self, name: string, value: string) -> undefined,
+    forEach(&self, callbackfn: fn (value: string, key: string, parent: &Self) -> unknown, thisArg?: unknown) -> undefined,
     [Symbol.iterator](&self) -> HeadersIterator<[string, string]>,
     /** Returns an iterator allowing to go through all key/value pairs contained in this object. */
     entries(&self) -> HeadersIterator<[string, string]>,

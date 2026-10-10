@@ -61,7 +61,7 @@ export declare class AbortController {
      *
      * [MDN Reference](https://developer.mozilla.org/docs/Web/API/AbortController/abort)
      */
-    abort(&mut self, reason?: unknown) -> unknown,
+    abort(&mut self, reason?: unknown) -> undefined,
     static prototype: AbortController,
     constructor(&mut self)
 }
@@ -88,11 +88,11 @@ export declare class AbortSignal extends EventTarget {
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/AbortSignal/reason) */
     readonly reason: any,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/AbortSignal/throwIfAborted) */
-    throwIfAborted(&mut self) -> unknown,
-    addEventListener<K: keyof AbortSignalEventMap>(&mut self, type: K, listener: fn (this: AbortSignal, ev: AbortSignalEventMap[K]) -> any, options?: boolean | AddEventListenerOptions) -> unknown,
-    addEventListener(&mut self, type: string, listener: EventListenerOrEventListenerObject, options?: boolean | AddEventListenerOptions) -> unknown,
-    removeEventListener<K: keyof AbortSignalEventMap>(&mut self, type: K, listener: fn (this: AbortSignal, ev: AbortSignalEventMap[K]) -> any, options?: boolean | EventListenerOptions) -> unknown,
-    removeEventListener(&mut self, type: string, listener: EventListenerOrEventListenerObject, options?: boolean | EventListenerOptions) -> unknown,
+    throwIfAborted(&mut self) -> undefined,
+    addEventListener<K: keyof AbortSignalEventMap>(&mut self, type: K, listener: fn (this: AbortSignal, ev: AbortSignalEventMap[K]) -> any, options?: boolean | AddEventListenerOptions) -> undefined,
+    addEventListener(&mut self, type: string, listener: EventListenerOrEventListenerObject, options?: boolean | AddEventListenerOptions) -> undefined,
+    removeEventListener<K: keyof AbortSignalEventMap>(&mut self, type: K, listener: fn (this: AbortSignal, ev: AbortSignalEventMap[K]) -> any, options?: boolean | EventListenerOptions) -> undefined,
+    removeEventListener(&mut self, type: string, listener: EventListenerOrEventListenerObject, options?: boolean | EventListenerOptions) -> undefined,
     static prototype: AbortSignal,
     constructor(&mut self),
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/AbortSignal/abort_static) */
@@ -266,25 +266,25 @@ export declare class Event {
      *
      * [MDN Reference](https://developer.mozilla.org/docs/Web/API/Event/initEvent)
      */
-    initEvent(&mut self, type: string, bubbles?: boolean, cancelable?: boolean) -> unknown,
+    initEvent(&mut self, type: string, bubbles?: boolean, cancelable?: boolean) -> undefined,
     /**
      * If invoked when the cancelable attribute value is true, and while executing a listener for the event with passive set to false, signals to the operation that caused event to be dispatched that it needs to be canceled.
      *
      * [MDN Reference](https://developer.mozilla.org/docs/Web/API/Event/preventDefault)
      */
-    preventDefault(&mut self) -> unknown,
+    preventDefault(&mut self) -> undefined,
     /**
      * Invoking this method prevents event from reaching any registered event listeners after the current one finishes running and, when dispatched in a tree, also prevents event from reaching any other objects.
      *
      * [MDN Reference](https://developer.mozilla.org/docs/Web/API/Event/stopImmediatePropagation)
      */
-    stopImmediatePropagation(&mut self) -> unknown,
+    stopImmediatePropagation(&mut self) -> undefined,
     /**
      * When dispatched in a tree, invoking this method prevents event from reaching any objects other than the current object.
      *
      * [MDN Reference](https://developer.mozilla.org/docs/Web/API/Event/stopPropagation)
      */
-    stopPropagation(&mut self) -> unknown,
+    stopPropagation(&mut self) -> undefined,
     readonly NONE: 0,
     readonly CAPTURING_PHASE: 1,
     readonly AT_TARGET: 2,
@@ -329,7 +329,7 @@ export declare class EventTarget {
      *
      * [MDN Reference](https://developer.mozilla.org/docs/Web/API/EventTarget/addEventListener)
      */
-    addEventListener(&mut self, type: string, callback: EventListenerOrEventListenerObject, options?: AddEventListenerOptions | boolean) -> unknown,
+    addEventListener(&mut self, type: string, callback: EventListenerOrEventListenerObject, options?: AddEventListenerOptions | boolean) -> undefined,
     /**
      * Dispatches a synthetic event event to target and returns true if either event's cancelable attribute value is false or its preventDefault() method was not invoked, and false otherwise.
      *
@@ -341,7 +341,7 @@ export declare class EventTarget {
      *
      * [MDN Reference](https://developer.mozilla.org/docs/Web/API/EventTarget/removeEventListener)
      */
-    removeEventListener(&mut self, type: string, callback: EventListenerOrEventListenerObject, options?: EventListenerOptions | boolean) -> unknown,
+    removeEventListener(&mut self, type: string, callback: EventListenerOrEventListenerObject, options?: EventListenerOptions | boolean) -> undefined,
     static prototype: EventTarget,
     constructor(&mut self)
 }

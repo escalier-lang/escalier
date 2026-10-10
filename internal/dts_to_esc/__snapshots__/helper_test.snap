@@ -1866,7 +1866,10 @@
     },
     Fn: &ast.FuncExpr{
         FuncSig: ast.FuncSig{
-            Return: &ast.UnknownTypeAnn{
+            Return: &ast.LitTypeAnn{
+                Lit: &ast.UndefinedLit{
+                    span: 38-42,
+                },
                 span: 38-42,
             },
         },
@@ -1885,7 +1888,10 @@
     },
     Fn: &ast.FuncExpr{
         FuncSig: ast.FuncSig{
-            Return: &ast.UnknownTypeAnn{
+            Return: &ast.LitTypeAnn{
+                Lit: &ast.UndefinedLit{
+                    span: 39-43,
+                },
                 span: 39-43,
             },
         },

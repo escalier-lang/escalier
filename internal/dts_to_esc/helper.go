@@ -118,8 +118,10 @@ func convertCallbackParam(p *dts_parser.Param) (*ast.Param, error) {
 // optional as well would reproduce it. The shape does not occur in the pinned TypeScript
 // corpus, whose only non-return `void` is the `declare const name: void` global.
 //
-// A `void` in any other input position lowers to `undefined` through convertTypeAnn, and a
-// return lowers to `unknown` through convertReturnTypeAnn.
+// A `void` in any other input position lowers to `undefined` through convertTypeAnn. A
+// `void` return lowers to `unknown` through convertReturnVoidAsUnknown on a function type,
+// a call signature, and an optional interface method, and to `undefined` through
+// convertTypeAnn everywhere else.
 func convertParamTypeAnn(ta dts_parser.TypeAnn) (ast.TypeAnn, error) {
 	if prim, ok := ta.(*dts_parser.PrimitiveType); ok && prim.Kind == dts_parser.PrimVoid {
 		return ast.NewNeverTypeAnn(prim.Span()), nil
@@ -191,7 +193,9 @@ func convertInterfaceMember(member dts_parser.InterfaceMember) (ast.ObjTypeAnnEl
 				return nil, fmt.Errorf("converting call signature parameter: %w", err)
 			}
 		}
-		returnType, err := convertReturnTypeAnn(m.ReturnType)
+		// A callable object type is a function the program may supply, as an
+		// `interface EventListener { (evt: Event): void }` callback is.
+		returnType, err := convertReturnVoidAsUnknown(m.ReturnType)
 		if err != nil {
 			return nil, fmt.Errorf("converting call signature return type: %w", err)
 		}
@@ -235,8 +239,10 @@ func convertInterfaceMember(member dts_parser.InterfaceMember) (ast.ObjTypeAnnEl
 		// stays: widening `thisArg` on a ProxyHandler trap would make
 		// every handler narrow before touching the value.
 		convert := convertParam
+		convertReturn := convertTypeAnn
 		if m.Optional {
 			convert = convertCallbackParam
+			convertReturn = convertReturnVoidAsUnknown
 		}
 		params := make([]*ast.Param, len(m.Params))
 		for i, p := range m.Params {
@@ -246,7 +252,7 @@ func convertInterfaceMember(member dts_parser.InterfaceMember) (ast.ObjTypeAnnEl
 				return nil, fmt.Errorf("converting method signature parameter: %w", err)
 			}
 		}
-		returnType, err := convertReturnTypeAnn(m.ReturnType)
+		returnType, err := convertReturn(m.ReturnType)
 		if err != nil {
 			return nil, fmt.Errorf("converting method signature return type: %w", err)
 		}
@@ -325,17 +331,13 @@ func convertInterfaceMember(member dts_parser.InterfaceMember) (ast.ObjTypeAnnEl
 	}
 }
 
-// convertReturnTypeAnn converts a return-type annotation, the one position where
-// TypeScript's `void` needs a reading of its own. A `void` return is bivariant in
-// TypeScript: the caller discards the value, so a function returning anything satisfies
-// the slot, which is what lets `xs.forEach((x) => x.trim())` type-check. Escalier has no
-// `void`, and lowering it to `undefined` would make the slot invariant and reject that
-// callback. `unknown` is the type that keeps the position permissive, since every type is
-// a subtype of it and the value is never read.
+// convertReturnVoidAsUnknown converts a return-type annotation, lowering `void` to
+// `unknown` and converting every other annotation through convertTypeAnn.
 //
-// Only a return position takes this reading. A `void` anywhere else lowers to `undefined`
-// through convertTypeAnn, so `Promise<void>` becomes `Promise<undefined>`.
-func convertReturnTypeAnn(ta dts_parser.TypeAnn) (ast.TypeAnn, error) {
+// TypeScript reads a `void` return as a discarded value, so a function returning
+// anything fills the slot. That is what lets `xs.forEach((x) => x.trim())` type-check.
+// Escalier has no `void`, and `unknown` is the type every return value satisfies.
+func convertReturnVoidAsUnknown(ta dts_parser.TypeAnn) (ast.TypeAnn, error) {
 	if prim, ok := ta.(*dts_parser.PrimitiveType); ok && prim.Kind == dts_parser.PrimVoid {
 		return ast.NewUnknownTypeAnn(prim.Span()), nil
 	}
@@ -489,7 +491,9 @@ func convertTypeAnn(ta dts_parser.TypeAnn) (ast.TypeAnn, error) {
 				return nil, fmt.Errorf("converting function parameter %d: %w", i, err)
 			}
 		}
-		returnType, err := convertReturnTypeAnn(t.ReturnType)
+		// A function type most often describes a callback the program passes in or
+		// assigns, so its `void` return takes the callback reading.
+		returnType, err := convertReturnVoidAsUnknown(t.ReturnType)
 		if err != nil {
 			return nil, fmt.Errorf("converting function return type: %w", err)
 		}
@@ -773,7 +777,7 @@ func convertMethodDecl(cctx *convertCtx, md *dts_parser.MethodDecl, className st
 	// Convert return type
 	var returnType ast.TypeAnn
 	if md.ReturnType != nil {
-		returnType, err = convertReturnTypeAnn(md.ReturnType)
+		returnType, err = convertTypeAnn(md.ReturnType)
 		if err != nil {
 			return nil, fmt.Errorf("converting method return type: %w", err)
 		}

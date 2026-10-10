@@ -1466,10 +1466,10 @@ func normalize(specKey string) (owner []string, member MemberKey, sort MemberSor
       return type belongs to each overload, so two signatures of one method
       can settle differently.
     - A non-primitive `unknown` is left alone. An object return the walk could
-      not read has no ownership answer the type can give. TypeScript's `void`
-      is one: the converter lowers a `void` return to `unknown` to keep a
-      callback slot permissive, so `DataView.prototype.setFloat64` and the rest
-      of the setters keep a return the join cannot name.
+      not read has no ownership answer the type can give. A method's `void`
+      return is not one of these. The converter lowers it to `undefined`, so
+      `DataView.prototype.setFloat64` and the rest of the setters settle as
+      owned.
   The join reports how many of these returns it settled and how many it left,
   so the number is read off the report rather than inferred.
 

@@ -300,7 +300,7 @@ export declare class Array<T> {
      * @param callbackfn A function that accepts up to three arguments. forEach calls the callbackfn function one time for each element in the array.
      * @param thisArg An object to which the this keyword can refer in the callbackfn function. If thisArg is omitted, undefined is used as the this value.
      */
-    forEach(&self, callbackfn: fn (value: T, index: number, array: &Self) -> unknown, thisArg?: unknown) -> unknown,
+    forEach(&self, callbackfn: fn (value: T, index: number, array: &Self) -> unknown, thisArg?: unknown) -> undefined,
     /**
      * Calls a defined callback function on each element of an array, and returns an array that contains the results.
      * @param callbackfn A function that accepts up to three arguments. The map method calls the callbackfn function one time for each element in the array.
@@ -495,7 +495,7 @@ export declare interface IteratorObject<T, TReturn = unknown, TNext = unknown> e
      * Performs the specified action for each element in the iterator.
      * @param callbackfn A function that accepts up to two arguments. forEach calls the callbackfn function one time for each element in the iterator.
      */
-    forEach(callbackfn: fn (value: T, index: number) -> unknown) -> unknown,
+    forEach(callbackfn: fn (value: T, index: number) -> unknown) -> undefined,
     /**
      * Determines whether the specified callback function returns true for any element of this iterator.
      * @param predicate A function that accepts up to two arguments. The some method calls

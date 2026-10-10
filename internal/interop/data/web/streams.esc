@@ -167,11 +167,11 @@ export declare class ReadableByteStreamController {
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/ReadableByteStreamController/desiredSize) */
     readonly desiredSize: number | null,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/ReadableByteStreamController/close) */
-    close(&mut self) -> unknown,
+    close(&mut self) -> undefined,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/ReadableByteStreamController/enqueue) */
-    enqueue(&mut self, chunk: typed_arrays.ArrayBufferView) -> unknown,
+    enqueue(&mut self, chunk: typed_arrays.ArrayBufferView) -> undefined,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/ReadableByteStreamController/error) */
-    error(&mut self, e?: unknown) -> unknown,
+    error(&mut self, e?: unknown) -> undefined,
     static prototype: ReadableByteStreamController,
     constructor(&mut self)
 }
@@ -215,7 +215,7 @@ export declare class ReadableStreamBYOBReader implements ReadableStreamGenericRe
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/ReadableStreamBYOBReader/read) */
     read<T: typed_arrays.ArrayBufferView>(&mut self, view: T) -> Promise<ReadableStreamReadResult<T>>,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/ReadableStreamBYOBReader/releaseLock) */
-    releaseLock(&mut self) -> unknown,
+    releaseLock(&mut self) -> undefined,
     static prototype: ReadableStreamBYOBReader,
     constructor(&mut self, stream: ReadableStream<typed_arrays.Uint8Array>)
 }
@@ -226,9 +226,9 @@ export declare class ReadableStreamBYOBRequest {
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/ReadableStreamBYOBRequest/view) */
     readonly view: typed_arrays.ArrayBufferView | null,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/ReadableStreamBYOBRequest/respond) */
-    respond(&mut self, bytesWritten: number) -> unknown,
+    respond(&mut self, bytesWritten: number) -> undefined,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/ReadableStreamBYOBRequest/respondWithNewView) */
-    respondWithNewView(&mut self, view: typed_arrays.ArrayBufferView) -> unknown,
+    respondWithNewView(&mut self, view: typed_arrays.ArrayBufferView) -> undefined,
     static prototype: ReadableStreamBYOBRequest,
     constructor(&mut self)
 }
@@ -239,11 +239,11 @@ export declare class ReadableStreamDefaultController<R = any> {
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/ReadableStreamDefaultController/desiredSize) */
     readonly desiredSize: number | null,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/ReadableStreamDefaultController/close) */
-    close(&mut self) -> unknown,
+    close(&mut self) -> undefined,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/ReadableStreamDefaultController/enqueue) */
-    enqueue(&mut self, chunk?: R) -> unknown,
+    enqueue(&mut self, chunk?: R) -> undefined,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/ReadableStreamDefaultController/error) */
-    error(&mut self, e?: unknown) -> unknown,
+    error(&mut self, e?: unknown) -> undefined,
     static prototype: ReadableStreamDefaultController,
     constructor(&mut self)
 }
@@ -254,7 +254,7 @@ export declare class ReadableStreamDefaultReader<R = any> implements ReadableStr
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/ReadableStreamDefaultReader/read) */
     read(&mut self) -> Promise<ReadableStreamReadResult<R>>,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/ReadableStreamDefaultReader/releaseLock) */
-    releaseLock(&mut self) -> unknown,
+    releaseLock(&mut self) -> undefined,
     static prototype: ReadableStreamDefaultReader,
     constructor(&mut self, stream: ReadableStream<R>)
 }
@@ -301,11 +301,11 @@ export declare class TransformStreamDefaultController<O = any> {
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/TransformStreamDefaultController/desiredSize) */
     readonly desiredSize: number | null,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/TransformStreamDefaultController/enqueue) */
-    enqueue(&mut self, chunk?: O) -> unknown,
+    enqueue(&mut self, chunk?: O) -> undefined,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/TransformStreamDefaultController/error) */
-    error(&mut self, reason?: unknown) -> unknown,
+    error(&mut self, reason?: unknown) -> undefined,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/TransformStreamDefaultController/terminate) */
-    terminate(&mut self) -> unknown,
+    terminate(&mut self) -> undefined,
     static prototype: TransformStreamDefaultController,
     constructor(&mut self)
 }
@@ -339,7 +339,7 @@ export declare class WritableStreamDefaultController {
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/WritableStreamDefaultController/signal) */
     readonly signal: AbortSignal,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/WritableStreamDefaultController/error) */
-    error(&mut self, e?: unknown) -> unknown,
+    error(&mut self, e?: unknown) -> undefined,
     static prototype: WritableStreamDefaultController,
     constructor(&mut self)
 }
@@ -362,7 +362,7 @@ export declare class WritableStreamDefaultWriter<W = any> {
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/WritableStreamDefaultWriter/close) */
     close(&mut self) -> Promise<undefined>,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/WritableStreamDefaultWriter/releaseLock) */
-    releaseLock(&mut self) -> unknown,
+    releaseLock(&mut self) -> undefined,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/WritableStreamDefaultWriter/write) */
     write(&mut self, chunk?: W) -> Promise<undefined>,
     static prototype: WritableStreamDefaultWriter,

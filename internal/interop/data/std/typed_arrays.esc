@@ -155,7 +155,7 @@ export declare class Int8Array<TArrayBuffer: ArrayBufferLike = ArrayBufferLike> 
      * @param thisArg An object to which the this keyword can refer in the callbackfn function.
      * If thisArg is omitted, undefined is used as the this value.
      */
-    forEach(&self, callbackfn: fn (value: number, index: number, array: &Self) -> unknown, thisArg?: unknown) -> unknown,
+    forEach(&self, callbackfn: fn (value: number, index: number, array: &Self) -> unknown, thisArg?: unknown) -> undefined,
     /**
      * Returns the index of the first occurrence of a value in an array.
      * @param searchElement The value to locate in the array.
@@ -244,7 +244,7 @@ export declare class Int8Array<TArrayBuffer: ArrayBufferLike = ArrayBufferLike> 
      * @param array A typed or untyped array of values to set.
      * @param offset The index in the current array at which the values are to be written.
      */
-    set(&mut self, array: ArrayLike<number>, offset?: number) -> unknown,
+    set(&mut self, array: ArrayLike<number>, offset?: number) -> undefined,
     /**
      * Returns a section of an array.
      * @param start The beginning of the specified portion of the array.
@@ -481,7 +481,7 @@ export declare class Uint8Array<TArrayBuffer: ArrayBufferLike = ArrayBufferLike>
      * @param thisArg An object to which the this keyword can refer in the callbackfn function.
      * If thisArg is omitted, undefined is used as the this value.
      */
-    forEach(&self, callbackfn: fn (value: number, index: number, array: &Self) -> unknown, thisArg?: unknown) -> unknown,
+    forEach(&self, callbackfn: fn (value: number, index: number, array: &Self) -> unknown, thisArg?: unknown) -> undefined,
     /**
      * Returns the index of the first occurrence of a value in an array.
      * @param searchElement The value to locate in the array.
@@ -570,7 +570,7 @@ export declare class Uint8Array<TArrayBuffer: ArrayBufferLike = ArrayBufferLike>
      * @param array A typed or untyped array of values to set.
      * @param offset The index in the current array at which the values are to be written.
      */
-    set(&mut self, array: ArrayLike<number>, offset?: number) -> unknown,
+    set(&mut self, array: ArrayLike<number>, offset?: number) -> undefined,
     /**
      * Returns a section of an array.
      * @param start The beginning of the specified portion of the array.
@@ -807,7 +807,7 @@ export declare class Uint8ClampedArray<TArrayBuffer: ArrayBufferLike = ArrayBuff
      * @param thisArg An object to which the this keyword can refer in the callbackfn function.
      * If thisArg is omitted, undefined is used as the this value.
      */
-    forEach(&self, callbackfn: fn (value: number, index: number, array: &Self) -> unknown, thisArg?: unknown) -> unknown,
+    forEach(&self, callbackfn: fn (value: number, index: number, array: &Self) -> unknown, thisArg?: unknown) -> undefined,
     /**
      * Returns the index of the first occurrence of a value in an array.
      * @param searchElement The value to locate in the array.
@@ -896,7 +896,7 @@ export declare class Uint8ClampedArray<TArrayBuffer: ArrayBufferLike = ArrayBuff
      * @param array A typed or untyped array of values to set.
      * @param offset The index in the current array at which the values are to be written.
      */
-    set(&mut self, array: ArrayLike<number>, offset?: number) -> unknown,
+    set(&mut self, array: ArrayLike<number>, offset?: number) -> undefined,
     /**
      * Returns a section of an array.
      * @param start The beginning of the specified portion of the array.
@@ -1133,7 +1133,7 @@ export declare class Int16Array<TArrayBuffer: ArrayBufferLike = ArrayBufferLike>
      * @param thisArg An object to which the this keyword can refer in the callbackfn function.
      * If thisArg is omitted, undefined is used as the this value.
      */
-    forEach(&self, callbackfn: fn (value: number, index: number, array: &Self) -> unknown, thisArg?: unknown) -> unknown,
+    forEach(&self, callbackfn: fn (value: number, index: number, array: &Self) -> unknown, thisArg?: unknown) -> undefined,
     /**
      * Returns the index of the first occurrence of a value in an array.
      * @param searchElement The value to locate in the array.
@@ -1222,7 +1222,7 @@ export declare class Int16Array<TArrayBuffer: ArrayBufferLike = ArrayBufferLike>
      * @param array A typed or untyped array of values to set.
      * @param offset The index in the current array at which the values are to be written.
      */
-    set(&mut self, array: ArrayLike<number>, offset?: number) -> unknown,
+    set(&mut self, array: ArrayLike<number>, offset?: number) -> undefined,
     /**
      * Returns a section of an array.
      * @param start The beginning of the specified portion of the array.
@@ -1459,7 +1459,7 @@ export declare class Uint16Array<TArrayBuffer: ArrayBufferLike = ArrayBufferLike
      * @param thisArg An object to which the this keyword can refer in the callbackfn function.
      * If thisArg is omitted, undefined is used as the this value.
      */
-    forEach(&self, callbackfn: fn (value: number, index: number, array: &Self) -> unknown, thisArg?: unknown) -> unknown,
+    forEach(&self, callbackfn: fn (value: number, index: number, array: &Self) -> unknown, thisArg?: unknown) -> undefined,
     /**
      * Returns the index of the first occurrence of a value in an array.
      * @param searchElement The value to locate in the array.
@@ -1548,7 +1548,7 @@ export declare class Uint16Array<TArrayBuffer: ArrayBufferLike = ArrayBufferLike
      * @param array A typed or untyped array of values to set.
      * @param offset The index in the current array at which the values are to be written.
      */
-    set(&mut self, array: ArrayLike<number>, offset?: number) -> unknown,
+    set(&mut self, array: ArrayLike<number>, offset?: number) -> undefined,
     /**
      * Returns a section of an array.
      * @param start The beginning of the specified portion of the array.
@@ -1785,7 +1785,7 @@ export declare class Int32Array<TArrayBuffer: ArrayBufferLike = ArrayBufferLike>
      * @param thisArg An object to which the this keyword can refer in the callbackfn function.
      * If thisArg is omitted, undefined is used as the this value.
      */
-    forEach(&self, callbackfn: fn (value: number, index: number, array: &Self) -> unknown, thisArg?: unknown) -> unknown,
+    forEach(&self, callbackfn: fn (value: number, index: number, array: &Self) -> unknown, thisArg?: unknown) -> undefined,
     /**
      * Returns the index of the first occurrence of a value in an array.
      * @param searchElement The value to locate in the array.
@@ -1874,7 +1874,7 @@ export declare class Int32Array<TArrayBuffer: ArrayBufferLike = ArrayBufferLike>
      * @param array A typed or untyped array of values to set.
      * @param offset The index in the current array at which the values are to be written.
      */
-    set(&mut self, array: ArrayLike<number>, offset?: number) -> unknown,
+    set(&mut self, array: ArrayLike<number>, offset?: number) -> undefined,
     /**
      * Returns a section of an array.
      * @param start The beginning of the specified portion of the array.
@@ -2111,7 +2111,7 @@ export declare class Uint32Array<TArrayBuffer: ArrayBufferLike = ArrayBufferLike
      * @param thisArg An object to which the this keyword can refer in the callbackfn function.
      * If thisArg is omitted, undefined is used as the this value.
      */
-    forEach(&self, callbackfn: fn (value: number, index: number, array: &Self) -> unknown, thisArg?: unknown) -> unknown,
+    forEach(&self, callbackfn: fn (value: number, index: number, array: &Self) -> unknown, thisArg?: unknown) -> undefined,
     /**
      * Returns the index of the first occurrence of a value in an array.
      * @param searchElement The value to locate in the array.
@@ -2200,7 +2200,7 @@ export declare class Uint32Array<TArrayBuffer: ArrayBufferLike = ArrayBufferLike
      * @param array A typed or untyped array of values to set.
      * @param offset The index in the current array at which the values are to be written.
      */
-    set(&mut self, array: ArrayLike<number>, offset?: number) -> unknown,
+    set(&mut self, array: ArrayLike<number>, offset?: number) -> undefined,
     /**
      * Returns a section of an array.
      * @param start The beginning of the specified portion of the array.
@@ -2437,7 +2437,7 @@ export declare class Float32Array<TArrayBuffer: ArrayBufferLike = ArrayBufferLik
      * @param thisArg An object to which the this keyword can refer in the callbackfn function.
      * If thisArg is omitted, undefined is used as the this value.
      */
-    forEach(&self, callbackfn: fn (value: number, index: number, array: &Self) -> unknown, thisArg?: unknown) -> unknown,
+    forEach(&self, callbackfn: fn (value: number, index: number, array: &Self) -> unknown, thisArg?: unknown) -> undefined,
     /**
      * Returns the index of the first occurrence of a value in an array.
      * @param searchElement The value to locate in the array.
@@ -2526,7 +2526,7 @@ export declare class Float32Array<TArrayBuffer: ArrayBufferLike = ArrayBufferLik
      * @param array A typed or untyped array of values to set.
      * @param offset The index in the current array at which the values are to be written.
      */
-    set(&mut self, array: ArrayLike<number>, offset?: number) -> unknown,
+    set(&mut self, array: ArrayLike<number>, offset?: number) -> undefined,
     /**
      * Returns a section of an array.
      * @param start The beginning of the specified portion of the array.
@@ -2763,7 +2763,7 @@ export declare class Float64Array<TArrayBuffer: ArrayBufferLike = ArrayBufferLik
      * @param thisArg An object to which the this keyword can refer in the callbackfn function.
      * If thisArg is omitted, undefined is used as the this value.
      */
-    forEach(&self, callbackfn: fn (value: number, index: number, array: &Self) -> unknown, thisArg?: unknown) -> unknown,
+    forEach(&self, callbackfn: fn (value: number, index: number, array: &Self) -> unknown, thisArg?: unknown) -> undefined,
     /**
      * Returns the index of the first occurrence of a value in an array.
      * @param searchElement The value to locate in the array.
@@ -2852,7 +2852,7 @@ export declare class Float64Array<TArrayBuffer: ArrayBufferLike = ArrayBufferLik
      * @param array A typed or untyped array of values to set.
      * @param offset The index in the current array at which the values are to be written.
      */
-    set(&mut self, array: ArrayLike<number>, offset?: number) -> unknown,
+    set(&mut self, array: ArrayLike<number>, offset?: number) -> undefined,
     /**
      * Returns a section of an array.
      * @param start The beginning of the specified portion of the array.
@@ -2958,7 +2958,7 @@ export declare class ArrayBuffer {
      *
      * [MDN](https://developer.mozilla.org/docs/Web/JavaScript/Reference/Global_Objects/ArrayBuffer/resize)
      */
-    resize(&mut self, newByteLength?: number) -> unknown,
+    resize(&mut self, newByteLength?: number) -> undefined,
     /**
      * Returns a boolean indicating whether or not this buffer has been detached (transferred).
      *
@@ -3018,14 +3018,14 @@ export declare class DataView<TArrayBuffer: ArrayBufferLike = ArrayBufferLike> {
      * @param value The value to set.
      * @param littleEndian If false or undefined, a big-endian value should be written.
      */
-    setBigInt64(&mut self, byteOffset: number, value: bigint, littleEndian?: boolean) -> unknown,
+    setBigInt64(&mut self, byteOffset: number, value: bigint, littleEndian?: boolean) -> undefined,
     /**
      * Stores a BigUint64 value at the specified byte offset from the start of the view.
      * @param byteOffset The place in the buffer at which the value should be set.
      * @param value The value to set.
      * @param littleEndian If false or undefined, a big-endian value should be written.
      */
-    setBigUint64(&mut self, byteOffset: number, value: bigint, littleEndian?: boolean) -> unknown,
+    setBigUint64(&mut self, byteOffset: number, value: bigint, littleEndian?: boolean) -> undefined,
     readonly buffer: TArrayBuffer,
     readonly byteLength: number,
     readonly byteOffset: number,
@@ -3089,54 +3089,54 @@ export declare class DataView<TArrayBuffer: ArrayBufferLike = ArrayBufferLike> {
      * @param value The value to set.
      * @param littleEndian If false or undefined, a big-endian value should be written.
      */
-    setFloat32(&mut self, byteOffset: number, value: number, littleEndian?: boolean) -> unknown,
+    setFloat32(&mut self, byteOffset: number, value: number, littleEndian?: boolean) -> undefined,
     /**
      * Stores an Float64 value at the specified byte offset from the start of the view.
      * @param byteOffset The place in the buffer at which the value should be set.
      * @param value The value to set.
      * @param littleEndian If false or undefined, a big-endian value should be written.
      */
-    setFloat64(&mut self, byteOffset: number, value: number, littleEndian?: boolean) -> unknown,
+    setFloat64(&mut self, byteOffset: number, value: number, littleEndian?: boolean) -> undefined,
     /**
      * Stores an Int8 value at the specified byte offset from the start of the view.
      * @param byteOffset The place in the buffer at which the value should be set.
      * @param value The value to set.
      */
-    setInt8(&mut self, byteOffset: number, value: number) -> unknown,
+    setInt8(&mut self, byteOffset: number, value: number) -> undefined,
     /**
      * Stores an Int16 value at the specified byte offset from the start of the view.
      * @param byteOffset The place in the buffer at which the value should be set.
      * @param value The value to set.
      * @param littleEndian If false or undefined, a big-endian value should be written.
      */
-    setInt16(&mut self, byteOffset: number, value: number, littleEndian?: boolean) -> unknown,
+    setInt16(&mut self, byteOffset: number, value: number, littleEndian?: boolean) -> undefined,
     /**
      * Stores an Int32 value at the specified byte offset from the start of the view.
      * @param byteOffset The place in the buffer at which the value should be set.
      * @param value The value to set.
      * @param littleEndian If false or undefined, a big-endian value should be written.
      */
-    setInt32(&mut self, byteOffset: number, value: number, littleEndian?: boolean) -> unknown,
+    setInt32(&mut self, byteOffset: number, value: number, littleEndian?: boolean) -> undefined,
     /**
      * Stores an Uint8 value at the specified byte offset from the start of the view.
      * @param byteOffset The place in the buffer at which the value should be set.
      * @param value The value to set.
      */
-    setUint8(&mut self, byteOffset: number, value: number) -> unknown,
+    setUint8(&mut self, byteOffset: number, value: number) -> undefined,
     /**
      * Stores an Uint16 value at the specified byte offset from the start of the view.
      * @param byteOffset The place in the buffer at which the value should be set.
      * @param value The value to set.
      * @param littleEndian If false or undefined, a big-endian value should be written.
      */
-    setUint16(&mut self, byteOffset: number, value: number, littleEndian?: boolean) -> unknown,
+    setUint16(&mut self, byteOffset: number, value: number, littleEndian?: boolean) -> undefined,
     /**
      * Stores an Uint32 value at the specified byte offset from the start of the view.
      * @param byteOffset The place in the buffer at which the value should be set.
      * @param value The value to set.
      * @param littleEndian If false or undefined, a big-endian value should be written.
      */
-    setUint32(&mut self, byteOffset: number, value: number, littleEndian?: boolean) -> unknown,
+    setUint32(&mut self, byteOffset: number, value: number, littleEndian?: boolean) -> undefined,
     /**
      * Gets the Float16 value at the specified byte offset from the start of the view. There is
      * no alignment constraint; multi-byte values may be fetched from any offset.
@@ -3150,7 +3150,7 @@ export declare class DataView<TArrayBuffer: ArrayBufferLike = ArrayBufferLike> {
      * @param value The value to set.
      * @param littleEndian If false or undefined, a big-endian value should be written.
      */
-    setFloat16(&mut self, byteOffset: number, value: number, littleEndian?: boolean) -> unknown,
+    setFloat16(&mut self, byteOffset: number, value: number, littleEndian?: boolean) -> undefined,
     static readonly prototype: DataView<ArrayBufferLike>,
     constructor(&mut self, buffer: TArrayBuffer, byteOffset?: number, byteLength?: number)
 }
@@ -3184,7 +3184,7 @@ export declare class SharedArrayBuffer {
      *
      * [MDN](https://developer.mozilla.org/docs/Web/JavaScript/Reference/Global_Objects/SharedArrayBuffer/grow)
      */
-    grow(&mut self, newByteLength?: number) -> unknown,
+    grow(&mut self, newByteLength?: number) -> undefined,
     static readonly prototype: SharedArrayBuffer,
     constructor(&mut self, byteLength?: number),
     constructor(&mut self, byteLength: number, options?: {
@@ -3496,7 +3496,7 @@ export declare class BigInt64Array<TArrayBuffer: ArrayBufferLike = ArrayBufferLi
      * @param thisArg An object to which the this keyword can refer in the callbackfn function.
      * If thisArg is omitted, undefined is used as the this value.
      */
-    forEach(&self, callbackfn: fn (value: bigint, index: number, array: &Self) -> unknown, thisArg?: unknown) -> unknown,
+    forEach(&self, callbackfn: fn (value: bigint, index: number, array: &Self) -> unknown, thisArg?: unknown) -> undefined,
     /**
      * Determines whether an array includes a certain element, returning true or false as appropriate.
      * @param searchElement The element to search for.
@@ -3587,7 +3587,7 @@ export declare class BigInt64Array<TArrayBuffer: ArrayBufferLike = ArrayBufferLi
      * @param array A typed or untyped array of values to set.
      * @param offset The index in the current array at which the values are to be written.
      */
-    set(&mut self, array: ArrayLike<bigint>, offset?: number) -> unknown,
+    set(&mut self, array: ArrayLike<bigint>, offset?: number) -> undefined,
     /**
      * Returns a section of an array.
      * @param start The beginning of the specified portion of the array.
@@ -3792,7 +3792,7 @@ export declare class BigUint64Array<TArrayBuffer: ArrayBufferLike = ArrayBufferL
      * @param thisArg An object to which the this keyword can refer in the callbackfn function.
      * If thisArg is omitted, undefined is used as the this value.
      */
-    forEach(&self, callbackfn: fn (value: bigint, index: number, array: &Self) -> unknown, thisArg?: unknown) -> unknown,
+    forEach(&self, callbackfn: fn (value: bigint, index: number, array: &Self) -> unknown, thisArg?: unknown) -> undefined,
     /**
      * Determines whether an array includes a certain element, returning true or false as appropriate.
      * @param searchElement The element to search for.
@@ -3883,7 +3883,7 @@ export declare class BigUint64Array<TArrayBuffer: ArrayBufferLike = ArrayBufferL
      * @param array A typed or untyped array of values to set.
      * @param offset The index in the current array at which the values are to be written.
      */
-    set(&mut self, array: ArrayLike<bigint>, offset?: number) -> unknown,
+    set(&mut self, array: ArrayLike<bigint>, offset?: number) -> undefined,
     /**
      * Returns a section of an array.
      * @param start The beginning of the specified portion of the array.
@@ -4137,7 +4137,7 @@ export declare class Float16Array<TArrayBuffer: ArrayBufferLike = ArrayBufferLik
      * @param thisArg An object to which the this keyword can refer in the callbackfn function.
      * If thisArg is omitted, undefined is used as the this value.
      */
-    forEach(&self, callbackfn: fn (value: number, index: number, array: &Self) -> unknown, thisArg?: unknown) -> unknown,
+    forEach(&self, callbackfn: fn (value: number, index: number, array: &Self) -> unknown, thisArg?: unknown) -> undefined,
     /**
      * Determines whether an array includes a certain element, returning true or false as appropriate.
      * @param searchElement The element to search for.
@@ -4232,7 +4232,7 @@ export declare class Float16Array<TArrayBuffer: ArrayBufferLike = ArrayBufferLik
      * @param array A typed or untyped array of values to set.
      * @param offset The index in the current array at which the values are to be written.
      */
-    set(&mut self, array: ArrayLike<number>, offset?: number) -> unknown,
+    set(&mut self, array: ArrayLike<number>, offset?: number) -> undefined,
     /**
      * Returns a section of an array.
      * @param start The beginning of the specified portion of the array.

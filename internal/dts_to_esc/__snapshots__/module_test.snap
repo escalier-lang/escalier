@@ -26,7 +26,10 @@
                                     span: 41-44,
                                 },
                                 FuncSig: ast.FuncSig{
-                                    Return: &ast.UnknownTypeAnn{
+                                    Return: &ast.LitTypeAnn{
+                                        Lit: &ast.UndefinedLit{
+                                            span: 48-52,
+                                        },
                                         span: 48-52,
                                     },
                                 },
@@ -84,7 +87,10 @@
                                     span: 61-64,
                                 },
                                 FuncSig: ast.FuncSig{
-                                    Return: &ast.UnknownTypeAnn{
+                                    Return: &ast.LitTypeAnn{
+                                        Lit: &ast.UndefinedLit{
+                                            span: 68-72,
+                                        },
                                         span: 68-72,
                                     },
                                 },
@@ -187,7 +193,10 @@
                                     span: 106-116,
                                 },
                                 FuncSig: ast.FuncSig{
-                                    Return: &ast.UnknownTypeAnn{
+                                    Return: &ast.LitTypeAnn{
+                                        Lit: &ast.UndefinedLit{
+                                            span: 120-124,
+                                        },
                                         span: 120-124,
                                     },
                                 },
@@ -356,7 +365,10 @@
                                     span: 41-44,
                                 },
                                 FuncSig: ast.FuncSig{
-                                    Return: &ast.UnknownTypeAnn{
+                                    Return: &ast.LitTypeAnn{
+                                        Lit: &ast.UndefinedLit{
+                                            span: 48-52,
+                                        },
                                         span: 48-52,
                                     },
                                 },
@@ -586,7 +598,10 @@
                                     span: 61-64,
                                 },
                                 FuncSig: ast.FuncSig{
-                                    Return: &ast.UnknownTypeAnn{
+                                    Return: &ast.LitTypeAnn{
+                                        Lit: &ast.UndefinedLit{
+                                            span: 68-72,
+                                        },
                                         span: 68-72,
                                     },
                                 },
@@ -688,7 +703,10 @@
                                     span: 79-82,
                                 },
                                 FuncSig: ast.FuncSig{
-                                    Return: &ast.UnknownTypeAnn{
+                                    Return: &ast.LitTypeAnn{
+                                        Lit: &ast.UndefinedLit{
+                                            span: 86-90,
+                                        },
                                         span: 86-90,
                                     },
                                 },
@@ -736,7 +754,10 @@
                                     span: 41-44,
                                 },
                                 FuncSig: ast.FuncSig{
-                                    Return: &ast.UnknownTypeAnn{
+                                    Return: &ast.LitTypeAnn{
+                                        Lit: &ast.UndefinedLit{
+                                            span: 48-52,
+                                        },
                                         span: 48-52,
                                     },
                                 },

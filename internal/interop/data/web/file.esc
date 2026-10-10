@@ -65,11 +65,11 @@ export declare class File extends Blob {
 @js("FormData")
 export declare class FormData {
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/FormData/append) */
-    append(&mut self, name: string, value: string | Blob) -> unknown,
-    append(&mut self, name: string, value: string) -> unknown,
-    append(&mut self, name: string, blobValue: Blob, filename?: string) -> unknown,
+    append(&mut self, name: string, value: string | Blob) -> undefined,
+    append(&mut self, name: string, value: string) -> undefined,
+    append(&mut self, name: string, blobValue: Blob, filename?: string) -> undefined,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/FormData/delete) */
-    delete(&mut self, name: string) -> unknown,
+    delete(&mut self, name: string) -> undefined,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/FormData/get) */
     get(&self, name: string) -> FormDataEntryValue | null,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/FormData/getAll) */
@@ -77,10 +77,10 @@ export declare class FormData {
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/FormData/has) */
     has(&self, name: string) -> boolean,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/FormData/set) */
-    set(&mut self, name: string, value: string | Blob) -> unknown,
-    set(&mut self, name: string, value: string) -> unknown,
-    set(&mut self, name: string, blobValue: Blob, filename?: string) -> unknown,
-    forEach(&self, callbackfn: fn (value: FormDataEntryValue, key: string, parent: &Self) -> unknown, thisArg?: unknown) -> unknown,
+    set(&mut self, name: string, value: string | Blob) -> undefined,
+    set(&mut self, name: string, value: string) -> undefined,
+    set(&mut self, name: string, blobValue: Blob, filename?: string) -> undefined,
+    forEach(&self, callbackfn: fn (value: FormDataEntryValue, key: string, parent: &Self) -> unknown, thisArg?: unknown) -> undefined,
     [Symbol.iterator](&self) -> FormDataIterator<[string, FormDataEntryValue]>,
     /** Returns an array of key, value pairs for every entry in the list. */
     entries(&self) -> FormDataIterator<[string, FormDataEntryValue]>,

@@ -691,13 +691,15 @@ func printDecoratorArg(t *testing.T, dec *ast.Decorator) string {
 }
 
 // TypeScript's `void` has no single Escalier counterpart, so the converter reads it by
-// position. This asserts all three readings on one converted declaration.
+// position. This asserts each reading on one converted declaration. A parameter is
+// `never`, a type argument is `undefined`, a callback's return is `unknown`, and the
+// declared function's own return is `undefined`.
 func TestStandalone_VoidLowersByPosition(t *testing.T) {
 	_, printed := convertSlice(t, `
 declare function f(x: void, p: Promise<void>, cb: (v: number) => void): void;
 `)
 	require.Contains(t, printed,
-		"fn f(x: never, p: Promise<undefined>, cb: fn (v: number) -> unknown) -> unknown")
+		"fn f(x: never, p: Promise<undefined>, cb: fn (v: number) -> unknown) -> undefined")
 }
 
 // The converter records a runtime path for every declaration it emits,
@@ -964,7 +966,7 @@ declare var Foo: Foo;
 `,
 			interfaces: 1,
 			vars:       1,
-			contains:   []string{"new (s: string) -> Foo", "bar() -> unknown"},
+			contains:   []string{"new (s: string) -> Foo", "bar() -> undefined"},
 		},
 		{
 			// The two declarations reach conversion as one, and the
@@ -988,7 +990,7 @@ declare var Foo: Foo;
 `,
 			interfaces: 1,
 			vars:       1,
-			contains:   []string{"new (s: string) -> HTMLElement", "bar() -> unknown"},
+			contains:   []string{"new (s: string) -> HTMLElement", "bar() -> undefined"},
 		},
 	}
 
@@ -1222,12 +1224,12 @@ declare global {
 `
 	_, printed := convertSlice(t, slice)
 	snaps.MatchInlineSnapshot(t, printed, snaps.Inline(`export declare interface Gadget {
-    tick() -> unknown
+    tick() -> undefined
 }
 
 /** A global interface. */
 export declare interface Widget {
-    spin() -> unknown
+    spin() -> undefined
 }
 
 @js("widgetCount")
@@ -1760,7 +1762,7 @@ declare var AbortController: {
 			want: `@js("AbortController")
 export declare class AbortController {
     readonly signal: AbortSignal,
-    abort(&mut self, reason?: unknown) -> unknown,
+    abort(&mut self, reason?: unknown) -> undefined,
     static prototype: AbortController,
     constructor(&mut self)
 }
@@ -2265,4 +2267,52 @@ export declare class Derived extends Base implements Mixin {
     constructor(&mut self)
 }`))
 	require.Empty(t, mod.DemotedBases)
+}
+
+// TestStandalone_VoidReturnByBodySupplier covers a `void` return, which lowers to
+// `unknown` where the program supplies the function's body and to `undefined` where
+// the runtime does.
+func TestStandalone_VoidReturnByBodySupplier(t *testing.T) {
+	tests := []struct {
+		name  string
+		input string
+		want  string
+	}{
+		{
+			name:  "DeclaredFunction",
+			input: "declare function log(msg: string): void;",
+			want:  "fn log(msg: string) -> undefined",
+		},
+		{
+			name:  "RequiredInterfaceMethod",
+			input: "interface Logger { log(msg: string): void; }",
+			want:  "log(msg: string) -> undefined",
+		},
+		{
+			name:  "OptionalInterfaceMethod",
+			input: "interface Handler { onEvent?(ev: string): void; }",
+			want:  "onEvent?(ev: string) -> unknown",
+		},
+		{
+			name:  "CallSignature",
+			input: "interface Listener { (ev: string): void; }",
+			want:  "(ev: string) -> unknown",
+		},
+		{
+			name:  "CallbackParameter",
+			input: "declare function each(cb: (n: number) => void): void;",
+			want:  "fn each(cb: fn (n: number) -> unknown) -> undefined",
+		},
+		{
+			name:  "FunctionTypedProperty",
+			input: "interface Socket { onmessage: ((data: string) => void) | null; }",
+			want:  "onmessage: (fn (data: string) -> unknown) | null",
+		},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			_, printed := convertSlice(t, test.input)
+			require.Contains(t, printed, test.want)
+		})
+	}
 }

@@ -1140,7 +1140,7 @@ func TestConvertParam_AnyWidensOnlyWhereTheRuntimeSuppliesTheBody(t *testing.T) 
 		{
 			"a callback's parameter stays",
 			"interface F { catch(onrejected: (reason: any) => void): void; }",
-			"catch(onrejected: fn (reason: any) -> unknown) -> unknown",
+			"catch(onrejected: fn (reason: any) -> unknown) -> undefined",
 		},
 		{
 			"a property holding a function type stays",

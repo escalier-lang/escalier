@@ -81,7 +81,7 @@ export declare class Table {
     /** [MDN Reference](https://developer.mozilla.org/docs/WebAssembly/JavaScript_interface/Table/grow) */
     grow(&mut self, delta: number, value?: unknown) -> number,
     /** [MDN Reference](https://developer.mozilla.org/docs/WebAssembly/JavaScript_interface/Table/set) */
-    set(&mut self, index: number, value?: unknown) -> unknown,
+    set(&mut self, index: number, value?: unknown) -> undefined,
     static prototype: Table,
     constructor(&mut self, descriptor: TableDescriptor, value?: unknown)
 }
