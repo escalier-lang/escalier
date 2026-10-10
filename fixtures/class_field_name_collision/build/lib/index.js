@@ -6,7 +6,7 @@ export class A {
 }
 export class B extends A {
   constructor() {
-    super();
+    super(1);
   }
 }
 export class C extends B {

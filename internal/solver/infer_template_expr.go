@@ -57,7 +57,7 @@ func (c *checker) inferTaggedTemplateLit(scope *Scope, lvl int, e *ast.TaggedTem
 // templateStringsArray returns the `TemplateStringsArray` type `std:string`
 // declares, and false when the run has not loaded that package.
 func (c *checker) templateStringsArray() (soltype.Type, bool) {
-	ns, ok := c.packages.Lookup("std:string")
+	ns, ok := c.ctx.packages.Lookup("std:string")
 	if !ok || ns == nil {
 		return nil, false
 	}

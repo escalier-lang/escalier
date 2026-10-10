@@ -3033,9 +3033,10 @@ func (c *checker) valueProp(lvl int, blame ast.Node, provNode ast.Node, name str
 	//     borrows reads each member through the union for-all rule.
 	recvCarrier := readCarrier(recv)
 	// A primitive has no members of its own. `(1.5).toFixed(2)` reads `toFixed` off
-	// the `Number` class, as JavaScript does when it boxes the receiver. The class comes
-	// from the package that declares it, so a module declaring its own `Number` does not
-	// change what a number's members are.
+	// the `Number` class, as JavaScript does at runtime. The class comes from the
+	// package that declares it, so a module declaring its own `Number` does not change
+	// what a number's members are. A union whose members map to different classes, as
+	// `number | string` does, is read member by member in constrainUnionFieldRead.
 	if wrapper, ok := c.primitiveWrapper(recvCarrier); ok {
 		recv, recvCarrier = wrapper, wrapper
 	}
