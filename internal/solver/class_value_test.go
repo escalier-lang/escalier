@@ -95,10 +95,9 @@ func TestClassValueBindsItsParametersOnEachSignature(t *testing.T) {
 	}
 }
 
-
 // TestConstructionInstantiatesTheClassBinder covers a construction binding the class's
-// parameters afresh: the instance takes the argument's type, a bound is checked against the
-// argument at the call, and two constructions of one class stay independent.
+// parameters afresh: each construction's instance takes its own argument's type, a bound
+// is checked against the argument at the call, and the instance reaches its methods.
 func TestConstructionInstantiatesTheClassBinder(t *testing.T) {
 	t.Parallel()
 

@@ -449,49 +449,20 @@ func coalesceScheme(t soltype.Type, genLevel int, declared []*soltype.TypeParam,
 			keep.Add(tp.Var)
 		}
 	}
-	display, _ := coalesceSchemeKeeping(t, genLevel, declared, declaredLts, keep)
-	return display
-}
-
-// coalesceSchemeKeepingDeclared coalesces a scheme for display and holds every parameter
-// the declaration wrote symbolic, returning those parameters alongside under the variables
-// the display holds.
-//
-// coalesceScheme keeps only a bounded parameter, so a slot nothing in the body mentions
-// elides. `class Consumer<T> { log: string }` reads back there as
-// `{new (log: string) -> Consumer<never>}`, which is what a reader of the class's own
-// handle wants. A `.d.ts` renderer wants the opposite. TypeScript has no generic `const`,
-// so the constructor signature has to write `new <T>(log: string): Consumer<T>`, and a
-// parameter inlined to `never` leaves it nothing to bind.
-//
-// A caller names the returned parameters, so each one carries the variable the display
-// holds for it rather than the one the declaration minted. The two differ when a
-// parameter's bound needed a display copy, which cleanBinderBounds explains.
-func coalesceSchemeKeepingDeclared(
-	t soltype.Type,
-	genLevel int,
-	declared []*soltype.TypeParam,
-	declaredLts []*soltype.LifetimeParam,
-) (soltype.Type, []*soltype.TypeParam) {
-	keep := funcTypeParamVars(t)
-	for _, tp := range declared {
-		keep.Add(tp.Var)
-	}
 	return coalesceSchemeKeeping(t, genLevel, declared, declaredLts, keep)
 }
 
-// coalesceSchemeKeeping is the body the two entry points above share. keep names the
-// variables held symbolic rather than inlined to their bounds. declaredLts are the lifetime
-// parameters the declaration wrote, which render under their own names wherever they occur
-// rather than being elided or renamed by the lifetime pass. The returned parameters are
-// declared's entries, re-pointed at the variables the display holds.
+// coalesceSchemeKeeping is the body of coalesceScheme. keep names the variables held
+// symbolic rather than inlined to their bounds. declaredLts are the lifetime parameters the
+// declaration wrote, which render under their own names wherever they occur rather than
+// being elided or renamed by the lifetime pass.
 func coalesceSchemeKeeping(
 	t soltype.Type,
 	genLevel int,
 	declared []*soltype.TypeParam,
 	declaredLts []*soltype.LifetimeParam,
 	keep set.Set[*soltype.TypeVarType],
-) (soltype.Type, []*soltype.TypeParam) {
+) soltype.Type {
 	simp := simplifyScheme(t, genLevel, keep)
 	cleaned := cleanBinderBounds(keep, simp, declared)
 	c := t.Accept(&schemeCoalescer{
@@ -506,52 +477,7 @@ func coalesceSchemeKeeping(
 	// D4: resolve borrow lifetimes to their display form. A declared lifetime parameter is
 	// pinned, so a class's `'a` keeps its name in a constructor binder's bound as well as in
 	// the instance the constructor returns.
-	c = coalesceLifetimes(c, soltype.Positive, classKeepLifetimes(declaredLts))
-	return c, displayTypeParams(declared, cleaned)
-}
-
-// displayTypeParams copies each declared parameter onto the variable the display holds for
-// it, which cleaned names when the parameter's bounds needed a copy. Name, bound, and
-// default come from the declaration, so a caller renders what the source wrote.
-//
-// A bound or a default naming a parameter is rewritten the same way. `class P<A: {x: number}, B: A>`
-// renders `B extends A`, where an unrewritten reference to A's original variable would
-// leave `B extends unknown`. A parameter's bound naming the parameter itself goes through
-// the same rewrite, which is what `class Node<T: {next: T}>` needs.
-func displayTypeParams(
-	declared []*soltype.TypeParam,
-	cleaned map[*soltype.TypeVarType]*soltype.TypeVarType,
-) []*soltype.TypeParam {
-	if len(declared) == 0 {
-		return nil
-	}
-	toDisplay := &typeSubst{
-		types:     map[*soltype.TypeVarType]soltype.Type{},
-		lifetimes: map[*soltype.LifetimeVar]soltype.Lifetime{},
-	}
-	for _, tp := range declared {
-		if cv, ok := cleaned[tp.Var]; ok {
-			toDisplay.types[tp.Var] = cv
-		}
-	}
-	out := make([]*soltype.TypeParam, len(declared))
-	for i, tp := range declared {
-		cp := *tp
-		if cv, ok := cleaned[tp.Var]; ok {
-			cp.Var = cv
-		}
-		if cp.UpperBound != nil {
-			cp.UpperBound = toDisplay.apply(cp.UpperBound)
-		}
-		if cp.LowerBound != nil {
-			cp.LowerBound = toDisplay.apply(cp.LowerBound)
-		}
-		if cp.Default != nil {
-			cp.Default = toDisplay.apply(cp.Default)
-		}
-		out[i] = &cp
-	}
-	return out
+	return coalesceLifetimes(c, soltype.Positive, classKeepLifetimes(declaredLts))
 }
 
 // funcTypeParamVars collects every generic function's own TypeParams binder var
@@ -754,8 +680,12 @@ func cleanBinderBounds(
 		// a method that reads a field typed by it, and a binder rendering from the variable's
 		// list would show those as bounds the source never wrote.
 		if tp, isDeclared := declaredAt[v]; isDeclared {
-			up, upChanged = declaredBounds(tp.UpperBound), true
-			lo, loChanged = declaredBounds(tp.LowerBound), true
+			if declUp := declaredBounds(tp.UpperBound); !sameBounds(up, declUp) {
+				up, upChanged = declUp, true
+			}
+			if declLo := declaredBounds(tp.LowerBound); !sameBounds(lo, declLo) {
+				lo, loChanged = declLo, true
+			}
 		}
 		if !upChanged && !loChanged {
 			continue
@@ -774,6 +704,19 @@ func declaredBounds(bound soltype.Type) []soltype.Type {
 		return nil
 	}
 	return []soltype.Type{bound}
+}
+
+// sameBounds reports whether a and b hold the same types in the same order, by identity.
+func sameBounds(a, b []soltype.Type) bool {
+	if len(a) != len(b) {
+		return false
+	}
+	for i := range a {
+		if a[i] != b[i] {
+			return false
+		}
+	}
+	return true
 }
 
 // dropSameClassVars returns bounds with every var whose class representative is rep
@@ -822,27 +765,6 @@ func (b ValueBinding) DisplayType() soltype.Type {
 	default:
 		return overloadDisplayType(b)
 	}
-}
-
-// DisplayTypeWithDeclaredParams returns the type b's name renders as, keeping every
-// parameter its declaration wrote as a variable, together with those parameters.
-//
-// DisplayType elides a parameter nothing in the body mentions, which is what a reader of
-// the declaration's own handle wants. A `.d.ts` renderer needs every one, since TypeScript
-// writes a class's parameters on its constructor signature. displayKeepingDeclared gives
-// the full reasons.
-//
-// A binding that declares no parameters, a function or an overload set among them, answers
-// exactly as DisplayType does with no parameters.
-func (b ValueBinding) DisplayTypeWithDeclaredParams() (soltype.Type, []*soltype.TypeParam) {
-	if len(b.Schemes) != 1 {
-		return b.DisplayType(), nil
-	}
-	sc, ok := b.Schemes[0].(*PolyScheme)
-	if !ok {
-		return b.DisplayType(), nil
-	}
-	return sc.displayKeepingDeclared()
 }
 
 // renderScheme renders a scheme to its Escalier type-annotation string, with a

@@ -188,12 +188,11 @@ func bindClassParams(fns []*soltype.FuncType, typeParams []*soltype.TypeParam) {
 	}
 }
 
-// reportStaticsNamingClassParams reports each static member whose type names one of the
-// class's type parameters. A parameter stands for an instance's argument and is bound by the
-// constructor, so a static member, which is reached through the class value with no instance
-// in hand, has nothing to read it as. A generic static declares a binder of its own instead,
-// as `static pick<U: string>(x: U)` does. One report per member names the first parameter
-// found, in declaration order.
+// reportStaticsNamingClassParams reports each static element of decl whose own type in
+// static names one of typeParams. A field is read through its type, a method arm through
+// its signature, a getter through its type and a setter through its parameter, so a
+// getter beside a setter and each arm of an overloaded method are judged on their own. One
+// report per element names the first parameter found, in declaration order.
 func (c *checker) reportStaticsNamingClassParams(decl *ast.ClassDecl, static *soltype.ObjectType, typeParams []*soltype.TypeParam) {
 	if len(typeParams) == 0 {
 		return
@@ -203,19 +202,21 @@ func (c *checker) reportStaticsNamingClassParams(decl *ast.ClassDecl, static *so
 		slots[tp.Var] = i
 	}
 	found := make([]bool, len(typeParams))
+	// arms counts the static method arms seen under each name, which is the index of the
+	// next arm's signature, since appendMethodSig keeps arms in declaration order.
+	arms := map[string]int{}
 	for _, elem := range decl.Body {
 		var key ast.ObjKey
 		var isStatic bool
-		var node ast.Node
 		switch e := elem.(type) {
 		case *ast.FieldElem:
-			key, isStatic, node = e.Name, e.Static, e
+			key, isStatic = e.Name, e.Static
 		case *ast.MethodElem:
-			key, isStatic, node = e.Name, e.Static, e
+			key, isStatic = e.Name, e.Static
 		case *ast.GetterElem:
-			key, isStatic, node = e.Name, e.Static, e
+			key, isStatic = e.Name, e.Static
 		case *ast.SetterElem:
-			key, isStatic, node = e.Name, e.Static, e
+			key, isStatic = e.Name, e.Static
 		default:
 			continue
 		}
@@ -226,12 +227,21 @@ func (c *checker) reportStaticsNamingClassParams(decl *ast.ClassDecl, static *so
 		if !ok {
 			continue
 		}
+		arm := 0
+		if _, isMethod := elem.(*ast.MethodElem); isMethod {
+			arm = arms[name]
+			arms[name]++
+		}
+		memberType := staticMemberType(static, elem, name, arm)
+		if memberType == nil {
+			continue
+		}
 		clear(found)
-		occurrences(slots, staticMemberTypes(static, name), found)
+		occurrences(slots, []soltype.Type{memberType}, found)
 		for i, hit := range found {
 			if hit {
 				c.report(&StaticMemberNamesClassParamError{
-					Class: decl.Name.Name, Member: name, Param: typeParams[i].Name, Node: node,
+					Class: decl.Name.Name, Member: name, Param: typeParams[i].Name, Node: elem,
 				})
 				break
 			}
@@ -239,34 +249,32 @@ func (c *checker) reportStaticsNamingClassParams(decl *ast.ClassDecl, static *so
 	}
 }
 
-// staticMemberTypes returns every type the static member called name declares: a field's
-// type, each signature of a method, a getter's type and a setter's parameter. A method
-// signature is walked whole, so a binder of its own bounded by a class parameter counts.
-func staticMemberTypes(static *soltype.ObjectType, name string) []soltype.Type {
-	var out []soltype.Type
-	for _, elem := range static.Elems {
-		switch e := elem.(type) {
+// staticMemberType returns the type static holds for the element elem declares under name:
+// a field's type, a method's signature at arm, a getter's type or a setter's parameter.
+// It returns nil when static has no such element, as after a member the signature phase
+// reported and skipped.
+func staticMemberType(static *soltype.ObjectType, elem ast.ClassElem, name string, arm int) soltype.Type {
+	for _, e := range static.Elems {
+		switch e := e.(type) {
 		case *soltype.PropertyElem:
-			if e.Name == name {
-				out = append(out, e.Type)
+			if _, isField := elem.(*ast.FieldElem); isField && e.Name == name {
+				return e.Type
 			}
 		case *soltype.MethodElem:
-			if e.Name == name {
-				for _, sig := range e.Signatures {
-					out = append(out, sig)
-				}
+			if _, isMethod := elem.(*ast.MethodElem); isMethod && e.Name == name && arm < len(e.Signatures) {
+				return e.Signatures[arm]
 			}
 		case *soltype.GetterElem:
-			if e.Name == name {
-				out = append(out, e.Type)
+			if _, isGetter := elem.(*ast.GetterElem); isGetter && e.Name == name {
+				return e.Type
 			}
 		case *soltype.SetterElem:
-			if e.Name == name {
-				out = append(out, e.Param)
+			if _, isSetter := elem.(*ast.SetterElem); isSetter && e.Name == name {
+				return e.Param
 			}
 		}
 	}
-	return out
+	return nil
 }
 
 // inferClassBodies infers every body a class declaration writes: the members in pending,
@@ -491,10 +499,8 @@ func classDeclTypes(def *ClassDef, ctors, calls []*soltype.FuncType) []soltype.T
 	// stripSelfReceiver drops a method's. The return is the class's own handle, minted with
 	// every type-parameter var as an argument, so walking it would mark them all; `never`
 	// stands in because it is a leaf that names nothing.
-	// A signature's binder is cleared as well, once the class's parameters have been bound
-	// on it. Visiting a binder reaches its variable, which would count every parameter as
-	// used. This runs before bindClassParams, so the clear is a no-op on the first pass
-	// and what keeps a later caller honest.
+	// The binder is cleared too. Visiting a binder reaches its variable, which would count
+	// every parameter the signature binds as used whether or not a position names it.
 	for _, fn := range ctors {
 		bare := *fn
 		bare.SelfParam = nil

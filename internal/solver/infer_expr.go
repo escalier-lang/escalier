@@ -1602,14 +1602,17 @@ func (c *checker) inferCallWithArgTypes(scope *Scope, lvl int, e *ast.CallExpr, 
 	fn, resolved := resolveFunc(callee)
 	// A class value's constructor carries the class's parameters as its own binder, and the
 	// value reaches here as an object or as a variable bounded by one, so the instantiation
-	// above did not reach it. Each construction binds the parameters afresh here, and the
-	// instantiated signature stands in for the callee from now on. Constraining the object
-	// itself would instantiate the binder a second time through the object arm, and the
-	// result would then carry two instances of the class that no member lookup could pick
-	// between.
+	// above did not reach it. Each construction binds the parameters afresh here. For a
+	// class value the instantiated signature also stands in for the callee from now on.
+	// Constraining the object itself would instantiate the binder a second time through the
+	// object arm, and the result would then carry two instances of the class that no member
+	// lookup could pick between. Any other callee keeps receiving the call shape itself, so
+	// a variable's later lower bound is still checked against it.
 	if resolved && len(fn.TypeParams) > 0 {
 		fn = c.ctx.instantiateFuncBinder(fn, lvl)
-		callee = fn
+		if _, isClassValue := c.classValueCarrier(callee); isClassValue {
+			callee = fn
+		}
 	}
 	if resolved {
 		cands := c.ctx.callCandidates(fn, newSeenPairs())

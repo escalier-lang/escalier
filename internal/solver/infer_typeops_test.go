@@ -529,7 +529,7 @@ func TestInferKeyofUnionWithUnreadableMember(t *testing.T) {
 				fn f<T>(k: keyof ({a: number, x: string} | {b: number, x: string} | T)) {}
 				val r = f("a")
 			`,
-			wantErr: `cannot constrain "a" <: keyof t9 | object | object`,
+			wantErr: `cannot constrain "a" <: keyof t12 | object | object`,
 		},
 	}
 	for _, tt := range tests {
@@ -1744,7 +1744,7 @@ func TestInferTupleSpreadOverTypeParamStaysInert(t *testing.T) {
 		val r = f([1])
 	`)
 	require.Len(t, errs, 1)
-	require.Equal(t, "cannot constrain tuple <: [...t5, number]", errs[0].Message())
+	require.Equal(t, "cannot constrain tuple <: [...t8, number]", errs[0].Message())
 }
 
 // A `mut` spread operand `[...mut P]` is rejected at the annotation site the same way a positional

@@ -2378,11 +2378,10 @@ func (e *UnusedTypeParamError) Message() string {
 }
 
 // StaticMemberNamesClassParamError fires when a static member's type names one of its class's
-// type parameters. The parameters are the binder of the constructor and stand for an
-// instance's arguments, and a static member is reached through the class value, where no
-// instance supplies them. `class Holder<T> { static s(x: T) -> number }` reports `s`. A
-// generic static declares a binder of its own instead. Class is the class's source name,
-// Member the static member's, Param the parameter's, and Node the member's declaration.
+// type parameters, as `static s(x: T)` in `class Holder<T>` does. A static naming `Self`
+// in a generic class is reported the same way, since `Self` resolves to the class handle
+// carrying every parameter. Class is the class's source name, Member the static member's,
+// Param the parameter's, and Node the member's declaration.
 type StaticMemberNamesClassParamError struct {
 	Class  string
 	Member string
