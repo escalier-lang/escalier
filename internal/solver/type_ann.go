@@ -1112,7 +1112,17 @@ func (c *checker) resolveFuncTypeAnn(scope *Scope, ta *ast.FuncTypeAnn, recv *as
 		}
 	}
 
-	t := &soltype.FuncType{Params: params, Ret: ret, Throws: throws, Inexact: ta.Inexact, TypeParams: typeParams}
+	// The annotation's own `<'a>` list is the type's binder, so a parameter written
+	// `f: fn <'a>(q: &'a T) -> &'a T` is quantified over 'a and each call of `f` binds it
+	// afresh, the way a call binds a `<T>` the annotation writes.
+	t := &soltype.FuncType{
+		Params:         params,
+		Ret:            ret,
+		Throws:         throws,
+		Inexact:        ta.Inexact,
+		TypeParams:     typeParams,
+		LifetimeParams: c.signatureLifetimeParams(lvl, ta.LifetimeParams),
+	}
 	c.recordProv(t, ta, AnnotationType)
 	return t, true
 }
