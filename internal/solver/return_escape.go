@@ -1284,6 +1284,21 @@ func (c *checker) checkParamFieldStoreEscape(recv ast.Expr, field string, source
 	c.fn.escapeSites = append(c.fn.escapeSites, escapeSite{expr: source, stmtRef: stmtRef, callerOwned: true})
 }
 
+// checkParamElementStoreEscape records an element store `recv[k] = source` into a BORROW
+// parameter's element as an escape of `source`. The key names no single field, so the store
+// cannot end the loans an earlier store left in one slot. A store into a receiver that dies
+// with the frame is not tracked here.
+func (c *checker) checkParamElementStoreEscape(recv, source ast.Expr, stmtRef liveness.StmtRef) {
+	if c.fn == nil || c.fn.eagerBorrowGraph == nil {
+		return
+	}
+	rp, ok := exprPlace(recv)
+	if !ok || rp.root <= 0 || !c.paramReferentOutlivesFrame(rp.root) {
+		return
+	}
+	c.recordEscapeSite(source, stmtRef)
+}
+
 // recordFieldStoreEdges records a borrow edge for a field store `recv.f = source` into a
 // receiver that dies with the frame, a local or an owned parameter, rooted at recv's place
 // extended by f. A store `b.peer = &mut d` records b → d at [peer], so a later flow-out of b
@@ -1320,6 +1335,28 @@ func (c *checker) recordFieldStoreEdges(
 	if borrow, ok := source.(*ast.BorrowExpr); ok {
 		if place, ok := loanPlace(borrow); ok {
 			c.recordStoreEdgeLoan(place, borrow.Mut, rp.root, base, stmtRef, borrow)
+		}
+	}
+}
+
+// recordElementStoreEdges records a borrow edge for an element store `recv[k] = source`
+// into a receiver that dies with the frame, the element twin of recordFieldStoreEdges. A
+// dynamic key names no field segment, so the edge is rooted at recv's own place. The
+// update is weak: the store repoints one element the checker cannot name, so the edges
+// the receiver's other elements hold stay recorded.
+func (c *checker) recordElementStoreEdges(recv, source ast.Expr, stmtRef liveness.StmtRef) {
+	if c.fn == nil || c.fn.eagerBorrowGraph == nil {
+		return
+	}
+	rp, ok := exprPlace(recv)
+	if !ok || rp.root <= 0 || c.paramReferentOutlivesFrame(rp.root) {
+		return
+	}
+	c.recordBorrowSources(rp.root, rp.path, source)
+	c.flushBorrowDirty(stmtRef)
+	if borrow, ok := source.(*ast.BorrowExpr); ok {
+		if place, ok := loanPlace(borrow); ok {
+			c.recordStoreEdgeLoan(place, borrow.Mut, rp.root, rp.path, stmtRef, borrow)
 		}
 	}
 }

@@ -273,6 +273,9 @@ func (c *checker) inferFunc(scope *Scope, lvl int, sig ast.FuncSig, body *ast.Bl
 	// paramTypes maps each bound parameter name to its soltype, consumed by the M4
 	// G1 liveness pre-pass to seed parameter alias mutability.
 	paramTypes := make(map[string]soltype.Type, len(sig.Params))
+	// defaults holds each parameter default until the body's context is open, so a raise
+	// or a use inside one belongs to this function.
+	var defaults []paramDefaultSite
 	for i, p := range sig.Params {
 		// A `...xs: Array<E>` parameter binds the slot rather than one argument. restParamSlot
 		// unwraps the marker to the pattern underneath and reports the forms that cannot carry
@@ -280,6 +283,9 @@ func (c *checker) inferFunc(scope *Scope, lvl int, sig ast.FuncSig, body *ast.Bl
 		// FuncParam below.
 		pat, rest, optional := c.restParamSlot(p, i == len(sig.Params)-1)
 		pt := c.paramType(declScope, p, lvl)
+		// A caller fills the parameter, so the lower bounds the body sees are not all it
+		// can hold.
+		c.markOpenVar(pt)
 		// A generic function in parameter position is a rank-2 callback such as
 		// `g: <V>(x: V) -> V`. Its `<V>` binder is kept on the parameter's FuncType so a
 		// caller's argument is checked against it by skolemizing `V`, and a call to the
@@ -309,6 +315,11 @@ func (c *checker) inferFunc(scope *Scope, lvl int, sig ast.FuncSig, body *ast.Bl
 				// param-type mismatch blames the param. An annotated param's blame
 				// instead rides on its annotation, recorded by resolveTypeAnn.
 				c.recordProv(pt, pat, ParamBinding)
+			}
+			if def := paramDefault(p); def != nil {
+				// A default sees only the parameters ahead of it, so it is inferred later in a
+				// scope holding just the bindings made so far.
+				defaults = append(defaults, paramDefaultSite{def: def, param: pt, scope: snapshotScope(declScope, fnScope)})
 			}
 			// A parameter binding never generalizes — its var is fixed for the body — so
 			// it is a MonoScheme; instantiate returns pt unchanged at every use.
@@ -419,6 +430,10 @@ func (c *checker) inferFunc(scope *Scope, lvl int, sig ast.FuncSig, body *ast.Bl
 		}
 	}
 
+	if body == nil {
+		// A bodyless signature has no context to open, so its defaults are inferred here.
+		c.inferParamDefaults(lvl, defaults)
+	}
 	var ret soltype.Type = &soltype.UndefinedType{}
 	// collected holds each return point's type and retExprs its operand, in source order.
 	// inferStmt appends to both at every ReturnStmt, so they have the same length.
@@ -478,6 +493,9 @@ func (c *checker) inferFunc(scope *Scope, lvl int, sig ast.FuncSig, body *ast.Bl
 			c.fn.yieldNext = gen.next
 			c.fn.nextDeclared = gen.ann != nil
 		}
+		// A default runs when the function is called, so it is inferred inside this context,
+		// where a raise reaches this function's throws sink.
+		c.inferParamDefaults(lvl, defaults)
 		// M4 G1: run the liveness pre-pass before walking the body so mutability
 		// transitions are checked. It renames the body's variable nodes (writing the
 		// VarIDs DetermineAliasSource and the alias tracker read) and seeds the
@@ -2094,10 +2112,10 @@ func soleCallableSignature(t *soltype.ObjectType) (*soltype.FuncType, bool) {
 // M3 walk handles. The source value is typed first (so its own errors surface
 // regardless of the target's validity), then the target is resolved and gated:
 //
-//   - The target must be a place: an IdentExpr resolving to a value binding. A
-//     literal, call, member, or any other non-place target is an
-//     InvalidAssignmentTargetError (member targets `obj.x = …` need record types,
-//     M4). An ident that resolves to no binding is an UnknownIdentifierError.
+//   - The target must be a place: an IdentExpr resolving to a value binding, or a
+//     member or index target, which inferMemberAssign and inferIndexAssign type. A
+//     literal, call, or any other non-place target is an InvalidAssignmentTargetError.
+//     An ident that resolves to no binding is an UnknownIdentifierError.
 //   - The binding must be reassignable: only a `var` (Kind == VarKind) is. A `val`,
 //     function, parameter, or prelude binding is a CannotAssignToImmutableError.
 //
@@ -2153,16 +2171,15 @@ func (c *checker) inferAssign(scope *Scope, lvl int, e *ast.BinaryExpr) soltype.
 
 	target, ok := e.Left.(*ast.IdentExpr)
 	if !ok {
-		// A member target (obj.x = …) is a field write: the receiver must accept a
-		// write to that field (M4 C3). An index target (xs[i] = …) still needs Array
-		// and index types (M7), so it stays unsupported, distinct from a fundamentally
-		// invalid target like `5 = x` or `f() = x`, which is an
+		// A member target `obj.x = …` is a field write, so the receiver must accept a
+		// write to that field. An index target `xs[i] = …` writes a field or an element.
+		// Any other target, such as `5 = x` or `f() = x`, is an
 		// InvalidAssignmentTargetError.
 		switch left := e.Left.(type) {
 		case *ast.MemberExpr:
 			return c.inferMemberAssign(scope, lvl, e, left, sourceT, assignStmt)
 		case *ast.IndexExpr:
-			c.reportUnsupportedFeature(e.Left, "assignment to a member or index")
+			return c.inferIndexAssign(scope, lvl, e, left, sourceT, assignStmt)
 		default:
 			c.report(&InvalidAssignmentTargetError{Target: e.Left})
 		}
@@ -2368,14 +2385,22 @@ func (c *checker) inferMemberAssign(scope *Scope, lvl int, e *ast.BinaryExpr, m 
 		return undefinedT
 	}
 	recv := c.inferWriteReceiver(scope, lvl, m.Object)
+	return c.inferFieldAssign(lvl, e, m.Object, m.Prop.Name, recv, source, assignStmt)
+}
+
+// inferFieldAssign types a write of field `name` on the receiver object, whose type
+// recv the caller has inferred. e is the assignment and e.Left is `object.name` or a
+// bracket form naming the same field, such as `object["name"]`. The rules are the
+// ones inferMemberAssign documents.
+func (c *checker) inferFieldAssign(lvl int, e *ast.BinaryExpr, object ast.Expr, name string, recv, source soltype.Type, assignStmt ast.Stmt) soltype.Type {
 	// The receiver's reads are part of this write, so the use check weighs them as a write to
-	// m rather than as reads of the receiver.
-	c.noteFieldWrite(m)
+	// the target rather than as reads of the receiver.
+	c.noteFieldWrite(e.Left, object)
 	// An accessor named prop resolves here rather than through the structural requirement
 	// below, whose element is a PropertyElem. constrain's object arm matches the sub side
 	// with ObjectType.Prop, so an accessor would read there as a missing property.
-	if accessor, ok := c.writeAccessor(m.Prop.Name, readCarrier(recv)); ok {
-		return c.inferAccessorAssign(lvl, e, m, recv, source, accessor, assignStmt)
+	if accessor, ok := c.writeAccessor(name, readCarrier(recv)); ok {
+		return c.inferAccessorAssign(lvl, e, name, recv, source, accessor, assignStmt)
 	}
 	w := widen(source)
 	// An owned-mutable field takes the immutable→mutable upgrade through the same shared
@@ -2387,7 +2412,7 @@ func (c *checker) inferMemberAssign(scope *Scope, lvl int, e *ast.BinaryExpr, m 
 	// keeps the field write consistent for when one does.
 	upgraded := false
 	if recvObj, ok := soltype.CarrierOf(recv).(*soltype.ObjectType); ok {
-		if prop, ok := recvObj.Prop(m.Prop.Name); ok && c.constrainAgainstImmutableTarget(e.Right, e.Right, source, prop.Type) {
+		if prop, ok := recvObj.Prop(name); ok && c.constrainAgainstImmutableTarget(e.Right, e.Right, source, prop.Type) {
 			w = prop.Type
 			upgraded = true
 		}
@@ -2396,15 +2421,15 @@ func (c *checker) inferMemberAssign(scope *Scope, lvl int, e *ast.BinaryExpr, m 
 	// outright; a TypeVar receiver falls through to the structural
 	// ReadonlyFieldSubtypeError the ObjectType write view raises.
 	if recvObj, ok := soltype.CarrierOf(recv).(*soltype.ObjectType); ok {
-		if prop, ok := recvObj.Prop(m.Prop.Name); ok && prop.Readonly {
-			c.report(&ReadonlyFieldError{Field: m.Prop.Name, site: e})
-			c.recordWritten(recv, m.Prop.Name, w)
+		if prop, ok := recvObj.Prop(name); ok && prop.Readonly {
+			c.report(&ReadonlyFieldError{Field: name, site: e})
+			c.recordWritten(recv, name, w)
 			c.recordType(e, w)
 			return w
 		}
 	}
 	errsBefore := len(c.errs)
-	reqField := &soltype.PropertyElem{Name: m.Prop.Name, Type: w}
+	reqField := &soltype.PropertyElem{Name: name, Type: w}
 	// A receiver that declares the field takes the write against the declared type. The
 	// requirement below pins its field invariant, which suits a receiver whose field type
 	// the write is inferring, but against a declared field it would also demand that the
@@ -2412,12 +2437,12 @@ func (c *checker) inferMemberAssign(scope *Scope, lvl int, e *ast.BinaryExpr, m 
 	// `d.x = "s"` into `x: number | string` would fail. The source is checked against
 	// the declared type instead, and the requirement carries that type, so it asks only
 	// that the receiver be mutable and hold the field.
-	if declared, ok := c.declaredWriteField(m.Prop.Name, recv); ok {
+	if declared, ok := c.declaredWriteField(name, recv); ok {
 		// The upgrade above already constrained the source against this field.
 		if !upgraded {
 			c.constrain(e.Right, source, writableFieldType(declared))
 		}
-		reqField = &soltype.PropertyElem{Name: m.Prop.Name, Type: declared.Type, Optional: declared.Optional}
+		reqField = &soltype.PropertyElem{Name: name, Type: declared.Type, Optional: declared.Optional}
 	}
 	req := &soltype.RefType{
 		Mut: true,
@@ -2432,7 +2457,7 @@ func (c *checker) inferMemberAssign(scope *Scope, lvl int, e *ast.BinaryExpr, m 
 		},
 	}
 	c.constrain(e, recv, req)
-	c.recordWritten(recv, m.Prop.Name, w)
+	c.recordWritten(recv, name, w)
 	// M4 G1: when the written value aliases a variable, merge the receiver's and the
 	// source's alias sets so a later transition off either sees the shared value. Only
 	// when the write type-checked, so a rejected write does not record a bogus alias.
@@ -2450,11 +2475,11 @@ func (c *checker) inferMemberAssign(scope *Scope, lvl int, e *ast.BinaryExpr, m 
 			// checkParamFieldStoreEscape applies only when the receiver is such a parameter,
 			// and records the store for the post-pass to decide. A closure in the value
 			// borrows what it captures, so it is weighed the same way and moves nothing.
-			c.checkParamFieldStoreEscape(m.Object, m.Prop.Name, e.Right, ref)
+			c.checkParamFieldStoreEscape(object, name, e.Right, ref)
 			// A store into a LOCAL receiver's field records a borrow edge instead, rooted at
 			// the field. It does not escape until the receiver itself flows out, at which
 			// point the recorded edge is followed. `b.peer = &mut d` records b → d at [peer].
-			c.recordFieldStoreEdges(m.Object, m.Prop.Name, e.Right, ref)
+			c.recordFieldStoreEdges(object, name, e.Right, ref)
 		}
 	}
 	// The assignment evaluates to the value just stored. recordType overwrites the
@@ -2484,6 +2509,173 @@ func writableFieldType(prop *soltype.PropertyElem) soltype.Type {
 	return newUnion(nil, []soltype.Type{prop.Type, &soltype.UndefinedType{}})
 }
 
+// inferIndexAssign types a write `recv[k] = source`. A key naming one property, which
+// indexKeyName decides the same way for a read, writes that field through
+// inferFieldAssign, so `self[k] = v` with `val k = "x"` checks as `self.x = v`. Any other
+// key writes an element, which inferElementAssign checks.
+func (c *checker) inferIndexAssign(scope *Scope, lvl int, e *ast.BinaryExpr, ix *ast.IndexExpr, source soltype.Type, assignStmt ast.Stmt) soltype.Type {
+	if ix.OptChain {
+		// `recv?.[k] = …` is not a meaningful assignment target, the same as the member form.
+		c.reportUnsupportedFeature(e.Left, "assignment to a member or index")
+		return &soltype.UndefinedType{}
+	}
+	// JavaScript evaluates the receiver before the key.
+	recv := c.inferWriteReceiver(scope, lvl, ix.Object)
+	if name, ok := c.indexKeyName(scope, lvl, ix, recv); ok {
+		return c.inferFieldAssign(lvl, e, ix.Object, name, recv, source, assignStmt)
+	}
+	return c.inferElementAssign(lvl, e, ix, recv, source, assignStmt)
+}
+
+// inferElementAssign types a write `recv[k] = source` whose key names no single property,
+// once inferIndexAssign has inferred the receiver and the key. The write applies the
+// gates a field write does:
+//
+//   - The receiver must be mutable. It is constrained against a `mut` borrow of its own
+//     type, so a write through an immutable `Array<number>` is rejected.
+//   - The slot must not be `readonly`. A `readonly` index signature, or a `readonly`
+//     property the key may name, is reported as a ReadonlyFieldError naming the key's
+//     type.
+//   - The source must fit each slot elementSlots returns. An array's slot is its
+//     element type, and a tuple's slot at a literal position is that element. A
+//     `number` key on a tuple may land on any position, so the source must fit every
+//     element. An index signature's slot is its value type, without the `undefined` a
+//     read of it adds, and each property the key may name is a slot too.
+//
+// A key the receiver cannot be indexed by reports the error a read at that key reports.
+// A receiver or key whose type is not yet known, such as a parameter inferred from its
+// uses, reports the write as unsupported.
+//
+// The assignment evaluates to the value just stored, widened the way a field write
+// widens it.
+func (c *checker) inferElementAssign(lvl int, e *ast.BinaryExpr, ix *ast.IndexExpr, recv, source soltype.Type, assignStmt ast.Stmt) soltype.Type {
+	undefinedT := soltype.Type(&soltype.UndefinedType{})
+	c.noteFieldWrite(e.Left, ix.Object)
+	if _, failed := c.info.TypeOf(ix.Index).(*soltype.ErrorType); failed {
+		return undefinedT
+	}
+	access, ok := c.indexAccess(ix, recv)
+	if !ok {
+		c.reportUnsupportedFeature(e.Left, "assignment to a member or index")
+		return undefinedT
+	}
+	// The read at the same key reports a key the receiver has no slot for: an index past a
+	// tuple's end, or a key no index signature covers.
+	if _, reduceErrs, _ := c.ctx.reduceResidual(access, newSeenPairs()); len(reduceErrs) > 0 {
+		c.blameConstraintErrors(ix, reduceErrs)
+		return undefinedT
+	}
+	slots, readonly, ok := c.elementSlots(access)
+	if !ok {
+		c.reportUnsupportedFeature(e.Left, "assignment to a member or index")
+		return undefinedT
+	}
+	w := widen(source)
+	if readonly {
+		c.report(&ReadonlyFieldError{Field: "[" + soltype.Print(access.Index) + "]", site: e})
+		c.recordType(e, w)
+		return w
+	}
+	errsBefore := len(c.errs)
+	c.constrain(e, recv, &soltype.RefType{
+		Mut: true,
+		// A fresh lifetime imposes no obligation on the receiver, matching the field write.
+		Lt:    c.ctx.freshLifetime(lvl),
+		Inner: access.Target.(soltype.RefInner),
+	})
+	if len(c.errs) > errsBefore {
+		// A receiver that cannot be written is the one fault, so the source is not checked
+		// against a slot the write never reaches.
+		c.recordType(e, w)
+		return w
+	}
+	for _, slot := range slots {
+		c.constrain(e.Right, source, slot)
+	}
+	if c.fn != nil && len(c.errs) == errsBefore {
+		c.trackAliasesForPropAssignment(e.Left, e.Right)
+		if ref, ok := c.fn.stmtToRef[assignStmt]; ok {
+			// Storing an owned value into an element moves it into the receiver, and storing
+			// a borrow of a local into a parameter's element escapes, as a field store does.
+			c.consumeOwned(e.Right, source, e.Right, ref)
+			c.checkParamElementStoreEscape(ix.Object, e.Right, ref)
+			c.recordElementStoreEdges(ix.Object, e.Right, ref)
+		}
+	}
+	c.recordType(e, w)
+	return w
+}
+
+// elementSlots returns the types a write through `access` must fit, and whether the slot
+// is `readonly`. An array instance read at a numeric key has one slot, its element type.
+// A tuple read at a literal position has that element, and at `number` every element. An
+// object whose index signature covers the key has the signature's value, plus each
+// property the key may name. `ok` is false for any other receiver, which has no element
+// to write, and for a receiver a borrow cannot wrap.
+func (c *checker) elementSlots(access *soltype.IndexType) (slots []soltype.Type, readonly bool, ok bool) {
+	if _, isInner := access.Target.(soltype.RefInner); !isInner {
+		// The mutability gate wraps the receiver in a `mut` borrow, which only a RefInner fits.
+		return nil, false, false
+	}
+	target := c.memberCarrier(access.Target)
+	if elem, isArray := c.ctx.arrayElem(target); isArray && isNumericKey(access.Index) {
+		return []soltype.Type{elem}, false, true
+	}
+	switch t := target.(type) {
+	case *soltype.TupleType:
+		if lit, isLit := access.Index.(*soltype.LitType); isLit {
+			if num, isNum := lit.Lit.(*soltype.NumLit); isNum {
+				i := int(num.Value)
+				if float64(i) == num.Value && i >= 0 && i < len(t.Elems) {
+					return []soltype.Type{t.Elems[i]}, false, true
+				}
+			}
+			return nil, false, false
+		}
+		if isNumericKey(access.Index) && !t.Inexact {
+			return t.Elems, false, true
+		}
+	case *soltype.ObjectType:
+		sig, found := c.ctx.indexSignatureFor(t, access.Index, newSeenPairs())
+		if !found {
+			return nil, false, false
+		}
+		slots, readonly = []soltype.Type{sig.Value}, sig.Readonly == soltype.ModAdd
+		// The key may also land on a property the object names, so the value has to fit
+		// that property too. `o[k] = 1` with `k: string` may write `o.a`.
+		for _, elem := range t.Elems {
+			prop, isProp := elem.(*soltype.PropertyElem)
+			if !isProp || !keyReaches(access.Index, prop.Name) {
+				continue
+			}
+			slots = append(slots, prop.Type)
+			readonly = readonly || prop.Readonly
+		}
+		return slots, readonly, true
+	}
+	return nil, false, false
+}
+
+// keyReaches reports whether a key of type `key` may name the member called `name`. A
+// string literal reaches the member it spells, a number literal the member its digits
+// spell, a primitive the members keySetCovers says it covers, and a union whatever one
+// of its members reaches.
+func keyReaches(key soltype.Type, name string) bool {
+	switch key := key.(type) {
+	case *soltype.UnionType:
+		for _, member := range key.Types {
+			if keyReaches(member, name) {
+				return true
+			}
+		}
+		return false
+	case *soltype.PrimType:
+		return keySetCovers(key, name)
+	}
+	keyName, ok := mappedKeyName(key)
+	return ok && keyName == name
+}
+
 // inferAccessorAssign types a write `recv.prop = source` that resolved to an accessor. A
 // getter-only member is reported, having no setter to call. A setter write is a call, not
 // a store: it checks the source against the setter's parameter and the receiver against
@@ -2492,7 +2684,7 @@ func writableFieldType(prop *soltype.PropertyElem) soltype.Type {
 func (c *checker) inferAccessorAssign(
 	lvl int,
 	e *ast.BinaryExpr,
-	m *ast.MemberExpr,
+	name string,
 	recv soltype.Type,
 	source soltype.Type,
 	accessor soltype.ObjTypeElem,
@@ -2500,7 +2692,7 @@ func (c *checker) inferAccessorAssign(
 ) soltype.Type {
 	setter, ok := accessor.(*soltype.SetterElem)
 	if !ok {
-		out := c.report(&ReadOnlyPropertyError{Name: m.Prop.Name, Site: e})
+		out := c.report(&ReadOnlyPropertyError{Name: name, Site: e})
 		c.recordType(e, out)
 		return out
 	}
@@ -2510,7 +2702,7 @@ func (c *checker) inferAccessorAssign(
 	// checks are independent.
 	c.raiseAccessorThrows(lvl, e, setter.ThrowsOrNever())
 	errsBefore := len(c.errs)
-	c.checkReceiverMut(e.Left, m.Prop.Name, recv, setter.SelfParam)
+	c.checkReceiverMut(e.Left, name, recv, setter.SelfParam)
 	c.constrain(e.Right, source, setter.Param)
 	// A concretely owned parameter takes the value out of this frame, so the source
 	// binding is consumed and a later use of it is a use-after-move. This mirrors
@@ -2716,10 +2908,18 @@ func (c *checker) inferTuple(scope *Scope, lvl int, e *ast.TupleExpr) soltype.Ty
 // with a static key folds into the object. A static key is an identifier label, a
 // string-literal key, or a numeric key like {0: v}. A spread ({...o}) merges the
 // operand object's fields in, following the same left-to-right rule the type-level
-// operator applies. The forms it does not cover each report an UnsupportedNodeError
-// and are skipped rather than panicking:
+// operator applies.
+//
+// A computed key `{[k]: v}` whose type is one string or number literal names a property
+// the way a written key does, so `val k = "a"` makes `{[k]: 1}` the object `{a: 1}`. Any
+// other key may name more than one property. Such a key contributes to an index
+// signature over its widened key set instead, so `{[k]: 1}` with `k: string` is
+// `{[K: string]?: 1}`. Every such key in one literal feeds one signature, whose key set
+// and value are the unions of what each key contributes.
+//
+// The forms it does not cover each report an UnsupportedNodeError and are skipped
+// rather than panicking:
 //   - method/constructor elements, which arrive with classes in M5,
-//   - computed keys ({[k]: v}), which need M9 index signatures,
 //   - shorthand ({x}, a property with no value).
 //
 // Usage-inference depth builds on this elsewhere, for example inferring an open
@@ -2738,6 +2938,7 @@ func (c *checker) inferObject(scope *Scope, lvl int, e *ast.ObjectExpr) soltype.
 	// contributes the operand object's fields, so `{...a, x: 1}` merges a's fields under x.
 	operandElems := make([][]soltype.ObjTypeElem, 0, len(e.Elems))
 	inexact := false
+	var sigKeys, sigValues []soltype.Type
 	for _, elem := range e.Elems {
 		if spread, ok := elem.(*ast.ObjSpreadExpr); ok {
 			op := c.inferExpr(scope, lvl, spread.Value)
@@ -2774,10 +2975,31 @@ func (c *checker) inferObject(scope *Scope, lvl int, e *ast.ObjectExpr) soltype.
 		}
 		name, ok := objKeyName(prop.Name)
 		if !ok {
-			// A computed key ({[k]: v}) carries no static property name, so it is M9.
-			// Blame the key itself, which has its own narrower span, not the whole
-			// property.
-			c.reportUnsupported(prop.Name)
+			computed, isComputed := prop.Name.(*ast.ComputedKey)
+			if !isComputed || isSymbolMemberKey(computed.Expr) {
+				// A string key spelling a reserved symbol member name, or a `Symbol.<name>`
+				// key naming no well-known symbol. Blame the key itself, which has its own
+				// narrower span, not the whole property.
+				c.reportUnsupported(prop.Name)
+				continue
+			}
+			// JavaScript evaluates a computed key before the value it labels.
+			keyT := c.inferExpr(scope, lvl, computed.Expr)
+			ft := c.inferExpr(scope, lvl, prop.Value)
+			c.consumeIntoLiteral(prop.Value, ft, stmtRef, hasStmtRef)
+			keyName, keySet, ok := c.computedObjKey(computed, keyT)
+			switch {
+			case !ok:
+			case keySet == nil:
+				operandElems = append(operandElems, []soltype.ObjTypeElem{&soltype.PropertyElem{Name: keyName, Type: ft}})
+			default:
+				sigKeys = append(sigKeys, keySet)
+				sigValues = append(sigValues, ft)
+				// The key may land on a property written before it and replace that value, so
+				// each such property may hold either. An optional field merged after it reads as
+				// that join, so `{a: "x", [s]: 1}` with `s: string` types `a` as `1 | "x"`.
+				operandElems = append(operandElems, overwrittenFields(operandElems, keySet, ft))
+			}
 			continue
 		}
 		ft := c.inferExpr(scope, lvl, prop.Value)
@@ -2786,10 +3008,132 @@ func (c *checker) inferObject(scope *Scope, lvl int, e *ast.ObjectExpr) soltype.
 		// Building an owned value into the object moves it.
 		c.consumeIntoLiteral(prop.Value, ft, stmtRef, hasStmtRef)
 	}
-	t := &soltype.ObjectType{Elems: mergeSpreadOperands(operandElems), Inexact: inexact}
+	elems := mergeSpreadOperands(operandElems)
+	if len(sigKeys) > 0 {
+		// The signature joins the elements after the merge, since the merge keys every
+		// mapped member alike and would keep only the last of two.
+		elems = append(elems, &soltype.MappedElem{
+			Key:      c.ctx.freshMappedKey("K"),
+			Keys:     newUnion(nil, sigKeys),
+			Value:    newUnion(nil, sigValues),
+			Optional: soltype.ModAdd,
+		})
+	}
+	t := &soltype.ObjectType{Elems: elems, Inexact: inexact}
 	c.recordType(e, t)
 	c.recordProv(t, e, ObjectField)
 	return t
+}
+
+// computedObjKey reads what a computed object-literal key `[k]` names, given keyT, the
+// type inferred for k. A key whose type is one string or number literal names the
+// property keyName, and keySet is nil. Any other legal key returns keySet, the set of
+// keys an index signature for it covers. That set widens each literal to its primitive
+// and a unique symbol to `symbol`, so `"a" | "b"` covers `string`.
+//
+// `ok` is false when the key names nothing. A key that already failed has reported its
+// own error. A key of a type that cannot key a property reports InvalidObjectKeyError,
+// and a key whose type is not yet known reports the key as unsupported.
+func (c *checker) computedObjKey(key *ast.ComputedKey, keyT soltype.Type) (keyName string, keySet soltype.Type, ok bool) {
+	if _, failed := keyT.(*soltype.ErrorType); failed {
+		return "", nil, false
+	}
+	ground, known := c.boundValueType(keyT)
+	if !known {
+		c.reportUnsupported(key)
+		return "", nil, false
+	}
+	if name, isLit := mappedKeyName(ground); isLit {
+		return name, nil, true
+	}
+	keys, legal := propertyKeySet(ground)
+	if !legal {
+		c.report(&InvalidObjectKeyError{Key: key.Expr, KeyType: ground})
+		return "", nil, false
+	}
+	return "", keys, true
+}
+
+// overwrittenFields returns one optional field of type `value` for each property in
+// `operands` whose name falls in `keys`. It is the operand a computed key over `keys` adds,
+// since that key may land on any of those properties.
+func overwrittenFields(operands [][]soltype.ObjTypeElem, keys, value soltype.Type) []soltype.ObjTypeElem {
+	names := set.NewSet[string]()
+	var out []soltype.ObjTypeElem
+	for _, elems := range operands {
+		for _, elem := range elems {
+			prop, isProp := elem.(*soltype.PropertyElem)
+			if !isProp || names.Contains(prop.Name) || !keySetCovers(keys, prop.Name) {
+				continue
+			}
+			name := prop.Name
+			names.Add(name)
+			out = append(out, &soltype.PropertyElem{Name: name, Type: value, Optional: true})
+		}
+	}
+	return out
+}
+
+// keySetCovers reports whether a member named `name` has a key in `keys`, a key set
+// propertyKeySet built. A `string` set covers every name but a reserved symbol member
+// name. A `number` set covers a name that spells a number the way JavaScript prints it,
+// such as "1". A `symbol` set covers a reserved symbol member name.
+func keySetCovers(keys soltype.Type, name string) bool {
+	_, isSymbol := soltype.SymbolOfMemberName(name)
+	switch keys := keys.(type) {
+	case *soltype.UnionType:
+		for _, member := range keys.Types {
+			if keySetCovers(member, name) {
+				return true
+			}
+		}
+		return false
+	case *soltype.PrimType:
+		switch keys.Prim {
+		case soltype.StrPrim:
+			return !isSymbol
+		case soltype.SymPrim:
+			return isSymbol
+		case soltype.NumPrim:
+			n, err := strconv.ParseFloat(name, 64)
+			return err == nil && strconv.FormatFloat(n, 'f', -1, 64) == name
+		}
+	}
+	return false
+}
+
+// propertyKeySet returns the primitive key set t falls in when t can key a property:
+// `string`, `number`, or `symbol`, or a union of them for a union t. A literal widens
+// to its primitive and a unique symbol to `symbol`. `ok` is false when some part of t
+// cannot key a property, such as `boolean` or an object.
+func propertyKeySet(t soltype.Type) (soltype.Type, bool) {
+	switch t := t.(type) {
+	case *soltype.PrimType:
+		switch t.Prim {
+		case soltype.StrPrim, soltype.NumPrim, soltype.SymPrim:
+			return t, true
+		}
+		return nil, false
+	case *soltype.LitType:
+		switch t.Lit.(type) {
+		case *soltype.StrLit, *soltype.NumLit:
+			return widen(t), true
+		}
+		return nil, false
+	case *soltype.UniqueSymbolType:
+		return widen(t), true
+	case *soltype.UnionType:
+		members := make([]soltype.Type, len(t.Types))
+		for i, m := range t.Types {
+			k, ok := propertyKeySet(m)
+			if !ok {
+				return nil, false
+			}
+			members[i] = k
+		}
+		return newUnion(nil, members), true
+	}
+	return nil, false
 }
 
 // objElemBuilder accumulates object PropertyElems under JavaScript's last-wins,
@@ -2921,9 +3265,9 @@ func (c *checker) inferMember(scope *Scope, lvl int, e *ast.MemberExpr) soltype.
 	return c.demandValue(c.resolveMemberPath(scope, lvl, e, false), e)
 }
 
-// inferIndex types `obj[index]` in value position — namespace index access
-// (Foo["bar"]) and the constant-string bracket form of property access
-// (obj["foo-bar"]); dynamic value indexing is M7.
+// inferIndex types `obj[index]` in value position. resolveIndexPath reads a namespace
+// member, a property the key names, or an element through the receiver's array, tuple,
+// or index-signature type.
 func (c *checker) inferIndex(scope *Scope, lvl int, e *ast.IndexExpr) soltype.Type {
 	return c.demandValue(c.resolveIndexPath(scope, lvl, e, false), e)
 }
@@ -3194,12 +3538,11 @@ func (c *checker) fieldReadBorrow(fieldVar *soltype.TypeVarType, recv soltype.Ty
 }
 
 // resolveIndexPath resolves `obj[index]`. A namespace object is indexed by a
-// constant string key — Foo["bar"] is the bracket form of Foo.bar — while a
-// dynamic key (Foo[k]) is rejected. A value object indexed by a constant string
-// key is the bracket form of property access — obj["foo-bar"] reads the same
-// property as obj.foo would, and lets the source name a property whose key is not
-// a valid identifier. A dynamic key reads through the receiver's index signature,
-// which dynamicIndexRead resolves.
+// constant string key, so `Foo["bar"]` is the bracket form of `Foo.bar`, while a dynamic
+// key such as `Foo[k]` is rejected. A value object indexed by a key that names one
+// property reads that property the way dot access does. `obj["foo-bar"]` is that form,
+// and lets the source name a property whose key is not a valid identifier. Every other
+// key reads through dynamicIndexRead.
 func (c *checker) resolveIndexPath(scope *Scope, lvl int, e *ast.IndexExpr, objPos bool) pathResult {
 	if e.OptChain {
 		c.reportUnsupportedFeature(e, "OptionalChain")
@@ -3217,22 +3560,84 @@ func (c *checker) resolveIndexPath(scope *Scope, lvl int, e *ast.IndexExpr, objP
 		}
 		return c.resolveNamespaceMember(lvl, e, obj.ns, name)
 	}
-	if name, ok := constStringKey(e.Index); ok {
+	name, ok := c.indexKeyName(scope, lvl, e, obj.value)
+	if ok {
 		if !objPos {
 			c.recordMemberUse(e)
 		}
 		return c.valueProp(lvl, e, e.Index, name, obj.value)
 	}
-	return c.dynamicIndexRead(scope, lvl, e, obj.value, objPos)
+	return c.dynamicIndexRead(e, obj.value, objPos)
 }
 
-// dynamicIndexRead resolves `recv[k]` for a non-constant key by typing it as the indexed access
-// `Recv[Kt]` and reducing it with the evaluator type-level `T[K]` uses, so `d[k]` agrees with `d.foo`.
-// That reduction reads the index signature and mints both rejections. An ungrounded receiver stays
-// unsupported, since the access would leave no type; reaching it needs an array or usage-inferred one.
-func (c *checker) dynamicIndexRead(scope *Scope, lvl int, e *ast.IndexExpr, recv soltype.Type, objPos bool) pathResult {
-	key := c.inferExpr(scope, lvl, e.Index)
-	access := &soltype.IndexType{Target: recv, Index: key}
+// indexKeyName returns the property name an index key names on a receiver of type recv,
+// and false when the key may name more than one. A string literal, a well-known symbol
+// such as `Symbol.iterator`, and an expression whose type is one string literal each
+// name one property. `val k = "a"` makes `obj[k]` read the property `a`.
+//
+// A key whose type is one number literal names the property its digits spell, as
+// `{0: v}` stores under "0", unless the receiver is read by position. `t[0]` reads a
+// tuple's first element, which the structural property read would miss.
+//
+// It infers e.Index unless the key is a string literal or a well-known symbol, so a
+// caller reads the key's type afterwards from `Info` rather than inferring the key a
+// second time.
+func (c *checker) indexKeyName(scope *Scope, lvl int, e *ast.IndexExpr, recv soltype.Type) (string, bool) {
+	if name, ok := constStringKey(e.Index); ok {
+		return name, true
+	}
+	if name, ok := wellKnownSymbolMember(e.Index); ok {
+		return name, true
+	}
+	key, ok := c.boundValueType(c.inferExpr(scope, lvl, e.Index))
+	if !ok {
+		return "", false
+	}
+	if name, ok := strLitName(key); ok {
+		return name, true
+	}
+	if name, ok := mappedKeyName(key); ok && !c.readsByPosition(recv) {
+		return name, true
+	}
+	return "", false
+}
+
+// readsByPosition reports whether a number key indexes recv by position rather than by
+// property name. A tuple and an array instance are read by position, and so is a
+// receiver boundValueType cannot read, which leaves the access to the evaluator. An
+// object or another class instance is read by name.
+func (c *checker) readsByPosition(recv soltype.Type) bool {
+	t, ok := c.boundValueType(recv)
+	if !ok {
+		return true
+	}
+	switch t := c.memberCarrier(peelBorrows(t)).(type) {
+	case *soltype.ObjectType:
+		return false
+	case *soltype.ClassType:
+		_, isArray := c.ctx.arrayElem(t)
+		return isArray
+	}
+	return true
+}
+
+// dynamicIndexRead resolves `recv[k]` for a key that names no single property, once
+// indexKeyName has inferred the key. It types the read as the indexed access
+// `Recv[Kt]` and reduces it with the evaluator a type-level `T[K]` uses, so `d[k]`
+// agrees with `D[K]`. The reduction reads an array's element type, a tuple's element
+// at a literal position, and an object's index signature, and it reports a key the
+// receiver cannot be read at.
+//
+// The receiver and the key are each read through boundValueType first, since a read of
+// a binding is a variable bounded below by the binding's type. An operand it cannot
+// read, such as a parameter whose type is inferred from its uses, leaves the read
+// unsupported.
+func (c *checker) dynamicIndexRead(e *ast.IndexExpr, recv soltype.Type, objPos bool) pathResult {
+	access, ok := c.indexAccess(e, recv)
+	if !ok {
+		c.reportUnsupported(e)
+		return pathResult{err: true}
+	}
 	reduced, reduceErrs, ok := c.ctx.reduceResidual(access, newSeenPairs())
 	if len(reduceErrs) > 0 {
 		c.blameConstraintErrors(e, reduceErrs)
@@ -3247,6 +3652,90 @@ func (c *checker) dynamicIndexRead(scope *Scope, lvl int, e *ast.IndexExpr, recv
 	}
 	c.recordType(e, reduced)
 	return pathResult{value: reduced}
+}
+
+// indexAccess builds the indexed access `Recv[Kt]` an index expression reads or
+// writes, with the receiver's borrow peeled and both operands read through their lower
+// bounds. The key's type is the one `Info` recorded for `e.Index`, so the key must already
+// be inferred. `ok` is false when boundValueType cannot read either operand.
+func (c *checker) indexAccess(e *ast.IndexExpr, recv soltype.Type) (*soltype.IndexType, bool) {
+	target, ok := c.boundValueType(recv)
+	if !ok {
+		return nil, false
+	}
+	key, ok := c.boundValueType(c.info.TypeOf(e.Index))
+	if !ok {
+		return nil, false
+	}
+	return &soltype.IndexType{Target: peelBorrows(target), Index: key}, true
+}
+
+// boundValueType returns the type t holds as a value. That is t itself when t is not a
+// type variable, and otherwise the join of the variable's lower bounds, each resolved
+// the same way. A read of a binding is a variable bounded below by the binding's type,
+// so a read of `val k = "x"` resolves to `"x"`. A widenable variable, the binding of an
+// unannotated `var`, resolves to its widened join, so `var k = x` resolves to `string`.
+//
+// `ok` is false in three cases:
+//   - A variable on the way has no lower bound, so nothing has yet flowed in to say
+//     what it holds.
+//   - A variable on the way is in openVars, so its lower bounds are not all it can
+//     hold. An unannotated parameter is one, since `fn f(k = "a")` may be called as
+//     `f("b")`.
+//   - The bounds cycle back to a variable already being resolved.
+func (c *checker) boundValueType(t soltype.Type) (soltype.Type, bool) {
+	return c.boundValueTypeOnPath(t, set.NewSet[*soltype.TypeVarType]())
+}
+
+// boundValueTypeOnPath is boundValueType with the variables being resolved on the
+// current path, so a cycle among lower bounds ends rather than recursing forever.
+func (c *checker) boundValueTypeOnPath(t soltype.Type, onPath set.Set[*soltype.TypeVarType]) (soltype.Type, bool) {
+	v, ok := t.(*soltype.TypeVarType)
+	if !ok {
+		return t, true
+	}
+	if onPath.Contains(v) || (c.openVars != nil && c.openVars.Contains(v)) {
+		return nil, false
+	}
+	onPath.Add(v)
+	defer onPath.Remove(v)
+	members := make([]soltype.Type, 0, len(v.LowerBounds))
+	for _, lb := range v.LowerBounds {
+		if lb == soltype.Type(v) {
+			continue
+		}
+		m, ok := c.boundValueTypeOnPath(lb, onPath)
+		if !ok {
+			return nil, false
+		}
+		members = append(members, m)
+	}
+	var joined soltype.Type
+	switch len(members) {
+	case 0:
+		return nil, false
+	case 1:
+		joined = members[0]
+	default:
+		joined = newUnion(nil, members)
+	}
+	// An unannotated `var` initialized through another binding keeps the literal in its
+	// lower bounds, though a reassignment may store any value of that literal's primitive.
+	// Widening matches the type coalescing displays, so `val x = "a"; var k = x` reads
+	// as `string` here rather than `"a"`.
+	return widenVar(v, soltype.Positive, joined), true
+}
+
+// markOpenVar adds t to openVars when t is a type variable, and does nothing otherwise.
+func (c *checker) markOpenVar(t soltype.Type) {
+	v, ok := t.(*soltype.TypeVarType)
+	if !ok {
+		return
+	}
+	if c.openVars == nil {
+		c.openVars = set.NewSet[*soltype.TypeVarType]()
+	}
+	c.openVars.Add(v)
 }
 
 // resolveNamespaceMember looks name up in ns directly and non-lexically — a
@@ -3324,15 +3813,33 @@ func objKeyName(k ast.ObjKey) (string, bool) {
 // Resolving the receiver needs the value scope, which a type annotation's member walk
 // does not have in reach.
 func wellKnownSymbolMember(key ast.Expr) (string, bool) {
-	member, isMember := key.(*ast.MemberExpr)
-	if !isMember || member.OptChain || member.Prop == nil {
-		return "", false
-	}
-	receiver, isIdent := member.Object.(*ast.IdentExpr)
-	if !isIdent || receiver.Name != "Symbol" {
+	member, ok := symbolMemberKey(key)
+	if !ok {
 		return "", false
 	}
 	return soltype.SymbolMemberName(member.Prop.Name)
+}
+
+// isSymbolMemberKey reports whether `key` is written `Symbol.<name>`, whether or not the
+// name is a well-known symbol. A computed key of that form outside the closed set names
+// a symbol soltype has no member name for, so a caller reports it rather than inferring
+// the key as an ordinary expression.
+func isSymbolMemberKey(key ast.Expr) bool {
+	_, ok := symbolMemberKey(key)
+	return ok
+}
+
+// symbolMemberKey returns `key` as a member access when it is written `Symbol.<name>`.
+func symbolMemberKey(key ast.Expr) (*ast.MemberExpr, bool) {
+	member, isMember := key.(*ast.MemberExpr)
+	if !isMember || member.OptChain || member.Prop == nil {
+		return nil, false
+	}
+	receiver, isIdent := member.Object.(*ast.IdentExpr)
+	if !isIdent || receiver.Name != "Symbol" {
+		return nil, false
+	}
+	return member, true
 }
 
 // identPatName reads the name of an IdentPat. M2 binds IdentPat-only patterns
@@ -4790,4 +5297,30 @@ func (c *checker) inferBlockOrExpr(scope *Scope, lvl int, b *ast.BlockOrExpr) (s
 	default:
 		return &soltype.UndefinedType{}, false
 	}
+}
+
+// paramDefaultSite is one parameter default waiting to be inferred. `scope` holds only the
+// bindings made before the parameter, and `param` is the parameter's type.
+type paramDefaultSite struct {
+	def   ast.Expr
+	param soltype.Type
+	scope *Scope
+}
+
+// inferParamDefaults infers each default in its own scope and constrains it against its
+// parameter's type, since the default fills the parameter when a caller omits it.
+func (c *checker) inferParamDefaults(lvl int, defaults []paramDefaultSite) {
+	for _, d := range defaults {
+		c.constrain(d.def, c.inferExpr(d.scope, lvl, d.def), d.param)
+	}
+}
+
+// snapshotScope returns a child of `parent` holding a copy of fnScope's own value bindings
+// as they stand now. A binding fnScope gains later is not visible through it.
+func snapshotScope(parent, fnScope *Scope) *Scope {
+	snap := parent.Child()
+	for name, b := range fnScope.bindings() {
+		snap.defineValue(name, b)
+	}
+	return snap
 }
