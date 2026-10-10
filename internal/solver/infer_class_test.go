@@ -863,8 +863,9 @@ func TestInferClassMethodRecursion(t *testing.T) {
 }
 
 // TestInferClassReturnsSelf covers a member that hands back `self` rather than reading
-// through it. The bare `self` is an instance of the class, so a method returning it
-// infers the class as its return type, with or without an annotation.
+// through it. The bare `self` is the receiver over the class, so a `&self` method
+// returning it infers a borrow of the class as its return type, with or without an
+// annotation.
 func TestInferClassReturnsSelf(t *testing.T) {
 	tests := []struct {
 		name       string
@@ -876,31 +877,31 @@ func TestInferClassReturnsSelf(t *testing.T) {
 			src: `
 				class P {
 					x: number,
-					id(self) { return self },
+					id(&self) { return self },
 				}
 				val p = P(1)
 				val m = p.id
 				val q = p.id()
 			`,
-			wantValues: map[string]string{"m": "fn () -> P", "q": "P"},
+			wantValues: map[string]string{"m": "fn () -> &P", "q": "&P"},
 		},
 		{
 			name: "AnnotatedReturn",
 			src: `
 				class P {
 					x: number,
-					id(self) -> Self { return self },
+					id(&self) -> &Self { return self },
 				}
 				val p = P(1)
 				val q = p.id()
 			`,
-			wantValues: map[string]string{"q": "P"},
+			wantValues: map[string]string{"q": "&P"},
 		},
 		{
 			name: "DeclaredReturn",
 			src: `
 				declare class P {
-					id(self) -> Self,
+					id(&self) -> Self,
 				}
 				declare val p: P
 				val q = p.id()
@@ -913,7 +914,7 @@ func TestInferClassReturnsSelf(t *testing.T) {
 			src: `
 				class P {
 					x: number,
-					getX(self) { return self.x },
+					getX(&self) { return self.x },
 				}
 				val p = P(1)
 				val x = p.getX()
@@ -947,10 +948,10 @@ func TestInferClassReturnsSelf(t *testing.T) {
 		{
 			name: "PassedAsArgument",
 			src: `
-				declare fn take(p: P) -> number
+				declare fn take(p: &P) -> number
 				class P {
 					x: number,
-					send(self) { return take(self) },
+					send(&self) { return take(self) },
 				}
 				val p = P(1)
 				val n = p.send()
