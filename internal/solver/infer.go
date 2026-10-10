@@ -204,10 +204,6 @@ type checker struct {
 	// package this run loads. It sits between the process-wide operator table and
 	// the ambient scope, so an ambient name shadows a prelude export.
 	prelude *Scope
-	// argTypes holds the type inferCallArgs gives a synthesized call argument in place
-	// of the type its expression infers. inferTaggedTemplateLit sets one for the array
-	// of quasis it passes. It is nil when no such call is being inferred.
-	argTypes map[ast.Expr]soltype.Type
 	// ambient is the per-run scope ambientScope builds over the prelude, holding the
 	// builtins a program reaches without an import. The entry module's scope is its
 	// child, so a module declaration shadows an ambient name and a file's import
