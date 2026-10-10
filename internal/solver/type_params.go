@@ -91,9 +91,8 @@ func (c *checker) resolveTypeParams(scope *Scope, lvl int, params []*ast.TypePar
 // itself through bare parameters of the same list, in either direction. `<T: U, U: T>` is
 // one such chain, and two lower bounds whose members name each other's parameter form
 // another. A chain steps from a parameter to the parameters its bound is. That is the bound
-// itself when it is a parameter, or each parameter among the
-// members of a union or an intersection at any depth, since `constrain` reaches each member
-// of either on its own. A transparent alias is read as its body, so `type Same<X> = X`
+// itself when it is a parameter, or each parameter among the members of a union or an
+// intersection at any depth, since `constrain` reaches each member of either on its own. A transparent alias is read as its body, so `type Same<X> = X`
 // steps through `Same<U>`. `<T: Foo<T>>` over a class or object is not a cycle, as the chain
 // stops at Foo.
 //
