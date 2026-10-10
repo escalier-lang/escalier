@@ -1,0 +1,6 @@
+// `has` accepts the element it looks for through a binder bounded below by `T`, so `T`
+// occurs only in an output position and `Set` stays covariant in `T`. See the `Array`
+// entry in prelude.replace.esc.
+export declare class Set<T> {
+    has<B>(&self, value: B) -> boolean where T: B,
+}

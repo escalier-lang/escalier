@@ -113,9 +113,11 @@ func TestArrayIsCovariantAndMutArrayIsNot(t *testing.T) {
 }
 
 // The committed `Array` keeps the variance the test prelude's does, and so do `Set` and `Map`.
-// Their `&self` methods also take an element, as `includes(&self, searchElement: T)` and
-// `has(&self, value: T)` do. Those methods cannot store the element, so an immutable view stays
-// covariant. A `mut` view also reaches `push`, `add`, and `set`, which keeps it invariant.
+// Their `&self` readers take an element through a lower-bounded binder, as
+// `includes<B>(&self, searchElement: B) -> boolean where T: B` and
+// `has<B>(&self, value: B) -> boolean where T: B` do, so `T` stays out of their input
+// positions and an immutable view stays covariant. A `mut` view also reaches `push`, `add`,
+// and `set`, which keeps it invariant.
 func TestCommittedCollectionsAreCovariantAndMutOnesAreNot(t *testing.T) {
 	t.Parallel()
 
@@ -175,6 +177,68 @@ func TestCommittedCollectionsAreCovariantAndMutOnesAreNot(t *testing.T) {
 				return
 			}
 			require.Equal(t, tt.want, errorMessagesOf(res.Errors))
+		})
+	}
+}
+
+// TestCommittedReadersWidenTheBinder covers a call to one of the committed lower-bounded
+// readers. The binder widens to admit the argument beside the element type, so an argument
+// of another type checks and a reader that builds an array returns it over the union. A
+// `reduce` with an initial value resolves through the `U` arm, so the accumulator keeps its
+// own type rather than widening over the elements.
+func TestCommittedReadersWidenTheBinder(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name string
+		src  string
+		want string
+	}{
+		{
+			name: "IncludesAdmitsANonElement",
+			src: `declare val nums: Array<number>
+				val got = nums.includes("s")`,
+			want: "boolean",
+		},
+		{
+			name: "WithReturnsTheUnion",
+			src: `declare val nums: Array<number>
+				val got = nums.with(0, "s")`,
+			want: `Array<number | "s">`,
+		},
+		{
+			name: "ConcatOfTheSameElementTypeKeepsIt",
+			src: `declare val nums: Array<number>
+				val got = nums.concat(nums)`,
+			want: "Array<number>",
+		},
+		{
+			name: "ReduceWithAnInitialValueKeepsTheAccumulatorType",
+			src: `declare val nums: Array<number>
+				val got = nums.reduce(fn (acc: string, cur: number, i: number, arr: &Array<number>) -> string { return acc }, "")`,
+			want: "string",
+		},
+		{
+			name: "SetHasAdmitsANonElement",
+			src: `import "std:set"
+				declare val s: set.Set<number>
+				val got = s.has("s")`,
+			want: "boolean",
+		},
+		{
+			name: "MapGetAdmitsANonKey",
+			src: `import "std:map"
+				declare val m: map.Map<string, number>
+				val got = m.get(5)`,
+			want: "number | undefined",
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			res := InferModuleAgainstStdlib(parseModule(t, tt.src), committedTree)
+			require.Empty(t, errorMessagesOf(res.Errors))
+			require.Equal(t, tt.want, soltype.Print(inferredValueType(t, res.Scope, "got")))
 		})
 	}
 }

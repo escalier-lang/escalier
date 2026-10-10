@@ -1,0 +1,7 @@
+// `get` and `has` accept the key they look up through a binder bounded below by `K`, so
+// `K` occurs only in an output position and `Map` stays covariant in `K`. See the `Array`
+// entry in prelude.replace.esc.
+export declare class Map<K, V> {
+    get<B>(&self, key: B) -> V | undefined where K: B,
+    has<B>(&self, key: B) -> boolean where K: B,
+}
