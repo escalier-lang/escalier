@@ -48,6 +48,12 @@ type Context struct {
 	symbolCounter int
 	probe         *Probe
 
+	// pendingRigidLts holds one entry per super signature whose lifetime binder a subtype
+	// check instantiated, waiting for checkRigidLifetimes to read what the sub required
+	// of the fresh lifetimes once the enclosing component has solved. skolemizeFuncBinder
+	// appends, and an entry is rolled back with the probe that recorded it.
+	pendingRigidLts []*rigidLtCheck
+
 	// arrayClass is the qualified class name the prelude's `Array` binds to, read
 	// off the prelude scope once per run. The subtyping and iteration rules that single an
 	// array out compare against it, so they cost a string comparison rather than a

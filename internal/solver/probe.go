@@ -436,10 +436,25 @@ func (c *Context) trialUnderProbe(sub, super soltype.Type) []SolverError {
 // pass a Clone instead. The probe rolls the trial's bounds back, so the verdicts the trial memoized
 // have to go with them.
 func (c *Context) trialUnderProbeSeen(sub, super soltype.Type, seen *seenPairs) []SolverError {
+	queued := len(c.pendingRigidLts)
 	p := newProbe(c, c.probe)
 	c.probe = p
 	errs := c.constrain(sub, super, seen, false)
 	c.probe = p.parent
+	// The trial's bounds are about to roll back, and the rigid-lifetime checks it queued
+	// with them, so what the sub required of a super binder's lifetimes is read now, on the
+	// relation the trial has built so far. A violation is one of the trial's errors, blamed
+	// by the caller like the rest. No mark is known here, so a relation to a lifetime
+	// outside the binder is not judged, only a forcing to 'static and a relation between two
+	// of the binder's own lifetimes.
+	if trials := c.pendingRigidLts[queued:]; len(trials) > 0 {
+		graph := buildLtBoundSet(occOf(rigidLifetimes(trials)))
+		for _, pending := range trials {
+			if requires, ok := pending.violation(graph); ok {
+				errs = append(errs, &LifetimeBinderNotSatisfiedError{Name: requires.name, Requires: requires.text})
+			}
+		}
+	}
 	p.Discard()
 	return errs
 }

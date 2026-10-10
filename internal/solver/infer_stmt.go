@@ -47,6 +47,7 @@ func (c *checker) inferBlock(scope *Scope, lvl int, b *ast.Block) (soltype.Type,
 // and overwrites the name's binding in the current scope, so redeclaration rebinds
 // without constraining the old and new types together.
 func (c *checker) inferStmt(scope *Scope, lvl int, s ast.Stmt) soltype.Type {
+	c.markLifetimes(s)
 	// M4 G1: record the enclosing statement so a reassignment in expression position
 	// can find its CFG StmtRef for transition checking. A no-op outside a function
 	// body (c.fn == nil), where no liveness analysis ran.

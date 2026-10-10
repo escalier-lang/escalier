@@ -789,6 +789,10 @@ func (c *checker) inferComponent(
 	// closes a recursive cycle, so coalescing a return type now yields the μ-knot that cycle
 	// implies. Report each function in the component whose return type no finite value inhabits.
 	c.checkCanReturn()
+	// Every subtype check in the component has recorded what its sub required of a super
+	// signature's quantified lifetimes, so a requirement the signature's caller cannot be
+	// held to is reported now.
+	c.checkRigidLifetimes()
 
 	// Phase 3: rebind each value name to its coalesced monomorphic type. A binding
 	// whose declarations all failed to produce a definition (missing initializer,

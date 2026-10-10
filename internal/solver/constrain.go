@@ -2733,14 +2733,32 @@ func isNeverType(t soltype.Type) bool {
 // against ft as a supertype must satisfy it for every instantiation. `<T>(x: T) -> T` becomes
 // `(x: sk) -> sk` for a fresh skolem sk, which `fn (x) { return 5 }` fails but a polymorphic
 // identity satisfies. Its lifetime parameters become fresh variables carrying their declared
-// bounds, which absorb what the check records without touching the declared binder. Nothing
-// holds them rigid, so a term that works for one choice of them passes.
+// bounds, which absorb what the check records without touching the declared binder, and a
+// check is queued that reads them back once the enclosing component has solved.
 func (c *Context) skolemizeFuncBinder(ft *soltype.FuncType) *soltype.FuncType {
 	sub := c.skolemizeParams(ft.TypeParams)
-	for i, lt := range c.freshLifetimeArgs(ft, binderLevel(ft)) {
-		sub.lifetimes[ft.LifetimeParams[i].Var] = lt
+	if len(ft.LifetimeParams) > 0 {
+		lts := c.freshLifetimeArgs(ft, binderLevel(ft))
+		fresh := make([]*soltype.LifetimeVar, len(lts))
+		for i, lt := range lts {
+			sub.lifetimes[ft.LifetimeParams[i].Var] = lt
+			fresh[i] = lt.(*soltype.LifetimeVar)
+		}
+		c.queueRigidLifetimeCheck(ft.LifetimeParams, fresh)
 	}
 	return substFuncBinder(ft, sub)
+}
+
+// queueRigidLifetimeCheck records the fresh lifetimes a super binder was instantiated with,
+// for checkRigidLifetimes. The entry rolls back with the probe that recorded it, so a
+// discarded trial leaves no check behind. The checker's constrain wrapper stamps the site and
+// the mark afterwards.
+func (c *Context) queueRigidLifetimeCheck(params []*soltype.LifetimeParam, fresh []*soltype.LifetimeVar) {
+	if probe := c.probe; probe != nil {
+		queueLen := len(c.pendingRigidLts)
+		probe.onRollback(func() { c.pendingRigidLts = c.pendingRigidLts[:queueLen] })
+	}
+	c.pendingRigidLts = append(c.pendingRigidLts, &rigidLtCheck{params: params, fresh: fresh, mark: -1})
 }
 
 // skolemizeParams mints one fresh skolem per parameter and returns the substitution replacing
