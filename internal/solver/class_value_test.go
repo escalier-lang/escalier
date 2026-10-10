@@ -132,6 +132,50 @@ func TestClassValueBindsItsParametersOnEachSignature(t *testing.T) {
 			want:  "{new () -> Util, pick<'a: 'c, 'b: 'c, 'c>(a: &'a {x: number}, b: &'b {x: number}, k: boolean) -> &'c {x: number}}",
 		},
 		{
+			// The class has no constructor, so its parameters are read off the call
+			// signature's binder, and the class lifetime that `x` writes once is pinned
+			// rather than elided.
+			name: "a callable-only class keeps its lifetime on the call signature",
+			src: `declare class F<'a> {
+				p: &'a {x: number},
+				<'b>(x: &'a {x: number}, y: &'b {x: number}) -> &'b {x: number}
+			}`,
+			class: "F",
+			want:  "{<'a, 'b>(x: &'a {x: number}, y: &'b {x: number}) -> &'b {x: number}}",
+		},
+		{
+			// `'a` is the class's whether or not the signature writes it, the way `T` would
+			// be, so the binder carries every class lifetime ahead of the signature's own.
+			name: "a call signature carries a class lifetime it does not write",
+			src: `declare class F<'a, 'b> {
+				p: &'a {x: number},
+				q: &'b {x: number},
+				<'c>(y: &'b {x: number}, z: &'c {x: number}) -> &'c {x: number}
+			}`,
+			class: "F",
+			want:  "{<'a, 'b, 'c>(y: &'b {x: number}, z: &'c {x: number}) -> &'c {x: number}}",
+		},
+		{
+			// Each reference instantiates the value afresh, so the join fuses two copies.
+			// The result is still the class's value and keeps its lifetime pinned.
+			name: "a join of two references to a callable-only class keeps its lifetime",
+			src: `declare class F<'a> {
+				p: &'a {x: number},
+				<'b>(x: &'a {x: number}, y: &'b {x: number}) -> &'b {x: number}
+			}
+			val j = if true { F } else { F }`,
+			class: "j",
+			want:  "{<'a, 'b>(x: &'a {x: number}, y: &'b {x: number}) -> &'b {x: number}}",
+		},
+		{
+			name: "a callable-only class renders a bound naming its lifetime",
+			src: `declare class F<'a, T: &'a {x: number}> {
+				(x: T) -> T
+			}`,
+			class: "F",
+			want:  "{<T: &'a {x: number}, 'a>(x: T) -> T}",
+		},
+		{
 			name: "a static method naming a class lifetime is reported",
 			src: `class Holder<'a> {
 				peer: &'a mut {value: number},
