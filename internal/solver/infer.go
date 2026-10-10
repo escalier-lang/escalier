@@ -959,6 +959,8 @@ func (c *checker) inferExpr(scope *Scope, lvl int, e ast.Expr) soltype.Type {
 		return c.inferTryCatch(scope, lvl, e)
 	case *ast.UnaryExpr:
 		return c.inferUnary(scope, lvl, e)
+	case *ast.DoExpr:
+		return c.inferDo(scope, lvl, e)
 	case *ast.TypeCastExpr:
 		return c.inferTypeCast(scope, lvl, e)
 	case *ast.TemplateLitExpr:

@@ -64,10 +64,6 @@ var (
 	causeShadowedTypeParam = &solverSkipCause{
 		name: "a fixture returning the class's `T` where a method's own `T` shadows it",
 	}
-	causeDoExpressions = &solverSkipCause{
-		name:   "do expressions",
-		ticket: "#1656",
-	}
 	causeIndexAndComputed = &solverSkipCause{
 		name:   "index expressions, computed keys, and assignment to a member",
 		ticket: "#1715",
@@ -127,8 +123,6 @@ var solverSkips = []solverSkip{
 	{"generic_class", causeShadowedTypeParam, "cannot constrain T <: T | number"},
 	{"template_literals", causeScriptDecls, "Declaration not allowed in function body: TypeDecl"},
 	{"if_val", causeIfValNullish, "cannot constrain null <: number"},
-
-	{"do", causeDoExpressions, "Unsupported: DoExpr"},
 
 	{"class_with_computed_members", causeIndexAndComputed, "Unsupported: assignment to a member or index"},
 	{"class_with_getter_setter", causeIndexAndComputed, "Unsupported: IndexExpr"},
