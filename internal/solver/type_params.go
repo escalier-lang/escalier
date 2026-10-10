@@ -13,10 +13,11 @@ import (
 // Pass 2 resolves each parameter's default and then declares that parameter, so a default reads
 // only the earlier siblings, the ones instantiation can substitute for it. Pass 3 resolves each
 // lower bound into its var's lower bound and each constraint into its var's upper bound against
-// the full list, so a forward `<T: U, U>`, a mutual `<T: U, U: T>`, an F-bound `<T: Foo<T>>` and
-// a `<B >: T, T>` all resolve. Pass 4 checks each default and each lower bound against its own
-// parameter's constraint. The result stays in declaration order, and the alias, class, enum, and
-// function-annotation paths all route through here.
+// the full list, so a forward `<T: U, U>`, an F-bound `<T: Foo<T>>` and a `<B >: T, T>` all
+// resolve. A bound chain that reaches its own parameter, as `<T: U, U: T>` does, resolves too
+// and is then reported by reportBoundCycles. Pass 4 checks each default and each lower bound
+// against its own parameter's constraint. The result stays in declaration order, and the alias,
+// class, enum, and function-annotation paths all route through here.
 func (c *checker) resolveTypeParams(scope *Scope, lvl int, params []*ast.TypeParam) []*soltype.TypeParam {
 	c.reportRequiredAfterDefault(params)
 	c.reportDuplicateTypeParams(params)
@@ -57,6 +58,7 @@ func (c *checker) resolveTypeParams(scope *Scope, lvl int, params []*ast.TypePar
 			}
 		}
 	}
+	c.reportBoundCycles(params, out)
 	// Pass 4: check each default and each lower bound against its own parameter's
 	// constraint, and each default against its lower bound. `<T: string = number>`,
 	// `<B >: string: number>` and `<B >: number = string>` are each rejected at the
@@ -83,6 +85,124 @@ func (c *checker) resolveTypeParams(scope *Scope, lvl int, params []*ast.TypePar
 		}
 	}
 	return out
+}
+
+// reportBoundCycles reports each type parameter whose bound chain reaches the parameter
+// itself through bare parameters of the same list, in either direction. `<T: U, U: T>` is
+// one such chain and `<B >: B>` another. A chain steps from a parameter to the parameters its
+// bound is. That is the bound itself when it is a parameter, or each parameter among the
+// members of a union or an intersection at any depth, since `constrain` reaches each member
+// of either on its own. A transparent alias is read as its body, so `type Same<X> = X`
+// steps through `Same<U>`. `<T: Foo<T>>` over a class or object is not a cycle, as the chain
+// stops at Foo.
+//
+// Such a chain has no bound to end on. The body check reads a rigid parameter as a skolem
+// and follows its bounds, so it would reach the pair it started from and close it the way
+// it closes a recursive type. That lets `x > 1` check with `x: T` under `<T: U, U: T>`. Each
+// cycle is reported once, at its first parameter in declaration order, naming the
+// parameters it runs through. decls and params are the same list, as declared and as
+// resolved.
+func (c *checker) reportBoundCycles(decls []*ast.TypeParam, params []*soltype.TypeParam) {
+	index := make(map[*soltype.TypeVarType]int, len(params))
+	for i, p := range params {
+		index[p.Var] = i
+	}
+	upper := func(p *soltype.TypeParam) []int { return c.boundSteps(p.Constraint, index) }
+	lower := func(p *soltype.TypeParam) []int { return c.boundSteps(p.LowerBound, index) }
+	for _, direction := range []struct {
+		steps func(*soltype.TypeParam) []int
+		lower bool
+	}{{upper, false}, {lower, true}} {
+		// reported is per direction, so a cycle found in the upper pass does not hide one
+		// through the same parameters in the lower pass.
+		reported := make([]bool, len(params))
+		for i := range params {
+			if reported[i] {
+				continue
+			}
+			through, found := boundCycle(i, params, direction.steps)
+			if !found {
+				continue
+			}
+			reported[i] = true
+			throughDecls := make([]*ast.TypeParam, len(through))
+			for k, j := range through {
+				reported[j] = true
+				throughDecls[k] = decls[j]
+			}
+			c.report(&TypeParamBoundCycleError{Param: decls[i], Through: throughDecls, Lower: direction.lower})
+		}
+	}
+}
+
+// boundSteps returns the positions of the parameters bound steps to: the bound's own
+// position when it is a parameter, else the position of each parameter among the members
+// of a union or an intersection, nested to any depth, with a transparent alias read as its
+// body. A nil bound or any other type steps nowhere. An alias already read on the walk is
+// not read again, so `type A = A | U` contributes `U` once and stops.
+func (c *checker) boundSteps(bound soltype.Type, index map[*soltype.TypeVarType]int) []int {
+	var out []int
+	aliases := set.NewSet[string]()
+	var walk func(t soltype.Type)
+	walk = func(t soltype.Type) {
+		switch b := t.(type) {
+		case *soltype.TypeVarType:
+			if i, isParam := index[b]; isParam {
+				out = append(out, i)
+			}
+		case *soltype.UnionType:
+			for _, m := range b.Types {
+				walk(m)
+			}
+		case *soltype.IntersectionType:
+			for _, m := range b.Types {
+				walk(m)
+			}
+		case *soltype.AliasType:
+			if aliases.Contains(b.Name) {
+				return
+			}
+			aliases.Add(b.Name)
+			if body, ok := c.ctx.aliasBody(b); ok {
+				walk(body)
+			}
+		}
+	}
+	if bound != nil {
+		walk(bound)
+	}
+	return out
+}
+
+// boundCycle reports whether following steps from params[start] returns to start, and
+// returns the parameters a found cycle passes through on the way, in order and excluding
+// start. A cycle that never returns to start, as the `U` of `<T: U, U: U>` forms, is left for
+// its own first parameter to report.
+func boundCycle(start int, params []*soltype.TypeParam, steps func(*soltype.TypeParam) []int) ([]int, bool) {
+	visited := set.NewSet[int]()
+	var path []int
+	var walk func(i int) bool
+	walk = func(i int) bool {
+		for _, j := range steps(params[i]) {
+			if j == start {
+				return true
+			}
+			if visited.Contains(j) {
+				continue
+			}
+			visited.Add(j)
+			path = append(path, j)
+			if walk(j) {
+				return true
+			}
+			path = path[:len(path)-1]
+		}
+		return false
+	}
+	if walk(start) {
+		return path, true
+	}
+	return nil, false
 }
 
 // typeParamArity is how many type arguments a reference to a declaration may write, anywhere
