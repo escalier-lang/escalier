@@ -58,9 +58,11 @@ var (
 	causeScriptDecls = &solverSkipCause{
 		name: "a `type` or `declare fn` declaration at the top level of a script",
 	}
-	causeTypeCast = &solverSkipCause{
-		name:   "typecast expressions",
-		ticket: "#1655",
+	// The fixture is what is wrong here. `getValue<T>` declares its own `T`, which
+	// shadows the class's, and then returns `self.value`, which has the class's `T`.
+	// The solver rejects that return, and the old checker accepts it.
+	causeShadowedTypeParam = &solverSkipCause{
+		name: "a fixture returning the class's `T` where a method's own `T` shadows it",
 	}
 	causeDoExpressions = &solverSkipCause{
 		name:   "do expressions",
@@ -122,10 +124,10 @@ var solverSkips = []solverSkip{
 	{"function_overloading", causeAsyncResolvedReturn, "async function return type must be a Promise; write Promise<...> or Promise<_>"},
 
 	{"literals", causeRegexTypeAnn, "Unsupported: LitTypeAnn"},
+	{"generic_class", causeShadowedTypeParam, "cannot constrain T <: T | number"},
 	{"template_literals", causeScriptDecls, "Declaration not allowed in function body: TypeDecl"},
 	{"if_val", causeIfValNullish, "cannot constrain null <: number"},
 
-	{"generic_class", causeTypeCast, "Unsupported: TypeCastExpr"},
 	{"do", causeDoExpressions, "Unsupported: DoExpr"},
 
 	{"class_with_computed_members", causeIndexAndComputed, "Unsupported: assignment to a member or index"},
