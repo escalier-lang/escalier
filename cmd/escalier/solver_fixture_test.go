@@ -92,6 +92,9 @@ var (
 		name:   "a property read on a union whose arms do not all declare it",
 		ticket: "#1719",
 	}
+	causeCaughtValue = &solverSkipCause{
+		name: "a `catch` arm reading the caught value, which the solver types `unknown`",
+	}
 )
 
 // solverSkip is one fixture the solver cannot yet check, with the cause it waits on
@@ -113,11 +116,6 @@ type solverSkip struct {
 // other diagnostics surface once that one lands and the entry is re-seeded.
 var solverSkips = []solverSkip{
 	{"async_await", causeAmbientScope, "Unknown identifier: fetch"},
-	{"bin_and_lib", causeAmbientScope, "Unknown identifier: console"},
-	{"bin_only", causeAmbientScope, "Unknown identifier: console"},
-	{"logging", causeAmbientScope, "Unknown identifier: console"},
-	{"namespace_use_parent_symbol", causeAmbientScope, "cannot find type `Function`"},
-	{"try_catch", causeAmbientScope, "Unknown identifier: Error"},
 
 	{"function_overloading", causePrimitiveMember, "cannot constrain number <: object"},
 	{"function_overloading_with_deps", causePrimitiveMember, "cannot constrain number <: object"},
@@ -147,6 +145,8 @@ var solverSkips = []solverSkip{
 	{"pattern_matching", causePatterns, "object is missing property: area"},
 
 	{"interface", causeExtendsTypeArgs, "type alias `Box` expects 1 type argument but got 0"},
+
+	{"try_catch", causeCaughtValue, "cannot constrain unknown <: string"},
 
 	{"member_access", causeUnionMember, "the package is accepted, and error.txt records a rejection"},
 }
@@ -262,8 +262,9 @@ const preludeURI = "std:prelude"
 //
 // The prelude's own diagnostics are dropped. Every run loads it and it currently
 // reports two, so counting them would make all 73 fixtures look rejected. Clearing
-// them is #1664. Any other package's diagnostics are kept, because a fixture reaches
-// one only by importing it, which makes its failure part of that fixture's story.
+// them is #1664. Any other package's diagnostics are kept. A fixture reaches one by
+// importing it, which makes its failure part of that fixture's story, or through the
+// ambient scope, whose packages all check clean.
 func checkOnSolver(sources []*ast.Source) []string {
 	output := compiler.CheckPackage(sources)
 
@@ -383,23 +384,29 @@ type emitSkip struct {
 // an entry keeps logging until every fault behind it clears, so clearing a cause does
 // not always drop its entries.
 //
-// Every entry but one names `index.d.ts`. The emitted source map agrees on every
-// fixture the comparison reaches.
+// Most entries name `index.d.ts`. A fixture whose `index.js` differs also differs in
+// its source map whenever the difference moves a mapped position, so the two are held
+// back together.
 //
 // The entries are seeded from a run rather than predicted, and an entry that starts
 // agreeing fails, so the list burns down the way solverSkips does.
 var emitSkips = map[emitSkip]*solverSkipCause{
 	{"fix_point_combinator", "index.js"}: causeFieldReadBound,
+	{"bin_and_lib", "index.js"}:          causeEnumVariantValue,
+	{"bin_and_lib", "index.js.map"}:      causeEnumVariantValue,
 
+	{"bin_and_lib", "index.d.ts"}:                 causeEnumVariantValue,
 	{"enum", "index.d.ts"}:                        causeEnumVariantValue,
 	{"generic_enum", "index.d.ts"}:                causeEnumVariantValue,
 	{"extractor_inside_namespaces", "index.d.ts"}: causeEnclosingNamespacePrefix,
+	{"namespace_use_parent_symbol", "index.d.ts"}: causeEnclosingNamespacePrefix,
 	{"extractor_arg_with_init", "index.d.ts"}:     causePatterns,
 	{"generalize", "index.d.ts"}:                  causeUnusedParamNotGeneralized,
 	{"type_ann_index_signature", "index.d.ts"}:    causeIndexSignatureOptional,
+	{"logging", "index.d.ts"}:                     causeUndefinedReturn,
 }
 
-// causeFieldReadBound is the one `index.js` entry's cause. Reading a field whose type
+// causeFieldReadBound is the cause of `fix_point_combinator`'s `index.js` entry. Reading a field whose type
 // is a plain function emits `obj.f.bind(obj)` on the solver and `obj.f` on the checker.
 // A method read agrees on both, so the disagreement is only for a field, which declares
 // no receiver and so needs no binding.
@@ -447,6 +454,13 @@ var (
 	causeIndexSignatureOptional = &solverSkipCause{
 		name:   "the `?` on an index signature over an uncountable key set",
 		ticket: "#1775",
+	}
+	// A function whose written return is `undefined` emits `void`, so
+	// `fn main() -> undefined` emits `main(): void` where the twin writes
+	// `main(): undefined`.
+	causeUndefinedReturn = &solverSkipCause{
+		name:   "the `undefined` return a signature writes",
+		ticket: "#1820",
 	}
 )
 

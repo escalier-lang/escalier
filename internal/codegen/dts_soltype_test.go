@@ -1009,6 +1009,8 @@ func TestRefNameFromSol(t *testing.T) {
 		"Namespaced":     {"Geometry.Point", "Geometry.Point"},
 		"Imported":       {"import:std:array.Foo", "Foo"},
 		"ImportedNested": {"import:npm:a%2Eb.Geometry.Point", "Geometry.Point"},
+		"GroupMember":    {"import:std:async.std__error.Error", "Error"},
+		"WebGroupMember": {"import:std:async.web__fetch.Response", "Response"},
 		// A key that is a package prefix and nothing else names no declaration, so
 		// there is no path to strip down to and it is returned whole.
 		"PrefixWithoutName": {"import:std:prelude", "import:std:prelude"},

@@ -9,9 +9,9 @@ import (
 // InferScript infers a script. A script is a source file whose top-level statements
 // run in source order with function-body semantics, the bin/ counterpart to a
 // library module. It returns the populated script Scope, the Info side table, and any
-// SolverErrors. The returned scope is a child of the run's prelude scope, so the
-// prelude package's exports resolve through the parent and the operator table
-// through its parent in turn.
+// SolverErrors. The returned scope is a child of the run's ambient scope, which
+// layers the ambient builtins over the prelude package's exports and the operator
+// table.
 //
 // A module and a script differ in how their top-level declarations relate. InferModule
 // dependency-orders mutually-visible top-level declarations through the dep graph. A
@@ -43,9 +43,23 @@ import (
 // source supplies `std:prelude` the way it does for a module, since a script's rules
 // name the same `Array` and `Promise` a module's do.
 func InferScript(script *ast.Script, source ModuleSource) (*Scope, *Info, []SolverError) {
+	return inferScriptWithGroups(script, source, nil, nil)
+}
+
+// inferScriptWithGroups is InferScript with the groups a stdlib directory adds, the
+// script counterpart to inferModuleWithGroups.
+func inferScriptWithGroups(
+	script *ast.Script,
+	source ModuleSource,
+	groupSource GroupSource,
+	groups PackageGroups,
+) (*Scope, *Info, []SolverError) {
 	c := newChecker()
 	c.source = source
-	return c.inferScriptIn(c.preludeScope().Child(), script)
+	c.groupSource = groupSource
+	c.groups = groups
+	c.bindAmbientExports()
+	return c.inferScriptIn(c.ambientScope().Child(), script)
 }
 
 // InferScriptInLib infers script against the scope a library module's run produced, so

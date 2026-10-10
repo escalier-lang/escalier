@@ -1078,6 +1078,11 @@ func patToPatFromSol(pat soltype.Pat, names *paramNamer) (Pat, bool) {
 // `import:<uri>.` prefix TypeScript cannot write. Dropping it keeps the namespace
 // path: `import:std:array.Foo` renders `Foo`, and `Geometry.Point` is unchanged.
 //
+// A pseudo-package that loaded in a group puts its declarations under a namespace
+// named for the package, such as `std__error`. That namespace is dropped too, since
+// a pseudo-package declares TypeScript globals. `import:std:async.std__error.Error`
+// renders `Error`.
+//
 // The solver escapes the dots inside the URI, so the first dot after the prefix
 // is where the path starts.
 func refNameFromSol(qualifiedName string) string {
@@ -1087,10 +1092,27 @@ func refNameFromSol(qualifiedName string) string {
 	if !strings.HasPrefix(qualifiedName, packageKeyHead) {
 		return qualifiedName
 	}
-	if dot := strings.Index(qualifiedName, "."); dot != -1 {
-		return qualifiedName[dot+1:]
+	dot := strings.Index(qualifiedName, ".")
+	if dot == -1 {
+		return qualifiedName
 	}
-	return qualifiedName
+	path := qualifiedName[dot+1:]
+	if head, rest, nested := strings.Cut(path, "."); nested && isGroupNamespace(head) {
+		return rest
+	}
+	return path
+}
+
+// isGroupNamespace reports whether name is the namespace a pseudo-package's
+// declarations land under inside a load group, `<scheme>__<package>`. See
+// groupNamespace in internal/solver/stdlib_group_load.go.
+func isGroupNamespace(name string) bool {
+	for _, scheme := range []string{"std", "web", "node"} {
+		if strings.HasPrefix(name, scheme+"__") {
+			return true
+		}
+	}
+	return false
 }
 
 // containsSelfTypeFromSol reports whether t mentions `Self`. A binding whose type
