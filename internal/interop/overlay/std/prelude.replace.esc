@@ -150,3 +150,60 @@ export declare type NonNullable<T> = T & ~(undefined | null)
 export declare interface Disposable {
     [Symbol.dispose]() -> unknown
 }
+
+// A reader that accepts a `T` takes it through a binder bounded below by `T`, as
+// `includes<B>(&self, searchElement: B) where T: B`, rather than as `searchElement: T`.
+// `T` then occurs only in the binder's lower bound, an output position, so `Array` stays
+// covariant in `T` without a special rule for `&self` methods. The call widens `B` to admit
+// its argument, so `Array<number>.includes("s")` checks with `B = number | string` where
+// TypeScript rejects it. A reader that builds a new array returns it over `B`, since the
+// elements it holds are the receiver's and the arguments both.
+//
+// A replace restates every arm of the set it names, so the two cases below keep an arm the
+// lower-bounded form makes redundant rather than dropping it.
+//
+// `find`, `findLast` and `filter` are TypeScript type-guard overloads whose `value is S`
+// predicate the conversion drops. The guard's `S: T` would make `Array` invariant through a
+// binder nothing narrows, so it is folded into `T`, which leaves the arm the `-> unknown`
+// arm beside it with a narrower predicate type.
+//
+// `reduce` and `reduceRight` write their `U` arm ahead of the lower-bounded arm that also
+// takes an initial value. Every call the lower-bounded arm admits the `U` arm admits, and
+// tried first it would widen a `string` accumulator over `Array<number>` to
+// `number | string`.
+export declare class Array<T> {
+    find(&self, predicate: fn (value: T, index: number, obj: &Self) -> boolean, thisArg?: unknown) -> T | undefined,
+    find(&self, predicate: fn (value: T, index: number, obj: &Self) -> unknown, thisArg?: unknown) -> T | undefined,
+    includes<B>(&self, searchElement: B, fromIndex?: number) -> boolean where T: B,
+    findLast(&self, predicate: fn (value: T, index: number, array: &Self) -> boolean, thisArg?: unknown) -> T | undefined,
+    findLast(&self, predicate: fn (value: T, index: number, array: &Self) -> unknown, thisArg?: unknown) -> T | undefined,
+    toSpliced<B>(&self, start: number, deleteCount: number, ...items: mut Array<B>) -> Array<B> where T: B,
+    toSpliced(&self, start: number, deleteCount?: number) -> Array<T>,
+    with<B>(&self, index: number, value: B) -> Array<B> where T: B,
+    concat<B>(&self, ...items: mut Array<ConcatArray<B>>) -> Array<B> where T: B,
+    concat<B>(&self, ...items: mut Array<B | ConcatArray<B>>) -> Array<B> where T: B,
+    indexOf<B>(&self, searchElement: B, fromIndex?: number) -> number where T: B,
+    lastIndexOf<B>(&self, searchElement: B, fromIndex?: number) -> number where T: B,
+    filter(&self, predicate: fn (value: T, index: number, array: &Self) -> boolean, thisArg?: unknown) -> Array<T>,
+    filter(&self, predicate: fn (value: T, index: number, array: &Self) -> unknown, thisArg?: unknown) -> Array<T>,
+    reduce<B>(&self, callbackfn: fn (previousValue: B, currentValue: T, currentIndex: number, array: &Self) -> B) -> B where T: B,
+    reduce<U>(&self, callbackfn: fn (previousValue: U, currentValue: T, currentIndex: number, array: &Self) -> U, initialValue: U) -> U,
+    reduce<B>(&self, callbackfn: fn (previousValue: B, currentValue: T, currentIndex: number, array: &Self) -> B, initialValue: B) -> B where T: B,
+    reduceRight<B>(&self, callbackfn: fn (previousValue: B, currentValue: T, currentIndex: number, array: &Self) -> B) -> B where T: B,
+    reduceRight<U>(&self, callbackfn: fn (previousValue: U, currentValue: T, currentIndex: number, array: &Self) -> U, initialValue: U) -> U,
+    reduceRight<B>(&self, callbackfn: fn (previousValue: B, currentValue: T, currentIndex: number, array: &Self) -> B, initialValue: B) -> B where T: B,
+}
+
+// The iterator's own `reduce` and its two guard overloads are written as `Array`'s are,
+// for the same reasons. `ArrayIterator`, `MapIterator` and `SetIterator` expand to this
+// body, so an arm here that put `T` in an input position would make each of those
+// collections invariant through its iterator.
+export declare interface IteratorObject<T, TReturn = unknown, TNext = unknown> {
+    filter(predicate: fn (value: T, index: number) -> boolean) -> IteratorObject<T, undefined, unknown>,
+    filter(predicate: fn (value: T, index: number) -> unknown) -> IteratorObject<T, undefined, unknown>,
+    reduce<B>(callbackfn: fn (previousValue: B, currentValue: T, currentIndex: number) -> B) -> B where T: B,
+    reduce<U>(callbackfn: fn (previousValue: U, currentValue: T, currentIndex: number) -> U, initialValue: U) -> U,
+    reduce<B>(callbackfn: fn (previousValue: B, currentValue: T, currentIndex: number) -> B, initialValue: B) -> B where T: B,
+    find(predicate: fn (value: T, index: number) -> boolean) -> T | undefined,
+    find(predicate: fn (value: T, index: number) -> unknown) -> T | undefined,
+}
