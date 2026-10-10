@@ -3614,6 +3614,20 @@ func (c *checker) meetNexts(nexts []soltype.Type) soltype.Type {
 	}
 }
 
+// inferDo types `do { … }` as the value its block completes with, in a scope of its
+// own. A block that ends in a declaration or a value-free statement is `undefined`,
+// and a block that always leaves before its tail is `never`. A `return` inside the
+// block is a return point of the enclosing function, the way it is inside an `if`
+// branch.
+func (c *checker) inferDo(scope *Scope, lvl int, e *ast.DoExpr) soltype.Type {
+	t, diverges := c.inferBlock(scope.Child(), lvl, &e.Body)
+	if diverges {
+		t = &soltype.NeverType{}
+	}
+	c.recordType(e, t)
+	return t
+}
+
 // inferIfElse types `if cond { cons } else { alt }`. The condition is
 // constrained `<: boolean`; each branch is typed (an empty / missing else
 // contributes `undefined`); the result is a fresh join var with each NON-DIVERGING
