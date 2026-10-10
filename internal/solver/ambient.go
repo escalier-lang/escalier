@@ -111,12 +111,12 @@ type ambientBinder struct {
 // bindPackage binds every export of ns by the rules bindAmbientExports lists.
 // Names are visited in sorted order so a run does not depend on map iteration.
 func (b *ambientBinder) bindPackage(ns *Namespace) {
-	// besideValue holds the names of this package's types that share a name with one
-	// of its `@js` values. The first loop binds such a type next to its value, so
-	// `@js("Intl.Collator") class Collator` puts the type `Collator` in `Intl`. The
-	// second loop skips these names, which keeps the type from also binding at the
-	// top level.
-	besideValue := set.NewSet[string]()
+	// boundWithValue holds the names of this package's types that share a name with
+	// one of its `@js` values. The first loop binds such a type next to its value, so
+	// `@js("Intl.Collator") class Collator` puts the type `Collator` in `Intl`. It
+	// leaves the type unbound when an earlier package claimed the value. The second
+	// loop skips these names, which keeps the type from also binding at the top level.
+	boundWithValue := set.NewSet[string]()
 	for _, name := range slices.Sorted(maps.Keys(ns.Values)) {
 		vb := ns.Values[name]
 		path, ok := jsPath(vb.Sources)
@@ -128,7 +128,7 @@ func (b *ambientBinder) bindPackage(ns *Namespace) {
 		values, types := b.target(segments[:len(segments)-1])
 		tb, hasType := ns.Types[name]
 		if hasType {
-			besideValue.Add(name)
+			boundWithValue.Add(name)
 		}
 		// A class's value and type come from one declaration, so a package whose value
 		// lost the name to an earlier package does not bind its type there either.
@@ -141,7 +141,7 @@ func (b *ambientBinder) bindPackage(ns *Namespace) {
 		}
 	}
 	for _, name := range slices.Sorted(maps.Keys(ns.Types)) {
-		if besideValue.Contains(name) {
+		if boundWithValue.Contains(name) {
 			continue
 		}
 		if _, taken := b.scope.types[name]; !taken {
