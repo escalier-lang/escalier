@@ -11,7 +11,6 @@ import (
 	"testing"
 
 	"github.com/escalier-lang/escalier/internal/ast"
-	"github.com/escalier-lang/escalier/internal/set"
 	"github.com/stretchr/testify/require"
 )
 
@@ -375,12 +374,6 @@ func fixtureLibSources(t *testing.T, fixtureDir string) []*ast.Source {
 	return sources
 }
 
-// solverInferenceOverflows are fixtures whose inference overflows the stack on the
-// solver path, before any emission runs. A Go stack overflow is fatal and takes the
-// test binary with it, so these are skipped rather than allowed to fail. Tracked in
-// #1695.
-var solverInferenceOverflows = set.FromSlice([]string{"class_with_fluent_mutating_methods"})
-
 // TestSolverEmitsDefinitionsForEveryFixture is the done-condition of #1675: the solver
 // path renders a `.d.ts` for every fixture whose lib/ module the checker path renders
 // one for. The committed golden says which those are, so a fixture whose source does
@@ -397,9 +390,6 @@ func TestSolverEmitsDefinitionsForEveryFixture(t *testing.T) {
 			continue
 		}
 		t.Run(entry.Name(), func(t *testing.T) {
-			if solverInferenceOverflows.Contains(entry.Name()) {
-				t.Skip("inference overflows the stack on the solver path, see #1695")
-			}
 			fixtureDir := filepath.Join("..", "..", "fixtures", entry.Name())
 			sources := fixtureLibSources(t, fixtureDir)
 			if len(sources) == 0 {

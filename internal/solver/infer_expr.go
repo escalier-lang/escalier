@@ -60,7 +60,7 @@ func (c *checker) inferLiteral(e *ast.LiteralExpr) soltype.Type {
 // surfaces it and only a consumer that needs a value rejects it. The error then
 // fires once for both `f(Foo)` and a partial chain `f(A.B)`.
 func (c *checker) inferIdent(scope *Scope, lvl int, e *ast.IdentExpr) soltype.Type {
-	return c.demandValue(c.resolveIdentPath(scope, lvl, e, false), e)
+	return c.demandValue(c.resolveIdentPath(scope, lvl, e, false, false), e)
 }
 
 // pathResult is the sum returned by resolvePath: a path expression resolves to
@@ -91,7 +91,7 @@ type pathResult struct {
 func (c *checker) resolvePath(scope *Scope, lvl int, e ast.Expr, objPos bool) pathResult {
 	switch e := e.(type) {
 	case *ast.IdentExpr:
-		return c.resolveIdentPath(scope, lvl, e, objPos)
+		return c.resolveIdentPath(scope, lvl, e, objPos, objPos)
 	case *ast.MemberExpr:
 		return c.resolveMemberPath(scope, lvl, e, objPos)
 	case *ast.IndexExpr:
@@ -118,15 +118,26 @@ func (c *checker) demandValue(r pathResult, node ast.Expr) soltype.Type {
 // resolveIdentPath looks a bare identifier up in the value sort first, then the
 // namespace sort, returning whichever it finds.
 //
+// objPos is the flag resolvePath documents. chainRoot marks that e is the root of a
+// member or index chain, read or written. A root reads the binding's scheme, and any
+// other read of a binding that carries a Nominal type reads that type.
+//
 // Any binding still in scope has at least one scheme: inferComponent pre-binds
 // each group member to a fresh MonoScheme, and on failure deletes the binding
 // (scope.removeValue) rather than leaving it with an empty Schemes slice. So the
 // len > 0 check should never fail in practice — but Schemes is a slice, not a
 // guaranteed-non-empty field, so we guard it anyway: a malformed empty binding
 // degrades to an unknown-identifier error instead of panicking on Schemes[0].
-func (c *checker) resolveIdentPath(scope *Scope, lvl int, e *ast.IdentExpr, objPos bool) pathResult {
+func (c *checker) resolveIdentPath(scope *Scope, lvl int, e *ast.IdentExpr, objPos, chainRoot bool) pathResult {
 	if b, ok := scope.GetValue(e.Name); ok && len(b.Schemes) > 0 {
 		t := c.bindingValue(lvl, b)
+		// A bare `self` that leaves the body, as in `return self` or `f(self)`, is an
+		// instance of the class. The structural view shares the class body's own element
+		// pointers, so letting it escape into a member's inferred signature would make the
+		// body contain itself.
+		if b.Nominal != nil && !chainRoot {
+			t = b.Nominal
+		}
 		c.recordType(e, t)
 		// Record this read so the post-walk use-after-move pass can test it against the
 		// consumed lattice. The binding's coalesced type drives the reference-shape
@@ -251,7 +262,7 @@ func (c *checker) inferFunc(scope *Scope, lvl int, sig ast.FuncSig, body *ast.Bl
 	var selfParam *soltype.FuncParam
 	if member != nil {
 		lt := c.receiverLifetime(recv, lvl)
-		c.bindSelf(fnScope, recv, lt, member.body)
+		c.bindSelf(fnScope, recv, lt, member.class, member.body)
 		if recv != nil {
 			selfParam = receiverParam(recv, lt, member.class)
 		}
@@ -2535,6 +2546,10 @@ func (c *checker) inferWriteReceiver(scope *Scope, lvl int, e ast.Expr) soltype.
 			return c.mutFieldRead(lvl, e, e.Index, name, recv)
 		}
 		return c.inferExpr(scope, lvl, e)
+	case *ast.IdentExpr:
+		// Every call reaches here through a member or index object, so the identifier is the
+		// root of the chain being written. `self.x = v` writes through the structural view.
+		return c.demandValue(c.resolveIdentPath(scope, lvl, e, false, true), e)
 	default:
 		return c.inferExpr(scope, lvl, e)
 	}
