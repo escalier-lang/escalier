@@ -111,6 +111,11 @@ type ambientBinder struct {
 // bindPackage binds every export of ns by the rules bindAmbientExports lists.
 // Names are visited in sorted order so a run does not depend on map iteration.
 func (b *ambientBinder) bindPackage(ns *Namespace) {
+	// besideValue holds the names of this package's types that share a name with one
+	// of its `@js` values. The first loop binds such a type next to its value, so
+	// `@js("Intl.Collator") class Collator` puts the type `Collator` in `Intl`. The
+	// second loop skips these names, which keeps the type from also binding at the
+	// top level.
 	besideValue := set.NewSet[string]()
 	for _, name := range slices.Sorted(maps.Keys(ns.Values)) {
 		vb := ns.Values[name]
