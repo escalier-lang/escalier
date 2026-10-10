@@ -644,11 +644,14 @@ func (f *methodLtFreshener) ExitType(t soltype.Type, _ soltype.Polarity) soltype
 // lifetime parameters. It does not descend into a type variable's bounds.
 type lifetimeCollector struct {
 	out set.Set[*soltype.LifetimeVar]
+	// order holds the same variables in first-appearance order.
+	order []*soltype.LifetimeVar
 }
 
 func (v *lifetimeCollector) add(lt soltype.Lifetime) {
-	if lv, ok := lt.(*soltype.LifetimeVar); ok {
+	if lv, ok := lt.(*soltype.LifetimeVar); ok && !v.out.Contains(lv) {
 		v.out.Add(lv)
+		v.order = append(v.order, lv)
 	}
 }
 

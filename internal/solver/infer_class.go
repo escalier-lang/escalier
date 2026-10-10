@@ -2246,7 +2246,7 @@ func (c *checker) freezeClassBody(
 		case *soltype.MethodElem:
 			sigs := make([]*soltype.FuncType, len(e.Signatures))
 			for j, sig := range e.Signatures {
-				if cs, ok := coalesceKeeping(sig, soltype.Positive, keep, flow, keepLts).(*soltype.FuncType); ok {
+				if cs, ok := coalesceMemberSig(sig, keep, flow, keepLts).(*soltype.FuncType); ok {
 					sigs[j] = cs
 				} else {
 					sigs[j] = sig

@@ -108,15 +108,28 @@ func TestClassValueBindsItsParametersOnEachSignature(t *testing.T) {
 			want:  "{<'a>(x: &'a {x: number}) -> &'a {x: number}}",
 		},
 		{
-			// The static's binder claims 'a, so the free lifetime the other static leaves in
-			// the value takes the next name rather than colliding with it.
-			name: "a free lifetime skips a name a static's binder claims",
+			// `t` writes no lifetime, and its body ties the return to `q`. The inferred
+			// lifetime binds on `t` as a written one binds on `s`, so the value quantifies
+			// nothing and each static names its own `'a`.
+			name: "an inferred method lifetime binds on its own method",
 			src: `class Util {
 				static s<'a>(p: &'a {x: number}) -> &'a {x: number} { return p },
 				static t(q: &{x: number}) -> &{x: number} { return q },
 			}`,
 			class: "Util",
-			want:  "<'b> {new () -> Util, s<'a>(p: &'a {x: number}) -> &'a {x: number}, t(q: &'b {x: number}) -> &'b {x: number}}",
+			want:  "{new () -> Util, s<'a>(p: &'a {x: number}) -> &'a {x: number}, t<'a>(q: &'a {x: number}) -> &'a {x: number}}",
+		},
+		{
+			// The return joins both borrows, so the inferred binder carries the outlives
+			// bounds the join puts on them, as a top-level function's prefix would.
+			name: "an inferred method lifetime carries its outlives bounds",
+			src: `class Util {
+				static pick(a: &{x: number}, b: &{x: number}, k: boolean) -> &{x: number} {
+					return if k { a } else { b }
+				},
+			}`,
+			class: "Util",
+			want:  "{new () -> Util, pick<'a: 'c, 'b: 'c, 'c>(a: &'a {x: number}, b: &'b {x: number}, k: boolean) -> &'c {x: number}}",
 		},
 		{
 			name: "a static method naming a class lifetime is reported",

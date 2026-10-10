@@ -1546,6 +1546,10 @@ func (p *namedPrinter) nameLifetimeParams(lps []*LifetimeParam) {
 // returns the call that puts back whatever each variable was named before. A signature's own
 // lifetime parameters are then in scope only inside it, the way releaseNames scopes its type
 // parameters, and a variable an enclosing prefix named keeps that name afterwards.
+//
+// A parameter with no name is one the body inferred, and it takes the first of 'a, 'b, … that
+// no name in scope and no named parameter of the same signature claims, so a method whose
+// borrow the body tied to its return renders `t<'a>(q: &'a {x: number}) -> &'a {x: number}`.
 func (p *namedPrinter) scopeLifetimeNames(lps []*LifetimeParam) func() {
 	if len(lps) == 0 {
 		return func() {}
@@ -1555,16 +1559,34 @@ func (p *namedPrinter) scopeLifetimeNames(lps []*LifetimeParam) func() {
 		had  bool
 	}
 	saved := make(map[*LifetimeVar]prior, len(lps))
+	taken := set.NewSet[string]()
+	for _, name := range p.ltNames {
+		taken.Add(name)
+	}
 	for _, lp := range lps {
-		if lp.Name == "" {
-			continue
+		if lp.Name != "" {
+			taken.Add(lp.Name)
 		}
+	}
+	if p.ltNames == nil {
+		p.ltNames = map[*LifetimeVar]string{}
+	}
+	next := 0
+	for _, lp := range lps {
 		if _, done := saved[lp.Var]; !done {
 			name, had := p.ltNames[lp.Var]
 			saved[lp.Var] = prior{name: name, had: had}
 		}
+		name := lp.Name
+		if name == "" {
+			for name = lifetimeParamName(next); taken.Contains(name); name = lifetimeParamName(next) {
+				next++
+			}
+			next++
+			taken.Add(name)
+		}
+		p.ltNames[lp.Var] = name
 	}
-	p.nameLifetimeParams(lps)
 	return func() {
 		for v, was := range saved {
 			if was.had {
