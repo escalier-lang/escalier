@@ -217,6 +217,136 @@ val o = {[C.key]: 1}`},
 	}
 }
 
+// TestUniqueSymbolNamedByAValueOfItsType covers how a symbol a `readonly` property declares
+// renders. A `val` whose annotation is the declaring type names the symbol after its own
+// path, so `declare val i: I` gives `typeof i.key` and a key off it `[i.key]`. A `val` at
+// the module root wins over one in a namespace, and otherwise the first in source order
+// wins. Without such a `val` the symbol renders by its id.
+func TestUniqueSymbolNamedByAValueOfItsType(t *testing.T) {
+	const iface = "declare interface I { readonly key: unique symbol }\n"
+	tests := []struct {
+		name     string
+		srcs     map[string]string
+		want     map[string]string
+		wantErrs []string
+	}{
+		{
+			name: "ObjectTypeAlias",
+			srcs: map[string]string{"input.esc": "type T = {readonly tag: unique symbol}\ndeclare val t: T\nval k = t.tag\nval o = {[t.tag]: 1}"},
+			want: map[string]string{"k": "typeof t.tag", "o": "{[t.tag]: 1}"},
+		},
+		{
+			name: "InlineObjectType",
+			srcs: map[string]string{"input.esc": "declare val o: {readonly key: unique symbol}\nval k = o.key\nval p = {[o.key]: 1}"},
+			want: map[string]string{"k": "typeof o.key", "p": "{[o.key]: 1}"},
+		},
+		{
+			name: "NestedReadonlyProperty",
+			srcs: map[string]string{"input.esc": "declare val n: {readonly a: {readonly b: unique symbol}}\nval k = n.a.b"},
+			want: map[string]string{"k": "typeof n.a.b"},
+		},
+		{
+			// A property that is not `readonly` cannot declare a symbol, so nothing below it
+			// is reached through a fixed path.
+			name: "NestedWritableProperty",
+			srcs: map[string]string{"input.esc": "declare val n: {a: {readonly b: unique symbol}}\nval k = n.a.b"},
+			want: map[string]string{"k": "unique symbol#0"},
+		},
+		{
+			// Reading an optional property can produce `undefined`, so no path names the
+			// symbol alone.
+			name: "OptionalProperty",
+			srcs: map[string]string{"input.esc": "declare val o: {readonly key?: unique symbol}\nval k = o.key"},
+			want: map[string]string{"k": "undefined | unique symbol#0"},
+		},
+		{
+			name: "InterfaceThatExtends",
+			srcs: map[string]string{"input.esc": `declare interface Base { x: number }
+declare interface I extends Base { readonly key: unique symbol }
+declare val i: I
+val k = i.key`},
+			want: map[string]string{"k": "typeof i.key"},
+		},
+		{
+			// `keys.i` comes first in source order, and the root `r` still wins.
+			name: "RootValWinsOverNamespacedVal",
+			srcs: map[string]string{
+				"input.esc":  iface + "val k = r.key",
+				"keys/a.esc": "export declare val i: I",
+				"z.esc":      "declare val r: I",
+			},
+			want: map[string]string{"k": "typeof r.key"},
+		},
+		{
+			name: "QuotedKey",
+			srcs: map[string]string{"input.esc": "declare val o: {readonly \"a-b\": unique symbol}\nval k = o[\"a-b\"]"},
+			want: map[string]string{"k": "unique symbol#0"},
+		},
+		{
+			name: "FirstValWins",
+			srcs: map[string]string{"input.esc": iface + "declare val i: I\ndeclare val j: I\nval k = j.key"},
+			want: map[string]string{"k": "typeof i.key"},
+		},
+		{
+			// The function reads the key through its parameter and may be inferred before
+			// `i`, which it does not refer to. The name is still the one `i` gives.
+			name: "ValDeclaredAfterTheUse",
+			srcs: map[string]string{"input.esc": iface + `fn wrap(x: &I) { return {[x.key]: 1} }
+fn read(x: &I) { return x.key }
+declare val i: I`},
+			want: map[string]string{"wrap": "fn (x: &I) -> {[i.key]: 1}", "read": "fn (x: &I) -> typeof i.key"},
+		},
+		{
+			// `make` builds its key through a parameter, and `o[i.key]` reads it through `i`.
+			// Both spell one member, so the read finds it.
+			name: "KeysBuiltTwoWaysMatch",
+			srcs: map[string]string{"input.esc": iface + `fn make(x: &I) { return {[x.key]: 1} }
+declare val i: I
+val o = make(i)
+val r = o[i.key]
+val p = {[i.key]: "x"}
+fn readP(x: &I) { return p[x.key] }`},
+			want: map[string]string{"o": "{[i.key]: 1}", "r": "1", "readP": `fn (x: &I) -> "x"`},
+		},
+		{
+			name: "NamespacedVal",
+			srcs: map[string]string{
+				"input.esc":  iface + "val k = keys.i.key\nval o = {[keys.i.key]: 1}",
+				"keys/i.esc": "export declare val i: I",
+			},
+			want: map[string]string{"k": "typeof keys.i.key", "o": "{[keys.i.key]: 1}"},
+		},
+		{
+			name: "NoValOfTheType",
+			srcs: map[string]string{"input.esc": iface + "fn read(x: &I) { return {[x.key]: 1} }"},
+			want: map[string]string{"read": "fn (x: &I) -> {[unique symbol#0]: 1}"},
+		},
+		{
+			// A `var` may be reassigned, so no path through it holds one symbol.
+			name: "VarOfTheType",
+			srcs: map[string]string{"input.esc": iface + "declare var v: I\nval k = v.key"},
+			want: map[string]string{"k": "unique symbol#0"},
+		},
+		{
+			name: "MissingPropertyNamesTheSymbol",
+			srcs: map[string]string{"input.esc": `declare interface I { readonly key: unique symbol, readonly other: unique symbol }
+declare val i: I
+val o = {[i.key]: 1}
+val r = o[i.other]`},
+			wantErrs: []string{"4:11-4:18: object is missing property: [i.other]"},
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			values, _, errs := inferSources(t, tt.srcs)
+			require.Equal(t, tt.wantErrs, messagesWithSpan(t, errs))
+			for name, want := range tt.want {
+				require.Equal(t, want, values[name], name)
+			}
+		})
+	}
+}
+
 // TestUniqueSymbolPosition covers where a `unique symbol` annotation may be written. It
 // names one symbol, so it is allowed only on a declaration that cannot be reassigned: a
 // `val` declaration, a `static readonly` class field, and a `readonly` property of an
@@ -275,12 +405,12 @@ func TestUniqueSymbolPosition(t *testing.T) {
 		{
 			name: "ReadonlyPropertyOfAnObjectType",
 			src:  "declare val o: {readonly key: unique symbol}\nval k = o.key",
-			want: map[string]string{"k": "unique symbol#0"},
+			want: map[string]string{"k": "typeof o.key"},
 		},
 		{
 			name: "ReadonlyPropertyOfAnInterface",
 			src:  "declare interface I { readonly key: unique symbol }\ndeclare val i: I\nval k = i.key\nval o = {[i.key]: 1}",
-			want: map[string]string{"k": "unique symbol#0", "o": "{[unique symbol#0]: 1}"},
+			want: map[string]string{"k": "typeof i.key", "o": "{[i.key]: 1}"},
 		},
 		{
 			name:     "PropertyThatIsNotReadonly",

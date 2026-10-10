@@ -59,6 +59,12 @@ type solTypeAnnBuilder struct {
 	// typeofSymbols, when true, renders a unique symbol that symbolKeys holds a name for as
 	// `typeof sym`. When it is false, every unique symbol renders as `unique symbol`.
 	typeofSymbols bool
+	// symbolDeclarers maps the id of a unique symbol a property declares to the object
+	// type holding that property. That property renders the symbol as `unique symbol`,
+	// since it is the declaration a `typeof i.key` elsewhere refers to. The object is
+	// compared by pointer. An alias or interface body is the one object its declaration
+	// stores, so the declaration renders that same pointer. A nil map names no declarer.
+	symbolDeclarers map[int]*soltype.ObjectType
 }
 
 // newSolTypeAnnBuilder returns a renderer for one declaration. typeParams are
@@ -461,6 +467,10 @@ func (b *solTypeAnnBuilder) objectTypeAnn(t *soltype.ObjectType) TypeAnn {
 			mappedAnns = append(mappedAnns, NewObjectTypeAnn(b.objTypeAnnElems(mapped)))
 			continue
 		}
+		if decl, declares := b.symbolDeclaration(t, elem); declares {
+			otherElems = append(otherElems, decl)
+			continue
+		}
 		otherElems = append(otherElems, b.objTypeAnnElems(elem)...)
 	}
 
@@ -476,6 +486,31 @@ func (b *solTypeAnnBuilder) objectTypeAnn(t *soltype.ObjectType) TypeAnn {
 		return mappedAnns[0]
 	}
 	return NewObjectTypeAnn(otherElems)
+}
+
+// symbolDeclaration returns the `readonly key: unique symbol` property `elem` emits when
+// it is the property of `obj` that declares a unique symbol, and false for any other
+// element. Rendering that symbol as `typeof i.key` would make the declaration refer to
+// itself, which TypeScript rejects as circular.
+func (b *solTypeAnnBuilder) symbolDeclaration(obj *soltype.ObjectType, elem soltype.ObjTypeElem) (ObjTypeAnnElem, bool) {
+	prop, isProp := elem.(*soltype.PropertyElem)
+	if !isProp {
+		return nil, false
+	}
+	sym, isSym := prop.Type.(*soltype.UniqueSymbolType)
+	if !isSym || b.symbolDeclarers[sym.ID] != obj {
+		return nil, false
+	}
+	key, ok := b.objKeyFromSol(prop.Name)
+	if !ok {
+		return nil, false
+	}
+	return &PropertyTypeAnn{
+		Name:     key,
+		Optional: prop.Optional,
+		Readonly: prop.Readonly,
+		Value:    NewUniqueSymbolTypeAnn(nil),
+	}, true
 }
 
 // objTypeAnnElems lowers one soltype ObjTypeElem to the elements it emits. A
@@ -1010,9 +1045,20 @@ func (b *solTypeAnnBuilder) objKeyFromSol(name string) (ObjKey, bool) {
 		if !named {
 			return nil, false
 		}
-		return NewComputedKey(NewIdentExpr(symName, "", nil), nil), true
+		return NewComputedKey(qualifiedExprFromSol(symName), nil), true
 	}
 	return NewStrLit(name, nil), true
+}
+
+// qualifiedExprFromSol splits a dotted value path such as `i.key`, which soltype carries
+// as one string, into the member expression that reads it.
+func qualifiedExprFromSol(path string) Expr {
+	parts := strings.Split(path, ".")
+	var expr Expr = NewIdentExpr(parts[0], "", nil)
+	for _, part := range parts[1:] {
+		expr = NewMemberExpr(expr, NewIdentifier(part, nil), false, nil)
+	}
+	return expr
 }
 
 // convertQualIdentFromSol splits a dotted reference such as `p.inner`, which

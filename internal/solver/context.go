@@ -366,8 +366,8 @@ func (c *Context) freshVar(level int) *soltype.TypeVarType {
 // declarations of `unique symbol` are two values, and nothing about either is written down
 // for a reader to compare instead.
 //
-// `name` is the dotted path of the declaration the symbol belongs to, such as `sym` or
-// `C.key`, and is empty when no declaration names it. The symbol carries it for display.
+// `name` is the dotted path a program reads the symbol through, such as `sym`, `C.key`, or
+// `i.key`, and is empty when no such path exists. The symbol carries it for display.
 func (c *Context) freshSymbol(name string) *soltype.UniqueSymbolType {
 	s := &soltype.UniqueSymbolType{ID: c.symbolCounter, Name: name}
 	c.symbolCounter++

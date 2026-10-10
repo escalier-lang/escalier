@@ -24,7 +24,10 @@ import (
 // The spelling holds the name because a member carries nothing but its spelling, and
 // rendering the key as `[sym]` needs the name. The name does not change which members
 // match. A symbol's name is fixed when the symbol is minted, so every member
-// keyed off one symbol carries the same spelling.
+// keyed off one symbol carries the same spelling. A name that comes from a later
+// declaration, such as the `val i: I` that names `I`'s `readonly key: unique symbol`
+// `i.key`, is chosen before the symbol is minted. internal/solver/symbol_owner.go
+// chooses it.
 //
 // The prefixes are an internal spelling and never reach a reader. Every name that does
 // goes through DisplayMemberName or printObjectKeyName, which render `[Symbol.iterator]`,

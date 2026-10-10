@@ -1312,11 +1312,13 @@ type SelfType struct {
 // Every unique symbol is a subtype of `symbol`, and no two distinct ones are subtypes of
 // each other. That pair of rules is the whole of its place in the lattice.
 //
-// Name is the dotted path of the declaration that minted the symbol, such as `sym` for
+// Name is the dotted path a program reads the symbol through, such as `sym` for
 // `declare val sym: unique symbol` or `C.key` for a class's `static readonly key: unique
-// symbol`. It is empty when the symbol was minted where no declaration names it. It is
-// for display only. It is set when the symbol is minted and never changes, so one id
-// always carries one name. Two symbols are the same exactly when their ids are.
+// symbol`. A symbol a `readonly` property declares takes the path of a `val` whose type
+// declares that property, so `interface I { readonly key: unique symbol }` with `declare
+// val i: I` gives `i.key`. Name is empty when no such path exists. It is for display
+// only. It is set when the symbol is minted and never changes, so one id always carries
+// one name. Two symbols are the same exactly when their ids are.
 type UniqueSymbolType struct {
 	ID   int
 	Name string

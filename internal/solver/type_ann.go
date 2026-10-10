@@ -35,8 +35,12 @@ func (c *checker) resolveTypeAnn(scope *Scope, ta ast.TypeAnn, lvl int) (soltype
 // `position` is the kind of declaration. A bare `unique symbol` annotation in an allowed
 // position mints a symbol carrying `name`, so `declare val sym: unique symbol` renders as
 // `typeof sym`. In any other position it reports UniqueSymbolPositionError and resolves
-// to `symbol`. Every other annotation resolves as resolveTypeAnn resolves it. An empty
-// `name` mints an unnamed symbol.
+// to `symbol`. An empty `name` mints an unnamed symbol.
+//
+// An object type annotation in an allowed position names the symbols its `readonly`
+// properties mint after `name` and the property, so `declare val o: {readonly key: unique
+// symbol}` renders `o.key` as `typeof o.key`. Every other annotation resolves as
+// resolveTypeAnn resolves it.
 func (c *checker) resolveDeclaredTypeAnn(scope *Scope, ta ast.TypeAnn, lvl int, name string, position uniqueSymbolPosition) (soltype.Type, bool) {
 	if usa, ok := ta.(*ast.UniqueSymbolTypeAnn); ok {
 		if position != uniqueSymbolAllowed {
@@ -46,7 +50,25 @@ func (c *checker) resolveDeclaredTypeAnn(scope *Scope, ta ast.TypeAnn, lvl int, 
 		c.recordType(usa, t)
 		return t, true
 	}
+	if position == uniqueSymbolAllowed {
+		return c.resolveOwnedTypeAnn(scope, ta, lvl, name)
+	}
 	return c.resolveTypeAnn(scope, ta, lvl)
+}
+
+// resolveOwnedTypeAnn resolves the annotation of one value, where `owner` is that value's
+// dotted path. An object type annotation resolves through resolveOwnedObjectTypeAnn, so
+// the symbols its `readonly` properties mint are named after `owner`. Every other
+// annotation, and any annotation under an empty `owner`, resolves as resolveTypeAnn
+// resolves it.
+func (c *checker) resolveOwnedTypeAnn(scope *Scope, ta ast.TypeAnn, lvl int, owner string) (soltype.Type, bool) {
+	obj, isObj := ta.(*ast.ObjectTypeAnn)
+	if !isObj || owner == "" {
+		return c.resolveTypeAnn(scope, ta, lvl)
+	}
+	t, ok := c.resolveOwnedObjectTypeAnn(scope, obj, lvl, owner)
+	c.recordType(obj, t)
+	return t, ok
 }
 
 // rejectUniqueSymbol reports a `unique symbol` annotation written in `position` and
@@ -249,6 +271,14 @@ func (c *checker) resolveTypeAnnType(scope *Scope, ta ast.TypeAnn, lvl int) (sol
 // value to a fresh var and keeps the object shape — cascade-safe, mirroring the
 // Promise<bad> recovery. The arm therefore always returns ok=true.
 func (c *checker) resolveObjectTypeAnn(scope *Scope, ta *ast.ObjectTypeAnn, lvl int) (soltype.Type, bool) {
+	return c.resolveOwnedObjectTypeAnn(scope, ta, lvl, "")
+}
+
+// resolveOwnedObjectTypeAnn resolves an object type annotation the way resolveObjectTypeAnn
+// does, where `owner` is the dotted path of the value the object describes. A `unique
+// symbol` on a required `readonly` property `key` written under an identifier mints a
+// symbol named `<owner>.key`. An empty `owner` mints every such symbol unnamed.
+func (c *checker) resolveOwnedObjectTypeAnn(scope *Scope, ta *ast.ObjectTypeAnn, lvl int, owner string) (soltype.Type, bool) {
 	// A `...A` spread and a `[K]: V for K in Keys` mapped member each make the object an unreduced
 	// residual whose final member list the evaluator computes. Either one puts the whole object on
 	// the ordered path below, which keeps source order for the override merge.
@@ -268,7 +298,7 @@ func (c *checker) resolveObjectTypeAnn(scope *Scope, ta *ast.ObjectTypeAnn, lvl 
 	// members collapse here to the unique-key shape Prop and equalType assume. A residual object
 	// keeps source order for the override merge and collapses in reduceObject once its spreads
 	// and mapped members ground.
-	lowering := &objAnnLowering{c: c, scope: scope, lvl: lvl}
+	lowering := &objAnnLowering{c: c, scope: scope, lvl: lvl, owner: owner}
 	unsupported := false
 	var elems []soltype.ObjTypeElem
 	if !hasResidual {
@@ -325,6 +355,9 @@ type objAnnLowering struct {
 	c     *checker
 	scope *Scope
 	lvl   int
+	// owner is the dotted path of the value the object describes, and empty when no one
+	// value has the object type. resolveOwnedObjectTypeAnn describes what it names.
+	owner string
 	// sawCtor records that a `new (…) -> T` member was already lowered.
 	sawCtor bool
 	// callable is the element the first `fn (…) -> T` member produced, nil until one is
@@ -351,7 +384,7 @@ type objAnnLowering struct {
 func (l *objAnnLowering) lower(elem ast.ObjTypeAnnElem) (soltype.ObjTypeElem, bool) {
 	switch elem := elem.(type) {
 	case *ast.PropertyTypeAnn:
-		name, ft, ok := l.c.resolveObjectProperty(l.scope, elem, l.lvl)
+		name, ft, ok := l.c.resolveObjectProperty(l.scope, elem, l.lvl, l.owner)
 		if !ok {
 			return nil, true
 		}
@@ -536,7 +569,10 @@ func mappedModifier(m *ast.MappedModifier) soltype.MappedModifier {
 // resolved field type. It reports false only when the property key is not a static name. A missing
 // or unsupported value annotation recovers to a fresh var, keeping the object shape cascade-safe,
 // mirroring the Promise<bad> recovery. Shared by the spread-free and spread-carrying paths.
-func (c *checker) resolveObjectProperty(scope *Scope, prop *ast.PropertyTypeAnn, lvl int) (string, soltype.Type, bool) {
+//
+// `owner` is the dotted path of the value the enclosing object describes, as
+// resolveOwnedObjectTypeAnn describes it.
+func (c *checker) resolveObjectProperty(scope *Scope, prop *ast.PropertyTypeAnn, lvl int, owner string) (string, soltype.Type, bool) {
 	name, ok := objKeyName(prop.Name)
 	if !ok {
 		c.reportUnsupported(prop.Name)
@@ -555,13 +591,20 @@ func (c *checker) resolveObjectProperty(scope *Scope, prop *ast.PropertyTypeAnn,
 			value = mta.Target
 		}
 		// A `readonly` property cannot be reassigned, so it may carry a `unique symbol`, as
-		// `SymbolConstructor`'s `readonly iterator: unique symbol` does in TypeScript. The
-		// property has no declaration path to name the symbol by.
+		// `SymbolConstructor`'s `readonly iterator: unique symbol` does in TypeScript.
 		position := uniqueSymbolAllowed
 		if !prop.Readonly {
 			position = uniqueSymbolOnProperty
 		}
-		if t, ok := c.resolveDeclaredTypeAnn(scope, value, lvl, "", position); ok {
+		// The property is reached as `<owner>.key` when the object describes one value and
+		// the key is an identifier. A quoted or computed key has no such path. Reading an
+		// optional property can produce `undefined`, so `typeof i.key` would not name the
+		// symbol alone and a key cannot be written through it.
+		symName := ""
+		if ident, isIdent := prop.Name.(*ast.IdentExpr); isIdent && owner != "" && !prop.Optional {
+			symName = owner + "." + ident.Name
+		}
+		if t, ok := c.resolveDeclaredTypeAnn(scope, value, lvl, symName, position); ok {
 			ft = t
 		}
 	}

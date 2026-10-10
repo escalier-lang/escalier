@@ -10,7 +10,7 @@ import (
 
 // Overload resolution, introduced in PR6. A name with more than one top-level FuncDecl
 // is an overload set. Its ValueBinding carries one TypeScheme per arm ordered by source
-// position. armPosLess in module.go defines that order as file path, then line, then column.
+// position. declPosLess in module.go defines that order as file path, then line, then column.
 // A set whose arms span several files in a lib/ therefore reads top-to-bottom, file by
 // file alphabetically, independent of the order sources reached the parser.
 //

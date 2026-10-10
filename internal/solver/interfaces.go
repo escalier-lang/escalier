@@ -37,6 +37,10 @@ type interfaceShell struct {
 	ns string
 	// def is the registered AliasDef with a nil Body. inferInterfaceBody fills it.
 	def *AliasDef
+	// symbolOwner is the path of the value that names the unique symbols the interface
+	// declares, such as `i` for `declare val i: I`, and empty when no value does. See
+	// symbolOwners.
+	symbolOwner string
 }
 
 // preBindInterface resolves the group's type parameters, registers an AliasDef
@@ -99,12 +103,13 @@ func (c *checker) preBindInterface(scope *Scope, lvl int, decls []*ast.Interface
 	c.recordType(first.Name, t)
 
 	return &interfaceShell{
-		decls:     decls,
-		lvl:       lvl,
-		qname:     qname,
-		declScope: declScope,
-		ns:        ns,
-		def:       def,
+		decls:       decls,
+		lvl:         lvl,
+		qname:       qname,
+		declScope:   declScope,
+		ns:          ns,
+		def:         def,
+		symbolOwner: c.symbolOwners[declScopeKey(ns, first.Name.Name)],
 	}
 }
 
@@ -155,7 +160,7 @@ func (c *checker) inferInterfaceBody(sh *interfaceShell) {
 			continue
 		}
 		recordInterfaceReceivers(sh.def, decl.TypeAnn)
-		resolved, ok := c.resolveObjectTypeAnn(bodyScope, decl.TypeAnn, sh.lvl)
+		resolved, ok := c.resolveOwnedObjectTypeAnn(bodyScope, decl.TypeAnn, sh.lvl, sh.symbolOwner)
 		if !ok {
 			continue
 		}

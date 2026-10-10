@@ -186,9 +186,14 @@ func (c *checker) inferDepGraph(scope *Scope, lvl int, module *ast.Module, g *de
 	// load of another package.
 	prevOnDefine := target.onDefine
 	target.onDefine = func(key string) { c.routeToNamespace(target, key) }
+	// Each symbol owner is chosen before any component is walked, since an interface's
+	// symbols are minted before the `val` that names them is reached.
+	prevOwners := c.symbolOwners
+	c.symbolOwners = symbolOwners(module, g)
 	defer func() {
 		target.onDefine = prevOnDefine
 		c.nsIndex = nil
+		c.symbolOwners = prevOwners
 	}()
 	// M4 E3: dep_graph fans one top-level destructuring `val {x, y} = …` across one
 	// SCC component per leaf key. Its initializer is typed and its pattern bound
@@ -1136,14 +1141,15 @@ func annotatedOverloadArms(g *dep_graph.DepGraph, key dep_graph.BindingKey) []*a
 	return funcs
 }
 
-// armPosLess orders two overload arms by SOURCE POSITION: file path (alphabetical),
+// declPosLess orders two declarations by SOURCE POSITION: file path (alphabetical),
 // then line, then column. This is the canonical "declaration order" the overload
 // resolver falls back to when specificity is a tie (see overload.go) — pinned to
 // position rather than to the order sources happened to reach the parser, so a name
 // whose arms span several files in a lib/ resolves as "first matching arm, reading
-// top-to-bottom, file by file alphabetically". module maps a Span's SourceID back to
-// its path, and arms within one file compare by the byte offset they start at.
-func armPosLess(module *ast.Module, a, b *ast.FuncDecl) bool {
+// top-to-bottom, file by file alphabetically". symbolOwners reads the same order. module
+// maps a Span's SourceID back to its path, and declarations within one file compare by
+// the byte offset they start at.
+func declPosLess(module *ast.Module, a, b ast.Decl) bool {
 	as, bs := a.Span(), b.Span()
 	ap, bp := module.GetSourcePath(as.SourceID), module.GetSourcePath(bs.SourceID)
 	if ap != bp {
@@ -1153,20 +1159,20 @@ func armPosLess(module *ast.Module, a, b *ast.FuncDecl) bool {
 }
 
 // sortArmDecls stable-sorts overload arm declarations into source-position order
-// (armPosLess). Used in phase 1 to order a signature-bound set's signatures so recursive
+// (declPosLess). Used in phase 1 to order a signature-bound set's signatures so recursive
 // resolution within the component matches the final exported order.
 func sortArmDecls(module *ast.Module, decls []*ast.FuncDecl) {
 	sort.SliceStable(decls, func(i, j int) bool {
-		return armPosLess(module, decls[i], decls[j])
+		return declPosLess(module, decls[i], decls[j])
 	})
 }
 
 // sortArms stable-sorts collected overload arms into source-position order
-// (armPosLess), keeping each arm's scheme/source/Info index aligned. Used in phase 3
+// (declPosLess), keeping each arm's scheme/source/Info index aligned. Used in phase 3
 // before the multi-scheme binding is assembled.
 func sortArms(module *ast.Module, arms []overloadArm) {
 	sort.SliceStable(arms, func(i, j int) bool {
-		return armPosLess(module, arms[i].decl, arms[j].decl)
+		return declPosLess(module, arms[i].decl, arms[j].decl)
 	})
 }
 

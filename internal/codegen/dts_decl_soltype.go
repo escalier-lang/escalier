@@ -1,6 +1,7 @@
 package codegen
 
 import (
+	"maps"
 	"sort"
 	"strings"
 
@@ -70,7 +71,8 @@ func (b *Builder) BuildDefinitionsFromSol(
 	}
 	sort.Strings(namespaceNames)
 
-	b.solSymbolKeys = symbolKeysFromSol(depGraph, root, namespaceGroups[""])
+	b.solSymbolDeclarers = map[int]*soltype.ObjectType{}
+	b.solSymbolKeys = symbolKeysFromSol(depGraph, root, namespaceGroups[""], b.solSymbolDeclarers)
 
 	// A class and an enum each hold a type binding and a value binding pointing at one
 	// declaration, so the walk would reach the declaration twice without this.
@@ -125,10 +127,22 @@ func (b *Builder) BuildDefinitionsFromSol(
 // `declare val sym: unique symbol` mints even when `val s2 = sym` holds it too.
 // Otherwise the first binding in that order names it.
 //
+// A symbol a `readonly` property of a binding's type declares is named by its path from
+// that binding. With `interface I { readonly key: unique symbol }` and `declare val i:
+// I`, the symbol is named `i.key`, so a key off it renders `[i.key]`. Only the binding
+// the solver named the symbol after qualifies. declaredPropertySymbols finds these
+// symbols, and records in `declarers` the object type each one is declared in.
+//
 // A binding inside a namespace block is left out. A declaration outside the block can
 // reach it only through the namespace's path, and only when the block exports it.
-func symbolKeysFromSol(depGraph *dep_graph.DepGraph, root SolNamespace, keys []dep_graph.BindingKey) map[int]string {
+func symbolKeysFromSol(
+	depGraph *dep_graph.DepGraph,
+	root SolNamespace,
+	keys []dep_graph.BindingKey,
+	declarers map[int]*soltype.ObjectType,
+) map[int]string {
 	symbolKeys := map[int]string{}
+	var declared []*soltype.UniqueSymbolType
 	for _, key := range keys {
 		for _, decl := range depGraph.GetDecls(key) {
 			varDecl, ok := decl.(*ast.VarDecl)
@@ -142,6 +156,9 @@ func symbolKeysFromSol(depGraph *dep_graph.DepGraph, root SolNamespace, keys []d
 				if !ok {
 					continue
 				}
+				for _, obj := range declaredObjectsFromSol(root, t) {
+					declared = append(declared, declaredPropertySymbols(obj, name, declarers)...)
+				}
 				sym, ok := t.(*soltype.UniqueSymbolType)
 				if !ok {
 					continue
@@ -152,7 +169,66 @@ func symbolKeysFromSol(depGraph *dep_graph.DepGraph, root SolNamespace, keys []d
 			}
 		}
 	}
+	// The path a property declares a symbol under is the name the solver gave it, so it
+	// wins over any binding that merely holds the symbol, such as `val k = i.key`.
+	for _, sym := range declared {
+		symbolKeys[sym.ID] = sym.Name
+	}
 	return symbolKeys
+}
+
+// declaredObjectsFromSol returns the object types that declare the members of a binding of
+// type `t`. That is `t` itself or the body of the alias or interface `t` refers to. An
+// interface that extends others has a body intersecting its parents with its own members.
+// Each parent stays a reference there, so the object arms returned hold only the members
+// the interface declares itself. Any other type returns nothing.
+func declaredObjectsFromSol(root SolNamespace, t soltype.Type) []*soltype.ObjectType {
+	if alias, isAlias := t.(*soltype.AliasType); isAlias {
+		body, _, ok := root.DeclaredType(alias.Name)
+		if !ok {
+			return nil
+		}
+		t = body
+	}
+	switch t := t.(type) {
+	case *soltype.ObjectType:
+		return []*soltype.ObjectType{t}
+	case *soltype.IntersectionType:
+		var out []*soltype.ObjectType
+		for _, arm := range t.Types {
+			if obj, isObj := arm.(*soltype.ObjectType); isObj {
+				out = append(out, obj)
+			}
+		}
+		return out
+	}
+	return nil
+}
+
+// declaredPropertySymbols returns each unique symbol a `readonly` property of `obj`
+// declares, where `path` is the dotted path `obj` is reached by. A property `key`
+// declares its symbol when the symbol is named `<path>.key`. A `readonly` property
+// holding an object type is searched in turn under `<path>.key`. Each symbol found is
+// recorded in `declarers` against the object type whose property declares it.
+func declaredPropertySymbols(obj *soltype.ObjectType, path string, declarers map[int]*soltype.ObjectType) []*soltype.UniqueSymbolType {
+	var out []*soltype.UniqueSymbolType
+	for _, elem := range obj.Elems {
+		prop, isProp := elem.(*soltype.PropertyElem)
+		if !isProp || !prop.Readonly {
+			continue
+		}
+		propPath := path + "." + prop.Name
+		switch value := prop.Type.(type) {
+		case *soltype.UniqueSymbolType:
+			if value.Name == propPath {
+				declarers[value.ID] = obj
+				out = append(out, value)
+			}
+		case *soltype.ObjectType:
+			out = append(out, declaredPropertySymbols(value, propPath, declarers)...)
+		}
+	}
+	return out
 }
 
 // solRenderer returns a renderer for one declaration of the module
@@ -161,6 +237,7 @@ func symbolKeysFromSol(depGraph *dep_graph.DepGraph, root SolNamespace, keys []d
 func (b *Builder) solRenderer(preludePrefix, companionPrefix string, typeParams []*soltype.TypeParam) *solTypeAnnBuilder {
 	render := newSolTypeAnnBuilder(preludePrefix, companionPrefix, typeParams)
 	render.symbolKeys = b.solSymbolKeys
+	render.symbolDeclarers = b.solSymbolDeclarers
 	// Inside a namespace block a member called `sym` shadows the root `sym`, so a
 	// `typeof sym` written there could name the member instead.
 	render.typeofSymbols = !b.solInNamespace
@@ -233,6 +310,18 @@ func (b *Builder) buildVarDeclFromSol(
 		}
 		localName := extractLocalName(name)
 		render := b.solRenderer(preludePrefix, localName, nil)
+		// A binding annotated with an object type declares the symbols its properties
+		// hold. symbolKeysFromSol recorded them against the type it read, which may be a
+		// different copy from the one rendered here. Recording them against this copy, for
+		// this render alone, keeps each declaring property written `unique symbol`.
+		if obj, isObj := bindingType.(*soltype.ObjectType); isObj && isTopLevel {
+			declarers := maps.Clone(b.solSymbolDeclarers)
+			if declarers == nil {
+				declarers = map[int]*soltype.ObjectType{}
+			}
+			declaredPropertySymbols(obj, name, declarers)
+			render.symbolDeclarers = declarers
+		}
 
 		// A type mentioning `Self` renders `this`, which TypeScript accepts only inside an
 		// interface, so the binding's type moves into one and the binding refers to it.

@@ -2589,3 +2589,34 @@ func TestNamespaceBlockRegistersItsOwnID(t *testing.T) {
 	assert.Contains(t, graph.Namespaces, "geo")
 	assert.Contains(t, graph.Namespaces, "geo.inner")
 }
+
+// TestResolveTypeKey covers which type key a type name written in a namespace refers to.
+// The name qualified by the namespace is tried before the bare name.
+func TestResolveTypeKey(t *testing.T) {
+	module := parseMultiFileModule(map[string]string{
+		"index.esc":   "type A = number\ntype B = string",
+		"inner/a.esc": "type A = boolean",
+	})
+	g := BuildDepGraph(module)
+
+	tests := []struct {
+		name     string
+		typeName string
+		ns       string
+		want     BindingKey
+		wantOK   bool
+	}{
+		{name: "RootName", typeName: "A", ns: "", want: TypeBindingKey("A"), wantOK: true},
+		{name: "NamespaceShadowsRoot", typeName: "A", ns: "inner", want: TypeBindingKey("inner.A"), wantOK: true},
+		{name: "RootReachedFromNamespace", typeName: "B", ns: "inner", want: TypeBindingKey("B"), wantOK: true},
+		{name: "QualifiedName", typeName: "inner.A", ns: "", want: TypeBindingKey("inner.A"), wantOK: true},
+		{name: "Unknown", typeName: "C", ns: "inner", want: "", wantOK: false},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			key, ok := g.ResolveTypeKey(tt.typeName, tt.ns)
+			require.Equal(t, tt.wantOK, ok)
+			require.Equal(t, tt.want, key)
+		})
+	}
+}
