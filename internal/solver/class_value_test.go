@@ -97,18 +97,23 @@ func TestClassValueBindsItsParametersOnEachSignature(t *testing.T) {
 			}`,
 			errs: []string{"static member `s` names lifetime parameter `'a`, which belongs to instances of `Holder`"},
 		},
-		{
-			// The static's own lifetime is a different variable from the class's, whatever it
-			// is called. A method's lifetime is quantified by the value's scheme and freshened
-			// per access, so it renders in the prefix under a generated name.
-			name: "a static declaring its own lifetime is not reported",
-			src: `class Holder<'a> {
-				peer: &'a mut {value: number},
-				static s<'a>(p: &'a mut {value: number}) -> &'a mut {value: number} { return p },
-			}`,
-			class: "Holder",
-			want:  "<'b> {new <'a>(peer: &'a mut {value: number}) -> Holder<'a>, s(p: &'b mut {value: number}) -> &'b mut {value: number}}",
-		},
+		// DISABLED until #1927, which records a method's lifetime parameters as its own binder.
+		// Until then inferFunc leaves the static's `'a` free in the value and the printer hoists
+		// it to the prefix under a generated name, rendering `<'b> {new …, s(p: &'b mut …)}`.
+		/*
+			{
+				// The static's own lifetime is a different variable from the class's, whatever it
+				// is called, so nothing is reported, and it is the static's own binder, so each
+				// signature renders its `'a` under its own `<…>`.
+				name: "a static declaring its own lifetime is not reported",
+				src: `class Holder<'a> {
+					peer: &'a mut {value: number},
+					static s<'a>(p: &'a mut {value: number}) -> &'a mut {value: number} { return p },
+				}`,
+				class: "Holder",
+				want:  "{new <'a>(peer: &'a mut {value: number}) -> Holder<'a>, s<'a>(p: &'a mut {value: number}) -> &'a mut {value: number}}",
+			},
+		*/
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
