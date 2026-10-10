@@ -333,9 +333,8 @@ func (lexer *Lexer) next() *Token {
 		}
 	case '>':
 		// `>` is never fused with what follows. A type's closing `>` may be followed by
-		// `=` or `:`, as in `val x: Array<number>= [1]`, so the parser recognizes `>=`
-		// and `>:` from two adjacent tokens where it expects one. `>=` is the comparison and
-		// `>:` a lower bound written on a binder, which the parser reports.
+		// `=`, as in `val x: Array<number>= [1]`, so the parser recognizes `>=` from two
+		// adjacent tokens where it expects one.
 		token = NewToken(GreaterThan, ">", lexer.spanBetween(startOffset, endOffset))
 	case '|':
 		if startOffset+1 < len(lexer.source.Contents) && lexer.source.Contents[startOffset+1] == '|' {

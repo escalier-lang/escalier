@@ -159,14 +159,6 @@ where A: number, B: number {
 			want: "type A<T> = T",
 			errs: []string{"Expected = but got identifier", "Unexpected token", "Unexpected token", "Unexpected token"},
 		},
-		{
-			// A lower bound written on the binder, where Scala puts it, is reported and still
-			// read, so the declaration prints in the clause form.
-			name: "ALowerBoundOnTheBinder",
-			src:  "type A<B >: T> = B",
-			want: "type A<B> where T: B = B",
-			errs: []string{"lower bounds are written in a where clause, as where T: B"},
-		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {

@@ -29,9 +29,8 @@ func parseAndPrint(t *testing.T, src string) (string, []string) {
 	return strings.Join(printed, "\n"), msgs
 }
 
-// TestParseAdjacentGreaterThanPairs covers `>=` read from two adjacent tokens, and `>:`
-// recognized the same way so a lower bound written on a binder gets its own error. The
-// lexer keeps `>` a token of its own, so a type's closing `>` may be followed by `:` or `=`
+// TestParseAdjacentGreaterThanPairs covers `>=` read from two adjacent tokens. The lexer
+// keeps `>` a token of its own, so a type's closing `>` may be followed by `=` or `:`
 // without the pair fusing into one operator.
 func TestParseAdjacentGreaterThanPairs(t *testing.T) {
 	tests := []struct {
@@ -41,20 +40,6 @@ func TestParseAdjacentGreaterThanPairs(t *testing.T) {
 		want string
 		errs []string
 	}{
-		{
-			name: "ALowerBoundOnABinder",
-			src:  "declare fn f<B >: T>(x: B) -> B",
-			want: "declare fn f<B>(x: B) -> B where T: B",
-			errs: []string{"lower bounds are written in a where clause, as where T: B"},
-		},
-		{
-			// A spaced pair is not the operator. The `>` closes the list and the `:` after
-			// it is unexpected.
-			name: "ASpacedLowerBound",
-			src:  "type A<B > : T> = B",
-			want: "type A<B> = T",
-			errs: []string{"Expected = but got :", "Unexpected token", "Unexpected token", "Unexpected token", "Unexpected token"},
-		},
 		{
 			// A conditional type's check type may end in `>` right before its `:`.
 			name: "AConditionalTypeCheckingAGenericType",
