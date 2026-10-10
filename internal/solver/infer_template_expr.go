@@ -44,13 +44,12 @@ func (c *checker) inferTaggedTemplateLit(scope *Scope, lvl int, e *ast.TaggedTem
 	// At runtime the tag receives a TemplateStringsArray, which carries a `raw`
 	// property `String.raw` reads. No expression infers that type, so the argument is
 	// given it directly.
+	var preset map[ast.Expr]soltype.Type
 	if t, ok := c.templateStringsArray(); ok {
-		prev := c.argTypes
-		c.argTypes = map[ast.Expr]soltype.Type{quasis: t}
-		defer func() { c.argTypes = prev }()
+		preset = map[ast.Expr]soltype.Type{quasis: t}
 	}
 	args := append([]ast.Expr{quasis}, e.Exprs...)
-	t := c.inferCall(scope, lvl, ast.NewCall(e.Tag, args, false, e.Span()))
+	t := c.inferCallWithArgTypes(scope, lvl, ast.NewCall(e.Tag, args, false, e.Span()), preset)
 	c.recordType(e, t)
 	return t
 }
