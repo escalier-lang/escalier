@@ -451,9 +451,9 @@ func TestClassLifetimeStoreEdge(t *testing.T) {
 }
 
 // TestMethodLifetimeBindersRenderOnTheMethod covers a method's own `<'a>` list as the binder
-// of its signature. The class body renders each method's lifetime under that method's own
-// `<…>`, and a binder the body elides, because the lifetime connects nothing, is dropped with
-// its uses.
+// of its signature. The class body, printed under the class's own parameter names, renders
+// each method's lifetime under that method's own `<…>`, and a binder the body elides, because
+// the lifetime connects nothing, is dropped with its uses.
 func TestMethodLifetimeBindersRenderOnTheMethod(t *testing.T) {
 	t.Parallel()
 
@@ -511,7 +511,7 @@ func TestMethodLifetimeBindersRenderOnTheMethod(t *testing.T) {
 				pick<'b>(&self) -> &'b {value: number} { return self.peer },
 			}`,
 			class: "Holder",
-			want:  "{peer: &mut {value: number}, pick(&self) -> &{value: number}}",
+			want:  "{peer: &'a mut {value: number}, pick(&self) -> &'a {value: number}}",
 		},
 		{
 			// `'b` resolves to `'a`, so it is dropped as a duplicate and `'a`'s bound on it,
@@ -543,7 +543,7 @@ func TestMethodLifetimeBindersRenderOnTheMethod(t *testing.T) {
 				pick<'b>(&self, q: &'b {value: number}) -> &'b {value: number} { return q },
 			}`,
 			class: "Holder",
-			want:  "{peer: &mut {value: number}, pick<'b>(&self, q: &'b {value: number}) -> &'b {value: number}}",
+			want:  "{peer: &'a mut {value: number}, pick<'b>(&self, q: &'b {value: number}) -> &'b {value: number}}",
 		},
 	}
 	for _, tt := range tests {
@@ -551,9 +551,11 @@ func TestMethodLifetimeBindersRenderOnTheMethod(t *testing.T) {
 			t.Parallel()
 			res := InferModuleWithSource(parseModule(t, tt.src), testStdlibSource())
 			require.Empty(t, errorMessagesOf(res.Errors))
-			body, _, ok := res.TypeBody(tt.class)
+			def, ok := res.checker.ctx.classDef(tt.class)
 			require.True(t, ok)
-			require.Equal(t, tt.want, soltype.Print(body))
+			// The body holds the variables the class's `<…>` clause binds, which plain Print
+			// has no names for, so the class's parameters are named as the source wrote them.
+			require.Equal(t, tt.want, soltype.PrintWithDeclaredParams(def.Body, def.TypeParams, def.LifetimeParams))
 		})
 	}
 }
