@@ -192,6 +192,42 @@ fn g<U>(u: U) -> Maybe<U> { return u }`,
 			errs: []string{"1:43-1:44: cannot constrain B <: T"},
 		},
 		{
+			// The failing sub is `x`'s type, which names `T` inside `Cmp`.
+			name: "AStructuredOperandNamesTheParameter",
+			src: `class Cmp<X> { value: X }
+fn f<T>(x: Cmp<T>) -> boolean { return x > 1 }`,
+			errs: []string{"2:40-2:41: cannot constrain Cmp<T> <: number"},
+		},
+		{
+			name: "AClassParameterInAMethodOperandIsNamed",
+			src: `class Cmp<X> { value: X }
+class C<T> {
+	v: T,
+	m(&self, x: Cmp<T>) -> boolean { return x > 1 },
+}`,
+			errs: []string{"4:42-4:43: cannot constrain Cmp<T> <: number"},
+		},
+		{
+			// The failing sub is `T`'s whole bound, which names its sibling `U`.
+			name: "ABoundNamingASiblingRendersTheSibling",
+			src: `class Cmp<X> { value: X }
+fn f<T: Cmp<U>, U>(x: T) -> boolean { return x > 1 }`,
+			errs: []string{"2:46-2:47: cannot constrain Cmp<U> <: number"},
+		},
+		{
+			// Naming is for display only. Checking `g(x)` meets `U`'s variable inside `T`'s
+			// bound at an input position, and the variable arm records the parameter, so
+			// the signature carries no skolem and `f(s, 5)` checks.
+			name: "ASiblingInABoundsInputPositionStaysAParameter",
+			src: `type Sink<X> = {set: fn (x: X) -> number}
+fn g<X>(s: Sink<X>, d: X) -> X { return d }
+fn f<T: Sink<U>, U>(x: T, d: U) -> U { return g(x, d) }
+val s: Sink<number> = {set: fn (x: number) -> number { return 1 }}
+val n: number = f(s, 5)`,
+			binding: "f",
+			want:    "fn <T: Sink<U>, U>(x: T, d: U) -> U",
+		},
+		{
 			// The declared lower bound is what `T <: B` follows from.
 			name:    "ALowerBoundRelatesSiblings",
 			src:     `fn f<B >: T, T>(x: B, y: T) -> B { return y }`,

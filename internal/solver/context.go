@@ -364,7 +364,7 @@ func (c *Context) freshSymbol() *soltype.UniqueSymbolType {
 // declared bounds and any bound a type reference in the signature put on it. A link the
 // body records afterward is not a bound the body may rely on, so it is left out. The skolem
 // is minted on first use, so a parameter the body never constrains from the sub side mints
-// nothing.
+// nothing unless a diagnostic names it.
 type rigidParam struct {
 	v      *soltype.TypeVarType
 	name   string
@@ -440,6 +440,37 @@ func (c *Context) rigidSkolem(rp *rigidParam) *soltype.SkolemType {
 	}
 	return rp.sk
 }
+
+// nameRigidParams returns t for display with each rigid parameter's variable replaced by
+// the parameter's skolem, which prints under the parameter's name. A diagnostic raised
+// while a body is checked names its operands through this, so `Cmp<T> <: number` reads
+// as written rather than as `Cmp<t3> <: number`. The result is for rendering only. The
+// type `constrain` checks is untouched and keeps the variable, which the variable arms read
+// as the parameter when it meets another variable. t is returned as it is when nothing is
+// rigid.
+func (c *Context) nameRigidParams(t soltype.Type) soltype.Type {
+	if len(c.rigidParams) == 0 || t == nil {
+		return t
+	}
+	return t.Accept(&rigidNameSubst{c: c}, soltype.Positive)
+}
+
+// rigidNameSubst rewrites each rigid parameter's variable to the parameter's skolem,
+// minting the skolem on first use. Any other variable is left as it is.
+type rigidNameSubst struct {
+	c *Context
+}
+
+func (s *rigidNameSubst) EnterType(t soltype.Type, _ soltype.Polarity) soltype.EnterResult {
+	if v, ok := t.(*soltype.TypeVarType); ok {
+		if rp, rigid := s.c.rigidParams[v]; rigid {
+			return soltype.EnterResult{Type: s.c.rigidSkolem(rp), SkipChildren: true}
+		}
+	}
+	return soltype.EnterResult{}
+}
+
+func (s *rigidNameSubst) ExitType(t soltype.Type, _ soltype.Polarity) soltype.Type { return t }
 
 // freshSkolem mints a distinct rigid type parameter carrying the given source name. It
 // draws from the same counter as freshVar so every skolem has a unique ID, which is what

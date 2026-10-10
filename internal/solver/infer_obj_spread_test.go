@@ -272,13 +272,13 @@ func TestInferObjectSpreadLiteral(t *testing.T) {
 // A rejected constraint whose subject is an object-spread residual names it structurally in the
 // diagnostic — `{...t1, ...}` rather than the bare `?` the default describe arm would render — so
 // the inert node stays legible in error messages. The trailing `...` marks the residual inexact,
-// matching soltype.Print. describe is the raw mid-constrain renderer, so the operand shows as the
-// raw var `t1` rather than the param name `T` the coalesced printer would use.
+// matching soltype.Print. The operand names `T` as the declaration wrote it, since a rigid
+// parameter renders under its name.
 func TestInferObjectSpreadResidualErrorMessage(t *testing.T) {
 	_, _, errs := inferSource(t, `fn f<T>(x: {...T, ...}) -> number { return x }`)
 	require.Len(t, errs, 1)
 	require.IsType(t, &CannotConstrainError{}, errs[0])
-	require.Equal(t, "1:44-1:45: cannot constrain {...t1, ...} <: number", msgWithSpan(t, errs[0]))
+	require.Equal(t, "1:44-1:45: cannot constrain {...T, ...} <: number", msgWithSpan(t, errs[0]))
 }
 
 // keyof and indexed access compose with an object spread: over a ground spread they merge the

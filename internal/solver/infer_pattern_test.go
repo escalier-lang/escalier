@@ -813,7 +813,7 @@ func TestInferTuplePatternRestFallbackGuards(t *testing.T) {
 					val [a, ...rest] = t
 					return rest
 				}`,
-			want: "3:10-3:22: cannot constrain [number, ...t1] <: tuple",
+			want: "3:10-3:22: cannot constrain [number, ...P] <: tuple",
 		},
 	}
 	for _, tt := range tests {
