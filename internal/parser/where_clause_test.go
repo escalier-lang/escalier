@@ -143,6 +143,29 @@ where A: number, B: number {
 			errs: []string{"lifetime bounds are written on the lifetime binder, as <'a: 'b>"},
 		},
 		{name: "ALifetimeBoundKeepsItsColon", src: "declare fn f<'a, 'b: 'a>(x: &'a number) -> &'b number"},
+		// A comma after a bodiless signature's clause separates it from the next member, so
+		// the clause ends there and the member after it is read as a member.
+		{
+			name: "AClauseEndsAtTheMemberSeparator",
+			src: `declare class Map<K, V> {
+    get<B>(&self, key: B) -> V | undefined where K: B,
+    has<B>(&self, key: B) -> boolean where K: B
+}`,
+		},
+		{
+			name: "AClauseBeforeAPropertyMember",
+			src: `interface Box<T> {
+    m<B>(&self, x: B) -> boolean where T: B,
+    x: number
+}`,
+		},
+		{
+			name: "AClauseWithTwoRelationsBeforeAMember",
+			src: `interface Box<T> {
+    m<A, B>(&self, x: A, y: B) -> boolean where T: A, T: B,
+    x: number
+}`,
+		},
 		{name: "WhereAsAParameterName", src: "declare fn f(where: number) -> number"},
 		{
 			// A relation naming no parameter of the declaration has no binder to land on.

@@ -1,9 +1,75 @@
 [
   {
     "decl": "Array",
+    "member": "concat",
+    "kind": "method",
+    "digest": "39737156f8603cba"
+  },
+  {
+    "decl": "Array",
+    "member": "filter",
+    "kind": "method",
+    "digest": "5d426bf530e7035b"
+  },
+  {
+    "decl": "Array",
+    "member": "find",
+    "kind": "method",
+    "digest": "db258c4fff199328"
+  },
+  {
+    "decl": "Array",
+    "member": "findLast",
+    "kind": "method",
+    "digest": "48a69cb39bb58349"
+  },
+  {
+    "decl": "Array",
+    "member": "includes",
+    "kind": "method",
+    "digest": "678583fa41a61d5e"
+  },
+  {
+    "decl": "Array",
+    "member": "indexOf",
+    "kind": "method",
+    "digest": "44b60c5ff52db4ee"
+  },
+  {
+    "decl": "Array",
+    "member": "lastIndexOf",
+    "kind": "method",
+    "digest": "19e84fa5abe2d87b"
+  },
+  {
+    "decl": "Array",
+    "member": "reduce",
+    "kind": "method",
+    "digest": "5ed253cf4fa63daa"
+  },
+  {
+    "decl": "Array",
+    "member": "reduceRight",
+    "kind": "method",
+    "digest": "ed8a80c1b39c50f2"
+  },
+  {
+    "decl": "Array",
     "member": "toLocaleString",
     "kind": "method",
     "digest": "7bffe5dcbefe46ae"
+  },
+  {
+    "decl": "Array",
+    "member": "toSpliced",
+    "kind": "method",
+    "digest": "90a76cfbbf459b88"
+  },
+  {
+    "decl": "Array",
+    "member": "with",
+    "kind": "method",
+    "digest": "d880dc69f1d526c0"
   },
   {
     "decl": "AsyncGenerator",
@@ -30,6 +96,24 @@
     "member": "throw",
     "kind": "method",
     "digest": "e207885967150b58"
+  },
+  {
+    "decl": "IteratorObject",
+    "member": "filter",
+    "kind": "method",
+    "digest": "9620cdcee6bc014f"
+  },
+  {
+    "decl": "IteratorObject",
+    "member": "find",
+    "kind": "method",
+    "digest": "313ab4c917dd55a8"
+  },
+  {
+    "decl": "IteratorObject",
+    "member": "reduce",
+    "kind": "method",
+    "digest": "14a6270462032a14"
   },
   {
     "decl": "NonNullable",

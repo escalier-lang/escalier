@@ -1,0 +1,14 @@
+[
+  {
+    "decl": "Map",
+    "member": "get",
+    "kind": "method",
+    "digest": "547ebb1e96442e50"
+  },
+  {
+    "decl": "Map",
+    "member": "has",
+    "kind": "method",
+    "digest": "0b4e4aaac06a735e"
+  }
+]
