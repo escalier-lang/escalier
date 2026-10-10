@@ -276,7 +276,7 @@ func TestBuildTypeAnnFromSolInferredTypeParams(t *testing.T) {
 		declared, retained := freshVar(1), freshVar(2)
 		sig := solFn([]*soltype.FuncParam{solParam("x", declared), solParam("y", retained)}, retained)
 		sig.TypeParams = []*soltype.TypeParam{
-			{Name: "T", Var: declared, Default: nil, Constraint: nil},
+			{Name: "T", Var: declared, Default: nil, UpperBound: nil},
 		}
 		require.Equal(t, "<T, T0>(x: T, y: T0) => T0", renderSol(t, sig))
 	})
@@ -285,7 +285,7 @@ func TestBuildTypeAnnFromSolInferredTypeParams(t *testing.T) {
 		declared, retained := freshVar(1), freshVar(2)
 		sig := solFn([]*soltype.FuncParam{solParam("x", declared), solParam("y", retained)}, retained)
 		sig.TypeParams = []*soltype.TypeParam{
-			{Name: "T0", Var: declared, Default: nil, Constraint: nil},
+			{Name: "T0", Var: declared, Default: nil, UpperBound: nil},
 		}
 		require.Equal(t, "<T0, T1>(x: T0, y: T1) => T1", renderSol(t, sig))
 	})
@@ -830,7 +830,7 @@ func TestBuildTypeAnnFromSolWithParams(t *testing.T) {
 	v := &soltype.TypeVarType{
 		ID: 1, Level: 1, LowerBounds: nil, UpperBounds: nil, Open: false, Widenable: false,
 	}
-	tp := &soltype.TypeParam{Name: "T", Var: v, Default: nil, Constraint: nil}
+	tp := &soltype.TypeParam{Name: "T", Var: v, Default: nil, UpperBound: nil}
 	body := solObj(solProp("value", v))
 
 	require.Equal(t, "{value: T}", renderSolWithParams(t, body, []*soltype.TypeParam{tp}))
@@ -1061,7 +1061,7 @@ func TestBuildTypeAnnFromSolUnnamedTypeParam(t *testing.T) {
 	v := &soltype.TypeVarType{
 		ID: 1, Level: 1, LowerBounds: nil, UpperBounds: nil, Open: false, Widenable: false,
 	}
-	unnamed := &soltype.TypeParam{Name: "", Var: v, Default: nil, Constraint: nil}
+	unnamed := &soltype.TypeParam{Name: "", Var: v, Default: nil, UpperBound: nil}
 	require.Equal(t, "{value: unknown}",
 		renderSolWithParams(t, solObj(solProp("value", v)), []*soltype.TypeParam{unnamed}))
 }

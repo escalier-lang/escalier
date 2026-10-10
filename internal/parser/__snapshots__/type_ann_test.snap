@@ -74,14 +74,14 @@
     TypeParams: []*ast.TypeParam{
         &ast.TypeParam{
             Name: "T",
-            Constraint: &ast.NumberTypeAnn{
+            UpperBound: &ast.NumberTypeAnn{
                 span: 6-12,
             },
             span: 3-12,
         },
         &ast.TypeParam{
             Name: "U",
-            Constraint: &ast.StringTypeAnn{
+            UpperBound: &ast.StringTypeAnn{
                 span: 17-23,
             },
             span: 14-23,

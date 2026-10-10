@@ -590,8 +590,8 @@ func typeParamsFromSol(render *solTypeAnnBuilder, typeParams []*soltype.TypePara
 	out := make([]*TypeParam, len(typeParams))
 	for i, tp := range typeParams {
 		var constraint TypeAnn
-		if tp.Constraint != nil {
-			constraint = render.typeAnn(tp.Constraint)
+		if tp.UpperBound != nil {
+			constraint = render.typeAnn(tp.UpperBound)
 		}
 		var defaultType TypeAnn
 		if tp.Default != nil {

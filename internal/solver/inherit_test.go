@@ -610,8 +610,8 @@ func TestWidestInstanceWidensASelfBoundToUnknown(t *testing.T) {
 	cmp := &soltype.ClassType{Name: "Cmp", TypeArgs: []soltype.Type{tVar}}
 	def := &ClassDef{
 		TypeParams: []*soltype.TypeParam{
-			{Name: "T", Var: tVar, Constraint: cmp},
-			{Name: "U", Var: uVar, Constraint: tVar},
+			{Name: "T", Var: tVar, UpperBound: cmp},
+			{Name: "U", Var: uVar, UpperBound: tVar},
 		},
 		Variance:        []Variance{Covariant, Covariant},
 		CovariantInputs: []bool{true, true},

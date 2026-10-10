@@ -238,7 +238,7 @@ func typeParamMismatch(first, later []*ast.TypeParam) (string, bool) {
 		if later[i].Variance != first[i].Variance {
 			return "they differ in variance", true
 		}
-		if later[i].Constraint != nil || later[i].LowerBound != nil {
+		if later[i].UpperBound != nil || later[i].LowerBound != nil {
 			return "only the first declaration may write a bound", true
 		}
 		if later[i].Default != nil {

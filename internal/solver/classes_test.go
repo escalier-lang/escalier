@@ -152,7 +152,7 @@ func TestInferBodyVariance(t *testing.T) {
 	boundedSelfMethod := func(name, cls string, tv *soltype.TypeVarType, ret soltype.Type) *soltype.MethodElem {
 		u := &soltype.TypeVarType{ID: 2, UpperBounds: []soltype.Type{tv}}
 		m := selfMethod(name, cls, tv, u, ret)
-		m.Signatures[0].TypeParams = []*soltype.TypeParam{{Name: "U", Var: u, Constraint: tv}}
+		m.Signatures[0].TypeParams = []*soltype.TypeParam{{Name: "U", Var: u, UpperBound: tv}}
 		return m
 	}
 	// oneParam builds a single-type-parameter ClassDef so each case shares one var
@@ -427,7 +427,7 @@ func TestInferBodyVariance(t *testing.T) {
 			def: oneParam(func(tv *soltype.TypeVarType) (*soltype.ObjectType, []*soltype.ClassType) {
 				u := &soltype.TypeVarType{ID: 2, UpperBounds: []soltype.Type{tv}}
 				held := &soltype.FuncType{
-					TypeParams: []*soltype.TypeParam{{Name: "U", Var: u, Constraint: tv}},
+					TypeParams: []*soltype.TypeParam{{Name: "U", Var: u, UpperBound: tv}},
 					Params:     []*soltype.FuncParam{{Pattern: &soltype.IdentPat{Name: "x"}, Type: u}},
 					Ret:        tv,
 				}

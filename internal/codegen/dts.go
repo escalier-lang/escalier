@@ -262,8 +262,8 @@ func (b *Builder) buildDeclStmt(decl ast.Decl, namespace *type_sys.Namespace, is
 		typeParams := make([]*TypeParam, len(decl.TypeParams))
 		for i, param := range decl.TypeParams {
 			var constraint TypeAnn
-			if param.Constraint != nil {
-				t := param.Constraint.InferredType()
+			if param.UpperBound != nil {
+				t := param.UpperBound.InferredType()
 				if t != nil {
 					constraint = b.buildTypeAnn(t)
 				}
@@ -315,8 +315,8 @@ func (b *Builder) buildDeclStmt(decl ast.Decl, namespace *type_sys.Namespace, is
 		typeParams := make([]*TypeParam, len(decl.TypeParams))
 		for i, param := range decl.TypeParams {
 			var constraint TypeAnn
-			if param.Constraint != nil {
-				t := param.Constraint.InferredType()
+			if param.UpperBound != nil {
+				t := param.UpperBound.InferredType()
 				if t != nil {
 					constraint = b.buildTypeAnn(t)
 				}
@@ -591,8 +591,8 @@ func (b *Builder) buildDeclStmt(decl ast.Decl, namespace *type_sys.Namespace, is
 			typeParams := make([]*TypeParam, len(decl.TypeParams))
 			for i, param := range decl.TypeParams {
 				var constraint TypeAnn
-				if param.Constraint != nil {
-					t := param.Constraint.InferredType()
+				if param.UpperBound != nil {
+					t := param.UpperBound.InferredType()
 					if t != nil {
 						constraint = b.buildTypeAnn(t)
 					}
@@ -1109,8 +1109,8 @@ func (b *Builder) buildFuncTypeAnnFromAST(fn *ast.FuncTypeAnn) *FuncTypeAnn {
 	typeParams := make([]*TypeParam, len(fn.TypeParams))
 	for i, tp := range fn.TypeParams {
 		var constraint TypeAnn
-		if tp.Constraint != nil {
-			if t := tp.Constraint.InferredType(); t != nil {
+		if tp.UpperBound != nil {
+			if t := tp.UpperBound.InferredType(); t != nil {
 				constraint = b.buildTypeAnn(t)
 			}
 		}

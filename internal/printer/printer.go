@@ -1964,9 +1964,9 @@ func (p *Printer) printTypeParam(tp *ast.TypeParam) {
 		p.writeString(" >: ")
 		p.printTypeAnn(tp.LowerBound)
 	}
-	if tp.Constraint != nil {
+	if tp.UpperBound != nil {
 		p.writeString(": ")
-		p.printTypeAnn(tp.Constraint)
+		p.printTypeAnn(tp.UpperBound)
 	}
 	if tp.Default != nil {
 		p.writeString(" = ")

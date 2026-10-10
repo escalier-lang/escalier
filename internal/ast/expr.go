@@ -393,28 +393,29 @@ const (
 	VarianceInOut                         // `in out`: invariant
 )
 
-// TypeParam is a type binder in a <…> quantifier list. Constraint is the bound
+// TypeParam is a type binder in a <…> quantifier list. UpperBound is the bound
 // the type must satisfy. In <T: U>, T <: U, read "T is a subtype of U". The ':'
 // here means subtyping, not the outliving ':' of a LifetimeParam bound. A
 // binder is a type or a lifetime, never both, so the two never mix on one
 // binder and the checker picks the relation from the binder's sort. Variance is
 // the optional `in`/`out`/`in out` declaration-site modifier. span covers the
 // whole binder. It runs from the variance modifier or the name through the end
-// of a constraint or default, so a diagnostic about the parameter can point at
+// of a bound or default, so a diagnostic about the parameter can point at
 // the declaration that introduced it.
 type TypeParam struct {
 	Name string
 	// LowerBound is the type written after `>:`, as `T` in `B >: T`. nil ⇒ none.
 	LowerBound TypeAnn
-	Constraint TypeAnn
+	// UpperBound is the type written after `:`, as `U` in `T: U`. nil ⇒ unbounded.
+	UpperBound TypeAnn
 	Default    TypeAnn
 	Variance   VarianceModifier
 	span       Span
 	commentSlots
 }
 
-func NewTypeParam(name string, lowerBound, constraint, defaultType TypeAnn, span Span) TypeParam {
-	return TypeParam{Name: name, LowerBound: lowerBound, Constraint: constraint, Default: defaultType, span: span}
+func NewTypeParam(name string, lowerBound, upperBound, defaultType TypeAnn, span Span) TypeParam {
+	return TypeParam{Name: name, LowerBound: lowerBound, UpperBound: upperBound, Default: defaultType, span: span}
 }
 
 func (t *TypeParam) Span() Span { return t.span }

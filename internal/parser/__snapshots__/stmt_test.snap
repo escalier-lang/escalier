@@ -887,7 +887,7 @@
             },
             &ast.TypeParam{
                 Name: "U",
-                Constraint: &ast.StringTypeAnn{
+                UpperBound: &ast.StringTypeAnn{
                     span: 18-24,
                 },
                 span: 15-24,
@@ -981,14 +981,14 @@
         TypeParams: []*ast.TypeParam{
             &ast.TypeParam{
                 Name: "T",
-                Constraint: &ast.NumberTypeAnn{
+                UpperBound: &ast.NumberTypeAnn{
                     span: 15-21,
                 },
                 span: 12-21,
             },
             &ast.TypeParam{
                 Name: "U",
-                Constraint: &ast.StringTypeAnn{
+                UpperBound: &ast.StringTypeAnn{
                     span: 26-32,
                 },
                 Default: &ast.StringTypeAnn{
@@ -1577,7 +1577,7 @@
         TypeParams: []*ast.TypeParam{
             &ast.TypeParam{
                 Name: "T",
-                Constraint: &ast.AnyTypeAnn{
+                UpperBound: &ast.AnyTypeAnn{
                     span: 18-21,
                 },
                 Default: &ast.StringTypeAnn{
@@ -1618,14 +1618,14 @@
         TypeParams: []*ast.TypeParam{
             &ast.TypeParam{
                 Name: "T",
-                Constraint: &ast.NumberTypeAnn{
+                UpperBound: &ast.NumberTypeAnn{
                     span: 14-20,
                 },
                 span: 11-20,
             },
             &ast.TypeParam{
                 Name: "U",
-                Constraint: &ast.StringTypeAnn{
+                UpperBound: &ast.StringTypeAnn{
                     span: 25-31,
                 },
                 span: 22-31,
@@ -4456,7 +4456,7 @@
         TypeParams: []*ast.TypeParam{
             &ast.TypeParam{
                 Name: "T",
-                Constraint: &ast.NumberTypeAnn{
+                UpperBound: &ast.NumberTypeAnn{
                     span: 17-23,
                 },
                 Variance: 1,

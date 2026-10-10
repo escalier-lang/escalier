@@ -687,8 +687,8 @@ func (b *solTypeAnnBuilder) funcTypeAnn(funcType *soltype.FuncType) FuncTypeAnn 
 		typeParams = make([]*TypeParam, len(funcType.TypeParams), len(funcType.TypeParams)+len(inferred))
 		for i, param := range funcType.TypeParams {
 			var constraint TypeAnn
-			if param.Constraint != nil {
-				constraint = b.typeAnn(param.Constraint)
+			if param.UpperBound != nil {
+				constraint = b.typeAnn(param.UpperBound)
 			}
 			var defaultType TypeAnn
 			if param.Default != nil {
@@ -829,8 +829,8 @@ func (b *solTypeAnnBuilder) bindDeclaredTypeParams(funcType *soltype.FuncType) [
 	params := make([]*TypeParam, len(bind))
 	for i, tp := range bind {
 		var constraint TypeAnn
-		if tp.Constraint != nil {
-			constraint = b.typeAnn(tp.Constraint)
+		if tp.UpperBound != nil {
+			constraint = b.typeAnn(tp.UpperBound)
 		}
 		var defaultType TypeAnn
 		if tp.Default != nil {

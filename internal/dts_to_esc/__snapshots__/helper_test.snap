@@ -654,7 +654,7 @@
     TypeParams: []*ast.TypeParam{
         &ast.TypeParam{
             Name: "T",
-            Constraint: &ast.StringTypeAnn{
+            UpperBound: &ast.StringTypeAnn{
                 span: 11-17,
             },
             span: 1-17,
@@ -1530,14 +1530,14 @@
     TypeParams: []*ast.TypeParam{
         &ast.TypeParam{
             Name: "T",
-            Constraint: &ast.StringTypeAnn{
+            UpperBound: &ast.StringTypeAnn{
                 span: 11-17,
             },
             span: 1-17,
         },
         &ast.TypeParam{
             Name: "U",
-            Constraint: &ast.NumberTypeAnn{
+            UpperBound: &ast.NumberTypeAnn{
                 span: 29-35,
             },
             span: 19-35,
