@@ -190,6 +190,16 @@ func (c *checker) inferDepGraph(scope *Scope, lvl int, module *ast.Module, g *de
 	// once, memoized here on the first leaf reached. Each leaf component then
 	// constrains its own projected type into its binding var.
 	destructured := map[*ast.VarDecl]*moduleDestructure{}
+	// The walk visits a class's value key before the declarations that read its members.
+	// Those declarations depend only on the class's type key, so g.Components alone may
+	// place them first. Before the value key, a member read sees only the signature stub
+	// built at the type key, and an unannotated return in that stub is a variable with no
+	// bounds yet. A reader whose type is generalized then fixes that return at `never`.
+	// In this example `f` would bind as `fn (b: B) -> never`, and a caller assigning
+	// `f(b)` to a `string` would check with no error.
+	//
+	//	fn f(b: B) { return b.m() }
+	//	class B { m(&self) { return 1 } }
 	for _, component := range classBodiesFirst(g) {
 		c.inferComponent(scope, lvl, module, g, component, handled, destructured)
 	}
@@ -215,16 +225,9 @@ func (c *checker) inferDepGraph(scope *Scope, lvl int, module *ast.Module, g *de
 
 // classBodiesFirst returns g.Components reordered so that a component naming a class's
 // type comes after the component holding that class's value key, wherever the dep graph
-// allows it. A reference such as `b: B` gives a dependency on B's type key only, while B's
-// member bodies are inferred at its value key. Inferring B's value key first lets a body
-// reading `b.m()` see m's inferred signature rather than an unrefined stub. The order
-// still puts every component after the components it depends on.
-//
-// The preferred edges are added beside the dep graph's own, and the strongly connected
-// components of the result are emitted in topological order. Components that a preferred
-// edge joins into one cycle are merged into one component, keeping their keys in their
-// original relative order. A reader of B in such a cycle is then generalized together
-// with B's value key, after linkMemberSig has bounded the member stubs the reader saw.
+// allows it. Every component still comes after the components it depends on. Components
+// that cannot be ordered that way are merged into one component, with their keys in their
+// original relative order.
 func classBodiesFirst(g *dep_graph.DepGraph) [][]dep_graph.BindingKey {
 	index := make(map[dep_graph.BindingKey]int)
 	for i, component := range g.Components {
@@ -236,6 +239,10 @@ func classBodiesFirst(g *dep_graph.DepGraph) [][]dep_graph.BindingKey {
 	for i := range nodes {
 		nodes[i] = i
 	}
+	// successors returns the components component i must come after. That is each
+	// component holding one of its dependencies, plus a preferred edge to the value key of
+	// each class whose type key it depends on. A reference such as `b: B` depends on B's
+	// type key only, while B's member bodies are inferred at its value key.
 	successors := func(i int) []int {
 		var out []int
 		for _, key := range g.Components[i] {
@@ -256,6 +263,12 @@ func classBodiesFirst(g *dep_graph.DepGraph) [][]dep_graph.BindingKey {
 		}
 		return out
 	}
+	// The strongly connected components of the components plus the preferred edges come
+	// back in topological order. A group of more than one is a cycle that only preferred
+	// edges close, since each original component is already a cycle of real edges. Such a
+	// group is inferred as one component, so a reader of B in it is generalized together
+	// with B's value key, after linkMemberSig has bounded the member stubs the reader saw.
+	// Sorting the indices keeps the original order, which respects every real dependency.
 	ordered := make([][]dep_graph.BindingKey, 0, len(g.Components))
 	for _, group := range graph.StronglyConnectedComponents(nodes, successors) {
 		sort.Ints(group)
