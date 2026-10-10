@@ -52,10 +52,11 @@ func (solverBackend) checkLib(_ context.Context, module *ast.Module) libResult {
 	}
 }
 
-// checkScript infers script against the prelude alone.
+// checkScript infers script against the standard library tree on disk, which supplies
+// the prelude and the ambient builtins.
 func (solverBackend) checkScript(_ context.Context, script *ast.Script) scriptResult {
 	dir, dirErrs := solverStdlibDir(scriptSpan(script))
-	_, info, errs := solver.InferScript(script, solver.StdlibSource(dir))
+	_, info, errs := solver.InferScriptAgainstStdlib(script, dir)
 	return scriptResult{
 		jsTypes:     codegen.SolverJSTypes{Types: &solverSolTypes{info: info}},
 		diagnostics: append(dirErrs, diagnostics(errs)...),

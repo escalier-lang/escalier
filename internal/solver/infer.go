@@ -202,9 +202,19 @@ type checker struct {
 	// prelude is the per-run scope holding the prelude package's exports, built
 	// on first request by preludeScope and shared by the entry module and every
 	// package this run loads. It sits between the process-wide operator table and
-	// a module's own declarations, so a module declaration shadows a prelude
-	// export and a file's import shadows both.
+	// the ambient scope, so an ambient name shadows a prelude export.
 	prelude *Scope
+	// ambient is the per-run scope ambientScope builds over the prelude, holding the
+	// builtins a program reaches without an import. The entry module's scope is its
+	// child, so a module declaration shadows an ambient name and a file's import
+	// shadows both. A loaded package parents its scope at the prelude and never sees
+	// this one. It is nil until a run asks for it.
+	ambient *Scope
+	// libVarCounter and libSymbolCounter are where the library packages' own counters
+	// stand. The prelude starts them at preludeIDBase and the ambient packages continue
+	// from where it stopped, so neither shares an id with the program.
+	libVarCounter    int
+	libSymbolCounter int
 
 	// loadStack is the chain of package URIs currently being loaded, outermost
 	// first. loadPackage pushes before inferring a package and pops afterwards, so

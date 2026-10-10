@@ -43,6 +43,9 @@ func BenchmarkStdlibClosureLoad(b *testing.B) {
 		name string
 		uris []string
 	}{
+		// What every program pays, since the ambient packages load whether or not
+		// anything imports them.
+		{"NoImports", nil},
 		// What a program importing one package pays. Its closure is `web:fetch`
 		// and what that reaches, not the whole tree.
 		{"OnePackage", []string{"web:fetch"}},

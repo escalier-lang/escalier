@@ -147,6 +147,7 @@ func (c *checker) bindPreludeExports(scope *Scope) {
 	programVars, programSymbols := c.ctx.varCounter, c.ctx.symbolCounter
 	c.ctx.varCounter, c.ctx.symbolCounter = preludeIDBase, preludeIDBase
 	ns, errs := c.loadPackage(preludeURI, ast.Span{})
+	c.libVarCounter, c.libSymbolCounter = c.ctx.varCounter, c.ctx.symbolCounter
 	c.ctx.varCounter, c.ctx.symbolCounter = programVars, programSymbols
 	if ns == nil {
 		return

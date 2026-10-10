@@ -14,8 +14,9 @@ import (
 // InferModule builds the dep graph for a single parsed module, infers every
 // top-level declaration in dep_graph SCC order, populates Info, and returns the
 // populated module Scope, the Info side table, and any SolverErrors. The module
-// scope is a child of the run's prelude scope, so the prelude package's exports
-// resolve through the parent and the operator table through its parent in turn.
+// scope is a child of the run's ambient scope, so the ambient builtins resolve
+// through the parent, the prelude package's exports through its parent, and the
+// operator table through the prelude's parent in turn.
 //
 // PR-5 replaces PR-2's source-order loop with dep_graph SCC ordering: a decl that
 // forward-references a name defined later in the source, or that mutually
@@ -134,8 +135,12 @@ func inferModuleWithGroups(
 	// The prelude package is loaded before anything is walked, so no rule reaches
 	// for a handle from inside a speculation trial, where a load would publish a
 	// package whose bounds a discard then truncates.
-	scope := c.preludeScope().Child()
+	scope := c.ambientScope().Child()
 	fileScopes := c.bindFileImports(scope, module)
+	// After the imports, so a failure in a package the module imports is reported at
+	// its import statement. The ambient packages share its load group and are
+	// published by then.
+	c.bindAmbientExports()
 	g := dep_graph.BuildDepGraph(module)
 	c.inferDepGraph(scope, 0, module, g)
 	return &ModuleResult{
