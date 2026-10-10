@@ -129,7 +129,9 @@ func (c *checker) demandValue(r pathResult, node ast.Expr) soltype.Type {
 // guaranteed-non-empty field, so we guard it anyway: a malformed empty binding
 // degrades to an unknown-identifier error instead of panicking on Schemes[0].
 func (c *checker) resolveIdentPath(scope *Scope, lvl int, e *ast.IdentExpr, objPos, chainRoot bool) pathResult {
-	if b, ok := scope.GetValue(e.Name); ok && len(b.Schemes) > 0 {
+	// A declaration binds under its namespace-qualified name, so `base` written in
+	// namespace `math` finds its sibling `math.base` before a root-namespace `base`.
+	if b, ok := c.lookupValueBinding(scope, e.Name); ok && len(b.Schemes) > 0 {
 		t := c.bindingValue(lvl, b)
 		// A bare `self` that leaves the body, as in `return self` or `f(self)`, is an
 		// instance of the class. The structural view shares the class body's own element
@@ -1553,7 +1555,7 @@ func (c *checker) inferCallWithArgTypes(scope *Scope, lvl int, e *ast.CallExpr, 
 	// here; it routes through the value-position intersection (constrain's
 	// IntersectionType arm) instead.
 	if ident, ok := e.Callee.(*ast.IdentExpr); ok {
-		if b, found := scope.GetValue(ident.Name); found && b.IsOverloaded() {
+		if b, found := c.lookupValueBinding(scope, ident.Name); found && b.IsOverloaded() {
 			return c.inferOverloadedCall(scope, lvl, e, b, preset)
 		}
 	}
@@ -2129,7 +2131,7 @@ func (c *checker) inferAssign(scope *Scope, lvl int, e *ast.BinaryExpr) soltype.
 		assignStmt = c.fn.currentStmt
 	}
 	if target, ok := e.Left.(*ast.IdentExpr); ok {
-		if b, found := scope.GetValue(target.Name); found {
+		if b, found := c.lookupValueBinding(scope, target.Name); found {
 			if closure, ok := e.Right.(*ast.FuncExpr); ok && !b.ModuleLevel {
 				c.markNamedClosure(closure)
 			}
@@ -2166,7 +2168,7 @@ func (c *checker) inferAssign(scope *Scope, lvl int, e *ast.BinaryExpr) soltype.
 		}
 		return undefinedT
 	}
-	b, found := scope.GetValue(target.Name)
+	b, found := c.lookupValueBinding(scope, target.Name)
 	if !found || len(b.Schemes) == 0 {
 		// Not a value binding. Mirror inferIdent's value-position behavior: a name that
 		// resolves to a namespace reports NamespaceUsedAsValue; otherwise it is an

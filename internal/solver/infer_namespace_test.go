@@ -179,3 +179,103 @@ func TestInferBorrowOfNamespaceMember(t *testing.T) {
 	require.Empty(t, c.errs)
 	require.Equal(t, "&{x: number}", soltype.Print(got))
 }
+
+// TestInferBareNamespaceSibling covers a bare reference from one file of a namespace
+// to a declaration in another file of the same namespace. Each file sits in a `math/`
+// directory, so every declaration binds under `math.`.
+func TestInferBareNamespaceSibling(t *testing.T) {
+	tests := []struct {
+		name  string
+		files map[string]string
+		want  map[string]string
+	}{
+		{
+			name: "Value",
+			files: map[string]string{
+				"math/base.esc":    "val base = 10\n",
+				"math/derived.esc": "val derived = base\n",
+			},
+			want: map[string]string{"math.derived": "10"},
+		},
+		{
+			name: "Assignment",
+			files: map[string]string{
+				"math/count.esc": "var count = 0\n",
+				"math/use.esc":   "fn reset() { count = 5 }\n",
+			},
+			want: map[string]string{"math.reset": "fn () -> undefined"},
+		},
+		{
+			// A root overload set of the same name does not capture the call.
+			name: "CallBesideRootOverloads",
+			files: map[string]string{
+				"root.esc":     "declare fn f(x: string) -> string\ndeclare fn f(x: number) -> number\n",
+				"math/f.esc":   "declare fn f(x: boolean) -> boolean\n",
+				"math/use.esc": "val r = f(true)\n",
+			},
+			want: map[string]string{"math.r": "boolean"},
+		},
+		{
+			name: "ExtractorPattern",
+			files: map[string]string{
+				"math/point.esc": "class Point { x: number }\n",
+				"math/use.esc":   "fn getX(p: Point) { return match p { Point {x} => x } }\n",
+			},
+			want: map[string]string{"math.getX": "fn (p: Point) -> number"},
+		},
+		{
+			name: "Class",
+			files: map[string]string{
+				"math/point.esc": "class Point { x: number }\n",
+				"math/use.esc":   "val p = Point(1)\nval x = p.x\n",
+			},
+			want: map[string]string{"math.p": "Point", "math.x": "number"},
+		},
+		{
+			name: "Enum",
+			files: map[string]string{
+				"math/sign.esc": "enum Sign { Pos, Neg }\n",
+				"math/use.esc":  "val s = Sign.Pos()\n",
+			},
+			want: map[string]string{"math.s": "Sign"},
+		},
+		{
+			// A parameter is nearer than a sibling, so it wins.
+			name: "ParameterShadowsSibling",
+			files: map[string]string{
+				"math/base.esc": "val base = 10\n",
+				"math/use.esc":  "fn f(base: string) { return base }\n",
+			},
+			want: map[string]string{"math.f": "fn (base: string) -> string"},
+		},
+		{
+			// A root-namespace declaration still resolves from inside the namespace.
+			name: "RootDeclaration",
+			files: map[string]string{
+				"root.esc":     "val root = true\n",
+				"math/use.esc": "val r = root\n",
+			},
+			want: map[string]string{"math.r": "true"},
+		},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			values, _, errs := inferSources(t, test.files)
+			require.Empty(t, errs)
+			for name, want := range test.want {
+				require.Equal(t, want, values[name], "value binding %q", name)
+			}
+		})
+	}
+}
+
+// TestInferBareNamespaceSiblingMiss asserts that a bare reference matching nothing in
+// its namespace is not resolved through another namespace's binding of that name.
+func TestInferBareNamespaceSiblingMiss(t *testing.T) {
+	_, _, errs := inferSources(t, map[string]string{
+		"other/base.esc": "val base = 10\n",
+		"math/use.esc":   "val derived = base\n",
+	})
+	require.Len(t, errs, 1)
+	require.Equal(t, "Unknown identifier: base", errs[0].Message())
+}

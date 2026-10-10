@@ -949,7 +949,7 @@ func (c *checker) resolveTypeOfQualIdent(scope *Scope, ident ast.QualIdent) (sol
 //
 // Step 2 reads c.classNamespace, the namespace of the declaration being inferred.
 func (c *checker) lookupValueBinding(scope *Scope, name string) (ValueBinding, bool) {
-	if c.pkgURI != "" && c.moduleScope != nil && c.classNamespace != "" {
+	if c.moduleScope != nil && c.classNamespace != "" {
 		if b, ok := scope.getValueBefore(name, c.moduleScope); ok {
 			return b, true
 		}
