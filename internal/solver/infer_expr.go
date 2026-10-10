@@ -1544,8 +1544,8 @@ func (c *checker) inferCall(scope *Scope, lvl int, e *ast.CallExpr) soltype.Type
 }
 
 // inferCallWithArgTypes is inferCall with preset argument types. An argument preset
-// holds takes that type in place of the one its expression infers. A nil preset
-// infers every argument.
+// holds takes that type rather than being inferred. A nil preset infers every
+// argument.
 func (c *checker) inferCallWithArgTypes(scope *Scope, lvl int, e *ast.CallExpr, preset map[ast.Expr]soltype.Type) soltype.Type {
 	// PR6: a DIRECT call to an overloaded name resolves against the overload set via
 	// resolveOverload, a phase distinct from constrain — so the disjunction stays out of
@@ -1891,15 +1891,15 @@ func (c *checker) upgradeCallShapeParams(
 // contains statements, such as an `if`, overwrites c.fn.currentStmt, so reading the point
 // afterward would record an argument move against an inner branch.
 //
-// An argument preset holds still has its expression inferred, and then takes the preset
-// type in place of the inferred one.
+// An argument preset holds takes that type, and its expression is not inferred.
 func (c *checker) inferCallArgs(scope *Scope, lvl int, e *ast.CallExpr, preset map[ast.Expr]soltype.Type) []soltype.Type {
 	args := make([]soltype.Type, len(e.Args))
 	for i, a := range e.Args {
-		args[i] = c.inferExpr(scope, lvl, a)
 		if t, ok := preset[a]; ok {
 			args[i] = t
+			continue
 		}
+		args[i] = c.inferExpr(scope, lvl, a)
 	}
 	return args
 }
