@@ -1540,6 +1540,13 @@ func borrowInnerOf(t soltype.Type) (soltype.RefInner, bool) {
 // PR4 adds two #677 pieces: an EXACT all-required call callShapeParams, and the extra-arg
 // lint that rejects passing more arguments than a concrete callee declares.
 func (c *checker) inferCall(scope *Scope, lvl int, e *ast.CallExpr) soltype.Type {
+	return c.inferCallWithArgTypes(scope, lvl, e, nil)
+}
+
+// inferCallWithArgTypes is inferCall with preset argument types. An argument preset
+// holds takes that type in place of the one its expression infers. A nil preset
+// infers every argument.
+func (c *checker) inferCallWithArgTypes(scope *Scope, lvl int, e *ast.CallExpr, preset map[ast.Expr]soltype.Type) soltype.Type {
 	// PR6: a DIRECT call to an overloaded name resolves against the overload set via
 	// resolveOverload, a phase distinct from constrain — so the disjunction stays out of
 	// the lattice. A call through an intermediate binding (`g = f; g(x)`) doesn't match
@@ -1547,7 +1554,7 @@ func (c *checker) inferCall(scope *Scope, lvl int, e *ast.CallExpr) soltype.Type
 	// IntersectionType arm) instead.
 	if ident, ok := e.Callee.(*ast.IdentExpr); ok {
 		if b, found := scope.GetValue(ident.Name); found && b.IsOverloaded() {
-			return c.inferOverloadedCall(scope, lvl, e, b)
+			return c.inferOverloadedCall(scope, lvl, e, b, preset)
 		}
 	}
 	// Resolve the enclosing statement's CFG point before inferring the callee or
@@ -1570,7 +1577,7 @@ func (c *checker) inferCall(scope *Scope, lvl int, e *ast.CallExpr) soltype.Type
 	// constrain.
 	if _, isMember := e.Callee.(*ast.MemberExpr); isMember {
 		if arms, ok := funcIntersectionArms(callee); ok {
-			return c.inferArmOverloadCall(scope, lvl, e, arms, consumeRef, hasConsumeRef)
+			return c.inferArmOverloadCall(scope, lvl, e, arms, preset, consumeRef, hasConsumeRef)
 		}
 	}
 	// A class value whose constructor is overloaded resolves through the arms its
@@ -1578,7 +1585,7 @@ func (c *checker) inferCall(scope *Scope, lvl int, e *ast.CallExpr) soltype.Type
 	// `Array(1, 2, 3)` select different arms, so the set is weighed per arm rather than
 	// folded into one callee <: callShape constraint.
 	if arms, ok := c.ctorOverloadArms(callee); ok {
-		return c.inferArmOverloadCall(scope, lvl, e, arms, consumeRef, hasConsumeRef)
+		return c.inferArmOverloadCall(scope, lvl, e, arms, preset, consumeRef, hasConsumeRef)
 	}
 	// Instantiate a generic callee so each call binds its type parameters independently. A
 	// rank-2 callback param is an unfreshened MonoScheme, so this keeps its `T` per-call.
@@ -1599,7 +1606,7 @@ func (c *checker) inferCall(scope *Scope, lvl int, e *ast.CallExpr) soltype.Type
 			// `i.next()` and `i.next(v)`, and rejects a wrong `v` against the element rather
 			// than against the slot. Routing here rather than into a single callee <: callShape
 			// constraint keeps that choice where choosing belongs.
-			return c.inferArmOverloadCall(scope, lvl, e, cands, consumeRef, hasConsumeRef)
+			return c.inferArmOverloadCall(scope, lvl, e, cands, preset, consumeRef, hasConsumeRef)
 		}
 		fn = cands[0]
 	}
@@ -1608,7 +1615,7 @@ func (c *checker) inferCall(scope *Scope, lvl int, e *ast.CallExpr) soltype.Type
 	// `callee <: callShape`, and under #677's accept-set reading the callee is the side that
 	// demands arguments while the call shape is the side that provides them.
 	callShapeParams := make([]*soltype.FuncParam, len(e.Args))
-	for i, t := range c.inferCallArgs(scope, lvl, e) {
+	for i, t := range c.inferCallArgs(scope, lvl, e, preset) {
 		callShapeParams[i] = &soltype.FuncParam{Type: t}
 	}
 	res := c.freshAt(lvl)
@@ -1767,11 +1774,11 @@ func (c *checker) consumeCallArgs(e *ast.CallExpr, fn *soltype.FuncType, ref liv
 // same call shape the ordinary path builds and constrains its own candidate against
 // it. The TooManyArgs and NotEnoughArgs lints don't apply – arity is settled by that
 // per-arm constraint, and a no-match becomes a NoMatchingOverloadError.
-func (c *checker) inferOverloadedCall(scope *Scope, lvl int, e *ast.CallExpr, b ValueBinding) soltype.Type {
+func (c *checker) inferOverloadedCall(scope *Scope, lvl int, e *ast.CallExpr, b ValueBinding, preset map[ast.Expr]soltype.Type) soltype.Type {
 	// Read the statement point before the arguments are inferred, for the reason inferCall
 	// gives: an argument containing statements overwrites the current one.
 	consumeRef, hasConsumeRef := c.currentStmtRef()
-	args := c.inferCallArgs(scope, lvl, e)
+	args := c.inferCallArgs(scope, lvl, e, preset)
 	// Record the callee's display type for Info (hover) via overloadDisplayType, which
 	// coalesces the schemes rather than instantiating them — resolveOverload below does
 	// the (only) per-arm instantiation needed to type the call.
@@ -1791,9 +1798,9 @@ func (c *checker) inferOverloadedCall(scope *Scope, lvl int, e *ast.CallExpr, b 
 // arm is what resolution does, and a no-match becomes a NoMatchingOverloadError.
 func (c *checker) inferArmOverloadCall(
 	scope *Scope, lvl int, e *ast.CallExpr, arms []*soltype.FuncType,
-	consumeRef liveness.StmtRef, hasConsumeRef bool,
+	preset map[ast.Expr]soltype.Type, consumeRef liveness.StmtRef, hasConsumeRef bool,
 ) soltype.Type {
-	args := c.inferCallArgs(scope, lvl, e)
+	args := c.inferCallArgs(scope, lvl, e, preset)
 	schemes := make([]TypeScheme, len(arms))
 	for i, arm := range arms {
 		schemes[i] = &MonoScheme{Ty: arm}
@@ -1883,12 +1890,15 @@ func (c *checker) upgradeCallShapeParams(
 // The enclosing statement's CFG point must be read BEFORE this runs: inferring an argument that
 // contains statements, such as an `if`, overwrites c.fn.currentStmt, so reading the point
 // afterward would record an argument move against an inner branch.
-func (c *checker) inferCallArgs(scope *Scope, lvl int, e *ast.CallExpr) []soltype.Type {
+//
+// An argument preset holds still has its expression inferred, and then takes the preset
+// type in place of the inferred one.
+func (c *checker) inferCallArgs(scope *Scope, lvl int, e *ast.CallExpr, preset map[ast.Expr]soltype.Type) []soltype.Type {
 	args := make([]soltype.Type, len(e.Args))
 	for i, a := range e.Args {
 		args[i] = c.inferExpr(scope, lvl, a)
-		if preset, ok := c.argTypes[a]; ok {
-			args[i] = preset
+		if t, ok := preset[a]; ok {
+			args[i] = t
 		}
 	}
 	return args
