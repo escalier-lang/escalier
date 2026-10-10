@@ -1773,21 +1773,13 @@ func TestInferClassMutVariance(t *testing.T) {
 	})
 }
 
-// TestInferClassSelfMethodInputVariance covers a parameter that a `&self` method takes as
-// input and that the class also gives an output position. The method cannot store what it
-// takes into the instance, so the output decides and the immutable view is covariant. A
-// field write still makes the mutable view invariant, and a parameter with no output
-// position stays contravariant.
-//
-// Keeping such a class covariant lets `Bag<number>` widen to `Bag<number | string>`, so
-// a subclass instance can be reached through a view wider than the one it extends. An
-// override of the method is therefore checked against the ancestor's method at the widest
-// instance the subclass can be read as, not at the arguments its `extends` clause writes.
-// Each covariant argument there is its parameter's bound, or `unknown` for an unbounded
-// parameter. That is why the expected messages below name `fn (x: unknown) -> boolean`
-// where the `extends` clause says `Bag<number>`. Making the parameter invariant instead
-// would keep the override check at `Bag<number>`, but it would also stop the widening.
-func TestInferClassSelfMethodInputVariance(t *testing.T) {
+// TestInferClassSelfMethodInput covers a parameter that a `&self` method takes as a value
+// parameter. The input counts the way any other input does, so a class that also gives the
+// parameter an output position is invariant and neither direction of widening holds. An
+// override of the method is checked against the method at the arguments the `extends`
+// clause writes. TestInferClassLowerBoundedMethod covers the lower-bounded form,
+// `contains<B>(&self, x: B) -> boolean where T: B`, which keeps such a class covariant.
+func TestInferClassSelfMethodInput(t *testing.T) {
 	t.Parallel()
 
 	const bag = `
@@ -1802,10 +1794,11 @@ func TestInferClassSelfMethodInputVariance(t *testing.T) {
 		want []string
 	}{
 		{
-			name: "an immutable instance widens",
+			name: "an immutable instance does not widen",
 			src: bag + `
 				fn widen(b: &Bag<number>) -> &Bag<number | string> { return b }
 			`,
+			want: []string{"cannot constrain string <: number"},
 		},
 		{
 			name: "an immutable instance does not narrow",
@@ -1815,45 +1808,41 @@ func TestInferClassSelfMethodInputVariance(t *testing.T) {
 			want: []string{"cannot constrain string <: number"},
 		},
 		{
-			name: "a method taking and returning the parameter widens",
+			name: "a method taking and returning the parameter does not widen",
 			src: `
 				class Echo<T> {
 					echo(&self, x: T) -> T { return x },
 				}
 				fn widen(e: &Echo<number>) -> &Echo<number | string> { return e }
 			`,
+			want: []string{"cannot constrain string <: number"},
 		},
 		{
-			// `NumBag` extends `Bag<number>`, but it can be read as `Bag<unknown>`. Through
-			// that view `contains("s")` would run this override, which compares a string
-			// with `>`. The override is checked against `Bag<unknown>`'s `contains`.
-			name: "an override narrowing a covariant input is rejected",
+			// `Bag<number>` does not widen, so no view of `NumBag` passes `contains` anything
+			// but a `number`, and the override is checked at `fn (x: number) -> boolean`.
+			name: "an override at the extends argument is allowed",
 			src: bag + `
 				class NumBag extends Bag<number> {
 					constructor(&mut self) { super([1]) },
 					contains(&self, x: number) -> boolean { return x > 1 },
 				}
 			`,
+		},
+		{
+			name: "an override narrower than the extends argument is rejected",
+			src: bag + `
+				class NumBag extends Bag<number> {
+					constructor(&mut self) { super([1]) },
+					contains(&self, x: 1) -> boolean { return true },
+				}
+			`,
 			want: []string{
 				"class `NumBag` redeclares inherited member `contains` with type " +
-					"`fn (x: number) -> boolean`, which is not compatible with " +
-					"`fn (x: unknown) -> boolean` declared by `Bag`",
+					"`fn (x: 1) -> boolean`, which is not compatible with " +
+					"`fn (x: number) -> boolean` declared by `Bag`",
 			},
 		},
 		{
-			// The override matches `Bag<unknown>`'s `contains`, the widest view of `AnyBag`.
-			name: "an override accepting any input is allowed",
-			src: bag + `
-				class AnyBag extends Bag<number> {
-					constructor(&mut self) { super([1]) },
-					contains(&self, x: unknown) -> boolean { return false },
-				}
-			`,
-		},
-		{
-			// `U` is unbounded and nothing in `Bag2` consumes it, so the override is as
-			// generic in `U` as `Bag`'s method is in `T`. A wider view passes a wider `U`,
-			// and the override is checked at `Bag<U>` rather than `Bag<unknown>`.
 			name: "a generic override keeps its parameter",
 			src: bag + `
 				class Bag2<U> extends Bag<U> {
@@ -1863,113 +1852,9 @@ func TestInferClassSelfMethodInputVariance(t *testing.T) {
 			`,
 		},
 		{
-			// `U: number` lets the override use `x` as a `number`, so it is not generic
-			// in the way the widening needs.
-			name: "a bounded generic override narrowing a covariant input is rejected",
-			src: bag + `
-				class NumBag2<U: number> extends Bag<U> {
-					constructor(&mut self, items: Array<U>) { super(items) },
-					contains(&self, x: U) -> boolean { return x > 1 },
-				}
-			`,
-			want: []string{
-				"class `NumBag2` redeclares inherited member `contains` with type " +
-					"`fn (x: U) -> boolean`, which is not compatible with " +
-					"`fn (x: unknown) -> boolean` declared by `Bag`",
-			},
-		},
-		{
-			// `Bag2<U>` measures `U` invariant, since it reaches the `extends` clause, so
-			// `Bag2<number>` does not widen. `Bag<number>` still does, and that view
-			// reaches the override below.
-			name: "an override is checked against every ancestor that widens",
-			src: bag + `
-				class Bag2<U> extends Bag<U> {
-					constructor(&mut self, items: Array<U>) { super(items) },
-					contains(&self, x: U) -> boolean { return false },
-				}
-				class NumBag3 extends Bag2<number> {
-					constructor(&mut self) { super([1]) },
-					contains(&self, x: number) -> boolean { return x > 1 },
-				}
-			`,
-			want: []string{
-				"class `NumBag3` redeclares inherited member `contains` with type " +
-					"`fn (x: number) -> boolean`, which is not compatible with " +
-					"`fn (x: unknown) -> boolean` declared by `Bag`",
-			},
-		},
-		{
-			// `Keyed<string>` is a `Bag<string>` through its `extends` clause, and `Bag` is
-			// covariant, so `Keyed<string>` is also a `Bag<number | string>`. That is how
-			// `go` hands `k` to `probe`. `Keyed<string>` is not a `Keyed<number | string>`,
-			// since the `key` field makes `Keyed` invariant in `U`, but the `Bag` view is
-			// enough. Through it `contains(42)` runs this override, which passes `42` to
-			// `self.key`, a function that takes only a `string`. Every subtype relation
-			// here holds, so the checker rejects the override, the one place that assumes
-			// `x` is a `U`.
-			name: "a generic override holding a consumer of its parameter is rejected",
-			src: bag + `
-				class Keyed<U> extends Bag<U> {
-					key: fn (x: U) -> number,
-					constructor(&mut self, key: fn (x: U) -> number) {
-						super([])
-						self.key = key
-					},
-					contains(&self, x: U) -> boolean { return self.key(x) > 0 },
-				}
-				fn probe(b: &Bag<number | string>) -> boolean { return b.contains(42) }
-				fn go(k: &Keyed<string>) -> boolean { return probe(k) }
-			`,
-			want: []string{
-				"class `Keyed` redeclares inherited member `contains` with type " +
-					"`fn (x: U) -> boolean`, which is not compatible with " +
-					"`fn (x: unknown) -> boolean` declared by `Bag`",
-			},
-		},
-		{
-			// Writing `x` into `sink` makes `Logged` invariant in `U`. The override is
-			// no longer generic in the way the widening needs, so it is checked at
-			// `Bag<unknown>`.
-			name: "a generic override storing its parameter in a mut field is rejected",
-			src: bag + `
-				class Logged<'a, U> extends Bag<U> {
-					sink: &'a mut Array<U>,
-					constructor(&mut self, sink: &'a mut Array<U>) {
-						super([])
-						self.sink = sink
-					},
-					contains(&self, x: U) -> boolean {
-						self.sink.push(x)
-						return false
-					},
-				}
-			`,
-			want: []string{
-				"class `Logged` redeclares inherited member `contains` with type " +
-					"`fn (x: U) -> boolean`, which is not compatible with " +
-					"`fn (x: unknown) -> boolean` declared by `Bag`",
-			},
-		},
-		{
-			// `NBag<1>` widens no further than `NBag<number>`, so the override has to accept
-			// a `number` and nothing wider.
-			name: "an override is widened to the parameter's bound",
-			src: `
-				class NBag<T: number> {
-					readonly v: T,
-					has(&self, x: T) -> boolean { return false },
-				}
-				class One extends NBag<1> {
-					constructor(&mut self) { super(1) },
-					has(&self, x: number) -> boolean { return x > 0 },
-				}
-			`,
-		},
-		{
-			// The widest view of `One` is `NBag<number>`, so the override has to accept
-			// every `number`, not just `1`.
-			name: "an override narrower than the parameter's bound is rejected",
+			// `NBag<1>` does not widen to `NBag<number>`, so the override only has to accept
+			// a `1`.
+			name: "an override at a bounded parameter's argument is allowed",
 			src: `
 				class NBag<T: number> {
 					readonly v: T,
@@ -1980,54 +1865,6 @@ func TestInferClassSelfMethodInputVariance(t *testing.T) {
 					has(&self, x: 1) -> boolean { return true },
 				}
 			`,
-			want: []string{
-				"class `One` redeclares inherited member `has` with type " +
-					"`fn (x: 1) -> boolean`, which is not compatible with " +
-					"`fn (x: number) -> boolean` declared by `NBag`",
-			},
-		},
-		{
-			// `Keyed` holds the consumer and `K2` reaches it through an inherited field.
-			name: "a generic override reaching an inherited consumer of its parameter is rejected",
-			src: bag + `
-				class Keyed<U> extends Bag<U> {
-					key: fn (x: U) -> number,
-					constructor(&mut self, key: fn (x: U) -> number) {
-						super([])
-						self.key = key
-					},
-				}
-				class K2<V> extends Keyed<V> {
-					constructor(&mut self, key: fn (x: V) -> number) { super(key) },
-					contains(&self, x: V) -> boolean { return self.key(x) > 0 },
-				}
-			`,
-			want: []string{
-				"class `K2` redeclares inherited member `contains` with type " +
-					"`fn (x: V) -> boolean`, which is not compatible with " +
-					"`fn (x: unknown) -> boolean` declared by `Bag`",
-			},
-		},
-		{
-			// `T` is covariant, so `D` reads as `C<unknown, unknown>` and `U`'s bound widens
-			// with it.
-			name: "a bound naming a covariant parameter widens with it",
-			src: `
-				class C<T, U: T> {
-					readonly t: T,
-					readonly u: U,
-					has(&self, x: U) -> boolean { return false },
-				}
-				class D extends C<number, number> {
-					constructor(&mut self) { super(1, 1) },
-					has(&self, x: number) -> boolean { return x > 0 },
-				}
-			`,
-			want: []string{
-				"class `D` redeclares inherited member `has` with type " +
-					"`fn (x: number) -> boolean`, which is not compatible with " +
-					"`fn (x: unknown) -> boolean` declared by `C`",
-			},
 		},
 	}
 	for _, tt := range tests {
@@ -2317,14 +2154,14 @@ func TestInferClassVarianceModifiers(t *testing.T) {
 			name: "in out modifier rejects a widening the body allows",
 			src: `class C<in out T> {
 				readonly v: T,
-				has(&self, x: T) -> boolean { return false },
 			}
 			fn widen(c: &C<number>) -> &C<number | string> { return c }`,
 			want: []string{"cannot constrain string <: number"},
 		},
 		{
-			// `in out T` keeps `C<number>` from widening, so nothing passes `has` a value its
-			// override cannot take.
+			// `has` takes `T` as input beside the field's output, so the body measures `T`
+			// invariant and the modifier matches it. `C<number>` does not widen, so nothing
+			// passes `has` a value its override cannot take.
 			name: "in out modifier allows an override at a fixed argument",
 			src: `class C<in out T> {
 				readonly v: T,
@@ -2334,6 +2171,92 @@ func TestInferClassVarianceModifiers(t *testing.T) {
 				constructor(&mut self) { super(1) },
 				has(&self, x: number) -> boolean { return x > 0 },
 			}`,
+		},
+		{
+			// `contains` takes `T` as a value parameter, which is the input that makes `T`
+			// invariant. The message names the lower-bounded form of that parameter.
+			name: "out modifier on a parameter a self method takes names the lower-bounded form",
+			src: `class Bag<out T> {
+				readonly items: Array<T>,
+				contains(&self, x: T) -> boolean { return false },
+			}`,
+			want: []string{
+				"type parameter `T` is declared covariant but is actually invariant; " +
+					"a lower-bounded binder, `contains<B>(&self, x: B) where T: B`, moves `T` out of the input position",
+			},
+		},
+		{
+			// The same rewrite turns a parameter only an input names from contravariant to
+			// covariant, since the lower bound is its only occurrence afterwards.
+			name: "out modifier on a parameter only a self method takes names the lower-bounded form",
+			src: `class Sink<out T> {
+				accept(self, x: T) { },
+			}`,
+			want: []string{
+				"type parameter `T` is declared covariant but is actually contravariant; " +
+					"a lower-bounded binder, `accept<B>(self, x: B) where T: B`, moves `T` out of the input position",
+			},
+		},
+		{
+			// A class parameter already named `B` pushes the suggested binder to `B2`.
+			name: "the suggested binder avoids the class's own parameter names",
+			src: `class C<out B> {
+				readonly v: B,
+				has(&self, x: B) -> boolean { return false },
+			}`,
+			want: []string{
+				"type parameter `B` is declared covariant but is actually invariant; " +
+					"a lower-bounded binder, `has<B2>(&self, x: B2) where B: B2`, moves `B` out of the input position",
+			},
+		},
+		{
+			// The method's own binder stays ahead of the new one and claims its name, the
+			// other parameters are elided, and an optional parameter stays optional.
+			name: "the suggested form keeps the method's binders and elides its other parameters",
+			src: `class C<out T> {
+				readonly v: T,
+				has<B>(&self, x?: T, y: B) -> boolean { return false },
+			}`,
+			want: []string{
+				"type parameter `T` is declared covariant but is actually invariant; " +
+					"a lower-bounded binder, `has<B, B2>(&self, x?: B2, …) where T: B2`, moves `T` out of the input position",
+			},
+		},
+		{
+			// A second input keeps `T` invariant after the rewrite. The hint still names the
+			// one it can move, and claims no more than that.
+			name: "the hint beside another input names only the parameter it moves",
+			src: `class C<out T> {
+				readonly v: T,
+				readonly sink: fn (x: T) -> undefined,
+				has(&self, x: T) -> boolean { return false },
+			}`,
+			want: []string{
+				"type parameter `T` is declared covariant but is actually invariant; " +
+					"a lower-bounded binder, `has<B>(&self, x: B) where T: B`, moves `T` out of the input position",
+			},
+		},
+		{
+			// A lower-bounded binder makes a parameter covariant, so the hint has nothing to
+			// offer an `in` modifier.
+			name: "in modifier on a parameter a self method takes carries no hint",
+			src: `class Cell<in T> {
+				readonly value: T,
+				accept(&self, x: T) { },
+			}`,
+			want: []string{"type parameter `T` is declared contravariant but is actually invariant"},
+		},
+		{
+			// The input that contradicts the modifier is the held consumer. A `&mut self`
+			// method's input shapes the mutable view alone, which the modifier does not speak
+			// for, so the message offers no rewrite.
+			name: "out modifier mismatched by a held consumer carries no hint for a mut self method",
+			src: `class Cell<out T> {
+				readonly value: T,
+				readonly sink: fn (x: T) -> undefined,
+				push(&mut self, x: T) { },
+			}`,
+			want: []string{"type parameter `T` is declared covariant but is actually invariant"},
 		},
 	}
 	for _, tt := range tests {

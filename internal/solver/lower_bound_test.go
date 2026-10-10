@@ -155,11 +155,9 @@ func TestLowerBoundedBinder(t *testing.T) {
 	}
 }
 
-// TestInferClassLowerBoundedMethod ports the `NumBag` and `Keyed` cases of
-// TestInferClassSelfMethodInputVariance to a base method whose own binder is bounded below by
+// TestInferClassLowerBoundedMethod covers a base method whose own binder is bounded below by
 // the class parameter. `T` then appears only in that bound, an output position, so `Bag` is
-// covariant by the ordinary rule rather than through the reader exemption, and an override is
-// held to the quantified signature rather than to the widest instance.
+// covariant and widens, and an override is held to the quantified signature.
 func TestInferClassLowerBoundedMethod(t *testing.T) {
 	t.Parallel()
 
@@ -240,6 +238,45 @@ func TestInferClassLowerBoundedMethod(t *testing.T) {
 				class AnyBag extends Bag<number> {
 					constructor(&mut self) { super([1]) },
 					contains(&self, x: unknown) -> boolean { return false },
+				}
+			`,
+		},
+		{
+			// The base's `where T: B` reads `where U: B` at the subclass's argument, so a
+			// generic override written in the same form matches it.
+			name: "a generic override keeping the binder is allowed",
+			src: bag + `
+				class Bag2<U> extends Bag<U> {
+					constructor(&mut self, items: Array<U>) { super(items) },
+					contains<B>(&self, x: B) -> boolean where U: B { return false },
+				}
+			`,
+		},
+		{
+			name: "a generic override that narrows the binder is rejected",
+			src: bag + `
+				class Bag2<U> extends Bag<U> {
+					constructor(&mut self, items: Array<U>) { super(items) },
+					contains(&self, x: U) -> boolean { return false },
+				}
+			`,
+			want: []string{
+				"class `Bag2` redeclares inherited member `contains` with type " +
+					"`fn (x: U) -> boolean`, which is not compatible with " +
+					"`fn <B>(x: B) -> boolean where U: B` declared by `Bag`",
+			},
+		},
+		{
+			// The override is checked against the base two `extends` edges up, through the
+			// generic class between them.
+			name: "an override keeping the binder through a generic subclass is allowed",
+			src: bag + `
+				class Bag2<U> extends Bag<U> {
+					constructor(&mut self, items: Array<U>) { super(items) },
+				}
+				class NumBag extends Bag2<number> {
+					constructor(&mut self) { super([1]) },
+					contains<B>(&self, x: B) -> boolean where number: B { return false },
 				}
 			`,
 		},

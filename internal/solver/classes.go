@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"maps"
 	"slices"
+	"strings"
 
 	"github.com/escalier-lang/escalier/internal/ast"
 	"github.com/escalier-lang/escalier/internal/set"
@@ -46,27 +47,13 @@ type ClassDef struct {
 	// entry falls back to Invariant.
 	MutVariance []Variance
 
-	// CovariantInputs has one entry per TypeParam. An entry is true when a method with an
-	// immutable receiver takes the parameter as input and Variance still measures it
-	// covariant. Through that covariance an instance can be read at a wider argument, so the
-	// override check also reads such a method at the widest instance widestInstance returns.
-	// It is nil until variance inference fills it, and a missing entry reads as false.
-	CovariantInputs []bool
-
-	// StorageVariance is the immutable-view variance measured from the class's own fields
-	// and the members an immutable reference reaches other than its methods, before a
-	// parameter reaching an `extends` argument is marked invariant. A parameter it measures
-	// Covariant or Bivariant is one the class holds no consumer of that a method with an
-	// immutable receiver can reach. It is nil until variance inference fills it.
-	StorageVariance []Variance
-
 	// varianceMeasured is set once the class body is inferred and its variance measured, even
 	// when that measurement is provisional.
 	varianceMeasured bool
 
 	// varianceProvisional marks the variance vectors as a stand-in. The measurement read a
-	// class whose own variance was not final yet, so every entry is Invariant and
-	// CovariantInputs is all false. settleVariance measures again.
+	// class whose own variance was not final yet, so every entry is Invariant.
+	// settleVariance measures again.
 	varianceProvisional bool
 
 	// varianceSelf is the class's qualified name and varianceDecl its declaration, which
@@ -193,10 +180,6 @@ func (v Variance) String() string {
 type measuredVariance struct {
 	// immut is stored as ClassDef.Variance and mut as ClassDef.MutVariance.
 	immut, mut []Variance
-	// covariantInputs is stored as ClassDef.CovariantInputs.
-	covariantInputs []bool
-	// storage is stored as ClassDef.StorageVariance.
-	storage []Variance
 	// incomplete reports that the measurement read a class whose variance is not settled.
 	// The vectors are then nil, and waitsOn names each such class.
 	incomplete bool
@@ -208,17 +191,15 @@ type measuredVariance struct {
 // and def.varianceDecl, which must be set first.
 //
 // A measurement that reads a class whose variance is not final stores Invariant throughout
-// and marks def provisional. Reading that class as Invariant instead would not be
-// conservative: an Invariant class in a non-mutating method's parameter adds an output
-// position, which sets that method's inputs aside. A final measurement bumps
-// measuredClasses, so a provisional class waiting on it measures again.
+// and marks def provisional. Invariant is sound for every parameter. A final measurement
+// bumps measuredClasses, so a provisional class waiting on it measures again and stores a
+// variance as precise as the body allows.
 func (c *Context) measureVariance(def *ClassDef) {
 	m := inferBodyVariance(def, def.varianceSelf, c)
 	def.varianceTriedAt = c.measuredClasses
 	if m.incomplete {
 		n := len(def.TypeParams)
 		def.Variance, def.MutVariance = uniformVariance(n, Invariant), uniformVariance(n, Invariant)
-		def.CovariantInputs, def.StorageVariance = make([]bool, n), uniformVariance(n, Invariant)
 		def.varianceProvisional = true
 		def.varianceMismatches = nil
 		def.varianceWaitsOn = m.waitsOn
@@ -230,9 +211,11 @@ func (c *Context) measureVariance(def *ClassDef) {
 // storeFinalVariance settles m against def's declared modifiers and stores it on def as
 // final.
 func (c *Context) storeFinalVariance(def *ClassDef, m measuredVariance) {
-	m, def.varianceMismatches = applyDeclaredVariance(m, def.varianceDecl)
+	m, def.varianceMismatches = applyDeclaredVariance(m, def)
+	// The hint walks every method signature, so only the mismatches a caller reports get
+	// one. settleVarianceGroup discards the mismatches of each fixpoint pass.
+	attachLowerBoundedHints(def, def.varianceMismatches)
 	def.Variance, def.MutVariance = m.immut, m.mut
-	def.CovariantInputs, def.StorageVariance = m.covariantInputs, m.storage
 	def.varianceProvisional = false
 	def.varianceWaitsOn = nil
 	c.measuredClasses++
@@ -312,7 +295,7 @@ func (c *Context) settleVarianceGroup(def *ClassDef) {
 			}
 			// A member's declared modifier is what the rest of the group reads it at, as a
 			// settled class outside the group is read at its stored variance.
-			m, _ = applyDeclaredVariance(m, member.varianceDecl)
+			m, _ = applyDeclaredVariance(m, member)
 			measured[name] = m
 			assumed := env.assumed[name]
 			if !slices.Equal(m.immut, assumed.Variance) || !slices.Equal(m.mut, assumed.MutVariance) {
@@ -353,8 +336,8 @@ func (env *groupVarianceEnv) aliasBody(ref *soltype.AliasType) (soltype.Type, bo
 }
 
 // applyDeclaredVariance settles a measurement against the `in`/`out`/`in out` modifiers
-// decl writes. It returns the vectors to store and one VarianceMismatchError per modifier
-// looser than the measured variance.
+// def's declaration writes. It returns the vectors to store and one VarianceMismatchError
+// per modifier looser than the measured variance.
 //
 // A modifier may be stricter than the measured variance, and the declared variance is then
 // what is stored. So `in out T` on a parameter the body reads covariantly makes the class
@@ -363,8 +346,9 @@ func (env *groupVarianceEnv) aliasBody(ref *soltype.AliasType) (soltype.Type, bo
 //
 // A modifier speaks for the immutable view. Each other vector stores whichever of its own
 // measurement and the modifier is stricter.
-func applyDeclaredVariance(m measuredVariance, decl *ast.ClassDecl) (measuredVariance, []*VarianceMismatchError) {
+func applyDeclaredVariance(m measuredVariance, def *ClassDef) (measuredVariance, []*VarianceMismatchError) {
 	var mismatches []*VarianceMismatchError
+	decl := def.varianceDecl
 	if decl == nil {
 		return m, nil
 	}
@@ -387,9 +371,98 @@ func applyDeclaredVariance(m measuredVariance, decl *ast.ClassDecl) (measuredVar
 		}
 		m.immut[i] = declared
 		m.mut[i] = joinVariance(m.mut[i], declared)
-		m.covariantInputs[i] = m.covariantInputs[i] && declared == Covariant
 	}
 	return m, mismatches
+}
+
+// attachLowerBoundedHints sets LowerBounded on each mismatch of a parameter declared `out`
+// that a method with an immutable receiver takes as a value parameter, as `accept(&self,
+// x: T)` does. The hint is the lower-bounded form of that parameter, `accept<B>(&self, x: B)
+// where T: B`, which moves `T` to an output position. A mismatch on an `in` parameter gets
+// none, since the rewrite only ever makes a parameter more covariant.
+func attachLowerBoundedHints(def *ClassDef, mismatches []*VarianceMismatchError) {
+	for _, mismatch := range mismatches {
+		if mismatch.Declared != Covariant {
+			continue
+		}
+		for i, tp := range def.TypeParams {
+			if tp.Name == mismatch.Name {
+				mismatch.LowerBounded = lowerBoundedInput(def, i)
+				break
+			}
+		}
+	}
+}
+
+// lowerBoundedInput returns the lower-bounded form of the first value parameter that a
+// method with an immutable receiver declares at def's i'th type parameter, or "" when no
+// method takes it so. For `accept(&self, x: T)` it is `accept<B>(&self, x: B) where T: B`.
+// The form keeps the method's own binders ahead of the new one and writes `…` for the
+// value parameters it leaves out, so `has<U>(&self, x: T, y: U)` gives
+// `has<U, B>(&self, x: B, …) where T: B`. The return type is left out as well. The new
+// binder is named `B`, or the first of `B2`, `B3`, … that neither the class nor the method
+// already uses.
+func lowerBoundedInput(def *ClassDef, i int) string {
+	if def.Body == nil {
+		return ""
+	}
+	target := def.TypeParams[i]
+	for _, elem := range def.Body.Elems {
+		method, ok := elem.(*soltype.MethodElem)
+		if !ok {
+			continue
+		}
+		for _, sig := range method.Signatures {
+			if sig.SelfParam == nil || mutReceiver(sig.SelfParam) {
+				continue
+			}
+			receiver := "self"
+			if _, isRef := sig.SelfParam.Type.(*soltype.RefType); isRef {
+				receiver = "&self"
+			}
+			for _, param := range sig.Params {
+				ident, isIdent := param.Pattern.(*soltype.IdentPat)
+				if !isIdent || param.Type != target.Var {
+					continue
+				}
+				binder := freshBinderName(def.TypeParams, sig.TypeParams)
+				binders := make([]string, 0, len(sig.TypeParams)+1)
+				for _, tp := range sig.TypeParams {
+					binders = append(binders, tp.Name)
+				}
+				binders = append(binders, binder)
+				optional := ""
+				if param.Optional {
+					optional = "?"
+				}
+				rest := ""
+				if len(sig.Params) > 1 {
+					rest = ", …"
+				}
+				return fmt.Sprintf("%s<%s>(%s, %s%s: %s%s) where %s: %s",
+					method.Name, strings.Join(binders, ", "), receiver, ident.Name, optional, binder, rest,
+					target.Name, binder)
+			}
+		}
+	}
+	return ""
+}
+
+// freshBinderName returns `B` when no type parameter in classParams or methodParams is named
+// so, and otherwise the first of `B2`, `B3`, … that none is.
+func freshBinderName(classParams, methodParams []*soltype.TypeParam) string {
+	taken := set.NewSet[string]()
+	for _, tp := range classParams {
+		taken.Add(tp.Name)
+	}
+	for _, tp := range methodParams {
+		taken.Add(tp.Name)
+	}
+	name := "B"
+	for n := 2; taken.Contains(name); n++ {
+		name = fmt.Sprintf("B%d", n)
+	}
+	return name
 }
 
 // joinVariance returns the least variance at least as strict as both a and b. Bivariant
@@ -469,29 +542,12 @@ func modifierVariance(m ast.VarianceModifier) (Variance, bool) {
 // what keeps `readonly items: Array<T>` invariant in mut, since `b.items.push(x)` type-checks
 // through a `mut` reference to the holder.
 //
-// A method that leaves its receiver immutable has input positions that count only for a
-// parameter the views give no output position. Such a method cannot store a value it takes
-// into the instance. A `T` passed in can leave only through that method's own outputs, and
-// the caller reads those at the type it holds the instance at. Storage that could keep the
-// value is a field or a mutating member, and those are measured in full. So once a
-// parameter has an output position, a non-mutating method's inputs leave it covariant. A
-// parameter with no output position keeps the contravariance its inputs give it, so
-// `accept(&self, x: T)` alone still measures `T` contravariant. A `declare class` has no
-// body, so the measurement trusts its declaration to list its storage as fields and
-// mutating members.
-//
-// `Array<T>` needs this as well. `includes(&self, searchElement: T)` and
-// `with(&self, index: number, value: T)` each put T in an input position. Neither method
-// mutates the array, and `at` gives T an output position, so T stays covariant in immut.
-//
-// The method body this relies on is generic in T, and a subclass override at a fixed
-// argument is not. covariantInputs marks each parameter covariant only because its inputs
-// were set aside, and checkOverriddenName holds an override to the method read at the
-// widest instance widestInstance computes. storage is the immutable-view variance of the
-// fields and the members an immutable reference reaches other than methods, before a
-// parameter reaching a `super` argument is marked invariant. That check reads it for a
-// subclass passing its own parameter on. A mutating member is left out of it, since the
-// method the check is about takes an immutable receiver and cannot call one.
+// A value parameter of a method with an immutable receiver is an input position in both
+// views, the same as any other input. `class Bag<T> { readonly items: Array<T>,
+// contains(&self, x: T) -> boolean }` therefore measures T invariant. A class that wants to
+// stay covariant writes the input as a lower-bounded binder, `contains<B>(&self, x: B) ->
+// boolean where T: B`, which puts T in an output position only. `Array.includes` is
+// written that way.
 //
 // Every other member position has one variance both views share, so it is walked once and
 // folded into both. A method return or getter is covariant whether or not the holder can
@@ -499,9 +555,10 @@ func modifierVariance(m ast.VarianceModifier) (Variance, bool) {
 func inferBodyVariance(def *ClassDef, selfName string, env varianceEnv) measuredVariance {
 	n := len(def.TypeParams)
 	assumed := measuredVariance{immut: uniformVariance(n, Bivariant), mut: uniformVariance(n, Bivariant)}
-	// A pass can lower an entry as well as raise it, since a new output position sets a
-	// non-mutating method's inputs aside, so the passes are bounded rather than trusted to
-	// converge. Each entry has four values, which bounds a sequence that keeps moving.
+	// A stricter assumed vector only adds positions to the class's own references, so each
+	// pass tightens the vectors or leaves them unchanged. An entry moves from Bivariant through
+	// Covariant or Contravariant to Invariant, which is at most two moves per entry per view.
+	// The bound covers that many passes, and the fallback after it keeps the loop total.
 	for range 4*n + 1 {
 		m, readSelf := measureBodyVariance(def, selfName, env, assumed)
 		// A body that never names its own class does not read assumed, so one pass is final.
@@ -510,12 +567,7 @@ func inferBodyVariance(def *ClassDef, selfName string, env varianceEnv) measured
 		}
 		assumed = m
 	}
-	return measuredVariance{
-		immut:           uniformVariance(n, Invariant),
-		mut:             uniformVariance(n, Invariant),
-		covariantInputs: make([]bool, n),
-		storage:         uniformVariance(n, Invariant),
-	}
+	return measuredVariance{immut: uniformVariance(n, Invariant), mut: uniformVariance(n, Invariant)}
 }
 
 // varianceEnv is what variance inference reads from outside the class it measures.
@@ -538,12 +590,7 @@ func uniformVariance(n int, v Variance) []Variance {
 // holds such a reference, which is the only way assumed reaches the result.
 func measureBodyVariance(def *ClassDef, selfName string, env varianceEnv, assumed measuredVariance) (m measuredVariance, readSelf bool) {
 	n := len(def.TypeParams)
-	m = measuredVariance{
-		immut:           make([]Variance, n),
-		mut:             make([]Variance, n),
-		covariantInputs: make([]bool, n),
-		storage:         make([]Variance, n),
-	}
+	m = measuredVariance{immut: make([]Variance, n), mut: make([]Variance, n)}
 	if n == 0 {
 		return m, false
 	}
@@ -586,16 +633,12 @@ func measureBodyVariance(def *ClassDef, selfName string, env varianceEnv, assume
 	// Each visitor records one group of occurrences:
 	//   - fieldRef: a field read through an immutable reference.
 	//   - mutFieldRef: a field read and written through a mutable reference.
-	//   - otherRef: every other member an immutable reference reaches, except the
-	//     non-mutating methods.
-	//   - readerRef: the non-mutating methods, whose input positions count only for a
-	//     parameter with no output position.
+	//   - otherRef: every other member an immutable reference reaches.
 	//   - mutOnlyRef: the members only a mutable reference reaches.
 	//   - superRef: the `extends` arguments.
 	fieldRef := newVisitor(false)
 	mutFieldRef := newVisitor(true)
 	otherRef := newVisitor(false)
-	readerRef := newVisitor(false)
 	mutOnlyRef := newVisitor(false)
 	superRef := newVisitor(false)
 	if def.Body != nil {
@@ -611,9 +654,7 @@ func measureBodyVariance(def *ClassDef, selfName string, env varianceEnv, assume
 				continue
 			}
 			immutPart, mutOnlyPart := splitByReceiverMut(elem)
-			if method, ok := immutPart.(*soltype.MethodElem); ok {
-				soltype.AcceptObjElem(method, readerRef, soltype.Positive)
-			} else if immutPart != nil {
+			if immutPart != nil {
 				soltype.AcceptObjElem(immutPart, otherRef, soltype.Positive)
 			}
 			if mutOnlyPart != nil {
@@ -629,48 +670,18 @@ func measureBodyVariance(def *ClassDef, selfName string, env varianceEnv, assume
 			arg.Accept(superRef, soltype.Negative)
 		}
 	}
-	// The reader exemption. A non-mutating method's input positions are set aside for a
-	// parameter that already has an output position in the immutable view, so a class such
-	// as `class Bag<T> { readonly items: Array<T>, contains(&self, x: T) -> boolean }` stays
-	// covariant. readerNeg reports whether a reader's input position still counts for the
-	// parameter.
-	//
-	// Setting them aside is safe because a wider argument has nowhere to go:
-	//   - The method cannot store it. Its receiver gives it no write access to the instance,
-	//     and nothing outside the method can be typed by the class's parameter.
-	//   - What the method returns is read at the view's own argument, so a value the wider
-	//     argument admits comes back typed as the wider argument.
-	//   - An override in a subclass could still rely on the narrower argument. covariantInputs
-	//     marks the parameter, so the override check also reads the method at the class's
-	//     widest instance and rejects such an override.
-	//
-	// The exemption covers, for a method whose receiver is `&self` or `self`:
-	//   - its value parameters, as `x: T` in `contains(&self, x: T)`;
-	//   - its own binders' upper bounds, as `T` in `m<U: T>(&self, x: U) -> T`.
-	//
-	// It does not cover the positions below, which count in full:
-	//   - every position of a method whose receiver is `&mut self` or `mut self`, and of a
-	//     setter. These count toward the mutable view alone, since an immutable reference
-	//     cannot reach them, and there they make a parameter they take and return invariant.
-	//   - a field's input positions, including those of a function the field holds. The
-	//     function is whatever the constructor was given, and it can close over state fixed
-	//     to the instance's argument.
-	//   - the write a mutable reference makes to a field that is not `readonly`.
-	//   - the `extends` arguments, which superRef marks in both directions.
-	//
-	// A parameter with no output position in the immutable view keeps its readers' input
-	// positions, so `m<U: T>(&self, x: U) -> boolean` alone makes T contravariant.
+	// The members a mutable reference alone reaches count toward the mutable view only. The
+	// write such a reference makes to a field that is not `readonly` is in mutFieldRef, and
+	// the setters and `&mut self` methods are in mutOnlyRef.
 	for i := range n {
-		ownPos := fieldRef.pos[i] || otherRef.pos[i] || readerRef.pos[i]
-		readerNeg := readerRef.neg[i] && !ownPos
-		ownNeg := fieldRef.neg[i] || otherRef.neg[i] || readerNeg
-		m.storage[i] = collapseVariance(fieldRef.pos[i] || otherRef.pos[i], fieldRef.neg[i] || otherRef.neg[i])
-		m.immut[i] = collapseVariance(ownPos || superRef.pos[i], ownNeg || superRef.neg[i])
-		m.mut[i] = collapseVariance(
-			mutFieldRef.pos[i] || otherRef.pos[i] || readerRef.pos[i] || mutOnlyRef.pos[i] || superRef.pos[i],
-			mutFieldRef.neg[i] || otherRef.neg[i] || readerNeg || mutOnlyRef.neg[i] || superRef.neg[i],
+		m.immut[i] = collapseVariance(
+			fieldRef.pos[i] || otherRef.pos[i] || superRef.pos[i],
+			fieldRef.neg[i] || otherRef.neg[i] || superRef.neg[i],
 		)
-		m.covariantInputs[i] = readerRef.neg[i] && m.immut[i] == Covariant
+		m.mut[i] = collapseVariance(
+			mutFieldRef.pos[i] || otherRef.pos[i] || mutOnlyRef.pos[i] || superRef.pos[i],
+			mutFieldRef.neg[i] || otherRef.neg[i] || mutOnlyRef.neg[i] || superRef.neg[i],
+		)
 	}
 	if len(waitsOn) > 0 {
 		return measuredVariance{incomplete: true, waitsOn: waitsOn}, readSelf
