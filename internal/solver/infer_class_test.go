@@ -862,6 +862,110 @@ func TestInferClassMethodRecursion(t *testing.T) {
 	}
 }
 
+// TestInferClassReturnsSelf covers a member that hands back `self` rather than reading
+// through it. The bare `self` is the receiver over the class, so a `&self` method
+// returning it infers a borrow of the class as its return type, with or without an
+// annotation.
+func TestInferClassReturnsSelf(t *testing.T) {
+	tests := []struct {
+		name       string
+		src        string
+		wantValues map[string]string
+	}{
+		{
+			name: "InferredReturn",
+			src: `
+				class P {
+					x: number,
+					id(&self) { return self },
+				}
+				val p = P(1)
+				val m = p.id
+				val q = p.id()
+			`,
+			wantValues: map[string]string{"m": "fn () -> &P", "q": "&P"},
+		},
+		{
+			name: "AnnotatedReturn",
+			src: `
+				class P {
+					x: number,
+					id(&self) -> &Self { return self },
+				}
+				val p = P(1)
+				val q = p.id()
+			`,
+			wantValues: map[string]string{"q": "&P"},
+		},
+		{
+			name: "DeclaredReturn",
+			src: `
+				declare class P {
+					id(&self) -> Self,
+				}
+				declare val p: P
+				val q = p.id()
+			`,
+			wantValues: map[string]string{"q": "P"},
+		},
+		{
+			// A read through `self` still sees the structural body.
+			name: "FieldRead",
+			src: `
+				class P {
+					x: number,
+					getX(&self) { return self.x },
+				}
+				val p = P(1)
+				val x = p.getX()
+			`,
+			wantValues: map[string]string{"x": "number"},
+		},
+		{
+			// A borrowed receiver hands back the borrow, so the chain stays on one instance.
+			name: "FluentChain",
+			src: `
+				class Point {
+					x: number,
+					y: number,
+					scale(&mut self, factor: number) {
+						self.x = self.x * factor
+						self.y = self.y * factor
+						return self
+					},
+					translate(&mut self, dx: number, dy: number) {
+						self.x = self.x + dx
+						self.y = self.y + dy
+						return self
+					},
+				}
+				val mut p = Point(5, 10)
+				val q = p.scale(2).translate(1, 1)
+				val x = q.x
+			`,
+			wantValues: map[string]string{"x": "number"},
+		},
+		{
+			name: "PassedAsArgument",
+			src: `
+				declare fn take(p: &P) -> number
+				class P {
+					x: number,
+					send(&self) { return take(self) },
+				}
+				val p = P(1)
+				val n = p.send()
+			`,
+			wantValues: map[string]string{"n": "number"},
+		},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			classValues(t, test.src, test.wantValues, nil)
+		})
+	}
+}
+
 // TestInferClassMutualRecursionRequiresAnnotation asserts the annotation gate: a pair of
 // mutually recursive methods with no annotated return anywhere in the cycle cannot ground
 // its own return types, so every member of the cycle is reported. Annotating either

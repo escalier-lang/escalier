@@ -92,10 +92,6 @@ var (
 		name:   "a property read on a union whose arms do not all declare it",
 		ticket: "#1719",
 	}
-	causeStackOverflow = &solverSkipCause{
-		name:   "inference overflows the stack",
-		ticket: "#1695",
-	}
 )
 
 // solverSkip is one fixture the solver cannot yet check, with the cause it waits on
@@ -128,6 +124,7 @@ var solverSkips = []solverSkip{
 	{"grouping", causePrimitiveMember, "cannot constrain number <: object"},
 	{"if_val", causePrimitiveMember, "cannot constrain number <: object"},
 
+	{"class_with_fluent_mutating_methods", causeUnaryOperators, "Unsupported: UnaryExpr"},
 	{"literals", causeUnaryOperators, "Unsupported: UnaryExpr"},
 	{"template_literals", causeTemplateLiterals, "Unsupported: TemplateLitExpr"},
 	{"generic_class", causeTypeCast, "Unsupported: TypeCastExpr"},
@@ -152,8 +149,6 @@ var solverSkips = []solverSkip{
 	{"interface", causeExtendsTypeArgs, "type alias `Box` expects 1 type argument but got 0"},
 
 	{"member_access", causeUnionMember, "the package is accepted, and error.txt records a rejection"},
-
-	{"class_with_fluent_mutating_methods", causeStackOverflow, "inference never returns"},
 }
 
 // TestCheckFixturesOnSolver checks each fixture on the solver and asserts the package
@@ -186,9 +181,7 @@ func TestCheckFixturesOnSolver(t *testing.T) {
 
 	skips := make(map[string]solverSkip, len(solverSkips))
 	for _, skip := range solverSkips {
-		// A renamed or deleted fixture would otherwise leave a dead entry behind, and
-		// for the stack-overflow entry that would let the fixture run and take the test
-		// binary down with it.
+		// A renamed or deleted fixture would otherwise leave a dead entry behind.
 		require.True(t, fixtures.Contains(skip.fixture), "solverSkips names no such fixture")
 		require.False(t, disabled.Contains(skip.fixture),
 			"a disabled fixture is held out of the run already, so it needs no entry")
@@ -220,11 +213,6 @@ func TestCheckFixturesOnSolver(t *testing.T) {
 		}
 		t.Run(entry.Name(), func(t *testing.T) {
 			skip, skipped := skips[entry.Name()]
-			if skipped && skip.cause == causeStackOverflow {
-				// A Go stack overflow is fatal and takes the test binary with it, so this
-				// fixture cannot be run at all, not even to see whether it still fails.
-				t.Skipf("%s: %s (%s)", skip.cause.name, skip.reason, skip.cause.ticket)
-			}
 
 			fixtureDir := filepath.Join(rootDir, "fixtures", entry.Name())
 			// A disabled fixture never ran, so its missing error.txt records that rather

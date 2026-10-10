@@ -44,6 +44,11 @@ type ValueBinding struct {
 	// old checker's type_system.Binding.VarID. It is metadata for transition checking
 	// only and never participates in type inference.
 	VarID int
+	// Nominal is the type a read of the binding has when it is not the root of a member
+	// or index chain, or nil when every read has the scheme's type. Only `self` sets it.
+	// Inside `class P`, the scheme holds the structural view of P's body and Nominal holds
+	// the receiver over `P`, so `return self` produces `P` while `self.x` reads the view.
+	Nominal soltype.Type
 }
 
 // IsOverloaded reports whether this binding is an overload set. Consumers MUST
