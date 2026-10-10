@@ -17,6 +17,12 @@ import (
 // vacuous, but rewriting it changes what a call yields rather than restating
 // it. Sixteen come from type predicates the converter degrades to `-> boolean`,
 // and answering those means representing the predicate.
+//
+// A parameter with a lower bound is left alone too. TypeScript has no lower
+// bounds, so one is written by an overlay, where `<B>(value: B) where T: B`
+// ties the argument to the enclosing class's `T`. The pass does not know
+// which names in a bound are parameters of the enclosing declaration, so it
+// keeps every lower-bounded parameter rather than judging the bound.
 
 // elideVacuousTypeParams rewrites every signature in the module.
 func elideVacuousTypeParams(mod *StandaloneModule) {
@@ -62,7 +68,7 @@ func elideVacuousIn(sig sigParts) {
 		// it stays. `Object.fromEntries<T = any>` occurs once only because the
 		// conversion dropped the `{ [k: string]: T }` return that used it, and the
 		// fix there is to restore the return.
-		if tp.Default != nil {
+		if tp.Default != nil || tp.LowerBound != nil {
 			kept = append(kept, tp)
 			continue
 		}
@@ -82,6 +88,7 @@ func elideVacuousIn(sig sigParts) {
 		for _, other := range *sig.typeParams {
 			if other != tp {
 				elsewhere += countTypeParamRefs(other.UpperBound, tp.Name)
+				elsewhere += countTypeParamRefs(other.LowerBound, tp.Name)
 				elsewhere += countTypeParamRefs(other.Default, tp.Name)
 			}
 		}
@@ -134,11 +141,12 @@ type typeRefCounter struct {
 func (c *typeRefCounter) EnterTypeAnn(t ast.TypeAnn) bool {
 	// A nested signature declaring the same name binds every reference under it
 	// to its own parameter, so none of them is an occurrence of the outer one.
-	// The nested parameters' own constraints and defaults sit outside that
-	// binding, so they are counted.
+	// The nested parameters' own bounds and defaults sit outside that binding,
+	// so they are counted.
 	if fn, ok := t.(*ast.FuncTypeAnn); ok && bindsTypeParam(fn.TypeParams, c.name) {
 		for _, tp := range fn.TypeParams {
 			c.count += countTypeParamRefs(tp.UpperBound, c.name)
+			c.count += countTypeParamRefs(tp.LowerBound, c.name)
 			c.count += countTypeParamRefs(tp.Default, c.name)
 		}
 		return false
