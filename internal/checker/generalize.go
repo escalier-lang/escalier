@@ -64,7 +64,7 @@ func collectUnresolvedTypeVarsImpl(
 		}
 	case *type_system.FuncType:
 		for _, tp := range t.TypeParams {
-			collectUnresolvedTypeVarsImpl(tp.Constraint, vars, order, visited)
+			collectUnresolvedTypeVarsImpl(tp.UpperBound, vars, order, visited)
 			collectUnresolvedTypeVarsImpl(tp.Default, vars, order, visited)
 		}
 		for _, param := range t.Params {
@@ -583,8 +583,8 @@ func simplifyRecursiveCycles(funcTypes []*type_system.FuncType) {
 		// a pre-existing type parameter's constraint or default are still
 		// discovered.
 		for _, tp := range ft.TypeParams {
-			if tp.Constraint != nil {
-				tp.Constraint.Accept(collector)
+			if tp.UpperBound != nil {
+				tp.UpperBound.Accept(collector)
 			}
 			if tp.Default != nil {
 				tp.Default.Accept(collector)
@@ -954,7 +954,7 @@ func generalizeFuncTypes(funcTypes []*type_system.FuncType, excluded set.Set[int
 		existingNames.Add(name)
 		tp := &type_system.TypeParam{
 			Name:       name,
-			Constraint: tv.Constraint,
+			UpperBound: tv.Constraint,
 			Default:    tv.Default,
 		}
 		typeParams[id] = tp

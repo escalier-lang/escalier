@@ -309,15 +309,15 @@ func (c *Checker) validateTypeParams(
 		}
 
 		// Check if constraints match
-		if (existing.Constraint == nil) != (new.Constraint == nil) {
+		if (existing.UpperBound == nil) != (new.UpperBound == nil) {
 			errors = append(errors, &TypeParamMismatchError{
 				InterfaceName: interfaceName,
 				message:       fmt.Sprintf("Type parameter '%s' constraint mismatch in interface '%s'", new.Name, interfaceName),
 				span:          span,
 			})
-		} else if existing.Constraint != nil && new.Constraint != nil {
+		} else if existing.UpperBound != nil && new.UpperBound != nil {
 			// Both have constraints, check if they're compatible
-			unifyErrors := c.Unify(ctx, existing.Constraint, new.Constraint)
+			unifyErrors := c.Unify(ctx, existing.UpperBound, new.UpperBound)
 			if len(unifyErrors) > 0 {
 				errors = append(errors, &TypeParamMismatchError{
 					InterfaceName: interfaceName,

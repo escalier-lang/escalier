@@ -466,8 +466,8 @@ func (c *Checker) InferComponent(
 
 				for _, typeParam := range typeParams {
 					var t type_system.Type = type_system.NewUnknownType(nil)
-					if typeParam.Constraint != nil {
-						t = typeParam.Constraint
+					if typeParam.UpperBound != nil {
+						t = typeParam.UpperBound
 					}
 					declCtx.Scope.SetTypeAlias(typeParam.Name, &type_system.TypeAlias{
 						Type:        t,
@@ -915,8 +915,8 @@ func (c *Checker) InferComponent(
 				// they can be referenced when inferring the enum variants
 				for _, typeParam := range typeParams {
 					var t type_system.Type = type_system.NewUnknownType(nil)
-					if typeParam.Constraint != nil {
-						t = typeParam.Constraint
+					if typeParam.UpperBound != nil {
+						t = typeParam.UpperBound
 					}
 					declCtx.Scope.SetTypeAlias(typeParam.Name, &type_system.TypeAlias{
 						Type:        t,
@@ -2121,7 +2121,7 @@ func (c *Checker) inferTypeParams(astTypeParams []*ast.TypeParam) []*type_system
 		}
 		typeParamMap[typeParam.Name] = &type_system.TypeParam{
 			Name:       typeParam.Name,
-			Constraint: constraintType,
+			UpperBound: constraintType,
 			Default:    defaultType,
 		}
 	}
@@ -2172,8 +2172,8 @@ func (c *Checker) unifyTypeParams(
 		}
 		inferredTypeParam := inferredTypeParams[i]
 
-		if existingTypeParam.Constraint != nil && inferredTypeParam.Constraint != nil {
-			constraintErrors := c.Unify(ctx, existingTypeParam.Constraint, inferredTypeParam.Constraint)
+		if existingTypeParam.UpperBound != nil && inferredTypeParam.UpperBound != nil {
+			constraintErrors := c.Unify(ctx, existingTypeParam.UpperBound, inferredTypeParam.UpperBound)
 			errors = slices.Concat(errors, constraintErrors)
 		}
 		if existingTypeParam.Default != nil && inferredTypeParam.Default != nil {

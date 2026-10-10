@@ -358,7 +358,7 @@ func (t *TypeRefType) Equals(other Type) bool {
 				if t.TypeAlias.TypeParams[i].Name != other.TypeAlias.TypeParams[i].Name {
 					return false
 				}
-				if !equals(t.TypeAlias.TypeParams[i].Constraint, other.TypeAlias.TypeParams[i].Constraint) {
+				if !equals(t.TypeAlias.TypeParams[i].UpperBound, other.TypeAlias.TypeParams[i].UpperBound) {
 					return false
 				}
 				if !equals(t.TypeAlias.TypeParams[i].Default, other.TypeAlias.TypeParams[i].Default) {
@@ -771,14 +771,14 @@ func (t *GlobalThisType) String() string {
 
 type TypeParam struct {
 	Name       string
-	Constraint Type
+	UpperBound Type
 	Default    Type
 }
 
 func NewTypeParam(name string) *TypeParam {
 	return &TypeParam{
 		Name:       name,
-		Constraint: nil,
+		UpperBound: nil,
 		Default:    nil,
 	}
 }
@@ -786,7 +786,7 @@ func NewTypeParam(name string) *TypeParam {
 func NewTypeParamWithDefault(name string, default_ Type) *TypeParam {
 	return &TypeParam{
 		Name:       name,
-		Constraint: nil,
+		UpperBound: nil,
 		Default:    default_,
 	}
 }
@@ -940,7 +940,7 @@ func (t *FuncType) Equals(other Type) bool {
 			if t.TypeParams[i].Name != other.TypeParams[i].Name {
 				return false
 			}
-			if !equals(t.TypeParams[i].Constraint, other.TypeParams[i].Constraint) {
+			if !equals(t.TypeParams[i].UpperBound, other.TypeParams[i].UpperBound) {
 				return false
 			}
 			if !equals(t.TypeParams[i].Default, other.TypeParams[i].Default) {
@@ -2906,7 +2906,7 @@ func namespaceEquals(n1, n2 *Namespace) bool {
 					if v1.TypeParams[i].Name != v2.TypeParams[i].Name {
 						return false
 					}
-					if !equals(v1.TypeParams[i].Constraint, v2.TypeParams[i].Constraint) {
+					if !equals(v1.TypeParams[i].UpperBound, v2.TypeParams[i].UpperBound) {
 						return false
 					}
 					if !equals(v1.TypeParams[i].Default, v2.TypeParams[i].Default) {

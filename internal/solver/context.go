@@ -368,7 +368,7 @@ func (c *Context) freshSymbol() *soltype.UniqueSymbolType {
 type rigidParam struct {
 	v      *soltype.TypeVarType
 	name   string
-	bounds []soltype.Type
+	uppers []soltype.Type
 	lowers []soltype.Type
 	sk     *soltype.SkolemType
 	// fromBelow marks a parameter that is also rigid on the super side of a constraint, so a
@@ -400,7 +400,7 @@ func (c *Context) holdTypeParamsRigid(params []*soltype.TypeParam, fromBelow boo
 	for _, tp := range params {
 		c.rigidParams[tp.Var] = &rigidParam{
 			v: tp.Var, name: tp.Name,
-			bounds:    slices.Clone(tp.AllUpperBounds()),
+			uppers:    slices.Clone(tp.AllUpperBounds()),
 			lowers:    slices.Clone(tp.AllLowerBounds()),
 			fromBelow: fromBelow || tp.LowerBound != nil || namedInLower.Contains(tp.Var),
 		}
@@ -416,7 +416,7 @@ func (c *Context) holdTypeParamsRigid(params []*soltype.TypeParam, fromBelow boo
 }
 
 // rigidSkolem returns the skolem a rigid parameter is read as, whose upper bound meets
-// rp.bounds and whose lower bound joins rp.lowers. The bounds stay unsubstituted, so a
+// rp.uppers and whose lower bound joins rp.lowers. The bounds stay unsubstituted, so a
 // bound naming a sibling parameter is read through that sibling's skolem in turn.
 func (c *Context) rigidSkolem(rp *rigidParam) *soltype.SkolemType {
 	if rp.sk != nil {
@@ -424,12 +424,12 @@ func (c *Context) rigidSkolem(rp *rigidParam) *soltype.SkolemType {
 	}
 	rp.sk = c.freshSkolem(rp.name)
 	c.rigidSkolems[rp.sk] = rp.v
-	switch len(rp.bounds) {
+	switch len(rp.uppers) {
 	case 0:
 	case 1:
-		rp.sk.Upper = rp.bounds[0]
+		rp.sk.Upper = rp.uppers[0]
 	default:
-		rp.sk.Upper = &soltype.IntersectionType{Types: rp.bounds}
+		rp.sk.Upper = &soltype.IntersectionType{Types: rp.uppers}
 	}
 	switch len(rp.lowers) {
 	case 0:

@@ -3674,7 +3674,7 @@ func TestExpandType(t *testing.T) {
 		// For simplicity, we'll use a TypeRefType for the inner type
 		typeParam := &type_system.TypeParam{
 			Name:       "T",
-			Constraint: nil,
+			UpperBound: nil,
 			Default:    nil,
 		}
 		innerTypeRef := type_system.NewTypeRefType(nil, "T", nil)
@@ -3768,8 +3768,8 @@ func TestExpandType(t *testing.T) {
 		scope := NewScope()
 
 		// Add a generic type alias: type Result<T, E> = T | E
-		typeParamT := &type_system.TypeParam{Name: "T", Constraint: nil, Default: nil}
-		typeParamE := &type_system.TypeParam{Name: "E", Constraint: nil, Default: nil}
+		typeParamT := &type_system.TypeParam{Name: "T", UpperBound: nil, Default: nil}
+		typeParamE := &type_system.TypeParam{Name: "E", UpperBound: nil, Default: nil}
 
 		typeRefT := type_system.NewTypeRefType(nil, "T", nil)
 		typeRefE := type_system.NewTypeRefType(nil, "E", nil)
@@ -4217,7 +4217,7 @@ func TestExpandType(t *testing.T) {
 		// Create the type parameter T
 		typeParamT := &type_system.TypeParam{
 			Name:       "T",
-			Constraint: nil,
+			UpperBound: nil,
 			Default:    nil,
 		}
 

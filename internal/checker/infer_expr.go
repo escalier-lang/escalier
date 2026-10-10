@@ -1198,8 +1198,8 @@ func (c *Checker) instantiateGenericFunc(fnType *type_system.FuncType) *type_sys
 	// After all type parameters are in the substitution map,
 	// substitute any type parameter references in the constraints
 	for _, typeParam := range fnType.TypeParams {
-		if typeParam.Constraint != nil {
-			substitutedConstraint := SubstituteTypeParams(typeParam.Constraint, tpSubs)
+		if typeParam.UpperBound != nil {
+			substitutedConstraint := SubstituteTypeParams(typeParam.UpperBound, tpSubs)
 			if freshVar, ok := tpSubs[typeParam.Name].(*type_system.TypeVarType); ok {
 				freshVar.Constraint = substitutedConstraint
 			}

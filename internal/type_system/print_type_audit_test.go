@@ -246,7 +246,7 @@ func TestPrintTypeAudit_RoundTrip(t *testing.T) {
 			},
 			type_system.NewTypeRefType(nil, "T", nil), nil)},
 		{"func with constrained type param", type_system.NewFuncType(nil,
-			[]*type_system.TypeParam{{Name: "T", Constraint: type_system.NewStrPrimType(nil)}},
+			[]*type_system.TypeParam{{Name: "T", UpperBound: type_system.NewStrPrimType(nil)}},
 			[]*type_system.FuncParam{
 				{Pattern: type_system.NewIdentPat("x"), Type: type_system.NewTypeRefType(nil, "T", nil)},
 			},

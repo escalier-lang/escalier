@@ -221,8 +221,8 @@ func (b *Builder) buildDeclStmt(decl ast.Decl, namespace *type_sys.Namespace, is
 		typeParams := make([]*TypeParam, len(funcType.TypeParams))
 		for i, param := range funcType.TypeParams {
 			var constraint TypeAnn
-			if param.Constraint != nil {
-				constraint = b.buildTypeAnn(param.Constraint)
+			if param.UpperBound != nil {
+				constraint = b.buildTypeAnn(param.UpperBound)
 			}
 			var default_ TypeAnn
 			if param.Default != nil {
@@ -399,8 +399,8 @@ func (b *Builder) buildDeclStmt(decl ast.Decl, namespace *type_sys.Namespace, is
 		classTypeParams := make([]*TypeParam, len(typeAlias.TypeParams))
 		for i, param := range typeAlias.TypeParams {
 			var constraint TypeAnn
-			if param.Constraint != nil {
-				constraint = b.buildTypeAnn(param.Constraint)
+			if param.UpperBound != nil {
+				constraint = b.buildTypeAnn(param.UpperBound)
 			}
 			var default_ TypeAnn
 			if param.Default != nil {
@@ -496,8 +496,8 @@ func (b *Builder) buildDeclStmt(decl ast.Decl, namespace *type_sys.Namespace, is
 					variantTypeParams := make([]*TypeParam, len(variantTypeAlias.TypeParams))
 					for i, param := range variantTypeAlias.TypeParams {
 						var constraint TypeAnn
-						if param.Constraint != nil {
-							constraint = b.buildTypeAnn(param.Constraint)
+						if param.UpperBound != nil {
+							constraint = b.buildTypeAnn(param.UpperBound)
 						}
 						var default_ TypeAnn
 						if param.Default != nil {
@@ -752,8 +752,8 @@ func (b *Builder) buildTypeAnn(t type_sys.Type) TypeAnn {
 		for i, tp := range t.TypeParams {
 			var constraint TypeAnn
 			var defaultType TypeAnn
-			if tp.Constraint != nil {
-				constraint = b.buildTypeAnn(tp.Constraint)
+			if tp.UpperBound != nil {
+				constraint = b.buildTypeAnn(tp.UpperBound)
 			}
 			if tp.Default != nil {
 				defaultType = b.buildTypeAnn(tp.Default)
@@ -1182,8 +1182,8 @@ func (b *Builder) buildFuncTypeAnn(funcType *type_sys.FuncType) FuncTypeAnn {
 		typeParams = make([]*TypeParam, len(funcType.TypeParams))
 		for i, param := range funcType.TypeParams {
 			var constraint TypeAnn
-			if param.Constraint != nil {
-				constraint = b.buildTypeAnn(param.Constraint)
+			if param.UpperBound != nil {
+				constraint = b.buildTypeAnn(param.UpperBound)
 			}
 			var default_ TypeAnn
 			if param.Default != nil {

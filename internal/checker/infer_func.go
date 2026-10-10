@@ -178,14 +178,14 @@ func (c *Checker) resolveTypeParams(
 		}
 		typeParam := &type_system.TypeParam{
 			Name:       tp.Name,
-			Constraint: constraintType,
+			UpperBound: constraintType,
 			Default:    defaultType,
 		}
 		byName[tp.Name] = typeParam
 
 		var t type_system.Type = type_system.NewUnknownType(nil)
-		if typeParam.Constraint != nil {
-			t = typeParam.Constraint
+		if typeParam.UpperBound != nil {
+			t = typeParam.UpperBound
 		}
 		funcCtx.Scope.SetTypeAlias(typeParam.Name, &type_system.TypeAlias{
 			Type:        t,

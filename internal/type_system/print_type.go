@@ -419,8 +419,8 @@ func printFuncSig(header string, fn *FuncType, includeSelf bool, pt func(Type) s
 			}
 			first = false
 			result += param.Name
-			if param.Constraint != nil {
-				result += ": " + pt(param.Constraint)
+			if param.UpperBound != nil {
+				result += ": " + pt(param.UpperBound)
 			}
 			if param.Default != nil {
 				result += " = " + pt(param.Default)
