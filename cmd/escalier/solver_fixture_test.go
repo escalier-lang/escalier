@@ -364,6 +364,7 @@ var emitSkips = map[emitSkip]*solverSkipCause{
 	{"class_inheritance_namespaces", "index.d.ts"}: causeCheckerRootNamespacePrefix,
 	{"generalize", "index.d.ts"}:                   causeUnusedParamNotGeneralized,
 	{"type_ann_index_signature", "index.d.ts"}:     causeIndexSignatureOptional,
+	{"type_ann_computed_keys", "index.d.ts"}:       causeCheckerSymbolKeyEmit,
 	{"logging", "index.d.ts"}:                      causeUndefinedReturn,
 	{"grouping", "index.d.ts"}:                     causeUnionOrder,
 }
@@ -416,6 +417,15 @@ var (
 	// The fault is the checker's.
 	causeCheckerRootNamespacePrefix = &solverSkipCause{
 		name: "a root reference to a namespaced type, which the checker writes unqualified",
+	}
+	// A member of an object type keyed off a `unique symbol` emits as a quoted string on
+	// the checker and as the computed key on the solver. With `declare val sym: unique
+	// symbol`, `type T = {[sym]: boolean}` emits `{"[Symbol(13)]": boolean}` on the
+	// checker, which names an ordinary string property, and `{[sym]: boolean}` on the
+	// solver. The fault is the checker's. The two also quote a number key differently,
+	// `1` on the checker and `"1"` on the solver, which denote the same key.
+	causeCheckerSymbolKeyEmit = &solverSkipCause{
+		name: "a unique symbol key in an object type the checker emits as a string",
 	}
 	// A union renders its members in the solver's own order rather than the order the
 	// source wrote, so `A | B & C` emits `B & C | A`. Both denote the same type.
