@@ -32,6 +32,12 @@ func (p *Parser) startsWhereClause() bool {
 // P's lower bound. A relation naming no parameter on either side is reported, since no
 // binder can carry it. The end of the last relation is returned with found=true, or the
 // zero location with found=false when there is no clause.
+//
+// A comma continues the clause only when a relation naming one of typeParams follows it.
+// A signature in a class body, an interface or an object type is followed by a comma and
+// the next member, and `where K: B,` followed by `has<B>(&self, key: B)` or `x: number`
+// has to end at that comma. A property named after one of the signature's own parameters
+// is the one member this cannot tell from a relation.
 func (p *Parser) whereClause(typeParams []*ast.TypeParam) (end ast.Location, found bool) {
 	if !p.startsWhereClause() {
 		return ast.Location{}, false
@@ -51,11 +57,37 @@ func (p *Parser) whereClause(typeParams []*ast.TypeParam) (end ast.Location, fou
 			}
 			end = relEnd
 		}
-		if p.lexer.peek().Type != Comma {
+		if !p.continuesWhereClause(typeParams) {
 			return end, true
 		}
 		p.lexer.consume() // consume ','
 	}
+}
+
+// continuesWhereClause reports whether the next tokens are a comma followed by a relation
+// that names one of typeParams on either side, which is the one shape a clause continues
+// with. The probe parses the relation and then restores the lexer and the error list, so
+// a comma that separates the signature from the next member is left for that member.
+func (p *Parser) continuesWhereClause(typeParams []*ast.TypeParam) bool {
+	if p.lexer.peek().Type != Comma {
+		return false
+	}
+	saved := p.saveState()
+	defer p.restoreState(saved)
+	p.lexer.consume() // consume ','
+	if p.lexer.peek().Type == Lifetime {
+		return true
+	}
+	sub := p.typeAnn()
+	if sub == nil || p.lexer.peek().Type != Colon {
+		return false
+	}
+	p.lexer.consume() // consume ':'
+	super := p.typeAnn()
+	if super == nil {
+		return false
+	}
+	return namedTypeParam(typeParams, sub) != nil || namedTypeParam(typeParams, super) != nil
 }
 
 // whereRelation parses one `sub: super` relation and records it. It returns the relation's

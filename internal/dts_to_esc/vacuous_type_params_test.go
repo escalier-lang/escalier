@@ -96,6 +96,13 @@ func TestElideVacuousTypeParams(t *testing.T) {
 			want: "m<T, U: T>(&self, v: T) -> U",
 		},
 		{
+			// Array's includes. The lower bound relates `B` to the class's `T`, which
+			// `(searchElement: unknown)` would drop.
+			name: "ALowerBoundedParameterStays",
+			src:  `export declare class C<T> { includes<B>(&self, searchElement: B) -> boolean where T: B }`,
+			want: "includes<B>(&self, searchElement: B) -> boolean where T: B",
+		},
+		{
 			name: "AParameterUsedInAThrowsStays",
 			src:  `export declare fn f<T>(v: T) -> boolean throws T`,
 			want: "fn f<T>(v: T) -> boolean throws T",
