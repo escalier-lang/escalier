@@ -442,12 +442,14 @@ func TestInferGenericTypeAliasParamBounds(t *testing.T) {
 			want: []string{"cannot constrain 1 <: string"},
 		},
 		{
+			// The declaration is rejected too, since `T` may be any type. The reference
+			// is still checked against the argument it fills.
 			name: "DefaultedArgumentChecked",
 			src: `
 				type Pair<T, U: string = T> = [T, U]
 				val p: Pair<number> = [1, 1]
 			`,
-			want: []string{"cannot constrain number <: string"},
+			want: []string{"cannot constrain T <: string", "cannot constrain number <: string"},
 		},
 		{
 			name: "AliasBodyReferenceChecked",

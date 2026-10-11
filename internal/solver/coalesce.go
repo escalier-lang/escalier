@@ -266,6 +266,10 @@ func (c *coalescer) EnterType(t soltype.Type, pol soltype.Polarity) soltype.Ente
 		}
 	}
 	if len(bounds) == 0 {
+		// A variable a call instantiated from a defaulted parameter takes the default.
+		if d, ok := v.DefaultApplies(); ok {
+			return soltype.EnterResult{Type: binder.tie(pol, d.Accept(c, pol)), SkipChildren: true}
+		}
 		return soltype.EnterResult{Type: emptyOf(pol), SkipChildren: true}
 	}
 	inlined := widenVar(v, pol, combine(pol, dedup(bounds), v.Open))
@@ -641,7 +645,11 @@ func (c *schemeCoalescer) EnterType(t soltype.Type, pol soltype.Polarity) soltyp
 	}
 	if len(parts) == 0 {
 		// Only reachable with !retain and no bounds — empty bounds under retain
-		// already leave parts=[rep]. Collapse to the polarity identity.
+		// already leave parts=[rep]. A variable a call instantiated from a defaulted
+		// parameter takes the default, and any other collapses to the polarity identity.
+		if d, ok := v.DefaultApplies(); ok {
+			return soltype.EnterResult{Type: binder.tie(pol, d.Accept(c, pol)), SkipChildren: true}
+		}
 		return soltype.EnterResult{Type: emptyOf(pol), SkipChildren: true}
 	}
 	inlined := widenVar(v, pol, combine(pol, dedup(parts), v.Open))

@@ -2812,8 +2812,8 @@ func (c *Context) instantiateFuncBinder(ft *soltype.FuncType, lvl int) *soltype.
 // what the signature and body linked onto it, rewritten so a bound naming a sibling
 // parameter or a lifetime parameter names its fresh stand-in. The body of a generic function
 // is checked against the binder's own variables, so the links it records are part of what an
-// instantiation has to respect. A parameter's default is not read, since a call writes no
-// type arguments and nothing applies a default to a variable inference leaves unconstrained.
+// instantiation has to respect. Each variable also carries its parameter's default, rewritten
+// the same way, so `<T, U = T>` gives `U`'s variable `T`'s variable as its default.
 func (c *Context) freshTypeArgs(ft *soltype.FuncType, lvl int, lts []soltype.Lifetime) []soltype.Type {
 	if len(ft.TypeParams) == 0 {
 		return nil
@@ -2831,6 +2831,13 @@ func (c *Context) freshTypeArgs(ft *soltype.FuncType, lvl int, lts []soltype.Lif
 		// and a call would then record its argument on that class variable.
 		nvs[i].LowerBounds = acceptBounds(tp.AllLowerBounds(), sub)
 		nvs[i].UpperBounds = acceptBounds(tp.AllUpperBounds(), sub)
+		if tp.Default != nil {
+			nvs[i].Default = &soltype.VarDefault{
+				Type:  sub.apply(tp.Default),
+				Lower: len(nvs[i].LowerBounds),
+				Upper: len(nvs[i].UpperBounds),
+			}
+		}
 	}
 	return args
 }

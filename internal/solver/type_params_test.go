@@ -193,9 +193,9 @@ func TestTypeParamDefaultIsPerReference(t *testing.T) {
 // TestTypeParamDefaultAgainstBound covers the declaration-site check that a type parameter's
 // default satisfies its own bound. The default fills the argument at every use site that omits
 // it, so a default outside the bound would supply an argument the bound forbids. The check is
-// shared by every `<…>` clause, so a class, an alias, and a function each report it, and a
-// bound naming a sibling parameter is compared through that sibling's var, whose upper bound
-// pass 3 has already seeded.
+// shared by every `<…>` clause, so a class, an alias, and a function each report it. A
+// bound naming a sibling parameter is compared against that sibling held rigid, since a use
+// site may choose any type the sibling allows.
 func TestTypeParamDefaultAgainstBound(t *testing.T) {
 	tests := []struct {
 		name string
@@ -229,7 +229,43 @@ func TestTypeParamDefaultAgainstBound(t *testing.T) {
 		{
 			name: "BoundNamesEarlierSibling",
 			src:  `class Box<U: string, T: U = number> { value: T }`,
-			want: []string{"cannot constrain number <: string"},
+			want: []string{"cannot constrain number <: U"},
+		},
+		{
+			// `T` may be `string` at a use site that leaves `U` to its default.
+			name: "FuncDefaultOutsideSiblingBound",
+			src:  `declare fn f<T, U: T = number>(x: T) -> Array<U>`,
+			want: []string{"cannot constrain number <: T"},
+		},
+		{
+			name: "FuncDefaultIsTheBoundingSibling",
+			src:  `declare fn f<T, U: T = T>(x: T) -> Array<U>`,
+		},
+		{
+			// The parameter being checked stays a variable, so the F-bound compares the
+			// default against `Cmp<X>`.
+			name: "FuncFBoundedDefault",
+			src: `
+				declare class Cmp<T> { v: T }
+				declare class X extends Cmp<X> { constructor(&mut self) }
+				declare fn f<U, T: Cmp<T> = X>(u: U) -> T
+			`,
+		},
+		{
+			// `T` may be any subtype of `string`, which `string` itself is not. A call
+			// with a literal argument shows the hole. Given
+			//
+			//	fn f<T: string, U: T = string>(x: T) -> fn(u: U) -> T {
+			//		return fn (u) { return u }
+			//	}
+			//	val h = f("a")
+			//	val r = h("zzz")
+			//
+			// the call pins `T` to `"a"`. Applying the default would give `h` the type
+			// `fn(u: string) -> "a"`, and `r` would be typed `"a"` while holding "zzz".
+			name: "FuncDefaultIsTheSiblingsBound",
+			src:  `declare fn f<T: string, U: T = string>(x: T) -> Array<U>`,
+			want: []string{"cannot constrain string <: T"},
 		},
 		{
 			// The default sits before the required U, so the ordering rule reports it too;
@@ -238,7 +274,7 @@ func TestTypeParamDefaultAgainstBound(t *testing.T) {
 			src:  `class Box<T: U = number, U: string> { value: T }`,
 			want: []string{
 				"the default for type parameter `T` can never be used, since `U` is declared after it and has no default",
-				"cannot constrain number <: string",
+				"cannot constrain number <: U",
 			},
 		},
 	}
@@ -281,12 +317,14 @@ func TestTypeParamDefaultOutsideBoundReportedOnce(t *testing.T) {
 			want: []string{"cannot constrain number <: string"},
 		},
 		{
+			// The declaration is rejected, since `A` may be a type `number` is not. The
+			// reference is still checked against the argument it fills.
 			name: "BoundNamesSiblingSoUseSiteStillChecks",
 			src: `
 				type P<A, B: A = number> = [A, B]
 				val p: P<string> = ["a", 1]
 			`,
-			want: []string{"cannot constrain number <: string"},
+			want: []string{"cannot constrain number <: A", "cannot constrain number <: string"},
 		},
 		{
 			name: "DefaultNamesSiblingSoUseSiteStillChecks",
@@ -294,7 +332,7 @@ func TestTypeParamDefaultOutsideBoundReportedOnce(t *testing.T) {
 				type Pair<T, U: string = T> = [T, U]
 				val p: Pair<number> = [1, 1]
 			`,
-			want: []string{"cannot constrain number <: string"},
+			want: []string{"cannot constrain T <: string", "cannot constrain number <: string"},
 		},
 	}
 	for _, tt := range tests {
