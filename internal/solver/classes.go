@@ -1861,18 +1861,17 @@ func (c *checker) recordMethodSelfParam(blame ast.Node, self *soltype.FuncParam)
 	c.methodSelfParams[blame] = self
 }
 
-// strippedMethodSig returns a method signature as a plain callable, its SelfParam
-// dropped, since `p.m` binds the receiver and returns a function of the remaining
-// parameters. The receiver's own ownership is checked separately at member access as a
-// `receiver <: SelfParam` constraint.
+// strippedMethodSig returns a method signature as a plain callable, its SelfParam and
+// lifetime binder dropped, since `p.m` binds the receiver and returns a function of the
+// remaining parameters over the lifetimes the access instantiated. The receiver's own
+// ownership is checked separately at member access as a `receiver <: SelfParam` constraint.
 func strippedMethodSig(sig *soltype.FuncType) *soltype.FuncType {
 	return &soltype.FuncType{
-		Params:         sig.Params,
-		Ret:            sig.Ret,
-		Throws:         sig.Throws,
-		Inexact:        sig.Inexact,
-		TypeParams:     sig.TypeParams,
-		LifetimeParams: sig.LifetimeParams,
+		Params:     sig.Params,
+		Ret:        sig.Ret,
+		Throws:     sig.Throws,
+		Inexact:    sig.Inexact,
+		TypeParams: sig.TypeParams,
 	}
 }
 

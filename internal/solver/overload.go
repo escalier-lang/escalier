@@ -79,6 +79,8 @@ func (c *checker) resolveOverload(lvl int, b ValueBinding, args []soltype.Type, 
 		// scheme keeps b.Schemes carrying the declared arms, which the no-match report renders.
 		if len(arm.TypeParams) > 0 {
 			arm = c.ctx.instantiateFuncBinder(arm, lvl)
+		} else {
+			arm = withoutLifetimeBinder(arm)
 		}
 		inst, matched, diags := c.tryArmCandidates(lvl, args, call.Args, arm)
 		c.closeProbe(p, matched)

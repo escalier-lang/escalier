@@ -27,26 +27,14 @@ import (
 // sig is the function's signature and ft its inferred type. A lifetime the enclosing class
 // declares is not checked here.
 func (c *checker) checkSignatureImpliesBodyLifetimes(sig ast.FuncSig, ft *soltype.FuncType) {
-	// Collect the lifetimes the `<…>` list names, in declaration order, with the variable
-	// each one resolved to. 'static, a repeated name, and a name with no variable are skipped.
 	ltParams := sig.LifetimeParams
 	named := map[string]*soltype.LifetimeVar{}
 	binders := map[string]*ast.LifetimeParam{}
 	var order []string
-	for _, p := range ltParams {
-		if p.Name == "static" {
-			continue
-		}
-		if _, seen := binders[p.Name]; seen {
-			continue
-		}
-		v, ok := c.namedLifetimes[p.Name]
-		if !ok {
-			continue
-		}
-		named[p.Name] = v
-		binders[p.Name] = p
-		order = append(order, p.Name)
+	for _, bound := range c.signatureLifetimeNames(ltParams) {
+		named[bound.param.Name] = bound.v
+		binders[bound.param.Name] = bound.param
+		order = append(order, bound.param.Name)
 	}
 	if len(order) == 0 {
 		return
@@ -89,6 +77,35 @@ func (c *checker) checkSignatureImpliesBodyLifetimes(sig ast.FuncSig, ft *soltyp
 			}
 		}
 	}
+}
+
+// signatureLifetime is one name a signature's `<…>` list binds, with the variable the
+// signature's positions interned under it.
+type signatureLifetime struct {
+	param *ast.LifetimeParam
+	v     *soltype.LifetimeVar
+}
+
+// signatureLifetimeNames returns the names own binds, in declaration order, each with its
+// variable. An entry binds nothing and is left out when it is `'static`, when an earlier
+// entry bound the same name, or when the signature never wrote the name and so interned no
+// variable for it. checkLifetimeDeclarations reports the last two. It reads the signature's
+// own named-lifetime scope, so it runs while that scope is installed.
+func (c *checker) signatureLifetimeNames(own []*ast.LifetimeParam) []signatureLifetime {
+	var out []signatureLifetime
+	seen := set.NewSet[string]()
+	for _, p := range own {
+		if p.Name == "static" || seen.Contains(p.Name) {
+			continue
+		}
+		seen.Add(p.Name)
+		v, written := c.namedLifetimes[p.Name]
+		if !written {
+			continue
+		}
+		out = append(out, signatureLifetime{param: p, v: v})
+	}
+	return out
 }
 
 // declaredLtBounds is the outlives relation a `<…>` list declares, closed transitively.

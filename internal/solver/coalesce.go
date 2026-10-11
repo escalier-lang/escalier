@@ -85,12 +85,35 @@ func coalesceKeeping(
 	flow map[*soltype.TypeVarType][]*soltype.TypeVarType,
 	keepLts set.Set[*soltype.LifetimeVar],
 ) soltype.Type {
-	c := t.Accept(&coalescer{seen: set.NewSet[*soltype.TypeVarType](), keep: keep, flow: flow}, pol)
-	c = bubbleOwnedMut(c) // #779: lift an owned-mut cell out of an immutable container
 	// D4: resolve borrow lifetimes to their display form, holding keepLts under their own
 	// names so a lifetime the enclosing declaration quantifies survives the member's own
 	// occurrence count.
-	return coalesceLifetimes(c, pol, keepLts)
+	return coalesceLifetimes(coalesceStructure(t, pol, keep, flow), pol, keepLts)
+}
+
+// coalesceMemberSig is coalesceKeeping for a class member's signature, whose lifetime pass
+// also binds each lifetime the signature infers on the signature itself, as
+// coalesceMemberLifetimes describes.
+func coalesceMemberSig(
+	sig *soltype.FuncType,
+	keep set.Set[*soltype.TypeVarType],
+	flow map[*soltype.TypeVarType][]*soltype.TypeVarType,
+	keepLts set.Set[*soltype.LifetimeVar],
+) soltype.Type {
+	return coalesceMemberLifetimes(coalesceStructure(sig, soltype.Positive, keep, flow), soltype.Positive, keepLts)
+}
+
+// coalesceStructure is the structural half of coalesceKeeping: the variables are inlined to
+// their bounds apart from keep, and an owned-mut cell is lifted out of an immutable
+// container. The borrow lifetimes are left raw for the lifetime pass.
+func coalesceStructure(
+	t soltype.Type,
+	pol soltype.Polarity,
+	keep set.Set[*soltype.TypeVarType],
+	flow map[*soltype.TypeVarType][]*soltype.TypeVarType,
+) soltype.Type {
+	c := t.Accept(&coalescer{seen: set.NewSet[*soltype.TypeVarType](), keep: keep, flow: flow}, pol)
+	return bubbleOwnedMut(c) // #779: lift an owned-mut cell out of an immutable container
 }
 
 // muBinders turns a cycle in the bound graph into a finite μ-knot. Both coalescers embed it, so

@@ -1353,6 +1353,12 @@ func (c *Context) constrain(sub, super soltype.Type, seen *seenPairs, mutCtx boo
 			if len(sub.TypeParams) > 0 {
 				return c.constrain(c.instantiateFuncBinder(sub, sub.TypeParams[0].Var.Level), sup, seen, mutCtx)
 			}
+			// A lifetime binder on either side is dropped rather than skolemized or
+			// instantiated. Lifetimes are solved by the outlives constraints the borrows
+			// record, so the signature at the binder's own variables is what is compared.
+			if len(sup.LifetimeParams) > 0 || len(sub.LifetimeParams) > 0 {
+				return c.constrain(withoutLifetimeBinder(sub), withoutLifetimeBinder(sup), seen, mutCtx)
+			}
 			// A tuple-typed rest param on either side expands to one positional param per element,
 			// so a written rest param works as a value-level type and not only as a pattern. The
 			// unexpanded sub and sup are what a diagnostic reports.
@@ -2691,17 +2697,29 @@ func overloadReadType(sigs []*soltype.FuncType) soltype.Type {
 }
 
 // callableView returns a method signature as the callable value a member read yields:
-// the signature with its receiver dropped, since a method value binds no `self`. It is
-// the subtyping counterpart of memberValue's method projection.
+// the signature with its receiver and lifetime binder dropped, since a method value binds no
+// `self` and its lifetimes are instantiated by the access that reads it. It is the subtyping
+// counterpart of memberValue's method projection.
 func callableView(ft *soltype.FuncType) *soltype.FuncType {
 	return &soltype.FuncType{
-		Params:         ft.Params,
-		Ret:            ft.Ret,
-		Throws:         ft.Throws,
-		Inexact:        ft.Inexact,
-		TypeParams:     ft.TypeParams,
-		LifetimeParams: ft.LifetimeParams,
+		Params:     ft.Params,
+		Ret:        ft.Ret,
+		Throws:     ft.Throws,
+		Inexact:    ft.Inexact,
+		TypeParams: ft.TypeParams,
 	}
+}
+
+// withoutLifetimeBinder returns ft with its own lifetime parameters dropped, or ft itself when
+// it has none. The lifetimes stay as the variables the binder named, so the result is the
+// signature at one choice of them.
+func withoutLifetimeBinder(ft *soltype.FuncType) *soltype.FuncType {
+	if len(ft.LifetimeParams) == 0 {
+		return ft
+	}
+	cp := *ft
+	cp.LifetimeParams = nil
+	return &cp
 }
 
 // isNeverType reports whether t is `never`, the bottom of the subtype lattice.
@@ -2773,10 +2791,12 @@ func (c *Context) instantiateFuncBinder(ft *soltype.FuncType, lvl int) *soltype.
 }
 
 // substFuncBinder rebuilds ft with sub applied to its parameters and return and its own
-// TypeParams dropped. A nested generic function's own TypeParams pass through unchanged.
+// TypeParams and LifetimeParams dropped, since the instantiation stands for one choice of
+// each. A nested generic function's own binder passes through unchanged.
 func substFuncBinder(ft *soltype.FuncType, sub *typeSubst) *soltype.FuncType {
 	cp := *ft
 	cp.TypeParams = nil
+	cp.LifetimeParams = nil
 	cp.Params = make([]*soltype.FuncParam, len(ft.Params))
 	for i, p := range ft.Params {
 		np := *p
