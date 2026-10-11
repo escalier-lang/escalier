@@ -2377,6 +2377,46 @@ func (e *UnusedTypeParamError) Message() string {
 	return "type parameter " + e.Name + " is declared but never used"
 }
 
+// StaticMemberNamesClassParamError fires when a static member's type names one of its class's
+// type parameters, as `static s(x: T)` in `class Holder<T>` does. A static naming `Self`
+// in a generic class is reported the same way, since `Self` resolves to the class handle
+// carrying every parameter. Class is the class's source name, Member the static member's,
+// Param the parameter's, and Node the member's declaration.
+type StaticMemberNamesClassParamError struct {
+	Class  string
+	Member string
+	Param  string
+	Node   ast.Node
+}
+
+func (*StaticMemberNamesClassParamError) isSolverError()        {}
+func (e *StaticMemberNamesClassParamError) Span() ast.Span      { return e.Node.Span() }
+func (e *StaticMemberNamesClassParamError) Related() []ast.Span { return nil }
+func (e *StaticMemberNamesClassParamError) Message() string {
+	return fmt.Sprintf("static member `%s` names type parameter `%s`, which belongs to instances of `%s`",
+		e.Member, e.Param, e.Class)
+}
+
+// StaticMemberNamesClassLifetimeError is the lifetime twin of StaticMemberNamesClassParamError.
+// It fires when a static member's type names one of its class's lifetime parameters, as
+// `static s(p: &'a {value: number})` in `class Holder<'a>` does. Class is the class's source
+// name, Member the static member's, Lifetime the parameter's name with its leading quote,
+// and Node the member's declaration.
+type StaticMemberNamesClassLifetimeError struct {
+	Class    string
+	Member   string
+	Lifetime string
+	Node     ast.Node
+}
+
+func (*StaticMemberNamesClassLifetimeError) isSolverError()        {}
+func (e *StaticMemberNamesClassLifetimeError) Span() ast.Span      { return e.Node.Span() }
+func (e *StaticMemberNamesClassLifetimeError) Related() []ast.Span { return nil }
+func (e *StaticMemberNamesClassLifetimeError) Message() string {
+	return fmt.Sprintf("static member `%s` names lifetime parameter `%s`, which belongs to instances of `%s`",
+		e.Member, e.Lifetime, e.Class)
+}
+
 // UnreachableTypeParamError fires when a type alias's body mentions a `<T>` binder, but no
 // argument passed to it can appear in the type an instantiation denotes. Every instantiation
 // of the alias is then one type, so a caller who writes an argument there says nothing by

@@ -13,9 +13,6 @@ type fakeSolNamespace struct {
 	values   map[string]soltype.Type
 	declared map[string]fakeDeclaredType
 	nested   map[string]*fakeSolNamespace
-	// valueParams are the type parameters ValueType reports beside a name's value type,
-	// which only a class declares. A case that leaves a name out here reports none.
-	valueParams map[string][]*soltype.TypeParam
 }
 
 // fakeDeclaredType is what a name's type declaration stands for, the pair
@@ -25,12 +22,9 @@ type fakeDeclaredType struct {
 	typeParams []*soltype.TypeParam
 }
 
-func (f *fakeSolNamespace) ValueType(name string) (soltype.Type, []*soltype.TypeParam, bool) {
+func (f *fakeSolNamespace) ValueType(name string) (soltype.Type, bool) {
 	t, ok := f.values[name]
-	if !ok {
-		return nil, nil, false
-	}
-	return t, f.valueParams[name], true
+	return t, ok
 }
 
 func (f *fakeSolNamespace) DeclaredType(name string) (soltype.Type, []*soltype.TypeParam, bool) {

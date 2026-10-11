@@ -298,9 +298,9 @@ func PrintAsSchemeWith(
 	ltNames := map[*LifetimeVar]string{}
 	ltIndex := map[*LifetimeVar]int{}
 	// A lifetime the declaration named keeps that name, the lifetime twin of the declared
-	// type parameters above, so `class Pair<'x, 'y>` renders under 'x and 'y rather than
-	// taking the generated 'a and 'b. A generated name skips one a declaration claims, the
-	// way it skips a name a function's own parameter claims.
+	// type parameters above, so a declaration's 'x and 'y render under those names rather
+	// than taking the generated 'a and 'b. A generated name skips one a declaration claims,
+	// the way it skips a name a function's own parameter claims.
 	declaredLtNames := map[*LifetimeVar]string{}
 	for _, lp := range declaredLts {
 		if lp.Name != "" {
@@ -403,9 +403,9 @@ func PrintAsSchemeWith(
 
 // declaredLtsFirst returns free with the lifetimes a declaration names moved to the front, in
 // the order the declaration wrote them, and the rest left in first-appearance order. The
-// quantifier prefix then reads in the same order as the argument list a reference writes, so
-// `class Pair<'x, 'y>` renders `<'x, 'y>` whichever field mentions 'y first. It is the
-// lifetime twin of the declared-first ordering the type-parameter labels take.
+// quantifier prefix then reads in the same order as the argument list a reference writes,
+// whichever member mentions a later one first. It is the lifetime twin of the declared-first
+// ordering the type-parameter labels take.
 func declaredLtsFirst(free []*LifetimeVar, declared []*LifetimeParam) []*LifetimeVar {
 	if len(declared) == 0 {
 		return free

@@ -41,7 +41,7 @@ func TestSelfReceiverStoreEdge(t *testing.T) {
 			`,
 			want: []string{"12:14-12:15: cannot move 'b' while it is borrowed"},
 			types: map[string]string{
-				"Holder": "<'a> {new (peer: &'a mut {value: number}) -> Holder<'a>}",
+				"Holder": "{new <'a>(peer: &'a mut {value: number}) -> Holder<'a>}",
 				"build":  "fn (p: mut {value: number}, out: &mut {slot: &mut {value: number}}) -> undefined",
 			},
 		},
@@ -65,7 +65,7 @@ func TestSelfReceiverStoreEdge(t *testing.T) {
 			`,
 			want: []string{"10:14-10:15: cannot move 'b' while it is borrowed"},
 			types: map[string]string{
-				"Holder": "<'a> {new (peer: &'a mut {value: number}) -> Holder<'a>}",
+				"Holder": "{new <'a>(peer: &'a mut {value: number}) -> Holder<'a>}",
 				"build":  "fn <'a>(h: &mut Holder<'a>) -> undefined",
 			},
 		},
@@ -87,7 +87,7 @@ func TestSelfReceiverStoreEdge(t *testing.T) {
 			`,
 			want: nil,
 			types: map[string]string{
-				"Holder": "<'a> {new (peer: &'a mut {value: number}) -> Holder<'a>}",
+				"Holder": "{new <'a>(peer: &'a mut {value: number}) -> Holder<'a>}",
 				"build":  "fn (p: mut {value: number}) -> &mut {value: number}",
 			},
 		},
@@ -112,7 +112,7 @@ func TestSelfReceiverStoreEdge(t *testing.T) {
 			`,
 			want: []string{"12:14-12:15: cannot move 'b' while it is borrowed"},
 			types: map[string]string{
-				"Holder": "<'a> {new (peer: &'a mut {value: number}) -> Holder<'a>}",
+				"Holder": "{new <'a>(peer: &'a mut {value: number}) -> Holder<'a>}",
 				"build":  "fn (p: mut {value: number}, out: &mut {slot: &mut {value: number}}) -> undefined",
 			},
 		},

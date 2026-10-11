@@ -36,14 +36,10 @@ type PolyScheme struct {
 	// declared holds the type parameters the declaration wrote, for a class, alias, or enum
 	// value. A function carries its own on each signature, so it leaves this nil. Coalescing
 	// reads it to keep each parameter symbolic rather than merging it with its bound.
-	declared []*soltype.TypeParam
-
-	// keptDisplay holds the display in which every declared parameter is still a
-	// variable, and keptParams those parameters under the variables that display holds.
-	// generalize seals both, for the reason it gives. A scheme with no declared
-	// parameters leaves them nil, since its two displays would be the same type.
-	keptDisplay soltype.Type
-	keptParams  []*soltype.TypeParam
+	// declaredLts holds the lifetime parameters the same declaration wrote, which the
+	// lifetime pass keeps under their names.
+	declared    []*soltype.TypeParam
+	declaredLts []*soltype.LifetimeParam
 
 	// coalesced memoizes the display type. A Body is immutable after
 	// generalization. Later components instantiate fresh copies rather than
@@ -64,27 +60,9 @@ func (*PolyScheme) isScheme() {}
 // goes stale.
 func (sc *PolyScheme) display() soltype.Type {
 	if sc.coalesced == nil {
-		sc.coalesced = coalesceScheme(sc.Body, sc.Level, sc.declared)
+		sc.coalesced = coalesceScheme(sc.Body, sc.Level, sc.declared, sc.declaredLts)
 	}
 	return sc.coalesced
-}
-
-// displayKeepingDeclared returns the scheme's display type with every parameter the
-// declaration wrote still a variable, together with those parameters named and carrying
-// the bound and default the source gave them.
-//
-// display() keeps only a bounded parameter, which is what a reader of the declaration's
-// own handle wants. `.d.ts` emission wants every one, since TypeScript binds a class's
-// parameters on its constructor signature and cannot bind one the display inlined away.
-// coalesceSchemeKeepingDeclared gives the two displays' full reasons.
-//
-// A scheme with no declared parameters has nothing to hold, so its two displays are the
-// same type and it answers with display() and no parameters.
-func (sc *PolyScheme) displayKeepingDeclared() (soltype.Type, []*soltype.TypeParam) {
-	if sc.keptDisplay == nil {
-		return sc.display(), nil
-	}
-	return sc.keptDisplay, sc.keptParams
 }
 
 // monoScheme wraps a raw type as a single-scheme value binding's scheme — the
@@ -519,16 +497,10 @@ func (c *checker) generalize(t soltype.Type, lvl int) TypeScheme {
 	// The declaration's own parameters are read from the raw body, where a class value's
 	// constructor return still names the class. Reading them before the display is sealed is
 	// what keeps them out of the merge coalescing would otherwise perform.
-	sc := &PolyScheme{Level: lvl, Body: t, declared: c.declaredTypeParams(t)}
+	sc := &PolyScheme{Level: lvl, Body: t, declared: c.declaredTypeParams(t), declaredLts: c.declaredLifetimeParams(t)}
 	// Seal the subsumed display now, while the ambient Context is available, so
 	// every later read sees the canonical type and an inferred `1 | number` renders `number`.
 	sc.coalesced = c.subsumeFinal(sc.display())
-	// The second display is sealed here for the same reason, since subsuming needs the
-	// Context too and displayKeepingDeclared is read long after this returns.
-	if len(sc.declared) > 0 {
-		kept, params := coalesceSchemeKeepingDeclared(sc.Body, sc.Level, sc.declared)
-		sc.keptDisplay, sc.keptParams = c.subsumeFinal(kept), params
-	}
 	return sc
 }
 

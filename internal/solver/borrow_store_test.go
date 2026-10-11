@@ -255,7 +255,7 @@ func TestCallStoreEdgePositions(t *testing.T) {
 			`,
 			want: []string{"12:14-12:15: cannot move 'b' while it is borrowed"},
 			types: map[string]string{
-				"Box":   "<T> {new (value: T) -> Box<T>}",
+				"Box":   "{new <T>(value: T) -> Box<T>}",
 				"store": "fn <'a>(target: &mut {box: &mut Box<&'a mut {value: number}>}, item: &'a mut {value: number}) -> undefined",
 				"build": "fn (seeded: mut Box<&mut {value: number}>, out: &mut {slot: &mut Box<&mut {value: number}>}) -> undefined",
 			},

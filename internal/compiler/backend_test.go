@@ -639,25 +639,24 @@ func TestBothCheckersBindAClassTypeParamOnItsConstructor(t *testing.T) {
 	}
 }
 
-// TestTheSolverDropsAClassTypeParamTwoSignaturesRead asserts that `Holder<T>`, whose
-// constructor and static member both read `T`, emits `unknown` in both positions.
+// TestTheSolverBindsAClassTypeParamOnItsConstructor asserts that `Holder<T>` emits its
+// parameter as the constructor signature's own binder, beside a static member that stands
+// outside it.
 //
-// A binder has to cover every occurrence of the variable it binds, and the two signatures
-// sit side by side in one object type that TypeScript gives no binder of its own. The
-// parameter therefore binds on neither signature. internal/checker writes `T` anyway,
-// naming something nothing declares, so the two disagree. #1804 decides what to emit for
-// a class whose static member makes the class inexpressible.
-func TestTheSolverDropsAClassTypeParamTwoSignaturesRead(t *testing.T) {
+// TypeScript has no generic `const`, so the only place the value's type can bind `T` is
+// the construct signature, and a static member cannot name it there. The solver's class
+// value carries the parameters on its constructor, so the emitted signature follows.
+func TestTheSolverBindsAClassTypeParamOnItsConstructor(t *testing.T) {
 	useSolver(t)
 	dts := CompilePackage(libSources(`
 		class Holder<T: {value: number}> {
 		    peer: T,
-		    static s(x: T) -> number { return x.value },
+		    static s(x: number) -> number { return x },
 		}
 	`)).CompUnits["lib/index"].DTS
 
 	require.Contains(t, dts,
-		"declare const Holder: {new (peer: unknown): Holder<unknown>, s(x: unknown): number};")
+		"declare const Holder: {new <T extends {value: number}>(peer: T): Holder<T>, s(x: number): number};")
 }
 
 // TestAGenericClassStaticSideIsSubsumed asserts that `Picker.pick`, whose body returns `n`

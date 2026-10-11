@@ -30,7 +30,7 @@ func TestInferClassLifetimeParams(t *testing.T) {
 			`,
 			want: nil,
 			types: map[string]string{
-				"Holder": "<'a> {new (peer: &'a mut {value: number}) -> Holder<'a>}",
+				"Holder": "{new <'a>(peer: &'a mut {value: number}) -> Holder<'a>}",
 				"read":   "fn <'a>(h: Holder<'a>) -> &'a mut {value: number}",
 			},
 		},
@@ -49,7 +49,7 @@ func TestInferClassLifetimeParams(t *testing.T) {
 			`,
 			want: nil,
 			types: map[string]string{
-				"Holder": "<'a> {new (peer: &'a mut {value: number}) -> Holder<'a>}",
+				"Holder": "{new <'a>(peer: &'a mut {value: number}) -> Holder<'a>}",
 				"read": "fn <'a: 'b, 'b>(h: Holder<'a>, other: &'b mut {value: number}) " +
 					"-> &'b mut {value: number}",
 			},
@@ -71,7 +71,7 @@ func TestInferClassLifetimeParams(t *testing.T) {
 			`,
 			want: nil,
 			types: map[string]string{
-				"Holder": "<'a> {new (peer: &'a mut {value: number}) -> Holder<'a>}",
+				"Holder": "{new <'a>(peer: &'a mut {value: number}) -> Holder<'a>}",
 				"call": "fn <'a>(h: mut Holder<'a>, p: &'a mut {value: number}) " +
 					"-> &'a mut {value: number}",
 			},
@@ -87,7 +87,7 @@ func TestInferClassLifetimeParams(t *testing.T) {
 			`,
 			want: nil,
 			types: map[string]string{
-				"Holder": "<'a> {new (peer: &'a mut {value: number}) -> Holder<'a>}",
+				"Holder": "{new <'a>(peer: &'a mut {value: number}) -> Holder<'a>}",
 			},
 		},
 		// A name neither the class nor the member binds is still undeclared, so the class
@@ -103,7 +103,7 @@ func TestInferClassLifetimeParams(t *testing.T) {
 				"4:25-4:27: lifetime 'z is used but not declared; add `<'z>` to the enclosing function signature",
 			},
 			types: map[string]string{
-				"Holder": "<'a> {new (peer: &'a mut {value: number}) -> Holder<'a>}",
+				"Holder": "{new <'a>(peer: &'a mut {value: number}) -> Holder<'a>}",
 			},
 		},
 		// A reference supplies one argument per parameter, and a count mismatch reports the
@@ -115,7 +115,7 @@ func TestInferClassLifetimeParams(t *testing.T) {
 			`,
 			want: []string{"3:21-3:27: class `Holder` expects 1 lifetime arguments but got 0"},
 			types: map[string]string{
-				"Holder": "<'a> {new (peer: &'a mut {value: number}) -> Holder<'a>}",
+				"Holder": "{new <'a>(peer: &'a mut {value: number}) -> Holder<'a>}",
 				"f":      "fn <'a>(h: Holder<'a>) -> undefined",
 			},
 		},
@@ -147,7 +147,7 @@ func TestClassLifetimeParamsRenderUnderSourceNames(t *testing.T) {
 	values, types, errs := inferSource(t, src)
 	require.Empty(t, messagesWithSpan(t, errs))
 	require.Equal(t,
-		"<'x, 'y> {new (a: &'x mut {value: number}, b: &'y mut {value: number}) -> Pair<'x, 'y>}",
+		"{new <'x, 'y>(a: &'x mut {value: number}, b: &'y mut {value: number}) -> Pair<'x, 'y>}",
 		values["Pair"],
 	)
 	require.Equal(t, "Pair<'x, 'y>", types["Pair"])
@@ -284,7 +284,7 @@ func TestClassTypeParamBoundSeesTheClassLifetime(t *testing.T) {
 	values, _, errs := inferSource(t, src)
 	require.Empty(t, messagesWithSpan(t, errs))
 	require.Equal(t,
-		"<T: &'a {value: number}, 'a> {new (peer: T) -> Holder<'a, T>}",
+		"{new <T: &'a {value: number}, 'a>(peer: T) -> Holder<'a, T>}",
 		values["Holder"],
 	)
 }
@@ -302,7 +302,7 @@ func TestClassLifetimeBinderOrderFollowsTheDeclaration(t *testing.T) {
 	values, _, errs := inferSource(t, src)
 	require.Empty(t, messagesWithSpan(t, errs))
 	require.Equal(t,
-		"<'x, 'y> {new (b: &'y mut {value: number}, a: &'x mut {value: number}) -> Pair<'x, 'y>}",
+		"{new <'x, 'y>(b: &'y mut {value: number}, a: &'x mut {value: number}) -> Pair<'x, 'y>}",
 		values["Pair"],
 	)
 }
