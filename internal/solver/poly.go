@@ -183,7 +183,18 @@ func (f *freshener) EnterType(t soltype.Type, _ soltype.Polarity) soltype.EnterR
 	// bound referencing v resolves to the in-progress nv rather than looping.
 	nv.LowerBounds = f.freshenBounds(v.LowerBounds)
 	nv.UpperBounds = f.freshenBounds(v.UpperBounds)
+	nv.Default = freshenDefault(v.Default, f)
 	return soltype.EnterResult{Type: nv, SkipChildren: true}
+}
+
+// freshenDefault returns a copy of d with its type walked by freshen, or nil for a nil d.
+// The bound counts carry over unchanged, since a freshened variable's bounds correspond
+// one to one with the original's.
+func freshenDefault(d *soltype.VarDefault, freshen soltype.TypeVisitor) *soltype.VarDefault {
+	if d == nil {
+		return nil
+	}
+	return &soltype.VarDefault{Type: d.Type.Accept(freshen, soltype.Positive), Lower: d.Lower, Upper: d.Upper}
 }
 
 func (f *freshener) ExitType(t soltype.Type, _ soltype.Polarity) soltype.Type { return t }
@@ -242,6 +253,7 @@ func (f *allFreshener) EnterType(t soltype.Type, _ soltype.Polarity) soltype.Ent
 	f.cache[v] = nv  // populate BEFORE bounds so a cyclic bound referencing v resolves to nv
 	nv.LowerBounds = f.freshenBounds(v.LowerBounds)
 	nv.UpperBounds = f.freshenBounds(v.UpperBounds)
+	nv.Default = freshenDefault(v.Default, f)
 	// SkipChildren is a no-op for a var (Accept treats it as a leaf), but we set it
 	// honestly: the var's bounds are a side graph, not tree children, so we freshen
 	// them above rather than letting the walk descend.

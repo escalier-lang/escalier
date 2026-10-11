@@ -39,6 +39,29 @@ type TypeVarType struct {
 	// view — because no other site can observe the literal the graph still holds;
 	// literal type annotations (a second such site) are a later milestone.
 	Widenable bool
+	// Default is the default of the type parameter a call instantiated this variable
+	// from, or nil when the parameter declares none. It is not a bound, and constrain never
+	// reads it. Coalescing reads it through DefaultApplies.
+	Default *VarDefault
+}
+
+// VarDefault is a type parameter's default carried on the variable a call instantiates
+// the parameter as. Lower and Upper are how many lower and upper bounds the variable held
+// when the default was attached, which are the bounds the parameter declares.
+type VarDefault struct {
+	Type  Type
+	Lower int
+	Upper int
+}
+
+// DefaultApplies returns v's default when v carries one and holds no bound beyond the
+// ones its parameter declares, so nothing at the call constrained it.
+func (v *TypeVarType) DefaultApplies() (Type, bool) {
+	d := v.Default
+	if d == nil || len(v.LowerBounds) != d.Lower || len(v.UpperBounds) != d.Upper {
+		return nil, false
+	}
+	return d.Type, true
 }
 
 // SkolemType is a rigid type parameter held abstract while a term is checked against a
