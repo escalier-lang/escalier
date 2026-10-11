@@ -801,6 +801,38 @@ func TestInferExtractorPatRestAndDefault(t *testing.T) {
 			`,
 			want: map[string]string{"s": "string", "n": "number"},
 		},
+		{
+			name: "DefaultThroughAnAlias",
+			src: `
+				type MaybeS = string | undefined
+				declare val p: [MaybeS]
+				val [s = "x"] = p
+			`,
+			want: map[string]string{"s": "string"},
+		},
+		{
+			name: "RestInAnIfVal",
+			src: `
+				class C { msg: string, value: number }
+				declare val subject: C
+				val rest = if val C(_, ...r) = subject { r } else { [0] }
+			`,
+			want: map[string]string{"rest": "[number]"},
+		},
+		{
+			name: "RestOverOptionalAndRestParameters",
+			src: `
+				class C {
+					a: number,
+					constructor(&mut self, a: number, b?: string, ...cs: Array<boolean>) {
+						self.a = a
+					},
+				}
+				declare val subject: C
+				val C(first, ...more) = subject
+			`,
+			want: map[string]string{"first": "number", "more": "Array<string | boolean | undefined>"},
+		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -825,5 +857,40 @@ func TestInferExtractorPatRestArity(t *testing.T) {
 		}
 	`)
 	require.Len(t, errs, 1)
-	require.Equal(t, "5:5-5:28: extractor pattern `Point` expects 2 arguments but got 3", msgWithSpan(t, errs[0]))
+	require.Equal(t, "5:5-5:28: extractor pattern `Point` expects 2 arguments but got at least 3", msgWithSpan(t, errs[0]))
+}
+
+// TestInferInteriorRestReported asserts that a rest before the last element of a tuple or
+// extractor pattern in a match arm is reported, since nothing binds the leaves around it.
+func TestInferInteriorRestReported(t *testing.T) {
+	tests := []struct {
+		name string
+		src  string
+		want string
+	}{
+		{
+			name: "Tuple",
+			src: `
+				declare val t: [number, string]
+				val r = match t { [...x, y] => 1 }
+			`,
+			want: "3:24-3:28: Unsupported: RestPat",
+		},
+		{
+			name: "Extractor",
+			src: `
+				class C { a: number, b: string }
+				declare val s: C
+				val r = match s { C(...x, y) => 1 }
+			`,
+			want: "4:25-4:29: Unsupported: RestPat",
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			_, _, errs := inferSource(t, tt.src)
+			require.Len(t, errs, 1)
+			require.Equal(t, tt.want, msgWithSpan(t, errs[0]))
+		})
+	}
 }

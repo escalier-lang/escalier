@@ -183,21 +183,10 @@ func shallowTest(p ast.Pat, scrutinee *Scrutinee, origin Origin) (Test, []bindSp
 		_, binds := objectTest(p.Object, scrutinee, origin)
 		return &ClassTest{Name: p.ClassName}, binds
 	case *ast.ExtractorPat:
-		// A rest anywhere but last binds nothing, the way tupleTest treats one, and the
-		// pattern walk reports it.
-		fixed, rest := splitTrailingRest(p.Args)
-		binds := make([]bindSpec, 0, len(fixed)+1)
-		for i, arg := range fixed {
-			binds = appendBind(binds, arg, scrutinee, ExtractStep{Index: i}, origin)
-		}
-		kind := NoRest
-		if len(fixed) < len(p.Args) {
-			kind = TrailingRest
-		}
-		if rest != nil {
-			binds = appendBind(binds, rest.Pattern, scrutinee, ExtractSuffixStep{From: len(fixed)}, origin)
-		}
-		return &ExtractorTest{Name: p.Name, Arity: len(fixed), Rest: kind}, binds
+		binds, arity, kind := positionalBinds(p.Args, scrutinee, origin,
+			func(i int) Step { return ExtractStep{Index: i} },
+			func(from int) Step { return ExtractSuffixStep{From: from} })
+		return &ExtractorTest{Name: p.Name, Arity: arity, Rest: kind}, binds
 	default:
 		// A bare rest pattern is the only form left, and it is meaningful only inside a
 		// tuple or an object. Keeping it whole as a nameless bind hands it to the
@@ -216,19 +205,35 @@ func shallowTest(p ast.Pat, scrutinee *Scrutinee, origin Origin) (Test, []bindSp
 // has to reject the pattern before a consumer binds names off the split. It is the pass
 // that can: it holds the source span a message points at, and the IR does not.
 func tupleTest(p *ast.TuplePat, scrutinee *Scrutinee, origin Origin) (Test, []bindSpec) {
-	fixed, rest := splitTrailingRest(p.Elems)
+	binds, length, kind := positionalBinds(p.Elems, scrutinee, origin,
+		func(i int) Step { return IndexStep{Index: i} },
+		func(from int) Step { return SuffixStep{From: from} })
+	return &TupleTest{Len: length, Rest: kind}, binds
+}
+
+// positionalBinds derives the binds of a list of positional sub-patterns, a tuple's
+// elements or an extractor's arguments. The elements before the first rest bind through
+// at(i), and a trailing rest binds its sub-pattern through suffix(from). It returns the
+// binds, how many elements sit before the rest, and whether the list has one.
+//
+// A rest anywhere but last binds nothing, for the reason tupleTest gives. The solver's
+// reportInteriorRests reports one before it lowers the pattern.
+func positionalBinds(
+	elems []ast.Pat, scrutinee *Scrutinee, origin Origin, at, suffix func(int) Step,
+) ([]bindSpec, int, RestKind) {
+	fixed, rest := splitTrailingRest(elems)
 	binds := make([]bindSpec, 0, len(fixed)+1)
 	for i, elem := range fixed {
-		binds = appendBind(binds, elem, scrutinee, IndexStep{Index: i}, origin)
+		binds = appendBind(binds, elem, scrutinee, at(i), origin)
 	}
 	kind := NoRest
-	if len(fixed) < len(p.Elems) {
+	if len(fixed) < len(elems) {
 		kind = TrailingRest
 	}
 	if rest != nil {
-		binds = appendBind(binds, rest.Pattern, scrutinee, SuffixStep{From: len(fixed)}, origin)
+		binds = appendBind(binds, rest.Pattern, scrutinee, suffix(len(fixed)), origin)
 	}
-	return &TupleTest{Len: len(fixed), Rest: kind}, binds
+	return binds, len(fixed), kind
 }
 
 // splitTrailingRest splits a tuple pattern's elements at its first rest. fixed holds

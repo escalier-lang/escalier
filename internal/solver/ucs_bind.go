@@ -202,7 +202,7 @@ func (b *pathBinder) bindAtWith(
 // reject a `mut` leaf the written pattern accepts.
 func (b *pathBinder) bindElemAt(scope *Scope, s *ucs.Scrutinee, elem *ast.ObjShorthandPat) {
 	v := b.shorthandView(scope, s, elem)
-	t := b.c.applyLeafExtras(scope, b.lvl, elem, v.ty, elem.TypeAnn, elem.Default)
+	t := b.c.applyLeafExtras(scope, b.lvl, elem, v.ty, v.concrete, elem.TypeAnn, elem.Default)
 	t = b.c.applyBindMode(b.lvl, elem, elem.Mutable, t, b.c.concreteLeaf(v.concrete, elem.TypeAnn), v.mode)
 	b.c.bindLeaf(scope, elem.Key.Name, t, elem, nil, defineLeafMono, forBinding)
 }
@@ -333,7 +333,7 @@ func (b *pathBinder) projectExtractSuffix(parent scrutineeView, from int) scruti
 	if !ok || from > len(ext.params) {
 		return derive(parent, b.c.freshAt(b.lvl), nil)
 	}
-	suffix := extractedSuffix(ext.params, from)
+	suffix := b.c.extractedSuffix(ext.params, from)
 	return derive(parent, suffix, suffix)
 }
 
@@ -535,8 +535,9 @@ func (b *pathBinder) applyExtractorTest(scope *Scope, node ast.Node, v scrutinee
 		return v
 	}
 	params := b.c.narrowToExtractor(node, ctor, v.ty)
-	if !extractorArityFits(t.Arity, t.Rest == ucs.TrailingRest, len(params)) {
-		b.c.report(&ExtractorPatternArityError{Node: node, Name: name, Expected: len(params), Got: t.Arity})
+	hasRest := t.Rest == ucs.TrailingRest
+	if !extractorArityFits(t.Arity, hasRest, len(params)) {
+		b.c.report(&ExtractorPatternArityError{Node: node, Name: name, Expected: len(params), Got: t.Arity, AtLeast: hasRest})
 	}
 	v.tested = &testedExtractor{params: params}
 	return v

@@ -3804,6 +3804,9 @@ func (c *checker) inferIfVal(scope *Scope, lvl int, e *ast.IfValExpr) soltype.Ty
 	scrutinee := c.inferExpr(scope, lvl, e.Target)
 	res := c.freshAt(lvl)
 	c.recordProv(res, e, IfValBranch)
+	// The UCS IR names no step for a rest before the last element, so the walk below binds
+	// nothing under one and cannot report it.
+	c.reportInteriorRests(e.Pattern)
 	core := ucs.DesugarIfVal(e)
 	// The binder is seeded with the type inferred above, so the walk never re-infers the
 	// target and a side-effecting one such as `if val x = f() { … }` runs its call once.
@@ -3936,6 +3939,9 @@ func (c *checker) typeAdmits(ann, t soltype.Type) bool {
 // match. An annotation pins the binding's type, so that value has to fit it. Otherwise
 // joinFallbackLeaves takes the value apart with the same pattern and joins each leaf.
 func (c *checker) inferValElse(scope *Scope, lvl int, d *ast.VarDecl) {
+	// The UCS IR names no step for a rest before the last element, so the walk below binds
+	// nothing under one and cannot report it.
+	c.reportInteriorRests(d.Pattern)
 	core, ok := ucs.DesugarValElse(d)
 	if !ok {
 		// A declaration the parser left without an initializer. There is no value to bind
@@ -4143,6 +4149,11 @@ func (c *checker) inferMatch(scope *Scope, lvl int, e *ast.MatchExpr) soltype.Ty
 	}
 	res := c.freshAt(lvl)
 	c.recordProv(res, e, MatchBranch)
+	// The UCS IR names no step for a rest before the last element, so the walk below binds
+	// nothing under one and cannot report it.
+	for _, arm := range e.Cases {
+		c.reportInteriorRests(arm.Pattern)
+	}
 	core := ucs.DesugarMatch(e)
 	// The binder is seeded with the type inferred above, so the walk never re-infers the
 	// target and a side-effecting one such as `match f() { … }` runs its call once.
