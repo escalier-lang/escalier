@@ -252,7 +252,17 @@ func TestTypeParamDefaultAgainstBound(t *testing.T) {
 			`,
 		},
 		{
-			// `T` may be any subtype of `string`, which `string` itself is not.
+			// `T` may be any subtype of `string`, which `string` itself is not. A call
+			// with a literal argument shows the hole. Given
+			//
+			//	fn f<T: string, U: T = string>(x: T) -> fn(u: U) -> T {
+			//		return fn (u) { return u }
+			//	}
+			//	val h = f("a")
+			//	val r = h("zzz")
+			//
+			// the call pins `T` to `"a"`. Applying the default would give `h` the type
+			// `fn(u: string) -> "a"`, and `r` would be typed `"a"` while holding "zzz".
 			name: "FuncDefaultIsTheSiblingsBound",
 			src:  `declare fn f<T: string, U: T = string>(x: T) -> Array<U>`,
 			want: []string{"cannot constrain string <: T"},
