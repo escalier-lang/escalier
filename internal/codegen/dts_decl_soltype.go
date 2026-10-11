@@ -80,6 +80,7 @@ func (b *Builder) BuildDefinitionsFromSol(
 			}
 		}
 
+		names := solNames{preludePrefix: preludePrefix, namespace: namespace}
 		namespaceStmts := []Stmt{}
 		for _, key := range namespaceGroups[namespace] {
 			for _, decl := range depGraph.GetDecls(key) {
@@ -88,7 +89,7 @@ func (b *Builder) BuildDefinitionsFromSol(
 				}
 				processedDecls.Add(decl)
 
-				declStmts := b.buildDeclStmtFromSol(decl, declNS, preludePrefix, namespace == "")
+				declStmts := b.buildDeclStmtFromSol(decl, declNS, names, namespace == "")
 				namespaceStmts = append(namespaceStmts, declStmts...)
 			}
 		}
@@ -135,22 +136,22 @@ func findNamespaceFromSol(ns SolNamespace, path string) (SolNamespace, bool) {
 func (b *Builder) buildDeclStmtFromSol(
 	decl ast.Decl,
 	ns SolNamespace,
-	preludePrefix string,
+	names solNames,
 	isTopLevel bool,
 ) []Stmt {
 	switch decl := decl.(type) {
 	case *ast.VarDecl:
-		return b.buildVarDeclFromSol(decl, ns, preludePrefix, isTopLevel)
+		return b.buildVarDeclFromSol(decl, ns, names, isTopLevel)
 	case *ast.FuncDecl:
-		return b.buildFuncDeclFromSol(decl, ns, preludePrefix, isTopLevel)
+		return b.buildFuncDeclFromSol(decl, ns, names, isTopLevel)
 	case *ast.TypeDecl:
-		return b.buildTypeDeclFromSol(decl, ns, preludePrefix, isTopLevel)
+		return b.buildTypeDeclFromSol(decl, ns, names, isTopLevel)
 	case *ast.InterfaceDecl:
-		return b.buildInterfaceDeclFromSol(decl, ns, preludePrefix, isTopLevel)
+		return b.buildInterfaceDeclFromSol(decl, ns, names, isTopLevel)
 	case *ast.ClassDecl:
-		return b.buildClassDeclFromSol(decl, ns, preludePrefix, isTopLevel)
+		return b.buildClassDeclFromSol(decl, ns, names, isTopLevel)
 	case *ast.EnumDecl:
-		return b.buildEnumDeclFromSol(decl, ns, preludePrefix, isTopLevel)
+		return b.buildEnumDeclFromSol(decl, ns, names, isTopLevel)
 	default:
 		return nil
 	}
@@ -162,20 +163,20 @@ func (b *Builder) buildDeclStmtFromSol(
 func (b *Builder) buildVarDeclFromSol(
 	decl *ast.VarDecl,
 	ns SolNamespace,
-	preludePrefix string,
+	names solNames,
 	isTopLevel bool,
 ) []Stmt {
-	names := ast.FindBindings(decl.Pattern).ToSlice()
-	sort.Strings(names)
+	bound := ast.FindBindings(decl.Pattern).ToSlice()
+	sort.Strings(bound)
 
-	stmts := make([]Stmt, 0, len(names))
-	for _, name := range names {
+	stmts := make([]Stmt, 0, len(bound))
+	for _, name := range bound {
 		bindingType, ok := ns.ValueType(name)
 		if !ok {
 			continue
 		}
 		localName := extractLocalName(name)
-		render := newSolTypeAnnBuilder(preludePrefix, localName, nil)
+		render := newSolTypeAnnBuilder(names, localName, nil)
 
 		// A type mentioning `Self` renders `this`, which TypeScript accepts only inside an
 		// interface, so the binding's type moves into one and the binding refers to it.
@@ -243,7 +244,7 @@ func interfaceBodyFromSol(typeAnn TypeAnn) TypeAnn {
 func (b *Builder) buildFuncDeclFromSol(
 	decl *ast.FuncDecl,
 	ns SolNamespace,
-	preludePrefix string,
+	names solNames,
 	isTopLevel bool,
 ) []Stmt {
 	// A declaration error recovery left without params or a body has no signature to
@@ -261,7 +262,7 @@ func (b *Builder) buildFuncDeclFromSol(
 	}
 
 	localName := extractLocalName(decl.Name.Name)
-	render := newSolTypeAnnBuilder(preludePrefix, localName, nil)
+	render := newSolTypeAnnBuilder(names, localName, nil)
 	sig := render.declFuncTypeAnn(funcType)
 
 	stmts := companionStmtsFromSol(render)
@@ -289,7 +290,7 @@ func (b *Builder) buildFuncDeclFromSol(
 func (b *Builder) buildTypeDeclFromSol(
 	decl *ast.TypeDecl,
 	ns SolNamespace,
-	preludePrefix string,
+	names solNames,
 	isTopLevel bool,
 ) []Stmt {
 	body, typeParams, ok := ns.DeclaredType(decl.Name.Name)
@@ -297,7 +298,7 @@ func (b *Builder) buildTypeDeclFromSol(
 		return nil
 	}
 	localName := extractLocalName(decl.Name.Name)
-	render := newSolTypeAnnBuilder(preludePrefix, localName, typeParams)
+	render := newSolTypeAnnBuilder(names, localName, typeParams)
 	typeAnn := render.render(body)
 	declTypeParams := typeParamsFromSol(render, typeParams)
 
@@ -322,7 +323,7 @@ func (b *Builder) buildTypeDeclFromSol(
 func (b *Builder) buildInterfaceDeclFromSol(
 	decl *ast.InterfaceDecl,
 	ns SolNamespace,
-	preludePrefix string,
+	names solNames,
 	isTopLevel bool,
 ) []Stmt {
 	body, typeParams, ok := ns.DeclaredType(decl.Name.Name)
@@ -330,7 +331,7 @@ func (b *Builder) buildInterfaceDeclFromSol(
 		return nil
 	}
 	localName := extractLocalName(decl.Name.Name)
-	render := newSolTypeAnnBuilder(preludePrefix, localName, typeParams)
+	render := newSolTypeAnnBuilder(names, localName, typeParams)
 	members, extends := interfacePartsFromSol(render.render(body))
 	declTypeParams := typeParamsFromSol(render, typeParams)
 
@@ -383,7 +384,7 @@ func interfacePartsFromSol(typeAnn TypeAnn) ([]ObjTypeAnnElem, []TypeAnn) {
 func (b *Builder) buildClassDeclFromSol(
 	decl *ast.ClassDecl,
 	ns SolNamespace,
-	preludePrefix string,
+	names solNames,
 	isTopLevel bool,
 ) []Stmt {
 	instance, typeParams, ok := ns.DeclaredType(decl.Name.Name)
@@ -399,7 +400,7 @@ func (b *Builder) buildClassDeclFromSol(
 	// The two sides render under their own builders, and each seeds the names it mints
 	// from a prefix of its own. Both numbering from one prefix would let the instance
 	// type and the static side mint the same name for two different bodies.
-	instanceRender := newSolTypeAnnBuilder(preludePrefix, localName, typeParams)
+	instanceRender := newSolTypeAnnBuilder(names, localName, typeParams)
 	instanceAnn := instanceRender.render(instance)
 	instanceTypeParams := typeParamsFromSol(instanceRender, typeParams)
 
@@ -422,7 +423,7 @@ func (b *Builder) buildClassDeclFromSol(
 	// The static side binds the class's parameters on each constructor and call signature,
 	// which carry them as their own binder, so the value renders
 	// `{new <T>(value: T): Box<T>}` and the `T` is bound where TypeScript needs it.
-	staticRender := newSolTypeAnnBuilder(preludePrefix, localName+"_static", nil)
+	staticRender := newSolTypeAnnBuilder(names, localName+"_static", nil)
 	staticAnn := staticRender.render(staticType)
 	stmts = append(stmts, companionStmtsFromSol(staticRender)...)
 	return append(stmts, &DeclStmt{
@@ -453,7 +454,7 @@ func (b *Builder) buildClassDeclFromSol(
 func (b *Builder) buildEnumDeclFromSol(
 	decl *ast.EnumDecl,
 	ns SolNamespace,
-	preludePrefix string,
+	names solNames,
 	isTopLevel bool,
 ) []Stmt {
 	variantNS, ok := ns.Namespace(decl.Name.Name)
@@ -462,6 +463,9 @@ func (b *Builder) buildEnumDeclFromSol(
 	}
 	localName := extractLocalName(decl.Name.Name)
 
+	// The variants are emitted inside a namespace named after the enum, nested in the one
+	// the enum itself is emitted into.
+	variantNames := names.within(localName)
 	var namespaceStmts []Stmt
 	for _, elem := range decl.Elems {
 		variant, isVariant := elem.(*ast.EnumVariant)
@@ -471,7 +475,7 @@ func (b *Builder) buildEnumDeclFromSol(
 			continue
 		}
 		namespaceStmts = append(namespaceStmts,
-			b.buildEnumVariantFromSol(variant, variantNS, preludePrefix)...)
+			b.buildEnumVariantFromSol(variant, variantNS, variantNames)...)
 	}
 
 	var stmts []Stmt
@@ -494,7 +498,7 @@ func (b *Builder) buildEnumDeclFromSol(
 	if !hasUnion || union == nil {
 		return stmts
 	}
-	render := newSolTypeAnnBuilder(preludePrefix, localName, typeParams)
+	render := newSolTypeAnnBuilder(names, localName, typeParams)
 	unionAnn := render.render(union)
 	declTypeParams := typeParamsFromSol(render, typeParams)
 
@@ -521,13 +525,13 @@ func (b *Builder) buildEnumDeclFromSol(
 func (b *Builder) buildEnumVariantFromSol(
 	variant *ast.EnumVariant,
 	variantNS SolNamespace,
-	preludePrefix string,
+	names solNames,
 ) []Stmt {
 	name := variant.Name.Name
 	var stmts []Stmt
 
 	if body, typeParams, ok := variantNS.DeclaredType(name); ok && body != nil {
-		render := newSolTypeAnnBuilder(preludePrefix, name, typeParams)
+		render := newSolTypeAnnBuilder(names, name, typeParams)
 		typeAnn := render.render(body)
 		declTypeParams := typeParamsFromSol(render, typeParams)
 		stmts = append(stmts, companionStmtsFromSol(render)...)
@@ -550,7 +554,7 @@ func (b *Builder) buildEnumVariantFromSol(
 	if ctorType, ok := variantNS.ValueType(name); ok {
 		// A prefix of its own, so the variant's type and its constructor cannot mint one
 		// name for two bodies.
-		render := newSolTypeAnnBuilder(preludePrefix, name+"_ctor", nil)
+		render := newSolTypeAnnBuilder(names, name+"_ctor", nil)
 		ctorAnn := render.render(ctorType)
 		stmts = append(stmts, companionStmtsFromSol(render)...)
 		stmts = append(stmts, &DeclStmt{

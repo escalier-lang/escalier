@@ -138,14 +138,6 @@ var shapeSkips = map[string]shapeSkip{
 		reason: "a callback parameter's `-> undefined` return emits `void`, which widens what the slot accepts",
 		ticket: "#1820",
 	},
-	"AnEnum": {
-		reason: "a variant's value emits as a plain function rather than a constructor object",
-		ticket: "#1784",
-	},
-	"AGenericEnum": {
-		reason: "a variant's value emits as a plain function rather than a constructor object",
-		ticket: "#1784",
-	},
 	"AnOptionalIndexSig": {
 		reason: "an index signature over an uncountable key set loses its `?`",
 		ticket: "#1775",

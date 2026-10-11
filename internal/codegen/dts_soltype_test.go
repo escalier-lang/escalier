@@ -26,7 +26,7 @@ func renderSol(t *testing.T, ty soltype.Type) string {
 func renderSolWithParams(t *testing.T, ty soltype.Type, typeParams []*soltype.TypeParam) string {
 	t.Helper()
 	printer := NewPrinter()
-	printer.PrintTypeAnn(newSolTypeAnnBuilder(solPreludePrefix, "t", typeParams).render(ty))
+	printer.PrintTypeAnn(newSolTypeAnnBuilder(solNames{preludePrefix: solPreludePrefix}, "t", typeParams).render(ty))
 	return printer.Output
 }
 
@@ -726,7 +726,7 @@ func TestBuildTypeAnnFromSolRecursive(t *testing.T) {
 			binder := &soltype.RecursiveVarType{ID: 0, Name: "X0"}
 			knot := &soltype.RecursiveType{Binder: binder, Body: test.body(binder)}
 
-			builder := newSolTypeAnnBuilder(solPreludePrefix, "t", nil)
+			builder := newSolTypeAnnBuilder(solNames{preludePrefix: solPreludePrefix}, "t", nil)
 			printer := NewPrinter()
 			printer.PrintTypeAnn(builder.render(knot))
 			require.Equal(t, test.rendered, printer.Output)
@@ -819,7 +819,7 @@ func TestReferencesNameEagerly(t *testing.T) {
 
 // A type carrying no knot mints nothing.
 func TestBuildTypeAnnFromSolMintsNoCompanionWithoutAKnot(t *testing.T) {
-	builder := newSolTypeAnnBuilder(solPreludePrefix, "x", nil)
+	builder := newSolTypeAnnBuilder(solNames{preludePrefix: solPreludePrefix}, "x", nil)
 	builder.render(solObj(solProp("x", solNum())))
 	require.Empty(t, builder.companionDecls())
 }
@@ -1025,6 +1025,34 @@ func TestRefNameFromSol(t *testing.T) {
 	}
 }
 
+// TestSolNamesLocalName covers how a reference reads inside the namespace a declaration
+// is emitted into. A type that namespace declares drops its prefix, and every other
+// reference keeps the name refNameFromSol gives it.
+func TestSolNamesLocalName(t *testing.T) {
+	tests := map[string]struct {
+		names         solNames
+		qualifiedName string
+		expected      string
+	}{
+		"TopLevel":           {solNames{}, "MyEnum.Color", "MyEnum.Color"},
+		"OwnNamespace":       {solNames{namespace: "MyEnum"}, "MyEnum.Color", "Color"},
+		"OtherNamespace":     {solNames{namespace: "Other"}, "MyEnum.Color", "MyEnum.Color"},
+		"TheNamespaceItself": {solNames{namespace: "MyEnum"}, "MyEnum", "MyEnum"},
+		"SharedLeadingName":  {solNames{namespace: "My"}, "MyEnum.Color", "MyEnum.Color"},
+		"NestedOwn":          {solNames{namespace: "A.B"}, "A.B.C", "C"},
+		"ParentOfNested":     {solNames{namespace: "A.B"}, "A.C", "A.C"},
+		"EnumVariant":        {solNames{}.within("Color"), "Color.RGB", "RGB"},
+		"VariantInNamespace": {solNames{namespace: "Geometry"}.within("Color"), "Geometry.Color.RGB", "RGB"},
+		"Imported":           {solNames{namespace: "Geometry"}, "import:npm:a.Geometry.Point", "Geometry.Point"},
+	}
+
+	for name, test := range tests {
+		t.Run(name, func(t *testing.T) {
+			require.Equal(t, test.expected, test.names.localName(test.qualifiedName))
+		})
+	}
+}
+
 // TestArityTrimNeedsThePreludePrefix asserts what the arity trim keys off: the
 // package the reference was declared in, which the builder knows only from the
 // prelude prefix it was given.
@@ -1043,7 +1071,7 @@ func TestArityTrimNeedsThePreludePrefix(t *testing.T) {
 
 	render := func(preludePrefix string) string {
 		printer := NewPrinter()
-		printer.PrintTypeAnn(newSolTypeAnnBuilder(preludePrefix, "t", nil).render(promise))
+		printer.PrintTypeAnn(newSolTypeAnnBuilder(solNames{preludePrefix: preludePrefix}, "t", nil).render(promise))
 		return printer.Output
 	}
 
