@@ -1910,10 +1910,10 @@ func mapFirstRune(s string, f func(rune) rune) string {
 //   - A well-known symbol the prelude declares, such as the type of `Symbol.iterator`, selects
 //     the member `[Symbol.iterator]`, so `val it = Symbol.iterator` makes `o[it]` read the
 //     same member `o[Symbol.iterator]` does.
-//   - Any other unique symbol selects the member spelled by its id.
+//   - Any other unique symbol selects the member spelled by its id and its name.
 //
 // A string literal spelling a unique symbol's reserved name returns false, so the string `"@@#0"`
-// never reaches the member `[unique symbol#0]`.
+// never reaches the member `[unique symbol#0]`. Nor does `"@@#0:sym"` reach `[sym]`.
 func (c *Context) keyMemberName(t soltype.Type) (string, bool) {
 	switch t := t.(type) {
 	case *soltype.LitType:
@@ -1929,7 +1929,7 @@ func (c *Context) keyMemberName(t soltype.Type) (string, bool) {
 		if name, isWellKnown := c.wellKnownSymbolMembers[t.ID]; isWellKnown {
 			return name, true
 		}
-		return soltype.UniqueSymbolMemberName(t.ID), true
+		return soltype.UniqueSymbolMemberName(t), true
 	}
 	return "", false
 }
@@ -2017,8 +2017,8 @@ func strLitType(name string) soltype.Type {
 // `Symbol.iterator`. Every other member returns its name as a string literal, and so does a
 // well-known symbol in a run whose prelude declares no type for it.
 func (c *Context) memberKeyType(name string) soltype.Type {
-	if id, isUnique := soltype.UniqueSymbolOfMemberName(name); isUnique {
-		return &soltype.UniqueSymbolType{ID: id}
+	if sym, isUnique := soltype.UniqueSymbolOfMemberName(name); isUnique {
+		return sym
 	}
 	if sym, isWellKnown := c.wellKnownSymbolTypes[name]; isWellKnown {
 		return sym
