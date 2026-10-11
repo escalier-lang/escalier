@@ -153,7 +153,7 @@ func (t *ObjectType) Accept(v TypeVisitor, pol Polarity) Type {
 	elems, changed := acceptObjElems(cur.Elems, v, pol) // covariant
 	out := cur
 	if changed {
-		out = &ObjectType{Elems: elems, Inexact: cur.Inexact}
+		out = &ObjectType{Elems: elems, Inexact: cur.Inexact, Class: cur.Class}
 	}
 	return v.ExitType(out, pol)
 }

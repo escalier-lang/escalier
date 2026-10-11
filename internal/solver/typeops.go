@@ -1827,7 +1827,7 @@ func (e *typeEvaluator) reduceExactness(kind soltype.ExactnessKind, operand solt
 		if soltype.HasResidualElem(op.Elems) {
 			break
 		}
-		return &soltype.ObjectType{Elems: op.Elems, Inexact: inexact}
+		return &soltype.ObjectType{Elems: op.Elems, Inexact: inexact, Class: op.Class}
 	case *soltype.TupleType:
 		// A tuple still carrying a `...P` spread has no final element list, mirroring the object arm.
 		if hasRestSpread(op.Elems) {

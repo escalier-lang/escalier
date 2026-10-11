@@ -260,7 +260,7 @@ func stripBorrowTree(
 				Readonly: p.Readonly,
 			}
 		}
-		return &soltype.ObjectType{Elems: elems, Inexact: t.Inexact}
+		return &soltype.ObjectType{Elems: elems, Inexact: t.Inexact, Class: t.Class}
 	case *soltype.TupleType:
 		// Keep a tuple's borrows unstripped. Every tuple element's borrow is recorded at the
 		// container path, since placeSeg has no tuple-index kind yet, so findReferentAt cannot

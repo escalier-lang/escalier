@@ -352,7 +352,7 @@ func (b *mutBubbler) ExitType(t soltype.Type, pol soltype.Polarity) soltype.Type
 			}
 			elems[i] = &soltype.PropertyElem{Name: p.Name, Type: ft, Optional: p.Optional, Readonly: p.Readonly}
 		}
-		obj := &soltype.ObjectType{Elems: elems, Inexact: t.Inexact}
+		obj := &soltype.ObjectType{Elems: elems, Inexact: t.Inexact, Class: t.Class}
 		if anyMut {
 			return soltype.NewRef(true, nil, obj)
 		}
@@ -808,10 +808,11 @@ func renderScheme(s TypeScheme) string {
 
 // renderSchemeWith renders a scheme like renderScheme, under the source names of the type
 // parameters the scheme's declaration wrote. A class, alias, or enum keeps those parameters
-// in the Context registry rather than in the type, so declaredFor looks them up from the
-// scheme's display type. It is called with that type once it is derived, since the lookup
-// reads the class or alias the type names. Pass nil to name nothing from the source, which
-// is right for every function: a FuncType carries its own parameters and names them itself.
+// in the Context registry rather than in the type, so declaredFor and declaredLtsFor look
+// them up from a type the scheme stands for. A MonoScheme is coalesced and the lookups read
+// the result. A PolyScheme carries the lists generalize read from its raw body, and those are
+// used as they are. Pass nil to name nothing from the source, which is right for every
+// function: a FuncType carries its own parameters and names them itself.
 func renderSchemeWith(
 	s TypeScheme,
 	declaredFor func(soltype.Type) []*soltype.TypeParam,
@@ -824,23 +825,27 @@ func renderSchemeWith(
 	// escaped coalescing renders as the raw t{ID} debug form instead of being disguised as a
 	// spurious type parameter.
 	var isParam func(*soltype.TypeVarType) bool
+	var declared []*soltype.TypeParam
+	var declaredLts []*soltype.LifetimeParam
 	switch sc := s.(type) {
 	case *MonoScheme:
 		t = coalesce(sc.Ty, soltype.Positive)
 		isParam = func(*soltype.TypeVarType) bool { return true }
+		if declaredFor != nil {
+			declared = declaredFor(t)
+		}
+		if declaredLtsFor != nil {
+			declaredLts = declaredLtsFor(t)
+		}
 	case *PolyScheme:
 		t = sc.display()
 		isParam = func(v *soltype.TypeVarType) bool { return v.Level > sc.Level }
+		// The lists generalize read from the raw body are what the display coalesced
+		// under, and the display may have dropped a binder entry the raw body carried, so
+		// they are not read again from it.
+		declared, declaredLts = sc.declared, sc.declaredLts
 	default:
 		panic(fmt.Sprintf("renderSchemeWith: unknown TypeScheme %T", s))
-	}
-	var declared []*soltype.TypeParam
-	if declaredFor != nil {
-		declared = declaredFor(t)
-	}
-	var declaredLts []*soltype.LifetimeParam
-	if declaredLtsFor != nil {
-		declaredLts = declaredLtsFor(t)
 	}
 	return soltype.PrintAsSchemeWith(t, isParam, displayLtBounds(t, soltype.Positive), declared, declaredLts)
 }
@@ -858,9 +863,12 @@ func (c *checker) renderValueBinding(s TypeScheme) string {
 // in the Context registry rather than in the type, so the printer cannot reach them from the
 // type alone and a caller reads them from here.
 //
-// A class VALUE binding is an object holding the constructor, whose return is the class's own
-// handle, so the class is reached through that return: `class Node<T>` binds the value
-// `{new (value: T) -> Node<T>}` and its parameters are found under Node.
+// A class VALUE binding is an object that names its class and whose constructor and call
+// signatures carry the class's parameters at the front of their binder, so `class Node<T>`
+// binds the value `{new <T>(value: T) -> Node<T>}` and its parameters are read off that
+// binder. The binder rather than the registry is read because an instantiated value carries
+// fresh variables there, and the parameters returned have to name the variables the value
+// writes.
 func (c *checker) declaredTypeParams(t soltype.Type) []*soltype.TypeParam {
 	switch t := t.(type) {
 	case *soltype.ClassType:
@@ -874,36 +882,105 @@ func (c *checker) declaredTypeParams(t soltype.Type) []*soltype.TypeParam {
 			return paramsForArgs(def.TypeParams, t.TypeArgs, subst)
 		}
 	case *soltype.ObjectType:
-		for _, elem := range t.Elems {
-			ctor, isCtor := elem.(*soltype.ConstructorElem)
-			if !isCtor {
-				continue
-			}
-			inst, hasInst := ctor.Instance()
-			if !hasInst {
-				return nil
-			}
-			if cls, isClass := inst.(*soltype.ClassType); isClass {
-				return c.declaredTypeParams(cls)
-			}
-			return nil
+		if def, sig, ok := c.classValueSignature(t); ok && len(sig.TypeParams) >= len(def.TypeParams) {
+			return sig.TypeParams[:len(def.TypeParams)]
+		}
+		if cls, ok := constructedClass(t); ok {
+			return c.declaredTypeParams(cls)
 		}
 	case *soltype.TypeVarType:
 		// A declaration's value is constrained into a binding var and the var is what
 		// generalizes, so the object is reached through the var's lower bounds. A display
 		// type has the var resolved already and takes the arms above.
-		if obj, ok := c.classValueCarrier(t); ok {
+		if obj, ok := c.declaredCarrier(t); ok {
 			return c.declaredTypeParams(obj)
 		}
 	}
 	return nil
 }
 
+// declaredCarrier returns the class value a binding var carries, for a reader of the
+// declared parameters. A class value is constrained into its binding var before the var
+// generalizes, so the value is a lower bound of the var. A var joined from two references to
+// one class, as `if k { F } else { F }` is, carries one instantiation of the value per
+// reference, and each names the same declaration, so the first is returned when every class
+// value among the bounds is the value of one class. ok is false for a var carrying no class
+// value or the values of two classes. A class value is one that names its class or that
+// constructs one, as constructedClass reads.
+func (c *checker) declaredCarrier(v *soltype.TypeVarType) (*soltype.ObjectType, bool) {
+	var found *soltype.ObjectType
+	class := ""
+	for _, lb := range v.LowerBounds {
+		if lb == soltype.Type(v) {
+			continue
+		}
+		obj, isObj := c.memberCarrier(lb).(*soltype.ObjectType)
+		if !isObj {
+			continue
+		}
+		name := obj.Class
+		if name == "" {
+			cls, constructs := constructedClass(obj)
+			if !constructs {
+				continue
+			}
+			name = cls.Name
+		}
+		if found != nil && name != class {
+			return nil, false
+		}
+		if found == nil {
+			found, class = obj, name
+		}
+	}
+	return found, found != nil
+}
+
+// classValueSignature returns the class obj is the value of and one of obj's constructor or
+// call signatures, whose binder starts with the class's own parameters, both sorts. ok is
+// false when obj is the value of no class, when its class is not registered, or when it
+// carries neither kind of signature. The binder is read on the value generalize sees, before
+// the display pass, which may drop an entry of it.
+func (c *checker) classValueSignature(obj *soltype.ObjectType) (def *ClassDef, sig *soltype.FuncType, ok bool) {
+	if obj.Class == "" {
+		return nil, nil, false
+	}
+	def, ok = c.ctx.classDef(obj.Class)
+	if !ok {
+		return nil, nil, false
+	}
+	if ctor, hasCtor := obj.Constructor(); hasCtor && len(ctor.Signatures) > 0 {
+		return def, ctor.Signatures[0], true
+	}
+	if call, hasCall := obj.Callable(); hasCall && len(call.Signatures) > 0 {
+		return def, call.Signatures[0], true
+	}
+	return nil, nil, false
+}
+
+// constructedClass returns the class handle a constructor in obj returns, for an object that
+// names no class itself but constructs one, as the annotation `{new (v: T) -> Node<T>}`
+// writes. Its signatures carry no class binder, so a reader resolves the class's parameters
+// against the handle's arguments instead. ok is false when obj has no constructor or the
+// constructor returns something other than a class instance.
+func constructedClass(obj *soltype.ObjectType) (*soltype.ClassType, bool) {
+	ctor, hasCtor := obj.Constructor()
+	if !hasCtor {
+		return nil, false
+	}
+	inst, hasInst := ctor.Instance()
+	if !hasInst {
+		return nil, false
+	}
+	cls, isClass := inst.(*soltype.ClassType)
+	return cls, isClass
+}
+
 // declaredLifetimeParams returns the lifetime parameters written by the declaration a display
 // type stands for, or nil when it stands for none. It is the lifetime-sort twin of
 // declaredTypeParams and reads the same four carriers: a class handle, an alias handle, the
-// class-value object whose constructor returns the handle, and the binding var that object
-// is constrained into before generalization.
+// class-value object that names its class, and the binding var that object is constrained
+// into before generalization.
 func (c *checker) declaredLifetimeParams(t soltype.Type) []*soltype.LifetimeParam {
 	switch t := t.(type) {
 	case *soltype.ClassType:
@@ -915,22 +992,14 @@ func (c *checker) declaredLifetimeParams(t soltype.Type) []*soltype.LifetimePara
 			return ltParamsForArgs(def.LifetimeParams, t.LifetimeArgs)
 		}
 	case *soltype.ObjectType:
-		for _, elem := range t.Elems {
-			ctor, isCtor := elem.(*soltype.ConstructorElem)
-			if !isCtor {
-				continue
-			}
-			inst, hasInst := ctor.Instance()
-			if !hasInst {
-				return nil
-			}
-			if cls, isClass := inst.(*soltype.ClassType); isClass {
-				return c.declaredLifetimeParams(cls)
-			}
-			return nil
+		if def, sig, ok := c.classValueSignature(t); ok && len(sig.LifetimeParams) >= len(def.LifetimeParams) {
+			return sig.LifetimeParams[:len(def.LifetimeParams)]
+		}
+		if cls, ok := constructedClass(t); ok {
+			return c.declaredLifetimeParams(cls)
 		}
 	case *soltype.TypeVarType:
-		if obj, ok := c.classValueCarrier(t); ok {
+		if obj, ok := c.declaredCarrier(t); ok {
 			return c.declaredLifetimeParams(obj)
 		}
 	}

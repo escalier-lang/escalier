@@ -628,15 +628,12 @@ func (r *ltRewriter) resolveArgs(args []soltype.Lifetime) ([]soltype.Lifetime, b
 	return out, changed
 }
 
-// resolveLtParams resolves a signature's own lifetime parameters against the receiver,
-// parameters, return and throws the walk has rewritten, so the binder keeps agreeing with the
-// uses. A parameter stays, under its resolved variable, when one of those positions still
-// writes that variable. It goes when the walk never recorded it, when the body elided every
-// use, when it resolved to 'static, when it resolved to a pinned lifetime other than its own,
-// which the enclosing declaration binds, or when an earlier parameter resolved to the same
-// variable. A bound on a variable the walk never recorded is dropped, the rest resolve the way
-// a reference's arguments do, and one that resolves to the parameter itself is dropped. The
-// second result reports whether anything changed, and nil-for-empty is preserved.
+// resolveLtParams returns t's lifetime binder resolved against the receiver, parameters,
+// return, throws and type-parameter bounds the walk has rewritten, so the binder keeps
+// agreeing with the uses. A parameter stays, under its resolved variable, when one of those
+// positions still writes it or when the enclosing declaration pins it, and its bounds are
+// resolved the same way. The second result reports whether anything changed, and
+// nil-for-empty is preserved.
 func (r *ltRewriter) resolveLtParams(t *soltype.FuncType) ([]*soltype.LifetimeParam, bool) {
 	if len(t.LifetimeParams) == 0 {
 		return t.LifetimeParams, false
@@ -646,10 +643,25 @@ func (r *ltRewriter) resolveLtParams(t *soltype.FuncType) ([]*soltype.LifetimePa
 	kept := set.NewSet[*soltype.LifetimeVar]()
 	changed := false
 	for _, lp := range t.LifetimeParams {
+		// A pinned parameter is the enclosing class's own. It stays whether or not the
+		// signature writes it, the way the class's type parameters stay on every signature.
+		if r.a.keepLts.Contains(lp.Var) {
+			if kept.Contains(lp.Var) {
+				changed = true
+				continue
+			}
+			kept.Add(lp.Var)
+			out = append(out, lp)
+			continue
+		}
+		// The walk never recorded the variable, so no position writes it.
 		if !r.a.occurs(lp.Var) {
 			changed = true
 			continue
 		}
+		// Resolve the parameter the way its uses were resolved. One that resolved to 'static
+		// goes, since 'static is no binder. One the analysis elides keeps its own variable, and
+		// the check against written below decides whether any use survived.
 		lv := lp.Var
 		if resolved, elide := r.a.resolveLt(lp.Var); !elide {
 			v, isVar := resolved.(*soltype.LifetimeVar)
@@ -659,11 +671,16 @@ func (r *ltRewriter) resolveLtParams(t *soltype.FuncType) ([]*soltype.LifetimePa
 			}
 			lv = v
 		}
-		if !written.Contains(lv) || (lv != lp.Var && r.a.keepLts.Contains(lv)) || kept.Contains(lv) {
+		// The parameter goes when the body elided every use, when it resolved to a lifetime
+		// the enclosing declaration binds, or when an earlier parameter resolved to the same
+		// variable.
+		if !written.Contains(lv) || r.a.keepLts.Contains(lv) || kept.Contains(lv) {
 			changed = true
 			continue
 		}
 		kept.Add(lv)
+		// A bound on a variable the walk never recorded is dropped, the rest resolve the way a
+		// reference's arguments do, and one naming the parameter itself is dropped.
 		bounds, unknownDropped := r.a.occurring(lp.Bounds)
 		bounds, boundsChanged := r.resolveArgs(bounds)
 		bounds, selfDropped := withoutLifetime(bounds, lv)
@@ -683,11 +700,19 @@ func (r *ltRewriter) resolveLtParams(t *soltype.FuncType) ([]*soltype.LifetimePa
 	return out, true
 }
 
-// signatureLifetimes returns every lifetime variable t's receiver, parameters, return and
-// throws write, in first-appearance order. The binder itself is left out, so a parameter
-// nothing else names is absent.
+// signatureLifetimes returns every lifetime variable t's receiver, parameters, return, throws
+// and type-parameter bounds write, in first-appearance order. The lifetime binder itself is
+// left out, so a parameter nothing else names is absent. A type parameter's bound counts
+// because `<T: &'a {x: number}>(x: T) -> T` writes 'a there and nowhere else.
 func signatureLifetimes(t *soltype.FuncType) []*soltype.LifetimeVar {
 	col := &lifetimeCollector{out: set.NewSet[*soltype.LifetimeVar]()}
+	for _, tp := range t.TypeParams {
+		for _, bound := range []soltype.Type{tp.UpperBound, tp.LowerBound, tp.Default} {
+			if bound != nil {
+				bound.Accept(col, soltype.Positive)
+			}
+		}
+	}
 	if t.SelfParam != nil {
 		t.SelfParam.Type.Accept(col, soltype.Negative)
 	}

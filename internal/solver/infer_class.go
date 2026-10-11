@@ -613,7 +613,9 @@ func (c *checker) classValue(
 		elems = append(elems, &soltype.CallableElem{Signatures: callFns})
 	}
 	elems = append(elems, static.Elems...)
-	value := &soltype.ObjectType{Elems: elems}
+	// The value names its class, so a reader of the class's declared parameters finds the
+	// declaration whether the value carries a constructor or only a call signature.
+	value := &soltype.ObjectType{Elems: elems, Class: self.Name}
 	resolved, ok := value.Accept(&selfSubst{recv: self}, soltype.Positive).(*soltype.ObjectType)
 	if !ok {
 		// selfSubst replaces only SelfType nodes, so an ObjectType always walks to an

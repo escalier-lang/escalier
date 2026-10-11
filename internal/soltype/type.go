@@ -422,6 +422,14 @@ type TupleType struct {
 type ObjectType struct {
 	Elems   []ObjTypeElem // ordered, name-deduped (last wins); Prop(name) lookup
 	Inexact bool          // trailing `...` ⇒ true
+	// Class is the registry name of the class this object is the value of, the same string
+	// a ClassType.Name holds, or "" for an object that is the value of no class. The class
+	// value's constructor and call signatures carry the class's parameters as their binder,
+	// and a reader that needs the declaration those parameters came from looks it up here. A
+	// rewrite that keeps the object's identity, such as a visitor walk, carries it along, and
+	// a merge of two values of one class keeps it. Equality and normalization ignore it, so
+	// a class value and a structurally identical object are one type.
+	Class string
 }
 
 // ObjTypeElem is the sealed set of object members, mirroring type_system's
