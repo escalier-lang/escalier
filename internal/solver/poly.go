@@ -680,6 +680,29 @@ func (v *lifetimeCollector) EnterType(t soltype.Type, _ soltype.Polarity) soltyp
 
 func (v *lifetimeCollector) ExitType(t soltype.Type, _ soltype.Polarity) soltype.Type { return t }
 
+// withoutReceiverLifetimes returns sig with every binder entry the receiver's type writes
+// removed, or sig itself when the receiver writes none. The access that reads the method
+// borrows the receiver at those lifetimes, which fixes them.
+func withoutReceiverLifetimes(sig *soltype.FuncType) *soltype.FuncType {
+	if sig.SelfParam == nil || len(sig.LifetimeParams) == 0 {
+		return sig
+	}
+	col := &lifetimeCollector{out: set.NewSet[*soltype.LifetimeVar]()}
+	sig.SelfParam.Type.Accept(col, soltype.Negative)
+	var kept []*soltype.LifetimeParam
+	for _, lp := range sig.LifetimeParams {
+		if !col.out.Contains(lp.Var) {
+			kept = append(kept, lp)
+		}
+	}
+	if len(kept) == len(sig.LifetimeParams) {
+		return sig
+	}
+	cp := *sig
+	cp.LifetimeParams = kept
+	return &cp
+}
+
 // recordMethodLifetimes adds to methodLifetimes every lifetime a method signature in obj
 // writes, other than the class's own lifetime parameters in classLts. It runs once a class
 // body is frozen, so it records the lifetimes the member signatures settle on.
@@ -706,10 +729,17 @@ func (c *Context) recordMethodLifetimes(obj *soltype.ObjectType, classLts set.Se
 }
 
 // instantiateMethodLifetimes returns member with each signature's own lifetimes replaced by
-// fresh ones at lvl, so this access shares none of them with another call to the same
+// fresh ones at lvl, so this access shares none of them with another access of the same
 // method. A lifetime the class declares is shared, since projection has already replaced it
 // with the instance's argument. A freshened lifetime keeps its outlives bounds, rewritten
 // through the same copy.
+//
+// The binder splits in two at the access. A lifetime the receiver's type writes, as the `'a`
+// of `peek<'a>(&'a self) -> &'a T`, is fixed by the receiver borrow the access takes, so it
+// leaves the binder and the value reads `fn () -> &'a T` at that borrow's lifetime. Any other
+// lifetime stays on the binder, so each call of the value instantiates it afresh, the way a
+// call instantiates a type binder, and `id<'a>(&self, q: &'a T) -> &'a T` read as a value
+// relates each call's argument to its own result.
 //
 // When recv holds a borrow and a signature's receiver borrows at a freshened lifetime, every
 // borrow recv may hold must outlive that lifetime, as an argument passed to a `&'a`
@@ -733,13 +763,9 @@ func (c *checker) instantiateMethodLifetimes(lvl int, blame ast.Node, recv solty
 		if !ok {
 			inst = sig
 		}
-		freshened := inst != sig
-		// The access instantiates the method's own lifetime binder, the way a call
-		// instantiates a type binder, so the value the access yields is a plain arrow over
-		// the fresh lifetimes rather than a quantified one.
-		inst = withoutLifetimeBinder(inst)
+		inst = withoutReceiverLifetimes(inst)
 		sigs[i] = inst
-		if len(held) == 0 || inst.SelfParam == nil || !freshened {
+		if len(held) == 0 || inst.SelfParam == nil || inst == sig {
 			continue
 		}
 		self, ok := inst.SelfParam.Type.(*soltype.RefType)

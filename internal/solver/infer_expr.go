@@ -1550,7 +1550,10 @@ func borrowInnerOf(t soltype.Type) (soltype.RefInner, bool) {
 // so the return is wired through directly here. The callee is concrete either as a
 // bare FuncType (an inline callee) OR as a var whose lower bound is a FuncType (a
 // named/generalized callee, which inferIdent now resolves through instantiate — see
-// resolveFunc); both recover, so recovery no longer regresses for named callees.
+// resolveFunc). The one exception is a var callee whose bound is quantified: the
+// signature resolved here is one instantiation of that bound and the constraint below
+// makes another, so wiring this one's return in would put a second copy of the binder's
+// lifetimes into the result, and such a callee recovers through the constraint alone.
 //
 // PR4 adds two #677 pieces: an EXACT all-required call callShapeParams, and the extra-arg
 // lint that rejects passing more arguments than a concrete callee declares.
@@ -1602,16 +1605,11 @@ func (c *checker) inferCallWithArgTypes(scope *Scope, lvl int, e *ast.CallExpr, 
 	if arms, ok := c.ctorOverloadArms(callee); ok {
 		return c.inferArmOverloadCall(scope, lvl, e, arms, preset, consumeRef, hasConsumeRef)
 	}
-	// Instantiate a generic callee so each call binds its type parameters independently. A
-	// rank-2 callback param is an unfreshened MonoScheme, so this keeps its `T` per-call.
-	if ft, ok := callee.(*soltype.FuncType); ok {
-		if len(ft.TypeParams) > 0 {
-			callee = c.ctx.instantiateFuncBinder(ft, lvl)
-		} else {
-			// A lifetime-only binder is dropped the same way. Its lifetimes were freshened
-			// when the callee's scheme was instantiated, so the call reads them as they are.
-			callee = withoutLifetimeBinder(ft)
-		}
+	// Instantiate a generic callee so each call binds its type parameters and lifetime
+	// parameters independently. A rank-2 callback param is an unfreshened MonoScheme, so
+	// this keeps its `T` per-call, and a method value keeps its `'a` per-call the same way.
+	if ft, ok := callee.(*soltype.FuncType); ok && quantified(ft) {
+		callee = c.ctx.instantiateFuncBinder(ft, lvl)
 	}
 	// Resolve the callee to the positional shapes the argument and arity rules read. This is the
 	// same callCandidates the per-arm trial in resolveOverload reads, so a rest slot means the
@@ -1627,13 +1625,17 @@ func (c *checker) inferCallWithArgTypes(scope *Scope, lvl int, e *ast.CallExpr, 
 	// object arm, and the result would then carry two instances of the class that no member
 	// lookup could pick between. Any other callee keeps receiving the call shape itself, so
 	// a variable's later lower bound is still checked against it.
-	if resolved && len(fn.TypeParams) > 0 {
+	// secondInstance marks a resolved signature that is one instantiation of a var
+	// callee's quantified bound while the callee <: callShape constraint below makes
+	// another, for the reason the function's doc comment gives.
+	secondInstance := false
+	if resolved && quantified(fn) {
 		fn = c.ctx.instantiateFuncBinder(fn, lvl)
 		if _, isClassValue := c.classValueCarrier(callee); isClassValue {
 			callee = fn
+		} else {
+			secondInstance = true
 		}
-	} else if resolved {
-		fn = withoutLifetimeBinder(fn)
 	}
 	if resolved {
 		cands := c.ctx.callCandidates(fn, newSeenPairs())
@@ -1728,7 +1730,9 @@ func (c *checker) inferCallWithArgTypes(scope *Scope, lvl int, e *ast.CallExpr, 
 	c.recordProv(callShape, e, CallShape)
 	c.constrain(e, callee, callShape)
 	if resolved {
-		c.constrain(e, fn.Ret, res)
+		if !secondInstance {
+			c.constrain(e, fn.Ret, res)
+		}
 		c.recordCallArgEffects(e, fn, consumeRef, hasConsumeRef)
 	}
 	c.recordType(e, res)
