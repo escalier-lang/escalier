@@ -11,8 +11,9 @@ import (
 // Such a tuple holds a fixed prefix, then any number of values of one element type, then a
 // fixed suffix. soltype writes the middle as a RestSpreadType element whose operand is an
 // `Array`, so `[number, ...Array<string>, boolean]` is three elements with the spread in the
-// middle. A spread over anything that is not an `Array`, such as a type parameter, is a
-// residual the evaluator splices once it grounds, and is not variadic.
+// middle. Either fixed part may be empty, so `[...Array<string>, number]` holds any number
+// of strings and then a number. A spread over anything that is not an `Array`, such as a
+// type parameter, is a residual the evaluator splices once it grounds, and is not variadic.
 
 // tupleShape is a tuple read as its fixed prefix, its variadic middle, and its fixed suffix.
 // rest is the element type of the middle, or nil for a tuple of fixed length. An inexact

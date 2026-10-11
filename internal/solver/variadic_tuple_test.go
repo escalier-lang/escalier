@@ -42,6 +42,47 @@ func TestVariadicTupleSubtyping(t *testing.T) {
 			src:  `val a: [number, ...Array<string>, boolean] = [1, "a", "b", true]`,
 		},
 		{
+			name: "FixedTupleFillsALeadingMiddle",
+			src:  `val a: [...Array<string>, number] = ["x", "y", 1]`,
+		},
+		{
+			name: "FixedTupleOfJustTheSuffix",
+			src:  `val a: [...Array<string>, number] = [1]`,
+		},
+		{
+			name:     "EmptyTupleMissesTheSuffix",
+			src:      `val a: [...Array<string>, number] = []`,
+			wantErrs: []string{"1:37-1:39: cannot constrain tuple <: [...Array<string>, number]"},
+		},
+		{
+			name:     "LastValueOfTheWrongType",
+			src:      `val a: [...Array<string>, number] = ["x"]`,
+			wantErrs: []string{"1:38-1:41: cannot constrain \"x\" <: number"},
+		},
+		{
+			name: "ArrayMissesAFixedLastElement",
+			src: `
+				declare val xs: Array<string>
+				val a: [...Array<string>, number] = xs
+			`,
+			wantErrs: []string{"3:41-3:43: cannot constrain Array<string> <: [...Array<string>, number]"},
+		},
+		{
+			name: "LeadingVariadicIntoAnArray",
+			src: `
+				declare val v: [...Array<string>, number]
+				val a: Array<string | number> = v
+			`,
+		},
+		{
+			name: "LeadingVariadicNeedsAPrefixItLacks",
+			src: `
+				declare val v: [...Array<string>, number]
+				val a: [string, ...Array<string>, number] = v
+			`,
+			wantErrs: []string{"3:49-3:50: cannot constrain [...Array<string>, number] <: [string, ...Array<string>, number]"},
+		},
+		{
 			name: "VariadicIntoAShorterPrefix",
 			src: `
 				declare val v: [number, string, ...Array<string>]
@@ -168,6 +209,16 @@ func TestVariadicTupleInference(t *testing.T) {
 			name: "SpreadAVariadicTuple",
 			src:  `fn f(t: [number, ...Array<string>]) { return [...t, true] }`,
 			want: "fn (t: [number, ...Array<string>]) -> [number, ...Array<string>, true]",
+		},
+		{
+			name: "SpreadALeadingVariadicTuple",
+			src:  `fn f(t: [...Array<string>, number]) { return [0, ...t] }`,
+			want: "fn (t: [...Array<string>, number]) -> [0, ...Array<string>, number]",
+		},
+		{
+			name: "IndexALeadingVariadicTuple",
+			src:  `fn f(t: [...Array<string>, number]) { return t[0] }`,
+			want: "fn (t: [...Array<string>, number]) -> number | string",
 		},
 		{
 			name: "IterateAVariadicTuple",
