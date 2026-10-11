@@ -37,7 +37,7 @@ func TestBindingsRenderSourceTypeParamNames(t *testing.T) {
 		{
 			name:       "ClassNamesItsOwnParameter",
 			src:        `class Node<T> { value: T, tail: Node<T> }`,
-			wantValues: map[string]string{"Node": "<T> {new (value: T, tail: Node<T>) -> Node<T>}"},
+			wantValues: map[string]string{"Node": "{new <T>(value: T, tail: Node<T>) -> Node<T>}"},
 			wantTypes:  map[string]string{"Node": "Node<T>"},
 		},
 		{
@@ -54,7 +54,7 @@ func TestBindingsRenderSourceTypeParamNames(t *testing.T) {
 					},
 				}
 			`,
-			wantValues: map[string]string{"Pair": "<K, V> {new (v: V, k: K) -> Pair<K, V>}"},
+			wantValues: map[string]string{"Pair": "{new <K, V>(v: V, k: K) -> Pair<K, V>}"},
 			wantTypes:  map[string]string{"Pair": "Pair<K, V>"},
 		},
 		{
@@ -87,8 +87,8 @@ func TestBindingsRenderSourceTypeParamNames(t *testing.T) {
 				val Alias = Box
 			`,
 			wantValues: map[string]string{
-				"Box":   "<T> {new (value: T) -> Box<T>}",
-				"Alias": "<T> {new (value: T) -> Box<T>}",
+				"Box":   "{new <T>(value: T) -> Box<T>}",
+				"Alias": "{new <T>(value: T) -> Box<T>}",
 			},
 			wantTypes: map[string]string{"Box": "Box<T>"},
 		},

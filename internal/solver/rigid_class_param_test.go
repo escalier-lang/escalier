@@ -151,7 +151,7 @@ class Keyed<U> extends Bag<U> {
 	put(&mut self, p) { self.v = p },
 }`,
 			binding: "C",
-			want:    "<U> {new (v: U) -> C<U>}",
+			want:    "{new <U>(v: U) -> C<U>}",
 		},
 		{
 			// A body that only moves the class's parameter around works for every instance.

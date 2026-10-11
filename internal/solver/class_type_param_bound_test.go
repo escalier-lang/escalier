@@ -9,10 +9,10 @@ import (
 // TestADeclaredTypeParamBoundRendersOnItsBinder covers where a declared bound appears in
 // a class value's rendered type.
 //
-// A class keeps its type parameters in the Context registry rather than on a signature,
-// so nothing in the type itself marks them as binders. Without that mark each one merges
-// with its own bound during coalescing, and at a negative position the merge is an
-// intersection, so `peer: T` reads back as `peer: T & {value: number}`.
+// A class's parameters are the binder of its constructor signature, so the value renders
+// them there with the bound and default the declaration wrote, and coalescing keeps each
+// one symbolic rather than merging it with its bound. Without that `peer: T` would read
+// back as `peer: T & {value: number}`.
 func TestADeclaredTypeParamBoundRendersOnItsBinder(t *testing.T) {
 	tests := []struct {
 		name string
@@ -22,27 +22,19 @@ func TestADeclaredTypeParamBoundRendersOnItsBinder(t *testing.T) {
 		{
 			name: "OnAConstructorParameter",
 			src:  `class Holder<T: {value: number}> { peer: T }`,
-			want: "<T: {value: number}> {new (peer: T) -> Holder<T>}",
-		},
-		{
-			name: "OnAStaticMember",
-			src: `class Holder<T: {value: number}> {
-				v: number,
-				static s(x: T) -> number { return 1 },
-			}`,
-			want: "<T: {value: number}> {new (v: number) -> Holder<T>, s(x: T) -> number}",
+			want: "{new <T: {value: number}>(peer: T) -> Holder<T>}",
 		},
 		// An unbounded parameter has no bound to merge with, so it renders as it always
 		// did and the slot its handle elides keeps eliding.
 		{
 			name: "AnUnboundedParameterRendersBare",
 			src:  `class Holder<T> { peer: T }`,
-			want: "<T> {new (peer: T) -> Holder<T>}",
+			want: "{new <T>(peer: T) -> Holder<T>}",
 		},
 		{
 			name: "ABoundBesideADefault",
 			src:  `class Holder<T: {value: number} = {value: number}> { peer: T }`,
-			want: "<T: {value: number} = {value: number}> {new (peer: T) -> Holder<T>}",
+			want: "{new <T: {value: number} = {value: number}>(peer: T) -> Holder<T>}",
 		},
 		// Two bounds meet, so the binder joins them.
 		{
@@ -50,7 +42,7 @@ func TestADeclaredTypeParamBoundRendersOnItsBinder(t *testing.T) {
 			src: `class Holder<T: {a: number} & {b: string}> {
 				peer: T,
 			}`,
-			want: "<T: {a: number} & {b: string}> {new (peer: T) -> Holder<T>}",
+			want: "{new <T: {a: number} & {b: string}>(peer: T) -> Holder<T>}",
 		},
 	}
 

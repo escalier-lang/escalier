@@ -119,7 +119,7 @@ func TestLowerBoundedBinder(t *testing.T) {
 		{
 			name: "both bounds and a default render in order",
 			src:  `class Box<B: number | string = number> where number: B { v: B }`,
-			want: map[string]string{"Box": "<B: number | string = number> {new (v: B) -> Box<B>} where number: B"},
+			want: map[string]string{"Box": "{new <B: number | string = number>(v: B) -> Box<B> where number: B}"},
 		},
 		{
 			// `T` occurs only in the lower bound, which counts as a use.

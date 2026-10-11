@@ -223,7 +223,7 @@ func TestInferClassGeneric(t *testing.T) {
 				val v = b.value
 			`,
 			wantValues: map[string]string{
-				"Box": "<T> {new (value: T) -> Box<T>}",
+				"Box": "{new <T>(value: T) -> Box<T>}",
 				"b":   "Box<5>",
 				"v":   "5",
 			},
@@ -1222,7 +1222,7 @@ func TestInferClassGenericSubGenericSuper(t *testing.T) {
 		val g = d.tag
 	`)
 	require.Empty(t, errs)
-	require.Equal(t, "<D> {new (tag: D) -> Dog<D>}", values["Dog"])
+	require.Equal(t, "{new <D>(tag: D) -> Dog<D>}", values["Dog"])
 	require.Equal(t, `Dog<"bone">`, values["d"])
 	require.Equal(t, `"bone"`, values["f"])
 	require.Equal(t, `"bone"`, values["g"])
@@ -1262,7 +1262,7 @@ func TestInferClassGenericMemberParam(t *testing.T) {
 		val b = Box(5)
 	`)
 	require.Empty(t, errs)
-	require.Equal(t, "<T> {new (v: T) -> Box<T>}", values["Box"])
+	require.Equal(t, "{new <T>(v: T) -> Box<T>}", values["Box"])
 	require.Equal(t, "Box<5>", values["b"])
 }
 

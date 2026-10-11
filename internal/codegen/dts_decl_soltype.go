@@ -22,15 +22,10 @@ import (
 // under the same spelling does not answer for the module.
 type SolNamespace interface {
 	// ValueType is the type a name renders as in value position, which for a class is
-	// its static side and for an enum variant its constructor, along with the type
-	// parameters the declaration wrote. Nothing in this namespace binds the name in that
-	// position when ok is false.
-	//
-	// The parameters come back under the variables the returned type holds for them, so a
-	// renderer names them by pointer. TypeScript writes them on a signature rather than
-	// beside the value, so the type keeps each one as a variable rather than eliding a
-	// slot nothing mentions.
-	ValueType(name string) (soltype.Type, []*soltype.TypeParam, bool)
+	// its static side and for an enum variant its constructor. A class's parameters arrive
+	// as the binder of each constructor and call signature. Nothing in this namespace binds
+	// the name in that position when ok is false.
+	ValueType(name string) (soltype.Type, bool)
 
 	// DeclaredType is what a name's type declaration stands for, along with the type
 	// parameters it quantifies. A class returns its instance members, and an alias, an
@@ -175,7 +170,7 @@ func (b *Builder) buildVarDeclFromSol(
 
 	stmts := make([]Stmt, 0, len(names))
 	for _, name := range names {
-		bindingType, _, ok := ns.ValueType(name)
+		bindingType, ok := ns.ValueType(name)
 		if !ok {
 			continue
 		}
@@ -256,7 +251,7 @@ func (b *Builder) buildFuncDeclFromSol(
 	if decl.Body == nil && !decl.Declare() {
 		return nil
 	}
-	bindingType, _, ok := ns.ValueType(decl.Name.Name)
+	bindingType, ok := ns.ValueType(decl.Name.Name)
 	if !ok {
 		return nil
 	}
@@ -395,7 +390,7 @@ func (b *Builder) buildClassDeclFromSol(
 	if !ok || instance == nil {
 		return nil
 	}
-	staticType, staticParams, ok := ns.ValueType(decl.Name.Name)
+	staticType, ok := ns.ValueType(decl.Name.Name)
 	if !ok {
 		return nil
 	}
@@ -424,11 +419,10 @@ func (b *Builder) buildClassDeclFromSol(
 		source: nil,
 	})
 
-	// The static side leaves the class's parameters for its constructor signature to
-	// bind. A `{new (value: T): Box<T>}` naming a `T` nothing binds is not valid
-	// TypeScript; the signature has to write `new <T>`.
+	// The static side binds the class's parameters on each constructor and call signature,
+	// which carry them as their own binder, so the value renders
+	// `{new <T>(value: T): Box<T>}` and the `T` is bound where TypeScript needs it.
 	staticRender := newSolTypeAnnBuilder(preludePrefix, localName+"_static", nil)
-	staticRender.bindOnSignatures(staticParams)
 	staticAnn := staticRender.render(staticType)
 	stmts = append(stmts, companionStmtsFromSol(staticRender)...)
 	return append(stmts, &DeclStmt{
@@ -553,7 +547,7 @@ func (b *Builder) buildEnumVariantFromSol(
 		})
 	}
 
-	if ctorType, _, ok := variantNS.ValueType(name); ok {
+	if ctorType, ok := variantNS.ValueType(name); ok {
 		// A prefix of its own, so the variant's type and its constructor cannot mint one
 		// name for two bodies.
 		render := newSolTypeAnnBuilder(preludePrefix, name+"_ctor", nil)
