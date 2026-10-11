@@ -636,7 +636,11 @@ func (c *checker) annKeyName(scope *Scope, key ast.ObjKey) (string, bool) {
 		return "", false
 	}
 	path := c.resolveAnnKeyPath(scope, computed.Expr)
-	if path.err {
+	switch {
+	case path.err:
+		return "", false
+	case path.ns != nil:
+		c.report(&NamespaceUsedAsValueError{Node: computed.Expr, NS: path.ns})
 		return "", false
 	}
 	bound, known := c.boundValueType(path.value)
@@ -663,9 +667,11 @@ func (c *checker) annKeyName(scope *Scope, key ast.ObjKey) (string, bool) {
 }
 
 // resolveAnnKeyPath resolves the expression of a computed key in an object type annotation to
-// the value it names. A string, number, or boolean literal resolves to its literal type, and a
-// name resolves to its binding's type. Any other expression reports InvalidTypeKeyError. Every
-// failure is reported, and the result's `err` is set.
+// the value or namespace it names. A string, number, or boolean literal resolves to its literal
+// type. A name resolves to its binding's type. A member `a.b` reads `b` off what `a` resolves
+// to, which is either a value or a namespace. Any other expression reports InvalidTypeKeyError,
+// as does a member a value does not have. Every failure is reported, and the result's `err` is
+// set.
 //
 // A name is read from its binding rather than inferred, so resolving a key records no use of the
 // binding and instantiates no fresh variables. The dep graph orders a binding a key names before
@@ -683,10 +689,44 @@ func (c *checker) resolveAnnKeyPath(scope *Scope, e ast.Expr) pathResult {
 				return pathResult{value: t}
 			}
 		}
+		if ns, ok := scope.GetNamespace(e.Name); ok {
+			return pathResult{ns: ns}
+		}
 		c.report(&UnknownIdentifierError{Ident: e})
 		return pathResult{err: true}
+	case *ast.MemberExpr:
+		if e.OptChain || e.Prop == nil {
+			break
+		}
+		obj := c.resolveAnnKeyPath(scope, e.Object)
+		switch {
+		case obj.err:
+			return obj
+		case obj.ns != nil:
+			return c.annKeyNamespaceMember(e, obj.ns)
+		}
+		if t, ok := c.typeofMember(obj.value, e.Prop.Name); ok {
+			return pathResult{value: t}
+		}
 	}
 	c.report(&InvalidTypeKeyError{Key: e})
+	return pathResult{err: true}
+}
+
+// annKeyNamespaceMember reads the member `e` names off the namespace `ns`, the namespace step of
+// resolveAnnKeyPath. A nested namespace resolves to that namespace, and a value resolves to its
+// binding's type. An absent member reports UnknownNamespaceMemberError and sets `err`.
+func (c *checker) annKeyNamespaceMember(e *ast.MemberExpr, ns *Namespace) pathResult {
+	name := e.Prop.Name
+	if nested, ok := ns.Nested[name]; ok {
+		return pathResult{ns: nested}
+	}
+	if b, ok := ns.Values[name]; ok {
+		if t := annKeyBindingType(b); t != nil {
+			return pathResult{value: t}
+		}
+	}
+	c.report(&UnknownNamespaceMemberError{Node: e, NS: ns, Name: name})
 	return pathResult{err: true}
 }
 

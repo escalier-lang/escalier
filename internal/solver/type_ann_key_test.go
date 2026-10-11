@@ -71,6 +71,16 @@ func TestAnnKeyNamesOneMember(t *testing.T) {
 			types: map[string]string{"T": "{[Symbol.iterator]: number}"},
 		},
 		{
+			name:  "NamespaceMember",
+			src:   "namespace N { declare val s: unique symbol }\ntype T = {[N.s]: number}",
+			types: map[string]string{"T": "{[N.s]: number}"},
+		},
+		{
+			name:  "MemberOfAValue",
+			src:   "declare val o: {k: \"x\"}\ntype T = {[o.k]: number}",
+			types: map[string]string{"T": "{x: number}"},
+		},
+		{
 			// The dep graph orders `k` before the alias that names it.
 			name:  "TypeAliasBeforeTheVal",
 			src:   "type T = {[k]: number}\nval k = \"a\"",
@@ -178,18 +188,16 @@ func TestAnnKeyRejectsAKeyNamingNoSingleMember(t *testing.T) {
 			},
 		},
 		{
-			// A key names a value only by a bare name, so a member read such as `o.k` names
-			// no single member.
-			name:     "DottedKey",
-			src:      "declare val o: {k: \"x\"}\ntype T = {[o.k]: number}",
-			types:    map[string]string{"T": "{}"},
-			wantErrs: []string{"2:12-2:15: A computed key in an object type must be a string literal, number literal, or unique symbol"},
-		},
-		{
 			name:     "UnknownIdentifier",
 			src:      "type T = {[nope]: number}",
 			types:    map[string]string{"T": "{}"},
 			wantErrs: []string{"1:12-1:16: Unknown identifier: nope"},
+		},
+		{
+			name:     "UnknownReceiver",
+			src:      "type T = {[Other.iterator](&self) -> number}",
+			types:    map[string]string{"T": "{}"},
+			wantErrs: []string{"1:12-1:17: Unknown identifier: Other"},
 		},
 		{
 			// A call is not a name, so its type is not read.
@@ -199,6 +207,26 @@ func TestAnnKeyRejectsAKeyNamingNoSingleMember(t *testing.T) {
 			wantErrs: []string{
 				"2:12-2:15: A computed key in an object type must be a string literal, number literal, or unique symbol",
 			},
+		},
+		{
+			name:  "MissingMemberOfAValue",
+			src:   "declare val o: {k: \"x\"}\ntype T = {[o.j]: number}",
+			types: map[string]string{"T": "{}"},
+			wantErrs: []string{
+				"2:12-2:15: A computed key in an object type must be a string literal, number literal, or unique symbol",
+			},
+		},
+		{
+			name:     "MissingNamespaceMember",
+			src:      "namespace N { val k = \"x\" }\ntype T = {[N.j]: number}",
+			types:    map[string]string{"T": "{}"},
+			wantErrs: []string{"2:12-2:15: Namespace N has no member: j"},
+		},
+		{
+			name:     "Namespace",
+			src:      "namespace N { val k = \"x\" }\ntype T = {[N]: number}",
+			types:    map[string]string{"T": "{}"},
+			wantErrs: []string{"2:12-2:13: Namespace used as a value: N"},
 		},
 		{
 			// A string spelling a reserved symbol member name is declined, as the same
