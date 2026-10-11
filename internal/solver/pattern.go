@@ -1,6 +1,7 @@
 package solver
 
 import (
+	"fmt"
 	"slices"
 
 	"github.com/escalier-lang/escalier/internal/ast"
@@ -715,9 +716,9 @@ func (c *checker) narrowToClass(
 // constructor's return type, then binds each argument against a constructor parameter. A
 // non-constructor name is an ExtractorPatternNotCtorError, a wrong count an ExtractorPatternArityError.
 //
-// Binding against constructor parameters is an interim gate. The real protocol deconstructs
-// through the instance's `[Symbol.customMatcher]` method, which needs symbol-keyed members
-// soltype lacks, so it is deferred to M7 (m5-implementation-plan.md §"Nominal patterns").
+// An enum variant deconstructs through its `[Symbol.customMatcher]` method. A class binds
+// against its constructor's parameters, which is an interim gate. Moving classes onto the
+// matcher is tracked in #1516.
 func (c *checker) bindExtractorPat(scope *Scope, lvl int, p *ast.ExtractorPat, scrutinee soltype.Type, scrutineeMode bindMode, leafTypes map[string]soltype.Type, emit leafEmit, purpose bindPurpose) soltype.Pat {
 	// Record the pattern node's type against the scrutinee it matches, the same as the
 	// sibling tuple/object cases, so hover and type-at-position resolve on the pattern.
@@ -757,17 +758,46 @@ func (c *checker) bindExtractorPat(scope *Scope, lvl int, p *ast.ExtractorPat, s
 // written pattern for bindExtractorPat, the tag test's name for the IR. The caller checks
 // the returned count against how many values its pattern takes.
 func (c *checker) narrowToExtractor(blame ast.Node, ctor *soltype.FuncType, scrutinee soltype.Type) []*soltype.FuncParam {
+	// The scrutinee's instance of the constructor's class is read before narrowing. The
+	// narrowing constraint adds ctor.Ret to a var scrutinee's lower bounds, after which the
+	// var carries two instances of the class and names neither.
+	ret, isClass := ctor.Ret.(*soltype.ClassType)
+	var sc *soltype.ClassType
+	if isClass {
+		sc, isClass = c.scrutineeInstance(scrutinee, ret.Name)
+	}
 	// The extracted value is an instance of the constructor's return type. Narrow the
 	// scrutinee to it, the same assertion an instance pattern makes.
 	c.constrain(blame, ctor.Ret, scrutinee)
 	// Read the parameters at the scrutinee's concrete arguments by substituting them
 	// directly, rather than relying on the narrowing constraint above to back-propagate them.
-	if sc, ok := c.classCarrier(scrutinee); ok {
-		if ret, isClass := ctor.Ret.(*soltype.ClassType); isClass && ret.Name == sc.Name {
-			return ctorParamsAt(ctor.Params, ret, sc)
-		}
+	if isClass {
+		return ctorParamsAt(ctor.Params, ret, sc)
 	}
 	return ctor.Params
+}
+
+// scrutineeInstance returns the instance of the class named name that scrutinee holds, and
+// false when it holds none or more than one. A scrutinee whose sole lower bound is an enum
+// holds the variant among the enum's members, so a `MyOption<number>` scrutinee holds
+// `MyOption.Some<number>` for the name `MyOption.Some`.
+func (c *checker) scrutineeInstance(scrutinee soltype.Type, name string) (*soltype.ClassType, bool) {
+	return soleLowerBound(scrutinee, func(x soltype.Type) (*soltype.ClassType, bool) {
+		x = c.memberCarrier(x)
+		if ct, ok := x.(*soltype.ClassType); ok {
+			return ct, ct.Name == name
+		}
+		union, ok := x.(*soltype.UnionType)
+		if !ok {
+			return nil, false
+		}
+		for _, member := range union.Types {
+			if ct, ok := member.(*soltype.ClassType); ok && ct.Name == name {
+				return ct, true
+			}
+		}
+		return nil, false
+	})
 }
 
 // ctorParamsAt rewrites a constructor's parameter types from its return instance's argument
@@ -818,20 +848,68 @@ func (c *checker) instancePatClass(scope *Scope, name string) (*soltype.ClassTyp
 	return ct, ok
 }
 
-// extractorCtor resolves an extractor pattern's name to a class value's constructor
-// signature. It looks the name up in the value sort, since a class binds its constructor on
-// the value side of its dual type/value binding, then instantiates that value at lvl through
-// bindingValue and pulls the constructor out with ctorSignature. Instantiating per call
-// freshens a generic constructor's type parameters, so two match arms each written `Box(v)`
-// get independent argument vars rather than sharing one. It returns ok=false when the name
-// is unbound, carries no scheme, or resolves to a value that is not callable as a
-// constructor.
+// extractorCtor resolves an extractor pattern's name to the signature its arguments bind
+// against. It looks the name up in the value sort, since a class binds its constructor on
+// the value side of its dual type/value binding, and instantiates that value at lvl through
+// bindingValue. Instantiating per call freshens a generic value's type parameters, so two
+// match arms each written `Box(v)` get independent argument vars rather than sharing one.
+// The signature is the value's matcher as matcherSignature reads it, or else its
+// constructor as ctorSignature reads it. It returns ok=false when the name is unbound,
+// carries no scheme, or resolves to a value that has neither signature.
 func (c *checker) extractorCtor(scope *Scope, lvl int, qi ast.QualIdent) (*soltype.FuncType, bool) {
 	b, ok := c.resolveQualValue(scope, qi)
 	if !ok || len(b.Schemes) == 0 {
 		return nil, false
 	}
-	return ctorSignature(c.bindingValue(lvl, b))
+	value := c.bindingValue(lvl, b)
+	if matcher, ok := c.matcherSignature(value); ok {
+		return matcher, true
+	}
+	return ctorSignature(value)
+}
+
+// matcherSignature returns the extractor signature an enum variant's
+// `[Symbol.customMatcher]` method describes, and false for any other value. The
+// signature's parameters are the elements of the tuple the matcher returns, and its return
+// is the matcher's subject, so it reads the way a constructor signature does in
+// ctorSignature.
+// For `[Symbol.customMatcher](subject: Color.RGB) -> [number, number, number]` it is
+// `fn (number, number, number) -> Color.RGB`. It keeps the matcher's binder.
+func (c *checker) matcherSignature(value soltype.Type) (*soltype.FuncType, bool) {
+	obj, ok := c.classValueCarrier(value)
+	if !ok {
+		return nil, false
+	}
+	member, ok := obj.ReadMember(soltype.CustomMatcherSymbolMember)
+	if !ok {
+		return nil, false
+	}
+	method, ok := member.(*soltype.MethodElem)
+	if !ok || len(method.Signatures) != 1 {
+		return nil, false
+	}
+	matcher := method.Signatures[0]
+	fields, ok := matcher.Ret.(*soltype.TupleType)
+	if !ok || len(matcher.Params) != 1 {
+		return nil, false
+	}
+	// A class's own matcher is not read yet, because what a default in the pattern binds
+	// against differs between the two. `C(msg = "x")` over `new (msg?: string)` binds
+	// `string`, and over a matcher returning `[string | undefined]` it would bind
+	// `string | undefined`. Moving classes onto the matcher is tracked in #1516.
+	if subject, isClass := matcher.Params[0].Type.(*soltype.ClassType); !isClass || !subject.Variant {
+		return nil, false
+	}
+	params := make([]*soltype.FuncParam, len(fields.Elems))
+	for i, field := range fields.Elems {
+		params[i] = &soltype.FuncParam{Pattern: &soltype.IdentPat{Name: fmt.Sprintf("arg%d", i)}, Type: field}
+	}
+	return &soltype.FuncType{
+		TypeParams:     matcher.TypeParams,
+		LifetimeParams: matcher.LifetimeParams,
+		Params:         params,
+		Ret:            matcher.Params[0].Type,
+	}, true
 }
 
 // resolveQualValue resolves a qualified identifier to its value binding. A bare name
@@ -913,8 +991,9 @@ func (c *checker) resolveQualClassType(scope *Scope, qi ast.QualIdent) (*soltype
 // Reading a constructor at all is a placeholder. What an extractor deconstructs is not what a
 // constructor builds, so the signature to read is the `[Symbol.customMatcher]` method on the
 // extractor's type, and a class carrying none is not an extractor. Binding against constructor
-// parameters instead is why `Point(x, y)` is accepted against a plain two-field class. #1516
-// carries the replacement, and #1246 the symbol-keyed members it needs first.
+// parameters instead is why `Point(x, y)` is accepted against a plain two-field class. An
+// enum variant already reads its matcher through matcherSignature, and #1516 tracks moving
+// classes onto it.
 func ctorSignature(t soltype.Type) (*soltype.FuncType, bool) {
 	switch t := t.(type) {
 	case *soltype.FuncType:

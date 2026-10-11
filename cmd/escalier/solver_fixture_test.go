@@ -381,12 +381,10 @@ type emitSkip struct {
 // agreeing fails, so the list burns down the way solverSkips does.
 var emitSkips = map[emitSkip]*solverSkipCause{
 	{"fix_point_combinator", "index.js"}: causeFieldReadBound,
-	{"bin_and_lib", "index.js"}:          causeEnumVariantValue,
-	{"bin_and_lib", "index.js.map"}:      causeEnumVariantValue,
 
-	{"bin_and_lib", "index.d.ts"}:                 causeEnumVariantValue,
-	{"enum", "index.d.ts"}:                        causeEnumVariantValue,
-	{"generic_enum", "index.d.ts"}:                causeEnumVariantValue,
+	{"bin_and_lib", "index.d.ts"}:                 causeEnclosingNamespacePrefix,
+	{"enum", "index.d.ts"}:                        causeEnclosingNamespacePrefix,
+	{"generic_enum", "index.d.ts"}:                causeEnclosingNamespacePrefix,
 	{"extractor_inside_namespaces", "index.d.ts"}: causeEnclosingNamespacePrefix,
 	{"namespace_use_parent_symbol", "index.d.ts"}: causeEnclosingNamespacePrefix,
 	{"namespace_bin_import", "index.d.ts"}:        causeEnclosingNamespacePrefix,
@@ -414,15 +412,6 @@ var causeFieldReadBound = &solverSkipCause{
 // The causes behind the `index.d.ts` entries, each triaged from the diff the artifact
 // comparison reports. #1676 is the issue that works them down.
 var (
-	// An enum variant's value is a plain function rather than the object a class value
-	// takes, so it carries neither a constructor nor the `[Symbol.customMatcher]`
-	// signature a pattern reads. What a match recovers is wrong as a result, not only
-	// the declaration describing it. `generic_enum` matches a `MyOption<number>` and
-	// reads the payload back as `never`.
-	causeEnumVariantValue = &solverSkipCause{
-		name:   "an enum variant's value as a constructor object",
-		ticket: "#1784",
-	}
 	// A reference to a type the enclosing namespace declares renders under its full
 	// path, so a member of `declare namespace MyEnum` reads `MyEnum.Color` where the
 	// twin writes `Color`. Both denote the same type.

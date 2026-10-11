@@ -69,7 +69,7 @@ func TestInferScriptEnum(t *testing.T) {
 	require.Empty(t, errs)
 	require.Equal(t, "Color", types["Color"])
 	require.Equal(t, "Color", values["c"])
-	require.Equal(t, "fn (r: number, g: number, b: number) -> Color", values["mk"])
+	require.Equal(t, "{new (r: number, g: number, b: number) -> Color, [Symbol.customMatcher](subject: Color.RGB) -> [number, number, number]}", values["mk"])
 }
 
 // TestInferScriptEnumOutOfOrder checks that a script does NOT resolve an enum used before

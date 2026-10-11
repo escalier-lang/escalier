@@ -16,9 +16,10 @@ import (
 // super.
 //
 // Each variant is a `final` ClassType named `Color.RGB` — a nominal handle qualified by
-// its enum, so two enums that share a variant name stay distinct. Each variant's
-// constructor binds as a value under the enum namespace and returns the enum's alias type,
-// so `Color.Hex("#fff")` infers `Color`, the enum the alias names.
+// its enum, so two enums that share a variant name stay distinct. Each variant binds a
+// value under the enum namespace. The value holds a constructor that returns the enum's
+// alias type, so `Color.Hex("#fff")` infers `Color`, the enum the alias names. It also
+// holds a static `[Symbol.customMatcher]`, which an extractor pattern reads.
 //
 // Inference is two-phase, so a group of mutually-recursive enums resolves each other:
 //
@@ -27,8 +28,8 @@ import (
 //     component before any body means `enum A { X(b: B) }` / `enum B { Y(a: A) }` each
 //     find the sibling's alias already bound. A self-recursive enum resolves through its
 //     own alias the same way.
-//   - inferEnumBody then resolves each variant's parameters, builds its constructor, and
-//     binds the constructor namespace.
+//   - inferEnumBody then resolves each variant's parameters, builds its value, and binds
+//     the namespace holding those values.
 //
 // Both run from the SCC type-key path (module.go), which is ordered before the enum's
 // value-key component, so the enum type binding and the constructor namespace exist for
@@ -163,8 +164,8 @@ func (c *checker) preBindEnum(scope *Scope, lvl int, decl *ast.EnumDecl, ns stri
 }
 
 // inferEnumBody completes a pre-bound enum: it resolves each variant's parameters — which
-// may name a sibling enum bound by preBindEnum — builds each variant's constructor, and
-// binds the constructor namespace. It runs after every enum in the recursive group is
+// may name a sibling enum bound by preBindEnum — builds each variant's value, and binds
+// the namespace holding those values. It runs after every enum in the recursive group is
 // pre-bound, so a cross-enum parameter reference resolves.
 func (c *checker) inferEnumBody(sh *enumShell) {
 	quiet := c.errorWindow()
@@ -185,8 +186,16 @@ func (c *checker) inferEnumBody(sh *enumShell) {
 		for _, param := range ctor.Params {
 			declared = append(declared, param.Type)
 		}
+		value := variantValue(ctor, sh.variantTypes[i].(*soltype.ClassType), sh.typeParams)
+		// The variant's ClassDef holds the value's statics, the way a class's does, so a
+		// reader of the class's statics finds the matcher the value carries.
+		if def, ok := c.ctx.classDef(value.Class); ok {
+			if matcher, ok := value.ReadMember(soltype.CustomMatcherSymbolMember); ok {
+				def.Static = &soltype.ObjectType{Elems: []soltype.ObjTypeElem{matcher}}
+			}
+		}
 		nsValues[variant.Name.Name] = ValueBinding{
-			Schemes: []TypeScheme{c.generalize(ctor, sh.lvl-1)},
+			Schemes: []TypeScheme{c.generalize(value, sh.lvl-1)},
 			Sources: []provenance.Provenance{&ast.NodeProvenance{Node: variant}},
 		}
 		nsTypes[variant.Name.Name] = TypeBinding{
@@ -211,9 +220,8 @@ func (c *checker) inferEnumBody(sh *enumShell) {
 // variant's declared parameters and returning the ENUM type, so `Color.Hex("#fff")`
 // infers the enum union `Color.RGB | Color.Hex`, not one variant — matching the old
 // checker, where a constructor yields the enum and a match narrows it back to a variant.
-// For a generic enum the return and the parameters share the enum's type-parameter vars;
-// the caller generalizes the result so each construction freshens them, the same
-// let-polymorphism a plain generic value uses.
+// For a generic enum the return and the parameters share the enum's type-parameter vars,
+// which variantValue binds on the signature so each construction freshens them.
 func (c *checker) variantConstructor(scope *Scope, lvl int, variant *ast.EnumVariant, ret soltype.Type) *soltype.FuncType {
 	params := make([]*soltype.FuncParam, len(variant.Params))
 	for i, p := range variant.Params {
@@ -231,4 +239,32 @@ func (c *checker) variantConstructor(scope *Scope, lvl int, variant *ast.EnumVar
 		}
 	}
 	return &soltype.FuncType{Params: params, Ret: ret}
+}
+
+// variantValue returns the value an enum variant's name binds to: an object holding ctor as
+// its constructor and a static `[Symbol.customMatcher]` method. The matcher takes the
+// variant's instance and returns a tuple of ctor's parameter types, so for
+// `enum Color { RGB(r: number, g: number, b: number) }` the value of `Color.RGB` is
+// `{new (r: number, g: number, b: number) -> Color, [Symbol.customMatcher](subject: Color.RGB) -> [number, number, number]}`.
+//
+// Both signatures carry typeParams, the enum's own parameters, as their binder, the way a
+// class value's signatures carry the class's. The object names variant as its class, so a
+// reader of the declared parameters finds the variant's ClassDef.
+func variantValue(ctor *soltype.FuncType, variant *soltype.ClassType, typeParams []*soltype.TypeParam) *soltype.ObjectType {
+	fields := make([]soltype.Type, len(ctor.Params))
+	for i, param := range ctor.Params {
+		fields[i] = param.Type
+	}
+	matcher := &soltype.FuncType{
+		Params: []*soltype.FuncParam{{Pattern: &soltype.IdentPat{Name: "subject"}, Type: variant}},
+		Ret:    &soltype.TupleType{Elems: fields},
+	}
+	bindClassParams([]*soltype.FuncType{ctor, matcher}, typeParams, nil)
+	return &soltype.ObjectType{
+		Elems: []soltype.ObjTypeElem{
+			&soltype.ConstructorElem{Signatures: []*soltype.FuncType{ctor}},
+			&soltype.MethodElem{Name: soltype.CustomMatcherSymbolMember, Signatures: []*soltype.FuncType{matcher}},
+		},
+		Class: variant.Name,
+	}
 }

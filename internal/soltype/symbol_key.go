@@ -101,9 +101,11 @@ func DisplayMemberName(name string) string {
 }
 
 // IteratorSymbolMember and AsyncIteratorSymbolMember are the two members the
-// iteration rules look up, named here so a rule reads the constant rather than
+// iteration rules look up, and CustomMatcherSymbolMember is the one an extractor
+// pattern reads. They are named here so a rule reads the constant rather than
 // rebuilding the spelling.
 var (
 	IteratorSymbolMember      = wellKnownSymbolPrefix + "iterator"
 	AsyncIteratorSymbolMember = wellKnownSymbolPrefix + "asyncIterator"
+	CustomMatcherSymbolMember = wellKnownSymbolPrefix + "customMatcher"
 )
