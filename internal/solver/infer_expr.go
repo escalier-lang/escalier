@@ -2739,11 +2739,14 @@ func (c *checker) recordNamespaceMember(node ast.Node, b ValueBinding) {
 //
 // Any other iterable operand has no fixed length, so the literal is an `Array` of the
 // union of every element and every spread's element type. `[...s]` over `s: string` is
-// `Array<string>`, and `[0, ...xs]` over `xs: Array<number>` is `Array<number>`. A spread
-// of a value that is not iterable is a SpreadNotTupleError. A spread whose operand already
-// errored is absorbed silently, so the recovery sentinel does not cascade a second
-// diagnostic. Two type-level cousins defer to M7/M9: a tuple-spread type over an abstract
-// operand [...P, x], and a typed variadic tail [number, ...Array<number>].
+// `Array<string>`. A literal with fixed elements beside such a spread loses its minimum
+// length this way. `[0, ...xs]` over `xs: Array<number>` is `Array<number>`, where
+// `[0, ...Array<number>]` would keep the `0`. The solver cannot yet check a value against
+// a tuple with a variadic tail, so #1967 tracks inferring one.
+//
+// A spread of a value that is not iterable is a SpreadNotTupleError. A spread whose operand
+// already errored is absorbed silently, so the recovery sentinel does not cascade a second
+// diagnostic.
 func (c *checker) inferTuple(scope *Scope, lvl int, e *ast.TupleExpr) soltype.Type {
 	// Resolve the enclosing statement's CFG point before inferring elements, which can
 	// overwrite c.fn.currentStmt with an inner branch statement.
