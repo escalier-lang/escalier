@@ -1709,8 +1709,21 @@ func armsTarget(arms []*soltype.FuncType) callTarget {
 }
 
 // applyCallShape applies args to callee, whose single signature is fn, or nil when that is
-// not yet known. secondInstance is callTarget's field of that name, and when it is set
-// fn's return is not wired into the call's type. It returns the call's type and fn.
+// not yet known. It returns the call's type and fn.
+//
+// The call's type always receives what constraining callee against the call shape
+// produces. secondInstance says whether fn's return also flows into it:
+//
+//   - secondInstance is false when fn is the only copy of the signature the call makes.
+//     In `fn inc(x: number) -> number` the call `inc(1)` has a signature with no binder
+//     to instantiate. A class value such as `Box(5)` has its callee replaced by fn.
+//     fn.Ret flows into the call's type, so `inc("a")` still has type `number` after its
+//     argument is reported.
+//   - secondInstance is true when callee is a variable whose bound is quantified. Given
+//     `fn id<T>(x: T) -> T`, the call `id(5)` reads a callee whose bound is
+//     `fn <T>(x: T) -> T`. inferCallTarget instantiates that bound once to produce fn,
+//     and constraining callee against the call shape instantiates it again with a fresh
+//     `T`. Only that second copy carries `5` to the call's type, so fn.Ret is left out.
 func (c *checker) applyCallShape(lvl int, e *ast.CallExpr, callee soltype.Type, fn *soltype.FuncType, secondInstance bool, args []soltype.Type) (soltype.Type, *soltype.FuncType) {
 	resolved := fn != nil
 	// These are the CALL SHAPE's parameters, built from the argument types, not the callee's.
