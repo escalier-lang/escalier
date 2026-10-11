@@ -141,7 +141,9 @@ func (b *ambientBinder) bindPackage(ns *Namespace) {
 		}
 	}
 	for _, name := range slices.Sorted(maps.Keys(ns.Types)) {
-		if boundWithValue.Contains(name) {
+		// `std:iterator` declares an interface under each built-in type name, and binding
+		// it would shadow the form resolveTypeAnn builds for that name.
+		if boundWithValue.Contains(name) || builtinTypeNames.Contains(name) {
 			continue
 		}
 		if _, taken := b.scope.types[name]; !taken {

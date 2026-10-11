@@ -4,6 +4,7 @@ import (
 	"sync"
 
 	"github.com/escalier-lang/escalier/internal/ast"
+	"github.com/escalier-lang/escalier/internal/set"
 	"github.com/escalier-lang/escalier/internal/soltype"
 )
 
@@ -168,6 +169,11 @@ func (c *checker) bindPreludeExports(scope *Scope) {
 		scope.defineValue(name, b)
 	}
 	for name, b := range ns.Types {
+		// The prelude declares an interface under each built-in type name, and binding
+		// it would shadow the form resolveTypeAnn builds for that name.
+		if builtinTypeNames.Contains(name) {
+			continue
+		}
 		scope.defineType(name, b)
 	}
 }
@@ -190,6 +196,11 @@ var stdlibTypePlaceholders = []string{
 	"Generator",
 	"AsyncGenerator",
 }
+
+// builtinTypeNames is stdlibTypePlaceholders as a lookup. resolveTypeAnn builds a
+// GeneratorType for a written `Generator<Y, R, N>` once no binding claims the name, so a
+// scope that binds a package's declarations leaves these names out.
+var builtinTypeNames = set.FromSlice(stdlibTypePlaceholders)
 
 // addStdlibTypePlaceholders seeds each stdlib type name as an opaque unknown
 // stub so a reference resolves without an unbound-name error. No structure, no

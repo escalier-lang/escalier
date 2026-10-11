@@ -2731,22 +2731,26 @@ func (c *checker) recordNamespaceMember(node ast.Node, b ValueBinding) {
 //
 // A spread element ([...xs]) splices the operand's element types into the literal.
 // For example, [...pair, 3] over pair: [number, string] builds
-// [number, string, number]. M4 handles only this concrete-literal splice: the
-// operand must infer to a TupleType. An inexact operand ([number, ...]) has unknown
-// length, so it may only be spread as the last element. There its known prefix
-// extends the literal and its unknown tail makes the result inexact too. An inexact
-// operand anywhere else would put a later element at an unknown position, which is an
-// InexactTupleSpreadError. A spread of any other type is a SpreadNotTupleError. A
-// spread whose operand already errored is absorbed silently, so the recovery
-// sentinel does not cascade a second diagnostic. Two type-level cousins defer to
-// M7/M9: a tuple-spread type over an abstract operand [...P, x], and a typed
-// variadic tail [number, ...Array<number>].
+// [number, string, number]. An inexact operand ([number, ...]) has unknown length, so
+// it may only be spread as the last element. There its known prefix extends the
+// literal and its unknown tail makes the result inexact too. An inexact operand
+// anywhere else would put a later element at an unknown position, which is an
+// InexactTupleSpreadError.
+//
+// Any other iterable operand has no fixed length, so the literal is an `Array` of the
+// union of every element and every spread's element type. `[...s]` over `s: string` is
+// `Array<string>`, and `[0, ...xs]` over `xs: Array<number>` is `Array<number>`. A spread
+// of a value that is not iterable is a SpreadNotTupleError. A spread whose operand already
+// errored is absorbed silently, so the recovery sentinel does not cascade a second
+// diagnostic. Two type-level cousins defer to M7/M9: a tuple-spread type over an abstract
+// operand [...P, x], and a typed variadic tail [number, ...Array<number>].
 func (c *checker) inferTuple(scope *Scope, lvl int, e *ast.TupleExpr) soltype.Type {
 	// Resolve the enclosing statement's CFG point before inferring elements, which can
 	// overwrite c.fn.currentStmt with an inner branch statement.
 	stmtRef, hasStmtRef := c.currentStmtRef()
 	elems := make([]soltype.Type, 0, len(e.Elems))
 	inexact := false
+	unbounded := false
 	for i, el := range e.Elems {
 		spread, ok := el.(*ast.ArraySpreadExpr)
 		if !ok {
@@ -2773,10 +2777,20 @@ func (c *checker) inferTuple(scope *Scope, lvl int, e *ast.TupleExpr) soltype.Ty
 			// The operand already reported its own failure; absorb it rather than
 			// layering a SpreadNotTupleError on the recovery sentinel.
 		default:
-			c.report(&SpreadNotTupleError{Spread: spread, Operand: op})
+			elem, ok := c.syncElemType(op)
+			if !ok {
+				c.report(&SpreadNotTupleError{Spread: spread, Operand: op})
+				continue
+			}
+			elems = append(elems, elem)
+			unbounded = true
+			c.consumeIntoLiteral(spread.Value, op, stmtRef, hasStmtRef)
 		}
 	}
-	t := &soltype.TupleType{Elems: elems, Inexact: inexact}
+	var t soltype.Type = &soltype.TupleType{Elems: elems, Inexact: inexact}
+	if unbounded {
+		t = c.ctx.arrayOf(newUnion(c.ctx, elems))
+	}
 	c.recordType(e, t)
 	c.recordProv(t, e, TupleElem)
 	return t

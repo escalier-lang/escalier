@@ -468,3 +468,76 @@ func nilIfEmpty(msgs []string) []string {
 	}
 	return msgs
 }
+
+// TestIterationAgainstStdlib covers iteration and spreading over the standard library's
+// declarations: a `string` iterates through `String`'s `[Symbol.iterator]`, and a spread of
+// any iterable that is not a tuple builds an `Array` of the elements.
+func TestIterationAgainstStdlib(t *testing.T) {
+	tests := []struct {
+		name string
+		src  string
+		want map[string]string
+	}{
+		{
+			name: "ForInOverAString",
+			src: `
+				fn count(s: string) -> number {
+					var n: number = 0
+					for ch in s {
+						val c: string = ch
+						n = n + 1
+					}
+					return n
+				}
+			`,
+			want: map[string]string{"count": "fn (s: string) -> number"},
+		},
+		{
+			name: "SpreadAString",
+			src:  `fn chars(s: string) { return [...s] }`,
+			want: map[string]string{"chars": "fn (s: string) -> Array<string>"},
+		},
+		{
+			name: "SpreadAnArrayBesideAnElement",
+			src:  `fn withZero(xs: Array<number>) { return [0, ...xs] }`,
+			want: map[string]string{"withZero": "fn (xs: Array<number>) -> Array<number>"},
+		},
+		{
+			name: "SpreadAGenerator",
+			src: `
+				gen fn count() {
+					yield 1
+					yield 2
+				}
+				fn all() { return [...count()] }
+			`,
+			want: map[string]string{"all": "fn () -> Array<1 | 2>"},
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			values, errs := inferAgainstTree(t, tt.src)
+			require.Empty(t, errs)
+			for name, want := range tt.want {
+				require.Equal(t, want, values[name], "value binding %q", name)
+			}
+		})
+	}
+}
+
+// TestGeneratorAnnotationAgainstStdlib asserts that a written `Generator<Y, R, N>` resolves
+// to the built-in generator type when the standard library also declares an interface of
+// that name, and that a generator a call returns fills a `mut` annotation.
+func TestGeneratorAnnotationAgainstStdlib(t *testing.T) {
+	values, errs := inferAgainstTree(t, `
+		gen fn count() {
+			yield 1
+		}
+		fn drive() {
+			val it: mut Generator<1, undefined, unknown> = count()
+			return it.next()
+		}
+	`)
+	require.Empty(t, errs)
+	require.Equal(t, "fn () -> IteratorResult<1, undefined>", values["drive"])
+}

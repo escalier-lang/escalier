@@ -319,13 +319,9 @@ type BorrowEscapeError struct {
 }
 
 // SpreadNotTupleError fires when a tuple-literal spread element ([...xs]) has an
-// operand that does not infer to a tuple. M4 handles only the concrete-literal
-// splice: the operand's element types are copied into the literal in order, so it
-// must be a TupleType. A spread of any other type, such as an Array (M7), cannot
-// be spliced statically. Two type-level cousins defer to M7/M9: a tuple-spread
-// type over an abstract operand [...P, x], and a typed variadic tail
-// [number, ...Array<number>]. Spread is the offending spread element and carries
-// the blame span. Operand is the type it inferred to.
+// operand that is neither a tuple nor iterable, so it has no elements to splice in.
+// `[...5]` reports one. Spread is the offending spread element and carries the blame
+// span. Operand is the type it inferred to.
 type SpreadNotTupleError struct {
 	Spread  *ast.ArraySpreadExpr
 	Operand soltype.Type

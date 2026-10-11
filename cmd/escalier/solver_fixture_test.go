@@ -72,10 +72,6 @@ var (
 		name:   "the gate requiring a subclass constructor to call `super(…)`",
 		ticket: "#1720",
 	}
-	causeIteration = &solverSkipCause{
-		name:   "iteration and spreading an iterable",
-		ticket: "#1717",
-	}
 	causePatterns = &solverSkipCause{
 		name:   "rest and default sub-patterns in an extractor pattern",
 		ticket: "#1718",
@@ -126,9 +122,6 @@ var solverSkips = []solverSkip{
 
 	{"class_field_name_collision", causeSuperGate, "A subclass constructor must call `super(…)`"},
 	{"class_inheritance_namespaces", causeSuperGate, "A subclass constructor must call `super(…)`"},
-
-	{"generators", causeIteration, "cannot spread t5 into a tuple"},
-	{"iterators", causeIteration, "string is not iterable"},
 
 	{"extractor_rest_arg", causePatterns, "extractor pattern `C` expects 3 arguments but got 2"},
 	{"pattern_matching", causePatterns, "object is missing property: area"},
@@ -254,12 +247,17 @@ const preludeURI = "std:prelude"
 // them is #1664. Any other package's diagnostics are kept. A fixture reaches one by
 // importing it, which makes its failure part of that fixture's story, or through the
 // ambient scope, whose packages all check clean.
+//
+// Warnings are dropped as well, since a warning does not reject the package.
 func checkOnSolver(sources []*ast.Source) []string {
 	output := compiler.CheckPackage(sources)
 
 	var diagnostics []string
 	for _, diagnostic := range output.TypeErrors {
 		if fromPackage, ok := diagnostic.(*solver.PackageInferenceError); ok && fromPackage.URI == preludeURI {
+			continue
+		}
+		if w, ok := diagnostic.(interface{ IsWarning() bool }); ok && w.IsWarning() {
 			continue
 		}
 		diagnostics = append(diagnostics, diagnostic.Message())

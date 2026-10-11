@@ -333,7 +333,9 @@ func acceptsNoArguments(sig *soltype.FuncType) bool {
 // iterationView returns the member list a protocol lookup reads t's `[Symbol.iterator]`
 // off. A class instance projects its body with the arguments it is reached at, an
 // interface reference expands to the object it stands for, and an object literal's type
-// is already that object. Every other type carries no members and declines.
+// is already that object. A primitive reads its wrapper class's body, so a `string`
+// iterates through the `[Symbol.iterator]` that `String` declares. Every other type
+// carries no members and declines.
 //
 // The operand is normalized first, the same way the structural walk normalizes it: a
 // borrow is peeled, since iterating `&xs` reads the same members as `xs`, and an
@@ -346,6 +348,10 @@ func (c *checker) iterationView(t soltype.Type) (*soltype.ObjectType, bool) {
 		return t, true
 	case *soltype.ClassType:
 		return c.ctx.projectClassBody(t)
+	default:
+		if wrapper, ok := c.primitiveWrapper(t); ok {
+			return c.ctx.projectClassBody(wrapper)
+		}
 	}
 	return nil, false
 }

@@ -153,11 +153,14 @@ func (b *solTypeAnnBuilder) typeAnn(t soltype.Type) TypeAnn {
 		// Both take three type arguments in TypeScript. Escalier's fourth, what
 		// advancing the generator may raise, has no slot.
 		// TODO(#385): Preserve the dropped raise type as TSDoc metadata.
-		return NewRefTypeAnn(t.Name(), []TypeAnn{
-			b.typeAnn(t.Yield),
-			b.typeAnn(t.Ret),
-			b.typeAnn(t.Next),
-		})
+		ret := b.typeAnn(t.Ret)
+		// internal/checker emits `void` for the return slot of a generator whose body
+		// returns no value, the generator twin of undefinedReturnAsVoid. Matching it keeps
+		// the two checkers' declarations identical, and removing both shims is #1810.
+		if _, ok := t.Ret.(*soltype.UndefinedType); ok {
+			ret = NewVoidTypeAnn(nil)
+		}
+		return NewRefTypeAnn(t.Name(), []TypeAnn{b.typeAnn(t.Yield), ret, b.typeAnn(t.Next)})
 	case *soltype.FuncType:
 		fn := b.funcTypeAnn(t)
 		return &fn

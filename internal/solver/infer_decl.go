@@ -623,6 +623,10 @@ func (c *checker) ownedCarrierSeen(t soltype.Type, seen *ownedSeen) soltype.RefI
 		return t
 	case *soltype.ClassType:
 		return t
+	case *soltype.GeneratorType:
+		// Calling a `gen fn` builds a new generator object, so the caller holds the only
+		// reference the way it does for a constructed class instance.
+		return t
 	}
 	return nil
 }
