@@ -750,6 +750,12 @@ func TestStringOnEveryNode(t *testing.T) {
 			&ExtractorTest{Name: ast.NewIdentifier("Ok", ast.Span{}), Arity: 1},
 			"Ok(_)",
 		},
+		{
+			"ExtractorTestWithRest",
+			&ExtractorTest{Name: ast.NewIdentifier("C", ast.Span{}), Arity: 1, Rest: TrailingRest},
+			"C(_, ...)",
+		},
+		{"ExtractSuffixStep", root.Project(ExtractSuffixStep{From: 1}, origin), "p.#[1..]"},
 	}
 
 	for _, test := range tests {

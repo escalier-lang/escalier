@@ -109,7 +109,7 @@ func testImplies(a, b Test) bool {
 		// Two runs of one extractor are taken to agree, the same assumption a branch
 		// order relies on when the surface repeats a pattern.
 		b, ok := b.(*ExtractorTest)
-		return ok && a.Arity == b.Arity &&
+		return ok && a.Arity == b.Arity && a.Rest == b.Rest &&
 			ast.QualIdentToString(a.Name) == ast.QualIdentToString(b.Name)
 	default:
 		return false

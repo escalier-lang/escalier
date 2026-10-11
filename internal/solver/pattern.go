@@ -736,18 +736,54 @@ func (c *checker) bindExtractorPat(scope *Scope, lvl int, p *ast.ExtractorPat, s
 		return &soltype.ExtractorPat{Name: name, Args: args}
 	}
 	params := c.narrowToExtractor(p, ctor, scrutinee)
-	if len(p.Args) != len(params) {
-		c.reportPat(purpose, &ExtractorPatternArityError{Node: p, Name: name, Expected: len(params), Got: len(p.Args)})
+	fixed, rest, recovered := splitTupleRest(p.Args)
+	if len(recovered) > 0 {
+		c.reportPatUnsupported(purpose, recovered[0])
 	}
-	args := make([]soltype.Pat, len(p.Args))
-	for i, a := range p.Args {
+	if !extractorArityFits(len(fixed), rest != nil || len(recovered) > 0, len(params)) {
+		c.reportPat(purpose, &ExtractorPatternArityError{Node: p, Name: name, Expected: len(params), Got: len(fixed)})
+	}
+	args := make([]soltype.Pat, 0, len(p.Args))
+	for i, a := range fixed {
 		var paramType soltype.Type = c.freshAt(lvl)
 		if i < len(params) {
 			paramType = params[i].Type
 		}
-		args[i] = c.bindPatMode(scope, lvl, a, paramType, paramType, scrutineeMode, leafTypes, emit, purpose)
+		args = append(args, c.bindPatMode(scope, lvl, a, paramType, paramType, scrutineeMode, leafTypes, emit, purpose))
+	}
+	if rest != nil {
+		var suffix soltype.Type = c.freshAt(lvl)
+		if len(fixed) <= len(params) {
+			suffix = extractedSuffix(params, len(fixed))
+		}
+		sub := c.bindPatMode(scope, lvl, rest.Pattern, suffix, suffix, scrutineeMode, leafTypes, emit, purpose)
+		args = append(args, &soltype.RestPat{Pattern: sub})
+	}
+	for _, e := range recovered {
+		args = append(args, c.bindRecoveredElem(scope, lvl, e, scrutineeMode, leafTypes, emit, purpose))
 	}
 	return &soltype.ExtractorPat{Name: name, Args: args}
+}
+
+// extractorArityFits reports whether a pattern taking taken values fits an extractor
+// yielding yields of them. A pattern ending in a rest takes at least taken values, and one
+// without takes exactly that many.
+func extractorArityFits(taken int, hasRest bool, yields int) bool {
+	if hasRest {
+		return taken <= yields
+	}
+	return taken == yields
+}
+
+// extractedSuffix returns the tuple of the value types params yields from index from on,
+// which is what a trailing rest in an extractor pattern binds. from must not exceed
+// len(params).
+func extractedSuffix(params []*soltype.FuncParam, from int) *soltype.TupleType {
+	elems := make([]soltype.Type, 0, len(params)-from)
+	for _, param := range params[from:] {
+		elems = append(elems, param.Type)
+	}
+	return &soltype.TupleType{Elems: elems}
 }
 
 // narrowToExtractor narrows scrutinee to ctor's return type and returns the parameters the
@@ -1071,6 +1107,10 @@ func (c *checker) freshClassInstance(ct *soltype.ClassType, lvl int) *soltype.Cl
 // `val` adopts its annotation. A default is required to satisfy that bound type
 // and flows into it, so a leaf bound from an absent-but-defaulted field reads the
 // default's type rather than `never`.
+//
+// A default replaces the value when it is `undefined`, so a bound type that is a union
+// holding `undefined` loses that member and gains the default's type. Destructuring
+// `[string | undefined]` with `[x = "hello"]` binds `x` as `string`.
 func (c *checker) applyLeafExtras(scope *Scope, lvl int, node ast.Node, leafType soltype.Type, typeAnn ast.TypeAnn, def ast.Expr) soltype.Type {
 	bound := leafType
 	if typeAnn != nil {
@@ -1082,6 +1122,13 @@ func (c *checker) applyLeafExtras(scope *Scope, lvl int, node ast.Node, leafType
 	if def != nil {
 		defT := c.inferExpr(scope, lvl, def)
 		c.constrain(def, defT, bound)
+		present, narrowed := narrowUnionMembers(groundedCarrier(bound), func(m soltype.Type) bool {
+			_, isUndefined := m.(*soltype.UndefinedType)
+			return !isUndefined
+		})
+		if narrowed {
+			bound = newUnion(c.ctx, []soltype.Type{present, defT})
+		}
 	}
 	return bound
 }

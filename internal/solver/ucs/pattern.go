@@ -183,11 +183,21 @@ func shallowTest(p ast.Pat, scrutinee *Scrutinee, origin Origin) (Test, []bindSp
 		_, binds := objectTest(p.Object, scrutinee, origin)
 		return &ClassTest{Name: p.ClassName}, binds
 	case *ast.ExtractorPat:
-		binds := make([]bindSpec, 0, len(p.Args))
-		for i, arg := range p.Args {
+		// A rest anywhere but last binds nothing, the way tupleTest treats one, and the
+		// pattern walk reports it.
+		fixed, rest := splitTrailingRest(p.Args)
+		binds := make([]bindSpec, 0, len(fixed)+1)
+		for i, arg := range fixed {
 			binds = appendBind(binds, arg, scrutinee, ExtractStep{Index: i}, origin)
 		}
-		return &ExtractorTest{Name: p.Name, Arity: len(p.Args)}, binds
+		kind := NoRest
+		if len(fixed) < len(p.Args) {
+			kind = TrailingRest
+		}
+		if rest != nil {
+			binds = appendBind(binds, rest.Pattern, scrutinee, ExtractSuffixStep{From: len(fixed)}, origin)
+		}
+		return &ExtractorTest{Name: p.Name, Arity: len(fixed), Rest: kind}, binds
 	default:
 		// A bare rest pattern is the only form left, and it is meaningful only inside a
 		// tuple or an object. Keeping it whole as a nameless bind hands it to the

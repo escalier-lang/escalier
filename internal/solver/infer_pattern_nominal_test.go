@@ -745,3 +745,85 @@ func TestInferMemberClassUnionSetterOnlyEverywhereErrors(t *testing.T) {
 	require.Len(t, errs, 1)
 	require.Equal(t, "5:13-5:14: object is missing property: v", msgWithSpan(t, errs[0]))
 }
+
+// TestInferExtractorPatRestAndDefault covers a trailing rest and a default inside an
+// extractor pattern. The rest binds the values past the fixed prefix as a tuple, and a
+// default removes `undefined` from the value it applies to.
+func TestInferExtractorPatRestAndDefault(t *testing.T) {
+	tests := []struct {
+		name string
+		src  string
+		want map[string]string
+	}{
+		{
+			name: "RestInAVal",
+			src: `
+				class C { msg: string, value: number, flag: boolean }
+				val subject = C("hello", 5, true)
+				val C(x, ...y) = subject
+			`,
+			want: map[string]string{"x": "string", "y": "[number, boolean]"},
+		},
+		{
+			name: "RestInAMatchArm",
+			src: `
+				class C { msg: string, value: number, flag: boolean }
+				declare val subject: C
+				val rest = match subject {
+					C(_, ...r) => r,
+				}
+			`,
+			want: map[string]string{"rest": "[number, boolean]"},
+		},
+		{
+			name: "RestTakingNothing",
+			src: `
+				class C { msg: string }
+				declare val subject: C
+				val C(m, ...none) = subject
+			`,
+			want: map[string]string{"m": "string", "none": "[]"},
+		},
+		{
+			name: "DefaultRemovesUndefined",
+			src: `
+				class C { msg: string | undefined }
+				val subject = C("hello")
+				val C(msg = "world") = subject
+			`,
+			want: map[string]string{"msg": "string"},
+		},
+		{
+			name: "DefaultInATuple",
+			src: `
+				declare val pair: [string | undefined, number]
+				val [s = "none", n] = pair
+			`,
+			want: map[string]string{"s": "string", "n": "number"},
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			values, _, errs := inferSource(t, tt.src)
+			require.Empty(t, errs)
+			for name, want := range tt.want {
+				require.Equal(t, want, values[name], "value binding %q", name)
+			}
+		})
+	}
+}
+
+// TestInferExtractorPatRestArity asserts that a rest covers any number of values but not
+// fewer than the fixed prefix takes.
+func TestInferExtractorPatRestArity(t *testing.T) {
+	_, _, errs := inferSource(t, `
+		class Point { x: number, y: number }
+		fn f(p: Point) {
+			return match p {
+				Point(x, y, z, ...rest) => x
+			}
+		}
+	`)
+	require.Len(t, errs, 1)
+	require.Equal(t, "5:5-5:28: extractor pattern `Point` expects 2 arguments but got 3", msgWithSpan(t, errs[0]))
+}

@@ -72,9 +72,11 @@ var (
 		name:   "the gate requiring a subclass constructor to call `super(…)`",
 		ticket: "#1720",
 	}
-	causePatterns = &solverSkipCause{
-		name:   "rest and default sub-patterns in an extractor pattern",
-		ticket: "#1718",
+	// `fixtures/pattern_matching` also narrows an arm by an annotated nested leaf, which
+	// is #1956 and surfaces once this cause clears.
+	causeStructuralClassPattern = &solverSkipCause{
+		name:   "a structural pattern matched against a class instance",
+		ticket: "#1955",
 	}
 	causeExtendsTypeArgs = &solverSkipCause{
 		name:   "a generic named in an `extends` clause without its type arguments",
@@ -123,8 +125,7 @@ var solverSkips = []solverSkip{
 	{"class_field_name_collision", causeSuperGate, "A subclass constructor must call `super(…)`"},
 	{"class_inheritance_namespaces", causeSuperGate, "A subclass constructor must call `super(…)`"},
 
-	{"extractor_rest_arg", causePatterns, "extractor pattern `C` expects 3 arguments but got 2"},
-	{"pattern_matching", causePatterns, "object is missing property: area"},
+	{"pattern_matching", causeStructuralClassPattern, "object is missing property: area"},
 
 	{"interface", causeExtendsTypeArgs, "type alias `Box` expects 1 type argument but got 0"},
 
@@ -386,7 +387,6 @@ var emitSkips = map[emitSkip]*solverSkipCause{
 	{"extractor_inside_namespaces", "index.d.ts"}: causeEnclosingNamespacePrefix,
 	{"namespace_use_parent_symbol", "index.d.ts"}: causeEnclosingNamespacePrefix,
 	{"namespace_bin_import", "index.d.ts"}:        causeEnclosingNamespacePrefix,
-	{"extractor_arg_with_init", "index.d.ts"}:     causePatterns,
 	{"generalize", "index.d.ts"}:                  causeUnusedParamNotGeneralized,
 	{"type_ann_index_signature", "index.d.ts"}:    causeIndexSignatureOptional,
 	{"logging", "index.d.ts"}:                     causeUndefinedReturn,
