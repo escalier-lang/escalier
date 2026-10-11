@@ -508,6 +508,11 @@ func (b *solTypeAnnBuilder) objectTypeAnn(t *soltype.ObjectType) TypeAnn {
 // TypeScript overload set is one sibling declaration per arm, so a method,
 // constructor, or call signature fans out; one with no arm emits nothing.
 func (b *solTypeAnnBuilder) objTypeAnnElems(elem soltype.ObjTypeElem) []ObjTypeAnnElem {
+	// A member keyed off a declared unique symbol has no key this emitter writes, so it
+	// is left out rather than written under the internal name soltype stores it by.
+	if _, isUnique := soltype.UniqueSymbolOfMemberName(soltype.ObjElemName(elem)); isUnique {
+		return nil
+	}
 	switch elem := elem.(type) {
 	case *soltype.PropertyElem:
 		return []ObjTypeAnnElem{&PropertyTypeAnn{
