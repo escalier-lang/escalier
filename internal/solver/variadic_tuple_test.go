@@ -87,6 +87,13 @@ func TestVariadicTupleSubtyping(t *testing.T) {
 			wantErrs: []string{"3:23-3:24: cannot constrain [number, ...Array<number>] <: tuple"},
 		},
 		{
+			name: "ArrayIntoAnInexactAllMiddle",
+			src: `
+				declare val xs: Array<number>
+				val a: [...Array<number>, ...] = xs
+			`,
+		},
+		{
 			name: "VariadicIntoAnInexactTuple",
 			src: `
 				declare val v: [number, string, ...Array<boolean>]
@@ -157,6 +164,48 @@ func TestVariadicTupleInference(t *testing.T) {
 			want: "fn (t: [number, ...Array<string>, boolean]) -> [number, [...Array<string>, boolean]]",
 		},
 		{
+			name: "LengthReadsOffArray",
+			src: `fn f(xs: Array<number>) {
+				val ys = [0, ...xs]
+				return ys.length
+			}`,
+			want: "fn (xs: Array<number>) -> number",
+		},
+		{
+			name: "IndexInsideThePrefix",
+			src: `fn f(xs: Array<number>) {
+				val ys = ["a", ...xs]
+				return ys[0]
+			}`,
+			want: `fn (xs: Array<number>) -> "a"`,
+		},
+		{
+			name: "IndexPastThePrefix",
+			src: `fn f(xs: Array<number>) {
+				val ys = ["a", ...xs]
+				return ys[1]
+			}`,
+			want: `fn (xs: Array<number>) -> number | "a"`,
+		},
+		{
+			name: "MemberOfAUnionOfVariadicTuples",
+			src: `fn f(xs: Array<number>, c: boolean) {
+				val r = if c { [0, ...xs] } else { ["a", ...xs] }
+				return r.length
+			}`,
+			want: "fn (xs: Array<number>, c: boolean) -> number",
+		},
+		{
+			name: "SpreadAnInexactVariadicTupleLast",
+			src:  `fn f(t: [number, ...Array<string>, ...]) { return [...t] }`,
+			want: "fn (t: [number, ...Array<string>, ...]) -> [number, ...Array<string>, ...]",
+		},
+		{
+			name: "SpreadAnInexactVariadicTupleBeforeAnIterable",
+			src:  `fn f(t: [number, ...Array<string>, ...], xs: Array<boolean>) { return [...t, ...xs] }`,
+			want: "fn (t: [number, ...Array<string>, ...], xs: Array<boolean>) -> [number, ...Array<unknown>]",
+		},
+		{
 			name: "RestInAMatchArm",
 			src:  `fn f(t: [number, ...Array<string>]) { return match t { [_, ...rest] => rest } }`,
 			want: "fn (t: [number, ...Array<string>]) -> Array<string>",
@@ -169,6 +218,15 @@ func TestVariadicTupleInference(t *testing.T) {
 			require.Equal(t, tt.want, values["f"])
 		})
 	}
+}
+
+// TestVariadicTupleInexactSpreadNotLast asserts that an inexact variadic tuple spread before
+// another element is rejected, since its open tail leaves no position for what follows.
+func TestVariadicTupleInexactSpreadNotLast(t *testing.T) {
+	_, _, errs := inferSource(t, `fn f(t: [number, ...Array<string>, ...]) { return [...t, 1] }`)
+	require.Equal(t, []string{
+		"1:52-1:56: cannot spread an inexact tuple except as the last element",
+	}, messagesWithSpan(t, errs))
 }
 
 // TestVariadicTupleFixedPatternRejected asserts that a pattern of fixed length is rejected

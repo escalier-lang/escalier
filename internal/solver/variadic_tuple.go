@@ -1,6 +1,8 @@
 package solver
 
 import (
+	"slices"
+
 	"github.com/escalier-lang/escalier/internal/soltype"
 )
 
@@ -15,11 +17,22 @@ import (
 // tupleShape is a tuple read as its fixed prefix, its variadic middle, and its fixed suffix.
 // rest is the element type of the middle, or nil for a tuple of fixed length. An inexact
 // tuple `[A, ...]` has an `unknown` middle and no suffix, since its open tail may hold
-// anything.
+// anything. That holds for `[A, ...Array<B>, C, ...]` too, whose open tail leaves no fixed
+// position after `A`.
 type tupleShape struct {
 	prefix []soltype.Type
 	rest   soltype.Type
 	suffix []soltype.Type
+}
+
+// elemUnion returns the union of every value type the shape holds, its fixed values and
+// its middle alike.
+func (s tupleShape) elemUnion(c *Context) soltype.Type {
+	elems := append(slices.Clone(s.prefix), s.suffix...)
+	if s.rest != nil {
+		elems = append(elems, s.rest)
+	}
+	return newUnion(c, elems)
 }
 
 // minLen returns how many values every tuple of the shape holds.
@@ -67,12 +80,23 @@ func (c *Context) shapeOf(t *soltype.TupleType) (tupleShape, bool) {
 		}
 	}
 	if t.Inexact {
-		if shape.rest != nil {
-			return tupleShape{}, false
-		}
-		shape.rest = &soltype.UnknownType{}
+		shape.rest, shape.suffix = &soltype.UnknownType{}, nil
 	}
 	return shape, true
+}
+
+// prefixPosition returns the position key names when it is an integer literal below n,
+// and false for any other key.
+func prefixPosition(key soltype.Type, n int) (int, bool) {
+	lit, ok := key.(*soltype.LitType)
+	if !ok {
+		return 0, false
+	}
+	num, ok := lit.Lit.(*soltype.NumLit)
+	if !ok || num.Value < 0 || num.Value >= float64(n) || num.Value != float64(int(num.Value)) {
+		return 0, false
+	}
+	return int(num.Value), true
 }
 
 // variadicTuple returns the type holding prefix, then any number of elem values, then
@@ -98,6 +122,27 @@ func (c *Context) variadicShape(t soltype.Type) (tupleShape, bool) {
 		return tupleShape{}, false
 	}
 	return c.shapeOf(tup)
+}
+
+// variadicArray returns the `Array` that t's values read through when t is a variadic tuple
+// or a union of them, looking through a borrow and a variable's lower bound. Its element is
+// the union of every value the tuples may hold, so a branch yielding `[0, ...Array<number>]`
+// or `[1, ...Array<number>]` reads members off `Array<0 | 1 | number>`. It returns false
+// for any other type.
+func (c *Context) variadicArray(t soltype.Type) (soltype.Type, bool) {
+	members := []soltype.Type{groundedCarrier(t)}
+	if union, ok := members[0].(*soltype.UnionType); ok {
+		members = union.Types
+	}
+	elems := make([]soltype.Type, 0, len(members))
+	for _, member := range members {
+		shape, ok := c.variadicShape(member)
+		if !ok {
+			return nil, false
+		}
+		elems = append(elems, shape.elemUnion(c))
+	}
+	return c.arrayOf(newUnion(c, elems)), true
 }
 
 // constrainVariadicTuple constrains sub against super where at least one of the two is

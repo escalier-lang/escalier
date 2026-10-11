@@ -2760,13 +2760,18 @@ func (c *checker) inferTuple(scope *Scope, lvl int, e *ast.TupleExpr) soltype.Ty
 		switch op := c.inferExpr(scope, lvl, spread.Value).(type) {
 		case *soltype.TupleType:
 			piece := tuplePiece{fixed: op.Elems}
-			if shape, ok := c.ctx.shapeOf(op); ok && shape.rest != nil {
-				if op.Inexact {
-					piece = tuplePiece{inexact: op, spread: spread, last: i == len(e.Elems)-1}
-				} else {
-					piece = tuplePiece{shape: &shape}
-					variadic = true
+			shape, shaped := c.ctx.shapeOf(op)
+			switch {
+			case op.Inexact:
+				// A residual spread fixes no prefix, so the elements stand in for one.
+				prefix := op.Elems
+				if shaped {
+					prefix = shape.prefix
 				}
+				piece = tuplePiece{inexact: op, inexactPrefix: prefix, spread: spread, last: i == len(e.Elems)-1}
+			case shaped && shape.rest != nil:
+				piece = tuplePiece{shape: &shape}
+				variadic = true
 			}
 			// An inexact tuple before the last element has no place in a tuple result, so
 			// it is consumed below only once the literal is known to hold it.
@@ -2805,14 +2810,15 @@ func (c *checker) inferTuple(scope *Scope, lvl int, e *ast.TupleExpr) soltype.Ty
 // fixed positions: an element's own type, or every element of a spread tuple of fixed
 // length. shape is a spread with a variadic middle, either a variadic tuple or an iterable
 // that is not a tuple, which inferTuple reads as all middle. inexact is a spread of an
-// inexact tuple, with spread its source node and last whether it is the literal's final
-// element.
+// inexact tuple, with inexactPrefix the values it holds before its open tail, spread its
+// source node, and last whether it is the literal's final element.
 type tuplePiece struct {
-	fixed   []soltype.Type
-	shape   *tupleShape
-	inexact *soltype.TupleType
-	spread  *ast.ArraySpreadExpr
-	last    bool
+	fixed         []soltype.Type
+	shape         *tupleShape
+	inexact       *soltype.TupleType
+	inexactPrefix []soltype.Type
+	spread        *ast.ArraySpreadExpr
+	last          bool
 }
 
 // fixedLiteral builds the tuple an array literal holding no variadic spread is. An inexact
@@ -2868,7 +2874,7 @@ func (c *checker) variadicLiteral(pieces []tuplePiece, stmtRef liveness.StmtRef,
 			if !piece.last {
 				c.consumeIntoLiteral(piece.spread.Value, piece.inexact, stmtRef, hasStmtRef)
 			}
-			addVariadic(tupleShape{prefix: piece.inexact.Elems, rest: &soltype.UnknownType{}})
+			addVariadic(tupleShape{prefix: piece.inexactPrefix, rest: &soltype.UnknownType{}})
 		case inMiddle:
 			suffix = append(suffix, piece.fixed...)
 		default:
@@ -3205,6 +3211,11 @@ func (c *checker) valueProp(lvl int, blame ast.Node, provNode ast.Node, name str
 	if wrapper, ok := c.primitiveWrapper(recvCarrier); ok {
 		recv, recvCarrier = wrapper, wrapper
 	}
+	// A variadic tuple is an array at least as long as its fixed elements, so it reads
+	// `length` and the methods off `Array` of every element it may hold.
+	if array, ok := c.ctx.variadicArray(recvCarrier); ok {
+		recv, recvCarrier = array, array
+	}
 	// A class instance, and any member that is a method or getter rather than a plain
 	// field, resolves through the projected class body by direct member lookup rather
 	// than the structural field-requirement below — the constraint path reads only
@@ -3397,6 +3408,20 @@ func (c *checker) resolveIndexPath(scope *Scope, lvl int, e *ast.IndexExpr, objP
 // unsupported, since the access would leave no type; reaching it needs an array or usage-inferred one.
 func (c *checker) dynamicIndexRead(scope *Scope, lvl int, e *ast.IndexExpr, recv soltype.Type, objPos bool) pathResult {
 	key := c.inferExpr(scope, lvl, e.Index)
+	// A variadic tuple fixes the type at a position only within its prefix. Any other
+	// index reads one of the values the tuple may hold, so it reads off `Array` of them.
+	if shape, ok := c.ctx.variadicShape(recv); ok {
+		if i, inPrefix := prefixPosition(key, len(shape.prefix)); inPrefix {
+			if !objPos {
+				c.recordMemberUse(e)
+			}
+			c.recordType(e, shape.prefix[i])
+			return pathResult{value: shape.prefix[i]}
+		}
+	}
+	if array, ok := c.ctx.variadicArray(recv); ok {
+		recv = array
+	}
 	access := &soltype.IndexType{Target: recv, Index: key}
 	reduced, reduceErrs, ok := c.ctx.reduceResidual(access, newSeenPairs())
 	if len(reduceErrs) > 0 {
