@@ -197,9 +197,8 @@ func TestPathBinderProjectsAndBinds(t *testing.T) {
 			leaf:  "rest",
 			want:  "{y: string, z: boolean}",
 		},
-		// An extractor's positional value resolves through the constructor parameter it
-		// yields, the interim protocol bindExtractorPat also binds through. Point's
-		// synthesized constructor takes its fields, so value 0 is `x`.
+		// An extractor's positional value resolves through the tuple its matcher returns,
+		// so value 0 of Point's `[subject.x, subject.y]` is `x`.
 		"ExtractorResult": {
 			src:      `class Point { x: number, y: number, static [Symbol.customMatcher](subject: Point) -> [number, number] { return [subject.x, subject.y] } }`,
 			rootType: func(t *testing.T, c *checker, scope *Scope) soltype.Type { return classType(t, c, scope, "Point") },
@@ -526,7 +525,7 @@ func TestPathBinderUnresolvedTagNames(t *testing.T) {
 		"NotAConstructor": {
 			test: &ucs.ExtractorTest{Name: ast.NewIdentifier("Missing", builderSpan()), Arity: 1},
 			step: ucs.ExtractStep{Index: 0},
-			want: "0-1: `Missing` is not a constructor and cannot be used as an extractor pattern.",
+			want: "0-1: `Missing` names no value, so it cannot be used as an extractor pattern",
 		},
 	}
 	for name, tt := range tests {

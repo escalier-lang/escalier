@@ -306,6 +306,22 @@ func TestInferEnumVariantValue(t *testing.T) {
 			`,
 			wantValues: map[string]string{"result": "number | string"},
 		},
+		{
+			name: "TwoArmsNamingOneGenericVariant",
+			src: `
+				enum MyOption<T> {
+					Some(value: T),
+					None(),
+				}
+				val o = MyOption.Some("s")
+				val result = match o {
+					MyOption.Some(v) if v == "a" => 1,
+					MyOption.Some(w) => w,
+					MyOption.None() => 0,
+				}
+			`,
+			wantValues: map[string]string{"result": `0 | 1 | "s"`},
+		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {

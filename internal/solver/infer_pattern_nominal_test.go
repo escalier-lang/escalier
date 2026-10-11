@@ -873,36 +873,89 @@ func TestInferInteriorRestReported(t *testing.T) {
 }
 
 // TestInferExtractorPatReadsTheMatcher covers extractor patterns that read what a class's
-// `[Symbol.customMatcher]` returns rather than what its constructor takes.
+// `[Symbol.customMatcher]` returns rather than what its constructor takes. A row with
+// wantErrs asserts those diagnostics, and one without asserts the bindings in want.
 func TestInferExtractorPatReadsTheMatcher(t *testing.T) {
-	t.Run("MatcherArityDiffersFromTheConstructor", func(t *testing.T) {
-		values, _, errs := inferSource(t, `
-			class Pair {
-				a: number,
-				b: string,
-				constructor(&mut self, a: number) {
-					self.a = a
-					self.b = ""
-				},
-				static [Symbol.customMatcher](subject: Pair) -> [number, string] {
-					return [subject.a, subject.b]
-				},
+	tests := []struct {
+		name     string
+		src      string
+		want     map[string]string
+		wantErrs []string
+	}{
+		{
+			name: "MatcherArityDiffersFromTheConstructor",
+			src: `
+				class Pair {
+					a: number,
+					b: string,
+					constructor(&mut self, a: number) {
+						self.a = a
+						self.b = ""
+					},
+					static [Symbol.customMatcher](subject: Pair) -> [number, string] {
+						return [subject.a, subject.b]
+					},
+				}
+				declare val p: Pair
+				val Pair(x, y) = p
+			`,
+			want: map[string]string{"x": "number", "y": "string"},
+		},
+		{
+			name: "VariadicMatcher",
+			src: `
+				declare class Words {
+					static [Symbol.customMatcher](subject: Words) -> [number, ...Array<string>],
+				}
+				declare val w: Words
+				val Words(n, first, second) = w
+				val Words(m, ...others) = w
+			`,
+			want: map[string]string{"n": "number", "first": "string", "second": "string", "others": "Array<string>"},
+		},
+		{
+			name: "VariadicMatcherNeedsItsFixedValues",
+			src: `
+				declare class Words { static [Symbol.customMatcher](subject: Words) -> [number, ...Array<string>] }
+				declare val w: Words
+				val r = match w { Words() => 0 }
+			`,
+			wantErrs: []string{"4:23-4:30: extractor pattern `Words` expects at least 1 arguments but got 0"},
+		},
+		{
+			name: "MissingMatcherInAVal",
+			src: `
+				class Point { x: number, y: number }
+				declare val p: Point
+				val Point(x, y) = p
+			`,
+			wantErrs: []string{
+				"4:9-4:20: `Point` declares no [Symbol.customMatcher] method, so it cannot be used as an extractor pattern",
+			},
+		},
+		{
+			name: "MalformedMatcher",
+			src: `
+				class Point { x: number, static [Symbol.customMatcher](subject: Point) -> Array<number> { return [subject.x] } }
+				declare val p: Point
+				val Point(x) = p
+			`,
+			wantErrs: []string{
+				"4:9-4:17: the [Symbol.customMatcher] of `Point` must be one method taking a subject and returning a tuple",
+			},
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			values, _, errs := inferSource(t, tt.src)
+			if tt.wantErrs != nil {
+				require.Equal(t, tt.wantErrs, messagesWithSpan(t, errs))
+				return
 			}
-			declare val p: Pair
-			val Pair(x, y) = p
-		`)
-		require.Empty(t, errs)
-		require.Equal(t, "number", values["x"])
-		require.Equal(t, "string", values["y"])
-	})
-	t.Run("MissingMatcherInAVal", func(t *testing.T) {
-		_, _, errs := inferSource(t, `
-			class Point { x: number, y: number }
-			declare val p: Point
-			val Point(x, y) = p
-		`)
-		require.Equal(t, []string{
-			"4:8-4:19: `Point` declares no [Symbol.customMatcher] method, so it cannot be used as an extractor pattern",
-		}, messagesWithSpan(t, errs))
-	})
+			require.Empty(t, errs)
+			for name, want := range tt.want {
+				require.Equal(t, want, values[name], "value binding %q", name)
+			}
+		})
+	}
 }

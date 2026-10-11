@@ -311,16 +311,19 @@ func (b *pathBinder) projectIndex(parentScrut *ucs.Scrutinee, parent scrutineeVi
 // is constrained here, so the step blames no node. The extractor test already narrowed the
 // scrutinee when it resolved the matcher.
 func (b *pathBinder) projectExtract(parent scrutineeView, i int) scrutineeView {
+	var value soltype.Type
 	ext, ok := parent.tested.(*testedExtractor)
-	if !ok || i >= len(ext.params) {
+	if ok {
+		value, ok = extractedValue(ext.params, i)
+	}
+	if !ok {
 		// Either no extractor test resolved a matcher for this scrutinee, or the pattern
-		// took more values than the matcher yields. The arity error is reported
-		// where the test is applied, so recovering with a fresh variable here keeps the
-		// leaves defined without a second diagnostic.
+		// took more values than the matcher yields. The arity error is reported where the
+		// test is applied, so recovering with a fresh variable here keeps the leaves
+		// defined without a second diagnostic.
 		return derive(parent, b.c.freshAt(b.lvl), nil)
 	}
-	param := ext.params[i].Type
-	return derive(parent, param, param)
+	return derive(parent, value, value)
 }
 
 // projectExtractSuffix resolves the values an extractor yields from index from on, the
@@ -328,11 +331,14 @@ func (b *pathBinder) projectExtract(parent scrutineeView, i int) scrutineeView {
 // The arity error for a pattern taking more values than the extractor yields is reported
 // where the test is applied, so this recovers with a fresh variable.
 func (b *pathBinder) projectExtractSuffix(parent scrutineeView, from int) scrutineeView {
+	var suffix soltype.Type
 	ext, ok := parent.tested.(*testedExtractor)
-	if !ok || from > len(ext.params) {
+	if ok {
+		suffix, ok = b.c.extractedSuffix(ext.params, from)
+	}
+	if !ok {
 		return derive(parent, b.c.freshAt(b.lvl), nil)
 	}
-	suffix := extractedSuffix(ext.params, from)
 	return derive(parent, suffix, suffix)
 }
 
@@ -528,15 +534,14 @@ func (b *pathBinder) applyClassTest(scope *Scope, node ast.Node, v scrutineeView
 // test, with the extracted values left to the projections rather than bound here.
 func (b *pathBinder) applyExtractorTest(scope *Scope, node ast.Node, v scrutineeView, t *ucs.ExtractorTest) scrutineeView {
 	name := ast.QualIdentToString(t.Name)
-	ctor, lookupErr := b.c.extractorSignature(scope, b.lvl, node, t.Name)
+	sig, lookupErr := b.c.extractorSignature(scope, b.lvl, node, t.Name)
 	if lookupErr != nil {
 		b.c.report(lookupErr)
 		return v
 	}
-	params := b.c.narrowToExtractor(node, ctor, v.ty)
-	hasRest := t.Rest == ucs.TrailingRest
-	if !extractorArityFits(t.Arity, hasRest, len(params)) {
-		b.c.report(&ExtractorPatternArityError{Node: node, Name: name, Expected: len(params), Got: t.Arity, AtLeast: hasRest})
+	params := b.c.narrowToExtractor(node, sig, v.ty)
+	if err := extractorArityError(node, name, params, t.Arity, t.Rest == ucs.TrailingRest); err != nil {
+		b.c.report(err)
 	}
 	v.tested = &testedExtractor{params: params}
 	return v
