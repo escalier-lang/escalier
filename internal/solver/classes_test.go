@@ -189,9 +189,6 @@ func TestInferBodyVariance(t *testing.T) {
 		def     *ClassDef
 		want    []Variance
 		wantMut []Variance
-		// wantInputs is the expected CovariantInputs vector. nil stands for no parameter
-		// marked.
-		wantInputs []bool
 		// self is the class name the body's own references carry.
 		self string
 	}{
@@ -220,42 +217,39 @@ func TestInferBodyVariance(t *testing.T) {
 			wantMut: []Variance{Contravariant},
 		},
 		{
-			// `accept` takes a `&self` receiver, so it cannot write the `T` it takes into
-			// `value`. Only the field write does that, and only the mutable view has it.
-			name: "a field and a self method parameter are covariant, and invariant under mut",
+			// A `&self` method's value parameter is an input position like any other, so it
+			// joins the field's output position and `T` is invariant in both views.
+			name: "a field and a self method parameter are invariant in both views",
 			def: oneParam(func(tv *soltype.TypeVarType) (*soltype.ObjectType, []*soltype.ClassType) {
 				return exactObj(
 					propElem("value", tv),
 					selfMethod("accept", "Cell", tv, tv, &soltype.UndefinedType{}),
 				), nil
 			}),
-			want:       []Variance{Covariant},
-			wantMut:    []Variance{Invariant},
-			wantInputs: []bool{true},
+			want:    []Variance{Invariant},
+			wantMut: []Variance{Invariant},
 		},
 		{
-			// The `T` passed to `echo` can leave only through `echo`'s own return.
-			name: "a self method taking and returning the parameter is covariant",
+			name: "a self method taking and returning the parameter is invariant",
 			def: oneParam(func(tv *soltype.TypeVarType) (*soltype.ObjectType, []*soltype.ClassType) {
 				return exactObj(selfMethod("echo", "Echo", tv, tv, tv)), nil
 			}),
-			want:       []Variance{Covariant},
-			wantMut:    []Variance{Covariant},
-			wantInputs: []bool{true},
+			want:    []Variance{Invariant},
+			wantMut: []Variance{Invariant},
 		},
 		{
-			// A `readonly` field cannot store the `T` either, so it gives `T` an output
-			// position and nothing more.
-			name: "a readonly field and a self method parameter are covariant in both views",
+			// The shape `includes(&self, searchElement: T)` would give `Array<T>`. The input
+			// counts in both views, so the lower-bounded form below is what keeps a class
+			// covariant.
+			name: "a readonly field and a self method parameter are invariant in both views",
 			def: oneParam(func(tv *soltype.TypeVarType) (*soltype.ObjectType, []*soltype.ClassType) {
 				return exactObj(
 					readonlyProp("value", tv),
 					selfMethod("includes", "Bag", tv, tv, boolT()),
 				), nil
 			}),
-			want:       []Variance{Covariant},
-			wantMut:    []Variance{Covariant},
-			wantInputs: []bool{true},
+			want:    []Variance{Invariant},
+			wantMut: []Variance{Invariant},
 		},
 		{
 			// A field whose type takes `T` as input can hold a consumer the instance was
@@ -394,8 +388,8 @@ func TestInferBodyVariance(t *testing.T) {
 			wantMut: []Variance{Contravariant},
 		},
 		{
-			// `m<B>(&self, x: B) -> boolean where T: B`. A binder's lower bound is an output position,
-			// so `T` is covariant by the ordinary rule and no reader exemption marks it.
+			// `m<B>(&self, x: B) -> boolean where T: B`. A binder's lower bound is an output
+			// position, so `T` is covariant.
 			name: "a parameter only a method binder's lower bound names is covariant",
 			def: oneParam(func(tv *soltype.TypeVarType) (*soltype.ObjectType, []*soltype.ClassType) {
 				b := &soltype.TypeVarType{ID: 2, LowerBounds: []soltype.Type{tv}}
@@ -407,22 +401,18 @@ func TestInferBodyVariance(t *testing.T) {
 			wantMut: []Variance{Covariant},
 		},
 		{
-			// `m<U: T>(&self, x: U) -> T`, the shape `Array.filter<S: T>` has. The bound is an
-			// input to a `&self` method, so it counts the way `echo(&self, x: T) -> T` does. The
-			// return keeps `T` covariant and the bound marks it as a covariant input.
-			name: "a self method binder's bound beside a return is a covariant input",
+			// `m<U: T>(&self, x: U) -> T`. The bound is an input position and the return an
+			// output position, so `T` is invariant the way it is for `echo(&self, x: T) -> T`.
+			name: "a self method binder's bound beside a return is invariant",
 			def: oneParam(func(tv *soltype.TypeVarType) (*soltype.ObjectType, []*soltype.ClassType) {
 				return exactObj(boundedSelfMethod("m", "C", tv, tv)), nil
 			}),
-			want:       []Variance{Covariant},
-			wantMut:    []Variance{Covariant},
-			wantInputs: []bool{true},
+			want:    []Variance{Invariant},
+			wantMut: []Variance{Invariant},
 		},
 		{
-			// `readonly f: <U: T>(x: U) -> T`. A field holds whatever function the constructor
-			// was given, which can close over state fixed to the instance's argument and store
-			// what it is passed there. So unlike a `&self` method's, its input positions always
-			// count. It takes `T` in through its bound and gives it back through its return.
+			// `readonly f: <U: T>(x: U) -> T`. The held function takes `T` in through its bound
+			// and gives it back through its return.
 			name: "a held function's binder bound beside its return is invariant",
 			def: oneParam(func(tv *soltype.TypeVarType) (*soltype.ObjectType, []*soltype.ClassType) {
 				u := &soltype.TypeVarType{ID: 2, UpperBounds: []soltype.Type{tv}}
@@ -462,11 +452,6 @@ func TestInferBodyVariance(t *testing.T) {
 			m := inferBodyVariance(tt.def, tt.self, settled)
 			require.Equal(t, tt.want, m.immut)
 			require.Equal(t, tt.wantMut, m.mut)
-			wantInputs := tt.wantInputs
-			if wantInputs == nil {
-				wantInputs = make([]bool, len(tt.want))
-			}
-			require.Equal(t, wantInputs, m.covariantInputs)
 		})
 	}
 }
