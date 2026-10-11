@@ -1053,6 +1053,21 @@ func TestSolNamesLocalName(t *testing.T) {
 	}
 }
 
+// TestNamespaceReferenceAvoidsATypeParameter asserts that a reference keeps its namespace
+// prefix when its local name is a type parameter in scope. In
+// `namespace Foo { type T = number; type Box<T> = {b: Foo.T} }` the field must not read `T`.
+func TestNamespaceReferenceAvoidsATypeParameter(t *testing.T) {
+	tp := &soltype.TypeParam{Name: "T", Var: &soltype.TypeVarType{ID: 1}}
+	builder := newSolTypeAnnBuilder(solNames{namespace: "Foo"}, "Box", []*soltype.TypeParam{tp})
+	printer := NewPrinter()
+	printer.PrintTypeAnn(builder.render(&soltype.ObjectType{Elems: []soltype.ObjTypeElem{
+		&soltype.PropertyElem{Name: "a", Type: tp.Var},
+		&soltype.PropertyElem{Name: "b", Type: &soltype.AliasType{Name: "Foo.T"}},
+		&soltype.PropertyElem{Name: "c", Type: &soltype.AliasType{Name: "Foo.U"}},
+	}}))
+	require.Equal(t, "{a: T, b: Foo.T, c: U}", printer.Output)
+}
+
 // TestArityTrimNeedsThePreludePrefix asserts what the arity trim keys off: the
 // package the reference was declared in, which the builder knows only from the
 // prelude prefix it was given.

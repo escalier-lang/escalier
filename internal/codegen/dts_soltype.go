@@ -123,6 +123,20 @@ func (b *solTypeAnnBuilder) bindTypeParams(typeParams []*soltype.TypeParam) {
 	}
 }
 
+// refName returns the name a reference to the class or alias qualifiedName is written
+// under. It is the namespace-local name names.localName gives, unless a type parameter
+// this render has named already holds that name and would capture the reference. Then the
+// reference keeps the name refNameFromSol gives it.
+func (b *solTypeAnnBuilder) refName(qualifiedName string) string {
+	local := b.names.localName(qualifiedName)
+	for _, name := range b.typeParamNames {
+		if name == local {
+			return refNameFromSol(qualifiedName)
+		}
+	}
+	return local
+}
+
 // render is the entry point for a whole type. Counting occurrences first is what
 // lets a signature tell a variable it fully contains from one it shares.
 func (b *solTypeAnnBuilder) render(t soltype.Type) TypeAnn {
@@ -182,9 +196,9 @@ func (b *solTypeAnnBuilder) typeAnn(t soltype.Type) TypeAnn {
 		// pass is needed because soltype carries it as a kind of its own.
 		return NewRefTypeAnn("this", nil)
 	case *soltype.ClassType:
-		return NewRefTypeAnn(b.names.localName(t.Name), b.typeArgs(t.Name, t.TypeArgs, t.Defaults))
+		return NewRefTypeAnn(b.refName(t.Name), b.typeArgs(t.Name, t.TypeArgs, t.Defaults))
 	case *soltype.AliasType:
-		return NewRefTypeAnn(b.names.localName(t.Name), b.typeArgs(t.Name, t.TypeArgs, t.Defaults))
+		return NewRefTypeAnn(b.refName(t.Name), b.typeArgs(t.Name, t.TypeArgs, t.Defaults))
 	case *soltype.GeneratorType:
 		// Both take three type arguments in TypeScript. Escalier's fourth, what
 		// advancing the generator may raise, has no slot.

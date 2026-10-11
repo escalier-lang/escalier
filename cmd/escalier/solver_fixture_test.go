@@ -408,9 +408,10 @@ var (
 	// A written `any` resolves to `unknown` in the solver, so `externref: any` emits
 	// `externref: unknown` where the twin writes `any`. The divergence is intended.
 	// `unknown` keeps a declaration sound where `any` would let every value through
-	// in both directions, so this entry stays until the checker is gone.
+	// in both directions, so #1676 records it as a difference to keep.
 	causeAnyAsUnknown = &solverSkipCause{
-		name: "a written `any` emitting as `unknown`",
+		name:   "a written `any` emitting as `unknown`",
+		ticket: "#1676",
 	}
 	// A parameter the body never reads coalesces to `unknown` rather than becoming a
 	// type parameter, so `fn fst(a, b) { return a }` emits `<T0>(a: T0, b: unknown) => T0`
