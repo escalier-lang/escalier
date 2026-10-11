@@ -117,6 +117,10 @@ type aliasShell struct {
 	// def is the registered AliasDef preBindAlias inserted with a nil Body; inferAliasBody
 	// fills its Body once every sibling identity in the component is bound.
 	def *AliasDef
+	// symbolOwner is the path of the value that names the unique symbols an object body
+	// declares, such as `t` for `declare val t: T`, and empty when no value does. See
+	// symbolOwners.
+	symbolOwner string
 	// paramsClean is true when preBindAlias resolved the alias's `<…>` list with no
 	// diagnostic. A bound or default that fails to resolve is left nil, taking the
 	// occurrences it held with it, so `type Foo<T, U: Nope<T>> = number` keeps no record
@@ -198,6 +202,7 @@ func (c *checker) preBindAlias(scope *Scope, lvl int, decl *ast.TypeDecl, ns str
 		declScope:   declScope,
 		namedLts:    aliasNamedLts,
 		def:         def,
+		symbolOwner: c.symbolOwners[declScopeKey(ns, decl.Name.Name)],
 		paramsClean: quiet(),
 	}
 }
@@ -250,7 +255,10 @@ func (c *checker) inferAliasBody(sh *aliasShell) {
 	quiet := c.errorWindow()
 	var body soltype.Type = c.freshAt(sh.lvl)
 	if sh.decl.TypeAnn != nil {
-		if resolved, ok := c.resolveTypeAnn(sh.declScope, sh.decl.TypeAnn, sh.lvl); ok {
+		// An object body describes the value sh.symbolOwner names, so the symbols its
+		// `readonly` properties mint are named after that value. resolveOwnedTypeAnn
+		// resolves any other body as resolveTypeAnn does.
+		if resolved, ok := c.resolveOwnedTypeAnn(sh.declScope, sh.decl.TypeAnn, sh.lvl, sh.symbolOwner); ok {
 			body = resolved
 		}
 		// An unsupported body reported its own error. Keep the fresh var so a reference

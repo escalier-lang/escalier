@@ -156,6 +156,24 @@ func (g *DepGraph) AllBindings() []BindingKey {
 	return keys
 }
 
+// ResolveTypeKey returns the type key a type name written in namespace `ns` refers to
+// among the graph's own declarations. It tries the name qualified by `ns` first and the
+// bare name second, and returns false when neither is a binding of the graph. A name
+// reached through an import binding is not one of the graph's own and also returns false.
+func (g *DepGraph) ResolveTypeKey(typeName, ns string) (BindingKey, bool) {
+	if ns != "" {
+		key := TypeBindingKey(ns + "." + typeName)
+		if g.HasBinding(key) {
+			return key, true
+		}
+	}
+	key := TypeBindingKey(typeName)
+	if g.HasBinding(key) {
+		return key, true
+	}
+	return "", false
+}
+
 // HasBinding checks if a binding exists
 func (g *DepGraph) HasBinding(key BindingKey) bool {
 	_, exists := g.Decls.Get(key)
@@ -428,19 +446,7 @@ func (v *DependencyVisitor) addTypeDependency(typeName string) bool {
 		return false
 	}
 
-	// If we're in a non-empty namespace, first try the qualified name
-	if v.CurrentNamespace != "" {
-		qualifiedTypeName := v.CurrentNamespace + "." + typeName
-		key := TypeBindingKey(qualifiedTypeName)
-		if v.Graph.HasBinding(key) {
-			v.Dependencies.Insert(key)
-			return true
-		}
-	}
-
-	// Then try the unqualified name (global namespace)
-	key := TypeBindingKey(typeName)
-	if v.Graph.HasBinding(key) {
+	if key, ok := v.Graph.ResolveTypeKey(typeName, v.CurrentNamespace); ok {
 		v.Dependencies.Insert(key)
 		return true
 	}
