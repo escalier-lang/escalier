@@ -538,8 +538,8 @@ func (c *checker) resolveObjectProperty(scope *Scope, prop *ast.PropertyTypeAnn,
 // to a concrete tuple, splicing it in position. Until then a spread over a type parameter stays
 // symbolic. The bare trailing `...` inexact marker is carried on ta.Inexact, not as an element. An
 // element whose annotation is unsupported recovers to a fresh var so the tuple keeps its arity. A
-// `[number, ...Array<number>]` variadic tail is distinct and stays out of scope until Array lands;
-// its spread operand fails to resolve today and recovers.
+// spread of an `Array`, as in `[number, ...Array<number>]`, never splices and stays a variadic
+// tail, which constrainVariadicTuple checks.
 func (c *checker) resolveTupleTypeAnn(scope *Scope, ta *ast.TupleTypeAnn, lvl int) (soltype.Type, bool) {
 	elems := make([]soltype.Type, 0, len(ta.Elems))
 	for _, el := range ta.Elems {

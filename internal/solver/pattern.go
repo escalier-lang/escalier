@@ -529,6 +529,14 @@ func (c *checker) bindRecoveredElem(scope *Scope, lvl int, e ast.Pat, scrutineeM
 // binds a variable bounded below by `[...]`. Unbounded it would coalesce to `never`, which
 // lets a caller assign the result to anything. restConcrete drives the borrow wrap.
 func (c *checker) tupleRestType(lvl int, node ast.Node, scrutinee soltype.Type, scrutTup, concreteTup *soltype.TupleType, prefix int) (bind, restConcrete soltype.Type) {
+	// A variadic scrutinee's rest holds the fixed values past the pattern's prefix and then
+	// its middle, so `[a, ...rest]` over `[number, ...Array<string>]` binds `Array<string>`.
+	// A prefix reaching into the middle is rejected by the requirement projectTuple emits,
+	// since the middle may be empty.
+	if shape, ok := c.ctx.variadicShape(scrutinee); ok && prefix <= len(shape.prefix) {
+		rest := c.ctx.variadicTuple(shape.prefix[prefix:], shape.rest, shape.suffix)
+		return rest, rest
+	}
 	tup, ok := c.restTupleShape(scrutinee, scrutTup, concreteTup)
 	if !ok || len(tup.Elems) < prefix {
 		v := c.freshAt(lvl)

@@ -500,7 +500,7 @@ func TestIterationAgainstStdlib(t *testing.T) {
 		{
 			name: "SpreadAnArrayBesideAnElement",
 			src:  `fn withZero(xs: Array<number>) { return [0, ...xs] }`,
-			want: map[string]string{"withZero": "fn (xs: Array<number>) -> Array<number>"},
+			want: map[string]string{"withZero": "fn (xs: Array<number>) -> [0, ...Array<number>]"},
 		},
 		{
 			name: "SpreadAGenerator",
@@ -521,7 +521,7 @@ func TestIterationAgainstStdlib(t *testing.T) {
 		{
 			name: "InexactTupleBeforeAnIterableSpread",
 			src:  `fn f(xs: Array<number>, t: [string, ...]) { return [...t, ...xs] }`,
-			want: map[string]string{"f": "fn (xs: Array<number>, t: [string, ...]) -> Array<unknown>"},
+			want: map[string]string{"f": "fn (xs: Array<number>, t: [string, ...]) -> [string, ...Array<unknown>]"},
 		},
 		{
 			name: "GeneratorWithOneTypeArgument",

@@ -1,6 +1,8 @@
 package solver
 
 import (
+	"slices"
+
 	"github.com/escalier-lang/escalier/internal/ast"
 	"github.com/escalier-lang/escalier/internal/set"
 	"github.com/escalier-lang/escalier/internal/soltype"
@@ -177,7 +179,8 @@ func (c *checker) asyncElemType(t soltype.Type) (soltype.Type, bool) {
 //
 // An inexact tuple `[number, ...]` has an open tail of unknown additional elements, so its
 // element type is the join of its listed elements with that unknown tail, which is `unknown`.
-// The precise type of the tail needs the `Array<T>` the tuple approximates.
+// A variadic tuple yields its fixed elements and its middle's element type, so
+// `[number, ...Array<string>]` yields `number | string`.
 func (c *checker) syncElemType(t soltype.Type) (soltype.Type, bool) {
 	t = groundedCarrier(t)
 	switch t := t.(type) {
@@ -191,6 +194,10 @@ func (c *checker) syncElemType(t soltype.Type) (soltype.Type, bool) {
 	case *soltype.TupleType:
 		if t.Inexact {
 			return &soltype.UnknownType{}, true
+		}
+		if shape, ok := c.ctx.shapeOf(t); ok && shape.rest != nil {
+			elems := append(slices.Clone(shape.prefix), shape.rest)
+			return newUnion(c.ctx, append(elems, shape.suffix...)), true
 		}
 		return newUnion(c.ctx, t.Elems), true
 	case *soltype.UnionType:
