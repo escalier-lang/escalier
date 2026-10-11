@@ -69,22 +69,37 @@ func (c *checker) resolveTypeParams(scope *Scope, lvl int, params []*ast.TypePar
 	//
 	// Each comparison is trialed under a probe rather than run live, so any bound it appends
 	// is rolled back. A default is a fully resolved type with nothing left to infer, so a
-	// live comparison would gain it nothing. It would cost something when the bound names a
-	// sibling parameter. Running `<T, U: T = number>` live compares number against T's var
-	// and leaves T carrying number as a lower bound, a claim that T must accept number that
-	// the source never wrote.
+	// live comparison would gain it nothing, and it would leave a bound on a sibling the
+	// source never wrote.
 	for i, p := range params {
-		if out[i].Default != nil && out[i].UpperBound != nil {
-			c.blameConstraintErrors(p.Default, c.ctx.trialUnderProbe(out[i].Default, out[i].UpperBound))
-		}
-		if out[i].Default != nil && out[i].LowerBound != nil {
-			c.blameConstraintErrors(p.Default, c.ctx.trialUnderProbe(out[i].LowerBound, out[i].Default))
+		if out[i].Default != nil && (out[i].UpperBound != nil || out[i].LowerBound != nil) {
+			c.checkDefaultAgainstBounds(p, out, i)
 		}
 		if out[i].LowerBound != nil && out[i].UpperBound != nil {
 			c.blameConstraintErrors(p.LowerBound, c.ctx.trialUnderProbe(out[i].LowerBound, out[i].UpperBound))
 		}
 	}
 	return out
+}
+
+// checkDefaultAgainstBounds reports a default of out[i] that falls outside the
+// parameter's upper or lower bound. Every other parameter of the list is held rigid for
+// the comparison, so a bound naming a sibling reads it as the unknown type a use site may
+// choose. `<T, U: T = number>` is rejected, since `T` may be `string` at a use that
+// leaves `U` to its default. The parameter being checked stays a variable, so an
+// F-bound such as `<T: Comparable<T> = Foo>` compares `Foo` against `Comparable<Foo>`.
+func (c *checker) checkDefaultAgainstBounds(p *ast.TypeParam, out []*soltype.TypeParam, i int) {
+	siblings := make([]*soltype.TypeParam, 0, len(out)-1)
+	siblings = append(siblings, out[:i]...)
+	siblings = append(siblings, out[i+1:]...)
+	release := c.ctx.holdTypeParamsRigid(siblings, true)
+	defer release()
+	if out[i].UpperBound != nil {
+		c.blameConstraintErrors(p.Default, c.ctx.trialUnderProbe(out[i].Default, out[i].UpperBound))
+	}
+	if out[i].LowerBound != nil {
+		c.blameConstraintErrors(p.Default, c.ctx.trialUnderProbe(out[i].LowerBound, out[i].Default))
+	}
 }
 
 // reportBoundCycles reports each type parameter whose bound chain reaches the parameter
