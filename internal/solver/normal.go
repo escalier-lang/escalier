@@ -1103,7 +1103,17 @@ func (c *Context) meetObjects(a, b *soltype.ObjectType) (soltype.Type, bool) {
 		}
 		elems = append(elems, e)
 	}
-	return &soltype.ObjectType{Elems: sortedByName(elems), Inexact: a.Inexact && b.Inexact}, true
+	return &soltype.ObjectType{Elems: sortedByName(elems), Inexact: a.Inexact && b.Inexact, Class: commonClass(a, b)}, true
+}
+
+// commonClass returns the class both a and b are the value of, or "" when they are values
+// of different classes or of none. Two instantiations of one class value fuse to a value of
+// that class, so the class's declared parameters still read off the result.
+func commonClass(a, b *soltype.ObjectType) string {
+	if a.Class == b.Class {
+		return a.Class
+	}
+	return ""
 }
 
 // requiredMembersWithin reports whether the allowed list names every member that
@@ -1193,7 +1203,7 @@ func (c *Context) joinObjects(a, b *soltype.ObjectType) (soltype.Type, bool) {
 		}
 		elems = append(elems, merged)
 	}
-	return &soltype.ObjectType{Elems: sortedByName(elems), Inexact: a.Inexact}, true
+	return &soltype.ObjectType{Elems: sortedByName(elems), Inexact: a.Inexact, Class: commonClass(a, b)}, true
 }
 
 // meetTuples fuses two tuple atoms position by position, or returns `never` when

@@ -692,7 +692,7 @@ func stripOwnedMut(t soltype.Type) soltype.Type {
 			}
 			elems[i] = &soltype.PropertyElem{Name: prop.Name, Type: stripOwnedMut(prop.Type), Optional: prop.Optional, Readonly: prop.Readonly}
 		}
-		return &soltype.ObjectType{Elems: elems, Inexact: t.Inexact}
+		return &soltype.ObjectType{Elems: elems, Inexact: t.Inexact, Class: t.Class}
 	case *soltype.TupleType:
 		elems := make([]soltype.Type, len(t.Elems))
 		for i, e := range t.Elems {
