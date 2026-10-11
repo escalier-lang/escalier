@@ -84,6 +84,11 @@ type checker struct {
 	// same reason. The map is allocated lazily by namedLifetime on first use.
 	namedLifetimes map[string]*soltype.LifetimeVar
 
+	// ltMarks maps a node to the lifetime counter at the start of its inference, written by
+	// markLifetimes for every expression and statement. A rigid-lifetime check sited at the
+	// node reads it to tell the lifetimes the checked value minted from the ones it shares.
+	ltMarks map[ast.Node]int
+
 	// methodSelfParams maps a member-access node to the `self` receiver of the method it
 	// reads. memberValue hands the call site a signature with its receiver stripped, since
 	// `p.m` binds the receiver and returns a function of the remaining parameters, so a rule
@@ -767,7 +772,37 @@ func (c *checker) freshAt(lvl int) *soltype.TypeVarType {
 // so the hot loop stays off the table. That is the perf invariant, §3.9. Bridge
 // errors never flow through here; they self-blame from their own node.
 func (c *checker) constrain(n ast.Node, source, target soltype.Type) {
+	queued := len(c.ctx.pendingRigidLts)
 	c.blameConstraintErrors(n, c.ctx.Constrain(source, target))
+	c.siteRigidLifetimeChecks(n, queued)
+}
+
+// siteRigidLifetimeChecks stamps the node n, the constraint site, on each rigid-lifetime check
+// the queue holds from index from on that has no site yet, with the mark n's inference began
+// at. A check with no site reports nothing, so a caller that runs the engine outside the
+// constrain wrapper and commits the result calls this for the node it blames.
+func (c *checker) siteRigidLifetimeChecks(n ast.Node, from int) {
+	for _, pending := range c.ctx.pendingRigidLts[from:] {
+		if pending.site != nil {
+			continue
+		}
+		pending.site = n
+		if mark, ok := c.ltMarks[n]; ok {
+			pending.mark = mark
+		}
+	}
+}
+
+// markLifetimes records the lifetime counter at the start of n's inference, so a rigid-lifetime
+// check sited at n can tell a lifetime minted while n was inferred, which belongs to the value
+// checked there, from one minted earlier, which n shares with its surroundings.
+func (c *checker) markLifetimes(n ast.Node) {
+	if c.ltMarks == nil {
+		c.ltMarks = map[ast.Node]int{}
+	}
+	if _, marked := c.ltMarks[n]; !marked {
+		c.ltMarks[n] = c.ctx.lifetimeCounter
+	}
 }
 
 // blameConstraintErrors stamps each error from a constraint run with the Prov table and
@@ -798,6 +833,8 @@ func (c *checker) blameConstraintErrors(n ast.Node, errs []SolverError) {
 			err.prov, err.site = c.prov, n
 		case *TupleLengthMismatchError:
 			err.prov, err.site = c.prov, n
+		case *LifetimeBinderNotSatisfiedError:
+			err.Node = n
 		case *MissingPropertyError:
 			err.prov, err.site = c.prov, n
 		case *InexactIntoExactError:
@@ -910,6 +947,7 @@ func (c *checker) recordType(n ast.Node, t soltype.Type) {
 // expression kind with no arm here falls through to a clean UnsupportedNodeError,
 // never a panic.
 func (c *checker) inferExpr(scope *Scope, lvl int, e ast.Expr) soltype.Type {
+	c.markLifetimes(e)
 	switch e := e.(type) {
 	case *ast.ErrorExpr:
 		// The parser substitutes this for an expression it could not read and reports

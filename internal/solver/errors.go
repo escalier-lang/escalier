@@ -2246,6 +2246,33 @@ func (e *LifetimeRelationUndeclaredError) Message() string {
 		e.Sub, e.Super, e.Sub, e.Super)
 }
 
+// LifetimeBinderNotSatisfiedError fires when a value is checked against a signature that
+// quantifies a lifetime and works only for some choices of it. The signature's caller chooses
+// the lifetime, so a closure passed where `fn <'a>(q: &'a T) -> &'a T` is expected has to
+// accept every 'a, and one returning a captured borrow does not. Name is the lifetime's source
+// name with its quote, Requires says what the value requires of it in the message's words, and
+// Node is where the value met the signature.
+type LifetimeBinderNotSatisfiedError struct {
+	Name     string
+	Requires string
+	Node     ast.Node
+}
+
+func (*LifetimeBinderNotSatisfiedError) isSolverError() {}
+
+// Span is the site's span. A violation a trial under a probe returns has no site until the
+// caller blames it, and reads as an empty span until then rather than failing.
+func (e *LifetimeBinderNotSatisfiedError) Span() ast.Span {
+	if e.Node == nil {
+		return ast.Span{}
+	}
+	return e.Node.Span()
+}
+func (e *LifetimeBinderNotSatisfiedError) Related() []ast.Span { return nil }
+func (e *LifetimeBinderNotSatisfiedError) Message() string {
+	return fmt.Sprintf("the caller of this signature chooses %s, but the value requires %s", e.Name, e.Requires)
+}
+
 // UndeclaredLifetimeError fires when a signature uses a named lifetime that its own
 // `<…>` quantifier list does not bind. A `&'x` borrow or a bound's right-hand side
 // names `'x`, but no `<'x>` binder introduces it, so the name is a forgotten
