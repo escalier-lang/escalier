@@ -1304,6 +1304,7 @@ func (*ReadBeforeInitError) isSolverError()                 {}
 func (*MethodCallBeforeInitError) isSolverError()           {}
 func (*InstancePatternNotClassError) isSolverError()        {}
 func (*ExtractorPatternNotCtorError) isSolverError()        {}
+func (*MissingCustomMatcherError) isSolverError()           {}
 func (*ExtractorPatternArityError) isSolverError()          {}
 func (*TypeArgArityMismatchError) isSolverError()           {}
 func (*LifetimeArgArityMismatchError) isSolverError()       {}
@@ -1396,9 +1397,8 @@ func (e *InstancePatternNotClassError) Message() string {
 }
 
 // ExtractorPatternNotCtorError fires when the name in an extractor pattern `Name(...)`
-// resolves to no constructor — the name is unbound, or its value is not callable as a
-// constructor. An extractor pattern deconstructs a value through the named constructor's
-// parameters, so the name must resolve to a constructor.
+// resolves to no value. A value that resolves but declares no `[Symbol.customMatcher]` is a
+// MissingCustomMatcherError instead.
 // Node is the node the message underlines, the same choice
 // InstancePatternNotClassError makes.
 type ExtractorPatternNotCtorError struct {
@@ -1410,6 +1410,21 @@ func (e *ExtractorPatternNotCtorError) Span() ast.Span      { return e.Node.Span
 func (e *ExtractorPatternNotCtorError) Related() []ast.Span { return nil }
 func (e *ExtractorPatternNotCtorError) Message() string {
 	return "`" + e.Name + "` is not a constructor and cannot be used as an extractor pattern."
+}
+
+// MissingCustomMatcherError fires when the name in an extractor pattern `Name(...)`
+// resolves to a value that declares no `[Symbol.customMatcher]`. The matcher is what says
+// which values an extractor pattern binds, so a class without one is not an extractor, even
+// when its constructor takes as many parameters as the pattern has arguments.
+type MissingCustomMatcherError struct {
+	Node ast.Node
+	Name string
+}
+
+func (e *MissingCustomMatcherError) Span() ast.Span      { return e.Node.Span() }
+func (e *MissingCustomMatcherError) Related() []ast.Span { return nil }
+func (e *MissingCustomMatcherError) Message() string {
+	return "`" + e.Name + "` declares no [Symbol.customMatcher] method, so it cannot be used as an extractor pattern"
 }
 
 // ExtractorPatternArityError fires when an extractor pattern `Name(a, b)` supplies a

@@ -55,7 +55,7 @@ type scrutineeView struct {
 // It is a sum rather than a group of fields on scrutineeView because the alternatives are
 // disjoint. A scrutinee is tested against exactly one tag, and each tag kind resolves a
 // different thing. A tuple test mints element variables and an extractor test resolves
-// constructor parameters, so no one value ever carries both.
+// the values its matcher yields, so no one value ever carries both.
 //
 // A literal test and a class test resolve nothing and leave it nil. A class test narrows
 // the scrutinee's own type to the instance member view instead, so its field steps read
@@ -84,9 +84,9 @@ type testedTuple struct {
 	scrut, concrete *soltype.TupleType
 }
 
-// testedExtractor carries the constructor parameters an extractor test resolved. An
-// extract step reads its value's type out of them, the interim protocol bindExtractorPat
-// also binds through until M7's `[Symbol.customMatcher]` lands.
+// testedExtractor carries the values an extractor test resolved through the extractor's
+// `[Symbol.customMatcher]`, one parameter per value as narrowToExtractor returns them. An
+// extract step reads its value's type out of them.
 type testedExtractor struct{ params []*soltype.FuncParam }
 
 // testedAnn carries the narrowing annotation a refutable form tested, which the leaf beneath
@@ -149,8 +149,8 @@ func (c *checker) newPathBinder(lvl int, blame ast.Node, root *ucs.Scrutinee, ro
 //
 // Applying a test is what makes the projections beneath it resolvable. A tuple test
 // mints the element variables an index step reads, a class test projects the instance
-// member view a field step reads, and an extractor test resolves the constructor
-// parameters an extract step reads.
+// member view a field step reads, and an extractor test resolves the matcher's values an
+// extract step reads.
 //
 // blame is the surface node a diagnostic about the test anchors to, which is the pattern
 // the branch lowered from. A blame that names no node falls back to s's own origin.
@@ -307,15 +307,14 @@ func (b *pathBinder) projectIndex(parentScrut *ucs.Scrutinee, parent scrutineeVi
 }
 
 // projectExtract resolves the i-th positional value an extractor yields, the `v` of
-// `Ok(v)`. The values come from the constructor parameters the enclosing extractor test
-// resolved, the interim protocol bindExtractorPat binds through until M7 replaces it with
-// `[Symbol.customMatcher]`. Nothing is constrained here, so the step blames no node. The
-// extractor test already narrowed the scrutinee when it resolved the constructor.
+// `Ok(v)`. The values come from the matcher the enclosing extractor test resolved. Nothing
+// is constrained here, so the step blames no node. The extractor test already narrowed the
+// scrutinee when it resolved the matcher.
 func (b *pathBinder) projectExtract(parent scrutineeView, i int) scrutineeView {
 	ext, ok := parent.tested.(*testedExtractor)
 	if !ok || i >= len(ext.params) {
-		// Either no extractor test resolved a constructor for this scrutinee, or the
-		// pattern took more values than the constructor yields. The arity error is reported
+		// Either no extractor test resolved a matcher for this scrutinee, or the pattern
+		// took more values than the matcher yields. The arity error is reported
 		// where the test is applied, so recovering with a fresh variable here keeps the
 		// leaves defined without a second diagnostic.
 		return derive(parent, b.c.freshAt(b.lvl), nil)
@@ -333,7 +332,7 @@ func (b *pathBinder) projectExtractSuffix(parent scrutineeView, from int) scruti
 	if !ok || from > len(ext.params) {
 		return derive(parent, b.c.freshAt(b.lvl), nil)
 	}
-	suffix := b.c.extractedSuffix(ext.params, from)
+	suffix := extractedSuffix(ext.params, from)
 	return derive(parent, suffix, suffix)
 }
 
@@ -524,14 +523,14 @@ func (b *pathBinder) applyClassTest(scope *Scope, node ast.Node, v scrutineeView
 	return v
 }
 
-// applyExtractorTest narrows the scrutinee to the constructor's return type and resolves
-// the parameters its extract steps read. It is bindExtractorPat's narrowing read off the
+// applyExtractorTest narrows the scrutinee to the matcher's subject and resolves the values
+// its extract steps read. It is bindExtractorPat's narrowing read off the
 // test, with the extracted values left to the projections rather than bound here.
 func (b *pathBinder) applyExtractorTest(scope *Scope, node ast.Node, v scrutineeView, t *ucs.ExtractorTest) scrutineeView {
 	name := ast.QualIdentToString(t.Name)
-	ctor, ok := b.c.extractorCtor(scope, b.lvl, t.Name)
-	if !ok {
-		b.c.report(&ExtractorPatternNotCtorError{Node: node, Name: name})
+	ctor, lookupErr := b.c.extractorSignature(scope, b.lvl, node, t.Name)
+	if lookupErr != nil {
+		b.c.report(lookupErr)
 		return v
 	}
 	params := b.c.narrowToExtractor(node, ctor, v.ty)

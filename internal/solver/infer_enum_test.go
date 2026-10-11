@@ -326,7 +326,7 @@ func TestExtractorOverGenericClass(t *testing.T) {
 		{
 			name: "DeclaredScrutinee",
 			src: `
-				class Box<T> { value: T }
+				class Box<T> { value: T, static [Symbol.customMatcher]<U>(subject: Box<U>) -> [U] { return [subject.value] } }
 				declare val b: Box<string>
 				val first = match b { Box(v) => v }
 				val second = match b { Box(v) => v }
@@ -336,7 +336,7 @@ func TestExtractorOverGenericClass(t *testing.T) {
 		{
 			name: "TwoArmsOverAConstructedScrutinee",
 			src: `
-				class Box<T> { value: T }
+				class Box<T> { value: T, static [Symbol.customMatcher]<U>(subject: Box<U>) -> [U] { return [subject.value] } }
 				val b = Box("s")
 				val r = match b {
 					Box(v) if v == "a" => 1,
