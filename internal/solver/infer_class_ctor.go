@@ -91,7 +91,7 @@ func (c *checker) walkConstructorBody(scope *Scope, lvl int, self *soltype.Class
 	c.superCtx = superCtx
 	// A constructor carries no type parameters of its own, since the class owns them,
 	// so generic resolution stays off here, matching the method path.
-	ft := c.inferFunc(ctorScope, lvl, bodySig, ctor.Fn.Body, ctor, false)
+	ft := c.inferFunc(ctorScope, lvl, bodySig, ctor.Fn.Body, ctor, false, true)
 	c.superCtx = prevSuper
 	c.checkSuperCalls(superCtx, ctor)
 	// Definite assignment runs over the class's OWN fields. An inherited field is left out,

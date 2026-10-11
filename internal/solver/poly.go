@@ -644,11 +644,14 @@ func (f *methodLtFreshener) ExitType(t soltype.Type, _ soltype.Polarity) soltype
 // lifetime parameters. It does not descend into a type variable's bounds.
 type lifetimeCollector struct {
 	out set.Set[*soltype.LifetimeVar]
+	// order holds the same variables in first-appearance order.
+	order []*soltype.LifetimeVar
 }
 
 func (v *lifetimeCollector) add(lt soltype.Lifetime) {
-	if lv, ok := lt.(*soltype.LifetimeVar); ok {
+	if lv, ok := lt.(*soltype.LifetimeVar); ok && !v.out.Contains(lv) {
 		v.out.Add(lv)
+		v.order = append(v.order, lv)
 	}
 }
 
@@ -730,8 +733,13 @@ func (c *checker) instantiateMethodLifetimes(lvl int, blame ast.Node, recv solty
 		if !ok {
 			inst = sig
 		}
+		freshened := inst != sig
+		// The access instantiates the method's own lifetime binder, the way a call
+		// instantiates a type binder, so the value the access yields is a plain arrow over
+		// the fresh lifetimes rather than a quantified one.
+		inst = withoutLifetimeBinder(inst)
 		sigs[i] = inst
-		if len(held) == 0 || inst.SelfParam == nil || inst == sig {
+		if len(held) == 0 || inst.SelfParam == nil || !freshened {
 			continue
 		}
 		self, ok := inst.SelfParam.Type.(*soltype.RefType)

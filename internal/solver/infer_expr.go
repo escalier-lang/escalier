@@ -189,7 +189,7 @@ func astKind(n any) string {
 // which generalization turns into a quantifier or coalesces to unknown/never at
 // render time.
 func (c *checker) inferFuncExpr(scope *Scope, lvl int, e *ast.FuncExpr) soltype.Type {
-	t := c.inferFunc(scope, lvl, e.FuncSig, e.Body, e, true)
+	t := c.inferFunc(scope, lvl, e.FuncSig, e.Body, e, true, false)
 	c.recordType(e, t)
 	// The closure reads or writes what it captures from the body it is written in.
 	c.recordCaptureLoans(scope, e)
@@ -206,7 +206,7 @@ func (c *checker) inferFuncExpr(scope *Scope, lvl int, e *ast.FuncExpr) soltype.
 // type. A bodyless (declare/ambient) function adopts its return annotation
 // without constraining anything. node supplies the span stamped onto a
 // return-annotation constraint failure.
-func (c *checker) inferFunc(scope *Scope, lvl int, sig ast.FuncSig, body *ast.Block, node ast.Node, allowTypeParams bool) *soltype.FuncType {
+func (c *checker) inferFunc(scope *Scope, lvl int, sig ast.FuncSig, body *ast.Block, node ast.Node, allowTypeParams, inClass bool) *soltype.FuncType {
 	// Give this function its own named-lifetime scope so a `&'a` in its signature
 	// resolves consistently across its params and return, without sharing the name
 	// with an enclosing or sibling function. Restored on exit so a nested function
@@ -255,6 +255,11 @@ func (c *checker) inferFunc(scope *Scope, lvl int, sig ast.FuncSig, body *ast.Bl
 		} else {
 			c.reportUnsupportedFeature(node, "TypeParam")
 		}
+	}
+	// A lifetime binder is reported in the same positions, since a getter or setter has no
+	// call site to instantiate one from and a constructor's lifetimes are the class's.
+	if !allowTypeParams && len(sig.LifetimeParams) > 0 {
+		c.reportUnsupportedFeature(node, "LifetimeParam")
 	}
 	fnScope := declScope.Child()
 	// An instance member binds `self` in its own scope and carries the receiver as its
@@ -643,7 +648,15 @@ func (c *checker) inferFunc(scope *Scope, lvl int, sig ast.FuncSig, body *ast.Bl
 	// inexact — it tolerates extra args when used as a callback (#677 §4.1), accept
 	// [required, ∞). Note exactness governs callback subtyping, not direct calls: an
 	// inexact value still rejects extras at a visible call site (the inferCall lint).
-	ft := &soltype.FuncType{SelfParam: selfParam, Params: params, Ret: ret, Throws: throws, Inexact: sig.Inexact, TypeParams: typeParams}
+	// A signature in a class body binds its own `<'a>` list on itself, so the class renders
+	// `peek<'a>(&'a self) -> &'a {x: number}` with the lifetime on the method rather than
+	// quantified over the whole value. A top-level function's lifetimes stay free in its
+	// scheme, whose quantifier prefix is the function's own.
+	var lifetimeParams []*soltype.LifetimeParam
+	if inClass && allowTypeParams {
+		lifetimeParams = c.signatureLifetimeParams(lvl, sig.LifetimeParams)
+	}
+	ft := &soltype.FuncType{SelfParam: selfParam, Params: params, Ret: ret, Throws: throws, Inexact: sig.Inexact, TypeParams: typeParams, LifetimeParams: lifetimeParams}
 	// Record the function's own type against its node so a function flowing into a
 	// non-function requirement blames the function, and FuncArityMismatchError can
 	// carry a "defined here" related span. (For a named callee this raw FuncType is
@@ -1591,8 +1604,14 @@ func (c *checker) inferCallWithArgTypes(scope *Scope, lvl int, e *ast.CallExpr, 
 	}
 	// Instantiate a generic callee so each call binds its type parameters independently. A
 	// rank-2 callback param is an unfreshened MonoScheme, so this keeps its `T` per-call.
-	if ft, ok := callee.(*soltype.FuncType); ok && len(ft.TypeParams) > 0 {
-		callee = c.ctx.instantiateFuncBinder(ft, lvl)
+	if ft, ok := callee.(*soltype.FuncType); ok {
+		if len(ft.TypeParams) > 0 {
+			callee = c.ctx.instantiateFuncBinder(ft, lvl)
+		} else {
+			// A lifetime-only binder is dropped the same way. Its lifetimes were freshened
+			// when the callee's scheme was instantiated, so the call reads them as they are.
+			callee = withoutLifetimeBinder(ft)
+		}
 	}
 	// Resolve the callee to the positional shapes the argument and arity rules read. This is the
 	// same callCandidates the per-arm trial in resolveOverload reads, so a rest slot means the
@@ -1613,6 +1632,8 @@ func (c *checker) inferCallWithArgTypes(scope *Scope, lvl int, e *ast.CallExpr, 
 		if _, isClassValue := c.classValueCarrier(callee); isClassValue {
 			callee = fn
 		}
+	} else if resolved {
+		fn = withoutLifetimeBinder(fn)
 	}
 	if resolved {
 		cands := c.ctx.callCandidates(fn, newSeenPairs())
