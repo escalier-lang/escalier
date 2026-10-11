@@ -2751,6 +2751,10 @@ func (c *checker) inferTuple(scope *Scope, lvl int, e *ast.TupleExpr) soltype.Ty
 	elems := make([]soltype.Type, 0, len(e.Elems))
 	inexact := false
 	unbounded := false
+	// misplaced holds each inexact tuple spread that is not the last element. A tuple
+	// result has no position for the elements after it, so each is an error there. An
+	// Array result has no positions at all, so it takes them as ordinary elements.
+	var misplaced []*InexactTupleSpreadError
 	for i, el := range e.Elems {
 		spread, ok := el.(*ast.ArraySpreadExpr)
 		if !ok {
@@ -2763,7 +2767,7 @@ func (c *checker) inferTuple(scope *Scope, lvl int, e *ast.TupleExpr) soltype.Ty
 		switch op := c.inferExpr(scope, lvl, spread.Value).(type) {
 		case *soltype.TupleType:
 			if op.Inexact && i != len(e.Elems)-1 {
-				c.report(&InexactTupleSpreadError{Spread: spread, Operand: op})
+				misplaced = append(misplaced, &InexactTupleSpreadError{Spread: spread, Operand: op})
 				continue
 			}
 			elems = append(elems, op.Elems...)
@@ -2789,7 +2793,20 @@ func (c *checker) inferTuple(scope *Scope, lvl int, e *ast.TupleExpr) soltype.Ty
 	}
 	var t soltype.Type = &soltype.TupleType{Elems: elems, Inexact: inexact}
 	if unbounded {
+		for _, m := range misplaced {
+			elems = append(elems, m.Operand.Elems...)
+			c.consumeIntoLiteral(m.Spread.Value, m.Operand, stmtRef, hasStmtRef)
+		}
+		// An inexact tuple's open tail holds values of any type, so an Array holding
+		// it holds `unknown`, the element type syncElemType gives such a tuple.
+		if inexact || len(misplaced) > 0 {
+			elems = append(elems, &soltype.UnknownType{})
+		}
 		t = c.ctx.arrayOf(newUnion(c.ctx, elems))
+	} else {
+		for _, m := range misplaced {
+			c.report(m)
+		}
 	}
 	c.recordType(e, t)
 	c.recordProv(t, e, TupleElem)

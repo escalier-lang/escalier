@@ -513,6 +513,26 @@ func TestIterationAgainstStdlib(t *testing.T) {
 			`,
 			want: map[string]string{"all": "fn () -> Array<1 | 2>"},
 		},
+		{
+			name: "InexactTupleTailWidensTheArray",
+			src:  `fn f(xs: Array<number>, t: [string, ...]) { return [...xs, ...t] }`,
+			want: map[string]string{"f": "fn (xs: Array<number>, t: [string, ...]) -> Array<unknown>"},
+		},
+		{
+			name: "InexactTupleBeforeAnIterableSpread",
+			src:  `fn f(xs: Array<number>, t: [string, ...]) { return [...t, ...xs] }`,
+			want: map[string]string{"f": "fn (xs: Array<number>, t: [string, ...]) -> Array<unknown>"},
+		},
+		{
+			name: "GeneratorWithOneTypeArgument",
+			src: `
+				gen fn count() {
+					yield 1
+				}
+				val g: Generator<number> = count()
+			`,
+			want: map[string]string{"g": "Generator<number, unknown, unknown>"},
+		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {

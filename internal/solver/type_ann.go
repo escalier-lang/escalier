@@ -100,16 +100,21 @@ func (c *checker) resolveTypeAnnType(scope *Scope, ta ast.TypeAnn, lvl int) (sol
 		// `async gen fn`. The prelude carries each as an opaque placeholder rather than a
 		// class, so a reference reaches here once no user binding shadows it, and a
 		// lifetime annotation is rejected rather than silently dropped. Y is what the body
-		// yields, R what it returns, and N what a `yield` evaluates to; all three are
-		// required. The optional fourth argument names what advancing the generator may
-		// raise, `Generator<Y, R, N, E>`. An unwritten one leaves Throws nil, the shorthand
-		// for a generator that cannot raise.
+		// yields, R what it returns, and N what a `yield` evaluates to. The optional fourth
+		// argument names what advancing the generator may raise, `Generator<Y, R, N, E>`.
+		// An unwritten one leaves Throws nil, the shorthand for a generator that cannot
+		// raise. An unwritten Y, R or N is `unknown`, the default the standard library's
+		// `interface Generator<T = unknown, TReturn = any, TNext = any>` declares, since
+		// `any` resolves to `unknown`.
 		if name := ast.QualIdentToString(ta.Name); (name == "Generator" || name == "AsyncGenerator") &&
-			(len(ta.TypeArgs) == 3 || len(ta.TypeArgs) == 4) {
+			len(ta.TypeArgs) <= 4 {
 			if len(ta.LifetimeArgs) > 0 || ta.Lifetime != nil {
 				return c.reportUnsupportedFeature(ta, "lifetime annotation on "+name), false
 			}
-			slots := make([]soltype.Type, len(ta.TypeArgs))
+			slots := make([]soltype.Type, max(len(ta.TypeArgs), 3))
+			for i := range slots {
+				slots[i] = &soltype.UnknownType{}
+			}
 			for i, arg := range ta.TypeArgs {
 				slot, ok := c.resolveTypeAnn(scope, arg, lvl)
 				if !ok {

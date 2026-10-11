@@ -97,6 +97,9 @@ func (c *Context) arrayOf(elem soltype.Type) soltype.Type {
 	if c.arrayClass == "" {
 		return &soltype.ErrorType{}
 	}
+	if def, declared := c.classDef(c.arrayClass); !declared || len(def.TypeParams) != arrayTypeParams {
+		return &soltype.ErrorType{}
+	}
 	return &soltype.ClassType{Name: c.arrayClass, TypeArgs: []soltype.Type{elem}}
 }
 
