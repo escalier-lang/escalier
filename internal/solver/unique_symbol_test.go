@@ -223,8 +223,6 @@ val o = {[C.key]: 1}`},
 // interface or object type. Anywhere else the annotation is reported and the value is typed
 // `symbol`.
 func TestUniqueSymbolPosition(t *testing.T) {
-	const elsewhere = "A `unique symbol` type is only allowed on a `val` declaration, a `static readonly` class field, or a `readonly` property."
-	const field = "A class field whose type is `unique symbol` must be `static` and `readonly`."
 	tests := []struct {
 		name     string
 		src      string
@@ -252,25 +250,25 @@ func TestUniqueSymbolPosition(t *testing.T) {
 			name:     "InstanceField",
 			src:      "declare class D { readonly key: unique symbol }\ndeclare val d: &D\nval k = d.key",
 			want:     map[string]string{"k": "symbol"},
-			wantErrs: []string{"1:33-1:46: " + field},
+			wantErrs: []string{"1:33-1:46: A class field whose type is `unique symbol` must be `static` and `readonly`."},
 		},
 		{
 			name:     "StaticFieldThatIsNotReadonly",
 			src:      "declare class D { static key: unique symbol }\nval k = D.key",
 			want:     map[string]string{"k": "symbol"},
-			wantErrs: []string{"1:31-1:44: " + field},
+			wantErrs: []string{"1:31-1:44: A class field whose type is `unique symbol` must be `static` and `readonly`."},
 		},
 		{
 			name:     "Parameter",
 			src:      "fn f(s: unique symbol) { return s }",
 			want:     map[string]string{"f": "fn (s: symbol) -> symbol"},
-			wantErrs: []string{"1:9-1:22: " + elsewhere},
+			wantErrs: []string{"1:9-1:22: A `unique symbol` type is only allowed on a `val` declaration, a `static readonly` class field, or a `readonly` property."},
 		},
 		{
 			name:     "ReturnType",
 			src:      "declare fn f() -> unique symbol",
 			want:     map[string]string{"f": "fn () -> symbol"},
-			wantErrs: []string{"1:19-1:32: " + elsewhere},
+			wantErrs: []string{"1:19-1:32: A `unique symbol` type is only allowed on a `val` declaration, a `static readonly` class field, or a `readonly` property."},
 		},
 		{
 			name: "ReadonlyPropertyOfAnObjectType",
@@ -291,7 +289,7 @@ func TestUniqueSymbolPosition(t *testing.T) {
 		{
 			name:     "TypeAlias",
 			src:      "type S = unique symbol",
-			wantErrs: []string{"1:10-1:23: " + elsewhere},
+			wantErrs: []string{"1:10-1:23: A `unique symbol` type is only allowed on a `val` declaration, a `static readonly` class field, or a `readonly` property."},
 		},
 	}
 	for _, tt := range tests {
