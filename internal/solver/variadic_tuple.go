@@ -160,8 +160,12 @@ func (c *Context) variadicArray(t soltype.Type) (soltype.Type, bool) {
 // A super of fixed length takes only a sub of that same fixed length, which the caller's
 // exact-tuple rule decides, so here it rejects any variadic sub. A sub with a middle of its
 // own has an unknown length, so its prefix and suffix must each cover super's, since its
-// middle may be empty. Under a mutable view every matched pair is checked in both
-// directions, the same invariance the exact-tuple rule applies.
+// middle may be empty.
+//
+// Under a mutable view the two shapes must agree: sub needs a middle and a prefix and suffix
+// of super's lengths. A write through super may push to its middle or empty it, which a sub
+// of fixed length or with a longer prefix or suffix cannot hold. Every matched pair is then
+// checked in both directions, the same invariance the exact-tuple rule applies.
 func (c *Context) constrainVariadicTuple(sub, super *soltype.TupleType, seen *seenPairs, mutCtx bool) ([]SolverError, bool) {
 	subShape, subOK := c.shapeOf(sub)
 	supShape, supOK := c.shapeOf(super)
@@ -170,6 +174,10 @@ func (c *Context) constrainVariadicTuple(sub, super *soltype.TupleType, seen *se
 	}
 	mismatch := []SolverError{&CannotConstrainError{Sub: sub, Super: super}}
 	if supShape.rest == nil {
+		return mismatch, true
+	}
+	if mutCtx && (subShape.rest == nil ||
+		len(subShape.prefix) != len(supShape.prefix) || len(subShape.suffix) != len(supShape.suffix)) {
 		return mismatch, true
 	}
 	if subShape.rest == nil {
