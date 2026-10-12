@@ -118,7 +118,8 @@ type ExtractorTest struct {
 // The tag comes from what the surface wrote rather than from a pattern's shape, so all
 // three refutable forms produce it. The `match` arm `x: number => x` narrows exactly as
 // `if val x: number = u` does. An annotation on a pattern's nested leaf, the `string` of
-// `[a: string, b]`, mints no test. It asserts against the value that leaf binds.
+// `[a: string, b]`, tests the projection that leaf binds, so the arm matches only a tuple
+// whose first element is a string. The identifier a rest binds tests nothing.
 type AnnTest struct{ Ann ast.TypeAnn }
 
 // String renders the tag test.

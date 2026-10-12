@@ -1689,6 +1689,15 @@ func (c *Context) constrain(sub, super soltype.Type, seen *seenPairs, mutCtx boo
 				superProp := soltype.AsProperty(superElem) // every remaining elem is a property
 				subProp, ok := sub.Prop(superProp.Name)
 				if !ok {
+					// A getter answers a read of the name it declares, so it can fill the
+					// property requirement in place of a field.
+					member, _ := sub.ReadMember(superProp.Name)
+					if g, isGetter := member.(*soltype.GetterElem); isGetter && getterReadsAsProperty(g) {
+						errs = append(errs, c.constrainGetterIntoProp(g, sub, superProp, seen, mutCtx)...)
+						continue
+					}
+				}
+				if !ok {
 					// A field read of a method yields the method's signature without its
 					// receiver, the value a direct `p.m` read yields. A receiver solved after
 					// the read takes this path. In `apply(fn (n) { return n.toFixed(2) })`,
@@ -2761,6 +2770,47 @@ func (c *Context) constrainObjMember(superElem soltype.ObjTypeElem, sub, sup *so
 		}
 	}
 	return []SolverError{&CannotConstrainError{Sub: sub, Super: sup}}
+}
+
+// constrainGetterIntoProp checks the sub's getter g against the property requirement prop,
+// which names the same member. g must satisfy getterReadsAsProperty. A read of prop runs the
+// getter, so the getter's type flows into prop's type.
+//
+// Inside a mutable wrapper, a writable prop is also written through. The sub's setter for the
+// name then takes prop's type. A sub with no setter, or one whose setter raises, reports
+// ReadonlyFieldSubtypeError the way a readonly field does, since a property write raises
+// nothing.
+func (c *Context) constrainGetterIntoProp(
+	g *soltype.GetterElem, sub *soltype.ObjectType, prop *soltype.PropertyElem, seen *seenPairs, mutCtx bool,
+) []SolverError {
+	errs := c.constrain(g.Type, prop.Type, seen, mutCtx)
+	if !mutCtx || prop.Readonly {
+		return errs
+	}
+	setter, _ := sub.WriteMember(prop.Name)
+	s, isSetter := setter.(*soltype.SetterElem)
+	if !isSetter {
+		return append(errs, &ReadonlyFieldSubtypeError{Field: prop.Name})
+	}
+	if _, never := s.ThrowsOrNever().(*soltype.NeverType); !never {
+		return append(errs, &ReadonlyFieldSubtypeError{Field: prop.Name})
+	}
+	return append(errs, c.constrain(prop.Type, s.Param, seen, mutCtx)...)
+}
+
+// getterReadsAsProperty reports whether a read of g can stand in for a property read. A
+// property read holds no receiver to borrow mutably or consume, so g must declare no receiver
+// or take it as an immutable borrow, as `get x(&self)` does. A property read also raises
+// nothing, so g must raise nothing either.
+func getterReadsAsProperty(g *soltype.GetterElem) bool {
+	if _, never := g.ThrowsOrNever().(*soltype.NeverType); !never {
+		return false
+	}
+	if g.SelfParam == nil {
+		return true
+	}
+	ref, isRef := g.SelfParam.Type.(*soltype.RefType)
+	return isRef && !ref.Mut
 }
 
 // methodReadType returns the value a read of a method member yields. A single signature reads

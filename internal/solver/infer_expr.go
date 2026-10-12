@@ -4470,6 +4470,23 @@ func (c *checker) bindRefutable(
 // admitsPartOf answers only the first job, so it gates the constraint below and never the
 // type the name takes.
 func (c *checker) bindNarrowedIdent(scope *Scope, lvl int, ip *ast.IdentPat, ann ast.TypeAnn, scrutinee soltype.Type) soltype.Type {
+	narrowed := c.narrowToAnn(scope, lvl, ip, ann, scrutinee)
+	binding := ValueBinding{Schemes: []TypeScheme{monoScheme(narrowed)}}
+	// Carry the rename-assigned VarID onto the binding so a later closure capture or
+	// alias-set check resolves this name, matching the ordinary body-level decl path.
+	if ip.VarID > 0 {
+		binding.VarID = ip.VarID
+	}
+	scope.defineValue(ip.Name, binding)
+	c.recordType(ip, narrowed)
+	return narrowed
+}
+
+// narrowToAnn returns the type a value of scrutinee has once it passed the narrowing
+// annotation ann, which is the annotation's own type. It reports through node when ann admits
+// nothing scrutinee holds, since such a test can never pass. An unsupported annotation is
+// reported once and yields scrutinee unchanged.
+func (c *checker) narrowToAnn(scope *Scope, lvl int, node ast.Node, ann ast.TypeAnn, scrutinee soltype.Type) soltype.Type {
 	narrowed, resolved := c.resolveTypeAnn(scope, ann, lvl)
 	switch {
 	case !resolved:
@@ -4486,16 +4503,8 @@ func (c *checker) bindNarrowedIdent(scope *Scope, lvl int, ip *ast.IdentPat, ann
 		// narrower than a member, the `1` of `if val x: 1 = u` over a `number | string`, so
 		// the union-super exists rule decides. A `number` over a `string` fails it and is
 		// reported here.
-		c.constrain(ip, narrowed, scrutinee)
+		c.constrain(node, narrowed, scrutinee)
 	}
-	binding := ValueBinding{Schemes: []TypeScheme{monoScheme(narrowed)}}
-	// Carry the rename-assigned VarID onto the binding so a later closure capture or
-	// alias-set check resolves this name, matching the ordinary body-level decl path.
-	if ip.VarID > 0 {
-		binding.VarID = ip.VarID
-	}
-	scope.defineValue(ip.Name, binding)
-	c.recordType(ip, narrowed)
 	return narrowed
 }
 
@@ -4829,7 +4838,7 @@ func (c *checker) inferMatchArms(
 	var bodies []soltype.Type
 	for _, arm := range arms {
 		armScope := scope.Child()
-		armScrut := narrowArmScrutinee(shape, scrutinee, arm.Pattern)
+		armScrut := c.ctx.narrowArmScrutinee(shape, scrutinee, arm.Pattern)
 		// A top-level annotation narrows the arm rather than asserting against what it binds,
 		// so it goes through bindRefutable, the same helper the walk's live arms use. Binding
 		// it as an ordinary pattern would assert the annotation on the whole scrutinee and
@@ -5031,7 +5040,7 @@ func unionParts(t soltype.Type) []soltype.Type {
 // object or tuple pattern's shape, which names no type and so has no entry in handled.
 func (c *checker) memberCaught(member, handled soltype.Type, arms []*ast.MatchCase) bool {
 	return c.memberSubtracted(member, handled) ||
-		structuralMemberCovered(member, arms)
+		c.ctx.structuralMemberCovered(member, arms)
 }
 
 // armsCatchType returns the type the unguarded catch arms catch, as one union. It is the
@@ -5141,12 +5150,12 @@ func typeVarsIn(t soltype.Type) []*soltype.TypeVarType {
 // an object member when the member carries every field the pattern names. A tuple pattern
 // covers a tuple member when their arities match. In both cases every sub-pattern must be
 // irrefutable, so a nested literal such as `{x: 1}` or `[a, 2]` does not cover.
-func structuralMemberCovered(member soltype.Type, arms []*ast.MatchCase) bool {
+func (c *Context) structuralMemberCovered(member soltype.Type, arms []*ast.MatchCase) bool {
 	for _, arm := range arms {
 		if arm.Guard != nil {
 			continue
 		}
-		if patternMatchesMemberShape(arm.Pattern, member) && irrefutablePat(arm.Pattern) {
+		if c.patternMatchesMemberShape(arm.Pattern, member) && irrefutablePat(arm.Pattern) {
 			return true
 		}
 	}
@@ -5159,10 +5168,10 @@ func structuralMemberCovered(member soltype.Type, arms []*ast.MatchCase) bool {
 // its fixed arity, or of at least that arity when the pattern ends in `...rest`. This is a
 // shape test only. Refutability of the sub-patterns is checked separately by the caller
 // that needs it. Every non-structural pattern returns false.
-func patternMatchesMemberShape(pat ast.Pat, member soltype.Type) bool {
+func (c *Context) patternMatchesMemberShape(pat ast.Pat, member soltype.Type) bool {
 	switch p := pat.(type) {
 	case *ast.ObjectPat:
-		return objectMemberHasKeys(member, objectPatFieldNames(p))
+		return c.objectMemberHasKeys(member, objectPatFieldNames(p))
 	case *ast.TuplePat:
 		arity, hasRest := tuplePatArity(p)
 		return tupleMemberFitsArity(member, arity, hasRest)
@@ -5175,17 +5184,42 @@ func patternMatchesMemberShape(pat ast.Pat, member soltype.Type) bool {
 // names, which is what lets an object shape destructure that member. It is the shape rule
 // itself, shared by a written object pattern and the UCS IR's object test so the two cannot
 // disagree about which members a branch narrows to.
-func objectMemberHasKeys(member soltype.Type, names []string) bool {
-	obj, ok := soltype.CarrierOf(member).(*soltype.ObjectType)
+func (c *Context) objectMemberHasKeys(member soltype.Type, names []string) bool {
+	carrier := soltype.CarrierOf(member)
+	// A class instance carries the members its projected body lists, inherited ones
+	// included, so `{kind}` destructures an instance of `class Event { kind: string }`.
+	if ct, isClass := carrier.(*soltype.ClassType); isClass {
+		body, ok := c.projectClassBody(ct)
+		if !ok {
+			return false
+		}
+		carrier = body
+	}
+	obj, ok := carrier.(*soltype.ObjectType)
 	if !ok {
 		return false
 	}
 	for _, name := range names {
-		if _, found := obj.Prop(name); !found {
+		if !readsAsProperty(obj, name) {
 			return false
 		}
 	}
 	return true
+}
+
+// readsAsProperty reports whether obj answers a read of name the way a property does. A
+// property does, and so does a getter that getterReadsAsProperty accepts, since constrain lets
+// such a getter fill a property requirement.
+func readsAsProperty(obj *soltype.ObjectType, name string) bool {
+	if _, found := obj.Prop(name); found {
+		return true
+	}
+	member, found := obj.ReadMember(name)
+	if !found {
+		return false
+	}
+	g, isGetter := member.(*soltype.GetterElem)
+	return isGetter && getterReadsAsProperty(g)
 }
 
 // tupleMemberFitsArity reports whether a union member is a tuple a shape of the given fixed
@@ -5260,7 +5294,7 @@ func tuplePatArity(p *ast.TuplePat) (fixed int, hasRest bool) {
 // members, and what it returns still names them as borrows. bindPattern peels the result,
 // through CarrierOf when narrowing kept one member and through peelBorrowUnion when it kept
 // several.
-func narrowArmScrutinee(shape, scrutinee soltype.Type, pat ast.Pat) soltype.Type {
+func (c *Context) narrowArmScrutinee(shape, scrutinee soltype.Type, pat ast.Pat) soltype.Type {
 	switch pat.(type) {
 	case *ast.ObjectPat, *ast.TuplePat:
 	default:
@@ -5268,7 +5302,7 @@ func narrowArmScrutinee(shape, scrutinee soltype.Type, pat ast.Pat) soltype.Type
 	}
 	inner, mut, lt := soltype.UnwrapRef(shape)
 	narrowed, ok := narrowUnionMembers(inner, func(m soltype.Type) bool {
-		return patternMatchesMemberShape(pat, m)
+		return c.patternMatchesMemberShape(pat, m)
 	})
 	if !ok {
 		return scrutinee
@@ -5348,21 +5382,25 @@ func structuralInexact(t soltype.Type) (inexact bool, ok bool) {
 	}
 }
 
-// irrefutablePat reports whether a pattern matches every value of a compatible
-// type, so it can never fail at runtime. A wildcard or identifier binds
-// unconditionally. An object or tuple pattern is irrefutable only when all of its
-// sub-patterns are. A `...rest` element binds whatever the pattern's fixed parts leave
-// behind. That leftover exists for every value of a compatible type, so a rest is
-// irrefutable exactly when its own sub-pattern is. Whether the pattern's fixed arity
+// irrefutablePat reports whether a pattern nested in an arm matches every value of a
+// compatible type, so it can never fail at runtime. A wildcard binds unconditionally, and so
+// does an identifier with no annotation. An annotated identifier or shorthand tests its
+// annotation, so `{code: c: number}` fails for a string `code`. An object or tuple pattern is
+// irrefutable only when all of its sub-patterns are. A `...rest` element binds whatever the
+// pattern's fixed parts leave behind. That leftover exists for every value of a compatible
+// type, so a rest is irrefutable exactly when its own sub-pattern is, and an identifier there
+// is irrefutable even when annotated. Whether the pattern's fixed arity
 // fits the value at all is a separate question, answered by patternMatchesMemberShape.
 // A literal pattern can fail, and the constructor patterns deferred to M5 are refutable,
 // so both return false.
 func irrefutablePat(p ast.Pat) bool {
 	switch p := p.(type) {
-	case *ast.WildcardPat, *ast.IdentPat:
+	case *ast.WildcardPat:
 		return true
+	case *ast.IdentPat:
+		return p.TypeAnn == nil
 	case *ast.RestPat:
-		return irrefutablePat(p.Pattern)
+		return irrefutableRest(p.Pattern)
 	case *ast.TuplePat:
 		for _, e := range p.Elems {
 			if !irrefutablePat(e) {
@@ -5374,13 +5412,15 @@ func irrefutablePat(p ast.Pat) bool {
 		for _, elem := range p.Elems {
 			switch e := elem.(type) {
 			case *ast.ObjShorthandPat:
-				// A shorthand binds an identifier, which always matches.
+				if e.TypeAnn != nil {
+					return false
+				}
 			case *ast.ObjKeyValuePat:
 				if !irrefutablePat(e.Value) {
 					return false
 				}
 			case *ast.ObjRestPat:
-				if !irrefutablePat(e.Pattern) {
+				if !irrefutableRest(e.Pattern) {
 					return false
 				}
 			default:
@@ -5391,6 +5431,16 @@ func irrefutablePat(p ast.Pat) bool {
 	default:
 		return false
 	}
+}
+
+// irrefutableRest is irrefutablePat for the sub-pattern of a tuple or object rest. An
+// identifier there binds the remainder whatever its annotation says, since a rest tests
+// nothing at runtime.
+func irrefutableRest(p ast.Pat) bool {
+	if _, isIdent := p.(*ast.IdentPat); isIdent {
+		return true
+	}
+	return irrefutablePat(p)
 }
 
 // blockDiverges reports whether a block always transfers control out before

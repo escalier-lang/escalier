@@ -177,89 +177,98 @@ func TestInferObjectRestMembersStayUsable(t *testing.T) {
 	})
 }
 
-// KNOWN GAP. Naming an accessor as a pattern FIELD fails, on an object type and on a class
-// instance alike, because propReq mints a plain property requirement and an object whose
-// member is a getter or setter does not satisfy one. Member access has no such trouble:
-// `b.doubled` reads `number` off the same class. Destructuring and member access disagree
-// here, and the pattern path is the one that is wrong.
+// An object pattern reads a getter the way member access does. A getter that borrows its
+// receiver immutably fills the plain property requirement propReq mints, so `{y}` binds the
+// getter's type. A setter-only name has nothing to read, so naming it as a field is still
+// reported missing.
 //
-// The rest itself is unaffected, which is why these live alongside the passing cases above.
-// The named key is excluded from the leftover whether or not its own binding checked, so
-// the recovery does not additionally hand the field to the rest.
-func TestInferObjectPatternAccessorFieldGap(t *testing.T) {
-	t.Run("a getter field on an object type is reported missing", func(t *testing.T) {
-		_, _, errs := inferSource(t, `
-			fn f(p: {x: number, get y(&self) -> string}) {
-				val {y} = p
-				return y
+// The rest is unaffected either way. The named key is excluded from the leftover whether or
+// not its own binding checked, so the recovery does not additionally hand the field to the
+// rest.
+func TestInferObjectPatternAccessorField(t *testing.T) {
+	tests := []struct {
+		name     string
+		src      string
+		want     string
+		wantErrs []string
+	}{
+		{
+			name: "a getter field on an object type binds",
+			src: `
+				fn f(p: {x: number, get y(&self) -> string}) {
+					val {y} = p
+					return y
+				}
+			`,
+			want: "fn (p: {x: number, get y() -> string}) -> string",
+		},
+		{
+			name: "member access on the same shape succeeds",
+			src: `
+				class Box {
+					v: number,
+					get doubled(&self) -> number { return self.v },
+				}
+				fn f(b: Box) { return b.doubled }
+			`,
+			want: "fn (b: Box) -> number",
+		},
+		{
+			name: "a getter field on a class instance is withheld from the rest",
+			src: `
+				class Box {
+					v: number,
+					get doubled(&self) -> number { return self.v },
+				}
+				fn f(b: Box) {
+					val {doubled, ...rest} = b
+					return rest
+				}
+			`,
+			want: "fn (b: Box) -> {v: number, ...}",
+		},
+		{
+			name: "a setter-only field on a class instance is reported missing",
+			src: `
+				class Box {
+					v: number,
+					set value(&mut self, x: number) { self.v = x },
+				}
+				fn f(b: Box) {
+					val {value, ...rest} = b
+					return rest
+				}
+			`,
+			want:     "fn (b: Box) -> {v: number, ...}",
+			wantErrs: []string{"7:11-7:16: object is missing property: value"},
+		},
+		{
+			name: "an accessor pair named as a field binds its getter",
+			src: `
+				class Box {
+					v: number,
+					get value(&self) -> number { return self.v },
+					set value(&mut self, x: number) { self.v = x },
+				}
+				fn f(b: Box) {
+					val {value, ...rest} = b
+					return [value, rest]
+				}
+			`,
+			want: "fn (b: Box) -> [number, {v: number, ...}]",
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			values, _, errs := inferSource(t, tt.src)
+			if tt.wantErrs == nil {
+				require.Empty(t, errs)
+			} else {
+				require.Equal(t, tt.wantErrs, messagesWithSpan(t, errs))
 			}
-		`)
-		require.Len(t, errs, 1)
-		require.Equal(t, "2:12-2:47: object is missing property: y", msgWithSpan(t, errs[0]))
-	})
-
-	t.Run("member access on the same shape succeeds", func(t *testing.T) {
-		values, _, errs := inferSource(t, `
-			class Box {
-				v: number,
-				get doubled(&self) -> number { return self.v },
-			}
-			fn f(b: Box) { return b.doubled }
-		`)
-		require.Empty(t, errs)
-		require.Equal(t, "fn (b: Box) -> number", values["f"])
-	})
-
-	t.Run("a reported accessor field is still withheld from the rest", func(t *testing.T) {
-		values, _, errs := inferSource(t, `
-			class Box {
-				v: number,
-				get doubled(&self) -> number { return self.v },
-			}
-			fn f(b: Box) {
-				val {doubled, ...rest} = b
-				return rest
-			}
-		`)
-		require.Len(t, errs, 1)
-		require.Equal(t, "7:10-7:17: object is missing property: doubled", msgWithSpan(t, errs[0]))
-		require.Equal(t, "fn (b: Box) -> {v: number, ...}", values["f"])
-	})
-
-	t.Run("a setter-only field on a class instance is reported missing", func(t *testing.T) {
-		values, _, errs := inferSource(t, `
-			class Box {
-				v: number,
-				set value(&mut self, x: number) { self.v = x },
-			}
-			fn f(b: Box) {
-				val {value, ...rest} = b
-				return rest
-			}
-		`)
-		require.Len(t, errs, 1)
-		require.Equal(t, "7:10-7:15: object is missing property: value", msgWithSpan(t, errs[0]))
-		require.Equal(t, "fn (b: Box) -> {v: number, ...}", values["f"])
-	})
-
-	t.Run("an accessor pair named as a field is reported missing", func(t *testing.T) {
-		// A readable name is still not a property, so naming the pair fails the same way
-		// naming a setter-only name does.
-		values, _, errs := inferSource(t, `
-			class Box {
-				v: number,
-				get value(&self) -> number { return self.v },
-				set value(&mut self, x: number) { self.v = x },
-			}
-			fn f(b: Box) {
-				val {value, ...rest} = b
-				return rest
-			}
-		`)
-		require.Len(t, errs, 1)
-		require.Equal(t, "8:10-8:15: object is missing property: value", msgWithSpan(t, errs[0]))
-		require.Equal(t, "fn (b: Box) -> {v: number, ...}", values["f"])
-	})
+			require.Equal(t, tt.want, values["f"])
+		})
+	}
 }
 
 // A class instance grounds to its projected body before the leftover is read, so an object

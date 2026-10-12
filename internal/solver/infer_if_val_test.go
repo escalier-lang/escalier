@@ -926,16 +926,16 @@ func TestInferAnnotationWiderThanAMemberBindsTheAnnotation(t *testing.T) {
 	}
 }
 
-// A type annotation on a pattern leaf asserts rather than narrows, which is the opposite of
-// what the same syntax does on a whole binding. A top-level `if val x: number = u` picks the
-// member of `u` the annotation names, so a `u` that is a `string` takes the `else`. A leaf's
-// annotation names no tag the branch tests: the leaf binds at the annotated type and the
-// projection has to fit it, so `[a: string, …]` over `[number, …]` is rejected outright
-// rather than sending control to the `else`.
+// A type annotation on a pattern leaf narrows the way the same syntax does on a whole
+// binding. A top-level `if val x: number = u` picks the member of `u` the annotation names,
+// so a `u` that is a `string` takes the `else`. A leaf's annotation tests the projection it
+// binds, so `[a: number]` over a `[number | string]` takes the `else` for a string. An
+// annotation that admits nothing the projection holds can never match, so
+// `[a: string, …]` over `[number, …]` is rejected.
 //
-// The three nested spellings each hang the annotation off a different node — a tuple
-// element and an object key-value's value are `IdentPat.TypeAnn`, an object shorthand is
-// `ObjShorthandPat.TypeAnn` written with `::` — and all three reach the same rule.
+// The three nested spellings each hang the annotation off a different node. A tuple element
+// and an object key-value's value are `IdentPat.TypeAnn`, and an object shorthand is
+// `ObjShorthandPat.TypeAnn` written with `::`. All three reach the same rule.
 func TestInferNestedLeafAnnotations(t *testing.T) {
 	tests := []struct {
 		name string
@@ -991,12 +991,11 @@ func TestInferNestedLeafAnnotations(t *testing.T) {
 			want: "fn (p: [5, string]) -> number",
 		},
 		{
-			// The element is a `number` and the annotation says `string`, so the projection
-			// does not fit. Control does not fall to the `else` the way a failed tag test
-			// would send it.
+			// The element is a `number` and the annotation says `string`, so the test can never
+			// pass.
 			name:     "if val tuple leaf annotation must fit",
 			src:      `fn f(p: [number, string]) { return if val [a: string, b: string] = p { [a, b] } else { ["", ""] } }`,
-			wantErrs: []string{"1:44-1:53: cannot constrain number <: string"},
+			wantErrs: []string{"1:47-1:53: cannot constrain string <: number"},
 		},
 		{
 			name: "val else tuple leaf annotation must fit",
@@ -1004,21 +1003,65 @@ func TestInferNestedLeafAnnotations(t *testing.T) {
 					val [a: string, b: string] = p else { return ["", ""] }
 					return [a, b]
 				}`,
-			wantErrs: []string{"2:11-2:20: cannot constrain number <: string"},
+			wantErrs: []string{"2:14-2:20: cannot constrain string <: number"},
 		},
 		{
 			name:     "if val object shorthand annotation must fit",
 			src:      `fn f(p: {a: number, b: string}) { return if val {a::string} = p { a } else { "" } }`,
-			wantErrs: []string{"1:50-1:59: cannot constrain number <: string"},
+			wantErrs: []string{"1:53-1:59: cannot constrain string <: number"},
 		},
 		{
 			name:     "if val object key-value annotation must fit",
 			src:      `fn f(p: {a: number, b: string}) { return if val {a: x: string} = p { x } else { "" } }`,
-			wantErrs: []string{"1:53-1:62: cannot constrain number <: string"},
+			wantErrs: []string{"1:56-1:62: cannot constrain string <: number"},
 		},
 		{
 			// The branch's own tag still narrows the scrutinee, so the leaf's annotation is
 			// checked against the member the object test picked rather than the whole union.
+			// The leaf's annotation picks one member of the element's union, so the name binds at
+			// that member and a string element takes the `else`.
+			name: "a tuple leaf annotation narrows its element",
+			src:  `fn f(p: [number | string]) { return if val [a: number] = p { a } else { 0 } }`,
+			want: "fn (p: [number | string]) -> number",
+		},
+		{
+			name: "an object shorthand annotation narrows its field",
+			src:  `fn f(p: {a: number | string}) { return if val {a::string} = p { a } else { "" } }`,
+			want: "fn (p: {a: number | string}) -> string",
+		},
+		{
+			// Arms whose leaf annotations together admit every value of the field cover the
+			// scrutinee, so the match needs no catch-all.
+			name: "match arms narrowing one field cover it",
+			src: `fn f(r: {value: string | number | boolean}) { return match r {
+					{value: a: string} => "string",
+					{value: b: number} => "number",
+					{value: c: boolean} => "boolean",
+				} }`,
+			want: `fn (r: {value: number | string | boolean}) -> "boolean" | "number" | "string"`,
+		},
+		{
+			name: "match arms narrowing part of a field do not cover it",
+			src: `fn f(r: {value: string | number}) { return match r {
+					{value: a: string} => "string",
+				} }`,
+			wantErrs: []string{"1:44-3:6: match is not exhaustive; `{value: number | string}` is matched only by a branch whose own pattern can fail, so add a branch that matches it irrefutably"},
+		},
+		{
+			// A rest tests nothing at runtime, so its annotation types the binding and the arm
+			// still matches every tuple of its arity.
+			name: "a rest annotation does not make the arm refutable",
+			src:  `fn f(t: [number, number]) { return match t { [a, ...rest: [number]] => rest } }`,
+			want: "fn (t: [number, number]) -> [number]",
+		},
+		{
+			// Coverage reads the field through the getter that answers it.
+			name: "match arms narrowing a getter cover it",
+			src: `class S { n: number, get area(&self) -> number | string { return self.n } }
+				fn f(s: S) { return match s { {area: a: number} => a, {area: b: string} => 0 } }`,
+			want: "fn (s: S) -> number",
+		},
+		{
 			name: "a leaf annotation reads the narrowed member",
 			src:  `fn f(p: {a: number} | {b: string}) { return if val {a: x: number} = p { x } else { 0 } }`,
 			want: "fn (p: {a: number} | {b: string}) -> number",

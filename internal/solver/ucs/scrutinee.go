@@ -49,6 +49,19 @@ func (s *Scrutinee) Project(step Step, origin Origin) *Scrutinee {
 // IsRoot reports whether s is a match target rather than a projection.
 func (s *Scrutinee) IsRoot() bool { return s.Parent == nil }
 
+// SamePath reports whether s and other name the same value: the same root reached by equal
+// steps. Two arms naming one path each project their own node, so pointer identity alone
+// tells their projections apart.
+func (s *Scrutinee) SamePath(other *Scrutinee) bool {
+	if s == other {
+		return true
+	}
+	if s == nil || other == nil || s.IsRoot() || other.IsRoot() {
+		return false
+	}
+	return s.Step.Equal(other.Step) && s.Parent.SamePath(other.Parent)
+}
+
 // Step is one segment of a projection path: how a sub-scrutinee is reached from the
 // scrutinee that encloses it.
 //
