@@ -829,8 +829,10 @@ func extractedValue(params []*soltype.FuncParam, i int) (soltype.Type, bool) {
 
 // extractedSuffix returns the type of the values params yields from position from on,
 // which is what a trailing rest in an extractor pattern binds, and false when from is past
-// the values it yields. It is a tuple of their types, or an `Array` of them when the values
-// do not end.
+// the values it yields. It is a tuple of their types. When the values do not end it is a
+// variadic tuple, which keeps the fixed values still ahead of the tail at their positions,
+// so `C(a, ...rest)` over a matcher returning `[number, string, ...Array<boolean>]` binds
+// `rest` as `[string, ...Array<boolean>]`.
 func (c *checker) extractedSuffix(params []*soltype.FuncParam, from int) (soltype.Type, bool) {
 	fixed, variadic := fixedValues(params)
 	if from > fixed && !variadic {
@@ -841,7 +843,7 @@ func (c *checker) extractedSuffix(params []*soltype.FuncParam, from int) (soltyp
 		elems = append(elems, params[i].Type)
 	}
 	if variadic {
-		return c.ctx.arrayOf(newUnion(c.ctx, append(elems, params[fixed].Type))), true
+		return c.ctx.variadicTuple(elems, params[fixed].Type, nil), true
 	}
 	return &soltype.TupleType{Elems: elems}, true
 }
