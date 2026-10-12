@@ -51,9 +51,6 @@ var (
 	causeIfValNullish = &solverSkipCause{
 		name: "an `if val` identifier or object pattern narrowing `null` and `undefined` out of its scrutinee",
 	}
-	causeScriptDecls = &solverSkipCause{
-		name: "a `type` or `declare fn` declaration at the top level of a script",
-	}
 	// `fixtures/pattern_matching` also narrows an arm by an annotated nested leaf, which
 	// is #1956 and surfaces once this cause clears.
 	causeStructuralClassPattern = &solverSkipCause{
@@ -90,7 +87,6 @@ var solverSkips = []solverSkip{
 	{"async_await", causeAmbientScope, "Unknown identifier: fetch"},
 
 	{"literals", causeRegexTypeAnn, "Unsupported: LitTypeAnn"},
-	{"template_literals", causeScriptDecls, "Declaration not allowed in function body: TypeDecl"},
 	{"if_val", causeIfValNullish, "cannot constrain null <: number"},
 
 	{"pattern_matching", causeStructuralClassPattern, "object is missing property: area"},

@@ -93,10 +93,10 @@ func (c *checker) inferStmt(scope *Scope, lvl int, s ast.Stmt) soltype.Type {
 		}
 		return t
 	case *ast.DeclStmt:
-		// A script (bin/) walks its top-level statements in source order, so a class or
-		// enum binds where it appears — used before its declaration it is an unknown
-		// identifier, unlike the module dep-graph path's out-of-order resolution. A real
-		// function body still rejects a local class or enum, so both are gated on the
+		// A script (bin/) walks its top-level statements in source order, so a class, enum,
+		// alias or `declare fn` binds where it appears — used before its declaration it is an
+		// unknown identifier, unlike the module dep-graph path's out-of-order resolution. A
+		// real function body still rejects each of them, so all four are gated on the
 		// script context (a funcCtx with a nil node; see InferScript). A script's top-level
 		// declarations live for the whole run, so the class registry's insert/overwrite
 		// invariant holds exactly as it does for a module's top-level decls.
@@ -113,6 +113,22 @@ func (c *checker) inferStmt(scope *Scope, lvl int, s ast.Stmt) soltype.Type {
 		case *ast.ClassDecl:
 			if c.inScript() {
 				c.bindScriptClass(scope, lvl, decl)
+				return &soltype.UndefinedType{}
+			}
+			c.report(&BodyDeclNotAllowedError{Decl: s.Decl})
+			return &soltype.UndefinedType{}
+		case *ast.TypeDecl:
+			if c.inScript() {
+				c.bindScriptAlias(scope, lvl, decl)
+				return &soltype.UndefinedType{}
+			}
+			c.report(&BodyDeclNotAllowedError{Decl: s.Decl})
+			return &soltype.UndefinedType{}
+		case *ast.FuncDecl:
+			// A script binds an ambient `declare fn` only. A `fn` with a body would need the
+			// capture and alias tracking a `val f = fn …` gets, which this path does not run.
+			if c.inScript() && decl.Declare() {
+				c.bindScriptFunc(scope, lvl, decl)
 				return &soltype.UndefinedType{}
 			}
 			c.report(&BodyDeclNotAllowedError{Decl: s.Decl})

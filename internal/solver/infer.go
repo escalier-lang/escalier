@@ -159,6 +159,11 @@ type checker struct {
 	// printers already strip it to `Array`.
 	pkgURI string
 
+	// scriptAliases holds each alias a script walk has bound, keyed by its registry name.
+	// bindScriptAlias reads it to report a second declaration of one name, which would
+	// otherwise replace the first's definition under every value already typed by it.
+	scriptAliases map[string]*ast.TypeDecl
+
 	// moduleScope is the scope of the module currently being walked, set for the
 	// length of the dep-graph walk and nil outside one. declTarget returns it, and
 	// class, enum, and alias registration write their type binding there. A
