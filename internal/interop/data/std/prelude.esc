@@ -932,29 +932,29 @@ export declare type NonNullable<T> = T & ~(undefined | null)
 /**
  * Obtain the parameters of a function type in a tuple
  */
-export declare type Parameters<T: fn (...args: Array<never>) -> unknown> = if T : fn (...args: infer P) -> unknown { P } else { never }
+export declare type Parameters<T: fn (...args: Array<_>) -> _> = if T : fn (...args: infer P) -> _ { P } else { never }
 
 /**
  * Obtain the parameters of a constructor function type in a tuple
  */
 export declare type ConstructorParameters<T: {
-    new (...args: Array<never>) -> unknown
+    new (...args: Array<_>) -> _
 }> = if T : {
-    new (...args: infer P) -> unknown
+    new (...args: infer P) -> _
 } { P } else { never }
 
 /**
  * Obtain the return type of a function type
  */
-export declare type ReturnType<T: fn (...args: Array<never>) -> unknown> = if T : fn (...args: Array<never>) -> infer R { R } else { unknown }
+export declare type ReturnType<T: fn (...args: Array<_>) -> _> = if T : fn (...args: Array<_>) -> infer R { R } else { unknown }
 
 /**
  * Obtain the return type of a constructor function type
  */
 export declare type InstanceType<T: {
-    new (...args: Array<never>) -> unknown
+    new (...args: Array<_>) -> _
 }> = if T : {
-    new (...args: Array<never>) -> infer R
+    new (...args: Array<_>) -> infer R
 } { R } else { unknown }
 
 /**
