@@ -209,7 +209,7 @@ func (e *typeEvaluator) reduceCond(t *soltype.CondType) soltype.Type {
 	// binder reaches the Check position only when an enclosing conditional left its Then branch
 	// unsubstituted. That position stands for a type no match has chosen yet, so the Check is not
 	// ground and the conditional stays symbolic.
-	if !condOperandGround(check) || containsInfer(check) || !condOperandGround(extends) {
+	if !e.ctx.condOperandGround(check) || containsInfer(check) || !e.ctx.condOperandGround(extends) {
 		// A distributive conditional that filters its own operand denotes a set difference, and a
 		// difference has an answer over an operand with no members to filter. See nativeDifference.
 		if diff, ok := e.nativeDifference(t, check, extends); ok {
@@ -459,8 +459,8 @@ func strLitKey(name string) soltype.Type {
 	return &soltype.LitType{Lit: &soltype.StrLit{Value: name}}
 }
 
-func condOperandGround(t soltype.Type) bool {
-	return !containsFreeVar(t) && !containsResidualOp(t)
+func (c *Context) condOperandGround(t soltype.Type) bool {
+	return !containsFreeVar(t) && !c.containsResidualOp(t)
 }
 
 // reduceTuple splices each `...P` spread element whose operand grounds to a concrete tuple into
@@ -828,7 +828,7 @@ func (e *typeEvaluator) expandMapped(t *soltype.MappedElem) (reduced *soltype.Ma
 		keys = keyofObjectNamed(src)
 		srcInexact = si
 	}
-	if !condOperandGround(keys) {
+	if !e.ctx.condOperandGround(keys) {
 		return reduced, nil, false, false
 	}
 	if soltype.UncountableKeys(keys) {
@@ -952,7 +952,7 @@ func (e *typeEvaluator) mappedFields(t *soltype.MappedElem, key soltype.Type, so
 	if t.Check != nil && t.Extends != nil {
 		check := e.reduce(substituteMappedKey(t.Check, t.Key, key))
 		extends := e.reduce(substituteMappedKey(t.Extends, t.Key, key))
-		if !condOperandGround(check) || !condOperandGround(extends) {
+		if !e.ctx.condOperandGround(check) || !e.ctx.condOperandGround(extends) {
 			return nil, false
 		}
 		if !e.ctx.condExtends(check, extends, e.seen) {
@@ -1576,7 +1576,7 @@ func (e *typeEvaluator) indexObject(obj *soltype.ObjectType, index soltype.Type,
 			// object and falls through to the missing-index-signature diagnostic below.
 			return &soltype.UnknownType{}
 		}
-		if condOperandGround(index) {
+		if e.ctx.condOperandGround(index) {
 			e.errs = append(e.errs, &NoIndexSignatureError{Object: obj, Index: index})
 			return &soltype.ErrorType{}
 		}
@@ -1603,7 +1603,7 @@ func (e *typeEvaluator) indexObject(obj *soltype.ObjectType, index soltype.Type,
 // `undefined` onto the value type, since the `?` every legal signature carries says the key may be
 // absent, so `{[K: string]?: number}` reads as `number | undefined`. An ungrounded key stays symbolic.
 func (e *typeEvaluator) indexSignatureRead(obj *soltype.ObjectType, index soltype.Type, inexact bool) soltype.Type {
-	if !condOperandGround(index) {
+	if !e.ctx.condOperandGround(index) {
 		return &soltype.IndexType{Target: obj, Index: index, Inexact: inexact}
 	}
 	idx, ok := e.ctx.indexSignatureFor(obj, index, e.seen)
@@ -1996,22 +1996,31 @@ func strLitType(name string) soltype.Type {
 }
 
 // containsResidualOp reports whether t holds any unreduced type-level operator node: a `keyof`, an
-// indexed access, a conditional, a mapped type, or a tuple spread. constrain consults it to decide
+// indexed access, a conditional, a mapped type, or a tuple spread. A spread of an `Array`, the
+// variadic tail of `[number, ...Array<string>]`, is not one. It never splices into fixed
+// positions, so it is the final form of its tuple rather than an operator waiting on its operand. constrain consults it to decide
 // whether a reduced operator fully grounded. A result with no residual is safe to recurse on. One
 // that still carries a `keyof`, a `T[K]`, a `{[K]: V for K in Keys}`, or a `[...T, x]` is not, since
 // re-reducing it would loop. Such a residual survives reduction when its operand is an unexpanded
 // type parameter, or an expanding alias the depth budget truncated.
-func containsResidualOp(t soltype.Type) bool {
-	f := &residualOpFinder{}
+func (c *Context) containsResidualOp(t soltype.Type) bool {
+	f := &residualOpFinder{ctx: c}
 	t.Accept(f, soltype.Positive)
 	return f.found
 }
 
 // residualOpFinder is the walking visitor behind containsResidualOp. It flags the first residual
-// operator it reaches and skips that node's children, since one occurrence is enough.
-type residualOpFinder struct{ found bool }
+// operator it reaches and skips that node's children, since one occurrence is enough. A variadic
+// tail is walked into rather than flagged.
+type residualOpFinder struct {
+	found bool
+	ctx   *Context
+}
 
 func (f *residualOpFinder) EnterType(t soltype.Type, pol soltype.Polarity) soltype.EnterResult {
+	if _, isTail := f.ctx.variadicTail(t); isTail {
+		return soltype.EnterResult{}
+	}
 	if isResidualOp(t) {
 		f.found = true
 		return soltype.EnterResult{SkipChildren: true}

@@ -709,13 +709,94 @@ func TestUtilityTypeRestParameterPatternMatchesAnyArity(t *testing.T) {
 			wantExpanded: "[]",
 		},
 		{
-			// A tuple element carries no optionality marker, so an optional parameter widens with
+			// A tuple element carries no optionality marker, so an optional parameter cuts the
+			// list at each length the function accepts. A passed optional parameter may still be
 			// `undefined`. TypeScript writes the same capture `[x: number, y?: string]`.
-			name:         "OptionalParameterWidens",
+			name:         "OptionalParameterGivesEachLength",
 			src:          `type Result = Parameters<fn (x: number, y?: string) -> boolean>`,
-			wantExpanded: "[number, string | undefined]",
+			wantExpanded: "[number] | [number, string | undefined]",
+		},
+		{
+			// A rest parameter gathers into the variadic tail of the capture.
+			name:         "RestParameterGathersAVariadicTail",
+			src:          `type Result = Parameters<fn (x: number, ...ys: Array<string>) -> boolean>`,
+			wantExpanded: "[number, ...Array<string>]",
+		},
+		{
+			name:         "OnlyARestParameter",
+			src:          `type Result = Parameters<fn (...ys: Array<string>) -> boolean>`,
+			wantExpanded: "Array<string>",
 		},
 	})
+}
+
+// TestStdlibFunctionUtilities covers the standard library's `Parameters`, `ReturnType`,
+// `ConstructorParameters` and `InstanceType`. Each row declares the utility's result and
+// asserts it fits want and that want fits it, so the two are the same type.
+func TestStdlibFunctionUtilities(t *testing.T) {
+	classes := `
+		class Point { x: number, y: number }
+		class Words {
+			head: number,
+			constructor(&mut self, head: number, ...tail: Array<string>) { self.head = head },
+		}
+		type First<T> = if T : [infer H, ...Array<unknown>] { H } else { never }
+	`
+	tests := []struct {
+		name    string
+		utility string
+		want    string
+	}{
+		{"ParametersOfFixedParams", "Parameters<fn (a: number, b: string) -> string>", "[number, string]"},
+		{"ParametersOfNoParams", "Parameters<fn () -> string>", "[]"},
+		{"ParametersOfARestParam", "Parameters<fn (a: number, ...rest: Array<string>) -> undefined>", "[number, ...Array<string>]"},
+		{"ParametersOfOnlyARestParam", "Parameters<fn (...rest: Array<string>) -> undefined>", "Array<string>"},
+		{"ParametersOfAnOptionalParam", "Parameters<fn (a: number, b?: string) -> undefined>", "[number] | [number, string | undefined]"},
+		// An inexact function ignores the values past its listed params, so they gather as an
+		// `unknown` tail.
+		{"ParametersOfAnInexactFunction", "Parameters<fn (a: number, ...) -> string>", "[number, ...Array<unknown>]"},
+		{"ParametersOfAnInexactOptionalParam", "Parameters<fn (a: number, b?: string, ...) -> string>", "[number] | [number, string | undefined, ...Array<unknown>]"},
+		{"ParametersOfAnInexactNullaryFunction", "Parameters<fn (...) -> string>", "Array<unknown>"},
+		{"ReturnType", "ReturnType<fn (a: number, ...rest: Array<string>) -> boolean>", "boolean"},
+		{"ReturnTypeOfAnInexactFunction", "ReturnType<fn (a: number, ...) -> boolean>", "boolean"},
+		{"ConstructorParametersOfAClass", "ConstructorParameters<typeof Point>", "[number, number]"},
+		{"ConstructorParametersOfARestParam", "ConstructorParameters<typeof Words>", "[number, ...Array<string>]"},
+		{"ConstructorParametersOfAnInexactConstructor", "ConstructorParameters<{new (a: number, ...) -> Point}>", "[number, ...Array<unknown>]"},
+		{"InstanceType", "InstanceType<typeof Point>", "Point"},
+		{"InstanceTypeOfAnInexactConstructor", "InstanceType<{new (a: number, ...) -> Point}>", "Point"},
+		// A variadic result feeds another conditional the way a fixed tuple does.
+		{"ConditionalOverAVariadicResult", "First<Parameters<fn (a: number, ...rest: Array<string>) -> undefined>>", "number"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			_, errs := inferAgainstTree(t, classes+`
+				declare val got: `+tt.utility+`
+				val fitsWant: `+tt.want+` = got
+				declare val want: `+tt.want+`
+				val fitsGot: `+tt.utility+` = want
+			`)
+			require.Empty(t, errs)
+		})
+	}
+}
+
+// TestStdlibFunctionUtilityBounds asserts that the function utilities reject an argument that is
+// not a function, and that the constructor utilities reject a plain function.
+func TestStdlibFunctionUtilityBounds(t *testing.T) {
+	tests := []struct {
+		name string
+		src  string
+		want string
+	}{
+		{"ParametersOfANumber", `declare val p: Parameters<number>`, "cannot constrain number <: function"},
+		{"InstanceTypeOfAFunction", `declare val p: InstanceType<fn () -> number>`, "cannot constrain function <: object"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			_, errs := inferAgainstTree(t, tt.src)
+			require.Equal(t, []string{tt.want}, errs)
+		})
+	}
 }
 
 // The `fn (...args: Array<_>) -> _` bound rejects a non-function argument at the reference, so the
