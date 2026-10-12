@@ -599,7 +599,7 @@ func (c *Context) readThroughBound(r borrowedRead, lb soltype.Type, seen *seenPa
 
 // borrowedFieldType returns the type a field of type field reads as through borrow, or nil
 // for a field that reads as declared. An owned `mut` cell and an object, tuple, class
-// instance, or alias read as a borrow bounded by borrow's lifetime. A union reads member by
+// instance, alias, or generator read as a borrow bounded by borrow's lifetime. A union reads member by
 // member. A field holding an immutable borrow reads as declared. A field holding a mutable
 // borrow is reborrowed immutably whatever borrow's own mutability, so an immutable borrow
 // never lends a write.
@@ -612,7 +612,7 @@ func borrowedFieldType(field soltype.Type, borrow *soltype.RefType) soltype.Type
 		if f.Mut {
 			return &soltype.RefType{Mut: false, Lt: f.Lt, Inner: f.Inner}
 		}
-	case *soltype.ObjectType, *soltype.TupleType, *soltype.ClassType, *soltype.AliasType:
+	case *soltype.ObjectType, *soltype.TupleType, *soltype.ClassType, *soltype.AliasType, *soltype.GeneratorType:
 		return &soltype.RefType{Mut: borrow.Mut, Lt: borrow.Lt, Inner: f.(soltype.RefInner)}
 	case *soltype.UnionType:
 		members := make([]soltype.Type, len(f.Types))

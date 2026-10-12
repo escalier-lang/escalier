@@ -4,6 +4,7 @@ import (
 	"sync"
 
 	"github.com/escalier-lang/escalier/internal/ast"
+	"github.com/escalier-lang/escalier/internal/set"
 	"github.com/escalier-lang/escalier/internal/soltype"
 )
 
@@ -168,14 +169,19 @@ func (c *checker) bindPreludeExports(scope *Scope) {
 		scope.defineValue(name, b)
 	}
 	for name, b := range ns.Types {
+		// The prelude declares an interface under each built-in type name, and binding
+		// it would shadow the form resolveTypeAnn builds for that name.
+		if builtinTypeNames.Contains(name) {
+			continue
+		}
 		scope.defineType(name, b)
 	}
 }
 
 // stdlibTypePlaceholders are the names resolveTypeAnn still resolves itself. Each
 // binds an opaque stub, so a reference to one is not an unbound name in a run whose
-// tree supplies no prelude package. A prelude that does load shadows every
-// placeholder it declares, since its exports go into a child of this scope.
+// tree supplies no prelude package. A prelude that does load declares an interface
+// under each name, and bindPreludeExports leaves those unbound so the stub stays.
 //
 // Two sorts of name are absent. `Promise` is read through the class the prelude
 // declares, and resolveTypeAnn has no arm of its own for it, so a reference against a
@@ -190,6 +196,11 @@ var stdlibTypePlaceholders = []string{
 	"Generator",
 	"AsyncGenerator",
 }
+
+// builtinTypeNames is stdlibTypePlaceholders as a lookup. resolveTypeAnn builds a
+// GeneratorType for a written `Generator<Y, R, N>` once no binding claims the name, so a
+// scope that binds a package's declarations leaves these names out.
+var builtinTypeNames = set.FromSlice(stdlibTypePlaceholders)
 
 // addStdlibTypePlaceholders seeds each stdlib type name as an opaque unknown
 // stub so a reference resolves without an unbound-name error. No structure, no

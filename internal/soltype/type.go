@@ -923,7 +923,9 @@ type RefType struct {
 // machinery. RecursiveType joins them for the same reason an AliasType does: a μ-knot over an
 // object is a borrowable value, and admitting it keeps RefType.Accept from peeling the `mut`
 // wrapper off a borrow whose inner coalesced to a knot. SelfType is a RefInner because it
-// stands for a class instance, so `&Self` borrows the receiver's own class.
+// stands for a class instance, so `&Self` borrows the receiver's own class. GeneratorType is
+// a RefInner because a generator is a stateful object, so `mut Generator<Y, R, N>` borrows
+// one the way `mut Point` borrows a class instance.
 type RefInner interface {
 	Type
 	isRefInner()
@@ -938,6 +940,7 @@ func (*ClassType) isRefInner()        {}
 func (*AliasType) isRefInner()        {}
 func (*RecursiveType) isRefInner()    {}
 func (*SelfType) isRefInner()         {}
+func (*GeneratorType) isRefInner()    {}
 
 // GeneratorType is the external face of a `gen fn`: calling one returns a generator
 // object rather than the body's value. It is a dedicated concrete rather than a

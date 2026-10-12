@@ -90,6 +90,19 @@ func (c *Context) arrayElem(t soltype.Type) (soltype.Type, bool) {
 	return args[0], true
 }
 
+// arrayOf returns an instance of the `Array` the run settled on, holding elem. A run whose
+// tree declares no usable `Array` has already reported it, so this hands back the recovery
+// sentinel, the way promiseOf does.
+func (c *Context) arrayOf(elem soltype.Type) soltype.Type {
+	if c.arrayClass == "" {
+		return &soltype.ErrorType{}
+	}
+	if def, declared := c.classDef(c.arrayClass); !declared || len(def.TypeParams) != arrayTypeParams {
+		return &soltype.ErrorType{}
+	}
+	return &soltype.ClassType{Name: c.arrayClass, TypeArgs: []soltype.Type{elem}}
+}
+
 // promiseParts returns what an instance of the `Promise` the run settled on resolves
 // to and what it may reject with, and false when t is not one.
 //
