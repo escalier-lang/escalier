@@ -167,8 +167,7 @@ func inferModuleWithGroups(
 // drives the reconciliation pass that reports any top-level declaration the dep
 // graph did not model.
 //
-// It returns the unique symbols the module's top-level declarations minted. A package
-// loaded partway through the walk keeps its own symbols out of the list.
+// It returns the unique symbols the module's top-level declarations minted.
 func (c *checker) inferDepGraph(scope *Scope, lvl int, module *ast.Module, g *dep_graph.DepGraph) soltype.ModuleSymbols {
 	// Saving the previous scope is defensive. A walk cannot start while another
 	// is in progress: bindImport is the only caller of loadPackage, and both
@@ -247,6 +246,7 @@ func (c *checker) inferDepGraph(scope *Scope, lvl int, module *ast.Module, g *de
 		}
 		return true
 	})
+	c.symbols.Minted = declaredSymbols(module, c.info)
 	return c.symbols
 }
 

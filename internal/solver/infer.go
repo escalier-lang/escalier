@@ -179,12 +179,8 @@ type checker struct {
 	nsIndex map[string]*Namespace
 
 	// symbols holds the unique symbols of the module under inference. Its Owners are chosen
-	// before the walk starts, and its Minted grows as the walk mints symbols. Each walk
-	// starts it afresh.
+	// before the walk starts, which is all the walk reads. Each walk starts it afresh.
 	symbols soltype.ModuleSymbols
-	// blockDepth counts the blocks enclosing the statement being inferred. It is 0 for a
-	// top-level declaration and above 0 inside a function body or a `do` block.
-	blockDepth int
 
 	// fileScopes holds one scope per file of the module being inferred, keyed by
 	// source id, each carrying that file's import bindings.

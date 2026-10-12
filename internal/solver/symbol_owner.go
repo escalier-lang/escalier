@@ -3,6 +3,7 @@ package solver
 import (
 	"github.com/escalier-lang/escalier/internal/ast"
 	"github.com/escalier-lang/escalier/internal/dep_graph"
+	"github.com/escalier-lang/escalier/internal/soltype"
 )
 
 // symbol_owner.go picks the value whose path names the unique symbols an interface or a
@@ -107,4 +108,40 @@ func symbolOwners(module *ast.Module, g *dep_graph.DepGraph) map[string]string {
 		}
 	}
 	return owners
+}
+
+// declaredSymbols returns the unique symbols the type annotations of module's top-level
+// declarations minted, in source order. `info` holds the type each annotation resolved
+// to. A symbol a declaration inside a function body or a `do` block mints is local to
+// that block, and the walk never reaches it, since it enters no expression or block.
+func declaredSymbols(module *ast.Module, info *Info) []*soltype.UniqueSymbolType {
+	v := &declaredSymbolVisitor{info: info}
+	module.Namespaces.Scan(func(_ string, ns *ast.Namespace) bool {
+		for _, d := range ns.Decls {
+			d.Accept(v)
+		}
+		return true
+	})
+	return v.symbols
+}
+
+// declaredSymbolVisitor collects the symbol each `unique symbol` annotation it reaches
+// resolved to. An annotation in a position that names no one symbol resolved to
+// `symbol` instead, and is passed over.
+type declaredSymbolVisitor struct {
+	ast.DefaultVisitor
+	info    *Info
+	symbols []*soltype.UniqueSymbolType
+}
+
+func (v *declaredSymbolVisitor) EnterExpr(ast.Expr) bool   { return false }
+func (v *declaredSymbolVisitor) EnterBlock(ast.Block) bool { return false }
+
+func (v *declaredSymbolVisitor) EnterTypeAnn(ta ast.TypeAnn) bool {
+	if usa, ok := ta.(*ast.UniqueSymbolTypeAnn); ok {
+		if sym, ok := v.info.TypeOf(usa).(*soltype.UniqueSymbolType); ok {
+			v.symbols = append(v.symbols, sym)
+		}
+	}
+	return true
 }
