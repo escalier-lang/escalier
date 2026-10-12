@@ -219,9 +219,11 @@ val o = {[C.key]: 1}`},
 
 // TestUniqueSymbolNamedByAValueOfItsType covers how a symbol a `readonly` property declares
 // renders. A `val` whose annotation is the declaring type names the symbol after its own
-// path, so `declare val i: I` gives `typeof i.key` and a key off it `[i.key]`. A `val` at
-// the module root wins over one in a namespace, and otherwise the first in source order
-// wins. Without such a `val` the symbol renders by its id.
+// path, so `declare val i: I` gives `typeof i.key` and a key off it `[i.key]`. A
+// `static readonly` class field does the same through its class, so the field in
+// `declare class C { static readonly i: I }` gives `typeof C.i.key`. A value at the module
+// root wins over one in a namespace, and otherwise the first in source order wins. Without
+// such a value the symbol renders by its id.
 func TestUniqueSymbolNamedByAValueOfItsType(t *testing.T) {
 	const iface = "declare interface I { readonly key: unique symbol }\n"
 	tests := []struct {
@@ -320,6 +322,31 @@ fn readP(x: &I) { return p[x.key] }`},
 			name: "NoValOfTheType",
 			srcs: map[string]string{"input.esc": iface + "fn read(x: &I) { return {[x.key]: 1} }"},
 			want: map[string]string{"read": "fn (x: &I) -> {[unique symbol#0]: 1}"},
+		},
+		{
+			name: "StaticReadonlyField",
+			srcs: map[string]string{"input.esc": iface + "declare class C { static readonly i: I }\nval k = C.i.key\nval o = {[C.i.key]: 1}"},
+			want: map[string]string{"k": "typeof C.i.key", "o": "{[C.i.key]: 1}"},
+		},
+		{
+			name: "NamespacedStaticReadonlyField",
+			srcs: map[string]string{
+				"input.esc":  iface + "val k = keys.C.i.key",
+				"keys/c.esc": "export declare class C { static readonly i: I }",
+			},
+			want: map[string]string{"k": "typeof keys.C.i.key"},
+		},
+		{
+			// The field comes first in source order, so it names the symbol.
+			name: "StaticReadonlyFieldBeforeVal",
+			srcs: map[string]string{"input.esc": iface + "declare class C { static readonly i: I }\ndeclare val j: I\nval k = j.key"},
+			want: map[string]string{"k": "typeof C.i.key"},
+		},
+		{
+			// A writable field may be reassigned, so no path through it holds one symbol.
+			name: "WritableStaticField",
+			srcs: map[string]string{"input.esc": iface + "declare class C { static w: I }\nval k = C.w.key"},
+			want: map[string]string{"k": "unique symbol#0"},
 		},
 		{
 			// A `var` may be reassigned, so no path through it holds one symbol.
