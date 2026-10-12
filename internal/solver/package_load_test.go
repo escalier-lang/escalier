@@ -611,7 +611,7 @@ func TestExportedSurfaceCarriesEveryPatternLeaf(t *testing.T) {
 		`),
 		sourceOf(t, map[string]string{
 			"shapes": `
-				class Some { value: number, }
+				class Some { value: number, static [Symbol.customMatcher](subject: Some) -> [number] { return [subject.value] } }
 				export val [first, ...rest] = [1, 2, 3]
 				export val {x, y} = {x: 1, y: 2}
 				export val Some(inner) = Some(1)

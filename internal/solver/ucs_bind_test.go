@@ -197,11 +197,10 @@ func TestPathBinderProjectsAndBinds(t *testing.T) {
 			leaf:  "rest",
 			want:  "{y: string, z: boolean}",
 		},
-		// An extractor's positional value resolves through the constructor parameter it
-		// yields, the interim protocol bindExtractorPat also binds through. Point's
-		// synthesized constructor takes its fields, so value 0 is `x`.
+		// An extractor's positional value resolves through the tuple its matcher returns,
+		// so value 0 of Point's `[subject.x, subject.y]` is `x`.
 		"ExtractorResult": {
-			src:      `class Point { x: number, y: number }`,
+			src:      `class Point { x: number, y: number, static [Symbol.customMatcher](subject: Point) -> [number, number] { return [subject.x, subject.y] } }`,
 			rootType: func(t *testing.T, c *checker, scope *Scope) soltype.Type { return classType(t, c, scope, "Point") },
 			test:     &ucs.ExtractorTest{Name: ast.NewIdentifier("Point", builderSpan()), Arity: 2},
 			steps:    []ucs.Step{ucs.ExtractStep{Index: 0}},
@@ -526,7 +525,7 @@ func TestPathBinderUnresolvedTagNames(t *testing.T) {
 		"NotAConstructor": {
 			test: &ucs.ExtractorTest{Name: ast.NewIdentifier("Missing", builderSpan()), Arity: 1},
 			step: ucs.ExtractStep{Index: 0},
-			want: "0-1: `Missing` is not a constructor and cannot be used as an extractor pattern.",
+			want: "0-1: `Missing` names no value, so it cannot be used as an extractor pattern",
 		},
 	}
 	for name, tt := range tests {
@@ -542,10 +541,10 @@ func TestPathBinderUnresolvedTagNames(t *testing.T) {
 	}
 }
 
-// An extractor test that takes a different number of values than the constructor yields
+// An extractor test that takes a different number of values than the matcher yields
 // reports the arity mismatch once, at the test, rather than once per extract step.
 func TestPathBinderExtractorArityMismatch(t *testing.T) {
-	c, scope := newPathChecker(t, `class Point { x: number, y: number }`)
+	c, scope := newPathChecker(t, `class Point { x: number, y: number, static [Symbol.customMatcher](subject: Point) -> [number, number] { return [subject.x, subject.y] } }`)
 	root, binder := seedPath(c, classType(t, c, scope, "Point"))
 	binder = binder.narrowedBy(scope, root, &ucs.ExtractorTest{Name: ast.NewIdentifier("Point", builderSpan()), Arity: 3}, nil)
 
@@ -555,8 +554,8 @@ func TestPathBinderExtractorArityMismatch(t *testing.T) {
 	require.Equal(t, []string{
 		"1:1-1:2: extractor pattern `Point` expects 2 arguments but got 3",
 	}, messagesWithSpan(t, c.errs))
-	// Value 0 still resolves through the constructor; value 2, which the constructor does
-	// not yield, recovers against a fresh variable rather than a second diagnostic.
+	// Value 0 still resolves through the matcher; value 2, which the matcher does not
+	// yield, recovers against a fresh variable rather than a second diagnostic.
 	require.Equal(t, "number", boundType(t, c, armScope, "a"))
 	require.Contains(t, armScope.values, "c")
 }

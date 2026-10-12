@@ -1303,7 +1303,9 @@ func (*FieldNotInitializedError) isSolverError()            {}
 func (*ReadBeforeInitError) isSolverError()                 {}
 func (*MethodCallBeforeInitError) isSolverError()           {}
 func (*InstancePatternNotClassError) isSolverError()        {}
-func (*ExtractorPatternNotCtorError) isSolverError()        {}
+func (*UnknownExtractorError) isSolverError()               {}
+func (*MissingCustomMatcherError) isSolverError()           {}
+func (*MalformedCustomMatcherError) isSolverError()         {}
 func (*ExtractorPatternArityError) isSolverError()          {}
 func (*TypeArgArityMismatchError) isSolverError()           {}
 func (*LifetimeArgArityMismatchError) isSolverError()       {}
@@ -1395,27 +1397,57 @@ func (e *InstancePatternNotClassError) Message() string {
 	return "`" + e.Name + "` does not name a class and cannot be used as an instance pattern."
 }
 
-// ExtractorPatternNotCtorError fires when the name in an extractor pattern `Name(...)`
-// resolves to no constructor — the name is unbound, or its value is not callable as a
-// constructor. An extractor pattern deconstructs a value through the named constructor's
-// parameters, so the name must resolve to a constructor.
+// UnknownExtractorError fires when the name in an extractor pattern `Name(...)` resolves to
+// no value. A value that resolves but declares no `[Symbol.customMatcher]` is a
+// MissingCustomMatcherError instead.
 // Node is the node the message underlines, the same choice
 // InstancePatternNotClassError makes.
-type ExtractorPatternNotCtorError struct {
+type UnknownExtractorError struct {
 	Node ast.Node
 	Name string
 }
 
-func (e *ExtractorPatternNotCtorError) Span() ast.Span      { return e.Node.Span() }
-func (e *ExtractorPatternNotCtorError) Related() []ast.Span { return nil }
-func (e *ExtractorPatternNotCtorError) Message() string {
-	return "`" + e.Name + "` is not a constructor and cannot be used as an extractor pattern."
+func (e *UnknownExtractorError) Span() ast.Span      { return e.Node.Span() }
+func (e *UnknownExtractorError) Related() []ast.Span { return nil }
+func (e *UnknownExtractorError) Message() string {
+	return "`" + e.Name + "` names no value, so it cannot be used as an extractor pattern"
+}
+
+// MissingCustomMatcherError fires when the name in an extractor pattern `Name(...)`
+// resolves to a value that declares no `[Symbol.customMatcher]`. The matcher is what says
+// which values an extractor pattern binds, so a class without one is not an extractor, even
+// when its constructor takes as many parameters as the pattern has arguments.
+type MissingCustomMatcherError struct {
+	Node ast.Node
+	Name string
+}
+
+func (e *MissingCustomMatcherError) Span() ast.Span      { return e.Node.Span() }
+func (e *MissingCustomMatcherError) Related() []ast.Span { return nil }
+func (e *MissingCustomMatcherError) Message() string {
+	return "`" + e.Name + "` declares no [Symbol.customMatcher] method, so it cannot be used as an extractor pattern"
+}
+
+// MalformedCustomMatcherError fires when the value an extractor pattern names declares a
+// `[Symbol.customMatcher]` that is not one method taking one subject and returning a tuple,
+// so it says nothing about which values the pattern binds.
+type MalformedCustomMatcherError struct {
+	Node ast.Node
+	Name string
+}
+
+func (e *MalformedCustomMatcherError) Span() ast.Span      { return e.Node.Span() }
+func (e *MalformedCustomMatcherError) Related() []ast.Span { return nil }
+func (e *MalformedCustomMatcherError) Message() string {
+	return "the [Symbol.customMatcher] of `" + e.Name + "` must be one method taking a subject and returning a tuple"
 }
 
 // ExtractorPatternArityError fires when an extractor pattern `Name(a, b)` supplies a
 // different number of sub-patterns than the extractor yields values. Each sub-pattern binds
 // one value, so the counts must match. A pattern ending in `...rest` takes Got values and
-// any number more, so AtLeast marks that Got is a minimum that exceeds Expected.
+// any number more, so AtLeast marks that Got is a minimum that exceeds Expected. A matcher
+// whose tuple ends in a spread yields Expected values and any number more, so
+// ExpectedAtLeast marks that Expected is a minimum that exceeds Got.
 // Node is the node the message underlines, the same choice
 // InstancePatternNotClassError makes.
 type ExtractorPatternArityError struct {
@@ -1424,15 +1456,21 @@ type ExtractorPatternArityError struct {
 	Expected int
 	Got      int
 	AtLeast  bool
+	// ExpectedAtLeast marks a matcher yielding Expected values and any number more.
+	ExpectedAtLeast bool
 }
 
 func (e *ExtractorPatternArityError) Span() ast.Span      { return e.Node.Span() }
 func (e *ExtractorPatternArityError) Related() []ast.Span { return nil }
 func (e *ExtractorPatternArityError) Message() string {
-	if e.AtLeast {
-		return fmt.Sprintf("extractor pattern `%s` expects %d arguments but got at least %d", e.Name, e.Expected, e.Got)
+	expected, got := strconv.Itoa(e.Expected), strconv.Itoa(e.Got)
+	if e.ExpectedAtLeast {
+		expected = "at least " + expected
 	}
-	return fmt.Sprintf("extractor pattern `%s` expects %d arguments but got %d", e.Name, e.Expected, e.Got)
+	if e.AtLeast {
+		got = "at least " + got
+	}
+	return "extractor pattern `" + e.Name + "` expects " + expected + " arguments but got " + got
 }
 
 // TypeDeclKind names the sort of declaration a type reference resolved to. resolveTypeArgs

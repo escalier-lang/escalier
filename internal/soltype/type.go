@@ -587,8 +587,7 @@ func (*SpreadElem) isObjTypeElem()      {}
 // The instance is the ONLY thing the arms agree on. Params is what distinguishes them, and each
 // arm carries its own Throws and Inexact from its own body. A reader after any of those has no
 // arm the set endorses, so there is no accessor for one: it reads Signatures directly and owns
-// the arbitrary choice at its own call site, as ctorSignature in the solver does. #1516 replaces
-// the reason that one reads a constructor at all.
+// the arbitrary choice at its own call site.
 func (e *ConstructorElem) Instance() (Type, bool) {
 	if len(e.Signatures) == 0 {
 		return nil, false

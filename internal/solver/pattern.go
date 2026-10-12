@@ -740,21 +740,18 @@ func (c *checker) narrowToClass(
 	return scrutinee, concrete
 }
 
-// bindExtractorPat types an extractor pattern `Name(a, b)`: it narrows the scrutinee to the
-// constructor's return type, then binds each argument against a constructor parameter. A
-// non-constructor name is an ExtractorPatternNotCtorError, a wrong count an ExtractorPatternArityError.
-//
-// An enum variant deconstructs through its `[Symbol.customMatcher]` method. A class binds
-// against its constructor's parameters, which is an interim gate. Moving classes onto the
-// matcher is tracked in #1516.
+// bindExtractorPat types an extractor pattern `Name(a, b)`. It narrows the scrutinee to the
+// subject of the named value's `[Symbol.customMatcher]`, then binds each argument against
+// a value of the tuple the matcher returns. A name extractorSignature cannot resolve is
+// reported with the error it returns, and a wrong count is an ExtractorPatternArityError.
 func (c *checker) bindExtractorPat(scope *Scope, lvl int, p *ast.ExtractorPat, scrutinee soltype.Type, scrutineeMode bindMode, leafTypes map[string]soltype.Type, emit leafEmit, purpose bindPurpose) soltype.Pat {
 	// Record the pattern node's type against the scrutinee it matches, the same as the
 	// sibling tuple/object cases, so hover and type-at-position resolve on the pattern.
 	c.recordPatType(purpose, p, scrutinee)
 	name := ast.QualIdentToString(p.Name)
-	ctor, ok := c.extractorCtor(scope, lvl, p.Name)
-	if !ok {
-		c.reportPat(purpose, &ExtractorPatternNotCtorError{Node: p, Name: name})
+	sig, lookupErr := c.extractorSignature(scope, lvl, p, p.Name)
+	if lookupErr != nil {
+		c.reportPat(purpose, lookupErr)
 		// Bind each argument against a fresh var so its leaves stay defined and a later
 		// reference does not cascade into an unknown-identifier error.
 		args := make([]soltype.Pat, len(p.Args))
@@ -763,27 +760,27 @@ func (c *checker) bindExtractorPat(scope *Scope, lvl int, p *ast.ExtractorPat, s
 		}
 		return &soltype.ExtractorPat{Name: name, Args: args}
 	}
-	params := c.narrowToExtractor(p, ctor, scrutinee)
+	params := c.narrowToExtractor(p, sig, scrutinee)
 	fixed, rest, recovered := splitTupleRest(p.Args)
 	if len(recovered) > 0 {
 		c.reportPatUnsupported(purpose, recovered[0])
 	}
 	hasRest := rest != nil || len(recovered) > 0
-	if !extractorArityFits(len(fixed), hasRest, len(params)) {
-		c.reportPat(purpose, &ExtractorPatternArityError{Node: p, Name: name, Expected: len(params), Got: len(fixed), AtLeast: hasRest})
+	if err := extractorArityError(p, name, params, len(fixed), hasRest); err != nil {
+		c.reportPat(purpose, err)
 	}
 	args := make([]soltype.Pat, 0, len(p.Args))
 	for i, a := range fixed {
-		var paramType soltype.Type = c.freshAt(lvl)
-		if i < len(params) {
-			paramType = params[i].Type
+		valueType, ok := extractedValue(params, i)
+		if !ok {
+			valueType = c.freshAt(lvl)
 		}
-		args = append(args, c.bindPatMode(scope, lvl, a, paramType, paramType, scrutineeMode, leafTypes, emit, purpose))
+		args = append(args, c.bindPatMode(scope, lvl, a, valueType, valueType, scrutineeMode, leafTypes, emit, purpose))
 	}
 	if rest != nil {
-		var suffix soltype.Type = c.freshAt(lvl)
-		if len(fixed) <= len(params) {
-			suffix = c.extractedSuffix(params, len(fixed))
+		suffix, ok := c.extractedSuffix(params, len(fixed))
+		if !ok {
+			suffix = c.freshAt(lvl)
 		}
 		sub := c.bindPatMode(scope, lvl, rest.Pattern, suffix, suffix, scrutineeMode, leafTypes, emit, purpose)
 		args = append(args, &soltype.RestPat{Pattern: sub})
@@ -794,65 +791,104 @@ func (c *checker) bindExtractorPat(scope *Scope, lvl int, p *ast.ExtractorPat, s
 	return &soltype.ExtractorPat{Name: name, Args: args}
 }
 
-// extractorArityFits reports whether a pattern taking taken values fits an extractor
-// yielding yields of them. A pattern ending in a rest takes at least taken values, and one
-// without takes exactly that many.
-func extractorArityFits(taken int, hasRest bool, yields int) bool {
-	if hasRest {
-		return taken <= yields
+// The helpers below read the values an extractor yields from params, the parameters of
+// the signature extractorSignature returns. Each parameter is one value, except a final
+// rest parameter, which matcherSignature mints for a variadic matcher tuple. Its type is
+// the type of every value from its position on, so `[number, ...Array<string>]` yields
+// one `number` and then any number of `string` values.
+
+// fixedValues returns how many values params yields at fixed positions, and whether more
+// may follow them.
+func fixedValues(params []*soltype.FuncParam) (int, bool) {
+	if n := len(params); n > 0 && params[n-1].Rest {
+		return n - 1, true
 	}
-	return taken == yields
+	return len(params), false
 }
 
-// extractedSuffix returns the type of the values params yields from index from on, which
-// is what a trailing rest in an extractor pattern binds. It is a tuple of those values'
-// types, where an optional parameter's value may be `undefined`. A rest parameter yields
-// any number of values, so a suffix reaching one is an `Array` of every value's type
-// instead. from must not exceed len(params).
-func (c *checker) extractedSuffix(params []*soltype.FuncParam, from int) soltype.Type {
-	elems := make([]soltype.Type, 0, len(params)-from)
-	for _, param := range params[from:] {
-		if param.Rest {
-			elem, ok := c.ctx.arrayElem(param.Type)
-			if !ok {
-				elem = &soltype.UnknownType{}
-			}
-			return c.ctx.arrayOf(newUnion(c.ctx, append(elems, elem)))
-		}
-		t := param.Type
-		if param.Optional {
-			t = newUnion(c.ctx, []soltype.Type{t, &soltype.UndefinedType{}})
-		}
-		elems = append(elems, t)
+// extractedValue returns the type of the value params yields at position i, and false
+// when it yields none there.
+func extractedValue(params []*soltype.FuncParam, i int) (soltype.Type, bool) {
+	fixed, variadic := fixedValues(params)
+	switch {
+	case i < fixed:
+		return params[i].Type, true
+	case variadic:
+		return params[fixed].Type, true
 	}
-	return &soltype.TupleType{Elems: elems}
+	return nil, false
 }
 
-// narrowToExtractor narrows scrutinee to ctor's return type and returns the parameters the
-// extracted values bind against, read at the scrutinee's own type arguments.
+// extractedSuffix returns the type of the values params yields from position from on,
+// which is what a trailing rest in an extractor pattern binds, and false when from is past
+// the values it yields. It is a tuple of their types, or an `Array` of them when the values
+// do not end.
+func (c *checker) extractedSuffix(params []*soltype.FuncParam, from int) (soltype.Type, bool) {
+	fixed, variadic := fixedValues(params)
+	if from > fixed && !variadic {
+		return nil, false
+	}
+	elems := make([]soltype.Type, 0, len(params))
+	for i := from; i < fixed; i++ {
+		elems = append(elems, params[i].Type)
+	}
+	if variadic {
+		return c.ctx.arrayOf(newUnion(c.ctx, append(elems, params[fixed].Type))), true
+	}
+	return &soltype.TupleType{Elems: elems}, true
+}
+
+// extractorArityError returns the error for a pattern taking taken values against the
+// values params yields, or nil when the counts fit. hasRest says the pattern ends in a
+// rest, so it takes taken values and any number more. Positions past an extractor's fixed
+// values are read from its variadic tail when it has one.
+func extractorArityError(node ast.Node, name string, params []*soltype.FuncParam, taken int, hasRest bool) *ExtractorPatternArityError {
+	fixed, variadic := fixedValues(params)
+	var fits bool
+	switch {
+	case variadic && hasRest:
+		fits = true
+	case variadic:
+		fits = taken >= fixed
+	case hasRest:
+		fits = taken <= fixed
+	default:
+		fits = taken == fixed
+	}
+	if fits {
+		return nil
+	}
+	return &ExtractorPatternArityError{
+		Node: node, Name: name, Expected: fixed, ExpectedAtLeast: variadic, Got: taken, AtLeast: hasRest,
+	}
+}
+
+// narrowToExtractor narrows scrutinee to sig's return type, the matcher's subject, and
+// returns sig's parameters, one per extracted value, read at the scrutinee's own type
+// arguments. sig is the signature extractorSignature returns.
 //
 // It is the narrowing half of an extractor pattern, shared with the UCS IR's extractor test
 // so the two cannot drift. blame is the node the narrowing constraint is anchored to: the
 // written pattern for bindExtractorPat, the tag test's name for the IR. The caller checks
 // the returned count against how many values its pattern takes.
-func (c *checker) narrowToExtractor(blame ast.Node, ctor *soltype.FuncType, scrutinee soltype.Type) []*soltype.FuncParam {
-	// The scrutinee's instance of the constructor's class is read before narrowing. The
-	// narrowing constraint adds ctor.Ret to a var scrutinee's lower bounds, after which the
+func (c *checker) narrowToExtractor(blame ast.Node, sig *soltype.FuncType, scrutinee soltype.Type) []*soltype.FuncParam {
+	// The scrutinee's instance of the subject's class is read before narrowing. The
+	// narrowing constraint adds sig.Ret to a var scrutinee's lower bounds, after which the
 	// var carries two instances of the class and names neither.
-	ret, isClass := ctor.Ret.(*soltype.ClassType)
+	ret, isClass := sig.Ret.(*soltype.ClassType)
 	var sc *soltype.ClassType
 	if isClass {
 		sc, isClass = c.scrutineeInstance(scrutinee, ret.Name)
 	}
-	// The extracted value is an instance of the constructor's return type. Narrow the
-	// scrutinee to it, the same assertion an instance pattern makes.
-	c.constrain(blame, ctor.Ret, scrutinee)
+	// The matched value is an instance of the matcher's subject. Narrow the scrutinee to
+	// it, the same assertion an instance pattern makes.
+	c.constrain(blame, sig.Ret, scrutinee)
 	// Read the parameters at the scrutinee's concrete arguments by substituting them
 	// directly, rather than relying on the narrowing constraint above to back-propagate them.
 	if isClass {
-		return ctorParamsAt(ctor.Params, ret, sc)
+		return paramsAtInstance(sig.Params, ret, sc)
 	}
-	return ctor.Params
+	return sig.Params
 }
 
 // scrutineeInstance returns the instance of the class named name that scrutinee holds, and
@@ -878,16 +914,16 @@ func (c *checker) scrutineeInstance(scrutinee soltype.Type, name string) (*solty
 	})
 }
 
-// ctorParamsAt rewrites a constructor's parameter types from its return instance's argument
-// vars (ret) to the scrutinee instance's concrete arguments (sc), so an extractor over a
-// generic scrutinee reads its parameters at the scrutinee's arguments.
+// paramsAtInstance rewrites an extractor signature's parameter types from its return
+// instance's argument vars (ret) to the scrutinee instance's concrete arguments (sc), so an
+// extractor over a generic scrutinee reads its values at the scrutinee's arguments.
 //
-// For `class Box<T> { value: T }` the instantiated constructor is `fn (value: t0) -> Box<t0>`,
-// so ret is `Box<t0>`. Matching `Box(v)` against a `Box<string>` scrutinee makes sc `Box<string>`,
-// so ctorParamsAt maps t0 to string and rewrites the parameter `value: t0` to `value: string`;
-// v then binds at string. A non-generic constructor, whose return carries no arguments, builds
-// an empty substitution and returns the parameters unchanged.
-func ctorParamsAt(params []*soltype.FuncParam, ret, sc *soltype.ClassType) []*soltype.FuncParam {
+// For `static [Symbol.customMatcher]<U>(subject: Box<U>) -> [U]` the instantiated signature
+// is `fn (u0) -> Box<u0>`, so ret is `Box<u0>`. Matching `Box(v)` against a `Box<string>`
+// scrutinee makes sc `Box<string>`, so paramsAtInstance maps u0 to string and `v` binds at
+// string. A non-generic signature, whose return carries no arguments, builds an empty
+// substitution and returns the parameters unchanged.
+func paramsAtInstance(params []*soltype.FuncParam, ret, sc *soltype.ClassType) []*soltype.FuncParam {
 	subst := &typeSubst{
 		types:     map[*soltype.TypeVarType]soltype.Type{},
 		lifetimes: map[*soltype.LifetimeVar]soltype.Lifetime{},
@@ -926,68 +962,101 @@ func (c *checker) instancePatClass(scope *Scope, name string) (*soltype.ClassTyp
 	return ct, ok
 }
 
-// extractorCtor resolves an extractor pattern's name to the signature its arguments bind
-// against. It looks the name up in the value sort, since a class binds its constructor on
-// the value side of its dual type/value binding, and instantiates that value at lvl through
-// bindingValue. Instantiating per call freshens a generic value's type parameters, so two
-// match arms each written `Box(v)` get independent argument vars rather than sharing one.
-// The signature is the value's matcher as matcherSignature reads it, or else its
-// constructor as ctorSignature reads it. It returns ok=false when the name is unbound,
-// carries no scheme, or resolves to a value that has neither signature.
-func (c *checker) extractorCtor(scope *Scope, lvl int, qi ast.QualIdent) (*soltype.FuncType, bool) {
+// extractorSignature resolves an extractor pattern's name to the signature its arguments
+// bind against, the one matcherSignature reads off the named value's
+// `[Symbol.customMatcher]`. It looks the name up in the value sort, since a class binds its
+// matcher on the value side of its dual type/value binding, and instantiates that value at
+// lvl through bindingValue. A matcher declaring its own type parameters is instantiated as
+// well. Instantiating per pattern gives two match arms each written `Box(v)` independent
+// argument vars rather than one shared var.
+//
+// On failure it returns the error to report against node instead. A name that resolves to
+// no value is an UnknownExtractorError, a value carrying no matcher is a
+// MissingCustomMatcherError, and one whose matcher has the wrong shape is a
+// MalformedCustomMatcherError.
+func (c *checker) extractorSignature(scope *Scope, lvl int, node ast.Node, qi ast.QualIdent) (*soltype.FuncType, SolverError) {
+	name := ast.QualIdentToString(qi)
 	b, ok := c.resolveQualValue(scope, qi)
 	if !ok || len(b.Schemes) == 0 {
-		return nil, false
+		return nil, &UnknownExtractorError{Node: node, Name: name}
 	}
-	value := c.bindingValue(lvl, b)
-	if matcher, ok := c.matcherSignature(value); ok {
-		return matcher, true
+	sig, fault := c.matcherSignature(c.bindingValue(lvl, b))
+	switch fault {
+	case matcherMissing:
+		return nil, &MissingCustomMatcherError{Node: node, Name: name}
+	case matcherMalformed:
+		return nil, &MalformedCustomMatcherError{Node: node, Name: name}
 	}
-	return ctorSignature(value)
+	if quantified(sig) {
+		sig = c.ctx.instantiateFuncBinder(sig, lvl)
+	}
+	return sig, nil
 }
 
-// matcherSignature returns the extractor signature an enum variant's
-// `[Symbol.customMatcher]` method describes, and false for any other value. The
-// signature's parameters are the elements of the tuple the matcher returns, and its return
-// is the matcher's subject, so it reads the way a constructor signature does in
-// ctorSignature.
-// For `[Symbol.customMatcher](subject: Color.RGB) -> [number, number, number]` it is
-// `fn (number, number, number) -> Color.RGB`. It keeps the matcher's binder.
-func (c *checker) matcherSignature(value soltype.Type) (*soltype.FuncType, bool) {
+// matcherFault says why a value is not an extractor.
+type matcherFault int
+
+const (
+	// matcherMissing is a value that declares no `[Symbol.customMatcher]`.
+	matcherMissing matcherFault = iota + 1
+	// matcherMalformed is a matcher that is not one method taking one subject and
+	// returning a tuple.
+	matcherMalformed
+)
+
+// matcherSignature returns the extractor signature the `[Symbol.customMatcher]` method of
+// a class value or enum variant describes, or the fault that keeps the value from being an
+// extractor. The signature's parameters are the values the matcher's tuple holds, and its
+// return is the matcher's subject, which is what narrowToExtractor narrows the scrutinee
+// to. For `[Symbol.customMatcher](subject: Color.RGB) -> [number, number, number]` it is
+// `fn (number, number, number) -> Color.RGB`. A tuple ending in `...Array<T>`, or an
+// inexact one, ends the list with a rest parameter of type `T` or `unknown`. It keeps the
+// matcher's binder.
+func (c *checker) matcherSignature(value soltype.Type) (*soltype.FuncType, matcherFault) {
 	obj, ok := c.classValueCarrier(value)
 	if !ok {
-		return nil, false
+		return nil, matcherMissing
 	}
 	member, ok := obj.ReadMember(soltype.CustomMatcherSymbolMember)
 	if !ok {
-		return nil, false
+		return nil, matcherMissing
 	}
 	method, ok := member.(*soltype.MethodElem)
 	if !ok || len(method.Signatures) != 1 {
-		return nil, false
+		return nil, matcherMalformed
 	}
 	matcher := method.Signatures[0]
 	fields, ok := matcher.Ret.(*soltype.TupleType)
 	if !ok || len(matcher.Params) != 1 {
-		return nil, false
+		return nil, matcherMalformed
 	}
-	// A class's own matcher is not read yet, because what a default in the pattern binds
-	// against differs between the two. `C(msg = "x")` over `new (msg?: string)` binds
-	// `string`, and over a matcher returning `[string | undefined]` it would bind
-	// `string | undefined`. Moving classes onto the matcher is tracked in #1516.
-	if subject, isClass := matcher.Params[0].Type.(*soltype.ClassType); !isClass || !subject.Variant {
-		return nil, false
-	}
-	params := make([]*soltype.FuncParam, len(fields.Elems))
+	params := make([]*soltype.FuncParam, 0, len(fields.Elems)+1)
 	for i, field := range fields.Elems {
-		params[i] = &soltype.FuncParam{Pattern: &soltype.IdentPat{Name: fmt.Sprintf("arg%d", i)}, Type: field}
+		param := &soltype.FuncParam{Pattern: &soltype.IdentPat{Name: fmt.Sprintf("arg%d", i)}, Type: field}
+		if spread, isSpread := field.(*soltype.RestSpreadType); isSpread {
+			// Only a final spread leaves the positions before it fixed.
+			if i != len(fields.Elems)-1 {
+				return nil, matcherMalformed
+			}
+			elem, ok := c.ctx.arrayElem(spread.Operand)
+			if !ok {
+				elem = &soltype.UnknownType{}
+			}
+			param.Type, param.Rest = elem, true
+		}
+		params = append(params, param)
+	}
+	if fields.Inexact {
+		params = append(params, &soltype.FuncParam{
+			Pattern: &soltype.IdentPat{Name: "rest"}, Type: &soltype.UnknownType{}, Rest: true,
+		})
 	}
 	return &soltype.FuncType{
 		TypeParams:     matcher.TypeParams,
 		LifetimeParams: matcher.LifetimeParams,
 		Params:         params,
 		Ret:            matcher.Params[0].Type,
-	}, true
+	}, 0
 }
 
 // resolveQualValue resolves a qualified identifier to its value binding. A bare name
@@ -1049,65 +1118,6 @@ func (c *checker) resolveQualClassType(scope *Scope, qi ast.QualIdent) (*soltype
 	}
 	ct, isClass := b.Type.(*soltype.ClassType)
 	return ct, isClass
-}
-
-// ctorSignature resolves a value to its constructor signature in one of three shapes: a class
-// value object's ConstructorElem, a bare FuncType, or either of those reached through a binding
-// var's lower bounds. The var case is the common one, since a class value is a pre-bound var
-// during its own inference component with the constructor recorded as a lower bound.
-//
-// For `class Point { x: number, y: number }` the value `Point` resolves mid-inference to a var
-// whose lower bound is `{new (x: number, y: number) -> Point}`, and ctorSignature looks through
-// the var to that object, returning that signature. Every class value has that shape, statics
-// or not. The bare-FuncType arm is what an extractor pattern naming a plain function resolves
-// through. A var with two conflicting constructor lower bounds is ambiguous and left
-// unresolved.
-//
-// An overloaded constructor resolves to its first arm. An extractor reads the parameter list
-// as the instance's positional shape, and only one list can serve as that shape.
-//
-// Reading a constructor at all is a placeholder. What an extractor deconstructs is not what a
-// constructor builds, so the signature to read is the `[Symbol.customMatcher]` method on the
-// extractor's type, and a class carrying none is not an extractor. Binding against constructor
-// parameters instead is why `Point(x, y)` is accepted against a plain two-field class. An
-// enum variant already reads its matcher through matcherSignature, and #1516 tracks moving
-// classes onto it.
-func ctorSignature(t soltype.Type) (*soltype.FuncType, bool) {
-	switch t := t.(type) {
-	case *soltype.FuncType:
-		return t, true
-	case *soltype.ObjectType:
-		if ctor, ok := t.Constructor(); ok {
-			if len(ctor.Signatures) == 0 {
-				return nil, false
-			}
-			// Arm zero of an overloaded constructor, chosen arbitrarily. The arms agree on the
-			// instance they produce and on nothing else, so no arm speaks for the set's
-			// parameter list. Read here rather than through an accessor so the choice is
-			// visible where it is made.
-			return ctor.Signatures[0], true
-		}
-	case *soltype.TypeVarType:
-		// Scan the var's lower bounds for a constructor, requiring all that resolve to agree.
-		// A var can carry more than one lower bound, so keep the first constructor found and
-		// compare each later one against it: if two name different constructors the var is an
-		// ambiguous join of unrelated class values, so bail rather than pick one arbitrarily.
-		var found *soltype.FuncType
-		for _, lb := range t.LowerBounds {
-			fn, ok := ctorSignature(lb)
-			if !ok {
-				continue
-			}
-			if found != nil && !equalType(found, fn) {
-				return nil, false
-			}
-			found = fn
-		}
-		if found != nil {
-			return found, true
-		}
-	}
-	return nil, false
 }
 
 // freshClassInstance builds an instance of ct with a fresh inference var for each of the

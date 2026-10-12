@@ -205,11 +205,11 @@ func TestInferMatchAllArmsDiverge(t *testing.T) {
 // A fallthrough runs with its branch's test known to have matched, so the walk keeps
 // that test applied. Normalization drops the second arm's `Point` test, because a value
 // reaching it already passed the first arm's. The extractor the first arm tested is what
-// resolves `a` to the constructor's first parameter. Without it `a` would be an
+// resolves `a` to the first value its matcher returns. Without it `a` would be an
 // unconstrained variable, and the result would read `0` rather than `number`.
 func TestInferMatchFallthroughKeepsTheMatchedTest(t *testing.T) {
 	values, _, errs := inferSource(t, `
-		class Point { x: number, y: number }
+		class Point { x: number, y: number, static [Symbol.customMatcher](subject: Point) -> [number, number] { return [subject.x, subject.y] } }
 		fn f(p: Point, b: boolean) {
 			return match p {
 				Point(a, c) if b => 0,

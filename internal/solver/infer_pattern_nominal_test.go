@@ -40,13 +40,11 @@ func TestInferInstancePatValDestructure(t *testing.T) {
 }
 
 // An extractor pattern `Point(x, y)` binds each argument sub-pattern against the matching
-// constructor parameter's type. This is the M5 interim: the extractor protocol is the
-// instance's `[Symbol.customMatcher]` method, which needs symbol-keyed members and lands in
-// M7. Point's synthesized constructor parameters are its fields, so `x` and `y` bind at
-// `number`, the same shape a custom matcher returning `[x, y]` would produce.
+// value of the tuple Point's `[Symbol.customMatcher]` returns, so `x` and `y` bind at
+// `number`.
 func TestInferExtractorPatBindsArgs(t *testing.T) {
 	values, _, errs := inferSource(t, `
-		class Point { x: number, y: number }
+		class Point { x: number, y: number, static [Symbol.customMatcher](subject: Point) -> [number, number] { return [subject.x, subject.y] } }
 		fn f(p: Point) {
 			return match p {
 				Point(x, y) => [x, y]
@@ -57,34 +55,26 @@ func TestInferExtractorPatBindsArgs(t *testing.T) {
 	require.Equal(t, "fn (p: Point) -> [number, number]", values["f"])
 }
 
-// DISABLED until M7. An extractor pattern deconstructs through the class instance's
-// `[Symbol.customMatcher]` method, not its constructor. M5 has no symbol-keyed members, so
-// bindExtractorPat binds against constructor parameters as an interim. This case asserts that
-// interim by extracting `label`, a constructor parameter that is never stored on the
-// instance and so is not recoverable from an instance value. Under M7's `[Symbol.customMatcher]`
-// resolution, `Celsius` declares no custom matcher, so the match is rejected outright.
-// Re-enable when M7 lands and assert the missing-custom-matcher error the commented body
-// records.
+// An extractor pattern deconstructs through the class's `[Symbol.customMatcher]` method,
+// not its constructor. `Celsius` takes a `label` its constructor never stores, so nothing
+// could recover it from an instance, and declaring no matcher, the class is not an extractor.
 func TestInferExtractorPatExplicitConstructor(t *testing.T) {
-	/*
-		_, _, errs := inferSource(t, `
-			class Celsius {
-				degrees: number,
-				constructor(&mut self, label: string, degrees: number) {
-					self.degrees = degrees
-				},
+	_, _, errs := inferSource(t, `
+		class Celsius {
+			degrees: number,
+			constructor(&mut self, label: string, degrees: number) {
+				self.degrees = degrees
+			},
+		}
+		fn f(c: Celsius) {
+			return match c {
+				Celsius(label, degrees) => [label, degrees]
 			}
-			fn f(c: Celsius) {
-				return match c {
-					Celsius(label, degrees) => [label, degrees]
-				}
-			}
-		`)
-		require.Len(t, errs, 1)
-		// M7: `Celsius` has no `[Symbol.customMatcher]` method, so it cannot be used as an
-		// extractor pattern. The exact error type lands with the matcher resolution.
-		require.Equal(t, "`Celsius` has no [Symbol.customMatcher] method", msgWithSpan(t, errs[0]))
-	*/
+		}
+	`)
+	require.Equal(t, []string{
+		"10:5-10:28: `Celsius` declares no [Symbol.customMatcher] method, so it cannot be used as an extractor pattern",
+	}, messagesWithSpan(t, errs))
 }
 
 // A generic class instance pattern projects the field at the instance's type argument, so
@@ -103,9 +93,10 @@ func TestInferInstancePatGeneric(t *testing.T) {
 }
 
 // A generic extractor pattern likewise binds the argument at the instance's type argument.
+// The matcher is static, so it declares its own type parameter.
 func TestInferExtractorPatGeneric(t *testing.T) {
 	values, _, errs := inferSource(t, `
-		class Box<T> { value: T }
+		class Box<T> { value: T, static [Symbol.customMatcher]<U>(subject: Box<U>) -> [U] { return [subject.value] } }
 		fn f(b: Box<string>) {
 			return match b {
 				Box(value) => value
@@ -174,11 +165,11 @@ func TestInferInstancePatWrongField(t *testing.T) {
 	require.Equal(t, "5:16-5:17: object is missing property: z", msgWithSpan(t, errs[0]))
 }
 
-// An extractor pattern whose argument count differs from the constructor's parameter count
-// is an ExtractorPatternArityError.
+// An extractor pattern whose argument count differs from the length of the tuple its
+// matcher returns is an ExtractorPatternArityError.
 func TestInferExtractorPatWrongArity(t *testing.T) {
 	_, _, errs := inferSource(t, `
-		class Point { x: number, y: number }
+		class Point { x: number, y: number, static [Symbol.customMatcher](subject: Point) -> [number, number] { return [subject.x, subject.y] } }
 		fn f(p: Point) {
 			return match p {
 				Point(x) => x
@@ -207,9 +198,9 @@ func TestInferInstancePatNotAClass(t *testing.T) {
 	}, messagesWithSpan(t, errs))
 }
 
-// An extractor pattern naming a value binding rather than a constructor is invalid, and that
-// one invalid arm leaves the `number` scrutinee non-exhaustive, so the coverage check reports
-// it too.
+// An extractor pattern naming a value that declares no matcher is invalid, and that one
+// invalid arm leaves the `number` scrutinee non-exhaustive, so the coverage check reports it
+// too.
 func TestInferExtractorPatNotAConstructor(t *testing.T) {
 	_, _, errs := inferSource(t, `
 		val g = 5
@@ -220,7 +211,7 @@ func TestInferExtractorPatNotAConstructor(t *testing.T) {
 		}
 	`)
 	require.Equal(t, []string{
-		"5:5-5:9: `g` is not a constructor and cannot be used as an extractor pattern.",
+		"5:5-5:9: `g` declares no [Symbol.customMatcher] method, so it cannot be used as an extractor pattern",
 		"4:11-6:5: match is not exhaustive; `number` admits values no pattern names, so add a catch-all branch",
 	}, messagesWithSpan(t, errs))
 }
@@ -356,8 +347,8 @@ func TestInferMatchUnionAliasExhaustiveness(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			_, _, errs := inferSource(t, `
-		class Dog { name: string }
-		class Cat { name: string }
+		class Dog { name: string, static [Symbol.customMatcher](subject: Dog) -> [string] { return [subject.name] } }
+		class Cat { name: string, static [Symbol.customMatcher](subject: Cat) -> [string] { return [subject.name] } }
 		type Pet = Dog | Cat
 		fn f(p: Pet) {
 			return match p {
@@ -384,7 +375,7 @@ func TestInferMatchUnionAliasExhaustiveness(t *testing.T) {
 // constructible since a variant constructor returns the whole enum union.
 func TestInferMatchNominalMemberUncoveredStructural(t *testing.T) {
 	_, _, errs := inferSource(t, `
-		class Point { x: number }
+		class Point { x: number, static [Symbol.customMatcher](subject: Point) -> [number] { return [subject.x] } }
 		fn f(b: boolean) {
 			val p = if b { Point(1) } else { {y: 2} }
 			return match p {
@@ -758,7 +749,7 @@ func TestInferExtractorPatRestAndDefault(t *testing.T) {
 		{
 			name: "RestInAVal",
 			src: `
-				class C { msg: string, value: number, flag: boolean }
+				class C { msg: string, value: number, flag: boolean, static [Symbol.customMatcher](subject: C) -> [string, number, boolean] { return [subject.msg, subject.value, subject.flag] } }
 				val subject = C("hello", 5, true)
 				val C(x, ...y) = subject
 			`,
@@ -767,7 +758,7 @@ func TestInferExtractorPatRestAndDefault(t *testing.T) {
 		{
 			name: "RestInAMatchArm",
 			src: `
-				class C { msg: string, value: number, flag: boolean }
+				class C { msg: string, value: number, flag: boolean, static [Symbol.customMatcher](subject: C) -> [string, number, boolean] { return [subject.msg, subject.value, subject.flag] } }
 				declare val subject: C
 				val rest = match subject {
 					C(_, ...r) => r,
@@ -778,7 +769,7 @@ func TestInferExtractorPatRestAndDefault(t *testing.T) {
 		{
 			name: "RestTakingNothing",
 			src: `
-				class C { msg: string }
+				class C { msg: string, static [Symbol.customMatcher](subject: C) -> [string] { return [subject.msg] } }
 				declare val subject: C
 				val C(m, ...none) = subject
 			`,
@@ -787,7 +778,7 @@ func TestInferExtractorPatRestAndDefault(t *testing.T) {
 		{
 			name: "DefaultRemovesUndefined",
 			src: `
-				class C { msg: string | undefined }
+				class C { msg: string | undefined, static [Symbol.customMatcher](subject: C) -> [string | undefined] { return [subject.msg] } }
 				val subject = C("hello")
 				val C(msg = "world") = subject
 			`,
@@ -813,25 +804,11 @@ func TestInferExtractorPatRestAndDefault(t *testing.T) {
 		{
 			name: "RestInAnIfVal",
 			src: `
-				class C { msg: string, value: number }
+				class C { msg: string, value: number, static [Symbol.customMatcher](subject: C) -> [string, number] { return [subject.msg, subject.value] } }
 				declare val subject: C
 				val rest = if val C(_, ...r) = subject { r } else { [0] }
 			`,
 			want: map[string]string{"rest": "[number]"},
-		},
-		{
-			name: "RestOverOptionalAndRestParameters",
-			src: `
-				class C {
-					a: number,
-					constructor(&mut self, a: number, b?: string, ...cs: Array<boolean>) {
-						self.a = a
-					},
-				}
-				declare val subject: C
-				val C(first, ...more) = subject
-			`,
-			want: map[string]string{"first": "number", "more": "Array<string | boolean | undefined>"},
 		},
 	}
 	for _, tt := range tests {
@@ -849,7 +826,7 @@ func TestInferExtractorPatRestAndDefault(t *testing.T) {
 // fewer than the fixed prefix takes.
 func TestInferExtractorPatRestArity(t *testing.T) {
 	_, _, errs := inferSource(t, `
-		class Point { x: number, y: number }
+		class Point { x: number, y: number, static [Symbol.customMatcher](subject: Point) -> [number, number] { return [subject.x, subject.y] } }
 		fn f(p: Point) {
 			return match p {
 				Point(x, y, z, ...rest) => x
@@ -879,7 +856,7 @@ func TestInferInteriorRestReported(t *testing.T) {
 		{
 			name: "Extractor",
 			src: `
-				class C { a: number, b: string }
+				class C { a: number, b: string, static [Symbol.customMatcher](subject: C) -> [number, string] { return [subject.a, subject.b] } }
 				declare val s: C
 				val r = match s { C(...x, y) => 1 }
 			`,
@@ -891,6 +868,94 @@ func TestInferInteriorRestReported(t *testing.T) {
 			_, _, errs := inferSource(t, tt.src)
 			require.Len(t, errs, 1)
 			require.Equal(t, tt.want, msgWithSpan(t, errs[0]))
+		})
+	}
+}
+
+// TestInferExtractorPatReadsTheMatcher covers extractor patterns that read what a class's
+// `[Symbol.customMatcher]` returns rather than what its constructor takes. A row with
+// wantErrs asserts those diagnostics, and one without asserts the bindings in want.
+func TestInferExtractorPatReadsTheMatcher(t *testing.T) {
+	tests := []struct {
+		name     string
+		src      string
+		want     map[string]string
+		wantErrs []string
+	}{
+		{
+			name: "MatcherArityDiffersFromTheConstructor",
+			src: `
+				class Pair {
+					a: number,
+					b: string,
+					constructor(&mut self, a: number) {
+						self.a = a
+						self.b = ""
+					},
+					static [Symbol.customMatcher](subject: Pair) -> [number, string] {
+						return [subject.a, subject.b]
+					},
+				}
+				declare val p: Pair
+				val Pair(x, y) = p
+			`,
+			want: map[string]string{"x": "number", "y": "string"},
+		},
+		{
+			name: "VariadicMatcher",
+			src: `
+				declare class Words {
+					static [Symbol.customMatcher](subject: Words) -> [number, ...Array<string>],
+				}
+				declare val w: Words
+				val Words(n, first, second) = w
+				val Words(m, ...others) = w
+			`,
+			want: map[string]string{"n": "number", "first": "string", "second": "string", "others": "Array<string>"},
+		},
+		{
+			name: "VariadicMatcherNeedsItsFixedValues",
+			src: `
+				declare class Words { static [Symbol.customMatcher](subject: Words) -> [number, ...Array<string>] }
+				declare val w: Words
+				val r = match w { Words() => 0 }
+			`,
+			wantErrs: []string{"4:23-4:30: extractor pattern `Words` expects at least 1 arguments but got 0"},
+		},
+		{
+			name: "MissingMatcherInAVal",
+			src: `
+				class Point { x: number, y: number }
+				declare val p: Point
+				val Point(x, y) = p
+			`,
+			wantErrs: []string{
+				"4:9-4:20: `Point` declares no [Symbol.customMatcher] method, so it cannot be used as an extractor pattern",
+			},
+		},
+		{
+			name: "MalformedMatcher",
+			src: `
+				class Point { x: number, static [Symbol.customMatcher](subject: Point) -> Array<number> { return [subject.x] } }
+				declare val p: Point
+				val Point(x) = p
+			`,
+			wantErrs: []string{
+				"4:9-4:17: the [Symbol.customMatcher] of `Point` must be one method taking a subject and returning a tuple",
+			},
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			values, _, errs := inferSource(t, tt.src)
+			if tt.wantErrs != nil {
+				require.Equal(t, tt.wantErrs, messagesWithSpan(t, errs))
+				return
+			}
+			require.Empty(t, errs)
+			for name, want := range tt.want {
+				require.Equal(t, want, values[name], "value binding %q", name)
+			}
 		})
 	}
 }
