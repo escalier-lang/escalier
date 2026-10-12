@@ -145,15 +145,14 @@ func TestPreludeStdlibNamesAreTypesNotValues(t *testing.T) {
 }
 
 // A program numbers its own unique symbols from zero however many the prelude declares,
-// the same way it numbers its type variables from `t0`. `SymbolConstructor` alone declares
-// seventeen, and a diagnostic about code that never names one should not start at
-// `unique symbol#17`.
+// the same way it numbers its type variables from `t0`. `Symbol` alone declares seventeen,
+// and a program's first symbol should not be `unique symbol#17`. A symbol prints by its
+// declaration's name, so the test reads the ids off the reported types.
 func TestPreludeSymbolsDoNotAdvanceTheProgramsNumbering(t *testing.T) {
 	const src = `
-		declare class C { readonly a: unique symbol, readonly b: unique symbol }
-		declare fn takeA(s: C["a"]) -> number
-		declare val c: C
-		val n = takeA(c.b)
+		declare class C { static readonly a: unique symbol, static readonly b: unique symbol }
+		declare fn takeA(s: typeof C.a) -> number
+		val n = takeA(C.b)
 	`
 	tests := []struct {
 		name  string
@@ -163,11 +162,10 @@ func TestPreludeSymbolsDoNotAdvanceTheProgramsNumbering(t *testing.T) {
 			// The shape the committed tree writes, so the fixture cannot drift from it.
 			name: "APreludeDeclaringSymbolsOfItsOwn",
 			files: map[string]string{"std/prelude.esc": `
-				export declare interface SymbolConstructor {
-					readonly iterator: unique symbol,
-					readonly asyncIterator: unique symbol,
+				export declare class Symbol {
+					static readonly iterator: unique symbol,
+					static readonly asyncIterator: unique symbol,
 				}
-				export declare var Symbol: SymbolConstructor
 			`},
 		},
 		{
@@ -178,9 +176,11 @@ func TestPreludeSymbolsDoNotAdvanceTheProgramsNumbering(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			res := inferAgainstStdlib(t, src, tt.files)
-			require.Equal(t,
-				[]string{"cannot constrain unique symbol#1 <: unique symbol#0"},
-				errorMessagesOf(res.Errors))
+			require.Equal(t, []string{"cannot constrain typeof C.b <: typeof C.a"}, errorMessagesOf(res.Errors))
+			mismatch, ok := res.Errors[0].(*CannotConstrainError)
+			require.True(t, ok)
+			require.Equal(t, "unique symbol#1", soltype.PrintQualified(mismatch.Sub))
+			require.Equal(t, "unique symbol#0", soltype.PrintQualified(mismatch.Super))
 		})
 	}
 }
