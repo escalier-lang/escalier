@@ -1481,8 +1481,14 @@ func (c *Context) constrain(sub, super soltype.Type, seen *seenPairs, mutCtx boo
 		if elemT, ok := c.arrayElem(super); ok {
 			return c.constrainTupleIntoArray(sub, super, elemT, seen, mutCtx)
 		}
+		if sup, ok := super.(*soltype.TupleType); ok && (c.isVariadicTuple(sub) || c.isVariadicTuple(sup)) {
+			if errs, decided := c.constrainVariadicTuple(sub, sup, seen, mutCtx); decided {
+				return errs
+			}
+		}
 		if tupleHasSpread(sub) || tupleHasSpread(super) {
-			// One side carries an unreduced `...P` spread the pre-switch could not ground: a spread
+			// One side carries an unreduced `...P` spread the pre-switch could not ground and that
+			// is not a variadic tail: a spread
 			// over a type parameter, or an expanding recursive alias. constrain treats such a tuple
 			// inert, the same as the KeyofType/IndexType residuals — it is never decomposed, so two
 			// spread-tuples are compatible only when structurally identical. When super is a variable
@@ -1729,6 +1735,18 @@ func (c *Context) constrain(sub, super soltype.Type, seen *seenPairs, mutCtx boo
 		}
 	case *soltype.ClassType:
 		switch sup := super.(type) {
+		case *soltype.TupleType:
+			// `Array<T>` holds any number of values, so it fills a tuple that is all
+			// variadic middle, `[...Array<U>]`, and no tuple with a fixed element.
+			if elem, isArray := c.arrayElem(sub); isArray {
+				if shape, ok := c.shapeOf(sup); ok && shape.rest != nil && shape.minLen() == 0 {
+					errs := c.constrain(elem, shape.rest, seen, mutCtx)
+					if mutCtx {
+						errs = append(errs, c.constrain(shape.rest, elem, seen, mutCtx)...)
+					}
+					return errs
+				}
+			}
 		case *soltype.ClassType:
 			// Nominal: identical name with a per-position argument check, or sub reaches
 			// sup transitively through the declared extends graph. The mut-context flag

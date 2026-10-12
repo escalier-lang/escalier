@@ -2731,18 +2731,13 @@ func (c *checker) recordNamespaceMember(node ast.Node, b ValueBinding) {
 //
 // A spread element ([...xs]) splices the operand's element types into the literal.
 // For example, [...pair, 3] over pair: [number, string] builds
-// [number, string, number]. An inexact operand ([number, ...]) has unknown length, so
-// it may only be spread as the last element. There its known prefix extends the
-// literal and its unknown tail makes the result inexact too. An inexact operand
-// anywhere else would put a later element at an unknown position, which is an
-// InexactTupleSpreadError.
+// [number, string, number].
 //
-// Any other iterable operand has no fixed length, so the literal is an `Array` of the
-// union of every element and every spread's element type. `[...s]` over `s: string` is
-// `Array<string>`. A literal with fixed elements beside such a spread loses its minimum
-// length this way. `[0, ...xs]` over `xs: Array<number>` is `Array<number>`, where
-// `[0, ...Array<number>]` would keep the `0`. The solver cannot yet check a value against
-// a tuple with a variadic tail, so #1967 tracks inferring one.
+// A spread of a variadic tuple, or of an iterable that is not a tuple, has no fixed
+// length, so the literal is a variadic tuple that variadicLiteral assembles.
+// `[0, ...xs]` over `xs: Array<number>` is `[0, ...Array<number>]`, and `[...xs]` is
+// `Array<number>`. Without one, fixedLiteral builds the tuple, where an inexact operand
+// such as `[number, ...]` may only be spread last.
 //
 // A spread of a value that is not iterable is a SpreadNotTupleError. A spread whose operand
 // already errored is absorbed silently, so the recovery sentinel does not cascade a second
@@ -2751,35 +2746,41 @@ func (c *checker) inferTuple(scope *Scope, lvl int, e *ast.TupleExpr) soltype.Ty
 	// Resolve the enclosing statement's CFG point before inferring elements, which can
 	// overwrite c.fn.currentStmt with an inner branch statement.
 	stmtRef, hasStmtRef := c.currentStmtRef()
-	elems := make([]soltype.Type, 0, len(e.Elems))
-	inexact := false
-	unbounded := false
-	// misplaced holds each inexact tuple spread that is not the last element. A tuple
-	// result has no position for the elements after it, so each is an error there. An
-	// Array result has no positions at all, so it takes them as ordinary elements.
-	var misplaced []*InexactTupleSpreadError
+	pieces := make([]tuplePiece, 0, len(e.Elems))
+	variadic := false
 	for i, el := range e.Elems {
 		spread, ok := el.(*ast.ArraySpreadExpr)
 		if !ok {
 			elemT := c.inferExpr(scope, lvl, el)
-			elems = append(elems, elemT)
+			pieces = append(pieces, tuplePiece{fixed: []soltype.Type{elemT}})
 			// Building an owned value into the tuple moves it.
 			c.consumeIntoLiteral(el, elemT, stmtRef, hasStmtRef)
 			continue
 		}
 		switch op := c.inferExpr(scope, lvl, spread.Value).(type) {
 		case *soltype.TupleType:
-			if op.Inexact && i != len(e.Elems)-1 {
-				misplaced = append(misplaced, &InexactTupleSpreadError{Spread: spread, Operand: op})
-				continue
+			piece := tuplePiece{fixed: op.Elems}
+			shape, shaped := c.ctx.shapeOf(op)
+			switch {
+			case op.Inexact:
+				// A residual spread fixes no prefix, so the elements stand in for one.
+				prefix := op.Elems
+				if shaped {
+					prefix = shape.prefix
+				}
+				piece = tuplePiece{inexact: op, inexactPrefix: prefix, spread: spread, last: i == len(e.Elems)-1}
+			case shaped && shape.rest != nil:
+				piece = tuplePiece{shape: &shape}
+				variadic = true
 			}
-			elems = append(elems, op.Elems...)
-			if op.Inexact {
-				inexact = true // a trailing inexact spread carries through
+			// An inexact tuple before the last element has no place in a tuple result, so
+			// it is consumed below only once the literal is known to hold it.
+			if piece.inexact == nil || piece.last {
+				// Spreading an owned tuple moves its elements into the new tuple, so the
+				// spread operand is consumed.
+				c.consumeIntoLiteral(spread.Value, op, stmtRef, hasStmtRef)
 			}
-			// Spreading an owned tuple moves its elements into the new tuple, so the
-			// spread operand is consumed.
-			c.consumeIntoLiteral(spread.Value, op, stmtRef, hasStmtRef)
+			pieces = append(pieces, piece)
 		case *soltype.ErrorType:
 			// The operand already reported its own failure; absorb it rather than
 			// layering a SpreadNotTupleError on the recovery sentinel.
@@ -2789,31 +2790,98 @@ func (c *checker) inferTuple(scope *Scope, lvl int, e *ast.TupleExpr) soltype.Ty
 				c.report(&SpreadNotTupleError{Spread: spread, Operand: op})
 				continue
 			}
-			elems = append(elems, elem)
-			unbounded = true
+			pieces = append(pieces, tuplePiece{shape: &tupleShape{rest: elem}})
+			variadic = true
 			c.consumeIntoLiteral(spread.Value, op, stmtRef, hasStmtRef)
 		}
 	}
-	var t soltype.Type = &soltype.TupleType{Elems: elems, Inexact: inexact}
-	if unbounded {
-		for _, m := range misplaced {
-			elems = append(elems, m.Operand.Elems...)
-			c.consumeIntoLiteral(m.Spread.Value, m.Operand, stmtRef, hasStmtRef)
-		}
-		// An inexact tuple's open tail holds values of any type, so an Array holding
-		// it holds `unknown`, the element type syncElemType gives such a tuple.
-		if inexact || len(misplaced) > 0 {
-			elems = append(elems, &soltype.UnknownType{})
-		}
-		t = c.ctx.arrayOf(newUnion(c.ctx, elems))
+	var t soltype.Type
+	if variadic {
+		t = c.variadicLiteral(pieces, stmtRef, hasStmtRef)
 	} else {
-		for _, m := range misplaced {
-			c.report(m)
-		}
+		t = c.fixedLiteral(pieces)
 	}
 	c.recordType(e, t)
 	c.recordProv(t, e, TupleElem)
 	return t
+}
+
+// tuplePiece is what one element of an array literal contributes. fixed holds values at
+// fixed positions: an element's own type, or every element of a spread tuple of fixed
+// length. shape is a spread with a variadic middle, either a variadic tuple or an iterable
+// that is not a tuple, which inferTuple reads as all middle. inexact is a spread of an
+// inexact tuple, with inexactPrefix the values it holds before its open tail, spread its
+// source node, and last whether it is the literal's final element.
+type tuplePiece struct {
+	fixed         []soltype.Type
+	shape         *tupleShape
+	inexact       *soltype.TupleType
+	inexactPrefix []soltype.Type
+	spread        *ast.ArraySpreadExpr
+	last          bool
+}
+
+// fixedLiteral builds the tuple an array literal holding no variadic spread is. An inexact
+// tuple spread as the last element extends the literal with its known prefix and makes the
+// literal inexact. One spread anywhere else would put a later element at an unknown
+// position, which is an InexactTupleSpreadError.
+func (c *checker) fixedLiteral(pieces []tuplePiece) *soltype.TupleType {
+	var elems []soltype.Type
+	inexact := false
+	for _, piece := range pieces {
+		switch {
+		case piece.inexact == nil:
+			elems = append(elems, piece.fixed...)
+		case piece.last:
+			elems = append(elems, piece.inexact.Elems...)
+			inexact = true
+		default:
+			c.report(&InexactTupleSpreadError{Spread: piece.spread, Operand: piece.inexact})
+		}
+	}
+	return &soltype.TupleType{Elems: elems, Inexact: inexact}
+}
+
+// variadicLiteral builds the type of an array literal holding a variadic spread. The values
+// before the first variadic spread form the prefix and the values after the last one form
+// the suffix. Everything between joins one middle whose element type is the union of
+// them, since a second variadic spread leaves no fixed position for what sits between the
+// two. An inexact tuple spread is read as its known prefix followed by an `unknown` middle.
+//
+// `[0, ...xs]` over `xs: Array<number>` is `[0, ...Array<number>]`, which keeps the
+// minimum length of one. A literal with no fixed value on either side is the `Array`
+// itself, so `[...xs]` is `Array<number>`.
+func (c *checker) variadicLiteral(pieces []tuplePiece, stmtRef liveness.StmtRef, hasStmtRef bool) soltype.Type {
+	var prefix, middle, suffix []soltype.Type
+	inMiddle := false
+	addVariadic := func(shape tupleShape) {
+		if !inMiddle {
+			prefix = append(prefix, shape.prefix...)
+		} else {
+			middle = append(middle, suffix...)
+			middle = append(middle, shape.prefix...)
+			suffix = nil
+		}
+		middle = append(middle, shape.rest)
+		suffix = append(suffix, shape.suffix...)
+		inMiddle = true
+	}
+	for _, piece := range pieces {
+		switch {
+		case piece.shape != nil:
+			addVariadic(*piece.shape)
+		case piece.inexact != nil:
+			if !piece.last {
+				c.consumeIntoLiteral(piece.spread.Value, piece.inexact, stmtRef, hasStmtRef)
+			}
+			addVariadic(tupleShape{prefix: piece.inexactPrefix, rest: &soltype.UnknownType{}})
+		case inMiddle:
+			suffix = append(suffix, piece.fixed...)
+		default:
+			prefix = append(prefix, piece.fixed...)
+		}
+	}
+	return c.ctx.variadicTuple(prefix, newUnion(c.ctx, middle), suffix)
 }
 
 // inferObject types an object literal as an exact soltype.ObjectType. A property
@@ -3143,6 +3211,11 @@ func (c *checker) valueProp(lvl int, blame ast.Node, provNode ast.Node, name str
 	if wrapper, ok := c.primitiveWrapper(recvCarrier); ok {
 		recv, recvCarrier = wrapper, wrapper
 	}
+	// A variadic tuple is an array at least as long as its fixed elements, so it reads
+	// `length` and the methods off `Array` of every element it may hold.
+	if array, ok := c.ctx.variadicArray(recvCarrier); ok {
+		recv, recvCarrier = array, array
+	}
 	// A class instance, and any member that is a method or getter rather than a plain
 	// field, resolves through the projected class body by direct member lookup rather
 	// than the structural field-requirement below — the constraint path reads only
@@ -3335,6 +3408,20 @@ func (c *checker) resolveIndexPath(scope *Scope, lvl int, e *ast.IndexExpr, objP
 // unsupported, since the access would leave no type; reaching it needs an array or usage-inferred one.
 func (c *checker) dynamicIndexRead(scope *Scope, lvl int, e *ast.IndexExpr, recv soltype.Type, objPos bool) pathResult {
 	key := c.inferExpr(scope, lvl, e.Index)
+	// A variadic tuple fixes the type at a position only within its prefix. Any other
+	// index reads one of the values the tuple may hold, so it reads off `Array` of them.
+	if shape, ok := c.ctx.variadicShape(recv); ok {
+		if i, inPrefix := prefixPosition(key, len(shape.prefix)); inPrefix {
+			if !objPos {
+				c.recordMemberUse(e)
+			}
+			c.recordType(e, shape.prefix[i])
+			return pathResult{value: shape.prefix[i]}
+		}
+	}
+	if array, ok := c.ctx.variadicArray(recv); ok {
+		recv = array
+	}
 	access := &soltype.IndexType{Target: recv, Index: key}
 	reduced, reduceErrs, ok := c.ctx.reduceResidual(access, newSeenPairs())
 	if len(reduceErrs) > 0 {

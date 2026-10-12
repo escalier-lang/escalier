@@ -914,6 +914,18 @@ func TestInferExtractorPatReadsTheMatcher(t *testing.T) {
 			want: map[string]string{"n": "number", "first": "string", "second": "string", "others": "Array<string>"},
 		},
 		{
+			name: "VariadicMatcherRestKeepsAFixedValue",
+			src: `
+				declare class Words {
+					static [Symbol.customMatcher](subject: Words) -> [number, string, ...Array<boolean>],
+				}
+				declare val w: Words
+				val Words(n, ...rest) = w
+				val r = match w { Words(_, ...more) => more }
+			`,
+			want: map[string]string{"n": "number", "rest": "[string, ...Array<boolean>]", "r": "[string, ...Array<boolean>]"},
+		},
+		{
 			name: "VariadicMatcherNeedsItsFixedValues",
 			src: `
 				declare class Words { static [Symbol.customMatcher](subject: Words) -> [number, ...Array<string>] }

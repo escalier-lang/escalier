@@ -529,6 +529,14 @@ func (c *checker) bindRecoveredElem(scope *Scope, lvl int, e ast.Pat, scrutineeM
 // binds a variable bounded below by `[...]`. Unbounded it would coalesce to `never`, which
 // lets a caller assign the result to anything. restConcrete drives the borrow wrap.
 func (c *checker) tupleRestType(lvl int, node ast.Node, scrutinee soltype.Type, scrutTup, concreteTup *soltype.TupleType, prefix int) (bind, restConcrete soltype.Type) {
+	// A variadic scrutinee's rest holds the fixed values past the pattern's prefix and then
+	// its middle, so `[a, ...rest]` over `[number, ...Array<string>]` binds `Array<string>`.
+	// A prefix reaching into the middle is rejected by the requirement projectTuple emits,
+	// since the middle may be empty.
+	if shape, ok := c.ctx.variadicShape(scrutinee); ok && prefix <= len(shape.prefix) {
+		rest := c.ctx.variadicTuple(shape.prefix[prefix:], shape.rest, shape.suffix)
+		return rest, rest
+	}
 	tup, ok := c.restTupleShape(scrutinee, scrutTup, concreteTup)
 	if !ok || len(tup.Elems) < prefix {
 		v := c.freshAt(lvl)
@@ -821,8 +829,10 @@ func extractedValue(params []*soltype.FuncParam, i int) (soltype.Type, bool) {
 
 // extractedSuffix returns the type of the values params yields from position from on,
 // which is what a trailing rest in an extractor pattern binds, and false when from is past
-// the values it yields. It is a tuple of their types, or an `Array` of them when the values
-// do not end.
+// the values it yields. It is a tuple of their types. When the values do not end it is a
+// variadic tuple, which keeps the fixed values still ahead of the tail at their positions,
+// so `C(a, ...rest)` over a matcher returning `[number, string, ...Array<boolean>]` binds
+// `rest` as `[string, ...Array<boolean>]`.
 func (c *checker) extractedSuffix(params []*soltype.FuncParam, from int) (soltype.Type, bool) {
 	fixed, variadic := fixedValues(params)
 	if from > fixed && !variadic {
@@ -833,7 +843,7 @@ func (c *checker) extractedSuffix(params []*soltype.FuncParam, from int) (soltyp
 		elems = append(elems, params[i].Type)
 	}
 	if variadic {
-		return c.ctx.arrayOf(newUnion(c.ctx, append(elems, params[fixed].Type))), true
+		return c.ctx.variadicTuple(elems, params[fixed].Type, nil), true
 	}
 	return &soltype.TupleType{Elems: elems}, true
 }
