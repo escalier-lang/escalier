@@ -143,10 +143,10 @@ export declare type BuiltinIteratorReturn = undefined
 // members TypeScript means to exclude, primitives included.
 export declare type NonNullable<T> = T & ~(undefined | null)
 
-// TypeScript bounds these four by `(...args: any) => any`, meaning any function, and its
-// `any` is bivariant, so every signature fits. Escalier reads `any` as `unknown`, which
-// makes the bound a function accepting any number of `unknown` arguments. Parameters are
-// contravariant, so `fn (a: number)` would not fit it.
+// TypeScript bounds `Parameters` and `ReturnType` by `(...args: any) => any`, meaning any
+// function, and its `any` is bivariant, so every signature fits. Escalier reads `any` as
+// `unknown`, which makes the bound a function accepting any number of `unknown` arguments.
+// Parameters are contravariant, so `fn (a: number)` would not fit it.
 //
 // `...args: Array<never>` says "any function" soundly. Each parameter is checked against
 // `never`, which every parameter type accepts, and the rest stands for the whole parameter

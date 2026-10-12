@@ -145,7 +145,7 @@ func (e *typeEvaluator) reduceDifference(members []soltype.Type) soltype.Type {
 	if !folded {
 		base = newIntersection(nil, positives)
 	}
-	if groundDifference(base, excluded) {
+	if e.ctx.groundDifference(base, excluded) {
 		members := unionMembers(base)
 		survivors := make([]soltype.Type, 0, len(members))
 		for _, m := range members {
@@ -181,12 +181,12 @@ func (e *typeEvaluator) excludeFrom(m soltype.Type, excluded []soltype.Type) (so
 // groundDifference reports whether a difference's operands are concrete enough to settle. Every
 // member of the positive side is asked two subtype questions per excluded type, and neither can be
 // decided over a type variable or an unreduced operator.
-func groundDifference(base soltype.Type, excluded []soltype.Type) bool {
-	if !condOperandGround(base) {
+func (c *Context) groundDifference(base soltype.Type, excluded []soltype.Type) bool {
+	if !c.condOperandGround(base) {
 		return false
 	}
 	for _, x := range excluded {
-		if !condOperandGround(x) {
+		if !c.condOperandGround(x) {
 			return false
 		}
 	}

@@ -225,12 +225,12 @@ func acceptSet(f *soltype.FuncType) (lo, hi int) {
 // past k, since its element type says what each value past the fixed params is. An inexact sub,
 // one shorter than k, or one whose rest has no element type to read is not.
 func (c *Context) canAbsorbRest(sub *soltype.FuncType, k int) bool {
-	if sub.Inexact || len(sub.Params) < k {
+	if sub.Inexact {
 		return false
 	}
 	j := restIndex(sub)
 	if j < 0 {
-		return true
+		return len(sub.Params) >= k
 	}
 	_, isArray := c.restSlotElem(sub.Params[j].Type)
 	return j >= k && isArray
@@ -881,7 +881,7 @@ func (c *Context) reduceResidual(t soltype.Type, seen *seenPairs) (soltype.Type,
 		}
 		return reduced, e.errs, true
 	}
-	if c.containsUnsettledOp(reduced) {
+	if c.containsResidualOp(reduced) {
 		return nil, nil, false
 	}
 	return reduced, e.errs, true
@@ -892,7 +892,7 @@ func (c *Context) reduceResidual(t soltype.Type, seen *seenPairs) (soltype.Type,
 // value is decided against it.
 func (c *Context) anyMemberResidual(u *soltype.UnionType) bool {
 	for _, member := range u.Types {
-		if c.containsUnsettledOp(member) {
+		if c.containsResidualOp(member) {
 			return true
 		}
 	}
@@ -1196,7 +1196,7 @@ func (c *Context) constrain(sub, super soltype.Type, seen *seenPairs, mutCtx boo
 	// itself, as a `T[number]` return type is, and only the inert residual arm in the structural
 	// switch matches that by identity.
 	if access, ok := sub.(*soltype.IndexType); ok {
-		if _, superIsVar := super.(*soltype.TypeVarType); !superIsVar && !containsResidualOp(super) {
+		if _, superIsVar := super.(*soltype.TypeVarType); !superIsVar && !c.containsResidualOp(super) {
 			if bound, ok := c.indexAccessUpperBound(access, seen); ok {
 				if c.unwrapDepth >= maxUnwrapDepth {
 					return []SolverError{&ExpansionLimitError{Sub: sub, Super: super}}

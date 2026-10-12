@@ -740,6 +740,7 @@ func TestStdlibFunctionUtilities(t *testing.T) {
 			head: number,
 			constructor(&mut self, head: number, ...tail: Array<string>) { self.head = head },
 		}
+		type First<T> = if T : [infer H, ...Array<unknown>] { H } else { never }
 	`
 	tests := []struct {
 		name    string
@@ -755,6 +756,8 @@ func TestStdlibFunctionUtilities(t *testing.T) {
 		{"ConstructorParametersOfAClass", "ConstructorParameters<typeof Point>", "[number, number]"},
 		{"ConstructorParametersOfARestParam", "ConstructorParameters<typeof Words>", "[number, ...Array<string>]"},
 		{"InstanceType", "InstanceType<typeof Point>", "Point"},
+		// A variadic result feeds another conditional the way a fixed tuple does.
+		{"ConditionalOverAVariadicResult", "First<Parameters<fn (a: number, ...rest: Array<string>) -> undefined>>", "number"},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
