@@ -39,19 +39,6 @@ type SolNamespace interface {
 	Namespace(name string) (SolNamespace, bool)
 }
 
-// SolSymbols describes the unique symbols the module being emitted declares.
-type SolSymbols struct {
-	// Minted holds each symbol a top-level declaration minted. A symbol's Name is the
-	// dotted path a program reads it through, such as `sym`, `C.key`, or `i.key`, and is
-	// empty when no such path exists.
-	Minted []*soltype.UniqueSymbolType
-	// Owners maps the name of each type that declares a symbol on a `readonly` property
-	// to the path of the value the symbol is named after. With
-	// `interface I { readonly key: unique symbol }` and `declare val i: I`, it maps `I`
-	// to `i`.
-	Owners map[string]string
-}
-
 // BuildDefinitionsFromSol builds `.d.ts` definitions from a solver module run, grouping
 // declarations by namespace the way the type_system walk does and emitting them in the
 // order depGraph typed them. Namespace names are sorted, so one module's output does not
@@ -62,7 +49,7 @@ func (b *Builder) BuildDefinitionsFromSol(
 	depGraph *dep_graph.DepGraph,
 	root SolNamespace,
 	preludePrefix string,
-	symbols SolSymbols,
+	symbols soltype.ModuleSymbols,
 ) *Module {
 	namespaceGroups := make(map[string][]dep_graph.BindingKey)
 

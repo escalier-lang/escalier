@@ -181,7 +181,7 @@ type checker struct {
 	// symbols holds the unique symbols of the module under inference. Its Owners are chosen
 	// before the walk starts, and its Minted grows as the walk mints symbols. Each walk
 	// starts it afresh.
-	symbols ModuleSymbols
+	symbols soltype.ModuleSymbols
 	// blockDepth counts the blocks enclosing the statement being inferred. It is 0 for a
 	// top-level declaration and above 0 inside a function body or a `do` block.
 	blockDepth int

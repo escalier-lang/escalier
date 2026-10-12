@@ -36,7 +36,7 @@ type Builder struct {
 	solSymbolKeys map[int]string
 	// solSymbolOwners maps the name of each type that declares a unique symbol on a
 	// `readonly` property to the path of the value the symbol is named after. See
-	// SolSymbols.
+	// soltype.ModuleSymbols.
 	solSymbolOwners map[string]string
 	// solShadowed holds the names a declaration in the namespace block being emitted
 	// cannot reach at the module root, because the block or an enclosing one declares a

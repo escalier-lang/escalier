@@ -183,3 +183,17 @@ var (
 	AsyncIteratorSymbolMember = wellKnownSymbolPrefix + "asyncIterator"
 	CustomMatcherSymbolMember = wellKnownSymbolPrefix + "customMatcher"
 )
+
+// ModuleSymbols describes the unique symbols one module declares. The solver produces it
+// for a module run, and the `.d.ts` emitter reads it to name each symbol.
+type ModuleSymbols struct {
+	// Minted holds each symbol a top-level declaration minted, in the order the run
+	// minted it. A symbol's Name is the dotted path a program reads it through, such as
+	// `sym`, `C.key`, or `i.key`, and is empty when no such path exists.
+	Minted []*UniqueSymbolType
+	// Owners maps the name of each type that declares a symbol on a `readonly` property
+	// to the path of the value the symbol is named after. With
+	// `interface I { readonly key: unique symbol }` and `declare val i: I`, it maps `I`
+	// to `i`.
+	Owners map[string]string
+}

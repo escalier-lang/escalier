@@ -56,7 +56,7 @@ type ModuleResult struct {
 	// Packages holds the surface of every package the run loaded.
 	Packages *PackageRegistry
 	// Symbols describes the unique symbols the module's own annotations declare.
-	Symbols ModuleSymbols
+	Symbols soltype.ModuleSymbols
 	// DepGraph is the graph the run built from the module and walked in SCC order.
 	// Codegen emits from one, and reading it here rather than rebuilding it removes
 	// the chance of emitting against a different graph than inference walked.
@@ -68,19 +68,6 @@ type ModuleResult struct {
 	// bin/ script checked against Scope, which needs this run's registries and
 	// counters rather than a second run's empty ones.
 	checker *checker
-}
-
-// ModuleSymbols describes the unique symbols one module's own annotations declare.
-type ModuleSymbols struct {
-	// Minted holds each symbol a top-level declaration minted, in the order the run
-	// minted it. A symbol's Name is the dotted path a program reads it through, such as
-	// `sym`, `C.key`, or `i.key`, and is empty when no such path exists.
-	Minted []*soltype.UniqueSymbolType
-	// Owners maps the name of each type that declares a symbol on a `readonly` property
-	// to the path of the value the symbol is named after. With
-	// `interface I { readonly key: unique symbol }` and `declare val i: I`, it maps `I`
-	// to `i`. See symbolOwners.
-	Owners map[string]string
 }
 
 // DeclaresTopLevel reports whether the module declared name at its top level, in
@@ -182,7 +169,7 @@ func inferModuleWithGroups(
 //
 // It returns the unique symbols the module's top-level declarations minted. A package
 // loaded partway through the walk keeps its own symbols out of the list.
-func (c *checker) inferDepGraph(scope *Scope, lvl int, module *ast.Module, g *dep_graph.DepGraph) ModuleSymbols {
+func (c *checker) inferDepGraph(scope *Scope, lvl int, module *ast.Module, g *dep_graph.DepGraph) soltype.ModuleSymbols {
 	// Saving the previous scope is defensive. A walk cannot start while another
 	// is in progress: bindImport is the only caller of loadPackage, and both
 	// call sites bind every import before walking anything, so a package is
@@ -208,7 +195,7 @@ func (c *checker) inferDepGraph(scope *Scope, lvl int, module *ast.Module, g *de
 	// Each symbol owner is chosen before any component is walked, since an interface's
 	// symbols are minted before the `val` that names them is reached.
 	prevSymbols := c.symbols
-	c.symbols = ModuleSymbols{Owners: symbolOwners(module, g)}
+	c.symbols = soltype.ModuleSymbols{Owners: symbolOwners(module, g)}
 	defer func() {
 		target.onDefine = prevOnDefine
 		c.nsIndex = nil
