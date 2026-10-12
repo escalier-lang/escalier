@@ -1811,6 +1811,30 @@ func (c *checker) writeAccessor(name string, carrier soltype.Type) (soltype.ObjT
 	return nil, false
 }
 
+// readMember looks `name` up on `carrier`'s class instance, class body, or class value,
+// whichever it resolves as, preferring the getter half of a getter/setter pair. It returns
+// found=false for any other receiver.
+func (c *checker) readMember(name string, carrier soltype.Type) (soltype.ObjTypeElem, bool) {
+	// An instance of a class, such as `b` in `val b = Box(1)`. The member is looked up on
+	// the class body and up its `extends` chain, and is typed at the instance's type
+	// arguments.
+	if ct, ok := c.classCarrier(carrier); ok {
+		return c.projectedClassMember(ct, ct, name, (*soltype.ObjectType).ReadMember, set.NewSet[string]())
+	}
+	// An object type the carrier is directly, once an alias or a `typeof` is expanded.
+	// This covers an object type annotation, an interface body, and a class value passed
+	// as its object type rather than through a variable.
+	if obj, ok := c.memberCarrier(carrier).(*soltype.ObjectType); ok {
+		return obj.ReadMember(name)
+	}
+	// A variable whose lower bounds carry a class value, such as `C` in `val C = Box`.
+	// A static member such as `C.create` is read off that value's object type.
+	if obj, ok := c.classValueCarrier(carrier); ok {
+		return obj.ReadMember(name)
+	}
+	return nil, false
+}
+
 // writeMember looks name up on carrier's class instance, class body, or class value,
 // whichever it resolves as, preferring the setter half of a getter/setter pair. It returns
 // found=false for any other receiver.

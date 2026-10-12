@@ -56,7 +56,7 @@ func ImplicitConstructor(decl *ClassDecl) (*ConstructorElem, *FieldElem) {
 		taken.Add(name)
 	}
 	for _, bodyElem := range decl.Body {
-		if field, ok := bodyElem.(*FieldElem); ok && takesConstructorParam(field) {
+		if field, ok := bodyElem.(*FieldElem); ok && TakesConstructorParam(field) {
 			if name, direct := directParamName(field.Name, freeKeyNames); direct {
 				taken.Add(name)
 			}
@@ -66,7 +66,7 @@ func ImplicitConstructor(decl *ClassDecl) (*ConstructorElem, *FieldElem) {
 
 	for _, bodyElem := range decl.Body {
 		field, ok := bodyElem.(*FieldElem)
-		if !ok || !takesConstructorParam(field) {
+		if !ok || !TakesConstructorParam(field) {
 			continue
 		}
 
@@ -190,7 +190,7 @@ func FreeNamesInComputedKeys(decl *ClassDecl) set.Set[string] {
 	names := set.NewSet[string]()
 	for _, bodyElem := range decl.Body {
 		field, ok := bodyElem.(*FieldElem)
-		if !ok || !takesConstructorParam(field) {
+		if !ok || !TakesConstructorParam(field) {
 			continue
 		}
 		key, computed := field.Name.(*ComputedKey)
@@ -210,10 +210,10 @@ func FreeNamesInComputedKeys(decl *ClassDecl) set.Set[string] {
 	return names
 }
 
-// takesConstructorParam reports whether a field's value arrives through a constructor
+// TakesConstructorParam reports whether a field's value arrives through a constructor
 // parameter. A static field belongs to the class rather than the instance. An optional
 // field defaults to `undefined`, and a parameter would force every caller to pass one.
-func takesConstructorParam(field *FieldElem) bool {
+func TakesConstructorParam(field *FieldElem) bool {
 	return !field.Static && !field.Optional
 }
 

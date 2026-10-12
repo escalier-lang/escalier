@@ -114,7 +114,7 @@ func (c *checker) checkInheritedMembers(def *ClassDef, self *soltype.ClassType, 
 	if def.Body == nil || len(def.Supers) == 0 {
 		return
 	}
-	blame := instanceMemberNodes(decl)
+	blame := c.instanceMemberNodes(decl)
 	rigid := c.ctx.skolemizeClassParams(def)
 	checked := set.NewSet[string]()
 	for _, elem := range def.Body.Elems {
@@ -480,7 +480,7 @@ func overrideBlame(blame map[memberBlameKey]ast.Node, name string, elem soltype.
 // instanceMemberNodes maps each instance member a class declaration writes to the node that
 // declares it, so an override diagnostic points at the member rather than the whole class. A
 // static member is left out, since `extends` relates instances.
-func instanceMemberNodes(decl *ast.ClassDecl) map[memberBlameKey]ast.Node {
+func (c *checker) instanceMemberNodes(decl *ast.ClassDecl) map[memberBlameKey]ast.Node {
 	nodes := map[memberBlameKey]ast.Node{}
 	for _, elem := range decl.Body {
 		var key ast.ObjKey
@@ -498,7 +498,7 @@ func instanceMemberNodes(decl *ast.ClassDecl) map[memberBlameKey]ast.Node {
 		default:
 			continue
 		}
-		if name, ok := objKeyName(key); ok && !static {
+		if name, ok := c.inferredKeyName(key); ok && !static {
 			nodes[memberBlameKey{name: name, setter: setter}] = elem
 		}
 	}
