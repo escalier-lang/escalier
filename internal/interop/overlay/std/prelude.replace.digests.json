@@ -86,6 +86,10 @@
     "digest": "12428e1afa5d2542"
   },
   {
+    "decl": "ConstructorParameters",
+    "digest": "204f1ee74343777f"
+  },
+  {
     "decl": "Disposable",
     "member": "Symbol.dispose",
     "kind": "method",
@@ -96,6 +100,10 @@
     "member": "throw",
     "kind": "method",
     "digest": "e207885967150b58"
+  },
+  {
+    "decl": "InstanceType",
+    "digest": "b8b9002077171c37"
   },
   {
     "decl": "IteratorObject",
@@ -118,6 +126,10 @@
   {
     "decl": "NonNullable",
     "digest": "cd845ace7ee44d0e"
+  },
+  {
+    "decl": "Parameters",
+    "digest": "677776a02d358346"
   },
   {
     "decl": "Promise",
@@ -155,5 +167,9 @@
     "member": "then",
     "kind": "method",
     "digest": "0143ef3631f4a9e9"
+  },
+  {
+    "decl": "ReturnType",
+    "digest": "06ca25c802cc501f"
   }
 ]

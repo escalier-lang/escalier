@@ -143,6 +143,26 @@ export declare type BuiltinIteratorReturn = undefined
 // members TypeScript means to exclude, primitives included.
 export declare type NonNullable<T> = T & ~(undefined | null)
 
+// TypeScript bounds these four by `(...args: any) => any`, meaning any function, and its
+// `any` is bivariant, so every signature fits. Escalier reads `any` as `unknown`, which
+// makes the bound a function accepting any number of `unknown` arguments. Parameters are
+// contravariant, so `fn (a: number)` would not fit it.
+//
+// `...args: Array<never>` says "any function" soundly. Each parameter is checked against
+// `never`, which every parameter type accepts, and the rest stands for the whole parameter
+// list, so a function of any arity fits.
+//
+// The two constructor forms take a class value. TypeScript writes them over
+// `abstract new (...args: any) => any`, and the mechanical lowering loses the `new`, so
+// they are restated over a construct signature.
+export declare type Parameters<T: fn (...args: Array<never>) -> unknown> = if T : fn (...args: infer P) -> unknown { P } else { never }
+
+export declare type ConstructorParameters<T: {new (...args: Array<never>) -> unknown}> = if T : {new (...args: infer P) -> unknown} { P } else { never }
+
+export declare type ReturnType<T: fn (...args: Array<never>) -> unknown> = if T : fn (...args: Array<never>) -> infer R { R } else { unknown }
+
+export declare type InstanceType<T: {new (...args: Array<never>) -> unknown}> = if T : {new (...args: Array<never>) -> infer R} { R } else { unknown }
+
 // A program implements `Disposable` itself, in a class whose instances it hands
 // to `using` or a `DisposableStack`. The runtime calls `[Symbol.dispose]` and
 // discards what it returns, so the return is `unknown` and a body returning a

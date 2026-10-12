@@ -2007,11 +2007,29 @@ func containsResidualOp(t soltype.Type) bool {
 	return f.found
 }
 
-// residualOpFinder is the walking visitor behind containsResidualOp. It flags the first residual
-// operator it reaches and skips that node's children, since one occurrence is enough.
-type residualOpFinder struct{ found bool }
+// containsUnsettledOp is containsResidualOp except that a spread of an `Array`, the variadic tail
+// of `[number, ...Array<string>]`, is settled. Such a spread never splices into fixed positions,
+// so it is the final form of its tuple rather than an operator waiting on its operand.
+func (c *Context) containsUnsettledOp(t soltype.Type) bool {
+	f := &residualOpFinder{ctx: c}
+	t.Accept(f, soltype.Positive)
+	return f.found
+}
+
+// residualOpFinder is the walking visitor behind containsResidualOp and containsUnsettledOp. It
+// flags the first residual operator it reaches and skips that node's children, since one
+// occurrence is enough. With ctx set, a variadic tail is walked into rather than flagged.
+type residualOpFinder struct {
+	found bool
+	ctx   *Context
+}
 
 func (f *residualOpFinder) EnterType(t soltype.Type, pol soltype.Polarity) soltype.EnterResult {
+	if f.ctx != nil {
+		if _, isTail := f.ctx.variadicTail(t); isTail {
+			return soltype.EnterResult{}
+		}
+	}
 	if isResidualOp(t) {
 		f.found = true
 		return soltype.EnterResult{SkipChildren: true}

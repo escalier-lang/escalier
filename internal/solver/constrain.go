@@ -5,6 +5,7 @@ import (
 	"maps"
 	"math"
 	"regexp"
+	"slices"
 	"strconv"
 	"strings"
 	"unicode/utf8"
@@ -219,10 +220,20 @@ func acceptSet(f *soltype.FuncType) (lo, hi int) {
 	return lo, len(f.Params)
 }
 
-// canAbsorbRest reports whether the sub's params from k on are a fixed-length group a super
-// rest param can absorb. An inexact sub, one with its own rest, or one shorter than k is not.
-func canAbsorbRest(sub *soltype.FuncType, k int) bool {
-	return !sub.Inexact && !hasRest(sub) && len(sub.Params) >= k
+// canAbsorbRest reports whether the sub's params from k on are a group a super rest param can
+// absorb. The group may end in the sub's own rest param when that param is an `Array<E>` at or
+// past k, since its element type says what each value past the fixed params is. An inexact sub,
+// one shorter than k, or one whose rest has no element type to read is not.
+func (c *Context) canAbsorbRest(sub *soltype.FuncType, k int) bool {
+	if sub.Inexact || len(sub.Params) < k {
+		return false
+	}
+	j := restIndex(sub)
+	if j < 0 {
+		return true
+	}
+	_, isArray := c.restSlotElem(sub.Params[j].Type)
+	return j >= k && isArray
 }
 
 // prefixRequiredCount is requiredCount over f's first k params alone, the arity check that
@@ -236,18 +247,35 @@ func prefixRequiredCount(f *soltype.FuncType, k int) int {
 	return n
 }
 
-// gatherRestParams turns the sub params a super's rest param stands for into tuple element
-// types. An optional param widens with `undefined`, since a tuple element carries no optionality
-// marker. The union takes a nil Context so its subsumption never calls constrain from inside one.
-func gatherRestParams(params []*soltype.FuncParam) []soltype.Type {
-	elems := make([]soltype.Type, len(params))
-	for i, p := range params {
-		elems[i] = p.Type
-		if p.Optional {
-			elems[i] = newUnion(nil, []soltype.Type{p.Type, &soltype.UndefinedType{}})
+// gatherRestParams returns the type of the argument lists the sub params a super's rest param
+// stands for accept, which is what an `infer` hole in that rest param binds. A tuple carries no
+// optionality marker, so each optional param cuts the list at a length the function accepts,
+// and the result is the union of those lengths:
+//
+//   - `(a: number, b: string)` gathers `[number, string]`.
+//   - `(a: number, b?: string)` gathers `[number] | [number, string | undefined]`. An optional
+//     param that is passed may still be passed `undefined`.
+//   - `(a: number, ...rest: Array<string>)` gathers `[number, ...Array<string>]`.
+//
+// A rest param is read through its `Array` element type, which canAbsorbRest has already
+// checked. The unions take a nil Context so their subsumption never calls constrain from inside
+// one.
+func (c *Context) gatherRestParams(params []*soltype.FuncParam) soltype.Type {
+	var elems []soltype.Type
+	var lengths []soltype.Type
+	for _, p := range params {
+		if p.Rest {
+			elem, _ := c.restSlotElem(p.Type)
+			return newUnion(nil, append(lengths, c.variadicTuple(elems, elem, nil)))
 		}
+		if p.Optional {
+			lengths = append(lengths, &soltype.TupleType{Elems: slices.Clone(elems)})
+			elems = append(elems, newUnion(nil, []soltype.Type{p.Type, &soltype.UndefinedType{}}))
+			continue
+		}
+		elems = append(elems, p.Type)
 	}
-	return elems
+	return newUnion(nil, append(lengths, &soltype.TupleType{Elems: elems}))
 }
 
 // constraintKey keys both of seenPairs' records by pointer identity (Go's
@@ -848,12 +876,12 @@ func (c *Context) reduceResidual(t soltype.Type, seen *seenPairs) (soltype.Type,
 		// through the fixed-point test, the same way the object and tuple arms ground with a
 		// residual field or element. Only a residual among the named members keeps the union
 		// symbolic, since such a member never settled to a value the union can offer.
-		if anyMemberResidual(u) {
+		if c.anyMemberResidual(u) {
 			return nil, nil, false
 		}
 		return reduced, e.errs, true
 	}
-	if containsResidualOp(reduced) {
+	if c.containsUnsettledOp(reduced) {
 		return nil, nil, false
 	}
 	return reduced, e.errs, true
@@ -862,9 +890,9 @@ func (c *Context) reduceResidual(t soltype.Type, seen *seenPairs) (soltype.Type,
 // anyMemberResidual reports whether a named member of u carries an unreduced operator. It reads the
 // named members only, since a union's tail bound is allowed to stay residual and reduces where a
 // value is decided against it.
-func anyMemberResidual(u *soltype.UnionType) bool {
+func (c *Context) anyMemberResidual(u *soltype.UnionType) bool {
 	for _, member := range u.Types {
-		if containsResidualOp(member) {
+		if c.containsUnsettledOp(member) {
 			return true
 		}
 	}
@@ -1363,7 +1391,7 @@ func (c *Context) constrain(sub, super soltype.Type, seen *seenPairs, mutCtx boo
 			// param against E. Either way the check is contravariant, the orientation the fixed
 			// positions use. A written tuple never reaches here, expandTupleRest having split it.
 			absorbAt, absorbElem := -1, soltype.Type(nil)
-			if k := restIndex(supX); k >= 0 && canAbsorbRest(subX, k) {
+			if k := restIndex(supX); k >= 0 && c.canAbsorbRest(subX, k) {
 				slot := supX.Params[k].Type
 				if _, isVar := slot.(*soltype.TypeVarType); isVar {
 					absorbAt = k
@@ -1375,10 +1403,16 @@ func (c *Context) constrain(sub, super soltype.Type, seen *seenPairs, mutCtx boo
 			if absorbAt >= 0 {
 				if absorbElem != nil {
 					for _, p := range subX.Params[absorbAt:] {
-						errs = append(errs, c.constrain(absorbElem, p.Type, seen, false)...) // contravariant
+						paramT := p.Type
+						if p.Rest {
+							// A sub rest param takes each of the values past the fixed params
+							// as one of its elements.
+							paramT, _ = c.restSlotElem(p.Type)
+						}
+						errs = append(errs, c.constrain(absorbElem, paramT, seen, false)...) // contravariant
 					}
 				} else {
-					gathered := &soltype.TupleType{Elems: gatherRestParams(subX.Params[absorbAt:])}
+					gathered := c.gatherRestParams(subX.Params[absorbAt:])
 					errs = append(errs, c.constrain(supX.Params[absorbAt].Type, gathered, seen, false)...) // contravariant
 				}
 			}
