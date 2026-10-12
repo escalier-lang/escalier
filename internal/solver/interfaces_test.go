@@ -289,3 +289,71 @@ func TestInterfaceTypeParamMismatchReports(t *testing.T) {
 		})
 	}
 }
+
+// TestOmittedTypeArgumentNeedsADefault covers when a reference to a generic may leave
+// out a type argument. It may only when the parameter declares a default, which then
+// stands in for the argument. The rule is the same in an `extends` clause as in a plain
+// alias reference.
+func TestOmittedTypeArgumentNeedsADefault(t *testing.T) {
+	tests := []struct {
+		name     string
+		src      string
+		typeName string
+		want     string
+		wantErrs []string
+	}{
+		{
+			name: "ExtendsWithoutADefault",
+			src: `
+				declare interface Box<T> {
+					value: T,
+				}
+				declare interface Labeled extends Box {
+					label: string,
+				}
+			`,
+			wantErrs: []string{"type alias `Box` expects 1 type argument but got 0"},
+		},
+		{
+			name: "ExtendsWithADefault",
+			src: `
+				declare interface Box<T = string> {
+					value: T,
+				}
+				declare interface Labeled extends Box {
+					label: string,
+				}
+			`,
+			typeName: "Labeled",
+			want:     "Box<string> & {label: string, ...}",
+			wantErrs: []string{},
+		},
+		{
+			name: "AliasWithoutADefault",
+			src: `
+				type Box<T> = {value: T}
+				type Uses = Box
+			`,
+			wantErrs: []string{"type alias `Box` expects 1 type argument but got 0"},
+		},
+		{
+			name: "AliasWithADefault",
+			src: `
+				type Box<T = string> = {value: T}
+				type Uses = Box
+			`,
+			typeName: "Uses",
+			want:     "Box<string>",
+			wantErrs: []string{},
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			_, types, errs := inferSource(t, tt.src)
+			require.Equal(t, tt.wantErrs, errorMessagesOf(errs))
+			if tt.typeName != "" {
+				require.Equal(t, tt.want, types[tt.typeName])
+			}
+		})
+	}
+}

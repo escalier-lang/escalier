@@ -9,9 +9,12 @@ export declare interface Calculator {
 export declare interface Comparable<T extends number | string> {
   compareTo(other: T): number;
 }
-export declare interface Container<T> extends Box {
+export declare interface Container<T> extends Box<string> {
   size: number;
   items: T;
+}
+export declare interface DefaultedBox<T = string> {
+  value: T;
 }
 export declare interface Person {
   name: string;
@@ -20,6 +23,9 @@ export declare interface Person {
 export declare interface Employee extends Person {
   employeeId: number;
   department: string;
+}
+export declare interface Labeled extends DefaultedBox {
+  label: string;
 }
 export declare interface Manager extends Person, Employee {
   teamSize: number;

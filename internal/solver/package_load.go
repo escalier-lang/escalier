@@ -24,7 +24,7 @@ import (
 // The URI on every key a load registers is what lets packages share this run's
 // Context without their declarations colliding.
 func (c *checker) loadPackage(uri string, span ast.Span) (*Namespace, []SolverError) {
-	if ns, found := c.packages.Lookup(uri); found {
+	if ns, found := c.ctx.packages.Lookup(uri); found {
 		if ns == nil {
 			// Found with a nil surface is the loading sentinel: this import
 			// re-enters a package still being assembled.
@@ -53,7 +53,7 @@ func (c *checker) loadPackage(uri string, span ast.Span) (*Namespace, []SolverEr
 		// would turn one error inside the group into an unbound-name error on every
 		// reference in the importing file. The single-package path answers the same
 		// way.
-		ns, _ := c.packages.Lookup(uri)
+		ns, _ := c.ctx.packages.Lookup(uri)
 		return ns, errs
 	}
 
@@ -66,11 +66,11 @@ func (c *checker) loadPackage(uri string, span ast.Span) (*Namespace, []SolverEr
 		}}
 	}
 
-	c.packages.markLoading(uri, path)
+	c.ctx.packages.markLoading(uri, path)
 	c.loadStack = append(c.loadStack, uri)
 	ns, pkgErrs := c.inferPackage(uri, module)
 	c.loadStack = c.loadStack[:len(c.loadStack)-1]
-	c.packages.publish(uri, ns)
+	c.ctx.packages.publish(uri, ns)
 	if len(pkgErrs) > 0 {
 		return ns, []SolverError{&PackageInferenceError{
 			URI:      uri,
