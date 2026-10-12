@@ -143,7 +143,9 @@ func (c *checker) inferModuleValElse(scope *Scope, lvl int, d *ast.VarDecl, ns s
 // `ns` is the dep_graph namespace the declaration sits in, empty at the root and in a
 // function body. A `unique symbol` annotation on a single-name binding mints a symbol
 // named by `ns` and the binding's name, so `declare val sym: unique symbol` inside
-// namespace `Keys` renders as `typeof Keys.sym`.
+// namespace `Keys` renders as `typeof Keys.sym`. An object type annotation names the
+// symbols its `readonly` properties mint after that path, as resolveDeclaredTypeAnn
+// describes.
 func (c *checker) inferVarDeclInit(scope *Scope, lvl int, d *ast.VarDecl, ns string) (soltype.Type, bool) {
 	// A destructuring pattern binds no single name, so a symbol its annotation mints stays
 	// unnamed.
