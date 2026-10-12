@@ -202,7 +202,7 @@ func (b *pathBinder) bindAtWith(
 // reject a `mut` leaf the written pattern accepts.
 func (b *pathBinder) bindElemAt(scope *Scope, s *ucs.Scrutinee, elem *ast.ObjShorthandPat) {
 	v := b.shorthandView(scope, s, elem)
-	t := b.c.applyLeafExtras(scope, b.lvl, elem, v.ty, elem.TypeAnn, elem.Default)
+	t := b.c.applyLeafExtras(scope, b.lvl, elem, v.ty, v.concrete, elem.TypeAnn, elem.Default)
 	t = b.c.applyBindMode(b.lvl, elem, elem.Mutable, t, b.c.concreteLeaf(v.concrete, elem.TypeAnn), v.mode)
 	b.c.bindLeaf(scope, elem.Key.Name, t, elem, nil, defineLeafMono, forBinding)
 }
@@ -263,6 +263,8 @@ func (b *pathBinder) project(scope *Scope, s *ucs.Scrutinee) scrutineeView {
 		return b.projectExtract(parent, step.Index)
 	case ucs.SuffixStep:
 		return b.projectSuffix(parent, node, step.From)
+	case ucs.ExtractSuffixStep:
+		return b.projectExtractSuffix(parent, step.From)
 	case ucs.RemainderStep:
 		return b.projectRemainder(parent, node, step.Exclude)
 	default:
@@ -320,6 +322,19 @@ func (b *pathBinder) projectExtract(parent scrutineeView, i int) scrutineeView {
 	}
 	param := ext.params[i].Type
 	return derive(parent, param, param)
+}
+
+// projectExtractSuffix resolves the values an extractor yields from index from on, the
+// `y` of `C(x, ...y)`, gathered into a tuple of the extractor's remaining value types.
+// The arity error for a pattern taking more values than the extractor yields is reported
+// where the test is applied, so this recovers with a fresh variable.
+func (b *pathBinder) projectExtractSuffix(parent scrutineeView, from int) scrutineeView {
+	ext, ok := parent.tested.(*testedExtractor)
+	if !ok || from > len(ext.params) {
+		return derive(parent, b.c.freshAt(b.lvl), nil)
+	}
+	suffix := b.c.extractedSuffix(ext.params, from)
+	return derive(parent, suffix, suffix)
 }
 
 // projectSuffix resolves `parent[from..]`, the tuple elements past a fixed prefix, which
@@ -520,8 +535,9 @@ func (b *pathBinder) applyExtractorTest(scope *Scope, node ast.Node, v scrutinee
 		return v
 	}
 	params := b.c.narrowToExtractor(node, ctor, v.ty)
-	if t.Arity != len(params) {
-		b.c.report(&ExtractorPatternArityError{Node: node, Name: name, Expected: len(params), Got: t.Arity})
+	hasRest := t.Rest == ucs.TrailingRest
+	if !extractorArityFits(t.Arity, hasRest, len(params)) {
+		b.c.report(&ExtractorPatternArityError{Node: node, Name: name, Expected: len(params), Got: t.Arity, AtLeast: hasRest})
 	}
 	v.tested = &testedExtractor{params: params}
 	return v

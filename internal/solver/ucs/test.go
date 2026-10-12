@@ -102,10 +102,12 @@ type ClassTest struct{ Name ast.QualIdent }
 
 // ExtractorTest matches an extractor tag, the `Ok` of `Ok(v)`. Arity is how many
 // positional values the pattern takes from the extractor, each reached by an
-// ExtractStep.
+// ExtractStep. Rest is TrailingRest when the pattern ends in `...rest`, so it takes at
+// least Arity values and binds the others through an ExtractSuffixStep.
 type ExtractorTest struct {
 	Name  ast.QualIdent
 	Arity int
+	Rest  RestKind
 }
 
 // AnnTest matches a narrowing type annotation, the `number` of `if val x: number = u`. A
@@ -165,6 +167,9 @@ func testString(t Test) string {
 		args := make([]string, t.Arity)
 		for i := range args {
 			args[i] = "_"
+		}
+		if t.Rest == TrailingRest {
+			args = append(args, "...")
 		}
 		return ast.QualIdentToString(t.Name) + "(" + strings.Join(args, ", ") + ")"
 	case *AnnTest:

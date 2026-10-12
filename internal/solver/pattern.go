@@ -220,7 +220,7 @@ func (c *checker) bindPatMode(scope *Scope, lvl int, pat ast.Pat, scrutinee solt
 	case *ast.IdentPat:
 		t := scrutinee
 		if purpose == forBinding {
-			t = c.applyLeafExtras(scope, lvl, p, scrutinee, p.TypeAnn, p.Default)
+			t = c.applyLeafExtras(scope, lvl, p, scrutinee, concrete, p.TypeAnn, p.Default)
 		}
 		t = c.applyBindMode(lvl, p, leafMut(p.Mutable, purpose), t, c.concreteLeaf(concrete, p.TypeAnn), scrutineeMode)
 		c.bindLeaf(scope, p.Name, t, p, leafTypes, emit, purpose)
@@ -308,7 +308,7 @@ func (c *checker) bindPatMode(scope *Scope, lvl int, pat ast.Pat, scrutinee solt
 				c.constrain(e, scrutinee, propReq(e.Key.Name, beta, e.Default != nil))
 				var t soltype.Type = beta
 				if purpose == forBinding {
-					t = c.applyLeafExtras(scope, lvl, e, beta, e.TypeAnn, e.Default)
+					t = c.applyLeafExtras(scope, lvl, e, beta, fieldConcrete(concrete, e.Key.Name), e.TypeAnn, e.Default)
 				}
 				t = c.applyBindMode(lvl, e, leafMut(e.Mutable, purpose), t, c.concreteLeaf(fieldConcrete(concrete, e.Key.Name), e.TypeAnn), scrutineeMode)
 				c.bindLeaf(scope, e.Key.Name, t, e, leafTypes, emit, purpose)
@@ -482,6 +482,34 @@ func splitTupleRest(elems []ast.Pat) (fixed []ast.Pat, rest *ast.RestPat, recove
 		return elems[:i], nil, elems[i:]
 	}
 	return elems, nil, nil
+}
+
+// reportInteriorRests reports, as unsupported, each tuple or extractor pattern in p whose
+// rest is not its last element. Only a trailing rest has a suffix to bind.
+func (c *checker) reportInteriorRests(p ast.Pat) {
+	if p != nil {
+		p.Accept(&interiorRestReporter{c: c})
+	}
+}
+
+// interiorRestReporter is the walk reportInteriorRests runs over a pattern.
+type interiorRestReporter struct {
+	ast.DefaultVisitor
+	c *checker
+}
+
+func (r *interiorRestReporter) EnterPat(p ast.Pat) bool {
+	var elems []ast.Pat
+	switch p := p.(type) {
+	case *ast.TuplePat:
+		elems = p.Elems
+	case *ast.ExtractorPat:
+		elems = p.Args
+	}
+	if _, _, recovered := splitTupleRest(elems); len(recovered) > 0 {
+		r.c.reportUnsupported(recovered[0])
+	}
+	return true
 }
 
 // bindRecoveredElem binds a tuple element the walk could not place, reached only after a
@@ -736,18 +764,68 @@ func (c *checker) bindExtractorPat(scope *Scope, lvl int, p *ast.ExtractorPat, s
 		return &soltype.ExtractorPat{Name: name, Args: args}
 	}
 	params := c.narrowToExtractor(p, ctor, scrutinee)
-	if len(p.Args) != len(params) {
-		c.reportPat(purpose, &ExtractorPatternArityError{Node: p, Name: name, Expected: len(params), Got: len(p.Args)})
+	fixed, rest, recovered := splitTupleRest(p.Args)
+	if len(recovered) > 0 {
+		c.reportPatUnsupported(purpose, recovered[0])
 	}
-	args := make([]soltype.Pat, len(p.Args))
-	for i, a := range p.Args {
+	hasRest := rest != nil || len(recovered) > 0
+	if !extractorArityFits(len(fixed), hasRest, len(params)) {
+		c.reportPat(purpose, &ExtractorPatternArityError{Node: p, Name: name, Expected: len(params), Got: len(fixed), AtLeast: hasRest})
+	}
+	args := make([]soltype.Pat, 0, len(p.Args))
+	for i, a := range fixed {
 		var paramType soltype.Type = c.freshAt(lvl)
 		if i < len(params) {
 			paramType = params[i].Type
 		}
-		args[i] = c.bindPatMode(scope, lvl, a, paramType, paramType, scrutineeMode, leafTypes, emit, purpose)
+		args = append(args, c.bindPatMode(scope, lvl, a, paramType, paramType, scrutineeMode, leafTypes, emit, purpose))
+	}
+	if rest != nil {
+		var suffix soltype.Type = c.freshAt(lvl)
+		if len(fixed) <= len(params) {
+			suffix = c.extractedSuffix(params, len(fixed))
+		}
+		sub := c.bindPatMode(scope, lvl, rest.Pattern, suffix, suffix, scrutineeMode, leafTypes, emit, purpose)
+		args = append(args, &soltype.RestPat{Pattern: sub})
+	}
+	for _, e := range recovered {
+		args = append(args, c.bindRecoveredElem(scope, lvl, e, scrutineeMode, leafTypes, emit, purpose))
 	}
 	return &soltype.ExtractorPat{Name: name, Args: args}
+}
+
+// extractorArityFits reports whether a pattern taking taken values fits an extractor
+// yielding yields of them. A pattern ending in a rest takes at least taken values, and one
+// without takes exactly that many.
+func extractorArityFits(taken int, hasRest bool, yields int) bool {
+	if hasRest {
+		return taken <= yields
+	}
+	return taken == yields
+}
+
+// extractedSuffix returns the type of the values params yields from index from on, which
+// is what a trailing rest in an extractor pattern binds. It is a tuple of those values'
+// types, where an optional parameter's value may be `undefined`. A rest parameter yields
+// any number of values, so a suffix reaching one is an `Array` of every value's type
+// instead. from must not exceed len(params).
+func (c *checker) extractedSuffix(params []*soltype.FuncParam, from int) soltype.Type {
+	elems := make([]soltype.Type, 0, len(params)-from)
+	for _, param := range params[from:] {
+		if param.Rest {
+			elem, ok := c.ctx.arrayElem(param.Type)
+			if !ok {
+				elem = &soltype.UnknownType{}
+			}
+			return c.ctx.arrayOf(newUnion(c.ctx, append(elems, elem)))
+		}
+		t := param.Type
+		if param.Optional {
+			t = newUnion(c.ctx, []soltype.Type{t, &soltype.UndefinedType{}})
+		}
+		elems = append(elems, t)
+	}
+	return &soltype.TupleType{Elems: elems}
 }
 
 // narrowToExtractor narrows scrutinee to ctor's return type and returns the parameters the
@@ -1071,19 +1149,55 @@ func (c *checker) freshClassInstance(ct *soltype.ClassType, lvl int) *soltype.Cl
 // `val` adopts its annotation. A default is required to satisfy that bound type
 // and flows into it, so a leaf bound from an absent-but-defaulted field reads the
 // default's type rather than `never`.
-func (c *checker) applyLeafExtras(scope *Scope, lvl int, node ast.Node, leafType soltype.Type, typeAnn ast.TypeAnn, def ast.Expr) soltype.Type {
+//
+// A default replaces the value when it is `undefined`, so a bound type that is a union
+// holding `undefined` loses that member and gains the default's type. Destructuring
+// `[string | undefined]` with `[x = "hello"]` binds `x` as `string`. concrete is the
+// leaf's statically known type, the same value bindPatMode receives, or nil. Without an
+// annotation the union is read from it, since leafType is often a projection variable.
+func (c *checker) applyLeafExtras(scope *Scope, lvl int, node ast.Node, leafType, concrete soltype.Type, typeAnn ast.TypeAnn, def ast.Expr) soltype.Type {
 	bound := leafType
+	shape := concrete
 	if typeAnn != nil {
 		if annT, ok := c.resolveTypeAnn(scope, typeAnn, lvl); ok {
 			c.constrain(node, leafType, annT)
 			bound = annT
+			shape = annT
 		}
 	}
+	if shape == nil {
+		shape = bound
+	}
 	if def != nil {
+		// The members are read before the default flows into the bound, which would
+		// otherwise add the default's own type to them.
+		present, narrowed := c.definedMembers(shape)
 		defT := c.inferExpr(scope, lvl, def)
 		c.constrain(def, defT, bound)
+		if narrowed {
+			bound = newUnion(c.ctx, []soltype.Type{present, defT})
+		}
 	}
 	return bound
+}
+
+// definedMembers returns the members of t other than `undefined`, and false when t is not
+// a union holding `undefined` beside something else. A variable is read through its lower
+// bounds, and an alias, including one written as a member, is read through its body, so
+// `"x" | MaybeS` over `type MaybeS = string | undefined` yields `"x" | string`.
+func (c *checker) definedMembers(t soltype.Type) (soltype.Type, bool) {
+	t = c.expandAliasChain(groundedCarrier(t))
+	if union, ok := t.(*soltype.UnionType); ok {
+		members := make([]soltype.Type, len(union.Types))
+		for i, member := range union.Types {
+			members[i] = c.expandAliasChain(member)
+		}
+		t = newUnion(c.ctx, members)
+	}
+	return narrowUnionMembers(t, func(m soltype.Type) bool {
+		_, isUndefined := m.(*soltype.UndefinedType)
+		return !isUndefined
+	})
 }
 
 // applyBindMode wraps a destructured leaf's leaf type according to the scrutinee's

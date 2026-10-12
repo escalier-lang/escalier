@@ -61,11 +61,12 @@ type Step interface {
 	Equal(other Step) bool
 }
 
-func (FieldStep) isStep()     {}
-func (IndexStep) isStep()     {}
-func (ExtractStep) isStep()   {}
-func (SuffixStep) isStep()    {}
-func (RemainderStep) isStep() {}
+func (FieldStep) isStep()         {}
+func (IndexStep) isStep()         {}
+func (ExtractStep) isStep()       {}
+func (SuffixStep) isStep()        {}
+func (ExtractSuffixStep) isStep() {}
+func (RemainderStep) isStep()     {}
 
 // FieldStep reaches an object field by name, the `x` of `p.x`.
 type FieldStep struct{ Name string }
@@ -113,6 +114,17 @@ func (s SuffixStep) Equal(other Step) bool {
 	return ok && o.From == s.From
 }
 
+// ExtractSuffixStep reaches the values an extractor yields past a fixed prefix, which is
+// what `...rest` binds in an extractor pattern. From is the index of the first value it
+// takes, so `C(x, ...y)` reaches `y` through ExtractSuffixStep{From: 1}. Only a trailing
+// rest is expressible, for the reason SuffixStep gives.
+type ExtractSuffixStep struct{ From int }
+
+func (s ExtractSuffixStep) Equal(other Step) bool {
+	o, ok := other.(ExtractSuffixStep)
+	return ok && o.From == s.From
+}
+
 // RemainderStep reaches an object with a set of keys removed, which is what
 // `...rest` binds in an object pattern. Exclude holds exactly the keys the object
 // pattern named at this level, so a key matched only by a deeper nested split still
@@ -151,6 +163,8 @@ func scrutineeString(s *Scrutinee) string {
 		return base + ".#" + strconv.Itoa(step.Index)
 	case SuffixStep:
 		return base + "[" + strconv.Itoa(step.From) + "..]"
+	case ExtractSuffixStep:
+		return base + ".#[" + strconv.Itoa(step.From) + "..]"
 	case RemainderStep:
 		keys := step.Exclude.ToSlice()
 		slices.Sort(keys)

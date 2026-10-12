@@ -1412,9 +1412,10 @@ func (e *ExtractorPatternNotCtorError) Message() string {
 	return "`" + e.Name + "` is not a constructor and cannot be used as an extractor pattern."
 }
 
-// ExtractorPatternArityError fires when an extractor pattern `Name(a, b, ...)` supplies
-// a different number of sub-patterns than the constructor has parameters. Each sub-pattern
-// binds one constructor parameter, so the counts must match.
+// ExtractorPatternArityError fires when an extractor pattern `Name(a, b)` supplies a
+// different number of sub-patterns than the extractor yields values. Each sub-pattern binds
+// one value, so the counts must match. A pattern ending in `...rest` takes Got values and
+// any number more, so AtLeast marks that Got is a minimum that exceeds Expected.
 // Node is the node the message underlines, the same choice
 // InstancePatternNotClassError makes.
 type ExtractorPatternArityError struct {
@@ -1422,11 +1423,15 @@ type ExtractorPatternArityError struct {
 	Name     string
 	Expected int
 	Got      int
+	AtLeast  bool
 }
 
 func (e *ExtractorPatternArityError) Span() ast.Span      { return e.Node.Span() }
 func (e *ExtractorPatternArityError) Related() []ast.Span { return nil }
 func (e *ExtractorPatternArityError) Message() string {
+	if e.AtLeast {
+		return fmt.Sprintf("extractor pattern `%s` expects %d arguments but got at least %d", e.Name, e.Expected, e.Got)
+	}
 	return fmt.Sprintf("extractor pattern `%s` expects %d arguments but got %d", e.Name, e.Expected, e.Got)
 }
 

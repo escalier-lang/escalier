@@ -745,3 +745,152 @@ func TestInferMemberClassUnionSetterOnlyEverywhereErrors(t *testing.T) {
 	require.Len(t, errs, 1)
 	require.Equal(t, "5:13-5:14: object is missing property: v", msgWithSpan(t, errs[0]))
 }
+
+// TestInferExtractorPatRestAndDefault covers a trailing rest and a default inside an
+// extractor pattern. The rest binds the values past the fixed prefix as a tuple, and a
+// default removes `undefined` from the value it applies to.
+func TestInferExtractorPatRestAndDefault(t *testing.T) {
+	tests := []struct {
+		name string
+		src  string
+		want map[string]string
+	}{
+		{
+			name: "RestInAVal",
+			src: `
+				class C { msg: string, value: number, flag: boolean }
+				val subject = C("hello", 5, true)
+				val C(x, ...y) = subject
+			`,
+			want: map[string]string{"x": "string", "y": "[number, boolean]"},
+		},
+		{
+			name: "RestInAMatchArm",
+			src: `
+				class C { msg: string, value: number, flag: boolean }
+				declare val subject: C
+				val rest = match subject {
+					C(_, ...r) => r,
+				}
+			`,
+			want: map[string]string{"rest": "[number, boolean]"},
+		},
+		{
+			name: "RestTakingNothing",
+			src: `
+				class C { msg: string }
+				declare val subject: C
+				val C(m, ...none) = subject
+			`,
+			want: map[string]string{"m": "string", "none": "[]"},
+		},
+		{
+			name: "DefaultRemovesUndefined",
+			src: `
+				class C { msg: string | undefined }
+				val subject = C("hello")
+				val C(msg = "world") = subject
+			`,
+			want: map[string]string{"msg": "string"},
+		},
+		{
+			name: "DefaultInATuple",
+			src: `
+				declare val pair: [string | undefined, number]
+				val [s = "none", n] = pair
+			`,
+			want: map[string]string{"s": "string", "n": "number"},
+		},
+		{
+			name: "DefaultThroughAnAlias",
+			src: `
+				type MaybeS = string | undefined
+				declare val p: [MaybeS]
+				val [s = "x"] = p
+			`,
+			want: map[string]string{"s": "string"},
+		},
+		{
+			name: "RestInAnIfVal",
+			src: `
+				class C { msg: string, value: number }
+				declare val subject: C
+				val rest = if val C(_, ...r) = subject { r } else { [0] }
+			`,
+			want: map[string]string{"rest": "[number]"},
+		},
+		{
+			name: "RestOverOptionalAndRestParameters",
+			src: `
+				class C {
+					a: number,
+					constructor(&mut self, a: number, b?: string, ...cs: Array<boolean>) {
+						self.a = a
+					},
+				}
+				declare val subject: C
+				val C(first, ...more) = subject
+			`,
+			want: map[string]string{"first": "number", "more": "Array<string | boolean | undefined>"},
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			values, _, errs := inferSource(t, tt.src)
+			require.Empty(t, errs)
+			for name, want := range tt.want {
+				require.Equal(t, want, values[name], "value binding %q", name)
+			}
+		})
+	}
+}
+
+// TestInferExtractorPatRestArity asserts that a rest covers any number of values but not
+// fewer than the fixed prefix takes.
+func TestInferExtractorPatRestArity(t *testing.T) {
+	_, _, errs := inferSource(t, `
+		class Point { x: number, y: number }
+		fn f(p: Point) {
+			return match p {
+				Point(x, y, z, ...rest) => x
+			}
+		}
+	`)
+	require.Len(t, errs, 1)
+	require.Equal(t, "5:5-5:28: extractor pattern `Point` expects 2 arguments but got at least 3", msgWithSpan(t, errs[0]))
+}
+
+// TestInferInteriorRestReported asserts that a rest before the last element of a tuple or
+// extractor pattern in a match arm is reported, since nothing binds the leaves around it.
+func TestInferInteriorRestReported(t *testing.T) {
+	tests := []struct {
+		name string
+		src  string
+		want string
+	}{
+		{
+			name: "Tuple",
+			src: `
+				declare val t: [number, string]
+				val r = match t { [...x, y] => 1 }
+			`,
+			want: "3:24-3:28: Unsupported: RestPat",
+		},
+		{
+			name: "Extractor",
+			src: `
+				class C { a: number, b: string }
+				declare val s: C
+				val r = match s { C(...x, y) => 1 }
+			`,
+			want: "4:25-4:29: Unsupported: RestPat",
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			_, _, errs := inferSource(t, tt.src)
+			require.Len(t, errs, 1)
+			require.Equal(t, tt.want, msgWithSpan(t, errs[0]))
+		})
+	}
+}
