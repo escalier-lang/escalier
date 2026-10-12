@@ -73,11 +73,11 @@ val d1 = describe(point)
 val d2 = describe(circle)
 
 // Async overloading - if any overload is async, the generated function must be async
-async fn fetchData(id: number) -> string {
+async fn fetchData(id: number) -> Promise<string> {
   return "Data for ID: " ++ id.toString()
 }
 
-async fn fetchData(id: string) -> string {
+async fn fetchData(id: string) -> Promise<string> {
   return "Data for key: " ++ id
 }
 
