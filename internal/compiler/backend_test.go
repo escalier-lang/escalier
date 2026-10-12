@@ -723,3 +723,110 @@ func TestNeitherCheckerSynthesizesAKeyFromACall(t *testing.T) {
 	require.NotContains(t, want, "constructor")
 	require.Equal(t, want, got, "the two checkers emit different JavaScript")
 }
+
+// TestTheSolverEmitsASymbolAPropertyDeclares covers the `.d.ts` the solver emits for a
+// unique symbol a `readonly` property declares. The `val` the symbol is named after holds
+// it at the path TypeScript writes, so a type naming the symbol reads `typeof i.key` and a
+// key off it reads `[i.key]`. The property that declares the symbol keeps `unique symbol`.
+//
+// internal/checker writes each such key as a string, so this asserts what the solver emits
+// rather than that the two agree.
+func TestTheSolverEmitsASymbolAPropertyDeclares(t *testing.T) {
+	tests := []struct {
+		name string
+		src  string
+		want string
+	}{
+		{
+			name: "Interface",
+			src: `declare interface I { readonly key: unique symbol }
+declare val i: I
+export val k = i.key
+export val o = {[i.key]: 1}`,
+			want: `declare interface I {
+  readonly key: unique symbol;
+}
+declare const i: I;
+export declare const k: typeof i.key;
+export declare const o: {[i.key]: 1};
+`,
+		},
+		{
+			name: "InterfaceThatExtends",
+			src: `declare interface Base { x: number }
+declare interface I extends Base { readonly key: unique symbol }
+declare val i: I
+export val o = {[i.key]: 1}`,
+			want: `declare interface Base {
+  x: number;
+}
+declare interface I extends Base {
+  readonly key: unique symbol;
+}
+declare const i: I;
+export declare const o: {[i.key]: 1};
+`,
+		},
+		{
+			name: "ObjectTypeAlias",
+			src: `type T = {readonly tag: unique symbol}
+declare val t: T
+export val o = {[t.tag]: "x"}`,
+			want: `declare type T = {readonly tag: unique symbol};
+declare const t: T;
+export declare const o: {[t.tag]: "x"};
+`,
+		},
+		{
+			name: "InlineObjectType",
+			src: `declare val inline: {readonly key: unique symbol}
+export val o = {[inline.key]: true}`,
+			want: `declare const inline: {readonly key: unique symbol};
+export declare const o: {[inline.key]: true};
+`,
+		},
+		{
+			name: "NestedReadonlyProperty",
+			src: `declare val n: {readonly a: {readonly b: unique symbol}}
+export val k = n.a.b`,
+			want: `declare const n: {readonly a: {readonly b: unique symbol}};
+export declare const k: typeof n.a.b;
+`,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			useSolver(t)
+			dts := CompilePackage(libSources(tt.src)).CompUnits["lib/index"].DTS
+			require.Equal(t, tt.want, dts)
+		})
+	}
+}
+
+// TestTheSolverEmitsARootSymbolInsideANamespace asserts that a namespace block names a
+// unique symbol the module root declares by the root value that holds it, both as
+// `typeof sym` and as a `[sym]` key. Writing `unique symbol` there would declare a new
+// symbol. When the block declares its own member called `sym`, the root `sym` is out of
+// reach, so the block names the symbol through a private alias of the same type.
+func TestTheSolverEmitsARootSymbolInsideANamespace(t *testing.T) {
+	useSolver(t)
+	sources := []*ast.Source{
+		{ID: 0, Path: "lib/index.esc", Contents: "export declare val sym: unique symbol\nexport val r = sym\n"},
+		{ID: 1, Path: "lib/plain/a.esc", Contents: "export val s2 = sym\nexport val o = {[sym]: 1}\n"},
+		{ID: 2, Path: "lib/shadow/b.esc", Contents: "export val sym = 5\nexport val s3 = r\nexport val o2 = {[r]: 1}\n"},
+	}
+	dts := CompilePackage(sources).CompUnits["lib/index"].DTS
+	require.Equal(t, `declare const __sym_symbol: typeof sym;
+export declare const sym: unique symbol;
+export declare const r: typeof sym;
+declare namespace plain {
+  export const o: {[sym]: 1};
+  export const s2: typeof sym;
+}
+declare namespace shadow {
+  export const o2: {[__sym_symbol]: 1};
+  export const s3: typeof __sym_symbol;
+  export const sym: 5;
+}
+`, dts)
+}

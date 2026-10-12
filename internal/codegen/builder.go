@@ -11,6 +11,7 @@ import (
 	"github.com/escalier-lang/escalier/internal/dep_graph"
 	"github.com/escalier-lang/escalier/internal/printer"
 	"github.com/escalier-lang/escalier/internal/set"
+	"github.com/escalier-lang/escalier/internal/soltype"
 )
 
 type Builder struct {
@@ -31,6 +32,24 @@ type Builder struct {
 	// jsTypes answers what emission needs to know about inferred types. A nil field
 	// reads as noJSTypes through b.types(), which is what a hand-built AST wants.
 	jsTypes JSTypes
+	// solSymbolKeys maps a unique symbol's id to the top-level value that names it in the
+	// module BuildDefinitionsFromSol is emitting. See symbolKeysFromSol.
+	solSymbolKeys map[int]string
+	// solSymbolDeclarers maps the id of each unique symbol a property of a type declares
+	// to the object type holding that property. See declaredPropertySymbols.
+	solSymbolDeclarers map[int]*soltype.ObjectType
+	// solShadowed holds the names a declaration in the namespace block being emitted
+	// cannot reach at the module root, because the block or an enclosing one declares a
+	// member under the same name. It is empty at the module root.
+	solShadowed set.Set[string]
+	// solSymbolAliases maps the id of a unique symbol that a shadowed name holds to the
+	// private top-level value BuildDefinitionsFromSol declares for it, in the order the
+	// aliases were needed. solSymbolAliasNames holds their names.
+	solSymbolAliases    []solSymbolAlias
+	solSymbolAliasNames map[int]string
+	// solModuleNames holds every name the module declares at any level, so an alias name
+	// collides with none of them.
+	solModuleNames set.Set[string]
 }
 
 // NewBuilder returns a Builder that answers the JSTypes questions through t, which is

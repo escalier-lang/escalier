@@ -1,7 +1,9 @@
 package codegen
 
 import (
+	"maps"
 	"sort"
+	"strconv"
 	"strings"
 
 	"github.com/escalier-lang/escalier/internal/ast"
@@ -65,6 +67,12 @@ func (b *Builder) BuildDefinitionsFromSol(
 	}
 	sort.Strings(namespaceNames)
 
+	b.solSymbolDeclarers = map[int]*soltype.ObjectType{}
+	b.solSymbolKeys = symbolKeysFromSol(depGraph, root, namespaceGroups[""], b.solSymbolDeclarers)
+	b.solSymbolAliases = nil
+	b.solSymbolAliasNames = map[int]string{}
+	b.solModuleNames = moduleNamesFromSol(namespaceGroups)
+
 	// A class and an enum each hold a type binding and a value binding pointing at one
 	// declaration, so the walk would reach the declaration twice without this.
 	processedDecls := set.NewSet[ast.Decl]()
@@ -89,6 +97,7 @@ func (b *Builder) BuildDefinitionsFromSol(
 				}
 				processedDecls.Add(decl)
 
+				b.solShadowed = shadowedNamesFromSol(namespaceGroups, namespace)
 				declStmts := b.buildDeclStmtFromSol(decl, declNS, names, namespace == "")
 				namespaceStmts = append(namespaceStmts, declStmts...)
 			}
@@ -108,7 +117,258 @@ func (b *Builder) BuildDefinitionsFromSol(
 		})
 	}
 
-	return &Module{Stmts: stmts}
+	// The aliases go first. TypeScript resolves a name anywhere in the file, so the order
+	// is only for a reader, who meets each alias before the namespace that uses it.
+	return &Module{Stmts: append(symbolAliasStmtsFromSol(b.solSymbolAliases), stmts...)}
+}
+
+// solSymbolAlias is one private top-level value that holds a unique symbol under a name
+// a namespace block can reach. `name` is the alias and `path` is the root value's path,
+// such as `sym` or `i.key`.
+type solSymbolAlias struct {
+	name string
+	path string
+}
+
+// symbolAliasStmtsFromSol declares each alias as `declare const name: typeof path`. The
+// alias's type is the original symbol, so `typeof name` and a `[name]` key both name it.
+// An alias is not exported, since it exists only for this file's namespace blocks.
+func symbolAliasStmtsFromSol(aliases []solSymbolAlias) []Stmt {
+	stmts := make([]Stmt, 0, len(aliases))
+	for _, alias := range aliases {
+		stmts = append(stmts, &DeclStmt{
+			Decl: &VarDecl{
+				Kind: ValKind,
+				Decls: []*Declarator{{
+					Pattern: NewIdentPat(alias.name, nil, nil),
+					TypeAnn: NewTypeOfTypeAnn(convertQualIdentFromSol(alias.path)),
+					Init:    nil,
+				}},
+				declare: true,
+				export:  false,
+				span:    nil,
+				source:  nil,
+			},
+			span:   nil,
+			source: nil,
+		})
+	}
+	return stmts
+}
+
+// moduleNamesFromSol returns every name a module declares: each binding's own name and
+// each namespace segment, at every level.
+func moduleNamesFromSol(namespaceGroups map[string][]dep_graph.BindingKey) set.Set[string] {
+	names := set.NewSet[string]()
+	for namespace, keys := range namespaceGroups {
+		if namespace != "" {
+			for _, segment := range strings.Split(namespace, ".") {
+				names.Add(segment)
+			}
+		}
+		for _, key := range keys {
+			names.Add(extractLocalName(key.Name()))
+		}
+	}
+	return names
+}
+
+// shadowedNamesFromSol returns the names that a declaration inside `namespace` reads as a
+// namespace member rather than as the module root's binding. That is every member the
+// block or an enclosing block declares, including a nested namespace's name. The module
+// root shadows nothing.
+func shadowedNamesFromSol(namespaceGroups map[string][]dep_graph.BindingKey, namespace string) set.Set[string] {
+	shadowed := set.NewSet[string]()
+	if namespace == "" {
+		return shadowed
+	}
+	enclosing := enclosingNamespaces(namespace)
+	for other, keys := range namespaceGroups {
+		if other == "" {
+			continue
+		}
+		for _, outer := range enclosing {
+			if other == outer {
+				for _, key := range keys {
+					shadowed.Add(extractLocalName(key.Name()))
+				}
+			}
+			// A namespace nested in an enclosing block is a member of that block too.
+			if rest, found := strings.CutPrefix(other, outer+"."); found {
+				shadowed.Add(strings.Split(rest, ".")[0])
+			}
+		}
+	}
+	return shadowed
+}
+
+// enclosingNamespaces returns `namespace` and every namespace that encloses it, so
+// `a.b` gives `a.b` and `a`.
+func enclosingNamespaces(namespace string) []string {
+	parts := strings.Split(namespace, ".")
+	out := make([]string, len(parts))
+	for i := range parts {
+		out[i] = strings.Join(parts[:i+1], ".")
+	}
+	return out
+}
+
+// symbolKeysForBlock returns the name a renderer in the current block writes for each
+// unique symbol. A symbol whose root name a member of the block shadows is written
+// through an alias instead, and the alias is recorded the first time a block needs it.
+func (b *Builder) symbolKeysForBlock() map[int]string {
+	if b.solShadowed == nil || b.solShadowed.Len() == 0 {
+		return b.solSymbolKeys
+	}
+	keys := make(map[int]string, len(b.solSymbolKeys))
+	for id, path := range b.solSymbolKeys {
+		root, _, _ := strings.Cut(path, ".")
+		if !b.solShadowed.Contains(root) {
+			keys[id] = path
+			continue
+		}
+		keys[id] = b.symbolAlias(id, path)
+	}
+	return keys
+}
+
+// symbolAlias returns the alias for the symbol with `id`, held by the root value at
+// `path`, and records it to be declared. The name avoids every name the module declares
+// and every alias already chosen, so no block can shadow it.
+func (b *Builder) symbolAlias(id int, path string) string {
+	if name, ok := b.solSymbolAliasNames[id]; ok {
+		return name
+	}
+	base := "__" + strings.ReplaceAll(path, ".", "_") + "_symbol"
+	name := base
+	for i := 2; b.solModuleNames.Contains(name); i++ {
+		name = base + "_" + strconv.Itoa(i)
+	}
+	b.solModuleNames.Add(name)
+	b.solSymbolAliasNames[id] = name
+	b.solSymbolAliases = append(b.solSymbolAliases, solSymbolAlias{name: name, path: path})
+	return name
+}
+
+// symbolKeysFromSol maps each unique symbol a module-level `val` binds to that binding's
+// name, the map solTypeAnnBuilder.symbolKeys reads. `keys` holds the module's top-level
+// bindings in the order the dependency graph typed them. When two bindings hold one
+// symbol, the binding whose name the symbol carries names it, so `sym` names the symbol
+// `declare val sym: unique symbol` mints even when `val s2 = sym` holds it too.
+// Otherwise the first binding in that order names it.
+//
+// A symbol a `readonly` property of a binding's type declares is named by its path from
+// that binding. With `interface I { readonly key: unique symbol }` and `declare val i:
+// I`, the symbol is named `i.key`, so a key off it renders `[i.key]`. Only the binding
+// the solver named the symbol after qualifies. declaredPropertySymbols finds these
+// symbols, and records in `declarers` the object type each one is declared in.
+//
+// A binding inside a namespace block is left out. A declaration outside the block can
+// reach it only through the namespace's path, and only when the block exports it.
+func symbolKeysFromSol(
+	depGraph *dep_graph.DepGraph,
+	root SolNamespace,
+	keys []dep_graph.BindingKey,
+	declarers map[int]*soltype.ObjectType,
+) map[int]string {
+	symbolKeys := map[int]string{}
+	var declared []*soltype.UniqueSymbolType
+	for _, key := range keys {
+		for _, decl := range depGraph.GetDecls(key) {
+			varDecl, ok := decl.(*ast.VarDecl)
+			if !ok {
+				continue
+			}
+			names := ast.FindBindings(varDecl.Pattern).ToSlice()
+			sort.Strings(names)
+			for _, name := range names {
+				t, ok := root.ValueType(name)
+				if !ok {
+					continue
+				}
+				for _, obj := range declaredObjectsFromSol(root, t) {
+					declared = append(declared, declaredPropertySymbols(obj, name, declarers)...)
+				}
+				sym, ok := t.(*soltype.UniqueSymbolType)
+				if !ok {
+					continue
+				}
+				if _, named := symbolKeys[sym.ID]; !named || sym.Name == name {
+					symbolKeys[sym.ID] = name
+				}
+			}
+		}
+	}
+	// The path a property declares a symbol under is the name the solver gave it, so it
+	// wins over any binding that merely holds the symbol, such as `val k = i.key`.
+	for _, sym := range declared {
+		symbolKeys[sym.ID] = sym.Name
+	}
+	return symbolKeys
+}
+
+// declaredObjectsFromSol returns the object types that declare the members of a binding of
+// type `t`. That is `t` itself or the body of the alias or interface `t` refers to. An
+// interface that extends others has a body intersecting its parents with its own members.
+// Each parent stays a reference there, so the object arms returned hold only the members
+// the interface declares itself. Any other type returns nothing.
+func declaredObjectsFromSol(root SolNamespace, t soltype.Type) []*soltype.ObjectType {
+	if alias, isAlias := t.(*soltype.AliasType); isAlias {
+		body, _, ok := root.DeclaredType(alias.Name)
+		if !ok {
+			return nil
+		}
+		t = body
+	}
+	switch t := t.(type) {
+	case *soltype.ObjectType:
+		return []*soltype.ObjectType{t}
+	case *soltype.IntersectionType:
+		var out []*soltype.ObjectType
+		for _, arm := range t.Types {
+			if obj, isObj := arm.(*soltype.ObjectType); isObj {
+				out = append(out, obj)
+			}
+		}
+		return out
+	}
+	return nil
+}
+
+// declaredPropertySymbols returns each unique symbol a `readonly` property of `obj`
+// declares, where `path` is the dotted path `obj` is reached by. A property `key`
+// declares its symbol when the symbol is named `<path>.key`. A `readonly` property
+// holding an object type is searched in turn under `<path>.key`. Each symbol found is
+// recorded in `declarers` against the object type whose property declares it.
+func declaredPropertySymbols(obj *soltype.ObjectType, path string, declarers map[int]*soltype.ObjectType) []*soltype.UniqueSymbolType {
+	var out []*soltype.UniqueSymbolType
+	for _, elem := range obj.Elems {
+		prop, isProp := elem.(*soltype.PropertyElem)
+		if !isProp || !prop.Readonly {
+			continue
+		}
+		propPath := path + "." + prop.Name
+		switch value := prop.Type.(type) {
+		case *soltype.UniqueSymbolType:
+			if value.Name == propPath {
+				declarers[value.ID] = obj
+				out = append(out, value)
+			}
+		case *soltype.ObjectType:
+			out = append(out, declaredPropertySymbols(value, propPath, declarers)...)
+		}
+	}
+	return out
+}
+
+// solRenderer returns a renderer for one declaration of the module
+// BuildDefinitionsFromSol is walking, which keys a member off a unique symbol through
+// the names symbolKeysFromSol found.
+func (b *Builder) solRenderer(names solNames, companionPrefix string, typeParams []*soltype.TypeParam) *solTypeAnnBuilder {
+	render := newSolTypeAnnBuilder(names, companionPrefix, typeParams)
+	render.symbolKeys = b.symbolKeysForBlock()
+	render.symbolDeclarers = b.solSymbolDeclarers
+	return render
 }
 
 // findNamespaceFromSol resolves a dotted namespace path against ns, one segment at a
@@ -176,12 +436,29 @@ func (b *Builder) buildVarDeclFromSol(
 			continue
 		}
 		localName := extractLocalName(name)
-		render := newSolTypeAnnBuilder(names, localName, nil)
+		render := b.solRenderer(names, localName, nil)
+		// A binding annotated with an object type declares the symbols its properties
+		// hold. symbolKeysFromSol recorded them against the type it read, which may be a
+		// different copy from the one rendered here. Recording them against this copy, for
+		// this render alone, keeps each declaring property written `unique symbol`.
+		if obj, isObj := bindingType.(*soltype.ObjectType); isObj && isTopLevel {
+			declarers := maps.Clone(b.solSymbolDeclarers)
+			if declarers == nil {
+				declarers = map[int]*soltype.ObjectType{}
+			}
+			declaredPropertySymbols(obj, name, declarers)
+			render.symbolDeclarers = declarers
+		}
 
 		// A type mentioning `Self` renders `this`, which TypeScript accepts only inside an
 		// interface, so the binding's type moves into one and the binding refers to it.
 		// `val inc = counter.increment` on a method returning `Self` is such a binding.
 		typeAnn := render.render(bindingType)
+		// The binding that names a symbol declares it, so it writes `unique symbol`
+		// rather than the `typeof sym` that would refer to itself.
+		if sym, isSym := bindingType.(*soltype.UniqueSymbolType); isSym && isTopLevel && b.solSymbolKeys[sym.ID] == name {
+			typeAnn = NewUniqueSymbolTypeAnn(nil)
+		}
 		var selfStmts []Stmt
 		if containsSelfTypeFromSol(bindingType) {
 			ifaceName := "__" + localName + "_self__"
@@ -262,7 +539,7 @@ func (b *Builder) buildFuncDeclFromSol(
 	}
 
 	localName := extractLocalName(decl.Name.Name)
-	render := newSolTypeAnnBuilder(names, localName, nil)
+	render := b.solRenderer(names, localName, nil)
 	sig := render.declFuncTypeAnn(funcType)
 
 	stmts := companionStmtsFromSol(render)
@@ -298,7 +575,7 @@ func (b *Builder) buildTypeDeclFromSol(
 		return nil
 	}
 	localName := extractLocalName(decl.Name.Name)
-	render := newSolTypeAnnBuilder(names, localName, typeParams)
+	render := b.solRenderer(names, localName, typeParams)
 	typeAnn := render.render(body)
 	declTypeParams := typeParamsFromSol(render, typeParams)
 
@@ -331,7 +608,7 @@ func (b *Builder) buildInterfaceDeclFromSol(
 		return nil
 	}
 	localName := extractLocalName(decl.Name.Name)
-	render := newSolTypeAnnBuilder(names, localName, typeParams)
+	render := b.solRenderer(names, localName, typeParams)
 	members, extends := interfacePartsFromSol(render.render(body))
 	declTypeParams := typeParamsFromSol(render, typeParams)
 
@@ -400,7 +677,7 @@ func (b *Builder) buildClassDeclFromSol(
 	// The two sides render under their own builders, and each seeds the names it mints
 	// from a prefix of its own. Both numbering from one prefix would let the instance
 	// type and the static side mint the same name for two different bodies.
-	instanceRender := newSolTypeAnnBuilder(names, localName, typeParams)
+	instanceRender := b.solRenderer(names, localName, typeParams)
 	instanceAnn := instanceRender.render(instance)
 	instanceTypeParams := typeParamsFromSol(instanceRender, typeParams)
 
@@ -423,7 +700,7 @@ func (b *Builder) buildClassDeclFromSol(
 	// The static side binds the class's parameters on each constructor and call signature,
 	// which carry them as their own binder, so the value renders
 	// `{new <T>(value: T): Box<T>}` and the `T` is bound where TypeScript needs it.
-	staticRender := newSolTypeAnnBuilder(names, localName+"_static", nil)
+	staticRender := b.solRenderer(names, localName+"_static", nil)
 	staticAnn := staticRender.render(staticType)
 	stmts = append(stmts, companionStmtsFromSol(staticRender)...)
 	return append(stmts, &DeclStmt{
@@ -498,7 +775,7 @@ func (b *Builder) buildEnumDeclFromSol(
 	if !hasUnion || union == nil {
 		return stmts
 	}
-	render := newSolTypeAnnBuilder(names, localName, typeParams)
+	render := b.solRenderer(names, localName, typeParams)
 	unionAnn := render.render(union)
 	declTypeParams := typeParamsFromSol(render, typeParams)
 
@@ -531,7 +808,7 @@ func (b *Builder) buildEnumVariantFromSol(
 	var stmts []Stmt
 
 	if body, typeParams, ok := variantNS.DeclaredType(name); ok && body != nil {
-		render := newSolTypeAnnBuilder(names, name, typeParams)
+		render := b.solRenderer(names, name, typeParams)
 		typeAnn := render.render(body)
 		declTypeParams := typeParamsFromSol(render, typeParams)
 		stmts = append(stmts, companionStmtsFromSol(render)...)
@@ -554,7 +831,7 @@ func (b *Builder) buildEnumVariantFromSol(
 	if ctorType, ok := variantNS.ValueType(name); ok {
 		// A prefix of its own, so the variant's type and its constructor cannot mint one
 		// name for two bodies.
-		render := newSolTypeAnnBuilder(names, name+"_ctor", nil)
+		render := b.solRenderer(names, name+"_ctor", nil)
 		ctorAnn := render.render(ctorType)
 		stmts = append(stmts, companionStmtsFromSol(render)...)
 		stmts = append(stmts, &DeclStmt{
