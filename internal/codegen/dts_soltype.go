@@ -503,8 +503,8 @@ func (b *solTypeAnnBuilder) objectTypeAnn(t *soltype.ObjectType) TypeAnn {
 			mappedAnns = append(mappedAnns, NewObjectTypeAnn(b.objTypeAnnElems(mapped)))
 			continue
 		}
-		if decl, declares := b.symbolDeclaration(t, elem); declares {
-			otherElems = append(otherElems, decl)
+		if prop, isDeclarer := b.uniqueSymbolProperty(t, elem); isDeclarer {
+			otherElems = append(otherElems, prop)
 			continue
 		}
 		otherElems = append(otherElems, b.objTypeAnnElems(elem)...)
@@ -524,11 +524,11 @@ func (b *solTypeAnnBuilder) objectTypeAnn(t *soltype.ObjectType) TypeAnn {
 	return NewObjectTypeAnn(otherElems)
 }
 
-// symbolDeclaration returns the `readonly key: unique symbol` property `elem` emits when
+// uniqueSymbolProperty returns the `readonly key: unique symbol` property `elem` emits when
 // it is the property of `obj` that declares a unique symbol, and false for any other
 // element. Rendering that symbol as `typeof i.key` would make the declaration refer to
 // itself, which TypeScript rejects as circular.
-func (b *solTypeAnnBuilder) symbolDeclaration(obj *soltype.ObjectType, elem soltype.ObjTypeElem) (ObjTypeAnnElem, bool) {
+func (b *solTypeAnnBuilder) uniqueSymbolProperty(obj *soltype.ObjectType, elem soltype.ObjTypeElem) (ObjTypeAnnElem, bool) {
 	prop, isProp := elem.(*soltype.PropertyElem)
 	if !isProp {
 		return nil, false
