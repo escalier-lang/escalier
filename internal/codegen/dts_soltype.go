@@ -16,12 +16,48 @@ import (
 // A former TypeScript cannot express degrades rather than failing; each arm says
 // how and why.
 
-// solTypeAnnBuilder renders soltype values as .d.ts type annotations.
-type solTypeAnnBuilder struct {
+// solNames carries what a reference's name is rendered against.
+type solNames struct {
 	// preludePrefix is the package key `std:prelude` is registered under, such as
 	// `import:std:prelude`. It is how a reference to one of the four prelude types
 	// below is told from a user's own type of the same name. Empty trims nothing.
 	preludePrefix string
+	// namespace is the dotted namespace the declaration being built is emitted into, or
+	// empty at the module's top level. A reference to a type that namespace declares
+	// renders under its local name, so `MyEnum.Color` written inside `MyEnum` is `Color`.
+	namespace string
+}
+
+// within returns names for declarations emitted inside the namespace name, nested in
+// the one names is emitted into.
+func (n solNames) within(name string) solNames {
+	if n.namespace != "" {
+		name = n.namespace + "." + name
+	}
+	return solNames{preludePrefix: n.preludePrefix, namespace: name}
+}
+
+// localName returns qualifiedName as a reference written inside the emitted namespace
+// reads it. A type the namespace declares drops the namespace's prefix, and any other
+// keeps the name refNameFromSol gives it. The namespace's own name keeps its name too,
+// since only a dotted name carries the prefix.
+//
+// The prefix is matched against the registry key itself. A type another package declares
+// carries that package's key ahead of its path, so a package's `Geometry.Point` is not
+// read as the `Point` a local `Geometry` namespace declares.
+func (n solNames) localName(qualifiedName string) string {
+	if n.namespace != "" {
+		if local, inside := strings.CutPrefix(qualifiedName, n.namespace+"."); inside {
+			return local
+		}
+	}
+	return refNameFromSol(qualifiedName)
+}
+
+// solTypeAnnBuilder renders soltype values as .d.ts type annotations.
+type solTypeAnnBuilder struct {
+	// names is what the references the builder renders are named against.
+	names solNames
 	// typeParamNames names each quantified type parameter. soltype binds one
 	// through TypeParam.Var rather than by name, so a `T` in a signature body
 	// arrives as the same pointer the binder holds.
@@ -50,9 +86,9 @@ type solTypeAnnBuilder struct {
 
 // newSolTypeAnnBuilder returns a renderer for one declaration. typeParams are
 // that declaration's own, since nothing inside its body binds them.
-func newSolTypeAnnBuilder(preludePrefix, companionPrefix string, typeParams []*soltype.TypeParam) *solTypeAnnBuilder {
+func newSolTypeAnnBuilder(names solNames, companionPrefix string, typeParams []*soltype.TypeParam) *solTypeAnnBuilder {
 	b := &solTypeAnnBuilder{
-		preludePrefix:   preludePrefix,
+		names:           names,
 		typeParamNames:  nil,
 		nextTypeParam:   0,
 		bindAt:          nil,
@@ -85,6 +121,20 @@ func (b *solTypeAnnBuilder) bindTypeParams(typeParams []*soltype.TypeParam) {
 		}
 		b.typeParamNames[tp.Var] = tp.Name
 	}
+}
+
+// refName returns the name a reference to the class or alias qualifiedName is written
+// under. It is the namespace-local name names.localName gives, unless a type parameter
+// this render has named already holds that name and would capture the reference. Then the
+// reference keeps the name refNameFromSol gives it.
+func (b *solTypeAnnBuilder) refName(qualifiedName string) string {
+	local := b.names.localName(qualifiedName)
+	for _, name := range b.typeParamNames {
+		if name == local {
+			return refNameFromSol(qualifiedName)
+		}
+	}
+	return local
 }
 
 // render is the entry point for a whole type. Counting occurrences first is what
@@ -146,9 +196,9 @@ func (b *solTypeAnnBuilder) typeAnn(t soltype.Type) TypeAnn {
 		// pass is needed because soltype carries it as a kind of its own.
 		return NewRefTypeAnn("this", nil)
 	case *soltype.ClassType:
-		return NewRefTypeAnn(refNameFromSol(t.Name), b.typeArgs(t.Name, t.TypeArgs, t.Defaults))
+		return NewRefTypeAnn(b.refName(t.Name), b.typeArgs(t.Name, t.TypeArgs, t.Defaults))
 	case *soltype.AliasType:
-		return NewRefTypeAnn(refNameFromSol(t.Name), b.typeArgs(t.Name, t.TypeArgs, t.Defaults))
+		return NewRefTypeAnn(b.refName(t.Name), b.typeArgs(t.Name, t.TypeArgs, t.Defaults))
 	case *soltype.GeneratorType:
 		// Both take three type arguments in TypeScript. Escalier's fourth, what
 		// advancing the generator may raise, has no slot.
@@ -407,10 +457,10 @@ func trimmedArgCountFromSol(args, defaults []soltype.Type) int {
 // different type that keeps every argument. An empty prefix matches nothing,
 // which trims no reference rather than trimming by bare name.
 func (b *solTypeAnnBuilder) typeScriptArity(qualifiedName string) (int, bool) {
-	if b.preludePrefix == "" {
+	if b.names.preludePrefix == "" {
 		return 0, false
 	}
-	local, inPrelude := strings.CutPrefix(qualifiedName, b.preludePrefix+".")
+	local, inPrelude := strings.CutPrefix(qualifiedName, b.names.preludePrefix+".")
 	if !inPrelude {
 		return 0, false
 	}

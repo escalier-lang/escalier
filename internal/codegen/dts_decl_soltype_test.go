@@ -48,7 +48,7 @@ func (f *fakeSolNamespace) Namespace(name string) (SolNamespace, bool) {
 func renderDeclFromSol(t *testing.T, source string, ns *fakeSolNamespace, isTopLevel bool) string {
 	t.Helper()
 	builder := &Builder{}
-	stmts := builder.buildDeclStmtFromSol(parseDecl(t, source), ns, solPreludePrefix, isTopLevel)
+	stmts := builder.buildDeclStmtFromSol(parseDecl(t, source), ns, solNames{preludePrefix: solPreludePrefix}, isTopLevel)
 	printer := NewPrinter()
 	printer.PrintModule(&Module{Stmts: stmts})
 	return printer.Output

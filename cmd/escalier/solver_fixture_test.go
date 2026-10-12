@@ -381,12 +381,7 @@ type emitSkip struct {
 var emitSkips = map[emitSkip]*solverSkipCause{
 	{"fix_point_combinator", "index.js"}: causeFieldReadBound,
 
-	{"bin_and_lib", "index.d.ts"}:                 causeEnclosingNamespacePrefix,
-	{"enum", "index.d.ts"}:                        causeEnclosingNamespacePrefix,
-	{"generic_enum", "index.d.ts"}:                causeEnclosingNamespacePrefix,
-	{"extractor_inside_namespaces", "index.d.ts"}: causeEnclosingNamespacePrefix,
-	{"namespace_use_parent_symbol", "index.d.ts"}: causeEnclosingNamespacePrefix,
-	{"namespace_bin_import", "index.d.ts"}:        causeEnclosingNamespacePrefix,
+	{"namespace_use_parent_symbol", "index.d.ts"}: causeAnyAsUnknown,
 	{"generalize", "index.d.ts"}:                  causeUnusedParamNotGeneralized,
 	{"type_ann_index_signature", "index.d.ts"}:    causeIndexSignatureOptional,
 	{"logging", "index.d.ts"}:                     causeUndefinedReturn,
@@ -410,12 +405,13 @@ var causeFieldReadBound = &solverSkipCause{
 // The causes behind the `index.d.ts` entries, each triaged from the diff the artifact
 // comparison reports. #1676 is the issue that works them down.
 var (
-	// A reference to a type the enclosing namespace declares renders under its full
-	// path, so a member of `declare namespace MyEnum` reads `MyEnum.Color` where the
-	// twin writes `Color`. Both denote the same type.
-	causeEnclosingNamespacePrefix = &solverSkipCause{
-		name:   "the enclosing namespace's prefix on a reference",
-		ticket: "#1785",
+	// A written `any` resolves to `unknown` in the solver, so `externref: any` emits
+	// `externref: unknown` where the twin writes `any`. The divergence is intended.
+	// `unknown` keeps a declaration sound where `any` would let every value through
+	// in both directions, so #1676 records it as a difference to keep.
+	causeAnyAsUnknown = &solverSkipCause{
+		name:   "a written `any` emitting as `unknown`",
+		ticket: "#1676",
 	}
 	// A parameter the body never reads coalesces to `unknown` rather than becoming a
 	// type parameter, so `fn fst(a, b) { return a }` emits `<T0>(a: T0, b: unknown) => T0`
