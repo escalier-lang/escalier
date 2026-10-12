@@ -87,7 +87,7 @@ func (c *checker) mintSymbol(ta *ast.UniqueSymbolTypeAnn, name string) *soltype.
 	// A symbol a declaration inside a block mints is local to that block, so only a
 	// top-level declaration's symbol joins the module's symbols.
 	if c.blockDepth == 0 {
-		c.mintedSymbols = append(c.mintedSymbols, t)
+		c.symbols.Minted = append(c.symbols.Minted, t)
 	}
 	return t
 }

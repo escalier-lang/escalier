@@ -178,13 +178,10 @@ type checker struct {
 	// walk defines it. It is nil outside a walk.
 	nsIndex map[string]*Namespace
 
-	// symbolOwners maps each type key name of the module under inference to the path of
-	// the value that names the unique symbols the type declares. See symbolOwners in
-	// symbol_owner.go. It is nil outside a walk.
-	symbolOwners map[string]string
-	// mintedSymbols holds each unique symbol a top-level declaration of the module under
-	// inference has minted so far, in mint order. Each walk starts it empty.
-	mintedSymbols []*soltype.UniqueSymbolType
+	// symbols holds the unique symbols of the module under inference. Its Owners are chosen
+	// before the walk starts, and its Minted grows as the walk mints symbols. Each walk
+	// starts it afresh.
+	symbols ModuleSymbols
 	// blockDepth counts the blocks enclosing the statement being inferred. It is 0 for a
 	// top-level declaration and above 0 inside a function body or a `do` block.
 	blockDepth int

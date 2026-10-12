@@ -109,7 +109,7 @@ func (c *checker) preBindInterface(scope *Scope, lvl int, decls []*ast.Interface
 		declScope:   declScope,
 		ns:          ns,
 		def:         def,
-		symbolOwner: c.symbolOwners[declScopeKey(ns, first.Name.Name)],
+		symbolOwner: c.symbols.Owners[declScopeKey(ns, first.Name.Name)],
 	}
 }
 
