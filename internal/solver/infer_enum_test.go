@@ -30,7 +30,7 @@ func TestInferEnumBasic(t *testing.T) {
 				val blue = Color.Hex("#0000FF")
 			`,
 			wantValues: map[string]string{
-				"rgb":  "fn (r: number, g: number, b: number) -> Color",
+				"rgb":  "{new (r: number, g: number, b: number) -> Color, [Symbol.customMatcher](subject: Color.RGB) -> [number, number, number]}",
 				"red":  "Color",
 				"blue": "Color",
 			},
@@ -111,7 +111,7 @@ func TestInferEnumMutuallyRecursive(t *testing.T) {
 	`, map[string]string{
 		"a":     "A",
 		"b":     "B",
-		"ctorA": "fn (next: B) -> A",
+		"ctorA": "{new (next: B) -> A, [Symbol.customMatcher](subject: A.ANode) -> [B]}",
 	}, map[string]string{
 		"A": "A.AEnd | A.ANode",
 		"B": "B.BEnd | B.BNode",
@@ -141,7 +141,7 @@ func TestInferEnumClassMutuallyRecursive(t *testing.T) {
 		"Node":     "{new (left: Tree, right: Tree) -> Node}",
 		"node":     "Node",
 		"branch":   "Tree",
-		"treeCtor": "fn (node: Node) -> Tree",
+		"treeCtor": "{new (node: Node) -> Tree, [Symbol.customMatcher](subject: Tree.Branch) -> [Node]}",
 		"kids":     "Tree",
 	}, map[string]string{
 		"Tree": "Tree.Leaf | Tree.Branch",
@@ -168,8 +168,8 @@ func TestInferEnumSharedVariantName(t *testing.T) {
 		val c = Color.RGB(1, 2, 3)
 		val p = Pixel.RGB(4, 5)
 	`, map[string]string{
-		"colorRGB": "fn (r: number, g: number, b: number) -> Color",
-		"pixelRGB": "fn (x: number, y: number) -> Pixel",
+		"colorRGB": "{new (r: number, g: number, b: number) -> Color, [Symbol.customMatcher](subject: Color.RGB) -> [number, number, number]}",
+		"pixelRGB": "{new (x: number, y: number) -> Pixel, [Symbol.customMatcher](subject: Pixel.RGB) -> [number, number]}",
 		"c":        "Color",
 		"p":        "Pixel",
 	}, map[string]string{
@@ -202,7 +202,7 @@ func TestInferEnumUnnamedParams(t *testing.T) {
 		}
 		val ctor = E.Pair
 	`, map[string]string{
-		"ctor": "fn (arg0: number, arg1: string) -> E",
+		"ctor": "{new (arg0: number, arg1: string) -> E, [Symbol.customMatcher](subject: E.Pair) -> [number, string]}",
 	}, nil)
 }
 
@@ -232,8 +232,8 @@ func TestEnumVariantDisplay(t *testing.T) {
 	require.Equal(t, "Point", soltype.Print(class))
 }
 
-// TestInferEnumGeneric checks that a generic enum's constructor is generalized like a
-// plain generic value, so each construction freshens the enum's type parameter and the
+// TestInferEnumGeneric checks that each construction of a generic enum's variant freshens
+// the enum's type parameter, which the constructor binds as its own, and that the
 // argument's type flows into the enum's alias instance. The enum name binds to an alias
 // carrying the enum's type-parameter var, so a construction renders under the enum name
 // with the argument's type — `MyOption.Some(5)` is `MyOption<5>`, the union hidden behind
@@ -250,4 +250,105 @@ func TestInferEnumGeneric(t *testing.T) {
 		"some": "MyOption<5>",
 		"str":  `MyOption<"hi">`,
 	}, nil)
+}
+
+// TestInferEnumVariantValue covers the value a variant's name binds to: a constructor beside
+// a static `[Symbol.customMatcher]`, both bound to the enum's own type parameters, and the
+// payload an extractor pattern recovers through the matcher.
+func TestInferEnumVariantValue(t *testing.T) {
+	tests := []struct {
+		name       string
+		src        string
+		wantValues map[string]string
+	}{
+		{
+			name: "GenericVariantBindsTheParameterOnEachSignature",
+			src: `
+				enum MyOption<T> {
+					Some(value: T),
+					None(),
+				}
+				val some = MyOption.Some
+				val none = MyOption.None
+			`,
+			wantValues: map[string]string{
+				"some": "{new <T>(value: T) -> MyOption<T>, [Symbol.customMatcher]<T>(subject: MyOption.Some<T>) -> [T]}",
+				"none": "{new <T>() -> MyOption<T>, [Symbol.customMatcher]<T>(subject: MyOption.None<T>) -> []}",
+			},
+		},
+		{
+			name: "MatchReadsAGenericPayloadAtTheScrutineesArgument",
+			src: `
+				enum MyOption<T> {
+					Some(value: T),
+					None(),
+				}
+				declare val option: MyOption<number>
+				val result = match option {
+					MyOption.Some(value) => value,
+					MyOption.None() => 0,
+				}
+			`,
+			wantValues: map[string]string{"result": "number"},
+		},
+		{
+			name: "MatchReadsEachVariantsPayload",
+			src: `
+				enum Color {
+					RGB(r: number, g: number, b: number),
+					Hex(code: string),
+				}
+				declare val color: Color
+				val result = match color {
+					Color.RGB(r, g, b) => r + g + b,
+					Color.Hex(code) => code,
+				}
+			`,
+			wantValues: map[string]string{"result": "number | string"},
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			classValues(t, tt.src, tt.wantValues, nil)
+		})
+	}
+}
+
+// TestExtractorOverGenericClass covers extractor patterns over a generic class. Each reads
+// the field at the scrutinee's argument, and two arms of one match naming the class each
+// bind their own argument rather than sharing one variable.
+func TestExtractorOverGenericClass(t *testing.T) {
+	tests := []struct {
+		name       string
+		src        string
+		wantValues map[string]string
+	}{
+		{
+			name: "DeclaredScrutinee",
+			src: `
+				class Box<T> { value: T }
+				declare val b: Box<string>
+				val first = match b { Box(v) => v }
+				val second = match b { Box(v) => v }
+			`,
+			wantValues: map[string]string{"first": "string", "second": "string"},
+		},
+		{
+			name: "TwoArmsOverAConstructedScrutinee",
+			src: `
+				class Box<T> { value: T }
+				val b = Box("s")
+				val r = match b {
+					Box(v) if v == "a" => 1,
+					Box(w) => w,
+				}
+			`,
+			wantValues: map[string]string{"r": `1 | "s"`},
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			classValues(t, tt.src, tt.wantValues, nil)
+		})
+	}
 }
