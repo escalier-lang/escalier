@@ -1012,8 +1012,9 @@ func commonPrefix(a, b []*soltype.FuncType) []*soltype.FuncType {
 //   - A unique symbol's reserved spelling renders as `[sym]`, where `sym` is the name
 //     symbolKeys holds for that id.
 //
-// Every other name is a string literal, which the printer emits bare when it is a
-// valid identifier.
+// A name that spells a non-negative number renders as a number literal, so a key
+// written `1` stays `1`. Every other name is a string literal, which the printer
+// emits bare when it is a valid identifier.
 //
 // `ok` is false for a unique symbol symbolKeys holds no name for, and the caller
 // leaves that member out. TypeScript has no key a declaration could write for a symbol
@@ -1033,7 +1034,21 @@ func (b *solTypeAnnBuilder) objKeyFromSol(name string) (ObjKey, bool) {
 		}
 		return NewComputedKey(qualifiedExprFromSol(symName), nil), true
 	}
+	if num, isNum := numericKey(name); isNum {
+		return NewNumLit(num, nil), true
+	}
 	return NewStrLit(name, nil), true
+}
+
+// numericKey returns the number name spells when the printer writes that number back
+// as exactly name, such as `1` or `1.5`. A spelling such as `01` or `-1` names a
+// string key that no number literal writes, and gives false.
+func numericKey(name string) (float64, bool) {
+	num, err := strconv.ParseFloat(name, 64)
+	if err != nil || num < 0 || strconv.FormatFloat(num, 'f', -1, 32) != name {
+		return 0, false
+	}
+	return num, true
 }
 
 // qualifiedExprFromSol splits a dotted value path such as `i.key`, which soltype carries

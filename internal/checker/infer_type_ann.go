@@ -424,6 +424,9 @@ func (c *Checker) inferObjectTypeAnn(
 	// would leave a nil in the slice for the object type to dereference
 	// later.
 	elems := make([]type_system.ObjTypeElem, 0, len(typeAnn.Elems))
+	// symbolKeyMap maps the id of each unique symbol a computed key names to the
+	// expression the key wrote, which the `.d.ts` emitter writes back as `[expr]`.
+	symbolKeyMap := map[int]any{}
 	for _, elem := range typeAnn.Elems {
 		switch elem := elem.(type) {
 		case *ast.CallableTypeAnn:
@@ -440,6 +443,7 @@ func (c *Checker) inferObjectTypeAnn(
 			if key == nil {
 				continue
 			}
+			recordSymbolKey(symbolKeyMap, key, elem.Name)
 			recv, recvErrs := buildMethodReceiver(receiver, elem.Receiver)
 			errors = slices.Concat(errors, recvErrs)
 			fn, fnErrors := c.inferFuncTypeAnn(ctx, elem.Fn, recv)
@@ -453,6 +457,7 @@ func (c *Checker) inferObjectTypeAnn(
 			if key == nil {
 				continue
 			}
+			recordSymbolKey(symbolKeyMap, key, elem.Name)
 			recv, recvErrs := buildMethodReceiver(receiver, elem.Receiver)
 			errors = slices.Concat(errors, recvErrs)
 			fn, fnErrors := c.inferFuncTypeAnn(ctx, elem.Fn, recv)
@@ -464,6 +469,7 @@ func (c *Checker) inferObjectTypeAnn(
 			if key == nil {
 				continue
 			}
+			recordSymbolKey(symbolKeyMap, key, elem.Name)
 			recv, recvErrs := buildMethodReceiver(receiver, elem.Receiver)
 			errors = slices.Concat(errors, recvErrs)
 			fn, fnErrors := c.inferFuncTypeAnn(ctx, elem.Fn, recv)
@@ -483,6 +489,7 @@ func (c *Checker) inferObjectTypeAnn(
 			if key == nil {
 				continue
 			}
+			recordSymbolKey(symbolKeyMap, key, elem.Name)
 			elems = append(elems, &type_system.PropertyElem{
 				Name:     *key,
 				Optional: elem.Optional,
@@ -590,5 +597,19 @@ func (c *Checker) inferObjectTypeAnn(
 
 	mergedElems, mergeErrors := c.MergeMethodOverloads(elems, declSpan(provenance))
 	errors = slices.Concat(errors, mergeErrors)
-	return type_system.NewObjectType(provenance, mergedElems), errors
+	objType := type_system.NewObjectType(provenance, mergedElems)
+	if len(symbolKeyMap) > 0 {
+		objType.SymbolKeyMap = symbolKeyMap
+	}
+	return objType, errors
+}
+
+// recordSymbolKey adds the expression of name to symbolKeyMap when name is a computed
+// key and key names a unique symbol.
+func recordSymbolKey(symbolKeyMap map[int]any, key *type_system.ObjTypeKey, name ast.ObjKey) {
+	computed, ok := name.(*ast.ComputedKey)
+	if !ok || key.Kind != type_system.SymObjTypeKeyKind {
+		return
+	}
+	symbolKeyMap[key.Sym] = computed.Expr
 }
