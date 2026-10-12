@@ -84,6 +84,11 @@ func (c *checker) rejectUniqueSymbol(ta *ast.UniqueSymbolTypeAnn, position uniqu
 func (c *checker) mintSymbol(ta *ast.UniqueSymbolTypeAnn, name string) *soltype.UniqueSymbolType {
 	t := c.ctx.freshSymbol(name)
 	c.recordProv(t, ta, AnnotationType)
+	// A symbol a declaration inside a block mints is local to that block, so only a
+	// top-level declaration's symbol joins the module's symbols.
+	if c.blockDepth == 0 {
+		c.mintedSymbols = append(c.mintedSymbols, t)
+	}
 	return t
 }
 

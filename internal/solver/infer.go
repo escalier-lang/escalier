@@ -182,6 +182,12 @@ type checker struct {
 	// the value that names the unique symbols the type declares. See symbolOwners in
 	// symbol_owner.go. It is nil outside a walk.
 	symbolOwners map[string]string
+	// mintedSymbols holds each unique symbol a top-level declaration of the module under
+	// inference has minted so far, in mint order. Each walk starts it empty.
+	mintedSymbols []*soltype.UniqueSymbolType
+	// blockDepth counts the blocks enclosing the statement being inferred. It is 0 for a
+	// top-level declaration and above 0 inside a function body or a `do` block.
+	blockDepth int
 
 	// fileScopes holds one scope per file of the module being inferred, keyed by
 	// source id, each carrying that file's import bindings.

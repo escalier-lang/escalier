@@ -32,6 +32,8 @@ import (
 // Value-position consumers still use the tail: `val x = if c { return 5 } else
 // { 6 }` sees the cons branch diverge and binds `x : 6`.
 func (c *checker) inferBlock(scope *Scope, lvl int, b *ast.Block) (soltype.Type, bool) {
+	c.blockDepth++
+	defer func() { c.blockDepth-- }()
 	var result soltype.Type = &soltype.UndefinedType{}
 	for _, s := range b.Stmts {
 		result = c.inferStmt(scope, lvl, s)

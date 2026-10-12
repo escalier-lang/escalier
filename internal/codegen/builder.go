@@ -11,7 +11,6 @@ import (
 	"github.com/escalier-lang/escalier/internal/dep_graph"
 	"github.com/escalier-lang/escalier/internal/printer"
 	"github.com/escalier-lang/escalier/internal/set"
-	"github.com/escalier-lang/escalier/internal/soltype"
 )
 
 type Builder struct {
@@ -35,9 +34,10 @@ type Builder struct {
 	// solSymbolKeys maps a unique symbol's id to the top-level value that names it in the
 	// module BuildDefinitionsFromSol is emitting. See symbolKeysFromSol.
 	solSymbolKeys map[int]string
-	// solSymbolDeclarers maps the id of each unique symbol a property of a type declares
-	// to the object type holding that property. See declaredPropertySymbols.
-	solSymbolDeclarers map[int]*soltype.ObjectType
+	// solSymbolOwners maps the name of each type that declares a unique symbol on a
+	// `readonly` property to the path of the value the symbol is named after. See
+	// SolSymbols.
+	solSymbolOwners map[string]string
 	// solShadowed holds the names a declaration in the namespace block being emitted
 	// cannot reach at the module root, because the block or an enclosing one declares a
 	// member under the same name. It is empty at the module root.

@@ -31,10 +31,16 @@ type solNames struct {
 // within returns names for declarations emitted inside the namespace name, nested in
 // the one names is emitted into.
 func (n solNames) within(name string) solNames {
-	if n.namespace != "" {
-		name = n.namespace + "." + name
+	return solNames{preludePrefix: n.preludePrefix, namespace: n.qualified(name)}
+}
+
+// qualified returns `name` prefixed by the path of the namespace `n` is emitted into.
+// That is the name a declaration in the namespace is registered under.
+func (n solNames) qualified(name string) string {
+	if n.namespace == "" {
+		return name
 	}
-	return solNames{preludePrefix: n.preludePrefix, namespace: name}
+	return n.namespace + "." + name
 }
 
 // localName returns qualifiedName as a reference written inside the emitted namespace
@@ -86,12 +92,16 @@ type solTypeAnnBuilder struct {
 	// that symbol. TypeScript keys a member off a unique symbol by writing such a value in
 	// brackets, so `{[sym]: number}` needs `sym` in scope. A nil map names no symbol.
 	symbolKeys map[int]string
-	// symbolDeclarers maps the id of a unique symbol a property declares to the object
-	// type holding that property. That property renders the symbol as `unique symbol`,
-	// since it is the declaration a `typeof i.key` elsewhere refers to. The object is
-	// compared by pointer. An alias or interface body is the one object its declaration
-	// stores, so the declaration renders that same pointer. A nil map names no declarer.
-	symbolDeclarers map[int]*soltype.ObjectType
+	// symbolPaths maps a unique symbol's id to the path that names it, before any alias a
+	// namespace block substitutes. A property at that path declares the symbol, so it
+	// renders `unique symbol` rather than the `typeof i.key` that would refer to itself.
+	// A nil map names no symbol.
+	symbolPaths map[int]string
+	// valuePath is the dotted path of the value whose type the next object rendered
+	// describes. With `interface I { readonly key: unique symbol }` and `declare val i: I`,
+	// the path for the body of `I` is `i`, and its property `key` is at `i.key`. It is
+	// empty when the object describes no value a path reaches.
+	valuePath string
 }
 
 // newSolTypeAnnBuilder returns a renderer for one declaration. typeParams are
@@ -158,6 +168,16 @@ func (b *solTypeAnnBuilder) render(t soltype.Type) TypeAnn {
 }
 
 func (b *solTypeAnnBuilder) typeAnn(t soltype.Type) TypeAnn {
+	// valuePath applies to an object type and to each arm of an intersection, which is how
+	// the body of an interface that extends others is stored. Any other type holds no
+	// value at the path, so an object inside it renders without one.
+	switch t.(type) {
+	case *soltype.ObjectType, *soltype.IntersectionType:
+	default:
+		path := b.valuePath
+		b.valuePath = ""
+		defer func() { b.valuePath = path }()
+	}
 	switch t := t.(type) {
 	case *soltype.TypeVarType:
 		if name, ok := b.typeParamNames[t]; ok {
@@ -496,16 +516,24 @@ func (b *solTypeAnnBuilder) typeScriptArity(qualifiedName string) (int, bool) {
 // indexSignatureTypeAnn lowers it to `[key: string]: V`, which TypeScript allows
 // beside ordinary members.
 func (b *solTypeAnnBuilder) objectTypeAnn(t *soltype.ObjectType) TypeAnn {
+	// Only a `readonly` property's value is reached at a path from this object's own,
+	// since any other member may be reassigned or is not a value.
+	path := b.valuePath
+	defer func() { b.valuePath = path }()
 	var mappedAnns []TypeAnn
 	otherElems := make([]ObjTypeAnnElem, 0, len(t.Elems))
 	for _, elem := range t.Elems {
+		b.valuePath = ""
 		if mapped, ok := elem.(*soltype.MappedElem); ok && !soltype.MappedElemSettled(mapped) {
 			mappedAnns = append(mappedAnns, NewObjectTypeAnn(b.objTypeAnnElems(mapped)))
 			continue
 		}
-		if prop, isDeclarer := b.uniqueSymbolProperty(t, elem); isDeclarer {
+		if prop, isDeclarer := b.uniqueSymbolProperty(path, elem); isDeclarer {
 			otherElems = append(otherElems, prop)
 			continue
+		}
+		if prop, isProp := elem.(*soltype.PropertyElem); isProp && prop.Readonly && path != "" {
+			b.valuePath = path + "." + prop.Name
 		}
 		otherElems = append(otherElems, b.objTypeAnnElems(elem)...)
 	}
@@ -525,16 +553,17 @@ func (b *solTypeAnnBuilder) objectTypeAnn(t *soltype.ObjectType) TypeAnn {
 }
 
 // uniqueSymbolProperty returns the `readonly key: unique symbol` property `elem` emits when
-// it is the property of `obj` that declares a unique symbol, and false for any other
-// element. Rendering that symbol as `typeof i.key` would make the declaration refer to
-// itself, which TypeScript rejects as circular.
-func (b *solTypeAnnBuilder) uniqueSymbolProperty(obj *soltype.ObjectType, elem soltype.ObjTypeElem) (ObjTypeAnnElem, bool) {
+// it declares a unique symbol, and false for any other element. `path` is the path of the
+// value the object holding `elem` describes, and `elem` declares its symbol when the
+// symbol is named `<path>.key`. Rendering that symbol as `typeof i.key` would make the
+// declaration refer to itself, which TypeScript rejects as circular.
+func (b *solTypeAnnBuilder) uniqueSymbolProperty(path string, elem soltype.ObjTypeElem) (ObjTypeAnnElem, bool) {
 	prop, isProp := elem.(*soltype.PropertyElem)
-	if !isProp {
+	if !isProp || path == "" {
 		return nil, false
 	}
 	sym, isSym := prop.Type.(*soltype.UniqueSymbolType)
-	if !isSym || b.symbolDeclarers[sym.ID] != obj {
+	if !isSym || b.symbolPaths[sym.ID] != path+"."+prop.Name {
 		return nil, false
 	}
 	key, ok := b.objKeyFromSol(prop.Name)

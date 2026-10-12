@@ -725,7 +725,7 @@ func TestNeitherCheckerSynthesizesAKeyFromACall(t *testing.T) {
 }
 
 // TestTheSolverEmitsASymbolAPropertyDeclares covers the `.d.ts` the solver emits for a
-// unique symbol a `readonly` property declares. The `val` the symbol is named after holds
+// unique symbol a `readonly` property declares. The value the symbol is named after holds
 // it at the path TypeScript writes, so a type naming the symbol reads `typeof i.key` and a
 // key off it reads `[i.key]`. The property that declares the symbol keeps `unique symbol`.
 //
@@ -786,6 +786,47 @@ export declare const o: {[inline.key]: true};
 `,
 		},
 		{
+			name: "StaticReadonlyField",
+			src: `declare class C { static readonly key: unique symbol }
+export val k = C.key
+export val o = {[C.key]: 1}`,
+			want: `declare type C = {};
+declare const C: {new (): C, readonly key: unique symbol};
+export declare const k: typeof C.key;
+export declare const o: {[C.key]: 1};
+`,
+		},
+		{
+			// The interface's symbol is named after the class field that holds a value of it.
+			name: "InterfaceNamedByAStaticReadonlyField",
+			src: `declare interface I { readonly key: unique symbol }
+declare class C { static readonly i: I }
+export val o = {[C.i.key]: 1}`,
+			want: `declare interface I {
+  readonly key: unique symbol;
+}
+declare type C = {};
+declare const C: {new (): C, readonly i: I};
+export declare const o: {[C.i.key]: 1};
+`,
+		},
+		{
+			// A `var` may be reassigned, so the solver gives the symbol no name. The first
+			// top-level `val` holding it names it instead.
+			name: "SymbolHeldByAVal",
+			src: `declare interface I { readonly key: unique symbol }
+declare var v: I
+export val k = v.key
+export val o = {[k]: 1}`,
+			want: `declare interface I {
+  readonly key: typeof k;
+}
+declare let v: I;
+export declare const k: unique symbol;
+export declare const o: {[k]: 1};
+`,
+		},
+		{
 			name: "NestedReadonlyProperty",
 			src: `declare val n: {readonly a: {readonly b: unique symbol}}
 export val k = n.a.b`,
@@ -828,5 +869,38 @@ declare namespace shadow {
   export const s3: typeof __sym_symbol;
   export const sym: 5;
 }
+`, dts)
+}
+
+// TestTheSolverEmitsASymbolANamespacedTypeDeclares asserts that an interface in a namespace
+// block keeps `unique symbol` on the property that declares its symbol when the value the
+// symbol is named after sits at the module root.
+func TestTheSolverEmitsASymbolANamespacedTypeDeclares(t *testing.T) {
+	useSolver(t)
+	sources := []*ast.Source{
+		{ID: 0, Path: "lib/index.esc", Contents: "export declare val i: ns.I\nexport val o = {[i.key]: 1}\n"},
+		{ID: 1, Path: "lib/ns/a.esc", Contents: "export declare interface I { readonly key: unique symbol }\n"},
+	}
+	dts := CompilePackage(sources).CompUnits["lib/index"].DTS
+	require.Equal(t, `export declare const i: ns.I;
+export declare const o: {[i.key]: 1};
+declare namespace ns {
+  export interface I {
+    readonly key: unique symbol;
+  }
+}
+`, dts)
+}
+
+// TestTheSolverEmitsABlockSymbolApartFromARootOne asserts that a symbol a `do` block
+// declares stays apart from a root value of the same name. Each is its own symbol, so a key
+// off the block's symbol is written through the value that holds it.
+func TestTheSolverEmitsABlockSymbolApartFromARootOne(t *testing.T) {
+	useSolver(t)
+	src := "export declare val sym: unique symbol\nexport val x = do {\n\tdeclare val sym: unique symbol\n\tsym\n}\nexport val o = {[x]: 1}\n"
+	dts := CompilePackage(libSources(src)).CompUnits["lib/index"].DTS
+	require.Equal(t, `export declare const x: unique symbol;
+export declare const o: {[x]: 1};
+export declare const sym: unique symbol;
 `, dts)
 }
