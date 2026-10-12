@@ -222,13 +222,15 @@ func acceptSet(f *soltype.FuncType) (lo, hi int) {
 
 // canAbsorbRest reports whether the sub's params from k on are a group a super rest param can
 // absorb. The group may end in the sub's own rest param when that param is an `Array<E>` at or
-// past k, since its element type says what each value past the fixed params is. An inexact sub,
-// one shorter than k, or one whose rest has no element type to read is not.
+// past k, since its element type says what each value past the fixed params is. An inexact sub
+// absorbs when it has no rest param, since it ignores every value past its listed params. A sub
+// shorter than k, an inexact sub with a rest param, or one whose rest has no element type to read
+// does not.
 func (c *Context) canAbsorbRest(sub *soltype.FuncType, k int) bool {
-	if sub.Inexact {
+	j := restIndex(sub)
+	if sub.Inexact && j >= 0 {
 		return false
 	}
-	j := restIndex(sub)
 	if j < 0 {
 		return len(sub.Params) >= k
 	}
@@ -256,11 +258,13 @@ func prefixRequiredCount(f *soltype.FuncType, k int) int {
 //   - `(a: number, b?: string)` gathers `[number] | [number, string | undefined]`. An optional
 //     param that is passed may still be passed `undefined`.
 //   - `(a: number, ...rest: Array<string>)` gathers `[number, ...Array<string>]`.
+//   - `(a: number, ...)` gathers `[number, ...Array<unknown>]` when inexact is true. An inexact
+//     function ignores the values past its listed params, so they may be anything.
 //
 // A rest param is read through its `Array` element type, which canAbsorbRest has already
 // checked. The unions take a nil Context so their subsumption never calls constrain from inside
 // one.
-func (c *Context) gatherRestParams(params []*soltype.FuncParam) soltype.Type {
+func (c *Context) gatherRestParams(params []*soltype.FuncParam, inexact bool) soltype.Type {
 	var elems []soltype.Type
 	var lengths []soltype.Type
 	for _, p := range params {
@@ -274,6 +278,9 @@ func (c *Context) gatherRestParams(params []*soltype.FuncParam) soltype.Type {
 			continue
 		}
 		elems = append(elems, p.Type)
+	}
+	if inexact {
+		return newUnion(nil, append(lengths, c.variadicTuple(elems, &soltype.UnknownType{}, nil)))
 	}
 	return newUnion(nil, append(lengths, &soltype.TupleType{Elems: elems}))
 }
@@ -1412,7 +1419,7 @@ func (c *Context) constrain(sub, super soltype.Type, seen *seenPairs, mutCtx boo
 						errs = append(errs, c.constrain(absorbElem, paramT, seen, false)...) // contravariant
 					}
 				} else {
-					gathered := c.gatherRestParams(subX.Params[absorbAt:])
+					gathered := c.gatherRestParams(subX.Params[absorbAt:], subX.Inexact)
 					errs = append(errs, c.constrain(supX.Params[absorbAt].Type, gathered, seen, false)...) // contravariant
 				}
 			}

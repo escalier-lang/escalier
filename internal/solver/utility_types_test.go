@@ -752,10 +752,18 @@ func TestStdlibFunctionUtilities(t *testing.T) {
 		{"ParametersOfARestParam", "Parameters<fn (a: number, ...rest: Array<string>) -> undefined>", "[number, ...Array<string>]"},
 		{"ParametersOfOnlyARestParam", "Parameters<fn (...rest: Array<string>) -> undefined>", "Array<string>"},
 		{"ParametersOfAnOptionalParam", "Parameters<fn (a: number, b?: string) -> undefined>", "[number] | [number, string | undefined]"},
+		// An inexact function ignores the values past its listed params, so they gather as an
+		// `unknown` tail.
+		{"ParametersOfAnInexactFunction", "Parameters<fn (a: number, ...) -> string>", "[number, ...Array<unknown>]"},
+		{"ParametersOfAnInexactOptionalParam", "Parameters<fn (a: number, b?: string, ...) -> string>", "[number] | [number, string | undefined, ...Array<unknown>]"},
+		{"ParametersOfAnInexactNullaryFunction", "Parameters<fn (...) -> string>", "Array<unknown>"},
 		{"ReturnType", "ReturnType<fn (a: number, ...rest: Array<string>) -> boolean>", "boolean"},
+		{"ReturnTypeOfAnInexactFunction", "ReturnType<fn (a: number, ...) -> boolean>", "boolean"},
 		{"ConstructorParametersOfAClass", "ConstructorParameters<typeof Point>", "[number, number]"},
 		{"ConstructorParametersOfARestParam", "ConstructorParameters<typeof Words>", "[number, ...Array<string>]"},
+		{"ConstructorParametersOfAnInexactConstructor", "ConstructorParameters<{new (a: number, ...) -> Point}>", "[number, ...Array<unknown>]"},
 		{"InstanceType", "InstanceType<typeof Point>", "Point"},
+		{"InstanceTypeOfAnInexactConstructor", "InstanceType<{new (a: number, ...) -> Point}>", "Point"},
 		// A variadic result feeds another conditional the way a fixed tuple does.
 		{"ConditionalOverAVariadicResult", "First<Parameters<fn (a: number, ...rest: Array<string>) -> undefined>>", "number"},
 	}

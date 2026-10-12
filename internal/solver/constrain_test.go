@@ -387,6 +387,27 @@ func TestConstrainRestParamElementChecking(t *testing.T) {
 		require.Empty(t, c.Constrain(sub, super))
 	})
 
+	// An inexact sub absorbs its listed params the way an exact one does. It ignores the
+	// values past them, so those values need no element check.
+	//
+	//	fn (a: number, b: string, ...) -> number  <:  fn (...rest: Array<number>) -> number
+	t.Run("an inexact sub's listed parameters are checked on the element", func(t *testing.T) {
+		c := arrayCtx()
+		super := restFn(num(), restParam("rest", arrayOf(num())))
+		sub := inexactFn(num(), identParam("a", num()), identParam("b", str()))
+		require.Equal(t,
+			[]string{"cannot constrain number <: string"},
+			Messages(c.Constrain(sub, super)))
+	})
+
+	//	fn (a: number, ...) -> number  <:  fn (...rest: Array<number>) -> number
+	t.Run("an inexact sub matching the element is accepted", func(t *testing.T) {
+		c := arrayCtx()
+		super := restFn(num(), restParam("rest", arrayOf(num())))
+		sub := inexactFn(num(), identParam("a", num()))
+		require.Empty(t, c.Constrain(sub, super))
+	})
+
 	// The named prefix ahead of the rest keeps its own positional check, so absorbing the
 	// tail does not loosen the parameters the super declares by position.
 	//
