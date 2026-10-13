@@ -30,7 +30,8 @@ const jsDotClass = `[^\n\r\x{2028}\x{2029}]`
 //
 //   - `i`, `m` and `s` become a leading Go flag group.
 //   - `y` anchors the match at the start, as a sticky regex tested from index 0 is.
-//   - `g`, `u` and `d` change nothing a whole-string test reads, so they are dropped.
+//   - `u` changes how `\u` escapes read, which rewriteRegexBody follows.
+//   - `g` and `d` change nothing a whole-string test reads, so they are dropped.
 //   - `v` is rejected, since its set notation has no RE2 form.
 //
 // rewriteRegexBody translates the body.
@@ -45,7 +46,7 @@ func compileRegexType(source string) (*regexp.Regexp, string) {
 	body, flags := source[1:end], source[end+1:]
 
 	var goFlags strings.Builder
-	sticky, dotAll := false, false
+	sticky, dotAll, unicode := false, false, false
 	seen := set.NewSet[rune]()
 	for _, flag := range flags {
 		if seen.Contains(flag) {
@@ -60,7 +61,9 @@ func compileRegexType(source string) (*regexp.Regexp, string) {
 			dotAll = true
 		case 'y':
 			sticky = true
-		case 'g', 'u', 'd':
+		case 'u':
+			unicode = true
+		case 'g', 'd':
 		case 'v':
 			return nil, "uses the `v` flag, whose set notation RE2 does not support"
 		default:
@@ -68,7 +71,7 @@ func compileRegexType(source string) (*regexp.Regexp, string) {
 		}
 	}
 
-	pattern, reason := rewriteRegexBody(body, dotAll)
+	pattern, reason := rewriteRegexBody(body, dotAll, unicode)
 	if reason != "" {
 		return nil, reason
 	}
@@ -86,7 +89,7 @@ func compileRegexType(source string) (*regexp.Regexp, string) {
 }
 
 // rewriteRegexBody rewrites the body of a JavaScript regex into Go syntax, or returns why it
-// cannot. dotAll reports whether the `s` flag is set. The body is read one token at a time,
+// cannot. dotAll reports whether the `s` flag is set, and unicode whether the `u` flag is. The body is read one token at a time,
 // so an escaped `\(` and a `(` inside a character class are never taken for a group.
 //
 // Where JavaScript and Go read the same syntax differently, the JavaScript meaning is
@@ -94,16 +97,18 @@ func compileRegexType(source string) (*regexp.Regexp, string) {
 //
 //   - `\s` and `\S` hold JavaScript's Unicode spaces, and `.` excludes every line terminator.
 //   - `[]` matches nothing and `[^]` matches any character.
-//   - `\uXXXX`, `\u{X…}`, `\cX` and `\0` become Go's `\x{…}` escapes.
+//   - `\uXXXX`, `\cX` and `\0` become Go's `\x{…}` escapes, and so does `\u{X…}` under the
+//     `u` flag. Without it, a `\u` that starts no `\uXXXX` escape is a literal `u`, so
+//     `\u{42}` is `u` repeated 42 times.
 //   - A named group `(?<name>` becomes `(?P<name>`.
-func rewriteRegexBody(body string, dotAll bool) (string, string) {
+func rewriteRegexBody(body string, dotAll, unicode bool) (string, string) {
 	var out strings.Builder
 	inClass := false
 	for i := 0; i < len(body); i++ {
 		ch := body[i]
 		switch {
 		case ch == '\\' && i+1 < len(body):
-			escape, width, reason := rewriteRegexEscape(body[i:], inClass)
+			escape, width, reason := rewriteRegexEscape(body[i:], inClass, unicode)
 			if reason != "" {
 				return "", reason
 			}
@@ -142,8 +147,8 @@ func rewriteRegexBody(body string, dotAll bool) (string, string) {
 // rewriteRegexEscape rewrites the escape at the start of rest, which begins with a
 // backslash. It returns the Go spelling, how many bytes of rest the escape spans, and a
 // reason when the escape cannot be written in RE2. inClass reports whether the escape sits
-// inside a character class.
-func rewriteRegexEscape(rest string, inClass bool) (string, int, string) {
+// inside a character class, and unicode whether the `u` flag is set.
+func rewriteRegexEscape(rest string, inClass, unicode bool) (string, int, string) {
 	next := rest[1]
 	switch {
 	case next >= '1' && next <= '9' && !inClass:
@@ -160,7 +165,7 @@ func rewriteRegexEscape(rest string, inClass bool) (string, int, string) {
 			return "", 0, "uses `\\S` inside a character class, which has no RE2 form"
 		}
 		return "[^" + jsSpaceSet + "]", 2, ""
-	case next == 'u' && strings.HasPrefix(rest[2:], "{"):
+	case next == 'u' && unicode && strings.HasPrefix(rest[2:], "{"):
 		end := strings.IndexByte(rest, '}')
 		if end < 0 {
 			return "", 0, "uses an unterminated `\\u{` escape"
@@ -168,6 +173,8 @@ func rewriteRegexEscape(rest string, inClass bool) (string, int, string) {
 		return `\x{` + rest[3:end] + `}`, end + 1, ""
 	case next == 'u' && len(rest) >= 6 && isHex(rest[2:6]):
 		return `\x{` + rest[2:6] + `}`, 6, ""
+	case next == 'u' && !unicode:
+		return "u", 2, ""
 	case next == 'c' && len(rest) >= 3 && isASCIILetter(rest[2]):
 		return fmt.Sprintf(`\x{%x}`, rest[2]%32), 3, ""
 	case next == '0' && (len(rest) < 3 || rest[2] < '0' || rest[2] > '9'):

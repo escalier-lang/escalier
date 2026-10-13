@@ -92,8 +92,19 @@ func TestInferRegexType(t *testing.T) {
 		},
 		{
 			name: "a unicode escape translates to RE2",
-			src:  `val v: /^\u0041\u{42}$/ = "AB"`,
-			want: `/^\u0041\u{42}$/`,
+			src:  `val v: /^\u0041\u{42}$/u = "AB"`,
+			want: `/^\u0041\u{42}$/u`,
+		},
+		{
+			// Without the `u` flag, `\u{3}` is a literal `u` repeated three times.
+			name: "a braced unicode escape without the u flag repeats a u",
+			src:  `val v: /^\u{3}$/ = "uuu"`,
+			want: `/^\u{3}$/`,
+		},
+		{
+			name:     "a braced unicode escape without the u flag is no code point",
+			src:      `val v: /^\u{42}$/ = "B"`,
+			wantErrs: []string{`1:21-1:24: cannot constrain "B" <: /^\u{42}$/`},
 		},
 		{
 			name:     "a repeated flag is rejected",
