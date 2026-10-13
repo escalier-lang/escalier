@@ -178,7 +178,16 @@ func (p *Pattern) Captures(s string) (map[string]string, bool) {
 	return out, true
 }
 
-// input returns s in the form the compiled pattern matches.
+// input returns s in the form the compiled pattern matches. A pattern compiled with the `u`
+// flag matches code points, which a Go string already holds, so s comes back unchanged.
+// Without the flag the pattern matches code units, so each code unit of s becomes one rune.
+// A unit up to U+FFFF that is no surrogate stays the rune it is, and each surrogate becomes
+// the rune unitRune maps it to.
+//
+// For example, "a😀" holds the code points U+0061 and U+1F600. In UTF-16 that is the units
+// 0x0061, 0xD83D and 0xDE00, so input returns the three runes U+0061, U+F003D and U+F0600.
+// A `.` in the pattern then matches one of the two surrogate runes, as it matches one code
+// unit in JavaScript.
 func (p *Pattern) input(s string) string {
 	if !p.units {
 		return s
@@ -190,7 +199,13 @@ func (p *Pattern) input(s string) string {
 	return b.String()
 }
 
-// output turns a span of the matched form back into the string it stands for.
+// output turns a span of the form input returns back into the string it stands for, so a
+// captured group reads as the text it matched in s. It reverses input: each rune unitRune
+// mapped a surrogate to becomes that surrogate unit again, and the units decode as UTF-16.
+//
+// For example, the runes U+F003D and U+F0600 become the units 0xD83D and 0xDE00, which
+// decode to "😀". A span holding half a surrogate pair, as `(.)` captures from "😀", decodes
+// to U+FFFD, since a Go string cannot hold a lone surrogate.
 func (p *Pattern) output(s string) string {
 	if !p.units {
 		return s
