@@ -189,7 +189,7 @@ Six of the determinations, copied from
 [spike_evidence/facts.txt](spike_evidence/facts.txt):
 
 ```
-Intl.Collator.prototype.resolvedOptions returns:fresh throws:TypeError rejects:none
+Intl.Collator.prototype.resolvedOptions returns:fresh throws:none rejects:none
 Intl.NumberFormat.prototype.formatToParts receiver:borrow returns:unknown throws:TypeError rejects:none
 Intl.Segmenter.prototype.segment receiver:borrow returns:unknown throws:TypeError rejects:none
 Intl.getCanonicalLocales receiver:none returns:fresh throws:RangeError|TypeError rejects:none
@@ -200,8 +200,11 @@ String.prototype.localeCompare returns:unknown throws:TypeError|unknown rejects:
 Three things stand out.
 
 **The throw sets come out complete.** Every one of the 77 is settled, and the
-answers are the `RangeError`/`TypeError` pairs the option-reading and
-internal-slot guards produce. A method whose body is half opaque still has a
+answers are the `RangeError`/`TypeError` pairs the option-reading guards
+produce. The `TypeError` a method raises when its receiver lacks the
+class's internal slot is not among them. The coercion filter drops that brand
+check, so `resolvedOptions` and the `Intl.Locale` getters come out
+`throws:none`. A method whose body is half opaque still has a
 readable throw set, because the guards that raise sit before the formatting
 the `yet` steps land in. This is the per-signal fallback the ECMA-262 spike
 argued for, doing exactly what it was meant to.
