@@ -139,22 +139,24 @@ func (c *checker) inferScriptIn(scope *Scope, script *ast.Script) (*Scope, *Info
 //  3. checkProductive and markPhantomParams mark the AliasDef, which constrain reads.
 //  4. runDeferredArgBounds checks the bounds on the type arguments the body wrote.
 //
-// A script is source-order, so a reference to an alias declared later is unbound. A second
-// alias of one name reports DuplicateDeclarationError and binds nothing.
+// A script is source-order, so a reference to an alias declared later is unbound. An alias
+// whose name scope already binds as a type reports DuplicateDeclarationError and binds
+// nothing.
 func (c *checker) bindScriptAlias(scope *Scope, lvl int, decl *ast.TypeDecl) {
-	qname := c.qualifyDecl("", decl.Name.Name)
-	if prev, dup := c.scriptAliases[qname]; dup {
-		c.report(&DuplicateDeclarationError{Decl: decl, Previous: prev, Name: decl.Name.Name})
-		return
+	// preBindAlias registers the alias under its name for the whole run, so a second
+	// registration would replace the first's definition under every value already typed by
+	// it. scope is the script's root, where every script-level type binds, so an earlier
+	// declaration of the name is one of its own bindings.
+	if prev, ok := scope.OwnType(decl.Name.Name); ok {
+		if prevDecl, isDecl := typeBindingDecl(prev); isDecl {
+			c.report(&DuplicateDeclarationError{Decl: decl, Previous: prevDecl, Name: decl.Name.Name})
+			return
+		}
 	}
 	sh := c.preBindAlias(scope, lvl+1, decl, "")
 	if sh == nil {
 		return
 	}
-	if c.scriptAliases == nil {
-		c.scriptAliases = map[string]*ast.TypeDecl{}
-	}
-	c.scriptAliases[qname] = decl
 	shells := []*aliasShell{sh}
 	prevBuilding := c.ctx.buildingAliases
 	c.ctx.buildingAliases = set.FromSlice([]string{sh.qname})
@@ -166,6 +168,19 @@ func (c *checker) bindScriptAlias(scope *Scope, lvl int, decl *ast.TypeDecl) {
 	c.reportPhantomParams(shells)
 	c.ctx.buildingAliases = prevBuilding
 	c.runDeferredArgBounds()
+}
+
+// typeBindingDecl returns the declaration that introduced b, and false when b records none.
+func typeBindingDecl(b TypeBinding) (ast.Decl, bool) {
+	if len(b.Sources) == 0 {
+		return nil, false
+	}
+	np, ok := b.Sources[0].(*ast.NodeProvenance)
+	if !ok {
+		return nil, false
+	}
+	decl, ok := np.Node.(ast.Decl)
+	return decl, ok
 }
 
 // bindScriptFunc infers a `declare fn` written at a script's top level and binds its

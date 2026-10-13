@@ -159,11 +159,6 @@ type checker struct {
 	// printers already strip it to `Array`.
 	pkgURI string
 
-	// scriptAliases holds each alias a script walk has bound, keyed by its registry name.
-	// bindScriptAlias reads it to report a second declaration of one name, which would
-	// otherwise replace the first's definition under every value already typed by it.
-	scriptAliases map[string]*ast.TypeDecl
-
 	// scriptScope is the scope a script's top-level statements bind into, and nil outside a
 	// script walk. atScriptRoot compares against it.
 	scriptScope *Scope

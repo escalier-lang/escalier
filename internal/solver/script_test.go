@@ -232,6 +232,14 @@ func TestInferScriptTypeAndFuncDecls(t *testing.T) {
 			wantErrs: []string{"Declaration not allowed in function body: FuncDecl"},
 		},
 		{
+			name: "AliasReusingAClassName",
+			src: `
+				class T { x: number }
+				type T = number
+			`,
+			wantErrs: []string{"Duplicate declaration: T"},
+		},
+		{
 			name: "FnWithBodyRejected",
 			src: `
 				fn double(x: number) -> number { return x * 2 }
