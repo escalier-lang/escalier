@@ -995,100 +995,102 @@ func TestInferStructuralPatternOverClassInstance(t *testing.T) {
 	}{
 		{
 			name: "a getter binds through a structural arm",
-			src:  `fn f(c: Circle) { return match c { {area} => area, _ => 0 } }`,
-			want: "fn (c: Circle) -> number",
+			src:  `fn f(c: &Circle) { return match c { {area} => area, _ => 0 } }`,
+			want: "fn (c: &Circle) -> number",
 		},
 		{
 			name: "a getter fills a property of an annotated object type",
-			src: `fn f(c: Circle) {
-				val o: {area: number, ...} = c
+			src: `fn f(c: &Circle) {
+				val o: &{area: number, ...} = c
 				return o.area
 			}`,
-			want: "fn (c: Circle) -> number",
+			want: "fn (c: &Circle) -> number",
 		},
 		{
 			// Destructuring reads the getter, so what it can raise reaches the enclosing
 			// function, which declares no `throws` here.
 			name:     "a raising getter's raise reaches the destructuring function",
-			src:      `fn f(c: Circle) { val {risky} = c }`,
-			wantErrs: []string{"9:25-9:30: cannot constrain string <: never"},
+			src:      `fn f(c: &Circle) { val {risky} = c }`,
+			wantErrs: []string{"9:26-9:31: cannot constrain string <: never"},
 		},
 		{
 			name: "a raising getter destructures under a matching throws clause",
-			src: `fn f(c: Circle) -> number throws string {
+			src: `fn f(c: &Circle) -> number throws string {
 				val {risky} = c
 				return risky
 			}`,
-			want: "fn (c: Circle) -> number throws string",
+			want: "fn (c: &Circle) -> number throws string",
 		},
 		{
 			// A `match` arm reads the getter through the same rule.
 			name:     "a raising getter's raise reaches a match arm's function",
-			src:      `fn f(c: Circle) { return match c { {risky} => risky } }`,
-			wantErrs: []string{"9:38-9:43: cannot constrain string <: never"},
+			src:      `fn f(c: &Circle) { return match c { {risky} => risky } }`,
+			wantErrs: []string{"9:39-9:44: cannot constrain string <: never"},
 		},
 		{
 			// Each member of a union scrutinee raises what its getter can raise.
 			name: "a raising getter's raise reaches the function through a union",
 			src: `class Square { side: number, get risky(&self) -> number throws boolean { if self.side < 0 { throw true } return self.side } }
-				fn f(s: Circle | Square) { val {risky} = s }`,
-			wantErrs: []string{"10:37-10:42: cannot constrain string <: never", "10:37-10:42: cannot constrain boolean <: never"},
+				fn f(s: &(Circle | Square)) { val {risky} = s }`,
+			wantErrs: []string{"10:40-10:45: cannot constrain string <: never", "10:40-10:45: cannot constrain boolean <: never"},
 		},
 		{
 			// A read through the property has no place to record the getter's raise.
 			name:     "a raising getter does not fill a property type",
-			src:      `fn f(c: Circle) { val o: {risky: number, ...} = c }`,
-			wantErrs: []string{"9:50-9:51: the getter `risky` can throw `string`, which the property `risky: number` cannot"},
+			src:      `fn f(c: &Circle) { val o: &{risky: number, ...} = c }`,
+			wantErrs: []string{"9:52-9:53: the getter `risky` can throw `string`, which the property `risky: number` cannot"},
 		},
 		{
 			name: "a getter that takes its receiver mutably does not fill a property",
 			src: `class Counter { n: number, get next(&mut self) -> number { return self.n } }
-				fn f(c: Counter) { val {next} = c }`,
-			wantErrs: []string{"10:29-10:33: object is missing property: next"},
+				fn f(c: &Counter) { val {next} = c }`,
+			wantErrs: []string{"10:30-10:34: object is missing property: next"},
 		},
 		{
-			// A writable property is written through, which a getter alone cannot take.
-			name: "a getter does not fill a writable property",
-			src: `fn f(c: mut Circle) {
-				val o: mut {area: number, ...} = c
+			// `&mut {area: number, ...}` is a mutable borrow of an object type, through which
+			// `o.area = 1` would write the field. Circle declares only a getter for `area`,
+			// so it cannot take that write.
+			name: "a getter does not fill a field of a mutable object type",
+			src: `fn f(c: &mut Circle) {
+				val o: &mut {area: number, ...} = c
 			}`,
-			wantErrs: []string{"10:38-10:39: readonly field area cannot satisfy a writable field requirement"},
+			wantErrs: []string{"10:39-10:40: readonly field area cannot satisfy a writable field requirement"},
 		},
 		{
-			name: "an accessor pair fills a writable property",
+			name: "an accessor pair fills a field of a mutable object type",
 			src: `class Cell {
 					v: number,
 					get value(&self) -> number { return self.v },
 					set value(&mut self, x: number) { self.v = x },
 				}
-				fn f(c: mut Cell) {
-					val o: mut {value: number, ...} = c
+				fn f(c: &mut Cell) {
+					val o: &mut {value: number, ...} = c
 					return o
 				}`,
-			want: "fn (c: mut Cell) -> {value: number, ...}",
+			want: "fn <'a>(c: &'a mut Cell) -> &'a mut {value: number, ...}",
 		},
 		{
 			name: "structural arms narrow and cover a union of classes",
-			src: `fn f(o: Color | Event) { return match o {
+			src: `fn f(o: &(Color | Event)) { return match o {
 				{r, g, b} => r + g + b,
 				{kind} => kind,
 			} }`,
-			want: "fn (o: Color | Event) -> number | string",
+			want: "fn (o: &(Color | Event)) -> number | string",
 		},
 		{
 			name: "a nominal arm and a structural arm cover a union of classes",
-			src: `fn f(o: Color | Event) { return match o {
+			src: `fn f(o: &(Color | Event)) { return match o {
 				Color {r, g, b} => r + g + b,
 				{kind} => kind,
 			} }`,
-			want: "fn (o: Color | Event) -> number | string",
+			want: "fn (o: &(Color | Event)) -> number | string",
 		},
 		{
 			name: "a structural arm leaves the classes without its keys uncovered",
-			src: `fn f(o: Color | Event) { return match o {
+			src: `fn f(o: &(Color | Event)) { return match o {
 				{r, g, b} => r + g + b,
 			} }`,
-			wantErrs: []string{"9:34-11:5: match is not exhaustive; add a branch for `Event`"},
+			wantErrs: []string{"9:37-11:5: match is not exhaustive; add a branch for `Event`"},
 		},
 	}
 	for _, tt := range tests {
