@@ -1336,31 +1336,28 @@ type SelfType struct {
 	Class *ClassType
 }
 
-// RegexType is the string type a regular expression annotation names, such as
-// `/^\d{3}-\d{4}$/`. A string literal is a subtype of it when Pattern matches the literal.
-// Every regex type is a subtype of `string`, and two regex types are subtypes of each other
-// only when they carry the same Source. Deciding whether one pattern's language contains
-// another's is out of reach for a checker, so nothing weaker than identity relates them.
-//
-// Source is the annotation as written, with its delimiters and flags. It is what the type
-// prints as. Pattern is Source compiled by jsregex, which matches the way JavaScript does in
-// time linear in its input, so checking a literal against a pattern cannot hang the checker
-// however the pattern is written.
-//
-// Groups holds a type for each named group a conditional captures, in source order. A regex
-// type written as a conditional's Extends operand gives each group an `infer` binder, so
-// `if T : /^_*(?<Ident>\w+)$/ { Ident } else { T }` binds Ident to the text the group
-// matched. Groups is empty everywhere else.
+// RegexType is the string type a regex annotation such as `/^\d{3}-\d{4}$/` names. A string
+// literal is a subtype of it when the pattern matches the literal. Every regex type is a
+// subtype of `string`, and two regex types relate only when they were written alike, since a
+// checker cannot decide whether one pattern's language contains another's.
 type RegexType struct {
-	Source  string
+	// Source is the annotation as written, with its delimiters and flags. The type prints as
+	// Source.
+	Source string
+	// Pattern is Source compiled by jsregex, which matches as JavaScript does in time linear in
+	// its input, so checking a literal cannot hang the checker.
 	Pattern *jsregex.Pattern
-	Groups  []RegexGroup
+	// Groups holds an `infer` binder for each named group, in source order, when the type is a
+	// conditional's Extends operand. `if T : /^_*(?<Ident>\w+)$/ { Ident } else { T }` binds
+	// Ident to the text the group matched. Groups is empty everywhere else.
+	Groups []RegexGroup
 }
 
-// RegexGroup is one named group a RegexType captures. A literal the pattern matches flows the
-// text the group matched into Type, or `undefined` when the group took no part in the match.
+// RegexGroup is one named group a RegexType captures.
 type RegexGroup struct {
 	Name string
+	// Type receives the text the group matched in a literal the pattern matches, or
+	// `undefined` when the group took no part in the match.
 	Type Type
 }
 
