@@ -97,7 +97,8 @@ func (c *checker) inferStmt(scope *Scope, lvl int, s ast.Stmt) soltype.Type {
 		// alias or `declare fn` binds where it appears — used before its declaration it is an
 		// unknown identifier, unlike the module dep-graph path's out-of-order resolution. A
 		// real function body still rejects each of them, so all four are gated on the
-		// script context (a funcCtx with a nil node; see InferScript). A script's top-level
+		// script context (a funcCtx with a nil node; see InferScript). An alias and a
+		// `declare fn` are further gated on the script's root scope. A script's top-level
 		// declarations live for the whole run, so the class registry's insert/overwrite
 		// invariant holds exactly as it does for a module's top-level decls.
 		switch decl := s.Decl.(type) {
@@ -118,7 +119,9 @@ func (c *checker) inferStmt(scope *Scope, lvl int, s ast.Stmt) soltype.Type {
 			c.report(&BodyDeclNotAllowedError{Decl: s.Decl})
 			return &soltype.UndefinedType{}
 		case *ast.TypeDecl:
-			if c.inScript() {
+			// An alias is registered under its name for the whole run, so one declared in a
+			// nested block would outlive the block. Only the top level binds one.
+			if c.atScriptRoot(scope) {
 				c.bindScriptAlias(scope, lvl, decl)
 				return &soltype.UndefinedType{}
 			}
@@ -127,7 +130,7 @@ func (c *checker) inferStmt(scope *Scope, lvl int, s ast.Stmt) soltype.Type {
 		case *ast.FuncDecl:
 			// A script binds an ambient `declare fn` only. A `fn` with a body would need the
 			// capture and alias tracking a `val f = fn …` gets, which this path does not run.
-			if c.inScript() && decl.Declare() {
+			if c.atScriptRoot(scope) && decl.Declare() {
 				c.bindScriptFunc(scope, lvl, decl)
 				return &soltype.UndefinedType{}
 			}

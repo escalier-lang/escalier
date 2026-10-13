@@ -102,6 +102,7 @@ func (c *checker) inferScriptIn(scope *Scope, script *ast.Script) (*Scope, *Info
 	// parent chain is what the pre-pass resolves outer names against. There is no
 	// enclosing context to restore, so the returned previous one is discarded.
 	scriptBody := &ast.Block{Stmts: script.Stmts, Span: script.Span()}
+	c.scriptScope = scope
 	c.pushFuncCtx(false, nil, 0)
 	c.runLivenessPrePass(scope, nil, nil, nil, nil, scriptBody)
 

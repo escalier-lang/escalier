@@ -213,6 +213,25 @@ func TestInferScriptTypeAndFuncDecls(t *testing.T) {
 			wantErrs: []string{"Duplicate declaration: T"},
 		},
 		{
+			// A nested block is no top level, so the alias there is rejected and the one at the
+			// top level binds.
+			name: "AliasInANestedBlock",
+			src: `
+				if true { type T = string }
+				type T = number
+				val x: T = 5
+			`,
+			wantValues: map[string]string{"x": "T"},
+			wantErrs:   []string{"Declaration not allowed in function body: TypeDecl"},
+		},
+		{
+			name: "DeclareFnInANestedBlock",
+			src: `
+				if true { declare fn g() -> number }
+			`,
+			wantErrs: []string{"Declaration not allowed in function body: FuncDecl"},
+		},
+		{
 			name: "FnWithBodyRejected",
 			src: `
 				fn double(x: number) -> number { return x * 2 }
