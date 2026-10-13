@@ -202,7 +202,7 @@ func (c *checker) preBindAlias(scope *Scope, lvl int, decl *ast.TypeDecl, ns str
 		declScope:   declScope,
 		namedLts:    aliasNamedLts,
 		def:         def,
-		symbolOwner: c.symbols.Owners[declScopeKey(ns, decl.Name.Name)],
+		symbolOwner: c.symbolOwners[declScopeKey(ns, decl.Name.Name)],
 		paramsClean: quiet(),
 	}
 }

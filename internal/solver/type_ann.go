@@ -47,6 +47,7 @@ func (c *checker) resolveDeclaredTypeAnn(scope *Scope, ta ast.TypeAnn, lvl int, 
 			return c.rejectUniqueSymbol(usa, position), true
 		}
 		t := c.mintSymbol(usa, name)
+		// declaredSymbols collects the module's symbols from this record, so it has to stay.
 		c.recordType(usa, t)
 		return t, true
 	}

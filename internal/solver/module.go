@@ -193,12 +193,12 @@ func (c *checker) inferDepGraph(scope *Scope, lvl int, module *ast.Module, g *de
 	target.onDefine = func(key string) { c.routeToNamespace(target, key) }
 	// Each symbol owner is chosen before any component is walked, since an interface's
 	// symbols are minted before the `val` that names them is reached.
-	prevSymbols := c.symbols
-	c.symbols = soltype.ModuleSymbols{Owners: symbolOwners(module, g)}
+	prevOwners := c.symbolOwners
+	c.symbolOwners = symbolOwners(module, g)
 	defer func() {
 		target.onDefine = prevOnDefine
 		c.nsIndex = nil
-		c.symbols = prevSymbols
+		c.symbolOwners = prevOwners
 	}()
 	// M4 E3: dep_graph fans one top-level destructuring `val {x, y} = …` across one
 	// SCC component per leaf key. Its initializer is typed and its pattern bound
@@ -246,8 +246,7 @@ func (c *checker) inferDepGraph(scope *Scope, lvl int, module *ast.Module, g *de
 		}
 		return true
 	})
-	c.symbols.Minted = declaredSymbols(module, c.info)
-	return c.symbols
+	return soltype.ModuleSymbols{Minted: declaredSymbols(module, c.info), Owners: c.symbolOwners}
 }
 
 // classBodiesFirst returns g.Components reordered so that a component naming a class's
