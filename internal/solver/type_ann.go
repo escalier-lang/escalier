@@ -886,11 +886,15 @@ func (c *checker) resolveNegationTypeAnn(scope *Scope, ta *ast.NegationTypeAnn, 
 // its argument against `null | undefined`. recordProvForResult records nothing for either atom,
 // since both are shared zero-size singletons that cannot carry provenance.
 //
-// A literal with no soltype form, such as a regex or a bigint, reports unsupported and recovers.
+// A regex lowers to a RegexType through resolveRegexTypeAnn. A literal with no soltype form,
+// such as a bigint, reports unsupported and recovers.
 func (c *checker) resolveLitTypeAnn(ta *ast.LitTypeAnn) (soltype.Type, bool) {
 	if atom, _, isAtom := atomLitOf(ta.Lit); isAtom {
 		c.recordProvForResult(atom, ta, AnnotationType)
 		return atom, true
+	}
+	if rl, isRegex := ta.Lit.(*ast.RegexLit); isRegex {
+		return c.resolveRegexTypeAnn(ta, rl)
 	}
 	lit, ok := c.litTypeOf(ta.Lit)
 	if !ok {
@@ -898,6 +902,22 @@ func (c *checker) resolveLitTypeAnn(ta *ast.LitTypeAnn) (soltype.Type, bool) {
 	}
 	c.recordProv(lit, ta, AnnotationType)
 	return lit, true
+}
+
+// resolveRegexTypeAnn lowers a regex annotation such as `/^\d+$/` to a RegexType. A pattern
+// compileRegexType rejects reports RegexTypeError and recovers.
+//
+// The type records no named capture groups. A regex type only decides which string literals
+// it admits, and nothing reads a group's span back out of a type, so a group adds nothing a
+// checker could use.
+func (c *checker) resolveRegexTypeAnn(ta *ast.LitTypeAnn, rl *ast.RegexLit) (soltype.Type, bool) {
+	pattern, reason := compileRegexType(rl.Value)
+	if pattern == nil {
+		return c.report(&RegexTypeError{Ann: ta, Source: rl.Value, Reason: reason}), false
+	}
+	t := &soltype.RegexType{Source: rl.Value, Pattern: pattern}
+	c.recordProv(t, ta, AnnotationType)
+	return t, true
 }
 
 // resolveIndexTypeAnn lowers `T[K]` to an IndexType residual and stores it unreduced, so the

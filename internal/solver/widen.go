@@ -28,6 +28,10 @@ func widen(t soltype.Type) soltype.Type {
 		// particular value, so a mutable cell holding one widens to `symbol` and can
 		// later hold another. `var s = Symbol.iterator; s = Symbol.asyncIterator`.
 		return &soltype.PrimType{Prim: soltype.SymPrim}
+	case *soltype.RegexType:
+		// A mutable cell holding a value of a regex type widens to `string`, the way one
+		// holding a string literal does.
+		return &soltype.PrimType{Prim: soltype.StrPrim}
 	case *soltype.LitType:
 		switch t.Lit.(type) {
 		case *soltype.NumLit:

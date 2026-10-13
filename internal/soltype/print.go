@@ -904,7 +904,7 @@ func isPrintLeaf(t Type) bool {
 	switch t.(type) {
 	case *TypeVarType, *PrimType, *LitType, *NeverType, *UnknownType, *ErrorType,
 		*NullType, *UndefinedType, *MappedKeyType, *InferType, *TypeofType,
-		*UniqueSymbolType, *RecursiveVarType, *SelfType:
+		*UniqueSymbolType, *RegexType, *RecursiveVarType, *SelfType:
 		return true
 	}
 	return false
@@ -1035,6 +1035,9 @@ func (p *namedPrinter) printType(t Type) string {
 		return "{" + strings.Join(elems, ", ") + "}"
 	case *UniqueSymbolType:
 		return p.printUniqueSymbol(t)
+	case *RegexType:
+		// A regex type renders as the source wrote it, delimiters and flags included.
+		return t.Source
 	case *SelfType:
 		// A `Self` renders as the word the source wrote, not as the class it was declared in.
 		// That is the whole point of keeping it a kind of its own: `me(&self) -> Self` on a

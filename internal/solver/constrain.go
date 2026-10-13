@@ -1366,6 +1366,13 @@ func (c *Context) constrain(sub, super soltype.Type, seen *seenPairs, mutCtx boo
 		if sup, ok := super.(*soltype.TemplateLitType); ok {
 			return c.constrainStrLitToTemplateLit(sub, sup)
 		}
+		if sup, ok := super.(*soltype.RegexType); ok {
+			// A string literal is a value of a regex type when the pattern matches it.
+			if s, isStr := sub.Lit.(*soltype.StrLit); isStr && sup.Pattern.MatchString(s.Value) {
+				return nil
+			}
+			return []SolverError{&CannotConstrainError{Sub: sub, Super: sup}}
+		}
 		if errs, handled := c.constrainThroughWrapper(sub, super, seen, mutCtx); handled {
 			return errs
 		}
@@ -1968,6 +1975,25 @@ func (c *Context) constrain(sub, super soltype.Type, seen *seenPairs, mutCtx boo
 		}
 		if sup, ok := super.(*soltype.PrimType); ok {
 			if sup.Prim == soltype.SymPrim {
+				return nil
+			}
+			return []SolverError{&CannotConstrainError{Sub: sub, Super: sup}}
+		}
+		if errs, handled := c.constrainThroughWrapper(sub, super, seen, mutCtx); handled {
+			return errs
+		}
+	case *soltype.RegexType:
+		// A regex type is a subtype of `string` the way a string literal is, and of another regex
+		// type only when the two were written alike. Whether one pattern admits every string
+		// another does is not something the checker decides.
+		if sup, ok := super.(*soltype.RegexType); ok {
+			if sub.Source == sup.Source {
+				return nil
+			}
+			return []SolverError{&CannotConstrainError{Sub: sub, Super: sup}}
+		}
+		if sup, ok := super.(*soltype.PrimType); ok {
+			if sup.Prim == soltype.StrPrim {
 				return nil
 			}
 			return []SolverError{&CannotConstrainError{Sub: sub, Super: sup}}

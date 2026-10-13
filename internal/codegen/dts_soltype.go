@@ -219,6 +219,10 @@ func (b *solTypeAnnBuilder) typeAnn(t soltype.Type) TypeAnn {
 		// The recovery sentinel absorbs in both directions, as `any` does, so a
 		// declaration built after a reported error cascades no second one.
 		return NewAnyTypeAnn(nil)
+	case *soltype.RegexType:
+		// TypeScript has no regex-checked string type, so a regex type emits as the `string`
+		// it refines.
+		return NewStringTypeAnn(nil)
 	case *soltype.UniqueSymbolType:
 		// TypeScript reads a written `unique symbol` as a new symbol, so a type that
 		// reaches an existing one names the value holding it, `typeof sym`. A symbol no

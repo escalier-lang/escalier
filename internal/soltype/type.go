@@ -2,6 +2,7 @@ package soltype
 
 import (
 	"fmt"
+	"regexp"
 	"strconv"
 )
 
@@ -1334,6 +1335,21 @@ type SelfType struct {
 	Class *ClassType
 }
 
+// RegexType is the string type a regular expression annotation names, such as
+// `/^\d{3}-\d{4}$/`. A string literal is a subtype of it when Pattern matches the literal.
+// Every regex type is a subtype of `string`, and two regex types are subtypes of each other
+// only when they carry the same Source. Deciding whether one pattern's language contains
+// another's is out of reach for a checker, so nothing weaker than identity relates them.
+//
+// Source is the annotation as written, with its delimiters and flags. It is what the type
+// prints as and what two regex types compare by. Pattern is Source compiled for Go's RE2
+// engine, which matches in time linear in its input, so checking a literal against a pattern
+// cannot hang the checker however the pattern is written.
+type RegexType struct {
+	Source  string
+	Pattern *regexp.Regexp
+}
+
 // UniqueSymbolType is one particular symbol, the type a `unique symbol` annotation
 // names. `SymbolConstructor` declares `readonly iterator: unique symbol`, and the type
 // of `Symbol.iterator` is that one symbol rather than the whole `symbol` primitive.
@@ -1517,6 +1533,7 @@ func (*AliasType) isType()           {}
 func (*SkolemType) isType()          {}
 func (*SelfType) isType()            {}
 func (*UniqueSymbolType) isType()    {}
+func (*RegexType) isType()           {}
 
 // LevelOf is the max level of any TypeVarType inside t; concrete leaves are 0.
 // Trimmed to the M1 type set (grows back as later milestones add formers).

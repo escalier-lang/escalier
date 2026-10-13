@@ -1779,6 +1779,10 @@ func equalTypeWith(a, b soltype.Type, ctx *alphaCtx) bool {
 		// compare instead.
 		b, ok := b.(*soltype.UniqueSymbolType)
 		return ok && a.ID == b.ID
+	case *soltype.RegexType:
+		// Two regex types are the same type exactly when they were written alike.
+		b, ok := b.(*soltype.RegexType)
+		return ok && a.Source == b.Source
 	case *soltype.SelfType:
 		// A `Self` equals only another `Self` over the same declaring class. It never equals
 		// that class written out, which is the distinction the kind exists to keep: a member

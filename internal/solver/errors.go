@@ -972,6 +972,15 @@ type UnsupportedFeatureError struct {
 	Feature string
 }
 
+// RegexTypeError fires when a regex annotation cannot be a type. Reason completes the
+// sentence the message starts with the annotation, such as "uses lookahead, which RE2 does
+// not support".
+type RegexTypeError struct {
+	Ann    *ast.LitTypeAnn
+	Source string
+	Reason string
+}
+
 // RaisingGetterPropertyError fires when a getter that can raise fills a property
 // requirement, as `val o: {x: number, ...} = c` does when `c`'s getter `x` declares
 // `throws string`. A read through the property has no place to record the raise, so the
@@ -1344,6 +1353,7 @@ func (*NotEnoughArgsError) isSolverError()                  {}
 func (*UnsupportedNodeError) isSolverError()                {}
 func (*UnsupportedFeatureError) isSolverError()             {}
 func (*BodyDeclNotAllowedError) isSolverError()             {}
+func (*RegexTypeError) isSolverError()                      {}
 func (*MissingInitializerError) isSolverError()             {}
 func (*DuplicateDeclarationError) isSolverError()           {}
 func (*NoMatchingOverloadError) isSolverError()             {}
@@ -2864,6 +2874,12 @@ func (e *UnsupportedFeatureError) Message() string {
 	return "Unsupported: " + e.Feature
 }
 
+func (e *RegexTypeError) Span() ast.Span      { return e.Ann.Span() }
+func (e *RegexTypeError) Related() []ast.Span { return nil }
+func (e *RegexTypeError) Message() string {
+	return "regex type " + e.Source + " " + e.Reason
+}
+
 func (e *BodyDeclNotAllowedError) Span() ast.Span      { return e.Decl.Span() }
 func (e *BodyDeclNotAllowedError) Related() []ast.Span { return nil }
 func (e *BodyDeclNotAllowedError) Message() string {
@@ -3554,6 +3570,8 @@ func describe(t soltype.Type) string {
 		// ids that tell them apart are what a reader compares. Without this arm both sides
 		// render `?` and the message says nothing about which symbols were involved.
 		return soltype.Print(t)
+	case *soltype.RegexType:
+		return t.Source
 	}
 	return "?"
 }

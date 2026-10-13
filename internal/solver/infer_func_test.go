@@ -126,20 +126,20 @@ func TestInferFuncDeclBodylessReturnAnnotation(t *testing.T) {
 // with a nil body to exercise it directly.
 func TestInferFuncDeclBodylessUnsupportedReturnRecoversToUnknown(t *testing.T) {
 	c := newTestChecker()
-	// declare fn now() -> /x/
+	// declare fn now() -> /(?=x)/
 	//
-	// A regex literal type stands in for any annotation resolveTypeAnn does not
-	// support.
+	// The regex type stands in for any annotation resolveTypeAnn cannot resolve, since
+	// RE2 rejects its lookahead.
 	d := ast.NewFuncDecl(
 		ast.NewIdentifier("now", testSpan()), nil, nil,
-		nil, ast.NewLitTypeAnn(ast.NewRegex("x", testSpan()), testSpan()), nil,
+		nil, ast.NewLitTypeAnn(ast.NewRegex("/(?=x)/", testSpan()), testSpan()), nil,
 		nil, // no body
 		false, true, false, testSpan(),
 	)
 
 	ty, _ := c.inferFuncDecl(NewScope(), 0, d)
 	require.Len(t, c.errs, 1)
-	require.Equal(t, "Unsupported: LitTypeAnn", c.errs[0].Message())
+	require.Equal(t, "regex type /(?=x)/ uses lookahead, which RE2 does not support", c.errs[0].Message())
 	require.Equal(t, "fn () -> unknown", render(ty))
 }
 
