@@ -1909,6 +1909,33 @@ func (c *checker) raiseUnionAccessorThrows(lvl int, blame ast.Node, name string,
 	}
 }
 
+// recordUnionMethodRead records the read of name at blame as a method read when carrier is a
+// union some member of which reads name as a method. The read goes through constrain's
+// field-read join, which never reaches instanceMemberValue, so it is recorded here, where the
+// read site is in scope. A member that reads a field holding a plain function does not stop
+// the record, since binding a function that ignores `this` changes nothing it does.
+//
+// A receiver read off a binding is often still an inference variable, so carrier is read
+// through the lower bounds it holds so far.
+func (c *checker) recordUnionMethodRead(blame ast.Node, name string, carrier soltype.Type) {
+	u, isUnion := groundedCarrier(carrier).(*soltype.UnionType)
+	if !isUnion {
+		return
+	}
+	for _, member := range u.Types {
+		obj, ok := c.ctx.readCarrierObject(soltype.CarrierOf(member))
+		if !ok {
+			continue
+		}
+		if elem, found := obj.ReadMember(name); found {
+			if _, isMethod := elem.(*soltype.MethodElem); isMethod {
+				c.info.setMethodRead(blame)
+				return
+			}
+		}
+	}
+}
+
 // recordMethodSelfParam notes the receiver of the method a member access reads, so a rule at
 // the call site can reach the type strippedMethodSig drops. An overloaded method records
 // nothing: its arms may declare different receivers, and which arm a call resolves is decided

@@ -873,3 +873,21 @@ func TestNominalSubtype(t *testing.T) {
 		})
 	}
 }
+
+// DISABLED until #1984. A member read off a receiver whose type comes only from how it is used
+// cannot tell a method from a field holding a function, so codegen emits `o.m` unbound and
+// `g()` runs `m` with `this` undefined. #1984 warns and asks for a type on `o`. The message
+// below is the one #1984 proposes, so it moves with whatever wording lands.
+/*
+func TestInferWarnsAboutAFunctionReadOffAnInferredReceiver(t *testing.T) {
+	_, _, errs := inferSource(t, `
+		fn f(o) {
+			val g = o.m
+			return g()
+		}
+	`)
+	require.Equal(t, []string{
+		"3:12-3:15: `o.m` reads a function off `o`, whose type is only inferred, so it cannot tell whether `m` is a method to bind to `o`; annotate `o`'s type",
+	}, messagesWithSpan(t, errs))
+}
+*/

@@ -976,6 +976,15 @@ func TestBothCheckersBindOnlyAMethodRead(t *testing.T) {
 			src:  "class C {\n\tstatic make() -> number { return 1 },\n}\nexport val g = C.make",
 			want: "export const g = C.make;",
 		},
+		// DISABLED until #1983. Codegen considers `.bind` only for a member expression, so a
+		// method read by a constant string index emits bare on both checkers. #1983 binds it.
+		/*
+			{
+				name: "AMethodReadByIndex",
+				src:  "class C {\n\tm(&self) -> number { return 1 },\n}\nval c = C()\nexport val g = c[\"m\"]",
+				want: "export const g = c[\"m\"].bind(c);",
+			},
+		*/
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -988,4 +997,16 @@ func TestBothCheckersBindOnlyAMethodRead(t *testing.T) {
 			require.Equal(t, checked, solved, "the two checkers emit different JavaScript")
 		})
 	}
+}
+
+// TestTheSolverBindsAMethodReadThroughAUnion asserts that the solver binds a method read off a
+// union receiver whose members declare the method. internal/checker emits the read bare, so this
+// asserts what the solver emits rather than that the two agree.
+func TestTheSolverBindsAMethodReadThroughAUnion(t *testing.T) {
+	useSolver(t)
+	src := "class A {\n\tm(&self) -> number { return 1 },\n}\n" +
+		"class B {\n\tm(&self) -> number { return 2 },\n}\n" +
+		"declare val x: A | B\nexport val g = x.m"
+	got := CompilePackage(libSources(src)).CompUnits["lib/index"].JS
+	require.Contains(t, got, "export const g = x.m.bind(x);")
 }
