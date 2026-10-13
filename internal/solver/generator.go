@@ -31,7 +31,7 @@ func (c *checker) generatorMember(lvl int, blame, provNode ast.Node, name string
 		c.errs = append(c.errs, err)
 		return pathResult{value: &soltype.ErrorType{}}, true
 	}
-	return c.memberValue(lvl, blame, member), true
+	return c.instanceMemberValue(lvl, blame, member), true
 }
 
 // generatorCarrier reads the generator a member access on t goes through, folding the several a

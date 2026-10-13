@@ -2,6 +2,7 @@ package solver
 
 import (
 	"github.com/escalier-lang/escalier/internal/ast"
+	"github.com/escalier-lang/escalier/internal/set"
 	"github.com/escalier-lang/escalier/internal/soltype"
 )
 
@@ -18,13 +19,20 @@ type Info struct {
 	// JavaScript rather than to a property read. soltype has no namespace former to
 	// recover this from, so the resolution records it as it happens.
 	nsMembers map[ast.Node]ast.Decl
+	// methodReads holds each member read that resolved to a method of an instance, an
+	// object type or an interface, which runs against the value it was read from. Codegen
+	// binds such a read to its receiver when it travels as a value.
+	// The read's recorded type cannot say this, since the value a method read yields is
+	// its signature with the receiver already stripped.
+	methodReads set.Set[ast.Node]
 }
 
 // NewInfo returns an empty Info side table ready to record inferred types.
 func NewInfo() *Info {
 	return &Info{
-		types:     map[ast.Node]soltype.Type{},
-		nsMembers: map[ast.Node]ast.Decl{},
+		types:       map[ast.Node]soltype.Type{},
+		nsMembers:   map[ast.Node]ast.Decl{},
+		methodReads: set.NewSet[ast.Node](),
 	}
 }
 
@@ -49,6 +57,17 @@ func (i *Info) NamespaceMemberDecl(n ast.Node) (ast.Decl, bool) {
 // setNamespaceMember records that n resolved to decl through a namespace.
 func (i *Info) setNamespaceMember(n ast.Node, decl ast.Decl) {
 	i.nsMembers[n] = decl
+}
+
+// IsMethodRead reports whether the member read n resolved to a method that runs against
+// the value it was read from.
+func (i *Info) IsMethodRead(n ast.Node) bool {
+	return i.methodReads.Contains(n)
+}
+
+// setMethodRead records that the member read n resolved to such a method.
+func (i *Info) setMethodRead(n ast.Node) {
+	i.methodReads.Add(n)
 }
 
 // ResolvedTypeOf returns the type recorded for n with any inference variable resolved

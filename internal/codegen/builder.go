@@ -1466,7 +1466,7 @@ func (b *Builder) buildExpr(expr ast.Expr, parent ast.Expr) (Expr, []Stmt) {
 
 		member := NewMemberExpr(objExpr, propExpr, expr.OptChain, expr)
 		if _, ok := parent.(*ast.CallExpr); !ok {
-			if b.types().IsFunc(expr) {
+			if b.types().IsMethodRead(expr) {
 				// If the object is not already an IdentExpr, extract it to a temp variable
 				// to avoid duplicating complex expressions and running side-effects multiple times
 				var bindTargetExpr Expr

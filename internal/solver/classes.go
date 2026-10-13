@@ -1405,7 +1405,7 @@ func (c *checker) projectedMember(lvl int, blame ast.Node, name string, recv, ca
 	c.checkReceiverMut(blame, name, recv, memberSelfParam(member))
 	// Each access from outside the class gets its own copy of the method's lifetimes, the
 	// way a call to a free function instantiates the function's scheme.
-	return c.memberValue(lvl, blame, c.instantiateMethodLifetimes(lvl, blame, recv, member)), true
+	return c.instanceMemberValue(lvl, blame, c.instantiateMethodLifetimes(lvl, blame, recv, member)), true
 }
 
 // primitiveWrappers names, for each primitive, the class the standard library declares
@@ -1511,7 +1511,7 @@ func (c *checker) objectMember(lvl int, blame ast.Node, name string, carrier sol
 	if _, isProp := member.(*soltype.PropertyElem); isProp {
 		return pathResult{}, false
 	}
-	return c.memberValue(lvl, blame, member), true
+	return c.instanceMemberValue(lvl, blame, member), true
 }
 
 // memberCarrier peels a receiver to the shape a member lookup dispatches on, expanding a
@@ -1642,7 +1642,7 @@ func (c *checker) classBodyMember(lvl int, blame ast.Node, name string, recv, ca
 		return pathResult{}, false
 	}
 	c.checkReceiverMut(blame, name, recv, memberSelfParam(member))
-	return c.memberValue(lvl, blame, member), true
+	return c.instanceMemberValue(lvl, blame, member), true
 }
 
 // projectClassMember rewrites one class-body member's type-parameter and
@@ -1791,6 +1791,18 @@ func (c *checker) memberValue(lvl int, blame ast.Node, member soltype.ObjTypeEle
 	}
 	c.recordType(blame, out)
 	return pathResult{value: out}
+}
+
+// instanceMemberValue is memberValue for a member read off an instance, an object type or
+// an interface rather than off a class value. A method read there names a method that runs
+// against the value it was read from, so it is recorded for codegen to bind to that receiver.
+// A method a TypeScript interface declares carries no `self` parameter, so the record is
+// keyed on the member being a method rather than on its signature.
+func (c *checker) instanceMemberValue(lvl int, blame ast.Node, member soltype.ObjTypeElem) pathResult {
+	if _, isMethod := member.(*soltype.MethodElem); isMethod {
+		c.info.setMethodRead(blame)
+	}
+	return c.memberValue(lvl, blame, member)
 }
 
 // writeAccessor resolves the accessor a field write `recv.prop = …` targets, across the

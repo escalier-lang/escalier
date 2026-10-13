@@ -917,3 +917,75 @@ func TestTheSolverEmitsARegexCaptureAsString(t *testing.T) {
 	require.Equal(t, "export declare type Opt<T> = T extends string ? [string | undefined] : never;\n"+
 		"export declare type Strip<T> = T extends string ? string : T;\n", got)
 }
+
+// TestBothCheckersBindOnlyAMethodRead covers which member reads emit `.bind`. A read of a
+// method of an instance, an object type or an interface keeps its receiver when it travels
+// as a value, so it emits `obj.m.bind(obj)`. A field or property holding a plain function reads no receiver, and a
+// static method reads none either, so those emit the bare read. The two checkers agree on
+// every case.
+func TestBothCheckersBindOnlyAMethodRead(t *testing.T) {
+	tests := []struct {
+		name string
+		src  string
+		want string
+	}{
+		{
+			name: "AFieldHoldingAFunction",
+			src:  "class Fix {\n\tf: fn(a: number) -> number,\n\trun(&self) -> number {\n\t\tval g = self.f\n\t\treturn g(1)\n\t},\n}",
+			want: "const g = this.f;",
+		},
+		{
+			name: "AMethodThroughSelf",
+			src:  "class C {\n\tm(&self) -> number { return 1 },\n\trun(&self) -> number {\n\t\tval g = self.m\n\t\treturn g()\n\t},\n}",
+			want: "const g = this.m.bind(this);",
+		},
+		{
+			name: "AMethodOfAnInstance",
+			src:  "class C {\n\tm(&self) -> number { return 1 },\n}\nval c = C()\nexport val g = c.m",
+			want: "export const g = c.m.bind(c);",
+		},
+		{
+			name: "AnOverloadedMethod",
+			src:  "class C {\n\tm(&self, x: number) -> number { return x },\n\tm(&self, x: string) -> string { return x },\n}\nval c = C()\nexport val g = c.m",
+			want: "export const g = c.m.bind(c);",
+		},
+		{
+			name: "AMethodOfAnObjectType",
+			src:  "declare val obj: {m(&self) -> number}\nexport val g = obj.m",
+			want: "export const g = obj.m.bind(obj);",
+		},
+		{
+			name: "AMethodOfAnInterface",
+			src:  "declare interface I { m(&self) -> number }\ndeclare val i: I\nexport val g = i.m",
+			want: "export const g = i.m.bind(i);",
+		},
+		{
+			// A method the TypeScript lib declares names no `self`, and still runs against
+			// the value it was read from.
+			name: "AMethodTheLibDeclares",
+			src:  "val xs: mut Array<number> = [1]\nexport val push = xs.push",
+			want: "export const push = xs.push.bind(xs);",
+		},
+		{
+			name: "APropertyHoldingAFunction",
+			src:  "declare val obj: {m: fn () -> number}\nexport val m = obj.m",
+			want: "export const m = obj.m;",
+		},
+		{
+			name: "AStaticMethod",
+			src:  "class C {\n\tstatic make() -> number { return 1 },\n}\nexport val g = C.make",
+			want: "export const g = C.make;",
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			useChecker(t)
+			checked := CompilePackage(libSources(tt.src)).CompUnits["lib/index"].JS
+			useSolver(t)
+			solved := CompilePackage(libSources(tt.src)).CompUnits["lib/index"].JS
+
+			require.Contains(t, solved, tt.want)
+			require.Equal(t, checked, solved, "the two checkers emit different JavaScript")
+		})
+	}
+}
