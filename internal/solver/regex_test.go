@@ -3,6 +3,7 @@ package solver
 import (
 	"testing"
 
+	"github.com/escalier-lang/escalier/internal/soltype"
 	"github.com/stretchr/testify/require"
 )
 
@@ -205,6 +206,38 @@ func TestInferRegexTypeAsString(t *testing.T) {
 			values, errs := inferAgainstTree(t, tt.src)
 			require.Empty(t, errs)
 			require.Equal(t, tt.want, values["v"])
+		})
+	}
+}
+
+// TestInferRegexTypeCaptures covers a regex type written as a conditional's Extends operand.
+// Each named group captures the text it matched, which the Then branch reads under the group's
+// name.
+func TestInferRegexTypeCaptures(t *testing.T) {
+	decls := `
+		type StripUnderscores<T> = if T : /^_*(?<Ident>[a-zA-Z][a-zA-Z0-9]*)_*$/ { Ident } else { T }
+		type Optional<T> = if T : /^a(?<B>b)?$/ { B } else { never }
+		type Split<T> = if T : /^(?<Head>\w+)-(?<Tail>\w+)$/ { [Head, Tail] } else { never }
+	`
+	tests := []struct {
+		name string
+		src  string
+		want string
+	}{
+		{"AGroupCapturesItsText", `StripUnderscores<"__baz__">`, `"baz"`},
+		{"ALiteralWithoutTheAffixes", `StripUnderscores<"foo">`, `"foo"`},
+		{"ANonMatchTakesTheElseBranch", `StripUnderscores<"_123_">`, `"_123_"`},
+		{"AUnionCheckDistributes", `StripUnderscores<"_a_" | "b">`, `"a" | "b"`},
+		{"AStringCheckTakesTheElseBranch", `StripUnderscores<string>`, `string`},
+		{"AnOptionalGroupThatMatched", `Optional<"ab">`, `"b"`},
+		{"AnOptionalGroupThatDidNotMatch", `Optional<"a">`, `undefined`},
+		{"TwoGroups", `Split<"left-right">`, `["left", "right"]`},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			nodes, ctx, errs := inferTypeNodes(t, decls+"type Result = "+tt.src)
+			require.Empty(t, errs)
+			require.Equal(t, tt.want, soltype.Print(expandAliasResidual(ctx, nodes["Result"])))
 		})
 	}
 }

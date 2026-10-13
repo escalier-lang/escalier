@@ -1367,11 +1367,7 @@ func (c *Context) constrain(sub, super soltype.Type, seen *seenPairs, mutCtx boo
 			return c.constrainStrLitToTemplateLit(sub, sup)
 		}
 		if sup, ok := super.(*soltype.RegexType); ok {
-			// A string literal is a value of a regex type when the pattern matches it.
-			if s, isStr := sub.Lit.(*soltype.StrLit); isStr && sup.Pattern.MatchString(s.Value) {
-				return nil
-			}
-			return []SolverError{&CannotConstrainError{Sub: sub, Super: sup}}
+			return c.constrainStrLitToRegex(sub, sup, seen, mutCtx)
 		}
 		if errs, handled := c.constrainThroughWrapper(sub, super, seen, mutCtx); handled {
 			return errs
@@ -2831,6 +2827,30 @@ func (c *Context) constrainGetterIntoProp(
 		return append(errs, &ReadonlyFieldSubtypeError{Field: prop.Name})
 	}
 	return append(errs, c.constrain(prop.Type, s.Param, seen, mutCtx)...)
+}
+
+// constrainStrLitToRegex checks a literal against a regex type. A string literal is a value
+// of the type when the pattern matches it. The text each of the type's groups matched then
+// flows into that group's type, which is how a conditional captures it. A group that took no
+// part in the match contributes `undefined`, the value JavaScript gives it.
+func (c *Context) constrainStrLitToRegex(sub *soltype.LitType, sup *soltype.RegexType, seen *seenPairs, mutCtx bool) []SolverError {
+	s, isStr := sub.Lit.(*soltype.StrLit)
+	if !isStr {
+		return []SolverError{&CannotConstrainError{Sub: sub, Super: sup}}
+	}
+	match := sup.Pattern.FindStringSubmatchIndex(s.Value)
+	if match == nil {
+		return []SolverError{&CannotConstrainError{Sub: sub, Super: sup}}
+	}
+	var errs []SolverError
+	for _, group := range sup.Groups {
+		var text soltype.Type = &soltype.UndefinedType{}
+		if i := sup.Pattern.SubexpIndex(group.Name); i > 0 && match[2*i] >= 0 {
+			text = &soltype.LitType{Lit: &soltype.StrLit{Value: s.Value[match[2*i]:match[2*i+1]]}}
+		}
+		errs = append(errs, c.constrain(text, group.Type, seen, mutCtx)...)
+	}
+	return errs
 }
 
 // getterReadsAsProperty reports whether a read of g can stand in for a property read. A

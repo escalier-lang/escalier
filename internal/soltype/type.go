@@ -1345,9 +1345,22 @@ type SelfType struct {
 // prints as and what two regex types compare by. Pattern is Source compiled for Go's RE2
 // engine, which matches in time linear in its input, so checking a literal against a pattern
 // cannot hang the checker however the pattern is written.
+//
+// Groups holds a type for each named group a conditional captures, in source order. A regex
+// type written as a conditional's Extends operand gives each group an `infer` binder, so
+// `if T : /^_*(?<Ident>\w+)$/ { Ident } else { T }` binds Ident to the text the group
+// matched. Groups is empty everywhere else.
 type RegexType struct {
 	Source  string
 	Pattern *regexp.Regexp
+	Groups  []RegexGroup
+}
+
+// RegexGroup is one named group a RegexType captures. A literal the pattern matches flows the
+// text the group matched into Type, or `undefined` when the group took no part in the match.
+type RegexGroup struct {
+	Name string
+	Type Type
 }
 
 // UniqueSymbolType is one particular symbol, the type a `unique symbol` annotation
@@ -1622,6 +1635,12 @@ func LevelOf(t Type) int {
 		// same single-child rule the KeyofType arm follows. The TupleType arm already maxes over its
 		// elements, so this element contributes its operand's level there.
 		return LevelOf(t.Operand)
+	case *RegexType:
+		m := 0
+		for _, group := range t.Groups {
+			m = max(m, LevelOf(group.Type))
+		}
+		return m
 	case *TemplateLitType:
 		// A template literal's level is the max over its interpolations, so an out-of-level
 		// interpolation lifts the level and the freshener/extruder prune descends into it, the
