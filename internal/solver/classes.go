@@ -1469,6 +1469,8 @@ func (c *Context) ownPrimitiveWrapper(t soltype.Type) (*soltype.ClassType, bool)
 		prim = primOf(t.Lit)
 	case *soltype.UniqueSymbolType:
 		prim = soltype.SymPrim
+	case *soltype.RegexType:
+		prim = soltype.StrPrim
 	default:
 		return nil, false
 	}

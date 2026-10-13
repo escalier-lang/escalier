@@ -68,6 +68,60 @@ func TestInferRegexType(t *testing.T) {
 			want: `/^\(\?=[(?=]$/`,
 		},
 		{
+			// JavaScript's `\s` holds the Unicode spaces, where Go's holds only ASCII ones.
+			name: "a space class matches a no-break space",
+			src:  "val v: /^\\s$/ = \"\u00a0\"",
+			want: `/^\s$/`,
+		},
+		{
+			// JavaScript's `.` excludes every line terminator, where Go's excludes only `\n`.
+			// The literal holds a raw U+2028 line separator.
+			name:     "a dot does not match a line separator",
+			src:      "val v: /^.$/ = \"\u2028\"",
+			wantErrs: []string{`1:16-1:19: cannot constrain "\u2028" <: /^.$/`},
+		},
+		{
+			name: "an empty negated class matches any character",
+			src:  `val v: /^[^]$/ = "a"`,
+			want: `/^[^]$/`,
+		},
+		{
+			name:     "an empty class matches nothing",
+			src:      `val v: /^[]$/ = "a"`,
+			wantErrs: []string{`1:17-1:20: cannot constrain "a" <: /^[]$/`},
+		},
+		{
+			name: "a unicode escape translates to RE2",
+			src:  `val v: /^\u0041\u{42}$/ = "AB"`,
+			want: `/^\u0041\u{42}$/`,
+		},
+		{
+			name:     "a repeated flag is rejected",
+			src:      `val v: /a/ii = "a"`,
+			wantErrs: []string{"1:8-1:13: regex type /a/ii repeats the flag `i`"},
+		},
+		{
+			name:     "the v flag is rejected",
+			src:      `val v: /a/v = "a"`,
+			wantErrs: []string{"1:8-1:12: regex type /a/v uses the `v` flag, whose set notation RE2 does not support"},
+		},
+		{
+			name:     "a negated space class inside a class is rejected",
+			src:      `val v: /[\Sa]/ = "a"`,
+			wantErrs: []string{"1:8-1:15: regex type /[\\Sa]/ uses `\\S` inside a character class, which has no RE2 form"},
+		},
+		{
+			// A regex type meets a literal it admits at the literal.
+			name: "an intersection with a matching literal is the literal",
+			src:  `declare val r: /^a+$/ & "aaa"` + "\n" + `val v = r`,
+			want: `"aaa"`,
+		},
+		{
+			name: "an intersection with string is the regex type",
+			src:  `declare val r: /^a+$/ & string` + "\n" + `val v = r`,
+			want: `/^a+$/`,
+		},
+		{
 			name:     "lookahead is rejected",
 			src:      `val v: /(?=foo)foo/ = "foo"`,
 			wantErrs: []string{`1:8-1:20: regex type /(?=foo)foo/ uses lookahead, which RE2 does not support`},
@@ -110,6 +164,34 @@ func TestInferRegexType(t *testing.T) {
 				require.Equal(t, tt.wantErrs, messagesWithSpan(t, errs))
 				return
 			}
+			require.Empty(t, errs)
+			require.Equal(t, tt.want, values["v"])
+		})
+	}
+}
+
+// A regex type reads the members of the `String` wrapper and keys a property, as `string`
+// does. Both need the stdlib tree, which declares `String`.
+func TestInferRegexTypeAsString(t *testing.T) {
+	tests := []struct {
+		name string
+		src  string
+		want string
+	}{
+		{
+			name: "a member read goes through the String wrapper",
+			src:  `declare val r: /^a+$/` + "\n" + `val v = r.length`,
+			want: "number",
+		},
+		{
+			name: "a regex type keys a property as a string",
+			src:  `declare val r: /^a+$/` + "\n" + `declare val o: {[key: string]?: number}` + "\n" + `val v = o[r]`,
+			want: "number | undefined",
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			values, errs := inferAgainstTree(t, tt.src)
 			require.Empty(t, errs)
 			require.Equal(t, tt.want, values["v"])
 		})

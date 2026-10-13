@@ -894,6 +894,9 @@ func (c *Context) valueFamilyOf(t soltype.Type) valueFamily {
 		// A unique symbol is a symbol, so it draws from the same family the primitive does
 		// and is disjoint from every other primitive for the same reason.
 		return symbolFamily
+	case *soltype.RegexType:
+		// A regex type admits only strings, so it is disjoint from every other family.
+		return stringFamily
 	case *soltype.NullType:
 		return nullFamily
 	case *soltype.UndefinedType:
@@ -993,7 +996,28 @@ func (c *Context) meetValueAtoms(a, b soltype.Type) (soltype.Type, bool) {
 	if _, ok := b.(*soltype.PrimType); ok {
 		return a, true
 	}
+	if r, ok := a.(*soltype.RegexType); ok {
+		return meetRegexAtom(r, b)
+	}
+	if r, ok := b.(*soltype.RegexType); ok {
+		return meetRegexAtom(r, a)
+	}
 	// Two distinct atoms of one family, such as `5` and `6`.
+	return &soltype.NeverType{}, true
+}
+
+// meetRegexAtom fuses a regex type with another atom of the string family that is neither
+// `string` nor equal to it. A string literal meets it at the literal when the pattern
+// matches and at `never` otherwise. Two different regex types may share values the checker
+// cannot enumerate, so their meet stays unfused.
+func meetRegexAtom(r *soltype.RegexType, other soltype.Type) (soltype.Type, bool) {
+	lit, isLit := other.(*soltype.LitType)
+	if !isLit {
+		return nil, false
+	}
+	if s, isStr := lit.Lit.(*soltype.StrLit); isStr && r.Pattern.MatchString(s.Value) {
+		return lit, true
+	}
 	return &soltype.NeverType{}, true
 }
 
