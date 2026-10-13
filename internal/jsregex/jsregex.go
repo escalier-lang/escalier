@@ -14,11 +14,17 @@
 //     the character it escapes.
 //   - A named group `(?<name>` becomes `(?P<name>`.
 //
-// Without the `u` flag JavaScript matches UTF-16 code units, where RE2 matches code points.
-// A Pattern compiled without it therefore matches a string transcoded to one rune per code
-// unit. Each surrogate unit maps to a rune in a private-use range no transcoded string holds
-// otherwise, and the pattern's surrogate escapes and astral characters map the same way. So
-// `/^..$/` matches "😀" and `/^.$/` does not, as in JavaScript.
+// A code point is the number Unicode gives one character, such as U+0061 for `a` or U+1F600
+// for 😀. A code unit is one 16-bit piece of a string's UTF-16 encoding, the form JavaScript
+// strings take. A code point up to U+FFFF fits in one code unit. One above U+FFFF, called an
+// astral character, takes two code units, called a surrogate pair. So "😀".length is 2 in
+// JavaScript.
+//
+// Without the `u` flag JavaScript matches code units, where RE2 matches code points. A Pattern
+// compiled without it therefore matches a string transcoded to one rune per code unit. Each
+// surrogate unit maps to a rune in a private-use range no transcoded string holds otherwise,
+// and the pattern's surrogate escapes and astral characters map the same way. So `/^..$/`
+// matches "😀" and `/^.$/` does not, as in JavaScript.
 package jsregex
 
 import (
