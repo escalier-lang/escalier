@@ -973,8 +973,10 @@ func TestInferExtractorPatReadsTheMatcher(t *testing.T) {
 }
 
 // A structural object pattern reads a class instance's members, getters included, and an arm
-// of one narrows a union of class instances to the members carrying its keys. A getter that
-// raises, or one that takes its receiver mutably, does not read as a property.
+// of one narrows a union of class instances to the members carrying its keys. A pattern reads a
+// raising getter the way a member read does, so its raise reaches the enclosing function. A
+// raising getter does not fill a property type, and a getter that takes its receiver mutably
+// fills neither.
 func TestInferStructuralPatternOverClassInstance(t *testing.T) {
 	classes := `
 		class Circle {
@@ -1005,9 +1007,38 @@ func TestInferStructuralPatternOverClassInstance(t *testing.T) {
 			want: "fn (c: Circle) -> number",
 		},
 		{
-			name:     "a raising getter does not fill a property",
+			// Destructuring reads the getter, so what it can raise reaches the enclosing
+			// function, which declares no `throws` here.
+			name:     "a raising getter's raise reaches the destructuring function",
 			src:      `fn f(c: Circle) { val {risky} = c }`,
-			wantErrs: []string{"9:25-9:30: object is missing property: risky"},
+			wantErrs: []string{"9:25-9:30: cannot constrain string <: never"},
+		},
+		{
+			name: "a raising getter destructures under a matching throws clause",
+			src: `fn f(c: Circle) -> number throws string {
+				val {risky} = c
+				return risky
+			}`,
+			want: "fn (c: Circle) -> number throws string",
+		},
+		{
+			// A `match` arm reads the getter through the same rule.
+			name:     "a raising getter's raise reaches a match arm's function",
+			src:      `fn f(c: Circle) { return match c { {risky} => risky } }`,
+			wantErrs: []string{"9:38-9:43: cannot constrain string <: never"},
+		},
+		{
+			// Each member of a union scrutinee raises what its getter can raise.
+			name: "a raising getter's raise reaches the function through a union",
+			src: `class Square { side: number, get risky(&self) -> number throws boolean { if self.side < 0 { throw true } return self.side } }
+				fn f(s: Circle | Square) { val {risky} = s }`,
+			wantErrs: []string{"10:37-10:42: cannot constrain string <: never", "10:37-10:42: cannot constrain boolean <: never"},
+		},
+		{
+			// A read through the property has no place to record the getter's raise.
+			name:     "a raising getter does not fill a property type",
+			src:      `fn f(c: Circle) { val o: {risky: number, ...} = c }`,
+			wantErrs: []string{"9:50-9:51: the getter `risky` can throw `string`, which the property `risky: number` cannot"},
 		},
 		{
 			name: "a getter that takes its receiver mutably does not fill a property",

@@ -1696,6 +1696,15 @@ func (c *Context) constrain(sub, super soltype.Type, seen *seenPairs, mutCtx boo
 						errs = append(errs, c.constrainGetterIntoProp(g, sub, superProp, seen, mutCtx)...)
 						continue
 					}
+					// A getter that raises cannot stand in for a property, since a later read
+					// through the property has no place to record the raise. A field read
+					// keeps reporting the member missing, which #1985 tracks.
+					if g, isGetter := member.(*soltype.GetterElem); isGetter && !fieldRead && getterBorrowsSelfImmut(g) {
+						errs = append(errs, &RaisingGetterPropertyError{
+							Name: superProp.Name, Throws: g.ThrowsOrNever(), Prop: superProp.Type,
+						})
+						continue
+					}
 				}
 				if !ok {
 					// A field read of a method yields the method's signature without its
@@ -2803,9 +2812,12 @@ func (c *Context) constrainGetterIntoProp(
 // or take it as an immutable borrow, as `get x(&self)` does. A property read also raises
 // nothing, so g must raise nothing either.
 func getterReadsAsProperty(g *soltype.GetterElem) bool {
-	if _, never := g.ThrowsOrNever().(*soltype.NeverType); !never {
-		return false
-	}
+	return isNeverType(g.ThrowsOrNever()) && getterBorrowsSelfImmut(g)
+}
+
+// getterBorrowsSelfImmut reports whether g declares no receiver or takes it as an immutable
+// borrow, as `get x(&self)` does.
+func getterBorrowsSelfImmut(g *soltype.GetterElem) bool {
 	if g.SelfParam == nil {
 		return true
 	}

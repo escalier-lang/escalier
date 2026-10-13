@@ -889,6 +889,8 @@ func (c *checker) blameConstraintErrors(n ast.Node, errs []SolverError) {
 			err.site = n
 		case *ReadonlyFieldSubtypeError:
 			err.site = n
+		case *RaisingGetterPropertyError:
+			err.site = n
 		}
 		d := diagnostic{span: e.Span(), msg: e.Message()}
 		if reported.Contains(d) {

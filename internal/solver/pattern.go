@@ -305,7 +305,7 @@ func (c *checker) bindPatMode(scope *Scope, lvl int, pat ast.Pat, scrutinee solt
 				// A default makes the field optional. `{x = 0}` binds even when x is
 				// absent, so the requirement must not demand it.
 				beta := c.freshAt(lvl)
-				c.constrain(e, scrutinee, propReq(e.Key.Name, beta, e.Default != nil))
+				c.readPatternField(e, lvl, scrutinee, e.Key.Name, beta, e.Default != nil, purpose)
 				var t soltype.Type = beta
 				if purpose == forBinding {
 					t = c.applyLeafExtras(scope, lvl, e, beta, fieldConcrete(concrete, e.Key.Name), e.TypeAnn, e.Default)
@@ -320,7 +320,7 @@ func (c *checker) bindPatMode(scope *Scope, lvl int, pat ast.Pat, scrutinee solt
 			case *ast.ObjKeyValuePat:
 				// A default on the value sub-pattern, as in `{x: a = 0}`, likewise makes
 				// the field optional.
-				beta, betaConcrete := c.projectField(e, lvl, scrutinee, concrete, e.Key.Name, patternDefaultsField(e.Value))
+				beta, betaConcrete := c.projectField(e, lvl, scrutinee, concrete, e.Key.Name, patternDefaultsField(e.Value), purpose)
 				sub := c.bindPatMode(scope, lvl, e.Value, beta, betaConcrete, scrutineeMode, leafTypes, emit, purpose)
 				named.Add(e.Key.Name)
 				fields = append(fields, &soltype.ObjectPatField{Name: e.Key.Name, Value: sub})
@@ -379,10 +379,10 @@ func (c *checker) bindPatMode(scope *Scope, lvl int, pat ast.Pat, scrutinee solt
 // type nor the upper bound below, and pinning there would make a `&mut` leaf invariantly
 // exact against the scrutinee's element. See applyBindMode's bmMut arm.
 func (c *checker) projectField(
-	blame ast.Node, lvl int, scrutinee, concrete soltype.Type, name string, optional bool,
+	blame ast.Node, lvl int, scrutinee, concrete soltype.Type, name string, optional bool, purpose bindPurpose,
 ) (proj, projConcrete soltype.Type) {
 	beta := c.freshAt(lvl)
-	c.constrain(blame, scrutinee, propReq(name, beta, optional))
+	c.readPatternField(blame, lvl, scrutinee, name, beta, optional, purpose)
 	// When the scrutinee is a concrete object, pin beta's upper bound to the field type.
 	// propReq gives beta the field only as a lower bound, which cannot reject a refutable
 	// literal sub-pattern of the wrong kind. The upper bound makes a nested literal flow
@@ -1398,6 +1398,31 @@ func (c *checker) recordPatType(purpose bindPurpose, n ast.Node, t soltype.Type)
 	if purpose == forBinding {
 		c.recordType(n, t)
 	}
+}
+
+// readPatternField reads the field name a pattern names off scrutinee into beta. optional
+// marks a field the pattern tolerates being absent. A pattern reads the field the way a member
+// read does, so a getter answers it and what the getter can raise reaches the enclosing body.
+// The raise is recorded here, since the field requirement constrain checks has no place to
+// record one. A projection records no raise, since the binding walk over the same pattern
+// already recorded it. See bindPurpose.
+func (c *checker) readPatternField(
+	blame ast.Node, lvl int, scrutinee soltype.Type, name string, beta soltype.Type, optional bool, purpose bindPurpose,
+) {
+	if purpose == forBinding {
+		c.raiseUnionAccessorThrows(lvl, blame, name, scrutinee)
+	}
+	if obj, ok := c.ctx.readCarrierObject(soltype.CarrierOf(groundedCarrier(scrutinee))); ok {
+		member, _ := obj.ReadMember(name)
+		if g, isGetter := member.(*soltype.GetterElem); isGetter && getterBorrowsSelfImmut(g) {
+			if purpose == forBinding {
+				c.raiseAccessorThrows(lvl, blame, g.ThrowsOrNever())
+			}
+			c.constrain(blame, g.Type, beta)
+			return
+		}
+	}
+	c.constrain(blame, scrutinee, propReq(name, beta, optional))
 }
 
 // propReq builds the inexact one-property requirement `{name: t, ...}` — "the

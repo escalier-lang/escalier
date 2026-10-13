@@ -221,7 +221,7 @@ func (b *pathBinder) shorthandView(scope *Scope, s *ucs.Scrutinee, elem *ast.Obj
 	parent := b.viewOf(scope, s.Parent)
 	name := elem.Key.Name
 	beta := b.c.freshAt(b.lvl)
-	b.c.constrain(elem, parent.ty, propReq(name, beta, elem.Default != nil))
+	b.c.readPatternField(elem, b.lvl, parent.ty, name, beta, elem.Default != nil, forBinding)
 	v := derive(parent, beta, fieldConcrete(parent.concrete, name))
 	b.views[s] = v
 	return v
@@ -279,7 +279,7 @@ func (b *pathBinder) project(scope *Scope, s *ucs.Scrutinee) scrutineeView {
 // field the scrutinee lacks surfaces MissingPropertyError from the same rule a written
 // `{name: sub}` pattern does.
 func (b *pathBinder) projectField(parent scrutineeView, node ast.Node, name string) scrutineeView {
-	proj, concrete := b.c.projectField(node, b.lvl, parent.ty, parent.concrete, name, parent.fieldOptional(name))
+	proj, concrete := b.c.projectField(node, b.lvl, parent.ty, parent.concrete, name, parent.fieldOptional(name), forBinding)
 	return derive(parent, proj, concrete)
 }
 
