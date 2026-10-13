@@ -60,20 +60,21 @@ func TestCompileRejects(t *testing.T) {
 	}
 }
 
-// TestCaptures covers the text each named group captures, and a group that takes no part.
+// TestCaptures covers the text each named group captures. A group that takes no part in the
+// match has no entry.
 func TestCaptures(t *testing.T) {
-	str := func(s string) *string { return &s }
 	tests := []struct {
 		name   string
 		source string
 		input  string
-		want   []*string
+		want   map[string]string
 	}{
-		{"TwoGroups", `/^(?<a>\w+)-(?<b>\w+)$/`, "x-y", []*string{str("x"), str("y")}},
-		{"AnOptionalGroupLeftOut", `/^a(?<b>b)?$/`, "a", []*string{nil}},
+		{"TwoGroups", `/^(?<a>\w+)-(?<b>\w+)$/`, "x-y", map[string]string{"a": "x", "b": "y"}},
+		{"AnOptionalGroupThatMatched", `/^a(?<b>b)?$/`, "ab", map[string]string{"b": "b"}},
+		{"AnOptionalGroupLeftOut", `/^a(?<b>b)?$/`, "a", map[string]string{}},
 		// One name on groups in two alternatives captures from whichever took part.
-		{"ANameSharedAcrossAlternatives", `/^(?<y>a)$|^(?<y>b)$/`, "b", []*string{str("b")}},
-		{"AnAstralCaptureWithoutU", `/^(?<c>..)$/`, "😀", []*string{str("😀")}},
+		{"ANameSharedAcrossAlternatives", `/^(?<y>a)$|^(?<y>b)$/`, "b", map[string]string{"y": "b"}},
+		{"AnAstralCaptureWithoutU", `/^(?<c>..)$/`, "😀", map[string]string{"c": "😀"}},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {

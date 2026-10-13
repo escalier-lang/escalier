@@ -151,20 +151,20 @@ func (p *Pattern) MatchString(s string) bool {
 	return p.re.MatchString(p.input(s))
 }
 
-// Captures reports whether the pattern matches s and, when it does, the text each of
-// Groups captured. A nil entry is a group that took no part in the match.
-func (p *Pattern) Captures(s string) ([]*string, bool) {
+// Captures reports whether the pattern matches s and, when it does, the text each named
+// group captured, keyed by the group's name. A group that took no part in the match has no
+// entry.
+func (p *Pattern) Captures(s string) (map[string]string, bool) {
 	in := p.input(s)
 	match := p.re.FindStringSubmatchIndex(in)
 	if match == nil {
 		return nil, false
 	}
-	out := make([]*string, len(p.Groups))
-	for i, g := range p.Groups {
+	out := map[string]string{}
+	for _, g := range p.Groups {
 		for _, idx := range g.Indices {
 			if match[2*idx] >= 0 {
-				text := p.output(in[match[2*idx]:match[2*idx+1]])
-				out[i] = &text
+				out[g.Name] = p.output(in[match[2*idx]:match[2*idx+1]])
 				break
 			}
 		}

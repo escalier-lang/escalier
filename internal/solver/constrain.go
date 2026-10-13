@@ -2852,8 +2852,8 @@ func (c *Context) constrainStrLitToRegex(sub *soltype.LitType, sup *soltype.Rege
 	var errs []SolverError
 	for _, group := range sup.Groups {
 		var text soltype.Type = &soltype.UndefinedType{}
-		if captured := captures[patternGroupIndex(sup.Pattern, group.Name)]; captured != nil {
-			text = &soltype.LitType{Lit: &soltype.StrLit{Value: *captured}}
+		if captured, took := captures[group.Name]; took {
+			text = &soltype.LitType{Lit: &soltype.StrLit{Value: captured}}
 		}
 		errs = append(errs, c.constrain(text, group.Type, seen, mutCtx)...)
 	}
