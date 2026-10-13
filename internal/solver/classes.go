@@ -1885,8 +1885,11 @@ func (c *checker) raiseAccessorThrows(lvl int, blame ast.Node, throws soltype.Ty
 // that join reads through. Only a getter contributes; a property, method, or setter raises
 // nothing on a read. It collects before it raises because the join abandons the whole read
 // once any member carries no readable object, as `A | undefined` does, and then no getter runs.
+//
+// A receiver read off a binding is often still an inference variable, so carrier is read
+// through the lower bounds it holds so far.
 func (c *checker) raiseUnionAccessorThrows(lvl int, blame ast.Node, name string, carrier soltype.Type) {
-	u, isUnion := carrier.(*soltype.UnionType)
+	u, isUnion := groundedCarrier(carrier).(*soltype.UnionType)
 	if !isUnion {
 		return
 	}

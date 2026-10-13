@@ -677,6 +677,18 @@ func TestInferThrowsAccessorReadResolution(t *testing.T) {
 			wantErrs: []string{"9:39-9:42: cannot constrain string <: never"},
 		},
 		{
+			// A receiver read off a `val` reaches the read as an inference variable bound to
+			// the union, and the getter's raise still reaches the enclosing clause.
+			name: "AUnionReceiverReadOffAVal",
+			src: `
+				class A { bad: boolean, get x(&self) -> number throws string { if self.bad { throw "a" } return 1 } }
+				class B { x: number }
+				declare val u: A | B
+				fn f() -> number { return u.x }
+			`,
+			wantErrs: []string{"5:31-5:34: cannot constrain string <: never"},
+		},
+		{
 			// `undefined` carries no readable object, so the join abandons the read
 			// entirely and falls back to strict every-member subtyping. No getter runs,
 			// so the two rejections below are the whole story — the getter's `string`
