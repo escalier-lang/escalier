@@ -1,0 +1,471 @@
+// Package jsregex compiles a JavaScript regex literal for Go's RE2 engine and matches strings
+// against it the way JavaScript would.
+//
+// RE2 matches in time linear in its input, so a pattern checked while a program is type-checked
+// cannot hang the checker however it is written. It supports no construct that needs
+// backtracking, so Compile rejects lookahead, lookbehind and backreferences by name.
+//
+// JavaScript and Go read some of the same syntax differently. Compile rewrites the pattern so
+// a match agrees with JavaScript:
+//
+//   - `\s` and `\S` hold JavaScript's Unicode spaces, and `.` excludes every line terminator.
+//   - `[]` matches nothing, `[^]` matches any character, and `[\b]` matches a backspace.
+//   - Without the `u` flag, an escape JavaScript gives no meaning, such as `\a` or `\p`, is
+//     the character it escapes.
+//   - A named group `(?<name>` becomes `(?P<name>`.
+//
+// Without the `u` flag JavaScript matches UTF-16 code units, where RE2 matches code points.
+// A Pattern compiled without it therefore matches a string transcoded to one rune per code
+// unit. Each surrogate unit maps to a rune in a private-use range no transcoded string holds
+// otherwise, and the pattern's surrogate escapes and astral characters map the same way. So
+// `/^..$/` matches "😀" and `/^.$/` does not, as in JavaScript.
+package jsregex
+
+import (
+	"fmt"
+	"regexp"
+	"regexp/syntax"
+	"strings"
+	"unicode/utf16"
+	"unicode/utf8"
+
+	"github.com/escalier-lang/escalier/internal/set"
+)
+
+// spaceSet is the members of JavaScript's `\s` class, written as the inside of a Go
+// character class. Go's own `\s` holds only the ASCII spaces.
+const spaceSet = `\t\n\v\f\r \x{a0}\x{1680}\x{2000}-\x{200a}\x{2028}\x{2029}\x{202f}\x{205f}\x{3000}\x{feff}`
+
+// dotClass is what JavaScript's `.` matches without the `s` flag, every character but a line
+// terminator. Go's own `.` excludes only `\n`.
+const dotClass = `[^\n\r\x{2028}\x{2029}]`
+
+// unitBase is the first rune of the private-use range a surrogate code unit maps to when a
+// pattern matches code units. Plane 15 holds no character a transcoded string carries as a
+// rune, since every astral character is split into its two units first.
+const unitBase = 0xF0000
+
+// Pattern is a compiled JavaScript regex.
+type Pattern struct {
+	re *regexp.Regexp
+	// units reports whether the pattern matches UTF-16 code units, which it does without the
+	// `u` flag.
+	units bool
+	// Groups holds each named capture group, in source order.
+	Groups []Group
+}
+
+// Group is one name a pattern's named capture groups use.
+type Group struct {
+	Name string
+	// Indices holds the subexpression index of every group that uses the name. JavaScript
+	// allows one name on groups in different alternatives, and a match reports the one that
+	// took part.
+	Indices []int
+	// Optional reports whether a match can leave every group with this name out, as `(?<b>b)?`
+	// or one side of an alternation does.
+	Optional bool
+}
+
+// Compile compiles a JavaScript regex literal such as `/^\d{3}$/i`. It returns nil and the
+// reason when the literal cannot be compiled, phrased to follow the literal in a sentence:
+// "uses lookahead, which RE2 does not support".
+//
+// The flags translate this way:
+//
+//   - `i`, `m` and `s` become a leading Go flag group.
+//   - `y` anchors the match at the start, as a sticky regex tested from index 0 is.
+//   - `u` makes the pattern match code points rather than code units.
+//   - `g` and `d` change nothing a whole-string test reads, so they are dropped.
+//   - `v` is rejected, since its set notation has no RE2 form.
+func Compile(source string) (*Pattern, string) {
+	if len(source) < 2 || source[0] != '/' {
+		return nil, "is not a regex literal"
+	}
+	end := strings.LastIndexByte(source, '/')
+	if end == 0 {
+		return nil, "is not a regex literal"
+	}
+	body, flags := source[1:end], source[end+1:]
+
+	var goFlags strings.Builder
+	sticky, dotAll, unicode := false, false, false
+	seen := set.NewSet[rune]()
+	for _, flag := range flags {
+		if seen.Contains(flag) {
+			return nil, "repeats the flag `" + string(flag) + "`"
+		}
+		seen.Add(flag)
+		switch flag {
+		case 'i', 'm':
+			goFlags.WriteRune(flag)
+		case 's':
+			goFlags.WriteRune(flag)
+			dotAll = true
+		case 'y':
+			sticky = true
+		case 'u':
+			unicode = true
+		case 'g', 'd':
+		case 'v':
+			return nil, "uses the `v` flag, whose set notation RE2 does not support"
+		default:
+			return nil, "uses the unknown flag `" + string(flag) + "`"
+		}
+	}
+
+	r := rewriter{dotAll: dotAll, unicode: unicode}
+	pattern, reason := r.body(body)
+	if reason != "" {
+		return nil, reason
+	}
+	if sticky {
+		pattern = `\A(?:` + pattern + `)`
+	}
+	if goFlags.Len() > 0 {
+		pattern = "(?" + goFlags.String() + ")" + pattern
+	}
+	re, err := regexp.Compile(pattern)
+	if err != nil {
+		return nil, "does not compile: " + err.Error()
+	}
+	return &Pattern{re: re, units: !unicode, Groups: groupsOf(re, pattern)}, ""
+}
+
+// GroupNames returns the names a JavaScript regex literal's named capture groups use, in
+// source order, and nil when the literal does not compile.
+func GroupNames(source string) []string {
+	p, _ := Compile(source)
+	if p == nil {
+		return nil
+	}
+	names := make([]string, len(p.Groups))
+	for i, g := range p.Groups {
+		names[i] = g.Name
+	}
+	return names
+}
+
+// MatchString reports whether the pattern matches s.
+func (p *Pattern) MatchString(s string) bool {
+	return p.re.MatchString(p.input(s))
+}
+
+// Captures reports whether the pattern matches s and, when it does, the text each of
+// Groups captured. A nil entry is a group that took no part in the match.
+func (p *Pattern) Captures(s string) ([]*string, bool) {
+	in := p.input(s)
+	match := p.re.FindStringSubmatchIndex(in)
+	if match == nil {
+		return nil, false
+	}
+	out := make([]*string, len(p.Groups))
+	for i, g := range p.Groups {
+		for _, idx := range g.Indices {
+			if match[2*idx] >= 0 {
+				text := p.output(in[match[2*idx]:match[2*idx+1]])
+				out[i] = &text
+				break
+			}
+		}
+	}
+	return out, true
+}
+
+// input returns s in the form the compiled pattern matches.
+func (p *Pattern) input(s string) string {
+	if !p.units {
+		return s
+	}
+	var b strings.Builder
+	for _, r := range s {
+		writeUnits(&b, r)
+	}
+	return b.String()
+}
+
+// output turns a span of the matched form back into the string it stands for.
+func (p *Pattern) output(s string) string {
+	if !p.units {
+		return s
+	}
+	units := make([]uint16, 0, len(s))
+	for _, r := range s {
+		if r >= unitBase && r < unitBase+0x800 {
+			units = append(units, uint16(0xD800+r-unitBase))
+			continue
+		}
+		units = append(units, utf16.Encode([]rune{r})...)
+	}
+	return string(utf16.Decode(units))
+}
+
+// writeUnits writes r as the runes that stand for its UTF-16 code units.
+func writeUnits(b *strings.Builder, r rune) {
+	if r <= 0xFFFF {
+		b.WriteRune(unitRune(uint16(r)))
+		return
+	}
+	hi, lo := utf16.EncodeRune(r)
+	b.WriteRune(unitRune(uint16(hi)))
+	b.WriteRune(unitRune(uint16(lo)))
+}
+
+// unitRune returns the rune that stands for one UTF-16 code unit. A surrogate maps into the
+// private-use range at unitBase, and every other unit is its own code point.
+func unitRune(u uint16) rune {
+	if u >= 0xD800 && u <= 0xDFFF {
+		return unitBase + rune(u-0xD800)
+	}
+	return rune(u)
+}
+
+// groupsOf returns the named groups of re, whose source is pattern, grouped by name in source
+// order.
+func groupsOf(re *regexp.Regexp, pattern string) []Group {
+	optional := optionalCaptures(pattern)
+	var groups []Group
+	byName := map[string]int{}
+	for idx, name := range re.SubexpNames() {
+		if name == "" {
+			continue
+		}
+		i, ok := byName[name]
+		if !ok {
+			i = len(groups)
+			byName[name] = i
+			groups = append(groups, Group{Name: name, Optional: true})
+		}
+		groups[i].Indices = append(groups[i].Indices, idx)
+		// A name is left out only when every group using it can be. Two groups sharing a name
+		// sit in different alternatives, so each is optional on its own.
+		if len(groups[i].Indices) == 1 {
+			groups[i].Optional = optional.Contains(idx)
+		} else {
+			groups[i].Optional = groups[i].Optional && optional.Contains(idx)
+		}
+	}
+	return groups
+}
+
+// optionalCaptures returns the subexpression indices of the capture groups a match can leave
+// out: one under a `?`, a `*`, a `{0,n}` repeat, or one side of an alternation.
+func optionalCaptures(pattern string) set.Set[int] {
+	out := set.NewSet[int]()
+	re, err := syntax.Parse(pattern, syntax.Perl)
+	if err != nil {
+		return out
+	}
+	var walk func(re *syntax.Regexp, optional bool)
+	walk = func(re *syntax.Regexp, optional bool) {
+		switch re.Op {
+		case syntax.OpCapture:
+			if optional {
+				out.Add(re.Cap)
+			}
+		case syntax.OpAlternate, syntax.OpStar, syntax.OpQuest:
+			optional = true
+		case syntax.OpRepeat:
+			optional = optional || re.Min == 0
+		}
+		for _, sub := range re.Sub {
+			walk(sub, optional)
+		}
+	}
+	walk(re, false)
+	return out
+}
+
+// rewriter rewrites the body of a JavaScript regex into Go syntax. dotAll reports whether the
+// `s` flag is set, and unicode whether the `u` flag is.
+type rewriter struct {
+	dotAll, unicode bool
+}
+
+// body rewrites body, or returns why it cannot. It reads one token at a time, so an escaped
+// `\(` and a `(` inside a character class are never taken for a group.
+func (r rewriter) body(body string) (string, string) {
+	var out strings.Builder
+	inClass := false
+	for i := 0; i < len(body); {
+		ch := body[i]
+		switch {
+		case ch == '\\' && i+1 < len(body):
+			escape, width, reason := r.escape(body[i:], inClass)
+			if reason != "" {
+				return "", reason
+			}
+			out.WriteString(escape)
+			i += width
+			continue
+		case ch >= utf8.RuneSelf:
+			cp, size := utf8.DecodeRuneInString(body[i:])
+			out.WriteString(r.literal(cp))
+			i += size
+			continue
+		case inClass:
+			if ch == ']' {
+				inClass = false
+			}
+			out.WriteByte(ch)
+		case strings.HasPrefix(body[i:], "[]"):
+			out.WriteString(`[^\x{0}-\x{10ffff}]`)
+			i += 2
+			continue
+		case strings.HasPrefix(body[i:], "[^]"):
+			out.WriteString(`[\x{0}-\x{10ffff}]`)
+			i += 3
+			continue
+		case ch == '[':
+			inClass = true
+			out.WriteByte(ch)
+		case ch == '.' && !r.dotAll:
+			out.WriteString(dotClass)
+		case strings.HasPrefix(body[i:], "(?<=") || strings.HasPrefix(body[i:], "(?<!"):
+			return "", "uses lookbehind, which RE2 does not support"
+		case strings.HasPrefix(body[i:], "(?=") || strings.HasPrefix(body[i:], "(?!"):
+			return "", "uses lookahead, which RE2 does not support"
+		case strings.HasPrefix(body[i:], "(?<"):
+			out.WriteString("(?P<")
+			i += len("(?<")
+			continue
+		default:
+			out.WriteByte(ch)
+		}
+		i++
+	}
+	return out.String(), ""
+}
+
+// literal returns the Go spelling of the character cp written literally in the pattern.
+// Matching code units splits an astral character into its two units.
+func (r rewriter) literal(cp rune) string {
+	if r.unicode || cp <= 0xFFFF {
+		return string(cp)
+	}
+	var b strings.Builder
+	hi, lo := utf16.EncodeRune(cp)
+	b.WriteString(r.codePoint(hi))
+	b.WriteString(r.codePoint(lo))
+	return b.String()
+}
+
+// codePoint returns the Go escape for the character cp, mapping a surrogate unit into the
+// range unitRune uses when the pattern matches code units.
+func (r rewriter) codePoint(cp rune) string {
+	if !r.unicode && cp >= 0xD800 && cp <= 0xDFFF {
+		cp = unitRune(uint16(cp))
+	}
+	return fmt.Sprintf(`\x{%x}`, cp)
+}
+
+// escape rewrites the escape at the start of rest, which begins with a backslash. It returns
+// the Go spelling, how many bytes of rest the escape spans, and a reason when the escape
+// cannot be written in RE2. inClass reports whether the escape sits inside a character class.
+func (r rewriter) escape(rest string, inClass bool) (string, int, string) {
+	next := rest[1]
+	switch {
+	case next >= '1' && next <= '9' && !inClass:
+		return "", 0, "uses a backreference, which RE2 does not support"
+	case next == 'k' && strings.HasPrefix(rest[2:], "<") && !inClass:
+		return "", 0, "uses a named backreference, which RE2 does not support"
+	case next == 's':
+		if inClass {
+			return spaceSet, 2, ""
+		}
+		return "[" + spaceSet + "]", 2, ""
+	case next == 'S':
+		if inClass {
+			return "", 0, "uses `\\S` inside a character class, which has no RE2 form"
+		}
+		return "[^" + spaceSet + "]", 2, ""
+	case next == 'b' && inClass:
+		return `\x{8}`, 2, ""
+	case strings.IndexByte("dDwWtnvfr", next) >= 0 || (strings.IndexByte("bB", next) >= 0 && !inClass):
+		return rest[:2], 2, ""
+	case next == 'u' && r.unicode && strings.HasPrefix(rest[2:], "{"):
+		end := strings.IndexByte(rest, '}')
+		if end < 0 || !isHex(rest[3:end]) {
+			return "", 0, "uses a malformed `\\u{` escape"
+		}
+		return `\x{` + rest[3:end] + `}`, end + 1, ""
+	case next == 'u' && len(rest) >= 6 && isHex(rest[2:6]):
+		return r.unicodeEscape(rest)
+	case next == 'x' && len(rest) >= 4 && isHex(rest[2:4]):
+		return `\x{` + rest[2:4] + `}`, 4, ""
+	case next == 'c' && len(rest) >= 3 && isASCIILetter(rest[2]):
+		return fmt.Sprintf(`\x{%x}`, rest[2]%32), 3, ""
+	case next == '0' && (len(rest) < 3 || rest[2] < '0' || rest[2] > '9'):
+		return `\x{0}`, 2, ""
+	case (next == 'p' || next == 'P') && r.unicode:
+		return propertyEscape(rest)
+	case next >= utf8.RuneSelf:
+		cp, size := utf8.DecodeRuneInString(rest[1:])
+		return r.literal(cp), 1 + size, ""
+	case isASCIILetter(next) || (next >= '0' && next <= '9'):
+		// An escape JavaScript gives no meaning is the character it escapes, and the `u` flag
+		// makes it a syntax error instead.
+		if r.unicode {
+			return "", 0, "uses the escape `\\" + string(next) + "`, which the `u` flag does not allow"
+		}
+		return string(next), 2, ""
+	default:
+		// An escaped punctuation character is itself in both languages.
+		return rest[:2], 2, ""
+	}
+}
+
+// unicodeEscape rewrites a `\uXXXX` escape at the start of rest. Under the `u` flag a high
+// surrogate followed by a low one is the one character the pair encodes.
+func (r rewriter) unicodeEscape(rest string) (string, int, string) {
+	var unit uint32
+	fmt.Sscanf(rest[2:6], "%x", &unit)
+	if r.unicode && unit >= 0xD800 && unit <= 0xDBFF && len(rest) >= 12 && rest[6:8] == `\u` && isHex(rest[8:12]) {
+		var low uint32
+		fmt.Sscanf(rest[8:12], "%x", &low)
+		if low >= 0xDC00 && low <= 0xDFFF {
+			return r.codePoint(utf16.DecodeRune(rune(unit), rune(low))), 12, ""
+		}
+	}
+	return r.codePoint(rune(unit)), 6, ""
+}
+
+// propertyEscape rewrites a `\p{…}` or `\P{…}` escape at the start of rest. JavaScript writes
+// a script as `Script=Greek` or `sc=Greek` and a category as `General_Category=L` or `gc=L`,
+// where Go writes the bare name.
+func propertyEscape(rest string) (string, int, string) {
+	if !strings.HasPrefix(rest[2:], "{") {
+		return "", 0, "uses a malformed property escape"
+	}
+	end := strings.IndexByte(rest, '}')
+	if end < 0 {
+		return "", 0, "uses a malformed property escape"
+	}
+	name := rest[3:end]
+	if key, value, ok := strings.Cut(name, "="); ok {
+		switch key {
+		case "Script", "sc", "General_Category", "gc":
+			name = value
+		default:
+			return "", 0, "uses the property `" + key + "`, which RE2 does not support"
+		}
+	}
+	return `\` + rest[1:2] + `{` + name + `}`, end + 1, ""
+}
+
+func isHex(s string) bool {
+	if s == "" {
+		return false
+	}
+	for i := 0; i < len(s); i++ {
+		c := s[i]
+		if !(c >= '0' && c <= '9' || c >= 'a' && c <= 'f' || c >= 'A' && c <= 'F') {
+			return false
+		}
+	}
+	return true
+}
+
+func isASCIILetter(c byte) bool {
+	return c >= 'a' && c <= 'z' || c >= 'A' && c <= 'Z'
+}

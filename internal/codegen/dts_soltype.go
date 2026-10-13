@@ -284,10 +284,17 @@ func (b *solTypeAnnBuilder) typeAnn(t soltype.Type) TypeAnn {
 	case *soltype.TypeofType:
 		return NewTypeOfTypeAnn(convertQualIdentFromSol(t.Ident))
 	case *soltype.CondType:
+		// A regex type emits as `string`, which declares none of the names its groups
+		// capture. The Then branch reads each such name as the string type it captures, so
+		// the declaration names nothing it does not declare.
+		then := t.Then
+		if captures := regexCaptureTypes(t.Extends); len(captures) > 0 {
+			then = then.Accept(&captureSubst{captures: captures}, soltype.Positive)
+		}
 		return NewCondTypeAnn(
 			b.typeAnn(t.Check),
 			b.typeAnn(t.Extends),
-			b.typeAnn(t.Then),
+			b.typeAnn(then),
 			b.typeAnn(t.Else),
 		)
 	case *soltype.InferType:
@@ -1264,3 +1271,53 @@ func (v *solSelfTypeVisitor) EnterType(t soltype.Type, _ soltype.Polarity) solty
 func (v *solSelfTypeVisitor) ExitType(t soltype.Type, _ soltype.Polarity) soltype.Type {
 	return t
 }
+
+// regexCaptureTypes returns, for each group a regex type in t captures, the declaration id of
+// its `infer` binder mapped to the type the group captures: `string`, joined with
+// `undefined` when a match can leave the group out.
+func regexCaptureTypes(t soltype.Type) map[int]soltype.Type {
+	f := &regexCaptureFinder{captures: map[int]soltype.Type{}}
+	t.Accept(f, soltype.Positive)
+	return f.captures
+}
+
+// regexCaptureFinder is the walking visitor behind regexCaptureTypes.
+type regexCaptureFinder struct{ captures map[int]soltype.Type }
+
+func (f *regexCaptureFinder) EnterType(t soltype.Type, _ soltype.Polarity) soltype.EnterResult {
+	regex, ok := t.(*soltype.RegexType)
+	if !ok {
+		return soltype.EnterResult{}
+	}
+	for _, group := range regex.Groups {
+		binder, ok := group.Type.(*soltype.InferType)
+		if !ok {
+			continue
+		}
+		var captured soltype.Type = &soltype.PrimType{Prim: soltype.StrPrim}
+		for _, g := range regex.Pattern.Groups {
+			if g.Name == group.Name && g.Optional {
+				captured = &soltype.UnionType{Types: []soltype.Type{captured, &soltype.UndefinedType{}}}
+			}
+		}
+		f.captures[binder.ID] = captured
+	}
+	return soltype.EnterResult{SkipChildren: true}
+}
+
+func (f *regexCaptureFinder) ExitType(t soltype.Type, _ soltype.Polarity) soltype.Type { return t }
+
+// captureSubst is the rewriting visitor that replaces each reference to a captured name with
+// the type regexCaptureTypes gives it.
+type captureSubst struct{ captures map[int]soltype.Type }
+
+func (s *captureSubst) EnterType(t soltype.Type, _ soltype.Polarity) soltype.EnterResult {
+	if ref, ok := t.(*soltype.InferType); ok {
+		if captured, found := s.captures[ref.ID]; found {
+			return soltype.EnterResult{Type: captured, SkipChildren: true}
+		}
+	}
+	return soltype.EnterResult{}
+}
+
+func (s *captureSubst) ExitType(t soltype.Type, _ soltype.Polarity) soltype.Type { return t }

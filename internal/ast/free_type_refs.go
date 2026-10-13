@@ -1,8 +1,7 @@
 package ast
 
 import (
-	"strings"
-
+	"github.com/escalier-lang/escalier/internal/jsregex"
 	"github.com/escalier-lang/escalier/internal/set"
 )
 
@@ -126,7 +125,7 @@ func (f *captureFinder) EnterTypeAnn(ta TypeAnn) bool {
 		f.add(ta.Name)
 	case *LitTypeAnn:
 		if regex, ok := ta.Lit.(*RegexLit); ok {
-			for _, name := range RegexGroupNames(regex.Value) {
+			for _, name := range jsregex.GroupNames(regex.Value) {
 				f.add(name)
 			}
 		}
@@ -139,32 +138,4 @@ func (f *captureFinder) add(name string) {
 		f.seen.Add(name)
 		f.names = append(f.names, name)
 	}
-}
-
-// RegexGroupNames returns the names of the named capture groups a JavaScript regex literal
-// such as `/^(?<area>\d{3})$/` writes, in source order. It skips an escaped `\(`, a `(`
-// inside a character class, and the lookbehind openers `(?<=` and `(?<!`.
-func RegexGroupNames(source string) []string {
-	var names []string
-	inClass := false
-	for i := 0; i < len(source); i++ {
-		switch {
-		case source[i] == '\\':
-			i++
-		case inClass:
-			inClass = source[i] != ']'
-		case source[i] == '[':
-			inClass = true
-		case strings.HasPrefix(source[i:], "(?<") && !strings.HasPrefix(source[i:], "(?<=") &&
-			!strings.HasPrefix(source[i:], "(?<!"):
-			start := i + len("(?<")
-			end := strings.IndexByte(source[start:], '>')
-			if end < 0 {
-				return names
-			}
-			names = append(names, source[start:start+end])
-			i = start + end
-		}
-	}
-	return names
 }

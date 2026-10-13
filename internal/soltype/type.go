@@ -2,8 +2,9 @@ package soltype
 
 import (
 	"fmt"
-	"regexp"
 	"strconv"
+
+	"github.com/escalier-lang/escalier/internal/jsregex"
 )
 
 // Type is the sealed interface for all soltype nodes. (Production name for the
@@ -1342,9 +1343,9 @@ type SelfType struct {
 // another's is out of reach for a checker, so nothing weaker than identity relates them.
 //
 // Source is the annotation as written, with its delimiters and flags. It is what the type
-// prints as and what two regex types compare by. Pattern is Source compiled for Go's RE2
-// engine, which matches in time linear in its input, so checking a literal against a pattern
-// cannot hang the checker however the pattern is written.
+// prints as. Pattern is Source compiled by jsregex, which matches the way JavaScript does in
+// time linear in its input, so checking a literal against a pattern cannot hang the checker
+// however the pattern is written.
 //
 // Groups holds a type for each named group a conditional captures, in source order. A regex
 // type written as a conditional's Extends operand gives each group an `infer` binder, so
@@ -1352,7 +1353,7 @@ type SelfType struct {
 // matched. Groups is empty everywhere else.
 type RegexType struct {
 	Source  string
-	Pattern *regexp.Regexp
+	Pattern *jsregex.Pattern
 	Groups  []RegexGroup
 }
 

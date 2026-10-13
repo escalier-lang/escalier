@@ -904,3 +904,16 @@ export declare const o: {[x]: 1};
 export declare const sym: unique symbol;
 `, dts)
 }
+
+// TestTheSolverEmitsARegexCaptureAsString covers the `.d.ts` of a conditional whose Extends
+// operand is a capturing regex type. TypeScript has no regex type, so the pattern emits as
+// `string` and each captured name emits as the string type it captures, joined with
+// `undefined` for a group a match can leave out.
+func TestTheSolverEmitsARegexCaptureAsString(t *testing.T) {
+	useSolver(t)
+	src := "export type Strip<T> = if T : /^_*(?<Ident>\\w+)_*$/ { Ident } else { T }\n" +
+		"export type Opt<T> = if T : /^a(?<B>b)?$/ { [B] } else { never }"
+	got := CompilePackage(libSources(src)).CompUnits["lib/index"].DTS
+	require.Equal(t, "export declare type Opt<T> = T extends string ? [string | undefined] : never;\n"+
+		"export declare type Strip<T> = T extends string ? string : T;\n", got)
+}

@@ -1780,9 +1780,18 @@ func equalTypeWith(a, b soltype.Type, ctx *alphaCtx) bool {
 		b, ok := b.(*soltype.UniqueSymbolType)
 		return ok && a.ID == b.ID
 	case *soltype.RegexType:
-		// Two regex types are the same type exactly when they were written alike.
+		// Two regex types are the same type when they were written alike and capture the same
+		// groups into the same types. A conditional's capturing pattern is no plain regex type.
 		b, ok := b.(*soltype.RegexType)
-		return ok && a.Source == b.Source
+		if !ok || a.Source != b.Source || len(a.Groups) != len(b.Groups) {
+			return false
+		}
+		for i := range a.Groups {
+			if a.Groups[i].Name != b.Groups[i].Name || !equalTypeWith(a.Groups[i].Type, b.Groups[i].Type, ctx) {
+				return false
+			}
+		}
+		return true
 	case *soltype.SelfType:
 		// A `Self` equals only another `Self` over the same declaring class. It never equals
 		// that class written out, which is the distinction the kind exists to keep: a member

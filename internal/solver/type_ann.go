@@ -4,6 +4,7 @@ import (
 	"fmt"
 
 	"github.com/escalier-lang/escalier/internal/ast"
+	"github.com/escalier-lang/escalier/internal/jsregex"
 	"github.com/escalier-lang/escalier/internal/soltype"
 )
 
@@ -905,26 +906,26 @@ func (c *checker) resolveLitTypeAnn(scope *Scope, ta *ast.LitTypeAnn) (soltype.T
 }
 
 // resolveRegexTypeAnn lowers a regex annotation such as `/^\d+$/` to a RegexType. A pattern
-// compileRegexType rejects reports RegexTypeError and recovers.
+// jsregex.Compile rejects reports RegexTypeError and recovers.
 //
 // Written as a conditional's Extends operand, the type captures each named group through the
 // `infer` binder resolveCondTypeAnn declared for its name. Anywhere else a group captures
 // nothing, so the type carries no groups.
 func (c *checker) resolveRegexTypeAnn(scope *Scope, ta *ast.LitTypeAnn, rl *ast.RegexLit) (soltype.Type, bool) {
-	pattern, reason := compileRegexType(rl.Value)
+	pattern, reason := jsregex.Compile(rl.Value)
 	if pattern == nil {
 		return c.report(&RegexTypeError{Ann: ta, Source: rl.Value, Reason: reason}), false
 	}
 	var groups []soltype.RegexGroup
 	if c.inCondExtends {
-		for _, name := range pattern.SubexpNames() {
-			b, found := scope.GetType(name)
+		for _, g := range pattern.Groups {
+			b, found := scope.GetType(g.Name)
 			decl, isDecl := b.Type.(*soltype.InferType)
-			if name == "" || !found || !isDecl {
+			if !found || !isDecl {
 				continue
 			}
 			groups = append(groups, soltype.RegexGroup{
-				Name: name,
+				Name: g.Name,
 				Type: &soltype.InferType{ID: decl.ID, Name: decl.Name, Binder: true},
 			})
 		}

@@ -10,6 +10,7 @@ import (
 	"strings"
 	"unicode/utf8"
 
+	"github.com/escalier-lang/escalier/internal/jsregex"
 	"github.com/escalier-lang/escalier/internal/set"
 	"github.com/escalier-lang/escalier/internal/soltype"
 )
@@ -1984,7 +1985,7 @@ func (c *Context) constrain(sub, super soltype.Type, seen *seenPairs, mutCtx boo
 		// another does is not something the checker decides.
 		if sup, ok := super.(*soltype.RegexType); ok {
 			if sub.Source == sup.Source {
-				return nil
+				return c.constrainRegexGroups(sup, seen, mutCtx)
 			}
 			return []SolverError{&CannotConstrainError{Sub: sub, Super: sup}}
 		}
@@ -2838,19 +2839,52 @@ func (c *Context) constrainStrLitToRegex(sub *soltype.LitType, sup *soltype.Rege
 	if !isStr {
 		return []SolverError{&CannotConstrainError{Sub: sub, Super: sup}}
 	}
-	match := sup.Pattern.FindStringSubmatchIndex(s.Value)
-	if match == nil {
+	if len(sup.Groups) == 0 {
+		if sup.Pattern.MatchString(s.Value) {
+			return nil
+		}
+		return []SolverError{&CannotConstrainError{Sub: sub, Super: sup}}
+	}
+	captures, matched := sup.Pattern.Captures(s.Value)
+	if !matched {
 		return []SolverError{&CannotConstrainError{Sub: sub, Super: sup}}
 	}
 	var errs []SolverError
 	for _, group := range sup.Groups {
 		var text soltype.Type = &soltype.UndefinedType{}
-		if i := sup.Pattern.SubexpIndex(group.Name); i > 0 && match[2*i] >= 0 {
-			text = &soltype.LitType{Lit: &soltype.StrLit{Value: s.Value[match[2*i]:match[2*i+1]]}}
+		if captured := captures[patternGroupIndex(sup.Pattern, group.Name)]; captured != nil {
+			text = &soltype.LitType{Lit: &soltype.StrLit{Value: *captured}}
 		}
 		errs = append(errs, c.constrain(text, group.Type, seen, mutCtx)...)
 	}
 	return errs
+}
+
+// constrainRegexGroups flows the text a value of a regex type captures into each of sup's
+// groups, for a sub written as the same pattern. Nothing records which string the value holds,
+// so each group captures `string`, joined with `undefined` when the group can take no part in
+// a match.
+func (c *Context) constrainRegexGroups(sup *soltype.RegexType, seen *seenPairs, mutCtx bool) []SolverError {
+	var errs []SolverError
+	for _, group := range sup.Groups {
+		var text soltype.Type = &soltype.PrimType{Prim: soltype.StrPrim}
+		if sup.Pattern.Groups[patternGroupIndex(sup.Pattern, group.Name)].Optional {
+			text = newUnion(nil, []soltype.Type{text, &soltype.UndefinedType{}})
+		}
+		errs = append(errs, c.constrain(text, group.Type, seen, mutCtx)...)
+	}
+	return errs
+}
+
+// patternGroupIndex returns the position of the group named name in p.Groups. Every group a
+// RegexType carries is one of its pattern's.
+func patternGroupIndex(p *jsregex.Pattern, name string) int {
+	for i, g := range p.Groups {
+		if g.Name == name {
+			return i
+		}
+	}
+	panic("patternGroupIndex: " + name + " is not a group of the pattern")
 }
 
 // getterReadsAsProperty reports whether a read of g can stand in for a property read. A

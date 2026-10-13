@@ -1142,8 +1142,8 @@ func (e *typeEvaluator) reduceKeyof(operand soltype.Type, inexact bool) soltype.
 		// the same reason. The rule holds whatever the operand is, so the operand needs no
 		// reduction.
 		return &soltype.NeverType{}
-	case *soltype.PrimType, *soltype.LitType, *soltype.NeverType, *soltype.UnknownType,
-		*soltype.NullType, *soltype.UndefinedType:
+	case *soltype.PrimType, *soltype.LitType, *soltype.RegexType, *soltype.NeverType,
+		*soltype.UnknownType, *soltype.NullType, *soltype.UndefinedType:
 		// None of these carries a readable member, so its key set is empty. `null` and
 		// `undefined` reach this arm once an annotation can name them, and a mapped type
 		// over either needs the ground `never` to build its empty result. Without it,
@@ -1869,8 +1869,8 @@ func (e *typeEvaluator) reduceExactness(kind soltype.ExactnessKind, operand solt
 			return &soltype.ErrorType{}
 		}
 		return op
-	case *soltype.PrimType, *soltype.LitType, *soltype.NeverType, *soltype.UnknownType,
-		*soltype.NullType, *soltype.UndefinedType, *soltype.GeneratorType,
+	case *soltype.PrimType, *soltype.LitType, *soltype.RegexType, *soltype.NeverType,
+		*soltype.UnknownType, *soltype.NullType, *soltype.UndefinedType, *soltype.GeneratorType,
 		*soltype.ErrorType:
 		return reduced
 	}

@@ -218,6 +218,11 @@ func TestInferRegexTypeCaptures(t *testing.T) {
 		type StripUnderscores<T> = if T : /^_*(?<Ident>[a-zA-Z][a-zA-Z0-9]*)_*$/ { Ident } else { T }
 		type Optional<T> = if T : /^a(?<B>b)?$/ { B } else { never }
 		type Split<T> = if T : /^(?<Head>\w+)-(?<Tail>\w+)$/ { [Head, Tail] } else { never }
+		type Either<T> = if T : /^(?<Y>a)$|^(?<Y>b)$/ { Y } else { never }
+		type Digits<T> = if T : /^(?<D>\d+)$/ { D } else { never }
+		type MaybeB<T> = if T : /^a(?<B>b)?$/ { B } else { never }
+		declare val digits: /^(?<D>\d+)$/
+		declare val maybeB: /^a(?<B>b)?$/
 	`
 	tests := []struct {
 		name string
@@ -232,6 +237,14 @@ func TestInferRegexTypeCaptures(t *testing.T) {
 		{"AnOptionalGroupThatMatched", `Optional<"ab">`, `"b"`},
 		{"AnOptionalGroupThatDidNotMatch", `Optional<"a">`, `undefined`},
 		{"TwoGroups", `Split<"left-right">`, `["left", "right"]`},
+		// One name on groups in two alternatives captures from whichever took part.
+		{"ANameSharedAcrossAlternatives", `Either<"b">`, `"b"`},
+		// A value of the same regex type captures some string the checker cannot name.
+		{"TheSameRegexTypeCapturesAString", `Digits<typeof digits>`, `string`},
+		{"TheSameRegexTypeWithAnOptionalGroup", `MaybeB<typeof maybeB>`, `string | undefined`},
+		// A regex type carries no members, as a string literal carries none.
+		{"KeyofARegexType", `keyof /^a/`, `never`},
+		{"ExactOverARegexType", `Exact< /^a/ >`, `/^a/`},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {

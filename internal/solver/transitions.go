@@ -112,7 +112,7 @@ func (e *MutabilityTransitionError) Message() string {
 	)
 }
 
-// isValueType reports whether the type is a primitive or literal type, or a union of
+// isValueType reports whether the type is a primitive, literal or regex type, or a union of
 // such types. Value types have copy semantics. Assigning one to another variable
 // creates an independent copy, so alias tracking is unnecessary.
 //
@@ -123,7 +123,7 @@ func (e *MutabilityTransitionError) Message() string {
 // a spurious alias edge or loan, so it over-reports rather than under-reports.
 func isValueType(t soltype.Type) bool {
 	switch p := t.(type) {
-	case *soltype.PrimType, *soltype.LitType:
+	case *soltype.PrimType, *soltype.LitType, *soltype.RegexType:
 		return true
 	case *soltype.UnionType:
 		for _, member := range p.Types {

@@ -581,8 +581,24 @@ func compareSameKind(a, b soltype.Type) int {
 		// carries.
 		return a.ID - b.(*soltype.UniqueSymbolType).ID
 	case *soltype.RegexType:
-		// Two regex types order by their source, the field their equality reads.
-		return strings.Compare(a.Source, b.(*soltype.RegexType).Source)
+		// Two regex types order by every field their equality reads: the source, then the
+		// groups positionally.
+		b := b.(*soltype.RegexType)
+		if a.Source != b.Source {
+			return strings.Compare(a.Source, b.Source)
+		}
+		if c := len(a.Groups) - len(b.Groups); c != 0 {
+			return c
+		}
+		for i := range a.Groups {
+			if a.Groups[i].Name != b.Groups[i].Name {
+				return strings.Compare(a.Groups[i].Name, b.Groups[i].Name)
+			}
+			if c := compareType(a.Groups[i].Type, b.Groups[i].Type); c != 0 {
+				return c
+			}
+		}
+		return 0
 	case *soltype.ClassType:
 		// Two class instances order by every field their equality reads: the qualified
 		// name, the exactness flag, then the lifetime and type arguments positionally.
