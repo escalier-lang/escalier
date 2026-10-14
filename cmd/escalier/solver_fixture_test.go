@@ -44,10 +44,6 @@ var (
 		name:   "a global the ambient builtin scope will bind",
 		ticket: "#1666",
 	}
-	causeAsyncResolvedReturn = &solverSkipCause{
-		name:   "an `async fn` annotating the resolved type rather than `Promise<T>`",
-		ticket: "#1849",
-	}
 	causeRegexTypeAnn = &solverSkipCause{
 		name:   "a regex literal written as a type annotation",
 		ticket: "#1693",
@@ -57,12 +53,6 @@ var (
 	}
 	causeScriptDecls = &solverSkipCause{
 		name: "a `type` or `declare fn` declaration at the top level of a script",
-	}
-	// The fixture is what is wrong here. `getValue<T>` declares its own `T`, which
-	// shadows the class's, and then returns `self.value`, which has the class's `T`.
-	// The solver rejects that return, and the old checker accepts it.
-	causeShadowedTypeParam = &solverSkipCause{
-		name: "a fixture returning the class's `T` where a method's own `T` shadows it",
 	}
 	// `fixtures/pattern_matching` also narrows an arm by an annotated nested leaf, which
 	// is #1956 and surfaces once this cause clears.
@@ -99,10 +89,7 @@ type solverSkip struct {
 var solverSkips = []solverSkip{
 	{"async_await", causeAmbientScope, "Unknown identifier: fetch"},
 
-	{"function_overloading", causeAsyncResolvedReturn, "async function return type must be a Promise; write Promise<...> or Promise<_>"},
-
 	{"literals", causeRegexTypeAnn, "Unsupported: LitTypeAnn"},
-	{"generic_class", causeShadowedTypeParam, "cannot constrain T <: T | number"},
 	{"template_literals", causeScriptDecls, "Declaration not allowed in function body: TypeDecl"},
 	{"if_val", causeIfValNullish, "cannot constrain null <: number"},
 
@@ -366,6 +353,7 @@ var emitSkips = map[emitSkip]*solverSkipCause{
 	{"type_ann_index_signature", "index.d.ts"}:     causeIndexSignatureOptional,
 	{"logging", "index.d.ts"}:                      causeUndefinedReturn,
 	{"grouping", "index.d.ts"}:                     causeUnionOrder,
+	{"function_overloading", "index.d.ts"}:         causeAsyncNoValueReturn,
 }
 
 // causeFieldReadBound is the cause of `fix_point_combinator`'s `index.js` entry. Reading a field whose type
@@ -422,6 +410,14 @@ var (
 	causeUnionOrder = &solverSkipCause{
 		name:   "a union's written member order",
 		ticket: "#1850",
+	}
+	// An `async fn` whose body returns no value emits `Promise<void>` on the checker and
+	// `Promise<undefined>` on the solver, so `async fn test() { … }` emits
+	// `test(): Promise<undefined>`. The solver writes the type the body produces, which is
+	// what emission writes once the checker is gone.
+	causeAsyncNoValueReturn = &solverSkipCause{
+		name:   "an `async fn` returning no value, which the checker writes as `Promise<void>`",
+		ticket: "#1676",
 	}
 	// A function whose written return is `undefined` emits `void`, so
 	// `fn main() -> undefined` emits `main(): void` where the twin writes
