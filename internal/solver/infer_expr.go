@@ -647,7 +647,12 @@ func (c *checker) inferFunc(scope *Scope, lvl int, sig ast.FuncSig, body *ast.Bl
 		if gen != nil {
 			gen.delegateNexts = c.fn.delegateNexts
 		}
+		recvReads := c.fn.inferredRecvReads
 		collected = c.popFuncCtx(saved)
+		// A read inside this body can still learn its receiver's type from the enclosing body,
+		// as a callback's parameter does from the call it is passed to, so the enclosing body
+		// decides it. The outermost body decides once everything it encloses is walked.
+		c.settleInferredRecvReads(recvReads)
 		// A body with no `return` that always leaves along the exceptional edge reaches
 		// no normal exit, so it produces `never`, not the `undefined` a fall-through body
 		// produces. Without this `fn f() -> number { throw Error("no") }` would report
@@ -1778,6 +1783,8 @@ func (c *checker) inferCallTarget(scope *Scope, lvl int, e *ast.CallExpr) callTa
 		}
 	}
 	callee, shortCircuits := c.inferCallee(scope, lvl, e)
+	// A member read called on the spot runs against its receiver, so it needs no binding.
+	c.markInferredRecvReadCalled(e.Callee)
 	target := c.calleeTarget(lvl, e, callee)
 	target.shortCircuits = shortCircuits
 	return target
@@ -3858,6 +3865,7 @@ func (c *checker) valueProp(lvl int, blame ast.Node, provNode ast.Node, name str
 	// entry (§3.3).
 	c.recordProv(fieldVar, provNode, MemberAccess)
 	c.constrain(blame, recvCarrier, req)
+	c.noteInferredRecvRead(blame, recvCarrier)
 	// fieldReadBorrow takes the whole receiver and unwraps mut/lifetime internally,
 	// applying PR 4 rule 4 to produce the field-bounded borrow.
 	out := c.fieldReadBorrow(fieldVar, recv, name, lvl)

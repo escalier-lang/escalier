@@ -2710,6 +2710,29 @@ func (e *UnusedThrowsClauseError) Message() string {
 		"` is unreachable; drop the clause"
 }
 
+// InferredRecvFuncReadError fires when a member read that is not called on the spot reads a
+// function off a receiver whose type is only inferred, as `val g = o.m` does inside
+// `fn f(o) { val g = o.m; return g() }`. Nothing says whether `m` is a method or a field
+// holding a function, so codegen cannot tell whether to bind the read to `o`. Read is the
+// member read, Recv the receiver's name and Name the member's.
+//
+// It is a warning, since the read is well-typed and a field holding a plain function needs
+// no binding.
+type InferredRecvFuncReadError struct {
+	Read *ast.MemberExpr
+	Recv string
+	Name string
+}
+
+func (*InferredRecvFuncReadError) isSolverError()        {}
+func (e *InferredRecvFuncReadError) Span() ast.Span      { return e.Read.Span() }
+func (e *InferredRecvFuncReadError) Related() []ast.Span { return nil }
+func (e *InferredRecvFuncReadError) IsWarning() bool     { return true }
+func (e *InferredRecvFuncReadError) Message() string {
+	return fmt.Sprintf("`%s.%s` reads a function off `%s`, whose type is only inferred, so it cannot tell whether `%s` is a method to bind to `%s`; annotate `%s`'s type",
+		e.Recv, e.Name, e.Recv, e.Name, e.Recv, e.Recv)
+}
+
 // GenThrowsClauseError fires when a `gen fn` writes a `throws` clause. A generator does
 // not raise at the call: obtaining one runs no body code, so what the body raises
 // surfaces at `next(v)` and belongs on the generator the function returns. The return
