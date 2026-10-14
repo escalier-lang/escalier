@@ -95,7 +95,12 @@ var declarationShapes = map[string]string{
 
 	"AnInterface":         "interface I {\n\tx: number,\n}",
 	"AnInterfaceIndexSig": "interface I {\n\t[K: string]?: number,\n}",
-	"AGenericInterface":   "interface I<T> {\n\tv: T,\n}",
+	// An index signature beside another member, over literal keys, or over an abstract key
+	// set has no interface form that matches the mapped member, so each lowers differently.
+	"AnInterfaceIndexSigBesideMember": "interface I {\n\tname: string,\n\t[K: string]?: boolean,\n}",
+	"AnInterfaceLiteralKeys":          "interface I {\n\t[K: \"x\" | \"y\"]?: number,\n}",
+	"AGenericInterfaceMappedMember":   "interface I<T> {\n\t[K: keyof T]?: T[K],\n}",
+	"AGenericInterface":               "interface I<T> {\n\tv: T,\n}",
 
 	"ADeclaredVal":       `declare val n: number`,
 	"AnInferredVal":      `export val n = 5`,
@@ -124,15 +129,30 @@ type shapeSkip struct {
 // starts agreeing fails, so the list burns down the way the fixture harness's emitSkips
 // does.
 var shapeSkips = map[string]shapeSkip{
-	"AnInterfaceIndexSig": {
-		reason: "the twin writes a mapped member inside an interface body, which TypeScript rejects, " +
-			"so the difference is intended",
-		ticket: "#1676",
-	},
+	"AnInterfaceIndexSig":             interfaceMappedMemberSkip,
+	"AnInterfaceIndexSigBesideMember": interfaceAsAliasSkip,
+	"AnInterfaceLiteralKeys":          interfaceMappedMemberSkip,
+	"AGenericInterfaceMappedMember":   interfaceAsAliasSkip,
 	"AClassGetterAndSetter": {
 		reason: "a setter's parameter name is lost, so it renders as `value`",
 		ticket: "#1823",
 	},
+}
+
+// interfaceMappedMemberSkip is the shared entry for an interface whose mapped member the
+// solver lowers to members an interface accepts.
+var interfaceMappedMemberSkip = shapeSkip{
+	reason: "the twin writes a mapped member inside an interface body, which TypeScript rejects " +
+		"with TS7061, so the difference is intended",
+	ticket: "#1676",
+}
+
+// interfaceAsAliasSkip is the shared entry for an interface whose mapped member has no
+// interface form, which the solver emits as a type alias.
+var interfaceAsAliasSkip = shapeSkip{
+	reason: "the solver emits a type alias where the twin writes a mapped member inside an " +
+		"interface body, which TypeScript rejects with TS7061, so the difference is intended",
+	ticket: "#1676",
 }
 
 // TestEachDeclarationShapeEmitsTheSameDefinitions asserts that both checkers emit the
