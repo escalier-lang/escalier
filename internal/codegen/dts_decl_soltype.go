@@ -638,13 +638,13 @@ func (b *Builder) buildInterfaceDeclFromSol(
 func interfacePartsFromSol(typeAnn TypeAnn) ([]ObjTypeAnnElem, []TypeAnn) {
 	switch t := typeAnn.(type) {
 	case *ObjectTypeAnn:
-		return t.Elems, nil
+		return interfaceMembers(t.Elems), nil
 	case *IntersectionTypeAnn:
 		var members []ObjTypeAnnElem
 		var extends []TypeAnn
 		for _, arm := range t.Types {
 			if obj, ok := arm.(*ObjectTypeAnn); ok {
-				members = append(members, obj.Elems...)
+				members = append(members, interfaceMembers(obj.Elems)...)
 				continue
 			}
 			extends = append(extends, arm)
@@ -653,6 +653,29 @@ func interfacePartsFromSol(typeAnn TypeAnn) ([]ObjTypeAnnElem, []TypeAnn) {
 	default:
 		return nil, nil
 	}
+}
+
+// interfaceMembers returns elems with each optional mapped member over its key set
+// rewritten as an index signature, since TypeScript accepts no mapped member in an
+// interface body. The `?` becomes `| undefined` on the value, so
+// `interface D {[K: string]?: number}` emits `[K: string]: number | undefined`.
+// Every other member is returned unchanged.
+func interfaceMembers(elems []ObjTypeAnnElem) []ObjTypeAnnElem {
+	out := make([]ObjTypeAnnElem, len(elems))
+	for i, elem := range elems {
+		mapped, ok := elem.(*MappedTypeAnn)
+		if !ok || mapped.Name != nil || mapped.Optional == nil || *mapped.Optional != MMAdd {
+			out[i] = elem
+			continue
+		}
+		out[i] = &IndexSignatureTypeAnn{
+			KeyName:  mapped.TypeParam.Name,
+			KeyType:  mapped.TypeParam.Constraint,
+			Value:    NewUnionTypeAnn([]TypeAnn{mapped.Value, NewUndefinedTypeAnn(nil)}),
+			Readonly: mapped.ReadOnly != nil && *mapped.ReadOnly == MMAdd,
+		}
+	}
+	return out
 }
 
 // buildClassDeclFromSol emits a class as the two declarations TypeScript needs for

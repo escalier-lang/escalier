@@ -214,6 +214,25 @@ func TestBuildDeclStmtFromSol(t *testing.T) {
 			want:       "export declare interface Person {\n  name: string;\n}\n",
 		},
 		{
+			name:   "InterfaceIndexSignatureCarriesItsQuestionMarkAsUndefined",
+			source: "export interface Dict {\n\tname: string,\n\treadonly [K: string]?: string,\n}",
+			ns: &fakeSolNamespace{
+				declared: map[string]fakeDeclaredType{
+					"Dict": {body: solObj(solProp("name", solStr()), &soltype.MappedElem{
+						Key:      &soltype.MappedKeyType{ID: 1, Name: "K"},
+						Keys:     solStr(),
+						Value:    solStr(),
+						Optional: soltype.ModAdd,
+						Readonly: soltype.ModAdd,
+					})},
+				},
+			},
+			isTopLevel: true,
+			// The mapped member leads, because the object splits it from the other
+			// members the way a type literal does.
+			want: "export declare interface Dict {\n  readonly [K: string]: string | undefined;\n  name: string;\n}\n",
+		},
+		{
 			name:   "InterfaceExtendingAnotherSplitsTheIntersection",
 			source: "export interface Employee extends Person {\n\tid: number,\n}",
 			ns: &fakeSolNamespace{
