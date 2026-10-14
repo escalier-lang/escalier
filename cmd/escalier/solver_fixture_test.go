@@ -48,9 +48,6 @@ var (
 		name:   "a property read on a union whose arms do not all declare it",
 		ticket: "#1719",
 	}
-	causeCaughtValue = &solverSkipCause{
-		name: "a `catch` arm reading the caught value, which the solver types `unknown`",
-	}
 )
 
 // solverSkip is one fixture the solver cannot yet check, with the cause it waits on
@@ -72,8 +69,6 @@ type solverSkip struct {
 // other diagnostics surface once that one lands and the entry is re-seeded.
 var solverSkips = []solverSkip{
 	{"async_await", causeAmbientScope, "Unknown identifier: fetch"},
-
-	{"try_catch", causeCaughtValue, "cannot constrain unknown <: string"},
 
 	{"member_access", causeUnionMember, "the package is accepted, and error.txt records a rejection"},
 }
@@ -332,6 +327,9 @@ var emitSkips = map[emitSkip]*solverSkipCause{
 	{"if_val", "index.d.ts"}:                       causeUnionOrder,
 	{"pattern_matching", "index.d.ts"}:             causeUnionOrder,
 	{"function_overloading", "index.d.ts"}:         causeAsyncNoValueReturn,
+	{"try_catch", "index.d.ts"}:                    causeArmBelowCatchAll,
+	{"try_catch", "index.js"}:                      causeBuiltinClassCall,
+	{"try_catch", "index.js.map"}:                  causeBuiltinClassCall,
 }
 
 // The causes behind the `index.d.ts` entries, each triaged from the diff the artifact
@@ -374,6 +372,22 @@ var (
 	causeUnionOrder = &solverSkipCause{
 		name:   "a union's written member order",
 		ticket: "#1850",
+	}
+	// An arm below an unguarded catch-all never runs, so the solver leaves its value out of
+	// the form's type. `try { throw "x" } catch { e => e, "x" => "unreachable" }` emits
+	// `"x"` on the solver and `"x" | "unreachable"` on the checker. The fixture's unions also
+	// differ in member order, which causeUnionOrder covers.
+	causeArmBelowCatchAll = &solverSkipCause{
+		name:   "the value of an arm below a catch-all, which the checker joins into the result",
+		ticket: "#1676",
+	}
+	// A call to a builtin the solver resolves as a class emits with `new`, so `Error("fail")`
+	// emits `new Error("fail")` on the solver and `Error("fail")` on the checker. JavaScript
+	// builds the same object either way for `Error`. The solver's form is the one every
+	// class call takes, so the difference is kept.
+	causeBuiltinClassCall = &solverSkipCause{
+		name:   "a call to a builtin class, which the solver emits with `new`",
+		ticket: "#1676",
 	}
 	// An `async fn` whose body returns no value emits `Promise<void>` on the checker and
 	// `Promise<undefined>` on the solver, so `async fn test() { … }` emits

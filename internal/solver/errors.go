@@ -2300,6 +2300,8 @@ func constructName(kind ucs.OriginKind) string {
 		return "val ... else"
 	case ucs.OriginGuard:
 		return "guard"
+	case ucs.OriginCatchArm:
+		return "catch"
 	default:
 		return "conditional"
 	}

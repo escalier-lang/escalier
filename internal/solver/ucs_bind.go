@@ -545,7 +545,7 @@ func (b *pathBinder) applyClassTest(scope *Scope, node ast.Node, v scrutineeView
 		v.ty, v.concrete, v.shape = fresh, nil, fresh
 		return v
 	}
-	target, targetConcrete := b.c.narrowToClass(b.lvl, node, ct, v.ty, v.concrete)
+	target, targetConcrete := b.c.narrowToClass(b.lvl, node, ct, v.ty, v.concrete, v.shape)
 	v.ty, v.concrete, v.shape = target, targetConcrete, target
 	return v
 }
