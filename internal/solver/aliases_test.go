@@ -719,7 +719,7 @@ func TestInferSelfReferenceKeepsUnionSiblings(t *testing.T) {
 				declare val l: L
 				val n = l.next
 			`,
-			wantN: "undefined | L",
+			wantN: "L | undefined",
 		},
 		{
 			name: "AliasOrNull",
@@ -728,7 +728,7 @@ func TestInferSelfReferenceKeepsUnionSiblings(t *testing.T) {
 				declare val l: L
 				val n = l.next
 			`,
-			wantN: "null | L",
+			wantN: "L | null",
 		},
 		{
 			name: "MutualAliasesOrUndefined",
@@ -738,7 +738,7 @@ func TestInferSelfReferenceKeepsUnionSiblings(t *testing.T) {
 				declare val b: B
 				val n = b.a
 			`,
-			wantN: "undefined | A",
+			wantN: "A | undefined",
 		},
 		{
 			name: "InterfaceArrayOrUndefined",
@@ -747,7 +747,7 @@ func TestInferSelfReferenceKeepsUnionSiblings(t *testing.T) {
 				declare val l: L
 				val n = l.next
 			`,
-			wantN: "undefined | Array<L>",
+			wantN: "Array<L> | undefined",
 		},
 		{
 			// Members that do not name `L` still subsume each other, so `1` folds into `number`.
@@ -757,7 +757,7 @@ func TestInferSelfReferenceKeepsUnionSiblings(t *testing.T) {
 				declare val l: L
 				val n = l.next
 			`,
-			wantN: "number | L",
+			wantN: "L | number",
 		},
 		{
 			name: "InterfaceRejectsUndefinedAgainstSelf",

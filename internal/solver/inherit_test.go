@@ -129,7 +129,7 @@ func TestInferClassOverrideCompat(t *testing.T) {
 			// could pass a `number` the Dog does not accept.
 			want: []string{
 				"class `Dog` redeclares inherited member `eat` with type `fn (food: string) -> undefined`, " +
-					"which is not compatible with `fn (food: number | string) -> undefined` declared by `Animal`",
+					"which is not compatible with `fn (food: string | number) -> undefined` declared by `Animal`",
 			},
 		},
 		{

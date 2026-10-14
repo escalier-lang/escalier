@@ -507,7 +507,7 @@ func TestConstrainUnionCommitOnAFusedAtom(t *testing.T) {
 
 	errs := c.Constrain(exactObj(propElem("x", numLit(5))), super)
 	require.Equal(t, []string{
-		"ambiguous match against t0 | object | object: committed object, " +
+		"ambiguous match against object | object | t0: committed object, " +
 			"but t0 would also match; annotate to disambiguate",
 	}, Messages(errs))
 	require.False(t, hasHardError(errs))

@@ -157,7 +157,7 @@ func TestInferComputedKey(t *testing.T) {
 			// claim `5` there, so both keys share one signature whose value joins theirs.
 			name: "SeveralKeysShareOneSignature",
 			src:  "declare val s: string\ndeclare val n: number\nval o = {[s]: 5, [n]: \"x\"}",
-			want: map[string]string{"o": `{[K: number | string]?: 5 | "x"}`},
+			want: map[string]string{"o": `{[K: string | number]?: 5 | "x"}`},
 		},
 		{
 			name: "UniqueSymbolKeyNamesAProperty",
@@ -180,7 +180,7 @@ func TestInferComputedKey(t *testing.T) {
 			// either value.
 			name: "KeyAfterAPropertyItMayReplace",
 			src:  "fn f(s: string) { val o = {a: \"x\", [s]: 1}\n return o.a }",
-			want: map[string]string{"f": `fn (s: string) -> 1 | "x"`},
+			want: map[string]string{"f": `fn (s: string) -> "x" | 1`},
 		},
 		{
 			// A property written after the key replaces whatever the key stored there.
@@ -192,7 +192,7 @@ func TestInferComputedKey(t *testing.T) {
 			// A `number` key reaches only a property whose name spells a number.
 			name: "NumberKeyAfterProperties",
 			src:  "fn f(n: number) { return {a: \"x\", 1: true, [n]: 2} }",
-			want: map[string]string{"f": `fn (n: number) -> {a: "x", "1": 2 | true, [K: number]?: 2}`},
+			want: map[string]string{"f": `fn (n: number) -> {a: "x", "1": true | 2, [K: number]?: 2}`},
 		},
 		{
 			// A parameter's default is one value it may hold, not the only one, so the key

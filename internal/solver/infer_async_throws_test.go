@@ -28,7 +28,7 @@ func TestInferAsyncThrowsAbsorbedIntoRejection(t *testing.T) {
 			// sync `throws _` builds.
 			name: "ThrowsOnBothBranchesUnionIntoTheRejection",
 			src:  `async fn f(c: boolean) { if c { throw "a" } else { throw 5 } }`,
-			want: `fn (c: boolean) -> Promise<never, 5 | "a">`,
+			want: `fn (c: boolean) -> Promise<never, "a" | 5>`,
 		},
 		{
 			// A written E is the declaration the body's throws are checked against, the
@@ -326,7 +326,7 @@ func TestInferPromiseErrRendering(t *testing.T) {
 	runThrowsCases(t, []throwsCase{
 		{
 			// Two promises differing only in their rejection stay distinct union
-			// members, so the canonical member order consults the rejection slot.
+			// members.
 			name: "PromisesDifferingOnlyInRejectionStayDistinct",
 			src: `
 				fn f(c: boolean, p1: Promise<number, "a">, p2: Promise<number, "b">) {

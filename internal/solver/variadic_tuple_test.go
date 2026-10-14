@@ -259,7 +259,7 @@ func TestVariadicTupleInference(t *testing.T) {
 				val ys = ["a", ...xs]
 				return ys[1]
 			}`,
-			want: `fn (xs: Array<number>) -> number | "a"`,
+			want: `fn (xs: Array<number>) -> "a" | number`,
 		},
 		{
 			name: "MemberOfAUnionOfVariadicTuples",

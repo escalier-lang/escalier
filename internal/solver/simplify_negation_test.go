@@ -41,7 +41,7 @@ func TestSimplifyNegationsDropsDisjointComplements(t *testing.T) {
 			// what is left is disjoint from `string`, so the complement goes too.
 			name:         "one guard over a union",
 			build:        func(*checker) soltype.Type { return interT(unionT(str(), num()), negT(str())) },
-			unsimplified: "(number | string) & ~string",
+			unsimplified: "(string | number) & ~string",
 			want:         "number",
 		},
 		{
@@ -51,7 +51,7 @@ func TestSimplifyNegationsDropsDisjointComplements(t *testing.T) {
 			build: func(*checker) soltype.Type {
 				return interT(unionT(str(), num(), boolT()), negT(str()), negT(num()))
 			},
-			unsimplified: "(number | string | boolean) & ~number & ~string",
+			unsimplified: "(string | number | boolean) & ~string & ~number",
 			want:         "boolean",
 		},
 		{
@@ -87,7 +87,7 @@ func TestSimplifyNegationsDropsDisjointComplements(t *testing.T) {
 				c.ctx.registerClass("Cat", &ClassDef{Supers: []*soltype.ClassType{cls("Animal", false)}})
 				return interT(unionT(cls("Dog", false), cls("Cat", false)), negT(cls("Dog", false)))
 			},
-			unsimplified: "(Cat | Dog) & ~Dog",
+			unsimplified: "(Dog | Cat) & ~Dog",
 			want:         "Cat",
 		},
 		{
@@ -100,7 +100,7 @@ func TestSimplifyNegationsDropsDisjointComplements(t *testing.T) {
 				c.ctx.registerClass("Cat", &ClassDef{Supers: []*soltype.ClassType{cls("Animal", false)}})
 				return interT(unionT(cls("Puppy", false), cls("Cat", false)), negT(cls("Dog", false)))
 			},
-			unsimplified: "(Cat | Puppy) & ~Dog",
+			unsimplified: "(Puppy | Cat) & ~Dog",
 			want:         "Cat",
 		},
 		{
@@ -126,7 +126,7 @@ func TestSimplifyNegationsDropsDisjointComplements(t *testing.T) {
 			build: func(*checker) soltype.Type {
 				return interT(num(), negT(newUnion(nil, []soltype.Type{boolT(), str()})))
 			},
-			unsimplified: "number & ~(string | boolean)",
+			unsimplified: "number & ~(boolean | string)",
 			want:         "number",
 		},
 		{
@@ -136,7 +136,7 @@ func TestSimplifyNegationsDropsDisjointComplements(t *testing.T) {
 				u := func() soltype.Type { return newUnion(nil, []soltype.Type{str(), num()}) }
 				return interT(u(), negT(u()))
 			},
-			unsimplified: "(number | string) & ~(number | string)",
+			unsimplified: "(string | number) & ~(string | number)",
 			want:         "never",
 		},
 	}
@@ -211,7 +211,7 @@ func TestNewNegation(t *testing.T) {
 		{"double complement", negT(str()), "string"},
 		{"primitive", str(), "~string"},
 		// A union bounds its members, so its complement is a real type.
-		{"union", unionT(str(), num()), "~(number | string)"},
+		{"union", unionT(str(), num()), "~(string | number)"},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {

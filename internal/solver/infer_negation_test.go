@@ -210,7 +210,7 @@ func TestInferNegationOfBorrowResolves(t *testing.T) {
 		{
 			name: "BorrowUnderUnion",
 			src:  "class Point { x: number }\ntype Result = ~(&Point | number)",
-			want: "~(number | &Point)",
+			want: "~(&Point | number)",
 		},
 		{
 			name: "BorrowUnderIntersection",

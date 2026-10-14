@@ -128,7 +128,7 @@ func TestInferMemberAssignWrittenObjectEscapes(t *testing.T) {
 	values, _, errs := inferSource(t, `fn foo(obj) { obj.x = 5
  return obj }`)
 	require.Empty(t, errs)
-	require.Equal(t, "fn <T0>(obj: T0 & mut {x: number}) -> T0", values["foo"])
+	require.Equal(t, "fn <T0>(obj: mut {x: number} & T0) -> T0", values["foo"])
 }
 
 // Writing a parameter's value into a field LINKS their types (#737). The write

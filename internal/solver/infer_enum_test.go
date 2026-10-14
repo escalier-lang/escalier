@@ -320,7 +320,7 @@ func TestInferEnumVariantValue(t *testing.T) {
 					MyOption.None() => 0,
 				}
 			`,
-			wantValues: map[string]string{"result": `0 | 1 | "s"`},
+			wantValues: map[string]string{"result": `1 | "s" | 0`},
 		},
 	}
 	for _, tt := range tests {

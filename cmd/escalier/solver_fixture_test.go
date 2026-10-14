@@ -331,8 +331,6 @@ var emitSkips = map[emitSkip]*solverSkipCause{
 	{"namespace_use_parent_symbol", "index.d.ts"}:  causeAnyAsUnknown,
 	{"class_inheritance_namespaces", "index.d.ts"}: causeCheckerRootNamespacePrefix,
 	{"generalize", "index.d.ts"}:                   causeUnusedParamNotGeneralized,
-	{"grouping", "index.d.ts"}:                     causeUnionOrder,
-	{"pattern_matching", "index.d.ts"}:             causeUnionOrder,
 	{"function_overloading", "index.d.ts"}:         causeAsyncNoValueReturn,
 }
 
@@ -362,12 +360,6 @@ var (
 	// The fault is the checker's.
 	causeCheckerRootNamespacePrefix = &solverSkipCause{
 		name: "a root reference to a namespaced type, which the checker writes unqualified",
-	}
-	// A union renders its members in the solver's own order rather than the order the
-	// source wrote, so `A | B & C` emits `B & C | A`. Both denote the same type.
-	causeUnionOrder = &solverSkipCause{
-		name:   "a union's written member order",
-		ticket: "#1850",
 	}
 	// An `async fn` whose body returns no value emits `Promise<void>` on the checker and
 	// `Promise<undefined>` on the solver, so `async fn test() { … }` emits

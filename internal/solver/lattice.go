@@ -12,22 +12,23 @@ import (
 // the single mint path for UnionType and IntersectionType. Every site that
 // builds a lattice node routes through them, so coalesced output, the
 // shared-property meet in mergeObjectGroup, PR2's annotation input, and PR6's
-// permissive borrow join all produce well-formed, canonical, deduplicated
+// permissive borrow join all produce well-formed, deduplicated
 // lattice nodes without re-spelling the rules.
 //
 // Normalization splits into a Context-free core and a Context-gated
 // subsumed-member elimination step. The core covers flatten, lattice
-// identities, ErrorType elision, dedup, canonical order, and collapse. Every
+// identities, ErrorType elision, dedup, and collapse. Every
 // caller needs it. Subsumption runs only when the caller passes a Context,
 // because the subtype test it uses calls c.constrain under a probe. combine
 // and mergeObjectGroup pass nil. resolveTypeAnn from PR2 and joinBorrows from
 // PR6 pass their checker's Context.
 //
-// Canonical member order keeps equalType positional and cheap. Two unions
-// over the same members hold them in the same order, so equalTypeSliceWith
-// already returns true. Canonical order also makes rendering deterministic,
-// so `number | string` and `string | number` print identically, and it lets
-// the canonical type serve as a stable key for caching.
+// Members keep the order they arrive in, so a union renders in the order its
+// source wrote or its inference produced. `type T = A | (B & C)` renders
+// `A | B & C`, and a `match` whose arms yield "yes" then "no" renders
+// `"yes" | "no"`. equalType and compareType read the members in compareType
+// order, so two unions over the same members compare equal whatever order each
+// holds them in.
 func newUnion(c *Context, parts []soltype.Type) soltype.Type {
 	flat := flattenUnion(parts)
 	pruned, hadError := pruneUnion(flat)
@@ -35,7 +36,6 @@ func newUnion(c *Context, parts []soltype.Type) soltype.Type {
 	if c != nil {
 		pruned = subsumeMembers(c, pruned, unionDrops)
 	}
-	sortTypes(pruned)
 	return collapseUnion(pruned, hadError)
 }
 
@@ -53,7 +53,6 @@ func newIntersection(c *Context, parts []soltype.Type) soltype.Type {
 	if c != nil {
 		pruned = subsumeMembers(c, pruned, intersectionDrops)
 	}
-	sortTypes(pruned)
 	return collapseIntersection(pruned, hadError)
 }
 
@@ -280,16 +279,22 @@ func collapseIntersection(pruned []soltype.Type, hadError bool) soltype.Type {
 // `undefined <: L` would then succeed and drop `undefined` from the field.
 //
 // When two members mutually subsume, the survivor must be deterministic. The
-// pass pre-sorts the input by compareType, so the iteration order is
-// canonical and newUnion([A, B]) and newUnion([B, A]) drop the same member
-// when A and B subsume each other but differ structurally. That is the
-// canonicalization contract the M6 plan states.
+// pass decides in compareType order, so newUnion([A, B]) and newUnion([B, A])
+// drop the same member when A and B subsume each other but differ
+// structurally. The members it keeps stay in the order they arrived in.
 func subsumeMembers(c *Context, parts []soltype.Type, drops func(c *Context, m, sibling soltype.Type) bool) []soltype.Type {
 	if len(parts) < 2 {
 		return parts
 	}
-	parts = append([]soltype.Type(nil), parts...)
-	sortTypes(parts)
+	// order lists the arrival indices in compareType order, and the pass walks
+	// the members through it.
+	order := make([]int, len(parts))
+	for i := range order {
+		order[i] = i
+	}
+	sort.SliceStable(order, func(i, j int) bool {
+		return compareType(parts[order[i]], parts[order[j]]) < 0
+	})
 	// hasVar[i] is true when member i still carries a free type or lifetime
 	// variable or names an alias under construction, so it is skipped by the
 	// concrete gate below.
@@ -310,15 +315,15 @@ func subsumeMembers(c *Context, parts []soltype.Type, drops func(c *Context, m, 
 		hasVar[i] = !concreteMember(p) || namesAliasIn(p, c.buildingAliases)
 	}
 	dropped := set.NewSet[int]()
-	for i, a := range parts {
+	for _, i := range order {
 		if dropped.Contains(i) || hasVar[i] {
 			continue
 		}
-		for j, b := range parts {
+		for _, j := range order {
 			if i == j || dropped.Contains(j) || hasVar[j] {
 				continue
 			}
-			if drops(c, a, b) {
+			if drops(c, parts[i], parts[j]) {
 				dropped.Add(i)
 				break
 			}
@@ -421,7 +426,7 @@ func (s *finalSubsumer) EnterType(t soltype.Type, pol soltype.Polarity) soltype.
 
 // ExitType subsumes a lattice node's members and rebuilds it only when something
 // changed. The input is a coalesced display type, so it is already flattened,
-// pruned, deduped, and canonically ordered. newUnion's other normalization steps
+// pruned, and deduped. newUnion's other normalization steps
 // would be no-ops here, so only subsumeMembers runs. It removes members and never
 // rewrites one, so comparing how many members came back against how many went in
 // says whether anything changed, and the members themselves need no comparison.
@@ -454,18 +459,20 @@ func (s *finalSubsumer) ExitType(t soltype.Type, pol soltype.Polarity) soltype.T
 	return t
 }
 
-// sortTypes orders parts in place under compareType. The sort is stable so a
-// list already in canonical order keeps its pointer order across passes,
-// which keeps a downstream rebuild identity-preserving when possible.
-func sortTypes(parts []soltype.Type) {
-	sort.SliceStable(parts, func(i, j int) bool {
-		return compareType(parts[i], parts[j]) < 0
+// sortedTypes returns a copy of parts ordered under compareType, leaving parts
+// as it was. The sort is stable, so members compareType ranks equal keep their
+// relative order.
+func sortedTypes(parts []soltype.Type) []soltype.Type {
+	out := append([]soltype.Type(nil), parts...)
+	sort.SliceStable(out, func(i, j int) bool {
+		return compareType(out[i], out[j]) < 0
 	})
+	return out
 }
 
-// compareType is the deterministic total order canonical member order is
-// built on. It is consistent with equalType: two equalType-equal types
-// compare equal. The ordering ranks by a concrete-kind tag and tie-breaks
+// compareType is the deterministic total order equalType and subsumeMembers read
+// a union's or an intersection's members in. It is consistent with equalType:
+// two equalType-equal types compare equal. The ordering ranks by a concrete-kind tag and tie-breaks
 // structurally, so distinct types that print identically still compare
 // strictly. Two RefTypes whose only difference is a pair of distinct unnamed
 // LifetimeVars is the case that motivates avoiding a printer-string
@@ -561,13 +568,13 @@ func compareSameKind(a, b soltype.Type) int {
 		if c := len(a.Types) - len(b.Types); c != 0 {
 			return c
 		}
-		return compareTypeSlice(a.Types, b.Types)
+		return compareTypeSlice(sortedTypes(a.Types), sortedTypes(b.Types))
 	case *soltype.IntersectionType:
 		b := b.(*soltype.IntersectionType)
 		if c := len(a.Types) - len(b.Types); c != 0 {
 			return c
 		}
-		return compareTypeSlice(a.Types, b.Types)
+		return compareTypeSlice(sortedTypes(a.Types), sortedTypes(b.Types))
 	case *soltype.NegationType:
 		// Two complements order by their operands, so the order over negated members mirrors
 		// the order over the members themselves and `~number` precedes `~string`.
@@ -905,12 +912,10 @@ func lifetimeKindOrder(lt soltype.Lifetime) int {
 }
 
 // typeKindOrder ranks a soltype concrete kind for compareType. The lattice
-// bounds and the error sentinel come first, then TypeVarType so quantified
-// parameters lead in a rendered union, then primitives and literals, then
-// the remaining structural kinds, then the lattice forms, and finally
-// NullType and UndefinedType. A union renders its parameters and data
-// members before its absence markers. NullType precedes UndefinedType, so
-// `T0 | number | null | undefined` is the canonical render.
+// bounds and the error sentinel come first, then TypeVarType, then primitives
+// and literals, then the remaining structural kinds, then the lattice forms,
+// and finally NullType and UndefinedType. NullType precedes UndefinedType, so
+// `T0 | number | null | undefined` is the order compareType reads a union in.
 //
 // NegationType is ranked with UnionType and IntersectionType among the
 // lattice forms. The slot makes the order over member lists holding

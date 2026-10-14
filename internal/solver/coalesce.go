@@ -1168,7 +1168,7 @@ func combine(pol soltype.Polarity, parts []soltype.Type, open bool) soltype.Type
 		parts = foldUsageBounds(parts, open)
 	}
 	// Route through the M6 PR1 smart constructors so the coalesced output is
-	// flattened, deduped, lattice-identity-pruned, and canonically ordered.
+	// flattened, deduped, and lattice-identity-pruned.
 	// The Context is nil here. Members are already coalesced and concrete, so
 	// the core normalization is enough. Subsumption is reserved for the
 	// Context-bearing mint sites resolveTypeAnn in PR2 and joinBorrows in PR6.
@@ -1373,8 +1373,8 @@ func dedup(parts []soltype.Type) []soltype.Type {
 // parameter), which is what lets dedup collapse `T0 & T0` to `T0`.
 //
 // Lifetimes compare by pointer identity too, which two borrows minted in one coalesce
-// share whenever they denote the same borrow. That identity keying is what dedup and the
-// lattice's canonical member order rely on, and it keeps two independent param lifetimes
+// share whenever they denote the same borrow. That identity keying is what dedup and
+// compareType rely on, and it keeps two independent param lifetimes
 // with no bound between them distinct. alphaEqualTypes is the cross-scheme variant that
 // compares lifetimes up to renaming instead.
 func equalType(a, b soltype.Type) bool {
@@ -1841,16 +1841,16 @@ func equalTypeWith(a, b soltype.Type, ctx *alphaCtx) bool {
 		return ok && a.Mut == b.Mut && ctx.sameLifetime(a.Lt, b.Lt) && equalTypeWith(a.Inner, b.Inner, ctx)
 	case *soltype.UnionType:
 		b, ok := b.(*soltype.UnionType)
-		// newUnion imposes canonical member order at construction, so the positional
-		// equalTypeSliceWith is order-stable and two unions over the same member set compare equal
+		// A union holds its members in arrival order, so both lists are read in
+		// compareType order. Two unions over the same member set then compare equal
 		// whatever order their members were minted in.
 		if !ok {
 			return false
 		}
-		return equalTypeSliceWith(a.Types, b.Types, ctx)
+		return equalTypeSliceWith(sortedTypes(a.Types), sortedTypes(b.Types), ctx)
 	case *soltype.IntersectionType:
 		b, ok := b.(*soltype.IntersectionType)
-		return ok && equalTypeSliceWith(a.Types, b.Types, ctx)
+		return ok && equalTypeSliceWith(sortedTypes(a.Types), sortedTypes(b.Types), ctx)
 	case *soltype.NegationType:
 		// Two complements are equal when their operands are, so `~A` equals `~A` and differs
 		// from `~B`. That is what lets a member list dedup a negated member the same way it

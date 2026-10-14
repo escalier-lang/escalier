@@ -19,8 +19,8 @@ func reduceType(t soltype.Type) soltype.Type {
 	return newTypeEvaluator(&Context{}, newSeenPairs()).reduce(t)
 }
 
-// meet builds an unnormalized intersection, so a test states the members it means rather than the
-// canonical order newIntersection would put them in.
+// meet builds an unnormalized intersection, so a test states the members it means without
+// newIntersection dropping or merging any.
 func meet(types ...soltype.Type) soltype.Type {
 	return &soltype.IntersectionType{Types: types}
 }
@@ -95,7 +95,7 @@ func TestReduceSetDifference(t *testing.T) {
 			// into keeps the complement.
 			name: "PartialOverlapOnOneMemberOnly",
 			diff: meet(join(str(), num()), negate(strLit("a"))),
-			want: `number | string & ~"a"`,
+			want: `string & ~"a" | number`,
 		},
 		{
 			// `(string | null) & ~(null | undefined)`
@@ -219,7 +219,7 @@ func TestReduceSetDifferenceStaysSymbolic(t *testing.T) {
 			diff: func(v *soltype.TypeVarType) soltype.Type {
 				return meet(&soltype.KeyofType{Operand: v}, negate(strLit("b")))
 			},
-			want: `~"b" & keyof t0`,
+			want: `keyof t0 & ~"b"`,
 		},
 	}
 	for _, tt := range tests {
@@ -297,14 +297,14 @@ func TestNativeSetDifferenceOverTypeVariable(t *testing.T) {
 			// collapse on that `never` yet, which is the uninhabited-intersection gap #927 tracks.
 			name: "ExcludeOfUnknown",
 			src:  `type Result<T> = Exclude<T, unknown>`,
-			want: "never & t16",
+			want: "t16 & never",
 		},
 		{
 			// `Omit`'s key set over a type parameter: the keys of T other than "x". Neither half
 			// grounds, so the whole key set stays a difference.
 			name: "OmitKeySetOverVariable",
 			src:  `type Result<T> = Exclude<keyof T, "x">`,
-			want: `~"x" & keyof t16`,
+			want: `keyof t16 & ~"x"`,
 		},
 	}
 	for _, tt := range tests {
@@ -345,7 +345,7 @@ func TestSetDifferenceOverABorrow(t *testing.T) {
 			// distributes, which is an ordinary meet of complements.
 			name: "BorrowInExcludedUnion",
 			src:  `type Result<T, 'a> = Exclude<T, &'a Point | string>`,
-			want: "t6 & ~(string | &'a Point)",
+			want: "t6 & ~(&'a Point | string)",
 		},
 		{
 			// An alias naming a borrow reduces the same way. The residual keeps the alias

@@ -23,7 +23,7 @@ func TestSymbolPrimitive(t *testing.T) {
 		{
 			name: "ItJoinsIntoAUnion",
 			src:  `type T = symbol | string`,
-			want: "string | symbol",
+			want: "symbol | string",
 		},
 	}
 	for _, tt := range tests {

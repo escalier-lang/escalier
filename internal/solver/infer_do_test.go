@@ -67,5 +67,5 @@ func TestInferDoReturn(t *testing.T) {
 		}
 	`)
 	require.Empty(t, errs)
-	require.Equal(t, `fn (c: boolean) -> 1 | "early"`, values["f"])
+	require.Equal(t, `fn (c: boolean) -> "early" | 1`, values["f"])
 }

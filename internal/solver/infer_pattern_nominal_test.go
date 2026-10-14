@@ -469,7 +469,7 @@ func TestInferMatchTupleRestPattern(t *testing.T) {
 		}
 	`)
 	require.Empty(t, errs)
-	require.Equal(t, "fn (p: [string] | [number, number]) -> number | string", values["f"])
+	require.Equal(t, "fn (p: [number, number] | [string]) -> number | string", values["f"])
 }
 
 // A match arm's object test narrows a union soundly. With `{x}` binding against only the
@@ -623,7 +623,7 @@ func TestInferMemberMixedObjectClassUnionReadsField(t *testing.T) {
 		}
 	`)
 	require.Empty(t, errs)
-	require.Equal(t, "fn (p: {x: string} | Point) -> number | string", values["f"])
+	require.Equal(t, "fn (p: {x: string} | Point) -> string | number", values["f"])
 }
 
 // A getter resolves through member lookup in the partial-union read (#886), contributing its

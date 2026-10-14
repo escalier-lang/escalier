@@ -394,7 +394,7 @@ func TestBuildTypeAnnFromSolFromSource(t *testing.T) {
 		"PropUndefinedReturn": {"", "{f: fn () -> undefined}", "{f: () => undefined}"},
 
 		"Tuple":        {"", "[number, string]", "[number, string]"},
-		"Union":        {"", "string | number", "number | string"},
+		"Union":        {"", "string | number", "string | number"},
 		"Intersection": {"", "{a: number} & {b: string}", "{a: number} & {b: string}"},
 		"TemplateLit":  {"", "`on${string}`", "`on${string}`"},
 		// TypeScript ships the string intrinsics as generic aliases.
@@ -507,7 +507,7 @@ func TestBuildTypeAnnFromSolFromSource(t *testing.T) {
 		"MinusReadonlyIndexSig": {
 			"", "{-readonly [K: string]?: number}", "{-readonly [K in string]?: number}",
 		},
-		"UnionIndexSig": {"", "{[K: string | number]?: number}", "{[K in number | string]?: number}"},
+		"UnionIndexSig": {"", "{[K: string | number]?: number}", "{[K in string | number]?: number}"},
 		// TypeScript rejects a mapped type beside other members, so the two split
 		// into an intersection with the mapped member first.
 		"IndexSigBesideMember": {

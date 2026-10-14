@@ -194,7 +194,7 @@ func TestInferKeyofNamedTypeStaysSymbolic(t *testing.T) {
 				type Result = keyof I
 			`,
 			wantSymbolic: "keyof I",
-			wantExpanded: `"a" | "b" | "shared"`,
+			wantExpanded: `"a" | "shared" | "b"`,
 		},
 		{
 			// An inexact member's keyof is the primitive `string`, which cannot confirm which of the
@@ -207,7 +207,7 @@ func TestInferKeyofNamedTypeStaysSymbolic(t *testing.T) {
 				type Result = keyof U
 			`,
 			wantSymbolic: "keyof U",
-			wantExpanded: `string & ("a" | "shared")`,
+			wantExpanded: `("a" | "shared") & string`,
 		},
 		{
 			// One member's keyof is the primitive `string` from its open key set, and the other names
@@ -219,7 +219,7 @@ func TestInferKeyofNamedTypeStaysSymbolic(t *testing.T) {
 				type Result = keyof U
 			`,
 			wantSymbolic: "keyof U",
-			wantExpanded: `string & "b"`,
+			wantExpanded: `"b" & string`,
 		},
 		{
 			// A primitive member has no keys, so the intersection with it is empty however many
@@ -283,7 +283,7 @@ func TestInferKeyofNamedTypeStaysSymbolic(t *testing.T) {
 				type Result = keyof Tree
 			`,
 			wantSymbolic: "keyof Tree",
-			wantExpanded: `"children" | "value"`,
+			wantExpanded: `"value" | "children"`,
 		},
 		{
 			// A generic alias instantiation substitutes its argument, then projects the keys.
@@ -522,14 +522,13 @@ func TestInferKeyofUnionWithUnreadableMember(t *testing.T) {
 		},
 		{
 			// The readable members both carry "x", so the type parameter decides whether "x"
-			// survives and the operator stays symbolic. The union renders its members in
-			// canonical order, so the type variable leads.
+			// survives and the operator stays symbolic.
 			name: "OverlappingReadableMembers",
 			src: `
 				fn f<T>(k: keyof ({a: number, x: string} | {b: number, x: string} | T)) {}
 				val r = f("a")
 			`,
-			wantErr: `cannot constrain "a" <: keyof t12 | object | object`,
+			wantErr: `cannot constrain "a" <: keyof object | object | t12`,
 		},
 	}
 	for _, tt := range tests {
@@ -605,7 +604,7 @@ func TestInferKeyofAny(t *testing.T) {
 		{
 			name:  "Annotation",
 			src:   `type K = keyof any`,
-			types: map[string]string{"K": "number | string | symbol"},
+			types: map[string]string{"K": "string | number | symbol"},
 		},
 		{
 			name: "BoundAdmitsEveryKeyKind",
@@ -2355,7 +2354,7 @@ func TestInferCondDistribution(t *testing.T) {
 				type Wrap<T> = if T : string { [T] } else { boolean }
 				type Result = Wrap<"a" | 1>
 			`,
-			wantExpanded: `boolean | ["a"]`,
+			wantExpanded: `["a"] | boolean`,
 		},
 		{
 			// A branch naming the distributed parameter reads it as the member, so the two members
@@ -2723,7 +2722,7 @@ func TestInferCondDistributionThroughNesting(t *testing.T) {
 				type Wrap<T> = if T : string { if T : "a" { "exact" } else { "other" } } else { "num" }
 				type Result = Wrap<"a" | "b" | 1>
 			`,
-			wantExpanded: `"exact" | "num" | "other"`,
+			wantExpanded: `"exact" | "other" | "num"`,
 		},
 		{
 			// Every member takes the outer Then, and the inner test still separates them.
@@ -2766,7 +2765,7 @@ func TestInferCondDistributionThroughNesting(t *testing.T) {
 				type LabelF<T> = if T : T { if IsStr<T> : "y" { "text" } else { "other" } } else { "unreachable" }
 				type Result = LabelF<string | number>
 			`,
-			wantExpanded: `"other" | "text"`,
+			wantExpanded: `"text" | "other"`,
 		},
 		{
 			// The same idiom over a tuple-wrapped Check, which does not distribute on its own. Forcing
@@ -2825,7 +2824,7 @@ func TestInferCondDistributionIntoBranchAlias(t *testing.T) {
 			// "n" is what IsStr yields for a non-string argument, which no member produces here.
 			name:    "UnreachableBranchRejected",
 			src:     aliases + `val x: Branch<"a" | 1> = "n"`,
-			wantErr: `cannot constrain "n" <: "num" | "y"`,
+			wantErr: `cannot constrain "n" <: "y" | "num"`,
 		},
 	}
 	for _, tt := range tests {
@@ -3174,7 +3173,7 @@ func TestInferMappedTypeReduction(t *testing.T) {
 				type Result = {[K: Keys]: boolean}
 			`,
 			wantSymbolic: "{[K: Keys]: boolean}",
-			wantExpanded: `{"1": boolean, a: boolean}`,
+			wantExpanded: `{a: boolean, "1": boolean}`,
 		},
 		{
 			// A tuple's keys are number literals, so a homomorphic map over one emits a field per
@@ -3305,7 +3304,7 @@ func TestInferMappedTypeReduction(t *testing.T) {
 				type Result = {[` + "`get${Capitalize<K>}`" + `]: Src[K] for K in keyof Src}
 			`,
 			wantSymbolic: "{[`get${Capitalize<K>}`]: Src[K] for K in keyof Src}",
-			wantExpanded: "{getAge: number, getName: string}",
+			wantExpanded: "{getName: string, getAge: number}",
 		},
 		{
 			// A remapping that reduces to a union of names emits one field per name, each carrying
@@ -3457,7 +3456,7 @@ func TestInferMappedTypeTemplateRenameInObject(t *testing.T) {
 				type Src = {name: string, age: number}
 				type Result = {id: number, [` + "`get${Capitalize<K>}`" + `]: Src[K] for K in keyof Src}
 			`,
-			wantExpanded: "{id: number, getAge: number, getName: string}",
+			wantExpanded: "{id: number, getName: string, getAge: number}",
 		},
 		{
 			// A computed name colliding with an explicit sibling overrides it, the rightmost-wins rule
@@ -4014,7 +4013,7 @@ func TestInferRequiredUncountableKeys(t *testing.T) {
 			// the rendered key set reads `number | string` whichever order the source wrote.
 			name:    "UnionWithPrimitiveMember",
 			src:     `val p: {[K: string | number]: boolean} = {a: true}`,
-			wantErr: "no object has a field at every key of number | string, so [K: number | string]: boolean is uninhabited; write [K: number | string]?: boolean instead",
+			wantErr: "no object has a field at every key of string | number, so [K: string | number]: boolean is uninhabited; write [K: string | number]?: boolean instead",
 		},
 		{
 			// A `readonly` marker is orthogonal to `?` and carries into the suggested fix.

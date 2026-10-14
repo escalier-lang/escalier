@@ -331,7 +331,7 @@ func TestCallStoreEdgePositions(t *testing.T) {
 			`,
 			want: []string{"6:29-6:35: object is missing property: value", "3:71-3:77: object has extra property: other", "11:14-11:15: cannot move 'b' while it is borrowed"},
 			types: map[string]string{
-				"store": "fn <'a>(target: &mut {peer: &'a mut {other: number} | &'a mut {value: number}}, " +
+				"store": "fn <'a>(target: &mut {peer: &'a mut {value: number} | &'a mut {other: number}}, " +
 					"item: &'a mut {value: number}) -> undefined",
 				"build": "fn (p: mut {value: number}, out: &mut {slot: &mut {value: number} | &mut {other: number}}) -> undefined",
 			},
