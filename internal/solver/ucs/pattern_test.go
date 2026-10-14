@@ -226,10 +226,12 @@ func TestShallowTestKeepsShorthandElements(t *testing.T) {
 	require.Same(t, elem, binds[0].elem)
 }
 
-// A shorthand with a narrowing annotation, such as `{x::number}`, produces a bind with
-// an empty `name`. binder.wrap turns that bind into a split that tests `number`, and
-// `x` is bound inside the split's branch.
-func TestShallowTestLeavesANarrowingShorthandNameless(t *testing.T) {
+// TestShallowTestDefersBindingANarrowingShorthand asserts that shallowTest gives the
+// `x::number` of `{x::number}` a bind with an empty `name` that still carries the
+// shorthand element. The empty `name` is what makes binder.wrap build a split testing
+// `number` instead of binding `x` right away. `x` is bound later, inside that split's
+// branch, from the name on the element.
+func TestShallowTestDefersBindingANarrowingShorthand(t *testing.T) {
 	elem := ast.NewObjShorthandPat(
 		ast.NewIdentifier("x", ast.Span{}), false, ast.NewNumberTypeAnn(ast.Span{}), nil, span(47, 57),
 	)
