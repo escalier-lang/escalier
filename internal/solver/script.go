@@ -1,9 +1,13 @@
 package solver
 
 import (
+	"slices"
 	"strconv"
 
 	"github.com/escalier-lang/escalier/internal/ast"
+	"github.com/escalier-lang/escalier/internal/provenance"
+	"github.com/escalier-lang/escalier/internal/set"
+	"github.com/escalier-lang/escalier/internal/soltype"
 )
 
 // InferScript infers a script. A script is a source file whose top-level statements
@@ -98,6 +102,7 @@ func (c *checker) inferScriptIn(scope *Scope, script *ast.Script) (*Scope, *Info
 	// parent chain is what the pre-pass resolves outer names against. There is no
 	// enclosing context to restore, so the returned previous one is discarded.
 	scriptBody := &ast.Block{Stmts: script.Stmts, Span: script.Span()}
+	c.scriptScope = scope
 	c.pushFuncCtx(false, nil, 0)
 	c.runLivenessPrePass(scope, nil, nil, nil, nil, scriptBody)
 
@@ -123,4 +128,98 @@ func (c *checker) inferScriptIn(scope *Scope, script *ast.Script) (*Scope, *Info
 	c.checkRigidLifetimes()
 
 	return scope, c.info, c.errs
+}
+
+// bindScriptAlias infers a `type` alias declared at a script's top level and binds its name
+// in scope. It runs the steps the module driver runs over a component, over a component of
+// one alias:
+//
+//  1. preBindAlias registers the alias and binds its name, so the body can name itself.
+//  2. inferAliasBody resolves the body.
+//  3. checkProductive and markPhantomParams mark the AliasDef, which constrain reads.
+//  4. runDeferredArgBounds checks the bounds on the type arguments the body wrote.
+//
+// A script is source-order, so a reference to an alias declared later is unbound. An alias
+// whose name scope already binds as a type reports DuplicateDeclarationError and binds
+// nothing.
+func (c *checker) bindScriptAlias(scope *Scope, lvl int, decl *ast.TypeDecl) {
+	// preBindAlias registers the alias under its name for the whole run, so a second
+	// registration would replace the first's definition under every value already typed by
+	// it. scope is the script's root, where every script-level type binds, so an earlier
+	// declaration of the name is one of its own bindings.
+	if prev, ok := scope.OwnType(decl.Name.Name); ok {
+		if prevDecl, isDecl := typeBindingDecl(prev); isDecl {
+			c.report(&DuplicateDeclarationError{Decl: decl, Previous: prevDecl, Name: decl.Name.Name})
+			return
+		}
+	}
+	sh := c.preBindAlias(scope, lvl+1, decl, "")
+	if sh == nil {
+		return
+	}
+	shells := []*aliasShell{sh}
+	prevBuilding := c.ctx.buildingAliases
+	c.ctx.buildingAliases = set.FromSlice([]string{sh.qname})
+	c.deferArgBounds = true
+	c.inferAliasBody(sh)
+	c.deferArgBounds = false
+	c.checkProductive(shells)
+	markPhantomParams(shells)
+	c.reportPhantomParams(shells)
+	c.ctx.buildingAliases = prevBuilding
+	c.runDeferredArgBounds()
+}
+
+// typeBindingDecl returns the declaration that introduced b, and false when b records none.
+func typeBindingDecl(b TypeBinding) (ast.Decl, bool) {
+	if len(b.Sources) == 0 {
+		return nil, false
+	}
+	np, ok := b.Sources[0].(*ast.NodeProvenance)
+	if !ok {
+		return nil, false
+	}
+	decl, ok := np.Node.(ast.Decl)
+	return decl, ok
+}
+
+// bindScriptFunc infers a `declare fn` written at a script's top level and binds its
+// generalized type in scope. A name scope already binds to an earlier `declare fn` gains
+// this one as another overload arm, and an arm whose parameters match an earlier arm's
+// reports DuplicateOverloadError.
+func (c *checker) bindScriptFunc(scope *Scope, lvl int, decl *ast.FuncDecl) {
+	name := decl.Name.Name
+	t, src := c.inferFuncDecl(scope, lvl+1, decl)
+	sc := c.generalize(t, lvl)
+	c.recordType(decl.Name, schemeType(sc))
+	b := ValueBinding{Schemes: []TypeScheme{sc}, Sources: []provenance.Provenance{src}}
+	if prev, ok := scope.OwnValue(name); ok {
+		if _, isFunc := bindingDecl(prev).(*ast.FuncDecl); isFunc {
+			c.checkDistinctArm(decl, t, prev)
+			b.Schemes = append(slices.Clone(prev.Schemes), b.Schemes...)
+			b.Sources = append(slices.Clone(prev.Sources), b.Sources...)
+		}
+	}
+	scope.defineValue(name, b)
+}
+
+// checkDistinctArm reports DuplicateOverloadError when the overload arm t declared by decl
+// has the same parameters as one of the arms prev already binds.
+func (c *checker) checkDistinctArm(decl *ast.FuncDecl, t soltype.Type, prev ValueBinding) {
+	ft, ok := t.(*soltype.FuncType)
+	if !ok {
+		return
+	}
+	for i, sc := range prev.Schemes {
+		pt, ok := schemeType(sc).(*soltype.FuncType)
+		if !ok || !equallySpecific(pt, ft) {
+			continue
+		}
+		prevDecl, _ := bindingDecl(ValueBinding{Sources: prev.Sources[i:]}).(ast.Decl)
+		if prevDecl == nil {
+			continue
+		}
+		c.report(&DuplicateOverloadError{Decl: decl, Previous: prevDecl, Name: decl.Name.Name})
+		return
+	}
 }

@@ -121,6 +121,154 @@ func TestInferScriptClassOutOfOrder(t *testing.T) {
 	require.Equal(t, "Unknown identifier: Point", errs[0].Message())
 }
 
+// TestInferScriptTypeAndFuncDecls covers a `type` alias and a `declare fn` written at a
+// script's top level. Each binds where it appears, the way a class or enum does, so a
+// reference before the declaration is unbound. A `fn` with a body is still rejected.
+func TestInferScriptTypeAndFuncDecls(t *testing.T) {
+	tests := []struct {
+		name       string
+		src        string
+		wantValues map[string]string
+		wantTypes  map[string]string
+		wantErrs   []string
+	}{
+		{
+			name: "Alias",
+			src: `
+				type Point = {x: number, y: number}
+				val p: Point = {x: 5, y: 10}
+			`,
+			wantValues: map[string]string{"p": "Point"},
+			wantTypes:  map[string]string{"Point": "Point"},
+		},
+		{
+			name: "GenericRecursiveAlias",
+			src: `
+				type List<T> = {head: T, tail: List<T> | null}
+				val l: List<number> = {head: 1, tail: null}
+			`,
+			wantValues: map[string]string{"l": "List<number>"},
+		},
+		{
+			name: "AliasBeforeDeclaration",
+			src: `
+				val p: Point = {x: 5, y: 10}
+				type Point = {x: number, y: number}
+			`,
+			wantErrs: []string{"cannot find type `Point`"},
+		},
+		{
+			name: "DeclareFn",
+			// A tagged template literal needs backticks, which a raw string cannot hold.
+			src: "declare fn foo(strings: Array<string>, ...values: Array<number>) -> string\n" +
+				"val output = foo`${1} ${2}`",
+			wantValues: map[string]string{
+				"foo":    "fn (strings: Array<string>, ...values: Array<number>) -> string",
+				"output": "string",
+			},
+		},
+		{
+			name: "GenericDeclareFn",
+			src: `
+				declare fn id<T>(x: T) -> T
+				val n = id(5)
+				val s = id("a")
+			`,
+			wantValues: map[string]string{"n": "5", "s": "\"a\""},
+		},
+		{
+			name: "OverloadedDeclareFn",
+			src: `
+				declare fn parse(x: string) -> number
+				declare fn parse(x: number) -> string
+				val a = parse("1")
+				val b = parse(1)
+			`,
+			wantValues: map[string]string{"a": "number", "b": "string"},
+		},
+		{
+			name: "DuplicateOverloadArm",
+			src: `
+				declare fn g(x: number) -> number
+				declare fn g(x: number) -> string
+			`,
+			wantErrs: []string{"Overload arms must have distinguishable parameter types: g"},
+		},
+		{
+			name: "DeclareFnBeforeDeclaration",
+			src: `
+				val n = double(2)
+				declare fn double(x: number) -> number
+			`,
+			wantErrs: []string{"Unknown identifier: double"},
+		},
+		{
+			name: "DuplicateAlias",
+			src: `
+				type T = number
+				val x: T = 5
+				type T = string
+				val y: number = x
+			`,
+			wantErrs: []string{"Duplicate declaration: T"},
+		},
+		{
+			// A nested block is no top level, so the alias there is rejected and the one at the
+			// top level binds.
+			name: "AliasInANestedBlock",
+			src: `
+				if true { type T = string }
+				type T = number
+				val x: T = 5
+			`,
+			wantValues: map[string]string{"x": "T"},
+			wantErrs:   []string{"Declaration not allowed in function body: TypeDecl"},
+		},
+		{
+			name: "DeclareFnInANestedBlock",
+			src: `
+				if true { declare fn g() -> number }
+			`,
+			wantErrs: []string{"Declaration not allowed in function body: FuncDecl"},
+		},
+		{
+			name: "AliasReusingAClassName",
+			src: `
+				class T { x: number }
+				type T = number
+			`,
+			wantErrs: []string{"Duplicate declaration: T"},
+		},
+		{
+			name: "FnWithBodyRejected",
+			src: `
+				fn double(x: number) -> number { return x * 2 }
+			`,
+			wantErrs: []string{"Declaration not allowed in function body: FuncDecl"},
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			values, types, errs := inferScriptSource(t, tt.src)
+			msgs := make([]string, len(errs))
+			for i, e := range errs {
+				msgs[i] = e.Message()
+			}
+			if tt.wantErrs == nil {
+				require.Empty(t, msgs)
+			} else {
+				require.Equal(t, tt.wantErrs, msgs)
+			}
+			for name, want := range tt.wantValues {
+				require.Equal(t, want, values[name], name)
+			}
+			for name, want := range tt.wantTypes {
+				require.Equal(t, want, types[name], name)
+			}
+		})
+	}
+}
+
 // TestScriptTransitionParity is the milestone's central claim: a `mut`→immutable
 // transition at script top level is checked identically to the same statements
 // wrapped in a function body. Each case runs through InferScript directly, then again

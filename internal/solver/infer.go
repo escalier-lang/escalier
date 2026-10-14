@@ -159,6 +159,10 @@ type checker struct {
 	// printers already strip it to `Array`.
 	pkgURI string
 
+	// scriptScope is the scope a script's top-level statements bind into, and nil outside a
+	// script walk. atScriptRoot compares against it.
+	scriptScope *Scope
+
 	// moduleScope is the scope of the module currently being walked, set for the
 	// length of the dep-graph walk and nil outside one. declTarget returns it, and
 	// class, enum, and alias registration write their type binding there. A
@@ -629,6 +633,13 @@ func (c *checker) pushFuncCtx(async bool, node ast.Node, lvl int) *funcCtx {
 // such as a local enum declaration.
 func (c *checker) inScript() bool {
 	return c.fn != nil && c.fn.node == nil
+}
+
+// atScriptRoot reports whether scope is the one a script's top-level statements bind into.
+// inScript also holds inside a block nested at the top level, such as the body of an
+// `if`, and this tells the top level itself apart from such a block.
+func (c *checker) atScriptRoot(scope *Scope) bool {
+	return c.inScript() && scope == c.scriptScope
 }
 
 // throwsSink returns the type this body's exceptional exits are constrained against.
