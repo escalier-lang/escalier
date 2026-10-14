@@ -1453,3 +1453,37 @@ func TestInferMatchVariadicTupleScrutinee(t *testing.T) {
 		})
 	}
 }
+
+// TestInferMatchTupleRestOverAUnion covers a tuple rest over a union of tuples. The rest binds
+// each member's suffix, joined, so it keeps the length each member gives it.
+func TestInferMatchTupleRestOverAUnion(t *testing.T) {
+	tests := []struct {
+		name string
+		src  string
+		want string
+	}{
+		{
+			name: "MembersOfDifferentLengths",
+			src:  `fn f(t: [number] | [number, string]) { return match t { [a, ...r] => r } }`,
+			want: "fn (t: [number] | [number, string]) -> [] | [string]",
+		},
+		{
+			name: "MembersOfOneLength",
+			src:  `fn f(t: [number, string] | [boolean, number]) { return match t { [a, ...r] => r } }`,
+			want: "fn (t: [number, string] | [boolean, number]) -> [string] | [number]",
+		},
+		{
+			// `[a, b, ...r]` passes only the two-element member, so `r` reads its suffix alone.
+			name: "AMemberTooShortIsLeftOut",
+			src:  `fn f(t: [number] | [number, string]) { return match t { [a, b, ...r] => r, [a] => [] } }`,
+			want: "fn (t: [number] | [number, string]) -> []",
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			values, _, errs := inferSource(t, tt.src)
+			require.Empty(t, messagesWithSpan(t, errs))
+			require.Equal(t, tt.want, values["f"])
+		})
+	}
+}

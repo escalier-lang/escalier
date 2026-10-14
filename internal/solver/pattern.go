@@ -581,6 +581,9 @@ func (c *checker) tupleRestType(lvl int, node ast.Node, scrutinee soltype.Type, 
 		rest := c.ctx.variadicTuple(nil, shape.rest, nil)
 		return rest, rest
 	}
+	if rest, ok := c.unionTupleRest(scrutinee, prefix); ok {
+		return rest, rest
+	}
 	tup, ok := c.restTupleShape(scrutinee, scrutTup, concreteTup)
 	if !ok || len(tup.Elems) < prefix {
 		v := c.freshAt(lvl)
@@ -592,6 +595,44 @@ func (c *checker) tupleRestType(lvl int, node ast.Node, scrutinee soltype.Type, 
 		Inexact: tup.Inexact,
 	}
 	return suffix, suffix
+}
+
+// unionTupleRest returns the suffix from index prefix of each tuple member of scrutinee, a
+// union of tuples, joined into one union. So `[a, ...rest]` over `[number] | [number, string]`
+// binds `[] | [string]`. A member too short for prefix is left out, since a tuple test of
+// that arity passes no such member. It reports false when scrutinee is not a union, when a
+// member is not a tuple it can read, or when no member is long enough.
+func (c *checker) unionTupleRest(scrutinee soltype.Type, prefix int) (soltype.Type, bool) {
+	u, isUnion := groundedCarrier(scrutinee).(*soltype.UnionType)
+	if !isUnion {
+		return nil, false
+	}
+	var rests []soltype.Type
+	for _, member := range u.Types {
+		if shape, ok := c.ctx.variadicShape(member); ok {
+			if prefix <= len(shape.prefix) {
+				rests = append(rests, c.ctx.variadicTuple(shape.prefix[prefix:], shape.rest, shape.suffix))
+				continue
+			}
+			if len(shape.suffix) > 0 {
+				return nil, false
+			}
+			rests = append(rests, c.ctx.variadicTuple(nil, shape.rest, nil))
+			continue
+		}
+		tup, ok := c.groundedTuple(soltype.CarrierOf(member))
+		if !ok {
+			return nil, false
+		}
+		if len(tup.Elems) < prefix {
+			continue
+		}
+		rests = append(rests, &soltype.TupleType{Elems: slices.Clone(tup.Elems[prefix:]), Inexact: tup.Inexact})
+	}
+	if len(rests) == 0 {
+		return nil, false
+	}
+	return newUnion(c.ctx, rests), true
 }
 
 // restTupleShape picks the tuple a rest reads its suffix out of. It takes concreteTup at a
