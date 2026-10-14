@@ -1315,6 +1315,17 @@ type UnreachableMatchArmError struct {
 	Covering *ast.MatchCase
 }
 
+// CoveredMatchArmError fires when a `match` arm can never run because the arms above it
+// together already cover every value the scrutinee can take. The trailing `_` of
+// `match foo { a: string => …, b: number => …, _ => … }` over a `string | number` is such
+// an arm. UnreachableMatchArmError reports the case where one catch-all arm covers it alone.
+//
+// The arm is still type-checked, for the reason UnreachableMatchArmError gives. A `catch`
+// arm never draws this error, since a value no signature named can still reach it.
+type CoveredMatchArmError struct {
+	Arm *ast.MatchCase
+}
+
 // MissingCatchArmError fires when a `try` carries no catch arms. The arms are what catch
 // an exception, so a `try` without them changes nothing about the block it wraps. Either
 // resolution is fine. Dropping the `try` keeps the block saying what it already says, and
@@ -1387,6 +1398,7 @@ func (*YieldOutsideGenError) isSolverError()                {}
 func (*GenReturnNotGeneratorError) isSolverError()          {}
 func (*NonExhaustiveMatchError) isSolverError()             {}
 func (*UnreachableMatchArmError) isSolverError()            {}
+func (*CoveredMatchArmError) isSolverError()                {}
 func (*MissingCatchArmError) isSolverError()                {}
 func (*UnhandledRethrowError) isSolverError()               {}
 func (*MixedOwnershipError) isSolverError()                 {}
@@ -2379,6 +2391,12 @@ func matchArmSpan(arm *ast.MatchCase) ast.Span {
 }
 func (e *UnreachableMatchArmError) Message() string {
 	return "this match arm is unreachable because an arm above it matches every value; drop it, or move it above that arm"
+}
+
+func (e *CoveredMatchArmError) Span() ast.Span      { return matchArmSpan(e.Arm) }
+func (e *CoveredMatchArmError) Related() []ast.Span { return nil }
+func (e *CoveredMatchArmError) Message() string {
+	return "this match arm is unreachable because the arms above it already cover every value; drop it"
 }
 
 func (e *MissingCatchArmError) Span() ast.Span       { return e.Try.Span() }

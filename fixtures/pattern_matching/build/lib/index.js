@@ -170,8 +170,6 @@ temp34 = extendedPoint;
 if (temp34 != null && "x" in temp34 && "y" in temp34) {
   const {x, y, ...rest} = temp34;
   temp33 = rest;
-} else {
-  temp33 = 0;
 }
 export const objectRestMatch = temp33;
 let temp35;
@@ -268,8 +266,6 @@ temp56 = longTuple;
 if (temp56.length >= 1) {
   const [first = 0, ...rest] = temp56;
   temp55 = rest;
-} else {
-  temp55 = 0;
 }
 export const tupleRestMatch = temp55;
 let temp57;
