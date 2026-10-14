@@ -828,6 +828,52 @@ func TestInferTuplePatternRestFallbackGuards(t *testing.T) {
 	}
 }
 
+// TestInferMatchRestSubPatternAfterARefutableArm covers a tuple rest's sub-pattern in an arm
+// that follows a refutable one. Both arms share the `[_, ...]` test on `p`, so the second
+// arm is reached from each test the first one can fail, and its rest still reads the suffix
+// of `p`'s type, `[number | string]`.
+func TestInferMatchRestSubPatternAfterARefutableArm(t *testing.T) {
+	tests := []struct {
+		name string
+		src  string
+		want string
+	}{
+		{
+			name: "LiteralFirstArm",
+			src:  `fn f(p: [number, string | number]) { return match p { [a, ...[5]] => "s", [c, ...[d]] => "n" } }`,
+			want: `fn (p: [number, string | number]) -> "s" | "n"`,
+		},
+		{
+			name: "GuardedFirstArm",
+			src:  `fn f(p: [number, string | number]) { return match p { [a, ...[b]] if b == 1 => "s", [c, ...[d]] => "n" } }`,
+			want: `fn (p: [number, string | number]) -> "s" | "n"`,
+		},
+		{
+			name: "AnnotatedFirstArm",
+			src:  `fn f(p: [number, string | number]) { return match p { [a, ...[b: string]] => "s", [c, ...[d]] => "n" } }`,
+			want: `fn (p: [number, string | number]) -> "s" | "n"`,
+		},
+		{
+			// The members share one arity, so the suffix reads as their elementwise union.
+			name: "UnionOfTuplesScrutinee",
+			src:  `fn f(p: [number, string] | [number, boolean]) { return match p { [a, ...["x"]] => 0, [c, ...[d]] => d } }`,
+			want: "fn (p: [number, string] | [number, boolean]) -> 0 | string | boolean",
+		},
+		{
+			name: "SecondArmBindsTheSuffixElement",
+			src:  `fn f(p: [number, string | number]) { return match p { [a, ...[5]] => 0, [c, ...[d]] => d } }`,
+			want: "fn (p: [number, string | number]) -> string | number",
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			values, _, errs := inferSource(t, tt.src)
+			require.Empty(t, errs)
+			require.Equal(t, tt.want, values["f"])
+		})
+	}
+}
+
 // A rest the walk cannot place is reported once and recovered against a fresh variable,
 // so its leaves stay defined and a later reference resolves rather than cascading into an
 // unknown-identifier error. Each case asserts the single reported error and reads a leaf
