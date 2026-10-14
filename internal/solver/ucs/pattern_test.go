@@ -226,9 +226,9 @@ func TestShallowTestKeepsShorthandElements(t *testing.T) {
 	require.Same(t, elem, binds[0].elem)
 }
 
-// A shorthand whose annotation narrows, the `x::number` of `{x::number}`, binds nameless.
-// binder.wrap turns that bind into a split testing the annotation, with the named leaf
-// beneath it.
+// A shorthand with a narrowing annotation, such as `{x::number}`, produces a bind with
+// an empty `name`. binder.wrap turns that bind into a split that tests `number`, and
+// `x` is bound inside the split's branch.
 func TestShallowTestLeavesANarrowingShorthandNameless(t *testing.T) {
 	elem := ast.NewObjShorthandPat(
 		ast.NewIdentifier("x", ast.Span{}), false, ast.NewNumberTypeAnn(ast.Span{}), nil, span(47, 57),

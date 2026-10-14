@@ -296,8 +296,11 @@ func objectTest(p *ast.ObjectPat, scrutinee *Scrutinee, origin Origin) (Test, []
 			// The solver reads the annotation, default, and `mut` marker off it, none of
 			// which the name alone carries.
 			//
-			// A shorthand whose annotation narrows, the `a::number` of `{a::number}`, stays
-			// nameless, so binder.wrap turns it into a split that tests the annotation.
+			// A shorthand with a narrowing annotation, such as `{a::number}`, leaves
+			// `name` empty. binder.wrap then sends it through binder.flatten instead of
+			// binding it directly. flatten builds a split on the projection `scrutinee.a`
+			// whose one branch tests `number`, and `a` is bound inside that branch. A
+			// value that fails the test falls through to the next arm.
 			leaf := leafOrigin(origin, e)
 			spec := bindSpec{
 				elem:   e,
@@ -356,9 +359,10 @@ func appendBind(binds []bindSpec, p ast.Pat, parent *Scrutinee, step Step, origi
 	}
 	leaf := leafOrigin(origin, p)
 	spec := bindSpec{pat: p, source: parent.Project(step, leaf), origin: leaf}
-	// An annotated identifier stays nameless, so binder.wrap turns it into a split that
-	// tests its annotation and binds it beneath the test. Codegen guards the same leaf with
-	// a runtime type check, so the two agree on which values the pattern matches.
+	// An annotated identifier leaves `name` empty. binder.wrap then sends it through
+	// binder.flatten, which builds a split on the projection that tests the annotation,
+	// and the identifier is bound inside that split's branch. Codegen guards the same
+	// leaf with a runtime type check, so the two agree on which values the pattern matches.
 	if ident, ok := p.(*ast.IdentPat); ok && ident.TypeAnn == nil {
 		spec.name = ident.Name
 	}
