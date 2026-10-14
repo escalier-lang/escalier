@@ -24,7 +24,7 @@ export async function fetchMultiple(temp4, temp5) {
 export async function fetchWithAwait(temp6) {
   const url = temp6;
   const data = await fetch(url);
-  return data;
+  return await data.text();
 }
 export async function fetchWithError(temp7) {
   const shouldError = temp7;

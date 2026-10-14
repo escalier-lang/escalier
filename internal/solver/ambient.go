@@ -46,6 +46,8 @@ var ambientPackages = []string{
 	"std:typed_arrays",
 	"std:url",
 	"std:weak_ref",
+	"web:core",
+	"web:fetch",
 }
 
 // ambientScope returns the per-run scope that holds the ambient builtins, creating
@@ -76,6 +78,9 @@ func (c *checker) ambientScope() *Scope {
 // A package the source does not answer for binds nothing and reports nothing. A
 // package that loads and reports diagnostics of its own reaches the run with them.
 // The first package to claim a name keeps it.
+//
+// A run with Options.NoAmbientNames set binds nothing, so the ambient scope stays empty.
+// It loads only the packages shapePackages lists.
 func (c *checker) bindAmbientExports() {
 	// The packages draw from the range the prelude draws from, so a program's own
 	// variables and symbols are numbered the same whether or not any builtin loaded.
@@ -87,7 +92,11 @@ func (c *checker) bindAmbientExports() {
 	}()
 
 	b := &ambientBinder{scope: c.ambientScope(), namespaces: map[string]*Namespace{}}
-	for _, uri := range ambientPackages {
+	packages := ambientPackages
+	if c.noAmbientNames {
+		packages = shapePackages()
+	}
+	for _, uri := range packages {
 		ns, errs := c.loadPackage(uri, ast.Span{})
 		// A run against a tree that lacks the package, such as a test's partial tree,
 		// goes on without its names.
@@ -97,8 +106,25 @@ func (c *checker) bindAmbientExports() {
 		for _, err := range errs {
 			c.report(err)
 		}
-		b.bindPackage(ns)
+		if !c.noAmbientNames {
+			b.bindPackage(ns)
+		}
 	}
+}
+
+// shapePackages returns, sorted, the packages that declare a class the checker reads with
+// no name in scope: each primitive's wrapper and `RegExp`. The prelude is left out, since
+// every run loads it first.
+func shapePackages() []string {
+	uris := set.FromSlice([]string{regexpClass.uri})
+	for _, wrapper := range primitiveWrappers {
+		if wrapper.uri != preludeURI {
+			uris.Add(wrapper.uri)
+		}
+	}
+	sorted := uris.ToSlice()
+	slices.Sort(sorted)
+	return sorted
 }
 
 // ambientBinder fills one ambient scope. namespaces maps each dotted `@js` prefix

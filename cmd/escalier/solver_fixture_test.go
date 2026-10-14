@@ -40,10 +40,6 @@ type solverSkipCause struct {
 }
 
 var (
-	causeAmbientScope = &solverSkipCause{
-		name:   "a global the ambient builtin scope will bind",
-		ticket: "#1666",
-	}
 	causeUnionMember = &solverSkipCause{
 		name:   "a property read on a union whose arms do not all declare it",
 		ticket: "#1719",
@@ -71,8 +67,6 @@ type solverSkip struct {
 // A fixture rejected for several causes is filed under the one to clear first. Its
 // other diagnostics surface once that one lands and the entry is re-seeded.
 var solverSkips = []solverSkip{
-	{"async_await", causeAmbientScope, "Unknown identifier: fetch"},
-
 	{"try_catch", causeCaughtValue, "cannot constrain unknown <: string"},
 
 	{"member_access", causeUnionMember, "the package is accepted, and error.txt records a rejection"},
@@ -153,7 +147,9 @@ func TestCheckFixturesOnSolver(t *testing.T) {
 
 			_, statErr := os.Stat(filepath.Join(fixtureDir, "error.txt"))
 			wantRejected := statErr == nil
-			diagnostics := checkOnSolver(sources)
+			config, err := compiler.ReadPackageConfig(fixtureDir)
+			require.NoError(t, err)
+			diagnostics := checkOnSolver(sources, config)
 
 			if skipped {
 				// Re-run rather than trusting the list. An entry that starts passing is
@@ -174,7 +170,7 @@ func TestCheckFixturesOnSolver(t *testing.T) {
 			// A package that checks on both is emitted by both, and the two outputs have
 			// to agree. Checking alone would miss a type the emitter reads to decide
 			// what to write, which is the whole class of fault #1673 closes.
-			requireSameEmittedOutput(t, entry.Name(), sources)
+			requireSameEmittedOutput(t, entry.Name(), sources, config)
 		})
 	}
 
@@ -184,8 +180,8 @@ func TestCheckFixturesOnSolver(t *testing.T) {
 // preludeURI is the package every run loads whether or not the source imports it.
 const preludeURI = "std:prelude"
 
-// checkOnSolver checks one package and returns the diagnostics that belong to it,
-// rendered as the run reports them.
+// checkOnSolver checks one package as config says and returns the diagnostics that belong
+// to it, rendered as the run reports them.
 //
 // The prelude's own diagnostics are dropped. Every run loads it and it currently
 // reports two, so counting them would make all 73 fixtures look rejected. Clearing
@@ -194,8 +190,8 @@ const preludeURI = "std:prelude"
 // ambient scope, whose packages all check clean.
 //
 // Warnings are dropped as well, since a warning does not reject the package.
-func checkOnSolver(sources []*ast.Source) []string {
-	output := compiler.CheckPackage(sources)
+func checkOnSolver(sources []*ast.Source, config compiler.PackageConfig) []string {
+	output := compiler.CheckPackage(sources, config)
 
 	var diagnostics []string
 	for _, diagnostic := range output.TypeErrors {
@@ -357,18 +353,18 @@ var (
 	}
 )
 
-// requireSameEmittedOutput compiles sources under each checker and fails on any
-// difference in the artifacts comparedArtifacts names.
+// requireSameEmittedOutput compiles sources under each checker, as config says, and fails
+// on any difference in the artifacts comparedArtifacts names.
 //
 // The checker's output is the expectation rather than a committed golden, because what
 // is being asked is whether the two agree. A committed golden would also answer that,
 // at the cost of a second copy of every fixture's output to keep in step.
-func requireSameEmittedOutput(t *testing.T, fixture string, sources []*ast.Source) {
+func requireSameEmittedOutput(t *testing.T, fixture string, sources []*ast.Source, config compiler.PackageConfig) {
 	t.Helper()
 
-	solverOutput := compiler.CompilePackage(sources)
+	solverOutput := compiler.CompilePackage(sources, config)
 	t.Setenv(compiler.CheckerEnvVar, "")
-	checkerOutput := compiler.CompilePackage(sources)
+	checkerOutput := compiler.CompilePackage(sources, config)
 	t.Setenv(compiler.CheckerEnvVar, compiler.CheckerSolver)
 
 	require.Equal(t, unitNames(checkerOutput), unitNames(solverOutput),

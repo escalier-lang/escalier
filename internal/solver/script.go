@@ -47,21 +47,23 @@ import (
 // source supplies `std:prelude` the way it does for a module, since a script's rules
 // name the same `Array` and `Promise` a module's do.
 func InferScript(script *ast.Script, source ModuleSource) (*Scope, *Info, []SolverError) {
-	return inferScriptWithGroups(script, source, nil, nil)
+	return inferScriptWithGroups(script, source, nil, nil, Options{})
 }
 
 // inferScriptWithGroups is InferScript with the groups a stdlib directory adds, the
-// script counterpart to inferModuleWithGroups.
+// script counterpart to inferModuleWithGroups. opts adjusts the run.
 func inferScriptWithGroups(
 	script *ast.Script,
 	source ModuleSource,
 	groupSource GroupSource,
 	groups PackageGroups,
+	opts Options,
 ) (*Scope, *Info, []SolverError) {
 	c := newChecker()
 	c.source = source
 	c.groupSource = groupSource
 	c.groups = groups
+	c.noAmbientNames = opts.NoAmbientNames
 	c.bindAmbientExports()
 	return c.inferScriptIn(c.ambientScope().Child(), script)
 }

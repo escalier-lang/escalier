@@ -68,7 +68,7 @@ func TestSelectBackend(t *testing.T) {
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
 			t.Setenv(CheckerEnvVar, test.value)
-			require.IsType(t, test.want, selectBackend())
+			require.IsType(t, test.want, selectBackend(PackageConfig{}))
 		})
 	}
 }
@@ -81,14 +81,14 @@ func TestCheckLibReportsATypeError(t *testing.T) {
 
 	t.Run("Checker", func(t *testing.T) {
 		useChecker(t)
-		out := CheckLib(context.Background(), libSources(src))
+		out := CheckLib(context.Background(), libSources(src), PackageConfig{})
 		require.Empty(t, out.ParseErrors)
 		require.Contains(t, messages(out.TypeErrors), `"hello" cannot be assigned to number`)
 	})
 
 	t.Run("Solver", func(t *testing.T) {
 		useSolver(t)
-		out := CheckLib(context.Background(), libSources(src))
+		out := CheckLib(context.Background(), libSources(src), PackageConfig{})
 		require.Empty(t, out.ParseErrors)
 		require.Contains(t, messages(out.TypeErrors), `cannot constrain "hello" <: number`)
 	})
@@ -113,14 +113,14 @@ func TestCheckBinScriptReadsTheLibrary(t *testing.T) {
 		t.Run(test.name, func(t *testing.T) {
 			test.setup(t)
 			ctx := context.Background()
-			libOutput := CheckLib(ctx, libSources(lib))
+			libOutput := CheckLib(ctx, libSources(lib), PackageConfig{})
 			require.NotNil(t, libOutput.LibScope)
 
-			resolved := CheckBinScript(ctx, libOutput.LibScope, binSource("val g = greeting\n"))
+			resolved := CheckBinScript(ctx, libOutput.LibScope, binSource("val g = greeting\n"), PackageConfig{})
 			require.Empty(t, resolved.ParseErrors)
 			require.NotContains(t, messages(resolved.TypeErrors), "Unknown identifier: greeting")
 
-			unresolved := CheckBinScript(ctx, libOutput.LibScope, binSource("val f = farewell\n"))
+			unresolved := CheckBinScript(ctx, libOutput.LibScope, binSource("val f = farewell\n"), PackageConfig{})
 			require.Empty(t, unresolved.ParseErrors)
 			require.Contains(t, messages(unresolved.TypeErrors), "Unknown identifier: farewell")
 		})
@@ -147,7 +147,7 @@ func TestCompileScriptImportsUsedLibSymbols(t *testing.T) {
 			test.setup(t)
 			ctx := context.Background()
 
-			libOutput := CheckLib(ctx, libSources(lib))
+			libOutput := CheckLib(ctx, libSources(lib), PackageConfig{})
 			require.NotNil(t, libOutput.LibScope)
 
 			out := CompileScript(libOutput.LibScope, binSource("val g = greeting\n"))
@@ -169,13 +169,13 @@ func TestCompileReportsTheSolverCodegenGap(t *testing.T) {
 
 	t.Run("Checker", func(t *testing.T) {
 		useChecker(t)
-		out := CompilePackage(append(libSources("export val greeting = \"hello\"\n"), binSource("val g = greeting\n")))
+		out := CompilePackage(append(libSources("export val greeting = \"hello\"\n"), binSource("val g = greeting\n")), PackageConfig{})
 		require.NotContains(t, messages(out.TypeErrors), gap)
 	})
 
 	t.Run("Solver", func(t *testing.T) {
 		useSolver(t)
-		out := CompilePackage(append(libSources("export val greeting = \"hello\"\n"), binSource("val g = greeting\n")))
+		out := CompilePackage(append(libSources("export val greeting = \"hello\"\n"), binSource("val g = greeting\n")), PackageConfig{})
 		// One for the library's compilation unit and one for the script's, since
 		// each is a file whose emitted output is wrong.
 		require.Equal(t, 2, countMessage(messages(out.TypeErrors), gap))
@@ -254,7 +254,7 @@ func TestCompileScriptImportsALibraryNamespace(t *testing.T) {
 			test.setup(t)
 			ctx := context.Background()
 
-			libOutput := CheckLib(ctx, libSources(lib))
+			libOutput := CheckLib(ctx, libSources(lib), PackageConfig{})
 			require.NotNil(t, libOutput.LibScope)
 
 			out := CompileScript(libOutput.LibScope, binSource("val o = Geometry.origin\n"))
@@ -273,7 +273,7 @@ func TestCheckLibWithoutAStandardLibrary(t *testing.T) {
 	empty := t.TempDir()
 	t.Setenv("ESCALIER_STDLIB_DIR", empty)
 
-	out := CheckLib(context.Background(), libSources("export val greeting = \"hello\"\n"))
+	out := CheckLib(context.Background(), libSources("export val greeting = \"hello\"\n"), PackageConfig{})
 
 	require.Empty(t, out.ParseErrors)
 	want := "cannot find the standard library: ESCALIER_STDLIB_DIR=" + strconv.Quote(empty) +
@@ -321,7 +321,7 @@ func TestCompileWithoutAStandardLibrary(t *testing.T) {
 // saying it cannot be trusted.
 func TestCompileScriptReportsTheGapOfTheCheckerThatChecked(t *testing.T) {
 	useSolver(t)
-	libOutput := CheckLib(context.Background(), libSources("export val greeting = \"hello\"\n"))
+	libOutput := CheckLib(context.Background(), libSources("export val greeting = \"hello\"\n"), PackageConfig{})
 	require.NotNil(t, libOutput.LibScope)
 
 	// The library keeps the solver. The variable goes back to the old checker.
@@ -404,7 +404,7 @@ func TestSolverEmitsDefinitionsForEveryFixture(t *testing.T) {
 			}
 
 			useSolver(t)
-			out := CompilePackage(sources)
+			out := CompilePackage(sources, PackageConfig{})
 			require.NotEmpty(t, out.CompUnits["lib/index"].DTS)
 		})
 	}
@@ -458,9 +458,9 @@ func TestBothCheckersEmitTheSameJS(t *testing.T) {
 			sources := libSources(source)
 
 			useChecker(t)
-			want := CompilePackage(sources).CompUnits["lib/index"].JS
+			want := CompilePackage(sources, PackageConfig{}).CompUnits["lib/index"].JS
 			useSolver(t)
-			got := CompilePackage(sources).CompUnits["lib/index"].JS
+			got := CompilePackage(sources, PackageConfig{}).CompUnits["lib/index"].JS
 
 			require.NotEmpty(t, want, "the checker emits something to compare against")
 			require.Equal(t, want, got, "the two checkers emit different JavaScript")
@@ -489,7 +489,7 @@ func TestAPatternOnAnAliasEmitsNoInstanceOfGuard(t *testing.T) {
 	for name, use := range map[string]func(*testing.T){"checker": useChecker, "solver": useSolver} {
 		t.Run(name, func(t *testing.T) {
 			use(t)
-			js := CompilePackage(sources).CompUnits["lib/index"].JS
+			js := CompilePackage(sources, PackageConfig{}).CompUnits["lib/index"].JS
 			require.NotEmpty(t, js)
 			require.NotContains(t, js, "instanceof Alias",
 				"an alias has no runtime binding, so the guard would throw a ReferenceError")
@@ -515,9 +515,9 @@ func TestBothCheckersEmitTheSameDefinitionsForAnExtractor(t *testing.T) {
 	`)
 
 	useChecker(t)
-	want := CompilePackage(sources).CompUnits["lib/index"].DTS
+	want := CompilePackage(sources, PackageConfig{}).CompUnits["lib/index"].DTS
 	useSolver(t)
-	got := CompilePackage(sources).CompUnits["lib/index"].DTS
+	got := CompilePackage(sources, PackageConfig{}).CompUnits["lib/index"].DTS
 
 	require.Contains(t, want, "[Symbol.customMatcher](subject: C): [string]",
 		"the checker declares the matcher, so there is something to match against")
@@ -553,7 +553,7 @@ func TestTheSolverEmitsAClassTypeParameterBound(t *testing.T) {
 	for name, src := range tests {
 		t.Run(name, func(t *testing.T) {
 			useSolver(t)
-			dts := CompilePackage(libSources(src)).CompUnits["lib/index"].DTS
+			dts := CompilePackage(libSources(src), PackageConfig{}).CompUnits["lib/index"].DTS
 			require.Contains(t, dts,
 				"declare const Holder: {new <T extends {value: number}>(peer: T): Holder<T>};")
 		})
@@ -629,9 +629,9 @@ func TestBothCheckersBindAClassTypeParamOnItsConstructor(t *testing.T) {
 	for name, test := range tests {
 		t.Run(name, func(t *testing.T) {
 			useChecker(t)
-			want := CompilePackage(libSources(test.src)).CompUnits["lib/index"].DTS
+			want := CompilePackage(libSources(test.src), PackageConfig{}).CompUnits["lib/index"].DTS
 			useSolver(t)
-			got := CompilePackage(libSources(test.src)).CompUnits["lib/index"].DTS
+			got := CompilePackage(libSources(test.src), PackageConfig{}).CompUnits["lib/index"].DTS
 
 			require.Contains(t, want, test.want)
 			require.Equal(t, want, got, "the two checkers emit different definitions")
@@ -653,7 +653,7 @@ func TestTheSolverBindsAClassTypeParamOnItsConstructor(t *testing.T) {
 		    peer: T,
 		    static s(x: number) -> number { return x },
 		}
-	`)).CompUnits["lib/index"].DTS
+	`), PackageConfig{}).CompUnits["lib/index"].DTS
 
 	require.Contains(t, dts,
 		"declare const Holder: {new <T extends {value: number}>(peer: T): Holder<T>, s(x: number): number};")
@@ -676,9 +676,9 @@ func TestAGenericClassStaticSideIsSubsumed(t *testing.T) {
 	`
 
 	useChecker(t)
-	want := CompilePackage(libSources(src)).CompUnits["lib/index"].DTS
+	want := CompilePackage(libSources(src), PackageConfig{}).CompUnits["lib/index"].DTS
 	useSolver(t)
-	got := CompilePackage(libSources(src)).CompUnits["lib/index"].DTS
+	got := CompilePackage(libSources(src), PackageConfig{}).CompUnits["lib/index"].DTS
 
 	require.Contains(t, want, "pick(flag: boolean, n: number): number}")
 	require.Equal(t, want, got, "the two checkers emit different definitions")
@@ -697,9 +697,9 @@ func TestBothCheckersSynthesizeAComputedKeyConstructor(t *testing.T) {
 	src := "class Odd {\n\t[Symbol.iterator]: number,\n}"
 
 	useChecker(t)
-	want := CompilePackage(libSources(src)).CompUnits["lib/index"].JS
+	want := CompilePackage(libSources(src), PackageConfig{}).CompUnits["lib/index"].JS
 	useSolver(t)
-	got := CompilePackage(libSources(src)).CompUnits["lib/index"].JS
+	got := CompilePackage(libSources(src), PackageConfig{}).CompUnits["lib/index"].JS
 
 	require.Contains(t, want, "this[Symbol.iterator] = _field1;")
 	require.Equal(t, want, got, "the two checkers emit different JavaScript")
@@ -716,9 +716,9 @@ func TestNeitherCheckerSynthesizesAKeyFromACall(t *testing.T) {
 	src := "declare fn makeKey() -> unique symbol\nclass Odd {\n\t[makeKey()]: number,\n}"
 
 	useChecker(t)
-	want := CompilePackage(libSources(src)).CompUnits["lib/index"].JS
+	want := CompilePackage(libSources(src), PackageConfig{}).CompUnits["lib/index"].JS
 	useSolver(t)
-	got := CompilePackage(libSources(src)).CompUnits["lib/index"].JS
+	got := CompilePackage(libSources(src), PackageConfig{}).CompUnits["lib/index"].JS
 
 	require.NotContains(t, want, "constructor")
 	require.Equal(t, want, got, "the two checkers emit different JavaScript")
@@ -838,7 +838,7 @@ export declare const k: typeof n.a.b;
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			useSolver(t)
-			dts := CompilePackage(libSources(tt.src)).CompUnits["lib/index"].DTS
+			dts := CompilePackage(libSources(tt.src), PackageConfig{}).CompUnits["lib/index"].DTS
 			require.Equal(t, tt.want, dts)
 		})
 	}
@@ -856,7 +856,7 @@ func TestTheSolverEmitsARootSymbolInsideANamespace(t *testing.T) {
 		{ID: 1, Path: "lib/plain/a.esc", Contents: "export val s2 = sym\nexport val o = {[sym]: 1}\n"},
 		{ID: 2, Path: "lib/shadow/b.esc", Contents: "export val sym = 5\nexport val s3 = r\nexport val o2 = {[r]: 1}\n"},
 	}
-	dts := CompilePackage(sources).CompUnits["lib/index"].DTS
+	dts := CompilePackage(sources, PackageConfig{}).CompUnits["lib/index"].DTS
 	require.Equal(t, `declare const __sym_symbol: typeof sym;
 export declare const sym: unique symbol;
 export declare const r: typeof sym;
@@ -881,7 +881,7 @@ func TestTheSolverEmitsASymbolANamespacedTypeDeclares(t *testing.T) {
 		{ID: 0, Path: "lib/index.esc", Contents: "export declare val i: ns.I\nexport val o = {[i.key]: 1}\n"},
 		{ID: 1, Path: "lib/ns/a.esc", Contents: "export declare interface I { readonly key: unique symbol }\n"},
 	}
-	dts := CompilePackage(sources).CompUnits["lib/index"].DTS
+	dts := CompilePackage(sources, PackageConfig{}).CompUnits["lib/index"].DTS
 	require.Equal(t, `export declare const i: ns.I;
 export declare const o: {[i.key]: 1};
 declare namespace ns {
@@ -898,7 +898,7 @@ declare namespace ns {
 func TestTheSolverEmitsABlockSymbolApartFromARootOne(t *testing.T) {
 	useSolver(t)
 	src := "export declare val sym: unique symbol\nexport val x = do {\n\tdeclare val sym: unique symbol\n\tsym\n}\nexport val o = {[x]: 1}\n"
-	dts := CompilePackage(libSources(src)).CompUnits["lib/index"].DTS
+	dts := CompilePackage(libSources(src), PackageConfig{}).CompUnits["lib/index"].DTS
 	require.Equal(t, `export declare const x: unique symbol;
 export declare const o: {[x]: 1};
 export declare const sym: unique symbol;
@@ -913,7 +913,7 @@ func TestTheSolverEmitsARegexCaptureAsString(t *testing.T) {
 	useSolver(t)
 	src := "export type Strip<T> = if T : /^_*(?<Ident>\\w+)_*$/ { Ident } else { T }\n" +
 		"export type Opt<T> = if T : /^a(?<B>b)?$/ { [B] } else { never }"
-	got := CompilePackage(libSources(src)).CompUnits["lib/index"].DTS
+	got := CompilePackage(libSources(src), PackageConfig{}).CompUnits["lib/index"].DTS
 	require.Equal(t, "export declare type Opt<T> = T extends string ? [string | undefined] : never;\n"+
 		"export declare type Strip<T> = T extends string ? string : T;\n", got)
 }
@@ -989,9 +989,9 @@ func TestBothCheckersBindOnlyAMethodRead(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			useChecker(t)
-			checked := CompilePackage(libSources(tt.src)).CompUnits["lib/index"].JS
+			checked := CompilePackage(libSources(tt.src), PackageConfig{}).CompUnits["lib/index"].JS
 			useSolver(t)
-			solved := CompilePackage(libSources(tt.src)).CompUnits["lib/index"].JS
+			solved := CompilePackage(libSources(tt.src), PackageConfig{}).CompUnits["lib/index"].JS
 
 			require.Contains(t, solved, tt.want)
 			require.Equal(t, checked, solved, "the two checkers emit different JavaScript")
@@ -1007,6 +1007,6 @@ func TestTheSolverBindsAMethodReadThroughAUnion(t *testing.T) {
 	src := "class A {\n\tm(&self) -> number { return 1 },\n}\n" +
 		"class B {\n\tm(&self) -> number { return 2 },\n}\n" +
 		"declare val x: A | B\nexport val g = x.m"
-	got := CompilePackage(libSources(src)).CompUnits["lib/index"].JS
+	got := CompilePackage(libSources(src), PackageConfig{}).CompUnits["lib/index"].JS
 	require.Contains(t, got, "export const g = x.m.bind(x);")
 }

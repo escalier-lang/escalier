@@ -34,14 +34,17 @@ import (
 //
 // internal/solver takes no context, so each method names the parameter `_` to say the
 // caller's deadline bounds nothing here.
-type solverBackend struct{}
+type solverBackend struct {
+	// options adjusts every run the backend starts.
+	options solver.Options
+}
 
 // checkLib infers module against the standard library tree on disk. The run resolves
 // each `import "std:*"` through that tree, and the result carries the dep graph the
 // walk ordered the module's declarations by.
-func (solverBackend) checkLib(_ context.Context, module *ast.Module) libResult {
+func (b solverBackend) checkLib(_ context.Context, module *ast.Module) libResult {
 	dir, dirErrs := solverStdlibDir(moduleSpan(module))
-	result := solver.InferModuleAgainstStdlib(module, dir)
+	result := solver.InferModuleAgainstStdlib(module, dir, b.options)
 	return libResult{
 		lib:         &solverLibScope{module: result},
 		depGraph:    result.DepGraph,
@@ -54,9 +57,9 @@ func (solverBackend) checkLib(_ context.Context, module *ast.Module) libResult {
 
 // checkScript infers script against the standard library tree on disk, which supplies
 // the prelude and the ambient builtins.
-func (solverBackend) checkScript(_ context.Context, script *ast.Script) scriptResult {
+func (b solverBackend) checkScript(_ context.Context, script *ast.Script) scriptResult {
 	dir, dirErrs := solverStdlibDir(scriptSpan(script))
-	_, info, errs := solver.InferScriptAgainstStdlib(script, dir)
+	_, info, errs := solver.InferScriptAgainstStdlib(script, dir, b.options)
 	return scriptResult{
 		jsTypes:     codegen.SolverJSTypes{Types: &solverSolTypes{info: info}},
 		diagnostics: append(dirErrs, diagnostics(errs)...),

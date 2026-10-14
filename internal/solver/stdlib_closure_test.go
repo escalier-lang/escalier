@@ -106,7 +106,7 @@ func TestTheClosureIsEmptyWithoutRoots(t *testing.T) {
 // the prelude classes the checker's own rules name merged in.
 func inferAgainstCyclicStdlib(t *testing.T, src string, files map[string]string) *ModuleResult {
 	t.Helper()
-	return InferModuleAgainstStdlib(parseModule(t, src), seedStdlib(t, withPreludeClasses(files)))
+	return InferModuleAgainstStdlib(parseModule(t, src), seedStdlib(t, withPreludeClasses(files)), Options{})
 }
 
 // Two packages naming each other load once, and each resolves the other's
@@ -514,7 +514,7 @@ func TestTheCommittedTreeLoadsItsCycles(t *testing.T) {
 	res := InferModuleAgainstStdlib(parseModule(t, `
 		import "web:dom"
 		val x = 1
-	`), committedTree)
+	`), committedTree, Options{})
 
 	for _, uri := range members {
 		ns, found := res.Packages.Lookup(uri)
@@ -537,7 +537,7 @@ func TestTheCommittedLocaleTakesItsImplementedMembers(t *testing.T) {
 		import "std:intl"
 		declare val locale: intl.Locale
 		val calendar = locale.calendar
-	`), committedTree)
+	`), committedTree, Options{})
 
 	require.Empty(t, errorMessagesOf(res.Errors))
 	require.Equal(t, "string | undefined", soltype.Print(inferredValueType(t, res.Scope, "calendar")))
@@ -566,7 +566,7 @@ func TestTheCommittedEventTargetRejectsANullListener(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
-			res := InferModuleAgainstStdlib(parseModule(t, tt.src), committedTree)
+			res := InferModuleAgainstStdlib(parseModule(t, tt.src), committedTree, Options{})
 			if tt.wantErr == "" {
 				require.Empty(t, errorMessagesOf(res.Errors))
 				return
@@ -604,7 +604,7 @@ func TestTheCommittedTreeLoadsCleanForStdAndWebFetch(t *testing.T) {
 		}
 		t.Run(name, func(t *testing.T) {
 			t.Parallel()
-			res := InferModuleAgainstStdlib(parseModule(t, src), committedTree)
+			res := InferModuleAgainstStdlib(parseModule(t, src), committedTree, Options{})
 			require.Empty(t, errorMessagesOf(res.Errors))
 		})
 	}
@@ -662,7 +662,7 @@ func TestTheCommittedTreeReachesEachAPIUnderItsOwnPackage(t *testing.T) {
 		t.Run(name, func(t *testing.T) {
 			t.Parallel()
 			src := "import \"" + test.uri + "\"\n" + test.src + "\n"
-			res := InferModuleAgainstStdlib(parseModule(t, src), committedTree)
+			res := InferModuleAgainstStdlib(parseModule(t, src), committedTree, Options{})
 			// The committed tree reports known diagnostics of its own, so what
 			// this asserts is the member's type rather than a clean run. Naming
 			// the old prefix, as in `dom.Credential`, leaves `read` at `never`.
@@ -887,7 +887,7 @@ func TestTheCommittedTypedArraysResolveTheirOwnNames(t *testing.T) {
 	res := InferModuleAgainstStdlib(parseModule(t, `
 		import "std:typed_arrays"
 		val x = 1
-	`), committedTree)
+	`), committedTree, Options{})
 
 	for _, msg := range errorMessagesOf(res.Errors) {
 		require.NotContains(t, msg, "cannot find type")

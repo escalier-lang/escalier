@@ -217,8 +217,8 @@ func sortedGroup(group []string) []string {
 // It is the entry point a run with a stdlib directory uses rather than
 // InferModuleWithSource, because loading a package needs two things a bare
 // ModuleSource cannot supply: the closure a module's imports reach, and a
-// reader for the whole closure at once.
-func InferModuleAgainstStdlib(module *ast.Module, dir string) *ModuleResult {
+// reader for the whole closure at once. opts adjusts the run.
+func InferModuleAgainstStdlib(module *ast.Module, dir string, opts Options) *ModuleResult {
 	// Every run loads the ambient packages, so they root the closure beside the
 	// module's own imports. Left out, they would load one at a time and miss the
 	// groups their imports form.
@@ -229,27 +229,27 @@ func InferModuleAgainstStdlib(module *ast.Module, dir string) *ModuleResult {
 		// Nothing is known about what the imports reach, so every package loads
 		// alone. That is right for the tree a readable directory would have held
 		// and reports honestly for one that cycles.
-		result := InferModuleWithSource(module, StdlibSource(dir))
+		result := inferModuleWithGroups(module, StdlibSource(dir), nil, nil, opts)
 		result.Errors = append(result.Errors, &UnresolvedPackageError{
 			URI: dir, Reason: err.Error(), span: ast.Span{},
 		})
 		return result
 	}
-	return inferModuleWithGroups(module, StdlibSource(dir), StdlibGroupSource(dir), groups)
+	return inferModuleWithGroups(module, StdlibSource(dir), StdlibGroupSource(dir), groups, opts)
 }
 
 // InferScriptAgainstStdlib infers script against the pseudo-packages in dir. It is
 // the script counterpart to InferModuleAgainstStdlib. A script binds no imports, so
-// the closure grows from the ambient packages alone.
-func InferScriptAgainstStdlib(script *ast.Script, dir string) (*Scope, *Info, []SolverError) {
+// the closure grows from the ambient packages alone. opts adjusts the run.
+func InferScriptAgainstStdlib(script *ast.Script, dir string, opts Options) (*Scope, *Info, []SolverError) {
 	groups, err := BuildPackageClosure(dir, ambientPackages)
 	if err != nil {
-		scope, info, errs := InferScript(script, StdlibSource(dir))
+		scope, info, errs := inferScriptWithGroups(script, StdlibSource(dir), nil, nil, opts)
 		return scope, info, append(errs, &UnresolvedPackageError{
 			URI: dir, Reason: err.Error(), span: ast.Span{},
 		})
 	}
-	return inferScriptWithGroups(script, StdlibSource(dir), StdlibGroupSource(dir), groups)
+	return inferScriptWithGroups(script, StdlibSource(dir), StdlibGroupSource(dir), groups, opts)
 }
 
 // pseudoPackageImportsOf returns the pseudo-package URIs a module's files import,

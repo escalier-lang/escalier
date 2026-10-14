@@ -441,7 +441,7 @@ func (server *Server) validateBinScript(
 
 	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
 	defer cancel()
-	result := compiler.CheckBinScript(ctx, lib, src)
+	result := compiler.CheckBinScript(ctx, lib, src, packageConfig(rootPath))
 
 	// Verify staleness and update caches.
 	server.mu.Lock()
@@ -476,6 +476,17 @@ func (server *Server) validateBinScript(
 	server.publishDiagnosticsForScript(lspContext, uri, version, triggerSourceID, src.LineMap(), result.ParseErrors, result.TypeErrors)
 }
 
+// packageConfig reads the PackageConfig from the package.json in rootPath. A file that
+// cannot be read or parsed is logged and the default config used, so the editor keeps
+// checking while the user fixes it.
+func packageConfig(rootPath string) compiler.PackageConfig {
+	config, err := compiler.ReadPackageConfig(rootPath)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "validate: %v\n", err)
+	}
+	return config
+}
+
 // validateFull performs a full package check (lib/ + bin/).
 func (server *Server) validateFull(
 	lspContext *glsp.Context,
@@ -506,7 +517,7 @@ func (server *Server) validateFull(
 	}
 
 	// Run package-level type checking (no codegen).
-	output := compiler.CheckPackage(sources)
+	output := compiler.CheckPackage(sources, packageConfig(rootPath))
 
 	// Verify that no document versions changed during validation.
 	server.mu.Lock()
