@@ -39,6 +39,10 @@ import (
 // Where the filter has an answer, that is the answer, so the two readings never disagree on the
 // same operand. The difference is reached only where the filter is stuck.
 //
+// A conditional over a regex type is the one exception. `string` is neither inside a regex type
+// nor disjoint from it, so the filter would send all of `string` to Else. reduceRegexSplit takes
+// both branches instead, reading the check as `string & ~/re/` in Else.
+//
 // The rewrite is not sticky either. An alias body is stored unreduced, so a later instantiation
 // with a ground argument reduces from the conditional again and takes the filter.
 
