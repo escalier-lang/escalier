@@ -177,8 +177,7 @@ func TestInferMatchInfersTheTargetOnce(t *testing.T) {
 		fn f(b: boolean) {
 			return match g(2) {
 				{x} if b => x,
-				{x} => x,
-				_ => 0
+				{x} => x
 			}
 		}
 	`)

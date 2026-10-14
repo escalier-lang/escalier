@@ -300,18 +300,30 @@ func (r *armReach) branchesReach(split *ucs.NormSplit) bool {
 	return true
 }
 
-// checkCondExhaustive reports a NonExhaustiveMatchError when the arms of one conditional form
-// leave a value of its scrutinee uncovered. shape is the scrutinee snapshot taken before any
-// arm bound, which the union members and the structural exactness are read off. The message
-// names the construct the top-level split lowered from rather than assuming a `match`.
+// checkCondExhaustive reports the NonExhaustiveMatchError condCoverage returns, if any.
+func (c *checker) checkCondExhaustive(scope *Scope, lvl int, norm ucs.Norm, shape soltype.Type) {
+	if err, _ := c.condCoverage(scope, lvl, norm, shape); err != nil {
+		c.report(err)
+	}
+}
+
+// condCoverage decides whether the arms of one conditional form cover every value of its
+// scrutinee. It reports nothing. It returns a NonExhaustiveMatchError when the arms leave a
+// value uncovered. Otherwise covered says whether the arms were shown to cover every value.
+// It is false where the rules below decline to ask, such as for a `boolean` scrutinee or one
+// whose type is still unsolved.
+//
+// shape is the scrutinee snapshot taken before any arm bound, which the union members and the
+// structural exactness are read off. The message names the construct the top-level split
+// lowered from rather than assuming a `match`.
 //
 // The inexact rule below is conservative, which is #1077. An object tag matches a value
 // carrying extra fields, and a rest-relaxed tuple tag matches a longer one, so both cover an
 // inexact scrutinee that this asks a catch-all for.
-func (c *checker) checkCondExhaustive(scope *Scope, lvl int, norm ucs.Norm, shape soltype.Type) {
+func (c *checker) condCoverage(scope *Scope, lvl int, norm ucs.Norm, shape soltype.Type) (err *NonExhaustiveMatchError, covered bool) {
 	split, isSplit := norm.(*ucs.NormSplit)
 	if !isSplit {
-		return
+		return nil, false
 	}
 	// Both readings ask about every split on a chain, and a chain read from one split always
 	// yields the same tests, so each answer is kept under the chain's first test.
@@ -325,7 +337,7 @@ func (c *checker) checkCondExhaustive(scope *Scope, lvl int, norm ucs.Norm, shap
 		return got
 	})
 	if cov.catchAll {
-		return
+		return nil, true
 	}
 	c.resolveAnnTags(scope, lvl, &cov)
 	// A transparent alias scrutinee, an enum handle or a user `type` reference, carries the
@@ -338,7 +350,7 @@ func (c *checker) checkCondExhaustive(scope *Scope, lvl int, norm ucs.Norm, shap
 	// no arm below it. Asking about the whole carrier is what covers a scrutinee that is no
 	// union, since the per-member rule below never runs for one.
 	if c.annAdmits(carrier, cov.covering) {
-		return
+		return nil, true
 	}
 	if u, isUnion := carrier.(*soltype.UnionType); isUnion {
 		uncovered := c.uncoveredMembers(scope, u, cov)
@@ -346,10 +358,9 @@ func (c *checker) checkCondExhaustive(scope *Scope, lvl int, norm ucs.Norm, shap
 		// primitive scrutinee instead, whose catch-all requirement the infiniteInhabitants rule
 		// below handles.
 		if uncovered.empty() {
-			return
+			return nil, !c.optionalKeyTested(carrier, cov.covering.tests)
 		}
-		c.report(uncovered.errorAt(split.Origin))
-		return
+		return uncovered.errorAt(split.Origin), false
 	}
 	inexact, isStructural := structuralInexact(carrier)
 	if !isStructural {
@@ -358,20 +369,22 @@ func (c *checker) checkCondExhaustive(scope *Scope, lvl int, norm ucs.Norm, shap
 		// arm exactly as an inexact union does. The whole carrier is the open tail no arm
 		// names, so it is the witness the diagnostic reports.
 		if infiniteInhabitants(carrier) {
-			c.report(&NonExhaustiveMatchError{Origin: split.Origin, OpenTail: carrier})
+			return &NonExhaustiveMatchError{Origin: split.Origin, OpenTail: carrier}, false
 		}
-		return
+		return nil, false
 	}
 	// An exact object or tuple is covered by a branch that destructures its shape. An inexact
 	// one carries an open tail of values no such branch can see, so only a catch-all covers it.
 	// Its shape is no witness to report alongside, since a branch naming that shape is exactly
 	// what the interim rule refuses to credit.
 	if inexact {
-		c.report(&NonExhaustiveMatchError{Origin: split.Origin, OpenTail: carrier})
-		return
+		return &NonExhaustiveMatchError{Origin: split.Origin, OpenTail: carrier}, false
 	}
 	if hasStructuralTag(cov.covering.tests) {
-		return
+		// Exhaustiveness accepts any structural tag here, but only one whose shape fits the
+		// scrutinee shows that the arms cover it.
+		return nil, c.ctx.structuralTagged(carrier, cov.covering.tests) &&
+			!c.optionalKeyTested(carrier, cov.covering.tests)
 	}
 	// The whole scrutinee is the witness, since a structural scrutinee has no members to
 	// single out. The expanded carrier stands in for it rather than the alias name a
@@ -381,7 +394,43 @@ func (c *checker) checkCondExhaustive(scope *Scope, lvl int, norm ucs.Norm, shap
 	uncovered.add(carrier,
 		hasStructuralTag(cov.guarded.tests) || cov.guardedCatchAll,
 		hasStructuralTag(cov.refutable.tests))
-	c.report(uncovered.errorAt(split.Origin))
+	return uncovered.errorAt(split.Origin), false
+}
+
+// optionalKeyTested reports whether an object test among tests names a key that carrier, or a
+// member of it when it is a union, declares optional. `{x}` over a `{x?: number}` is such a
+// test. Coverage credits it with the member, but a value lacking `x` fails it at runtime.
+func (c *checker) optionalKeyTested(carrier soltype.Type, tests []ucs.Test) bool {
+	members := []soltype.Type{carrier}
+	if u, isUnion := carrier.(*soltype.UnionType); isUnion {
+		members = u.Types
+	}
+	for _, member := range members {
+		t := soltype.CarrierOf(c.expandAliasChain(member))
+		if ct, isClass := t.(*soltype.ClassType); isClass {
+			body, ok := c.ctx.projectClassBody(ct)
+			if !ok {
+				continue
+			}
+			t = body
+		}
+		obj, isObj := t.(*soltype.ObjectType)
+		if !isObj {
+			continue
+		}
+		for _, tag := range tests {
+			test, isObjTest := tag.(*ucs.ObjectTest)
+			if !isObjTest {
+				continue
+			}
+			for _, key := range test.Keys {
+				if prop, ok := obj.Prop(key.Name); ok && prop.Optional {
+					return true
+				}
+			}
+		}
+	}
+	return false
 }
 
 // annTestsCover reports whether tests, annotation tests of the projection s of the scrutinee

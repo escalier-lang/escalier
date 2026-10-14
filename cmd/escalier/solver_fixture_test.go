@@ -44,6 +44,16 @@ var (
 		name:   "a global the ambient builtin scope will bind",
 		ticket: "#1666",
 	}
+	// The fixture is what is wrong here, but the old checker cannot accept the fix. A catch-all
+	// below `[first = 0, ...rest] => rest` over a `[number, number, number]` can never run, and
+	// neither can the one below `{x, y, ...rest}` over an exact object. The solver reports both,
+	// while the old checker reads each rest pattern as non-exhaustive and requires the arm.
+	// #1677 drops both arms when the solver becomes the default. The fixture's `index.d.ts`
+	// then differs in union member order, which causeUnionOrder covers.
+	causeCatchAllTheCheckerRequires = &solverSkipCause{
+		name:   "a catch-all the old checker requires below arms that already cover the scrutinee",
+		ticket: "#1677",
+	}
 	causeUnionMember = &solverSkipCause{
 		name:   "a property read on a union whose arms do not all declare it",
 		ticket: "#1719",
@@ -69,6 +79,8 @@ type solverSkip struct {
 // other diagnostics surface once that one lands and the entry is re-seeded.
 var solverSkips = []solverSkip{
 	{"async_await", causeAmbientScope, "Unknown identifier: fetch"},
+
+	{"pattern_matching", causeCatchAllTheCheckerRequires, "this match arm is unreachable because the arms above it already cover every value; drop it"},
 
 	{"member_access", causeUnionMember, "the package is accepted, and error.txt records a rejection"},
 }
@@ -325,7 +337,6 @@ var emitSkips = map[emitSkip]*solverSkipCause{
 	{"logging", "index.d.ts"}:                      causeUndefinedReturn,
 	{"grouping", "index.d.ts"}:                     causeUnionOrder,
 	{"if_val", "index.d.ts"}:                       causeUnionOrder,
-	{"pattern_matching", "index.d.ts"}:             causeUnionOrder,
 	{"function_overloading", "index.d.ts"}:         causeAsyncNoValueReturn,
 	{"try_catch", "index.d.ts"}:                    causeArmBelowCatchAll,
 	{"try_catch", "index.js"}:                      causeBuiltinClassCall,

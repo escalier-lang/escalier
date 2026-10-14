@@ -1158,7 +1158,7 @@ func TestInferMatchExactUnionMissingMember(t *testing.T) {
 // reads the scrutinee's shape from before any arm binds, so a guarded arm's foreign
 // literal does not leak into the union as a phantom uncovered member. The two
 // unguarded arms cover `"a" | "b"`, so the match is exhaustive despite the guarded
-// `"z"` arm.
+// `"z"` arm. That same coverage makes the `"z"` arm dead, which is the one error reported.
 func TestInferMatchExactUnionGuardedArmNoPhantomMember(t *testing.T) {
 	_, _, errs := inferSource(t, `
 		fn f(b: boolean) {
@@ -1170,7 +1170,9 @@ func TestInferMatchExactUnionGuardedArmNoPhantomMember(t *testing.T) {
 			}
 		}
 	`)
-	require.Empty(t, errs)
+	require.Equal(t, []string{
+		"7:5-7:18: this match arm is unreachable because the arms above it already cover every value; drop it",
+	}, messagesWithSpan(t, errs))
 }
 
 // A bare `number` scrutinee has infinitely many values, so literal arms alone leave it
