@@ -93,7 +93,7 @@ type coverageWalk struct {
 // find no covering branch at all.
 //
 // annCovers answers whether a list of annotation tests over a projection admits every value
-// of that projection, and may be nil when no such answer is available.
+// of that projection.
 func readCoverage(split *ucs.NormSplit, annCovers annCoversFunc) coverage {
 	w := &coverageWalk{
 		root:   split.Scrutinee,
@@ -181,7 +181,7 @@ type armReach struct {
 	// ignoreGuards selects the guard-blind reading.
 	ignoreGuards bool
 	// annCovers reports whether annotation tests over a projection admit every value of that
-	// projection. It is nil when the caller has no types to answer with.
+	// projection.
 	annCovers annCoversFunc
 	// memo records the verdict per term, since a tail is asked about once per branch falling
 	// into it.
@@ -269,12 +269,9 @@ func (r *armReach) splitReaches(split *ucs.NormSplit) bool {
 //
 //	split ref.value { : string => … } default split ref.value { : number => … } default ✗
 //
-// It reports false when no annCovers hook is set, or when some split on the chain makes a test
-// other than an annotation or holds a branch that does not reach an arm body.
+// It reports false when some split on the chain makes a test other than an annotation or
+// holds a branch that does not reach an arm body.
 func (r *armReach) annChain(split *ucs.NormSplit) ([]ucs.Test, bool) {
-	if r.annCovers == nil {
-		return nil, false
-	}
 	var tests []ucs.Test
 	for cur := split; cur != nil; {
 		for _, branch := range cur.Branches {
@@ -417,8 +414,7 @@ func (c *checker) annTestsCover(scope *Scope, lvl int, shape soltype.Type, s *uc
 }
 
 // projectionType returns the type the path s names when the root scrutinee has type shape. It
-// reads each field step through fieldReadType and each index step off a tuple, and reports
-// false for any other step or for a type it cannot read the step from.
+// reads each step through stepRead and reports false for a step it cannot read.
 func (c *checker) projectionType(shape soltype.Type, s *ucs.Scrutinee) (soltype.Type, bool) {
 	if s.IsRoot() {
 		return shape, true
@@ -427,54 +423,72 @@ func (c *checker) projectionType(shape soltype.Type, s *ucs.Scrutinee) (soltype.
 	if !ok {
 		return nil, false
 	}
-	switch step := s.Step.(type) {
-	case ucs.FieldStep:
-		return c.fieldReadType(parent, step.Name)
-	case ucs.IndexStep:
-		tup, isTup := c.expandAliasChain(soltype.CarrierOf(parent)).(*soltype.TupleType)
-		if !isTup || step.Index >= len(tup.Elems) {
-			return nil, false
-		}
-		return tup.Elems[step.Index], true
-	default:
-		return nil, false
-	}
+	return c.stepRead(parent, s.Step)
 }
 
-// fieldReadType returns the type a read of the field name yields on a value of type t. A
-// class instance reads off its projected body, and a union reads each member and joins what
-// they hold. A property reads its type, joined with `undefined` when it is optional, and a
-// getter getterReadsAsProperty accepts reads its getter type. It reports false when t, or
-// some member of it, has no such field.
-func (c *checker) fieldReadType(t soltype.Type, name string) (soltype.Type, bool) {
+// stepRead returns the type a read through step yields on a value of type t, and reports
+// false when t does not hold the step.
+//
+//   - A field step reads a property, joined with `undefined` when it is optional, or a
+//     getter getterReadsAsProperty accepts.
+//   - A remainder step reads as the object itself, since a field read through the remainder
+//     names a key the remainder kept.
+//   - An index step reads a tuple element, and a suffix step the tuple of elements from its
+//     index on.
+//   - A class instance reads off its projected body.
+//   - A union reads each member and joins what the members holding the step hold. It reports
+//     false when no member holds it.
+//
+// A union member that lacks the step is left out because a member lacking it is never
+// tagged by the test above the projection. memberTagged tags an object only when it reads
+// every key as a property, and a tuple only when its arity fits. Such a member reaches the
+// arms below as the projection's fallthrough, and coverage judges it there.
+func (c *checker) stepRead(t soltype.Type, step ucs.Step) (soltype.Type, bool) {
 	switch carrier := c.expandAliasChain(soltype.CarrierOf(t)).(type) {
 	case *soltype.UnionType:
-		fields := make([]soltype.Type, len(carrier.Types))
-		for i, member := range carrier.Types {
-			field, ok := c.fieldReadType(member, name)
-			if !ok {
-				return nil, false
+		var held []soltype.Type
+		for _, member := range carrier.Types {
+			if read, ok := c.stepRead(member, step); ok {
+				held = append(held, read)
 			}
-			fields[i] = field
+		}
+		if len(held) == 0 {
+			return nil, false
 		}
 		// No Context, so subsumption does not run. See peelBorrowUnion.
-		return newUnion(nil, fields), true
+		return newUnion(nil, held), true
 	case *soltype.ClassType:
 		body, ok := c.ctx.projectClassBody(carrier)
 		if !ok {
 			return nil, false
 		}
-		return c.fieldReadType(body, name)
+		return c.stepRead(body, step)
 	case *soltype.ObjectType:
-		if prop, found := carrier.Prop(name); found {
-			if prop.Optional {
-				return newUnion(nil, []soltype.Type{prop.Type, &soltype.UndefinedType{}}), true
+		switch step := step.(type) {
+		case ucs.FieldStep:
+			if prop, found := carrier.Prop(step.Name); found {
+				if prop.Optional {
+					return newUnion(nil, []soltype.Type{prop.Type, &soltype.UndefinedType{}}), true
+				}
+				return prop.Type, true
 			}
-			return prop.Type, true
+			member, found := carrier.ReadMember(step.Name)
+			if g, isGetter := member.(*soltype.GetterElem); found && isGetter && getterReadsAsProperty(g) {
+				return g.Type, true
+			}
+		case ucs.RemainderStep:
+			return carrier, true
 		}
-		member, found := carrier.ReadMember(name)
-		if g, isGetter := member.(*soltype.GetterElem); found && isGetter && getterReadsAsProperty(g) {
-			return g.Type, true
+	case *soltype.TupleType:
+		switch step := step.(type) {
+		case ucs.IndexStep:
+			if step.Index < len(carrier.Elems) {
+				return carrier.Elems[step.Index], true
+			}
+		case ucs.SuffixStep:
+			if step.From <= len(carrier.Elems) {
+				return &soltype.TupleType{Elems: carrier.Elems[step.From:], Inexact: carrier.Inexact}, true
+			}
 		}
 	}
 	return nil, false

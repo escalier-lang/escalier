@@ -1062,6 +1062,72 @@ func TestInferNestedLeafAnnotations(t *testing.T) {
 			want: "fn (s: S) -> number",
 		},
 		{
+			name: "match arms narrowing a field of each union member cover it",
+			src:  `fn f(r: {value: string} | {value: number}) { return match r { {value: a: string} => "s", {value: b: number} => "n" } }`,
+			want: `fn (r: {value: number} | {value: string}) -> "n" | "s"`,
+		},
+		{
+			// An optional field reads as `string | number | undefined`, so the `{}` arm covers what
+			// the two annotations leave.
+			name: "match arms narrowing an optional field cover it with an arm for its absence",
+			src:  `fn f(r: {value?: string | number}) { return match r { {value: a: string} => "s", {value: b: number} => "n", {} => "e" } }`,
+			want: `fn (r: {value?: number | string}) -> "e" | "n" | "s"`,
+		},
+		{
+			name:     "match arms narrowing an optional field leave its absence uncovered",
+			src:      `fn f(r: {value?: string | number}) { return match r { {value: a: string} => "s", {value: b: number} => "n" } }`,
+			wantErrs: []string{"1:45-1:109: match is not exhaustive; `{value?: number | string}` is matched only by a branch whose own pattern can fail, so add a branch that matches it irrefutably"},
+		},
+		{
+			// `{other: number}` has no `value`, so the `{value}` test never passes it to the annotation.
+			// The `value` the annotation tests is the `string` of the other member.
+			name: "a union member without the narrowed field is left to its own arm",
+			src:  `fn f(r: {value: string} | {other: number}) { return match r { {value: a: string} => "s", {other} => "o" } }`,
+			want: `fn (r: {other: number} | {value: string}) -> "o" | "s"`,
+		},
+		{
+			// An inexact member may hold a `value` of any type. The annotation test fails on such a
+			// value, and the `{other}` arm below catches it.
+			name: "an inexact union member without the narrowed field is left to its own arm",
+			src:  `fn f(r: {value: string} | {other: number, ...}) { return match r { {value: a: string} => "s", {other} => "o" } }`,
+			want: `fn (r: {value: string} | {other: number, ...}) -> "o" | "s"`,
+		},
+		{
+			name: "a union member that is not an object is left to its own arm",
+			src:  `fn f(r: {value: string | number} | number) { return match r { {value: a: string} => "s", {value: b: number} => "n", n: number => "x" } }`,
+			want: `fn (r: number | {value: number | string}) -> "n" | "s" | "x"`,
+		},
+		{
+			name: "match arms narrowing an element of each tuple member cover it",
+			src:  `fn f(p: [string] | [number]) { return match p { [a: string] => "s", [b: number] => "n" } }`,
+			want: `fn (p: [number] | [string]) -> "n" | "s"`,
+		},
+		{
+			name: "an annotation under a tuple rest's sub-pattern covers its element",
+			src:  `fn f(p: [number, number]) { return match p { [c, ...[d: number]] => d } }`,
+			want: `fn (p: [number, number]) -> number`,
+		},
+		{
+			name: "an annotation under an object rest's sub-pattern covers its field",
+			src:  `fn f(r: {a: number, b: number}) { return match r { {a, ...{b: x: number}} => x } }`,
+			want: `fn (r: {a: number, b: number}) -> number`,
+		},
+		{
+			name:     "an annotation under an object rest's sub-pattern leaves the rest of its field uncovered",
+			src:      `fn f(r: {a: number, b: number | string}) { return match r { {a, ...{b: x: number}} => x } }`,
+			wantErrs: []string{"1:51-1:90: match is not exhaustive; `{a: number, b: number | string}` is matched only by a branch whose own pattern can fail, so add a branch that matches it irrefutably"},
+		},
+		{
+			name:     "literal annotations do not cover a wider field",
+			src:      `fn f(r: {value: number}) { return match r { {value: a: 1} => "a", {value: b: 2} => "b" } }`,
+			wantErrs: []string{"1:35-1:89: match is not exhaustive; `{value: number}` is matched only by a branch whose own pattern can fail, so add a branch that matches it irrefutably"},
+		},
+		{
+			name:     "a guarded annotation arm does not cover its share of a field",
+			src:      `fn f(r: {value: string | number}) { return match r { {value: a: string} if a == "" => "e", {value: b: number} => "n" } }`,
+			wantErrs: []string{"1:44-1:119: match is not exhaustive; `{value: number | string}` is matched only by a guarded branch, whose guard can fail, so add an unguarded branch for it"},
+		},
+		{
 			name: "a leaf annotation reads the narrowed member",
 			src:  `fn f(p: {a: number} | {b: string}) { return if val {a: x: number} = p { x } else { 0 } }`,
 			want: "fn (p: {a: number} | {b: string}) -> number",
