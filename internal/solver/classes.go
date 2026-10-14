@@ -1405,7 +1405,7 @@ func (c *checker) projectedMember(lvl int, blame ast.Node, name string, recv, ca
 	c.checkReceiverMut(blame, name, recv, memberSelfParam(member))
 	// Each access from outside the class gets its own copy of the method's lifetimes, the
 	// way a call to a free function instantiates the function's scheme.
-	return c.memberValue(lvl, blame, c.instantiateMethodLifetimes(lvl, blame, recv, member)), true
+	return c.instanceMemberValue(lvl, blame, c.instantiateMethodLifetimes(lvl, blame, recv, member)), true
 }
 
 // primitiveWrappers names, for each primitive, the class the standard library declares
@@ -1511,7 +1511,7 @@ func (c *checker) objectMember(lvl int, blame ast.Node, name string, carrier sol
 	if _, isProp := member.(*soltype.PropertyElem); isProp {
 		return pathResult{}, false
 	}
-	return c.memberValue(lvl, blame, member), true
+	return c.instanceMemberValue(lvl, blame, member), true
 }
 
 // memberCarrier peels a receiver to the shape a member lookup dispatches on, expanding a
@@ -1642,7 +1642,7 @@ func (c *checker) classBodyMember(lvl int, blame ast.Node, name string, recv, ca
 		return pathResult{}, false
 	}
 	c.checkReceiverMut(blame, name, recv, memberSelfParam(member))
-	return c.memberValue(lvl, blame, member), true
+	return c.instanceMemberValue(lvl, blame, member), true
 }
 
 // projectClassMember rewrites one class-body member's type-parameter and
@@ -1793,6 +1793,18 @@ func (c *checker) memberValue(lvl int, blame ast.Node, member soltype.ObjTypeEle
 	return pathResult{value: out}
 }
 
+// instanceMemberValue is memberValue for a member read off an instance, an object type or
+// an interface rather than off a class value. A method read there names a method that runs
+// against the value it was read from, so it is recorded for codegen to bind to that receiver.
+// A method a TypeScript interface declares carries no `self` parameter, so the record is
+// keyed on the member being a method rather than on its signature.
+func (c *checker) instanceMemberValue(lvl int, blame ast.Node, member soltype.ObjTypeElem) pathResult {
+	if _, isMethod := member.(*soltype.MethodElem); isMethod {
+		c.info.setMethodRead(blame)
+	}
+	return c.memberValue(lvl, blame, member)
+}
+
 // writeAccessor resolves the accessor a field write `recv.prop = …` targets, across the
 // same three receiver shapes valueProp intercepts for a read: a class instance, a class
 // body reached through `self`, and a class value. The returned ok routes the write to
@@ -1873,8 +1885,11 @@ func (c *checker) raiseAccessorThrows(lvl int, blame ast.Node, throws soltype.Ty
 // that join reads through. Only a getter contributes; a property, method, or setter raises
 // nothing on a read. It collects before it raises because the join abandons the whole read
 // once any member carries no readable object, as `A | undefined` does, and then no getter runs.
+//
+// A receiver read off a binding is often still an inference variable, so carrier is read
+// through the lower bounds it holds so far.
 func (c *checker) raiseUnionAccessorThrows(lvl int, blame ast.Node, name string, carrier soltype.Type) {
-	u, isUnion := carrier.(*soltype.UnionType)
+	u, isUnion := groundedCarrier(carrier).(*soltype.UnionType)
 	if !isUnion {
 		return
 	}
@@ -1894,6 +1909,33 @@ func (c *checker) raiseUnionAccessorThrows(lvl int, blame ast.Node, name string,
 	}
 	for _, t := range throws {
 		c.raiseAccessorThrows(lvl, blame, t)
+	}
+}
+
+// recordUnionMethodRead records the read of name at blame as a method read when carrier is a
+// union some member of which reads name as a method. The read goes through constrain's
+// field-read join, which never reaches instanceMemberValue, so it is recorded here, where the
+// read site is in scope. A member that reads a field holding a plain function does not stop
+// the record, since binding a function that ignores `this` changes nothing it does.
+//
+// A receiver read off a binding is often still an inference variable, so carrier is read
+// through the lower bounds it holds so far.
+func (c *checker) recordUnionMethodRead(blame ast.Node, name string, carrier soltype.Type) {
+	u, isUnion := groundedCarrier(carrier).(*soltype.UnionType)
+	if !isUnion {
+		return
+	}
+	for _, member := range u.Types {
+		obj, ok := c.ctx.readCarrierObject(soltype.CarrierOf(member))
+		if !ok {
+			continue
+		}
+		if elem, found := obj.ReadMember(name); found {
+			if _, isMethod := elem.(*soltype.MethodElem); isMethod {
+				c.info.setMethodRead(blame)
+				return
+			}
+		}
 	}
 }
 

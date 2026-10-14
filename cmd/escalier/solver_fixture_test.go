@@ -328,8 +328,6 @@ type emitSkip struct {
 // The entries are seeded from a run rather than predicted, and an entry that starts
 // agreeing fails, so the list burns down the way solverSkips does.
 var emitSkips = map[emitSkip]*solverSkipCause{
-	{"fix_point_combinator", "index.js"}: causeFieldReadBound,
-
 	{"namespace_use_parent_symbol", "index.d.ts"}:  causeAnyAsUnknown,
 	{"class_inheritance_namespaces", "index.d.ts"}: causeCheckerRootNamespacePrefix,
 	{"generalize", "index.d.ts"}:                   causeUnusedParamNotGeneralized,
@@ -338,20 +336,6 @@ var emitSkips = map[emitSkip]*solverSkipCause{
 	{"grouping", "index.d.ts"}:                     causeUnionOrder,
 	{"pattern_matching", "index.d.ts"}:             causeUnionOrder,
 	{"function_overloading", "index.d.ts"}:         causeAsyncNoValueReturn,
-}
-
-// causeFieldReadBound is the cause of `fix_point_combinator`'s `index.js` entry. Reading a field whose type
-// is a plain function emits `obj.f.bind(obj)` on the solver and `obj.f` on the checker.
-// A method read agrees on both, so the disagreement is only for a field, which declares
-// no receiver and so needs no binding.
-//
-// The right rule binds a read that resolved to a method and leaves a plain function
-// alone. The solver cannot answer that from the type, because member lookup yields the
-// value the read produces and that value carries no receiver, so it has to record
-// method-ness during the walk.
-var causeFieldReadBound = &solverSkipCause{
-	name:   "binding a field read whose type is a plain function",
-	ticket: "#1782",
 }
 
 // The causes behind the `index.d.ts` entries, each triaged from the diff the artifact

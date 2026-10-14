@@ -96,6 +96,10 @@ func (t *solverSolTypes) NamespaceMemberDecl(n ast.Node) (ast.Decl, bool) {
 	return t.info.NamespaceMemberDecl(n)
 }
 
+func (t *solverSolTypes) IsMethodRead(n ast.Node) bool {
+	return t.info.IsMethodRead(n)
+}
+
 // solverDts renders the library's .d.ts from the module run, which holds the scope
 // the declarations landed in and the registries their members are keyed in.
 type solverDts struct {

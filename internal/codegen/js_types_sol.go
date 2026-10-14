@@ -17,6 +17,9 @@ type SolTypes interface {
 	// NamespaceMemberDecl returns the declaration a namespace member read resolved
 	// to, and reports whether the node is such a read.
 	NamespaceMemberDecl(n ast.Node) (ast.Decl, bool)
+	// IsMethodRead reports whether the member read n resolved to a method that runs
+	// against the value it was read from.
+	IsMethodRead(n ast.Node) bool
 }
 
 // SolverJSTypes answers from one internal/solver run.
@@ -55,10 +58,11 @@ func (s SolverJSTypes) CalleeConstructs(callee ast.Expr) bool {
 	return false
 }
 
-// IsFunc reports whether the expression resolved to a function type.
-func (s SolverJSTypes) IsFunc(e ast.Expr) bool {
-	_, ok := s.Types.ResolvedTypeOf(e).(*soltype.FuncType)
-	return ok
+// IsMethodRead reports whether the read resolved to such a method. The run recorded
+// it during the walk, because the value a method read yields has its receiver stripped
+// and so looks the same as a field holding a plain function.
+func (s SolverJSTypes) IsMethodRead(m *ast.MemberExpr) bool {
+	return s.Types.IsMethodRead(m)
 }
 
 // NullableArms reads the union arms that are `null` and `undefined`. soltype gives

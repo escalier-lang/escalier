@@ -3603,6 +3603,7 @@ func (c *checker) valueProp(lvl int, blame ast.Node, provNode ast.Node, name str
 	// access to the enclosing throws sink, so the getters it may read through are
 	// collected here instead, where the sink is in scope.
 	c.raiseUnionAccessorThrows(lvl, blame, name, recvCarrier)
+	c.recordUnionMethodRead(blame, name, recvCarrier)
 	fieldVar := c.freshAt(lvl)
 	// The member-requirement record {prop: fieldVar} is deliberately NOT recorded —
 	// MissingPropertyError blames this inner fieldVar, so the record would be a dead

@@ -28,10 +28,11 @@ type JSTypes interface {
 	// CalleeConstructs reports whether a call's callee carries a constructor, which
 	// emits `new C(…)` rather than `C(…)`.
 	CalleeConstructs(callee ast.Expr) bool
-	// IsFunc reports whether an expression's type is a function. A member read that
-	// is a function and is not itself being called emits `obj.m.bind(obj)`, so the
-	// method keeps its receiver when it travels as a value.
-	IsFunc(e ast.Expr) bool
+	// IsMethodRead reports whether a member read resolved to a method that runs against
+	// the value it was read from. Such a read that is not itself being called emits
+	// `obj.m.bind(obj)`, so the method keeps its receiver when it travels as a value. A
+	// field holding a plain function reads no receiver and emits no `bind`.
+	IsMethodRead(m *ast.MemberExpr) bool
 	// NullableArms reports whether an expression's type is a union admitting `null`
 	// or `undefined`. An `if val` guards its pattern test with the checks these ask
 	// for.
@@ -49,7 +50,7 @@ type noJSTypes struct{}
 
 func (noJSTypes) IsNominalTypeRef(*ast.TypeRefTypeAnn) bool   { return false }
 func (noJSTypes) CalleeConstructs(ast.Expr) bool              { return false }
-func (noJSTypes) IsFunc(ast.Expr) bool                        { return false }
+func (noJSTypes) IsMethodRead(*ast.MemberExpr) bool           { return false }
 func (noJSTypes) NullableArms(ast.Expr) (bool, bool)          { return false, false }
 func (noJSTypes) MemberJSExpr(*ast.MemberExpr) (string, bool) { return "", false }
 
@@ -98,10 +99,48 @@ func (CheckerJSTypes) CalleeConstructs(callee ast.Expr) bool {
 	return false
 }
 
-// IsFunc reports whether the expression's type is a function type.
-func (CheckerJSTypes) IsFunc(e ast.Expr) bool {
-	_, ok := e.InferredType().(*type_system.FuncType)
-	return ok
+// IsMethodRead reports whether the read's type is a function that takes `self`, or an
+// overload set whose every arm does. A method of a class or an interface keeps its
+// SelfParam in type_system, which is what tells it apart from a field holding a plain
+// function. A method an object type annotation declares carries none, so a read off such
+// an object asks the object whether the member is a method.
+func (CheckerJSTypes) IsMethodRead(m *ast.MemberExpr) bool {
+	if obj, ok := type_system.Prune(m.Object.InferredType()).(*type_system.ObjectType); ok && m.Prop != nil {
+		if declaresMethod(obj, m.Prop.Name) {
+			return true
+		}
+	}
+	switch t := m.InferredType().(type) {
+	case *type_system.FuncType:
+		return t.SelfParam != nil
+	case *type_system.IntersectionType:
+		for _, arm := range t.Types {
+			fn, ok := arm.(*type_system.FuncType)
+			if !ok || fn.SelfParam == nil {
+				return false
+			}
+		}
+		return len(t.Types) > 0
+	}
+	return false
+}
+
+// declaresMethod reports whether obj declares a method named name that runs against obj. A
+// class value carries a constructor, and the methods it holds beside it are static, so
+// they read no receiver.
+func declaresMethod(obj *type_system.ObjectType, name string) bool {
+	found := false
+	for _, elem := range obj.Elems {
+		switch e := elem.(type) {
+		case *type_system.ConstructorElem:
+			return false
+		case *type_system.MethodElem:
+			if e.Name == type_system.NewStrKey(name) {
+				found = true
+			}
+		}
+	}
+	return found
 }
 
 // NullableArms reads the union arms that are the `null` and `undefined` literals. A
