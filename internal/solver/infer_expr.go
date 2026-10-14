@@ -5220,15 +5220,15 @@ func (c *checker) reportUnreachableArms(arms []*ast.MatchCase, walked set.Set[uc
 	return unreachable
 }
 
-// inferMatchArms types each arm of a `try`'s catch clause and each unreachable arm of a
-// `match`, constrains every non-diverging body into res, and returns those bodies for the
-// caller's ownership check. Each arm binds in a fresh child scope, so a name one arm binds is
+// inferMatchArms types each arm a `match` or a `catch` clause leaves unreachable,
+// constrains every non-diverging body into res, and returns those bodies for the caller's
+// ownership check. Each arm binds in a fresh child scope, so a name one arm binds is
 // invisible to the next, and node is blamed for each body's join. shape is the coalesced
 // scrutinee narrowArmScrutinee reads union members from. scrutinee is what an arm binds
 // against when no narrowing applies, so a var's identity and borrow survive there. inferMatch
-// passes a snapshot and the original, inferTryCatch one already-concrete type for both.
+// and inferTryCatch each pass a snapshot and the original.
 //
-// The reachable arms of a `match` are typed by condWalk instead, off the normalized form.
+// The reachable arms of both forms are typed by condWalk instead, off the normalized form.
 func (c *checker) inferMatchArms(
 	scope *Scope, lvl int, node ast.Node, arms []*ast.MatchCase, shape, scrutinee, res soltype.Type,
 ) []soltype.Type {
@@ -5301,12 +5301,38 @@ func (c *checker) inferTryCatch(scope *Scope, lvl int, e *ast.TryCatchExpr) solt
 		branches = append(branches, tryT)
 	}
 
-	// A catch can catch any value the runtime throws, whatever the block's signature named, so the
-	// caught value is `unknown`. That is this walk's scrutinee, serving as both the narrowing shape
-	// and the bind target, and the arms are typed exactly as a `match` expression's are. The
-	// block's known throws drive rethrowUnhandled instead.
-	caught := soltype.Type(&soltype.UnknownType{})
-	branches = append(branches, c.inferMatchArms(scope, lvl, e, e.Catch, caught, caught, res)...)
+	// The arms match against the values the block is known to throw, so `throw "error"`
+	// gives a caught value of `"error"`. A value outside them can still reach the `catch` at
+	// runtime. Codegen rethrows one no arm matches, but an arm that matches every value
+	// receives it under the known type.
+	//
+	// The caught value is a fresh variable the collected throws flow into, rather than a
+	// snapshot of them. A callee whose throws are still unsolved here then reaches the arms
+	// once it is solved. A test an arm applies constrains into this variable, so it never
+	// widens the collected throws rethrowUnhandled reads.
+	caught := c.freshAt(lvl)
+	c.constrain(e, collected, caught)
+	// The UCS IR names no step for a rest before the last element, so the walk below binds
+	// nothing under one and cannot report it.
+	for _, arm := range e.Catch {
+		c.reportInteriorRests(arm.Pattern)
+	}
+	// The arms are typed through the same walk as a `match` expression's. No exhaustiveness
+	// check follows, since rethrowUnhandled accounts for what the arms leave over.
+	core := ucs.DesugarCatch(e)
+	binder := c.newPathBinder(lvl, e, core.Scrutinee, caught)
+	w := c.walkCond(scope, lvl, e, core, binder, res)
+	branches = append(branches, w.bodies...)
+	// An arm below an unguarded catch-all can never run, so the walk never reaches it. It is
+	// typed anyway, so a fault inside it is still reported. Its value is not one the form
+	// produces, so it joins neither res nor the ownership check.
+	var unwalked []*ast.MatchCase
+	for _, arm := range e.Catch {
+		if !w.arms.Contains(arm) {
+			unwalked = append(unwalked, arm)
+		}
+	}
+	c.inferMatchArms(scope, lvl, e, unwalked, binder.views[core.Scrutinee].shape, caught, c.freshAt(lvl))
 	c.checkUniformOwnership(e, branches)
 	c.rethrowUnhandled(scope, e, collected, enclosing)
 	c.recordType(e, res)

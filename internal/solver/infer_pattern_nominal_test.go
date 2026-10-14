@@ -1134,3 +1134,50 @@ func TestInferStructuralPatternOverClassInstance(t *testing.T) {
 		})
 	}
 }
+
+// An instance pattern naming a base class matches a subclass instance, since every value of
+// the subclass is an instance of the base. The fields bind at the base's view of the
+// scrutinee, and a union narrows to the members that reach the named class.
+func TestInferInstancePatBaseClassOverSubclass(t *testing.T) {
+	const base = `
+		class AppError { code: number, constructor(&mut self) { self.code = 0 } }
+		class ParseError extends AppError { constructor(&mut self) { super() } }
+		class OtherError { tag: string, constructor(&mut self) { self.tag = "" } }
+		class Failure<T> { payload: T, constructor(&mut self, payload: T) { self.payload = payload } }
+		class Timeout<T> extends Failure<T> { constructor(&mut self, payload: T) { super(payload) } }
+	`
+	tests := []struct {
+		name string
+		src  string
+		want string
+	}{
+		{
+			name: "a subclass scrutinee",
+			src:  `fn f(p: ParseError) { return match p { AppError{code} => code } }`,
+			want: "fn (p: ParseError) -> number",
+		},
+		{
+			name: "a generic subclass scrutinee binds the base's argument",
+			src:  `fn f(p: Timeout<string>) { return match p { Failure{payload} => payload } }`,
+			want: "fn (p: Timeout<string>) -> string",
+		},
+		{
+			// The arm covers the subclass member, so the match needs no catch-all.
+			name: "a base-class arm covers a subclass member",
+			src:  `fn f(p: ParseError | OtherError) { return match p { AppError{code} => code, OtherError{tag} => 0 } }`,
+			want: "fn (p: ParseError | OtherError) -> number",
+		},
+		{
+			name: "a union keeps the members that reach the class",
+			src:  `fn f(p: ParseError | OtherError) { return match p { AppError{code} => code, _ => 0 } }`,
+			want: "fn (p: ParseError | OtherError) -> number",
+		},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			values, _, errs := inferSource(t, base+test.src)
+			require.Empty(t, errs)
+			require.Equal(t, test.want, values["f"])
+		})
+	}
+}
