@@ -361,7 +361,7 @@ func TestInferAnnAccessorReadRaises(t *testing.T) {
 				declare fn make() -> {get a(&self) -> number throws string, ...}
 				fn g() -> number { return make().a }
 			`,
-			want: []string{"3:31-3:39: cannot constrain string <: never"},
+			want: []string{"3:31-3:39: this read can throw `string`, which `g` does not declare; add `throws string` to `g`"},
 		},
 		{
 			name: "GetterReadRaisesDeclared",
@@ -385,7 +385,7 @@ func TestInferAnnAccessorReadRaises(t *testing.T) {
 				declare fn make() -> mut {set a(&mut self, v: number) throws string, ...}
 				fn g() { var o = make() o.a = 5 }
 			`,
-			want: []string{"3:29-3:36: cannot constrain string <: never"},
+			want: []string{"3:29-3:36: assigning `o.a` can throw `string`, which `g` does not declare; add `throws string` to `g`"},
 		},
 	}
 	for _, tt := range tests {

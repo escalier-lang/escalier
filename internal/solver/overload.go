@@ -93,7 +93,7 @@ func (c *checker) resolveOverload(lvl int, b ValueBinding, args []soltype.Type, 
 			// keep dispatch off the caller's clause, so the real edge is wired now that an arm
 			// has been chosen.
 			if inst.Throws != nil {
-				c.constrain(call, inst.Throws, c.throwsSink(lvl))
+				c.raiseInto(lvl, call, describeSite("calling", "this call", call.Callee), inst.Throws)
 			}
 			c.markCallRaised(inst)
 			return inst.Ret, inst

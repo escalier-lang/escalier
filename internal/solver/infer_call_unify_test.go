@@ -127,7 +127,7 @@ func TestInferOverloadThrowsIsNotDispatch(t *testing.T) {
 		gen fn g() { yield 1 throw "boom" }
 		fn f() { val it = g() return it.next() }
 	`)
-	require.Equal(t, []string{`3:32-3:41: cannot constrain "boom" <: never`},
+	require.Equal(t, []string{"3:32-3:41: calling `it.next` can throw `\"boom\"`, which `f` does not declare; add `throws string` to `f`"},
 		messagesWithSpan(t, errs))
 }
 

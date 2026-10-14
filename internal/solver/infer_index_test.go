@@ -529,7 +529,7 @@ func TestInferParamDefault(t *testing.T) {
 		{
 			name:     "DefaultRaisesFromAFunctionThatDeclaresNone",
 			src:      "declare fn boom() -> number throws string\nfn g(v: number = boom()) { return v }",
-			wantErrs: []string{"2:18-2:24: cannot constrain string <: never"},
+			wantErrs: []string{"2:18-2:24: calling `boom` can throw `string`, which `g` does not declare; add `throws string` to `g`"},
 		},
 	})
 }

@@ -237,7 +237,7 @@ func TestInferAsyncThrowsHeldToTheAnnotation(t *testing.T) {
 		{
 			name:     "ThrowUnderAOneArgumentPromiseAnnotation",
 			src:      `async fn f() -> Promise<number> { throw "x" }`,
-			wantErrs: []string{`1:41-1:44: cannot constrain "x" <: never`},
+			wantErrs: []string{"1:41-1:44: this `throw` can throw `\"x\"`, which `f`'s rejection type `never` does not admit"},
 		},
 		{
 			name: "AwaitUnderAOneArgumentPromiseAnnotation",
@@ -248,7 +248,7 @@ func TestInferAsyncThrowsHeldToTheAnnotation(t *testing.T) {
 					return 5
 				}
 			`,
-			wantErrs: []string{`4:6-4:15: cannot constrain "boom" <: never`},
+			wantErrs: []string{"4:6-4:15: this `await` can throw `\"boom\"`, which `g`'s rejection type `never` does not admit"},
 		},
 	})
 }

@@ -113,7 +113,7 @@ func (c *checker) constrainIterationRaise(site ast.Expr, t soltype.Type, lvl int
 	if !ok {
 		return
 	}
-	c.constrain(site, raise, c.throwsSink(lvl))
+	c.raiseInto(lvl, site, describeSite("advancing", "advancing this iterator", site), raise)
 	c.markRaised()
 }
 
