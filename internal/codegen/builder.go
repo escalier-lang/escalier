@@ -1437,6 +1437,15 @@ func (b *Builder) buildExpr(expr ast.Expr, parent ast.Expr) (Expr, []Stmt) {
 	case *ast.IndexExpr:
 		objExpr, objStmts := b.buildExpr(expr.Object, expr)
 		indexExpr, indexStmts := b.buildExpr(expr.Index, expr)
+		if _, ok := parent.(*ast.CallExpr); !ok && b.types().IsMethodRead(expr) {
+			// A method read that travels as a value is bound so it keeps its receiver. The
+			// receiver is hoisted before the index is evaluated, which keeps the
+			// object-then-index order JavaScript evaluates `obj[key]` in.
+			call, bindStmts := b.bindMethodRead(objExpr, expr.Object, func(recv Expr) Expr {
+				return NewIndexExpr(recv, indexExpr, expr.OptChain, expr)
+			}, expr)
+			return call, slices.Concat(objStmts, bindStmts, indexStmts)
+		}
 		stmts := slices.Concat(objStmts, indexStmts)
 		return NewIndexExpr(objExpr, indexExpr, expr.OptChain, expr), stmts
 	case *ast.MemberExpr:
@@ -1464,37 +1473,16 @@ func (b *Builder) buildExpr(expr ast.Expr, parent ast.Expr) (Expr, []Stmt) {
 		objExpr, objStmts := b.buildExpr(expr.Object, expr)
 		propExpr := buildIdent(expr.Prop)
 
-		member := NewMemberExpr(objExpr, propExpr, expr.OptChain, expr)
-		if _, ok := parent.(*ast.CallExpr); !ok {
-			if b.types().IsMethodRead(expr) {
-				// If the object is not already an IdentExpr, extract it to a temp variable
-				// to avoid duplicating complex expressions and running side-effects multiple times
-				var bindTargetExpr Expr
-				if _, isIdentExpr := objExpr.(*IdentExpr); isIdentExpr {
-					bindTargetExpr = objExpr
-				} else {
-					tempVar, tempDeclStmt := b.createTempVar(expr.Object)
-
-					// Initialize the temp variable with the object expression
-					tempDecl := tempDeclStmt.(*DeclStmt).Decl.(*VarDecl)
-					tempDecl.Decls[0].Init = objExpr
-					tempDecl.Kind = ValKind
-
-					objStmts = append(objStmts, tempDeclStmt)
-
-					// Update the member expression to use the temp variable
-					member = NewMemberExpr(tempVar, propExpr, expr.OptChain, expr)
-					bindTargetExpr = tempVar
-				}
-
-				bindIdent := NewIdentifier("bind", nil)
-				callee := NewMemberExpr(member, bindIdent, false, expr)
-				call := NewCallExpr(callee, []Expr{bindTargetExpr}, false, nil)
-				return call, objStmts
-			}
+		// A method read that travels as a value is bound so it keeps its receiver. A read
+		// called on the spot gets its receiver from the call.
+		if _, ok := parent.(*ast.CallExpr); !ok && b.types().IsMethodRead(expr) {
+			call, bindStmts := b.bindMethodRead(objExpr, expr.Object, func(recv Expr) Expr {
+				return NewMemberExpr(recv, propExpr, expr.OptChain, expr)
+			}, expr)
+			return call, slices.Concat(objStmts, bindStmts)
 		}
 
-		return member, objStmts
+		return NewMemberExpr(objExpr, propExpr, expr.OptChain, expr), objStmts
 	case *ast.TupleExpr:
 		elemsExprs, elemsStmts := b.buildExprs(expr.Elems)
 		return NewArrayExpr(elemsExprs, expr), elemsStmts
@@ -1863,8 +1851,25 @@ func (b *Builder) buildObjKey(key ast.ObjKey) (ObjKey, []Stmt) {
 	}
 }
 
-// createTempVar creates a temporary variable declaration and returns the temp variable
-// expression and the declaration statement.
+// bindMethodRead returns `read.bind(recv)`. objExpr is the built receiver and objSource
+// the receiver in the source. read builds the member or index read off whichever receiver
+// expression the bind uses.
+//
+// A receiver that is not an identifier is hoisted into a `val` temporary, so it is
+// evaluated once. The returned statements declare that temporary and are empty otherwise.
+func (b *Builder) bindMethodRead(objExpr Expr, objSource ast.Expr, read func(recv Expr) Expr, source ast.Node) (Expr, []Stmt) {
+	recv := objExpr
+	var stmts []Stmt
+	if _, isIdent := objExpr.(*IdentExpr); !isIdent {
+		tempVar, tempDeclStmt := b.createTempVarWithInit(objExpr, objSource)
+		tempDeclStmt.(*DeclStmt).Decl.(*VarDecl).Kind = ValKind
+		stmts = append(stmts, tempDeclStmt)
+		recv = tempVar
+	}
+	callee := NewMemberExpr(read(recv), NewIdentifier("bind", nil), false, source)
+	return NewCallExpr(callee, []Expr{recv}, false, nil), stmts
+}
+
 // createTempVarWithInit declares a fresh temp already holding init, for a temp whose
 // starting value matters. createTempVar leaves the temp undefined for callers that assign
 // it before every read.
@@ -1874,6 +1879,8 @@ func (b *Builder) createTempVarWithInit(init Expr, sourceExpr ast.Expr) (Expr, S
 	return tempVar, declStmt
 }
 
+// createTempVar creates a temporary variable declaration and returns the temp variable
+// expression and the declaration statement.
 func (b *Builder) createTempVar(sourceExpr ast.Expr) (Expr, Stmt) {
 	tempId := b.NewTempId()
 	tempVar := NewIdentExpr(tempId, "", sourceExpr)

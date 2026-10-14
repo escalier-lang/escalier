@@ -61,8 +61,8 @@ func (s SolverJSTypes) CalleeConstructs(callee ast.Expr) bool {
 // IsMethodRead reports whether the read resolved to such a method. The run recorded
 // it during the walk, because the value a method read yields has its receiver stripped
 // and so looks the same as a field holding a plain function.
-func (s SolverJSTypes) IsMethodRead(m *ast.MemberExpr) bool {
-	return s.Types.IsMethodRead(m)
+func (s SolverJSTypes) IsMethodRead(e ast.Expr) bool {
+	return s.Types.IsMethodRead(e)
 }
 
 // NullableArms reads the union arms that are `null` and `undefined`. soltype gives

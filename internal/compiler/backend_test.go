@@ -918,11 +918,12 @@ func TestTheSolverEmitsARegexCaptureAsString(t *testing.T) {
 		"export declare type Strip<T> = T extends string ? string : T;\n", got)
 }
 
-// TestBothCheckersBindOnlyAMethodRead covers which member reads emit `.bind`. A read of a
-// method of an instance, an object type or an interface keeps its receiver when it travels
-// as a value, so it emits `obj.m.bind(obj)`. A field or property holding a plain function reads no receiver, and a
-// static method reads none either, so those emit the bare read. The two checkers agree on
-// every case.
+// TestBothCheckersBindOnlyAMethodRead covers which member and index reads emit `.bind`. A
+// read of a method of an instance, an object type or an interface keeps its receiver when it
+// travels as a value, so `obj.m` emits `obj.m.bind(obj)` and `obj["m"]` emits
+// `obj["m"].bind(obj)`. A field or property holding a plain function reads no receiver, and
+// a static method reads none either, so those emit the bare read. A read called on the spot
+// emits no `.bind`. The two checkers agree on every case.
 func TestBothCheckersBindOnlyAMethodRead(t *testing.T) {
 	tests := []struct {
 		name string
@@ -976,15 +977,31 @@ func TestBothCheckersBindOnlyAMethodRead(t *testing.T) {
 			src:  "class C {\n\tstatic make() -> number { return 1 },\n}\nexport val g = C.make",
 			want: "export const g = C.make;",
 		},
-		// DISABLED until #1983. Codegen considers `.bind` only for a member expression, so a
-		// method read by a constant string index emits bare on both checkers. #1983 binds it.
-		/*
-			{
-				name: "AMethodReadByIndex",
-				src:  "class C {\n\tm(&self) -> number { return 1 },\n}\nval c = C()\nexport val g = c[\"m\"]",
-				want: "export const g = c[\"m\"].bind(c);",
-			},
-		*/
+		{
+			name: "AMethodReadByIndex",
+			src:  "class C {\n\tm(&self) -> number { return 1 },\n}\nval c = C()\nexport val g = c[\"m\"]",
+			want: "export const g = c[\"m\"].bind(c);",
+		},
+		{
+			name: "AMethodReadByAKeyBinding",
+			src:  "class C {\n\tm(&self) -> number { return 1 },\n}\nval c = C()\nval k = \"m\"\nexport val g = c[k]",
+			want: "export const g = c[k].bind(c);",
+		},
+		{
+			name: "AMethodReadByIndexOffACall",
+			src:  "class C {\n\tm(&self) -> number { return 1 },\n}\nfn make() -> C { return C() }\nexport val g = make()[\"m\"]",
+			want: "export const g = temp1[\"m\"].bind(temp1);",
+		},
+		{
+			name: "AMethodReadByIndexAndCalled",
+			src:  "class C {\n\tm(&self) -> number { return 1 },\n}\nval c = C()\nexport val n = c[\"m\"]()",
+			want: "export const n = c[\"m\"]();",
+		},
+		{
+			name: "APropertyHoldingAFunctionReadByIndex",
+			src:  "declare val obj: {m: fn () -> number}\nexport val m = obj[\"m\"]",
+			want: "export const m = obj[\"m\"];",
+		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
