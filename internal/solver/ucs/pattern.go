@@ -335,7 +335,7 @@ func objectTest(p *ast.ObjectPat, scrutinee *Scrutinee, origin Origin) (Test, []
 		step := RemainderStep{Exclude: named}
 		binds = appendRestBind(binds, rest.Pattern, scrutinee, step, origin)
 	}
-	return &ObjectTest{Keys: objKeys, Rest: kind}, binds
+	return &ObjectTest{Keys: objKeys, Rest: kind, Pat: p}, binds
 }
 
 // valueDefaultsField reports whether an object pattern's value sub-pattern carries a

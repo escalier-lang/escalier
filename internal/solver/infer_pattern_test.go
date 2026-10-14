@@ -1435,8 +1435,8 @@ func TestInferMatchVariadicTupleScrutinee(t *testing.T) {
 		{
 			// A `val` destructuring tests no length, so it still needs the scrutinee to have
 			// exactly the pattern's length.
-			name:     "ADestructuringStillNeedsTheLength",
-			src:      `fn f(t: [number, ...Array<string>]) { val [a, b] = t
+			name: "ADestructuringStillNeedsTheLength",
+			src: `fn f(t: [number, ...Array<string>]) { val [a, b] = t
 				return b }`,
 			wantErrs: []string{"1:43-1:49: cannot constrain [number, ...Array<string>] <: tuple"},
 		},
@@ -1482,6 +1482,54 @@ func TestInferMatchTupleRestOverAUnion(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			values, _, errs := inferSource(t, tt.src)
+			require.Empty(t, messagesWithSpan(t, errs))
+			require.Equal(t, tt.want, values["f"])
+		})
+	}
+}
+
+// TestInferMatchNarrowsByAbsentKeys covers an object pattern over a union of exact objects
+// that differ by which keys they carry. When the pattern's keys fit one member exactly and
+// another member carries more, the pattern also checks that the extra keys are absent, and
+// narrows to the members without them.
+func TestInferMatchNarrowsByAbsentKeys(t *testing.T) {
+	tests := []struct {
+		name     string
+		src      string
+		want     string
+		wantErrs []string
+	}{
+		{
+			name: "EachShapeHasItsArm",
+			src:  `fn f(s: {radius: number} | {radius: number, label: string}) { return match s { {radius} => radius, {radius, label} => label } }`,
+			want: "fn (s: {radius: number} | {radius: number, label: string}) -> number | string",
+		},
+		{
+			name:     "TheLabelledShapeNeedsItsOwnArm",
+			src:      `fn f(s: {radius: number} | {radius: number, label: string}) { return match s { {radius} => radius } }`,
+			wantErrs: []string{"1:70-1:100: match is not exhaustive; add a branch for `{radius: number, label: string}`"},
+		},
+		{
+			// An inexact member may carry `label` under any type, so absence proves nothing
+			// about it and the pattern still matches it.
+			name: "AnInexactMemberIsNotExcluded",
+			src:  `fn f(s: {radius: number} | {radius: number, label: string, ...}) { return match s { {radius} => radius } }`,
+			want: "fn (s: {radius: number} | {radius: number, label: string, ...}) -> number",
+		},
+		{
+			// A rest takes the keys the pattern leaves, so it checks none absent.
+			name: "ARestChecksNothingAbsent",
+			src:  `fn f(s: {radius: number} | {radius: number, label: string}) { return match s { {radius, ...r} => radius } }`,
+			want: "fn (s: {radius: number} | {radius: number, label: string}) -> number",
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			values, _, errs := inferSource(t, tt.src)
+			if tt.wantErrs != nil {
+				require.Equal(t, tt.wantErrs, messagesWithSpan(t, errs))
+				return
+			}
 			require.Empty(t, messagesWithSpan(t, errs))
 			require.Equal(t, tt.want, values["f"])
 		})

@@ -76,10 +76,15 @@ type ObjectKey struct {
 
 // ObjectTest matches a structural object shape. Keys are the fields the pattern
 // named at this level, in source order. A field's own sub-pattern is not part of the
-// test. It becomes a split over the projected field.
+// test. It becomes a split over the projected field. Pat is the object pattern the test
+// came from, which the solver keys what it learns about the test by. Also holds the
+// patterns of equal object tests that branches under this one no longer make, since this
+// test implies theirs. The solver records for them what it records for Pat.
 type ObjectTest struct {
 	Keys []ObjectKey
 	Rest RestKind
+	Pat  *ast.ObjectPat
+	Also []*ast.ObjectPat
 }
 
 // TupleTest matches a structural tuple shape of Len elements. An element's

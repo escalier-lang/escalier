@@ -20,6 +20,9 @@ type SolTypes interface {
 	// IsMethodRead reports whether the member read n resolved to a method that runs
 	// against the value it was read from.
 	IsMethodRead(n ast.Node) bool
+	// AbsentKeys returns the keys the object pattern p's runtime test also checks are
+	// absent.
+	AbsentKeys(p *ast.ObjectPat) []string
 }
 
 // SolverJSTypes answers from one internal/solver run.
@@ -63,6 +66,11 @@ func (s SolverJSTypes) CalleeConstructs(callee ast.Expr) bool {
 // and so looks the same as a field holding a plain function.
 func (s SolverJSTypes) IsMethodRead(e ast.Expr) bool {
 	return s.Types.IsMethodRead(e)
+}
+
+// AbsentKeys reads the keys the run recorded for p.
+func (s SolverJSTypes) AbsentKeys(p *ast.ObjectPat) []string {
+	return s.Types.AbsentKeys(p)
 }
 
 // NullableArms reads the union arms that are `null` and `undefined`. soltype gives

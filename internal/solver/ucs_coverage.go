@@ -577,14 +577,14 @@ func (c *checker) memberTagged(scope *Scope, member soltype.Type, group tagGroup
 	case *soltype.ClassType:
 		// A structural tag names a class member when the instance carries every key it
 		// tests, the same rule that lets the branch under it destructure the member.
-		return c.nominalTagged(scope, m, group.tests) || c.ctx.structuralTagged(member, group.tests)
+		return c.nominalTagged(scope, m, group.tests) || c.structuralTagged(member, group.tests)
 	case *soltype.TupleType:
 		if shape, ok := c.ctx.variadicShape(m); ok {
 			return variadicTagged(shape, group.tests)
 		}
-		return c.ctx.structuralTagged(member, group.tests)
+		return c.structuralTagged(member, group.tests)
 	case *soltype.ObjectType:
-		return c.ctx.structuralTagged(member, group.tests)
+		return c.structuralTagged(member, group.tests)
 	default:
 		return false
 	}
@@ -718,7 +718,7 @@ func (c *checker) nominalTagged(scope *Scope, member *soltype.ClassType, tags []
 
 // structuralTagged reports whether some covering test is a shape the member carries, which is
 // what lets the branch under that test destructure it.
-func (c *Context) structuralTagged(member soltype.Type, tags []ucs.Test) bool {
+func (c *checker) structuralTagged(member soltype.Type, tags []ucs.Test) bool {
 	for _, tag := range tags {
 		if c.testMatchesMemberShape(tag, member) {
 			return true
