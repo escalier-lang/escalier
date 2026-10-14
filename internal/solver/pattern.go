@@ -805,7 +805,7 @@ func (c *checker) bindInstancePat(scope *Scope, lvl int, p *ast.InstancePat, scr
 		obj, _ := c.bindPatMode(scope, lvl, p.Object, c.freshAt(lvl), nil, scrutineeMode, leafTypes, emit, purpose).(*soltype.ObjectPat)
 		return &soltype.InstancePat{ClassName: name, Object: obj}
 	}
-	target, targetConcrete := c.narrowToClass(lvl, p, ct, scrutinee, concrete)
+	target, targetConcrete := c.narrowToClass(lvl, p, ct, scrutinee, concrete, nil)
 	obj, _ := c.bindPatMode(scope, lvl, p.Object, target, targetConcrete, scrutineeMode, leafTypes, emit, purpose).(*soltype.ObjectPat)
 	return &soltype.InstancePat{ClassName: ct.Name, Object: obj}
 }
@@ -816,24 +816,75 @@ func (c *checker) bindInstancePat(scope *Scope, lvl int, p *ast.InstancePat, scr
 //
 // It is the narrowing half of an instance pattern, shared with the UCS IR's class test so
 // the two cannot drift. blame is the node the narrowing constraint is anchored to: the
-// written pattern for bindInstancePat, the tag test's class name for the IR.
+// written pattern for bindInstancePat, the tag test's class name for the IR. shape is the
+// scrutinee's union structure as it stood before any arm bound, and nil when the caller holds
+// no such snapshot, in which case the scrutinee is grounded here.
 func (c *checker) narrowToClass(
-	lvl int, blame ast.Node, ct *soltype.ClassType, scrutinee, concrete soltype.Type,
+	lvl int, blame ast.Node, ct *soltype.ClassType, scrutinee, concrete, shape soltype.Type,
 ) (target, targetConcrete soltype.Type) {
+	sc, isClass := c.classCarrier(scrutinee)
+	// A scrutinee whose class extends ct is already an instance of it, so the pattern narrows
+	// nothing. Its fields project out of the scrutinee's own view of ct, which carries the
+	// arguments the scrutinee fixes, so a `Failure{payload}` arm over a `Timeout<number>`
+	// binds `payload` as `number`.
+	if isClass && sc.Name != ct.Name {
+		if up, reaches, _ := c.ctx.ancestorInstance(sc, ct.Name); reaches {
+			if body, ok := c.ctx.projectClassBody(up); ok {
+				return body, body
+			}
+			return scrutinee, concrete
+		}
+	}
 	inst := c.freshClassInstance(ct, lvl)
+	// A union scrutinee whose members include instances of ct, directly or through a
+	// subclass, narrows to those members. `AppError{code}` over `ParseError | OtherError`
+	// keeps `ParseError`. Each kept member's view of ct flows into the fresh instance, so
+	// the instance's arguments cover every member the pattern can match.
+	if shape == nil {
+		shape = groundedCarrier(scrutinee)
+	}
+	if ups := c.unionMembersReaching(shape, ct.Name); len(ups) > 0 {
+		for _, up := range ups {
+			c.constrain(blame, up, inst)
+		}
+		if body, ok := c.ctx.projectClassBody(inst); ok {
+			return body, body
+		}
+		return scrutinee, concrete
+	}
 	// The pattern narrows the scrutinee to the named class. The instance flows into the
 	// scrutinee, so a scrutinee that cannot be this class is rejected here.
 	c.constrain(blame, inst, scrutinee)
 	// Project the scrutinee's own instance when it names the same class, so its concrete
 	// arguments give the field types directly; a downcast falls back to the asserted instance.
 	projected := inst
-	if sc, ok := c.classCarrier(scrutinee); ok && sc.Name == ct.Name {
+	if isClass && sc.Name == ct.Name {
 		projected = sc
 	}
 	if body, ok := c.ctx.projectClassBody(projected); ok {
 		return body, body
 	}
 	return scrutinee, concrete
+}
+
+// unionMembersReaching returns, for each member of the union shape whose class is name or
+// extends it, that member's instance of name. It returns nothing when shape is not a union.
+func (c *checker) unionMembersReaching(shape soltype.Type, name string) []*soltype.ClassType {
+	u, isUnion := soltype.CarrierOf(shape).(*soltype.UnionType)
+	if !isUnion {
+		return nil
+	}
+	var ups []*soltype.ClassType
+	for _, member := range u.Types {
+		sc, ok := c.classCarrier(member)
+		if !ok {
+			continue
+		}
+		if up, reaches, _ := c.ctx.ancestorInstance(sc, name); reaches {
+			ups = append(ups, up)
+		}
+	}
+	return ups
 }
 
 // bindExtractorPat types an extractor pattern `Name(a, b)`. It narrows the scrutinee to the

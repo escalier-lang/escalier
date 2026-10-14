@@ -24,6 +24,8 @@ const (
 	OriginValElse
 	// OriginGuard is an arm's `if` guard.
 	OriginGuard
+	// OriginCatchArm is an arm of a `try` expression's `catch` clause.
+	OriginCatchArm
 )
 
 // String renders the kind as the phrase a diagnostic uses to name the construct.
@@ -37,6 +39,8 @@ func (k OriginKind) String() string {
 		return "val else"
 	case OriginGuard:
 		return "guard"
+	case OriginCatchArm:
+		return "catch arm"
 	default:
 		return "unknown origin"
 	}
