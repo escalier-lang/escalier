@@ -36,6 +36,38 @@ func (s tupleShape) elemUnion(c *Context) soltype.Type {
 	return newUnion(c, elems)
 }
 
+// atLength returns the tuple the shape holds at length count, and false when it holds none
+// of that length. open asks instead for the tuples of length count or more, as a tuple
+// pattern with a trailing rest admits. Their first count values are fixed and the values
+// after them are variadic. Past the prefix, a position of such a tuple may hold a middle
+// value or a suffix value depending on the length, so it reads as the union of the two. open
+// reports false when count fits in the prefix, which the shape already reads.
+func (s tupleShape) atLength(c *Context, count int, open bool) (soltype.Type, bool) {
+	if s.rest == nil {
+		return nil, false
+	}
+	if open {
+		if count <= len(s.prefix) {
+			return nil, false
+		}
+		tail := newUnion(c, append([]soltype.Type{s.rest}, s.suffix...))
+		fixed := slices.Clone(s.prefix)
+		for len(fixed) < count {
+			fixed = append(fixed, tail)
+		}
+		return c.variadicTuple(fixed, tail, nil), true
+	}
+	if count < s.minLen() {
+		return nil, false
+	}
+	elems := slices.Clone(s.prefix)
+	for range count - s.minLen() {
+		elems = append(elems, s.rest)
+	}
+	elems = append(elems, s.suffix...)
+	return &soltype.TupleType{Elems: elems}, true
+}
+
 // minLen returns how many values every tuple of the shape holds.
 func (s tupleShape) minLen() int { return len(s.prefix) + len(s.suffix) }
 

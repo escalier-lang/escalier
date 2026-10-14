@@ -497,6 +497,11 @@ func (c *Context) testMatchesMemberShape(test ucs.Test, member soltype.Type) boo
 		}
 		return c.objectMemberHasKeys(member, names)
 	case *ucs.TupleTest:
+		// A variadic member holds every length from its fixed values up, so an exact test
+		// fits it at any length that reaches them and a rest test fits it always.
+		if shape, ok := c.variadicShape(member); ok {
+			return t.Rest == ucs.TrailingRest || t.Len >= shape.minLen()
+		}
 		return tupleMemberFitsArity(member, t.Len, t.Rest == ucs.TrailingRest)
 	default:
 		return false
@@ -507,7 +512,16 @@ func (c *Context) testMatchesMemberShape(test ucs.Test, member soltype.Type) boo
 // checker's one tuple projection. Every element's upper bound is anchored to node, since a
 // normalized test names no sub-pattern to underline the way a written tuple pattern does.
 func (b *pathBinder) tupleShapeReq(v scrutineeView, node ast.Node, count int, inexact bool) *testedTuple {
-	elems, scrutTup, concreteTup := b.c.projectTuple(node, b.lvl, v.ty, v.concrete, count, inexact, nil, forBinding)
+	scrutinee, concrete := v.ty, v.concrete
+	// A tuple test checks the scrutinee's length at runtime, so a variadic scrutinee is read
+	// as the tuple it holds at the lengths the test admits. `[a, b]` over
+	// `[number, ...Array<string>]` then reads `[number, string]`.
+	if shape, ok := b.c.ctx.variadicShape(v.ty); ok {
+		if at, fits := shape.atLength(b.c.ctx, count, inexact); fits {
+			scrutinee, concrete = at, at
+		}
+	}
+	elems, scrutTup, concreteTup := b.c.projectTuple(node, b.lvl, scrutinee, concrete, count, inexact, nil, forBinding)
 	return &testedTuple{elems: elems, scrut: scrutTup, concrete: concreteTup}
 }
 

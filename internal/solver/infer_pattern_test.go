@@ -1399,3 +1399,57 @@ func TestInferObjectContainingTuplePattern(t *testing.T) {
 	require.Empty(t, errs)
 	require.Equal(t, "fn (o: {pt: [number, string]}) -> [string, number]", values["f"])
 }
+
+// TestInferMatchVariadicTupleScrutinee covers tuple patterns over a variadic tuple. A tuple
+// test checks the length at runtime, so each pattern matches the lengths it admits and binds
+// each position at the type the scrutinee holds there.
+func TestInferMatchVariadicTupleScrutinee(t *testing.T) {
+	tests := []struct {
+		name     string
+		src      string
+		want     string
+		wantErrs []string
+	}{
+		{
+			name: "EachLengthBindsItsPositions",
+			src:  `fn f(t: [number, ...Array<string>]) { return match t { [a] => a, [a, b] => b, [a, b, c, ...r] => c } }`,
+			want: "fn (t: [number, ...Array<string>]) -> number | string",
+		},
+		{
+			name: "ARestPastThePrefixBindsTheMiddle",
+			src:  `fn f(t: [number, ...Array<string>]) { return match t { [a] => 0, [a, b, ...r] => r } }`,
+			want: "fn (t: [number, ...Array<string>]) -> 0 | Array<string>",
+		},
+		{
+			// `[a, b]` reads the suffix's `boolean` at its last position. Past the prefix, a
+			// position under a rest may hold a middle or a suffix value, so `c` reads both.
+			name: "AFixedSuffixFillsTheLastPositions",
+			src:  `fn f(t: [number, ...Array<string>, boolean]) { return match t { [a, b] => b, [a, b, c, ...r] => c } }`,
+			want: "fn (t: [number, ...Array<string>, boolean]) -> boolean | string",
+		},
+		{
+			name:     "MissingLengthsAreReported",
+			src:      `fn f(t: [number, ...Array<string>]) { return match t { [a] => a, [a, b] => b } }`,
+			wantErrs: []string{"1:46-1:79: match is not exhaustive; add a branch for `[number, ...Array<string>]`"},
+		},
+		{
+			// A `val` destructuring tests no length, so it still needs the scrutinee to have
+			// exactly the pattern's length.
+			name:     "ADestructuringStillNeedsTheLength",
+			src:      `fn f(t: [number, ...Array<string>]) { val [a, b] = t
+				return b }`,
+			wantErrs: []string{"1:43-1:49: cannot constrain [number, ...Array<string>] <: tuple"},
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			values, _, errs := inferSource(t, tt.src)
+			if tt.wantErrs != nil {
+				require.Equal(t, tt.wantErrs, messagesWithSpan(t, errs))
+				return
+			}
+			require.Empty(t, messagesWithSpan(t, errs))
+			require.Equal(t, tt.want, values["f"])
+		})
+	}
+}

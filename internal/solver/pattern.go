@@ -574,6 +574,13 @@ func (c *checker) tupleRestType(lvl int, node ast.Node, scrutinee soltype.Type, 
 		rest := c.ctx.variadicTuple(shape.prefix[prefix:], shape.rest, shape.suffix)
 		return rest, rest
 	}
+	// A prefix reaching into the middle of a variadic scrutinee with no fixed suffix leaves
+	// the rest of the middle, so `[a, b, ...rest]` over `[number, ...Array<string>]` binds
+	// `Array<string>`. A match arm reaches this, since its tuple test checks the length.
+	if shape, ok := c.ctx.variadicShape(scrutinee); ok && len(shape.suffix) == 0 && shape.rest != nil {
+		rest := c.ctx.variadicTuple(nil, shape.rest, nil)
+		return rest, rest
+	}
 	tup, ok := c.restTupleShape(scrutinee, scrutTup, concreteTup)
 	if !ok || len(tup.Elems) < prefix {
 		v := c.freshAt(lvl)
