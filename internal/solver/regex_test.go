@@ -3,6 +3,7 @@ package solver
 import (
 	"testing"
 
+	"github.com/escalier-lang/escalier/internal/ast"
 	"github.com/escalier-lang/escalier/internal/soltype"
 	"github.com/stretchr/testify/require"
 )
@@ -253,4 +254,67 @@ func TestInferRegexTypeCaptures(t *testing.T) {
 			require.Equal(t, tt.want, soltype.Print(expandAliasResidual(ctx, nodes["Result"])))
 		})
 	}
+}
+
+// TestInferRegexLiteral covers a regex literal, which types as an instance of the `RegExp`
+// class std:regexp declares, so its members read through that class.
+func TestInferRegexLiteral(t *testing.T) {
+	tests := []struct {
+		name string
+		src  string
+		want map[string]string
+	}{
+		{
+			name: "a literal is a RegExp",
+			src:  `val re = /ab+c/`,
+			want: map[string]string{"re": "RegExp"},
+		},
+		{
+			name: "a literal with flags is a RegExp",
+			src:  `val re = /^(?<year>\d{4})$/gi`,
+			want: map[string]string{"re": "RegExp"},
+		},
+		{
+			name: "a method reads through RegExp",
+			src: `
+				val re: mut RegExp = /ab+c/
+				val ok = re.test("abbc")
+			`,
+			want: map[string]string{"ok": "boolean"},
+		},
+		{
+			name: "a property reads through RegExp",
+			src:  `val src = /ab+c/.source`,
+			want: map[string]string{"src": "string"},
+		},
+		{
+			name: "a literal passes where a RegExp is expected",
+			src:  `val parts = "a,b".split(/,/)`,
+			want: map[string]string{"parts": "Array<string>"},
+		},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			values, errs := inferAgainstTree(t, test.src)
+			require.Empty(t, errs)
+			for name, want := range test.want {
+				require.Equal(t, want, values[name], name)
+			}
+		})
+	}
+}
+
+// TestRegexLiteralWithoutRegExp asserts that a run with no std:regexp reports the missing
+// class once, however many regex literals it reads, and records each literal's type.
+func TestRegexLiteralWithoutRegExp(t *testing.T) {
+	c := newTestChecker()
+	first := ast.NewLitExpr(ast.NewRegex("/a/", testSpan()))
+	second := ast.NewLitExpr(ast.NewRegex("/b/", testSpan()))
+	require.IsType(t, &soltype.ErrorType{}, c.inferExpr(NewScope(), 0, first))
+	require.IsType(t, &soltype.ErrorType{}, c.inferExpr(NewScope(), 0, second))
+	require.Equal(t, []string{
+		"the standard library declares no class `RegExp`, which the checker needs",
+	}, errorMessagesOf(c.errs))
+	require.IsType(t, &soltype.ErrorType{}, c.info.TypeOf(first))
+	require.IsType(t, &soltype.ErrorType{}, c.info.TypeOf(second))
 }

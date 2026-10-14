@@ -17,12 +17,24 @@ import (
 // inferLiteral types a literal expression and records it in Info. A number, string, or
 // boolean literal types as its singleton soltype.LitType. `null` and `undefined` type as
 // the atoms atomLitOf returns. Neither carries provenance, for the reason atomLitOf gives.
-// The remaining ast literal kinds, regex and bigint, fall through to the subset guard
-// until soltype.Lit grows a member for each (§ soltype/type.go Prim/Lit note).
+// A regex literal types as an instance of `RegExp`, which regexpInstance returns. A bigint
+// literal falls through to the subset guard until soltype.Lit grows a member for it
+// (§ soltype/type.go Prim/Lit note).
 func (c *checker) inferLiteral(e *ast.LiteralExpr) soltype.Type {
 	if atom, _, isAtom := atomLitOf(e.Lit); isAtom {
 		c.recordType(e, atom)
 		return atom
+	}
+	if _, isRegex := e.Lit.(*ast.RegexLit); isRegex {
+		// A regex literal evaluates to a `RegExp` object, so it types as the class rather
+		// than as a soltype.RegexType. A RegexType is a set of strings, the type a regex
+		// annotation names.
+		t := c.regexpInstance()
+		c.recordType(e, t)
+		if _, failed := t.(*soltype.ErrorType); !failed {
+			c.recordProv(t, e, LiteralInference)
+		}
+		return t
 	}
 	var lit soltype.Lit
 	switch l := e.Lit.(type) {

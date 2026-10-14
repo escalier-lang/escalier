@@ -1408,9 +1408,12 @@ func (c *checker) projectedMember(lvl int, blame ast.Node, name string, recv, ca
 	return c.instanceMemberValue(lvl, blame, c.instantiateMethodLifetimes(lvl, blame, recv, member)), true
 }
 
+// stdClass names a class the standard library declares and the package that declares it.
+type stdClass struct{ uri, name string }
+
 // primitiveWrappers names, for each primitive, the class the standard library declares
-// for its values and the package that declares it.
-var primitiveWrappers = map[soltype.Prim]struct{ uri, name string }{
+// for its values.
+var primitiveWrappers = map[soltype.Prim]stdClass{
 	soltype.NumPrim:    {"std:number", "Number"},
 	soltype.StrPrim:    {"std:string", "String"},
 	soltype.BoolPrim:   {"std:boolean", "Boolean"},
@@ -1478,16 +1481,61 @@ func (c *Context) ownPrimitiveWrapper(t soltype.Type) (*soltype.ClassType, bool)
 	if !ok {
 		return nil, false
 	}
-	ns, ok := c.packages.Lookup(wrapper.uri)
-	if !ok || ns == nil {
-		return nil, false
+	ct, _, ok := c.loadedClass(wrapper)
+	return ct, ok
+}
+
+// loadedClass returns the class cls names when the run has loaded cls's package. When it
+// returns false, the fault says why. It is preludeClassAbsent for a package the run has not
+// loaded or one that declares no such name, and preludeClassNotAClass for a name bound to
+// something other than a class.
+func (c *Context) loadedClass(cls stdClass) (*soltype.ClassType, preludeClassFault, bool) {
+	if c.packages == nil {
+		return nil, preludeClassAbsent, false
 	}
-	b, ok := ns.Types[wrapper.name]
+	ns, ok := c.packages.Lookup(cls.uri)
+	if !ok || ns == nil {
+		return nil, preludeClassAbsent, false
+	}
+	b, ok := ns.Types[cls.name]
 	if !ok {
-		return nil, false
+		return nil, preludeClassAbsent, false
 	}
 	ct, isClass := b.Type.(*soltype.ClassType)
-	return ct, isClass
+	if !isClass {
+		return nil, preludeClassNotAClass, false
+	}
+	return ct, preludeClassAbsent, true
+}
+
+// regexpClass is the class every regex literal's value is an instance of.
+var regexpClass = stdClass{"std:regexp", "RegExp"}
+
+// regexpInstance returns a fresh instance of the `RegExp` class std:regexp declares. It
+// reads the class from the packages the run has loaded and never loads one itself.
+//
+// When the run has loaded no usable `RegExp`, regexpInstance returns the ErrorType recovery
+// sentinel. It reports MissingPreludeClassError on the first such call only.
+//
+// The instance does not record the pattern's named groups, so a match's `groups` has the
+// type std:regexp declares for every pattern.
+func (c *checker) regexpInstance() soltype.Type {
+	ct, fault, ok := c.ctx.loadedClass(regexpClass)
+	if !ok {
+		if !c.regexpReported {
+			c.regexpReported = true
+			if c.ctx.probe != nil {
+				c.ctx.probe.onRollback(func() { c.regexpReported = false })
+			}
+			c.report(&MissingPreludeClassError{Name: regexpClass.name, Fault: fault})
+		}
+		return &soltype.ErrorType{}
+	}
+	inst := *ct
+	inst.TypeArgs = slices.Clone(ct.TypeArgs)
+	inst.Defaults = slices.Clone(ct.Defaults)
+	inst.LifetimeArgs = slices.Clone(ct.LifetimeArgs)
+	return &inst
 }
 
 // objectMember resolves a read of a method, getter, or setter carried by a plain object type,
