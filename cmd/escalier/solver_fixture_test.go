@@ -330,7 +330,6 @@ type emitSkip struct {
 var emitSkips = map[emitSkip]*solverSkipCause{
 	{"namespace_use_parent_symbol", "index.d.ts"}:  causeAnyAsUnknown,
 	{"class_inheritance_namespaces", "index.d.ts"}: causeCheckerRootNamespacePrefix,
-	{"generalize", "index.d.ts"}:                   causeUnusedParamNotGeneralized,
 	{"function_overloading", "index.d.ts"}:         causeAsyncNoValueReturn,
 }
 
@@ -344,14 +343,6 @@ var (
 	causeAnyAsUnknown = &solverSkipCause{
 		name:   "a written `any` emitting as `unknown`",
 		ticket: "#1676",
-	}
-	// A parameter the body never reads coalesces to `unknown` rather than becoming a
-	// type parameter, so `fn fst(a, b) { return a }` emits `<T0>(a: T0, b: unknown) => T0`
-	// where the twin emits `<T0, T1>(a: T0, b: T1) => T0`. The bound a call site imposes
-	// on a parameter is lost the same way.
-	causeUnusedParamNotGeneralized = &solverSkipCause{
-		name:   "generalizing a parameter the body never reads",
-		ticket: "#1774",
 	}
 	// A reference at the module root to a type a namespace declares emits without the
 	// namespace on the checker. With `class NsDerived` in `lib/geo/`, the root

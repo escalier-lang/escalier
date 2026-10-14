@@ -283,10 +283,14 @@ func PrintAsSchemeWith(
 	// Every remaining quantified variable takes a generated T0, T1, … in first-appearance
 	// order, skipping any name a source parameter already claims.
 	next := 0
+	// generatedAt records the variable behind each generated label, so its bound can be
+	// appended in place once every name is registered.
+	generatedAt := map[int]*TypeVarType{}
 	for _, v := range params {
 		if _, bound := p.names[v]; bound {
 			continue
 		}
+		generatedAt[len(labels)] = v
 		name := typeParamName(next)
 		for p.nameTaken(name) {
 			next++
@@ -371,6 +375,14 @@ func PrintAsSchemeWith(
 			bounds = []Type{tp.UpperBound}
 		}
 		labels[i] += p.typeParamSuffix(bounds, tp.Default)
+	}
+	// A generated binder renders the upper bounds its variable carries. The solver hands
+	// this function a display copy that carries only the concrete bounds the parameter is
+	// held to. Passing a to a callee's `A: number` renders `fn <T0: number>(a: T0) -> T0`.
+	for i := range labels {
+		if v, generated := generatedAt[i]; generated {
+			labels[i] += p.typeParamSuffix(v.UpperBounds, nil)
+		}
 	}
 	switch t.(type) {
 	case *ClassType, *AliasType:
