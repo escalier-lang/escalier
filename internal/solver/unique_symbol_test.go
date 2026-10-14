@@ -3,6 +3,7 @@ package solver
 import (
 	"testing"
 
+	"github.com/escalier-lang/escalier/internal/dep_graph"
 	"github.com/escalier-lang/escalier/internal/soltype"
 	"github.com/stretchr/testify/require"
 )
@@ -456,6 +457,63 @@ func TestUniqueSymbolPosition(t *testing.T) {
 			for name, want := range tt.want {
 				require.Equal(t, want, values[name], name)
 			}
+		})
+	}
+}
+
+// TestModuleSymbols covers the symbols a module run reports for the `.d.ts` emitter. Each
+// is named by the path a program reads it through. A symbol a declaration inside a block
+// mints is local to that block and is left out.
+func TestModuleSymbols(t *testing.T) {
+	tests := []struct {
+		name       string
+		src        string
+		wantMinted []string
+		wantOwners map[string]string
+	}{
+		{
+			name:       "RootVal",
+			src:        "declare val sym: unique symbol",
+			wantMinted: []string{"sym"},
+			wantOwners: map[string]string{},
+		},
+		{
+			name:       "InterfaceNamedByAVal",
+			src:        "declare interface I { readonly key: unique symbol }\ndeclare val i: I",
+			wantMinted: []string{"i.key"},
+			wantOwners: map[string]string{"I": "i"},
+		},
+		{
+			name:       "StaticReadonlyField",
+			src:        "declare class C { static readonly key: unique symbol }",
+			wantMinted: []string{"C.key"},
+			wantOwners: map[string]string{},
+		},
+		{
+			name:       "DoBlock",
+			src:        "val x = do {\n\tdeclare val s: unique symbol\n\ts\n}",
+			wantMinted: nil,
+			wantOwners: map[string]string{},
+		},
+		{
+			name:       "FunctionBody",
+			src:        "fn f() {\n\tdeclare val s: unique symbol\n\treturn s\n}",
+			wantMinted: nil,
+			wantOwners: map[string]string{},
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			module := parseModuleFiles(t, map[string]string{"input.esc": tt.src})
+			c := newTestChecker()
+			symbols := c.inferDepGraph(c.preludeScope().Child(), 0, module, dep_graph.BuildDepGraph(module))
+			require.Empty(t, c.errs)
+			var minted []string
+			for _, sym := range symbols.Minted {
+				minted = append(minted, sym.Name)
+			}
+			require.Equal(t, tt.wantMinted, minted)
+			require.Equal(t, tt.wantOwners, symbols.Owners)
 		})
 	}
 }

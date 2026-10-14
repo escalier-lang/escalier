@@ -55,6 +55,8 @@ type ModuleResult struct {
 	Info *Info
 	// Packages holds the surface of every package the run loaded.
 	Packages *PackageRegistry
+	// Symbols describes the unique symbols the module's own annotations declare.
+	Symbols soltype.ModuleSymbols
 	// DepGraph is the graph the run built from the module and walked in SCC order.
 	// Codegen emits from one, and reading it here rather than rebuilding it removes
 	// the chance of emitting against a different graph than inference walked.
@@ -142,12 +144,13 @@ func inferModuleWithGroups(
 	// published by then.
 	c.bindAmbientExports()
 	g := dep_graph.BuildDepGraph(module)
-	c.inferDepGraph(scope, 0, module, g)
+	symbols := c.inferDepGraph(scope, 0, module, g)
 	return &ModuleResult{
 		Scope:      scope,
 		FileScopes: fileScopes,
 		Info:       c.info,
 		Packages:   c.ctx.packages,
+		Symbols:    symbols,
 		DepGraph:   g,
 		Errors:     c.errs,
 		checker:    c,
@@ -163,7 +166,9 @@ func inferModuleWithGroups(
 // destructuring `val [a, b] = …` registers under both value:a and value:b), and
 // drives the reconciliation pass that reports any top-level declaration the dep
 // graph did not model.
-func (c *checker) inferDepGraph(scope *Scope, lvl int, module *ast.Module, g *dep_graph.DepGraph) {
+//
+// It returns the unique symbols the module's top-level declarations minted.
+func (c *checker) inferDepGraph(scope *Scope, lvl int, module *ast.Module, g *dep_graph.DepGraph) soltype.ModuleSymbols {
 	// Saving the previous scope is defensive. A walk cannot start while another
 	// is in progress: bindImport is the only caller of loadPackage, and both
 	// call sites bind every import before walking anything, so a package is
@@ -241,6 +246,7 @@ func (c *checker) inferDepGraph(scope *Scope, lvl int, module *ast.Module, g *de
 		}
 		return true
 	})
+	return soltype.ModuleSymbols{Minted: declaredSymbols(module, c.info), Owners: c.symbolOwners}
 }
 
 // classBodiesFirst returns g.Components reordered so that a component naming a class's
