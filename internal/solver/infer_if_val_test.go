@@ -45,6 +45,80 @@ func TestInferIfValAndValElse(t *testing.T) {
 			want: "fn (u: number | string) -> number | string",
 		},
 		{
+			// A bare identifier binds only when the target holds a value, so `null` never
+			// reaches it.
+			name: "if-val bare ident drops null",
+			src: `fn f(o: string | null) {
+				return if val v = o { v } else { "" }
+			}`,
+			want: "fn (o: string | null) -> string",
+		},
+		{
+			name: "if-val bare ident drops undefined",
+			src: `fn f(o: string | undefined) {
+				return if val v = o { v } else { "" }
+			}`,
+			want: "fn (o: string | undefined) -> string",
+		},
+		{
+			name: "if-val bare ident drops null and undefined",
+			src: `fn f(o: string | null | undefined) {
+				return if val v = o { v } else { "" }
+			}`,
+			want: "fn (o: string | null | undefined) -> string",
+		},
+		{
+			// A literal pattern tests for the nullish member, so it keeps it.
+			name: "if-val null literal keeps null",
+			src: `fn f(o: number | null) {
+				return if val null = o { 1 } else { 0 }
+			}`,
+			want: "fn (o: number | null) -> 1 | 0",
+		},
+		{
+			// An annotation may name the nullish member, so an annotated identifier keeps it.
+			name: "if-val annotated ident keeps null",
+			src: `fn f(o: string | null) {
+				return if val v: null = o { v } else { null }
+			}`,
+			want: "fn (o: string | null) -> null",
+		},
+		{
+			// A union of borrows keeps its borrow once `null` is dropped, so the leaf binds as
+			// a borrow too.
+			name: "if-val object pattern over borrows and null",
+			src: `fn f(o: &{x: {a: number}} | &{x: {a: number}, y: number} | null) {
+				return if val {x} = o { x.a } else { 0 }
+			}`,
+			want: "fn (o: &{x: {a: number}} | &{x: {a: number}, y: number} | null) -> number",
+		},
+		{
+			// The alternate reads the target at its full type.
+			name: "if-val alternate keeps the nullish members",
+			src: `fn f(o: string | null) {
+				return if val v = o { v } else { o }
+			}`,
+			want: "fn (o: string | null) -> string | null",
+		},
+		{
+			// An object pattern destructures the member that remains once `null` is dropped,
+			// even when that member is written through an alias.
+			name: "if-val object pattern drops null from an alias member",
+			src: `type P = {x: number, y: number}
+			fn f(p: P | null) {
+				return if val {x, y} = p { x * y } else { 0 }
+			}`,
+			want: "fn (p: P | null) -> number",
+		},
+		{
+			name: "if-val object pattern drops undefined from an alias member",
+			src: `type C = {e: boolean}
+			fn f(c: C | undefined) {
+				return if val {e} = c { e } else { false }
+			}`,
+			want: "fn (c: C | undefined) -> boolean",
+		},
+		{
 			// A union annotation picks the matching sub-union.
 			name: "if-val narrows to sub-union",
 			src: `fn f(u: number | string | boolean) {
