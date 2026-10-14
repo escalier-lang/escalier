@@ -332,7 +332,6 @@ var emitSkips = map[emitSkip]*solverSkipCause{
 	{"class_inheritance_namespaces", "index.d.ts"}: causeCheckerRootNamespacePrefix,
 	{"generalize", "index.d.ts"}:                   causeUnusedParamNotGeneralized,
 	{"type_ann_index_signature", "index.d.ts"}:     causeIndexSignatureOptional,
-	{"logging", "index.d.ts"}:                      causeUndefinedReturn,
 	{"grouping", "index.d.ts"}:                     causeUnionOrder,
 	{"pattern_matching", "index.d.ts"}:             causeUnionOrder,
 	{"function_overloading", "index.d.ts"}:         causeAsyncNoValueReturn,
@@ -386,13 +385,6 @@ var (
 	causeAsyncNoValueReturn = &solverSkipCause{
 		name:   "an `async fn` returning no value, which the checker writes as `Promise<void>`",
 		ticket: "#1676",
-	}
-	// A function whose written return is `undefined` emits `void`, so
-	// `fn main() -> undefined` emits `main(): void` where the twin writes
-	// `main(): undefined`.
-	causeUndefinedReturn = &solverSkipCause{
-		name:   "the `undefined` return a signature writes",
-		ticket: "#1820",
 	}
 )
 

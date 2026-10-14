@@ -140,6 +140,60 @@ func TestBuildDeclStmtFromSol(t *testing.T) {
 			want:       "export declare function log(msg: string): void;\n",
 		},
 		{
+			// A `return` inside a nested function belongs to that function, so the
+			// outer body still returns no value.
+			name:   "FnWhoseNestedFunctionReturnsAValueDeclaresAVoidReturn",
+			source: `export fn run() { val f = fn () { return 1 } }`,
+			ns: &fakeSolNamespace{
+				values: map[string]soltype.Type{"run": solFn(nil, &soltype.UndefinedType{})},
+			},
+			isTopLevel: true,
+			want:       "export declare function run(): void;\n",
+		},
+		{
+			name:   "FnWritingAnUndefinedReturnDeclaresIt",
+			source: `export fn h() -> undefined { return undefined }`,
+			ns: &fakeSolNamespace{
+				values: map[string]soltype.Type{"h": solFn(nil, &soltype.UndefinedType{})},
+			},
+			isTopLevel: true,
+			want:       "export declare function h(): undefined;\n",
+		},
+		{
+			name:   "FnWritingAnUndefinedReturnOverABodyWithNoValueDeclaresIt",
+			source: `export fn main() -> undefined { console.log("hi") }`,
+			ns: &fakeSolNamespace{
+				values: map[string]soltype.Type{"main": solFn(nil, &soltype.UndefinedType{})},
+			},
+			isTopLevel: true,
+			want:       "export declare function main(): undefined;\n",
+		},
+		{
+			name:   "FnReturningUndefinedExplicitlyDeclaresAnUndefinedReturn",
+			source: `export fn k() { return undefined }`,
+			ns: &fakeSolNamespace{
+				values: map[string]soltype.Type{"k": solFn(nil, &soltype.UndefinedType{})},
+			},
+			isTopLevel: true,
+			want:       "export declare function k(): undefined;\n",
+		},
+		{
+			name:   "DeclaredFnKeepsItsWrittenUndefinedReturns",
+			source: `export declare fn each(cb: fn (x: number) -> undefined) -> undefined`,
+			ns: &fakeSolNamespace{
+				values: map[string]soltype.Type{
+					"each": solFn(
+						[]*soltype.FuncParam{solParam("cb", solFn(
+							[]*soltype.FuncParam{solParam("x", solNum())}, &soltype.UndefinedType{},
+						))},
+						&soltype.UndefinedType{},
+					),
+				},
+			},
+			isTopLevel: true,
+			want:       "export declare function each(cb: (x: number) => undefined): undefined;\n",
+		},
+		{
 			name:   "TypeAliasEmitsTheRegisteredBody",
 			source: `export type Alias = string`,
 			ns: &fakeSolNamespace{
