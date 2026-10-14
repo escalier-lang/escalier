@@ -48,6 +48,11 @@ type Context struct {
 	symbolCounter int
 	probe         *Probe
 
+	// readRaises maps a field-read requirement to the throws types its read site already
+	// raised, one per raising getter it found on the receiver. registerReadRaises fills it
+	// and readRaised reads it.
+	readRaises map[*soltype.ObjectType][]soltype.Type
+
 	// pendingRigidLts holds one entry per super signature whose lifetime binder a subtype
 	// check instantiated, waiting for checkRigidLifetimes to read what the sub required
 	// of the fresh lifetimes once the enclosing component has solved. skolemizeFuncBinder

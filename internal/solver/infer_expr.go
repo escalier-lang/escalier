@@ -3610,21 +3610,24 @@ func (c *checker) valueProp(lvl int, blame ast.Node, provNode ast.Node, name str
 	if res, ok := c.generatorMember(lvl, blame, provNode, name, recvCarrier); ok {
 		return res
 	}
-	// A union receiver reaches the structural requirement below, whose result is joined
-	// per member inside constrain by constrainUnionFieldRead. That join runs with no
-	// access to the enclosing throws sink, so the getters it may read through are
-	// collected here instead, where the sink is in scope.
-	c.raiseUnionAccessorThrows(lvl, blame, name, recvCarrier)
-	c.recordUnionMethodRead(blame, name, recvCarrier)
 	fieldVar := c.freshAt(lvl)
+	req := &soltype.ObjectType{
+		Elems:   []soltype.ObjTypeElem{&soltype.PropertyElem{Name: name, Type: fieldVar}},
+		Inexact: true, // "has at least this property" — width tolerance is inexactness
+	}
+	// A union receiver reaches the structural requirement below, whose result is joined
+	// per member inside constrain by constrainUnionFieldRead. A receiver joined from two
+	// branches reaches each of its lower bounds through constrain instead. Neither path
+	// has access to the enclosing throws sink, so the getters they may read through are
+	// raised here, where the sink is in scope, and registered for req so constrain lets
+	// them fill it.
+	c.raiseUnionAccessorThrows(lvl, blame, name, recvCarrier, req)
+	c.recordUnionMethodRead(blame, name, recvCarrier)
 	// The member-requirement record {prop: fieldVar} is deliberately NOT recorded —
 	// MissingPropertyError blames this inner fieldVar, so the record would be a dead
 	// entry (§3.3).
 	c.recordProv(fieldVar, provNode, MemberAccess)
-	c.constrain(blame, recvCarrier, &soltype.ObjectType{
-		Elems:   []soltype.ObjTypeElem{&soltype.PropertyElem{Name: name, Type: fieldVar}},
-		Inexact: true, // "has at least this property" — width tolerance is inexactness
-	})
+	c.constrain(blame, recvCarrier, req)
 	// fieldReadBorrow takes the whole receiver and unwraps mut/lifetime internally,
 	// applying PR 4 rule 4 to produce the field-bounded borrow.
 	out := c.fieldReadBorrow(fieldVar, recv, name, lvl)
