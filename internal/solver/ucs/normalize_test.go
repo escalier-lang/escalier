@@ -669,42 +669,48 @@ func mustDesugarValElse(t *testing.T, src string) *CoreSplit {
 	return core
 }
 
-// A type annotation on a pattern leaf is not a tag the branch tests. Only the annotation a
-// refutable form writes on its whole binding becomes an AnnTest. A leaf's own annotation
-// stays on the bind, where the solver reads it off the pattern node, so the branch's tag is
-// the container's shape as it would be without any annotation.
-func TestNormalizeNestedAnnotationIsNotATag(t *testing.T) {
+// A type annotation on a pattern leaf is a tag on the projection that leaf binds. The
+// branch tests the container's shape, then a split over each annotated leaf's projection
+// tests its annotation and binds the leaf beneath it. The annotation a refutable form writes
+// on its whole binding is still the only one recorded on the branch's Ann.
+func TestNormalizeNestedAnnotationIsATag(t *testing.T) {
 	// `{a: x: string}` annotates a key-value pattern's value, and `{b::number}` a shorthand
 	// element. The two carry their annotation on different nodes, so both are checked.
 	core := DesugarIfVal(findExpr[*ast.IfValExpr](t, `if val {a: x: string, b::number} = p { cons } else { alt }`))
 
 	require.Nil(t, core.Branches[0].Ann)
-	branch := Normalize(core).(*NormSplit).Branches[0]
-	require.IsType(t, &ObjectTest{}, branch.Test)
-
-	value := branch.Cont.(*NormBind)
-	require.Equal(t, "x", value.Name)
-	require.NotNil(t, value.Pat.(*ast.IdentPat).TypeAnn)
-
-	shorthand := value.Cont.(*NormBind)
-	require.Equal(t, "b", shorthand.Name)
-	require.NotNil(t, shorthand.Elem.TypeAnn)
+	snaps.MatchInlineSnapshot(t, normalized(core), snaps.Inline(`split p {
+  {a, b} => split p.a {
+    : string => bind x = p.a; split p.b {
+      : number => bind b = p.b; leaf { cons }
+    } default leaf { alt }
+  } default leaf { alt }
+} default leaf { alt }`))
 }
 
-// A tuple element's annotation behaves the same way: the branch tests the tuple's arity and
-// each annotated element is an ordinary bind on its projection.
-func TestNormalizeNestedTupleAnnotationIsNotATag(t *testing.T) {
+// A tuple element's annotation behaves the same way. The branch tests the tuple's arity and
+// each annotated element becomes a split over its projection.
+func TestNormalizeNestedTupleAnnotationIsATag(t *testing.T) {
 	core := DesugarIfVal(findExpr[*ast.IfValExpr](t, `if val [a: string, b: number] = p { cons } else { alt }`))
 
 	require.Nil(t, core.Branches[0].Ann)
-	branch := Normalize(core).(*NormSplit).Branches[0]
-	require.IsType(t, &TupleTest{}, branch.Test)
+	snaps.MatchInlineSnapshot(t, normalized(core), snaps.Inline(`split p {
+  [_, _] => split p.0 {
+    : string => bind a = p.0; split p.1 {
+      : number => bind b = p.1; leaf { cons }
+    } default leaf { alt }
+  } default leaf { alt }
+} default leaf { alt }`))
+}
 
-	first := branch.Cont.(*NormBind)
-	require.Equal(t, "a", first.Name)
-	require.NotNil(t, first.Pat.(*ast.IdentPat).TypeAnn)
+// A leaf's annotation tests even when the leaf writes a default, since codegen guards the
+// field with a runtime type check either way. The identifier a rest binds tests nothing.
+func TestNormalizeNestedAnnotationWithDefaultOrRest(t *testing.T) {
+	core := DesugarIfVal(findExpr[*ast.IfValExpr](t, `if val {a: x: number = 0, ...rest: {b: string}} = p { cons } else { alt }`))
 
-	second := first.Cont.(*NormBind)
-	require.Equal(t, "b", second.Name)
-	require.NotNil(t, second.Pat.(*ast.IdentPat).TypeAnn)
+	snaps.MatchInlineSnapshot(t, normalized(core), snaps.Inline(`split p {
+  {a?, ...} => split p.a {
+    : number => bind x = p.a, rest = p \ {a}; leaf { cons }
+  } default leaf { alt }
+} default leaf { alt }`))
 }

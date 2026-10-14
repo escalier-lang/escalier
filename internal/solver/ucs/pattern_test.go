@@ -207,21 +207,40 @@ func TestShallowTestKeepsABareRestWhole(t *testing.T) {
 
 // A shorthand element carries an annotation, a default, and a `mut` marker, none of
 // which the bound name holds. The bind points at the element so the solver can read
-// them when it binds the leaf.
+// them when it binds the leaf. This one writes no annotation, so it tests nothing and
+// the bind is named rather than left for a split to test.
 func TestShallowTestKeepsShorthandElements(t *testing.T) {
 	elem := ast.NewObjShorthandPat(
-		ast.NewIdentifier("x", ast.Span{}), true, ast.NewNumberTypeAnn(ast.Span{}), nil, span(47, 60),
+		ast.NewIdentifier("x", ast.Span{}), true, nil, num(0), span(47, 60),
 	)
 	pattern := ast.NewObjectPat([]ast.ObjPatElem{elem}, ast.Span{})
 	origin := At(OriginMatchArm, arm(span(45, 70)))
 
-	// `{mut x: number}` reads to `{x} => bind x = p.x; leaf 0`. The rendering names the
+	// `{mut x = 0}` reads to `{x?} => bind x = p.x; leaf 0`. The rendering names the
 	// key and the bound leaf and stops there, so the assertions below read the element
-	// the bind points at, which is where the annotation and the `mut` marker live.
+	// the bind points at, which is where the default and the `mut` marker live.
 	_, binds := shallowTest(pattern, NewRoot(ident("p"), origin), origin)
 	require.Len(t, binds, 1)
 	require.Equal(t, "x", binds[0].name)
 	require.Nil(t, binds[0].pat)
+	require.Same(t, elem, binds[0].elem)
+}
+
+// TestShallowTestDefersBindingANarrowingShorthand asserts that shallowTest gives the
+// `x::number` of `{x::number}` a bind with an empty `name` that still carries the
+// shorthand element. The empty `name` is what makes binder.wrap build a split testing
+// `number` instead of binding `x` right away. `x` is bound later, inside that split's
+// branch, from the name on the element.
+func TestShallowTestDefersBindingANarrowingShorthand(t *testing.T) {
+	elem := ast.NewObjShorthandPat(
+		ast.NewIdentifier("x", ast.Span{}), false, ast.NewNumberTypeAnn(ast.Span{}), nil, span(47, 57),
+	)
+	pattern := ast.NewObjectPat([]ast.ObjPatElem{elem}, ast.Span{})
+	origin := At(OriginMatchArm, arm(span(45, 70)))
+
+	_, binds := shallowTest(pattern, NewRoot(ident("p"), origin), origin)
+	require.Len(t, binds, 1)
+	require.Empty(t, binds[0].name)
 	require.Same(t, elem, binds[0].elem)
 }
 

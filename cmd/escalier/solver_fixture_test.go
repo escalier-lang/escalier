@@ -51,12 +51,6 @@ var (
 	causeIfValNullish = &solverSkipCause{
 		name: "an `if val` identifier or object pattern narrowing `null` and `undefined` out of its scrutinee",
 	}
-	// `fixtures/pattern_matching` also narrows an arm by an annotated nested leaf, which
-	// is #1956 and surfaces once this cause clears.
-	causeStructuralClassPattern = &solverSkipCause{
-		name:   "a structural pattern matched against a class instance",
-		ticket: "#1955",
-	}
 	causeUnionMember = &solverSkipCause{
 		name:   "a property read on a union whose arms do not all declare it",
 		ticket: "#1719",
@@ -88,8 +82,6 @@ var solverSkips = []solverSkip{
 
 	{"literals", causeRegexTypeAnn, "Unsupported: LitTypeAnn"},
 	{"if_val", causeIfValNullish, "cannot constrain null <: number"},
-
-	{"pattern_matching", causeStructuralClassPattern, "object is missing property: area"},
 
 	{"try_catch", causeCaughtValue, "cannot constrain unknown <: string"},
 
@@ -349,6 +341,7 @@ var emitSkips = map[emitSkip]*solverSkipCause{
 	{"type_ann_index_signature", "index.d.ts"}:     causeIndexSignatureOptional,
 	{"logging", "index.d.ts"}:                      causeUndefinedReturn,
 	{"grouping", "index.d.ts"}:                     causeUnionOrder,
+	{"pattern_matching", "index.d.ts"}:             causeUnionOrder,
 	{"function_overloading", "index.d.ts"}:         causeAsyncNoValueReturn,
 }
 

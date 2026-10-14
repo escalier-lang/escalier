@@ -165,7 +165,7 @@ func (b *pathBinder) narrowedBy(scope *Scope, s *ucs.Scrutinee, test ucs.Test, b
 		node = b.blameFor(s)
 	}
 	next := &pathBinder{c: b.c, lvl: b.lvl, blame: b.blame, views: maps.Clone(b.views)}
-	next.views[s] = next.applyTest(scope, node, v, test)
+	next.views[s] = next.applyTest(scope, node, s, v, test)
 	return next
 }
 
@@ -221,7 +221,7 @@ func (b *pathBinder) shorthandView(scope *Scope, s *ucs.Scrutinee, elem *ast.Obj
 	parent := b.viewOf(scope, s.Parent)
 	name := elem.Key.Name
 	beta := b.c.freshAt(b.lvl)
-	b.c.constrain(elem, parent.ty, propReq(name, beta, elem.Default != nil))
+	b.c.readPatternField(elem, b.lvl, parent.ty, name, beta, elem.Default != nil, forBinding)
 	v := derive(parent, beta, fieldConcrete(parent.concrete, name))
 	b.views[s] = v
 	return v
@@ -279,7 +279,7 @@ func (b *pathBinder) project(scope *Scope, s *ucs.Scrutinee) scrutineeView {
 // field the scrutinee lacks surfaces MissingPropertyError from the same rule a written
 // `{name: sub}` pattern does.
 func (b *pathBinder) projectField(parent scrutineeView, node ast.Node, name string) scrutineeView {
-	proj, concrete := b.c.projectField(node, b.lvl, parent.ty, parent.concrete, name, parent.fieldOptional(name))
+	proj, concrete := b.c.projectField(node, b.lvl, parent.ty, parent.concrete, name, parent.fieldOptional(name), forBinding)
 	return derive(parent, proj, concrete)
 }
 
@@ -393,7 +393,7 @@ func (v scrutineeView) fieldOptional(name string) bool {
 
 // applyTest narrows v by the tag test one branch of a split applies to it, and resolves
 // whatever that test leaves behind for the projections beneath it.
-func (b *pathBinder) applyTest(scope *Scope, node ast.Node, v scrutineeView, test ucs.Test) scrutineeView {
+func (b *pathBinder) applyTest(scope *Scope, node ast.Node, s *ucs.Scrutinee, v scrutineeView, test ucs.Test) scrutineeView {
 	// A scrutinee is tested against one tag per branch, so whatever an earlier call left
 	// here belongs to a different branch's test and must not be read by this one's steps.
 	v.tested = nil
@@ -417,11 +417,32 @@ func (b *pathBinder) applyTest(scope *Scope, node ast.Node, v scrutineeView, tes
 	case *ucs.ExtractorTest:
 		return b.applyExtractorTest(scope, node, v, t)
 	case *ucs.AnnTest:
+		if !s.IsRoot() {
+			return b.applyNestedAnnTest(scope, node, v, t)
+		}
 		v.tested = &testedAnn{ann: t.Ann}
 		return v
 	default:
 		return v
 	}
+}
+
+// applyNestedAnnTest narrows a projected value to the annotation a nested leaf tests, the
+// `string` of `{value: a: string}`. The view keeps its binding mode, so the leaf beneath the
+// test binds through the ordinary projection and still takes its `mut` marker and any
+// borrow. The test resolves nothing for that leaf to read, so it leaves v.tested nil.
+//
+// A projected value's type is the variable its projection minted, so the annotation is
+// checked against the shape that variable stands for when the path reached one. `a: number`
+// over the `5` of a `[5, string]` scrutinee then sees the `5`.
+func (b *pathBinder) applyNestedAnnTest(scope *Scope, node ast.Node, v scrutineeView, t *ucs.AnnTest) scrutineeView {
+	scrutinee := v.ty
+	if v.concrete != nil {
+		scrutinee = v.concrete
+	}
+	narrowed := b.c.narrowToAnn(scope, b.lvl, node, t.Ann, scrutinee)
+	v.ty, v.concrete, v.shape = narrowed, narrowed, narrowed
+	return v
 }
 
 // narrowingAnn returns the annotation the split over s tested it against, and false when
@@ -449,7 +470,7 @@ func (b *pathBinder) narrowUnion(v scrutineeView, test ucs.Test) scrutineeView {
 		shape = groundedCarrier(shape)
 	}
 	narrowed, ok := narrowUnionMembers(shape, func(member soltype.Type) bool {
-		return testMatchesMemberShape(test, member)
+		return b.c.ctx.testMatchesMemberShape(test, member)
 	})
 	if !ok {
 		// Narrowing does not apply, so the scrutinee's own type stays the bind target. The
@@ -468,14 +489,14 @@ func (b *pathBinder) narrowUnion(v scrutineeView, test ucs.Test) scrutineeView {
 // fits a tuple member of its fixed arity, or of at least that arity under a trailing
 // rest. Every other test kind returns false, the same gate narrowArmScrutinee puts on object
 // and tuple patterns alone.
-func testMatchesMemberShape(test ucs.Test, member soltype.Type) bool {
+func (c *Context) testMatchesMemberShape(test ucs.Test, member soltype.Type) bool {
 	switch t := test.(type) {
 	case *ucs.ObjectTest:
 		names := make([]string, len(t.Keys))
 		for i, key := range t.Keys {
 			names[i] = key.Name
 		}
-		return objectMemberHasKeys(member, names)
+		return c.objectMemberHasKeys(member, names)
 	case *ucs.TupleTest:
 		return tupleMemberFitsArity(member, t.Len, t.Rest == ucs.TrailingRest)
 	default:

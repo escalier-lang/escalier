@@ -91,11 +91,14 @@ type coverageWalk struct {
 // tail, so the arms after it are branches of a split inside that tail and of no other.
 // Reading the top-level split of `match v { _ if g => 0, {x} => 1, {y} => 2 }` alone would
 // find no covering branch at all.
-func readCoverage(split *ucs.NormSplit) coverage {
+//
+// annCovers answers whether a list of annotation tests over a projection admits every value
+// of that projection.
+func readCoverage(split *ucs.NormSplit, annCovers annCoversFunc) coverage {
 	w := &coverageWalk{
 		root:   split.Scrutinee,
-		strict: newArmReach(split.Scrutinee, false),
-		blind:  newArmReach(split.Scrutinee, true),
+		strict: newArmReach(split.Scrutinee, false, annCovers),
+		blind:  newArmReach(split.Scrutinee, true, annCovers),
 		seen:   set.NewSet[ucs.Norm](),
 	}
 	catchAll := w.strict.reaches(split.Default)
@@ -177,13 +180,20 @@ type armReach struct {
 	root *ucs.Scrutinee
 	// ignoreGuards selects the guard-blind reading.
 	ignoreGuards bool
+	// annCovers reports whether annotation tests over a projection admit every value of that
+	// projection.
+	annCovers annCoversFunc
 	// memo records the verdict per term, since a tail is asked about once per branch falling
 	// into it.
 	memo map[ucs.Norm]bool
 }
 
-func newArmReach(root *ucs.Scrutinee, ignoreGuards bool) *armReach {
-	return &armReach{root: root, ignoreGuards: ignoreGuards, memo: map[ucs.Norm]bool{}}
+// annCoversFunc reports whether tests, every one an annotation test of the projection s,
+// together admit every value s can hold.
+type annCoversFunc func(s *ucs.Scrutinee, tests []ucs.Test) bool
+
+func newArmReach(root *ucs.Scrutinee, ignoreGuards bool, annCovers annCoversFunc) *armReach {
+	return &armReach{root: root, ignoreGuards: ignoreGuards, annCovers: annCovers, memo: map[ucs.Norm]bool{}}
 }
 
 // reaches reports whether control reaching term reaches an arm body.
@@ -225,20 +235,58 @@ func (r *armReach) reaches(term ucs.Norm) bool {
 // one branch's test and continues below it or fails every test and continues into the tail,
 // so the split matches when all of those continuations do.
 //
-// A split over a projection gets a second reading, since the interim rules read a structural
-// sub-pattern as irrefutable: `{a: {b}}` tests `{a}` on the scrutinee and then `{b}` on the
-// projection `p.a`, and the second test is taken to hold. A projected literal, class, or
-// extractor test is refutable and gets no such reading. Neither does a test of the root
-// scrutinee, whose coverage depends on the exactness checkCondExhaustive reads off the type.
+// A split over a projection gets two more readings.
+//
+//   - The interim rules read a structural sub-pattern as irrefutable. `{a: {b}}` tests `{a}`
+//     on the scrutinee and then `{b}` on the projection `p.a`, and the second test is taken
+//     to hold.
+//   - Annotation tests that together admit every value of the projection cover it.
+//     `{value: a: string}` and `{value: b: number}` cover a `value` of `string | number`.
+//
+// A projected literal, class, or extractor test is refutable and gets neither reading. Nor
+// does a test of the root scrutinee, whose coverage depends on the exactness
+// checkCondExhaustive reads off the type.
 func (r *armReach) splitReaches(split *ucs.NormSplit) bool {
 	if r.reaches(split.Default) && r.branchesReach(split) {
 		return true
 	}
-	if split.Scrutinee == r.root || len(split.Branches) != 1 {
+	if split.Scrutinee == r.root {
+		return false
+	}
+	if tests, ok := r.annChain(split); ok && r.annCovers(split.Scrutinee, tests) {
+		return true
+	}
+	if len(split.Branches) != 1 {
 		return false
 	}
 	branch := split.Branches[0]
 	return structuralTest(branch.Test) && r.reaches(branch.Cont)
+}
+
+// annChain returns the annotation tests a value of split's projection is offered. Arms that
+// each test one annotation on the same path normalize into a chain of splits, each the
+// default of the one before:
+//
+//	split ref.value { : string => … } default split ref.value { : number => … } default ✗
+//
+// It reports false when some split on the chain makes a test other than an annotation or
+// holds a branch that does not reach an arm body.
+func (r *armReach) annChain(split *ucs.NormSplit) ([]ucs.Test, bool) {
+	var tests []ucs.Test
+	for cur := split; cur != nil; {
+		for _, branch := range cur.Branches {
+			if _, isAnn := branch.Test.(*ucs.AnnTest); !isAnn || !r.reaches(branch.Cont) {
+				return nil, false
+			}
+			tests = append(tests, branch.Test)
+		}
+		next, isSplit := cur.Default.(*ucs.NormSplit)
+		if !isSplit || !next.Scrutinee.SamePath(split.Scrutinee) {
+			break
+		}
+		cur = next
+	}
+	return tests, len(tests) > 0
 }
 
 // branchesReach reports whether every branch of a split reaches an arm body once its test
@@ -265,7 +313,17 @@ func (c *checker) checkCondExhaustive(scope *Scope, lvl int, norm ucs.Norm, shap
 	if !isSplit {
 		return
 	}
-	cov := readCoverage(split)
+	// Both readings ask about every split on a chain, and a chain read from one split always
+	// yields the same tests, so each answer is kept under the chain's first test.
+	answers := map[ucs.Test]bool{}
+	cov := readCoverage(split, func(s *ucs.Scrutinee, tests []ucs.Test) bool {
+		got, asked := answers[tests[0]]
+		if !asked {
+			got = c.annTestsCover(scope, lvl, shape, s, tests)
+			answers[tests[0]] = got
+		}
+		return got
+	})
 	if cov.catchAll {
 		return
 	}
@@ -324,6 +382,116 @@ func (c *checker) checkCondExhaustive(scope *Scope, lvl int, norm ucs.Norm, shap
 		hasStructuralTag(cov.guarded.tests) || cov.guardedCatchAll,
 		hasStructuralTag(cov.refutable.tests))
 	c.report(uncovered.errorAt(split.Origin))
+}
+
+// annTestsCover reports whether tests, annotation tests of the projection s of the scrutinee
+// whose snapshot is shape, together admit every value the projection can hold. A union
+// projection is covered member by member, so `a: string` and `b: number` cover
+// `string | number`. It reports false when the projection's type cannot be read off shape.
+func (c *checker) annTestsCover(scope *Scope, lvl int, shape soltype.Type, s *ucs.Scrutinee, tests []ucs.Test) bool {
+	t, ok := c.projectionType(shape, s)
+	if !ok {
+		return false
+	}
+	// The typing walk resolved each annotation already and reported any it could not
+	// support, so resolving them again runs under a discarded probe.
+	p := c.openProbe()
+	group := tagGroup{tests: tests, anns: c.annTypes(scope, lvl, tests)}
+	c.closeProbe(p, false)
+	if c.annAdmits(t, group) {
+		return true
+	}
+	u, isUnion := t.(*soltype.UnionType)
+	if !isUnion {
+		return false
+	}
+	for _, member := range u.Types {
+		if !c.annAdmits(member, group) {
+			return false
+		}
+	}
+	return true
+}
+
+// projectionType returns the type the path s names when the root scrutinee has type shape. It
+// reads each step through stepRead and reports false for a step it cannot read.
+func (c *checker) projectionType(shape soltype.Type, s *ucs.Scrutinee) (soltype.Type, bool) {
+	if s.IsRoot() {
+		return shape, true
+	}
+	parent, ok := c.projectionType(shape, s.Parent)
+	if !ok {
+		return nil, false
+	}
+	return c.stepRead(parent, s.Step)
+}
+
+// stepRead returns the type a read through step yields on a value of type t, and reports
+// false when t does not hold the step.
+//
+//   - A field step reads a property, joined with `undefined` when it is optional, or a
+//     getter getterReadsAsProperty accepts.
+//   - A remainder step reads as the object itself, since a field read through the remainder
+//     names a key the remainder kept.
+//   - An index step reads a tuple element, and a suffix step the tuple of elements from its
+//     index on.
+//   - A class instance reads off its projected body.
+//   - A union reads each member and joins what the members holding the step hold. It reports
+//     false when no member holds it.
+//
+// A union member that lacks the step is left out because a member lacking it is never
+// tagged by the test above the projection. memberTagged tags an object only when it reads
+// every key as a property, and a tuple only when its arity fits. Such a member reaches the
+// arms below as the projection's fallthrough, and coverage judges it there.
+func (c *checker) stepRead(t soltype.Type, step ucs.Step) (soltype.Type, bool) {
+	switch carrier := c.expandAliasChain(soltype.CarrierOf(t)).(type) {
+	case *soltype.UnionType:
+		var held []soltype.Type
+		for _, member := range carrier.Types {
+			if read, ok := c.stepRead(member, step); ok {
+				held = append(held, read)
+			}
+		}
+		if len(held) == 0 {
+			return nil, false
+		}
+		// No Context, so subsumption does not run. See peelBorrowUnion.
+		return newUnion(nil, held), true
+	case *soltype.ClassType:
+		body, ok := c.ctx.projectClassBody(carrier)
+		if !ok {
+			return nil, false
+		}
+		return c.stepRead(body, step)
+	case *soltype.ObjectType:
+		switch step := step.(type) {
+		case ucs.FieldStep:
+			if prop, found := carrier.Prop(step.Name); found {
+				if prop.Optional {
+					return newUnion(nil, []soltype.Type{prop.Type, &soltype.UndefinedType{}}), true
+				}
+				return prop.Type, true
+			}
+			member, found := carrier.ReadMember(step.Name)
+			if g, isGetter := member.(*soltype.GetterElem); found && isGetter && getterReadsAsProperty(g) {
+				return g.Type, true
+			}
+		case ucs.RemainderStep:
+			return carrier, true
+		}
+	case *soltype.TupleType:
+		switch step := step.(type) {
+		case ucs.IndexStep:
+			if step.Index < len(carrier.Elems) {
+				return carrier.Elems[step.Index], true
+			}
+		case ucs.SuffixStep:
+			if step.From <= len(carrier.Elems) {
+				return &soltype.TupleType{Elems: carrier.Elems[step.From:], Inexact: carrier.Inexact}, true
+			}
+		}
+	}
+	return nil, false
 }
 
 // uncoveredWitnesses holds the values a form leaves uncovered, grouped by the fix each one
@@ -400,9 +568,11 @@ func (c *checker) memberTagged(scope *Scope, member soltype.Type, group tagGroup
 	case *soltype.NullType, *soltype.UndefinedType:
 		return atomTagged(member, group.tests)
 	case *soltype.ClassType:
-		return c.nominalTagged(scope, m, group.tests)
+		// A structural tag names a class member when the instance carries every key it
+		// tests, the same rule that lets the branch under it destructure the member.
+		return c.nominalTagged(scope, m, group.tests) || c.ctx.structuralTagged(member, group.tests)
 	case *soltype.ObjectType, *soltype.TupleType:
-		return structuralTagged(member, group.tests)
+		return c.ctx.structuralTagged(member, group.tests)
 	default:
 		return false
 	}
@@ -507,9 +677,9 @@ func (c *checker) nominalTagged(scope *Scope, member *soltype.ClassType, tags []
 
 // structuralTagged reports whether some covering test is a shape the member carries, which is
 // what lets the branch under that test destructure it.
-func structuralTagged(member soltype.Type, tags []ucs.Test) bool {
+func (c *Context) structuralTagged(member soltype.Type, tags []ucs.Test) bool {
 	for _, tag := range tags {
-		if testMatchesMemberShape(tag, member) {
+		if c.testMatchesMemberShape(tag, member) {
 			return true
 		}
 	}

@@ -47,7 +47,17 @@ func (p projections) read(bind bindSpec) projection {
 	if got, ok := p[bind.source]; ok {
 		return got
 	}
-	test, binds := shallowTest(bind.pat, bind.source, bind.origin)
+	var test Test
+	var binds []bindSpec
+	if bind.elem != nil {
+		// A nameless shorthand is one whose annotation narrows. objectTest leaves it
+		// nameless for that reason, so the annotation is its test and the leaf binds
+		// beneath it.
+		test = &AnnTest{Ann: bind.elem.TypeAnn}
+		binds = []bindSpec{{name: bind.elem.Key.Name, elem: bind.elem, source: bind.source, origin: bind.origin}}
+	} else {
+		test, binds = shallowTest(bind.pat, bind.source, bind.origin)
+	}
 	got := projection{test: test, binds: binds}
 	p[bind.source] = got
 	return got
@@ -163,8 +173,13 @@ func shallowTest(p ast.Pat, scrutinee *Scrutinee, origin Origin) (Test, []bindSp
 		return nil, nil
 	case *ast.IdentPat:
 		// An identifier pattern binds the scrutinee itself rather than a projection of
-		// it, so the bind's source is the scrutinee node.
-		return nil, []bindSpec{{
+		// it, so the bind's source is the scrutinee node. A narrowing annotation on it is
+		// the test, so `a: string` matches only a string.
+		var test Test
+		if p.TypeAnn != nil {
+			test = &AnnTest{Ann: p.TypeAnn}
+		}
+		return test, []bindSpec{{
 			name:   p.Name,
 			pat:    p,
 			source: scrutinee,
@@ -231,7 +246,7 @@ func positionalBinds(
 		kind = TrailingRest
 	}
 	if rest != nil {
-		binds = appendBind(binds, rest.Pattern, scrutinee, suffix(len(fixed)), origin)
+		binds = appendRestBind(binds, rest.Pattern, scrutinee, suffix(len(fixed)), origin)
 	}
 	return binds, len(fixed), kind
 }
@@ -280,13 +295,22 @@ func objectTest(p *ast.ObjectPat, scrutinee *Scrutinee, origin Origin) (Test, []
 			// A shorthand element is not an ast.Pat, so it rides the bind's Elem field.
 			// The solver reads the annotation, default, and `mut` marker off it, none of
 			// which the name alone carries.
+			//
+			// A shorthand with a narrowing annotation, such as `{a::number}`, leaves
+			// `name` empty. binder.wrap then sends it through binder.flatten instead of
+			// binding it directly. flatten builds a split on the projection `scrutinee.a`
+			// whose one branch tests `number`, and `a` is bound inside that branch. A
+			// value that fails the test falls through to the next arm.
 			leaf := leafOrigin(origin, e)
-			binds = append(binds, bindSpec{
-				name:   e.Key.Name,
+			spec := bindSpec{
 				elem:   e,
 				source: scrutinee.Project(FieldStep{Name: e.Key.Name}, leaf),
 				origin: leaf,
-			})
+			}
+			if e.TypeAnn == nil {
+				spec.name = e.Key.Name
+			}
+			binds = append(binds, spec)
 		case *ast.ObjKeyValuePat:
 			objKeys = append(objKeys, ObjectKey{
 				Name:     e.Key.Name,
@@ -309,7 +333,7 @@ func objectTest(p *ast.ObjectPat, scrutinee *Scrutinee, origin Origin) (Test, []
 	if rest != nil {
 		kind = TrailingRest
 		step := RemainderStep{Exclude: named}
-		binds = appendBind(binds, rest.Pattern, scrutinee, step, origin)
+		binds = appendRestBind(binds, rest.Pattern, scrutinee, step, origin)
 	}
 	return &ObjectTest{Keys: objKeys, Rest: kind}, binds
 }
@@ -335,10 +359,27 @@ func appendBind(binds []bindSpec, p ast.Pat, parent *Scrutinee, step Step, origi
 	}
 	leaf := leafOrigin(origin, p)
 	spec := bindSpec{pat: p, source: parent.Project(step, leaf), origin: leaf}
-	if ident, ok := p.(*ast.IdentPat); ok {
+	// An annotated identifier leaves `name` empty. binder.wrap then sends it through
+	// binder.flatten, which builds a split on the projection that tests the annotation,
+	// and the identifier is bound inside that split's branch. Codegen guards the same
+	// leaf with a runtime type check, so the two agree on which values the pattern matches.
+	if ident, ok := p.(*ast.IdentPat); ok && ident.TypeAnn == nil {
 		spec.name = ident.Name
 	}
 	return append(binds, spec)
+}
+
+// appendRestBind is appendBind for the sub-pattern of a tuple or object rest. An identifier
+// there is always named, so its annotation types the binding rather than testing the
+// remainder. Codegen emits no runtime check for a rest, so a test here would claim the
+// pattern can fail where the generated code always matches.
+func appendRestBind(binds []bindSpec, p ast.Pat, parent *Scrutinee, step Step, origin Origin) []bindSpec {
+	ident, ok := p.(*ast.IdentPat)
+	if !ok {
+		return appendBind(binds, p, parent, step, origin)
+	}
+	leaf := leafOrigin(origin, p)
+	return append(binds, bindSpec{name: ident.Name, pat: p, source: parent.Project(step, leaf), origin: leaf})
 }
 
 // leafOrigin points a bind and its projection at the pattern leaf they came from, so a

@@ -567,6 +567,7 @@ func (*CannotConstrainError) isSolverError()         {}
 func (*MutFieldError) isSolverError()                {}
 func (*ReadonlyFieldError) isSolverError()           {}
 func (*ReadonlyFieldSubtypeError) isSolverError()    {}
+func (*RaisingGetterPropertyError) isSolverError()   {}
 func (*FuncArityMismatchError) isSolverError()       {}
 func (*TupleLengthMismatchError) isSolverError()     {}
 func (*SpreadNotTupleError) isSolverError()          {}
@@ -969,6 +970,18 @@ type UnsupportedNodeError struct {
 type UnsupportedFeatureError struct {
 	Node    ast.Node
 	Feature string
+}
+
+// RaisingGetterPropertyError fires when a getter that can raise fills a property
+// requirement, as `val o: {x: number, ...} = c` does when `c`'s getter `x` declares
+// `throws string`. A read through the property has no place to record the raise, so the
+// getter cannot stand in for it. Throws is what the getter can raise and Prop the property's
+// type.
+type RaisingGetterPropertyError struct {
+	Name   string
+	Throws soltype.Type
+	Prop   soltype.Type
+	site   ast.Node
 }
 
 // BodyDeclNotAllowedError fires when a statement-level declaration in a function
@@ -3265,6 +3278,14 @@ func (e *ReadonlyFieldError) Span() ast.Span      { return spanOfNode(e.site) }
 func (e *ReadonlyFieldError) Related() []ast.Span { return nil }
 func (e *ReadonlyFieldError) Message() string {
 	return fmt.Sprintf("cannot assign to readonly property: %s", e.Field)
+}
+
+func (e *RaisingGetterPropertyError) Span() ast.Span      { return spanOfNode(e.site) }
+func (e *RaisingGetterPropertyError) Related() []ast.Span { return nil }
+func (e *RaisingGetterPropertyError) Message() string {
+	name := soltype.DisplayMemberName(e.Name)
+	return fmt.Sprintf("the getter `%s` can throw `%s`, which the property `%s: %s` cannot",
+		name, describe(e.Throws), name, describe(e.Prop))
 }
 
 func (e *ReadonlyFieldSubtypeError) Span() ast.Span      { return spanOfNode(e.site) }
