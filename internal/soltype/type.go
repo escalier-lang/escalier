@@ -3,6 +3,8 @@ package soltype
 import (
 	"fmt"
 	"strconv"
+
+	"github.com/escalier-lang/escalier/internal/jsregex"
 )
 
 // Type is the sealed interface for all soltype nodes. (Production name for the
@@ -1334,6 +1336,31 @@ type SelfType struct {
 	Class *ClassType
 }
 
+// RegexType is the string type a regex annotation such as `/^\d{3}-\d{4}$/` names. A string
+// literal is a subtype of it when the pattern matches the literal. Every regex type is a
+// subtype of `string`, and two regex types relate only when they were written alike, since a
+// checker cannot decide whether one pattern's language contains another's.
+type RegexType struct {
+	// Source is the annotation as written, with its delimiters and flags. The type prints as
+	// Source.
+	Source string
+	// Pattern is Source compiled by jsregex, which matches as JavaScript does in time linear in
+	// its input, so checking a literal cannot hang the checker.
+	Pattern *jsregex.Pattern
+	// Groups holds an `infer` binder for each named group, in source order, when the type is a
+	// conditional's Extends operand. `if T : /^_*(?<Ident>\w+)$/ { Ident } else { T }` binds
+	// Ident to the text the group matched. Groups is empty everywhere else.
+	Groups []RegexGroup
+}
+
+// RegexGroup is one named group a RegexType captures.
+type RegexGroup struct {
+	Name string
+	// Type receives the text the group matched in a literal the pattern matches, or
+	// `undefined` when the group took no part in the match.
+	Type Type
+}
+
 // UniqueSymbolType is one particular symbol, the type a `unique symbol` annotation
 // names. `SymbolConstructor` declares `readonly iterator: unique symbol`, and the type
 // of `Symbol.iterator` is that one symbol rather than the whole `symbol` primitive.
@@ -1517,6 +1544,7 @@ func (*AliasType) isType()           {}
 func (*SkolemType) isType()          {}
 func (*SelfType) isType()            {}
 func (*UniqueSymbolType) isType()    {}
+func (*RegexType) isType()           {}
 
 // LevelOf is the max level of any TypeVarType inside t; concrete leaves are 0.
 // Trimmed to the M1 type set (grows back as later milestones add formers).
@@ -1605,6 +1633,12 @@ func LevelOf(t Type) int {
 		// same single-child rule the KeyofType arm follows. The TupleType arm already maxes over its
 		// elements, so this element contributes its operand's level there.
 		return LevelOf(t.Operand)
+	case *RegexType:
+		m := 0
+		for _, group := range t.Groups {
+			m = max(m, LevelOf(group.Type))
+		}
+		return m
 	case *TemplateLitType:
 		// A template literal's level is the max over its interpolations, so an out-of-level
 		// interpolation lifts the level and the freshener/extruder prune descends into it, the

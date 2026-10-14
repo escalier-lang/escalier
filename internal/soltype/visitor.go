@@ -87,6 +87,7 @@ func (t *InferType) Accept(v TypeVisitor, pol Polarity) Type     { return accept
 func (t *MappedKeyType) Accept(v TypeVisitor, pol Polarity) Type { return acceptLeaf(t, v, pol) }
 
 func (t *UniqueSymbolType) Accept(v TypeVisitor, pol Polarity) Type { return acceptLeaf(t, v, pol) }
+
 func (t *RecursiveVarType) Accept(v TypeVisitor, pol Polarity) Type { return acceptLeaf(t, v, pol) }
 
 func (t *FuncType) Accept(v TypeVisitor, pol Polarity) Type {
@@ -281,6 +282,30 @@ func (t *RestSpreadType) Accept(v TypeVisitor, pol Polarity) Type {
 	out := cur
 	if operand != cur.Operand {
 		out = &RestSpreadType{Operand: operand}
+	}
+	return v.ExitType(out, pol)
+}
+
+func (t *RegexType) Accept(v TypeVisitor, pol Polarity) Type {
+	e := v.EnterType(t, pol)
+	if e.SkipChildren {
+		return v.ExitType(skipReplace(t, e), pol)
+	}
+	cur := descendReplacement(t, e)
+	// The group types walk in the current polarity, the way a template literal's
+	// interpolations do. The pattern and its source carry through unchanged.
+	types := make([]Type, len(cur.Groups))
+	for i, group := range cur.Groups {
+		types[i] = group.Type
+	}
+	rewritten, changed := acceptTypes(types, v, pol)
+	out := cur
+	if changed {
+		groups := make([]RegexGroup, len(cur.Groups))
+		for i, group := range cur.Groups {
+			groups[i] = RegexGroup{Name: group.Name, Type: rewritten[i]}
+		}
+		out = &RegexType{Source: cur.Source, Pattern: cur.Pattern, Groups: groups}
 	}
 	return v.ExitType(out, pol)
 }

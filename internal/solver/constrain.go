@@ -10,6 +10,7 @@ import (
 	"strings"
 	"unicode/utf8"
 
+	"github.com/escalier-lang/escalier/internal/jsregex"
 	"github.com/escalier-lang/escalier/internal/set"
 	"github.com/escalier-lang/escalier/internal/soltype"
 )
@@ -1366,6 +1367,9 @@ func (c *Context) constrain(sub, super soltype.Type, seen *seenPairs, mutCtx boo
 		if sup, ok := super.(*soltype.TemplateLitType); ok {
 			return c.constrainStrLitToTemplateLit(sub, sup)
 		}
+		if sup, ok := super.(*soltype.RegexType); ok {
+			return c.constrainStrLitToRegex(sub, sup, seen, mutCtx)
+		}
 		if errs, handled := c.constrainThroughWrapper(sub, super, seen, mutCtx); handled {
 			return errs
 		}
@@ -1968,6 +1972,25 @@ func (c *Context) constrain(sub, super soltype.Type, seen *seenPairs, mutCtx boo
 		}
 		if sup, ok := super.(*soltype.PrimType); ok {
 			if sup.Prim == soltype.SymPrim {
+				return nil
+			}
+			return []SolverError{&CannotConstrainError{Sub: sub, Super: sup}}
+		}
+		if errs, handled := c.constrainThroughWrapper(sub, super, seen, mutCtx); handled {
+			return errs
+		}
+	case *soltype.RegexType:
+		// A regex type is a subtype of `string` the way a string literal is, and of another regex
+		// type only when the two were written alike. Whether one pattern admits every string
+		// another does is not something the checker decides.
+		if sup, ok := super.(*soltype.RegexType); ok {
+			if sub.Source == sup.Source {
+				return c.constrainRegexGroups(sup, seen, mutCtx)
+			}
+			return []SolverError{&CannotConstrainError{Sub: sub, Super: sup}}
+		}
+		if sup, ok := super.(*soltype.PrimType); ok {
+			if sup.Prim == soltype.StrPrim {
 				return nil
 			}
 			return []SolverError{&CannotConstrainError{Sub: sub, Super: sup}}
@@ -2805,6 +2828,63 @@ func (c *Context) constrainGetterIntoProp(
 		return append(errs, &ReadonlyFieldSubtypeError{Field: prop.Name})
 	}
 	return append(errs, c.constrain(prop.Type, s.Param, seen, mutCtx)...)
+}
+
+// constrainStrLitToRegex checks a literal against a regex type. A string literal is a value
+// of the type when the pattern matches it. The text each of the type's groups matched then
+// flows into that group's type, which is how a conditional captures it. A group that took no
+// part in the match contributes `undefined`, the value JavaScript gives it.
+func (c *Context) constrainStrLitToRegex(sub *soltype.LitType, sup *soltype.RegexType, seen *seenPairs, mutCtx bool) []SolverError {
+	s, isStr := sub.Lit.(*soltype.StrLit)
+	if !isStr {
+		return []SolverError{&CannotConstrainError{Sub: sub, Super: sup}}
+	}
+	if len(sup.Groups) == 0 {
+		if sup.Pattern.MatchString(s.Value) {
+			return nil
+		}
+		return []SolverError{&CannotConstrainError{Sub: sub, Super: sup}}
+	}
+	captures, matched := sup.Pattern.Captures(s.Value)
+	if !matched {
+		return []SolverError{&CannotConstrainError{Sub: sub, Super: sup}}
+	}
+	var errs []SolverError
+	for _, group := range sup.Groups {
+		var text soltype.Type = &soltype.UndefinedType{}
+		if captured, took := captures[group.Name]; took {
+			text = &soltype.LitType{Lit: &soltype.StrLit{Value: captured}}
+		}
+		errs = append(errs, c.constrain(text, group.Type, seen, mutCtx)...)
+	}
+	return errs
+}
+
+// constrainRegexGroups flows the text a value of a regex type captures into each of sup's
+// groups, for a sub written as the same pattern. Nothing records which string the value holds,
+// so each group captures `string`, joined with `undefined` when the group can take no part in
+// a match.
+func (c *Context) constrainRegexGroups(sup *soltype.RegexType, seen *seenPairs, mutCtx bool) []SolverError {
+	var errs []SolverError
+	for _, group := range sup.Groups {
+		var text soltype.Type = &soltype.PrimType{Prim: soltype.StrPrim}
+		if sup.Pattern.Groups[patternGroupIndex(sup.Pattern, group.Name)].Optional {
+			text = newUnion(nil, []soltype.Type{text, &soltype.UndefinedType{}})
+		}
+		errs = append(errs, c.constrain(text, group.Type, seen, mutCtx)...)
+	}
+	return errs
+}
+
+// patternGroupIndex returns the position of the group named name in p.Groups. Every group a
+// RegexType carries is one of its pattern's.
+func patternGroupIndex(p *jsregex.Pattern, name string) int {
+	for i, g := range p.Groups {
+		if g.Name == name {
+			return i
+		}
+	}
+	panic("patternGroupIndex: " + name + " is not a group of the pattern")
 }
 
 // getterReadsAsProperty reports whether a read of g can stand in for a property read. A

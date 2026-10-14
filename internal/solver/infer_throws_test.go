@@ -388,11 +388,11 @@ func TestInferThrowsOnClassMembers(t *testing.T) {
 func TestInferThrowsAnnotationRecovery(t *testing.T) {
 	runThrowsErrCases(t, []throwsErrCase{
 		{
-			// The regex literal type `/x/` stands in for any annotation resolveTypeAnn
-			// does not support.
+			// The regex type `/(?=x)/` stands in for any annotation resolveTypeAnn cannot
+			// resolve, since RE2 rejects its lookahead.
 			name:     "UnsupportedAnnotationDoesNotCascade",
-			src:      `val f: fn() -> number throws /x/ = fn () -> never throws _ { throw "x" }`,
-			wantErrs: []string{"1:30-1:33: Unsupported: LitTypeAnn"},
+			src:      `val f: fn() -> number throws /(?=x)/ = fn () -> never throws _ { throw "x" }`,
+			wantErrs: []string{"1:30-1:37: regex type /(?=x)/ uses lookahead, which RE2 does not support"},
 		},
 	})
 }

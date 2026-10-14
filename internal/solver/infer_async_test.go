@@ -406,18 +406,18 @@ func TestInferAwaitUnknownArgNoCascade(t *testing.T) {
 
 // An unsupported INNER of a supported `Promise<…>` keeps the Promise wrapper. The param
 // stays Promise-shaped, its recovered inner a fresh var, rather than collapsing to a bare
-// var. Only the inner's own unsupported error is reported. The regex literal type `/x/`
-// stands in for any annotation resolveTypeAnn does not support. The param here is unused,
+// var. Only the inner's own error is reported. The regex type `/(?=x)/` stands in for any
+// annotation resolveTypeAnn cannot resolve, since RE2 rejects its lookahead. The param here is unused,
 // so its recovered inner var sits in contravariant position with no bounds and coalesces
 // to `unknown`.
 func TestInferPromiseUnsupportedInnerKeepsWrapper(t *testing.T) {
 	values, _, errs := inferSource(t, `
-		fn f(p: Promise< /x/ >) {
+		fn f(p: Promise< /(?=x)/ >) {
 			return 0
 		}
 	`)
 	require.Len(t, errs, 1)
-	require.Equal(t, "2:20-2:23: Unsupported: LitTypeAnn", msgWithSpan(t, errs[0]))
+	require.Equal(t, "2:20-2:27: regex type /(?=x)/ uses lookahead, which RE2 does not support", msgWithSpan(t, errs[0]))
 	require.Equal(t, "fn (p: Promise<unknown>) -> 0", values["f"])
 }
 
@@ -427,12 +427,12 @@ func TestInferPromiseUnsupportedInnerKeepsWrapper(t *testing.T) {
 // a poisoned `never` or `unknown`, either of which would have cascaded or frozen.
 func TestInferPromiseUnsupportedInnerGeneralizes(t *testing.T) {
 	values, _, errs := inferSource(t, `
-		fn f(p: Promise< /x/ >) {
+		fn f(p: Promise< /(?=x)/ >) {
 			return p
 		}
 	`)
 	require.Len(t, errs, 1)
-	require.Equal(t, "2:20-2:23: Unsupported: LitTypeAnn", msgWithSpan(t, errs[0]))
+	require.Equal(t, "2:20-2:27: regex type /(?=x)/ uses lookahead, which RE2 does not support", msgWithSpan(t, errs[0]))
 	require.Equal(t, "fn <T0>(p: Promise<T0>) -> Promise<T0>", values["f"])
 }
 

@@ -4,6 +4,7 @@ import (
 	"fmt"
 
 	"github.com/escalier-lang/escalier/internal/ast"
+	"github.com/escalier-lang/escalier/internal/jsregex"
 	"github.com/escalier-lang/escalier/internal/soltype"
 )
 
@@ -144,7 +145,7 @@ func (c *checker) resolveTypeAnnType(scope *Scope, ta ast.TypeAnn, lvl int) (sol
 		c.recordProvForResult(t, ta, AnnotationType)
 		return t, true
 	case *ast.LitTypeAnn:
-		return c.resolveLitTypeAnn(ta)
+		return c.resolveLitTypeAnn(scope, ta)
 	case *ast.TypeRefTypeAnn:
 		// Resolve through the type scope first, which covers a user-defined alias, class,
 		// or type parameter, and the classes the prelude package declares. A written
@@ -886,11 +887,15 @@ func (c *checker) resolveNegationTypeAnn(scope *Scope, ta *ast.NegationTypeAnn, 
 // its argument against `null | undefined`. recordProvForResult records nothing for either atom,
 // since both are shared zero-size singletons that cannot carry provenance.
 //
-// A literal with no soltype form, such as a regex or a bigint, reports unsupported and recovers.
-func (c *checker) resolveLitTypeAnn(ta *ast.LitTypeAnn) (soltype.Type, bool) {
+// A regex lowers to a RegexType through resolveRegexTypeAnn. A literal with no soltype form,
+// such as a bigint, reports unsupported and recovers.
+func (c *checker) resolveLitTypeAnn(scope *Scope, ta *ast.LitTypeAnn) (soltype.Type, bool) {
 	if atom, _, isAtom := atomLitOf(ta.Lit); isAtom {
 		c.recordProvForResult(atom, ta, AnnotationType)
 		return atom, true
+	}
+	if rl, isRegex := ta.Lit.(*ast.RegexLit); isRegex {
+		return c.resolveRegexTypeAnn(scope, ta, rl)
 	}
 	lit, ok := c.litTypeOf(ta.Lit)
 	if !ok {
@@ -898,6 +903,36 @@ func (c *checker) resolveLitTypeAnn(ta *ast.LitTypeAnn) (soltype.Type, bool) {
 	}
 	c.recordProv(lit, ta, AnnotationType)
 	return lit, true
+}
+
+// resolveRegexTypeAnn lowers a regex annotation such as `/^\d+$/` to a RegexType. A pattern
+// jsregex.Compile rejects reports RegexTypeError and recovers.
+//
+// Written as a conditional's Extends operand, the type captures each named group through the
+// `infer` binder resolveCondTypeAnn declared for its name. Anywhere else a group captures
+// nothing, so the type carries no groups.
+func (c *checker) resolveRegexTypeAnn(scope *Scope, ta *ast.LitTypeAnn, rl *ast.RegexLit) (soltype.Type, bool) {
+	pattern, reason := jsregex.Compile(rl.Value)
+	if pattern == nil {
+		return c.report(&RegexTypeError{Ann: ta, Source: rl.Value, Reason: reason}), false
+	}
+	var groups []soltype.RegexGroup
+	if c.inCondExtends {
+		for _, g := range pattern.Groups {
+			b, found := scope.GetType(g.Name)
+			decl, isDecl := b.Type.(*soltype.InferType)
+			if !found || !isDecl {
+				continue
+			}
+			groups = append(groups, soltype.RegexGroup{
+				Name: g.Name,
+				Type: &soltype.InferType{ID: decl.ID, Name: decl.Name, Binder: true},
+			})
+		}
+	}
+	t := &soltype.RegexType{Source: rl.Value, Pattern: pattern, Groups: groups}
+	c.recordProv(t, ta, AnnotationType)
+	return t, true
 }
 
 // resolveIndexTypeAnn lowers `T[K]` to an IndexType residual and stores it unreduced, so the
@@ -939,7 +974,7 @@ func (c *checker) resolveCondTypeAnn(scope *Scope, ta *ast.CondTypeAnn, lvl int)
 	// Declare each name the Extends operand introduces, so the clause that declares it and the Then
 	// branch's references to it resolve to one shared declaration.
 	condScope := scope
-	if names := ast.InferAnnNames(ta.Extends); len(names) > 0 {
+	if names := ast.CaptureNames(ta.Extends); len(names) > 0 {
 		condScope = scope.Child()
 		for _, name := range names {
 			condScope.defineType(name, TypeBinding{Type: c.ctx.freshInferDecl(name)})

@@ -1,6 +1,9 @@
 package ast
 
-import "github.com/escalier-lang/escalier/internal/set"
+import (
+	"github.com/escalier-lang/escalier/internal/jsregex"
+	"github.com/escalier-lang/escalier/internal/set"
+)
 
 // FreeTypeRefs returns the `Name` and `Name<…>` references a type annotation makes that no
 // binder written inside the annotation declares, in traversal order so a caller reporting
@@ -8,7 +11,8 @@ import "github.com/escalier-lang/escalier/internal/set"
 //
 // A binder covers the region the annotation that writes it spans. A `fn <U>(…)` quantifier
 // covers its function annotation, a mapped key covers the object annotation holding it, and
-// an `infer U` covers its conditional's Extends and Then operands.
+// a capture covers its conditional's Extends and Then operands. CaptureNames says which
+// names an Extends operand captures.
 //
 // Both checkers read this to tell a reference that reaches an enclosing declaration's type
 // parameter from one the annotation binds itself.
@@ -51,11 +55,11 @@ func (v *freeTypeRefScan) EnterTypeAnn(t TypeAnn) bool {
 		}
 		v.push(names)
 	case *CondTypeAnn:
-		// The four operands are walked here rather than by the shared descent, since an
-		// `infer U` clause covers only two of them. Check reads no capture, and a capture
+		// The four operands are walked here rather than by the shared descent, since a
+		// capture covers only two of them. Check reads no capture, and a capture
 		// named again in Else is a free reference.
 		n.Check.Accept(v)
-		v.push(set.FromSlice(InferAnnNames(n.Extends)))
+		v.push(set.FromSlice(CaptureNames(n.Extends)))
 		n.Extends.Accept(v)
 		n.Then.Accept(v)
 		v.pop()
@@ -92,26 +96,46 @@ func (v *freeTypeRefScan) shadowed(name string) bool {
 	return false
 }
 
-// InferAnnNames returns each `infer U` name the annotation writes, one entry per distinct
-// name so a name written twice binds once. A caller resolving a conditional declares these
-// so the clause that writes one and the Then branch's references to it share a declaration.
-func InferAnnNames(ta TypeAnn) []string {
-	f := &inferAnnFinder{seen: set.NewSet[string]()}
+// CaptureNames returns each name the annotation captures when it is a conditional's Extends
+// operand, one entry per distinct name so a name written twice binds once. Two forms
+// capture:
+//
+//   - An `infer U` clause captures U.
+//   - A regex type captures each of its named groups, so `/^(?<Ident>\w+)$/` captures
+//     `Ident`.
+//
+// A caller resolving a conditional declares these so the clause that writes one and the Then
+// branch's references to it share a declaration.
+func CaptureNames(ta TypeAnn) []string {
+	f := &captureFinder{seen: set.NewSet[string]()}
 	ta.Accept(f)
 	return f.names
 }
 
-// inferAnnFinder is the visitor behind InferAnnNames.
-type inferAnnFinder struct {
+// captureFinder is the visitor behind CaptureNames.
+type captureFinder struct {
 	DefaultVisitor
 	seen  set.Set[string]
 	names []string
 }
 
-func (f *inferAnnFinder) EnterTypeAnn(ta TypeAnn) bool {
-	if it, ok := ta.(*InferTypeAnn); ok && !f.seen.Contains(it.Name) {
-		f.seen.Add(it.Name)
-		f.names = append(f.names, it.Name)
+func (f *captureFinder) EnterTypeAnn(ta TypeAnn) bool {
+	switch ta := ta.(type) {
+	case *InferTypeAnn:
+		f.add(ta.Name)
+	case *LitTypeAnn:
+		if regex, ok := ta.Lit.(*RegexLit); ok {
+			for _, name := range jsregex.GroupNames(regex.Value) {
+				f.add(name)
+			}
+		}
 	}
 	return true
+}
+
+func (f *captureFinder) add(name string) {
+	if !f.seen.Contains(name) {
+		f.seen.Add(name)
+		f.names = append(f.names, name)
+	}
 }

@@ -580,6 +580,25 @@ func compareSameKind(a, b soltype.Type) int {
 		// Two unique symbols order by the id that tells them apart, the only thing either
 		// carries.
 		return a.ID - b.(*soltype.UniqueSymbolType).ID
+	case *soltype.RegexType:
+		// Two regex types order by every field their equality reads: the source, then the
+		// groups positionally.
+		b := b.(*soltype.RegexType)
+		if a.Source != b.Source {
+			return strings.Compare(a.Source, b.Source)
+		}
+		if c := len(a.Groups) - len(b.Groups); c != 0 {
+			return c
+		}
+		for i := range a.Groups {
+			if a.Groups[i].Name != b.Groups[i].Name {
+				return strings.Compare(a.Groups[i].Name, b.Groups[i].Name)
+			}
+			if c := compareType(a.Groups[i].Type, b.Groups[i].Type); c != 0 {
+				return c
+			}
+		}
+		return 0
 	case *soltype.ClassType:
 		// Two class instances order by every field their equality reads: the qualified
 		// name, the exactness flag, then the lifetime and type arguments positionally.
@@ -939,10 +958,12 @@ func typeKindOrder(t soltype.Type) int {
 		return 18
 	case *soltype.UniqueSymbolType:
 		return 19
+	case *soltype.RegexType:
+		return 20
 	}
 	// Every residual shares the last rank. compareSameKind asserts b to a's own type,
 	// so a kind reaching that function needs a rank of its own here: two kinds sharing
 	// one rank and both carrying a branch there would assert across them. The residuals
 	// are safe because none of them has a branch.
-	return 20
+	return 21
 }

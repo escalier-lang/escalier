@@ -44,10 +44,6 @@ var (
 		name:   "a global the ambient builtin scope will bind",
 		ticket: "#1666",
 	}
-	causeRegexTypeAnn = &solverSkipCause{
-		name:   "a regex literal written as a type annotation",
-		ticket: "#1693",
-	}
 	causeIfValNullish = &solverSkipCause{
 		name: "an `if val` identifier or object pattern narrowing `null` and `undefined` out of its scrutinee",
 	}
@@ -80,7 +76,6 @@ type solverSkip struct {
 var solverSkips = []solverSkip{
 	{"async_await", causeAmbientScope, "Unknown identifier: fetch"},
 
-	{"literals", causeRegexTypeAnn, "Unsupported: LitTypeAnn"},
 	{"if_val", causeIfValNullish, "cannot constrain null <: number"},
 
 	{"try_catch", causeCaughtValue, "cannot constrain unknown <: string"},

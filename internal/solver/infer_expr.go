@@ -3279,8 +3279,8 @@ func keySetCovers(keys soltype.Type, name string) bool {
 
 // propertyKeySet returns the primitive key set t falls in when t can key a property:
 // `string`, `number`, or `symbol`, or a union of them for a union t. A literal widens
-// to its primitive and a unique symbol to `symbol`, so a key whose type is the union of
-// `"a"` and a unique symbol covers `string | symbol`. `ok` is false when some part of t
+// to its primitive, a unique symbol to `symbol` and a regex type to `string`, so a key
+// whose type is the union of `"a"` and a unique symbol covers `string | symbol`. `ok` is false when some part of t
 // cannot key a property, such as `boolean` or an object.
 func propertyKeySet(t soltype.Type) (soltype.Type, bool) {
 	switch t := t.(type) {
@@ -3296,7 +3296,7 @@ func propertyKeySet(t soltype.Type) (soltype.Type, bool) {
 			return widen(t), true
 		}
 		return nil, false
-	case *soltype.UniqueSymbolType:
+	case *soltype.UniqueSymbolType, *soltype.RegexType:
 		return widen(t), true
 	case *soltype.UnionType:
 		members := make([]soltype.Type, len(t.Types))
