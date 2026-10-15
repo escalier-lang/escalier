@@ -28,11 +28,12 @@ type JSTypes interface {
 	// CalleeConstructs reports whether a call's callee carries a constructor, which
 	// emits `new C(…)` rather than `C(…)`.
 	CalleeConstructs(callee ast.Expr) bool
-	// IsMethodRead reports whether a member read resolved to a method that runs against
-	// the value it was read from. Such a read that is not itself being called emits
-	// `obj.m.bind(obj)`, so the method keeps its receiver when it travels as a value. A
-	// field holding a plain function reads no receiver and emits no `bind`.
-	IsMethodRead(m *ast.MemberExpr) bool
+	// IsMethodRead reports whether a member read `obj.m` or an index read `obj["m"]`
+	// resolved to a method that runs against the value it was read from. Such a read that
+	// is not itself being called emits `obj.m.bind(obj)`, so the method keeps its receiver
+	// when it travels as a value. A field holding a plain function reads no receiver and
+	// emits no `bind`. Any other expression reports false.
+	IsMethodRead(e ast.Expr) bool
 	// NullableArms reports whether an expression's type is a union admitting `null`
 	// or `undefined`. An `if val` guards its pattern test with the checks these ask
 	// for.
@@ -50,7 +51,7 @@ type noJSTypes struct{}
 
 func (noJSTypes) IsNominalTypeRef(*ast.TypeRefTypeAnn) bool   { return false }
 func (noJSTypes) CalleeConstructs(ast.Expr) bool              { return false }
-func (noJSTypes) IsMethodRead(*ast.MemberExpr) bool           { return false }
+func (noJSTypes) IsMethodRead(ast.Expr) bool                  { return false }
 func (noJSTypes) NullableArms(ast.Expr) (bool, bool)          { return false, false }
 func (noJSTypes) MemberJSExpr(*ast.MemberExpr) (string, bool) { return "", false }
 
@@ -104,13 +105,34 @@ func (CheckerJSTypes) CalleeConstructs(callee ast.Expr) bool {
 // SelfParam in type_system, which is what tells it apart from a field holding a plain
 // function. A method an object type annotation declares carries none, so a read off such
 // an object asks the object whether the member is a method.
-func (CheckerJSTypes) IsMethodRead(m *ast.MemberExpr) bool {
-	if obj, ok := type_system.Prune(m.Object.InferredType()).(*type_system.ObjectType); ok && m.Prop != nil {
-		if declaresMethod(obj, m.Prop.Name) {
+//
+// The object lookup needs the member's name, so an index read takes it only when its index
+// is a string literal, as in `obj["m"]`. Any other index read goes by its type alone.
+func (CheckerJSTypes) IsMethodRead(e ast.Expr) bool {
+	var object ast.Expr
+	var name string
+	switch e := e.(type) {
+	case *ast.MemberExpr:
+		if e.Prop == nil {
+			return false
+		}
+		object, name = e.Object, e.Prop.Name
+	case *ast.IndexExpr:
+		object = e.Object
+		if lit, isLit := e.Index.(*ast.LiteralExpr); isLit {
+			if str, isStr := lit.Lit.(*ast.StrLit); isStr {
+				name = str.Value
+			}
+		}
+	default:
+		return false
+	}
+	if obj, ok := type_system.Prune(object.InferredType()).(*type_system.ObjectType); ok && name != "" {
+		if declaresMethod(obj, name) {
 			return true
 		}
 	}
-	switch t := m.InferredType().(type) {
+	switch t := e.InferredType().(type) {
 	case *type_system.FuncType:
 		return t.SelfParam != nil
 	case *type_system.IntersectionType:
