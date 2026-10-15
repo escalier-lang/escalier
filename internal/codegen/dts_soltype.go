@@ -525,9 +525,11 @@ func (b *solTypeAnnBuilder) typeScriptArity(qualifiedName string) (int, bool) {
 // rest. `{name: string, [K: keyof T]: T[K]}` emits
 // `{[K in keyof T]: T[K]} & {name: string}`.
 //
-// An index signature is exempt. It is a settled mapped member here, and
-// indexSignatureTypeAnn lowers it to `[key: string]: V`, which TypeScript allows
-// beside ordinary members.
+// An index signature is a mapped member too and emits the same way, so
+// `{name: string, [K: string]?: boolean}` emits
+// `{[K in string]?: boolean} & {name: string}`. TypeScript's own
+// `[key: string]: V` form has no `?`, and the `?` is what makes a read off it
+// `V | undefined`.
 func (b *solTypeAnnBuilder) objectTypeAnn(t *soltype.ObjectType) TypeAnn {
 	// Only a `readonly` property's value is reached at a path from this object's own,
 	// since any other member may be reassigned or is not a value.
@@ -537,7 +539,7 @@ func (b *solTypeAnnBuilder) objectTypeAnn(t *soltype.ObjectType) TypeAnn {
 	otherElems := make([]ObjTypeAnnElem, 0, len(t.Elems))
 	for _, elem := range t.Elems {
 		b.valuePath = ""
-		if mapped, ok := elem.(*soltype.MappedElem); ok && !soltype.MappedElemSettled(mapped) {
+		if mapped, ok := elem.(*soltype.MappedElem); ok {
 			mappedAnns = append(mappedAnns, NewObjectTypeAnn(b.objTypeAnnElems(mapped)))
 			continue
 		}
@@ -680,78 +682,9 @@ func (b *solTypeAnnBuilder) objTypeAnnElems(elem soltype.ObjTypeElem) []ObjTypeA
 			source: nil,
 		}}
 	case *soltype.MappedElem:
-		if soltype.MappedElemSettled(elem) {
-			return []ObjTypeAnnElem{b.indexSignatureTypeAnn(elem)}
-		}
 		return []ObjTypeAnnElem{b.mappedTypeAnn(elem)}
 	}
 	panic(fmt.Sprintf("objTypeAnnElems: unhandled %T", elem))
-}
-
-// indexSignatureTypeAnn renders a settled mapped member as `[key: Keys]: Value`.
-// The `?` such a member always carries is dropped: TypeScript writes an index
-// signature without one and settles the question with
-// `noUncheckedIndexedAccess`.
-func (b *solTypeAnnBuilder) indexSignatureTypeAnn(elem *soltype.MappedElem) *IndexSignatureTypeAnn {
-	keyName := indexSignatureKeyName(elem.Keys)
-	if referencesMappedKey(elem.Value, elem.Key) {
-		// `{[K: string]?: T[K]}` names its key in the value, so the conventional
-		// name would leave `T[K]` pointing at nothing.
-		keyName = elem.Key.Name
-	}
-	return &IndexSignatureTypeAnn{
-		KeyName:  keyName,
-		KeyType:  b.typeAnn(elem.Keys),
-		Value:    b.typeAnn(elem.Value),
-		Readonly: elem.Readonly == soltype.ModAdd,
-	}
-}
-
-// indexSignatureKeyName is the key name TypeScript's own declarations use.
-func indexSignatureKeyName(keys soltype.Type) string {
-	prim, isPrim := keys.(*soltype.PrimType)
-	if !isPrim {
-		return "key"
-	}
-	switch prim.Prim {
-	case soltype.NumPrim:
-		return "index"
-	case soltype.SymPrim:
-		return "sym"
-	case soltype.StrPrim, soltype.BoolPrim, soltype.BigIntPrim:
-		// Only string, number, and symbol key sets settle, so the last two never
-		// reach here.
-		return "key"
-	}
-	return "key"
-}
-
-// referencesMappedKey reports whether t names the key a mapped member binds.
-func referencesMappedKey(t soltype.Type, key *soltype.MappedKeyType) bool {
-	if t == nil || key == nil {
-		return false
-	}
-	visitor := &solMappedKeyVisitor{key: key, found: false}
-	t.Accept(visitor, soltype.Positive)
-	return visitor.found
-}
-
-type solMappedKeyVisitor struct {
-	key   *soltype.MappedKeyType
-	found bool
-}
-
-func (v *solMappedKeyVisitor) EnterType(t soltype.Type, _ soltype.Polarity) soltype.EnterResult {
-	// Matched by id, so a nested member writing the same name stays separate.
-	if ref, ok := t.(*soltype.MappedKeyType); ok && ref.ID == v.key.ID {
-		v.found = true
-		return soltype.EnterResult{Type: nil, SkipChildren: true}
-	}
-	return soltype.EnterResult{Type: nil, SkipChildren: false}
-}
-
-func (v *solMappedKeyVisitor) ExitType(t soltype.Type, _ soltype.Polarity) soltype.Type {
-	return t
 }
 
 // mappedTypeAnn renders a mapped member as `[K in Keys]: V`. The

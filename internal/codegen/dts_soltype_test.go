@@ -497,22 +497,23 @@ func TestBuildTypeAnnFromSolFromSource(t *testing.T) {
 		// What a call raises has no TypeScript form.
 		"Throws": {"", "fn () -> number throws string", "() => number"},
 
-		// An index signature is a settled mapped member in `soltype`. TypeScript
-		// allows one beside ordinary members, so it needs no intersection split.
-		"IndexSignature":   {"", "{[K: string]?: number}", "{[key: string]: number}"},
-		"NumericIndexSig":  {"", "{[index: number]?: string}", "{[index: number]: string}"},
-		"SymbolIndexSig":   {"", "{[K: symbol]?: string}", "{[sym: symbol]: string}"},
-		"ReadonlyIndexSig": {"", "{readonly [K: string]?: number}", "{readonly [key: string]: number}"},
-		// `-readonly` removes the marker, and an index signature inherits none, so
-		// it emits without one the way an unmarked signature does. Only ModAdd puts
-		// `readonly` on the emitted form.
-		"MinusReadonlyIndexSig": {"", "{-readonly [K: string]?: number}", "{[key: string]: number}"},
-		// A union key set has no single primitive to name the key after.
-		"UnionIndexSig":        {"", "{[K: string | number]?: number}", "{[key: number | string]: number}"},
-		"IndexSigBesideMember": {"", "{name: string, [K: string]?: number}", "{name: string, [key: string]: number}"},
-		// A member that names its key in the value it computes keeps the source's
-		// name, since the conventional one would leave `T[K]` dangling.
-		"IndexSigKeyInValue": {"type T = {a: number}", "{[K: string]?: T[K]}", "{[K: string]: T[K]}"},
+		// An index signature is a settled mapped member in `soltype`. It emits as a
+		// mapped type under the key name its source wrote, which keeps its `?` and
+		// its modifiers.
+		"IndexSignature":   {"", "{[K: string]?: number}", "{[K in string]?: number}"},
+		"NumericIndexSig":  {"", "{[index: number]?: string}", "{[index in number]?: string}"},
+		"SymbolIndexSig":   {"", "{[K: symbol]?: string}", "{[K in symbol]?: string}"},
+		"ReadonlyIndexSig": {"", "{readonly [K: string]?: number}", "{readonly [K in string]?: number}"},
+		"MinusReadonlyIndexSig": {
+			"", "{-readonly [K: string]?: number}", "{-readonly [K in string]?: number}",
+		},
+		"UnionIndexSig": {"", "{[K: string | number]?: number}", "{[K in number | string]?: number}"},
+		// TypeScript rejects a mapped type beside other members, so the two split
+		// into an intersection with the mapped member first.
+		"IndexSigBesideMember": {
+			"", "{name: string, [K: string]?: number}", "{[K in string]?: number} & {name: string}",
+		},
+		"IndexSigKeyInValue": {"type T = {a: number}", "{[K: string]?: T[K]}", "{[K in string]?: T[K]}"},
 
 		"Mapped": {"type T = {a: number}", "{[K]: T[K] for K in keyof T}", "{[K in keyof T]: T[K]}"},
 		"MappedAddModifiers": {
@@ -1148,27 +1149,6 @@ func TestBuildTypeAnnFromSolUnnamedTypeParam(t *testing.T) {
 		renderSolWithParams(t, solObj(solProp("value", v)), []*soltype.TypeParam{unnamed}))
 }
 
-// TestReferencesMappedKey asserts the walk that decides whether an index signature
-// keeps the key name its source wrote.
-func TestReferencesMappedKey(t *testing.T) {
-	key := &soltype.MappedKeyType{ID: 7, Name: "K"}
-	indexed := &soltype.IndexType{
-		Target:  solAlias("T"),
-		Index:   &soltype.MappedKeyType{ID: 7, Name: "K"},
-		Inexact: false,
-	}
-
-	require.True(t, referencesMappedKey(indexed, key))
-	require.False(t, referencesMappedKey(solNum(), key))
-	// A nested mapped member writing the same name draws its own id, which is what
-	// keeps its binding separate from this one.
-	require.False(t, referencesMappedKey(&soltype.MappedKeyType{ID: 8, Name: "K"}, key))
-	// A mapped member always carries a key, and Value is never nil, so neither nil
-	// arises from a well-formed member. The walk answers rather than faulting.
-	require.False(t, referencesMappedKey(nil, key))
-	require.False(t, referencesMappedKey(indexed, nil))
-}
-
 // TestBuildTypeAnnFromSolParity pairs each solver type with the type_system type
 // the checker builds for the same source and asserts both render to the same
 // TypeScript. It is what makes the port a twin rather than a second renderer that
@@ -1195,6 +1175,7 @@ func TestBuildTypeAnnFromSolParity(t *testing.T) {
 	tsStr := type_sys.NewStrPrimType(nil)
 	tsBool := type_sys.NewBoolPrimType(nil)
 	tsSelfRef := type_sys.NewTypeRefType(nil, "Self", nil)
+	mmAdd := type_sys.MMAdd
 
 	tsFn := func(params []*type_sys.FuncParam, ret type_sys.Type) *type_sys.FuncType {
 		return type_sys.NewFuncType(nil, nil, params, ret, nil)
@@ -1340,7 +1321,15 @@ func TestBuildTypeAnnFromSolParity(t *testing.T) {
 		},
 		"IndexSignature": {
 			type_sys.NewObjectType(nil, []type_sys.ObjTypeElem{
-				type_sys.NewIndexSignatureElem(tsStr, tsNum, false),
+				&type_sys.MappedElem{
+					TypeParam: &type_sys.IndexParam{Name: "K", Constraint: tsStr},
+					Name:      nil,
+					Value:     tsNum,
+					Optional:  &mmAdd,
+					Readonly:  nil,
+					Check:     nil,
+					Extends:   nil,
+				},
 			}),
 			solObj(solIndexSig(solStr(), solNum())),
 		},

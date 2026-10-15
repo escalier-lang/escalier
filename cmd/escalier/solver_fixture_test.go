@@ -331,7 +331,6 @@ var emitSkips = map[emitSkip]*solverSkipCause{
 	{"namespace_use_parent_symbol", "index.d.ts"}:  causeAnyAsUnknown,
 	{"class_inheritance_namespaces", "index.d.ts"}: causeCheckerRootNamespacePrefix,
 	{"generalize", "index.d.ts"}:                   causeUnusedParamNotGeneralized,
-	{"type_ann_index_signature", "index.d.ts"}:     causeIndexSignatureOptional,
 	{"grouping", "index.d.ts"}:                     causeUnionOrder,
 	{"pattern_matching", "index.d.ts"}:             causeUnionOrder,
 	{"function_overloading", "index.d.ts"}:         causeAsyncNoValueReturn,
@@ -355,14 +354,6 @@ var (
 	causeUnusedParamNotGeneralized = &solverSkipCause{
 		name:   "generalizing a parameter the body never reads",
 		ticket: "#1774",
-	}
-	// An index signature over an uncountable key set loses its `?`, so
-	// `{[K: string]?: number}` emits `{[key: string]: number}`. No object has a field at
-	// every key of an infinite set, so the `?` is what makes a read off it
-	// `number | undefined`, and dropping it overstates what the declaration promises.
-	causeIndexSignatureOptional = &solverSkipCause{
-		name:   "the `?` on an index signature over an uncountable key set",
-		ticket: "#1775",
 	}
 	// A reference at the module root to a type a namespace declares emits without the
 	// namespace on the checker. With `class NsDerived` in `lib/geo/`, the root

@@ -93,8 +93,9 @@ var declarationShapes = map[string]string{
 	"AnOptionalProp":     `type A = {x?: number}`,
 	"ATypeofType":        "declare val v: number\ntype A = typeof v",
 
-	"AnInterface":       "interface I {\n\tx: number,\n}",
-	"AGenericInterface": "interface I<T> {\n\tv: T,\n}",
+	"AnInterface":         "interface I {\n\tx: number,\n}",
+	"AnInterfaceIndexSig": "interface I {\n\t[K: string]?: number,\n}",
+	"AGenericInterface":   "interface I<T> {\n\tv: T,\n}",
 
 	"ADeclaredVal":       `declare val n: number`,
 	"AnInferredVal":      `export val n = 5`,
@@ -123,10 +124,6 @@ type shapeSkip struct {
 // starts agreeing fails, so the list burns down the way the fixture harness's emitSkips
 // does.
 var shapeSkips = map[string]shapeSkip{
-	"AnOptionalIndexSig": {
-		reason: "an index signature over an uncountable key set loses its `?`",
-		ticket: "#1775",
-	},
 	"AClassGetterAndSetter": {
 		reason: "a setter's parameter name is lost, so it renders as `value`",
 		ticket: "#1823",
