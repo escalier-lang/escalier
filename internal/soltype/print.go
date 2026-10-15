@@ -1489,7 +1489,7 @@ func (p *namedPrinter) whereClause(tps []*TypeParam) string {
 	var relations []string
 	for _, tp := range tps {
 		if lowers := tp.DeclaredLowerBounds(); len(lowers) > 0 {
-			relations = append(relations, p.joinTypes(lowers, " | ")+": "+p.printType(tp.Var))
+			relations = append(relations, p.joinTypes(lowers, " | ", precUnion)+": "+p.printType(tp.Var))
 		}
 	}
 	if len(relations) == 0 {
@@ -1548,7 +1548,7 @@ func (p *namedPrinter) typeParamBinders(tps []*TypeParam) []string {
 func (p *namedPrinter) typeParamSuffix(bounds []Type, dflt Type) string {
 	var s string
 	if len(bounds) > 0 {
-		s += ": " + p.joinTypes(bounds, " & ")
+		s += ": " + p.joinTypes(bounds, " & ", precIntersection)
 	}
 	if dflt != nil {
 		s += " = " + p.printType(dflt)
@@ -1556,11 +1556,17 @@ func (p *namedPrinter) typeParamSuffix(bounds []Type, dflt Type) string {
 	return s
 }
 
-// joinTypes renders each type and joins the results with sep.
-func (p *namedPrinter) joinTypes(types []Type, sep string) string {
+// joinTypes renders each type and joins the results with sep, the operator whose
+// precedence is minPrec. When there are several, a type that binds more loosely than
+// that operator is parenthesized, so the bounds `number | string` and `boolean` render
+// `(number | string) & boolean`. A lone type is rendered bare.
+func (p *namedPrinter) joinTypes(types []Type, sep string, minPrec int) string {
+	if len(types) == 1 {
+		return p.printType(types[0])
+	}
 	rendered := make([]string, len(types))
 	for j, t := range types {
-		rendered[j] = p.printType(t)
+		rendered[j] = p.printTypeMinPrec(t, minPrec)
 	}
 	return strings.Join(rendered, sep)
 }
