@@ -491,16 +491,20 @@ func coalesceSchemeKeeping(
 	keep set.Set[*soltype.TypeVarType],
 ) soltype.Type {
 	simp := simplifyScheme(t, genLevel, keep)
+	// A parameter the caller picks the type of is kept like a variable that occurs at
+	// both polarities.
+	for rep := range paramOnlyReps(t, genLevel, simp) {
+		simp.mergedOcc[rep.ID] = occPos | occNeg
+	}
 	cleaned := cleanBinderBounds(keep, simp, declared)
 	c := t.Accept(&schemeCoalescer{
-		simp:      simp,
-		genLevel:  genLevel,
-		keep:      keep,
-		cleaned:   cleaned,
-		paramReps: paramOnlyReps(t, genLevel, simp),
-		binders:   map[*soltype.TypeVarType]*soltype.TypeVarType{},
-		seen:      set.NewSet[*soltype.TypeVarType](),
-		walking:   set.NewSet[*soltype.TypeVarType](),
+		simp:       simp,
+		genLevel:   genLevel,
+		keep:       keep,
+		cleaned:    cleaned,
+		classUpper: classUpperBounds(simp),
+		binders:    map[*soltype.TypeVarType]*soltype.TypeVarType{},
+		seen:       set.NewSet[*soltype.TypeVarType](),
 	}, soltype.Positive)
 	c = bubbleOwnedMut(c) // #779: lift an owned-mut cell out of an immutable container
 	// A scheme display is always coalesced from the Positive root.
@@ -605,11 +609,11 @@ func (tc *typeParamCollector) ExitType(t soltype.Type, _ soltype.Polarity) solty
 // EnterType.
 //
 // It adds the retain decision. A variable is KEPT as a named type parameter when
-// its representative is quantifiable at genLevel and either occurs in both
-// polarities or is in paramReps. A kept variable is merged with its coalesced
-// bounds rather than inlined. Every other variable is inlined exactly as coalescer
-// does. So on a body with no kept variable, this reduces node for node to a plain
-// coalesce.
+// its representative is quantifiable at genLevel and occurs in both polarities,
+// which coalesceSchemeKeeping also sets for the representatives paramOnlyReps
+// returns. A kept variable is merged with its coalesced bounds rather than inlined.
+// Every other variable is inlined exactly as coalescer does. So on a body with no
+// kept variable, this reduces node for node to a plain coalesce.
 //
 // Each variable resolves through simp to its co-occurrence representative, so
 // every member of a merged class renders as the same parameter.
@@ -628,23 +632,41 @@ type schemeCoalescer struct {
 	seen    set.Set[*soltype.TypeVarType]
 	// mu is coalescer.mu's twin, keyed by the co-occurrence representative the seen-set uses.
 	mu muBinders
-	// paramReps holds the representatives paramOnlyReps returns. Each is kept even though
-	// it occurs at one polarity only.
-	paramReps set.Set[*soltype.TypeVarType]
 	// binders maps a kept representative that is not a declared binder to the copy it
 	// renders as. binderFor describes the copy's bounds.
 	binders map[*soltype.TypeVarType]*soltype.TypeVarType
-	// walking holds the variables whose own bounds are being walked, where seen holds
-	// their representatives. Two members of one class can be on the path at once, the
-	// second reached through the first's bounds.
-	walking set.Set[*soltype.TypeVarType]
+	// classUpper holds classUpperBounds, which binderFor and a negative position read.
+	classUpper map[*soltype.TypeVarType][]soltype.Type
+}
+
+// classUpperBounds maps each class representative to the upper bounds its members
+// carry, leaving out a bound that names a member of the same class.
+func classUpperBounds(simp *schemeSimplification) map[*soltype.TypeVarType][]soltype.Type {
+	ids := make([]int, 0, len(simp.idToVar))
+	for id := range simp.idToVar {
+		ids = append(ids, id)
+	}
+	sort.Ints(ids)
+	out := map[*soltype.TypeVarType][]soltype.Type{}
+	for _, id := range ids {
+		v := simp.idToVar[id]
+		rep := simp.rep(v)
+		for _, b := range v.UpperBounds {
+			if bv, ok := b.(*soltype.TypeVarType); ok && simp.rep(bv) == rep {
+				continue
+			}
+			if !boundsHold(out[rep], b) {
+				out[rep] = append(out[rep], b)
+			}
+		}
+	}
+	return out
 }
 
 // binderFor returns the copy a kept representative renders as, minting it on first
-// use. A copy starts with the representative's own upper bounds that mention no
-// variable, and no lower bounds. A bound the walk reads off another member of the
-// representative's class at a negative position is added to the copy's upper bounds,
-// so the binder carries it. In
+// use. The copy has no lower bounds, and its upper bounds are the ones in classUpper
+// that mention no type or lifetime variable. A bound that mentions one is left out,
+// since the binder renders outside the walk that would name or elide that variable. In
 //
 //	fn fstNum<A: number, B: number>(a: A, b: B) -> A { return a }
 //	fn w(a, b) { return fstNum(a, b) }
@@ -659,8 +681,10 @@ func (c *schemeCoalescer) binderFor(rep *soltype.TypeVarType) *soltype.TypeVarTy
 	cp := *rep
 	cp.LowerBounds = nil
 	cp.UpperBounds = nil
-	for _, b := range rep.UpperBounds {
-		addBinderBound(&cp, b)
+	for _, b := range c.classUpper[rep] {
+		if concreteMember(b) {
+			cp.UpperBounds = append(cp.UpperBounds, b)
+		}
 	}
 	c.binders[rep] = &cp
 	return &cp
@@ -674,16 +698,6 @@ func boundsHold(bounds []soltype.Type, t soltype.Type) bool {
 		}
 	}
 	return false
-}
-
-// addBinderBound adds bound to binder's upper bounds unless an equal one is there. A
-// bound that mentions a type or lifetime variable is left out, since the binder renders
-// outside the walk that would name or elide that variable.
-func addBinderBound(binder *soltype.TypeVarType, bound soltype.Type) {
-	if !concreteMember(bound) || boundsHold(binder.UpperBounds, bound) {
-		return
-	}
-	binder.UpperBounds = append(binder.UpperBounds, bound)
 }
 
 func (c *schemeCoalescer) EnterType(t soltype.Type, pol soltype.Polarity) soltype.EnterResult {
@@ -701,29 +715,24 @@ func (c *schemeCoalescer) EnterType(t soltype.Type, pol soltype.Polarity) soltyp
 		return soltype.EnterResult{Type: c.displayBinder(v), SkipChildren: true}
 	}
 	rep := c.simp.rep(v)
-	retain := rep.Level > c.genLevel && !hasEqualBounds(rep) &&
-		(c.simp.mergedOcc[rep.ID].both() || c.paramReps.Contains(rep))
+	retain := rep.Level > c.genLevel && c.simp.mergedOcc[rep.ID].both() && !hasEqualBounds(rep)
 	// A non-binder var whose class representative is a binder renders under that binder's
 	// display copy, so an artifact reached in a structural position reads as the declared
 	// parameter rather than a second name for the same type.
+	// v's own bounds, or at a negative position the upper bounds of every member of its
+	// class. A member reached once its class is on the path is cut short below, so its
+	// upper bounds are read here, by the first member reached. A call that passes a
+	// parameter to a callee's bounded type parameter records the bound on a member other
+	// than the parameter's own variable.
+	bs := v.BoundsAt(pol)
 	if shown := c.displayBinder(rep); shown != rep {
 		rep = shown
-	} else if retain {
-		rep = c.binderFor(rep)
-	}
-	if pol == soltype.Negative && c.seen.Contains(rep) && !c.walking.Contains(v) && len(v.UpperBounds) > 0 {
-		// Another member of v's class is on the path, and v's own upper bounds have not
-		// been walked. An upper bound sits on the variable it was recorded against, so
-		// skipping v would drop it. A call that passes a parameter to a callee's bounded
-		// type parameter records the bound this way. Lower bounds need no such walk, since
-		// constrain copies each one along a var-to-var chain to every member it reaches.
-		if bounds := c.walkMemberBounds(v, rep, pol); len(bounds) > 0 {
-			if !retain {
-				return soltype.EnterResult{Type: combine(pol, dedup(bounds), v.Open), SkipChildren: true}
-			}
-			for _, b := range bounds {
-				addBinderBound(rep, b)
-			}
+	} else {
+		if pol == soltype.Negative {
+			bs = c.classUpper[rep]
+		}
+		if retain {
+			rep = c.binderFor(rep)
 		}
 	}
 	if c.seen.Contains(rep) {
@@ -743,13 +752,8 @@ func (c *schemeCoalescer) EnterType(t soltype.Type, pol soltype.Polarity) soltyp
 	}
 	c.seen.Add(rep)
 	defer c.seen.Remove(rep) // path-scoped: pop on the way back up (panic-safe)
-	c.walking.Add(v)
-	defer c.walking.Remove(v)
 	binder := c.mu.push(rep, pol)
 	defer c.mu.pop(rep) // path-scoped like `seen`, so a binder is open only while rep is on the path
-
-	// v's own bounds, not the representative's.
-	bs := v.BoundsAt(pol)
 
 	// Pre-size parts with rep at index 0 when retaining, rather than appending then
 	// prepending. At the front, rep appears first in the union or intersection combine
@@ -769,16 +773,14 @@ func (c *schemeCoalescer) EnterType(t soltype.Type, pol soltype.Polarity) soltyp
 	// sit on v, the first member reached. This holds because the body is
 	// propagation-closed, meaning every variable already carries the bounds propagated
 	// to it. coalesceScheme renders a component only after it is fully constrained, so
-	// that is always true here. An upper bound is not copied that way, and the
-	// walkMemberBounds branch above reads it off the member itself.
+	// that is always true here. An upper bound is not copied that way, which is why bs
+	// holds the class's upper bounds at a negative position.
 	for _, b := range bs {
-		got := b.Accept(c, pol)
-		// A bound the binder already carries says nothing more at a negative position,
-		// so `fn <T0: number>(a: T0) -> T0` renders rather than `(a: T0 & number)`.
-		if retain && pol == soltype.Negative && boundsHold(rep.UpperBounds, got) {
+		// The binder carries every concrete upper bound, so the position needs only its name.
+		if retain && pol == soltype.Negative && concreteMember(b) {
 			continue
 		}
-		parts = append(parts, got)
+		parts = append(parts, b.Accept(c, pol))
 	}
 	if len(parts) == 0 {
 		// Only reachable with !retain and no bounds — empty bounds under retain
@@ -797,23 +799,6 @@ func (c *schemeCoalescer) ExitType(t soltype.Type, pol soltype.Polarity) soltype
 	// Borrow lifetimes are left raw here and resolved by the coalesceLifetimes
 	// post-pass, which needs the whole type to analyze lifetime occurrence (D4).
 	return foldNegation(t)
-}
-
-// walkMemberBounds coalesces v's own bounds at pol, where v is a member of the class rep
-// stands for and another member is already on the path. A bound that coalesces to rep
-// itself, or to the identity of pol, says nothing and is left out.
-func (c *schemeCoalescer) walkMemberBounds(v, rep *soltype.TypeVarType, pol soltype.Polarity) []soltype.Type {
-	c.walking.Add(v)
-	defer c.walking.Remove(v)
-	var out []soltype.Type
-	for _, b := range v.BoundsAt(pol) {
-		got := b.Accept(c, pol)
-		if got == soltype.Type(rep) || equalType(got, emptyOf(pol)) {
-			continue
-		}
-		out = append(out, got)
-	}
-	return out
 }
 
 // displayBinder maps a binder var to its cleaned display copy when one exists, else
