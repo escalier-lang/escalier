@@ -47,6 +47,7 @@ var declarationShapes = map[string]string{
 	// that neither emitter invents a rendering for the clause.
 	"AThrowsClause":             `declare fn f(x: number) -> string throws number`,
 	"ANoValueReturn":            "class C {\n\tv: number,\n}\nfn bump(c: mut C) {\n\tc.v = c.v + 1\n}",
+	"AnAnnotatedNoValueBody":    "class C {\n\tv: number,\n}\nfn set(c: mut C) -> undefined {\n\tc.v = 1\n}",
 	"ADeclaredUndefinedReturn":  `declare fn g() -> undefined`,
 	"AnAnnotatedUndefinedBody":  "fn h() -> undefined {\n\treturn undefined\n}",
 	"AReturnOfUndefined":        "fn k() {\n\treturn undefined\n}",
@@ -122,22 +123,6 @@ type shapeSkip struct {
 // starts agreeing fails, so the list burns down the way the fixture harness's emitSkips
 // does.
 var shapeSkips = map[string]shapeSkip{
-	"ADeclaredUndefinedReturn": {
-		reason: "a written `-> undefined` return emits `void`, where the twin writes `undefined`",
-		ticket: "#1820",
-	},
-	"AnAnnotatedUndefinedBody": {
-		reason: "a written `-> undefined` return emits `void`, where the twin writes `undefined`",
-		ticket: "#1820",
-	},
-	"AReturnOfUndefined": {
-		reason: "a `return undefined` body emits `void`, where the twin writes `undefined`",
-		ticket: "#1820",
-	},
-	"ACallbackReturnUndefined": {
-		reason: "a callback parameter's `-> undefined` return emits `void`, which widens what the slot accepts",
-		ticket: "#1820",
-	},
 	"AnOptionalIndexSig": {
 		reason: "an index signature over an uncountable key set loses its `?`",
 		ticket: "#1775",
