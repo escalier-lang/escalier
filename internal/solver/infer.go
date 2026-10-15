@@ -70,6 +70,11 @@ type checker struct {
 	// the closure's AST no longer marks it as captured once the pre-pass has run.
 	closureCaptureInfo map[*ast.FuncExpr][]liveness.CaptureInfo
 
+	// closureDecls maps each closure bindScriptFuncWithBody builds to the `fn` declaration
+	// it is typed in place of. Its body can call the declaration's name. It is nil until a
+	// script declares a `fn` with a body.
+	closureDecls map[*ast.FuncExpr]*ast.FuncDecl
+
 	// openVars holds the variables whose lower bounds do not cover every value they can
 	// hold. A parameter's variable is one, since a caller fills it. A pattern leaf with a
 	// default is another, since it holds the default only when the field is absent.

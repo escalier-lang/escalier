@@ -713,9 +713,17 @@ func (c *checker) runLivenessPrePass(scope *Scope, astParams []*ast.Param, recv 
 	}
 	firstID := liveness.VarID(c.varIDCounter)
 	var captured []string
+	// selfName is the name a script `fn` declaration's body calls itself by, empty for any
+	// other body.
+	selfName := ""
 	if closure != nil {
 		captured = c.collectClosureCaptures(scope, closure, outerBindings)
 		extraParams = append(extraParams, captured...)
+		// A parameter of the same name shadows the function's own name for the whole body.
+		if fd, ok := c.closureDecls[closure]; ok && !paramsBind(astParams, fd.Name.Name) {
+			selfName = fd.Name.Name
+			extraParams = append(extraParams, selfName)
+		}
 	}
 	renameResult := liveness.RenameFrom(astParams, *body, outerBindings, firstID, extraParams...)
 	c.varIDCounter += renameResult.UniqueVarCount
@@ -764,7 +772,41 @@ func (c *checker) runLivenessPrePass(scope *Scope, astParams []*ast.Param, recv 
 	}
 	c.fn.paramVarIDs = c.fn.paramVarIDs.Union(captureVarIDs)
 	c.fn.captureVarIDs = captureVarIDs
+	if selfName != "" {
+		c.seedSelfCaptureEdges(scope, closure, renameResult.ExtraParamVarIDs[selfName], renameResult.ExtraParamVarIDs)
+	}
 	return renameResult.ExtraParamVarIDs
+}
+
+// paramsBind reports whether a leaf of one of params binds name.
+func paramsBind(params []*ast.Param, name string) bool {
+	found := false
+	for _, param := range params {
+		ast.ForEachLeafBinding(param.Pattern, func(leaf string, _ int) {
+			found = found || leaf == name
+		})
+	}
+	return found
+}
+
+// seedSelfCaptureEdges gives selfID, the VarID a recursive closure's body reads its own
+// name by, a capture edge to each local the closure captures. ids maps each captured name
+// to the VarID the body's rename gave it. A call of selfID inside the body then takes the
+// loans of the closure's captures, the way a call of the closure's name outside it does.
+// A capture with value semantics gets no edge, matching recordCaptureLoans.
+func (c *checker) seedSelfCaptureEdges(scope *Scope, closure *ast.FuncExpr, selfID liveness.VarID, ids map[string]liveness.VarID) {
+	c.fn.aliases.NewValue(selfID, liveness.AliasImmutable)
+	for _, capture := range c.closureCaptures(closure) {
+		id, ok := ids[capture.Name]
+		if !ok || id == selfID {
+			continue
+		}
+		b, found := scope.GetValue(capture.Name)
+		if !found || isValueType(bindingType(b)) {
+			continue
+		}
+		c.addEdge(selfID, fieldBorrow{referent: id, mut: capture.IsMutable, capture: true})
+	}
 }
 
 // collectClosureCaptures returns the names of the locals `closure` captures from an enclosing

@@ -2225,20 +2225,29 @@ func (c *checker) inferCallArgs(scope *Scope, lvl int, e *ast.CallExpr, preset m
 // inferCallTarget read off the callee, or the arm resolveOverload picked. Keeping them here is what stops one path from
 // forgetting them, which is how #1508 came about.
 //
-// fn is nil when no arm accepted the call. Nothing is moved then, since no signature says which
-// arguments a call that does not type-check would have consumed.
+// fn is nil when no arm accepted the call or the callee's signature is still a variable. Nothing
+// is moved then, since no signature says which arguments the call consumes. The call still takes
+// the loans of the closures it runs.
 func (c *checker) recordCallArgEffects(
 	e *ast.CallExpr, fn *soltype.FuncType, consumeRef liveness.StmtRef, hasConsumeRef bool,
 ) {
-	if fn == nil || !hasConsumeRef {
+	if !hasConsumeRef {
 		return
 	}
-	c.consumeCallArgs(e, fn, consumeRef)
+	if fn != nil {
+		c.consumeCallArgs(e, fn, consumeRef)
+	}
 	// Calling a closure runs its body, and a callee handed a closure may call it during the
 	// call. So the callee and each argument that names a closure access what it captures.
+	// Neither depends on the signature, so a callee whose signature is still a variable
+	// takes these loans too. A recursive call of a script `fn` inside its own body has
+	// such a callee.
 	c.useClosureCaptures(e.Callee, consumeRef)
 	for _, arg := range e.Args {
 		c.useClosureCaptures(arg, consumeRef)
+	}
+	if fn == nil {
+		return
 	}
 	// A borrow parameter takes a borrow, so the call has to write one. The receiver of a
 	// method call is not an argument and keeps auto-borrowing.

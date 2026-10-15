@@ -2,6 +2,7 @@ package solver
 
 import (
 	"context"
+	"strings"
 	"testing"
 
 	"github.com/escalier-lang/escalier/internal/ast"
@@ -121,9 +122,10 @@ func TestInferScriptClassOutOfOrder(t *testing.T) {
 	require.Equal(t, "Unknown identifier: Point", errs[0].Message())
 }
 
-// TestInferScriptTypeAndFuncDecls covers a `type` alias and a `declare fn` written at a
-// script's top level. Each binds where it appears, the way a class or enum does, so a
-// reference before the declaration is unbound. A `fn` with a body is still rejected.
+// TestInferScriptTypeAndFuncDecls covers a `type` alias, a `declare fn`, and a `fn` with a
+// body written at a script's top level. Each binds where it appears, the way a class or
+// enum does, so a reference before the declaration is unbound. A function declaration
+// nested in a block or a function body is rejected.
 func TestInferScriptTypeAndFuncDecls(t *testing.T) {
 	tests := []struct {
 		name       string
@@ -240,11 +242,214 @@ func TestInferScriptTypeAndFuncDecls(t *testing.T) {
 			wantErrs: []string{"Duplicate declaration: T"},
 		},
 		{
-			name: "FnWithBodyRejected",
+			name: "FnWithBody",
 			src: `
-				fn double(x: number) -> number { return x * 2 }
+				fn add(a: number, b: number) {
+					return a + b
+				}
+				val sum = add(1, 2)
+			`,
+			wantValues: map[string]string{
+				"add": "fn (a: number, b: number) -> number",
+				"sum": "number",
+			},
+		},
+		{
+			name: "RecursiveFn",
+			src: `
+				fn countdown(n: number) {
+					if n == 0 {
+						return "done"
+					}
+					return countdown(n - 1)
+				}
+				val r = countdown(3)
+			`,
+			wantValues: map[string]string{
+				"countdown": "fn (n: number) -> \"done\"",
+				"r":         "\"done\"",
+			},
+		},
+		{
+			name: "RecursiveFnWritingACapture",
+			src: `
+				val mut total = {v: 0}
+				fn sum(n: number) {
+					if n > 0 {
+						total.v = total.v + n
+						sum(n - 1)
+					}
+				}
+				sum(3)
+				val r = total.v
+			`,
+			wantValues: map[string]string{
+				"sum": "fn (n: number) -> undefined",
+				"r":   "number",
+			},
+		},
+		{
+			// The recursive call writes x through the capture while `a` still borrows x.
+			name: "RecursiveCallWritesACaptureBesideLiveBorrow",
+			src: captureDecls + `
+				val mut x = {v: 1}
+				fn f(n: number) {
+					if n > 0 {
+						val a = &x
+						f(n - 1)
+						readRead(a, a)
+					}
+					x.v = n
+				}
+			`,
+			wantErrs: []string{"cannot borrow 'x' as mutable while it is borrowed as immutable"},
+		},
+		{
+			// The parameter f shadows the function's own name, so `&f` borrows the parameter.
+			name: "ParamShadowsTheFnName",
+			src: `
+				fn f(f: {v: number}) {
+					val r = &f
+					return r
+				}
+			`,
+			wantValues: map[string]string{"f": "fn (f: {v: number}) -> &{v: number}"},
+		},
+		{
+			name: "RecursiveFnThatCannotReturn",
+			src: `
+				fn f() {
+					return {next: f()}
+				}
+			`,
+			wantErrs: []string{"`f` has type `fn () -> {next: μX0.{next: X0}}`, and no finite value inhabits its return type, so a call to it never returns; give the recursion a base case, make the recursive property optional, or defer the recursive call behind a function or a Promise"},
+		},
+		{
+			name: "FnCapturesAnEarlierVal",
+			src: `
+				val base = 10
+				fn addBase(x: number) {
+					return x + base
+				}
+				val r = addBase(1)
+			`,
+			wantValues: map[string]string{
+				"addBase": "fn (x: number) -> number",
+				"r":       "number",
+			},
+		},
+		{
+			name: "FnCapturesAnEarlierVar",
+			src: `
+				var count = 0
+				fn bump() {
+					count = count + 1
+					return count
+				}
+				val r = bump()
+			`,
+			wantValues: map[string]string{
+				"bump": "fn () -> number",
+				"r":    "number",
+			},
+		},
+		{
+			name: "GenericFn",
+			src: `
+				fn id<T>(x: T) -> T {
+					return x
+				}
+				val n = id(5)
+				val s = id("a")
+			`,
+			wantValues: map[string]string{
+				"id": "fn <T>(x: T) -> T",
+				"n":  "5",
+				"s":  "\"a\"",
+			},
+		},
+		{
+			name: "GeneratorFn",
+			src: `
+				gen fn nums() {
+					yield 1
+					yield 2
+				}
+				val g = nums()
+			`,
+			wantValues: map[string]string{
+				"nums": "fn () -> Generator<1 | 2, undefined, unknown>",
+				"g":    "Generator<1 | 2, undefined, unknown>",
+			},
+		},
+		{
+			name: "AsyncFn",
+			src: `
+				async fn fetchNum() {
+					return 5
+				}
+				val p = fetchNum()
+			`,
+			wantValues: map[string]string{
+				"fetchNum": "fn () -> Promise<5>",
+				"p":        "Promise<5>",
+			},
+		},
+		{
+			name: "FnBeforeDeclaration",
+			src: `
+				val n = double(2)
+				fn double(x: number) {
+					return x * 2
+				}
+			`,
+			wantErrs: []string{"Unknown identifier: double"},
+		},
+		{
+			name: "FnInANestedBlock",
+			src: `
+				if true {
+					fn g() {
+						return 1
+					}
+				}
 			`,
 			wantErrs: []string{"Declaration not allowed in function body: FuncDecl"},
+		},
+		{
+			name: "FnInAFunctionBody",
+			src: `
+				fn outer() {
+					fn inner() {
+						return 1
+					}
+				}
+			`,
+			wantErrs: []string{"Declaration not allowed in function body: FuncDecl"},
+		},
+		{
+			name: "OverloadedFnWithBody",
+			src: `
+				fn parse(x: string) {
+					return 1
+				}
+				fn parse(x: number) {
+					return "1"
+				}
+				val b = parse(1)
+			`,
+			wantValues: map[string]string{"b": "\"1\""},
+			wantErrs:   []string{"A script cannot overload a function declared with a body: parse"},
+		},
+		{
+			name: "DeclareFnAfterFnWithBody",
+			src: `
+				fn parse(x: string) {
+					return 1
+				}
+				declare fn parse(x: number) -> string
+			`,
+			wantErrs: []string{"A script cannot overload a function declared with a body: parse"},
 		},
 	}
 	for _, tt := range tests {
@@ -346,6 +551,65 @@ func TestScriptTransitionParity(t *testing.T) {
 			}
 			require.ElementsMatch(t, tt.want, scriptMsgs)
 			require.ElementsMatch(t, tt.want, fnMsgs, "script and function-wrapped forms must report the same transition errors")
+		})
+	}
+}
+
+// TestScriptFnCaptureParity asserts that a script-level `fn f() { … }` checks its captures
+// of the script's earlier bindings the way `val f = fn () { … }` does. Each case writes the
+// function on one line marked FN, then runs once with `fn f()` there and once with
+// `val f = fn ()`. Both runs must report exactly the expected messages.
+func TestScriptFnCaptureParity(t *testing.T) {
+	tests := map[string]struct {
+		src  string
+		want []string
+	}{
+		// Calling f writes x through the capture while `a` still borrows x immutably.
+		"WriteThroughCaptureBesideLiveBorrow": {
+			src: captureDecls + `
+				val mut x = {v: 1}
+				val a = &x
+				FN { x.v = 5 }
+				f()
+				readRead(a, a)
+			`,
+			want: []string{"10:5-10:6: cannot borrow 'x' as mutable while it is borrowed as immutable"},
+		},
+		// Calling f reads x, so a call after x moves is a use after the move.
+		"CallAfterMovingTheCapture": {
+			src: captureDecls + `
+				val x = {v: 1}
+				FN { readRead(&x, &x) }
+				take(x)
+				f()
+			`,
+			want: []string{"10:5-10:6: use of moved value 'x'"},
+		},
+		// f reads x only while it runs, so x can move once the last call returns.
+		"MoveAfterTheLastCall": {
+			src: captureDecls + `
+				val x = {v: 1}
+				FN { readRead(&x, &x) }
+				f()
+				take(x)
+			`,
+		},
+		// f writes the captured `var` count, which the script reads after the call.
+		"WriteThroughCapturedVar": {
+			src: `
+				var count = 0
+				FN { count = count + 1 }
+				f()
+				val n = count
+			`,
+		},
+	}
+	for name, tt := range tests {
+		t.Run(name, func(t *testing.T) {
+			for _, form := range []string{"fn f()", "val f = fn ()"} {
+				_, _, errs := inferScriptSource(t, strings.ReplaceAll(tt.src, "FN", form))
+				require.Equal(t, tt.want, messagesWithSpan(t, errs), form)
+			}
 		})
 	}
 }

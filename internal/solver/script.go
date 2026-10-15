@@ -188,21 +188,80 @@ func typeBindingDecl(b TypeBinding) (ast.Decl, bool) {
 // bindScriptFunc infers a `declare fn` written at a script's top level and binds its
 // generalized type in scope. A name scope already binds to an earlier `declare fn` gains
 // this one as another overload arm, and an arm whose parameters match an earlier arm's
-// reports DuplicateOverloadError.
+// reports DuplicateOverloadError. A name scope already binds to an earlier `fn` with a
+// body reports ScriptOverloadWithBodyError and is rebound to this declaration alone.
 func (c *checker) bindScriptFunc(scope *Scope, lvl int, decl *ast.FuncDecl) {
 	name := decl.Name.Name
 	t, src := c.inferFuncDecl(scope, lvl+1, decl)
 	sc := c.generalize(t, lvl)
 	c.recordType(decl.Name, schemeType(sc))
 	b := ValueBinding{Schemes: []TypeScheme{sc}, Sources: []provenance.Provenance{src}}
-	if prev, ok := scope.OwnValue(name); ok {
-		if _, isFunc := bindingDecl(prev).(*ast.FuncDecl); isFunc {
-			c.checkDistinctArm(decl, t, prev)
-			b.Schemes = append(slices.Clone(prev.Schemes), b.Schemes...)
-			b.Sources = append(slices.Clone(prev.Sources), b.Sources...)
-		}
+	if prev, prevDecl := ownFuncDecl(scope, name); prevDecl != nil && !c.checkScriptOverloadWithBody(decl, prevDecl) {
+		c.checkDistinctArm(decl, t, prev)
+		b.Schemes = append(slices.Clone(prev.Schemes), b.Schemes...)
+		b.Sources = append(slices.Clone(prev.Sources), b.Sources...)
 	}
 	scope.defineValue(name, b)
+}
+
+// bindScriptFuncWithBody infers decl, a `fn` with a body written at a script's top level
+// as statement s, and binds its generalized type in scope. It types decl as the
+// `val name = fn …` declaration it stands for, so the body's captures of the script's
+// earlier bindings take the alias, borrow, and move checks such a closure takes. The
+// name is bound to a fresh variable while the body is walked, so the body can call
+// itself. A name scope already binds to an earlier function declaration reports
+// ScriptOverloadWithBodyError, and decl rebinds it.
+func (c *checker) bindScriptFuncWithBody(scope *Scope, lvl int, s ast.Stmt, decl *ast.FuncDecl) {
+	name := decl.Name.Name
+	if _, prevDecl := ownFuncDecl(scope, name); prevDecl != nil {
+		c.checkScriptOverloadWithBody(decl, prevDecl)
+	}
+	closure := ast.NewFuncExpr(nil, nil, nil, nil, nil, false, decl.Body, decl.Span())
+	closure.FuncSig = decl.FuncSig
+	if c.closureDecls == nil {
+		c.closureDecls = map[*ast.FuncExpr]*ast.FuncDecl{}
+	}
+	c.closureDecls[closure] = decl
+	// The script's rename pass gave decl's name its VarID, and every later read of the
+	// name carries that VarID. The pattern takes it so defineLocal records the closure's
+	// aliases under it.
+	pat := ast.NewIdentPat(name, false, nil, nil, decl.Name.Span())
+	pat.VarID = decl.VarID
+	vd := ast.NewVarDecl(ast.ValKind, pat, nil, closure, false, false, decl.Span())
+	sources := []provenance.Provenance{&ast.NodeProvenance{Node: decl}}
+	// The recursive binding carries no VarID, so the closure's capture analysis does not
+	// count the name as a capture of a script local. The closure's pre-pass gives the name a
+	// VarID of its own inside the body instead, which seedSelfCaptureEdges reads.
+	self := c.freshAt(lvl + 1)
+	scope.defineValue(name, ValueBinding{Schemes: []TypeScheme{monoScheme(self)}, Sources: sources})
+	// The initializer is the closure, so inferVarDecl always produces a binding.
+	b, _ := c.inferVarDecl(scope, lvl, vd, self)
+	b.Sources = sources
+	c.recordType(decl.Name, schemeType(b.Schemes[0]))
+	c.defineLocal(scope, name, vd, b, s)
+}
+
+// ownFuncDecl returns scope's own binding of name and the function declaration that
+// introduced it. The declaration is nil when scope does not bind name itself or a
+// declaration of another kind introduced it.
+func ownFuncDecl(scope *Scope, name string) (ValueBinding, *ast.FuncDecl) {
+	prev, ok := scope.OwnValue(name)
+	if !ok {
+		return ValueBinding{}, nil
+	}
+	prevDecl, _ := bindingDecl(prev).(*ast.FuncDecl)
+	return prev, prevDecl
+}
+
+// checkScriptOverloadWithBody reports ScriptOverloadWithBodyError when decl redeclares the
+// function prevDecl declared and either of the two has a body. It returns whether it
+// reported.
+func (c *checker) checkScriptOverloadWithBody(decl, prevDecl *ast.FuncDecl) bool {
+	if decl.Body == nil && prevDecl.Body == nil {
+		return false
+	}
+	c.report(&ScriptOverloadWithBodyError{Decl: decl, Previous: prevDecl})
+	return true
 }
 
 // checkDistinctArm reports DuplicateOverloadError when the overload arm t declared by decl
