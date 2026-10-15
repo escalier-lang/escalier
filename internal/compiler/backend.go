@@ -21,22 +21,25 @@ type Diagnostic interface {
 }
 
 // CheckerEnvVar names the environment variable that picks which type checker the
-// compiler's entry points run. Set it to CheckerSolver to run internal/solver. Any
-// other value, unset included, runs internal/checker, the default while the cutover
-// is in progress. It is read on each entry point call, so a test can set it for one
-// call with t.Setenv.
+// compiler's entry points run. Set it to CheckerLegacy to run internal/checker. Any
+// other value, unset included, runs internal/solver. It is read on each entry point
+// call, so a test can set it for one call with t.Setenv.
 const CheckerEnvVar = "ESCALIER_CHECKER"
 
-// CheckerSolver is the CheckerEnvVar value that selects internal/solver.
+// CheckerSolver is the CheckerEnvVar value that names internal/solver. Leaving the
+// variable unset selects the same checker.
 const CheckerSolver = "solver"
+
+// CheckerLegacy is the CheckerEnvVar value that selects internal/checker.
+const CheckerLegacy = "checker"
 
 // selectBackend returns the checker CheckerEnvVar names, configured by config. The old
 // checker reads none of config.
 func selectBackend(config PackageConfig) backend {
-	if os.Getenv(CheckerEnvVar) == CheckerSolver {
-		return solverBackend{options: solver.Options{NoAmbientNames: config.NoAmbientNames}}
+	if os.Getenv(CheckerEnvVar) == CheckerLegacy {
+		return checkerBackend{}
 	}
-	return checkerBackend{}
+	return solverBackend{options: solver.Options{NoAmbientNames: config.NoAmbientNames}}
 }
 
 // backend is the compiler's view of a type checker. Each entry point resolves one

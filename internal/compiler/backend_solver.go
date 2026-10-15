@@ -12,14 +12,13 @@ import (
 	"github.com/escalier-lang/escalier/internal/stdlibdir"
 )
 
-// solverBackend runs internal/solver. CheckerEnvVar selects it; nothing reaches it
-// by default while the cutover is in progress.
+// solverBackend runs internal/solver. It is what every entry point uses unless
+// CheckerEnvVar selects the old checker.
 //
 // Three things it does differently from the checker path:
 //
 //   - The emitted .d.ts is rendered from soltype. It matches what the checker path
-//     writes except for the divergences recorded in emitSkips in
-//     cmd/escalier/solver_fixture_test.go and shapeSkips in dts_parity_test.go.
+//     writes except for the divergences recorded in shapeSkips in dts_parity_test.go.
 //   - The diagnostics include every package the run loaded, so a package the source
 //     imports reports its own errors beside the source's. #1696 tracks the file they
 //     are blamed on.

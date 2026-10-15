@@ -62,7 +62,7 @@ func TestGeneratorFunction(t *testing.T) {
 	source := &ast.Source{
 		ID:       0,
 		Path:     "input.esc",
-		Contents: "fn count() {\n  yield 1\n  yield 2\n  yield 3\n}\n",
+		Contents: "gen fn count() {\n  yield 1\n  yield 2\n  yield 3\n}\n",
 	}
 	output := Compile(source)
 	snaps.MatchSnapshot(t, snapshot.String(output))
@@ -72,7 +72,7 @@ func TestGeneratorWithReturn(t *testing.T) {
 	source := &ast.Source{
 		ID:       0,
 		Path:     "input.esc",
-		Contents: "fn myGen() {\n  yield 1\n  return 42\n}\n",
+		Contents: "gen fn myGen() {\n  yield 1\n  return 42\n}\n",
 	}
 	output := Compile(source)
 	snaps.MatchSnapshot(t, snapshot.String(output))
@@ -82,7 +82,7 @@ func TestYieldFrom(t *testing.T) {
 	source := &ast.Source{
 		ID:       0,
 		Path:     "input.esc",
-		Contents: "fn delegating() {\n  declare val nums: Array<number>\n  yield from nums\n}\n",
+		Contents: "gen fn delegating() {\n  declare val nums: Array<number>\n  yield from nums\n}\n",
 	}
 	output := Compile(source)
 	snaps.MatchSnapshot(t, snapshot.String(output))
@@ -102,7 +102,7 @@ func TestForInIterator(t *testing.T) {
 	source := &ast.Source{
 		ID:       0,
 		Path:     "input.esc",
-		Contents: "declare val items: Iterator<number>\nfor x in items {\n  val y = x\n}\n",
+		Contents: "declare val items: IterableIterator<number>\nfor x in items {\n  val y = x\n}\n",
 	}
 	output := Compile(source)
 	snaps.MatchSnapshot(t, snapshot.String(output))
@@ -112,7 +112,7 @@ func TestForAwaitIn(t *testing.T) {
 	source := &ast.Source{
 		ID:       0,
 		Path:     "input.esc",
-		Contents: "async fn processItems() {\n  declare val items: Array<number>\n  for await x in items {\n    val y = x\n  }\n}\n",
+		Contents: "async fn processItems() {\n  declare val items: AsyncIterable<number>\n  for await x in items {\n    val y = x\n  }\n}\n",
 	}
 	output := Compile(source)
 	snaps.MatchSnapshot(t, snapshot.String(output))
@@ -122,7 +122,7 @@ func TestForAwaitInAsyncIterator(t *testing.T) {
 	source := &ast.Source{
 		ID:       0,
 		Path:     "input.esc",
-		Contents: "async fn processItems() {\n  declare val items: AsyncIterator<number>\n  for await x in items {\n    val y = x\n  }\n}\n",
+		Contents: "async fn processItems() {\n  declare val items: AsyncIterableIterator<number>\n  for await x in items {\n    val y = x\n  }\n}\n",
 	}
 	output := Compile(source)
 	snaps.MatchSnapshot(t, snapshot.String(output))

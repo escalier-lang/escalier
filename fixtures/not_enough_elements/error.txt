@@ -1,5 +1,5 @@
-lib/not_enough_elements.esc:2:13: Not enough elements to unpack
+lib/not_enough_elements.esc:2:21: cannot constrain tuple of length 1 <: tuple of length 3
 
 2:      val [a, b, c] = [1]
-                ^^^^
+                        ^^^
 

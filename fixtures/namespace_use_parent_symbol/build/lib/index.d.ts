@@ -3,7 +3,7 @@ declare const FileReader: {prototype: FileReader, newReader(): FileReader, reado
 declare namespace web_assembly {
   interface ValueTypeMap {
     anyfunc: Function;
-    externref: any;
+    externref: unknown;
     f32: number;
     f64: number;
     i32: number;

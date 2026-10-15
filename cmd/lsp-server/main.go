@@ -33,6 +33,7 @@ func main() {
 	if *stdlibDir != "" {
 		_ = os.Setenv("ESCALIER_STDLIB_DIR", *stdlibDir)
 	}
+	useLegacyChecker()
 
 	fmt.Fprintf(os.Stderr, "Hello, from lsp-server\n")
 
@@ -264,4 +265,11 @@ func (s *Server) exit(context *glsp.Context) error {
 func (*Server) setTrace(context *glsp.Context, params *protocol.SetTraceParams) error {
 	protocol.SetTraceValue(params.Value)
 	return nil
+}
+
+// useLegacyChecker selects internal/checker for every compiler entry point the server
+// calls. Completions, hover, and go-to-definition read the scopes only that checker
+// returns, and #1678 through #1682 move them onto the solver.
+func useLegacyChecker() {
+	_ = os.Setenv(compiler.CheckerEnvVar, compiler.CheckerLegacy)
 }

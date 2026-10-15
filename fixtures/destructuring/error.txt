@@ -1,5 +1,5 @@
-lib/destructuring.esc:9:12: Key not found in object: z in {x: number, y: number}
+lib/destructuring.esc:7:14: object is missing property: z
 
-9:  val {x, y, z} = p
-               ^
+7:  type Point = {x: number, y: number}
+                 ^^^^^^^^^^^^^^^^^^^^^^
 

@@ -1,25 +1,25 @@
-lib/mapped_type.esc:74:24: Unknown property 'active' in object type {name: string, email: string}
+lib/mapped_type.esc:74:24: object is missing property: active
 
 74: val active = strPerson.active
                            ^^^^^^
 
-lib/mapped_type.esc:11:15: Unknown property 'b' in object type {a: number, c: boolean}
+lib/mapped_type.esc:11:15: object is missing property: b
 
 11: val b1 = obj1.b // error, this field shouldn't exist on obj1
                   ^
 
-lib/mapped_type.esc:36:15: Unknown property 'b' in object type {a: number, c: boolean}
+lib/mapped_type.esc:36:15: object is missing property: b
 
 36: val b4 = obj4.b // error, this field shouldn't exist on obj4
                   ^
 
-lib/mapped_type.esc:71:20: Unknown property 'id' in object type {name: string, email: string}
+lib/mapped_type.esc:71:20: object is missing property: id
 
 71: val id = strPerson.id
                        ^^
 
-bin/foo.esc:4:1: Cannot mutate readonly property 'a' on type: mut MyReadonly<Obj>
+bin/foo.esc:4:1: readonly field a cannot satisfy a writable field requirement
 
 4:  roObj.a = roA
-    ^^^^^^^
+    ^^^^^^^^^^^^^
 

@@ -1,0 +1,9 @@
+DISABLED until #1974.
+
+The solver types a `catch` arm's caught value as `unknown`, so
+`msg => "caught: " ++ msg` reports `cannot constrain unknown <: string`. The
+fixture is valid source, and a golden written now would record that rejection.
+
+Re-enable by deleting this file once #1974 types the caught value as the union
+of what the try block throws. The build output is regenerated then, with
+`UPDATE_FIXTURES=true go test ./cmd/...`.

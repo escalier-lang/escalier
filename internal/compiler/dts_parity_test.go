@@ -10,13 +10,9 @@ import (
 // declarationShapes is one small source per shape the `.d.ts` emitters have to render,
 // read by TestEachDeclarationShapeEmitsTheSameDefinitions.
 //
-// The fixture harness compares the same artifact, but only for a fixture the solver can
-// check end to end, which holds most of them out. Of 74 fixtures, 29 are held back by a
-// check-stage gap, 2 are disabled outright, and 13 more record an expected rejection and
-// return before emission. A shape no remaining fixture happens to write is compared
-// nowhere, which is how the `void` return divergence #1820 landed. A source here needs
-// no package on disk and no fixture that checks cleanly, so covering a shape costs one
-// entry.
+// The fixture goldens are written from the solver alone, so nothing else compares the
+// two checkers' `.d.ts`. A source here needs no package on disk, so covering a shape
+// costs one entry.
 //
 // Keep each source to the one shape it names. A source carrying two shapes fails for
 // either, and a skip entry then has to name both causes.
@@ -133,8 +129,7 @@ type shapeSkip struct {
 
 // shapeSkips are the shapes whose emitted definitions still differ between the two
 // checkers. The entries are seeded from a run rather than predicted, and a shape that
-// starts agreeing fails, so the list burns down the way the fixture harness's emitSkips
-// does.
+// starts agreeing fails, so the list burns down instead of rotting.
 var shapeSkips = map[string]shapeSkip{
 	// The checker writes `void` for a return it infers from a body that returns no
 	// value, and the solver writes `undefined`. buildFuncDeclFromSol rewrites a function
@@ -161,10 +156,9 @@ var noValueReturnSkip = shapeSkip{
 // TestEachDeclarationShapeEmitsTheSameDefinitions asserts that both checkers emit the
 // same `.d.ts` for each source in declarationShapes.
 //
-// The checker's output is the expectation rather than a committed golden, for the reason
-// the fixture harness's requireSameEmittedOutput gives: what is being asked is whether
-// the two agree. Neither output is asserted to be correct TypeScript, so a shape both
-// render the same way wrongly passes here. #1804 is one such shape, left out because the
+// The checker's output is the expectation rather than a committed golden, because what
+// is being asked is whether the two agree. Neither output is asserted to be correct
+// TypeScript, so a shape both render the same way wrongly passes here. #1804 is one such shape, left out because the
 // checker emits a type parameter nothing binds and matching it is not the goal.
 func TestEachDeclarationShapeEmitsTheSameDefinitions(t *testing.T) {
 	for name := range shapeSkips {

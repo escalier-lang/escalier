@@ -3,6 +3,11 @@
 Measured at `ac4f1e3`. Every number below is reproducible; the method is in
 §"How these numbers were taken".
 
+P5 has landed since. The solver is the default checker, `ESCALIER_CHECKER=checker`
+selects the old one, and `cmd/escalier/solver_fixture_test.go` is deleted. The
+fixture goldens are written from the solver. See
+[01-cutover-plan.md](01-cutover-plan.md)§"P5 — Flip the default" for what changed.
+
 ## What has landed from this plan
 
 Seven of the plan's pull requests are in, which moved most of the numbers below.

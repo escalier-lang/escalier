@@ -1,0 +1,1 @@
+{"version":3,"file":"./index.js","sources":["../../lib/index.esc"],"sourcesContent":["import \"std:date\"\n\nexport val now: date.Date = date.Date()\nexport val stamp: number = now.getTime()\n"],"names":[],"mappings":"aAEW,AAAA,MAAiB,IAAA;aACjB,AAAA,QAAgB,AAAA,AAAA,IAAI"}

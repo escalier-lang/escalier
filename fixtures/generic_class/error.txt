@@ -1,0 +1,5 @@
+lib/index.esc:11:15: ambiguous match against t15 | t19: committed t15, but t19 would also match; annotate to disambiguate
+
+11: val box = Box(5:number)
+                  ^^^^^^^^
+

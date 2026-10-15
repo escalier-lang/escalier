@@ -15,6 +15,7 @@ func TestMain(m *testing.M) {
 		fmt.Fprintln(os.Stderr, err)
 		os.Exit(1)
 	}
+	useLegacyChecker()
 
 	// Load and type-check the TypeScript prelude once, without a deadline, so
 	// its cost is paid here rather than inside a per-test timeout. checker.Prelude

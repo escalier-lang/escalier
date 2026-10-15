@@ -1,11 +1,11 @@
 declare type Base = {tag: string, who(): string};
 declare const Base: {new (): Base};
-declare const nsDerived: NsDerived;
+declare const nsDerived: geo.NsDerived;
 declare const nsTag: string;
 declare const nsWho: string;
-declare const qualifiedDerived: QualifiedDerived;
+declare const qualifiedDerived: util.QualifiedDerived;
 declare const qualifiedWho: string;
-declare const utilDerived: UtilDerived;
+declare const utilDerived: util.UtilDerived;
 declare const utilTag: string;
 declare const utilWho: string;
 declare namespace geo {

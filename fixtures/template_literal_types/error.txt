@@ -1,4 +1,4 @@
-lib/index.esc:9:12: "c-c" cannot be assigned to "a-c" | "b-c"
+lib/index.esc:9:12: cannot constrain "c-c" <: "a-c" | "b-c"
 
 9:  val z: T = "c-c"
                ^^^^^

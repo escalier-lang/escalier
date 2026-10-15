@@ -1,4 +1,4 @@
-declare type Counter = {readonly value: number, increment(): void};
+declare type Counter = {readonly value: number, increment(): undefined};
 declare const Counter: {new (value: number): Counter};
 declare type Point = {readonly x: number, y: number};
 declare const Point: {new (x: number, y: number): Point};

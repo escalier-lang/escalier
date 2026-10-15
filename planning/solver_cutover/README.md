@@ -66,6 +66,9 @@ Pick before P2 starts, because the answer changes what the P2 harness covers.
 
 ## Where this stands
 
+P5 has landed: the solver is the compiler's default checker, and the LSP is the
+last caller of the old one until P6. The rest of this section predates P5.
+
 Seven of the plan's pull requests have landed, and the solver now checks **43 of
 the 72 runnable fixtures** with 31 skipped and none failing. #1712 replaced this
 plan's predictions about what the solver cannot do with a measured skip list in
