@@ -80,7 +80,7 @@ func (c *checker) ambientScope() *Scope {
 // The first package to claim a name keeps it.
 //
 // A run with Options.NoAmbientNames set binds nothing, so the ambient scope stays empty.
-// It loads only the packages shapePackages lists.
+// It loads only the packages literalClassPackages lists.
 func (c *checker) bindAmbientExports() {
 	// The packages draw from the range the prelude draws from, so a program's own
 	// variables and symbols are numbered the same whether or not any builtin loaded.
@@ -94,7 +94,7 @@ func (c *checker) bindAmbientExports() {
 	b := &ambientBinder{scope: c.ambientScope(), namespaces: map[string]*Namespace{}}
 	packages := ambientPackages
 	if c.noAmbientNames {
-		packages = shapePackages()
+		packages = literalClassPackages()
 	}
 	for _, uri := range packages {
 		ns, errs := c.loadPackage(uri, ast.Span{})
@@ -112,10 +112,10 @@ func (c *checker) bindAmbientExports() {
 	}
 }
 
-// shapePackages returns, sorted, the packages that declare a class the checker reads with
-// no name in scope: each primitive's wrapper and `RegExp`. The prelude is left out, since
-// every run loads it first.
-func shapePackages() []string {
+// literalClassPackages returns, sorted, the packages that declare the classes a literal's
+// value reads through. Those are each primitive's wrapper, such as `String` for `"ab"`, and
+// `RegExp` for a regex literal. The prelude is left out, since every run loads it first.
+func literalClassPackages() []string {
 	uris := set.FromSlice([]string{regexpClass.uri})
 	for _, wrapper := range primitiveWrappers {
 		if wrapper.uri != preludeURI {
