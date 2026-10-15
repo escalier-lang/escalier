@@ -300,7 +300,7 @@ func TestInferDestructureBorrowUnion(t *testing.T) {
   val {x: v} = p else { {x: q} }
   return v
 }`,
-			want: "fn <'a: 'd, 'b: 'd, 'c, 'd>(p: &'a {x: {a: number}} | &'b {y: string}, q: &'c {a: number}) -> &'c {a: number} | &'d {a: number}",
+			want: "fn <'a: 'd, 'b: 'd, 'c, 'd>(p: &'a {x: {a: number}} | &'b {y: string}, q: &'c {a: number}) -> &'d {a: number} | &'c {a: number}",
 		},
 		{
 			// A borrowed fallback is peeled the way the scrutinee is, so the pattern's owned

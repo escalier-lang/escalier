@@ -23,7 +23,7 @@ func TestBigIntPrimitive(t *testing.T) {
 		{
 			name: "ItJoinsIntoAUnion",
 			src:  `type T = bigint | string`,
-			want: "string | bigint",
+			want: "bigint | string",
 		},
 	}
 	for _, tt := range tests {

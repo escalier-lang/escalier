@@ -134,13 +134,13 @@ func Print(t Type) string {
 // user-facing output but collapses `A.Point` and `B.Point` to one string. The solver forms
 // a collision-free canonical identity key from PrintQualified. It is not a surface form.
 func PrintQualified(t Type) string {
-	return (&namedPrinter{qualify: true, symbolIDs: true}).printType(t)
+	return (&namedPrinter{qualify: true, symbolIDs: true, sortMembers: true}).printType(t)
 }
 
 // printIdentity renders a type like Print but shows every unique symbol by its id, the
 // form Equal compares.
 func printIdentity(t Type) string {
-	return (&namedPrinter{symbolIDs: true}).printType(t)
+	return (&namedPrinter{symbolIDs: true, sortMembers: true}).printType(t)
 }
 
 // ElisionMark stands for the subtree PrintElided dropped. It is U+2026, distinct from the `...`
@@ -759,6 +759,12 @@ type namedPrinter struct {
 	// declarations can share a name, so a rendering used as an identity key has to show
 	// the id. Plain Print leaves it false and shows the name.
 	symbolIDs bool
+	// sortMembers renders the members of a union or an intersection in sorted string order
+	// rather than the order the type holds them in. A union keeps the order its members
+	// arrived in, so `A | B` and `B | A` are one type held two ways, and a rendering used as
+	// an identity key has to give both one key. Plain Print leaves it false and shows the
+	// held order.
+	sortMembers bool
 	// maxDepth bounds how deep printType descends before it renders ElisionMark in place of a
 	// subtree. Zero, the value Print and PrintQualified leave, descends without limit. depth is
 	// the nesting of the node being rendered, counted from 0 at the root.
@@ -1173,11 +1179,17 @@ func (p *namedPrinter) printType(t Type) string {
 		for _, m := range t.Types {
 			parts = append(parts, p.printTypeMinPrec(m, precUnion))
 		}
+		if p.sortMembers {
+			sort.Strings(parts)
+		}
 		return strings.Join(parts, " | ")
 	case *IntersectionType:
 		parts := make([]string, len(t.Types))
 		for i, m := range t.Types {
 			parts[i] = p.printTypeMinPrec(m, precIntersection)
+		}
+		if p.sortMembers {
+			sort.Strings(parts)
 		}
 		return strings.Join(parts, " & ")
 	case *NegationType:

@@ -109,7 +109,7 @@ func TestInferThrowsFromBodyUnderAWildcardClause(t *testing.T) {
 			// Two throws on different paths union, the same join the return points take.
 			name: "ThrowsOnBothBranches",
 			src:  `fn f(c: boolean) throws _ { if c { throw "a" } else { throw 5 } }`,
-			want: `fn (c: boolean) -> never throws 5 | "a"`,
+			want: `fn (c: boolean) -> never throws "a" | 5`,
 		},
 		{
 			// The `else` branch diverges, so it drops out of the value union and only the
@@ -293,7 +293,7 @@ func TestInferThrowsSubtyping(t *testing.T) {
 				fn narrow() throws string { throw "boom" }
 				val f: fn() -> never throws string | number = narrow
 			`,
-			want: "fn () -> never throws number | string",
+			want: "fn () -> never throws string | number",
 		},
 	})
 	runThrowsErrCases(t, []throwsErrCase{
@@ -564,7 +564,7 @@ func TestInferThrowsFromAnAccessor(t *testing.T) {
 				class B { bad: boolean, get x(&self) -> number throws number { if self.bad { throw 2 } return 1 } }
 				fn f(c: A | B) -> number throws _ { return c.x }
 			`,
-			want: "fn (c: A | B) -> number throws number | string",
+			want: "fn (c: A | B) -> number throws string | number",
 		},
 		{
 			// Reading a METHOD only names the function; its throws stays in the signature
@@ -699,8 +699,8 @@ func TestInferThrowsAccessorReadResolution(t *testing.T) {
 				fn f(c: A | undefined) -> number { return c.x }
 			`,
 			wantErrs: []string{
-				"3:47-3:50: cannot constrain undefined <: object",
 				"3:49-3:50: object is missing property: x",
+				"3:47-3:50: cannot constrain undefined <: object",
 			},
 		},
 	})
@@ -754,14 +754,14 @@ func TestInferThrowsThroughAGetterRead(t *testing.T) {
 					return c.b
 				}
 			`,
-			want: "fn (c: C) -> number throws number | string",
+			want: "fn (c: C) -> number throws string | number",
 		},
 		{
 			// A read on one path and a `throw` on the other union, so a getter raise sits
 			// in the same clause as a literal the body throws itself.
 			name: "GetterRaiseJoinsAThrowOnAnotherPath",
 			src:  raisingGetterClass + `fn f(c: C, t: boolean) -> number throws _ { if t { throw 5 } return c.x }`,
-			want: "fn (c: C, t: boolean) -> number throws string | 5",
+			want: "fn (c: C, t: boolean) -> number throws 5 | string",
 		},
 		{
 			// A getter reading another getter is a consumer like any other, so the outer

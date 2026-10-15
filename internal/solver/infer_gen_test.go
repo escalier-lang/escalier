@@ -185,7 +185,7 @@ func TestInferYieldFrom(t *testing.T) {
 				gen fn g() { yield 1 return "r" }
 				gen fn f() { yield "a" return yield from g() }
 			`,
-			want: `fn () -> Generator<1 | "a", "r", unknown>`,
+			want: `fn () -> Generator<"a" | 1, "r", unknown>`,
 		},
 		{
 			// A union delegate is resolved branch by branch, so the delegation keeps
@@ -198,7 +198,7 @@ func TestInferYieldFrom(t *testing.T) {
 					return yield from g
 				}
 			`,
-			want: `fn (g: Generator<number, string, never> | Generator<boolean, number, never>) -> Generator<number | boolean, number | string, never>`,
+			want: `fn (g: Generator<number, string, never> | Generator<boolean, number, never>) -> Generator<number | boolean, string | number, never>`,
 		},
 		{
 			// A tuple branch carries no return value, so it contributes `undefined` to
@@ -209,7 +209,7 @@ func TestInferYieldFrom(t *testing.T) {
 					return yield from g
 				}
 			`,
-			want: `fn (g: [boolean] | Generator<number, string, never>) -> Generator<number | boolean, string | undefined, never>`,
+			want: `fn (g: Generator<number, string, never> | [boolean]) -> Generator<number | boolean, string | undefined, never>`,
 		},
 		{
 			// An async generator is a legal delegate from an async generator body, and a
@@ -220,7 +220,7 @@ func TestInferYieldFrom(t *testing.T) {
 					return yield from g
 				}
 			`,
-			want: `fn (g: AsyncGenerator<number, string, never> | AsyncGenerator<boolean, number, never>) -> AsyncGenerator<number | boolean, number | string, never>`,
+			want: `fn (g: AsyncGenerator<number, string, never> | AsyncGenerator<boolean, number, never>) -> AsyncGenerator<number | boolean, string | number, never>`,
 		},
 		{
 			// Tree-walk delegation is the main use of `yield from`, so a generator
@@ -264,7 +264,7 @@ func TestInferYieldFrom(t *testing.T) {
 				gen fn b() -> Generator<number, string, number> { yield 2 return "r" }
 				gen fn f() { yield from a() yield from b() }
 			`,
-			want: `fn () -> Generator<number, undefined, number & string>`,
+			want: `fn () -> Generator<number, undefined, string & number>`,
 		},
 	})
 	runGenErrCases(t, []genErrCase{
@@ -687,7 +687,7 @@ func TestInferGenNext(t *testing.T) {
 				gen fn h() { yield "a" throw 5 }
 				fn f(b: boolean) throws _ { val it = if b { g() } else { h() } return it.next() }
 			`,
-			want: `fn (b: boolean) -> IteratorYieldResult<1 | "a"> throws 5 | "boom"`,
+			want: `fn (b: boolean) -> IteratorYieldResult<1 | "a"> throws "boom" | 5`,
 		},
 		{
 			// A callee whose return type is a union of generators lowers that union into the

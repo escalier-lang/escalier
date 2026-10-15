@@ -9,7 +9,7 @@ import (
 
 // TestNewUnionNormalization is the table-driven sweep over newUnion's
 // Context-free steps. Each row exercises one of flatten, lattice identities,
-// ErrorType elision, dedup, canonical order, or collapse.
+// ErrorType elision, dedup, arrival order, or collapse.
 func TestNewUnionNormalization(t *testing.T) {
 	tests := []struct {
 		name  string
@@ -17,11 +17,9 @@ func TestNewUnionNormalization(t *testing.T) {
 		want  soltype.Type
 	}{
 		{
-			name:  "nested union splices in, canonical order",
+			name:  "nested union splices in at its position",
 			parts: []soltype.Type{parseType(t, "number | string"), parseType(t, "boolean")},
-			// PrimType members sort by the Prim enum order NumPrim, StrPrim,
-			// BoolPrim.
-			want: parseType(t, "number | string | boolean"),
+			want:  parseType(t, "number | string | boolean"),
 		},
 		{
 			name: "doubly-nested union splices fully",
@@ -92,7 +90,7 @@ func TestNewIntersectionNormalization(t *testing.T) {
 		want  soltype.Type
 	}{
 		{
-			name:  "nested intersection splices in, canonical order",
+			name:  "nested intersection splices in at its position",
 			parts: []soltype.Type{parseType(t, "number & {a: number}"), parseType(t, "{b: string}")},
 			want:  parseType(t, "number & {a: number} & {b: string}"),
 		},
@@ -156,21 +154,27 @@ func TestNewIntersectionNormalization(t *testing.T) {
 	}
 }
 
-// TestNewUnionCanonicalOrder is the M6 PR1 gate against speculative-pinning
-// drift. A union of a member list and of its shuffle must render identically
-// and compare equalType-equal.
-func TestNewUnionCanonicalOrder(t *testing.T) {
+// TestNewUnionKeepsArrivalOrder asserts that a union holds its members in the
+// order they arrived in, and that a union of a member list and of its shuffle
+// still compare equalType-equal.
+func TestNewUnionKeepsArrivalOrder(t *testing.T) {
 	a := newUnion(nil, parseTypes(t, "number", "string"))
 	b := newUnion(nil, parseTypes(t, "string", "number"))
-	require.True(t, equalType(a, b), "expected canonical order to equate both shuffles")
-	require.Equal(t, soltype.Print(a), soltype.Print(b))
+	require.True(t, equalType(a, b), "both shuffles hold the same members")
+	require.Zero(t, compareType(a, b), "both shuffles hold the same members")
+	require.Equal(t, "number | string", soltype.Print(a))
+	require.Equal(t, "string | number", soltype.Print(b))
 }
 
-func TestNewIntersectionCanonicalOrder(t *testing.T) {
+// TestNewIntersectionKeepsArrivalOrder is the meet twin of
+// TestNewUnionKeepsArrivalOrder.
+func TestNewIntersectionKeepsArrivalOrder(t *testing.T) {
 	a := newIntersection(nil, parseTypes(t, "number", "string"))
 	b := newIntersection(nil, parseTypes(t, "string", "number"))
-	require.True(t, equalType(a, b), "expected canonical order to equate both shuffles")
-	require.Equal(t, soltype.Print(a), soltype.Print(b))
+	require.True(t, equalType(a, b), "both shuffles hold the same members")
+	require.Zero(t, compareType(a, b), "both shuffles hold the same members")
+	require.Equal(t, "number & string", soltype.Print(a))
+	require.Equal(t, "string & number", soltype.Print(b))
 }
 
 // TestNewUnionSubsumeWithContext covers the Context-gated subsumption step.
@@ -280,35 +284,34 @@ func TestNewUnionSubsumptionSkipsLifetimeVar(t *testing.T) {
 	require.Len(t, got.(*soltype.UnionType).Types, 2)
 }
 
-// TestUndefinedAndNullSortLast asserts the convention that the absence markers
-// NullType and UndefinedType appear after data members in canonical order, with
-// NullType before UndefinedType. A mixed union such as `number | null | undefined`
-// surfaces the data first and the absence markers last.
-func TestUndefinedAndNullSortLast(t *testing.T) {
+// TestNewUnionKeepsAbsenceMarkersInArrivalOrder asserts that `null` and
+// `undefined` stay where they arrived in a union, the way every other member
+// does, so `undefined | number` renders as written.
+func TestNewUnionKeepsAbsenceMarkersInArrivalOrder(t *testing.T) {
 	tests := []struct {
 		name  string
 		parts []soltype.Type
 		want  string
 	}{
 		{
-			name:  "undefined sorts after a data member",
+			name:  "undefined before a data member",
 			parts: parseTypes(t, "undefined", "number"),
-			want:  "number | undefined",
+			want:  "undefined | number",
 		},
 		{
-			name:  "null sorts after a data member",
+			name:  "null before a data member",
 			parts: parseTypes(t, "null", "number"),
-			want:  "number | null",
+			want:  "null | number",
 		},
 		{
-			name:  "null sorts before undefined",
+			name:  "undefined before null before a data member",
 			parts: parseTypes(t, "undefined", "null", "number"),
-			want:  "number | null | undefined",
+			want:  "undefined | null | number",
 		},
 		{
-			name:  "null before undefined independent of input order",
+			name:  "undefined before null",
 			parts: parseTypes(t, "undefined", "null"),
-			want:  "null | undefined",
+			want:  "undefined | null",
 		},
 	}
 	for _, tt := range tests {
@@ -321,7 +324,7 @@ func TestUndefinedAndNullSortLast(t *testing.T) {
 
 // TestCompareTypeConsistentWithEqual asserts compareType's consistency
 // contract. Two equalType-equal types must compare equal. Without that,
-// canonicalization would be unstable and dedup unreliable.
+// sorting would be unstable and dedup unreliable.
 func TestCompareTypeConsistentWithEqual(t *testing.T) {
 	tests := []struct {
 		name string
@@ -383,8 +386,8 @@ func TestCompareTypeNegation(t *testing.T) {
 	// the same sequence.
 	forward := []soltype.Type{num(), negStr, inter, negNum, parseType(t, "null")}
 	reverse := []soltype.Type{parseType(t, "null"), negNum, inter, negStr, num()}
-	sortTypes(forward)
-	sortTypes(reverse)
+	forward = sortedTypes(forward)
+	reverse = sortedTypes(reverse)
 	require.Equal(t, len(forward), len(reverse))
 	for i := range forward {
 		require.True(t, equalType(forward[i], reverse[i]),

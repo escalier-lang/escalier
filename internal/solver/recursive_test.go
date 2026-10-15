@@ -170,8 +170,8 @@ func TestInferGuardedRecursionRendersMuKnot(t *testing.T) {
 				}
 			`,
 			binding: "iter",
-			want: "fn (n: number) -> {next: fn () -> μX0.({done: true} | " +
-				"{done: false, value: number, rest: {next: fn () -> X0}})}",
+			want: "fn (n: number) -> {next: fn () -> μX0.({done: false, value: number, " +
+				"rest: {next: fn () -> X0}} | {done: true})}",
 		},
 		{
 			// A fluent API whose chaining methods return the builder again. Every method is a lambda,
@@ -196,8 +196,8 @@ func TestInferGuardedRecursionRendersMuKnot(t *testing.T) {
 				fn stmt() { return {kind: "stmt", inner: expr()} }
 			`,
 			binding: "expr",
-			want: `fn () -> {kind: "call", arg: μX0.({kind: "stmt", inner: {kind: "call", arg: X0}} ` +
-				`| undefined)}`,
+			want: `fn () -> {kind: "call", arg: μX0.(undefined | {kind: "stmt", ` +
+				`inner: {kind: "call", arg: X0}})}`,
 		},
 	}
 	for _, tt := range tests {

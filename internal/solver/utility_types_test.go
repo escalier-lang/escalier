@@ -291,10 +291,10 @@ func TestUtilityTypeReductions(t *testing.T) {
 		},
 		{
 			// An object member is decided by the same rule as a primitive one, so the two mix in
-			// one union. The survivors render in canonical order rather than source order.
+			// one union. The survivors keep the order the source wrote them in.
 			name:         "ExcludeFromMixedUnion",
 			src:          `type Result = Exclude<{a: number} | string | number, {a: number}>`,
-			wantExpanded: "number | string",
+			wantExpanded: "string | number",
 		},
 		{
 			// `{...}` is the object with no declared fields and an open tail, so every object is a
@@ -310,7 +310,7 @@ func TestUtilityTypeReductions(t *testing.T) {
 			// `{c: boolean}`. ExcludeWiderMemberViaOpenTarget below is the spelling that agrees.
 			name:         "ExcludeExactTargetKeepsWiderMember",
 			src:          `type Result = Exclude<{a: number, b: string} | {c: boolean}, {a: number}>`,
-			wantExpanded: "{c: boolean} | {a: number, b: string}",
+			wantExpanded: "{a: number, b: string} | {c: boolean}",
 		},
 		{
 			// The `...` marker restores width tolerance, so the wider member is dropped and the
@@ -372,7 +372,7 @@ func TestUtilityTypeReductions(t *testing.T) {
 			// With the `...` marker both members carrying `a` are kept, matching TypeScript.
 			name:         "ExtractWiderMembersViaOpenTarget",
 			src:          `type Result = Extract<{a: number, b: string} | {a: number}, {a: number, ...}>`,
-			wantExpanded: "{a: number} | {a: number, b: string}",
+			wantExpanded: "{a: number, b: string} | {a: number}",
 		},
 		// `ReturnType<F>` reads the return type off a function through an `infer` capture.
 		{
@@ -485,7 +485,7 @@ func TestUtilityTypeComposition(t *testing.T) {
 				type Getters<T> = {[` + "`get${Capitalize<K>}`" + `]: T[K] for K in keyof T}
 				type Result = Getters<{name: string, age: number}>
 			`,
-			wantExpanded: "{getAge: number, getName: string}",
+			wantExpanded: "{getName: string, getAge: number}",
 		},
 	})
 }
@@ -963,11 +963,10 @@ func TestUtilityTypeNonNullable(t *testing.T) {
 			wantExpanded: "string",
 		},
 		{
-			// Distributing rebuilds the union, so the result comes back in the canonical
-			// order lattice.go documents rather than the source order.
+			// Distributing rebuilds the union in the order the source wrote its members.
 			name:         "LeavesOtherMembers",
 			src:          `type Result = NonNullable<string | number>`,
-			wantExpanded: "number | string",
+			wantExpanded: "string | number",
 		},
 		{
 			name:         "EveryMemberStripped",

@@ -170,13 +170,12 @@ func TestInferOptionalPropertyReadAgainstWrittenUndefined(t *testing.T) {
 	require.Equal(t, "number | undefined", values["x"])
 }
 
-// A union renders its data members before its absence markers, which typeKindOrder fixes as
-// NullType, then UndefinedType. The source order below is the reverse, so the render
-// shows the canonical order rather than the written one.
-func TestInferNullUndefinedUnionCanonicalOrder(t *testing.T) {
+// A union renders its members in the order the annotation wrote them, absence markers
+// included.
+func TestInferNullUndefinedUnionKeepsWrittenOrder(t *testing.T) {
 	values, _, errs := inferSource(t, `val u: undefined | null | number = 5`)
 	require.Empty(t, errs)
-	require.Equal(t, "number | null | undefined", values["u"])
+	require.Equal(t, "undefined | null | number", values["u"])
 }
 
 // A `null` match arm binds against a union scrutinee that carries the atom, and the two arms

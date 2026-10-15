@@ -113,7 +113,7 @@ func TestPreludeIteratorResultAliases(t *testing.T) {
 				&soltype.PrimType{Prim: soltype.NumPrim},
 				&soltype.PrimType{Prim: soltype.StrPrim},
 			},
-			want: `IteratorReturnResult<string> | IteratorYieldResult<number>`,
+			want: `IteratorYieldResult<number> | IteratorReturnResult<string>`,
 		},
 	}
 	for _, test := range tests {

@@ -260,7 +260,7 @@ func TestUniqueSymbolNamedByAValueOfItsType(t *testing.T) {
 			// symbol alone.
 			name: "OptionalProperty",
 			srcs: map[string]string{"input.esc": "declare val o: {readonly key?: unique symbol}\nval k = o.key"},
-			want: map[string]string{"k": "undefined | unique symbol#0"},
+			want: map[string]string{"k": "unique symbol#0 | undefined"},
 		},
 		{
 			name: "InterfaceThatExtends",

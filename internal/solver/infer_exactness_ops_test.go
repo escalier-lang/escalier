@@ -140,7 +140,7 @@ func TestInferOperatorExactnessPropagates(t *testing.T) {
 				type Result = keyof I
 			`,
 			wantSymbolic: "keyof I",
-			wantExpanded: `string | "a"`,
+			wantExpanded: `"a" | string`,
 		},
 		{
 			// `Exact` and `Inexact` are the two operators that run the other way. Every case above
@@ -306,7 +306,7 @@ func TestInferExactnessIntrinsics(t *testing.T) {
 				type Result = Inexact<Color>
 			`,
 			wantSymbolic: "Inexact<Color>",
-			wantExpanded: `"blue" | "green" | "red"`,
+			wantExpanded: `"red" | "green" | "blue"`,
 		},
 		{
 			// `Exact` over a union is likewise the identity.
@@ -316,7 +316,7 @@ func TestInferExactnessIntrinsics(t *testing.T) {
 				type Result = Exact<Color>
 			`,
 			wantSymbolic: "Exact<Color>",
-			wantExpanded: `"blue" | "green" | "red"`,
+			wantExpanded: `"red" | "green" | "blue"`,
 		},
 		{
 			// An open key set is the primitive `string`, which carries no exactness marker, so

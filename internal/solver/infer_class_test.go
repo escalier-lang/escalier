@@ -3552,7 +3552,7 @@ func TestInferBorrowedReceiverInACallback(t *testing.T) {
 				}
 			`,
 			want: []string{
-				"cannot use borrowed &Coll<number> as owned undefined | Coll<number>",
+				"cannot use borrowed &Coll<number> as owned Coll<number> | undefined",
 			},
 		},
 		{

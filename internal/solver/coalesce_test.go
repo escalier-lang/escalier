@@ -153,8 +153,7 @@ func TestCoalesceNegativeObjectMerge(t *testing.T) {
 			num(),
 		}
 		got := coalesce(p, soltype.Negative)
-		// Members are in canonical order (M6 PR1): PrimType ranks before
-		// ObjectType, so `number & {a: number}`.
+		// equalType compares the members as a set, so this order is not asserted.
 		want := &soltype.IntersectionType{Types: []soltype.Type{
 			num(),
 			exactObj(propElem("a", num())),
