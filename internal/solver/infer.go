@@ -226,6 +226,9 @@ type checker struct {
 	// shadows both. A loaded package parents its scope at the prelude and never sees
 	// this one. It is nil until a run asks for it.
 	ambient *Scope
+	// regexpReported is set once the run has reported that it loaded no usable `RegExp`,
+	// so a second regex literal does not report it again.
+	regexpReported bool
 	// libVarCounter and libSymbolCounter are where the library packages' own counters
 	// stand. The prelude starts them at preludeIDBase and the ambient packages continue
 	// from where it stopped, so neither shares an id with the program.

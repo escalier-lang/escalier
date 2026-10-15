@@ -1,6 +1,7 @@
 package solver
 
 import (
+	"math/big"
 	"testing"
 
 	"github.com/escalier-lang/escalier/internal/ast"
@@ -43,15 +44,15 @@ func TestInferLiteral(t *testing.T) {
 	}
 }
 
-// A literal kind with no soltype form, regex or bigint, is a subset miss rather than a
-// crash. Both wait on a soltype.Lit member of their own.
+// A bigint literal has no soltype form, so it is a subset miss rather than a crash. It
+// waits on a soltype.Lit member of its own.
 func TestInferLiteralUnsupported(t *testing.T) {
 	c := newTestChecker()
-	e := ast.NewLitExpr(ast.NewRegex("/a/", testSpan()))
+	e := ast.NewLitExpr(ast.NewBigInt(*big.NewInt(1), testSpan()))
 	got := c.inferExpr(NewScope(), 0, e)
 	require.IsType(t, &soltype.ErrorType{}, got) // PR8: report's recovery placeholder
 	require.Len(t, c.errs, 1)
-	require.Equal(t, "Unsupported: RegexLit", c.errs[0].Message())
+	require.Equal(t, "Unsupported: BigIntLit", c.errs[0].Message())
 	require.Equal(t, testSpan(), c.errs[0].Span())
 }
 
