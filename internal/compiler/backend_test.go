@@ -353,6 +353,13 @@ func TestBothCheckersEmitTheSameJS(t *testing.T) {
 			declare val always: number
 			export val got = if val n = always { n } else { 0 }
 		`,
+		"OptionalChainForms": `
+			declare val o: {e?: {f: string, m: fn () -> number}, g?: fn () -> number}
+			export val member = o.e?.f
+			export val index = o.e?["f"]
+			export val call = o.g?()
+			export val method = o.e?.m()
+		`,
 		"MethodReferenceKeepsItsReceiver": `
 			declare val obj: {m: fn () -> number}
 			export val m = obj.m
@@ -429,6 +436,28 @@ func TestAPatternOnAnAliasEmitsNoInstanceOfGuard(t *testing.T) {
 			require.NotEmpty(t, js)
 			require.NotContains(t, js, "instanceof Alias",
 				"an alias has no runtime binding, so the guard would throw a ReferenceError")
+		})
+	}
+}
+
+// TestBothCheckersGuardAnOptionalChainTarget asserts that an `if val` over an optional
+// chain guards its target against `undefined` whichever checker ran. The chain `o.e?.f`
+// yields `undefined` when `o.e` is absent, and the guard reads that from the chain's type.
+//
+// The guard is asserted directly rather than left to the output comparison, because a
+// comparison passes whether both emit the guard or neither does, and omitting it is the
+// fault.
+func TestBothCheckersGuardAnOptionalChainTarget(t *testing.T) {
+	sources := libSources(`
+		declare val o: {e?: {f: string}}
+		export val got = if val s = o.e?.f { s } else { "" }
+	`)
+
+	for name, use := range map[string]func(*testing.T){"checker": useChecker, "solver": useSolver} {
+		t.Run(name, func(t *testing.T) {
+			use(t)
+			js := CompilePackage(sources, PackageConfig{}).CompUnits["lib/index"].JS
+			require.Contains(t, js, "o.e?.f != undefined")
 		})
 	}
 }

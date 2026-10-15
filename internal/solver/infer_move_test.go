@@ -28,6 +28,46 @@ func TestMoveSemantics(t *testing.T) {
 			`,
 			want: []string{"5:6-5:9: use of moved value 'p'"},
 		},
+		// An optional link reads the place the plain link names, so `p?.x` reads `p.x`.
+		"OptionalLinkReadsAMovedBinding": {
+			src: `
+				fn test() {
+					val p: mut {x: number} = {x: 0}
+					val q = p
+					p?.x
+				}
+			`,
+			want: []string{"5:6-5:10: use of moved value 'p'"},
+		},
+		"OptionalLinkReadsAMovedField": {
+			src: `
+				fn test() {
+					val mut b = {v: {x: 1}}
+					val n = b.v
+					b.v?.x
+				}
+			`,
+			want: []string{"5:6-5:12: use of moved value 'b.v'"},
+		},
+		"OptionalLinkMovesAnObjectField": {
+			src: `
+				fn test() {
+					val mut b = {v: {x: 1}}
+					val n = b?.v
+					val m = b?.v
+				}
+			`,
+			want: []string{"5:14-5:18: use of moved value 'b.v'"},
+		},
+		"OptionalLinkAfterASiblingMoveOk": {
+			src: `
+				fn test() {
+					val mut b = {v: {x: 1}, w: {x: 2}}
+					val n = b.v
+					b?.w.x
+				}
+			`,
+		},
 		// A field of value type copies, so binding it moves nothing and the field and its
 		// object stay usable.
 		"ValueFieldReadTwiceOk": {

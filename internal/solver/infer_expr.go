@@ -81,10 +81,17 @@ func (c *checker) inferIdent(scope *Scope, lvl int, e *ast.IdentExpr) soltype.Ty
 // At most one of value/ns is set; err is set instead when resolution reported an
 // error. The value arm may itself hold the ErrorType recovery sentinel — that is a
 // value, not an err — so a malformed-but-already-reported leaf does not double-report.
+//
+// shortCircuits marks a value read through an optional link whose receiver may be `null`
+// or `undefined`. An optional link is a member, index, or call written `?.`, `?[`, or `?(`.
+// When the receiver is nullish, such a link stops the whole chain and the chain yields
+// `undefined`, so `a?.b.c` never reads `.c` off a missing `a`. value leaves that `undefined` out, so each later link of the chain reads the
+// defined value. chainValue adds it back once the outermost link is resolved.
 type pathResult struct {
-	value soltype.Type
-	ns    *Namespace
-	err   bool
+	value         soltype.Type
+	ns            *Namespace
+	err           bool
+	shortCircuits bool
 }
 
 // resolvePath resolves an ident / member / index chain to a value or a namespace
@@ -108,6 +115,10 @@ func (c *checker) resolvePath(scope *Scope, lvl int, e ast.Expr, objPos bool) pa
 		return c.resolveMemberPath(scope, lvl, e, objPos)
 	case *ast.IndexExpr:
 		return c.resolveIndexPath(scope, lvl, e, objPos)
+	case *ast.CallExpr:
+		// inferExpr marks every expression it infers, and a call resolved here bypasses it.
+		c.markLifetimes(e)
+		return c.resolveCallPath(scope, lvl, e, nil)
 	default:
 		return pathResult{value: c.inferExpr(scope, lvl, e)}
 	}
@@ -125,6 +136,72 @@ func (c *checker) demandValue(r pathResult, node ast.Expr) soltype.Type {
 	default:
 		return r.value
 	}
+}
+
+// chainValue is demandValue for the outermost link of a member, index, or call chain.
+// When an optional link of the chain may short-circuit, the chain's value is the join
+// of the read and `undefined`. Over `o: {e?: {f: string}}`, `o.e?.f` is
+// `string | undefined`.
+func (c *checker) chainValue(lvl int, r pathResult, node ast.Expr) soltype.Type {
+	t := c.demandValue(r, node)
+	if r.err || r.ns != nil || !r.shortCircuits {
+		return t
+	}
+	res := c.freshAt(lvl)
+	c.recordProv(res, node, OptionalChainJoin)
+	c.constrain(node, t, res)
+	c.constrain(node, &soltype.UndefinedType{}, res)
+	c.recordType(node, res)
+	return res
+}
+
+// definedReceiver returns the receiver an optional link reads through, which is recv with
+// its `null` and `undefined` members removed, and reports whether recv may be nullish. A
+// receiver that is only `null` or `undefined` reads through as `never`, because the link
+// always short-circuits and the read never runs. A borrow of a nullable union reads
+// through as the same borrow of the union's other members.
+func definedReceiver(recv soltype.Type) (soltype.Type, bool) {
+	if narrowed, ok := withoutNullish(recv); ok {
+		return narrowed, true
+	}
+	if ref, isRef := recv.(*soltype.RefType); isRef {
+		if narrowed, ok := withoutNullish(ref.Inner); ok {
+			if inner, isInner := narrowed.(soltype.RefInner); isInner {
+				return &soltype.RefType{Mut: ref.Mut, Lt: ref.Lt, Inner: inner}, true
+			}
+		}
+	}
+	if isNullish(groundedCarrier(recv)) {
+		return &soltype.NeverType{}, true
+	}
+	return recv, false
+}
+
+// hasOptionalLink reports whether e is a member, index, or call chain with an optional link,
+// following each link's object or callee. `a?.b.c` has one, and `f(a?.b).c` has none,
+// because an argument is not a link of the chain.
+func hasOptionalLink(e ast.Expr) bool {
+	switch e := e.(type) {
+	case *ast.MemberExpr:
+		return e.OptChain || hasOptionalLink(e.Object)
+	case *ast.IndexExpr:
+		return e.OptChain || hasOptionalLink(e.Object)
+	case *ast.CallExpr:
+		return e.OptChain || hasOptionalLink(e.Callee)
+	default:
+		return false
+	}
+}
+
+// isNullish reports whether t is `null`, `undefined`, or a union of only those.
+func isNullish(t soltype.Type) bool {
+	u, isUnion := soltype.CarrierOf(t).(*soltype.UnionType)
+	if !isUnion {
+		return isNullishAtom(t)
+	}
+	return len(u.Types) > 0 && !slices.ContainsFunc(u.Types, func(member soltype.Type) bool {
+		return !isNullishAtom(member)
+	})
 }
 
 // resolveIdentPath looks a bare identifier up in the value sort first, then the
@@ -1349,16 +1426,25 @@ func (c *checker) inferBorrow(scope *Scope, lvl int, e *ast.BorrowExpr) soltype.
 	// reference-shaped field has to go through this path. The ordinary borrow
 	// path would reject it as a mutability mismatch against the immutable
 	// wrap PR 4's `fieldReadBorrow` puts on an implicit read.
+	//
+	// A path holding an optional link, such as `&a?.b`, may short-circuit to `undefined`,
+	// which no field of the receiver holds. Neither the field-path borrow nor the ordinary
+	// borrow bounds such a borrow by its receiver, so the borrow is reported as unsupported
+	// once the chain is inferred.
+	if hasOptionalLink(e.Arg) {
+		c.inferExpr(scope, lvl, e.Arg)
+		t := c.reportUnsupportedFeature(e, "borrow of an optional chain")
+		c.recordType(e, t)
+		return t
+	}
 	switch arg := e.Arg.(type) {
 	case *ast.MemberExpr:
-		if !arg.OptChain && arg.Prop != nil && arg.Prop.Name != "" {
+		if arg.Prop != nil && arg.Prop.Name != "" {
 			return c.inferBorrowOfMember(scope, lvl, e, arg.Object, arg.Prop.Name, arg.Prop, arg)
 		}
 	case *ast.IndexExpr:
-		if !arg.OptChain {
-			if name, ok := constStringKey(arg.Index); ok {
-				return c.inferBorrowOfMember(scope, lvl, e, arg.Object, name, arg.Index, arg)
-			}
+		if name, ok := constStringKey(arg.Index); ok {
+			return c.inferBorrowOfMember(scope, lvl, e, arg.Object, name, arg.Index, arg)
 		}
 	}
 	sub := c.inferExpr(scope, lvl, e.Arg)
@@ -1595,6 +1681,14 @@ func (c *checker) inferCall(scope *Scope, lvl int, e *ast.CallExpr) soltype.Type
 // holds takes that type rather than being inferred. A nil preset infers every
 // argument.
 func (c *checker) inferCallWithArgTypes(scope *Scope, lvl int, e *ast.CallExpr, preset map[ast.Expr]soltype.Type) soltype.Type {
+	return c.chainValue(lvl, c.resolveCallPath(scope, lvl, e, preset), e)
+}
+
+// resolveCallPath types the call e as a link of a member, index, or call chain. The
+// result's value is the call's return type. shortCircuits is set when the call's own
+// `?(` or an optional link in its callee may short-circuit. preset is the one
+// inferCallWithArgTypes takes.
+func (c *checker) resolveCallPath(scope *Scope, lvl int, e *ast.CallExpr, preset map[ast.Expr]soltype.Type) pathResult {
 	// Every call runs these steps in this order:
 	//
 	//  1. Read the enclosing statement's CFG point and note the call site.
@@ -1625,19 +1719,21 @@ func (c *checker) inferCallWithArgTypes(scope *Scope, lvl int, e *ast.CallExpr, 
 	}
 	c.recordCallArgEffects(e, fn, consumeRef, hasConsumeRef)
 	c.recordType(e, ret)
-	return ret
+	return pathResult{value: ret, shortCircuits: target.shortCircuits}
 }
 
 // callTarget is what a call applies its arguments to. overloads is non-nil when the
 // callee carries several signatures, and the call picks one of them. Otherwise callee is
 // the inferred callee, and fn is its single signature, or nil when that is not yet known.
 // secondInstance marks an fn that is one instantiation of a variable callee's quantified
-// bound, while constraining callee makes another.
+// bound, while constraining callee makes another. shortCircuits is the flag pathResult
+// documents, read off the callee and the call's own `?(`.
 type callTarget struct {
 	overloads      *ValueBinding
 	callee         soltype.Type
 	fn             *soltype.FuncType
 	secondInstance bool
+	shortCircuits  bool
 }
 
 // inferCallTarget resolves e's callee and returns what the call applies its arguments to.
@@ -1657,7 +1753,43 @@ func (c *checker) inferCallTarget(scope *Scope, lvl int, e *ast.CallExpr) callTa
 			return callTarget{overloads: &b}
 		}
 	}
-	callee := c.inferExpr(scope, lvl, e.Callee)
+	callee, shortCircuits := c.inferCallee(scope, lvl, e)
+	target := c.calleeTarget(lvl, e, callee)
+	target.shortCircuits = shortCircuits
+	return target
+}
+
+// inferCallee infers e's callee and returns the value the call applies its arguments to,
+// along with the flag pathResult documents as shortCircuits. A member, index, or call
+// callee resolves as an inner link of the chain the call continues, so `a?.b()` calls
+// the `b` read off a defined `a`. A callee written `f?()` has its `null` and
+// `undefined` members removed.
+func (c *checker) inferCallee(scope *Scope, lvl int, e *ast.CallExpr) (soltype.Type, bool) {
+	var callee soltype.Type
+	shortCircuits := false
+	switch e.Callee.(type) {
+	case *ast.MemberExpr, *ast.IndexExpr, *ast.CallExpr:
+		// The callee is the outermost place the call reads, so it resolves with objPos
+		// false and records its own use, as inferExpr would. It marks its lifetimes for the
+		// same reason.
+		c.markLifetimes(e.Callee)
+		r := c.resolvePath(scope, lvl, e.Callee, false)
+		callee = c.demandValue(r, e.Callee)
+		shortCircuits = r.shortCircuits && !r.err && r.ns == nil
+	default:
+		callee = c.inferExpr(scope, lvl, e.Callee)
+	}
+	if e.OptChain {
+		var nullable bool
+		callee, nullable = definedReceiver(callee)
+		shortCircuits = shortCircuits || nullable
+	}
+	return callee, shortCircuits
+}
+
+// calleeTarget returns what a call applies its arguments to, given the callee value
+// inferCallee returned.
+func (c *checker) calleeTarget(lvl int, e *ast.CallExpr, callee soltype.Type) callTarget {
 	// A member callee whose type is an intersection of function arms is an overloaded
 	// method, since memberValue gathers a multi-signature method's arms into an
 	// IntersectionType. Resolving one arm here through resolveOverload, the method analogue
@@ -2455,9 +2587,10 @@ func (c *checker) inferAssign(scope *Scope, lvl int, e *ast.BinaryExpr) soltype.
 // assignment evaluates to the value just stored, so its type is the widened source.
 func (c *checker) inferMemberAssign(scope *Scope, lvl int, e *ast.BinaryExpr, m *ast.MemberExpr, source soltype.Type, assignStmt ast.Stmt) soltype.Type {
 	undefinedT := soltype.Type(&soltype.UndefinedType{})
-	if m.OptChain {
-		// `recv?.prop = …` is not a meaningful assignment target; optional chaining is
-		// M6 regardless, so report the whole target as unsupported rather than typing it.
+	if hasOptionalLink(m) {
+		// A target holding an optional link, such as `recv?.prop = …` or `a?.b.c = …`, is not a
+		// valid JavaScript assignment target. Report the whole target as unsupported
+		// rather than typing it.
 		c.reportUnsupportedFeature(e.Left, "assignment to a member or index")
 		return undefinedT
 	}
@@ -2596,8 +2729,9 @@ func writableFieldType(prop *soltype.PropertyElem) soltype.Type {
 // inferFieldAssign, so `self[k] = v` with `val k = "x"` checks as `self.x = v`. Any other
 // key writes an element, which inferElementAssign checks.
 func (c *checker) inferIndexAssign(scope *Scope, lvl int, e *ast.BinaryExpr, ix *ast.IndexExpr, source soltype.Type, assignStmt ast.Stmt) soltype.Type {
-	if ix.OptChain {
-		// `recv?.[k] = …` is not a meaningful assignment target, the same as the member form.
+	if hasOptionalLink(ix) {
+		// A target holding an optional link, such as `recv?[k] = …`, is not a valid JavaScript
+		// assignment target, the same as the member form.
 		c.reportUnsupportedFeature(e.Left, "assignment to a member or index")
 		return &soltype.UndefinedType{}
 	}
@@ -3447,34 +3581,40 @@ func (b *objElemBuilder) result() []soltype.ObjTypeElem {
 
 // inferMember types a field read (recv.prop) in value position: it resolves the
 // member as a path and demands a value, so a property read returns its type while
-// a member that resolves to a namespace (A.B used as a value) is rejected.
-// Optional chaining (recv?.prop) needs union/undefined handling and is M6.
+// a member that resolves to a namespace (A.B used as a value) is rejected. A read
+// through an optional link that may short-circuit, as in `recv?.prop`, also yields
+// `undefined`.
 func (c *checker) inferMember(scope *Scope, lvl int, e *ast.MemberExpr) soltype.Type {
-	return c.demandValue(c.resolveMemberPath(scope, lvl, e, false), e)
+	return c.chainValue(lvl, c.resolveMemberPath(scope, lvl, e, false), e)
 }
 
 // inferIndex types `obj[index]` in value position. resolveIndexPath reads a namespace
 // member, a property the key names, or an element through the receiver's array, tuple,
-// or index-signature type.
+// or index-signature type. A read through an optional link that may short-circuit, as
+// in `obj?[index]`, also yields `undefined`.
 func (c *checker) inferIndex(scope *Scope, lvl int, e *ast.IndexExpr) soltype.Type {
-	return c.demandValue(c.resolveIndexPath(scope, lvl, e, false), e)
+	return c.chainValue(lvl, c.resolveIndexPath(scope, lvl, e, false), e)
+}
+
+// resolveLinkObject resolves the object of a member or index link. optional is the
+// link's `?.`. The result of an optional link has the object's `null` and `undefined`
+// members removed, and sets shortCircuits when the object had any.
+func (c *checker) resolveLinkObject(scope *Scope, lvl int, object ast.Expr, optional bool) pathResult {
+	obj := c.resolvePath(scope, lvl, object, true)
+	if !optional || obj.err || obj.ns != nil {
+		return obj
+	}
+	value, nullable := definedReceiver(obj.value)
+	return pathResult{value: value, shortCircuits: obj.shortCircuits || nullable}
 }
 
 // resolveMemberPath resolves `obj.prop`. It first resolves the object as a path —
 // so a namespace object (Foo.bar, A.B.c) walks through as a non-lexical member
 // lookup — and otherwise types the object as an ordinary value receiver and reads
-// the property structurally.
+// the property structurally. An optional link `obj?.prop` reads the property off obj's
+// defined members, and the result carries the shortCircuits flag pathResult documents.
 func (c *checker) resolveMemberPath(scope *Scope, lvl int, e *ast.MemberExpr, objPos bool) pathResult {
-	if e.OptChain {
-		// Optional chaining (recv?.prop) is wholesale unsupported in M2; report it
-		// up front and do NOT descend into the receiver, so a single diagnostic
-		// stands for the construct instead of cascading the receiver's errors. The
-		// MemberExpr kind is supported — it is the optional-chain feature that is
-		// not — so this is an UnsupportedFeatureError blaming the member.
-		c.reportUnsupportedFeature(e, "OptionalChain")
-		return pathResult{err: true}
-	}
-	obj := c.resolvePath(scope, lvl, e.Object, true)
+	obj := c.resolveLinkObject(scope, lvl, e.Object, e.OptChain)
 	if obj.err {
 		return pathResult{err: true}
 	}
@@ -3500,7 +3640,9 @@ func (c *checker) resolveMemberPath(scope *Scope, lvl int, e *ast.MemberExpr, ob
 	if !objPos {
 		c.recordMemberUse(e)
 	}
-	return c.valueMember(lvl, e, obj.value)
+	r := c.valueMember(lvl, e, obj.value)
+	r.shortCircuits = obj.shortCircuits
+	return r
 }
 
 // valueMember reads property prop off a value receiver: it allocates a fresh
@@ -3642,7 +3784,8 @@ func (c *checker) valueProp(lvl int, blame ast.Node, provNode ast.Node, name str
 // carrier. A primitive or function field stays a value, since PrimType and
 // FuncType are excluded from RefInner. A field whose static type is itself an
 // immutable borrow copies the borrow out flat rather than nesting, setting up
-// PR 9's nested-borrow normalization.
+// PR 9's nested-borrow normalization. An optional field reads as that borrow or
+// `undefined`.
 //
 // A receiver whose shape is not statically known returns the existing `fieldVar`
 // unchanged. A usage-inferred TypeVar carrier and an index path with no
@@ -3672,7 +3815,27 @@ func (c *checker) fieldReadBorrow(fieldVar *soltype.TypeVarType, recv soltype.Ty
 	if !ok {
 		return fieldVar
 	}
-	switch fieldType := prop.Type.(type) {
+	if !prop.Optional {
+		if borrow, ok := c.fieldBorrow(prop.Type, fieldVar, recvMut, recvLt, lvl); ok {
+			return borrow
+		}
+		return fieldVar
+	}
+	// An optional field may be absent, so its read is the field's borrow or `undefined`.
+	// fieldVar's lower bound already holds that `undefined`, so an immutable borrow wraps
+	// the declared field type instead.
+	if borrow, ok := c.fieldBorrow(prop.Type, nil, recvMut, recvLt, lvl); ok {
+		return newUnion(nil, []soltype.Type{borrow, &soltype.UndefinedType{}})
+	}
+	return fieldVar
+}
+
+// fieldBorrow returns the value a read of a field typed fieldType yields off a receiver
+// with mutability recvMut and lifetime recvLt, and false when the read yields the field
+// as a plain value. readVar is the inner an immutable borrow of an object-shaped field
+// wraps. A nil readVar wraps fieldType itself.
+func (c *checker) fieldBorrow(fieldType soltype.Type, readVar soltype.RefInner, recvMut bool, recvLt soltype.Lifetime, lvl int) (soltype.Type, bool) {
+	switch fieldType := fieldType.(type) {
 	case *soltype.RefType:
 		if fieldType.Lt == nil {
 			// An owned-mutable field cell, which a class body writes as `mut Box<T>`. Read
@@ -3686,7 +3849,7 @@ func (c *checker) fieldReadBorrow(fieldVar *soltype.TypeVarType, recv soltype.Ty
 			if lt == nil {
 				lt = c.ctx.freshLifetime(lvl)
 			}
-			return &soltype.RefType{Mut: fieldType.Mut, Lt: lt, Inner: fieldType.Inner}
+			return &soltype.RefType{Mut: fieldType.Mut, Lt: lt, Inner: fieldType.Inner}, true
 		}
 		if !fieldType.Mut {
 			// Flat copy-out of an immutable borrow field. Immutable borrows are
@@ -3695,9 +3858,9 @@ func (c *checker) fieldReadBorrow(fieldVar *soltype.TypeVarType, recv soltype.Ty
 			// `&mut` field falls through to the no-wrap branch. Aliasing a
 			// mutable borrow needs the move-engine work in PR 6, and PR 9
 			// retires the depth-two `&mut &mut` shape entirely.
-			return fieldType
+			return fieldType, true
 		}
-		return fieldVar
+		return nil, false
 	case *soltype.ObjectType, *soltype.TupleType, *soltype.ClassType, *soltype.AliasType:
 		// A bare object/tuple field a borrowed receiver lends is read as a
 		// receiver-bounded borrow whose mutability follows the receiver (PR 14): a
@@ -3717,7 +3880,7 @@ func (c *checker) fieldReadBorrow(fieldVar *soltype.TypeVarType, recv soltype.Ty
 			// store as a move that consumes `pair.a`. The move engine keys the consume
 			// on the field's place (PR 7). A mutable receiver yields an owned-mutable
 			// field and an immutable one the bare field.
-			return soltype.NewRef(recvMut, nil, fieldType.(soltype.RefInner))
+			return soltype.NewRef(recvMut, nil, fieldType.(soltype.RefInner)), true
 		}
 		if recvMut {
 			// Mutable read: keep the concrete field shape as the borrow's inner, the
@@ -3725,12 +3888,16 @@ func (c *checker) fieldReadBorrow(fieldVar *soltype.TypeVarType, recv soltype.Ty
 			// sees the nested structure and the borrow survives the co-occurrence pass.
 			// Routing it through `fieldVar` would pin the var invariant in both
 			// polarities and widen it into a union that peels the borrow.
-			return &soltype.RefType{Mut: true, Lt: lt, Inner: fieldType.(soltype.RefInner)}
+			return &soltype.RefType{Mut: true, Lt: lt, Inner: fieldType.(soltype.RefInner)}, true
 		}
 		// Immutable read: route through the fresh field-read var (PR 4).
-		return &soltype.RefType{Mut: false, Lt: lt, Inner: fieldVar}
+		inner := readVar
+		if inner == nil {
+			inner = fieldType.(soltype.RefInner)
+		}
+		return &soltype.RefType{Mut: false, Lt: lt, Inner: inner}, true
 	default:
-		return fieldVar
+		return nil, false
 	}
 }
 
@@ -3739,13 +3906,10 @@ func (c *checker) fieldReadBorrow(fieldVar *soltype.TypeVarType, recv soltype.Ty
 // key such as `Foo[k]` is rejected. A value object indexed by a key that names one
 // property reads that property the way dot access does. `obj["foo-bar"]` is that form,
 // and lets the source name a property whose key is not a valid identifier. Every other
-// key reads through dynamicIndexRead.
+// key reads through dynamicIndexRead. An optional link `obj?[index]` reads off obj's
+// defined members, the way resolveMemberPath reads `obj?.prop`.
 func (c *checker) resolveIndexPath(scope *Scope, lvl int, e *ast.IndexExpr, objPos bool) pathResult {
-	if e.OptChain {
-		c.reportUnsupportedFeature(e, "OptionalChain")
-		return pathResult{err: true}
-	}
-	obj := c.resolvePath(scope, lvl, e.Object, true)
+	obj := c.resolveLinkObject(scope, lvl, e.Object, e.OptChain)
 	if obj.err {
 		return pathResult{err: true}
 	}
@@ -3757,14 +3921,22 @@ func (c *checker) resolveIndexPath(scope *Scope, lvl int, e *ast.IndexExpr, objP
 		}
 		return c.resolveNamespaceMember(lvl, e, obj.ns, name)
 	}
-	name, ok := c.indexKeyName(scope, lvl, e, obj.value)
-	if ok {
+	var r pathResult
+	if name, ok := c.indexKeyName(scope, lvl, e, obj.value); ok {
 		if !objPos {
 			c.recordMemberUse(e)
 		}
-		return c.valueProp(lvl, e, e.Index, name, obj.value)
+		r = c.valueProp(lvl, e, e.Index, name, obj.value)
+	} else if _, isNever := obj.value.(*soltype.NeverType); isNever && obj.shortCircuits {
+		// definedReceiver returns `never` for a receiver that is always nullish. The link
+		// always short-circuits, so there is no element to read.
+		c.recordType(e, obj.value)
+		r = pathResult{value: obj.value}
+	} else {
+		r = c.dynamicIndexRead(e, obj.value, objPos)
 	}
-	return c.dynamicIndexRead(e, obj.value, objPos)
+	r.shortCircuits = obj.shortCircuits
+	return r
 }
 
 // indexKeyName returns the property name an index key names on a receiver of type recv,
@@ -4492,13 +4664,18 @@ func withoutNullish(t soltype.Type) (soltype.Type, bool) {
 		shape = groundedCarrier(t)
 	}
 	return narrowUnionMembers(shape, func(member soltype.Type) bool {
-		switch soltype.CarrierOf(member).(type) {
-		case *soltype.NullType, *soltype.UndefinedType:
-			return false
-		default:
-			return true
-		}
+		return !isNullishAtom(member)
 	})
+}
+
+// isNullishAtom reports whether t is `null` or `undefined`, looking through a borrow.
+func isNullishAtom(t soltype.Type) bool {
+	switch soltype.CarrierOf(t).(type) {
+	case *soltype.NullType, *soltype.UndefinedType:
+		return true
+	default:
+		return false
+	}
 }
 
 // bindRefutable binds a refutable pattern's names against a scrutinee, returning the type
