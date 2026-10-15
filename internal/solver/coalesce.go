@@ -492,7 +492,9 @@ func coalesceSchemeKeeping(
 ) soltype.Type {
 	simp := simplifyScheme(t, genLevel, keep)
 	// A parameter the caller picks the type of is kept like a variable that occurs at
-	// both polarities.
+	// both polarities, which matches the type parameter internal/checker gives it.
+	// TODO(#2010): Drop this once internal/checker is retired. A type parameter that
+	// occurs in one position links nothing, so its bound alone says the same.
 	for rep := range paramOnlyReps(t, genLevel, simp) {
 		simp.mergedOcc[rep.ID] = occPos | occNeg
 	}
