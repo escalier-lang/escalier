@@ -429,17 +429,10 @@ func (r *renamer) renameObjExprElems(elems []ast.ObjExprElem) {
 	for _, elem := range elems {
 		switch e := elem.(type) {
 		case *ast.PropertyExpr:
-			if e.Value != nil {
-				r.renameExpr(e.Value)
-				// For computed keys, resolve the key expression.
-				if ck, ok := e.Name.(*ast.ComputedKey); ok {
-					r.renameExpr(ck.Expr)
-				}
-			} else {
-				// Shorthand property {x} — the name is also a variable reference.
-				if ident, ok := e.Name.(*ast.IdentExpr); ok {
-					ident.VarID = int(r.resolve(ident.Name, ident.Span()))
-				}
+			r.renameExpr(e.ValueExpr())
+			// For computed keys, resolve the key expression.
+			if ck, ok := e.Name.(*ast.ComputedKey); ok {
+				r.renameExpr(ck.Expr)
 			}
 		case *ast.CallableExpr:
 			// Don't recurse into the callable body.

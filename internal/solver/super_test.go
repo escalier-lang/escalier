@@ -226,6 +226,26 @@ func TestInferSuperCall(t *testing.T) {
 			},
 		},
 		{
+			// A shorthand property `{self}` reads `self` the way `{self: self}` does.
+			name: "SelfReadByAShorthandPropertyBeforeTheCall",
+			src: `
+				class Animal {
+					legs: number,
+					constructor(&mut self) { self.legs = 4 },
+				}
+				class Dog extends Animal {
+					constructor(&mut self) {
+						val o = {self}
+						super()
+					},
+				}
+			`,
+			want: []string{
+				"`super(…)` must run before `self` is used, " +
+					"since the inherited members do not exist until it does.",
+			},
+		},
+		{
 			name: "SelfMentionedInTheArguments",
 			src: `
 				class Animal {

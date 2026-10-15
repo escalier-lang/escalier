@@ -82,6 +82,19 @@ func (v *varIDSetter) EnterExpr(expr ast.Expr) bool {
 	return true
 }
 
+// EnterObjExprElem sets VarID on the key of a shorthand property `{x}`, which the
+// visitor skips as a label but which rename resolves as a read of x.
+func (v *varIDSetter) EnterObjExprElem(elem ast.ObjExprElem) bool {
+	if prop, ok := elem.(*ast.PropertyExpr); ok && prop.Value == nil {
+		if ident, ok := prop.Name.(*ast.IdentExpr); ok {
+			if id, found := v.ids[ident.Name]; found {
+				ident.VarID = id
+			}
+		}
+	}
+	return true
+}
+
 func TestDetermineAliasSource_Identifier(t *testing.T) {
 	ident := ast.NewIdent("x", ast.Span{})
 	ident.VarID = 1
@@ -349,6 +362,17 @@ func TestDetermineAliasSource_ObjectExpr_ProducesPropertyLeaves(t *testing.T) {
 	require.Equal(t, "fresh", formatAliasSource(src, names))
 	require.Equal(t, AliasOriginFresh, src.Origin)
 	require.Equal(t, "a.head, b.tail", formatLeaves(src, names))
+}
+
+// A shorthand property `{b}` reads b into the field b, the same leaf `{b: b}` produces.
+func TestDetermineAliasSource_ObjectExpr_ShorthandProducesPropertyLeaf(t *testing.T) {
+	expr := parseExpr(t, "{head: a, b}")
+	setVarIDs(expr, map[string]int{"a": 1, "b": 2})
+	names := map[VarID]string{1: "a", 2: "b"}
+
+	src := DetermineAliasSource(expr)
+	require.Equal(t, AliasOriginFresh, src.Origin)
+	require.Equal(t, "a.head, b.b", formatLeaves(src, names))
 }
 
 func TestDetermineAliasSource_NestedTupleInObject(t *testing.T) {

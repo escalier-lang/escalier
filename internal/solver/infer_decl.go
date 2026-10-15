@@ -663,10 +663,10 @@ func freshLiteralShape(e ast.Expr, leafOK func(ast.Expr) bool) bool {
 	case *ast.ObjectExpr:
 		for _, elem := range e.Elems {
 			prop, ok := elem.(*ast.PropertyExpr)
-			if !ok || prop.Value == nil {
+			if !ok {
 				return false
 			}
-			if !freshLiteralShape(prop.Value, leafOK) {
+			if !freshLiteralShape(prop.ValueExpr(), leafOK) {
 				return false
 			}
 		}
@@ -896,7 +896,7 @@ func (c *checker) checkExcessLiteralMembers(e ast.Expr, sub, annT soltype.Type) 
 		}
 		for _, elem := range obj.Elems {
 			prop, ok := elem.(*ast.PropertyExpr)
-			if !ok || prop.Value == nil {
+			if !ok {
 				continue
 			}
 			name, ok := objKeyName(prop.Name)
@@ -1052,9 +1052,9 @@ func (c *checker) recordDestructureBorrowEdges(pat ast.Pat, init ast.Expr) {
 		}
 		props := map[string]ast.Expr{}
 		for _, elem := range obj.Elems {
-			if p, ok := elem.(*ast.PropertyExpr); ok && p.Value != nil {
+			if p, ok := elem.(*ast.PropertyExpr); ok {
 				if name, ok := objKeyName(p.Name); ok {
-					props[name] = p.Value
+					props[name] = p.ValueExpr()
 				}
 			}
 		}

@@ -377,11 +377,7 @@ func (c *checker) reachesOf(e ast.Expr, fieldBorrowGraph map[liveness.VarID][]fi
 		for _, elem := range e.Elems {
 			switch el := elem.(type) {
 			case *ast.PropertyExpr:
-				if el.Value != nil {
-					out = append(out, c.reachesOf(el.Value, fieldBorrowGraph)...)
-				} else if ident, ok := el.Name.(*ast.IdentExpr); ok {
-					out = append(out, c.reachesOf(ident, fieldBorrowGraph)...)
-				}
+				out = append(out, c.reachesOf(el.ValueExpr(), fieldBorrowGraph)...)
 			case *ast.ObjSpreadExpr:
 				out = append(out, c.reachesOf(el.Value, fieldBorrowGraph)...)
 			}
@@ -1089,22 +1085,13 @@ func (c *checker) recordBorrowSources(root liveness.VarID, base []placeSeg, e as
 		for _, elem := range e.Elems {
 			switch el := elem.(type) {
 			case *ast.PropertyExpr:
-				if el.Value != nil {
-					if name, ok := objKeyName(el.Name); ok {
-						c.recordBorrowSources(root, appendSeg(base, name), el.Value)
-					} else {
-						// A computed key names no static field segment, so the borrow can't
-						// be addressed by a field path. Keep base, attributing the value to the
-						// enclosing object conservatively.
-						c.recordBorrowSources(root, base, el.Value)
-					}
-				} else if ident, ok := el.Name.(*ast.IdentExpr); ok && ident.VarID > 0 {
-					// A shorthand property `{peer}` is `{peer: peer}`: the field peer holds
-					// the value of the binding peer. objKeyName would give the field name,
-					// but the value's edges are reached through the binding's VarID, so read
-					// both the name and the VarID from the IdentExpr directly. A shorthand
-					// key is always an identifier, never a computed or string key.
-					c.copyPlaceEdges(root, appendSeg(base, ident.Name), movePlace{root: liveness.VarID(ident.VarID)})
+				if name, ok := objKeyName(el.Name); ok {
+					c.recordBorrowSources(root, appendSeg(base, name), el.ValueExpr())
+				} else {
+					// A computed key names no static field segment, so the borrow can't
+					// be addressed by a field path. Keep base, attributing the value to the
+					// enclosing object conservatively.
+					c.recordBorrowSources(root, base, el.ValueExpr())
 				}
 			case *ast.ObjSpreadExpr:
 				c.recordBorrowSources(root, base, el.Value)

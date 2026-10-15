@@ -172,8 +172,8 @@ func (c *checker) reportLiteralSharedPaths(
 		elems = e.Elems
 	case *ast.ObjectExpr:
 		for _, elem := range e.Elems {
-			if prop, isProp := elem.(*ast.PropertyExpr); isProp && prop.Value != nil {
-				elems = append(elems, prop.Value)
+			if prop, isProp := elem.(*ast.PropertyExpr); isProp {
+				elems = append(elems, prop.ValueExpr())
 			}
 		}
 	default:

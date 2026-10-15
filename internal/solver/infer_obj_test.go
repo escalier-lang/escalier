@@ -1,6 +1,7 @@
 package solver
 
 import (
+	"strings"
 	"testing"
 
 	"github.com/escalier-lang/escalier/internal/ast"
@@ -205,16 +206,90 @@ func TestInferObjectDuplicateKeyLastWins(t *testing.T) {
 	require.True(t, equalType(obj, obj), "equalType must be reflexive for a deduped object")
 }
 
-// Shorthand ({x}) is a property with no value — deferred to M4. It reports a
-// clean UnsupportedNodeError and is skipped (the rest of the object still types).
-func TestInferObjectShorthandUnsupported(t *testing.T) {
-	c := newTestChecker()
-	shorthand := ast.NewProperty(ast.NewIdent("x", testSpan()), false, false, nil, testSpan())
-	got := c.inferExpr(NewScope(), 0, objExpr(shorthand))
-	require.Equal(t, "{}", render(got))
-	require.Len(t, c.errs, 1)
-	require.Equal(t, "Unsupported: PropertyExpr", c.errs[0].Message())
-	require.Equal(t, testSpan(), c.errs[0].Span())
+// TestInferObjectShorthand covers the shorthand property `{a}`. Each src spells the
+// property as PROP. The case runs once with PROP as `{a}` and once as `{a: a}`, and
+// asserts that both forms infer the values in want and report the errors in errs.
+// Every expected error sits on a line other than PROP's, so its span is the same in
+// both forms.
+func TestInferObjectShorthand(t *testing.T) {
+	tests := map[string]struct {
+		src  string
+		want map[string]string
+		errs []string
+	}{
+		"ValBinding": {
+			src: `
+				val a = 1
+				val o = PROP
+			`,
+			want: map[string]string{"o": "{a: 1}"},
+		},
+		"VarBinding": {
+			src: `
+				var a = 1
+				val o = PROP
+			`,
+			want: map[string]string{"o": "{a: number}"},
+		},
+		"Parameter": {
+			src: `
+				fn f(a: string) {
+					return PROP
+				}
+			`,
+			want: map[string]string{"f": "fn (a: string) -> {a: string}"},
+		},
+		"CapturedOuterBinding": {
+			src: `
+				fn f() {
+					val a = "x"
+					val g = fn () {
+						return PROP
+					}
+					return g()
+				}
+			`,
+			want: map[string]string{"f": `fn () -> {a: "x"}`},
+		},
+		// Building an owned object into the literal moves it, so the later read of a is a
+		// use-after-move.
+		"OwnedValueMoves": {
+			src: `
+				fn f() {
+					val a = {x: 1}
+					val o = PROP
+					a.x
+				}
+			`,
+			errs: []string{"5:6-5:9: use of moved value 'a'"},
+		},
+		// The literal stored into p carries the immutable borrow of b that a holds. The
+		// return then hands b out mutably as well, so the two paths disagree.
+		"BorrowCarriedIntoLiteral": {
+			src: `
+				fn f(p: &mut {node: {a: &{value: number}}}) {
+					val mut b = {value: 0}
+					val a = &b
+					p.node = PROP
+					return &mut b
+				}
+			`,
+			errs: []string{"6:13-6:19: 'b' leaves the function through a mutable path and an immutable one"},
+		},
+	}
+
+	for name, tc := range tests {
+		for _, form := range []string{"{a}", "{a: a}"} {
+			t.Run(name+"/"+form, func(t *testing.T) {
+				src := strings.ReplaceAll(tc.src, "PROP", form)
+				values, _, errs := inferSource(t, src)
+				require.Equal(t, tc.errs, messagesWithSpan(t, errs))
+				for binding, want := range tc.want {
+					require.Equal(t, want, values[binding])
+				}
+			})
+		}
+	}
 }
 
 // A spread element ({...o}) splices the operand object's fields into the literal. A concrete inline
