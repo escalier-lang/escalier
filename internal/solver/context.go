@@ -29,7 +29,8 @@ type Context struct {
 	varCounter int
 
 	// rigidParams holds the type parameters of each generic declaration whose body is being
-	// inferred, keyed by variable. constrain checks such a parameter on the sub side of a
+	// inferred, and of each one whose body the module component being inferred has already
+	// walked, keyed by variable. constrain checks such a parameter on the sub side of a
 	// constraint against its bounds alone, so the body has to work for every instantiation
 	// those bounds allow. Against a type, it reads the parameter as its skolem, an opaque
 	// type that satisfies a constraint only through the parameter's bounds.
@@ -410,10 +411,20 @@ type rigidParam struct {
 // parameter with a declared lower bound, or one a sibling's lower bound names, as `U` in
 // `where Box<U>: T`, is rigid on the super side either way, so a value that reaches it
 // through that bound meets its skolem rather than binding it.
+//
+// Releases run in the reverse order of their holds. A parameter that was already rigid gets
+// its earlier entry back when the function runs, so an outer hold over the same parameter
+// stays in force after an inner one is released.
 func (c *Context) holdTypeParamsRigid(params []*soltype.TypeParam, fromBelow bool) (release func()) {
 	if c.rigidParams == nil {
 		c.rigidParams = map[*soltype.TypeVarType]*rigidParam{}
 		c.rigidSkolems = map[*soltype.SkolemType]*soltype.TypeVarType{}
+	}
+	earlier := make(map[*soltype.TypeVarType]*rigidParam, len(params))
+	for _, tp := range params {
+		if rp, rigid := c.rigidParams[tp.Var]; rigid {
+			earlier[tp.Var] = rp
+		}
 	}
 	namedInLower := set.NewSet[*soltype.TypeVarType]()
 	for _, tp := range params {
@@ -435,6 +446,10 @@ func (c *Context) holdTypeParamsRigid(params []*soltype.TypeParam, fromBelow boo
 		for _, tp := range params {
 			if sk := c.rigidParams[tp.Var].sk; sk != nil {
 				delete(c.rigidSkolems, sk)
+			}
+			if rp, rigid := earlier[tp.Var]; rigid {
+				c.rigidParams[tp.Var] = rp
+				continue
 			}
 			delete(c.rigidParams, tp.Var)
 		}

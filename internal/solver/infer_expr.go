@@ -288,6 +288,18 @@ func (c *checker) inferFuncExpr(scope *Scope, lvl int, e *ast.FuncExpr) soltype.
 	return t
 }
 
+// holdTypeParamsRigidForComponent makes params rigid the way holdTypeParamsRigid does. While a
+// module component is being inferred, the hold lasts until inferComponent returns and the
+// returned function does nothing. Otherwise the returned function ends the hold.
+func (c *checker) holdTypeParamsRigidForComponent(params []*soltype.TypeParam, fromBelow bool) (release func()) {
+	release = c.ctx.holdTypeParamsRigid(params, fromBelow)
+	if c.componentRigidReleases == nil {
+		return release
+	}
+	*c.componentRigidReleases = append(*c.componentRigidReleases, release)
+	return func() {}
+}
+
 // inferFunc is the shared function-typing core for FuncExpr and FuncDecl. It
 // opens a child scope, binds each param (its annotation resolved to a soltype,
 // or a fresh var when un-annotated), types the body block in that scope, and
@@ -561,7 +573,16 @@ func (c *checker) inferFunc(scope *Scope, lvl int, sig ast.FuncSig, body *ast.Bl
 	}
 	// The body has to work for every instantiation its type parameters' bounds allow, so
 	// those parameters are rigid while it is walked and checked against the return
-	// annotation. Nothing after that constrains a parameter from the sub side.
+	// annotation. In a module component they stay rigid until the whole component is
+	// inferred. A constraint the body records through a sibling's binding var reaches a
+	// parameter only once the sibling's definition reaches that var. Take this pair:
+	//
+	//	fn add(a: number, b: number) -> number { if a > 0 { strs("x") } return a + b }
+	//	fn strs<A: string>(a: A) { return add(a, a) }
+	//
+	// `A <: number` is checked when `add`'s signature reaches its var, which can be after
+	// the body of `strs` is walked. A non-rigid `A` would take `number` as a bound there
+	// instead of being rejected.
 	//
 	// signatureFloors counts each parameter's lower bounds as the resolved signature left
 	// them, so checkTypeParamsProducible reads only what the body adds. A type reference in
@@ -576,7 +597,7 @@ func (c *checker) inferFunc(scope *Scope, lvl int, sig ast.FuncSig, body *ast.Bl
 		// which names the parameter and the type the body forced. A binder with a declared
 		// lower bound is rigid from below regardless, so `return 1` against `-> B` with
 		// `where number: B` is checked against the bound rather than recorded as a floor.
-		defer c.ctx.holdTypeParamsRigid(typeParams, false)()
+		defer c.holdTypeParamsRigidForComponent(typeParams, false)()
 	}
 	if hasBody {
 		// PR3: open a fresh function context so every ReturnStmt encountered while
