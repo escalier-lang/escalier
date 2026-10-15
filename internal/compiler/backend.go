@@ -99,14 +99,6 @@ type libResult struct {
 	fileScopes map[int]*checker.Scope
 	// diagnostics are the module's type errors.
 	diagnostics []Diagnostic
-	// codegenGap names what the checker that produced this result cannot yet drive in
-	// codegen, or is nil when it drives it fully. An entry point that emits reports it
-	// beside the source's own diagnostics, so output that cannot be trusted says so.
-	//
-	// It rides the result rather than being asked of a backend, because a LibScope
-	// holds the checker that made it: a script checked against one is checked by that
-	// checker whatever CheckerEnvVar says at the time.
-	codegenGap Diagnostic
 }
 
 // scriptResult is what a backend produced for one bin/ script.
@@ -118,8 +110,6 @@ type scriptResult struct {
 	jsTypes codegen.JSTypes
 	// diagnostics are the script's type errors.
 	diagnostics []Diagnostic
-	// codegenGap is libResult.codegenGap for this script.
-	codegenGap Diagnostic
 }
 
 // checkScriptIn infers script with lib in scope, or with the prelude alone when the

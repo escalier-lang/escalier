@@ -487,11 +487,15 @@ func (b *Builder) buildFuncDeclFromSol(
 	// internal/checker gives `void` to a function whose return it infers from a body
 	// that returns no value, and `undefined` to one that writes `-> undefined` or
 	// returns `undefined` explicitly. soltype has one kind for both, so the source
-	// tells them apart.
+	// tells them apart. An `async fn` gets the same rewrite on its promise's value, so
+	// `async fn test() { … }` emits `test(): Promise<void>`.
 	// TODO(#1810): Drop this rewrite once internal/checker is retired.
-	if _, isUndefined := funcType.Ret.(*soltype.UndefinedType); isUndefined &&
-		decl.Return == nil && !returnsValue(decl.Body) {
-		sig.Return = NewVoidTypeAnn(nil)
+	if decl.Return == nil && !returnsValue(decl.Body) {
+		if _, isUndefined := funcType.Ret.(*soltype.UndefinedType); isUndefined {
+			sig.Return = NewVoidTypeAnn(nil)
+		} else if decl.Async {
+			undefinedPromiseValueAsVoid(sig.Return)
+		}
 	}
 
 	stmts := companionStmtsFromSol(render)
@@ -512,6 +516,18 @@ func (b *Builder) buildFuncDeclFromSol(
 		span:   nil,
 		source: nil,
 	})
+}
+
+// undefinedPromiseValueAsVoid rewrites ret's value argument to `void` in place when
+// ret is a rendered `Promise<undefined>`, and leaves any other type alone.
+func undefinedPromiseValueAsVoid(ret TypeAnn) {
+	ref, ok := ret.(*TypeRefTypeAnn)
+	if !ok || ref.Name != "Promise" || len(ref.TypeArgs) == 0 {
+		return
+	}
+	if _, isUndefined := ref.TypeArgs[0].(*UndefinedTypeAnn); isUndefined {
+		ref.TypeArgs[0] = NewVoidTypeAnn(nil)
+	}
 }
 
 // returnsValue reports whether body holds a `return` with an operand. A `return`

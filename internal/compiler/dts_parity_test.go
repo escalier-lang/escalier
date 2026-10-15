@@ -51,6 +51,13 @@ var declarationShapes = map[string]string{
 	"ADeclaredUndefinedReturn":  `declare fn g() -> undefined`,
 	"AnAnnotatedUndefinedBody":  "fn h() -> undefined {\n\treturn undefined\n}",
 	"AReturnOfUndefined":        "fn k() {\n\treturn undefined\n}",
+	"AnAsyncNoValueReturn":      "class C {\n\tv: number,\n}\nasync fn bump(c: mut C) {\n\tc.v = c.v + 1\n}",
+	"AnAsyncReturnOfUndefined":  "async fn k() {\n\treturn undefined\n}",
+	"AnAsyncValueReturn":        "async fn k() {\n\treturn 5\n}",
+	"ANoValueMethod":            "class C {\n\tv: number,\n\tbump(&mut self) { self.v = 1 },\n}",
+	"AnAsyncNoValueMethod":      "class C {\n\tv: number,\n\tasync bump(&mut self) { self.v = 1 },\n}",
+	"ANoValueFuncValue":         "export val k = fn () {\n\tval x = 1\n}",
+	"AnAsyncNoValueFuncValue":   "export val k = async fn () {\n\tval x = 1\n}",
 	"ACallbackReturnUndefined":  `declare fn each(cb: fn (x: number) -> undefined) -> number`,
 	"ACallbackReturnUnknown":    `declare fn each(cb: fn (x: number) -> unknown) -> number`,
 	"APropertyHoldingACallback": `declare val o: {cb: fn (x: number) -> undefined}`,
@@ -124,10 +131,26 @@ type shapeSkip struct {
 // starts agreeing fails, so the list burns down the way the fixture harness's emitSkips
 // does.
 var shapeSkips = map[string]shapeSkip{
+	// The checker writes `void` for a return it infers from a body that returns no
+	// value, and the solver writes `undefined`. buildFuncDeclFromSol rewrites a function
+	// declaration's return to match, and nothing rewrites a method's or a function
+	// value's. #1810 makes `undefined` the output everywhere once the checker is gone, so
+	// these four are left to diverge rather than shimmed.
+	"ANoValueMethod":          noValueReturnSkip,
+	"AnAsyncNoValueMethod":    noValueReturnSkip,
+	"ANoValueFuncValue":       noValueReturnSkip,
+	"AnAsyncNoValueFuncValue": noValueReturnSkip,
 	"AClassGetterAndSetter": {
 		reason: "a setter's parameter name is lost, so it renders as `value`",
 		ticket: "#1823",
 	},
+}
+
+// noValueReturnSkip is the skip for a method or function value whose body returns no
+// value.
+var noValueReturnSkip = shapeSkip{
+	reason: "the solver writes an inferred no-value return as `undefined` where the checker writes `void`",
+	ticket: "#1810",
 }
 
 // TestEachDeclarationShapeEmitsTheSameDefinitions asserts that both checkers emit the
@@ -170,18 +193,12 @@ func TestEachDeclarationShapeEmitsTheSameDefinitions(t *testing.T) {
 	}
 }
 
-// shapeDiagnostics returns what a compile reported about the source, dropping the two
-// things the solver path reports about its own state instead. The prelude's own
-// diagnostics ride along on every solver run in this package, and the codegen-gap marker
-// says the solver's emitted output is not yet trusted, which is the premise of this test
-// rather than a fault in a shape.
+// shapeDiagnostics returns what a compile reported about the source, dropping the
+// prelude's own diagnostics, which ride along on every solver run in this package.
 func shapeDiagnostics(out CompilerOutput) []string {
 	var reported []string
 	for _, diagnostic := range out.TypeErrors {
 		if pkg, fromPackage := diagnostic.(*solver.PackageInferenceError); fromPackage && pkg.URI == preludePackageURI {
-			continue
-		}
-		if _, isGap := diagnostic.(*codegenGapError); isGap {
 			continue
 		}
 		reported = append(reported, diagnostic.Message())
