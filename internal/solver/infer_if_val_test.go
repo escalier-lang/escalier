@@ -76,6 +76,15 @@ func TestInferIfValAndValElse(t *testing.T) {
 			want: "fn (o: number | null) -> 0 | 1",
 		},
 		{
+			// A literal other than `null` or `undefined` matches no nullish value, so the
+			// target drops it.
+			name: "if-val number literal drops null",
+			src: `fn f(o: number | null) {
+				return if val 5 = o { 1 } else { 0 }
+			}`,
+			want: "fn (o: number | null) -> 0 | 1",
+		},
+		{
 			// An annotation may name the nullish member, so an annotated identifier keeps it.
 			name: "if-val annotated ident keeps null",
 			src: `fn f(o: string | null) {

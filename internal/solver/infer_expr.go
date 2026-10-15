@@ -4443,7 +4443,10 @@ func (c *checker) inferIfVal(scope *Scope, lvl int, e *ast.IfValExpr) soltype.Ty
 	// target and a side-effecting one such as `if val x = f() { … }` runs its call once.
 	target := scrutinee
 	// Codegen guards the consequent with `!= null` and `!= undefined` checks on the target,
-	// so no nullish member reaches a pattern that could not have matched one anyway.
+	// so no nullish member reaches a pattern that could not have matched one anyway. A
+	// pattern that can match one keeps it, since its test constrains the nullish member
+	// into the target. `if val null = o` over a `number | null` would otherwise check
+	// `null <: number`.
 	if !patternMatchesNullish(e.Pattern) {
 		if narrowed, ok := withoutNullish(scrutinee); ok {
 			target = narrowed
@@ -4459,12 +4462,13 @@ func (c *checker) inferIfVal(scope *Scope, lvl int, e *ast.IfValExpr) soltype.Ty
 }
 
 // patternMatchesNullish reports whether p, as the whole pattern of a refutable form, can
-// match `null` or `undefined`. A literal pattern can, and so can an identifier whose
-// annotation might admit one, as `v: null` does.
+// match `null` or `undefined`. A `null` or `undefined` literal can, and so can an
+// identifier whose annotation might admit one, as `v: null` does.
 func patternMatchesNullish(p ast.Pat) bool {
 	switch p := p.(type) {
 	case *ast.LitPat:
-		return true
+		_, _, isAtom := atomLitOf(p.Lit)
+		return isAtom
 	case *ast.IdentPat:
 		return p.TypeAnn != nil
 	default:
