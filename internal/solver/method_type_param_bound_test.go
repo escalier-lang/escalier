@@ -9,7 +9,7 @@ import (
 // TestAMethodTypeParamBoundIsCheckedInItsBody covers a generic method whose body passes its
 // own bounded type parameter to a sibling static of its class. The body reads the class's
 // name before the class has a value, so the call is checked against the static's signature
-// and an argument whose bound does not fit is reported at the call.
+// and each argument whose bound does not fit is reported at that argument.
 //
 // A constructor call and a call to a free function in the same component read a binding var
 // that is solved after the body. The parameter stays rigid, so the call is still rejected
@@ -29,7 +29,7 @@ func TestAMethodTypeParamBoundIsCheckedInItsBody(t *testing.T) {
 				static add(a: number, b: number) -> number { return a + b },
 				strs<A: string>(&self, a: A) { return Foo.add(a, a) },
 			}`,
-			want: []string{"4:43-4:56: cannot constrain string <: number"},
+			want: []string{"4:51-4:52: cannot constrain string <: number", "4:54-4:55: cannot constrain string <: number"},
 		},
 		{
 			name: "StaticMethodBoundDoesNotFit",
@@ -38,7 +38,7 @@ func TestAMethodTypeParamBoundIsCheckedInItsBody(t *testing.T) {
 				static add(a: number, b: number) -> number { return a + b },
 				static strs<A: string>(a: A) { return Foo.add(a, a) },
 			}`,
-			want: []string{"4:43-4:56: cannot constrain string <: number"},
+			want: []string{"4:51-4:52: cannot constrain string <: number", "4:54-4:55: cannot constrain string <: number"},
 		},
 		{
 			name: "InstanceMethodBoundFits",
@@ -65,7 +65,7 @@ func TestAMethodTypeParamBoundIsCheckedInItsBody(t *testing.T) {
 				strs<A: string>(&self, a: A) { return Foo.add(a, a) },
 				static add(a: number, b: number) -> number { return a + b },
 			}`,
-			want: []string{"3:43-3:56: cannot constrain string <: number"},
+			want: []string{"3:51-3:52: cannot constrain string <: number", "3:54-3:55: cannot constrain string <: number"},
 		},
 		{
 			name: "ConstructorCall",

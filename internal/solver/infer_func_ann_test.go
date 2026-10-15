@@ -174,8 +174,8 @@ val r = f(inc)`
 	require.Len(t, errs, 2)
 	require.IsType(t, &CannotConstrainError{}, errs[0])
 	require.IsType(t, &CannotConstrainError{}, errs[1])
-	require.Equal(t, "4:9-4:15: cannot constrain T <: number", msgWithSpan(t, errs[0]))
-	require.Equal(t, "4:9-4:15: cannot constrain number <: T", msgWithSpan(t, errs[1]))
+	require.Equal(t, "4:11-4:14: cannot constrain T <: number", msgWithSpan(t, errs[0]))
+	require.Equal(t, "4:11-4:14: cannot constrain number <: T", msgWithSpan(t, errs[1]))
 }
 
 // A function-literal body whose return type is not the declared parameter does not

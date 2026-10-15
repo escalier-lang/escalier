@@ -100,7 +100,7 @@ func TestASuperLifetimeBinderIsHeldRigid(t *testing.T) {
 			name: "a callback argument is checked at the call",
 			src: cb + `fn use(f: Cb) -> number { return 1 }
 				fn go(seed: &{x: number}) -> number { return use(fn (q) { return seed }) }`,
-			want: []string{"3:50-3:77: the caller of this signature chooses 'a, but the value requires 'a to be outlived by a lifetime the signature does not quantify"},
+			want: []string{"3:54-3:76: the caller of this signature chooses 'a, but the value requires 'a to be outlived by a lifetime the signature does not quantify"},
 		},
 	}
 	for _, tt := range tests {

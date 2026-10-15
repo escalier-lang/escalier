@@ -156,7 +156,7 @@ func TestInferOptionalChainErrors(t *testing.T) {
 			// `number | undefined` to `f`.
 			name:     "AnArgumentEndsItsOwnChain",
 			src:      "declare val a: {b: number} | undefined\ndeclare fn f(n: number) -> number\nval x = f(a?.b)",
-			wantErrs: []string{"3:9-3:16: cannot constrain undefined <: number"},
+			wantErrs: []string{"3:11-3:15: cannot constrain undefined <: number"},
 		},
 		{
 			// JavaScript rejects an optional chain as an assignment target, even when the

@@ -1964,9 +1964,27 @@ func (c *checker) applyCallShape(lvl int, e *ast.CallExpr, callee soltype.Type, 
 	// known. A deferred callee, one called through a `var`, keeps every argument on the
 	// strict path.
 	if resolved {
+		// upgradeCallShapeParams replaces the slots it pins in place, so the slots before it
+		// ran are kept to tell those apart.
+		unpinned := slices.Clone(callShapeParams)
 		callShapeParams = c.upgradeCallShapeParams(e.Args, callShapeParams, fn, func(src ast.Node, srcT, target soltype.Type) {
 			c.constrain(src, srcT, target)
 		})
+		// Checking each remaining argument against its parameter here, with the argument as
+		// the site, blames a mismatch on the argument. Through the call shape below, the
+		// blame would land on the whole call whenever the argument's type was written
+		// elsewhere, as `s` in `add(1, s)` after `val s: string = "x"`. Each argument also
+		// reports on its own, so `add(a, a)` names both.
+		//
+		// The arguments are checked here only when fn is the callee's whole signature. A
+		// variable callee with several lower bounds is left to the call shape, which checks
+		// the arguments against every bound and not only the one fn was read from, as
+		// `val f = if c { f1 } else { f2 }` gives. A generic callee is left to it as well. The
+		// call shape instantiates its signature again, and checking fn's copy too would
+		// report each mismatch twice.
+		if !secondInstance && c.isWholeSignature(callee, fn) {
+			callShapeParams = c.checkArgsAgainstParams(e.Args, unpinned, callShapeParams, fn)
+		}
 	}
 
 	// callShape is built EXACT with all N params required, on purpose. That gives
@@ -2139,6 +2157,44 @@ func (c *checker) upgradeCallShapeParams(
 		callShapeParams[i] = &soltype.FuncParam{Type: fn.Params[i].Type}
 	}
 	return callShapeParams
+}
+
+// isWholeSignature reports whether fn is every signature callee carries. That holds when
+// callee is fn itself, a type variable whose one lower bound is fn, or a class value with a
+// constructor and no call signature, whose constructor fn was read from.
+func (c *checker) isWholeSignature(callee soltype.Type, fn *soltype.FuncType) bool {
+	if obj, isClassValue := c.classValueCarrier(callee); isClassValue {
+		_, hasCtor := obj.Constructor()
+		_, hasCall := obj.Callable()
+		return hasCtor && !hasCall
+	}
+	v, isVar := callee.(*soltype.TypeVarType)
+	if !isVar {
+		return callee == soltype.Type(fn)
+	}
+	return len(v.LowerBounds) == 1 && v.LowerBounds[0] == soltype.Type(fn)
+}
+
+// checkArgsAgainstParams constrains each argument in argExprs against fn's parameter at the
+// same position, blaming a failure on the argument. It returns params with each checked
+// slot replaced by `never`, which every parameter accepts, so a call shape built from them
+// asks nothing more of fn's parameters. The caller passes an fn that is the callee's whole
+// signature.
+//
+// unpinned holds the slots before upgradeCallShapeParams ran, and params holds them after.
+// A slot that pass already pinned is left alone, and so is a rest parameter's slot and one
+// past the end of either list.
+func (c *checker) checkArgsAgainstParams(
+	argExprs []ast.Expr, unpinned, params []*soltype.FuncParam, fn *soltype.FuncType,
+) []*soltype.FuncParam {
+	for i := 0; i < len(argExprs) && i < len(fn.Params) && i < len(params); i++ {
+		if fn.Params[i].Rest || params[i] != unpinned[i] {
+			continue
+		}
+		c.constrain(argExprs[i], params[i].Type, fn.Params[i].Type)
+		params[i] = &soltype.FuncParam{Type: &soltype.NeverType{}}
+	}
+	return params
 }
 
 // inferCallArgs types a call's arguments left to right, the ONE place either call path does so.

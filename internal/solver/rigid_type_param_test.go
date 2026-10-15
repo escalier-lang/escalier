@@ -84,7 +84,7 @@ class C {
 	val h = fn <V: string>(v: V) -> V { return v }
 	return h(u)
 }`,
-			errs: []string{"3:9-3:13: cannot constrain number <: string"},
+			errs: []string{"3:11-3:12: cannot constrain number <: string"},
 		},
 		{
 			name: "AGeneratorBody",
