@@ -3,6 +3,7 @@ package solver
 import (
 	"testing"
 
+	"github.com/escalier-lang/escalier/internal/dep_graph"
 	"github.com/stretchr/testify/require"
 )
 
@@ -173,6 +174,26 @@ func TestInferParamGeneralization(t *testing.T) {
 			require.Equal(t, tt.want, values["f"])
 		})
 	}
+}
+
+// TestInferOverloadArmGeneralizesAnUnreadParam asserts that an overload arm keeps
+// a parameter its body never reads as a type parameter. Each arm generalizes on its
+// own, from a scheme body that is the arm's signature itself.
+func TestInferOverloadArmGeneralizesAnUnreadParam(t *testing.T) {
+	module := parseModuleFiles(t, map[string]string{"input.esc": `
+		fn f(x: number) -> number { return x }
+		fn f(x: string, y) -> string { return x }
+	`})
+	c := newTestChecker()
+	scope := c.preludeScope().Child()
+	c.inferDepGraph(scope, 0, module, dep_graph.BuildDepGraph(module))
+	require.Empty(t, c.errs)
+
+	b, ok := scope.values["f"]
+	require.True(t, ok)
+	require.Len(t, b.Schemes, 2)
+	require.Equal(t, "fn (x: number) -> number", renderScheme(b.Schemes[0]))
+	require.Equal(t, "fn <T0>(x: string, y: T0) -> string", renderScheme(b.Schemes[1]))
 }
 
 // A recursive group generalizes without looping (the coalesce seen-guard, shipped
