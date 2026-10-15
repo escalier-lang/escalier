@@ -659,7 +659,13 @@ func (e *typeEvaluator) groundObjectOperand(operand soltype.Type) soltype.Type {
 // that still carries a spread. It is the ok-returning wrapper over groundObjectOperand that keyof
 // and indexed access use to decide whether a spread target has grounded.
 func (e *typeEvaluator) groundToObject(operand soltype.Type) (*soltype.ObjectType, bool) {
-	obj, ok := e.groundObjectOperand(operand).(*soltype.ObjectType)
+	return groundObject(e.groundObjectOperand(operand))
+}
+
+// groundObject reports t as a ground object, or ok=false when t is not an ObjectType or still
+// carries a spread. t must already be grounded, as groundObjectOperand returns it.
+func groundObject(t soltype.Type) (*soltype.ObjectType, bool) {
+	obj, ok := t.(*soltype.ObjectType)
 	if !ok || soltype.HasObjectSpread(obj.Elems) {
 		return nil, false
 	}
