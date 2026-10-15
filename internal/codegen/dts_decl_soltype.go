@@ -573,36 +573,20 @@ func (b *Builder) buildTypeDeclFromSol(
 	// named after the value the solver chose as their owner. That value may sit at the
 	// module root while the alias sits in a namespace block.
 	render.valuePath = b.solSymbolOwners[names.qualified(localName)]
-	return typeAliasStmtsFromSol(render, localName, decl.Name, decl, decl.Export(), body, typeParams, isTopLevel)
-}
-
-// typeAliasStmtsFromSol renders body with render and returns the companion statements its
-// symbols need followed by `type localName<typeParams> = body`. nameNode is the source
-// identifier the emitted name maps back to, and source the declaration the alias stands for.
-func typeAliasStmtsFromSol(
-	render *solTypeAnnBuilder,
-	localName string,
-	nameNode *ast.Ident,
-	source ast.Node,
-	export bool,
-	body soltype.Type,
-	typeParams []*soltype.TypeParam,
-	isTopLevel bool,
-) []Stmt {
 	typeAnn := render.render(body)
 	declTypeParams := typeParamsFromSol(render, typeParams)
 
 	stmts := companionStmtsFromSol(render)
 	return append(stmts, &DeclStmt{
 		Decl: &TypeDecl{
-			Name:       NewIdentifier(localName, nameNode),
+			Name:       NewIdentifier(localName, decl.Name),
 			TypeParams: declTypeParams,
 			TypeAnn:    typeAnn,
 			Interface:  false,
 			declare:    isTopLevel,
-			export:     export,
+			export:     decl.Export(),
 			span:       nil,
-			source:     source,
+			source:     decl,
 		},
 		span:   nil,
 		source: nil,
@@ -626,14 +610,7 @@ func (b *Builder) buildInterfaceDeclFromSol(
 	// are named after the value the solver chose as their owner. That value may sit at
 	// the module root while the interface sits in a namespace block.
 	render.valuePath = b.solSymbolOwners[names.qualified(localName)]
-	interfaceBody, expressible := interfaceShapeFromSol(body)
-	if !expressible {
-		// A mapped member whose keys TypeScript cannot list in an interface body, such
-		// as `[K: keyof T]`, is valid only in a type literal, so the declaration emits
-		// as an alias of one.
-		return typeAliasStmtsFromSol(render, localName, decl.Name, decl, decl.Export(), body, typeParams, isTopLevel)
-	}
-	members, extends := interfacePartsFromSol(render.render(interfaceBody))
+	members, extends := interfacePartsFromSol(render.render(body))
 	declTypeParams := typeParamsFromSol(render, typeParams)
 
 	stmts := companionStmtsFromSol(render)
@@ -661,13 +638,13 @@ func (b *Builder) buildInterfaceDeclFromSol(
 func interfacePartsFromSol(typeAnn TypeAnn) ([]ObjTypeAnnElem, []TypeAnn) {
 	switch t := typeAnn.(type) {
 	case *ObjectTypeAnn:
-		return interfaceMembers(t.Elems), nil
+		return t.Elems, nil
 	case *IntersectionTypeAnn:
 		var members []ObjTypeAnnElem
 		var extends []TypeAnn
 		for _, arm := range t.Types {
 			if obj, ok := arm.(*ObjectTypeAnn); ok {
-				members = append(members, interfaceMembers(obj.Elems)...)
+				members = append(members, obj.Elems...)
 				continue
 			}
 			extends = append(extends, arm)
@@ -676,238 +653,6 @@ func interfacePartsFromSol(typeAnn TypeAnn) ([]ObjTypeAnnElem, []TypeAnn) {
 	default:
 		return nil, nil
 	}
-}
-
-// interfaceShapeFromSol rewrites each mapped member of an interface body into members
-// TypeScript accepts in an interface, and reports false when one has no such form.
-// body is the registered body, an object or the intersection of the parents and an
-// object. A mapped member splits by key:
-//
-//   - A string or number literal key becomes an ordinary property, with the key put in
-//     place of the key variable in the value. `[K: "x" | "y"]?: number` becomes
-//     `x?: number` and `y?: number`.
-//   - The keys an index signature accepts stay together in one mapped member, which
-//     interfaceMembers lowers once rendered. These are `string`, `number`, `symbol`,
-//     and a template literal whose interpolations are each `string` or `number`.
-//   - Any other key, such as `keyof T`, has no interface form. So does a member that
-//     remaps or filters its keys, an index signature whose value names its key or that
-//     lacks the `?`, and a literal key the object already declares as a property.
-//
-// An index signature also has to be the interface's only member. TypeScript holds every
-// other member and every inherited one to the signature's value type, so
-// `interface L {name: string, [K: string]: number | undefined}` is rejected, where
-// Escalier's `{name: string, [K: string]?: number}` describes an object whose other keys
-// hold a number.
-func interfaceShapeFromSol(body soltype.Type) (soltype.Type, bool) {
-	switch t := body.(type) {
-	case *soltype.ObjectType:
-		rewritten, sigs, ok := interfaceObjectFromSol(t)
-		if !ok || (sigs > 0 && len(rewritten.Elems) > 1) {
-			return nil, false
-		}
-		return rewritten, true
-	case *soltype.IntersectionType:
-		arms := make([]soltype.Type, len(t.Types))
-		sigs, members := 0, 0
-		for i, arm := range t.Types {
-			obj, ok := arm.(*soltype.ObjectType)
-			if !ok {
-				// A parent contributes members the signature would govern too.
-				arms[i] = arm
-				members++
-				continue
-			}
-			rewritten, armSigs, ok := interfaceObjectFromSol(obj)
-			if !ok {
-				return nil, false
-			}
-			arms[i] = rewritten
-			sigs += armSigs
-			members += len(rewritten.Elems)
-		}
-		if sigs > 0 && members > 1 {
-			return nil, false
-		}
-		return &soltype.IntersectionType{Types: arms}, true
-	}
-	return body, true
-}
-
-// interfaceObjectFromSol is interfaceShapeFromSol for one object. It also returns how
-// many of the rewritten object's members are mapped members left for an index signature.
-func interfaceObjectFromSol(obj *soltype.ObjectType) (*soltype.ObjectType, int, bool) {
-	if !soltype.HasMappedElem(obj.Elems) {
-		return obj, 0, true
-	}
-	sigs := 0
-	declared := set.NewSet[string]()
-	for _, elem := range obj.Elems {
-		if prop, ok := elem.(*soltype.PropertyElem); ok {
-			declared.Add(prop.Name)
-		}
-	}
-	elems := make([]soltype.ObjTypeElem, 0, len(obj.Elems))
-	for _, elem := range obj.Elems {
-		mapped, ok := elem.(*soltype.MappedElem)
-		if !ok {
-			elems = append(elems, elem)
-			continue
-		}
-		if mapped.Name != nil || mapped.Check != nil || mapped.Extends != nil {
-			return nil, 0, false
-		}
-		var indexKeys []soltype.Type
-		for _, key := range keyMembers(mapped.Keys) {
-			if name, isLit := literalKeyName(key); isLit {
-				// A second declaration of a property the object already declares is a
-				// duplicate member in an interface.
-				if declared.Contains(name) {
-					return nil, 0, false
-				}
-				declared.Add(name)
-				elems = append(elems, &soltype.PropertyElem{
-					Name:     name,
-					Type:     substMappedKey(mapped.Value, mapped.Key, key),
-					Optional: mapped.Optional == soltype.ModAdd,
-					Readonly: mapped.Readonly == soltype.ModAdd,
-				})
-				continue
-			}
-			if !indexSignatureKey(key) {
-				return nil, 0, false
-			}
-			indexKeys = append(indexKeys, key)
-		}
-		if len(indexKeys) == 0 {
-			continue
-		}
-		// An index signature has no binding for its key, so a value that names the key
-		// would name nothing. interfaceMembers lowers only the optional form, the one an
-		// uncountable key set takes.
-		if mapped.Optional != soltype.ModAdd || namesMappedKey(mapped.Value, mapped.Key) {
-			return nil, 0, false
-		}
-		keys := indexKeys[0]
-		if len(indexKeys) > 1 {
-			keys = &soltype.UnionType{Types: indexKeys}
-		}
-		cp := *mapped
-		cp.Keys = keys
-		elems = append(elems, &cp)
-		sigs++
-	}
-	cp := *obj
-	cp.Elems = elems
-	return &cp, sigs, true
-}
-
-// keyMembers returns the members of a union key set, or the key set itself.
-func keyMembers(keys soltype.Type) []soltype.Type {
-	if union, ok := keys.(*soltype.UnionType); ok {
-		return union.Types
-	}
-	return []soltype.Type{keys}
-}
-
-// literalKeyName returns the property name a string or number literal key stands for.
-func literalKeyName(key soltype.Type) (string, bool) {
-	lit, ok := key.(*soltype.LitType)
-	if !ok {
-		return "", false
-	}
-	switch l := lit.Lit.(type) {
-	case *soltype.StrLit:
-		return l.Value, true
-	case *soltype.NumLit:
-		return strconv.FormatFloat(l.Value, 'f', -1, 64), true
-	}
-	return "", false
-}
-
-// indexSignatureKey reports whether TypeScript accepts key as an index signature's key
-// type: `string`, `number`, `symbol`, or a template literal whose interpolations are
-// each `string` or `number`.
-func indexSignatureKey(key soltype.Type) bool {
-	switch k := key.(type) {
-	case *soltype.PrimType:
-		return k.Prim == soltype.StrPrim || k.Prim == soltype.NumPrim || k.Prim == soltype.SymPrim
-	case *soltype.TemplateLitType:
-		for _, interp := range k.Interps {
-			prim, ok := interp.(*soltype.PrimType)
-			if !ok || (prim.Prim != soltype.StrPrim && prim.Prim != soltype.NumPrim) {
-				return false
-			}
-		}
-		return true
-	}
-	return false
-}
-
-// substMappedKey returns t with every reference to key replaced by with.
-func substMappedKey(t soltype.Type, key *soltype.MappedKeyType, with soltype.Type) soltype.Type {
-	return t.Accept(&mappedKeySubst{key: key, with: with}, soltype.Positive)
-}
-
-// namesMappedKey reports whether t refers to key.
-func namesMappedKey(t soltype.Type, key *soltype.MappedKeyType) bool {
-	finder := &mappedKeyFinder{key: key}
-	t.Accept(finder, soltype.Positive)
-	return finder.found
-}
-
-// mappedKeyFinder is the visitor namesMappedKey runs.
-type mappedKeyFinder struct {
-	key   *soltype.MappedKeyType
-	found bool
-}
-
-func (v *mappedKeyFinder) EnterType(t soltype.Type, _ soltype.Polarity) soltype.EnterResult {
-	if ref, ok := t.(*soltype.MappedKeyType); ok && ref.ID == v.key.ID {
-		v.found = true
-	}
-	return soltype.EnterResult{SkipChildren: v.found}
-}
-
-func (v *mappedKeyFinder) ExitType(t soltype.Type, _ soltype.Polarity) soltype.Type { return t }
-
-// mappedKeySubst is the visitor substMappedKey runs.
-type mappedKeySubst struct {
-	key  *soltype.MappedKeyType
-	with soltype.Type
-}
-
-func (v *mappedKeySubst) EnterType(t soltype.Type, _ soltype.Polarity) soltype.EnterResult {
-	// Matched by id, so a nested mapped member writing the same name stays separate.
-	if ref, ok := t.(*soltype.MappedKeyType); ok && ref.ID == v.key.ID {
-		return soltype.EnterResult{Type: v.with, SkipChildren: true}
-	}
-	return soltype.EnterResult{}
-}
-
-func (v *mappedKeySubst) ExitType(t soltype.Type, _ soltype.Polarity) soltype.Type { return t }
-
-// interfaceMembers returns elems with each optional mapped member over its key set
-// rewritten as an index signature, since TypeScript accepts no mapped member in an
-// interface body. interfaceShapeFromSol leaves only mapped members whose keys an index
-// signature accepts. The `?` becomes `| undefined` on the value, so
-// `interface D {[K: string]?: number}` emits `[K: string]: number | undefined`.
-// Every other member is returned unchanged.
-func interfaceMembers(elems []ObjTypeAnnElem) []ObjTypeAnnElem {
-	out := make([]ObjTypeAnnElem, len(elems))
-	for i, elem := range elems {
-		mapped, ok := elem.(*MappedTypeAnn)
-		if !ok || mapped.Name != nil || mapped.Optional == nil || *mapped.Optional != MMAdd {
-			out[i] = elem
-			continue
-		}
-		out[i] = &IndexSignatureTypeAnn{
-			KeyName:  mapped.TypeParam.Name,
-			KeyType:  mapped.TypeParam.Constraint,
-			Value:    NewUnionTypeAnn([]TypeAnn{mapped.Value, NewUndefinedTypeAnn(nil)}),
-			Readonly: mapped.ReadOnly != nil && *mapped.ReadOnly == MMAdd,
-		}
-	}
-	return out
 }
 
 // buildClassDeclFromSol emits a class as the two declarations TypeScript needs for

@@ -58,8 +58,6 @@ func renderDeclFromSol(t *testing.T, source string, ns *fakeSolNamespace, isTopL
 // The types come from a fake namespace rather than a run, so each case names exactly
 // the inference result it depends on.
 func TestBuildDeclStmtFromSol(t *testing.T) {
-	// key is the key variable the mapped members below bind.
-	key := &soltype.MappedKeyType{ID: 1, Name: "K"}
 	tests := []struct {
 		name       string
 		source     string
@@ -214,98 +212,6 @@ func TestBuildDeclStmtFromSol(t *testing.T) {
 			},
 			isTopLevel: true,
 			want:       "export declare interface Person {\n  name: string;\n}\n",
-		},
-		{
-			name:   "InterfaceIndexSignatureCarriesItsQuestionMarkAsUndefined",
-			source: "export interface Dict {\n\treadonly [K: string]?: string,\n}",
-			ns: &fakeSolNamespace{
-				declared: map[string]fakeDeclaredType{
-					"Dict": {body: solObj(&soltype.MappedElem{
-						Key:      key,
-						Keys:     solStr(),
-						Value:    solStr(),
-						Optional: soltype.ModAdd,
-						Readonly: soltype.ModAdd,
-					})},
-				},
-			},
-			isTopLevel: true,
-			want:       "export declare interface Dict {\n  readonly [K: string]: string | undefined;\n}\n",
-		},
-		{
-			// Each literal key becomes a property, with the key put in place of the key
-			// variable in the value.
-			name:   "InterfaceLiteralKeysBecomeProperties",
-			source: "export interface Pair {\n\t[K: \"x\" | 1]?: Box<K>,\n}",
-			ns: &fakeSolNamespace{
-				declared: map[string]fakeDeclaredType{
-					"Pair": {body: solObj(&soltype.MappedElem{
-						Key:      key,
-						Keys:     &soltype.UnionType{Types: []soltype.Type{&soltype.LitType{Lit: &soltype.StrLit{Value: "x"}}, &soltype.LitType{Lit: &soltype.NumLit{Value: 1}}}},
-						Value:    solAlias("Box", key),
-						Optional: soltype.ModAdd,
-						Readonly: soltype.ModNone,
-					})},
-				},
-			},
-			isTopLevel: true,
-			want:       "export declare interface Pair {\n  x?: Box<\"x\">;\n  1?: Box<1>;\n}\n",
-		},
-		{
-			// TypeScript holds every other member to an index signature's value type, so
-			// an interface pairing the two emits as an alias.
-			name:   "InterfaceIndexSignatureBesideAMemberEmitsAnAlias",
-			source: "export interface Config {\n\tname: string,\n\t[K: string]?: boolean,\n}",
-			ns: &fakeSolNamespace{
-				declared: map[string]fakeDeclaredType{
-					"Config": {body: solObj(solProp("name", solStr()), &soltype.MappedElem{
-						Key:      key,
-						Keys:     solStr(),
-						Value:    solBool(),
-						Optional: soltype.ModAdd,
-						Readonly: soltype.ModNone,
-					})},
-				},
-			},
-			isTopLevel: true,
-			want:       "export declare type Config = {[K in string]?: boolean} & {name: string};\n",
-		},
-		{
-			// A literal key the object already declares would be a second declaration of
-			// one member, so the interface emits as an alias.
-			name:   "InterfaceLiteralKeyBesideItsPropertyEmitsAnAlias",
-			source: "export interface Over {\n\tx: string,\n\t[K: \"x\"]?: number,\n}",
-			ns: &fakeSolNamespace{
-				declared: map[string]fakeDeclaredType{
-					"Over": {body: solObj(solProp("x", solStr()), &soltype.MappedElem{
-						Key:      key,
-						Keys:     &soltype.LitType{Lit: &soltype.StrLit{Value: "x"}},
-						Value:    solNum(),
-						Optional: soltype.ModAdd,
-						Readonly: soltype.ModNone,
-					})},
-				},
-			},
-			isTopLevel: true,
-			want:       "export declare type Over = {[K in \"x\"]?: number} & {x: string};\n",
-		},
-		{
-			// A key set that stays abstract has no interface form.
-			name:   "InterfaceOverAnAbstractKeySetEmitsAnAlias",
-			source: "export interface Partial {\n\t[K: keyof Obj]?: number,\n}",
-			ns: &fakeSolNamespace{
-				declared: map[string]fakeDeclaredType{
-					"Partial": {body: solObj(&soltype.MappedElem{
-						Key:      key,
-						Keys:     &soltype.KeyofType{Operand: solAlias("Obj"), Inexact: false},
-						Value:    solNum(),
-						Optional: soltype.ModAdd,
-						Readonly: soltype.ModNone,
-					})},
-				},
-			},
-			isTopLevel: true,
-			want:       "export declare type Partial = {[K in keyof Obj]?: number};\n",
 		},
 		{
 			name:   "InterfaceExtendingAnotherSplitsTheIntersection",
