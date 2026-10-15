@@ -916,3 +916,64 @@ func TestInferThrowsThroughASetterWrite(t *testing.T) {
 		},
 	})
 }
+
+// A receiver joined from two branches is an inference variable whose lower bounds are the
+// branches' classes. Its getter read reaches each class through constrain rather than
+// through the union join, and the getter's raise still reaches the enclosing body.
+const joinedGetterClasses = `
+	class A { n: number, get x(&self) -> number throws string { if self.n < 0 { throw "a" } return self.n } }
+	class B { n: number, get x(&self) -> number throws string { if self.n < 0 { throw "b" } return self.n } }
+`
+
+func TestInferThrowsThroughAGetterOfAJoinedReceiver(t *testing.T) {
+	runThrowsCases(t, []throwsCase{
+		{
+			name: "MemberRead",
+			src: joinedGetterClasses + `
+				fn f(a: A, b: B, c: boolean) -> number throws string {
+					val u = if c { a } else { b }
+					return u.x
+				}`,
+			want: "fn (a: A, b: B, c: boolean) -> number throws string",
+		},
+		{
+			name: "Destructuring",
+			src: joinedGetterClasses + `
+				fn f(a: A, b: B, c: boolean) -> number throws string {
+					val u = if c { a } else { b }
+					val {x} = u
+					return x
+				}`,
+			want: "fn (a: A, b: B, c: boolean) -> number throws string",
+		},
+	})
+	runThrowsErrCases(t, []throwsErrCase{
+		{
+			name: "MemberReadWithNoClause",
+			src: joinedGetterClasses + `
+				fn f(a: A, b: B, c: boolean) -> number {
+					val u = if c { a } else { b }
+					return u.x
+				}`,
+			// Each class's getter raises `string`, so the read reports once per member, as a
+			// read off a parameter of type `A | B` does.
+			wantErrs: []string{
+				"7:13-7:16: cannot constrain string <: never",
+				"7:13-7:16: cannot constrain string <: never",
+			},
+		},
+		{
+			name: "DestructuringWithNoClause",
+			src: joinedGetterClasses + `
+				fn f(a: A, b: B, c: boolean) -> number {
+					val u = if c { a } else { b }
+					val {x} = u
+					return x
+				}`,
+			wantErrs: []string{
+				"7:11-7:12: cannot constrain string <: never",
+				"7:11-7:12: cannot constrain string <: never",
+			},
+		},
+	})
+}

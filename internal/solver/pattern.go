@@ -1404,14 +1404,10 @@ func (c *checker) recordPatType(purpose bindPurpose, n ast.Node, t soltype.Type)
 // marks a field the pattern tolerates being absent. A pattern reads the field the way a member
 // read does, so a getter answers it and what the getter can raise reaches the enclosing body.
 // The raise is recorded here, since the field requirement constrain checks has no place to
-// record one. A projection records no raise, since the binding walk over the same pattern
-// already recorded it. See bindPurpose.
+// record one. A projection records no raise. See bindPurpose.
 func (c *checker) readPatternField(
 	blame ast.Node, lvl int, scrutinee soltype.Type, name string, beta soltype.Type, optional bool, purpose bindPurpose,
 ) {
-	if purpose == forBinding {
-		c.raiseUnionAccessorThrows(lvl, blame, name, scrutinee)
-	}
 	if obj, ok := c.ctx.readCarrierObject(soltype.CarrierOf(groundedCarrier(scrutinee))); ok {
 		member, _ := obj.ReadMember(name)
 		if g, isGetter := member.(*soltype.GetterElem); isGetter && getterBorrowsSelfImmut(g) {
@@ -1422,7 +1418,14 @@ func (c *checker) readPatternField(
 			return
 		}
 	}
-	c.constrain(blame, scrutinee, propReq(name, beta, optional))
+	req := propReq(name, beta, optional)
+	// A union scrutinee or one joined from branches reaches its getters inside constrain,
+	// which has no throws sink, so they are raised here. See bindPurpose for why a
+	// projection raises nothing.
+	if purpose == forBinding {
+		c.raiseUnionAccessorThrows(lvl, blame, name, scrutinee, req)
+	}
+	c.constrain(blame, scrutinee, req)
 }
 
 // propReq builds the inexact one-property requirement `{name: t, ...}` — "the

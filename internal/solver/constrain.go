@@ -1700,14 +1700,20 @@ func (c *Context) constrain(sub, super soltype.Type, seen *seenPairs, mutCtx boo
 						errs = append(errs, c.constrainGetterIntoProp(g, sub, superProp, seen, mutCtx)...)
 						continue
 					}
-					// A getter that raises cannot stand in for a property, since a later read
-					// through the property has no place to record the raise. A field read
-					// keeps reporting the member missing, which #1985 tracks.
-					if g, isGetter := member.(*soltype.GetterElem); isGetter && !fieldRead && getterBorrowsSelfImmut(g) {
-						errs = append(errs, &RaisingGetterPropertyError{
-							Name: superProp.Name, Throws: g.ThrowsOrNever(), Prop: superProp.Type,
-						})
-						continue
+					// A raising getter fills a field-read requirement only when the read that
+					// minted it already raised what the getter can throw into the enclosing body.
+					// Any other requirement has no place to record the raise. A field read whose
+					// read did not raise it falls through and reports the member missing.
+					if g, isGetter := member.(*soltype.GetterElem); isGetter && getterBorrowsSelfImmut(g) {
+						if !fieldRead {
+							errs = append(errs, &RaisingGetterPropertyError{
+								Name: superProp.Name, Throws: g.ThrowsOrNever(), Prop: superProp.Type,
+							})
+							continue
+						} else if c.readRaised(sup, g.ThrowsOrNever(), seen) {
+							errs = append(errs, c.constrainGetterIntoProp(g, sub, superProp, seen, mutCtx)...)
+							continue
+						}
 					}
 				}
 				if !ok {
@@ -2523,6 +2529,28 @@ func (c *Context) breadcrumbUnionCommit(errs []SolverError, v *soltype.TypeVarTy
 		}
 	}
 	return errs
+}
+
+// registerReadRaises records throws as raised by the read that minted req. See readRaises.
+func (c *Context) registerReadRaises(req *soltype.ObjectType, throws []soltype.Type) {
+	if len(throws) == 0 {
+		return
+	}
+	if c.readRaises == nil {
+		c.readRaises = map[*soltype.ObjectType][]soltype.Type{}
+	}
+	c.readRaises[req] = append(c.readRaises[req], throws...)
+}
+
+// readRaised reports whether throws is a subtype of some type the read that minted req
+// already raised. See readRaises.
+func (c *Context) readRaised(req *soltype.ObjectType, throws soltype.Type, seen *seenPairs) bool {
+	for _, raised := range c.readRaises[req] {
+		if c.condExtends(throws, raised, seen) {
+			return true
+		}
+	}
+	return false
 }
 
 // isFieldReadReq reports whether an object super is a field-read or destructure

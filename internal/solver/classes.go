@@ -1927,16 +1927,14 @@ func (c *checker) raiseAccessorThrows(lvl int, blame ast.Node, throws soltype.Ty
 	c.constrain(blame, throws, c.throwsSink(lvl))
 }
 
-// raiseUnionAccessorThrows records what reading `name` off a union receiver may raise.
-// constrainUnionFieldRead joins the read's value across the union's members from inside
-// constrain, which holds no throws sink, so this walks the same members to reach the getters
-// that join reads through. Only a getter contributes; a property, method, or setter raises
-// nothing on a read. It collects before it raises because the join abandons the whole read
-// once any member carries no readable object, as `A | undefined` does, and then no getter runs.
+// raiseUnionAccessorThrows raises what reading `name` off a union receiver may throw, and
+// registers those throws for req, the field requirement the read constrains the receiver
+// against. Only a getter contributes. A property, method, or setter raises nothing on a read.
+// Nothing is raised or registered when some member carries no readable object, as
+// `A | undefined` does, matching constrainUnionFieldRead, which reads no getter then.
 //
-// A receiver read off a binding is often still an inference variable, so carrier is read
-// through the lower bounds it holds so far.
-func (c *checker) raiseUnionAccessorThrows(lvl int, blame ast.Node, name string, carrier soltype.Type) {
+// carrier is read through the lower bounds it holds so far when it is an inference variable.
+func (c *checker) raiseUnionAccessorThrows(lvl int, blame ast.Node, name string, carrier soltype.Type, req *soltype.ObjectType) {
 	u, isUnion := groundedCarrier(carrier).(*soltype.UnionType)
 	if !isUnion {
 		return
@@ -1951,13 +1949,14 @@ func (c *checker) raiseUnionAccessorThrows(lvl int, blame ast.Node, name string,
 		if !found {
 			continue
 		}
-		if getter, isGetter := elem.(*soltype.GetterElem); isGetter {
+		if getter, isGetter := elem.(*soltype.GetterElem); isGetter && !isNeverType(getter.ThrowsOrNever()) {
 			throws = append(throws, getter.ThrowsOrNever())
 		}
 	}
 	for _, t := range throws {
 		c.raiseAccessorThrows(lvl, blame, t)
 	}
+	c.ctx.registerReadRaises(req, throws)
 }
 
 // recordUnionMethodRead records the read of name at blame as a method read when carrier is a
