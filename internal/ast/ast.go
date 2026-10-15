@@ -73,9 +73,11 @@ type Member struct {
 }
 
 func (m *Member) Span() Span {
+	left := m.Left.Span()
 	return Span{
-		Start: m.Left.Span().Start,
-		End:   m.Right.Span().End,
+		Start:    left.Start,
+		End:      m.Right.Span().End,
+		SourceID: left.SourceID,
 	}
 }
 

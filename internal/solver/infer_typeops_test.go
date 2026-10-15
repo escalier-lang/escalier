@@ -1005,6 +1005,94 @@ func TestInferTypeofConstraint(t *testing.T) {
 	}
 }
 
+// TestInferTypeofAcrossFiles covers a `typeof` operand that reaches a value through a
+// directory-derived namespace, and one whose value is annotated with an alias. Each
+// diagnostic is rendered with the path of the file it is blamed in, so a case asserts the
+// error lands on the annotation in `index.esc` rather than in the file declaring the value.
+// A case that assigns `1` to `typeof shapes.unitCircle.center.x` shows the query resolves to
+// the literal `0` and not to `number`.
+func TestInferTypeofAcrossFiles(t *testing.T) {
+	circle := `
+		type Point = {x: number, y: number}
+		type PointRef = &Point
+		val unitCircle = {center: {x: 0, y: 0}, radius: 1}
+		val origin: Point = {x: 0, y: 0}
+		val originRef: PointRef = &origin
+	`
+	tests := []struct {
+		name     string
+		index    string
+		wantErrs []string
+	}{
+		{
+			name:  "NamespacedValueAccepted",
+			index: `val cx: typeof shapes.unitCircle.center.x = 0`,
+		},
+		{
+			name:     "NamespacedValueRejected",
+			index:    `val cx: typeof shapes.unitCircle.center.x = 1`,
+			wantErrs: []string{"index.esc 1:45-1:46: cannot constrain 1 <: 0"},
+		},
+		{
+			name: "NamespacedValueThroughAlias",
+			index: `
+type CX = typeof shapes.unitCircle.center.x
+val cx: CX = 1`,
+			wantErrs: []string{"index.esc 3:14-3:15: cannot constrain 1 <: 0"},
+		},
+		{
+			// `shapes.origin` is annotated `Point`, so projecting `x` expands the alias
+			// before reading the member.
+			name:     "AliasAnnotatedValue",
+			index:    `val ox: typeof shapes.origin.x = "a"`,
+			wantErrs: []string{`index.esc 1:34-1:37: cannot constrain "a" <: number`},
+		},
+		{
+			// `shapes.originRef` is annotated `PointRef`, an alias of a borrow, so
+			// projecting `x` strips the borrow the alias body wraps.
+			name:     "BorrowAliasAnnotatedValue",
+			index:    `val ox: typeof shapes.originRef.x = "a"`,
+			wantErrs: []string{`index.esc 1:37-1:40: cannot constrain "a" <: number`},
+		},
+		{
+			name:  "NestedNamespace",
+			index: `val nx: typeof shapes.inner.depth = 2`,
+			wantErrs: []string{
+				"index.esc 1:37-1:38: cannot constrain 2 <: 1",
+			},
+		},
+		{
+			name:  "UnknownNamespaceMember",
+			index: `type Missing = typeof shapes.missing`,
+			wantErrs: []string{
+				"index.esc 1:16-1:37: Namespace shapes has no member: missing",
+			},
+		},
+		{
+			name:  "NamespaceIsNotAValue",
+			index: `type Whole = typeof shapes`,
+			wantErrs: []string{
+				"index.esc 1:14-1:27: Unsupported: typeof of a name that is not a readable value",
+			},
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			_, _, errs := inferSources(t, map[string]string{
+				"shapes/circle.esc":      circle,
+				"shapes/inner/depth.esc": `val depth = 1`,
+				"index.esc":              tt.index,
+			})
+			var got []string
+			for _, err := range errs {
+				path := sourceForTest(t, err.Span().SourceID).Path
+				got = append(got, path+" "+msgWithSpan(t, err))
+			}
+			require.Equal(t, tt.wantErrs, got)
+		})
+	}
+}
+
 // A `typeof v` on both sides of a flow checks reflexively: the identity function's `return k`
 // constrains `typeof v <: typeof v`, which constrain decides by unwrapping both sides to the
 // value's type. The signature keeps the query on both positions.
