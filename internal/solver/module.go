@@ -659,13 +659,15 @@ func (c *checker) inferComponent(
 		}
 	}
 
-	// A body reads a class's name through the class's binding var. The var gets its lower
-	// bound only once the class's own bodies are inferred, so a constraint recorded through
-	// it is checked late. An error it raises is then blamed on the class declaration rather
+	// A body reads a class's name through the class's binding var. inferClassBodies
+	// constrains the class value into the var once the class's constructors are inferred,
+	// so a body inferred before that reads an unbound var. A constraint recorded through
+	// it is checked late, and an error it raises is blamed on the class declaration rather
 	// than on the expression that read the name. The class's statics carry their signatures
 	// already, so a read such as `Foo.add` resolves against them until the var is bound.
-	prevClassStatics := c.componentClassStatics
-	c.componentClassStatics = map[*soltype.TypeVarType]*soltype.ObjectType{}
+	prevClasses, prevClassOf := c.componentClasses, c.componentClassOf
+	c.componentClasses = map[*soltype.TypeVarType]*componentClass{}
+	c.componentClassOf = map[*ast.ClassDecl]*componentClass{}
 	for _, key := range component {
 		b, isValue := bindings[key]
 		if !isValue {
@@ -679,7 +681,9 @@ func (c *checker) inferComponent(
 			}
 			if decl, isClass := d.(*ast.ClassDecl); isClass {
 				sigs := c.classSigsOf(c.lookupScope(scope, decl), inner, decl, g.GetNamespace(key))
-				c.componentClassStatics[b.v] = sigs.def.Static
+				class := &componentClass{static: sigs.def.Static, v: b.v}
+				c.componentClasses[b.v] = class
+				c.componentClassOf[decl] = class
 			}
 			break
 		}
@@ -694,7 +698,7 @@ func (c *checker) inferComponent(
 		for i := len(releases) - 1; i >= 0; i-- {
 			releases[i]()
 		}
-		c.componentClassStatics = prevClassStatics
+		c.componentClasses, c.componentClassOf = prevClasses, prevClassOf
 		c.componentRigidReleases = prevRigidReleases
 	}()
 
@@ -782,7 +786,9 @@ func (c *checker) inferComponent(
 			if !b.bound {
 				// An overload set's lower bound is the fusion of every arm, so the first arm
 				// is collected here and constrained after the loop rather than on its own.
-				if !fused {
+				// inferClassBodies already put a component class's value into its var, so the
+				// class's own member bodies could read it.
+				if !fused && c.boundClassValue(d) == nil {
 					c.constrain(d, t, b.v)
 				}
 				b.primary = d

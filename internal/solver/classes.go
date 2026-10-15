@@ -2135,15 +2135,42 @@ func receiverClass(t soltype.Type) soltype.RefInner {
 	return nil
 }
 
+// componentClass is a class in the module component being inferred.
+type componentClass struct {
+	// static is the class's static side, which a read of v produces while v has no lower
+	// bound.
+	static *soltype.ObjectType
+	// v is the class's binding var.
+	v *soltype.TypeVarType
+	// value is the class value constrained into v, or nil until inferClassBodies
+	// constrains it.
+	value *soltype.ObjectType
+}
+
+// boundClassValue returns the class value inferClassBodies constrained into the binding var
+// of d, or nil when d is not a class or no value has been constrained.
+func (c *checker) boundClassValue(d ast.Decl) *soltype.ObjectType {
+	decl, isClass := d.(*ast.ClassDecl)
+	if !isClass {
+		return nil
+	}
+	if class, inComponent := c.componentClassOf[decl]; inComponent {
+		return class.value
+	}
+	return nil
+}
+
 // classValueMember resolves a static member read off a class value, such as
 // `Point.origin`, by looking the member up on the value object and producing its type via
 // memberValue. It returns ok=false when the receiver is not a class value or carries no
 // such member, leaving both cases to the structural field-requirement path. A binding var in
-// componentClassStatics that has no lower bound yet reads as its class's static side.
+// componentClasses that has no lower bound yet reads as its class's static side.
 func (c *checker) classValueMember(lvl int, blame ast.Node, name string, carrier soltype.Type) (pathResult, bool) {
 	obj, ok := c.classValueCarrier(carrier)
 	if v, isVar := carrier.(*soltype.TypeVarType); isVar && !ok && len(v.LowerBounds) == 0 {
-		obj, ok = c.componentClassStatics[v]
+		if class, inComponent := c.componentClasses[v]; inComponent {
+			obj, ok = class.static, true
+		}
 	}
 	if !ok {
 		return pathResult{}, false

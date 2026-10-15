@@ -138,11 +138,13 @@ type checker struct {
 	// `Self` still resolves as an ordinary class reference with its own arity check.
 	selfClass *soltype.ClassType
 
-	// componentClassStatics maps the binding variable of each class in the component being
-	// inferred to that class's static side. classValueMember reads a static member through
-	// it while the variable has no lower bound yet. inferComponent fills it before its phase 2
-	// and puts the earlier map back when it returns.
-	componentClassStatics map[*soltype.TypeVarType]*soltype.ObjectType
+	// componentClasses maps the binding variable of each class in the component being
+	// inferred to the class's entry, and componentClassOf maps the class's declaration to
+	// the same entry.
+	// inferComponent fills both before its phase 2 and puts the earlier maps back when it
+	// returns.
+	componentClasses map[*soltype.TypeVarType]*componentClass
+	componentClassOf map[*ast.ClassDecl]*componentClass
 
 	// componentRigidReleases collects the release of each rigid hold that lasts as long as
 	// the module component being inferred. inferComponent runs them when it returns. It is

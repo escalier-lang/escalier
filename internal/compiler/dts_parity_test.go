@@ -70,10 +70,15 @@ var declarationShapes = map[string]string{
 	"AClassGetterAndSetter": "class C {\n\tv: number,\n\tget val(&self) -> number { return self.v },\n\tset val(&mut self, n: number) { self.v = n },\n}",
 	"AClassStatic":          "class C {\n\tv: number,\n\tstatic make(n: number) -> number { return n },\n}",
 	"AReadonlyField":        "class C {\n\treadonly v: number,\n}",
-	"AClassConstructor":     "class C {\n\tv: number,\n\tconstructor(&mut self, v: number) { self.v = v },\n}",
-	"AGetterOnly":           "class C {\n\tv: number,\n\tget val(&self) -> number { return self.v },\n}",
-	"AStaticGetter":         "class C {\n\tstatic get val() -> number { return 1 },\n}",
-	"AnOverloadedMethod":    "declare class C {\n\tm(&self, x: number) -> number,\n\tm(&self, x: string) -> string,\n}",
+	// In each of the next three, a member with no return annotation returns an instance of its own class.
+	"AMethodConstructingItsClass": "class C {\n\tv: number,\n\tclone(&self) { return C(self.v) },\n}",
+	"AStaticFactory":              "class C {\n\tv: number,\n\tstatic make(n: number) { return C(n) },\n}",
+	"AGenericMethodConstructingItsClass": "class Box<T> {\n\tv: T,\n" +
+		"\tmap<U>(&self, f: fn (x: T) -> U) { return Box(f(self.v)) },\n}",
+	"AClassConstructor":  "class C {\n\tv: number,\n\tconstructor(&mut self, v: number) { self.v = v },\n}",
+	"AGetterOnly":        "class C {\n\tv: number,\n\tget val(&self) -> number { return self.v },\n}",
+	"AStaticGetter":      "class C {\n\tstatic get val() -> number { return 1 },\n}",
+	"AnOverloadedMethod": "declare class C {\n\tm(&self, x: number) -> number,\n\tm(&self, x: string) -> string,\n}",
 	"ASymbolKeyedMember": "class C {\n\tmsg: string,\n\tstatic [Symbol.customMatcher](subject: C) -> [string] {\n" +
 		"\t\treturn [subject.msg]\n\t}\n}",
 	"AClassImplements": "interface I {\n\tx: number,\n}\nclass C implements I {\n\tx: number,\n}",

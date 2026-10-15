@@ -16,8 +16,10 @@ import (
 )
 
 // inferClassDecl types a class declaration (M5 B1). It returns the class's value type
-// for the SCC driver to constrain into the value binding var and generalize, along with
-// the decl's provenance. The value is an object carrying the constructor as a ConstructorElem
+// for the SCC driver to generalize, along with the decl's provenance. For a class in a
+// module component the value is already in the class's binding var, which
+// inferClassBodies constrains it into. The driver constrains any other class's value into
+// its var. The value is an object carrying the constructor as a ConstructorElem
 // plus any static members (see classValue). It has two side effects. It registers
 // the instance TypeBinding in scope, so the class name resolves as a type. It registers
 // the ClassDef in the nominal registry, so member lookup and the nominal constrain rule
@@ -85,26 +87,7 @@ func (c *checker) inferClassDecl(scope *Scope, lvl int, decl *ast.ClassDecl, ns 
 	// return types, so it is reported before any body runs. Reporting here, not during
 	// body inference, keeps the diagnostic off the inferred-never recovery.
 	c.checkMethodRecursionAnnotations(decl)
-	// A member body walks against the `self` view rather than the class's own body, so an
-	// inherited member is reachable through `self`. Every own member signature is in the
-	// body by now, so the view is complete, and it shares each own element pointer so the
-	// signature installs and field refinements below still land on the registered body.
-	callFns, ctorFns := c.inferClassBodies(bodyScope, lvl, self, body, typeParams, decl, sigs.pending, ctors)
-	if len(ctorFns) == 0 {
-		// A subclass must declare its own constructor to call `super`, so a missing one is
-		// reported here and the synthesis below stands in for recovery.
-		if decl.Extends != nil {
-			c.report(&SubclassConstructorRequiredError{Decl: decl})
-		}
-		// A class declaring a call signature and no constructor is callable and not
-		// constructible, so nothing is synthesized. Synthesizing one would make
-		// `Symbol(…)` construct instead of call, and the specification forbids
-		// `new Symbol()`, so having no constructor is what makes constructing it
-		// unrepresentable rather than merely discouraged.
-		if len(callFns) == 0 {
-			ctorFns = []*soltype.FuncType{c.synthesizeConstructor(decl, self, body)}
-		}
-	}
+	callFns, ctorFns := c.inferClassBodies(lvl, decl, sigs, ctors)
 
 	// Coalesce each member so lookup reads concrete member types rather than the fresh
 	// vars a field held before a constructor assignment refined it. A non-generic class
@@ -166,16 +149,18 @@ func (c *checker) inferClassDecl(scope *Scope, lvl int, decl *ast.ClassDecl, ns 
 		c.reportUnusedTypeParams(typeParams, decl.TypeParams, classDeclTypes(def, ctorFns, callFns))
 	}
 
-	// The class's parameters, both sorts, are the binder of every constructor and call
-	// signature, so a construction instantiates them the way a generic function's call does
-	// and the class value is monomorphic in them. A static member is reached through that
-	// value, where no instance supplies an argument, so one that names a parameter is
-	// reported.
-	bindClassParams(ctorFns, typeParams, shell.lifetimeParams)
-	bindClassParams(callFns, typeParams, shell.lifetimeParams)
+	// A static member is reached through the class value, where no instance supplies an
+	// argument, so one that names a class parameter is reported.
 	c.reportStaticsNamingClassParams(decl, static, typeParams, shell.lifetimeParams)
 
-	return c.classValue(self, ctorFns, callFns, static), &ast.NodeProvenance{Node: decl}, true
+	value := c.classValue(self, ctorFns, callFns, static)
+	if bound := c.boundClassValue(decl); bound != nil {
+		// The value is already the binding var's lower bound, so it takes the coalesced
+		// statics in place.
+		bound.Elems = value.Elems
+		value = bound
+	}
+	return value, &ast.NodeProvenance{Node: decl}, true
 }
 
 // bindClassParams puts the class's type parameters and lifetime parameters at the front of
@@ -312,19 +297,18 @@ func staticMemberType(static *soltype.ObjectType, elem ast.ClassElem, name strin
 	return nil
 }
 
-// inferClassBodies infers every body a class declaration writes: the members in pending,
-// the call signatures, and the constructors in ctors. It returns the call signatures' and
-// the constructors' inferred types.
+// inferClassBodies infers every body a class declaration writes: the call signatures, the
+// constructors in ctors, and the members sigs holds pending. It returns the call signatures
+// and the constructors, each with the class's parameters as its binder. A class with
+// neither gets a synthesized constructor.
 func (c *checker) inferClassBodies(
-	scope *Scope,
 	lvl int,
-	self *soltype.ClassType,
-	body *soltype.ObjectType,
-	typeParams []*soltype.TypeParam,
 	decl *ast.ClassDecl,
-	pending []pendingMember,
+	sigs *classSigs,
 	ctors []*ast.ConstructorElem,
 ) (callFns, ctorFns []*soltype.FuncType) {
+	scope, self, body := sigs.bodyScope, sigs.self, sigs.def.Body
+	typeParams := sigs.shell.typeParams
 	// Each body has to work for every argument an instance may give the class, so the
 	// class's parameters are rigid while the bodies are inferred. A member's signature is
 	// linked to its stub inside the same window, since a sibling call recorded against the
@@ -334,9 +318,43 @@ func (c *checker) inferClassBodies(
 	if len(typeParams) > 0 {
 		defer c.ctx.holdTypeParamsRigid(typeParams, true)()
 	}
-	c.inferMemberBodies(scope, lvl, c.ctx.selfView(self, body), pending)
 	callFns = c.inferCallSignatures(scope, lvl, decl)
 	ctorFns = c.walkConstructorBodies(scope, lvl, self, body, ctors)
+	if len(ctorFns) == 0 {
+		// A subclass must declare its own constructor to call `super`, so a missing one is
+		// reported here and the synthesis below stands in for recovery.
+		if decl.Extends != nil {
+			c.report(&SubclassConstructorRequiredError{Decl: decl})
+		}
+		// A class declaring a call signature and no constructor is callable and not
+		// constructible, so nothing is synthesized. Synthesizing one would make
+		// `Symbol(…)` construct instead of call, and the specification forbids
+		// `new Symbol()`, so having no constructor is what makes constructing it
+		// unrepresentable rather than merely discouraged.
+		if len(callFns) == 0 {
+			ctorFns = []*soltype.FuncType{c.synthesizeConstructor(decl, self, body)}
+		}
+	}
+	// The class's parameters, both sorts, are the binder of every constructor and call
+	// signature, so a construction instantiates them the way a generic function's call does
+	// and the class value is monomorphic in them.
+	bindClassParams(ctorFns, typeParams, sigs.shell.lifetimeParams)
+	bindClassParams(callFns, typeParams, sigs.shell.lifetimeParams)
+	// inferClassDecl coalesces each member once the bodies are inferred, and a bound that
+	// arrives later does not reach the coalesced member. Take
+	// `clone(&self) { return Widget(self.name) }`. The call's result is `Widget` only once
+	// the binding var of `Widget` holds the class value, so the value goes into the var
+	// before the member bodies run. Otherwise `clone` would be coalesced to return `never`.
+	// inferClassDecl later puts the coalesced statics into the same value.
+	if class, inComponent := c.componentClassOf[decl]; inComponent {
+		class.value = c.classValue(self, ctorFns, callFns, sigs.def.Static)
+		c.constrain(decl, class.value, class.v)
+	}
+	// A member body walks against the `self` view rather than the class's own body, so an
+	// inherited member is reachable through `self`. Every own member signature is in the
+	// body by now, so the view is complete, and it shares each own element pointer so the
+	// signature installs and field refinements still land on the registered body.
+	c.inferMemberBodies(scope, lvl, c.ctx.selfView(self, body), sigs.pending)
 	return callFns, ctorFns
 }
 
@@ -565,8 +583,8 @@ func classDeclTypes(def *ClassDef, ctors, calls []*soltype.FuncType) []soltype.T
 // bindScriptClass infers a class declared at a script's top level (bin/) and binds its
 // constructor value in scope. inferClassDecl already registers the instance type binding
 // and the nominal ClassDef; this generalizes the returned constructor value and defines
-// it, the linear-body analogue of what the module SCC driver does after constraining the
-// class value into its binding var. A script is source-order, so a self-recursive class
+// it, the linear-body analogue of what the module SCC driver does once the class value is
+// in its binding var. A script is source-order, so a self-recursive class
 // resolves through the shell inferClassDecl pre-binds, while a forward reference to a
 // class declared later is an unknown identifier.
 func (c *checker) bindScriptClass(scope *Scope, lvl int, decl *ast.ClassDecl) {
@@ -599,7 +617,7 @@ func (c *checker) classValue(
 	self *soltype.ClassType,
 	ctorFns, callFns []*soltype.FuncType,
 	static *soltype.ObjectType,
-) soltype.Type {
+) *soltype.ObjectType {
 	elems := make([]soltype.ObjTypeElem, 0, len(static.Elems)+2)
 	// A class declaring a call signature and no constructor carries no ConstructorElem at
 	// all, so nothing constructs it. inferConstructor synthesizes none for that shape.

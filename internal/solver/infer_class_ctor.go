@@ -14,7 +14,7 @@ import (
 // signature built from its value parameters. A class declaring none yields none.
 //
 // What a class with no declared constructor gets instead is the caller's decision, since it
-// turns on whether the class declares a call signature as well. See inferClassDecl.
+// turns on whether the class declares a call signature as well. See inferClassBodies.
 func (c *checker) walkConstructorBodies(
 	scope *Scope,
 	lvl int,
