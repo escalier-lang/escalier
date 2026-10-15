@@ -4422,6 +4422,10 @@ func (c *checker) inferIfElse(scope *Scope, lvl int, e *ast.IfElseExpr) soltype.
 // ucs.Normalize lower the form into a split over that one value and condWalk types the
 // result.
 //
+// The pattern binds only when the target holds a value. A `null` or `undefined` target
+// takes the alternate whatever the pattern is, so `if val v = o` over a `string | null`
+// binds `v` as `string`.
+//
 // The pattern's names are bound ONLY in the consequent, at the narrowed member type. The
 // alternate is the split's fallthrough, which the walk types in the scope the form
 // started in, so it reads the scrutinee at its full type and never sees those names. Each
@@ -4437,13 +4441,61 @@ func (c *checker) inferIfVal(scope *Scope, lvl int, e *ast.IfValExpr) soltype.Ty
 	core := ucs.DesugarIfVal(e)
 	// The binder is seeded with the type inferred above, so the walk never re-infers the
 	// target and a side-effecting one such as `if val x = f() { … }` runs its call once.
-	binder := c.newPathBinder(lvl, e, core.Scrutinee, scrutinee)
+	target := scrutinee
+	// Codegen guards the consequent with `!= null` and `!= undefined` checks on the target,
+	// so no nullish member reaches a pattern that could not have matched one anyway. A
+	// pattern that can match one keeps it, since its test constrains the nullish member
+	// into the target. `if val null = o` over a `number | null` would otherwise check
+	// `null <: number`.
+	if !patternMatchesNullish(e.Pattern) {
+		if narrowed, ok := withoutNullish(scrutinee); ok {
+			target = narrowed
+		}
+	}
+	binder := c.newPathBinder(lvl, e, core.Scrutinee, target)
 	w := c.walkCond(scope, lvl, e, core, binder, res)
 	// The two halves join into one value, so they have to agree on ownership, exactly as
 	// inferIfElse's do. A diverging half produces no value and is left out of the check.
 	c.checkUniformOwnership(e, w.bodies)
 	c.recordType(e, res)
 	return res
+}
+
+// patternMatchesNullish reports whether p, as the whole pattern of a refutable form, can
+// match `null` or `undefined`. A `null` or `undefined` literal can, and so can an
+// identifier whose annotation might admit one, as `v: null` does.
+func patternMatchesNullish(p ast.Pat) bool {
+	switch p := p.(type) {
+	case *ast.LitPat:
+		_, _, isAtom := atomLitOf(p.Lit)
+		return isAtom
+	case *ast.IdentPat:
+		return p.TypeAnn != nil
+	default:
+		return false
+	}
+}
+
+// withoutNullish returns t with its `null` and `undefined` members removed, reading an
+// inference variable through its solved shape. It returns false when t has no nullish
+// member, when nothing else remains, and for a borrow of a whole union, whose members it
+// does not reach.
+func withoutNullish(t soltype.Type) (soltype.Type, bool) {
+	if _, isRef := t.(*soltype.RefType); isRef {
+		return nil, false
+	}
+	shape := t
+	if carrierIsVar(t) {
+		shape = groundedCarrier(t)
+	}
+	return narrowUnionMembers(shape, func(member soltype.Type) bool {
+		switch soltype.CarrierOf(member).(type) {
+		case *soltype.NullType, *soltype.UndefinedType:
+			return false
+		default:
+			return true
+		}
+	})
 }
 
 // bindRefutable binds a refutable pattern's names against a scrutinee, returning the type

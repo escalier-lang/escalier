@@ -44,9 +44,6 @@ var (
 		name:   "a global the ambient builtin scope will bind",
 		ticket: "#1666",
 	}
-	causeIfValNullish = &solverSkipCause{
-		name: "an `if val` identifier or object pattern narrowing `null` and `undefined` out of its scrutinee",
-	}
 	causeUnionMember = &solverSkipCause{
 		name:   "a property read on a union whose arms do not all declare it",
 		ticket: "#1719",
@@ -75,8 +72,6 @@ type solverSkip struct {
 // other diagnostics surface once that one lands and the entry is re-seeded.
 var solverSkips = []solverSkip{
 	{"async_await", causeAmbientScope, "Unknown identifier: fetch"},
-
-	{"if_val", causeIfValNullish, "cannot constrain null <: number"},
 
 	{"try_catch", causeCaughtValue, "cannot constrain unknown <: string"},
 
