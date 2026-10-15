@@ -3,6 +3,7 @@ package solver
 import (
 	"testing"
 
+	"github.com/escalier-lang/escalier/internal/dep_graph"
 	"github.com/stretchr/testify/require"
 )
 
@@ -108,10 +109,10 @@ func TestInferModuleDistinctParamsStayDistinct(t *testing.T) {
 	require.Equal(t, map[string]string{"pair": "fn <T0, T1>(a: T0, b: T1) -> [T0, T1]"}, values)
 }
 
-// A polymorphic function with a parameter-only variable: the second param is
-// never used, so its variable occurs only negatively and coalesces to `unknown`
-// (single-polarity elimination), while the first param stays a type parameter.
-// Per-call instantiation keeps k(1, "z") and k("s", true) at distinct types.
+// A polymorphic function with a parameter the body never reads. The second
+// parameter's variable occurs only negatively, and it still becomes a type
+// parameter, since the parameter's type is the caller's to pick. Per-call
+// instantiation keeps k(1, "z") and k("s", true) at distinct types.
 func TestInferModulePolymorphicWithParameterOnlyVar(t *testing.T) {
 	values, _, errs := inferSource(t, `
 		val k = fn (x, y) { return x }
@@ -120,17 +121,87 @@ func TestInferModulePolymorphicWithParameterOnlyVar(t *testing.T) {
 	`)
 	require.Empty(t, errs)
 	require.Equal(t, map[string]string{
-		"k": "fn <T0>(x: T0, y: unknown) -> T0",
+		"k": "fn <T0, T1>(x: T0, y: T1) -> T0",
 		"a": "1",
 		"b": `"s"`,
 	}, values)
 }
 
+// TestInferParamGeneralization covers when a parameter's variable becomes a type
+// parameter and which bound its binder carries.
+func TestInferParamGeneralization(t *testing.T) {
+	const fstNum = "fn fstNum<A: number, B: number>(a: A, b: B) -> A { return a }\n"
+	tests := []struct {
+		name string
+		src  string
+		want string
+	}{
+		{
+			name: "a parameter the body never reads",
+			src:  "fn f(a, b) { return b }",
+			want: "fn <T0, T1>(a: T0, b: T1) -> T1",
+		},
+		{
+			name: "a parameter passed to a bounded type parameter",
+			src:  fstNum + "fn f(b) { return fstNum(1, b) }",
+			want: "fn <T0: number>(b: T0) -> 1",
+		},
+		{
+			name: "a bound reaches a parameter the return also holds",
+			src:  fstNum + "fn f(a, b) { return fstNum(a, b) }",
+			want: "fn <T0: number, T1: number>(a: T0, b: T1) -> T0",
+		},
+		{
+			name: "a concrete bound on a parameter the return holds renders on its binder",
+			src:  "declare fn g(n: number) -> number\nfn f(x) {\n\tg(x)\n\treturn x\n}",
+			want: "fn <T0: number>(x: T0) -> T0",
+		},
+		{
+			name: "a concrete bound inlines into the parameter",
+			src:  "fn f(a) { return a + 1 }",
+			want: "fn (a: number) -> number",
+		},
+		{
+			name: "a bounded type parameter's bound reaches a field",
+			src:  fstNum + "fn f(o) { return fstNum(1, o.x) }",
+			want: "fn (o: {x: number}) -> 1",
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			values, _, errs := inferSource(t, tt.src)
+			require.Empty(t, errs)
+			require.Equal(t, tt.want, values["f"])
+		})
+	}
+}
+
+// TestInferOverloadArmGeneralizesAnUnreadParam asserts that an overload arm keeps
+// a parameter its body never reads as a type parameter. Each arm generalizes on its
+// own, from a scheme body that is the arm's signature itself.
+func TestInferOverloadArmGeneralizesAnUnreadParam(t *testing.T) {
+	module := parseModuleFiles(t, map[string]string{"input.esc": `
+		fn f(x: number) -> number { return x }
+		fn f(x: string, y) -> string { return x }
+	`})
+	c := newTestChecker()
+	scope := c.preludeScope().Child()
+	c.inferDepGraph(scope, 0, module, dep_graph.BuildDepGraph(module))
+	require.Empty(t, c.errs)
+
+	b, ok := scope.values["f"]
+	require.True(t, ok)
+	require.Len(t, b.Schemes, 2)
+	require.Equal(t, "fn (x: number) -> number", renderScheme(b.Schemes[0]))
+	require.Equal(t, "fn <T0>(x: string, y: T0) -> string", renderScheme(b.Schemes[1]))
+}
+
 // A recursive group generalizes without looping (the coalesce seen-guard, shipped
 // in M2 PR-5, keeps the cyclic var↔var bound graph total under generalization too).
-// The ungrounded mutual recursion bottoms out: each param is unused (parameter-only
-// ⇒ unknown) and each return is an ungrounded recursive position (⇒ never). The
-// real contract is that inference TERMINATES rather than hangs.
+// The ungrounded mutual recursion bottoms out. Each parameter is only passed to the
+// other function, so it becomes a type parameter, and each return is an ungrounded
+// recursive position, so it is `never`. The real contract is that inference
+// TERMINATES rather than hangs.
 func TestInferModuleRecursiveGroupGeneralizesWithoutLooping(t *testing.T) {
 	values, _, errs := inferSource(t, `
 		fn ping(n) { return pong(n) }
@@ -138,7 +209,7 @@ func TestInferModuleRecursiveGroupGeneralizesWithoutLooping(t *testing.T) {
 	`)
 	require.Empty(t, errs)
 	require.Equal(t, map[string]string{
-		"ping": "fn (n: unknown) -> never",
-		"pong": "fn (n: unknown) -> never",
+		"ping": "fn <T0>(n: T0) -> never",
+		"pong": "fn <T0>(n: T0) -> never",
 	}, values)
 }

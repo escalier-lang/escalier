@@ -806,6 +806,40 @@ func TestPrintSchemeParamsLeakAnchor(t *testing.T) {
 	require.Equal(t, "fn <T0>(x: T0) -> [T0, t99]", got)
 }
 
+// TestPrintSchemeGeneratedBinderBounds asserts how a generated binder renders several
+// upper bounds. A bound that binds more loosely than `&` is parenthesized, so the
+// binder keeps the meet of its bounds.
+func TestPrintSchemeGeneratedBinderBounds(t *testing.T) {
+	num := &PrimType{Prim: NumPrim}
+	str := &PrimType{Prim: StrPrim}
+	boolean := &PrimType{Prim: BoolPrim}
+	tests := []struct {
+		name   string
+		bounds []Type
+		want   string
+	}{
+		{"one union bound", []Type{&UnionType{Types: []Type{num, str}}}, "fn <T0: number | string>(x: T0) -> T0"},
+		{
+			"a union beside another bound",
+			[]Type{&UnionType{Types: []Type{num, str}}, boolean},
+			"fn <T0: (number | string) & boolean>(x: T0) -> T0",
+		},
+		{
+			"a function returning a union beside another bound",
+			[]Type{&FuncType{Ret: &UnionType{Types: []Type{num, str}}}, boolean},
+			"fn <T0: (fn () -> number | string) & boolean>(x: T0) -> T0",
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			param := &TypeVarType{ID: 1, Level: 2, UpperBounds: tt.bounds}
+			ty := &FuncType{Params: []*FuncParam{identP("x", param)}, Ret: param}
+			got := PrintAsSchemeWith(ty, func(v *TypeVarType) bool { return v.Level > 1 }, nil, nil, nil)
+			require.Equal(t, tt.want, got)
+		})
+	}
+}
+
 // A class, alias, or enum keeps its type parameters outside the type it binds, so
 // PrintAsSchemeWith renders them under their source names only when the caller passes them as
 // declared. The cases below build the shape a class VALUE binding takes: an object holding
