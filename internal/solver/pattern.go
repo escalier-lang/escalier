@@ -550,9 +550,14 @@ func (c *checker) tupleRestType(lvl int, node ast.Node, scrutinee soltype.Type, 
 	return suffix, suffix
 }
 
-// restTupleShape picks the tuple a rest reads its suffix out of: concreteTup at a nested
-// level, scrutTup at a top-level destructuring. Both are nil when the initializer
-// references another module-level binding, whose variable is coalesced to its bound shape.
+// restTupleShape picks the tuple a rest reads its suffix out of. It takes concreteTup at a
+// nested level and scrutTup at a top-level destructuring. Otherwise it grounds the scrutinee,
+// then the scrutinee coalesced to the shape its bounds have fixed, through concreteTupleShape,
+// so a union of tuples of one arity reads as their elementwise union.
+//
+// Both shapes are nil when the initializer references another module-level binding, whose
+// variable is coalesced to its bound shape. They are also nil for a match arm reached as a
+// join, which walkFallthrough types without the tuple test its paths passed.
 func (c *checker) restTupleShape(scrutinee soltype.Type, scrutTup, concreteTup *soltype.TupleType) (*soltype.TupleType, bool) {
 	if concreteTup != nil {
 		return concreteTup, true
@@ -560,10 +565,16 @@ func (c *checker) restTupleShape(scrutinee soltype.Type, scrutTup, concreteTup *
 	if scrutTup != nil {
 		return scrutTup, true
 	}
+	if tup := c.concreteTupleShape(scrutinee); tup != nil {
+		return tup, true
+	}
 	if _, isVar := scrutinee.(*soltype.TypeVarType); !isVar {
 		return nil, false
 	}
-	return c.groundedTuple(groundedCarrier(scrutinee))
+	if tup := c.concreteTupleShape(groundedCarrier(scrutinee)); tup != nil {
+		return tup, true
+	}
+	return nil, false
 }
 
 // concreteTupleShape resolves the statically known tuple a destructured leaf reads its
