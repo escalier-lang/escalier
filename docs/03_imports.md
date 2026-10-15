@@ -80,6 +80,10 @@ val d: date.Date = date.Date()   // construct — no `new` keyword
 val start = date.Date.now()      // a class static
 ```
 
+That is how an import reaches a class. While the [ambient builtins](#ambient-builtins)
+are on, `Date()` and `Date.now()` also resolve with no import. A package that turns
+them off reaches the class only through the import, as `date.Date`.
+
 Every export is a member of that one binding, whatever kind it is. A class, a
 function, a value, a type, and a nested namespace are all read the same way, so
 nothing about a package's contents changes how you name a thing inside it.
@@ -178,6 +182,12 @@ The compiler binds the exports of every `std:*` package, plus `web:core` and
 and `fetch` all resolve with no import statement. An `@js` path decides where a
 name binds, so `@js("Math.clz32")` puts `clz32` in an ambient `Math`. A module's
 own declaration and a file's import both shadow an ambient name.
+
+A builtin class binds the same way, so `Date()` and `Date.now()` need no import.
+Importing its package still binds the package as a namespace, so after
+`import "std:date"` the class is also `date.Date`, as
+[A class is reached through its package](#a-class-is-reached-through-its-package)
+describes.
 
 A package turns the ambient names off in its `package.json`:
 
