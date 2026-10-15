@@ -171,7 +171,7 @@ func TestCommittedCollectionsAreCovariantAndMutOnesAreNot(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
-			res := InferModuleAgainstStdlib(parseModule(t, tt.src), committedTree)
+			res := InferModuleAgainstStdlib(parseModule(t, tt.src), committedTree, Options{})
 			if len(tt.want) == 0 {
 				require.Empty(t, errorMessagesOf(res.Errors))
 				return
@@ -236,7 +236,7 @@ func TestCommittedReadersWidenTheBinder(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
-			res := InferModuleAgainstStdlib(parseModule(t, tt.src), committedTree)
+			res := InferModuleAgainstStdlib(parseModule(t, tt.src), committedTree, Options{})
 			require.Empty(t, errorMessagesOf(res.Errors))
 			require.Equal(t, tt.want, soltype.Print(inferredValueType(t, res.Scope, "got")))
 		})
@@ -310,7 +310,7 @@ func TestIterationCallbacksBorrowTheReceiver(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
-			res := InferModuleAgainstStdlib(parseModule(t, tt.src), committedTree)
+			res := InferModuleAgainstStdlib(parseModule(t, tt.src), committedTree, Options{})
 			if len(tt.want) == 0 {
 				require.Empty(t, errorMessagesOf(res.Errors))
 				return
@@ -522,7 +522,7 @@ func TestPromiseCombinatorsAcceptAnArrayLiteral(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
-			res := InferModuleAgainstStdlib(parseModule(t, tt.src), committedTree)
+			res := InferModuleAgainstStdlib(parseModule(t, tt.src), committedTree, Options{})
 			require.Empty(t, errorMessagesOf(res.Errors))
 		})
 	}

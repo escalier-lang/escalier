@@ -268,7 +268,7 @@ func TestPrimitiveMemberMissingRelatedSpan(t *testing.T) {
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
-			res := InferModuleAgainstStdlib(parseModule(t, test.src), benchTree)
+			res := InferModuleAgainstStdlib(parseModule(t, test.src), benchTree, Options{})
 			require.Len(t, res.Errors, 1)
 			require.Equal(t, test.want, msgWithSpan(t, res.Errors[0]))
 			related := []string{}

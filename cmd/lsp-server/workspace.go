@@ -76,8 +76,13 @@ func (s *Server) compilePackage() (any, error) {
 		return nil, fmt.Errorf("no source files found")
 	}
 
+	config, err := compiler.ReadPackageConfig(rootPath)
+	if err != nil {
+		return nil, fmt.Errorf("failed to read the package config: %v", err)
+	}
+
 	// Compile the entire package.
-	output := compiler.CompilePackage(sources)
+	output := compiler.CompilePackage(sources, config)
 
 	if len(output.ParseErrors) > 0 {
 		errorsJSON, err := json.Marshal(output.ParseErrors)

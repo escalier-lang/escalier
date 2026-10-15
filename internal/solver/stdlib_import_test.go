@@ -532,11 +532,23 @@ func TestCoreImportBindsItsExportsUnprefixed(t *testing.T) {
 		require.Equal(t, "string", soltype.Print(inferredValueType(t, res.Scope, "t")))
 	})
 
-	t.Run("WithoutTheImportTheBareNameIsUnbound", func(t *testing.T) {
+	t.Run("WithoutTheImportTheAmbientScopeBindsIt", func(t *testing.T) {
 		res := inferAgainstStdlib(t, `
 			declare val e: Event
 			val t = e.type
 		`, files)
+
+		require.Empty(t, errorMessagesOf(res.Errors))
+		require.Equal(t, "string", soltype.Print(inferredValueType(t, res.Scope, "t")))
+	})
+
+	t.Run("WithoutTheImportOrTheAmbientScopeTheBareNameIsUnbound", func(t *testing.T) {
+		module := parseModule(t, `
+			declare val e: Event
+			val t = e.type
+		`)
+		source := StdlibSource(seedStdlib(t, withPreludeClasses(files)))
+		res := inferModuleWithGroups(module, source, nil, nil, Options{NoAmbientNames: true})
 
 		require.Equal(t, []string{"cannot find type `Event`"}, errorMessagesOf(res.Errors))
 	})

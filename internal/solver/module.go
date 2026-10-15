@@ -11,6 +11,14 @@ import (
 	"github.com/escalier-lang/escalier/internal/soltype"
 )
 
+// Options adjusts one inference run. The zero value is the default run.
+type Options struct {
+	// NoAmbientNames leaves the ambient scope empty, so a module reaches a builtin only
+	// through `std:prelude` or its own imports. The ambient packages still load, since
+	// a primitive's members and a regex literal's type are read from them.
+	NoAmbientNames bool
+}
+
 // InferModule builds the dep graph for a single parsed module, infers every
 // top-level declaration in dep_graph SCC order, populates Info, and returns the
 // populated module Scope, the Info side table, and any SolverErrors. The module
@@ -118,22 +126,24 @@ func PreludeKeyPrefix() string {
 // what InferModule passes, since a run over one module has no second module to
 // reach.
 func InferModuleWithSource(module *ast.Module, source ModuleSource) *ModuleResult {
-	return inferModuleWithGroups(module, source, nil, nil)
+	return inferModuleWithGroups(module, source, nil, nil, Options{})
 }
 
 // inferModuleWithGroups is InferModuleWithSource with the two things a stdlib
 // directory adds: the groups that load together, and a reader for a whole
-// group. Both are nil for a run whose packages each load alone.
+// group. Both are nil for a run whose packages each load alone. opts adjusts the run.
 func inferModuleWithGroups(
 	module *ast.Module,
 	source ModuleSource,
 	groupSource GroupSource,
 	groups PackageGroups,
+	opts Options,
 ) *ModuleResult {
 	c := newChecker()
 	c.source = source
 	c.groupSource = groupSource
 	c.groups = groups
+	c.noAmbientNames = opts.NoAmbientNames
 	// The prelude package is loaded before anything is walked, so no rule reaches
 	// for a handle from inside a speculation trial, where a load would publish a
 	// package whose bounds a discard then truncates.

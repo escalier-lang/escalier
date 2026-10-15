@@ -8,6 +8,7 @@ import (
 	"github.com/escalier-lang/escalier/internal/checker"
 	"github.com/escalier-lang/escalier/internal/codegen"
 	"github.com/escalier-lang/escalier/internal/dep_graph"
+	"github.com/escalier-lang/escalier/internal/solver"
 )
 
 // Diagnostic is one type error, as everything downstream of the compiler reads it:
@@ -29,10 +30,11 @@ const CheckerEnvVar = "ESCALIER_CHECKER"
 // CheckerSolver is the CheckerEnvVar value that selects internal/solver.
 const CheckerSolver = "solver"
 
-// selectBackend returns the checker CheckerEnvVar names.
-func selectBackend() backend {
+// selectBackend returns the checker CheckerEnvVar names, configured by config. The old
+// checker reads none of config.
+func selectBackend(config PackageConfig) backend {
 	if os.Getenv(CheckerEnvVar) == CheckerSolver {
-		return solverBackend{}
+		return solverBackend{options: solver.Options{NoAmbientNames: config.NoAmbientNames}}
 	}
 	return checkerBackend{}
 }

@@ -226,6 +226,8 @@ type checker struct {
 	// shadows both. A loaded package parents its scope at the prelude and never sees
 	// this one. It is nil until a run asks for it.
 	ambient *Scope
+	// noAmbientNames is Options.NoAmbientNames for this run.
+	noAmbientNames bool
 	// regexpReported is set once the run has reported that it loaded no usable `RegExp`,
 	// so a second regex literal does not report it again.
 	regexpReported bool

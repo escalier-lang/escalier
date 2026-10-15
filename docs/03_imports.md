@@ -10,6 +10,10 @@ Two things follow. `globalThis` does not exist — it was the union of every
 ambient name, and there is nothing left to take its union over. Neither does
 `eval`.
 
+Until that model is complete, the compiler binds the builtins ambiently as a
+compatibility surface. [Ambient builtins](#ambient-builtins) describes it and
+how a package turns it off.
+
 ## The two kinds of import
 
 ```escalier
@@ -75,6 +79,10 @@ import "std:date"
 val d: date.Date = date.Date()   // construct — no `new` keyword
 val start = date.Date.now()      // a class static
 ```
+
+That is how an import reaches a class. While the [ambient builtins](#ambient-builtins)
+are on, `Date()` and `Date.now()` also resolve with no import. A package that turns
+them off reaches the class only through the import, as `date.Date`.
 
 Every export is a member of that one binding, whatever kind it is. A class, a
 function, a value, a type, and a nested namespace are all read the same way, so
@@ -166,6 +174,35 @@ in one of two modes.
 Shape-loading is per-file and additive, and it never satisfies an explicit
 reference. `"ab".toUpperCase()` works without an import; `String.raw(…)` needs
 `import "std:string"`.
+
+### Ambient builtins
+
+The compiler binds the exports of every `std:*` package, plus `web:core` and
+`web:fetch`, without an import. `Math.PI`, `console.log`, `parseInt`, `Error`,
+and `fetch` all resolve with no import statement. An `@js` path decides where a
+name binds, so `@js("Math.clz32")` puts `clz32` in an ambient `Math`. A module's
+own declaration and a file's import both shadow an ambient name.
+
+A builtin class binds the same way, so `Date()` and `Date.now()` need no import.
+Importing its package still binds the package as a namespace, so after
+`import "std:date"` the class is also `date.Date`, as
+[A class is reached through its package](#a-class-is-reached-through-its-package)
+describes.
+
+A package turns the ambient names off in its `package.json`:
+
+```json
+{
+  "name": "my-lib",
+  "escalier": { "ambient": false }
+}
+```
+
+Every file in that package then sees only `std:prelude` and its own imports, so
+`Math.PI` is spelled `import "std:math"` and `math.PI`. Shape-loading is not
+affected, so `"ab".toUpperCase()` and a regex literal still type without an import.
+The setting applies to the new checker, which `ESCALIER_CHECKER=solver` selects.
+The default checker binds the builtins ambiently either way.
 
 ### The Web surface
 
@@ -277,9 +314,8 @@ packages are not.
 
 ## Shadowing
 
-A local declaration shadows an imported one. Since there are no ambient globals,
-there is nothing to shadow implicitly, and no `globalThis` escape hatch for
-reaching a shadowed name.
+A local declaration shadows an imported one, and both shadow an ambient builtin.
+There is no `globalThis` escape hatch for reaching a shadowed name.
 
 Two imports whose last segments collide need one of them renamed. The syntax is
 not settled; the shape under consideration is a trailing `as`:

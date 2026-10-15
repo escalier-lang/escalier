@@ -58,10 +58,10 @@ func BenchmarkStdlibClosureLoad(b *testing.B) {
 
 		b.Run(tt.name+"/Warm", func(b *testing.B) {
 			// Prime the parse cache, so the loop measures inference alone.
-			InferModuleAgainstStdlib(module, benchTree)
+			InferModuleAgainstStdlib(module, benchTree, Options{})
 			b.ResetTimer()
 			for range b.N {
-				InferModuleAgainstStdlib(module, benchTree)
+				InferModuleAgainstStdlib(module, benchTree, Options{})
 			}
 		})
 
@@ -71,7 +71,7 @@ func BenchmarkStdlibClosureLoad(b *testing.B) {
 				restore := emptyTheParseCache()
 				b.StartTimer()
 
-				InferModuleAgainstStdlib(module, benchTree)
+				InferModuleAgainstStdlib(module, benchTree, Options{})
 
 				b.StopTimer()
 				restore()

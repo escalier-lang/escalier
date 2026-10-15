@@ -147,9 +147,9 @@ func TestEachDeclarationShapeEmitsTheSameDefinitions(t *testing.T) {
 	for name, src := range declarationShapes {
 		t.Run(name, func(t *testing.T) {
 			useChecker(t)
-			checkerOut := CompilePackage(libSources(src))
+			checkerOut := CompilePackage(libSources(src), PackageConfig{})
 			useSolver(t)
-			solverOut := CompilePackage(libSources(src))
+			solverOut := CompilePackage(libSources(src), PackageConfig{})
 			want := checkerOut.CompUnits["lib/index"].DTS
 			got := solverOut.CompUnits["lib/index"].DTS
 

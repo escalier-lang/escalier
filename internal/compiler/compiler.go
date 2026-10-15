@@ -70,8 +70,8 @@ type CheckLibOutput struct {
 	TypeErrors  []Diagnostic
 }
 
-// CheckLib parses and type-checks lib/ source files without codegen.
-func CheckLib(ctx context.Context, libSources []*ast.Source) CheckLibOutput {
+// CheckLib parses and type-checks lib/ source files without codegen, as config says.
+func CheckLib(ctx context.Context, libSources []*ast.Source, config PackageConfig) CheckLibOutput {
 	if len(libSources) == 0 {
 		return CheckLibOutput{
 			FileScopes:  map[int]*checker.Scope{},
@@ -81,7 +81,7 @@ func CheckLib(ctx context.Context, libSources []*ast.Source) CheckLibOutput {
 	}
 
 	module, parseErrors := parser.ParseLibFiles(ctx, libSources)
-	lib := selectBackend().checkLib(ctx, module)
+	lib := selectBackend(config).checkLib(ctx, module)
 
 	return CheckLibOutput{
 		Module:      module,
@@ -94,8 +94,8 @@ func CheckLib(ctx context.Context, libSources []*ast.Source) CheckLibOutput {
 }
 
 // CheckPackage performs parsing and type-checking for a package (lib/ + bin/)
-// without codegen. Returns ASTs, scopes, and errors needed by the LSP.
-func CheckPackage(sources []*ast.Source) CheckOutput {
+// without codegen, as config says. Returns ASTs, scopes, and errors needed by the LSP.
+func CheckPackage(sources []*ast.Source, config PackageConfig) CheckOutput {
 	libSources := []*ast.Source{}
 	for _, src := range sources {
 		if strings.HasPrefix(src.Path, "lib/") {
@@ -106,7 +106,7 @@ func CheckPackage(sources []*ast.Source) CheckOutput {
 	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
 	defer cancel()
 
-	libOutput := CheckLib(ctx, libSources)
+	libOutput := CheckLib(ctx, libSources, config)
 
 	sourcesByID := make(map[int]*ast.Source, len(sources))
 	for _, src := range sources {
@@ -130,7 +130,7 @@ func CheckPackage(sources []*ast.Source) CheckOutput {
 		if !strings.HasPrefix(src.Path, "bin/") {
 			continue
 		}
-		scriptOutput := CheckBinScript(ctx, libOutput.LibScope, src)
+		scriptOutput := CheckBinScript(ctx, libOutput.LibScope, src, config)
 		output.Scripts[src.ID] = scriptOutput.Script
 		output.ScriptScopes[src.ID] = scriptOutput.Scope
 		output.ParseErrors = append(output.ParseErrors, scriptOutput.ParseErrors...)
@@ -149,13 +149,13 @@ type BinScriptOutput struct {
 }
 
 // CheckBinScript parses and type-checks a single bin/ script with the given
-// library surface in scope. If lib is nil, the script is checked with only the
-// prelude in scope.
-func CheckBinScript(ctx context.Context, lib LibScope, src *ast.Source) BinScriptOutput {
+// library surface in scope. If lib is nil, the script is checked as config says with only
+// the prelude and the ambient builtins in scope.
+func CheckBinScript(ctx context.Context, lib LibScope, src *ast.Source, config PackageConfig) BinScriptOutput {
 	p := parser.NewParser(ctx, src)
 	script, parseErrors := p.ParseScript()
 
-	result := checkScriptIn(ctx, selectBackend(), lib, script)
+	result := checkScriptIn(ctx, selectBackend(config), lib, script)
 
 	return BinScriptOutput{
 		Script:      script,
@@ -171,7 +171,7 @@ func Compile(source *ast.Source) CompilerOutput {
 	p := parser.NewParser(ctx, source)
 	inMod, parseErrors := p.ParseScript()
 
-	result := selectBackend().checkScript(ctx, inMod)
+	result := selectBackend(PackageConfig{}).checkScript(ctx, inMod)
 	typeErrors := result.diagnostics
 	if result.codegenGap != nil {
 		typeErrors = append(typeErrors, result.codegenGap)
@@ -218,7 +218,9 @@ func Compile(source *ast.Source) CompilerOutput {
 	}
 }
 
-func CompilePackage(sources []*ast.Source) CompilerOutput {
+// CompilePackage compiles a package's lib/ and bin/ sources, checking them as config
+// says. ReadPackageConfig reads config from the package's package.json.
+func CompilePackage(sources []*ast.Source, config PackageConfig) CompilerOutput {
 	// Compile everything in libs/ into a single .js and .d.ts file.
 	libSources := []*ast.Source{}
 	for _, src := range sources {
@@ -230,7 +232,7 @@ func CompilePackage(sources []*ast.Source) CompilerOutput {
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 
-	selected := selectBackend()
+	selected := selectBackend(config)
 
 	output := CompilerOutput{
 		ParseErrors: []*parser.Error{},
@@ -301,7 +303,7 @@ func CompilePackage(sources []*ast.Source) CompilerOutput {
 	}
 
 	for _, src := range binSources {
-		scriptOutput := CompileScript(libScope, src)
+		scriptOutput := compileScript(selected, libScope, src)
 		output.ParseErrors = append(output.ParseErrors, scriptOutput.ParseErrors...)
 		output.TypeErrors = append(output.TypeErrors, scriptOutput.TypeErrors...)
 
@@ -358,12 +360,17 @@ func collectUsedLibSymbols(script *ast.Script, lib LibScope) []string {
 // TODO: Update this so that we inject an `import` statement at the start of
 // each script source to import the `lib` namespace.
 func CompileScript(lib LibScope, source *ast.Source) CompilerOutput {
+	return compileScript(selectBackend(PackageConfig{}), lib, source)
+}
+
+// compileScript is CompileScript with the backend that checks a script when lib is nil.
+func compileScript(b backend, lib LibScope, source *ast.Source) CompilerOutput {
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 	p := parser.NewParser(ctx, source)
 	inMod, parseErrors := p.ParseScript()
 
-	result := checkScriptIn(ctx, selectBackend(), lib, inMod)
+	result := checkScriptIn(ctx, b, lib, inMod)
 	typeErrors := result.diagnostics
 	if result.codegenGap != nil {
 		typeErrors = append(typeErrors, result.codegenGap)

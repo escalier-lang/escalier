@@ -5,7 +5,7 @@ export async fn fetchData(url: string) {
 
 export async fn fetchWithAwait(url: string) -> Promise<string, string> {
     val data = await fetch(url)
-    return data
+    return await data.text()
 }
 
 // Async function with error handling

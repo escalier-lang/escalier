@@ -214,8 +214,16 @@ func build(stdout io.Writer, stderr io.Writer, pkgs []string) bool {
 			continue
 		}
 
+		config, err := compiler.ReadPackageConfig(".")
+		if err != nil {
+			fmt.Fprintf(stderr, "failed to read the package config for %s: %v\n", pkg, err)
+			_ = os.Chdir(cwd)
+			allOK = false
+			continue
+		}
+
 		sources, idToSource, unreadable := loadSources(stderr, files)
-		output := compiler.CompilePackage(sources)
+		output := compiler.CompilePackage(sources, config)
 
 		printErrors(stderr, output, idToSource)
 
