@@ -302,7 +302,7 @@ func TestInferScriptTypeAndFuncDecls(t *testing.T) {
 					x.v = n
 				}
 			`,
-			wantErrs: []string{"cannot borrow 'x' as mutable while it is borrowed as immutable"},
+			wantErrs: []string{"this call may run 'f', which writes 'x' while it is borrowed as immutable"},
 		},
 		{
 			// The parameter f shadows the function's own name, so `&f` borrows the parameter.
@@ -573,7 +573,7 @@ func TestScriptFnCaptureParity(t *testing.T) {
 				f()
 				readRead(a, a)
 			`,
-			want: []string{"10:5-10:6: cannot borrow 'x' as mutable while it is borrowed as immutable"},
+			want: []string{"10:5-10:6: this call may run 'f', which writes 'x' while it is borrowed as immutable"},
 		},
 		// Calling f reads x, so a call after x moves is a use after the move.
 		"CallAfterMovingTheCapture": {

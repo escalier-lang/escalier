@@ -84,9 +84,9 @@ type BorrowAliasError struct {
 	// the one the error is blamed on, since it is where the program first holds two views.
 	FirstMut  bool
 	SecondMut bool
-	// FirstVia and SecondVia name the module-level binding whose stored closure a call may run,
-	// when the matching borrow is the write that closure makes during the call. They are empty
-	// for a borrow the program writes.
+	// FirstVia and SecondVia name the closure a call may run, when the matching borrow is that
+	// closure's access to what it captures during the call. They are empty for a borrow the
+	// program writes.
 	FirstVia  string
 	SecondVia string
 	node      ast.Node
@@ -105,10 +105,16 @@ func (e *BorrowAliasError) Message() string {
 		held = fmt.Sprintf("'%s' is", e.FirstPlace)
 	}
 	if e.SecondVia != "" {
-		return fmt.Sprintf("this call may run '%s', which writes '%s' while %s borrowed as immutable", e.SecondVia, e.Place, held)
+		if e.SecondMut {
+			return fmt.Sprintf("this call may run '%s', which writes '%s' while %s borrowed as immutable", e.SecondVia, e.Place, held)
+		}
+		return fmt.Sprintf("this call may run '%s', which reads '%s' while %s borrowed as mutable", e.SecondVia, e.Place, held)
 	}
 	if e.FirstVia != "" {
-		return fmt.Sprintf("cannot borrow '%s' as immutable in a call that may run '%s', which writes it", e.Place, e.FirstVia)
+		if e.FirstMut {
+			return fmt.Sprintf("cannot borrow '%s' as immutable in a call that may run '%s', which writes it", e.Place, e.FirstVia)
+		}
+		return fmt.Sprintf("cannot borrow '%s' as mutable in a call that may run '%s', which reads it", e.Place, e.FirstVia)
 	}
 	if e.SecondMut {
 		return fmt.Sprintf("cannot borrow '%s' as mutable while %s borrowed as immutable", e.Place, held)
@@ -202,8 +208,10 @@ type loan struct {
 	// An async or generator body hands control back to the caller at each `await` or `yield`
 	// while the frame still runs, so there the loan lasts to the end of the function.
 	callerOwned bool
-	// via names the module-level binding whose stored closure a call may run, for a loan
-	// standing for the write that closure makes during the call. It is empty otherwise.
+	// via names the closure a call may run, for a loan standing for that closure's access to
+	// what it captures during the call. It is the module-level binding a stored closure is
+	// reached through, or the local binding a closure is called through or passed as. It is
+	// empty for a borrow the program writes.
 	via string
 	// endSeq is the sequence at which a reassignment of the holder ended this loan, and 0 while
 	// it still holds. The loan stays in the list so a read walked BEFORE that point is still
@@ -412,7 +420,7 @@ func (c *checker) recordCaptureLoans(scope *Scope, closure *ast.FuncExpr) {
 		return
 	}
 	for _, local := range captured {
-		c.takeCaptureLoan(local, ref, closure)
+		c.takeCaptureLoan(local, ref, closure, "")
 	}
 }
 
@@ -439,7 +447,7 @@ func (c *checker) useClosureCaptures(expr ast.Expr, ref liveness.StmtRef) {
 	// Sorting keeps the order of the loans, and so of any reports, the same from run to run.
 	slices.Sort(roots)
 	for _, root := range roots {
-		c.takeCaptureLoan(capturedLocal{root: root, mut: writes[root]}, ref, e)
+		c.takeCaptureLoan(capturedLocal{root: root, mut: writes[root]}, ref, e, e.Name)
 		c.fn.useSites = append(c.fn.useSites, moveUse{place: movePlace{root: root}, ref: ref, node: e, loanSeqAt: c.fn.loanSeq + 1})
 	}
 }
@@ -447,14 +455,16 @@ func (c *checker) useClosureCaptures(expr ast.Expr, ref liveness.StmtRef) {
 // takeCaptureLoan records a loan of the whole captured local for the statement at `ref`,
 // after reporting any conflict with a loan already live there. The loan has no holder, so it
 // lasts for that statement alone. It is mutable when the closure writes the capture. `node`
-// is what a conflict report blames.
-func (c *checker) takeCaptureLoan(local capturedLocal, ref liveness.StmtRef, node ast.Node) {
+// is what a conflict report blames, and `via` names the closure for it, or is empty when the
+// capture is not reached through a call.
+func (c *checker) takeCaptureLoan(local capturedLocal, ref liveness.StmtRef, node ast.Node, via string) {
 	fresh := loan{
 		place: movePlace{root: local.root},
 		mut:   local.mut,
 		ref:   ref,
 		node:  node,
 		seq:   c.nextLoanSeq(),
+		via:   via,
 	}
 	c.checkAgainstHeldLoans(fresh)
 	c.fn.loans = append(c.fn.loans, fresh)
