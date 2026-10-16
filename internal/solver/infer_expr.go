@@ -75,22 +75,25 @@ func (c *checker) inferIdent(scope *Scope, lvl int, e *ast.IdentExpr) soltype.Ty
 	return c.demandValue(c.resolveIdentPath(scope, lvl, e, false, false), e)
 }
 
-// pathResult is the sum returned by resolvePath: a path expression resolves to
-// EITHER a value (its instantiated type, in value) OR a namespace (ns), or it
-// failed (err, with the diagnostic already reported, the caller should recover).
-// At most one of value/ns is set; err is set instead when resolution reported an
-// error. The value arm may itself hold the ErrorType recovery sentinel — that is a
-// value, not an err — so a malformed-but-already-reported leaf does not double-report.
-//
-// shortCircuits marks a value read through an optional link whose receiver may be `null`
-// or `undefined`. An optional link is a member, index, or call written `?.`, `?[`, or `?(`.
-// When the receiver is nullish, such a link stops the whole chain and the chain yields
-// `undefined`, so `a?.b.c` never reads `.c` off a missing `a`. value leaves that `undefined` out, so each later link of the chain reads the
-// defined value. chainValue adds it back once the outermost link is resolved.
+// pathResult is what resolvePath returns. A path expression resolves to a value or to a
+// namespace, or its resolution failed. At most one of value, ns, and err is set.
 type pathResult struct {
-	value         soltype.Type
-	ns            *Namespace
-	err           bool
+	// value is the instantiated type of a path that resolves to a value. It may hold the
+	// ErrorType recovery sentinel, which is still a value rather than an err, so a leaf
+	// whose error was already reported is not reported again.
+	value soltype.Type
+	// ns is the namespace a path resolves to, as `Foo` does in `Foo.bar`.
+	ns *Namespace
+	// err marks a resolution that failed. Its diagnostic is already reported, and the
+	// caller recovers.
+	err bool
+	// shortCircuits marks a value read through an optional link whose receiver may be
+	// `null` or `undefined`. An optional link is a member, index, or call written `?.`,
+	// `?[`, or `?(`. When the receiver is nullish, such a link stops the whole chain and
+	// the chain yields `undefined`, so `a?.b.c` never reads `.c` off a missing `a`.
+	//
+	// value leaves that `undefined` out, so each later link of the chain reads the defined
+	// value. chainValue adds it back once the outermost link is resolved.
 	shortCircuits bool
 }
 
