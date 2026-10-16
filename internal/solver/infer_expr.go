@@ -2589,9 +2589,9 @@ func (c *checker) inferMemberAssign(scope *Scope, lvl int, e *ast.BinaryExpr, m 
 	undefinedT := soltype.Type(&soltype.UndefinedType{})
 	if hasOptionalLink(m) {
 		// A target holding an optional link, such as `recv?.prop = …` or `a?.b.c = …`, is not a
-		// valid JavaScript assignment target. Report the whole target as unsupported
-		// rather than typing it.
-		c.reportUnsupportedFeature(e.Left, "assignment to a member or index")
+		// valid JavaScript assignment target, so the whole target is reported rather than
+		// typed.
+		c.report(&OptionalChainAssignmentError{Target: e.Left})
 		return undefinedT
 	}
 	if m.Prop == nil || m.Prop.Name == "" {
@@ -2732,7 +2732,7 @@ func (c *checker) inferIndexAssign(scope *Scope, lvl int, e *ast.BinaryExpr, ix 
 	if hasOptionalLink(ix) {
 		// A target holding an optional link, such as `recv?[k] = …`, is not a valid JavaScript
 		// assignment target, the same as the member form.
-		c.reportUnsupportedFeature(e.Left, "assignment to a member or index")
+		c.report(&OptionalChainAssignmentError{Target: e.Left})
 		return &soltype.UndefinedType{}
 	}
 	// JavaScript evaluates the receiver before the key.

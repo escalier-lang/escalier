@@ -153,14 +153,14 @@ val x = "hi"`
 	requireBlame(t, src, errs, "2:1-2:13: Duplicate declaration: x", `val x = "hi"`, "val x = 5")
 }
 
-// An unsupported feature blames the node written in the source, here the assignment
-// target `o?.a`, and reports the feature name.
-func TestBlameUnsupportedFeatureOptionalChainTarget(t *testing.T) {
+// An assignment through an optional chain blames the whole target `o?.a` and names the
+// optional chain as the reason.
+func TestBlameOptionalChainAssignmentTarget(t *testing.T) {
 	src := `fn f(o: mut {a: number}) {
     o?.a = 6
 }`
 	_, _, errs := inferSource(t, src)
-	requireBlame(t, src, errs, "2:5-2:9: Unsupported: assignment to a member or index", "o?.a")
+	requireBlame(t, src, errs, "2:5-2:9: cannot assign through an optional chain, since `?.` may short-circuit and leave no place to write", "o?.a")
 }
 
 // --- Site-fallback fixtures ---

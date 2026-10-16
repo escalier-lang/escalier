@@ -963,13 +963,20 @@ type UnsupportedNodeError struct {
 
 // UnsupportedFeatureError is the sibling of UnsupportedNodeError for the case
 // where the node kind IS supported but a feature of it is not — e.g. a generic
-// function (the FuncExpr is fine, type params are M3) or optional chaining (the
-// MemberExpr is fine, recv?.foo is M6). The node carries the blame span; Feature
+// function (the FuncExpr is fine, type params are M3) or a borrow of an optional
+// chain (the UnaryExpr is fine, &a?.b is not). The node carries the blame span; Feature
 // names what is unsupported (not derivable from astKind, which would name the
 // supported parent).
 type UnsupportedFeatureError struct {
 	Node    ast.Node
 	Feature string
+}
+
+// OptionalChainAssignmentError fires when an assignment's target holds an optional link,
+// as in `o?.a = 6` or `a?.b.c = 5`. JavaScript rejects such a target, since the chain may
+// short-circuit and leave no place to write. Target is the whole left-hand side.
+type OptionalChainAssignmentError struct {
+	Target ast.Expr
 }
 
 // RegexTypeError fires when a regex annotation cannot be a type. Reason completes the
@@ -1352,6 +1359,7 @@ func (*TooManyArgsError) isSolverError()                    {}
 func (*NotEnoughArgsError) isSolverError()                  {}
 func (*UnsupportedNodeError) isSolverError()                {}
 func (*UnsupportedFeatureError) isSolverError()             {}
+func (*OptionalChainAssignmentError) isSolverError()        {}
 func (*BodyDeclNotAllowedError) isSolverError()             {}
 func (*RegexTypeError) isSolverError()                      {}
 func (*MissingInitializerError) isSolverError()             {}
@@ -2866,6 +2874,12 @@ func (e *UnsupportedNodeError) Span() ast.Span      { return e.Node.Span() }
 func (e *UnsupportedNodeError) Related() []ast.Span { return nil }
 func (e *UnsupportedNodeError) Message() string {
 	return "Unsupported: " + astKind(e.Node)
+}
+
+func (e *OptionalChainAssignmentError) Span() ast.Span      { return e.Target.Span() }
+func (e *OptionalChainAssignmentError) Related() []ast.Span { return nil }
+func (e *OptionalChainAssignmentError) Message() string {
+	return "cannot assign through an optional chain, since `?.` may short-circuit and leave no place to write"
 }
 
 func (e *UnsupportedFeatureError) Span() ast.Span      { return e.Node.Span() }
