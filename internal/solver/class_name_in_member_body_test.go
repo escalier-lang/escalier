@@ -100,3 +100,37 @@ func TestAMemberBodyReadsItsOwnClassValue(t *testing.T) {
 		})
 	}
 }
+
+// TestAConstructorBodyReadsItsClassStatics covers a constructor body that calls a static of
+// its own class. Constructor bodies are walked before the class value reaches the class's
+// binding var, so `Foo.add` reads the static's signature off the class's static side. An
+// argument that does not fit is then reported at the argument, not at the declaration
+// whose type it carries.
+func TestAConstructorBodyReadsItsClassStatics(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name string
+		src  string
+		want []string
+	}{
+		{
+			name: "an argument that fits",
+			src: "class Foo {\n\tv: number,\n\tstatic add(a: number) -> number { return a },\n" +
+				"\tconstructor(&mut self, n: number) { self.v = Foo.add(n) },\n}",
+		},
+		{
+			name: "an argument that does not fit",
+			src: "class Foo {\n\tv: number,\n\tstatic add(a: number) -> number { return a },\n" +
+				"\tconstructor(&mut self, s: string) { self.v = Foo.add(s) },\n}",
+			want: []string{"4:55-4:56: cannot constrain string <: number"},
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			_, _, errs := inferSource(t, tt.src)
+			require.Equal(t, tt.want, messagesWithSpan(t, errs))
+		})
+	}
+}
