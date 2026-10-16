@@ -448,7 +448,14 @@ func (c *checker) useClosureCaptures(expr ast.Expr, ref liveness.StmtRef) {
 	slices.Sort(roots)
 	for _, root := range roots {
 		c.takeCaptureLoan(capturedLocal{root: root, mut: writes[root]}, ref, e, e.Name)
-		c.fn.useSites = append(c.fn.useSites, moveUse{place: movePlace{root: root}, ref: ref, node: e, loanSeqAt: c.fn.loanSeq + 1})
+		c.fn.useSites = append(c.fn.useSites, moveUse{
+			place:     movePlace{root: root},
+			ref:       ref,
+			node:      e,
+			loanSeqAt: c.fn.loanSeq + 1,
+			via:       e.Name,
+			viaReads:  !writes[root],
+		})
 	}
 }
 

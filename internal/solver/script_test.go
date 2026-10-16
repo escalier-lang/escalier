@@ -583,7 +583,7 @@ func TestScriptFnCaptureParity(t *testing.T) {
 				take(x)
 				f()
 			`,
-			want: []string{"10:5-10:6: use of moved value 'x'"},
+			want: []string{"10:5-10:6: this call may run 'f', which reads 'x' after it was moved"},
 		},
 		// f reads x only while it runs, so x can move once the last call returns.
 		"MoveAfterTheLastCall": {
