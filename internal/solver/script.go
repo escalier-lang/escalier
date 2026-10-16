@@ -216,24 +216,28 @@ func (c *checker) bindScriptFuncWithBody(scope *Scope, lvl int, s ast.Stmt, decl
 	if _, prevDecl := ownFuncDecl(scope, name); prevDecl != nil {
 		c.checkScriptOverloadWithBody(decl, prevDecl)
 	}
+
 	closure := ast.NewFuncExpr(nil, nil, nil, nil, nil, false, decl.Body, decl.Span())
 	closure.FuncSig = decl.FuncSig
 	if c.closureDecls == nil {
 		c.closureDecls = map[*ast.FuncExpr]*ast.FuncDecl{}
 	}
 	c.closureDecls[closure] = decl
+
 	// The script's rename pass gave decl's name its VarID, and every later read of the
 	// name carries that VarID. The pattern takes it so defineLocal records the closure's
 	// aliases under it.
 	pat := ast.NewIdentPat(name, false, nil, nil, decl.Name.Span())
 	pat.VarID = decl.VarID
 	vd := ast.NewVarDecl(ast.ValKind, pat, nil, closure, false, false, decl.Span())
+
 	sources := []provenance.Provenance{&ast.NodeProvenance{Node: decl}}
 	// The recursive binding carries no VarID, so the closure's capture analysis does not
 	// count the name as a capture of a script local. The closure's pre-pass gives the name a
 	// VarID of its own inside the body instead, which seedSelfCaptureEdges reads.
 	self := c.freshAt(lvl + 1)
 	scope.defineValue(name, ValueBinding{Schemes: []TypeScheme{monoScheme(self)}, Sources: sources})
+
 	// The initializer is the closure, so inferVarDecl always produces a binding.
 	b, _ := c.inferVarDecl(scope, lvl, vd, self)
 	b.Sources = sources

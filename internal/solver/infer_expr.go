@@ -2234,9 +2234,11 @@ func (c *checker) recordCallArgEffects(
 	if !hasConsumeRef {
 		return
 	}
+
 	if fn != nil {
 		c.consumeCallArgs(e, fn, consumeRef)
 	}
+
 	// Calling a closure runs its body, and a callee handed a closure may call it during the
 	// call. So the callee and each argument that names a closure access what it captures.
 	// Neither depends on the signature, so a callee whose signature is still a variable
@@ -2246,17 +2248,21 @@ func (c *checker) recordCallArgEffects(
 	for _, arg := range e.Args {
 		c.useClosureCaptures(arg, consumeRef)
 	}
+
 	if fn == nil {
 		return
 	}
+
 	// A borrow parameter takes a borrow, so the call has to write one. The receiver of a
 	// method call is not an argument and keeps auto-borrowing.
 	c.checkExplicitBorrowArgs(e, fn)
+
 	// Every argument of a call is live at once, so two that borrow overlapping data break
 	// exclusivity when the two parameters disagree about whether the data can change. This runs
 	// before the store edges are recorded, so an argument is compared against the loans that
 	// existed before the call rather than against the one its own store creates.
 	c.checkCallBorrowExclusivity(e, fn, consumeRef)
+
 	// A borrow argument the signature stores into another argument, or into a method's
 	// receiver, aliases the two for as long as the target lives. Record that edge here rather
 	// than leaving the alias invisible to the escape check and the component move.
