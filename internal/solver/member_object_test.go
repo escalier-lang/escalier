@@ -115,6 +115,32 @@ func TestMemberObject(t *testing.T) {
 			expected: `{length: number, at(&self, index: number) -> number | string | undefined, push(&mut self, item: number | string) -> number, [Symbol.iterator](&self) -> Iterator<number | string, undefined, unknown>, ...}`,
 		},
 		{
+			name: "VariadicTuple",
+			src: `
+				declare val v: [number, ...Array<string>]
+				val probe = v
+			`,
+			expected: `{length: number, at(&self, index: number) -> number | string | undefined, push(&mut self, item: number | string) -> number, [Symbol.iterator](&self) -> Iterator<number | string, undefined, unknown>, ...}`,
+		},
+		{
+			name: "Typeof",
+			src: `
+				declare val point: {x: number}
+				declare val v: typeof point
+				val probe = v
+			`,
+			expected: "{x: number}",
+		},
+		{
+			name: "UnreducedMappedType",
+			src: `
+				fn f<T>(v: {[P]: T[P] for P in keyof T}) {
+					val probe = v
+				}
+			`,
+			expected: "",
+		},
+		{
 			name: "Union",
 			src: `
 				declare val v: {a: number} | {b: string}
@@ -225,4 +251,9 @@ func TestInfoExpand(t *testing.T) {
 			require.Equal(t, tt.expected, soltype.Print(res.Info.Expand(binding.DisplayType())))
 		})
 	}
+}
+
+func TestInfoExpandOnNewInfo(t *testing.T) {
+	alias := &soltype.AliasType{Name: "Point"}
+	require.Same(t, alias, NewInfo().Expand(alias))
 }
