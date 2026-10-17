@@ -992,3 +992,16 @@ func TestTheSolverBindsAMethodReadThroughAUnion(t *testing.T) {
 	got := CompilePackage(libSources(src), PackageConfig{}).CompUnits["lib/index"].JS
 	require.Contains(t, got, "export const g = x.m.bind(x);")
 }
+
+// TestTheSolverEmitsAnObjectRestOverAUnion asserts that an object rest over a union emits
+// the union of each member's leftover, the type TypeScript infers for the same pattern.
+// internal/checker merges the leftovers into one object, so this asserts what the solver
+// emits rather than that the two agree.
+func TestTheSolverEmitsAnObjectRestOverAUnion(t *testing.T) {
+	useSolver(t)
+	src := "type FB = {kind: \"foo\", id: number, foo: string} | {kind: \"bar\", id: number, bar: boolean}\n" +
+		"declare val fb: FB\n" +
+		"val {kind: k, id: i, ...rest2} = fb"
+	got := CompilePackage(libSources(src), PackageConfig{}).CompUnits["lib/index"].DTS
+	require.Contains(t, got, "declare const rest2: {foo: string} | {bar: boolean};")
+}

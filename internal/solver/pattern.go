@@ -630,16 +630,31 @@ func (c *checker) groundedTuple(t soltype.Type) (*soltype.TupleType, bool) {
 
 // objectRestType resolves what an object pattern's `...rest` binds: the scrutinee's members
 // minus the keys its fields name, typed as the fresh object JavaScript's rest builds at run
-// time rather than as `Omit<T, K>`. restMember decides each surviving member's form. With no
-// ground object shape it binds a variable bounded below by `{...}`, tupleRestType's twin,
-// and inferFunc opens such a parameter so a caller can fill the rest.
+// time rather than as `Omit<T, K>`. restMember decides each surviving member's form. A union
+// scrutinee distributes, so each member contributes its own leftover and the rest binds their
+// union. `{kind, ...rest}` over `{kind: "a", x: number} | {kind: "b", y: string}` binds rest
+// at `{x: number} | {y: string}`. With no ground object shape it binds a variable bounded
+// below by `{...}`, tupleRestType's twin, and inferFunc opens such a parameter so a caller
+// can fill the rest.
 func (c *checker) objectRestType(lvl int, node ast.Node, scrutinee, concrete soltype.Type, named set.Set[string]) (bind, restConcrete soltype.Type) {
-	obj, ok := c.restObjectShape(scrutinee, concrete)
+	objs, ok := c.restObjectShapes(scrutinee, concrete)
 	if !ok {
 		v := c.freshAt(lvl)
 		c.constrain(node, &soltype.ObjectType{Inexact: true}, v)
 		return v, nil
 	}
+	leftovers := make([]soltype.Type, len(objs))
+	for i, obj := range objs {
+		leftovers[i] = objectLeftover(obj, named)
+	}
+	// No Context, so subsumption does not run. See peelBorrowUnion.
+	leftover := newUnion(nil, leftovers)
+	return leftover, leftover
+}
+
+// objectLeftover returns the members of obj whose names the `named` set lacks, each in the
+// form restMember gives it. The result keeps obj's exactness.
+func objectLeftover(obj *soltype.ObjectType, named set.Set[string]) *soltype.ObjectType {
 	// A setter reads as `undefined` unless a getter shares its name, so the getter names
 	// are collected before any member is converted.
 	getters := set.NewSet[string]()
@@ -657,8 +672,7 @@ func (c *checker) objectRestType(lvl int, node ast.Node, scrutinee, concrete sol
 			elems = append(elems, kept)
 		}
 	}
-	leftover := &soltype.ObjectType{Elems: elems, Inexact: obj.Inexact}
-	return leftover, leftover
+	return &soltype.ObjectType{Elems: elems, Inexact: obj.Inexact}
 }
 
 // restMember gives one leftover member the form it takes in the object a rest builds. A rest
@@ -690,26 +704,52 @@ func restMember(el soltype.ObjTypeElem, getters set.Set[string]) (soltype.ObjTyp
 	}
 }
 
-// restObjectShape reports the object a rest reads its leftover members out of, the object
-// twin of restTupleShape. It grounds the threaded concrete type first, then the scrutinee,
-// then the scrutinee coalesced to the shape its bounds have fixed.
-func (c *checker) restObjectShape(scrutinee, concrete soltype.Type) (*soltype.ObjectType, bool) {
+// restObjectShapes reports the objects a rest reads its leftover members out of, the object
+// twin of restTupleShape. It returns one object for an object type and one per member for a
+// union whose members all ground to objects. It tries the threaded concrete type first, then
+// the scrutinee, then the scrutinee coalesced to the shape its bounds have fixed. ok=false
+// means none of them grounds.
+func (c *checker) restObjectShapes(scrutinee, concrete soltype.Type) ([]*soltype.ObjectType, bool) {
 	eval := newTypeEvaluator(c.ctx, newSeenPairs())
 	if concrete != nil {
-		if obj, ok := eval.groundToObject(concrete); ok {
-			return obj, true
+		if objs, ok := groundObjectMembers(eval, concrete); ok {
+			return objs, true
 		}
 	}
 	if scrutinee == nil {
 		return nil, false
 	}
-	if obj, ok := eval.groundToObject(scrutinee); ok {
-		return obj, true
+	if objs, ok := groundObjectMembers(eval, scrutinee); ok {
+		return objs, true
 	}
 	if _, isVar := scrutinee.(*soltype.TypeVarType); !isVar {
 		return nil, false
 	}
-	return eval.groundToObject(groundedCarrier(scrutinee))
+	return groundObjectMembers(eval, groundedCarrier(scrutinee))
+}
+
+// groundObjectMembers grounds t to the objects its union members stand for, expanding an
+// alias on the way. A non-union t yields a single object, and a member that is itself an
+// alias of a union contributes each of its members. ok=false when t, or any member of it,
+// has no ground object shape, or when t is `never`.
+func groundObjectMembers(eval *typeEvaluator, t soltype.Type) ([]*soltype.ObjectType, bool) {
+	grounded := eval.groundObjectOperand(t)
+	if obj, ok := groundObject(grounded); ok {
+		return []*soltype.ObjectType{obj}, true
+	}
+	u, isUnion := grounded.(*soltype.UnionType)
+	if !isUnion {
+		return nil, false
+	}
+	var objs []*soltype.ObjectType
+	for _, member := range u.Types {
+		memberObjs, ok := groundObjectMembers(eval, member)
+		if !ok {
+			return nil, false
+		}
+		objs = append(objs, memberObjs...)
+	}
+	return objs, len(objs) > 0
 }
 
 // bindInstancePat types a class-instance pattern `Name { x, y }`: it narrows the scrutinee

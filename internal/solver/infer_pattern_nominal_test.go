@@ -598,18 +598,46 @@ func TestInferMemberClassUnionReadsCommonFieldAsJoin(t *testing.T) {
 	require.Equal(t, "fn (p: A | B) -> number | string", values["f"])
 }
 
-// A property on some but not all members of a class-instance union reads as `T | undefined`
-// (#886), mirroring the plain-object rule: the member lacking the field contributes undefined.
-func TestInferMemberClassUnionReadsPartialFieldAsUndefined(t *testing.T) {
-	values, _, errs := inferSource(t, `
-		class A { x: number }
-		class B { y: string }
-		fn f(p: A | B) {
-			return p.x
-		}
-	`)
-	require.Empty(t, errs)
-	require.Equal(t, "fn (p: A | B) -> number | undefined", values["f"])
+// TestInferMemberClassUnionReadsPartialField covers reading a property that some but not all
+// members of a class-instance union declare. A subclass of a class that is not `final` may add
+// the property at any type, so that member contributes `unknown`. A `final` class lacking the
+// property contributes `undefined`.
+func TestInferMemberClassUnionReadsPartialField(t *testing.T) {
+	tests := []struct {
+		name string
+		src  string
+		want string
+	}{
+		{
+			name: "the class lacking the field is not final",
+			src: `
+				class A { x: number }
+				class B { y: string }
+				fn f(p: A | B) {
+					return p.x
+				}
+			`,
+			want: "fn (p: A | B) -> unknown",
+		},
+		{
+			name: "the class lacking the field is final",
+			src: `
+				class A { x: number }
+				final class B { y: string }
+				fn f(p: A | B) {
+					return p.x
+				}
+			`,
+			want: "fn (p: A | B) -> number | undefined",
+		},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			values, _, errs := inferSource(t, test.src)
+			require.Empty(t, errs)
+			require.Equal(t, test.want, values["f"])
+		})
+	}
 }
 
 // A union mixing a plain object and a class instance joins through the same per-member read
@@ -693,10 +721,11 @@ func TestInferMemberClassUnionAbsentFieldErrors(t *testing.T) {
 
 // A setter-only member reads as undefined at runtime, so when another member exposes the name
 // readably the join includes undefined (#886). Here `A` exposes `v` only as a setter and `B`
-// carries it as a property, so `p.v` reads `string | undefined`.
+// carries it as a property, so `p.v` reads `string | undefined`. `A` is `final` so that no
+// subclass can add a getter for `v`.
 func TestInferMemberClassUnionSetterOnlyReadsUndefined(t *testing.T) {
 	values, _, errs := inferSource(t, `
-		class A { _v: number, set v(&mut self, x: number) { self._v = x } }
+		final class A { _v: number, set v(&mut self, x: number) { self._v = x } }
 		class B { v: string }
 		fn f(p: A | B) {
 			return p.v

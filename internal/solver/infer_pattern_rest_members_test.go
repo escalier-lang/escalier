@@ -491,3 +491,160 @@ func TestInferObjectRestOnBorrowedInstanceWithSetter(t *testing.T) {
 	require.Empty(t, errs)
 	require.Equal(t, "fn <'a>(b: &'a mut Box) -> &'a mut {value: undefined, ...}", values["f"])
 }
+
+// TestInferObjectRestOverUnion covers an object rest whose scrutinee is a union. The rest
+// distributes over the members, so each member contributes the fields the pattern leaves
+// and the rest binds the union of those leftovers. That is what TypeScript infers for the
+// same destructuring.
+func TestInferObjectRestOverUnion(t *testing.T) {
+	const fb = `type FB = {kind: "foo", id: number, foo: string} | {kind: "bar", id: number, bar: boolean}`
+	tests := []struct {
+		name     string
+		src      string
+		binding  string
+		want     string
+		wantErrs []string
+	}{
+		{
+			name: "a non-union object keeps its leftover",
+			src: `
+				declare val p: {kind: "foo", id: number, foo: string}
+				val {kind: k, id: i, ...rest} = p
+			`,
+			binding: "rest",
+			want:    "{foo: string}",
+		},
+		{
+			name: "a union reached through an alias",
+			src: fb + `
+				declare val fb: FB
+				val {kind: k, id: i, ...rest} = fb
+			`,
+			binding: "rest",
+			want:    "{foo: string} | {bar: boolean}",
+		},
+		{
+			name: "a union member that is itself an alias of a union",
+			src: `
+				type AB = {kind: "a", a: number} | {kind: "b", b: string}
+				declare val v: AB | {kind: "c", c: boolean}
+				val {kind, ...rest} = v
+			`,
+			binding: "rest",
+			want:    "{a: number} | {b: string} | {c: boolean}",
+		},
+		{
+			name: "a union written inline",
+			src: `
+				declare val fb: {kind: "foo", foo: string} | {kind: "bar", bar: boolean}
+				val {kind, ...rest} = fb
+			`,
+			binding: "rest",
+			want:    "{foo: string} | {bar: boolean}",
+		},
+		{
+			name: "a rest inside a function parameter pattern",
+			src: fb + `
+				fn f({kind, id, ...rest}: FB) { return rest }
+			`,
+			binding: "f",
+			want:    "fn ({kind, id, ...rest}: FB) -> {foo: string} | {bar: boolean}",
+		},
+		{
+			name: "a rest in a match arm pattern",
+			src: fb + `
+				fn f(p: FB) {
+					return match p {
+						{kind, id, ...rest} => rest,
+					}
+				}
+			`,
+			binding: "f",
+			want:    "fn (p: FB) -> {foo: string} | {bar: boolean}",
+		},
+		// A plain read of a key that an exact member lacks reads `undefined` from that member.
+		{
+			name: "a plain read of a key an exact member lacks",
+			src: `
+				fn f(p: {kind: "a", b: string} | {kind: "c", c: number}) {
+					return p.b
+				}
+			`,
+			binding: "f",
+			want:    `fn (p: {kind: "a", b: string} | {kind: "c", c: number}) -> string | undefined`,
+		},
+		// A member written with `...` may carry a key it does not declare, at any type, so a
+		// plain read of that key reads `unknown`. The next case destructures the same key and
+		// must agree with it.
+		{
+			name: "a plain read of a key one member lacks",
+			src: `
+				fn f(p: {kind: "a", b: string} | {kind: "c", c: number, ...}) {
+					return p.b
+				}
+			`,
+			binding: "f",
+			want:    `fn (p: {kind: "a", b: string} | {kind: "c", c: number, ...}) -> unknown`,
+		},
+		{
+			name: "a destructured key one member lacks reads as the plain read does",
+			src: `
+				fn f(p: {kind: "a", b: string} | {kind: "c", c: number, ...}) {
+					val {b, ...rest} = p
+					return [b, rest]
+				}
+			`,
+			binding: "f",
+			want: `fn (p: {kind: "a", b: string} | {kind: "c", c: number, ...}) -> ` +
+				`[unknown, {kind: "a"} | {kind: "c", c: number, ...}]`,
+		},
+		// An open member does not make a key that no member declares readable.
+		{
+			name: "a plain read of a key no member declares",
+			src: `
+				fn f(p: {kind: "a", b: string} | {kind: "c", c: number, ...}) {
+					return p.z
+				}
+			`,
+			binding:  "f",
+			want:     `fn (p: {kind: "a", b: string} | {kind: "c", c: number, ...}) -> never`,
+			wantErrs: []string{"3:15-3:16: object is missing property: z"},
+		},
+		// A member that is not an object fails a plain read. The next case destructures
+		// the same key and must report the same error.
+		{
+			name: "a plain read through a non-object member",
+			src: `
+				fn f(p: {kind: "a", b: string} | number) {
+					return p.b
+				}
+			`,
+			binding:  "f",
+			want:     `fn (p: {kind: "a", b: string} | number) -> string`,
+			wantErrs: []string{"3:13-3:16: cannot constrain number <: object"},
+		},
+		{
+			name: "a destructured key through a non-object member reports the plain read's error",
+			src: `
+				fn f(p: {kind: "a", b: string} | number) {
+					val {b, ...rest} = p
+					return rest
+				}
+			`,
+			binding:  "f",
+			want:     `fn (p: {kind: "a", b: string} | number) -> {...}`,
+			wantErrs: []string{"3:11-3:12: cannot constrain number <: object"},
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			values, _, errs := inferSource(t, tt.src)
+			if tt.wantErrs == nil {
+				require.Empty(t, errs)
+			} else {
+				require.Equal(t, tt.wantErrs, messagesWithSpan(t, errs))
+			}
+			require.Equal(t, tt.want, values[tt.binding])
+		})
+	}
+}

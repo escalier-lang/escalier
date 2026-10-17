@@ -2585,9 +2585,12 @@ func isFieldReadReq(o *soltype.ObjectType) bool {
 //   - a member lacking `f`, or exposing it only as a setter, contributes undefined — a
 //     setter-only member reads as undefined at runtime — so `f` readable on some but not all
 //     members reads as `T | undefined`;
-//   - an inexact union's open `...` tail contributes unknown, since it may carry `f` at any type;
-//   - `f` readable on no member of an exact union is a MissingPropertyError, since the read is
-//     a constant undefined, like reading an absent field off a single object. This case also
+//   - an open member that does not declare `f` contributes `unknown`, since it may carry `f`
+//     at any type or not at all. An object written with `...` is open, and so is an instance
+//     of a class that is not `final`, because a subclass may add `f`. So reading `b` off
+//     `{kind: "a", b: string} | {kind: "c", ...}` yields `unknown`;
+//   - `f` readable on no member is a MissingPropertyError, even when some member is open,
+//     like reading an absent field off a single object. This case also
 //     covers a member exposing `f` only as a setter with no readable member anywhere, so a
 //     write-only member is rejected rather than read as bare undefined.
 //
@@ -2606,14 +2609,28 @@ func (c *Context) constrainUnionFieldRead(sub *soltype.UnionType, super soltype.
 		return nil, false
 	}
 	members := make([]*soltype.ObjectType, 0, len(sub.Types))
+	// open[i] records that members[i] may carry members it does not declare. That holds for a
+	// structural object written with `...` and for an instance of a class that is not `final`,
+	// since a subclass may add members. A primitive's wrapper body is not open, so reading a
+	// member a primitive lacks still reads as `undefined`.
+	open := make([]bool, 0, len(sub.Types))
 	for _, m := range sub.Types {
-		obj, ok := c.readCarrierObject(soltype.CarrierOf(m))
+		carrier := soltype.CarrierOf(m)
+		obj, ok := c.readCarrierObject(carrier)
 		// A member with no fields to read, such as `undefined` or a bare type variable, sends
 		// the read back to the strict rule that every member must carry the property.
 		if !ok {
 			return nil, false
 		}
 		members = append(members, obj)
+		isOpen := false
+		switch t := carrier.(type) {
+		case *soltype.ObjectType:
+			isOpen = t.Inexact
+		case *soltype.ClassType:
+			isOpen = !t.Final
+		}
+		open = append(open, isOpen)
 	}
 	for _, elem := range req.Elems {
 		prop := soltype.AsProperty(elem)
@@ -2621,10 +2638,12 @@ func (c *Context) constrainUnionFieldRead(sub *soltype.UnionType, super soltype.
 		// some member yields a readable value; anyUndefined that the read can also yield
 		// undefined, because some member lacks the property, carries it optionally, or exposes
 		// it as a write-only setter, so it may be absent at runtime. A member carrying an
-		// optional field sets both.
+		// optional field sets both. anyUnknown records that an open member lacks the property,
+		// so the read may yield a value of any type.
 		anyValue := false
 		anyUndefined := false
-		for _, obj := range members {
+		anyUnknown := false
+		for i, obj := range members {
 			read, hasValue, mayUndef := memberReadContribution(obj, prop.Name)
 			if hasValue {
 				anyValue = true
@@ -2632,6 +2651,9 @@ func (c *Context) constrainUnionFieldRead(sub *soltype.UnionType, super soltype.
 			}
 			if mayUndef {
 				anyUndefined = true
+			}
+			if !hasValue && open[i] {
+				anyUnknown = true
 			}
 		}
 		if !anyValue {
@@ -2647,7 +2669,9 @@ func (c *Context) constrainUnionFieldRead(sub *soltype.UnionType, super soltype.
 			errs = append(errs, missing)
 			continue
 		}
-		if anyUndefined {
+		if anyUnknown {
+			errs = append(errs, c.constrain(&soltype.UnknownType{}, prop.Type, seen, mutCtx)...)
+		} else if anyUndefined {
 			errs = append(errs, c.constrain(&soltype.UndefinedType{}, prop.Type, seen, mutCtx)...)
 		}
 	}
