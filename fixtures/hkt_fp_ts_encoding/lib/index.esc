@@ -1,0 +1,53 @@
+// The fp-ts encoding of higher-kinded types. A registry maps a string key, the URI, to
+// each type constructor applied to A, and `Kind<F, A>` looks the constructor up by key.
+enum MyOption<T> {
+	Some(value: T),
+	None,
+}
+
+type URItoKind<A> = {
+	Array: Array<A>,
+	MyOption: MyOption<A>,
+}
+type URIS = keyof URItoKind<unknown>
+type Kind<F: URIS, A> = URItoKind<A>[F]
+
+type Functor<F: URIS> = {
+	URI: F,
+	map: fn <A, B>(fa: Kind<F, A>, f: fn (a: A) -> B) -> Kind<F, B>,
+}
+
+// Each instance names a literal URI, so Kind reduces to the concrete constructor. The
+// callback takes all three parameters because the solver rejects a shorter one.
+val arrayFunctor: Functor<"Array"> = {
+	URI: "Array",
+	map: fn (fa, f) { return fa.map(fn (a, i, arr) { return f(a) }) },
+}
+
+val optionFunctor: Functor<"MyOption"> = {
+	URI: "MyOption",
+	map: fn (fa, f) {
+		return match fa {
+			MyOption.Some(value) => MyOption.Some(f(value)),
+			MyOption.None() => MyOption.None(),
+		}
+	},
+}
+
+val xs: Array<number> = [1, 2, 3]
+
+// Calling a method on a concrete instance.
+val viaInstance = arrayFunctor.map(xs, fn (n) { return n * 2 })
+
+// Code generic over F, where F stays a rigid key inside the body.
+fn double<F: URIS>(functor: Functor<F>, fa: Kind<F, number>) -> Kind<F, number> {
+	return functor.map(fa, fn (n) { return n * 2 })
+}
+
+fn widen<F: URIS>(fa: Kind<F, 5>) -> Kind<F, number> {
+	return fa
+}
+
+// Calls that have to infer F from the instance.
+val ys = double(arrayFunctor, xs)
+val zs = double(optionFunctor, MyOption.Some(5))

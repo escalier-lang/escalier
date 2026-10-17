@@ -1,0 +1,6 @@
+{
+    "name": "hkt_fp_ts_encoding",
+    "version": "0.0.1",
+    "type": "module",
+    "main": "build/lib/index.js"
+}

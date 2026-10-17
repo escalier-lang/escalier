@@ -1,0 +1,55 @@
+lib/index.esc:44:9: cannot constrain URItoKind<number>[F] <: URItoKind<t40>[F]
+
+44: 	return functor.map(fa, fn (n) { return n * 2 })
+            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+lib/index.esc:44:9: cannot constrain URItoKind<t41>[F] <: URItoKind<number>[F]
+
+44: 	return functor.map(fa, fn (n) { return n * 2 })
+            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+lib/index.esc:48:9: cannot constrain URItoKind<5>[F] <: URItoKind<number>[F]
+
+48: 	return fa
+            ^^
+
+lib/index.esc:52:10: cannot constrain URItoKind<A>[t87] <: Array<t91>
+
+52: val ys = double(arrayFunctor, xs)
+             ^^^^^^^^^^^^^^^^^^^^^^^^
+
+lib/index.esc:52:10: cannot constrain Array<t92> <: URItoKind<B>[t87]
+
+52: val ys = double(arrayFunctor, xs)
+             ^^^^^^^^^^^^^^^^^^^^^^^^
+
+lib/index.esc:52:10: cannot constrain Array<number> <: URItoKind<number>[t87]
+
+52: val ys = double(arrayFunctor, xs)
+             ^^^^^^^^^^^^^^^^^^^^^^^^
+
+lib/index.esc:53:10: cannot constrain URItoKind<A>[t104] <: MyOption.Some<t107> | MyOption.None<t107>
+
+53: val zs = double(optionFunctor, MyOption.Some(5))
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+lib/index.esc:53:10: cannot constrain MyOption.Some<t108> <: URItoKind<B>[t104]
+
+53: val zs = double(optionFunctor, MyOption.Some(5))
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+lib/index.esc:53:10: cannot constrain MyOption.None<t108> <: URItoKind<B>[t104]
+
+53: val zs = double(optionFunctor, MyOption.Some(5))
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+lib/index.esc:53:10: cannot constrain MyOption.Some<t99> <: URItoKind<number>[t104]
+
+53: val zs = double(optionFunctor, MyOption.Some(5))
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+lib/index.esc:53:10: cannot constrain MyOption.None<t99> <: URItoKind<number>[t104]
+
+53: val zs = double(optionFunctor, MyOption.Some(5))
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
