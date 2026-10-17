@@ -79,6 +79,18 @@ func TestModuleBindingMovesAndBorrows(t *testing.T) {
 			`,
 			want: []string{"13:6-13:15: this call may run 'bumpTwice', which writes 'x' while it is borrowed as immutable"},
 		},
+		"ParameterShadowsAModuleBindingACalleeWrites": {
+			src: decls + `
+				val mut x = {v: 1}
+				fn bump() { x.v = 5 }
+				fn test(x: {v: number}) {
+					val a = &x
+					bump()
+					readRead(a, a)
+				}
+			`,
+			want: nil,
+		},
 	}
 	for name, tt := range tests {
 		t.Run(name, func(t *testing.T) {
