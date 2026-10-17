@@ -2585,8 +2585,9 @@ func isFieldReadReq(o *soltype.ObjectType) bool {
 //   - a member lacking `f`, or exposing it only as a setter, contributes undefined — a
 //     setter-only member reads as undefined at runtime — so `f` readable on some but not all
 //     members reads as `T | undefined`;
-//   - an object member written with `...` that does not declare `f` contributes `unknown`,
-//     since its open tail may carry `f` at any type or not at all. So reading `b` off
+//   - an open member that does not declare `f` contributes `unknown`, since it may carry `f`
+//     at any type or not at all. An object written with `...` is open, and so is an instance
+//     of a class that is not `final`, because a subclass may add `f`. So reading `b` off
 //     `{kind: "a", b: string} | {kind: "c", ...}` yields `unknown`;
 //   - `f` readable on no member is a MissingPropertyError, even when some member is open,
 //     like reading an absent field off a single object. This case also
@@ -2608,9 +2609,10 @@ func (c *Context) constrainUnionFieldRead(sub *soltype.UnionType, super soltype.
 		return nil, false
 	}
 	members := make([]*soltype.ObjectType, 0, len(sub.Types))
-	// open[i] records that members[i] is a structural object written with `...`. A class
-	// body or a primitive's wrapper body is also inexact, but its absent members read as
-	// `undefined`, so only a structural object counts as open here.
+	// open[i] records that members[i] may carry members it does not declare. That holds for a
+	// structural object written with `...` and for an instance of a class that is not `final`,
+	// since a subclass may add members. A primitive's wrapper body is not open, so reading a
+	// member a primitive lacks still reads as `undefined`.
 	open := make([]bool, 0, len(sub.Types))
 	for _, m := range sub.Types {
 		carrier := soltype.CarrierOf(m)
@@ -2621,8 +2623,14 @@ func (c *Context) constrainUnionFieldRead(sub *soltype.UnionType, super soltype.
 			return nil, false
 		}
 		members = append(members, obj)
-		structural, isStructural := carrier.(*soltype.ObjectType)
-		open = append(open, isStructural && structural.Inexact)
+		isOpen := false
+		switch t := carrier.(type) {
+		case *soltype.ObjectType:
+			isOpen = t.Inexact
+		case *soltype.ClassType:
+			isOpen = !t.Final
+		}
+		open = append(open, isOpen)
 	}
 	for _, elem := range req.Elems {
 		prop := soltype.AsProperty(elem)
