@@ -97,6 +97,7 @@ func TestPrintDeclAudit_RoundTrip(t *testing.T) {
 		{"declare class type constructor param", `declare class C<F<_>> {}`},
 		{"declare class binary type constructor param", `declare class C<F<_, _>, T> {}`},
 		{"declare class type constructor slot variance", `declare class C<F<out _, in _, in out _>> {}`},
+		{"declare class bounded type constructor param", `declare class C<F<out _>: Sized> {}`},
 		{"export declare class", `export declare class C {}`},
 		{"final class", `final class C {}`},
 		{"export final class", `export final class C {}`},

@@ -362,6 +362,10 @@ type TypeParam struct {
 	// for a type constructor, as `[SlotCovariant]` for `F<out _>`. It is empty for a
 	// parameter that stands for a type.
 	Slots []SlotVariance
+	// CtorBound is the constructor a type-constructor parameter declares as its bound, as
+	// `Sized` in `F<out _>: Sized`, and nil when it declares none. UpperBound and the
+	// variable's own bounds never hold it.
+	CtorBound Type
 }
 
 // Arity returns the number of arguments tp takes as a type constructor, which is 0 for a
@@ -1627,7 +1631,11 @@ func LevelOf(t Type) int {
 	case *TypeAppType:
 		// An application's level is the max over its head and arguments, so an out-of-level
 		// constructor variable in the head lifts the level the way an argument does.
-		return max(LevelOf(t.Head), maxMemberLevel(t.Args))
+		m := max(LevelOf(t.Head), maxMemberLevel(t.Args))
+		if t.Bound != nil {
+			m = max(m, LevelOf(t.Bound))
+		}
+		return m
 	case *TypeCtorType:
 		m := 0
 		for _, f := range t.Fixed {

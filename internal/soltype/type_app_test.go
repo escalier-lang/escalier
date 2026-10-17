@@ -110,13 +110,13 @@ func TestNewTypeAppLatticeHead(t *testing.T) {
 	arr := &TypeCtorType{Base: &ClassType{Name: "Array"}, Fixed: []Type{nil}}
 	args := []Type{num}
 
-	require.Equal(t, "Box<number>", Print(NewTypeApp(&UnionType{Types: []Type{v, box}}, args, nil)))
+	require.Equal(t, "Box<number>", Print(NewTypeApp(&UnionType{Types: []Type{v, box}}, args, nil, nil)))
 	require.Equal(t, "Box<number> | Array<number>",
-		Print(NewTypeApp(&UnionType{Types: []Type{box, v, arr}}, args, nil)))
-	require.Equal(t, "Box<number>", Print(NewTypeApp(&IntersectionType{Types: []Type{v, box}}, args, nil)))
+		Print(NewTypeApp(&UnionType{Types: []Type{box, v, arr}}, args, nil, nil)))
+	require.Equal(t, "Box<number>", Print(NewTypeApp(&IntersectionType{Types: []Type{v, box}}, args, nil, nil)))
 	require.Equal(t, "Box<number> & Array<number>",
-		Print(NewTypeApp(&IntersectionType{Types: []Type{box, arr}}, args, nil)))
-	_, stays := NewTypeApp(&UnionType{Types: []Type{v, &TypeVarType{ID: 2}}}, args, nil).(*TypeAppType)
+		Print(NewTypeApp(&IntersectionType{Types: []Type{box, arr}}, args, nil, nil)))
+	_, stays := NewTypeApp(&UnionType{Types: []Type{v, &TypeVarType{ID: 2}}}, args, nil, nil).(*TypeAppType)
 	require.True(t, stays)
 }
 
@@ -128,4 +128,15 @@ func TestPrintSchemeConstructorParam(t *testing.T) {
 	quantified := func(v *TypeVarType) bool { return v == f }
 	got := PrintAsSchemeWith(app, quantified, nil, []*TypeParam{{Name: "F", Var: f, Slots: []SlotVariance{SlotInvariant}}}, nil)
 	require.Equal(t, "<F<_>> F<number>", got)
+}
+
+// TestPrintSchemeBoundedConstructorParam asserts that a declared type-constructor parameter's
+// bound follows its `<_>` in a scheme's binder list.
+func TestPrintSchemeBoundedConstructorParam(t *testing.T) {
+	f := &TypeVarType{ID: 1, Level: 2}
+	app := &TypeAppType{Head: f, Args: []Type{&PrimType{Prim: NumPrim}}}
+	quantified := func(v *TypeVarType) bool { return v == f }
+	sized := &TypeCtorType{Base: &AliasType{Name: "Sized"}, Fixed: []Type{nil}}
+	tp := &TypeParam{Name: "F", Var: f, Slots: []SlotVariance{SlotCovariant}, CtorBound: sized}
+	require.Equal(t, "<F<out _>: Sized> F<number>", PrintAsSchemeWith(app, quantified, nil, []*TypeParam{tp}, nil))
 }

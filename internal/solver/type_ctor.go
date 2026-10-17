@@ -7,8 +7,35 @@ import (
 	"github.com/escalier-lang/escalier/internal/soltype"
 )
 
-// resolveTypeCtorArg resolves ta as the argument of a type-constructor parameter whose arguments
-// have the declared variances slots. It returns one of:
+// headKind is what a type-constructor parameter declares about the constructors it stands for:
+// the variance of each argument, and the bound every instance has to satisfy. A named
+// constructor declares nothing, so its headKind is the zero value.
+type headKind struct {
+	Slots []soltype.SlotVariance
+	// Bound is the parameter's declared bound, a TypeCtorType, or nil when it declares none.
+	Bound soltype.Type
+}
+
+// kindOfApp returns the headKind app's parameter declares. An application that records no bound
+// takes its head's when the head is a constructor parameter with one, since a reference written
+// before a sibling's bound resolved recorded none.
+func (c *Context) kindOfApp(app *soltype.TypeAppType) headKind {
+	return headKind{Slots: app.Variances, Bound: c.boundOfApp(app)}
+}
+
+// boundOfApp returns the bound app's parameter declares, read from app or, when app records none,
+// from its head's parameter.
+func (c *Context) boundOfApp(app *soltype.TypeAppType) soltype.Type {
+	if app.Bound != nil {
+		return app.Bound
+	}
+	if v, ok := app.Head.(*soltype.TypeVarType); ok {
+		return c.ctorParamKindOf(v).Bound
+	}
+	return nil
+}
+
+// resolveTypeCtor resolves ta as a type constructor taking arity arguments. It returns one of:
 //
 //   - the variable of a constructor parameter in scope, as F in `Functor<F>` inside `<F<_>>`
 //   - a TypeCtorType for a named class or alias, as `Array` in `Functor<Array>`
@@ -17,12 +44,7 @@ import (
 // taking one argument. A reference that writes no arguments leaves every parameter a hole, except
 // that trailing parameters with a default are filled from it when that brings the hole count down
 // to arity. A mismatched count is reported and the argument recovers to a fresh variable.
-//
-// A constructor parameter in scope is accepted when its own slots declare at least the variance
-// each of slots asks for. A named constructor is checked against slots once inference finishes,
-// since a class's variance is measured from its body.
-func (c *checker) resolveTypeCtorArg(scope *Scope, ta ast.TypeAnn, slots []soltype.SlotVariance, lvl int) soltype.Type {
-	arity := len(slots)
+func (c *checker) resolveTypeCtor(scope *Scope, ta ast.TypeAnn, arity int, lvl int) soltype.Type {
 	ref, ok := ta.(*ast.TypeRefTypeAnn)
 	if !ok {
 		c.report(&NotATypeCtorError{Ann: ta, Arity: arity})
@@ -35,10 +57,7 @@ func (c *checker) resolveTypeCtorArg(scope *Scope, ta ast.TypeAnn, slots []solty
 		return c.freshAt(lvl)
 	}
 	if v, isVar := b.Type.(*soltype.TypeVarType); isVar {
-		if got := c.ctx.ctorParamSlotsOf(v); len(got) == arity && len(ref.TypeArgs) == 0 {
-			if slot, ok := slotsSatisfy(got, slots); !ok {
-				c.report(&KindMismatchError{Ctor: name, Slot: slot, Want: slots[slot], site: ta})
-			}
+		if len(c.ctx.ctorParamSlotsOf(v)) == arity && len(ref.TypeArgs) == 0 {
 			return v
 		}
 		c.report(&NotATypeCtorError{Ann: ta, Arity: arity})
@@ -94,28 +113,111 @@ func (c *checker) resolveTypeCtorArg(scope *Scope, ta ast.TypeAnn, slots []solty
 		c.report(&NotATypeCtorError{Ann: ta, Arity: arity})
 		return c.freshAt(lvl)
 	}
-	c.deferredKindChecks = append(c.deferredKindChecks, deferredKindCheck{ctor: ctor, slots: slots, site: ta})
 	return ctor
 }
 
-// deferredKindCheck is one named constructor waiting to be checked against the slots of the
-// parameter it was passed to.
-type deferredKindCheck struct {
-	ctor  *soltype.TypeCtorType
-	slots []soltype.SlotVariance
-	site  ast.Node
+// resolveTypeCtorArg resolves ta as the argument of a type-constructor parameter that declares
+// want, and queues the check that the argument satisfies want. The check runs once inference
+// finishes, since a class's variance is measured from its body.
+func (c *checker) resolveTypeCtorArg(scope *Scope, ta ast.TypeAnn, want headKind, lvl int) soltype.Type {
+	arg := c.resolveTypeCtor(scope, ta, len(want.Slots), lvl)
+	c.queueKindCheck(arg, want, ta)
+	return arg
 }
 
-// runDeferredKindChecks checks each constructor resolveTypeCtorArg queued against its slots and
-// clears the queue. It runs once every class's variance is final.
+// queueKindCheck queues the check that head, a constructor argument written at site, satisfies
+// want. A head that failed to resolve was already reported and queues nothing.
+func (c *checker) queueKindCheck(head soltype.Type, want headKind, site ast.Node) {
+	switch h := head.(type) {
+	case *soltype.TypeCtorType:
+	case *soltype.TypeVarType:
+		if len(c.ctx.ctorParamSlotsOf(h)) == 0 {
+			return
+		}
+	default:
+		return
+	}
+	c.deferredKindChecks = append(c.deferredKindChecks, deferredKindCheck{head: head, want: want, site: site})
+}
+
+// deferredKindCheck is one constructor argument waiting to be checked against want, what the
+// parameter it was passed to declares. head is a TypeCtorType or a constructor parameter's
+// variable.
+type deferredKindCheck struct {
+	head soltype.Type
+	want headKind
+	site ast.Node
+}
+
+// runDeferredKindChecks runs each check resolveTypeCtorArg queued and clears the queue. It runs
+// once every class's variance is final.
 func (c *checker) runDeferredKindChecks() {
 	pending := c.deferredKindChecks
 	c.deferredKindChecks = nil
 	for _, k := range pending {
-		if slot, ok := c.ctx.ctorSatisfiesSlots(k.ctor, k.slots); !ok {
-			c.report(&KindMismatchError{Ctor: soltype.Print(k.ctor), Slot: slot, Want: k.slots[slot], site: k.site})
+		// A parameter's own declaration is read here rather than when the check was queued,
+		// since a sibling's bound may resolve after a reference to it.
+		var have headKind
+		name := soltype.Print(k.head)
+		if v, ok := k.head.(*soltype.TypeVarType); ok {
+			have = c.ctx.ctorParamKindOf(v)
+			name = headSourceName(k.site)
+		}
+		if err := c.ctx.headSatisfies(k.head, have, k.want); err != nil {
+			completeKindError(err, name, k.site)
+			c.report(err)
 		}
 	}
+}
+
+// headSourceName returns the name a constructor argument written at site spells.
+func headSourceName(site ast.Node) string {
+	if ref, ok := site.(*ast.TypeRefTypeAnn); ok {
+		return ast.QualIdentToString(ref.Name)
+	}
+	return ""
+}
+
+// completeKindError sets the constructor name and the reporting node of err, a KindMismatchError
+// or a BoundMismatchError. A nil site leaves the node for blameConstraintErrors to set.
+func completeKindError(err SolverError, name string, site ast.Node) {
+	switch e := err.(type) {
+	case *KindMismatchError:
+		e.Ctor, e.site = name, site
+	case *BoundMismatchError:
+		e.Ctor, e.site = name, site
+	}
+}
+
+// headSatisfies returns the error that standing head where a parameter declaring want is expected
+// would report, or nil when head satisfies want. have is what head declares when it is a
+// constructor parameter. The error names no constructor and no site, which completeKindError
+// fills in.
+//
+// A named constructor satisfies want when it has each variance want's slots declare and when
+// every instance of it satisfies want's bound. A constructor parameter satisfies want when its own
+// slots declare at least that variance and its own bound implies want's bound.
+func (c *Context) headSatisfies(head soltype.Type, have, want headKind) SolverError {
+	if ctor, ok := head.(*soltype.TypeCtorType); ok {
+		if slot, ok := c.ctorSatisfiesSlots(ctor, want.Slots); !ok {
+			return &KindMismatchError{Slot: slot, Want: want.Slots[slot]}
+		}
+		if !c.ctorSatisfiesBound(ctor, want.Bound) {
+			return &BoundMismatchError{Bound: soltype.Print(want.Bound)}
+		}
+		return nil
+	}
+	if slot, ok := slotsSatisfy(have.Slots, want.Slots); !ok {
+		return &KindMismatchError{Slot: slot, Want: want.Slots[slot]}
+	}
+	if want.Bound == nil {
+		return nil
+	}
+	haveBound, ok := have.Bound.(*soltype.TypeCtorType)
+	if !ok || !c.ctorSatisfiesBound(haveBound, want.Bound) {
+		return &BoundMismatchError{Bound: soltype.Print(want.Bound)}
+	}
+	return nil
 }
 
 // slotsSatisfy reports whether a constructor parameter declaring have may stand where want is
@@ -168,6 +270,26 @@ func (c *Context) ctorSatisfiesSlots(ctor *soltype.TypeCtorType, slots []soltype
 	return 0, true
 }
 
+// ctorSatisfiesBound reports whether every instance of ctor satisfies bound, a TypeCtorType of the
+// same arity. A nil bound is satisfied by any constructor. The check applies both to the same
+// fresh skolems and asks whether `ctor<x> <: bound<x>` holds under a probe.
+func (c *Context) ctorSatisfiesBound(ctor *soltype.TypeCtorType, bound soltype.Type) bool {
+	if bound == nil {
+		return true
+	}
+	boundCtor, ok := bound.(*soltype.TypeCtorType)
+	if !ok || boundCtor.Arity() != ctor.Arity() {
+		return false
+	}
+	args := make([]soltype.Type, ctor.Arity())
+	for i := range args {
+		args[i] = c.freshSkolem("x")
+	}
+	inst, _ := ctor.Apply(args)
+	boundInst, _ := boundCtor.Apply(args)
+	return !hasHardError(c.trialUnderProbe(inst, boundInst))
+}
+
 // KindMismatchError reports a constructor that lacks the variance a type-constructor parameter
 // declares for one of its arguments, as `Box` would for `F<out _>` when Box is invariant in T.
 // Ctor is the constructor as the message names it, and Slot is the index of that argument.
@@ -188,6 +310,22 @@ func (e *KindMismatchError) Message() string {
 	}
 	return "type constructor `" + e.Ctor + "` is not " + want + " in argument " +
 		strconv.Itoa(e.Slot+1) + ", which its parameter declares"
+}
+
+// BoundMismatchError reports a constructor whose instances do not satisfy the bound a
+// type-constructor parameter declares, as `Box` would for `F<_>: Sized` when Box has no `size`.
+// Ctor and Bound are the constructor and the bound as the message names them.
+type BoundMismatchError struct {
+	Ctor  string
+	Bound string
+	site  ast.Node
+}
+
+func (*BoundMismatchError) isSolverError()        {}
+func (e *BoundMismatchError) Span() ast.Span      { return spanOfNode(e.site) }
+func (e *BoundMismatchError) Related() []ast.Span { return nil }
+func (e *BoundMismatchError) Message() string {
+	return "type constructor `" + e.Ctor + "` does not satisfy the bound `" + e.Bound + "` its parameter declares"
 }
 
 // countFilled returns the number of non-nil entries in fixed.
@@ -226,7 +364,7 @@ func (c *checker) resolveTypeApp(scope *Scope, ref *ast.TypeRefTypeAnn, v *solty
 		}
 		args[i] = resolved
 	}
-	t := soltype.NewTypeApp(v, args, slots)
+	t := soltype.NewTypeApp(v, args, slots, c.ctx.ctorParamKindOf(v).Bound)
 	c.recordProv(t, ref, AnnotationType)
 	return t
 }
@@ -267,7 +405,14 @@ func (c *Context) reduceTypeApp(app *soltype.TypeAppType) (soltype.Type, bool) {
 	if !ok {
 		return nil, false
 	}
-	return soltype.NewTypeApp(head, app.Args, app.Variances), true
+	// A rigid head carries its own parameter's bound, which implies the one app records.
+	bound := app.Bound
+	if hv, ok := head.(*soltype.TypeVarType); ok {
+		if own := c.ctorParamKindOf(hv).Bound; own != nil {
+			bound = own
+		}
+	}
+	return soltype.NewTypeApp(head, app.Args, app.Variances, bound), true
 }
 
 // headBoundOf returns the first bound of v that can stand as a head: a constructor or a rigid
@@ -304,6 +449,9 @@ func (c *Context) headBoundOf(v *soltype.TypeVarType) (soltype.Type, bool) {
 //     checks the constructor against that declared variance first.
 //   - Two constructors relate when they name the same declaration and their fixed arguments are
 //     equal.
+//   - An application whose head is rigid and whose parameter declares a bound relates to any
+//     other type through the bound's instance, so `F<A> <: T` holds when `Sized<A> <: T` does
+//     under `F<_>: Sized`.
 func (c *Context) constrainTypeApp(sub, super soltype.Type, seen *seenPairs, mutCtx bool) ([]SolverError, bool) {
 	if _, ok := sub.(*soltype.TypeVarType); ok {
 		return nil, false
@@ -349,13 +497,24 @@ func (c *Context) constrainTypeApp(sub, super soltype.Type, seen *seenPairs, mut
 	if isBorrow(sub) || isBorrow(super) {
 		return nil, false
 	}
+	// A rigid head stands for every constructor satisfying its parameter's bound, so what is read
+	// from `F<A>` is what every instance of the bound offers. `F<A> <: T` holds when
+	// `Bound<A> <: T` does.
+	if subIsApp && !superIsApp && c.isRigidHead(subApp.Head) {
+		if bound, ok := c.boundOfApp(subApp).(*soltype.TypeCtorType); ok {
+			if inst, ok := bound.Apply(subApp.Args); ok {
+				return c.constrain(inst, super, seen, mutCtx), true
+			}
+		}
+	}
 	switch {
 	case subIsApp && superIsApp:
 		if len(subApp.Args) != len(superApp.Args) {
 			return []SolverError{&CannotConstrainError{Sub: sub, Super: super}}, true
 		}
-		if errs := c.unifyHeads(subApp.Head, subApp.Variances, superApp.Head, superApp.Variances, seen, mutCtx); len(errs) > 0 {
-			if _, kind := errs[0].(*KindMismatchError); kind {
+		if errs := c.unifyHeads(subApp.Head, c.kindOfApp(subApp), superApp.Head, c.kindOfApp(superApp), seen, mutCtx); len(errs) > 0 {
+			switch errs[0].(type) {
+			case *KindMismatchError, *BoundMismatchError:
 				return errs, true
 			}
 			return []SolverError{&CannotConstrainError{Sub: sub, Super: super}}, true
@@ -406,8 +565,9 @@ func (c *Context) matchHead(app *soltype.TypeAppType, other soltype.Type, appIsS
 		return []SolverError{&CannotConstrainError{Sub: sub, Super: super}}
 	}
 	matchSplit := func(s instanceSplit, seen *seenPairs) []SolverError {
-		if errs := c.unifyHeads(app.Head, app.Variances, s.ctor, nil, seen, mutCtx); len(errs) > 0 {
-			if _, kind := errs[0].(*KindMismatchError); kind {
+		if errs := c.unifyHeads(app.Head, c.kindOfApp(app), s.ctor, headKind{}, seen, mutCtx); len(errs) > 0 {
+			switch errs[0].(type) {
+			case *KindMismatchError, *BoundMismatchError:
 				return errs
 			}
 			return []SolverError{&CannotConstrainError{Sub: sub, Super: super}}
@@ -496,19 +656,18 @@ func holePositions(n, k int) [][]int {
 	return out
 }
 
-// unifyHeads requires two heads to denote the same constructor. aSlots and bSlots are the
-// variances each head's application declares, and nil for a constructor head, which declares
-// none. A head that is an inference variable is bound to the other head in both directions,
+// unifyHeads requires two heads to denote the same constructor. aKind and bKind are what each
+// head's application declares, and the zero headKind for a constructor head, which declares
+// nothing. A head that is an inference variable is bound to the other head in both directions,
 // which may be a constructor or a rigid head. A rigid head unifies only with itself or with an
 // inference variable, so a generic body can pass its own F to another function generic over a
 // constructor.
 //
-// Every binding of an inference head is checked against the slots that head's application
-// declares, so an `F<out _>` binds only to a covariant constructor. A constructor is checked by
-// ctorSatisfiesSlots. Another head is checked by the slots it declares, and two inference heads
-// must each declare what the other asks for, since either may be bound to a constructor later
-// through the other's application alone.
-func (c *Context) unifyHeads(a soltype.Type, aSlots []soltype.SlotVariance, b soltype.Type, bSlots []soltype.SlotVariance, seen *seenPairs, mutCtx bool) []SolverError {
+// Every binding of an inference head is checked by headSatisfies against what that head's
+// application declares, so an `F<out _>` binds only to a covariant constructor. Two inference
+// heads must each declare what the other asks for, since either may be bound to a constructor
+// later through the other's application alone.
+func (c *Context) unifyHeads(a soltype.Type, aKind headKind, b soltype.Type, bKind headKind, seen *seenPairs, mutCtx bool) []SolverError {
 	if a == b {
 		return nil
 	}
@@ -516,31 +675,31 @@ func (c *Context) unifyHeads(a soltype.Type, aSlots []soltype.SlotVariance, b so
 	if (aRigid && !c.isInferenceHead(b)) || (bRigid && !c.isInferenceHead(a)) {
 		return []SolverError{&CannotConstrainError{Sub: a, Super: b}}
 	}
-	if err := c.checkHeadBinding(a, aSlots, b, bSlots); err != nil {
+	if err := c.checkHeadBinding(a, aKind, b, bKind); err != nil {
 		return []SolverError{err}
 	}
-	if err := c.checkHeadBinding(b, bSlots, a, aSlots); err != nil {
+	if err := c.checkHeadBinding(b, bKind, a, aKind); err != nil {
 		return []SolverError{err}
 	}
 	return c.constrainInvariant(a, b, seen, mutCtx)
 }
 
-// checkHeadBinding reports the KindMismatchError that binding the head `from` to the head `to`
-// would violate, or nil. Only an inference head is bound, so any other `from` passes.
-func (c *Context) checkHeadBinding(from soltype.Type, fromSlots []soltype.SlotVariance, to soltype.Type, toSlots []soltype.SlotVariance) SolverError {
+// checkHeadBinding returns the error binding the head `from` to the head `to` would report, or
+// nil. fromKind and toKind are what each head's application declares. Only an inference head is bound, so any other `from` passes.
+func (c *Context) checkHeadBinding(from soltype.Type, fromKind headKind, to soltype.Type, toKind headKind) SolverError {
 	if !c.isInferenceHead(from) {
 		return nil
 	}
-	if ctor, ok := to.(*soltype.TypeCtorType); ok {
-		if slot, ok := c.ctorSatisfiesSlots(ctor, fromSlots); !ok {
-			return &KindMismatchError{Ctor: soltype.Print(ctor), Slot: slot, Want: fromSlots[slot]}
-		}
+	err := c.headSatisfies(to, toKind, fromKind)
+	if err == nil {
 		return nil
 	}
-	if slot, ok := slotsSatisfy(toSlots, fromSlots); !ok {
-		return &KindMismatchError{Ctor: describe(c.nameRigidParams(to)), Slot: slot, Want: fromSlots[slot]}
+	name := soltype.Print(to)
+	if _, ok := to.(*soltype.TypeCtorType); !ok {
+		name = describe(c.nameRigidParams(to))
 	}
-	return nil
+	completeKindError(err, name, nil)
+	return err
 }
 
 // isInferenceHead reports whether t is an inference variable a head can be bound to, rather than

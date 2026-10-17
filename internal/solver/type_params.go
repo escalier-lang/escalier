@@ -39,8 +39,9 @@ func (c *checker) resolveTypeParams(scope *Scope, lvl int, params []*ast.TypePar
 	for i, p := range params {
 		if p.Default != nil && !c.reportDefaultForwardRef(params, i) {
 			// A constructor parameter's default is a constructor, as `Array` in `F<_> = Array`.
+			// It is checked in pass 3, once the parameter's own bound has resolved.
 			if p.Arity() > 0 {
-				out[i].Default = c.resolveTypeCtorArg(scope, p.Default, out[i].Slots, lvl)
+				out[i].Default = c.resolveTypeCtor(scope, p.Default, p.Arity(), lvl)
 			} else if dt, ok := c.resolveTypeAnn(scope, p.Default, lvl); ok {
 				out[i].Default = dt
 			}
@@ -52,12 +53,16 @@ func (c *checker) resolveTypeParams(scope *Scope, lvl int, params []*ast.TypePar
 	// its own field, where later solving cannot overwrite it. The var's bound lists grow as
 	// constraints flow in, so a reader that wants what the source wrote reads the field.
 	for i, p := range params {
-		if p.Arity() > 0 && (p.LowerBound != nil || p.UpperBound != nil) {
-			bound := p.UpperBound
-			if bound == nil {
-				bound = p.LowerBound
+		if p.Arity() > 0 {
+			if p.LowerBound != nil {
+				c.reportUnsupportedFeature(p.LowerBound, "lower bound on a type constructor parameter")
 			}
-			c.reportUnsupportedFeature(bound, "bound on a type constructor parameter")
+			if p.UpperBound != nil {
+				c.resolveCtorParamBound(scope, p, out[i], lvl)
+			}
+			if out[i].Default != nil {
+				c.queueKindCheck(out[i].Default, headKind{Slots: out[i].Slots, Bound: out[i].CtorBound}, p.Default)
+			}
 			continue
 		}
 		if p.LowerBound != nil {
@@ -305,11 +310,12 @@ func (c *checker) resolveTypeArgs(
 	// argument is dropped below, but resolving it first is what reports an unresolvable name
 	// inside it rather than swallowing the diagnostic along with the argument.
 	written := make([]soltype.Type, got)
+	firstKindCheck := len(c.deferredKindChecks)
 	for i, arg := range ref.TypeArgs {
 		// A parameter that stands for a type constructor takes a constructor as its argument,
 		// as `Array` is in `Functor<Array>`, so the argument is not resolved as a type.
 		if i < len(params) && params[i].Arity() > 0 {
-			written[i] = c.resolveTypeCtorArg(scope, arg, params[i].Slots, lvl)
+			written[i] = c.resolveTypeCtorArg(scope, arg, headKind{Slots: params[i].Slots, Bound: params[i].CtorBound}, lvl)
 			continue
 		}
 		if resolved, ok := c.resolveTypeAnn(scope, arg, lvl); ok {
@@ -336,6 +342,18 @@ func (c *checker) resolveTypeArgs(
 			// parameter list is not resolved yet so there is no default to read. Recover to a
 			// fresh var so every parameter has an argument to substitute.
 			args[i] = c.freshAt(lvl)
+		}
+	}
+	// A constructor parameter's bound may name a sibling parameter, as `Pair<T, _>` does in
+	// `<T, F<_>: Pair<T, _>>`, so each check queued above reads the bound with this reference's
+	// arguments in place of the siblings.
+	if len(c.deferredKindChecks) > firstKindCheck {
+		subst := newTypeSubst(params, args, nil, nil)
+		for i := firstKindCheck; i < len(c.deferredKindChecks); i++ {
+			k := &c.deferredKindChecks[i]
+			if k.want.Bound != nil {
+				k.want.Bound = k.want.Bound.Accept(subst, soltype.Positive)
+			}
 		}
 	}
 	return args
@@ -510,4 +528,21 @@ func slotVariances(mods []ast.VarianceModifier) []soltype.SlotVariance {
 		}
 	}
 	return out
+}
+
+// resolveCtorParamBound resolves the bound p writes on a type-constructor parameter, as `Sized`
+// in `F<out _>: Sized`, and records it on out and on out's variable. The bound must name a class
+// or alias as a constructor of p's arity. A bound naming another constructor parameter is
+// reported as unsupported.
+func (c *checker) resolveCtorParamBound(scope *Scope, p *ast.TypeParam, out *soltype.TypeParam, lvl int) {
+	bound := c.resolveTypeCtor(scope, p.UpperBound, p.Arity(), lvl)
+	switch b := bound.(type) {
+	case *soltype.TypeCtorType:
+		out.CtorBound = b
+		c.ctx.setCtorParamBound(out.Var, b)
+	case *soltype.TypeVarType:
+		if len(c.ctx.ctorParamSlotsOf(b)) > 0 {
+			c.reportUnsupportedFeature(p.UpperBound, "bound naming a type constructor parameter")
+		}
+	}
 }

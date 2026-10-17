@@ -64,3 +64,13 @@ fn firstSlot<F<_>, A>(fa: mut F<A>) -> mut F<A> {
 }
 val slots: mut Array<number> = [1, 2]
 val borrowedSlots = firstSlot(slots)
+
+// `F<_>: Sized` means every `F<A>` is a `Sized<A>`, so the body reads `size` through the bound
+// and each call checks that the constructor it infers satisfies it.
+type Sized<T> = {size: number, item: T, ...}
+class Bag<T> { item: T, size: number }
+fn sizeOf<F<_>: Sized>(fa: F<number>) -> number {
+	return fa.size
+}
+val bag: Bag<number> = Bag(1, 3)
+val bagSize = sizeOf(bag)

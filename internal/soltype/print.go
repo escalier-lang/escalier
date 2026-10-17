@@ -377,6 +377,9 @@ func PrintAsSchemeWith(
 		if tp.UpperBound != nil {
 			bounds = []Type{tp.UpperBound}
 		}
+		if tp.CtorBound != nil {
+			bounds = []Type{tp.CtorBound}
+		}
 		labels[i] += p.typeParamSuffix(bounds, tp.Default)
 	}
 	// A generated binder renders the upper bounds its variable carries. The solver hands
@@ -635,6 +638,9 @@ func freeTypeVars(t Type) []*TypeVarType {
 				}
 				for _, b := range tp.DeclaredUpperBounds() {
 					walk(b)
+				}
+				if tp.CtorBound != nil {
+					walk(tp.CtorBound)
 				}
 				if tp.Default != nil {
 					walk(tp.Default)
@@ -1569,7 +1575,11 @@ func (p *namedPrinter) typeParamBinders(tps []*TypeParam) []string {
 	for i, tp := range tps {
 		// Reading the declared bound is what renders `pick<T: U>` on a `C<number>` as
 		// `<T: number>`. printType gives the registered source name, else t{ID}.
-		binders[i] = p.printType(tp.Var) + ctorSlots(tp.Slots) + p.typeParamSuffix(tp.DeclaredUpperBounds(), tp.Default)
+		bounds := tp.DeclaredUpperBounds()
+		if tp.CtorBound != nil {
+			bounds = []Type{tp.CtorBound}
+		}
+		binders[i] = p.printType(tp.Var) + ctorSlots(tp.Slots) + p.typeParamSuffix(bounds, tp.Default)
 	}
 	return binders
 }
