@@ -226,3 +226,8 @@ func TestInfoExpand(t *testing.T) {
 		})
 	}
 }
+
+func TestInfoExpandOnNewInfo(t *testing.T) {
+	alias := &soltype.AliasType{Name: "Point"}
+	require.Same(t, alias, NewInfo().Expand(alias))
+}
