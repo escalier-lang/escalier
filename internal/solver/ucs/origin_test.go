@@ -75,6 +75,7 @@ func TestOriginKindString(t *testing.T) {
 		{OriginIfVal, "if val"},
 		{OriginValElse, "val else"},
 		{OriginGuard, "guard"},
+		{OriginCatchArm, "catch arm"},
 		{OriginKind(99), "unknown origin"},
 	}
 
