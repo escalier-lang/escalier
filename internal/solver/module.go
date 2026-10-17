@@ -851,6 +851,30 @@ func (c *checker) inferComponent(
 	}
 	c.classNamespace = prevNS
 
+	// Every class in the component has bound its value, so a member that constructs a class
+	// declared after its own now resolves to that class. Freeze the marked classes again so
+	// the bindings phase 3 generalizes read the later class. Every marked class is thawed before any is
+	// frozen. A member reading another marked class's value then coalesces through that
+	// class's unfrozen members rather than copying the `never` its first freeze left.
+	var marked []*componentClass
+	seen := set.NewSet[*componentClass]()
+	for _, key := range component {
+		for _, d := range g.GetDecls(key) {
+			if decl, isClass := d.(*ast.ClassDecl); isClass {
+				if class, inComponent := c.componentClassOf[decl]; inComponent && class.refreeze != nil && !seen.Contains(class) {
+					seen.Add(class)
+					marked = append(marked, class)
+				}
+			}
+		}
+	}
+	for _, class := range marked {
+		class.thaw()
+	}
+	for _, class := range marked {
+		class.refreeze()
+	}
+
 	// Every definition in the component has been constrained into its binding var, which is what
 	// closes a recursive cycle, so coalescing a return type now yields the μ-knot that cycle
 	// implies. Report each function in the component whose return type no finite value inhabits.
