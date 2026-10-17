@@ -11,23 +11,11 @@ import (
 	"testing"
 
 	"github.com/escalier-lang/escalier/internal/ast"
+	"github.com/gkampitakis/go-snaps/snaps"
 	"github.com/stretchr/testify/require"
 )
 
-// useChecker points the compiler at internal/checker for the rest of the test.
-func useChecker(t *testing.T) {
-	t.Helper()
-	t.Setenv(CheckerEnvVar, CheckerLegacy)
-}
-
-// useSolver points the compiler at internal/solver for the rest of the test.
-func useSolver(t *testing.T) {
-	t.Helper()
-	t.Setenv(CheckerEnvVar, CheckerSolver)
-}
-
-// messages renders each diagnostic's message. The two checkers word the same fault
-// differently, so a test asserting one names the checker whose wording it expects.
+// messages renders each diagnostic's message.
 func messages(diags []Diagnostic) []string {
 	out := make([]string, len(diags))
 	for i, d := range diags {
@@ -46,175 +34,78 @@ func binSource(contents string) *ast.Source {
 	return &ast.Source{ID: 1, Path: "bin/index.esc", Contents: contents}
 }
 
-// TestSelectBackend checks which checker CheckerEnvVar names. The solver is the
-// default, so only CheckerLegacy selects the old checker, and an unset variable and
-// a value the seam does not recognize both run the solver.
-func TestSelectBackend(t *testing.T) {
-	tests := []struct {
-		name  string
-		value string
-		want  backend
-	}{
-		{name: "Unset", value: "", want: solverBackend{}},
-		{name: "Solver", value: CheckerSolver, want: solverBackend{}},
-		{name: "Legacy", value: CheckerLegacy, want: checkerBackend{}},
-		{name: "Unrecognized", value: "nonesuch", want: solverBackend{}},
-	}
-
-	for _, test := range tests {
-		t.Run(test.name, func(t *testing.T) {
-			t.Setenv(CheckerEnvVar, test.value)
-			require.IsType(t, test.want, selectBackend(PackageConfig{}))
-		})
-	}
-}
-
-// TestCheckLibReportsATypeError checks that a library's type error reaches the
-// caller on either checker. The two word the fault differently, so each setting
-// asserts its own checker's message.
+// TestCheckLibReportsATypeError checks that a library's type error reaches the caller.
 func TestCheckLibReportsATypeError(t *testing.T) {
 	const src = "export val x: number = \"hello\"\n"
 
-	t.Run("Checker", func(t *testing.T) {
-		useChecker(t)
-		out := CheckLib(context.Background(), libSources(src), PackageConfig{})
-		require.Empty(t, out.ParseErrors)
-		require.Contains(t, messages(out.TypeErrors), `"hello" cannot be assigned to number`)
-	})
-
-	t.Run("Solver", func(t *testing.T) {
-		useSolver(t)
-		out := CheckLib(context.Background(), libSources(src), PackageConfig{})
-		require.Empty(t, out.ParseErrors)
-		require.Contains(t, messages(out.TypeErrors), `cannot constrain "hello" <: number`)
-	})
+	out := CheckLib(context.Background(), libSources(src), PackageConfig{})
+	require.Empty(t, out.ParseErrors)
+	require.Contains(t, messages(out.TypeErrors), `cannot constrain "hello" <: number`)
 }
 
-// TestCheckBinScriptReadsTheLibrary checks the lib/ to bin/ seam on either checker:
-// a script resolves a name the library declared, and reports one neither declared.
-// Both settings run the same two scripts, since what is asserted is which names
-// resolve rather than how a fault is worded.
+// TestCheckBinScriptReadsTheLibrary checks the lib/ to bin/ seam: a script resolves a
+// name the library declared, and reports one neither declared.
 func TestCheckBinScriptReadsTheLibrary(t *testing.T) {
 	const lib = "export val greeting = \"hello\"\n"
 
-	tests := []struct {
-		name  string
-		setup func(*testing.T)
-	}{
-		{name: "Checker", setup: useChecker},
-		{name: "Solver", setup: useSolver},
-	}
+	ctx := context.Background()
+	libOutput := CheckLib(ctx, libSources(lib), PackageConfig{})
+	require.NotNil(t, libOutput.LibScope)
 
-	for _, test := range tests {
-		t.Run(test.name, func(t *testing.T) {
-			test.setup(t)
-			ctx := context.Background()
-			libOutput := CheckLib(ctx, libSources(lib), PackageConfig{})
-			require.NotNil(t, libOutput.LibScope)
+	resolved := CheckBinScript(ctx, libOutput.LibScope, binSource("val g = greeting\n"), PackageConfig{})
+	require.Empty(t, resolved.ParseErrors)
+	require.NotContains(t, messages(resolved.TypeErrors), "Unknown identifier: greeting")
 
-			resolved := CheckBinScript(ctx, libOutput.LibScope, binSource("val g = greeting\n"), PackageConfig{})
-			require.Empty(t, resolved.ParseErrors)
-			require.NotContains(t, messages(resolved.TypeErrors), "Unknown identifier: greeting")
-
-			unresolved := CheckBinScript(ctx, libOutput.LibScope, binSource("val f = farewell\n"), PackageConfig{})
-			require.Empty(t, unresolved.ParseErrors)
-			require.Contains(t, messages(unresolved.TypeErrors), "Unknown identifier: farewell")
-		})
-	}
+	unresolved := CheckBinScript(ctx, libOutput.LibScope, binSource("val f = farewell\n"), PackageConfig{})
+	require.Empty(t, unresolved.ParseErrors)
+	require.Contains(t, messages(unresolved.TypeErrors), "Unknown identifier: farewell")
 }
 
 // TestCompileScriptImportsUsedLibSymbols checks that the emitted script imports the
-// library names it used and no others, on either checker. This is what the LibScope
-// interface's declaresTopLevel answers, and each checker answers it off its own
-// representation of the library's surface.
+// library names it used and no others. This is what the LibScope interface's
+// declaresTopLevel answers.
 func TestCompileScriptImportsUsedLibSymbols(t *testing.T) {
 	const lib = "export val greeting = \"hello\"\nexport val unused = 0\n"
 
-	tests := []struct {
-		name  string
-		setup func(*testing.T)
-	}{
-		{name: "Checker", setup: useChecker},
-		{name: "Solver", setup: useSolver},
-	}
+	libOutput := CheckLib(context.Background(), libSources(lib), PackageConfig{})
+	require.NotNil(t, libOutput.LibScope)
 
-	for _, test := range tests {
-		t.Run(test.name, func(t *testing.T) {
-			test.setup(t)
-			ctx := context.Background()
-
-			libOutput := CheckLib(ctx, libSources(lib), PackageConfig{})
-			require.NotNil(t, libOutput.LibScope)
-
-			out := CompileScript(libOutput.LibScope, binSource("val g = greeting\n"))
-			require.Empty(t, out.ParseErrors)
-			require.Equal(t,
-				"import { greeting } from \"../lib/index.js\";\nconst g = greeting;\n"+
-					"//# sourceMappingURL=./index.js.map\n",
-				out.CompUnits["bin/index"].JS)
-		})
-	}
+	out := CompileScript(libOutput.LibScope, binSource("val g = greeting\n"))
+	require.Empty(t, out.ParseErrors)
+	require.Equal(t,
+		"import { greeting } from \"../lib/index.js\";\nconst g = greeting;\n"+
+			"//# sourceMappingURL=./index.js.map\n",
+		out.CompUnits["bin/index"].JS)
 }
 
-// TestCompileAScriptWithNoLibrary checks the entry point a package with no lib/
-// files takes: the script resolves what the prelude declares and nothing else, on
-// either checker.
+// TestCompileAScriptWithNoLibrary checks the entry point a package with no lib/ files
+// takes: the script resolves what the prelude declares and nothing else.
 func TestCompileAScriptWithNoLibrary(t *testing.T) {
-	tests := []struct {
-		name  string
-		setup func(*testing.T)
-	}{
-		{name: "Checker", setup: useChecker},
-		{name: "Solver", setup: useSolver},
-	}
-
-	for _, test := range tests {
-		t.Run(test.name, func(t *testing.T) {
-			test.setup(t)
-			out := Compile(&ast.Source{ID: 0, Path: "bin/index.esc", Contents: "val g = \"hello\"\n"})
-			require.Empty(t, out.ParseErrors)
-			require.NotContains(t, messages(out.TypeErrors), "Unknown identifier: g")
-			require.Contains(t, out.CompUnits["index"].JS, `const g = "hello";`)
-		})
-	}
+	out := Compile(&ast.Source{ID: 0, Path: "bin/index.esc", Contents: "val g = \"hello\"\n"})
+	require.Empty(t, out.ParseErrors)
+	require.NotContains(t, messages(out.TypeErrors), "Unknown identifier: g")
+	require.Contains(t, out.CompUnits["index"].JS, `const g = "hello";`)
 }
 
-// TestCompileScriptImportsALibraryNamespace checks that a `namespace` block the
-// library declares is imported by a script that reads through it, on either
-// checker. A namespace is the second sort declaresTopLevel answers for, and each
-// checker reads it off its own representation of the library.
+// TestCompileScriptImportsALibraryNamespace checks that a `namespace` block the library
+// declares is imported by a script that reads through it. A namespace is the second sort
+// declaresTopLevel answers for.
 func TestCompileScriptImportsALibraryNamespace(t *testing.T) {
 	const lib = "namespace Geometry {\n\texport val origin = 0\n}\n"
 
-	tests := []struct {
-		name  string
-		setup func(*testing.T)
-	}{
-		{name: "Checker", setup: useChecker},
-		{name: "Solver", setup: useSolver},
-	}
+	libOutput := CheckLib(context.Background(), libSources(lib), PackageConfig{})
+	require.NotNil(t, libOutput.LibScope)
 
-	for _, test := range tests {
-		t.Run(test.name, func(t *testing.T) {
-			test.setup(t)
-			ctx := context.Background()
-
-			libOutput := CheckLib(ctx, libSources(lib), PackageConfig{})
-			require.NotNil(t, libOutput.LibScope)
-
-			out := CompileScript(libOutput.LibScope, binSource("val o = Geometry.origin\n"))
-			require.Empty(t, out.ParseErrors)
-			require.Contains(t, out.CompUnits["bin/index"].JS,
-				"import { Geometry } from \"../lib/index.js\";")
-		})
-	}
+	out := CompileScript(libOutput.LibScope, binSource("val o = Geometry.origin\n"))
+	require.Empty(t, out.ParseErrors)
+	require.Contains(t, out.CompUnits["bin/index"].JS,
+		"import { Geometry } from \"../lib/index.js\";")
 }
 
-// TestCheckLibWithoutAStandardLibrary checks what the solver path reports when the
-// standard library tree cannot be found. The run reports the prelude classes as
+// TestCheckLibWithoutAStandardLibrary checks what a check reports when the standard
+// library tree cannot be found. The run reports the prelude classes as
 // missing on top of this, so the diagnostic asserted here is the one naming the cause.
 func TestCheckLibWithoutAStandardLibrary(t *testing.T) {
-	useSolver(t)
 	empty := t.TempDir()
 	t.Setenv("ESCALIER_STDLIB_DIR", empty)
 
@@ -239,7 +130,6 @@ func TestCheckLibWithoutAStandardLibrary(t *testing.T) {
 // script with no library. The script path names the file the same way the module path
 // does, so a caller places both diagnostics the same way.
 func TestCompileWithoutAStandardLibrary(t *testing.T) {
-	useSolver(t)
 	empty := t.TempDir()
 	t.Setenv("ESCALIER_STDLIB_DIR", empty)
 
@@ -301,14 +191,11 @@ func fixtureLibSources(t *testing.T, fixtureDir string) []*ast.Source {
 	return sources
 }
 
-// TestSolverEmitsDefinitionsForEveryFixture is the done-condition of #1675: the solver
-// path renders a `.d.ts` for every fixture whose lib/ module the checker path renders
-// one for. The committed golden says which those are, so a fixture whose source does
-// not parse and whose golden is therefore empty is not held to it.
-//
-// It asserts only that something is written. Whether it matches what the checker path
-// writes for the same source is #1676's job, and today much of it does not.
-func TestSolverEmitsDefinitionsForEveryFixture(t *testing.T) {
+// TestEmitsDefinitionsForEveryFixture asserts that a `.d.ts` is rendered for every
+// fixture whose committed golden holds one. A fixture whose source does not parse has an
+// empty golden and is not held to it. It asserts only that something is written, and the
+// fixture harness compares the text.
+func TestEmitsDefinitionsForEveryFixture(t *testing.T) {
 	entries, err := os.ReadDir(filepath.Join("..", "..", "fixtures"))
 	require.NoError(t, err)
 
@@ -327,19 +214,18 @@ func TestSolverEmitsDefinitionsForEveryFixture(t *testing.T) {
 				require.True(t, os.IsNotExist(err), "reading the golden: %v", err)
 			}
 			if len(golden) == 0 {
-				t.Skip("the checker path emits no definitions for this fixture either")
+				t.Skip("the golden holds no definitions for this fixture")
 			}
 
-			useSolver(t)
 			out := CompilePackage(sources, PackageConfig{})
 			require.NotEmpty(t, out.CompUnits["lib/index"].DTS)
 		})
 	}
 }
 
-// TestBothCheckersEmitTheSameJS asserts that a source exercising a type the emitter
-// reads emits identical JavaScript whichever checker ran.
-func TestBothCheckersEmitTheSameJS(t *testing.T) {
+// TestEmitsJSForTypeDrivenForms covers JavaScript emission for sources that exercise a
+// type the emitter reads. Each case's output is recorded as a snapshot.
+func TestEmitsJSForTypeDrivenForms(t *testing.T) {
 	tests := map[string]string{
 		"NullableIfValGuardsItsTarget": `
 			declare val maybe: number | undefined
@@ -394,29 +280,19 @@ func TestBothCheckersEmitTheSameJS(t *testing.T) {
 
 	for name, source := range tests {
 		t.Run(name, func(t *testing.T) {
-			sources := libSources(source)
-
-			useChecker(t)
-			want := CompilePackage(sources, PackageConfig{}).CompUnits["lib/index"].JS
-			useSolver(t)
-			got := CompilePackage(sources, PackageConfig{}).CompUnits["lib/index"].JS
-
-			require.NotEmpty(t, want, "the checker emits something to compare against")
-			require.Equal(t, want, got, "the two checkers emit different JavaScript")
+			js := CompilePackage(libSources(source), PackageConfig{}).CompUnits["lib/index"].JS
+			require.NotEmpty(t, js)
+			snaps.MatchSnapshot(t, js)
 		})
 	}
 }
 
-// TestAPatternOnAnAliasEmitsNoInstanceOfGuard asserts that neither checker emits an
-// `instanceof` guard for a pattern annotated with an alias of a class.
+// TestAPatternOnAnAliasEmitsNoInstanceOfGuard asserts that no `instanceof` guard is
+// emitted for a pattern annotated with an alias of a class.
 //
 // The guard tests the name the annotation wrote. An alias declares no runtime binding,
 // so `value instanceof Alias` throws a ReferenceError. An alias is therefore not
 // nominal for emission even though the class it stands for is.
-//
-// The absence of the guard is asserted directly rather than left to the output
-// comparison above, because a comparison passes whether both emit the guard or neither
-// does, and emitting it is the fault.
 func TestAPatternOnAnAliasEmitsNoInstanceOfGuard(t *testing.T) {
 	sources := libSources(`
 		class Point { x: number }
@@ -425,47 +301,33 @@ func TestAPatternOnAnAliasEmitsNoInstanceOfGuard(t *testing.T) {
 		export val hit = match v { p: Alias => 1, _ => 0 }
 	`)
 
-	for name, use := range map[string]func(*testing.T){"checker": useChecker, "solver": useSolver} {
-		t.Run(name, func(t *testing.T) {
-			use(t)
-			js := CompilePackage(sources, PackageConfig{}).CompUnits["lib/index"].JS
-			require.NotEmpty(t, js)
-			require.NotContains(t, js, "instanceof Alias",
-				"an alias has no runtime binding, so the guard would throw a ReferenceError")
-		})
-	}
+	js := CompilePackage(sources, PackageConfig{}).CompUnits["lib/index"].JS
+	require.NotEmpty(t, js)
+	require.NotContains(t, js, "instanceof Alias",
+		"an alias has no runtime binding, so the guard would throw a ReferenceError")
 }
 
-// TestBothCheckersGuardAnOptionalChainTarget asserts that an `if val` over an optional
-// chain guards its target against `undefined` whichever checker ran. The chain `o.e?.f`
-// yields `undefined` when `o.e` is absent, and the guard reads that from the chain's type.
-//
-// The guard is asserted directly rather than left to the output comparison, because a
-// comparison passes whether both emit the guard or neither does, and omitting it is the
-// fault.
-func TestBothCheckersGuardAnOptionalChainTarget(t *testing.T) {
+// TestGuardsAnOptionalChainTarget asserts that an `if val` over an optional chain guards
+// its target against `undefined`. The chain `o.e?.f` yields `undefined` when `o.e` is
+// absent, and the guard reads that from the chain's type.
+func TestGuardsAnOptionalChainTarget(t *testing.T) {
 	sources := libSources(`
 		declare val o: {e?: {f: string}}
 		export val got = if val s = o.e?.f { s } else { "" }
 	`)
 
-	for name, use := range map[string]func(*testing.T){"checker": useChecker, "solver": useSolver} {
-		t.Run(name, func(t *testing.T) {
-			use(t)
-			js := CompilePackage(sources, PackageConfig{}).CompUnits["lib/index"].JS
-			require.Contains(t, js, "o.e?.f != undefined")
-		})
-	}
+	js := CompilePackage(sources, PackageConfig{}).CompUnits["lib/index"].JS
+	require.Contains(t, js, "o.e?.f != undefined")
 }
 
-// TestBothCheckersEmitTheSameDefinitionsForAnExtractor asserts that a class usable in a
-// pattern declares the same static side in the emitted `.d.ts` whichever checker ran.
+// TestEmitsDefinitionsForAnExtractor asserts that a class usable in a pattern declares
+// its matcher on the static side of the emitted `.d.ts`.
 //
 // A class is usable in a pattern by declaring `[Symbol.customMatcher]`, which says what
 // a match against it binds. soltype stores a member keyed off a well-known symbol under
 // a reserved spelling and takes the symbols it accepts from a closed set, so the member
 // reaches the type only because `customMatcher` is in that set.
-func TestBothCheckersEmitTheSameDefinitionsForAnExtractor(t *testing.T) {
+func TestEmitsDefinitionsForAnExtractor(t *testing.T) {
 	sources := libSources(`
 		class C {
 		    msg: string,
@@ -475,17 +337,11 @@ func TestBothCheckersEmitTheSameDefinitionsForAnExtractor(t *testing.T) {
 		}
 	`)
 
-	useChecker(t)
-	want := CompilePackage(sources, PackageConfig{}).CompUnits["lib/index"].DTS
-	useSolver(t)
-	got := CompilePackage(sources, PackageConfig{}).CompUnits["lib/index"].DTS
-
-	require.Contains(t, want, "[Symbol.customMatcher](subject: C): [string]",
-		"the checker declares the matcher, so there is something to match against")
-	require.Equal(t, want, got, "the two checkers emit different definitions")
+	dts := CompilePackage(sources, PackageConfig{}).CompUnits["lib/index"].DTS
+	require.Contains(t, dts, "[Symbol.customMatcher](subject: C): [string]")
 }
 
-// TestTheSolverEmitsAClassTypeParameterBound asserts that a class's declared bound reaches
+// TestEmitsAClassTypeParameterBound asserts that a class's declared bound reaches
 // the emitted `.d.ts` as an `extends` clause.
 //
 // The clause is emitted from the parameter variable's upper-bound list, and that list
@@ -495,10 +351,7 @@ func TestBothCheckersEmitTheSameDefinitionsForAnExtractor(t *testing.T) {
 //
 // The clause is written on the constructor signature under the name the source gave the
 // parameter, since TypeScript has no generic `const` to hang a class's parameters on.
-//
-// internal/checker emits `<T extends unknown>` for both sources, which says nothing, so
-// this asserts what the solver emits rather than that the two agree.
-func TestTheSolverEmitsAClassTypeParameterBound(t *testing.T) {
+func TestEmitsAClassTypeParameterBound(t *testing.T) {
 	tests := map[string]string{
 		"AParameterOnlyTheConstructorReads": `
 			class Holder<T: {value: number}> { peer: T }
@@ -513,7 +366,6 @@ func TestTheSolverEmitsAClassTypeParameterBound(t *testing.T) {
 
 	for name, src := range tests {
 		t.Run(name, func(t *testing.T) {
-			useSolver(t)
 			dts := CompilePackage(libSources(src), PackageConfig{}).CompUnits["lib/index"].DTS
 			require.Contains(t, dts,
 				"declare const Holder: {new <T extends {value: number}>(peer: T): Holder<T>};")
@@ -521,15 +373,15 @@ func TestTheSolverEmitsAClassTypeParameterBound(t *testing.T) {
 	}
 }
 
-// TestBothCheckersBindAClassTypeParamOnItsConstructor covers the type parameters a
-// generic class's emitted constructor signature writes.
+// TestBindsAClassTypeParamOnItsConstructor covers the type parameters a generic class's
+// emitted constructor signature writes.
 //
 // TypeScript has no generic `const`, so a class's parameters cannot be written beside the
 // value and each signature that uses one binds it. The declared name, bound, and default
 // reach that binder. A parameter no constructor argument mentions is bound too, since a
 // signature reading `new (log: string): Consumer<never>` constructs a `Consumer` that
 // accepts nothing.
-func TestBothCheckersBindAClassTypeParamOnItsConstructor(t *testing.T) {
+func TestBindsAClassTypeParamOnItsConstructor(t *testing.T) {
 	tests := map[string]struct {
 		src  string
 		want string
@@ -589,26 +441,20 @@ func TestBothCheckersBindAClassTypeParamOnItsConstructor(t *testing.T) {
 
 	for name, test := range tests {
 		t.Run(name, func(t *testing.T) {
-			useChecker(t)
-			want := CompilePackage(libSources(test.src), PackageConfig{}).CompUnits["lib/index"].DTS
-			useSolver(t)
-			got := CompilePackage(libSources(test.src), PackageConfig{}).CompUnits["lib/index"].DTS
-
-			require.Contains(t, want, test.want)
-			require.Equal(t, want, got, "the two checkers emit different definitions")
+			dts := CompilePackage(libSources(test.src), PackageConfig{}).CompUnits["lib/index"].DTS
+			require.Contains(t, dts, test.want)
 		})
 	}
 }
 
-// TestTheSolverBindsAClassTypeParamOnItsConstructor asserts that `Holder<T>` emits its
+// TestBindsAClassTypeParamBesideAStatic asserts that `Holder<T>` emits its
 // parameter as the constructor signature's own binder, beside a static member that stands
 // outside it.
 //
 // TypeScript has no generic `const`, so the only place the value's type can bind `T` is
 // the construct signature, and a static member cannot name it there. The solver's class
 // value carries the parameters on its constructor, so the emitted signature follows.
-func TestTheSolverBindsAClassTypeParamOnItsConstructor(t *testing.T) {
-	useSolver(t)
+func TestBindsAClassTypeParamBesideAStatic(t *testing.T) {
 	dts := CompilePackage(libSources(`
 		class Holder<T: {value: number}> {
 		    peer: T,
@@ -636,63 +482,44 @@ func TestAGenericClassStaticSideIsSubsumed(t *testing.T) {
 		}
 	`
 
-	useChecker(t)
-	want := CompilePackage(libSources(src), PackageConfig{}).CompUnits["lib/index"].DTS
-	useSolver(t)
-	got := CompilePackage(libSources(src), PackageConfig{}).CompUnits["lib/index"].DTS
-
-	require.Contains(t, want, "pick(flag: boolean, n: number): number}")
-	require.Equal(t, want, got, "the two checkers emit different definitions")
+	dts := CompilePackage(libSources(src), PackageConfig{}).CompUnits["lib/index"].DTS
+	require.Contains(t, dts, "pick(flag: boolean, n: number): number}")
 }
 
-// TestBothCheckersSynthesizeAComputedKeyConstructor asserts that a class whose only
-// field is keyed off `Symbol.iterator` emits the same constructor on both checkers.
+// TestSynthesizesAComputedKeyConstructor asserts that a class whose only field is keyed
+// off `Symbol.iterator` emits a constructor that assigns it.
 //
 // A variable key such as `[k]` is left out. soltype takes a computed key from a closed
 // set of well-known symbols, so internal/solver reports `Unsupported: ComputedKey` for
-// one and drops the field, which makes its `.d.ts` disagree even where the emitted
-// JavaScript matches. Comparing a shape one checker rejects says nothing, and
-// TestEmitsTheImplicitConstructor in internal/codegen covers what emission derives for
-// a variable key without running either checker.
-func TestBothCheckersSynthesizeAComputedKeyConstructor(t *testing.T) {
+// one and drops the field. TestEmitsTheImplicitConstructor in internal/codegen covers
+// what emission derives for a variable key without running a checker.
+func TestSynthesizesAComputedKeyConstructor(t *testing.T) {
 	src := "class Odd {\n\t[Symbol.iterator]: number,\n}"
 
-	useChecker(t)
-	want := CompilePackage(libSources(src), PackageConfig{}).CompUnits["lib/index"].JS
-	useSolver(t)
-	got := CompilePackage(libSources(src), PackageConfig{}).CompUnits["lib/index"].JS
-
-	require.Contains(t, want, "this[Symbol.iterator] = _field1;")
-	require.Equal(t, want, got, "the two checkers emit different JavaScript")
+	js := CompilePackage(libSources(src), PackageConfig{}).CompUnits["lib/index"].JS
+	require.Contains(t, js, "this[Symbol.iterator] = _field1;")
 }
 
-// TestNeitherCheckerSynthesizesAKeyFromACall asserts that a class whose field key comes
-// from a call emits no constructor on either checker.
+// TestDoesNotSynthesizeAKeyFromACall asserts that a class whose field key comes from a
+// call emits no constructor.
 //
 // `makeKey()` answers with a fresh symbol per call, so a constructor reading it per
-// construction would assign a property no reader can name. internal/checker reports that
-// the class needs an explicit constructor; internal/solver emits the same class without
-// one, which is #1715 rather than anything about this rule.
-func TestNeitherCheckerSynthesizesAKeyFromACall(t *testing.T) {
+// construction would assign a property no reader can name.
+func TestDoesNotSynthesizeAKeyFromACall(t *testing.T) {
 	src := "declare fn makeKey() -> unique symbol\nclass Odd {\n\t[makeKey()]: number,\n}"
 
-	useChecker(t)
-	want := CompilePackage(libSources(src), PackageConfig{}).CompUnits["lib/index"].JS
-	useSolver(t)
-	got := CompilePackage(libSources(src), PackageConfig{}).CompUnits["lib/index"].JS
-
-	require.NotContains(t, want, "constructor")
-	require.Equal(t, want, got, "the two checkers emit different JavaScript")
+	js := CompilePackage(libSources(src), PackageConfig{}).CompUnits["lib/index"].JS
+	require.NotContains(t, js, "constructor")
 }
 
-// TestTheSolverEmitsASymbolAPropertyDeclares covers the `.d.ts` the solver emits for a
+// TestEmitsASymbolAPropertyDeclares covers the `.d.ts` the solver emits for a
 // unique symbol a `readonly` property declares. The value the symbol is named after holds
 // it at the path TypeScript writes, so a type naming the symbol reads `typeof i.key` and a
 // key off it reads `[i.key]`. The property that declares the symbol keeps `unique symbol`.
 //
 // internal/checker writes each such key as a string, so this asserts what the solver emits
 // rather than that the two agree.
-func TestTheSolverEmitsASymbolAPropertyDeclares(t *testing.T) {
+func TestEmitsASymbolAPropertyDeclares(t *testing.T) {
 	tests := []struct {
 		name string
 		src  string
@@ -798,20 +625,18 @@ export declare const k: typeof n.a.b;
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			useSolver(t)
 			dts := CompilePackage(libSources(tt.src), PackageConfig{}).CompUnits["lib/index"].DTS
 			require.Equal(t, tt.want, dts)
 		})
 	}
 }
 
-// TestTheSolverEmitsARootSymbolInsideANamespace asserts that a namespace block names a
+// TestEmitsARootSymbolInsideANamespace asserts that a namespace block names a
 // unique symbol the module root declares by the root value that holds it, both as
 // `typeof sym` and as a `[sym]` key. Writing `unique symbol` there would declare a new
 // symbol. When the block declares its own member called `sym`, the root `sym` is out of
 // reach, so the block names the symbol through a private alias of the same type.
-func TestTheSolverEmitsARootSymbolInsideANamespace(t *testing.T) {
-	useSolver(t)
+func TestEmitsARootSymbolInsideANamespace(t *testing.T) {
 	sources := []*ast.Source{
 		{ID: 0, Path: "lib/index.esc", Contents: "export declare val sym: unique symbol\nexport val r = sym\n"},
 		{ID: 1, Path: "lib/plain/a.esc", Contents: "export val s2 = sym\nexport val o = {[sym]: 1}\n"},
@@ -833,11 +658,10 @@ declare namespace shadow {
 `, dts)
 }
 
-// TestTheSolverEmitsASymbolANamespacedTypeDeclares asserts that an interface in a namespace
+// TestEmitsASymbolANamespacedTypeDeclares asserts that an interface in a namespace
 // block keeps `unique symbol` on the property that declares its symbol when the value the
 // symbol is named after sits at the module root.
-func TestTheSolverEmitsASymbolANamespacedTypeDeclares(t *testing.T) {
-	useSolver(t)
+func TestEmitsASymbolANamespacedTypeDeclares(t *testing.T) {
 	sources := []*ast.Source{
 		{ID: 0, Path: "lib/index.esc", Contents: "export declare val i: ns.I\nexport val o = {[i.key]: 1}\n"},
 		{ID: 1, Path: "lib/ns/a.esc", Contents: "export declare interface I { readonly key: unique symbol }\n"},
@@ -853,11 +677,10 @@ declare namespace ns {
 `, dts)
 }
 
-// TestTheSolverEmitsABlockSymbolApartFromARootOne asserts that a symbol a `do` block
+// TestEmitsABlockSymbolApartFromARootOne asserts that a symbol a `do` block
 // declares stays apart from a root value of the same name. Each is its own symbol, so a key
 // off the block's symbol is written through the value that holds it.
-func TestTheSolverEmitsABlockSymbolApartFromARootOne(t *testing.T) {
-	useSolver(t)
+func TestEmitsABlockSymbolApartFromARootOne(t *testing.T) {
 	src := "export declare val sym: unique symbol\nexport val x = do {\n\tdeclare val sym: unique symbol\n\tsym\n}\nexport val o = {[x]: 1}\n"
 	dts := CompilePackage(libSources(src), PackageConfig{}).CompUnits["lib/index"].DTS
 	require.Equal(t, `export declare const x: unique symbol;
@@ -866,12 +689,11 @@ export declare const sym: unique symbol;
 `, dts)
 }
 
-// TestTheSolverEmitsARegexCaptureAsString covers the `.d.ts` of a conditional whose Extends
+// TestEmitsARegexCaptureAsString covers the `.d.ts` of a conditional whose Extends
 // operand is a capturing regex type. TypeScript has no regex type, so the pattern emits as
 // `string` and each captured name emits as the string type it captures, joined with
 // `undefined` for a group a match can leave out.
-func TestTheSolverEmitsARegexCaptureAsString(t *testing.T) {
-	useSolver(t)
+func TestEmitsARegexCaptureAsString(t *testing.T) {
 	src := "export type Strip<T> = if T : /^_*(?<Ident>\\w+)_*$/ { Ident } else { T }\n" +
 		"export type Opt<T> = if T : /^a(?<B>b)?$/ { [B] } else { never }"
 	got := CompilePackage(libSources(src), PackageConfig{}).CompUnits["lib/index"].DTS
@@ -884,8 +706,8 @@ func TestTheSolverEmitsARegexCaptureAsString(t *testing.T) {
 // travels as a value, so `obj.m` emits `obj.m.bind(obj)` and `obj["m"]` emits
 // `obj["m"].bind(obj)`. A field or property holding a plain function reads no receiver, and
 // a static method reads none either, so those emit the bare read. A read called on the spot
-// emits no `.bind`. The two checkers agree on every case.
-func TestBothCheckersBindOnlyAMethodRead(t *testing.T) {
+// emits no `.bind`.
+func TestBindsOnlyAMethodRead(t *testing.T) {
 	tests := []struct {
 		name string
 		src  string
@@ -966,22 +788,15 @@ func TestBothCheckersBindOnlyAMethodRead(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			useChecker(t)
-			checked := CompilePackage(libSources(tt.src), PackageConfig{}).CompUnits["lib/index"].JS
-			useSolver(t)
-			solved := CompilePackage(libSources(tt.src), PackageConfig{}).CompUnits["lib/index"].JS
-
-			require.Contains(t, solved, tt.want)
-			require.Equal(t, checked, solved, "the two checkers emit different JavaScript")
+			js := CompilePackage(libSources(tt.src), PackageConfig{}).CompUnits["lib/index"].JS
+			require.Contains(t, js, tt.want)
 		})
 	}
 }
 
-// TestTheSolverBindsAMethodReadThroughAUnion asserts that the solver binds a method read off a
-// union receiver whose members declare the method. internal/checker emits the read bare, so this
-// asserts what the solver emits rather than that the two agree.
-func TestTheSolverBindsAMethodReadThroughAUnion(t *testing.T) {
-	useSolver(t)
+// TestBindsAMethodReadThroughAUnion asserts that the solver binds a method read off a
+// union receiver whose members declare the method.
+func TestBindsAMethodReadThroughAUnion(t *testing.T) {
 	src := "class A {\n\tm(&self) -> number { return 1 },\n}\n" +
 		"class B {\n\tm(&self) -> number { return 2 },\n}\n" +
 		"declare val x: A | B\nexport val g = x.m"
@@ -989,12 +804,9 @@ func TestTheSolverBindsAMethodReadThroughAUnion(t *testing.T) {
 	require.Contains(t, got, "export const g = x.m.bind(x);")
 }
 
-// TestTheSolverEmitsAnObjectRestOverAUnion asserts that an object rest over a union emits
+// TestEmitsAnObjectRestOverAUnion asserts that an object rest over a union emits
 // the union of each member's leftover, the type TypeScript infers for the same pattern.
-// internal/checker merges the leftovers into one object, so this asserts what the solver
-// emits rather than that the two agree.
-func TestTheSolverEmitsAnObjectRestOverAUnion(t *testing.T) {
-	useSolver(t)
+func TestEmitsAnObjectRestOverAUnion(t *testing.T) {
 	src := "type FB = {kind: \"foo\", id: number, foo: string} | {kind: \"bar\", id: number, bar: boolean}\n" +
 		"declare val fb: FB\n" +
 		"val {kind: k, id: i, ...rest2} = fb"

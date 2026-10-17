@@ -12,18 +12,10 @@ import (
 	"github.com/escalier-lang/escalier/internal/stdlibdir"
 )
 
-// solverBackend runs internal/solver. It is what every entry point uses unless
-// CheckerEnvVar selects the old checker.
+// solverBackend runs internal/solver, which every entry point uses.
 //
-// Three things it does differently from the checker path:
-//
-//   - The emitted .d.ts is rendered from soltype. It matches what the checker path
-//     writes except for the divergences recorded in shapeSkips in dts_parity_test.go.
-//   - The diagnostics include every package the run loaded, so a package the source
-//     imports reports its own errors beside the source's. #1696 tracks the file they
-//     are blamed on.
-//   - libResult.scope, libResult.fileScopes, and scriptResult.scope are nil, because
-//     the LSP reads internal/checker's scope type. Tracked in #1678 through #1682.
+// The diagnostics include every package the run loaded, so a package the source imports
+// reports its own errors beside the source's. #1696 tracks the file they are blamed on.
 //
 // internal/solver takes no context, so each method names the parameter `_` to say the
 // caller's deadline bounds nothing here.
@@ -39,14 +31,14 @@ func (b solverBackend) checkLib(_ context.Context, module *ast.Module) libResult
 	dir, dirErrs := solverStdlibDir(moduleSpan(module))
 	result := solver.InferModuleAgainstStdlib(module, dir, b.options)
 	return libResult{
-		lib:           &solverLibScope{module: result},
-		depGraph:      result.DepGraph,
-		dts:           &solverDts{module: result},
-		jsTypes:       codegen.SolverJSTypes{Types: &solverSolTypes{info: result.Info}},
-		info:          result.Info,
-		solScope:      result.Scope,
-		solFileScopes: result.FileScopes,
-		diagnostics:   append(dirErrs, diagnostics(result.Errors)...),
+		lib:         &solverLibScope{module: result},
+		depGraph:    result.DepGraph,
+		dts:         &solverDts{module: result},
+		jsTypes:     codegen.SolverJSTypes{Types: &solverSolTypes{info: result.Info}},
+		info:        result.Info,
+		scope:       result.Scope,
+		fileScopes:  result.FileScopes,
+		diagnostics: append(dirErrs, diagnostics(result.Errors)...),
 	}
 }
 
@@ -58,7 +50,7 @@ func (b solverBackend) checkScript(_ context.Context, script *ast.Script) script
 	return scriptResult{
 		jsTypes:     codegen.SolverJSTypes{Types: &solverSolTypes{info: info}},
 		info:        info,
-		solScope:    scope,
+		scope:       scope,
 		diagnostics: append(dirErrs, diagnostics(errs)...),
 	}
 }
@@ -197,7 +189,7 @@ func (l *solverLibScope) checkScript(_ context.Context, script *ast.Script) scri
 	return scriptResult{
 		jsTypes:     codegen.SolverJSTypes{Types: &solverSolTypes{info: info}},
 		info:        info,
-		solScope:    scope,
+		scope:       scope,
 		diagnostics: diagnostics(errs),
 	}
 }
