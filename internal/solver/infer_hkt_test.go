@@ -216,3 +216,128 @@ func TestInferTypeConstructorParams(t *testing.T) {
 		})
 	}
 }
+
+// TestInferTypeConstructorVariance covers the variance a type-constructor parameter declares on
+// each slot, as `F<out _>`. The cases cover subtyping between applications under each variance,
+// the kind check on a named constructor argument, the kind check on a head a call infers, and
+// passing one constructor parameter where another is expected.
+func TestInferTypeConstructorVariance(t *testing.T) {
+	const prelude = `
+class Box<T> { value: T }
+class Sink<T> { put: fn (x: T) -> undefined }
+type CoFunctor<F<out _>> = {map: fn <A, B>(fa: F<A>, f: fn (a: A) -> B) -> F<B>}
+type ContraBox<F<in _>> = {x: F<number>}
+fn widen<F<out _>>(fa: F<5>) -> F<number> { return fa }
+`
+	tests := []struct {
+		name string
+		src  string
+		// want holds the rendered type of each listed value binding.
+		want map[string]string
+		// wantErrs is every diagnostic in order. nil expects none.
+		wantErrs []string
+	}{
+		{
+			name: "CovariantWidens",
+			src:  ``,
+			want: map[string]string{"widen": "fn <F<out _>>(fa: F<5>) -> F<number>"},
+		},
+		{
+			name:     "CovariantRejectsNarrowing",
+			src:      `fn narrow<F<out _>>(fa: F<number>) -> F<5> { return fa }`,
+			wantErrs: []string{"cannot constrain number <: 5"},
+		},
+		{
+			name: "ContravariantNarrows",
+			src:  `fn narrow<F<in _>>(fa: F<number>) -> F<5> { return fa }`,
+		},
+		{
+			name:     "ContravariantRejectsWidening",
+			src:      `fn widen2<F<in _>>(fa: F<5>) -> F<number> { return fa }`,
+			wantErrs: []string{"cannot constrain number <: 5"},
+		},
+		{
+			name: "CovariantConstructorAccepted",
+			src:  `type X = CoFunctor<Box>`,
+		},
+		{
+			name: "CovariantConstructorRejected",
+			src:  `type X = CoFunctor<Sink>`,
+			wantErrs: []string{
+				"type constructor `Sink` is not covariant in argument 1, which its parameter declares",
+			},
+		},
+		{
+			name: "ContravariantConstructorAccepted",
+			src:  `type X = ContraBox<Sink>`,
+		},
+		{
+			name: "ContravariantConstructorRejected",
+			src:  `type X = ContraBox<Box>`,
+			wantErrs: []string{
+				"type constructor `Box` is not contravariant in argument 1, which its parameter declares",
+			},
+		},
+		{
+			name: "InferredHeadChecked",
+			src: `val b: Box<5> = Box(5)
+			val r = widen(b)`,
+			want: map[string]string{"r": "Box<number>"},
+		},
+		{
+			name: "InferredHeadRejected",
+			src: `val s: Sink<5> = Sink(fn (x) { return undefined })
+			val r = widen(s)`,
+			want: map[string]string{"r": "never"},
+			wantErrs: []string{
+				"type constructor `Sink` is not covariant in argument 1, which its parameter declares",
+			},
+		},
+		{
+			// An inference head bound to another head is checked against that head's declared
+			// slots, so an invariant G cannot stand for widen's covariant F. The argument and the
+			// return each bind F, so each reports.
+			name: "InvariantHeadPassedToCovariantParam",
+			src:  `fn outer<G<_>>(x: G<5>) -> G<number> { return widen(x) }`,
+			wantErrs: []string{
+				"type constructor `G` is not covariant in argument 1, which its parameter declares",
+				"type constructor `G` is not covariant in argument 1, which its parameter declares",
+			},
+		},
+		{
+			name: "CovariantHeadPassedToCovariantParam",
+			src:  `fn outer<G<out _>>(x: G<5>) -> G<number> { return widen(x) }`,
+		},
+		{
+			name: "InOutSlotRenders",
+			src: `fn keep<F<in out _>>(x: F<5>) -> F<5> { return x }
+			val w = keep`,
+			want: map[string]string{"w": "fn <F<in out _>>(x: F<5>) -> F<5>"},
+		},
+		{
+			name: "ParamWithVarianceAccepted",
+			src:  `fn outer<G<out _>>(x: CoFunctor<G>) -> number { return 1 }`,
+		},
+		{
+			name: "InvariantParamRejected",
+			src:  `fn outer<G<_>>(x: CoFunctor<G>) -> number { return 1 }`,
+			wantErrs: []string{
+				"type constructor `G` is not covariant in argument 1, which its parameter declares",
+			},
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			values, _, errs := inferSource(t, prelude+tt.src)
+			if tt.wantErrs == nil {
+				require.Empty(t, errorMessagesOf(errs))
+			} else {
+				require.Equal(t, tt.wantErrs, errorMessagesOf(errs))
+			}
+			for name, want := range tt.want {
+				require.Contains(t, values, name)
+				require.Equal(t, want, values[name], name)
+			}
+		})
+	}
+}

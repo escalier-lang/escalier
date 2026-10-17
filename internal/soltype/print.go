@@ -1569,7 +1569,7 @@ func (p *namedPrinter) typeParamBinders(tps []*TypeParam) []string {
 	for i, tp := range tps {
 		// Reading the declared bound is what renders `pick<T: U>` on a `C<number>` as
 		// `<T: number>`. printType gives the registered source name, else t{ID}.
-		binders[i] = p.printType(tp.Var) + arityHoles(tp.Arity) + p.typeParamSuffix(tp.DeclaredUpperBounds(), tp.Default)
+		binders[i] = p.printType(tp.Var) + ctorSlots(tp.Slots) + p.typeParamSuffix(tp.DeclaredUpperBounds(), tp.Default)
 	}
 	return binders
 }
@@ -1893,11 +1893,16 @@ func printLit(lit Lit) string {
 	panic(fmt.Sprintf("printLit: unhandled Lit %T", lit))
 }
 
-// arityHoles renders the `<_, _>` that follows a constructor parameter's name, one `_` per
-// argument the constructor takes. It renders the empty string for an arity of 0.
-func arityHoles(arity int) string {
-	if arity == 0 {
+// ctorSlots renders the `<out _, _>` that follows a constructor parameter's name, one `_` per
+// argument the constructor takes, each after its variance modifier. It renders the empty string
+// for a parameter that stands for a type.
+func ctorSlots(slots []SlotVariance) string {
+	if len(slots) == 0 {
 		return ""
 	}
-	return "<" + strings.TrimSuffix(strings.Repeat("_, ", arity), ", ") + ">"
+	parts := make([]string, len(slots))
+	for i, v := range slots {
+		parts[i] = v.modifier() + "_"
+	}
+	return "<" + strings.Join(parts, ", ") + ">"
 }

@@ -26,7 +26,7 @@ func TestParseTypeCtorParamArity(t *testing.T) {
 			decl := script.Stmts[0].(*ast.DeclStmt).Decl.(*ast.FuncDecl)
 			got := make([]int, len(decl.TypeParams))
 			for i, tp := range decl.TypeParams {
-				got[i] = tp.Arity
+				got[i] = tp.Arity()
 			}
 			require.Equal(t, test.want, got)
 		})
@@ -56,4 +56,15 @@ func TestParseTypeCtorParamErrors(t *testing.T) {
 			require.Equal(t, test.message, errors[0].Message)
 		})
 	}
+}
+
+// TestParseTypeCtorSlotVariance covers the variance modifier each `_` slot may carry.
+func TestParseTypeCtorSlotVariance(t *testing.T) {
+	source := &ast.Source{ID: 0, Path: "input.esc", Contents: `fn f<F<_, out _, in _, in out _>>() {}`}
+	script, errors := NewParser(context.Background(), source).ParseScript()
+	require.Empty(t, errors)
+	decl := script.Stmts[0].(*ast.DeclStmt).Decl.(*ast.FuncDecl)
+	require.Equal(t, []ast.VarianceModifier{
+		ast.VarianceNone, ast.VarianceOut, ast.VarianceIn, ast.VarianceInOut,
+	}, decl.TypeParams[0].CtorSlots)
 }

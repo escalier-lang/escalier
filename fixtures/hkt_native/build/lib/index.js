@@ -82,4 +82,10 @@ export const taggedFunctor = {map: function (temp18, temp19) {
   return new Tagged(fa.tag, f(fa.value));
 }};
 export const doubledTagged = double(taggedFunctor, tagged);
+export const five = new Box(5);
+export function widen(temp20) {
+  const fa = temp20;
+  return fa;
+}
+export const widened = widen(five);
 //# sourceMappingURL=./index.js.map

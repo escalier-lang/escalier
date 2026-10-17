@@ -1198,13 +1198,14 @@ func (p *Parser) typeParam(allowVariance bool) *ast.TypeParam {
 	end := token.Span.End
 
 	// A parameter written `F<_>` or `F<_, _>` stands for a type constructor. Each `_` is one
-	// argument slot the constructor takes.
-	arity := 0
+	// argument slot the constructor takes, and may carry a variance modifier, as `F<out _>`.
+	var slots []ast.VarianceModifier
 	if open := p.lexer.peek(); open.Type == LessThan {
 		p.lexer.consume() // consume '<'
 		end = open.Span.End
 		badSlot := false
 		for {
+			slotVariance := p.parseSlotVariance()
 			slot := p.lexer.peek()
 			if slot.Type != Underscore {
 				p.reportError(slot.Span, "expected `_` in a type constructor parameter")
@@ -1212,7 +1213,7 @@ func (p *Parser) typeParam(allowVariance bool) *ast.TypeParam {
 				break
 			}
 			p.lexer.consume()
-			arity++
+			slots = append(slots, slotVariance)
 			end = slot.Span.End
 			if p.lexer.peek().Type != Comma {
 				break
@@ -1261,8 +1262,29 @@ func (p *Parser) typeParam(allowVariance bool) *ast.TypeParam {
 
 	typeParam := ast.NewTypeParam(name, nil, upperBound, default_, ast.NewSpan(start, end, p.lexer.source.ID))
 	typeParam.Variance = variance
-	typeParam.Arity = arity
+	typeParam.CtorSlots = slots
 	return &typeParam
+}
+
+// parseSlotVariance reads an optional `in`, `out`, or `in out` modifier before a `_` slot of
+// a type-constructor parameter and returns which was written, or VarianceNone. A modifier is
+// read only when the slot's `_` follows it.
+func (p *Parser) parseSlotVariance() ast.VarianceModifier {
+	token := p.lexer.peek()
+	if token.Type == Identifier && token.Value == "out" && p.lexer.peek2().Type == Underscore {
+		p.lexer.consume()
+		return ast.VarianceOut
+	}
+	if token.Type != In {
+		return ast.VarianceNone
+	}
+	p.lexer.consume() // consume `in`
+	next := p.lexer.peek()
+	if next.Type == Identifier && next.Value == "out" && p.lexer.peek2().Type == Underscore {
+		p.lexer.consume()
+		return ast.VarianceInOut
+	}
+	return ast.VarianceIn
 }
 
 // parseVarianceModifier reads an optional `in`, `out`, or `in out` declaration-site

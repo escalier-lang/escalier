@@ -49,10 +49,10 @@ type Context struct {
 	// variable, and the copiers add each copy through copyParamMark. isParamVar reads it.
 	paramVars set.Set[*soltype.TypeVarType]
 
-	// ctorParamArity maps the variable of each type-constructor parameter, as F in
-	// `<F<_>>`, to the number of arguments it takes. A parameter that stands for a type is
-	// absent.
-	ctorParamArity map[*soltype.TypeVarType]int
+	// ctorParamSlots maps the variable of each type-constructor parameter, as F in
+	// `<F<out _>>`, to the declared variance of each argument it takes. A parameter that stands
+	// for a type is absent.
+	ctorParamSlots map[*soltype.TypeVarType][]soltype.SlotVariance
 
 	// symbolCounter mints the id a `unique symbol` annotation carries. Each written
 	// annotation is its own symbol, so the counter advances per annotation rather than
@@ -393,19 +393,19 @@ func (c *Context) markParamVar(v *soltype.TypeVarType) {
 	c.paramVars.Add(v)
 }
 
-// markCtorParam records v as the variable of a type-constructor parameter taking arity
-// arguments.
-func (c *Context) markCtorParam(v *soltype.TypeVarType, arity int) {
-	if c.ctorParamArity == nil {
-		c.ctorParamArity = map[*soltype.TypeVarType]int{}
+// markCtorParam records v as the variable of a type-constructor parameter whose arguments have
+// the declared variances slots.
+func (c *Context) markCtorParam(v *soltype.TypeVarType, slots []soltype.SlotVariance) {
+	if c.ctorParamSlots == nil {
+		c.ctorParamSlots = map[*soltype.TypeVarType][]soltype.SlotVariance{}
 	}
-	c.ctorParamArity[v] = arity
+	c.ctorParamSlots[v] = slots
 }
 
-// ctorParamArityOf returns the number of arguments v's parameter takes when v is the variable
-// of a type-constructor parameter, and 0 otherwise.
-func (c *Context) ctorParamArityOf(v *soltype.TypeVarType) int {
-	return c.ctorParamArity[v]
+// ctorParamSlotsOf returns the declared variance of each argument v's parameter takes when v is
+// the variable of a type-constructor parameter, and nil otherwise.
+func (c *Context) ctorParamSlotsOf(v *soltype.TypeVarType) []soltype.SlotVariance {
+	return c.ctorParamSlots[v]
 }
 
 // isParamVar reports whether v is a type parameter's variable or a copy of one.

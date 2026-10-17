@@ -1372,7 +1372,7 @@ func (c *checker) resolveScopedTypeRef(scope *Scope, ref *ast.TypeRefTypeAnn, lv
 	}
 	// A type-constructor parameter applied to arguments, as `F<number>` inside `<F<_>>`.
 	// A bare `F` is reported as an arity mismatch there.
-	if v, ok := b.Type.(*soltype.TypeVarType); ok && c.ctx.ctorParamArityOf(v) > 0 {
+	if v, ok := b.Type.(*soltype.TypeVarType); ok && len(c.ctx.ctorParamSlotsOf(v)) > 0 {
 		return c.resolveTypeApp(scope, ref, v, lvl), true
 	}
 	if len(ref.TypeArgs) == 0 {

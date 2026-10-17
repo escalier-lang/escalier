@@ -9,9 +9,75 @@ package soltype
 //
 // A head that is a known constructor never stays here. NewTypeApp applies it, so `F<number>` with
 // `F = Array` is the ClassType `Array<number>` and not an application node.
+//
+// Variances holds the declared variance of each argument, one entry per entry of Args.
 type TypeAppType struct {
-	Head Type
-	Args []Type
+	Head      Type
+	Args      []Type
+	Variances []SlotVariance
+}
+
+// SlotVariance is the declared variance of one argument of a type-constructor parameter. It
+// says how an application's subtyping depends on that argument.
+type SlotVariance int
+
+const (
+	// SlotInvariant requires the argument to match in both directions. It is what a `_` with
+	// no modifier declares.
+	SlotInvariant SlotVariance = iota
+	// SlotCovariant, written `out _`, lets a subtype argument make a subtype application.
+	SlotCovariant
+	// SlotContravariant, written `in _`, flips the direction.
+	SlotContravariant
+	// SlotInOut, written `in out _`, is invariant like SlotInvariant. It is kept apart only so
+	// the modifier the source wrote renders back.
+	SlotInOut
+)
+
+// modifier returns the source modifier for v followed by a space, or the empty string for an
+// invariant slot.
+func (v SlotVariance) modifier() string {
+	switch v {
+	case SlotCovariant:
+		return "out "
+	case SlotContravariant:
+		return "in "
+	case SlotInOut:
+		return "in out "
+	}
+	return ""
+}
+
+// Variance returns v with SlotInOut folded into SlotInvariant, the form subtyping reads.
+func (v SlotVariance) Variance() SlotVariance {
+	if v == SlotInOut {
+		return SlotInvariant
+	}
+	return v
+}
+
+// Meet returns the variance two declarations of one argument agree on. Two equal variances give
+// that variance, and any disagreement gives SlotInvariant.
+func (v SlotVariance) Meet(w SlotVariance) SlotVariance {
+	if v.Variance() == w.Variance() {
+		return v.Variance()
+	}
+	return SlotInvariant
+}
+
+// Slot returns the declared variance of t's i'th argument, with SlotInOut folded into
+// SlotInvariant, and SlotInvariant when t records none for it.
+func (t *TypeAppType) Slot(i int) SlotVariance {
+	return SlotAt(t.Variances, i)
+}
+
+// SlotAt returns the variance slots declares at index i, with SlotInOut folded into
+// SlotInvariant, and SlotInvariant when slots has no entry there.
+func SlotAt(slots []SlotVariance, i int) SlotVariance {
+	if i < len(slots) {
+		return slots[i].Variance()
+	}
+	return SlotInvariant
 }
 
 // TypeCtorType is a type constructor used as a value of a constructor parameter, as `Array` is in
@@ -79,16 +145,20 @@ func (c *TypeCtorType) Apply(args []Type) (Type, bool) {
 	return nil, false
 }
 
-// NewTypeApp returns the application of head to args. A TypeCtorType head is applied at once, so
-// the result is the class or alias instance the constructor names. Any other head gives a
-// TypeAppType.
-func NewTypeApp(head Type, args []Type) Type {
-	if ctor, ok := head.(*TypeCtorType); ok {
-		if applied, ok := ctor.Apply(args); ok {
+// NewTypeApp returns the application of head to args, whose declared variances are variances.
+// A TypeCtorType head is applied at once, so the result is the class or alias instance the
+// constructor names. A `never` or `unknown` head, which coalescing leaves for a head no
+// constraint bound, gives that bound itself. Any other head gives a TypeAppType.
+func NewTypeApp(head Type, args []Type, variances []SlotVariance) Type {
+	switch h := head.(type) {
+	case *TypeCtorType:
+		if applied, ok := h.Apply(args); ok {
 			return applied
 		}
+	case *NeverType, *UnknownType:
+		return h
 	}
-	return &TypeAppType{Head: head, Args: args}
+	return &TypeAppType{Head: head, Args: args, Variances: variances}
 }
 
 func (t *TypeAppType) Accept(v TypeVisitor, pol Polarity) Type {
@@ -97,15 +167,31 @@ func (t *TypeAppType) Accept(v TypeVisitor, pol Polarity) Type {
 		return v.ExitType(skipReplace(t, e), pol)
 	}
 	cur := descendReplacement(t, e)
-	// The head and the arguments walk covariantly, as a class's arguments do. Variance is
-	// decided where constrain compares two applications.
+	// The head walks covariantly. Each argument walks at the polarity its declared variance
+	// gives it, so an `in _` argument walks flipped. An invariant argument walks covariantly,
+	// as a class's arguments do.
 	head := cur.Head.Accept(v, pol)
-	args, changed := acceptTypes(cur.Args, v, pol)
+	args := cur.Args
+	changed := false
+	for i, a := range cur.Args {
+		argPol := pol
+		if cur.Slot(i) == SlotContravariant {
+			argPol = pol.Flip()
+		}
+		na := a.Accept(v, argPol)
+		if na != a {
+			if !changed {
+				args = append([]Type(nil), cur.Args...)
+				changed = true
+			}
+			args[i] = na
+		}
+	}
 	out := Type(cur)
 	if head != cur.Head || changed {
 		// A substitution that puts a constructor in the head turns the node into the
 		// application the constructor names.
-		out = NewTypeApp(head, args)
+		out = NewTypeApp(head, args, cur.Variances)
 	}
 	return v.ExitType(out, pol)
 }

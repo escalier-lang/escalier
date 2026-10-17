@@ -1970,8 +1970,16 @@ func (p *Printer) printVarianceModifier(v ast.VarianceModifier) {
 func (p *Printer) printTypeParam(tp *ast.TypeParam) {
 	p.printVarianceModifier(tp.Variance)
 	p.writeString(tp.Name)
-	if tp.Arity > 0 {
-		p.writeString("<" + strings.TrimSuffix(strings.Repeat("_, ", tp.Arity), ", ") + ">")
+	if len(tp.CtorSlots) > 0 {
+		p.writeString("<")
+		for i, v := range tp.CtorSlots {
+			if i > 0 {
+				p.writeString(", ")
+			}
+			p.printVarianceModifier(v)
+			p.writeString("_")
+		}
+		p.writeString(">")
 	}
 	if tp.UpperBound != nil && !tp.UpperBoundInWhere {
 		p.writeString(": ")

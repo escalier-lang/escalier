@@ -49,3 +49,11 @@ val doubledTagged = double(taggedFunctor, tagged)
 
 val opt: MyOption<number> = MyOption.Some(5)
 val doubledOpt = double(optionFunctor, opt)
+
+// `out _` declares F covariant in its argument, so `F<5>` widens to `F<number>`. The call checks
+// that Box is covariant before binding F to it.
+fn widen<F<out _>>(fa: F<5>) -> F<number> {
+	return fa
+}
+val five: Box<5> = Box(5)
+val widened = widen(five)

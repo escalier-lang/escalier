@@ -278,6 +278,10 @@ type checker struct {
 	// deferredArgBounds holds the comparisons raised during that window, replayed by
 	// runDeferredArgBounds once every body in the component is filled.
 	deferredArgBounds []deferredArgBound
+	// deferredKindChecks holds the named constructors passed to a type-constructor parameter,
+	// each checked against that parameter's declared variance once every class's variance is
+	// final.
+	deferredKindChecks []deferredKindCheck
 
 	// memberName is the name of the class member whose body is about to be walked, set by
 	// inferMemberBodies and consumed by the inferFunc call that walks it. A member reaches
@@ -868,6 +872,8 @@ func (c *checker) blameConstraintErrors(n ast.Node, errs []SolverError) {
 			err.shownSub, err.shownSuper = c.ctx.nameRigidParams(err.Sub), c.ctx.nameRigidParams(err.Super)
 		case *ExpansionLimitError:
 			err.prov, err.site = c.prov, n
+		case *KindMismatchError:
+			err.site = n
 		case *AmbiguousUnionCommitWarning:
 			err.prov, err.site = c.prov, n
 			err.shownUnion = c.ctx.nameRigidParams(err.Union)
