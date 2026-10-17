@@ -779,18 +779,31 @@ func HasTypeVar(t Type) bool {
 	return s.found
 }
 
-// typeVarSeeker is the read-only TypeVisitor that backs HasTypeVar. It rewrites
-// nothing. EnterType returns SkipChildren once it has seen a TypeVarType so
-// later sibling subtrees are not walked.
-type typeVarSeeker struct{ found bool }
+// HasTypeVarOrSkolem reports whether t contains any TypeVarType or SkolemType in its structure.
+func HasTypeVarOrSkolem(t Type) bool {
+	s := &typeVarSeeker{skolems: true}
+	t.Accept(s, Positive)
+	return s.found
+}
+
+// typeVarSeeker is the read-only TypeVisitor that backs HasTypeVar and HasTypeVarOrSkolem. It
+// rewrites nothing. EnterType returns SkipChildren once it has seen what it seeks so later
+// sibling subtrees are not walked. skolems sets whether a SkolemType counts.
+type typeVarSeeker struct{ found, skolems bool }
 
 func (s *typeVarSeeker) EnterType(t Type, _ Polarity) EnterResult {
 	if s.found {
 		return EnterResult{SkipChildren: true}
 	}
-	if _, ok := t.(*TypeVarType); ok {
+	switch t.(type) {
+	case *TypeVarType:
 		s.found = true
 		return EnterResult{SkipChildren: true}
+	case *SkolemType:
+		if s.skolems {
+			s.found = true
+			return EnterResult{SkipChildren: true}
+		}
 	}
 	return EnterResult{}
 }

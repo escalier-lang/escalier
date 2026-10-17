@@ -73,11 +73,15 @@ func (b *Builder) BuildDefinitionsFromSol(
 	b.solSymbolAliases = nil
 	b.solSymbolAliasNames = map[int]string{}
 	b.solModuleNames = moduleNamesFromSol(namespaceGroups)
+	b.solKinds = newKindRegistry(b.solModuleNames)
 
 	// A class and an enum each hold a type binding and a value binding pointing at one
 	// declaration, so the walk would reach the declaration twice without this.
 	processedDecls := set.NewSet[ast.Decl]()
 	stmts := []Stmt{}
+	// generics holds every generic type the module declares at its root, which the registry
+	// offers as constructors when the module names any registry declaration.
+	var generics []genericTypeDecl
 
 	for _, namespace := range namespaceNames {
 		declNS := root
@@ -99,6 +103,11 @@ func (b *Builder) BuildDefinitionsFromSol(
 				processedDecls.Add(decl)
 
 				b.solShadowed = shadowedNamesFromSol(namespaceGroups, namespace)
+				if namespace == "" {
+					if name, arity := genericTypeDeclFromSol(decl); arity > 0 {
+						generics = append(generics, genericTypeDecl{name: name, arity: arity})
+					}
+				}
 				declStmts := b.buildDeclStmtFromSol(decl, declNS, names, namespace == "")
 				namespaceStmts = append(namespaceStmts, declStmts...)
 			}
@@ -118,6 +127,18 @@ func (b *Builder) BuildDefinitionsFromSol(
 		})
 	}
 
+	// The registry goes last, once every declaration has named the constructors it uses. A
+	// TypeScript caller has to name a constructor's URI to call a function generic over it, so
+	// every generic type the module declares joins the registry of its arity.
+	for _, g := range generics {
+		b.solKinds.offer(&soltype.TypeCtorType{
+			Base:  &soltype.AliasType{Name: g.name},
+			Fixed: make([]soltype.Type, g.arity),
+		})
+	}
+	kindRender := b.solRenderer(solNames{preludePrefix: preludePrefix, namespace: ""}, "", nil)
+	kindRender.typeParamNames = map[*soltype.TypeVarType]string{}
+	stmts = append(stmts, kindRegistryStmts(b.solKinds, kindRender, exportsAny(stmts))...)
 	// The aliases go first. TypeScript resolves a name anywhere in the file, so the order
 	// is only for a reader, who meets each alias before the namespace that uses it.
 	return &Module{Stmts: append(symbolAliasStmtsFromSol(b.solSymbolAliases), stmts...)}
@@ -316,6 +337,7 @@ func symbolKeysFromSol(
 // the names symbolKeysFromSol found.
 func (b *Builder) solRenderer(names solNames, companionPrefix string, typeParams []*soltype.TypeParam) *solTypeAnnBuilder {
 	render := newSolTypeAnnBuilder(names, companionPrefix, typeParams)
+	render.kinds = b.solKinds
 	render.symbolKeys = b.symbolKeysForBlock()
 	render.symbolPaths = b.solSymbolKeys
 	return render
@@ -887,7 +909,9 @@ func typeParamsFromSol(render *solTypeAnnBuilder, typeParams []*soltype.TypePara
 	out := make([]*TypeParam, len(typeParams))
 	for i, tp := range typeParams {
 		var constraint TypeAnn
-		if tp.UpperBound != nil {
+		if tp.Arity() > 0 {
+			constraint = render.ctorParamConstraint(tp.Arity(), tp.CtorBound)
+		} else if tp.UpperBound != nil {
 			constraint = render.typeAnn(tp.UpperBound)
 		}
 		var defaultType TypeAnn
@@ -912,4 +936,48 @@ func companionStmtsFromSol(render *solTypeAnnBuilder) []Stmt {
 		stmts[i] = &DeclStmt{Decl: companion, span: nil, source: nil}
 	}
 	return stmts
+}
+
+// exportsAny reports whether any top-level declaration among stmts is exported, which makes the
+// emitted file a module rather than a script.
+func exportsAny(stmts []Stmt) bool {
+	for _, s := range stmts {
+		if ds, ok := s.(*DeclStmt); ok && ds.Decl.Export() {
+			return true
+		}
+	}
+	return false
+}
+
+// genericTypeDecl is a type the module declares with type parameters, named by its local name.
+type genericTypeDecl struct {
+	name  string
+	arity int
+}
+
+// genericTypeDeclFromSol returns the name and type-parameter count of a class, alias, enum, or
+// interface declaration, and 0 for any other declaration. A declaration with a type-constructor
+// parameter or a bounded parameter also gives 0. The first names no instance when applied to
+// types alone, and the second has no instance for the registry's unconstrained arguments.
+func genericTypeDeclFromSol(decl ast.Decl) (string, int) {
+	var name string
+	var params []*ast.TypeParam
+	switch d := decl.(type) {
+	case *ast.TypeDecl:
+		name, params = d.Name.Name, d.TypeParams
+	case *ast.ClassDecl:
+		name, params = d.Name.Name, d.TypeParams
+	case *ast.EnumDecl:
+		name, params = d.Name.Name, d.TypeParams
+	case *ast.InterfaceDecl:
+		name, params = d.Name.Name, d.TypeParams
+	default:
+		return "", 0
+	}
+	for _, p := range params {
+		if p.Arity() > 0 || p.UpperBound != nil || p.LowerBound != nil {
+			return "", 0
+		}
+	}
+	return name, len(params)
 }

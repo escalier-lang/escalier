@@ -1,0 +1,15 @@
+// An exported module declares its URI registry exported too, so a TypeScript caller can import
+// it and extend it.
+export type Functor<F<out _>> = {
+	map: fn <A, B>(fa: F<A>, f: fn (a: A) -> B) -> F<B>,
+}
+
+export class Box<T> { value: T }
+
+export val boxFunctor: Functor<Box> = {
+	map: fn (fa, f) { return Box(f(fa.value)) },
+}
+
+export fn double<F<out _>>(functor: Functor<F>, fa: F<number>) -> F<number> {
+	return functor.map(fa, fn (n) { return n * 2 })
+}
