@@ -7,15 +7,14 @@ import (
 )
 
 // TestAMethodTypeParamBoundIsCheckedInItsBody covers a generic method whose body passes its
-// own bounded type parameter to a sibling static of its class. The body reads the class's
-// name before the class has a value, so the call is checked against the static's signature
-// and each argument whose bound does not fit is reported at that argument.
+// own bounded type parameter to a sibling static or the constructor of its class. The body
+// reads the class's name before the class's binding var is solved, so the call is checked
+// against the static's signature or the class value, and each argument whose bound does not
+// fit is reported at that argument.
 //
-// A constructor call and a call to a free function in the same component read a binding var
-// that is solved after the body. The parameter stays rigid, so the call is still rejected
-// once the var is solved. The error is blamed inside the declaration whose signature solves
-// the var, which is the parameter's bound for `Foo(a)` and the `add` declaration for
-// `add(a, a)`.
+// A call to a free function in the same component reads a binding var that is solved after
+// the body. The parameter stays rigid, so the call is still rejected once the var is solved.
+// The error is blamed inside the `add` declaration, whose signature solves the var.
 func TestAMethodTypeParamBoundIsCheckedInItsBody(t *testing.T) {
 	tests := []struct {
 		name string
@@ -73,7 +72,7 @@ func TestAMethodTypeParamBoundIsCheckedInItsBody(t *testing.T) {
 				v: number,
 				strs<A: string>(&self, a: A) { return Foo(a) },
 			}`,
-			want: []string{"3:13-3:19: cannot constrain string <: number"},
+			want: []string{"3:47-3:48: cannot constrain string <: number"},
 		},
 		{
 			name: "FreeFunctionInTheSameComponent",
