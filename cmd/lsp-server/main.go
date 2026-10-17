@@ -11,7 +11,6 @@ import (
 	protocol "github.com/tliron/glsp/protocol_3_16"
 	glsp_server "github.com/tliron/glsp/server"
 
-	"github.com/escalier-lang/escalier/internal/checker"
 	"github.com/escalier-lang/escalier/internal/compiler"
 	"github.com/escalier-lang/escalier/internal/set"
 )
@@ -34,10 +33,9 @@ func main() {
 		_ = os.Setenv("ESCALIER_STDLIB_DIR", *stdlibDir)
 	}
 	// The compiler runs internal/solver by default, but the server stays on internal/checker.
-	// Completions of the names in scope read the *checker.Scope values only that checker
-	// returns, and the solver path leaves them nil. Hover, go-to-definition, and member
-	// completions read the solver's Info and fall back to what the old checker writes onto
-	// the AST. The server moves to the solver once scope completions read its scopes.
+	// Every feature reads the solver's results when a check produced them and falls back to
+	// what the old checker produces otherwise. The server moves to the solver once that
+	// fallback is removed.
 	useLegacyChecker()
 
 	fmt.Fprintf(os.Stderr, "Hello, from lsp-server\n")
@@ -99,9 +97,8 @@ type Server struct {
 	libFilesCache set.Set[string]
 	binFilesCache set.Set[string]
 
-	// Cached prelude/global scope and its completion items.
-	// Computed lazily on first completion request; never changes after that.
-	preludeScope       *checker.Scope
+	// Completion items for the builtins every file sees. Computed lazily on the first
+	// completion request; never changes after that.
 	preludeCompletions []protocol.CompletionItem
 
 	mu sync.RWMutex

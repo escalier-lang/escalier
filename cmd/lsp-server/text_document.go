@@ -507,8 +507,10 @@ func (server *Server) validateBinScript(
 	co.ScriptScopes[triggerSourceID] = result.Scope
 	if result.Info != nil {
 		co.ScriptInfos[triggerSourceID] = result.Info
+		co.SolverScriptScopes[triggerSourceID] = result.SolverScope
 	} else {
 		delete(co.ScriptInfos, triggerSourceID)
+		delete(co.SolverScriptScopes, triggerSourceID)
 	}
 	// The new AST's spans index the text just parsed, so the source has to move
 	// with them. Keeping the one the last full check stored would convert the

@@ -39,12 +39,14 @@ func (b solverBackend) checkLib(_ context.Context, module *ast.Module) libResult
 	dir, dirErrs := solverStdlibDir(moduleSpan(module))
 	result := solver.InferModuleAgainstStdlib(module, dir, b.options)
 	return libResult{
-		lib:         &solverLibScope{module: result},
-		depGraph:    result.DepGraph,
-		dts:         &solverDts{module: result},
-		jsTypes:     codegen.SolverJSTypes{Types: &solverSolTypes{info: result.Info}},
-		info:        result.Info,
-		diagnostics: append(dirErrs, diagnostics(result.Errors)...),
+		lib:           &solverLibScope{module: result},
+		depGraph:      result.DepGraph,
+		dts:           &solverDts{module: result},
+		jsTypes:       codegen.SolverJSTypes{Types: &solverSolTypes{info: result.Info}},
+		info:          result.Info,
+		solScope:      result.Scope,
+		solFileScopes: result.FileScopes,
+		diagnostics:   append(dirErrs, diagnostics(result.Errors)...),
 	}
 }
 
@@ -52,10 +54,11 @@ func (b solverBackend) checkLib(_ context.Context, module *ast.Module) libResult
 // the prelude and the ambient builtins.
 func (b solverBackend) checkScript(_ context.Context, script *ast.Script) scriptResult {
 	dir, dirErrs := solverStdlibDir(scriptSpan(script))
-	_, info, errs := solver.InferScriptAgainstStdlib(script, dir, b.options)
+	scope, info, errs := solver.InferScriptAgainstStdlib(script, dir, b.options)
 	return scriptResult{
 		jsTypes:     codegen.SolverJSTypes{Types: &solverSolTypes{info: info}},
 		info:        info,
+		solScope:    scope,
 		diagnostics: append(dirErrs, diagnostics(errs)...),
 	}
 }
@@ -190,10 +193,11 @@ type solverLibScope struct {
 // checkScript infers script against the library module's scope, so the script reads
 // the library's top-level declarations without importing them.
 func (l *solverLibScope) checkScript(_ context.Context, script *ast.Script) scriptResult {
-	_, info, errs := solver.InferScriptInLib(script, l.module)
+	scope, info, errs := solver.InferScriptInLib(script, l.module)
 	return scriptResult{
 		jsTypes:     codegen.SolverJSTypes{Types: &solverSolTypes{info: info}},
 		info:        info,
+		solScope:    scope,
 		diagnostics: diagnostics(errs),
 	}
 }

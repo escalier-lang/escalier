@@ -40,6 +40,7 @@ func sharedPrelude() *Scope {
 // M2 gate.
 func NewPrelude() *Scope {
 	s := NewScope()
+	s.builtin = true
 	addOperatorBindings(s)
 	addStdlibTypePlaceholders(s)
 	addIteratorResultAliases(s)
@@ -123,6 +124,7 @@ func (c *checker) preludeScope() *Scope {
 		return c.prelude
 	}
 	c.prelude = sharedPrelude().Child()
+	c.prelude.builtin = true
 	c.bindPreludeExports(c.prelude)
 	c.resolvePreludeClasses()
 	c.resolveWellKnownSymbols()
