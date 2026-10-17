@@ -1785,7 +1785,7 @@ func (c *checker) inferCallTarget(scope *Scope, lvl int, e *ast.CallExpr) callTa
 	callee, shortCircuits := c.inferCallee(scope, lvl, e)
 	// A member read called on the spot runs against its receiver, so it needs no binding.
 	c.markInferredRecvReadCalled(e.Callee)
-	target := c.calleeTarget(lvl, e, callee)
+	target := c.calleeTarget(lvl, e, callee, c.calleeFreshlyInstantiated(scope, e))
 	target.shortCircuits = shortCircuits
 	return target
 }
@@ -1818,9 +1818,25 @@ func (c *checker) inferCallee(scope *Scope, lvl int, e *ast.CallExpr) (soltype.T
 	return callee, shortCircuits
 }
 
+// calleeFreshlyInstantiated reports whether e's callee is a name whose binding generalized,
+// so reading it instantiated the binding's scheme for this call alone. Every variable the
+// scheme quantifies is then a copy no other expression reads.
+func (c *checker) calleeFreshlyInstantiated(scope *Scope, e *ast.CallExpr) bool {
+	ident, ok := e.Callee.(*ast.IdentExpr)
+	if !ok {
+		return false
+	}
+	b, found := c.lookupValueBinding(scope, ident.Name)
+	if !found || len(b.Schemes) != 1 || b.Nominal != nil {
+		return false
+	}
+	_, poly := b.Schemes[0].(*PolyScheme)
+	return poly
+}
+
 // calleeTarget returns what a call applies its arguments to, given the callee value
-// inferCallee returned.
-func (c *checker) calleeTarget(lvl int, e *ast.CallExpr, callee soltype.Type) callTarget {
+// inferCallee returned. fresh is calleeFreshlyInstantiated's answer for e.
+func (c *checker) calleeTarget(lvl int, e *ast.CallExpr, callee soltype.Type, fresh bool) callTarget {
 	// A member callee whose type is an intersection of function arms is an overloaded
 	// method, since memberValue gathers a multi-signature method's arms into an
 	// IntersectionType. Resolving one arm here through resolveOverload, the method analogue
@@ -1866,8 +1882,18 @@ func (c *checker) calleeTarget(lvl int, e *ast.CallExpr, callee soltype.Type) ca
 	// applyCallShape makes another, for the reason inferCall's doc comment gives.
 	secondInstance := false
 	if resolved && quantified(fn) {
-		fn = c.ctx.instantiateFuncBinder(fn, lvl)
-		if _, isClassValue := c.classValueCarrier(callee); isClassValue {
+		_, isClassValue := c.classValueCarrier(callee)
+		if isClassValue && fresh {
+			// Reading the class's name copied the constructor's binder, together with the
+			// links its member bodies recorded on the class's parameters. Those copies belong
+			// to this call, so the call binds them where they stand. Copying the binder again
+			// would leave the links naming the first copy, and the argument would reach it
+			// only through them.
+			fn = c.ctx.bindFuncBinderInPlace(fn, lvl)
+		} else {
+			fn = c.ctx.instantiateFuncBinder(fn, lvl)
+		}
+		if isClassValue {
 			callee = fn
 		} else {
 			secondInstance = true
