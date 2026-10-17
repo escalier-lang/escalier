@@ -270,9 +270,11 @@ func (server *Server) textDocumentHover(context *glsp.Context, params *protocol.
 	switch node := hoverNode.(type) {
 	case ast.Expr, ast.Pat:
 		if info != nil {
+			server.solverMu.RLock()
 			if t := info.DisplayTypeOf(hoverNode); t != nil {
 				value = "`" + soltype.PrintAsScheme(t) + "`"
 			}
+			server.solverMu.RUnlock()
 			break
 		}
 		// The old checker records no Info, and writes each type onto its node.
@@ -487,7 +489,9 @@ func (server *Server) validateBinScript(
 
 	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
 	defer cancel()
+	server.solverMu.Lock()
 	result := compiler.CheckBinScript(ctx, lib, src, packageConfig(rootPath))
+	server.solverMu.Unlock()
 
 	// Verify staleness and update caches.
 	server.mu.Lock()

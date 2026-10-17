@@ -126,6 +126,26 @@ func (i *Info) ResolvedTypeOf(n ast.Node) soltype.Type {
 	return groundedCarrier(t)
 }
 
+// Expand returns t with each alias and `typeof` on the outside expanded and each borrow
+// on the outside peeled, until none is left. `type Shape = A | B` expands to `A | B`.
+// A table built by NewInfo holds no registries and returns t unchanged.
+func (i *Info) Expand(t soltype.Type) soltype.Type {
+	if i.ctx == nil || t == nil {
+		return t
+	}
+	return i.ctx.expandedCarrier(t)
+}
+
+// LendsMut reports whether the value recorded for n lends mutable access, which a
+// `&mut self` member and a setter need from their receiver. It reads the type as
+// recorded, before any coalescing, because a binding's read records a variable whose
+// lower bounds carry the borrow. Every one of those bounds has to be a `mut` borrow,
+// since the value at run time may be any of them.
+func (i *Info) LendsMut(n ast.Node) bool {
+	t := i.types[n]
+	return t != nil && lendsMut(t)
+}
+
 // MemberObject returns an object type whose elements are the members a value of type t
 // exposes, answered against the registries of the run that recorded this table. It
 // reads t the way a member read off a value of type t does:
