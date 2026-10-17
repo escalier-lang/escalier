@@ -370,7 +370,14 @@ func (c *checker) checkCondExhaustive(scope *Scope, lvl int, norm ucs.Norm, shap
 		c.report(&NonExhaustiveMatchError{Origin: split.Origin, OpenTail: carrier})
 		return
 	}
-	if hasStructuralTag(cov.covering.tests) {
+	// A variadic tuple holds tuples of many lengths, so it is covered once the tuple tests
+	// together match every one of them. Any other exact object or tuple is covered by a
+	// branch that destructures its shape.
+	if shape, ok := c.ctx.variadicShape(carrier); ok {
+		if variadicTagged(shape, cov.covering.tests) {
+			return
+		}
+	} else if hasStructuralTag(cov.covering.tests) {
 		return
 	}
 	// The whole scrutinee is the witness, since a structural scrutinee has no members to
@@ -570,12 +577,46 @@ func (c *checker) memberTagged(scope *Scope, member soltype.Type, group tagGroup
 	case *soltype.ClassType:
 		// A structural tag names a class member when the instance carries every key it
 		// tests, the same rule that lets the branch under it destructure the member.
-		return c.nominalTagged(scope, m, group.tests) || c.ctx.structuralTagged(member, group.tests)
-	case *soltype.ObjectType, *soltype.TupleType:
-		return c.ctx.structuralTagged(member, group.tests)
+		return c.nominalTagged(scope, m, group.tests) || c.structuralTagged(member, group.tests)
+	case *soltype.TupleType:
+		if shape, ok := c.ctx.variadicShape(m); ok {
+			return variadicTagged(shape, group.tests)
+		}
+		return c.structuralTagged(member, group.tests)
+	case *soltype.ObjectType:
+		return c.structuralTagged(member, group.tests)
 	default:
 		return false
 	}
+}
+
+// variadicTagged reports whether the tuple tests among tags together match every length a
+// tuple of shape can have. A rest test of length k matches every length from k up, and an
+// exact test matches its one length, so `[a]`, `[a, b]` and `[a, b, c, ...r]` match every
+// `[number, ...Array<string>]`.
+func variadicTagged(shape tupleShape, tags []ucs.Test) bool {
+	exact := set.NewSet[int]()
+	openFrom := -1
+	for _, tag := range tags {
+		tt, ok := tag.(*ucs.TupleTest)
+		if !ok {
+			continue
+		}
+		if tt.Rest != ucs.TrailingRest {
+			exact.Add(tt.Len)
+		} else if openFrom < 0 || tt.Len < openFrom {
+			openFrom = tt.Len
+		}
+	}
+	if openFrom < 0 {
+		return false
+	}
+	for n := shape.minLen(); n < openFrom; n++ {
+		if !exact.Contains(n) {
+			return false
+		}
+	}
+	return true
 }
 
 // resolveAnnTags resolves the annotation of every annotation test in each of cov's groups, so
@@ -677,7 +718,7 @@ func (c *checker) nominalTagged(scope *Scope, member *soltype.ClassType, tags []
 
 // structuralTagged reports whether some covering test is a shape the member carries, which is
 // what lets the branch under that test destructure it.
-func (c *Context) structuralTagged(member soltype.Type, tags []ucs.Test) bool {
+func (c *checker) structuralTagged(member soltype.Type, tags []ucs.Test) bool {
 	for _, tag := range tags {
 		if c.testMatchesMemberShape(tag, member) {
 			return true

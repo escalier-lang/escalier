@@ -36,6 +36,65 @@ func (s tupleShape) elemUnion(c *Context) soltype.Type {
 	return newUnion(c, elems)
 }
 
+// tupleAtLength returns t read at the lengths a tuple test of count admits, as atLength
+// reads a variadic tuple. open asks for the lengths from count up. A union has each variadic
+// member read so and keeps its other members. It reports false when no variadic tuple in t
+// changes.
+func (c *Context) tupleAtLength(t soltype.Type, count int, open bool) (soltype.Type, bool) {
+	if shape, ok := c.variadicShape(t); ok {
+		return shape.atLength(c, count, open)
+	}
+	u, isUnion := groundedCarrier(t).(*soltype.UnionType)
+	if !isUnion {
+		return nil, false
+	}
+	changed := false
+	members := slices.Clone(u.Types)
+	for i, member := range members {
+		if shape, ok := c.variadicShape(member); ok {
+			if at, fits := shape.atLength(c, count, open); fits {
+				members[i], changed = at, true
+			}
+		}
+	}
+	if !changed {
+		return nil, false
+	}
+	return newUnion(c, members), true
+}
+
+// atLength returns the tuple the shape holds at length count, and false when it holds none
+// of that length. open asks instead for the tuples of length count or more, as a tuple
+// pattern with a trailing rest admits. Their first count values are fixed and the values
+// after them are variadic. Past the prefix, a position of such a tuple may hold a middle
+// value or a suffix value depending on the length, so it reads as the union of the two. open
+// reports false when count fits in the prefix, which the shape already reads.
+func (s tupleShape) atLength(c *Context, count int, open bool) (soltype.Type, bool) {
+	if s.rest == nil {
+		return nil, false
+	}
+	if open {
+		if count <= len(s.prefix) {
+			return nil, false
+		}
+		tail := newUnion(c, append([]soltype.Type{s.rest}, s.suffix...))
+		fixed := slices.Clone(s.prefix)
+		for len(fixed) < count {
+			fixed = append(fixed, tail)
+		}
+		return c.variadicTuple(fixed, tail, nil), true
+	}
+	if count < s.minLen() {
+		return nil, false
+	}
+	elems := slices.Clone(s.prefix)
+	for range count - s.minLen() {
+		elems = append(elems, s.rest)
+	}
+	elems = append(elems, s.suffix...)
+	return &soltype.TupleType{Elems: elems}, true
+}
+
 // minLen returns how many values every tuple of the shape holds.
 func (s tupleShape) minLen() int { return len(s.prefix) + len(s.suffix) }
 

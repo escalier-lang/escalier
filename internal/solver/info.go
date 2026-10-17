@@ -25,6 +25,10 @@ type Info struct {
 	// The read's recorded type cannot say this, since the value a method read yields is
 	// its signature with the receiver already stripped.
 	methodReads set.Set[ast.Node]
+	// absentKeys holds, per object pattern a split has tested, the keys its runtime test also
+	// checks are absent. A pattern missing from the map has not been tested.
+	// recordAbsentKeys fills it.
+	absentKeys map[*ast.ObjectPat][]string
 }
 
 // NewInfo returns an empty Info side table ready to record inferred types.
@@ -33,7 +37,15 @@ func NewInfo() *Info {
 		types:       map[ast.Node]soltype.Type{},
 		nsMembers:   map[ast.Node]ast.Decl{},
 		methodReads: set.NewSet[ast.Node](),
+		absentKeys:  map[*ast.ObjectPat][]string{},
 	}
+}
+
+// AbsentKeys returns the keys the runtime test of the object pattern p also checks are
+// absent, in sorted order, and nil when it checks none. `{radius}` over
+// `{radius: number} | {radius: number, label: string}` checks `label`.
+func (i *Info) AbsentKeys(p *ast.ObjectPat) []string {
+	return i.absentKeys[p]
 }
 
 // TypeOf returns the type recorded for n, or nil if none has been set.

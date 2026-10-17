@@ -2818,6 +2818,13 @@ func (b *Builder) buildPatternCondition(pattern ast.Pat, targetExpr Expr) (Expr,
 			}
 		}
 
+		// A key the checker asks to be absent tells this pattern's union member apart from
+		// one that carries more keys.
+		for _, key := range b.types().AbsentKeys(pat) {
+			absent := NewUnaryExpr(LogicalNot, buildPropertyInObjectCheck(key, targetExpr, pat), pat)
+			conditions = append(conditions, absent)
+		}
+
 		// Only generate the destructuring binding at this level
 		objectPat := NewObjectPat(objPatElems, pat)
 		declarator := &Declarator{
