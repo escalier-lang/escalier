@@ -79,6 +79,10 @@ type checker struct {
 	// the closure's AST no longer marks it as captured once the pre-pass has run.
 	closureCaptureInfo map[ast.Func][]liveness.CaptureInfo
 
+	// moduleCaptures holds the module-level bindings each function written outside any body
+	// reaches, and whether it may write each one. collectModuleCaptures fills it.
+	moduleCaptures map[ast.Func][]liveness.CaptureInfo
+
 	// openVars holds the variables whose lower bounds do not cover every value they can
 	// hold. A parameter's variable is one, since a caller fills it. A pattern leaf with a
 	// default is another, since it holds the default only when the field is absent.
