@@ -466,6 +466,9 @@ type Result = Inner<typeof s>`,
 		t.Run(tt.name, func(t *testing.T) {
 			nodes, ctx, errs := inferTypeNodes(t, tt.src)
 			require.Equal(t, tt.wantErrs, messagesWithSpan(t, errs))
+			for _, e := range errs {
+				require.True(t, isWarning(e), "a shadowed alternative is a warning")
+			}
 			require.Equal(t, tt.want, soltype.Print(expandAliasResidual(ctx, nodes["Result"])))
 		})
 	}

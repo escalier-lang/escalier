@@ -137,6 +137,8 @@ func TestCaptureSources(t *testing.T) {
 		// A shadowed alternative never takes part in a match, so the literal leaves it out.
 		{"AShadowedAlternativeIsLeftOut", `/^(?<a>a|ab).*$/`, []string{`/^a$/`}},
 		{"AShadowedAlternativeInsideTheBody", `/^(?<a>x(a|ab).*)$/`, []string{`/^x(a).*$/`}},
+		// A shadowed alternative outside the group leaves the group's literal as written.
+		{"AShadowedAlternativeOutsideTheGroup", `/^(?:a|ab)(?<b>c).*$/`, []string{`/^c$/`}},
 		// A group inside a shadowed alternative never captures, so it gives no literal.
 		{"AGroupInsideAShadowedAlternative", `/^(?:b|(?<a>bc)).*$/`, []string{}},
 	}
