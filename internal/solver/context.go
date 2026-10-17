@@ -28,20 +28,6 @@ import (
 type Context struct {
 	varCounter int
 
-	// rigidParams holds the type parameters of each generic declaration whose body is being
-	// inferred, and of each one whose body the module component being inferred has already
-	// walked, keyed by variable. constrain checks such a parameter on the sub side of a
-	// constraint against its bounds alone, so the body has to work for every instantiation
-	// those bounds allow. Against a type, it reads the parameter as its skolem, an opaque
-	// type that satisfies a constraint only through the parameter's bounds.
-	// holdTypeParamsRigid fills it.
-	rigidParams map[*soltype.TypeVarType]*rigidParam
-
-	// rigidSkolems maps the skolem each rigid parameter has been read as back to the
-	// parameter's variable. constrain reads such a skolem as its parameter again when it
-	// meets a variable, so a skolem never becomes a variable's bound.
-	rigidSkolems map[*soltype.SkolemType]*soltype.TypeVarType
-
 	// paramVars holds the variable of every type parameter a declaration writes, and every
 	// copy that instantiation or extrusion makes of one. A call instantiates a binder by
 	// substituting fresh variables for its parameters, so a copy only stays reachable through
@@ -413,46 +399,15 @@ func (c *Context) freshSymbol(name string) *soltype.UniqueSymbolType {
 	return s
 }
 
-// rigidParam is one entry of Context.rigidParams. bounds are the upper bounds and lowers
-// the lower bounds the parameter's variable carried when it became rigid. That is its
-// declared bounds and any bound a type reference in the signature put on it. A link the
-// body records afterward is not a bound the body may rely on, so it is left out. The skolem
-// is minted on first use, so a parameter the body never constrains from the sub side mints
-// nothing unless a diagnostic names it.
-type rigidParam struct {
-	v      *soltype.TypeVarType
-	name   string
-	uppers []soltype.Type
-	lowers []soltype.Type
-	sk     *soltype.SkolemType
-	// fromBelow marks a parameter that is also rigid on the super side of a constraint, so a
-	// type flowing into it is checked against its skolem. A parameter with a declared lower
-	// bound is always marked, since the skolem's lower bound is what decides such a type, and
-	// so is a parameter a sibling's lower bound names, since a type reaching the sibling
-	// through that bound reaches it too.
-	fromBelow bool
-}
-
-// holdTypeParamsRigid makes params rigid for constrain until the returned function runs.
-// fromBelow makes them rigid on the super side of a constraint as well as the sub side. A
-// parameter with a declared lower bound, or one a sibling's lower bound names, as `U` in
+// markTypeParamsRigid makes params rigid for constrain from here on. fromBelow makes them
+// rigid on the super side of a constraint as well as the sub side. A parameter with a
+// declared lower bound, or one a sibling's lower bound names, as `U` in
 // `where Box<U>: T`, is rigid on the super side either way, so a value that reaches it
 // through that bound meets its skolem rather than binding it.
 //
-// Releases run in the reverse order of their holds. A parameter that was already rigid gets
-// its earlier entry back when the function runs, so an outer hold over the same parameter
-// stays in force after an inner one is released.
-func (c *Context) holdTypeParamsRigid(params []*soltype.TypeParam, fromBelow bool) (release func()) {
-	if c.rigidParams == nil {
-		c.rigidParams = map[*soltype.TypeVarType]*rigidParam{}
-		c.rigidSkolems = map[*soltype.SkolemType]*soltype.TypeVarType{}
-	}
-	earlier := make(map[*soltype.TypeVarType]*rigidParam, len(params))
-	for _, tp := range params {
-		if rp, rigid := c.rigidParams[tp.Var]; rigid {
-			earlier[tp.Var] = rp
-		}
-	}
+// Each parameter's bounds are read as its variable holds them now. Marking a parameter that
+// is already rigid replaces its data with what this call reads.
+func (c *Context) markTypeParamsRigid(params []*soltype.TypeParam, fromBelow bool) {
 	namedInLower := set.NewSet[*soltype.TypeVarType]()
 	for _, tp := range params {
 		if tp.LowerBound != nil {
@@ -462,62 +417,52 @@ func (c *Context) holdTypeParamsRigid(params []*soltype.TypeParam, fromBelow boo
 		}
 	}
 	for _, tp := range params {
-		c.rigidParams[tp.Var] = &rigidParam{
-			v: tp.Var, name: tp.Name,
-			uppers:    slices.Clone(tp.AllUpperBounds()),
-			lowers:    slices.Clone(tp.AllLowerBounds()),
-			fromBelow: fromBelow || tp.LowerBound != nil || namedInLower.Contains(tp.Var),
-		}
-	}
-	return func() {
-		for _, tp := range params {
-			if sk := c.rigidParams[tp.Var].sk; sk != nil {
-				delete(c.rigidSkolems, sk)
-			}
-			if rp, rigid := earlier[tp.Var]; rigid {
-				c.rigidParams[tp.Var] = rp
-				continue
-			}
-			delete(c.rigidParams, tp.Var)
+		tp.Var.Rigid = &soltype.RigidParam{
+			Name:      tp.Name,
+			Uppers:    slices.Clone(tp.AllUpperBounds()),
+			Lowers:    slices.Clone(tp.AllLowerBounds()),
+			FromBelow: fromBelow || tp.LowerBound != nil || namedInLower.Contains(tp.Var),
 		}
 	}
 }
 
-// rigidSkolem returns the skolem a rigid parameter is read as, whose upper bound meets
-// rp.uppers and whose lower bound joins rp.lowers. The bounds stay unsubstituted, so a
-// bound naming a sibling parameter is read through that sibling's skolem in turn.
-func (c *Context) rigidSkolem(rp *rigidParam) *soltype.SkolemType {
-	if rp.sk != nil {
-		return rp.sk
+// rigidSkolem returns the skolem the rigid parameter v is read as, whose upper bound meets
+// the parameter's upper bounds and whose lower bound joins its lower bounds. The bounds
+// stay unsubstituted, so a bound naming a sibling parameter is read through that sibling's
+// skolem in turn. v must be rigid.
+func (c *Context) rigidSkolem(v *soltype.TypeVarType) *soltype.SkolemType {
+	rp := v.Rigid
+	if rp.Skolem != nil {
+		return rp.Skolem
 	}
-	rp.sk = c.freshSkolem(rp.name)
-	c.rigidSkolems[rp.sk] = rp.v
-	switch len(rp.uppers) {
+	sk := c.freshSkolem(rp.Name)
+	sk.Param = v
+	switch len(rp.Uppers) {
 	case 0:
 	case 1:
-		rp.sk.Upper = rp.uppers[0]
+		sk.Upper = rp.Uppers[0]
 	default:
-		rp.sk.Upper = &soltype.IntersectionType{Types: rp.uppers}
+		sk.Upper = &soltype.IntersectionType{Types: rp.Uppers}
 	}
-	switch len(rp.lowers) {
+	switch len(rp.Lowers) {
 	case 0:
 	case 1:
-		rp.sk.Lower = rp.lowers[0]
+		sk.Lower = rp.Lowers[0]
 	default:
-		rp.sk.Lower = &soltype.UnionType{Types: rp.lowers}
+		sk.Lower = &soltype.UnionType{Types: rp.Lowers}
 	}
-	return rp.sk
+	rp.Skolem = sk
+	return sk
 }
 
 // nameRigidParams returns t for display with each rigid parameter's variable replaced by
-// the parameter's skolem, which prints under the parameter's name. A diagnostic raised
-// while a body is checked names its operands through this, so `Cmp<T> <: number` reads
-// as written rather than as `Cmp<t3> <: number`. The result is for rendering only. The
-// type `constrain` checks is untouched and keeps the variable, which the variable arms read
-// as the parameter when it meets another variable. t is returned as it is when nothing is
-// rigid.
+// the parameter's skolem, which prints under the parameter's name. A diagnostic names its
+// operands through this, so `Cmp<T> <: number` reads as written rather than as
+// `Cmp<t3> <: number`. The result is for rendering only. The type `constrain` checks is
+// untouched and keeps the variable, which the variable arms read as the parameter when it
+// meets another variable.
 func (c *Context) nameRigidParams(t soltype.Type) soltype.Type {
-	if len(c.rigidParams) == 0 || t == nil {
+	if t == nil {
 		return t
 	}
 	return t.Accept(&rigidNameSubst{c: c}, soltype.Positive)
@@ -530,10 +475,8 @@ type rigidNameSubst struct {
 }
 
 func (s *rigidNameSubst) EnterType(t soltype.Type, _ soltype.Polarity) soltype.EnterResult {
-	if v, ok := t.(*soltype.TypeVarType); ok {
-		if rp, rigid := s.c.rigidParams[v]; rigid {
-			return soltype.EnterResult{Type: s.c.rigidSkolem(rp), SkipChildren: true}
-		}
+	if v, ok := t.(*soltype.TypeVarType); ok && v.Rigid != nil {
+		return soltype.EnterResult{Type: s.c.rigidSkolem(v), SkipChildren: true}
 	}
 	return soltype.EnterResult{}
 }

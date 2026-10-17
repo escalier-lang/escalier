@@ -84,23 +84,87 @@ func (c *checker) resolveTypeParams(scope *Scope, lvl int, params []*ast.TypePar
 }
 
 // checkDefaultAgainstBounds reports a default of out[i] that falls outside the
-// parameter's upper or lower bound. Every other parameter of the list is held rigid for
+// parameter's upper or lower bound. Every other parameter of the list reads as a skolem in
 // the comparison, so a bound naming a sibling reads it as the unknown type a use site may
 // choose. `<T, U: T = number>` is rejected, since `T` may be `string` at a use that
 // leaves `U` to its default. The parameter being checked stays a variable, so an
 // F-bound such as `<T: Comparable<T> = Foo>` compares `Foo` against `Comparable<Foo>`.
 func (c *checker) checkDefaultAgainstBounds(p *ast.TypeParam, out []*soltype.TypeParam, i int) {
-	siblings := make([]*soltype.TypeParam, 0, len(out)-1)
-	siblings = append(siblings, out[:i]...)
-	siblings = append(siblings, out[i+1:]...)
-	release := c.ctx.holdTypeParamsRigid(siblings, true)
-	defer release()
+	subst := &paramSkolemSubst{skolems: map[*soltype.TypeVarType]*soltype.SkolemType{}}
+	for j, tp := range out {
+		if j != i {
+			subst.skolems[tp.Var] = c.ctx.freshSkolem(tp.Name)
+		}
+	}
+	// Each skolem is minted before any bound is read, so a bound naming a sibling reads
+	// that sibling's skolem.
+	for j, tp := range out {
+		if j == i {
+			continue
+		}
+		sk := subst.skolems[tp.Var]
+		sk.Upper = subst.meet(tp.AllUpperBounds())
+		sk.Lower = subst.join(tp.AllLowerBounds())
+	}
+	def := subst.apply(out[i].Default)
 	if out[i].UpperBound != nil {
-		c.blameConstraintErrors(p.Default, c.ctx.trialUnderProbe(out[i].Default, out[i].UpperBound))
+		c.blameConstraintErrors(p.Default, c.ctx.trialUnderProbe(def, subst.apply(out[i].UpperBound)))
 	}
 	if out[i].LowerBound != nil {
-		c.blameConstraintErrors(p.Default, c.ctx.trialUnderProbe(out[i].LowerBound, out[i].Default))
+		c.blameConstraintErrors(p.Default, c.ctx.trialUnderProbe(subst.apply(out[i].LowerBound), def))
 	}
+}
+
+// paramSkolemSubst rewrites each type parameter variable in skolems to its skolem. Any other
+// variable is left as it is.
+type paramSkolemSubst struct {
+	skolems map[*soltype.TypeVarType]*soltype.SkolemType
+}
+
+func (s *paramSkolemSubst) EnterType(t soltype.Type, _ soltype.Polarity) soltype.EnterResult {
+	if v, ok := t.(*soltype.TypeVarType); ok {
+		if sk, ok := s.skolems[v]; ok {
+			return soltype.EnterResult{Type: sk, SkipChildren: true}
+		}
+	}
+	return soltype.EnterResult{}
+}
+
+func (s *paramSkolemSubst) ExitType(t soltype.Type, _ soltype.Polarity) soltype.Type { return t }
+
+// apply returns t with each variable in skolems replaced by its skolem.
+func (s *paramSkolemSubst) apply(t soltype.Type) soltype.Type {
+	return t.Accept(s, soltype.Positive)
+}
+
+// meet returns the intersection of bounds after apply, nil when there are none.
+func (s *paramSkolemSubst) meet(bounds []soltype.Type) soltype.Type {
+	switch len(bounds) {
+	case 0:
+		return nil
+	case 1:
+		return s.apply(bounds[0])
+	}
+	types := make([]soltype.Type, len(bounds))
+	for i, b := range bounds {
+		types[i] = s.apply(b)
+	}
+	return &soltype.IntersectionType{Types: types}
+}
+
+// join returns the union of bounds after apply, nil when there are none.
+func (s *paramSkolemSubst) join(bounds []soltype.Type) soltype.Type {
+	switch len(bounds) {
+	case 0:
+		return nil
+	case 1:
+		return s.apply(bounds[0])
+	}
+	types := make([]soltype.Type, len(bounds))
+	for i, b := range bounds {
+		types[i] = s.apply(b)
+	}
+	return &soltype.UnionType{Types: types}
 }
 
 // reportBoundCycles reports each type parameter whose bound chain reaches the parameter

@@ -1348,7 +1348,7 @@ func (c *checker) resolveQualClassType(scope *Scope, qi ast.QualIdent) (*soltype
 func (c *checker) freshClassInstance(ct *soltype.ClassType, lvl int) *soltype.ClassType {
 	def, ok := c.ctx.classDef(ct.Name)
 	if !ok {
-		return &soltype.ClassType{Name: ct.Name, Final: ct.Final}
+		return &soltype.ClassType{Name: ct.Name, Final: ct.Final, Variant: ct.Variant}
 	}
 	var typeArgs []soltype.Type
 	if len(def.TypeParams) > 0 {
@@ -1370,6 +1370,7 @@ func (c *checker) freshClassInstance(ct *soltype.ClassType, lvl int) *soltype.Cl
 		Defaults:     paramDefaults(def.TypeParams),
 		LifetimeArgs: ltArgs,
 		Final:        ct.Final,
+		Variant:      ct.Variant,
 	}
 }
 
