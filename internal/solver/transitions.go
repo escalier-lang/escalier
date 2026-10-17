@@ -699,7 +699,7 @@ func (c *checker) varIDToName(id liveness.VarID) string {
 //     bindings those are.
 //
 // The returned map holds the VarID the rename assigned to each extra parameter, keyed by
-// name: `self` and every captured local.
+// name: `self`, every captured local, and every module-level name the body reaches.
 func (c *checker) runLivenessPrePass(scope *Scope, astParams []*ast.Param, recv *ast.MethodReceiver, closure ast.Func, enclosed bool, paramTypes map[string]soltype.Type, body *ast.Block) map[string]liveness.VarID {
 	// Build outer bindings from the scope chain. Every value binding accessible from
 	// the current scope gets a negative VarID so the rename pass can distinguish
@@ -722,9 +722,9 @@ func (c *checker) runLivenessPrePass(scope *Scope, astParams []*ast.Param, recv 
 	// selfName is the name a function declaration's body calls itself by, empty for any other
 	// body.
 	selfName := ""
-	// moduleFuncs holds each module function among the module-level bindings the body
-	// reaches, keyed by name.
-	var moduleFuncs map[string]ast.Func
+	// moduleFuncs holds the functions each module-level name the body reaches was declared
+	// as, keyed by name.
+	var moduleFuncs map[string][]ast.Func
 	if closure != nil && !enclosed {
 		captured, moduleFuncs = c.collectModuleCaptures(scope, closure, outerBindings)
 		extraParams = append(extraParams, captured...)
@@ -790,8 +790,10 @@ func (c *checker) runLivenessPrePass(scope *Scope, astParams []*ast.Param, recv 
 	}
 	// A call of a module function in this body runs what that function reaches, so the
 	// function's name holds a capture edge to each module-level binding it reaches.
-	for name, fn := range moduleFuncs {
-		c.seedModuleFuncEdges(scope, fn, renameResult.ExtraParamVarIDs[name], renameResult.ExtraParamVarIDs)
+	for name, fns := range moduleFuncs {
+		for _, fn := range fns {
+			c.seedModuleFuncEdges(fn, renameResult.ExtraParamVarIDs[name], renameResult.ExtraParamVarIDs)
+		}
 	}
 	return renameResult.ExtraParamVarIDs
 }
@@ -828,23 +830,25 @@ func (c *checker) seedSelfCaptureEdges(scope *Scope, closure ast.Func, selfID li
 }
 
 // collectModuleCaptures returns the names of the module-level bindings fn reaches, sorted,
-// and the module functions among them keyed by name. fn reaches a binding its body reads or
-// writes, and every binding a module function it names reaches. A function whose own walk has
-// not recorded what it reaches contributes only itself. fn's own entry is recorded first, so
-// a call of fn inside its body reads it.
+// and the functions each module-level name among them was declared as, keyed by name. fn
+// reaches a binding its body reads or writes, and every binding a module function it names
+// reaches. A function whose own walk has not recorded what it reaches contributes only
+// itself. fn's own entry is recorded before its body is walked, so a call of fn inside its
+// body reads it.
 //
 // A binding with value semantics is left out of what fn reaches, since a copy of it cannot
-// see a later change to the binding.
-func (c *checker) collectModuleCaptures(scope *Scope, fn ast.Func, outerBindings map[string]liveness.VarID) ([]string, map[string]ast.Func) {
+// see a later change to the binding. So is a name one of fn's parameters binds, since the
+// parameter shadows it for the whole body.
+func (c *checker) collectModuleCaptures(scope *Scope, fn ast.Func, outerBindings map[string]liveness.VarID) ([]string, map[string][]ast.Func) {
 	reached := map[string]bool{}
-	funcs := map[string]ast.Func{}
+	funcs := map[string][]ast.Func{}
 	for _, capture := range liveness.ClosureCaptures(fn, outerBindings) {
 		b, found := scope.GetValue(capture.Name)
 		if !found || !b.ModuleLevel {
 			continue
 		}
-		if callee, ok := moduleFuncOf(b); ok {
-			funcs[capture.Name] = callee
+		if callees := moduleFuncsOf(b); len(callees) > 0 {
+			funcs[capture.Name] = callees
 			continue
 		}
 		if isValueType(bindingType(b)) {
@@ -852,12 +856,16 @@ func (c *checker) collectModuleCaptures(scope *Scope, fn ast.Func, outerBindings
 		}
 		reached[capture.Name] = reached[capture.Name] || capture.IsMutable
 	}
-	for _, callee := range funcs {
-		if callee == fn {
-			continue
-		}
-		for _, capture := range c.moduleCaptures[callee] {
-			reached[capture.Name] = reached[capture.Name] || capture.IsMutable
+	for _, callees := range funcs {
+		for _, callee := range callees {
+			if callee == fn {
+				continue
+			}
+			for _, capture := range c.moduleCaptures[callee] {
+				if !paramsBind(fn.Signature().Params, capture.Name) {
+					reached[capture.Name] = reached[capture.Name] || capture.IsMutable
+				}
+			}
 		}
 	}
 	own := make([]liveness.CaptureInfo, 0, len(reached))
@@ -880,27 +888,35 @@ func (c *checker) collectModuleCaptures(scope *Scope, fn ast.Func, outerBindings
 	return names, funcs
 }
 
-// moduleFuncOf returns the function a module-level binding was declared as: a `fn`
-// declaration with a body, or the function expression a `val` declaration is initialized
-// with.
-func moduleFuncOf(b ValueBinding) (ast.Func, bool) {
-	switch decl := bindingDecl(b).(type) {
-	case *ast.FuncDecl:
-		if decl.Body != nil {
-			return decl, true
+// moduleFuncsOf returns the functions a module-level binding was declared as, one per
+// declaration in source order. Each is a `fn` declaration with a body or the function
+// expression a `val` declaration is initialized with. A `var` can be reassigned to another
+// function, so it yields none.
+func moduleFuncsOf(b ValueBinding) []ast.Func {
+	var fns []ast.Func
+	for _, src := range b.Sources {
+		np, ok := src.(*ast.NodeProvenance)
+		if !ok {
+			continue
 		}
-	case *ast.VarDecl:
-		if fe, ok := decl.Init.(*ast.FuncExpr); ok {
-			return fe, true
+		switch decl := np.Node.(type) {
+		case *ast.FuncDecl:
+			if decl.Body != nil {
+				fns = append(fns, decl)
+			}
+		case *ast.VarDecl:
+			if fe, ok := decl.Init.(*ast.FuncExpr); ok && decl.Kind == ast.ValKind {
+				fns = append(fns, fe)
+			}
 		}
 	}
-	return nil, false
+	return fns
 }
 
 // seedModuleFuncEdges gives fnID, the VarID the body's rename gave a module function fn, a
 // capture edge to each module-level binding fn reaches. ids maps each name the body defined
 // as an extra parameter to its VarID.
-func (c *checker) seedModuleFuncEdges(scope *Scope, fn ast.Func, fnID liveness.VarID, ids map[string]liveness.VarID) {
+func (c *checker) seedModuleFuncEdges(fn ast.Func, fnID liveness.VarID, ids map[string]liveness.VarID) {
 	for _, capture := range c.moduleCaptures[fn] {
 		id, ok := ids[capture.Name]
 		if !ok || id == fnID {
