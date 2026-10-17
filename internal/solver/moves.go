@@ -252,6 +252,9 @@ type movePlace struct {
 // A dynamic index falls back to its container place, since the checker cannot prove
 // two dynamic indices disjoint — `arr[i]` and `arr[j]` both resolve to `arr`, so a
 // move through one conservatively blocks a use through the other.
+//
+// An optional link names the place the plain link does, so `a?.b` is the place `a.b`.
+// Whenever the link reads anything, it reads that place.
 func exprPlace(e ast.Expr) (movePlace, bool) {
 	switch e := e.(type) {
 	case *ast.IdentExpr:
@@ -260,7 +263,7 @@ func exprPlace(e ast.Expr) (movePlace, bool) {
 		}
 		return movePlace{root: liveness.VarID(e.VarID)}, true
 	case *ast.MemberExpr:
-		if e.OptChain || e.Prop == nil || e.Prop.Name == "" {
+		if e.Prop == nil || e.Prop.Name == "" {
 			return movePlace{}, false
 		}
 		base, ok := exprPlace(e.Object)
@@ -269,9 +272,6 @@ func exprPlace(e ast.Expr) (movePlace, bool) {
 		}
 		return extendPlace(base, e.Prop.Name), true
 	case *ast.IndexExpr:
-		if e.OptChain {
-			return movePlace{}, false
-		}
 		base, ok := exprPlace(e.Object)
 		if !ok {
 			return movePlace{}, false

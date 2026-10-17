@@ -300,31 +300,6 @@ func TestInferMemberMissingProperty(t *testing.T) {
 	require.Equal(t, testSpan(), c.errs[0].Span())
 }
 
-// Optional chaining (recv?.prop) needs union/undefined handling — M6.
-func TestInferMemberOptionalChainUnsupported(t *testing.T) {
-	c := newTestChecker()
-	e := ast.NewMember(objExpr(prop("a", numExpr(5))), ast.NewIdentifier("a", testSpan()), true, testSpan())
-
-	got := c.inferExpr(NewScope(), 0, e)
-	require.IsType(t, &soltype.ErrorType{}, got) // PR8: report's recovery placeholder
-	require.Len(t, c.errs, 1)
-	require.Equal(t, "Unsupported: OptionalChain", c.errs[0].Message())
-	require.Equal(t, testSpan(), c.errs[0].Span())
-}
-
-// Optional chaining is reported up front WITHOUT descending into the receiver:
-// an unbound receiver does not add a cascading "unknown identifier" error — the
-// single OptionalChain diagnostic stands for the whole unsupported construct.
-func TestInferMemberOptionalChainDoesNotDescendIntoReceiver(t *testing.T) {
-	c := newTestChecker()
-	// nope?.a — receiver `nope` is unbound and would error if typed.
-	e := ast.NewMember(identExpr("nope"), ast.NewIdentifier("a", testSpan()), true, testSpan())
-
-	c.inferExpr(NewScope(), 0, e)
-	require.Len(t, c.errs, 1)
-	require.Equal(t, "Unsupported: OptionalChain", c.errs[0].Message())
-}
-
 // A malformed `recv.` (no valid property name) leaves Prop.Name empty; the
 // parser has already reported the missing identifier, so the walk must NOT layer
 // a spurious "object is missing property: " on top. It yields the ErrorType

@@ -90,6 +90,7 @@ const (
 	ValElseBranch                             // a fresh join var per leaf a val-else binds, the union of that leaf of the narrowed init and of a non-diverging else's fallback
 	BorrowExprOrigin                          // a RefType minted by inferBorrow from a `&p` / `&mut p` expression
 	OwnedMutConstruction                      // an owned-mutable RefType minted for `val mut q = {…}` from a fresh literal
+	OptionalChainJoin                         // a fresh join var from chainValue, the union of an optional chain's read and the `undefined` it short-circuits to
 )
 
 // NodeResolver resolves an operand type to the AST node that minted it. M2.5's

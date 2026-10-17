@@ -945,8 +945,8 @@ func (c *checker) reportUnsupported(node ast.Node) soltype.Type {
 }
 
 // reportUnsupportedFeature records an UnsupportedFeatureError: the node's KIND is
-// supported but a feature of it is not (optional chaining on a MemberExpr, type
-// params on a FuncExpr). The node carries the blame span; feature names what is
+// supported but a feature of it is not, such as type params on a FuncExpr or an
+// assignment through an optional chain. The node carries the blame span; feature names what is
 // unsupported, since astKind would name the supported parent.
 func (c *checker) reportUnsupportedFeature(node ast.Node, feature string) soltype.Type {
 	return c.report(&UnsupportedFeatureError{Node: node, Feature: feature})
