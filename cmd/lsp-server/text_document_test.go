@@ -470,7 +470,6 @@ func TestDiagnosticsPublishedFromSolver(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			useSolver(t)
 			s := integrationServer(t, tt.files)
 			ctx, published := publishedDiagnostics()
 			uri := openFileIn(t, s, ctx, tt.open, tt.files[tt.open])
@@ -588,7 +587,6 @@ func TestDefinitionFromSolver(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			useSolver(t)
 			s := integrationServer(t, tt.files)
 			uri := openFile(t, s, tt.open, tt.files[tt.open])
 
@@ -651,7 +649,6 @@ func TestHoverFromSolver(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			useSolver(t)
 			s := integrationServer(t, tt.files)
 			uri := openFile(t, s, tt.open, tt.files[tt.open])
 
