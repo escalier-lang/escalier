@@ -2710,6 +2710,61 @@ func (e *UnusedThrowsClauseError) Message() string {
 		"` is unreachable; drop the clause"
 }
 
+// UndeclaredRaiseError fires when something a function body does can raise a value the
+// function's declared `throws` does not admit. A function with no clause declares that it
+// raises nothing, so `fn f() -> number { throw "x" }` reports one.
+//
+//   - `Site` is the expression that raises and `What` names it, as "calling `g`" does.
+//   - `Throws` is what it can raise.
+//   - `Fn` is the function's name, and empty for an anonymous function.
+//   - `Ann` is the annotation that declared the function's `throws`, and nil for no clause.
+//     `Form` says whether it is a `throws` clause, a `Promise<V, E>` return annotation, or
+//     a `Generator<Y, R, N, E>` one.
+//   - `Declared` is the type `Ann` declares.
+type UndeclaredRaiseError struct {
+	Site     ast.Node
+	What     string
+	Throws   soltype.Type
+	Fn       string
+	Ann      ast.TypeAnn
+	Form     throwsForm
+	Declared soltype.Type
+}
+
+func (*UndeclaredRaiseError) isSolverError()        {}
+func (e *UndeclaredRaiseError) Span() ast.Span      { return e.Site.Span() }
+func (e *UndeclaredRaiseError) Related() []ast.Span { return nil }
+func (e *UndeclaredRaiseError) Message() string {
+	fn := "the enclosing function"
+	if e.Fn != "" {
+		fn = "`" + e.Fn + "`"
+	}
+	raised := soltype.Print(e.Throws)
+	switch {
+	case e.Ann == nil:
+		return fmt.Sprintf("%s can throw `%s`, but it doesn't declare it; add `throws %s` to %s's signature",
+			fn, raised, soltype.Print(widen(e.Throws)), fn)
+	case e.Form == throwsPromise && !statesRejectionType(e.Ann):
+		return fmt.Sprintf("%s doesn't state a rejection type even though it can throw `%s`", fn, raised)
+	case e.Form == throwsPromise:
+		return fmt.Sprintf("%s can throw `%s`, which %s's rejection type `%s` does not admit",
+			e.What, raised, fn, soltype.Print(e.Declared))
+	case e.Form == throwsGenerator:
+		return fmt.Sprintf("%s can throw `%s`, which %s's raise type `%s` does not admit",
+			e.What, raised, fn, soltype.Print(e.Declared))
+	default:
+		return fmt.Sprintf("%s can throw `%s`, which %s's `throws %s` does not admit",
+			e.What, raised, fn, soltype.Print(e.Declared))
+	}
+}
+
+// statesRejectionType reports whether the `Promise` return annotation `ann` writes its
+// rejection slot, as `Promise<number, string>` does and `Promise<number>` does not.
+func statesRejectionType(ann ast.TypeAnn) bool {
+	ref, isRef := ann.(*ast.TypeRefTypeAnn)
+	return !isRef || len(ref.TypeArgs) >= 2
+}
+
 // InferredRecvFuncReadError fires when a member read that is not called on the spot reads a
 // function off a receiver whose type is only inferred, as `val g = o.m` does inside
 // `fn f(o) { val g = o.m; return g() }`. Nothing says whether `m` is a method or a field

@@ -40,7 +40,7 @@ func TestInferTryCatchHandlesWithACatchAll(t *testing.T) {
 			// exactly as it would be outside a `try`.
 			name:     "AnArmBodyStillNeedsAClause",
 			src:      `fn f() { try { throw "boom" } catch { e => throw 5 } }`,
-			wantErrs: []string{"1:50-1:51: cannot constrain 5 <: never"},
+			wantErrs: []string{"1:50-1:51: `f` can throw `5`, but it doesn't declare it; add `throws number` to `f`'s signature"},
 		},
 	})
 }
@@ -201,7 +201,7 @@ func TestInferTryWithoutCatchArmsIsRejected(t *testing.T) {
 			src:  `fn f() { try { throw "boom" } }`,
 			wantErrs: []string{
 				"1:10-1:30: " + noArmsMsg,
-				`1:22-1:28: cannot constrain "boom" <: never`,
+				"1:22-1:28: `f` can throw `\"boom\"`, but it doesn't declare it; add `throws string` to `f`'s signature",
 			},
 		},
 	})

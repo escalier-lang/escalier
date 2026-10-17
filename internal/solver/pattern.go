@@ -1513,7 +1513,7 @@ func (c *checker) readPatternField(
 		member, _ := obj.ReadMember(name)
 		if g, isGetter := member.(*soltype.GetterElem); isGetter && getterBorrowsSelfImmut(g) {
 			if purpose == forBinding {
-				c.raiseAccessorThrows(lvl, blame, g.ThrowsOrNever())
+				c.raiseAccessorThrows(lvl, blame, describeRead(blame, name), g.ThrowsOrNever())
 			}
 			c.constrain(blame, g.Type, beta)
 			return beta

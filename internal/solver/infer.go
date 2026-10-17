@@ -37,6 +37,10 @@ type checker struct {
 	// returns collection (a return inside an inner fn never escapes to the outer).
 	fn *funcCtx
 
+	// memberFuncNames maps the function expression of each class method, getter, and setter
+	// to the member's name, which the expression does not carry. funcName reads it.
+	memberFuncNames map[*ast.FuncExpr]string
+
 	// pendingRecvReads holds the member reads off inferred receivers that top-level bodies
 	// collected. A value initializer can still pass such a body to a call that types its
 	// receiver, so checkPendingRecvReads checks them once the component is constrained.
@@ -408,6 +412,11 @@ type funcCtx struct {
 	// fresh variable for `throws _` — so each exit is blamed at its own site, and reads it
 	// back as the function's Throws. Only a script's top level has no signature to seed it.
 	throws soltype.Type
+	// throwsAnn is the annotation that declared `throws`, and nil when the function declares
+	// nothing. throwsForm says which kind of annotation it is. raiseInto names both when a
+	// raise breaks them.
+	throwsAnn  ast.TypeAnn
+	throwsForm throwsForm
 	// raised records whether any exceptional exit can actually raise, which a concrete
 	// declared sink cannot answer since constraining into it leaves no trace. A `throw`
 	// sets it; a call sets it unless the callee is resolved and provably non-throwing.
@@ -719,6 +728,119 @@ func (c *checker) freshThrowsSink(lvl int) *soltype.TypeVarType {
 		return c.freshAt(c.fn.lvl)
 	}
 	return c.freshAt(lvl)
+}
+
+// throwsForm is the kind of annotation that declares a function's `throws`.
+type throwsForm int
+
+const (
+	// throwsClause is a sync function's `throws` clause, or its absence.
+	throwsClause throwsForm = iota
+	// throwsPromise is an async function's `Promise<V, E>` return annotation, whose `E`
+	// declares what the body rejects with.
+	throwsPromise
+	// throwsGenerator is a generator's `Generator<Y, R, N, E>` return annotation, whose
+	// `E` declares what advancing it raises.
+	throwsGenerator
+)
+
+// raiseInto constrains `throws`, what `site` can raise, into the throws sink of the body
+// being walked. `what` names `site` for a diagnostic, as "calling `g`" does. When the sink
+// rejects `throws` with type mismatches alone, it reports one UndeclaredRaiseError in place
+// of them. Any other error the constraint reports is blamed at `site` as it stands.
+func (c *checker) raiseInto(lvl int, site ast.Node, what string, throws soltype.Type) {
+	queued := len(c.ctx.pendingRigidLts)
+	errs := c.ctx.Constrain(throws, c.throwsSink(lvl))
+	if c.fn == nil || !hasHardError(errs) || !onlyMismatches(errs) {
+		c.blameConstraintErrors(site, errs)
+		c.siteRigidLifetimeChecks(site, queued)
+		return
+	}
+	var warnings []SolverError
+	for _, e := range errs {
+		if isWarning(e) {
+			warnings = append(warnings, e)
+		}
+	}
+	c.blameConstraintErrors(site, warnings)
+	c.siteRigidLifetimeChecks(site, queued)
+	raise := &UndeclaredRaiseError{
+		Site:     site,
+		What:     what,
+		Throws:   groundedCarrier(throws),
+		Fn:       c.funcName(c.fn.node),
+		Ann:      c.fn.throwsAnn,
+		Form:     c.fn.throwsForm,
+		Declared: c.fn.throws,
+	}
+	// A read off a union whose members raise the same type raises once per member, and
+	// one diagnostic covers them all.
+	for _, prev := range c.errs {
+		if prev.Span() == raise.Span() && prev.Message() == raise.Message() {
+			return
+		}
+	}
+	c.report(raise)
+}
+
+// onlyMismatches reports whether every fatal error in `errs` is a CannotConstrainError.
+func onlyMismatches(errs []SolverError) bool {
+	for _, e := range errs {
+		if _, isMismatch := e.(*CannotConstrainError); !isMismatch && !isWarning(e) {
+			return false
+		}
+	}
+	return true
+}
+
+// funcName returns the name `node` declares when it is a function declaration or the function
+// expression of a class member, and "" for any other node.
+func (c *checker) funcName(node ast.Node) string {
+	switch node := node.(type) {
+	case *ast.FuncDecl:
+		if node.Name != nil {
+			return node.Name.Name
+		}
+	case *ast.FuncExpr:
+		return c.memberFuncNames[node]
+	}
+	return ""
+}
+
+// describeSite names `site` for a diagnostic as `verb` followed by the site's source, as
+// "calling `o.m`" does. It returns `fallback` for a site that is neither an identifier nor
+// a chain of member reads off one.
+func describeSite(verb, fallback string, site ast.Node) string {
+	if name, ok := pathName(site); ok {
+		return verb + " `" + name + "`"
+	}
+	return fallback
+}
+
+// describeRead names a read of the field `name` at `blame` for a diagnostic. A pattern reads the
+// field by destructuring it, and any other site reads it as describeSite spells it.
+func describeRead(blame ast.Node, name string) string {
+	switch blame.(type) {
+	case *ast.ObjShorthandPat, *ast.ObjKeyValuePat:
+		return "destructuring `" + name + "`"
+	}
+	return describeSite("reading", "this read", blame)
+}
+
+// pathName spells an identifier, or a chain of member reads off one, as source.
+func pathName(n ast.Node) (string, bool) {
+	switch n := n.(type) {
+	case *ast.IdentExpr:
+		return n.Name, true
+	case *ast.MemberExpr:
+		if n.Prop == nil {
+			return "", false
+		}
+		if object, ok := pathName(n.Object); ok {
+			return object + "." + n.Prop.Name, true
+		}
+	}
+	return "", false
 }
 
 // markRaised records that the body being walked has an exceptional exit that can raise.

@@ -1816,7 +1816,7 @@ func (c *checker) memberValue(lvl int, blame ast.Node, member soltype.ObjTypeEle
 		// Reading through a getter runs its body, so the read is an exceptional exit of
 		// the enclosing body the way a call is. A method read is not. Reading `p.m` only
 		// names the function, and its throws stays in the signature until it is called.
-		c.raiseAccessorThrows(lvl, blame, m.ThrowsOrNever())
+		c.raiseAccessorThrows(lvl, blame, describeSite("reading", "this read", blame), m.ThrowsOrNever())
 		out = m.Type
 	case *soltype.MethodElem:
 		switch len(m.Signatures) {
@@ -1907,12 +1907,12 @@ func (c *checker) writeMember(name string, carrier soltype.Type) (soltype.ObjTyp
 // non-throwing to the caller. A `never` throws is skipped outright, leaving the enclosing
 // clause counting as unused; anything else, an unsolved variable included, marks the body
 // as raising, matching how inferCall treats an unresolved callee.
-func (c *checker) raiseAccessorThrows(lvl int, blame ast.Node, throws soltype.Type) {
+func (c *checker) raiseAccessorThrows(lvl int, blame ast.Node, what string, throws soltype.Type) {
 	if isNeverType(throws) {
 		return
 	}
 	c.markRaised()
-	c.constrain(blame, throws, c.throwsSink(lvl))
+	c.raiseInto(lvl, blame, what, throws)
 }
 
 // raiseUnionAccessorThrows raises what reading `name` off a union receiver may throw, and
@@ -1942,7 +1942,7 @@ func (c *checker) raiseUnionAccessorThrows(lvl int, blame ast.Node, name string,
 		}
 	}
 	for _, t := range throws {
-		c.raiseAccessorThrows(lvl, blame, t)
+		c.raiseAccessorThrows(lvl, blame, describeRead(blame, name), t)
 	}
 	c.ctx.registerReadRaises(req, throws)
 }
