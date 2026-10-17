@@ -33,6 +33,12 @@ beforeEach(() => {
             __dirname,
             '../../../internal/interop/data',
         ),
+        // The type checker resolves `std:prelude` and the ambient builtins from
+        // the same directory.
+        ESCALIER_STDLIB_DIR: path.join(
+            __dirname,
+            '../../../internal/interop/data',
+        ),
     });
     runPromise = client.run();
 });
@@ -200,7 +206,12 @@ test('foo/bar', async () => {
 `);
 });
 
-test('textDocument/didOpen', async () => {
+// The server's first check loads the standard library, which takes several
+// seconds in WebAssembly under coverage instrumentation. A test that waits for
+// a check gets longer than Vitest's 5-second default to see it finish.
+const CHECK_TEST_TIMEOUT_MS = 20_000;
+
+test('textDocument/didOpen', { timeout: CHECK_TEST_TIMEOUT_MS }, async () => {
     let diagnostics: lsp.PublishDiagnosticsParams['diagnostics'] | null = null;
 
     client.onTextDocumentPublishDiagnostics((params) => {
@@ -256,7 +267,7 @@ test('textDocument/didOpen', async () => {
     `);
 });
 
-test('textDocument/didChange', async () => {
+test('textDocument/didChange', { timeout: CHECK_TEST_TIMEOUT_MS }, async () => {
     let diagnostics: lsp.PublishDiagnosticsParams['diagnostics'] | null = null;
 
     client.onTextDocumentPublishDiagnostics((params) => {
