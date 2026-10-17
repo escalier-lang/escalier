@@ -4590,11 +4590,11 @@ func (c *checker) delegateElemType(t soltype.Type) (soltype.Type, soltype.Type, 
 // first when the delegating body is async and through the sync one otherwise.
 func (c *checker) delegateSlots(t soltype.Type) ([]soltype.Type, bool) {
 	if c.fn != nil && c.fn.async {
-		if typeArgs, found := c.protocolIterator(t, soltype.AsyncIteratorSymbolMember); found {
+		if typeArgs, found := c.protocolIterator(t, true); found {
 			return typeArgs, true
 		}
 	}
-	return c.protocolIterator(t, soltype.IteratorSymbolMember)
+	return c.protocolIterator(t, false)
 }
 
 // meetNexts combines the Next slots a generator must satisfy at once into the single

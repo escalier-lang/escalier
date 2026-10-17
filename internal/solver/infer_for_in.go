@@ -178,7 +178,7 @@ func (c *checker) asyncElemType(t soltype.Type) (soltype.Type, bool) {
 		}
 		return newUnion(c.ctx, elems), true
 	}
-	return c.protocolElem(t, soltype.AsyncIteratorSymbolMember)
+	return c.protocolElem(t, true)
 }
 
 // syncElemType resolves the element type of a synchronously-iterable value. A borrow is
@@ -227,21 +227,23 @@ func (c *checker) syncElemType(t soltype.Type) (soltype.Type, bool) {
 		}
 		return newUnion(c.ctx, elems), true
 	}
-	return c.protocolElem(t, soltype.IteratorSymbolMember)
+	return c.protocolElem(t, false)
 }
 
 // protocolElem returns the element type t yields through the iteration protocol, and
-// false when t declares no such member. It is protocolIterator's first slot.
-func (c *checker) protocolElem(t soltype.Type, symbol string) (soltype.Type, bool) {
-	typeArgs, found := c.protocolIterator(t, symbol)
+// false when t declares no such member. It is protocolIterator's first slot, and async
+// picks the protocol the way it does there.
+func (c *checker) protocolElem(t soltype.Type, async bool) (soltype.Type, bool) {
+	typeArgs, found := c.protocolIterator(t, async)
 	if !found || len(typeArgs) == 0 {
 		return nil, false
 	}
 	return typeArgs[0], true
 }
 
-// protocolIterator returns the type arguments of the iterator the member named by symbol
-// hands back, and false when t declares no such member.
+// protocolIterator returns the type arguments of the iterator t's protocol member hands back,
+// and false when t declares no such member. The member is `[Symbol.asyncIterator]` when async
+// is true and `[Symbol.iterator]` otherwise.
 //
 // It finds that member through protocolReturn and takes the arguments of what calling it
 // evaluates to. `Array<T>` declares `[Symbol.iterator](&self) -> ArrayIterator<T>`, so the
@@ -253,7 +255,11 @@ func (c *checker) protocolElem(t soltype.Type, symbol string) (soltype.Type, boo
 // it accepts from a sent value. A shorter list states only the slots it carries. A member
 // returning something with no type argument yields nothing readable and declines, so the
 // operand is reported not iterable rather than iterating `unknown`.
-func (c *checker) protocolIterator(t soltype.Type, symbol string) ([]soltype.Type, bool) {
+func (c *checker) protocolIterator(t soltype.Type, async bool) ([]soltype.Type, bool) {
+	symbol := soltype.IteratorSymbolMember
+	if async {
+		symbol = soltype.AsyncIteratorSymbolMember
+	}
 	ret, returns := c.protocolReturn(t, symbol, set.NewSet[string]())
 	if !returns {
 		return nil, false
