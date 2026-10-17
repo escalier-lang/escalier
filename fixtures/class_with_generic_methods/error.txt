@@ -1,8 +1,3 @@
-lib/index.esc:8:20: ambiguous match against number | t22: committed number, but t22 would also match; annotate to disambiguate
-
-8:              return self.value
-                       ^^^^^^^^^^
-
 lib/index.esc:17:29: cannot constrain string <: number
 
 17:         return Foo.addNums1(a, b) // error

@@ -2453,9 +2453,9 @@ func hexDigitValue(b byte) int {
 // that would also match sub while binding an inference variable, or nil when none does. For
 // `5 <: (T | number)` number commits but T would also match by pinning to 5, so T is
 // returned. Each candidate is trialled under a throwaway probe, so the peek records no bound.
-// A union with no bare type-variable member cannot bind ambiguously, so the scan is skipped,
-// sparing the common all-concrete union super such as an enum value flowing into its variant
-// union.
+// A type parameter's variable, or a copy of one, is never returned. A union with no bare
+// type-variable member cannot bind ambiguously, so the scan is skipped, sparing the common
+// all-concrete union super such as an enum value flowing into its variant union.
 func (c *Context) ambiguousAlternate(sub soltype.Type, u *soltype.UnionType, committed soltype.Type, seen *seenPairs, mutCtx bool) soltype.Type {
 	hasVar := false
 	for _, m := range u.Types {
@@ -2469,6 +2469,16 @@ func (c *Context) ambiguousAlternate(sub soltype.Type, u *soltype.UnionType, com
 	}
 	for _, j := range specificityOrder(u.Types) {
 		if c.partOfCommitted(u.Types[j], committed) {
+			continue
+		}
+		// Inside a generic body a parameter stands for every type a caller may pick, so a
+		// value matching it is not a choice this union makes. `return self.value` against
+		// `-> number | T` commits `number`, and T is not an alternative to it. A copy of a
+		// parameter is reached only through the bounds a body recorded. In a `class Box<T>`
+		// whose method `getValue<U>` returns `self.value` against `-> T | U`, the call
+		// `Box(5:number)` carries `number` through those bounds to a copy of `T | U`. The U
+		// copy there is no type the call chose.
+		if v, isVar := u.Types[j].(*soltype.TypeVarType); isVar && c.isParamVar(v) {
 			continue
 		}
 		if ok, mutated := c.trialMutatesBounds(sub, u.Types[j], seen, mutCtx); ok && mutated {
@@ -3478,6 +3488,7 @@ func (e *extruder) EnterType(t soltype.Type, pol soltype.Polarity) soltype.Enter
 		return soltype.EnterResult{Type: nv, SkipChildren: true}
 	}
 	nv := e.c.freshVar(e.lvl)
+	e.c.copyParamMark(nv, v)
 	e.cache[key] = nv
 	// v is the original (possibly pre-probe) var — its append is the one a Discard
 	// must truncate. nv was just minted here, so journaling it is a harmless no-op

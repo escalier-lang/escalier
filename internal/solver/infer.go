@@ -870,6 +870,9 @@ func (c *checker) blameConstraintErrors(n ast.Node, errs []SolverError) {
 			err.prov, err.site = c.prov, n
 		case *AmbiguousUnionCommitWarning:
 			err.prov, err.site = c.prov, n
+			err.shownUnion = c.ctx.nameRigidParams(err.Union)
+			err.shownCommitted = c.ctx.nameRigidParams(err.Committed)
+			err.shownAlternate = c.ctx.nameRigidParams(err.Alternate)
 		case *TupleLengthMismatchError:
 			err.prov, err.site = c.prov, n
 		case *LifetimeBinderNotSatisfiedError:

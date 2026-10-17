@@ -42,6 +42,13 @@ type Context struct {
 	// meets a variable, so a skolem never becomes a variable's bound.
 	rigidSkolems map[*soltype.SkolemType]*soltype.TypeVarType
 
+	// paramVars holds the variable of every type parameter a declaration writes, and every
+	// copy that instantiation or extrusion makes of one. A call instantiates a binder by
+	// substituting fresh variables for its parameters, so a copy only stays reachable through
+	// the bounds a body recorded on the parameter. resolveTypeParams adds each parameter's
+	// variable, and the copiers add each copy through copyParamMark. isParamVar reads it.
+	paramVars set.Set[*soltype.TypeVarType]
+
 	// symbolCounter mints the id a `unique symbol` annotation carries. Each written
 	// annotation is its own symbol, so the counter advances per annotation rather than
 	// per name, and two references to one declaration share an id because they share the
@@ -371,6 +378,26 @@ func (c *Context) freshVar(level int) *soltype.TypeVarType {
 	v := &soltype.TypeVarType{ID: c.varCounter, Level: level}
 	c.varCounter++
 	return v
+}
+
+// markParamVar records v in paramVars, as a type parameter's variable or a copy of one.
+func (c *Context) markParamVar(v *soltype.TypeVarType) {
+	if c.paramVars == nil {
+		c.paramVars = set.NewSet[*soltype.TypeVarType]()
+	}
+	c.paramVars.Add(v)
+}
+
+// isParamVar reports whether v is a type parameter's variable or a copy of one.
+func (c *Context) isParamVar(v *soltype.TypeVarType) bool {
+	return c.paramVars.Contains(v)
+}
+
+// copyParamMark marks the copy nv when the variable it was copied from is in paramVars.
+func (c *Context) copyParamMark(nv, from *soltype.TypeVarType) {
+	if c.isParamVar(from) {
+		c.markParamVar(nv)
+	}
 }
 
 // freshSymbol mints one particular symbol, the type a written `unique symbol` names. Each

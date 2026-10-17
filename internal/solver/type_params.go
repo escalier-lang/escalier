@@ -29,6 +29,7 @@ func (c *checker) resolveTypeParams(scope *Scope, lvl int, params []*ast.TypePar
 	// siblings each default can see.
 	for i, p := range params {
 		out[i] = &soltype.TypeParam{Name: p.Name, Var: c.freshAt(lvl)}
+		c.ctx.markParamVar(out[i].Var)
 	}
 	// Pass 2: resolve each default under the names declared so far, then declare this
 	// parameter. A default naming a later sibling or itself finds the name undeclared.

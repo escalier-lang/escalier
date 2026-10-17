@@ -2798,6 +2798,10 @@ type AmbiguousUnionCommitWarning struct {
 	Alternate soltype.Type // another member that would also have matched
 	prov      NodeResolver
 	site      ast.Node
+	// shownUnion, shownCommitted, and shownAlternate are the three types as the message
+	// renders them, each with every rigid type parameter's variable under the parameter's
+	// name. blameConstraintErrors assigns them, and nil leaves the type itself to render.
+	shownUnion, shownCommitted, shownAlternate soltype.Type
 }
 
 func (*AmbiguousUnionCommitWarning) isSolverError()    {}
@@ -2808,7 +2812,17 @@ func (e *AmbiguousUnionCommitWarning) Span() ast.Span {
 func (e *AmbiguousUnionCommitWarning) Related() []ast.Span { return nil }
 func (e *AmbiguousUnionCommitWarning) Message() string {
 	return fmt.Sprintf("ambiguous match against %s: committed %s, but %s would also match; annotate to disambiguate",
-		describe(e.Union), describe(e.Committed), describe(e.Alternate))
+		describe(shownOr(e.shownUnion, e.Union)), describe(shownOr(e.shownCommitted, e.Committed)),
+		describe(shownOr(e.shownAlternate, e.Alternate)))
+}
+
+// shownOr returns shown, the display copy a diagnostic carries for t, or t itself when
+// shown is nil.
+func shownOr(shown, t soltype.Type) soltype.Type {
+	if shown != nil {
+		return shown
+	}
+	return t
 }
 
 func (e *UnknownIdentifierError) Span() ast.Span      { return e.Ident.Span() }
@@ -3095,14 +3109,7 @@ func (e *AsyncThrowsClauseError) Message() string {
 }
 
 func (e *CannotConstrainError) Message() string {
-	sub, super := e.Sub, e.Super
-	if e.shownSub != nil {
-		sub = e.shownSub
-	}
-	if e.shownSuper != nil {
-		super = e.shownSuper
-	}
-	msg := fmt.Sprintf("cannot constrain %s <: %s", describe(sub), describe(super))
+	msg := fmt.Sprintf("cannot constrain %s <: %s", describe(shownOr(e.shownSub, e.Sub)), describe(shownOr(e.shownSuper, e.Super)))
 	if e.commitUnion != nil {
 		// An earlier value committed the e.commitVar branch of e.commitUnion, pinning that
 		// var. This later use forces an incompatible bound onto the same var, so the
