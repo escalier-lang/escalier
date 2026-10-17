@@ -2726,7 +2726,11 @@ func (c *checker) inferFieldAssign(lvl int, e *ast.BinaryExpr, object ast.Expr, 
 	// inferred, such as an unannotated parameter, declares no field. A caller that passes
 	// an object with a readonly field into that shape gets ReadonlyFieldSubtypeError.
 	declared, hasDeclared := member.(*soltype.PropertyElem)
-	if hasDeclared && declared.Readonly {
+	// A constructor may write its class's own readonly field once, to initialize it.
+	// checkConstructorInit rejects the write later if it is not the field's first.
+	readonlyField := hasDeclared && declared.Readonly
+	initWrite := readonlyField && c.ctorInit.deferReadonlyWrite(e, object, name)
+	if readonlyField && !initWrite {
 		c.report(&ReadonlyFieldError{Field: name, site: e.Left})
 		c.recordWritten(recv, name, w)
 		c.recordType(e, w)
@@ -2760,7 +2764,9 @@ func (c *checker) inferFieldAssign(lvl int, e *ast.BinaryExpr, object ast.Expr, 
 		if !upgraded {
 			c.constrain(e.Right, source, writableFieldType(declared))
 		}
-		reqField = &soltype.PropertyElem{Name: name, Type: declared.Type, Optional: declared.Optional}
+		// An initializing write keeps the field readonly in the requirement, which asks only
+		// that the receiver hold the field. A writable field there would reject `self`.
+		reqField = &soltype.PropertyElem{Name: name, Type: declared.Type, Optional: declared.Optional, Readonly: initWrite}
 	}
 	req := &soltype.RefType{
 		Mut: true,

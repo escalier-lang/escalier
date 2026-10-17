@@ -323,6 +323,11 @@ type checker struct {
 	// call, and walkConstructorBody checks what it collected once the body is done.
 	superCtx *superCtx
 
+	// ctorInit is the readonly-field state of the constructor body being walked, nil outside
+	// one. inferFieldAssign records a write to one of the class's own readonly fields here
+	// instead of rejecting it, and checkConstructorInit decides which writes initialize.
+	ctorInit *ctorInitCtx
+
 	// pendingOverrides holds every class carrying an `extends` edge, each waiting to have
 	// the members it declares checked against the ones they override. The check is queued
 	// rather than run inside inferClassDecl because a subclass can be inferred before its
