@@ -43,7 +43,7 @@ val r = probe(&k)
 val mm = k.contains`,
 			binding: "mm",
 			want:    "fn <B>(x: B) -> number",
-			errs:    []string{"11:46-11:57: cannot constrain B <: U"},
+			errs:    []string{"11:55-11:56: cannot constrain B <: U"},
 		},
 		{
 			// Leaf reaches key through Keyed, at Leaf's own V.
@@ -65,7 +65,7 @@ class Leaf<V> extends Keyed<V> {
 	},
 	contains<B>(&self, x: B) -> number { return self.key(x) },
 }`,
-			errs: []string{"16:46-16:57: cannot constrain B <: V"},
+			errs: []string{"16:55-16:56: cannot constrain B <: V"},
 		},
 		{
 			// A binder bounded by the class's parameter may be passed on. The override check
@@ -114,7 +114,7 @@ class Keyed<U> extends Bag<U> {
 	a(&self, x: U) -> number { return self.b(x) },
 	b(&self, y: number) -> number { return y },
 }`,
-			errs: []string{"3:36-3:45: cannot constrain U <: number"},
+			errs: []string{"3:43-3:44: cannot constrain U <: number"},
 		},
 		{
 			name: "AConstructorBody",

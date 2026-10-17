@@ -133,6 +133,17 @@ type checker struct {
 	// `Self` still resolves as an ordinary class reference with its own arity check.
 	selfClass *soltype.ClassType
 
+	// componentClassStatics maps the binding variable of each class in the component being
+	// inferred to that class's static side. classValueMember reads a static member through
+	// it while the variable has no lower bound yet. inferComponent fills it before its phase 2
+	// and puts the earlier map back when it returns.
+	componentClassStatics map[*soltype.TypeVarType]*soltype.ObjectType
+
+	// componentRigidReleases collects the release of each rigid hold that lasts as long as
+	// the module component being inferred. inferComponent runs them when it returns. It is
+	// nil while no component is being inferred.
+	componentRigidReleases *[]func()
+
 	// selfAlias is the handle `Self` names inside the interface body being walked, nil outside
 	// any interface body. inferInterfaceBody sets it and binds `Self` to it, the way
 	// inferClassDecl does selfClass. It is the interface's own alias at its own type-parameter

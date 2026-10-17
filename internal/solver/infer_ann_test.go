@@ -299,7 +299,7 @@ fn f() {
 		src := `fn sink(q: mut {a: {x: number | string}}) {}
 fn f(p: mut {a: {x: number}}) { sink(p) }`
 		_, _, errs := inferSource(t, src)
-		require.Equal(t, []string{"2:33-2:40: cannot constrain string <: number"}, messagesWithSpan(t, errs))
+		require.Equal(t, []string{"2:38-2:39: cannot constrain string <: number"}, messagesWithSpan(t, errs))
 	})
 }
 
@@ -466,7 +466,7 @@ func TestInferOwnedMutArgumentIntoAWiderParam(t *testing.T) {
 	return take(cfg)
 }`
 		_, _, errs := inferSource(t, src)
-		require.Equal(t, []string{"4:9-4:18: cannot constrain string <: number"},
+		require.Equal(t, []string{"4:14-4:17: cannot constrain string <: number"},
 			messagesWithSpan(t, errs))
 	})
 }

@@ -168,7 +168,7 @@ val o = {[sym]: 1, [other]: "x"}
 val r = o[other]
 val n = take(other)`},
 			want:     map[string]string{"o": `{[sym]: 1, [other]: "x"}`, "r": `"x"`},
-			wantErrs: []string{"6:9-6:20: cannot constrain typeof other <: typeof sym"},
+			wantErrs: []string{"6:14-6:19: cannot constrain typeof other <: typeof sym"},
 		},
 		{
 			name:     "MissingPropertyNamesTheSymbol",

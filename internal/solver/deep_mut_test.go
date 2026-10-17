@@ -146,7 +146,7 @@ func TestReadonlySubtypingFlowsThroughCallAndReturn(t *testing.T) {
 		src := `fn sink(o: mut {a: number}) {}
 fn f(obj: mut {readonly a: number}) { sink(obj) }`
 		_, _, errs := inferSource(t, src)
-		require.Equal(t, []string{"2:39-2:48: readonly field a cannot satisfy a writable field requirement"}, messagesWithSpan(t, errs))
+		require.Equal(t, []string{"2:44-2:47: readonly field a cannot satisfy a writable field requirement"}, messagesWithSpan(t, errs))
 	})
 	t.Run("return: readonly source as writable return", func(t *testing.T) {
 		src := "fn f(obj: mut {readonly a: number}) -> mut {a: number} { return obj }"
@@ -234,7 +234,7 @@ func TestLazyDeepMutPinsNestedFieldInvariant(t *testing.T) {
 	src := `fn sink(q: mut {a: {x: number | string}}) {}
 fn f(p: mut {a: {x: number}}) { sink(p) }`
 	_, _, errs := inferSource(t, src)
-	require.Equal(t, []string{"2:33-2:40: cannot constrain string <: number"}, messagesWithSpan(t, errs))
+	require.Equal(t, []string{"2:38-2:39: cannot constrain string <: number"}, messagesWithSpan(t, errs))
 }
 
 // The same shapes under an immutable wrapper are covariant, so the strict-subtype

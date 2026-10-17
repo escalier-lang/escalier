@@ -659,6 +659,45 @@ func (c *checker) inferComponent(
 		}
 	}
 
+	// A body reads a class's name through the class's binding var. The var gets its lower
+	// bound only once the class's own bodies are inferred, so a constraint recorded through
+	// it is checked late. An error it raises is then blamed on the class declaration rather
+	// than on the expression that read the name. The class's statics carry their signatures
+	// already, so a read such as `Foo.add` resolves against them until the var is bound.
+	prevClassStatics := c.componentClassStatics
+	c.componentClassStatics = map[*soltype.TypeVarType]*soltype.ObjectType{}
+	for _, key := range component {
+		b, isValue := bindings[key]
+		if !isValue {
+			continue
+		}
+		// The var stands for the first declaration under the key. Phase 2 reports any other
+		// as a duplicate.
+		for _, d := range g.GetDecls(key) {
+			if handled.Contains(d) {
+				continue
+			}
+			if decl, isClass := d.(*ast.ClassDecl); isClass {
+				sigs := c.classSigsOf(c.lookupScope(scope, decl), inner, decl, g.GetNamespace(key))
+				c.componentClassStatics[b.v] = sigs.def.Static
+			}
+			break
+		}
+	}
+	// A function's type parameters stay rigid until this function returns, which is after
+	// every definition in the component has reached its binding var. inferFunc gives the
+	// reason.
+	prevRigidReleases := c.componentRigidReleases
+	c.componentRigidReleases = &[]func(){}
+	defer func() {
+		releases := *c.componentRigidReleases
+		for i := len(releases) - 1; i >= 0; i-- {
+			releases[i]()
+		}
+		c.componentClassStatics = prevClassStatics
+		c.componentRigidReleases = prevRigidReleases
+	}()
+
 	// Phase 2: infer each declaration's definition and constrain it <: its var.
 	//
 	// Each key's namespace is set for the whole of its inference, so a bare type

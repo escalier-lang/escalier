@@ -2138,9 +2138,13 @@ func receiverClass(t soltype.Type) soltype.RefInner {
 // classValueMember resolves a static member read off a class value, such as
 // `Point.origin`, by looking the member up on the value object and producing its type via
 // memberValue. It returns ok=false when the receiver is not a class value or carries no
-// such member, leaving both cases to the structural field-requirement path.
+// such member, leaving both cases to the structural field-requirement path. A binding var in
+// componentClassStatics that has no lower bound yet reads as its class's static side.
 func (c *checker) classValueMember(lvl int, blame ast.Node, name string, carrier soltype.Type) (pathResult, bool) {
 	obj, ok := c.classValueCarrier(carrier)
+	if v, isVar := carrier.(*soltype.TypeVarType); isVar && !ok && len(v.LowerBounds) == 0 {
+		obj, ok = c.componentClassStatics[v]
+	}
 	if !ok {
 		return pathResult{}, false
 	}
