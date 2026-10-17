@@ -56,6 +56,7 @@ var ambientPackages = []string{
 func (c *checker) ambientScope() *Scope {
 	if c.ambient == nil {
 		c.ambient = c.preludeScope().Child()
+		c.ambient.builtin = true
 	}
 	return c.ambient
 }

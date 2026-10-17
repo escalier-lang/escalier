@@ -1,8 +1,12 @@
 package solver
 
 import (
+	"maps"
+	"slices"
+
 	"github.com/escalier-lang/escalier/internal/ast"
 	"github.com/escalier-lang/escalier/internal/provenance"
+	"github.com/escalier-lang/escalier/internal/set"
 	"github.com/escalier-lang/escalier/internal/soltype"
 )
 
@@ -110,6 +114,8 @@ type Scope struct {
 	// scope's own maps, so a member defined after the binding is still reached.
 	unprefixed []*Namespace
 	parent     *Scope
+	// builtin marks a scope that holds builtins every program sees. See IsBuiltin.
+	builtin bool
 	// onDefine, when set, is called with each name this scope binds, in either
 	// sort. The module scope of a run under inference sets it so a qualified
 	// member reaches the namespace pre-bound for its prefix as it is defined,
@@ -260,6 +266,80 @@ func (s *Scope) getValueBefore(name string, stop *Scope) (ValueBinding, bool) {
 func (s *Scope) OwnNamespace(name string) (*Namespace, bool) {
 	ns, ok := s.namespaces[name]
 	return ns, ok
+}
+
+// IsBuiltin reports whether s holds builtins every program sees rather than names a
+// program declared. Three scopes do: the root holding the operators and the placeholder
+// types, the scope holding the prelude package's exports, and the scope holding the
+// ambient packages' exports. Each is an ancestor of every module and script scope.
+func (s *Scope) IsBuiltin() bool {
+	return s.builtin
+}
+
+// Parent returns the scope s is nested in, or nil for a root scope.
+func (s *Scope) Parent() *Scope {
+	return s.parent
+}
+
+// LocalValue resolves name in the value sort without walking to the parent. It reads
+// this scope's own map, then the namespaces whose members the scope binds under their
+// own names, which is the order GetValue reads them at each level.
+func (s *Scope) LocalValue(name string) (ValueBinding, bool) {
+	if b, ok := s.values[name]; ok {
+		return b, true
+	}
+	for _, ns := range s.unprefixed {
+		if b, ok := ns.Values[name]; ok {
+			return b, true
+		}
+	}
+	return ValueBinding{}, false
+}
+
+// LocalType is the type-sort counterpart of LocalValue.
+func (s *Scope) LocalType(name string) (TypeBinding, bool) {
+	if b, ok := s.types[name]; ok {
+		return b, true
+	}
+	for _, ns := range s.unprefixed {
+		if b, ok := ns.Types[name]; ok {
+			return b, true
+		}
+	}
+	return TypeBinding{}, false
+}
+
+// ValueNames returns, sorted, every name LocalValue resolves in the value sort.
+func (s *Scope) ValueNames() []string {
+	names := set.NewSet[string]()
+	for name := range s.values {
+		names.Add(name)
+	}
+	for _, ns := range s.unprefixed {
+		for name := range ns.Values {
+			names.Add(name)
+		}
+	}
+	return slices.Sorted(maps.Keys(names))
+}
+
+// TypeNames returns, sorted, every name LocalType resolves in the type sort.
+func (s *Scope) TypeNames() []string {
+	names := set.NewSet[string]()
+	for name := range s.types {
+		names.Add(name)
+	}
+	for _, ns := range s.unprefixed {
+		for name := range ns.Types {
+			names.Add(name)
+		}
+	}
+	return slices.Sorted(maps.Keys(names))
+}
+
+// NamespaceNames returns, sorted, every name this scope binds in the namespace sort.
+func (s *Scope) NamespaceNames() []string {
+	return slices.Sorted(maps.Keys(s.namespaces))
 }
 
 // GetNamespace resolves name in the namespace sort by the same lexical walk.
