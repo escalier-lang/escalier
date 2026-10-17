@@ -57,6 +57,8 @@ type Pattern struct {
 	// units reports whether the pattern matches UTF-16 code units, which it does without the
 	// `u` flag.
 	units bool
+	// flags holds the literal's flags as written, such as "iu".
+	flags string
 	// Groups holds each named capture group, in source order.
 	Groups []Group
 }
@@ -71,6 +73,9 @@ type Group struct {
 	// Optional reports whether a match can leave every group with this name out, as `(?<b>b)?`
 	// or one side of an alternation does.
 	Optional bool
+	// Bodies holds the JavaScript source between the parentheses of every group that uses the
+	// name, in the order of Indices. The body of `(?<y>\d{4})` is `\d{4}`.
+	Bodies []string
 }
 
 // Compile compiles a JavaScript regex literal such as `/^\d{3}$/i`. It returns nil and the
@@ -135,7 +140,150 @@ func Compile(source string) (*Pattern, string) {
 	if err != nil {
 		return nil, "does not compile: " + err.Error()
 	}
-	return &Pattern{re: re, units: !unicode, Groups: groupsOf(re, pattern)}, ""
+	groups := groupsOf(re, pattern)
+	bodies := groupBodies(body)
+	for i := range groups {
+		name := groups[i].Name
+		groups[i].Bodies = bodies[name][:len(groups[i].Indices)]
+	}
+	return &Pattern{re: re, units: !unicode, flags: flags, Groups: groups}, ""
+}
+
+// CaptureSources returns a regex literal for each group named by g, in the order of
+// g.Indices. Each literal matches every string its group can capture, so `(?<y>\d{4})` gives
+// `/^\d{4}$/`. The text around a group can rule out some of those strings, so a literal can
+// match more than the group ever captures.
+//
+// It reports false when a group's body tests the text around the group, which a literal of
+// the body alone cannot read. A body does that through `\b` or `\B`, or through `^` or `$`
+// under the `m` flag, where they test for a line terminator before or after the group.
+func (p *Pattern) CaptureSources(g Group) ([]string, bool) {
+	multiline := strings.ContainsRune(p.flags, 'm')
+	// The `g`, `d` and `y` flags change nothing a whole-string test reads, and `m` would make
+	// the literal's own anchors match at line terminators.
+	flags := strings.Map(func(r rune) rune {
+		if strings.ContainsRune("isu", r) {
+			return r
+		}
+		return -1
+	}, p.flags)
+	sources := make([]string, len(g.Bodies))
+	for i, body := range g.Bodies {
+		if readsSurroundings(body, multiline) {
+			return nil, false
+		}
+		if hasTopLevelAlternation(body) {
+			body = "(?:" + body + ")"
+		}
+		sources[i] = "/^" + body + "$/" + flags
+	}
+	return sources, true
+}
+
+// forEachToken calls visit with the start and source of each token of the JavaScript regex
+// body, and whether the token sits inside a character class. An escape is one token of its
+// backslash and the character after it, and every other byte is a token of its own.
+func forEachToken(body string, visit func(i int, tok string, inClass bool)) {
+	inClass := false
+	for i := 0; i < len(body); {
+		width := 1
+		if body[i] == '\\' && i+1 < len(body) {
+			width = 2
+		}
+		tok := body[i : i+width]
+		switch {
+		case tok == "[" && !inClass:
+			visit(i, tok, false)
+			inClass = true
+		case tok == "]" && inClass:
+			inClass = false
+			visit(i, tok, false)
+		default:
+			visit(i, tok, inClass)
+		}
+		i += width
+	}
+}
+
+// groupBodies returns the source of each named group's body in body, keyed by name, in the
+// order the groups open.
+func groupBodies(body string) map[string][]string {
+	type frame struct {
+		start int
+		// slot is the group's position among the named groups, and -1 for any other group.
+		slot int
+	}
+	var stack []frame
+	var names, sources []string
+	forEachToken(body, func(i int, tok string, inClass bool) {
+		if inClass {
+			return
+		}
+		switch tok {
+		case "(":
+			rest := body[i:]
+			if !strings.HasPrefix(rest, "(?<") || strings.HasPrefix(rest, "(?<=") || strings.HasPrefix(rest, "(?<!") {
+				stack = append(stack, frame{slot: -1})
+				return
+			}
+			end := strings.IndexByte(rest, '>')
+			stack = append(stack, frame{start: i + end + 1, slot: len(names)})
+			names = append(names, rest[3:end])
+			sources = append(sources, "")
+		case ")":
+			if len(stack) == 0 {
+				return
+			}
+			top := stack[len(stack)-1]
+			stack = stack[:len(stack)-1]
+			if top.slot >= 0 {
+				sources[top.slot] = body[top.start:i]
+			}
+		}
+	})
+	out := map[string][]string{}
+	for i, name := range names {
+		out[name] = append(out[name], sources[i])
+	}
+	return out
+}
+
+// readsSurroundings reports whether body tests the characters next to the text it matches.
+// It does through `\b` or `\B`, and through `^` or `$` when multiline makes them line anchors.
+func readsSurroundings(body string, multiline bool) bool {
+	reads := false
+	forEachToken(body, func(_ int, tok string, inClass bool) {
+		if inClass {
+			return
+		}
+		switch tok {
+		case `\b`, `\B`:
+			reads = true
+		case "^", "$":
+			reads = reads || multiline
+		}
+	})
+	return reads
+}
+
+// hasTopLevelAlternation reports whether body holds a `|` outside every group and class, so
+// anchoring it needs a group around it.
+func hasTopLevelAlternation(body string) bool {
+	depth, found := 0, false
+	forEachToken(body, func(_ int, tok string, inClass bool) {
+		if inClass {
+			return
+		}
+		switch tok {
+		case "(":
+			depth++
+		case ")":
+			depth--
+		case "|":
+			found = found || depth == 0
+		}
+	})
+	return found
 }
 
 // GroupNames returns the names a JavaScript regex literal's named capture groups use, in

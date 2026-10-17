@@ -95,19 +95,53 @@ func TestGroups(t *testing.T) {
 		want   []Group
 	}{
 		{"NoGroups", `/^a+$/`, nil},
-		{"ARequiredGroup", `/^(?<a>a)$/`, []Group{{Name: "a", Indices: []int{1}}}},
-		{"AnUnnamedGroupBeforeANamedOne", `/^(a)(?<b>b)$/`, []Group{{Name: "b", Indices: []int{2}}}},
-		{"AnOptionalGroup", `/^(?<a>a)?$/`, []Group{{Name: "a", Indices: []int{1}, Optional: true}}},
-		{"AStarredGroup", `/^(?<a>a)*$/`, []Group{{Name: "a", Indices: []int{1}, Optional: true}}},
-		{"AGroupInAnAlternation", `/^(?<a>a)|b$/`, []Group{{Name: "a", Indices: []int{1}, Optional: true}}},
-		{"ANameSharedAcrossAlternatives", `/^(?<y>a)$|^(?<y>b)$/`, []Group{{Name: "y", Indices: []int{1, 2}, Optional: true}}},
-		{"AGroupUnderAPlus", `/^(?<a>a)+$/`, []Group{{Name: "a", Indices: []int{1}}}},
+		{"ARequiredGroup", `/^(?<a>a)$/`, []Group{{Name: "a", Indices: []int{1}, Bodies: []string{"a"}}}},
+		{"AnUnnamedGroupBeforeANamedOne", `/^(a)(?<b>b)$/`, []Group{{Name: "b", Indices: []int{2}, Bodies: []string{"b"}}}},
+		{"AnOptionalGroup", `/^(?<a>a)?$/`, []Group{{Name: "a", Indices: []int{1}, Optional: true, Bodies: []string{"a"}}}},
+		{"AStarredGroup", `/^(?<a>a)*$/`, []Group{{Name: "a", Indices: []int{1}, Optional: true, Bodies: []string{"a"}}}},
+		{"AGroupInAnAlternation", `/^(?<a>a)|b$/`, []Group{{Name: "a", Indices: []int{1}, Optional: true, Bodies: []string{"a"}}}},
+		{"ANameSharedAcrossAlternatives", `/^(?<y>a)$|^(?<y>b)$/`, []Group{{Name: "y", Indices: []int{1, 2}, Optional: true, Bodies: []string{"a", "b"}}}},
+		{"AGroupUnderAPlus", `/^(?<a>a)+$/`, []Group{{Name: "a", Indices: []int{1}, Bodies: []string{"a"}}}},
+		{"ANestedGroup", `/^(?<a>x(?<b>[)]y)z)$/`, []Group{{Name: "a", Indices: []int{1}, Bodies: []string{"x(?<b>[)]y)z"}}, {Name: "b", Indices: []int{2}, Bodies: []string{"[)]y"}}}},
+		{"AnEscapedParenInABody", `/^(?<a>\)+)$/`, []Group{{Name: "a", Indices: []int{1}, Bodies: []string{`\)+`}}}},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			p, reason := Compile(tt.source)
 			require.Empty(t, reason)
 			require.Equal(t, tt.want, p.Groups)
+		})
+	}
+}
+
+// TestCaptureSources covers the regex literal a group's captures read as, and the groups whose
+// captures no literal of the body alone describes.
+func TestCaptureSources(t *testing.T) {
+	tests := []struct {
+		name   string
+		source string
+		want   []string
+	}{
+		{"ABody", `/^_*(?<id>[a-z][a-z0-9]*)_*$/`, []string{`/^[a-z][a-z0-9]*$/`}},
+		{"AnAlternationIsGrouped", `/^(?<v>a|bc)!$/`, []string{`/^(?:a|bc)$/`}},
+		{"ANestedAlternationIsNot", `/^(?<v>(a|b)c)$/`, []string{`/^(a|b)c$/`}},
+		{"AnAlternationInAClassIsNot", `/^(?<v>[|]x)$/`, []string{`/^[|]x$/`}},
+		{"ANameSharedAcrossAlternatives", `/^(?<y>a)$|^(?<y>b)$/`, []string{`/^a$/`, `/^b$/`}},
+		{"TheFlagsAMatchReadsAreKept", `/^(?<a>a.)$/gisuy`, []string{`/^a.$/isu`}},
+		{"AnAnchorWithoutTheMFlag", `/^(?<a>^a)$/`, []string{`/^^a$/`}},
+		{"TheMFlagWithoutAnAnchor", `/^(?<a>a)$/m`, []string{`/^a$/`}},
+		{"ABackspaceInAClass", `/^(?<a>[\b])$/`, []string{`/^[\b]$/`}},
+		{"AWordBoundary", `/^a(?<w>\bb)$/`, nil},
+		{"ANonWordBoundary", `/^a(?<w>\Bb)$/`, nil},
+		{"ALineAnchorUnderTheMFlag", `/^(?<a>a$)/m`, nil},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			p, reason := Compile(tt.source)
+			require.Empty(t, reason)
+			got, ok := p.CaptureSources(p.Groups[0])
+			require.Equal(t, tt.want != nil, ok)
+			require.Equal(t, tt.want, got)
 		})
 	}
 }
