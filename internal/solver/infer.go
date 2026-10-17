@@ -37,6 +37,11 @@ type checker struct {
 	// returns collection (a return inside an inner fn never escapes to the outer).
 	fn *funcCtx
 
+	// pendingRecvReads holds the member reads off inferred receivers that top-level bodies
+	// collected. A value initializer can still pass such a body to a call that types its
+	// receiver, so checkPendingRecvReads checks them once the component is constrained.
+	pendingRecvReads []inferredRecvRead
+
 	// topThrows is the throws sink for a `try` block written at module top level, where
 	// there is no funcCtx to hold one. inferTryCatch installs it for the duration of the
 	// block and clears it afterwards, so it is nil everywhere else. throwsSink reads it
@@ -437,6 +442,9 @@ type funcCtx struct {
 	// does one that yields `never`. inferFunc reads it to warn about a `gen` marker the
 	// body never uses. It is the generator twin of raised.
 	yielded bool
+	// inferredRecvReads holds each member read in this body, or in a body it encloses, whose
+	// receiver is an identifier typed only by how the body uses it.
+	inferredRecvReads []inferredRecvRead
 	// lvl is the level this body is walked at, so throwsSink mints the sink there rather
 	// than inside a `val` initializer, which is typed one level deeper. A sink minted deep
 	// gets extruded by a later exit, and the resulting cycle renders as a μ-knot.

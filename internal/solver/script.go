@@ -128,6 +128,10 @@ func (c *checker) inferScriptIn(scope *Scope, script *ast.Script) (*Scope, *Info
 	// final. Report each function whose return type no finite value inhabits.
 	c.checkCanReturn()
 	c.checkRigidLifetimes()
+	// The script's top level is the outermost body, so every read off an inferred receiver
+	// it or its functions made is decided here.
+	c.pendingRecvReads = append(c.pendingRecvReads, c.fn.inferredRecvReads...)
+	c.checkPendingRecvReads()
 
 	return scope, c.info, c.errs
 }
