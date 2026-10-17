@@ -257,3 +257,36 @@ func TestInfoExpandOnNewInfo(t *testing.T) {
 	alias := &soltype.AliasType{Name: "Point"}
 	require.Same(t, alias, NewInfo().Expand(alias))
 }
+
+func TestNeedsMutReceiver(t *testing.T) {
+	recv := func(mut bool) *soltype.FuncParam {
+		return &soltype.FuncParam{Type: &soltype.RefType{Mut: mut, Inner: &soltype.ObjectType{}}}
+	}
+	method := func(muts ...bool) *soltype.MethodElem {
+		m := &soltype.MethodElem{Name: "m"}
+		for _, mut := range muts {
+			m.Signatures = append(m.Signatures, &soltype.FuncType{SelfParam: recv(mut)})
+		}
+		return m
+	}
+	tests := []struct {
+		name     string
+		member   soltype.ObjTypeElem
+		expected bool
+	}{
+		{name: "MutMethod", member: method(true), expected: true},
+		{name: "SharedMethod", member: method(false), expected: false},
+		{name: "AllArmsMut", member: method(true, true), expected: true},
+		{name: "MixedArmsSharedFirst", member: method(false, true), expected: false},
+		{name: "MixedArmsMutFirst", member: method(true, false), expected: false},
+		{name: "NoArms", member: method(), expected: false},
+		{name: "Setter", member: &soltype.SetterElem{Name: "s"}, expected: true},
+		{name: "MutGetter", member: &soltype.GetterElem{Name: "g", SelfParam: recv(true)}, expected: true},
+		{name: "Property", member: &soltype.PropertyElem{Name: "p"}, expected: false},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			require.Equal(t, tt.expected, NeedsMutReceiver(tt.member))
+		})
+	}
+}
