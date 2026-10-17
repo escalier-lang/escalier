@@ -78,6 +78,13 @@ func TestShadowed(t *testing.T) {
 			want:   []Shadowed{{Start: 7, End: 15, Text: "(?<B>ab)", By: "a"}},
 		},
 		{
+			// `bc` is shadowed by the `b` before it, but it sits inside `(b|bc)`, which is
+			// shadowed by the outer `b`. Only the outer alternative is reported.
+			name:   "AShadowedAlternativeInsideAShadowedAlternative",
+			source: `/^(?<g>b|(b|bc)).*$/`,
+			want:   []Shadowed{{Start: 9, End: 15, Text: "(b|bc)", By: "b"}},
+		},
+		{
 			// A quantifier repeats the alternation, so the source after it is no continuation.
 			name:   "ARepeatedAlternation",
 			source: `/^(a|ab)*$/`,
