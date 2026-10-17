@@ -4,43 +4,35 @@ import (
 	"testing"
 
 	"github.com/escalier-lang/escalier/internal/solver"
+	"github.com/gkampitakis/go-snaps/snaps"
 	"github.com/stretchr/testify/require"
 )
 
-// declarationShapes is one small source per shape the `.d.ts` emitters have to render,
-// read by TestEachDeclarationShapeEmitsTheSameDefinitions.
+// declarationShapes is one small source per shape the `.d.ts` emitter has to render,
+// read by TestEachDeclarationShapeEmitsDefinitions. A source here needs no package on
+// disk, so covering a shape costs one entry.
 //
-// The fixture goldens are written from the solver alone, so nothing else compares the
-// two checkers' `.d.ts`. A source here needs no package on disk, so covering a shape
-// costs one entry.
+// Keep each source to the one shape it names, so a change to the snapshot points at one
+// cause.
 //
-// Keep each source to the one shape it names. A source carrying two shapes fails for
-// either, and a skip entry then has to name both causes.
+// Two kinds of shape are deliberately absent:
 //
-// Three kinds of shape are deliberately absent:
-//
-//   - A source one checker rejects. Comparing the degraded output two different recovery
-//     paths produce says nothing about emission. `class D extends B` without an explicit
-//     constructor is one, which internal/checker rejects and #1720 covers.
-//     shapeDiagnostics enforces this rather than leaving it to a reader.
-//   - A borrow anywhere in a type. internal/checker panics with `unknown type: <error>`
-//     when one reaches emission, #1805, and a panic takes the test binary down rather
-//     than failing the one case.
-//   - A shape both checkers emit nothing for. An empty result compared against an empty
-//     result asserts nothing, which the require.NotEmpty below rejects. An overloaded
-//     function is one, #1824.
+//   - A source the solver rejects. The output a recovery path produces says nothing
+//     about emission, and shapeDiagnostics enforces this rather than leaving it to a
+//     reader.
+//   - A shape that emits nothing, which the require.NotEmpty below rejects. An
+//     overloaded function is one, #1824.
 var declarationShapes = map[string]string{
 	"AFunction":               `declare fn f(x: number) -> string`,
 	"AFunctionWithABody":      "fn f(x: number) -> string {\n\treturn \"a\"\n}",
 	"AGenericFunction":        `declare fn f<T>(x: T) -> T`,
 	"AGenericFunctionBound":   `declare fn f<T: {value: number}>(x: T) -> number`,
 	"AGenericFunctionDefault": `declare fn f<T = string>(x: T) -> T`,
-	// Both emitters drop the `?`, #1826, so this agrees on output a consumer cannot
-	// tell from AFunction's. It still asserts they drop it the same way.
+	// The emitter drops the `?`, #1826, so this emits AFunction's text.
 	"AnOptionalParam": `declare fn f(x?: number) -> string`,
 	"ARestParam":      `declare fn f(...xs: Array<number>) -> string`,
-	// TypeScript has no `throws`, so this emits AFunction's text. What it asserts is
-	// that neither emitter invents a rendering for the clause.
+	// TypeScript has no `throws`, so this emits AFunction's text. It records that the
+	// emitter invents no rendering for the clause.
 	"AThrowsClause":             `declare fn f(x: number) -> string throws number`,
 	"ANoValueReturn":            "class C {\n\tv: number,\n}\nfn bump(c: mut C) {\n\tc.v = c.v + 1\n}",
 	"AnAnnotatedNoValueBody":    "class C {\n\tv: number,\n}\nfn set(c: mut C) -> undefined {\n\tc.v = 1\n}",
@@ -58,11 +50,12 @@ var declarationShapes = map[string]string{
 	"ACallbackReturnUnknown":    `declare fn each(cb: fn (x: number) -> unknown) -> number`,
 	"APropertyHoldingACallback": `declare val o: {cb: fn (x: number) -> undefined}`,
 
-	"AClass":                "class C {\n\tx: number,\n\ty: string,\n}",
-	"AGenericClass":         "class Box<T> {\n\tvalue: T,\n}",
-	"AClassParamBound":      "class Holder<T: {value: number}> {\n\tpeer: T,\n}",
-	"AClassParamDefault":    "declare class Task<T, E = never> {\n\trun(&self) -> T,\n\tfail(&self, r: E) -> never,\n}",
-	"AClassMethod":          "class C {\n\tv: number,\n\tread(&self) -> number { return self.v },\n}",
+	"AClass":             "class C {\n\tx: number,\n\ty: string,\n}",
+	"AGenericClass":      "class Box<T> {\n\tvalue: T,\n}",
+	"AClassParamBound":   "class Holder<T: {value: number}> {\n\tpeer: T,\n}",
+	"AClassParamDefault": "declare class Task<T, E = never> {\n\trun(&self) -> T,\n\tfail(&self, r: E) -> never,\n}",
+	"AClassMethod":       "class C {\n\tv: number,\n\tread(&self) -> number { return self.v },\n}",
+	// The snapshot names the setter's parameter `value` rather than `n`, #1823.
 	"AClassGetterAndSetter": "class C {\n\tv: number,\n\tget val(&self) -> number { return self.v },\n\tset val(&mut self, n: number) { self.v = n },\n}",
 	"AClassStatic":          "class C {\n\tv: number,\n\tstatic make(n: number) -> number { return n },\n}",
 	"AReadonlyField":        "class C {\n\treadonly v: number,\n}",
@@ -119,75 +112,17 @@ var declarationShapes = map[string]string{
 	"ANestedNamespace": "namespace outer {\n\tnamespace inner {\n\t\tdeclare val n: number\n\t}\n}",
 }
 
-// shapeSkip is why one shape's definitions still differ, and the ticket the difference
-// waits on. A shape can wait on more than one cause, in which case ticket names the one
-// to clear first and reason names the rest.
-type shapeSkip struct {
-	reason string
-	ticket string
-}
-
-// shapeSkips are the shapes whose emitted definitions still differ between the two
-// checkers. The entries are seeded from a run rather than predicted, and a shape that
-// starts agreeing fails, so the list burns down instead of rotting.
-var shapeSkips = map[string]shapeSkip{
-	// The checker writes `void` for a return it infers from a body that returns no
-	// value, and the solver writes `undefined`. buildFuncDeclFromSol rewrites a function
-	// declaration's return to match, and nothing rewrites a method's or a function
-	// value's. #1810 makes `undefined` the output everywhere once the checker is gone, so
-	// these four are left to diverge rather than shimmed.
-	"ANoValueMethod":          noValueReturnSkip,
-	"AnAsyncNoValueMethod":    noValueReturnSkip,
-	"ANoValueFuncValue":       noValueReturnSkip,
-	"AnAsyncNoValueFuncValue": noValueReturnSkip,
-	"AClassGetterAndSetter": {
-		reason: "a setter's parameter name is lost, so it renders as `value`",
-		ticket: "#1823",
-	},
-}
-
-// noValueReturnSkip is the skip for a method or function value whose body returns no
-// value.
-var noValueReturnSkip = shapeSkip{
-	reason: "the solver writes an inferred no-value return as `undefined` where the checker writes `void`",
-	ticket: "#1810",
-}
-
-// TestEachDeclarationShapeEmitsTheSameDefinitions asserts that both checkers emit the
-// same `.d.ts` for each source in declarationShapes.
-//
-// The checker's output is the expectation rather than a committed golden, because what
-// is being asked is whether the two agree. Neither output is asserted to be correct
-// TypeScript, so a shape both render the same way wrongly passes here. #1804 is one such shape, left out because the
-// checker emits a type parameter nothing binds and matching it is not the goal.
-func TestEachDeclarationShapeEmitsTheSameDefinitions(t *testing.T) {
-	for name := range shapeSkips {
-		require.Contains(t, declarationShapes, name,
-			"shapeSkips names %q, which declarationShapes does not", name)
-	}
-
+// TestEachDeclarationShapeEmitsDefinitions records the `.d.ts` emitted for each source in
+// declarationShapes as a snapshot.
+func TestEachDeclarationShapeEmitsDefinitions(t *testing.T) {
 	for name, src := range declarationShapes {
 		t.Run(name, func(t *testing.T) {
-			useChecker(t)
-			checkerOut := CompilePackage(libSources(src), PackageConfig{})
-			useSolver(t)
-			solverOut := CompilePackage(libSources(src), PackageConfig{})
-			want := checkerOut.CompUnits["lib/index"].DTS
-			got := solverOut.CompUnits["lib/index"].DTS
+			out := CompilePackage(libSources(src), PackageConfig{})
+			dts := out.CompUnits["lib/index"].DTS
 
-			require.Empty(t, shapeDiagnostics(checkerOut), "internal/checker rejects this shape")
-			require.Empty(t, shapeDiagnostics(solverOut), "internal/solver rejects this shape")
-			require.NotEmpty(t, want, "internal/checker emits something to compare")
-			require.NotEmpty(t, got, "internal/solver emits something to compare")
-
-			if skip, held := shapeSkips[name]; held {
-				// Re-compare rather than trusting the list, so clearing a cause forces
-				// its shapes back into the comparison.
-				require.NotEqual(t, want, got,
-					"this shape now agrees; drop it from shapeSkips")
-				t.Skipf("%s (%s)", skip.reason, skip.ticket)
-			}
-			require.Equal(t, want, got, "the two checkers emit different definitions")
+			require.Empty(t, shapeDiagnostics(out), "internal/solver rejects this shape")
+			require.NotEmpty(t, dts, "internal/solver emits nothing for this shape")
+			snaps.MatchSnapshot(t, dts)
 		})
 	}
 }

@@ -201,8 +201,6 @@ A package turns the ambient names off in its `package.json`:
 Every file in that package then sees only `std:prelude` and its own imports, so
 `Math.PI` is spelled `import "std:math"` and `math.PI`. Shape-loading is not
 affected, so `"ab".toUpperCase()` and a regex literal still type without an import.
-The legacy checker, which `ESCALIER_CHECKER=checker` selects, ignores the setting
-and binds the builtins ambiently either way.
 
 ### The Web surface
 
