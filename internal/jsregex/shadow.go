@@ -58,13 +58,21 @@ func (p *Pattern) findShadowed() []Shadowed {
 			continue
 		}
 		cont := g.continuation(p.body)
+		if p.readsPosition(cont) {
+			continue
+		}
+		// Every comparison in this alternation reads the same branch programs, so each one
+		// is compiled once here.
+		branches := make([]branch, len(g.branches))
+		for i, s := range g.branches {
+			branches[i] = p.newBranch(s.text(p.body), cont)
+		}
 		for k := 1; k < len(g.branches); k++ {
-			alt := g.branches[k].text(p.body)
-			if found, ok := p.shadowedBy(alt, g.branches[:k], cont); ok {
+			if found, ok := p.shadowedBy(branches[k], branches[:k], cont); ok {
 				out = append(out, Shadowed{
 					Start: 1 + g.branches[k].start,
 					End:   1 + g.branches[k].end,
-					Text:  alt,
+					Text:  branches[k].text,
 					By:    found,
 				})
 			}
@@ -83,33 +91,49 @@ func (p *Pattern) findShadowed() []Shadowed {
 	return kept
 }
 
-// shadowedBy reports whether alt followed by cont is covered by the earlier alternatives
-// followed by cont. It returns the one earlier alternative that covers alt alone, or "" when
+// branch is one alternative of an alternation, with the program for it followed by the
+// alternation's continuation.
+type branch struct {
+	text string
+	// reads reports whether text tests where in the string it sits. See readsPosition.
+	reads bool
+	// prog is nil when reads is true or the source does not compile.
+	prog *syntax.Prog
+}
+
+// newBranch returns the branch for the alternative text followed by cont.
+func (p *Pattern) newBranch(text, cont string) branch {
+	b := branch{text: text, reads: p.readsPosition(text)}
+	if !b.reads {
+		b.prog, _ = p.language(text, cont)
+	}
+	return b
+}
+
+// shadowedBy reports whether alt is covered by the earlier alternatives, each followed by
+// cont. It returns the text of the one earlier alternative that covers alt alone, or "" when
 // only their union does.
-func (p *Pattern) shadowedBy(alt string, earlier []span, cont string) (string, bool) {
-	texts := make([]string, len(earlier))
-	for i, e := range earlier {
-		texts[i] = e.text(p.body)
-	}
-	for _, t := range append([]string{alt, cont}, texts...) {
-		if p.readsPosition(t) {
-			return "", false
-		}
-	}
-	sub, ok := p.language(alt, cont)
-	if !ok {
+func (p *Pattern) shadowedBy(alt branch, earlier []branch, cont string) (string, bool) {
+	if alt.prog == nil {
 		return "", false
 	}
-	for _, t := range texts {
-		if sup, ok := p.language(t, cont); ok && contains(sup, sub) {
-			return t, true
+	texts := make([]string, len(earlier))
+	for i, e := range earlier {
+		if e.reads {
+			return "", false
+		}
+		texts[i] = e.text
+	}
+	for _, e := range earlier {
+		if e.prog != nil && contains(e.prog, alt.prog) {
+			return e.text, true
 		}
 	}
 	if len(texts) < 2 {
 		return "", false
 	}
 	sup, ok := p.language(strings.Join(texts, "|"), cont)
-	if ok && contains(sup, sub) {
+	if ok && contains(sup, alt.prog) {
 		return "", true
 	}
 	return "", false
