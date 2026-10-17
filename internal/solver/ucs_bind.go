@@ -111,6 +111,12 @@ type pathBinder struct {
 	// not an ast.Node.
 	blame ast.Node
 	views map[*ucs.Scrutinee]scrutineeView
+	// openRoot is set when the root scrutinee can hold values its type does not name. A
+	// `catch` clause's caught value is one, since the runtime can throw a value the checker
+	// never saw. A literal or class test at such a root constrains into a separate variable
+	// the root flows into, so the test admits any value and never widens what the root's
+	// bindings read.
+	openRoot bool
 }
 
 // newPathBinder builds the binder for one conditional form. root is the IR's root
@@ -164,7 +170,7 @@ func (b *pathBinder) narrowedBy(scope *Scope, s *ucs.Scrutinee, test ucs.Test, b
 	if !ok {
 		node = b.blameFor(s)
 	}
-	next := &pathBinder{c: b.c, lvl: b.lvl, blame: b.blame, views: maps.Clone(b.views)}
+	next := &pathBinder{c: b.c, lvl: b.lvl, blame: b.blame, views: maps.Clone(b.views), openRoot: b.openRoot}
 	next.views[s] = next.applyTest(scope, node, s, v, test)
 	return next
 }
@@ -409,10 +415,10 @@ func (b *pathBinder) applyTest(scope *Scope, node ast.Node, s *ucs.Scrutinee, v 
 		v.tested = b.tupleShapeReq(v, node, t.Len, t.Rest == ucs.TrailingRest)
 		return v
 	case *ucs.LitTest:
-		b.applyLitTest(node, v, t)
+		b.applyLitTest(node, b.testedAt(node, s, v), t)
 		return v
 	case *ucs.ClassTest:
-		return b.applyClassTest(scope, node, v, t)
+		return b.applyClassTest(scope, node, b.testedAt(node, s, v), t)
 	case *ucs.ExtractorTest:
 		return b.applyExtractorTest(scope, node, v, t)
 	case *ucs.AnnTest:
@@ -424,6 +430,19 @@ func (b *pathBinder) applyTest(scope *Scope, node ast.Node, s *ucs.Scrutinee, v 
 	default:
 		return v
 	}
+}
+
+// testedAt returns the view a literal or class test at s constrains into. That is v itself,
+// except at an open root, where it is v with its type replaced by a fresh variable the root
+// flows into.
+func (b *pathBinder) testedAt(node ast.Node, s *ucs.Scrutinee, v scrutineeView) scrutineeView {
+	if !b.openRoot || !s.IsRoot() {
+		return v
+	}
+	probe := b.c.freshAt(b.lvl)
+	b.c.constrain(node, v.ty, probe)
+	v.ty, v.concrete = probe, nil
+	return v
 }
 
 // applyNestedAnnTest narrows a projected value to the annotation a nested leaf tests, the
@@ -544,7 +563,7 @@ func (b *pathBinder) applyClassTest(scope *Scope, node ast.Node, v scrutineeView
 		v.ty, v.concrete, v.shape = fresh, nil, fresh
 		return v
 	}
-	target, targetConcrete := b.c.narrowToClass(b.lvl, node, ct, v.ty, v.concrete)
+	target, targetConcrete := b.c.narrowToClass(b.lvl, node, ct, v.ty, v.concrete, v.shape)
 	v.ty, v.concrete, v.shape = target, targetConcrete, target
 	return v
 }

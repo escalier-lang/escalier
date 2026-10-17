@@ -30,13 +30,9 @@ import "github.com/escalier-lang/escalier/internal/ast"
 // tail is normalization's job.
 func DesugarMatch(e *ast.MatchExpr) *CoreSplit {
 	origin := At(OriginMatchArm, e)
-	branches := make([]*CoreBranch, len(e.Cases))
-	for i, matchCase := range e.Cases {
-		branches[i] = desugarMatchCase(matchCase)
-	}
 	return &CoreSplit{
 		Scrutinee: NewRoot(e.Target, scrutineeOrigin(OriginMatchArm, e.Target, origin)),
-		Branches:  branches,
+		Branches:  desugarMatchCases(OriginMatchArm, e.Cases),
 		Origin:    origin,
 	}
 }
@@ -56,16 +52,40 @@ func scrutineeOrigin(kind OriginKind, target ast.Expr, cause Origin) Origin {
 	return origin
 }
 
-// desugarMatchCase lowers one `match` arm into a branch. It takes an *ast.MatchCase
-// rather than a whole expression so that more than one surface form can reach it.
-// The AST stores a `TryCatchExpr`'s catch clauses as []*ast.MatchCase too, so those
-// clauses can lower through this path once the solver types them.
+// DesugarCatch lowers the `catch` clause of `try { … } catch { arms }` into a split over the
+// caught value, one branch per arm in source order. The caught value has no expression of
+// its own, so the root scrutinee's origin is invented from the `try` and names no target.
+//
+// The split has no fallthrough. A value no arm matches is rethrown, which the solver
+// accounts for outside the split.
+func DesugarCatch(e *ast.TryCatchExpr) *CoreSplit {
+	origin := At(OriginCatchArm, e)
+	return &CoreSplit{
+		Scrutinee: NewRoot(nil, InventedFrom(OriginCatchArm, origin)),
+		Branches:  desugarMatchCases(OriginCatchArm, e.Catch),
+		Origin:    origin,
+	}
+}
+
+// desugarMatchCases lowers each arm into a branch, in source order, tagging its origins
+// with kind.
+func desugarMatchCases(kind OriginKind, arms []*ast.MatchCase) []*CoreBranch {
+	branches := make([]*CoreBranch, len(arms))
+	for i, matchCase := range arms {
+		branches[i] = desugarMatchCase(kind, matchCase)
+	}
+	return branches
+}
+
+// desugarMatchCase lowers one arm into a branch, tagging its origins with kind. It takes an
+// *ast.MatchCase rather than a whole expression so that more than one surface form can
+// reach it. A `match` arm and a `catch` arm are both stored as one.
 //
 // A `match` arm writes its narrowing annotation inside the pattern, as the `number` of
 // `x: number => x`, the same node an `if val` writes it on. The branch reads it from
 // there, so the three surface forms agree on what the annotation means.
-func desugarMatchCase(matchCase *ast.MatchCase) *CoreBranch {
-	origin := At(OriginMatchArm, matchCase)
+func desugarMatchCase(kind OriginKind, matchCase *ast.MatchCase) *CoreBranch {
+	origin := At(kind, matchCase)
 	var cont Core = &BodyLeaf{Body: matchCase.Body, Arm: matchCase, Origin: origin}
 	if matchCase.Guard != nil {
 		// The guard sits below the branch, so it runs with the pattern's bindings in
@@ -82,7 +102,7 @@ func desugarMatchCase(matchCase *ast.MatchCase) *CoreBranch {
 		Cont:    cont,
 		Arm:     matchCase,
 		Ann:     PatternNarrowingAnn(matchCase.Pattern),
-		Origin:  branchOrigin(OriginMatchArm, matchCase.Pattern, origin),
+		Origin:  branchOrigin(kind, matchCase.Pattern, origin),
 	}
 }
 

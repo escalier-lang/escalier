@@ -1,15 +1,15 @@
 export declare const basicTryCatch: "success" | "error";
 export declare const blockBody: number;
-export declare const catchAllFirst: "x" | "unreachable";
+export declare const catchAllFirst: "x";
 export declare function guardedBinding(n: number): number;
 export declare function guardedIdent(n: number): number;
 export declare function guardedRefutable(n: number): number;
 export declare function guardedWildcard(n: number): number;
 export declare const mixedReturn: 42 | "error";
-export declare const multipleCases: "caught error" | "unknown";
+export declare const multipleCases: "caught error";
 export declare const nestedTryCatch: 5 | 10 | 0;
 export declare const objectPattern: "fail" | "unknown";
-export declare const patternBinding: "fail" | "unknown";
+export declare const patternBinding: "fail";
 export declare function safeDivide(a: number, b: number): number;
 export declare const tryCatchWithThrow: string;
 export declare const withGuard: "critical error" | "other error";
