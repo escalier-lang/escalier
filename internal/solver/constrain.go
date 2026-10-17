@@ -3148,12 +3148,28 @@ func (c *Context) instantiateFuncBinder(ft *soltype.FuncType, lvl int) *soltype.
 	return substFuncBinder(ft, newTypeSubst(ft.TypeParams, args, ft.LifetimeParams, lts))
 }
 
+// binderMintedAt reports whether ft has no lifetime parameters and each of its type
+// parameters' variables is a variable minted at lvl that is not rigid. An instantiation at
+// lvl mints its copies that way.
+func (c *Context) binderMintedAt(ft *soltype.FuncType, lvl int) bool {
+	if len(ft.LifetimeParams) > 0 {
+		return false
+	}
+	for _, tp := range ft.TypeParams {
+		if tp.Var.Level != lvl || tp.Var.Rigid != nil {
+			return false
+		}
+	}
+	return true
+}
+
 // bindFuncBinderInPlace returns ft instantiated at its own type-parameter variables. Its type
-// binder is dropped, so each variable stands for the one choice a single use makes, and each
-// parameter's default moves onto its variable the way freshTypeArgs attaches one. Lifetime
-// parameters are instantiated at fresh lifetimes at lvl. ft's type-parameter variables must
-// be read by this use alone.
-func (c *Context) bindFuncBinderInPlace(ft *soltype.FuncType, lvl int) *soltype.FuncType {
+// binder is dropped, so each variable stands for the one choice a single use makes. Each
+// parameter's default moves onto its variable the way freshTypeArgs attaches one, and the
+// variable stops counting as a type parameter's copy for isParamVar. ft's type-parameter
+// variables must be read by this use alone, and binderMintedAt must hold for ft. A lifetime
+// parameter can appear in a type parameter's bounds, and this function rewrites no bound.
+func (c *Context) bindFuncBinderInPlace(ft *soltype.FuncType) *soltype.FuncType {
 	for _, tp := range ft.TypeParams {
 		if tp.Default != nil && tp.Var.Default == nil {
 			tp.Var.Default = &soltype.VarDefault{
@@ -3162,9 +3178,13 @@ func (c *Context) bindFuncBinderInPlace(ft *soltype.FuncType, lvl int) *soltype.
 				Upper: len(tp.Var.UpperBounds),
 			}
 		}
+		if c.paramVars != nil {
+			c.paramVars.Remove(tp.Var)
+		}
 	}
-	lts := c.freshLifetimeArgs(ft, lvl)
-	return substFuncBinder(ft, newTypeSubst(nil, nil, ft.LifetimeParams, lts))
+	cp := *ft
+	cp.TypeParams = nil
+	return &cp
 }
 
 // freshTypeArgs mints a fresh type variable at lvl for each of ft's type parameters and

@@ -70,9 +70,5 @@ func TestACtorCallBindsOneCopyOfEachClassParameter(t *testing.T) {
 		}
 	}
 	require.NotNil(t, linked)
-	found := false
-	for _, member := range linked.Types {
-		found = found || member == soltype.Type(param)
-	}
-	require.True(t, found, "the copied link names %s, not the bound parameter", soltype.Print(linked))
+	require.Contains(t, linked.Types, soltype.Type(param))
 }
