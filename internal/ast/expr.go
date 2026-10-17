@@ -676,6 +676,21 @@ func NewProperty(name ObjKey, optional, readonly bool, value Expr, span Span) *P
 	return &PropertyExpr{Name: name, Optional: optional, Readonly: readonly, Value: value, span: span, commentSlots: commentSlots{}}
 }
 func (e *PropertyExpr) Span() Span { return e.span }
+
+// ValueExpr returns the expression that produces the property's value. That is
+// Value when one is written. A shorthand property `{x}` has a nil Value, and its
+// IdentExpr key is both the field name and a read of the binding x, so ValueExpr
+// returns the key. It returns nil when Value is nil and the key is not an
+// IdentExpr, which the parser never produces.
+func (e *PropertyExpr) ValueExpr() Expr {
+	if e.Value != nil {
+		return e.Value
+	}
+	if ident, ok := e.Name.(*IdentExpr); ok {
+		return ident
+	}
+	return nil
+}
 func (e *PropertyExpr) Accept(v Visitor) {
 	if v.EnterObjExprElem(e) {
 		switch key := e.Name.(type) {

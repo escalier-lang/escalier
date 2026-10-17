@@ -512,14 +512,14 @@ func determineObjectAliasSource(expr *ast.ObjectExpr) AliasSource {
 	seen := set.NewSet[string]()
 	for _, elem := range expr.Elems {
 		prop, ok := elem.(*ast.PropertyExpr)
-		if !ok || prop.Value == nil {
+		if !ok {
 			continue
 		}
 		key, ok := propertyKeyToString(prop.Name)
 		if !ok {
 			continue
 		}
-		child := DetermineAliasSource(prop.Value)
+		child := DetermineAliasSource(prop.ValueExpr())
 		for _, leaf := range child.Leaves {
 			// Build a new path with PropertyOf{Key: key} prepended to leaf.Path.
 			newPath := append([]ProjectionStep{PropertyOf{Key: key}}, leaf.Path...)

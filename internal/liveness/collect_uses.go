@@ -283,16 +283,9 @@ func (c *collector) collectObjExprElems(elems []ast.ObjExprElem) {
 	for _, elem := range elems {
 		switch e := elem.(type) {
 		case *ast.PropertyExpr:
-			if e.Value != nil {
-				c.collectExpr(e.Value)
-				if ck, ok := e.Name.(*ast.ComputedKey); ok {
-					c.collectExpr(ck.Expr)
-				}
-			} else {
-				// Shorthand property {x} — the name is a variable reference.
-				if ident, ok := e.Name.(*ast.IdentExpr); ok {
-					c.addUse(ident.VarID)
-				}
+			c.collectExpr(e.ValueExpr())
+			if ck, ok := e.Name.(*ast.ComputedKey); ok {
+				c.collectExpr(ck.Expr)
 			}
 		case *ast.CallableExpr:
 			// Don't recurse into callable body.

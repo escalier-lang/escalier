@@ -3239,10 +3239,9 @@ func (c *checker) variadicLiteral(pieces []tuplePiece, stmtRef liveness.StmtRef,
 // `{[K: string]?: 1}`. Every such key in one literal feeds one signature, whose key set
 // and value are the unions of what each key contributes.
 //
-// The forms it does not cover each report an UnsupportedNodeError and are skipped
-// rather than panicking:
-//   - method/constructor elements, which arrive with classes in M5,
-//   - shorthand ({x}, a property with no value).
+// A shorthand property `{x}` reads the binding x into the field x, so it types as
+// `{x: x}` does. A method or constructor element reports an UnsupportedNodeError and
+// is skipped.
 //
 // Usage-inference depth builds on this elsewhere, for example inferring an open
 // object from how a value is used. Here the closed object the literal spells out is
@@ -3290,11 +3289,9 @@ func (c *checker) inferObject(scope *Scope, lvl int, e *ast.ObjectExpr) soltype.
 			c.reportUnsupported(elem)
 			continue
 		}
-		if prop.Value == nil {
-			// Shorthand ({x}) needs the ident's binding folded in as the value.
-			c.reportUnsupported(prop)
-			continue
-		}
+		// A shorthand `{x}` reads the binding x through its key, so it infers and moves
+		// exactly like `{x: x}`.
+		value := prop.ValueExpr()
 		name, ok := objKeyName(prop.Name)
 		if !ok {
 			computed, isComputed := prop.Name.(*ast.ComputedKey)
@@ -3307,8 +3304,8 @@ func (c *checker) inferObject(scope *Scope, lvl int, e *ast.ObjectExpr) soltype.
 			}
 			// JavaScript evaluates a computed key before the value it labels.
 			keyT := c.inferExpr(scope, lvl, computed.Expr)
-			ft := c.inferExpr(scope, lvl, prop.Value)
-			c.consumeIntoLiteral(prop.Value, ft, stmtRef, hasStmtRef)
+			ft := c.inferExpr(scope, lvl, value)
+			c.consumeIntoLiteral(value, ft, stmtRef, hasStmtRef)
 			keyName, keySet, ok := c.computedObjKey(computed, keyT)
 			switch {
 			case !ok:
@@ -3324,11 +3321,11 @@ func (c *checker) inferObject(scope *Scope, lvl int, e *ast.ObjectExpr) soltype.
 			}
 			continue
 		}
-		ft := c.inferExpr(scope, lvl, prop.Value)
+		ft := c.inferExpr(scope, lvl, value)
 		// A literal property is never optional or readonly.
 		operandElems = append(operandElems, []soltype.ObjTypeElem{&soltype.PropertyElem{Name: name, Type: ft}})
 		// Building an owned value into the object moves it.
-		c.consumeIntoLiteral(prop.Value, ft, stmtRef, hasStmtRef)
+		c.consumeIntoLiteral(value, ft, stmtRef, hasStmtRef)
 	}
 	elems := mergeSpreadOperands(operandElems)
 	if len(sigKeys) > 0 {

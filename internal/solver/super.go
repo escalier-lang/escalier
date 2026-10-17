@@ -202,9 +202,25 @@ func (col *superCollector) EnterExpr(e ast.Expr) bool {
 		}
 		return false
 	case *ast.IdentExpr:
-		if e.Name == "self" {
-			col.selfUses = append(col.selfUses, superSite{ref: col.currentRef, node: e})
+		col.recordSelfUse(e)
+	}
+	return true
+}
+
+// EnterObjExprElem records a shorthand property `{self}` as a use of `self`. The visitor
+// skips a property's IdentExpr key as a label, so EnterExpr never sees this read.
+func (col *superCollector) EnterObjExprElem(elem ast.ObjExprElem) bool {
+	if prop, ok := elem.(*ast.PropertyExpr); ok && prop.Value == nil {
+		if ident, ok := prop.Name.(*ast.IdentExpr); ok {
+			col.recordSelfUse(ident)
 		}
 	}
 	return true
+}
+
+// recordSelfUse records e as a use of `self` at the current statement when e names `self`.
+func (col *superCollector) recordSelfUse(e *ast.IdentExpr) {
+	if e.Name == "self" {
+		col.selfUses = append(col.selfUses, superSite{ref: col.currentRef, node: e})
+	}
 }
