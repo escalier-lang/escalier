@@ -1,0 +1,122 @@
+
+[TestEmitsJSForTypeDrivenForms/APatternOnAClassTestsInstanceOf - 1]
+export class Point {
+  constructor(temp1) {
+    const x = temp1;
+    this.x = x;
+  }
+}
+let temp2;
+let temp3;
+temp3 = v;
+if (temp3 instanceof Point) {
+  const p = temp3;
+  temp2 = 1;
+} else {
+  temp2 = 0;
+}
+export const hit = temp2;
+//# sourceMappingURL=./index.js.map
+
+---
+
+[TestEmitsJSForTypeDrivenForms/AMethodReadOffSelfKeepsItsReceiver - 1]
+export class Counter {
+  constructor(temp1) {
+    const count = temp1;
+    this.count = count;
+  }
+  bump() {
+    return this.count;
+  }
+  handle() {
+    return this.bump.bind(this);
+  }
+}
+//# sourceMappingURL=./index.js.map
+
+---
+
+[TestEmitsJSForTypeDrivenForms/NonNullableIfValDoesNotGuard - 1]
+let temp1;
+if (true) {
+  const n = always;
+  temp1 = n;
+} else {
+  temp1 = 0;
+}
+export const got = temp1;
+//# sourceMappingURL=./index.js.map
+
+---
+
+[TestEmitsJSForTypeDrivenForms/ConstructorCallTakesNew - 1]
+export class Point {
+  constructor(temp1, temp2) {
+    const x = temp1;
+    const y = temp2;
+    this.x = x;
+    this.y = y;
+  }
+}
+export const p = new Point(1, 2);
+//# sourceMappingURL=./index.js.map
+
+---
+
+[TestEmitsJSForTypeDrivenForms/AFunctionFieldReadOffSelfIsNotBound - 1]
+export class Fix {
+  constructor(temp1) {
+    const f = temp1;
+    this.f = f;
+  }
+  recurse(temp2) {
+    const arg = temp2;
+    const g = this.f;
+    return g(arg);
+  }
+}
+//# sourceMappingURL=./index.js.map
+
+---
+
+[TestEmitsJSForTypeDrivenForms/NullableIfValGuardsItsTarget - 1]
+let temp1;
+if (maybe != undefined && true) {
+  const n = maybe;
+  temp1 = n;
+} else {
+  temp1 = 0;
+}
+export const got = temp1;
+//# sourceMappingURL=./index.js.map
+
+---
+
+[TestEmitsJSForTypeDrivenForms/OptionalChainForms - 1]
+export const call = o.g?();
+export const index = o.e?["f"];
+export const member = o.e?.f;
+export const method = o.e?.m();
+//# sourceMappingURL=./index.js.map
+
+---
+
+[TestEmitsJSForTypeDrivenForms/MethodReferenceKeepsItsReceiver - 1]
+export const m = obj.m;
+//# sourceMappingURL=./index.js.map
+
+---
+
+[TestEmitsJSForTypeDrivenForms/AClassDerivesItsConstructor - 1]
+export class Counter {
+  constructor(temp1) {
+    const count = temp1;
+    this.count = count;
+  }
+}
+export const c = new Counter(0);
+export const n = c.count;
+//# sourceMappingURL=./index.js.map
+
+---

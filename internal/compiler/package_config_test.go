@@ -45,7 +45,6 @@ func TestReadPackageConfig(t *testing.T) {
 // that opts out leaves them unbound in lib/ and in a bin/ script with no library, and a
 // lib/ file still reaches a builtin through its import.
 func TestCheckPackageAmbientNames(t *testing.T) {
-	useSolver(t)
 	optOut := PackageConfig{NoAmbientNames: true}
 	tests := []struct {
 		name     string

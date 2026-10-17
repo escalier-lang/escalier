@@ -1,0 +1,416 @@
+
+[TestEachDeclarationShapeEmitsDefinitions/AGenericFunction - 1]
+declare function f<T>(x: T): T;
+
+---
+
+[TestEachDeclarationShapeEmitsDefinitions/AGenericFunctionDefault - 1]
+declare function f<T = string>(x: T): T;
+
+---
+
+[TestEachDeclarationShapeEmitsDefinitions/AnAnnotatedUndefinedBody - 1]
+declare function h(): undefined;
+
+---
+
+[TestEachDeclarationShapeEmitsDefinitions/AReturnOfUndefined - 1]
+declare function k(): undefined;
+
+---
+
+[TestEachDeclarationShapeEmitsDefinitions/AClassStatic - 1]
+declare type C = {v: number};
+declare const C: {new (v: number): C, make(n: number): number};
+
+---
+
+[TestEachDeclarationShapeEmitsDefinitions/AClassImplements - 1]
+declare interface I {
+  x: number;
+}
+declare type C = {x: number};
+declare const C: {new (x: number): C};
+
+---
+
+[TestEachDeclarationShapeEmitsDefinitions/AnAliasDefault - 1]
+declare type A<T = string> = {v: T};
+
+---
+
+[TestEachDeclarationShapeEmitsDefinitions/AUnion - 1]
+declare type A = number | string | undefined;
+
+---
+
+[TestEachDeclarationShapeEmitsDefinitions/AnAsyncNoValueMethod - 1]
+declare type C = {v: number, bump(): Promise<undefined>};
+declare const C: {new (v: number): C};
+
+---
+
+[TestEachDeclarationShapeEmitsDefinitions/AReadonlyField - 1]
+declare type C = {readonly v: number};
+declare const C: {new (v: number): C};
+
+---
+
+[TestEachDeclarationShapeEmitsDefinitions/AnOptionalProp - 1]
+declare type A = {x?: number};
+
+---
+
+[TestEachDeclarationShapeEmitsDefinitions/AnInferredVal - 1]
+export declare const n: 5;
+
+---
+
+[TestEachDeclarationShapeEmitsDefinitions/ARestParam - 1]
+declare function f(...xs: Array<number>): string;
+
+---
+
+[TestEachDeclarationShapeEmitsDefinitions/AnAnnotatedNoValueBody - 1]
+declare type C = {v: number};
+declare const C: {new (v: number): C};
+declare function set(c: C): undefined;
+
+---
+
+[TestEachDeclarationShapeEmitsDefinitions/ANoValueFuncValue - 1]
+export declare const k: () => undefined;
+
+---
+
+[TestEachDeclarationShapeEmitsDefinitions/AClass - 1]
+declare type C = {x: number, y: string};
+declare const C: {new (x: number, y: string): C};
+
+---
+
+[TestEachDeclarationShapeEmitsDefinitions/AnEnum - 1]
+declare namespace Color {
+  export type Red = {};
+  export const Red: {new (): Color, [Symbol.customMatcher](subject: Red): []};
+  export type Green = {};
+  export const Green: {new (): Color, [Symbol.customMatcher](subject: Green): []};
+}
+declare type Color = Color.Red | Color.Green;
+
+---
+
+[TestEachDeclarationShapeEmitsDefinitions/ANeverReturn - 1]
+declare function boom(): never;
+
+---
+
+[TestEachDeclarationShapeEmitsDefinitions/ANestedNamespace - 1]
+declare namespace outer {
+  namespace inner {
+    const n: number;
+  }
+}
+
+---
+
+[TestEachDeclarationShapeEmitsDefinitions/AThrowsClause - 1]
+declare function f(x: number): string;
+
+---
+
+[TestEachDeclarationShapeEmitsDefinitions/ACallbackReturnUndefined - 1]
+declare function each(cb: (x: number) => undefined): number;
+
+---
+
+[TestEachDeclarationShapeEmitsDefinitions/AStaticFactory - 1]
+declare type C = {v: number};
+declare const C: {new (v: number): C, make(n: number): C};
+
+---
+
+[TestEachDeclarationShapeEmitsDefinitions/AnAlias - 1]
+declare type A = {x: number};
+
+---
+
+[TestEachDeclarationShapeEmitsDefinitions/AnInterfaceIndexSig - 1]
+declare interface I {
+  [K in string]?: number;
+}
+
+---
+
+[TestEachDeclarationShapeEmitsDefinitions/AnInterface - 1]
+declare interface I {
+  x: number;
+}
+
+---
+
+[TestEachDeclarationShapeEmitsDefinitions/ALiteralVal - 1]
+declare const s: "hello";
+
+---
+
+[TestEachDeclarationShapeEmitsDefinitions/AnObjectWithMethod - 1]
+declare const o: {m: (x: number) => string};
+
+---
+
+[TestEachDeclarationShapeEmitsDefinitions/ANegativeLiteral - 1]
+declare const n: -1;
+
+---
+
+[TestEachDeclarationShapeEmitsDefinitions/AFunctionWithABody - 1]
+declare function f(x: number): string;
+
+---
+
+[TestEachDeclarationShapeEmitsDefinitions/AClassParamDefault - 1]
+declare type Task<T, E = never> = {run(): T, fail(r: E): never};
+declare const Task: {new <T, E = never>(): Task<T, E>};
+
+---
+
+[TestEachDeclarationShapeEmitsDefinitions/AStaticGetter - 1]
+declare type C = {};
+declare const C: {new (): C, get val(): number};
+
+---
+
+[TestEachDeclarationShapeEmitsDefinitions/ATypeofType - 1]
+declare const v: number;
+declare type A = typeof v;
+
+---
+
+[TestEachDeclarationShapeEmitsDefinitions/ADeclaredUndefinedReturn - 1]
+declare function g(): undefined;
+
+---
+
+[TestEachDeclarationShapeEmitsDefinitions/AnAsyncNoValueReturn - 1]
+declare type C = {v: number};
+declare const C: {new (v: number): C};
+declare function bump(c: C): Promise<void>;
+
+---
+
+[TestEachDeclarationShapeEmitsDefinitions/AClassMethod - 1]
+declare type C = {v: number, read(): number};
+declare const C: {new (v: number): C};
+
+---
+
+[TestEachDeclarationShapeEmitsDefinitions/AnOptionalIndexSig - 1]
+declare type A = {[K in string]?: number};
+
+---
+
+[TestEachDeclarationShapeEmitsDefinitions/AUniqueSymbol - 1]
+declare const s: unique symbol;
+
+---
+
+[TestEachDeclarationShapeEmitsDefinitions/APropertyHoldingACallback - 1]
+declare const o: {cb: (x: number) => undefined};
+
+---
+
+[TestEachDeclarationShapeEmitsDefinitions/AMethodConstructingItsClass - 1]
+declare type C = {v: number, clone(): C};
+declare const C: {new (v: number): C};
+
+---
+
+[TestEachDeclarationShapeEmitsDefinitions/AGenericMethodConstructingItsClass - 1]
+declare type Box<T> = {v: T, map<U>(f: (x: T) => U): Box<U>};
+declare const Box: {new <T>(v: T): Box<T>};
+
+---
+
+[TestEachDeclarationShapeEmitsDefinitions/AClassExtends - 1]
+declare type B = {x: number};
+declare const B: {new (x: number): B};
+declare type D = {y: number};
+declare const D: {new (x: number, y: number): D};
+
+---
+
+[TestEachDeclarationShapeEmitsDefinitions/AGenericEnum - 1]
+declare namespace MyOption {
+  export type Some<T> = {};
+  export const Some: {new <T>(value: T): MyOption<T>, [Symbol.customMatcher]<T>(subject: Some<T>): [T]};
+  export type None<T> = {};
+  export const None: {new <T>(): MyOption<T>, [Symbol.customMatcher]<T>(subject: None<T>): []};
+}
+declare type MyOption<T> = MyOption.Some<T> | MyOption.None<T>;
+
+---
+
+[TestEachDeclarationShapeEmitsDefinitions/AGenericAlias - 1]
+declare type A<T> = {v: T};
+
+---
+
+[TestEachDeclarationShapeEmitsDefinitions/ANamespace - 1]
+declare namespace inner {
+  const n: number;
+}
+
+---
+
+[TestEachDeclarationShapeEmitsDefinitions/ACallbackReturnUnknown - 1]
+declare function each(cb: (x: number) => unknown): number;
+
+---
+
+[TestEachDeclarationShapeEmitsDefinitions/AClassParamBound - 1]
+declare type Holder<T extends {value: number}> = {peer: T};
+declare const Holder: {new <T extends {value: number}>(peer: T): Holder<T>};
+
+---
+
+[TestEachDeclarationShapeEmitsDefinitions/AGenericInterface - 1]
+declare interface I<T> {
+  v: T;
+}
+
+---
+
+[TestEachDeclarationShapeEmitsDefinitions/AnOptionalParam - 1]
+declare function f(x: number): string;
+
+---
+
+[TestEachDeclarationShapeEmitsDefinitions/AnAsyncReturnOfUndefined - 1]
+declare function k(): Promise<undefined>;
+
+---
+
+[TestEachDeclarationShapeEmitsDefinitions/AnOverloadedMethod - 1]
+declare type C = {m(x: number): number, m(x: string): string};
+declare const C: {new (): C};
+
+---
+
+[TestEachDeclarationShapeEmitsDefinitions/ASymbolKeyedMember - 1]
+declare type C = {msg: string};
+declare const C: {new (msg: string): C, [Symbol.customMatcher](subject: C): [string]};
+
+---
+
+[TestEachDeclarationShapeEmitsDefinitions/AnIndexedAccess - 1]
+declare type A = {x: number}["x"];
+
+---
+
+[TestEachDeclarationShapeEmitsDefinitions/AConditional - 1]
+declare type A<T> = T extends number ? "num" : "other";
+
+---
+
+[TestEachDeclarationShapeEmitsDefinitions/AGenericClass - 1]
+declare type Box<T> = {value: T};
+declare const Box: {new <T>(value: T): Box<T>};
+
+---
+
+[TestEachDeclarationShapeEmitsDefinitions/AnIndexSignature - 1]
+declare type A = {[K in string]: number};
+
+---
+
+[TestEachDeclarationShapeEmitsDefinitions/AnAliasBound - 1]
+declare type A<T extends {value: number}> = {v: T};
+
+---
+
+[TestEachDeclarationShapeEmitsDefinitions/AFunction - 1]
+declare function f(x: number): string;
+
+---
+
+[TestEachDeclarationShapeEmitsDefinitions/ANoValueReturn - 1]
+declare type C = {v: number};
+declare const C: {new (v: number): C};
+declare function bump(c: C): void;
+
+---
+
+[TestEachDeclarationShapeEmitsDefinitions/ANoValueMethod - 1]
+declare type C = {v: number, bump(): undefined};
+declare const C: {new (v: number): C};
+
+---
+
+[TestEachDeclarationShapeEmitsDefinitions/AnAsyncNoValueFuncValue - 1]
+export declare const k: () => Promise<undefined>;
+
+---
+
+[TestEachDeclarationShapeEmitsDefinitions/AnIntersection - 1]
+declare type A = {x: number} & {y: string};
+
+---
+
+[TestEachDeclarationShapeEmitsDefinitions/AnAsyncValueReturn - 1]
+declare function k(): Promise<5>;
+
+---
+
+[TestEachDeclarationShapeEmitsDefinitions/AClassGetterAndSetter - 1]
+declare type C = {v: number, get val(): number, set val(value: number)};
+declare const C: {new (v: number): C};
+
+---
+
+[TestEachDeclarationShapeEmitsDefinitions/AClassConstructor - 1]
+declare type C = {v: number};
+declare const C: {new (v: number): C};
+
+---
+
+[TestEachDeclarationShapeEmitsDefinitions/AGetterOnly - 1]
+declare type C = {v: number, get val(): number};
+declare const C: {new (v: number): C};
+
+---
+
+[TestEachDeclarationShapeEmitsDefinitions/ATuple - 1]
+declare type A = [number, string];
+
+---
+
+[TestEachDeclarationShapeEmitsDefinitions/AMappedType - 1]
+declare type A<T> = {[P in keyof T]?: T[P]};
+
+---
+
+[TestEachDeclarationShapeEmitsDefinitions/ADeclaredVal - 1]
+declare const n: number;
+
+---
+
+[TestEachDeclarationShapeEmitsDefinitions/AGenericFunctionBound - 1]
+declare function f<T extends {value: number}>(x: T): number;
+
+---
+
+[TestEachDeclarationShapeEmitsDefinitions/AKeyof - 1]
+declare type A = keyof {x: number, y: string};
+
+---
+
+[TestEachDeclarationShapeEmitsDefinitions/ABigIntVal - 1]
+declare const b: bigint;
+
+---
+
+[TestEachDeclarationShapeEmitsDefinitions/AnExportedFn - 1]
+export declare function f(x: number): number;
+
+---
