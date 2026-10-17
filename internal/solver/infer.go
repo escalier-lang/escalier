@@ -146,11 +146,6 @@ type checker struct {
 	componentClasses map[*soltype.TypeVarType]*componentClass
 	componentClassOf map[*ast.ClassDecl]*componentClass
 
-	// componentRigidReleases collects the release of each rigid hold that lasts as long as
-	// the module component being inferred. inferComponent runs them when it returns. It is
-	// nil while no component is being inferred.
-	componentRigidReleases *[]func()
-
 	// selfAlias is the handle `Self` names inside the interface body being walked, nil outside
 	// any interface body. inferInterfaceBody sets it and binds `Self` to it, the way
 	// inferClassDecl does selfClass. It is the interface's own alias at its own type-parameter

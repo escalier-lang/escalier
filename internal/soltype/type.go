@@ -45,6 +45,28 @@ type TypeVarType struct {
 	// from, or nil when the parameter declares none. It is not a bound, and constrain never
 	// reads it. Coalescing reads it through DefaultApplies.
 	Default *VarDefault
+	// Rigid is set on the variable of a declared type parameter when the walk of a body that
+	// has to work for every instantiation of it starts, and stays set from then on. constrain
+	// reads a rigid variable through its skolem rather than binding it. Instantiation
+	// replaces a declared parameter with a fresh variable, so a copy is never rigid.
+	Rigid *RigidParam
+}
+
+// RigidParam is the data a rigid type parameter carries. Uppers and Lowers are the upper
+// and lower bounds its variable held when it became rigid. That is its declared bounds and
+// any bound a type reference in the signature put on it. A bound recorded afterward is not
+// one a body may rely on, so it is left out.
+type RigidParam struct {
+	Name   string
+	Uppers []Type
+	Lowers []Type
+	// Skolem is the opaque type the parameter reads as against a type. It is minted on
+	// first use, so a parameter mints none until something constrains it from the sub side
+	// or a diagnostic names it.
+	Skolem *SkolemType
+	// FromBelow marks a parameter that is also rigid on the super side of a constraint, so
+	// a type flowing into it is checked against its skolem.
+	FromBelow bool
 }
 
 // VarDefault is a type parameter's default carried on the variable a call instantiates
@@ -80,6 +102,9 @@ type SkolemType struct {
 	Name  string
 	Upper Type
 	Lower Type
+	// Param is the rigid parameter whose RigidParam.Skolem this is, and nil for any other
+	// skolem. constrain reads such a skolem as its parameter again when it meets a variable.
+	Param *TypeVarType
 }
 
 // BoundsAt returns the bounds relevant to a polarity: lowers in Positive

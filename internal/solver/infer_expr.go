@@ -288,18 +288,6 @@ func (c *checker) inferFuncExpr(scope *Scope, lvl int, e *ast.FuncExpr) soltype.
 	return t
 }
 
-// holdTypeParamsRigidForComponent makes params rigid the way holdTypeParamsRigid does. While a
-// module component is being inferred, the hold lasts until inferComponent returns and the
-// returned function does nothing. Otherwise the returned function ends the hold.
-func (c *checker) holdTypeParamsRigidForComponent(params []*soltype.TypeParam, fromBelow bool) (release func()) {
-	release = c.ctx.holdTypeParamsRigid(params, fromBelow)
-	if c.componentRigidReleases == nil {
-		return release
-	}
-	*c.componentRigidReleases = append(*c.componentRigidReleases, release)
-	return func() {}
-}
-
 // inferFunc is the shared function-typing core for FuncExpr and FuncDecl. It
 // opens a child scope, binds each param (its annotation resolved to a soltype,
 // or a fresh var when un-annotated), types the body block in that scope, and
@@ -572,9 +560,8 @@ func (c *checker) inferFunc(scope *Scope, lvl int, sig ast.FuncSig, body *ast.Bl
 		retAnnT, retAnnOK = c.resolveTypeAnn(declScope, sig.Return, lvl)
 	}
 	// The body has to work for every instantiation its type parameters' bounds allow, so
-	// those parameters are rigid while it is walked and checked against the return
-	// annotation. In a module component they stay rigid until the whole component is
-	// inferred. A constraint the body records through a sibling's binding var reaches a
+	// those parameters are rigid from the walk of the body on. They stay rigid after it,
+	// since a constraint the body records through a sibling's binding var reaches a
 	// parameter only once the sibling's definition reaches that var. Take this pair:
 	//
 	//	fn add(a: number, b: number) -> number { if a > 0 { strs("x") } return a + b }
@@ -597,7 +584,7 @@ func (c *checker) inferFunc(scope *Scope, lvl int, sig ast.FuncSig, body *ast.Bl
 		// which names the parameter and the type the body forced. A binder with a declared
 		// lower bound is rigid from below regardless, so `return 1` against `-> B` with
 		// `where number: B` is checked against the bound rather than recorded as a floor.
-		defer c.holdTypeParamsRigidForComponent(typeParams, false)()
+		c.ctx.markTypeParamsRigid(typeParams, false)
 	}
 	if hasBody {
 		// PR3: open a fresh function context so every ReturnStmt encountered while
@@ -5281,7 +5268,7 @@ func (c *checker) inferTryCatch(scope *Scope, lvl int, e *ast.TryCatchExpr) solt
 	c.constrain(e, caught, unwalkedScrut)
 	c.inferMatchArms(scope, lvl, e, unwalked, binder.views[core.Scrutinee].shape, unwalkedScrut, c.freshAt(lvl))
 	c.checkUniformOwnership(e, branches)
-	c.rethrowUnhandled(scope, e, collected, enclosing)
+	c.rethrowUnhandled(scope, lvl, e, collected, enclosing)
 	c.recordType(e, res)
 	return res
 }
@@ -5319,11 +5306,11 @@ func (c *checker) walkTryBlock(scope *Scope, lvl int, b *ast.Block, sink soltype
 // unguarded catch-all catches every value and is answered before the difference is taken. Only the
 // named throws are weighed: a value outside them can still be thrown and rethrown at runtime, but
 // no signature named its type, so recording it would widen the clause to `unknown`.
-func (c *checker) rethrowUnhandled(scope *Scope, e *ast.TryCatchExpr, collected, enclosing soltype.Type) {
+func (c *checker) rethrowUnhandled(scope *Scope, lvl int, e *ast.TryCatchExpr, collected, enclosing soltype.Type) {
 	if ast.HasUnguardedCatchAll(e.Catch) {
 		return
 	}
-	handled := c.armsCatchType(scope, e.Catch)
+	handled := c.armsCatchType(scope, lvl, e.Catch)
 	uncovered := make([]soltype.Type, 0)
 	for _, part := range c.caughtMembers(coalesce(collected, soltype.Positive)) {
 		if c.memberCaught(part, handled, e.Catch) {
@@ -5425,13 +5412,13 @@ func (c *checker) memberCaught(member, handled soltype.Type, arms []*ast.MatchCa
 // A guarded arm is skipped. Its guard can fail, so no value is caught on the strength of the
 // arm's pattern alone. A pattern armCatchType cannot name contributes nothing, which makes
 // the difference subtract less and the rethrow name more than what actually escapes.
-func (c *checker) armsCatchType(scope *Scope, arms []*ast.MatchCase) soltype.Type {
+func (c *checker) armsCatchType(scope *Scope, lvl int, arms []*ast.MatchCase) soltype.Type {
 	parts := make([]soltype.Type, 0, len(arms))
 	for _, arm := range arms {
 		if arm.Guard != nil {
 			continue
 		}
-		if caught, ok := c.armCatchType(scope, arm.Pattern); ok {
+		if caught, ok := c.armCatchType(scope, lvl, arm.Pattern); ok {
 			parts = append(parts, caught)
 		}
 	}
@@ -5446,14 +5433,16 @@ func (c *checker) armsCatchType(scope *Scope, arms []*ast.MatchCase) soltype.Typ
 //     spellings catch those two atoms.
 //   - An instance or extractor pattern catches the class it names, provided its
 //     sub-patterns all bind unconditionally. `Color.RGB(r, g, b)` catches `Color.RGB`, but
-//     `Color.RGB(0, g, b)` matches only when the first field is 0 and names no type.
+//     `Color.RGB(0, g, b)` matches only when the first field is 0 and names no type. A
+//     generic class is caught at fresh type arguments minted at lvl, so `Failure{payload}`
+//     catches a `Failure` of any payload.
 //
 // An object or tuple pattern reports false. It admits every value of a shape rather than of
 // a type, and objectMemberHasKeys and tupleMemberFitsArity are what read that shape against a
 // member, including through a borrow. structuralMemberCovered applies them, and the UCS IR's
 // own tests apply the same two, so a written pattern and its IR test cannot disagree about
 // which members a branch reaches. Rule 2 of memberCaught is where such a pattern is weighed.
-func (c *checker) armCatchType(scope *Scope, p ast.Pat) (soltype.Type, bool) {
+func (c *checker) armCatchType(scope *Scope, lvl int, p ast.Pat) (soltype.Type, bool) {
 	switch pat := p.(type) {
 	case *ast.WildcardPat, *ast.IdentPat:
 		return &soltype.UnknownType{}, true
@@ -5467,12 +5456,12 @@ func (c *checker) armCatchType(scope *Scope, p ast.Pat) (soltype.Type, bool) {
 	case *ast.InstancePat:
 		ct, ok := c.instancePatClass(scope, ast.QualIdentToString(pat.ClassName))
 		if ok && irrefutablePat(pat.Object) {
-			return ct, true
+			return c.freshClassInstance(ct, lvl), true
 		}
 	case *ast.ExtractorPat:
 		ct, ok := c.resolveQualClassType(scope, pat.Name)
 		if ok && allIrrefutable(pat.Args) {
-			return ct, true
+			return c.freshClassInstance(ct, lvl), true
 		}
 	}
 	return nil, false

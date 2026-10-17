@@ -1109,44 +1109,39 @@ func (c *Context) constrain(sub, super soltype.Type, seen *seenPairs, mutCtx boo
 	// A rigid type parameter on the sub side stands for every type its bounds allow. It is
 	// read as its skolem against a type and stays a variable against a variable, so a skolem
 	// that meets a variable is read as its parameter again.
-	if sk, ok := sub.(*soltype.SkolemType); ok {
-		if v, rigid := c.rigidSkolems[sk]; rigid {
-			if _, superIsVar := super.(*soltype.TypeVarType); superIsVar {
-				return c.constrain(v, super, seen, mutCtx)
-			}
+	if sk, ok := sub.(*soltype.SkolemType); ok && sk.Param != nil {
+		if _, superIsVar := super.(*soltype.TypeVarType); superIsVar {
+			return c.constrain(sk.Param, super, seen, mutCtx)
 		}
 	}
-	if subVar, ok := sub.(*soltype.TypeVarType); ok {
-		if rp, rigid := c.rigidParams[subVar]; rigid {
-			superVar, superIsVar := super.(*soltype.TypeVarType)
-			superRp := c.rigidParams[superVar]
-			switch {
-			case !superIsVar:
-				return c.constrain(c.rigidSkolem(rp), super, seen, mutCtx)
-			case superRp == nil:
-				return c.constrainRigidParamIntoVar(subVar, superVar, seen, mutCtx)
-			default:
-				// Two rigid parameters are compared skolem to skolem, so the relation has to
-				// follow from the sub side's declared bounds. The arm covers a parameter of
-				// one declaration meeting a parameter of an enclosing one, and two parameters
-				// of the same declaration. In `(self.key)(x)` with `x: B` and
-				// `key: fn (x: U) -> number`, a method's `B` meets its class's `U`. That
-				// relation holds for `contains<B: U>` and fails for `contains<B>`. In
-				// `fn h<U, T>(t: T) -> U { return t }`, `T` meets its sibling `U` and fails,
-				// since the signature states no relation between them.
-				return c.constrain(c.rigidSkolem(rp), c.rigidSkolem(superRp), seen, mutCtx)
-			}
+	if subVar, ok := sub.(*soltype.TypeVarType); ok && subVar.Rigid != nil {
+		superVar, superIsVar := super.(*soltype.TypeVarType)
+		switch {
+		case !superIsVar:
+			return c.constrain(c.rigidSkolem(subVar), super, seen, mutCtx)
+		case superVar.Rigid == nil:
+			return c.constrainRigidParamIntoVar(subVar, superVar, seen, mutCtx)
+		default:
+			// Two rigid parameters are compared skolem to skolem, so the relation has to
+			// follow from the sub side's declared bounds. The arm covers a parameter of
+			// one declaration meeting a parameter of an enclosing one, and two parameters
+			// of the same declaration. In `(self.key)(x)` with `x: B` and
+			// `key: fn (x: U) -> number`, a method's `B` meets its class's `U`. That
+			// relation holds for `contains<B: U>` and fails for `contains<B>`. In
+			// `fn h<U, T>(t: T) -> U { return t }`, `T` meets its sibling `U` and fails,
+			// since the signature states no relation between them.
+			return c.constrain(c.rigidSkolem(subVar), c.rigidSkolem(superVar), seen, mutCtx)
 		}
 	}
-	// On the super side, a parameter held rigid from below takes a type with no variables in
+	// On the super side, a parameter rigid from below takes a type with no variables in
 	// it only as its skolem, so `return 5` against `-> U` is reported at the return. A type
 	// with a variable in it is recorded on the parameter as before. That variable may still
 	// be inferred to the parameter itself, as an unannotated `p` is by
 	// `fn g<U>(u: U, p) -> U { return p }`, and a skolem recorded on it would reach the
 	// signature.
 	if superVar, ok := super.(*soltype.TypeVarType); ok {
-		if rp, rigid := c.rigidParams[superVar]; rigid && rp.fromBelow && len(typeVarsIn(sub)) == 0 {
-			return c.constrain(sub, c.rigidSkolem(rp), seen, mutCtx)
+		if superVar.Rigid != nil && superVar.Rigid.FromBelow && len(typeVarsIn(sub)) == 0 {
+			return c.constrain(sub, c.rigidSkolem(superVar), seen, mutCtx)
 		}
 	}
 
