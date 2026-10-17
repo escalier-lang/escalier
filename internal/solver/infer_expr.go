@@ -2510,6 +2510,9 @@ func (c *checker) inferAssign(scope *Scope, lvl int, e *ast.BinaryExpr) soltype.
 		}
 		return undefinedT
 	}
+	// An editor jumps from an assignment's target to the binding it writes. The
+	// record comes before the immutability check so a rejected write still links.
+	c.recordDecl(target, b)
 	if b.Kind != ast.VarKind {
 		c.report(&CannotAssignToImmutableError{
 			Assign: e,
@@ -2542,8 +2545,6 @@ func (c *checker) inferAssign(scope *Scope, lvl int, e *ast.BinaryExpr) soltype.
 	// the `b.Kind != ast.VarKind` gate above before reaching here.
 	targetT := c.freshenAll(schemeType(b.Schemes[0]), lvl)
 	c.recordType(target, targetT)
-	// An editor jumps from an assignment's target to the binding it writes.
-	c.recordDecl(target, b)
 	// M4 G1: track the alias this reassignment creates and check its mutability
 	// transition, but only when the constraint below succeeds — an ill-typed
 	// reassignment must not seed a false-positive transition error off types that
