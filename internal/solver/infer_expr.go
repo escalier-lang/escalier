@@ -2008,8 +2008,8 @@ func (c *checker) applyCallShape(lvl int, e *ast.CallExpr, callee soltype.Type, 
 	// required(callee) <= N <= upper(callee). If callShape were INEXACT instead,
 	// its accept-set would widen to [N, ∞), demanding upper(callee) = ∞ and thus
 	// rejecting every call to a fixed-arity (exact) function.
-	// constrain's covariant throws rule records what the callee raises into the shape's
-	// Throws slot, callThrows. A non-throwing `never` records nothing. callThrows is raised
+	// `constrain`'s covariant throws rule records what the callee raises into the shape's
+	// `Throws` slot, callThrows. A non-throwing `never` records nothing. callThrows is raised
 	// into this body's sink below.
 	callThrows := c.freshThrowsSink(lvl)
 	callShape := &soltype.FuncType{Params: callShapeParams, Ret: res, Throws: callThrows}
@@ -4414,9 +4414,9 @@ func (c *checker) inferAwait(scope *Scope, lvl int, e *ast.AwaitExpr) soltype.Ty
 // sits where a value is expected: `return if ok { v } else { throw Error("no value") }`.
 func (c *checker) inferThrow(scope *Scope, lvl int, e *ast.ThrowExpr) soltype.Type {
 	arg := c.inferExpr(scope, lvl, e.Arg)
-	// The operand is the site, so a thrown value that does not fit the sink is reported on
+	// The operand is the `site`, so a thrown value that does not fit the sink is reported on
 	// that value. A literal carries its own source span, but the type of a call such as
-	// `Error("x")` does not. Its error takes the span of the site passed here, and passing
+	// `Error("x")` does not. Its error takes the span of the `site` passed here, and passing
 	// the whole `throw` would underline the keyword too.
 	c.raiseInto(lvl, e.Arg, "this `throw`", arg)
 	c.markRaised()

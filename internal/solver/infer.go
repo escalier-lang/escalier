@@ -412,7 +412,7 @@ type funcCtx struct {
 	// fresh variable for `throws _` — so each exit is blamed at its own site, and reads it
 	// back as the function's Throws. Only a script's top level has no signature to seed it.
 	throws soltype.Type
-	// throwsAnn is the annotation that declared throws, and nil when the function declares
+	// throwsAnn is the annotation that declared `throws`, and nil when the function declares
 	// nothing. throwsForm says which kind of annotation it is. raiseInto names both when a
 	// raise breaks them.
 	throwsAnn  ast.TypeAnn
@@ -730,24 +730,24 @@ func (c *checker) freshThrowsSink(lvl int) *soltype.TypeVarType {
 	return c.freshAt(lvl)
 }
 
-// throwsForm is the kind of annotation that declares a function's throws.
+// throwsForm is the kind of annotation that declares a function's `throws`.
 type throwsForm int
 
 const (
 	// throwsClause is a sync function's `throws` clause, or its absence.
 	throwsClause throwsForm = iota
-	// throwsPromise is an async function's `Promise<V, E>` return annotation, whose E
+	// throwsPromise is an async function's `Promise<V, E>` return annotation, whose `E`
 	// declares what the body rejects with.
 	throwsPromise
-	// throwsGenerator is a generator's `Generator<Y, R, N, E>` return annotation, whose E
-	// declares what advancing it raises.
+	// throwsGenerator is a generator's `Generator<Y, R, N, E>` return annotation, whose
+	// `E` declares what advancing it raises.
 	throwsGenerator
 )
 
-// raiseInto constrains throws, what site can raise, into the throws sink of the body being
-// walked. what names site for a diagnostic, as "calling `g`" does. When the sink rejects
-// throws with type mismatches alone, it reports one UndeclaredRaiseError in place of them.
-// Any other error the constraint reports is blamed at site as it stands.
+// raiseInto constrains `throws`, what `site` can raise, into the throws sink of the body
+// being walked. `what` names `site` for a diagnostic, as "calling `g`" does. When the sink
+// rejects `throws` with type mismatches alone, it reports one UndeclaredRaiseError in place
+// of them. Any other error the constraint reports is blamed at `site` as it stands.
 func (c *checker) raiseInto(lvl int, site ast.Node, what string, throws soltype.Type) {
 	queued := len(c.ctx.pendingRigidLts)
 	errs := c.ctx.Constrain(throws, c.throwsSink(lvl))
@@ -783,7 +783,7 @@ func (c *checker) raiseInto(lvl int, site ast.Node, what string, throws soltype.
 	c.report(raise)
 }
 
-// onlyMismatches reports whether every fatal error in errs is a CannotConstrainError.
+// onlyMismatches reports whether every fatal error in `errs` is a CannotConstrainError.
 func onlyMismatches(errs []SolverError) bool {
 	for _, e := range errs {
 		if _, isMismatch := e.(*CannotConstrainError); !isMismatch && !isWarning(e) {
@@ -793,7 +793,7 @@ func onlyMismatches(errs []SolverError) bool {
 	return true
 }
 
-// funcName returns the name node declares when it is a function declaration or the function
+// funcName returns the name `node` declares when it is a function declaration or the function
 // expression of a class member, and "" for any other node.
 func (c *checker) funcName(node ast.Node) string {
 	switch node := node.(type) {
@@ -807,8 +807,8 @@ func (c *checker) funcName(node ast.Node) string {
 	return ""
 }
 
-// describeSite names site for a diagnostic as verb followed by the site's source, as
-// "calling `o.m`" does. It returns fallback for a site that is neither an identifier nor
+// describeSite names `site` for a diagnostic as `verb` followed by the site's source, as
+// "calling `o.m`" does. It returns `fallback` for a site that is neither an identifier nor
 // a chain of member reads off one.
 func describeSite(verb, fallback string, site ast.Node) string {
 	if name, ok := pathName(site); ok {
@@ -817,7 +817,7 @@ func describeSite(verb, fallback string, site ast.Node) string {
 	return fallback
 }
 
-// describeRead names a read of the field name at blame for a diagnostic. A pattern reads the
+// describeRead names a read of the field `name` at `blame` for a diagnostic. A pattern reads the
 // field by destructuring it, and any other site reads it as describeSite spells it.
 func describeRead(blame ast.Node, name string) string {
 	switch blame.(type) {

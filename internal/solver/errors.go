@@ -2711,16 +2711,16 @@ func (e *UnusedThrowsClauseError) Message() string {
 }
 
 // UndeclaredRaiseError fires when something a function body does can raise a value the
-// function's declared throws does not admit. A function with no clause declares that it
+// function's declared `throws` does not admit. A function with no clause declares that it
 // raises nothing, so `fn f() -> number { throw "x" }` reports one.
 //
-//   - Site is the expression that raises and What names it, as "calling `g`" does.
-//   - Throws is what it can raise.
-//   - Fn is the function's name, and empty for an anonymous function.
-//   - Ann is the annotation that declared the function's throws, and nil for no clause.
-//     Form says whether it is a `throws` clause, a `Promise<V, E>` return annotation, or
+//   - `Site` is the expression that raises and `What` names it, as "calling `g`" does.
+//   - `Throws` is what it can raise.
+//   - `Fn` is the function's name, and empty for an anonymous function.
+//   - `Ann` is the annotation that declared the function's `throws`, and nil for no clause.
+//     `Form` says whether it is a `throws` clause, a `Promise<V, E>` return annotation, or
 //     a `Generator<Y, R, N, E>` one.
-//   - Declared is the type Ann declares.
+//   - `Declared` is the type `Ann` declares.
 type UndeclaredRaiseError struct {
 	Site     ast.Node
 	What     string
@@ -2758,7 +2758,7 @@ func (e *UndeclaredRaiseError) Message() string {
 	}
 }
 
-// statesRejectionType reports whether the `Promise` return annotation ann writes its
+// statesRejectionType reports whether the `Promise` return annotation `ann` writes its
 // rejection slot, as `Promise<number, string>` does and `Promise<number>` does not.
 func statesRejectionType(ann ast.TypeAnn) bool {
 	ref, isRef := ann.(*ast.TypeRefTypeAnn)
