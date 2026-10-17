@@ -224,6 +224,9 @@ func TestInferRegexTypeCaptures(t *testing.T) {
 		type MaybeB<T> = if T : /^a(?<B>b)?$/ { B } else { never }
 		declare val digits: /^(?<D>\d+)$/
 		declare val maybeB: /^a(?<B>b)?$/
+		declare val either: /^(?<Y>a)$|^(?<Y>b)$/
+		type Word<T> = if T : /^(?<W>\b\w+)$/ { W } else { never }
+		declare val word: /^(?<W>\b\w+)$/
 	`
 	tests := []struct {
 		name string
@@ -234,15 +237,24 @@ func TestInferRegexTypeCaptures(t *testing.T) {
 		{"ALiteralWithoutTheAffixes", `StripUnderscores<"foo">`, `"foo"`},
 		{"ANonMatchTakesTheElseBranch", `StripUnderscores<"_123_">`, `"_123_"`},
 		{"AUnionCheckDistributes", `StripUnderscores<"_a_" | "b">`, `"a" | "b"`},
-		{"AStringCheckJoinsBothBranches", `StripUnderscores<string>`, `string`},
+		// Then captures the strings the group's body matches, and Else keeps the strings the whole
+		// pattern rejects.
+		{"AStringCheckJoinsBothBranches", `StripUnderscores<string>`, `/^[a-zA-Z][a-zA-Z0-9]*$/ | string & ~/^_*(?<Ident>[a-zA-Z][a-zA-Z0-9]*)_*$/`},
 		{"AnOptionalGroupThatMatched", `Optional<"ab">`, `"b"`},
 		{"AnOptionalGroupThatDidNotMatch", `Optional<"a">`, `undefined`},
 		{"TwoGroups", `Split<"left-right">`, `["left", "right"]`},
 		// One name on groups in two alternatives captures from whichever took part.
 		{"ANameSharedAcrossAlternatives", `Either<"b">`, `"b"`},
-		// A value of the same regex type captures some string the checker cannot name.
-		{"TheSameRegexTypeCapturesAString", `Digits<typeof digits>`, `string`},
-		{"TheSameRegexTypeWithAnOptionalGroup", `MaybeB<typeof maybeB>`, `string | undefined`},
+		// A value of the same regex type captures some string the checker cannot name. The string
+		// is one the group's body matches.
+		{"TheSameRegexTypeCapturesWhatTheBodyMatches", `Digits<typeof digits>`, `/^\d+$/`},
+		{"TheSameRegexTypeWithAnOptionalGroup", `MaybeB<typeof maybeB>`, `/^b$/ | undefined`},
+		// Each group that uses the name contributes its own body. jsregex counts a name shared
+		// across alternatives as optional, so `undefined` joins them.
+		{"TheSameRegexTypeWithANameSharedAcrossAlternatives", `Either<typeof either>`, `/^a$/ | /^b$/ | undefined`},
+		// `\b` tests the character before the group, which a regex type of the body alone cannot
+		// read, so the group captures `string`.
+		{"ABodyReadingItsSurroundingsCapturesAString", `Word<typeof word>`, `string`},
 		// A regex type carries no members, as a string literal carries none.
 		{"KeyofARegexType", `keyof /^a/`, `never`},
 		{"ExactOverARegexType", `Exact< /^a/ >`, `/^a/`},
@@ -341,8 +353,9 @@ func TestInferRegexTypeComplement(t *testing.T) {
 		{"ANonDistributiveConditionalDecidesOneBranch", `if string : /^\d+$/ { "a" } else { "b" }`, `"b"`},
 		{"TheElseBranchReadsTheComplement", `NotDigits<string>`, `string & ~/^\d+$/`},
 		{"TheThenBranchReadsTheRegexType", `OnlyDigits<string>`, `/^\d+$/`},
-		// Ident captures a `string` in Then, which absorbs the complement Else yields.
-		{"BothBranchesJoin", `StripUnderscores<string>`, `string`},
+		// Ident captures the strings its group's body matches in Then, and Else yields the
+		// complement.
+		{"BothBranchesJoin", `StripUnderscores<string>`, `/^[a-zA-Z][a-zA-Z0-9]*$/ | string & ~/^_*(?<Ident>[a-zA-Z][a-zA-Z0-9]*)_*$/`},
 		{"AStringAlreadyExcludingTheRegexTakesElse", `NotDigits<NotDigits<string>>`, `string & ~/^\d+$/`},
 		{"AMatchingLiteralTakesThen", `NotDigits<"12">`, `never`},
 		{"ARejectedLiteralTakesElse", `NotDigits<"ab">`, `"ab"`},
