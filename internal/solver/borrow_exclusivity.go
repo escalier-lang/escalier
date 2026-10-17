@@ -384,7 +384,7 @@ type capturedLocal struct {
 // A capture whose type has value semantics is left out, since a closure holding a primitive
 // cannot see a later change to the binding it copied. So is a capture from a body further
 // out, which this body's tables do not track.
-func (c *checker) recordCaptureLoans(scope *Scope, closure *ast.FuncExpr) {
+func (c *checker) recordCaptureLoans(scope *Scope, closure ast.Func) {
 	if c.fn == nil {
 		return
 	}
@@ -412,7 +412,7 @@ func (c *checker) recordCaptureLoans(scope *Scope, closure *ast.FuncExpr) {
 	}
 	if len(captured) > 0 {
 		if c.fn.capturedLocals == nil {
-			c.fn.capturedLocals = map[*ast.FuncExpr][]capturedLocal{}
+			c.fn.capturedLocals = map[ast.Func][]capturedLocal{}
 		}
 		c.fn.capturedLocals[closure] = append(c.fn.capturedLocals[closure], captured...)
 	}
@@ -932,12 +932,12 @@ func (c *checker) checkCallBorrowExclusivity(e *ast.CallExpr, fn *soltype.FuncTy
 
 // markNamedClosure adds `closure` to namedClosures. It must run before the closure is
 // inferred, since inferring it records its capture accesses.
-func (c *checker) markNamedClosure(closure *ast.FuncExpr) {
+func (c *checker) markNamedClosure(closure ast.Func) {
 	if c.fn == nil {
 		return
 	}
 	if c.fn.namedClosures == nil {
-		c.fn.namedClosures = set.NewSet[*ast.FuncExpr]()
+		c.fn.namedClosures = set.NewSet[ast.Func]()
 	}
 	c.fn.namedClosures.Add(closure)
 }
