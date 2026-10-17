@@ -818,12 +818,20 @@ func (v *varianceVisitor) withMutable(m bool) *varianceVisitor {
 func (v *varianceVisitor) EnterType(t soltype.Type, pol soltype.Polarity) soltype.EnterResult {
 	switch t := t.(type) {
 	case *soltype.TypeAppType:
-		// constrainTypeApp relates an application's arguments invariantly, so a parameter
-		// reached through `F<T>` occupies both positions. The head reads as written.
+		// constrainTypeApp relates each argument by the variance its slot declares, so a
+		// parameter reached through `F<T>` takes the slot's position. An invariant slot puts it in
+		// both. The head reads as written.
 		t.Head.Accept(v, pol)
-		for _, arg := range t.Args {
-			arg.Accept(v, pol)
-			arg.Accept(v, pol.Flip())
+		for i, arg := range t.Args {
+			switch t.Slot(i) {
+			case soltype.SlotCovariant:
+				arg.Accept(v, pol)
+			case soltype.SlotContravariant:
+				arg.Accept(v, pol.Flip())
+			default:
+				arg.Accept(v, pol)
+				arg.Accept(v, pol.Flip())
+			}
 		}
 		return soltype.EnterResult{SkipChildren: true}
 	case *soltype.RefType:

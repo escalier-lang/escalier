@@ -358,10 +358,15 @@ type TypeParam struct {
 	Default    Type // nil ⇒ required
 	UpperBound Type // nil ⇒ unbounded
 	LowerBound Type // nil ⇒ none
-	// Arity is the number of arguments the parameter takes when it stands for a type
-	// constructor, as 1 for `F<_>`. It is 0 for a parameter that stands for a type.
-	Arity int
+	// Slots holds the declared variance of each argument the parameter takes when it stands
+	// for a type constructor, as `[SlotCovariant]` for `F<out _>`. It is empty for a
+	// parameter that stands for a type.
+	Slots []SlotVariance
 }
+
+// Arity returns the number of arguments tp takes as a type constructor, which is 0 for a
+// parameter that stands for a type.
+func (tp *TypeParam) Arity() int { return len(tp.Slots) }
 
 // DeclaredUpperBounds returns tp's upper bounds as its binder states them. That is the
 // declared UpperBound when there is one, and the variable's upper-bound list otherwise. The

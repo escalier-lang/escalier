@@ -106,6 +106,6 @@ func TestPrintSchemeConstructorParam(t *testing.T) {
 	f := &TypeVarType{ID: 1, Level: 2}
 	app := &TypeAppType{Head: f, Args: []Type{&PrimType{Prim: NumPrim}}}
 	quantified := func(v *TypeVarType) bool { return v == f }
-	got := PrintAsSchemeWith(app, quantified, nil, []*TypeParam{{Name: "F", Var: f, Arity: 1}}, nil)
+	got := PrintAsSchemeWith(app, quantified, nil, []*TypeParam{{Name: "F", Var: f, Slots: []SlotVariance{SlotInvariant}}}, nil)
 	require.Equal(t, "<F<_>> F<number>", got)
 }

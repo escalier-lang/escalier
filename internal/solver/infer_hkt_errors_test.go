@@ -217,3 +217,35 @@ val tf: Functor<Tagged<_, number>> = {map: fn (fa, f) { return Tagged(f(fa.tag),
 		})
 	}
 }
+
+// TestInferApplicationFieldVariance asserts that a class field typed `F<T>` gives the class the
+// variance F's slot declares for T.
+func TestInferApplicationFieldVariance(t *testing.T) {
+	tests := []struct {
+		name     string
+		src      string
+		wantErrs []string
+	}{
+		{
+			name: "CovariantSlotWidens",
+			src: `class Wrap<F<out _>, T> { inner: F<T> }
+			fn w(x: Wrap<Array, 5>) -> Wrap<Array, number> { return x }`,
+		},
+		{
+			name: "InvariantSlotRejectsWidening",
+			src: `class Wrap<F<_>, T> { inner: F<T> }
+			fn w(x: Wrap<Array, 5>) -> Wrap<Array, number> { return x }`,
+			wantErrs: []string{"cannot constrain number <: 5"},
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			_, _, errs := inferSource(t, tt.src)
+			if tt.wantErrs == nil {
+				require.Empty(t, errorMessagesOf(errs))
+				return
+			}
+			require.Equal(t, tt.wantErrs, errorMessagesOf(errs))
+		})
+	}
+}

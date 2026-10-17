@@ -416,9 +416,11 @@ type TypeParam struct {
 	UpperBoundInWhere bool
 	Default           TypeAnn
 	Variance          VarianceModifier
-	// Arity is the number of type arguments the parameter takes when it stands for a type
-	// constructor, as 1 in `F<_>`. It is 0 for an ordinary parameter that stands for a type.
-	Arity int
+	// CtorSlots holds one entry per argument the parameter takes when it stands for a type
+	// constructor, as `F<out _>` does. Each entry is the variance written before that `_`,
+	// and VarianceNone where none was written. It is empty for a parameter that stands for a
+	// type.
+	CtorSlots []VarianceModifier
 	span              Span
 	commentSlots
 }
@@ -428,6 +430,10 @@ func NewTypeParam(name string, lowerBound, upperBound, defaultType TypeAnn, span
 }
 
 func (t *TypeParam) Span() Span { return t.span }
+
+// Arity returns the number of arguments t takes as a type constructor, which is 0 for a
+// parameter that stands for a type.
+func (t *TypeParam) Arity() int { return len(t.CtorSlots) }
 
 type FuncSig struct {
 	LifetimeParams []*LifetimeParam // optional, e.g. <'a, 'b: 'a>

@@ -28,10 +28,10 @@ func (c *checker) resolveTypeParams(scope *Scope, lvl int, params []*ast.TypePar
 	// Pass 1: mint each parameter's var. Nothing is declared yet, so pass 2 controls which
 	// siblings each default can see.
 	for i, p := range params {
-		out[i] = &soltype.TypeParam{Name: p.Name, Var: c.freshAt(lvl), Arity: p.Arity}
+		out[i] = &soltype.TypeParam{Name: p.Name, Var: c.freshAt(lvl), Slots: slotVariances(p.CtorSlots)}
 		c.ctx.markParamVar(out[i].Var)
-		if p.Arity > 0 {
-			c.ctx.markCtorParam(out[i].Var, p.Arity)
+		if p.Arity() > 0 {
+			c.ctx.markCtorParam(out[i].Var, out[i].Slots)
 		}
 	}
 	// Pass 2: resolve each default under the names declared so far, then declare this
@@ -39,8 +39,8 @@ func (c *checker) resolveTypeParams(scope *Scope, lvl int, params []*ast.TypePar
 	for i, p := range params {
 		if p.Default != nil && !c.reportDefaultForwardRef(params, i) {
 			// A constructor parameter's default is a constructor, as `Array` in `F<_> = Array`.
-			if p.Arity > 0 {
-				out[i].Default = c.resolveTypeCtorArg(scope, p.Default, p.Arity, lvl)
+			if p.Arity() > 0 {
+				out[i].Default = c.resolveTypeCtorArg(scope, p.Default, out[i].Slots, lvl)
 			} else if dt, ok := c.resolveTypeAnn(scope, p.Default, lvl); ok {
 				out[i].Default = dt
 			}
@@ -52,7 +52,7 @@ func (c *checker) resolveTypeParams(scope *Scope, lvl int, params []*ast.TypePar
 	// its own field, where later solving cannot overwrite it. The var's bound lists grow as
 	// constraints flow in, so a reader that wants what the source wrote reads the field.
 	for i, p := range params {
-		if p.Arity > 0 && (p.LowerBound != nil || p.UpperBound != nil) {
+		if p.Arity() > 0 && (p.LowerBound != nil || p.UpperBound != nil) {
 			bound := p.UpperBound
 			if bound == nil {
 				bound = p.LowerBound
@@ -308,8 +308,8 @@ func (c *checker) resolveTypeArgs(
 	for i, arg := range ref.TypeArgs {
 		// A parameter that stands for a type constructor takes a constructor as its argument,
 		// as `Array` is in `Functor<Array>`, so the argument is not resolved as a type.
-		if i < len(params) && params[i].Arity > 0 {
-			written[i] = c.resolveTypeCtorArg(scope, arg, params[i].Arity, lvl)
+		if i < len(params) && params[i].Arity() > 0 {
+			written[i] = c.resolveTypeCtorArg(scope, arg, params[i].Slots, lvl)
 			continue
 		}
 		if resolved, ok := c.resolveTypeAnn(scope, arg, lvl); ok {
@@ -487,4 +487,27 @@ func (c *checker) runDeferredArgBounds() {
 	for _, p := range pending {
 		c.constrain(p.site, p.sub, p.super)
 	}
+}
+
+// slotVariances converts the variance modifiers a type-constructor parameter writes on its `_`
+// slots to the solver's slot variances. `out` is covariant, `in` is contravariant, `in out`
+// is SlotInOut, and no modifier is invariant.
+func slotVariances(mods []ast.VarianceModifier) []soltype.SlotVariance {
+	if len(mods) == 0 {
+		return nil
+	}
+	out := make([]soltype.SlotVariance, len(mods))
+	for i, m := range mods {
+		switch m {
+		case ast.VarianceOut:
+			out[i] = soltype.SlotCovariant
+		case ast.VarianceIn:
+			out[i] = soltype.SlotContravariant
+		case ast.VarianceInOut:
+			out[i] = soltype.SlotInOut
+		default:
+			out[i] = soltype.SlotInvariant
+		}
+	}
+	return out
 }

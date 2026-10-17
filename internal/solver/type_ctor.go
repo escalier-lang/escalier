@@ -7,8 +7,8 @@ import (
 	"github.com/escalier-lang/escalier/internal/soltype"
 )
 
-// resolveTypeCtorArg resolves ta as the argument of a type-constructor parameter that takes arity
-// arguments. It returns one of:
+// resolveTypeCtorArg resolves ta as the argument of a type-constructor parameter whose arguments
+// have the declared variances slots. It returns one of:
 //
 //   - the variable of a constructor parameter in scope, as F in `Functor<F>` inside `<F<_>>`
 //   - a TypeCtorType for a named class or alias, as `Array` in `Functor<Array>`
@@ -17,7 +17,12 @@ import (
 // taking one argument. A reference that writes no arguments leaves every parameter a hole, except
 // that trailing parameters with a default are filled from it when that brings the hole count down
 // to arity. A mismatched count is reported and the argument recovers to a fresh variable.
-func (c *checker) resolveTypeCtorArg(scope *Scope, ta ast.TypeAnn, arity int, lvl int) soltype.Type {
+//
+// A constructor parameter in scope is accepted when its own slots declare at least the variance
+// each of slots asks for. A named constructor is checked against slots once inference finishes,
+// since a class's variance is measured from its body.
+func (c *checker) resolveTypeCtorArg(scope *Scope, ta ast.TypeAnn, slots []soltype.SlotVariance, lvl int) soltype.Type {
+	arity := len(slots)
 	ref, ok := ta.(*ast.TypeRefTypeAnn)
 	if !ok {
 		c.report(&NotATypeCtorError{Ann: ta, Arity: arity})
@@ -30,7 +35,10 @@ func (c *checker) resolveTypeCtorArg(scope *Scope, ta ast.TypeAnn, arity int, lv
 		return c.freshAt(lvl)
 	}
 	if v, isVar := b.Type.(*soltype.TypeVarType); isVar {
-		if got := c.ctx.ctorParamArityOf(v); got == arity && len(ref.TypeArgs) == 0 {
+		if got := c.ctx.ctorParamSlotsOf(v); len(got) == arity && len(ref.TypeArgs) == 0 {
+			if slot, ok := slotsSatisfy(got, slots); !ok {
+				c.report(&KindMismatchError{Ctor: name, Slot: slot, Want: slots[slot], site: ta})
+			}
 			return v
 		}
 		c.report(&NotATypeCtorError{Ann: ta, Arity: arity})
@@ -86,7 +94,100 @@ func (c *checker) resolveTypeCtorArg(scope *Scope, ta ast.TypeAnn, arity int, lv
 		c.report(&NotATypeCtorError{Ann: ta, Arity: arity})
 		return c.freshAt(lvl)
 	}
+	c.deferredKindChecks = append(c.deferredKindChecks, deferredKindCheck{ctor: ctor, slots: slots, site: ta})
 	return ctor
+}
+
+// deferredKindCheck is one named constructor waiting to be checked against the slots of the
+// parameter it was passed to.
+type deferredKindCheck struct {
+	ctor  *soltype.TypeCtorType
+	slots []soltype.SlotVariance
+	site  ast.Node
+}
+
+// runDeferredKindChecks checks each constructor resolveTypeCtorArg queued against its slots and
+// clears the queue. It runs once every class's variance is final.
+func (c *checker) runDeferredKindChecks() {
+	pending := c.deferredKindChecks
+	c.deferredKindChecks = nil
+	for _, k := range pending {
+		if slot, ok := c.ctx.ctorSatisfiesSlots(k.ctor, k.slots); !ok {
+			c.report(&KindMismatchError{Ctor: soltype.Print(k.ctor), Slot: slot, Want: k.slots[slot], site: k.site})
+		}
+	}
+}
+
+// slotsSatisfy reports whether a constructor parameter declaring have may stand where want is
+// expected. Each slot of want that declares a variance needs the same variance in have, and an
+// invariant slot of want accepts any. It returns the first slot that fails.
+func slotsSatisfy(have, want []soltype.SlotVariance) (int, bool) {
+	for i := range want {
+		w := soltype.SlotAt(want, i)
+		if w != soltype.SlotInvariant && soltype.SlotAt(have, i) != w {
+			return i, false
+		}
+	}
+	return 0, true
+}
+
+// ctorSatisfiesSlots reports whether ctor has the variance each of slots declares, and the first
+// slot where it does not. A covariant slot holds when applying ctor to a subtype in that slot
+// gives a subtype instance. The check applies ctor to two skolems, lo and hi with lo <: hi, and
+// asks whether `ctor<lo> <: ctor<hi>` holds under a probe. A contravariant slot asks the reverse.
+// Every other hole takes one skolem shared by both sides.
+func (c *Context) ctorSatisfiesSlots(ctor *soltype.TypeCtorType, slots []soltype.SlotVariance) (int, bool) {
+	for i := range slots {
+		want := soltype.SlotAt(slots, i)
+		if want == soltype.SlotInvariant {
+			continue
+		}
+		hi := c.freshSkolem("hi")
+		lo := c.freshSkolem("lo")
+		lo.Upper = hi
+		loArgs := make([]soltype.Type, len(slots))
+		hiArgs := make([]soltype.Type, len(slots))
+		for j := range slots {
+			if j == i {
+				loArgs[j], hiArgs[j] = lo, hi
+				continue
+			}
+			shared := c.freshSkolem("x")
+			loArgs[j], hiArgs[j] = shared, shared
+		}
+		loInst, _ := ctor.Apply(loArgs)
+		hiInst, _ := ctor.Apply(hiArgs)
+		sub, super := loInst, hiInst
+		if want == soltype.SlotContravariant {
+			sub, super = hiInst, loInst
+		}
+		if hasHardError(c.trialUnderProbe(sub, super)) {
+			return i, false
+		}
+	}
+	return 0, true
+}
+
+// KindMismatchError reports a constructor that lacks the variance a type-constructor parameter
+// declares for one of its arguments, as `Box` would for `F<out _>` when Box is invariant in T.
+// Ctor is the constructor as the message names it, and Slot is the index of that argument.
+type KindMismatchError struct {
+	Ctor string
+	Slot int
+	Want soltype.SlotVariance
+	site ast.Node
+}
+
+func (*KindMismatchError) isSolverError()        {}
+func (e *KindMismatchError) Span() ast.Span      { return spanOfNode(e.site) }
+func (e *KindMismatchError) Related() []ast.Span { return nil }
+func (e *KindMismatchError) Message() string {
+	want := "covariant"
+	if e.Want.Variance() == soltype.SlotContravariant {
+		want = "contravariant"
+	}
+	return "type constructor `" + e.Ctor + "` is not " + want + " in argument " +
+		strconv.Itoa(e.Slot+1) + ", which its parameter declares"
 }
 
 // countFilled returns the number of non-nil entries in fixed.
@@ -104,7 +205,8 @@ func countFilled(fixed []soltype.Type) int {
 // type-constructor parameter. It reports a count that differs from the parameter's arity and
 // recovers to a fresh variable.
 func (c *checker) resolveTypeApp(scope *Scope, ref *ast.TypeRefTypeAnn, v *soltype.TypeVarType, lvl int) soltype.Type {
-	arity := c.ctx.ctorParamArityOf(v)
+	slots := c.ctx.ctorParamSlotsOf(v)
+	arity := len(slots)
 	if len(ref.TypeArgs) != arity {
 		c.report(&TypeArgArityMismatchError{
 			Ref:      ref,
@@ -124,7 +226,7 @@ func (c *checker) resolveTypeApp(scope *Scope, ref *ast.TypeRefTypeAnn, v *solty
 		}
 		args[i] = resolved
 	}
-	t := soltype.NewTypeApp(v, args)
+	t := soltype.NewTypeApp(v, args, slots)
 	c.recordProv(t, ref, AnnotationType)
 	return t
 }
@@ -165,7 +267,7 @@ func (c *Context) reduceTypeApp(app *soltype.TypeAppType) (soltype.Type, bool) {
 	if !ok {
 		return nil, false
 	}
-	return soltype.NewTypeApp(head, app.Args), true
+	return soltype.NewTypeApp(head, app.Args, app.Variances), true
 }
 
 // headBoundOf returns the first bound of v that can stand as a head: a constructor or a rigid
@@ -190,13 +292,15 @@ func (c *Context) headBoundOf(v *soltype.TypeVarType) (soltype.Type, bool) {
 //
 //   - An application whose head is bound to a constructor reduces to the instance it names, and
 //     the constraint is decided on that.
-//   - Two applications `F<A> <: G<B>` relate when the heads unify and each argument equals its
-//     counterpart. Arguments are invariant, since a constructor parameter declares no variance.
+//   - Two applications `F<A> <: G<B>` relate when the heads unify and each argument relates to
+//     its counterpart by the variance both sides declare for it. A slot the two sides disagree on
+//     is invariant.
 //   - An application against a named instance, as `F<A> <: Array<number>`, matches heads. The
 //     instance splits into a constructor taking as many arguments as the application supplies,
-//     which binds F, and the arguments it leaves for those holes, which must each equal A. The
-//     split fixes the leading arguments, so `Promise<number, E>` against `F<A>` binds F to
-//     `Promise<_, E>`.
+//     which binds F, and the arguments it leaves for those holes, which relate to A by the
+//     application's declared variance. The split fixes the leading arguments, so
+//     `Promise<number, E>` against `F<A>` binds F to `Promise<_, E>`. Binding an inference head
+//     checks the constructor against that declared variance first.
 //   - Two constructors relate when they name the same declaration and their fixed arguments are
 //     equal.
 func (c *Context) constrainTypeApp(sub, super soltype.Type, seen *seenPairs, mutCtx bool) ([]SolverError, bool) {
@@ -244,21 +348,28 @@ func (c *Context) constrainTypeApp(sub, super soltype.Type, seen *seenPairs, mut
 		if len(subApp.Args) != len(superApp.Args) {
 			return []SolverError{&CannotConstrainError{Sub: sub, Super: super}}, true
 		}
-		if errs := c.unifyHeads(subApp.Head, superApp.Head, seen, mutCtx); len(errs) > 0 {
+		if errs := c.unifyHeads(subApp.Head, subApp.Variances, superApp.Head, superApp.Variances, seen, mutCtx); len(errs) > 0 {
+			if _, kind := errs[0].(*KindMismatchError); kind {
+				return errs, true
+			}
 			return []SolverError{&CannotConstrainError{Sub: sub, Super: super}}, true
 		}
-		return c.constrainArgsInvariant(subApp.Args, superApp.Args, seen, mutCtx), true
+		variances := make([]soltype.SlotVariance, len(subApp.Args))
+		for i := range variances {
+			variances[i] = subApp.Slot(i).Meet(superApp.Slot(i))
+		}
+		return c.constrainArgs(subApp.Args, superApp.Args, variances, seen, mutCtx), true
 	case subIsApp:
-		return c.matchHead(subApp, super, sub, super, seen, mutCtx), true
+		return c.matchHead(subApp, super, true, seen, mutCtx), true
 	case superIsApp:
-		return c.matchHead(superApp, sub, sub, super, seen, mutCtx), true
+		return c.matchHead(superApp, sub, false, seen, mutCtx), true
 	}
 	return nil, false
 }
 
 // matchHead decides app against other, a type on the opposite side of the constraint, by
-// splitting other into a constructor and the arguments it applies. sub and super are the
-// constraint's own operands, which name a failure.
+// splitting other into a constructor and the arguments it applies. appIsSub reports whether app
+// is the constraint's subtype side.
 //
 // An instance with more arguments than app splits several ways, one per choice of which
 // arguments are holes. An inference head takes the first split that holds, trying the trailing
@@ -267,7 +378,11 @@ func (c *Context) constrainTypeApp(sub, super soltype.Type, seen *seenPairs, mut
 //
 // An alias that splits no way is expanded and matched again, so `type Nums = Array<number>`
 // matches `F<A>` through its body.
-func (c *Context) matchHead(app *soltype.TypeAppType, other, sub, super soltype.Type, seen *seenPairs, mutCtx bool) []SolverError {
+func (c *Context) matchHead(app *soltype.TypeAppType, other soltype.Type, appIsSub bool, seen *seenPairs, mutCtx bool) []SolverError {
+	sub, super := soltype.Type(app), other
+	if !appIsSub {
+		sub, super = other, app
+	}
 	splits := instanceSplits(other, len(app.Args))
 	if len(splits) == 0 {
 		if alias, ok := other.(*soltype.AliasType); ok {
@@ -277,18 +392,24 @@ func (c *Context) matchHead(app *soltype.TypeAppType, other, sub, super soltype.
 			c.pushUnfoldingAlias(alias)
 			defer c.popUnfoldingAlias(alias)
 			expanded := c.expandAlias(alias)
-			if other == sub {
-				return c.constrainUnwrapped(expanded, super, seen, mutCtx)
+			if appIsSub {
+				return c.constrainUnwrapped(sub, expanded, seen, mutCtx)
 			}
-			return c.constrainUnwrapped(sub, expanded, seen, mutCtx)
+			return c.constrainUnwrapped(expanded, super, seen, mutCtx)
 		}
 		return []SolverError{&CannotConstrainError{Sub: sub, Super: super}}
 	}
 	matchSplit := func(s instanceSplit, seen *seenPairs) []SolverError {
-		if errs := c.unifyHeads(app.Head, s.ctor, seen, mutCtx); len(errs) > 0 {
+		if errs := c.unifyHeads(app.Head, app.Variances, s.ctor, nil, seen, mutCtx); len(errs) > 0 {
+			if _, kind := errs[0].(*KindMismatchError); kind {
+				return errs
+			}
 			return []SolverError{&CannotConstrainError{Sub: sub, Super: super}}
 		}
-		return c.constrainArgsInvariant(app.Args, s.args, seen, mutCtx)
+		if appIsSub {
+			return c.constrainArgs(app.Args, s.args, app.Variances, seen, mutCtx)
+		}
+		return c.constrainArgs(s.args, app.Args, app.Variances, seen, mutCtx)
 	}
 	if len(splits) > 1 && c.isInferenceHead(app.Head) {
 		order := make([]int, len(splits))
@@ -369,11 +490,19 @@ func holePositions(n, k int) [][]int {
 	return out
 }
 
-// unifyHeads requires two heads to denote the same constructor. A head that is an inference
-// variable is bound to the other head in both directions, which may be a constructor or a rigid
-// head. A rigid head unifies only with itself or with an inference variable, so a generic body
-// can pass its own F to another function generic over a constructor.
-func (c *Context) unifyHeads(a, b soltype.Type, seen *seenPairs, mutCtx bool) []SolverError {
+// unifyHeads requires two heads to denote the same constructor. aSlots and bSlots are the
+// variances each head's application declares, and nil for a constructor head, which declares
+// none. A head that is an inference variable is bound to the other head in both directions,
+// which may be a constructor or a rigid head. A rigid head unifies only with itself or with an
+// inference variable, so a generic body can pass its own F to another function generic over a
+// constructor.
+//
+// Every binding of an inference head is checked against the slots that head's application
+// declares, so an `F<out _>` binds only to a covariant constructor. A constructor is checked by
+// ctorSatisfiesSlots. Another head is checked by the slots it declares, and two inference heads
+// must each declare what the other asks for, since either may be bound to a constructor later
+// through the other's application alone.
+func (c *Context) unifyHeads(a soltype.Type, aSlots []soltype.SlotVariance, b soltype.Type, bSlots []soltype.SlotVariance, seen *seenPairs, mutCtx bool) []SolverError {
 	if a == b {
 		return nil
 	}
@@ -381,7 +510,31 @@ func (c *Context) unifyHeads(a, b soltype.Type, seen *seenPairs, mutCtx bool) []
 	if (aRigid && !c.isInferenceHead(b)) || (bRigid && !c.isInferenceHead(a)) {
 		return []SolverError{&CannotConstrainError{Sub: a, Super: b}}
 	}
+	if err := c.checkHeadBinding(a, aSlots, b, bSlots); err != nil {
+		return []SolverError{err}
+	}
+	if err := c.checkHeadBinding(b, bSlots, a, aSlots); err != nil {
+		return []SolverError{err}
+	}
 	return c.constrainInvariant(a, b, seen, mutCtx)
+}
+
+// checkHeadBinding reports the KindMismatchError that binding the head `from` to the head `to`
+// would violate, or nil. Only an inference head is bound, so any other `from` passes.
+func (c *Context) checkHeadBinding(from soltype.Type, fromSlots []soltype.SlotVariance, to soltype.Type, toSlots []soltype.SlotVariance) SolverError {
+	if !c.isInferenceHead(from) {
+		return nil
+	}
+	if ctor, ok := to.(*soltype.TypeCtorType); ok {
+		if slot, ok := c.ctorSatisfiesSlots(ctor, fromSlots); !ok {
+			return &KindMismatchError{Ctor: soltype.Print(ctor), Slot: slot, Want: fromSlots[slot]}
+		}
+		return nil
+	}
+	if slot, ok := slotsSatisfy(toSlots, fromSlots); !ok {
+		return &KindMismatchError{Ctor: describe(c.nameRigidParams(to)), Slot: slot, Want: fromSlots[slot]}
+	}
+	return nil
 }
 
 // isInferenceHead reports whether t is an inference variable a head can be bound to, rather than
@@ -410,12 +563,20 @@ func (c *Context) constrainInvariant(a, b soltype.Type, seen *seenPairs, mutCtx 
 	return append(errs, c.constrain(b, a, seen, mutCtx)...)
 }
 
-// constrainArgsInvariant requires each of as to equal its counterpart in bs. The two slices
-// have the same length.
-func (c *Context) constrainArgsInvariant(as, bs []soltype.Type, seen *seenPairs, mutCtx bool) []SolverError {
+// constrainArgs relates each sub-side argument in subs to its super-side counterpart in supers by
+// the variance variances gives it. A missing entry in variances is invariant. subs and supers have
+// the same length.
+func (c *Context) constrainArgs(subs, supers []soltype.Type, variances []soltype.SlotVariance, seen *seenPairs, mutCtx bool) []SolverError {
 	var errs []SolverError
-	for i := range as {
-		errs = append(errs, c.constrainInvariant(as[i], bs[i], seen, mutCtx)...)
+	for i := range subs {
+		switch soltype.SlotAt(variances, i) {
+		case soltype.SlotCovariant:
+			errs = append(errs, c.constrain(subs[i], supers[i], seen, mutCtx)...)
+		case soltype.SlotContravariant:
+			errs = append(errs, c.constrain(supers[i], subs[i], seen, mutCtx)...)
+		default:
+			errs = append(errs, c.constrainInvariant(subs[i], supers[i], seen, mutCtx)...)
+		}
 	}
 	return errs
 }

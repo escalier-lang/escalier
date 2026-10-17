@@ -23,3 +23,6 @@ declare const doubledOpt: MyOption<number>;
 declare const tagged: Tagged<string, number>;
 declare const taggedFunctor: Functor<unknown>;
 declare const doubledTagged: Tagged<string, number>;
+declare const five: Box<5>;
+declare function widen<F>(fa: unknown): unknown;
+declare const widened: Box<number>;
