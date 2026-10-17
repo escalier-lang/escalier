@@ -45,8 +45,8 @@ type TypeVarType struct {
 	// from, or nil when the parameter declares none. It is not a bound, and constrain never
 	// reads it. Coalescing reads it through DefaultApplies.
 	Default *VarDefault
-	// Rigid is set on the variable of a declared type parameter once a body that has to
-	// work for every instantiation of it is checked, and stays set from then on. constrain
+	// Rigid is set on the variable of a declared type parameter when the walk of a body that
+	// has to work for every instantiation of it starts, and stays set from then on. constrain
 	// reads a rigid variable through its skolem rather than binding it. Instantiation
 	// replaces a declared parameter with a fresh variable, so a copy is never rigid.
 	Rigid *RigidParam
@@ -61,7 +61,8 @@ type RigidParam struct {
 	Uppers []Type
 	Lowers []Type
 	// Skolem is the opaque type the parameter reads as against a type. It is minted on
-	// first use, so a parameter nothing constrains from the sub side mints none.
+	// first use, so a parameter mints none until something constrains it from the sub side
+	// or a diagnostic names it.
 	Skolem *SkolemType
 	// FromBelow marks a parameter that is also rigid on the super side of a constraint, so
 	// a type flowing into it is checked against its skolem.

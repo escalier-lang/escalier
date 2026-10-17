@@ -242,6 +242,18 @@ val n: number = f(s, 5)`,
 }`,
 			errs: []string{"3:37-3:38: cannot constrain A <: B"},
 		},
+		{
+			// The implements check runs after the member bodies, and the class's `U` is still
+			// rigid there. A method returning `U` therefore does not satisfy a member that
+			// returns `number`.
+			name: "AnImplementsCheckReadsTheClassParameterAsRigid",
+			src: `interface I { get(self) -> number }
+class C<U> implements I {
+	u: U,
+	get(self) -> U { return self.u },
+}`,
+			errs: []string{"2:23-2:24: Class 'C' does not implement interface 'I': member 'get' signature does not match"},
+		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {

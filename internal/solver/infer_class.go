@@ -311,9 +311,9 @@ func (c *checker) inferClassBodies(
 	typeParams := sigs.shell.typeParams
 
 	// Each body has to work for every argument an instance may give the class, so the
-	// class's parameters are rigid from here on. A member's signature is
-	// linked to its stub inside the same window, since a sibling call recorded against the
-	// stub reaches the parameters through that link.
+	// class's parameters are rigid from here on. A member's signature is linked to its stub
+	// while they are rigid, since a sibling call recorded against the stub reaches the
+	// parameters through that link.
 	// A class has no counterpart to checkTypeParamsProducible, so its parameters are rigid
 	// from below too, and `self.v = 5` with `v: U` is reported at the write.
 	if len(typeParams) > 0 {
