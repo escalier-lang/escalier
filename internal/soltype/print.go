@@ -281,7 +281,7 @@ func PrintAsSchemeWith(
 			continue // one variable gets one binder, however many parameters point at it
 		}
 		declaredAt[len(labels)] = tp
-		labels = append(labels, p.bindTypeParam(tp.Var, tp.Name))
+		labels = append(labels, p.bindTypeParam(tp.Var, tp.Name)+ctorSlots(tp.Slots))
 	}
 	// Every remaining quantified variable takes a generated T0, T1, … in first-appearance
 	// order, skipping any name a source parameter already claims.
@@ -376,6 +376,9 @@ func PrintAsSchemeWith(
 		var bounds []Type
 		if tp.UpperBound != nil {
 			bounds = []Type{tp.UpperBound}
+		}
+		if tp.CtorBound != nil {
+			bounds = []Type{tp.CtorBound}
 		}
 		labels[i] += p.typeParamSuffix(bounds, tp.Default)
 	}
