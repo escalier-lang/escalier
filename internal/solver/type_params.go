@@ -28,14 +28,20 @@ func (c *checker) resolveTypeParams(scope *Scope, lvl int, params []*ast.TypePar
 	// Pass 1: mint each parameter's var. Nothing is declared yet, so pass 2 controls which
 	// siblings each default can see.
 	for i, p := range params {
-		out[i] = &soltype.TypeParam{Name: p.Name, Var: c.freshAt(lvl)}
+		out[i] = &soltype.TypeParam{Name: p.Name, Var: c.freshAt(lvl), Arity: p.Arity}
 		c.ctx.markParamVar(out[i].Var)
+		if p.Arity > 0 {
+			c.ctx.markCtorParam(out[i].Var, p.Arity)
+		}
 	}
 	// Pass 2: resolve each default under the names declared so far, then declare this
 	// parameter. A default naming a later sibling or itself finds the name undeclared.
 	for i, p := range params {
 		if p.Default != nil && !c.reportDefaultForwardRef(params, i) {
-			if dt, ok := c.resolveTypeAnn(scope, p.Default, lvl); ok {
+			// A constructor parameter's default is a constructor, as `Array` in `F<_> = Array`.
+			if p.Arity > 0 {
+				out[i].Default = c.resolveTypeCtorArg(scope, p.Default, p.Arity, lvl)
+			} else if dt, ok := c.resolveTypeAnn(scope, p.Default, lvl); ok {
 				out[i].Default = dt
 			}
 		}
@@ -46,6 +52,14 @@ func (c *checker) resolveTypeParams(scope *Scope, lvl int, params []*ast.TypePar
 	// its own field, where later solving cannot overwrite it. The var's bound lists grow as
 	// constraints flow in, so a reader that wants what the source wrote reads the field.
 	for i, p := range params {
+		if p.Arity > 0 && (p.LowerBound != nil || p.UpperBound != nil) {
+			bound := p.UpperBound
+			if bound == nil {
+				bound = p.LowerBound
+			}
+			c.reportUnsupportedFeature(bound, "bound on a type constructor parameter")
+			continue
+		}
 		if p.LowerBound != nil {
 			if lt, ok := c.resolveTypeAnn(scope, p.LowerBound, lvl); ok {
 				c.ctx.addLowerBound(out[i].Var, lt)
@@ -292,6 +306,12 @@ func (c *checker) resolveTypeArgs(
 	// inside it rather than swallowing the diagnostic along with the argument.
 	written := make([]soltype.Type, got)
 	for i, arg := range ref.TypeArgs {
+		// A parameter that stands for a type constructor takes a constructor as its argument,
+		// as `Array` is in `Functor<Array>`, so the argument is not resolved as a type.
+		if i < len(params) && params[i].Arity > 0 {
+			written[i] = c.resolveTypeCtorArg(scope, arg, params[i].Arity, lvl)
+			continue
+		}
 		if resolved, ok := c.resolveTypeAnn(scope, arg, lvl); ok {
 			written[i] = resolved
 		} else {

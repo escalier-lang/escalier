@@ -603,7 +603,7 @@ func acceptTypeParams(tps []*TypeParam, v TypeVisitor, pol Polarity) ([]*TypePar
 				out = append([]*TypeParam(nil), tps...)
 				changed = true
 			}
-			out[i] = &TypeParam{Name: tp.Name, Var: nv, Default: def, UpperBound: cons, LowerBound: lower}
+			out[i] = &TypeParam{Name: tp.Name, Var: nv, Default: def, UpperBound: cons, LowerBound: lower, Arity: tp.Arity}
 		}
 	}
 	return out, changed

@@ -43,6 +43,9 @@ func typePrec(t Type) int {
 		// `T[K]` is a postfix primary that binds tighter than any prefix, so it never needs
 		// outer parens. `keyof T[K]` reads as `keyof (T[K])`, matching TypeScript.
 		return precAtom
+	case *TypeAppType, *TypeCtorType:
+		// `F<A>` and `Promise<_, E>` end in a closing `>`, so they bind like a class instance.
+		return precAtom
 	case *TypeofType:
 		return precPrefix
 	case *UniqueSymbolType:
@@ -704,6 +707,17 @@ func freeTypeVars(t Type) []*TypeVarType {
 			}
 		case *KeyofType:
 			walk(t.Operand)
+		case *TypeAppType:
+			walk(t.Head)
+			for _, a := range t.Args {
+				walk(a)
+			}
+		case *TypeCtorType:
+			for _, f := range t.Fixed {
+				if f != nil {
+					walk(f)
+				}
+			}
 		case *IndexType:
 			walk(t.Target)
 			walk(t.Index)
@@ -1116,6 +1130,29 @@ func (p *namedPrinter) printType(t Type) string {
 		// `keyof T`, mirroring type_system's KeyOfType rendering. The operand prints at
 		// precPrefix so a looser operand such as a union gets parenthesized: `keyof (A | B)`.
 		return "keyof " + p.printTypeMinPrec(t.Operand, precPrefix)
+	case *TypeAppType:
+		// `F<A>`, the head as its parameter's name and the arguments in order.
+		args := make([]string, len(t.Args))
+		for i, a := range t.Args {
+			args[i] = p.printType(a)
+		}
+		return p.printTypeMinPrec(t.Head, precAtom) + "<" + strings.Join(args, ", ") + ">"
+	case *TypeCtorType:
+		// A whole constructor renders bare, as `Array`. A partial one renders its holes as `_`,
+		// as `Promise<_, FetchError>`.
+		name := p.printType(t.Base)
+		if t.Arity() == len(t.Fixed) {
+			return name
+		}
+		parts := make([]string, len(t.Fixed))
+		for i, f := range t.Fixed {
+			if f == nil {
+				parts[i] = "_"
+			} else {
+				parts[i] = p.printType(f)
+			}
+		}
+		return name + "<" + strings.Join(parts, ", ") + ">"
 	case *IndexType:
 		// `T[K]`. The target prints at precAtom so a looser target such as a union or a
 		// `keyof` gets parenthesized: `(A | B)["x"]`, `(keyof T)[K]`. The index sits inside
@@ -1532,7 +1569,7 @@ func (p *namedPrinter) typeParamBinders(tps []*TypeParam) []string {
 	for i, tp := range tps {
 		// Reading the declared bound is what renders `pick<T: U>` on a `C<number>` as
 		// `<T: number>`. printType gives the registered source name, else t{ID}.
-		binders[i] = p.printType(tp.Var) + p.typeParamSuffix(tp.DeclaredUpperBounds(), tp.Default)
+		binders[i] = p.printType(tp.Var) + arityHoles(tp.Arity) + p.typeParamSuffix(tp.DeclaredUpperBounds(), tp.Default)
 	}
 	return binders
 }
@@ -1854,4 +1891,13 @@ func printLit(lit Lit) string {
 		return strconv.FormatBool(lit.Value)
 	}
 	panic(fmt.Sprintf("printLit: unhandled Lit %T", lit))
+}
+
+// arityHoles renders the `<_, _>` that follows a constructor parameter's name, one `_` per
+// argument the constructor takes. It renders the empty string for an arity of 0.
+func arityHoles(arity int) string {
+	if arity == 0 {
+		return ""
+	}
+	return "<" + strings.TrimSuffix(strings.Repeat("_, ", arity), ", ") + ">"
 }

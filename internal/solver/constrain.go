@@ -678,6 +678,12 @@ func (c *Context) peelTransparent(t soltype.Type) soltype.Type {
 			t = c.expandAlias(ty)
 		case *soltype.RecursiveType:
 			t = unfoldRecursive(ty)
+		case *soltype.TypeAppType:
+			reduced, ok := c.reduceTypeApp(ty)
+			if !ok {
+				return t
+			}
+			t = reduced
 		default:
 			return t
 		}
@@ -720,6 +726,13 @@ func (c *Context) evalTypeOperator(t soltype.Type, seen *seenPairs) (soltype.Typ
 		return t.Ty, nil, true
 	case *soltype.RecursiveType:
 		return unfoldRecursive(t), nil, true
+	case *soltype.TypeAppType:
+		// An application whose head has been bound to a constructor stands for the instance the
+		// constructor names.
+		if reduced, ok := c.reduceTypeApp(t); ok {
+			return reduced, nil, true
+		}
+		return nil, nil, false
 	case *soltype.KeyofType, *soltype.IndexType, *soltype.CondType,
 		*soltype.TemplateLitType, *soltype.StringIntrinsicType, *soltype.ExactnessType:
 		return c.reduceResidual(t, seen)
@@ -1148,6 +1161,13 @@ func (c *Context) constrain(sub, super soltype.Type, seen *seenPairs, mutCtx boo
 		if rp, rigid := c.rigidParams[superVar]; rigid && rp.fromBelow && len(typeVarsIn(sub)) == 0 {
 			return c.constrain(sub, c.rigidSkolem(rp), seen, mutCtx)
 		}
+	}
+
+	// An application or a constructor is decided by the rules for type-constructor heads. This
+	// runs ahead of alias expansion, so `F<A>` matches an alias instance by its name before the
+	// name is expanded away.
+	if errs, ok := c.constrainTypeApp(sub, super, seen, mutCtx); ok {
+		return errs
 	}
 
 	// An alias, a `typeof` query, a `keyof`, an indexed access `T[K]`, and a conditional are

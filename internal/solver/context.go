@@ -49,6 +49,11 @@ type Context struct {
 	// variable, and the copiers add each copy through copyParamMark. isParamVar reads it.
 	paramVars set.Set[*soltype.TypeVarType]
 
+	// ctorParamArity maps the variable of each type-constructor parameter, as F in
+	// `<F<_>>`, to the number of arguments it takes. A parameter that stands for a type is
+	// absent.
+	ctorParamArity map[*soltype.TypeVarType]int
+
 	// symbolCounter mints the id a `unique symbol` annotation carries. Each written
 	// annotation is its own symbol, so the counter advances per annotation rather than
 	// per name, and two references to one declaration share an id because they share the
@@ -386,6 +391,21 @@ func (c *Context) markParamVar(v *soltype.TypeVarType) {
 		c.paramVars = set.NewSet[*soltype.TypeVarType]()
 	}
 	c.paramVars.Add(v)
+}
+
+// markCtorParam records v as the variable of a type-constructor parameter taking arity
+// arguments.
+func (c *Context) markCtorParam(v *soltype.TypeVarType, arity int) {
+	if c.ctorParamArity == nil {
+		c.ctorParamArity = map[*soltype.TypeVarType]int{}
+	}
+	c.ctorParamArity[v] = arity
+}
+
+// ctorParamArityOf returns the number of arguments v's parameter takes when v is the variable
+// of a type-constructor parameter, and 0 otherwise.
+func (c *Context) ctorParamArityOf(v *soltype.TypeVarType) int {
+	return c.ctorParamArity[v]
 }
 
 // isParamVar reports whether v is a type parameter's variable or a copy of one.

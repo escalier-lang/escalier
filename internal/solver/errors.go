@@ -1624,6 +1624,7 @@ const (
 	ClassDeclKind     TypeDeclKind = "class"
 	EnumDeclKind      TypeDeclKind = "enum"
 	InterfaceDeclKind TypeDeclKind = "interface"
+	TypeCtorParamKind TypeDeclKind = "type constructor parameter"
 )
 
 // article returns the indefinite article that reads correctly before the kind's name, so a
@@ -3642,6 +3643,12 @@ func describe(t soltype.Type) string {
 		return soltype.Print(t)
 	case *soltype.RegexType:
 		return t.Source
+	case *soltype.TypeAppType:
+		// An application renders `F<A>` over its head, so a rejected constraint names the
+		// constructor parameter the source wrote.
+		return describe(t.Head) + "<" + joinDescribe(t.Args, ", ") + ">"
+	case *soltype.TypeCtorType:
+		return soltype.Print(t)
 	}
 	return "?"
 }

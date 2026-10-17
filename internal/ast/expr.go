@@ -416,6 +416,9 @@ type TypeParam struct {
 	UpperBoundInWhere bool
 	Default           TypeAnn
 	Variance          VarianceModifier
+	// Arity is the number of type arguments the parameter takes when it stands for a type
+	// constructor, as 1 in `F<_>`. It is 0 for an ordinary parameter that stands for a type.
+	Arity int
 	span              Span
 	commentSlots
 }

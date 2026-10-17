@@ -1197,6 +1197,47 @@ func (p *Parser) typeParam(allowVariance bool) *ast.TypeParam {
 	}
 	end := token.Span.End
 
+	// A parameter written `F<_>` or `F<_, _>` stands for a type constructor. Each `_` is one
+	// argument slot the constructor takes.
+	arity := 0
+	if open := p.lexer.peek(); open.Type == LessThan {
+		p.lexer.consume() // consume '<'
+		end = open.Span.End
+		badSlot := false
+		for {
+			slot := p.lexer.peek()
+			if slot.Type != Underscore {
+				p.reportError(slot.Span, "expected `_` in a type constructor parameter")
+				badSlot = true
+				break
+			}
+			p.lexer.consume()
+			arity++
+			end = slot.Span.End
+			if p.lexer.peek().Type != Comma {
+				break
+			}
+			p.lexer.consume() // consume ','
+		}
+		if closing := p.lexer.peek(); closing.Type != GreaterThan && !badSlot {
+			p.reportError(closing.Span, "expected `>` after a type constructor parameter")
+		}
+		// Skip whatever is left of a malformed list up to its `>`, so one mistake reports one
+		// error. The skip stops at a token that can only begin what follows the binder list.
+		for {
+			next := p.lexer.peek()
+			if next.Type == GreaterThan {
+				p.lexer.consume()
+				end = next.Span.End
+				break
+			}
+			if next.Type == OpenParen || next.Type == EndOfFile {
+				break
+			}
+			p.lexer.consume()
+		}
+	}
+
 	var upperBound ast.TypeAnn
 	var default_ ast.TypeAnn
 
@@ -1220,6 +1261,7 @@ func (p *Parser) typeParam(allowVariance bool) *ast.TypeParam {
 
 	typeParam := ast.NewTypeParam(name, nil, upperBound, default_, ast.NewSpan(start, end, p.lexer.source.ID))
 	typeParam.Variance = variance
+	typeParam.Arity = arity
 	return &typeParam
 }
 
