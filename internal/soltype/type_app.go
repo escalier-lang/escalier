@@ -146,9 +146,15 @@ func (c *TypeCtorType) Apply(args []Type) (Type, bool) {
 }
 
 // NewTypeApp returns the application of head to args, whose declared variances are variances.
-// A TypeCtorType head is applied at once, so the result is the class or alias instance the
-// constructor names. A `never` or `unknown` head, which coalescing leaves for a head no
-// constraint bound, gives that bound itself. Any other head gives a TypeAppType.
+// The head decides the result:
+//
+//   - A TypeCtorType head is applied at once, giving the class or alias instance it names.
+//   - A `never` or `unknown` head gives that bound itself.
+//   - A union or intersection head that holds constructors gives the union or intersection of
+//     their instances. Its other members are dropped, so `(T0 | Array)<number>` is
+//     `Array<number>`.
+//
+// Any other head gives a TypeAppType.
 func NewTypeApp(head Type, args []Type, variances []SlotVariance) Type {
 	switch h := head.(type) {
 	case *TypeCtorType:
@@ -157,6 +163,18 @@ func NewTypeApp(head Type, args []Type, variances []SlotVariance) Type {
 		}
 	case *NeverType, *UnknownType:
 		return h
+	case *UnionType:
+		if applied := applyCtorMembers(h.Types, args); len(applied) == 1 {
+			return applied[0]
+		} else if len(applied) > 1 {
+			return &UnionType{Types: applied}
+		}
+	case *IntersectionType:
+		if applied := applyCtorMembers(h.Types, args); len(applied) == 1 {
+			return applied[0]
+		} else if len(applied) > 1 {
+			return &IntersectionType{Types: applied}
+		}
 	}
 	return &TypeAppType{Head: head, Args: args, Variances: variances}
 }
@@ -224,4 +242,18 @@ func (t *TypeCtorType) Accept(v TypeVisitor, pol Polarity) Type {
 		out = &TypeCtorType{Base: cur.Base, Fixed: fixed}
 	}
 	return v.ExitType(out, pol)
+}
+
+// applyCtorMembers applies each constructor among members to args and returns the instances,
+// skipping a constructor whose arity differs from len(args).
+func applyCtorMembers(members []Type, args []Type) []Type {
+	var applied []Type
+	for _, m := range members {
+		if ctor, ok := m.(*TypeCtorType); ok {
+			if inst, ok := ctor.Apply(args); ok {
+				applied = append(applied, inst)
+			}
+		}
+	}
+	return applied
 }

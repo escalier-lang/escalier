@@ -341,3 +341,97 @@ fn widen<F<out _>>(fa: F<5>) -> F<number> { return fa }
 		})
 	}
 }
+
+// TestInferBorrowedTypeApps covers a borrow of an application, as `mut F<A>` and `&F<A>`. A
+// borrow's head matches under a borrow of the same kind, so `mut F<A>` against
+// `mut Array<number>` binds F to Array. The borrow rules decide a borrow against an
+// application first, so an owned `mut` value peels into an owned `F<A>`. Under a mutable
+// borrow every argument is invariant, whatever its slot declares.
+func TestInferBorrowedTypeApps(t *testing.T) {
+	const prelude = `
+class Box<T> { value: T }
+fn idMut<F<_>, A>(fa: mut F<A>) -> mut F<A> { return fa }
+fn idOwned<F<_>, A>(fa: F<A>) -> F<A> { return fa }
+fn idRef<F<_>>(fa: &F<number>) -> &F<number> { return fa }
+`
+	tests := []struct {
+		name string
+		src  string
+		// want holds the rendered type of each listed value binding.
+		want map[string]string
+		// wantErrs is every diagnostic in order. nil expects none.
+		wantErrs []string
+	}{
+		{
+			name: "MutBorrowRenders",
+			src:  ``,
+			want: map[string]string{"idMut": "fn <F<_>, A>(fa: mut F<A>) -> mut F<A>"},
+		},
+		{
+			name: "SharedBorrowRenders",
+			src:  ``,
+			want: map[string]string{"idRef": "fn <F<_>, 'a>(fa: &'a F<number>) -> &'a F<number>"},
+		},
+		{
+			name: "SharedBorrowMatched",
+			src: `val a: Array<number> = [1]
+			val r = idRef(&a)`,
+			want: map[string]string{"r": "&Array<number>"},
+		},
+		{
+			name: "MutValueDecaysToSharedBorrow",
+			src: `val m: mut Array<number> = [1]
+			val r = idRef(&m)`,
+			want: map[string]string{"r": "&Array<number>"},
+		},
+		{
+			name:     "MutBorrowMakesArgumentsInvariant",
+			src:      `fn w<F<out _>>(fa: mut F<5>) -> mut F<number> { return fa }`,
+			wantErrs: []string{"cannot constrain number <: 5"},
+		},
+		{
+			name: "FieldReadThroughMutReceiverLendsBorrow",
+			src: `type H<F<_>> = {items: F<number>}
+			fn get<F<_>>(h: mut H<F>) -> mut F<number> { return h.items }`,
+			want: map[string]string{"get": "fn <F<_>>(h: mut H<F>) -> mut F<number>"},
+		},
+		{
+			name: "MutArrayMatched",
+			src: `val m: mut Array<number> = [1]
+			val r = idMut(m)`,
+			want: map[string]string{"r": "mut Array<number>"},
+		},
+		{
+			name: "MutClassMatched",
+			src: `val m: mut Box<number> = Box(1)
+			val r = idMut(m)`,
+			want: map[string]string{"r": "mut Box<number>"},
+		},
+		{
+			name: "OwnedMutValuePeelsIntoOwnedApp",
+			src: `val m: mut Array<number> = [1]
+			val r = idOwned(m)`,
+			want: map[string]string{"r": "Array<number>"},
+		},
+		{
+			name: "MutAppRejectsImmutable",
+			src: `val a: Array<number> = [1]
+			val r = idMut(a)`,
+			wantErrs: []string{"cannot constrain immutable Array<number> <: mutable t20<t21>"},
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			values, _, errs := inferSource(t, prelude+tt.src)
+			if tt.wantErrs == nil {
+				require.Empty(t, errorMessagesOf(errs))
+			} else {
+				require.Equal(t, tt.wantErrs, errorMessagesOf(errs))
+			}
+			for name, want := range tt.want {
+				require.Contains(t, values, name)
+				require.Equal(t, want, values[name], name)
+			}
+		})
+	}
+}
