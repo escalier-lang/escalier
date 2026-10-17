@@ -141,11 +141,6 @@ func TestInferTypeConstructorParams(t *testing.T) {
 			val q: Q = {x: [1]}`,
 		},
 		{
-			name:     "ConstructorParamBoundUnsupported",
-			src:      `type Q<F<_>: Array> = {x: F<number>}`,
-			wantErrs: []string{"Unsupported: bound on a type constructor parameter"},
-		},
-		{
 			name: "InstanceAndValueDisagree",
 			src: `val b: Box<number> = Box(5)
 			val r = double(arrayFunctor, b)`,
@@ -418,6 +413,140 @@ fn idRef<F<_>>(fa: &F<number>) -> &F<number> { return fa }
 			src: `val a: Array<number> = [1]
 			val r = idMut(a)`,
 			wantErrs: []string{"cannot constrain immutable Array<number> <: mutable t20<t21>"},
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			values, _, errs := inferSource(t, prelude+tt.src)
+			if tt.wantErrs == nil {
+				require.Empty(t, errorMessagesOf(errs))
+			} else {
+				require.Equal(t, tt.wantErrs, errorMessagesOf(errs))
+			}
+			for name, want := range tt.want {
+				require.Contains(t, values, name)
+				require.Equal(t, want, values[name], name)
+			}
+		})
+	}
+}
+
+// TestInferTypeConstructorBounds covers a bound on a type-constructor parameter, as
+// `F<_>: Sized`, which means `F<A> <: Sized<A>` for every A. The cases cover reading through the
+// bound inside a generic body, checking a constructor against the bound when a call infers it or
+// a type argument names it, and passing one constructor parameter where a bounded one is
+// expected.
+func TestInferTypeConstructorBounds(t *testing.T) {
+	const prelude = `
+type Sized<T> = {size: number, item: T, ...}
+class Bag<T> { item: T, size: number }
+class Box<T> { value: T }
+fn sizeOf<F<_>: Sized>(fa: F<number>) -> number { return fa.size }
+type Has<F<_>: Sized> = {x: F<number>}
+`
+	tests := []struct {
+		name string
+		src  string
+		// want holds the rendered type of each listed value binding.
+		want map[string]string
+		// wantErrs is every diagnostic in order. nil expects none.
+		wantErrs []string
+	}{
+		{
+			name: "BoundRenders",
+			src:  ``,
+			want: map[string]string{"sizeOf": "fn <F<_>: Sized>(fa: F<number>) -> number"},
+		},
+		{
+			name: "BoundWithVarianceRenders",
+			src: `fn s2<F<out _>: Sized>(fa: F<number>) -> number { return fa.size }
+			val w = s2`,
+			want: map[string]string{"w": "fn <F<out _>: Sized>(fa: F<number>) -> number"},
+		},
+		{
+			name:     "BodyReadsOnlyWhatTheBoundOffers",
+			src:      `fn bad<F<_>: Sized>(fa: F<number>) -> number { return fa.value }`,
+			wantErrs: []string{"object is missing property: value"},
+		},
+		{
+			name: "InferredConstructorSatisfiesBound",
+			src: `val b: Bag<number> = Bag(1, 3)
+			val r = sizeOf(b)`,
+			want: map[string]string{"r": "number"},
+		},
+		{
+			name: "InferredConstructorViolatesBound",
+			src: `val b: Box<number> = Box(1)
+			val r = sizeOf(b)`,
+			wantErrs: []string{
+				"type constructor `Box` does not satisfy the bound `Sized` its parameter declares",
+			},
+		},
+		{
+			name: "WrittenConstructorSatisfiesBound",
+			src:  `type X = Has<Bag>`,
+		},
+		{
+			name: "WrittenConstructorViolatesBound",
+			src:  `type X = Has<Box>`,
+			wantErrs: []string{
+				"type constructor `Box` does not satisfy the bound `Sized` its parameter declares",
+			},
+		},
+		{
+			name: "BoundedParamPassedToBoundedParam",
+			src:  `fn outer<G<_>: Sized>(g: G<number>) -> number { return sizeOf(g) }`,
+		},
+		{
+			name: "UnboundedParamPassedToBoundedCall",
+			src:  `fn outer<G<_>>(g: G<number>) -> number { return sizeOf(g) }`,
+			wantErrs: []string{
+				"type constructor `G` does not satisfy the bound `Sized` its parameter declares",
+			},
+		},
+		{
+			name: "DefaultViolatesBound",
+			src:  `type Q<F<_>: Sized = Box> = {x: F<number>}`,
+			wantErrs: []string{
+				"type constructor `Box` does not satisfy the bound `Sized` its parameter declares",
+			},
+		},
+		{
+			// G's bound resolves after T's, which already names G.
+			name: "LaterSiblingBoundSatisfies",
+			src:  `fn f<T: Has<G>, G<_>: Sized>(t: T) -> number { return 1 }`,
+		},
+		{
+			name: "LaterSiblingBoundReadInBody",
+			src:  `fn g<T: G<number>, G<_>: Sized>(t: T) -> number { return t.size }`,
+		},
+		{
+			// The bound names the sibling T, which takes the reference's argument.
+			name: "BoundNamesSibling",
+			src: `type Pair<K, V> = {k: K, v: V, ...}
+			class StrPair<V> { k: string, v: V }
+			type Keyed<T, F<_>: Pair<T, _>> = {x: F<number>}
+			type Ok = Keyed<string, StrPair>
+			type Bad = Keyed<boolean, StrPair>`,
+			wantErrs: []string{
+				"type constructor `StrPair` does not satisfy the bound `Pair<boolean, _>` its parameter declares",
+			},
+		},
+		{
+			// A partially applied constructor is named with its fixed arguments.
+			name: "PartialConstructorNamedInError",
+			src: `class Tagged<E, A> { tag: E, value: A }
+			type X = Has<Tagged<string, _>>`,
+			wantErrs: []string{
+				"type constructor `Tagged<string, _>` does not satisfy the bound `Sized` its parameter declares",
+			},
+		},
+		{
+			name: "UnboundedParamWrittenForBoundedParam",
+			src:  `fn outer<G<_>>(h: Has<G>) -> number { return 1 }`,
+			wantErrs: []string{
+				"type constructor `G` does not satisfy the bound `Sized` its parameter declares",
+			},
 		},
 	}
 	for _, tt := range tests {

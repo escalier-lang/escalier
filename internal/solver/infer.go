@@ -874,6 +874,8 @@ func (c *checker) blameConstraintErrors(n ast.Node, errs []SolverError) {
 			err.prov, err.site = c.prov, n
 		case *KindMismatchError:
 			err.site = n
+		case *BoundMismatchError:
+			err.site = n
 		case *AmbiguousUnionCommitWarning:
 			err.prov, err.site = c.prov, n
 			err.shownUnion = c.ctx.nameRigidParams(err.Union)

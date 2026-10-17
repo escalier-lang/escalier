@@ -10,11 +10,14 @@ package soltype
 // A head that is a known constructor never stays here. NewTypeApp applies it, so `F<number>` with
 // `F = Array` is the ClassType `Array<number>` and not an application node.
 //
-// Variances holds the declared variance of each argument, one entry per entry of Args.
+// Variances holds the declared variance of each argument, one entry per entry of Args. Bound is
+// the constructor the parameter declares as its bound, as `Sized` in `F<out _>: Sized`, and nil
+// when it declares none. It means `F<A> <: Sized<A>` for every A.
 type TypeAppType struct {
 	Head      Type
 	Args      []Type
 	Variances []SlotVariance
+	Bound     Type
 }
 
 // SlotVariance is the declared variance of one argument of a type-constructor parameter. It
@@ -145,7 +148,8 @@ func (c *TypeCtorType) Apply(args []Type) (Type, bool) {
 	return nil, false
 }
 
-// NewTypeApp returns the application of head to args, whose declared variances are variances.
+// NewTypeApp returns the application of head to args, whose declared variances are variances and
+// whose parameter's declared bound is bound.
 // The head decides the result:
 //
 //   - A TypeCtorType head is applied at once, giving the class or alias instance it names.
@@ -155,7 +159,7 @@ func (c *TypeCtorType) Apply(args []Type) (Type, bool) {
 //     `Array<number>`.
 //
 // Any other head gives a TypeAppType.
-func NewTypeApp(head Type, args []Type, variances []SlotVariance) Type {
+func NewTypeApp(head Type, args []Type, variances []SlotVariance, bound Type) Type {
 	switch h := head.(type) {
 	case *TypeCtorType:
 		if applied, ok := h.Apply(args); ok {
@@ -176,7 +180,7 @@ func NewTypeApp(head Type, args []Type, variances []SlotVariance) Type {
 			return &IntersectionType{Types: applied}
 		}
 	}
-	return &TypeAppType{Head: head, Args: args, Variances: variances}
+	return &TypeAppType{Head: head, Args: args, Variances: variances, Bound: bound}
 }
 
 func (t *TypeAppType) Accept(v TypeVisitor, pol Polarity) Type {
@@ -205,11 +209,16 @@ func (t *TypeAppType) Accept(v TypeVisitor, pol Polarity) Type {
 			args[i] = na
 		}
 	}
+	// The bound walks covariantly, so a substitution reaches an argument the bound fixes.
+	bound := cur.Bound
+	if bound != nil {
+		bound = bound.Accept(v, pol)
+	}
 	out := Type(cur)
-	if head != cur.Head || changed {
+	if head != cur.Head || changed || bound != cur.Bound {
 		// A substitution that puts a constructor in the head turns the node into the
 		// application the constructor names.
-		out = NewTypeApp(head, args, cur.Variances)
+		out = NewTypeApp(head, args, cur.Variances, bound)
 	}
 	return v.ExitType(out, pol)
 }

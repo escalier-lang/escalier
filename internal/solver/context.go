@@ -49,10 +49,10 @@ type Context struct {
 	// variable, and the copiers add each copy through copyParamMark. isParamVar reads it.
 	paramVars set.Set[*soltype.TypeVarType]
 
-	// ctorParamSlots maps the variable of each type-constructor parameter, as F in
-	// `<F<out _>>`, to the declared variance of each argument it takes. A parameter that stands
-	// for a type is absent.
-	ctorParamSlots map[*soltype.TypeVarType][]soltype.SlotVariance
+	// ctorParams maps the variable of each type-constructor parameter, as F in
+	// `<F<out _>: Sized>`, to what it declares: the variance of each argument it takes and its
+	// bound. A parameter that stands for a type is absent.
+	ctorParams map[*soltype.TypeVarType]headKind
 
 	// symbolCounter mints the id a `unique symbol` annotation carries. Each written
 	// annotation is its own symbol, so the counter advances per annotation rather than
@@ -396,16 +396,30 @@ func (c *Context) markParamVar(v *soltype.TypeVarType) {
 // markCtorParam records v as the variable of a type-constructor parameter whose arguments have
 // the declared variances slots.
 func (c *Context) markCtorParam(v *soltype.TypeVarType, slots []soltype.SlotVariance) {
-	if c.ctorParamSlots == nil {
-		c.ctorParamSlots = map[*soltype.TypeVarType][]soltype.SlotVariance{}
+	if c.ctorParams == nil {
+		c.ctorParams = map[*soltype.TypeVarType]headKind{}
 	}
-	c.ctorParamSlots[v] = slots
+	c.ctorParams[v] = headKind{Slots: slots}
+}
+
+// setCtorParamBound records bound as the declared bound of the type-constructor parameter whose
+// variable is v. markCtorParam must have recorded v first.
+func (c *Context) setCtorParamBound(v *soltype.TypeVarType, bound soltype.Type) {
+	k := c.ctorParams[v]
+	k.Bound = bound
+	c.ctorParams[v] = k
 }
 
 // ctorParamSlotsOf returns the declared variance of each argument v's parameter takes when v is
 // the variable of a type-constructor parameter, and nil otherwise.
 func (c *Context) ctorParamSlotsOf(v *soltype.TypeVarType) []soltype.SlotVariance {
-	return c.ctorParamSlots[v]
+	return c.ctorParams[v].Slots
+}
+
+// ctorParamKindOf returns what v's parameter declares when v is the variable of a
+// type-constructor parameter, and the zero headKind otherwise.
+func (c *Context) ctorParamKindOf(v *soltype.TypeVarType) headKind {
+	return c.ctorParams[v]
 }
 
 // isParamVar reports whether v is a type parameter's variable or a copy of one.

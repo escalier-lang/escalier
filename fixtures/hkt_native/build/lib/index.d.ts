@@ -1,3 +1,5 @@
+declare type Bag<T> = {item: T, size: number};
+declare const Bag: {new <T>(item: T, size: number): Bag<T>};
 declare type Box<T> = {value: T};
 declare const Box: {new <T>(value: T): Box<T>};
 declare type Functor<F> = {map: <A, B>(fa: unknown, f: (a: A) => B) => unknown};
@@ -8,9 +10,13 @@ declare namespace MyOption {
   export const None: {new <T>(): MyOption<T>, [Symbol.customMatcher]<T>(subject: None<T>): []};
 }
 declare type MyOption<T> = MyOption.Some<T> | MyOption.None<T>;
+declare type Sized<T> = {size: number, item: T};
 declare type Tagged<E, A> = {tag: E, value: A};
 declare const Tagged: {new <E, A>(tag: E, value: A): Tagged<E, A>};
 declare const arrayFunctor: Functor<unknown>;
+declare const bag: Bag<number>;
+declare function sizeOf<F>(fa: unknown): number;
+declare const bagSize: number;
 declare function firstSlot<F, A>(fa: unknown): unknown;
 declare const slots: Array<number>;
 declare const borrowedSlots: Array<number>;
