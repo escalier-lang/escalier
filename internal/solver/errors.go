@@ -495,6 +495,10 @@ type TypeParamNotProducibleError struct {
 // number, y: number} }`, reading `pos` off a `Dog` through an `Animal`-typed binding hands
 // out a `{x: number, y: number}` typed as `{x: number}`.
 //
+// An interface whose `extends` clause names a parent reports it too, when it redeclares a
+// member the parent declares at a type the parent's does not admit. Kind says which of the
+// two declarations redeclares the member.
+//
 // Member is the member's name, Class the subclass that redeclares it, and SuperClass the
 // ancestor that declares the member being overridden. SubType and SuperType are the two
 // types the override rule compared, subclass first. Position says which of a member's types
@@ -529,6 +533,7 @@ type ClassDoesNotImplementInterfaceError struct {
 }
 
 type IncompatibleOverrideError struct {
+	Kind       TypeDeclKind
 	Member     string
 	Class      string
 	SuperClass string
@@ -553,8 +558,10 @@ type IncompatibleOverrideError struct {
 //
 // Member is the member's name, Class the subclass, SuperClass the ancestor that declares the
 // member being overridden, and Form and SuperForm the two forms as the message spells them.
-// Node is the redeclaring member's source.
+// Node is the redeclaring member's source. Kind says whether a class or an interface
+// redeclares the member.
 type OverrideFormMismatchError struct {
+	Kind       TypeDeclKind
 	Member     string
 	Class      string
 	SuperClass string
@@ -3306,13 +3313,13 @@ func (e *ClassDoesNotImplementInterfaceError) Message() string {
 }
 
 func (e *IncompatibleOverrideError) Message() string {
-	return fmt.Sprintf("class `%s` redeclares inherited member `%s` with %s `%s`, which is not compatible with `%s` declared by `%s`",
-		e.Class, soltype.DisplayMemberName(e.Member), e.Position, soltype.Print(e.SubType), soltype.Print(e.SuperType), e.SuperClass)
+	return fmt.Sprintf("%s `%s` redeclares inherited member `%s` with %s `%s`, which is not compatible with `%s` declared by `%s`",
+		e.Kind, e.Class, soltype.DisplayMemberName(e.Member), e.Position, soltype.Print(e.SubType), soltype.Print(e.SuperType), e.SuperClass)
 }
 
 func (e *OverrideFormMismatchError) Message() string {
-	return fmt.Sprintf("class `%s` redeclares inherited member `%s` as %s, but `%s` declares it as %s",
-		e.Class, soltype.DisplayMemberName(e.Member), e.Form, e.SuperClass, e.SuperForm)
+	return fmt.Sprintf("%s `%s` redeclares inherited member `%s` as %s, but `%s` declares it as %s",
+		e.Kind, e.Class, soltype.DisplayMemberName(e.Member), e.Form, e.SuperClass, e.SuperForm)
 }
 
 // describeBorrowInner renders the pointee of a borrow for a diagnostic. An immutable
