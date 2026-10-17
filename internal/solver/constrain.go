@@ -3148,6 +3148,25 @@ func (c *Context) instantiateFuncBinder(ft *soltype.FuncType, lvl int) *soltype.
 	return substFuncBinder(ft, newTypeSubst(ft.TypeParams, args, ft.LifetimeParams, lts))
 }
 
+// bindFuncBinderInPlace returns ft instantiated at its own type-parameter variables. Its type
+// binder is dropped, so each variable stands for the one choice a single use makes, and each
+// parameter's default moves onto its variable the way freshTypeArgs attaches one. Lifetime
+// parameters are instantiated at fresh lifetimes at lvl. ft's type-parameter variables must
+// be read by this use alone.
+func (c *Context) bindFuncBinderInPlace(ft *soltype.FuncType, lvl int) *soltype.FuncType {
+	for _, tp := range ft.TypeParams {
+		if tp.Default != nil && tp.Var.Default == nil {
+			tp.Var.Default = &soltype.VarDefault{
+				Type:  tp.Default,
+				Lower: len(tp.Var.LowerBounds),
+				Upper: len(tp.Var.UpperBounds),
+			}
+		}
+	}
+	lts := c.freshLifetimeArgs(ft, lvl)
+	return substFuncBinder(ft, newTypeSubst(nil, nil, ft.LifetimeParams, lts))
+}
+
 // freshTypeArgs mints a fresh type variable at lvl for each of ft's type parameters and
 // returns them in the parameters' order, or nil when ft has none. lts are the lifetimes
 // standing in for ft's lifetime parameters, in their order, since a bound may name one.
