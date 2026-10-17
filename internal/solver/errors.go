@@ -1584,17 +1584,17 @@ func (e *ExtractorPatternArityError) Message() string {
 // than the tuple it destructures holds. Expected counts the pattern's fixed elements, and
 // AtLeast marks a pattern ending in `...rest`, which accepts any tuple at least that long.
 // Value is the tuple the pattern was matched against, and an inexact Value reports its
-// length as a minimum. Node is the pattern, which Span() underlines. Related() points at
-// Value's source when one is recorded.
+// length as a minimum. At is the span Span() underlines. Related() points at Value's source
+// when one is recorded.
 type TuplePatternArityError struct {
-	Node     ast.Node
+	At       ast.Span
 	Value    *soltype.TupleType
 	Expected int
 	AtLeast  bool
 	prov     NodeResolver
 }
 
-func (e *TuplePatternArityError) Span() ast.Span      { return e.Node.Span() }
+func (e *TuplePatternArityError) Span() ast.Span      { return e.At }
 func (e *TuplePatternArityError) Related() []ast.Span { return relatedOf(e.prov, e.Value) }
 func (e *TuplePatternArityError) Message() string {
 	got := len(e.Value.Elems)

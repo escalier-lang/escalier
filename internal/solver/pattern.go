@@ -398,6 +398,18 @@ func (c *checker) projectField(
 	return beta, fieldConcrete(concrete, name)
 }
 
+// arityErrorSpan returns the span a TuplePatternArityError underlines. got is the value's
+// element count and count is the number of fixed elements in the pattern. When the value is
+// shorter and elemAt is non-nil, the span runs from the first pattern element the value has no
+// element for through the last fixed element, so `val [a, b, c] = [1]` underlines `b, c`.
+// Otherwise it is the span of whole.
+func arityErrorSpan(whole ast.Node, elemAt func(int) ast.Node, got, count int) ast.Span {
+	if elemAt == nil || got >= count {
+		return whole.Span()
+	}
+	return ast.MergeSpans(elemAt(got).Span(), elemAt(count-1).Span())
+}
+
 // projectTuple lowers the scrutinee's first count elements into fresh variables through one
 // whole-tuple requirement, returning those variables and the grounded scrutinee and concrete
 // tuples a `...rest` reads its suffix out of. It is the one tuple projection, shared by a
@@ -409,8 +421,10 @@ func (c *checker) projectField(
 // sub-patterns can underline the offending element rather than the whole shape. Pass nil for
 // blameElem to anchor every pin to blame.
 //
-// A wrong arity in a binding walk is a TuplePatternArityError anchored to blame. In a
-// projection it is the engine's TupleLengthMismatchError, which underlines the value's source.
+// A wrong arity in a binding walk is a TuplePatternArityError. It underlines the pattern
+// elements the value has no element for when blameElem is non-nil and the value is too short,
+// and blame otherwise. In a projection it is the engine's TupleLengthMismatchError, which
+// underlines the value's source.
 func (c *checker) projectTuple(
 	blame ast.Node, lvl int, scrutinee, concrete soltype.Type, count int, inexact bool, blameElem func(int) ast.Node, purpose bindPurpose,
 ) (elems []soltype.Type, scrutTup, concreteTup *soltype.TupleType) {
@@ -431,7 +445,13 @@ func (c *checker) projectTuple(
 	if purpose == forBinding {
 		for i, e := range errs {
 			if mismatch, ok := e.(*TupleLengthMismatchError); ok && mismatch.Super == req {
-				errs[i] = &TuplePatternArityError{Node: blame, Value: mismatch.Sub, Expected: count, AtLeast: inexact, prov: c.prov}
+				errs[i] = &TuplePatternArityError{
+					At:       arityErrorSpan(blame, blameElem, len(mismatch.Sub.Elems), count),
+					Value:    mismatch.Sub,
+					Expected: count,
+					AtLeast:  inexact,
+					prov:     c.prov,
+				}
 			}
 		}
 	}

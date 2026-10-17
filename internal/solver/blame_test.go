@@ -153,7 +153,7 @@ val {x, y, z} = p`,
 		},
 		"TuplePatternLongerThanValue": {
 			src:     `val [a, b, c] = [1]`,
-			want:    []string{"1:5-1:14: not enough elements to unpack: the pattern expects 3, but the value has 1"},
+			want:    []string{"1:9-1:13: not enough elements to unpack: the pattern expects 3, but the value has 1"},
 			related: []string{"[1]"},
 		},
 		"TuplePatternShorterThanValue": {
@@ -163,7 +163,7 @@ val {x, y, z} = p`,
 		},
 		"TuplePatternWithRestLongerThanValue": {
 			src:     `val [a, b, ...rest] = [1]`,
-			want:    []string{"1:5-1:20: not enough elements to unpack: the pattern expects at least 2, but the value has 1"},
+			want:    []string{"1:9-1:10: not enough elements to unpack: the pattern expects at least 2, but the value has 1"},
 			related: []string{"[1]"},
 		},
 		"TuplePatternLongerThanInexactValue": {
@@ -171,7 +171,7 @@ val {x, y, z} = p`,
 	val [a, b] = t
 	return a
 }`,
-			want:    []string{"2:6-2:12: not enough elements to unpack: the pattern expects 2, but the value has at least 1"},
+			want:    []string{"2:10-2:11: not enough elements to unpack: the pattern expects 2, but the value has at least 1"},
 			related: []string{"[number, ...]"},
 		},
 		"ParamObjectPatternMissingKey": {
@@ -181,7 +181,7 @@ val {x, y, z} = p`,
 		},
 		"ParamTuplePatternLongerThanValue": {
 			src:     `fn f([a, b, c]: [number]) { return a }`,
-			want:    []string{"1:6-1:15: not enough elements to unpack: the pattern expects 3, but the value has 1"},
+			want:    []string{"1:10-1:14: not enough elements to unpack: the pattern expects 3, but the value has 1"},
 			related: []string{"[number]"},
 		},
 	}

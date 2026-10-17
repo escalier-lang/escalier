@@ -73,7 +73,7 @@ func TestInferValTuplePatternWrongArity(t *testing.T) {
 		}
 	`)
 	require.Len(t, errs, 1)
-	require.Equal(t, "3:8-3:17: not enough elements to unpack: the pattern expects 3, but the value has 2", msgWithSpan(t, errs[0]))
+	require.Equal(t, "3:15-3:16: not enough elements to unpack: the pattern expects 3, but the value has 2", msgWithSpan(t, errs[0]))
 }
 
 // A destructuring parameter types like a `val` destructuring of the argument: the
@@ -712,7 +712,7 @@ func TestInferRestPatternUnknownLeftoverUses(t *testing.T) {
 			}
 		`)
 		require.Len(t, errs, 1)
-		require.Equal(t, "4:9-4:15: not enough elements to unpack: the pattern expects 2, but the value has at least 0", msgWithSpan(t, errs[0]))
+		require.Equal(t, "4:10-4:14: not enough elements to unpack: the pattern expects 2, but the value has at least 0", msgWithSpan(t, errs[0]))
 	})
 
 	t.Run("reading a field off the leftover is rejected", func(t *testing.T) {
@@ -801,7 +801,7 @@ func TestInferTuplePatternRestFallbackGuards(t *testing.T) {
 					val [a, b, ...rest] = t
 					return rest
 				}`,
-			want: "3:10-3:25: not enough elements to unpack: the pattern expects at least 2, but the value has 1",
+			want: "3:14-3:15: not enough elements to unpack: the pattern expects at least 2, but the value has 1",
 		},
 		{
 			// `...P` over a type parameter never splices, so no position after it is fixed
