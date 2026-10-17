@@ -502,14 +502,15 @@ func TestInferClassOverrideCompat(t *testing.T) {
 				}
 				class Dog extends Animal {
 					readonly legs: number,
-					constructor(&mut self) { super(4) },
+					constructor(&mut self) {
+						super(4)
+						self.legs = 4
+					},
 				}
 			`,
 			// The `Animal` view still admits `a.legs = 5`, so a subclass cannot take the
-			// write away. The initialization diagnostic rides along because a `readonly`
-			// instance field has no way to be assigned, which is a separate gap.
+			// write away.
 			want: []string{
-				"Field 'legs' is not initialized on every path through the constructor.",
 				"class `Dog` redeclares inherited member `legs` as a readonly field, " +
 					"but `Animal` declares it as a writable field",
 			},
