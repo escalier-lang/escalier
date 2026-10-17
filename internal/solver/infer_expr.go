@@ -3949,7 +3949,7 @@ func (c *checker) fieldBorrow(fieldType soltype.Type, readVar soltype.RefInner, 
 			return fieldType, true
 		}
 		return nil, false
-	case *soltype.ObjectType, *soltype.TupleType, *soltype.ClassType, *soltype.AliasType:
+	case *soltype.ObjectType, *soltype.TupleType, *soltype.ClassType, *soltype.AliasType, *soltype.TypeAppType:
 		// A bare object/tuple field a borrowed receiver lends is read as a
 		// receiver-bounded borrow whose mutability follows the receiver (PR 14): a
 		// mutable borrow yields `&mut`, an immutable one `&`. This is where the lazy
@@ -3959,7 +3959,8 @@ func (c *checker) fieldBorrow(fieldType soltype.Type, readVar soltype.RefInner, 
 		// mutability when one of its links names a declaration instead of writing an object
 		// inline. `config.certificates.push(x)` is that case: `certificates` is typed
 		// `Array<T>`, a class, and capping the chain there would leave it unwritable
-		// through a `mut` receiver.
+		// through a `mut` receiver. A field typed by an application such as `F<A>` lends
+		// the same way, since it stands for a class or alias instance.
 		lt := recvLt
 		if lt == nil {
 			// An owned receiver yields the field's owned value, not a borrow, so a

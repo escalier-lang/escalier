@@ -100,6 +100,26 @@ func TestTypeAppLevel(t *testing.T) {
 	require.Equal(t, 5, LevelOf(&TypeCtorType{Base: &ClassType{Name: "Tagged"}, Fixed: []Type{a, nil}}))
 }
 
+// TestNewTypeAppLatticeHead covers a head that coalesced to a union or an intersection. The
+// constructors among its members are applied and every other member is dropped. A head with no
+// constructor among its members stays an application.
+func TestNewTypeAppLatticeHead(t *testing.T) {
+	num := &PrimType{Prim: NumPrim}
+	v := &TypeVarType{ID: 1}
+	box := &TypeCtorType{Base: &ClassType{Name: "Box"}, Fixed: []Type{nil}}
+	arr := &TypeCtorType{Base: &ClassType{Name: "Array"}, Fixed: []Type{nil}}
+	args := []Type{num}
+
+	require.Equal(t, "Box<number>", Print(NewTypeApp(&UnionType{Types: []Type{v, box}}, args, nil)))
+	require.Equal(t, "Box<number> | Array<number>",
+		Print(NewTypeApp(&UnionType{Types: []Type{box, v, arr}}, args, nil)))
+	require.Equal(t, "Box<number>", Print(NewTypeApp(&IntersectionType{Types: []Type{v, box}}, args, nil)))
+	require.Equal(t, "Box<number> & Array<number>",
+		Print(NewTypeApp(&IntersectionType{Types: []Type{box, arr}}, args, nil)))
+	_, stays := NewTypeApp(&UnionType{Types: []Type{v, &TypeVarType{ID: 2}}}, args, nil).(*TypeAppType)
+	require.True(t, stays)
+}
+
 // TestPrintSchemeConstructorParam asserts that a declared type-constructor parameter keeps its
 // `<_>` in a scheme's binder list.
 func TestPrintSchemeConstructorParam(t *testing.T) {

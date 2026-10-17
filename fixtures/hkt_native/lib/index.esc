@@ -57,3 +57,10 @@ fn widen<F<out _>>(fa: F<5>) -> F<number> {
 }
 val five: Box<5> = Box(5)
 val widened = widen(five)
+
+// A borrow of an application matches under a borrow of the same kind, so F binds to Array.
+fn firstSlot<F<_>, A>(fa: mut F<A>) -> mut F<A> {
+	return fa
+}
+val slots: mut Array<number> = [1, 2]
+val borrowedSlots = firstSlot(slots)

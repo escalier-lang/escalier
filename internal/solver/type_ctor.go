@@ -285,8 +285,9 @@ func (c *Context) headBoundOf(v *soltype.TypeVarType) (soltype.Type, bool) {
 
 // constrainTypeApp decides a constraint that has an application or a constructor on at least one
 // side. It reports false when no rule here applies, so the rest of constrain decides the pair.
-// That covers a variable on the other side, which records the whole node as a bound, and a union,
-// intersection, or complement on the other side, which the lattice rules take apart first.
+// That covers a variable on the other side, which records the whole node as a bound, a union,
+// intersection, or complement on the other side, which the lattice rules take apart first, and a
+// borrow on the other side, which the borrow rules take apart first.
 //
 // The rules are:
 //
@@ -341,6 +342,11 @@ func (c *Context) constrainTypeApp(sub, super soltype.Type, seen *seenPairs, mut
 		}
 	}
 	if isLatticeNode(sub) || isLatticeNode(super) {
+		return nil, false
+	}
+	// A borrow against an application is decided by the borrow rules, which peel an owned
+	// `mut` value into a bare destination and relate two borrows by their inners.
+	if isBorrow(sub) || isBorrow(super) {
 		return nil, false
 	}
 	switch {
@@ -564,12 +570,17 @@ func (c *Context) constrainInvariant(a, b soltype.Type, seen *seenPairs, mutCtx 
 }
 
 // constrainArgs relates each sub-side argument in subs to its super-side counterpart in supers by
-// the variance variances gives it. A missing entry in variances is invariant. subs and supers have
-// the same length.
+// the variance variances gives it. A missing entry in variances is invariant, and so is every
+// argument under a mutable borrow, where a write through the borrow reaches the argument.
+// subs and supers have the same length.
 func (c *Context) constrainArgs(subs, supers []soltype.Type, variances []soltype.SlotVariance, seen *seenPairs, mutCtx bool) []SolverError {
 	var errs []SolverError
 	for i := range subs {
-		switch soltype.SlotAt(variances, i) {
+		v := soltype.SlotAt(variances, i)
+		if mutCtx {
+			v = soltype.SlotInvariant
+		}
+		switch v {
 		case soltype.SlotCovariant:
 			errs = append(errs, c.constrain(subs[i], supers[i], seen, mutCtx)...)
 		case soltype.SlotContravariant:
@@ -579,6 +590,12 @@ func (c *Context) constrainArgs(subs, supers []soltype.Type, variances []soltype
 		}
 	}
 	return errs
+}
+
+// isBorrow reports whether t is a RefType.
+func isBorrow(t soltype.Type) bool {
+	_, ok := t.(*soltype.RefType)
+	return ok
 }
 
 // isLatticeNode reports whether t is a union, an intersection, or a complement.

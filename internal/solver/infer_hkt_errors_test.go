@@ -232,6 +232,13 @@ func TestInferApplicationFieldVariance(t *testing.T) {
 			fn w(x: Wrap<Array, 5>) -> Wrap<Array, number> { return x }`,
 		},
 		{
+			// A write through the borrow reaches the field, so even a covariant slot is invariant.
+			name: "MutBorrowRejectsWidening",
+			src: `class Wrap<F<out _>, T> { inner: F<T> }
+			fn w(x: mut Wrap<Array, 5>) -> mut Wrap<Array, number> { return x }`,
+			wantErrs: []string{"cannot constrain number <: 5"},
+		},
+		{
 			name: "InvariantSlotRejectsWidening",
 			src: `class Wrap<F<_>, T> { inner: F<T> }
 			fn w(x: Wrap<Array, 5>) -> Wrap<Array, number> { return x }`,
