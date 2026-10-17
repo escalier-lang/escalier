@@ -194,7 +194,7 @@ func TestTypeParamDefaultIsPerReference(t *testing.T) {
 // default satisfies its own bound. The default fills the argument at every use site that omits
 // it, so a default outside the bound would supply an argument the bound forbids. The check is
 // shared by every `<…>` clause, so a class, an alias, and a function each report it. A
-// bound naming a sibling parameter is compared against that sibling held rigid, since a use
+// bound naming a sibling parameter is compared against that sibling's skolem, since a use
 // site may choose any type the sibling allows.
 func TestTypeParamDefaultAgainstBound(t *testing.T) {
 	tests := []struct {

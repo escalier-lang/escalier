@@ -688,18 +688,8 @@ func (c *checker) inferComponent(
 			break
 		}
 	}
-	// A function's type parameters stay rigid until this function returns, which is after
-	// every definition in the component has reached its binding var. inferFunc gives the
-	// reason.
-	prevRigidReleases := c.componentRigidReleases
-	c.componentRigidReleases = &[]func(){}
 	defer func() {
-		releases := *c.componentRigidReleases
-		for i := len(releases) - 1; i >= 0; i-- {
-			releases[i]()
-		}
 		c.componentClasses, c.componentClassOf = prevClasses, prevClassOf
-		c.componentRigidReleases = prevRigidReleases
 	}()
 
 	// Phase 2: infer each declaration's definition and constrain it <: its var.
