@@ -50,6 +50,9 @@ type Builder struct {
 	// solModuleNames holds every name the module declares at any level, so an alias name
 	// collides with none of them.
 	solModuleNames set.Set[string]
+	// solKinds collects the constructors BuildDefinitionsFromSol's declarations name as URIs.
+	// See dts_kinds.go.
+	solKinds *kindRegistry
 }
 
 // NewBuilder returns a Builder that answers the JSTypes questions through t, which is

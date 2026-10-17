@@ -102,6 +102,10 @@ type solTypeAnnBuilder struct {
 	// the path for the body of `I` is `i`, and its property `key` is at `i.key`. It is
 	// empty when the object describes no value a path reaches.
 	valuePath string
+	// kinds collects the constructors this render names as URIs, shared by every render of one
+	// module so the module declares one registry. See dts_kinds.go. It must be set before the
+	// render reaches a type-constructor parameter.
+	kinds *kindRegistry
 }
 
 // newSolTypeAnnBuilder returns a renderer for one declaration. typeParams are
@@ -116,6 +120,7 @@ func newSolTypeAnnBuilder(names solNames, companionPrefix string, typeParams []*
 		companionPrefix: companionPrefix,
 		companions:      nil,
 		recursiveNames:  map[int]string{},
+		kinds:           nil,
 	}
 	b.bindTypeParams(typeParams)
 	return b
@@ -345,11 +350,10 @@ func (b *solTypeAnnBuilder) typeAnn(t soltype.Type) TypeAnn {
 		// TypeScript has no complement. `unknown` reduces the `A & ~B` a narrowed
 		// match remainder produces to `A`, keeping the type it refines.
 		return NewUnknownTypeAnn(nil)
-	case *soltype.TypeAppType, *soltype.TypeCtorType:
-		// TypeScript has no type-constructor parameters, so `F<A>` and a constructor argument
-		// such as `Array` in `Functor<Array>` both render as `unknown`.
-		// TODO: emit the URI-registry encoding so the relation between arguments survives.
-		return NewUnknownTypeAnn(nil)
+	case *soltype.TypeAppType:
+		return b.typeAppTypeAnn(t)
+	case *soltype.TypeCtorType:
+		return b.typeCtorTypeAnn(t)
 	}
 	panic(fmt.Sprintf("typeAnn: unhandled %T", t))
 }
@@ -761,7 +765,9 @@ func (b *solTypeAnnBuilder) funcTypeAnn(funcType *soltype.FuncType) FuncTypeAnn 
 		typeParams = make([]*TypeParam, len(funcType.TypeParams), len(funcType.TypeParams)+len(inferred))
 		for i, param := range funcType.TypeParams {
 			var constraint TypeAnn
-			if param.UpperBound != nil {
+			if param.Arity() > 0 {
+				constraint = b.ctorParamConstraint(param.Arity(), param.CtorBound)
+			} else if param.UpperBound != nil {
 				constraint = b.typeAnn(param.UpperBound)
 			}
 			var defaultType TypeAnn
