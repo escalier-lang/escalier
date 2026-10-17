@@ -32,6 +32,7 @@ import (
 	"regexp"
 	"regexp/syntax"
 	"strings"
+	"sync"
 	"unicode/utf16"
 	"unicode/utf8"
 
@@ -59,8 +60,16 @@ type Pattern struct {
 	units bool
 	// flags holds the literal's flags as written, such as "iu".
 	flags string
+	// body is the literal's source between its slashes.
+	body string
+	// groupSpans holds where in body each group of each name sits, in the order of the group's
+	// Indices.
+	groupSpans map[string][]groupSpan
 	// Groups holds each named capture group, in source order.
 	Groups []Group
+
+	shadowOnce sync.Once
+	shadowed   []Shadowed
 }
 
 // Group is one name a pattern's named capture groups use.
@@ -141,18 +150,23 @@ func Compile(source string) (*Pattern, string) {
 		return nil, "does not compile: " + err.Error()
 	}
 	groups := groupsOf(re, pattern)
-	bodies := groupBodies(body)
+	spans := groupSpans(body)
 	for i := range groups {
-		name := groups[i].Name
-		groups[i].Bodies = bodies[name][:len(groups[i].Indices)]
+		for _, gs := range spans[groups[i].Name] {
+			groups[i].Bodies = append(groups[i].Bodies, gs.body.text(body))
+		}
 	}
-	return &Pattern{re: re, units: !unicode, flags: flags, Groups: groups}, ""
+	return &Pattern{re: re, units: !unicode, flags: flags, body: body, groupSpans: spans, Groups: groups}, ""
 }
 
 // CaptureSources returns a regex literal for each group named by g, in the order of
 // g.Indices. Each literal matches every string its group can capture, so `(?<y>\d{4})` gives
 // `/^\d{4}$/`. The text around a group can rule out some of those strings, so a literal can
 // match more than the group ever captures.
+//
+// An alternative Shadowed reports is left out of the literal, since it never takes part in a
+// match, so `(?<a>a|ab).*` gives `/^a$/`. A group that sits inside such an alternative never
+// captures anything and gives no literal.
 //
 // It reports false when a group's body tests the text around the group, which a literal of
 // the body alone cannot read. A body does that through `\b` or `\B`, or through `^` or `$`
@@ -167,17 +181,44 @@ func (p *Pattern) CaptureSources(g Group) ([]string, bool) {
 		}
 		return -1
 	}, p.flags)
-	sources := make([]string, len(g.Bodies))
-	for i, body := range g.Bodies {
+	sources := []string{}
+	for _, gs := range p.groupSpans[g.Name] {
+		body, live := p.liveBody(gs)
+		if !live {
+			continue
+		}
 		if readsSurroundings(body, multiline) {
 			return nil, false
 		}
 		if hasTopLevelAlternation(body) {
 			body = "(?:" + body + ")"
 		}
-		sources[i] = "/^" + body + "$/" + flags
+		sources = append(sources, "/^"+body+"$/"+flags)
 	}
 	return sources, true
+}
+
+// liveBody returns the body of the group at gs with every shadowed alternative inside it
+// removed, along with the `|` before it. It reports false when the group itself sits inside a
+// shadowed alternative.
+func (p *Pattern) liveBody(gs groupSpan) (string, bool) {
+	var b strings.Builder
+	at := gs.body.start
+	for _, s := range p.Shadowed() {
+		// Shadowed spans count from the literal's opening slash, and body offsets do not.
+		dead := span{s.Start - 1, s.End - 1}
+		if dead.start <= gs.open && gs.open < dead.end {
+			return "", false
+		}
+		if dead.start < gs.body.start || dead.end > gs.body.end {
+			continue
+		}
+		// A shadowed alternative is never the first of its alternation, so a `|` comes before it.
+		b.WriteString(p.body[at : dead.start-1])
+		at = dead.end
+	}
+	b.WriteString(p.body[at:gs.body.end])
+	return b.String(), true
 }
 
 // forEachToken calls visit with the start and source of each token of the JavaScript regex
@@ -205,16 +246,25 @@ func forEachToken(body string, visit func(i int, tok string, inClass bool)) {
 	}
 }
 
-// groupBodies returns the source of each named group's body in body, keyed by name, in the
-// order the groups open.
-func groupBodies(body string) map[string][]string {
+// groupSpan is where a named group sits in a regex body.
+type groupSpan struct {
+	// open is the offset of the group's `(`.
+	open int
+	// body spans the source between the group's name and its `)`.
+	body span
+}
+
+// groupSpans returns where each named group sits in body, keyed by name, in the order the
+// groups open.
+func groupSpans(body string) map[string][]groupSpan {
 	type frame struct {
-		start int
+		open, start int
 		// slot is the group's position among the named groups, and -1 for any other group.
 		slot int
 	}
 	var stack []frame
-	var names, sources []string
+	var names []string
+	var spans []groupSpan
 	forEachToken(body, func(i int, tok string, inClass bool) {
 		if inClass {
 			return
@@ -227,9 +277,9 @@ func groupBodies(body string) map[string][]string {
 				return
 			}
 			end := strings.IndexByte(rest, '>')
-			stack = append(stack, frame{start: i + end + 1, slot: len(names)})
+			stack = append(stack, frame{open: i, start: i + end + 1, slot: len(names)})
 			names = append(names, rest[3:end])
-			sources = append(sources, "")
+			spans = append(spans, groupSpan{})
 		case ")":
 			if len(stack) == 0 {
 				return
@@ -237,13 +287,13 @@ func groupBodies(body string) map[string][]string {
 			top := stack[len(stack)-1]
 			stack = stack[:len(stack)-1]
 			if top.slot >= 0 {
-				sources[top.slot] = body[top.start:i]
+				spans[top.slot] = groupSpan{open: top.open, body: span{top.start, i}}
 			}
 		}
 	})
-	out := map[string][]string{}
+	out := map[string][]groupSpan{}
 	for i, name := range names {
-		out[name] = append(out[name], sources[i])
+		out[name] = append(out[name], spans[i])
 	}
 	return out
 }

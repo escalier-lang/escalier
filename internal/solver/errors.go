@@ -3029,6 +3029,31 @@ func (e *RegexTypeError) Message() string {
 	return "regex type " + e.Source + " " + e.Reason
 }
 
+// ShadowedAlternativeError fires on an alternative of a regex type that can never take part
+// in a match, because an alternative before it always matches first. In `/^(?<A>a|ab).*$/`
+// the `a` always wins, so `ab` is reported. It is a warning, since the type is well formed
+// and only the alternative is dead.
+//
+//   - `Alt` is the dead alternative's source and `At` its span inside the annotation.
+//   - `By` is the earlier alternative that matches first, and empty when only the earlier
+//     alternatives together cover `Alt`.
+type ShadowedAlternativeError struct {
+	Alt string
+	By  string
+	At  ast.Span
+}
+
+func (*ShadowedAlternativeError) isSolverError()        {}
+func (e *ShadowedAlternativeError) Span() ast.Span      { return e.At }
+func (e *ShadowedAlternativeError) Related() []ast.Span { return nil }
+func (e *ShadowedAlternativeError) IsWarning() bool     { return true }
+func (e *ShadowedAlternativeError) Message() string {
+	if e.By == "" {
+		return "`" + e.Alt + "` can never match, because the alternatives before it always match first"
+	}
+	return "`" + e.Alt + "` can never match, because `" + e.By + "` before it always matches first"
+}
+
 func (e *BodyDeclNotAllowedError) Span() ast.Span      { return e.Decl.Span() }
 func (e *BodyDeclNotAllowedError) Related() []ast.Span { return nil }
 func (e *BodyDeclNotAllowedError) Message() string {

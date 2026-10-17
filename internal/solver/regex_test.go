@@ -414,3 +414,59 @@ func TestInferRegexTypeComplementInAMatch(t *testing.T) {
 		})
 	}
 }
+
+// TestInferRegexShadowedAlternative covers the warning on a regex alternative that can never
+// take part in a match, and the capture type that leaves such an alternative out.
+func TestInferRegexShadowedAlternative(t *testing.T) {
+	tests := []struct {
+		name     string
+		src      string
+		want     string
+		wantErrs []string
+	}{
+		{
+			// `.*` matches whatever follows `a`, so `A` only ever captures what `a` matches.
+			name: "AShadowedAlternativeLeavesTheCaptureType",
+			src: `type First<T> = if T : /^(?<A>a|ab).*$/ { A } else { never }
+declare val s: /^(?<A>a|ab).*$/
+type Result = First<typeof s>`,
+			want: `/^a$/`,
+			wantErrs: []string{
+				"1:33-1:35: `ab` can never match, because `a` before it always matches first",
+				"2:25-2:27: `ab` can never match, because `a` before it always matches first",
+			},
+		},
+		{
+			name: "EveryAlternativeIsReachable",
+			src: `type First<T> = if T : /^(?<A>a|ab)c$/ { A } else { never }
+declare val s: /^(?<A>a|ab)c$/
+type Result = First<typeof s>`,
+			want: `/^(?:a|ab)$/`,
+		},
+		{
+			name:     "TheEarlierAlternativesTogether",
+			src:      `type Result = /^(?:a.*|b.*|[ab]x)$/`,
+			want:     `/^(?:a.*|b.*|[ab]x)$/`,
+			wantErrs: []string{"1:28-1:33: `[ab]x` can never match, because the alternatives before it always match first"},
+		},
+		{
+			// `B` sits inside the shadowed alternative, so it never captures.
+			name: "AGroupInsideAShadowedAlternative",
+			src: `type Inner<T> = if T : /^(?:b|(?<B>bc)).*$/ { B } else { never }
+declare val s: /^(?:b|(?<B>bc)).*$/
+type Result = Inner<typeof s>`,
+			want: `undefined`,
+			wantErrs: []string{
+				"1:31-1:39: `(?<B>bc)` can never match, because `b` before it always matches first",
+				"2:23-2:31: `(?<B>bc)` can never match, because `b` before it always matches first",
+			},
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			nodes, ctx, errs := inferTypeNodes(t, tt.src)
+			require.Equal(t, tt.wantErrs, messagesWithSpan(t, errs))
+			require.Equal(t, tt.want, soltype.Print(expandAliasResidual(ctx, nodes["Result"])))
+		})
+	}
+}
