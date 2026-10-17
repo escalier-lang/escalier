@@ -71,7 +71,16 @@ func (p *Pattern) findShadowed() []Shadowed {
 		}
 	}
 	slices.SortFunc(out, func(a, b Shadowed) int { return a.Start - b.Start })
-	return out
+	// An alternative inside a shadowed alternative never runs either, so the outer one is the
+	// only one reported. In `(?:b|(b|bc))` that is `(b|bc)`, though `bc` is shadowed too.
+	kept := out[:0]
+	for _, s := range out {
+		if len(kept) > 0 && s.Start < kept[len(kept)-1].End {
+			continue
+		}
+		kept = append(kept, s)
+	}
+	return kept
 }
 
 // shadowedBy reports whether alt followed by cont is covered by the earlier alternatives
