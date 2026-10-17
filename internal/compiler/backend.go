@@ -100,6 +100,9 @@ type libResult struct {
 	// phase of the cutover.
 	scope      *checker.Scope
 	fileScopes map[int]*checker.Scope
+	// info holds internal/solver's per-node records for the module. It is nil on the
+	// old checker's path.
+	info *solver.Info
 	// diagnostics are the module's type errors.
 	diagnostics []Diagnostic
 }
@@ -111,6 +114,8 @@ type scriptResult struct {
 	scope *checker.Scope
 	// jsTypes is libResult.jsTypes for this script.
 	jsTypes codegen.JSTypes
+	// info is libResult.info for this script.
+	info *solver.Info
 	// diagnostics are the script's type errors.
 	diagnostics []Diagnostic
 }

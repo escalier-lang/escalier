@@ -233,6 +233,8 @@ func (c *checker) resolveIdentPath(scope *Scope, lvl int, e *ast.IdentExpr, objP
 			t = b.Nominal
 		}
 		c.recordType(e, t)
+		// An editor jumps from a read to the binding it resolved to.
+		c.recordDecl(e, b)
 		// Record this read so the post-walk use-after-move pass can test it against the
 		// consumed lattice. The binding's coalesced type drives the reference-shape
 		// decision, since a fresh instantiation can hide a mono owned shape behind a
@@ -1774,6 +1776,8 @@ func (c *checker) inferCallTarget(scope *Scope, lvl int, e *ast.CallExpr) callTa
 	if ident, ok := e.Callee.(*ast.IdentExpr); ok {
 		if b, found := c.lookupValueBinding(scope, ident.Name); found && b.IsOverloaded() {
 			c.recordType(e.Callee, overloadDisplayType(b))
+			// An editor jumps from the callee to the overload set's first arm.
+			c.recordDecl(ident, b)
 			return callTarget{overloads: &b}
 		}
 	}
@@ -2538,6 +2542,8 @@ func (c *checker) inferAssign(scope *Scope, lvl int, e *ast.BinaryExpr) soltype.
 	// the `b.Kind != ast.VarKind` gate above before reaching here.
 	targetT := c.freshenAll(schemeType(b.Schemes[0]), lvl)
 	c.recordType(target, targetT)
+	// An editor jumps from an assignment's target to the binding it writes.
+	c.recordDecl(target, b)
 	// M4 G1: track the alias this reassignment creates and check its mutability
 	// transition, but only when the constraint below succeeds — an ill-typed
 	// reassignment must not seed a false-positive transition error off types that
@@ -3140,6 +3146,17 @@ func bindingDecl(b ValueBinding) ast.Node {
 		return np.Node
 	}
 	return nil
+}
+
+// recordDecl records that the identifier read e resolved to b, keyed to b's first
+// source node. A binding with no source node records nothing.
+func (c *checker) recordDecl(e *ast.IdentExpr, b ValueBinding) {
+	decl := bindingDecl(b)
+	if decl == nil {
+		return
+	}
+	snapshotMapEntry(c, c.info.decls, e)
+	c.info.setDecl(e, decl)
 }
 
 // recordNamespaceMember notes that node read b through a namespace, so codegen can
@@ -4808,7 +4825,10 @@ func (c *checker) bindRefutable(
 // type the name takes.
 func (c *checker) bindNarrowedIdent(scope *Scope, lvl int, ip *ast.IdentPat, ann ast.TypeAnn, scrutinee soltype.Type) soltype.Type {
 	narrowed := c.narrowToAnn(scope, lvl, ip, ann, scrutinee)
-	binding := ValueBinding{Schemes: []TypeScheme{monoScheme(narrowed)}}
+	binding := ValueBinding{
+		Schemes: []TypeScheme{monoScheme(narrowed)},
+		Sources: []provenance.Provenance{&ast.NodeProvenance{Node: ip}},
+	}
 	// Carry the rename-assigned VarID onto the binding so a later closure capture or
 	// alias-set check resolves this name, matching the ordinary body-level decl path.
 	if ip.VarID > 0 {

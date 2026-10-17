@@ -34,9 +34,10 @@ func main() {
 		_ = os.Setenv("ESCALIER_STDLIB_DIR", *stdlibDir)
 	}
 	// The compiler runs internal/solver by default, but the server stays on internal/checker.
-	// Completions, hover, and go-to-definition read the *checker.Scope values only that
-	// checker returns, and the solver path leaves them nil. #1678 through #1682 move those
-	// features onto the solver, and #1683 removes this call.
+	// Completions read the *checker.Scope values only that checker returns, and the solver
+	// path leaves them nil. Hover and go-to-definition read the solver's Info and fall back
+	// to what the old checker writes onto the AST. The server moves to the solver once
+	// completions read its scopes.
 	useLegacyChecker()
 
 	fmt.Fprintf(os.Stderr, "Hello, from lsp-server\n")

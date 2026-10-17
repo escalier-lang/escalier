@@ -506,3 +506,165 @@ func TestDiagnosticsPublishedFromSolver(t *testing.T) {
 		})
 	}
 }
+
+// --- Hover and go-to-definition from internal/solver ---
+
+func TestDefinitionFromSolver(t *testing.T) {
+	tests := []struct {
+		name  string
+		files map[string]string
+		// open is the file the request names. line and col are 0-based.
+		open      string
+		line, col protocol.UInteger
+		// expected is the location returned, rendered as "path line:col-line:col", or
+		// the error when the request fails.
+		expected string
+	}{
+		{
+			name: "BinReadsLibExport",
+			files: map[string]string{
+				"lib/math.esc": "export fn add(a: number, b: number) -> number { return a + b }",
+				"bin/main.esc": "val x = add(1, 2)",
+			},
+			open: "bin/main.esc", line: 0, col: 9,
+			expected: "lib/math.esc 0:10-0:13",
+		},
+		{
+			name: "Param",
+			files: map[string]string{
+				"bin/main.esc": "fn double(n: number) -> number { return n * 2 }",
+			},
+			open: "bin/main.esc", line: 0, col: 40,
+			expected: "bin/main.esc 0:10-0:11",
+		},
+		{
+			name: "DestructuredLeaf",
+			files: map[string]string{
+				"bin/main.esc": "val {a, b} = {a: 1, b: 2}\nval c = b",
+			},
+			open: "bin/main.esc", line: 1, col: 8,
+			expected: "bin/main.esc 0:8-0:9",
+		},
+		{
+			name: "MutVal",
+			files: map[string]string{
+				"bin/main.esc": "val mut x: number = 5\nval y = x",
+			},
+			open: "bin/main.esc", line: 1, col: 8,
+			expected: "bin/main.esc 0:8-0:9",
+		},
+		{
+			name: "ShorthandLeafWithDefault",
+			files: map[string]string{
+				"bin/main.esc": "val {a, b = 2}: {a: number, b?: number} = {a: 1}\nval c = b",
+			},
+			open: "bin/main.esc", line: 1, col: 8,
+			expected: "bin/main.esc 0:8-0:9",
+		},
+		{
+			name: "AssignmentTarget",
+			files: map[string]string{
+				"bin/main.esc": "var x = 1\nx = 2",
+			},
+			open: "bin/main.esc", line: 1, col: 0,
+			expected: "bin/main.esc 0:4-0:5",
+		},
+		{
+			name: "OverloadedCallee",
+			files: map[string]string{
+				"lib/f.esc": "export declare fn f(a: number) -> number\nexport declare fn f(a: string) -> string\nval r = f(1)",
+			},
+			open: "lib/f.esc", line: 2, col: 8,
+			expected: "lib/f.esc 0:18-0:19",
+		},
+		{
+			name: "StdlibName",
+			files: map[string]string{
+				"bin/main.esc": `val n = parseInt("1")`,
+			},
+			open: "bin/main.esc", line: 0, col: 9,
+			expected: "textDocument/definition: no declaration in the package for parseInt",
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			useSolver(t)
+			s := integrationServer(t, tt.files)
+			uri := openFile(t, s, tt.open, tt.files[tt.open])
+
+			result, err := s.textDocumentDefinition(&glsp.Context{}, &protocol.DefinitionParams{
+				TextDocumentPositionParams: protocol.TextDocumentPositionParams{
+					TextDocument: protocol.TextDocumentIdentifier{URI: uri},
+					Position:     protocol.Position{Line: tt.line, Character: tt.col},
+				},
+			})
+			if err != nil {
+				require.Equal(t, tt.expected, err.Error())
+				return
+			}
+			loc, ok := result.(protocol.Location)
+			require.True(t, ok, "expected protocol.Location, got %T", result)
+			rel, err := filepath.Rel(uriToPath(s.rootURI), uriToPath(string(loc.URI)))
+			require.NoError(t, err)
+			require.Equal(t, tt.expected, fmt.Sprintf(
+				"%s %d:%d-%d:%d",
+				filepath.ToSlash(rel),
+				loc.Range.Start.Line, loc.Range.Start.Character,
+				loc.Range.End.Line, loc.Range.End.Character,
+			))
+		})
+	}
+}
+
+func TestHoverFromSolver(t *testing.T) {
+	tests := []struct {
+		name  string
+		files map[string]string
+		// open is the file the request names. line and col are 0-based.
+		open      string
+		line, col protocol.UInteger
+		expected  string
+	}{
+		{
+			name:  "InferredVal",
+			files: map[string]string{"bin/main.esc": "val x = 5"},
+			open:  "bin/main.esc", line: 0, col: 4,
+			expected: "`5`",
+		},
+		{
+			name: "LibFuncReadFromBin",
+			files: map[string]string{
+				"lib/math.esc": "export fn add(a: number, b: number) -> number { return a + b }",
+				"bin/main.esc": "val x = add(1, 2)",
+			},
+			open: "bin/main.esc", line: 0, col: 9,
+			expected: "`fn (a: number, b: number) -> number`",
+		},
+		{
+			name: "LibParam",
+			files: map[string]string{
+				"lib/math.esc": "export fn add(a: number, b: number) -> number { return a + b }",
+			},
+			open: "lib/math.esc", line: 0, col: 55,
+			expected: "`number`",
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			useSolver(t)
+			s := integrationServer(t, tt.files)
+			uri := openFile(t, s, tt.open, tt.files[tt.open])
+
+			hover, err := s.textDocumentHover(&glsp.Context{}, &protocol.HoverParams{
+				TextDocumentPositionParams: protocol.TextDocumentPositionParams{
+					TextDocument: protocol.TextDocumentIdentifier{URI: uri},
+					Position:     protocol.Position{Line: tt.line, Character: tt.col},
+				},
+			})
+			require.NoError(t, err)
+			content, ok := hover.Contents.(protocol.MarkupContent)
+			require.True(t, ok)
+			require.Equal(t, tt.expected, content.Value)
+		})
+	}
+}
