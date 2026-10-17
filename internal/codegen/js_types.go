@@ -34,6 +34,9 @@ type JSTypes interface {
 	// when it travels as a value. A field holding a plain function reads no receiver and
 	// emits no `bind`. Any other expression reports false.
 	IsMethodRead(e ast.Expr) bool
+	// AbsentKeys returns the keys an object pattern's runtime test also checks are absent,
+	// beyond the keys the pattern names. Each emits `!("key" in value)`.
+	AbsentKeys(p *ast.ObjectPat) []string
 	// NullableArms reports whether an expression's type is a union admitting `null`
 	// or `undefined`. An `if val` guards its pattern test with the checks these ask
 	// for.
@@ -52,6 +55,7 @@ type noJSTypes struct{}
 func (noJSTypes) IsNominalTypeRef(*ast.TypeRefTypeAnn) bool   { return false }
 func (noJSTypes) CalleeConstructs(ast.Expr) bool              { return false }
 func (noJSTypes) IsMethodRead(ast.Expr) bool                  { return false }
+func (noJSTypes) AbsentKeys(*ast.ObjectPat) []string          { return nil }
 func (noJSTypes) NullableArms(ast.Expr) (bool, bool)          { return false, false }
 func (noJSTypes) MemberJSExpr(*ast.MemberExpr) (string, bool) { return "", false }
 
@@ -146,6 +150,10 @@ func (CheckerJSTypes) IsMethodRead(e ast.Expr) bool {
 	}
 	return false
 }
+
+// AbsentKeys returns nil. internal/checker narrows an object pattern by the keys it names
+// alone.
+func (CheckerJSTypes) AbsentKeys(*ast.ObjectPat) []string { return nil }
 
 // declaresMethod reports whether obj declares a method named name that runs against obj. A
 // class value carries a constructor, and the methods it holds beside it are static, so

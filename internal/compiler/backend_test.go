@@ -1001,3 +1001,64 @@ func TestTheSolverEmitsAnObjectRestOverAUnion(t *testing.T) {
 	got := CompilePackage(libSources(src), PackageConfig{}).CompUnits["lib/index"].DTS
 	require.Contains(t, got, "declare const rest2: {foo: string} | {bar: boolean};")
 }
+
+// TestTheSolverEmitsAKeyAbsenceTest asserts that an object pattern whose keys fit one exact
+// union member, and fit another that carries more, also tests that the extra keys are
+// absent. `{radius}` then matches only the unlabelled shape.
+func TestTheSolverEmitsAKeyAbsenceTest(t *testing.T) {
+	useSolver(t)
+	src := "export fn f(s: {radius: number} | {radius: number, label: string}) { return match s { {radius} => radius, {radius, label} => label } }"
+	got := CompilePackage(libSources(src), PackageConfig{}).CompUnits["lib/index"].JS
+	require.Contains(t, got, `if (temp3 != null && "radius" in temp3 && !("label" in temp3)) {`)
+	require.Contains(t, got, `} else if (temp3 != null && "radius" in temp3 && "label" in temp3) {`)
+}
+
+// TestTheSolverEmitsAKeyAbsenceTestForAnImpliedArm asserts that an arm whose object test an
+// earlier guarded arm's equal test implies still checks the absent keys. The guard can
+// fail, so the second `{radius}` arm runs on the values the first one tested.
+func TestTheSolverEmitsAKeyAbsenceTestForAnImpliedArm(t *testing.T) {
+	useSolver(t)
+	src := "export fn f(s: {radius: number} | {radius: number, label: string}) { return match s { {radius} if radius > 0 => 1, {radius} => 2, {radius, label} => 3 } }"
+	got := CompilePackage(libSources(src), PackageConfig{}).CompUnits["lib/index"].JS
+	require.Contains(t, got, `} else if (temp3 != null && "radius" in temp3 && !("label" in temp3)) {`)
+}
+
+// TestTheSolverEmitsNoKeyAbsenceTestForANestedPattern asserts that an object pattern nested
+// in a tuple tests only the keys it names. The match is exhaustive, so a test that also
+// checked `label` was absent would let the labelled value fall past every arm.
+func TestTheSolverEmitsNoKeyAbsenceTestForANestedPattern(t *testing.T) {
+	useSolver(t)
+	src := "export fn f(s: [{radius: number} | {radius: number, label: string}, number]) { return match s { [{radius}, _] => radius } }"
+	got := CompilePackage(libSources(src), PackageConfig{}).CompUnits["lib/index"].JS
+	require.Contains(t, got, `if (temp3.length == 2 && temp3[0] != null && "radius" in temp3[0]) {`)
+}
+
+// TestTheSolverEmitsAKeyAbsenceTestByOpenness covers when the key absence test is emitted
+// over a union with an inexact member. An inexact loose member still carries the keys it
+// declares, so `{radius}` checks `label` is absent. An inexact tight member may carry `label`
+// under any type, so the check would reject its values, and none is emitted.
+func TestTheSolverEmitsAKeyAbsenceTestByOpenness(t *testing.T) {
+	tests := []struct {
+		name string
+		src  string
+		want string
+	}{
+		{
+			name: "AnInexactLooseMember",
+			src:  "export fn f(s: {radius: number} | {radius: number, label: string, ...}) { return match s { {radius} => radius, {radius, label} => label } }",
+			want: `if (temp3 != null && "radius" in temp3 && !("label" in temp3)) {`,
+		},
+		{
+			name: "AnInexactTightMember",
+			src:  "export fn f(s: {radius: number, ...} | {radius: string, label: string}) { return match s { {radius} => radius, _ => 0 } }",
+			want: `if (temp3 != null && "radius" in temp3) {`,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			useSolver(t)
+			got := CompilePackage(libSources(tt.src), PackageConfig{}).CompUnits["lib/index"].JS
+			require.Contains(t, got, tt.want)
+		})
+	}
+}

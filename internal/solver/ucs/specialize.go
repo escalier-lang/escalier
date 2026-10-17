@@ -1,6 +1,7 @@
 package ucs
 
 import (
+	"slices"
 	"strconv"
 	"strings"
 
@@ -37,6 +38,7 @@ func specialize(cands []candidate, matched Test) []candidate {
 		case cand.test == nil:
 			out = append(out, cand)
 		case testImplies(matched, cand.test):
+			noteImpliedPattern(matched, cand.test)
 			cand.test = nil
 			out = append(out, cand)
 		case testsDisjoint(matched, cand.test):
@@ -46,6 +48,21 @@ func specialize(cands []candidate, matched Test) []candidate {
 		}
 	}
 	return out
+}
+
+// noteImpliedPattern records the pattern of `implied`, an object test that `matched`
+// makes unnecessary, on `matched`. See ObjectTest.Also.
+func noteImpliedPattern(matched, implied Test) {
+	m, mIsObj := matched.(*ObjectTest)
+	i, iIsObj := implied.(*ObjectTest)
+	if !mIsObj || !iIsObj {
+		return
+	}
+	for _, p := range append([]*ast.ObjectPat{i.Pat}, i.Also...) {
+		if p != nil && p != m.Pat && !slices.Contains(m.Also, p) {
+			m.Also = append(m.Also, p)
+		}
+	}
 }
 
 // capturedBy reports whether one of the earlier candidates already takes every value

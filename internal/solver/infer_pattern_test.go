@@ -1399,3 +1399,251 @@ func TestInferObjectContainingTuplePattern(t *testing.T) {
 	require.Empty(t, errs)
 	require.Equal(t, "fn (o: {pt: [number, string]}) -> [string, number]", values["f"])
 }
+
+// TestInferMatchVariadicTupleScrutinee covers tuple patterns over a variadic tuple. A tuple
+// test checks the length at runtime, so each pattern matches the lengths it admits and binds
+// each position at the type the scrutinee holds there.
+func TestInferMatchVariadicTupleScrutinee(t *testing.T) {
+	tests := []struct {
+		name     string
+		src      string
+		want     string
+		wantErrs []string
+	}{
+		{
+			name: "EachLengthBindsItsPositions",
+			src:  `fn f(t: [number, ...Array<string>]) { return match t { [a] => a, [a, b] => b, [a, b, c, ...r] => c } }`,
+			want: "fn (t: [number, ...Array<string>]) -> number | string",
+		},
+		{
+			// `[a]` covers length 1 and `[a, b, ...r]` every length from 2 up, so together
+			// they cover the variadic member.
+			name: "AnExactAndARestTestCoverAVariadicMember",
+			src:  `fn f(s: {x: number} | [number, ...Array<string>]) { return match s { {x} => 0, [a] => 1, [a, b, ...r] => 2 } }`,
+			want: "fn (s: {x: number} | [number, ...Array<string>]) -> 0 | 1 | 2",
+		},
+		{
+			// A test reads each variadic member of a union at the length it tests, so `c`
+			// reads a `string` out of either member.
+			name: "AUnionMemberIsReadAtTheTestedLength",
+			src:  `fn f(t: [string, string, string] | [number, ...Array<string>]) { return match t { [a, b, c, ...r] => c, _ => "" } }`,
+			want: "fn (t: [string, string, string] | [number, ...Array<string>]) -> string",
+		},
+		{
+			name: "AnExactTestReadsAUnionMemberAtItsLength",
+			src:  `fn f(t: [boolean, boolean] | [number, ...Array<string>]) { return match t { [a, b] => b, _ => true } }`,
+			want: "fn (t: [boolean, boolean] | [number, ...Array<string>]) -> boolean | string",
+		},
+		{
+			name:     "AVariadicMemberMissingALength",
+			src:      `fn f(s: {x: number} | [number, ...Array<string>]) { return match s { {x} => 0, [a] => 1, [a, b, c, ...r] => 2 } }`,
+			wantErrs: []string{"1:60-1:112: match is not exhaustive; add a branch for `[number, ...Array<string>]`"},
+		},
+		{
+			name: "ARestPastThePrefixBindsTheMiddle",
+			src:  `fn f(t: [number, ...Array<string>]) { return match t { [a] => 0, [a, b, ...r] => r } }`,
+			want: "fn (t: [number, ...Array<string>]) -> 0 | Array<string>",
+		},
+		{
+			// `[a, b]` reads the suffix's `boolean` at its last position. Past the prefix, a
+			// position under a rest may hold a middle or a suffix value, so `c` reads both.
+			name: "AFixedSuffixFillsTheLastPositions",
+			src:  `fn f(t: [number, ...Array<string>, boolean]) { return match t { [a, b] => b, [a, b, c, ...r] => c } }`,
+			want: "fn (t: [number, ...Array<string>, boolean]) -> boolean | string",
+		},
+		{
+			name:     "MissingLengthsAreReported",
+			src:      `fn f(t: [number, ...Array<string>]) { return match t { [a] => a, [a, b] => b } }`,
+			wantErrs: []string{"1:46-1:79: match is not exhaustive; add a branch for `[number, ...Array<string>]`"},
+		},
+		{
+			// A `val` destructuring tests no length, so it still needs the scrutinee to have
+			// exactly the pattern's length.
+			name: "ADestructuringStillNeedsTheLength",
+			src: `fn f(t: [number, ...Array<string>]) { val [a, b] = t
+				return b }`,
+			wantErrs: []string{"1:43-1:49: cannot constrain [number, ...Array<string>] <: tuple"},
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			values, _, errs := inferSource(t, tt.src)
+			if tt.wantErrs != nil {
+				require.Equal(t, tt.wantErrs, messagesWithSpan(t, errs))
+				return
+			}
+			require.Empty(t, messagesWithSpan(t, errs))
+			require.Equal(t, tt.want, values["f"])
+		})
+	}
+}
+
+// TestInferMatchTupleRestOverAUnion covers a tuple rest over a union of tuples. The rest binds
+// each member's suffix, joined, so it keeps the length each member gives it.
+func TestInferMatchTupleRestOverAUnion(t *testing.T) {
+	tests := []struct {
+		name string
+		src  string
+		want string
+	}{
+		{
+			name: "MembersOfDifferentLengths",
+			src:  `fn f(t: [number] | [number, string]) { return match t { [a, ...r] => r } }`,
+			want: "fn (t: [number] | [number, string]) -> [] | [string]",
+		},
+		{
+			// A variadic member gives the rest its values past the prefix. The `[]` the
+			// other member gives joins into that `Array<string>`.
+			name: "AVariadicMember",
+			src:  `fn f(t: [string] | [number, ...Array<string>]) { return match t { [a, ...r] => r } }`,
+			want: "fn (t: [string] | [number, ...Array<string>]) -> Array<string>",
+		},
+		{
+			// Only the variadic member reaches length 3, and its rest starts past its prefix.
+			name: "APrefixLongerThanAVariadicMembersPrefix",
+			src:  `fn f(t: [string, string] | [number, ...Array<string>]) { return match t { [a, b, c, ...r] => r, _ => [] } }`,
+			want: "fn (t: [string, string] | [number, ...Array<string>]) -> Array<string>",
+		},
+		{
+			// Both members reach length 3, so the rest reads past the variadic member's prefix.
+			name: "BothMembersReachThePrefix",
+			src:  `fn f(t: [string, string, string] | [number, ...Array<string>]) { return match t { [a, b, c, ...r] => r, _ => [] } }`,
+			want: "fn (t: [string, string, string] | [number, ...Array<string>]) -> Array<string>",
+		},
+		{
+			// A rest that starts inside a variadic tuple's prefix keeps the rest of the prefix.
+			name: "ARestInsideTheVariadicPrefix",
+			src:  `fn f(t: [number, string, ...Array<boolean>]) { return match t { [a, ...r] => r } }`,
+			want: "fn (t: [number, string, ...Array<boolean>]) -> [string, ...Array<boolean>]",
+		},
+		{
+			// A destructuring tests no length, so the rest reads every member.
+			name: "ADestructuring",
+			src:  "fn f(t: [number] | [number, string]) { val [a, ...r] = t\nreturn r }",
+			want: "fn (t: [number] | [number, string]) -> [] | [string]",
+		},
+		{
+			name: "MembersOfOneLength",
+			src:  `fn f(t: [number, string] | [boolean, number]) { return match t { [a, ...r] => r } }`,
+			want: "fn (t: [number, string] | [boolean, number]) -> [string] | [number]",
+		},
+		{
+			// `[a, b, ...r]` passes only the two-element member, so `r` reads its suffix alone.
+			name: "AMemberTooShortIsLeftOut",
+			src:  `fn f(t: [number] | [number, string]) { return match t { [a, b, ...r] => r, [a] => [] } }`,
+			want: "fn (t: [number] | [number, string]) -> []",
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			values, _, errs := inferSource(t, tt.src)
+			require.Empty(t, messagesWithSpan(t, errs))
+			require.Equal(t, tt.want, values["f"])
+		})
+	}
+}
+
+// TestInferMatchNarrowsByAbsentKeys covers an object pattern over a union of exact objects
+// that differ by which keys they carry. When the pattern's keys fit one member exactly and
+// another member carries more, the pattern also checks that the extra keys are absent, and
+// narrows to the members without them.
+func TestInferMatchNarrowsByAbsentKeys(t *testing.T) {
+	tests := []struct {
+		name     string
+		src      string
+		want     string
+		wantErrs []string
+	}{
+		{
+			name: "EachShapeHasItsArm",
+			src:  `fn f(s: {radius: number} | {radius: number, label: string}) { return match s { {radius} => radius, {radius, label} => label } }`,
+			want: "fn (s: {radius: number} | {radius: number, label: string}) -> number | string",
+		},
+		{
+			name:     "TheLabelledShapeNeedsItsOwnArm",
+			src:      `fn f(s: {radius: number} | {radius: number, label: string}) { return match s { {radius} => radius } }`,
+			wantErrs: []string{"1:70-1:100: match is not exhaustive; add a branch for `{radius: number, label: string}`"},
+		},
+		{
+			// An inexact member still carries the keys it declares, so a check that `label`
+			// is absent rules it out.
+			name:     "AnInexactMemberIsExcludedByAKeyItDeclares",
+			src:      `fn f(s: {radius: number} | {radius: number, label: string, ...}) { return match s { {radius} => radius } }`,
+			wantErrs: []string{"1:75-1:105: match is not exhaustive; add a branch for `{radius: number, label: string, ...}`"},
+		},
+		{
+			name: "AnInexactMemberWithItsOwnArm",
+			src:  `fn f(s: {radius: number} | {radius: number, label: string, ...}) { return match s { {radius} => radius, {radius, label} => label } }`,
+			want: "fn (s: {radius: number} | {radius: number, label: string, ...}) -> number | string",
+		},
+		{
+			// The inexact member declares `label`, but the tight member declares it too, so
+			// only `size` is checked absent. The inexact member may carry `size`, which its
+			// type cannot rule out, so no key is checked and the pattern matches all three.
+			name: "AnInexactMemberDeclaringNoAbsentKey",
+			src:  `fn f(s: {radius: number, label?: string} | {radius: number, size: number} | {radius: number, label: string, ...}) { return match s { {radius} => radius } }`,
+			want: "fn (s: {radius: number, label?: string} | {radius: number, size: number} | {radius: number, label: string, ...}) -> number",
+		},
+		{
+			// The tight member declares the loose member's extra key, so no key is left to
+			// check absent and the pattern matches both.
+			name: "ATightMemberDeclaresTheExtraKey",
+			src:  `fn f(s: {a: number, b?: string} | {a: number, b: number}) { return match s { {a} => a } }`,
+			want: "fn (s: {a: number, b?: string} | {a: number, b: number}) -> number",
+		},
+		{
+			// A member with an index signature still carries the keys it declares, so a check
+			// that `b` is absent rules it out.
+			name:     "AMemberWithAnIndexSignatureIsExcludedByAKeyItDeclares",
+			src:      `fn f(s: {a: number} | {a: number, b: string, [k: string]: number}) { return match s { {a} => a } }`,
+			wantErrs: []string{"1:77-1:97: match is not exhaustive; add a branch for `{a: number, b: string, [k: string]: number}`"},
+		},
+		{
+			// A tight member with an index signature may carry `b`, so checking `b` is absent
+			// could reject its values. No key is checked, and `{a}` matches both members.
+			name: "ATightMemberWithAnIndexSignature",
+			src:  `fn f(s: {a: number, [k: string]: number} | {a: string, b: string}) { return match s { {a} => a } }`,
+			want: "fn (s: {a: number, [k: string]: number} | {a: string, b: string}) -> number | string",
+		},
+		{
+			name:     "ARequiredMethodIsAnExtraKey",
+			src:      `fn f(s: {a: number} | {a: string, m() -> number}) { return match s { {a} => 1 } }`,
+			wantErrs: []string{"1:60-1:80: match is not exhaustive; add a branch for `{a: string, m() -> number}`"},
+		},
+		{
+			name:     "AGetterIsAnExtraKey",
+			src:      `fn f(s: {a: number} | {a: string, get g(self) -> number}) { return match s { {a} => 1 } }`,
+			wantErrs: []string{"1:68-1:88: match is not exhaustive; add a branch for `{a: string, get g() -> number}`"},
+		},
+		{
+			// An optional member is one a value need not carry, so it is no extra key.
+			name: "AnOptionalMemberIsNoExtraKey",
+			src:  `fn f(s: {a: number} | {a: string, m?: number}) { return match s { {a} => 1 } }`,
+			want: "fn (s: {a: number} | {a: string, m?: number}) -> 1",
+		},
+		{
+			// A rest takes the keys the pattern leaves, so it checks none absent.
+			name: "ARestChecksNothingAbsent",
+			src:  `fn f(s: {radius: number} | {radius: number, label: string}) { return match s { {radius, ...r} => radius } }`,
+			want: "fn (s: {radius: number} | {radius: number, label: string}) -> number",
+		},
+		{
+			// Coverage reads absent keys for the root's members alone, so a nested pattern
+			// checks none and matches every member carrying its keys.
+			name: "ANestedPatternChecksNothingAbsent",
+			src:  `fn f(s: [{radius: number} | {radius: number, label: string}, number]) { return match s { [{radius}, _] => radius } }`,
+			want: "fn (s: [{radius: number} | {radius: number, label: string}, number]) -> number",
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			values, _, errs := inferSource(t, tt.src)
+			if tt.wantErrs != nil {
+				require.Equal(t, tt.wantErrs, messagesWithSpan(t, errs))
+				return
+			}
+			require.Empty(t, messagesWithSpan(t, errs))
+			require.Equal(t, tt.want, values["f"])
+		})
+	}
+}

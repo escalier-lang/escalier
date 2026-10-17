@@ -2,6 +2,7 @@ package solver
 
 import (
 	"maps"
+	"slices"
 
 	"github.com/escalier-lang/escalier/internal/ast"
 	"github.com/escalier-lang/escalier/internal/set"
@@ -111,6 +112,8 @@ type pathBinder struct {
 	// not an ast.Node.
 	blame ast.Node
 	views map[*ucs.Scrutinee]scrutineeView
+	// rootShape is the root scrutinee's union structure before any branch narrowed it.
+	rootShape soltype.Type
 }
 
 // newPathBinder builds the binder for one conditional form. root is the IR's root
@@ -140,6 +143,7 @@ func (c *checker) newPathBinder(lvl int, blame ast.Node, root *ucs.Scrutinee, ro
 		mode:     mode,
 		shape:    shape,
 	}
+	b.rootShape = shape
 	return b
 }
 
@@ -164,7 +168,7 @@ func (b *pathBinder) narrowedBy(scope *Scope, s *ucs.Scrutinee, test ucs.Test, b
 	if !ok {
 		node = b.blameFor(s)
 	}
-	next := &pathBinder{c: b.c, lvl: b.lvl, blame: b.blame, views: maps.Clone(b.views)}
+	next := &pathBinder{c: b.c, lvl: b.lvl, blame: b.blame, views: maps.Clone(b.views), rootShape: b.rootShape}
 	next.views[s] = next.applyTest(scope, node, s, v, test)
 	return next
 }
@@ -400,7 +404,17 @@ func (b *pathBinder) applyTest(scope *Scope, node ast.Node, s *ucs.Scrutinee, v 
 	case *ucs.ObjectTest:
 		// An object test emits nothing itself. Its keys are looked up one at a time, by the
 		// field steps beneath it, which is the same per-field dispatch bindPatMode's object
-		// arm makes.
+		// arm makes. The keys it checks are absent decide which members narrowing keeps, so
+		// they are worked out first.
+		//
+		// Only a root test checks absent keys, since coverage reads them for the root's
+		// members alone. A nested test that checked them would let a value fall past every
+		// arm with no diagnostic. They are worked out over the root's unnarrowed shape
+		// because codegen emits one runtime test per pattern, which every path reaching the
+		// pattern runs.
+		if s.IsRoot() {
+			b.c.recordAbsentKeys(b.rootShape, t)
+		}
 		v = b.narrowUnion(v, test)
 		v.tested = &testedObject{test: t}
 		return v
@@ -469,7 +483,7 @@ func (b *pathBinder) narrowUnion(v scrutineeView, test ucs.Test) scrutineeView {
 		shape = groundedCarrier(shape)
 	}
 	narrowed, ok := narrowUnionMembers(shape, func(member soltype.Type) bool {
-		return b.c.ctx.testMatchesMemberShape(test, member)
+		return b.c.testMatchesMemberShape(test, member)
 	})
 	if !ok {
 		// Narrowing does not apply, so the scrutinee's own type stays the bind target. The
@@ -481,6 +495,139 @@ func (b *pathBinder) narrowUnion(v scrutineeView, test ucs.Test) scrutineeView {
 	return v
 }
 
+// objectTestNames returns the names of the keys t tests, in source order.
+func objectTestNames(t *ucs.ObjectTest) []string {
+	names := make([]string, len(t.Keys))
+	for i, key := range t.Keys {
+		names[i] = key.Name
+	}
+	return names
+}
+
+// recordAbsentKeys works out the keys the object test t also checks are absent when the
+// value it tests has type `shape`, and records them in `Info` for t's pattern and for the
+// patterns in `t.Also`. A pattern tested before keeps the keys its first test recorded, so
+// a caller passes the same `shape` to every test of one pattern.
+//
+// The keys tell the members of a union apart by what they carry. They are found from the
+// object members the test's keys admit:
+//
+//   - A tight member carries no required key beyond the tested ones. It has to be exact,
+//     with no index signature, since only such a member is known to carry no other key.
+//   - A loose member carries more. It may be inexact, since the required keys it declares
+//     are present whatever else it carries.
+//
+// With at least one of each, the absent keys are the loose members' extra required keys,
+// less every key a tight member declares. Over
+// `{radius: number} | {radius: number, label: string, ...}`, `{radius}` checks `label` is
+// absent. An inexact loose member may carry any absent key, so each one has to declare at
+// least one of them, or no keys are checked. A test with a rest, or of a value that is no
+// union, checks none.
+func (c *checker) recordAbsentKeys(shape soltype.Type, t *ucs.ObjectTest) {
+	if t.Pat == nil {
+		return
+	}
+	keys, tested := c.info.absentKeys[t.Pat]
+	if !tested {
+		keys = c.ctx.absentKeysFor(shape, t)
+		c.info.absentKeys[t.Pat] = keys
+	}
+	// A pattern whose test this one implies runs under this one without testing, so its
+	// runtime test has to check the same keys.
+	for _, p := range t.Also {
+		if _, done := c.info.absentKeys[p]; !done {
+			c.info.absentKeys[p] = keys
+		}
+	}
+}
+
+// absentKeysFor returns the keys recordAbsentKeys records, sorted.
+func (c *Context) absentKeysFor(shape soltype.Type, t *ucs.ObjectTest) []string {
+	u, isUnion := shape.(*soltype.UnionType)
+	if !isUnion || t.Rest == ucs.TrailingRest {
+		return nil
+	}
+	names := objectTestNames(t)
+	testedNames := set.FromSlice(names)
+	declared := set.NewSet[string]()
+	extras := set.NewSet[string]()
+	tight := false
+	// openExtras holds the extra required keys of each inexact loose member.
+	var openExtras []set.Set[string]
+	for _, member := range u.Types {
+		if !c.objectMemberHasKeys(member, names) {
+			continue
+		}
+		obj, isObj := soltype.CarrierOf(member).(*soltype.ObjectType)
+		if !isObj {
+			return nil
+		}
+		open := obj.Inexact || hasIndexSignature(obj)
+		extra := requiredMemberNames(obj).Difference(testedNames)
+		if extra.Len() == 0 {
+			if open {
+				return nil
+			}
+			tight = true
+			declared = declared.Union(memberNames(obj))
+			continue
+		}
+		extras = extras.Union(extra)
+		if open {
+			openExtras = append(openExtras, extra)
+		}
+	}
+	if !tight || extras.Len() == 0 {
+		return nil
+	}
+	absent := extras.Difference(declared)
+	if absent.Len() == 0 {
+		return nil
+	}
+	// An inexact loose member that declares none of the absent keys passes the test only when
+	// it happens to carry none of them, which its type cannot say.
+	for _, extra := range openExtras {
+		if extra.Intersection(absent).Len() == 0 {
+			return nil
+		}
+	}
+	out := absent.ToSlice()
+	slices.Sort(out)
+	return out
+}
+
+// hasIndexSignature reports whether obj declares an index signature, which admits keys obj
+// does not name.
+func hasIndexSignature(obj *soltype.ObjectType) bool {
+	for _, elem := range obj.Elems {
+		if _, isMapped := elem.(*soltype.MappedElem); isMapped {
+			return true
+		}
+	}
+	return false
+}
+
+// requiredMemberNames returns the names of the members every value of obj carries: its
+// properties and methods that are not optional, and its getters.
+func requiredMemberNames(obj *soltype.ObjectType) set.Set[string] {
+	names := set.NewSet[string]()
+	for _, elem := range obj.Elems {
+		switch e := elem.(type) {
+		case *soltype.PropertyElem:
+			if !e.Optional {
+				names.Add(e.Name)
+			}
+		case *soltype.MethodElem:
+			if !e.Optional {
+				names.Add(e.Name)
+			}
+		case *soltype.GetterElem:
+			names.Add(e.Name)
+		}
+	}
+	return names
+}
+
 // testMatchesMemberShape reports whether a structural tag test's shape fits a union
 // member, so a branch under that test can destructure the member. It is
 // patternMatchesMemberShape read off the IR's test rather than off the source pattern. An
@@ -488,15 +635,29 @@ func (b *pathBinder) narrowUnion(v scrutineeView, test ucs.Test) scrutineeView {
 // fits a tuple member of its fixed arity, or of at least that arity under a trailing
 // rest. Every other test kind returns false, the same gate narrowArmScrutinee puts on object
 // and tuple patterns alone.
-func (c *Context) testMatchesMemberShape(test ucs.Test, member soltype.Type) bool {
+func (c *checker) testMatchesMemberShape(test ucs.Test, member soltype.Type) bool {
 	switch t := test.(type) {
 	case *ucs.ObjectTest:
-		names := make([]string, len(t.Keys))
-		for i, key := range t.Keys {
-			names[i] = key.Name
+		if !c.ctx.objectMemberHasKeys(member, objectTestNames(t)) {
+			return false
 		}
-		return c.objectMemberHasKeys(member, names)
+		// A member carrying a key the test checks is absent never passes it. A member that
+		// declares none of those keys is exact or it would have stopped absentKeysFor, so it
+		// carries none of them.
+		if obj, isObj := soltype.CarrierOf(member).(*soltype.ObjectType); isObj {
+			for _, key := range c.info.AbsentKeys(t.Pat) {
+				if _, has := obj.ReadMember(key); has {
+					return false
+				}
+			}
+		}
+		return true
 	case *ucs.TupleTest:
+		// A variadic member holds every length from its fixed values up, so an exact test
+		// fits it at any length that reaches them and a rest test fits it always.
+		if shape, ok := c.ctx.variadicShape(member); ok {
+			return t.Rest == ucs.TrailingRest || t.Len >= shape.minLen()
+		}
 		return tupleMemberFitsArity(member, t.Len, t.Rest == ucs.TrailingRest)
 	default:
 		return false
@@ -507,7 +668,14 @@ func (c *Context) testMatchesMemberShape(test ucs.Test, member soltype.Type) boo
 // checker's one tuple projection. Every element's upper bound is anchored to node, since a
 // normalized test names no sub-pattern to underline the way a written tuple pattern does.
 func (b *pathBinder) tupleShapeReq(v scrutineeView, node ast.Node, count int, inexact bool) *testedTuple {
-	elems, scrutTup, concreteTup := b.c.projectTuple(node, b.lvl, v.ty, v.concrete, count, inexact, nil, forBinding)
+	scrutinee, concrete := v.ty, v.concrete
+	// A tuple test checks the scrutinee's length at runtime, so a variadic scrutinee is read
+	// as the tuple it holds at the lengths the test admits. `[a, b]` over
+	// `[number, ...Array<string>]` then reads `[number, string]`.
+	if at, ok := b.c.ctx.tupleAtLength(v.ty, count, inexact); ok {
+		scrutinee, concrete = at, at
+	}
+	elems, scrutTup, concreteTup := b.c.projectTuple(node, b.lvl, scrutinee, concrete, count, inexact, nil, forBinding)
 	return &testedTuple{elems: elems, scrut: scrutTup, concrete: concreteTup}
 }
 
