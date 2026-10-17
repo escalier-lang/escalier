@@ -76,6 +76,34 @@ class Derived extends Base {}`,
 			want: map[string]string{"Derived": "{new (seed?: number) -> Derived}"},
 		},
 		{
+			name: "RestBaseParameterWithNoOwnFields",
+			src: `class Base {
+    n: number,
+    constructor(&mut self, ...xs: Array<number>) { self.n = 1 },
+}
+class Derived extends Base {}`,
+			want: map[string]string{"Derived": "{new (...xs: Array<number>) -> Derived}"},
+		},
+		{
+			name: "ThrowingBaseConstructor",
+			src: `class Base {
+    n: number,
+    constructor(&mut self, s: string) throws string {
+        if s == "" { throw "empty" }
+        self.n = 1
+    },
+}
+class Derived extends Base { y: number }`,
+			want: map[string]string{"Derived": "{new (s: string, y: number) -> Derived throws string}"},
+		},
+		{
+			// The superclass constructs the subclass, so the two share a component.
+			name: "BaseInTheSameComponent",
+			src: `class Base { x: number, make(&self) { return Derived(1, 2) } }
+class Derived extends Base { y: number }`,
+			want: map[string]string{"Derived": "{new (x: number, y: number) -> Derived}"},
+		},
+		{
 			name: "ConstructingTheSubclass",
 			src: `class Base { x: number }
 class Derived extends Base { y: string }
@@ -135,6 +163,23 @@ class Base { x: number }
 class Derived extends Base { [keys.k]: number }`,
 			want: []string{"3:7-3:14: class `Derived` must declare a constructor, since none can be synthesized: " +
 				"a field's computed key is neither a variable nor a property of `Symbol`"},
+		},
+		{
+			name: "BaseWithNoConstructor",
+			src: `declare class Sym { (d: string) -> Sym }
+class Derived extends Sym { y: number }`,
+			want: []string{"2:7-2:14: class `Derived` must declare a constructor, since none can be synthesized: " +
+				"`Sym` declares no constructor"},
+		},
+		{
+			name: "RestBaseParameterBeforeOwnFields",
+			src: `class Base {
+    n: number,
+    constructor(&mut self, ...xs: Array<number>) { self.n = 1 },
+}
+class Derived extends Base { y: number }`,
+			want: []string{"5:7-5:14: class `Derived` must declare a constructor, since none can be synthesized: " +
+				"parameter `xs` of the constructor of `Base` may be left out, and the fields `Derived` adds would follow it"},
 		},
 		{
 			name: "OptionalBaseParameterBeforeOwnFields",

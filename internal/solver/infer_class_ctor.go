@@ -91,11 +91,6 @@ func (c *checker) synthesizeSubclassConstructor(lvl int, scope *Scope, decl *ast
 		return fail("a field's computed key is neither a variable nor a property of `Symbol`")
 	}
 	sigs, found := c.superConstructorSigs(lvl, scope, super)
-	if !found {
-		// A superclass in the same component may have bound its value already without
-		// generalizing it into a scheme yet.
-		sigs, found = c.componentConstructorSigs(super)
-	}
 	switch {
 	case !found:
 		return fail(fmt.Sprintf("the constructor of `%s` is not known where it is declared", super.Name))
@@ -158,23 +153,6 @@ func (c *checker) synthesizeSubclassConstructor(lvl int, scope *Scope, decl *ast
 		fn.LifetimeParams = sig.LifetimeParams[nl:]
 	}
 	return fn, true
-}
-
-// componentConstructorSigs returns the constructor signatures of the class super names
-// when it belongs to the module component being inferred and inferClassBodies has already
-// bound its value. ok is false otherwise.
-func (c *checker) componentConstructorSigs(super *soltype.ClassType) ([]*soltype.FuncType, bool) {
-	for _, class := range c.componentClasses {
-		if class.value == nil || class.value.Class != super.Name {
-			continue
-		}
-		ctor, ok := class.value.Constructor()
-		if !ok {
-			return nil, true
-		}
-		return ctor.Signatures, true
-	}
-	return nil, false
 }
 
 // implicitConstructorParamNames maps each required instance field's member name to the
