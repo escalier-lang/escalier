@@ -1,6 +1,7 @@
 package solver
 
 import (
+	"slices"
 	"sort"
 	"strings"
 
@@ -33,10 +34,65 @@ func newUnion(c *Context, parts []soltype.Type) soltype.Type {
 	flat := flattenUnion(parts)
 	pruned, hadError := pruneUnion(flat)
 	pruned = dedup(pruned)
+	pruned, top := absorbComplements(pruned)
+	if top {
+		return &soltype.UnknownType{}
+	}
 	if c != nil {
 		pruned = subsumeMembers(c, pruned, unionDrops)
 	}
 	return collapseUnion(pruned, hadError)
+}
+
+// absorbComplements rewrites the members of a union that carry the complement of another
+// member, by two identities:
+//
+//   - `A | (B & ~A)` is `A | B`. The values `~A` takes out of B are ones A admits, so the
+//     union keeps them anyway. `/^\d+$/ | string & ~/^\d+$/` becomes `/^\d+$/ | string`,
+//     which subsumption then reduces to `string`.
+//   - `A | ~A` is `unknown`, since every value is in A or in its complement.
+//
+// It reports true when the union is `unknown`, and otherwise returns the members with each
+// absorbed complement removed. A complement is absorbed only by a member equalType finds
+// equal to its operand. Reuses the input slice when nothing changes.
+func absorbComplements(parts []soltype.Type) ([]soltype.Type, bool) {
+	if len(parts) < 2 {
+		return parts, false
+	}
+	// hasOther reports whether a member other than parts[i] equals t.
+	hasOther := func(i int, t soltype.Type) bool {
+		for j, p := range parts {
+			if j != i && equalType(p, t) {
+				return true
+			}
+		}
+		return false
+	}
+	var out []soltype.Type
+	for i, p := range parts {
+		switch p := p.(type) {
+		case *soltype.NegationType:
+			if hasOther(i, p.Inner) {
+				return nil, true
+			}
+		case *soltype.IntersectionType:
+			kept := filterDropped(p.Types, func(m soltype.Type) bool {
+				n, isNeg := m.(*soltype.NegationType)
+				return isNeg && hasOther(i, n.Inner)
+			})
+			if len(kept) != len(p.Types) {
+				if out == nil {
+					out = slices.Clone(parts)
+				}
+				out[i] = newIntersection(nil, kept)
+			}
+		}
+	}
+	if out == nil {
+		return parts, false
+	}
+	// An intersection reduced to a single member can now equal another member.
+	return dedup(out), false
 }
 
 // newIntersection is the meet twin of newUnion. An IntersectionType carries
