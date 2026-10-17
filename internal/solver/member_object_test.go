@@ -1,0 +1,193 @@
+package solver
+
+import (
+	"testing"
+
+	"github.com/escalier-lang/escalier/internal/ast"
+	"github.com/escalier-lang/escalier/internal/soltype"
+	"github.com/stretchr/testify/require"
+)
+
+// lastReadOf returns the type info recorded for the last read of name.
+func lastReadOf(t *testing.T, info *Info, name string) soltype.Type {
+	t.Helper()
+	var read *ast.IdentExpr
+	for n := range info.types {
+		ident, ok := n.(*ast.IdentExpr)
+		if !ok || ident.Name != name {
+			continue
+		}
+		if read == nil || ident.Span().Start.Offset > read.Span().Start.Offset {
+			read = ident
+		}
+	}
+	require.NotNil(t, read, "no read of %s was recorded", name)
+	return info.TypeOf(read)
+}
+
+func TestMemberObject(t *testing.T) {
+	tests := []struct {
+		name string
+		// src reads v last. MemberObject is asked about the type recorded for that read.
+		src string
+		// expected is the returned object rendered by soltype.Print, or "" when
+		// MemberObject returns false.
+		expected string
+	}{
+		{
+			name: "ClassInstanceWithInheritedMembers",
+			src: `
+				class Animal<T> {
+					name: T,
+					constructor(&mut self, name: T) { self.name = name },
+					speak(&self) -> T { return self.name },
+				}
+				class Dog extends Animal<string> {
+					constructor(&mut self) { super("rex") },
+					bark(&self) -> string { return "woof" },
+				}
+				val v = Dog()
+				val probe = v
+			`,
+			expected: "{bark(&self) -> string, name: string, speak(&self) -> string, ...}",
+		},
+		{
+			name: "ClassValueStatics",
+			src: `
+				class Counter {
+					n: number,
+					static zero() -> number { return 0 },
+				}
+				val v = Counter
+				val probe = v
+			`,
+			expected: "{new (n: number) -> Counter, zero() -> number}",
+		},
+		{
+			name: "Alias",
+			src: `
+				type Point = {x: number, y: number}
+				declare val v: Point
+				val probe = v
+			`,
+			expected: "{x: number, y: number}",
+		},
+		{
+			name: "Interface",
+			src: `
+				interface Named { name: string }
+				declare val v: Named
+				val probe = v
+			`,
+			expected: "{name: string, ...}",
+		},
+		{
+			name: "ObjectLiteral",
+			src: `
+				val v = {a: 1, b: "two"}
+				val probe = v
+			`,
+			expected: `{a: 1, b: "two"}`,
+		},
+		{
+			name: "Borrow",
+			src: `
+				declare val v: &{a: number}
+				val probe = v
+			`,
+			expected: "{a: number}",
+		},
+		{
+			name: "Tuple",
+			src: `
+				val v = [1, "two"]
+				val probe = v
+			`,
+			expected: `{length: number, at(&self, index: number) -> 1 | "two" | undefined, push(&mut self, item: 1 | "two") -> number, [Symbol.iterator](&self) -> Iterator<1 | "two", undefined, unknown>, ...}`,
+		},
+		{
+			name: "AliasOfTuple",
+			src: `
+				type Pair = [number, string]
+				declare val v: Pair
+				val probe = v
+			`,
+			expected: `{length: number, at(&self, index: number) -> number | string | undefined, push(&mut self, item: number | string) -> number, [Symbol.iterator](&self) -> Iterator<number | string, undefined, unknown>, ...}`,
+		},
+		{
+			name: "Union",
+			src: `
+				declare val v: {a: number} | {b: string}
+				val probe = v
+			`,
+			expected: "",
+		},
+		{
+			name: "Function",
+			src: `
+				fn v() -> number { return 1 }
+				val probe = v
+			`,
+			expected: "",
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			res := InferModuleWithSource(parseModule(t, tt.src), testStdlibSource())
+			require.Empty(t, res.Errors)
+
+			obj, ok := res.Info.MemberObject(lastReadOf(t, res.Info, "v"))
+			if tt.expected == "" {
+				require.False(t, ok)
+				return
+			}
+			require.True(t, ok)
+			require.Equal(t, tt.expected, soltype.Print(obj))
+		})
+	}
+}
+
+// TestMemberObjectPrimitiveWrapper covers a primitive and a literal, which read their
+// members off the class the standard library declares for them. The wrapper classes
+// declare dozens of members, so each case asserts a few names rather than the whole list.
+func TestMemberObjectPrimitiveWrapper(t *testing.T) {
+	tests := []struct {
+		name     string
+		src      string
+		expected []string
+	}{
+		{
+			name:     "StringLiteral",
+			src:      "val v = \"abc\"\nval probe = v",
+			expected: []string{"length", "toUpperCase", "slice"},
+		},
+		{
+			name:     "AliasOfString",
+			src:      "type S = string\ndeclare val v: S\nval probe = v",
+			expected: []string{"length", "toUpperCase"},
+		},
+		{
+			name:     "DeclaredNumber",
+			src:      "declare val v: number\nval probe = v",
+			expected: []string{"toFixed", "toString"},
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			res := InferModuleAgainstStdlib(parseModule(t, tt.src), benchTree, Options{})
+			require.Empty(t, messagesWithSpan(t, res.Errors))
+
+			obj, ok := res.Info.MemberObject(lastReadOf(t, res.Info, "v"))
+			require.True(t, ok)
+			names := memberNames(obj)
+			for _, name := range tt.expected {
+				require.True(t, names.Contains(name), "missing member %s", name)
+			}
+		})
+	}
+}
+
+func TestMemberObjectOnNewInfo(t *testing.T) {
+	_, ok := NewInfo().MemberObject(&soltype.ObjectType{})
+	require.False(t, ok)
+}
