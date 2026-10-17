@@ -405,8 +405,9 @@ func (c *Context) freshSymbol(name string) *soltype.UniqueSymbolType {
 // `where Box<U>: T`, is rigid on the super side either way, so a value that reaches it
 // through that bound meets its skolem rather than binding it.
 //
-// Each parameter's bounds are read as its variable holds them now. Marking a parameter that
-// is already rigid replaces its data with what this call reads.
+// Each parameter's bounds are read as its variable holds them now. A parameter that is
+// already rigid keeps the data its first mark gave it, since a bound recorded after that
+// mark is not one a body may rely on.
 func (c *Context) markTypeParamsRigid(params []*soltype.TypeParam, fromBelow bool) {
 	namedInLower := set.NewSet[*soltype.TypeVarType]()
 	for _, tp := range params {
@@ -417,6 +418,9 @@ func (c *Context) markTypeParamsRigid(params []*soltype.TypeParam, fromBelow boo
 		}
 	}
 	for _, tp := range params {
+		if tp.Var.Rigid != nil {
+			continue
+		}
 		tp.Var.Rigid = &soltype.RigidParam{
 			Name:      tp.Name,
 			Uppers:    slices.Clone(tp.AllUpperBounds()),
