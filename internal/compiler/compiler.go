@@ -14,6 +14,7 @@ import (
 	"github.com/escalier-lang/escalier/internal/checker"
 	"github.com/escalier-lang/escalier/internal/codegen"
 	"github.com/escalier-lang/escalier/internal/parser"
+	"github.com/escalier-lang/escalier/internal/solver"
 )
 
 type CompUnitOutput struct {
@@ -35,10 +36,16 @@ type CheckOutput struct {
 	Module      *ast.Module            // parsed lib module (nil if no lib/ files)
 	ModuleScope *checker.Scope         // scope after InferModule
 	FileScopes  map[int]*checker.Scope // SourceID -> file scope (lib/ files)
+	// ModuleInfo holds internal/solver's per-node records for the lib/ module. It is
+	// nil when the package has no lib/ files or the old checker ran.
+	ModuleInfo *solver.Info
 
 	// Script results (bin/ files)
 	Scripts      map[int]*ast.Script    // SourceID -> parsed script AST
 	ScriptScopes map[int]*checker.Scope // SourceID -> script scope
+	// ScriptInfos maps a bin/ script's SourceID to internal/solver's per-node records
+	// for it. A script has no entry when the old checker ran.
+	ScriptInfos map[int]*solver.Info
 
 	// LibScope is the library surface each bin/ script was checked against, nil
 	// when the package has no lib/ files. The LSP caches it so a bin/ script that
@@ -60,12 +67,26 @@ func (o *CheckOutput) SourceByID(sourceID int) *ast.Source {
 	return o.Sources[sourceID]
 }
 
+// InfoFor returns internal/solver's per-node records for the file a SourceID names,
+// or nil when the output holds none for it. A bin/ script has records of its own,
+// and every lib/ file shares the module's.
+func (o *CheckOutput) InfoFor(sourceID int) *solver.Info {
+	if info, ok := o.ScriptInfos[sourceID]; ok {
+		return info
+	}
+	if o.Module != nil && o.Module.GetSourcePath(sourceID) != "" {
+		return o.ModuleInfo
+	}
+	return nil
+}
+
 // CheckLibOutput contains the results of type-checking lib/ files.
 type CheckLibOutput struct {
 	Module      *ast.Module            // parsed lib module (nil if no lib/ files)
 	ModuleScope *checker.Scope         // scope after InferModule
 	FileScopes  map[int]*checker.Scope // SourceID -> file scope (lib/ files)
 	LibScope    LibScope               // lib surface for bin/ script checking
+	Info        *solver.Info           // nil when the old checker ran
 	ParseErrors []*parser.Error
 	TypeErrors  []Diagnostic
 }
@@ -88,6 +109,7 @@ func CheckLib(ctx context.Context, libSources []*ast.Source, config PackageConfi
 		ModuleScope: lib.scope,
 		FileScopes:  lib.fileScopes,
 		LibScope:    lib.lib,
+		Info:        lib.info,
 		ParseErrors: parseErrors,
 		TypeErrors:  lib.diagnostics,
 	}
@@ -119,6 +141,8 @@ func CheckPackage(sources []*ast.Source, config PackageConfig) CheckOutput {
 		FileScopes:   libOutput.FileScopes,
 		Scripts:      map[int]*ast.Script{},
 		ScriptScopes: map[int]*checker.Scope{},
+		ModuleInfo:   libOutput.Info,
+		ScriptInfos:  map[int]*solver.Info{},
 		LibScope:     libOutput.LibScope,
 		Sources:      sourcesByID,
 		ParseErrors:  libOutput.ParseErrors,
@@ -133,6 +157,9 @@ func CheckPackage(sources []*ast.Source, config PackageConfig) CheckOutput {
 		scriptOutput := CheckBinScript(ctx, libOutput.LibScope, src, config)
 		output.Scripts[src.ID] = scriptOutput.Script
 		output.ScriptScopes[src.ID] = scriptOutput.Scope
+		if scriptOutput.Info != nil {
+			output.ScriptInfos[src.ID] = scriptOutput.Info
+		}
 		output.ParseErrors = append(output.ParseErrors, scriptOutput.ParseErrors...)
 		output.TypeErrors = append(output.TypeErrors, scriptOutput.TypeErrors...)
 	}
@@ -144,6 +171,7 @@ func CheckPackage(sources []*ast.Source, config PackageConfig) CheckOutput {
 type BinScriptOutput struct {
 	Script      *ast.Script
 	Scope       *checker.Scope
+	Info        *solver.Info // nil when the old checker ran
 	ParseErrors []*parser.Error
 	TypeErrors  []Diagnostic
 }
@@ -160,6 +188,7 @@ func CheckBinScript(ctx context.Context, lib LibScope, src *ast.Source, config P
 	return BinScriptOutput{
 		Script:      script,
 		Scope:       result.scope,
+		Info:        result.info,
 		ParseErrors: parseErrors,
 		TypeErrors:  result.diagnostics,
 	}

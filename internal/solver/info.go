@@ -29,6 +29,12 @@ type Info struct {
 	// checks are absent. A pattern missing from the map has not been tested.
 	// recordAbsentKeys fills it.
 	absentKeys map[*ast.ObjectPat][]string
+	// decls maps an identifier read to the node that bound the name it read. That
+	// node is the binding's first source, which is a declaration such as a
+	// *ast.VarDecl or *ast.FuncDecl, or a pattern for a parameter or a
+	// destructured leaf. A read of a binding with no source, such as one the
+	// prelude seeded, has no entry.
+	decls map[*ast.IdentExpr]ast.Node
 }
 
 // NewInfo returns an empty Info side table ready to record inferred types.
@@ -38,6 +44,7 @@ func NewInfo() *Info {
 		nsMembers:   map[ast.Node]ast.Decl{},
 		methodReads: set.NewSet[ast.Node](),
 		absentKeys:  map[*ast.ObjectPat][]string{},
+		decls:       map[*ast.IdentExpr]ast.Node{},
 	}
 }
 
@@ -71,6 +78,18 @@ func (i *Info) setNamespaceMember(n ast.Node, decl ast.Decl) {
 	i.nsMembers[n] = decl
 }
 
+// DeclOf returns the node that bound the name e read, and reports whether e
+// resolved to a binding that records one.
+func (i *Info) DeclOf(e *ast.IdentExpr) (ast.Node, bool) {
+	decl, ok := i.decls[e]
+	return decl, ok
+}
+
+// setDecl records that the identifier read e resolved to the binding decl introduced.
+func (i *Info) setDecl(e *ast.IdentExpr, decl ast.Node) {
+	i.decls[e] = decl
+}
+
 // IsMethodRead reports whether the member read n resolved to a method that runs against
 // the value it was read from.
 func (i *Info) IsMethodRead(n ast.Node) bool {
@@ -102,4 +121,17 @@ func (i *Info) ResolvedTypeOf(n ast.Node) soltype.Type {
 		return nil
 	}
 	return groundedCarrier(t)
+}
+
+// DisplayTypeOf returns the type recorded for n coalesced to the form a person reads,
+// or nil when none was recorded. Every inference variable is replaced by the bounds it
+// settled on, except a type parameter generalization kept, which soltype.PrintAsScheme
+// names. `val x = 5` displays `x` as `5` where TypeOf may return a variable. Call it only
+// once a run has finished, for the reason ResolvedTypeOf gives.
+func (i *Info) DisplayTypeOf(n ast.Node) soltype.Type {
+	t := i.types[n]
+	if t == nil {
+		return nil
+	}
+	return coalesce(t, soltype.Positive)
 }

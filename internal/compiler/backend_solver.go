@@ -43,6 +43,7 @@ func (b solverBackend) checkLib(_ context.Context, module *ast.Module) libResult
 		depGraph:    result.DepGraph,
 		dts:         &solverDts{module: result},
 		jsTypes:     codegen.SolverJSTypes{Types: &solverSolTypes{info: result.Info}},
+		info:        result.Info,
 		diagnostics: append(dirErrs, diagnostics(result.Errors)...),
 	}
 }
@@ -54,6 +55,7 @@ func (b solverBackend) checkScript(_ context.Context, script *ast.Script) script
 	_, info, errs := solver.InferScriptAgainstStdlib(script, dir, b.options)
 	return scriptResult{
 		jsTypes:     codegen.SolverJSTypes{Types: &solverSolTypes{info: info}},
+		info:        info,
 		diagnostics: append(dirErrs, diagnostics(errs)...),
 	}
 }
@@ -195,6 +197,7 @@ func (l *solverLibScope) checkScript(_ context.Context, script *ast.Script) scri
 	_, info, errs := solver.InferScriptInLib(script, l.module)
 	return scriptResult{
 		jsTypes:     codegen.SolverJSTypes{Types: &solverSolTypes{info: info}},
+		info:        info,
 		diagnostics: diagnostics(errs),
 	}
 }
