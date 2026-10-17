@@ -4395,7 +4395,11 @@ func (c *checker) inferAwait(scope *Scope, lvl int, e *ast.AwaitExpr) soltype.Ty
 // sits where a value is expected: `return if ok { v } else { throw Error("no value") }`.
 func (c *checker) inferThrow(scope *Scope, lvl int, e *ast.ThrowExpr) soltype.Type {
 	arg := c.inferExpr(scope, lvl, e.Arg)
-	c.constrain(e, arg, c.throwsSink(lvl))
+	// The operand is the constraint site, so a thrown value that does not fit the sink is
+	// reported on that value. A literal carries its own source span, but the type of a call
+	// such as `Error("x")` does not. Its error takes the span of the site passed here, and
+	// passing the whole `throw` would underline the keyword too.
+	c.constrain(e.Arg, arg, c.throwsSink(lvl))
 	c.markRaised()
 	// Recorded but given no provenance: every `&NeverType{}` shares one address, and Prov
 	// is pointer-keyed, so a second throw would trip recordProv's guard. Info is node-keyed.
