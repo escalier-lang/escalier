@@ -874,20 +874,117 @@ func TestNominalSubtype(t *testing.T) {
 	}
 }
 
-// DISABLED until #1984. A member read off a receiver whose type comes only from how it is used
-// cannot tell a method from a field holding a function, so codegen emits `o.m` unbound and
-// `g()` runs `m` with `this` undefined. #1984 warns and asks for a type on `o`. The message
-// below is the one #1984 proposes, so it moves with whatever wording lands.
-/*
+// TestInferWarnsAboutAFunctionReadOffAnInferredReceiver covers the warning a member read gets
+// when it reads a function off a receiver whose type comes only from how the body uses it.
+// Nothing then tells a method from a field holding a function, so codegen cannot tell
+// whether to bind the read.
 func TestInferWarnsAboutAFunctionReadOffAnInferredReceiver(t *testing.T) {
-	_, _, errs := inferSource(t, `
-		fn f(o) {
-			val g = o.m
-			return g()
-		}
-	`)
-	require.Equal(t, []string{
-		"3:12-3:15: `o.m` reads a function off `o`, whose type is only inferred, so it cannot tell whether `m` is a method to bind to `o`; annotate `o`'s type",
-	}, messagesWithSpan(t, errs))
+	const warning = "`o.m` reads a function off `o`, whose type is only inferred, so it cannot tell whether `m` is a method to bind to `o`; annotate `o`'s type"
+	tests := []struct {
+		name string
+		src  string
+		// types maps each function or value the source defines to its inferred type.
+		types    map[string]string
+		wantErrs []string
+	}{
+		{
+			name: "AFunctionReadAsAValue",
+			src: `
+				fn f(o) {
+					val g = o.m
+					return g()
+				}
+			`,
+			types:    map[string]string{"f": "fn <T0>(o: {m: fn () -> T0}) -> T0"},
+			wantErrs: []string{"3:14-3:17: " + warning},
+		},
+		{
+			// The read is called where it is made, so codegen emits `o.m()`. That call runs `m`
+			// against `o` whether `m` is a method or a field holding a function, so the read
+			// draws no warning. The receiver is still inferred as a field holding a function.
+			name:  "AReadCalledOnTheSpot",
+			src:   `fn f(o) { return o.m() }`,
+			types: map[string]string{"f": "fn <T0>(o: {m: fn () -> T0}) -> T0"},
+		},
+		{
+			name:  "ADataRead",
+			src:   `fn f(o) { return o.x + 1 }`,
+			types: map[string]string{"f": "fn (o: {x: number}) -> number"},
+		},
+		{
+			// Nothing in the body uses the value as a function.
+			name: "AReadNeverUsedAsAFunction",
+			src: `fn f(o) { val g = o.m
+				return g }`,
+			types: map[string]string{"f": "fn <T0>(o: {m: T0}) -> T0"},
+		},
+		{
+			// The closure reads `o.m` and the enclosing body calls what it returns.
+			name: "AReadUsedOutsideItsClosure",
+			src: `
+				fn f(o) {
+					val h = fn () { return o.m }
+					return h()()
+				}
+			`,
+			types:    map[string]string{"f": "fn <T0>(o: {m: fn () -> T0}) -> T0"},
+			wantErrs: []string{"3:29-3:32: " + warning},
+		},
+		{
+			// `each` types the callback's `o` as `Foo` once the callback is passed to it.
+			name: "ACallbackTypedByTheCallInABody",
+			src: `
+				class Foo { m(&self) -> number { return 1 } }
+				fn each(x: Foo, k: fn (y: Foo) -> number) -> number { return k(x) }
+				fn h(x: Foo) { return each(x, fn (o) { val g = o.m
+					return g() }) }
+			`,
+			types: map[string]string{
+				"each": "fn (x: Foo, k: fn (y: Foo) -> number) -> number",
+				"h":    "fn (x: Foo) -> number",
+			},
+		},
+		{
+			name: "ACallbackTypedByTheCallAtTopLevel",
+			src: `
+				class Foo { m(&self) -> number { return 1 } }
+				fn each(x: Foo, k: fn (y: Foo) -> number) -> number { return k(x) }
+				val r = each(Foo(), fn (o) { val g = o.m
+					return g() })
+			`,
+			types: map[string]string{
+				"each": "fn (x: Foo, k: fn (y: Foo) -> number) -> number",
+				"r":    "number",
+			},
+		},
+		{
+			name: "AnAnnotatedMethodReceiver",
+			src: `fn f(o: {m(&self) -> number}) {
+					val g = o.m
+					return g()
+				}`,
+			types: map[string]string{"f": "fn (o: {m() -> number}) -> number"},
+		},
+		{
+			name: "AnAnnotatedFieldReceiver",
+			src: `fn f(o: {m: fn () -> number}) {
+					val g = o.m
+					return g()
+				}`,
+			types: map[string]string{"f": "fn (o: {m: fn () -> number}) -> number"},
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			values, _, errs := inferSource(t, tt.src)
+			if tt.wantErrs == nil {
+				require.Empty(t, messagesWithSpan(t, errs))
+			} else {
+				require.Equal(t, tt.wantErrs, messagesWithSpan(t, errs))
+			}
+			for name, want := range tt.types {
+				require.Equal(t, want, values[name], name)
+			}
+		})
+	}
 }
-*/

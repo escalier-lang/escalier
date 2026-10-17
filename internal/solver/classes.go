@@ -1974,6 +1974,131 @@ func (c *checker) recordUnionMethodRead(blame ast.Node, name string, carrier sol
 	}
 }
 
+// inferredRecvRead is a member read whose receiver is an identifier typed only by how the
+// body uses it. recv is the receiver's type, and called is set when the read is called on
+// the spot.
+type inferredRecvRead struct {
+	read   *ast.MemberExpr
+	recv   *soltype.TypeVarType
+	called bool
+}
+
+// noteInferredRecvRead records the member read blame in the body being walked when its
+// receiver is an identifier whose type recv is an inference variable with no lower bound
+// yet. It records nothing outside a body.
+func (c *checker) noteInferredRecvRead(blame ast.Node, recv soltype.Type) {
+	if c.fn == nil {
+		return
+	}
+	read, isMember := blame.(*ast.MemberExpr)
+	if !isMember || read.Prop == nil {
+		return
+	}
+	if _, isIdent := read.Object.(*ast.IdentExpr); !isIdent {
+		return
+	}
+	recvVar, isVar := recv.(*soltype.TypeVarType)
+	if !isVar || len(recvVar.LowerBounds) > 0 {
+		return
+	}
+	c.fn.inferredRecvReads = append(c.fn.inferredRecvReads, inferredRecvRead{read: read, recv: recvVar})
+}
+
+// markInferredRecvReadCalled marks callee called when the body being walked recorded it
+// through noteInferredRecvRead.
+func (c *checker) markInferredRecvReadCalled(callee ast.Expr) {
+	if c.fn == nil {
+		return
+	}
+	for i := len(c.fn.inferredRecvReads) - 1; i >= 0; i-- {
+		if c.fn.inferredRecvReads[i].read == callee {
+			c.fn.inferredRecvReads[i].called = true
+			return
+		}
+	}
+}
+
+// settleInferredRecvReads hands reads, collected by a body that has just been walked, to the
+// body enclosing it. A body at module top level hands them to pendingRecvReads, which
+// checkPendingRecvReads checks.
+func (c *checker) settleInferredRecvReads(reads []inferredRecvRead) {
+	if c.fn == nil {
+		c.pendingRecvReads = append(c.pendingRecvReads, reads...)
+		return
+	}
+	c.fn.inferredRecvReads = append(c.fn.inferredRecvReads, reads...)
+}
+
+// checkPendingRecvReads reports an InferredRecvFuncReadError for each read in
+// pendingRecvReads when three things hold, then empties pendingRecvReads:
+//
+//   - the read is not called on the spot;
+//   - the receiver still has no lower bound;
+//   - some field requirement the receiver carries for the member is a function, or has a
+//     function as an upper bound.
+func (c *checker) checkPendingRecvReads() {
+	for _, r := range c.pendingRecvReads {
+		if r.called || len(r.recv.LowerBounds) > 0 || !requiresFuncMember(r.recv, r.read.Prop.Name) {
+			continue
+		}
+		c.report(&InferredRecvFuncReadError{
+			Read: r.read,
+			Recv: r.read.Object.(*ast.IdentExpr).Name,
+			Name: r.read.Prop.Name,
+		})
+	}
+	c.pendingRecvReads = nil
+}
+
+// requiresFuncMember reports whether one of v's object upper bounds types the property name
+// as a function, or as a variable that hasFuncUpperBound accepts.
+func requiresFuncMember(v *soltype.TypeVarType, name string) bool {
+	for _, ub := range v.UpperBounds {
+		obj, isObj := ub.(*soltype.ObjectType)
+		if !isObj {
+			continue
+		}
+		prop, found := obj.Prop(name)
+		if !found {
+			continue
+		}
+		switch field := prop.Type.(type) {
+		case *soltype.FuncType:
+			return true
+		case *soltype.TypeVarType:
+			if hasFuncUpperBound(field) {
+				return true
+			}
+		}
+	}
+	return false
+}
+
+// hasFuncUpperBound reports whether v has a function type among its upper bounds, directly or
+// through a chain of variables bounded above by one another.
+func hasFuncUpperBound(v *soltype.TypeVarType) bool {
+	seen := set.NewSet[*soltype.TypeVarType]()
+	var walk func(*soltype.TypeVarType) bool
+	walk = func(cur *soltype.TypeVarType) bool {
+		if seen.Contains(cur) {
+			return false
+		}
+		seen.Add(cur)
+		for _, ub := range cur.UpperBounds {
+			switch ub := ub.(type) {
+			case *soltype.FuncType:
+				return true
+			case *soltype.TypeVarType:
+				if walk(ub) {
+					return true
+				}
+			}
+		}
+		return false
+	}
+	return walk(v)
+}
+
 // recordMethodSelfParam notes the receiver of the method a member access reads, so a rule at
 // the call site can reach the type strippedMethodSig drops. An overloaded method records
 // nothing: its arms may declare different receivers, and which arm a call resolves is decided
