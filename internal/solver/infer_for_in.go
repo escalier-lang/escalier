@@ -362,19 +362,18 @@ func acceptsNoArguments(sig *soltype.FuncType) bool {
 //   - A class instance reads its body projected at the arguments it is reached at.
 //   - An object type reads its own member list. An interface without an `extends` clause
 //     expands to one.
-//   - An intersection reads its arms from last to first and answers with the first arm
-//     whose member nullaryReturn accepts.
+//   - An intersection reads its arms in armsByPrecedence order and answers with the first
+//     arm whose member nullaryReturn accepts.
 //   - A primitive reads its wrapper class's body, so a `string` iterates through the
 //     `[Symbol.iterator]` that `String` declares.
 //
 // Every other type carries no members and declines.
 //
-// The intersection order serves an interface with an `extends` clause, which expands to its
-// parents followed by its own body. Reading from the end lets a member the interface declares
-// replace the one a parent supplies, as inferInterfaceBody specifies. `IterableIterator<T>`
-// expands to `Iterator<T> & {[Symbol.iterator]() -> IterableIterator<T>}` and reads its own
-// declaration. For an intersection written in source, every arm's member applies to the
-// value, so the element any one arm reports is a supertype of what the value yields.
+// That order serves an interface with an `extends` clause, so a member the interface declares
+// is read over the one a parent supplies. `IterableIterator<T>` expands to
+// `Iterator<T> & {[Symbol.iterator]() -> IterableIterator<T>}` and reads its own declaration.
+// For an intersection written in source, every arm's member applies to the value, so the
+// element any one arm reports is a supertype of what the value yields.
 //
 // seen holds the alias names expanded on the path from the operand to t, so an `extends`
 // cycle stops rather than recursing forever. Each arm gets its own copy, since two arms
@@ -388,7 +387,7 @@ func (c *checker) protocolReturn(t soltype.Type, symbol string, seen set.Set[str
 	case *soltype.ClassType:
 		member, found = c.declaredClassMember(t, symbol)
 	case *soltype.IntersectionType:
-		for _, arm := range slices.Backward(t.Types) {
+		for _, arm := range armsByPrecedence(t) {
 			if ret, returns := c.protocolReturn(arm, symbol, seen.Clone()); returns {
 				return ret, true
 			}

@@ -3,6 +3,7 @@ package solver
 import (
 	"testing"
 
+	"github.com/escalier-lang/escalier/internal/soltype"
 	"github.com/stretchr/testify/require"
 )
 
@@ -356,4 +357,23 @@ func TestOmittedTypeArgumentNeedsADefault(t *testing.T) {
 			}
 		})
 	}
+}
+
+// TestArmsByPrecedenceReadsTheOwnBodyFirst asserts that armsByPrecedence yields the
+// interface's own members ahead of its parents for a body extendedInterfaceBody builds, so a
+// lookup reading the first arm that declares a member reads the interface's own declaration.
+func TestArmsByPrecedenceReadsTheOwnBodyFirst(t *testing.T) {
+	first := &soltype.ObjectType{Inexact: true}
+	second := &soltype.ObjectType{Inexact: true}
+	own := &soltype.ObjectType{Inexact: true}
+
+	var arms []soltype.Type
+	for _, arm := range armsByPrecedence(extendedInterfaceBody([]soltype.Type{first, second}, own)) {
+		arms = append(arms, arm)
+	}
+
+	require.Len(t, arms, 3)
+	require.Same(t, own, arms[0])
+	require.Same(t, second, arms[1])
+	require.Same(t, first, arms[2])
 }
