@@ -899,7 +899,9 @@ func TestInferWarnsAboutAFunctionReadOffAnInferredReceiver(t *testing.T) {
 			wantErrs: []string{"3:14-3:17: " + warning},
 		},
 		{
-			// A call supplies the receiver as `self`.
+			// The read is called where it is made, so codegen emits `o.m()`. That call runs `m`
+			// against `o` whether `m` is a method or a field holding a function, so the read
+			// draws no warning. The receiver is still inferred as a field holding a function.
 			name:  "AReadCalledOnTheSpot",
 			src:   `fn f(o) { return o.m() }`,
 			types: map[string]string{"f": "fn <T0>(o: {m: fn () -> T0}) -> T0"},
