@@ -118,13 +118,6 @@ func (s *Server) textDocumentDefinition(context *glsp.Context, params *protocol.
 			declSrc = co.SourceByID(decl.Span().SourceID)
 			span = definitionSpan(decl, declSrc)
 		}
-	} else if isIdent {
-		// The old checker records no Info. It stores the binding an identifier
-		// resolved to in the identifier's Source field.
-		if np, ok := ident.Source.(*ast.NodeProvenance); ok {
-			span = np.Node.Span()
-			declSrc = co.SourceByID(span.SourceID)
-		}
 	}
 	s.mu.RUnlock()
 	if node == nil {
@@ -267,20 +260,16 @@ func (server *Server) textDocumentHover(context *glsp.Context, params *protocol.
 		info = co.InfoFor(sourceID)
 	}
 	server.mu.RUnlock()
-	switch node := hoverNode.(type) {
+	switch hoverNode.(type) {
 	case ast.Expr, ast.Pat:
-		if info != nil {
-			server.solverMu.RLock()
-			if t := info.DisplayTypeOf(hoverNode); t != nil {
-				value = "`" + soltype.PrintAsScheme(t) + "`"
-			}
-			server.solverMu.RUnlock()
+		if info == nil {
 			break
 		}
-		// The old checker records no Info, and writes each type onto its node.
-		if typed, ok := node.(interface{ InferredType() ast.Type }); ok && typed.InferredType() != nil {
-			value = "`" + typed.InferredType().String() + "`"
+		server.solverMu.RLock()
+		if t := info.DisplayTypeOf(hoverNode); t != nil {
+			value = "`" + soltype.PrintAsScheme(t) + "`"
 		}
+		server.solverMu.RUnlock()
 	}
 
 	hover := protocol.Hover{
@@ -504,7 +493,6 @@ func (server *Server) validateBinScript(
 	co := server.checkOutput
 	// Update only this script's entries in the existing checkOutput.
 	co.Scripts[triggerSourceID] = result.Script
-	co.ScriptScopes[triggerSourceID] = result.Scope
 	if result.Info != nil {
 		co.ScriptInfos[triggerSourceID] = result.Info
 		co.SolverScriptScopes[triggerSourceID] = result.SolverScope

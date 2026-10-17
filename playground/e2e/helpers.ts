@@ -1,6 +1,13 @@
 import { type Page, expect } from '@playwright/test';
 
 /**
+ * How long a test waits for the playground's first compile. That compile loads the
+ * standard library in WebAssembly on the page's main thread, which takes several
+ * seconds and longer on a loaded CI runner.
+ */
+export const COMPILE_TIMEOUT_MS = 30_000;
+
+/**
  * Wait for the WASM LSP to initialize and compilation to complete.
  *
  * Verifies that the `/build` directory appears in the file explorer and
@@ -14,7 +21,7 @@ export async function waitForCompilation(
     { files = ['index.js'] }: { files?: string[] } = {},
 ): Promise<void> {
     const buildButton = page.getByRole('button', { name: /^[▸▾] build$/ });
-    await expect(buildButton).toBeVisible({ timeout: 10_000 });
+    await expect(buildButton).toBeVisible({ timeout: COMPILE_TIMEOUT_MS });
 
     // Expand build/ then build/lib/ to access compiled output files.
     // The second lib button (nth(1)) is the one inside build/, since the
@@ -34,6 +41,37 @@ export async function waitForCompilation(
     // Collapse to restore initial explorer state
     await buildLibButton.click();
     await buildButton.click();
+}
+
+/**
+ * Record the text of every alert the page shows, from before the page loads. A toast
+ * dismisses itself after a few seconds, and the first compile can hold the main thread
+ * for longer than that, so a test reads the record rather than polling the DOM.
+ */
+export async function recordAlerts(page: Page): Promise<void> {
+    await page.addInitScript(() => {
+        const alerts: string[] = [];
+        (window as unknown as { recordedAlerts: string[] }).recordedAlerts =
+            alerts;
+        new MutationObserver(() => {
+            for (const el of document.querySelectorAll('[role="alert"]')) {
+                const text = el.textContent ?? '';
+                if (!alerts.includes(text)) {
+                    alerts.push(text);
+                }
+            }
+        }).observe(document, { childList: true, subtree: true });
+    });
+}
+
+/**
+ * Return the text of every alert recordAlerts has seen so far.
+ */
+export async function recordedAlerts(page: Page): Promise<string[]> {
+    return page.evaluate(
+        () =>
+            (window as unknown as { recordedAlerts: string[] }).recordedAlerts,
+    );
 }
 
 /**

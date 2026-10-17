@@ -32,12 +32,9 @@ func main() {
 	if *stdlibDir != "" {
 		_ = os.Setenv("ESCALIER_STDLIB_DIR", *stdlibDir)
 	}
-	// The compiler runs internal/solver by default, but the server stays on internal/checker.
-	// Every feature reads the solver's results when a check produced them and falls back to
-	// what the old checker produces otherwise. The server moves to the solver once that
-	// fallback is removed.
-	useLegacyChecker()
-
+	// Every feature reads internal/solver's results, so the server runs that checker
+	// whatever the environment it was started in selects.
+	_ = os.Setenv(compiler.CheckerEnvVar, compiler.CheckerSolver)
 	fmt.Fprintf(os.Stderr, "Hello, from lsp-server\n")
 
 	s := NewServer()
@@ -272,10 +269,4 @@ func (s *Server) exit(context *glsp.Context) error {
 func (*Server) setTrace(context *glsp.Context, params *protocol.SetTraceParams) error {
 	protocol.SetTraceValue(params.Value)
 	return nil
-}
-
-// useLegacyChecker selects internal/checker for every compiler entry point the process
-// calls, by setting compiler.CheckerEnvVar.
-func useLegacyChecker() {
-	_ = os.Setenv(compiler.CheckerEnvVar, compiler.CheckerLegacy)
 }
