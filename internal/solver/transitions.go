@@ -836,8 +836,9 @@ func (c *checker) seedSelfCaptureEdges(scope *Scope, closure ast.Func, selfID li
 // itself. fn's own entry is recorded before its body is walked, so a call of fn inside its
 // body reads it.
 //
-// A binding with value semantics is left out of what fn reaches, since a copy of it cannot
-// see a later change to the binding. So is a name one of fn's parameters binds, since the
+// Only a binding a `val` or `var` declares is reached. A class, an enum, or a `declare fn`
+// names a declaration rather than a value fn can move. A binding with value semantics is
+// left out too, since a copy of it cannot see a later change to the binding. So is a name one of fn's parameters binds, since the
 // parameter shadows it for the whole body.
 func (c *checker) collectModuleCaptures(scope *Scope, fn ast.Func, outerBindings map[string]liveness.VarID) ([]string, map[string][]ast.Func) {
 	reached := map[string]bool{}
@@ -849,6 +850,9 @@ func (c *checker) collectModuleCaptures(scope *Scope, fn ast.Func, outerBindings
 		}
 		if callees := moduleFuncsOf(b); len(callees) > 0 {
 			funcs[capture.Name] = callees
+			continue
+		}
+		if !declaredByVarDecl(b) {
 			continue
 		}
 		if isValueType(bindingType(b)) {
@@ -886,6 +890,18 @@ func (c *checker) collectModuleCaptures(scope *Scope, fn ast.Func, outerBindings
 	}
 	slices.Sort(names)
 	return names, funcs
+}
+
+// declaredByVarDecl reports whether a `val` or `var` declaration introduced b.
+func declaredByVarDecl(b ValueBinding) bool {
+	for _, src := range b.Sources {
+		if np, ok := src.(*ast.NodeProvenance); ok {
+			if _, isVar := np.Node.(*ast.VarDecl); isVar {
+				return true
+			}
+		}
+	}
+	return false
 }
 
 // moduleFuncsOf returns the functions a module-level binding was declared as, one per
