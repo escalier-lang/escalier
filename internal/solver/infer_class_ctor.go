@@ -75,16 +75,15 @@ func (c *checker) implicitFieldParams(decl *ast.ClassDecl, body *soltype.ObjectT
 // ok is false when no such constructor can be built. The reason is reported as a
 // SubclassConstructorSynthesisError, and the caller recovers.
 func (c *checker) synthesizeSubclassConstructor(lvl int, scope *Scope, decl *ast.ClassDecl, self *soltype.ClassType, body *soltype.ObjectType) (*soltype.FuncType, bool) {
-	def, ok := c.ctx.classDef(self.Name)
-	if !ok || len(def.Supers) == 0 {
-		// The `extends` clause named no class, which is already reported.
-		return nil, false
-	}
-	super := def.Supers[0]
 	fail := func(reason string) (*soltype.FuncType, bool) {
 		c.report(&SubclassConstructorSynthesisError{Decl: decl, Reason: reason})
 		return nil, false
 	}
+	def, ok := c.ctx.classDef(self.Name)
+	if !ok || len(def.Supers) == 0 {
+		return fail(fmt.Sprintf("`%s` in its `extends` clause names no class", ast.QualIdentToString(decl.Extends.Name)))
+	}
+	super := def.Supers[0]
 	// A field whose computed key cannot be read again gives emission no constructor to
 	// derive, so a hand-written one has to assign it.
 	if _, _, blocker := ast.ImplicitSubclassConstructor(decl); blocker != nil {
@@ -101,15 +100,10 @@ func (c *checker) synthesizeSubclassConstructor(lvl int, scope *Scope, decl *ast
 	}
 	sig := sigs[0]
 
-	// The superclass constructor binds the superclass's own parameters first. Reading each
-	// one at the argument the `extends` clause writes gives the parameters this subclass
-	// forwards.
-	// Any parameters the constructor binds beyond those stay its own.
-	superDef, ok := c.ctx.classDef(super.Name)
-	if !ok || len(superDef.TypeParams) > len(sig.TypeParams) || len(superDef.LifetimeParams) > len(sig.LifetimeParams) {
-		return fail(fmt.Sprintf("the constructor of `%s` does not bind its class's parameters", super.Name))
-	}
-	nt, nl := len(superDef.TypeParams), len(superDef.LifetimeParams)
+	// The superclass constructor binds the superclass's own parameters first, one per
+	// argument the `extends` clause writes. Reading each at its argument gives the parameters
+	// this subclass forwards. Any parameters the constructor binds beyond those stay its own.
+	nt, nl := min(len(super.TypeArgs), len(sig.TypeParams)), min(len(super.LifetimeArgs), len(sig.LifetimeParams))
 	subst := newTypeSubst(sig.TypeParams[:nt], super.TypeArgs, sig.LifetimeParams[:nl], super.LifetimeArgs)
 
 	own := c.implicitFieldParams(decl, body)
@@ -145,14 +139,13 @@ func (c *checker) synthesizeSubclassConstructor(lvl int, scope *Scope, decl *ast
 	if sig.Throws != nil {
 		throws = subst.apply(sig.Throws)
 	}
-	fn := &soltype.FuncType{Params: params, Ret: self, Throws: throws}
-	if len(sig.TypeParams) > nt {
-		fn.TypeParams = sig.TypeParams[nt:]
-	}
-	if len(sig.LifetimeParams) > nl {
-		fn.LifetimeParams = sig.LifetimeParams[nl:]
-	}
-	return fn, true
+	return &soltype.FuncType{
+		TypeParams:     sig.TypeParams[nt:],
+		LifetimeParams: sig.LifetimeParams[nl:],
+		Params:         params,
+		Ret:            self,
+		Throws:         throws,
+	}, true
 }
 
 // implicitConstructorParamNames maps each required instance field's member name to the

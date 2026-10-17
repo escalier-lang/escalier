@@ -165,6 +165,12 @@ class Derived extends Base { [keys.k]: number }`,
 				"a field's computed key is neither a variable nor a property of `Symbol`"},
 		},
 		{
+			name: "ExtendsNamesNoClass",
+			src:  `class Derived extends Nope { y: number }`,
+			want: []string{"1:7-1:14: class `Derived` must declare a constructor, since none can be synthesized: " +
+				"`Nope` in its `extends` clause names no class"},
+		},
+		{
 			name: "BaseWithNoConstructor",
 			src: `declare class Sym { (d: string) -> Sym }
 class Derived extends Sym { y: number }`,

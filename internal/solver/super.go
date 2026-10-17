@@ -69,9 +69,6 @@ func (c *checker) superConstructor(lvl int, ctx *superCtx) (soltype.Type, bool) 
 // read from declScope. The signatures are empty for a class value carrying no constructor.
 // ok is false when declScope binds no class value under the name.
 func (c *checker) superConstructorSigs(lvl int, declScope *Scope, super *soltype.ClassType) ([]*soltype.FuncType, bool) {
-	if declScope == nil {
-		return nil, false
-	}
 	binding, found := declScope.GetValue(super.Name)
 	if !found || len(binding.Schemes) == 0 {
 		return nil, false
