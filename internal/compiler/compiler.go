@@ -39,6 +39,11 @@ type CheckOutput struct {
 	// ModuleInfo holds internal/solver's per-node records for the lib/ module. It is
 	// nil when the package has no lib/ files or the old checker ran.
 	ModuleInfo *solver.Info
+	// SolverModuleScope and SolverFileScopes are internal/solver's scope for the lib/
+	// module and its import scope for each lib/ file, keyed by SourceID. Both are nil
+	// when the package has no lib/ files or the old checker ran.
+	SolverModuleScope *solver.Scope
+	SolverFileScopes  map[int]*solver.Scope
 
 	// Script results (bin/ files)
 	Scripts      map[int]*ast.Script    // SourceID -> parsed script AST
@@ -46,6 +51,9 @@ type CheckOutput struct {
 	// ScriptInfos maps a bin/ script's SourceID to internal/solver's per-node records
 	// for it. A script has no entry when the old checker ran.
 	ScriptInfos map[int]*solver.Info
+	// SolverScriptScopes maps a bin/ script's SourceID to internal/solver's scope for
+	// it. A script has no entry when the old checker ran.
+	SolverScriptScopes map[int]*solver.Scope
 
 	// LibScope is the library surface each bin/ script was checked against, nil
 	// when the package has no lib/ files. The LSP caches it so a bin/ script that
@@ -87,8 +95,12 @@ type CheckLibOutput struct {
 	FileScopes  map[int]*checker.Scope // SourceID -> file scope (lib/ files)
 	LibScope    LibScope               // lib surface for bin/ script checking
 	Info        *solver.Info           // nil when the old checker ran
-	ParseErrors []*parser.Error
-	TypeErrors  []Diagnostic
+	// SolverModuleScope and SolverFileScopes are CheckOutput's, nil when the old
+	// checker ran.
+	SolverModuleScope *solver.Scope
+	SolverFileScopes  map[int]*solver.Scope
+	ParseErrors       []*parser.Error
+	TypeErrors        []Diagnostic
 }
 
 // CheckLib parses and type-checks lib/ source files without codegen, as config says.
@@ -105,13 +117,15 @@ func CheckLib(ctx context.Context, libSources []*ast.Source, config PackageConfi
 	lib := selectBackend(config).checkLib(ctx, module)
 
 	return CheckLibOutput{
-		Module:      module,
-		ModuleScope: lib.scope,
-		FileScopes:  lib.fileScopes,
-		LibScope:    lib.lib,
-		Info:        lib.info,
-		ParseErrors: parseErrors,
-		TypeErrors:  lib.diagnostics,
+		Module:            module,
+		ModuleScope:       lib.scope,
+		FileScopes:        lib.fileScopes,
+		LibScope:          lib.lib,
+		Info:              lib.info,
+		SolverModuleScope: lib.solScope,
+		SolverFileScopes:  lib.solFileScopes,
+		ParseErrors:       parseErrors,
+		TypeErrors:        lib.diagnostics,
 	}
 }
 
@@ -136,17 +150,20 @@ func CheckPackage(sources []*ast.Source, config PackageConfig) CheckOutput {
 	}
 
 	output := CheckOutput{
-		Module:       libOutput.Module,
-		ModuleScope:  libOutput.ModuleScope,
-		FileScopes:   libOutput.FileScopes,
-		Scripts:      map[int]*ast.Script{},
-		ScriptScopes: map[int]*checker.Scope{},
-		ModuleInfo:   libOutput.Info,
-		ScriptInfos:  map[int]*solver.Info{},
-		LibScope:     libOutput.LibScope,
-		Sources:      sourcesByID,
-		ParseErrors:  libOutput.ParseErrors,
-		TypeErrors:   libOutput.TypeErrors,
+		Module:             libOutput.Module,
+		ModuleScope:        libOutput.ModuleScope,
+		FileScopes:         libOutput.FileScopes,
+		Scripts:            map[int]*ast.Script{},
+		ScriptScopes:       map[int]*checker.Scope{},
+		ModuleInfo:         libOutput.Info,
+		SolverModuleScope:  libOutput.SolverModuleScope,
+		SolverFileScopes:   libOutput.SolverFileScopes,
+		ScriptInfos:        map[int]*solver.Info{},
+		SolverScriptScopes: map[int]*solver.Scope{},
+		LibScope:           libOutput.LibScope,
+		Sources:            sourcesByID,
+		ParseErrors:        libOutput.ParseErrors,
+		TypeErrors:         libOutput.TypeErrors,
 	}
 
 	// Check each bin/ script with the library surface in scope.
@@ -159,6 +176,7 @@ func CheckPackage(sources []*ast.Source, config PackageConfig) CheckOutput {
 		output.ScriptScopes[src.ID] = scriptOutput.Scope
 		if scriptOutput.Info != nil {
 			output.ScriptInfos[src.ID] = scriptOutput.Info
+			output.SolverScriptScopes[src.ID] = scriptOutput.SolverScope
 		}
 		output.ParseErrors = append(output.ParseErrors, scriptOutput.ParseErrors...)
 		output.TypeErrors = append(output.TypeErrors, scriptOutput.TypeErrors...)
@@ -171,7 +189,8 @@ func CheckPackage(sources []*ast.Source, config PackageConfig) CheckOutput {
 type BinScriptOutput struct {
 	Script      *ast.Script
 	Scope       *checker.Scope
-	Info        *solver.Info // nil when the old checker ran
+	Info        *solver.Info  // nil when the old checker ran
+	SolverScope *solver.Scope // nil when the old checker ran
 	ParseErrors []*parser.Error
 	TypeErrors  []Diagnostic
 }
@@ -189,6 +208,7 @@ func CheckBinScript(ctx context.Context, lib LibScope, src *ast.Source, config P
 		Script:      script,
 		Scope:       result.scope,
 		Info:        result.info,
+		SolverScope: result.solScope,
 		ParseErrors: parseErrors,
 		TypeErrors:  result.diagnostics,
 	}
