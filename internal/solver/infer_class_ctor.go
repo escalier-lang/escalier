@@ -1,6 +1,7 @@
 package solver
 
 import (
+	"fmt"
 	"slices"
 
 	"github.com/escalier-lang/escalier/internal/ast"
@@ -37,6 +38,13 @@ func (c *checker) walkConstructorBodies(
 // Each parameter takes the name implicitConstructorParamNames reads for its field, and a field
 // it has no name for takes the field's own name.
 func (c *checker) synthesizeConstructor(decl *ast.ClassDecl, self *soltype.ClassType, body *soltype.ObjectType) *soltype.FuncType {
+	return &soltype.FuncType{Params: c.implicitFieldParams(decl, body), Ret: self}
+}
+
+// implicitFieldParams returns one parameter per required instance field of body, in
+// declaration order, each named the way implicitConstructorParamNames reads it. A field it
+// has no name for takes the field's own name.
+func (c *checker) implicitFieldParams(decl *ast.ClassDecl, body *soltype.ObjectType) []*soltype.FuncParam {
 	paramNames := c.implicitConstructorParamNames(decl)
 	var params []*soltype.FuncParam
 	for _, e := range body.Elems {
@@ -53,25 +61,143 @@ func (c *checker) synthesizeConstructor(decl *ast.ClassDecl, self *soltype.Class
 			Type:    prop.Type,
 		})
 	}
-	return &soltype.FuncType{Params: params, Ret: self}
+	return params
+}
+
+// synthesizeSubclassConstructor builds the implicit constructor of a subclass that declares
+// no explicit one and no call signature. It takes the superclass constructor's parameters,
+// read at the type arguments the `extends` clause writes, followed by the parameters
+// implicitFieldParams gives the subclass's own required fields. It returns the instance.
+//
+// scope is the scope the class body reads names from, where the superclass's value binding
+// is read, the same scope a `super(…)` call in a declared constructor reads it from.
+//
+// ok is false when no such constructor can be built. The reason is reported as a
+// SubclassConstructorSynthesisError, and the caller recovers.
+func (c *checker) synthesizeSubclassConstructor(lvl int, scope *Scope, decl *ast.ClassDecl, self *soltype.ClassType, body *soltype.ObjectType) (*soltype.FuncType, bool) {
+	def, ok := c.ctx.classDef(self.Name)
+	if !ok || len(def.Supers) == 0 {
+		// The `extends` clause named no class, which is already reported.
+		return nil, false
+	}
+	super := def.Supers[0]
+	fail := func(reason string) (*soltype.FuncType, bool) {
+		c.report(&SubclassConstructorSynthesisError{Decl: decl, Reason: reason})
+		return nil, false
+	}
+	// A field whose computed key cannot be read again gives emission no constructor to
+	// derive, so a hand-written one has to assign it.
+	if _, _, blocker := ast.ImplicitSubclassConstructor(decl); blocker != nil {
+		return fail("a field's computed key is neither a variable nor a property of `Symbol`")
+	}
+	sigs, found := c.superConstructorSigs(lvl, scope, super)
+	if !found {
+		// A superclass in the same component may have bound its value already without
+		// generalizing it into a scheme yet.
+		sigs, found = c.componentConstructorSigs(super)
+	}
+	switch {
+	case !found:
+		return fail(fmt.Sprintf("the constructor of `%s` is not known where it is declared", super.Name))
+	case len(sigs) == 0:
+		return fail(fmt.Sprintf("`%s` declares no constructor", super.Name))
+	case len(sigs) > 1:
+		return fail(fmt.Sprintf("`%s` declares more than one constructor", super.Name))
+	}
+	sig := sigs[0]
+
+	// The superclass constructor binds the superclass's own parameters first. Reading each
+	// one at the argument the `extends` clause writes gives the parameters this subclass
+	// forwards.
+	// Any parameters the constructor binds beyond those stay its own.
+	superDef, ok := c.ctx.classDef(super.Name)
+	if !ok || len(superDef.TypeParams) > len(sig.TypeParams) || len(superDef.LifetimeParams) > len(sig.LifetimeParams) {
+		return fail(fmt.Sprintf("the constructor of `%s` does not bind its class's parameters", super.Name))
+	}
+	nt, nl := len(superDef.TypeParams), len(superDef.LifetimeParams)
+	subst := newTypeSubst(sig.TypeParams[:nt], super.TypeArgs, sig.LifetimeParams[:nl], super.LifetimeArgs)
+
+	own := c.implicitFieldParams(decl, body)
+	ownNames := set.NewSet[string]()
+	for _, param := range own {
+		if ip, ok := param.Pattern.(*soltype.IdentPat); ok {
+			ownNames.Add(ip.Name)
+		}
+	}
+	params := make([]*soltype.FuncParam, 0, len(sig.Params)+len(own))
+	for i, param := range sig.Params {
+		// The subclass's own arguments are split off the end of the argument list, so a
+		// superclass parameter the caller may leave out would shift them.
+		if len(own) > 0 && (param.Optional || param.Rest) {
+			label := fmt.Sprintf("%d", i+1)
+			if ip, ok := param.Pattern.(*soltype.IdentPat); ok {
+				label = "`" + ip.Name + "`"
+			}
+			return fail(fmt.Sprintf("parameter %s of the constructor of `%s` may be left out, and the fields `%s` adds would follow it", label, super.Name, self.Name))
+		}
+		if ip, ok := param.Pattern.(*soltype.IdentPat); ok && ownNames.Contains(ip.Name) {
+			return fail(fmt.Sprintf("a field of `%s` and a parameter of the constructor of `%s` are both named `%s`", self.Name, super.Name, ip.Name))
+		}
+		params = append(params, &soltype.FuncParam{
+			Pattern:  param.Pattern,
+			Type:     subst.apply(param.Type),
+			Optional: param.Optional,
+			Rest:     param.Rest,
+		})
+	}
+	params = append(params, own...)
+	var throws soltype.Type
+	if sig.Throws != nil {
+		throws = subst.apply(sig.Throws)
+	}
+	fn := &soltype.FuncType{Params: params, Ret: self, Throws: throws}
+	if len(sig.TypeParams) > nt {
+		fn.TypeParams = sig.TypeParams[nt:]
+	}
+	if len(sig.LifetimeParams) > nl {
+		fn.LifetimeParams = sig.LifetimeParams[nl:]
+	}
+	return fn, true
+}
+
+// componentConstructorSigs returns the constructor signatures of the class super names
+// when it belongs to the module component being inferred and inferClassBodies has already
+// bound its value. ok is false otherwise.
+func (c *checker) componentConstructorSigs(super *soltype.ClassType) ([]*soltype.FuncType, bool) {
+	for _, class := range c.componentClasses {
+		if class.value == nil || class.value.Class != super.Name {
+			continue
+		}
+		ctor, ok := class.value.Constructor()
+		if !ok {
+			return nil, true
+		}
+		return ctor.Signatures, true
+	}
+	return nil, false
 }
 
 // implicitConstructorParamNames maps each required instance field's member name to the
-// parameter ast.ImplicitConstructor binds its value under. A field whose key binds no name,
-// such as `[sym]` or `"a-b"`, arrives under a generated `_field<N>`, and the map holds that
-// name. The map is empty for a class ast.ImplicitConstructor builds no constructor for.
+// parameter ast.ImplicitConstructor binds its value under, or for a subclass the parameter
+// ast.ImplicitSubclassConstructor gives it. A field whose key binds no name, such as `[sym]`
+// or `"a-b"`, arrives under a generated `_field<N>`, and the map holds that name. The map is
+// empty for a class neither builds a constructor for.
 //
 // It reads each computed key's member name from `Info`, so it must run after the class
 // body's keys are inferred.
 func (c *checker) implicitConstructorParamNames(decl *ast.ClassDecl) map[string]string {
 	names := map[string]string{}
-	synth, _ := ast.ImplicitConstructor(decl)
-	if synth == nil {
+	// Each parameter belongs to the next required instance field in declaration order.
+	var params []*ast.Param
+	if synth, _ := ast.ImplicitConstructor(decl); synth != nil {
+		// The first parameter is the `self` receiver.
+		params = synth.Fn.Params[1:]
+	} else if _, fieldParams, _ := ast.ImplicitSubclassConstructor(decl); fieldParams != nil {
+		params = fieldParams
+	}
+	if params == nil {
 		return names
 	}
-	// The first parameter is the `self` receiver. Each one after it belongs to the next
-	// required instance field in declaration order.
-	params := synth.Fn.Params[1:]
 	i := 0
 	for _, elem := range decl.Body {
 		field, ok := elem.(*ast.FieldElem)

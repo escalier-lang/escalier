@@ -1,0 +1,25 @@
+export class Base {
+    x: number,
+}
+
+export class Derived extends Base {
+    y: number,
+}
+
+export class Seeded {
+    x: number,
+    constructor(&mut self, seed: string) {
+        self.x = 1
+    },
+}
+
+export class FromSeed extends Seeded {
+    y: number,
+}
+
+export class Leaf extends Derived {
+    z: string,
+}
+
+val d = Derived(1, 2)
+val leaf = Leaf(1, 2, "three")

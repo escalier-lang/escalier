@@ -323,18 +323,23 @@ func (c *checker) inferClassBodies(
 	callFns = c.inferCallSignatures(scope, lvl, decl)
 	ctorFns = c.walkConstructorBodies(scope, lvl, self, body, ctors)
 	if len(ctorFns) == 0 {
-		// A subclass must declare its own constructor to call `super`, so a missing one is
-		// reported here and the synthesis below stands in for recovery.
-		if decl.Extends != nil {
-			c.report(&SubclassConstructorRequiredError{Decl: decl})
-		}
 		// A class declaring a call signature and no constructor is callable and not
 		// constructible, so nothing is synthesized. Synthesizing one would make
 		// `Symbol(…)` construct instead of call, and the specification forbids
 		// `new Symbol()`, so having no constructor is what makes constructing it
 		// unrepresentable rather than merely discouraged.
 		if len(callFns) == 0 {
-			ctorFns = []*soltype.FuncType{c.synthesizeConstructor(decl, self, body)}
+			// A subclass's constructor also takes its superclass constructor's arguments.
+			// One that cannot be synthesized is reported, and the constructor of a class
+			// without a superclass stands in for recovery.
+			fn, ok := (*soltype.FuncType)(nil), false
+			if decl.Extends != nil {
+				fn, ok = c.synthesizeSubclassConstructor(lvl, scope, decl, self, body)
+			}
+			if !ok {
+				fn = c.synthesizeConstructor(decl, self, body)
+			}
+			ctorFns = []*soltype.FuncType{fn}
 		}
 	}
 

@@ -58,10 +58,21 @@ func (c *checker) inferSuperCall(scope *Scope, lvl int, e *ast.SuperCallExpr) so
 // scope. A parameter named after the superclass would shadow the class binding there, and the
 // arguments would go unchecked against a signature the lookup never found.
 func (c *checker) superConstructor(lvl int, ctx *superCtx) (soltype.Type, bool) {
-	if ctx.declScope == nil {
+	sigs, ok := c.superConstructorSigs(lvl, ctx.declScope, ctx.super)
+	if !ok || len(sigs) == 0 {
 		return nil, false
 	}
-	binding, found := ctx.declScope.GetValue(ctx.super.Name)
+	return overloadReadType(sigs), true
+}
+
+// superConstructorSigs returns the constructor signatures of the class value super names,
+// read from declScope. The signatures are empty for a class value carrying no constructor.
+// ok is false when declScope binds no class value under the name.
+func (c *checker) superConstructorSigs(lvl int, declScope *Scope, super *soltype.ClassType) ([]*soltype.FuncType, bool) {
+	if declScope == nil {
+		return nil, false
+	}
+	binding, found := declScope.GetValue(super.Name)
 	if !found || len(binding.Schemes) == 0 {
 		return nil, false
 	}
@@ -71,9 +82,9 @@ func (c *checker) superConstructor(lvl int, ctx *superCtx) (soltype.Type, bool) 
 	}
 	ctor, ok := obj.Constructor()
 	if !ok {
-		return nil, false
+		return nil, true
 	}
-	return overloadReadType(ctor.Signatures), true
+	return ctor.Signatures, true
 }
 
 // superVarID is the synthetic binding the move dataflow tracks in place of "the superclass
