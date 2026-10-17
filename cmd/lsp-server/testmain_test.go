@@ -7,7 +7,9 @@ import (
 	"testing"
 
 	"github.com/escalier-lang/escalier/internal/checker"
+	"github.com/escalier-lang/escalier/internal/compiler"
 	"github.com/escalier-lang/escalier/internal/interop"
+	"github.com/escalier-lang/escalier/internal/stdlibdir"
 )
 
 func TestMain(m *testing.M) {
@@ -15,7 +17,15 @@ func TestMain(m *testing.M) {
 		fmt.Fprintln(os.Stderr, err)
 		os.Exit(1)
 	}
-	// The tests exercise the server as main configures it, on internal/checker.
+	// A test that runs the solver resolves `std:prelude` from disk, and the test
+	// binary's directory is not one the executable-relative lookup finds the tree from.
+	if err := stdlibdir.SetStdlibDirForTest(); err != nil {
+		fmt.Fprintln(os.Stderr, err)
+		os.Exit(1)
+	}
+	// The tests exercise the server as main configures it, on internal/checker. A
+	// test that covers a feature already reading internal/solver's results calls
+	// useSolver.
 	useLegacyChecker()
 
 	// Load and type-check the TypeScript prelude once, without a deadline, so
@@ -27,4 +37,11 @@ func TestMain(m *testing.M) {
 	checker.Prelude(checker.NewChecker(context.Background()))
 
 	os.Exit(m.Run())
+}
+
+// useSolver runs every compiler entry point t calls on internal/solver, overriding
+// the checker TestMain selects for the rest of the package.
+func useSolver(t *testing.T) {
+	t.Helper()
+	t.Setenv(compiler.CheckerEnvVar, compiler.CheckerSolver)
 }
