@@ -118,13 +118,6 @@ type pendingReturn struct {
 // diagnostics after the trial is over.
 func (c *checker) queueReturnCheck(node ast.Node, ft *soltype.FuncType, genLevel int, memberName string) {
 	site, name := node, memberName
-	// A script's `fn` with a body reaches inferFunc as the closure typed in its place, and
-	// is blamed at its name like any other `fn` declaration.
-	if closure, isExpr := node.(*ast.FuncExpr); isExpr {
-		if fd, ok := c.closureDecls[closure]; ok {
-			node = fd
-		}
-	}
 	if fd, isDecl := node.(*ast.FuncDecl); isDecl && fd.Name != nil {
 		site, name = fd.Name, fd.Name.Name
 	}
