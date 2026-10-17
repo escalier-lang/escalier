@@ -134,6 +134,11 @@ func TestCaptureSources(t *testing.T) {
 		{"AWordBoundary", `/^a(?<w>\bb)$/`, nil},
 		{"ANonWordBoundary", `/^a(?<w>\Bb)$/`, nil},
 		{"ALineAnchorUnderTheMFlag", `/^(?<a>a$)/m`, nil},
+		// A shadowed alternative never takes part in a match, so the literal leaves it out.
+		{"AShadowedAlternativeIsLeftOut", `/^(?<a>a|ab).*$/`, []string{`/^a$/`}},
+		{"AShadowedAlternativeInsideTheBody", `/^(?<a>x(a|ab).*)$/`, []string{`/^x(a).*$/`}},
+		// A group inside a shadowed alternative never captures, so it gives no literal.
+		{"AGroupInsideAShadowedAlternative", `/^(?:b|(?<a>bc)).*$/`, []string{}},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
