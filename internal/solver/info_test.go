@@ -46,6 +46,8 @@ func TestInfoDeclOf(t *testing.T) {
 		read string
 		// expected is the source text of the node DeclOf returns for that read.
 		expected string
+		// expectedErrs is the message of each error InferScript reports.
+		expectedErrs []string
 	}{
 		{
 			name:     "ScriptVal",
@@ -78,6 +80,13 @@ func TestInfoDeclOf(t *testing.T) {
 			expected: "var x = 1",
 		},
 		{
+			name:         "RejectedAssignmentTarget",
+			src:          "val x = 1\nx = 2",
+			read:         "x",
+			expected:     "val x = 1",
+			expectedErrs: []string{"Cannot assign to immutable binding: x"},
+		},
+		{
 			name:     "LocalShadowsOuter",
 			src:      "val x = 1\nfn f() -> number {\n\tval x = 2\n\treturn x\n}",
 			read:     "x",
@@ -87,12 +96,15 @@ func TestInfoDeclOf(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			_, info, errs := InferScript(parseScript(t, tt.src), testStdlibSource())
-			require.Empty(t, errs)
+			var msgs []string
+			for _, err := range errs {
+				msgs = append(msgs, err.Message())
+			}
+			require.Equal(t, tt.expectedErrs, msgs)
 
 			var read *ast.IdentExpr
-			for e := range info.types {
-				ident, ok := e.(*ast.IdentExpr)
-				if !ok || ident.Name != tt.read {
+			for ident := range info.decls {
+				if ident.Name != tt.read {
 					continue
 				}
 				if read == nil || ident.Span().Start.Offset > read.Span().Start.Offset {
