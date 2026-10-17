@@ -23,7 +23,7 @@ import (
 // `s <: [αa, αb]`, an exact tuple whose wrong arity is rejected. A trailing
 // `...rest` relaxes that to an inexact prefix requirement. Only a field the
 // scrutinee lacks, or a wrong tuple arity, is rejected, surfacing
-// MissingPropertyError or TupleLengthMismatchError. The scrutinee's borrow
+// MissingPropertyError or TuplePatternArityError. The scrutinee's borrow
 // wrapper is peeled first via CarrierOf, so a destructured borrow binds the
 // borrowed contents, just as a member read does.
 //
@@ -259,7 +259,7 @@ func (c *checker) bindPatMode(scope *Scope, lvl int, pat ast.Pat, scrutinee solt
 		// A trailing `...rest` element makes the pattern match any tuple at least as
 		// long as the fixed prefix, so the requirement becomes an INEXACT tuple over
 		// the fixed elements. Without a rest the requirement stays exact and a wrong
-		// arity is a TupleLengthMismatchError. Only a trailing rest has a suffix to
+		// arity is a TuplePatternArityError. Only a trailing rest has a suffix to
 		// bind. splitTupleRest returns any other one as recovered.
 		fixed, rest, recovered := splitTupleRest(p.Elems)
 		if len(recovered) > 0 {
@@ -269,7 +269,7 @@ func (c *checker) bindPatMode(scope *Scope, lvl int, pat ast.Pat, scrutinee solt
 		// Each element sub-pattern blames its own node for the upper-bound pin, so
 		// `[a, "hi"]` against `[number, number]` underlines the literal rather than the
 		// whole pattern.
-		elemTypes, scrutTup, concreteTup := c.projectTuple(p, lvl, scrutinee, concrete, len(fixed), inexact, func(i int) ast.Node { return fixed[i] })
+		elemTypes, scrutTup, concreteTup := c.projectTuple(p, lvl, scrutinee, concrete, len(fixed), inexact, func(i int) ast.Node { return fixed[i] }, purpose)
 		subs := make([]soltype.Pat, 0, len(p.Elems))
 		for i, e := range fixed {
 			var elemConcrete soltype.Type
@@ -304,8 +304,7 @@ func (c *checker) bindPatMode(scope *Scope, lvl int, pat ast.Pat, scrutinee solt
 			case *ast.ObjShorthandPat:
 				// A default makes the field optional. `{x = 0}` binds even when x is
 				// absent, so the requirement must not demand it.
-				beta := c.freshAt(lvl)
-				c.readPatternField(e, lvl, scrutinee, e.Key.Name, beta, e.Default != nil, purpose)
+				beta := c.readPatternField(e, lvl, scrutinee, e.Key.Name, e.Default != nil, purpose)
 				var t soltype.Type = beta
 				if purpose == forBinding {
 					t = c.applyLeafExtras(scope, lvl, e, beta, fieldConcrete(concrete, e.Key.Name), e.TypeAnn, e.Default)
@@ -381,8 +380,7 @@ func (c *checker) bindPatMode(scope *Scope, lvl int, pat ast.Pat, scrutinee solt
 func (c *checker) projectField(
 	blame ast.Node, lvl int, scrutinee, concrete soltype.Type, name string, optional bool, purpose bindPurpose,
 ) (proj, projConcrete soltype.Type) {
-	beta := c.freshAt(lvl)
-	c.readPatternField(blame, lvl, scrutinee, name, beta, optional, purpose)
+	beta := c.readPatternField(blame, lvl, scrutinee, name, optional, purpose)
 	// When the scrutinee is a concrete object, pin beta's upper bound to the field type.
 	// propReq gives beta the field only as a lower bound, which cannot reject a refutable
 	// literal sub-pattern of the wrong kind. The upper bound makes a nested literal flow
@@ -410,8 +408,11 @@ func (c *checker) projectField(
 // requirement, and blameElem anchors each element's upper bound, so a caller holding
 // sub-patterns can underline the offending element rather than the whole shape. Pass nil for
 // blameElem to anchor every pin to blame.
+//
+// A wrong arity in a binding walk is a TuplePatternArityError anchored to blame. In a
+// projection it is the engine's TupleLengthMismatchError, which underlines the value's source.
 func (c *checker) projectTuple(
-	blame ast.Node, lvl int, scrutinee, concrete soltype.Type, count int, inexact bool, blameElem func(int) ast.Node,
+	blame ast.Node, lvl int, scrutinee, concrete soltype.Type, count int, inexact bool, blameElem func(int) ast.Node, purpose bindPurpose,
 ) (elems []soltype.Type, scrutTup, concreteTup *soltype.TupleType) {
 	elems = make([]soltype.Type, count)
 	for i := range elems {
@@ -419,7 +420,23 @@ func (c *checker) projectTuple(
 	}
 	// Each αi lowers from the scrutinee's matching element, so a sub-pattern binds at that
 	// element's type.
-	c.constrain(blame, scrutinee, &soltype.TupleType{Elems: elems, Inexact: inexact})
+	req := &soltype.TupleType{Elems: elems, Inexact: inexact}
+	queued := len(c.ctx.pendingRigidLts)
+	errs := c.ctx.Constrain(scrutinee, req)
+	// A length mismatch against req means the pattern's arity is wrong for the value. In a
+	// binding walk the value's source can sit far from here, as with `val [a, b, c] = t`
+	// where t's tuple annotation is on a parameter, so the error names the pattern instead.
+	// A projection checks a second value such as a val-else fallback against a pattern the
+	// binding walk already accepted, so the fallback is the thing to fix and keeps the blame.
+	if purpose == forBinding {
+		for i, e := range errs {
+			if mismatch, ok := e.(*TupleLengthMismatchError); ok && mismatch.Super == req {
+				errs[i] = &TuplePatternArityError{Node: blame, Value: mismatch.Sub, Expected: count, AtLeast: inexact, prov: c.prov}
+			}
+		}
+	}
+	c.blameConstraintErrors(blame, errs)
+	c.siteRigidLifetimeChecks(blame, queued)
 	// Both shapes are spliced once, since every read by the caller is by index. See
 	// groundedTuple.
 	scrutTup, _ = c.groundedTuple(scrutinee)
@@ -1451,14 +1468,27 @@ func (c *checker) recordPatType(purpose bindPurpose, n ast.Node, t soltype.Type)
 	}
 }
 
-// readPatternField reads the field name a pattern names off scrutinee into beta. optional
-// marks a field the pattern tolerates being absent. A pattern reads the field the way a member
-// read does, so a getter answers it and what the getter can raise reaches the enclosing body.
-// The raise is recorded here, since the field requirement constrain checks has no place to
-// record one. A projection records no raise. See bindPurpose.
+// readPatternField reads the field name a pattern names off scrutinee into a fresh variable
+// at lvl and returns that variable. blame anchors the field requirement. A binding walk also
+// records blame as the variable's provenance, and a projection records none. optional marks
+// a field the pattern tolerates being absent.
+//
+// A pattern reads the field the way a member read does, so a getter answers it and what the
+// getter can raise reaches the enclosing body. The raise is recorded here, since the field
+// requirement constrain checks has no place to record one. A projection records no raise.
+// See bindPurpose.
 func (c *checker) readPatternField(
-	blame ast.Node, lvl int, scrutinee soltype.Type, name string, beta soltype.Type, optional bool, purpose bindPurpose,
-) {
+	blame ast.Node, lvl int, scrutinee soltype.Type, name string, optional bool, purpose bindPurpose,
+) soltype.Type {
+	beta := c.freshAt(lvl)
+	// A binding walk destructures the declaration's own initializer, whose type is often
+	// written far from here. `val {x, y, z} = p` with `p: Point` would otherwise underline
+	// Point's declaration, which every destructure of a Point shares. A projection checks
+	// a second value such as a val-else fallback against a pattern the binding walk
+	// already accepted, so the fallback is the thing to fix and keeps the blame.
+	if purpose == forBinding {
+		c.recordProv(beta, blame, PatternField)
+	}
 	if obj, ok := c.ctx.readCarrierObject(soltype.CarrierOf(groundedCarrier(scrutinee))); ok {
 		member, _ := obj.ReadMember(name)
 		if g, isGetter := member.(*soltype.GetterElem); isGetter && getterBorrowsSelfImmut(g) {
@@ -1466,7 +1496,7 @@ func (c *checker) readPatternField(
 				c.raiseAccessorThrows(lvl, blame, g.ThrowsOrNever())
 			}
 			c.constrain(blame, g.Type, beta)
-			return
+			return beta
 		}
 	}
 	req := propReq(name, beta, optional)
@@ -1477,6 +1507,7 @@ func (c *checker) readPatternField(
 		c.raiseUnionAccessorThrows(lvl, blame, name, scrutinee, req)
 	}
 	c.constrain(blame, scrutinee, req)
+	return beta
 }
 
 // propReq builds the inexact one-property requirement `{name: t, ...}` — "the

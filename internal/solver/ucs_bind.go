@@ -220,8 +220,7 @@ func (b *pathBinder) shorthandView(scope *Scope, s *ucs.Scrutinee, elem *ast.Obj
 	}
 	parent := b.viewOf(scope, s.Parent)
 	name := elem.Key.Name
-	beta := b.c.freshAt(b.lvl)
-	b.c.readPatternField(elem, b.lvl, parent.ty, name, beta, elem.Default != nil, forBinding)
+	beta := b.c.readPatternField(elem, b.lvl, parent.ty, name, elem.Default != nil, forBinding)
 	v := derive(parent, beta, fieldConcrete(parent.concrete, name))
 	b.views[s] = v
 	return v
@@ -508,7 +507,7 @@ func (c *Context) testMatchesMemberShape(test ucs.Test, member soltype.Type) boo
 // checker's one tuple projection. Every element's upper bound is anchored to node, since a
 // normalized test names no sub-pattern to underline the way a written tuple pattern does.
 func (b *pathBinder) tupleShapeReq(v scrutineeView, node ast.Node, count int, inexact bool) *testedTuple {
-	elems, scrutTup, concreteTup := b.c.projectTuple(node, b.lvl, v.ty, v.concrete, count, inexact, nil)
+	elems, scrutTup, concreteTup := b.c.projectTuple(node, b.lvl, v.ty, v.concrete, count, inexact, nil, forBinding)
 	return &testedTuple{elems: elems, scrut: scrutTup, concrete: concreteTup}
 }
 

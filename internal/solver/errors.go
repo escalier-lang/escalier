@@ -1413,6 +1413,7 @@ func (*UnknownExtractorError) isSolverError()               {}
 func (*MissingCustomMatcherError) isSolverError()           {}
 func (*MalformedCustomMatcherError) isSolverError()         {}
 func (*ExtractorPatternArityError) isSolverError()          {}
+func (*TuplePatternArityError) isSolverError()              {}
 func (*TypeArgArityMismatchError) isSolverError()           {}
 func (*LifetimeArgArityMismatchError) isSolverError()       {}
 func (*ReservedTypeNameError) isSolverError()               {}
@@ -1577,6 +1578,38 @@ func (e *ExtractorPatternArityError) Message() string {
 		got = "at least " + got
 	}
 	return "extractor pattern `" + e.Name + "` expects " + expected + " arguments but got " + got
+}
+
+// TuplePatternArityError fires when a tuple pattern binds a different number of elements
+// than the tuple it destructures holds. Expected counts the pattern's fixed elements, and
+// AtLeast marks a pattern ending in `...rest`, which accepts any tuple at least that long.
+// Value is the tuple the pattern was matched against, and an inexact Value reports its
+// length as a minimum. Node is the pattern, which Span() underlines. Related() points at
+// Value's source when one is recorded.
+type TuplePatternArityError struct {
+	Node     ast.Node
+	Value    *soltype.TupleType
+	Expected int
+	AtLeast  bool
+	prov     NodeResolver
+}
+
+func (e *TuplePatternArityError) Span() ast.Span      { return e.Node.Span() }
+func (e *TuplePatternArityError) Related() []ast.Span { return relatedOf(e.prov, e.Value) }
+func (e *TuplePatternArityError) Message() string {
+	got := len(e.Value.Elems)
+	problem := "not enough elements to unpack"
+	if got > e.Expected {
+		problem = "too many elements to unpack"
+	}
+	expected, has := strconv.Itoa(e.Expected), strconv.Itoa(got)
+	if e.AtLeast {
+		expected = "at least " + expected
+	}
+	if e.Value.Inexact {
+		has = "at least " + has
+	}
+	return problem + ": the pattern expects " + expected + ", but the value has " + has
 }
 
 // TypeDeclKind names the sort of declaration a type reference resolved to. resolveTypeArgs

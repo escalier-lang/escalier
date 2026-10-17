@@ -135,10 +135,10 @@ func TestInferModuleDestructuring(t *testing.T) {
 			errs: []string{"object is missing property: z"},
 		},
 		{
-			// A wrong tuple arity is rejected with a TupleLengthMismatchError.
+			// A wrong tuple arity is rejected with a TuplePatternArityError.
 			name: "tuple wrong arity",
 			src:  `val [a, b, c] = [1, 2]`,
-			errs: []string{"cannot constrain tuple of length 2 <: tuple of length 3"},
+			errs: []string{"not enough elements to unpack: the pattern expects 3, but the value has 2"},
 		},
 		{
 			// An initializer that recovered to the ErrorType sentinel recovers EACH leaf
