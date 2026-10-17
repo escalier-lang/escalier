@@ -625,3 +625,28 @@ func TestInferTryCatchArmNarrowsItsScrutinee(t *testing.T) {
 		},
 	})
 }
+
+// An arm's literal or class test admits any value, since the runtime can throw one the
+// checker never saw. The test widens nothing a binding of the caught value reads.
+func TestInferTryCatchArmTestLeavesTheCaughtValue(t *testing.T) {
+	runThrowsCases(t, []throwsCase{
+		{
+			name: "LiteralArmAboveACatchAll",
+			src:  `fn f() { return try { throw "x" } catch { 5 => 0, e => e } }`,
+			want: `fn () -> 0 | "x"`,
+		},
+		{
+			name: "LiteralArmBelowACatchAll",
+			src:  `fn f() { return try { throw "x" } catch { e => e, 5 => 0 } }`,
+			want: `fn () -> "x"`,
+		},
+		{
+			name: "ClassArmAboveACatchAll",
+			src: `
+				class AppError { code: number, constructor(&mut self) { self.code = 0 } }
+				fn f() { return try { throw "x" } catch { AppError{code} => code, e => e } }
+			`,
+			want: `fn () -> number | "x"`,
+		},
+	})
+}

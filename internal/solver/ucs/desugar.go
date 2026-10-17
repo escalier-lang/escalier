@@ -30,13 +30,9 @@ import "github.com/escalier-lang/escalier/internal/ast"
 // tail is normalization's job.
 func DesugarMatch(e *ast.MatchExpr) *CoreSplit {
 	origin := At(OriginMatchArm, e)
-	branches := make([]*CoreBranch, len(e.Cases))
-	for i, matchCase := range e.Cases {
-		branches[i] = desugarMatchCase(OriginMatchArm, matchCase)
-	}
 	return &CoreSplit{
 		Scrutinee: NewRoot(e.Target, scrutineeOrigin(OriginMatchArm, e.Target, origin)),
-		Branches:  branches,
+		Branches:  desugarMatchCases(OriginMatchArm, e.Cases),
 		Origin:    origin,
 	}
 }
@@ -64,15 +60,21 @@ func scrutineeOrigin(kind OriginKind, target ast.Expr, cause Origin) Origin {
 // accounts for outside the split.
 func DesugarCatch(e *ast.TryCatchExpr) *CoreSplit {
 	origin := At(OriginCatchArm, e)
-	branches := make([]*CoreBranch, len(e.Catch))
-	for i, matchCase := range e.Catch {
-		branches[i] = desugarMatchCase(OriginCatchArm, matchCase)
-	}
 	return &CoreSplit{
 		Scrutinee: NewRoot(nil, InventedFrom(OriginCatchArm, origin)),
-		Branches:  branches,
+		Branches:  desugarMatchCases(OriginCatchArm, e.Catch),
 		Origin:    origin,
 	}
+}
+
+// desugarMatchCases lowers each arm into a branch, in source order, tagging its origins
+// with kind.
+func desugarMatchCases(kind OriginKind, arms []*ast.MatchCase) []*CoreBranch {
+	branches := make([]*CoreBranch, len(arms))
+	for i, matchCase := range arms {
+		branches[i] = desugarMatchCase(kind, matchCase)
+	}
+	return branches
 }
 
 // desugarMatchCase lowers one arm into a branch, tagging its origins with kind. It takes an

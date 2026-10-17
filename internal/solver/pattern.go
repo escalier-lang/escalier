@@ -920,7 +920,11 @@ func (c *checker) narrowToClass(
 }
 
 // unionMembersReaching returns, for each member of the union shape whose class is name or
-// extends it, that member's instance of name. It returns nothing when shape is not a union.
+// extends it, that member's instance of name. It returns nothing when shape is not a union,
+// or when some other member could still hold an instance of name. A class that does not
+// extend name, a primitive, a literal, `null`, and `undefined` cannot hold one. Any other
+// member can, such as a type parameter `U` that a caller instantiates as the class itself.
+// So can a class whose extends edges are not resolved yet.
 func (c *checker) unionMembersReaching(shape soltype.Type, name string) []*soltype.ClassType {
 	u, isUnion := soltype.CarrierOf(shape).(*soltype.UnionType)
 	if !isUnion {
@@ -930,9 +934,17 @@ func (c *checker) unionMembersReaching(shape soltype.Type, name string) []*solty
 	for _, member := range u.Types {
 		sc, ok := c.classCarrier(member)
 		if !ok {
-			continue
+			switch soltype.CarrierOf(member).(type) {
+			case *soltype.PrimType, *soltype.LitType, *soltype.NullType, *soltype.UndefinedType:
+				continue
+			}
+			return nil
 		}
-		if up, reaches, _ := c.ctx.ancestorInstance(sc, name); reaches {
+		up, reaches, settled := c.ctx.ancestorInstance(sc, name)
+		if !settled {
+			return nil
+		}
+		if reaches {
 			ups = append(ups, up)
 		}
 	}
