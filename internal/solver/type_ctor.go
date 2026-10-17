@@ -355,7 +355,10 @@ func (c *Context) constrainTypeApp(sub, super soltype.Type, seen *seenPairs, mut
 			return []SolverError{&CannotConstrainError{Sub: sub, Super: super}}, true
 		}
 		if errs := c.unifyHeads(subApp.Head, subApp.Variances, superApp.Head, superApp.Variances, seen, mutCtx); len(errs) > 0 {
-			return errs, true
+			if _, kind := errs[0].(*KindMismatchError); kind {
+				return errs, true
+			}
+			return []SolverError{&CannotConstrainError{Sub: sub, Super: super}}, true
 		}
 		variances := make([]soltype.SlotVariance, len(subApp.Args))
 		for i := range variances {

@@ -727,13 +727,6 @@ func (c *Context) evalTypeOperator(t soltype.Type, seen *seenPairs) (soltype.Typ
 		return t.Ty, nil, true
 	case *soltype.RecursiveType:
 		return unfoldRecursive(t), nil, true
-	case *soltype.TypeAppType:
-		// An application whose head has been bound to a constructor stands for the instance the
-		// constructor names.
-		if reduced, ok := c.reduceTypeApp(t); ok {
-			return reduced, nil, true
-		}
-		return nil, nil, false
 	case *soltype.KeyofType, *soltype.IndexType, *soltype.CondType,
 		*soltype.TemplateLitType, *soltype.StringIntrinsicType, *soltype.ExactnessType:
 		return c.reduceResidual(t, seen)
