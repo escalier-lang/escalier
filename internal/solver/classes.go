@@ -817,6 +817,24 @@ func (v *varianceVisitor) withMutable(m bool) *varianceVisitor {
 
 func (v *varianceVisitor) EnterType(t soltype.Type, pol soltype.Polarity) soltype.EnterResult {
 	switch t := t.(type) {
+	case *soltype.TypeAppType:
+		// constrainTypeApp relates each argument by the variance its slot declares, so a
+		// parameter reached through `F<T>` takes the slot's position. An invariant slot puts it in
+		// both, and so does a mutable reference to the holder, where constrainArgs makes every
+		// argument invariant. The head reads as written.
+		t.Head.Accept(v, pol)
+		for i, arg := range t.Args {
+			switch slot := t.Slot(i); {
+			case slot == soltype.SlotCovariant && !v.mutable:
+				arg.Accept(v, pol)
+			case slot == soltype.SlotContravariant && !v.mutable:
+				arg.Accept(v, pol.Flip())
+			default:
+				arg.Accept(v, pol)
+				arg.Accept(v, pol.Flip())
+			}
+		}
+		return soltype.EnterResult{SkipChildren: true}
 	case *soltype.RefType:
 		if !t.Mut {
 			// Nothing writes through an immutable borrow, so its pointee reads as written
