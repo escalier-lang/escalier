@@ -1562,6 +1562,67 @@ func (c *checker) objectMember(lvl int, blame ast.Node, name string, carrier sol
 	return c.instanceMemberValue(lvl, blame, member), true
 }
 
+// memberObject returns the object type whose elements are the members a value of type t
+// exposes, with every inference variable in them coalesced. See Info.MemberObject for the
+// cases it reads.
+//
+// It only reads the Context. Reducing a mapped type or a spread would mint variables, so
+// an object holding one is declined rather than reduced.
+func (c *Context) memberObject(t soltype.Type) (*soltype.ObjectType, bool) {
+	carrier := c.expandedCarrier(groundedCarrier(t))
+	if wrapper, ok := c.ownPrimitiveWrapper(carrier); ok {
+		carrier = wrapper
+	}
+	if tup, ok := carrier.(*soltype.TupleType); ok {
+		shape, ok := c.shapeOf(tup)
+		if !ok {
+			return nil, false
+		}
+		elems := append(slices.Clone(shape.prefix), shape.suffix...)
+		if shape.rest != nil {
+			elems = append(elems, shape.rest)
+		}
+		carrier = c.arrayOf(newUnion(nil, elems))
+	}
+	var obj *soltype.ObjectType
+	switch carrier := carrier.(type) {
+	case *soltype.ClassType:
+		body, ok := c.projectClassBody(carrier)
+		if !ok {
+			return nil, false
+		}
+		obj = body
+	case *soltype.ObjectType:
+		obj = carrier
+	default:
+		return nil, false
+	}
+	if soltype.HasResidualElem(obj.Elems) {
+		return nil, false
+	}
+	// Coalescing builds a fresh object, so the caller holds none of the registry's own
+	// storage.
+	coalesced, ok := coalesce(obj, soltype.Positive).(*soltype.ObjectType)
+	return coalesced, ok
+}
+
+// expandedCarrier peels t the way memberCarrier does, expanding an alias and unwrapping a
+// `typeof` until neither is left, and peels any borrow either one uncovers.
+func (c *Context) expandedCarrier(t soltype.Type) soltype.Type {
+	t = peelBorrows(t)
+	for range maxExpandDepth {
+		switch cur := t.(type) {
+		case *soltype.AliasType:
+			t = peelBorrows(c.expandAlias(cur))
+		case *soltype.TypeofType:
+			t = peelBorrows(cur.Ty)
+		default:
+			return t
+		}
+	}
+	return t
+}
+
 // memberCarrier peels a receiver to the shape a member lookup dispatches on, expanding a
 // transparent alias and unwrapping a `typeof v`. Both repeat, since either may name the other.
 // A type that is neither is returned unchanged.

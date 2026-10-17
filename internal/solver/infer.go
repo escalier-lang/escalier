@@ -873,6 +873,7 @@ func newChecker() *checker {
 		varIDCounter: 1,
 	}
 	c.ctx.fusionRecorder = c.recordFusionEdge
+	c.info.ctx = c.ctx
 	registerIteratorResultAliases(c.ctx)
 	return c
 }
@@ -908,6 +909,7 @@ func (c *checker) forScript(pkgURI string) *checker {
 	// Point the recorder at the script, so a fusion its walk records lands in the
 	// script's Prov table rather than the module's.
 	sc.ctx.fusionRecorder = sc.recordFusionEdge
+	sc.info.ctx = sc.ctx
 	// A language server re-checks one bin/ file against a cached library on every
 	// keystroke, handing this run the same source id each time, so drop whatever the
 	// previous check registered under this prefix. A compile repeats no prefix, since
