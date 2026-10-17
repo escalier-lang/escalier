@@ -1022,3 +1022,13 @@ func TestTheSolverEmitsAKeyAbsenceTestForAnImpliedArm(t *testing.T) {
 	got := CompilePackage(libSources(src), PackageConfig{}).CompUnits["lib/index"].JS
 	require.Contains(t, got, `} else if (temp3 != null && "radius" in temp3 && !("label" in temp3)) {`)
 }
+
+// TestTheSolverEmitsNoKeyAbsenceTestForANestedPattern asserts that an object pattern nested
+// in a tuple tests only the keys it names. The match is exhaustive, so a test that also
+// checked `label` was absent would let the labelled value fall past every arm.
+func TestTheSolverEmitsNoKeyAbsenceTestForANestedPattern(t *testing.T) {
+	useSolver(t)
+	src := "export fn f(s: [{radius: number} | {radius: number, label: string}, number]) { return match s { [{radius}, _] => radius } }"
+	got := CompilePackage(libSources(src), PackageConfig{}).CompUnits["lib/index"].JS
+	require.Contains(t, got, `if (temp3.length == 2 && temp3[0] != null && "radius" in temp3[0]) {`)
+}

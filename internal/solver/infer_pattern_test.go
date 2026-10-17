@@ -1522,6 +1522,13 @@ func TestInferMatchNarrowsByAbsentKeys(t *testing.T) {
 			src:  `fn f(s: {radius: number} | {radius: number, label: string}) { return match s { {radius, ...r} => radius } }`,
 			want: "fn (s: {radius: number} | {radius: number, label: string}) -> number",
 		},
+		{
+			// Coverage reads absent keys for the root's members alone, so a nested pattern
+			// checks none and matches every member carrying its keys.
+			name: "ANestedPatternChecksNothingAbsent",
+			src:  `fn f(s: [{radius: number} | {radius: number, label: string}, number]) { return match s { [{radius}, _] => radius } }`,
+			want: "fn (s: [{radius: number} | {radius: number, label: string}, number]) -> number",
+		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {

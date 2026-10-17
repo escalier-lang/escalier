@@ -112,6 +112,8 @@ type pathBinder struct {
 	// not an ast.Node.
 	blame ast.Node
 	views map[*ucs.Scrutinee]scrutineeView
+	// rootShape is the root scrutinee's union structure before any branch narrowed it.
+	rootShape soltype.Type
 }
 
 // newPathBinder builds the binder for one conditional form. root is the IR's root
@@ -141,6 +143,7 @@ func (c *checker) newPathBinder(lvl int, blame ast.Node, root *ucs.Scrutinee, ro
 		mode:     mode,
 		shape:    shape,
 	}
+	b.rootShape = shape
 	return b
 }
 
@@ -165,7 +168,7 @@ func (b *pathBinder) narrowedBy(scope *Scope, s *ucs.Scrutinee, test ucs.Test, b
 	if !ok {
 		node = b.blameFor(s)
 	}
-	next := &pathBinder{c: b.c, lvl: b.lvl, blame: b.blame, views: maps.Clone(b.views)}
+	next := &pathBinder{c: b.c, lvl: b.lvl, blame: b.blame, views: maps.Clone(b.views), rootShape: b.rootShape}
 	next.views[s] = next.applyTest(scope, node, s, v, test)
 	return next
 }
@@ -403,7 +406,15 @@ func (b *pathBinder) applyTest(scope *Scope, node ast.Node, s *ucs.Scrutinee, v 
 		// field steps beneath it, which is the same per-field dispatch bindPatMode's object
 		// arm makes. The keys it checks are absent decide which members narrowing keeps, so
 		// they are worked out first.
-		b.c.recordAbsentKeys(groundedCarrier(v.shape), t)
+		//
+		// Only a root test checks absent keys, since coverage reads them for the root's
+		// members alone. A nested test that checked them would let a value fall past every
+		// arm with no diagnostic. They are worked out over the root's unnarrowed shape
+		// because codegen emits one runtime test per pattern, which every path reaching the
+		// pattern runs.
+		if s.IsRoot() {
+			b.c.recordAbsentKeys(b.rootShape, t)
+		}
 		v = b.narrowUnion(v, test)
 		v.tested = &testedObject{test: t}
 		return v
@@ -495,7 +506,8 @@ func objectTestNames(t *ucs.ObjectTest) []string {
 
 // recordAbsentKeys works out the keys the object test t also checks are absent when the
 // value it tests has type shape, and records them in Info for t's pattern and for the
-// patterns in t.Also. A pattern tested before keeps the keys its first test recorded.
+// patterns in t.Also. A pattern tested before keeps the keys its first test recorded, so
+// a caller passes the same shape to every test of one pattern.
 //
 // The keys tell exact members of a union apart by what they carry. They are found from the
 // members the test's keys admit, and only when every one of those is an exact object type
