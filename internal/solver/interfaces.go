@@ -6,6 +6,7 @@ import (
 
 	"github.com/escalier-lang/escalier/internal/ast"
 	"github.com/escalier-lang/escalier/internal/provenance"
+	"github.com/escalier-lang/escalier/internal/set"
 	"github.com/escalier-lang/escalier/internal/soltype"
 )
 
@@ -44,6 +45,10 @@ type interfaceShell struct {
 	// declares, such as `i` for `declare val i: I`, and empty when no value does. See
 	// symbolOwners.
 	symbolOwner string
+	// parents are the types the `extends` clauses resolve to and own the members the body
+	// declares. inferInterfaceBody sets both for an interface with an `extends` clause.
+	parents []soltype.Type
+	own     *soltype.ObjectType
 }
 
 // preBindInterface resolves the group's type parameters, registers an AliasDef
@@ -192,6 +197,183 @@ func (c *checker) inferInterfaceBody(sh *interfaceShell) {
 	// built is named rather than read. That is what lets `interface A {b: B}` and
 	// `interface B extends A {x}` resolve each other.
 	sh.def.Body = extendedInterfaceBody(parents, own)
+	sh.parents, sh.own = parents, own
+	// Every interface in the libraries a package load reads is written `declare`. They come from
+	// TypeScript's own declarations, which TypeScript has already checked, and comparing
+	// their overrides member by member costs minutes on the DOM interfaces. Such an
+	// interface is left out. Every other interface is queued.
+	if len(c.loadStack) == 0 || !allDeclared(sh.decls) {
+		c.pendingInterfaceOverrides = append(c.pendingInterfaceOverrides, sh)
+	}
+}
+
+// checkInterfaceOverrides checks every member an interface declares against the same-named
+// member its parents declare, and reports one the parent's member does not admit. It reads
+// sh.parents and sh.own, which inferInterfaceBody sets, and every parent's body has to be
+// built first.
+//
+// The rules are the ones checkOverriddenName applies to a class. Each access half the parent
+// exposes has to be offered in a form at least as strong and at a type that fits, covariantly
+// for a read and contravariantly for a write. The interface's type parameters are compared as
+// skolems, so the obligation holds for every instantiation.
+func (c *checker) checkInterfaceOverrides(sh *interfaceShell) {
+	blame := interfaceMemberNodes(sh.decls)
+	var rigid *typeSubst
+	if len(sh.def.TypeParams) > 0 {
+		rigid = c.ctx.skolemizeParams(sh.def.TypeParams)
+	}
+	name := sh.decls[0].Name.Name
+	checked := set.NewSet[string]()
+	for _, elem := range sh.own.Elems {
+		member := soltype.ObjElemName(elem)
+		if member == "" || checked.Contains(member) {
+			continue
+		}
+		checked.Add(member)
+		c.checkInterfaceOverriddenName(sh, name, member, blame, rigid)
+	}
+}
+
+// checkInterfaceOverriddenName checks one member the interface named name declares against
+// the same member on its parents, reporting at most one diagnostic for it.
+func (c *checker) checkInterfaceOverriddenName(
+	sh *interfaceShell,
+	name, member string,
+	blame map[memberBlameKey]ast.Node,
+	rigid *typeSubst,
+) {
+	for _, parent := range sh.parents {
+		// owners[i] is the parent type declaring the member goals[i] compares against.
+		var goals []subtypeGoal
+		var owners []soltype.Type
+		for _, half := range []memberHalf{readHalf, writeHalf} {
+			for _, inherited := range c.interfaceParentHalves(parent, member, half, set.NewSet[string]()) {
+				superHalf, owner := inherited.elem, inherited.owner
+				subHalf, declared := declaredHalf(sh.own, member, half)
+				if !declared || formWeakens(subHalf, superHalf) {
+					own, _ := sh.own.Member(member)
+					c.report(&OverrideFormMismatchError{
+						Kind:       InterfaceDeclKind,
+						Member:     member,
+						Class:      name,
+						SuperClass: soltype.Print(rigid.apply(owner)),
+						Form:       memberForm(own),
+						SuperForm:  memberForm(superHalf),
+						Node:       interfaceOverrideBlame(sh, blame, member, subHalf),
+					})
+					return
+				}
+				for _, goal := range halfGoals(subHalf, superHalf, half, nil) {
+					goals = append(goals, goal)
+					owners = append(owners, owner)
+				}
+			}
+		}
+		for i, goal := range goals {
+			if !hasHardError(c.ctx.trialUnderProbe(rigid.apply(goal.sub), rigid.apply(goal.super))) {
+				continue
+			}
+			c.report(&IncompatibleOverrideError{
+				Kind:       InterfaceDeclKind,
+				Member:     member,
+				Class:      name,
+				SuperClass: soltype.Print(rigid.apply(owners[i])),
+				Position:   goal.position,
+				SubType:    rigid.apply(goal.shownSub),
+				SuperType:  rigid.apply(goal.shownSuper),
+				Node:       interfaceOverrideBlame(sh, blame, member, goal.subElem),
+			})
+			return
+		}
+	}
+}
+
+// inheritedInterfaceHalf is one member a parent type offers for an access half, along with
+// the type that declares it.
+type inheritedInterfaceHalf struct {
+	elem  soltype.ObjTypeElem
+	owner soltype.Type
+}
+
+// interfaceParentHalves returns every member serving one access half of name on the parent
+// type t, each with the type that declares it. An interface parent is expanded to its body.
+// A class parent is read through its projected body.
+//
+// A parent whose body is itself an `extends` meet answers with the member its own arm
+// declares when there is one. That member is checked against the parent's own parents when
+// the parent is checked, so it is the only one an override has to fit. Otherwise every arm
+// that offers the member answers, since a value of the parent is a value of each arm.
+//
+// seen holds the alias names expanded on the path to t, so an `extends` cycle stops.
+func (c *checker) interfaceParentHalves(t soltype.Type, name string, half memberHalf, seen set.Set[string]) []inheritedInterfaceHalf {
+	switch body := c.expandAliasChainFrom(t, seen).(type) {
+	case *soltype.ObjectType:
+		if elem, ok := declaredHalf(body, name, half); ok {
+			return []inheritedInterfaceHalf{{elem: elem, owner: t}}
+		}
+	case *soltype.IntersectionType:
+		var found []inheritedInterfaceHalf
+		for _, arm := range armsByPrecedence(body) {
+			for _, inherited := range c.interfaceParentHalves(arm, name, half, seen.Clone()) {
+				// The arm holding the parent's own members is a bare object, which names
+				// nothing. The member is then the parent's own, and it is the only answer.
+				if _, bare := inherited.owner.(*soltype.ObjectType); bare {
+					return []inheritedInterfaceHalf{{elem: inherited.elem, owner: t}}
+				}
+				found = append(found, inherited)
+			}
+		}
+		return found
+	case *soltype.ClassType:
+		if obj, ok := c.ctx.projectClassBody(body); ok {
+			if elem, found := declaredHalf(obj, name, half); found {
+				return []inheritedInterfaceHalf{{elem: elem, owner: t}}
+			}
+		}
+	}
+	return nil
+}
+
+// allDeclared reports whether every declaration in decls is written `declare`.
+func allDeclared(decls []*ast.InterfaceDecl) bool {
+	for _, d := range decls {
+		if !d.Declare() {
+			return false
+		}
+	}
+	return true
+}
+
+// interfaceMemberNodes maps each member the declarations write to the node that declares it,
+// so an override diagnostic points at the member. A later declaration of a name replaces an
+// earlier one's entry, matching the merge.
+func interfaceMemberNodes(decls []*ast.InterfaceDecl) map[memberBlameKey]ast.Node {
+	nodes := map[memberBlameKey]ast.Node{}
+	for _, decl := range decls {
+		if decl.TypeAnn == nil {
+			continue
+		}
+		for _, elem := range decl.TypeAnn.Elems {
+			key, _, setter, ok := interfaceMemberKey(elem)
+			if !ok {
+				continue
+			}
+			if name, ok := objKeyName(key); ok {
+				nodes[memberBlameKey{name: name, setter: setter}] = elem
+			}
+		}
+	}
+	return nodes
+}
+
+// interfaceOverrideBlame returns the node an interface override diagnostic points at: the
+// member's declaration, or the first declaration of the interface when its key names no
+// member objKeyName can read.
+func interfaceOverrideBlame(sh *interfaceShell, blame map[memberBlameKey]ast.Node, name string, elem soltype.ObjTypeElem) ast.Node {
+	if node := overrideBlame(blame, name, elem); node != nil {
+		return node
+	}
+	return sh.decls[0]
 }
 
 // extendedInterfaceBody returns the body of an interface with an `extends` clause: the meet
@@ -213,23 +395,17 @@ func armsByPrecedence(it *soltype.IntersectionType) iter.Seq2[int, soltype.Type]
 // writes. A later declaration of a name replaces an earlier one's entry.
 func recordInterfaceReceivers(def *AliasDef, body *ast.ObjectTypeAnn) {
 	for _, elem := range body.Elems {
-		var key ast.ObjKey
-		var recv *ast.MethodReceiver
-		setter := false
-		switch elem := elem.(type) {
-		case *ast.MethodTypeAnn:
-			key, recv = elem.Name, elem.Receiver
-		case *ast.GetterTypeAnn:
-			key, recv = elem.Name, elem.Receiver
-		case *ast.SetterTypeAnn:
-			// A receiver no setter may declare is already reported where the body is
-			// lowered. Leaving it unrecorded keeps `implements` from comparing against it and
-			// reporting the same mistake again on each implementing class.
-			if invalidSetterReceiver(elem.Receiver) {
-				continue
-			}
-			key, recv, setter = elem.Name, elem.Receiver, true
-		default:
+		if _, isProp := elem.(*ast.PropertyTypeAnn); isProp {
+			continue
+		}
+		// A receiver no setter may declare is already reported where the body is lowered.
+		// Leaving it unrecorded keeps `implements` from comparing against it and reporting
+		// the same mistake again on each implementing class.
+		if setter, ok := elem.(*ast.SetterTypeAnn); ok && invalidSetterReceiver(setter.Receiver) {
+			continue
+		}
+		key, recv, setter, ok := interfaceMemberKey(elem)
+		if !ok {
 			continue
 		}
 		name, ok := objKeyName(key)
@@ -288,3 +464,20 @@ func (e *InterfaceTypeParamMismatchError) Message() string {
 func (e *InterfaceTypeParamMismatchError) Span() ast.Span      { return e.span }
 func (e *InterfaceTypeParamMismatchError) Related() []ast.Span { return nil }
 func (e *InterfaceTypeParamMismatchError) isSolverError()      {}
+
+// interfaceMemberKey returns the key a field, method, getter, or setter of an interface body
+// writes, the receiver a method or accessor writes, and whether the member is a setter. ok is
+// false for any other element, such as an index signature.
+func interfaceMemberKey(elem ast.ObjTypeAnnElem) (key ast.ObjKey, recv *ast.MethodReceiver, setter, ok bool) {
+	switch elem := elem.(type) {
+	case *ast.PropertyTypeAnn:
+		return elem.Name, nil, false, true
+	case *ast.MethodTypeAnn:
+		return elem.Name, elem.Receiver, false, true
+	case *ast.GetterTypeAnn:
+		return elem.Name, elem.Receiver, false, true
+	case *ast.SetterTypeAnn:
+		return elem.Name, elem.Receiver, true, true
+	}
+	return nil, nil, false, false
+}

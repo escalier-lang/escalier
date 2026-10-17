@@ -332,6 +332,12 @@ type checker struct {
 	// rather than run inside inferClassDecl because a subclass can be inferred before its
 	// superclass. queueInheritedMemberCheck spells that ordering out.
 	pendingOverrides []pendingOverrideCheck
+	// pendingInterfaceOverrides holds the interfaces inferInterfaceBody queued, each waiting
+	// to have the members it declares checked against the ones its parents declare. A parent
+	// in the same component may not have its body yet when inferInterfaceBody runs, so
+	// checkQueuedInheritedMembers runs the check with the class checks. inferDepGraph keeps
+	// each module's queue apart from the queue of a module whose load it interrupts.
+	pendingInterfaceOverrides []*interfaceShell
 
 	// pendingImplements holds every class carrying an `implements` clause, each waiting to
 	// be checked against the members its clause names. It is queued for the reason
