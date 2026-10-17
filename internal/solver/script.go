@@ -226,6 +226,9 @@ func (c *checker) bindScriptFuncWithBody(scope *Scope, lvl int, s ast.Stmt, decl
 
 	// The calls of the name take the capture loans, so writing the declaration takes none.
 	c.markNamedClosure(decl)
+	// A lifetime check queued while the declaration is typed reads the lifetimes minted
+	// before it, as one queued while an expression is typed does.
+	c.markLifetimes(decl)
 	t, _ := c.inferFuncDecl(scope, lvl+1, decl)
 	c.recordCaptureLoans(scope, decl)
 	c.constrain(decl, t, self)
@@ -233,31 +236,34 @@ func (c *checker) bindScriptFuncWithBody(scope *Scope, lvl int, s ast.Stmt, decl
 	c.recordType(decl.Name, schemeType(scheme))
 	b := ValueBinding{Schemes: []TypeScheme{scheme}, Sources: sources, Kind: ast.ValKind, VarID: decl.VarID}
 	scope.defineValue(name, b)
+	// The name's capture edges let a call of it take the capture loans, the way a call of a
+	// `val name = fn …` binding does.
 	c.trackFuncDeclCaptures(scope, decl, bindingType(b), s)
 }
 
-// trackFuncDeclCaptures records what binding decl's name in the current body sets up for the
-// alias, move, and borrow checks. The name holds a fresh value, so it aliases nothing. It
-// joins the alias set of each local the body captures and holds a capture edge to each one,
-// so a call of the name takes the capture loans. bindingT is the name's type. s is the
-// statement decl is written as.
+// trackFuncDeclCaptures records decl's name in the current body's alias and borrow tables.
+// The name holds a fresh value, joins the alias set of each local the body captures, and
+// holds a capture edge to each one. bindingT is the name's type. s is the statement decl is
+// written as.
 func (c *checker) trackFuncDeclCaptures(scope *Scope, decl *ast.FuncDecl, bindingT soltype.Type, s ast.Stmt) {
-	if c.fn == nil || decl.VarID <= 0 {
+	if c.fn == nil {
 		return
 	}
 	id := liveness.VarID(decl.VarID)
-	c.recordVarIDType(id, bindingT)
-	if c.fn.aliases != nil {
+	if decl.VarID > 0 && c.fn.aliases != nil {
+		c.recordVarIDType(id, bindingT)
 		c.fn.aliases.NewValue(id, aliasMutability(isMutableType(bindingT)))
 		c.trackCapturedAliases(scope, decl, id)
 	}
-	if c.fn.eagerBorrowGraph != nil {
+	if decl.VarID > 0 && c.fn.eagerBorrowGraph != nil {
 		c.clearEagerSubtree(id, nil)
 		c.addCaptureEdges(id, nil, decl)
 	}
 	if ref, ok := c.fn.stmtToRef[s]; ok {
 		c.flushBorrowDirty(ref)
-		c.dropLoansHeldBy(id)
+		if decl.VarID > 0 {
+			c.dropLoansHeldBy(id)
+		}
 	}
 }
 

@@ -600,13 +600,11 @@ func (c *checker) inferFunc(scope *Scope, lvl int, sig ast.FuncSig, body *ast.Bl
 		defer c.holdTypeParamsRigidForComponent(typeParams, false)()
 	}
 	if hasBody {
-		// PR3: open a fresh function context so every ReturnStmt encountered while
-		// walking the body lands in our own returns list (a nested fn inside this
-		// body opens its own context, so its returns never leak out here).
 		// A function written inside an enclosing body captures that body's locals. That is
-		// every function expression written in a body, and a script's `fn` declaration,
-		// whose enclosing body is the script's. A module's `fn` declaration has no
-		// enclosing body.
+		// every function expression, and a `fn` declaration inferred while a body is
+		// current. Only a script's top level admits such a declaration, and its enclosing
+		// body is the script's. A module's `fn` declaration is inferred with no body
+		// current.
 		var closure ast.Func
 		switch n := node.(type) {
 		case *ast.FuncExpr:
@@ -616,6 +614,9 @@ func (c *checker) inferFunc(scope *Scope, lvl int, sig ast.FuncSig, body *ast.Bl
 				closure = n
 			}
 		}
+		// PR3: open a fresh function context so every ReturnStmt encountered while
+		// walking the body lands in our own returns list (a nested fn inside this
+		// body opens its own context, so its returns never leak out here).
 		saved := c.pushFuncCtx(sig.Async, node, lvl)
 		c.fn.throws = declaredThrows
 		if gen != nil {

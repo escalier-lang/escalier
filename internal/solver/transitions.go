@@ -720,7 +720,7 @@ func (c *checker) runLivenessPrePass(scope *Scope, astParams []*ast.Param, recv 
 		captured = c.collectClosureCaptures(scope, closure, outerBindings)
 		extraParams = append(extraParams, captured...)
 		// A parameter of the same name shadows the function's own name for the whole body.
-		if fd, ok := closure.(*ast.FuncDecl); ok && !paramsBind(astParams, fd.Name.Name) {
+		if fd, ok := closure.(*ast.FuncDecl); ok && fd.Name != nil && !paramsBind(astParams, fd.Name.Name) {
 			selfName = fd.Name.Name
 			extraParams = append(extraParams, selfName)
 		}
