@@ -149,3 +149,71 @@ type X = Functor<number>`)
 	require.Equal(t, "2:18-2:24: expected a type constructor taking 1 type argument", msgWithSpan(t, errs[0]))
 	require.Empty(t, errs[0].Related())
 }
+
+// TestInferTypeConstructorMatching covers how head matching reads an instance. An instance with
+// more arguments than the application takes is tried at each choice of hole positions, so a
+// constructor with a leading hole is found whichever argument binds the head first. An alias that
+// splits no way is matched through its body. A class field typed `F<T>` makes the class
+// invariant in T, since an application relates its arguments invariantly.
+func TestInferTypeConstructorMatching(t *testing.T) {
+	const prelude = `
+type Functor<F<_>> = {map: fn <A, B>(fa: F<A>, f: fn (a: A) -> B) -> F<B>}
+class Tagged<E, A> { tag: E, value: A }
+fn id<F<_>, A>(fa: F<A>) -> F<A> { return fa }
+val tf: Functor<Tagged<_, number>> = {map: fn (fa, f) { return Tagged(f(fa.tag), fa.value) }}
+`
+	tests := []struct {
+		name     string
+		src      string
+		want     map[string]string
+		wantErrs []string
+	}{
+		{
+			name: "LeadingHoleValueFirst",
+			src: `fn g<F<_>>(fa: F<string>, functor: Functor<F>) -> F<string> { return fa }
+			val t: Tagged<string, number> = Tagged("a", 1)
+			val r = g(t, tf)`,
+			want: map[string]string{"r": "Tagged<string, number>"},
+		},
+		{
+			name: "LeadingHoleFunctorFirst",
+			src: `fn g<F<_>>(functor: Functor<F>, fa: F<string>) -> F<string> { return fa }
+			val t: Tagged<string, number> = Tagged("a", 1)
+			val r = g(tf, t)`,
+			want: map[string]string{"r": "Tagged<string, number>"},
+		},
+		{
+			name: "LeadingHoleDisagrees",
+			src: `fn g<F<_>>(functor: Functor<F>, fa: F<string>) -> F<string> { return fa }
+			val t: Tagged<string, string> = Tagged("a", "b")
+			val r = g(tf, t)`,
+			wantErrs: []string{"cannot constrain string <: number"},
+		},
+		{
+			name: "AliasMatchedThroughBody",
+			src: `type Nums = Array<number>
+			val n: Nums = [1]
+			val r = id(n)`,
+			want: map[string]string{"r": "Array<number>"},
+		},
+		{
+			name: "ApplicationFieldMakesClassInvariant",
+			src: `class Wrap<F<_>, T> { inner: F<T> }
+			fn w(x: Wrap<Array, 5>) -> Wrap<Array, number> { return x }`,
+			wantErrs: []string{"cannot constrain number <: 5"},
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			values, _, errs := inferSource(t, prelude+tt.src)
+			if tt.wantErrs == nil {
+				require.Empty(t, errorMessagesOf(errs))
+			} else {
+				require.Equal(t, tt.wantErrs, errorMessagesOf(errs))
+			}
+			for name, want := range tt.want {
+				require.Equal(t, want, values[name], name)
+			}
+		})
+	}
+}

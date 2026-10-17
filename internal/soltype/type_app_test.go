@@ -99,3 +99,13 @@ func TestTypeAppLevel(t *testing.T) {
 	require.Equal(t, 3, LevelOf(&TypeAppType{Head: f, Args: []Type{&PrimType{Prim: NumPrim}}}))
 	require.Equal(t, 5, LevelOf(&TypeCtorType{Base: &ClassType{Name: "Tagged"}, Fixed: []Type{a, nil}}))
 }
+
+// TestPrintSchemeConstructorParam asserts that a declared type-constructor parameter keeps its
+// `<_>` in a scheme's binder list.
+func TestPrintSchemeConstructorParam(t *testing.T) {
+	f := &TypeVarType{ID: 1, Level: 2}
+	app := &TypeAppType{Head: f, Args: []Type{&PrimType{Prim: NumPrim}}}
+	quantified := func(v *TypeVarType) bool { return v == f }
+	got := PrintAsSchemeWith(app, quantified, nil, []*TypeParam{{Name: "F", Var: f, Arity: 1}}, nil)
+	require.Equal(t, "<F<_>> F<number>", got)
+}

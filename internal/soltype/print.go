@@ -281,7 +281,7 @@ func PrintAsSchemeWith(
 			continue // one variable gets one binder, however many parameters point at it
 		}
 		declaredAt[len(labels)] = tp
-		labels = append(labels, p.bindTypeParam(tp.Var, tp.Name))
+		labels = append(labels, p.bindTypeParam(tp.Var, tp.Name)+arityHoles(tp.Arity))
 	}
 	// Every remaining quantified variable takes a generated T0, T1, … in first-appearance
 	// order, skipping any name a source parameter already claims.
