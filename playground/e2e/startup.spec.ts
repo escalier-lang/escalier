@@ -1,6 +1,11 @@
 import { expect, test } from '@playwright/test';
 
-import { loadPlayground } from './helpers';
+import {
+    COMPILE_TIMEOUT_MS,
+    loadPlayground,
+    recordAlerts,
+    recordedAlerts,
+} from './helpers';
 
 test.describe('App Loading', () => {
     test('default load shows hello-world example', async ({ page }) => {
@@ -46,16 +51,17 @@ test.describe('App Loading', () => {
     test('invalid example falls back to hello-world with warning', async ({
         page,
     }) => {
+        await recordAlerts(page);
         await page.goto('/?example=nonexistent');
 
         // Should show a warning toast about unknown example
-        await expect(page.getByRole('alert').first()).toContainText(
-            'Unknown example',
-        );
+        await expect
+            .poll(() => recordedAlerts(page), { timeout: COMPILE_TIMEOUT_MS })
+            .toContainEqual(expect.stringContaining('Unknown example'));
 
         // Should still load and compile successfully (hello-world fallback)
         await expect(page.getByRole('button', { name: /build/ })).toBeVisible({
-            timeout: 15_000,
+            timeout: COMPILE_TIMEOUT_MS,
         });
 
         // File explorer should show hello-world structure
@@ -69,7 +75,7 @@ test.describe('App Loading', () => {
 
         // The build directory should eventually appear after compilation
         await expect(page.getByRole('button', { name: /build/ })).toBeVisible({
-            timeout: 15_000,
+            timeout: COMPILE_TIMEOUT_MS,
         });
     });
 });
