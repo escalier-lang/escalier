@@ -15,6 +15,7 @@ func TestMain(m *testing.M) {
 		fmt.Fprintln(os.Stderr, err)
 		os.Exit(1)
 	}
+	// The tests exercise the server as main configures it, on internal/checker.
 	useLegacyChecker()
 
 	// Load and type-check the TypeScript prelude once, without a deadline, so
