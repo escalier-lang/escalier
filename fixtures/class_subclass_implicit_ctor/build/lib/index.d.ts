@@ -1,0 +1,12 @@
+export declare type Base = {x: number};
+export declare const Base: {new (x: number): Base};
+export declare type Derived = {y: number};
+export declare const Derived: {new (x: number, y: number): Derived};
+export declare type Seeded = {x: number};
+export declare const Seeded: {new (seed: string): Seeded};
+export declare type FromSeed = {y: number};
+export declare const FromSeed: {new (seed: string, y: number): FromSeed};
+export declare type Leaf = {z: string};
+export declare const Leaf: {new (x: number, y: number, z: string): Leaf};
+declare const d: Derived;
+declare const leaf: Leaf;

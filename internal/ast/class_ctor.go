@@ -17,7 +17,7 @@ const selfParamName = "self"
 // `constructor(&mut self, x: number, y: number) { self.x = x; self.y = y }`.
 //
 // The element is nil for a class that declares a constructor, a `declare class`, and a
-// subclass, whose body would have to forward to `super(…)`.
+// subclass. ImplicitSubclassConstructor builds a subclass's.
 //
 // The second return names the field that blocked synthesis, which is a non-static field
 // whose computed key stableKeyExpr rejects. A caller that reports diagnostics says the
@@ -26,35 +26,144 @@ const selfParamName = "self"
 // internal/checker and JavaScript emission both call this, which is what makes them
 // agree on what a class constructs.
 func ImplicitConstructor(decl *ClassDecl) (*ConstructorElem, *FieldElem) {
-	if decl.Declare() || decl.Extends != nil {
+	if decl.Declare() || decl.Extends != nil || declaresConstructor(decl) {
 		return nil, nil
 	}
-	for _, bodyElem := range decl.Body {
-		if _, declared := bodyElem.(*ConstructorElem); declared {
-			return nil, nil
-		}
+	inits, blocker := implicitFieldInits(decl, FreeNamesInComputedKeys(decl), set.NewSet[string]())
+	if blocker != nil {
+		return nil, blocker
+	}
+	classSpan := decl.Name.Span()
+	params := []*Param{implicitSelfParam(classSpan)}
+	stmts := []Stmt{}
+	for _, init := range inits {
+		params = append(params, init.param)
+		rhs := NewIdent(init.param.Pattern.(*IdentPat).Name, init.field.Span())
+		stmts = append(stmts, init.assign(rhs))
+	}
+	return implicitConstructorElem(params, stmts, classSpan), nil
+}
+
+// ImplicitSubclassConstructor returns the constructor a subclass that declares none gets.
+// It takes the superclass constructor's arguments followed by one argument per required
+// instance field, in declaration order. Its body passes the leading arguments to
+// `super(…)` and then assigns each field from its trailing argument.
+//
+// The superclass's parameters are not visible from decl, so the constructor gathers every
+// argument into one rest parameter and splits it from the end. For
+// `class Derived extends Base { y: number }` that is
+//
+//	constructor(&mut self, ...args) {
+//	    super(...args.slice(0, args.length - 1))
+//	    self.y = args[args.length - 1]
+//	}
+//
+// The second return holds the parameter a typed signature gives each field, in the order
+// the fields take their arguments. A field whose key binds no name takes a generated
+// `_field<N>`, the way ImplicitConstructor names it.
+//
+// The element is nil for a class without an `extends` clause, a class that declares a
+// constructor, and a `declare class`. The third return names the field that blocked
+// synthesis, as it does for ImplicitConstructor.
+func ImplicitSubclassConstructor(decl *ClassDecl) (*ConstructorElem, []*Param, *FieldElem) {
+	if decl.Declare() || decl.Extends == nil || declaresConstructor(decl) {
+		return nil, nil, nil
+	}
+	freeKeyNames := FreeNamesInComputedKeys(decl)
+	restName := "args"
+	for i := 1; freeKeyNames.Contains(restName); i++ {
+		restName = fmt.Sprintf("args%d", i)
+	}
+	inits, blocker := implicitFieldInits(decl, freeKeyNames, set.FromSlice([]string{restName}))
+	if blocker != nil {
+		return nil, nil, blocker
 	}
 
 	classSpan := decl.Name.Span()
+	restPat := NewRestPat(NewIdentPat(restName, false /* not mutable */, nil, nil, classSpan), classSpan)
+	params := []*Param{implicitSelfParam(classSpan), {Pattern: restPat}}
 
-	// At the class-name span, so a diagnostic against the synthesized constructor
-	// lands on the header.
+	// args.length - n, the index of the argument n places from the end.
+	fromEnd := func(n int) Expr {
+		length := NewMember(NewIdent(restName, classSpan), NewIdentifier("length", classSpan), false, classSpan)
+		return NewBinary(length, NewLitExpr(NewNumber(float64(n), classSpan)), Minus, classSpan)
+	}
+
+	var superArgs Expr = NewIdent(restName, classSpan)
+	if len(inits) > 0 {
+		slice := NewMember(NewIdent(restName, classSpan), NewIdentifier("slice", classSpan), false, classSpan)
+		superArgs = NewCall(slice, []Expr{NewLitExpr(NewNumber(0, classSpan)), fromEnd(len(inits))}, false, classSpan)
+	}
+	superCall := NewSuperCall([]Expr{NewArraySpread(superArgs, classSpan)}, classSpan)
+	stmts := []Stmt{NewExprStmt(superCall, classSpan)}
+
+	fieldParams := make([]*Param, 0, len(inits))
+	for i, init := range inits {
+		fieldParams = append(fieldParams, init.param)
+		fieldSpan := init.field.Span()
+		rhs := NewIndex(NewIdent(restName, fieldSpan), fromEnd(len(inits)-i), false, fieldSpan)
+		stmts = append(stmts, init.assign(rhs))
+	}
+	return implicitConstructorElem(params, stmts, classSpan), fieldParams, nil
+}
+
+// declaresConstructor reports whether decl writes a `constructor` block.
+func declaresConstructor(decl *ClassDecl) bool {
+	for _, bodyElem := range decl.Body {
+		if _, declared := bodyElem.(*ConstructorElem); declared {
+			return true
+		}
+	}
+	return false
+}
+
+// implicitSelfParam returns the `mut self` receiver a synthesized constructor binds. It sits
+// at the class-name span, so a diagnostic against the synthesized constructor lands on the
+// header.
+func implicitSelfParam(classSpan Span) *Param {
 	selfPat := NewIdentPat(selfParamName, true /* mutable */, nil, nil, classSpan)
-	selfParam := &Param{Pattern: selfPat, TypeAnn: nil, Optional: false}
-	params := []*Param{selfParam}
-	stmts := []Stmt{}
+	return &Param{Pattern: selfPat, TypeAnn: nil, Optional: false}
+}
 
-	// A name a computed key reads cannot also be a parameter, so it is settled first
-	// and the direct-name decision below consults it.
-	freeKeyNames := FreeNamesInComputedKeys(decl)
+// implicitConstructorElem wraps a synthesized constructor's parameters and statements in the
+// element a class body holds.
+func implicitConstructorElem(params []*Param, stmts []Stmt, classSpan Span) *ConstructorElem {
+	body := &Block{Stmts: stmts, Span: classSpan}
+	fnExpr := NewFuncExpr(nil, nil, params, nil, nil, false, body, classSpan)
+	return &ConstructorElem{
+		Fn:       fnExpr,
+		Receiver: &MethodReceiver{Mut: true, Span_: classSpan},
+		Private:  false,
+		Span_:    classSpan,
+	}
+}
 
+// implicitFieldInit is what a synthesized constructor needs for one required field: the
+// field, the parameter its value arrives in, and the target `self.<name>` or
+// `self[<key>]` the value is assigned to.
+type implicitFieldInit struct {
+	field *FieldElem
+	param *Param
+	lhs   Expr
+}
+
+// assign returns the statement that stores rhs into the field.
+func (init implicitFieldInit) assign(rhs Expr) Stmt {
+	span := init.field.Span()
+	return NewExprStmt(NewBinary(init.lhs, rhs, Assign, span), span)
+}
+
+// implicitFieldInits returns one implicitFieldInit per required instance field of decl, in
+// declaration order. freeKeyNames is FreeNamesInComputedKeys(decl). A generated `_field<N>`
+// parameter name avoids every name in reserved.
+//
+// The second return names the field that blocked synthesis, a non-static field whose
+// computed key stableKeyExpr rejects. The inits are nil when it is set.
+func implicitFieldInits(decl *ClassDecl, freeKeyNames, reserved set.Set[string]) ([]implicitFieldInit, *FieldElem) {
 	// Collected before any parameter is built, so a generated name can avoid them.
 	// `class C { _field1: number, "a-b": string }` would otherwise bind `_field1`
 	// twice, a SyntaxError, and assign the first field's value to the second.
-	taken := set.NewSet[string]()
-	for name := range freeKeyNames {
-		taken.Add(name)
-	}
+	taken := reserved.Union(freeKeyNames)
 	for _, bodyElem := range decl.Body {
 		if field, ok := bodyElem.(*FieldElem); ok && TakesConstructorParam(field) {
 			if name, direct := directParamName(field.Name, freeKeyNames); direct {
@@ -64,6 +173,7 @@ func ImplicitConstructor(decl *ClassDecl) (*ConstructorElem, *FieldElem) {
 	}
 	generated := 0
 
+	var inits []implicitFieldInit
 	for _, bodyElem := range decl.Body {
 		field, ok := bodyElem.(*FieldElem)
 		if !ok || !TakesConstructorParam(field) {
@@ -99,7 +209,7 @@ func ImplicitConstructor(decl *ClassDecl) (*ConstructorElem, *FieldElem) {
 				}
 				keyExpr = k.Expr
 			default:
-				panic("ImplicitConstructor: unexpected ObjKey variant")
+				panic("implicitFieldInits: unexpected ObjKey variant")
 			}
 			for {
 				generated++
@@ -112,26 +222,14 @@ func ImplicitConstructor(decl *ClassDecl) (*ConstructorElem, *FieldElem) {
 			lhs = NewIndex(selfRef, keyExpr, false, fieldSpan)
 		}
 
-		rhs := NewIdent(paramName, fieldSpan)
 		paramPat := NewIdentPat(paramName, false /* not mutable */, nil, nil, fieldSpan)
-		params = append(params, &Param{
-			Pattern:  paramPat,
-			TypeAnn:  field.Type,
-			Optional: false,
+		inits = append(inits, implicitFieldInit{
+			field: field,
+			param: &Param{Pattern: paramPat, TypeAnn: field.Type, Optional: false},
+			lhs:   lhs,
 		})
-
-		assign := NewBinary(lhs, rhs, Assign, fieldSpan)
-		stmts = append(stmts, NewExprStmt(assign, fieldSpan))
 	}
-
-	body := &Block{Stmts: stmts, Span: classSpan}
-	fnExpr := NewFuncExpr(nil, nil, params, nil, nil, false, body, classSpan)
-	return &ConstructorElem{
-		Fn:       fnExpr,
-		Receiver: &MethodReceiver{Mut: true, Span_: classSpan},
-		Private:  false,
-		Span_:    classSpan,
-	}, nil
+	return inits, nil
 }
 
 // stableKeyExpr reports whether reading expr again gives what it gave when the class was

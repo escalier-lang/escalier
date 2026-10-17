@@ -1,7 +1,6 @@
 package codegen
 
 import (
-	"strings"
 	"testing"
 
 	"github.com/stretchr/testify/require"
@@ -285,8 +284,66 @@ func TestEmitsTheImplicitConstructor(t *testing.T) {
 	}
 }
 
+// TestEmitsTheImplicitSubclassConstructor covers the constructor a subclass that declares
+// none gets, which ast.ImplicitSubclassConstructor derives. It gathers every argument, passes
+// all but the subclass's own to `super(…)`, and assigns each own field from the arguments
+// left at the end.
+func TestEmitsTheImplicitSubclassConstructor(t *testing.T) {
+	tests := []struct {
+		name string
+		src  string
+		want string
+	}{
+		{
+			name: "ASubclassForwardsItsLeadingArguments",
+			src: `class Derived extends Base {
+				y: number,
+				z: string,
+			}`,
+			want: `export class Derived extends Base {
+  constructor(...temp1) {
+    const args = temp1;
+    super(...args.slice(0, args.length - 2));
+    this.y = args[args.length - 2];
+    this.z = args[args.length - 1];
+  }
+}`,
+		},
+		{
+			name: "AFieldlessSubclassForwardsEveryArgument",
+			src:  `class Derived extends Base {}`,
+			want: `export class Derived extends Base {
+  constructor(...temp1) {
+    const args = temp1;
+    super(...args);
+  }
+}`,
+		},
+		{
+			// A computed key reading `args` keeps the rest parameter off that name.
+			name: "TheRestParameterAvoidsANameAKeyReads",
+			src: `class Derived extends Base {
+				[args]: number,
+			}`,
+			want: `export class Derived extends Base {
+  constructor(...temp1) {
+    const args1 = temp1;
+    super(...args1.slice(0, args1.length - 1));
+    this[args] = args1[args1.length - 1];
+  }
+}`,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := buildSource(t, tt.src)
+			require.Equal(t, tt.want, got)
+		})
+	}
+}
+
 // TestEmitsNoImplicitConstructor covers the classes that get none. A declared
-// constructor is emitted as written rather than joined by a second one, and the four
+// constructor is emitted as written rather than joined by a second one, and the three
 // shapes with no derivable constructor emit a body without one.
 func TestEmitsNoImplicitConstructor(t *testing.T) {
 	// A declared constructor is the one emitted, so the class carries exactly one.
@@ -311,20 +368,6 @@ func TestEmitsNoImplicitConstructor(t *testing.T) {
 			x: number,
 		}`)
 		require.NotContains(t, got, "constructor")
-	})
-
-	// A subclass's constructor would have to forward to `super(…)`, so the checkers
-	// require it to declare its own and emission derives none.
-	t.Run("ASubclassGetsNone", func(t *testing.T) {
-		got := buildSource(t, `class Base {
-			x: number,
-		}
-		class Derived extends Base {
-			y: number,
-		}`)
-		require.Contains(t, got, "export class Derived extends Base {")
-		require.Equal(t, 1, strings.Count(got, "constructor"),
-			"only Base gets a derived constructor")
 	})
 
 	// A key a call produces answers differently per call, so no constructor is derived

@@ -1396,7 +1396,7 @@ func (*MethodOverloadReceiverMismatchError) isSolverError() {}
 func (*DuplicateObjectMemberError) isSolverError()          {}
 func (*DuplicateConstructorSignatureError) isSolverError()  {}
 func (*FieldInitializerNotAllowedError) isSolverError()     {}
-func (*SubclassConstructorRequiredError) isSolverError()    {}
+func (*SubclassConstructorSynthesisError) isSolverError()   {}
 func (*CallSignatureRequiresDeclareError) isSolverError()   {}
 func (*WriteOnlyPropertyError) isSolverError()              {}
 func (*ReadOnlyPropertyError) isSolverError()               {}
@@ -2050,17 +2050,17 @@ func (e *FieldInitializerNotAllowedError) Message() string {
 	return "Field '" + soltype.DisplayMemberName(e.Name) + "' cannot have a `= expr` initializer; only static fields may use this form. Initialize instance fields in the constructor body."
 }
 
-// SubclassConstructorRequiredError fires when a class with an `extends` clause
-// declares no `constructor` block. Synthesizing one would silently skip the required
-// `super(...)` call, so the constructor must be written explicitly.
-type SubclassConstructorRequiredError struct {
-	Decl *ast.ClassDecl
+// SubclassConstructorSynthesisError fires when a class with an `extends` clause declares
+// no `constructor` block and no constructor can be synthesized for it. Reason says why.
+type SubclassConstructorSynthesisError struct {
+	Decl   *ast.ClassDecl
+	Reason string
 }
 
-func (e *SubclassConstructorRequiredError) Span() ast.Span      { return e.Decl.Name.Span() }
-func (e *SubclassConstructorRequiredError) Related() []ast.Span { return nil }
-func (e *SubclassConstructorRequiredError) Message() string {
-	return "Subclasses must declare an explicit `constructor` block; constructor synthesis is not supported for classes with an `extends` clause."
+func (e *SubclassConstructorSynthesisError) Span() ast.Span      { return e.Decl.Name.Span() }
+func (e *SubclassConstructorSynthesisError) Related() []ast.Span { return nil }
+func (e *SubclassConstructorSynthesisError) Message() string {
+	return fmt.Sprintf("class `%s` must declare a constructor, since none can be synthesized: %s", e.Decl.Name.Name, e.Reason)
 }
 
 // CallSignatureRequiresDeclareError fires when a class with a body declares a

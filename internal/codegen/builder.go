@@ -971,7 +971,12 @@ func (b *Builder) buildDeclWithNamespace(decl ast.Decl, nsName string) []Stmt {
 		b.reservedTempNames = prevReserved.Union(ast.FreeNamesInComputedKeys(d))
 
 		elems := d.Body
+		// A subclass forwards its leading arguments to `super(…)`, which needs no
+		// knowledge of the superclass, so emission derives it the same way. At most one of
+		// the two applies, since only a subclass gets the second.
 		if synth, _ := ast.ImplicitConstructor(d); synth != nil {
+			elems = append([]ast.ClassElem{synth}, d.Body...)
+		} else if synth, _, _ := ast.ImplicitSubclassConstructor(d); synth != nil {
 			elems = append([]ast.ClassElem{synth}, d.Body...)
 		}
 		classElems, classStmts := b.buildClassElems(elems, superClass != nil)
