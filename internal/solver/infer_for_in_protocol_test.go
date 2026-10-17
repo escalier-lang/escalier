@@ -132,11 +132,109 @@ func TestForInRejectsWhatDeclaresNoProtocolMember(t *testing.T) {
 			`,
 			want: "Seq is not iterable",
 		},
+		{
+			// A read of `n` binds a fresh variable, and the report names the type that
+			// variable resolves to.
+			name: "ADeclaredValue",
+			src: `
+				declare val n: number
+				fn use() { for x in n { x } }
+			`,
+			want: "number is not iterable",
+		},
+		{
+			name: "AnInterfaceWhoseParentsDeclareNoMember",
+			src: `
+				interface Sized { size: number }
+				interface Bag extends Sized { name: string }
+				fn use(b: Bag) { for x in b { x } }
+			`,
+			want: "Bag is not iterable",
+		},
+		{
+			// The lookup walks each interface's parents, so it has to stop once it
+			// reaches an interface it already expanded.
+			name: "AnExtendsCycle",
+			src: `
+				interface A extends B { a: number }
+				interface B extends A { b: number }
+				fn use(s: A) { for x in s { x } }
+			`,
+			want: "A is not iterable",
+		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			_, _, errs := inferSource(t, tt.src)
 			require.Equal(t, []string{tt.want}, errorMessagesOf(errs))
+		})
+	}
+}
+
+// TestForInOverAnIntersection covers an operand whose type is an intersection. An interface
+// with an `extends` clause expands to one made of its parents and its own body, so the
+// protocol member is read from the body when the interface declares it and from a parent
+// otherwise. An arm whose member iteration cannot call leaves the lookup to the other arms.
+func TestForInOverAnIntersection(t *testing.T) {
+	tests := []struct {
+		name string
+		src  string
+		want string
+	}{
+		{
+			name: "TheOwnMemberAnswers",
+			src: `
+				interface Seq<T> extends Iterator<T> { [Symbol.iterator]() -> Seq<T> }
+				fn use(s: Seq<number>) { for x in s { return x } }
+			`,
+			want: "fn (s: Seq<number>) -> number",
+		},
+		{
+			name: "AnInheritedMemberAnswers",
+			src: `
+				interface Named { name: string }
+				interface Seq extends Named, Iterable<number> { size: number }
+				fn use(s: Seq) { for x in s { return x } }
+			`,
+			want: "fn (s: Seq) -> number",
+		},
+		{
+			// Both halves declare the member, and the interface's own declaration
+			// replaces the one it inherits.
+			name: "TheOwnMemberWinsOverTheInheritedOne",
+			src: `
+				interface Base { [Symbol.iterator]() -> Iterator<number> }
+				interface Seq extends Base { [Symbol.iterator]() -> Iterator<string> }
+				fn use(s: Seq) { for x in s { return x } }
+			`,
+			want: "fn (s: Seq) -> string",
+		},
+		{
+			// The second arm's member demands an argument, so the first arm answers.
+			name: "AnArmIterationCannotCallIsSkipped",
+			src: `
+				type Seq = Iterable<number> & {[Symbol.iterator](&self, hint: string) -> Iterator<string>}
+				fn use(s: Seq) { for x in s { return x } }
+			`,
+			want: "fn (s: Seq) -> number",
+		},
+		{
+			// Both arms expand `Wrap`. The lookup reads the second arm first, and
+			// expanding `Wrap` there does not stop it expanding `Wrap` in the first arm.
+			name: "TwoArmsReachingOneAlias",
+			src: `
+				type Wrap<T> = T
+				type Seq = Wrap<Iterable<number>> & Wrap<{size: number}>
+				fn use(s: Seq) { for x in s { return x } }
+			`,
+			want: "fn (s: Seq) -> number",
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			values, _, errs := inferSource(t, tt.src)
+			require.Empty(t, errorMessagesOf(errs))
+			require.Equal(t, tt.want, values["use"])
 		})
 	}
 }
@@ -522,6 +620,58 @@ func TestIterationAgainstStdlib(t *testing.T) {
 			name: "InexactTupleBeforeAnIterableSpread",
 			src:  `fn f(xs: Array<number>, t: [string, ...]) { return [...t, ...xs] }`,
 			want: map[string]string{"f": "fn (xs: Array<number>, t: [string, ...]) -> [string, ...Array<unknown>]"},
+		},
+		{
+			// `IterableIterator` extends `Iterator` and declares `[Symbol.iterator]` in its
+			// own body, so its type expands to an intersection of the parent and that body.
+			name: "ForInOverAnIterableIterator",
+			src: `
+				declare val it: IterableIterator<number>
+				fn first() { for x in it { return x } }
+			`,
+			want: map[string]string{"first": "fn () -> number"},
+		},
+		{
+			name: "ForAwaitOverAnAsyncIterableIterator",
+			src: `
+				declare val it: AsyncIterableIterator<number>
+				async fn first() { for await x in it { return x } }
+			`,
+			want: map[string]string{"first": "fn () -> Promise<number>"},
+		},
+		{
+			// `keys` returns `MapIterator<K>`, which extends `IteratorObject`, which in
+			// turn extends `Iterator` and `Disposable`.
+			name: "ForInOverMapKeys",
+			src: `
+				declare val m: Map<string, number>
+				fn first() { for x in m.keys() { return x } }
+			`,
+			want: map[string]string{"first": "fn () -> string"},
+		},
+		{
+			name: "SpreadMapKeys",
+			src: `
+				declare val m: Map<string, number>
+				fn all() { return [...m.keys()] }
+			`,
+			want: map[string]string{"all": "fn () -> Array<string>"},
+		},
+		{
+			name: "SpreadAnIterableIterator",
+			src: `
+				declare val it: IterableIterator<number>
+				fn all() { return [...it] }
+			`,
+			want: map[string]string{"all": "fn () -> Array<number>"},
+		},
+		{
+			name: "YieldFromAnIterableIterator",
+			src: `
+				declare val it: IterableIterator<number>
+				gen fn each() { yield from it }
+			`,
+			want: map[string]string{"each": "fn () -> Generator<number, undefined, unknown>"},
 		},
 		{
 			name: "GeneratorWithOneTypeArgument",

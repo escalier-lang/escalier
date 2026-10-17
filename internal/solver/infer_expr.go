@@ -4590,11 +4590,11 @@ func (c *checker) delegateElemType(t soltype.Type) (soltype.Type, soltype.Type, 
 // first when the delegating body is async and through the sync one otherwise.
 func (c *checker) delegateSlots(t soltype.Type) ([]soltype.Type, bool) {
 	if c.fn != nil && c.fn.async {
-		if typeArgs, found := c.protocolIterator(t, soltype.AsyncIteratorSymbolMember); found {
+		if typeArgs, found := c.protocolIterator(t, true); found {
 			return typeArgs, true
 		}
 	}
-	return c.protocolIterator(t, soltype.IteratorSymbolMember)
+	return c.protocolIterator(t, false)
 }
 
 // meetNexts combines the Next slots a generator must satisfy at once into the single
@@ -5319,7 +5319,12 @@ func (c *checker) rethrowUnhandled(scope *Scope, e *ast.TryCatchExpr, collected,
 // caller decides against that type rather than against the alias handle. A seen-set of names
 // breaks a degenerate cycle such as `type A = A`. A non-alias is returned unchanged.
 func (c *checker) expandAliasChain(t soltype.Type) soltype.Type {
-	seen := set.NewSet[string]()
+	return c.expandAliasChainFrom(t, set.NewSet[string]())
+}
+
+// expandAliasChainFrom is expandAliasChain over a seen-set the caller owns. It adds each name
+// it expands to seen and stops at a name already there, returning that alias unexpanded.
+func (c *checker) expandAliasChainFrom(t soltype.Type, seen set.Set[string]) soltype.Type {
 	for {
 		at, ok := t.(*soltype.AliasType)
 		if !ok || seen.Contains(at.Name) {

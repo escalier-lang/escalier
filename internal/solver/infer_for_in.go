@@ -56,7 +56,9 @@ func (c *checker) inferForIn(scope *Scope, lvl int, s *ast.ForInStmt) soltype.Ty
 		// walk rejection.
 		_, brokenIterable := soltype.CarrierOf(iterable).(*soltype.ErrorType)
 		if !awaitRejected && !brokenIterable {
-			c.report(&NotIterableError{Iterable: s.Iterable, Type: iterable, Await: s.IsAwait})
+			// Reading `it` in `declare val it: number` binds a fresh variable with `number`
+			// as its lower bound, so the report names `number` rather than the variable.
+			c.report(&NotIterableError{Iterable: s.Iterable, Type: reportedOperand(iterable), Await: s.IsAwait})
 		}
 		// Recover with the ErrorType placeholder so the loop variable does not leak
 		// an unsolved inference variable, and so a pattern binding against it absorbs
@@ -85,6 +87,20 @@ func (c *checker) inferForIn(scope *Scope, lvl int, s *ast.ForInStmt) soltype.Ty
 	c.bindPattern(bodyScope, lvl, s.Pattern, elem, nil)
 	c.inferBlock(bodyScope, lvl, &s.Body)
 	return &soltype.UndefinedType{}
+}
+
+// reportedOperand returns the type a diagnostic names for an operand of type t. An inference
+// variable is coalesced to the union of its lower bounds, keeping any borrow around it. A
+// variable with no lower bound coalesces to `never`, a type the source did not write, so that
+// variable is returned unchanged. Any other type is returned unchanged.
+func reportedOperand(t soltype.Type) soltype.Type {
+	if !carrierIsVar(t) {
+		return t
+	}
+	if solved := coalesce(t, soltype.Positive); !isNeverType(soltype.CarrierOf(solved)) {
+		return solved
+	}
+	return t
 }
 
 // constrainIterationRaise sends what advancing t may raise into the enclosing throws
@@ -162,7 +178,7 @@ func (c *checker) asyncElemType(t soltype.Type) (soltype.Type, bool) {
 		}
 		return newUnion(c.ctx, elems), true
 	}
-	return c.protocolElem(t, soltype.AsyncIteratorSymbolMember)
+	return c.protocolElem(t, true)
 }
 
 // syncElemType resolves the element type of a synchronously-iterable value. A borrow is
@@ -211,23 +227,25 @@ func (c *checker) syncElemType(t soltype.Type) (soltype.Type, bool) {
 		}
 		return newUnion(c.ctx, elems), true
 	}
-	return c.protocolElem(t, soltype.IteratorSymbolMember)
+	return c.protocolElem(t, false)
 }
 
 // protocolElem returns the element type t yields through the iteration protocol, and
-// false when t declares no such member. It is protocolIterator's first slot.
-func (c *checker) protocolElem(t soltype.Type, symbol string) (soltype.Type, bool) {
-	typeArgs, found := c.protocolIterator(t, symbol)
+// false when t declares no such member. It is protocolIterator's first slot, and async
+// picks the protocol the way it does there.
+func (c *checker) protocolElem(t soltype.Type, async bool) (soltype.Type, bool) {
+	typeArgs, found := c.protocolIterator(t, async)
 	if !found || len(typeArgs) == 0 {
 		return nil, false
 	}
 	return typeArgs[0], true
 }
 
-// protocolIterator returns the type arguments of the iterator the member named by symbol
-// hands back, and false when t declares no such member.
+// protocolIterator returns the type arguments of the iterator t's protocol member hands back,
+// and false when t declares no such member. The member is `[Symbol.asyncIterator]` when async
+// is true and `[Symbol.iterator]` otherwise.
 //
-// It reads that member off t's member view and takes the arguments of what calling it
+// It finds that member through protocolReturn and takes the arguments of what calling it
 // evaluates to. `Array<T>` declares `[Symbol.iterator](&self) -> ArrayIterator<T>`, so the
 // lookup lands on that method and the arguments are the one `T` in its return.
 //
@@ -237,16 +255,12 @@ func (c *checker) protocolElem(t soltype.Type, symbol string) (soltype.Type, boo
 // it accepts from a sent value. A shorter list states only the slots it carries. A member
 // returning something with no type argument yields nothing readable and declines, so the
 // operand is reported not iterable rather than iterating `unknown`.
-func (c *checker) protocolIterator(t soltype.Type, symbol string) ([]soltype.Type, bool) {
-	body, viewed := c.iterationView(t)
-	if !viewed {
-		return nil, false
+func (c *checker) protocolIterator(t soltype.Type, async bool) ([]soltype.Type, bool) {
+	symbol := soltype.IteratorSymbolMember
+	if async {
+		symbol = soltype.AsyncIteratorSymbolMember
 	}
-	member, found := body.ReadMember(symbol)
-	if !found {
-		return nil, false
-	}
-	ret, returns := nullaryReturn(member)
+	ret, returns := c.protocolReturn(t, symbol, set.NewSet[string]())
 	if !returns {
 		return nil, false
 	}
@@ -337,30 +351,66 @@ func acceptsNoArguments(sig *soltype.FuncType) bool {
 	return true
 }
 
-// iterationView returns the member list a protocol lookup reads t's `[Symbol.iterator]`
-// off. A class instance projects its body with the arguments it is reached at, an
-// interface reference expands to the object it stands for, and an object literal's type
-// is already that object. A primitive reads its wrapper class's body, so a `string`
-// iterates through the `[Symbol.iterator]` that `String` declares. Every other type
-// carries no members and declines.
+// protocolReturn returns what calling the member named by symbol on t with no arguments
+// evaluates to, and false when t carries no such member or nullaryReturn declines it.
 //
-// The operand is normalized first, the same way the structural walk normalizes it: a
-// borrow is peeled, since iterating `&xs` reads the same members as `xs`, and an
-// inference variable is coalesced to its lower-bound shape. An alias is then followed to
-// the end of its chain, so `type Nums = Array<number>` iterates the way the class it
-// names does.
-func (c *checker) iterationView(t soltype.Type) (*soltype.ObjectType, bool) {
-	switch t := c.expandAliasChain(groundedCarrier(t)).(type) {
+// t is normalized first: a borrow is peeled, since iterating `&xs` reads the same members as
+// `xs`, and an inference variable is coalesced to its lower-bound shape. An alias is then
+// followed to the end of its chain, so `type Nums = Array<number>` reads the member the
+// class it names declares. What the chain ends at decides where the member is read:
+//
+//   - A class instance reads its body projected at the arguments it is reached at.
+//   - An object type reads its own member list. An interface without an `extends` clause
+//     expands to one.
+//   - An intersection reads its arms in armsByPrecedence order and answers with the first
+//     arm whose member nullaryReturn accepts.
+//   - A primitive reads its wrapper class's body, so a `string` iterates through the
+//     `[Symbol.iterator]` that `String` declares.
+//
+// Every other type carries no members and declines.
+//
+// That order serves an interface with an `extends` clause, so a member the interface declares
+// is read over the one a parent supplies. `IterableIterator<T>` expands to
+// `Iterator<T> & {[Symbol.iterator]() -> IterableIterator<T>}` and reads its own declaration.
+// For an intersection written in source, every arm's member applies to the value, so the
+// element any one arm reports is a supertype of what the value yields.
+//
+// seen holds the alias names expanded on the path from the operand to t, so an `extends`
+// cycle stops rather than recursing forever. Each arm gets its own copy, since two arms
+// can reach the same alias at different arguments.
+func (c *checker) protocolReturn(t soltype.Type, symbol string, seen set.Set[string]) (soltype.Type, bool) {
+	var member soltype.ObjTypeElem
+	found := false
+	switch t := c.expandAliasChainFrom(groundedCarrier(t), seen).(type) {
 	case *soltype.ObjectType:
-		return t, true
+		member, found = t.ReadMember(symbol)
 	case *soltype.ClassType:
-		return c.ctx.projectClassBody(t)
+		member, found = c.declaredClassMember(t, symbol)
+	case *soltype.IntersectionType:
+		for _, arm := range armsByPrecedence(t) {
+			if ret, returns := c.protocolReturn(arm, symbol, seen.Clone()); returns {
+				return ret, true
+			}
+		}
 	default:
 		if wrapper, ok := c.primitiveWrapper(t); ok {
-			return c.ctx.projectClassBody(wrapper)
+			member, found = c.declaredClassMember(wrapper, symbol)
 		}
 	}
-	return nil, false
+	if !found {
+		return nil, false
+	}
+	return nullaryReturn(member)
+}
+
+// declaredClassMember returns the member named by symbol that ct's body declares, projected
+// at ct's arguments.
+func (c *checker) declaredClassMember(ct *soltype.ClassType, symbol string) (soltype.ObjTypeElem, bool) {
+	body, ok := c.ctx.projectClassBody(ct)
+	if !ok {
+		return nil, false
+	}
+	return body.ReadMember(symbol)
 }
 
 // nominalTypeArgs returns the type arguments of a nominal reference, and false for a

@@ -1,6 +1,9 @@
 package solver
 
 import (
+	"iter"
+	"slices"
+
 	"github.com/escalier-lang/escalier/internal/ast"
 	"github.com/escalier-lang/escalier/internal/provenance"
 	"github.com/escalier-lang/escalier/internal/soltype"
@@ -188,7 +191,22 @@ func (c *checker) inferInterfaceBody(sh *interfaceShell) {
 	// The parents stay as the references they resolved to, so a parent still being
 	// built is named rather than read. That is what lets `interface A {b: B}` and
 	// `interface B extends A {x}` resolve each other.
-	sh.def.Body = &soltype.IntersectionType{Types: append(parents, own)}
+	sh.def.Body = extendedInterfaceBody(parents, own)
+}
+
+// extendedInterfaceBody returns the body of an interface with an `extends` clause: the meet
+// of parents and own, with own as the last arm. armsByPrecedence reads the arms back in the
+// order this builds them.
+func extendedInterfaceBody(parents []soltype.Type, own *soltype.ObjectType) *soltype.IntersectionType {
+	return &soltype.IntersectionType{Types: append(parents, soltype.Type(own))}
+}
+
+// armsByPrecedence yields the arms of `it`, most specific first. For a body
+// extendedInterfaceBody built, that is the interface's own members, then each parent from
+// the last listed to the first. A lookup that stops at the first arm declaring a member
+// therefore reads the declaration the interface itself wrote over one a parent supplies.
+func armsByPrecedence(it *soltype.IntersectionType) iter.Seq2[int, soltype.Type] {
+	return slices.Backward(it.Types)
 }
 
 // recordInterfaceReceivers stores on def the receiver each method, getter, and setter in body
