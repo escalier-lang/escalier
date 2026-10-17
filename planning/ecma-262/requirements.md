@@ -162,11 +162,14 @@ ranking.
    `return O` / `return M` aliases the receiver; a return of a
    freshly-allocated value from `ArrayCreate` / `OrdinaryObjectCreate` /
    `ArraySpeciesCreate` does not. This maps onto the signals the
-   checker's lifetime inference already uses, and the elision rules
-   (lifetimes Phase 11) already cover the common return-self and
-   return-fresh cases without per-method data. The alias facts are a
-   secondary output of the same analysis, surfaced to a human editing
-   lifetime annotations, not an automatic annotator.
+   checker's lifetime inference already uses. The elision rules of
+   lifetimes Phase 11 cover return-fresh without per-method data. They do
+   not cover return-self. Elision counts only a signature's parameters,
+   and a method's receiver is a field of its own, so a return that borrows
+   the receiver has to be annotated. Phase 11 also reaches body-less
+   `declare fn` declarations only, leaving interface methods to Phase 12.
+   The alias facts are a secondary output of the same analysis, surfaced
+   to a human editing lifetime annotations, not an automatic annotator.
 
 4. **Thrown exceptions — medium confidence, curation-grade.** The
    algorithm names the exception types it can raise, directly and
@@ -308,8 +311,12 @@ them:
   *non-mutating* method that returns self and should preserve whatever
   mutability the caller had — needs mutability polymorphism (a return
   mutability abstracted over the receiver's), which the affine checker
-  does not express today. No ECMA-262 builtin hits it: every builtin that
-  returns `this` mutates, so `-> &mut Self` covers them all. The
+  does not express today. Three ECMA-262 builtins hit it.
+  `Object.prototype.valueOf`, `Iterator.prototype [ @@iterator ]`, and
+  `AsyncIteratorPrototype [ @@asyncIterator ]` return `this` without
+  writing it, so each takes `&self` and annotates `-> &Self`, and a `mut`
+  caller gets an immutable receiver back. Every other `this`-returning
+  builtin mutates, so `-> &mut Self` covers the remaining twelve. The
   polymorphic case is deferred to the affine_semantics workstream, out of
   this workstream's scope.
 - **Whether a lifetime applies at all depends on the return type.** A
@@ -318,15 +325,29 @@ them:
   there. Only a reference-typed return carries a borrow/lifetime, and
   reference-versus-value is the return **type**, which comes from the
   typed source at the FR7 join, not from the shape-free fact.
-- **Elision already covers the common shapes.** Escalier's lifetime
-  elision infers the lifetime for return-self (`&self`/`&mut self` in,
-  borrow of self out) and needs none for return-fresh (owned). So FR4 adds
-  value only where elision gives up — a return that borrows a *non-receiver
-  parameter* (`param`) or mixes inputs (`union`) — and those are rare in
-  ECMA-262 (`Object.assign` returning its `target`; `Promise.resolve`
-  returning its argument or a fresh promise). Even there the concrete
-  annotation needs the typed signature (the borrow mutability, the union's
-  lifetime variables), so it is review input, not an auto-annotator.
+- **Elision covers some return-fresh, and no return-self.** Escalier's
+  lifetime elision needs no annotation for a value-typed return, and none
+  for a reference-typed one whose signature declares no reference
+  parameter. Those are the owned returns it gets right. A signature with
+  exactly one reference-typed parameter is where it goes wrong: elision
+  binds the return to that parameter whatever the algorithm actually hands
+  back, so even a `fresh` return there is over-constrained and needs its
+  annotation written. Elision also never binds a method's return to its
+  receiver. It counts a signature's parameters, and a method's receiver is
+  a field of its own, so every `receiver` return needs one written too.
+  The `.d.ts` import path skips elision and is annotated by the FR7
+  interop rules instead. Those rules read the declared types rather than
+  the algorithm, so they miss the aliasing wherever the declared return
+  type hides it. `Array.prototype.reverse` returns `this` and declares
+  `T[]`, and its `receiver` fact corrects both paths. `get
+  DataView.prototype.buffer` hands out an object the receiver holds and
+  declares an array buffer, and there FR4 only names the gap. The fact it
+  publishes is `unknown`, so closing that one waits on the
+  `receiverInterior` alias kind or on a hand-written override entry. FR4
+  also reaches the `param` and `union` shapes neither path covers at all.
+  Even there the concrete annotation needs the typed signature for the
+  borrow's mutability and the union's lifetime variables, so it is review
+  input, not an auto-annotator.
 
 ### Synchronous throws versus asynchronous rejections
 
@@ -452,9 +473,12 @@ return is a borrow tied to that parameter's lifetime, `fresh` is an owned
 return, and `union` is a lifetime union. It is recorded but not
 automatically converted into a `&`/lifetime annotation: the alias edge
 under-determines the annotation (return type reference-vs-value from the
-FR7 join, the borrow mutability, union lifetime variables), and elision
-already covers `receiver` and `fresh`, so FR4 mainly informs the rare
-`param`/`union` cases. See the ownership-model section above.
+FR7 join, the borrow mutability, union lifetime variables). Where it does
+change the annotation is every `receiver` return, which elision cannot
+reach, a `fresh` reference return whose signature has one reference
+parameter, which elision over-constrains, and `param` and `union`, which
+no rule covers. A return the analysis leaves `unknown` is not among them.
+It names a gap without closing it. See the ownership-model section above.
 
 ### FR5. Soundness bias
 
