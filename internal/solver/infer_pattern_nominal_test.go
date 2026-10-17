@@ -1173,6 +1173,13 @@ func TestInferInstancePatBaseClassOverSubclass(t *testing.T) {
 			want: "fn (p: ParseError | OtherError) -> number",
 		},
 		{
+			// A literal member cannot hold an `AppError`, so the union still narrows to the member
+			// that reaches the class.
+			name: "a literal member does not block the narrowing",
+			src:  `fn f(p: ParseError | "none") { return match p { AppError{code} => code, _ => 0 } }`,
+			want: `fn (p: ParseError | "none") -> number`,
+		},
+		{
 			// A caller can instantiate `U` as `Failure<number>`, so the arm does not narrow the
 			// union to its `Failure<string>` member, and `payload` is not bound as a `string`.
 			name: "a union with a type parameter member does not narrow",
