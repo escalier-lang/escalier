@@ -603,6 +603,19 @@ func (c *checker) inferFunc(scope *Scope, lvl int, sig ast.FuncSig, body *ast.Bl
 		// PR3: open a fresh function context so every ReturnStmt encountered while
 		// walking the body lands in our own returns list (a nested fn inside this
 		// body opens its own context, so its returns never leak out here).
+		// A function written inside an enclosing body captures that body's locals. That is
+		// every function expression written in a body, and a script's `fn` declaration,
+		// whose enclosing body is the script's. A module's `fn` declaration has no
+		// enclosing body.
+		var closure ast.Func
+		switch n := node.(type) {
+		case *ast.FuncExpr:
+			closure = n
+		case *ast.FuncDecl:
+			if c.fn != nil {
+				closure = n
+			}
+		}
 		saved := c.pushFuncCtx(sig.Async, node, lvl)
 		c.fn.throws = declaredThrows
 		if gen != nil {
@@ -620,7 +633,6 @@ func (c *checker) inferFunc(scope *Scope, lvl int, sig ast.FuncSig, body *ast.Bl
 		// parameter alias sets onto c.fn. recordParamVarIDs then copies each param's
 		// freshly-assigned VarID onto its binding so a closure capturing the param
 		// resolves to its alias set.
-		closure, _ := node.(*ast.FuncExpr)
 		extraVarIDs := c.runLivenessPrePass(fnScope, sig.Params, recv, closure, paramTypes, body)
 		recordParamVarIDs(fnScope, sig.Params)
 		recordExtraParamVarIDs(fnScope, extraVarIDs)

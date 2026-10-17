@@ -5,6 +5,7 @@ import (
 	"strconv"
 
 	"github.com/escalier-lang/escalier/internal/ast"
+	"github.com/escalier-lang/escalier/internal/liveness"
 	"github.com/escalier-lang/escalier/internal/provenance"
 	"github.com/escalier-lang/escalier/internal/set"
 	"github.com/escalier-lang/escalier/internal/soltype"
@@ -205,44 +206,59 @@ func (c *checker) bindScriptFunc(scope *Scope, lvl int, decl *ast.FuncDecl) {
 }
 
 // bindScriptFuncWithBody infers decl, a `fn` with a body written at a script's top level
-// as statement s, and binds its generalized type in scope. It types decl as the
-// `val name = fn …` declaration it stands for, so the body's captures of the script's
-// earlier bindings take the alias, borrow, and move checks such a closure takes. The
-// name is bound to a fresh variable while the body is walked, so the body can call
-// itself. A name scope already binds to an earlier function declaration reports
-// ScriptOverloadWithBodyError, and decl rebinds it.
+// as statement s, and binds its generalized type in scope. The body's captures of the
+// script's earlier bindings take the alias, borrow, and move checks a `val name = fn …`
+// closure's captures take. The name is bound to a fresh variable while the body is walked,
+// so the body can call itself. A name scope already binds to an earlier function
+// declaration reports ScriptOverloadWithBodyError, and decl rebinds it.
 func (c *checker) bindScriptFuncWithBody(scope *Scope, lvl int, s ast.Stmt, decl *ast.FuncDecl) {
 	name := decl.Name.Name
 	if _, prevDecl := ownFuncDecl(scope, name); prevDecl != nil {
 		c.checkScriptOverloadWithBody(decl, prevDecl)
 	}
 
-	closure := ast.NewFuncExpr(nil, nil, nil, nil, nil, false, decl.Body, decl.Span())
-	closure.FuncSig = decl.FuncSig
-	if c.closureDecls == nil {
-		c.closureDecls = map[*ast.FuncExpr]*ast.FuncDecl{}
-	}
-	c.closureDecls[closure] = decl
-
-	// The script's rename pass gave decl's name its VarID, and every later read of the
-	// name carries that VarID. The pattern takes it so defineLocal records the closure's
-	// aliases under it.
-	pat := ast.NewIdentPat(name, false, nil, nil, decl.Name.Span())
-	pat.VarID = decl.VarID
-	vd := ast.NewVarDecl(ast.ValKind, pat, nil, closure, false, false, decl.Span())
-
 	sources := []provenance.Provenance{&ast.NodeProvenance{Node: decl}}
-	// The recursive binding carries no VarID, so the closure's capture analysis does not
-	// count the name as a capture of a script local. The closure's pre-pass gives the name a
-	// VarID of its own inside the body instead, which seedSelfCaptureEdges reads.
+	// The recursive binding carries no VarID, so the body's capture analysis does not count
+	// the name as a capture of a script local. The body's pre-pass gives the name a VarID of
+	// its own inside the body instead, which seedSelfCaptureEdges reads.
 	self := c.freshAt(lvl + 1)
 	scope.defineValue(name, ValueBinding{Schemes: []TypeScheme{monoScheme(self)}, Sources: sources})
 
-	// The initializer is the closure, so inferVarDecl always produces a binding.
-	b, _ := c.inferVarDecl(scope, lvl, vd, self)
-	b.Sources = sources
-	c.recordType(decl.Name, schemeType(b.Schemes[0]))
-	c.defineLocal(scope, name, vd, b, s)
+	// The calls of the name take the capture loans, so writing the declaration takes none.
+	c.markNamedClosure(decl)
+	t, _ := c.inferFuncDecl(scope, lvl+1, decl)
+	c.recordCaptureLoans(scope, decl)
+	c.constrain(decl, t, self)
+	scheme := c.generalize(t, lvl)
+	c.recordType(decl.Name, schemeType(scheme))
+	b := ValueBinding{Schemes: []TypeScheme{scheme}, Sources: sources, Kind: ast.ValKind, VarID: decl.VarID}
+	scope.defineValue(name, b)
+	c.trackFuncDeclCaptures(scope, decl, bindingType(b), s)
+}
+
+// trackFuncDeclCaptures records what binding decl's name in the current body sets up for the
+// alias, move, and borrow checks. The name holds a fresh value, so it aliases nothing. It
+// joins the alias set of each local the body captures and holds a capture edge to each one,
+// so a call of the name takes the capture loans. bindingT is the name's type. s is the
+// statement decl is written as.
+func (c *checker) trackFuncDeclCaptures(scope *Scope, decl *ast.FuncDecl, bindingT soltype.Type, s ast.Stmt) {
+	if c.fn == nil || decl.VarID <= 0 {
+		return
+	}
+	id := liveness.VarID(decl.VarID)
+	c.recordVarIDType(id, bindingT)
+	if c.fn.aliases != nil {
+		c.fn.aliases.NewValue(id, aliasMutability(isMutableType(bindingT)))
+		c.trackCapturedAliases(scope, decl, id)
+	}
+	if c.fn.eagerBorrowGraph != nil {
+		c.clearEagerSubtree(id, nil)
+		c.addCaptureEdges(id, nil, decl)
+	}
+	if ref, ok := c.fn.stmtToRef[s]; ok {
+		c.flushBorrowDirty(ref)
+		c.dropLoansHeldBy(id)
+	}
 }
 
 // ownFuncDecl returns scope's own binding of name and the function declaration that

@@ -68,12 +68,7 @@ type checker struct {
 	// closureCaptureInfo holds the captures each closure's pre-pass found, keyed by the
 	// closure. The pre-pass defines a captured local as a parameter of the closure's body, so
 	// the closure's AST no longer marks it as captured once the pre-pass has run.
-	closureCaptureInfo map[*ast.FuncExpr][]liveness.CaptureInfo
-
-	// closureDecls maps each closure bindScriptFuncWithBody builds to the `fn` declaration
-	// it is typed in place of. Its body can call the declaration's name. It is nil until a
-	// script declares a `fn` with a body.
-	closureDecls map[*ast.FuncExpr]*ast.FuncDecl
+	closureCaptureInfo map[ast.Func][]liveness.CaptureInfo
 
 	// openVars holds the variables whose lower bounds do not cover every value they can
 	// hold. A parameter's variable is one, since a caller fills it. A pattern leaf with a
@@ -555,7 +550,7 @@ type funcCtx struct {
 	captureVarIDs set.Set[liveness.VarID]
 	// capturedLocals holds, for each closure written in this body, the locals of this body it
 	// captures that hold a reference-shaped value.
-	capturedLocals map[*ast.FuncExpr][]capturedLocal
+	capturedLocals map[ast.Func][]capturedLocal
 	// capturedTypes holds the binding type of every local in capturedLocals.
 	capturedTypes map[liveness.VarID]soltype.Type
 	// globalClosureStores records each store whose value may carry a closure into a
@@ -575,9 +570,10 @@ type funcCtx struct {
 	escapeSites []escapeSite
 	// namedClosures holds each closure that takes no loan where it is written. One is the
 	// initializer of a local name, as in `val f = fn () { … }`, whose captures are weighed at
-	// each call of the name and each call the name is passed to. Another is stored into a
-	// module-level binding, whose captures are weighed at each call after the store.
-	namedClosures set.Set[*ast.FuncExpr]
+	// each call of the name and each call the name is passed to. A script's `fn` declaration
+	// is weighed the same way. Another is stored into a module-level binding, whose captures
+	// are weighed at each call after the store.
+	namedClosures set.Set[ast.Func]
 	// loans holds every borrow bound to a name in this body, in source order. The exclusivity
 	// check compares each new borrow against the ones still live. See borrow_exclusivity.go.
 	loans []loan
