@@ -1565,11 +1565,24 @@ func TestInferMatchNarrowsByAbsentKeys(t *testing.T) {
 			wantErrs: []string{"1:70-1:100: match is not exhaustive; add a branch for `{radius: number, label: string}`"},
 		},
 		{
-			// An inexact member may carry `label` under any type, so absence proves nothing
-			// about it and the pattern still matches it.
-			name: "AnInexactMemberIsNotExcluded",
-			src:  `fn f(s: {radius: number} | {radius: number, label: string, ...}) { return match s { {radius} => radius } }`,
-			want: "fn (s: {radius: number} | {radius: number, label: string, ...}) -> number",
+			// An inexact member still carries the keys it declares, so a check that `label`
+			// is absent rules it out.
+			name:     "AnInexactMemberIsExcludedByAKeyItDeclares",
+			src:      `fn f(s: {radius: number} | {radius: number, label: string, ...}) { return match s { {radius} => radius } }`,
+			wantErrs: []string{"1:75-1:105: match is not exhaustive; add a branch for `{radius: number, label: string, ...}`"},
+		},
+		{
+			name: "AnInexactMemberWithItsOwnArm",
+			src:  `fn f(s: {radius: number} | {radius: number, label: string, ...}) { return match s { {radius} => radius, {radius, label} => label } }`,
+			want: "fn (s: {radius: number} | {radius: number, label: string, ...}) -> number | string",
+		},
+		{
+			// The inexact member declares `label`, but the tight member declares it too, so
+			// only `size` is checked absent. The inexact member may carry `size`, which its
+			// type cannot rule out, so no key is checked and the pattern matches all three.
+			name: "AnInexactMemberDeclaringNoAbsentKey",
+			src:  `fn f(s: {radius: number, label?: string} | {radius: number, size: number} | {radius: number, label: string, ...}) { return match s { {radius} => radius } }`,
+			want: "fn (s: {radius: number, label?: string} | {radius: number, size: number} | {radius: number, label: string, ...}) -> number",
 		},
 		{
 			// The tight member declares the loose member's extra key, so no key is left to
@@ -1579,11 +1592,18 @@ func TestInferMatchNarrowsByAbsentKeys(t *testing.T) {
 			want: "fn (s: {a: number, b?: string} | {a: number, b: number}) -> number",
 		},
 		{
-			// An index signature admits keys the member does not name, so absence proves
-			// nothing about it.
-			name: "AMemberWithAnIndexSignatureIsNotExcluded",
-			src:  `fn f(s: {a: number} | {a: number, b: string, [k: string]: number}) { return match s { {a} => a } }`,
-			want: "fn (s: {a: number} | {a: number, b: string, [k: string]: number}) -> number",
+			// A member with an index signature still carries the keys it declares, so a check
+			// that `b` is absent rules it out.
+			name:     "AMemberWithAnIndexSignatureIsExcludedByAKeyItDeclares",
+			src:      `fn f(s: {a: number} | {a: number, b: string, [k: string]: number}) { return match s { {a} => a } }`,
+			wantErrs: []string{"1:77-1:97: match is not exhaustive; add a branch for `{a: number, b: string, [k: string]: number}`"},
+		},
+		{
+			// A tight member with an index signature may carry `b`, so checking `b` is absent
+			// could reject its values. No key is checked, and `{a}` matches both members.
+			name: "ATightMemberWithAnIndexSignature",
+			src:  `fn f(s: {a: number, [k: string]: number} | {a: string, b: string}) { return match s { {a} => a } }`,
+			want: "fn (s: {a: number, [k: string]: number} | {a: string, b: string}) -> number | string",
 		},
 		{
 			name:     "ARequiredMethodIsAnExtraKey",

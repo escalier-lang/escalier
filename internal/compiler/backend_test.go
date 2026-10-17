@@ -1032,3 +1032,33 @@ func TestTheSolverEmitsNoKeyAbsenceTestForANestedPattern(t *testing.T) {
 	got := CompilePackage(libSources(src), PackageConfig{}).CompUnits["lib/index"].JS
 	require.Contains(t, got, `if (temp3.length == 2 && temp3[0] != null && "radius" in temp3[0]) {`)
 }
+
+// TestTheSolverEmitsAKeyAbsenceTestByOpenness covers when the key absence test is emitted
+// over a union with an inexact member. An inexact loose member still carries the keys it
+// declares, so `{radius}` checks `label` is absent. An inexact tight member may carry `label`
+// under any type, so the check would reject its values, and none is emitted.
+func TestTheSolverEmitsAKeyAbsenceTestByOpenness(t *testing.T) {
+	tests := []struct {
+		name string
+		src  string
+		want string
+	}{
+		{
+			name: "AnInexactLooseMember",
+			src:  "export fn f(s: {radius: number} | {radius: number, label: string, ...}) { return match s { {radius} => radius, {radius, label} => label } }",
+			want: `if (temp3 != null && "radius" in temp3 && !("label" in temp3)) {`,
+		},
+		{
+			name: "AnInexactTightMember",
+			src:  "export fn f(s: {radius: number, ...} | {radius: string, label: string}) { return match s { {radius} => radius, _ => 0 } }",
+			want: `if (temp3 != null && "radius" in temp3) {`,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			useSolver(t)
+			got := CompilePackage(libSources(tt.src), PackageConfig{}).CompUnits["lib/index"].JS
+			require.Contains(t, got, tt.want)
+		})
+	}
+}

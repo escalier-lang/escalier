@@ -509,17 +509,20 @@ func objectTestNames(t *ucs.ObjectTest) []string {
 // patterns in t.Also. A pattern tested before keeps the keys its first test recorded, so
 // a caller passes the same shape to every test of one pattern.
 //
-// The keys tell exact members of a union apart by what they carry. They are found from the
-// members the test's keys admit, and only when every one of those is an exact object type
-// with no index signature, since only such a member is known to carry no other key:
+// The keys tell the members of a union apart by what they carry. They are found from the
+// object members the test's keys admit:
 //
-//   - A tight member carries no required key beyond the tested ones.
-//   - A loose member carries more.
+//   - A tight member carries no required key beyond the tested ones. It has to be exact,
+//     with no index signature, since only such a member is known to carry no other key.
+//   - A loose member carries more. It may be inexact, since the required keys it declares
+//     are present whatever else it carries.
 //
 // With at least one of each, the absent keys are the loose members' extra required keys,
 // less every key a tight member declares. Over
-// `{radius: number} | {radius: number, label: string}`, `{radius}` checks `label` is absent.
-// A test with a rest, or of a value that is no union, checks none.
+// `{radius: number} | {radius: number, label: string, ...}`, `{radius}` checks `label` is
+// absent. An inexact loose member may carry any absent key, so each one has to declare at
+// least one of them, or no keys are checked. A test with a rest, or of a value that is no
+// union, checks none.
 func (c *checker) recordAbsentKeys(shape soltype.Type, t *ucs.ObjectTest) {
 	if t.Pat == nil {
 		return
@@ -548,33 +551,49 @@ func (c *Context) absentKeysFor(shape soltype.Type, t *ucs.ObjectTest) []string 
 	testedNames := set.FromSlice(names)
 	declared := set.NewSet[string]()
 	extras := set.NewSet[string]()
-	tight, loose := false, false
+	tight := false
+	// openExtras holds the extra required keys of each inexact loose member.
+	var openExtras []set.Set[string]
 	for _, member := range u.Types {
 		if !c.objectMemberHasKeys(member, names) {
 			continue
 		}
 		obj, isObj := soltype.CarrierOf(member).(*soltype.ObjectType)
-		if !isObj || obj.Inexact || hasIndexSignature(obj) {
+		if !isObj {
 			return nil
 		}
+		open := obj.Inexact || hasIndexSignature(obj)
 		extra := requiredMemberNames(obj).Difference(testedNames)
 		if extra.Len() == 0 {
+			if open {
+				return nil
+			}
 			tight = true
 			declared = declared.Union(memberNames(obj))
 			continue
 		}
-		loose = true
 		extras = extras.Union(extra)
+		if open {
+			openExtras = append(openExtras, extra)
+		}
 	}
-	if !tight || !loose {
+	if !tight || extras.Len() == 0 {
 		return nil
 	}
-	absent := extras.Difference(declared).ToSlice()
-	if len(absent) == 0 {
+	absent := extras.Difference(declared)
+	if absent.Len() == 0 {
 		return nil
 	}
-	slices.Sort(absent)
-	return absent
+	// An inexact loose member that declares none of the absent keys passes the test only when
+	// it happens to carry none of them, which its type cannot say.
+	for _, extra := range openExtras {
+		if extra.Intersection(absent).Len() == 0 {
+			return nil
+		}
+	}
+	out := absent.ToSlice()
+	slices.Sort(out)
+	return out
 }
 
 // hasIndexSignature reports whether obj declares an index signature, which admits keys obj
@@ -622,8 +641,9 @@ func (c *checker) testMatchesMemberShape(test ucs.Test, member soltype.Type) boo
 		if !c.ctx.objectMemberHasKeys(member, objectTestNames(t)) {
 			return false
 		}
-		// A member carrying a key the test checks is absent never passes it. Absent keys
-		// are only checked over exact object members, so a member here is one.
+		// A member carrying a key the test checks is absent never passes it. A member that
+		// declares none of those keys is exact or it would have stopped absentKeysFor, so it
+		// carries none of them.
 		if obj, isObj := soltype.CarrierOf(member).(*soltype.ObjectType); isObj {
 			for _, key := range c.info.AbsentKeys(t.Pat) {
 				if _, has := obj.ReadMember(key); has {
