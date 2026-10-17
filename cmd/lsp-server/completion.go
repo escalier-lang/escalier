@@ -13,6 +13,8 @@ import (
 	"github.com/escalier-lang/escalier/internal/ast"
 	"github.com/escalier-lang/escalier/internal/checker"
 	"github.com/escalier-lang/escalier/internal/lexer_util"
+	"github.com/escalier-lang/escalier/internal/soltype"
+	"github.com/escalier-lang/escalier/internal/solver"
 	"github.com/escalier-lang/escalier/internal/type_system"
 )
 
@@ -227,6 +229,7 @@ func (s *Server) textDocumentCompletion(context *glsp.Context, params *protocol.
 	var script *ast.Script
 	var scope *checker.Scope
 	var checkedSrc *ast.Source
+	var info *solver.Info
 	sourceID := s.sourceIDForURI(uri)
 	if co := s.checkOutput; co != nil {
 		module = co.Module
@@ -235,6 +238,7 @@ func (s *Server) textDocumentCompletion(context *glsp.Context, params *protocol.
 		script = co.Scripts[sourceID]
 		scope = co.ScriptScopes[sourceID]
 		checkedSrc = co.SourceByID(sourceID)
+		info = co.InfoFor(sourceID)
 	}
 	doc, opened := s.documents[uri]
 	s.mu.RUnlock()
@@ -258,13 +262,17 @@ func (s *Server) textDocumentCompletion(context *glsp.Context, params *protocol.
 		return &protocol.CompletionList{Items: []protocol.CompletionItem{}}, nil
 	}
 
+	// A check by internal/solver records Info and no *checker.Scope, and one by the old
+	// checker does the reverse, so either one is enough to complete from.
+	checked := info != nil
+
 	// Try module-aware completions first.
-	if module != nil && moduleScope != nil && isModule {
-		return s.moduleCompletion(module, sourceID, moduleScope, fileScopes, loc, doc.Text)
+	if module != nil && isModule && (moduleScope != nil || checked) {
+		return s.moduleCompletion(module, sourceID, moduleScope, fileScopes, info, loc, doc.Text)
 	}
 
 	// Fall back to script-based completions.
-	if script == nil || scope == nil {
+	if script == nil || (scope == nil && !checked) {
 		return nil, nil
 	}
 
@@ -280,28 +288,16 @@ func (s *Server) textDocumentCompletion(context *glsp.Context, params *protocol.
 		case *ast.MemberExpr:
 			// Case A: cursor right after `.` — MemberExpr with empty property
 			// Case B: cursor on partial property like `foo.ba|` — MemberExpr with non-empty property
-			objType := n.Object.InferredType()
-			if objType != nil {
-				if n.OptChain {
-					objType = stripNullUndefined(objType)
-				}
-				items = completionsFromType(objType, scope)
-				if n.Prop.Name != "" {
-					items = filterByPrefix(items, n.Prop.Name)
-				}
+			items = s.memberCompletions(n, info, scope)
+			if n.Prop.Name != "" {
+				items = filterByPrefix(items, n.Prop.Name)
 			}
 		case *ast.IdentExpr:
 			if memberExpr, ok := parent.(*ast.MemberExpr); ok {
 				// The cursor landed on the property identifier of a MemberExpr.
 				// Provide member completions filtered by the partial property name.
-				objType := memberExpr.Object.InferredType()
-				if objType != nil {
-					if memberExpr.OptChain {
-						objType = stripNullUndefined(objType)
-					}
-					items = completionsFromType(objType, scope)
-					items = filterByPrefix(items, n.Name)
-				}
+				items = s.memberCompletions(memberExpr, info, scope)
+				items = filterByPrefix(items, n.Name)
 			} else {
 				// Case C: standalone identifier — scope-based completions
 				items = s.completionsFromScope(script, scope, loc, string(uri))
@@ -340,6 +336,7 @@ func (s *Server) moduleCompletion(
 	sourceID int,
 	moduleScope *checker.Scope,
 	fileScopes map[int]*checker.Scope,
+	info *solver.Info,
 	loc ast.Location,
 	docText string,
 ) (any, error) {
@@ -347,7 +344,7 @@ func (s *Server) moduleCompletion(
 	// Use the module scope for type lookups (member completions need it for
 	// wrapper type aliases like String, Number, etc.)
 	lookupScope := moduleScope
-	if lookupScope.Parent != nil {
+	if lookupScope != nil && lookupScope.Parent != nil {
 		lookupScope = lookupScope.Parent // prelude scope has the wrapper types
 	}
 
@@ -360,26 +357,14 @@ func (s *Server) moduleCompletion(
 	} else {
 		switch n := node.(type) {
 		case *ast.MemberExpr:
-			objType := n.Object.InferredType()
-			if objType != nil {
-				if n.OptChain {
-					objType = stripNullUndefined(objType)
-				}
-				items = completionsFromType(objType, lookupScope)
-				if n.Prop.Name != "" {
-					items = filterByPrefix(items, n.Prop.Name)
-				}
+			items = s.memberCompletions(n, info, lookupScope)
+			if n.Prop.Name != "" {
+				items = filterByPrefix(items, n.Prop.Name)
 			}
 		case *ast.IdentExpr:
 			if memberExpr, ok := parent.(*ast.MemberExpr); ok {
-				objType := memberExpr.Object.InferredType()
-				if objType != nil {
-					if memberExpr.OptChain {
-						objType = stripNullUndefined(objType)
-					}
-					items = completionsFromType(objType, lookupScope)
-					items = filterByPrefix(items, n.Name)
-				}
+				items = s.memberCompletions(memberExpr, info, lookupScope)
+				items = filterByPrefix(items, n.Name)
 			} else {
 				items = s.completionsFromModuleScope(module, sourceID, fileScope, moduleScope, loc)
 				items = filterByPrefix(items, n.Name)
@@ -418,6 +403,113 @@ func (s *Server) moduleCompletion(
 		IsIncomplete: isIncomplete,
 		Items:        items,
 	}, nil
+}
+
+// memberCompletions returns completion items for the members of e's receiver. It reads
+// internal/solver's records when info holds them. Otherwise it reads the type the old
+// checker wrote onto the receiver and looks up that type's wrapper classes in scope.
+func (s *Server) memberCompletions(e *ast.MemberExpr, info *solver.Info, scope *checker.Scope) []protocol.CompletionItem {
+	if info != nil {
+		s.solverMu.RLock()
+		defer s.solverMu.RUnlock()
+		t := info.DisplayTypeOf(e.Object)
+		if t == nil {
+			return nil
+		}
+		return completionsFromSolType(t, info, info.LendsMut(e.Object))
+	}
+	objType := e.Object.InferredType()
+	if objType == nil {
+		return nil
+	}
+	if e.OptChain {
+		objType = stripNullUndefined(objType)
+	}
+	return completionsFromType(objType, scope)
+}
+
+// completionsFromSolType returns completion items for the members of a value of type t.
+// A member of a union is offered when any variant has it, and a member of an
+// intersection when every part has it. receiverMut says whether the value lends mutable
+// access, without which a `&mut self` method or a setter is left out.
+func completionsFromSolType(t soltype.Type, info *solver.Info, receiverMut bool) []protocol.CompletionItem {
+	// A union or an intersection may sit behind an alias or a borrow.
+	switch t := info.Expand(t).(type) {
+	case *soltype.UnionType:
+		var sets [][]protocol.CompletionItem
+		for _, variant := range t.Types {
+			switch variant.(type) {
+			case *soltype.NullType, *soltype.UndefinedType:
+				// `a?.` and `a.` over `T | undefined` both offer T's members.
+				continue
+			}
+			sets = append(sets, completionsFromSolType(variant, info, receiverMut))
+		}
+		return unionCompletions(sets)
+	case *soltype.IntersectionType:
+		sets := make([][]protocol.CompletionItem, len(t.Types))
+		for i, part := range t.Types {
+			sets[i] = completionsFromSolType(part, info, receiverMut)
+		}
+		return intersectionCompletions(sets)
+	}
+	obj, ok := info.MemberObject(t)
+	if !ok {
+		return nil
+	}
+	return completionsFromSolObject(obj, receiverMut)
+}
+
+// completionsFromSolObject returns a completion item for each member of obj named by a
+// string. A member keyed by a symbol, such as `[Symbol.iterator]`, has no name to type
+// after the dot and is left out.
+func completionsFromSolObject(obj *soltype.ObjectType, receiverMut bool) []protocol.CompletionItem {
+	var items []protocol.CompletionItem
+	add := func(name, label string, kind protocol.CompletionItemKind, detail string) {
+		items = append(items, protocol.CompletionItem{
+			Label:      label,
+			Kind:       &kind,
+			Detail:     &detail,
+			FilterText: &name,
+		})
+	}
+	for _, elem := range obj.Elems {
+		name := soltype.ObjElemName(elem)
+		if name == "" || soltype.IsSymbolMemberName(name) {
+			continue
+		}
+		if !receiverMut && solver.NeedsMutReceiver(elem) {
+			continue
+		}
+		switch elem := elem.(type) {
+		case *soltype.PropertyElem:
+			label := name
+			if elem.Optional {
+				label += "?"
+			}
+			add(name, label, protocol.CompletionItemKindProperty, soltype.Print(elem.Type))
+		case *soltype.MethodElem:
+			add(name, name, protocol.CompletionItemKindMethod, methodDetail(elem))
+		case *soltype.GetterElem:
+			add(name, name, protocol.CompletionItemKindProperty, soltype.Print(elem.Type))
+		case *soltype.SetterElem:
+			add(name, name, protocol.CompletionItemKindProperty, "setter")
+		}
+	}
+	return items
+}
+
+// methodDetail renders a method's signature without its receiver, which the caller
+// supplies by writing the value before the dot. An overloaded method renders each arm,
+// joined by ` & `.
+func methodDetail(m *soltype.MethodElem) string {
+	arms := make([]string, len(m.Signatures))
+	for i, sig := range m.Signatures {
+		withoutSelf := *sig
+		withoutSelf.SelfParam = nil
+		arms[i] = soltype.Print(&withoutSelf)
+	}
+	return strings.Join(arms, " & ")
 }
 
 // completionsFromType returns completion items for member access on a type.
@@ -616,23 +708,23 @@ func completionDedupeKey(item protocol.CompletionItem) string {
 }
 
 func completionsFromUnionType(u *type_system.UnionType, scope *checker.Scope, receiverMut bool) []protocol.CompletionItem {
-	// Collect members from each variant. Properties that exist on at least one
-	// variant are included. If a property is missing from some variants, its
-	// detail type is shown with "| undefined".
-	var allSets []map[string]protocol.CompletionItem
+	var sets [][]protocol.CompletionItem
 	for _, variant := range u.Types {
 		variant = type_system.Prune(variant)
 		// Skip null/undefined in unions
 		if isNullOrUndefined(variant) {
 			continue
 		}
-		memberItems := completionsFromTypeImpl(variant, scope, receiverMut)
-		set := make(map[string]protocol.CompletionItem, len(memberItems))
-		for _, item := range memberItems {
-			set[completionDedupeKey(item)] = item
-		}
-		allSets = append(allSets, set)
+		sets = append(sets, completionsFromTypeImpl(variant, scope, receiverMut))
 	}
+	return unionCompletions(sets)
+}
+
+// unionCompletions merges the member completions of a union's variants, one set per
+// variant. A member any variant has is offered. When a variant lacks the member or
+// declares it optional, its detail gains `| undefined`.
+func unionCompletions(sets [][]protocol.CompletionItem) []protocol.CompletionItem {
+	allSets := keyedCompletionSets(sets)
 	if len(allSets) == 0 {
 		return nil
 	}
@@ -669,17 +761,18 @@ func completionsFromUnionType(u *type_system.UnionType, scope *checker.Scope, re
 }
 
 func completionsFromIntersectionType(inter *type_system.IntersectionType, scope *checker.Scope, receiverMut bool) []protocol.CompletionItem {
-	// Only keys present in ALL parts are accessible. If a key has different
-	// value types across parts, its detail shows the intersection of those types.
-	var allSets []map[string]protocol.CompletionItem
-	for _, part := range inter.Types {
-		memberItems := completionsFromTypeImpl(part, scope, receiverMut)
-		set := make(map[string]protocol.CompletionItem, len(memberItems))
-		for _, item := range memberItems {
-			set[completionDedupeKey(item)] = item
-		}
-		allSets = append(allSets, set)
+	sets := make([][]protocol.CompletionItem, len(inter.Types))
+	for i, part := range inter.Types {
+		sets[i] = completionsFromTypeImpl(part, scope, receiverMut)
 	}
+	return intersectionCompletions(sets)
+}
+
+// intersectionCompletions merges the member completions of an intersection's parts, one
+// set per part. Only a member every part has is offered. When the parts give it
+// different types, its detail joins them with ` & `.
+func intersectionCompletions(sets [][]protocol.CompletionItem) []protocol.CompletionItem {
+	allSets := keyedCompletionSets(sets)
 	if len(allSets) == 0 {
 		return nil
 	}
@@ -718,11 +811,33 @@ func completionsFromIntersectionType(inter *type_system.IntersectionType, scope 
 	return items
 }
 
+// keyedCompletionSets keys each set's items by completionDedupeKey.
+func keyedCompletionSets(sets [][]protocol.CompletionItem) []map[string]protocol.CompletionItem {
+	keyed := make([]map[string]protocol.CompletionItem, len(sets))
+	for i, items := range sets {
+		keyed[i] = make(map[string]protocol.CompletionItem, len(items))
+		for _, item := range items {
+			key := completionDedupeKey(item)
+			// A getter and a setter share a name. The getter's item carries the type a
+			// read yields, so a setter's item never replaces it.
+			if _, taken := keyed[i][key]; taken && item.Detail != nil && *item.Detail == "setter" {
+				continue
+			}
+			keyed[i][key] = item
+		}
+	}
+	return keyed
+}
+
 // completionsFromScope collects in-scope bindings for standalone identifier completion.
 // It walks the AST ancestor chain from the cursor position, collecting bindings from
 // each enclosing scope: function params, match/catch pattern bindings, for-in loop
 // variables, if-val patterns, and block-local variable declarations.
 func (s *Server) completionsFromScope(script *ast.Script, scope *checker.Scope, cursor ast.Location, uri string) []protocol.CompletionItem {
+	// A check by internal/solver holds no *checker.Scope to complete from.
+	if scope == nil {
+		return nil
+	}
 	seen := map[string]bool{}
 	var items []protocol.CompletionItem
 
@@ -845,6 +960,10 @@ func (s *Server) completionsFromModuleScope(
 	moduleScope *checker.Scope,
 	cursor ast.Location,
 ) []protocol.CompletionItem {
+	// A check by internal/solver holds no *checker.Scope to complete from.
+	if moduleScope == nil {
+		return nil
+	}
 	seen := map[string]bool{}
 	var items []protocol.CompletionItem
 

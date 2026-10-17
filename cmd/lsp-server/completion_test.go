@@ -1678,3 +1678,234 @@ val x: h`},
 	// "usePkg" is also a value (function) — should be excluded.
 	assert.NotContains(t, labels, "usePkg", "function declarations should not appear in type annotation completions")
 }
+
+// --- Member completions from internal/solver ---
+
+// solverMemberCompletions checks files on internal/solver, opens open, and returns the
+// completions at line and col, both 1-based, rendered as "label: detail".
+func solverMemberCompletions(t *testing.T, files map[string]string, open string, line, col int) []string {
+	t.Helper()
+	useSolver(t)
+	s := integrationServer(t, files)
+	uri := openFile(t, s, open, files[open])
+	result, err := s.textDocumentCompletion(&glsp.Context{}, &protocol.CompletionParams{
+		TextDocumentPositionParams: protocol.TextDocumentPositionParams{
+			TextDocument: protocol.TextDocumentIdentifier{URI: uri},
+			Position: protocol.Position{
+				Line:      protocol.UInteger(line - 1),
+				Character: protocol.UInteger(col - 1),
+			},
+		},
+	})
+	require.NoError(t, err)
+	if result == nil {
+		return nil
+	}
+	list, ok := result.(*protocol.CompletionList)
+	require.True(t, ok)
+	rendered := make([]string, len(list.Items))
+	for i, item := range list.Items {
+		detail := ""
+		if item.Detail != nil {
+			detail = *item.Detail
+		}
+		rendered[i] = item.Label + ": " + detail
+	}
+	return rendered
+}
+
+func TestMemberCompletionFromSolver(t *testing.T) {
+	tests := []struct {
+		name string
+		src  string
+		// line and col are the 1-based cursor position in src.
+		line, col int
+		expected  []string
+	}{
+		{
+			name:     "AnnotatedObject",
+			src:      "val obj: {a: number, b: string} = {a: 1, b: \"hello\"}\nobj.",
+			line:     2,
+			col:      5,
+			expected: []string{"a: number", "b: string"},
+		},
+		{
+			name:     "FilteredByPrefix",
+			src:      "val obj: {alpha: number, beta: string, able: boolean} = {alpha: 1, beta: \"hi\", able: true}\nobj.al",
+			line:     2,
+			col:      7,
+			expected: []string{"alpha: number"},
+		},
+		{
+			name:     "UnionOffersEveryVariantsMembers",
+			src:      "val obj: {a: number, b: string} | {a: number, c: boolean} = {a: 1, b: \"hi\"}\nobj.",
+			line:     2,
+			col:      5,
+			expected: []string{"a: number", "b: string | undefined", "c: boolean | undefined"},
+		},
+		{
+			name:     "IntersectionOffersCommonMembers",
+			src:      "declare val obj: {a: number, b: string} & {a: number, c: boolean}\nobj.",
+			line:     2,
+			col:      5,
+			expected: []string{"a: number"},
+		},
+		{
+			name:     "OptionalChainSkipsNullish",
+			src:      "declare val obj: {a: number} | undefined\nobj?.",
+			line:     2,
+			col:      6,
+			expected: []string{"a: number"},
+		},
+		{
+			name:     "GetterWithoutSetterOnImmutableReceiver",
+			src:      "declare val obj: {\n    get bar(self) -> boolean,\n    set bar(mut self, value: boolean) -> undefined\n}\nobj.",
+			line:     5,
+			col:      5,
+			expected: []string{"bar: boolean"},
+		},
+		{
+			name: "ClassInstanceHidesMutSelfOnImmutableBinding",
+			src: `class Counter {
+	n: number,
+	constructor(&mut self) { self.n = 0 },
+	get(&self) -> number { return self.n },
+	bump(&mut self) -> number { self.n = self.n + 1
+		return self.n },
+}
+val c = Counter()
+c.`,
+			line:     9,
+			col:      3,
+			expected: []string{"get: fn () -> number", "n: number"},
+		},
+		{
+			name: "ClassInstanceShowsMutSelfOnMutBinding",
+			src: `class Counter {
+	n: number,
+	constructor(&mut self) { self.n = 0 },
+	get(&self) -> number { return self.n },
+	bump(&mut self) -> number { self.n = self.n + 1
+		return self.n },
+}
+val mut c = Counter()
+c.`,
+			line:     9,
+			col:      3,
+			expected: []string{"bump: fn () -> number", "get: fn () -> number", "n: number"},
+		},
+		{
+			name:     "UnionBehindAlias",
+			src:      "type Shape = {a: number, b: string} | {a: number, c: boolean}\ndeclare val s: Shape\ns.",
+			line:     3,
+			col:      3,
+			expected: []string{"a: number", "b: string | undefined", "c: boolean | undefined"},
+		},
+		{
+			name: "MutSelfGetterOnImmutableBinding",
+			src: `class Lazy {
+	m: string,
+	constructor(&mut self) { self.m = "" },
+	get n(&mut self) -> number { return 1 },
+}
+val l = Lazy()
+l.`,
+			line:     7,
+			col:      3,
+			expected: []string{"m: string"},
+		},
+		{
+			name:     "GetterKeepsTypeInUnionOnMutReceiver",
+			src:      "declare val obj: mut ({get bar(self) -> boolean, set bar(mut self, value: boolean) -> undefined} | {bar: boolean})\nobj.",
+			line:     2,
+			col:      5,
+			expected: []string{"bar: boolean"},
+		},
+		{
+			name:     "ErrorTypeOffersNothing",
+			src:      "val obj: {a: number} = {a: 1}\nval x = obj.\nx.",
+			line:     3,
+			col:      3,
+			expected: []string{},
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			files := map[string]string{"bin/main.esc": tt.src}
+			require.Equal(t, tt.expected, solverMemberCompletions(t, files, "bin/main.esc", tt.line, tt.col))
+		})
+	}
+}
+
+// TestMemberCompletionFromSolverMembership covers receivers whose member lists are too
+// long to assert whole, such as the standard library's classes, by naming members the
+// list must and must not hold.
+func TestMemberCompletionFromSolverMembership(t *testing.T) {
+	tests := []struct {
+		name  string
+		files map[string]string
+		// open is the file the cursor is in. line and col are 1-based.
+		open      string
+		line, col int
+		contains  []string
+		excludes  []string
+	}{
+		{
+			name:     "StringLiteral",
+			files:    map[string]string{"bin/main.esc": "val s = \"abc\"\ns.toUp"},
+			open:     "bin/main.esc",
+			line:     2,
+			col:      7,
+			contains: []string{"toUpperCase: fn () -> string"},
+		},
+		{
+			name:     "ImmutableMapHidesMutSelf",
+			files:    map[string]string{"bin/main.esc": "declare val m: Map<string, number>\nm."},
+			open:     "bin/main.esc",
+			line:     2,
+			col:      3,
+			contains: []string{"has: fn <B>(key: B) -> boolean where string: B"},
+			excludes: []string{"clear: fn () -> undefined"},
+		},
+		{
+			name:     "MutMapShowsMutSelf",
+			files:    map[string]string{"bin/main.esc": "declare val m: mut Map<string, number>\nm."},
+			open:     "bin/main.esc",
+			line:     2,
+			col:      3,
+			contains: []string{"has: fn <B>(key: B) -> boolean where string: B", "clear: fn () -> undefined"},
+		},
+		{
+			name: "LibModuleFile",
+			files: map[string]string{
+				"lib/point.esc": "type Point = {x: number, y: number}\ndeclare val p: Point\nval q = p.",
+			},
+			open:     "lib/point.esc",
+			line:     3,
+			col:      11,
+			contains: []string{"x: number", "y: number"},
+		},
+		{
+			name: "BinReadsLibClass",
+			files: map[string]string{
+				"lib/box.esc":  "export class Box {\n\tvalue: number,\n\tconstructor(&mut self) { self.value = 0 },\n}",
+				"bin/main.esc": "val b = Box()\nb.",
+			},
+			open:     "bin/main.esc",
+			line:     2,
+			col:      3,
+			contains: []string{"value: number"},
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			items := solverMemberCompletions(t, tt.files, tt.open, tt.line, tt.col)
+			for _, item := range tt.contains {
+				require.Contains(t, items, item)
+			}
+			for _, item := range tt.excludes {
+				require.NotContains(t, items, item)
+			}
+		})
+	}
+}
