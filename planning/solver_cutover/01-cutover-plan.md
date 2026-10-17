@@ -509,6 +509,17 @@ regular-tree normalization — did not appear. The guess that statement and
 declaration forms would show up was right: the `super(…)` gate and the extractor
 patterns are both outside the expression walk P1.7 audited.
 
+**Triaged.** Two of the 29 entries remain, and both have a ticket:
+
+| Fixture | Cause | Issue | Status |
+| --- | --- | --- | --- |
+| `member_access` | a property read on a union whose arms do not all declare it | #1719 | intended; the solver applies the decided rule, and `error.txt` changes at P5 |
+| `try_catch` | a `catch` arm reading the caught value | #1974 | a solver fault, deferred past P5 because its fix changes emitted output |
+
+`try_catch` is the one entry that is neither cleared nor intended. P5 marks the
+fixture `DISABLED until #1974`, since a golden written from the solver would
+record a rejection of valid source.
+
 **Gate.** The skip list is empty, or every remaining entry is a triaged intended
 improvement with a note naming why the divergence is right.
 

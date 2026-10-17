@@ -13,7 +13,6 @@ import (
 	"github.com/escalier-lang/escalier/internal/ast"
 	"github.com/escalier-lang/escalier/internal/compiler"
 	"github.com/escalier-lang/escalier/internal/set"
-	"github.com/escalier-lang/escalier/internal/solver"
 	"github.com/stretchr/testify/require"
 )
 
@@ -57,12 +56,22 @@ func (c *solverSkipCause) status() string {
 }
 
 var (
+	// The solver reads `fb.foo` off `{kind: "foo", foo: string} | {kind: "bar"}` as
+	// `string | undefined`, which is the rule #1719 decided. The checker rejects the
+	// read, and its rejection is what the fixture's error.txt records. The file is
+	// written from the default checker, so it changes when the solver becomes the
+	// default and not before.
 	causeUnionMember = &solverSkipCause{
-		name:   "a property read on a union whose arms do not all declare it",
-		ticket: "#1719",
+		name:     "a property read on a union whose arms do not all declare it",
+		ticket:   "#1719",
+		intended: true,
 	}
+	// The fix types the caught value as the union of what the try block throws. It
+	// also changes what codegen emits for a `catch`, so it waits until the solver is
+	// the default checker and its output is the reference.
 	causeCaughtValue = &solverSkipCause{
-		name: "a `catch` arm reading the caught value, which the solver types `unknown`",
+		name:   "a `catch` arm reading the caught value, which the solver types `unknown`",
+		ticket: "#1974",
 	}
 )
 
@@ -194,17 +203,12 @@ func TestCheckFixturesOnSolver(t *testing.T) {
 	reportSolverSkipCauses(t, fixtures.Len()-disabled.Len())
 }
 
-// preludeURI is the package every run loads whether or not the source imports it.
-const preludeURI = "std:prelude"
-
 // checkOnSolver checks one package as config says and returns the diagnostics that belong
 // to it, rendered as the run reports them.
 //
-// The prelude's own diagnostics are dropped. Every run loads it and it currently
-// reports two, so counting them would make all 73 fixtures look rejected. Clearing
-// them is #1664. Any other package's diagnostics are kept. A fixture reaches one by
+// The diagnostics of every package the run loaded are kept. A fixture reaches one by
 // importing it, which makes its failure part of that fixture's story, or through the
-// ambient scope, whose packages all check clean.
+// prelude and the ambient scope, whose packages all check clean.
 //
 // Warnings are dropped as well, since a warning does not reject the package.
 func checkOnSolver(sources []*ast.Source, config compiler.PackageConfig) []string {
@@ -212,9 +216,6 @@ func checkOnSolver(sources []*ast.Source, config compiler.PackageConfig) []strin
 
 	var diagnostics []string
 	for _, diagnostic := range output.TypeErrors {
-		if fromPackage, ok := diagnostic.(*solver.PackageInferenceError); ok && fromPackage.URI == preludeURI {
-			continue
-		}
 		if w, ok := diagnostic.(interface{ IsWarning() bool }); ok && w.IsWarning() {
 			continue
 		}
@@ -288,17 +289,22 @@ func reportSolverSkipCauses(t *testing.T, runnable int) {
 	sort.SliceStable(causes, func(i, j int) bool { return counts[causes[i]] > counts[causes[j]] })
 
 	unticketed := set.NewSet[string]()
+	intended := set.NewSet[string]()
 	lines := make([]string, 0, len(causes))
 	for _, cause := range causes {
 		if cause.ticket == "" {
 			unticketed.Add(cause.name)
 		}
+		if cause.intended {
+			intended.Add(cause.name)
+		}
 		lines = append(lines, fmt.Sprintf("  %2d  %s (%s)", counts[cause], cause.name, cause.status()))
 	}
 
-	t.Logf("the solver checks %d of %d fixtures; %d are held back by %d causes, %d of them unticketed:\n%s",
+	t.Logf("the solver checks %d of %d fixtures; %d are held back by %d causes, %d of them "+
+		"unticketed and %d intended:\n%s",
 		runnable-len(solverSkips), runnable, len(solverSkips), len(causes), unticketed.Len(),
-		strings.Join(lines, "\n"))
+		intended.Len(), strings.Join(lines, "\n"))
 }
 
 // comparedArtifacts names the emitted files the two checkers have to agree on.
