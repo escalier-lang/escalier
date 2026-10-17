@@ -562,8 +562,20 @@ func TestInferObjectRestOverUnion(t *testing.T) {
 			binding: "f",
 			want:    "fn (p: FB) -> {foo: string} | {bar: boolean}",
 		},
-		// A plain read of a key one member lacks reads `undefined` from that member rather
-		// than failing. The next case destructures the same key and must agree with it.
+		// A plain read of a key that an exact member lacks reads `undefined` from that member.
+		{
+			name: "a plain read of a key an exact member lacks",
+			src: `
+				fn f(p: {kind: "a", b: string} | {kind: "c", c: number}) {
+					return p.b
+				}
+			`,
+			binding: "f",
+			want:    `fn (p: {kind: "a", b: string} | {kind: "c", c: number}) -> string | undefined`,
+		},
+		// A member written with `...` may carry a key it does not declare, at any type, so a
+		// plain read of that key reads `unknown`. The next case destructures the same key and
+		// must agree with it.
 		{
 			name: "a plain read of a key one member lacks",
 			src: `
@@ -572,7 +584,7 @@ func TestInferObjectRestOverUnion(t *testing.T) {
 				}
 			`,
 			binding: "f",
-			want:    `fn (p: {kind: "a", b: string} | {kind: "c", c: number, ...}) -> string | undefined`,
+			want:    `fn (p: {kind: "a", b: string} | {kind: "c", c: number, ...}) -> unknown`,
 		},
 		{
 			name: "a destructured key one member lacks reads as the plain read does",
@@ -584,7 +596,19 @@ func TestInferObjectRestOverUnion(t *testing.T) {
 			`,
 			binding: "f",
 			want: `fn (p: {kind: "a", b: string} | {kind: "c", c: number, ...}) -> ` +
-				`[string | undefined, {kind: "a"} | {kind: "c", c: number, ...}]`,
+				`[unknown, {kind: "a"} | {kind: "c", c: number, ...}]`,
+		},
+		// An open member does not make a key that no member declares readable.
+		{
+			name: "a plain read of a key no member declares",
+			src: `
+				fn f(p: {kind: "a", b: string} | {kind: "c", c: number, ...}) {
+					return p.z
+				}
+			`,
+			binding:  "f",
+			want:     `fn (p: {kind: "a", b: string} | {kind: "c", c: number, ...}) -> never`,
+			wantErrs: []string{"3:15-3:16: object is missing property: z"},
 		},
 		// A member that is not an object fails a plain read. The next case destructures
 		// the same key and must report the same error.
