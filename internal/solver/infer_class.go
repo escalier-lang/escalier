@@ -309,6 +309,7 @@ func (c *checker) inferClassBodies(
 ) (callFns, ctorFns []*soltype.FuncType) {
 	scope, self, body := sigs.bodyScope, sigs.self, sigs.def.Body
 	typeParams := sigs.shell.typeParams
+
 	// Each body has to work for every argument an instance may give the class, so the
 	// class's parameters are rigid while the bodies are inferred. A member's signature is
 	// linked to its stub inside the same window, since a sibling call recorded against the
@@ -318,6 +319,7 @@ func (c *checker) inferClassBodies(
 	if len(typeParams) > 0 {
 		defer c.ctx.holdTypeParamsRigid(typeParams, true)()
 	}
+
 	callFns = c.inferCallSignatures(scope, lvl, decl)
 	ctorFns = c.walkConstructorBodies(scope, lvl, self, body, ctors)
 	if len(ctorFns) == 0 {
@@ -335,11 +337,13 @@ func (c *checker) inferClassBodies(
 			ctorFns = []*soltype.FuncType{c.synthesizeConstructor(decl, self, body)}
 		}
 	}
+
 	// The class's parameters, both sorts, are the binder of every constructor and call
 	// signature, so a construction instantiates them the way a generic function's call does
 	// and the class value is monomorphic in them.
 	bindClassParams(ctorFns, typeParams, sigs.shell.lifetimeParams)
 	bindClassParams(callFns, typeParams, sigs.shell.lifetimeParams)
+
 	// inferClassDecl coalesces each member once the bodies are inferred, and a bound that
 	// arrives later does not reach the coalesced member. Take
 	// `clone(&self) { return Widget(self.name) }`. The call's result is `Widget` only once
@@ -350,11 +354,13 @@ func (c *checker) inferClassBodies(
 		class.value = c.classValue(self, ctorFns, callFns, sigs.def.Static)
 		c.constrain(decl, class.value, class.v)
 	}
+
 	// A member body walks against the `self` view rather than the class's own body, so an
 	// inherited member is reachable through `self`. Every own member signature is in the
 	// body by now, so the view is complete, and it shares each own element pointer so the
 	// signature installs and field refinements still land on the registered body.
 	c.inferMemberBodies(scope, lvl, c.ctx.selfView(self, body), sigs.pending)
+
 	return callFns, ctorFns
 }
 
