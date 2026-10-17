@@ -652,10 +652,8 @@ func (b *pathBinder) tupleShapeReq(v scrutineeView, node ast.Node, count int, in
 	// A tuple test checks the scrutinee's length at runtime, so a variadic scrutinee is read
 	// as the tuple it holds at the lengths the test admits. `[a, b]` over
 	// `[number, ...Array<string>]` then reads `[number, string]`.
-	if shape, ok := b.c.ctx.variadicShape(v.ty); ok {
-		if at, fits := shape.atLength(b.c.ctx, count, inexact); fits {
-			scrutinee, concrete = at, at
-		}
+	if at, ok := b.c.ctx.tupleAtLength(v.ty, count, inexact); ok {
+		scrutinee, concrete = at, at
 	}
 	elems, scrutTup, concreteTup := b.c.projectTuple(node, b.lvl, scrutinee, concrete, count, inexact, nil, forBinding)
 	return &testedTuple{elems: elems, scrut: scrutTup, concrete: concreteTup}
