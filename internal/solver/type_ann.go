@@ -5,6 +5,7 @@ import (
 
 	"github.com/escalier-lang/escalier/internal/ast"
 	"github.com/escalier-lang/escalier/internal/jsregex"
+	"github.com/escalier-lang/escalier/internal/set"
 	"github.com/escalier-lang/escalier/internal/soltype"
 )
 
@@ -1059,13 +1060,17 @@ func nakedTypeParamCheck(ann ast.TypeAnn, resolved soltype.Type) bool {
 // resolveTypeOfTypeAnn lowers a `typeof v` query to a TypeofType residual: it resolves the value's
 // type at annotation time and stores it unrendered behind the value reference, so the annotation
 // prints `typeof v` the way the source wrote it while constrain compares against the resolved type.
-// A name or member that resolves to no readable value reports an unsupported feature and recovers.
+// A namespace with no member of the written name reports UnknownNamespaceMemberError. Any other
+// name or member that resolves to no readable value reports an unsupported feature. Both recover.
 func (c *checker) resolveTypeOfTypeAnn(scope *Scope, ta *ast.TypeOfTypeAnn) (soltype.Type, bool) {
-	ty, ok := c.resolveTypeOfQualIdent(scope, ta.Value)
-	if !ok {
+	path := c.typeofPath(scope, ta, ta.Value)
+	if path.err {
+		return &soltype.ErrorType{}, false
+	}
+	if path.value == nil {
 		return c.reportUnsupportedFeature(ta, "typeof of a name that is not a readable value"), false
 	}
-	t := &soltype.TypeofType{Ident: ast.QualIdentToString(ta.Value), Ty: ty}
+	t := &soltype.TypeofType{Ident: ast.QualIdentToString(ta.Value), Ty: path.value}
 	c.recordProv(t, ta, AnnotationType)
 	return t, true
 }
@@ -1165,34 +1170,58 @@ func (c *checker) resolveExactnessIntrinsic(scope *Scope, ta *ast.TypeRefTypeAnn
 	return t, true
 }
 
-// resolveTypeOfQualIdent resolves a `typeof` operand — a bare value name or a member chain
-// `p.x` — to the value's type, porting the old checker's resolveTypeOfQualIdent
-// (internal/checker/expand_type.go). A name reads the value's coalesced scheme type; a member
-// chain projects each property off the resolved base. ok=false when a step does not resolve.
+// typeofPath resolves a `typeof` operand, or a prefix of one, to the value or namespace it
+// names. The operand is a bare value name, a member chain `p.x`, or a value reached through
+// namespaces such as `shapes.unitCircle.center`. Each step follows the precedence resolvePath
+// gives a member expression:
 //
-// The result is not stamped with provenance: it is a shared binding/property type, not the
-// freshly-minted unique pointer recordProv requires, so a mismatch blames its constraint site.
-func (c *checker) resolveTypeOfQualIdent(scope *Scope, ident ast.QualIdent) (soltype.Type, bool) {
+//   - A bare name reads a value binding before a namespace.
+//   - A step off a namespace reads a nested namespace before a value member.
+//   - A step off a value projects the property off the value's type.
+//
+// A namespace with no member of the step's name reports UnknownNamespaceMemberError against ta
+// and sets `err`. Any other step that does not resolve returns the zero pathResult and reports
+// nothing.
+//
+// A value is a binding's coalesced scheme type or a property read off one. It is not stamped
+// with provenance, since it is a shared type rather than the freshly-minted unique pointer
+// recordProv requires, so a mismatch blames its constraint site.
+func (c *checker) typeofPath(scope *Scope, ta *ast.TypeOfTypeAnn, ident ast.QualIdent) pathResult {
 	switch id := ident.(type) {
 	case *ast.Ident:
 		if b, ok := c.lookupValueBinding(scope, id.Name); ok {
 			// bindingType takes the scheme's coalesced concrete type, not a fresh inference
-			// var that would coalesce to unknown in a negative position such as the operand of
-			// `keyof typeof v`. The dep graph orders v first, so its scheme is final here; a
-			// definition-less binding yields nil, i.e. the ok=false path.
-			if t := bindingType(b); t != nil {
-				return t, true
+			// var that would coalesce to `unknown` in a negative position such as the operand
+			// of `keyof typeof v`. The dep graph orders v first, so its scheme is final here.
+			// A definition-less binding yields nil and resolves to nothing.
+			return pathResult{value: bindingType(b)}
+		}
+		if ns, ok := scope.GetNamespace(id.Name); ok {
+			return pathResult{ns: ns}
+		}
+	case *ast.Member:
+		left := c.typeofPath(scope, ta, id.Left)
+		name := id.Right.Name
+		switch {
+		case left.err:
+			return left
+		case left.ns != nil:
+			if nested, ok := left.ns.Nested[name]; ok {
+				return pathResult{ns: nested}
+			}
+			b, ok := left.ns.Values[name]
+			if !ok {
+				c.report(&UnknownNamespaceMemberError{Node: ta, NS: left.ns, Name: name})
+				return pathResult{err: true}
+			}
+			return pathResult{value: bindingType(b)}
+		case left.value != nil:
+			if t, ok := c.typeofMember(left.value, name); ok {
+				return pathResult{value: t}
 			}
 		}
-		return nil, false
-	case *ast.Member:
-		recv, ok := c.resolveTypeOfQualIdent(scope, id.Left)
-		if !ok {
-			return nil, false
-		}
-		return c.typeofMember(recv, id.Right.Name)
 	}
-	return nil, false
+	return pathResult{}
 }
 
 // lookupValueBinding resolves a bare value name, ranking its sources the way
@@ -1215,11 +1244,11 @@ func (c *checker) lookupValueBinding(scope *Scope, name string) (ValueBinding, b
 	return scope.GetValue(name)
 }
 
-// typeofMember projects the named property off a `typeof p.x` receiver: it strips any borrow
-// wrapper, then reads the member off the carrier object, returning nothing when the receiver
-// is not an object or carries no such readable member.
+// typeofMember projects the named property off a `typeof p.x` receiver. It reads the member off
+// the carrier object typeofCarrier returns, and returns nothing when the receiver is not an
+// object or carries no such readable member.
 func (c *checker) typeofMember(recv soltype.Type, name string) (soltype.Type, bool) {
-	obj, ok := c.ctx.readCarrierObject(readCarrier(recv))
+	obj, ok := c.ctx.readCarrierObject(c.typeofCarrier(recv))
 	if !ok {
 		return nil, false
 	}
@@ -1228,6 +1257,25 @@ func (c *checker) typeofMember(recv soltype.Type, name string) (soltype.Type, bo
 		return nil, false
 	}
 	return read, true
+}
+
+// typeofCarrier returns the type a member is read off when recv is the receiver of
+// `typeof p.x`. It strips borrow wrappers and expands transparent aliases, repeating
+// through both, since an alias body may be a borrow of another alias. With `type PointRef =
+// &Point`, a receiver typed `PointRef` yields Point's object type. A seen-set of alias names
+// stops a cycle such as `type A = &A`.
+func (c *checker) typeofCarrier(recv soltype.Type) soltype.Type {
+	seen := set.NewSet[string]()
+	t := readCarrier(recv)
+	for {
+		t = peelBorrows(t)
+		alias, ok := t.(*soltype.AliasType)
+		if !ok || seen.Contains(alias.Name) {
+			return t
+		}
+		seen.Add(alias.Name)
+		t = c.ctx.expandAlias(alias)
+	}
 }
 
 // restParamSlot reads the `...` marker off one written parameter, returning the pattern to

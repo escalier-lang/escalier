@@ -521,7 +521,10 @@ func (p *Parser) primaryTypeAnn() ast.TypeAnn {
 			}
 			p.lexer.consume() // consume identifier
 			qualIdent := p.parseQualifiedIdent(identToken)
-			typeAnn = ast.NewTypeOfTypeAnn(qualIdent, qualIdent.Span())
+			typeAnn = ast.NewTypeOfTypeAnn(
+				qualIdent,
+				ast.NewSpan(token.Span.Start, qualIdent.Span().End, p.lexer.source.ID),
+			)
 		case OpenBracket: // tuple type
 			p.lexer.consume()
 			elemTypes, tupleInexact := parseDelimSeqInexact(p, CloseBracket, Comma, p.typeAnn)

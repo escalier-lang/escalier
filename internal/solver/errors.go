@@ -886,10 +886,11 @@ type NamespaceUsedAsValueError struct {
 
 // UnknownNamespaceMemberError fires when a namespace member access (Foo.bar or the
 // constant-keyed Foo["bar"]) names a member the namespace does not declare —
-// neither a value nor a nested namespace. Node is the member/index expression (the
-// blame span); NS is the namespace; Name is the absent member.
+// neither a value nor a nested namespace. Node is the blame span's node. It is the
+// member or index expression, or the `typeof Foo.bar` annotation that names the
+// member. NS is the namespace, and Name is the absent member.
 type UnknownNamespaceMemberError struct {
-	Node ast.Expr
+	Node ast.Node
 	NS   *Namespace
 	Name string
 }
