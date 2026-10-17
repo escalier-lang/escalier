@@ -1883,13 +1883,14 @@ func (c *checker) calleeTarget(lvl int, e *ast.CallExpr, callee soltype.Type, fr
 	secondInstance := false
 	if resolved && quantified(fn) {
 		_, isClassValue := c.classValueCarrier(callee)
-		if isClassValue && fresh {
+		if isClassValue && fresh && c.ctx.binderMintedAt(fn, lvl) {
 			// Reading the class's name copied the constructor's binder, together with the
 			// links its member bodies recorded on the class's parameters. Those copies belong
 			// to this call, so the call binds them where they stand. Copying the binder again
 			// would leave the links naming the first copy, and the argument would reach it
-			// only through them.
-			fn = c.ctx.bindFuncBinderInPlace(fn, lvl)
+			// only through them. binderMintedAt confirms the binder holds this read's copies
+			// and no lifetime parameter whose bounds would need rewriting.
+			fn = c.ctx.bindFuncBinderInPlace(fn)
 		} else {
 			fn = c.ctx.instantiateFuncBinder(fn, lvl)
 		}
