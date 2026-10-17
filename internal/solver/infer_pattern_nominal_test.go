@@ -1172,6 +1172,13 @@ func TestInferInstancePatBaseClassOverSubclass(t *testing.T) {
 			src:  `fn f(p: ParseError | OtherError) { return match p { AppError{code} => code, _ => 0 } }`,
 			want: "fn (p: ParseError | OtherError) -> number",
 		},
+		{
+			// A caller can instantiate `U` as `Failure<number>`, so the arm does not narrow the
+			// union to its `Failure<string>` member, and `payload` is not bound as a `string`.
+			name: "a union with a type parameter member does not narrow",
+			src:  `fn f<U>(p: Failure<string> | U) { return match p { Failure{payload} => payload, _ => 0 } }`,
+			want: "fn <U>(p: Failure<string> | U) -> 0",
+		},
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {

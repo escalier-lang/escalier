@@ -5248,8 +5248,9 @@ func (c *checker) inferTryCatch(scope *Scope, lvl int, e *ast.TryCatchExpr) solt
 	//
 	// The caught value is a fresh variable the collected throws flow into, rather than a
 	// snapshot of them. A callee whose throws are still unsolved here then reaches the arms
-	// once it is solved. A test an arm applies constrains into this variable, so it never
-	// widens the collected throws rethrowUnhandled reads.
+	// once it is solved. An arm's literal or class test constrains into a variable this one
+	// flows into, so the test widens neither caught nor the collected throws rethrowUnhandled
+	// reads.
 	caught := c.freshAt(lvl)
 	c.constrain(e, collected, caught)
 	// The UCS IR names no step for a rest before the last element, so the walk below binds
@@ -5261,6 +5262,7 @@ func (c *checker) inferTryCatch(scope *Scope, lvl int, e *ast.TryCatchExpr) solt
 	// check follows, since rethrowUnhandled accounts for what the arms leave over.
 	core := ucs.DesugarCatch(e)
 	binder := c.newPathBinder(lvl, e, core.Scrutinee, caught)
+	binder.openRoot = true
 	w := c.walkCond(scope, lvl, e, core, binder, res)
 	branches = append(branches, w.bodies...)
 	// An arm below an unguarded catch-all can never run, so the walk never reaches it. It is
@@ -5272,7 +5274,12 @@ func (c *checker) inferTryCatch(scope *Scope, lvl int, e *ast.TryCatchExpr) solt
 			unwalked = append(unwalked, arm)
 		}
 	}
-	c.inferMatchArms(scope, lvl, e, unwalked, binder.views[core.Scrutinee].shape, caught, c.freshAt(lvl))
+	// The unwalked arms bind against a variable caught flows into. A literal or class test in
+	// one of them then adds its lower bound there, and the catch-all above it still reads
+	// only the known throws.
+	unwalkedScrut := c.freshAt(lvl)
+	c.constrain(e, caught, unwalkedScrut)
+	c.inferMatchArms(scope, lvl, e, unwalked, binder.views[core.Scrutinee].shape, unwalkedScrut, c.freshAt(lvl))
 	c.checkUniformOwnership(e, branches)
 	c.rethrowUnhandled(scope, e, collected, enclosing)
 	c.recordType(e, res)
