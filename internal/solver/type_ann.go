@@ -917,6 +917,20 @@ func (c *checker) resolveRegexTypeAnn(scope *Scope, ta *ast.LitTypeAnn, rl *ast.
 	if pattern == nil {
 		return c.report(&RegexTypeError{Ann: ta, Source: rl.Value, Reason: reason}), false
 	}
+	// The annotation's span starts at the literal's opening slash, which is where Shadowed
+	// counts its offsets from.
+	start := ta.Span().Start.Offset
+	for _, s := range pattern.Shadowed() {
+		c.report(&ShadowedAlternativeError{
+			Alt: s.Text,
+			By:  s.By,
+			At: ast.Span{
+				Start:    ast.Location{Offset: start + s.Start},
+				End:      ast.Location{Offset: start + s.End},
+				SourceID: ta.Span().SourceID,
+			},
+		})
+	}
 	var groups []soltype.RegexGroup
 	if c.inCondExtends {
 		for _, g := range pattern.Groups {
