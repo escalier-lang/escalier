@@ -1,4 +1,4 @@
-lib/exception_handling.esc:37:43: cannot constrain Error <: string
+lib/exception_handling.esc:37:43: this `throw` can throw `Error`, which `throwTypeIsWrong`'s `throws string` does not admit
 
 37:     if value != "" { value } else { throw Error("value is empty") }
                                               ^^^^^^^^^^^^^^^^^^^^^^^

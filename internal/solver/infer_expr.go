@@ -605,6 +605,14 @@ func (c *checker) inferFunc(scope *Scope, lvl int, sig ast.FuncSig, body *ast.Bl
 		// body opens its own context, so its returns never leak out here).
 		saved := c.pushFuncCtx(sig.Async, node, lvl)
 		c.fn.throws = declaredThrows
+		switch {
+		case gen != nil && gen.ann != nil && gen.ann.Raises():
+			c.fn.throwsAnn, c.fn.throwsForm = sig.Return, throwsGenerator
+		case sig.Async && asyncIsPromise:
+			c.fn.throwsAnn, c.fn.throwsForm = sig.Return, throwsPromise
+		case !sig.Async && gen == nil:
+			c.fn.throwsAnn = sig.Throws
+		}
 		if gen != nil {
 			c.fn.gen = true
 			c.fn.yields = gen.yields
@@ -2000,9 +2008,11 @@ func (c *checker) applyCallShape(lvl int, e *ast.CallExpr, callee soltype.Type, 
 	// required(callee) <= N <= upper(callee). If callShape were INEXACT instead,
 	// its accept-set would widen to [N, ∞), demanding upper(callee) = ∞ and thus
 	// rejecting every call to a fixed-arity (exact) function.
-	// The shape's Throws slot is this body's sink, so constrain's covariant throws rule
-	// records what the callee raises into it. A non-throwing `never` records nothing.
-	callShape := &soltype.FuncType{Params: callShapeParams, Ret: res, Throws: c.throwsSink(lvl)}
+	// `constrain`'s covariant throws rule records what the callee raises into the shape's
+	// `Throws` slot, callThrows. A non-throwing `never` records nothing. callThrows is raised
+	// into this body's sink below.
+	callThrows := c.freshThrowsSink(lvl)
+	callShape := &soltype.FuncType{Params: callShapeParams, Ret: res, Throws: callThrows}
 	// A resolved callee that declares nothing raises nothing, so it leaves the enclosing
 	// clause unused. Any other callee counts as raising, since its throws may still be an
 	// unsolved variable at this point. resolveOverload reaches the same rule through the same
@@ -2017,6 +2027,9 @@ func (c *checker) applyCallShape(lvl int, e *ast.CallExpr, callee soltype.Type, 
 	// concrete arity faults are owned by the lints above — resolves its blame to the call.
 	c.recordProv(callShape, e, CallShape)
 	c.constrain(e, callee, callShape)
+	// What the callee raises reaches callThrows through the shape. Raising it from here
+	// names the callee when the enclosing clause does not admit it.
+	c.raiseInto(lvl, e, describeSite("calling", "this call", e.Callee), callThrows)
 	if !resolved {
 		return res, nil
 	}
@@ -3014,7 +3027,7 @@ func (c *checker) inferAccessorAssign(
 	// enclosing body exactly as a getter read is. This runs before errsBefore is captured,
 	// so an undeclared raise does not suppress the move the write records below — the two
 	// checks are independent.
-	c.raiseAccessorThrows(lvl, e, setter.ThrowsOrNever())
+	c.raiseAccessorThrows(lvl, e, describeSite("assigning", "this assignment", e.Left), setter.ThrowsOrNever())
 	errsBefore := len(c.errs)
 	c.checkReceiverMut(e.Left, name, recv, setter.SelfParam)
 	c.constrain(e.Right, source, setter.Param)
@@ -4389,7 +4402,9 @@ func (c *checker) inferAwait(scope *Scope, lvl int, e *ast.AwaitExpr) soltype.Ty
 	// diagnostic — res then stays unbound and coalesces to `never`, the right
 	// recovery for awaiting something broken. The M2-era isRecoveryPlaceholder guard
 	// this site used is gone.
-	c.constrain(e, arg, c.ctx.promiseOf(res, c.throwsSink(lvl)))
+	rejects := c.freshThrowsSink(lvl)
+	c.constrain(e, arg, c.ctx.promiseOf(res, rejects))
+	c.raiseInto(lvl, e, describeSite("awaiting", "this `await`", e.Arg), rejects)
 	c.recordType(e, res)
 	return res
 }
@@ -4399,11 +4414,11 @@ func (c *checker) inferAwait(scope *Scope, lvl int, e *ast.AwaitExpr) soltype.Ty
 // sits where a value is expected: `return if ok { v } else { throw Error("no value") }`.
 func (c *checker) inferThrow(scope *Scope, lvl int, e *ast.ThrowExpr) soltype.Type {
 	arg := c.inferExpr(scope, lvl, e.Arg)
-	// The operand is the constraint site, so a thrown value that does not fit the sink is
-	// reported on that value. A literal carries its own source span, but the type of a call
-	// such as `Error("x")` does not. Its error takes the span of the site passed here, and
-	// passing the whole `throw` would underline the keyword too.
-	c.constrain(e.Arg, arg, c.throwsSink(lvl))
+	// The operand is the `site`, so a thrown value that does not fit the sink is reported on
+	// that value. A literal carries its own source span, but the type of a call such as
+	// `Error("x")` does not. Its error takes the span of the `site` passed here, and passing
+	// the whole `throw` would underline the keyword too.
+	c.raiseInto(lvl, e.Arg, "this `throw`", arg)
 	c.markRaised()
 	// Recorded but given no provenance: every `&NeverType{}` shares one address, and Prov
 	// is pointer-keyed, so a second throw would trip recordProv's guard. Info is node-keyed.

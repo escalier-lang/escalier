@@ -546,7 +546,7 @@ func TestInferGenRaises(t *testing.T) {
 			// mismatched raise is blamed at its own site.
 			name:     "ThrowAgainstDeclaredRaiseSlot",
 			src:      `gen fn f() -> Generator<1, never, never, "boom"> { yield 1 throw "other" }`,
-			wantErrs: []string{`1:66-1:73: cannot constrain "other" <: "boom"`},
+			wantErrs: []string{"1:66-1:73: this `throw` can throw `\"other\"`, which `f`'s raise type `\"boom\"` does not admit"},
 		},
 		{
 			// A clause-less caller that iterates a raising generator is asked to handle it.
@@ -555,7 +555,7 @@ func TestInferGenRaises(t *testing.T) {
 				gen fn g() { yield 1 throw "boom" }
 				fn f() { for x in g() { } }
 			`,
-			wantErrs: []string{`3:23-3:26: cannot constrain "boom" <: never`},
+			wantErrs: []string{"3:23-3:26: `f` can throw `\"boom\"`, but it doesn't declare it; add `throws string` to `f`'s signature"},
 		},
 		{
 			// A clause-less caller that advances a raising generator by hand is asked to
@@ -565,7 +565,7 @@ func TestInferGenRaises(t *testing.T) {
 				gen fn g() { yield 1 throw "boom" }
 				fn f() { val it = g() return it.next() }
 			`,
-			wantErrs: []string{`3:34-3:43: cannot constrain "boom" <: never`},
+			wantErrs: []string{"3:34-3:43: `f` can throw `\"boom\"`, but it doesn't declare it; add `throws string` to `f`'s signature"},
 		},
 	})
 }
@@ -774,7 +774,7 @@ func TestInferGenNext(t *testing.T) {
 				fn f(b: boolean) { val it = if b { g() } else { 5 } return it.next() }
 			`,
 			wantErrs: []string{
-				`3:64-3:71: cannot constrain Generator<t8, undefined, unknown> <: object`,
+				"3:64-3:71: cannot constrain Generator<t9, undefined, unknown> <: object",
 				`3:64-3:71: cannot constrain 5 <: object`,
 			},
 		},

@@ -1885,6 +1885,10 @@ func (c *checker) inferMemberFunc(scope *Scope, lvl int, m pendingMember, body *
 	}
 	// generic is true for a method and false for a getter or setter. inferFunc reports a
 	// binder it is not allowed to resolve as an unsupported feature.
+	if c.memberFuncNames == nil {
+		c.memberFuncNames = map[*ast.FuncExpr]string{}
+	}
+	c.memberFuncNames[m.fn] = m.name
 	return c.inferFunc(scope.Child(), lvl, m.fn.FuncSig, m.fn.Body, m.fn, m.generic, true)
 }
 
