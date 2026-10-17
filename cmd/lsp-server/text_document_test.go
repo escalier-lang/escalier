@@ -1,10 +1,13 @@
 package main
 
 import (
+	"fmt"
 	"os"
 	"path/filepath"
 	"testing"
+	"time"
 
+	"github.com/escalier-lang/escalier/internal/ast"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"github.com/tliron/glsp"
@@ -37,10 +40,16 @@ func integrationServer(t *testing.T, files map[string]string) *Server {
 // openFile simulates opening a file in the editor, triggering synchronous validation.
 func openFile(t *testing.T, s *Server, relPath string, contents string) protocol.DocumentUri {
 	t.Helper()
+	return openFileIn(t, s, &glsp.Context{}, relPath, contents)
+}
+
+// openFileIn is openFile with the server's notifications sent to ctx.
+func openFileIn(t *testing.T, s *Server, ctx *glsp.Context, relPath string, contents string) protocol.DocumentUri {
+	t.Helper()
 	rootPath := uriToPath(s.rootURI)
 	absPath := filepath.Join(rootPath, relPath)
 	uri := protocol.DocumentUri(pathToURI(absPath))
-	err := s.textDocumentDidOpen(&glsp.Context{}, &protocol.DidOpenTextDocumentParams{
+	err := s.textDocumentDidOpen(ctx, &protocol.DidOpenTextDocumentParams{
 		TextDocument: protocol.TextDocumentItem{
 			URI:        uri,
 			LanguageID: "escalier",
@@ -354,4 +363,146 @@ func TestWorkspaceExecuteCommand_RejectsClosedDocument(t *testing.T) {
 	})
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "document not open")
+}
+
+// --- Diagnostics published from internal/solver ---
+
+// publishedDiagnostics returns a context whose Notify forwards each
+// publishDiagnostics notification to the returned channel. The server sends each
+// notification from a goroutine of its own, so a test reads them from the channel
+// rather than from a slice.
+func publishedDiagnostics() (*glsp.Context, <-chan *protocol.PublishDiagnosticsParams) {
+	published := make(chan *protocol.PublishDiagnosticsParams, 64)
+	ctx := &glsp.Context{
+		Notify: func(method string, params any) {
+			if method != protocol.ServerTextDocumentPublishDiagnostics {
+				return
+			}
+			published <- params.(*protocol.PublishDiagnosticsParams)
+		},
+	}
+	return ctx, published
+}
+
+// awaitDiagnostics reads published notifications until one names uri at version,
+// and returns its diagnostics rendered as "line:col-line:col message". Lines and
+// columns are the LSP's, counted from 0.
+func awaitDiagnostics(
+	t *testing.T,
+	published <-chan *protocol.PublishDiagnosticsParams,
+	uri protocol.DocumentUri,
+	version protocol.UInteger,
+) []string {
+	t.Helper()
+	// The first solver check in the process loads the standard library from disk,
+	// which takes several seconds under the race detector.
+	timeout := time.After(60 * time.Second)
+	for {
+		select {
+		case params := <-published:
+			if params.URI != uri || params.Version == nil || *params.Version != version {
+				continue
+			}
+			rendered := make([]string, len(params.Diagnostics))
+			for i, d := range params.Diagnostics {
+				rendered[i] = fmt.Sprintf(
+					"%d:%d-%d:%d %s",
+					d.Range.Start.Line, d.Range.Start.Character,
+					d.Range.End.Line, d.Range.End.Character,
+					d.Message,
+				)
+			}
+			return rendered
+		case <-timeout:
+			t.Fatalf("no diagnostics published for %s at version %d", uri, version)
+			return nil
+		}
+	}
+}
+
+func TestDiagnosticsPublishedFromSolver(t *testing.T) {
+	tests := []struct {
+		name  string
+		files map[string]string
+		// open is the file the test opens, which triggers a full package check.
+		open string
+		// change, when set, replaces the text of open after the full check. A bin/
+		// file changed alone is re-checked against the cached library surface.
+		change string
+		// expected are the diagnostics published for open once the last check ends.
+		expected []string
+	}{
+		{
+			name: "BinTypeErrorFromFullCheck",
+			files: map[string]string{
+				"bin/main.esc": `val x: number = "hello"`,
+			},
+			open:     "bin/main.esc",
+			expected: []string{`0:16-0:23 cannot constrain "hello" <: number`},
+		},
+		{
+			name: "LibTypeErrorFromFullCheck",
+			files: map[string]string{
+				"lib/math.esc": `export val x: number = "hello"`,
+			},
+			open:     "lib/math.esc",
+			expected: []string{`0:23-0:30 cannot constrain "hello" <: number`},
+		},
+		{
+			name: "BinTypeErrorFromIncrementalCheck",
+			files: map[string]string{
+				"lib/math.esc": "export fn add(a: number, b: number) -> number { a + b }",
+				"bin/main.esc": "val x = add(1, 2)",
+			},
+			open:     "bin/main.esc",
+			change:   `val x: string = add(1, 2)`,
+			expected: []string{`0:16-0:25 cannot constrain number <: string`},
+		},
+		{
+			name: "NoErrorsPublishesEmptyList",
+			files: map[string]string{
+				"lib/math.esc": "export fn add(a: number, b: number) -> number { a + b }",
+				"bin/main.esc": "val x = add(1, 2)",
+			},
+			open:     "bin/main.esc",
+			expected: []string{},
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			useSolver(t)
+			s := integrationServer(t, tt.files)
+			ctx, published := publishedDiagnostics()
+			uri := openFileIn(t, s, ctx, tt.open, tt.files[tt.open])
+			var version protocol.UInteger = 1
+			var module *ast.Module
+			if tt.change != "" {
+				// The files a change case starts from are valid, and reading this
+				// notification leaves the change's as the next one for this file.
+				require.Empty(t, awaitDiagnostics(t, published, uri, 1))
+				s.mu.RLock()
+				module = s.checkOutput.Module
+				s.mu.RUnlock()
+				version = 2
+				require.NoError(t, s.textDocumentDidChange(ctx, &protocol.DidChangeTextDocumentParams{
+					TextDocument: protocol.VersionedTextDocumentIdentifier{
+						TextDocumentIdentifier: protocol.TextDocumentIdentifier{URI: uri},
+						Version:                protocol.Integer(version),
+					},
+					ContentChanges: []any{
+						protocol.TextDocumentContentChangeEventWhole{Text: tt.change},
+					},
+				}))
+			}
+
+			require.Equal(t, tt.expected, awaitDiagnostics(t, published, uri, version))
+			if tt.change != "" {
+				// The re-check of a bin/ file alone keeps the parsed library, where a
+				// full package check parses it again.
+				s.mu.RLock()
+				defer s.mu.RUnlock()
+				require.Same(t, module, s.checkOutput.Module)
+			}
+		})
+	}
 }
