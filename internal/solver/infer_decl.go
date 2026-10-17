@@ -952,14 +952,21 @@ func (c *checker) checkExcessLiteralMembers(e ast.Expr, sub, annT soltype.Type) 
 // lvl: variables created in the initializer (level > lvl) become reusable type parameters,
 // while variables captured from an enclosing scope (level <= lvl) stay shared — so
 // `fn (y) { val getY = fn () { y }; [getY(), getY()] }` keeps getY's captured `y`
-// instead of freezing it to `never`, the bug eager coalescing caused. A body-level
-// `val` is never recursive (the name is bound only after its initializer is typed),
-// so there is no pre-binding or binding var; the SCC driver owns the recursive top-level
-// path (see inferDeclDef). ok=false when there is no initializer.
-func (c *checker) inferVarDecl(scope *Scope, lvl int, d *ast.VarDecl) (ValueBinding, bool) {
+// instead of freezing it to `never`, the bug eager coalescing caused. The SCC driver
+// owns the recursive top-level path of a module (see inferDeclDef). ok=false when there
+// is no initializer.
+//
+// self is the variable a recursive reference in the initializer reads, or nil when the
+// initializer cannot name the binding. The caller binds self in scope at level lvl+1
+// before the call. The initializer's type flows into self before generalization, so
+// each recursive use constrains the binding's own type.
+func (c *checker) inferVarDecl(scope *Scope, lvl int, d *ast.VarDecl, self *soltype.TypeVarType) (ValueBinding, bool) {
 	initType, ok := c.inferVarDeclInit(scope, lvl+1, d, "")
 	if !ok {
 		return ValueBinding{}, false
+	}
+	if self != nil {
+		c.constrain(d.Init, initType, self)
 	}
 	bound := initType
 	// M4 B3: an un-annotated body-level `var` widens at coalesce time like its

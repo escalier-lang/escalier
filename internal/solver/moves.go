@@ -70,9 +70,12 @@ type UseAfterMoveError struct {
 	// reaching the use (the MaybeMoved lattice state), false when every reaching
 	// path moved it (Moved).
 	Conditional bool
-	// Via names the module-level binding whose stored closure the call being blamed may run,
-	// when the read is that closure's write. It is empty otherwise.
+	// Via names the closure the call being blamed may run, when the read is that closure's
+	// access to what it captures. It is empty otherwise.
 	Via string
+	// ViaReads marks a closure named by Via that only reads the place. It is false for one
+	// that writes it.
+	ViaReads bool
 	// use is the read being rejected; it self-blames from here.
 	use ast.Node
 	// moveSite is the consume that moved the binding, used for the related span. It
@@ -93,7 +96,11 @@ func (e *UseAfterMoveError) Message() string {
 		return fmt.Sprintf("use of partially moved value '%s'; field '%s' was moved out", e.ReadName, e.Name)
 	}
 	if e.Via != "" {
-		return fmt.Sprintf("this call may run '%s', which writes '%s' after it was moved", e.Via, e.Name)
+		access := "writes"
+		if e.ViaReads {
+			access = "reads"
+		}
+		return fmt.Sprintf("this call may run '%s', which %s '%s' after it was moved", e.Via, access, e.Name)
 	}
 	return fmt.Sprintf("use of moved value '%s'", e.Name)
 }
@@ -110,10 +117,12 @@ type moveUse struct {
 	// borrow exclusivity check weighs the read against the loans below it, so a borrow written
 	// later in the source, on the other arm of an `if` among others, does not reach back to it.
 	loanSeqAt int
-	// via names the module-level binding whose stored closure a call may run, for a read
-	// standing for that closure's write during the call. It is empty for a read the program
-	// writes.
+	// via names the closure a call may run, for a read standing for that closure's access to
+	// what it captures during the call. It is empty for a read the program writes.
 	via string
+	// viaReads marks a closure named by via that only reads the place. It is false for one
+	// that writes it.
+	viaReads bool
 }
 
 // isBorrowType reports whether t is a borrow — a RefType carrying a lifetime.
@@ -779,6 +788,7 @@ func (c *checker) checkUseAfterMoves() {
 			Partial:     partial,
 			Conditional: state == liveness.MaybeMoved,
 			Via:         u.via,
+			ViaReads:    u.viaReads,
 			use:         u.node,
 			moveSite:    c.fn.moveNodes[movedID],
 		})

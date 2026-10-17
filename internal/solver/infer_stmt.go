@@ -94,11 +94,11 @@ func (c *checker) inferStmt(scope *Scope, lvl int, s ast.Stmt) soltype.Type {
 		return t
 	case *ast.DeclStmt:
 		// A script (bin/) walks its top-level statements in source order, so a class, enum,
-		// alias or `declare fn` binds where it appears — used before its declaration it is an
-		// unknown identifier, unlike the module dep-graph path's out-of-order resolution. A
-		// real function body still rejects each of them, so all four are gated on the
-		// script context (a funcCtx with a nil node; see InferScript). An alias and a
-		// `declare fn` are further gated on the script's root scope. A script's top-level
+		// alias or function declaration binds where it appears — used before its declaration
+		// it is an unknown identifier, unlike the module dep-graph path's out-of-order
+		// resolution. A real function body still rejects each of them, so all four are gated
+		// on the script context (a funcCtx with a nil node; see InferScript). An alias and a
+		// function declaration are further gated on the script's root scope. A script's top-level
 		// declarations live for the whole run, so the class registry's insert/overwrite
 		// invariant holds exactly as it does for a module's top-level decls.
 		switch decl := s.Decl.(type) {
@@ -128,11 +128,17 @@ func (c *checker) inferStmt(scope *Scope, lvl int, s ast.Stmt) soltype.Type {
 			c.report(&BodyDeclNotAllowedError{Decl: s.Decl})
 			return &soltype.UndefinedType{}
 		case *ast.FuncDecl:
-			// A script binds an ambient `declare fn` only. A `fn` with a body would need the
-			// capture and alias tracking a `val f = fn …` gets, which this path does not run.
-			if c.atScriptRoot(scope) && decl.Declare() {
-				c.bindScriptFunc(scope, lvl, decl)
-				return &soltype.UndefinedType{}
+			// A function declaration binds only at a script's top level. A nested one is
+			// rejected, in a script's blocks and in every function body.
+			if c.atScriptRoot(scope) {
+				switch {
+				case decl.Declare():
+					c.bindScriptFunc(scope, lvl, decl)
+					return &soltype.UndefinedType{}
+				case decl.Body != nil:
+					c.bindScriptFuncWithBody(scope, lvl, s, decl)
+					return &soltype.UndefinedType{}
+				}
 			}
 			c.report(&BodyDeclNotAllowedError{Decl: s.Decl})
 			return &soltype.UndefinedType{}
@@ -174,32 +180,37 @@ func (c *checker) inferStmt(scope *Scope, lvl int, s ast.Stmt) soltype.Type {
 		// allowed and overwrites the name's binding (§3.2). inferVarDecl reports a
 		// missing initializer itself and returns ok=false; bind only when it
 		// produced a type.
-		if b, ok := c.inferVarDecl(scope, lvl, vd); ok {
-			// M4 G1: carry the rename-assigned VarID onto the binding so a later
-			// closure capture resolves this body-level binding to its alias set, then
-			// track the alias the declaration creates and check its mutability
-			// transition. Both are no-ops outside a function body (c.fn == nil).
-			if ip, ok := vd.Pattern.(*ast.IdentPat); ok && ip.VarID > 0 {
-				b.VarID = ip.VarID
-			}
-			scope.defineValue(name, b) // overwrite ⇒ same-name redeclaration rebinds
-			if c.fn != nil {
-				c.trackAliasesForVarDecl(scope, vd, bindingType(b), s)
-				c.consumeBindingInit(vd, bindingType(b), s)
-				// Record which function-locals this binding's initializer borrows, so a
-				// later flow-out of the binding can find a borrow of a local that would
-				// escape the frame.
-				c.recordBorrowEdges(b.VarID, vd.Init)
-				if ref, ok := c.fn.stmtToRef[s]; ok {
-					c.flushBorrowDirty(ref)
-					// An initializer that borrows a place binds a loan of it to this binding,
-					// which then has to stay exclusive for as long as the binding is read.
-					c.recordBorrowLoan(b.VarID, vd.Init, ref)
-				}
-			}
+		if b, ok := c.inferVarDecl(scope, lvl, vd, nil); ok {
+			c.defineLocal(scope, name, vd, b, s)
 		}
 		return &soltype.UndefinedType{}
 	default:
 		return c.reportUnsupported(s)
+	}
+}
+
+// defineLocal binds name to b in scope for the single-name `val`/`var` vd written at
+// statement s, overwriting any earlier binding of name. Inside a body it copies the
+// VarID the rename pass gave vd's pattern onto b, then records the aliases, consumes,
+// borrow edges, and loans the declaration creates. A later closure capture of the
+// binding resolves to its alias set through that VarID.
+func (c *checker) defineLocal(scope *Scope, name string, vd *ast.VarDecl, b ValueBinding, s ast.Stmt) {
+	if ip, ok := vd.Pattern.(*ast.IdentPat); ok && ip.VarID > 0 {
+		b.VarID = ip.VarID
+	}
+	scope.defineValue(name, b)
+	if c.fn == nil {
+		return
+	}
+	c.trackAliasesForVarDecl(scope, vd, bindingType(b), s)
+	c.consumeBindingInit(vd, bindingType(b), s)
+	// Record which function-locals this binding's initializer borrows, so a later
+	// flow-out of the binding can find a borrow of a local that would escape the frame.
+	c.recordBorrowEdges(b.VarID, vd.Init)
+	if ref, ok := c.fn.stmtToRef[s]; ok {
+		c.flushBorrowDirty(ref)
+		// An initializer that borrows a place binds a loan of it to this binding, which
+		// then has to stay exclusive for as long as the binding is read.
+		c.recordBorrowLoan(b.VarID, vd.Init, ref)
 	}
 }

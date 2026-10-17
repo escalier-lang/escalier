@@ -1082,6 +1082,14 @@ type DuplicateOverloadError struct {
 	Name           string
 }
 
+// ScriptOverloadWithBodyError fires when a script's top level declares one function name
+// twice and either declaration has a body. A script binds a `fn` with a body the way it
+// binds `val f = fn …`, so a second declaration of the name rebinds it instead of joining
+// the first as an overload arm. Decl is the later declaration and Previous the earlier one.
+type ScriptOverloadWithBodyError struct {
+	Decl, Previous *ast.FuncDecl
+}
+
 // TooManyArgsError fires when a DIRECT call supplies more arguments than the
 // (concrete) callee declares — the #677 §4.2.3 extra-arg lint, which rejects
 // too-many for exact AND inexact callees alike (an inexact function tolerates
@@ -1368,6 +1376,7 @@ func (*DuplicateDeclarationError) isSolverError()           {}
 func (*NoMatchingOverloadError) isSolverError()             {}
 func (*UnannotatedRecursiveOverloadError) isSolverError()   {}
 func (*DuplicateOverloadError) isSolverError()              {}
+func (*ScriptOverloadWithBodyError) isSolverError()         {}
 func (*AwaitOutsideAsyncError) isSolverError()              {}
 func (*ForAwaitOutsideAsyncError) isSolverError()           {}
 func (*NotIterableError) isSolverError()                    {}
@@ -2943,6 +2952,12 @@ func (e *DuplicateOverloadError) Span() ast.Span      { return e.Decl.Span() }
 func (e *DuplicateOverloadError) Related() []ast.Span { return []ast.Span{e.Previous.Span()} }
 func (e *DuplicateOverloadError) Message() string {
 	return "Overload arms must have distinguishable parameter types: " + e.Name
+}
+
+func (e *ScriptOverloadWithBodyError) Span() ast.Span      { return e.Decl.Span() }
+func (e *ScriptOverloadWithBodyError) Related() []ast.Span { return []ast.Span{e.Previous.Span()} }
+func (e *ScriptOverloadWithBodyError) Message() string {
+	return "A script cannot overload a function declared with a body: " + e.Decl.Name.Name
 }
 
 func (e *AwaitOutsideAsyncError) Span() ast.Span { return e.Await.Span() }
