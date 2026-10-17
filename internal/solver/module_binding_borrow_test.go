@@ -91,6 +91,16 @@ func TestModuleBindingMovesAndBorrows(t *testing.T) {
 			`,
 			want: nil,
 		},
+		"ClassValueReadTwice": {
+			src: decls + `
+				class Foo { v: number }
+				fn test() {
+					val a = Foo
+					val b = Foo
+				}
+			`,
+			want: nil,
+		},
 	}
 	for name, tt := range tests {
 		t.Run(name, func(t *testing.T) {
