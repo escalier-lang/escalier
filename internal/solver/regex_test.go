@@ -234,7 +234,7 @@ func TestInferRegexTypeCaptures(t *testing.T) {
 		{"ALiteralWithoutTheAffixes", `StripUnderscores<"foo">`, `"foo"`},
 		{"ANonMatchTakesTheElseBranch", `StripUnderscores<"_123_">`, `"_123_"`},
 		{"AUnionCheckDistributes", `StripUnderscores<"_a_" | "b">`, `"a" | "b"`},
-		{"AStringCheckTakesTheElseBranch", `StripUnderscores<string>`, `string`},
+		{"AStringCheckJoinsBothBranches", `StripUnderscores<string>`, `string`},
 		{"AnOptionalGroupThatMatched", `Optional<"ab">`, `"b"`},
 		{"AnOptionalGroupThatDidNotMatch", `Optional<"a">`, `undefined`},
 		{"TwoGroups", `Split<"left-right">`, `["left", "right"]`},
@@ -317,4 +317,87 @@ func TestRegexLiteralWithoutRegExp(t *testing.T) {
 	}, errorMessagesOf(c.errs))
 	require.IsType(t, &soltype.ErrorType{}, c.info.TypeOf(first))
 	require.IsType(t, &soltype.ErrorType{}, c.info.TypeOf(second))
+}
+
+// TestInferRegexTypeComplement covers a `string` narrowed to the strings a regex type rejects.
+// A conditional over a regex type takes both branches for `string`, reading the check as the
+// matching strings in Then and as `string & ~/re/` in Else.
+func TestInferRegexTypeComplement(t *testing.T) {
+	decls := `
+		type StripUnderscores<T> = if T : /^_*(?<Ident>[a-zA-Z][a-zA-Z0-9]*)_*$/ { Ident } else { T }
+		type NotDigits<T> = if T : /^\d+$/ { never } else { T }
+		type OnlyDigits<T> = if T : /^\d+$/ { T } else { never }
+		type D = /^\d+$/
+		type NotD<T> = if T : D { never } else { T }
+	`
+	tests := []struct {
+		name string
+		src  string
+		want string
+	}{
+		{"ARegexAliasSplitsAsAnInlineRegex", `NotD<string>`, `string & ~/^\d+$/`},
+		// A check that is not a naked type parameter does not distribute, so it decides one
+		// branch.
+		{"ANonDistributiveConditionalDecidesOneBranch", `if string : /^\d+$/ { "a" } else { "b" }`, `"b"`},
+		{"TheElseBranchReadsTheComplement", `NotDigits<string>`, `string & ~/^\d+$/`},
+		{"TheThenBranchReadsTheRegexType", `OnlyDigits<string>`, `/^\d+$/`},
+		// Ident captures a `string` in Then, which absorbs the complement Else yields.
+		{"BothBranchesJoin", `StripUnderscores<string>`, `string`},
+		{"AStringAlreadyExcludingTheRegexTakesElse", `NotDigits<NotDigits<string>>`, `string & ~/^\d+$/`},
+		{"AMatchingLiteralTakesThen", `NotDigits<"12">`, `never`},
+		{"ARejectedLiteralTakesElse", `NotDigits<"ab">`, `"ab"`},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			nodes, ctx, errs := inferTypeNodes(t, decls+"type Result = "+tt.src)
+			require.Empty(t, errs)
+			require.Equal(t, tt.want, soltype.Print(expandAliasResidual(ctx, nodes["Result"])))
+		})
+	}
+}
+
+// TestInferRegexTypeComplementInAMatch covers the complement a `match` arm after a regex
+// annotation test reads, and a literal checked against a complement.
+func TestInferRegexTypeComplementInAMatch(t *testing.T) {
+	tests := []struct {
+		name     string
+		src      string
+		want     string
+		wantErrs []string
+	}{
+		{
+			name: "TheFallThroughArmBindsTheComplement",
+			src:  `fn f(s: string) { return match s { d: /^\d+$/ => "", other => other } }`,
+			want: `fn (s: string) -> string & ~/^\d+$/`,
+		},
+		{
+			name: "ARegexAliasAnnotation",
+			src: `type D = /^\d+$/
+				fn f(s: string) { return match s { d: D => "", other => other } }`,
+			want: `fn (s: string) -> string & ~/^\d+$/`,
+		},
+		{
+			name: "AMatchingLiteralIsRejectedAgainstTheComplement",
+			src: `type NotDigits<T> = if T : /^\d+$/ { never } else { T }
+				fn f() -> NotDigits<string> { return "12" }`,
+			wantErrs: []string{`2:42-2:46: cannot constrain "12" <: ~/^\d+$/`},
+		},
+		{
+			name: "ARejectedLiteralFitsTheComplement",
+			src: `type NotDigits<T> = if T : /^\d+$/ { never } else { T }
+				fn f() -> NotDigits<string> { return "ab" }`,
+			want: "fn () -> NotDigits<string>",
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			values, _, errs := inferSource(t, tt.src)
+			if tt.wantErrs != nil {
+				require.Equal(t, tt.wantErrs, messagesWithSpan(t, errs))
+				return
+			}
+			require.Empty(t, messagesWithSpan(t, errs))
+			require.Equal(t, tt.want, values["f"])
+		})
+	}
 }
