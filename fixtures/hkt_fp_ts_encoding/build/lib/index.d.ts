@@ -14,6 +14,5 @@ declare function double<F extends URIS>(functor: Functor<F>, fa: Kind<F, number>
 declare const optionFunctor: Functor<"MyOption">;
 declare const xs: Array<number>;
 declare const viaInstance: Kind<"Array", number>;
-declare function widen<F extends URIS>(fa: Kind<F, 5>): Kind<F, number>;
 declare const ys: Kind<"Array", number>;
 declare const zs: Kind<"MyOption", number>;

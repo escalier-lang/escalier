@@ -1141,8 +1141,9 @@ type KeyofType struct {
 }
 
 // IndexType is the residual `Target[Index]` indexed-access type operator (M9 PR2), the
-// sibling of KeyofType. Like KeyofType it is inert: it carries no bounds, constrain never
-// records one against it, and it flows through the solver's structural machinery untouched.
+// sibling of KeyofType. Like KeyofType it carries no bounds, and constrain never records one
+// against it. Two accesses at the same index are compared by their targets, which may record
+// bounds on variables inside those targets.
 // An evaluator reduces it once its operands are ground — `{x: number}["x"]` ⇒ `number`, a
 // tuple `[a, b][0]` ⇒ `a`, and a union index distributes so `T["a" | "b"]` ⇒ `T["a"] |
 // T["b"]`. Until then a `T[K]` over a type parameter stays symbolic and renders `T[K]`.

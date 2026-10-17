@@ -18,10 +18,10 @@ type Functor<F: URIS> = {
 }
 
 // Each instance names a literal URI, so Kind reduces to the concrete constructor. The
-// callback takes all three parameters because the solver rejects a shorter one.
+// callback is inexact because Array.map calls it with three arguments.
 val arrayFunctor: Functor<"Array"> = {
 	URI: "Array",
-	map: fn (fa, f) { return fa.map(fn (a, i, arr) { return f(a) }) },
+	map: fn (fa, f) { return fa.map(fn (a, ...) { return f(a) }) },
 }
 
 val optionFunctor: Functor<"MyOption"> = {
@@ -42,10 +42,6 @@ val viaInstance = arrayFunctor.map(xs, fn (n) { return n * 2 })
 // Code generic over F, where F stays a rigid key inside the body.
 fn double<F: URIS>(functor: Functor<F>, fa: Kind<F, number>) -> Kind<F, number> {
 	return functor.map(fa, fn (n) { return n * 2 })
-}
-
-fn widen<F: URIS>(fa: Kind<F, 5>) -> Kind<F, number> {
-	return fa
 }
 
 // Calls that have to infer F from the instance.

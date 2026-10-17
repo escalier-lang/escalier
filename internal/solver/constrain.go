@@ -928,6 +928,43 @@ func (c *Context) indexAccessUpperBound(access *soltype.IndexType, seen *seenPai
 	return reduced, true
 }
 
+// constrainSameKeyAccess decides `O1[K] <: O2[K]` for two residual accesses whose indexes are
+// equal. An access reads the member at each key the index admits, so the constraint holds when
+// each such member of O1 is a subtype of the same member of O2.
+//
+// When K's bound is a finite set of literal keys, each key is checked on its own. Otherwise the
+// whole targets are compared, which is sufficient but rejects a pair that differs only at keys K
+// never admits. The key-by-key accesses keep each side's Inexact flag.
+func (c *Context) constrainSameKeyAccess(sub, super *soltype.IndexType, seen *seenPairs, mutCtx bool) []SolverError {
+	keys, ok := c.indexBoundKeys(sub.Index, seen)
+	if !ok {
+		return c.constrain(sub.Target, super.Target, seen, mutCtx)
+	}
+	var errs []SolverError
+	for _, key := range keys {
+		subAt := &soltype.IndexType{Target: sub.Target, Index: key, Inexact: sub.Inexact}
+		superAt := &soltype.IndexType{Target: super.Target, Index: key, Inexact: super.Inexact}
+		errs = append(errs, c.constrain(subAt, superAt, seen, mutCtx)...)
+	}
+	return errs
+}
+
+// indexBoundKeys returns the literal keys a type-parameter index may take, read from its upper
+// bound after the bound reduces. `K: "a" | "b"` gives `"a"` and `"b"`, and `F: keyof {x: A, y: B}`
+// gives `"x"` and `"y"`. It reports false when the index is not a bounded parameter or the bound
+// does not reduce to a finite set of literals.
+func (c *Context) indexBoundKeys(index soltype.Type, seen *seenPairs) ([]soltype.Type, bool) {
+	bound, ok := paramUpperBound(index)
+	if !ok {
+		return nil, false
+	}
+	bound = c.peelTransparent(bound)
+	if reduced, errs, ok := c.reduceResidual(bound, seen); ok && len(errs) == 0 {
+		bound = reduced
+	}
+	return literalKeys(bound)
+}
+
 // maxUnwrapDepth caps how many type operators constrain may evaluate along one constraint path.
 // Almost every unwrap chain is a handful of steps and settles on its own. Three rules already close
 // the recursive ones: the reflexive shortcut settles a comparison between the same alias
@@ -2018,10 +2055,11 @@ func (c *Context) constrain(sub, super soltype.Type, seen *seenPairs, mutCtx boo
 		*soltype.ExactnessType:
 		// A residual type-level operator the pre-switch could not ground reaches here: a `keyof T`,
 		// `T[K]`, `on${T}`, `Uppercase<T>`, or `Exact<T>` over a type parameter, or an expanding
-		// recursive alias. constrain treats every such operator inert, neither decomposing nor
-		// reducing it, so two residuals are compatible only when structurally identical. A reflexive
-		// `keyof T <: keyof T` succeeds without recording any bound, and a residual against any
-		// other concrete fails.
+		// recursive alias. constrain does not reduce such an operator, so two residuals are
+		// compatible when structurally identical. A reflexive `keyof T <: keyof T` succeeds without
+		// recording any bound, and a residual against any other concrete fails. The one exception
+		// is a pair of indexed accesses at the same index, which constrainSameKeyAccess decides by
+		// their targets. `URItoKind<5>[F] <: URItoKind<number>[F]` holds for a rigid `F` that way.
 		// When super is a variable the case falls through to the superVar arm below, which records the
 		// whole residual as one lower bound, keeping the operator symbolic on the coalesced binding. A
 		// tuple carrying a `...P` spread is handled inertly in the TupleType arm above, the spread
@@ -2029,6 +2067,11 @@ func (c *Context) constrain(sub, super soltype.Type, seen *seenPairs, mutCtx boo
 		if _, superIsVar := super.(*soltype.TypeVarType); !superIsVar {
 			if equalType(sub, super) {
 				return nil
+			}
+			if subAccess, ok := sub.(*soltype.IndexType); ok {
+				if superAccess, ok := super.(*soltype.IndexType); ok && equalType(subAccess.Index, superAccess.Index) {
+					return c.constrainSameKeyAccess(subAccess, superAccess, seen, mutCtx)
+				}
 			}
 			return []SolverError{&CannotConstrainError{Sub: sub, Super: super}}
 		}

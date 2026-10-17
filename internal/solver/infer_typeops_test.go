@@ -1596,6 +1596,91 @@ func TestInferIndexOverBoundedParam(t *testing.T) {
 	}
 }
 
+// Two indexed accesses at the same rigid key compare by their targets, so `O1[K] <: O2[K]` holds
+// whenever O1's member at every key K admits is a subtype of O2's. Neither access reduces, since
+// the key is a type parameter. The cases cover object targets, a target that differs only at a key
+// the bound excludes, alias targets in the shape the fp-ts `Kind` encoding uses, an unbounded key,
+// and a pair of accesses whose keys differ.
+func TestInferIndexSameKeyComparesTargets(t *testing.T) {
+	tests := []struct {
+		name string
+		src  string
+		// wantErrs is every diagnostic in order. nil expects none.
+		wantErrs []string
+	}{
+		{
+			name: "WiderTargetAccepted",
+			src: `fn f<K: "a" | "b">(x: {a: 5, b: 6}[K]) -> {a: number, b: number}[K] {
+				return x
+			}`,
+		},
+		{
+			name: "NarrowerTargetRejected",
+			src: `fn f<K: "a" | "b">(x: {a: number, b: 6}[K]) -> {a: 5, b: 6}[K] {
+				return x
+			}`,
+			wantErrs: []string{"cannot constrain number <: 5"},
+		},
+		{
+			// Member b differs, but K's bound admits only "a".
+			name: "MismatchOutsideBoundAccepted",
+			src: `fn f<K: "a">(x: {a: 5, b: string}[K]) -> {a: number, b: number}[K] {
+				return x
+			}`,
+		},
+		{
+			name: "AliasTargetAccepted",
+			src: `
+				type R<A> = {a: A, b: [A]}
+				fn f<K: keyof R<unknown>>(x: R<5>[K]) -> R<number>[K] { return x }
+			`,
+		},
+		{
+			name: "KindEncodingAccepted",
+			src: `
+				type URItoKind<A> = {Box: {value: A}, Pair: [A, A]}
+				type URIS = keyof URItoKind<unknown>
+				type Kind<F: URIS, A> = URItoKind<A>[F]
+				fn widen<F: URIS>(fa: Kind<F, 5>) -> Kind<F, number> { return fa }
+			`,
+		},
+		{
+			name: "KindEncodingRejected",
+			src: `
+				type URItoKind<A> = {Box: {value: A}, Pair: [A, A]}
+				type URIS = keyof URItoKind<unknown>
+				type Kind<F: URIS, A> = URItoKind<A>[F]
+				fn narrow<F: URIS>(fa: Kind<F, number>) -> Kind<F, 5> { return fa }
+			`,
+			wantErrs: []string{"cannot constrain number <: 5"},
+		},
+		{
+			// Without a bound the whole targets are compared.
+			name: "UnboundedKeyAccepted",
+			src: `fn f<K>(x: {a: 5}[K]) -> {a: number}[K] {
+				return x
+			}`,
+		},
+		{
+			name: "DifferentKeysRejected",
+			src: `fn f<K: "a", J: "a">(x: {a: 5}[K]) -> {a: number}[J] {
+				return x
+			}`,
+			wantErrs: []string{`cannot constrain object[K] <: object[J]`},
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			_, _, errs := inferSource(t, tt.src)
+			if tt.wantErrs == nil {
+				require.Empty(t, errs)
+				return
+			}
+			require.Equal(t, tt.wantErrs, errorMessagesOf(errs))
+		})
+	}
+}
+
 // A tuple-spread annotation `[...P, x]` is stored as a residual and reduced by splicing each
 // spread operand's tuple in position once the operand grounds to a concrete tuple. Each case
 // asserts the stored `Result` renders the way the source wrote it, then asserts that reducing it

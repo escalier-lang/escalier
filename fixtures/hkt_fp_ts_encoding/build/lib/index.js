@@ -21,46 +21,40 @@ MyOption.None = MyOption__None;
 export const arrayFunctor = {URI: "Array", map: function (temp2, temp3) {
   const fa = temp2;
   const f = temp3;
-  return fa.map(function (temp4, temp5, temp6) {
+  return fa.map(function (temp4) {
     const a = temp4;
-    const i = temp5;
-    const arr = temp6;
     return f(a);
   });
 }};
-export function double(temp7, temp8) {
-  const functor = temp7;
-  const fa = temp8;
-  return functor.map(fa, function (temp9) {
-    const n = temp9;
+export function double(temp5, temp6) {
+  const functor = temp5;
+  const fa = temp6;
+  return functor.map(fa, function (temp7) {
+    const n = temp7;
     return n * 2;
   });
 }
-export const optionFunctor = {URI: "MyOption", map: function (temp10, temp11) {
-  const fa = temp10;
-  const f = temp11;
-  let temp12;
-  let temp13;
-  temp13 = fa;
-  if (temp13 instanceof MyOption.Some) {
-    const [temp14] = InvokeCustomMatcherOrThrow(MyOption.Some, temp13, undefined);
-    const value = temp14;
-    temp12 = new MyOption.Some(f(value));
-  } else if (temp13 instanceof MyOption.None) {
-    const [] = InvokeCustomMatcherOrThrow(MyOption.None, temp13, undefined);
-    temp12 = new MyOption.None();
+export const optionFunctor = {URI: "MyOption", map: function (temp8, temp9) {
+  const fa = temp8;
+  const f = temp9;
+  let temp10;
+  let temp11;
+  temp11 = fa;
+  if (temp11 instanceof MyOption.Some) {
+    const [temp12] = InvokeCustomMatcherOrThrow(MyOption.Some, temp11, undefined);
+    const value = temp12;
+    temp10 = new MyOption.Some(f(value));
+  } else if (temp11 instanceof MyOption.None) {
+    const [] = InvokeCustomMatcherOrThrow(MyOption.None, temp11, undefined);
+    temp10 = new MyOption.None();
   }
-  return temp12;
+  return temp10;
 }};
 export const xs = [1, 2, 3];
-export const viaInstance = arrayFunctor.map(xs, function (temp15) {
-  const n = temp15;
+export const viaInstance = arrayFunctor.map(xs, function (temp13) {
+  const n = temp13;
   return n * 2;
 });
-export function widen(temp16) {
-  const fa = temp16;
-  return fa;
-}
 export const ys = double(arrayFunctor, xs);
 export const zs = double(optionFunctor, new MyOption.Some(5));
 //# sourceMappingURL=./index.js.map
