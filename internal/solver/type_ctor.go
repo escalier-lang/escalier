@@ -370,32 +370,74 @@ func (c *Context) constrainTypeApp(sub, super soltype.Type, seen *seenPairs, mut
 // matchHead decides app against other, a type on the opposite side of the constraint, by
 // splitting other into a constructor and the arguments it applies. appIsSub reports whether app
 // is the constraint's subtype side.
+//
+// An instance with more arguments than app splits several ways, one per choice of which
+// arguments are holes. An inference head takes the first split that holds, trying the trailing
+// holes first, so `Tagged<string, number>` against `F<string>` binds F to `Tagged<_, number>`
+// once `Tagged<string, _>` fails. Any other head takes the trailing split.
+//
+// An alias that splits no way is expanded and matched again, so `type Nums = Array<number>`
+// matches `F<A>` through its body.
 func (c *Context) matchHead(app *soltype.TypeAppType, other soltype.Type, appIsSub bool, seen *seenPairs, mutCtx bool) []SolverError {
 	sub, super := soltype.Type(app), other
 	if !appIsSub {
 		sub, super = other, app
 	}
-	ctor, args, ok := splitInstance(other, len(app.Args))
-	if !ok {
-		return []SolverError{&CannotConstrainError{Sub: sub, Super: super}}
-	}
-	if errs := c.unifyHeads(app.Head, app.Variances, ctor, nil, seen, mutCtx); len(errs) > 0 {
-		if _, kind := errs[0].(*KindMismatchError); kind {
-			return errs
+	splits := instanceSplits(other, len(app.Args))
+	if len(splits) == 0 {
+		if alias, ok := other.(*soltype.AliasType); ok {
+			if c.unwrapDepth >= maxUnwrapDepth {
+				return []SolverError{&ExpansionLimitError{Sub: sub, Super: super}}
+			}
+			c.pushUnfoldingAlias(alias)
+			defer c.popUnfoldingAlias(alias)
+			expanded := c.expandAlias(alias)
+			if appIsSub {
+				return c.constrainUnwrapped(sub, expanded, seen, mutCtx)
+			}
+			return c.constrainUnwrapped(expanded, super, seen, mutCtx)
 		}
 		return []SolverError{&CannotConstrainError{Sub: sub, Super: super}}
 	}
-	if appIsSub {
-		return c.constrainArgs(app.Args, args, app.Variances, seen, mutCtx)
+	matchSplit := func(s instanceSplit, seen *seenPairs) []SolverError {
+		if errs := c.unifyHeads(app.Head, app.Variances, s.ctor, nil, seen, mutCtx); len(errs) > 0 {
+			if _, kind := errs[0].(*KindMismatchError); kind {
+				return errs
+			}
+			return []SolverError{&CannotConstrainError{Sub: sub, Super: super}}
+		}
+		if appIsSub {
+			return c.constrainArgs(app.Args, s.args, app.Variances, seen, mutCtx)
+		}
+		return c.constrainArgs(s.args, app.Args, app.Variances, seen, mutCtx)
 	}
-	return c.constrainArgs(args, app.Args, app.Variances, seen, mutCtx)
+	if len(splits) > 1 && c.isInferenceHead(app.Head) {
+		order := make([]int, len(splits))
+		for i := range order {
+			order[i] = i
+		}
+		committed, _, winErrs, _ := c.trialAndCommit(order, func(i int) []SolverError {
+			return matchSplit(splits[i], seen.Clone())
+		})
+		if committed {
+			return winErrs
+		}
+	}
+	return matchSplit(splits[0], seen)
 }
 
-// splitInstance splits a class or alias instance into a constructor taking arity arguments and
-// the arguments that fill it. The constructor keeps the instance's leading arguments fixed and
-// leaves the last arity as holes. It reports false for any other type and for an instance with
-// fewer than arity arguments.
-func splitInstance(t soltype.Type, arity int) (*soltype.TypeCtorType, []soltype.Type, bool) {
+// instanceSplit is one way to read an instance as a constructor applied to arguments.
+type instanceSplit struct {
+	ctor *soltype.TypeCtorType
+	args []soltype.Type
+}
+
+// instanceSplits returns every way to split a class or alias instance into a constructor taking
+// arity arguments and the arguments that fill its holes. The constructor keeps the instance's
+// other arguments fixed. Splits with holes further right come first, so the first split leaves the
+// last arity arguments as holes. It returns nil for any other type and for an instance with fewer
+// than arity arguments.
+func instanceSplits(t soltype.Type, arity int) []instanceSplit {
 	var base soltype.Type
 	var targs []soltype.Type
 	switch inst := t.(type) {
@@ -408,15 +450,44 @@ func splitInstance(t soltype.Type, arity int) (*soltype.TypeCtorType, []soltype.
 		cp.TypeArgs = nil
 		base, targs = &cp, inst.TypeArgs
 	default:
-		return nil, nil, false
+		return nil
 	}
 	if len(targs) < arity {
-		return nil, nil, false
+		return nil
 	}
-	split := len(targs) - arity
-	fixed := make([]soltype.Type, len(targs))
-	copy(fixed, targs[:split])
-	return &soltype.TypeCtorType{Base: base, Fixed: fixed}, targs[split:], true
+	var splits []instanceSplit
+	for _, holes := range holePositions(len(targs), arity) {
+		fixed := append([]soltype.Type(nil), targs...)
+		args := make([]soltype.Type, 0, arity)
+		for _, h := range holes {
+			args = append(args, targs[h])
+			fixed[h] = nil
+		}
+		splits = append(splits, instanceSplit{ctor: &soltype.TypeCtorType{Base: base, Fixed: fixed}, args: args})
+	}
+	return splits
+}
+
+// holePositions returns every increasing choice of k positions out of n, with choices further
+// right first, so for n = 3 and k = 1 it returns [2], [1], [0].
+func holePositions(n, k int) [][]int {
+	var out [][]int
+	var pick func(start int, chosen []int)
+	pick = func(start int, chosen []int) {
+		if len(chosen) == k {
+			out = append(out, append([]int(nil), chosen...))
+			return
+		}
+		for i := start; i < n; i++ {
+			pick(i+1, append(chosen, i))
+		}
+	}
+	pick(0, nil)
+	// pick produces the choices in increasing order, so reversing puts the rightmost first.
+	for i, j := 0, len(out)-1; i < j; i, j = i+1, j-1 {
+		out[i], out[j] = out[j], out[i]
+	}
+	return out
 }
 
 // unifyHeads requires two heads to denote the same constructor. aSlots and bSlots are the
