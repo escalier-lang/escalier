@@ -555,7 +555,7 @@ func TestInferGenRaises(t *testing.T) {
 				gen fn g() { yield 1 throw "boom" }
 				fn f() { for x in g() { } }
 			`,
-			wantErrs: []string{"3:23-3:26: advancing this iterator can throw `\"boom\"`, which `f` does not declare; add `throws string` to `f`"},
+			wantErrs: []string{"3:23-3:26: `f` can throw `\"boom\"`, but it doesn't declare it; add `throws string` to `f`'s signature"},
 		},
 		{
 			// A clause-less caller that advances a raising generator by hand is asked to
@@ -565,7 +565,7 @@ func TestInferGenRaises(t *testing.T) {
 				gen fn g() { yield 1 throw "boom" }
 				fn f() { val it = g() return it.next() }
 			`,
-			wantErrs: []string{"3:34-3:43: calling `it.next` can throw `\"boom\"`, which `f` does not declare; add `throws string` to `f`"},
+			wantErrs: []string{"3:34-3:43: `f` can throw `\"boom\"`, but it doesn't declare it; add `throws string` to `f`'s signature"},
 		},
 	})
 }

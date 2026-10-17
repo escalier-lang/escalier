@@ -529,7 +529,7 @@ func TestInferParamDefault(t *testing.T) {
 		{
 			name:     "DefaultRaisesFromAFunctionThatDeclaresNone",
 			src:      "declare fn boom() -> number throws string\nfn g(v: number = boom()) { return v }",
-			wantErrs: []string{"2:18-2:24: calling `boom` can throw `string`, which `g` does not declare; add `throws string` to `g`"},
+			wantErrs: []string{"2:18-2:24: `g` can throw `string`, but it doesn't declare it; add `throws string` to `g`'s signature"},
 		},
 	})
 }

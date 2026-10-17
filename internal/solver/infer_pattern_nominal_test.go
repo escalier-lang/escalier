@@ -1040,7 +1040,7 @@ func TestInferStructuralPatternOverClassInstance(t *testing.T) {
 			// function, which declares no `throws` here.
 			name:     "a raising getter's raise reaches the destructuring function",
 			src:      `fn f(c: &Circle) { val {risky} = c }`,
-			wantErrs: []string{"9:26-9:31: destructuring `risky` can throw `string`, which `f` does not declare; add `throws string` to `f`"},
+			wantErrs: []string{"9:26-9:31: `f` can throw `string`, but it doesn't declare it; add `throws string` to `f`'s signature"},
 		},
 		{
 			name: "a raising getter destructures under a matching throws clause",
@@ -1054,14 +1054,14 @@ func TestInferStructuralPatternOverClassInstance(t *testing.T) {
 			// A `match` arm reads the getter through the same rule.
 			name:     "a raising getter's raise reaches a match arm's function",
 			src:      `fn f(c: &Circle) { return match c { {risky} => risky } }`,
-			wantErrs: []string{"9:39-9:44: destructuring `risky` can throw `string`, which `f` does not declare; add `throws string` to `f`"},
+			wantErrs: []string{"9:39-9:44: `f` can throw `string`, but it doesn't declare it; add `throws string` to `f`'s signature"},
 		},
 		{
 			// Each member of a union scrutinee raises what its getter can raise.
 			name: "a raising getter's raise reaches the function through a union",
 			src: `class Square { side: number, get risky(&self) -> number throws boolean { if self.side < 0 { throw true } return self.side } }
 				fn f(s: &(Circle | Square)) { val {risky} = s }`,
-			wantErrs: []string{"10:40-10:45: destructuring `risky` can throw `string`, which `f` does not declare; add `throws string` to `f`", "10:40-10:45: destructuring `risky` can throw `boolean`, which `f` does not declare; add `throws boolean` to `f`"},
+			wantErrs: []string{"10:40-10:45: `f` can throw `string`, but it doesn't declare it; add `throws string` to `f`'s signature", "10:40-10:45: `f` can throw `boolean`, but it doesn't declare it; add `throws boolean` to `f`'s signature"},
 		},
 		{
 			// A read through the property has no place to record the getter's raise.

@@ -2742,8 +2742,10 @@ func (e *UndeclaredRaiseError) Message() string {
 	raised := soltype.Print(e.Throws)
 	switch {
 	case e.Ann == nil:
-		return fmt.Sprintf("%s can throw `%s`, which %s does not declare; add `throws %s` to %s",
-			e.What, raised, fn, soltype.Print(widen(e.Throws)), fn)
+		return fmt.Sprintf("%s can throw `%s`, but it doesn't declare it; add `throws %s` to %s's signature",
+			fn, raised, soltype.Print(widen(e.Throws)), fn)
+	case e.Form == throwsPromise && !statesRejectionType(e.Ann):
+		return fmt.Sprintf("%s doesn't state a rejection type even though it can throw `%s`", fn, raised)
 	case e.Form == throwsPromise:
 		return fmt.Sprintf("%s can throw `%s`, which %s's rejection type `%s` does not admit",
 			e.What, raised, fn, soltype.Print(e.Declared))
@@ -2754,6 +2756,13 @@ func (e *UndeclaredRaiseError) Message() string {
 		return fmt.Sprintf("%s can throw `%s`, which %s's `throws %s` does not admit",
 			e.What, raised, fn, soltype.Print(e.Declared))
 	}
+}
+
+// statesRejectionType reports whether the `Promise` return annotation ann writes its
+// rejection slot, as `Promise<number, string>` does and `Promise<number>` does not.
+func statesRejectionType(ann ast.TypeAnn) bool {
+	ref, isRef := ann.(*ast.TypeRefTypeAnn)
+	return !isRef || len(ref.TypeArgs) >= 2
 }
 
 // InferredRecvFuncReadError fires when a member read that is not called on the spot reads a

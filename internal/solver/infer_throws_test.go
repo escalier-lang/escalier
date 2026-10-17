@@ -62,7 +62,7 @@ func TestInferThrowsRequiresAClause(t *testing.T) {
 		{
 			name:     "ThrowInAClauselessFunction",
 			src:      `fn f() { throw "boom" }`,
-			wantErrs: []string{"1:16-1:22: this `throw` can throw `\"boom\"`, which `f` does not declare; add `throws string` to `f`"},
+			wantErrs: []string{"1:16-1:22: `f` can throw `\"boom\"`, but it doesn't declare it; add `throws string` to `f`'s signature"},
 		},
 		{
 			name: "CallToAThrowingCalleeFromAClauselessCaller",
@@ -70,17 +70,17 @@ func TestInferThrowsRequiresAClause(t *testing.T) {
 				fn a() throws string { throw "boom" }
 				fn f() { a() }
 			`,
-			wantErrs: []string{"3:14-3:17: calling `a` can throw `string`, which `f` does not declare; add `throws string` to `f`"},
+			wantErrs: []string{"3:14-3:17: `f` can throw `string`, but it doesn't declare it; add `throws string` to `f`'s signature"},
 		},
 		{
 			name:     "ThrowInAClauselessFunctionExpression",
 			src:      `val f = fn () { throw "x" }`,
-			wantErrs: []string{"1:23-1:26: this `throw` can throw `\"x\"`, which the enclosing function does not declare; add `throws string` to the enclosing function"},
+			wantErrs: []string{"1:23-1:26: the enclosing function can throw `\"x\"`, but it doesn't declare it; add `throws string` to the enclosing function's signature"},
 		},
 		{
 			name:     "ThrowInAClauselessMethod",
 			src:      `class C { m(&self) { throw "x" } }`,
-			wantErrs: []string{"1:28-1:31: this `throw` can throw `\"x\"`, which `m` does not declare; add `throws string` to `m`"},
+			wantErrs: []string{"1:28-1:31: `m` can throw `\"x\"`, but it doesn't declare it; add `throws string` to `m`'s signature"},
 		},
 		{
 			// A clause on the ANNOTATION does not reach an un-annotated function
@@ -90,7 +90,7 @@ func TestInferThrowsRequiresAClause(t *testing.T) {
 			// signature. Writing `fn () throws _ { … }` is how the lambda opts in.
 			name:     "AnnotationClauseDoesNotReachAnUnannotatedLambda",
 			src:      `val f: fn() -> never throws string = fn () { throw "x" }`,
-			wantErrs: []string{"1:52-1:55: this `throw` can throw `\"x\"`, which the enclosing function does not declare; add `throws string` to the enclosing function"},
+			wantErrs: []string{"1:52-1:55: the enclosing function can throw `\"x\"`, but it doesn't declare it; add `throws string` to the enclosing function's signature"},
 		},
 	})
 }
@@ -598,12 +598,12 @@ func TestInferThrowsRejectsAnUndeclaredAccessorRaise(t *testing.T) {
 		{
 			name:     "ThrowInAClauselessGetter",
 			src:      `class C { v: number, get x(&self) { throw "boom" } }`,
-			wantErrs: []string{"1:43-1:49: this `throw` can throw `\"boom\"`, which `x` does not declare; add `throws string` to `x`"},
+			wantErrs: []string{"1:43-1:49: `x` can throw `\"boom\"`, but it doesn't declare it; add `throws string` to `x`'s signature"},
 		},
 		{
 			name:     "ThrowInAClauselessSetter",
 			src:      `class C { v: number, set x(&mut self, v: number) { throw "boom" } }`,
-			wantErrs: []string{"1:58-1:64: this `throw` can throw `\"boom\"`, which `x` does not declare; add `throws string` to `x`"},
+			wantErrs: []string{"1:58-1:64: `x` can throw `\"boom\"`, but it doesn't declare it; add `throws string` to `x`'s signature"},
 		},
 		{
 			name: "CallToAThrowingCalleeFromAClauselessGetter",
@@ -611,7 +611,7 @@ func TestInferThrowsRejectsAnUndeclaredAccessorRaise(t *testing.T) {
 				fn a() throws string { throw "boom" }
 				class C { v: number, get x(&self) -> number { return a() } }
 			`,
-			wantErrs: []string{"3:58-3:61: calling `a` can throw `string`, which `x` does not declare; add `throws string` to `x`"},
+			wantErrs: []string{"3:58-3:61: `x` can throw `string`, but it doesn't declare it; add `throws string` to `x`'s signature"},
 		},
 		{
 			// The read is the exceptional exit, so the diagnostic blames the access
@@ -625,7 +625,7 @@ func TestInferThrowsRejectsAnUndeclaredAccessorRaise(t *testing.T) {
 				}
 				fn f(c: C) -> number { return c.x }
 			`,
-			wantErrs: []string{"7:35-7:38: reading `c.x` can throw `string`, which `f` does not declare; add `throws string` to `f`"},
+			wantErrs: []string{"7:35-7:38: `f` can throw `string`, but it doesn't declare it; add `throws string` to `f`'s signature"},
 		},
 		{
 			name: "SelfReadOfARaisingGetterFromAClauselessMethod",
@@ -637,7 +637,7 @@ func TestInferThrowsRejectsAnUndeclaredAccessorRaise(t *testing.T) {
 					m(&self) -> number { return self.x },
 				}
 			`,
-			wantErrs: []string{"6:34-6:40: reading `self.x` can throw `string`, which `m` does not declare; add `throws string` to `m`"},
+			wantErrs: []string{"6:34-6:40: `m` can throw `string`, but it doesn't declare it; add `throws string` to `m`'s signature"},
 		},
 	})
 }
@@ -659,7 +659,7 @@ func TestInferThrowsAccessorReadResolution(t *testing.T) {
 				}
 				fn f(c: A) -> number { return c.x }
 			`,
-			wantErrs: []string{"8:35-8:38: reading `c.x` can throw `string`, which `f` does not declare; add `throws string` to `f`"},
+			wantErrs: []string{"8:35-8:38: `f` can throw `string`, but it doesn't declare it; add `throws string` to `f`'s signature"},
 		},
 		{
 			// The same pair reached through a union, where the read joins per member.
@@ -674,7 +674,7 @@ func TestInferThrowsAccessorReadResolution(t *testing.T) {
 				class B { x: number }
 				fn f(c: A | B) -> number { return c.x }
 			`,
-			wantErrs: []string{"9:39-9:42: reading `c.x` can throw `string`, which `f` does not declare; add `throws string` to `f`"},
+			wantErrs: []string{"9:39-9:42: `f` can throw `string`, but it doesn't declare it; add `throws string` to `f`'s signature"},
 		},
 		{
 			// A receiver read off a `val` reaches the read as an inference variable bound to
@@ -686,7 +686,7 @@ func TestInferThrowsAccessorReadResolution(t *testing.T) {
 				declare val u: A | B
 				fn f() -> number { return u.x }
 			`,
-			wantErrs: []string{"5:31-5:34: reading `u.x` can throw `string`, which `f` does not declare; add `throws string` to `f`"},
+			wantErrs: []string{"5:31-5:34: `f` can throw `string`, but it doesn't declare it; add `throws string` to `f`'s signature"},
 		},
 		{
 			// `undefined` carries no readable object, so the join abandons the read
@@ -827,7 +827,7 @@ func TestInferThrowsThroughAGetterRead(t *testing.T) {
 					get y(&self) -> number { return self.inner.x },
 				}
 			`,
-			wantErrs: []string{"10:38-10:50: reading `self.inner.x` can throw `string`, which `y` does not declare; add `throws string` to `y`"},
+			wantErrs: []string{"10:38-10:50: `y` can throw `string`, but it doesn't declare it; add `throws string` to `y`'s signature"},
 		},
 	})
 }
@@ -900,7 +900,7 @@ func TestInferThrowsThroughASetterWrite(t *testing.T) {
 			// rather than the setter's own body, which declared its raise correctly.
 			name:     "WriteThroughARaisingSetterFromAClauselessWriter",
 			src:      raisingSetterClass + `fn f(c: mut C) { c.x = 5 }`,
-			wantErrs: []string{"7:18-7:25: assigning `c.x` can throw `string`, which `f` does not declare; add `throws string` to `f`"},
+			wantErrs: []string{"7:18-7:25: `f` can throw `string`, but it doesn't declare it; add `throws string` to `f`'s signature"},
 		},
 		{
 			name: "SelfWriteThroughARaisingSetterFromAClauselessMethod",
@@ -912,7 +912,7 @@ func TestInferThrowsThroughASetterWrite(t *testing.T) {
 					m(&mut self) { self.x = 5 },
 				}
 			`,
-			wantErrs: []string{"6:21-6:31: assigning `self.x` can throw `string`, which `m` does not declare; add `throws string` to `m`"},
+			wantErrs: []string{"6:21-6:31: `m` can throw `string`, but it doesn't declare it; add `throws string` to `m`'s signature"},
 		},
 	})
 }
@@ -958,7 +958,7 @@ func TestInferThrowsThroughAGetterOfAJoinedReceiver(t *testing.T) {
 			// Each class's getter raises `string`. The two raises report the same diagnostic,
 			// which is reported once.
 			wantErrs: []string{
-				"7:13-7:16: reading `u.x` can throw `string`, which `f` does not declare; add `throws string` to `f`",
+				"7:13-7:16: `f` can throw `string`, but it doesn't declare it; add `throws string` to `f`'s signature",
 			},
 		},
 		{
@@ -970,7 +970,7 @@ func TestInferThrowsThroughAGetterOfAJoinedReceiver(t *testing.T) {
 					return x
 				}`,
 			wantErrs: []string{
-				"7:11-7:12: destructuring `x` can throw `string`, which `f` does not declare; add `throws string` to `f`",
+				"7:11-7:12: `f` can throw `string`, but it doesn't declare it; add `throws string` to `f`'s signature",
 			},
 		},
 	})
@@ -1012,7 +1012,7 @@ func TestInferThrownValueMismatchSpan(t *testing.T) {
 				class Oops {}
 				fn f() { throw Oops() }
 			`,
-			wantErrs: []string{"3:20-3:26: this `throw` can throw `Oops`, which `f` does not declare; add `throws Oops` to `f`"},
+			wantErrs: []string{"3:20-3:26: `f` can throw `Oops`, but it doesn't declare it; add `throws Oops` to `f`'s signature"},
 		},
 	}
 	for _, test := range tests {
@@ -1023,27 +1023,28 @@ func TestInferThrownValueMismatchSpan(t *testing.T) {
 	}
 }
 
-// TestInferUndeclaredRaiseNamesTheRaiseAndTheClause covers the message a raise gets when the
-// enclosing function's throws does not admit it. It names what raises, the function, and the
-// clause, or suggests one when the function has none.
-func TestInferUndeclaredRaiseNamesTheRaiseAndTheClause(t *testing.T) {
+// TestInferUndeclaredRaiseMessages covers the message a raise gets when the enclosing
+// function's throws does not admit it. A function with no clause gets a suggested one. A
+// function whose `Promise` annotation leaves out the rejection type is told it states none.
+// Any other function gets a message naming what raises and the annotation that rejects it.
+func TestInferUndeclaredRaiseMessages(t *testing.T) {
 	runThrowsErrCases(t, []throwsErrCase{
 		{
 			name:     "AThrowWithNoClause",
 			src:      `fn f(b: boolean) -> number { if b { throw "x" } return 1 }`,
-			wantErrs: []string{"1:43-1:46: this `throw` can throw `\"x\"`, which `f` does not declare; add `throws string` to `f`"},
+			wantErrs: []string{"1:43-1:46: `f` can throw `\"x\"`, but it doesn't declare it; add `throws string` to `f`'s signature"},
 		},
 		{
 			name: "ACallWithNoClause",
 			src: `declare fn g() -> number throws string
 				fn f() -> number { return g() }`,
-			wantErrs: []string{"2:31-2:34: calling `g` can throw `string`, which `f` does not declare; add `throws string` to `f`"},
+			wantErrs: []string{"2:31-2:34: `f` can throw `string`, but it doesn't declare it; add `throws string` to `f`'s signature"},
 		},
 		{
 			name: "AGetterReadWithNoClause",
 			src: `class A { n: number, get x(&self) -> number throws string { if self.n < 0 { throw "a" } return self.n } }
 				fn f(a: A) -> number { return a.x }`,
-			wantErrs: []string{"2:35-2:38: reading `a.x` can throw `string`, which `f` does not declare; add `throws string` to `f`"},
+			wantErrs: []string{"2:35-2:38: `f` can throw `string`, but it doesn't declare it; add `throws string` to `f`'s signature"},
 		},
 		{
 			name: "ACallAgainstAClause",
@@ -1054,12 +1055,17 @@ func TestInferUndeclaredRaiseNamesTheRaiseAndTheClause(t *testing.T) {
 		{
 			name:     "AnAnonymousFunction",
 			src:      `val f = fn (b: boolean) -> number { if b { throw "x" } return 1 }`,
-			wantErrs: []string{"1:50-1:53: this `throw` can throw `\"x\"`, which the enclosing function does not declare; add `throws string` to the enclosing function"},
+			wantErrs: []string{"1:50-1:53: the enclosing function can throw `\"x\"`, but it doesn't declare it; add `throws string` to the enclosing function's signature"},
 		},
 		{
 			name:     "AnAsyncFunction",
 			src:      `async fn f() -> Promise<number, number> { throw "x" }`,
 			wantErrs: []string{"1:49-1:52: this `throw` can throw `\"x\"`, which `f`'s rejection type `number` does not admit"},
+		},
+		{
+			name:     "AnAsyncFunctionWithNoRejectionType",
+			src:      `async fn f() -> Promise<number> { throw "x" }`,
+			wantErrs: []string{"1:41-1:44: `f` doesn't state a rejection type even though it can throw `\"x\"`"},
 		},
 	})
 }
