@@ -2924,18 +2924,39 @@ func (c *Context) constrainStrLitToRegex(sub *soltype.LitType, sup *soltype.Rege
 
 // constrainRegexGroups flows the text a value of a regex type captures into each of sup's
 // groups, for a sub written as the same pattern. Nothing records which string the value holds,
-// so each group captures `string`, joined with `undefined` when the group can take no part in
-// a match.
+// so each group captures captureType's strings, joined with `undefined` when the group can
+// take no part in a match.
 func (c *Context) constrainRegexGroups(sup *soltype.RegexType, seen *seenPairs, mutCtx bool) []SolverError {
 	var errs []SolverError
 	for _, group := range sup.Groups {
-		var text soltype.Type = &soltype.PrimType{Prim: soltype.StrPrim}
-		if sup.Pattern.Groups[patternGroupIndex(sup.Pattern, group.Name)].Optional {
+		g := sup.Pattern.Groups[patternGroupIndex(sup.Pattern, group.Name)]
+		text := c.captureType(sup.Pattern, g)
+		if g.Optional {
 			text = newUnion(nil, []soltype.Type{text, &soltype.UndefinedType{}})
 		}
 		errs = append(errs, c.constrain(text, group.Type, seen, mutCtx)...)
 	}
 	return errs
+}
+
+// captureType returns the type of the strings the group g of p can capture. Each group using
+// g's name contributes the regex type of its body, so `(?<y>\d{4})` captures `/^\d{4}$/`. It
+// returns `string` when no regex type describes a group's captures.
+func (c *Context) captureType(p *jsregex.Pattern, g jsregex.Group) soltype.Type {
+	str := &soltype.PrimType{Prim: soltype.StrPrim}
+	sources, ok := p.CaptureSources(g)
+	if !ok {
+		return str
+	}
+	types := make([]soltype.Type, len(sources))
+	for i, source := range sources {
+		pattern, _ := jsregex.Compile(source)
+		if pattern == nil {
+			return str
+		}
+		types[i] = &soltype.RegexType{Source: source, Pattern: pattern}
+	}
+	return newUnion(c, types)
 }
 
 // patternGroupIndex returns the position of the group named name in p.Groups. Every group a
