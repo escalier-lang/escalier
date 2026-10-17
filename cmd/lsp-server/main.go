@@ -34,10 +34,10 @@ func main() {
 		_ = os.Setenv("ESCALIER_STDLIB_DIR", *stdlibDir)
 	}
 	// The compiler runs internal/solver by default, but the server stays on internal/checker.
-	// Completions read the *checker.Scope values only that checker returns, and the solver
-	// path leaves them nil. Hover and go-to-definition read the solver's Info and fall back
-	// to what the old checker writes onto the AST. The server moves to the solver once
-	// completions read its scopes.
+	// Completions of the names in scope read the *checker.Scope values only that checker
+	// returns, and the solver path leaves them nil. Hover, go-to-definition, and member
+	// completions read the solver's Info and fall back to what the old checker writes onto
+	// the AST. The server moves to the solver once scope completions read its scopes.
 	useLegacyChecker()
 
 	fmt.Fprintf(os.Stderr, "Hello, from lsp-server\n")
@@ -105,6 +105,11 @@ type Server struct {
 	preludeCompletions []protocol.CompletionItem
 
 	mu sync.RWMutex
+	// solverMu orders reads of internal/solver's results against a bin/ re-check. A
+	// library's run and every script checked against it share one set of registries,
+	// and re-checking a script writes them. validateBinScript holds it for writing
+	// around the check, and a request that queries a run's Info holds it for reading.
+	solverMu sync.RWMutex
 	// validated is broadcast after validate() updates the checkOutput.
 	// The completion handler waits on this when the cached version is
 	// behind the document version.

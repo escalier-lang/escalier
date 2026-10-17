@@ -191,3 +191,38 @@ func TestMemberObjectOnNewInfo(t *testing.T) {
 	_, ok := NewInfo().MemberObject(&soltype.ObjectType{})
 	require.False(t, ok)
 }
+
+func TestInfoExpand(t *testing.T) {
+	tests := []struct {
+		name string
+		// src reads v last. Expand is asked about the type v was declared at.
+		src      string
+		expected string
+	}{
+		{
+			name:     "AliasOfUnion",
+			src:      "type Shape = {a: number} | {b: string}\ndeclare val v: Shape\nval probe = v",
+			expected: "{a: number} | {b: string}",
+		},
+		{
+			name:     "BorrowOfAlias",
+			src:      "type Point = {x: number}\ndeclare val v: &Point\nval probe = v",
+			expected: "{x: number}",
+		},
+		{
+			name:     "PlainObject",
+			src:      "declare val v: {x: number}\nval probe = v",
+			expected: "{x: number}",
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			res := InferModuleWithSource(parseModule(t, tt.src), testStdlibSource())
+			require.Empty(t, res.Errors)
+
+			binding, ok := res.Scope.OwnValue("v")
+			require.True(t, ok)
+			require.Equal(t, tt.expected, soltype.Print(res.Info.Expand(binding.DisplayType())))
+		})
+	}
+}
