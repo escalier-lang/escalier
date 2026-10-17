@@ -141,15 +141,22 @@ func (c *checker) walkConstructorBody(scope *Scope, lvl int, self *soltype.Class
 		superCtx.super = def.Supers[0]
 	}
 	c.superCtx = superCtx
+	// Collect the body's writes to the class's own readonly fields while it is walked. Only
+	// definite assignment knows whether a write is the field's first on every path, so the
+	// decision waits for checkConstructorInit.
+	prevInit := c.ctorInit
+	ctorInit := &ctorInitCtx{body: body}
+	c.ctorInit = ctorInit
 	// A constructor carries no type parameters of its own, since the class owns them,
 	// so generic resolution stays off here, matching the method path.
 	ft := c.inferFunc(ctorScope, lvl, bodySig, ctor.Fn.Body, ctor, false, true)
 	c.superCtx = prevSuper
+	c.ctorInit = prevInit
 	c.checkSuperCalls(superCtx, ctor)
 	// Definite assignment runs over the class's OWN fields. An inherited field is left out,
 	// since the `super(…)` call delegates its initialization to the superclass constructor
 	// rather than making the subclass re-assign every field its ancestors declare.
-	c.checkConstructorInit(body, ctor)
+	c.checkConstructorInit(body, ctor, ctorInit)
 	// A constructor returns a fresh instance, not the `undefined` its statement body falls
 	// off to, so override the inferred return with the instance type.
 	return &soltype.FuncType{Params: ft.Params, Ret: self, Throws: ft.Throws, Inexact: ft.Inexact}
@@ -174,7 +181,12 @@ func (c *checker) walkConstructorBody(scope *Scope, lvl int, self *soltype.Class
 // A `throw` is exempt: it assigns every required field synthetically, so a path that
 // throws before initializing the instance vacuously satisfies the requirement and does
 // not pollute the join at the exit.
-func (c *checker) checkConstructorInit(body *soltype.ObjectType, ctor *ast.ConstructorElem) {
+//
+// It also reports a ReadonlyFieldError for each write in init.writes that does not
+// initialize its field. A write initializes the field when it is reachable code in the
+// constructor's own body, outside any nested function, and the field is assigned on no
+// path reaching it.
+func (c *checker) checkConstructorInit(body *soltype.ObjectType, ctor *ast.ConstructorElem, init *ctorInitCtx) {
 	if ctor.Fn == nil || ctor.Fn.Body == nil {
 		return
 	}
@@ -191,15 +203,54 @@ func (c *checker) checkConstructorInit(body *soltype.ObjectType, ctor *ast.Const
 		fieldIDs[prop.Name] = next
 		next++
 	}
-	if len(fieldIDs) == 0 {
+	// Each readonly field written in the body gets an id of its own, so the state before
+	// each write says whether an earlier write reaches it. It is separate from the field's
+	// fieldIDs entry because a `throw` gens every fieldIDs entry, and a throw nested in an
+	// expression such as `b || throw e` would otherwise mark the field written on the path
+	// that continues.
+	readonlyIDs := map[string]liveness.VarID{}
+	for _, w := range init.writes {
+		if _, ok := readonlyIDs[w.field]; ok {
+			continue
+		}
+		readonlyIDs[w.field] = next
+		next++
+	}
+	if len(fieldIDs) == 0 && len(readonlyIDs) == 0 {
 		return
 	}
 
 	cfg := liveness.BuildCFG(*ctor.Fn.Body)
 	col := &initCollector{
-		c:        c,
-		fieldIDs: fieldIDs,
-		gens:     map[liveness.StmtRef]set.Set[liveness.VarID]{},
+		c:           c,
+		fieldIDs:    fieldIDs,
+		readonlyIDs: readonlyIDs,
+		gens:        map[liveness.StmtRef]set.Set[liveness.VarID]{},
+		writes:      map[*ast.BinaryExpr]liveness.StmtRef{},
+		repeats:     set.NewSet[*ast.BinaryExpr](),
+	}
+	// The builder splits `self.f = if c { a } else { b }` into its branch blocks and keeps
+	// the statement itself out of every block. It maps the statement to the entry of the
+	// join block instead, and puts the target `self.f` in the block before the branch as a
+	// statement of its own. decomposed holds each such assignment by its target.
+	decomposed := map[ast.Expr]*ast.BinaryExpr{}
+	decomposedRefs := map[*ast.BinaryExpr]liveness.StmtRef{}
+	for stmt, ref := range liveness.BuildStmtToRef(cfg) {
+		if ref.StmtIdx >= 0 {
+			continue
+		}
+		es, ok := stmt.(*ast.ExprStmt)
+		if !ok {
+			continue
+		}
+		be, ok := es.Expr.(*ast.BinaryExpr)
+		if !ok || be.Op != ast.Assign {
+			continue
+		}
+		if _, ok := c.selfFieldName(be.Left); ok {
+			decomposed[be.Left] = be
+			decomposedRefs[be] = ref
+		}
 	}
 	// Walk each CFG block's statements. The builder has already flattened control flow
 	// into blocks and wrapped each branch condition as its own statement, so the per-
@@ -208,11 +259,39 @@ func (c *checker) checkConstructorInit(body *soltype.ObjectType, ctor *ast.Const
 	for _, block := range cfg.Blocks {
 		for idx, stmt := range block.Stmts {
 			col.currentRef = liveness.StmtRef{BlockID: block.ID, StmtIdx: idx}
+			// The target of a decomposed assignment is written, not read, so only a
+			// bracket key in it is scanned.
+			if es, ok := stmt.(*ast.ExprStmt); ok {
+				if _, isTarget := decomposed[es.Expr]; isTarget {
+					if ix, isIndex := es.Expr.(*ast.IndexExpr); isIndex {
+						ix.Index.Accept(col)
+					}
+					continue
+				}
+			}
 			stmt.Accept(col)
 		}
 	}
+	// A decomposed assignment writes its field at the join, after every branch has run.
+	for be, ref := range decomposedRefs {
+		name, _ := c.selfFieldName(be.Left)
+		col.currentRef = ref
+		col.write(be, name)
+	}
 
 	info := liveness.AnalyzeMoves(cfg, col.gens)
+
+	// A readonly write the collector did not reach sits in a nested function, which may run
+	// after construction, or in unreachable code. A write that follows another write to the
+	// same field in one statement is a second write. Any other write the collector reached
+	// initializes the field when no path into it has already assigned the field.
+	for _, w := range init.writes {
+		ref, reached := col.writes[w.node]
+		if reached && !col.repeats.Contains(w.node) && info.StateBefore(ref, readonlyIDs[w.field]) == liveness.NotMoved {
+			continue
+		}
+		c.report(&ReadonlyFieldError{Field: w.field, site: w.node.Left})
+	}
 
 	// A required field not Moved at the exit join is unassigned on some path reaching a
 	// normal exit. StmtIdx -1 reads the exit block's entry state, the join over every
@@ -273,21 +352,43 @@ type initCall struct {
 // statement's expression is attributed to it.
 type initCollector struct {
 	ast.DefaultVisitor
-	c          *checker
-	currentRef liveness.StmtRef
-	fieldIDs   map[string]liveness.VarID
-	gens       map[liveness.StmtRef]set.Set[liveness.VarID]
-	reads      []initRead
-	calls      []initCall
+	c           *checker
+	currentRef  liveness.StmtRef
+	fieldIDs    map[string]liveness.VarID
+	readonlyIDs map[string]liveness.VarID
+	gens        map[liveness.StmtRef]set.Set[liveness.VarID]
+	reads       []initRead
+	calls       []initCall
+	// writes maps each `self.f = …` assignment the collector reached to its CFG point.
+	writes map[*ast.BinaryExpr]liveness.StmtRef
+	// repeats holds each readonly-field assignment that follows another write to the same
+	// field within one statement, such as the second write in `[self.x = 1, self.x = 2]`.
+	repeats set.Set[*ast.BinaryExpr]
 }
 
-// gen records that field is assigned at the current statement. A field absent from
-// fieldIDs is optional or unknown and is not tracked.
-func (col *initCollector) gen(field string) {
-	id, ok := col.fieldIDs[field]
-	if !ok {
-		return
+// write records the assignment e to field at the current statement.
+func (col *initCollector) write(e *ast.BinaryExpr, field string) {
+	if id, ok := col.readonlyIDs[field]; ok && col.gens[col.currentRef] != nil && col.gens[col.currentRef].Contains(id) {
+		col.repeats.Add(e)
 	}
+	col.gen(field)
+	col.writes[e] = col.currentRef
+}
+
+// gen records that field is assigned at the current statement, under its fieldIDs entry
+// and its readonlyIDs entry. A field absent from both is optional or unknown and is not
+// tracked.
+func (col *initCollector) gen(field string) {
+	if id, ok := col.fieldIDs[field]; ok {
+		col.genID(id)
+	}
+	if id, ok := col.readonlyIDs[field]; ok {
+		col.genID(id)
+	}
+}
+
+// genID records that the synthetic id is assigned at the current statement.
+func (col *initCollector) genID(id liveness.VarID) {
 	at := col.gens[col.currentRef]
 	if at == nil {
 		at = set.NewSet[liveness.VarID]()
@@ -312,16 +413,17 @@ func (col *initCollector) EnterExpr(e ast.Expr) bool {
 					ix.Index.Accept(col)
 				}
 				e.Right.Accept(col)
-				col.gen(name)
+				col.write(e, name)
 				return false
 			}
 		}
 	case *ast.ThrowExpr:
 		// A throwing path never completes construction, so it is exempt: mark every
 		// required field assigned so the throw does not lower the init state at the join.
-		// The thrown value is still scanned for reads.
-		for name := range col.fieldIDs {
-			col.gen(name)
+		// The thrown value is still scanned for reads. readonlyIDs are left alone, since
+		// they record only real writes.
+		for _, id := range col.fieldIDs {
+			col.genID(id)
 		}
 		if e.Arg != nil {
 			e.Arg.Accept(col)
@@ -393,4 +495,33 @@ func (c *checker) selfFieldName(e ast.Expr) (string, bool) {
 func isSelfIdent(e ast.Expr) bool {
 	id, ok := e.(*ast.IdentExpr)
 	return ok && id.Name == "self"
+}
+
+// ctorInitCtx collects the writes a constructor body makes to the class's own readonly
+// fields while the body is walked. body is the class's own instance body.
+type ctorInitCtx struct {
+	body   *soltype.ObjectType
+	writes []readonlyInitWrite
+}
+
+// readonlyInitWrite is one write to a readonly field that ctorInitCtx deferred: the field
+// name and the assignment.
+type readonlyInitWrite struct {
+	field string
+	node  *ast.BinaryExpr
+}
+
+// deferReadonlyWrite records the assignment e as a candidate initializing write when object
+// is the bare `self` identifier and the class's own body declares name as a readonly field.
+// It reports whether it recorded one. A false result leaves the write to the caller to reject.
+func (ctx *ctorInitCtx) deferReadonlyWrite(e *ast.BinaryExpr, object ast.Expr, name string) bool {
+	if ctx == nil || !isSelfIdent(object) {
+		return false
+	}
+	prop, ok := ctx.body.Prop(name)
+	if !ok || !prop.Readonly {
+		return false
+	}
+	ctx.writes = append(ctx.writes, readonlyInitWrite{field: name, node: e})
+	return true
 }
