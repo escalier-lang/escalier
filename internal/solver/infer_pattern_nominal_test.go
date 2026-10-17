@@ -1083,7 +1083,7 @@ func TestInferStructuralPatternOverClassInstance(t *testing.T) {
 			src: `fn f(c: &mut Circle) {
 				val o: &mut {area: number, ...} = c
 			}`,
-			wantErrs: []string{"10:39-10:40: readonly field area cannot satisfy a writable field requirement"},
+			wantErrs: []string{"10:39-10:40: readonly field 'area' cannot satisfy a writable field requirement"},
 		},
 		{
 			name: "an accessor pair fills a field of a mutable object type",

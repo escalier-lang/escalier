@@ -380,13 +380,12 @@ type MutFieldError struct {
 	Ann *ast.MutableTypeAnn
 }
 
-// ReadonlyFieldError fires on a literal field-assignment `obj.f = …` whose target
-// field is declared `readonly`. The assignment-site check lives in
-// inferMemberAssign, which catches the case directly so the diagnostic blames the
-// write expression and the message names the assignment outright.
+// ReadonlyFieldError fires on an assignment such as `obj.f = …` or `obj[k] = …` whose
+// target is declared `readonly`. Field is the member name, or the bracketed key type
+// for an element write. site is the assignment target, which carries the blame span.
 type ReadonlyFieldError struct {
 	Field string
-	site  ast.Node // the BinaryExpr assignment, which carries the blame span
+	site  ast.Node
 }
 
 // ReadonlyFieldSubtypeError fires when a readonly source field flows into a
@@ -396,7 +395,8 @@ type ReadonlyFieldError struct {
 // contract. The check sits in the ObjectType <: ObjectType arm under the
 // mut-context flag, the contravariant write view of a mutable borrow, and blames
 // whatever site triggered the constraint, typically the call argument or return
-// that flows the value out.
+// that flows the value out. A direct write to a declared readonly field reports
+// ReadonlyFieldError instead.
 type ReadonlyFieldSubtypeError struct {
 	Field string
 	site  ast.Node
@@ -3323,7 +3323,7 @@ func (e *MutFieldError) Message() string {
 func (e *ReadonlyFieldError) Span() ast.Span      { return spanOfNode(e.site) }
 func (e *ReadonlyFieldError) Related() []ast.Span { return nil }
 func (e *ReadonlyFieldError) Message() string {
-	return fmt.Sprintf("cannot assign to readonly property: %s", e.Field)
+	return fmt.Sprintf("cannot assign to '%s' because it is a readonly property", soltype.DisplayMemberName(e.Field))
 }
 
 func (e *RaisingGetterPropertyError) Span() ast.Span      { return spanOfNode(e.site) }
@@ -3337,7 +3337,7 @@ func (e *RaisingGetterPropertyError) Message() string {
 func (e *ReadonlyFieldSubtypeError) Span() ast.Span      { return spanOfNode(e.site) }
 func (e *ReadonlyFieldSubtypeError) Related() []ast.Span { return nil }
 func (e *ReadonlyFieldSubtypeError) Message() string {
-	return fmt.Sprintf("readonly field %s cannot satisfy a writable field requirement", soltype.DisplayMemberName(e.Field))
+	return fmt.Sprintf("readonly field '%s' cannot satisfy a writable field requirement", soltype.DisplayMemberName(e.Field))
 }
 
 // describe renders a RAW, uncoalesced type for in-flight error messages (t0,
