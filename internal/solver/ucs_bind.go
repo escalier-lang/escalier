@@ -440,6 +440,47 @@ func (b *pathBinder) applyTest(scope *Scope, node ast.Node, s *ucs.Scrutinee, v 
 	}
 }
 
+// excludingRegexAnns returns b with the scrutinee split tests read as the strings that fail
+// every regex annotation among the split's tests. `other` in
+// `match s { d: /^\d+$/ => d, other => other }` over `string` binds `string & ~/^\d+$/`. It
+// returns b itself when no such test applies. That is also the case for a scrutinee whose type
+// is not `string` or a meet of `string` with complements, which covers a borrow and a type
+// still being inferred.
+func (b *pathBinder) excludingRegexAnns(scope *Scope, split *ucs.NormSplit) *pathBinder {
+	var tests []ucs.Test
+	for _, branch := range split.Branches {
+		if _, isAnn := branch.Test.(*ucs.AnnTest); isAnn {
+			tests = append(tests, branch.Test)
+		}
+	}
+	if len(tests) == 0 {
+		return b
+	}
+	v := b.viewOf(scope, split.Scrutinee)
+	shape := v.shape
+	// The walk resolved each annotation already and reported any it could not support, so
+	// resolving them again runs under a discarded probe.
+	p := b.c.openProbe()
+	anns := b.c.annTypes(scope, b.lvl, tests)
+	b.c.closeProbe(p, false)
+	changed := false
+	for _, ann := range anns {
+		re, isRegex := b.c.expandAliasChain(ann).(*soltype.RegexType)
+		if !isRegex || !splitsByRegex(shape, re) {
+			continue
+		}
+		shape = regexComplement(b.c.ctx, shape, re)
+		changed = true
+	}
+	if !changed {
+		return b
+	}
+	next := &pathBinder{c: b.c, lvl: b.lvl, blame: b.blame, views: maps.Clone(b.views)}
+	v.ty, v.concrete, v.shape = shape, shape, shape
+	next.views[split.Scrutinee] = v
+	return next
+}
+
 // applyNestedAnnTest narrows a projected value to the annotation a nested leaf tests, the
 // `string` of `{value: a: string}`. The view keeps its binding mode, so the leaf beneath the
 // test binds through the ordinary projection and still takes its `mut` marker and any

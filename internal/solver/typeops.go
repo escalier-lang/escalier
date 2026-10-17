@@ -220,6 +220,12 @@ func (e *typeEvaluator) reduceCond(t *soltype.CondType) soltype.Type {
 	if union, ok := check.(*soltype.UnionType); ok && t.Distribute {
 		return e.distributeCond(t, union)
 	}
+	// Only a distributive conditional splits, since its check is the naked type parameter
+	// and each branch can read it narrowed. A regex reached through an alias splits as one
+	// written inline does.
+	if re, isRegex := e.groundReduced(extends).(*soltype.RegexType); isRegex && t.Distribute && splitsByRegex(check, re) {
+		return e.reduceRegexSplit(t, check, re)
+	}
 	if containsInfer(extends) {
 		return e.reduceCondInfer(t, check, extends)
 	}
@@ -227,6 +233,69 @@ func (e *typeEvaluator) reduceCond(t *soltype.CondType) soltype.Type {
 		return e.reduceBranch(t.Then)
 	}
 	return e.reduceBranch(t.Else)
+}
+
+// splitsByRegex reports whether a conditional over the regex type re takes both branches for
+// check. That holds when check is `string` or a meet of `string` with complements, such as
+// `string & ~/^a/`, since some of its strings match re and some do not. It is false for a
+// literal, which re decides, and for a check whose complements already exclude re, which
+// takes only the Else branch.
+func splitsByRegex(check soltype.Type, re *soltype.RegexType) bool {
+	parts := []soltype.Type{check}
+	if meet, isMeet := check.(*soltype.IntersectionType); isMeet {
+		parts = meet.Types
+	}
+	sawString := false
+	for _, part := range parts {
+		switch part := part.(type) {
+		case *soltype.PrimType:
+			if part.Prim != soltype.StrPrim {
+				return false
+			}
+			sawString = true
+		case *soltype.NegationType:
+			if excluded, isRegex := part.Inner.(*soltype.RegexType); isRegex && excluded.Source == re.Source {
+				return false
+			}
+		default:
+			return false
+		}
+	}
+	return sawString
+}
+
+// reduceRegexSplit reduces a conditional over the regex type re whose check splitsByRegex
+// accepts. It reduces both branches and unions them:
+//
+//   - Then reads the check as the strings re matches, so a capture re names binds as it
+//     does for a value of re itself.
+//   - Else reads the check as the strings re rejects, `check & ~re`.
+//
+// So `if T : /^\d+$/ { never } else { T }` over `string` reduces to `string & ~/^\d+$/`. Each
+// branch reads the check through the positions the conditional's own type parameter held,
+// the way distributeCond substitutes a union member.
+func (e *typeEvaluator) reduceRegexSplit(t *soltype.CondType, check soltype.Type, re *soltype.RegexType) soltype.Type {
+	bare := withoutGroups(re)
+	matched := newIntersection(e.ctx, []soltype.Type{check, bare})
+	rejected := regexComplement(e.ctx, check, re)
+	thenT := e.reduceCond(&soltype.CondType{
+		Check:   matched,
+		Extends: t.Extends,
+		Then:    substituteOccurrences(t.Then, t.Check, matched),
+		Else:    &soltype.NeverType{},
+	})
+	elseT := e.reduceBranch(substituteOccurrences(t.Else, t.Check, rejected))
+	return newUnion(e.ctx, []soltype.Type{thenT, elseT})
+}
+
+// withoutGroups returns re with no capture groups, the type of the strings re matches.
+func withoutGroups(re *soltype.RegexType) *soltype.RegexType {
+	return &soltype.RegexType{Source: re.Source, Pattern: re.Pattern}
+}
+
+// regexComplement returns the strings of check that re rejects, `check & ~re`.
+func regexComplement(c *Context, check soltype.Type, re *soltype.RegexType) soltype.Type {
+	return newIntersection(c, []soltype.Type{check, newNegation(withoutGroups(re))})
 }
 
 // reduceBranch reduces the branch a conditional selected. It is reduce plus one rule: a branch that
