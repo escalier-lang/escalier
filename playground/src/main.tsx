@@ -83,6 +83,9 @@ async function main() {
         // the playground's virtual filesystem, so point it at the path
         // where copy-files.js mirrors the data dir (see volume.ts).
         ESCALIER_BUILTINS_DIR: '/node_modules/escalier-builtins',
+        // The same directory holds the standard library's `.esc` files, which the
+        // type checker resolves `std:prelude` and the ambient builtins from.
+        ESCALIER_STDLIB_DIR: '/node_modules/escalier-builtins',
     });
     client.run();
     const initResponse = await client.initialize({
