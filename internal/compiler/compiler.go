@@ -173,9 +173,6 @@ func Compile(source *ast.Source) CompilerOutput {
 
 	result := selectBackend(PackageConfig{}).checkScript(ctx, inMod)
 	typeErrors := result.diagnostics
-	if result.codegenGap != nil {
-		typeErrors = append(typeErrors, result.codegenGap)
-	}
 
 	// namespace := scope.Namespace
 
@@ -250,9 +247,6 @@ func CompilePackage(sources []*ast.Source, config PackageConfig) CompilerOutput 
 
 		output.ParseErrors = append(output.ParseErrors, parseErrors...)
 		output.TypeErrors = append(output.TypeErrors, lib.diagnostics...)
-		if lib.codegenGap != nil {
-			output.TypeErrors = append(output.TypeErrors, lib.codegenGap)
-		}
 
 		// A parse error leaves an error node in the tree where a declaration or type
 		// annotation belongs, and codegen has no lowering for one. `buildTypeAnn`
@@ -372,9 +366,6 @@ func compileScript(b backend, lib LibScope, source *ast.Source) CompilerOutput {
 
 	result := checkScriptIn(ctx, b, lib, inMod)
 	typeErrors := result.diagnostics
-	if result.codegenGap != nil {
-		typeErrors = append(typeErrors, result.codegenGap)
-	}
 
 	builder := codegen.NewBuilder(result.jsTypes)
 	jsMod := builder.BuildScript(inMod)

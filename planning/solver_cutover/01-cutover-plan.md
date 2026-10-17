@@ -631,6 +631,21 @@ emits `undefined` where the twin emits `void`.
 The 28 the solver cannot yet check are out of reach, so this count moves as the
 P2.4 causes clear and is a lower bound on the work #1676 names.
 
+**Triaged.** With the P2.4 causes cleared, the comparison reaches every fixture
+the solver accepts. Two `index.d.ts` diffs remain, and both are recorded in
+`emitSkips` as intended:
+
+| Fixture | Divergence | Why the solver's output is kept |
+| --- | --- | --- |
+| `namespace_use_parent_symbol` | a written `any` emits as `unknown` | `unknown` keeps the declaration sound |
+| `class_inheritance_namespaces` | a root reference to a namespaced type keeps its namespace | the checker's unqualified name binds nothing at the root |
+
+A function declaration whose body returns no value emits `void` or
+`Promise<void>` on both, through the shim #1810 removes after the cutover. A
+method or function value with such a body is not shimmed and emits `undefined`
+or `Promise<undefined>` on the solver. No fixture has one, and
+`dts_parity_test.go` records the four shapes against #1810.
+
 **Not in scope.** The `@escalier-type` JSDoc round-tripping for exactness and
 the value-level `exact<T>(v)` lowering, both of which M10 owns and neither of
 which the current fixtures exercise.

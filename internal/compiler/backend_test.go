@@ -160,57 +160,6 @@ func TestCompileScriptImportsUsedLibSymbols(t *testing.T) {
 	}
 }
 
-// TestCompileReportsTheSolverCodegenGap checks that a compile on the solver path
-// says its output is not yet correct, and that the checker path says nothing extra.
-// Codegen reads types only internal/checker stamps onto the tree, so the solver's
-// JavaScript is wrong in ways no other diagnostic names.
-func TestCompileReportsTheSolverCodegenGap(t *testing.T) {
-	const gap = solverCodegenGap
-
-	t.Run("Checker", func(t *testing.T) {
-		useChecker(t)
-		out := CompilePackage(append(libSources("export val greeting = \"hello\"\n"), binSource("val g = greeting\n")), PackageConfig{})
-		require.NotContains(t, messages(out.TypeErrors), gap)
-	})
-
-	t.Run("Solver", func(t *testing.T) {
-		useSolver(t)
-		out := CompilePackage(append(libSources("export val greeting = \"hello\"\n"), binSource("val g = greeting\n")), PackageConfig{})
-		// One for the library's compilation unit and one for the script's, since
-		// each is a file whose emitted output is wrong.
-		require.Equal(t, 2, countMessage(messages(out.TypeErrors), gap))
-		// The gap covers output that is written but not yet right, so the library's
-		// .d.ts is emitted rather than left empty.
-		require.NotEmpty(t, out.CompUnits["lib/index"].DTS)
-
-		// Each blames the file it is about, so a caller placing diagnostics puts
-		// them on the library and on the script rather than both on one.
-		blamed := []int{}
-		for _, err := range out.TypeErrors {
-			if err.Message() == gap {
-				blamed = append(blamed, err.Span().SourceID)
-			}
-		}
-		require.Equal(t, []int{0, 1}, blamed)
-	})
-}
-
-// solverCodegenGap is the message the solver path reports for each file it emits.
-const solverCodegenGap = "ESCALIER_CHECKER=solver does not yet emit correct output for this file: " +
-	"a read of a function-typed field is bound to its receiver, and the .d.ts does not " +
-	"yet match the one the old checker writes"
-
-// countMessage returns how many of msgs equal want.
-func countMessage(msgs []string, want string) int {
-	n := 0
-	for _, msg := range msgs {
-		if msg == want {
-			n++
-		}
-	}
-	return n
-}
-
 // TestCompileAScriptWithNoLibrary checks the entry point a package with no lib/
 // files takes: the script resolves what the prelude declares and nothing else, on
 // either checker.
@@ -314,24 +263,6 @@ func TestCompileWithoutAStandardLibrary(t *testing.T) {
 	}
 }
 
-// TestCompileScriptReportsTheGapOfTheCheckerThatChecked checks that the codegen gap
-// follows the checker that checked the script rather than the one selected when the
-// emit happens. A LibScope holds the checker that produced it, so reading the gap off
-// the selected backend instead would emit solver-checked JavaScript with nothing
-// saying it cannot be trusted.
-func TestCompileScriptReportsTheGapOfTheCheckerThatChecked(t *testing.T) {
-	useSolver(t)
-	libOutput := CheckLib(context.Background(), libSources("export val greeting = \"hello\"\n"), PackageConfig{})
-	require.NotNil(t, libOutput.LibScope)
-
-	// The library keeps the solver. The variable goes back to the old checker.
-	t.Setenv(CheckerEnvVar, "")
-
-	out := CompileScript(libOutput.LibScope, binSource("val g = greeting\n"))
-	require.Empty(t, out.ParseErrors)
-	require.Equal(t, 1, countMessage(messages(out.TypeErrors), solverCodegenGap))
-}
-
 // fixtureLibSources reads a fixture's lib/ files as the source list the entry points
 // take. It walks subdirectories, because a fixture puts a namespace's declarations in a
 // directory of that name, and sorts by path so a multi-file fixture is assembled the
@@ -412,10 +343,6 @@ func TestSolverEmitsDefinitionsForEveryFixture(t *testing.T) {
 
 // TestBothCheckersEmitTheSameJS asserts that a source exercising a type the emitter
 // reads emits identical JavaScript whichever checker ran.
-//
-// A source whose class reads a function-typed field is left out. The solver binds such
-// a read to its receiver and the checker does not, which is #1782 rather than anything
-// about the types read here.
 func TestBothCheckersEmitTheSameJS(t *testing.T) {
 	tests := map[string]string{
 		"NullableIfValGuardsItsTarget": `
@@ -443,6 +370,15 @@ func TestBothCheckersEmitTheSameJS(t *testing.T) {
 			class Point { x: number }
 			declare val v: unknown
 			export val hit = match v { p: Point => 1, _ => 0 }
+		`,
+		"AFunctionFieldReadOffSelfIsNotBound": `
+			class Fix {
+			    f: fn (a: number) -> number,
+			    recurse(&self, arg: number) -> number {
+			        val g = self.f
+			        return g(arg)
+			    },
+			}
 		`,
 		"AMethodReadOffSelfKeepsItsReceiver": `
 			class Counter {

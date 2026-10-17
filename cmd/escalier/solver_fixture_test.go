@@ -37,6 +37,23 @@ type solverSkipCause struct {
 	// ticket is the issue that clears it, or empty when nothing names it yet. An empty
 	// ticket is itself a finding, since it marks work the cutover plan did not foresee.
 	ticket string
+	// intended marks a divergence triaged as the solver being right. Its entries stay
+	// listed until the checker it diverges from stops being the reference, and ticket
+	// names the issue that triaged it.
+	intended bool
+}
+
+// status returns the cause's ticket as the test's logs print it, followed by
+// `intended` for a divergence triaged as right, as in "#1676, intended".
+func (c *solverSkipCause) status() string {
+	ticket := c.ticket
+	if ticket == "" {
+		ticket = "no ticket yet"
+	}
+	if c.intended {
+		return ticket + ", intended"
+	}
+	return ticket
 }
 
 var (
@@ -273,12 +290,10 @@ func reportSolverSkipCauses(t *testing.T, runnable int) {
 	unticketed := set.NewSet[string]()
 	lines := make([]string, 0, len(causes))
 	for _, cause := range causes {
-		ticket := cause.ticket
-		if ticket == "" {
-			ticket = "no ticket yet"
+		if cause.ticket == "" {
 			unticketed.Add(cause.name)
 		}
-		lines = append(lines, fmt.Sprintf("  %2d  %s (%s)", counts[cause], cause.name, ticket))
+		lines = append(lines, fmt.Sprintf("  %2d  %s (%s)", counts[cause], cause.name, cause.status()))
 	}
 
 	t.Logf("the solver checks %d of %d fixtures; %d are held back by %d causes, %d of them unticketed:\n%s",
@@ -321,35 +336,29 @@ type emitSkip struct {
 var emitSkips = map[emitSkip]*solverSkipCause{
 	{"namespace_use_parent_symbol", "index.d.ts"}:  causeAnyAsUnknown,
 	{"class_inheritance_namespaces", "index.d.ts"}: causeCheckerRootNamespacePrefix,
-	{"function_overloading", "index.d.ts"}:         causeAsyncNoValueReturn,
 }
 
 // The causes behind the `index.d.ts` entries, each triaged from the diff the artifact
-// comparison reports. #1676 is the issue that works them down.
+// comparison reports. Both are divergences #1676 triaged as intended.
 var (
 	// A written `any` resolves to `unknown` in the solver, so `externref: any` emits
 	// `externref: unknown` where the twin writes `any`. The divergence is intended.
 	// `unknown` keeps a declaration sound where `any` would let every value through
-	// in both directions, so #1676 records it as a difference to keep.
+	// in both directions.
 	causeAnyAsUnknown = &solverSkipCause{
-		name:   "a written `any` emitting as `unknown`",
-		ticket: "#1676",
+		name:     "a written `any` emitting as `unknown`",
+		ticket:   "#1676",
+		intended: true,
 	}
 	// A reference at the module root to a type a namespace declares emits without the
 	// namespace on the checker. With `class NsDerived` in `lib/geo/`, the root
 	// `val nsDerived = geo.NsDerived()` emits `nsDerived: NsDerived` on the checker,
 	// which names no type at the root, and `nsDerived: geo.NsDerived` on the solver.
-	// The fault is the checker's.
+	// The fault is the checker's, so the solver's output is the one to keep.
 	causeCheckerRootNamespacePrefix = &solverSkipCause{
-		name: "a root reference to a namespaced type, which the checker writes unqualified",
-	}
-	// An `async fn` whose body returns no value emits `Promise<void>` on the checker and
-	// `Promise<undefined>` on the solver, so `async fn test() { … }` emits
-	// `test(): Promise<undefined>`. The solver writes the type the body produces, which is
-	// what emission writes once the checker is gone.
-	causeAsyncNoValueReturn = &solverSkipCause{
-		name:   "an `async fn` returning no value, which the checker writes as `Promise<void>`",
-		ticket: "#1676",
+		name:     "a root reference to a namespaced type, which the checker writes unqualified",
+		ticket:   "#1676",
+		intended: true,
 	}
 )
 
@@ -400,7 +409,7 @@ func requireSameEmittedOutput(t *testing.T, fixture string, sources []*ast.Sourc
 		}
 		require.True(t, differed.Contains(artifact.name),
 			"%s now agrees between the checkers; drop it from emitSkips", artifact.name)
-		waiting = append(waiting, fmt.Sprintf("%s: %s (%s)", artifact.name, cause.name, cause.ticket))
+		waiting = append(waiting, fmt.Sprintf("%s: %s (%s)", artifact.name, cause.name, cause.status()))
 	}
 	if len(waiting) > 0 {
 		t.Logf("still differs:\n  %s", strings.Join(waiting, "\n  "))

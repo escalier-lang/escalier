@@ -15,20 +15,14 @@ import (
 // solverBackend runs internal/solver. CheckerEnvVar selects it; nothing reaches it
 // by default while the cutover is in progress.
 //
-// The path is a seam, not a finished compiler. Four things it does differently from
-// the checker path are each a later phase of the cutover, and this is the list to
-// read before trusting anything it produces:
+// Three things it does differently from the checker path:
 //
-//   - Reading a field whose type is a plain function binds it to its receiver, so
-//     `self.f` emits `this.f.bind(this)` where the checker path emits `this.f`. A
-//     method read agrees on both. Tracked in #1782.
-//   - The emitted .d.ts is rendered from soltype and matches what the checker path
-//     writes for most but not all source. Reconciling the two is tracked in #1676,
-//     and the four causes behind the fixtures that still differ are #1772 through
-//     #1775.
-//   - The diagnostics include every package the run loaded, so a package that is
-//     itself clean still reports the two errors `std:prelude` carries. Tracked in
-//     #1664 for the errors themselves and #1696 for the file they are blamed on.
+//   - The emitted .d.ts is rendered from soltype. It matches what the checker path
+//     writes except for the divergences recorded in emitSkips in
+//     cmd/escalier/solver_fixture_test.go and shapeSkips in dts_parity_test.go.
+//   - The diagnostics include every package the run loaded, so a package the source
+//     imports reports its own errors beside the source's. #1696 tracks the file they
+//     are blamed on.
 //   - libResult.scope, libResult.fileScopes, and scriptResult.scope are nil, because
 //     the LSP reads internal/checker's scope type. Tracked in #1678 through #1682.
 //
@@ -51,7 +45,6 @@ func (b solverBackend) checkLib(_ context.Context, module *ast.Module) libResult
 		dts:         &solverDts{module: result},
 		jsTypes:     codegen.SolverJSTypes{Types: &solverSolTypes{info: result.Info}},
 		diagnostics: append(dirErrs, diagnostics(result.Errors)...),
-		codegenGap:  &codegenGapError{span: moduleSpan(module)},
 	}
 }
 
@@ -63,23 +56,7 @@ func (b solverBackend) checkScript(_ context.Context, script *ast.Script) script
 	return scriptResult{
 		jsTypes:     codegen.SolverJSTypes{Types: &solverSolTypes{info: info}},
 		diagnostics: append(dirErrs, diagnostics(errs)...),
-		codegenGap:  &codegenGapError{span: scriptSpan(script)},
 	}
-}
-
-// codegenGapError reports that this path's emitted output is not yet trustworthy, so
-// a caller reads it as a diagnostic rather than discovering it from output that looks
-// finished. The two gaps it names are the first two in this file's type doc.
-type codegenGapError struct {
-	span ast.Span
-}
-
-func (e *codegenGapError) Span() ast.Span { return e.span }
-
-func (e *codegenGapError) Message() string {
-	return CheckerEnvVar + "=" + CheckerSolver + " does not yet emit correct output for this file: " +
-		"a read of a function-typed field is bound to its receiver, and the .d.ts does not " +
-		"yet match the one the old checker writes"
 }
 
 // solverSolTypes reads one module run for the questions JavaScript emission asks.
@@ -216,7 +193,6 @@ func (l *solverLibScope) checkScript(_ context.Context, script *ast.Script) scri
 	return scriptResult{
 		jsTypes:     codegen.SolverJSTypes{Types: &solverSolTypes{info: info}},
 		diagnostics: diagnostics(errs),
-		codegenGap:  &codegenGapError{span: scriptSpan(script)},
 	}
 }
 
