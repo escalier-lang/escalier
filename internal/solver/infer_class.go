@@ -105,10 +105,19 @@ func (c *checker) inferClassDecl(scope *Scope, lvl int, decl *ast.ClassDecl, ns 
 	// coalesces everything.
 	keep := classKeepVars(typeParams, body, static)
 	flow := keptFlowMap(keep)
-	c.freezeClassBody(body, keep, flow, keepLts)
-	c.freezeClassBody(static, keep, flow, keepLts)
-	c.ctx.recordMethodLifetimes(body, keepLts)
-	c.ctx.recordMethodLifetimes(static, keepLts)
+	// freezeClassBody writes into the element slices, so a class the driver may freeze again
+	// keeps copies of its unfrozen members.
+	var unfrozenBody, unfrozenStatic []soltype.ObjTypeElem
+	if _, inComponent := c.componentClassOf[decl]; inComponent {
+		unfrozenBody, unfrozenStatic = slices.Clone(body.Elems), slices.Clone(static.Elems)
+	}
+	freeze := func() {
+		c.freezeClassBody(body, keep, flow, keepLts)
+		c.freezeClassBody(static, keep, flow, keepLts)
+		c.ctx.recordMethodLifetimes(body, keepLts)
+		c.ctx.recordMethodLifetimes(static, keepLts)
+	}
+	freeze()
 
 	// Freeze both per-parameter variance vectors once every member body has refined its
 	// signature, so the walk measures each type parameter at its final occurrences. The
@@ -154,11 +163,27 @@ func (c *checker) inferClassDecl(scope *Scope, lvl int, decl *ast.ClassDecl, ns 
 	c.reportStaticsNamingClassParams(decl, static, typeParams, shell.lifetimeParams)
 
 	value := c.classValue(self, ctorFns, callFns, static)
-	if bound := c.boundClassValue(decl); bound != nil {
+	if class, inComponent := c.componentClassOf[decl]; inComponent && class.value != nil {
 		// The value is already the binding var's lower bound, so it takes the coalesced
 		// statics in place.
-		bound.Elems = value.Elems
-		value = bound
+		class.value.Elems = value.Elems
+		value = class.value
+		// A member body that constructs a class declared later in the component reads that
+		// class's binding var before the var holds the class value. The freeze above then
+		// coalesces the call's result to `never`. A class whose members mention `never` is
+		// marked. The driver freezes it again once every class in the component has bound its
+		// value, and by then the unfrozen member types carry the later class.
+		if mentionsNever(body) || mentionsNever(static) {
+			class.thaw = func() {
+				body.Elems = slices.Clone(unfrozenBody)
+				static.Elems = slices.Clone(unfrozenStatic)
+				class.value.Elems = c.classValue(self, ctorFns, callFns, static).Elems
+			}
+			class.refreeze = func() {
+				freeze()
+				class.value.Elems = c.classValue(self, ctorFns, callFns, static).Elems
+			}
+		}
 	}
 	return value, &ast.NodeProvenance{Node: decl}, true
 }
@@ -2248,6 +2273,27 @@ func coalesceThrows(
 	}
 	return coalesceKeeping(t, soltype.Positive, keep, flow, keepLts)
 }
+
+// mentionsNever reports whether any member type of obj contains `never`.
+func mentionsNever(obj *soltype.ObjectType) bool {
+	v := &neverVisitor{}
+	obj.Accept(v, soltype.Positive)
+	return v.found
+}
+
+// neverVisitor records whether a walk reaches `never`.
+type neverVisitor struct {
+	found bool
+}
+
+func (v *neverVisitor) EnterType(t soltype.Type, _ soltype.Polarity) soltype.EnterResult {
+	if _, ok := t.(*soltype.NeverType); ok {
+		v.found = true
+	}
+	return soltype.EnterResult{SkipChildren: v.found}
+}
+
+func (v *neverVisitor) ExitType(t soltype.Type, _ soltype.Polarity) soltype.Type { return t }
 
 // freezeClassBody coalesces each member's type in place so member lookup and the
 // class-vs-object rule read concrete member types rather than the fresh vars a field held

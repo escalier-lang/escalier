@@ -2501,6 +2501,11 @@ type componentClass struct {
 	// value is the class value constrained into v, or nil until inferClassBodies
 	// constrains it.
 	value *soltype.ObjectType
+	// thaw puts back the member types the class held before inferClassDecl coalesced them,
+	// in its body, its static side, and value. refreeze then coalesces them again and puts
+	// the new statics into value. Both are nil unless inferClassDecl marks the class to be
+	// frozen again.
+	thaw, refreeze func()
 }
 
 // boundClassValue returns the class value inferClassBodies constrained into the binding var
