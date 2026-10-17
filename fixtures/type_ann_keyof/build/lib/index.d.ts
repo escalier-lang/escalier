@@ -1,4 +1,4 @@
-declare type Event = {msg: string, print(): void};
+declare type Event = {msg: string, print(): undefined};
 declare const Event: {new (msg: string): Event};
 declare type Point = {x: number, y: number};
 declare type Tuple = [string, number, boolean];

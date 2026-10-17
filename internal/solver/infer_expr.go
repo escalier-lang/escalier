@@ -2706,13 +2706,32 @@ func (c *checker) inferFieldAssign(lvl int, e *ast.BinaryExpr, object ast.Expr, 
 	// The receiver's reads are part of this write, so the use check weighs them as a write to
 	// the target rather than as reads of the receiver.
 	c.noteFieldWrite(e.Left, object)
+	// The member is looked up once on the receiver's class instance, class body, or class
+	// value, or on its known object shape. A receiver whose shape is still being inferred
+	// declares no member.
+	member, _ := c.writeMember(name, readCarrier(recv))
 	// An accessor named prop resolves here rather than through the structural requirement
 	// below, whose element is a PropertyElem. constrain's object arm matches the sub side
-	// with ObjectType.Prop, so an accessor would read there as a missing property.
-	if accessor, ok := c.writeAccessor(name, readCarrier(recv)); ok {
-		return c.inferAccessorAssign(lvl, e, name, recv, source, accessor, assignStmt)
+	// with ObjectType.Prop, so an accessor would read there as a missing property. A getter
+	// with no setter is routed here too, since only inferAccessorAssign reports that it has
+	// no setter to call.
+	switch member.(type) {
+	case *soltype.SetterElem, *soltype.GetterElem:
+		return c.inferAccessorAssign(lvl, e, name, recv, source, member, assignStmt)
 	}
 	w := widen(source)
+	// A write to a declared readonly field is reported here, blamed on the target, so every
+	// receiver form gives the same diagnostic. The structural requirement below would
+	// otherwise reject it as a subtyping failure. A receiver whose shape is still being
+	// inferred, such as an unannotated parameter, declares no field. A caller that passes
+	// an object with a readonly field into that shape gets ReadonlyFieldSubtypeError.
+	declared, hasDeclared := member.(*soltype.PropertyElem)
+	if hasDeclared && declared.Readonly {
+		c.report(&ReadonlyFieldError{Field: name, site: e.Left})
+		c.recordWritten(recv, name, w)
+		c.recordType(e, w)
+		return w
+	}
 	// An owned-mutable field takes the immutable→mutable upgrade through the same shared
 	// helper as the other value-flow sites, so the field write stays consistent with them:
 	// a uniquely-owned source is constrained covariantly against the field's read view, and
@@ -2727,17 +2746,6 @@ func (c *checker) inferFieldAssign(lvl int, e *ast.BinaryExpr, object ast.Expr, 
 			upgraded = true
 		}
 	}
-	// Catch a readonly write at the assignment site so the diagnostic blames it
-	// outright; a TypeVar receiver falls through to the structural
-	// ReadonlyFieldSubtypeError the ObjectType write view raises.
-	if recvObj, ok := soltype.CarrierOf(recv).(*soltype.ObjectType); ok {
-		if prop, ok := recvObj.Prop(name); ok && prop.Readonly {
-			c.report(&ReadonlyFieldError{Field: name, site: e})
-			c.recordWritten(recv, name, w)
-			c.recordType(e, w)
-			return w
-		}
-	}
 	errsBefore := len(c.errs)
 	reqField := &soltype.PropertyElem{Name: name, Type: w}
 	// A receiver that declares the field takes the write against the declared type. The
@@ -2747,7 +2755,7 @@ func (c *checker) inferFieldAssign(lvl int, e *ast.BinaryExpr, object ast.Expr, 
 	// `d.x = "s"` into `x: number | string` would fail. The source is checked against
 	// the declared type instead, and the requirement carries that type, so it asks only
 	// that the receiver be mutable and hold the field.
-	if declared, ok := c.declaredWriteField(name, recv); ok {
+	if hasDeclared {
 		// The upgrade above already constrained the source against this field.
 		if !upgraded {
 			c.constrain(e.Right, source, writableFieldType(declared))
@@ -2796,18 +2804,6 @@ func (c *checker) inferFieldAssign(lvl int, e *ast.BinaryExpr, object ast.Expr, 
 	// `undefined` recovery type inferAssign recorded on e before dispatching here.
 	c.recordType(e, w)
 	return w
-}
-
-// declaredWriteField returns the field named name that recv declares, when recv is an object
-// or class instance whose shape is known. It reports false for a receiver whose shape is still
-// being inferred, and for a member that is not a plain property.
-func (c *checker) declaredWriteField(name string, recv soltype.Type) (*soltype.PropertyElem, bool) {
-	member, found := c.writeMember(name, readCarrier(recv))
-	if !found {
-		return nil, false
-	}
-	prop, ok := member.(*soltype.PropertyElem)
-	return prop, ok
 }
 
 // writableFieldType returns the type a write to prop may store. An optional field may also
@@ -2883,7 +2879,7 @@ func (c *checker) inferElementAssign(lvl int, e *ast.BinaryExpr, ix *ast.IndexEx
 	}
 	w := widen(source)
 	if readonly {
-		c.report(&ReadonlyFieldError{Field: "[" + soltype.Print(access.Index) + "]", site: e})
+		c.report(&ReadonlyFieldError{Field: "[" + soltype.Print(access.Index) + "]", site: e.Left})
 		c.recordType(e, w)
 		return w
 	}
@@ -4395,7 +4391,11 @@ func (c *checker) inferAwait(scope *Scope, lvl int, e *ast.AwaitExpr) soltype.Ty
 // sits where a value is expected: `return if ok { v } else { throw Error("no value") }`.
 func (c *checker) inferThrow(scope *Scope, lvl int, e *ast.ThrowExpr) soltype.Type {
 	arg := c.inferExpr(scope, lvl, e.Arg)
-	c.constrain(e, arg, c.throwsSink(lvl))
+	// The operand is the constraint site, so a thrown value that does not fit the sink is
+	// reported on that value. A literal carries its own source span, but the type of a call
+	// such as `Error("x")` does not. Its error takes the span of the site passed here, and
+	// passing the whole `throw` would underline the keyword too.
+	c.constrain(e.Arg, arg, c.throwsSink(lvl))
 	c.markRaised()
 	// Recorded but given no provenance: every `&NeverType{}` shares one address, and Prov
 	// is pointer-keyed, so a second throw would trip recordProv's guard. Info is node-keyed.

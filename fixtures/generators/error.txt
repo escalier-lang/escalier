@@ -1,0 +1,5 @@
+lib/generators.esc:74:1: the body never yields, so this returns an empty Generator; add a `yield` or drop the `gen`
+
+74: export gen fn genNoYield() {
+    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+

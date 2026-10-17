@@ -1,4 +1,4 @@
-lib/exception_handling.esc:37:43: Error cannot be assigned to string
+lib/exception_handling.esc:37:43: cannot constrain Error <: string
 
 37:     if value != "" { value } else { throw Error("value is empty") }
                                               ^^^^^^^^^^^^^^^^^^^^^^^

@@ -977,3 +977,50 @@ func TestInferThrowsThroughAGetterOfAJoinedReceiver(t *testing.T) {
 		},
 	})
 }
+
+// A thrown value that does not fit the enclosing sink is reported on the thrown value,
+// not on the whole `throw` expression. The cases cover a literal, whose type carries its
+// own source span, and a constructor call, whose type takes the span of the constraint site.
+func TestInferThrownValueMismatchSpan(t *testing.T) {
+	tests := []struct {
+		name     string
+		src      string
+		wantErrs []string
+	}{
+		{
+			name:     "LiteralAgainstTheClause",
+			src:      `fn f() throws number { throw "boom" }`,
+			wantErrs: []string{`1:30-1:36: cannot constrain "boom" <: number`},
+		},
+		{
+			name: "ConstructorCallAgainstTheClause",
+			src: `
+				class Oops {}
+				fn f() throws string { throw Oops() }
+			`,
+			wantErrs: []string{"3:34-3:40: cannot constrain Oops <: string"},
+		},
+		{
+			name: "ConstructorCallInABranch",
+			src: `
+				class Oops {}
+				fn f(s: string) -> undefined throws string { if s != "" { s } else { throw Oops() } }
+			`,
+			wantErrs: []string{"3:80-3:86: cannot constrain Oops <: string"},
+		},
+		{
+			name: "ConstructorCallInAClauselessFunction",
+			src: `
+				class Oops {}
+				fn f() { throw Oops() }
+			`,
+			wantErrs: []string{"3:20-3:26: cannot constrain Oops <: never"},
+		},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			_, _, errs := inferSource(t, test.src)
+			require.Equal(t, test.wantErrs, messagesWithSpan(t, errs))
+		})
+	}
+}

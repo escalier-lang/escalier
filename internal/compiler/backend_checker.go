@@ -10,8 +10,8 @@ import (
 	"github.com/escalier-lang/escalier/internal/type_system"
 )
 
-// checkerBackend runs internal/checker. It is what every entry point uses unless
-// CheckerEnvVar selects the solver.
+// checkerBackend runs internal/checker. An entry point uses it only when
+// CheckerEnvVar is set to CheckerLegacy.
 type checkerBackend struct{}
 
 // checkLib infers module through InferModule rather than the lower-level

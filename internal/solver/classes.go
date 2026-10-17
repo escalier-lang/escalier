@@ -1853,26 +1853,6 @@ func (c *checker) instanceMemberValue(lvl int, blame ast.Node, member soltype.Ob
 	return c.memberValue(lvl, blame, member)
 }
 
-// writeAccessor resolves the accessor a field write `recv.prop = …` targets, across the
-// same three receiver shapes valueProp intercepts for a read: a class instance, a class
-// body reached through `self`, and a class value. The returned ok routes the write to
-// inferAccessorAssign. Every other member kind returns ok=false, so a field write keeps the
-// structural path, where the readonly check, the `written` record, and the borrow edges live.
-func (c *checker) writeAccessor(name string, carrier soltype.Type) (soltype.ObjTypeElem, bool) {
-	member, found := c.writeMember(name, carrier)
-	if !found {
-		return nil, false
-	}
-	// A setter is the member the write calls. A getter is routed here too, since it has no
-	// setter to call and only inferAccessorAssign knows to report that. The structural path
-	// matches a PropertyElem, finds none, and would blame a missing property instead.
-	switch member.(type) {
-	case *soltype.SetterElem, *soltype.GetterElem:
-		return member, true
-	}
-	return nil, false
-}
-
 // readMember looks `name` up on `carrier`'s class instance, class body, or class value,
 // whichever it resolves as, preferring the getter half of a getter/setter pair. It returns
 // found=false for any other receiver.
@@ -1905,6 +1885,14 @@ func (c *checker) writeMember(name string, carrier soltype.Type) (soltype.ObjTyp
 		return c.projectedClassMember(ct, ct, name, (*soltype.ObjectType).WriteMember, set.NewSet[string]())
 	}
 	if obj, ok := c.memberCarrier(carrier).(*soltype.ObjectType); ok {
+		// An object built from a mapped type or a spread names its fields only once reduced.
+		// `{readonly [P]: T[P] for P in keyof T}` at `T = {a: number}` declares `a` after
+		// reduction and nothing before it.
+		if soltype.HasResidualElem(obj.Elems) {
+			if reduced, isObj := newTypeEvaluator(c.ctx, newSeenPairs()).reduce(obj).(*soltype.ObjectType); isObj {
+				obj = reduced
+			}
+		}
 		return obj.WriteMember(name)
 	}
 	if obj, ok := c.classValueCarrier(carrier); ok {

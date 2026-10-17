@@ -692,6 +692,46 @@ in between.
 **Gate.** `go test ./...` passes with the solver as the default. The old-checker
 harness is retired in the same commit, not kept limping.
 
+**What the flip surfaced.** P2's harness compared only whether each fixture was
+accepted or rejected. A fixture that already expected a rejection hid every other
+diagnostic the solver got wrong in it. Regenerating the goldens from the solver
+exposed eight gaps, each fixed in its own pull request ahead of the flip:
+
+| Issue | Gap | Seen in |
+| --- | --- | --- |
+| #2019 | optional chaining | `objects` |
+| #2020 | a shorthand property, `{a}` | `objects` |
+| #2021 | a method's own type-parameter bound, unchecked at a call in its body | `class_with_generic_methods` |
+| #2022 | `typeof` of a namespace member | `type_ann_typeof` |
+| #2023 | a script-level `fn` with a body | `internal/compiler` snapshot tests |
+| #2031 | iterating an `IterableIterator`, such as `map.keys()` | `internal/compiler` snapshot tests |
+| #2033 | a method calling its own class's constructor, inferred as `never` | `interop_mutability` |
+| #2034 | an object rest over a union, inferred as `{}` | `destructuring` |
+
+Three more change only what a diagnostic says or where it points, and stay open
+past the flip: #2035 blames a destructured missing key on the type's declaration,
+#2036 leaves `"length"` out of `keyof` a tuple, and #2037 is an ambiguous-union
+warning on valid generic code.
+
+**Landed.** `ESCALIER_CHECKER=checker` selects the old checker, and anything else
+runs the solver. The LSP sets it to `checker` at startup until P6 moves it.
+`cmd/escalier/solver_fixture_test.go` is deleted. The fixture goldens are written
+from the solver, so `TestBuildFixtureTests` is the one fixture harness.
+`try_catch` is `DISABLED until #1974`. The stdlib fixtures are re-enabled, and no
+`TestStdlibImport_*` test is still disabled.
+
+The two intended `.d.ts` divergences P4.3 recorded are now the goldens. These
+diagnostics changed beyond wording:
+
+- `interop_mutability` loses the old checker's false `Callee is not callable` on
+  `xs.toSorted()`.
+- `type_ann_keyof` accepts `keyof Event = "print"`, because `keyof` a class
+  includes its methods, as it does in TypeScript.
+- `objects` reports the immutable receiver of `obj3.bar = "hello"` and stops
+  there, rather than also reporting the setter's argument.
+- `generators` and `generic_class` record a warning each, so each gains an
+  `error.txt`.
+
 **Not in scope.** Deleting anything. `internal/checker`, `internal/type_system`,
 the AST's `inferredType` field, and `internal/checker/tests` all stay, compiled
 and tested, as the parity baseline M11.5 needs.

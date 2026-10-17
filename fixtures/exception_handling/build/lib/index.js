@@ -5,7 +5,7 @@ export function getValueOrThrow(temp1) {
   if (value != "") {
     temp2 = value;
   } else {
-    throw Error("value is empty");
+    throw new Error("value is empty");
   }
   return temp2;
 }
@@ -30,7 +30,7 @@ export function throwTypeIsWrong(temp4) {
   if (value != "") {
     temp5 = value;
   } else {
-    throw Error("value is empty");
+    throw new Error("value is empty");
   }
   temp5;
 }
@@ -39,7 +39,7 @@ export const throwingFunc = function (temp6) {
   if (condition) {
     return "success";
   } else {
-    throw Error("failure");
+    throw new Error("failure");
   }
 };
 //# sourceMappingURL=./index.js.map

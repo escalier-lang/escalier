@@ -380,13 +380,12 @@ type MutFieldError struct {
 	Ann *ast.MutableTypeAnn
 }
 
-// ReadonlyFieldError fires on a literal field-assignment `obj.f = …` whose target
-// field is declared `readonly`. The assignment-site check lives in
-// inferMemberAssign, which catches the case directly so the diagnostic blames the
-// write expression and the message names the assignment outright.
+// ReadonlyFieldError fires on an assignment such as `obj.f = …` or `obj[k] = …` whose
+// target is declared `readonly`. Field is the member name, or the bracketed key type
+// for an element write. site is the assignment target, which carries the blame span.
 type ReadonlyFieldError struct {
 	Field string
-	site  ast.Node // the BinaryExpr assignment, which carries the blame span
+	site  ast.Node
 }
 
 // ReadonlyFieldSubtypeError fires when a readonly source field flows into a
@@ -396,7 +395,8 @@ type ReadonlyFieldError struct {
 // contract. The check sits in the ObjectType <: ObjectType arm under the
 // mut-context flag, the contravariant write view of a mutable borrow, and blames
 // whatever site triggered the constraint, typically the call argument or return
-// that flows the value out.
+// that flows the value out. A direct write to a declared readonly field reports
+// ReadonlyFieldError instead.
 type ReadonlyFieldSubtypeError struct {
 	Field string
 	site  ast.Node
@@ -1413,6 +1413,7 @@ func (*UnknownExtractorError) isSolverError()               {}
 func (*MissingCustomMatcherError) isSolverError()           {}
 func (*MalformedCustomMatcherError) isSolverError()         {}
 func (*ExtractorPatternArityError) isSolverError()          {}
+func (*TuplePatternArityError) isSolverError()              {}
 func (*TypeArgArityMismatchError) isSolverError()           {}
 func (*LifetimeArgArityMismatchError) isSolverError()       {}
 func (*ReservedTypeNameError) isSolverError()               {}
@@ -1577,6 +1578,38 @@ func (e *ExtractorPatternArityError) Message() string {
 		got = "at least " + got
 	}
 	return "extractor pattern `" + e.Name + "` expects " + expected + " arguments but got " + got
+}
+
+// TuplePatternArityError fires when a tuple pattern binds a different number of elements
+// than the tuple it destructures holds. Expected counts the pattern's fixed elements, and
+// AtLeast marks a pattern ending in `...rest`, which accepts any tuple at least that long.
+// Value is the tuple the pattern was matched against, and an inexact Value reports its
+// length as a minimum. At is the span Span() underlines. Related() points at Value's source
+// when one is recorded.
+type TuplePatternArityError struct {
+	At       ast.Span
+	Value    *soltype.TupleType
+	Expected int
+	AtLeast  bool
+	prov     NodeResolver
+}
+
+func (e *TuplePatternArityError) Span() ast.Span      { return e.At }
+func (e *TuplePatternArityError) Related() []ast.Span { return relatedOf(e.prov, e.Value) }
+func (e *TuplePatternArityError) Message() string {
+	got := len(e.Value.Elems)
+	problem := "not enough elements to unpack"
+	if got > e.Expected {
+		problem = "too many elements to unpack"
+	}
+	expected, has := strconv.Itoa(e.Expected), strconv.Itoa(got)
+	if e.AtLeast {
+		expected = "at least " + expected
+	}
+	if e.Value.Inexact {
+		has = "at least " + has
+	}
+	return problem + ": the pattern expects " + expected + ", but the value has " + has
 }
 
 // TypeDeclKind names the sort of declaration a type reference resolved to. resolveTypeArgs
@@ -2765,6 +2798,10 @@ type AmbiguousUnionCommitWarning struct {
 	Alternate soltype.Type // another member that would also have matched
 	prov      NodeResolver
 	site      ast.Node
+	// shownUnion, shownCommitted, and shownAlternate are the three types as the message
+	// renders them, each with every rigid type parameter's variable under the parameter's
+	// name. blameConstraintErrors assigns them, and nil leaves the type itself to render.
+	shownUnion, shownCommitted, shownAlternate soltype.Type
 }
 
 func (*AmbiguousUnionCommitWarning) isSolverError()    {}
@@ -2775,7 +2812,17 @@ func (e *AmbiguousUnionCommitWarning) Span() ast.Span {
 func (e *AmbiguousUnionCommitWarning) Related() []ast.Span { return nil }
 func (e *AmbiguousUnionCommitWarning) Message() string {
 	return fmt.Sprintf("ambiguous match against %s: committed %s, but %s would also match; annotate to disambiguate",
-		describe(e.Union), describe(e.Committed), describe(e.Alternate))
+		describe(shownOr(e.shownUnion, e.Union)), describe(shownOr(e.shownCommitted, e.Committed)),
+		describe(shownOr(e.shownAlternate, e.Alternate)))
+}
+
+// shownOr returns shown, the display copy a diagnostic carries for t, or t itself when
+// shown is nil.
+func shownOr(shown, t soltype.Type) soltype.Type {
+	if shown != nil {
+		return shown
+	}
+	return t
 }
 
 func (e *UnknownIdentifierError) Span() ast.Span      { return e.Ident.Span() }
@@ -3062,14 +3109,7 @@ func (e *AsyncThrowsClauseError) Message() string {
 }
 
 func (e *CannotConstrainError) Message() string {
-	sub, super := e.Sub, e.Super
-	if e.shownSub != nil {
-		sub = e.shownSub
-	}
-	if e.shownSuper != nil {
-		super = e.shownSuper
-	}
-	msg := fmt.Sprintf("cannot constrain %s <: %s", describe(sub), describe(super))
+	msg := fmt.Sprintf("cannot constrain %s <: %s", describe(shownOr(e.shownSub, e.Sub)), describe(shownOr(e.shownSuper, e.Super)))
 	if e.commitUnion != nil {
 		// An earlier value committed the e.commitVar branch of e.commitUnion, pinning that
 		// var. This later use forces an incompatible bound onto the same var, so the
@@ -3323,7 +3363,7 @@ func (e *MutFieldError) Message() string {
 func (e *ReadonlyFieldError) Span() ast.Span      { return spanOfNode(e.site) }
 func (e *ReadonlyFieldError) Related() []ast.Span { return nil }
 func (e *ReadonlyFieldError) Message() string {
-	return fmt.Sprintf("cannot assign to readonly property: %s", e.Field)
+	return fmt.Sprintf("cannot assign to '%s' because it is a readonly property", soltype.DisplayMemberName(e.Field))
 }
 
 func (e *RaisingGetterPropertyError) Span() ast.Span      { return spanOfNode(e.site) }
@@ -3337,7 +3377,7 @@ func (e *RaisingGetterPropertyError) Message() string {
 func (e *ReadonlyFieldSubtypeError) Span() ast.Span      { return spanOfNode(e.site) }
 func (e *ReadonlyFieldSubtypeError) Related() []ast.Span { return nil }
 func (e *ReadonlyFieldSubtypeError) Message() string {
-	return fmt.Sprintf("readonly field %s cannot satisfy a writable field requirement", soltype.DisplayMemberName(e.Field))
+	return fmt.Sprintf("readonly field '%s' cannot satisfy a writable field requirement", soltype.DisplayMemberName(e.Field))
 }
 
 // describe renders a RAW, uncoalesced type for in-flight error messages (t0,

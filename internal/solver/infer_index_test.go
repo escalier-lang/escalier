@@ -465,7 +465,7 @@ func TestInferAssignToMemberOrIndex(t *testing.T) {
 		{
 			name:     "ReadonlyIndexSignature",
 			src:      "fn f(d: &mut {readonly [K: string]?: number}, k: string) { d[k] = 1 }",
-			wantErrs: []string{"1:60-1:68: cannot assign to readonly property: [string]"},
+			wantErrs: []string{"1:60-1:64: cannot assign to '[string]' because it is a readonly property"},
 		},
 		{
 			name: "KeyTypedByOneStringLiteralWritesTheField",
@@ -480,7 +480,7 @@ func TestInferAssignToMemberOrIndex(t *testing.T) {
 		{
 			name:     "ReadonlyFieldThroughABracket",
 			src:      "fn f(o: &mut {readonly x: number}) { o[\"x\"] = 1 }",
-			wantErrs: []string{"1:38-1:48: cannot assign to readonly property: x"},
+			wantErrs: []string{"1:38-1:44: cannot assign to 'x' because it is a readonly property"},
 		},
 		{
 			name:     "ReceiverInferredFromUse",

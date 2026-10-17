@@ -91,6 +91,7 @@ const (
 	BorrowExprOrigin                          // a RefType minted by inferBorrow from a `&p` / `&mut p` expression
 	OwnedMutConstruction                      // an owned-mutable RefType minted for `val mut q = {…}` from a fresh literal
 	OptionalChainJoin                         // a fresh join var from chainValue, the union of an optional chain's read and the `undefined` it short-circuits to
+	PatternField                              // a fresh field var from readPatternField, recorded against the pattern element that names the field
 )
 
 // NodeResolver resolves an operand type to the AST node that minted it. M2.5's

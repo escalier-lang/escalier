@@ -814,7 +814,7 @@ func (o *ObjectType) ReadMember(name string) (ObjTypeElem, bool) {
 // than against the getter Member would return.
 //
 // A getter-only name resolves here to the getter, the mirror of ReadMember resolving a
-// setter-only name. That is what lets `writeAccessor` report `Property 'x' is read-only`
+// setter-only name. That is what lets a field write report `Property 'x' is read-only`
 // rather than the generic missing-property error a not-found would produce.
 func (o *ObjectType) WriteMember(name string) (ObjTypeElem, bool) {
 	return o.preferredMember(name, func(e ObjTypeElem) bool {

@@ -120,7 +120,7 @@ func TestInferMatchTypesAFallthroughArmOnce(t *testing.T) {
 					}
 				}
 			`,
-			want: "2:13-2:24: object is missing property: y",
+			want: "5:8-5:9: object is missing property: y",
 		},
 		// A tuple test's fault is the whole-tuple requirement the arity mismatch fails,
 		// which the copy would emit a second time.
@@ -134,7 +134,7 @@ func TestInferMatchTypesAFallthroughArmOnce(t *testing.T) {
 					}
 				}
 			`,
-			want: "2:13-2:29: cannot constrain tuple of length 2 <: tuple of length 3",
+			want: "5:7-5:16: not enough elements to unpack: the pattern expects 3, but the value has 2",
 		},
 	}
 

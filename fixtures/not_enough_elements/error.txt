@@ -1,4 +1,4 @@
-lib/not_enough_elements.esc:2:13: Not enough elements to unpack
+lib/not_enough_elements.esc:2:13: not enough elements to unpack: the pattern expects 3, but the value has 1
 
 2:      val [a, b, c] = [1]
                 ^^^^

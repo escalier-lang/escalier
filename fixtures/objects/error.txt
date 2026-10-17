@@ -1,10 +1,5 @@
-lib/main.esc:4:5: Cannot mutate immutable type: {foo(msg: string, flag: boolean) -> string, get bar() -> boolean, set bar(value: boolean) -> undefined}
+lib/main.esc:4:5: cannot constrain immutable object <: mutable object
 
 4:      obj3.bar = "hello"
-        ^^^^^^^^
-
-lib/main.esc:4:16: "hello" cannot be assigned to boolean
-
-4:      obj3.bar = "hello"
-                   ^^^^^^^
+        ^^^^^^^^^^^^^^^^^^
 

@@ -4419,7 +4419,7 @@ func TestInferIndexSignatureConstraint(t *testing.T) {
 				declare fn g() -> mut {readonly a: number}
 				val y = f(g())
 			`,
-			wantErr: `readonly field a cannot satisfy a writable field requirement`,
+			wantErr: `readonly field 'a' cannot satisfy a writable field requirement`,
 		},
 		{
 			// Outside a `mut` wrapper the signature is read-only, so the key stays covariant.

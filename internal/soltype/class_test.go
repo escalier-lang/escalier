@@ -571,7 +571,7 @@ func TestObjectReadWriteMember(t *testing.T) {
 		},
 		{
 			// Resolved in both directions. The write direction reaching the getter is what
-			// lets writeAccessor report the pointed read-only error.
+			// lets inferFieldAssign route the write to the accessor check.
 			name:      "getter alone",
 			elems:     []ObjTypeElem{getter},
 			lookup:    "x",

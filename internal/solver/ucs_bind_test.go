@@ -173,7 +173,7 @@ func TestPathBinderProjectsAndBinds(t *testing.T) {
 			steps:    []ucs.Step{ucs.IndexStep{Index: 0}},
 			leaf:     "a",
 			want:     "never",
-			wantErrs: []string{"0-1: cannot constrain tuple of length 2 <: tuple of length 3"},
+			wantErrs: []string{"0-1: not enough elements to unpack: the pattern expects 3, but the value has 2"},
 		},
 		// A trailing rest relaxes the test to a prefix and binds the suffix, which the path
 		// names with a suffix step rather than with an index.

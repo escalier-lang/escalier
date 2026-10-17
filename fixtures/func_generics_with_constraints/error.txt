@@ -1,29 +1,29 @@
-lib/index.esc:5:16: string cannot be assigned to number
+lib/index.esc:6:21: cannot constrain string <: number
 
-5:  fn addStrs1<A: string, B: string>(a: A, b: B) {
-                   ^^^^^^
+6:      return addNums1(a, b) // error
+                        ^
 
-lib/index.esc:5:27: string cannot be assigned to number
+lib/index.esc:6:24: cannot constrain string <: number
 
-5:  fn addStrs1<A: string, B: string>(a: A, b: B) {
-                              ^^^^^^
+6:      return addNums1(a, b) // error
+                           ^
 
-lib/index.esc:13:22: string cannot be assigned to number
+lib/index.esc:14:21: cannot constrain string <: number
 
-13: val addStrs3 = fn<A: string, B: string>(a: A, b: B) {
-                         ^^^^^^
+14:     return addNums1(a, b) // error
+                        ^
 
-lib/index.esc:13:33: string cannot be assigned to number
+lib/index.esc:14:24: cannot constrain string <: number
 
-13: val addStrs3 = fn<A: string, B: string>(a: A, b: B) {
-                                    ^^^^^^
+14:     return addNums1(a, b) // error
+                           ^
 
-lib/index.esc:22:14: "hello" cannot be assigned to number
+lib/index.esc:22:14: cannot constrain "hello" <: number
 
 22:     addNums2("hello", 5)
                  ^^^^^^^
 
-lib/index.esc:23:14: "hello" cannot be assigned to number
+lib/index.esc:23:14: cannot constrain "hello" <: number
 
 23:     addNums4("hello", 5)
                  ^^^^^^^

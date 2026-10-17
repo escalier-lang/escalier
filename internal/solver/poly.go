@@ -163,6 +163,7 @@ func (f *freshener) EnterType(t soltype.Type, _ soltype.Polarity) soltype.EnterR
 	}
 	nv := f.c.freshAt(f.lvl)
 	nv.Open = v.Open // carry the `open` param marker onto the instantiated copy
+	f.c.ctx.copyParamMark(nv, v)
 	// Carry `var` widenability onto the copy, mirroring Open. DEFENSIVE: no current
 	// path observes it — a read of a widened binding gets the literal propagated
 	// concretely through the bound graph (constrain copies a var's concrete bounds
@@ -250,7 +251,8 @@ func (f *allFreshener) EnterType(t soltype.Type, _ soltype.Polarity) soltype.Ent
 	}
 	nv := f.c.freshAt(f.lvl)
 	nv.Open = v.Open // carry the `open` param marker onto the freshened copy
-	f.cache[v] = nv  // populate BEFORE bounds so a cyclic bound referencing v resolves to nv
+	f.c.ctx.copyParamMark(nv, v)
+	f.cache[v] = nv // populate BEFORE bounds so a cyclic bound referencing v resolves to nv
 	nv.LowerBounds = f.freshenBounds(v.LowerBounds)
 	nv.UpperBounds = f.freshenBounds(v.UpperBounds)
 	nv.Default = freshenDefault(v.Default, f)

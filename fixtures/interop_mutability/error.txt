@@ -1,35 +1,30 @@
-lib/index.esc:95:5: Callee is not callable: undefined
+lib/index.esc:95:5: cannot constrain immutable Cache <: mutable Cache
 
 95:     c.getOrInsert("k", 0)   // EXPECTED-ERROR (tier 6 exception)
         ^^^^^^^^^^^^^
 
-lib/index.esc:55:5: Callee is not callable: undefined
+lib/index.esc:55:5: cannot constrain immutable Date <: mutable Date
 
 55:     d.setHours(12)          // EXPECTED-ERROR (tier 4: Date.setHours mutates)
         ^^^^^^^^^^
 
-lib/index.esc:20:5: Callee is not callable: undefined
+lib/index.esc:20:5: cannot constrain immutable Array<number> <: mutable Array<number>
 
 20:     xs.push(1)  // EXPECTED-ERROR (tier 2)
         ^^^^^^^
 
-lib/index.esc:128:5: Callee is not callable: undefined
+lib/index.esc:128:5: cannot constrain immutable Widget <: mutable Widget
 
 128:    w.render()              // EXPECTED-ERROR (tier 8: defaults to mutating)
         ^^^^^^^^
 
-lib/index.esc:73:5: Callee is not callable: undefined
+lib/index.esc:73:5: cannot constrain immutable Array<number> <: mutable Array<number>
 
 73:     xs.sort()               // EXPECTED-ERROR (tier 2: sort requires mut Array)
         ^^^^^^^
 
-lib/index.esc:33:5: Cannot mutate readonly property 'x' on type: mut Point
+lib/index.esc:33:5: cannot assign to 'x' because it is a readonly property
 
 33:     p.x = 0     // EXPECTED-ERROR (tier 2: readonly prop)
         ^^^
-
-lib/index.esc:69:12: Callee is not callable: undefined
-
-69:     return xs.toSorted()    // OK: toSorted returns a new array
-               ^^^^^^^^^^^
 

@@ -182,7 +182,7 @@ declare class C {
     readonly [sym]: number,
 }
 fn go(c: &mut C) { c[sym] = 5 }`},
-			wantErrs: []string{"5:20-5:30: readonly field [sym] cannot satisfy a writable field requirement"},
+			wantErrs: []string{"5:20-5:26: cannot assign to '[sym]' because it is a readonly property"},
 		},
 		{
 			name: "WellKnownSymbol",

@@ -135,6 +135,70 @@ func TestBlameMissingPropertyInlineReceiverRelated(t *testing.T) {
 	requireBlame(t, src, errs, "1:16-1:17: object is missing property: b", "b", "{a: 5}")
 }
 
+// TestBlameDestructuringPattern covers a destructure the value cannot satisfy. Each error
+// underlines the pattern element that asks for what the value lacks, and the value's type
+// source is the related span.
+func TestBlameDestructuringPattern(t *testing.T) {
+	tests := map[string]struct {
+		src     string
+		want    []string
+		related []string
+	}{
+		"ObjectPatternMissingKey": {
+			src: `type Point = {x: number, y: number}
+val p: Point = {x: 5, y: 10}
+val {x, y, z} = p`,
+			want:    []string{"3:12-3:13: object is missing property: z"},
+			related: []string{"{x: number, y: number}"},
+		},
+		"TuplePatternLongerThanValue": {
+			src:     `val [a, b, c] = [1]`,
+			want:    []string{"1:9-1:13: not enough elements to unpack: the pattern expects 3, but the value has 1"},
+			related: []string{"[1]"},
+		},
+		"TuplePatternShorterThanValue": {
+			src:     `val [a] = [1, 2]`,
+			want:    []string{"1:5-1:8: too many elements to unpack: the pattern expects 1, but the value has 2"},
+			related: []string{"[1, 2]"},
+		},
+		"TuplePatternWithRestLongerThanValue": {
+			src:     `val [a, b, ...rest] = [1]`,
+			want:    []string{"1:9-1:10: not enough elements to unpack: the pattern expects at least 2, but the value has 1"},
+			related: []string{"[1]"},
+		},
+		"TuplePatternLongerThanInexactValue": {
+			src: `fn f(t: [number, ...]) {
+	val [a, b] = t
+	return a
+}`,
+			want:    []string{"2:10-2:11: not enough elements to unpack: the pattern expects 2, but the value has at least 1"},
+			related: []string{"[number, ...]"},
+		},
+		"ParamObjectPatternMissingKey": {
+			src:     `fn f({x, z}: {x: number}) { return x }`,
+			want:    []string{"1:10-1:11: object is missing property: z"},
+			related: []string{"{x: number}"},
+		},
+		"ParamTuplePatternLongerThanValue": {
+			src:     `fn f([a, b, c]: [number]) { return a }`,
+			want:    []string{"1:10-1:14: not enough elements to unpack: the pattern expects 3, but the value has 1"},
+			related: []string{"[number]"},
+		},
+	}
+
+	for name, tt := range tests {
+		t.Run(name, func(t *testing.T) {
+			_, _, errs := inferSource(t, tt.src)
+			require.Equal(t, tt.want, messagesWithSpan(t, errs))
+			related := []string{}
+			for _, s := range errs[0].Related() {
+				related = append(related, spanText(tt.src, s))
+			}
+			require.Equal(t, tt.related, related)
+		})
+	}
+}
+
 // --- Bridge-error span fixtures (self-blaming, no Prov) ---
 
 // An unknown identifier blames the ident itself.

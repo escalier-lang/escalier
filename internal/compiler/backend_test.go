@@ -14,20 +14,15 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-// useChecker points the compiler at internal/checker and at the repo's standard
-// library tree. The tree matters on the solver path, which resolves `std:prelude`
-// from disk, and the test binary runs from a temporary directory the lazy
-// stdlibdir.StdlibDir("") walk cannot find the repo root from.
+// useChecker points the compiler at internal/checker for the rest of the test.
 func useChecker(t *testing.T) {
 	t.Helper()
-	t.Setenv(CheckerEnvVar, "")
-	t.Setenv("ESCALIER_STDLIB_DIR", filepath.Join("..", "interop", "data"))
+	t.Setenv(CheckerEnvVar, CheckerLegacy)
 }
 
-// useSolver is useChecker with CheckerEnvVar set to the solver.
+// useSolver points the compiler at internal/solver for the rest of the test.
 func useSolver(t *testing.T) {
 	t.Helper()
-	useChecker(t)
 	t.Setenv(CheckerEnvVar, CheckerSolver)
 }
 
@@ -51,18 +46,19 @@ func binSource(contents string) *ast.Source {
 	return &ast.Source{ID: 1, Path: "bin/index.esc", Contents: contents}
 }
 
-// TestSelectBackend checks which checker CheckerEnvVar names. The old checker is
-// the default, so an unset variable and a value the seam does not recognize both
-// leave the compiler's behavior as it was before the solver path existed.
+// TestSelectBackend checks which checker CheckerEnvVar names. The solver is the
+// default, so only CheckerLegacy selects the old checker, and an unset variable and
+// a value the seam does not recognize both run the solver.
 func TestSelectBackend(t *testing.T) {
 	tests := []struct {
 		name  string
 		value string
 		want  backend
 	}{
-		{name: "Unset", value: "", want: checkerBackend{}},
+		{name: "Unset", value: "", want: solverBackend{}},
 		{name: "Solver", value: CheckerSolver, want: solverBackend{}},
-		{name: "Unrecognized", value: "nonesuch", want: checkerBackend{}},
+		{name: "Legacy", value: CheckerLegacy, want: checkerBackend{}},
+		{name: "Unrecognized", value: "nonesuch", want: solverBackend{}},
 	}
 
 	for _, test := range tests {
