@@ -597,10 +597,10 @@ func (c *checker) tupleRestType(lvl int, node ast.Node, scrutinee soltype.Type, 
 	return suffix, suffix
 }
 
-// unionTupleRest returns the suffix from index prefix of each tuple member of scrutinee, a
+// unionTupleRest returns the suffix from index `prefix` of each tuple member of `scrutinee`, a
 // union of tuples, joined into one union. So `[a, ...rest]` over `[number] | [number, string]`
-// binds `[] | [string]`. A member too short for prefix is left out, since a tuple test of
-// that arity passes no such member. It reports false when scrutinee is not a union, when a
+// binds `[] | [string]`. A member too short for `prefix` is left out, since a tuple test of
+// that arity passes no such member. It reports false when `scrutinee` is not a union, when a
 // member is not a tuple it can read, or when no member is long enough.
 func (c *checker) unionTupleRest(scrutinee soltype.Type, prefix int) (soltype.Type, bool) {
 	u, isUnion := groundedCarrier(scrutinee).(*soltype.UnionType)

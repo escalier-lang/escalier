@@ -50,8 +50,8 @@ func specialize(cands []candidate, matched Test) []candidate {
 	return out
 }
 
-// noteImpliedPattern records the pattern of implied, an object test that matched makes
-// unnecessary, on matched. See ObjectTest.Also.
+// noteImpliedPattern records the pattern of `implied`, an object test that `matched`
+// makes unnecessary, on `matched`. See ObjectTest.Also.
 func noteImpliedPattern(matched, implied Test) {
 	m, mIsObj := matched.(*ObjectTest)
 	i, iIsObj := implied.(*ObjectTest)

@@ -590,8 +590,8 @@ func (c *checker) memberTagged(scope *Scope, member soltype.Type, group tagGroup
 	}
 }
 
-// variadicTagged reports whether the tuple tests among tags together match every length a
-// tuple of shape can have. A rest test of length k matches every length from k up, and an
+// variadicTagged reports whether the tuple tests among `tags` together match every length
+// a tuple of `shape` can have. A rest test of length k matches every length from k up, and an
 // exact test matches its one length, so `[a]`, `[a, b]` and `[a, b, c, ...r]` match every
 // `[number, ...Array<string>]`.
 func variadicTagged(shape tupleShape, tags []ucs.Test) bool {

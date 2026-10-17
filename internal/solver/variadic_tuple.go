@@ -36,10 +36,10 @@ func (s tupleShape) elemUnion(c *Context) soltype.Type {
 	return newUnion(c, elems)
 }
 
-// tupleAtLength returns t read at the lengths a tuple test of count admits, as atLength
-// reads a variadic tuple. open asks for the lengths from count up. A union has each variadic
-// member read so and keeps its other members. It reports false when no variadic tuple in t
-// changes.
+// tupleAtLength returns t read at the lengths a tuple test of `count` admits, as atLength
+// reads a variadic tuple. `open` asks for the lengths from `count` up. A union has each
+// variadic member read so and keeps its other members. It reports false when no variadic
+// tuple in t changes.
 func (c *Context) tupleAtLength(t soltype.Type, count int, open bool) (soltype.Type, bool) {
 	if shape, ok := c.variadicShape(t); ok {
 		return shape.atLength(c, count, open)
@@ -63,12 +63,12 @@ func (c *Context) tupleAtLength(t soltype.Type, count int, open bool) (soltype.T
 	return newUnion(c, members), true
 }
 
-// atLength returns the tuple the shape holds at length count, and false when it holds none
-// of that length. open asks instead for the tuples of length count or more, as a tuple
-// pattern with a trailing rest admits. Their first count values are fixed and the values
+// atLength returns the tuple the shape holds at length `count`, and false when it holds none
+// of that length. `open` asks instead for the tuples of length `count` or more, as a tuple
+// pattern with a trailing rest admits. Their first `count` values are fixed and the values
 // after them are variadic. Past the prefix, a position of such a tuple may hold a middle
-// value or a suffix value depending on the length, so it reads as the union of the two. open
-// reports false when count fits in the prefix, which the shape already reads.
+// value or a suffix value depending on the length, so it reads as the union of the two.
+// `open` reports false when `count` fits in the prefix, which the shape already reads.
 func (s tupleShape) atLength(c *Context, count int, open bool) (soltype.Type, bool) {
 	if s.rest == nil {
 		return nil, false

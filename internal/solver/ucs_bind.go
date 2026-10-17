@@ -505,9 +505,9 @@ func objectTestNames(t *ucs.ObjectTest) []string {
 }
 
 // recordAbsentKeys works out the keys the object test t also checks are absent when the
-// value it tests has type shape, and records them in Info for t's pattern and for the
-// patterns in t.Also. A pattern tested before keeps the keys its first test recorded, so
-// a caller passes the same shape to every test of one pattern.
+// value it tests has type `shape`, and records them in `Info` for t's pattern and for the
+// patterns in `t.Also`. A pattern tested before keeps the keys its first test recorded, so
+// a caller passes the same `shape` to every test of one pattern.
 //
 // The keys tell the members of a union apart by what they carry. They are found from the
 // object members the test's keys admit:
