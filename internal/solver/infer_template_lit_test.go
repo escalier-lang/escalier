@@ -579,3 +579,77 @@ func TestTemplateOverTwoOpenInterps(t *testing.T) {
 	require.True(t, subtypeHolds(ctx, strLit("b-c"), result), "so is any dashed pairing of strings")
 	require.False(t, subtypeHolds(ctx, strLit("xyz"), result), "a string the template cannot spell is not")
 }
+
+// TestTemplateWithinTemplate covers a template literal type checked against `string` and against
+// another template literal type. Each case binds a value of the first template to the second type.
+func TestTemplateWithinTemplate(t *testing.T) {
+	tests := []struct {
+		name    string
+		sub     string
+		super   string
+		wantErr string // "" ⇒ expect no error
+	}{
+		{"the same template", "`on${string}`", "`on${string}`", ""},
+		{"any template is a string", "`a${string}`", "string", ""},
+		{"a template of a number is a string", "`on${number}`", "string | number", ""},
+		{"a longer fixed suffix lands in the interpolation", "`on${string}x`", "`on${string}`", ""},
+		{"a number interpolation lands in a string interpolation", "`${number}px`", "`${string}px`", ""},
+		{"a template within one union member", "`id-${number}`", "`id-${number}` | `key-${string}`", ""},
+		{"fixed text splits before the last interpolation", "`a-${string}-b`", "`${string}-${string}`", ""},
+		// Every interpolation of the super admits any string, so where each "-" splits makes no
+		// difference.
+		{"string interpolations split anywhere", "`${number}-${number}`", "`${string}-${string}`", ""},
+		{"a split past an interpolation", "`a${string}-${string}`", "`${string}-${string}`", ""},
+		{"a number interpolation in a wider interpolation", "`a${number}`", "`a${number | boolean}`", ""},
+		{"a missing prefix", "`${string}`", "`on${string}`", "cannot constrain `${string}` <: `on${string}`"},
+		{"a missing suffix", "`on${string}`", "`on${string}x`", "cannot constrain `on${string}` <: `on${string}x`"},
+		{"a string interpolation in a number interpolation", "`${string}px`", "`${number}px`", "cannot constrain `${string}px` <: `${number}px`"},
+		// "a-b-1" splits as "a" and "b-1", and "b-1" is no number.
+		{"an interpolation that could hold the next segment", "`${string}-1`", "`${string}-${number}`", "cannot constrain `${string}-1` <: `${string}-${number}`"},
+		// The first interpolation of the super takes one character, which an interpolation cannot fix.
+		{"adjacent interpolations", "`${number}px`", "`${number}${string}`", "cannot constrain `${number}px` <: `${number}${string}`"},
+		{"a number interpolation in a number interpolation", "`${number}px`", "`${number}px`", ""},
+		// "1" before the number -5 spells "1-5", which is no number.
+		{"a fixed prefix on a number interpolation", "`1${number}`", "`${number}`", "cannot constrain `1${number}` <: `${number}`"},
+		// The number NaN followed by "0" spells "NaN0", which is no number.
+		{"a fixed suffix on a number interpolation", "`${number}0`", "`${number}`", "cannot constrain `${number}0` <: `${number}`"},
+		// A template whose interpolations are all finite unions expands to string literals, so
+		// `1${0 | 5}` is "10" | "15".
+		{"a fixed prefix on a union of numbers", "`1${0 | 5}`", "`${number}`", ""},
+		{"a union interpolation within a string interpolation", "`on${\"x\" | \"y\"}`", "`on${string}`", ""},
+		// A union beside a `string` interpolation does not expand, so it reaches the matcher as an
+		// interpolation.
+		{"a union interpolation before a string interpolation", "`on${\"x\" | \"y\"}${string}`", "`on${string}`", ""},
+		{"a union interpolation with a member outside the super", "`on${\"x\" | \"y\"}`", "\"onx\"", "cannot constrain \"ony\" <: \"onx\""},
+		{"a union interpolation before a string interpolation with a member outside the super", "`on${\"x\" | \"y\"}${string}`", "`onx${string}`", "cannot constrain `on${\"x\" | \"y\"}${string}` <: `onx${string}`"},
+		// "a-b-1" splits as "a" and "b-1", and "b-1" is no number.
+		{"a union interpolation whose member holds the next segment", "`${\"a-b\" | \"c\"}-${number}`", "`${string}-${number}`", "cannot constrain `${\"a-b\" | \"c\"}-${number}` <: `${string}-${number}`"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			_, _, errs := inferSource(t, "declare val a: "+tt.sub+"\nval b: "+tt.super+" = a")
+			if tt.wantErr == "" {
+				require.Empty(t, errs)
+				return
+			}
+			require.Len(t, errs, 1)
+			require.Equal(t, tt.wantErr, errs[0].Message())
+		})
+	}
+}
+
+// TestTemplateOverATypeParameterWithinString asserts that a template over a type parameter is
+// within `string` and within a template whose interpolation admits any string.
+func TestTemplateOverATypeParameterWithinString(t *testing.T) {
+	_, _, errs := inferSource(t, "fn f<T: string>(x: `on${T}`) {\n    val s: string = x\n    val t: `on${string}` = x\n    return s\n}")
+	require.Empty(t, errs)
+}
+
+// TestTemplateWithinATemplateOverAnInferenceVariable asserts that a template whose interpolation
+// is still an inference variable is not matched speculatively, which would leave the variable
+// unconstrained.
+func TestTemplateWithinATemplateOverAnInferenceVariable(t *testing.T) {
+	_, _, errs := inferSource(t, "declare fn g<T>(x: `a${T}`) -> T\ndeclare val a: `a${number}`\nval r = g(a)")
+	require.Len(t, errs, 1)
+	require.Equal(t, "cannot constrain `a${number}` <: `a${t10}`", errs[0].Message())
+}

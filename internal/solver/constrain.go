@@ -2009,10 +2009,20 @@ func (c *Context) constrain(sub, super soltype.Type, seen *seenPairs, mutCtx boo
 		if _, ok := super.(*soltype.NullType); ok {
 			return nil
 		}
-	case *soltype.KeyofType, *soltype.IndexType, *soltype.TemplateLitType, *soltype.StringIntrinsicType,
-		*soltype.ExactnessType:
+	case *soltype.TemplateLitType:
+		// A template the pre-switch could not ground to string literals reaches here, such as
+		// `on${string}` or `on${T}`. It spells strings whatever its interpolations hold, so it is
+		// within `string`, and templateWithin compares it with another template. When super is
+		// a variable the case falls through to the superVar arm, as for the operators below.
+		if _, superIsVar := super.(*soltype.TypeVarType); !superIsVar {
+			if equalType(sub, super) || c.templateWithin(sub, super) {
+				return nil
+			}
+			return []SolverError{&CannotConstrainError{Sub: sub, Super: super}}
+		}
+	case *soltype.KeyofType, *soltype.IndexType, *soltype.StringIntrinsicType, *soltype.ExactnessType:
 		// A residual type-level operator the pre-switch could not ground reaches here: a `keyof T`,
-		// `T[K]`, `on${T}`, `Uppercase<T>`, or `Exact<T>` over a type parameter, or an expanding
+		// `T[K]`, `Uppercase<T>`, or `Exact<T>` over a type parameter, or an expanding
 		// recursive alias. constrain treats every such operator inert, neither decomposing nor
 		// reducing it, so two residuals are compatible only when structurally identical. A reflexive
 		// `keyof T <: keyof T` succeeds without recording any bound, and a residual against any
@@ -2237,44 +2247,198 @@ func (c *Context) constrainStrLitToTemplateLit(sub *soltype.LitType, super *solt
 //   - The last interpolation takes everything up to the trailing quasi, so a single `${number}`
 //     consumes the whole remaining string.
 func templateMatchesString(s string, quasis []string, interps []soltype.Type) bool {
-	if len(quasis) != len(interps)+1 {
+	return matchTemplate(nil, []tmplSeg{{text: s}}, quasis, interps)
+}
+
+// templateWithin reports whether every string the template sub spells is one super admits,
+// when super is `string` or another template. Every template is within `string`.
+func (c *Context) templateWithin(sub *soltype.TemplateLitType, super soltype.Type) bool {
+	switch super := super.(type) {
+	case *soltype.PrimType:
+		return super.Prim == soltype.StrPrim
+	case *soltype.TemplateLitType:
+		if len(sub.Quasis) != len(sub.Interps)+1 {
+			return false
+		}
+		segs := make([]tmplSeg, 0, 2*len(sub.Quasis))
+		for i, q := range sub.Quasis {
+			segs = append(segs, tmplSeg{text: q})
+			if i < len(sub.Interps) {
+				segs = append(segs, tmplSeg{hole: sub.Interps[i]})
+			}
+		}
+		return matchTemplate(c, segs, super.Quasis, super.Interps)
+	}
+	return false
+}
+
+// tmplSeg is one piece of what a template spells: a run of fixed text, or an interpolation
+// when hole is non-nil.
+type tmplSeg struct {
+	text string
+	hole soltype.Type
+}
+
+// matchTemplate reports whether the template with quasis and interps admits every string segs
+// spells. segs is fixed text and interpolations in order, and a string is one run of text.
+//
+// The template splits segs left to right, the way templateMatchesString describes for a
+// string, and pieceInInterp decides each piece against its interpolation:
+//
+//   - segs must begin with the leading quasi and end with the trailing one.
+//   - A non-empty quasi after an interpolation ends that interpolation's piece at the quasi's
+//     first occurrence in the fixed text.
+//   - An empty quasi between two interpolations gives the earlier one exactly one character,
+//     which has to be fixed text.
+//   - The last interpolation takes the rest.
+//
+// A piece that runs past an interpolation of segs to reach its quasi can end later than the
+// split of some string segs spells, since the interpolation can spell the quasi too. Such a
+// piece is allowed only when every interpolation from it on admits any string, so where the
+// splits land changes nothing. `${string}-1` is then not within `${string}-${number}`, since
+// "a-b-1" splits as "a" and "b-1". TypeScript accepts that pair.
+//
+// c decides an interpolation of segs against an interpolation of the template, and may be nil
+// when segs is fixed text alone.
+func matchTemplate(c *Context, segs []tmplSeg, quasis []string, interps []soltype.Type) bool {
+	if len(quasis) != len(interps)+1 || len(segs) == 0 {
 		return false
 	}
 	start, end := quasis[0], quasis[len(quasis)-1]
 	if len(interps) == 0 {
-		return s == start
+		return len(segs) == 1 && segs[0].hole == nil && segs[0].text == start
 	}
-	// The leading and trailing quasis must both be present and not overlap in s. limit is where the
-	// trailing quasi begins, so every span lives in s[pos:limit].
-	if len(s) < len(start)+len(end) || !strings.HasPrefix(s, start) || !strings.HasSuffix(s, end) {
+	first, last := segs[0], segs[len(segs)-1]
+	if first.hole != nil || last.hole != nil || !strings.HasPrefix(first.text, start) || !strings.HasSuffix(last.text, end) {
 		return false
 	}
-	limit := len(s) - len(end)
-	pos := len(start)
-	// Every interpolation but the last is bounded on the right by the quasi that follows it.
-	for i := 0; i < len(interps)-1; i++ {
-		delim := quasis[i+1]
-		if delim == "" {
-			// Adjacent interpolations: this one takes exactly one character. Decode a whole rune
-			// rather than one byte, so a multibyte character is not split into an invalid span.
-			if pos >= limit {
+	// In one run of text, the leading and trailing quasis must not overlap.
+	if len(segs) == 1 && len(first.text) < len(start)+len(end) {
+		return false
+	}
+	segs = slices.Clone(segs)
+	segs[0].text = segs[0].text[len(start):]
+	lastText := segs[len(segs)-1].text
+	segs[len(segs)-1].text = lastText[:len(lastText)-len(end)]
+
+	// anyFrom[i] reports whether every interpolation from i on admits any string.
+	anyFrom := make([]bool, len(interps)+1)
+	anyFrom[len(interps)] = true
+	for i := len(interps) - 1; i >= 0; i-- {
+		anyFrom[i] = anyFrom[i+1] && c.admitsAnyString(interps[i])
+	}
+
+	// seg and off are the position in segs the next piece starts at.
+	seg, off := 0, 0
+	for i, interp := range interps {
+		var piece []tmplSeg
+		switch {
+		case i == len(interps)-1:
+			// The last interpolation takes the rest of segs.
+			piece = sliceSegs(segs, seg, off, len(segs)-1, len(segs[len(segs)-1].text))
+		case quasis[i+1] == "":
+			// An empty quasi follows, so this interpolation takes exactly one character. Skip the
+			// runs of text already used up. The next character has to be fixed text, since an
+			// interpolation of segs could spell any number of characters.
+			for seg < len(segs) && segs[seg].hole == nil && off == len(segs[seg].text) {
+				seg, off = seg+1, 0
+			}
+			if seg == len(segs) || segs[seg].hole != nil {
 				return false
 			}
-			_, width := utf8.DecodeRuneInString(s[pos:limit])
-			if !spanInInterp(s[pos:pos+width], interps[i]) {
+
+			// Decode a whole rune, so a multibyte character is not split into an invalid span.
+			_, width := utf8.DecodeRuneInString(segs[seg].text[off:])
+			piece = []tmplSeg{{text: segs[seg].text[off : off+width]}}
+			off += width
+		default:
+			// A non-empty quasi follows, so this interpolation ends at the quasi's first occurrence
+			// in the fixed text. Passing an interpolation of segs on the way is allowed only when
+			// every interpolation from i on admits any string, as matchTemplate's docstring says.
+			delim := quasis[i+1]
+			at, idx := seg, -1
+			for ; at < len(segs); at++ {
+				if segs[at].hole != nil {
+					if !anyFrom[i] {
+						return false
+					}
+					continue
+				}
+				from := 0
+				if at == seg {
+					from = off
+				}
+				if k := strings.Index(segs[at].text[from:], delim); k >= 0 {
+					idx = from + k
+					break
+				}
+			}
+			if idx < 0 {
 				return false
 			}
-			pos += width
-			continue
+			piece = sliceSegs(segs, seg, off, at, idx)
+			seg, off = at, idx+len(delim)
 		}
-		off := strings.Index(s[pos:limit], delim)
-		if off < 0 || !spanInInterp(s[pos:pos+off], interps[i]) {
+		if !c.pieceInInterp(piece, interp) {
 			return false
 		}
-		pos += off + len(delim)
 	}
-	// The last interpolation takes everything up to the trailing quasi.
-	return spanInInterp(s[pos:limit], interps[len(interps)-1])
+	return true
+}
+
+// sliceSegs returns the part of segs from offset fromOff in segs[from] up to offset toOff in
+// segs[to]. It leaves out the runs of text that come out empty, so a piece that is one
+// interpolation between two empty quasis is that interpolation alone.
+func sliceSegs(segs []tmplSeg, from, fromOff, to, toOff int) []tmplSeg {
+	var out []tmplSeg
+	for j := from; j <= to; j++ {
+		if segs[j].hole != nil {
+			out = append(out, segs[j])
+			continue
+		}
+		// lo and hi bound the part of this run of text inside the slice. The first run starts at
+		// fromOff, the last run ends at toOff, and a run between them is taken whole. With segs
+		// holding "ab", `${T}` and "cd", the slice from offset 1 in "ab" to offset 1 in "cd" is
+		// "b", `${T}` and "c".
+		lo, hi := 0, len(segs[j].text)
+		if j == from {
+			lo = fromOff
+		}
+		if j == to {
+			hi = toOff
+		}
+		if lo < hi {
+			out = append(out, tmplSeg{text: segs[j].text[lo:hi]})
+		}
+	}
+	return out
+}
+
+// pieceInInterp reports whether interp admits every string the piece spells. A piece of fixed
+// text alone is decided by spanInInterp. A piece holding an interpolation is admitted by an
+// interp that admits any string, or, when the piece is that interpolation alone, by an interp
+// the interpolation's type is a subtype of. c may be nil when the piece is fixed text alone.
+func (c *Context) pieceInInterp(piece []tmplSeg, interp soltype.Type) bool {
+	if !slices.ContainsFunc(piece, func(s tmplSeg) bool { return s.hole != nil }) {
+		var text strings.Builder
+		for _, s := range piece {
+			text.WriteString(s.text)
+		}
+		return spanInInterp(text.String(), interp)
+	}
+	if c.admitsAnyString(interp) {
+		return true
+	}
+
+	// subtypeHolds discards every bound it records, so neither side may still hold an inference
+	// variable, or the variable would pass unconstrained.
+	return len(piece) == 1 && concreteMember(piece[0].hole) && concreteMember(interp) &&
+		subtypeHolds(c, piece[0].hole, interp)
+}
+
+// admitsAnyString reports whether t admits every string. It reports false when c is nil.
+func (c *Context) admitsAnyString(t soltype.Type) bool {
+	return c != nil && concreteMember(t) && subtypeHolds(c, &soltype.PrimType{Prim: soltype.StrPrim}, t)
 }
 
 // spanInInterp reports whether the string span is one value the interpolation type admits, reading
