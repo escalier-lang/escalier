@@ -123,6 +123,35 @@ val r = match p {
 }`,
 		},
 		{
+			// The parameter's type is still being inferred, so a caller may pass a value
+			// no arm above names.
+			name: "a catch-all over an unannotated parameter",
+			src: `fn f(x) {
+	return match x {
+		a: string => 1,
+		b: number => 2,
+		_ => 3,
+	}
+}
+val r = f(true)`,
+		},
+		{
+			// The `{x}` arm names an optional key, so the three arms together are not shown
+			// to cover `p`. The first two are, so the arms below them are reported.
+			name: "arms below a covering prefix followed by an optional-key arm",
+			src: `declare val p: string | {x?: number, y: number}
+val r = match p {
+	s: string => 1,
+	{y} => 2,
+	{x} => 3,
+	_ => 4,
+}`,
+			wantErrs: []string{
+				"5:2-5:10: " + coveredArmMsg,
+				"6:2-6:8: " + coveredArmMsg,
+			},
+		},
+		{
 			// A value no signature named can still reach a catch arm, so a catch-all below
 			// arms covering every known throw is allowed.
 			name: "a catch-all in a catch clause",

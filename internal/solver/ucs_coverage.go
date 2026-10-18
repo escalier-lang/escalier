@@ -309,11 +309,11 @@ func (c *checker) checkCondExhaustive(scope *Scope, lvl int, norm ucs.Norm, shap
 
 // condCoverage decides whether the arms of one conditional form cover every value of its
 // scrutinee. It reports nothing. It returns a NonExhaustiveMatchError when the arms leave a
-// value uncovered. Otherwise covered says whether the arms were shown to cover every value.
+// value uncovered. Otherwise `covered` says whether the arms were shown to cover every value.
 // It is false where the rules below decline to ask, such as for a `boolean` scrutinee or one
 // whose type is still unsolved.
 //
-// shape is the scrutinee snapshot taken before any arm bound, which the union members and the
+// `shape` is the scrutinee snapshot taken before any arm bound, which the union members and the
 // structural exactness are read off. The message names the construct the top-level split
 // lowered from rather than assuming a `match`.
 //
@@ -345,6 +345,13 @@ func (c *checker) condCoverage(scope *Scope, lvl int, norm ucs.Norm, shape solty
 	// performs, is what lets `match c { Color.RGB(..) => .., Color.Hex(..) => .. }` over
 	// `val c: Color` cover the variant union without a default arm.
 	carrier := c.expandAliasChain(soltype.CarrierOf(shape))
+	// A scrutinee whose type is still being inferred has a snapshot with no lower bounds,
+	// which coalesces to `never`. Every annotation admits `never`, so the rules below would
+	// count any set of arms as covering it. `fn f(x) { match x { a: string => 1, _ => 2 } }` is such a
+	// match, and a caller may still pass `f(5)`.
+	if _, isNever := carrier.(*soltype.NeverType); isNever {
+		return nil, false
+	}
 	// An annotation admitting the whole scrutinee covers every value, exactly as an unguarded
 	// catch-all arm does. `match u { x: number | string => x }` over a `number | string` needs
 	// no arm below it. Asking about the whole carrier is what covers a scrutinee that is no

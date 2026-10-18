@@ -5205,8 +5205,9 @@ func (c *checker) inferMatch(scope *Scope, lvl int, e *ast.MatchExpr) soltype.Ty
 	c.inferMatchArms(scope, lvl, e, unreachable, matchShape, scrutinee, c.freshAt(lvl))
 	c.checkUniformOwnership(e, w.bodies)
 	c.checkCondExhaustive(scope, lvl, w.norm, matchShape)
-	// The arms are judged against the same snapshot checkCondExhaustive reads, so an arm is
-	// reported covered exactly when the arms above it would pass that check on their own.
+	// The arms are judged against the same snapshot checkCondExhaustive reads. Covering
+	// asks more of the arms above than exhaustiveness does, so an arm below an exhaustive
+	// prefix can still go unreported, as the catch-all after `{x}` over a `{x?: number}` does.
 	c.reportCoveredArms(scope, lvl, e, w.arms, matchShape)
 	c.recordType(e, res)
 	return res
@@ -5214,19 +5215,14 @@ func (c *checker) inferMatch(scope *Scope, lvl int, e *ast.MatchExpr) soltype.Ty
 
 // reportCoveredArms reports a CoveredMatchArmError for each arm of e the walk reached whose
 // values the arms above it already cover. It finds the first arm whose preceding arms are
-// shown by condCoverage to cover every value of shape, then reports that arm and every walked
-// arm below it. walked holds the arms the walk typed. An arm it did not reach is below a
+// shown by condCoverage to cover every value of `shape`, then reports that arm and every walked
+// arm below it. `walked` holds the arms the walk typed. An arm it did not reach is below a
 // catch-all, which reportUnreachableArms reports instead.
 //
 // An unguarded arm with a nested sub-pattern that tests its value ends the search.
 // condCoverage reads such a sub-pattern as matching every value, so `{a: {x}}` would count
 // as covering `{a: {y: string}}` and the arm naming that member would be reported.
 func (c *checker) reportCoveredArms(scope *Scope, lvl int, e *ast.MatchExpr, walked set.Set[ucs.Spanned], shape soltype.Type) {
-	// Adding an arm never uncovers a value, so when every arm but the last leaves one
-	// uncovered, no shorter prefix covers the scrutinee either.
-	if len(e.Cases) < 2 || !c.prefixCovers(scope, lvl, e, len(e.Cases)-1, shape) {
-		return
-	}
 	for i := 1; i < len(e.Cases); i++ {
 		if above := e.Cases[i-1]; above.Guard == nil && hasNestedTest(above.Pattern) {
 			return
@@ -5247,7 +5243,7 @@ func (c *checker) reportCoveredArms(scope *Scope, lvl int, e *ast.MatchExpr, wal
 }
 
 // prefixCovers reports whether the first n arms of e are shown by condCoverage to cover every
-// value of shape.
+// value of `shape`.
 func (c *checker) prefixCovers(scope *Scope, lvl int, e *ast.MatchExpr, n int, shape soltype.Type) bool {
 	prefix := *e
 	prefix.Cases = e.Cases[:n]
@@ -5267,8 +5263,8 @@ func hasNestedTest(p ast.Pat) bool {
 	return v.found
 }
 
-// nestedTestFinder sets found on reaching a sub-pattern below top that tests its value. root
-// is the pattern the walk starts from, which is top or the instance pattern holding it.
+// nestedTestFinder sets `found` on reaching a sub-pattern below `top` that tests its value.
+// `root` is the pattern the walk starts from, which is `top` or the instance pattern holding it.
 type nestedTestFinder struct {
 	ast.DefaultVisitor
 	root  ast.Pat
