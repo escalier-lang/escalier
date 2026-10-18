@@ -2,6 +2,7 @@ package main
 
 import (
 	"encoding/json"
+	"maps"
 	"slices"
 	"sort"
 	"strings"
@@ -12,12 +13,10 @@ import (
 	protocol "github.com/tliron/glsp/protocol_3_16"
 
 	"github.com/escalier-lang/escalier/internal/ast"
-	"github.com/escalier-lang/escalier/internal/checker"
 	"github.com/escalier-lang/escalier/internal/compiler"
 	"github.com/escalier-lang/escalier/internal/lexer_util"
 	"github.com/escalier-lang/escalier/internal/soltype"
 	"github.com/escalier-lang/escalier/internal/solver"
-	"github.com/escalier-lang/escalier/internal/type_system"
 )
 
 const maxCompletionItems = 100
@@ -170,22 +169,15 @@ func (s *Server) resolveDetail(data completionResolveData) string {
 	return lookupDetail(view, data.Name)
 }
 
-// scriptScopeView returns a view of the scope a bin/ script was checked in, from
-// whichever checker produced co, or nil when co holds none for sourceID.
+// scriptScopeView returns a view of the scope a bin/ script was checked in, or nil when
+// co holds none for sourceID.
 func scriptScopeView(co *compiler.CheckOutput, sourceID int) scopeView {
-	if scope, ok := co.SolverScriptScopes[sourceID]; ok {
-		return newSolverScopeView(scope, co.ScriptInfos[sourceID])
-	}
-	return newCheckerScopeView(co.ScriptScopes[sourceID])
+	return newSolverScopeView(co.SolverScriptScopes[sourceID], co.ScriptInfos[sourceID])
 }
 
-// moduleScopeView returns a view of the lib/ module's scope from whichever checker
-// produced co, or nil when co holds none.
+// moduleScopeView returns a view of the lib/ module's scope, or nil when co holds none.
 func moduleScopeView(co *compiler.CheckOutput) scopeView {
-	if co.SolverModuleScope != nil {
-		return newSolverScopeView(co.SolverModuleScope, co.ModuleInfo)
-	}
-	return newCheckerScopeView(co.ModuleScope)
+	return newSolverScopeView(co.SolverModuleScope, co.ModuleInfo)
 }
 
 // builtinScopeView returns a view of the first level that holds builtins in the scope
@@ -206,10 +198,7 @@ func builtinScopeView(co *compiler.CheckOutput) scopeView {
 // fileScopeView returns a view of the import scope of the lib/ file sourceID names, or
 // nil when co holds none for it.
 func fileScopeView(co *compiler.CheckOutput, sourceID int) scopeView {
-	if scope, ok := co.SolverFileScopes[sourceID]; ok {
-		return newSolverScopeView(scope, co.ModuleInfo)
-	}
-	return newCheckerScopeView(co.FileScopes[sourceID])
+	return newSolverScopeView(co.SolverFileScopes[sourceID], co.ModuleInfo)
 }
 
 // shouldSuppressCompletions checks if the cursor is on a node where completions
@@ -253,18 +242,14 @@ func (s *Server) textDocumentCompletion(context *glsp.Context, params *protocol.
 		s.validated.Wait()
 	}
 	var module *ast.Module
-	var moduleScope *checker.Scope
 	var script *ast.Script
-	var scope *checker.Scope
 	var checkedSrc *ast.Source
 	var info *solver.Info
 	var moduleView, fileView, scriptView scopeView
 	sourceID := s.sourceIDForURI(uri)
 	if co := s.checkOutput; co != nil {
 		module = co.Module
-		moduleScope = co.ModuleScope
 		script = co.Scripts[sourceID]
-		scope = co.ScriptScopes[sourceID]
 		checkedSrc = co.SourceByID(sourceID)
 		info = co.InfoFor(sourceID)
 		moduleView = moduleScopeView(co)
@@ -299,7 +284,7 @@ func (s *Server) textDocumentCompletion(context *glsp.Context, params *protocol.
 
 	// Try module-aware completions first.
 	if module != nil && isModule && moduleView != nil {
-		return s.moduleCompletion(module, sourceID, moduleScope, moduleView, fileView, info, loc, doc.Text)
+		return s.moduleCompletion(module, sourceID, moduleView, fileView, info, loc, doc.Text)
 	}
 
 	// Fall back to script-based completions.
@@ -319,7 +304,7 @@ func (s *Server) textDocumentCompletion(context *glsp.Context, params *protocol.
 		case *ast.MemberExpr:
 			// Case A: cursor right after `.` — MemberExpr with empty property
 			// Case B: cursor on partial property like `foo.ba|` — MemberExpr with non-empty property
-			items = s.memberCompletions(n, info, scope)
+			items = s.memberCompletions(n, info, scriptView)
 			if n.Prop.Name != "" {
 				items = filterByPrefix(items, n.Prop.Name)
 			}
@@ -327,7 +312,7 @@ func (s *Server) textDocumentCompletion(context *glsp.Context, params *protocol.
 			if memberExpr, ok := parent.(*ast.MemberExpr); ok {
 				// The cursor landed on the property identifier of a MemberExpr.
 				// Provide member completions filtered by the partial property name.
-				items = s.memberCompletions(memberExpr, info, scope)
+				items = s.memberCompletions(memberExpr, info, scriptView)
 				items = filterByPrefix(items, n.Name)
 			} else {
 				// Case C: standalone identifier — scope-based completions
@@ -365,18 +350,17 @@ func (s *Server) textDocumentCompletion(context *glsp.Context, params *protocol.
 func (s *Server) moduleCompletion(
 	module *ast.Module,
 	sourceID int,
-	moduleScope *checker.Scope,
 	moduleView scopeView,
 	fileView scopeView,
 	info *solver.Info,
 	loc ast.Location,
 	docText string,
 ) (any, error) {
-	// Use the module scope for type lookups (member completions need it for
-	// wrapper type aliases like String, Number, etc.)
-	lookupScope := moduleScope
-	if lookupScope != nil && lookupScope.Parent != nil {
-		lookupScope = lookupScope.Parent // prelude scope has the wrapper types
+	// A lib/ file's import scope sits between the module scope and the file, so a
+	// namespace the file imports resolves from it.
+	nsView := fileView
+	if nsView == nil {
+		nsView = moduleView
 	}
 
 	node, parent := findNodeAndParentInFile(module, sourceID, loc)
@@ -388,13 +372,13 @@ func (s *Server) moduleCompletion(
 	} else {
 		switch n := node.(type) {
 		case *ast.MemberExpr:
-			items = s.memberCompletions(n, info, lookupScope)
+			items = s.memberCompletions(n, info, nsView)
 			if n.Prop.Name != "" {
 				items = filterByPrefix(items, n.Prop.Name)
 			}
 		case *ast.IdentExpr:
 			if memberExpr, ok := parent.(*ast.MemberExpr); ok {
-				items = s.memberCompletions(memberExpr, info, lookupScope)
+				items = s.memberCompletions(memberExpr, info, nsView)
 				items = filterByPrefix(items, n.Name)
 			} else {
 				items = s.completionsFromModuleScope(module, sourceID, fileView, moduleView, info, loc)
@@ -436,25 +420,73 @@ func (s *Server) moduleCompletion(
 	}, nil
 }
 
-// memberCompletions returns completion items for the members of e's receiver. It reads
-// internal/solver's records when info holds them. Otherwise it reads the type the old
-// checker wrote onto the receiver and looks up that type's wrapper classes in scope.
-func (s *Server) memberCompletions(e *ast.MemberExpr, info *solver.Info, scope *checker.Scope) []protocol.CompletionItem {
-	if info != nil {
-		t := info.DisplayTypeOf(e.Object)
-		if t == nil {
-			return nil
-		}
-		return completionsFromSolType(t, info, info.LendsMut(e.Object))
-	}
-	objType := e.Object.InferredType()
-	if objType == nil {
+// memberCompletions returns completion items for the members of e's receiver, read from
+// info, or nil when info is nil. view is the scope e is written in.
+func (s *Server) memberCompletions(e *ast.MemberExpr, info *solver.Info, view scopeView) []protocol.CompletionItem {
+	if info == nil {
 		return nil
 	}
-	if e.OptChain {
-		objType = stripNullUndefined(objType)
+	if t := info.DisplayTypeOf(e.Object); t != nil {
+		return completionsFromSolType(t, info, info.LendsMut(e.Object))
 	}
-	return completionsFromType(objType, scope)
+	// A namespace is not a value, so the check records no type for one, and its members
+	// are read from the scope that binds it instead.
+	if ns, ok := namespaceAt(e.Object, view, info); ok {
+		return completionsFromNamespace(ns, info)
+	}
+	return nil
+}
+
+// namespaceAt returns the namespace expr names, or false when it names none. An
+// identifier names the namespace view resolves it to. A member expression such as
+// `a.b` names the namespace its property selects from the namespace its object names.
+// An identifier info resolved to a value names no namespace, since a value hides a
+// namespace of the same name.
+func namespaceAt(expr ast.Expr, view scopeView, info *solver.Info) (*solver.Namespace, bool) {
+	switch expr := expr.(type) {
+	case *ast.IdentExpr:
+		if _, isValue := info.DeclOf(expr); isValue || view == nil {
+			return nil, false
+		}
+		return view.lookupNamespace(expr.Name)
+	case *ast.MemberExpr:
+		outer, ok := namespaceAt(expr.Object, view, info)
+		if !ok || expr.Prop == nil {
+			return nil, false
+		}
+		nested, ok := outer.Nested[expr.Prop.Name]
+		return nested, ok
+	}
+	return nil, false
+}
+
+// completionsFromNamespace returns a completion item for each value, type, and nested
+// namespace ns holds. info expands a type alias for display.
+func completionsFromNamespace(ns *solver.Namespace, info *solver.Info) []protocol.CompletionItem {
+	var items []protocol.CompletionItem
+	add := func(name string, kind protocol.CompletionItemKind, detail string) {
+		item := protocol.CompletionItem{Label: name, Kind: &kind}
+		if detail != "" {
+			item.Detail = &detail
+		}
+		items = append(items, item)
+	}
+	for _, name := range identifiers(slices.Sorted(maps.Keys(ns.Values))) {
+		t := ns.Values[name].DisplayType()
+		// A member bound with no type yet is one a read of it cannot resolve.
+		if t == nil {
+			continue
+		}
+		add(name, completionKindForSolValue(t), printSolType(t))
+	}
+	for _, name := range identifiers(slices.Sorted(maps.Keys(ns.Types))) {
+		binding := ns.Types[name]
+		add(name, completionKindForSolType(binding), printSolType(info.Expand(binding.Type)))
+	}
+	for _, name := range identifiers(slices.Sorted(maps.Keys(ns.Nested))) {
+		add(name, protocol.CompletionItemKindModule, "")
+	}
+	return items
 }
 
 // completionsFromSolType returns completion items for the members of a value of type t.
@@ -541,192 +573,6 @@ func methodDetail(m *soltype.MethodElem) string {
 	return strings.Join(arms, " & ")
 }
 
-// completionsFromType returns completion items for member access on a type.
-func completionsFromType(t type_system.Type, scope *checker.Scope) []protocol.CompletionItem {
-	return completionsFromTypeImpl(t, scope, checker.ReceiverIsDefinitelyMutable(t))
-}
-
-// completionsFromTypeImpl is the same as completionsFromType but lets internal
-// recursive callers thread an explicit receiverMut flag through unwrappings of
-// MutType so the receiver's outer mutability isn't lost when we strip
-// the wrapper to look up the inner type's members.
-func completionsFromTypeImpl(t type_system.Type, scope *checker.Scope, receiverMut bool) []protocol.CompletionItem {
-	t = type_system.Prune(t)
-
-	switch t := t.(type) {
-	case *type_system.MutType:
-		return completionsFromTypeImpl(t.Type, scope, true)
-	case *type_system.ObjectType:
-		return completionsFromObjectType(t, receiverMut)
-	case *type_system.NamespaceType:
-		return completionsFromNamespace(t.Namespace)
-	case *type_system.PrimType:
-		wrapperName := primWrapperName(t.Prim)
-		if wrapperName == "" {
-			return nil
-		}
-		alias := scope.GetTypeAlias(wrapperName)
-		if alias == nil {
-			return nil
-		}
-		return completionsFromTypeImpl(alias.Type, scope, receiverMut)
-	case *type_system.LitType:
-		var wrapperName string
-		switch t.Lit.(type) {
-		case *type_system.BoolLit:
-			wrapperName = "Boolean"
-		case *type_system.NumLit:
-			wrapperName = "Number"
-		case *type_system.StrLit:
-			wrapperName = "String"
-		default:
-			return nil
-		}
-		alias := scope.GetTypeAlias(wrapperName)
-		if alias == nil {
-			return nil
-		}
-		return completionsFromTypeImpl(alias.Type, scope, receiverMut)
-	case *type_system.TupleType:
-		alias := scope.GetTypeAlias("Array")
-		if alias == nil {
-			return nil
-		}
-		return completionsFromTypeImpl(alias.Type, scope, receiverMut)
-	case *type_system.FuncType:
-		alias := scope.GetTypeAlias("Function")
-		if alias == nil {
-			return nil
-		}
-		return completionsFromTypeImpl(alias.Type, scope, receiverMut)
-	case *type_system.UnionType:
-		return completionsFromUnionType(t, scope, receiverMut)
-	case *type_system.IntersectionType:
-		return completionsFromIntersectionType(t, scope, receiverMut)
-	case *type_system.TypeRefType:
-		if t.TypeAlias != nil {
-			return completionsFromTypeImpl(t.TypeAlias.Type, scope, receiverMut)
-		}
-		return nil
-	case *type_system.TypeVarType:
-		// Unresolved type variable — no completions
-		return nil
-	case *type_system.ErrorType, *type_system.NeverType, *type_system.AnyType:
-		return nil
-	default:
-		return nil
-	}
-}
-
-func completionsFromObjectType(obj *type_system.ObjectType, receiverMut bool) []protocol.CompletionItem {
-	// Open objects are still being built up by inference and only ever hold
-	// PropertyElems, so the visibility filter has nothing to do here. Treat as
-	// mutable to skip the filter.
-	receiverMutForElems := receiverMut || obj.Open
-	var items []protocol.CompletionItem
-	for _, elem := range obj.Elems {
-		switch elem := elem.(type) {
-		case *type_system.PropertyElem:
-			if elem.Name.Kind != type_system.StrObjTypeKeyKind {
-				continue
-			}
-			label := elem.Name.Str
-			if elem.Optional {
-				label += "?"
-			}
-			kind := protocol.CompletionItemKindProperty
-			detail := elem.Value.String()
-			items = append(items, protocol.CompletionItem{
-				Label:      label,
-				Kind:       &kind,
-				Detail:     &detail,
-				FilterText: &elem.Name.Str,
-			})
-		case *type_system.MethodElem:
-			if elem.Name.Kind != type_system.StrObjTypeKeyKind {
-				continue
-			}
-			// Hide `&mut self` methods on non-mut receivers.
-			// All arms share receiver mutability (enforced by
-			// MergeMethodOverloads); inspecting arm 0 is sufficient.
-			if !receiverMutForElems && type_system.ReceiverIsMut(elem.Signatures[0]) {
-				continue
-			}
-			kind := protocol.CompletionItemKindMethod
-			detail := elem.AsType().String()
-			items = append(items, protocol.CompletionItem{
-				Label:      elem.Name.Str,
-				Kind:       &kind,
-				Detail:     &detail,
-				FilterText: &elem.Name.Str,
-			})
-		case *type_system.GetterElem:
-			if elem.Name.Kind != type_system.StrObjTypeKeyKind {
-				continue
-			}
-			kind := protocol.CompletionItemKindProperty
-			detail := elem.Fn.Return.String()
-			items = append(items, protocol.CompletionItem{
-				Label:      elem.Name.Str,
-				Kind:       &kind,
-				Detail:     &detail,
-				FilterText: &elem.Name.Str,
-			})
-		case *type_system.SetterElem:
-			if elem.Name.Kind != type_system.StrObjTypeKeyKind {
-				continue
-			}
-			// Hide setters on non-mut receivers; if a getter exists for the
-			// same name it still produces a completion item so the property
-			// remains visible read-side.
-			if !receiverMutForElems {
-				continue
-			}
-			kind := protocol.CompletionItemKindProperty
-			detail := "setter"
-			items = append(items, protocol.CompletionItem{
-				Label:      elem.Name.Str,
-				Kind:       &kind,
-				Detail:     &detail,
-				FilterText: &elem.Name.Str,
-			})
-		}
-	}
-	return items
-}
-
-// TODO: show only value-level completions or only type-level completions when
-// it makes sense to do so.
-func completionsFromNamespace(ns *type_system.Namespace) []protocol.CompletionItem {
-	var items []protocol.CompletionItem
-	for name, binding := range ns.Values {
-		kind := completionKindForValueType(binding.Type)
-		detail := safeTypeString(binding.Type)
-		items = append(items, protocol.CompletionItem{
-			Label:  name,
-			Kind:   &kind,
-			Detail: &detail,
-		})
-	}
-	for name, alias := range ns.Types {
-		kind := completionKindForTypeAlias(alias)
-		detail := safeTypeString(alias.Type)
-		items = append(items, protocol.CompletionItem{
-			Label:  name,
-			Kind:   &kind,
-			Detail: &detail,
-		})
-	}
-	for name := range ns.Namespaces {
-		kind := protocol.CompletionItemKindModule
-		items = append(items, protocol.CompletionItem{
-			Label: name,
-			Kind:  &kind,
-		})
-	}
-	return items
-}
-
 // completionDedupeKey returns the canonical name for deduplication, using
 // FilterText (the raw property name) when available, otherwise Label.
 func completionDedupeKey(item protocol.CompletionItem) string {
@@ -734,19 +580,6 @@ func completionDedupeKey(item protocol.CompletionItem) string {
 		return *item.FilterText
 	}
 	return item.Label
-}
-
-func completionsFromUnionType(u *type_system.UnionType, scope *checker.Scope, receiverMut bool) []protocol.CompletionItem {
-	var sets [][]protocol.CompletionItem
-	for _, variant := range u.Types {
-		variant = type_system.Prune(variant)
-		// Skip null/undefined in unions
-		if isNullOrUndefined(variant) {
-			continue
-		}
-		sets = append(sets, completionsFromTypeImpl(variant, scope, receiverMut))
-	}
-	return unionCompletions(sets)
 }
 
 // unionCompletions merges the member completions of a union's variants, one set per
@@ -795,14 +628,6 @@ func unionCompletions(sets [][]protocol.CompletionItem) []protocol.CompletionIte
 		}
 	}
 	return items
-}
-
-func completionsFromIntersectionType(inter *type_system.IntersectionType, scope *checker.Scope, receiverMut bool) []protocol.CompletionItem {
-	sets := make([][]protocol.CompletionItem, len(inter.Types))
-	for i, part := range inter.Types {
-		sets[i] = completionsFromTypeImpl(part, scope, receiverMut)
-	}
-	return intersectionCompletions(sets)
 }
 
 // intersectionCompletions merges the member completions of an intersection's parts, one
@@ -1197,7 +1022,7 @@ func collectFileImportBindings(
 				continue
 			}
 
-			if view.hasNamespace(localName) {
+			if _, ok := view.namespace(localName); ok {
 				seen[localName] = true
 				kind := protocol.CompletionItemKindModule
 				*items = append(*items, protocol.CompletionItem{
@@ -1326,22 +1151,17 @@ func collectPatternBindings(info *solver.Info, pat ast.Pat, seen map[string]bool
 	}
 }
 
-// patternDetail returns the type of the name pat binds, read from internal/solver's
-// records when info holds them and from what the old checker wrote onto pat otherwise.
-// It returns nil when neither recorded a type.
+// patternDetail returns the type info recorded for the name pat binds, or nil when info
+// is nil or recorded none.
 func patternDetail(info *solver.Info, pat *ast.IdentPat) *string {
-	if info != nil {
-		t := info.DisplayTypeOf(pat)
-		if t == nil {
-			return nil
-		}
-		detail := printSolType(t)
-		return &detail
-	}
-	if pat.InferredType() == nil {
+	if info == nil {
 		return nil
 	}
-	detail := pat.InferredType().String()
+	t := info.DisplayTypeOf(pat)
+	if t == nil {
+		return nil
+	}
+	detail := printSolType(t)
 	return &detail
 }
 
@@ -1460,87 +1280,10 @@ func wordAtCursor(text string, loc ast.Location) string {
 
 // Helper functions
 
-// safeTypeString returns a string representation of a type, avoiding
-// infinite recursion on NamespaceType (whose String() recurses into
-// sub-namespace bindings).
-func safeTypeString(t type_system.Type) string {
-	if _, ok := t.(*type_system.NamespaceType); ok {
-		return "namespace"
-	}
-	return t.String()
-}
-
-func completionKindForValueType(t type_system.Type) protocol.CompletionItemKind {
-	t = type_system.Prune(t)
-	if _, ok := t.(*type_system.FuncType); ok {
-		return protocol.CompletionItemKindFunction
-	}
-	return protocol.CompletionItemKindVariable
-}
-
-func completionKindForTypeAlias(alias *type_system.TypeAlias) protocol.CompletionItemKind {
-	if obj, ok := alias.Type.(*type_system.ObjectType); ok {
-		if obj.Nominal {
-			return protocol.CompletionItemKindClass
-		}
-		if obj.Interface {
-			return protocol.CompletionItemKindInterface
-		}
-	}
-	return protocol.CompletionItemKindStruct
-}
-
-func primWrapperName(prim type_system.Prim) string {
-	switch prim {
-	case type_system.BoolPrim:
-		return "Boolean"
-	case type_system.NumPrim:
-		return "Number"
-	case type_system.StrPrim:
-		return "String"
-	case type_system.BigIntPrim:
-		return "BigInt"
-	case type_system.SymbolPrim:
-		return "Symbol"
-	default:
-		return ""
-	}
-}
-
 // isOptionalCompletion returns true if the completion item represents an
 // optional property (label ends with "?" while FilterText is the raw name).
 func isOptionalCompletion(item protocol.CompletionItem) bool {
 	return item.FilterText != nil && strings.HasSuffix(item.Label, "?")
-}
-
-func stripNullUndefined(t type_system.Type) type_system.Type {
-	union, ok := t.(*type_system.UnionType)
-	if !ok {
-		return t
-	}
-	var filtered []type_system.Type
-	for _, variant := range union.Types {
-		if !isNullOrUndefined(variant) {
-			filtered = append(filtered, variant)
-		}
-	}
-	if len(filtered) == 0 {
-		return t
-	}
-	if len(filtered) == 1 {
-		return filtered[0]
-	}
-	return type_system.NewUnionType(nil, filtered...)
-}
-
-func isNullOrUndefined(t type_system.Type) bool {
-	if lit, ok := t.(*type_system.LitType); ok {
-		switch lit.Lit.(type) {
-		case *type_system.NullLit, *type_system.UndefinedLit:
-			return true
-		}
-	}
-	return false
 }
 
 func filterByPrefix(items []protocol.CompletionItem, prefix string) []protocol.CompletionItem {

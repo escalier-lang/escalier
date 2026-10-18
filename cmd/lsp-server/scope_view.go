@@ -1,22 +1,16 @@
 package main
 
 import (
-	"maps"
-	"slices"
-	"strings"
-
 	protocol "github.com/tliron/glsp/protocol_3_16"
 
 	"github.com/escalier-lang/escalier/internal/ast"
-	"github.com/escalier-lang/escalier/internal/checker"
 	"github.com/escalier-lang/escalier/internal/lexer_util"
 	"github.com/escalier-lang/escalier/internal/soltype"
 	"github.com/escalier-lang/escalier/internal/solver"
 )
 
-// scopeView is one level of a lexical scope as completions read it. internal/checker and
-// internal/solver each represent a scope their own way, and an implementation adapts one
-// of them. A name a level binds is reported by that level alone, never by its parent.
+// scopeView is one level of a lexical scope as completions read it. A name a level binds
+// is reported by that level alone, never by its parent.
 type scopeView interface {
 	// parent returns the enclosing level, or nil at the root.
 	parent() scopeView
@@ -35,8 +29,11 @@ type scopeView interface {
 	// typeKind and typeDetail are valueKind and valueDetail for the type sort.
 	typeKind(name string) (protocol.CompletionItemKind, bool)
 	typeDetail(name string) (string, bool)
-	// hasNamespace reports whether the level binds a namespace under name.
-	hasNamespace(name string) bool
+	// namespace returns the namespace the level binds under name.
+	namespace(name string) (*solver.Namespace, bool)
+	// lookupNamespace returns the namespace name resolves to from the level, walking
+	// up to the root the way the solver resolves a name in the namespace sort.
+	lookupNamespace(name string) (*solver.Namespace, bool)
 	// memberValueDetail returns the detail of the value a module's namespace nsPath
 	// declares under name, where nsPath is dotted and empty for the root namespace.
 	memberValueDetail(nsPath, name string) (string, bool)
@@ -52,96 +49,11 @@ func lookupDetail(view scopeView, name string) string {
 		if detail, ok := cur.typeDetail(name); ok {
 			return detail
 		}
-		if cur.hasNamespace(name) {
+		if _, ok := cur.namespace(name); ok {
 			return "namespace"
 		}
 	}
 	return ""
-}
-
-// checkerScopeView adapts a *checker.Scope. The old checker's prelude is the root of every
-// chain, so the root level is the only builtin one.
-type checkerScopeView struct {
-	scope *checker.Scope
-}
-
-// newCheckerScopeView returns a view of scope, or nil when scope is nil.
-func newCheckerScopeView(scope *checker.Scope) scopeView {
-	if scope == nil {
-		return nil
-	}
-	return &checkerScopeView{scope: scope}
-}
-
-func (v *checkerScopeView) parent() scopeView { return newCheckerScopeView(v.scope.Parent) }
-
-func (v *checkerScopeView) isBuiltin() bool { return v.scope.Parent == nil }
-
-func (v *checkerScopeView) valueNames() []string {
-	return slices.Sorted(maps.Keys(v.scope.Namespace.Values))
-}
-
-func (v *checkerScopeView) typeNames() []string {
-	return slices.Sorted(maps.Keys(v.scope.Namespace.Types))
-}
-
-func (v *checkerScopeView) namespaceNames() []string {
-	return slices.Sorted(maps.Keys(v.scope.Namespace.Namespaces))
-}
-
-func (v *checkerScopeView) valueKind(name string) (protocol.CompletionItemKind, bool) {
-	binding, ok := v.scope.Namespace.Values[name]
-	if !ok {
-		return 0, false
-	}
-	return completionKindForValueType(binding.Type), true
-}
-
-func (v *checkerScopeView) valueDetail(name string) (string, bool) {
-	binding, ok := v.scope.Namespace.Values[name]
-	if !ok {
-		return "", false
-	}
-	return safeTypeString(binding.Type), true
-}
-
-func (v *checkerScopeView) typeKind(name string) (protocol.CompletionItemKind, bool) {
-	alias, ok := v.scope.Namespace.Types[name]
-	if !ok {
-		return 0, false
-	}
-	return completionKindForTypeAlias(alias), true
-}
-
-func (v *checkerScopeView) typeDetail(name string) (string, bool) {
-	alias, ok := v.scope.Namespace.Types[name]
-	if !ok {
-		return "", false
-	}
-	return safeTypeString(alias.Type), true
-}
-
-func (v *checkerScopeView) hasNamespace(name string) bool {
-	_, ok := v.scope.Namespace.Namespaces[name]
-	return ok
-}
-
-func (v *checkerScopeView) memberValueDetail(nsPath, name string) (string, bool) {
-	ns := v.scope.Namespace
-	if nsPath != "" {
-		for _, part := range strings.Split(nsPath, ".") {
-			child, ok := ns.GetNamespace(part)
-			if !ok {
-				return "", false
-			}
-			ns = child
-		}
-	}
-	binding, ok := ns.Values[name]
-	if !ok {
-		return "", false
-	}
-	return safeTypeString(binding.Type), true
 }
 
 // solverScopeView adapts a *solver.Scope. info is a table from the same run, which
@@ -214,9 +126,12 @@ func (v *solverScopeView) typeDetail(name string) (string, bool) {
 	return printSolType(t), true
 }
 
-func (v *solverScopeView) hasNamespace(name string) bool {
-	_, ok := v.scope.OwnNamespace(name)
-	return ok
+func (v *solverScopeView) namespace(name string) (*solver.Namespace, bool) {
+	return v.scope.OwnNamespace(name)
+}
+
+func (v *solverScopeView) lookupNamespace(name string) (*solver.Namespace, bool) {
+	return v.scope.GetNamespace(name)
 }
 
 func (v *solverScopeView) memberValueDetail(nsPath, name string) (string, bool) {

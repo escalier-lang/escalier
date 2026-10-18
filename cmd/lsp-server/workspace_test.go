@@ -111,7 +111,7 @@ func TestCompilePackageWritesDespiteATypeError(t *testing.T) {
 	}
 	require.NoError(t, json.Unmarshal([]byte(err.Error()), &typeErrs))
 	require.Len(t, typeErrs, 1)
-	require.Equal(t, `"not a number" cannot be assigned to number`, typeErrs[0].Message)
+	require.Equal(t, `cannot constrain "not a number" <: number`, typeErrs[0].Message)
 
 	// The JS is lowered from the rejected source, which is what emitting on error means.
 	require.Contains(t, readBuiltJS(t, root), `export const n = "not a number";`)
