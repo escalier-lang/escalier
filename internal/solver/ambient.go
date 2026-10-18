@@ -82,7 +82,13 @@ func (c *checker) ambientScope() *Scope {
 //
 // A run with Options.NoAmbientNames set binds nothing, so the ambient scope stays empty.
 // It loads only the packages literalClassPackages lists.
+//
+// A run binds the ambient scope once. A later call returns without loading anything.
 func (c *checker) bindAmbientExports() {
+	if c.ambientBound {
+		return
+	}
+	c.ambientBound = true
 	// The packages draw from the range the prelude draws from, so a program's own
 	// variables and symbols are numbered the same whether or not any builtin loaded.
 	programVars, programSymbols := c.ctx.varCounter, c.ctx.symbolCounter

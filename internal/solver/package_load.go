@@ -141,10 +141,11 @@ func messagesOf(errs []SolverError) []string {
 
 // inferPackage infers one package's module and returns the surface it exports.
 //
-// The package's declarations go into a child of the run's prelude scope rather
-// than of the importer, so nothing the importer declares is visible to it while
-// the prelude package's exports still are. pkgURI is set for the duration, which
-// puts the URI on every key the walk registers.
+// The package's declarations go into a child of a scope the run shares rather
+// than of the importer, so nothing the importer declares is visible to it. A
+// pseudo-package's parent is the prelude scope. An npm package's parent is the
+// ambient scope, which has to be bound first. pkgURI is set for the duration,
+// which puts the URI on every key the walk registers.
 func (c *checker) inferPackage(uri string, module *ast.Module) (*Namespace, []SolverError) {
 	prevURI := c.pkgURI
 	c.pkgURI = uri
@@ -156,6 +157,11 @@ func (c *checker) inferPackage(uri string, module *ast.Module) (*Namespace, []So
 	c.errs = nil
 
 	scope := c.preludeScope().Child()
+	// A `.d.ts` is written against TypeScript's global library, which the ambient
+	// scope holds. `ReadonlyArray` in `csstype` is one such name.
+	if !IsSchemePrefixedImport(uri) {
+		scope = c.ambientScope().Child()
+	}
 	c.bindFileImports(scope, module)
 	c.inferDepGraph(scope, 0, module, dep_graph.BuildDepGraph(module))
 

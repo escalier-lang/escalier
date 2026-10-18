@@ -17,6 +17,10 @@ type Options struct {
 	// through `std:prelude` or its own imports. The ambient packages still load, since
 	// a primitive's members and a regex literal's type are read from them.
 	NoAmbientNames bool
+	// PackageDir is the directory an import with no URI scheme resolves from, through
+	// the `node_modules` directories at and above it. An empty PackageDir resolves no
+	// such import.
+	PackageDir string
 	// CheckJsDecorators reports a pseudo-package file whose values break the `@js`
 	// rules jsDecoratorErrors lists, at the import that loads it.
 	CheckJsDecorators bool

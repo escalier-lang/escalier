@@ -36,7 +36,10 @@ func TestReadPackageConfig(t *testing.T) {
 				return
 			}
 			require.NoError(t, err)
-			require.Equal(t, test.want, got)
+			// Dir is the temporary directory, so each case's want leaves it out.
+			want := test.want
+			want.Dir = dir
+			require.Equal(t, want, got)
 		})
 	}
 }
@@ -62,6 +65,40 @@ func TestCheckPackageAmbientNames(t *testing.T) {
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
 			out := CheckPackage([]*ast.Source{{ID: 1, Path: test.path, Contents: test.src}}, test.config)
+			require.Empty(t, out.ParseErrors)
+			require.Equal(t, test.wantErrs, messages(out.TypeErrors))
+		})
+	}
+}
+
+// TestCheckPackageResolvesNodeModules covers a lib/ file importing an npm package from the
+// `node_modules` beside the package.json ReadPackageConfig read. A config with no Dir
+// resolves no such import.
+func TestCheckPackageResolvesNodeModules(t *testing.T) {
+	dir := t.TempDir()
+	pkgDir := filepath.Join(dir, "node_modules", "plain")
+	require.NoError(t, os.MkdirAll(pkgDir, 0o755))
+	require.NoError(t, os.WriteFile(filepath.Join(pkgDir, "index.d.ts"),
+		[]byte("export declare const version: string;\n"), 0o644))
+	config, err := ReadPackageConfig(dir)
+	require.NoError(t, err)
+
+	tests := []struct {
+		name     string
+		path     string
+		config   PackageConfig
+		wantErrs []string
+	}{
+		{name: "Lib", path: "lib/index.esc", config: config, wantErrs: []string{}},
+		{name: "NoDir", path: "lib/index.esc", config: PackageConfig{}, wantErrs: []string{
+			`cannot resolve import "plain": unrecognized scheme in "plain"`,
+			"Unknown identifier: p",
+		}},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			src := "import \"plain\" as p\nval v: string = p.version\n"
+			out := CheckPackage([]*ast.Source{{ID: 1, Path: test.path, Contents: src}}, test.config)
 			require.Empty(t, out.ParseErrors)
 			require.Equal(t, test.wantErrs, messages(out.TypeErrors))
 		})

@@ -51,6 +51,9 @@ func (c *checker) bindImport(fileScope *Scope, stmt *ast.ImportStmt) []SolverErr
 	if IsSchemePrefixedImport(uri) {
 		return c.bindPseudoPackageImport(fileScope, stmt)
 	}
+	// An npm package's declarations read the ambient scope, so it has to be full
+	// before the package infers.
+	c.bindAmbientExports()
 	ns, errs := c.loadPackage(uri, stmt.Span())
 	if ns == nil {
 		// Either the load failed, and errs says why, or the URI is mid-load further

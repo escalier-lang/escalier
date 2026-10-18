@@ -233,32 +233,52 @@ func InferModuleAgainstStdlib(module *ast.Module, dir string, opts Options) *Mod
 	// groups their imports form.
 	roots := set.FromSlice(append(pseudoPackageImportsOf(module), ambientPackages...)).ToSlice()
 	sort.Strings(roots)
+	source := packageSource(dir, opts)
 	groups, err := BuildPackageClosure(dir, roots)
 	if err != nil {
 		// Nothing is known about what the imports reach, so every package loads
 		// alone. That is right for the tree a readable directory would have held
 		// and reports honestly for one that cycles.
-		result := inferModuleWithGroups(module, StdlibSource(dir), nil, nil, opts)
+		result := inferModuleWithGroups(module, source, nil, nil, opts)
 		result.Errors = append(result.Errors, &UnresolvedPackageError{
 			URI: dir, Reason: err.Error(), span: ast.Span{},
 		})
 		return result
 	}
-	return inferModuleWithGroups(module, StdlibSource(dir), StdlibGroupSource(dir), groups, opts)
+	return inferModuleWithGroups(module, source, StdlibGroupSource(dir), groups, opts)
 }
 
 // InferScriptAgainstStdlib infers script against the pseudo-packages in dir. It is
 // the script counterpart to InferModuleAgainstStdlib. A script binds no imports, so
 // the closure grows from the ambient packages alone. opts adjusts the run.
 func InferScriptAgainstStdlib(script *ast.Script, dir string, opts Options) (*Scope, *Info, []SolverError) {
+	source := packageSource(dir, opts)
 	groups, err := BuildPackageClosure(dir, ambientPackages)
 	if err != nil {
-		scope, info, errs := inferScriptWithGroups(script, StdlibSource(dir), nil, nil, opts)
+		scope, info, errs := inferScriptWithGroups(script, source, nil, nil, opts)
 		return scope, info, append(errs, &UnresolvedPackageError{
 			URI: dir, Reason: err.Error(), span: ast.Span{},
 		})
 	}
-	return inferScriptWithGroups(script, StdlibSource(dir), StdlibGroupSource(dir), groups, opts)
+	return inferScriptWithGroups(script, source, StdlibGroupSource(dir), groups, opts)
+}
+
+// packageSource returns the ModuleSource a run against the pseudo-packages in dir
+// loads through. A URI with a scheme reads from dir. Any other URI reads from the
+// `node_modules` directories at and above opts.PackageDir, and resolves nothing
+// when opts.PackageDir is empty.
+func packageSource(dir string, opts Options) ModuleSource {
+	stdlib := StdlibSource(dir)
+	if opts.PackageDir == "" {
+		return stdlib
+	}
+	npm := NodeModulesSource(opts.PackageDir)
+	return func(uri string) (*ast.Module, string, error) {
+		if IsSchemePrefixedImport(uri) {
+			return stdlib(uri)
+		}
+		return npm(uri)
+	}
 }
 
 // pseudoPackageImportsOf returns the pseudo-package URIs a module's files import,

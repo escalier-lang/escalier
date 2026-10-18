@@ -251,6 +251,8 @@ type checker struct {
 	noAmbientNames bool
 	// checkJsDecorators is Options.CheckJsDecorators for this run.
 	checkJsDecorators bool
+	// ambientBound is set once bindAmbientExports has filled the ambient scope.
+	ambientBound bool
 	// regexpReported is set once the run has reported that it loaded no usable `RegExp`,
 	// so a second regex literal does not report it again.
 	regexpReported bool
