@@ -50,10 +50,25 @@ var ambientPackages = []string{
 	"web:fetch",
 }
 
-// ambientScope returns the per-run scope that holds the ambient builtins, creating
-// it empty as a child of the prelude scope on the first request and returning the
-// same scope on every later one. bindAmbientExports fills it.
+// globalsScope returns the per-run scope that holds the exports of every package in
+// ambientPackages, creating it empty as a child of the prelude scope on the first
+// request and returning the same scope on every later one. bindGlobals fills it.
+func (c *checker) globalsScope() *Scope {
+	if c.globals == nil {
+		c.globals = c.preludeScope().Child()
+		c.globals.builtin = true
+	}
+	return c.globals
+}
+
+// ambientScope returns the per-run scope that holds the ambient builtins. It is
+// globalsScope, except in a run with Options.NoAmbientNames set, where it is an
+// empty child of the prelude scope created on the first request.
+// bindAmbientExports fills it.
 func (c *checker) ambientScope() *Scope {
+	if !c.noAmbientNames {
+		return c.globalsScope()
+	}
 	if c.ambient == nil {
 		c.ambient = c.preludeScope().Child()
 		c.ambient.builtin = true
@@ -61,8 +76,24 @@ func (c *checker) ambientScope() *Scope {
 	return c.ambient
 }
 
-// bindAmbientExports loads each package in ambientPackages and binds its exports
-// into the ambient scope by three rules:
+// bindAmbientExports fills the ambient scope. It calls bindGlobals, except in a run
+// with Options.NoAmbientNames set. That run binds nothing and loads only the
+// packages literalClassPackages lists. A run binds the ambient scope once, and a
+// later call returns without loading anything.
+func (c *checker) bindAmbientExports() {
+	if !c.noAmbientNames {
+		c.bindGlobals()
+		return
+	}
+	if c.ambientBound {
+		return
+	}
+	c.ambientBound = true
+	c.loadLibraryPackages(literalClassPackages(), nil)
+}
+
+// bindGlobals loads each package in ambientPackages and binds its exports into the
+// globals scope by three rules:
 //
 //  1. A type-only export binds under its declared name. `interface Console` binds
 //     `Console`.
@@ -80,15 +111,19 @@ func (c *checker) ambientScope() *Scope {
 // package that loads and reports diagnostics of its own reaches the run with them.
 // The first package to claim a name keeps it.
 //
-// A run with Options.NoAmbientNames set binds nothing, so the ambient scope stays empty.
-// It loads only the packages literalClassPackages lists.
-//
-// A run binds the ambient scope once. A later call returns without loading anything.
-func (c *checker) bindAmbientExports() {
-	if c.ambientBound {
+// A run binds the globals scope once. A later call returns without loading anything.
+func (c *checker) bindGlobals() {
+	if c.globalsBound {
 		return
 	}
-	c.ambientBound = true
+	c.globalsBound = true
+	c.loadLibraryPackages(ambientPackages, &ambientBinder{scope: c.globalsScope(), namespaces: map[string]*Namespace{}})
+}
+
+// loadLibraryPackages loads each package uris names, reports its diagnostics, and
+// binds its exports through b when b is non-nil. A package the source does not
+// answer for is skipped.
+func (c *checker) loadLibraryPackages(uris []string, b *ambientBinder) {
 	// The packages draw from the range the prelude draws from, so a program's own
 	// variables and symbols are numbered the same whether or not any builtin loaded.
 	programVars, programSymbols := c.ctx.varCounter, c.ctx.symbolCounter
@@ -98,12 +133,7 @@ func (c *checker) bindAmbientExports() {
 		c.ctx.varCounter, c.ctx.symbolCounter = programVars, programSymbols
 	}()
 
-	b := &ambientBinder{scope: c.ambientScope(), namespaces: map[string]*Namespace{}}
-	packages := ambientPackages
-	if c.noAmbientNames {
-		packages = literalClassPackages()
-	}
-	for _, uri := range packages {
+	for _, uri := range uris {
 		ns, errs := c.loadPackage(uri, ast.Span{})
 		// A run against a tree that lacks the package, such as a test's partial tree,
 		// goes on without its names.
@@ -113,7 +143,7 @@ func (c *checker) bindAmbientExports() {
 		for _, err := range errs {
 			c.report(err)
 		}
-		if !c.noAmbientNames {
+		if b != nil {
 			b.bindPackage(ns)
 		}
 	}

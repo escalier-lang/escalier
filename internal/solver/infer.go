@@ -241,17 +241,24 @@ type checker struct {
 	// package this run loads. It sits between the process-wide operator table and
 	// the ambient scope, so an ambient name shadows a prelude export.
 	prelude *Scope
-	// ambient is the per-run scope ambientScope builds over the prelude, holding the
-	// builtins a program reaches without an import. The entry module's scope is its
-	// child, so a module declaration shadows an ambient name and a file's import
-	// shadows both. A loaded package parents its scope at the prelude and never sees
-	// this one. It is nil until a run asks for it.
+	// globals is the per-run scope globalsScope builds over the prelude, holding the
+	// exports of every package in ambientPackages. An npm package's scope is its
+	// child. It is nil until a run asks for it.
+	globals *Scope
+	// globalsBound is set once bindGlobals has filled the globals scope.
+	globalsBound bool
+	// ambient is the empty scope ambientScope builds over the prelude in a run with
+	// Options.NoAmbientNames set. Every other run uses globals as its ambient scope.
+	// The entry module's scope is a child of the ambient scope, so a module
+	// declaration shadows an ambient name and a file's import shadows both. A
+	// pseudo-package parents its scope at the prelude and never sees either one.
 	ambient *Scope
 	// noAmbientNames is Options.NoAmbientNames for this run.
 	noAmbientNames bool
 	// checkJsDecorators is Options.CheckJsDecorators for this run.
 	checkJsDecorators bool
-	// ambientBound is set once bindAmbientExports has filled the ambient scope.
+	// ambientBound is set once bindAmbientExports has loaded the literal classes' packages
+	// in a run with Options.NoAmbientNames set.
 	ambientBound bool
 	// regexpReported is set once the run has reported that it loaded no usable `RegExp`,
 	// so a second regex literal does not report it again.
