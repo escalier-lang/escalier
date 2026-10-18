@@ -1285,6 +1285,10 @@ func buildPropertyInObjectCheck(propName string, objectExpr Expr, source ast.Nod
 
 // buildTypeGuard generates a runtime type check expression for a given type annotation
 func (b *Builder) buildTypeGuard(valueExpr Expr, typeAnn ast.TypeAnn) Expr {
+	// A regex type is tested with its own pattern, which an alias hides from typeAnn.
+	if source, ok := b.types().RegexSource(typeAnn); ok {
+		return b.buildRegexGuard(valueExpr, source)
+	}
 	switch t := typeAnn.(type) {
 	case *ast.NumberTypeAnn:
 		return b.buildTypeOfCheck(valueExpr, "number", StrictEqual, nil)
@@ -1293,6 +1297,11 @@ func (b *Builder) buildTypeGuard(valueExpr Expr, typeAnn ast.TypeAnn) Expr {
 	case *ast.BooleanTypeAnn:
 		return b.buildTypeOfCheck(valueExpr, "boolean", StrictEqual, nil)
 	case *ast.LitTypeAnn:
+		// A JSTypes that records no regex sources, such as CheckerJSTypes, still reaches an
+		// inline regex here.
+		if re, isRegex := t.Lit.(*ast.RegexLit); isRegex {
+			return b.buildRegexGuard(valueExpr, re.Value)
+		}
 		// For literal types, check exact value
 		litExpr := NewLitExpr(buildLit(t.Lit), nil)
 		return NewBinaryExpr(valueExpr, StrictEqual, litExpr, nil)
@@ -1365,6 +1374,19 @@ func (b *Builder) buildTypeGuard(valueExpr Expr, typeAnn ast.TypeAnn) Expr {
 		// For complex types we can't easily check at runtime, accept anything
 		return NewLitExpr(NewBoolLit(true, nil), nil)
 	}
+}
+
+// buildRegexGuard returns `typeof valueExpr === "string" && /re/.test(valueExpr)` for the
+// regex literal source.
+func (b *Builder) buildRegexGuard(valueExpr Expr, source string) Expr {
+	test := NewCallExpr(
+		NewMemberExpr(NewLitExpr(NewRegexLit(source, nil), nil), NewIdentifier("test", nil), false, nil),
+		[]Expr{valueExpr},
+		false,
+		nil,
+	)
+	isString := b.buildTypeOfCheck(valueExpr, "string", StrictEqual, nil)
+	return NewBinaryExpr(isString, LogicalAnd, test, nil)
 }
 
 // nominalGuardName returns the class name an `x instanceof C` guard tests for a

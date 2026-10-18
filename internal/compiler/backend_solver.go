@@ -80,6 +80,10 @@ func (t *solverSolTypes) AbsentKeys(p *ast.ObjectPat) []string {
 	return t.info.AbsentKeys(p)
 }
 
+func (t *solverSolTypes) RegexSource(ta ast.TypeAnn) (string, bool) {
+	return t.info.RegexSource(ta)
+}
+
 // solverDts renders the library's .d.ts from the module run, which holds the scope
 // the declarations landed in and the registries their members are keyed in.
 type solverDts struct {

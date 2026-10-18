@@ -1,0 +1,16 @@
+type Digits = /^\d+$/
+
+export fn classify(s: string) {
+    return match s {
+        d: Digits => "digits",
+        w: /^[a-z]+$/i => "word",
+        _ => "other",
+    }
+}
+
+export fn firstDigits(p: [string, number]) {
+    return match p {
+        [d: Digits, n] => n,
+        _ => 0,
+    }
+}
