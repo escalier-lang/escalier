@@ -35,6 +35,9 @@ type Info struct {
 	// destructured leaf. A read of a binding with no source, such as one the
 	// prelude seeded, has no entry.
 	decls map[*ast.IdentExpr]ast.Node
+	// ctx is the Context of the run that recorded this table, or nil for a table built
+	// by NewInfo. MemberObject reads the class and alias registries it holds.
+	ctx *Context
 }
 
 // NewInfo returns an empty Info side table ready to record inferred types.
@@ -121,6 +124,22 @@ func (i *Info) ResolvedTypeOf(n ast.Node) soltype.Type {
 		return nil
 	}
 	return groundedCarrier(t)
+}
+
+// MemberObject returns an object type whose elements are the members a value of type t
+// exposes, read against the registries of the run that recorded this table. Inference
+// variables in the result are coalesced, and the caller owns the result. A union yields
+// one object listing every member some variant has, which is not a supertype of t. It
+// returns false when t exposes no fixed set of members, and on a table built by NewInfo.
+//
+// Call it only once the run has finished. A library run and the bin/ scripts checked
+// against it share one set of registries, so no check of those scripts may run while it
+// is called on any of their tables.
+func (i *Info) MemberObject(t soltype.Type) (*soltype.ObjectType, bool) {
+	if i.ctx == nil || t == nil {
+		return nil, false
+	}
+	return i.ctx.memberObject(t)
 }
 
 // DisplayTypeOf returns the type recorded for n coalesced to the form a person reads,
