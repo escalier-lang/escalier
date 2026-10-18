@@ -33,8 +33,8 @@ const maxProductStates = 4096
 // source order.
 //
 // An alternative counts as shadowed only when the check below proves it. Patterns the check
-// cannot read report nothing. Those are a pattern with the `i` flag, an alternation that a
-// quantifier repeats, and an alternative whose match depends on the text around it.
+// cannot read report nothing. Those are an alternation that a quantifier repeats, and an
+// alternative whose match depends on the text around it.
 func (p *Pattern) Shadowed() []Shadowed {
 	p.shadowOnce.Do(func() { p.shadowed = p.findShadowed() })
 	return p.shadowed
@@ -49,9 +49,6 @@ func (p *Pattern) Shadowed() []Shadowed {
 // A_0 first, then A_1, and so on. It backtracks into A_k only when every earlier alternative
 // fails to finish the match from that position, which the containment rules out.
 func (p *Pattern) findShadowed() []Shadowed {
-	if strings.ContainsRune(p.flags, 'i') {
-		return nil
-	}
 	var out []Shadowed
 	for _, g := range parseAlternations(p.body) {
 		if len(g.branches) < 2 || g.repeated() {
@@ -125,7 +122,7 @@ func (p *Pattern) shadowedBy(alt branch, earlier []branch, cont string) (string,
 		texts[i] = e.text
 	}
 	for _, e := range earlier {
-		if e.prog != nil && contains(e.prog, alt.prog) {
+		if e.prog != nil && contains(e.prog, alt.prog, anywhere) {
 			return e.text, true
 		}
 	}
@@ -133,7 +130,7 @@ func (p *Pattern) shadowedBy(alt branch, earlier []branch, cont string) (string,
 		return "", false
 	}
 	sup, ok := p.language(strings.Join(texts, "|"), cont)
-	if ok && contains(sup, alt.prog) {
+	if ok && contains(sup, alt.prog, anywhere) {
 		return "", true
 	}
 	return "", false
@@ -164,7 +161,7 @@ func (p *Pattern) readsPosition(src string) bool {
 // reports false when the source does not compile.
 func (p *Pattern) language(alt, cont string) (*syntax.Prog, bool) {
 	flags := strings.Map(func(r rune) rune {
-		if strings.ContainsRune("msu", r) {
+		if strings.ContainsRune("imsu", r) {
 			return r
 		}
 		return -1
@@ -173,7 +170,21 @@ func (p *Pattern) language(alt, cont string) (*syntax.Prog, bool) {
 	if compiled == nil {
 		return nil, false
 	}
-	re, err := syntax.Parse(compiled.re.String(), syntax.Perl)
+	return compiled.program(compiled.goBody)
+}
+
+// program compiles goBody, a pattern in RE2 syntax, under the pattern's flags. Without the
+// `u` flag, the `i` flag folds case the way JavaScript does rather than the way Go does.
+func (p *Pattern) program(goBody string) (*syntax.Prog, bool) {
+	jsFold := p.units && strings.ContainsRune(p.goFlags, 'i')
+	flags := p.goFlags
+	if jsFold {
+		flags = strings.ReplaceAll(flags, "i", "")
+	}
+	if flags != "" {
+		goBody = "(?" + flags + ")" + goBody
+	}
+	re, err := syntax.Parse(goBody, syntax.Perl)
 	if err != nil {
 		return nil, false
 	}
@@ -181,7 +192,44 @@ func (p *Pattern) language(alt, cont string) (*syntax.Prog, bool) {
 	if err != nil {
 		return nil, false
 	}
+	if jsFold {
+		foldLikeJS(prog)
+	}
 	return prog, true
+}
+
+// Contains reports whether p matches every string q matches. A pattern matches a string when
+// it matches anywhere in it, as RegExp.prototype.test does, so `/\d/` contains `/^\d+$/`.
+//
+// It reports false when it cannot decide, so an undecided pair is never accepted. It cannot
+// decide when:
+//
+//   - the two patterns differ in the `u` flag, which decides whether they read code points or
+//     code units;
+//   - either pattern tests a position other than the start or the end of the string;
+//   - the walk reaches maxProductStates.
+func (p *Pattern) Contains(q *Pattern) bool {
+	if p.units != q.units {
+		return false
+	}
+	if p.re.String() == q.re.String() {
+		return true
+	}
+	sup, sub := p.searchProg(), q.searchProg()
+	if sup == nil || sub == nil {
+		return false
+	}
+	return contains(sup, sub, atStart)
+}
+
+// searchProg returns the pattern compiled with `(?s:.*)` in front, or nil when it does not
+// compile. The program matches from the start of a string every string the pattern matches
+// somewhere in.
+func (p *Pattern) searchProg() *syntax.Prog {
+	p.searchOnce.Do(func() {
+		p.search, _ = p.program(`(?s:.*)(?:` + p.goBody + `)`)
+	})
+	return p.search
 }
 
 // span is a half-open range of byte offsets in a regex body.
@@ -282,17 +330,25 @@ func parseAlternations(body string) []*altGroup {
 // It walks the two programs' DFAs together. A DFA state is the set of instructions the NFA
 // can be at after reading the same input. Characters are read one class at a time, where a
 // class is a range of runes every instruction treats alike.
-func contains(sup, sub *syntax.Prog) bool {
+//
+// from says where in the string the input starts. A walk from atStart lets `^` pass before
+// the first character and fail after it. A walk from anywhere gives up on `^`.
+func contains(sup, sub *syntax.Prog, from position) bool {
 	reps := runeClasses(sup, sub)
 	type node struct {
 		sub, sup         []uint32
 		subDone, supDone bool
+		pos              position
 	}
 	keyOf := func(n node) string {
-		return pcsKey(n.sub) + "|" + pcsKey(n.sup) + "|" + strconv.FormatBool(n.subDone) + strconv.FormatBool(n.supDone)
+		return pcsKey(n.sub) + "|" + pcsKey(n.sup) + "|" + strconv.FormatBool(n.subDone) + strconv.FormatBool(n.supDone) + strconv.Itoa(int(n.pos))
+	}
+	next := anywhere
+	if from == atStart {
+		next = pastStart
 	}
 	seen := set.NewSet[string]()
-	queue := []node{{sub: []uint32{uint32(sub.Start)}, sup: []uint32{uint32(sup.Start)}}}
+	queue := []node{{sub: []uint32{uint32(sub.Start)}, sup: []uint32{uint32(sup.Start)}, pos: from}}
 	for len(queue) > 0 {
 		n := queue[0]
 		queue = queue[1:]
@@ -304,11 +360,11 @@ func contains(sup, sub *syntax.Prog) bool {
 			return false
 		}
 		seen.Add(key)
-		subC, ok := closure(sub, n.sub)
+		subC, ok := closure(sub, n.sub, n.pos)
 		if !ok {
 			return false
 		}
-		supC, ok := closure(sup, n.sup)
+		supC, ok := closure(sup, n.sup, n.pos)
 		if !ok {
 			return false
 		}
@@ -333,11 +389,24 @@ func contains(sup, sub *syntax.Prog) bool {
 				sup:     step(sup, supC.states, r),
 				subDone: subDone,
 				supDone: supDone,
+				pos:     next,
 			})
 		}
 	}
 	return true
 }
+
+// position is what a containment walk knows about where its input sits in the string.
+type position int
+
+const (
+	// anywhere is a position the walk cannot place, so a `^` there makes it give up.
+	anywhere position = iota
+	// atStart is the start of the string, where `^` passes.
+	atStart
+	// pastStart is after the first character, where `^` fails.
+	pastStart
+)
 
 // closed is the result of following every instruction that reads no input.
 type closed struct {
@@ -349,9 +418,13 @@ type closed struct {
 	matchAtEnd bool
 }
 
-// closure follows from pcs every instruction that reads no input. It reports false on an
-// empty-width test other than the end of the text, which the check does not model.
-func closure(prog *syntax.Prog, pcs []uint32) (closed, bool) {
+// closure follows every instruction that reads no input, starting from pcs, at position
+// pos. A pc is an index into prog.Inst. pcs holds the instructions the program can be at
+// after reading the same input, which is prog.Start before any input and the result of step
+// after each character. It reports false on an empty-width test other than the start or the
+// end of the text, which the check does not model, and on a test of the start at a position
+// it cannot place.
+func closure(prog *syntax.Prog, pcs []uint32, pos position) (closed, bool) {
 	var out closed
 	states := set.NewSet[uint32]()
 	for _, atEnd := range []bool{false, true} {
@@ -371,12 +444,22 @@ func closure(prog *syntax.Prog, pcs []uint32) (closed, bool) {
 			case syntax.InstCapture, syntax.InstNop:
 				stack = append(stack, inst.Out)
 			case syntax.InstEmptyWidth:
-				if syntax.EmptyOp(inst.Arg) != syntax.EmptyEndText {
+				op := syntax.EmptyOp(inst.Arg)
+				if op&^(syntax.EmptyBeginText|syntax.EmptyEndText) != 0 {
 					return closed{}, false
 				}
-				if atEnd {
-					stack = append(stack, inst.Out)
+				if op&syntax.EmptyBeginText != 0 {
+					if pos == anywhere {
+						return closed{}, false
+					}
+					if pos == pastStart {
+						continue
+					}
 				}
+				if op&syntax.EmptyEndText != 0 && !atEnd {
+					continue
+				}
+				stack = append(stack, inst.Out)
 			case syntax.InstMatch:
 				if atEnd {
 					out.matchAtEnd = true
@@ -433,8 +516,18 @@ func runeClasses(progs ...*syntax.Prog) []rune {
 				bounds.Add(inst.Rune[0] + 1)
 			case syntax.InstRune:
 				if len(inst.Rune) == 1 {
-					bounds.Add(inst.Rune[0])
-					bounds.Add(inst.Rune[0] + 1)
+					// A case-folding instruction reads each case of its rune, so every case
+					// bounds a class of its own. Under `/k/iu` the instruction holds `k`
+					// alone but reads `K`, `k` and the Kelvin sign `\u212A`, so each of the
+					// three starts a class.
+					fold := syntax.Flags(inst.Arg)&syntax.FoldCase != 0
+					for r := inst.Rune[0]; ; r = unicode.SimpleFold(r) {
+						bounds.Add(r)
+						bounds.Add(r + 1)
+						if !fold || unicode.SimpleFold(r) == inst.Rune[0] {
+							break
+						}
+					}
 					continue
 				}
 				for i := 0; i+1 < len(inst.Rune); i += 2 {

@@ -1363,8 +1363,8 @@ type SelfType struct {
 
 // RegexType is the string type a regex annotation such as `/^\d{3}-\d{4}$/` names. A string
 // literal is a subtype of it when the pattern matches the literal. Every regex type is a
-// subtype of `string`, and two regex types relate only when they were written alike, since a
-// checker cannot decide whether one pattern's language contains another's.
+// subtype of `string`. One regex type is a subtype of another when the other's pattern
+// matches every string its own does, so `/^\d{3}$/` is a subtype of `/^\d+$/`.
 type RegexType struct {
 	// Source is the annotation as written, with its delimiters and flags. The type prints as
 	// Source.

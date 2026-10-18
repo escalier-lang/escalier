@@ -253,7 +253,9 @@ func splitsByRegex(check soltype.Type, re *soltype.RegexType) bool {
 			}
 			sawString = true
 		case *soltype.NegationType:
-			if excluded, isRegex := part.Inner.(*soltype.RegexType); isRegex && excluded.Source == re.Source {
+			// A complement of a pattern that matches every string `re` does leaves none of
+			// them, so there is nothing to split.
+			if excluded, isRegex := part.Inner.(*soltype.RegexType); isRegex && excluded.Pattern.Contains(re.Pattern) {
 				return false
 			}
 		default:

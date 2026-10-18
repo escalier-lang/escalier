@@ -1008,9 +1008,19 @@ func (c *Context) meetValueAtoms(a, b soltype.Type) (soltype.Type, bool) {
 
 // meetRegexAtom fuses a regex type with another atom of the string family that is neither
 // `string` nor equal to it. A string literal meets it at the literal when the pattern
-// matches and at `never` otherwise. Two different regex types may share values the checker
-// cannot enumerate, so their meet stays unfused.
+// matches and at `never` otherwise. Two regex types meet at the one whose pattern the other
+// contains, so `/^\d{3}$/ & /^\d+$/` is `/^\d{3}$/`. Two regex types where neither contains
+// the other may still share values, so their meet stays unfused.
 func meetRegexAtom(r *soltype.RegexType, other soltype.Type) (soltype.Type, bool) {
+	if o, isRegex := other.(*soltype.RegexType); isRegex {
+		switch {
+		case r.Pattern.Contains(o.Pattern):
+			return o, true
+		case o.Pattern.Contains(r.Pattern):
+			return r, true
+		}
+		return nil, false
+	}
 	lit, isLit := other.(*soltype.LitType)
 	if !isLit {
 		return nil, false
