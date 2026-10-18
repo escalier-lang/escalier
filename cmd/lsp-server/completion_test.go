@@ -1822,6 +1822,64 @@ l.`,
 			expected: []string{"bar: boolean"},
 		},
 		{
+			name: "GenericClassAtDeclaredArgument",
+			src: `class Box<T> {
+	value: T,
+	constructor(&mut self, value: T) { self.value = value },
+	get(&self) -> T { return self.value },
+}
+declare val b: Box<string>
+b.`,
+			line:     7,
+			col:      3,
+			expected: []string{"get: fn () -> string", "value: string"},
+		},
+		{
+			name: "GenericClassAtInferredArgument",
+			src: `class Box<T> {
+	value: T,
+	constructor(&mut self, value: T) { self.value = value },
+	get(&self) -> T { return self.value },
+}
+val b = Box(5)
+b.`,
+			line:     7,
+			col:      3,
+			expected: []string{"get: fn () -> 5", "value: 5"},
+		},
+		{
+			name: "GenericAlias",
+			src: `type Pair<A, B> = {first: A, second: B}
+declare val p: Pair<number, string>
+p.`,
+			line:     3,
+			col:      3,
+			expected: []string{"first: number", "second: string"},
+		},
+		{
+			name: "GenericAliasOfUnion",
+			src: `type Result<T, E> = {ok: true, value: T} | {ok: false, error: E}
+declare val r: Result<number, string>
+r.`,
+			line:     3,
+			col:      3,
+			expected: []string{"error: string | undefined", "ok: true | false", "value: number | undefined"},
+		},
+		{
+			name: "SubclassOfGenericClass",
+			src: `class Animal<A> {
+	food: A,
+}
+class Dog extends Animal<string> {
+	constructor(&mut self) { super("bone") },
+}
+val d = Dog()
+d.`,
+			line:     8,
+			col:      3,
+			expected: []string{"food: string"},
+		},
+		{
 			name:     "ErrorTypeOffersNothing",
 			src:      "val obj: {a: number} = {a: 1}\nval x = obj.\nx.",
 			line:     3,
