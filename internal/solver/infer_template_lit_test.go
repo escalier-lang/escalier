@@ -608,6 +608,22 @@ func TestTemplateWithinTemplate(t *testing.T) {
 		{"an interpolation that could hold the next segment", "`${string}-1`", "`${string}-${number}`", "cannot constrain `${string}-1` <: `${string}-${number}`"},
 		// The first interpolation of the super takes one character, which an interpolation cannot fix.
 		{"adjacent interpolations", "`${number}px`", "`${number}${string}`", "cannot constrain `${number}px` <: `${number}${string}`"},
+		{"a number interpolation in a number interpolation", "`${number}px`", "`${number}px`", ""},
+		// "1" before the number -5 spells "1-5", which is no number.
+		{"a fixed prefix on a number interpolation", "`1${number}`", "`${number}`", "cannot constrain `1${number}` <: `${number}`"},
+		// The number NaN followed by "0" spells "NaN0", which is no number.
+		{"a fixed suffix on a number interpolation", "`${number}0`", "`${number}`", "cannot constrain `${number}0` <: `${number}`"},
+		// A template whose interpolations are all finite unions expands to string literals, so
+		// `1${0 | 5}` is "10" | "15".
+		{"a fixed prefix on a union of numbers", "`1${0 | 5}`", "`${number}`", ""},
+		{"a union interpolation within a string interpolation", "`on${\"x\" | \"y\"}`", "`on${string}`", ""},
+		// A union beside a `string` interpolation does not expand, so it reaches the matcher as an
+		// interpolation.
+		{"a union interpolation before a string interpolation", "`on${\"x\" | \"y\"}${string}`", "`on${string}`", ""},
+		{"a union interpolation with a member outside the super", "`on${\"x\" | \"y\"}`", "\"onx\"", "cannot constrain \"ony\" <: \"onx\""},
+		{"a union interpolation before a string interpolation with a member outside the super", "`on${\"x\" | \"y\"}${string}`", "`onx${string}`", "cannot constrain `on${\"x\" | \"y\"}${string}` <: `onx${string}`"},
+		// "a-b-1" splits as "a" and "b-1", and "b-1" is no number.
+		{"a union interpolation whose member holds the next segment", "`${\"a-b\" | \"c\"}-${number}`", "`${string}-${number}`", "cannot constrain `${\"a-b\" | \"c\"}-${number}` <: `${string}-${number}`"},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
