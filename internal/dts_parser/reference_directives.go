@@ -37,15 +37,26 @@ var referenceDirectivePattern = regexp.MustCompile(`^///\s*<reference\s+(\w+)\s*
 func ParseReferenceDirectives(contents string) []ReferenceDirective {
 	var directives []ReferenceDirective
 	inBlockComment := false
-	for _, line := range strings.Split(contents, "\n") {
+	for _, line := range strings.Split(strings.TrimPrefix(contents, "\uFEFF"), "\n") {
 		trimmed := strings.TrimSpace(line)
-		if inBlockComment {
-			if _, after, found := strings.Cut(trimmed, "*/"); found {
+		// Block comments are stripped from the front of the line, so code after a
+		// `/* … */` on the same line ends the scan.
+		for {
+			if inBlockComment {
+				_, after, found := strings.Cut(trimmed, "*/")
+				if !found {
+					trimmed = ""
+					break
+				}
 				inBlockComment = false
 				trimmed = strings.TrimSpace(after)
-			} else {
 				continue
 			}
+			if !strings.HasPrefix(trimmed, "/*") {
+				break
+			}
+			inBlockComment = true
+			trimmed = trimmed[2:]
 		}
 		switch {
 		case trimmed == "":
@@ -61,10 +72,6 @@ func ParseReferenceDirectives(contents string) []ReferenceDirective {
 			}
 		case strings.HasPrefix(trimmed, "//"):
 			continue
-		case strings.HasPrefix(trimmed, "/*"):
-			if !strings.Contains(trimmed[2:], "*/") {
-				inBlockComment = true
-			}
 		default:
 			return directives
 		}

@@ -74,6 +74,20 @@ func TestResolveTypesEntryPoint(t *testing.T) {
 	}
 }
 
+// TestResolveTypeReferencePrefersTheTypesPackage asserts that a `types` reference resolves
+// `@types/<name>` ahead of a package of the same name that ships its own types.
+func TestResolveTypeReferencePrefersTheTypesPackage(t *testing.T) {
+	root := t.TempDir()
+	for _, file := range []string{"node_modules/node/index.d.ts", "node_modules/@types/node/index.d.ts"} {
+		path := filepath.Join(root, filepath.FromSlash(file))
+		require.NoError(t, os.MkdirAll(filepath.Dir(path), 0o755))
+		require.NoError(t, os.WriteFile(path, nil, 0o644))
+	}
+	got, err := ResolveTypeReference("node", root)
+	require.NoError(t, err)
+	require.Equal(t, filepath.Join(root, "node_modules", "@types", "node", "index.d.ts"), got)
+}
+
 // TestResolveTypesEntryPointRejectsARelativePath asserts that a module name with a `.` or
 // `..` segment resolves nothing, rather than reaching outside `node_modules`.
 func TestResolveTypesEntryPointRejectsARelativePath(t *testing.T) {

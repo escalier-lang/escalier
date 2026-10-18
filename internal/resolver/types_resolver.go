@@ -22,6 +22,19 @@ import (
 // GetTypesEntryPoint's for the first package directory that exists but has no entry
 // point. With no such directory, it names every directory the lookup tried.
 func ResolveTypesEntryPoint(moduleName string, fromDir string) (string, error) {
+	return resolveTypes(moduleName, fromDir, false)
+}
+
+// ResolveTypeReference is ResolveTypesEntryPoint for the target of a
+// `/// <reference types="…" />` directive, which tries `node_modules/@types/<name>`
+// before `node_modules/<name>` in each directory.
+func ResolveTypeReference(name string, fromDir string) (string, error) {
+	return resolveTypes(name, fromDir, true)
+}
+
+// resolveTypes is ResolveTypesEntryPoint, trying the `@types` package first in each
+// directory when typesFirst is set.
+func resolveTypes(moduleName string, fromDir string, typesFirst bool) (string, error) {
 	for _, segment := range strings.Split(moduleName, "/") {
 		if segment == "." || segment == ".." || segment == "" {
 			return "", fmt.Errorf("%q is a relative path, not a package name", moduleName)
@@ -31,10 +44,14 @@ func ResolveTypesEntryPoint(moduleName string, fromDir string) (string, error) {
 	var entryErr error
 	for dir := fromDir; ; {
 		nodeModules := filepath.Join(dir, "node_modules")
-		for _, pkgDir := range []string{
+		candidates := []string{
 			filepath.Join(nodeModules, filepath.FromSlash(moduleName)),
 			filepath.Join(nodeModules, "@types", filepath.FromSlash(typesPackageName(moduleName))),
-		} {
+		}
+		if typesFirst {
+			candidates[0], candidates[1] = candidates[1], candidates[0]
+		}
+		for _, pkgDir := range candidates {
 			tried = append(tried, pkgDir)
 			if isDir(pkgDir) {
 				path, err := GetTypesEntryPoint(pkgDir)
