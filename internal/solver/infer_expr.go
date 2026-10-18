@@ -233,6 +233,8 @@ func (c *checker) resolveIdentPath(scope *Scope, lvl int, e *ast.IdentExpr, objP
 			t = b.Nominal
 		}
 		c.recordType(e, t)
+		// An editor jumps from a read to the binding it resolved to.
+		c.recordDecl(e, b)
 		// Record this read so the post-walk use-after-move pass can test it against the
 		// consumed lattice. The binding's coalesced type drives the reference-shape
 		// decision, since a fresh instantiation can hide a mono owned shape behind a
@@ -1787,6 +1789,9 @@ func (c *checker) inferCallTarget(scope *Scope, lvl int, e *ast.CallExpr) callTa
 	if ident, ok := e.Callee.(*ast.IdentExpr); ok {
 		if b, found := c.lookupValueBinding(scope, ident.Name); found && b.IsOverloaded() {
 			c.recordType(e.Callee, overloadDisplayType(b))
+			// The callee links to the set's first arm. resolveOverload replaces the link with
+			// the arm the call matches, so a call no arm accepts still reaches a declaration.
+			c.recordDecl(ident, b)
 			return callTarget{overloads: &b}
 		}
 	}
@@ -2526,6 +2531,9 @@ func (c *checker) inferAssign(scope *Scope, lvl int, e *ast.BinaryExpr) soltype.
 		}
 		return undefinedT
 	}
+	// An editor jumps from an assignment's target to the binding it writes. The
+	// record comes before the immutability check so a rejected write still links.
+	c.recordDecl(target, b)
 	if b.Kind != ast.VarKind {
 		c.report(&CannotAssignToImmutableError{
 			Assign: e,
@@ -3160,6 +3168,32 @@ func bindingDecl(b ValueBinding) ast.Node {
 		return np.Node
 	}
 	return nil
+}
+
+// recordDecl records that the identifier read e resolved to b, keyed to b's first
+// source node. A binding with no source node records nothing.
+func (c *checker) recordDecl(e *ast.IdentExpr, b ValueBinding) {
+	decl := bindingDecl(b)
+	if decl == nil {
+		return
+	}
+	snapshotMapEntry(c, c.info.decls, e)
+	c.info.setDecl(e, decl)
+}
+
+// recordArmDecl records that the identifier read e resolved to the overload arm at
+// b.Schemes[idx], keyed to that arm's declaration at b.Sources[idx]. It records nothing
+// when the arm has no source node, as for an overload set the prelude seeded.
+func (c *checker) recordArmDecl(e *ast.IdentExpr, b ValueBinding, idx int) {
+	if idx >= len(b.Sources) {
+		return
+	}
+	np, ok := b.Sources[idx].(*ast.NodeProvenance)
+	if !ok {
+		return
+	}
+	snapshotMapEntry(c, c.info.decls, e)
+	c.info.setDecl(e, np.Node)
 }
 
 // recordNamespaceMember notes that node read b through a namespace, so codegen can
@@ -4831,7 +4865,10 @@ func (c *checker) bindRefutable(
 // type the name takes.
 func (c *checker) bindNarrowedIdent(scope *Scope, lvl int, ip *ast.IdentPat, ann ast.TypeAnn, scrutinee soltype.Type) soltype.Type {
 	narrowed := c.narrowToAnn(scope, lvl, ip, ann, scrutinee)
-	binding := ValueBinding{Schemes: []TypeScheme{monoScheme(narrowed)}}
+	binding := ValueBinding{
+		Schemes: []TypeScheme{monoScheme(narrowed)},
+		Sources: []provenance.Provenance{&ast.NodeProvenance{Node: ip}},
+	}
 	// Carry the rename-assigned VarID onto the binding so a later closure capture or
 	// alias-set check resolves this name, matching the ordinary body-level decl path.
 	if ip.VarID > 0 {

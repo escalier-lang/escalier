@@ -5,6 +5,7 @@ import (
 	"slices"
 
 	"github.com/escalier-lang/escalier/internal/ast"
+	"github.com/escalier-lang/escalier/internal/provenance"
 	"github.com/escalier-lang/escalier/internal/set"
 	"github.com/escalier-lang/escalier/internal/soltype"
 )
@@ -82,8 +83,11 @@ func leafMut(marked bool, purpose bindPurpose) bool {
 // defineLeafMono is the default leaf-placement strategy: it defines the leaf as a
 // monomorphic projection of the scrutinee. Used by every body-level and
 // function-param destructuring path.
-func defineLeafMono(scope *Scope, name string, t soltype.Type, _ ast.Node) {
-	scope.defineValue(name, ValueBinding{Schemes: []TypeScheme{monoScheme(t)}})
+func defineLeafMono(scope *Scope, name string, t soltype.Type, node ast.Node) {
+	scope.defineValue(name, ValueBinding{
+		Schemes: []TypeScheme{monoScheme(t)},
+		Sources: []provenance.Provenance{&ast.NodeProvenance{Node: node}},
+	})
 }
 
 // bindMode records how a pattern's leaves bind to the scrutinee. It is derived from

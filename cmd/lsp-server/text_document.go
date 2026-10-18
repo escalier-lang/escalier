@@ -15,6 +15,8 @@ import (
 	"github.com/escalier-lang/escalier/internal/compiler"
 	"github.com/escalier-lang/escalier/internal/parser"
 	"github.com/escalier-lang/escalier/internal/set"
+	"github.com/escalier-lang/escalier/internal/soltype"
+	"github.com/escalier-lang/escalier/internal/solver"
 	"github.com/tliron/glsp"
 	protocol "github.com/tliron/glsp/protocol_3_16"
 )
@@ -102,44 +104,87 @@ func (s *Server) textDocumentDefinition(context *glsp.Context, params *protocol.
 	sourceID := s.sourceIDForURI(params.TextDocument.URI)
 	s.mu.RLock()
 	var node ast.Node
+	var info *solver.Info
+	var declSrc *ast.Source
 	co := s.checkOutput
 	if co != nil {
 		node = findNodeAtLocation(co, sourceID, loc)
+		info = co.InfoFor(sourceID)
+	}
+	ident, isIdent := node.(*ast.IdentExpr)
+	var span ast.Span
+	if isIdent && info != nil {
+		if decl, ok := info.DeclOf(ident); ok {
+			declSrc = co.SourceByID(decl.Span().SourceID)
+			span = definitionSpan(decl, declSrc)
+		}
+	} else if isIdent {
+		// The old checker records no Info. It stores the binding an identifier
+		// resolved to in the identifier's Source field.
+		if np, ok := ident.Source.(*ast.NodeProvenance); ok {
+			span = np.Node.Span()
+			declSrc = co.SourceByID(span.SourceID)
+		}
 	}
 	s.mu.RUnlock()
 	if node == nil {
 		return nil, fmt.Errorf("textDocument/definition: node not found")
 	}
+	if !isIdent {
+		return nil, fmt.Errorf("textDocument/definition: node is not an IdentExpr")
+	}
+	// A name bound by the standard library or a dependency is declared in a file
+	// outside the package, which the check output holds no text for.
+	if declSrc == nil {
+		return nil, fmt.Errorf("textDocument/definition: no declaration in the package for %s", ident.Name)
+	}
 
 	rootPath := uriToPath(s.rootURI)
+	return protocol.Location{
+		URI:   protocol.DocumentUri(pathToURI(filepath.Join(rootPath, declSrc.Path))),
+		Range: spanToRange(lineMapFor(declSrc), span),
+	}, nil
+}
 
-	switch node := node.(type) {
-	case *ast.IdentExpr:
-		if node.Source == nil {
-			return nil, fmt.Errorf("textDocument/definition: node.Decl is nil")
+// definitionSpan returns the span of the name decl binds, where decl is the node a
+// binding records as its source and src is the file decl was parsed from. A `val` or
+// `var` with a single name, a function, an identifier pattern, and a shorthand
+// property pattern each yield their name. Any other node yields its own span.
+func definitionSpan(decl ast.Node, src *ast.Source) ast.Span {
+	switch decl := decl.(type) {
+	case *ast.VarDecl:
+		if ip, ok := decl.Pattern.(*ast.IdentPat); ok {
+			return identPatNameSpan(ip, src)
 		}
-		var span ast.Span
-		switch provenance := node.Source.(type) {
-		case *ast.NodeProvenance:
-			span = provenance.Node.Span()
-		default:
-			panic(fmt.Sprintf("textDocument/definition: unexpected provenance type %T", node.Source))
+	case *ast.FuncDecl:
+		if decl.Name != nil {
+			return decl.Name.Span()
 		}
-		// Resolve the declaration's file URI from the span's SourceID.
-		declURI := params.TextDocument.URI
-		if co != nil && co.Module != nil {
-			if srcPath := co.Module.GetSourcePath(span.SourceID); srcPath != "" {
-				declURI = protocol.DocumentUri(pathToURI(filepath.Join(rootPath, srcPath)))
-			}
-		}
-		loc := protocol.Location{
-			URI:   declURI,
-			Range: spanToRange(s.checkedLineMap(span.SourceID), span),
-		}
+	case *ast.IdentPat:
+		return identPatNameSpan(decl, src)
+	case *ast.ObjShorthandPat:
+		return decl.Key.Span()
+	}
+	return decl.Span()
+}
 
-		return loc, nil
-	default:
-		return nil, fmt.Errorf("textDocument/definition: node is not an IdentExpr")
+// identPatNameSpan returns the span of the name ip binds. The pattern's own span also
+// covers a leading `mut`, a type annotation, and a default, and the pattern keeps no
+// span of the name alone. The name follows the `mut` and any whitespace after it in
+// src's text, so it is found there.
+func identPatNameSpan(ip *ast.IdentPat, src *ast.Source) ast.Span {
+	span := ip.Span()
+	start := span.Start.Offset
+	if ip.Mutable && src != nil {
+		start += len("mut")
+		for start < len(src.Contents) && strings.ContainsRune(" \t\r\n", rune(src.Contents[start])) {
+			start++
+		}
+	}
+	return ast.Span{
+		Start:    ast.Location{Offset: start},
+		End:      ast.Location{Offset: start + len(ip.Name)},
+		SourceID: span.SourceID,
 	}
 }
 
@@ -216,22 +261,23 @@ func (server *Server) textDocumentHover(context *glsp.Context, params *protocol.
 	sourceID := server.sourceIDForURI(params.TextDocument.URI)
 	server.mu.RLock()
 	var hoverNode ast.Node
+	var info *solver.Info
 	if co := server.checkOutput; co != nil {
 		hoverNode = findNodeAtLocation(co, sourceID, loc)
+		info = co.InfoFor(sourceID)
 	}
 	server.mu.RUnlock()
-	if hoverNode != nil {
-		switch node := hoverNode.(type) {
-		case ast.Expr:
-			if node.InferredType() != nil {
-				value = "`" + node.InferredType().String() + "`"
+	switch node := hoverNode.(type) {
+	case ast.Expr, ast.Pat:
+		if info != nil {
+			if t := info.DisplayTypeOf(hoverNode); t != nil {
+				value = "`" + soltype.PrintAsScheme(t) + "`"
 			}
-		case ast.Pat:
-			if node.InferredType() != nil {
-				value = "`" + node.InferredType().String() + "`"
-			}
-		default:
-			// do nothing
+			break
+		}
+		// The old checker records no Info, and writes each type onto its node.
+		if typed, ok := node.(interface{ InferredType() ast.Type }); ok && typed.InferredType() != nil {
+			value = "`" + typed.InferredType().String() + "`"
 		}
 	}
 
@@ -455,6 +501,11 @@ func (server *Server) validateBinScript(
 	// Update only this script's entries in the existing checkOutput.
 	co.Scripts[triggerSourceID] = result.Script
 	co.ScriptScopes[triggerSourceID] = result.Scope
+	if result.Info != nil {
+		co.ScriptInfos[triggerSourceID] = result.Info
+	} else {
+		delete(co.ScriptInfos, triggerSourceID)
+	}
 	// The new AST's spans index the text just parsed, so the source has to move
 	// with them. Keeping the one the last full check stored would convert the
 	// new offsets against stale text.
