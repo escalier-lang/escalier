@@ -249,6 +249,8 @@ type checker struct {
 	ambient *Scope
 	// noAmbientNames is Options.NoAmbientNames for this run.
 	noAmbientNames bool
+	// checkJsDecorators is Options.CheckJsDecorators for this run.
+	checkJsDecorators bool
 	// regexpReported is set once the run has reported that it loaded no usable `RegExp`,
 	// so a second regex literal does not report it again.
 	regexpReported bool

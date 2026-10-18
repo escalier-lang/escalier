@@ -19,7 +19,11 @@ type Diagnostic interface {
 
 // newBackend returns the checker every entry point runs, configured by config.
 func newBackend(config PackageConfig) backend {
-	return solverBackend{options: solver.Options{NoAmbientNames: config.NoAmbientNames}}
+	return solverBackend{options: solver.Options{
+		NoAmbientNames: config.NoAmbientNames,
+		// The compiler lowers each pseudo-package value to the JS its `@js` names.
+		CheckJsDecorators: true,
+	}}
 }
 
 // backend is the compiler's view of a type checker. Each entry point builds one through

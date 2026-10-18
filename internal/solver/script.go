@@ -65,6 +65,7 @@ func inferScriptWithGroups(
 	c.groupSource = groupSource
 	c.groups = groups
 	c.noAmbientNames = opts.NoAmbientNames
+	c.checkJsDecorators = opts.CheckJsDecorators
 	c.bindAmbientExports()
 	return c.inferScriptIn(c.ambientScope().Child(), script)
 }

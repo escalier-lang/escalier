@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/escalier-lang/escalier/internal/ast"
@@ -634,12 +635,22 @@ func TestCoreImportShadowingNamesTheAliasItBound(t *testing.T) {
 	}, errorMessagesOf(res.Errors))
 }
 
+// withJsPreludeClasses is withPreludeClasses with a `@js` decorator on each prelude class, so
+// the prelude keeps the rules Options.CheckJsDecorators holds a pseudo-package to.
+func withJsPreludeClasses(files map[string]string) map[string]string {
+	merged := withPreludeClasses(files)
+	merged["std/prelude.esc"] = strings.NewReplacer(
+		"export declare class Array", "@js(\"Array\")\nexport declare class Array",
+		"export declare class Promise", "@js(\"Promise\")\nexport declare class Promise",
+	).Replace(merged["std/prelude.esc"])
+	return merged
+}
+
 // TestPseudoPackageLoaderRules covers the `@js` rules a pseudo-package file is held to when
-// an import loads it. Every exported value carries `@js` with one string-literal argument,
-// and every declaration is exported. Each diagnostic names the file and is anchored to the
-// `import` that loaded it.
+// an import loads it under Options.CheckJsDecorators. Every exported value carries `@js` with
+// one string-literal argument, and every value is exported. Each diagnostic names the file
+// and is anchored to the `import` that loaded it.
 func TestPseudoPackageLoaderRules(t *testing.T) {
-	t.Skip("internal/solver does not enforce the @js loader rules, #2101")
 	tests := []struct {
 		name string
 		file string
@@ -651,19 +662,23 @@ func TestPseudoPackageLoaderRules(t *testing.T) {
 			file: "@js(\"parseInt\")\nexport declare fn foo() -> number\nexport declare type Helper = number",
 		},
 		{
+			name: "an unexported type",
+			file: "declare type Helper = number\nexport declare type Pub = Helper",
+		},
+		{
 			name: "an exported value with no @js",
 			file: "export val PI: number = 3.14",
 			want: []string{"exported value \"PI\" in pseudo-package file %s is missing an `@js(\"...\")` decorator"},
 		},
 		{
+			name: "an exported class with no @js",
+			file: "export declare class Point { x: number }",
+			want: []string{"exported class \"Point\" in pseudo-package file %s is missing an `@js(\"...\")` decorator"},
+		},
+		{
 			name: "an unexported value",
 			file: "@js(\"helper\")\ndeclare val helper: number",
 			want: []string{"unexported value \"helper\" in pseudo-package file %s has no runtime mapping; add `export` (and an `@js(...)` decorator) or remove the declaration"},
-		},
-		{
-			name: "an unexported type",
-			file: "declare type Helper = number",
-			want: []string{"unexported type \"Helper\" in pseudo-package file %s would leak to importers through the shared package namespace; add `export` or remove the declaration"},
 		},
 		{
 			name: "an @js with a non-string argument",
@@ -678,8 +693,9 @@ func TestPseudoPackageLoaderRules(t *testing.T) {
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
-			dir := seedStdlib(t, withPreludeClasses(map[string]string{"std/example.esc": test.file}))
-			res := InferModuleWithSource(parseModule(t, `import "std:example"`), StdlibSource(dir))
+			dir := seedStdlib(t, withJsPreludeClasses(map[string]string{"std/example.esc": test.file}))
+			res := inferModuleWithGroups(parseModule(t, `import "std:example"`), StdlibSource(dir), nil, nil,
+				Options{CheckJsDecorators: true})
 			path := filepath.Join(dir, "std", "example.esc")
 			want := make([]string, len(test.want))
 			for i, w := range test.want {
@@ -692,4 +708,34 @@ func TestPseudoPackageLoaderRules(t *testing.T) {
 			require.Equal(t, want, errorMessagesOf(res.Errors))
 		})
 	}
+}
+
+// TestPseudoPackageLoaderRulesInAGroup asserts that a member of a cyclic group is held to the
+// `@js` rules on its own, and that its diagnostic names the member's file.
+func TestPseudoPackageLoaderRulesInAGroup(t *testing.T) {
+	dir := seedStdlib(t, withJsPreludeClasses(map[string]string{
+		"std/alpha.esc": "import \"std:beta\"\n@js(\"Alpha\")\nexport declare class Alpha { partner: beta.Beta }",
+		"std/beta.esc":  "import \"std:alpha\"\nexport declare class Beta { partner: alpha.Alpha }",
+	}))
+	res := InferModuleAgainstStdlib(parseModule(t, `import "std:alpha"`), dir, Options{CheckJsDecorators: true})
+	require.Equal(t, []string{
+		fmt.Sprintf("exported class \"Beta\" in pseudo-package file %s is missing an `@js(\"...\")` decorator",
+			filepath.Join(dir, "std", "beta.esc")),
+	}, errorMessagesOf(res.Errors))
+}
+
+// TestAnUnexportedPseudoPackageTypeIsUnreachable asserts that an importer cannot name a type a
+// pseudo-package declares without `export`, which is why the `@js` rules leave such a type
+// alone.
+func TestAnUnexportedPseudoPackageTypeIsUnreachable(t *testing.T) {
+	dir := seedStdlib(t, withPreludeClasses(map[string]string{"std/example.esc": "declare type Helper = number"}))
+	res := InferModuleWithSource(parseModule(t, "import \"std:example\"\ndeclare val x: example.Helper"), StdlibSource(dir))
+	require.Equal(t, []string{"cannot find type `example.Helper`"}, errorMessagesOf(res.Errors))
+}
+
+// TestTheCommittedTreeKeepsTheLoaderRules asserts that every ambient package in the committed
+// tree loads with no `@js` diagnostic.
+func TestTheCommittedTreeKeepsTheLoaderRules(t *testing.T) {
+	res := InferModuleAgainstStdlib(parseModule(t, `val x = 1`), benchTree, Options{CheckJsDecorators: true})
+	require.Empty(t, errorMessagesOf(res.Errors))
 }
