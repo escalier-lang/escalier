@@ -578,9 +578,9 @@ func (r rewriter) body(body string) (string, string) {
 					// JavaScript folds the class before it complements it, and foldTree
 					// would fold the complement. So the class is written out folded and
 					// complemented here.
-					class, ok := foldedComplement("[" + string(out.Bytes()[classStart+2:]))
-					if !ok {
-						return "", "uses a character class RE2 cannot parse"
+					class, err := foldedComplement("[" + string(out.Bytes()[classStart+2:]))
+					if err != nil {
+						return "", "does not compile: " + err.Error()
 					}
 					out.Truncate(classStart)
 					out.WriteString(class)

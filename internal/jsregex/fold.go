@@ -84,29 +84,25 @@ func foldTree(re *syntax.Regexp) {
 // foldedComplement returns an RE2 class matching what the negated JavaScript class `[^…]`
 // matches under the `i` flag without the `u` flag. class is the RE2 source of the class
 // without its `^`. JavaScript folds the class's characters and then takes the complement, so
-// `[^a]` matches neither `a` nor `A`. It reports false when class does not parse as a class.
-func foldedComplement(class string) (string, bool) {
+// `[^a]` matches neither `a` nor `A`. It returns the error RE2 reports when class does not
+// parse.
+func foldedComplement(class string) (string, error) {
 	re, err := syntax.Parse(class, syntax.Perl)
 	if err != nil {
-		return "", false
+		return "", err
 	}
 	var pairs []rune
 	switch re.Op {
-	case syntax.OpCharClass:
-		pairs = re.Rune
 	case syntax.OpLiteral:
 		for _, r := range re.Rune {
 			pairs = append(pairs, literalRanges(r, re.Flags)...)
 		}
 	case syntax.OpAnyChar:
 		pairs = []rune{0, unicode.MaxRune}
-	case syntax.OpAnyCharNotNL:
-		pairs = []rune{0, '\n' - 1, '\n' + 1, unicode.MaxRune}
-	case syntax.OpNoMatch:
 	default:
-		return "", false
+		pairs = re.Rune
 	}
-	return spellClass(complementRanges(foldRanges(pairs))), true
+	return spellClass(complementRanges(foldRanges(pairs))), nil
 }
 
 // foldRanges returns the rune ranges in pairs, each a low and a high bound, widened to every
