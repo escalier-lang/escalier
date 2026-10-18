@@ -45,9 +45,9 @@ func TestInferRegexType(t *testing.T) {
 			want: `/^a/`,
 		},
 		{
-			name:     "a regex type is not a different regex type",
-			src:      `declare val r: /^a/` + "\n" + `val v: /^a+/ = r`,
-			wantErrs: []string{`2:16-2:17: cannot constrain /^a/ <: /^a+/`},
+			name:     "a regex type is not a regex type matching fewer strings",
+			src:      `declare val r: /^a+/` + "\n" + `val v: /^aa/ = r`,
+			wantErrs: []string{`2:16-2:17: cannot constrain /^a+/ <: /^aa/`},
 		},
 		{
 			name: "the i flag matches without case",
@@ -341,6 +341,7 @@ func TestInferRegexTypeComplement(t *testing.T) {
 		type OnlyDigits<T> = if T : /^\d+$/ { T } else { never }
 		type D = /^\d+$/
 		type NotD<T> = if T : D { never } else { T }
+		type ThreeDigits<T> = if T : /^\d{3}$/ { "yes" } else { "no" }
 	`
 	tests := []struct {
 		name string
@@ -357,12 +358,72 @@ func TestInferRegexTypeComplement(t *testing.T) {
 		// complement.
 		{"BothBranchesJoin", `StripUnderscores<string>`, `/^[a-zA-Z][a-zA-Z0-9]*$/ | string & ~/^_*(?<Ident>[a-zA-Z][a-zA-Z0-9]*)_*$/`},
 		{"AStringAlreadyExcludingTheRegexTakesElse", `NotDigits<NotDigits<string>>`, `string & ~/^\d+$/`},
+		// `/^\d+$/` matches every string `/^\d{3}$/` does, so its complement leaves none of them.
+		{"AStringExcludingAContainingRegexTakesElse", `ThreeDigits<string & ~/^\d+$/>`, `"no"`},
+		{"AStringExcludingAnOverlappingRegexSplits", `ThreeDigits<string & ~/^1/>`, `"yes" | "no"`},
 		{"AMatchingLiteralTakesThen", `NotDigits<"12">`, `never`},
 		{"ARejectedLiteralTakesElse", `NotDigits<"ab">`, `"ab"`},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			nodes, ctx, errs := inferTypeNodes(t, decls+"type Result = "+tt.src)
+			require.Empty(t, errs)
+			require.Equal(t, tt.want, soltype.Print(expandAliasResidual(ctx, nodes["Result"])))
+		})
+	}
+}
+
+// TestInferRegexSubtype covers a regex type checked against another regex type. It passes
+// when the second pattern matches every string the first does.
+func TestInferRegexSubtype(t *testing.T) {
+	tests := []struct {
+		name     string
+		sub, sup string
+		wantErrs []string
+	}{
+		{name: "AFixedCountInARun", sub: `/^\d{3}$/`, sup: `/^\d+$/`},
+		{name: "AlternativesInAClass", sub: `/^(?:cat|dog)$/`, sup: `/^[a-z]+$/`},
+		{name: "TheSameLanguageWrittenDifferently", sub: `/^\d+$/`, sup: `/^[0-9]+$/`},
+		{name: "AnAnchoredPatternInAnUnanchoredOne", sub: `/^\d+$/`, sup: `/\d/`},
+		{name: "TheIFlagOnTheSupertype", sub: `/^abc$/`, sup: `/^abc$/i`},
+		{
+			name:     "ARunInAFixedCount",
+			sub:      `/^\d+$/`,
+			sup:      `/^\d{3}$/`,
+			wantErrs: []string{`2:20-2:21: cannot constrain /^\d+$/ <: /^\d{3}$/`},
+		},
+		{
+			name:     "TheIFlagOnTheSubtype",
+			sub:      `/^abc$/i`,
+			sup:      `/^abc$/`,
+			wantErrs: []string{`2:18-2:19: cannot constrain /^abc$/i <: /^abc$/`},
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			src := "declare val r: " + tt.sub + "\nval v: " + tt.sup + " = r"
+			_, _, errs := inferSource(t, src)
+			require.Equal(t, tt.wantErrs, messagesWithSpan(t, errs))
+		})
+	}
+}
+
+// TestInferRegexTypesCombine covers a union and a meet of two regex types. When one pattern
+// contains the other, the union keeps the wider type and the meet keeps the narrower one.
+func TestInferRegexTypesCombine(t *testing.T) {
+	tests := []struct {
+		name string
+		src  string
+		want string
+	}{
+		{"AUnionKeepsTheWiderType", `/^\d{3}$/ | /^\d+$/`, `/^\d+$/`},
+		{"AMeetKeepsTheNarrowerType", `/^\d+$/ & /^\d{3}$/`, `/^\d{3}$/`},
+		{"AUnionOfOverlappingTypesStays", `/^a/ | /b$/`, `/^a/ | /b$/`},
+		{"AMeetOfOverlappingTypesStays", `/^a/ & /b$/`, `/^a/ & /b$/`},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			nodes, ctx, errs := inferTypeNodes(t, "type Result = "+tt.src)
 			require.Empty(t, errs)
 			require.Equal(t, tt.want, soltype.Print(expandAliasResidual(ctx, nodes["Result"])))
 		})

@@ -1982,10 +1982,10 @@ func (c *Context) constrain(sub, super soltype.Type, seen *seenPairs, mutCtx boo
 		}
 	case *soltype.RegexType:
 		// A regex type is a subtype of `string` the way a string literal is, and of another regex
-		// type only when the two were written alike. Whether one pattern admits every string
-		// another does is not something the checker decides.
+		// type when the other's pattern matches every string its own does. `/^\d{3}$/` is then a
+		// subtype of `/^\d+$/`. A pair Contains cannot decide is rejected.
 		if sup, ok := super.(*soltype.RegexType); ok {
-			if sub.Source == sup.Source {
+			if sub.Source == sup.Source || sup.Pattern.Contains(sub.Pattern) {
 				return c.constrainRegexGroups(sup, seen, mutCtx)
 			}
 			return []SolverError{&CannotConstrainError{Sub: sub, Super: sup}}

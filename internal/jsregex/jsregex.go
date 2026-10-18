@@ -62,6 +62,10 @@ type Pattern struct {
 	flags string
 	// body is the literal's source between its slashes.
 	body string
+	// goBody is body rewritten into RE2 syntax, without the flag group goFlags holds.
+	goBody string
+	// goFlags holds the Go flags the literal's flags map to, such as "im".
+	goFlags string
 	// groupSpans holds where in body each group of each name sits, in the order of the group's
 	// Indices.
 	groupSpans map[string][]groupSpan
@@ -70,6 +74,9 @@ type Pattern struct {
 
 	shadowOnce sync.Once
 	shadowed   []Shadowed
+
+	searchOnce sync.Once
+	search     *syntax.Prog
 }
 
 // Group is one name a pattern's named capture groups use.
@@ -142,6 +149,7 @@ func Compile(source string) (*Pattern, string) {
 	if sticky {
 		pattern = `\A(?:` + pattern + `)`
 	}
+	goBody := pattern
 	if goFlags.Len() > 0 {
 		pattern = "(?" + goFlags.String() + ")" + pattern
 	}
@@ -156,7 +164,16 @@ func Compile(source string) (*Pattern, string) {
 			groups[i].Bodies = append(groups[i].Bodies, gs.body.text(body))
 		}
 	}
-	return &Pattern{re: re, units: !unicode, flags: flags, body: body, groupSpans: spans, Groups: groups}, ""
+	return &Pattern{
+		re:         re,
+		units:      !unicode,
+		flags:      flags,
+		body:       body,
+		goBody:     goBody,
+		goFlags:    goFlags.String(),
+		groupSpans: spans,
+		Groups:     groups,
+	}, ""
 }
 
 // CaptureSources returns a regex literal for each group named by g, in the order of
