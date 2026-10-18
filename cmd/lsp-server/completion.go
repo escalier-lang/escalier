@@ -2,6 +2,7 @@ package main
 
 import (
 	"encoding/json"
+	"slices"
 	"sort"
 	"strings"
 	"time"
@@ -721,8 +722,9 @@ func completionsFromUnionType(u *type_system.UnionType, scope *checker.Scope, re
 }
 
 // unionCompletions merges the member completions of a union's variants, one set per
-// variant. A member any variant has is offered. When a variant lacks the member or
-// declares it optional, its detail gains `| undefined`.
+// variant. A member any variant has is offered. When the variants give it different
+// types, its detail joins them with ` | `. When a variant lacks the member or declares it
+// optional, its detail gains `| undefined`.
 func unionCompletions(sets [][]protocol.CompletionItem) []protocol.CompletionItem {
 	allSets := keyedCompletionSets(sets)
 	if len(allSets) == 0 {
@@ -737,21 +739,28 @@ func unionCompletions(sets [][]protocol.CompletionItem) []protocol.CompletionIte
 				continue
 			}
 			seen[key] = true
-			// Check if this property is absent or optional in any variant.
+			// Collect the distinct details the variants give the member, and note whether
+			// some variant lacks it or declares it optional.
 			needsUndefined := false
+			var details []string
 			for _, other := range allSets {
 				otherItem, ok := other[key]
 				if !ok {
 					needsUndefined = true
-					break
+					continue
 				}
 				if isOptionalCompletion(otherItem) {
 					needsUndefined = true
-					break
+				}
+				if otherItem.Detail != nil && !slices.Contains(details, *otherItem.Detail) {
+					details = append(details, *otherItem.Detail)
 				}
 			}
-			if needsUndefined && item.Detail != nil {
-				detail := *item.Detail + " | undefined"
+			if len(details) > 0 {
+				if needsUndefined {
+					details = append(details, "undefined")
+				}
+				detail := strings.Join(details, " | ")
 				item.Detail = &detail
 			}
 			items = append(items, item)
