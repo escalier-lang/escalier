@@ -1059,6 +1059,16 @@ func (c *checker) recordBorrowEdges(destVarID int, init ast.Expr) {
 	c.recordBorrowSources(root, nil, init)
 }
 
+// addCaptureEdges records a capture edge from root at base to each local of the current body
+// that closure captures, other than root itself.
+func (c *checker) addCaptureEdges(root liveness.VarID, base []placeSeg, closure ast.Func) {
+	for _, captured := range c.fn.capturedLocals[closure] {
+		if captured.root != root {
+			c.addEdge(root, fieldBorrow{path: base, referent: captured.root, mut: captured.mut, capture: true})
+		}
+	}
+}
+
 // recordBorrowSources records the borrow edges the expression e contributes to the binding
 // `root`, at `base`, the field path reached so far:
 //
@@ -1104,11 +1114,7 @@ func (c *checker) recordBorrowSources(root liveness.VarID, base []placeSeg, e as
 	case *ast.ArraySpreadExpr:
 		c.recordBorrowSources(root, base, e.Value)
 	case *ast.FuncExpr:
-		for _, captured := range c.fn.capturedLocals[e] {
-			if captured.root != root {
-				c.addEdge(root, fieldBorrow{path: base, referent: captured.root, mut: captured.mut, capture: true})
-			}
-		}
+		c.addCaptureEdges(root, base, e)
 	case *ast.CallExpr, *ast.TaggedTemplateLitExpr:
 		return
 	default:

@@ -614,6 +614,22 @@ func TestScriptFnCaptureParity(t *testing.T) {
 	}
 }
 
+// TestScriptFnNonReturningBlamedAtName asserts that a script-level `fn` whose body cannot
+// return is reported at its name, as a module-level `fn` is. `cons` reads the script's `n`,
+// so it is typed through the capture path a script `fn` with captures takes.
+func TestScriptFnNonReturningBlamedAtName(t *testing.T) {
+	src := `val n = 1
+fn cons(x: number) { return {head: n, tail: cons(x)} }`
+	want := []string{nonReturningMsg("2:4-2:8", "cons",
+		"fn (x: number) -> {head: 1, tail: μX0.{head: 1, tail: X0}}")}
+
+	_, _, scriptErrs := inferScriptSource(t, src)
+	require.Equal(t, want, messagesWithSpan(t, scriptErrs))
+
+	_, _, moduleErrs := inferSource(t, src)
+	require.Equal(t, want, messagesWithSpan(t, moduleErrs))
+}
+
 // TestScriptLinearScoping asserts the defining difference between a script and a
 // module: a script's top-level statements are a linear body, so a binding sees only
 // the ones before it. The same source that forward-references a later binding is an

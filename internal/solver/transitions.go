@@ -500,11 +500,11 @@ func (c *checker) trackAliasesForIdentPat(
 // closure captures from the current body. The alias is mutable when the closure writes the
 // capture. A capture's conflicts with other borrows are checked through the loans
 // takeCaptureLoan records for it, not here.
-func (c *checker) trackCapturedAliases(scope *Scope, funcExpr *ast.FuncExpr, closureVarID liveness.VarID) {
+func (c *checker) trackCapturedAliases(scope *Scope, closure ast.Func, closureVarID liveness.VarID) {
 	if c.fn.aliases == nil {
 		return
 	}
-	for _, capture := range c.closureCaptures(funcExpr) {
+	for _, capture := range c.closureCaptures(closure) {
 		// GetValue returns the innermost binding, so shadowing resolves to the name in
 		// scope at the capture site.
 		b, found := scope.GetValue(capture.Name)
@@ -687,14 +687,14 @@ func (c *checker) varIDToName(id liveness.VarID) string {
 // recv is the body's receiver, nil when the body has none. A receiver is not an entry in
 // astParams, so the rename pass defines `self` as an extra parameter of the body.
 //
-// `closure` is the function expression whose body this is, nil for any other body. Each local
-// it captures from an enclosing body is defined as an extra parameter of the body too, so a
-// place rooted at the capture is tracked inside the closure. The captures are recorded for
-// closureCaptures to return.
+// `closure` is the function whose body this is when that function is written inside an
+// enclosing body, and nil for any other body. Each local it captures from the enclosing body is
+// defined as an extra parameter of the body too, so a place rooted at the capture is tracked
+// inside the closure. The captures are recorded for closureCaptures to return.
 //
 // The returned map holds the VarID the rename assigned to each extra parameter, keyed by
 // name: `self` and every captured local.
-func (c *checker) runLivenessPrePass(scope *Scope, astParams []*ast.Param, recv *ast.MethodReceiver, closure *ast.FuncExpr, paramTypes map[string]soltype.Type, body *ast.Block) map[string]liveness.VarID {
+func (c *checker) runLivenessPrePass(scope *Scope, astParams []*ast.Param, recv *ast.MethodReceiver, closure ast.Func, paramTypes map[string]soltype.Type, body *ast.Block) map[string]liveness.VarID {
 	// Build outer bindings from the scope chain. Every value binding accessible from
 	// the current scope gets a negative VarID so the rename pass can distinguish
 	// local from non-local variables.
@@ -713,14 +713,14 @@ func (c *checker) runLivenessPrePass(scope *Scope, astParams []*ast.Param, recv 
 	}
 	firstID := liveness.VarID(c.varIDCounter)
 	var captured []string
-	// selfName is the name a script `fn` declaration's body calls itself by, empty for any
-	// other body.
+	// selfName is the name a function declaration's body calls itself by, empty for any other
+	// body.
 	selfName := ""
 	if closure != nil {
 		captured = c.collectClosureCaptures(scope, closure, outerBindings)
 		extraParams = append(extraParams, captured...)
 		// A parameter of the same name shadows the function's own name for the whole body.
-		if fd, ok := c.closureDecls[closure]; ok && !paramsBind(astParams, fd.Name.Name) {
+		if fd, ok := closure.(*ast.FuncDecl); ok && fd.Name != nil && !paramsBind(astParams, fd.Name.Name) {
 			selfName = fd.Name.Name
 			extraParams = append(extraParams, selfName)
 		}
@@ -794,7 +794,7 @@ func paramsBind(params []*ast.Param, name string) bool {
 // to the VarID the body's rename gave it. A call of selfID inside the body then takes the
 // loans of the closure's captures, the way a call of the closure's name outside it does.
 // A capture with value semantics gets no edge, matching recordCaptureLoans.
-func (c *checker) seedSelfCaptureEdges(scope *Scope, closure *ast.FuncExpr, selfID liveness.VarID, ids map[string]liveness.VarID) {
+func (c *checker) seedSelfCaptureEdges(scope *Scope, closure ast.Func, selfID liveness.VarID, ids map[string]liveness.VarID) {
 	c.fn.aliases.NewValue(selfID, liveness.AliasImmutable)
 	for _, capture := range c.closureCaptures(closure) {
 		id, ok := ids[capture.Name]
@@ -817,10 +817,10 @@ func (c *checker) seedSelfCaptureEdges(scope *Scope, closure *ast.FuncExpr, self
 // liveness.ClosureCaptures renames the closure's body and the bodies nested in it. The
 // pre-pass renames the closure's body again right after this, and each nested body is renamed
 // by its own pre-pass before the walk reaches it.
-func (c *checker) collectClosureCaptures(scope *Scope, closure *ast.FuncExpr, outerBindings map[string]liveness.VarID) []string {
+func (c *checker) collectClosureCaptures(scope *Scope, closure ast.Func, outerBindings map[string]liveness.VarID) []string {
 	captures := liveness.ClosureCaptures(closure, outerBindings)
 	if c.closureCaptureInfo == nil {
-		c.closureCaptureInfo = map[*ast.FuncExpr][]liveness.CaptureInfo{}
+		c.closureCaptureInfo = map[ast.Func][]liveness.CaptureInfo{}
 	}
 	c.closureCaptureInfo[closure] = captures
 	var names []string
@@ -836,7 +836,7 @@ func (c *checker) collectClosureCaptures(scope *Scope, closure *ast.FuncExpr, ou
 // closureCaptures returns the variables `closure` captures from enclosing scopes and whether it
 // writes each one. A closure whose body has been walked returns what its pre-pass recorded.
 // Any other closure is analyzed on the spot.
-func (c *checker) closureCaptures(closure *ast.FuncExpr) []liveness.CaptureInfo {
+func (c *checker) closureCaptures(closure ast.Func) []liveness.CaptureInfo {
 	if captures, ok := c.closureCaptureInfo[closure]; ok {
 		return captures
 	}

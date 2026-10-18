@@ -31,15 +31,16 @@ type CaptureInfo struct {
 // as mutable even though primitives have value semantics. The caller
 // (trackCapturedAliases in the checker) is responsible for skipping alias
 // tracking for value types.
-func AnalyzeCaptures(funcExpr *ast.FuncExpr) []CaptureInfo {
-	if funcExpr.Body == nil || len(funcExpr.Body.Stmts) == 0 {
+func AnalyzeCaptures(fn ast.Func) []CaptureInfo {
+	body := fn.FuncBody()
+	if body == nil || len(body.Stmts) == 0 {
 		return nil
 	}
 
 	v := &captureVisitor{
 		captures: make(map[VarID]CaptureInfo),
 	}
-	funcExpr.Body.Accept(v)
+	body.Accept(v)
 	return v.sorted()
 }
 
@@ -53,18 +54,19 @@ func AnalyzeCaptures(funcExpr *ast.FuncExpr) []CaptureInfo {
 // outerBindings maps each name visible where `closure` is written to a negative VarID.
 // ClosureCaptures renames `closure`'s body and every body nested in it, so each body has to be
 // renamed again before anything reads its VarIDs.
-func ClosureCaptures(closure *ast.FuncExpr, outerBindings map[string]VarID) []CaptureInfo {
-	if closure.Body == nil {
+func ClosureCaptures(closure ast.Func, outerBindings map[string]VarID) []CaptureInfo {
+	body := closure.FuncBody()
+	if body == nil {
 		return nil
 	}
 	r := newRenamer(outerBindings, 1)
 	r.nested = true
-	r.renameNestedFunc(closure.Params, closure.Body)
+	r.renameNestedFunc(closure.Signature().Params, body)
 	v := &captureVisitor{
 		captures: make(map[VarID]CaptureInfo),
 		nested:   true,
 	}
-	closure.Body.Accept(v)
+	body.Accept(v)
 	return v.sorted()
 }
 
