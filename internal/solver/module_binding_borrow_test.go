@@ -37,7 +37,7 @@ func TestModuleBindingMovesAndBorrows(t *testing.T) {
 					peek()
 				}
 			`,
-			want: []string{"9:6-9:10: this call may run 'peek', which reads 'x' after it was moved"},
+			want: []string{"9:6-9:10: this call runs 'peek', which reads 'x' after it was moved"},
 		},
 		"CallWritesWhileBorrowed": {
 			src: decls + `
@@ -49,7 +49,7 @@ func TestModuleBindingMovesAndBorrows(t *testing.T) {
 					readRead(a, a)
 				}
 			`,
-			want: []string{"9:6-9:10: this call may run 'bump', which writes 'x' while it is borrowed as immutable"},
+			want: []string{"9:6-9:10: this call runs 'bump', which writes 'x' while it is borrowed as immutable"},
 		},
 		"CallReadsWhileBorrowed": {
 			src: decls + `
@@ -77,7 +77,7 @@ func TestModuleBindingMovesAndBorrows(t *testing.T) {
 					readRead(a, a)
 				}
 			`,
-			want: []string{"13:6-13:15: this call may run 'bumpTwice', which writes 'x' while it is borrowed as immutable"},
+			want: []string{"13:6-13:15: this call runs 'bumpTwice', which writes 'x' while it is borrowed as immutable"},
 		},
 		"ParameterShadowsAModuleBindingACalleeWrites": {
 			src: decls + `
@@ -86,6 +86,33 @@ func TestModuleBindingMovesAndBorrows(t *testing.T) {
 				fn test(x: {v: number}) {
 					val a = &x
 					bump()
+					readRead(a, a)
+				}
+			`,
+			want: nil,
+		},
+		"ClosureCallsAModuleFunctionThatWrites": {
+			src: decls + `
+				val mut x = {v: 1}
+				fn bump() { x.v = 5 }
+				fn test() {
+					val a = &x
+					val g = fn () { bump() }
+					g()
+					readRead(a, a)
+				}
+			`,
+			want: []string{"10:6-10:7: this call runs 'g', which writes 'x' while it is borrowed as immutable"},
+		},
+		"ClosureCallsAModuleFunctionBesideALocalOfTheSameName": {
+			src: decls + `
+				val mut x = {v: 1}
+				fn bump() { x.v = 5 }
+				fn test() {
+					val mut x = {v: 2}
+					val a = &x
+					val g = fn () { bump() }
+					g()
 					readRead(a, a)
 				}
 			`,

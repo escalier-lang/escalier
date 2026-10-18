@@ -589,10 +589,6 @@ func (c *checker) inferFunc(scope *Scope, lvl int, sig ast.FuncSig, body *ast.Bl
 		c.ctx.markTypeParamsRigid(typeParams, false)
 	}
 	if hasBody {
-		// A function inferred while a body is current is written inside that body and
-		// captures its locals. A script's `fn` declaration is one, since only a script's top
-		// level admits a declaration inside a body. A function inferred with no body current
-		// reaches the module's bindings instead.
 		var closure ast.Func
 		switch n := node.(type) {
 		case *ast.FuncExpr:
@@ -600,6 +596,11 @@ func (c *checker) inferFunc(scope *Scope, lvl int, sig ast.FuncSig, body *ast.Bl
 		case *ast.FuncDecl:
 			closure = n
 		}
+		// A function is enclosed when another body is being walked as it is inferred. Two kinds
+		// are: a function expression inside a function, and a `fn` declaration at a script's
+		// top level, whose enclosing body is the script. An enclosed function captures
+		// variables from that body. Any other function, such as a module's `fn` declaration,
+		// reads the module-level bindings directly.
 		enclosed := c.fn != nil
 		// PR3: open a fresh function context so every ReturnStmt encountered while
 		// walking the body lands in our own returns list (a nested fn inside this
@@ -2294,9 +2295,9 @@ func (c *checker) recordCallArgEffects(
 	// Neither depends on the signature, so a callee whose signature is still a variable
 	// takes these loans too. A recursive call of a script `fn` inside its own body has
 	// such a callee.
-	c.useClosureCaptures(e.Callee, consumeRef)
+	c.useClosureCaptures(e.Callee, consumeRef, true)
 	for _, arg := range e.Args {
-		c.useClosureCaptures(arg, consumeRef)
+		c.useClosureCaptures(arg, consumeRef, false)
 	}
 
 	if fn == nil {

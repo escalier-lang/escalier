@@ -73,6 +73,9 @@ type UseAfterMoveError struct {
 	// Via names the closure the call being blamed may run, when the read is that closure's
 	// access to what it captures. It is empty otherwise.
 	Via string
+	// ViaRuns marks a closure named by Via that the call is sure to run, because the call's
+	// callee names it.
+	ViaRuns bool
 	// ViaReads marks a closure named by Via that only reads the place. It is false for one
 	// that writes it.
 	ViaReads bool
@@ -100,7 +103,7 @@ func (e *UseAfterMoveError) Message() string {
 		if e.ViaReads {
 			access = "reads"
 		}
-		return fmt.Sprintf("this call may run '%s', which %s '%s' after it was moved", e.Via, access, e.Name)
+		return fmt.Sprintf("this call %s '%s', which %s '%s' after it was moved", runsVerb(e.ViaRuns), e.Via, access, e.Name)
 	}
 	return fmt.Sprintf("use of moved value '%s'", e.Name)
 }
@@ -120,6 +123,9 @@ type moveUse struct {
 	// via names the closure a call may run, for a read standing for that closure's access to
 	// what it captures during the call. It is empty for a read the program writes.
 	via string
+	// viaRuns marks a closure named by via that the call is sure to run, because the call's
+	// callee names it.
+	viaRuns bool
 	// viaReads marks a closure named by via that only reads the place. It is false for one
 	// that writes it.
 	viaReads bool
@@ -788,6 +794,7 @@ func (c *checker) checkUseAfterMoves() {
 			Partial:     partial,
 			Conditional: state == liveness.MaybeMoved,
 			Via:         u.via,
+			ViaRuns:     u.viaRuns,
 			ViaReads:    u.viaReads,
 			use:         u.node,
 			moveSite:    c.fn.moveNodes[movedID],
