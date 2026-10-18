@@ -181,6 +181,62 @@ func TestMemberObject(t *testing.T) {
 			expected: "{readonly a: number | string}",
 		},
 		{
+			name: "UnionOfAccessors",
+			src: `
+				declare val v: {get a(&self) -> number, set a(&mut self, v: number)} | {get a(&self) -> string}
+				val probe = v
+			`,
+			expected: "{readonly a: number | string}",
+		},
+		{
+			name: "UnionOfSetterAndProperty",
+			src: `
+				declare val v: {set a(&mut self, v: number)} | {a: string}
+				val probe = v
+			`,
+			expected: "{a?: string}",
+		},
+		{
+			name: "UnionOfSetters",
+			src: `
+				declare val v: {set a(&mut self, v: number)} | {set a(&mut self, v: string)}
+				val probe = v
+			`,
+			expected: "{set a(value: number)}",
+		},
+		{
+			name: "UnionOfMethodAndProperty",
+			src: `
+				declare val v: {m(&self) -> number} | {m: string}
+				val probe = v
+			`,
+			expected: "{readonly m: (fn () -> number) | string}",
+		},
+		{
+			name: "UnionOfOverloadedMethodAndProperty",
+			src: `
+				declare val v: {m(&self, x: number) -> number, m(&self, x: string) -> string} | {m: boolean}
+				val probe = v
+			`,
+			expected: "{readonly m: (fn (x: number) -> number) & (fn (x: string) -> string) | boolean}",
+		},
+		{
+			name: "UnionWithIndexSignature",
+			src: `
+				declare val v: {[K]: number for K in string} | {a: number}
+				val probe = v
+			`,
+			expected: "",
+		},
+		{
+			name: "UnionOfNullAndUndefined",
+			src: `
+				declare val v: null | undefined
+				val probe = v
+			`,
+			expected: "",
+		},
+		{
 			name: "UnionWithUnreducedMember",
 			src: `
 				fn f<T>(v: {[P]: T[P] for P in keyof T} | {a: number}) {

@@ -1589,8 +1589,8 @@ func (c *checker) objectMember(lvl int, blame ast.Node, name string, carrier sol
 
 // memberObject returns the object type whose elements are the members a value of type t
 // exposes, with every inference variable in them coalesced. It reads t the way a member
-// read off a value of type t does, except that a union reads as the merge unionMembers
-// builds. It returns false for an intersection, `never`, `unknown`, and an object built
+// read off a value of type t does, except that a union reads as the merge
+// unionMemberObject builds. It returns false for an intersection, `never`, `unknown`, and an object built
 // from a mapped type or a spread.
 //
 // It only reads the Context. Reducing a mapped type or a spread would mint variables, so
@@ -1600,7 +1600,7 @@ func (c *Context) memberObject(t soltype.Type) (*soltype.ObjectType, bool) {
 	// `typeof` reads as the type it expands to, and a borrow as what it borrows.
 	carrier := c.expandedCarrier(groundedCarrier(t))
 	if u, ok := carrier.(*soltype.UnionType); ok {
-		return c.unionMembers(u)
+		return c.unionMemberObject(u)
 	}
 	// A primitive, a literal or a unique symbol reads as its wrapper class's instance, such
 	// as `String` for `"abc"`.
@@ -1651,7 +1651,7 @@ func (c *Context) memberObject(t soltype.Type) (*soltype.ObjectType, bool) {
 	return coalesced, ok
 }
 
-// unionMembers returns one object holding every member some variant of u exposes, read
+// unionMemberObject returns one object holding every member some variant of u exposes, read
 // through memberObject. A `null` or `undefined` variant is skipped. The result is not a
 // supertype of u. It lists what a reader such as editor completion can offer after a dot.
 //
@@ -1661,10 +1661,9 @@ func (c *Context) memberObject(t soltype.Type) (*soltype.ObjectType, bool) {
 //   - Any other member becomes a property whose type is the union of what reading it yields
 //     in each variant. It is readonly unless every variant that has it can write it.
 //
-// `{a: number} | {b: string}` yields `{a?: number, b?: string}`. A member with no name, such
-// as an index signature, is dropped. It returns false when a variant exposes no fixed set of
-// members, or when every variant is `null` or `undefined`.
-func (c *Context) unionMembers(u *soltype.UnionType) (*soltype.ObjectType, bool) {
+// `{a: number} | {b: string}` yields `{a?: number, b?: string}`. It returns false when a
+// variant exposes no fixed set of members, or when every variant is `null` or `undefined`.
+func (c *Context) unionMemberObject(u *soltype.UnionType) (*soltype.ObjectType, bool) {
 	var objs []*soltype.ObjectType
 	for _, variant := range u.Types {
 		switch variant.(type) {
@@ -1688,9 +1687,6 @@ func (c *Context) unionMembers(u *soltype.UnionType) (*soltype.ObjectType, bool)
 		byName[i] = map[string][]soltype.ObjTypeElem{}
 		for _, elem := range obj.Elems {
 			name := soltype.ObjElemName(elem)
-			if name == "" {
-				continue
-			}
 			if !slices.Contains(names, name) {
 				names = append(names, name)
 			}
@@ -1704,7 +1700,7 @@ func (c *Context) unionMembers(u *soltype.UnionType) (*soltype.ObjectType, bool)
 	return merged, true
 }
 
-// mergedMember returns the element unionMembers lists for name, given each variant's
+// mergedMember returns the element unionMemberObject lists for name, given each variant's
 // elements keyed by name.
 func mergedMember(name string, byName []map[string][]soltype.ObjTypeElem) soltype.ObjTypeElem {
 	missing := false
