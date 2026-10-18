@@ -1667,10 +1667,8 @@ reduce through the M9 operator machinery.
   - **Cascading-error suppression + ordering/dedup.** Suppress derived errors that
     exist only because of an upstream failure, and order/dedup a file's diagnostics
     so one root cause doesn't read as ten.
-  - **Corpus-wide audit, differential against the old checker.** Run the audit over
-    the M8 fixture corpus with the old checker *still present* (this is why the
-    milestone precedes the M12 flip): its diagnostics are the parity baseline M12
-    deletes. Acceptance is a checklist applied corpus-wide — every error has a
+  - **Corpus-wide audit.** Run the audit over the M8 fixture corpus on the new
+    checker alone. Acceptance is a checklist applied corpus-wide — every error has a
     precise primary span, sensible related spans, consistent expected/actual
     framing, no duplicate/cascaded noise — with any per-feature wording fix filed in
     place.
@@ -1683,13 +1681,13 @@ reduce through the M9 operator machinery.
   polish here instead of being side-tracked chasing perfect diagnostics mid-feature.
 
   **Accept:** the audit checklist passes across the M8 corpus (precise primary span,
-  coherent related spans, no cascades/dupes), with no diagnostic worse than the old
-  checker's; a provenance chain renders its full why-chain to AST leaves; an
+  coherent related spans, no cascades/dupes); a provenance chain renders its full why-chain to AST leaves; an
   ident-use type error shows both the use (primary) and the definition ("defined
   here"). **Depends on:** M9 (full feature set ⇒ complete provenance DAG), M8
-  (fixture corpus + differential harness), M11 (the LSP rendering surface).
-  **Precedes:** M12 — the new checker's diagnostics should be at least at parity with
-  the old checker *before* the flip deletes the baseline.
+  (fixture corpus), M11 (the LSP rendering surface). It does not gate M12. Every
+  fixture already checks on the new checker, and no Escalier code outside this
+  repository depends on the old checker's diagnostics, so M12 deletes the old checker
+  without waiting for a parity comparison.
 - **M12 — Flip & cleanup.** Make the new checker the default; retire the old
   checker + its tests; **delete** the AST `inferredType` field, the
   `type Type = type_system.Type` alias, and `tools/gen_ast`'s generation of the
@@ -1781,9 +1779,8 @@ reduce through the M9 operator machinery.
   a small, independently-verifiable infra step (golden span fixtures) and does not
   enlarge M3's language-feature acceptance bar.
 - M11.5 (diagnostics capstone) is numbered `.5` for the same reason M2.5 is — to
-  slot between M11 and M12 without renumbering — and sits *before* the M12 flip on
-  purpose: the old checker is the parity baseline for the error-quality differential,
-  and M12 deletes it. It rides after M11 because the LSP is the rendering surface for
+  slot between M11 and M12 without renumbering. It does not gate M12, which deletes the
+  old checker without an error-quality differential against it. It rides after M11 because the LSP is the rendering surface for
   the multi-span/chain work, and after M9 because the provenance DAG it renders
   (the M3+ interior edges) isn't complete until the last feature lands. Folding the
   error-rendering gestalt into one late, corpus-driven pass is also what lets M3–M9
