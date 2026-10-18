@@ -383,9 +383,9 @@ func TestNeedsMutReceiver(t *testing.T) {
 		expected bool
 	}{
 		{name: "MutMethod", member: method(true), expected: true},
-		{name: "SharedMethod", member: method(false), expected: false},
+		{name: "ImmMethod", member: method(false), expected: false},
 		{name: "AllArmsMut", member: method(true, true), expected: true},
-		{name: "MixedArmsSharedFirst", member: method(false, true), expected: false},
+		{name: "MixedArmsImmFirst", member: method(false, true), expected: false},
 		{name: "MixedArmsMutFirst", member: method(true, false), expected: false},
 		{name: "NoArms", member: method(), expected: false},
 		{name: "Setter", member: &soltype.SetterElem{Name: "s"}, expected: true},
