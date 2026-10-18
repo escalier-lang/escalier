@@ -508,7 +508,9 @@ func runeClasses(progs ...*syntax.Prog) []rune {
 			case syntax.InstRune:
 				if len(inst.Rune) == 1 {
 					// A case-folding instruction reads each case of its rune, so every case
-					// bounds a class of its own.
+					// bounds a class of its own. Under `/k/iu` the instruction holds `k`
+					// alone but reads `K`, `k` and the Kelvin sign `\u212A`, so each of the
+					// three starts a class.
 					fold := syntax.Flags(inst.Arg)&syntax.FoldCase != 0
 					for r := inst.Rune[0]; ; r = unicode.SimpleFold(r) {
 						bounds.Add(r)
