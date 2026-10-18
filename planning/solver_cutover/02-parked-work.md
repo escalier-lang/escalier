@@ -65,7 +65,7 @@ the resume points below.
 | Regenerating the committed tree | builtins §6, §7 | P0's confirmed causes are solver gaps and need no regeneration. Its one unresolved cause may turn out to be a generator gap, and a regeneration is in P0's scope if it does |
 | M6 PR7, `if`-`val` and `val`-`else` | M6 | P2's harness says whether a fixture needs it |
 | M9 PR9f, regular-tree normalization | M9 | same |
-| M11.5, the diagnostics capstone | M11.5 | its precondition is the old checker still being in the tree, which P5 preserves and P7 ends |
+| M11.5, the diagnostics capstone | M11.5 | it is quality work on top of a working checker. P7.2 does not wait for it, so it runs without the old checker as a baseline |
 
 ## The three real regressions at the flip
 

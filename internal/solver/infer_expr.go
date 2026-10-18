@@ -5217,8 +5217,106 @@ func (c *checker) inferMatch(scope *Scope, lvl int, e *ast.MatchExpr) soltype.Ty
 	c.inferMatchArms(scope, lvl, e, unreachable, matchShape, scrutinee, c.freshAt(lvl))
 	c.checkUniformOwnership(e, w.bodies)
 	c.checkCondExhaustive(scope, lvl, w.norm, matchShape)
+	// The arms are judged against the same snapshot checkCondExhaustive reads. Covering
+	// asks more of the arms above than exhaustiveness does, so an arm below an exhaustive
+	// prefix can still go unreported, as the catch-all after `{x}` over a `{x?: number}` does.
+	c.reportCoveredArms(scope, lvl, e, w.arms, matchShape)
 	c.recordType(e, res)
 	return res
+}
+
+// reportCoveredArms reports a CoveredMatchArmError for each arm of e the walk reached whose
+// values the arms above it already cover. It finds the first arm whose preceding arms are
+// shown by condCoverage to cover every value of `shape`, then reports that arm and every walked
+// arm below it. `walked` holds the arms the walk typed. An arm it did not reach is below a
+// catch-all, which reportUnreachableArms reports instead.
+//
+// An unguarded arm with a nested sub-pattern that tests its value is left out of every
+// prefix. condCoverage reads such a sub-pattern as matching every value, so `{a: {x}}` would
+// count as covering `{a: {y: string}}` and the arm naming that member would be reported.
+// The arms around it still count, so `{a}` below `{a: {x}}` covers a `{a: {x?: number}}`.
+func (c *checker) reportCoveredArms(scope *Scope, lvl int, e *ast.MatchExpr, walked set.Set[ucs.Spanned], shape soltype.Type) {
+	for i := 1; i < len(e.Cases); i++ {
+		if !walked.Contains(e.Cases[i]) {
+			continue
+		}
+		if !c.prefixCovers(scope, lvl, e, i, shape) {
+			continue
+		}
+		for _, arm := range e.Cases[i:] {
+			if walked.Contains(arm) {
+				c.report(&CoveredMatchArmError{Arm: arm})
+			}
+		}
+		return
+	}
+}
+
+// prefixCovers reports whether the first n arms of e, less each unguarded arm with a nested
+// sub-pattern that tests its value, are shown by condCoverage to cover every value of `shape`.
+func (c *checker) prefixCovers(scope *Scope, lvl int, e *ast.MatchExpr, n int, shape soltype.Type) bool {
+	prefix := *e
+	prefix.Cases = nil
+	for _, arm := range e.Cases[:n] {
+		if arm.Guard == nil && hasNestedTest(arm.Pattern) {
+			continue
+		}
+		prefix.Cases = append(prefix.Cases, arm)
+	}
+	if len(prefix.Cases) == 0 {
+		return false
+	}
+	_, covered := c.condCoverage(scope, lvl, ucs.Normalize(ucs.DesugarMatch(&prefix)), shape)
+	return covered
+}
+
+// hasNestedTest reports whether p holds a sub-pattern below its top level that tests the
+// value it matches, as the `{x}` of `{a: {x}}` or the `1` of `[1, b]` does. The field list
+// of an instance pattern is its top level, so `Point{x}` holds none.
+func hasNestedTest(p ast.Pat) bool {
+	v := &nestedTestFinder{root: p, top: p}
+	if inst, ok := p.(*ast.InstancePat); ok {
+		v.top = inst.Object
+	}
+	p.Accept(v)
+	return v.found
+}
+
+// nestedTestFinder sets `found` on reaching a sub-pattern below `top` that tests its value.
+// `root` is the pattern the walk starts from, which is `top` or the instance pattern holding it.
+type nestedTestFinder struct {
+	ast.DefaultVisitor
+	root  ast.Pat
+	top   ast.Pat
+	found bool
+}
+
+// EnterExpr keeps the walk out of a default value, whose patterns test nothing about the
+// value the arm matches.
+func (v *nestedTestFinder) EnterExpr(ast.Expr) bool { return false }
+
+// EnterTypeAnn keeps the walk out of an annotation for the reason EnterExpr gives.
+func (v *nestedTestFinder) EnterTypeAnn(ast.TypeAnn) bool { return false }
+
+func (v *nestedTestFinder) EnterPat(p ast.Pat) bool {
+	if obj, ok := p.(*ast.ObjectPat); ok {
+		for _, elem := range obj.Elems {
+			if sh, isShorthand := elem.(*ast.ObjShorthandPat); isShorthand && sh.TypeAnn != nil {
+				v.found = true
+			}
+		}
+	}
+	if p != v.top && p != v.root {
+		switch p := p.(type) {
+		case *ast.ObjectPat, *ast.TuplePat, *ast.LitPat, *ast.InstancePat, *ast.ExtractorPat:
+			v.found = true
+		case *ast.IdentPat:
+			if p.TypeAnn != nil {
+				v.found = true
+			}
+		}
+	}
+	return !v.found
 }
 
 // reportUnreachableArms reports every untyped arm an unguarded catch-all above it covers,

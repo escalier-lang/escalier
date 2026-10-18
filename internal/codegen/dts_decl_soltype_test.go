@@ -129,7 +129,7 @@ func TestBuildDeclStmtFromSol(t *testing.T) {
 			want: "export declare function id<T0>(x: T0): T0;\n",
 		},
 		{
-			name:   "FnReturningNoValueDeclaresAVoidReturn",
+			name:   "FnReturningNoValueDeclaresAnUndefinedReturn",
 			source: `export fn log(msg: string) { console.log(msg) }`,
 			ns: &fakeSolNamespace{
 				values: map[string]soltype.Type{
@@ -137,18 +137,27 @@ func TestBuildDeclStmtFromSol(t *testing.T) {
 				},
 			},
 			isTopLevel: true,
-			want:       "export declare function log(msg: string): void;\n",
+			want:       "export declare function log(msg: string): undefined;\n",
 		},
 		{
-			// A `return` inside a nested function belongs to that function, so the
-			// outer body still returns no value.
-			name:   "FnWhoseNestedFunctionReturnsAValueDeclaresAVoidReturn",
-			source: `export fn run() { val f = fn () { return 1 } }`,
+			name:   "FnParamTypedUndefinedDeclaresIt",
+			source: `export fn f(x: undefined) -> number { return 1 }`,
 			ns: &fakeSolNamespace{
-				values: map[string]soltype.Type{"run": solFn(nil, &soltype.UndefinedType{})},
+				values: map[string]soltype.Type{
+					"f": solFn([]*soltype.FuncParam{solParam("x", &soltype.UndefinedType{})}, solNum()),
+				},
 			},
 			isTopLevel: true,
-			want:       "export declare function run(): void;\n",
+			want:       "export declare function f(x: undefined): number;\n",
+		},
+		{
+			name:   "ValPropertyTypedUndefinedDeclaresIt",
+			source: `export val o = {u: undefined}`,
+			ns: &fakeSolNamespace{
+				values: map[string]soltype.Type{"o": solObj(solProp("u", &soltype.UndefinedType{}))},
+			},
+			isTopLevel: true,
+			want:       "export declare const o: {u: undefined};\n",
 		},
 		{
 			name:   "FnWritingAnUndefinedReturnDeclaresIt",

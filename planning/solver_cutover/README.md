@@ -23,7 +23,7 @@ rotting, rebuild an ambient scope over what is left so `Math.PI` and
 `console.log` still resolve without an import, and point the compiler at the
 solver. `internal/checker/` stays in the tree afterwards, no longer the default
 but still reachable behind a flag and still imported by the LSP, until P6 ports
-the LSP and the diagnostics audit finishes. The flip becomes cheap because the
+the LSP. The flip becomes cheap because the
 expensive half of M12 is the deletion, not the switch.
 
 ## Documents

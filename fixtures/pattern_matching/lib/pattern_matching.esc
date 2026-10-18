@@ -74,16 +74,14 @@ export val mixedMatch = match num3 {
 // Tuple rest patterns
 export val longTuple: [number, number, number] = [1, 2, 3]
 export val tupleRestMatch = match longTuple {
-    [first = 0, ...rest] => rest,
-    _ => 0
+    [first = 0, ...rest] => rest
 }
 
 // Object rest patterns
 type ExtendedPoint = {x: number, y: number, z: number, name: string}
 export val extendedPoint: ExtendedPoint = {x: 1, y: 2, z: 3, name: "point"}
 export val objectRestMatch = match extendedPoint {
-    {x, y, ...rest} => rest,
-    _ => 0
+    {x, y, ...rest} => rest
 }
 
 declare val ref: {value: string | number | boolean}

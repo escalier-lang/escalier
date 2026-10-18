@@ -1204,15 +1204,15 @@ func TestInferMatchExactUnionMissingMember(t *testing.T) {
 // reads the scrutinee's shape from before any arm binds, so a guarded arm's foreign
 // literal does not leak into the union as a phantom uncovered member. The two
 // unguarded arms cover `"a" | "b"`, so the match is exhaustive despite the guarded
-// `"z"` arm.
+// `"z"` arm. The guarded arm comes first so that no arm sits below a covering prefix.
 func TestInferMatchExactUnionGuardedArmNoPhantomMember(t *testing.T) {
 	_, _, errs := inferSource(t, `
 		fn f(b: boolean) {
 			val x = if b { "a" } else { "b" }
 			return match x {
+				"z" if b => 3,
 				"a" => 1,
-				"b" => 2,
-				"z" if b => 3
+				"b" => 2
 			}
 		}
 	`)

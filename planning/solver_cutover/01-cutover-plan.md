@@ -23,15 +23,14 @@ plus `web:fetch`, and everything behind `web:dom` is not.
 **Split the M12 flip from the M12 deletion.** M12 reads as one step: default the
 compiler to the solver, retire `internal/checker`, delete the AST's
 `inferredType` field. Those have different prerequisites. Defaulting needs
-codegen to work. Deleting needs the LSP ported and the diagnostics audit done,
-because `cmd/lsp-server` imports `checker` and because M11.5 wants the old
-checker's diagnostics as its parity baseline.
+codegen to work. Deleting needs the LSP ported, because `cmd/lsp-server`
+imports `checker`.
 
 Keeping `internal/checker/` in the tree satisfies both and costs nothing but
 build time. After P5 it is no longer the compiler's default, and it stays
 reachable three ways: through P2's environment variable, through
-`cmd/lsp-server`, which imports it until P6, and through its own test suite,
-which is M11.5's parity baseline. P7 is what removes it.
+`cmd/lsp-server`, which imports it until P6, and through its own test suite.
+P7 is what removes it.
 
 ## Phase order
 
@@ -50,7 +49,7 @@ they do not read top to bottom; the "depends on" column is what binds.
 | 5 | P3 — JS emission | #1673 | — | P2.3 | one |
 | 6 | P5 — flip | #1677 | — | P0.7, P1.5, P1.7, P2, P3, P4.3 | one, and atomic by design |
 | 7 | P6 — LSP | #1678–#1682 | — | P5 | P6.1 to P6.3 independent; P6.4 and P6.5 follow P6.3 |
-| 8 | P7 — deletion | #1683–#1685 | — | P6, and M11.5 for P7.2 | sequential |
+| 8 | P7 — deletion | #1683–#1685 | — | P6 | sequential |
 
 **Seven have landed**, and #1671's harness turned P2.4 from one tracking issue
 into eight named causes, #1714 through #1721. Those were seeded from a real run
@@ -158,7 +157,6 @@ graph TD
         P71 --> P72 --> P73
     end
 
-    M115["M11.5 · diagnostics capstone"]
 
     P11 -.->|baseline to lower| P01 & P02 & P03 & P04 & P05 & P06
     P01 & P02 & P03 & P04 & P05 & P06 --> P07
@@ -172,7 +170,6 @@ graph TD
     P07 & P15c & P17b & P17c & P17d & P17e & P17f & P24 & P3 & P43 --> P5
     P5 --> P61 & P62 & P63
     P61 & P62 & P65 --> P71
-    M115 --> P72
 
     classDef landed fill:#eceff1,stroke:#90a4ae,stroke-dasharray:4 3,color:#000;
     class P01,P17a,P21,P22,P23,P41,P42 landed;
@@ -734,7 +731,7 @@ diagnostics changed beyond wording:
 
 **Not in scope.** Deleting anything. `internal/checker`, `internal/type_system`,
 the AST's `inferredType` field, and `internal/checker/tests` all stay, compiled
-and tested, as the parity baseline M11.5 needs.
+and tested, until P7 removes them.
 
 ---
 
@@ -798,8 +795,12 @@ on P6, so nothing outside `internal/checker` still reaches it.
 `internal/checker/tests`. Before this lands, port the assertions
 [02-parked-work.md](02-parked-work.md)§"What keeps the first two honest" names,
 so the `node_modules` and JSX gaps stay asserted rather than disappearing with
-the old checker's test files. Depends on M11.5, whose audit wants the old
-checker's diagnostics as its parity baseline.
+the old checker's test files.
+
+P7.2 does not wait for the M11.5 diagnostics audit. Every fixture already
+checks on the solver through P2's harness, which is the evidence the deletion
+needs. No Escalier code outside this repository depends on the old checker's
+diagnostics, so there is no consumer for a parity baseline to protect.
 
 **P7.3 [#1685](https://github.com/escalier-lang/escalier/issues/1685) — delete `internal/type_system` and the AST field.** Remove the package,
 re-home the two names `internal/ast` still carries — `type_system.Type` and
@@ -839,4 +840,5 @@ Stated plainly so nobody reads P5 as "the migration is finished":
   covers the common case it was meant to serve, so what is missing is the lazy
   part: a file pays for the whole ambient list rather than for the packages its
   literals actually reach.
-- Diagnostics quality has had no cross-cutting pass. M11.5 still owes that.
+- Diagnostics quality has had no cross-cutting pass. M11.5 still owes that, and
+  it runs against the solver alone, since P7.2 deletes the old checker first.

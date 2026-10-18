@@ -195,7 +195,7 @@ declare function g(): undefined;
 [TestEachDeclarationShapeEmitsDefinitions/AnAsyncNoValueReturn - 1]
 declare type C = {v: number};
 declare const C: {new (v: number): C};
-declare function bump(c: C): Promise<void>;
+declare function bump(c: C): Promise<undefined>;
 
 ---
 
@@ -337,7 +337,7 @@ declare function f(x: number): string;
 [TestEachDeclarationShapeEmitsDefinitions/ANoValueReturn - 1]
 declare type C = {v: number};
 declare const C: {new (v: number): C};
-declare function bump(c: C): void;
+declare function bump(c: C): undefined;
 
 ---
 

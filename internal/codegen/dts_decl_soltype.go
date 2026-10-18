@@ -484,19 +484,6 @@ func (b *Builder) buildFuncDeclFromSol(
 	localName := extractLocalName(decl.Name.Name)
 	render := b.solRenderer(names, localName, nil)
 	sig := render.declFuncTypeAnn(funcType)
-	// internal/checker gives `void` to a function whose return it infers from a body
-	// that returns no value, and `undefined` to one that writes `-> undefined` or
-	// returns `undefined` explicitly. soltype has one kind for both, so the source
-	// tells them apart. An `async fn` gets the same rewrite on its promise's value, so
-	// `async fn test() { … }` emits `test(): Promise<void>`.
-	// TODO(#1810): Drop this rewrite once internal/checker is retired.
-	if decl.Return == nil && !returnsValue(decl.Body) {
-		if _, isUndefined := funcType.Ret.(*soltype.UndefinedType); isUndefined {
-			sig.Return = NewVoidTypeAnn(nil)
-		} else if decl.Async {
-			undefinedPromiseValueAsVoid(sig.Return)
-		}
-	}
 
 	stmts := companionStmtsFromSol(render)
 	return append(stmts, &DeclStmt{
@@ -516,59 +503,6 @@ func (b *Builder) buildFuncDeclFromSol(
 		span:   nil,
 		source: nil,
 	})
-}
-
-// undefinedPromiseValueAsVoid rewrites ret's value argument to `void` in place when
-// ret is a rendered `Promise<undefined>`, and leaves any other type alone.
-func undefinedPromiseValueAsVoid(ret TypeAnn) {
-	ref, ok := ret.(*TypeRefTypeAnn)
-	if !ok || ref.Name != "Promise" || len(ref.TypeArgs) == 0 {
-		return
-	}
-	if _, isUndefined := ref.TypeArgs[0].(*UndefinedTypeAnn); isUndefined {
-		ref.TypeArgs[0] = NewVoidTypeAnn(nil)
-	}
-}
-
-// returnsValue reports whether body holds a `return` with an operand. A `return`
-// inside a nested function belongs to that function and is not counted. A nil body
-// returns no value.
-func returnsValue(body *ast.Block) bool {
-	if body == nil {
-		return false
-	}
-	finder := &valueReturnFinder{}
-	for _, stmt := range body.Stmts {
-		stmt.Accept(finder)
-		if finder.found {
-			return true
-		}
-	}
-	return false
-}
-
-// valueReturnFinder records whether the walk reached a `return` with an operand,
-// skipping the bodies of nested functions.
-type valueReturnFinder struct {
-	ast.DefaultVisitor
-	found bool
-}
-
-func (v *valueReturnFinder) EnterStmt(stmt ast.Stmt) bool {
-	if ret, ok := stmt.(*ast.ReturnStmt); ok && ret.Expr != nil {
-		v.found = true
-	}
-	return !v.found
-}
-
-func (v *valueReturnFinder) EnterExpr(expr ast.Expr) bool {
-	_, isFunc := expr.(*ast.FuncExpr)
-	return !v.found && !isFunc
-}
-
-func (v *valueReturnFinder) EnterDecl(decl ast.Decl) bool {
-	_, isFunc := decl.(*ast.FuncDecl)
-	return !v.found && !isFunc
 }
 
 // buildTypeDeclFromSol emits a type alias from the body registered under the
