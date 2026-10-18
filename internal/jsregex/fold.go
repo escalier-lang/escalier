@@ -6,16 +6,27 @@ import (
 	"sort"
 	"sync"
 	"unicode"
+	"unicode/utf8"
+
+	"golang.org/x/text/cases"
+	"golang.org/x/text/language"
 )
 
 // jsCanonical returns the rune JavaScript compares r by when a pattern with the `i` flag and
-// without the `u` flag matches it. That is r's uppercase form, unless the uppercase form is
-// ASCII and r is not, in which case r compares as itself.
+// without the `u` flag matches it. That is r's full uppercase form, read with upper. r
+// compares as itself when that form is more than one UTF-16 code unit, or when it is ASCII
+// and r is not. upper is not safe for concurrent use.
 //
 // Go's case folding is wider. It puts the Kelvin sign `K` with `k`, but the Kelvin sign is its
-// own uppercase form, so `/k/i` does not match it in JavaScript.
-func jsCanonical(r rune) rune {
-	u := unicode.ToUpper(r)
+// own uppercase form, so `/k/i` does not match it in JavaScript. It also puts `ᾀ` with `ᾈ`,
+// but the full uppercase form of each is the two characters `ἈΙ`, so `/ᾀ/i` does not match
+// `ᾈ` either.
+func jsCanonical(upper cases.Caser, r rune) rune {
+	s := upper.String(string(r))
+	u, size := utf8.DecodeRuneInString(s)
+	if size != len(s) || u > 0xFFFF {
+		return r
+	}
 	if r >= 0x80 && u < 0x80 {
 		return r
 	}
@@ -25,6 +36,7 @@ func jsCanonical(r rune) rune {
 // caseGroups returns, for each rune that has another case, the runes with its jsCanonical
 // form, itself included. The second result lists those runes in order.
 var caseGroups = sync.OnceValues(func() (map[rune][]rune, []rune) {
+	upper := cases.Upper(language.Und)
 	groups := map[rune][]rune{}
 	var cased []rune
 	for r := rune(0); r <= unicode.MaxRune; r++ {
@@ -33,7 +45,7 @@ var caseGroups = sync.OnceValues(func() (map[rune][]rune, []rune) {
 		}
 		group := []rune{r}
 		for m := unicode.SimpleFold(r); m != r; m = unicode.SimpleFold(m) {
-			if jsCanonical(m) == jsCanonical(r) {
+			if jsCanonical(upper, m) == jsCanonical(upper, r) {
 				group = append(group, m)
 			}
 		}

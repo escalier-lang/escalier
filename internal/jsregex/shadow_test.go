@@ -167,6 +167,10 @@ func TestContains(t *testing.T) {
 		{"TheKelvinSignWithoutTheUFlag", `/^k$/i`, `/^\u212A$/`, false},
 		{"TheKelvinSignInAClassWithoutTheUFlag", `/^[a-z]$/i`, `/^\u212A$/`, false},
 		{"TheKelvinSignWithTheUFlag", `/^k$/iu`, `/^\u212A$/u`, true},
+		// Without `u`, a character whose full uppercase form is two characters compares as itself.
+		// `ᾀ` and `ᾈ` both uppercase to `ἈΙ`.
+		{"AnIotaSubscriptWithoutTheUFlag", `/^\u1F80$/i`, `/^\u1F88$/`, false},
+		{"AnIotaSubscriptWithTheUFlag", `/^\u1F80$/iu`, `/^\u1F88$/u`, true},
 		{"AnUppercaseLetterWithoutTheUFlag", `/^[a-z]$/i`, `/^K$/`, true},
 		// The check models neither a word boundary nor `$` under the `m` flag.
 		{"AWordBoundary", `/\bcat/`, `/^cat$/`, false},
