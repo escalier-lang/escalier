@@ -77,8 +77,8 @@ class C {
 			errs: []string{"3:51-3:55: cannot constrain number <: string"},
 		},
 		{
-			// The inner function holds its own parameter rigid while its body is inferred,
-			// and the outer one's stays rigid around it.
+			// The inner function's parameter is rigid from its body on, and the outer one's is
+			// rigid around it.
 			name: "ANestedGenericFunction",
 			src: `fn g<U: number>(u: U) {
 	val h = fn <V: string>(v: V) -> V { return v }
@@ -174,7 +174,7 @@ fn g<U>(u: U) -> Maybe<U> { return u }`,
 			errs: []string{"2:9-2:10: cannot constrain T <: U"},
 		},
 		{
-			// A class's parameters are held rigid across its member bodies, so two of them
+			// A class's parameters are rigid across its member bodies, so two of them
 			// meet the same way a function's do.
 			name: "TwoClassParametersRelated",
 			src: `class C<T, U> {
@@ -241,6 +241,18 @@ val n: number = f(s, 5)`,
 	m<A, B>(&self, a: A) -> B { return a },
 }`,
 			errs: []string{"3:37-3:38: cannot constrain A <: B"},
+		},
+		{
+			// The implements check runs after the member bodies, and the class's `U` is still
+			// rigid there. A method returning `U` therefore does not satisfy a member that
+			// returns `number`.
+			name: "AnImplementsCheckReadsTheClassParameterAsRigid",
+			src: `interface I { get(self) -> number }
+class C<U> implements I {
+	u: U,
+	get(self) -> U { return self.u },
+}`,
+			errs: []string{"2:23-2:24: Class 'C' does not implement interface 'I': member 'get' signature does not match"},
 		},
 	}
 	for _, tt := range tests {

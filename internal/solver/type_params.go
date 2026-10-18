@@ -84,7 +84,7 @@ func (c *checker) resolveTypeParams(scope *Scope, lvl int, params []*ast.TypePar
 }
 
 // checkDefaultAgainstBounds reports a default of out[i] that falls outside the
-// parameter's upper or lower bound. Every other parameter of the list is held rigid for
+// parameter's upper or lower bound. Every other parameter of the list reads as a skolem in
 // the comparison, so a bound naming a sibling reads it as the unknown type a use site may
 // choose. `<T, U: T = number>` is rejected, since `T` may be `string` at a use that
 // leaves `U` to its default. The parameter being checked stays a variable, so an
@@ -93,13 +93,13 @@ func (c *checker) checkDefaultAgainstBounds(p *ast.TypeParam, out []*soltype.Typ
 	siblings := make([]*soltype.TypeParam, 0, len(out)-1)
 	siblings = append(siblings, out[:i]...)
 	siblings = append(siblings, out[i+1:]...)
-	release := c.ctx.holdTypeParamsRigid(siblings, true)
-	defer release()
+	sub := c.ctx.skolemizeParams(siblings)
+	def := out[i].Default.Accept(sub, soltype.Positive)
 	if out[i].UpperBound != nil {
-		c.blameConstraintErrors(p.Default, c.ctx.trialUnderProbe(out[i].Default, out[i].UpperBound))
+		c.blameConstraintErrors(p.Default, c.ctx.trialUnderProbe(def, out[i].UpperBound.Accept(sub, soltype.Positive)))
 	}
 	if out[i].LowerBound != nil {
-		c.blameConstraintErrors(p.Default, c.ctx.trialUnderProbe(out[i].LowerBound, out[i].Default))
+		c.blameConstraintErrors(p.Default, c.ctx.trialUnderProbe(out[i].LowerBound.Accept(sub, soltype.Positive), def))
 	}
 }
 
