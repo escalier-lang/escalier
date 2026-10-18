@@ -369,6 +369,35 @@ func TestInferRegexTypeComplement(t *testing.T) {
 	}
 }
 
+// TestInferUnionAbsorbsAComplement covers a union that holds both a type and a member
+// excluding it. The member drops its complement of the type, so `A | B & ~A` reads as
+// `A | B`, and `A | ~A` reads as `unknown`.
+func TestInferUnionAbsorbsAComplement(t *testing.T) {
+	decls := `
+		type Same<T> = if T : /^\d+$/ { T } else { T }
+	`
+	tests := []struct {
+		name string
+		src  string
+		want string
+	}{
+		{"ARegexAndTheStringsItRejects", `/^\d+$/ | string & ~/^\d+$/`, `string`},
+		{"TheComplementFirst", `string & ~/^\d+$/ | /^\d+$/`, `string`},
+		// Then reads the matching strings and Else the rest, and the two join back to `string`.
+		{"ARegexSplitConditional", `Same<string>`, `string`},
+		{"ARegexAndItsComplement", `/^\d+$/ | ~/^\d+$/`, `unknown`},
+		{"AComplementOfAnotherRegex", `/^a$/ | string & ~/^b$/`, `/^a$/ | string & ~/^b$/`},
+		{"OneOfTwoComplements", `"a" | string & ~"a" & ~"b"`, `string & ~"b"`},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			nodes, ctx, errs := inferTypeNodes(t, decls+"type Result = "+tt.src)
+			require.Empty(t, errs)
+			require.Equal(t, tt.want, soltype.Print(expandAliasResidual(ctx, nodes["Result"])))
+		})
+	}
+}
+
 // TestInferRegexTypeComplementInAMatch covers the complement a `match` arm after a regex
 // annotation test reads, and a literal checked against a complement.
 func TestInferRegexTypeComplementInAMatch(t *testing.T) {
