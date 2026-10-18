@@ -96,6 +96,10 @@ func (c *checker) resolveOverload(lvl int, b ValueBinding, args []soltype.Type, 
 				c.raiseInto(lvl, call, describeSite("calling", "this call", call.Callee), inst.Throws)
 			}
 			c.markCallRaised(inst)
+			// An editor jumps from a direct call's callee to the arm the call dispatches to.
+			if ident, ok := call.Callee.(*ast.IdentExpr); ok {
+				c.recordArmDecl(ident, b, idx)
+			}
 			return inst.Ret, inst
 		}
 	}
