@@ -38,29 +38,17 @@ type Info struct {
 	// ctx is the Context of the run that recorded this table, or nil for a table built
 	// by NewInfo. MemberObject reads the class and alias registries it holds.
 	ctx *Context
-	// regexSources holds the source of each annotation that resolved to a regex type,
-	// directly or through an alias. recordRegexSource fills it.
-	regexSources map[ast.TypeAnn]string
 }
 
 // NewInfo returns an empty Info side table ready to record inferred types.
 func NewInfo() *Info {
 	return &Info{
-		types:        map[ast.Node]soltype.Type{},
-		nsMembers:    map[ast.Node]ast.Decl{},
-		methodReads:  set.NewSet[ast.Node](),
-		absentKeys:   map[*ast.ObjectPat][]string{},
-		decls:        map[*ast.IdentExpr]ast.Node{},
-		regexSources: map[ast.TypeAnn]string{},
+		types:         map[ast.Node]soltype.Type{},
+		nsMembers:     map[ast.Node]ast.Decl{},
+		methodReads:   set.NewSet[ast.Node](),
+		absentKeys:    map[*ast.ObjectPat][]string{},
+		decls:         map[*ast.IdentExpr]ast.Node{},
 	}
-}
-
-// RegexSource returns the source of the regex type an annotation resolved to, such as
-// `/^\d+$/` for the `Digits` of `d: Digits` under `type Digits = /^\d+$/`. It reports false
-// for an annotation that resolved to anything else.
-func (i *Info) RegexSource(ta ast.TypeAnn) (string, bool) {
-	source, ok := i.regexSources[ta]
-	return source, ok
 }
 
 // AbsentKeys returns the keys the runtime test of the object pattern p also checks are

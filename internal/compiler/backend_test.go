@@ -910,3 +910,83 @@ func TestTheSolverEmitsARegexTestForARegexAnnotation(t *testing.T) {
 		})
 	}
 }
+
+// TestTheSolverEmitsAUnionTestForAUnionAnnotation covers the runtime test emitted for an
+// annotation naming a union, written inline or through an alias. Each member is tested, and
+// the tests are joined with `||`.
+func TestTheSolverEmitsAUnionTestForAUnionAnnotation(t *testing.T) {
+	tests := []struct {
+		name string
+		src  string
+		want string
+	}{
+		{
+			name: "AnInlineUnion",
+			src:  "export fn f(v: number | string | boolean) { return match v { x: number | string => 1, _ => 2 } }",
+			want: `if (typeof temp3 === "number" || typeof temp3 === "string") {`,
+		},
+		{
+			name: "AUnionAlias",
+			src:  "type NumOrStr = number | string\nexport fn f(v: number | string | boolean) { return match v { x: NumOrStr => 1, _ => 2 } }",
+			want: `if (typeof temp3 === "number" || typeof temp3 === "string") {`,
+		},
+		{
+			name: "AUnionAliasOfRegexAliases",
+			src:  "type A = /^[a-z]+$/\ntype B = /^\\d+$/\ntype Id = A | B\nexport fn f(s: string) { return match s { i: Id => 1, _ => 2 } }",
+			want: `if (typeof temp3 === "string" && /^[a-z]+$/.test(temp3) || typeof temp3 === "string" && /^\d+$/.test(temp3)) {`,
+		},
+		{
+			name: "AUnionAliasOfLiterals",
+			src:  "type Lits = \"a\" | 1 | null | undefined\nexport fn f(v: string | number | null | undefined) { return match v { x: Lits => 1, _ => 2 } }",
+			want: `if (temp3 === "a" || temp3 === 1 || temp3 === null || temp3 === undefined) {`,
+		},
+		{
+			name: "AUnionInAnObjectTypeAnnotation",
+			src:  "export fn f(v: {code: number | string | boolean}) { return match v { x: {code: number | string} => 1, _ => 2 } }",
+			want: `"code" in temp3 && (typeof temp3.code === "number" || typeof temp3.code === "string")) {`,
+		},
+		{
+			name: "AUnionAliasWithAnObjectMember",
+			src:  "type NumOrObj = number | {a: number}\nexport fn f(v: number | {a: number} | string) { return match v { x: NumOrObj => 1, _ => 2 } }",
+			want: `if (typeof temp3 === "number" || temp3 !== null && typeof temp3 === "object" && "a" in temp3 && typeof temp3.a === "number") {`,
+		},
+		{
+			name: "AUnionAliasOfOtherLiterals",
+			src:  "type T = true | \"s\"\nexport fn f(v: T | number) { return match v { x: T => 1, _ => 2 } }",
+			want: `if (temp3 === true || temp3 === "s") {`,
+		},
+		{
+			// An optional property passes when it is absent, and is tested when it is present.
+			name: "AUnionAliasOfATupleAndAnObjectWithAUnionProperty",
+			src:  "type T = boolean | [number] | {a?: number, b: string, c: number | string}\nexport fn f(v: T | number) { return match v { x: T => 1, _ => 2 } }",
+			want: `if (typeof temp3 === "boolean" || Array.isArray(temp3) || temp3 !== null && typeof temp3 === "object" && (!("a" in temp3) || typeof temp3.a === "number") && "b" in temp3 && typeof temp3.b === "string" && "c" in temp3 && (typeof temp3.c === "number" || typeof temp3.c === "string")) {`,
+		},
+		{
+			name: "AUnionAliasOfTwoInstancesOfOneGenericAlias",
+			src:  "type Maybe<T> = T | null\ntype NumOrStr = Maybe<number> | Maybe<string>\nexport fn f(v: NumOrStr | boolean) { return match v { x: NumOrStr => 1, _ => 2 } }",
+			want: `if (typeof temp3 === "number" || temp3 === null || typeof temp3 === "string" || temp3 === null) {`,
+		},
+		{
+			name: "AUnionAliasWithAPropertyOfAnAlias",
+			src:  "type Digits = /^\\d+$/\ntype T = number | {d: Digits}\nexport fn f(v: T | string) { return match v { x: T => 1, _ => 2 } }",
+			want: `if (typeof temp3 === "number" || temp3 !== null && typeof temp3 === "object" && "d" in temp3 && typeof temp3.d === "string" && /^\d+$/.test(temp3.d)) {`,
+		},
+		{
+			name: "AUnionAliasWithAPropertyNotAnIdentifier",
+			src:  "type T = number | {\"a-b\": string}\nexport fn f(v: T | string) { return match v { x: T => 1, _ => 2 } }",
+			want: `if (typeof temp3 === "number" || temp3 !== null && typeof temp3 === "object" && "a-b" in temp3 && typeof temp3["a-b"] === "string") {`,
+		},
+		{
+			// The recursive reference passes, which ends the guard.
+			name: "ARecursiveUnionAlias",
+			src:  "type Tree = number | {left: Tree}\nexport fn f(v: Tree | string) { return match v { x: Tree => 1, _ => 2 } }",
+			want: `if (typeof temp3 === "number" || temp3 !== null && typeof temp3 === "object" && "left" in temp3 && (typeof temp3.left === "number" || temp3.left !== null && typeof temp3.left === "object" && "left" in temp3.left)) {`,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := CompilePackage(libSources(tt.src), PackageConfig{}).CompUnits["lib/index"].JS
+			require.Contains(t, got, tt.want)
+		})
+	}
+}

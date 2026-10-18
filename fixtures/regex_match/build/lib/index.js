@@ -27,4 +27,20 @@ export function firstDigits(temp4) {
   }
   return temp5;
 }
+export function kind(temp7) {
+  const v = temp7;
+  let temp8;
+  let temp9;
+  temp9 = v;
+  if (typeof temp9 === "string" && /^[a-z]+$/.test(temp9) || typeof temp9 === "string" && /^\d+$/.test(temp9)) {
+    const i = temp9;
+    temp8 = "id";
+  } else if (typeof temp9 === "number" || typeof temp9 === "boolean") {
+    const n = temp9;
+    temp8 = "scalar";
+  } else {
+    temp8 = "other";
+  }
+  return temp8;
+}
 //# sourceMappingURL=./index.js.map

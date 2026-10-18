@@ -14,3 +14,13 @@ export fn firstDigits(p: [string, number]) {
         _ => 0,
     }
 }
+
+type Id = /^[a-z]+$/ | Digits
+
+export fn kind(v: string | number | boolean) {
+    return match v {
+        i: Id => "id",
+        n: number | boolean => "scalar",
+        _ => "other",
+    }
+}

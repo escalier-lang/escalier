@@ -28,21 +28,8 @@ func (c *checker) resolveTypeAnn(scope *Scope, ta ast.TypeAnn, lvl int) (soltype
 	// recorded.
 	if ok && t != nil {
 		c.recordType(ta, t)
-		c.recordRegexSource(ta, t)
 	}
 	return t, ok
-}
-
-// recordRegexSource records in Info the source of the regex type ta resolved to as t,
-// directly or through an alias. Codegen tests a regex annotation with the pattern itself,
-// which an alias hides from the annotation as written.
-func (c *checker) recordRegexSource(ta ast.TypeAnn, t soltype.Type) {
-	if _, isAlias := t.(*soltype.AliasType); isAlias {
-		t = c.expandAliasChain(t)
-	}
-	if re, isRegex := t.(*soltype.RegexType); isRegex {
-		c.info.regexSources[ta] = re.Source
-	}
 }
 
 // resolveDeclaredTypeAnn resolves the annotation a declaration writes for the value it

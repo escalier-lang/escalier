@@ -5515,7 +5515,8 @@ func (c *checker) rethrowUnhandled(scope *Scope, lvl int, e *ast.TryCatchExpr, c
 	}
 	handled := c.armsCatchType(scope, lvl, e.Catch)
 	uncovered := make([]soltype.Type, 0)
-	for _, part := range c.caughtMembers(coalesce(collected, soltype.Positive)) {
+	// Each member of the caught union is weighed against the catch arms on its own.
+	for _, part := range c.unionMembers(coalesce(collected, soltype.Positive)) {
 		if c.memberCaught(part, handled, e.Catch) {
 			continue
 		}
@@ -5558,31 +5559,30 @@ func (c *checker) expandAliasChainFrom(t soltype.Type, seen set.Set[string]) sol
 	}
 }
 
-// caughtMembers returns the members one member of the caught union stands for, so each is
-// weighed against the catch arms on its own. It expands a transparent alias and takes a union
-// apart, and repeats through both, since an alias may name a union whose own members are
-// aliases. `type Outer = Inner | "c"` over `type Inner = "a" | "b"` yields `"a"`, `"b"`, and
-// `"c"`. A member that is neither an alias nor a union is returned as it is.
-func (c *checker) caughtMembers(t soltype.Type) []soltype.Type {
-	return c.appendCaughtMembers(nil, t, set.NewSet[string]())
+// unionMembers returns the members t stands for. It expands a transparent alias and takes a
+// union apart, and repeats through both, since an alias may name a union whose own members
+// are aliases. `type Outer = Inner | "c"` over `type Inner = "a" | "b"` yields `"a"`, `"b"`,
+// and `"c"`. A member that is neither an alias nor a union is returned as it is.
+func (c *checker) unionMembers(t soltype.Type) []soltype.Type {
+	return c.appendUnionMembers(nil, t, set.NewSet[string]())
 }
 
-// appendCaughtMembers is caughtMembers' walk, accumulating into out. seen holds the alias
+// appendUnionMembers is unionMembers' walk, accumulating into out. seen holds the alias
 // names already expanded, so a self-referential alias such as `type A = A | "x"` contributes
 // `"x"` once and stops rather than expanding forever. The set is shared across the whole walk,
 // which is sound because the result is a union: a name reached twice contributes the same
 // members both times.
-func (c *checker) appendCaughtMembers(out []soltype.Type, t soltype.Type, seen set.Set[string]) []soltype.Type {
+func (c *checker) appendUnionMembers(out []soltype.Type, t soltype.Type, seen set.Set[string]) []soltype.Type {
 	switch t := t.(type) {
 	case *soltype.AliasType:
 		if seen.Contains(t.Name) {
 			return out
 		}
 		seen.Add(t.Name)
-		return c.appendCaughtMembers(out, c.ctx.expandAlias(t), seen)
+		return c.appendUnionMembers(out, c.ctx.expandAlias(t), seen)
 	case *soltype.UnionType:
 		for _, m := range t.Types {
-			out = c.appendCaughtMembers(out, m, seen)
+			out = c.appendUnionMembers(out, m, seen)
 		}
 		return out
 	}
