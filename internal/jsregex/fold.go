@@ -14,6 +14,31 @@ import (
 	"golang.org/x/text/language"
 )
 
+// fold.go makes a pattern with the `i` flag and without the `u` flag match the characters
+// JavaScript matches, which Go's own `(?i)` does not do.
+//
+// JavaScript compares two characters under `i` by their uppercase forms. Go treats every
+// character in a Unicode case orbit as equal, which is a wider rule. The Kelvin sign
+// `\u212A` shares an orbit with `k` and `K` in Go, but its uppercase form is itself, so
+// `/k/i` does not match it in JavaScript.
+//
+// So Compile never hands Go the `i` flag without `u`. It spells out every case JavaScript
+// matches, and Go compiles the result as a case-sensitive pattern:
+//
+//  1. The rewriter translates the body to RE2 syntax. It folds and complements each negated
+//     class on the spot with foldedComplement, since JavaScript folds a class's characters
+//     before it takes the complement. `/[^a]/i` becomes `[^Aa]`. Folding after the
+//     complement would match everything. The complement of `a` holds `A`, and folding `A`
+//     adds `a` back.
+//  2. Compile parses the result without `i` and passes the tree to foldTree.
+//  3. foldTree replaces each literal rune with a class of its cases, and widens each class
+//     to the cases of the runes it holds. `/ab/i` becomes `[Aa][Bb]` and `/[a-c]/i`
+//     becomes `[A-Ca-c]`. `/k/i` becomes `[Kk]`, leaving out the Kelvin sign.
+//  4. Compile prints the tree back to RE2 source for Go to compile.
+//
+// caseGroups holds the characters JavaScript treats as cases of one another, computed once
+// from jsCanonical.
+
 // jsCanonical returns the rune JavaScript compares r by when a pattern with the `i` flag and
 // without the `u` flag matches it. That is r's full uppercase form, read with upper. r
 // compares as itself when that form is more than one UTF-16 code unit, or when it is ASCII
