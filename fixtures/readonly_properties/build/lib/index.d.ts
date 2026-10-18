@@ -9,5 +9,5 @@ declare const immutablePoint: Point;
 declare const immutableX: number;
 declare const point: Point;
 declare const pointX: number;
-declare function tryUpdateImmutableProperties(): void;
-declare function updateMutableProperties(): void;
+declare function tryUpdateImmutableProperties(): undefined;
+declare function updateMutableProperties(): undefined;
