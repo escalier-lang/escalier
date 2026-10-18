@@ -5568,17 +5568,26 @@ func (c *checker) unionMembers(t soltype.Type) []soltype.Type {
 }
 
 // appendUnionMembers is unionMembers' walk, accumulating into out. seen holds the alias
-// names already expanded, so a self-referential alias such as `type A = A | "x"` contributes
-// `"x"` once and stops rather than expanding forever. The set is shared across the whole walk,
-// which is sound because the result is a union: a name reached twice contributes the same
-// members both times.
+// references already expanded, so a self-referential alias such as `type A = A | "x"`
+// contributes `"x"` once and stops rather than expanding forever. The set is shared across
+// the whole walk, which is sound because the result is a union: a reference reached twice
+// contributes the same members both times.
+//
+// A reference is keyed by its instantiation, so `Maybe<string> | Maybe<number>` over `type
+// Maybe<T> = T | null` expands both. A reference to an alias checkProductive rejected is
+// keyed by name alone. Such an alias recurses without a type constructor, and its arguments
+// can grow at each step, as in `type L<T> = T | L<Array<T>>`.
 func (c *checker) appendUnionMembers(out []soltype.Type, t soltype.Type, seen set.Set[string]) []soltype.Type {
 	switch t := t.(type) {
 	case *soltype.AliasType:
-		if seen.Contains(t.Name) {
+		key := soltype.PrintQualified(t)
+		if c.ctx.notProductive(t) {
+			key = t.Name
+		}
+		if seen.Contains(key) {
 			return out
 		}
-		seen.Add(t.Name)
+		seen.Add(key)
 		return c.appendUnionMembers(out, c.ctx.expandAlias(t), seen)
 	case *soltype.UnionType:
 		for _, m := range t.Types {

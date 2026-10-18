@@ -29,6 +29,8 @@ type SolTypes interface {
 	// AliasedUnion returns the union an annotation naming an alias of a union resolved to,
 	// and reports whether it named one.
 	AliasedUnion(ta ast.TypeAnn) (*soltype.UnionType, bool)
+	// Expand returns t with each alias on the outside expanded, until none is left.
+	Expand(t soltype.Type) soltype.Type
 }
 
 // SolverJSTypes answers from one internal/solver run.
@@ -81,6 +83,11 @@ func (s SolverJSTypes) RegexSource(ta ast.TypeAnn) (string, bool) {
 // AliasedUnion reads the union the run recorded for the annotation.
 func (s SolverJSTypes) AliasedUnion(ta ast.TypeAnn) (*soltype.UnionType, bool) {
 	return s.Types.AliasedUnion(ta)
+}
+
+// Expand expands t against the run's alias registry.
+func (s SolverJSTypes) Expand(t soltype.Type) soltype.Type {
+	return s.Types.Expand(t)
 }
 
 // AbsentKeys reads the keys the run recorded for p.

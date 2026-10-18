@@ -88,6 +88,10 @@ func (t *solverSolTypes) AliasedUnion(ta ast.TypeAnn) (*soltype.UnionType, bool)
 	return t.info.AliasedUnion(ta)
 }
 
+func (t *solverSolTypes) Expand(typ soltype.Type) soltype.Type {
+	return t.info.Expand(typ)
+}
+
 // solverDts renders the library's .d.ts from the module run, which holds the scope
 // the declarations landed in and the registries their members are keyed in.
 type solverDts struct {

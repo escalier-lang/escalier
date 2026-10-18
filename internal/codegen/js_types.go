@@ -38,6 +38,9 @@ type JSTypes interface {
 	// AliasedUnion returns the union an annotation names through an alias, and reports
 	// whether it names one.
 	AliasedUnion(ta ast.TypeAnn) (*soltype.UnionType, bool)
+	// Expand returns t with each alias on the outside expanded, until none is left. It
+	// returns t unchanged when it cannot expand it.
+	Expand(t soltype.Type) soltype.Type
 	// NullableArms reports whether an expression's type is a union admitting `null`
 	// or `undefined`. An `if val` guards its pattern test with the checks these ask
 	// for.
@@ -61,6 +64,7 @@ func (noJSTypes) RegexSource(ast.TypeAnn) (string, bool)    { return "", false }
 func (noJSTypes) AliasedUnion(ast.TypeAnn) (*soltype.UnionType, bool) {
 	return nil, false
 }
+func (noJSTypes) Expand(t soltype.Type) soltype.Type          { return t }
 func (noJSTypes) NullableArms(ast.Expr) (bool, bool)          { return false, false }
 func (noJSTypes) MemberJSExpr(*ast.MemberExpr) (string, bool) { return "", false }
 

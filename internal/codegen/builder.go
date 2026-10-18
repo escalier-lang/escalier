@@ -1292,11 +1292,7 @@ func (b *Builder) buildTypeGuard(valueExpr Expr, typeAnn ast.TypeAnn) Expr {
 	}
 	// An alias hides the members of the union it names from typeAnn.
 	if union, ok := b.types().AliasedUnion(typeAnn); ok {
-		guards := make([]Expr, len(union.Types))
-		for i, member := range union.Types {
-			guards[i] = b.buildSolTypeGuard(valueExpr, member)
-		}
-		return anyCondition(guards)
+		return b.buildSolTypeGuard(valueExpr, union, set.NewSet[string]())
 	}
 	switch t := typeAnn.(type) {
 	case *ast.UnionTypeAnn:
@@ -1392,11 +1388,27 @@ func (b *Builder) buildTypeGuard(valueExpr Expr, typeAnn ast.TypeAnn) Expr {
 }
 
 // buildSolTypeGuard returns a runtime test that value is of type t, for a type an alias
-// names rather than one written as an annotation. It tests what buildTypeGuard tests for the
-// same type written out: primitives, literals, regex types, `null`, `undefined`, object
-// types by their required properties, tuples, and unions of them. It returns `true` for any
-// other type.
-func (b *Builder) buildSolTypeGuard(valueExpr Expr, t soltype.Type) Expr {
+// names rather than one written as an annotation. It tests primitives, literals, regex
+// types, `null`, `undefined`, object types by their properties, tuples, unions of them, and
+// aliases of any of these. An optional property passes when it is absent. It returns `true`
+// for any other type.
+//
+// expanding holds the aliases being expanded on the way down to t. An alias already in it
+// tests as `true`, so the guard for a recursive alias such as `type Tree = {left: Tree | null}`
+// ends.
+func (b *Builder) buildSolTypeGuard(valueExpr Expr, t soltype.Type, expanding set.Set[string]) Expr {
+	if alias, isAlias := t.(*soltype.AliasType); isAlias {
+		key := soltype.PrintQualified(alias)
+		if expanding.Contains(key) {
+			return NewLitExpr(NewBoolLit(true, nil), nil)
+		}
+		expanding.Add(key)
+		defer expanding.Remove(key)
+		t = b.types().Expand(alias)
+		if _, stillAlias := t.(*soltype.AliasType); stillAlias {
+			return NewLitExpr(NewBoolLit(true, nil), nil)
+		}
+	}
 	switch t := t.(type) {
 	case *soltype.PrimType:
 		switch t.Prim {
@@ -1433,13 +1445,19 @@ func (b *Builder) buildSolTypeGuard(valueExpr Expr, t soltype.Type) Expr {
 		}
 		for _, elem := range t.Elems {
 			prop, isProp := elem.(*soltype.PropertyElem)
-			if !isProp || prop.Optional {
+			if !isProp {
 				continue
 			}
-			conditions = append(conditions,
-				buildPropertyInObjectCheck(prop.Name, valueExpr, nil),
-				b.buildSolTypeGuard(NewMemberExpr(valueExpr, NewIdentifier(prop.Name, nil), false, nil), prop.Type),
-			)
+			present := buildPropertyInObjectCheck(prop.Name, valueExpr, nil)
+			valueGuard := b.buildSolTypeGuard(buildPropertyRead(valueExpr, prop.Name), prop.Type, expanding)
+			if !prop.Optional {
+				conditions = append(conditions, present, valueGuard)
+				continue
+			}
+			if !isTrueLiteral(valueGuard) {
+				absent := NewUnaryExpr(LogicalNot, present, nil)
+				conditions = append(conditions, NewBinaryExpr(absent, LogicalOr, valueGuard, nil))
+			}
 		}
 		return combineConditions(conditions, nil)
 	case *soltype.TupleType:
@@ -1447,11 +1465,20 @@ func (b *Builder) buildSolTypeGuard(valueExpr Expr, t soltype.Type) Expr {
 	case *soltype.UnionType:
 		guards := make([]Expr, len(t.Types))
 		for i, member := range t.Types {
-			guards[i] = b.buildSolTypeGuard(valueExpr, member)
+			guards[i] = b.buildSolTypeGuard(valueExpr, member, expanding)
 		}
 		return anyCondition(guards)
 	}
 	return NewLitExpr(NewBoolLit(true, nil), nil)
+}
+
+// buildPropertyRead returns the read of the property name off valueExpr, as `value.name`
+// when name is an identifier and as `value["name"]` otherwise.
+func buildPropertyRead(valueExpr Expr, name string) Expr {
+	if IsValidIdentifier(name) {
+		return NewMemberExpr(valueExpr, NewIdentifier(name, nil), false, nil)
+	}
+	return NewIndexExpr(valueExpr, NewLitExpr(NewStrLit(name, nil), nil), false, nil)
 }
 
 // anyCondition joins guards with `||`. It returns `true` when any guard is `true`, since

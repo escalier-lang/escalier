@@ -956,10 +956,31 @@ func TestTheSolverEmitsAUnionTestForAUnionAnnotation(t *testing.T) {
 			want: `if (temp3 === true || temp3 === "s") {`,
 		},
 		{
-			// An optional property is not tested, since a value may leave it out.
+			// An optional property passes when it is absent, and is tested when it is present.
 			name: "AUnionAliasOfATupleAndAnObjectWithAUnionProperty",
 			src:  "type T = boolean | [number] | {a?: number, b: string, c: number | string}\nexport fn f(v: T | number) { return match v { x: T => 1, _ => 2 } }",
-			want: `if (typeof temp3 === "boolean" || Array.isArray(temp3) || temp3 !== null && typeof temp3 === "object" && "b" in temp3 && typeof temp3.b === "string" && "c" in temp3 && (typeof temp3.c === "number" || typeof temp3.c === "string")) {`,
+			want: `if (typeof temp3 === "boolean" || Array.isArray(temp3) || temp3 !== null && typeof temp3 === "object" && (!("a" in temp3) || typeof temp3.a === "number") && "b" in temp3 && typeof temp3.b === "string" && "c" in temp3 && (typeof temp3.c === "number" || typeof temp3.c === "string")) {`,
+		},
+		{
+			name: "AUnionAliasOfTwoInstancesOfOneGenericAlias",
+			src:  "type Maybe<T> = T | null\ntype NumOrStr = Maybe<number> | Maybe<string>\nexport fn f(v: NumOrStr | boolean) { return match v { x: NumOrStr => 1, _ => 2 } }",
+			want: `if (typeof temp3 === "number" || temp3 === null || typeof temp3 === "string" || temp3 === null) {`,
+		},
+		{
+			name: "AUnionAliasWithAPropertyOfAnAlias",
+			src:  "type Digits = /^\\d+$/\ntype T = number | {d: Digits}\nexport fn f(v: T | string) { return match v { x: T => 1, _ => 2 } }",
+			want: `if (typeof temp3 === "number" || temp3 !== null && typeof temp3 === "object" && "d" in temp3 && typeof temp3.d === "string" && /^\d+$/.test(temp3.d)) {`,
+		},
+		{
+			name: "AUnionAliasWithAPropertyNotAnIdentifier",
+			src:  "type T = number | {\"a-b\": string}\nexport fn f(v: T | string) { return match v { x: T => 1, _ => 2 } }",
+			want: `if (typeof temp3 === "number" || temp3 !== null && typeof temp3 === "object" && "a-b" in temp3 && typeof temp3["a-b"] === "string") {`,
+		},
+		{
+			// The recursive reference passes, which ends the guard.
+			name: "ARecursiveUnionAlias",
+			src:  "type Tree = number | {left: Tree}\nexport fn f(v: Tree | string) { return match v { x: Tree => 1, _ => 2 } }",
+			want: `if (typeof temp3 === "number" || temp3 !== null && typeof temp3 === "object" && "left" in temp3 && (typeof temp3.left === "number" || temp3.left !== null && typeof temp3.left === "object" && "left" in temp3.left)) {`,
 		},
 	}
 	for _, tt := range tests {
