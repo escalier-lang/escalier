@@ -236,10 +236,12 @@ func (c *checker) bindScriptFuncWithBody(scope *Scope, lvl int, s ast.Stmt, decl
 	t, _ := c.inferFuncDecl(scope, lvl+1, decl)
 	c.recordCaptureLoans(scope, decl)
 	c.constrain(decl, t, self)
+
 	scheme := c.generalize(t, lvl)
 	c.recordType(decl.Name, schemeType(scheme))
 	b := ValueBinding{Schemes: []TypeScheme{scheme}, Sources: sources, Kind: ast.ValKind, VarID: decl.VarID}
 	scope.defineValue(name, b)
+
 	// The name's capture edges let a call of it take the capture loans, the way a call of a
 	// `val name = fn …` binding does.
 	c.trackFuncDeclCaptures(scope, decl, bindingType(b), s)
@@ -253,16 +255,19 @@ func (c *checker) trackFuncDeclCaptures(scope *Scope, decl *ast.FuncDecl, bindin
 	if c.fn == nil {
 		return
 	}
+
 	id := liveness.VarID(decl.VarID)
 	if decl.VarID > 0 && c.fn.aliases != nil {
 		c.recordVarIDType(id, bindingT)
 		c.fn.aliases.NewValue(id, aliasMutability(isMutableType(bindingT)))
 		c.trackCapturedAliases(scope, decl, id)
 	}
+
 	if decl.VarID > 0 && c.fn.eagerBorrowGraph != nil {
 		c.clearEagerSubtree(id, nil)
 		c.addCaptureEdges(id, nil, decl)
 	}
+
 	if ref, ok := c.fn.stmtToRef[s]; ok {
 		c.flushBorrowDirty(ref)
 		if decl.VarID > 0 {
