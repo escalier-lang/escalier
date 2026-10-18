@@ -2378,7 +2378,8 @@ func matchTemplate(c *Context, segs []tmplSeg, quasis []string, interps []soltyp
 }
 
 // sliceSegs returns the part of segs from offset fromOff in segs[from] up to offset toOff in
-// segs[to].
+// segs[to]. It leaves out the runs of text that come out empty, so a piece that is one
+// interpolation between two empty quasis is that interpolation alone.
 func sliceSegs(segs []tmplSeg, from, fromOff, to, toOff int) []tmplSeg {
 	var out []tmplSeg
 	for j := from; j <= to; j++ {
@@ -2393,7 +2394,9 @@ func sliceSegs(segs []tmplSeg, from, fromOff, to, toOff int) []tmplSeg {
 		if j == to {
 			hi = toOff
 		}
-		out = append(out, tmplSeg{text: segs[j].text[lo:hi]})
+		if lo < hi {
+			out = append(out, tmplSeg{text: segs[j].text[lo:hi]})
+		}
 	}
 	return out
 }
@@ -2413,9 +2416,10 @@ func (c *Context) pieceInInterp(piece []tmplSeg, interp soltype.Type) bool {
 	if c.admitsAnyString(interp) {
 		return true
 	}
-	// subtypeHolds discards every bound it records, so an interpolation that still holds an
-	// inference variable is not compared, or the variable would pass unconstrained.
-	return len(piece) == 1 && concreteMember(piece[0].hole) && subtypeHolds(c, piece[0].hole, interp)
+	// subtypeHolds discards every bound it records, so neither side may still hold an inference
+	// variable, or the variable would pass unconstrained.
+	return len(piece) == 1 && concreteMember(piece[0].hole) && concreteMember(interp) &&
+		subtypeHolds(c, piece[0].hole, interp)
 }
 
 // admitsAnyString reports whether t admits every string. It reports false when c is nil.

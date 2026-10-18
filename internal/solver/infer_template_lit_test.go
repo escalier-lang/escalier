@@ -600,6 +600,7 @@ func TestTemplateWithinTemplate(t *testing.T) {
 		// difference.
 		{"string interpolations split anywhere", "`${number}-${number}`", "`${string}-${string}`", ""},
 		{"a split past an interpolation", "`a${string}-${string}`", "`${string}-${string}`", ""},
+		{"a number interpolation in a wider interpolation", "`a${number}`", "`a${number | boolean}`", ""},
 		{"a missing prefix", "`${string}`", "`on${string}`", "cannot constrain `${string}` <: `on${string}`"},
 		{"a missing suffix", "`on${string}`", "`on${string}x`", "cannot constrain `on${string}` <: `on${string}x`"},
 		{"a string interpolation in a number interpolation", "`${string}px`", "`${number}px`", "cannot constrain `${string}px` <: `${number}px`"},
@@ -626,4 +627,13 @@ func TestTemplateWithinTemplate(t *testing.T) {
 func TestTemplateOverATypeParameterWithinString(t *testing.T) {
 	_, _, errs := inferSource(t, "fn f<T: string>(x: `on${T}`) {\n    val s: string = x\n    val t: `on${string}` = x\n    return s\n}")
 	require.Empty(t, errs)
+}
+
+// TestTemplateWithinATemplateOverAnInferenceVariable asserts that a template whose interpolation
+// is still an inference variable is not matched speculatively, which would leave the variable
+// unconstrained.
+func TestTemplateWithinATemplateOverAnInferenceVariable(t *testing.T) {
+	_, _, errs := inferSource(t, "declare fn g<T>(x: `a${T}`) -> T\ndeclare val a: `a${number}`\nval r = g(a)")
+	require.Len(t, errs, 1)
+	require.Equal(t, "cannot constrain `a${number}` <: `a${t10}`", errs[0].Message())
 }
