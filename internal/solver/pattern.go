@@ -875,6 +875,7 @@ func (c *checker) narrowToClass(
 	lvl int, blame ast.Node, ct *soltype.ClassType, scrutinee, concrete, shape soltype.Type,
 ) (target, targetConcrete soltype.Type) {
 	sc, isClass := c.classCarrier(scrutinee)
+
 	// A scrutinee whose class extends ct is already an instance of it, so the pattern narrows
 	// nothing. Its fields project out of the scrutinee's own view of ct, which carries the
 	// arguments the scrutinee fixes, so a `Failure{payload}` arm over a `Timeout<number>`
@@ -887,7 +888,9 @@ func (c *checker) narrowToClass(
 			return scrutinee, concrete
 		}
 	}
+
 	inst := c.freshClassInstance(ct, lvl)
+
 	// A union scrutinee whose members include instances of ct, directly or through a
 	// subclass, narrows to those members. `AppError{code}` over `ParseError | OtherError`
 	// keeps `ParseError`. Each kept member's view of ct flows into the fresh instance, so
@@ -895,7 +898,7 @@ func (c *checker) narrowToClass(
 	if shape == nil {
 		shape = groundedCarrier(scrutinee)
 	}
-	if ups := c.unionMembersReaching(shape, ct.Name); len(ups) > 0 {
+	if ups := c.unionMembersAsClass(shape, ct.Name); len(ups) > 0 {
 		for _, up := range ups {
 			c.constrain(blame, up, inst)
 		}
@@ -904,9 +907,11 @@ func (c *checker) narrowToClass(
 		}
 		return scrutinee, concrete
 	}
+
 	// The pattern narrows the scrutinee to the named class. The instance flows into the
 	// scrutinee, so a scrutinee that cannot be this class is rejected here.
 	c.constrain(blame, inst, scrutinee)
+
 	// Project the scrutinee's own instance when it names the same class, so its concrete
 	// arguments give the field types directly; a downcast falls back to the asserted instance.
 	projected := inst
@@ -919,17 +924,18 @@ func (c *checker) narrowToClass(
 	return scrutinee, concrete
 }
 
-// unionMembersReaching returns, for each member of the union shape whose class is name or
-// extends it, that member's instance of name. It returns nothing when shape is not a union,
-// or when some other member could still hold an instance of name. A class that does not
-// extend name, a primitive, a literal, `null`, and `undefined` cannot hold one. Any other
-// member can, such as a type parameter `U` that a caller instantiates as the class itself.
-// So can a class whose extends edges are not resolved yet.
-func (c *checker) unionMembersReaching(shape soltype.Type, name string) []*soltype.ClassType {
+// unionMembersAsClass returns, for each member of the union shape whose class is className
+// or extends it, that member's instance of className. It returns nothing when shape is not a
+// union, or when some other member could still hold an instance of className. A class that
+// does not extend className, a primitive, a literal, `null`, and `undefined` cannot hold
+// one. Any other member can, such as a type parameter `U` that a caller instantiates as the
+// class itself. So can a class whose extends edges are not resolved yet.
+func (c *checker) unionMembersAsClass(shape soltype.Type, className string) []*soltype.ClassType {
 	u, isUnion := soltype.CarrierOf(shape).(*soltype.UnionType)
 	if !isUnion {
 		return nil
 	}
+
 	var ups []*soltype.ClassType
 	for _, member := range u.Types {
 		sc, ok := c.classCarrier(member)
@@ -940,7 +946,8 @@ func (c *checker) unionMembersReaching(shape soltype.Type, name string) []*solty
 			}
 			return nil
 		}
-		up, reaches, settled := c.ctx.ancestorInstance(sc, name)
+
+		up, reaches, settled := c.ctx.ancestorInstance(sc, className)
 		if !settled {
 			return nil
 		}
@@ -948,6 +955,7 @@ func (c *checker) unionMembersReaching(shape soltype.Type, name string) []*solty
 			ups = append(ups, up)
 		}
 	}
+
 	return ups
 }
 

@@ -5282,6 +5282,7 @@ func (c *checker) inferTryCatch(scope *Scope, lvl int, e *ast.TryCatchExpr) solt
 
 	res := c.freshAt(lvl)
 	c.recordProv(res, e, TryCatchBranch)
+
 	// The enclosing sink is read before the nested one is installed, so the rethrow below
 	// reaches the clause of the function this `try` sits in.
 	enclosing := c.throwsSink(lvl)
@@ -5292,6 +5293,7 @@ func (c *checker) inferTryCatch(scope *Scope, lvl int, e *ast.TryCatchExpr) solt
 	// the try block's tail alongside the arm bodies. A diverging branch produces no value
 	// and is left out of both the join and the check.
 	var branches []soltype.Type
+
 	// This call is what fills `collected`. Nothing assigns to it: walkTryBlock installs it as
 	// the sink throwsSink returns, so each `throw` and each call inside the block constrains
 	// into it and records a lower bound.
@@ -5313,11 +5315,13 @@ func (c *checker) inferTryCatch(scope *Scope, lvl int, e *ast.TryCatchExpr) solt
 	// reads.
 	caught := c.freshAt(lvl)
 	c.constrain(e, collected, caught)
+
 	// The UCS IR names no step for a rest before the last element, so the walk below binds
 	// nothing under one and cannot report it.
 	for _, arm := range e.Catch {
 		c.reportInteriorRests(arm.Pattern)
 	}
+
 	// The arms are typed through the same walk as a `match` expression's. No exhaustiveness
 	// check follows, since rethrowUnhandled accounts for what the arms leave over.
 	core := ucs.DesugarCatch(e)
@@ -5325,6 +5329,7 @@ func (c *checker) inferTryCatch(scope *Scope, lvl int, e *ast.TryCatchExpr) solt
 	binder.openRoot = true
 	w := c.walkCond(scope, lvl, e, core, binder, res)
 	branches = append(branches, w.bodies...)
+
 	// An arm below an unguarded catch-all can never run, so the walk never reaches it. It is
 	// typed anyway, so a fault inside it is still reported. Its value is not one the form
 	// produces, so it joins neither res nor the ownership check.
@@ -5334,6 +5339,7 @@ func (c *checker) inferTryCatch(scope *Scope, lvl int, e *ast.TryCatchExpr) solt
 			unwalked = append(unwalked, arm)
 		}
 	}
+
 	// The unwalked arms bind against a variable caught flows into. A literal or class test in
 	// one of them then adds its lower bound there, and the catch-all above it still reads
 	// only the known throws.
