@@ -910,3 +910,60 @@ func TestTheSolverEmitsARegexTestForARegexAnnotation(t *testing.T) {
 		})
 	}
 }
+
+// TestTheSolverEmitsAUnionTestForAUnionAnnotation covers the runtime test emitted for an
+// annotation naming a union, written inline or through an alias. Each member is tested, and
+// the tests are joined with `||`.
+func TestTheSolverEmitsAUnionTestForAUnionAnnotation(t *testing.T) {
+	tests := []struct {
+		name string
+		src  string
+		want string // "" ⇒ the arm emits no test
+	}{
+		{
+			name: "AnInlineUnion",
+			src:  "export fn f(v: number | string | boolean) { return match v { x: number | string => 1, _ => 2 } }",
+			want: `if (typeof temp3 === "number" || typeof temp3 === "string") {`,
+		},
+		{
+			name: "AUnionAlias",
+			src:  "type NumOrStr = number | string\nexport fn f(v: number | string | boolean) { return match v { x: NumOrStr => 1, _ => 2 } }",
+			want: `if (typeof temp3 === "number" || typeof temp3 === "string") {`,
+		},
+		{
+			name: "AUnionAliasOfRegexAliases",
+			src:  "type A = /^[a-z]+$/\ntype B = /^\\d+$/\ntype Id = A | B\nexport fn f(s: string) { return match s { i: Id => 1, _ => 2 } }",
+			want: `if (typeof temp3 === "string" && /^[a-z]+$/.test(temp3) || typeof temp3 === "string" && /^\d+$/.test(temp3)) {`,
+		},
+		{
+			name: "AUnionAliasOfLiterals",
+			src:  "type Lits = \"a\" | 1 | null | undefined\nexport fn f(v: string | number | null | undefined) { return match v { x: Lits => 1, _ => 2 } }",
+			want: `if (temp3 === "a" || temp3 === 1 || temp3 === null || temp3 === undefined) {`,
+		},
+		{
+			name: "AUnionInAnObjectTypeAnnotation",
+			src:  "export fn f(v: {code: number | string | boolean}) { return match v { x: {code: number | string} => 1, _ => 2 } }",
+			want: `"code" in temp3 && (typeof temp3.code === "number" || typeof temp3.code === "string")) {`,
+		},
+		{
+			name: "AUnionAliasWithAnObjectMember",
+			src:  "type NumOrObj = number | {a: number}\nexport fn f(v: number | {a: number} | string) { return match v { x: NumOrObj => 1, _ => 2 } }",
+			want: `if (typeof temp3 === "number" || temp3 !== null && typeof temp3 === "object" && "a" in temp3 && typeof temp3.a === "number") {`,
+		},
+		{
+			// buildLit cannot spell a bigint literal, so the union passes every value.
+			name: "AUnionWithABigIntMember",
+			src:  "export fn f(v: bigint | string | boolean) { return match v { x: 1n | string => 1, _ => 2 } }",
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := CompilePackage(libSources(tt.src), PackageConfig{}).CompUnits["lib/index"].JS
+			if tt.want == "" {
+				require.NotContains(t, got, "if (")
+				return
+			}
+			require.Contains(t, got, tt.want)
+		})
+	}
+}

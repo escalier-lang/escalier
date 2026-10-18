@@ -84,6 +84,10 @@ func (t *solverSolTypes) RegexSource(ta ast.TypeAnn) (string, bool) {
 	return t.info.RegexSource(ta)
 }
 
+func (t *solverSolTypes) AliasedUnion(ta ast.TypeAnn) (*soltype.UnionType, bool) {
+	return t.info.AliasedUnion(ta)
+}
+
 // solverDts renders the library's .d.ts from the module run, which holds the scope
 // the declarations landed in and the registries their members are keyed in.
 type solverDts struct {

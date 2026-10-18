@@ -11,6 +11,7 @@ import (
 	"github.com/escalier-lang/escalier/internal/dep_graph"
 	"github.com/escalier-lang/escalier/internal/printer"
 	"github.com/escalier-lang/escalier/internal/set"
+	"github.com/escalier-lang/escalier/internal/soltype"
 )
 
 type Builder struct {
@@ -1289,7 +1290,21 @@ func (b *Builder) buildTypeGuard(valueExpr Expr, typeAnn ast.TypeAnn) Expr {
 	if source, ok := b.types().RegexSource(typeAnn); ok {
 		return b.buildRegexGuard(valueExpr, source)
 	}
+	// An alias hides the members of the union it names from typeAnn.
+	if union, ok := b.types().AliasedUnion(typeAnn); ok {
+		guards := make([]Expr, len(union.Types))
+		for i, member := range union.Types {
+			guards[i] = b.buildSolTypeGuard(valueExpr, member)
+		}
+		return anyCondition(guards)
+	}
 	switch t := typeAnn.(type) {
+	case *ast.UnionTypeAnn:
+		guards := make([]Expr, len(t.Types))
+		for i, member := range t.Types {
+			guards[i] = b.buildTypeGuard(valueExpr, member)
+		}
+		return anyCondition(guards)
 	case *ast.NumberTypeAnn:
 		return b.buildTypeOfCheck(valueExpr, "number", StrictEqual, nil)
 	case *ast.StringTypeAnn:
@@ -1301,6 +1316,11 @@ func (b *Builder) buildTypeGuard(valueExpr Expr, typeAnn ast.TypeAnn) Expr {
 		// inline regex here.
 		if re, isRegex := t.Lit.(*ast.RegexLit); isRegex {
 			return b.buildRegexGuard(valueExpr, re.Value)
+		}
+		// buildLit cannot spell a bigint literal yet, so a bigint annotation passes every
+		// value rather than emitting no code.
+		if _, isBigInt := t.Lit.(*ast.BigIntLit); isBigInt {
+			return NewLitExpr(NewBoolLit(true, nil), nil)
 		}
 		// For literal types, check exact value
 		litExpr := NewLitExpr(buildLit(t.Lit), nil)
@@ -1374,6 +1394,82 @@ func (b *Builder) buildTypeGuard(valueExpr Expr, typeAnn ast.TypeAnn) Expr {
 		// For complex types we can't easily check at runtime, accept anything
 		return NewLitExpr(NewBoolLit(true, nil), nil)
 	}
+}
+
+// buildSolTypeGuard returns a runtime test that value is of type t, for a type an alias
+// names rather than one written as an annotation. It tests what buildTypeGuard tests for the
+// same type written out: primitives, literals, regex types, `null`, `undefined`, object
+// types by their required properties, tuples, and unions of them. It returns `true` for any
+// other type.
+func (b *Builder) buildSolTypeGuard(valueExpr Expr, t soltype.Type) Expr {
+	switch t := t.(type) {
+	case *soltype.PrimType:
+		switch t.Prim {
+		case soltype.NumPrim:
+			return b.buildTypeOfCheck(valueExpr, "number", StrictEqual, nil)
+		case soltype.StrPrim:
+			return b.buildTypeOfCheck(valueExpr, "string", StrictEqual, nil)
+		case soltype.BoolPrim:
+			return b.buildTypeOfCheck(valueExpr, "boolean", StrictEqual, nil)
+		}
+	case *soltype.LitType:
+		var lit Lit
+		switch l := t.Lit.(type) {
+		case *soltype.StrLit:
+			lit = NewStrLit(l.Value, nil)
+		case *soltype.NumLit:
+			lit = NewNumLit(l.Value, nil)
+		case *soltype.BoolLit:
+			lit = NewBoolLit(l.Value, nil)
+		}
+		if lit != nil {
+			return NewBinaryExpr(valueExpr, StrictEqual, NewLitExpr(lit, nil), nil)
+		}
+	case *soltype.RegexType:
+		return b.buildRegexGuard(valueExpr, t.Source)
+	case *soltype.NullType:
+		return NewBinaryExpr(valueExpr, StrictEqual, NewLitExpr(NewNullLit(nil), nil), nil)
+	case *soltype.UndefinedType:
+		return NewBinaryExpr(valueExpr, StrictEqual, NewLitExpr(NewUndefinedLit(nil), nil), nil)
+	case *soltype.ObjectType:
+		conditions := []Expr{
+			NewBinaryExpr(valueExpr, StrictNotEqual, NewLitExpr(NewNullLit(nil), nil), nil),
+			b.buildTypeOfCheck(valueExpr, "object", StrictEqual, nil),
+		}
+		for _, elem := range t.Elems {
+			prop, isProp := elem.(*soltype.PropertyElem)
+			if !isProp || prop.Optional {
+				continue
+			}
+			conditions = append(conditions,
+				buildPropertyInObjectCheck(prop.Name, valueExpr, nil),
+				b.buildSolTypeGuard(NewMemberExpr(valueExpr, NewIdentifier(prop.Name, nil), false, nil), prop.Type),
+			)
+		}
+		return combineConditions(conditions, nil)
+	case *soltype.TupleType:
+		return buildArrayIsArrayCheck(valueExpr, nil)
+	case *soltype.UnionType:
+		guards := make([]Expr, len(t.Types))
+		for i, member := range t.Types {
+			guards[i] = b.buildSolTypeGuard(valueExpr, member)
+		}
+		return anyCondition(guards)
+	}
+	return NewLitExpr(NewBoolLit(true, nil), nil)
+}
+
+// anyCondition joins guards with `||`. It returns `true` when any guard is `true`, since
+// that guard passes every value.
+func anyCondition(guards []Expr) Expr {
+	if len(guards) == 0 || slices.ContainsFunc(guards, isTrueLiteral) {
+		return NewLitExpr(NewBoolLit(true, nil), nil)
+	}
+	out := guards[0]
+	for _, g := range guards[1:] {
+		out = NewBinaryExpr(out, LogicalOr, g, nil)
+	}
+	return out
 }
 
 // buildRegexGuard returns `typeof valueExpr === "string" && /re/.test(valueExpr)` for the

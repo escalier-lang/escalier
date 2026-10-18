@@ -2,6 +2,7 @@ package codegen
 
 import (
 	"github.com/escalier-lang/escalier/internal/ast"
+	"github.com/escalier-lang/escalier/internal/soltype"
 )
 
 // JSTypes answers the questions JavaScript emission asks about what inference
@@ -34,6 +35,9 @@ type JSTypes interface {
 	// RegexSource returns the source of the regex type an annotation names, directly or
 	// through an alias, and reports whether it names one.
 	RegexSource(ta ast.TypeAnn) (string, bool)
+	// AliasedUnion returns the union an annotation names through an alias, and reports
+	// whether it names one.
+	AliasedUnion(ta ast.TypeAnn) (*soltype.UnionType, bool)
 	// NullableArms reports whether an expression's type is a union admitting `null`
 	// or `undefined`. An `if val` guards its pattern test with the checks these ask
 	// for.
@@ -49,11 +53,14 @@ type JSTypes interface {
 // every question has one answer path rather than a nil check at each call site.
 type noJSTypes struct{}
 
-func (noJSTypes) IsNominalTypeRef(*ast.TypeRefTypeAnn) bool   { return false }
-func (noJSTypes) CalleeConstructs(ast.Expr) bool              { return false }
-func (noJSTypes) IsMethodRead(ast.Expr) bool                  { return false }
-func (noJSTypes) AbsentKeys(*ast.ObjectPat) []string          { return nil }
-func (noJSTypes) RegexSource(ast.TypeAnn) (string, bool)      { return "", false }
+func (noJSTypes) IsNominalTypeRef(*ast.TypeRefTypeAnn) bool { return false }
+func (noJSTypes) CalleeConstructs(ast.Expr) bool            { return false }
+func (noJSTypes) IsMethodRead(ast.Expr) bool                { return false }
+func (noJSTypes) AbsentKeys(*ast.ObjectPat) []string        { return nil }
+func (noJSTypes) RegexSource(ast.TypeAnn) (string, bool)    { return "", false }
+func (noJSTypes) AliasedUnion(ast.TypeAnn) (*soltype.UnionType, bool) {
+	return nil, false
+}
 func (noJSTypes) NullableArms(ast.Expr) (bool, bool)          { return false, false }
 func (noJSTypes) MemberJSExpr(*ast.MemberExpr) (string, bool) { return "", false }
 

@@ -26,6 +26,9 @@ type SolTypes interface {
 	// RegexSource returns the source of the regex type an annotation resolved to, and
 	// reports whether it resolved to one.
 	RegexSource(ta ast.TypeAnn) (string, bool)
+	// AliasedUnion returns the union an annotation naming an alias of a union resolved to,
+	// and reports whether it named one.
+	AliasedUnion(ta ast.TypeAnn) (*soltype.UnionType, bool)
 }
 
 // SolverJSTypes answers from one internal/solver run.
@@ -73,6 +76,11 @@ func (s SolverJSTypes) IsMethodRead(e ast.Expr) bool {
 // RegexSource reads the source the run recorded for the annotation.
 func (s SolverJSTypes) RegexSource(ta ast.TypeAnn) (string, bool) {
 	return s.Types.RegexSource(ta)
+}
+
+// AliasedUnion reads the union the run recorded for the annotation.
+func (s SolverJSTypes) AliasedUnion(ta ast.TypeAnn) (*soltype.UnionType, bool) {
+	return s.Types.AliasedUnion(ta)
 }
 
 // AbsentKeys reads the keys the run recorded for p.

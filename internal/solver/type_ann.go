@@ -28,20 +28,28 @@ func (c *checker) resolveTypeAnn(scope *Scope, ta ast.TypeAnn, lvl int) (soltype
 	// recorded.
 	if ok && t != nil {
 		c.recordType(ta, t)
-		c.recordRegexSource(ta, t)
+		// Codegen tests a value against an annotation, and an alias hides what it tests for.
+		c.recordAliasTarget(ta, t)
 	}
 	return t, ok
 }
 
-// recordRegexSource records in Info the source of the regex type ta resolved to as t,
-// directly or through an alias. Codegen tests a regex annotation with the pattern itself,
-// which an alias hides from the annotation as written.
-func (c *checker) recordRegexSource(ta ast.TypeAnn, t soltype.Type) {
-	if _, isAlias := t.(*soltype.AliasType); isAlias {
+// recordAliasTarget records in Info what ta, which resolved to t, names behind any alias:
+// the source of a regex type, and the members of a union an alias names.
+func (c *checker) recordAliasTarget(ta ast.TypeAnn, t soltype.Type) {
+	_, isAlias := t.(*soltype.AliasType)
+	if isAlias {
 		t = c.expandAliasChain(t)
 	}
-	if re, isRegex := t.(*soltype.RegexType); isRegex {
-		c.info.regexSources[ta] = re.Source
+	switch t := t.(type) {
+	case *soltype.RegexType:
+		snapshotMapEntry(c, c.info.regexSources, ta)
+		c.info.regexSources[ta] = t.Source
+	case *soltype.UnionType:
+		if isAlias {
+			snapshotMapEntry(c, c.info.aliasedUnions, ta)
+			c.info.aliasedUnions[ta] = &soltype.UnionType{Types: c.unionMembers(t)}
+		}
 	}
 }
 
