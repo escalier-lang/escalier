@@ -145,41 +145,41 @@ func TestShadowed(t *testing.T) {
 func TestContains(t *testing.T) {
 	tests := []struct {
 		name     string
-		sup, sub string
+		sub, sup string
 		want     bool
 	}{
-		{"AFixedCountInARun", `/^\d+$/`, `/^\d{3}$/`, true},
-		{"ARunInAFixedCount", `/^\d{3}$/`, `/^\d+$/`, false},
-		{"AlternativesInAClass", `/^[a-z]+$/`, `/^(?:cat|dog)$/`, true},
-		{"TheSameLanguageOneWay", `/^[0-9]+$/`, `/^\d+$/`, true},
-		{"TheSameLanguageTheOtherWay", `/^\d+$/`, `/^[0-9]+$/`, true},
+		{"AFixedCountInARun", `/^\d{3}$/`, `/^\d+$/`, true},
+		{"ARunInAFixedCount", `/^\d+$/`, `/^\d{3}$/`, false},
+		{"AlternativesInAClass", `/^(?:cat|dog)$/`, `/^[a-z]+$/`, true},
+		{"TheSameLanguageOneWay", `/^\d+$/`, `/^[0-9]+$/`, true},
+		{"TheSameLanguageTheOtherWay", `/^[0-9]+$/`, `/^\d+$/`, true},
 		// `/\d/` matches any string holding a digit.
-		{"AnAnchoredPatternInAnUnanchoredOne", `/\d/`, `/^\d+$/`, true},
-		{"AnUnanchoredPatternInAnAnchoredOne", `/^\d+$/`, `/\d/`, false},
-		{"AnUnanchoredPatternInAWiderOne", `/[a-z]/`, `/b/`, true},
-		{"AStartTestInAnAlternation", `/^[ab]/`, `/^a|^b/`, true},
-		{"AStartTestInOneAlternative", `/^a/`, `/^a|b/`, false},
-		{"AStickyPatternReadsAsAnchored", `/a/y`, `/^a/`, true},
-		{"TheIFlagOnTheSupertype", `/^a$/i`, `/^a$/`, true},
-		{"TheIFlagOnTheSubtype", `/^a$/`, `/^a$/i`, false},
-		{"TheUFlagOnOneSide", `/^a$/u`, `/^a$/`, false},
+		{"AnAnchoredPatternInAnUnanchoredOne", `/^\d+$/`, `/\d/`, true},
+		{"AnUnanchoredPatternInAnAnchoredOne", `/\d/`, `/^\d+$/`, false},
+		{"AnUnanchoredPatternInAWiderOne", `/b/`, `/[a-z]/`, true},
+		{"AStartTestInAnAlternation", `/^a|^b/`, `/^[ab]/`, true},
+		{"AStartTestInOneAlternative", `/^a|b/`, `/^a/`, false},
+		{"AStickyPatternReadsAsAnchored", `/^a/`, `/a/y`, true},
+		{"TheIFlagOnTheSupertype", `/^a$/`, `/^a$/i`, true},
+		{"TheIFlagOnTheSubtype", `/^a$/i`, `/^a$/`, false},
+		{"TheUFlagOnOneSide", `/^a$/`, `/^a$/u`, false},
 		// Without `u`, JavaScript folds case by uppercase forms, and the Kelvin sign is its own.
-		{"TheKelvinSignWithoutTheUFlag", `/^k$/i`, `/^\u212A$/`, false},
-		{"TheKelvinSignInAClassWithoutTheUFlag", `/^[a-z]$/i`, `/^\u212A$/`, false},
-		{"TheKelvinSignWithTheUFlag", `/^k$/iu`, `/^\u212A$/u`, true},
+		{"TheKelvinSignWithoutTheUFlag", `/^\u212A$/`, `/^k$/i`, false},
+		{"TheKelvinSignInAClassWithoutTheUFlag", `/^\u212A$/`, `/^[a-z]$/i`, false},
+		{"TheKelvinSignWithTheUFlag", `/^\u212A$/u`, `/^k$/iu`, true},
 		// Without `u`, a character whose full uppercase form is two characters compares as itself.
 		// `ᾀ` and `ᾈ` both uppercase to `ἈΙ`.
-		{"AnIotaSubscriptWithoutTheUFlag", `/^\u1F80$/i`, `/^\u1F88$/`, false},
-		{"AnIotaSubscriptWithTheUFlag", `/^\u1F80$/iu`, `/^\u1F88$/u`, true},
-		{"AnUppercaseLetterWithoutTheUFlag", `/^[a-z]$/i`, `/^K$/`, true},
+		{"AnIotaSubscriptWithoutTheUFlag", `/^\u1F88$/`, `/^\u1F80$/i`, false},
+		{"AnIotaSubscriptWithTheUFlag", `/^\u1F88$/u`, `/^\u1F80$/iu`, true},
+		{"AnUppercaseLetterWithoutTheUFlag", `/^K$/`, `/^[a-z]$/i`, true},
 		// JavaScript folds a negated class before it complements it, so `[^a]` rules out `A`.
-		{"ANegatedClassUnderTheIFlag", `/^[^a]$/i`, `/^A$/`, false},
-		{"AnotherLetterInANegatedClassUnderTheIFlag", `/^[^a]$/i`, `/^B$/`, true},
+		{"ANegatedClassUnderTheIFlag", `/^A$/`, `/^[^a]$/i`, false},
+		{"AnotherLetterInANegatedClassUnderTheIFlag", `/^B$/`, `/^[^a]$/i`, true},
 		// The check models neither a word boundary nor `$` under the `m` flag.
-		{"AWordBoundary", `/\bcat/`, `/^cat$/`, false},
-		{"TheMFlag", `/^a$/m`, `/^a$/`, false},
+		{"AWordBoundary", `/^cat$/`, `/\bcat/`, false},
+		{"TheMFlag", `/^a$/`, `/^a$/m`, false},
 		// The subtype's DFA has more states than the walk explores.
-		{"APairPastTheCap", `/^(?:a|b)*a(?:a|b){12}$|^c$/`, `/^(?:a|b)*a(?:a|b){12}$/`, false},
+		{"APairPastTheCap", `/^(?:a|b)*a(?:a|b){12}$/`, `/^(?:a|b)*a(?:a|b){12}$|^c$/`, false},
 		{"TheSamePatternPastTheCap", `/^(?:a|b)*a(?:a|b){12}$/`, `/^(?:a|b)*a(?:a|b){12}$/`, true},
 	}
 	for _, tt := range tests {
