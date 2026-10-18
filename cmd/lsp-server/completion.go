@@ -172,12 +172,12 @@ func (s *Server) resolveDetail(data completionResolveData) string {
 // scriptScopeView returns a view of the scope a bin/ script was checked in, or nil when
 // co holds none for sourceID.
 func scriptScopeView(co *compiler.CheckOutput, sourceID int) scopeView {
-	return newSolverScopeView(co.SolverScriptScopes[sourceID], co.ScriptInfos[sourceID])
+	return newSolverScopeView(co.ScriptScopes[sourceID], co.ScriptInfos[sourceID])
 }
 
 // moduleScopeView returns a view of the lib/ module's scope, or nil when co holds none.
 func moduleScopeView(co *compiler.CheckOutput) scopeView {
-	return newSolverScopeView(co.SolverModuleScope, co.ModuleInfo)
+	return newSolverScopeView(co.ModuleScope, co.ModuleInfo)
 }
 
 // builtinScopeView returns a view of the first level that holds builtins in the scope
@@ -198,7 +198,7 @@ func builtinScopeView(co *compiler.CheckOutput) scopeView {
 // fileScopeView returns a view of the import scope of the lib/ file sourceID names, or
 // nil when co holds none for it.
 func fileScopeView(co *compiler.CheckOutput, sourceID int) scopeView {
-	return newSolverScopeView(co.SolverFileScopes[sourceID], co.ModuleInfo)
+	return newSolverScopeView(co.FileScopes[sourceID], co.ModuleInfo)
 }
 
 // shouldSuppressCompletions checks if the cursor is on a node where completions

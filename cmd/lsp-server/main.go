@@ -32,9 +32,6 @@ func main() {
 	if *stdlibDir != "" {
 		_ = os.Setenv("ESCALIER_STDLIB_DIR", *stdlibDir)
 	}
-	// Every feature reads internal/solver's results, so the server runs that checker
-	// whatever the environment it was started in selects.
-	_ = os.Setenv(compiler.CheckerEnvVar, compiler.CheckerSolver)
 	fmt.Fprintf(os.Stderr, "Hello, from lsp-server\n")
 
 	s := NewServer()

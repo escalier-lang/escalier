@@ -33,7 +33,7 @@ func checkScript(t *testing.T, source string) compiler.BinScriptOutput {
 func parseAndInferAllowErrors(t *testing.T, source string) (*ast.Script, scopeView, *solver.Info) {
 	t.Helper()
 	out := checkScript(t, source)
-	return out.Script, newSolverScopeView(out.SolverScope, out.Info), out.Info
+	return out.Script, newSolverScopeView(out.Scope, out.Info), out.Info
 }
 
 // testServer returns a minimal *Server for use in completion tests.
@@ -241,9 +241,9 @@ func scriptCompletions(t *testing.T, source string, loc ast.Location) []protocol
 		Text:       source,
 	}
 	s.checkOutput = &compiler.CheckOutput{
-		Scripts:            map[int]*ast.Script{sourceID: out.Script},
-		ScriptInfos:        map[int]*solver.Info{sourceID: out.Info},
-		SolverScriptScopes: map[int]*solver.Scope{sourceID: out.SolverScope},
+		Scripts:      map[int]*ast.Script{sourceID: out.Script},
+		ScriptInfos:  map[int]*solver.Info{sourceID: out.Info},
+		ScriptScopes: map[int]*solver.Scope{sourceID: out.Scope},
 	}
 	s.validatedVersion[uri] = version
 
@@ -803,11 +803,11 @@ obj.`
 func parseModuleAndInfer(t *testing.T, sources []*ast.Source) (*ast.Module, scopeView, map[int]scopeView, *solver.Info) {
 	t.Helper()
 	out := checkModule(t, sources)
-	fileScopes := make(map[int]scopeView, len(out.SolverFileScopes))
-	for sourceID, scope := range out.SolverFileScopes {
+	fileScopes := make(map[int]scopeView, len(out.FileScopes))
+	for sourceID, scope := range out.FileScopes {
 		fileScopes[sourceID] = newSolverScopeView(scope, out.Info)
 	}
-	return out.Module, newSolverScopeView(out.SolverModuleScope, out.Info), fileScopes, out.Info
+	return out.Module, newSolverScopeView(out.ModuleScope, out.Info), fileScopes, out.Info
 }
 
 // checkModule parses sources as one lib/ module and checks it, logging the parse and
@@ -1381,11 +1381,11 @@ func moduleCompletions(
 	}
 
 	s.checkOutput = &compiler.CheckOutput{
-		Module:            out.Module,
-		ModuleInfo:        out.Info,
-		SolverModuleScope: out.SolverModuleScope,
-		SolverFileScopes:  out.SolverFileScopes,
-		Scripts:           map[int]*ast.Script{},
+		Module:      out.Module,
+		ModuleInfo:  out.Info,
+		ModuleScope: out.ModuleScope,
+		FileScopes:  out.FileScopes,
+		Scripts:     map[int]*ast.Script{},
 	}
 
 	targetURI := protocol.DocumentUri(fmt.Sprintf("file:///workspace/%s", targetPath))
@@ -1457,11 +1457,11 @@ val x: ma`},
 	}
 	s.validatedVersion[uri] = version
 	s.checkOutput = &compiler.CheckOutput{
-		Module:            out.Module,
-		ModuleInfo:        out.Info,
-		SolverModuleScope: out.SolverModuleScope,
-		SolverFileScopes:  out.SolverFileScopes,
-		Scripts:           map[int]*ast.Script{},
+		Module:      out.Module,
+		ModuleInfo:  out.Info,
+		ModuleScope: out.ModuleScope,
+		FileScopes:  out.FileScopes,
+		Scripts:     map[int]*ast.Script{},
 	}
 
 	params := &protocol.CompletionParams{
@@ -1506,11 +1506,11 @@ val x: a`},
 	}
 	s.validatedVersion[uri] = version
 	s.checkOutput = &compiler.CheckOutput{
-		Module:            out.Module,
-		ModuleInfo:        out.Info,
-		SolverModuleScope: out.SolverModuleScope,
-		SolverFileScopes:  out.SolverFileScopes,
-		Scripts:           map[int]*ast.Script{},
+		Module:      out.Module,
+		ModuleInfo:  out.Info,
+		ModuleScope: out.ModuleScope,
+		FileScopes:  out.FileScopes,
+		Scripts:     map[int]*ast.Script{},
 	}
 
 	params := &protocol.CompletionParams{

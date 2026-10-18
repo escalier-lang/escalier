@@ -493,13 +493,8 @@ func (server *Server) validateBinScript(
 	co := server.checkOutput
 	// Update only this script's entries in the existing checkOutput.
 	co.Scripts[triggerSourceID] = result.Script
-	if result.Info != nil {
-		co.ScriptInfos[triggerSourceID] = result.Info
-		co.SolverScriptScopes[triggerSourceID] = result.SolverScope
-	} else {
-		delete(co.ScriptInfos, triggerSourceID)
-		delete(co.SolverScriptScopes, triggerSourceID)
-	}
+	co.ScriptInfos[triggerSourceID] = result.Info
+	co.ScriptScopes[triggerSourceID] = result.Scope
 	// The new AST's spans index the text just parsed, so the source has to move
 	// with them. Keeping the one the last full check stored would convert the
 	// new offsets against stale text.

@@ -2,49 +2,29 @@ package compiler
 
 import (
 	"context"
-	"os"
 
 	"github.com/escalier-lang/escalier/internal/ast"
-	"github.com/escalier-lang/escalier/internal/checker"
 	"github.com/escalier-lang/escalier/internal/codegen"
 	"github.com/escalier-lang/escalier/internal/dep_graph"
 	"github.com/escalier-lang/escalier/internal/solver"
 )
 
 // Diagnostic is one type error, as everything downstream of the compiler reads it:
-// a span and a message. internal/checker's Error and internal/solver's SolverError
-// both satisfy it, so an output carries whichever checker ran without its readers
-// having to know which one that was.
+// a span and a message. internal/solver's SolverError satisfies it, as does the
+// diagnostic the compiler reports when it cannot find the standard library.
 type Diagnostic interface {
 	Span() ast.Span
 	Message() string
 }
 
-// CheckerEnvVar names the environment variable that picks which type checker the
-// compiler's entry points run. Set it to CheckerLegacy to run internal/checker. Any
-// other value, unset included, runs internal/solver. It is read on each entry point
-// call, so a test can set it for one call with t.Setenv.
-const CheckerEnvVar = "ESCALIER_CHECKER"
-
-// CheckerSolver is the CheckerEnvVar value that names internal/solver. Leaving the
-// variable unset selects the same checker.
-const CheckerSolver = "solver"
-
-// CheckerLegacy is the CheckerEnvVar value that selects internal/checker.
-const CheckerLegacy = "checker"
-
-// selectBackend returns the checker CheckerEnvVar names, configured by config. The old
-// checker reads none of config.
-func selectBackend(config PackageConfig) backend {
-	if os.Getenv(CheckerEnvVar) == CheckerLegacy {
-		return checkerBackend{}
-	}
+// newBackend returns the checker every entry point runs, configured by config.
+func newBackend(config PackageConfig) backend {
 	return solverBackend{options: solver.Options{NoAmbientNames: config.NoAmbientNames}}
 }
 
-// backend is the compiler's view of a type checker. Each entry point resolves one
-// through selectBackend and drives it, so the choice is made in one place instead of
-// at each construction site.
+// backend is the compiler's view of a type checker. Each entry point builds one through
+// newBackend and drives it, so its configuration is set in one place instead of at each
+// construction site.
 type backend interface {
 	// checkLib infers a parsed lib/ module.
 	checkLib(ctx context.Context, module *ast.Module) libResult
@@ -54,12 +34,9 @@ type backend interface {
 	checkScript(ctx context.Context, script *ast.Script) scriptResult
 }
 
-// LibScope is the surface a package's lib/ module declared, in whatever form the
-// checker that produced it holds. It is the lib/ to bin/ seam: each bin/ script is
-// checked as if the library's top-level declarations were already in scope, and the
-// emitted script imports the ones it used. Neither implementation converts to the
-// other's type representation, which is what keeps the cutover from building a bridge
-// back into type_system.
+// LibScope is the surface a package's lib/ module declared. It is the lib/ to bin/
+// seam: each bin/ script is checked as if the library's top-level declarations were
+// already in scope, and the emitted script imports the ones it used.
 type LibScope interface {
 	// checkScript infers a parsed bin/ script with this library in scope.
 	checkScript(ctx context.Context, script *ast.Script) scriptResult
@@ -69,9 +46,7 @@ type LibScope interface {
 	declaresTopLevel(name string) bool
 }
 
-// dtsEmitter renders one library module's .d.ts. The two checkers hold a module's
-// type surface in different representations, so each implements this over its own and
-// neither converts to the other's.
+// dtsEmitter renders one library module's .d.ts from the type surface a run produced.
 type dtsEmitter interface {
 	// buildDefinitions emits the declarations of the module depGraph orders, so they
 	// appear in the order inference typed them.
@@ -86,49 +61,35 @@ type libResult struct {
 	// depGraph is the graph the run ordered the module's declarations by, which
 	// codegen emits the library's JS from.
 	depGraph *dep_graph.DepGraph
-	// dts renders the library's .d.ts from the type surface this run produced. Each
-	// checker represents that surface in its own types, so each renders from its own
-	// rather than converting to the other's. It is nil when the run produced no surface
-	// to render.
+	// dts renders the library's .d.ts from the type surface this run produced. It is nil
+	// when the run produced no surface to render.
 	dts dtsEmitter
 	// jsTypes answers what JavaScript emission asks about the types this run inferred.
-	// It rides the result for the same reason dts does: each checker holds its results
-	// in its own representation and answers from that.
 	jsTypes codegen.JSTypes
-	// scope and fileScopes are the LSP's view of the module. Both are nil on the
-	// solver path, whose scopes have a different type; porting the LSP is a later
-	// phase of the cutover.
-	scope      *checker.Scope
-	fileScopes map[int]*checker.Scope
-	// info holds internal/solver's per-node records for the module. It is nil on the
-	// old checker's path.
+	// info holds the run's per-node records for the module.
 	info *solver.Info
-	// solScope and solFileScopes are internal/solver's module scope and per-file import
-	// scopes. Both are nil on the old checker's path.
-	solScope      *solver.Scope
-	solFileScopes map[int]*solver.Scope
+	// scope and fileScopes are the run's module scope and per-file import scopes.
+	scope      *solver.Scope
+	fileScopes map[int]*solver.Scope
 	// diagnostics are the module's type errors.
 	diagnostics []Diagnostic
 }
 
 // scriptResult is what a backend produced for one bin/ script.
 type scriptResult struct {
-	// scope is the LSP's view of the script, nil on the solver path for the reason
-	// libResult.scope gives.
-	scope *checker.Scope
 	// jsTypes is libResult.jsTypes for this script.
 	jsTypes codegen.JSTypes
 	// info is libResult.info for this script.
 	info *solver.Info
-	// solScope is internal/solver's scope for the script, nil on the old checker's path.
-	solScope *solver.Scope
+	// scope is the run's scope for the script.
+	scope *solver.Scope
 	// diagnostics are the script's type errors.
 	diagnostics []Diagnostic
 }
 
 // checkScriptIn infers script with lib in scope, or with the prelude alone when the
-// package declared no library. A LibScope holds the checker that produced it, so a
-// script checked against one is checked by that checker rather than by b.
+// package declared no library. A LibScope carries the run that produced it, so a script
+// checked against one continues that run rather than starting one from b.
 func checkScriptIn(ctx context.Context, b backend, lib LibScope, script *ast.Script) scriptResult {
 	if lib == nil {
 		return b.checkScript(ctx, script)
@@ -136,8 +97,8 @@ func checkScriptIn(ctx context.Context, b backend, lib LibScope, script *ast.Scr
 	return lib.checkScript(ctx, script)
 }
 
-// diagnostics widens a checker's own error slice to the Diagnostic interface. Go
-// converts no slice element-wise, so the copy is written out.
+// diagnostics widens the solver's error slice to the Diagnostic interface. Go converts
+// no slice element-wise, so the copy is written out.
 func diagnostics[E Diagnostic](errs []E) []Diagnostic {
 	out := make([]Diagnostic, len(errs))
 	for i, e := range errs {
