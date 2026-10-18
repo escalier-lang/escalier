@@ -103,6 +103,10 @@ type libResult struct {
 	// info holds internal/solver's per-node records for the module. It is nil on the
 	// old checker's path.
 	info *solver.Info
+	// solScope and solFileScopes are internal/solver's module scope and per-file import
+	// scopes. Both are nil on the old checker's path.
+	solScope      *solver.Scope
+	solFileScopes map[int]*solver.Scope
 	// diagnostics are the module's type errors.
 	diagnostics []Diagnostic
 }
@@ -116,6 +120,8 @@ type scriptResult struct {
 	jsTypes codegen.JSTypes
 	// info is libResult.info for this script.
 	info *solver.Info
+	// solScope is internal/solver's scope for the script, nil on the old checker's path.
+	solScope *solver.Scope
 	// diagnostics are the script's type errors.
 	diagnostics []Diagnostic
 }

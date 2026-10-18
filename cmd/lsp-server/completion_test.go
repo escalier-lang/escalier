@@ -338,7 +338,7 @@ x`
 
 	// Cursor at "x" on line 3
 	loc := cursorAt(source, 3, 1)
-	items := testServer().completionsFromScope(script, scope, loc, "")
+	items := testServer().completionsFromScope(script, newCheckerScopeView(scope), nil, loc, "")
 	items = filterByPrefix(items, "x")
 	labels := getCompletionLabels(items)
 	assert.Contains(t, labels, "x")
@@ -352,7 +352,7 @@ gre`
 
 	// Cursor at "gre" — line 2, col 3
 	loc := cursorAt(source, 2, 3)
-	items := testServer().completionsFromScope(script, scope, loc, "")
+	items := testServer().completionsFromScope(script, newCheckerScopeView(scope), nil, loc, "")
 	items = filterByPrefix(items, "gre")
 	labels := getCompletionLabels(items)
 	assert.Equal(t, []string{"greet"}, labels)
@@ -366,7 +366,7 @@ a`
 
 	// Cursor at "a" on line 3 — both a and b should be visible
 	loc := cursorAt(source, 3, 1)
-	items := testServer().completionsFromScope(script, scope, loc, "")
+	items := testServer().completionsFromScope(script, newCheckerScopeView(scope), nil, loc, "")
 
 	seen := map[string]bool{}
 	for _, item := range items {
@@ -384,7 +384,7 @@ val b: number = 2`
 
 	// Cursor at "a" on line 2 — only a should be visible, not b
 	loc := cursorAt(source, 2, 1)
-	items := testServer().completionsFromScope(script, scope, loc, "")
+	items := testServer().completionsFromScope(script, newCheckerScopeView(scope), nil, loc, "")
 
 	seen := map[string]bool{}
 	for _, item := range items {
@@ -443,7 +443,7 @@ func TestScopeCompletionInsideFuncBody(t *testing.T) {
 
 	// Cursor at "sum" on line 3, inside the function body
 	loc := cursorAt(source, 3, 2)
-	items := testServer().completionsFromScope(script, scope, loc, "")
+	items := testServer().completionsFromScope(script, newCheckerScopeView(scope), nil, loc, "")
 
 	seen := map[string]bool{}
 	for _, item := range items {
@@ -464,7 +464,7 @@ fn foo() -> number {
 
 	// Cursor at "outer" on line 3, inside foo's body
 	loc := cursorAt(source, 3, 2)
-	items := testServer().completionsFromScope(script, scope, loc, "")
+	items := testServer().completionsFromScope(script, newCheckerScopeView(scope), nil, loc, "")
 
 	seen := map[string]bool{}
 	for _, item := range items {
@@ -489,7 +489,7 @@ func TestScopeCompletionInsideNestedBlocks(t *testing.T) {
 
 	// Cursor at "b" on line 5, inside the if-block
 	loc := cursorAt(source, 5, 3)
-	items := testServer().completionsFromScope(script, scope, loc, "")
+	items := testServer().completionsFromScope(script, newCheckerScopeView(scope), nil, loc, "")
 
 	seen := map[string]bool{}
 	for _, item := range items {
@@ -502,7 +502,7 @@ func TestScopeCompletionInsideNestedBlocks(t *testing.T) {
 
 	// Cursor at "a" on line 8, inside the else-block
 	loc2 := cursorAt(source, 8, 3)
-	items2 := testServer().completionsFromScope(script, scope, loc2, "")
+	items2 := testServer().completionsFromScope(script, newCheckerScopeView(scope), nil, loc2, "")
 
 	seen2 := map[string]bool{}
 	for _, item := range items2 {
@@ -527,7 +527,7 @@ func TestScopeCompletionInsideMatchCase(t *testing.T) {
 	//          123456789012345678901
 	// "myField" after => starts at col 19
 	loc := cursorAt(source, 3, 19)
-	items := testServer().completionsFromScope(script, scope, loc, "")
+	items := testServer().completionsFromScope(script, newCheckerScopeView(scope), nil, loc, "")
 
 	seen := map[string]bool{}
 	for _, item := range items {
@@ -549,7 +549,7 @@ func TestScopeCompletionMatchBindingNotVisibleOutside(t *testing.T) {
 
 	// Cursor at "x" on line 5, outside the match expression
 	loc := cursorAt(source, 5, 3)
-	items := testServer().completionsFromScope(script, scope, loc, "")
+	items := testServer().completionsFromScope(script, newCheckerScopeView(scope), nil, loc, "")
 
 	seen := map[string]bool{}
 	for _, item := range items {
@@ -570,7 +570,7 @@ for item in items {
 
 	// Cursor at "item" on line 3, col 3
 	loc := cursorAt(source, 3, 3)
-	items := testServer().completionsFromScope(script, scope, loc, "")
+	items := testServer().completionsFromScope(script, newCheckerScopeView(scope), nil, loc, "")
 
 	seen := map[string]bool{}
 	for _, item := range items {
@@ -590,7 +590,7 @@ items`
 
 	// Cursor at "items" on line 5, after the for-in loop
 	loc := cursorAt(source, 5, 1)
-	items := testServer().completionsFromScope(script, scope, loc, "")
+	items := testServer().completionsFromScope(script, newCheckerScopeView(scope), nil, loc, "")
 
 	seen := map[string]bool{}
 	for _, item := range items {
@@ -608,7 +608,7 @@ func TestScopeCompletionInsideFuncExpr(t *testing.T) {
 
 	// Cursor at "name" on line 2, inside the function expression body
 	loc := cursorAt(source, 2, 2)
-	items := testServer().completionsFromScope(script, scope, loc, "")
+	items := testServer().completionsFromScope(script, newCheckerScopeView(scope), nil, loc, "")
 
 	seen := map[string]bool{}
 	for _, item := range items {
@@ -628,7 +628,7 @@ add`
 
 	// Cursor at "add" on line 5, outside the function
 	loc := cursorAt(source, 5, 1)
-	items := testServer().completionsFromScope(script, scope, loc, "")
+	items := testServer().completionsFromScope(script, newCheckerScopeView(scope), nil, loc, "")
 
 	seen := map[string]bool{}
 	for _, item := range items {
@@ -655,7 +655,7 @@ try {
 
 	// Cursor inside try block at "a" on line 4
 	loc := cursorAt(source, 4, 2)
-	items := testServer().completionsFromScope(script, scope, loc, "")
+	items := testServer().completionsFromScope(script, newCheckerScopeView(scope), nil, loc, "")
 
 	seen := map[string]bool{}
 	for _, item := range items {
@@ -668,7 +668,7 @@ try {
 
 	// Cursor inside catch block at "b" on line 8
 	loc2 := cursorAt(source, 8, 3)
-	items2 := testServer().completionsFromScope(script, scope, loc2, "")
+	items2 := testServer().completionsFromScope(script, newCheckerScopeView(scope), nil, loc2, "")
 
 	seen2 := map[string]bool{}
 	for _, item := range items2 {
@@ -692,7 +692,7 @@ if val [a, b] = target {
 
 	// Cursor inside consequent at "a" on line 3
 	loc := cursorAt(source, 3, 2)
-	items := testServer().completionsFromScope(script, scope, loc, "")
+	items := testServer().completionsFromScope(script, newCheckerScopeView(scope), nil, loc, "")
 
 	seen := map[string]bool{}
 	for _, item := range items {
@@ -705,7 +705,7 @@ if val [a, b] = target {
 
 	// Cursor inside else at "c" on line 6
 	loc2 := cursorAt(source, 6, 2)
-	items2 := testServer().completionsFromScope(script, scope, loc2, "")
+	items2 := testServer().completionsFromScope(script, newCheckerScopeView(scope), nil, loc2, "")
 
 	seen2 := map[string]bool{}
 	for _, item := range items2 {
@@ -727,7 +727,7 @@ val result = do {
 
 	// Cursor at "inner" on line 4
 	loc := cursorAt(source, 4, 2)
-	items := testServer().completionsFromScope(script, scope, loc, "")
+	items := testServer().completionsFromScope(script, newCheckerScopeView(scope), nil, loc, "")
 
 	seen := map[string]bool{}
 	for _, item := range items {
@@ -750,7 +750,7 @@ if (true) {
 
 	// Cursor inside consequent at "a" on line 4
 	loc := cursorAt(source, 4, 2)
-	items := testServer().completionsFromScope(script, scope, loc, "")
+	items := testServer().completionsFromScope(script, newCheckerScopeView(scope), nil, loc, "")
 
 	seen := map[string]bool{}
 	for _, item := range items {
@@ -762,7 +762,7 @@ if (true) {
 
 	// Cursor inside else at "b" on line 7
 	loc2 := cursorAt(source, 7, 2)
-	items2 := testServer().completionsFromScope(script, scope, loc2, "")
+	items2 := testServer().completionsFromScope(script, newCheckerScopeView(scope), nil, loc2, "")
 
 	seen2 := map[string]bool{}
 	for _, item := range items2 {
@@ -905,7 +905,7 @@ val defaultId: UserId = 0
 	loc := cursorAt(sources[1].Contents, 4, 1)
 	fileScope := fileScopes[1]
 
-	items := testServer().completionsFromModuleScope(module, 1, fileScope, moduleScope, loc)
+	items := testServer().completionsFromModuleScope(module, 1, newCheckerScopeView(fileScope), newCheckerScopeView(moduleScope), nil, loc)
 	seen := map[string]bool{}
 	for _, item := range items {
 		seen[item.Label] = true
@@ -930,7 +930,7 @@ val c: number = 3`},
 	// All top-level declarations are visible anywhere in the file because
 	// the DepGraph reorders them before type checking and code generation.
 	loc := cursorAt(sources[0].Contents, 2, 1)
-	items := testServer().completionsFromModuleScope(module, 0, fileScopes[0], moduleScope, loc)
+	items := testServer().completionsFromModuleScope(module, 0, newCheckerScopeView(fileScopes[0]), newCheckerScopeView(moduleScope), nil, loc)
 	seen := map[string]bool{}
 	for _, item := range items {
 		seen[item.Label] = true
@@ -952,7 +952,7 @@ val b: number = 20`},
 	// Cursor at line 1 col 1 in file1 — all declarations from file2 should be visible
 	// even though the cursor is "before" them (they're in a different file)
 	loc := cursorAt(sources[0].Contents, 1, 1)
-	items := testServer().completionsFromModuleScope(module, 0, fileScopes[0], moduleScope, loc)
+	items := testServer().completionsFromModuleScope(module, 0, newCheckerScopeView(fileScopes[0]), newCheckerScopeView(moduleScope), nil, loc)
 	seen := map[string]bool{}
 	for _, item := range items {
 		seen[item.Label] = true
@@ -974,7 +974,7 @@ fn laterFunc() -> number { 42 }`},
 	// Function declarations are always visible in modules just like all other
 	// declarations
 	loc := cursorAt(sources[0].Contents, 1, 1)
-	items := testServer().completionsFromModuleScope(module, 0, fileScopes[0], moduleScope, loc)
+	items := testServer().completionsFromModuleScope(module, 0, newCheckerScopeView(fileScopes[0]), newCheckerScopeView(moduleScope), nil, loc)
 	seen := map[string]bool{}
 	for _, item := range items {
 		seen[item.Label] = true
@@ -1029,7 +1029,7 @@ fn foo(a: number) -> number {
 
 	// Cursor at "inner" on line 5, inside foo's body (after inner and later declarations)
 	loc := cursorAt(sources[0].Contents, 5, 2)
-	items := testServer().completionsFromModuleScope(module, 0, fileScopes[0], moduleScope, loc)
+	items := testServer().completionsFromModuleScope(module, 0, newCheckerScopeView(fileScopes[0]), newCheckerScopeView(moduleScope), nil, loc)
 	seen := map[string]bool{}
 	for _, item := range items {
 		seen[item.Label] = true
@@ -1044,7 +1044,7 @@ fn foo(a: number) -> number {
 	// Cursor at line 3, col 15 (after "val inner" declaration but before "later" declaration)
 	// Variables declared after this point should not be visible
 	locEarly := cursorAt(sources[0].Contents, 3, 15)
-	itemsEarly := testServer().completionsFromModuleScope(module, 0, fileScopes[0], moduleScope, locEarly)
+	itemsEarly := testServer().completionsFromModuleScope(module, 0, newCheckerScopeView(fileScopes[0]), newCheckerScopeView(moduleScope), nil, locEarly)
 	seenEarly := map[string]bool{}
 	for _, item := range itemsEarly {
 		seenEarly[item.Label] = true
@@ -1083,7 +1083,7 @@ declare val x: number`},
 	// Completions from file1 (which has the import)
 	loc0 := cursorAt(sources[0].Contents, 2, 1)
 	loc1 := cursorAt(sources[1].Contents, 2, 1)
-	items1 := testServer().completionsFromModuleScope(module, 0, fileScopes[0], moduleScope, loc0)
+	items1 := testServer().completionsFromModuleScope(module, 0, newCheckerScopeView(fileScopes[0]), newCheckerScopeView(moduleScope), nil, loc0)
 	seen1 := map[string]bool{}
 	for _, item := range items1 {
 		seen1[item.Label] = true
@@ -1094,7 +1094,7 @@ declare val x: number`},
 	assert.True(t, seen1["y"], "y from other file should be visible (cross-file)")
 
 	// Completions from file2 (which does NOT have the import)
-	items2 := testServer().completionsFromModuleScope(module, 1, fileScopes[1], moduleScope, loc1)
+	items2 := testServer().completionsFromModuleScope(module, 1, newCheckerScopeView(fileScopes[1]), newCheckerScopeView(moduleScope), nil, loc1)
 	seen2 := map[string]bool{}
 	for _, item := range items2 {
 		seen2[item.Label] = true
@@ -1143,7 +1143,7 @@ fn usePkg() -> number { 1 }`},
 	loc1 := cursorAt(sources[1].Contents, 2, 1)
 
 	// file1 completions: pkg namespace should be present
-	items1 := testServer().completionsFromModuleScope(module, 0, fileScopes[0], moduleScope, loc0)
+	items1 := testServer().completionsFromModuleScope(module, 0, newCheckerScopeView(fileScopes[0]), newCheckerScopeView(moduleScope), nil, loc0)
 	seen1 := map[string]bool{}
 	for _, item := range items1 {
 		seen1[item.Label] = true
@@ -1153,7 +1153,7 @@ fn usePkg() -> number { 1 }`},
 	assert.True(t, seen1["other"], "other from file2 should be visible (cross-file)")
 
 	// file2 completions: pkg namespace should NOT be present
-	items2 := testServer().completionsFromModuleScope(module, 1, fileScopes[1], moduleScope, loc1)
+	items2 := testServer().completionsFromModuleScope(module, 1, newCheckerScopeView(fileScopes[1]), newCheckerScopeView(moduleScope), nil, loc1)
 	seen2 := map[string]bool{}
 	for _, item := range items2 {
 		seen2[item.Label] = true
@@ -1175,7 +1175,7 @@ func TestModuleNamespaceVisibleFromRootFile(t *testing.T) {
 
 	// Completions from main.esc (root namespace)
 	loc := cursorAt(sources[0].Contents, 1, 1)
-	items := testServer().completionsFromModuleScope(module, 0, fileScopes[0], moduleScope, loc)
+	items := testServer().completionsFromModuleScope(module, 0, newCheckerScopeView(fileScopes[0]), newCheckerScopeView(moduleScope), nil, loc)
 
 	seen := map[string]bool{}
 	kindByLabel := map[string]protocol.CompletionItemKind{}
@@ -1204,7 +1204,7 @@ func TestModuleNamespaceDeclsVisibleWithinSameNamespace(t *testing.T) {
 	loc1 := cursorAt(sources[1].Contents, 1, 1)
 
 	// Completions from add.esc
-	items1 := testServer().completionsFromModuleScope(module, 0, fileScopes[0], moduleScope, loc0)
+	items1 := testServer().completionsFromModuleScope(module, 0, newCheckerScopeView(fileScopes[0]), newCheckerScopeView(moduleScope), nil, loc0)
 	seen1 := map[string]bool{}
 	for _, item := range items1 {
 		seen1[item.Label] = true
@@ -1214,7 +1214,7 @@ func TestModuleNamespaceDeclsVisibleWithinSameNamespace(t *testing.T) {
 	assert.True(t, seen1["sub"], "sub from other file in same namespace should be visible")
 
 	// Completions from sub.esc
-	items2 := testServer().completionsFromModuleScope(module, 1, fileScopes[1], moduleScope, loc1)
+	items2 := testServer().completionsFromModuleScope(module, 1, newCheckerScopeView(fileScopes[1]), newCheckerScopeView(moduleScope), nil, loc1)
 	seen2 := map[string]bool{}
 	for _, item := range items2 {
 		seen2[item.Label] = true
@@ -1235,7 +1235,7 @@ func TestModuleMultipleNamespacesVisible(t *testing.T) {
 	module, moduleScope, fileScopes := parseModuleAndInfer(t, sources)
 
 	loc := cursorAt(sources[0].Contents, 1, 1)
-	items := testServer().completionsFromModuleScope(module, 0, fileScopes[0], moduleScope, loc)
+	items := testServer().completionsFromModuleScope(module, 0, newCheckerScopeView(fileScopes[0]), newCheckerScopeView(moduleScope), nil, loc)
 
 	seen := map[string]bool{}
 	for _, item := range items {
@@ -1298,7 +1298,7 @@ fn rootFunc() -> string { "hello" }`},
 
 	// Cursor at "rootDecl" on line 2 inside helperFunc in the lib/helper.esc file
 	loc := cursorAt(sources[1].Contents, 2, 2)
-	items := testServer().completionsFromModuleScope(module, 1, fileScopes[1], moduleScope, loc)
+	items := testServer().completionsFromModuleScope(module, 1, newCheckerScopeView(fileScopes[1]), newCheckerScopeView(moduleScope), nil, loc)
 	seen := map[string]bool{}
 	for _, item := range items {
 		seen[item.Label] = true
@@ -1329,7 +1329,7 @@ val other: number = 2`},
 	require.True(t, ok, "expected IdentExpr, got %T", node)
 	require.Equal(t, "roo", identExpr.Name)
 
-	items := testServer().completionsFromModuleScope(module, 1, fileScopes[1], moduleScope, loc)
+	items := testServer().completionsFromModuleScope(module, 1, newCheckerScopeView(fileScopes[1]), newCheckerScopeView(moduleScope), nil, loc)
 	filtered := filterByPrefix(items, identExpr.Name)
 	labels := getCompletionLabels(filtered)
 
@@ -1966,4 +1966,188 @@ func TestMemberCompletionFromSolverMembership(t *testing.T) {
 			}
 		})
 	}
+}
+
+// --- Scope completions from internal/solver ---
+
+// solverCompletionItems checks files on internal/solver, opens open, and returns the
+// completion items at line and col, both 1-based, with each item's detail resolved.
+func solverCompletionItems(t *testing.T, files map[string]string, open string, line, col int) map[string]string {
+	t.Helper()
+	useSolver(t)
+	s := integrationServer(t, files)
+	uri := openFile(t, s, open, files[open])
+	result, err := s.textDocumentCompletion(&glsp.Context{}, &protocol.CompletionParams{
+		TextDocumentPositionParams: protocol.TextDocumentPositionParams{
+			TextDocument: protocol.TextDocumentIdentifier{URI: uri},
+			Position: protocol.Position{
+				Line:      protocol.UInteger(line - 1),
+				Character: protocol.UInteger(col - 1),
+			},
+		},
+	})
+	require.NoError(t, err)
+	require.NotNil(t, result)
+	list, ok := result.(*protocol.CompletionList)
+	require.True(t, ok)
+	details := make(map[string]string, len(list.Items))
+	for _, item := range list.Items {
+		resolved, err := s.completionItemResolve(&glsp.Context{}, &item)
+		require.NoError(t, err)
+		detail := ""
+		if resolved.Detail != nil {
+			detail = *resolved.Detail
+		}
+		details[item.Label] = detail
+	}
+	return details
+}
+
+func TestScopeCompletionFromSolver(t *testing.T) {
+	tests := []struct {
+		name  string
+		files map[string]string
+		// open is the file the cursor is in. line and col are 1-based.
+		open      string
+		line, col int
+		// expected maps each label the list must hold to its resolved detail.
+		expected map[string]string
+		// excludes are labels the list must not hold.
+		excludes []string
+	}{
+		{
+			name:     "ScriptLocalsBeforeCursor",
+			files:    map[string]string{"bin/main.esc": "val x = 5\nval y = x\nval z = 1"},
+			open:     "bin/main.esc",
+			line:     2,
+			col:      10,
+			expected: map[string]string{"x": "5"},
+			excludes: []string{"y", "z"},
+		},
+		{
+			name:     "AmbientBuiltinsInScript",
+			files:    map[string]string{"bin/main.esc": "val n = pars"},
+			open:     "bin/main.esc",
+			line:     1,
+			col:      13,
+			expected: map[string]string{"parseInt": "fn (string: string, radix?: number) -> number"},
+		},
+		{
+			name:     "OperatorBindingsLeftOut",
+			files:    map[string]string{"bin/main.esc": "val n = un"},
+			open:     "bin/main.esc",
+			line:     1,
+			col:      11,
+			expected: map[string]string{},
+			excludes: []string{"unary +", "unary -"},
+		},
+		{
+			name:     "AmbientNamespaceInScript",
+			files:    map[string]string{"bin/main.esc": "val n = Mat"},
+			open:     "bin/main.esc",
+			line:     1,
+			col:      12,
+			expected: map[string]string{"Math": "namespace"},
+		},
+		{
+			name: "BinSeesLibExport",
+			files: map[string]string{
+				"lib/math.esc": "export fn add(a: number, b: number) -> number { return a + b }",
+				"bin/main.esc": "val x = ad",
+			},
+			open:     "bin/main.esc",
+			line:     1,
+			col:      11,
+			expected: map[string]string{"add": "fn (a: number, b: number) -> number"},
+		},
+		{
+			name:     "ScriptTypeAnnotation",
+			files:    map[string]string{"bin/main.esc": "type Point = {x: number}\nval p: Po"},
+			open:     "bin/main.esc",
+			line:     2,
+			col:      10,
+			expected: map[string]string{"Point": "{x: number}"},
+		},
+		{
+			name: "ModuleDeclsAcrossFiles",
+			files: map[string]string{
+				"lib/a.esc": "export fn add(a: number, b: number) -> number { return a + b }",
+				"lib/b.esc": "export val total = ad",
+			},
+			open:     "lib/b.esc",
+			line:     1,
+			col:      22,
+			expected: map[string]string{"add": "fn (a: number, b: number) -> number"},
+		},
+		{
+			name: "NamespacedLibFile",
+			files: map[string]string{
+				"lib/geo/point.esc": "export fn origin() -> number { return 0 }\nexport val o = ori",
+			},
+			open:     "lib/geo/point.esc",
+			line:     2,
+			col:      19,
+			expected: map[string]string{"origin": "fn () -> number"},
+		},
+		{
+			name:     "LibFileImport",
+			files:    map[string]string{"lib/a.esc": "import \"std:math\"\nexport val n = mat"},
+			open:     "lib/a.esc",
+			line:     2,
+			col:      18,
+			expected: map[string]string{"math": ""},
+		},
+		{
+			name:     "AmbientBuiltinsInModule",
+			files:    map[string]string{"lib/a.esc": "export val n = pars"},
+			open:     "lib/a.esc",
+			line:     1,
+			col:      20,
+			expected: map[string]string{"parseInt": "fn (string: string, radix?: number) -> number"},
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			details := solverCompletionItems(t, tt.files, tt.open, tt.line, tt.col)
+			for label, detail := range tt.expected {
+				require.Contains(t, details, label)
+				require.Equal(t, detail, details[label], "detail of %s", label)
+			}
+			for _, label := range tt.excludes {
+				require.NotContains(t, details, label)
+			}
+		})
+	}
+}
+
+// TestScopeCompletionFromSolverAfterIncrementalCheck asserts that a bin/ file re-checked
+// alone against the cached library completes from the scope that re-check produced.
+func TestScopeCompletionFromSolverAfterIncrementalCheck(t *testing.T) {
+	useSolver(t)
+	files := map[string]string{
+		"lib/math.esc": "export fn add(a: number, b: number) -> number { return a + b }",
+		"bin/main.esc": "val x = add(1, 2)",
+	}
+	s := integrationServer(t, files)
+	openFile(t, s, "lib/math.esc", files["lib/math.esc"])
+	binURI := openFile(t, s, "bin/main.esc", files["bin/main.esc"])
+
+	newText := "val x = add(1, 2)\nval later = 1\nval y = la"
+	require.NoError(t, s.textDocumentDidChange(&glsp.Context{}, &protocol.DidChangeTextDocumentParams{
+		TextDocument: protocol.VersionedTextDocumentIdentifier{
+			TextDocumentIdentifier: protocol.TextDocumentIdentifier{URI: binURI},
+			Version:                2,
+		},
+		ContentChanges: []any{
+			protocol.TextDocumentContentChangeEventWhole{Text: newText},
+		},
+	}))
+	// sync.NewCond(s.mu.RLocker()) built s.validated, so the wait runs under RLock.
+	s.mu.RLock()
+	for s.validatedVersion[binURI] < 2 {
+		s.validated.Wait()
+	}
+	s.mu.RUnlock()
+
+	require.Equal(t, []string{"later"}, getCompletionLabelsAt(t, s, binURI, 3, 11))
 }

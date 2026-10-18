@@ -13,6 +13,7 @@ import (
 
 	"github.com/escalier-lang/escalier/internal/ast"
 	"github.com/escalier-lang/escalier/internal/checker"
+	"github.com/escalier-lang/escalier/internal/compiler"
 	"github.com/escalier-lang/escalier/internal/lexer_util"
 	"github.com/escalier-lang/escalier/internal/soltype"
 	"github.com/escalier-lang/escalier/internal/solver"
@@ -33,53 +34,50 @@ type completionResolveData struct {
 
 // buildPreludeCompletions computes completion items for all prelude/global scope
 // bindings. Detail is deferred to completionItem/resolve.
-func buildPreludeCompletions(scope *checker.Scope) []protocol.CompletionItem {
-	if scope == nil {
+func buildPreludeCompletions(view scopeView) []protocol.CompletionItem {
+	if view == nil {
 		return nil
 	}
 	var items []protocol.CompletionItem
-	buildScopeCompletionsNoDetail(scope, &items, "prelude")
+	buildScopeCompletionsNoDetail(view, &items, "prelude")
 	return items
 }
 
 // buildScopeCompletionsNoDetail recursively collects completion items from a scope
 // chain without computing Detail strings. Sets Data for deferred resolution.
-func buildScopeCompletionsNoDetail(scope *checker.Scope, items *[]protocol.CompletionItem, scopeID string) {
-	if scope == nil {
-		return
+func buildScopeCompletionsNoDetail(view scopeView, items *[]protocol.CompletionItem, scopeID string) {
+	for cur := view; cur != nil; cur = cur.parent() {
+		for _, name := range cur.valueNames() {
+			kind, _ := cur.valueKind(name)
+			*items = append(*items, protocol.CompletionItem{
+				Label: name,
+				Kind:  &kind,
+				Data:  completionResolveData{Scope: scopeID, Name: name},
+			})
+		}
+		for _, name := range cur.typeNames() {
+			kind, _ := cur.typeKind(name)
+			*items = append(*items, protocol.CompletionItem{
+				Label: name,
+				Kind:  &kind,
+				Data:  completionResolveData{Scope: scopeID, Name: name},
+			})
+		}
+		for _, name := range cur.namespaceNames() {
+			kind := protocol.CompletionItemKindModule
+			*items = append(*items, protocol.CompletionItem{
+				Label: name,
+				Kind:  &kind,
+				Data:  completionResolveData{Scope: scopeID, Name: name},
+			})
+		}
 	}
-	ns := scope.Namespace
-	for name, binding := range ns.Values {
-		kind := completionKindForValueType(binding.Type)
-		*items = append(*items, protocol.CompletionItem{
-			Label: name,
-			Kind:  &kind,
-			Data:  completionResolveData{Scope: scopeID, Name: name},
-		})
-	}
-	for name, alias := range ns.Types {
-		kind := completionKindForTypeAlias(alias)
-		*items = append(*items, protocol.CompletionItem{
-			Label: name,
-			Kind:  &kind,
-			Data:  completionResolveData{Scope: scopeID, Name: name},
-		})
-	}
-	for name := range ns.Namespaces {
-		kind := protocol.CompletionItemKindModule
-		*items = append(*items, protocol.CompletionItem{
-			Label: name,
-			Kind:  &kind,
-			Data:  completionResolveData{Scope: scopeID, Name: name},
-		})
-	}
-	buildScopeCompletionsNoDetail(scope.Parent, items, scopeID)
 }
 
-// getPreludeCompletions returns cached prelude completion items, building them
-// on first access. The prelude scope is obtained from the script or module scope's
-// parent chain.
-func (s *Server) getPreludeCompletions(preludeScope *checker.Scope) []protocol.CompletionItem {
+// getPreludeCompletions returns cached completion items for the builtins, building them
+// on first access from preludeView, the first builtin level of a script's or module's
+// scope chain.
+func (s *Server) getPreludeCompletions(preludeView scopeView) []protocol.CompletionItem {
 	s.mu.RLock()
 	cached := s.preludeCompletions
 	s.mu.RUnlock()
@@ -87,12 +85,11 @@ func (s *Server) getPreludeCompletions(preludeScope *checker.Scope) []protocol.C
 		return cached
 	}
 
-	items := buildPreludeCompletions(preludeScope)
+	items := buildPreludeCompletions(preludeView)
 
 	s.mu.Lock()
 	// Double-check in case another goroutine built it concurrently.
 	if s.preludeCompletions == nil {
-		s.preludeScope = preludeScope
 		s.preludeCompletions = items
 	}
 	cached = s.preludeCompletions
@@ -149,39 +146,70 @@ func (s *Server) completionItemResolve(context *glsp.Context, params *protocol.C
 // data.Scope and searches for the binding by name.
 func (s *Server) resolveDetail(data completionResolveData) string {
 	s.mu.RLock()
-	var scope *checker.Scope
+	var view scopeView
 	switch data.Scope {
 	case "prelude":
-		scope = s.preludeScope
+		if co := s.checkOutput; co != nil {
+			view = builtinScopeView(co)
+		}
 	case "script":
 		if co := s.checkOutput; co != nil {
-			sourceID := s.sourceIDForURI(protocol.DocumentUri(data.URI))
-			scope = co.ScriptScopes[sourceID]
+			view = scriptScopeView(co, s.sourceIDForURI(protocol.DocumentUri(data.URI)))
 		}
 	case "module":
 		if co := s.checkOutput; co != nil {
-			scope = co.ModuleScope
+			view = moduleScopeView(co)
 		}
 	}
 	s.mu.RUnlock()
-	if scope == nil {
+	if view == nil {
 		return ""
 	}
+	s.solverMu.RLock()
+	defer s.solverMu.RUnlock()
+	return lookupDetail(view, data.Name)
+}
 
-	for s := scope; s != nil; s = s.Parent {
-		ns := s.Namespace
-		if binding, ok := ns.Values[data.Name]; ok {
-			return safeTypeString(binding.Type)
-		}
-		if alias, ok := ns.Types[data.Name]; ok {
-			return safeTypeString(alias.Type)
-		}
-		if _, ok := ns.Namespaces[data.Name]; ok {
-			return "namespace"
+// scriptScopeView returns a view of the scope a bin/ script was checked in, from
+// whichever checker produced co, or nil when co holds none for sourceID.
+func scriptScopeView(co *compiler.CheckOutput, sourceID int) scopeView {
+	if scope, ok := co.SolverScriptScopes[sourceID]; ok {
+		return newSolverScopeView(scope, co.ScriptInfos[sourceID])
+	}
+	return newCheckerScopeView(co.ScriptScopes[sourceID])
+}
+
+// moduleScopeView returns a view of the lib/ module's scope from whichever checker
+// produced co, or nil when co holds none.
+func moduleScopeView(co *compiler.CheckOutput) scopeView {
+	if co.SolverModuleScope != nil {
+		return newSolverScopeView(co.SolverModuleScope, co.ModuleInfo)
+	}
+	return newCheckerScopeView(co.ModuleScope)
+}
+
+// builtinScopeView returns a view of the first level that holds builtins in the scope
+// chains co holds, or nil when co holds no scope. Every lib/ and bin/ file of a check
+// reaches the same builtins, so any one chain answers.
+func builtinScopeView(co *compiler.CheckOutput) scopeView {
+	if view := moduleScopeView(co); view != nil {
+		return firstBuiltin(view)
+	}
+	for sourceID := range co.Scripts {
+		if view := scriptScopeView(co, sourceID); view != nil {
+			return firstBuiltin(view)
 		}
 	}
+	return nil
+}
 
-	return ""
+// fileScopeView returns a view of the import scope of the lib/ file sourceID names, or
+// nil when co holds none for it.
+func fileScopeView(co *compiler.CheckOutput, sourceID int) scopeView {
+	if scope, ok := co.SolverFileScopes[sourceID]; ok {
+		return newSolverScopeView(scope, co.ModuleInfo)
+	}
+	return newCheckerScopeView(co.FileScopes[sourceID])
 }
 
 // shouldSuppressCompletions checks if the cursor is on a node where completions
@@ -226,20 +254,22 @@ func (s *Server) textDocumentCompletion(context *glsp.Context, params *protocol.
 	}
 	var module *ast.Module
 	var moduleScope *checker.Scope
-	var fileScopes map[int]*checker.Scope
 	var script *ast.Script
 	var scope *checker.Scope
 	var checkedSrc *ast.Source
 	var info *solver.Info
+	var moduleView, fileView, scriptView scopeView
 	sourceID := s.sourceIDForURI(uri)
 	if co := s.checkOutput; co != nil {
 		module = co.Module
 		moduleScope = co.ModuleScope
-		fileScopes = co.FileScopes
 		script = co.Scripts[sourceID]
 		scope = co.ScriptScopes[sourceID]
 		checkedSrc = co.SourceByID(sourceID)
 		info = co.InfoFor(sourceID)
+		moduleView = moduleScopeView(co)
+		fileView = fileScopeView(co, sourceID)
+		scriptView = scriptScopeView(co, sourceID)
 	}
 	doc, opened := s.documents[uri]
 	s.mu.RUnlock()
@@ -256,6 +286,10 @@ func (s *Server) textDocumentCompletion(context *glsp.Context, params *protocol.
 
 	isModule := s.isModuleFile(uri)
 
+	// Every path below may query a run's Info or its scopes.
+	s.solverMu.RLock()
+	defer s.solverMu.RUnlock()
+
 	// Check if the cursor is on a node where completions should be suppressed
 	// (e.g. IdentPat). This runs after waiting for validation so the cached
 	// ASTs are up to date.
@@ -263,17 +297,13 @@ func (s *Server) textDocumentCompletion(context *glsp.Context, params *protocol.
 		return &protocol.CompletionList{Items: []protocol.CompletionItem{}}, nil
 	}
 
-	// A check by internal/solver records Info and no *checker.Scope, and one by the old
-	// checker does the reverse, so either one is enough to complete from.
-	checked := info != nil
-
 	// Try module-aware completions first.
-	if module != nil && isModule && (moduleScope != nil || checked) {
-		return s.moduleCompletion(module, sourceID, moduleScope, fileScopes, info, loc, doc.Text)
+	if module != nil && isModule && moduleView != nil {
+		return s.moduleCompletion(module, sourceID, moduleScope, moduleView, fileView, info, loc, doc.Text)
 	}
 
 	// Fall back to script-based completions.
-	if script == nil || (scope == nil && !checked) {
+	if script == nil || scriptView == nil {
 		return nil, nil
 	}
 
@@ -283,7 +313,7 @@ func (s *Server) textDocumentCompletion(context *glsp.Context, params *protocol.
 
 	if node == nil {
 		// Cursor on whitespace/blank — provide scope-based completions
-		items = s.completionsFromScope(script, scope, loc, string(uri))
+		items = s.completionsFromScope(script, scriptView, info, loc, string(uri))
 	} else {
 		switch n := node.(type) {
 		case *ast.MemberExpr:
@@ -301,12 +331,12 @@ func (s *Server) textDocumentCompletion(context *glsp.Context, params *protocol.
 				items = filterByPrefix(items, n.Name)
 			} else {
 				// Case C: standalone identifier — scope-based completions
-				items = s.completionsFromScope(script, scope, loc, string(uri))
+				items = s.completionsFromScope(script, scriptView, info, loc, string(uri))
 				items = filterByPrefix(items, n.Name)
 			}
 		case *ast.TypeRefTypeAnn:
 			// Cursor is in a type annotation — return only type completions.
-			items = typeCompletionsFromScope(scope, "script", string(uri))
+			items = typeCompletionsFromScope(scriptView, "script", string(uri))
 			if n.Name != nil {
 				if ident, ok := n.Name.(*ast.Ident); ok && ident.Name != "" {
 					items = filterByPrefix(items, ident.Name)
@@ -314,7 +344,7 @@ func (s *Server) textDocumentCompletion(context *glsp.Context, params *protocol.
 			}
 		default:
 			// Other node types — provide scope-based completions
-			items = s.completionsFromScope(script, scope, loc, string(uri))
+			items = s.completionsFromScope(script, scriptView, info, loc, string(uri))
 			if prefix := wordAtCursor(doc.Text, loc); prefix != "" {
 				items = filterByPrefix(items, prefix)
 			}
@@ -336,12 +366,12 @@ func (s *Server) moduleCompletion(
 	module *ast.Module,
 	sourceID int,
 	moduleScope *checker.Scope,
-	fileScopes map[int]*checker.Scope,
+	moduleView scopeView,
+	fileView scopeView,
 	info *solver.Info,
 	loc ast.Location,
 	docText string,
 ) (any, error) {
-	fileScope := fileScopes[sourceID]
 	// Use the module scope for type lookups (member completions need it for
 	// wrapper type aliases like String, Number, etc.)
 	lookupScope := moduleScope
@@ -354,7 +384,7 @@ func (s *Server) moduleCompletion(
 	var items []protocol.CompletionItem
 
 	if node == nil {
-		items = s.completionsFromModuleScope(module, sourceID, fileScope, moduleScope, loc)
+		items = s.completionsFromModuleScope(module, sourceID, fileView, moduleView, info, loc)
 	} else {
 		switch n := node.(type) {
 		case *ast.MemberExpr:
@@ -367,7 +397,7 @@ func (s *Server) moduleCompletion(
 				items = s.memberCompletions(memberExpr, info, lookupScope)
 				items = filterByPrefix(items, n.Name)
 			} else {
-				items = s.completionsFromModuleScope(module, sourceID, fileScope, moduleScope, loc)
+				items = s.completionsFromModuleScope(module, sourceID, fileView, moduleView, info, loc)
 				items = filterByPrefix(items, n.Name)
 			}
 		case *ast.TypeRefTypeAnn:
@@ -376,11 +406,11 @@ func (s *Server) moduleCompletion(
 			seen := map[string]bool{}
 			// URI is empty because resolveModuleDetail looks up s.moduleScopeCache
 			// directly and doesn't need a per-file URI.
-			items = typeCompletionsFromScope(moduleScope, "module", "")
+			items = typeCompletionsFromScope(moduleView, "module", "")
 			for _, item := range items {
 				seen[item.Label] = true
 			}
-			collectFileImportBindings(module, sourceID, fileScope, seen, &items)
+			collectFileImportBindings(module, sourceID, fileView, seen, &items)
 			// Filter out value-only imports (keep types and namespaces).
 			items = filterTypeItems(items)
 			if n.Name != nil {
@@ -389,7 +419,7 @@ func (s *Server) moduleCompletion(
 				}
 			}
 		default:
-			items = s.completionsFromModuleScope(module, sourceID, fileScope, moduleScope, loc)
+			items = s.completionsFromModuleScope(module, sourceID, fileView, moduleView, info, loc)
 			if prefix := wordAtCursor(docText, loc); prefix != "" {
 				items = filterByPrefix(items, prefix)
 			}
@@ -411,8 +441,6 @@ func (s *Server) moduleCompletion(
 // checker wrote onto the receiver and looks up that type's wrapper classes in scope.
 func (s *Server) memberCompletions(e *ast.MemberExpr, info *solver.Info, scope *checker.Scope) []protocol.CompletionItem {
 	if info != nil {
-		s.solverMu.RLock()
-		defer s.solverMu.RUnlock()
 		t := info.DisplayTypeOf(e.Object)
 		if t == nil {
 			return nil
@@ -842,9 +870,8 @@ func keyedCompletionSets(sets [][]protocol.CompletionItem) []map[string]protocol
 // It walks the AST ancestor chain from the cursor position, collecting bindings from
 // each enclosing scope: function params, match/catch pattern bindings, for-in loop
 // variables, if-val patterns, and block-local variable declarations.
-func (s *Server) completionsFromScope(script *ast.Script, scope *checker.Scope, cursor ast.Location, uri string) []protocol.CompletionItem {
-	// A check by internal/solver holds no *checker.Scope to complete from.
-	if scope == nil {
+func (s *Server) completionsFromScope(script *ast.Script, view scopeView, info *solver.Info, cursor ast.Location, uri string) []protocol.CompletionItem {
+	if view == nil {
 		return nil
 	}
 	seen := map[string]bool{}
@@ -859,36 +886,36 @@ func (s *Server) completionsFromScope(script *ast.Script, scope *checker.Scope, 
 		case *ast.FuncDecl:
 			if a.Body != nil && a.Body.Span.Contains(cursor) {
 				for _, param := range a.Params {
-					collectPatternBindings(param.Pattern, seen, &items)
+					collectPatternBindings(info, param.Pattern, seen, &items)
 				}
-				collectBlockBindings(a.Body.Stmts, cursor, false, seen, &items)
+				collectBlockBindings(info, a.Body.Stmts, cursor, false, seen, &items)
 			}
 		case *ast.FuncExpr:
 			if a.Body != nil && a.Body.Span.Contains(cursor) {
 				for _, param := range a.Params {
-					collectPatternBindings(param.Pattern, seen, &items)
+					collectPatternBindings(info, param.Pattern, seen, &items)
 				}
-				collectBlockBindings(a.Body.Stmts, cursor, false, seen, &items)
+				collectBlockBindings(info, a.Body.Stmts, cursor, false, seen, &items)
 			}
 		case *ast.MatchExpr:
 			for _, matchCase := range a.Cases {
 				if matchCase.Span().Contains(cursor) {
-					collectPatternBindings(matchCase.Pattern, seen, &items)
+					collectPatternBindings(info, matchCase.Pattern, seen, &items)
 					if matchCase.Body.Block != nil {
-						collectBlockBindings(matchCase.Body.Block.Stmts, cursor, false, seen, &items)
+						collectBlockBindings(info, matchCase.Body.Block.Stmts, cursor, false, seen, &items)
 					}
 					break
 				}
 			}
 		case *ast.TryCatchExpr:
 			if a.Try.Span.Contains(cursor) {
-				collectBlockBindings(a.Try.Stmts, cursor, false, seen, &items)
+				collectBlockBindings(info, a.Try.Stmts, cursor, false, seen, &items)
 			} else {
 				for _, catchCase := range a.Catch {
 					if catchCase.Span().Contains(cursor) {
-						collectPatternBindings(catchCase.Pattern, seen, &items)
+						collectPatternBindings(info, catchCase.Pattern, seen, &items)
 						if catchCase.Body.Block != nil {
-							collectBlockBindings(catchCase.Body.Block.Stmts, cursor, false, seen, &items)
+							collectBlockBindings(info, catchCase.Body.Block.Stmts, cursor, false, seen, &items)
 						}
 						break
 					}
@@ -896,49 +923,45 @@ func (s *Server) completionsFromScope(script *ast.Script, scope *checker.Scope, 
 			}
 		case *ast.IfValExpr:
 			if a.Cons.Span.Contains(cursor) {
-				collectPatternBindings(a.Pattern, seen, &items)
-				collectBlockBindings(a.Cons.Stmts, cursor, false, seen, &items)
+				collectPatternBindings(info, a.Pattern, seen, &items)
+				collectBlockBindings(info, a.Cons.Stmts, cursor, false, seen, &items)
 			} else if a.Alt != nil && a.Alt.Block != nil && a.Alt.Block.Span.Contains(cursor) {
-				collectBlockBindings(a.Alt.Block.Stmts, cursor, false, seen, &items)
+				collectBlockBindings(info, a.Alt.Block.Stmts, cursor, false, seen, &items)
 			}
 		case *ast.IfElseExpr:
 			if a.Cons.Span.Contains(cursor) {
-				collectBlockBindings(a.Cons.Stmts, cursor, false, seen, &items)
+				collectBlockBindings(info, a.Cons.Stmts, cursor, false, seen, &items)
 			} else if a.Alt != nil && a.Alt.Block != nil && a.Alt.Block.Span.Contains(cursor) {
-				collectBlockBindings(a.Alt.Block.Stmts, cursor, false, seen, &items)
+				collectBlockBindings(info, a.Alt.Block.Stmts, cursor, false, seen, &items)
 			}
 		case *ast.DoExpr:
 			if a.Body.Span.Contains(cursor) {
-				collectBlockBindings(a.Body.Stmts, cursor, false, seen, &items)
+				collectBlockBindings(info, a.Body.Stmts, cursor, false, seen, &items)
 			}
 		case *ast.ForInStmt:
 			if a.Body.Span.Contains(cursor) {
-				collectPatternBindings(a.Pattern, seen, &items)
-				collectBlockBindings(a.Body.Stmts, cursor, false, seen, &items)
+				collectPatternBindings(info, a.Pattern, seen, &items)
+				collectBlockBindings(info, a.Body.Stmts, cursor, false, seen, &items)
 			}
 		}
 	}
 
 	// Collect from top-level script statements.
 	// Scripts (bin/) don't hoist — only modules (lib/) do.
-	collectBlockBindings(script.Stmts, cursor, false, seen, &items)
+	collectBlockBindings(info, script.Stmts, cursor, false, seen, &items)
 
 	// Collect type and namespace symbols from the current scope.
 	// Values are already collected by collectBlockBindings above.
-	collectScopeTypeBindings(scope, seen, &items)
+	collectScopeTypeBindings(view, seen, &items)
 
 	// Walk up the scope chain to collect bindings from intermediate scopes
 	// (e.g., the lib namespace scope between the script scope and prelude).
-	// Skip the prelude — it's handled separately below with caching.
-	preludeScope := scope.Parent
-	// The condition s.Parent != nil stops before the prelude (whose Parent is nil).
-	for s := scope.Parent; s != nil && s.Parent != nil; s = s.Parent {
-		preludeScope = s.Parent
-		ns := s.Namespace
-		for name, binding := range ns.Values {
+	// Skip the builtins — they're handled separately below with caching.
+	for cur := view.parent(); cur != nil && !cur.isBuiltin(); cur = cur.parent() {
+		for _, name := range cur.valueNames() {
 			if !seen[name] {
 				seen[name] = true
-				kind := completionKindForValueType(binding.Type)
+				kind, _ := cur.valueKind(name)
 				items = append(items, protocol.CompletionItem{
 					Label: name,
 					Kind:  &kind,
@@ -949,7 +972,7 @@ func (s *Server) completionsFromScope(script *ast.Script, scope *checker.Scope, 
 	}
 
 	// Append cached prelude/global bindings, skipping any that are shadowed.
-	for _, item := range s.getPreludeCompletions(preludeScope) {
+	for _, item := range s.getPreludeCompletions(firstBuiltin(view)) {
 		if !seen[item.Label] {
 			seen[item.Label] = true
 			items = append(items, item)
@@ -965,12 +988,12 @@ func (s *Server) completionsFromScope(script *ast.Script, scope *checker.Scope, 
 func (s *Server) completionsFromModuleScope(
 	module *ast.Module,
 	sourceID int,
-	fileScope *checker.Scope,
-	moduleScope *checker.Scope,
+	fileView scopeView,
+	moduleView scopeView,
+	info *solver.Info,
 	cursor ast.Location,
 ) []protocol.CompletionItem {
-	// A check by internal/solver holds no *checker.Scope to complete from.
-	if moduleScope == nil {
+	if moduleView == nil {
 		return nil
 	}
 	seen := map[string]bool{}
@@ -983,36 +1006,36 @@ func (s *Server) completionsFromModuleScope(
 		case *ast.FuncDecl:
 			if a.Body != nil && a.Body.Span.Contains(cursor) {
 				for _, param := range a.Params {
-					collectPatternBindings(param.Pattern, seen, &items)
+					collectPatternBindings(info, param.Pattern, seen, &items)
 				}
-				collectBlockBindings(a.Body.Stmts, cursor, false, seen, &items)
+				collectBlockBindings(info, a.Body.Stmts, cursor, false, seen, &items)
 			}
 		case *ast.FuncExpr:
 			if a.Body != nil && a.Body.Span.Contains(cursor) {
 				for _, param := range a.Params {
-					collectPatternBindings(param.Pattern, seen, &items)
+					collectPatternBindings(info, param.Pattern, seen, &items)
 				}
-				collectBlockBindings(a.Body.Stmts, cursor, false, seen, &items)
+				collectBlockBindings(info, a.Body.Stmts, cursor, false, seen, &items)
 			}
 		case *ast.MatchExpr:
 			for _, matchCase := range a.Cases {
 				if matchCase.Span().Contains(cursor) {
-					collectPatternBindings(matchCase.Pattern, seen, &items)
+					collectPatternBindings(info, matchCase.Pattern, seen, &items)
 					if matchCase.Body.Block != nil {
-						collectBlockBindings(matchCase.Body.Block.Stmts, cursor, false, seen, &items)
+						collectBlockBindings(info, matchCase.Body.Block.Stmts, cursor, false, seen, &items)
 					}
 					break
 				}
 			}
 		case *ast.TryCatchExpr:
 			if a.Try.Span.Contains(cursor) {
-				collectBlockBindings(a.Try.Stmts, cursor, false, seen, &items)
+				collectBlockBindings(info, a.Try.Stmts, cursor, false, seen, &items)
 			} else {
 				for _, catchCase := range a.Catch {
 					if catchCase.Span().Contains(cursor) {
-						collectPatternBindings(catchCase.Pattern, seen, &items)
+						collectPatternBindings(info, catchCase.Pattern, seen, &items)
 						if catchCase.Body.Block != nil {
-							collectBlockBindings(catchCase.Body.Block.Stmts, cursor, false, seen, &items)
+							collectBlockBindings(info, catchCase.Body.Block.Stmts, cursor, false, seen, &items)
 						}
 						break
 					}
@@ -1020,25 +1043,25 @@ func (s *Server) completionsFromModuleScope(
 			}
 		case *ast.IfValExpr:
 			if a.Cons.Span.Contains(cursor) {
-				collectPatternBindings(a.Pattern, seen, &items)
-				collectBlockBindings(a.Cons.Stmts, cursor, false, seen, &items)
+				collectPatternBindings(info, a.Pattern, seen, &items)
+				collectBlockBindings(info, a.Cons.Stmts, cursor, false, seen, &items)
 			} else if a.Alt != nil && a.Alt.Block != nil && a.Alt.Block.Span.Contains(cursor) {
-				collectBlockBindings(a.Alt.Block.Stmts, cursor, false, seen, &items)
+				collectBlockBindings(info, a.Alt.Block.Stmts, cursor, false, seen, &items)
 			}
 		case *ast.IfElseExpr:
 			if a.Cons.Span.Contains(cursor) {
-				collectBlockBindings(a.Cons.Stmts, cursor, false, seen, &items)
+				collectBlockBindings(info, a.Cons.Stmts, cursor, false, seen, &items)
 			} else if a.Alt != nil && a.Alt.Block != nil && a.Alt.Block.Span.Contains(cursor) {
-				collectBlockBindings(a.Alt.Block.Stmts, cursor, false, seen, &items)
+				collectBlockBindings(info, a.Alt.Block.Stmts, cursor, false, seen, &items)
 			}
 		case *ast.DoExpr:
 			if a.Body.Span.Contains(cursor) {
-				collectBlockBindings(a.Body.Stmts, cursor, false, seen, &items)
+				collectBlockBindings(info, a.Body.Stmts, cursor, false, seen, &items)
 			}
 		case *ast.ForInStmt:
 			if a.Body.Span.Contains(cursor) {
-				collectPatternBindings(a.Pattern, seen, &items)
-				collectBlockBindings(a.Body.Stmts, cursor, false, seen, &items)
+				collectPatternBindings(info, a.Pattern, seen, &items)
+				collectBlockBindings(info, a.Body.Stmts, cursor, false, seen, &items)
 			}
 		}
 	}
@@ -1046,18 +1069,18 @@ func (s *Server) completionsFromModuleScope(
 	// 2. Collect module-level value declarations with position filtering.
 	// All top-level declarations in a module are always visible from other files
 	// inside the same module.
-	collectModuleDeclBindings(module, sourceID, moduleScope, seen, &items)
+	collectModuleDeclBindings(module, sourceID, moduleView, info, seen, &items)
 
 	// 3. Collect types and namespaces from the module scope.
-	collectScopeTypeBindings(moduleScope, seen, &items)
+	collectScopeTypeBindings(moduleView, seen, &items)
 
 	// 4. Collect file-scoped import bindings (values, types, namespaces).
-	if fileScope != nil {
-		collectFileImportBindings(module, sourceID, fileScope, seen, &items)
+	if fileView != nil {
+		collectFileImportBindings(module, sourceID, fileView, seen, &items)
 	}
 
 	// 5. Append cached prelude/global bindings, skipping any that are shadowed.
-	for _, item := range s.getPreludeCompletions(moduleScope.Parent) {
+	for _, item := range s.getPreludeCompletions(firstBuiltin(moduleView)) {
 		if !seen[item.Label] {
 			seen[item.Label] = true
 			items = append(items, item)
@@ -1074,7 +1097,8 @@ func (s *Server) completionsFromModuleScope(
 func collectModuleDeclBindings(
 	module *ast.Module,
 	sourceID int,
-	moduleScope *checker.Scope,
+	moduleView scopeView,
+	info *solver.Info,
 	seen map[string]bool,
 	items *[]protocol.CompletionItem,
 ) {
@@ -1084,18 +1108,6 @@ func collectModuleDeclBindings(
 		if file.SourceID == sourceID {
 			fileNsName = file.Namespace
 			break
-		}
-	}
-
-	// Get the type_system.Namespace for this file's namespace
-	tsNs := moduleScope.Namespace
-	if fileNsName != "" {
-		for _, part := range strings.Split(fileNsName, ".") {
-			child, ok := tsNs.GetNamespace(part)
-			if !ok {
-				return
-			}
-			tsNs = child
 		}
 	}
 
@@ -1116,8 +1128,7 @@ func collectModuleDeclBindings(
 			seen[name] = true
 			kind := protocol.CompletionItemKindFunction
 			var detail *string
-			if binding, ok := tsNs.Values[name]; ok {
-				d := safeTypeString(binding.Type)
+			if d, ok := moduleView.memberValueDetail(fileNsName, name); ok {
 				detail = &d
 			}
 			*items = append(*items, protocol.CompletionItem{
@@ -1128,7 +1139,7 @@ func collectModuleDeclBindings(
 		case *ast.VarDecl:
 			// Val declarations: all top-level declarations are visible anywhere in the file
 			// because the DepGraph reorders them before type checking
-			collectPatternBindings(d.Pattern, seen, items)
+			collectPatternBindings(info, d.Pattern, seen, items)
 		}
 	}
 }
@@ -1138,11 +1149,11 @@ func collectModuleDeclBindings(
 func collectFileImportBindings(
 	module *ast.Module,
 	sourceID int,
-	scope *checker.Scope,
+	view scopeView,
 	seen map[string]bool,
 	items *[]protocol.CompletionItem,
 ) {
-	if module == nil || scope == nil {
+	if module == nil || view == nil {
 		return
 	}
 
@@ -1157,7 +1168,6 @@ func collectFileImportBindings(
 		return
 	}
 
-	ns := scope.Namespace
 	for _, importStmt := range file.Imports {
 		{
 			localName := importStmt.LocalName()
@@ -1165,10 +1175,9 @@ func collectFileImportBindings(
 				continue
 			}
 
-			if binding, ok := ns.Values[localName]; ok {
+			if kind, ok := view.valueKind(localName); ok {
 				seen[localName] = true
-				kind := completionKindForValueType(binding.Type)
-				detail := safeTypeString(binding.Type)
+				detail, _ := view.valueDetail(localName)
 				*items = append(*items, protocol.CompletionItem{
 					Label:  localName,
 					Kind:   &kind,
@@ -1177,10 +1186,9 @@ func collectFileImportBindings(
 				continue
 			}
 
-			if alias, ok := ns.Types[localName]; ok {
+			if kind, ok := view.typeKind(localName); ok {
 				seen[localName] = true
-				kind := completionKindForTypeAlias(alias)
-				detail := safeTypeString(alias.Type)
+				detail, _ := view.typeDetail(localName)
 				*items = append(*items, protocol.CompletionItem{
 					Label:  localName,
 					Kind:   &kind,
@@ -1189,7 +1197,7 @@ func collectFileImportBindings(
 				continue
 			}
 
-			if _, ok := ns.GetNamespace(localName); ok {
+			if view.hasNamespace(localName) {
 				seen[localName] = true
 				kind := protocol.CompletionItemKindModule
 				*items = append(*items, protocol.CompletionItem{
@@ -1205,7 +1213,7 @@ func collectFileImportBindings(
 // from a block's statements. When hoistFuncs is true, function declarations
 // and imports are visible regardless of cursor position (for top-level module
 // statements). Otherwise, all declarations are position-dependent.
-func collectBlockBindings(stmts []ast.Stmt, cursor ast.Location, hoistFuncs bool, seen map[string]bool, items *[]protocol.CompletionItem) {
+func collectBlockBindings(info *solver.Info, stmts []ast.Stmt, cursor ast.Location, hoistFuncs bool, seen map[string]bool, items *[]protocol.CompletionItem) {
 	if hoistFuncs {
 		// Pass 1: imports and hoisted function declarations (always visible)
 		for _, stmt := range stmts {
@@ -1245,7 +1253,7 @@ func collectBlockBindings(stmts []ast.Stmt, cursor ast.Location, hoistFuncs bool
 		}
 		if declStmt, ok := stmt.(*ast.DeclStmt); ok {
 			if varDecl, ok := declStmt.Decl.(*ast.VarDecl); ok {
-				collectPatternBindings(varDecl.Pattern, seen, items)
+				collectPatternBindings(info, varDecl.Pattern, seen, items)
 			}
 			if !hoistFuncs {
 				if funcDecl, ok := declStmt.Decl.(*ast.FuncDecl); ok {
@@ -1279,17 +1287,13 @@ func collectBlockBindings(stmts []ast.Stmt, cursor ast.Location, hoistFuncs bool
 	}
 }
 
-func collectPatternBindings(pat ast.Pat, seen map[string]bool, items *[]protocol.CompletionItem) {
+func collectPatternBindings(info *solver.Info, pat ast.Pat, seen map[string]bool, items *[]protocol.CompletionItem) {
 	switch pat := pat.(type) {
 	case *ast.IdentPat:
 		if pat.Name != "" && !seen[pat.Name] {
 			seen[pat.Name] = true
 			kind := protocol.CompletionItemKindVariable
-			var detail *string
-			if pat.InferredType() != nil {
-				d := pat.InferredType().String()
-				detail = &d
-			}
+			detail := patternDetail(info, pat)
 			*items = append(*items, protocol.CompletionItem{
 				Label:  pat.Name,
 				Kind:   &kind,
@@ -1300,7 +1304,7 @@ func collectPatternBindings(pat ast.Pat, seen map[string]bool, items *[]protocol
 		for _, elem := range pat.Elems {
 			switch elem := elem.(type) {
 			case *ast.ObjKeyValuePat:
-				collectPatternBindings(elem.Value, seen, items)
+				collectPatternBindings(info, elem.Value, seen, items)
 			case *ast.ObjShorthandPat:
 				name := elem.Key.Name
 				if name != "" && !seen[name] {
@@ -1312,29 +1316,47 @@ func collectPatternBindings(pat ast.Pat, seen map[string]bool, items *[]protocol
 					})
 				}
 			case *ast.ObjRestPat:
-				collectPatternBindings(elem.Pattern, seen, items)
+				collectPatternBindings(info, elem.Pattern, seen, items)
 			}
 		}
 	case *ast.TuplePat:
 		for _, elem := range pat.Elems {
-			collectPatternBindings(elem, seen, items)
+			collectPatternBindings(info, elem, seen, items)
 		}
 	}
+}
+
+// patternDetail returns the type of the name pat binds, read from internal/solver's
+// records when info holds them and from what the old checker wrote onto pat otherwise.
+// It returns nil when neither recorded a type.
+func patternDetail(info *solver.Info, pat *ast.IdentPat) *string {
+	if info != nil {
+		t := info.DisplayTypeOf(pat)
+		if t == nil {
+			return nil
+		}
+		detail := printSolType(t)
+		return &detail
+	}
+	if pat.InferredType() == nil {
+		return nil
+	}
+	detail := pat.InferredType().String()
+	return &detail
 }
 
 // collectScopeTypeBindings collects only type and namespace symbols from a
 // single scope level, without recursing into parents. This is used for the
 // current scope where values are already collected via AST walking.
-func collectScopeTypeBindings(scope *checker.Scope, seen map[string]bool, items *[]protocol.CompletionItem) {
-	if scope == nil {
+func collectScopeTypeBindings(view scopeView, seen map[string]bool, items *[]protocol.CompletionItem) {
+	if view == nil {
 		return
 	}
-	ns := scope.Namespace
-	for name, alias := range ns.Types {
+	for _, name := range view.typeNames() {
 		if !seen[name] {
 			seen[name] = true
-			kind := completionKindForTypeAlias(alias)
-			detail := safeTypeString(alias.Type)
+			kind, _ := view.typeKind(name)
+			detail, _ := view.typeDetail(name)
 			*items = append(*items, protocol.CompletionItem{
 				Label:  name,
 				Kind:   &kind,
@@ -1342,7 +1364,7 @@ func collectScopeTypeBindings(scope *checker.Scope, seen map[string]bool, items 
 			})
 		}
 	}
-	for name := range ns.Namespaces {
+	for _, name := range view.namespaceNames() {
 		if !seen[name] {
 			seen[name] = true
 			kind := protocol.CompletionItemKindModule
@@ -1357,15 +1379,14 @@ func collectScopeTypeBindings(scope *checker.Scope, seen map[string]bool, items 
 // typeCompletionsFromScope collects only type aliases and namespaces from the
 // entire scope chain (current scope + parents). Used when the cursor is in a
 // type annotation position. Detail is deferred to completionItem/resolve.
-func typeCompletionsFromScope(scope *checker.Scope, scopeID string, uri string) []protocol.CompletionItem {
+func typeCompletionsFromScope(view scopeView, scopeID string, uri string) []protocol.CompletionItem {
 	seen := map[string]bool{}
 	var items []protocol.CompletionItem
-	for s := scope; s != nil; s = s.Parent {
-		ns := s.Namespace
-		for name, alias := range ns.Types {
+	for cur := view; cur != nil; cur = cur.parent() {
+		for _, name := range cur.typeNames() {
 			if !seen[name] {
 				seen[name] = true
-				kind := completionKindForTypeAlias(alias)
+				kind, _ := cur.typeKind(name)
 				items = append(items, protocol.CompletionItem{
 					Label: name,
 					Kind:  &kind,
@@ -1373,7 +1394,7 @@ func typeCompletionsFromScope(scope *checker.Scope, scopeID string, uri string) 
 				})
 			}
 		}
-		for name := range ns.Namespaces {
+		for _, name := range cur.namespaceNames() {
 			if !seen[name] {
 				seen[name] = true
 				kind := protocol.CompletionItemKindModule
