@@ -615,6 +615,24 @@ func TestInferMultiFile(t *testing.T) {
 	}
 }
 
+// A type alias declared in one file names a type in another file's annotations.
+// The module scope holds the alias, so a sibling file resolves it by its short name.
+func TestInferMultiFileTypeAlias(t *testing.T) {
+	values, types, errs := inferSources(t, map[string]string{
+		"types.esc": `type UserId = number`,
+		"utils.esc": `
+			fn getUser(id: UserId) -> UserId { return id }
+			val defaultId: UserId = 0
+		`,
+	})
+	require.Empty(t, errs)
+	require.Equal(t, map[string]string{"UserId": "number"}, types)
+	require.Equal(t, map[string]string{
+		"getUser":   "fn (id: UserId) -> UserId",
+		"defaultId": "UserId",
+	}, values)
+}
+
 // An unknown identifier that no file defines stays an unbound-name error even in
 // the multi-file path: the combined dep graph has no binding for it, so the
 // reference resolves to the never placeholder and reports cleanly.
