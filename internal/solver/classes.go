@@ -1511,6 +1511,9 @@ func (c *Context) loadedClass(cls stdClass) (*soltype.ClassType, preludeClassFau
 // regexpClass is the class every regex literal's value is an instance of.
 var regexpClass = stdClass{"std:regexp", "RegExp"}
 
+// functionClass is the class a function value's members are read from.
+var functionClass = stdClass{"std:function", "Function"}
+
 // regexpInstance returns a fresh instance of the `RegExp` class std:regexp declares. It
 // reads the class from the packages the run has loaded and never loads one itself.
 //
@@ -1564,8 +1567,9 @@ func (c *checker) objectMember(lvl int, blame ast.Node, name string, carrier sol
 
 // memberObject returns the object type whose elements are the members a value of type t
 // exposes, with every inference variable in them coalesced. It reads t the way a member
-// read off a value of type t does. It returns false for a union, an intersection, a
-// function, `never`, `unknown`, and an object built from a mapped type or a spread.
+// read off a value of type t does, except that a union reads as the merge unionMembers
+// builds. It returns false for an intersection, `never`, `unknown`, and an object built
+// from a mapped type or a spread.
 //
 // It only reads the Context. Reducing a mapped type or a spread would mint variables, so
 // an object holding one is declined rather than reduced.
@@ -1573,10 +1577,19 @@ func (c *Context) memberObject(t soltype.Type) (*soltype.ObjectType, bool) {
 	// An inference variable reads as the bounds it settled on. An alias, an interface or a
 	// `typeof` reads as the type it expands to, and a borrow as what it borrows.
 	carrier := c.expandedCarrier(groundedCarrier(t))
+	if u, ok := carrier.(*soltype.UnionType); ok {
+		return c.unionMembers(u)
+	}
 	// A primitive, a literal or a unique symbol reads as its wrapper class's instance, such
 	// as `String` for `"abc"`.
 	if wrapper, ok := c.ownPrimitiveWrapper(carrier); ok {
 		carrier = wrapper
+	}
+	// A function reads as an instance of the `Function` class.
+	if _, ok := carrier.(*soltype.FuncType); ok {
+		if fn, _, ok := c.loadedClass(functionClass); ok {
+			carrier = fn
+		}
 	}
 	// A tuple reads as the `Array` instance holding the union of its elements.
 	if tup, ok := carrier.(*soltype.TupleType); ok {
@@ -1614,6 +1627,147 @@ func (c *Context) memberObject(t soltype.Type) (*soltype.ObjectType, bool) {
 	// storage.
 	coalesced, ok := coalesce(obj, soltype.Positive).(*soltype.ObjectType)
 	return coalesced, ok
+}
+
+// unionMembers returns one object holding every member some variant of u exposes, read
+// through memberObject. A `null` or `undefined` variant is skipped. The result is not a
+// supertype of u. It lists what a reader such as editor completion can offer after a dot.
+//
+//   - A member some variant lacks is optional.
+//   - A member every variant that has it declares as a method stays a method, holding the
+//     signatures of all those variants.
+//   - Any other member becomes a property whose type is the union of what reading it yields
+//     in each variant. It is readonly unless every variant that has it can write it.
+//
+// `{a: number} | {b: string}` yields `{a?: number, b?: string}`. A member with no name, such
+// as an index signature, is dropped. It returns false when a variant exposes no fixed set of
+// members, or when every variant is `null` or `undefined`.
+func (c *Context) unionMembers(u *soltype.UnionType) (*soltype.ObjectType, bool) {
+	var objs []*soltype.ObjectType
+	for _, variant := range u.Types {
+		switch variant.(type) {
+		case *soltype.NullType, *soltype.UndefinedType:
+			continue
+		}
+		obj, ok := c.memberObject(variant)
+		if !ok {
+			return nil, false
+		}
+		objs = append(objs, obj)
+	}
+	if len(objs) == 0 {
+		return nil, false
+	}
+	// byName[i] holds variant i's elements keyed by member name. A getter and a setter
+	// share a name, so one name can hold two elements.
+	var names []string
+	byName := make([]map[string][]soltype.ObjTypeElem, len(objs))
+	for i, obj := range objs {
+		byName[i] = map[string][]soltype.ObjTypeElem{}
+		for _, elem := range obj.Elems {
+			name := soltype.ObjElemName(elem)
+			if name == "" {
+				continue
+			}
+			if !slices.Contains(names, name) {
+				names = append(names, name)
+			}
+			byName[i][name] = append(byName[i][name], elem)
+		}
+	}
+	merged := &soltype.ObjectType{}
+	for _, name := range names {
+		merged.Elems = append(merged.Elems, mergedMember(name, byName))
+	}
+	return merged, true
+}
+
+// mergedMember returns the element unionMembers lists for name, given each variant's
+// elements keyed by name.
+func mergedMember(name string, byName []map[string][]soltype.ObjTypeElem) soltype.ObjTypeElem {
+	missing := false
+	allMethods := true
+	for _, members := range byName {
+		elems := members[name]
+		if len(elems) == 0 {
+			missing = true
+			continue
+		}
+		for _, elem := range elems {
+			if _, ok := elem.(*soltype.MethodElem); !ok {
+				allMethods = false
+			}
+		}
+	}
+	if allMethods {
+		method := &soltype.MethodElem{Name: name, Optional: missing}
+		for _, members := range byName {
+			for _, elem := range members[name] {
+				m := elem.(*soltype.MethodElem)
+				method.Optional = method.Optional || m.Optional
+				for _, sig := range m.Signatures {
+					if !slices.ContainsFunc(method.Signatures, func(have *soltype.FuncType) bool {
+						return soltype.Print(have) == soltype.Print(sig)
+					}) {
+						method.Signatures = append(method.Signatures, sig)
+					}
+				}
+			}
+		}
+		return method
+	}
+	prop := &soltype.PropertyElem{Name: name, Optional: missing}
+	var reads []soltype.Type
+	var firstSetter soltype.ObjTypeElem
+	for _, members := range byName {
+		elems := members[name]
+		if len(elems) == 0 {
+			continue
+		}
+		readable, writable := false, false
+		for _, elem := range elems {
+			switch elem := elem.(type) {
+			case *soltype.PropertyElem:
+				reads = append(reads, elem.Type)
+				readable = true
+				writable = writable || !elem.Readonly
+				prop.Optional = prop.Optional || elem.Optional
+			case *soltype.GetterElem:
+				reads = append(reads, elem.Type)
+				readable = true
+			case *soltype.SetterElem:
+				writable = true
+				if firstSetter == nil {
+					firstSetter = elem
+				}
+			case *soltype.MethodElem:
+				reads = append(reads, methodValueType(elem))
+				readable = true
+			}
+		}
+		// A variant that can only write the member yields nothing when it is read.
+		prop.Optional = prop.Optional || !readable
+		prop.Readonly = prop.Readonly || !writable
+	}
+	if len(reads) == 0 {
+		// Every variant that has the member can only write it, so a setter describes it.
+		return firstSetter
+	}
+	prop.Type = newUnion(nil, reads)
+	return prop
+}
+
+// methodValueType returns the type of the value reading m yields, its one signature or an
+// intersection of its overloads.
+func methodValueType(m *soltype.MethodElem) soltype.Type {
+	if len(m.Signatures) == 1 {
+		return m.Signatures[0]
+	}
+	parts := make([]soltype.Type, len(m.Signatures))
+	for i, sig := range m.Signatures {
+		parts[i] = sig
+	}
+	return &soltype.IntersectionType{Types: parts}
 }
 
 // expandedCarrier peels t the way memberCarrier does, expanding an alias and unwrapping a

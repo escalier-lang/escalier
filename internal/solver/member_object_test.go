@@ -146,12 +146,53 @@ func TestMemberObject(t *testing.T) {
 				declare val v: {a: number} | {b: string}
 				val probe = v
 			`,
+			expected: "{a?: number, b?: string}",
+		},
+		{
+			name: "UnionSharedKey",
+			src: `
+				declare val v: {kind: "a", x: number} | {kind: "b", y: string}
+				val probe = v
+			`,
+			expected: `{kind: "a" | "b", x?: number, y?: string}`,
+		},
+		{
+			name: "UnionWithUndefined",
+			src: `
+				declare val v: {a: number} | undefined
+				val probe = v
+			`,
+			expected: "{a: number}",
+		},
+		{
+			name: "UnionOfMethods",
+			src: `
+				declare val v: {m(&self) -> number, n(&self) -> number} | {m(&self) -> string}
+				val probe = v
+			`,
+			expected: "{m() -> number; m() -> string, n?() -> number}",
+		},
+		{
+			name: "UnionOfReadonlyAndWritable",
+			src: `
+				declare val v: {readonly a: number} | {a: string}
+				val probe = v
+			`,
+			expected: "{readonly a: number | string}",
+		},
+		{
+			name: "UnionWithUnreducedMember",
+			src: `
+				fn f<T>(v: {[P]: T[P] for P in keyof T} | {a: number}) {
+					val probe = v
+				}
+			`,
 			expected: "",
 		},
 		{
-			name: "Function",
+			name: "Intersection",
 			src: `
-				fn v() -> number { return 1 }
+				declare val v: {a: number} & {b: string}
 				val probe = v
 			`,
 			expected: "",
@@ -173,10 +214,11 @@ func TestMemberObject(t *testing.T) {
 	}
 }
 
-// TestMemberObjectPrimitiveWrapper covers a primitive and a literal, which read their
-// members off the class the standard library declares for them. The wrapper classes
-// declare dozens of members, so each case asserts a few names rather than the whole list.
-func TestMemberObjectPrimitiveWrapper(t *testing.T) {
+// TestMemberObjectStdlibClass covers the types that read their members off a class the
+// standard library declares. A primitive or a literal reads its wrapper class, and a
+// function reads `Function`. Those classes declare dozens of members, so each case
+// asserts a few names rather than the whole list.
+func TestMemberObjectStdlibClass(t *testing.T) {
 	tests := []struct {
 		name     string
 		src      string
@@ -196,6 +238,16 @@ func TestMemberObjectPrimitiveWrapper(t *testing.T) {
 			name:     "DeclaredNumber",
 			src:      "declare val v: number\nval probe = v",
 			expected: []string{"toFixed", "toString"},
+		},
+		{
+			name:     "Function",
+			src:      "fn v() -> number { return 1 }\nval probe = v",
+			expected: []string{"name", "apply", "call", "bind"},
+		},
+		{
+			name:     "UnionOfPrimitives",
+			src:      "declare val v: number | string\nval probe = v",
+			expected: []string{"toFixed", "toUpperCase", "toString"},
 		},
 	}
 	for _, tt := range tests {
