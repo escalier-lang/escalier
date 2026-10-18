@@ -2327,25 +2327,34 @@ func matchTemplate(c *Context, segs []tmplSeg, quasis []string, interps []soltyp
 	for i := len(interps) - 1; i >= 0; i-- {
 		anyFrom[i] = anyFrom[i+1] && c.admitsAnyString(interps[i])
 	}
+
 	// seg and off are the position in segs the next piece starts at.
 	seg, off := 0, 0
 	for i, interp := range interps {
 		var piece []tmplSeg
 		switch {
 		case i == len(interps)-1:
+			// The last interpolation takes the rest of segs.
 			piece = sliceSegs(segs, seg, off, len(segs)-1, len(segs[len(segs)-1].text))
 		case quasis[i+1] == "":
+			// An empty quasi follows, so this interpolation takes exactly one character. Skip the
+			// runs of text already used up. The next character has to be fixed text, since an
+			// interpolation of segs could spell any number of characters.
 			for seg < len(segs) && segs[seg].hole == nil && off == len(segs[seg].text) {
 				seg, off = seg+1, 0
 			}
 			if seg == len(segs) || segs[seg].hole != nil {
 				return false
 			}
+
 			// Decode a whole rune, so a multibyte character is not split into an invalid span.
 			_, width := utf8.DecodeRuneInString(segs[seg].text[off:])
 			piece = []tmplSeg{{text: segs[seg].text[off : off+width]}}
 			off += width
 		default:
+			// A non-empty quasi follows, so this interpolation ends at the quasi's first occurrence
+			// in the fixed text. Passing an interpolation of segs on the way is allowed only when
+			// every interpolation from i on admits any string, as matchTemplate's docstring says.
 			delim := quasis[i+1]
 			at, idx := seg, -1
 			for ; at < len(segs); at++ {
@@ -2387,6 +2396,10 @@ func sliceSegs(segs []tmplSeg, from, fromOff, to, toOff int) []tmplSeg {
 			out = append(out, segs[j])
 			continue
 		}
+		// lo and hi bound the part of this run of text inside the slice. The first run starts at
+		// fromOff, the last run ends at toOff, and a run between them is taken whole. With segs
+		// holding "ab", `${T}` and "cd", the slice from offset 1 in "ab" to offset 1 in "cd" is
+		// "b", `${T}` and "c".
 		lo, hi := 0, len(segs[j].text)
 		if j == from {
 			lo = fromOff
@@ -2416,6 +2429,7 @@ func (c *Context) pieceInInterp(piece []tmplSeg, interp soltype.Type) bool {
 	if c.admitsAnyString(interp) {
 		return true
 	}
+
 	// subtypeHolds discards every bound it records, so neither side may still hold an inference
 	// variable, or the variable would pass unconstrained.
 	return len(piece) == 1 && concreteMember(piece[0].hole) && concreteMember(interp) &&
