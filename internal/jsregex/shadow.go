@@ -418,9 +418,12 @@ type closed struct {
 	matchAtEnd bool
 }
 
-// closure follows from pcs, at position pos, every instruction that reads no input. It
-// reports false on an empty-width test other than the start or the end of the text, which
-// the check does not model, and on a test of the start at a position it cannot place.
+// closure follows every instruction that reads no input, starting from pcs, at position
+// pos. A pc is an index into prog.Inst. pcs holds the instructions the program can be at
+// after reading the same input, which is prog.Start before any input and the result of step
+// after each character. It reports false on an empty-width test other than the start or the
+// end of the text, which the check does not model, and on a test of the start at a position
+// it cannot place.
 func closure(prog *syntax.Prog, pcs []uint32, pos position) (closed, bool) {
 	var out closed
 	states := set.NewSet[uint32]()
