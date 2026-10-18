@@ -673,3 +673,37 @@ func TestHoverFromSolver(t *testing.T) {
 		})
 	}
 }
+
+// DISABLED until #2096 lands. Inside a generic function's body, hover on a value
+// typed by the function's type parameter shows `never`. The fix shows `T`.
+/*
+func TestHoverTypeParamInBody(t *testing.T) {
+	src := "fn f<T>(x: T) -> T {\n\tval y = x\n\treturn y\n}"
+	files := map[string]string{"bin/main.esc": src}
+	tests := []struct {
+		name      string
+		line, col protocol.UInteger
+	}{
+		{name: "BindingFromParam", line: 1, col: 5},
+		{name: "ParamRead", line: 1, col: 9},
+		{name: "BindingRead", line: 2, col: 8},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			s := integrationServer(t, files)
+			uri := openFile(t, s, "bin/main.esc", src)
+
+			hover, err := s.textDocumentHover(&glsp.Context{}, &protocol.HoverParams{
+				TextDocumentPositionParams: protocol.TextDocumentPositionParams{
+					TextDocument: protocol.TextDocumentIdentifier{URI: uri},
+					Position:     protocol.Position{Line: tt.line, Character: tt.col},
+				},
+			})
+			require.NoError(t, err)
+			content, ok := hover.Contents.(protocol.MarkupContent)
+			require.True(t, ok)
+			require.Equal(t, "`T`", content.Value)
+		})
+	}
+}
+*/

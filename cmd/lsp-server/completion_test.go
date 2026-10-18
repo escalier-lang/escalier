@@ -2011,3 +2011,49 @@ func TestScopeCompletionFromSolverAfterIncrementalCheck(t *testing.T) {
 
 	require.Equal(t, []string{"later"}, getCompletionLabelsAt(t, s, binURI, 3, 11))
 }
+
+// DISABLED until #2095 lands. Completion on a generic class's instance shows a
+// generic method's own type parameter with an internal bound, so `map` reads
+// `fn <U: t8 & t8>(...)`. The fix drops the bound the source never declared.
+/*
+func TestMemberCompletionGenericMethodTypeParam(t *testing.T) {
+	src := `class Box<T> {
+	value: T,
+	constructor(&mut self, value: T) { self.value = value },
+	map<U>(&self, f: fn (value: T) -> U) -> U { return f(self.value) },
+}
+declare val b: Box<string>
+b.`
+	files := map[string]string{"bin/main.esc": src}
+	require.Equal(t,
+		[]string{"map: fn <U>(f: fn (value: string) -> U) -> U", "value: string"},
+		solverMemberCompletions(t, files, "bin/main.esc", 7, 3))
+}
+*/
+
+// DISABLED until #2096 lands. Inside a generic function's body, a member typed by
+// the function's type parameter displays as `never`. The fix keeps the parameter's
+// name, so the member reads `value: T`.
+/*
+func TestMemberCompletionTypeParamInBody(t *testing.T) {
+	src := `fn f<T>(x: {value: T}) -> T {
+	x.
+	return x.value
+}`
+	files := map[string]string{"bin/main.esc": src}
+	require.Equal(t, []string{"value: T"}, solverMemberCompletions(t, files, "bin/main.esc", 2, 4))
+}
+*/
+
+// DISABLED until #2097 lands. A value typed by a bounded type parameter gets no
+// member completions. The fix reads the members of the parameter's bound.
+/*
+func TestMemberCompletionBoundedTypeParam(t *testing.T) {
+	src := `fn f<T: {value: number}>(x: T) -> number {
+	x.
+	return x.value
+}`
+	files := map[string]string{"bin/main.esc": src}
+	require.Equal(t, []string{"value: number"}, solverMemberCompletions(t, files, "bin/main.esc", 2, 4))
+}
+*/
