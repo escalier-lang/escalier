@@ -321,7 +321,7 @@ func (c *checker) inferClassBodies(
 	}
 
 	callFns = c.inferCallSignatures(scope, lvl, decl)
-	ctorFns = c.walkConstructorBodies(scope, lvl, self, body, ctors)
+	ctorFns = c.walkConstructorBodies(scope, lvl, self, body, decl.Extends, ctors)
 	if len(ctorFns) == 0 {
 		// A subclass must declare its own constructor to call `super`, so a missing one is
 		// reported here and the synthesis below stands in for recovery.

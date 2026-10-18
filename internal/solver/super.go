@@ -9,11 +9,13 @@ import (
 
 // superCtx is what a `super(…)` call needs while a constructor body is walked. super is the
 // class whose constructor the call runs, nil when the enclosing class declares no
-// superclass. declScope is the scope the enclosing class is declared in, which is where the
-// superclass's value binding is read from. A nil superCtx means the walk is not inside a
-// constructor at all.
+// superclass. superName is the superclass's name as the `extends` clause writes it, such
+// as `geometry.Point`. declScope is the scope the enclosing class is declared in, which is
+// where the superclass's value binding is read from. A nil superCtx means the walk is not
+// inside a constructor at all.
 type superCtx struct {
 	super     *soltype.ClassType
+	superName ast.QualIdent
 	declScope *Scope
 }
 
@@ -62,6 +64,12 @@ func (c *checker) superConstructor(lvl int, ctx *superCtx) (soltype.Type, bool) 
 		return nil, false
 	}
 	binding, found := ctx.declScope.GetValue(ctx.super.Name)
+	// A class declared in a package has a registry name that no value binding carries, such
+	// as `import:geometry.Point`. Its value is read by the name the `extends` clause writes,
+	// resolved the way a written value reference is.
+	if !found && ctx.superName != nil {
+		binding, found = c.resolveQualValue(ctx.declScope, ctx.superName)
+	}
 	if !found || len(binding.Schemes) == 0 {
 		return nil, false
 	}

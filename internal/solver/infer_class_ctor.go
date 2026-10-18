@@ -20,11 +20,12 @@ func (c *checker) walkConstructorBodies(
 	lvl int,
 	self *soltype.ClassType,
 	body *soltype.ObjectType,
+	extends *ast.TypeRefTypeAnn,
 	ctors []*ast.ConstructorElem,
 ) []*soltype.FuncType {
 	out := make([]*soltype.FuncType, len(ctors))
 	for i, ctor := range ctors {
-		out[i] = c.walkConstructorBody(scope, lvl, self, body, ctor)
+		out[i] = c.walkConstructorBody(scope, lvl, self, body, extends, ctor)
 	}
 	return out
 }
@@ -108,7 +109,7 @@ func (c *checker) implicitConstructorParamNames(decl *ast.ClassDecl) map[string]
 // After the body is walked it runs definite-assignment analysis so a required field
 // left unassigned on some path is a FieldNotInitializedError and a `self.f` read before
 // its assignment is a ReadBeforeInitError.
-func (c *checker) walkConstructorBody(scope *Scope, lvl int, self *soltype.ClassType, body *soltype.ObjectType, ctor *ast.ConstructorElem) *soltype.FuncType {
+func (c *checker) walkConstructorBody(scope *Scope, lvl int, self *soltype.ClassType, body *soltype.ObjectType, extends *ast.TypeRefTypeAnn, ctor *ast.ConstructorElem) *soltype.FuncType {
 	// The parser materializes `&mut self` as Fn.Params[0]; the callable signature is
 	// the params after it.
 	valueParams := ctor.Fn.Params
@@ -139,6 +140,9 @@ func (c *checker) walkConstructorBody(scope *Scope, lvl int, self *soltype.Class
 	superCtx := &superCtx{declScope: scope}
 	if def, ok := c.ctx.classDef(self.Name); ok && len(def.Supers) > 0 {
 		superCtx.super = def.Supers[0]
+	}
+	if extends != nil {
+		superCtx.superName = extends.Name
 	}
 	c.superCtx = superCtx
 	// A constructor carries no type parameters of its own, since the class owns them,
