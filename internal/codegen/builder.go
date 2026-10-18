@@ -1317,11 +1317,6 @@ func (b *Builder) buildTypeGuard(valueExpr Expr, typeAnn ast.TypeAnn) Expr {
 		if re, isRegex := t.Lit.(*ast.RegexLit); isRegex {
 			return b.buildRegexGuard(valueExpr, re.Value)
 		}
-		// buildLit cannot spell a bigint literal yet, so a bigint annotation passes every
-		// value rather than emitting no code.
-		if _, isBigInt := t.Lit.(*ast.BigIntLit); isBigInt {
-			return NewLitExpr(NewBoolLit(true, nil), nil)
-		}
 		// For literal types, check exact value
 		litExpr := NewLitExpr(buildLit(t.Lit), nil)
 		return NewBinaryExpr(valueExpr, StrictEqual, litExpr, nil)

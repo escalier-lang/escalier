@@ -918,7 +918,7 @@ func TestTheSolverEmitsAUnionTestForAUnionAnnotation(t *testing.T) {
 	tests := []struct {
 		name string
 		src  string
-		want string // "" ⇒ the arm emits no test
+		want string
 	}{
 		{
 			name: "AnInlineUnion",
@@ -951,18 +951,20 @@ func TestTheSolverEmitsAUnionTestForAUnionAnnotation(t *testing.T) {
 			want: `if (typeof temp3 === "number" || temp3 !== null && typeof temp3 === "object" && "a" in temp3 && typeof temp3.a === "number") {`,
 		},
 		{
-			// buildLit cannot spell a bigint literal, so the union passes every value.
-			name: "AUnionWithABigIntMember",
-			src:  "export fn f(v: bigint | string | boolean) { return match v { x: 1n | string => 1, _ => 2 } }",
+			name: "AUnionAliasOfOtherLiterals",
+			src:  "type T = true | \"s\"\nexport fn f(v: T | number) { return match v { x: T => 1, _ => 2 } }",
+			want: `if (temp3 === true || temp3 === "s") {`,
+		},
+		{
+			// An optional property is not tested, since a value may leave it out.
+			name: "AUnionAliasOfATupleAndAnObjectWithAUnionProperty",
+			src:  "type T = boolean | [number] | {a?: number, b: string, c: number | string}\nexport fn f(v: T | number) { return match v { x: T => 1, _ => 2 } }",
+			want: `if (typeof temp3 === "boolean" || Array.isArray(temp3) || temp3 !== null && typeof temp3 === "object" && "b" in temp3 && typeof temp3.b === "string" && "c" in temp3 && (typeof temp3.c === "number" || typeof temp3.c === "string")) {`,
 		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			got := CompilePackage(libSources(tt.src), PackageConfig{}).CompUnits["lib/index"].JS
-			if tt.want == "" {
-				require.NotContains(t, got, "if (")
-				return
-			}
 			require.Contains(t, got, tt.want)
 		})
 	}
