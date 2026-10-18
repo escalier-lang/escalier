@@ -1563,16 +1563,22 @@ func (c *checker) objectMember(lvl int, blame ast.Node, name string, carrier sol
 }
 
 // memberObject returns the object type whose elements are the members a value of type t
-// exposes, with every inference variable in them coalesced. See Info.MemberObject for the
-// cases it reads.
+// exposes, with every inference variable in them coalesced. It reads t the way a member
+// read off a value of type t does. It returns false for a union, an intersection, a
+// function, `never`, `unknown`, and an object built from a mapped type or a spread.
 //
 // It only reads the Context. Reducing a mapped type or a spread would mint variables, so
 // an object holding one is declined rather than reduced.
 func (c *Context) memberObject(t soltype.Type) (*soltype.ObjectType, bool) {
+	// An inference variable reads as the bounds it settled on. An alias, an interface or a
+	// `typeof` reads as the type it expands to, and a borrow as what it borrows.
 	carrier := c.expandedCarrier(groundedCarrier(t))
+	// A primitive, a literal or a unique symbol reads as its wrapper class's instance, such
+	// as `String` for `"abc"`.
 	if wrapper, ok := c.ownPrimitiveWrapper(carrier); ok {
 		carrier = wrapper
 	}
+	// A tuple reads as the `Array` instance holding the union of its elements.
 	if tup, ok := carrier.(*soltype.TupleType); ok {
 		shape, ok := c.shapeOf(tup)
 		if !ok {
@@ -1587,12 +1593,16 @@ func (c *Context) memberObject(t soltype.Type) (*soltype.ObjectType, bool) {
 	var obj *soltype.ObjectType
 	switch carrier := carrier.(type) {
 	case *soltype.ClassType:
+		// A class instance exposes its own members and the ones it inherits, at the
+		// instance's type arguments.
 		body, ok := c.projectClassBody(carrier)
 		if !ok {
 			return nil, false
 		}
 		obj = body
 	case *soltype.ObjectType:
+		// An object type exposes itself. That covers a class value, whose statics are an
+		// object type.
 		obj = carrier
 	default:
 		return nil, false
