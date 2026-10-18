@@ -867,3 +867,46 @@ func TestTheSolverEmitsAKeyAbsenceTestByOpenness(t *testing.T) {
 		})
 	}
 }
+
+// TestTheSolverEmitsARegexTestForARegexAnnotation covers the runtime test emitted for an
+// annotation naming a regex type, written inline or through an alias. It covers a match arm at
+// the root and nested, a property of an object type annotation, and an overload's parameter.
+func TestTheSolverEmitsARegexTestForARegexAnnotation(t *testing.T) {
+	tests := []struct {
+		name string
+		src  string
+		want string
+	}{
+		{
+			name: "AnInlineRegex",
+			src:  "export fn f(s: string) { return match s { w: /^[a-z]+$/i => 1, _ => 2 } }",
+			want: `if (typeof temp3 === "string" && /^[a-z]+$/i.test(temp3)) {`,
+		},
+		{
+			name: "ARegexAlias",
+			src:  "type Digits = /^\\d+$/\nexport fn f(s: string) { return match s { d: Digits => 1, _ => 2 } }",
+			want: `if (typeof temp3 === "string" && /^\d+$/.test(temp3)) {`,
+		},
+		{
+			name: "ANestedRegexAlias",
+			src:  "type Digits = /^\\d+$/\nexport fn f(p: [string, number]) { return match p { [d: Digits, n] => n, _ => 0 } }",
+			want: `if (temp3.length == 2 && typeof temp3[0] === "string" && /^\d+$/.test(temp3[0])) {`,
+		},
+		{
+			name: "ARegexAliasInAnObjectTypeAnnotation",
+			src:  "type Digits = /^\\d+$/\nexport fn f(v: {code: string}) { return match v { x: {code: Digits} => 1, _ => 2 } }",
+			want: `typeof temp3.code === "string" && /^\d+$/.test(temp3.code)) {`,
+		},
+		{
+			name: "ARegexAliasInAnOverload",
+			src:  "type Digits = /^\\d+$/\nexport fn f(s: Digits) -> number { return 1 }\nexport fn f(s: string) -> string { return s }",
+			want: `if (arguments.length === 1 && typeof param0 === "string" && /^\d+$/.test(param0)) {`,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := CompilePackage(libSources(tt.src), PackageConfig{}).CompUnits["lib/index"].JS
+			require.Contains(t, got, tt.want)
+		})
+	}
+}

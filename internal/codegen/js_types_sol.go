@@ -23,6 +23,9 @@ type SolTypes interface {
 	// AbsentKeys returns the keys the object pattern p's runtime test also checks are
 	// absent.
 	AbsentKeys(p *ast.ObjectPat) []string
+	// RegexSource returns the source of the regex type an annotation resolved to, and
+	// reports whether it resolved to one.
+	RegexSource(ta ast.TypeAnn) (string, bool)
 }
 
 // SolverJSTypes answers from one internal/solver run.
@@ -65,6 +68,11 @@ func (s SolverJSTypes) CalleeConstructs(callee ast.Expr) bool {
 // and so looks the same as a field holding a plain function.
 func (s SolverJSTypes) IsMethodRead(e ast.Expr) bool {
 	return s.Types.IsMethodRead(e)
+}
+
+// RegexSource reads the source the run recorded for the annotation.
+func (s SolverJSTypes) RegexSource(ta ast.TypeAnn) (string, bool) {
+	return s.Types.RegexSource(ta)
 }
 
 // AbsentKeys reads the keys the run recorded for p.
