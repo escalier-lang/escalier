@@ -676,6 +676,11 @@ func TestPseudoPackageLoaderRules(t *testing.T) {
 			want: []string{"exported class \"Point\" in pseudo-package file %s is missing an `@js(\"...\")` decorator"},
 		},
 		{
+			name: "a value with no @js inside a namespace block",
+			file: "export namespace Geo { export declare val PI: number }",
+			want: []string{"exported value \"PI\" in pseudo-package file %s is missing an `@js(\"...\")` decorator"},
+		},
+		{
 			name: "an unexported value",
 			file: "@js(\"helper\")\ndeclare val helper: number",
 			want: []string{"unexported value \"helper\" in pseudo-package file %s has no runtime mapping; add `export` (and an `@js(...)` decorator) or remove the declaration"},

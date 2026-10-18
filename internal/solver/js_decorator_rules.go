@@ -8,31 +8,43 @@ import (
 )
 
 // jsDecoratorErrors reports the value-level declarations of a pseudo-package
-// module that break the `@js` loader rules:
+// module that break the `@js` loader rules. A value-level declaration is a `val`,
+// an `fn`, or a `class`, the kinds that bind a runtime value. The rules are:
 //
 //  1. An exported value-level declaration carries `@js("...")` with a single
 //     string-literal argument.
 //  2. A value-level declaration is exported.
 //
 // Only the declarations in namespace `under` and the namespaces nested in it
-// are checked, and an empty `under` checks every declaration. path names the
-// file in each diagnostic, and span anchors it, since the declaration's own span
-// points into a file the importer did not write. A type-level declaration may
-// stay unexported, because exportedSurface leaves it out of what an importer can
-// reach.
+// are checked, and an empty `under` checks every declaration. A `namespace`
+// block's members are checked like the declarations around it. Type-level
+// declarations are not checked. path names the file in each diagnostic, and
+// span is the span each diagnostic carries.
 func jsDecoratorErrors(path string, module *ast.Module, under string, span ast.Span) []SolverError {
 	var errs []SolverError
 	module.Namespaces.Scan(func(key string, ns *ast.Namespace) bool {
 		if under != "" && key != under && !strings.HasPrefix(key, under+".") {
 			return true
 		}
-		for _, decl := range ns.Decls {
-			if err := checkJsDecorator(path, decl, span); err != nil {
-				errs = append(errs, err)
-			}
-		}
+		errs = append(errs, declsJsDecoratorErrors(path, ns.Decls, span)...)
 		return true
 	})
+	return errs
+}
+
+// declsJsDecoratorErrors is jsDecoratorErrors over decls and the members of each
+// `namespace` block among them.
+func declsJsDecoratorErrors(path string, decls []ast.Decl, span ast.Span) []SolverError {
+	var errs []SolverError
+	for _, decl := range decls {
+		if nsDecl, ok := decl.(*ast.NamespaceDecl); ok {
+			errs = append(errs, declsJsDecoratorErrors(path, nsDecl.Decls, span)...)
+			continue
+		}
+		if err := checkJsDecorator(path, decl, span); err != nil {
+			errs = append(errs, err)
+		}
+	}
 	return errs
 }
 
@@ -92,7 +104,8 @@ const (
 
 // PseudoPackageDeclError reports a declaration in a pseudo-package file that
 // breaks a rule jsDecoratorErrors lists. It is anchored at the import that
-// loaded the file.
+// loaded the file. An ambient package loads with no import, so its diagnostic
+// carries an empty span.
 type PseudoPackageDeclError struct {
 	// Path is the pseudo-package file that holds the declaration.
 	Path string
