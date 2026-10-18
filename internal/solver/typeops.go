@@ -184,7 +184,7 @@ func (e *typeEvaluator) reduce(t soltype.Type) soltype.Type {
 }
 
 // reduceCond reduces `if Check : Extends { Then } else { Else }` by deciding `Check <: Extends`
-// and selecting a branch, Then on success or Else on failure. The decision runs only when both
+// and selecting Then when it holds or Else when it does not. The decision runs only when both
 // operands are ground:
 //
 //   - a ground Check and Extends decide the branch with an assignability probe, and the reduction

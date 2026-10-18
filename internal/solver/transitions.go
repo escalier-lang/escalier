@@ -676,8 +676,9 @@ func (c *checker) varIDToName(id liveness.VarID) string {
 // runLivenessPrePass runs name resolution, CFG construction, and liveness analysis
 // on the function body about to be walked, populating the transition-checking state
 // on c.fn. The rename pass writes VarIDs directly onto the body's AST nodes, so
-// DetermineAliasSource and the downstream IdentPat/IdentExpr reads see them. paramTypes maps each parameter name to
-// its soltype, the mutability the alias seeding records.
+// DetermineAliasSource and the downstream IdentPat/IdentExpr reads see them.
+// paramTypes maps each parameter name to its soltype, the mutability the alias
+// seeding records.
 //
 // Must be called after parameters are bound in scope (so outer-scope names resolve)
 // but before the body is walked.

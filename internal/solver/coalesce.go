@@ -1363,7 +1363,8 @@ func combine(pol soltype.Polarity, parts []soltype.Type, open bool) soltype.Type
 // 5` as a MUTABLE inexact requirement `mut {x: number, ...}` on the receiver var,
 // alongside the bare inexact reads. When ANY write is present, every selection —
 // reads and writes alike — folds into ONE object wrapped in `mut`, rather than a
-// per-field partition: `obj.x = 5; obj.y = 10` ⇒ `mut {x, y}` and the mixed `val x = obj.bar; obj.baz = 5` ⇒
+// per-field partition: `obj.x = 5; obj.y = 10` ⇒ `mut {x, y}` and the mixed
+// `val x = obj.bar; obj.baz = 5` ⇒
 // `mut {bar, baz}` — a single object, not `{bar} & mut {baz}`. With
 // no write the reads fold into a bare (immutable) object, the pre-C3 behavior. The
 // tradeoff: wrapping the whole object in `mut` makes read-only fields invariant
