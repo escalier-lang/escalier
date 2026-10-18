@@ -1,9 +1,11 @@
 package jsregex
 
 import (
+	"fmt"
 	"regexp/syntax"
 	"slices"
 	"sort"
+	"strings"
 	"sync"
 	"unicode"
 	"unicode/utf8"
@@ -57,35 +59,121 @@ var caseGroups = sync.OnceValues(func() (map[rune][]rune, []rune) {
 	return groups, cased
 })
 
-// foldLikeJS widens each rune-reading instruction of prog to read every case of the runes it
-// reads, the way a JavaScript pattern with the `i` flag and without the `u` flag does. prog
-// has to be compiled without the `i` flag.
-func foldLikeJS(prog *syntax.Prog) {
-	groups, cased := caseGroups()
-	for i := range prog.Inst {
-		inst := &prog.Inst[i]
-		var pairs []rune
-		switch {
-		case inst.Op == syntax.InstRune1, inst.Op == syntax.InstRune && len(inst.Rune) == 1:
-			pairs = []rune{inst.Rune[0], inst.Rune[0]}
-		case inst.Op == syntax.InstRune:
-			pairs = slices.Clone(inst.Rune)
-		default:
-			continue
+// foldTree rewrites re in place to match every case of each character it matches, the way a
+// JavaScript pattern with the `i` flag and without the `u` flag does. re has to be parsed
+// without the `i` flag, and every negated class in it has to be folded and complemented
+// already.
+func foldTree(re *syntax.Regexp) {
+	switch re.Op {
+	case syntax.OpLiteral:
+		flags := re.Flags &^ syntax.FoldCase
+		subs := make([]*syntax.Regexp, 0, len(re.Rune))
+		for _, r := range re.Rune {
+			subs = append(subs, &syntax.Regexp{Op: syntax.OpCharClass, Flags: flags, Rune: foldRanges(literalRanges(r, re.Flags))})
 		}
-		n := len(pairs)
-		for j := 0; j < n; j += 2 {
-			lo, hi := pairs[j], pairs[j+1]
-			for k := sort.Search(len(cased), func(k int) bool { return cased[k] >= lo }); k < len(cased) && cased[k] <= hi; k++ {
-				for _, m := range groups[cased[k]] {
-					pairs = append(pairs, m, m)
-				}
-			}
-		}
-		inst.Op = syntax.InstRune
-		inst.Rune = mergeRanges(pairs)
-		inst.Arg = 0
+		re.Op, re.Flags, re.Rune, re.Sub = syntax.OpConcat, flags, nil, subs
+		return
+	case syntax.OpCharClass:
+		re.Rune = foldRanges(re.Rune)
 	}
+	for _, sub := range re.Sub {
+		foldTree(sub)
+	}
+}
+
+// foldedComplement returns an RE2 class matching what the negated JavaScript class `[^…]`
+// matches under the `i` flag without the `u` flag. class is the RE2 source of the class
+// without its `^`. JavaScript folds the class's characters and then takes the complement, so
+// `[^a]` matches neither `a` nor `A`. It reports false when class does not parse as a class.
+func foldedComplement(class string) (string, bool) {
+	re, err := syntax.Parse(class, syntax.Perl)
+	if err != nil {
+		return "", false
+	}
+	var pairs []rune
+	switch re.Op {
+	case syntax.OpCharClass:
+		pairs = re.Rune
+	case syntax.OpLiteral:
+		for _, r := range re.Rune {
+			pairs = append(pairs, literalRanges(r, re.Flags)...)
+		}
+	case syntax.OpAnyChar:
+		pairs = []rune{0, unicode.MaxRune}
+	case syntax.OpAnyCharNotNL:
+		pairs = []rune{0, '\n' - 1, '\n' + 1, unicode.MaxRune}
+	case syntax.OpNoMatch:
+	default:
+		return "", false
+	}
+	return spellClass(complementRanges(foldRanges(pairs))), true
+}
+
+// foldRanges returns the rune ranges in pairs, each a low and a high bound, widened to every
+// case of the runes they hold, the way a JavaScript pattern with the `i` flag and without
+// the `u` flag reads them.
+func foldRanges(pairs []rune) []rune {
+	groups, cased := caseGroups()
+	out := slices.Clone(pairs)
+	for j := 0; j+1 < len(pairs); j += 2 {
+		lo, hi := pairs[j], pairs[j+1]
+		for k := sort.Search(len(cased), func(k int) bool { return cased[k] >= lo }); k < len(cased) && cased[k] <= hi; k++ {
+			out = append(out, pairsOf(groups[cased[k]])...)
+		}
+	}
+	return mergeRanges(out)
+}
+
+// complementRanges returns the ranges of the runes the merged ranges in pairs leave out.
+func complementRanges(pairs []rune) []rune {
+	var out []rune
+	next := rune(0)
+	for j := 0; j+1 < len(pairs); j += 2 {
+		if pairs[j] > next {
+			out = append(out, next, pairs[j]-1)
+		}
+		next = pairs[j+1] + 1
+	}
+	if next <= unicode.MaxRune {
+		out = append(out, next, unicode.MaxRune)
+	}
+	return out
+}
+
+// spellClass returns the RE2 source of a class matching the ranges in pairs.
+func spellClass(pairs []rune) string {
+	if len(pairs) == 0 {
+		return emptyClass
+	}
+	var b strings.Builder
+	b.WriteByte('[')
+	for j := 0; j+1 < len(pairs); j += 2 {
+		fmt.Fprintf(&b, `\x{%x}-\x{%x}`, pairs[j], pairs[j+1])
+	}
+	b.WriteByte(']')
+	return b.String()
+}
+
+// literalRanges returns the runes a literal r parsed with flags matches, as merged ranges.
+// Go's parser turns a class holding exactly two cases of one character, such as `[ßẞ]`,
+// into a literal with the FoldCase flag, which matches both.
+func literalRanges(r rune, flags syntax.Flags) []rune {
+	runes := []rune{r}
+	if flags&syntax.FoldCase != 0 {
+		for m := unicode.SimpleFold(r); m != r; m = unicode.SimpleFold(m) {
+			runes = append(runes, m)
+		}
+	}
+	return mergeRanges(pairsOf(runes))
+}
+
+// pairsOf returns a one-rune range for each rune of runes.
+func pairsOf(runes []rune) []rune {
+	out := make([]rune, 0, 2*len(runes))
+	for _, r := range runes {
+		out = append(out, r, r)
+	}
+	return out
 }
 
 // mergeRanges sorts the rune ranges in pairs, each a low and a high bound, and joins the

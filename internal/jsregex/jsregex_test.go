@@ -30,6 +30,24 @@ func TestMatchString(t *testing.T) {
 		{"ADotUnderUMatchesOneCodePoint", `/^.$/u`, "😀", true},
 		{"AnAstralLiteralWithoutU", `/^😀$/`, "😀", true},
 		{"ANegatedClassWithoutUMatchesOneUnit", `/^[^a]$/`, "😀", false},
+		// Without `u`, the `i` flag compares characters by their uppercase forms, and a
+		// non-ASCII character never folds to an ASCII one. The Kelvin sign, the long s and
+		// the Angstrom sign are their own uppercase forms.
+		{"TheIFlagMatchesTheOtherCase", `/^k$/i`, "K", true},
+		{"TheIFlagSkipsTheKelvinSign", `/^k$/i`, "\u212A", false},
+		{"TheIFlagSkipsTheLongSInAClass", `/^[a-z]$/i`, "\u017F", false},
+		{"TheIFlagSkipsTheLongS", `/^s$/i`, "\u017F", false},
+		{"TheIFlagSkipsTheAngstromSign", `/^å$/i`, "\u212B", false},
+		{"TheIFlagMatchesANonASCIICase", `/^å$/i`, "Å", true},
+		{"TheIFlagFoldsAnEscape", `/^\x41$/i`, "a", true},
+		{"TheIFlagFoldsANegatedClassFirst", `/^[^a]$/i`, "A", false},
+		{"TheIFlagKeepsWhatANegatedClassAllows", `/^[^a]$/i`, "b", true},
+		// Go parses a class of exactly two cases, such as `[ßẞ]`, as one case-folding literal.
+		{"TheIFlagKeepsBothCasesOfATwoCaseClass", `/^[ßẞ]$/i`, "ẞ", true},
+		{"TheIFlagKeepsBothCasesOutOfANegatedTwoCaseClass", `/^[^ßẞ]$/i`, "ẞ", false},
+		{"TheIFlagKeepsTheCapitalSharpSApart", `/^ß$/i`, "ẞ", false},
+		{"TheIFlagUnderUMatchesTheKelvinSign", `/^k$/iu`, "\u212A", true},
+		{"TheIFlagUnderUMatchesTheLongSInAClass", `/^[a-z]$/iu`, "\u017F", true},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {

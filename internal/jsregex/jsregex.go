@@ -28,6 +28,7 @@
 package jsregex
 
 import (
+	"bytes"
 	"fmt"
 	"regexp"
 	"regexp/syntax"
@@ -47,6 +48,9 @@ const spaceSet = `\t\n\v\f\r \x{a0}\x{1680}\x{2000}-\x{200a}\x{2028}\x{2029}\x{2
 // terminator. Go's own `.` excludes only `\n`.
 const dotClass = `[^\n\r\x{2028}\x{2029}]`
 
+// emptyClass is a Go character class that matches no character, which JavaScript writes `[]`.
+const emptyClass = `[^\x{0}-\x{10ffff}]`
+
 // unitBase is the first rune of the private-use range a surrogate code unit maps to when a
 // pattern matches code units. Plane 15 holds no character a transcoded string carries as a
 // rune, since every astral character is split into its two units first.
@@ -64,7 +68,7 @@ type Pattern struct {
 	body string
 	// goBody is body rewritten into RE2 syntax, without the flag group goFlags holds.
 	goBody string
-	// goFlags holds the Go flags the literal's flags map to, such as "im".
+	// goFlags holds the Go flags the literal's flags map to, such as "m" for `/a/im`.
 	goFlags string
 	// groupSpans holds where in body each group of each name sits, in the order of the group's
 	// Indices.
@@ -100,7 +104,9 @@ type Group struct {
 //
 // The flags translate this way:
 //
-//   - `i`, `m` and `s` become a leading Go flag group.
+//   - `m` and `s` become a leading Go flag group, and so does `i` with the `u` flag.
+//   - `i` without the `u` flag widens each literal and class to the cases JavaScript matches,
+//     which Go's case folding does not match. See foldTree.
 //   - `y` anchors the match at the start, as a sticky regex tested from index 0 is.
 //   - `u` makes the pattern match code points rather than code units.
 //   - `g` and `d` change nothing a whole-string test reads, so they are dropped.
@@ -116,7 +122,7 @@ func Compile(source string) (*Pattern, string) {
 	body, flags := source[1:end], source[end+1:]
 
 	var goFlags strings.Builder
-	sticky, dotAll, unicode := false, false, false
+	sticky, dotAll, unicode, ignoreCase := false, false, false, false
 	seen := set.NewSet[rune]()
 	for _, flag := range flags {
 		if seen.Contains(flag) {
@@ -124,7 +130,9 @@ func Compile(source string) (*Pattern, string) {
 		}
 		seen.Add(flag)
 		switch flag {
-		case 'i', 'm':
+		case 'i':
+			ignoreCase = true
+		case 'm':
 			goFlags.WriteRune(flag)
 		case 's':
 			goFlags.WriteRune(flag)
@@ -141,10 +149,29 @@ func Compile(source string) (*Pattern, string) {
 		}
 	}
 
-	r := rewriter{dotAll: dotAll, unicode: unicode}
+	foldCase := ignoreCase && !unicode
+	if ignoreCase && unicode {
+		goFlags.WriteRune('i')
+	}
+
+	r := rewriter{dotAll: dotAll, unicode: unicode, foldCase: foldCase}
 	pattern, reason := r.body(body)
 	if reason != "" {
 		return nil, reason
+	}
+	if foldCase {
+		src := pattern
+		if goFlags.Len() > 0 {
+			src = "(?" + goFlags.String() + ")" + src
+		}
+		tree, err := syntax.Parse(src, syntax.Perl)
+		if err != nil {
+			return nil, "does not compile: " + err.Error()
+		}
+		foldTree(tree)
+		// The printed tree spells every flag it was parsed under, so it reads the same
+		// whatever flag group goes in front of it.
+		pattern = tree.String()
 	}
 	if sticky {
 		pattern = `\A(?:` + pattern + `)`
@@ -513,16 +540,20 @@ func optionalCaptures(pattern string) set.Set[int] {
 }
 
 // rewriter rewrites the body of a JavaScript regex into Go syntax. dotAll reports whether the
-// `s` flag is set, and unicode whether the `u` flag is.
+// `s` flag is set, and unicode whether the `u` flag is. foldCase reports whether the `i` flag
+// is set without the `u` flag.
 type rewriter struct {
-	dotAll, unicode bool
+	dotAll, unicode, foldCase bool
 }
 
 // body rewrites body, or returns why it cannot. It reads one token at a time, so an escaped
 // `\(` and a `(` inside a character class are never taken for a group.
 func (r rewriter) body(body string) (string, string) {
-	var out strings.Builder
+	var out bytes.Buffer
 	inClass := false
+	// classStart is where in out the open class starts, and negated reports whether it
+	// starts with `[^`.
+	classStart, negated := 0, false
 	for i := 0; i < len(body); {
 		ch := body[i]
 		switch {
@@ -540,12 +571,23 @@ func (r rewriter) body(body string) (string, string) {
 			i += size
 			continue
 		case inClass:
+			out.WriteByte(ch)
 			if ch == ']' {
 				inClass = false
+				if negated && r.foldCase {
+					// JavaScript folds the class before it complements it, and foldTree
+					// would fold the complement. So the class is written out folded and
+					// complemented here.
+					class, ok := foldedComplement("[" + string(out.Bytes()[classStart+2:]))
+					if !ok {
+						return "", "uses a character class RE2 cannot parse"
+					}
+					out.Truncate(classStart)
+					out.WriteString(class)
+				}
 			}
-			out.WriteByte(ch)
 		case strings.HasPrefix(body[i:], "[]"):
-			out.WriteString(`[^\x{0}-\x{10ffff}]`)
+			out.WriteString(emptyClass)
 			i += 2
 			continue
 		case strings.HasPrefix(body[i:], "[^]"):
@@ -554,6 +596,7 @@ func (r rewriter) body(body string) (string, string) {
 			continue
 		case ch == '[':
 			inClass = true
+			classStart, negated = out.Len(), strings.HasPrefix(body[i:], "[^")
 			out.WriteByte(ch)
 		case ch == '.' && !r.dotAll:
 			out.WriteString(dotClass)

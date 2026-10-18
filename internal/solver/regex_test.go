@@ -55,6 +55,12 @@ func TestInferRegexType(t *testing.T) {
 			want: `/^abc$/i`,
 		},
 		{
+			// Without the `u` flag, `k` matches `K` but not the Kelvin sign.
+			name:     "the i flag folds case as JavaScript does",
+			src:      "val v: /^k$/i = \"\u212A\"",
+			wantErrs: []string{"1:17-1:20: cannot constrain \"\u212A\" <: /^k$/i"},
+		},
+		{
 			name:     "the y flag anchors the match at the start",
 			src:      `val v: /b/y = "ab"`,
 			wantErrs: []string{`1:15-1:19: cannot constrain "ab" <: /b/y`},
