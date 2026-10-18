@@ -1286,13 +1286,13 @@ func buildPropertyInObjectCheck(propName string, objectExpr Expr, source ast.Nod
 
 // buildTypeGuard generates a runtime type check expression for a given type annotation
 func (b *Builder) buildTypeGuard(valueExpr Expr, typeAnn ast.TypeAnn) Expr {
-	// A regex type is tested with its own pattern, which an alias hides from typeAnn.
-	if source, ok := b.types().RegexSource(typeAnn); ok {
-		return b.buildRegexGuard(valueExpr, source)
-	}
-	// An alias hides the members of the union it names from typeAnn.
-	if union, ok := b.types().AliasedUnion(typeAnn); ok {
-		return b.buildSolTypeGuard(valueExpr, union, set.NewSet[string]())
+	// A reference to an alias hides the regex type or the union it names from typeAnn. Any
+	// other reference keeps the guard below, such as `instanceof` for a class.
+	if ref, isRef := typeAnn.(*ast.TypeRefTypeAnn); isRef {
+		switch t := b.types().ExpandedTypeOf(ref).(type) {
+		case *soltype.RegexType, *soltype.UnionType:
+			return b.buildSolTypeGuard(valueExpr, t, set.NewSet[string]())
+		}
 	}
 	switch t := typeAnn.(type) {
 	case *ast.UnionTypeAnn:
@@ -1308,8 +1308,7 @@ func (b *Builder) buildTypeGuard(valueExpr Expr, typeAnn ast.TypeAnn) Expr {
 	case *ast.BooleanTypeAnn:
 		return b.buildTypeOfCheck(valueExpr, "boolean", StrictEqual, nil)
 	case *ast.LitTypeAnn:
-		// A JSTypes that records no regex sources, such as CheckerJSTypes, still reaches an
-		// inline regex here.
+		// An inline regex type is tested with its own pattern.
 		if re, isRegex := t.Lit.(*ast.RegexLit); isRegex {
 			return b.buildRegexGuard(valueExpr, re.Value)
 		}

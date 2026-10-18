@@ -32,12 +32,10 @@ type JSTypes interface {
 	// AbsentKeys returns the keys an object pattern's runtime test also checks are absent,
 	// beyond the keys the pattern names. Each emits `!("key" in value)`.
 	AbsentKeys(p *ast.ObjectPat) []string
-	// RegexSource returns the source of the regex type an annotation names, directly or
-	// through an alias, and reports whether it names one.
-	RegexSource(ta ast.TypeAnn) (string, bool)
-	// AliasedUnion returns the union an annotation names through an alias, and reports
-	// whether it names one.
-	AliasedUnion(ta ast.TypeAnn) (*soltype.UnionType, bool)
+	// ExpandedTypeOf returns the type an annotation resolved to, with each alias on the
+	// outside expanded, or nil when it records none. `Digits` under `type Digits = /^\d+$/`
+	// returns the regex type `/^\d+$/`.
+	ExpandedTypeOf(ta ast.TypeAnn) soltype.Type
 	// Expand returns t with each alias on the outside expanded, until none is left. It
 	// returns t unchanged when it cannot expand it.
 	Expand(t soltype.Type) soltype.Type
@@ -56,14 +54,11 @@ type JSTypes interface {
 // every question has one answer path rather than a nil check at each call site.
 type noJSTypes struct{}
 
-func (noJSTypes) IsNominalTypeRef(*ast.TypeRefTypeAnn) bool { return false }
-func (noJSTypes) CalleeConstructs(ast.Expr) bool            { return false }
-func (noJSTypes) IsMethodRead(ast.Expr) bool                { return false }
-func (noJSTypes) AbsentKeys(*ast.ObjectPat) []string        { return nil }
-func (noJSTypes) RegexSource(ast.TypeAnn) (string, bool)    { return "", false }
-func (noJSTypes) AliasedUnion(ast.TypeAnn) (*soltype.UnionType, bool) {
-	return nil, false
-}
+func (noJSTypes) IsNominalTypeRef(*ast.TypeRefTypeAnn) bool   { return false }
+func (noJSTypes) CalleeConstructs(ast.Expr) bool              { return false }
+func (noJSTypes) IsMethodRead(ast.Expr) bool                  { return false }
+func (noJSTypes) AbsentKeys(*ast.ObjectPat) []string          { return nil }
+func (noJSTypes) ExpandedTypeOf(ast.TypeAnn) soltype.Type     { return nil }
 func (noJSTypes) Expand(t soltype.Type) soltype.Type          { return t }
 func (noJSTypes) NullableArms(ast.Expr) (bool, bool)          { return false, false }
 func (noJSTypes) MemberJSExpr(*ast.MemberExpr) (string, bool) { return "", false }

@@ -80,14 +80,6 @@ func (t *solverSolTypes) AbsentKeys(p *ast.ObjectPat) []string {
 	return t.info.AbsentKeys(p)
 }
 
-func (t *solverSolTypes) RegexSource(ta ast.TypeAnn) (string, bool) {
-	return t.info.RegexSource(ta)
-}
-
-func (t *solverSolTypes) AliasedUnion(ta ast.TypeAnn) (*soltype.UnionType, bool) {
-	return t.info.AliasedUnion(ta)
-}
-
 func (t *solverSolTypes) Expand(typ soltype.Type) soltype.Type {
 	return t.info.Expand(typ)
 }

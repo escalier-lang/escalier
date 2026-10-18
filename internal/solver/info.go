@@ -38,12 +38,6 @@ type Info struct {
 	// ctx is the Context of the run that recorded this table, or nil for a table built
 	// by NewInfo. MemberObject reads the class and alias registries it holds.
 	ctx *Context
-	// regexSources holds the source of each annotation that resolved to a regex type,
-	// directly or through an alias. recordAliasTarget fills it.
-	regexSources map[ast.TypeAnn]string
-	// aliasedUnions holds the union each annotation naming an alias of a union resolved to.
-	// recordAliasTarget fills it.
-	aliasedUnions map[ast.TypeAnn]*soltype.UnionType
 }
 
 // NewInfo returns an empty Info side table ready to record inferred types.
@@ -54,25 +48,7 @@ func NewInfo() *Info {
 		methodReads:   set.NewSet[ast.Node](),
 		absentKeys:    map[*ast.ObjectPat][]string{},
 		decls:         map[*ast.IdentExpr]ast.Node{},
-		regexSources:  map[ast.TypeAnn]string{},
-		aliasedUnions: map[ast.TypeAnn]*soltype.UnionType{},
 	}
-}
-
-// AliasedUnion returns the union an annotation naming an alias of a union resolved to, such
-// as `number | string` for the `NumOrStr` of `x: NumOrStr` under
-// `type NumOrStr = number | string`. It reports false for any other annotation.
-func (i *Info) AliasedUnion(ta ast.TypeAnn) (*soltype.UnionType, bool) {
-	u, ok := i.aliasedUnions[ta]
-	return u, ok
-}
-
-// RegexSource returns the source of the regex type an annotation resolved to, such as
-// `/^\d+$/` for the `Digits` of `d: Digits` under `type Digits = /^\d+$/`. It reports false
-// for an annotation that resolved to anything else.
-func (i *Info) RegexSource(ta ast.TypeAnn) (string, bool) {
-	source, ok := i.regexSources[ta]
-	return source, ok
 }
 
 // AbsentKeys returns the keys the runtime test of the object pattern p also checks are
