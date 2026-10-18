@@ -36,8 +36,7 @@ func sharedPrelude() *Scope {
 //     Promise/Iterable/… resolves without an unbound-name error. M2 seeds
 //     placeholders only; real ingestion (real structures, arity) is M7.
 //
-// Nothing here imports internal/checker or internal/type_system — that is the
-// M2 gate.
+// Nothing here imports internal/type_system.
 func NewPrelude() *Scope {
 	s := NewScope()
 	s.builtin = true

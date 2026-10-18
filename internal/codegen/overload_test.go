@@ -12,9 +12,8 @@ import (
 )
 
 // buildSource lowers one module of Escalier source to the JS it emits. It runs the
-// parser and codegen without the checker in between, which is what lets a class
-// declaring two constructors be exercised here — internal/checker still reports that
-// as unsupported, so such a class never reaches codegen through the build path.
+// parser and codegen without the checker in between, so each case asserts what
+// emission produces on its own.
 //
 // A class that declares no constructor still emits the one it gets implicitly, because
 // codegen derives that element from the declared fields rather than reading one a

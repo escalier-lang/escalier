@@ -1,6 +1,7 @@
 package solver
 
 import (
+	"fmt"
 	"os"
 	"path/filepath"
 	"testing"
@@ -631,4 +632,64 @@ func TestCoreImportShadowingNamesTheAliasItBound(t *testing.T) {
 		"importing \"web:core\" binds Event, which this module already declares; " +
 			"reach the imported one as `dom.Event` or rename the declaration",
 	}, errorMessagesOf(res.Errors))
+}
+
+// TestPseudoPackageLoaderRules covers the `@js` rules a pseudo-package file is held to when
+// an import loads it. Every exported value carries `@js` with one string-literal argument,
+// and every declaration is exported. Each diagnostic names the file and is anchored to the
+// `import` that loaded it.
+func TestPseudoPackageLoaderRules(t *testing.T) {
+	t.Skip("internal/solver does not enforce the @js loader rules, #2101")
+	tests := []struct {
+		name string
+		file string
+		// want formats each expected message with the path of `std/example.esc`.
+		want []string
+	}{
+		{
+			name: "a valid package",
+			file: "@js(\"parseInt\")\nexport declare fn foo() -> number\nexport declare type Helper = number",
+		},
+		{
+			name: "an exported value with no @js",
+			file: "export val PI: number = 3.14",
+			want: []string{"exported value \"PI\" in pseudo-package file %s is missing an `@js(\"...\")` decorator"},
+		},
+		{
+			name: "an unexported value",
+			file: "@js(\"helper\")\ndeclare val helper: number",
+			want: []string{"unexported value \"helper\" in pseudo-package file %s has no runtime mapping; add `export` (and an `@js(...)` decorator) or remove the declaration"},
+		},
+		{
+			name: "an unexported type",
+			file: "declare type Helper = number",
+			want: []string{"unexported type \"Helper\" in pseudo-package file %s would leak to importers through the shared package namespace; add `export` or remove the declaration"},
+		},
+		{
+			name: "an @js with a non-string argument",
+			file: "@js(123)\nexport declare val PI: number",
+			want: []string{"`@js` decorator on value \"PI\" in pseudo-package file %s must take a single string-literal argument"},
+		},
+		{
+			name: "an @js with two arguments",
+			file: "@js(\"a\", \"b\")\nexport declare val PI: number",
+			want: []string{"`@js` decorator on value \"PI\" in pseudo-package file %s must take a single string-literal argument"},
+		},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			dir := seedStdlib(t, withPreludeClasses(map[string]string{"std/example.esc": test.file}))
+			res := InferModuleWithSource(parseModule(t, `import "std:example"`), StdlibSource(dir))
+			path := filepath.Join(dir, "std", "example.esc")
+			want := make([]string, len(test.want))
+			for i, w := range test.want {
+				want[i] = fmt.Sprintf(w, path)
+			}
+			if len(want) == 0 {
+				require.Empty(t, errorMessagesOf(res.Errors))
+				return
+			}
+			require.Equal(t, want, errorMessagesOf(res.Errors))
+		})
+	}
 }

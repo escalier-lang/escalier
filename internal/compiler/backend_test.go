@@ -516,9 +516,6 @@ func TestDoesNotSynthesizeAKeyFromACall(t *testing.T) {
 // unique symbol a `readonly` property declares. The value the symbol is named after holds
 // it at the path TypeScript writes, so a type naming the symbol reads `typeof i.key` and a
 // key off it reads `[i.key]`. The property that declares the symbol keeps `unique symbol`.
-//
-// internal/checker writes each such key as a string, so this asserts what the solver emits
-// rather than that the two agree.
 func TestEmitsASymbolAPropertyDeclares(t *testing.T) {
 	tests := []struct {
 		name string

@@ -2,18 +2,12 @@ package codegen
 
 import (
 	"github.com/escalier-lang/escalier/internal/ast"
-	"github.com/escalier-lang/escalier/internal/type_system"
 )
 
 // JSTypes answers the questions JavaScript emission asks about what inference
-// concluded. Everything else in the emitter reads the AST and the dep graph, both of
-// which are the same whichever checker ran, so this interface is the whole of
-// codegen's dependency on a type representation.
-//
-// Each checker holds its results in its own form: internal/checker stamps a type onto
-// each AST node, and internal/solver records types in a side table keyed by node.
-// Neither converts to the other's representation, so each supplies its own
-// implementation of this interface.
+// concluded. Everything else in the emitter reads the AST and the dep graph, so this
+// interface is the whole of codegen's dependency on a type representation.
+// SolverJSTypes implements it over the side table internal/solver records types in.
 //
 // A Builder with no JSTypes answers every question the way an untyped tree does, so
 // emission still runs and produces the plainest form of each construct. That is the
@@ -66,157 +60,4 @@ func (b *Builder) types() JSTypes {
 		return noJSTypes{}
 	}
 	return b.jsTypes
-}
-
-// CheckerJSTypes answers from internal/checker's results, which it reads off the AST
-// through the inferred-type field that checker stamps onto each node.
-type CheckerJSTypes struct{}
-
-// IsNominalTypeRef follows a reference to the object type it names, directly or
-// through a type alias, and reports whether that object is nominal.
-func (CheckerJSTypes) IsNominalTypeRef(t *ast.TypeRefTypeAnn) bool {
-	inferred := t.InferredType()
-	if inferred == nil {
-		return false
-	}
-	pruned := type_system.Prune(inferred)
-	if typeRef, ok := pruned.(*type_system.TypeRefType); ok && typeRef.TypeAlias != nil {
-		if obj, ok := type_system.Prune(typeRef.TypeAlias.Type).(*type_system.ObjectType); ok && obj.Nominal {
-			return true
-		}
-	}
-	obj, ok := pruned.(*type_system.ObjectType)
-	return ok && obj.Nominal
-}
-
-// CalleeConstructs reports whether the callee's type is an object carrying a
-// constructor element.
-func (CheckerJSTypes) CalleeConstructs(callee ast.Expr) bool {
-	objType, ok := callee.InferredType().(*type_system.ObjectType)
-	if !ok {
-		return false
-	}
-	for _, elem := range objType.Elems {
-		if _, isConstructor := elem.(*type_system.ConstructorElem); isConstructor {
-			return true
-		}
-	}
-	return false
-}
-
-// IsMethodRead reports whether the read's type is a function that takes `self`, or an
-// overload set whose every arm does. A method of a class or an interface keeps its
-// SelfParam in type_system, which is what tells it apart from a field holding a plain
-// function. A method an object type annotation declares carries none, so a read off such
-// an object asks the object whether the member is a method.
-//
-// The object lookup needs the member's name, so an index read takes it only when its index
-// is a string literal, as in `obj["m"]`. Any other index read goes by its type alone.
-func (CheckerJSTypes) IsMethodRead(e ast.Expr) bool {
-	var object ast.Expr
-	var name string
-	switch e := e.(type) {
-	case *ast.MemberExpr:
-		if e.Prop == nil {
-			return false
-		}
-		object, name = e.Object, e.Prop.Name
-	case *ast.IndexExpr:
-		object = e.Object
-		if lit, isLit := e.Index.(*ast.LiteralExpr); isLit {
-			if str, isStr := lit.Lit.(*ast.StrLit); isStr {
-				name = str.Value
-			}
-		}
-	default:
-		return false
-	}
-	if obj, ok := type_system.Prune(object.InferredType()).(*type_system.ObjectType); ok && name != "" {
-		if declaresMethod(obj, name) {
-			return true
-		}
-	}
-	switch t := e.InferredType().(type) {
-	case *type_system.FuncType:
-		return t.SelfParam != nil
-	case *type_system.IntersectionType:
-		for _, arm := range t.Types {
-			fn, ok := arm.(*type_system.FuncType)
-			if !ok || fn.SelfParam == nil {
-				return false
-			}
-		}
-		return len(t.Types) > 0
-	}
-	return false
-}
-
-// AbsentKeys returns nil. internal/checker narrows an object pattern by the keys it names
-// alone.
-func (CheckerJSTypes) AbsentKeys(*ast.ObjectPat) []string { return nil }
-
-// declaresMethod reports whether obj declares a method named name that runs against obj. A
-// class value carries a constructor, and the methods it holds beside it are static, so
-// they read no receiver.
-func declaresMethod(obj *type_system.ObjectType, name string) bool {
-	found := false
-	for _, elem := range obj.Elems {
-		switch e := elem.(type) {
-		case *type_system.ConstructorElem:
-			return false
-		case *type_system.MethodElem:
-			if e.Name == type_system.NewStrKey(name) {
-				found = true
-			}
-		}
-	}
-	return found
-}
-
-// NullableArms reads the union arms that are the `null` and `undefined` literals. A
-// type that is not a union admits neither, so it answers false twice.
-func (CheckerJSTypes) NullableArms(e ast.Expr) (bool, bool) {
-	inferred := e.InferredType()
-	if inferred == nil {
-		return false, false
-	}
-	unionType, ok := type_system.Prune(inferred).(*type_system.UnionType)
-	if !ok {
-		return false, false
-	}
-	var hasNull, hasUndefined bool
-	for _, t := range unionType.Types {
-		litType, ok := type_system.Prune(t).(*type_system.LitType)
-		if !ok {
-			continue
-		}
-		if _, isNull := litType.Lit.(*type_system.NullLit); isNull {
-			hasNull = true
-		}
-		if _, isUndefined := litType.Lit.(*type_system.UndefinedLit); isUndefined {
-			hasUndefined = true
-		}
-	}
-	return hasNull, hasUndefined
-}
-
-// MemberJSExpr resolves the property through the namespace the receiver's type names,
-// then reads the `@js("…")` argument off the declaration that bound it.
-func (CheckerJSTypes) MemberJSExpr(m *ast.MemberExpr) (string, bool) {
-	if m.Prop == nil {
-		return "", false
-	}
-	objType := m.Object.InferredType()
-	if objType == nil {
-		return "", false
-	}
-	nsType, ok := type_system.Prune(objType).(*type_system.NamespaceType)
-	if !ok || nsType.Namespace == nil {
-		return "", false
-	}
-	binding := nsType.Namespace.Values[m.Prop.Name]
-	if binding == nil {
-		return "", false
-	}
-	return jsExprFromOwner(binding.Owner)
 }

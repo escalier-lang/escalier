@@ -605,8 +605,7 @@ func TestMutabilityTransitionsFromSource(t *testing.T) {
 		},
 		// G3 binds a `mut` borrow into a bare annotation by reborrowing it as a local
 		// immutable view. `snap` dies within `p`'s region and never escapes, so the
-		// lifetime sort accepts it, matching internal/checker, which has no borrow-escape
-		// concept here. Before G3 this reported the divergent "does not live long enough".
+		// lifetime sort accepts it.
 		"UnforcedLifetime_LocalReborrow_OK": {
 			src: `
 				fn f(p: mut {x: number}) {

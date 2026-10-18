@@ -6,10 +6,8 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-// TestInferTypeCast covers `expr : T`, ported from the old checker's
-// internal/checker/tests/typecast_test.go. A cast the operand satisfies yields the
-// annotation. `any` resolves to `unknown` on the solver, so a cast to `any` yields
-// `unknown` where the old checker yields `any`.
+// TestInferTypeCast covers `expr : T`. A cast the operand satisfies yields the
+// annotation. `any` resolves to `unknown`, so a cast to `any` yields `unknown`.
 func TestInferTypeCast(t *testing.T) {
 	tests := []struct {
 		name string

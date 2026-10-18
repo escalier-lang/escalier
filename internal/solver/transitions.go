@@ -13,10 +13,8 @@ import (
 	"github.com/escalier-lang/escalier/internal/soltype"
 )
 
-// Mutability-transition checking, ported from internal/checker/check_transitions.go
-// and internal/checker/liveness_prepass.go (M4 G1). The liveness/CFG/alias-tracking
-// machinery in internal/liveness is reused verbatim. Only two pieces are reimplemented
-// over soltype rather than type_system:
+// Mutability-transition checking. The liveness, CFG, and alias-tracking machinery
+// comes from internal/liveness. Two pieces are written over soltype here:
 //
 //   - isValueType / isMutableType, the two type predicates the transition checker
 //     consults, and
@@ -677,10 +675,10 @@ func (c *checker) varIDToName(id liveness.VarID) string {
 
 // runLivenessPrePass runs name resolution, CFG construction, and liveness analysis
 // on the function body about to be walked, populating the transition-checking state
-// on c.fn. Ported from internal/checker/liveness_prepass.go. The rename pass writes
-// VarIDs directly onto the body's AST nodes, so DetermineAliasSource and the
-// downstream IdentPat/IdentExpr reads see them. paramTypes maps each parameter name to
-// its soltype, the mutability the alias seeding records.
+// on c.fn. The rename pass writes VarIDs directly onto the body's AST nodes, so
+// DetermineAliasSource and the downstream IdentPat/IdentExpr reads see them.
+// paramTypes maps each parameter name to its soltype, the mutability the alias
+// seeding records.
 //
 // Must be called after parameters are bound in scope (so outer-scope names resolve)
 // but before the body is walked.

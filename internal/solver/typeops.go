@@ -184,9 +184,8 @@ func (e *typeEvaluator) reduce(t soltype.Type) soltype.Type {
 }
 
 // reduceCond reduces `if Check : Extends { Then } else { Else }` by deciding `Check <: Extends`
-// and selecting a branch, mirroring the old checker's CondType case
-// (internal/checker/expand_type.go), which unifies Check with Extends and returns Then on success
-// or Else on failure. The decision runs only when both operands are ground:
+// and selecting Then when it holds or Else when it does not. The decision runs only when both
+// operands are ground:
 //
 //   - a ground Check and Extends decide the branch with an assignability probe, and the reduction
 //     continues into the selected branch alone, so an error in the unselected branch never surfaces;
@@ -844,9 +843,9 @@ func mergeSpreadElem(earlier, later soltype.ObjTypeElem) soltype.ObjTypeElem {
 	}
 }
 
-// expandMapped computes the fields a `[K]: V for K in Keys` member contributes to its object,
-// mirroring the old checker's expandMappedElems (internal/checker/expand_type.go). It emits one
-// field per key of the Keys union, each built by mappedFields with that key substituted for K:
+// expandMapped computes the fields a `[K]: V for K in Keys` member contributes to its object.
+// It emits one field per key of the Keys union, each built by mappedFields with that key
+// substituted for K:
 //
 //	{[K]: T[K] for K in keyof T}   with T = {x: number, y: string}
 //	⇒ {x: number, y: string}
@@ -1133,8 +1132,7 @@ func (s *mappedKeySubst) EnterType(t soltype.Type, _ soltype.Polarity) soltype.E
 
 func (s *mappedKeySubst) ExitType(t soltype.Type, _ soltype.Polarity) soltype.Type { return t }
 
-// reduceKeyof reduces `keyof operand` to the union of the operand's keys, mirroring the old
-// checker's KeyOfType case (internal/checker/expand_type.go):
+// reduceKeyof reduces `keyof operand` to the union of the operand's keys:
 //
 //   - an object projects its property, getter, and setter names as string-literal types;
 //   - a tuple yields only its own numeric indices, omitting the inherited "length"; see keyofTuple;
@@ -1463,8 +1461,7 @@ func (e *typeEvaluator) keyofIntersection(members []soltype.Type, inexact bool) 
 	return newUnion(nil, parts)
 }
 
-// reduceIndex reduces `target[index]` to the type stored at that key, mirroring the old
-// checker's IndexType case (internal/checker/expand_type.go):
+// reduceIndex reduces `target[index]` to the type stored at that key:
 //
 //   - an object indexed by a string-literal key yields that member's read type, and an unknown
 //     key records an UnknownObjectKeyError;

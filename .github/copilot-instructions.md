@@ -13,7 +13,7 @@ Escalier is a programming language compiler with strong TypeScript interoperabil
 - `cmd/escalier/` - Main compiler binary
 - `cmd/lsp-server/` - Language Server Protocol implementation
 - `internal/ast/` - Abstract Syntax Tree definitions
-- `internal/checker/` - Type checking and validation
+- `internal/solver/` - Type inference and checking
 - `internal/parser/` - Source code parsing
 - `internal/codegen/` - Code generation to JavaScript
 - `internal/compiler/` - Main compilation orchestration
@@ -115,7 +115,7 @@ The project uses **Biome** for JavaScript/TypeScript linting and formatting.
 3. **Adding new language features:**
    - Add test fixtures in `fixtures/[feature-name]/`
    - Update parser in `internal/parser/`
-   - Update type checker in `internal/checker/`
+   - Update type checker in `internal/solver/`
    - Update code generator in `internal/codegen/`
    - Add documentation in `docs/`
 
@@ -153,7 +153,7 @@ Escalier extends TypeScript with:
 
 ### Compilation Pipeline
 1. **Parse** - Source → AST (`internal/parser/`)
-2. **Type Check** - AST → Typed AST with diagnostics (`internal/checker/`)
+2. **Type Check** - AST → Typed AST with diagnostics (`internal/solver/`)
 3. **Code Generation** - Typed AST → JavaScript + .d.ts files (`internal/codegen/`)
 
 ### Type System

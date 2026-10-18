@@ -956,10 +956,8 @@ func (b *Builder) buildDeclWithNamespace(decl ast.Decl, nsName string) []Stmt {
 		}
 
 		// A class that declares no constructor still constructs its fields, so the
-		// implicit one is derived here rather than read back from the tree. Only
-		// internal/checker installs it during inference, so deriving it is what makes
-		// the emitted class the same whichever checker ran. It goes first so the
-		// constructor emits ahead of the members, where that install puts it.
+		// implicit one is derived here, since no checker installs it on the tree. It
+		// goes first so the constructor emits ahead of the members.
 		//
 		// A computed key leaves no parameter name to bind, so no constructor is
 		// derived. Reporting that belongs to the checkers, so the field is dropped.

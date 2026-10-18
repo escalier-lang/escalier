@@ -14,7 +14,7 @@ import (
 // carries type parameters routes through resolveTypeParams, so one check covers them all.
 //
 // A constructor's own type parameters are unsupported, #1802, so the shape is rejected
-// before the check is reached and is left out here. internal/checker covers it.
+// before the check is reached and is left out here.
 func TestADuplicateTypeParamIsReported(t *testing.T) {
 	const want = "type parameter `T` is declared more than once"
 

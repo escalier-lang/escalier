@@ -7,7 +7,6 @@ import (
 	"testing"
 
 	"github.com/escalier-lang/escalier/internal/ast"
-	"github.com/escalier-lang/escalier/internal/checker"
 	"github.com/escalier-lang/escalier/internal/compiler"
 	"github.com/escalier-lang/escalier/internal/parser"
 	"github.com/stretchr/testify/assert"
@@ -106,9 +105,6 @@ func TestLoadSources(t *testing.T) {
 		assert.Len(t, idToSource, 0)
 	})
 }
-
-// Note: formatTypeError is tested indirectly through printErrors tests
-// since checker.Error types have unexported fields
 
 func TestWriteOutputFile(t *testing.T) {
 	t.Run("write JavaScript file", func(t *testing.T) {
@@ -342,7 +338,7 @@ func TestFormatTypeError(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
 			span := ast.NewSpan(ast.Location{Offset: tc.start}, ast.Location{Offset: tc.end}, source.ID)
-			got := formatTypeError(checker.NewGenericError("mismatch", span), source)
+			got := formatTypeError(testDiagnostic{span: span, message: "mismatch"}, source)
 			require.Equal(t, tc.want, got)
 		})
 	}
@@ -353,6 +349,15 @@ func TestFormatTypeError(t *testing.T) {
 func TestFormatTypeErrorOnASynthesizedSpan(t *testing.T) {
 	t.Parallel()
 	source := &ast.Source{ID: 0, Path: "lib/index.esc", Contents: "val x = 1\n"}
-	err := checker.NewGenericError("mismatch", checker.DEFAULT_SPAN)
+	err := testDiagnostic{span: ast.Span{}, message: "mismatch"}
 	require.Equal(t, "lib/index.esc: mismatch\n", formatTypeError(err, source))
 }
+
+// testDiagnostic is a compiler.Diagnostic with a fixed span and message.
+type testDiagnostic struct {
+	span    ast.Span
+	message string
+}
+
+func (d testDiagnostic) Span() ast.Span  { return d.span }
+func (d testDiagnostic) Message() string { return d.message }

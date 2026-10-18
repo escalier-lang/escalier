@@ -1,9 +1,6 @@
 fn area(w: number) -> number { return w * w }
 fn area(w: number, h: number) -> number { return w * h }
 
-// An overloaded constructor is covered by internal/codegen's own tests instead.
-// internal/checker still reports `Multiple constructors per class are not yet
-// supported`, so such a class never reaches codegen through this path.
 class Box {
     x: number,
     y: number,
