@@ -577,6 +577,14 @@ func TestDefinitionFromSolver(t *testing.T) {
 			expected: "lib/f.esc 0:18-0:19",
 		},
 		{
+			name: "OverloadedCalleeSecondArm",
+			files: map[string]string{
+				"lib/f.esc": "export declare fn f(a: number) -> number\nexport declare fn f(a: string) -> string\nval r = f(\"hello\")",
+			},
+			open: "lib/f.esc", line: 2, col: 8,
+			expected: "lib/f.esc 1:18-1:19",
+		},
+		{
 			name: "StdlibName",
 			files: map[string]string{
 				"bin/main.esc": `val n = parseInt("1")`,
