@@ -147,31 +147,13 @@ func (i *Info) LendsMut(n ast.Node) bool {
 }
 
 // MemberObject returns an object type whose elements are the members a value of type t
-// exposes, answered against the registries of the run that recorded this table. It
-// reads t the way a member read off a value of type t does:
+// exposes, read against the registries of the run that recorded this table. Inference
+// variables in the result are coalesced, and the caller owns the result. It returns false
+// when t exposes no fixed set of members, and on a table built by NewInfo.
 //
-//   - A class instance yields its own members and the ones it inherits, at the
-//     instance's type arguments.
-//   - An alias, an interface, or a `typeof` yields the type it expands to.
-//   - A primitive, a literal, or a unique symbol yields its wrapper class's instance,
-//     such as `String` for `"abc"`.
-//   - A tuple yields the `Array` instance holding the union of its elements.
-//   - An object type, a class value's statics included, yields itself.
-//   - A borrow yields what it borrows, and an inference variable yields what its
-//     bounds settled on.
-//
-// Every inference variable in the returned members is replaced by the bounds it settled
-// on, and the object is the caller's to keep or change.
-//
-// It returns false for any other type, such as a union, an intersection, a function,
-// `never`, or `unknown`. It also returns false for an object built from a mapped type
-// or a spread, which names its members only once reduced, and for a table built by
-// NewInfo.
-//
-// Call it only once the run has finished. A library run and every bin/ script checked
-// against it share one set of registries, and a script's check rewrites the entries
-// the previous check of that script made. A caller must not call it on any of those
-// tables while such a check runs.
+// Call it only once the run has finished. A library run and the bin/ scripts checked
+// against it share one set of registries, so no check of those scripts may run while it
+// is called on any of their tables.
 func (i *Info) MemberObject(t soltype.Type) (*soltype.ObjectType, bool) {
 	if i.ctx == nil || t == nil {
 		return nil, false
