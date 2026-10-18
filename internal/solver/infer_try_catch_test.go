@@ -45,24 +45,20 @@ func TestInferTryCatchHandlesWithACatchAll(t *testing.T) {
 	})
 }
 
-// The caught union is open. Any call can raise something no signature predicted, so the
-// members the try block is known to raise are only the part the type system can name.
-//
-// This is the one place the tail is rendered. A rethrow drops it, since a throws clause is
-// open already and would gain nothing from carrying it, but a catch arm matches an actual
-// value and has to reckon with one the block did not predict.
-func TestInferTryCatchBindsUnknown(t *testing.T) {
+// The caught value is the union of the values the try block is known to throw. A value
+// outside that union can still reach the `catch` at runtime. Codegen rethrows it unless an
+// arm catches everything, and such an arm receives it under the known type.
+func TestInferTryCatchBindsTheKnownThrows(t *testing.T) {
 	runThrowsCases(t, []throwsCase{
 		{
 			// The arm returns the caught binding, so the function's return type is the caught
-			// type. A catch can catch any value the runtime throws, so the caught value is
-			// `unknown` whatever the block's signature named.
-			name: "CaughtBindingIsUnknown",
+			// type.
+			name: "CaughtBindingIsTheThrownValue",
 			src:  `fn f() { try { throw "boom" } catch { e => { return e } } }`,
-			want: `fn () -> unknown`,
+			want: `fn () -> "boom"`,
 		},
 		{
-			name: "CaughtBindingIsUnknownWhateverIsRaised",
+			name: "CaughtBindingIsTheUnionOfTheThrownValues",
 			src: `
 				fn f(c: boolean) {
 					try {
@@ -72,22 +68,51 @@ func TestInferTryCatchBindsUnknown(t *testing.T) {
 					}
 				}
 			`,
-			want: `fn (c: boolean) -> unknown`,
+			want: `fn (c: boolean) -> "boom" | 5`,
 		},
 		{
-			// A block with no known exceptional exit binds `unknown` too, the same as one that
-			// raises a known type.
-			name: "CaughtBindingOfAQuietBlockIsUnknown",
-			src: `
-				fn f() {
-					try {
-						val x = 1
-					} catch {
-						e => { return e }
-					}
-				}
-			`,
-			want: "fn () -> unknown",
+			// A block with no known exceptional exit binds `never`, so the arm adds nothing to
+			// the form's value.
+			name:    "CaughtBindingOfAQuietBlockIsNever",
+			src:     `val r = try { 1 } catch { e => e }`,
+			binding: "r",
+			want:    "1",
+		},
+		{
+			// The caught value is the thrown string, so it concatenates without a narrowing
+			// annotation.
+			name:    "CaughtStringConcatenates",
+			src:     `val r = try { throw "error" } catch { msg => "caught: " ++ msg }`,
+			binding: "r",
+			want:    "string",
+		},
+		{
+			// An object pattern destructures the thrown object.
+			name:    "AnObjectPatternDestructuresTheThrownObject",
+			src:     `val r = try { throw {message: "fail"} } catch { {message: msg} => msg, _ => "u" }`,
+			binding: "r",
+			want:    `"fail" | "u"`,
+		},
+		{
+			// A callee's throws reach the arms once they are solved. An unannotated callback's
+			// throws are still open when the arms are walked, so the arms see them only later.
+			name: "AnArmMatchesAValueACallbackThrows",
+			src:  `fn f(cb) { return try { cb() } catch { "x" => 1, _ => 2 } }`,
+			want: "fn <T0>(cb: fn () -> T0 throws unknown) -> T0 | 1 | 2",
+		},
+		{
+			// A value outside the known throws can still reach the `catch` at runtime, so an
+			// arm naming one is allowed.
+			name: "AnArmMayNameAValueOutsideTheKnownThrows",
+			src:  `fn f() { try { throw "boom" } catch { 5 => 0, _ => 1 } }`,
+			want: "fn () -> undefined",
+		},
+		{
+			// A catch-all below arms that cover every known thrown value is allowed. It catches
+			// the values no signature named.
+			name: "ACatchAllBelowCoveringArmsIsAllowed",
+			src:  `fn f() { try { throw "boom" } catch { "boom" => 0, _ => 1 } }`,
+			want: "fn () -> undefined",
 		},
 	})
 }
@@ -98,8 +123,8 @@ func TestInferTryCatchBindsUnknown(t *testing.T) {
 //
 // Only the known throws are weighed. A value outside them can still be thrown and rethrown at
 // runtime, but no signature named its type, so recording it would widen the clause to
-// `unknown`. The caught binding, which the arms narrow, is `unknown`, which
-// TestInferTryCatchBindsUnknown covers.
+// `unknown`. The caught binding, which the arms narrow, is the union of the known throws,
+// which TestInferTryCatchBindsTheKnownThrows covers.
 func TestInferTryCatchRethrowsWhatTheArmsLeave(t *testing.T) {
 	runThrowsCases(t, []throwsCase{
 		{
@@ -137,9 +162,9 @@ func TestInferTryCatchRethrowsWhatTheArmsLeave(t *testing.T) {
 			// land. The blame is the try/catch, not the `throw "boom"` inside the block:
 			// that `throw` IS caught, and what fails is the re-raise past the arms.
 			name: "RethrowNeedsAClause",
-			src:  `fn f() { try { throw "boom" } catch { 5 => 0 } }`,
+			src:  `fn f(c: boolean) { try { if c { throw "boom" } else { throw 5 } } catch { 5 => 0 } }`,
 			wantErrs: []string{
-				"1:10-1:45: the catch arms leave \"boom\" uncovered, so it is rethrown, and the enclosing `throws never` does not admit it. Cover it with a catch arm, or widen the enclosing clause",
+				"1:20-1:81: the catch arms leave \"boom\" uncovered, so it is rethrown, and the enclosing `throws never` does not admit it. Cover it with a catch arm, or widen the enclosing clause",
 			},
 		},
 		{
@@ -209,7 +234,7 @@ func TestInferTryWithoutCatchArmsIsRejected(t *testing.T) {
 
 // A `try` at module top level has no funcCtx to hold its nested sink, so it installs the
 // checker's module-level one instead. Without that the block collects nothing and every
-// caught binding reads `unknown`.
+// caught binding reads `never`.
 func TestInferTryCatchAtModuleTopLevel(t *testing.T) {
 	tests := []struct {
 		name string
@@ -219,25 +244,25 @@ func TestInferTryCatchAtModuleTopLevel(t *testing.T) {
 		want map[string]string
 	}{
 		{
-			name: "CaughtBindingIsUnknown",
+			name: "CaughtBindingIsTheThrownValue",
 			src:  `val caught = try { throw "fail" } catch { msg => msg }`,
-			want: map[string]string{"caught": `unknown`},
+			want: map[string]string{"caught": `"fail"`},
 		},
 		{
 			// The install is undone when the block finishes, so a later `try` over a quiet
-			// block collects nothing rather than inheriting the earlier block's throws. Both
-			// caught bindings read `unknown`, whatever the block raised.
+			// block collects nothing rather than inheriting the earlier block's throws. The
+			// second caught binding is `never`, so `b` is the block's `undefined` alone.
 			name: "TheSinkDoesNotLeakBetweenDecls",
 			src: `
 				val a = try { throw "one" } catch { e => e }
 				val b = try { val q = 1 } catch { e => e }
 			`,
-			want: map[string]string{"a": `unknown`, "b": "unknown"},
+			want: map[string]string{"a": `"one"`, "b": "undefined"},
 		},
 		{
 			// throwsSink reads the module-level sink only when there is no funcCtx, so a
 			// function declared inside the block collects into its own signature rather than
-			// the block's. The caught binding is `unknown` regardless.
+			// the block's. The caught binding is the block's own throw alone.
 			name: "ANestedFunctionKeepsItsOwnSink",
 			src: `
 				val caught = try {
@@ -245,7 +270,7 @@ func TestInferTryCatchAtModuleTopLevel(t *testing.T) {
 					throw "outer"
 				} catch { e => e }
 			`,
-			want: map[string]string{"caught": `unknown`},
+			want: map[string]string{"caught": `"outer"`},
 		},
 	}
 	for _, test := range tests {
@@ -278,22 +303,22 @@ func TestInferTryCatchNests(t *testing.T) {
 					}
 				}
 			`,
-			want: `fn (c: boolean) -> unknown`,
+			want: `fn (c: boolean) -> "boom"`,
 		},
 		{
 			// The outer catch-all closes what the inner form left over, so the function
 			// still needs no clause.
 			name: "AnOuterCatchAllAbsorbsTheInnerRemainder",
 			src: `
-				fn f() {
+				fn f(c: boolean) {
 					try {
-						try { throw "boom" } catch { 5 => 0 }
+						try { if c { throw "boom" } else { throw 5 } } catch { 5 => 0 }
 					} catch {
 						e => 1
 					}
 				}
 			`,
-			want: "fn () -> undefined",
+			want: "fn (c: boolean) -> undefined",
 		},
 		{
 			// A nested function owns its own throws sink, so a `try` in the enclosing body
@@ -319,7 +344,7 @@ func TestInferTryCatchNests(t *testing.T) {
 			src: `
 				fn a() throws string { throw "boom" }
 				fn f() throws _ {
-					val x = try { a() } catch { 5 => 0 }
+					val x = try { a() } catch { "x" => 0 }
 					return x
 				}
 			`,
@@ -580,13 +605,12 @@ func TestInferTryCatchExpandsAliasedErrorTypes(t *testing.T) {
 	})
 }
 
-// The caught value is `unknown`, since a catch can catch any value the runtime throws. A
-// fixed-arity tuple pattern cannot destructure `unknown`, so `[a, b]` fails against it. The
-// catch-all arm below still binds the value, so only the tuple arm's diagnostic remains.
+// The caught value is the union of the known throws, so a tuple pattern narrows it to the
+// member whose arity it fits and binds that member's elements.
 func TestInferTryCatchArmNarrowsItsScrutinee(t *testing.T) {
-	runThrowsErrCases(t, []throwsErrCase{
+	runThrowsCases(t, []throwsCase{
 		{
-			name: "TuplePatternCannotDestructureUnknown",
+			name: "TuplePatternNarrowsToTheMemberItFits",
 			src: `
 				fn f(b: boolean) {
 					return try {
@@ -597,9 +621,32 @@ func TestInferTryCatchArmNarrowsItsScrutinee(t *testing.T) {
 					}
 				}
 			`,
-			wantErrs: []string{
-				"6:7-6:13: cannot constrain unknown <: tuple",
-			},
+			want: "fn (b: boolean) -> 1 | 0",
+		},
+	})
+}
+
+// An arm's literal or class test admits any value, since the runtime can throw one the
+// checker never saw. The test widens nothing a binding of the caught value reads.
+func TestInferTryCatchArmTestLeavesTheCaughtValue(t *testing.T) {
+	runThrowsCases(t, []throwsCase{
+		{
+			name: "LiteralArmAboveACatchAll",
+			src:  `fn f() { return try { throw "x" } catch { 5 => 0, e => e } }`,
+			want: `fn () -> 0 | "x"`,
+		},
+		{
+			name: "LiteralArmBelowACatchAll",
+			src:  `fn f() { return try { throw "x" } catch { e => e, 5 => 0 } }`,
+			want: `fn () -> "x"`,
+		},
+		{
+			name: "ClassArmAboveACatchAll",
+			src: `
+				class AppError { code: number, constructor(&mut self) { self.code = 0 } }
+				fn f() { return try { throw "x" } catch { AppError{code} => code, e => e } }
+			`,
+			want: `fn () -> number | "x"`,
 		},
 	})
 }

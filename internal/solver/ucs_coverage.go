@@ -698,11 +698,18 @@ func atomTagged(member soltype.Type, tags []ucs.Test) bool {
 // nominalTagged reports whether some covering test names the member's class, resolving the
 // test's name through the type sort so `Color.RGB` covers the `Color.RGB` variant. An
 // instance pattern lowers to a class test and an extractor pattern to an extractor test.
+//
+// A class test also covers a member whose class extends the one it names, since every value
+// of a subclass is an instance of its base. `AppError{code}` covers a `ParseError` member.
 func (c *checker) nominalTagged(scope *Scope, member *soltype.ClassType, tags []ucs.Test) bool {
 	for _, tag := range tags {
 		switch t := tag.(type) {
 		case *ucs.ClassTest:
-			if ct, ok := c.instancePatClass(scope, ast.QualIdentToString(t.Name)); ok && ct.Name == member.Name {
+			ct, ok := c.instancePatClass(scope, ast.QualIdentToString(t.Name))
+			if !ok {
+				continue
+			}
+			if _, reaches, _ := c.ctx.ancestorInstance(member, ct.Name); reaches {
 				return true
 			}
 		case *ucs.ExtractorTest:

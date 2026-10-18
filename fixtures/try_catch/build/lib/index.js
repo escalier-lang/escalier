@@ -89,7 +89,7 @@ try {
 export const mixedReturn = temp12;
 let temp13;
 try {
-  throw Error("fail");
+  throw new Error("fail");
 } catch (__error) {
   const Error = __error;
   temp13 = "caught error";
