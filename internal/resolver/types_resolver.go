@@ -18,9 +18,9 @@ import (
 //
 // A subpath such as `lodash/fp` resolves to the directory of that name inside the
 // package, or to a `.d.ts` file of that name. A moduleName with a `.` or `..`
-// segment names no package and is rejected. When a package directory exists but its
-// entry point does not, the error is GetTypesEntryPoint's. Otherwise it names every
-// directory the lookup tried.
+// segment names no package and is rejected. When nothing holds types, the error is
+// GetTypesEntryPoint's for the first package directory that exists but has no entry
+// point. With no such directory, it names every directory the lookup tried.
 func ResolveTypesEntryPoint(moduleName string, fromDir string) (string, error) {
 	for _, segment := range strings.Split(moduleName, "/") {
 		if segment == "." || segment == ".." || segment == "" {
@@ -28,6 +28,7 @@ func ResolveTypesEntryPoint(moduleName string, fromDir string) (string, error) {
 		}
 	}
 	var tried []string
+	var entryErr error
 	for dir := fromDir; ; {
 		nodeModules := filepath.Join(dir, "node_modules")
 		for _, pkgDir := range []string{
@@ -41,11 +42,16 @@ func ResolveTypesEntryPoint(moduleName string, fromDir string) (string, error) {
 					return path, nil
 				}
 				// A subpath such as `react/jsx-runtime` can name a file beside a
-				// directory of the same name, so the file is tried before reporting.
+				// directory of the same name.
 				if file := pkgDir + ".d.ts"; isFile(file) {
 					return file, nil
 				}
-				return "", err
+				// The lookup goes on, since `node_modules/react` holds only
+				// JavaScript and its types are in `node_modules/@types/react`.
+				if entryErr == nil {
+					entryErr = err
+				}
+				continue
 			}
 			if file := pkgDir + ".d.ts"; isFile(file) {
 				return file, nil
@@ -56,6 +62,9 @@ func ResolveTypesEntryPoint(moduleName string, fromDir string) (string, error) {
 			break
 		}
 		dir = parent
+	}
+	if entryErr != nil {
+		return "", entryErr
 	}
 	return "", fmt.Errorf("no types found for %q; looked in %s", moduleName, strings.Join(tried, ", "))
 }

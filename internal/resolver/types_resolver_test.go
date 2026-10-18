@@ -46,6 +46,12 @@ func TestResolveTypesEntryPoint(t *testing.T) {
 			want:   "node_modules/@types/react/jsx-runtime.d.ts",
 		},
 		{
+			name:   "a package that ships no types beside its @types package",
+			files:  []string{"node_modules/react/index.js", "node_modules/react/package.json", "node_modules/@types/react/index.d.ts"},
+			module: "react",
+			want:   "node_modules/@types/react/index.d.ts",
+		},
+		{
 			name:   "a package above the directory resolved from",
 			files:  []string{"node_modules/@types/react/index.d.ts", "src/components/deep/.keep"},
 			module: "react",
