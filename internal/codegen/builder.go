@@ -1291,7 +1291,7 @@ func (b *Builder) buildTypeGuard(valueExpr Expr, typeAnn ast.TypeAnn) Expr {
 	if ref, isRef := typeAnn.(*ast.TypeRefTypeAnn); isRef {
 		switch t := b.types().ExpandedTypeOf(ref).(type) {
 		case *soltype.RegexType, *soltype.UnionType:
-			return b.buildSolTypeGuard(valueExpr, t, set.NewSet[string]())
+			return b.buildSolTypeGuard(valueExpr, t, ref, set.NewSet[string]())
 		}
 	}
 	switch t := typeAnn.(type) {
@@ -1300,7 +1300,7 @@ func (b *Builder) buildTypeGuard(valueExpr Expr, typeAnn ast.TypeAnn) Expr {
 		for i, member := range t.Types {
 			guards[i] = b.buildTypeGuard(valueExpr, member)
 		}
-		return anyCondition(guards)
+		return anyCondition(guards, t)
 	case *ast.NumberTypeAnn:
 		return b.buildTypeOfCheck(valueExpr, "number", StrictEqual, nil)
 	case *ast.StringTypeAnn:
@@ -1310,7 +1310,7 @@ func (b *Builder) buildTypeGuard(valueExpr Expr, typeAnn ast.TypeAnn) Expr {
 	case *ast.LitTypeAnn:
 		// An inline regex type is tested with its own pattern.
 		if re, isRegex := t.Lit.(*ast.RegexLit); isRegex {
-			return b.buildRegexGuard(valueExpr, re.Value)
+			return b.buildRegexGuard(valueExpr, re.Value, t)
 		}
 		// For literal types, check exact value
 		litExpr := NewLitExpr(buildLit(t.Lit), nil)
@@ -1392,118 +1392,120 @@ func (b *Builder) buildTypeGuard(valueExpr Expr, typeAnn ast.TypeAnn) Expr {
 // aliases of any of these. An optional property passes when it is absent. It returns `true`
 // for any other type.
 //
+// source is the annotation the guard tests, which every node of the guard maps back to.
 // expanding holds the aliases being expanded on the way down to t. An alias already in it
 // tests as `true`, so the guard for a recursive alias such as `type Tree = {left: Tree | null}`
 // ends.
-func (b *Builder) buildSolTypeGuard(valueExpr Expr, t soltype.Type, expanding set.Set[string]) Expr {
+func (b *Builder) buildSolTypeGuard(valueExpr Expr, t soltype.Type, source ast.Node, expanding set.Set[string]) Expr {
 	if alias, isAlias := t.(*soltype.AliasType); isAlias {
 		key := soltype.PrintQualified(alias)
 		if expanding.Contains(key) {
-			return NewLitExpr(NewBoolLit(true, nil), nil)
+			return NewLitExpr(NewBoolLit(true, source), source)
 		}
 		expanding.Add(key)
 		defer expanding.Remove(key)
 		t = b.types().Expand(alias)
 		if _, stillAlias := t.(*soltype.AliasType); stillAlias {
-			return NewLitExpr(NewBoolLit(true, nil), nil)
+			return NewLitExpr(NewBoolLit(true, source), source)
 		}
 	}
 	switch t := t.(type) {
 	case *soltype.PrimType:
 		switch t.Prim {
 		case soltype.NumPrim:
-			return b.buildTypeOfCheck(valueExpr, "number", StrictEqual, nil)
+			return b.buildTypeOfCheck(valueExpr, "number", StrictEqual, source)
 		case soltype.StrPrim:
-			return b.buildTypeOfCheck(valueExpr, "string", StrictEqual, nil)
+			return b.buildTypeOfCheck(valueExpr, "string", StrictEqual, source)
 		case soltype.BoolPrim:
-			return b.buildTypeOfCheck(valueExpr, "boolean", StrictEqual, nil)
+			return b.buildTypeOfCheck(valueExpr, "boolean", StrictEqual, source)
 		}
 	case *soltype.LitType:
 		var lit Lit
 		switch l := t.Lit.(type) {
 		case *soltype.StrLit:
-			lit = NewStrLit(l.Value, nil)
+			lit = NewStrLit(l.Value, source)
 		case *soltype.NumLit:
-			lit = NewNumLit(l.Value, nil)
+			lit = NewNumLit(l.Value, source)
 		case *soltype.BoolLit:
-			lit = NewBoolLit(l.Value, nil)
+			lit = NewBoolLit(l.Value, source)
 		}
 		if lit != nil {
-			return NewBinaryExpr(valueExpr, StrictEqual, NewLitExpr(lit, nil), nil)
+			return NewBinaryExpr(valueExpr, StrictEqual, NewLitExpr(lit, source), source)
 		}
 	case *soltype.RegexType:
-		return b.buildRegexGuard(valueExpr, t.Source)
+		return b.buildRegexGuard(valueExpr, t.Source, source)
 	case *soltype.NullType:
-		return NewBinaryExpr(valueExpr, StrictEqual, NewLitExpr(NewNullLit(nil), nil), nil)
+		return NewBinaryExpr(valueExpr, StrictEqual, NewLitExpr(NewNullLit(source), source), source)
 	case *soltype.UndefinedType:
-		return NewBinaryExpr(valueExpr, StrictEqual, NewLitExpr(NewUndefinedLit(nil), nil), nil)
+		return NewBinaryExpr(valueExpr, StrictEqual, NewLitExpr(NewUndefinedLit(source), source), source)
 	case *soltype.ObjectType:
 		conditions := []Expr{
-			NewBinaryExpr(valueExpr, StrictNotEqual, NewLitExpr(NewNullLit(nil), nil), nil),
-			b.buildTypeOfCheck(valueExpr, "object", StrictEqual, nil),
+			NewBinaryExpr(valueExpr, StrictNotEqual, NewLitExpr(NewNullLit(source), source), source),
+			b.buildTypeOfCheck(valueExpr, "object", StrictEqual, source),
 		}
 		for _, elem := range t.Elems {
 			prop, isProp := elem.(*soltype.PropertyElem)
 			if !isProp {
 				continue
 			}
-			present := buildPropertyInObjectCheck(prop.Name, valueExpr, nil)
-			valueGuard := b.buildSolTypeGuard(buildPropertyRead(valueExpr, prop.Name), prop.Type, expanding)
+			present := buildPropertyInObjectCheck(prop.Name, valueExpr, source)
+			valueGuard := b.buildSolTypeGuard(buildPropertyRead(valueExpr, prop.Name, source), prop.Type, source, expanding)
 			if !prop.Optional {
 				conditions = append(conditions, present, valueGuard)
 				continue
 			}
 			if !isTrueLiteral(valueGuard) {
-				absent := NewUnaryExpr(LogicalNot, present, nil)
-				conditions = append(conditions, NewBinaryExpr(absent, LogicalOr, valueGuard, nil))
+				absent := NewUnaryExpr(LogicalNot, present, source)
+				conditions = append(conditions, NewBinaryExpr(absent, LogicalOr, valueGuard, source))
 			}
 		}
-		return combineConditions(conditions, nil)
+		return combineConditions(conditions, source)
 	case *soltype.TupleType:
-		return buildArrayIsArrayCheck(valueExpr, nil)
+		return buildArrayIsArrayCheck(valueExpr, source)
 	case *soltype.UnionType:
 		guards := make([]Expr, len(t.Types))
 		for i, member := range t.Types {
-			guards[i] = b.buildSolTypeGuard(valueExpr, member, expanding)
+			guards[i] = b.buildSolTypeGuard(valueExpr, member, source, expanding)
 		}
-		return anyCondition(guards)
+		return anyCondition(guards, source)
 	}
-	return NewLitExpr(NewBoolLit(true, nil), nil)
+	return NewLitExpr(NewBoolLit(true, source), source)
 }
 
 // buildPropertyRead returns the read of the property name off valueExpr, as `value.name`
-// when name is an identifier and as `value["name"]` otherwise.
-func buildPropertyRead(valueExpr Expr, name string) Expr {
+// when name is an identifier and as `value["name"]` otherwise. source is the node the read
+// maps back to.
+func buildPropertyRead(valueExpr Expr, name string, source ast.Node) Expr {
 	if IsValidIdentifier(name) {
-		return NewMemberExpr(valueExpr, NewIdentifier(name, nil), false, nil)
+		return NewMemberExpr(valueExpr, NewIdentifier(name, source), false, source)
 	}
-	return NewIndexExpr(valueExpr, NewLitExpr(NewStrLit(name, nil), nil), false, nil)
+	return NewIndexExpr(valueExpr, NewLitExpr(NewStrLit(name, source), source), false, source)
 }
 
 // anyCondition joins guards with `||`. It returns `true` when any guard is `true`, since
-// that guard passes every value.
-func anyCondition(guards []Expr) Expr {
+// that guard passes every value. source is the node each `||` maps back to.
+func anyCondition(guards []Expr, source ast.Node) Expr {
 	if len(guards) == 0 || slices.ContainsFunc(guards, isTrueLiteral) {
-		return NewLitExpr(NewBoolLit(true, nil), nil)
+		return NewLitExpr(NewBoolLit(true, source), source)
 	}
 	out := guards[0]
 	for _, g := range guards[1:] {
-		out = NewBinaryExpr(out, LogicalOr, g, nil)
+		out = NewBinaryExpr(out, LogicalOr, g, source)
 	}
 	return out
 }
 
 // buildRegexGuard returns `typeof valueExpr === "string" && /re/.test(valueExpr)` for the
-// regex literal source.
-func (b *Builder) buildRegexGuard(valueExpr Expr, source string) Expr {
+// regex literal pattern. source is the node every part of the guard maps back to.
+func (b *Builder) buildRegexGuard(valueExpr Expr, pattern string, source ast.Node) Expr {
 	test := NewCallExpr(
-		NewMemberExpr(NewLitExpr(NewRegexLit(source, nil), nil), NewIdentifier("test", nil), false, nil),
+		NewMemberExpr(NewLitExpr(NewRegexLit(pattern, source), source), NewIdentifier("test", source), false, source),
 		[]Expr{valueExpr},
 		false,
-		nil,
+		source,
 	)
-	isString := b.buildTypeOfCheck(valueExpr, "string", StrictEqual, nil)
-	return NewBinaryExpr(isString, LogicalAnd, test, nil)
+	isString := b.buildTypeOfCheck(valueExpr, "string", StrictEqual, source)
+	return NewBinaryExpr(isString, LogicalAnd, test, source)
 }
 
 // nominalGuardName returns the class name an `x instanceof C` guard tests for a

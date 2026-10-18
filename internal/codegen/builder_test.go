@@ -8,6 +8,7 @@ import (
 	"github.com/escalier-lang/escalier/internal/dep_graph"
 	"github.com/escalier-lang/escalier/internal/parser"
 	"github.com/escalier-lang/escalier/internal/set"
+	"github.com/escalier-lang/escalier/internal/soltype"
 	"github.com/escalier-lang/escalier/internal/type_system"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -1634,4 +1635,39 @@ func parseDecl(t *testing.T, source string) ast.Decl {
 	}
 
 	return decl
+}
+
+// aliasExpander expands every annotation to one type, standing in for a solver run in which
+// the annotation names an alias of that type.
+type aliasExpander struct {
+	noJSTypes
+	target soltype.Type
+}
+
+func (a aliasExpander) ExpandedTypeOf(ast.TypeAnn) soltype.Type { return a.target }
+
+// TestTheGuardForAnAliasMapsBackToTheAnnotation asserts that every member test of the guard
+// built for an alias of a union, and every `||` joining them, has the annotation as its
+// source, so the source map points each part of the guard at the annotation.
+func TestTheGuardForAnAliasMapsBackToTheAnnotation(t *testing.T) {
+	union := &soltype.UnionType{Types: []soltype.Type{
+		&soltype.PrimType{Prim: soltype.NumPrim},
+		&soltype.RegexType{Source: `/^\d+$/`},
+		&soltype.ObjectType{Elems: []soltype.ObjTypeElem{
+			&soltype.PropertyElem{Name: "a", Type: &soltype.PrimType{Prim: soltype.StrPrim}, Optional: true},
+		}},
+	}}
+	ref := ast.NewRefTypeAnn(ast.NewIdentifier("T", ast.Span{}), nil, ast.Span{})
+	b := NewBuilder(aliasExpander{target: union})
+
+	guard := b.buildTypeGuard(NewIdentExpr("v", "", nil), ref)
+
+	// anyCondition joins the three member tests left to right, as `(m0 || m1) || m2`.
+	outer, ok := guard.(*BinaryExpr)
+	require.True(t, ok)
+	inner, ok := outer.Left.(*BinaryExpr)
+	require.True(t, ok)
+	for _, node := range []Expr{outer, inner, inner.Left, inner.Right, outer.Right} {
+		require.Equal(t, ast.Node(ref), node.Source())
+	}
 }
