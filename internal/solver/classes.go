@@ -745,6 +745,28 @@ func splitByReceiverMut(elem soltype.ObjTypeElem) (immutPart, mutOnlyPart soltyp
 	}
 }
 
+// NeedsMutReceiver reports whether reading, calling, or writing member needs mutable access
+// to the value it is reached through. That holds for a method or a getter whose `self`
+// receiver is `&mut self` or `mut self`, and for every setter, since a setter writes the
+// value. An overloaded method needs mutable access only when every arm's receiver does.
+func NeedsMutReceiver(member soltype.ObjTypeElem) bool {
+	switch m := member.(type) {
+	case *soltype.SetterElem:
+		return true
+	case *soltype.MethodElem:
+		// A method whose arms disagree on the receiver is already a
+		// MethodOverloadReceiverMismatchError, but its arms stay in the class body, so an
+		// immutable receiver still reaches the arms that take `&self`.
+		for _, sig := range m.Signatures {
+			if !mutReceiver(sig.SelfParam) {
+				return false
+			}
+		}
+		return len(m.Signatures) > 0
+	}
+	return mutReceiver(memberSelfParam(member))
+}
+
 // mutReceiver reports whether a member's `self` receiver demands mutable access, which is
 // what makes the member unreachable through an immutable reference. Both `&mut self` and `mut
 // self` are a mutable RefType over the class. A `&self` or `self` receiver is not, and a nil
