@@ -158,7 +158,7 @@ func (c *checker) inferPackage(uri string, module *ast.Module) (*Namespace, []So
 
 	scope := c.preludeScope().Child()
 	// A `.d.ts` is written against TypeScript's global library, which the ambient
-	// scope holds. `ReadonlyArray` in `csstype` is one such name.
+	// scope holds. `Console` is one such name.
 	if !IsSchemePrefixedImport(uri) {
 		scope = c.ambientScope().Child()
 	}

@@ -8,30 +8,82 @@ import (
 	"strings"
 )
 
-// ResolveTypesPackage finds the @types package for a given module name.
-// Returns the path to the package directory, or an error if not found.
+// ResolveTypesEntryPoint returns the `.d.ts` file the types for moduleName start at.
+// It looks in the `node_modules` directories at and above fromDir, the way Node looks
+// a package up, and in each one tries in turn:
 //
-// Resolution algorithm:
-// 1. Starting from fromDir, look for node_modules/@types/moduleName
-// 2. Walk up parent directories, checking each node_modules/@types/moduleName
-// 3. Stop when found or when reaching the filesystem root
-func ResolveTypesPackage(moduleName string, fromDir string) (string, error) {
-	typesPackage := "@types/" + moduleName
-
-	dir := fromDir
-	for {
-		candidate := filepath.Join(dir, "node_modules", typesPackage)
-		if info, err := os.Stat(candidate); err == nil && info.IsDir() {
-			return candidate, nil
+//  1. `node_modules/<moduleName>`, a package that ships its own types;
+//  2. `node_modules/@types/<name>`, a package whose types are published apart. A
+//     scoped `@scope/pkg` publishes them as `@types/scope__pkg`.
+//
+// A subpath such as `lodash/fp` resolves to the directory of that name inside the
+// package, or to a `.d.ts` file of that name. A moduleName with a `.` or `..`
+// segment names no package and is rejected. When a package directory exists but its
+// entry point does not, the error is GetTypesEntryPoint's. Otherwise it names every
+// directory the lookup tried.
+func ResolveTypesEntryPoint(moduleName string, fromDir string) (string, error) {
+	for _, segment := range strings.Split(moduleName, "/") {
+		if segment == "." || segment == ".." || segment == "" {
+			return "", fmt.Errorf("%q is a relative path, not a package name", moduleName)
 		}
-
+	}
+	var tried []string
+	for dir := fromDir; ; {
+		nodeModules := filepath.Join(dir, "node_modules")
+		for _, pkgDir := range []string{
+			filepath.Join(nodeModules, filepath.FromSlash(moduleName)),
+			filepath.Join(nodeModules, "@types", filepath.FromSlash(typesPackageName(moduleName))),
+		} {
+			tried = append(tried, pkgDir)
+			if isDir(pkgDir) {
+				path, err := GetTypesEntryPoint(pkgDir)
+				if err == nil {
+					return path, nil
+				}
+				// A subpath such as `react/jsx-runtime` can name a file beside a
+				// directory of the same name, so the file is tried before reporting.
+				if file := pkgDir + ".d.ts"; isFile(file) {
+					return file, nil
+				}
+				return "", err
+			}
+			if file := pkgDir + ".d.ts"; isFile(file) {
+				return file, nil
+			}
+		}
 		parent := filepath.Dir(dir)
 		if parent == dir {
-			// Reached filesystem root
-			return "", fmt.Errorf("@types/%s not found", moduleName)
+			break
 		}
 		dir = parent
 	}
+	return "", fmt.Errorf("no types found for %q; looked in %s", moduleName, strings.Join(tried, ", "))
+}
+
+// typesPackageName returns the `@types` package name for moduleName. A scoped package
+// `@scope/name` publishes its types as `@types/scope__name`, and any subpath after the
+// package name is kept.
+func typesPackageName(moduleName string) string {
+	if !strings.HasPrefix(moduleName, "@") {
+		return moduleName
+	}
+	scope, rest, found := strings.Cut(moduleName[1:], "/")
+	if !found {
+		return moduleName
+	}
+	return scope + "__" + rest
+}
+
+// isDir reports whether path names a directory, following a symlink.
+func isDir(path string) bool {
+	info, err := os.Stat(path)
+	return err == nil && info.IsDir()
+}
+
+// isFile reports whether path names a regular file, following a symlink.
+func isFile(path string) bool {
+	info, err := os.Stat(path)
+	return err == nil && info.Mode().IsRegular()
 }
 
 // GetTypesEntryPoint returns the main .d.ts file for a types package.

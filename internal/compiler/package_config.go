@@ -48,7 +48,9 @@ func ReadPackageConfig(dir string) (PackageConfig, error) {
 	}
 	var pkg packageJSON
 	if err := json.Unmarshal(contents, &pkg); err != nil {
-		return PackageConfig{}, fmt.Errorf("failed to parse %s: %w", path, err)
+		// Dir is still known, so a caller that goes on with the defaults resolves the
+		// package's imports.
+		return PackageConfig{Dir: absDir}, fmt.Errorf("failed to parse %s: %w", path, err)
 	}
 	config := PackageConfig{Dir: absDir}
 	if pkg.Escalier.Ambient != nil {

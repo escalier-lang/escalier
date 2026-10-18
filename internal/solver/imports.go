@@ -31,10 +31,19 @@ func (c *checker) bindFileImports(scope *Scope, module *ast.Module) map[int]*Sco
 
 	fileScopes := map[int]*Scope{}
 	for _, file := range module.Files {
-		fileScope := scope.Child()
-		fileScopes[file.SourceID] = fileScope
-		for _, stmt := range file.Imports {
-			c.errs = append(c.errs, c.bindImport(fileScope, stmt)...)
+		fileScopes[file.SourceID] = scope.Child()
+	}
+	// Every pseudo-package import binds before any npm import. Binding an npm import
+	// binds the ambient scope first, and a pseudo-package the ambient scope loads
+	// reports its diagnostics with no span. Bound first, the pseudo-package reports
+	// them at the import that names it.
+	for _, pseudo := range []bool{true, false} {
+		for _, file := range module.Files {
+			for _, stmt := range file.Imports {
+				if IsSchemePrefixedImport(stmt.PackageName) == pseudo {
+					c.errs = append(c.errs, c.bindImport(fileScopes[file.SourceID], stmt)...)
+				}
+			}
 		}
 	}
 	// After the loop, not before. Loading an imported package reenters this
