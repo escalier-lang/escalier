@@ -1789,7 +1789,8 @@ func (c *checker) inferCallTarget(scope *Scope, lvl int, e *ast.CallExpr) callTa
 	if ident, ok := e.Callee.(*ast.IdentExpr); ok {
 		if b, found := c.lookupValueBinding(scope, ident.Name); found && b.IsOverloaded() {
 			c.recordType(e.Callee, overloadDisplayType(b))
-			// An editor jumps from the callee to the overload set's first arm.
+			// The callee links to the set's first arm. resolveOverload replaces the link with
+			// the arm the call matches, so a call no arm accepts still reaches a declaration.
 			c.recordDecl(ident, b)
 			return callTarget{overloads: &b}
 		}
@@ -3178,6 +3179,21 @@ func (c *checker) recordDecl(e *ast.IdentExpr, b ValueBinding) {
 	}
 	snapshotMapEntry(c, c.info.decls, e)
 	c.info.setDecl(e, decl)
+}
+
+// recordArmDecl records that the identifier read e resolved to the overload arm at
+// b.Schemes[idx], keyed to that arm's declaration at b.Sources[idx]. It records nothing
+// when the arm has no source node, as for an overload set the prelude seeded.
+func (c *checker) recordArmDecl(e *ast.IdentExpr, b ValueBinding, idx int) {
+	if idx >= len(b.Sources) {
+		return
+	}
+	np, ok := b.Sources[idx].(*ast.NodeProvenance)
+	if !ok {
+		return
+	}
+	snapshotMapEntry(c, c.info.decls, e)
+	c.info.setDecl(e, np.Node)
 }
 
 // recordNamespaceMember notes that node read b through a namespace, so codegen can
