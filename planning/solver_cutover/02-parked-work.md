@@ -118,12 +118,11 @@ The P1 ledger is what keeps its size visible.
 
 ### What keeps the first two honest
 
-1. **Before P7, port the assertions.** The coverage for both lives in
-   `internal/checker/tests/import_load_test.go`,
-   `internal/checker/tests/package_registry_test.go`, and
-   `internal/checker/tests/jsx_test.go`, all of which P7 deletes. Move enough of
-   each into `internal/solver` as failing-and-skipped tests that the gap stays
-   asserted rather than disappearing with the old checker's test files.
+1. **Keep the assertions skipped, not deleted.**
+   `internal/solver/third_party_import_test.go` asserts the `node_modules`
+   import, tracked by #2099. `internal/solver/jsx_test.go` asserts JSX,
+   tracked by #2100. Each skips with its issue number, and the fix removes the
+   `t.Skip`.
 2. **Say so in the release notes for the flip.** A program importing from
    `node_modules`, and a program using JSX, type-check before P5 and do not
    after it.

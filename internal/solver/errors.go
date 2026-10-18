@@ -15,7 +15,7 @@ import (
 // concrete struct carries typed references to the offending soltype.Type values
 // (not just a rendered string) so LSP/tooling consumers can inspect what the
 // error refers to — e.g. navigate to a type's declaration — without reparsing
-// the message. Modeled on internal/checker/error.go's shape.
+// the message.
 //
 // M2.5 makes every Span() node-derived: bridge kinds self-blame from the AST node
 // they carry, and constraint kinds resolve their offending operand to its minting
@@ -2534,9 +2534,6 @@ func (e *UndeclaredLifetimeError) Message() string {
 // of them, so the repeat binds nothing a program can reach and a caller has no way to say
 // which parameter an argument fills. Name is the repeated name, Param the redundant binder
 // and the blame span, and First the kept binder, surfaced through Related.
-//
-// The message matches internal/checker's error of the same name, so the two checkers report
-// one thing.
 type DuplicateTypeParamError struct {
 	Name  string
 	Param *ast.TypeParam

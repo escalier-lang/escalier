@@ -9,9 +9,7 @@ import "github.com/escalier-lang/escalier/internal/soltype"
 // each property value / element in place, preserving Inexact; a RefType is peeled, its
 // inner widened, and re-wrapped via NewRef. Every other type passes through unchanged.
 //
-// It is the new-checker analogue of internal/checker's widenLiteral /
-// widenObjectLiterals / widenTupleLiterals (unify.go). M4 B3 calls it in two
-// places, both for an un-annotated `var`:
+// It is called in two places, both for an un-annotated `var`:
 //   - eagerly on a DIRECT literal initializer in inferVarDeclInit, widening at
 //     the constraint level so the widened type propagates through the bound graph
 //     to reads of the binding (`var a = 5; val z = a` ⇒ z: number); and

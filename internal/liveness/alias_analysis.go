@@ -21,9 +21,8 @@ type ProjectionStep interface{ projectionStep() }
 // element of an array").
 //
 // NOTE: ElementOf is not currently emitted by any producer. Tuple/array
-// literals always emit IndexOf{Index: i}, and stepIntoSlot collapses
-// IndexOf to element-of-array semantics when the underlying type is
-// Array<T> (see internal/checker/infer_lifetime.go::stepIntoSlot).
+// literals always emit IndexOf{Index: i}, and a consumer reads IndexOf
+// as element-of-array when the underlying type is Array<T>.
 // ElementOf is reserved for future array-iteration / collection-method
 // support, where no specific index is meaningful.
 type ElementOf struct{}
@@ -38,11 +37,10 @@ type ElementOf struct{}
 // number is semantically irrelevant when the surrounding type resolves
 // to Array<T>. This is because the AST-level producer can't tell
 // whether a literal will be typed as a tuple or an array — that
-// decision happens later. The lifetime-attachment side
-// (stepIntoSlot) handles both: for TupleType it picks the slot at
-// the given index; for Array<T> it ignores the index and returns the
-// element type. Contrast with ElementOf, which is unconditionally
-// slot-agnostic.
+// decision happens later. A consumer handles both: for a tuple it picks
+// the slot at the given index, and for Array<T> it ignores the index and
+// takes the element type. Contrast with ElementOf, which is
+// unconditionally slot-agnostic.
 type IndexOf struct{ Index int }
 
 // PropertyOf is the step into an object property ({k: a}).

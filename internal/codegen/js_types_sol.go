@@ -37,8 +37,7 @@ type SolverJSTypes struct {
 // An alias of a class answers false, even though the class it names is nominal. The
 // guard this feeds tests the name the annotation wrote, and an alias declares no
 // runtime binding to test against. Given `type B = Point`, a true here would emit
-// `value instanceof B` and throw a ReferenceError. internal/checker answers false for
-// an alias too, so the two agree.
+// `value instanceof B` and throw a ReferenceError.
 func (s SolverJSTypes) IsNominalTypeRef(t *ast.TypeRefTypeAnn) bool {
 	_, isClass := s.Types.ResolvedTypeOf(t).(*soltype.ClassType)
 	return isClass

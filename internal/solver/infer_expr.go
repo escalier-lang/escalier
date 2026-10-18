@@ -5917,11 +5917,6 @@ func irrefutableRest(p ast.Pat) bool {
 // value and contributes `never` to any value-position consumer. A diverging
 // block's `return` is still a function return point — inferStmt collects it
 // independently — this governs only the block's VALUE contribution.
-//
-// This trio (blockDiverges / stmtDiverges / exprDiverges / blockOrExprDiverges)
-// mirrors the old checker's blockAlwaysExits / stmtAlwaysExits / exprAlwaysExits
-// (internal/checker/infer_func.go) so the two analyses extend in lockstep: when a
-// new diverging form is recognised in one, add the matching arm in the other.
 func blockDiverges(b *ast.Block) bool {
 	if b == nil || len(b.Stmts) == 0 {
 		return false

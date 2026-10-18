@@ -9,8 +9,7 @@ import (
 
 // TestEmitsTheImplicitConstructor covers the constructor a class that declares none
 // gets. Emission derives it from the declared fields through ast.ImplicitConstructor,
-// which is also what internal/checker installs during inference, so the emitted class
-// is the same whichever checker ran.
+// the same element internal/solver infers the class's constructor from.
 //
 // buildSource runs no checker, so these assert what emission derives on its own.
 func TestEmitsTheImplicitConstructor(t *testing.T) {

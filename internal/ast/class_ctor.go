@@ -23,7 +23,7 @@ const selfParamName = "self"
 // whose computed key stableKeyExpr rejects. A caller that reports diagnostics says the
 // class needs an explicit constructor, and one that only emits code leaves it out.
 //
-// internal/checker and JavaScript emission both call this, which is what makes them
+// internal/solver and JavaScript emission both call this, which is what makes them
 // agree on what a class constructs.
 func ImplicitConstructor(decl *ClassDecl) (*ConstructorElem, *FieldElem) {
 	if decl.Declare() || decl.Extends != nil {

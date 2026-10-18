@@ -26,7 +26,7 @@ import (
 // statements. A module skips those at top level, where c.fn is nil and every
 // transition entry point is a no-op.
 //
-// It mirrors the old checker's InferScript in internal/checker/infer_script.go:
+// It runs these steps:
 //
 //  1. wrap the script's statements in an ast.Block;
 //  2. push a fresh funcCtx so c.fn is non-nil and the transition checker is live;

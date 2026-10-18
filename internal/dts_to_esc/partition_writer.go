@@ -495,10 +495,8 @@ func mergeDecls(stmts []dts_parser.Statement) []dts_parser.Statement {
 // `Foo` — readonly-twin members are appended to `Foo`'s member list if
 // missing, and the standalone module's emitted class is then post-
 // processed so that each method whose name appears on the twin gets a
-// non-mutating `self` receiver (twins are positive evidence the method
-// does not mutate, the same contract `mergeReadonlyVariant` in
-// [internal/checker/prelude.go](../../internal/checker/prelude.go)
-// established for the legacy prelude path).
+// non-mutating `self` receiver. A twin is positive evidence that the
+// method does not mutate.
 //
 // `ReadonlyFoo` itself is dropped from emission, and no alias stands in
 // for it. Escalier spells the immutable view `Foo<…>`, so once the

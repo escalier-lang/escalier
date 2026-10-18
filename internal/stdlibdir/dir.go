@@ -100,8 +100,8 @@ func resolveStdlibDir(in stdlibDirInputs) (string, error) {
 //
 // Call from TestMain in each test package that transitively resolves
 // `std:`/`web:`/`node:` imports. Current call sites include
-// `internal/interop`, `internal/checker/tests`, and any future test
-// package whose checker reaches the stdlib resolver.
+// `internal/interop` and any future test package whose checker reaches
+// the stdlib resolver.
 //
 // This helper lives in a non-test file (despite its `ForTest` name)
 // because symbols defined in `*_test.go` files are visible only within
