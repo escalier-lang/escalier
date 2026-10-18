@@ -148,8 +148,9 @@ func (i *Info) LendsMut(n ast.Node) bool {
 
 // MemberObject returns an object type whose elements are the members a value of type t
 // exposes, read against the registries of the run that recorded this table. Inference
-// variables in the result are coalesced, and the caller owns the result. It returns false
-// when t exposes no fixed set of members, and on a table built by NewInfo.
+// variables in the result are coalesced, and the caller owns the result. A union yields
+// one object listing every member some variant has, which is not a supertype of t. It
+// returns false when t exposes no fixed set of members, and on a table built by NewInfo.
 //
 // Call it only once the run has finished. A library run and the bin/ scripts checked
 // against it share one set of registries, so no check of those scripts may run while it
