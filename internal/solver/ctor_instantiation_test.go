@@ -12,6 +12,11 @@ import (
 // TestACtorCallBindsOneCopyOfEachClassParameter asserts that `Box(5:number)` binds a single
 // variable for `T`. The class value's constructor binder, the class type the call returns,
 // and the union the copied `getValue` link reaches all name that one variable.
+//
+// The test reads the solver's variables rather than an inferred type or a diagnostic,
+// because a second copy of `T` changes neither. The one visible symptom a second copy
+// caused is a false ambiguous-union warning. ambiguousAlternate skips every variable in
+// Context.paramVars, so that warning stays hidden with or without the second copy.
 func TestACtorCallBindsOneCopyOfEachClassParameter(t *testing.T) {
 	module := parseModule(t, `
 		class Box<T> {
