@@ -123,6 +123,17 @@ val r = match p {
 }`,
 		},
 		{
+			// The nested `{x}` can fail to match, but `{a}` covers `p` on its own.
+			name: "a catch-all below an arm covering what a nested sub-pattern above misses",
+			src: `declare val p: {a: {x?: number}}
+val r = match p {
+	{a: {x}} => 1,
+	{a} => 2,
+	_ => 3,
+}`,
+			wantErrs: []string{"5:2-5:8: " + coveredArmMsg},
+		},
+		{
 			// The parameter's type is still being inferred, so a caller may pass a value
 			// no arm above names.
 			name: "a catch-all over an unannotated parameter",

@@ -5219,14 +5219,12 @@ func (c *checker) inferMatch(scope *Scope, lvl int, e *ast.MatchExpr) soltype.Ty
 // arm below it. `walked` holds the arms the walk typed. An arm it did not reach is below a
 // catch-all, which reportUnreachableArms reports instead.
 //
-// An unguarded arm with a nested sub-pattern that tests its value ends the search.
-// condCoverage reads such a sub-pattern as matching every value, so `{a: {x}}` would count
-// as covering `{a: {y: string}}` and the arm naming that member would be reported.
+// An unguarded arm with a nested sub-pattern that tests its value is left out of every
+// prefix. condCoverage reads such a sub-pattern as matching every value, so `{a: {x}}` would
+// count as covering `{a: {y: string}}` and the arm naming that member would be reported.
+// The arms around it still count, so `{a}` below `{a: {x}}` covers a `{a: {x?: number}}`.
 func (c *checker) reportCoveredArms(scope *Scope, lvl int, e *ast.MatchExpr, walked set.Set[ucs.Spanned], shape soltype.Type) {
 	for i := 1; i < len(e.Cases); i++ {
-		if above := e.Cases[i-1]; above.Guard == nil && hasNestedTest(above.Pattern) {
-			return
-		}
 		if !walked.Contains(e.Cases[i]) {
 			continue
 		}
@@ -5242,11 +5240,20 @@ func (c *checker) reportCoveredArms(scope *Scope, lvl int, e *ast.MatchExpr, wal
 	}
 }
 
-// prefixCovers reports whether the first n arms of e are shown by condCoverage to cover every
-// value of `shape`.
+// prefixCovers reports whether the first n arms of e, less each unguarded arm with a nested
+// sub-pattern that tests its value, are shown by condCoverage to cover every value of `shape`.
 func (c *checker) prefixCovers(scope *Scope, lvl int, e *ast.MatchExpr, n int, shape soltype.Type) bool {
 	prefix := *e
-	prefix.Cases = e.Cases[:n]
+	prefix.Cases = nil
+	for _, arm := range e.Cases[:n] {
+		if arm.Guard == nil && hasNestedTest(arm.Pattern) {
+			continue
+		}
+		prefix.Cases = append(prefix.Cases, arm)
+	}
+	if len(prefix.Cases) == 0 {
+		return false
+	}
 	_, covered := c.condCoverage(scope, lvl, ucs.Normalize(ucs.DesugarMatch(&prefix)), shape)
 	return covered
 }
