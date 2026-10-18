@@ -7,8 +7,8 @@ import (
 )
 
 // TestInferJSX covers JSX elements and fragments typed against `@types/react`. Valid cases
-// expect no diagnostics. The expected messages are the ones internal/checker reported for the
-// same source, and the solver may settle on its own wording when it implements the check.
+// expect no diagnostics. The expected messages are a starting point, and the implementation
+// may settle on its own wording.
 func TestInferJSX(t *testing.T) {
 	t.Skip("JSX does not type-check in internal/solver, #2100")
 	tests := []struct {

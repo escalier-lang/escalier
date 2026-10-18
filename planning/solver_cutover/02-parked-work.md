@@ -88,19 +88,16 @@ because it is hard.
 
 ### JSX
 
-`internal/solver` contains no reference to `JSX`. The old checker has
-`infer_jsx.go` at 677 lines and `react_types.go` at 194, with 3,126 lines of
-tests under `internal/checker/tests/jsx_test.go`. `internal/codegen/jsx.go`
-emits JSX, so the feature ships today. `react_types.go` finds `@types/react`
-through `internal/resolver`, which makes JSX downstream of the previous item:
-port ingestion first, then JSX on top of it. `planning/react_and_jsx/` holds the
+`internal/solver` has no JSX inference, tracked by #2100.
+`internal/codegen/jsx.go` emits JSX, so the feature ships untyped. Typing it
+needs `@types/react`, which loads through `internal/resolver`. That makes JSX
+downstream of the previous item: port ingestion first, then JSX on top of it. `planning/react_and_jsx/` holds the
 design.
 
 ### The ambient DOM surface
 
-`internal/checker/prelude.go:529` appends `lib.dom.d.ts` to the old checker's
-global load, so a program writes `fetch`, `document`, or `Element` with no
-import today.
+A program wrote `fetch`, `document`, or `Element` with no import while the
+old checker's global load included `lib.dom.d.ts`.
 
 P1.5 rebuilds an ambient scope over the packages P0 clears, so the `std:*`
 surface and `web:core` plus `web:fetch` keep their old spellings. What it cannot
@@ -123,6 +120,8 @@ The P1 ledger is what keeps its size visible.
    import, tracked by #2099. `internal/solver/jsx_test.go` asserts JSX,
    tracked by #2100. Each skips with its issue number, and the fix removes the
    `t.Skip`.
+   `TestPseudoPackageLoaderRules` in `internal/solver/stdlib_import_test.go`
+   asserts the `@js` loader rules on pseudo-package files, tracked by #2101.
 2. **Say so in the release notes for the flip.** A program importing from
    `node_modules`, and a program using JSX, type-check before P5 and do not
    after it.

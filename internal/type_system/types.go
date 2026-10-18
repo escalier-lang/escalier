@@ -1413,7 +1413,7 @@ type ObjectType struct {
 	// A `declare` class records its `implements` interfaces in both
 	// Implements and Includes. The clause means two things there: the
 	// interfaces are checked against the class, and their members become the
-	// class's. See checkImplements in internal/checker.
+	// class's.
 	Includes []*TypeRefType
 	// NOTE: the value type is ast.Expr, but we can't use that here because it
 	// would cause a cycle between type_system and ast packages.

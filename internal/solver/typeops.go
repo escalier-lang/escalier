@@ -844,8 +844,8 @@ func mergeSpreadElem(earlier, later soltype.ObjTypeElem) soltype.ObjTypeElem {
 }
 
 // expandMapped computes the fields a `[K]: V for K in Keys` member contributes to its object.
-// It emits one
-// field per key of the Keys union, each built by mappedFields with that key substituted for K:
+// It emits one field per key of the Keys union, each built by mappedFields with that key
+// substituted for K:
 //
 //	{[K]: T[K] for K in keyof T}   with T = {x: number, y: string}
 //	⇒ {x: number, y: string}
