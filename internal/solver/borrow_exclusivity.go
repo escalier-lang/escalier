@@ -86,11 +86,14 @@ type BorrowAliasError struct {
 	SecondMut bool
 	// FirstVia and SecondVia name the closure a call may run, when the matching borrow is that
 	// closure's access to what it captures during the call. They are empty for a borrow the
-	// program writes.
-	FirstVia  string
-	SecondVia string
-	node      ast.Node
-	first     ast.Span
+	// program writes. FirstRuns and SecondRuns mark a closure the call is sure to run, because
+	// the call's callee names it.
+	FirstVia   string
+	SecondVia  string
+	FirstRuns  bool
+	SecondRuns bool
+	node       ast.Node
+	first      ast.Span
 }
 
 func (*BorrowAliasError) isSolverError()        {}
@@ -106,15 +109,15 @@ func (e *BorrowAliasError) Message() string {
 	}
 	if e.SecondVia != "" {
 		if e.SecondMut {
-			return fmt.Sprintf("this call may run '%s', which writes '%s' while %s borrowed as immutable", e.SecondVia, e.Place, held)
+			return fmt.Sprintf("this call %s '%s', which writes '%s' while %s borrowed as immutable", runsVerb(e.SecondRuns), e.SecondVia, e.Place, held)
 		}
-		return fmt.Sprintf("this call may run '%s', which reads '%s' while %s borrowed as mutable", e.SecondVia, e.Place, held)
+		return fmt.Sprintf("this call %s '%s', which reads '%s' while %s borrowed as mutable", runsVerb(e.SecondRuns), e.SecondVia, e.Place, held)
 	}
 	if e.FirstVia != "" {
 		if e.FirstMut {
-			return fmt.Sprintf("cannot borrow '%s' as immutable in a call that may run '%s', which writes it", e.Place, e.FirstVia)
+			return fmt.Sprintf("cannot borrow '%s' as immutable in a call that %s '%s', which writes it", e.Place, runsVerb(e.FirstRuns), e.FirstVia)
 		}
-		return fmt.Sprintf("cannot borrow '%s' as mutable in a call that may run '%s', which reads it", e.Place, e.FirstVia)
+		return fmt.Sprintf("cannot borrow '%s' as mutable in a call that %s '%s', which reads it", e.Place, runsVerb(e.FirstRuns), e.FirstVia)
 	}
 	if e.SecondMut {
 		return fmt.Sprintf("cannot borrow '%s' as mutable while %s borrowed as immutable", e.Place, held)
@@ -127,11 +130,13 @@ func (e *BorrowAliasError) Message() string {
 type MoveWhileBorrowedError struct {
 	// Place names the data moved, `x` for a whole binding and `x.a` for a field.
 	Place string
-	// Via names the module-level binding whose stored closure the call may run, when the borrow
-	// is the write that closure makes during the call, and is empty otherwise.
-	Via    string
-	move   ast.Node
-	borrow ast.Span
+	// Via names the closure the call may run, when the borrow is the write that closure makes
+	// during the call, and is empty otherwise. ViaRuns marks a closure the call is sure to run,
+	// because the call's callee names it.
+	Via     string
+	ViaRuns bool
+	move    ast.Node
+	borrow  ast.Span
 }
 
 func (*MoveWhileBorrowedError) isSolverError()        {}
@@ -139,9 +144,18 @@ func (e *MoveWhileBorrowedError) Span() ast.Span      { return e.move.Span() }
 func (e *MoveWhileBorrowedError) Related() []ast.Span { return []ast.Span{e.borrow} }
 func (e *MoveWhileBorrowedError) Message() string {
 	if e.Via != "" {
-		return fmt.Sprintf("cannot move '%s' in a call that may run '%s', which writes it", e.Place, e.Via)
+		return fmt.Sprintf("cannot move '%s' in a call that %s '%s', which writes it", e.Place, runsVerb(e.ViaRuns), e.Via)
 	}
 	return fmt.Sprintf("cannot move '%s' while it is borrowed", e.Place)
+}
+
+// runsVerb returns how a message says a call reaches a closure: "runs" when the call is sure
+// to run it and "may run" otherwise.
+func runsVerb(runs bool) string {
+	if runs {
+		return "runs"
+	}
+	return "may run"
 }
 
 // BorrowedValueWriteError reports a field write through the owner while an immutable borrow of
@@ -213,6 +227,9 @@ type loan struct {
 	// reached through, or the local binding a closure is called through or passed as. It is
 	// empty for a borrow the program writes.
 	via string
+	// viaRuns marks a closure named by via that the call is sure to run, because the call's
+	// callee names it.
+	viaRuns bool
 	// endSeq is the sequence at which a reassignment of the holder ended this loan, and 0 while
 	// it still holds. The loan stays in the list so a read walked BEFORE that point is still
 	// weighed against it; erasing it would let a later reassignment silence an earlier read.
@@ -286,6 +303,8 @@ func (c *checker) reportBorrowConflict(first, second loan) {
 		SecondMut:  second.mut,
 		FirstVia:   first.via,
 		SecondVia:  second.via,
+		FirstRuns:  first.viaRuns,
+		SecondRuns: second.viaRuns,
 		node:       second.node,
 		first:      first.node.Span(),
 	})
@@ -420,16 +439,17 @@ func (c *checker) recordCaptureLoans(scope *Scope, closure ast.Func) {
 		return
 	}
 	for _, local := range captured {
-		c.takeCaptureLoan(local, ref, closure, "")
+		c.takeCaptureLoan(local, ref, closure, "", false)
 	}
 }
 
 // useClosureCaptures takes the capture loans of the closure `expr` names for the statement at
-// `ref`, and records a read of each captured local there. The closure's captures are the
+// `ref`, and records a read of each captured local there. runs reports whether the call is
+// sure to run the closure. The closure's captures are the
 // capture edges the name holds in the borrow graph, whether it was bound to the closure or
 // copied from a name that was. A local captured through several edges is taken once, as a
 // write when any edge writes it. Any expression other than a name records nothing.
-func (c *checker) useClosureCaptures(expr ast.Expr, ref liveness.StmtRef) {
+func (c *checker) useClosureCaptures(expr ast.Expr, ref liveness.StmtRef, runs bool) {
 	e, ok := expr.(*ast.IdentExpr)
 	if !ok || c.fn == nil || e.VarID <= 0 {
 		return
@@ -447,13 +467,14 @@ func (c *checker) useClosureCaptures(expr ast.Expr, ref liveness.StmtRef) {
 	// Sorting keeps the order of the loans, and so of any reports, the same from run to run.
 	slices.Sort(roots)
 	for _, root := range roots {
-		c.takeCaptureLoan(capturedLocal{root: root, mut: writes[root]}, ref, e, e.Name)
+		c.takeCaptureLoan(capturedLocal{root: root, mut: writes[root]}, ref, e, e.Name, runs)
 		c.fn.useSites = append(c.fn.useSites, moveUse{
 			place:     movePlace{root: root},
 			ref:       ref,
 			node:      e,
 			loanSeqAt: c.fn.loanSeq + 1,
 			via:       e.Name,
+			viaRuns:   runs,
 			viaReads:  !writes[root],
 		})
 	}
@@ -463,15 +484,16 @@ func (c *checker) useClosureCaptures(expr ast.Expr, ref liveness.StmtRef) {
 // after reporting any conflict with a loan already live there. The loan has no holder, so it
 // lasts for that statement alone. It is mutable when the closure writes the capture. `node`
 // is what a conflict report blames, and `via` names the closure for it, or is empty when the
-// capture is not reached through a call.
-func (c *checker) takeCaptureLoan(local capturedLocal, ref liveness.StmtRef, node ast.Node, via string) {
+// capture is not reached through a call. runs reports whether the call is sure to run it.
+func (c *checker) takeCaptureLoan(local capturedLocal, ref liveness.StmtRef, node ast.Node, via string, runs bool) {
 	fresh := loan{
-		place: movePlace{root: local.root},
-		mut:   local.mut,
-		ref:   ref,
-		node:  node,
-		seq:   c.nextLoanSeq(),
-		via:   via,
+		place:   movePlace{root: local.root},
+		mut:     local.mut,
+		ref:     ref,
+		node:    node,
+		seq:     c.nextLoanSeq(),
+		via:     via,
+		viaRuns: runs,
 	}
 	c.checkAgainstHeldLoans(fresh)
 	c.fn.loans = append(c.fn.loans, fresh)
@@ -820,10 +842,11 @@ func (c *checker) checkUsesAgainstLoans(reported set.Set[ast.Node]) {
 			}
 			if moved {
 				c.report(&MoveWhileBorrowedError{
-					Place:  c.renderPlace(u.place),
-					Via:    l.via,
-					move:   u.node,
-					borrow: l.node.Span(),
+					Place:   c.renderPlace(u.place),
+					Via:     l.via,
+					ViaRuns: l.viaRuns,
+					move:    u.node,
+					borrow:  l.node.Span(),
 				})
 			} else {
 				c.report(&BorrowedValueWriteError{

@@ -1,6 +1,7 @@
 package solver
 
 import (
+	"cmp"
 	"fmt"
 	"slices"
 	"sort"
@@ -687,23 +688,26 @@ func (c *checker) varIDToName(id liveness.VarID) string {
 // recv is the body's receiver, nil when the body has none. A receiver is not an entry in
 // astParams, so the rename pass defines `self` as an extra parameter of the body.
 //
-// `closure` is the function whose body this is when that function is written inside an
-// enclosing body, and nil for any other body. Each local it captures from the enclosing body is
-// defined as an extra parameter of the body too, so a place rooted at the capture is tracked
-// inside the closure. The captures are recorded for closureCaptures to return.
+// `closure` is the function whose body this is. It is nil for a script's top level, the one
+// body that belongs to no function. enclosed reports whether the function is written inside
+// an enclosing body.
+//
+//   - An enclosed function defines each variable it captures from the enclosing body as an
+//     extra parameter of its body, so a place rooted at the capture is tracked inside the
+//     closure. collectClosureCaptures says which variables those are, and records them for
+//     closureCaptures to return.
+//   - Any other function defines each module-level binding it reaches as an extra parameter,
+//     so its moves and borrows are tracked inside the body. collectModuleCaptures says which
+//     bindings those are.
 //
 // The returned map holds the VarID the rename assigned to each extra parameter, keyed by
-// name: `self` and every captured local.
-func (c *checker) runLivenessPrePass(scope *Scope, astParams []*ast.Param, recv *ast.MethodReceiver, closure ast.Func, paramTypes map[string]soltype.Type, body *ast.Block) map[string]liveness.VarID {
+// name: `self`, every captured variable, and every module-level name the body reaches.
+func (c *checker) runLivenessPrePass(scope *Scope, astParams []*ast.Param, recv *ast.MethodReceiver, closure ast.Func, enclosed bool, paramTypes map[string]soltype.Type, body *ast.Block) map[string]liveness.VarID {
 	// Build outer bindings from the scope chain. Every value binding accessible from
 	// the current scope gets a negative VarID so the rename pass can distinguish
 	// local from non-local variables.
 	outerBindings := c.collectOuterBindings(scope)
 
-	// Allocate this body's local VarIDs from the module-wide counter so they are
-	// unique across every body in the run, then advance it past them. UniqueVarCount
-	// is the number of locals this body defined, so the next body starts just after.
-	//
 	// A method's receiver is an ast.MethodReceiver on the function rather than an entry
 	// in astParams, so `self` reaches the rename pass through its extraParamNames hook.
 	// Without it every `self` in the body resolves as an outer name.
@@ -711,13 +715,20 @@ func (c *checker) runLivenessPrePass(scope *Scope, astParams []*ast.Param, recv 
 	if recv != nil {
 		extraParams = []string{"self"}
 	}
-	firstID := liveness.VarID(c.varIDCounter)
+
 	var captured []string
 	// selfName is the name a function declaration's body calls itself by, empty for any other
 	// body.
 	selfName := ""
-	if closure != nil {
-		captured = c.collectClosureCaptures(scope, closure, outerBindings)
+	// moduleFuncs holds the functions each module-level name among the extra parameters was
+	// declared as, keyed by name.
+	var moduleFuncs map[string][]ast.Func
+	if closure != nil && !enclosed {
+		captured, moduleFuncs = c.collectModuleCaptures(scope, closure, outerBindings)
+		extraParams = append(extraParams, captured...)
+	}
+	if closure != nil && enclosed {
+		captured, moduleFuncs = c.collectClosureCaptures(scope, closure, outerBindings)
 		extraParams = append(extraParams, captured...)
 		// A parameter of the same name shadows the function's own name for the whole body.
 		if fd, ok := closure.(*ast.FuncDecl); ok && fd.Name != nil && !paramsBind(astParams, fd.Name.Name) {
@@ -725,6 +736,11 @@ func (c *checker) runLivenessPrePass(scope *Scope, astParams []*ast.Param, recv 
 			extraParams = append(extraParams, selfName)
 		}
 	}
+
+	// Allocate this body's local VarIDs from the module-wide counter so they are
+	// unique across every body in the run, then advance it past them. UniqueVarCount
+	// is the number of locals this body defined, so the next body starts just after.
+	firstID := liveness.VarID(c.varIDCounter)
 	renameResult := liveness.RenameFrom(astParams, *body, outerBindings, firstID, extraParams...)
 	c.varIDCounter += renameResult.UniqueVarCount
 
@@ -756,6 +772,7 @@ func (c *checker) runLivenessPrePass(scope *Scope, astParams []*ast.Param, recv 
 	c.fn.stmtToRef = stmtToRef
 	c.fn.varIDNames = renameResult.VarIDNames
 	c.fn.varIDTypes = varIDTypes
+
 	// Retain the CFG and the move-engine state. The body walk records consume sites
 	// into moveSites, which liveness.AnalyzeMoves folds into the branch-merged consumed
 	// lattice over these same blocks once the whole body is walked.
@@ -766,15 +783,25 @@ func (c *checker) runLivenessPrePass(scope *Scope, astParams []*ast.Param, recv 
 	c.fn.eagerBorrowGraph = map[liveness.VarID][]fieldBorrow{}
 	c.fn.borrowGens = map[liveness.StmtRef][]borrowAssign{}
 	c.fn.borrowDirty = set.NewSet[liveness.VarID]()
+
 	c.fn.paramVarIDs = collectParamVarIDs(astParams)
 	if selfVarID > 0 {
 		c.fn.paramVarIDs.Add(selfVarID)
 	}
 	c.fn.paramVarIDs = c.fn.paramVarIDs.Union(captureVarIDs)
 	c.fn.captureVarIDs = captureVarIDs
+
 	if selfName != "" {
 		c.seedSelfCaptureEdges(scope, closure, renameResult.ExtraParamVarIDs[selfName], renameResult.ExtraParamVarIDs)
 	}
+	// A call of a module function in this body runs what that function reaches, so the
+	// function's name holds a capture edge to each module-level binding it reaches.
+	for name, fns := range moduleFuncs {
+		for _, fn := range fns {
+			c.seedModuleFuncEdges(fn, renameResult.ExtraParamVarIDs[name], renameResult.ExtraParamVarIDs)
+		}
+	}
+
 	return renameResult.ExtraParamVarIDs
 }
 
@@ -809,20 +836,176 @@ func (c *checker) seedSelfCaptureEdges(scope *Scope, closure ast.Func, selfID li
 	}
 }
 
-// collectClosureCaptures returns the names of the locals `closure` captures from an enclosing
-// body, sorted. A name bound at module level or in the prelude carries no VarID and is left
-// out. Every capture `closure` makes, module-level names included, is recorded for
-// closureCaptures to return.
+// collectModuleCaptures returns the names of the module-level bindings fn reaches, sorted,
+// and the functions each module-level name among them was declared as, keyed by name. fn
+// reaches a binding its body reads or writes, and every binding a module function it names
+// reaches. A function whose own walk has not recorded what it reaches contributes only
+// itself. fn's own entry is recorded before its body is walked, so a call of fn inside its
+// body reads it.
+//
+// Only a binding a `val` or `var` declares is reached. A class, an enum, or a `declare fn`
+// names a declaration rather than a value fn can move. A binding with value semantics is
+// left out too, since a copy of it cannot see a later change to the binding. So is a name one of fn's parameters binds, since the
+// parameter shadows it for the whole body.
+func (c *checker) collectModuleCaptures(scope *Scope, fn ast.Func, outerBindings map[string]liveness.VarID) ([]string, map[string][]ast.Func) {
+	reached := map[string]bool{}
+	funcs := map[string][]ast.Func{}
+	for _, capture := range liveness.ClosureCaptures(fn, outerBindings) {
+		b, found := scope.GetValue(capture.Name)
+		if !found || !b.ModuleLevel {
+			continue
+		}
+		if callees := moduleFuncsOf(b); len(callees) > 0 {
+			funcs[capture.Name] = callees
+			continue
+		}
+		if !declaredByVarDecl(b) {
+			continue
+		}
+		if isValueType(bindingType(b)) {
+			continue
+		}
+		reached[capture.Name] = reached[capture.Name] || capture.IsMutable
+	}
+	for _, capture := range c.reachedThroughModuleFuncs(fn, funcs) {
+		reached[capture.Name] = reached[capture.Name] || capture.IsMutable
+	}
+
+	own := make([]liveness.CaptureInfo, 0, len(reached))
+	for name, mut := range reached {
+		own = append(own, liveness.CaptureInfo{Name: name, IsMutable: mut})
+	}
+	slices.SortFunc(own, func(a, b liveness.CaptureInfo) int { return cmp.Compare(a.Name, b.Name) })
+	if c.moduleCaptures == nil {
+		c.moduleCaptures = map[ast.Func][]liveness.CaptureInfo{}
+	}
+	c.moduleCaptures[fn] = own
+	names := make([]string, 0, len(reached)+len(funcs))
+	for name := range reached {
+		names = append(names, name)
+	}
+	for name := range funcs {
+		names = append(names, name)
+	}
+	slices.Sort(names)
+	return names, funcs
+}
+
+// reachedThroughModuleFuncs returns the module-level bindings the functions in funcs reach,
+// sorted by name. funcs holds the module functions fn names, keyed by name. A binding is
+// written when any of those functions writes it. fn itself contributes nothing, and a name one
+// of fn's parameters binds is left out.
+func (c *checker) reachedThroughModuleFuncs(fn ast.Func, funcs map[string][]ast.Func) []liveness.CaptureInfo {
+	reached := map[string]bool{}
+	for _, callees := range funcs {
+		for _, callee := range callees {
+			if callee == fn {
+				continue
+			}
+			for _, capture := range c.moduleCaptures[callee] {
+				if !paramsBind(fn.Signature().Params, capture.Name) {
+					reached[capture.Name] = reached[capture.Name] || capture.IsMutable
+				}
+			}
+		}
+	}
+
+	out := make([]liveness.CaptureInfo, 0, len(reached))
+	for name, mut := range reached {
+		out = append(out, liveness.CaptureInfo{Name: name, IsMutable: mut})
+	}
+	slices.SortFunc(out, func(a, b liveness.CaptureInfo) int { return cmp.Compare(a.Name, b.Name) })
+	return out
+}
+
+// declaredByVarDecl reports whether a `val` or `var` declaration introduced b.
+func declaredByVarDecl(b ValueBinding) bool {
+	for _, src := range b.Sources {
+		if np, ok := src.(*ast.NodeProvenance); ok {
+			if _, isVar := np.Node.(*ast.VarDecl); isVar {
+				return true
+			}
+		}
+	}
+	return false
+}
+
+// moduleFuncsOf returns the functions a module-level binding was declared as, one per
+// declaration in source order. Each is a `fn` declaration with a body or the function
+// expression a `val` declaration is initialized with. A `var` can be reassigned to another
+// function, so it yields none.
+func moduleFuncsOf(b ValueBinding) []ast.Func {
+	var fns []ast.Func
+	for _, src := range b.Sources {
+		np, ok := src.(*ast.NodeProvenance)
+		if !ok {
+			continue
+		}
+		switch decl := np.Node.(type) {
+		case *ast.FuncDecl:
+			if decl.Body != nil {
+				fns = append(fns, decl)
+			}
+		case *ast.VarDecl:
+			if fe, ok := decl.Init.(*ast.FuncExpr); ok && decl.Kind == ast.ValKind {
+				fns = append(fns, fe)
+			}
+		}
+	}
+	return fns
+}
+
+// seedModuleFuncEdges gives fnID, the VarID the body's rename gave a module function fn, a
+// capture edge to each module-level binding fn reaches. ids maps each name the body defined
+// as an extra parameter to its VarID.
+func (c *checker) seedModuleFuncEdges(fn ast.Func, fnID liveness.VarID, ids map[string]liveness.VarID) {
+	for _, capture := range c.moduleCaptures[fn] {
+		id, ok := ids[capture.Name]
+		if !ok || id == fnID {
+			continue
+		}
+		c.addEdge(fnID, fieldBorrow{referent: id, mut: capture.IsMutable, capture: true})
+	}
+}
+
+// collectClosureCaptures returns the names of the variables `closure` captures from an
+// enclosing body, sorted, and the functions each module-level name among them was declared
+// as, keyed by name. A name only counts when the enclosing body tracks it, which a name
+// bound in the prelude, or at module level without the body reaching it, is not.
+//
+// `closure` captures each name its body reads or writes. It also captures each module-level
+// binding a module function it names reaches, since a call of that function inside
+// `closure` runs it. Every capture is recorded for closureCaptures to return.
 //
 // liveness.ClosureCaptures renames the closure's body and the bodies nested in it. The
 // pre-pass renames the closure's body again right after this, and each nested body is renamed
 // by its own pre-pass before the walk reaches it.
-func (c *checker) collectClosureCaptures(scope *Scope, closure ast.Func, outerBindings map[string]liveness.VarID) []string {
+func (c *checker) collectClosureCaptures(scope *Scope, closure ast.Func, outerBindings map[string]liveness.VarID) ([]string, map[string][]ast.Func) {
 	captures := liveness.ClosureCaptures(closure, outerBindings)
+
+	funcs := map[string][]ast.Func{}
+	for _, capture := range captures {
+		b, found := scope.GetValue(capture.Name)
+		if !found || !b.ModuleLevel || b.VarID <= 0 {
+			continue
+		}
+		if callees := moduleFuncsOf(b); len(callees) > 0 {
+			funcs[capture.Name] = callees
+		}
+	}
+	for _, reached := range c.reachedThroughModuleFuncs(closure, funcs) {
+		// A local of the enclosing body with the same name hides the module-level binding.
+		if b, found := scope.GetValue(reached.Name); !found || !b.ModuleLevel {
+			continue
+		}
+		captures = addCapture(captures, reached)
+	}
+
 	if c.closureCaptureInfo == nil {
 		c.closureCaptureInfo = map[ast.Func][]liveness.CaptureInfo{}
 	}
 	c.closureCaptureInfo[closure] = captures
+
 	var names []string
 	for _, capture := range captures {
 		if b, found := scope.GetValue(capture.Name); found && b.VarID > 0 {
@@ -830,7 +1013,19 @@ func (c *checker) collectClosureCaptures(scope *Scope, closure ast.Func, outerBi
 		}
 	}
 	slices.Sort(names)
-	return names
+	return names, funcs
+}
+
+// addCapture returns captures with capture added. A name already present is kept once, and it
+// is written when either entry writes it.
+func addCapture(captures []liveness.CaptureInfo, capture liveness.CaptureInfo) []liveness.CaptureInfo {
+	for i, existing := range captures {
+		if existing.Name == capture.Name {
+			captures[i].IsMutable = existing.IsMutable || capture.IsMutable
+			return captures
+		}
+	}
+	return append(captures, capture)
 }
 
 // closureCaptures returns the variables `closure` captures from enclosing scopes and whether it

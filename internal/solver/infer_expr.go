@@ -589,20 +589,19 @@ func (c *checker) inferFunc(scope *Scope, lvl int, sig ast.FuncSig, body *ast.Bl
 		c.ctx.markTypeParamsRigid(typeParams, false)
 	}
 	if hasBody {
-		// A function written inside an enclosing body captures that body's locals. That is
-		// every function expression, and a `fn` declaration inferred while a body is
-		// current. Only a script's top level admits such a declaration, and its enclosing
-		// body is the script's. A module's `fn` declaration is inferred with no body
-		// current.
 		var closure ast.Func
 		switch n := node.(type) {
 		case *ast.FuncExpr:
 			closure = n
 		case *ast.FuncDecl:
-			if c.fn != nil {
-				closure = n
-			}
+			closure = n
 		}
+		// A function is enclosed when another body is being walked as it is inferred. Two kinds
+		// are: a function expression inside a function, and a `fn` declaration at a script's
+		// top level, whose enclosing body is the script. An enclosed function captures
+		// variables from that body. Any other function, such as a module's `fn` declaration,
+		// reads the module-level bindings directly.
+		enclosed := c.fn != nil
 		// PR3: open a fresh function context so every ReturnStmt encountered while
 		// walking the body lands in our own returns list (a nested fn inside this
 		// body opens its own context, so its returns never leak out here).
@@ -631,7 +630,7 @@ func (c *checker) inferFunc(scope *Scope, lvl int, sig ast.FuncSig, body *ast.Bl
 		// parameter alias sets onto c.fn. recordParamVarIDs then copies each param's
 		// freshly-assigned VarID onto its binding so a closure capturing the param
 		// resolves to its alias set.
-		extraVarIDs := c.runLivenessPrePass(fnScope, sig.Params, recv, closure, paramTypes, body)
+		extraVarIDs := c.runLivenessPrePass(fnScope, sig.Params, recv, closure, enclosed, paramTypes, body)
 		recordParamVarIDs(fnScope, sig.Params)
 		recordExtraParamVarIDs(fnScope, extraVarIDs)
 		// Walk the body for type-checking and to collect its ReturnStmts; the
@@ -2296,9 +2295,9 @@ func (c *checker) recordCallArgEffects(
 	// Neither depends on the signature, so a callee whose signature is still a variable
 	// takes these loans too. A recursive call of a script `fn` inside its own body has
 	// such a callee.
-	c.useClosureCaptures(e.Callee, consumeRef)
+	c.useClosureCaptures(e.Callee, consumeRef, true)
 	for _, arg := range e.Args {
-		c.useClosureCaptures(arg, consumeRef)
+		c.useClosureCaptures(arg, consumeRef, false)
 	}
 
 	if fn == nil {
