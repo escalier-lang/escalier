@@ -149,7 +149,7 @@ func TestMemberObject(t *testing.T) {
 			expected: "{a?: number, b?: string}",
 		},
 		{
-			name: "UnionSharedKey",
+			name: "UnionCommonKey",
 			src: `
 				declare val v: {kind: "a", x: number} | {kind: "b", y: string}
 				val probe = v
