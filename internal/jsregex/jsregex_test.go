@@ -30,6 +30,28 @@ func TestMatchString(t *testing.T) {
 		{"ADotUnderUMatchesOneCodePoint", `/^.$/u`, "😀", true},
 		{"AnAstralLiteralWithoutU", `/^😀$/`, "😀", true},
 		{"ANegatedClassWithoutUMatchesOneUnit", `/^[^a]$/`, "😀", false},
+		// Without `u`, the `i` flag compares characters by their uppercase forms, and a
+		// non-ASCII character never folds to an ASCII one. The Kelvin sign, the long s and
+		// the Angstrom sign are their own uppercase forms.
+		{"TheIFlagMatchesTheOtherCase", `/^k$/i`, "K", true},
+		{"TheIFlagSkipsTheKelvinSign", `/^k$/i`, "\u212A", false},
+		{"TheIFlagSkipsTheLongSInAClass", `/^[a-z]$/i`, "\u017F", false},
+		{"TheIFlagSkipsTheLongS", `/^s$/i`, "\u017F", false},
+		{"TheIFlagSkipsTheAngstromSign", `/^å$/i`, "\u212B", false},
+		{"TheIFlagMatchesANonASCIICase", `/^å$/i`, "Å", true},
+		{"TheIFlagFoldsAnEscape", `/^\x41$/i`, "a", true},
+		{"TheIFlagFoldsANegatedClassFirst", `/^[^a]$/i`, "A", false},
+		{"TheIFlagKeepsWhatANegatedClassAllows", `/^[^a]$/i`, "b", true},
+		{"TheIFlagFoldsANegatedClassOfTwoLetters", `/^[^ab]$/i`, "B", false},
+		{"TheIFlagWithTheMFlag", `/^a$/im`, "b\nA", true},
+		// Go parses a class of exactly two cases, such as `[ßẞ]`, as one case-folding literal.
+		{"TheIFlagKeepsBothCasesOfATwoCaseClass", `/^[ßẞ]$/i`, "ẞ", true},
+		{"TheIFlagKeepsBothCasesOutOfANegatedTwoCaseClass", `/^[^ßẞ]$/i`, "ẞ", false},
+		{"TheIFlagKeepsTheCapitalSharpSApart", `/^ß$/i`, "ẞ", false},
+		{"TheIFlagUnderUMatchesTheKelvinSign", `/^k$/iu`, "\u212A", true},
+		{"TheIFlagUnderUMatchesTheLongSInAClass", `/^[a-z]$/iu`, "\u017F", true},
+		// `[\d\D]` holds every character, so its complement holds none.
+		{"TheIFlagOnANegatedClassOfEveryCharacter", `/^[^\d\D]$/i`, "a", false},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -50,6 +72,8 @@ func TestCompileRejects(t *testing.T) {
 		{"AnUnknownEscapeUnderU", `/\a/u`, "uses the escape `\\a`, which the `u` flag does not allow"},
 		{"AnUnsupportedProperty", `/\p{Script_Extensions=Greek}/u`, "uses the property `Script_Extensions`, which RE2 does not support"},
 		{"AMalformedBracedEscape", `/\u{zz}/u`, "uses a malformed `\\u{` escape"},
+		{"ABackwardRangeUnderTheIFlag", `/[z-a]/i`, "does not compile: error parsing regexp: invalid character class range: `z-a`"},
+		{"ABackwardRangeInANegatedClassUnderTheIFlag", `/[^z-a]/i`, "does not compile: error parsing regexp: invalid character class range: `z-a`"},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {

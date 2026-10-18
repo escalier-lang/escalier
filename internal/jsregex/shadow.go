@@ -173,16 +173,10 @@ func (p *Pattern) language(alt, cont string) (*syntax.Prog, bool) {
 	return compiled.program(compiled.goBody)
 }
 
-// program compiles goBody, a pattern in RE2 syntax, under the pattern's flags. Without the
-// `u` flag, the `i` flag folds case the way JavaScript does rather than the way Go does.
+// program compiles goBody, a pattern in RE2 syntax, under the pattern's flags.
 func (p *Pattern) program(goBody string) (*syntax.Prog, bool) {
-	jsFold := p.units && strings.ContainsRune(p.goFlags, 'i')
-	flags := p.goFlags
-	if jsFold {
-		flags = strings.ReplaceAll(flags, "i", "")
-	}
-	if flags != "" {
-		goBody = "(?" + flags + ")" + goBody
+	if p.goFlags != "" {
+		goBody = "(?" + p.goFlags + ")" + goBody
 	}
 	re, err := syntax.Parse(goBody, syntax.Perl)
 	if err != nil {
@@ -191,9 +185,6 @@ func (p *Pattern) program(goBody string) (*syntax.Prog, bool) {
 	prog, err := syntax.Compile(re.Simplify())
 	if err != nil {
 		return nil, false
-	}
-	if jsFold {
-		foldLikeJS(prog)
 	}
 	return prog, true
 }

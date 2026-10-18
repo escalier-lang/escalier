@@ -172,6 +172,9 @@ func TestContains(t *testing.T) {
 		{"AnIotaSubscriptWithoutTheUFlag", `/^\u1F88$/`, `/^\u1F80$/i`, false},
 		{"AnIotaSubscriptWithTheUFlag", `/^\u1F88$/u`, `/^\u1F80$/iu`, true},
 		{"AnUppercaseLetterWithoutTheUFlag", `/^K$/`, `/^[a-z]$/i`, true},
+		// JavaScript folds a negated class before it complements it, so `[^a]` rules out `A`.
+		{"ANegatedClassUnderTheIFlag", `/^A$/`, `/^[^a]$/i`, false},
+		{"AnotherLetterInANegatedClassUnderTheIFlag", `/^B$/`, `/^[^a]$/i`, true},
 		// The check models neither a word boundary nor `$` under the `m` flag.
 		{"AWordBoundary", `/^cat$/`, `/\bcat/`, false},
 		{"TheMFlag", `/^a$/`, `/^a$/m`, false},
