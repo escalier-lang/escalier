@@ -1883,7 +1883,7 @@ func TestScopeCompletionFromSolver(t *testing.T) {
 			line:     2,
 			col:      10,
 			expected: map[string]string{"x": "5"},
-			excludes: []string{"z"},
+			excludes: []string{"y", "z"},
 		},
 		{
 			name:     "AmbientBuiltinsInScript",
