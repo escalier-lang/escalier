@@ -258,8 +258,8 @@ type finite = number & ~NaN & ~Infinity & ~-Infinity
 As a type, `NaN` equals itself, even though the value `NaN` is not equal to
 itself at runtime. That has two consequences:
 
-- `x === NaN` is always `false`, so it never narrows `x`. `Number.isNaN`
-  narrows to `NaN`, and `Number.isFinite` narrows to `finite`.
+- `x === NaN` is always `false` at runtime, so a program tests for `NaN` with
+  a pattern, as in `if val n: NaN = x`, or with `Number.isNaN`.
 - A `NaN` pattern or type test compiles to `Number.isNaN(x)`. An `Infinity`
   pattern compiles to `x === Infinity`.
 
@@ -312,7 +312,7 @@ a residual of the same kind.
 easier to read, so the solver prints `number & ~(0..10)` and keeps the interval
 split internal.
 
-### 4.3. Narrowing in `match`
+### 4.3. Refinement in `match`
 
 An arm that matches a range removes it from the scrutinee for the arms that
 follow:
@@ -388,7 +388,7 @@ rare in integer code, and typing every sum as `number` would make `int` useless
 for arithmetic. The language guide states the gap.
 
 The types in section 3.5 can spell the sound result, which is
-`int | Infinity | -Infinity`. Using it would force a narrowing after every
+`int | Infinity | -Infinity`. Using it would force a pattern match after every
 sum, so `+`, `-`, and `*` keep `int`. The functions in section 12.5 have no
 such cost, so they return exact types.
 
@@ -427,11 +427,33 @@ unannotated `fn (a, b) { a + b }` harder to read. Under the second approach that
 function keeps its current type, `fn (a: number, b: number) -> number`. An
 annotated `fn (a: int, b: int) { a + b }` returns `int`.
 
-### 5.5. Narrowing on comparisons
+### 5.5. Comparisons do not refine types
 
-`if i < 10` on `i: int` could narrow `i` to `-Infinity..10` in the `then` branch and to
-`10..Infinity` in the `else` branch. The narrowing is not needed for the first
-milestones. Section 13 schedules it last.
+Escalier does not re-type a variable based on control flow. A refinement always
+binds a new name through `match`, `if val`, or `val … else`. A comparison is a
+`boolean` expression, so `if i < 10` leaves `i` at `int` in both branches.
+
+A range pattern does the job a comparison would do in TypeScript:
+
+```esc
+fn clamp(i: int) -> 0..10 {
+    return match i {
+        j: -Infinity..0 => 0,
+        j: 0..10        => j,     // j: 0..10
+        _               => 9,
+    }
+}
+
+if val small: -Infinity..10 = i {
+    // small: -Infinity..10, and i is still int
+}
+```
+
+The pattern `j: 0..10` compiles to `i >= 0 && i < 10` on an `int` scrutinee,
+the same test the comparison would make. See section 10.2. Unlike a guard such
+as `j if j < 10`, a range pattern also counts toward exhaustiveness, since a
+guarded arm covers nothing. Section 14 asks whether a guard that compares a
+binding with a literal should be read as a range pattern.
 
 ## 6. Range values
 
@@ -516,7 +538,7 @@ match code {
 }
 ```
 
-The pattern narrows the scrutinee to the meet of its type with the range, and
+The pattern binds its name at the meet of the scrutinee's type with the range, and
 section 4.3 gives the coverage rule.
 
 ## 7. Stepped ranges
@@ -911,16 +933,18 @@ becomes `0..Infinity`.
 
 `int` and range annotations emit no runtime code. `val x: 0..10 = f()` is
 checked statically and compiles to `const x = f()`. A program turns a `number`
-into an `int` through a check that narrows it:
+into an `int` through a pattern that binds a new name at the refined type:
 
 ```esc
-if Number.isInteger(n) { ... }      // narrows n to int in the then branch
-val k: int = n else { return 0 }    // let-else narrowing
+if val k: int = n { ... }           // k: int, and n is still number
+val k: int = n else { return 0 }    // k: int for the rest of the block
 ```
+
+Both compile to a `Number.isInteger(n)` test, as section 10.2 shows.
 
 ### 10.2. Runtime guards
 
-A pattern or narrowing test on the new types emits an inline check.
+A pattern or type test on the new types emits an inline check.
 `buildTypeGuard` and `buildSolTypeGuard` in `codegen/builder.go` gain these
 forms:
 
@@ -1081,9 +1105,9 @@ Two of these catch errors that throw at runtime:
 
 The position arguments of `at`, `slice`, and the others are truncated by
 JavaScript, so `arr.at(1.5)` reads `arr[1]`. Typing them as `int` turns a
-silent truncation into a type error. A program with a `number` in hand narrows
-it first with `Number.isInteger`, or converts it with `Math.trunc` and
-narrows the result with `Number.isFinite`, as section 12.5 shows.
+silent truncation into a type error. A program with a `number` in hand binds
+it at `int` with `if val k: int = n`, or converts it with `Math.trunc` and
+binds the result at `int`, as section 12.5 shows.
 
 Element reads keep their current rule for `int` and `number` keys. They return
 the element type, and an index past the end still reads as the element type.
@@ -1157,9 +1181,6 @@ and write types. Section 14 asks how the stdlib should spell that.
 | `Math.sign` | returns `-1 \| 0 \| 1 \| NaN` |
 | `parseInt` | returns `int \| NaN \| Infinity \| -Infinity` |
 | `Date.prototype.getFullYear` and the other date getters | return `int \| NaN` |
-| `Number.isInteger`, `Number.isSafeInteger` | narrow their argument to `int` |
-| `Number.isFinite` | narrows its argument to `finite` |
-| `Number.isNaN` | narrows its argument to `NaN` |
 | `Number.MAX_SAFE_INTEGER`, `Number.MIN_SAFE_INTEGER` | their literal values |
 
 The string length bound is `2 ** 53 - 1`, the limit the specification sets.
@@ -1188,23 +1209,27 @@ A call takes the first overload whose parameter accepts the argument:
 | `number` | `int \| NaN \| Infinity \| -Infinity` |
 
 The first overload keeps a range intact. The last one gives a plain `number`
-an exact result instead of `number`. A program narrows that result to `int`
-with `Number.isFinite`:
+an exact result instead of `number`. A program binds that result at `int`
+with a pattern:
 
 ```esc
 val i = Math.trunc(x)            // i: int | NaN | Infinity | -Infinity
-if Number.isFinite(i) {
-    arr.at(i)                    // i: int
+if val k: int = i {
+    arr.at(k)                    // k: int
 }
 ```
+
+`Number.isInteger`, `Number.isFinite`, and `Number.isNaN` keep their
+`boolean` results and refine nothing. The patterns `k: int`, `k: finite`, and
+`k: NaN` do the refining, and they compile to the same calls.
 
 ## 13. Milestones
 
 1. **`int` type.** Covers the lexer-independent parts: `int` as a prelude type
    name, `IntRangeType` with unbounded ends, constrain and lattice rules,
    printing, and `.d.ts` emission as `number`. The `NaN`, `Infinity`, and
-   `-Infinity` types, the `finite` alias, and the `Number.isInteger`,
-   `Number.isFinite`, and `Number.isNaN` narrowings land here too.
+   `-Infinity` types, the `finite` alias, and the `x: int`, `x: finite`, and
+   `x: NaN` type tests land here too.
 2. **Range annotations.** Covers the `DotDot` token, the number-scan fix,
    `RangeTypeAnn` with literal and type-reference bounds, interval meets, joins,
    and the right-hand union normalization from section 3.3. The literal-union
@@ -1222,8 +1247,7 @@ if Number.isFinite(i) {
 8. **Standard library.** Covers section 12: the length and index aliases, the
    `Indices` and `At` intrinsics, the array, tuple, typed array, and string
    signatures, and the `Math` rounding overloads.
-9. **Later work.** Covers interval arithmetic with steps, generic bounds, and
-   narrowing on comparisons.
+9. **Later work.** Covers interval arithmetic with steps and generic bounds.
 
 The `float32` printing fix from section 10.4 lands before milestone 5.
 
@@ -1258,3 +1282,9 @@ The `float32` printing fix from section 10.4 lands before milestone 5.
 12. **Split element types.** Section 12.4 reads typed array elements as a range
    and writes them as `number`. This design does not settle how the stdlib
    spells an index signature whose read and write types differ.
+13. **Guards as range patterns.** Section 5.5 refines through range patterns,
+   and a guard covers nothing for exhaustiveness. The checker could read a
+   guard that compares the arm's own binding with a literal, such as
+   `j if j < 10`, as the pattern `j: -Infinity..10`. The refinement would
+   still land on the new binding `j`, so it keeps the no-flow-typing rule. The
+   cost is a second way to write the same arm.
