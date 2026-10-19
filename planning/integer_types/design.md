@@ -1288,3 +1288,50 @@ The `float32` printing fix from section 10.4 lands before milestone 5.
    `j if j < 10`, as the pattern `j: -Infinity..10`. The refinement would
    still land on the new binding `j`, so it keeps the no-flow-typing rule. The
    cost is a second way to write the same arm.
+14. **Flow typing.** Section 5.5 keeps Escalier's rule that a refinement binds
+   a new name. Flow typing would instead re-type an existing variable after a
+   test. Several `int` and range idioms read more naturally that way:
+   - A bounds check before an index. After `if i >= 0 && i < 10`, `i` could
+     have type `0..10` in the `then` branch, so `t[i]` on a 10-element tuple
+     would check without a second name.
+   - An early return. After `if n < 0 { return }`, `n` could have type
+     `0..Infinity` for the rest of the function. `val k: 0..Infinity = n else
+     { return }` covers this today, at the cost of a second name.
+   - A loop counter. In `var i: int = 0` followed by `while i < t.length { t[i];
+     i += 1 }`, `i` could have type `0..t.length` inside the body. A `for ... in`
+     over a range covers the common case, but not a loop that advances by a
+     variable amount.
+   - A divisor check. After `if d != 0`, `d` could have type `int & ~0`, so
+     `a % d` would return `int` under section 5.1.
+   - A `NaN` or infinity check. After `if !Number.isFinite(x) { return }`, `x`
+     could have type `finite`, so `Math.floor(x)` would pick the `finite`
+     overload and return `int`.
+
+   The costs are the reasons Escalier avoids flow typing today. A binding would
+   no longer have one type for its whole scope, which the checker's principal
+   types rely on. A `var` that is reassigned after the test, or captured by a
+   closure that may reassign it, would lose the refinement. Each comparison
+   operator would also need a rule for the range it implies on each branch.
+15. **Arithmetic on types.** Section 5.3 computes the result of `+`, `-`, and
+   `*` on ranges inside the checker. Exposing the same operations in type
+   annotations would let a signature state how its result depends on its
+   arguments:
+   ```esc
+   fn inc<N: int>(n: N) -> Add<N, 1>
+   fn concat<A, B>(a: A, b: B) -> ... // length Add<A["length"], B["length"]>
+   fn slice<S: int, E: int>(...) -> ... // length Sub<E, S>
+   type Grid = 0..Mul<Width, Height>
+   ```
+   Named intrinsics such as `Add`, `Sub`, and `Mul` need no new syntax. Infix
+   operators in types would read better, but `-` already means a negative
+   literal and a mapped-type modifier, as in `-readonly`.
+
+   Type-level arithmetic is a step toward dependent typing, where a type names
+   a value. `i: Indices<typeof arr>` would tie an index to a particular array.
+   `typeof arr` gives `arr`'s declared type, though, not its runtime length. For
+   an `Array<T>` that type has the length `ArrayLength`, so the index type is
+   just `ArrayIndex`. Tying a type to a value's length needs the checker to
+   track that value symbolically. A precise result also needs a solver for
+   linear integer constraints, as in proving `i + 1 < arr.length` from
+   `i < arr.length - 1`. The intrinsics are cheap and fit the current solver.
+   Full dependent typing is a much larger change.
