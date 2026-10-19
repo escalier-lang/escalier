@@ -229,6 +229,42 @@ this design keeps that. Widening to `int` would reject the common
 takes an annotation, as in `var i: int = 0`. Section 14 lists widening to `int`
 as an open question.
 
+### 3.5. `NaN` and the infinities
+
+`NaN`, `Infinity`, and `-Infinity` each get a type whose one value is that
+number. The prelude binds the global values `NaN` and `Infinity` at these
+types, along with `Number.NaN`, `Number.POSITIVE_INFINITY`, and
+`Number.NEGATIVE_INFINITY`. `val x = Infinity` gives `x: Infinity`, and unary
+minus folds `-Infinity` to the `-Infinity` type the way it folds `-5` to `-5`.
+
+The three types sit in the number family next to the literals. Each is a
+subtype of `number`. Each is disjoint from the other two, from `int`, and from
+every literal. With negation they split `number` into disjoint parts, and the
+prelude names the part that excludes all three:
+
+```esc
+type finite = number & ~NaN & ~Infinity & ~-Infinity
+```
+
+| Part of `number` | Examples |
+|---|---|
+| `int` | `0`, `-7`, `2 ** 60` |
+| `finite & ~int` | `1.5`, `0.1` |
+| `NaN` | `NaN` |
+| `Infinity`, `-Infinity` | `1 / 0`, `-1 / 0` |
+
+`int <: finite` holds, and every range is a subtype of `finite`.
+
+As a type, `NaN` equals itself, even though the value `NaN` is not equal to
+itself at runtime. That has two consequences:
+
+- `x === NaN` is always `false`, so it never narrows `x`. `Number.isNaN`
+  narrows to `NaN`, and `Number.isFinite` narrows to `finite`.
+- A `NaN` pattern or type test compiles to `Number.isNaN(x)`. An `Infinity`
+  pattern compiles to `x === Infinity`.
+
+In a type annotation, `-Infinity` parses as a single type, the way `-5` does.
+
 ## 4. Negation
 
 `~T` is every value `T` rejects, so `~int` admits strings, objects, `1.5`,
@@ -266,9 +302,9 @@ of an interval set reduces to their difference. The rewrite gives
 
 ### 4.2. Complements that leave `int`
 
-`number & ~int` is the set of non-integral numbers plus `NaN` and the two
-infinities. No interval names it, so it stays as a residual
-`number & ~int` in the normal form. Excluding one regex type from another leaves
+`number & ~int` is `(finite & ~int) | NaN | Infinity | -Infinity`. The checker
+prints the shorter `number & ~int`. No interval names the `finite & ~int`
+part, so it stays as a residual in the normal form. Excluding one regex type from another leaves
 a residual of the same kind.
 
 `number & ~(0..10)` mixes both cases. It equals
@@ -326,7 +362,8 @@ operand types:
 | `+`, `-`, `*` | ranges | interval arithmetic, see 5.3 |
 | unary `-` | `int` | `int` |
 | unary `-` | `a..b` | `(1-b)..(1-a)` |
-| `/` | any | `number` |
+| `/` | `int`, `int & ~0` | `finite` |
+| `/` | any other | `number` |
 | `**` | any | `number` |
 | `%` | `int`, `int & ~0` | `int` |
 | `%` | `int`, `int` | `number` |
@@ -335,6 +372,8 @@ operand types:
 `%` with a zero divisor yields `NaN`, so `int % int` is not closed over `int`.
 The result is `int` only when the divisor type excludes `0`. That is a direct use
 of negation: `1..Infinity` and `int & ~0` both qualify, since neither contains `0`.
+The same divisor makes `/` return `finite`, since dividing an integer by a
+nonzero integer cannot overflow.
 The lexer does not tokenize `%` yet, so this row applies once `%` lands.
 
 The bitwise operators always yield integers in JavaScript. When they are added
@@ -347,6 +386,11 @@ about `1.8e308`. `Infinity` is not an `int`, so typing the result as `int` is
 unsound at that boundary. This design accepts that gap. Values of that size are
 rare in integer code, and typing every sum as `number` would make `int` useless
 for arithmetic. The language guide states the gap.
+
+The types in section 3.5 can spell the sound result, which is
+`int | Infinity | -Infinity`. Using it would force a narrowing after every
+sum, so `+`, `-`, and `*` keep `int`. The functions in section 12.5 have no
+such cost, so they return exact types.
 
 Precision loss above `2 ** 53` does not break soundness. The rounded result is
 still an integer, so it is still an `int`.
@@ -442,7 +486,7 @@ error.
 ### 6.3. Bounds
 
 The lower operand must be a subtype of `int`. The upper operand must be a
-subtype of `int` or be `Infinity`. `0..x` with `x: number` reports
+subtype of `int | Infinity`, using the `Infinity` type from section 3.5. `0..x` with `x: number` reports
 `range bound must be an int or Infinity, found number`.
 
 `m..Infinity` iterates without end, so a loop over it needs a `break` or
@@ -795,6 +839,10 @@ A range with a type-variable bound needs a second form, covered in section 9.5.
 These sites switch on primitives or literals and each needs a case for
 `IntRangeType`:
 
+- `soltype/type.go`. `NaN`, `Infinity`, and `-Infinity` can be `NumLit`
+  values, since a `float64` holds all three. `LitType.Equal` compares values
+  with `==`, which is false for two `NaN`s, so it needs a `math.IsNaN` case.
+
 - `solver/constrain.go`, around `:1335`. Add `IntRangeType <: IntRangeType`,
   `IntRangeType <: number`, and integral `LitType <: IntRangeType`.
 - `solver/normal.go`. `valueFamilyOf` returns `numberFamily`. `meetValueAtoms`
@@ -819,8 +867,7 @@ A bound written as a type reference resolves through `resolveScopedTypeRef`
 like any other reference. After resolution, the bound's type is checked against
 `int`, then reduced by the union-over-bounds rule from section 2.4 to the `min`
 or `max` integer it admits. `type Lo = 0` gives `0`, and `type Lo = int` gives
-`-Infinity`. `Infinity` and `-Infinity` resolve as bounds without a type
-reference, since the prelude gives them no literal type.
+`-Infinity`. An `Infinity` or `-Infinity` bound is the type from section 3.5.
 
 ### 9.4. Indexing
 
@@ -942,6 +989,7 @@ TypeScript has no integer type. The emitter maps the new types as follows:
 | `0..Infinity`, `-Infinity..0`, and other unbounded ranges | `number` |
 | a finite range with at most 16 members | union of its literals, such as `0 \| 1 \| 2` |
 | a larger finite range | `number` |
+| `NaN`, `Infinity`, `-Infinity`, `finite` | `number` |
 | `IntRange<T>` | `IntRange<T'>`, where `T'` is `T` mapped by this table |
 
 A literal union gives TypeScript callers a real check for small ranges such as a
@@ -1034,7 +1082,8 @@ Two of these catch errors that throw at runtime:
 The position arguments of `at`, `slice`, and the others are truncated by
 JavaScript, so `arr.at(1.5)` reads `arr[1]`. Typing them as `int` turns a
 silent truncation into a type error. A program with a `number` in hand narrows
-it first with `Number.isInteger`, or converts it as section 14 discusses.
+it first with `Number.isInteger`, or converts it with `Math.trunc` and
+narrows the result with `Number.isFinite`, as section 12.5 shows.
 
 Element reads keep their current rule for `int` and `number` keys. They return
 the element type, and an index past the end still reads as the element type.
@@ -1103,26 +1152,59 @@ and write types. Section 14 asks how the stdlib should spell that.
 | `String.prototype.length` | `0..9007199254740992` |
 | `charAt`, `at`, `slice`, `substring`, `padStart` position and length arguments | `int` |
 | `codePointAt` | returns `0..1114112 \| undefined` |
+| `charCodeAt` | returns `0..65536 \| NaN` |
 | `Math.clz32` | returns `0..33` |
+| `Math.sign` | returns `-1 \| 0 \| 1 \| NaN` |
+| `parseInt` | returns `int \| NaN \| Infinity \| -Infinity` |
+| `Date.prototype.getFullYear` and the other date getters | return `int \| NaN` |
 | `Number.isInteger`, `Number.isSafeInteger` | narrow their argument to `int` |
+| `Number.isFinite` | narrows its argument to `finite` |
+| `Number.isNaN` | narrows its argument to `NaN` |
 | `Number.MAX_SAFE_INTEGER`, `Number.MIN_SAFE_INTEGER` | their literal values |
 
 The string length bound is `2 ** 53 - 1`, the limit the specification sets.
+`parseInt` includes the infinities because a long enough run of digits, such as
+400 nines, overflows.
 
-Several members look integral and are not, so they stay `number`:
+`Math.floor`, `Math.ceil`, `Math.round`, and `Math.trunc` pass `NaN` and the
+infinities through unchanged, and return an integer for every other input. Each
+takes this overload set, with `floor` shown:
 
-- `Math.floor`, `Math.ceil`, `Math.round`, and `Math.trunc` return `NaN` for
-  `NaN` and an infinity for an infinite input.
-- `charCodeAt` returns `NaN` past the end of the string.
-- `parseInt` returns `NaN` on a bad input.
-- `Date.prototype.getFullYear` and its siblings return `NaN` on an invalid date.
+```esc
+floor<T: int>(x: T) -> T
+floor(x: finite) -> int
+floor(x: NaN) -> NaN
+floor(x: Infinity) -> Infinity
+floor(x: -Infinity) -> -Infinity
+floor(x: number) -> int | NaN | Infinity | -Infinity
+```
+
+A call takes the first overload whose parameter accepts the argument:
+
+| Argument type | Result |
+|---|---|
+| `0..10` | `0..10` |
+| `finite` | `int` |
+| `number` | `int \| NaN \| Infinity \| -Infinity` |
+
+The first overload keeps a range intact. The last one gives a plain `number`
+an exact result instead of `number`. A program narrows that result to `int`
+with `Number.isFinite`:
+
+```esc
+val i = Math.trunc(x)            // i: int | NaN | Infinity | -Infinity
+if Number.isFinite(i) {
+    arr.at(i)                    // i: int
+}
+```
 
 ## 13. Milestones
 
 1. **`int` type.** Covers the lexer-independent parts: `int` as a prelude type
    name, `IntRangeType` with unbounded ends, constrain and lattice rules,
-   printing, and `.d.ts` emission as `number`. The `Number.isInteger` narrowing
-   lands here too.
+   printing, and `.d.ts` emission as `number`. The `NaN`, `Infinity`, and
+   `-Infinity` types, the `finite` alias, and the `Number.isInteger`,
+   `Number.isFinite`, and `Number.isNaN` narrowings land here too.
 2. **Range annotations.** Covers the `DotDot` token, the number-scan fix,
    `RangeTypeAnn` with literal and type-reference bounds, interval meets, joins,
    and the right-hand union normalization from section 3.3. The literal-union
@@ -1138,8 +1220,8 @@ Several members look integral and are not, so they stay `number`:
 7. **Stepped ranges.** Covers `by` in types, values, and patterns, the
    residue-class lattice rules, and stepped loop lowering from section 7.
 8. **Standard library.** Covers section 12: the length and index aliases, the
-   `Indices` and `At` intrinsics, and the array, tuple, typed array, and string
-   signatures.
+   `Indices` and `At` intrinsics, the array, tuple, typed array, and string
+   signatures, and the `Math` rounding overloads.
 9. **Later work.** Covers interval arithmetic with steps, generic bounds, and
    narrowing on comparisons.
 
@@ -1171,11 +1253,8 @@ The `float32` printing fix from section 10.4 lands before milestone 5.
    `bigint` family. The lexer does not read `bigint` literals yet.
 10. **Template literal types.** `` `${int}` `` could match strings of decimal
    digits with an optional sign. The checker has the regex machinery for it.
-11. **Converting `number` to `int`.** Section 12.2 types position arguments as
-   `int`, and `Math.trunc` stays `number` because of `NaN`. A program holding a
-   `number` needs a short way to get an `int`. One option is a prelude function
-   `toInt(x: number) -> int | undefined` that returns `undefined` for `NaN` and
-   the infinities.
+11. **Comparing with `NaN`.** `x == NaN` is always `false`. The checker could
+   report it and point at `Number.isNaN`.
 12. **Split element types.** Section 12.4 reads typed array elements as a range
    and writes them as `number`. This design does not settle how the stdlib
    spells an index signature whose read and write types differ.
