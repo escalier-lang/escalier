@@ -851,7 +851,8 @@ type IntRangeType struct {
 ```
 
 The residue is stored rather than derived from `Lo`, because `Lo` is
-`-Infinity` for a range anchored on its upper bound.
+`-Infinity` for a range anchored on its upper bound. Section 9.1 gives the
+precision rules for all four fields.
 
 ## 8. Parsing
 
@@ -935,6 +936,38 @@ infinities stand for unbounded ends. `int` is the fully unbounded range, so the
 lattice needs no separate `int` atom. `0..Infinity` is `{0, +Inf}`. Integral
 literals stay `LitType` and convert to one-member intervals inside the lattice
 operations.
+
+#### Precision
+
+Storing a bound as a `float64` is exact. Computing a new bound is not always
+exact, because `float64` addition and multiplication round once a result passes
+`2 ** 53` in magnitude. The checker uses `float64` throughout and handles that
+limit with these rules:
+
+1. A bound written in an annotation is stored as the lexer parsed it and is
+   never adjusted. That matches the value the same literal has at runtime.
+2. Meets and joins of intervals take the `min` or `max` of existing bounds,
+   so they are exact. The residue of a stepped range comes from `math.Mod`,
+   which is also exact.
+3. A bound computed by arithmetic rounds outward when its magnitude passes
+   `2 ** 53`. A lower bound moves one representable value down with
+   `math.Nextafter(lo, math.Inf(-1))`, and an upper bound moves one value up.
+   One `float64` operation rounds by at most half of that gap, so the widened
+   range still contains every true member. This covers the interval arithmetic
+   in sections 5.3 and 7.5 and the `last + step` normalization in section 7.2.
+4. A step computed by arithmetic is dropped when it passes `2 ** 53`, which
+   leaves the unstepped range over the same bounds. Multiplying a stepped range
+   by a large literal is the case that reaches this rule. The greatest common
+   divisor used when adding two stepped ranges never exceeds its inputs, so it
+   stays exact.
+5. A meet of two stepped ranges whose least common multiple passes `2 ** 53`
+   stays unreduced, as `A & B`. It keeps both atoms instead of rounding, the
+   way other residuals in section 4.2 do.
+
+Rules 3 and 4 only widen the type an operation produces. A wider result type is
+sound, and it loses precision only for ranges with bounds or steps beyond
+`2 ** 53`. Rule 5 is exact. None of the rules ever narrows a type, so the
+checker never accepts a value that the exact rules would reject.
 
 A range with a type-variable bound needs a second form, covered in section 9.5.
 
