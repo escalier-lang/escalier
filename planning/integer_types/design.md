@@ -133,11 +133,42 @@ each bound admits. A bound that admits arbitrarily large integers reduces to
 
 In the last row `N` ranges over `0` through `99`, and the largest range it
 yields is `0..99`. Section 9.5 covers that case. The same rule types value
-ranges. `0..n` with `n: int` has type `IntRange<0..Infinity>` in section 6.1,
-and `0..n` with `n: 0..100` has type `IntRange<0..99>`.
+ranges. `0..n` with `n: int` has element type `0..Infinity` in section 6.1,
+and `0..n` with `n: 0..100` has element type `0..99`.
 
 The rule always reduces a bound to a single integer or an infinity, so the
 checker never prints a range whose bound is another type.
+
+### 2.5. Reading the bounds of a range type
+
+Two prelude intrinsics read the bounds back out of a type `T` that is a subtype
+of `int`:
+
+- `Lower<T>` is the lower bound as `m..n` would write it. That is the smallest
+  member of `T`, or `-Infinity` when `T` has no smallest member.
+- `Upper<T>` is the exclusive upper bound as `m..n` would write it. That is
+  one step past the largest member of `T`, or `Infinity` when `T` has no
+  largest member.
+
+| `T` | `Lower<T>` | `Upper<T>` |
+|---|---|---|
+| `0..10` | `0` | `10` |
+| `5` | `5` | `6` |
+| `0..10 by 3` | `0` | `12` |
+| `0..3 \| 5..8` | `0` | `8` |
+| `0..Infinity` | `0` | `Infinity` |
+| `int` | `-Infinity` | `Infinity` |
+| `never` | `never` | `never` |
+
+For a stepped range, `Upper<T>` follows the printed form from section 7.2, so it
+is the last member plus the step. For a union of intervals, the two intrinsics
+give the bounds of the smallest range that covers the whole union. A type
+parameter stays unreduced until it is instantiated, so `Lower<N>` is a valid
+type in a generic signature.
+
+`Lower` and `Upper` return bounds, not members. Intrinsics that return the
+smallest and largest members, `Min` and `Max`, can come later if a signature
+needs them. `Max<0..10>` would be `9` where `Upper<0..10>` is `10`.
 
 ## 3. The `number` lattice
 
@@ -460,16 +491,44 @@ binding with a literal should be read as a range pattern.
 ### 6.1. What `a..b` evaluates to
 
 As an expression, `a..b` builds a range object. The object is not an `int`. Its
-type is `IntRange<A..B>`, where `A` and `B` are the operand types:
+type is `IntRange<A..B, A, B>`, where `A` and `B` are the operand types. The
+first argument is the element type. The other two are the types of `start` and
+`end`:
 
 ```esc
 val r = 0..10            // r: IntRange<0..10>
 for i in r { ... }       // i: 0..10
+r.start                  // 0
+r.end                    // 10
 
 fn f(n: int) {
-    val s = 0..n         // s: IntRange<0..Infinity>
+    val s = 0..n         // s: IntRange<0..Infinity, 0, int>
 }
 ```
+
+The last two parameters default to `Lower<T>` and `Upper<T>` from section 2.5.
+The printer omits trailing arguments that equal their defaults, as section 8.4
+describes, so a range with literal bounds prints with one argument. `s` keeps
+all three, because its `end` has type `int` while `Upper<0..Infinity>` is
+`Infinity`.
+
+The separate parameters matter because the element type is a set and loses
+facts about how the range was written:
+
+| Expression | Type |
+|---|---|
+| `0..10` | `IntRange<0..10>` |
+| `0..9 by 2` | `IntRange<0..10 by 2, 0, 9>` |
+| `10..0 by -1` | `IntRange<1..11, 10, 0>` |
+| `5..5` | `IntRange<never, 5, 5>` |
+
+`0..9 by 2` and `0..10 by 2` have the same members and different `end`
+values. `10..0 by -1` has the same members as `1..11` and starts at the other
+end. `5..5` has no members and still has a `start` of `5`.
+
+Code that only reads elements names the element type alone. A parameter typed
+`IntRange<0..10>` accepts only ranges whose `start` is `0` and whose `end` is
+`10`, so a function that only iterates should take `Iterable<0..10>` instead.
 
 The name avoids `Range`, which the DOM library declares as a global interface.
 
@@ -477,17 +536,22 @@ The prelude declares `IntRange` as a class backed by the runtime package
 `@escalier/runtime`:
 
 ```esc
-declare class IntRange<T: int> {
-    readonly start: int,
-    readonly end: number,
+declare class IntRange<
+    T: int,
+    S: int = Lower<T>,
+    E: int | Infinity | -Infinity = Upper<T>,
+> {
+    readonly start: S,
+    readonly end: E,
     readonly length: number,
     has(&self, x: number) -> boolean,
     [Symbol.iterator](&self) -> Iterator<T, undefined, undefined>,
 }
 ```
 
-`end` and `length` are `number` because both are `Infinity` for an unbounded
-range.
+`E` admits both infinities because a range with a negative step may end at
+`-Infinity`. `length` is `number` because it is `Infinity` for an unbounded
+range. Open question 15 covers giving it an exact type such as `Sub<E, S>`.
 
 ### 6.2. Iteration
 
@@ -675,11 +739,9 @@ milestone.
 `a..b by s` builds an `IntRange` with a `step` field:
 
 ```esc
-declare class IntRange<T: int> {
-    readonly start: int,
-    readonly end: number,
-    readonly step: int,
+declare class IntRange<T: int, S: int = Lower<T>, E: ... = Upper<T>> {
     ...
+    readonly step: int,
 }
 ```
 
@@ -696,7 +758,7 @@ The step operand of a value range may be any expression, with two conditions:
 val r = 0..10 by 2           // r: IntRange<0..10 by 2>
 
 fn every(n: int, s: 1..Infinity) {
-    val r = 0..n by s        // r: IntRange<0..Infinity>
+    val r = 0..n by s        // r: IntRange<0..Infinity, 0, int>
 }
 ```
 
@@ -833,6 +895,14 @@ The type printer prints `int` and `m..n`. It prints a one-member interval as its
 literal, so `5..6` prints as `5`. The source printer used by `printer.Print`
 gains the same two forms for annotations and the `RangeExpr` form for
 expressions.
+
+The type printer also omits trailing type arguments that equal their
+parameters' defaults. The rule applies to every generic type, not only to
+`IntRange`. It drops arguments from the end of the list and stops at the first
+argument that differs from its default, so the remaining arguments keep their
+positions. `IntRange<0..10, 0, 10>` prints as `IntRange<0..10>`.
+`IntRange<0..Infinity, 0, int>` keeps all three, because its last argument
+differs from its default.
 
 ## 9. Solver
 
@@ -1014,7 +1084,7 @@ TypeScript has no integer type. The emitter maps the new types as follows:
 | a finite range with at most 16 members | union of its literals, such as `0 \| 1 \| 2` |
 | a larger finite range | `number` |
 | `NaN`, `Infinity`, `-Infinity`, `finite` | `number` |
-| `IntRange<T>` | `IntRange<T'>`, where `T'` is `T` mapped by this table |
+| `IntRange<T, S, E>` | `IntRange<T', S', E'>`, where each argument is mapped by this table |
 
 A literal union gives TypeScript callers a real check for small ranges such as a
 day of the week or a die face. Above the threshold a union bloats the
@@ -1239,7 +1309,9 @@ if val k: int = i {
 4. **Integer arithmetic.** Covers the result types in section 5.1, computed from
    concrete operand types.
 5. **Range values.** Covers `RangeExpr`, the `IntRange` prelude class and its
-   runtime implementation, `for ... in` lowering, and range patterns.
+   runtime implementation, the `Lower` and `Upper` intrinsics, the printer rule
+   that omits default type arguments, `for ... in` lowering, and range
+   patterns.
 6. **Coverage.** Covers interval-based exhaustiveness and narrowing in `match`,
    and tuple indexing by range.
 7. **Stepped ranges.** Covers `by` in types, values, and patterns, the
