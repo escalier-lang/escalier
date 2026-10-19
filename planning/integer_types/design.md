@@ -54,6 +54,9 @@ The rest of the document covers the following, in order:
 `int` admits exactly the values for which `Number.isInteger(x)` is true. These
 are the finite `number` values with no fractional part.
 
+- `1.0` is an `int`. JavaScript has one `number` value for `1` and `1.0`, and
+  the lexer keeps only the parsed value, so `1.0` has the literal type `1`. The
+  same holds for `1e3`, whose type is `1000`.
 - `-0` is an `int`.
 - `2 ** 60` is an `int`. Every `number` with magnitude at or above `2 ** 53` is
   integral, so `int` is not limited to the safe-integer range.
@@ -106,8 +109,9 @@ section 4 relies on.
 
 ### 2.4. Bounds that are not single integers
 
-A bound is a type, not a number, so the general rule has to say what a bound
-like `int` or `0 | 5` means. The rule is a union over bound values:
+A bound may name a type that is not a single integer, such as a type parameter
+`N: 0..100` or an alias `type Lo = 0 | 5`. The rule for such a bound is a union
+over bound values:
 
 > `L..U` is the union of `l..u` over every `l` in `L` and every `u` in `U`.
 
@@ -117,17 +121,21 @@ each bound admits. A bound that admits arbitrarily large integers reduces to
 `Infinity`, and one that admits arbitrarily small integers reduces to
 `-Infinity`:
 
-| Annotation | Meaning |
-|---|---|
-| `(0 \| 5)..10` | `0..10` |
-| `0..(5 \| 10)` | `0..10` |
-| `0..int` | `0..Infinity` |
-| `int..0` | `-Infinity..0` |
-| `0..(0..100)` | `0..99` |
+| Bound types | Annotation | Meaning |
+|---|---|---|
+| `type Lo = 0 \| 5` | `Lo..10` | `0..10` |
+| `type Hi = 5 \| 10` | `0..Hi` | `0..10` |
+| | `0..int` | `0..Infinity` |
+| | `int..0` | `-Infinity..0` |
+| `N: 0..100` | `0..N` | `0..99` |
 
-The last row comes up with generic bounds in section 9.5. The upper bound ranges
-over `0` through `99`, and the largest range it yields is `0..99`. The `0..int`
-row is why `0..n` with `n: int` has type `IntRange<0..Infinity>` in section 6.1.
+In the last row `N` ranges over `0` through `99`, and the largest range it
+yields is `0..99`. Section 9.5 covers that case. The same rule types value
+ranges. `0..n` with `n: int` has type `IntRange<0..Infinity>` in section 6.1,
+and `0..n` with `n: 0..100` has type `IntRange<0..99>`.
+
+The rule always reduces a bound to a single integer or an infinity, so the
+checker never prints a range whose bound is another type.
 
 ## 3. The `number` lattice
 
@@ -737,22 +745,26 @@ The resolver maps it to the new `int` type the way it maps `number`.
 A range annotation is `RangeTypeAnn{Start, End}`. Each bound is one of:
 
 - an integer literal, including a negative one such as `-5`
+- `Infinity` as an upper bound, or `-Infinity` as a lower bound
 - a type reference such as `Lo`, `N`, or `int`
-- a parenthesized type such as `(0 | 5)` or `(0..100)`
+
+Any other type is not a valid bound, so `0..(0 | 5)`, `0..(0..100)`, and
+`0..typeof n` are parse errors. A bound that needs one of these forms names it
+with an alias first, as in `type Hi = 0 | 5` followed by `0..Hi`. Keeping bounds
+to names and literals keeps every range readable at a glance.
 
 `..` binds tighter than `&` and `|`, so `0..10 | 20..30` is a union of two
 ranges. `-5..5` parses as `(-5)..5`.
 
 A value identifier is not a valid bound. `0..MAX` with `val MAX = 10` reports
-that `MAX` is a value, and points the user at `0..typeof MAX`.
+that `MAX` is a value, and points the user at `type Max = typeof MAX`.
 
 ### 8.4. Printing
 
 The type printer prints `int` and `n..m`. It prints a one-member interval as its
-literal, so `5..6` prints as `5`. It wraps a range in parentheses when the range
-is a bound of another range, as in `0..(0..100)`. The source printer used by
-`printer.Print` gains the same two forms for annotations and the `RangeExpr`
-form for expressions.
+literal, so `5..6` prints as `5`. The source printer used by `printer.Print`
+gains the same two forms for annotations and the `RangeExpr` form for
+expressions.
 
 ## 9. Solver
 
