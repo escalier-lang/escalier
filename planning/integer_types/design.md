@@ -1298,7 +1298,8 @@ The `float32` printing fix from section 10.4 lands before milestone 5.
      `0..Infinity` for the rest of the function. `val k: 0..Infinity = n else
      { return }` covers this today, at the cost of a second name.
    - A loop counter. In `var i: int = 0` followed by `while i < t.length { t[i];
-     i += 1 }`, `i` could have type `0..t.length` inside the body. A `for ... in`
+     i += 1 }` over a 3-element tuple `t`, `i` could have type `0..3` inside the
+     body. A `for ... in`
      over a range covers the common case, but not a loop that advances by a
      variable amount.
    - A divisor check. After `if d != 0`, `d` could have type `int & ~0`, so
