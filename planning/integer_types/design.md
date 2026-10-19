@@ -43,8 +43,9 @@ The rest of the document covers the following, in order:
   and next to negation.
 - Section 5 covers operators.
 - Section 6 covers range values.
-- Sections 7 to 10 cover parsing, the solver, codegen, and TypeScript interop.
-- Section 11 lists milestones and section 12 lists open questions.
+- Section 7 covers stepped ranges.
+- Sections 8 to 11 cover parsing, the solver, codegen, and TypeScript interop.
+- Section 12 lists milestones and section 13 lists open questions.
 
 ## 2. Semantics
 
@@ -124,7 +125,7 @@ each bound admits. A bound that admits arbitrarily large integers reduces to
 | `int..0` | `-Infinity..0` |
 | `0..(0..100)` | `0..99` |
 
-The last row comes up with generic bounds in section 8.5. The upper bound ranges
+The last row comes up with generic bounds in section 9.5. The upper bound ranges
 over `0` through `99`, and the largest range it yields is `0..99`. The `0..int`
 row is why `0..n` with `n: int` has type `IntRange<0..Infinity>` in section 6.1.
 
@@ -215,7 +216,7 @@ same pass proves `int <: -Infinity..0 | 0..Infinity`.
 `val x = 5` keeps the literal type `5`. `var x = 5` widens to `number` today, and
 this design keeps that. Widening to `int` would reject the common
 `var total = 0` followed by `total += price`. A `var` that should stay integral
-takes an annotation, as in `var i: int = 0`. Section 12 lists widening to `int`
+takes an annotation, as in `var i: int = 0`. Section 13 lists widening to `int`
 as an open question.
 
 ## 4. Negation
@@ -298,7 +299,7 @@ and returns `0..10` unchanged. `0..10 & ~3` gives the precise `0..3 | 4..10`.
 
 Splitting a range into literals for distribution would turn `0..Infinity` into an
 infinite union, so this design does not distribute over ranges. The language
-guide should point readers at `T & ~U` for numeric exclusion. Section 12 asks
+guide should point readers at `T & ~U` for numeric exclusion. Section 13 asks
 whether `Exclude` should be redefined in terms of negation.
 
 ## 5. Operators
@@ -376,7 +377,7 @@ annotated `fn (a: int, b: int) { a + b }` returns `int`.
 
 `if i < 10` on `i: int` could narrow `i` to `-Infinity..10` in the `then` branch and to
 `10..Infinity` in the `else` branch. The narrowing is not needed for the first
-milestones. Section 11 schedules it last.
+milestones. Section 12 schedules it last.
 
 ## 6. Range values
 
@@ -464,9 +465,247 @@ match code {
 The pattern narrows the scrutinee to the meet of its type with the range, and
 section 4.3 gives the coverage rule.
 
-## 7. Parsing
+## 7. Stepped ranges
 
-### 7.1. Lexer
+### 7.1. Syntax and meaning
+
+`n..m by s` keeps every `s`-th integer of a range, starting from `n`:
+
+```esc
+type Even = 0..10 by 2      // 0, 2, 4, 6, 8
+
+for i in 0..10 by 3 { ... } // i: 0..10 by 3, yields 0, 3, 6, 9
+for i in 10..0 by -1 { ... } // yields 10, 9, ..., 1
+```
+
+The bounds stay half-open. A positive step yields `n`, `n+s`, `n+2s`, and so on
+while the value is below `m`. A negative step yields values while they are above
+`m`, so `10..0 by -1` stops before `0`. A step with the wrong sign for its
+bounds, such as `0..10 by -1`, yields nothing.
+
+The same form works in a type annotation, an expression, and a pattern. Without
+`by` the step is `1`, so every rule in sections 2 to 6 is the `by 1` case of the
+rules here.
+
+### 7.2. Stepped types are sets
+
+As a type, a stepped range is a set of integers. Order plays no part, so a
+negative step names the same set as some positive one. `10..0 by -2` is
+`{10, 8, 6, 4, 2}`, which is `2..12 by 2`. The checker stores and prints every
+stepped type with a positive step. The negative-step form matters only for the
+order a range value yields its members in.
+
+The checker also tightens the upper bound, so equal sets print the same way.
+The printed upper bound is the last member plus the step:
+
+| Annotation | Printed form |
+|---|---|
+| `0..10 by 2` | `0..10 by 2` |
+| `0..9 by 2` | `0..10 by 2` |
+| `0..10 by 3` | `0..12 by 3` |
+| `10..0 by -2` | `2..12 by 2` |
+| `0..10 by 1` | `0..10` |
+| `0..1 by 5` | `0` |
+
+In a type, the step must be a single nonzero integer literal or an alias for
+one. `0..10 by 0`, `0..10 by int`, and `0..10 by (2 | 3)` are errors. The
+union-over-bounds rule from section 2.4 still applies to the bounds.
+
+### 7.3. Unbounded stepped ranges
+
+`0..Infinity by 2` is every even integer from `0` up. Its members are anchored
+on the lower bound.
+
+When the lower bound is `-Infinity`, the members are anchored on the upper
+bound instead. `-Infinity..10 by 2` is `{8, 6, 4, ...}`, the values `10 - 2k`
+for every `k >= 1`.
+
+When both bounds are infinite, the members are anchored on `0`.
+`-Infinity..Infinity by 2` is every even integer. The odd integers have no
+direct spelling. Negation supplies one, as `int & ~(-Infinity..Infinity by 2)`,
+and the checker prints them that way.
+
+### 7.4. The lattice
+
+A stepped range is a residue class intersected with an interval. A residue
+class is the set of integers that leave the same remainder `r` when divided by
+the step `s`. `0..10 by 2` is the residue class `r = 0, s = 2` within `0..10`.
+The rules below extend sections 3 and 4.
+
+Subtyping:
+
+- `A <: B` when every member of `A` lies in `B`'s interval and in `B`'s residue
+  class.
+- When `A` has two or more members, the residue condition holds exactly when
+  `B`'s step divides `A`'s step and the two residues agree modulo `B`'s step.
+- `0..10 by 4 <: 0..10 by 2` holds. `0..10 by 2 <: 0..10 by 4` does not.
+- Every stepped range is a subtype of the unstepped range with the same bounds,
+  and so of `int`.
+
+Meets:
+
+- The intervals intersect as in section 3.1.
+- Two residue classes meet in one class whose step is the least common multiple
+  of the two steps. If no integer satisfies both remainders, the meet is
+  `never`. `0..Infinity by 2 & 0..Infinity by 3` is `0..Infinity by 6`.
+  `0..Infinity by 2 & 1..Infinity by 2` is `never`.
+
+Joins:
+
+- Two stepped ranges with the same step and residue merge when their intervals
+  touch or overlap, as unstepped ranges do.
+- Stepped ranges with the same step merge into an unstepped range when together
+  they cover every integer of an interval. `0..10 by 2 | 1..10 by 2` is
+  `0..10`, and `0..Infinity by 2 | 1..Infinity by 2` is `0..Infinity`.
+- Any other union keeps its atoms.
+
+Negation:
+
+- `int & ~(0..10 by 2)` is
+  `-Infinity..0 | 1..11 by 2 | 10..Infinity`. The complement of a stepped range
+  inside its own interval is the other `s - 1` residue classes.
+- That count grows with the step. Above a step of 16, the checker keeps
+  `int & ~(n..m by s)` unreduced instead of expanding it. That is the same kind
+  of residual as `number & ~int` in section 4.2.
+
+Coverage in `match` follows from these rules:
+
+```esc
+fn parity(n: 0..Infinity) -> string {
+    return match n {
+        0..Infinity by 2 => "even",
+        1..Infinity by 2 => "odd",
+    }
+}
+```
+
+The two arms join into `0..Infinity`, so the match is exhaustive.
+
+### 7.5. Arithmetic
+
+Interval arithmetic in section 5.3 extends to steps:
+
+- Adding a literal shifts the residue and keeps the step. `x + 1` with
+  `x: 0..10 by 2` is `1..11 by 2`.
+- Multiplying by a literal `k` multiplies the bounds and the step. `x * 3` with
+  `x: 0..5` is `0..15 by 3`.
+- Adding two stepped ranges gives the greatest common divisor of their steps.
+
+These rules land with the rest of interval arithmetic, in the later-work
+milestone.
+
+### 7.6. Values
+
+`a..b by s` builds an `IntRange` with a `step` field:
+
+```esc
+declare class IntRange<T: int> {
+    readonly start: int,
+    readonly end: number,
+    readonly step: int,
+    ...
+}
+```
+
+The step operand of a value range may be any expression, with two conditions:
+
+- Its type must be a subtype of `int & ~0`. A zero step would never advance,
+  so the checker rejects one statically. A parameter used as a step needs a
+  type such as `1..Infinity` or `int & ~0`.
+- When the step type is a single literal, the element type of the range is the
+  stepped type. Otherwise it is the unstepped range over the same bounds, which
+  contains every member the range can yield.
+
+```esc
+val r = 0..10 by 2           // r: IntRange<0..10 by 2>
+
+fn every(n: int, s: 1..Infinity) {
+    val r = 0..n by s        // r: IntRange<0..Infinity>
+}
+```
+
+The rules for unbounded value ranges flip with the sign of the step. With a
+positive step, the end may be `Infinity`. With a negative step, the end may be
+`-Infinity`. The start must always be a finite `int`.
+
+The `IntRange` constructor throws a `RangeError` on a zero step. Only
+TypeScript callers can reach that check, since Escalier code cannot pass one.
+
+### 7.7. Parsing
+
+`by` is a contextual keyword. It is recognized only directly after the upper
+bound of a range, so `by` stays usable as an identifier everywhere else. The
+step operand parses at the same precedence as a bound, so `0..n by k + 1` is
+`0..n by (k + 1)`.
+
+`by` must sit on the same line as the upper bound. The parser ends a binary
+expression at a line break outside a multi-line context, and `by` follows that
+rule:
+
+```esc
+val r = 0..10
+by(3)        // a call to a function named `by`, not a step
+```
+
+`RangeExpr` and `RangeTypeAnn` each gain an optional `Step` field. `a by b`
+without a range is a parse error.
+
+### 7.8. Codegen
+
+A counting loop over a stepped range picks its comparison from the sign of the
+step:
+
+```js
+// for i in a..b by 2
+for (let i = a, $end = b; i < $end; i += 2) { body }
+
+// for i in a..b by -2
+for (let i = a, $end = b; i > $end; i -= 2) { body }
+```
+
+When the step type contains both signs, as with `int & ~0`, the loop tests the
+sign at runtime:
+
+```js
+for (let i = a, $end = b, $s = s; $s > 0 ? i < $end : i > $end; i += $s) { body }
+```
+
+Runtime guards for stepped types add a remainder check to the guard in
+section 10.2:
+
+| Test | Emitted JavaScript |
+|---|---|
+| `x: 0..10 by 2` | `Number.isInteger(x) && x >= 0 && x < 10 && (x - 0) % 2 === 0` |
+| `x: -Infinity..10 by 2` | `Number.isInteger(x) && x < 10 && (10 - x) % 2 === 0` |
+| `x: -Infinity..Infinity by 2` | `Number.isInteger(x) && x % 2 === 0` |
+
+A remainder in JavaScript takes the sign of the dividend, so `-4 % 2` is `-0`.
+`-0 === 0` holds, so the check is correct for negative values.
+
+### 7.9. TypeScript interop
+
+A stepped range follows the table in section 11.1 by its member count. A finite
+range with at most 16 members emits as a literal union, so `0..10 by 2` emits as
+`0 | 2 | 4 | 6 | 8`. Larger and unbounded stepped ranges emit as `number`.
+
+### 7.10. Representation
+
+The `IntRangeType` atom from section 9.1 gains a step and a residue:
+
+```go
+type IntRangeType struct {
+    Lo, Hi float64
+    Step   float64 // always positive, 1 when unstepped
+    Rem    float64 // in [0, Step), 0 when unstepped
+}
+```
+
+The residue is stored rather than derived from `Lo`, because `Lo` is
+`-Infinity` for a range anchored on its upper bound.
+
+## 8. Parsing
+
+### 8.1. Lexer
 
 The lexer has no `..` token, and it reads `1..2` as the number `1.` followed by
 the number `.2`. Two changes fix that:
@@ -481,7 +720,7 @@ the range `1..toString()`, which fails to type-check because a function is not
 an `int`. Escalier does not promise JavaScript's lexical grammar, so this is
 acceptable.
 
-### 7.2. Expressions
+### 8.2. Expressions
 
 Add a binary operator `..` to `ast.Precedence` between the additive and
 comparison levels. The parser builds a new `RangeExpr` node with `Start` and
@@ -489,7 +728,7 @@ comparison levels. The parser builds a new `RangeExpr` node with `Start` and
 and its codegen differs, so a distinct node keeps both paths simple. The node
 goes through the AST generator in `tools/gen_ast`.
 
-### 7.3. Type annotations
+### 8.3. Type annotations
 
 `int` resolves as a type name bound in the prelude scope rather than as a
 keyword. That keeps `int` usable as a value identifier, as in `val int = 5`.
@@ -507,7 +746,7 @@ ranges. `-5..5` parses as `(-5)..5`.
 A value identifier is not a valid bound. `0..MAX` with `val MAX = 10` reports
 that `MAX` is a value, and points the user at `0..typeof MAX`.
 
-### 7.4. Printing
+### 8.4. Printing
 
 The type printer prints `int` and `n..m`. It prints a one-member interval as its
 literal, so `5..6` prints as `5`. It wraps a range in parentheses when the range
@@ -515,9 +754,9 @@ is a bound of another range, as in `0..(0..100)`. The source printer used by
 `printer.Print` gains the same two forms for annotations and the `RangeExpr`
 form for expressions.
 
-## 8. Solver
+## 9. Solver
 
-### 8.1. Representation
+### 9.1. Representation
 
 Add one atom to `soltype`:
 
@@ -535,9 +774,9 @@ lattice needs no separate `int` atom. `0..Infinity` is `{0, +Inf}`. Integral
 literals stay `LitType` and convert to one-member intervals inside the lattice
 operations.
 
-A range with a type-variable bound needs a second form, covered in section 8.5.
+A range with a type-variable bound needs a second form, covered in section 9.5.
 
-### 8.2. Places that change
+### 9.2. Places that change
 
 These sites switch on primitives or literals and each needs a case for
 `IntRangeType`:
@@ -554,13 +793,13 @@ These sites switch on primitives or literals and each needs a case for
   end is infinite. A finite interval is coverable arm by arm.
 - `solver/ucs_coverage.go`. Coverage over the number family becomes an
   interval union. See section 4.3.
-- `solver/typeops.go`, `isNumericKey` and `indexTuple`. See section 8.4.
+- `solver/typeops.go`, `isNumericKey` and `indexTuple`. See section 9.4.
 - `soltype/print.go` and `soltype/visitor.go`. Printing, and a leaf `Accept`.
 - `solver/type_ann.go`. `resolveTypeAnnType` resolves `RangeTypeAnn` and the
   `int` name. It reports a bound that is not a subtype of `int`, and an empty
   literal range.
 
-### 8.3. Type-reference bounds
+### 9.3. Type-reference bounds
 
 A bound written as a type reference resolves through `resolveScopedTypeRef`
 like any other reference. After resolution, the bound's type is checked against
@@ -569,7 +808,7 @@ or `max` integer it admits. `type Lo = 0` gives `0`, and `type Lo = int` gives
 `-Infinity`. `Infinity` and `-Infinity` resolve as bounds without a type
 reference, since the prelude gives them no literal type.
 
-### 8.4. Indexing
+### 9.4. Indexing
 
 `isNumericKey` accepts `int` and every range. On a tuple of length `n`:
 
@@ -582,7 +821,7 @@ reference, since the prelude gives them no literal type.
 Array reads already return the element type for any numeric key, so they need
 only the `isNumericKey` change.
 
-### 8.5. Generic bounds
+### 9.5. Generic bounds
 
 A bound may be a type parameter:
 
@@ -605,9 +844,9 @@ Generic bounds are a later milestone. Before they land, a type-parameter bound
 reduces through its declared upper bound right away, so `0..N` with `N: int`
 becomes `0..Infinity`.
 
-## 9. Codegen
+## 10. Codegen
 
-### 9.1. Types are erased
+### 10.1. Types are erased
 
 `int` and range annotations emit no runtime code. `val x: 0..10 = f()` is
 checked statically and compiles to `const x = f()`. A program turns a `number`
@@ -618,7 +857,7 @@ if Number.isInteger(n) { ... }      // narrows n to int in the then branch
 val k: int = n else { return 0 }    // let-else narrowing
 ```
 
-### 9.2. Runtime guards
+### 10.2. Runtime guards
 
 A pattern or narrowing test on the new types emits an inline check.
 `buildTypeGuard` and `buildSolTypeGuard` in `codegen/builder.go` gain these
@@ -634,7 +873,7 @@ forms:
 The last row drops `Number.isInteger` because the scrutinee's static type
 already proves it.
 
-### 9.3. Range expressions
+### 10.3. Range expressions
 
 A range is an `IntRange` object by default. Codegen replaces it with a counting
 loop when the loop is the only thing that can observe the object. That holds in
@@ -669,7 +908,7 @@ const r = new IntRange(0, n);
 The counting-loop form matters because ranges will appear mostly in loop heads.
 It avoids an allocation and an iterator call per step.
 
-### 9.4. Large integer literals
+### 10.4. Large integer literals
 
 `codegen/printer.go` prints number literals with
 `strconv.FormatFloat(v, 'f', -1, 32)`. The bit size of 32 rounds the value to
@@ -677,9 +916,9 @@ It avoids an allocation and an iterator call per step.
 with the wrong value. This bug exists today. It matters more once code works
 with large `int` bounds, so the fix goes in before the codegen milestone.
 
-## 10. TypeScript interop
+## 11. TypeScript interop
 
-### 10.1. Emitting `.d.ts`
+### 11.1. Emitting `.d.ts`
 
 TypeScript has no integer type. The emitter maps the new types as follows:
 
@@ -697,7 +936,7 @@ declaration and slows TypeScript's checker, so it falls back to `number`.
 
 TypeScript callers can pass any `number` where Escalier expects an `int`, since
 nothing checks at the boundary. Exported functions emit no runtime validation
-under this design. Section 12 asks whether an opt-in boundary check is worth
+under this design. Section 13 asks whether an opt-in boundary check is worth
 adding.
 
 The planned `@esctype` tag carries the exact Escalier type next to the
@@ -710,7 +949,7 @@ consumer sees the TypeScript type.
 The `IntRange` class ships with a `.d.ts` in `@escalier/runtime`, so emitted
 declarations that mention it resolve for TypeScript consumers.
 
-### 10.2. Importing `.d.ts`
+### 11.2. Importing `.d.ts`
 
 TypeScript's `number` stays `number`, and a numeric literal stays a literal. A
 TypeScript literal union such as `0 | 1 | 2` stays a union of literals, per
@@ -720,7 +959,7 @@ typed `0..3`.
 `int <: number`, so every TypeScript API that takes a `number` accepts an `int`
 or a range with no change.
 
-### 10.3. Stdlib refinements
+### 11.3. Stdlib refinements
 
 Some stdlib members always return integers. Typing them as `int` or a range
 makes the new types useful without casts. These go through the stdlib override
@@ -742,7 +981,7 @@ Several members look integral and are not, so they stay `number`:
 - `parseInt` returns `NaN` on a bad input.
 - `Date.prototype.getFullYear` and its siblings return `NaN` on an invalid date.
 
-## 11. Milestones
+## 12. Milestones
 
 1. **`int` type.** Covers the lexer-independent parts: `int` as a prelude type
    name, `IntRangeType` with unbounded ends, constrain and lattice rules,
@@ -760,13 +999,15 @@ Several members look integral and are not, so they stay `number`:
    runtime implementation, `for ... in` lowering, and range patterns.
 6. **Coverage.** Covers interval-based exhaustiveness and narrowing in `match`,
    and tuple indexing by range.
-7. **Stdlib refinements.** Covers the overrides in section 10.3.
-8. **Later work.** Covers interval arithmetic, generic bounds, and narrowing on
-   comparisons.
+7. **Stepped ranges.** Covers `by` in types, values, and patterns, the
+   residue-class lattice rules, and stepped loop lowering from section 7.
+8. **Stdlib refinements.** Covers the overrides in section 11.3.
+9. **Later work.** Covers interval arithmetic with steps, generic bounds, and
+   narrowing on comparisons.
 
-The `float32` printing fix from section 9.4 lands before milestone 5.
+The `float32` printing fix from section 10.4 lands before milestone 5.
 
-## 12. Open questions
+## 13. Open questions
 
 1. **Name.** The working name is `int`. `integer` reads closer to
    `Number.isInteger` and avoids suggesting a fixed-width type. `int` is shorter.
@@ -779,13 +1020,14 @@ The `float32` printing fix from section 9.4 lands before milestone 5.
 4. **`Exclude` over ranges.** Section 4.4 keeps the distributive definition,
    which leaves ranges whole. Redefining `Exclude<T, U>` as `T & ~U` would
    change its result for object types too.
-5. **Step size.** A stepped range such as every even integer in `0..10` needs
-   syntax and a lattice atom for arithmetic progressions.
+5. **Complement cutoff.** Section 7.4 stops expanding the complement of a
+   stepped range above a step of 16. The cutoff trades precision for the size
+   of the normal form.
 6. **Inclusive ranges.** `n..=m` would name `n` through `m` inclusive. It is not
    needed for this design and can be added later without conflict.
 7. **Boundary checks.** Exported functions could validate `int` and range
    parameters when called from TypeScript, behind a compiler flag.
-8. **Literal-union threshold.** Section 10.1 uses 16 members as the cutoff for
+8. **Literal-union threshold.** Section 11.1 uses 16 members as the cutoff for
    emitting a range as a TypeScript literal union.
 9. **`bigint` ranges.** `1n..10n` would need a parallel interval atom in the
    `bigint` family. The lexer does not read `bigint` literals yet.
