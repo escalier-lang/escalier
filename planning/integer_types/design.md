@@ -667,20 +667,32 @@ and the checker prints them that way.
 
 ### 7.4. The lattice
 
-A stepped range is a residue class intersected with an interval. A residue
-class is the set of integers that leave the same remainder `r` when divided by
-the step `s`. `0..10 by 2` is the residue class `r = 0, s = 2` within `0..10`.
-The rules below extend sections 3 and 4.
+The rules below extend sections 3 and 4 to stepped ranges.
 
 Subtyping:
 
-- `A <: B` when every member of `A` lies in `B`'s interval and in `B`'s residue
-  class.
-- When `A` has two or more members, the residue condition holds exactly when
-  `B`'s step divides `A`'s step and the two residues agree modulo `B`'s step.
-- `0..10 by 4 <: 0..10 by 2` holds. `0..10 by 2 <: 0..10 by 4` does not.
+- `A <: B` when every member of `A` is a member of `B`. Each member of `A` must
+  fall within `B`'s bounds and land on one of `B`'s steps.
+- When `A` has two or more members, a quick check decides the second part.
+  `A`'s step must be a multiple of `B`'s step, and `A`'s first member must
+  land on one of `B`'s steps. Then every later member of `A` lands on one too.
 - Every stepped range is a subtype of the unstepped range with the same bounds,
   and so of `int`.
+
+| `A` | `B` | `A <: B` | Why |
+|---|---|---|---|
+| `0..10 by 4` | `0..10 by 2` | yes | `0`, `4`, `8` are all steps of `B` |
+| `2..10 by 4` | `0..10 by 2` | yes | `2`, `6` are all steps of `B` |
+| `1..10 by 4` | `0..10 by 2` | no | `1` is not a step of `B` |
+| `0..10 by 3` | `0..10 by 2` | no | `3` is not a step of `B` |
+| `0..10 by 2` | `0..10 by 4` | no | `2` is not a step of `B` |
+| `6` | `0..10 by 3` | yes | `6` is a step of `B` |
+
+The meet and negation rules need one more term. A residue class is the set of
+integers that leave the same remainder `r` when divided by a step `s`. It is
+every integer a range's steps would hit if the range extended forever in both
+directions. `0..10 by 2` is the residue class `r = 0, s = 2`, which is the
+even integers, cut down to `0..10`.
 
 Meets:
 
