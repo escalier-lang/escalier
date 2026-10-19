@@ -170,6 +170,40 @@ type in a generic signature.
 smallest and largest members, `Min` and `Max`, can come later if a signature
 needs them. `Max<0..10>` would be `9` where `Upper<0..10>` is `10`.
 
+### 2.6. Inclusive ranges
+
+`m..=n` includes its upper bound. It names the integers `k` with
+`m <= k <= n`, so `0..=9` and `0..10` are the same set:
+
+```esc
+type Digit   = 0..=9         // same type as 0..10
+type Percent = 0..=100       // 0 through 100
+```
+
+The inclusive form reads better where a range ends on a value people name, as
+in the status-code patterns of section 6.5. It also avoids a bound that looks
+shared between neighbors. `200..=299` and `300..=399` have no number in
+common, where `200..300` and `300..400` both mention `300`.
+
+`m..=n` is the same type as `m..(n + 1)`. The rules for each part of the
+design follow from that:
+
+- The bound rules match section 8.3, except that the upper bound must be an
+  integer literal or a type reference. `0..=Infinity` is an error, since
+  `Infinity` is never a member. Write `0..Infinity` instead.
+- The union-over-bounds rule in section 2.4 applies to each bound. `0..=N` with
+  `N: 0..100` is `0..100`.
+- `5..=4` with literal bounds is an empty annotation, so it is an error.
+  `5..=5` is the one-member range `5`.
+- The checker stores and prints every range in the exclusive form, as section
+  7.2 does for stepped ranges. `Percent` prints as `0..101`, and `Upper<0..=9>`
+  is `10`. A range type is a set, so it cannot remember which form it was
+  written in.
+- A stepped inclusive range keeps `n` when a step lands on it. `0..=10 by 2` is
+  `{0, 2, 4, 6, 8, 10}`, and `10..=0 by -2` counts down to `0`.
+- An inclusive value range has the same element type as the matching exclusive
+  one. Its `end` field holds the exclusive bound, so `(0..=9).end` is `10`.
+
 ## 3. The `number` lattice
 
 The new types sit between `number` and its integral literals.
@@ -551,7 +585,7 @@ declare class IntRange<
 
 `E` admits both infinities because a range with a negative step may end at
 `-Infinity`. `length` is `number` because it is `Infinity` for an unbounded
-range. Open question 15 covers giving it an exact type such as `Sub<E, S>`.
+range. Open question 14 covers giving it an exact type such as `Sub<E, S>`.
 
 ### 6.2. Iteration
 
@@ -596,11 +630,16 @@ A range in pattern position tests membership:
 
 ```esc
 match code {
-    200..300 => "ok",
-    400..500 => "client error",
-    _        => "other",
+    200..=299 => "ok",
+    300..=399 => "redirect",
+    400..=499 => "client error",
+    500..=599 => "server error",
+    _         => "other",
 }
 ```
+
+The inclusive form from section 2.6 lets each arm name the first and last codes
+in its class.
 
 The pattern binds its name at the meet of the scrutinee's type with the range, and
 section 4.3 gives the coverage rule.
@@ -861,8 +900,9 @@ precision rules for all four fields.
 The lexer has no `..` token, and it reads `1..2` as the number `1.` followed by
 the number `.2`. Two changes fix that:
 
-1. Add a `DotDot` token. On a `.`, emit `DotDotDot` for three dots, `DotDot` for
-   two, and `Dot` for one.
+1. Add `DotDot` and `DotDotEq` tokens. On a `.`, emit `DotDotDot` for three
+   dots, `DotDotEq` for two dots followed by `=`, `DotDot` for two, and `Dot`
+   for one.
 2. In the number scan, stop before a `.` that is followed by another `.`. Then
    `1..2` lexes as `1`, `..`, `2`, and `1...` still lexes as `1` and `...`.
 
@@ -873,9 +913,10 @@ acceptable.
 
 ### 8.2. Expressions
 
-Add a binary operator `..` to `ast.Precedence` between the additive and
-comparison levels. The parser builds a new `RangeExpr` node with `Start` and
-`End`, not a `BinaryExpr`. A range is not a call to a prelude operator binding,
+Add binary operators `..` and `..=` to `ast.Precedence` between the additive
+and comparison levels. The parser builds a new `RangeExpr` node with `Start`,
+`End`, and an `Inclusive` flag, not a `BinaryExpr`. `RangeTypeAnn` carries the
+same flag. A range is not a call to a prelude operator binding,
 and its codegen differs, so a distinct node keeps both paths simple. The node
 goes through the AST generator in `tools/gen_ast`.
 
@@ -1090,9 +1131,16 @@ the iterator would yield:
 // for i in a..b { body }
 for (let i = a, $end = b; i < $end; i++) { body }
 
+// for i in a..=b { body }
+for (let i = a, $end = b; i <= $end; i++) { body }
+
 // for i in a..Infinity { body }
 for (let i = a; ; i++) { body }
 ```
+
+An inclusive loop compares with `<=` against `b` rather than with `<` against
+`b + 1`. The `IntRange` constructor takes the same flag and computes the
+exclusive `end` itself.
 
 `break`, `continue`, and labels work the same in either form, since both are
 JavaScript loops.
@@ -1345,7 +1393,8 @@ if val k: int = i {
    printing, and `.d.ts` emission as `number`. The `NaN`, `Infinity`, and
    `-Infinity` types, the `finite` alias, and the `x: int`, `x: finite`, and
    `x: NaN` type tests land here too.
-2. **Range annotations.** Covers the `DotDot` token, the number-scan fix,
+2. **Range annotations.** Covers the `DotDot` and `DotDotEq` tokens, inclusive
+   ranges from section 2.6, the number-scan fix,
    `RangeTypeAnn` with literal and type-reference bounds, interval meets, joins,
    and the right-hand union normalization from section 3.3. The literal-union
    `.d.ts` emission lands here too.
@@ -1384,28 +1433,26 @@ The `float32` printing fix from section 10.4 lands before milestone 5.
 5. **Complement cutoff.** Section 7.4 stops expanding the complement of a
    stepped range above a step of 16. The cutoff trades precision for the size
    of the normal form.
-6. **Inclusive ranges.** `m..=n` would name `m` through `n` inclusive. It is not
-   needed for this design and can be added later without conflict.
-7. **Boundary checks.** Exported functions could validate `int` and range
+6. **Boundary checks.** Exported functions could validate `int` and range
    parameters when called from TypeScript, behind a compiler flag.
-8. **Literal-union threshold.** Section 11.1 uses 16 members as the cutoff for
+7. **Literal-union threshold.** Section 11.1 uses 16 members as the cutoff for
    emitting a range as a TypeScript literal union.
-9. **`bigint` ranges.** `1n..10n` would need a parallel interval atom in the
+8. **`bigint` ranges.** `1n..10n` would need a parallel interval atom in the
    `bigint` family. The lexer does not read `bigint` literals yet.
-10. **Template literal types.** `` `${int}` `` could match strings of decimal
+9. **Template literal types.** `` `${int}` `` could match strings of decimal
    digits with an optional sign. The checker has the regex machinery for it.
-11. **Comparing with `NaN`.** `x == NaN` is always `false`. The checker could
+10. **Comparing with `NaN`.** `x == NaN` is always `false`. The checker could
    report it and point at `Number.isNaN`.
-12. **Split element types.** Section 12.4 reads typed array elements as a range
+11. **Split element types.** Section 12.4 reads typed array elements as a range
    and writes them as `number`. This design does not settle how the stdlib
    spells an index signature whose read and write types differ.
-13. **Guards as range patterns.** Section 5.5 refines through range patterns,
+12. **Guards as range patterns.** Section 5.5 refines through range patterns,
    and a guard covers nothing for exhaustiveness. The checker could read a
    guard that compares the arm's own binding with a literal, such as
    `j if j < 10`, as the pattern `j: -Infinity..10`. The refinement would
    still land on the new binding `j`, so it keeps the no-flow-typing rule. The
    cost is a second way to write the same arm.
-14. **Flow typing.** Section 5.5 keeps Escalier's rule that a refinement binds
+13. **Flow typing.** Section 5.5 keeps Escalier's rule that a refinement binds
    a new name. Flow typing would instead re-type an existing variable after a
    test. Several `int` and range idioms read more naturally that way:
    - A bounds check before an index. After `if i >= 0 && i < 10`, `i` could
@@ -1430,7 +1477,7 @@ The `float32` printing fix from section 10.4 lands before milestone 5.
    types rely on. A `var` that is reassigned after the test, or captured by a
    closure that may reassign it, would lose the refinement. Each comparison
    operator would also need a rule for the range it implies on each branch.
-15. **Arithmetic on types.** Section 5.3 computes the result of `+`, `-`, and
+14. **Arithmetic on types.** Section 5.3 computes the result of `+`, `-`, and
    `*` on ranges inside the checker. Exposing the same operations in type
    annotations would let a signature state how its result depends on its
    arguments:
