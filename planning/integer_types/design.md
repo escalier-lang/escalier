@@ -45,7 +45,9 @@ The rest of the document covers the following, in order:
 - Section 6 covers range values.
 - Section 7 covers stepped ranges.
 - Sections 8 to 11 cover parsing, the solver, codegen, and TypeScript interop.
-- Section 12 lists milestones and section 13 lists open questions.
+- Section 12 applies the new types to arrays, tuples, and the rest of the
+  standard library.
+- Section 13 lists milestones and section 14 lists open questions.
 
 ## 2. Semantics
 
@@ -224,7 +226,7 @@ same pass proves `int <: -Infinity..0 | 0..Infinity`.
 `val x = 5` keeps the literal type `5`. `var x = 5` widens to `number` today, and
 this design keeps that. Widening to `int` would reject the common
 `var total = 0` followed by `total += price`. A `var` that should stay integral
-takes an annotation, as in `var i: int = 0`. Section 13 lists widening to `int`
+takes an annotation, as in `var i: int = 0`. Section 14 lists widening to `int`
 as an open question.
 
 ## 4. Negation
@@ -307,7 +309,7 @@ and returns `0..10` unchanged. `0..10 & ~3` gives the precise `0..3 | 4..10`.
 
 Splitting a range into literals for distribution would turn `0..Infinity` into an
 infinite union, so this design does not distribute over ranges. The language
-guide should point readers at `T & ~U` for numeric exclusion. Section 13 asks
+guide should point readers at `T & ~U` for numeric exclusion. Section 14 asks
 whether `Exclude` should be redefined in terms of negation.
 
 ## 5. Operators
@@ -385,7 +387,7 @@ annotated `fn (a: int, b: int) { a + b }` returns `int`.
 
 `if i < 10` on `i: int` could narrow `i` to `-Infinity..10` in the `then` branch and to
 `10..Infinity` in the `else` branch. The narrowing is not needed for the first
-milestones. Section 12 schedules it last.
+milestones. Section 13 schedules it last.
 
 ## 6. Range values
 
@@ -948,7 +950,7 @@ declaration and slows TypeScript's checker, so it falls back to `number`.
 
 TypeScript callers can pass any `number` where Escalier expects an `int`, since
 nothing checks at the boundary. Exported functions emit no runtime validation
-under this design. Section 13 asks whether an opt-in boundary check is worth
+under this design. Section 14 asks whether an opt-in boundary check is worth
 adding.
 
 The planned `@esctype` tag carries the exact Escalier type next to the
@@ -971,29 +973,151 @@ typed `0..3`.
 `int <: number`, so every TypeScript API that takes a `number` accepts an `int`
 or a range with no change.
 
-### 11.3. Stdlib refinements
+## 12. Arrays, tuples, and the standard library
 
-Some stdlib members always return integers. Typing them as `int` or a range
-makes the new types useful without casts. These go through the stdlib override
-mechanism rather than edits to the generated `.esc` files:
+The stdlib is where most programs first meet `int` and ranges. Tightening its
+signatures turns a range into the natural type of every length, index, and
+search result. Each change below goes through the stdlib override mechanism,
+not through edits to the generated `.esc` files.
+
+### 12.1. Length and index aliases
+
+JavaScript caps an array's length at `2 ** 32 - 1`, so lengths and indices have
+exact ranges. The prelude names them:
+
+```esc
+type ArrayLength = 0..4294967296    // 0 through 2 ** 32 - 1
+type ArrayIndex  = 0..4294967295    // 0 through 2 ** 32 - 2
+```
+
+Two intrinsics compute the same facts for a particular array or tuple type:
+
+- `Indices<T>` is the set of valid indices of `T`.
+- `At<T, I>` is the type of `T` read at index `I`, as `Array.prototype.at`
+  defines it. A negative `I` counts from the end, and an index past either end
+  reads `undefined`.
+
+| `T` | `Indices<T>` | `T["length"]` |
+|---|---|---|
+| `[A, B, C]` | `0..3` | `3` |
+| `[A, B?]` | `0..2` | `1..3` |
+| `[A, ...Array<B>]` | `ArrayIndex` | `1..4294967296` |
+| `[A, B, ...]` | `ArrayIndex` | `2..4294967296` |
+| `Array<T>` | `ArrayIndex` | `ArrayLength` |
+
+A stdlib signature refers to the receiver as `Self`, so `Indices<Self>` in an
+`Array` method resolves to `0..3` when the receiver is `[A, B, C]`.
+
+### 12.2. Arrays
+
+| Member | Type today | Type with this design |
+|---|---|---|
+| `length` | `number` | `ArrayLength` |
+| `new Array(n)`, `Array(n)` | `n: number` | `n: ArrayLength` |
+| `push`, `unshift` | return `number` | return `ArrayLength` |
+| `indexOf`, `lastIndexOf`, `findIndex`, `findLastIndex` | return `number` | return `-1 \| ArrayIndex` |
+| callback `index` in `map`, `forEach`, `filter`, `reduce`, and the rest | `number` | `Indices<Self>` |
+| `at(index)` | `index: number`, returns `T \| undefined` | `index: int`, returns `At<Self, I>` |
+| `with(index, value)` | `index: number` | `index: int` |
+| `slice`, `fill`, `copyWithin`, `includes`, `indexOf` position arguments | `number` | `int` |
+| `splice(start, deleteCount)` | `number`, `number` | `int`, `ArrayLength` |
+
+Two of these catch errors that throw at runtime:
+
+- Assigning `arr.length = 1.5` or calling `new Array(-1)` throws a
+  `RangeError`. A write to `length` and the constructor's argument now require
+  an `ArrayLength`, so the checker reports both.
+- `with` throws a `RangeError` for an index outside the array. On a tuple,
+  `with` takes `Indices<Self>`, so the checker catches the out-of-range case
+  there too.
+
+The position arguments of `at`, `slice`, and the others are truncated by
+JavaScript, so `arr.at(1.5)` reads `arr[1]`. Typing them as `int` turns a
+silent truncation into a type error. A program with a `number` in hand narrows
+it first with `Number.isInteger`, or converts it as section 14 discusses.
+
+Element reads keep their current rule for `int` and `number` keys. They return
+the element type, and an index past the end still reads as the element type.
+Two key types are always wrong and now report an error:
+
+- A key whose type is disjoint from `int`, such as `arr[1.5]` or a key of type
+  `number & ~int`, always reads `undefined`.
+- A negative key, such as `arr[-1]`, reads a property named `"-1"`, not the
+  last element. The error message points at `arr.at(-1)`.
+
+### 12.3. Tuples
+
+A tuple gets every array change above, with `Self` resolved to the tuple type.
+The ranges then carry the tuple's length:
+
+```esc
+val t: [string, number, boolean] = ["a", 1, true]
+
+t.length                          // 3
+t.map(fn (x, i) => i)             // i: 0..3
+t.at(-1)                          // boolean
+t.at(i)                           // with i: 0..2, string | number
+
+for i in 0..t.length {
+    print(t[i])                   // t[i]: string | number | boolean
+}
+```
+
+The loop needs no out-of-range check. `t.length` is the literal `3`, so `i` has
+type `0..3`, and section 9.4 reads `t[i]` as the union of the elements at
+`0`, `1`, and `2`.
+
+`t.with(3, x)` is an error, since `3` is outside `Indices<Self>`. `t.at(5)` is
+`undefined`, matching what JavaScript returns.
+
+A tuple with optional or rest elements reads from the table in section 12.1. A
+read at an index that may hold an optional element includes `undefined`.
+
+### 12.4. Typed arrays and `DataView`
+
+Every typed array stores integers of a fixed width, so its element type is an
+exact range:
+
+| Class | Element type |
+|---|---|
+| `Int8Array` | `-128..128` |
+| `Uint8Array`, `Uint8ClampedArray` | `0..256` |
+| `Int16Array` | `-32768..32768` |
+| `Uint16Array` | `0..65536` |
+| `Int32Array` | `-2147483648..2147483648` |
+| `Uint32Array` | `0..4294967296` |
+
+The range is the read type. A write takes any `number`, since JavaScript wraps
+or clamps the value into the range rather than throwing. Writing `300` into a
+`Uint8Array` stores `44`. The element signature therefore needs separate read
+and write types. Section 14 asks how the stdlib should spell that.
+
+`Float32Array`, `Float64Array`, and the `BigInt` arrays keep `number` and
+`bigint` elements. The `DataView` getters follow the same table. For example,
+`getUint8` returns `0..256` and `getInt16` returns `-32768..32768`.
+
+### 12.5. Strings, `Math`, and `Number`
 
 | Member | Type |
 |---|---|
-| `Array.prototype.length`, `String.prototype.length` | `0..Infinity` |
-| `indexOf`, `lastIndexOf`, `findIndex`, `findLastIndex` | `-1..Infinity` |
-| the index argument of `map`, `forEach`, `filter`, and the other array callbacks | `0..Infinity` |
+| `String.prototype.length` | `0..9007199254740992` |
+| `charAt`, `at`, `slice`, `substring`, `padStart` position and length arguments | `int` |
+| `codePointAt` | returns `0..1114112 \| undefined` |
+| `Math.clz32` | returns `0..33` |
 | `Number.isInteger`, `Number.isSafeInteger` | narrow their argument to `int` |
 | `Number.MAX_SAFE_INTEGER`, `Number.MIN_SAFE_INTEGER` | their literal values |
 
+The string length bound is `2 ** 53 - 1`, the limit the specification sets.
+
 Several members look integral and are not, so they stay `number`:
 
-- `Math.floor`, `Math.ceil`, `Math.round`, and `Math.trunc` return `NaN` or an
-  infinity for those inputs.
+- `Math.floor`, `Math.ceil`, `Math.round`, and `Math.trunc` return `NaN` for
+  `NaN` and an infinity for an infinite input.
 - `charCodeAt` returns `NaN` past the end of the string.
 - `parseInt` returns `NaN` on a bad input.
 - `Date.prototype.getFullYear` and its siblings return `NaN` on an invalid date.
 
-## 12. Milestones
+## 13. Milestones
 
 1. **`int` type.** Covers the lexer-independent parts: `int` as a prelude type
    name, `IntRangeType` with unbounded ends, constrain and lattice rules,
@@ -1013,13 +1137,15 @@ Several members look integral and are not, so they stay `number`:
    and tuple indexing by range.
 7. **Stepped ranges.** Covers `by` in types, values, and patterns, the
    residue-class lattice rules, and stepped loop lowering from section 7.
-8. **Stdlib refinements.** Covers the overrides in section 11.3.
+8. **Standard library.** Covers section 12: the length and index aliases, the
+   `Indices` and `At` intrinsics, and the array, tuple, typed array, and string
+   signatures.
 9. **Later work.** Covers interval arithmetic with steps, generic bounds, and
    narrowing on comparisons.
 
 The `float32` printing fix from section 10.4 lands before milestone 5.
 
-## 13. Open questions
+## 14. Open questions
 
 1. **Name.** The working name is `int`. `integer` reads closer to
    `Number.isInteger` and avoids suggesting a fixed-width type. `int` is shorter.
@@ -1045,3 +1171,11 @@ The `float32` printing fix from section 10.4 lands before milestone 5.
    `bigint` family. The lexer does not read `bigint` literals yet.
 10. **Template literal types.** `` `${int}` `` could match strings of decimal
    digits with an optional sign. The checker has the regex machinery for it.
+11. **Converting `number` to `int`.** Section 12.2 types position arguments as
+   `int`, and `Math.trunc` stays `number` because of `NaN`. A program holding a
+   `number` needs a short way to get an `int`. One option is a prelude function
+   `toInt(x: number) -> int | undefined` that returns `undefined` for `NaN` and
+   the infinities.
+12. **Split element types.** Section 12.4 reads typed array elements as a range
+   and writes them as `number`. This design does not settle how the stdlib
+   spells an index signature whose read and write types differ.
