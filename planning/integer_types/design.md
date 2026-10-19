@@ -5,10 +5,10 @@
 This document adds two subtypes of `number`.
 
 - `int` is the type of every integral number.
-- `n..m` is the type of the integers from `n` up to but not including `m`. So
+- `m..n` is the type of the integers from `m` up to but not including `n`. So
   `0..3` admits `0`, `1`, and `2`, and does not admit `3`.
 
-The `n..m` syntax works both as a type annotation and as an expression. As a
+The `m..n` syntax works both as a type annotation and as an expression. As a
 type it names a set of integers. As an expression it builds a range value that
 can be iterated:
 
@@ -71,9 +71,9 @@ ordinary inputs, which would push every arithmetic result back to `number`.
 `Number.isInteger` semantics keep `+`, `-`, and `*` closed over `int` except at
 overflow to `Infinity`. Section 5.2 discusses that case.
 
-### 2.2. `n..m`
+### 2.2. `m..n`
 
-`n..m` is the set of integers `k` with `n <= k < m`. The range is half-open. The
+`m..n` is the set of integers `k` with `m <= k < n`. The range is half-open. The
 lower bound is included and the upper bound is excluded.
 
 Half-open ranges compose without off-by-one adjustments:
@@ -83,7 +83,7 @@ Half-open ranges compose without off-by-one adjustments:
 - `a..b & b..c` is `never`.
 - `0..n` has exactly `n` members when `n >= 0`.
 
-When `n >= m` the set is empty. A range annotation whose bounds are both literal
+When `m >= n` the set is empty. A range annotation whose bounds are both literal
 and empty, such as `5..5` or `5..3`, is an error, since it almost always means a
 typo. An empty range that arises through inference, such as from an alias
 instantiation, is `never`.
@@ -156,13 +156,13 @@ The new types sit between `number` and its integral literals.
 The rules below define the order:
 
 - `int <: number`.
-- An integral number literal `k` is a subtype of `int`, and of `n..m` when
-  `n <= k < m`.
+- An integral number literal `k` is a subtype of `int`, and of `m..n` when
+  `m <= k < n`.
 - A non-integral literal such as `1.5` is not a subtype of `int`, and its meet
   with `int` is `never`.
 - `a..b <: c..d` when the first range is empty, or when `c <= a` and `b <= d`.
-- `n..m <: int` always.
-- `int <: n..m` only when the range is `-Infinity..Infinity`.
+- `m..n <: int` always.
+- `int <: m..n` only when the range is `-Infinity..Infinity`.
 
 The solver groups primitive types into value families. A family is a set of
 runtime values that no other family shares, such as numbers, strings, or
@@ -443,7 +443,7 @@ The lower operand must be a subtype of `int`. The upper operand must be a
 subtype of `int` or be `Infinity`. `0..x` with `x: number` reports
 `range bound must be an int or Infinity, found number`.
 
-`n..Infinity` iterates without end, so a loop over it needs a `break` or
+`m..Infinity` iterates without end, so a loop over it needs a `break` or
 `return`. Spreading a range whose type has an `Infinity` upper bound never
 finishes, so `[...0..Infinity]` and `Array.from(0..Infinity)` report an error
 when the checker sees the unbounded type.
@@ -477,7 +477,7 @@ section 4.3 gives the coverage rule.
 
 ### 7.1. Syntax and meaning
 
-`n..m by s` keeps every `s`-th integer of a range, starting from `n`:
+`m..n by s` keeps every `s`-th integer of a range, starting from `m`:
 
 ```esc
 type Even = 0..10 by 2      // 0, 2, 4, 6, 8
@@ -486,9 +486,9 @@ for i in 0..10 by 3 { ... } // i: 0..10 by 3, yields 0, 3, 6, 9
 for i in 10..0 by -1 { ... } // yields 10, 9, ..., 1
 ```
 
-The bounds stay half-open. A positive step yields `n`, `n+s`, `n+2s`, and so on
-while the value is below `m`. A negative step yields values while they are above
-`m`, so `10..0 by -1` stops before `0`. A step with the wrong sign for its
+The bounds stay half-open. A positive step yields `m`, `m+s`, `m+2s`, and so on
+while the value is below `n`. A negative step yields values while they are above
+`n`, so `10..0 by -1` stops before `0`. A step with the wrong sign for its
 bounds, such as `0..10 by -1`, yields nothing.
 
 The same form works in a type annotation, an expression, and a pattern. Without
@@ -573,7 +573,7 @@ Negation:
   `-Infinity..0 | 1..11 by 2 | 10..Infinity`. The complement of a stepped range
   inside its own interval is the other `s - 1` residue classes.
 - That count grows with the step. Above a step of 16, the checker keeps
-  `int & ~(n..m by s)` unreduced instead of expanding it. That is the same kind
+  `int & ~(m..n by s)` unreduced instead of expanding it. That is the same kind
   of residual as `number & ~int` in section 4.2.
 
 Coverage in `match` follows from these rules:
@@ -761,7 +761,7 @@ that `MAX` is a value, and points the user at `type Max = typeof MAX`.
 
 ### 8.4. Printing
 
-The type printer prints `int` and `n..m`. It prints a one-member interval as its
+The type printer prints `int` and `m..n`. It prints a one-member interval as its
 literal, so `5..6` prints as `5`. The source printer used by `printer.Print`
 gains the same two forms for annotations and the `RangeExpr` form for
 expressions.
@@ -1004,7 +1004,7 @@ Several members look integral and are not, so they stay `number`:
    and the right-hand union normalization from section 3.3. The literal-union
    `.d.ts` emission lands here too.
 3. **Negation.** Covers the difference rewrite from section 4.1, residuals that
-   leave `int`, and tests over `~int` and `~(n..m)`.
+   leave `int`, and tests over `~int` and `~(m..n)`.
 4. **Integer arithmetic.** Covers the result types in section 5.1, computed from
    concrete operand types.
 5. **Range values.** Covers `RangeExpr`, the `IntRange` prelude class and its
@@ -1035,7 +1035,7 @@ The `float32` printing fix from section 10.4 lands before milestone 5.
 5. **Complement cutoff.** Section 7.4 stops expanding the complement of a
    stepped range above a step of 16. The cutoff trades precision for the size
    of the normal form.
-6. **Inclusive ranges.** `n..=m` would name `n` through `m` inclusive. It is not
+6. **Inclusive ranges.** `m..=n` would name `m` through `n` inclusive. It is not
    needed for this design and can be added later without conflict.
 7. **Boundary checks.** Exported functions could validate `int` and range
    parameters when called from TypeScript, behind a compiler flag.
