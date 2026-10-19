@@ -1,0 +1,2 @@
+export val big = 9007199254740991
+export val obj = {16777217: "x"}

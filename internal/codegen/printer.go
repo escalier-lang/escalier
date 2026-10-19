@@ -287,7 +287,7 @@ func (p *Printer) PrintLit(lit Lit) {
 	case *StrLit:
 		p.print(fmt.Sprintf("%q", l.Value))
 	case *NumLit:
-		p.print(strconv.FormatFloat(l.Value, 'f', -1, 32))
+		p.print(strconv.FormatFloat(l.Value, 'f', -1, 64))
 	case *BoolLit:
 		if l.Value {
 			p.print("true")
@@ -526,7 +526,7 @@ func (p *Printer) printObjKey(key ObjKey) {
 			p.print(fmt.Sprintf("%q", key.Value))
 		}
 	case *NumLit:
-		p.print(strconv.FormatFloat(key.Value, 'f', -1, 32))
+		p.print(strconv.FormatFloat(key.Value, 'f', -1, 64))
 	case *ComputedKey:
 		p.print("[")
 		p.PrintExpr(key.Expr)

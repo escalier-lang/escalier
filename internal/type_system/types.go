@@ -1043,7 +1043,7 @@ func (s *ObjTypeKey) String() string {
 	case StrObjTypeKeyKind:
 		return s.Str
 	case NumObjTypeKeyKind:
-		return strconv.FormatFloat(s.Num, 'f', -1, 32)
+		return strconv.FormatFloat(s.Num, 'f', -1, 64)
 	case SymObjTypeKeyKind:
 		return "symbol" + fmt.Sprint(s.Sym)
 	default:

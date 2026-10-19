@@ -1,0 +1,1 @@
+{"version":3,"file":"./index.js","sources":["../../lib/index.esc"],"sourcesContent":["export val big = 9007199254740991\nexport val obj = {16777217: \"x\"}\n"],"names":[],"mappings":"aAAW,AAAA,MAAM;aACN,AAAA,MAAM,CAAC,UAAU"}

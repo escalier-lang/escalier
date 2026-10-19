@@ -43,7 +43,7 @@ func (l *NumLit) Equal(other Lit) bool {
 	return false
 }
 func (l *NumLit) String() string {
-	return strconv.FormatFloat(l.Value, 'f', -1, 32)
+	return strconv.FormatFloat(l.Value, 'f', -1, 64)
 }
 
 type StrLit struct{ Value string }
