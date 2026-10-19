@@ -32,7 +32,7 @@ type Hi = 10
 type R  = Lo..Hi     // same as 0..10
 
 fn countTo(n: int) {
-    for i in 0..n { ... }   // i: 0..int, which is every int >= 0
+    for i in 0..n { ... }   // i: 0..Infinity, which is every int >= 0
 }
 ```
 
@@ -84,7 +84,26 @@ and empty, such as `5..5` or `5..3`, is an error, since it almost always means a
 typo. An empty range that arises through inference, such as from an alias
 instantiation, is `never`.
 
-### 2.3. Bounds that are not single integers
+### 2.3. Unbounded ranges
+
+`Infinity` may be the upper bound and `-Infinity` the lower bound. Neither is an
+`int`, and neither is ever a member of the range. They mark an end with no
+limit:
+
+| Annotation | Meaning |
+|---|---|
+| `0..Infinity` | every `int >= 0` |
+| `-Infinity..0` | every `int < 0` |
+| `-Infinity..Infinity` | `int` |
+
+The checker prints every unbounded interval it computes in this form, which
+section 4 relies on.
+
+`Infinity` is the only bound that is not an `int`. `0..1.5`, `0..NaN`,
+`0..number`, and `0..string` are errors. So are `Infinity..0` and
+`0..-Infinity`, which are empty.
+
+### 2.4. Bounds that are not single integers
 
 A bound is a type, not a number, so the general rule has to say what a bound
 like `int` or `0 | 5` means. The rule is a union over bound values:
@@ -93,27 +112,21 @@ like `int` or `0 | 5` means. The rule is a union over bound values:
 
 When `L` and `U` are single literals this is the plain range. Otherwise it
 reduces to `min(L)..max(U)`, where `min` and `max` are taken over the integers
-each bound admits:
+each bound admits. A bound that admits arbitrarily large integers reduces to
+`Infinity`, and one that admits arbitrarily small integers reduces to
+`-Infinity`:
 
 | Annotation | Meaning |
 |---|---|
-| `0..10` | `0`, `1`, ..., `9` |
 | `(0 \| 5)..10` | `0..10` |
 | `0..(5 \| 10)` | `0..10` |
-| `0..int` | every `int >= 0` |
-| `int..0` | every `int < 0` |
-| `int..int` | `int` |
+| `0..int` | `0..Infinity` |
+| `int..0` | `-Infinity..0` |
 | `0..(0..100)` | `0..99` |
 
 The last row comes up with generic bounds in section 8.5. The upper bound ranges
-over `0` through `99`, and the largest range it yields is `0..99`.
-
-The rule gives unbounded ranges without new syntax. `0..int` reads as "from 0
-to any int", which is every non-negative integer. It also gives the solver a
-printable form for every interval it computes, which section 4 relies on.
-
-Each bound must be a subtype of `int`. `0..1.5`, `0..number`, and `0..string`
-are errors.
+over `0` through `99`, and the largest range it yields is `0..99`. The `0..int`
+row is why `0..n` with `n: int` has type `IntRange<0..Infinity>` in section 6.1.
 
 ## 3. The `number` lattice
 
@@ -124,7 +137,7 @@ The new types sit between `number` and its integral literals.
                 /      \
              int        number & ~int
             /    \           |
-   int..0  0..int        1.5, 0.25, ...
+   -Infinity..0  0..Infinity        1.5, 0.25, ...
           |
         0..10
        /  |   \
@@ -140,7 +153,7 @@ The rules below define the order:
   with `int` is `never`.
 - `a..b <: c..d` when the first range is empty, or when `c <= a` and `b <= d`.
 - `n..m <: int` always.
-- `int <: n..m` only when the range is `int..int`.
+- `int <: n..m` only when the range is `-Infinity..Infinity`.
 
 The solver groups primitive types into value families. A family is a set of
 runtime values that no other family shares, such as numbers, strings, or
@@ -195,7 +208,7 @@ The existing rule for `S <: A | B` succeeds when `S` is a subtype of one member.
 That rule cannot prove `0..10 <: 0..5 | 5..10`, since neither member covers the
 whole range. The union must be normalized into its interval set before that rule
 runs. Normalizing merges `0..5 | 5..10` into `0..10` and the check succeeds. The
-same pass proves `int <: int..0 | 0..int`.
+same pass proves `int <: -Infinity..0 | 0..Infinity`.
 
 ### 3.4. Literal widening
 
@@ -214,15 +227,15 @@ as an open question.
 
 The integer intervals are closed under complement relative to `int`. The
 complement of a finite set of intervals is another finite set of intervals, and
-the union-over-bounds rule from section 2.3 prints the unbounded ends:
+section 2.3 gives the printed form of the unbounded ends:
 
 | Type | Normal form |
 |---|---|
-| `int & ~(0..10)` | `int..0 \| 10..int` |
+| `int & ~(0..10)` | `-Infinity..0 \| 10..Infinity` |
 | `0..10 & ~5` | `0..5 \| 6..10` |
 | `0..10 & ~(3..6)` | `0..3 \| 6..10` |
 | `int & ~int` | `never` |
-| `int & ~(0..int)` | `int..0` |
+| `int & ~(0..Infinity)` | `-Infinity..0` |
 | `int & ~number` | `never` |
 
 The solver checks `A <: ~B` by deciding whether `A & B` is `never`. The meet
@@ -248,7 +261,7 @@ infinities. No interval names it, so it stays as a residual
 a residual of the same kind.
 
 `number & ~(0..10)` mixes both cases. It equals
-`(number & ~int) | int..0 | 10..int`. That form is longer than the input and no
+`(number & ~int) | -Infinity..0 | 10..Infinity`. That form is longer than the input and no
 easier to read, so the solver prints `number & ~(0..10)` and keeps the interval
 split internal.
 
@@ -260,17 +273,17 @@ follow:
 ```esc
 fn bucket(n: int) -> string {
     return match n {
-        int..0 => "negative",
+        -Infinity..0 => "negative",
         0..10  => "small",
-        x      => `large ${x}`,  // x: 10..int
+        x      => `large ${x}`,  // x: 10..Infinity
     }
 }
 ```
 
 Coverage over `int` becomes an interval union. A match on an `int` scrutinee is
 exhaustive when the union of its unguarded range, literal, and `int` arms
-covers `int..int`. Replacing the last arm with `10..int => "large"` keeps the
-match above exhaustive, since `int..0 | 0..10 | 10..int` merges to `int`. A finite range scrutinee such
+covers `-Infinity..Infinity`. Replacing the last arm with `10..Infinity => "large"` keeps the
+match above exhaustive, since `-Infinity..0 | 0..10 | 10..Infinity` merges to `int`. A finite range scrutinee such
 as `0..3` is exhaustive when its arms cover `0`, `1`, and `2`.
 
 A `number` scrutinee is exhaustive with arms `x: int` and `x: ~int`, or with an
@@ -283,7 +296,7 @@ distributes over the members of a union `T`. A range is one atom rather than a
 union of literals, so `Exclude<0..10, 3>` checks `0..10 : 3`, finds it false,
 and returns `0..10` unchanged. `0..10 & ~3` gives the precise `0..3 | 4..10`.
 
-Splitting a range into literals for distribution would turn `0..int` into an
+Splitting a range into literals for distribution would turn `0..Infinity` into an
 infinite union, so this design does not distribute over ranges. The language
 guide should point readers at `T & ~U` for numeric exclusion. Section 12 asks
 whether `Exclude` should be redefined in terms of negation.
@@ -310,7 +323,7 @@ operand types:
 
 `%` with a zero divisor yields `NaN`, so `int % int` is not closed over `int`.
 The result is `int` only when the divisor type excludes `0`. That is a direct use
-of negation: `1..int` and `int & ~0` both qualify, since neither contains `0`.
+of negation: `1..Infinity` and `int & ~0` both qualify, since neither contains `0`.
 The lexer does not tokenize `%` yet, so this row applies once `%` lands.
 
 The bitwise operators always yield integers in JavaScript. When they are added
@@ -338,7 +351,7 @@ converts to inclusive bounds, applies the operator, and converts back:
   that pair `a` or `b-1` with `c` or `d-1`.
 
 A literal operand is the one-member range `k..k+1`, so `i + 1` with `i: 0..10`
-gives `1..11`. An unbounded end stays unbounded. `0..int + 1` gives `1..int`.
+gives `1..11`. An unbounded end stays unbounded. `0..Infinity + 1` gives `1..Infinity`.
 
 Interval arithmetic is a later milestone. Until it lands, any arithmetic on
 range operands yields `int`.
@@ -361,8 +374,8 @@ annotated `fn (a: int, b: int) { a + b }` returns `int`.
 
 ### 5.5. Narrowing on comparisons
 
-`if i < 10` on `i: int` could narrow `i` to `int..10` in the `then` branch and to
-`10..int` in the `else` branch. The narrowing is not needed for the first
+`if i < 10` on `i: int` could narrow `i` to `-Infinity..10` in the `then` branch and to
+`10..Infinity` in the `else` branch. The narrowing is not needed for the first
 milestones. Section 11 schedules it last.
 
 ## 6. Range values
@@ -377,7 +390,7 @@ val r = 0..10            // r: IntRange<0..10>
 for i in r { ... }       // i: 0..10
 
 fn f(n: int) {
-    val s = 0..n         // s: IntRange<0..int>
+    val s = 0..n         // s: IntRange<0..Infinity>
 }
 ```
 
@@ -389,27 +402,54 @@ The prelude declares `IntRange` as a class backed by the runtime package
 ```esc
 declare class IntRange<T: int> {
     readonly start: int,
-    readonly end: int,
-    readonly length: 0..int,
+    readonly end: number,
+    readonly length: number,
     has(&self, x: number) -> boolean,
     [Symbol.iterator](&self) -> Iterator<T, undefined, undefined>,
 }
 ```
 
-`for ... in` already reads `[Symbol.iterator]` through the iteration protocol,
-so it accepts an `IntRange` without a new arm in `syncElemType`.
+`end` and `length` are `number` because both are `Infinity` for an unbounded
+range.
 
-Each operand must be a subtype of `int`. `0..x` with `x: number` reports
-`range bound must be an int, found number`. A value range whose bounds are
-equal or reversed iterates zero times and is not an error.
+### 6.2. Iteration
 
-### 6.2. Precedence
+Every range value is iterable. `for ... in` already reads `[Symbol.iterator]`
+through the iteration protocol, so it accepts an `IntRange` without a new arm in
+`syncElemType`. The same member makes a range work anywhere an `Iterable` is
+expected, in Escalier and in TypeScript:
+
+```esc
+val xs = [...0..5]                 // xs: Array<0..5>
+val ys = Array.from(1..4)          // ys: Array<1..4>
+```
+
+The iterator yields `start`, `start + 1`, and so on while the value is below
+`end`. A range whose bounds are equal or reversed yields nothing and is not an
+error.
+
+### 6.3. Bounds
+
+The lower operand must be a subtype of `int`. The upper operand must be a
+subtype of `int` or be `Infinity`. `0..x` with `x: number` reports
+`range bound must be an int or Infinity, found number`.
+
+`n..Infinity` iterates without end, so a loop over it needs a `break` or
+`return`. Spreading a range whose type has an `Infinity` upper bound never
+finishes, so `[...0..Infinity]` and `Array.from(0..Infinity)` report an error
+when the checker sees the unbounded type.
+
+`-Infinity` is valid as a lower bound in types but not in values. An iterator
+cannot start from `-Infinity`, since adding `1` to it gives `-Infinity` again.
+`-Infinity..0` in expression position is an error.
+
+### 6.4. Precedence
 
 `..` binds looser than every arithmetic operator and tighter than the
 comparisons. `0..n+1` parses as `0..(n+1)`. `..` does not associate, so
 `a..b..c` is a parse error.
 
-### 6.3. Range patterns
+### 6.5. Range patterns
 
 A range in pattern position tests membership:
 
@@ -491,7 +531,7 @@ type IntRangeType struct {
 
 `float64` holds every integer a JavaScript `number` can hold, and the two
 infinities stand for unbounded ends. `int` is the fully unbounded range, so the
-lattice needs no separate `int` atom. `0..int` is `{0, +Inf}`. Integral
+lattice needs no separate `int` atom. `0..Infinity` is `{0, +Inf}`. Integral
 literals stay `LitType` and convert to one-member intervals inside the lattice
 operations.
 
@@ -524,8 +564,10 @@ These sites switch on primitives or literals and each needs a case for
 
 A bound written as a type reference resolves through `resolveScopedTypeRef`
 like any other reference. After resolution, the bound's type is checked against
-`int`, then reduced by the union-over-bounds rule to the `min` or `max` integer
-it admits. `type Lo = 0` gives `0`, and `type Lo = int` gives `-Inf`.
+`int`, then reduced by the union-over-bounds rule from section 2.4 to the `min`
+or `max` integer it admits. `type Lo = 0` gives `0`, and `type Lo = int` gives
+`-Infinity`. `Infinity` and `-Infinity` resolve as bounds without a type
+reference, since the prelude gives them no literal type.
 
 ### 8.4. Indexing
 
@@ -561,7 +603,7 @@ form, `IntRangeType` with `Lo` or `Hi` held as a type. The rules for it:
 
 Generic bounds are a later milestone. Before they land, a type-parameter bound
 reduces through its declared upper bound right away, so `0..N` with `N: int`
-becomes `0..int`.
+becomes `0..Infinity`.
 
 ## 9. Codegen
 
@@ -586,7 +628,7 @@ forms:
 |---|---|
 | `x: int` | `Number.isInteger(x)` |
 | `x: 0..10` | `Number.isInteger(x) && x >= 0 && x < 10` |
-| `x: 0..int` | `Number.isInteger(x) && x >= 0` |
+| `x: 0..Infinity` | `Number.isInteger(x) && x >= 0` |
 | `0..10` pattern on an `int` scrutinee | `x >= 0 && x < 10` |
 
 The last row drops `Number.isInteger` because the scrutinee's static type
@@ -594,13 +636,27 @@ already proves it.
 
 ### 9.3. Range expressions
 
-A `for ... in` over a literal range expression lowers to a counting loop. Each
-bound is evaluated once, in source order:
+A range is an `IntRange` object by default. Codegen replaces it with a counting
+loop when the loop is the only thing that can observe the object. That holds in
+two cases:
+
+- the iterated expression of a `for ... in` is a range expression
+- the iterated expression is a `val` bound to a range expression, and the loop
+  is the binding's only use
+
+The counting loop evaluates each bound once, in source order, and matches what
+the iterator would yield:
 
 ```js
 // for i in a..b { body }
 for (let i = a, $end = b; i < $end; i++) { body }
+
+// for i in a..Infinity { body }
+for (let i = a; ; i++) { body }
 ```
+
+`break`, `continue`, and labels work the same in either form, since both are
+JavaScript loops.
 
 Every other range expression builds an `IntRange` from `@escalier/runtime`:
 
@@ -630,7 +686,7 @@ TypeScript has no integer type. The emitter maps the new types as follows:
 | Escalier | TypeScript |
 |---|---|
 | `int` | `number` |
-| `0..int`, `int..0`, and other unbounded ranges | `number` |
+| `0..Infinity`, `-Infinity..0`, and other unbounded ranges | `number` |
 | a finite range with at most 16 members | union of its literals, such as `0 \| 1 \| 2` |
 | a larger finite range | `number` |
 | `IntRange<T>` | `IntRange<T'>`, where `T'` is `T` mapped by this table |
@@ -672,9 +728,9 @@ mechanism rather than edits to the generated `.esc` files:
 
 | Member | Type |
 |---|---|
-| `Array.prototype.length`, `String.prototype.length` | `0..int` |
-| `indexOf`, `lastIndexOf`, `findIndex`, `findLastIndex` | `-1..int` |
-| the index argument of `map`, `forEach`, `filter`, and the other array callbacks | `0..int` |
+| `Array.prototype.length`, `String.prototype.length` | `0..Infinity` |
+| `indexOf`, `lastIndexOf`, `findIndex`, `findLastIndex` | `-1..Infinity` |
+| the index argument of `map`, `forEach`, `filter`, and the other array callbacks | `0..Infinity` |
 | `Number.isInteger`, `Number.isSafeInteger` | narrow their argument to `int` |
 | `Number.MAX_SAFE_INTEGER`, `Number.MIN_SAFE_INTEGER` | their literal values |
 
@@ -714,22 +770,24 @@ The `float32` printing fix from section 9.4 lands before milestone 5.
 
 1. **Name.** The working name is `int`. `integer` reads closer to
    `Number.isInteger` and avoids suggesting a fixed-width type. `int` is shorter.
-2. **Open-ended syntax.** `0..int` and `int..0` print unbounded ranges with no
-   new syntax. Rust-style `0..` and `..0` would be shorter, but they collide
-   with spread in some positions and need their own parse rules.
+2. **Open-ended shorthand.** Rust-style `0..` and `..0` would be shorter than
+   `0..Infinity` and `-Infinity..0`. They collide with spread in some positions
+   and need their own parse rules.
 3. **Widening `var`.** Section 3.4 keeps `var i = 0` as `number`. Widening an
    integral literal to `int` would help counting loops and would reject
    accumulators that later receive fractions.
 4. **`Exclude` over ranges.** Section 4.4 keeps the distributive definition,
    which leaves ranges whole. Redefining `Exclude<T, U>` as `T & ~U` would
    change its result for object types too.
-5. **Inclusive ranges.** `n..=m` would name `n` through `m` inclusive. It is not
+5. **Step size.** A stepped range such as every even integer in `0..10` needs
+   syntax and a lattice atom for arithmetic progressions.
+6. **Inclusive ranges.** `n..=m` would name `n` through `m` inclusive. It is not
    needed for this design and can be added later without conflict.
-6. **Boundary checks.** Exported functions could validate `int` and range
+7. **Boundary checks.** Exported functions could validate `int` and range
    parameters when called from TypeScript, behind a compiler flag.
-7. **Literal-union threshold.** Section 10.1 uses 16 members as the cutoff for
+8. **Literal-union threshold.** Section 10.1 uses 16 members as the cutoff for
    emitting a range as a TypeScript literal union.
-8. **`bigint` ranges.** `1n..10n` would need a parallel interval atom in the
+9. **`bigint` ranges.** `1n..10n` would need a parallel interval atom in the
    `bigint` family. The lexer does not read `bigint` literals yet.
-9. **Template literal types.** `` `${int}` `` could match strings of decimal
+10. **Template literal types.** `` `${int}` `` could match strings of decimal
    digits with an optional sign. The checker has the regex machinery for it.
