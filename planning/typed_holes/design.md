@@ -617,22 +617,15 @@ diagnostics.
 print any type diagnostic, with the source excerpt and the location highlighted.
 The `in scope:` and `contains:` lines follow the excerpt.
 
-The build counts every entry in `TypeErrors` as a failure today
-(cmd/escalier/build.go:241), so a hole would fail the build. Whether warnings
-fail the build becomes a setting instead:
+The build counts every entry in `TypeErrors` as a failure
+(cmd/escalier/build.go:241), so a hole fails the build. The build still writes
+the generated JavaScript first, so a program with holes can run up to its first
+hole. Making it configurable whether warnings fail the build is
+[deferred](#deferred).
 
-1. `compiler.Diagnostic` gets an `IsWarning()` method, or the compiler splits
-   warnings into their own list, so the build can tell the two apart.
-2. A `--warnings-as-errors` flag, with a matching `PackageConfig` field, decides
-   whether warnings count toward failure. It defaults to on, so any warning fails
-   the build. Passing `--warnings-as-errors=false` or setting the field to `false`
-   makes the build print warnings and still succeed.
-3. Holes are warnings, so the same setting decides whether they fail the build.
-   CI keeps the default to reject unfinished code, and local development turns
-   it off to run a program that still has holes.
-
-The setting covers the existing warnings too, such as `UnusedTypeParamError`.
-The default matches what the build does today, where every warning fails it.
+`compiler.Diagnostic` gets an `IsWarning()` method, or the compiler splits
+warnings into their own list. The CLI labels warnings as warnings, and the LSP
+maps them to a lower severity.
 
 ### LSP
 
@@ -684,7 +677,7 @@ the author didn't intend.
 1. Parse `?` and `?name`, infer the expected type, report it through the CLI with
    the bindings in scope, and generate the throw. Keep holes out of
    generalization and out of the thrown type. Replace solved type variables in
-   the report. Add the `--warnings-as-errors` setting.
+   the report.
 2. Fix LSP severity mapping, and add the diagnostic, hover and goal list.
 3. Add non-empty holes.
 4. Add the `alongside` report, and leave hole arguments out of overload
@@ -694,7 +687,10 @@ the author didn't intend.
 
 ## Deferred
 
+- A `--warnings-as-errors` flag and `PackageConfig` field that decide whether
+  warnings fail the build. It would default to on, which matches the build
+  today. Turning it off would let a program with holes build cleanly.
 - A hole-specific setting that fails the build on holes while other warnings
-  still pass. `--warnings-as-errors` covers holes for now.
+  still pass.
 - Holes that share a name and a type, as in Lean 4, where a repeated `?x` is one
   hole and every use constrains it.
