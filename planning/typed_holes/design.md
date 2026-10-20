@@ -540,7 +540,9 @@ A function that throws a value it doesn't declare gets an error today:
 
 If a hole added to the thrown type, every function containing one would get
 this error, and the error would hide the hole's own report. The checker treats
-the hole's runtime error as a panic outside the `throws` system.
+the hole's runtime error as a panic outside the `throws` system. The type system
+never sees the error a hole throws, so a hole can't cause a type error anywhere
+else in the program.
 
 ## Diagnostics
 
@@ -582,12 +584,15 @@ fail the build becomes a setting instead:
 1. `compiler.Diagnostic` gets an `IsWarning()` method, or the compiler splits
    warnings into their own list, so the build can tell the two apart.
 2. A `--warnings-as-errors` flag, with a matching `PackageConfig` field, decides
-   whether warnings count toward failure. When it's off, the build prints warnings
-   and still succeeds. When it's on, any warning fails the build.
+   whether warnings count toward failure. It defaults to on, so any warning fails
+   the build. Passing `--warnings-as-errors=false` or setting the field to `false`
+   makes the build print warnings and still succeed.
 3. Holes are warnings, so the same setting decides whether they fail the build.
-   CI turns it on to reject unfinished code, and local development leaves it off.
+   CI keeps the default to reject unfinished code, and local development turns
+   it off to run a program that still has holes.
 
 The setting covers the existing warnings too, such as `UnusedTypeParamError`.
+The default matches what the build does today, where every warning fails it.
 
 ### LSP
 
@@ -649,13 +654,12 @@ the author didn't intend.
 
 ## Open questions
 
-- Should a hole's runtime error be catchable as an ordinary `Error`, or should it
-  use a dedicated class so tests can tell holes apart from other failures?
-- Should `--warnings-as-errors` default to on, the way GHC treats holes as errors
-  by default? Or should it default to off and leave CI to turn it on?
-- Does any project need holes to fail the build while other warnings don't? If
-  so, a hole-specific setting can sit beside the general one.
 - Should hole names be unique per module or per file? Per module matches how the
   checker scopes declarations. Per file is easier to see while editing.
-- Should the bindings list include the prelude when the expected type is
-  something only a prelude value provides, such as a function from `Math`?
+- The bindings list leaves out prelude values such as `Math.sqrt` to stay short.
+  Should it include a prelude value when that value's type fits the hole?
+
+## Deferred
+
+- A hole-specific setting that fails the build on holes while other warnings
+  still pass. `--warnings-as-errors` covers holes for now.
