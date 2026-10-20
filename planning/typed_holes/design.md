@@ -89,9 +89,10 @@ whitespace between them. `? total` is an anonymous hole followed by the
 identifier `total`, which is a parse error.
 
 Hole names live in their own namespace. `?total` doesn't refer to a binding named
-`total` and doesn't conflict with one. A name must be unique within a module, and
-a duplicate is an error that points at both holes. Requiring unique names keeps
-the CLI report and the LSP goal list unambiguous. The checker numbers anonymous
+`total` and doesn't conflict with one. A name is a label and doesn't have to be
+unique. Two holes named `?todo` are separate holes, and each gets its own report.
+Every report includes the hole's location, so a repeated name is never
+ambiguous. GHC treats `_name` holes the same way. The checker numbers anonymous
 holes by source position, as `?_1`, `?_2`, and so on, for reporting only.
 
 ### Non-empty holes
@@ -691,12 +692,9 @@ the author didn't intend.
 5. Add hole fits and code actions: fill with a binding, case-split, and
    introduce a lambda when the expected type is a function.
 
-## Open questions
-
-- Should hole names be unique per module or per file? Per module matches how the
-  checker scopes declarations. Per file is easier to see while editing.
-
 ## Deferred
 
 - A hole-specific setting that fails the build on holes while other warnings
   still pass. `--warnings-as-errors` covers holes for now.
+- Holes that share a name and a type, as in Lean 4, where a repeated `?x` is one
+  hole and every use constrains it.
