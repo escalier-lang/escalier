@@ -259,15 +259,19 @@ diagnostics.
 print any type diagnostic, with the source excerpt and the location highlighted.
 The `in scope:` and `contains:` lines follow the excerpt.
 
-Two changes are needed in the build command:
+The build counts every entry in `TypeErrors` as a failure today
+(cmd/escalier/build.go:241), so a hole would fail the build. Whether warnings
+fail the build becomes a setting instead:
 
-1. The build counts every entry in `TypeErrors` as a failure today
-   (cmd/escalier/build.go:241). It should count only entries that aren't warnings.
-   `compiler.Diagnostic` needs an `IsWarning()` method, or the compiler needs to
-   split warnings into their own list. Either change also fixes the existing
-   warnings, which fail the build today.
-2. A `--deny-holes` flag turns hole warnings into errors so CI can reject
-   unfinished code.
+1. `compiler.Diagnostic` gets an `IsWarning()` method, or the compiler splits
+   warnings into their own list, so the build can tell the two apart.
+2. A `--warnings-as-errors` flag, with a matching `PackageConfig` field, decides
+   whether warnings count toward failure. When it's off, the build prints warnings
+   and still succeeds. When it's on, any warning fails the build.
+3. Holes are warnings, so the same setting decides whether they fail the build.
+   CI turns it on to reject unfinished code, and local development leaves it off.
+
+The setting covers the existing warnings too, such as `UnusedTypeParamError`.
 
 ### LSP
 
@@ -315,19 +319,21 @@ the author didn't intend.
 ## Phases
 
 1. Parse `?` and `?name`, infer the expected type, report it through the CLI with
-   the bindings in scope, and generate the throw. Fix the CLI's warning count.
+   the bindings in scope, and generate the throw. Add the `--warnings-as-errors`
+   setting.
 2. Fix LSP severity mapping, and add the diagnostic, hover and goal list.
 3. Add non-empty holes.
-4. Add `--deny-holes`.
-5. Add hole fits and code actions: fill with a binding, case-split, and
+4. Add hole fits and code actions: fill with a binding, case-split, and
    introduce a lambda when the expected type is a function.
 
 ## Open questions
 
 - Should a hole's runtime error be catchable as an ordinary `Error`, or should it
   use a dedicated class so tests can tell holes apart from other failures?
-- Should `--deny-holes` be the default for `escalier build` and opt-out for
-  development, the way GHC treats holes as errors by default?
+- Should `--warnings-as-errors` default to on, the way GHC treats holes as errors
+  by default? Or should it default to off and leave CI to turn it on?
+- Does any project need holes to fail the build while other warnings don't? If
+  so, a hole-specific setting can sit beside the general one.
 - Should hole names be unique per module or per file? Per module matches how the
   checker scopes declarations. Per file is easier to see while editing.
 - Should the bindings list include the prelude when the expected type is
