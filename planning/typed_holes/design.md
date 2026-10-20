@@ -231,9 +231,11 @@ same scope structure, so the walk lives in the solver and the LSP reuses it.
 ## Holes in larger programs
 
 The examples below show what a hole reports when inference has to work harder.
-Each expected type was checked against the current solver. In each check an
+Most expected types were checked against the current solver. In each check an
 unannotated parameter stood in for the hole, because the checker infers a
-parameter's type from its uses the same way it would infer a hole's. The reports
+parameter's type from its uses the same way it would infer a hole's. The
+generic-function, `compose` and let-polymorphism examples weren't checked this
+way. Their reports follow from how annotations and generalization work. The reports
 are rendered in the format this doc proposes.
 
 Some examples also turn up a requirement the basic design misses. Each of those
