@@ -228,6 +228,318 @@ to keep the list short. The LSP's `scopeView`
 walks a solver scope level by level for completions. The hole report reads the
 same scope structure, so the walk lives in the solver and the LSP reuses it.
 
+## Holes in larger programs
+
+The examples below show what a hole reports when inference has to work harder.
+Each expected type was checked against the current solver. In each check an
+unannotated parameter stood in for the hole, because the checker infers a
+parameter's type from its uses the same way it would infer a hole's. The reports
+are rendered in the format this doc proposes.
+
+Some examples also turn up a requirement the basic design misses. Each of those
+ends with a paragraph that states the requirement.
+
+### The type comes from later uses
+
+A hole bound to a name learns from every later use of that name.
+
+```esc
+declare fn listen(port: number) -> boolean
+declare fn log(msg: string) -> boolean
+
+fn start() {
+    val cfg = ?cfg
+    listen(cfg.port)
+    log(cfg.host)
+}
+```
+
+```
+hole ?cfg : {host: string, port: number}
+```
+
+Neither use mentions the whole object type. Each member read adds one upper
+bound, and the intersection of the two is the record the author has to build.
+
+This works only if `val cfg` doesn't generalize the hole's type. A generalized
+binding gives each use a fresh copy of the type, so no use would reach the hole.
+A hole isn't a syntactic value, so it must fall under the value restriction the
+same way a call does.
+
+### Callbacks
+
+A hole in a callback's body learns from the call that receives the callback, and
+the callback's parameters get their types from the same call.
+
+```esc
+declare fn map<T, U>(xs: Array<T>, f: fn (x: T) -> U) -> Array<U>
+
+val prices: Array<number> = [3, 4]
+val labels: Array<string> = map(prices, fn (p) { return ?label })
+```
+
+```
+hole ?label : string
+  in scope:
+    p: number
+    prices: Array<number>
+```
+
+The constraint travels three steps. `labels` fixes `U` to `string`, `U` is the
+callback's return type, and the hole is the callback's return value. `p` has no
+annotation, but `map` gives it the type `number`.
+
+A hole can also stand for the whole callback. The report is then the full
+signature the call wants:
+
+```esc
+val labels: Array<string> = map(prices, ?toLabel)
+```
+
+```
+hole ?toLabel : fn (x: number) -> string
+```
+
+The same holds for a callback whose type parameter appears in more than one
+place:
+
+```esc
+declare fn fold<T, A>(xs: Array<T>, init: A, f: fn (acc: A, x: T) -> A) -> A
+
+val names: Array<string> = ["ada", "grace"]
+val total: number = fold(names, 0, ?step)
+```
+
+```
+hole ?step : fn (acc: number, x: string) -> number
+```
+
+The solver's raw answer is `fn (acc: A | 0, x: string) -> A & number`. That type
+is correct, but it reads poorly. The report has to replace each type variable
+that the instantiation solved with its solution, so `A` becomes `number`.
+
+### Generic functions
+
+A hole passed to a generic function gets its type from what the call's result
+must be:
+
+```esc
+fn identity<T>(x: T) -> T { return x }
+
+val n: number = identity(?x)
+```
+
+```
+hole ?x : number
+```
+
+A hole inside a generic function reports in terms of that function's type
+parameters:
+
+```esc
+fn first<T>(xs: Array<T>) -> T {
+    return ?first
+}
+```
+
+```
+hole ?first : T
+  in scope:
+    xs: Array<T>
+```
+
+### Curried functions and function position
+
+When a curried function's type is annotated, a hole at any level gets the rest
+of the signature:
+
+```esc
+val add: fn (a: number) -> fn (b: number) -> number = fn (a) {
+    return ?addA
+}
+```
+
+```
+hole ?addA : fn (b: number) -> number
+  in scope:
+    a: number
+```
+
+A hole in function position gets a signature built from its call. The author
+writes the call first and asks what function would fit it:
+
+```esc
+val parse = fn (a: number) { return a }
+val show = fn (b: string) { return b }
+val ok: boolean = ?combine(parse)(show)
+```
+
+```
+hole ?combine : fn (arg0: fn (a: number) -> number) -> fn (arg0: fn (b: string) -> string) -> boolean
+```
+
+The two calls make the hole a curried function. Each call contributes one
+parameter, and the annotation on `ok` fixes the final result.
+
+A hole also helps write a combinator. The expected type and the bindings in
+scope narrow the body down to one sensible choice:
+
+```esc
+fn compose(
+    f: fn (b: string) -> boolean,
+    g: fn (a: number) -> string,
+) -> fn (n: number) -> boolean {
+    return ?composed
+}
+```
+
+```
+hole ?composed : fn (n: number) -> boolean
+  in scope:
+    f: fn (b: string) -> boolean
+    g: fn (a: number) -> string
+```
+
+The only way to get from `number` to `boolean` with `f` and `g` is
+`fn (n) { return f(g(n)) }`.
+
+The return annotation on `compose` is what gives the hole its type. Without it,
+the checker generalizes `compose` before any call site is checked, and a call
+site can't reach the hole. [Let-polymorphism](#let-polymorphism) explains why.
+
+### Mutual recursion
+
+Mutually recursive functions are inferred together and generalized together. A
+hole in one function can therefore learn from a sibling function's annotation:
+
+```esc
+fn isEven(n: number) -> boolean {
+    return if n == 0 { true } else { isOdd(n - 1) }
+}
+
+fn isOdd(n) {
+    return if n == 0 { ?base } else { isEven(n - 1) }
+}
+```
+
+```
+hole ?base : boolean
+  in scope:
+    n: number
+```
+
+`isOdd` has no annotation, but its result flows into the return of `isEven`,
+which does have one.
+
+Without the annotation on `isEven`, nothing constrains the hole. The hole's
+value flows into the return of `isOdd`, then into the return of `isEven`, and
+neither return is used anywhere with a type. Any value fits, so `unconstrained`
+is the correct answer. It isn't a helpful one, though, because the other branch
+already shows that the author wants a `boolean`.
+
+The report should add the other values that flow into the same place. The
+checker collects them by walking from the hole's type variable to each variable
+it flows into and reading those variables' lower bounds:
+
+```
+hole ?base is unconstrained
+  flows into: the return value of isOdd
+  alongside: true
+```
+
+The diagnostic gains an `Alongside` field for this.
+
+### Narrowing around a hole
+
+A hole's outward type is `never`, so it adds nothing to the types around it.
+Those types are therefore narrower than they will be once the hole is filled.
+With the unannotated version of the example above, the checker infers:
+
+```esc
+// inferred: fn (n: number) -> true
+fn isOdd(n) {
+    return if n == 0 { ?base } else { isEven(n - 1) }
+}
+```
+
+Code that calls `isOdd` sees `true` and can type-check against it. That code can
+then fail once the hole is filled with `false`. This is the cost of keeping a
+hole out of inference, and it's the same cost `throw` has today. The goal list
+lets the author see which signatures still depend on a hole. The LSP's hover on
+`isOdd` should also say that its type is provisional.
+
+### Let-polymorphism
+
+A generic function is generalized once, and each call gets a fresh copy of its
+type. Constraints from a call site therefore never reach a hole inside the
+function:
+
+```esc
+fn wrap(x) {
+    return {value: x, extra: ?extra}
+}
+
+val w: {value: number, extra: string} = wrap(1)
+```
+
+```
+hole ?extra is unconstrained
+```
+
+The call site's `string` constrains a copy of the hole's type, not the hole.
+That's correct, because `wrap` has to work for every caller. A future report
+could still list the types call sites expect as a hint, with the uses labeled
+as call sites.
+
+### Overloads
+
+A hole has no lower bounds, so it fits every overload's parameter. The checker
+commits to the first overload that accepts the arguments, which is always the
+first one:
+
+```esc
+declare fn pick(x: number) -> string
+declare fn pick(x: string) -> number
+
+val r: number = pick(?x)
+```
+
+The checker reports `cannot constrain string <: number` today. It picks the
+first overload, and that overload's `string` result doesn't match `r`. The second
+overload would have worked.
+
+When an argument is a hole, overload resolution should leave that argument out
+of the decision. It should pick by the other arguments and the expected result,
+and report the remaining candidates when more than one is left:
+
+```
+hole ?x : string
+```
+
+```
+hole ?x : number | string
+  candidates:
+    pick(x: number) -> string
+    pick(x: string) -> number
+```
+
+The first report is for `val r: number = pick(?x)`. The second is for a bare
+`pick(?x)`, where nothing narrows the choice. The diagnostic gains a
+`Candidates` field for this.
+
+### Throws
+
+A hole lowers to a `throw`, but it must not add to the function's thrown type.
+A function that throws a value it doesn't declare gets an error today:
+
+```
+`isOdd` can throw `"hole"`, but it doesn't declare it; add `throws string` to `isOdd`'s signature
+```
+
+If a hole added to the thrown type, every function containing one would get
+this error, and the error would hide the hole's own report. The checker treats
+the hole's runtime error as a panic outside the `throws` system.
+
 ## Diagnostics
 
 ### The diagnostic type
@@ -236,12 +548,14 @@ The solver produces one `HoleDiagnostic` per hole:
 
 ```go
 type HoleDiagnostic struct {
-    Hole     *ast.HoleExpr
-    Name     string            // the source name, or "_1", "_2", ...
-    Expected soltype.Type      // nil when the hole is unconstrained
-    Contains soltype.Type      // the inner type of a non-empty hole, or nil
-    FitErr   SolverError       // why Contains doesn't fit, or nil
-    Bindings []HoleBinding     // innermost scope first
+    Hole       *ast.HoleExpr
+    Name       string              // the source name, or "_1", "_2", ...
+    Expected   soltype.Type        // nil when the hole is unconstrained
+    Contains   soltype.Type        // the inner type of a non-empty hole, or nil
+    FitErr     SolverError         // why Contains doesn't fit, or nil
+    Bindings   []HoleBinding       // innermost scope first
+    Alongside  []soltype.Type      // other values that flow where the hole's value flows
+    Candidates []*soltype.FuncType // overloads still open when the hole is an argument
 }
 
 func (e *HoleDiagnostic) IsWarning() bool { return true }
@@ -312,6 +626,8 @@ the author didn't intend.
   `HoleDiagnostic` rendered as a string, including unconstrained holes, holes in
   generic functions, holes inside overload calls, and non-empty holes that fit and
   don't fit.
+- Solver tests also cover each example in [holes in larger
+  programs](#holes-in-larger-programs), asserting the report shown there.
 - A fixture under `fixtures/typed_holes/` covers the CLI output and the generated
   JavaScript.
 - LSP tests cover severity, hover and document symbols.
@@ -319,11 +635,14 @@ the author didn't intend.
 ## Phases
 
 1. Parse `?` and `?name`, infer the expected type, report it through the CLI with
-   the bindings in scope, and generate the throw. Add the `--warnings-as-errors`
-   setting.
+   the bindings in scope, and generate the throw. Keep holes out of
+   generalization and out of the thrown type. Replace solved type variables in
+   the report. Add the `--warnings-as-errors` setting.
 2. Fix LSP severity mapping, and add the diagnostic, hover and goal list.
 3. Add non-empty holes.
-4. Add hole fits and code actions: fill with a binding, case-split, and
+4. Add the `alongside` report, and leave hole arguments out of overload
+   resolution with a `candidates` report.
+5. Add hole fits and code actions: fill with a binding, case-split, and
    introduce a lambda when the expected type is a function.
 
 ## Open questions
