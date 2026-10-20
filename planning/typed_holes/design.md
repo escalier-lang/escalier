@@ -222,11 +222,49 @@ suspends the fit check, not the rest of the checker.
 ### Bindings in scope
 
 The report lists the value bindings visible at the hole, innermost first, with
-their types coalesced for display. It omits the prelude and imported namespaces
-to keep the list short. The LSP's `scopeView`
+their types coalesced for display. This list shows the hole's context, so it
+holds only local bindings. The prelude and imported namespaces would bury that
+context under hundreds of names. Prelude and imported values still appear as
+[hole fits](#hole-fits) when their types fit. The LSP's `scopeView`
 ([cmd/lsp-server/scope_view.go](../../cmd/lsp-server/scope_view.go)) already
 walks a solver scope level by level for completions. The hole report reads the
 same scope structure, so the walk lives in the solver and the LSP reuses it.
+
+### Hole fits
+
+A hole fit is a value whose type fits the hole's expected type. The checker
+tests every value visible at the hole:
+
+- local bindings,
+- the module's declarations,
+- imports,
+- the prelude, including namespace members such as `Math.sqrt`.
+
+A generic value fits when some instantiation of it fits. `identity` fits
+`fn (x: number) -> number`, for example. The report lists fits in the order
+above, so the values nearest the hole come first.
+
+```esc
+fn hypot(a: number, b: number) -> number {
+    return ?root(a * a + b * b)
+}
+```
+
+```
+hole ?root : fn (arg0: number) -> number
+  in scope:
+    a: number
+    b: number
+  fits:
+    Math.sqrt
+    Math.abs
+    Math.cbrt
+    ... and 21 more
+```
+
+The CLI shows the first ten fits and a count of the rest. The LSP returns all of
+them, since an editor menu scrolls. An unconstrained hole has no fits list,
+because every value fits it.
 
 ## Holes in larger programs
 
@@ -560,6 +598,7 @@ type HoleDiagnostic struct {
     Bindings   []HoleBinding       // innermost scope first
     Alongside  []soltype.Type      // other values that flow where the hole's value flows
     Candidates []*soltype.FuncType // overloads still open when the hole is an argument
+    Fits       []HoleFit           // values whose type fits, nearest scope first
 }
 
 func (e *HoleDiagnostic) IsWarning() bool { return true }
@@ -656,8 +695,6 @@ the author didn't intend.
 
 - Should hole names be unique per module or per file? Per module matches how the
   checker scopes declarations. Per file is easier to see while editing.
-- The bindings list leaves out prelude values such as `Math.sqrt` to stay short.
-  Should it include a prelude value when that value's type fits the hole?
 
 ## Deferred
 
