@@ -101,8 +101,22 @@ limit:
 | `-Infinity..0` | every `int < 0` |
 | `-Infinity..Infinity` | `int` |
 
-The checker prints every unbounded interval it computes in this form, which
-section 4 relies on.
+A missing bound is shorthand for the matching infinity:
+
+| Shorthand | Long form |
+|---|---|
+| `0..` | `0..Infinity` |
+| `..0` | `-Infinity..0` |
+| `..=0` | `-Infinity..1` |
+
+A bare `..` with neither bound is not a type, since `int` already names that
+set. `0..=` is an error, because an inclusive range needs an upper bound to
+include. Section 7.2 gives the rules that decide when a bound is missing.
+
+The checker prints every unbounded interval it computes in the long form, which
+section 4 relies on. A printed type often ends an error message, and a trailing
+`..` there reads like truncated text. The long form is valid in every position
+where the shorthand is.
 
 `Infinity` is the only bound that is not an `int`. `0..1.5`, `0..NaN`,
 `0..number`, and `0..string` are errors. So are `Infinity..0` and
@@ -585,7 +599,7 @@ declare class IntRangeIter<T: int> {
 ```
 
 `length` is `number` because it is `Infinity` for an unbounded
-range. Open question 14 covers giving it an exact type such as `Sub<E, S>`.
+range. Open question 13 covers giving it an exact type such as `Sub<E, S>`.
 
 ### 6.2. Iteration
 
@@ -632,13 +646,16 @@ subtype of `int | Infinity`, using the `Infinity` type from section 3.5. `0..x` 
 `range bound must be an int or Infinity, found number`.
 
 `m..Infinity` iterates without end, so a loop over it needs a `break` or
-`return`. Spreading a range whose type has an `Infinity` upper bound never
+`return`. `m..` is the same value, so `for i in 0.. { … }` counts up from `0`
+until the body exits. Spreading a range whose type has an `Infinity` upper bound never
 finishes, so `[...0..Infinity]` and `Array.from(0..Infinity)` report an error
 when the checker sees the unbounded type.
 
 `-Infinity` is valid as a lower bound in types but not in values. An iterator
 cannot start from `-Infinity`, since adding `1` to it gives `-Infinity` again.
-`-Infinity..0` in expression position is an error.
+`-Infinity..0` in expression position is an error, and so are its shorthands
+`..0` and `..=0`. The message for `..xs` suggests `...xs` when `xs` is not an
+`int`, since that is most often a mistyped spread.
 
 ### 6.4. Precedence
 
@@ -691,7 +708,37 @@ and comparison levels. The parser builds a new `RangeExpr` node with `Start`,
 `End`, and an `Inclusive` flag, not a `BinaryExpr`. `RangeTypeAnn` carries the
 same flag. A range is not a call to a prelude operator binding,
 and its codegen differs, so a distinct node keeps both paths simple. The node
-goes through the AST generator in `tools/gen_ast`.
+goes through the AST generator in `tools/gen_ast`. `Start` and `End` are
+optional, for the shorthand in section 2.3.
+
+A prefix `..` or `..=` starts a range with no lower bound. After a `..` that
+follows an operand, the parser reads an upper bound when the next token can
+start an expression, with two exceptions:
+
+1. An `{` never starts an upper bound. Without this rule, `for i in 0.. { … }`
+   would read the loop body as an object literal bound. An object is never an
+   `int`, so the rule rejects nothing that could type-check.
+2. In single-line mode, the upper bound must start on the same line as the
+   `..`. Otherwise the range is open:
+
+   ```esc
+   val r = 0..
+   foo()        // a separate statement, not the bound of r
+   ```
+
+   Other binary operators accept a right operand on the next line. A range is
+   the one operator whose right operand is optional, so a line break has to
+   decide between the two readings. Inside parentheses or brackets the parser
+   is in multi-line mode, and a bound on the next line still attaches.
+
+Any other token that cannot start an expression ends the range, so `f(0..)`,
+`[0.., 1]`, and `10.. => "large"` are open ranges. `0..-1` reads `-1` as the
+bound.
+
+`..` and `...` are separate tokens, so the shorthand never parses as a spread.
+A mistyped spread is still easy to write. `[..xs]` in an expression is a value
+range with no start. `[A, B, ..]` in a tuple type is a bare `..`. Both are
+errors under the rules above, and each message suggests `...`.
 
 ### 7.3. Type annotations
 
@@ -699,7 +746,8 @@ goes through the AST generator in `tools/gen_ast`.
 keyword. That keeps `int` usable as a value identifier, as in `val int = 5`.
 The resolver maps it to the new `int` type the way it maps `number`.
 
-A range annotation is `RangeTypeAnn{Start, End}`. Each bound is one of:
+A range annotation is `RangeTypeAnn{Start, End}`. Either bound may be missing,
+as section 2.3 describes. A present bound is one of:
 
 - an integer literal, including a negative one such as `-5`
 - `Infinity` as an upper bound, or `-Infinity` as a lower bound
@@ -712,6 +760,13 @@ to names and literals keeps every range readable at a glance.
 
 `..` binds tighter than `&` and `|`, so `0..10 | 20..30` is a union of two
 ranges. `-5..5` parses as `(-5)..5`.
+
+Deciding whether an upper bound is present is simpler in a type than in an
+expression. A bound can only start with an integer literal, `-`, or an
+identifier, so any other token ends the range. `Array<0..>`, `0.. | ..-5`,
+and `[0.., string]` are open ranges with no lookahead. The same-line rule
+from section 7.2 applies, so a type alias that ends in `0..` does not take an
+identifier on the next line as its bound.
 
 A value identifier is not a valid bound. `0..MAX` with `val MAX = 10` reports
 that `MAX` is a value, and points the user at `type Max = typeof MAX`.
@@ -1168,7 +1223,8 @@ if val k: int = i {
    `-Infinity` types, the `finite` alias, and the `x: int`, `x: finite`, and
    `x: NaN` type tests land here too.
 2. **Range annotations.** Covers the `DotDot` and `DotDotEq` tokens, inclusive
-   ranges from section 2.6, the number-scan fix,
+   ranges from section 2.6, the open-ended shorthand from section 2.3, the
+   number-scan fix,
    `RangeTypeAnn` with literal and type-reference bounds, interval meets, joins,
    and the right-hand union normalization from section 3.3. The literal-union
    `.d.ts` emission lands here too.
@@ -1194,40 +1250,37 @@ The `float32` printing fix from section 9.4 lands before milestone 5.
 
 1. **Name.** The working name is `int`. `integer` reads closer to
    `Number.isInteger` and avoids suggesting a fixed-width type. `int` is shorter.
-2. **Open-ended shorthand.** Rust-style `0..` and `..0` would be shorter than
-   `0..Infinity` and `-Infinity..0`. They collide with spread in some positions
-   and need their own parse rules.
-3. **Widening `var`.** Section 3.4 keeps `var i = 0` as `number`. Widening an
+2. **Widening `var`.** Section 3.4 keeps `var i = 0` as `number`. Widening an
    integral literal to `int` would help counting loops and would reject
    accumulators that later receive fractions.
-4. **`Exclude` over ranges.** Section 4.4 keeps the distributive definition,
+3. **`Exclude` over ranges.** Section 4.4 keeps the distributive definition,
    which leaves ranges whole. Redefining `Exclude<T, U>` as `T & ~U` would
    change its result for object types too.
-5. **Stepped types.** `step` and `reversed` in section 6.2 change iteration
+4. **Stepped types.** `step` and `reversed` in section 6.2 change iteration
    only, so no type names every even integer in `0..100`. A `by` form such as
    `0..100 by 2` could add stepped types later without conflicting with the
    methods. It needs a lattice atom that records a remainder for the step, and
    meets that compute least common multiples.
-6. **Boundary checks.** Exported functions could validate `int` and range
+5. **Boundary checks.** Exported functions could validate `int` and range
    parameters when called from TypeScript, behind a compiler flag.
-7. **Literal-union threshold.** Section 10.1 uses 16 members as the cutoff for
+6. **Literal-union threshold.** Section 10.1 uses 16 members as the cutoff for
    emitting a range as a TypeScript literal union.
-8. **`bigint` ranges.** `1n..10n` would need a parallel interval atom in the
+7. **`bigint` ranges.** `1n..10n` would need a parallel interval atom in the
    `bigint` family. The lexer does not read `bigint` literals yet.
-9. **Template literal types.** `` `${int}` `` could match strings of decimal
+8. **Template literal types.** `` `${int}` `` could match strings of decimal
    digits with an optional sign. The checker has the regex machinery for it.
-10. **Comparing with `NaN`.** `x == NaN` is always `false`. The checker could
+9. **Comparing with `NaN`.** `x == NaN` is always `false`. The checker could
    report it and point at `Number.isNaN`.
-11. **Split element types.** Section 11.4 reads typed array elements as a range
+10. **Split element types.** Section 11.4 reads typed array elements as a range
    and writes them as `number`. This design does not settle how the stdlib
    spells an index signature whose read and write types differ.
-12. **Guards as range patterns.** Section 5.5 refines through range patterns,
+11. **Guards as range patterns.** Section 5.5 refines through range patterns,
    and a guard covers nothing for exhaustiveness. The checker could read a
    guard that compares the arm's own binding with a literal, such as
    `j if j < 10`, as the pattern `j: -Infinity..10`. The refinement would
    still land on the new binding `j`, so it keeps the no-flow-typing rule. The
    cost is a second way to write the same arm.
-13. **Flow typing.** Section 5.5 keeps Escalier's rule that a refinement binds
+12. **Flow typing.** Section 5.5 keeps Escalier's rule that a refinement binds
    a new name. Flow typing would instead re-type an existing variable after a
    test. Several `int` and range idioms read more naturally that way:
    - A bounds check before an index. After `if i >= 0 && i < 10`, `i` could
@@ -1252,7 +1305,7 @@ The `float32` printing fix from section 9.4 lands before milestone 5.
    types rely on. A `var` that is reassigned after the test, or captured by a
    closure that may reassign it, would lose the refinement. Each comparison
    operator would also need a rule for the range it implies on each branch.
-14. **Arithmetic on types.** Section 5.3 computes the result of `+`, `-`, and
+13. **Arithmetic on types.** Section 5.3 computes the result of `+`, `-`, and
    `*` on ranges inside the checker. Exposing the same operations in type
    annotations would let a signature state how its result depends on its
    arguments:
