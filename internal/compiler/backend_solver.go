@@ -84,6 +84,14 @@ func (t *solverSolTypes) Expand(typ soltype.Type) soltype.Type {
 	return t.info.Expand(typ)
 }
 
+func (t *solverSolTypes) ImplicitSubclassConstructor(decl *ast.ClassDecl) ([]string, func(*ast.FieldElem) bool, bool) {
+	ctor, ok := t.info.ImplicitSubclassConstructor(decl)
+	if !ok {
+		return nil, nil, false
+	}
+	return ctor.SuperParams, ctor.Inherited.Contains, true
+}
+
 // solverDts renders the library's .d.ts from the module run, which holds the scope
 // the declarations landed in and the registries their members are keyed in.
 type solverDts struct {

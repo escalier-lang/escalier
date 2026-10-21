@@ -60,15 +60,22 @@ func (c *checker) inferSuperCall(scope *Scope, lvl int, e *ast.SuperCallExpr) so
 // scope. A parameter named after the superclass would shadow the class binding there, and the
 // arguments would go unchecked against a signature the lookup never found.
 func (c *checker) superConstructor(lvl int, ctx *superCtx) (soltype.Type, bool) {
-	if ctx.declScope == nil {
+	sigs, ok := c.superConstructorSigs(lvl, ctx.declScope, ctx.super.Name, ctx.superName)
+	if !ok || len(sigs) == 0 {
 		return nil, false
 	}
-	binding, found := ctx.declScope.GetValue(ctx.super.Name)
-	// A class declared in a package has a registry name that no value binding carries, such
-	// as `import:geometry.Point`. Its value is read by the name the `extends` clause writes,
-	// resolved the way a written value reference is.
-	if !found && ctx.superName != nil {
-		binding, found = c.resolveQualValue(ctx.declScope, ctx.superName)
+	return overloadReadType(sigs), true
+}
+
+// superConstructorSigs returns the constructor signatures of a superclass's class value,
+// read from declScope. The value is looked up by registryName, the superclass's name in the
+// class registry. When no value binding carries that name and written is not nil, written
+// is resolved instead, the way a written value reference is. The signatures are empty for a
+// class value carrying no constructor. ok is false when neither lookup finds a class value.
+func (c *checker) superConstructorSigs(lvl int, declScope *Scope, registryName string, written ast.QualIdent) ([]*soltype.FuncType, bool) {
+	binding, found := declScope.GetValue(registryName)
+	if !found && written != nil {
+		binding, found = c.resolveQualValue(declScope, written)
 	}
 	if !found || len(binding.Schemes) == 0 {
 		return nil, false
@@ -79,9 +86,9 @@ func (c *checker) superConstructor(lvl int, ctx *superCtx) (soltype.Type, bool) 
 	}
 	ctor, ok := obj.Constructor()
 	if !ok {
-		return nil, false
+		return nil, true
 	}
-	return overloadReadType(ctor.Signatures), true
+	return ctor.Signatures, true
 }
 
 // superVarID is the synthetic binding the move dataflow tracks in place of "the superclass

@@ -1,9 +1,10 @@
 package codegen
 
 import (
-	"strings"
 	"testing"
 
+	"github.com/escalier-lang/escalier/internal/ast"
+	"github.com/escalier-lang/escalier/internal/set"
 	"github.com/stretchr/testify/require"
 )
 
@@ -284,8 +285,103 @@ func TestEmitsTheImplicitConstructor(t *testing.T) {
 	}
 }
 
+// subclassCtors answers ImplicitSubclassConstructor the way a checker run would, keyed by
+// the subclass's name, and answers every other question the way an untyped tree does.
+type subclassCtors struct {
+	noJSTypes
+	// superParams maps each subclass to its superclass constructor's parameter names.
+	superParams map[string][]string
+	// inherited maps each subclass to the names of the fields it redeclares.
+	inherited map[string][]string
+}
+
+func (s subclassCtors) ImplicitSubclassConstructor(decl *ast.ClassDecl) ([]string, func(*ast.FieldElem) bool, bool) {
+	params, ok := s.superParams[decl.Name.Name]
+	if !ok {
+		return nil, nil, false
+	}
+	redeclared := set.FromSlice(s.inherited[decl.Name.Name])
+	return params, func(f *ast.FieldElem) bool {
+		ident, ok := f.Name.(*ast.IdentExpr)
+		return ok && redeclared.Contains(ident.Name)
+	}, true
+}
+
+// TestEmitsTheImplicitSubclassConstructor covers the constructor a subclass that declares
+// none gets, which ast.ImplicitSubclassConstructor derives from what the checker reports. It
+// takes the superclass constructor's parameters and the subclass's added fields, passes the
+// first to `super(…)`, and assigns the rest.
+func TestEmitsTheImplicitSubclassConstructor(t *testing.T) {
+	src := `class Base {
+		foo: string,
+	}
+	class Derived1 extends Base {
+		foo: string,
+		bar: number,
+	}
+	class Derived2 extends Base {
+		bar: number,
+	}
+	class Derived3 extends Base {}`
+	got := buildSourceWith(t, src, subclassCtors{
+		superParams: map[string][]string{
+			"Derived1": {"foo"},
+			"Derived2": {"foo"},
+			"Derived3": {"foo"},
+		},
+		inherited: map[string][]string{"Derived1": {"foo"}},
+	})
+	require.Equal(t, `export class Base {
+  constructor(temp1) {
+    const foo = temp1;
+    this.foo = foo;
+  }
+}
+export class Derived1 extends Base {
+  constructor(temp2, temp3) {
+    const foo = temp2;
+    const bar = temp3;
+    super(foo);
+    this.bar = bar;
+  }
+}
+export class Derived2 extends Base {
+  constructor(temp4, temp5) {
+    const foo = temp4;
+    const bar = temp5;
+    super(foo);
+    this.bar = bar;
+  }
+}
+export class Derived3 extends Base {
+  constructor(temp6) {
+    const foo = temp6;
+    super(foo);
+  }
+}`, got)
+}
+
+// A subclass gets no constructor when the checker reports none for it. JavaScript's own
+// default constructor then passes every argument to `super(…)`.
+func TestEmitsNoImplicitSubclassConstructorUnreported(t *testing.T) {
+	got := buildSource(t, `class Base {
+		foo: string,
+	}
+	class Derived extends Base {
+		bar: number,
+	}`)
+	require.Equal(t, `export class Base {
+  constructor(temp1) {
+    const foo = temp1;
+    this.foo = foo;
+  }
+}
+export class Derived extends Base {
+}`, got)
+}
+
 // TestEmitsNoImplicitConstructor covers the classes that get none. A declared
-// constructor is emitted as written rather than joined by a second one, and the four
+// constructor is emitted as written rather than joined by a second one, and the three
 // shapes with no derivable constructor emit a body without one.
 func TestEmitsNoImplicitConstructor(t *testing.T) {
 	// A declared constructor is the one emitted, so the class carries exactly one.
@@ -310,20 +406,6 @@ func TestEmitsNoImplicitConstructor(t *testing.T) {
 			x: number,
 		}`)
 		require.NotContains(t, got, "constructor")
-	})
-
-	// A subclass's constructor would have to forward to `super(…)`, so the checkers
-	// require it to declare its own and emission derives none.
-	t.Run("ASubclassGetsNone", func(t *testing.T) {
-		got := buildSource(t, `class Base {
-			x: number,
-		}
-		class Derived extends Base {
-			y: number,
-		}`)
-		require.Contains(t, got, "export class Derived extends Base {")
-		require.Equal(t, 1, strings.Count(got, "constructor"),
-			"only Base gets a derived constructor")
 	})
 
 	// A key a call produces answers differently per call, so no constructor is derived

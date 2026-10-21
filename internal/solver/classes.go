@@ -114,6 +114,12 @@ type ClassDef struct {
 	// constructor itself is the value binding's FuncType.
 	Static *soltype.ObjectType
 
+	// implicitCtor pairs each parameter of the class's synthesized constructor with the
+	// field it initializes, in order. It is nil when the class has no synthesized
+	// constructor that emission also builds, and empty, not nil, for one that takes no
+	// parameters.
+	implicitCtor []implicitParam
+
 	// Level is the class binding's generalize level. A generic method's own type
 	// parameters live deeper than this, so member access wraps a resolved method in a
 	// scheme quantified at this level and instantiates it per access.

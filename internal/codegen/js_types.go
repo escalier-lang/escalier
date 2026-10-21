@@ -48,6 +48,11 @@ type JSTypes interface {
 	// The receiver vanishes, because the decorator argument is a complete
 	// JS-runtime expression: `math.sin` lowers to `Math.sin`.
 	MemberJSExpr(m *ast.MemberExpr) (string, bool)
+	// ImplicitSubclassConstructor reports how a subclass that declares no constructor
+	// gets one: the parameter names of its superclass's synthesized constructor, in
+	// order, and the fields it redeclares from that superclass. ok is false when no
+	// constructor is synthesized for decl.
+	ImplicitSubclassConstructor(decl *ast.ClassDecl) (superParams []string, inherited func(*ast.FieldElem) bool, ok bool)
 }
 
 // noJSTypes answers as an untyped tree does. A nil JSTypes field reads as this, so
@@ -62,6 +67,9 @@ func (noJSTypes) ExpandedTypeOf(ast.TypeAnn) soltype.Type     { return nil }
 func (noJSTypes) Expand(t soltype.Type) soltype.Type          { return t }
 func (noJSTypes) NullableArms(ast.Expr) (bool, bool)          { return false, false }
 func (noJSTypes) MemberJSExpr(*ast.MemberExpr) (string, bool) { return "", false }
+func (noJSTypes) ImplicitSubclassConstructor(*ast.ClassDecl) ([]string, func(*ast.FieldElem) bool, bool) {
+	return nil, nil, false
+}
 
 // types returns the oracle to ask, which is noJSTypes for a Builder that was given
 // none.

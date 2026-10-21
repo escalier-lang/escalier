@@ -398,18 +398,31 @@ func (c *checker) inferClassBodies(
 	callFns = c.inferCallSignatures(scope, lvl, decl)
 	ctorFns = c.walkConstructorBodies(scope, lvl, self, body, decl.Extends, ctors)
 	if len(ctorFns) == 0 {
-		// A subclass must declare its own constructor to call `super`, so a missing one is
-		// reported here and the synthesis below stands in for recovery.
-		if decl.Extends != nil {
-			c.report(&SubclassConstructorRequiredError{Decl: decl})
-		}
 		// A class declaring a call signature and no constructor is callable and not
 		// constructible, so nothing is synthesized. Synthesizing one would make
 		// `Symbol(…)` construct instead of call, and the specification forbids
 		// `new Symbol()`, so having no constructor is what makes constructing it
 		// unrepresentable rather than merely discouraged.
 		if len(callFns) == 0 {
-			ctorFns = []*soltype.FuncType{c.synthesizeConstructor(decl, self, body)}
+			// A subclass's constructor also takes its superclass constructor's arguments.
+			// One that cannot be synthesized is reported, and the constructor of a class
+			// without a superclass stands in for recovery.
+			fn, ok := (*soltype.FuncType)(nil), false
+			if decl.Extends != nil {
+				fn, ok = c.synthesizeSubclassConstructor(lvl, scope, decl, self, body)
+			}
+			if !ok {
+				var implicit []implicitParam
+				fn, implicit = c.synthesizeConstructor(decl, self, body)
+				// A synthesized subclass constructor forwards to this one by name, so only a
+				// constructor emission also builds is recorded. Emission builds none for a
+				// `declare class` or for a class whose computed key blocks it, and the one
+				// recovering a failed subclass synthesis is never emitted.
+				if synth, _ := ast.ImplicitConstructor(decl); synth != nil {
+					sigs.def.implicitCtor = implicit
+				}
+			}
+			ctorFns = []*soltype.FuncType{fn}
 		}
 	}
 

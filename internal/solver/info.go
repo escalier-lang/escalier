@@ -38,6 +38,19 @@ type Info struct {
 	// ctx is the Context of the run that recorded this table, or nil for a table built
 	// by NewInfo. MemberObject reads the class and alias registries it holds.
 	ctx *Context
+	// subclassCtors holds the constructor synthesized for each subclass that declares
+	// none, keyed by its declaration.
+	subclassCtors map[*ast.ClassDecl]ImplicitSubclassConstructor
+}
+
+// ImplicitSubclassConstructor is what the solver decided for a subclass that declares no
+// constructor, which emission needs to build the constructor's body.
+type ImplicitSubclassConstructor struct {
+	// SuperParams names the superclass's synthesized constructor's parameters, in order.
+	SuperParams []string
+	// Inherited holds each field the subclass redeclares from its superclass. Its value
+	// arrives through the superclass's parameter for it.
+	Inherited set.Set[*ast.FieldElem]
 }
 
 // NewInfo returns an empty Info side table ready to record inferred types.
@@ -48,6 +61,7 @@ func NewInfo() *Info {
 		methodReads:   set.NewSet[ast.Node](),
 		absentKeys:    map[*ast.ObjectPat][]string{},
 		decls:         map[*ast.IdentExpr]ast.Node{},
+		subclassCtors: map[*ast.ClassDecl]ImplicitSubclassConstructor{},
 	}
 }
 
@@ -102,6 +116,18 @@ func (i *Info) IsMethodRead(n ast.Node) bool {
 // setMethodRead records that the member read n resolved to such a method.
 func (i *Info) setMethodRead(n ast.Node) {
 	i.methodReads.Add(n)
+}
+
+// ImplicitSubclassConstructor returns the constructor synthesized for the subclass decl,
+// and reports whether one was.
+func (i *Info) ImplicitSubclassConstructor(decl *ast.ClassDecl) (ImplicitSubclassConstructor, bool) {
+	ctor, ok := i.subclassCtors[decl]
+	return ctor, ok
+}
+
+// setImplicitSubclassConstructor records the constructor synthesized for decl.
+func (i *Info) setImplicitSubclassConstructor(decl *ast.ClassDecl, ctor ImplicitSubclassConstructor) {
+	i.subclassCtors[decl] = ctor
 }
 
 // ResolvedTypeOf returns the type recorded for n with any inference variable resolved
