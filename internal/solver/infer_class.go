@@ -88,6 +88,9 @@ func (c *checker) inferClassDecl(scope *Scope, lvl int, decl *ast.ClassDecl, ns 
 	// body inference, keeps the diagnostic off the inferred-never recovery.
 	c.checkMethodRecursionAnnotations(decl)
 	callFns, ctorFns := c.inferClassBodies(lvl, decl, sigs, ctors)
+	// The unused-parameter check below asks whether this class's own signatures and bodies
+	// reported anything, so the window is read before any other declaration is inferred.
+	bodyClean := quiet() && sigs.clean && paramsClean
 
 	// Coalesce each member so lookup reads concrete member types rather than the fresh
 	// vars a field held before a constructor assignment refined it. A non-generic class
@@ -104,63 +107,93 @@ func (c *checker) inferClassDecl(scope *Scope, lvl int, decl *ast.ClassDecl, ns 
 	// class carrying a generic method still keeps that method's parameters. An empty set
 	// coalesces everything.
 	keep := classKeepVars(typeParams, body, static)
-	flow := keptFlowMap(keep)
-	c.freezeClassBody(body, keep, flow, keepLts)
-	c.freezeClassBody(static, keep, flow, keepLts)
-	c.ctx.recordMethodLifetimes(body, keepLts)
-	c.ctx.recordMethodLifetimes(static, keepLts)
 
-	// Freeze both per-parameter variance vectors once every member body has refined its
-	// signature, so the walk measures each type parameter at its final occurrences. The
-	// conservative Invariant seeded above governs any constraint raised during body
-	// inference; the nominal rule reads the measured variance from here on (C2). Which of
-	// the two vectors it reads depends on the mutability of the reference the constraint
-	// sits under.
-	//
-	// A class this body names may not be inferred yet, since a type reference orders only
-	// that class's identity ahead of this one. The measurement is then provisional and is
-	// settled once that class is measured.
-	def.varianceSelf, def.varianceDecl = self.Name, decl
-	c.ctx.measureVariance(def)
-	def.varianceMeasured = true
-	if def.varianceProvisional {
-		// The last class of a group that waits on itself completes the group here, since
-		// nothing it waits on settles alone.
-		c.ctx.settleVarianceGroup(def)
-	}
-	if def.varianceProvisional {
-		c.provisionalVariance = append(c.provisionalVariance, def)
-	} else {
-		for _, mismatch := range def.varianceMismatches {
-			c.report(mismatch)
+	// finish coalesces the members and runs every step that reads the coalesced members, then
+	// returns the class value with the coalesced statics.
+	finish := func() *soltype.ObjectType {
+		def.coalesceMember = nil
+		// The flow map is read off the bound graph, so it is built once every bound is in.
+		flow := keptFlowMap(keep)
+		c.freezeClassBody(body, keep, flow, keepLts)
+		c.freezeClassBody(static, keep, flow, keepLts)
+		c.ctx.recordMethodLifetimes(body, keepLts)
+		c.ctx.recordMethodLifetimes(static, keepLts)
+
+		// Freeze both per-parameter variance vectors once every member body has refined its
+		// signature, so the walk measures each type parameter at its final occurrences. The
+		// conservative Invariant seeded above governs any constraint raised during body
+		// inference; the nominal rule reads the measured variance from here on (C2). Which of
+		// the two vectors it reads depends on the mutability of the reference the constraint
+		// sits under.
+		//
+		// A class this body names may not be inferred yet, since a type reference orders only
+		// that class's identity ahead of this one. The measurement is then provisional and is
+		// settled once that class is measured.
+		def.varianceSelf, def.varianceDecl = self.Name, decl
+		c.ctx.measureVariance(def)
+		def.varianceMeasured = true
+		if def.varianceProvisional {
+			// The last class of a group that waits on itself completes the group here, since
+			// nothing it waits on settles alone.
+			c.ctx.settleVarianceGroup(def)
 		}
+		if def.varianceProvisional {
+			c.provisionalVariance = append(c.provisionalVariance, def)
+		} else {
+			for _, mismatch := range def.varianceMismatches {
+				c.report(mismatch)
+			}
+		}
+
+		// Queue this class for the override check the driver runs once every class is inferred.
+		// The nominal subtype rule decides `Dog <: Animal` on the `extends` edge alone, so that
+		// check is what keeps a subclass from contradicting the edge with a member typed
+		// unrelated to the one it inherits.
+		c.queueInheritedMemberCheck(def, self, decl)
+		// Queue the `implements` check for the same reason. It reads the members the class
+		// inherits, so every ancestor has to be final first.
+		c.queueImplementsCheck(def, self, decl, sigs.implemented, ownNames)
+
+		if bodyClean {
+			c.reportUnusedTypeParams(typeParams, decl.TypeParams, classDeclTypes(def, ctorFns, callFns))
+		}
+
+		// A static member is reached through the class value, where no instance supplies an
+		// argument, so one that names a class parameter is reported.
+		c.reportStaticsNamingClassParams(decl, static, typeParams, shell.lifetimeParams)
+
+		return c.classValue(self, ctorFns, callFns, static)
 	}
-
-	// Queue this class for the override check the driver runs once every class is inferred.
-	// The nominal subtype rule decides `Dog <: Animal` on the `extends` edge alone, so that
-	// check is what keeps a subclass from contradicting the edge with a member typed
-	// unrelated to the one it inherits.
-	c.queueInheritedMemberCheck(def, self, decl)
-	// Queue the `implements` check for the same reason. It reads the members the class
-	// inherits, so every ancestor has to be final first.
-	c.queueImplementsCheck(def, self, decl, sigs.implemented, ownNames)
-
-	if quiet() && sigs.clean && paramsClean {
-		c.reportUnusedTypeParams(typeParams, decl.TypeParams, classDeclTypes(def, ctorFns, callFns))
+	// A class in a component waits for the component. A member body of one class can read
+	// another class of the component before that class has bound its value or inferred its
+	// bodies, as in `static mk() { return B(1) }` written ahead of `class B`. Until then the
+	// member's type holds a var whose bounds are not all in, and coalescing it would read
+	// `never`. The driver runs finish for each class once the whole component is inferred.
+	if class, inComponent := c.componentClassOf[decl]; inComponent && class.value != nil {
+		// An instance of a generic class reads each member at its own arguments, and only a
+		// coalesced member names nothing but the class's parameters. An uncoalesced member
+		// such as `get(&self) { return self.v }` returns an inference var every instance
+		// shares, so `Box(1).get()` and `Box("s").get()` would both flow into it. Until
+		// finish runs, each read coalesces the one member it projects.
+		if len(def.TypeParams) > 0 || len(def.LifetimeParams) > 0 {
+			def.coalesceMember = func(member soltype.ObjTypeElem) soltype.ObjTypeElem {
+				return freezeMember(member, keep, keptFlowMap(keep), keepLts)
+			}
+		}
+		class.finish = func() {
+			prevNS := c.classNamespace
+			c.classNamespace = ns
+			defer func() { c.classNamespace = prevNS }()
+			savedSelfClass := c.selfClass
+			c.selfClass = self
+			defer func() { c.selfClass = savedSelfClass }()
+			// The value is already the binding var's lower bound, so it takes the coalesced
+			// statics in place.
+			class.value.Elems = finish().Elems
+		}
+		return class.value, &ast.NodeProvenance{Node: decl}, true
 	}
-
-	// A static member is reached through the class value, where no instance supplies an
-	// argument, so one that names a class parameter is reported.
-	c.reportStaticsNamingClassParams(decl, static, typeParams, shell.lifetimeParams)
-
-	value := c.classValue(self, ctorFns, callFns, static)
-	if bound := c.boundClassValue(decl); bound != nil {
-		// The value is already the binding var's lower bound, so it takes the coalesced
-		// statics in place.
-		bound.Elems = value.Elems
-		value = bound
-	}
-	return value, &ast.NodeProvenance{Node: decl}, true
+	return finish(), &ast.NodeProvenance{Node: decl}, true
 }
 
 // bindClassParams puts the class's type parameters and lifetime parameters at the front of
@@ -2267,37 +2300,49 @@ func (c *checker) freezeClassBody(
 	keepLts set.Set[*soltype.LifetimeVar],
 ) {
 	for i, e := range obj.Elems {
-		switch e := e.(type) {
-		case *soltype.PropertyElem:
-			obj.Elems[i] = &soltype.PropertyElem{Name: e.Name, Type: coalesceKeeping(e.Type, soltype.Positive, keep, flow, keepLts), Optional: e.Optional, Readonly: e.Readonly}
-		case *soltype.GetterElem:
-			obj.Elems[i] = &soltype.GetterElem{
-				Name:      e.Name,
-				SelfParam: e.SelfParam,
-				Type:      coalesceKeeping(e.Type, soltype.Positive, keep, flow, keepLts),
-				Throws:    coalesceThrows(e.Throws, keep, flow, keepLts),
-			}
-		case *soltype.SetterElem:
-			obj.Elems[i] = &soltype.SetterElem{
-				Name:      e.Name,
-				SelfParam: e.SelfParam,
-				Param:     coalesceKeeping(e.Param, soltype.Negative, keep, flow, keepLts),
-				// A setter's written value coalesces negatively, but what the write raises
-				// flows out to the writer, so its throws position still coalesces positively.
-				Throws: coalesceThrows(e.Throws, keep, flow, keepLts),
-			}
-		case *soltype.MethodElem:
-			sigs := make([]*soltype.FuncType, len(e.Signatures))
-			for j, sig := range e.Signatures {
-				if cs, ok := coalesceMemberSig(sig, keep, flow, keepLts).(*soltype.FuncType); ok {
-					sigs[j] = cs
-				} else {
-					sigs[j] = sig
-				}
-			}
-			obj.Elems[i] = &soltype.MethodElem{Name: e.Name, Signatures: sigs, Static: e.Static}
-		}
+		obj.Elems[i] = freezeMember(e, keep, flow, keepLts)
 	}
+}
+
+// freezeMember returns member with each of its types coalesced, keeping the vars in keep and
+// the lifetimes in keepLts. A member kind with no types to coalesce is returned unchanged.
+func freezeMember(
+	member soltype.ObjTypeElem,
+	keep set.Set[*soltype.TypeVarType],
+	flow map[*soltype.TypeVarType][]*soltype.TypeVarType,
+	keepLts set.Set[*soltype.LifetimeVar],
+) soltype.ObjTypeElem {
+	switch e := member.(type) {
+	case *soltype.PropertyElem:
+		return &soltype.PropertyElem{Name: e.Name, Type: coalesceKeeping(e.Type, soltype.Positive, keep, flow, keepLts), Optional: e.Optional, Readonly: e.Readonly}
+	case *soltype.GetterElem:
+		return &soltype.GetterElem{
+			Name:      e.Name,
+			SelfParam: e.SelfParam,
+			Type:      coalesceKeeping(e.Type, soltype.Positive, keep, flow, keepLts),
+			Throws:    coalesceThrows(e.Throws, keep, flow, keepLts),
+		}
+	case *soltype.SetterElem:
+		return &soltype.SetterElem{
+			Name:      e.Name,
+			SelfParam: e.SelfParam,
+			Param:     coalesceKeeping(e.Param, soltype.Negative, keep, flow, keepLts),
+			// A setter's written value coalesces negatively, but what the write raises
+			// flows out to the writer, so its throws position still coalesces positively.
+			Throws: coalesceThrows(e.Throws, keep, flow, keepLts),
+		}
+	case *soltype.MethodElem:
+		sigs := make([]*soltype.FuncType, len(e.Signatures))
+		for j, sig := range e.Signatures {
+			if cs, ok := coalesceMemberSig(sig, keep, flow, keepLts).(*soltype.FuncType); ok {
+				sigs[j] = cs
+			} else {
+				sigs[j] = sig
+			}
+		}
+		return &soltype.MethodElem{Name: e.Name, Signatures: sigs, Static: e.Static}
+	}
+	return member
 }
 
 // lookupTypeThroughNamespace answers a dotted name by walking its leading segments

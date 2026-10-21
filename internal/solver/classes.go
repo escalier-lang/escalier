@@ -113,6 +113,10 @@ type ClassDef struct {
 	// binding. B1 stores static members here for later phases; the callable
 	// constructor itself is the value binding's FuncType.
 	Static *soltype.ObjectType
+	// coalesceMember returns one member of Body with its types coalesced. It is set while the
+	// class waits for its component to finish and Body still holds uncoalesced members, and
+	// nil otherwise.
+	coalesceMember func(soltype.ObjTypeElem) soltype.ObjTypeElem
 
 	// Level is the class binding's generalize level. A generic method's own type
 	// parameters live deeper than this, so member access wraps a resolved method in a
@@ -1946,6 +1950,9 @@ func projectClassMember(def *ClassDef, ct *soltype.ClassType, member soltype.Obj
 	if len(def.TypeParams) == 0 && len(def.LifetimeParams) == 0 {
 		return member
 	}
+	if def.coalesceMember != nil {
+		member = def.coalesceMember(member)
+	}
 	return soltype.AcceptObjElem(member, newClassSubst(def, ct), soltype.Positive)
 }
 
@@ -2501,6 +2508,10 @@ type componentClass struct {
 	// value is the class value constrained into v, or nil until inferClassBodies
 	// constrains it.
 	value *soltype.ObjectType
+	// finish coalesces the class's members and puts its coalesced statics into value. It is
+	// nil until inferClassDecl has inferred the class's bodies, and the driver runs it once
+	// every declaration in the component is inferred.
+	finish func()
 }
 
 // boundClassValue returns the class value inferClassBodies constrained into the binding var

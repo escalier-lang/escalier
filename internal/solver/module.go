@@ -841,6 +841,22 @@ func (c *checker) inferComponent(
 	}
 	c.classNamespace = prevNS
 
+	// Every declaration in the component has been inferred, so every bound a class member's
+	// type will get is in. Coalesce each class now, in component order.
+	finished := set.NewSet[*componentClass]()
+	for _, key := range component {
+		for _, d := range g.GetDecls(key) {
+			decl, isClass := d.(*ast.ClassDecl)
+			if !isClass {
+				continue
+			}
+			if class, inComponent := c.componentClassOf[decl]; inComponent && class.finish != nil && !finished.Contains(class) {
+				finished.Add(class)
+				class.finish()
+			}
+		}
+	}
+
 	// Every definition in the component has been constrained into its binding var, which is what
 	// closes a recursive cycle, so coalescing a return type now yields the μ-knot that cycle
 	// implies. Report each function in the component whose return type no finite value inhabits.
