@@ -119,6 +119,17 @@ func (b *Builder) BuildTopLevelDecls(depGraph *dep_graph.DepGraph) *Module {
 	b.depGraph = depGraph // Store dep graph for namespace lookups
 	b.isModule = true
 
+	// A temp is emitted beside the user's own bindings, so one spelled `temp<N>` would
+	// collide with it. `val temp1 = 5` beside a top-level `if` would otherwise
+	// redeclare `temp1` for the `if`'s result.
+	var declNodes []ast.Node
+	for _, key := range depGraph.AllBindings() {
+		for _, decl := range depGraph.GetDecls(key) {
+			declNodes = append(declNodes, decl)
+		}
+	}
+	b.reservedTempNames = b.reservedTempNames.Union(moduleNames(declNodes))
+
 	var stmts []Stmt
 
 	// Build namespace hierarchy statements
@@ -715,6 +726,9 @@ func (b *Builder) buildStmt(stmt ast.Stmt) []Stmt {
 
 func (b *Builder) BuildScript(mod *ast.Script) *Module {
 	b.isModule = false
+	// A temp is emitted beside the script's own bindings, so it must not reuse a name
+	// the script spells.
+	b.reservedTempNames = b.reservedTempNames.Union(moduleNames([]ast.Node{mod}))
 	var stmts []Stmt
 	for _, s := range mod.Stmts {
 		stmts = slices.Concat(stmts, b.buildStmt(s))
