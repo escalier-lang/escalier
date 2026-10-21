@@ -104,6 +104,22 @@ class Derived extends Base { y: number }`,
 			want: map[string]string{"Derived": "{new (x: number, y: number) -> Derived}"},
 		},
 		{
+			// A computed key is evaluated once beside the class, so any key shape gets a
+			// constructor, and a subclass can build on it.
+			name: "BaseWithAComputedKey",
+			src: `declare val keys: {readonly k: unique symbol}
+class Base { [keys.k]: number }
+class Derived extends Base { y: number }`,
+			want: map[string]string{"Derived": "{new (_field1: number, y: number) -> Derived}"},
+		},
+		{
+			name: "SubclassWithAComputedKey",
+			src: `declare val keys: {readonly k: unique symbol}
+class Base { x: number }
+class Derived extends Base { [keys.k]: number }`,
+			want: map[string]string{"Derived": "{new (x: number, _field1: number) -> Derived}"},
+		},
+		{
 			name: "ConstructingTheSubclass",
 			src: `class Base { x: number }
 class Derived extends Base { y: string }
@@ -242,26 +258,10 @@ class Derived extends Base { y: number }`,
 				"the constructor of `Base` is not synthesized"},
 		},
 		{
-			name: "BaseWithBlockedComputedKey",
-			src: `declare val keys: {readonly k: unique symbol}
-class Base { [keys.k]: number }
-class Derived extends Base { y: number }`,
-			want: []string{"3:7-3:14: class `Derived` must declare a constructor, since none can be synthesized: " +
-				"the constructor of `Base` is not synthesized"},
-		},
-		{
 			name: "ExtendsNamesNoClass",
 			src:  `class Derived extends Nope { y: number }`,
 			want: []string{"1:7-1:14: class `Derived` must declare a constructor, since none can be synthesized: " +
 				"`Nope` in its `extends` clause names no class"},
-		},
-		{
-			name: "UnstableComputedKey",
-			src: `declare val keys: {readonly k: unique symbol}
-class Base { x: number }
-class Derived extends Base { [keys.k]: number }`,
-			want: []string{"3:7-3:14: class `Derived` must declare a constructor, since none can be synthesized: " +
-				"a field's computed key is neither a variable nor a property of `Symbol`"},
 		},
 	}
 	for _, tt := range tests {

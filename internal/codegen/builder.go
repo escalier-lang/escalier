@@ -956,33 +956,16 @@ func (b *Builder) buildDeclWithNamespace(decl ast.Decl, nsName string) []Stmt {
 			}
 		}
 
-		// A class that declares no constructor still constructs its fields, so the
-		// implicit one is derived here, since no checker installs it on the tree. It
-		// goes first so the constructor emits ahead of the members.
-		//
-		// A computed key leaves no parameter name to bind, so no constructor is
-		// derived. Reporting that belongs to the checkers, so the field is dropped.
-		// A computed key reads a name from the surrounding scope, and the parameters this
-		// class emits are lowered to `temp<N>`, so one of those could shadow it.
-		// `class C { [temp1]: number }` over a `temp1` the key reads would otherwise store
-		// the field under the parameter's own value.
-		prevReserved := b.reservedTempNames
-		b.reservedTempNames = prevReserved.Union(ast.FreeNamesInComputedKeys(d))
-
+		// A class that declares no constructor still constructs its fields. The solver
+		// leaves the tree alone, so the implicit constructor is derived here. It goes first
+		// so the constructor emits ahead of the members.
 		elems := d.Body
-		// A subclass's constructor passes its superclass's parameters to `super(…)`.
-		// Only the checker knows those, so it says whether to synthesize one and with
-		// what. At most one of the two applies, since only a subclass gets the second.
-		if synth, _ := ast.ImplicitConstructor(d); synth != nil {
+		synth, keyStmts := b.implicitConstructor(d)
+		if synth != nil {
 			elems = append([]ast.ClassElem{synth}, d.Body...)
-		} else if superParams, inherited, ok := b.types().ImplicitSubclassConstructor(d); ok {
-			if synth, _, _ := ast.ImplicitSubclassConstructor(d, superParams, inherited); synth != nil {
-				elems = append([]ast.ClassElem{synth}, d.Body...)
-			}
 		}
 		classElems, classStmts := b.buildClassElems(elems, superClass != nil)
-		b.reservedTempNames = prevReserved
-		allStmts = slices.Concat(allStmts, classStmts)
+		allStmts = slices.Concat(allStmts, keyStmts, classStmts)
 
 		classDecl := &ClassDecl{
 			Name: &Identifier{
@@ -1979,6 +1962,97 @@ func (b *Builder) buildExpr(expr ast.Expr, parent ast.Expr) (Expr, []Stmt) {
 	default:
 		panic(fmt.Sprintf("TODO - buildExpr - default case: %#v", expr))
 	}
+}
+
+// implicitConstructor returns the constructor emission derives for a class that declares
+// none, or nil when the class gets none. The statements bind each computed key the
+// constructor assigns a field by, and run before the class is defined.
+func (b *Builder) implicitConstructor(d *ast.ClassDecl) (*ast.ConstructorElem, []Stmt) {
+	derive := func(keyIndex func(*ast.ComputedKey) ast.Expr) *ast.ConstructorElem {
+		if synth := ast.ImplicitConstructor(d, keyIndex); synth != nil {
+			return synth
+		}
+		// A subclass's constructor passes its superclass's parameters to `super(…)`, and
+		// only the solver knows those.
+		if superParams, inherited, ok := b.types().ImplicitSubclassConstructor(d); ok {
+			synth, _ := ast.ImplicitSubclassConstructor(d, superParams, inherited, keyIndex)
+			return synth
+		}
+		return nil
+	}
+	synth := derive(nil)
+	if synth == nil {
+		return nil, nil
+	}
+
+	// JavaScript evaluates a computed member key once, where the class is defined. The
+	// constructor runs once per instance, so each key it assigns a field by is evaluated
+	// into a binding before the class, and the constructor indexes with the binding.
+	// `class C { [makeKey()]: number }` then calls `makeKey` once, as JavaScript would.
+	//
+	// The binding's name avoids every parameter the constructor binds, since a field named
+	// `temp1` binds `temp1` in the constructor and would otherwise shadow it. It also
+	// avoids every name a key reads. `[temp1]: number` over an outer `temp1` would
+	// otherwise emit `const temp1 = temp1`, which throws.
+	prevReserved := b.reservedTempNames
+	b.reservedTempNames = prevReserved.Union(implicitParamNames(synth)).Union(computedKeyReads(d))
+	defer func() { b.reservedTempNames = prevReserved }()
+	var stmts []Stmt
+	bindings := map[*ast.ComputedKey]ast.Expr{}
+	synth = derive(func(key *ast.ComputedKey) ast.Expr {
+		if binding, ok := bindings[key]; ok {
+			return binding
+		}
+		keyExpr, exprStmts := b.buildExpr(key.Expr, nil)
+		temp, decl := b.createTempVarWithInit(keyExpr, key.Expr)
+		decl.(*DeclStmt).Decl.(*VarDecl).Kind = ValKind
+		stmts = slices.Concat(stmts, exprStmts, []Stmt{decl})
+		binding := ast.NewIdent(temp.(*IdentExpr).Name, key.Span())
+		bindings[key] = binding
+		return binding
+	})
+	return synth, stmts
+}
+
+// computedKeyReads returns the name of every identifier the computed keys of decl's
+// instance fields read.
+func computedKeyReads(decl *ast.ClassDecl) set.Set[string] {
+	reads := &identReads{names: set.NewSet[string]()}
+	for _, elem := range decl.Body {
+		field, ok := elem.(*ast.FieldElem)
+		if !ok || field.Static {
+			continue
+		}
+		if key, computed := field.Name.(*ast.ComputedKey); computed {
+			key.Expr.Accept(reads)
+		}
+	}
+	return reads.names
+}
+
+// identReads records the name of every identifier expression a walk reaches.
+type identReads struct {
+	ast.DefaultVisitor
+	names set.Set[string]
+}
+
+func (v *identReads) EnterExpr(e ast.Expr) bool {
+	if ident, ok := e.(*ast.IdentExpr); ok {
+		v.names.Add(ident.Name)
+	}
+	return true
+}
+
+// implicitParamNames returns the names synth's value parameters bind, leaving out the
+// receiver.
+func implicitParamNames(synth *ast.ConstructorElem) set.Set[string] {
+	names := set.NewSet[string]()
+	for _, param := range synth.Fn.Params[1:] {
+		if pat, ok := param.Pattern.(*ast.IdentPat); ok {
+			names.Add(pat.Name)
+		}
+	}
+	return names
 }
 
 func (b *Builder) buildObjKey(key ast.ObjKey) (ObjKey, []Stmt) {

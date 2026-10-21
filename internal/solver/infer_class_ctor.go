@@ -145,19 +145,7 @@ func (c *checker) synthesizeSubclassConstructor(lvl int, scope *Scope, decl *ast
 		ownMembers = append(ownMembers, member)
 	}
 
-	// A field whose computed key cannot be read again gives emission no constructor to
-	// derive, so a hand-written one has to assign it.
-	_, fieldParams, blocker := ast.ImplicitSubclassConstructor(decl, superNames, inherited.Contains)
-	if blocker != nil {
-		return fail("a field's computed key is neither a variable nor a property of `Symbol`")
-	}
-	// A superclass parameter shadows a name one of the subclass's computed keys reads.
-	freeKeyNames := ast.FreeNamesInComputedKeys(decl)
-	for _, name := range superNames {
-		if freeKeyNames.Contains(name) {
-			return fail(fmt.Sprintf("a computed key of `%s` reads `%s`, which names a parameter of the constructor of `%s`", self.Name, name, super.Name))
-		}
-	}
+	_, fieldParams := ast.ImplicitSubclassConstructor(decl, superNames, inherited.Contains, nil)
 
 	superNameSet := set.FromSlice(superNames)
 	implicit := append([]implicitParam{}, superDef.implicitCtor...)
@@ -188,7 +176,7 @@ func (c *checker) synthesizeSubclassConstructor(lvl int, scope *Scope, decl *ast
 // body's keys are inferred.
 func (c *checker) implicitConstructorParamNames(decl *ast.ClassDecl) map[string]string {
 	names := map[string]string{}
-	synth, _ := ast.ImplicitConstructor(decl)
+	synth := ast.ImplicitConstructor(decl, nil)
 	if synth == nil {
 		return names
 	}
