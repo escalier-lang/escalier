@@ -111,7 +111,7 @@ func (c *checker) inferClassDecl(scope *Scope, lvl int, decl *ast.ClassDecl, ns 
 	// finish coalesces the members and runs every step that reads the coalesced members, then
 	// returns the class value with the coalesced statics.
 	finish := func() *soltype.ObjectType {
-		def.coalesceMember = nil
+		def.provisional = nil
 		// The flow map is read off the bound graph, so it is built once every bound is in.
 		flow := keptFlowMap(keep)
 		c.freezeClassBody(body, keep, flow, keepLts)
@@ -172,12 +172,16 @@ func (c *checker) inferClassDecl(scope *Scope, lvl int, decl *ast.ClassDecl, ns 
 	if class, inComponent := c.componentClassOf[decl]; inComponent && class.value != nil {
 		// An instance of a generic class reads each member at its own arguments, and only a
 		// coalesced member names nothing but the class's parameters. An uncoalesced member
-		// such as `get(&self) { return self.v }` returns an inference var every instance
-		// shares, so `Box(1).get()` and `Box("s").get()` would both flow into it. Until
-		// finish runs, each read coalesces the one member it projects.
+		// such as `get(&self) { return self.v }` returns a var bounded by the field var for
+		// `v`. Nothing in a component is generalized until it finishes, so `Box(1)` inside
+		// the component writes `1` into that field var, and `Box("s").get()` would read it.
+		// Until finish runs, an instance reads a copy of each member coalesced now, before
+		// any other declaration constructs the class.
 		if len(def.TypeParams) > 0 || len(def.LifetimeParams) > 0 {
-			def.coalesceMember = func(member soltype.ObjTypeElem) soltype.ObjTypeElem {
-				return freezeMember(member, keep, keptFlowMap(keep), keepLts)
+			flow := keptFlowMap(keep)
+			def.provisional = make(map[soltype.ObjTypeElem]soltype.ObjTypeElem, len(body.Elems))
+			for _, elem := range body.Elems {
+				def.provisional[elem] = freezeMember(elem, keep, flow, keepLts)
 			}
 		}
 		class.finish = func() {

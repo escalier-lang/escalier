@@ -1,0 +1,9 @@
+export class A {
+    v: number,
+    static mk() { return B(1) },
+}
+
+export class B {
+    n: number,
+    toA(&self) { return A(self.n) },
+}

@@ -113,10 +113,10 @@ type ClassDef struct {
 	// binding. B1 stores static members here for later phases; the callable
 	// constructor itself is the value binding's FuncType.
 	Static *soltype.ObjectType
-	// coalesceMember returns one member of Body with its types coalesced. It is set while the
-	// class waits for its component to finish and Body still holds uncoalesced members, and
-	// nil otherwise.
-	coalesceMember func(soltype.ObjTypeElem) soltype.ObjTypeElem
+	// provisional maps each member of Body to a coalesced copy taken once the class's own
+	// bodies are inferred. It is set while the class waits for its component to finish and
+	// Body still holds uncoalesced members, and nil otherwise.
+	provisional map[soltype.ObjTypeElem]soltype.ObjTypeElem
 
 	// Level is the class binding's generalize level. A generic method's own type
 	// parameters live deeper than this, so member access wraps a resolved method in a
@@ -1006,14 +1006,21 @@ func (c *Context) projectOwnElems(def *ClassDef, ct *soltype.ClassType) []soltyp
 		// runs for a generic class, so the two compose.
 		own := make([]soltype.ObjTypeElem, len(def.Body.Elems))
 		for i, elem := range def.Body.Elems {
-			own[i] = projectClassMember(def, ct, projectSelf(def, ct, elem))
+			own[i] = projectClassMember(def, ct, projectSelf(def, ct, def.instanceMember(elem)))
 		}
 		return own
 	}
 	if len(def.TypeParams) == 0 && len(def.LifetimeParams) == 0 {
 		return def.Body.Elems
 	}
-	projected := def.Body.Accept(newClassSubst(def, ct), soltype.Positive)
+	body := def.Body
+	if def.provisional != nil {
+		body = &soltype.ObjectType{Elems: make([]soltype.ObjTypeElem, len(def.Body.Elems))}
+		for i, elem := range def.Body.Elems {
+			body.Elems[i] = def.instanceMember(elem)
+		}
+	}
+	projected := body.Accept(newClassSubst(def, ct), soltype.Positive)
 	obj, ok := projected.(*soltype.ObjectType)
 	if !ok {
 		// Substitution replaces only vars and lifetimes, so an ObjectType body always
@@ -1093,7 +1100,7 @@ func (c *Context) chainElems(def *ClassDef, ct, recv *soltype.ClassType, taken, 
 				// says what they are here. The `Self` substitution takes recv, the class the
 				// receiver belongs to, which is what makes an inherited `-> Self` yield the
 				// subclass rather than the class that declared the member.
-				out = append(out, projectClassMember(superDef, super, projectSelf(superDef, recv, elem)))
+				out = append(out, projectClassMember(superDef, super, projectSelf(superDef, recv, superDef.instanceMember(elem))))
 			}
 		}
 		// Marked after the loop rather than inside it, so a class declaring both halves of an
@@ -1879,7 +1886,7 @@ func (c *checker) projectedClassMember(ct, recv *soltype.ClassType, name string,
 		// walk reaches it. The `Self` substitution takes recv, the class the ACCESS was made
 		// through, which stays fixed as the walk climbs so an inherited `-> Self` yields the
 		// receiver's class rather than the declaring one.
-		return projectClassMember(def, ct, projectSelf(def, recv, member)), true
+		return projectClassMember(def, ct, projectSelf(def, recv, def.instanceMember(member))), true
 	}
 	if visited.Contains(ct.Name) {
 		return nil, false
@@ -1940,6 +1947,16 @@ func (c *checker) classBodyMember(lvl int, blame ast.Node, name string, recv, ca
 	return c.instanceMemberValue(lvl, blame, member), true
 }
 
+// instanceMember returns the member of Body an instance reads: its provisional copy while
+// the class waits for its component to finish, and member itself otherwise. member is an
+// element of Body, so it is the one to pass before projectSelf builds a new element.
+func (def *ClassDef) instanceMember(member soltype.ObjTypeElem) soltype.ObjTypeElem {
+	if view, ok := def.provisional[member]; ok {
+		return view
+	}
+	return member
+}
+
 // projectClassMember rewrites one class-body member's type-parameter and
 // lifetime-parameter vars to the arguments of one instance, the single-member analogue
 // of projectClassBody. A non-generic class, whose body holds no such vars, returns the
@@ -1949,9 +1966,6 @@ func (c *checker) classBodyMember(lvl int, blame ast.Node, name string, recv, ca
 func projectClassMember(def *ClassDef, ct *soltype.ClassType, member soltype.ObjTypeElem) soltype.ObjTypeElem {
 	if len(def.TypeParams) == 0 && len(def.LifetimeParams) == 0 {
 		return member
-	}
-	if def.coalesceMember != nil {
-		member = def.coalesceMember(member)
 	}
 	return soltype.AcceptObjElem(member, newClassSubst(def, ct), soltype.Positive)
 }
