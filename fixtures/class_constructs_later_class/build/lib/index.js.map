@@ -1,0 +1,1 @@
+{"version":3,"file":"./index.js","sources":["../../lib/index.esc"],"sourcesContent":["export class A {\n    v: number,\n    static mk() { return B(1) },\n}\n\nexport class B {\n    n: number,\n    toA(\u0026self) { return A(self.n) },\n}\n"],"names":[],"mappings":"AAAA;;;;;;;;;AAKA"}

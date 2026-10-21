@@ -2501,6 +2501,14 @@ type componentClass struct {
 	// value is the class value constrained into v, or nil until inferClassBodies
 	// constrains it.
 	value *soltype.ObjectType
+	// alone is set when the class is the only value declaration in its component, so no other
+	// declaration can read its members before it finishes.
+	alone bool
+	// finish coalesces the class's members and puts its coalesced statics into value. It is
+	// nil until inferClassDecl has inferred the class's bodies, and the driver runs it once
+	// every declaration in the component is inferred. A class that is alone finishes in
+	// inferClassDecl and leaves it nil.
+	finish func()
 }
 
 // boundClassValue returns the class value inferClassBodies constrained into the binding var
