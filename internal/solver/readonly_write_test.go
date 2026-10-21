@@ -136,6 +136,59 @@ func TestReadonlyFieldConstructorInit(t *testing.T) {
 			want: []string{},
 		},
 		{
+			name: "InitFromMatch",
+			src: `class A {
+    readonly x: number,
+    constructor(&mut self, n: number) {
+        self.x = match n {
+            1 => 10,
+            _ => 20,
+        }
+    },
+}`,
+			want: []string{},
+		},
+		{
+			name: "InitFromTryCatch",
+			src: `class A {
+    readonly x: number,
+    constructor(&mut self, n: number) {
+        self.x = try {
+            n
+        } catch {
+            _ => 0,
+        }
+    },
+}`,
+			want: []string{},
+		},
+		{
+			name: "InitFromDo",
+			src: `class A {
+    readonly x: number,
+    constructor(&mut self, n: number) {
+        self.x = do {
+            n
+        }
+    },
+}`,
+			want: []string{},
+		},
+		{
+			name: "InitFromIfVal",
+			src: `class A {
+    readonly x: number,
+    constructor(&mut self, o: number | undefined) {
+        self.x = if val y = o {
+            y
+        } else {
+            0
+        }
+    },
+}`,
+			want: []string{},
+		},
+		{
 			name: "WritableInitFromBranchingExpr",
 			src: `class A {
     x: number,
@@ -288,6 +341,38 @@ class Derived extends Base {
     },
 }`,
 			want: []string{"4:28-6:6: Field 'y' is not initialized on every path through the constructor."},
+		},
+		{
+			name: "RepeatedInitAfterMatch",
+			src: `class A {
+    readonly x: number,
+    constructor(&mut self, n: number) {
+        self.x = match n {
+            1 => 10,
+            _ => 20,
+        }
+        self.x = 3
+    },
+}`,
+			want: []string{"8:9-8:15: cannot assign to 'x' because it is a readonly property"},
+		},
+		{
+			// The write in the arm runs first. The assignment writes at the join after the
+			// arm, so it is the second write.
+			name: "InitInMatchArmAndAssignment",
+			src: `class A {
+    readonly x: number,
+    constructor(&mut self, n: number) {
+        self.x = match n {
+            1 => {
+                self.x = 5
+                10
+            },
+            _ => 20,
+        }
+    },
+}`,
+			want: []string{"4:9-4:15: cannot assign to 'x' because it is a readonly property"},
 		},
 	}
 	for _, tt := range tests {
