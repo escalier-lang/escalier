@@ -1,7 +1,10 @@
 package solver
 
 import (
+	"fmt"
 	"testing"
+
+	"github.com/escalier-lang/escalier/internal/ast"
 
 	"github.com/stretchr/testify/require"
 )
@@ -370,4 +373,129 @@ func TestInferSuperCall(t *testing.T) {
 			require.Equal(t, test.want, Messages(errs))
 		})
 	}
+}
+
+// TestInferSuperCallOverImportedSuperclass covers a `super(…)` call whose superclass another
+// package exports. The arguments are checked against the imported constructor, which the
+// subclass reads through the package's namespace.
+func TestInferSuperCallOverImportedSuperclass(t *testing.T) {
+	t.Parallel()
+
+	packages := map[string]string{
+		"geometry": `
+			export class Point {
+				x: number,
+				y: number,
+			}
+			export namespace solid {
+				export class Box {
+					depth: number,
+					constructor(&mut self, depth: number) { self.depth = depth },
+				}
+			}
+		`,
+	}
+
+	// Each diagnostic renders as the source text it blames, then its message.
+	tests := []struct {
+		name string
+		src  string
+		want []string
+	}{
+		{
+			name: "MatchingArguments",
+			src: `import "geometry"
+class Point3 extends geometry.Point {
+    z: number,
+    constructor(&mut self, x: number, y: number, z: number) {
+        super(x, y)
+        self.z = z
+    },
+}`,
+			want: nil,
+		},
+		{
+			name: "ArgumentOfTheWrongType",
+			src: `import "geometry"
+class Point3 extends geometry.Point {
+    z: number,
+    constructor(&mut self, x: number, y: number, z: number) {
+        super("bad", y)
+        self.z = z
+    },
+}`,
+			want: []string{`"bad": cannot constrain "bad" <: number`},
+		},
+		{
+			name: "TooFewArguments",
+			src: `import "geometry"
+class Point3 extends geometry.Point {
+    z: number,
+    constructor(&mut self, x: number, y: number, z: number) {
+        super(x)
+        self.z = z
+    },
+}`,
+			want: []string{"super(x): cannot constrain function of arity 2 <: function of arity 1"},
+		},
+		{
+			name: "SuperclassInANestedNamespace",
+			src: `import "geometry"
+class Crate extends geometry.solid.Box {
+    constructor(&mut self) { super(true) },
+}`,
+			want: []string{"true: cannot constrain true <: number"},
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			t.Parallel()
+			res := InferModuleWithSource(parseModule(t, test.src), sourceOf(t, packages))
+			var got []string
+			for _, e := range res.Errors {
+				got = append(got, spanText(test.src, e.Span())+": "+e.Message())
+			}
+			require.Equal(t, test.want, got)
+		})
+	}
+}
+
+// TestInferSuperCallInsideAPackageNamespace asserts that a `super(…)` call in a package
+// checks against the sibling superclass in its own namespace. The package also declares a
+// root-level `Base` whose constructor takes a `string`, which `extends Base` inside
+// `geo` does not name.
+func TestInferSuperCallInsideAPackageNamespace(t *testing.T) {
+	t.Parallel()
+
+	source := preludeFallback(t, func(uri string) (*ast.Module, string, error) {
+		if uri != "shapes" {
+			return nil, "", fmt.Errorf("no such package")
+		}
+		return parseModuleFiles(t, map[string]string{
+			"lib/index.esc": `
+				export class Base {
+					tag: string,
+					constructor(&mut self, tag: string) { self.tag = tag },
+				}
+			`,
+			"lib/geo/shapes.esc": `
+				export class Base {
+					sides: number,
+					constructor(&mut self, sides: number) { self.sides = sides },
+				}
+				export class Square extends Base {
+					constructor(&mut self) { super(4) },
+				}
+				export class Bad extends Base {
+					constructor(&mut self) { super("four") },
+				}
+			`,
+		}), "lib/index.esc", nil
+	})
+
+	res := InferModuleWithSource(parseModule(t, `import "shapes"`), source)
+	require.Equal(t, []string{
+		"package \"shapes\" (lib/index.esc) has 1 error(s):\n  cannot constrain \"four\" <: number",
+	}, errorMessagesOf(res.Errors))
 }
