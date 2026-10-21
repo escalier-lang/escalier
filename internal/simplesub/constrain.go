@@ -325,7 +325,7 @@ func describe(st SimpleType) string {
 		case "str":
 			return strconv.Quote(t.str)
 		case "num":
-			return strconv.FormatFloat(t.num, 'f', -1, 32)
+			return strconv.FormatFloat(t.num, 'f', -1, 64)
 		case "bool":
 			return strconv.FormatBool(t.b)
 		}

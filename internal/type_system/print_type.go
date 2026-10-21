@@ -237,7 +237,7 @@ func printLitType(t *LitType) string {
 	case *StrLit:
 		return strconv.Quote(lit.Value)
 	case *NumLit:
-		return strconv.FormatFloat(lit.Value, 'f', -1, 32)
+		return strconv.FormatFloat(lit.Value, 'f', -1, 64)
 	case *BoolLit:
 		return strconv.FormatBool(lit.Value)
 	case *BigIntLit:
