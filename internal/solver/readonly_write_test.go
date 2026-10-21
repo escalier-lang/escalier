@@ -246,6 +246,49 @@ class Derived extends Base {
 			src:  `class A { readonly x: number, constructor(&mut self) {} }`,
 			want: []string{"1:54-1:56: Field 'x' is not initialized on every path through the constructor."},
 		},
+		{
+			// Each readonly field is tracked on its own, so the two branches may assign them
+			// in different orders.
+			name: "InitTwoFieldsOnEachBranch",
+			src: `class P {
+    readonly x: number,
+    readonly y: number,
+    constructor(&mut self, b: boolean) {
+        if b {
+            self.x = 1
+            self.y = 2
+        } else {
+            self.y = 3
+            self.x = 4
+        }
+    },
+}`,
+			want: []string{},
+		},
+		{
+			name: "RepeatedInitOfOneOfTwoFields",
+			src: `class P {
+    readonly x: number,
+    readonly y: number,
+    constructor(&mut self) {
+        self.x = 1
+        self.y = 2
+        self.x = 3
+    },
+}`,
+			want: []string{"7:9-7:15: cannot assign to 'x' because it is a readonly property"},
+		},
+		{
+			name: "MissingInitOfOneOfTwoFields",
+			src: `class P {
+    readonly x: number,
+    readonly y: number,
+    constructor(&mut self) {
+        self.x = 1
+    },
+}`,
+			want: []string{"4:28-6:6: Field 'y' is not initialized on every path through the constructor."},
+		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
