@@ -169,6 +169,11 @@ func (c *checker) inferClassDecl(scope *Scope, lvl int, decl *ast.ClassDecl, ns 
 	// class has type parameters to measure.
 	if waits {
 		measureVariance()
+		// Each access from outside the class freshens the lifetimes its method quantifies,
+		// which the recorded set names. The rest of the component reads the members before
+		// finish runs, so they are recorded now as well.
+		c.ctx.recordMethodLifetimes(body, keepLts)
+		c.ctx.recordMethodLifetimes(static, keepLts)
 	}
 
 	// finish coalesces the members and runs every step that reads the coalesced members, then
