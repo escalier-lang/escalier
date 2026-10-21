@@ -273,6 +273,32 @@ export class C {
   }
 }`,
 		},
+		// The keys of the other members are evaluated into bindings beside the class too,
+		// and those avoid every name any key reads.
+		{
+			name: "AMemberKeyBindingAvoidsANameAKeyReads",
+			src: `declare val temp1: unique symbol
+			declare val temp2: unique symbol
+			declare val k: unique symbol
+			class C {
+				static [temp1]: number = 1,
+				[k]: number,
+				[temp2](&self) { return 1 },
+			}`,
+			want: `const temp5 = temp1;
+const temp3 = k;
+const temp6 = temp2;
+export class C {
+  constructor(temp4) {
+    const _field1 = temp4;
+    this[temp3] = _field1;
+  }
+  static [temp5] = 1;
+  [temp6]() {
+    return 1;
+  }
+}`,
+		},
 		// A key's binding cannot take a name the constructor binds either, or the
 		// constructor would index with the field's value. The field `temp1` keeps its
 		// name, and the binding skips to `temp2`.

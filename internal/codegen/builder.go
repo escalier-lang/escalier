@@ -962,14 +962,18 @@ func (b *Builder) buildDeclWithNamespace(decl ast.Decl, nsName string) []Stmt {
 		// leaves the tree alone, so the implicit constructor is derived here. It goes first
 		// so the constructor emits ahead of the members.
 		elems := d.Body
-		prevKeyBindings := b.keyBindings
+		prevKeyBindings, prevReserved := b.keyBindings, b.reservedTempNames
+		// A computed key can be evaluated into a binding beside the class, so no binding
+		// may take a name a key reads. `[temp1]: number` over an outer `temp1` would
+		// otherwise emit `const temp1 = temp1`, which throws.
+		b.reservedTempNames = prevReserved.Union(computedKeyRefs(d))
 		synth, keyBindings := b.implicitConstructor(d)
 		if synth != nil {
 			elems = append([]ast.ClassElem{synth}, d.Body...)
 		}
 		b.keyBindings = keyBindings
 		classElems, classStmts := b.buildClassElems(elems, superClass != nil)
-		b.keyBindings = prevKeyBindings
+		b.keyBindings, b.reservedTempNames = prevKeyBindings, prevReserved
 		allStmts = slices.Concat(allStmts, classStmts)
 
 		classDecl := &ClassDecl{
@@ -1996,9 +2000,7 @@ func (b *Builder) implicitConstructor(d *ast.ClassDecl) (*ast.ConstructorElem, m
 	// then calls `makeKey` once.
 	//
 	// A binding's name avoids every name the constructor may bind, since a field named
-	// `temp1` binds `temp1` in the constructor and would otherwise shadow it. It also avoids
-	// every name a key reads. `[temp1]: number` over an outer `temp1` would otherwise emit
-	// `const temp1 = temp1`, which throws.
+	// `temp1` binds `temp1` in the constructor and would otherwise shadow it.
 	var superParams []string
 	var inherited func(*ast.FieldElem) bool
 	subclass := false
@@ -2026,12 +2028,12 @@ func (b *Builder) implicitConstructor(d *ast.ClassDecl) (*ast.ConstructorElem, m
 	return ast.ImplicitConstructor(d, keyIndex), bindings
 }
 
-// implicitBindableNames returns superParams, the spelling of each instance field's key, and
-// every identifier a computed key of an instance field reads. The first two cover every name
-// a synthesized constructor for decl may bind. They can hold more names than it binds, since
-// a field spelled like a reserved word gets a generated name instead.
+// implicitBindableNames returns superParams and the spelling of each instance field's key,
+// which cover every name a synthesized constructor for decl may bind. They can hold more
+// names than it binds, since a field spelled like a reserved word gets a generated name
+// instead.
 func implicitBindableNames(decl *ast.ClassDecl, superParams []string) set.Set[string] {
-	refs := &identRefs{names: set.FromSlice(superParams)}
+	names := set.FromSlice(superParams)
 	for _, elem := range decl.Body {
 		field, ok := elem.(*ast.FieldElem)
 		if !ok || field.Static {
@@ -2039,11 +2041,31 @@ func implicitBindableNames(decl *ast.ClassDecl, superParams []string) set.Set[st
 		}
 		switch key := field.Name.(type) {
 		case *ast.IdentExpr:
-			refs.names.Add(key.Name)
+			names.Add(key.Name)
 		case *ast.StrLit:
-			refs.names.Add(key.Value)
-		case *ast.ComputedKey:
-			key.Expr.Accept(refs)
+			names.Add(key.Value)
+		}
+	}
+	return names
+}
+
+// computedKeyRefs returns every identifier the computed member keys of decl read.
+func computedKeyRefs(decl *ast.ClassDecl) set.Set[string] {
+	refs := &identRefs{names: set.NewSet[string]()}
+	for _, elem := range decl.Body {
+		var key ast.ObjKey
+		switch e := elem.(type) {
+		case *ast.FieldElem:
+			key = e.Name
+		case *ast.MethodElem:
+			key = e.Name
+		case *ast.GetterElem:
+			key = e.Name
+		case *ast.SetterElem:
+			key = e.Name
+		}
+		if computed, ok := key.(*ast.ComputedKey); ok {
+			computed.Expr.Accept(refs)
 		}
 	}
 	return refs.names
