@@ -273,7 +273,7 @@ func (c *checker) inheritedHalfWalk(
 			// declared `-> Self` reads as that class however many levels up it was declared.
 			// The class substitution still takes superInstance, the arguments the `extends`
 			// clause writes.
-			return projectClassMember(superDef, superInstance, projectSelf(superDef, recv, superDef.instanceMember(member))), superInstance, true
+			return projectClassMember(superDef, superInstance, projectSelf(superDef, recv, member)), superInstance, true
 		}
 		if member, owner, found := c.inheritedHalfWalk(superDef, superInstance, recv, name, half, visited); found {
 			return member, owner, true

@@ -36,9 +36,11 @@ import (
 // pre-declared sibling signature, whether self-recursive, mutually recursive, or a
 // forward call to a member declared later.
 //
-// Once every body has refined the field vars, a non-generic body is coalesced so member
-// lookup reads concrete member types. A generic body keeps its parameter vars symbolic
-// for per-instance projection.
+// Once every body has refined the field vars, the members are coalesced so member lookup
+// reads concrete member types. A generic body keeps its parameter vars symbolic for
+// per-instance projection. A class that shares its component with another declaration is
+// coalesced when the driver runs the class's finish step, after the whole component is
+// inferred. It returns the class value, whose statics are coalesced by the same step.
 func (c *checker) inferClassDecl(scope *Scope, lvl int, decl *ast.ClassDecl, ns string) (soltype.Type, provenance.Provenance, bool) {
 	sigs := c.classSigsOf(scope, lvl, decl, ns)
 	self, def, shell := sigs.self, sigs.def, sigs.shell
@@ -108,17 +110,34 @@ func (c *checker) inferClassDecl(scope *Scope, lvl int, decl *ast.ClassDecl, ns 
 	// coalesces everything.
 	keep := classKeepVars(typeParams, body, static)
 
-	// finish coalesces the members and runs every step that reads the coalesced members, then
-	// returns the class value with the coalesced statics.
-	finish := func() *soltype.ObjectType {
-		def.provisional = nil
-		// The flow map is read off the bound graph, so it is built once every bound is in.
+	// A class that shares its component with another declaration waits for the component. A
+	// member body of one class can read another declaration of the component before that
+	// declaration is inferred, as in `static mk() { return B(1) }` written ahead of `class B`.
+	// Until then the member's type holds a var whose bounds are not all in, and coalescing it
+	// would read `never`. The driver runs finish for each waiting class once the whole
+	// component is inferred.
+	class, inComponent := c.componentClassOf[decl]
+	waits := inComponent && !class.alone
+	// An instance of a generic class reads each member at its own arguments, and only a
+	// coalesced member names nothing but the class's parameters. An uncoalesced member such as
+	// `get(&self) { return self.v }` returns a var bounded by the field var for `v`. Nothing in
+	// a component is generalized until it finishes, so `Box(1)` inside the component writes `1`
+	// into that field var, and `Box("s").get()` would read it. So while a generic class waits,
+	// its body holds a copy of each member coalesced now, before any other declaration
+	// constructs the class. finish puts the members back and coalesces them once more, with
+	// every bound in.
+	var waiting []soltype.ObjTypeElem
+	if waits && (len(typeParams) > 0 || len(shell.lifetimeParams) > 0) {
+		waiting = body.Elems
 		flow := keptFlowMap(keep)
-		c.freezeClassBody(body, keep, flow, keepLts)
-		c.freezeClassBody(static, keep, flow, keepLts)
-		c.ctx.recordMethodLifetimes(body, keepLts)
-		c.ctx.recordMethodLifetimes(static, keepLts)
+		provisional := make([]soltype.ObjTypeElem, len(waiting))
+		for i, elem := range waiting {
+			provisional[i] = freezeMember(elem, keep, flow, keepLts)
+		}
+		body.Elems = provisional
+	}
 
+	measureVariance := func() {
 		// Freeze both per-parameter variance vectors once every member body has refined its
 		// signature, so the walk measures each type parameter at its final occurrences. The
 		// conservative Invariant seeded above governs any constraint raised during body
@@ -144,6 +163,29 @@ func (c *checker) inferClassDecl(scope *Scope, lvl int, decl *ast.ClassDecl, ns 
 				c.report(mismatch)
 			}
 		}
+	}
+	// A waiting class is measured now, so a constraint the rest of the component raises on its
+	// instances reads the measured variance. Its body then holds coalesced members if the
+	// class has type parameters to measure.
+	if waits {
+		measureVariance()
+	}
+
+	// finish coalesces the members and runs every step that reads the coalesced members, then
+	// returns the class value with the coalesced statics.
+	finish := func() *soltype.ObjectType {
+		if waiting != nil {
+			body.Elems = waiting
+		}
+		// The flow map is read off the bound graph, so it is built once every bound is in.
+		flow := keptFlowMap(keep)
+		c.freezeClassBody(body, keep, flow, keepLts)
+		c.freezeClassBody(static, keep, flow, keepLts)
+		c.ctx.recordMethodLifetimes(body, keepLts)
+		c.ctx.recordMethodLifetimes(static, keepLts)
+		if !waits {
+			measureVariance()
+		}
 
 		// Queue this class for the override check the driver runs once every class is inferred.
 		// The nominal subtype rule decides `Dog <: Animal` on the `extends` edge alone, so that
@@ -164,30 +206,18 @@ func (c *checker) inferClassDecl(scope *Scope, lvl int, decl *ast.ClassDecl, ns 
 
 		return c.classValue(self, ctorFns, callFns, static)
 	}
-	// A class in a component waits for the component. A member body of one class can read
-	// another class of the component before that class has bound its value or inferred its
-	// bodies, as in `static mk() { return B(1) }` written ahead of `class B`. Until then the
-	// member's type holds a var whose bounds are not all in, and coalescing it would read
-	// `never`. The driver runs finish for each class once the whole component is inferred.
-	if class, inComponent := c.componentClassOf[decl]; inComponent && class.value != nil {
-		// An instance of a generic class reads each member at its own arguments, and only a
-		// coalesced member names nothing but the class's parameters. An uncoalesced member
-		// such as `get(&self) { return self.v }` returns a var bounded by the field var for
-		// `v`. Nothing in a component is generalized until it finishes, so `Box(1)` inside
-		// the component writes `1` into that field var, and `Box("s").get()` would read it.
-		// Until finish runs, an instance reads a copy of each member coalesced now, before
-		// any other declaration constructs the class.
-		if len(def.TypeParams) > 0 || len(def.LifetimeParams) > 0 {
-			flow := keptFlowMap(keep)
-			def.provisional = make(map[soltype.ObjTypeElem]soltype.ObjTypeElem, len(body.Elems))
-			for _, elem := range body.Elems {
-				def.provisional[elem] = freezeMember(elem, keep, flow, keepLts)
-			}
-		}
+	switch {
+	case waits:
 		class.finish = func() {
 			prevNS := c.classNamespace
 			c.classNamespace = ns
 			defer func() { c.classNamespace = prevNS }()
+			savedClassLts := c.declLifetimes
+			c.declLifetimes = shell.namedLts
+			defer func() { c.declLifetimes = savedClassLts }()
+			savedNamedLts := c.namedLifetimes
+			c.namedLifetimes = sigs.namedLts
+			defer func() { c.namedLifetimes = savedNamedLts }()
 			savedSelfClass := c.selfClass
 			c.selfClass = self
 			defer func() { c.selfClass = savedSelfClass }()
@@ -195,6 +225,9 @@ func (c *checker) inferClassDecl(scope *Scope, lvl int, decl *ast.ClassDecl, ns 
 			// statics in place.
 			class.value.Elems = finish().Elems
 		}
+		return class.value, &ast.NodeProvenance{Node: decl}, true
+	case inComponent:
+		class.value.Elems = finish().Elems
 		return class.value, &ast.NodeProvenance{Node: decl}, true
 	}
 	return finish(), &ast.NodeProvenance{Node: decl}, true
@@ -381,12 +414,12 @@ func (c *checker) inferClassBodies(
 	bindClassParams(ctorFns, typeParams, sigs.shell.lifetimeParams)
 	bindClassParams(callFns, typeParams, sigs.shell.lifetimeParams)
 
-	// inferClassDecl coalesces each member once the bodies are inferred, and a bound that
-	// arrives later does not reach the coalesced member. Take
+	// A class alone in its component is coalesced as soon as its bodies are inferred, and a
+	// bound that arrives later does not reach the coalesced member. Take
 	// `clone(&self) { return Widget(self.name) }`. The call's result is `Widget` only once
 	// the binding var of `Widget` holds the class value, so the value goes into the var
 	// before the member bodies run. Otherwise `clone` would be coalesced to return `never`.
-	// inferClassDecl later puts the coalesced statics into the same value.
+	// The coalesced statics go into the same value once the class finishes.
 	if class, inComponent := c.componentClassOf[decl]; inComponent {
 		class.value = c.classValue(self, ctorFns, callFns, sigs.def.Static)
 		c.constrain(decl, class.value, class.v)

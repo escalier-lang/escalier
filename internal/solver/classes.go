@@ -113,10 +113,6 @@ type ClassDef struct {
 	// binding. B1 stores static members here for later phases; the callable
 	// constructor itself is the value binding's FuncType.
 	Static *soltype.ObjectType
-	// provisional maps each member of Body to a coalesced copy taken once the class's own
-	// bodies are inferred. It is set while the class waits for its component to finish and
-	// Body still holds uncoalesced members, and nil otherwise.
-	provisional map[soltype.ObjTypeElem]soltype.ObjTypeElem
 
 	// Level is the class binding's generalize level. A generic method's own type
 	// parameters live deeper than this, so member access wraps a resolved method in a
@@ -1006,21 +1002,14 @@ func (c *Context) projectOwnElems(def *ClassDef, ct *soltype.ClassType) []soltyp
 		// runs for a generic class, so the two compose.
 		own := make([]soltype.ObjTypeElem, len(def.Body.Elems))
 		for i, elem := range def.Body.Elems {
-			own[i] = projectClassMember(def, ct, projectSelf(def, ct, def.instanceMember(elem)))
+			own[i] = projectClassMember(def, ct, projectSelf(def, ct, elem))
 		}
 		return own
 	}
 	if len(def.TypeParams) == 0 && len(def.LifetimeParams) == 0 {
 		return def.Body.Elems
 	}
-	body := def.Body
-	if def.provisional != nil {
-		body = &soltype.ObjectType{Elems: make([]soltype.ObjTypeElem, len(def.Body.Elems))}
-		for i, elem := range def.Body.Elems {
-			body.Elems[i] = def.instanceMember(elem)
-		}
-	}
-	projected := body.Accept(newClassSubst(def, ct), soltype.Positive)
+	projected := def.Body.Accept(newClassSubst(def, ct), soltype.Positive)
 	obj, ok := projected.(*soltype.ObjectType)
 	if !ok {
 		// Substitution replaces only vars and lifetimes, so an ObjectType body always
@@ -1100,7 +1089,7 @@ func (c *Context) chainElems(def *ClassDef, ct, recv *soltype.ClassType, taken, 
 				// says what they are here. The `Self` substitution takes recv, the class the
 				// receiver belongs to, which is what makes an inherited `-> Self` yield the
 				// subclass rather than the class that declared the member.
-				out = append(out, projectClassMember(superDef, super, projectSelf(superDef, recv, superDef.instanceMember(elem))))
+				out = append(out, projectClassMember(superDef, super, projectSelf(superDef, recv, elem)))
 			}
 		}
 		// Marked after the loop rather than inside it, so a class declaring both halves of an
@@ -1886,7 +1875,7 @@ func (c *checker) projectedClassMember(ct, recv *soltype.ClassType, name string,
 		// walk reaches it. The `Self` substitution takes recv, the class the ACCESS was made
 		// through, which stays fixed as the walk climbs so an inherited `-> Self` yields the
 		// receiver's class rather than the declaring one.
-		return projectClassMember(def, ct, projectSelf(def, recv, def.instanceMember(member))), true
+		return projectClassMember(def, ct, projectSelf(def, recv, member)), true
 	}
 	if visited.Contains(ct.Name) {
 		return nil, false
@@ -1945,16 +1934,6 @@ func (c *checker) classBodyMember(lvl int, blame ast.Node, name string, recv, ca
 	}
 	c.checkReceiverMut(blame, name, recv, memberSelfParam(member))
 	return c.instanceMemberValue(lvl, blame, member), true
-}
-
-// instanceMember returns the member of Body an instance reads: its provisional copy while
-// the class waits for its component to finish, and member itself otherwise. member is an
-// element of Body, so it is the one to pass before projectSelf builds a new element.
-func (def *ClassDef) instanceMember(member soltype.ObjTypeElem) soltype.ObjTypeElem {
-	if view, ok := def.provisional[member]; ok {
-		return view
-	}
-	return member
 }
 
 // projectClassMember rewrites one class-body member's type-parameter and
@@ -2522,9 +2501,13 @@ type componentClass struct {
 	// value is the class value constrained into v, or nil until inferClassBodies
 	// constrains it.
 	value *soltype.ObjectType
+	// alone is set when the class is the only value declaration in its component, so no other
+	// declaration can read its members before it finishes.
+	alone bool
 	// finish coalesces the class's members and puts its coalesced statics into value. It is
 	// nil until inferClassDecl has inferred the class's bodies, and the driver runs it once
-	// every declaration in the component is inferred.
+	// every declaration in the component is inferred. A class that is alone finishes in
+	// inferClassDecl and leaves it nil.
 	finish func()
 }
 

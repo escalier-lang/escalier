@@ -119,6 +119,24 @@ func TestAMemberBodyConstructsALaterClass(t *testing.T) {
 			val pair = User.pair`,
 			want: map[string]string{"pair": "fn () -> [1, \"s\"]"},
 		},
+		{
+			name: "a waiting generic class compares at its measured variance",
+			src: `class Box<T> {
+				v: T,
+				get(&self) { return self.v },
+				toUser(&self) { return User(1) },
+			}
+			class User {
+				id: number,
+				static f() {
+					val b: Box<1> = Box(1)
+					val wide: &Box<number> = &b
+					return wide.get()
+				},
+			}
+			val f = User.f`,
+			want: map[string]string{"f": "fn () -> number"},
+		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {

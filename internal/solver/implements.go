@@ -114,7 +114,7 @@ func (c *checker) classTargetMembers(ct, recv *soltype.ClassType) []soltype.ObjT
 	}
 	own := make([]soltype.ObjTypeElem, len(def.Body.Elems))
 	for i, elem := range def.Body.Elems {
-		own[i] = projectClassMember(def, ct, projectSelf(def, recv, def.instanceMember(elem)))
+		own[i] = projectClassMember(def, ct, projectSelf(def, recv, elem))
 	}
 	if len(def.Supers) == 0 {
 		return own

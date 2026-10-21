@@ -668,6 +668,12 @@ func (c *checker) inferComponent(
 	prevClasses, prevClassOf := c.componentClasses, c.componentClassOf
 	c.componentClasses = map[*soltype.TypeVarType]*componentClass{}
 	c.componentClassOf = map[*ast.ClassDecl]*componentClass{}
+	valueKeys := 0
+	for _, key := range component {
+		if _, isValue := bindings[key]; isValue {
+			valueKeys++
+		}
+	}
 	for _, key := range component {
 		b, isValue := bindings[key]
 		if !isValue {
@@ -681,7 +687,7 @@ func (c *checker) inferComponent(
 			}
 			if decl, isClass := d.(*ast.ClassDecl); isClass {
 				sigs := c.classSigsOf(c.lookupScope(scope, decl), inner, decl, g.GetNamespace(key))
-				class := &componentClass{static: sigs.def.Static, v: b.v}
+				class := &componentClass{static: sigs.def.Static, v: b.v, alone: valueKeys == 1}
 				c.componentClasses[b.v] = class
 				c.componentClassOf[decl] = class
 			}
