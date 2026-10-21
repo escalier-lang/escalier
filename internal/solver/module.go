@@ -848,7 +848,8 @@ func (c *checker) inferComponent(
 	c.classNamespace = prevNS
 
 	// Every declaration in the component has been inferred, so every bound a class member's
-	// type will get is in. Coalesce each class now, in component order.
+	// type will get is in. Run each waiting class's finish step, in component order. finish is
+	// what coalesces the class's members, through freezeClassBody in inferClassDecl.
 	finished := set.NewSet[*componentClass]()
 	for _, key := range component {
 		for _, d := range g.GetDecls(key) {
