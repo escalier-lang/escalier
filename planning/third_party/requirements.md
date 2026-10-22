@@ -77,7 +77,10 @@ Out of scope (owned by the builtins workstream or other efforts):
   pseudo-package layout.
 - URI-scheme imports (`import "std:math"`) and the `?local` /
   `?nested` flag modifiers.
-- Cross-package augmentation via registry interfaces.
+- Cross-package augmentation, including registry interfaces.
+  [cross_package_augmentation](../cross_package_augmentation/requirements.md)
+  specifies it. Its section 7 covers how the `.d.ts` loader converts the
+  augmentations a third-party package ships.
 - Prelude changes that swap lib-walking for `builtins.esc`.
 - Always-current API surface plus codegen polyfill insertion.
 - Intrinsic type handling in the checker.

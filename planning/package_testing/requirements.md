@@ -336,8 +336,7 @@ declare module "expect" {
 ```
 
 Vitest uses the same mechanism on its `Assertion<T>` interface. Escalier has no
-module augmentation, and [third_party](../third_party/requirements.md) lists
-cross-package augmentation as out of scope, so no design covers it yet.
+module augmentation yet.
 
 Escalier will get module augmentation: a declaration that adds members to an
 interface declared in another package. Custom matchers are one user of it.
