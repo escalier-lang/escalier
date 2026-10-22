@@ -1,0 +1,3 @@
+declare val cond: boolean
+val temp1 = 5
+val x = if cond { temp1 } else { 10 }

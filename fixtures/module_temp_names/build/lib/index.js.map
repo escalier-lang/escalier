@@ -1,0 +1,1 @@
+{"version":3,"file":"./index.js","sources":["../../lib/index.esc"],"sourcesContent":["declare val cond: boolean\nval temp1 = 5\nval x = if cond { temp1 } else { 10 }\n"],"names":[],"mappings":"aACI,AAAA,QAAQ;AACL,IAAA,AAAA;AAAA,IAAI;EAAO;;;;iBAAX,PAAW,RAAe,eAA1B,PAA0B,GAA7B,AAAA,IAAG"}
