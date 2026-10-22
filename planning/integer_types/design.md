@@ -83,7 +83,16 @@ Half-open ranges compose without off-by-one adjustments:
 - `0..len` covers the valid indices of a collection of length `len`.
 - `a..b | b..c` is exactly `a..c`.
 - `a..b & b..c` is `never`.
-- `0..n` has exactly `n` members when `n >= 0`.
+- `0..n` has exactly `n` members when `n >= 0` and `n` is a safe integer.
+
+The members of a range are `number` values. Every integer from
+`-(2 ** 53 - 1)` through `2 ** 53 - 1` is a `number`, and these are the safe
+integers. Above `2 ** 53` in magnitude, only some integers are `number` values.
+`2 ** 53 + 1` rounds to `2 ** 53`, so it is not a member of any range. A range
+with a bound beyond the safe integers therefore has fewer members than `n - m`.
+The type rules in sections 3 and 4 hold for every range, since they compare
+bounds rather than count members. Iteration and `length` are defined over the
+safe integers only, as section 6.2 describes.
 
 When `m >= n` the set is empty. A range annotation whose bounds are both literal
 and empty, such as `5..5` or `5..3`, is an error, since it almost always means a
@@ -197,8 +206,12 @@ in the status-code patterns of section 6.5. It also avoids a bound that looks
 shared between neighbors. `200..=299` and `300..=399` have no number in
 common, where `200..300` and `300..400` both mention `300`.
 
-`m..=n` is the same type as `m..(n + 1)`. The rules for each part of the
-design follow from that:
+`m..=n` is the same type as `m..n'`, where `n'` is the smallest integral
+`number` above `n`. For a safe integer `n`, `n'` is `n + 1`, so `0..=9` is
+`0..10`. Above `2 ** 53`, `n + 1` can round back to `n`, so the checker computes
+`n'` with `math.Nextafter(n, math.Inf(1))` instead. That value is the next
+integral `number` there, since every `number` of that size is an integer. The
+rules for each part of the design follow from this definition:
 
 - The bound rules match section 7.3, except that the upper bound must be an
   integer literal or a type reference. `0..=Infinity` is an error, since
@@ -646,8 +659,14 @@ val xs = [...0..5]                 // xs: Array<0..5>
 val ys = Array.from(1..4)          // ys: Array<1..4>
 ```
 
-The iterator yields `start`, `start + 1`, and so on while the value is below
-`end`. A range whose bounds are equal or reversed yields nothing and is not an
+The iterator yields the safe integers of the range in increasing order. It
+starts at `start` and adds `1` while the value is below `end`. A bound beyond the
+safe integers is clamped first. A `start` below `-(2 ** 53 - 1)` begins at
+`-(2 ** 53 - 1)`, and iteration stops after `2 ** 53 - 1`. Without the clamp,
+`i + 1` rounds back to `i` outside the safe integers, and the loop never
+advances. `length` counts the same safe integers.
+
+A range whose bounds are equal or reversed yields nothing and is not an
 error, so `10..0` is empty rather than a countdown.
 
 Two methods change the order or spacing. They follow Rust's `rev` and
@@ -907,9 +926,18 @@ or `max` integer it admits. `type Lo = 0` gives `0`, and `type Lo = int` gives
 
 - A range key inside `0..n` reads the union of the elements it covers. With
   `t: [string, number, boolean]` and `i: 0..2`, `t[i]` is `string | number`.
-- A range key that reaches past `n` reports `TupleIndexOutOfRangeError`, as a
-  literal key out of range does today.
-- An `int` key reads the union of every element, as a `number` key does today.
+- A range key with no member inside `0..n` reports `TupleIndexOutOfRangeError`,
+  as a literal key out of range does today. `t[-1]` is an error, and so is
+  `t[k]` with `k: 3..10`.
+- A range key that is partly inside `0..n` reads the union of the elements it
+  covers plus `undefined`. A negative member reads a property such as `"-1"`,
+  and a member at or past `n` reads past the end, and both give `undefined` at
+  runtime. An `int` key is this case, so `t[i]` with `i: int` is
+  `string | number | boolean | undefined`.
+
+A `number` key keeps its current rule and reads the union of every element.
+`at` takes a signed index and counts a negative one from the end, as section
+11.1 describes.
 
 Array reads already return the element type for any numeric key, so they need
 only the `isNumericKey` change.
@@ -980,7 +1008,8 @@ two cases:
   is the binding's only use
 
 The counting loop evaluates each bound once, in source order, and matches what
-the iterator would yield:
+the iterator would yield. The loops below assume both bound types lie within
+the safe integers, which holds for literal bounds and for most annotated ones:
 
 ```js
 // for i in a..b { body }
@@ -1000,6 +1029,19 @@ for (let i = b - 1, $start = a; i >= $start; i--) { body }
 
 // for i in (a..=b).reversed().step(k) { body }
 for (let i = b, $start = a, $k = k; i >= $start; i -= $k) { body }
+```
+
+When a bound's type reaches past the safe integers, as `int` does, codegen
+clamps that bound once before the loop. That gives the iteration from section
+6.2:
+
+```js
+// for i in a..b, with a: int and b: int
+for (let i = Math.max(a, -9007199254740991), $end = Math.min(b, 9007199254740992);
+     i < $end; i++) { body }
+
+// for i in a..Infinity, with a: int
+for (let i = Math.max(a, -9007199254740991); i <= 9007199254740991; i++) { body }
 ```
 
 An inclusive loop compares with `<=` against `b` rather than with `<` against
@@ -1091,17 +1133,25 @@ type ArrayIndex  = 0..4294967295    // 0 through 2 ** 32 - 2
 Two intrinsics compute the same facts for a particular array or tuple type:
 
 - `Indices<T>` is the set of valid indices of `T`.
+- `RelativeIndices<T>` is the set of indices that `with` accepts. A negative
+  index counts from the end, so a tuple of length `n` accepts `-n..n`. A tuple
+  whose length may vary uses its shortest length, since only those indices
+  are valid for every value of the type.
 - `At<T, I>` is the type of `T` read at index `I`, as `Array.prototype.at`
   defines it. A negative `I` counts from the end, and an index past either end
   reads `undefined`.
 
-| `T` | `Indices<T>` | `T["length"]` |
-|---|---|---|
-| `[A, B, C]` | `0..3` | `3` |
-| `[A, B?]` | `0..2` | `1..3` |
-| `[A, ...Array<B>]` | `ArrayIndex` | `1..4294967296` |
-| `[A, B, ...]` | `ArrayIndex` | `2..4294967296` |
-| `Array<T>` | `ArrayIndex` | `ArrayLength` |
+| `T` | `Indices<T>` | `RelativeIndices<T>` | `T["length"]` |
+|---|---|---|---|
+| `[A, B, C]` | `0..3` | `-3..3` | `3` |
+| `[A, B?]` | `0..2` | `-1..1` | `1..3` |
+| `[A, ...Array<B>]` | `ArrayIndex` | `-1..1` | `1..4294967296` |
+| `[A, B, ...]` | `ArrayIndex` | `-2..2` | `2..4294967296` |
+| `Array<T>` | `ArrayIndex` | `-4294967295..4294967295` | `ArrayLength` |
+
+For an `Array<T>`, `RelativeIndices` cannot know the length, so it admits
+every index some array could accept. `with` still throws at runtime for an
+index outside the actual array.
 
 A stdlib signature refers to the receiver as `Self`, so `Indices<Self>` in an
 `Array` method resolves to `0..3` when the receiver is `[A, B, C]`.
@@ -1116,7 +1166,7 @@ A stdlib signature refers to the receiver as `Self`, so `Indices<Self>` in an
 | `indexOf`, `lastIndexOf`, `findIndex`, `findLastIndex` | return `number` | return `-1 \| ArrayIndex` |
 | callback `index` in `map`, `forEach`, `filter`, `reduce`, and the rest | `number` | `Indices<Self>` |
 | `at(index)` | `index: number`, returns `T \| undefined` | `index: int`, returns `At<Self, I>` |
-| `with(index, value)` | `index: number` | `index: int` |
+| `with(index, value)` | `index: number` | `index: RelativeIndices<Self>` |
 | `slice`, `fill`, `copyWithin`, `includes`, `indexOf` position arguments | `number` | `int` |
 | `splice(start, deleteCount)` | `number`, `number` | `int`, `ArrayLength` |
 
@@ -1126,8 +1176,8 @@ Two of these catch errors that throw at runtime:
   `RangeError`. A write to `length` and the constructor's argument now require
   an `ArrayLength`, so the checker reports both.
 - `with` throws a `RangeError` for an index outside the array. On a tuple,
-  `with` takes `Indices<Self>`, so the checker catches the out-of-range case
-  there too.
+  `with` takes `RelativeIndices<Self>`, so the checker catches the
+  out-of-range case there too.
 
 The position arguments of `at`, `slice`, and the others are truncated by
 JavaScript, so `arr.at(1.5)` reads `arr[1]`. Typing them as `int` turns a
@@ -1166,8 +1216,9 @@ The loop needs no out-of-range check. `t.length` is the literal `3`, so `i` has
 type `0..3`, and section 8.4 reads `t[i]` as the union of the elements at
 `0`, `1`, and `2`.
 
-`t.with(3, x)` is an error, since `3` is outside `Indices<Self>`. `t.at(5)` is
-`undefined`, matching what JavaScript returns.
+`t.with(3, x)` and `t.with(-4, x)` are errors, since both are outside
+`RelativeIndices<Self>`, which is `-3..3`. `t.with(-1, x)` replaces the last
+element. `t.at(5)` is `undefined`, matching what JavaScript returns.
 
 A tuple with optional or rest elements reads from the table in section 11.1. A
 read at an index that may hold an optional element includes `undefined`.
@@ -1277,7 +1328,7 @@ if val k: int = i {
 6. **Coverage.** Covers interval-based exhaustiveness and narrowing in `match`,
    and tuple indexing by range.
 7. **Standard library.** Covers section 11: the length and index aliases, the
-   `Indices` and `At` intrinsics, the array, tuple, typed array, and string
+   `Indices`, `RelativeIndices`, and `At` intrinsics, the array, tuple, typed array, and string
    signatures, and the `Math` rounding overloads.
 8. **Later work.** Covers interval arithmetic, generic bounds, and the `Add`,
    `Sub`, and `Mul` intrinsics from decision 13 in section 13.
