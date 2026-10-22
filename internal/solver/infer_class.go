@@ -416,9 +416,9 @@ func (c *checker) inferClassBodies(
 				fn, implicit = c.synthesizeConstructor(decl, self, body)
 				// A synthesized subclass constructor forwards to this one by name, so only a
 				// constructor emission also builds is recorded. Emission builds none for a
-				// `declare class` or for a class whose computed key blocks it, and the one
-				// recovering a failed subclass synthesis is never emitted.
-				if synth, _ := ast.ImplicitConstructor(decl); synth != nil {
+				// `declare class`, and the one recovering a failed subclass synthesis is
+				// never emitted.
+				if ast.ImplicitConstructor(decl, nil) != nil {
 					sigs.def.implicitCtor = implicit
 				}
 			}

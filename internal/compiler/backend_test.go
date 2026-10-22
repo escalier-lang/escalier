@@ -486,30 +486,79 @@ func TestAGenericClassStaticSideIsSubsumed(t *testing.T) {
 	require.Contains(t, dts, "pick(flag: boolean, n: number): number}")
 }
 
-// TestSynthesizesAComputedKeyConstructor asserts that a class whose only field is keyed
-// off `Symbol.iterator` emits a constructor that assigns it.
-//
-// A variable key such as `[k]` is left out. soltype takes a computed key from a closed
-// set of well-known symbols, so internal/solver reports `Unsupported: ComputedKey` for
-// one and drops the field. TestEmitsTheImplicitConstructor in internal/codegen covers
-// what emission derives for a variable key without running a checker.
+// TestSynthesizesAComputedKeyConstructor covers the constructor a class gets for a field
+// with a computed key. The key is evaluated once into a binding beside the class, as
+// JavaScript evaluates a computed member key once, and the constructor indexes with the
+// binding. A call such as `makeKey()` therefore runs once, not once per construction.
+// Every computed member key of such a class is evaluated in source order, so a static
+// field's key runs before an instance field's key written after it.
 func TestSynthesizesAComputedKeyConstructor(t *testing.T) {
-	src := "class Odd {\n\t[Symbol.iterator]: number,\n}"
-
-	js := CompilePackage(libSources(src), PackageConfig{}).CompUnits["lib/index"].JS
-	require.Contains(t, js, "this[Symbol.iterator] = _field1;")
+	tests := []struct {
+		name string
+		src  string
+		want string
+	}{
+		{
+			name: "AWellKnownSymbol",
+			src:  "class Odd {\n\t[Symbol.iterator]: number,\n}",
+			want: `const temp1 = Symbol.iterator;
+export class Odd {
+  constructor(temp2) {
+    const _field1 = temp2;
+    this[temp1] = _field1;
+  }
 }
-
-// TestDoesNotSynthesizeAKeyFromACall asserts that a class whose field key comes from a
-// call emits no constructor.
-//
-// `makeKey()` answers with a fresh symbol per call, so a constructor reading it per
-// construction would assign a property no reader can name.
-func TestDoesNotSynthesizeAKeyFromACall(t *testing.T) {
-	src := "declare fn makeKey() -> unique symbol\nclass Odd {\n\t[makeKey()]: number,\n}"
-
-	js := CompilePackage(libSources(src), PackageConfig{}).CompUnits["lib/index"].JS
-	require.NotContains(t, js, "constructor")
+//# sourceMappingURL=./index.js.map
+`,
+		},
+		{
+			name: "AVariableKey",
+			src:  "declare val k: unique symbol\nclass Odd {\n\t[k]: number,\n}",
+			want: `const temp1 = k;
+export class Odd {
+  constructor(temp2) {
+    const _field1 = temp2;
+    this[temp1] = _field1;
+  }
+}
+//# sourceMappingURL=./index.js.map
+`,
+		},
+		{
+			name: "KeysInSourceOrder",
+			src:  "declare fn a() -> unique symbol\ndeclare fn b() -> unique symbol\nclass Odd {\n\tstatic [a()]: number = 1,\n\t[b()]: number,\n}",
+			want: `const temp3 = a();
+const temp1 = b();
+export class Odd {
+  constructor(temp2) {
+    const _field1 = temp2;
+    this[temp1] = _field1;
+  }
+  static [temp3] = 1;
+}
+//# sourceMappingURL=./index.js.map
+`,
+		},
+		{
+			name: "AKeyFromACall",
+			src:  "declare fn makeKey() -> unique symbol\nclass Odd {\n\t[makeKey()]: number,\n}",
+			want: `const temp1 = makeKey();
+export class Odd {
+  constructor(temp2) {
+    const _field1 = temp2;
+    this[temp1] = _field1;
+  }
+}
+//# sourceMappingURL=./index.js.map
+`,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			js := CompilePackage(libSources(tt.src), PackageConfig{}).CompUnits["lib/index"].JS
+			require.Equal(t, tt.want, js)
+		})
+	}
 }
 
 // TestEmitsASymbolAPropertyDeclares covers the `.d.ts` the solver emits for a

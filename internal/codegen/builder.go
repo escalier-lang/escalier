@@ -17,9 +17,7 @@ import (
 type Builder struct {
 	tempId int
 	// reservedTempNames are names NewTempId must not mint, because something the emitted
-	// code reads already binds them. A class whose computed key reads a name from the
-	// surrounding scope sets it for the span of that class, so a `temp<N>` parameter
-	// cannot shadow what the key meant. The zero value reserves nothing.
+	// code reads already binds them. The zero value reserves nothing.
 	reservedTempNames set.Set[string]
 	depGraph          *dep_graph.DepGraph
 	hasExtractor      bool
@@ -32,6 +30,10 @@ type Builder struct {
 	// jsTypes answers what emission needs to know about inferred types. A nil field
 	// reads as noJSTypes through b.types(), which is what a hand-built AST wants.
 	jsTypes JSTypes
+	// keyBindings names the binding each computed key of the class being emitted is
+	// evaluated into, for the keys its synthesized constructor assigns a field by. It is nil
+	// outside a class that has one.
+	keyBindings map[*ast.ComputedKey]string
 	// solSymbolKeys maps a unique symbol's id to the top-level value that names it in the
 	// module BuildDefinitionsFromSol is emitting. See symbolKeysFromSol.
 	solSymbolKeys map[int]string
@@ -970,32 +972,22 @@ func (b *Builder) buildDeclWithNamespace(decl ast.Decl, nsName string) []Stmt {
 			}
 		}
 
-		// A class that declares no constructor still constructs its fields, so the
-		// implicit one is derived here, since no checker installs it on the tree. It
-		// goes first so the constructor emits ahead of the members.
-		//
-		// A computed key leaves no parameter name to bind, so no constructor is
-		// derived. Reporting that belongs to the checkers, so the field is dropped.
-		// A computed key reads a name from the surrounding scope, and the parameters this
-		// class emits are lowered to `temp<N>`, so one of those could shadow it.
-		// `class C { [temp1]: number }` over a `temp1` the key reads would otherwise store
-		// the field under the parameter's own value.
-		prevReserved := b.reservedTempNames
-		b.reservedTempNames = prevReserved.Union(ast.FreeNamesInComputedKeys(d))
-
+		// A class that declares no constructor still constructs its fields. The solver
+		// leaves the tree alone, so the implicit constructor is derived here. It goes first
+		// so the constructor emits ahead of the members.
 		elems := d.Body
-		// A subclass's constructor passes its superclass's parameters to `super(…)`.
-		// Only the checker knows those, so it says whether to synthesize one and with
-		// what. At most one of the two applies, since only a subclass gets the second.
-		if synth, _ := ast.ImplicitConstructor(d); synth != nil {
+		prevKeyBindings, prevReserved := b.keyBindings, b.reservedTempNames
+		// A computed key can be evaluated into a binding beside the class, so no binding
+		// may take a name a key reads. `[temp1]: number` over an outer `temp1` would
+		// otherwise emit `const temp1 = temp1`, which throws.
+		b.reservedTempNames = prevReserved.Union(computedKeyRefs(d))
+		synth, keyBindings := b.implicitConstructor(d)
+		if synth != nil {
 			elems = append([]ast.ClassElem{synth}, d.Body...)
-		} else if superParams, inherited, ok := b.types().ImplicitSubclassConstructor(d); ok {
-			if synth, _, _ := ast.ImplicitSubclassConstructor(d, superParams, inherited); synth != nil {
-				elems = append([]ast.ClassElem{synth}, d.Body...)
-			}
 		}
+		b.keyBindings = keyBindings
 		classElems, classStmts := b.buildClassElems(elems, superClass != nil)
-		b.reservedTempNames = prevReserved
+		b.keyBindings, b.reservedTempNames = prevKeyBindings, prevReserved
 		allStmts = slices.Concat(allStmts, classStmts)
 
 		classDecl := &ClassDecl{
@@ -1995,6 +1987,106 @@ func (b *Builder) buildExpr(expr ast.Expr, parent ast.Expr) (Expr, []Stmt) {
 	}
 }
 
+// buildClassKey builds the key of a member of the class being emitted. In a class whose
+// synthesized constructor indexes with key bindings, a computed key is evaluated into a
+// binding as well, and the member is keyed by the binding. Every computed key of the class
+// is then evaluated by a statement before the class, in source order, as JavaScript
+// evaluates them. Any other key is built as buildObjKey builds it.
+func (b *Builder) buildClassKey(key ast.ObjKey) (ObjKey, []Stmt) {
+	computed, ok := key.(*ast.ComputedKey)
+	if !ok || len(b.keyBindings) == 0 {
+		return b.buildObjKey(key)
+	}
+	keyExpr, stmts := b.buildExpr(computed.Expr, nil)
+	temp, decl := b.createTempVarWithInit(keyExpr, computed.Expr)
+	decl.(*DeclStmt).Decl.(*VarDecl).Kind = ValKind
+	return NewComputedKey(temp, key), append(stmts, decl)
+}
+
+// implicitConstructor returns the constructor emission derives for a class that declares
+// none, or nil when the class gets none. The map names the binding each computed key the
+// constructor assigns a field by is evaluated into. buildClassElems declares each binding
+// where it reaches the field, before the class is defined.
+func (b *Builder) implicitConstructor(d *ast.ClassDecl) (*ast.ConstructorElem, map[*ast.ComputedKey]string) {
+	// JavaScript evaluates a computed member key once, where the class is defined. The
+	// constructor runs once per instance, so it indexes with a binding the key was
+	// evaluated into instead of evaluating the key again. `class C { [makeKey()]: number }`
+	// then calls `makeKey` once.
+	var superParams []string
+	var inherited func(*ast.FieldElem) bool
+	subclass := false
+	if d.Extends != nil {
+		superParams, inherited, subclass = b.types().ImplicitSubclassConstructor(d)
+		if !subclass {
+			return nil, nil
+		}
+	}
+
+	// A binding's name avoids every name the constructor may bind, since a field named
+	// `temp1` binds `temp1` in the constructor and would otherwise shadow it.
+	prevReserved := b.reservedTempNames
+	b.reservedTempNames = prevReserved.Union(implicitBindableNames(d, superParams))
+	defer func() { b.reservedTempNames = prevReserved }()
+
+	bindings := map[*ast.ComputedKey]string{}
+	keyIndex := func(key *ast.ComputedKey) ast.Expr {
+		name := b.NewTempId()
+		bindings[key] = name
+		return ast.NewIdent(name, key.Span())
+	}
+
+	// A subclass's constructor passes its superclass's parameters to `super(…)`, and only
+	// the solver knows those.
+	if subclass {
+		synth, _ := ast.ImplicitSubclassConstructor(d, superParams, inherited, keyIndex)
+		return synth, bindings
+	}
+	return ast.ImplicitConstructor(d, keyIndex), bindings
+}
+
+// implicitBindableNames returns superParams and the spelling of each instance field's key,
+// which cover every name a synthesized constructor for decl may bind. They can hold more
+// names than it binds, since a field spelled like a reserved word gets a generated name
+// instead.
+func implicitBindableNames(decl *ast.ClassDecl, superParams []string) set.Set[string] {
+	names := set.FromSlice(superParams)
+	for _, elem := range decl.Body {
+		field, ok := elem.(*ast.FieldElem)
+		if !ok || field.Static {
+			continue
+		}
+		switch key := field.Name.(type) {
+		case *ast.IdentExpr:
+			names.Add(key.Name)
+		case *ast.StrLit:
+			names.Add(key.Value)
+		}
+	}
+	return names
+}
+
+// computedKeyRefs returns every identifier the computed member keys of decl read.
+func computedKeyRefs(decl *ast.ClassDecl) set.Set[string] {
+	refs := &identRefs{names: set.NewSet[string]()}
+	for _, elem := range decl.Body {
+		var key ast.ObjKey
+		switch e := elem.(type) {
+		case *ast.FieldElem:
+			key = e.Name
+		case *ast.MethodElem:
+			key = e.Name
+		case *ast.GetterElem:
+			key = e.Name
+		case *ast.SetterElem:
+			key = e.Name
+		}
+		if computed, ok := key.(*ast.ComputedKey); ok {
+			computed.Expr.Accept(refs)
+		}
+	}
+	return refs.names
+}
+
 func (b *Builder) buildObjKey(key ast.ObjKey) (ObjKey, []Stmt) {
 	switch k := key.(type) {
 	case *ast.IdentExpr:
@@ -2043,13 +2135,16 @@ func (b *Builder) createTempVarWithInit(init Expr, sourceExpr ast.Expr) (Expr, S
 // expression and the declaration statement.
 func (b *Builder) createTempVar(sourceExpr ast.Expr) (Expr, Stmt) {
 	tempId := b.NewTempId()
-	tempVar := NewIdentExpr(tempId, "", sourceExpr)
+	return NewIdentExpr(tempId, "", sourceExpr), b.declareTemp(tempId, sourceExpr)
+}
 
+// declareTemp returns an uninitialized `var` declaration of the temp name.
+func (b *Builder) declareTemp(name string, sourceExpr ast.Expr) *DeclStmt {
 	tempDecl := &VarDecl{
 		Kind: VarKind,
 		Decls: []*Declarator{
 			{
-				Pattern: NewIdentPat(tempId, nil, sourceExpr),
+				Pattern: NewIdentPat(name, nil, sourceExpr),
 				TypeAnn: nil,
 				Init:    nil,
 			},
@@ -2060,13 +2155,11 @@ func (b *Builder) createTempVar(sourceExpr ast.Expr) (Expr, Stmt) {
 		source:  sourceExpr,
 	}
 
-	declStmt := &DeclStmt{
+	return &DeclStmt{
 		Decl:   tempDecl,
 		span:   nil,
 		source: sourceExpr,
 	}
-
-	return tempVar, declStmt
 }
 
 // buildBlockWithTempVar builds a block of statements and assigns the result of the last
@@ -2370,7 +2463,7 @@ func (b *Builder) buildClassElems(inElems []ast.ClassElem, derived bool) ([]Clas
 			// Only handle static fields here; instance fields are
 			// initialized inside the constructor body.
 			if e.Static {
-				name, nameStmts := b.buildObjKey(e.Name)
+				name, nameStmts := b.buildClassKey(e.Name)
 				allStmts = slices.Concat(allStmts, nameStmts)
 
 				// The checker requires every static field to have an
@@ -2394,7 +2487,18 @@ func (b *Builder) buildClassElems(inElems []ast.ClassElem, derived bool) ([]Clas
 				}
 				outElems = append(outElems, fieldElem)
 			}
-			// Instance fields are skipped and handled by the constructor
+			// An instance field is assigned by the constructor. Its key, when the
+			// constructor indexes with a binding of it, is evaluated here, so it runs in
+			// source order with the keys of the members around it.
+			if key, computed := e.Name.(*ast.ComputedKey); computed && !e.Static {
+				if name, bound := b.keyBindings[key]; bound {
+					keyExpr, keyStmts := b.buildExpr(key.Expr, nil)
+					decl := b.declareTemp(name, key.Expr)
+					decl.Decl.(*VarDecl).Kind = ValKind
+					decl.Decl.(*VarDecl).Decls[0].Init = keyExpr
+					allStmts = slices.Concat(allStmts, keyStmts, []Stmt{decl})
+				}
+			}
 		case *ast.MethodElem:
 			if e.Fn == nil {
 				continue
@@ -2408,7 +2512,7 @@ func (b *Builder) buildClassElems(inElems []ast.ClassElem, derived bool) ([]Clas
 				if siblings[0] != elem {
 					continue
 				}
-				name, nameStmts := b.buildObjKey(e.Name)
+				name, nameStmts := b.buildClassKey(e.Name)
 				allStmts = slices.Concat(allStmts, nameStmts)
 				if member := b.buildOverloadedMethod(name, e, methodArms(siblings)); member != nil {
 					outElems = append(outElems, member)
@@ -2425,7 +2529,7 @@ func (b *Builder) buildClassElems(inElems []ast.ClassElem, derived bool) ([]Clas
 				b.inBlockScope = prevInBlockScope
 			}
 
-			name, nameStmts := b.buildObjKey(e.Name)
+			name, nameStmts := b.buildClassKey(e.Name)
 			allStmts = slices.Concat(allStmts, nameStmts)
 
 			isGenerator := e.Fn.Gen || (e.Fn.Body != nil && containsYield(e.Fn.Body.Stmts))
@@ -2456,7 +2560,7 @@ func (b *Builder) buildClassElems(inElems []ast.ClassElem, derived bool) ([]Clas
 				b.inBlockScope = prevInBlockScope
 			}
 
-			name, nameStmts := b.buildObjKey(e.Name)
+			name, nameStmts := b.buildClassKey(e.Name)
 			allStmts = slices.Concat(allStmts, nameStmts)
 
 			getterElem := &GetterElem{
@@ -2483,7 +2587,7 @@ func (b *Builder) buildClassElems(inElems []ast.ClassElem, derived bool) ([]Clas
 				b.inBlockScope = prevInBlockScope
 			}
 
-			name, nameStmts := b.buildObjKey(e.Name)
+			name, nameStmts := b.buildClassKey(e.Name)
 			allStmts = slices.Concat(allStmts, nameStmts)
 
 			setterElem := &SetterElem{
@@ -3226,14 +3330,13 @@ func isTrueLiteral(expr Expr) bool {
 	return false
 }
 
-// guardRefs collects the identifier names a guard expression mentions, so a caller can ask
-// whether the guard depends on the names its arm's pattern binds.
-type guardRefs struct {
+// identRefs collects the name of every identifier expression a walk reaches.
+type identRefs struct {
 	ast.DefaultVisitor
 	names set.Set[string]
 }
 
-func (v *guardRefs) EnterExpr(e ast.Expr) bool {
+func (v *identRefs) EnterExpr(e ast.Expr) bool {
 	if ident, isIdent := e.(*ast.IdentExpr); isIdent {
 		v.names.Add(ident.Name)
 	}
@@ -3373,7 +3476,8 @@ func guardReadsPatternBindings(pat ast.Pat, guard ast.Expr) bool {
 	if bound.Len() == 0 {
 		return false
 	}
-	refs := &guardRefs{names: set.NewSet[string]()}
+	// The guard depends on the names its arm's pattern binds when it mentions one.
+	refs := &identRefs{names: set.NewSet[string]()}
 	guard.Accept(refs)
 	return refs.names.Intersection(bound).Len() > 0
 }

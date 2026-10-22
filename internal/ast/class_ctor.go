@@ -19,20 +19,16 @@ const selfParamName = "self"
 // The element is nil for a class that declares a constructor, a `declare class`, and a
 // subclass. ImplicitSubclassConstructor builds a subclass's.
 //
-// The second return names the field that blocked synthesis, which is a non-static field
-// whose computed key stableKeyExpr rejects. A caller that reports diagnostics says the
-// class needs an explicit constructor, and one that only emits code leaves it out.
+// keyIndex returns the expression the constructor indexes `self` with to assign a field
+// whose key is computed. A nil keyIndex indexes with the key's own expression.
 //
 // internal/solver and JavaScript emission both call this, which is what makes them
 // agree on what a class constructs.
-func ImplicitConstructor(decl *ClassDecl) (*ConstructorElem, *FieldElem) {
+func ImplicitConstructor(decl *ClassDecl, keyIndex func(*ComputedKey) Expr) *ConstructorElem {
 	if decl.Declare() || decl.Extends != nil || declaresConstructor(decl) {
-		return nil, nil
+		return nil
 	}
-	inits, blocker := implicitFieldInits(decl, FreeNamesInComputedKeys(decl), set.NewSet[string](), nil)
-	if blocker != nil {
-		return nil, blocker
-	}
+	inits := implicitFieldInits(decl, set.NewSet[string](), nil, keyIndex)
 	classSpan := decl.Name.Span()
 	params := []*Param{implicitSelfParam(classSpan)}
 	stmts := []Stmt{}
@@ -41,7 +37,7 @@ func ImplicitConstructor(decl *ClassDecl) (*ConstructorElem, *FieldElem) {
 		rhs := NewIdent(init.param.Pattern.(*IdentPat).Name, init.field.Span())
 		stmts = append(stmts, init.assign(rhs))
 	}
-	return implicitConstructorElem(params, stmts, classSpan), nil
+	return implicitConstructorElem(params, stmts, classSpan)
 }
 
 // ImplicitSubclassConstructor returns the constructor a subclass that declares none gets,
@@ -63,16 +59,12 @@ func ImplicitConstructor(decl *ClassDecl) (*ConstructorElem, *FieldElem) {
 // key binds no name takes a generated `_field<N>` that avoids superParams.
 //
 // The element is nil for a class without an `extends` clause, a class that declares a
-// constructor, and a `declare class`. The third return names the field that blocked
-// synthesis, as it does for ImplicitConstructor.
-func ImplicitSubclassConstructor(decl *ClassDecl, superParams []string, inherited func(*FieldElem) bool) (*ConstructorElem, []*Param, *FieldElem) {
+// constructor, and a `declare class`. keyIndex is as it is for ImplicitConstructor.
+func ImplicitSubclassConstructor(decl *ClassDecl, superParams []string, inherited func(*FieldElem) bool, keyIndex func(*ComputedKey) Expr) (*ConstructorElem, []*Param) {
 	if decl.Declare() || decl.Extends == nil || declaresConstructor(decl) {
-		return nil, nil, nil
+		return nil, nil
 	}
-	inits, blocker := implicitFieldInits(decl, FreeNamesInComputedKeys(decl), set.FromSlice(superParams), inherited)
-	if blocker != nil {
-		return nil, nil, blocker
-	}
+	inits := implicitFieldInits(decl, set.FromSlice(superParams), inherited, keyIndex)
 
 	classSpan := decl.Name.Span()
 	params := []*Param{implicitSelfParam(classSpan)}
@@ -90,7 +82,7 @@ func ImplicitSubclassConstructor(decl *ClassDecl, superParams []string, inherite
 		rhs := NewIdent(init.param.Pattern.(*IdentPat).Name, init.field.Span())
 		stmts = append(stmts, init.assign(rhs))
 	}
-	return implicitConstructorElem(params, stmts, classSpan), fieldParams, nil
+	return implicitConstructorElem(params, stmts, classSpan), fieldParams
 }
 
 // declaresConstructor reports whether decl writes a `constructor` block.
@@ -140,20 +132,17 @@ func (init implicitFieldInit) assign(rhs Expr) Stmt {
 }
 
 // implicitFieldInits returns one implicitFieldInit per required instance field of decl, in
-// declaration order, leaving out each field skip reports. A nil skip leaves out none.
-// freeKeyNames is FreeNamesInComputedKeys(decl). A generated `_field<N>` parameter name
-// avoids every name in reserved.
-//
-// The second return names the field that blocked synthesis, a non-static field whose
-// computed key stableKeyExpr rejects. The inits are nil when it is set.
-func implicitFieldInits(decl *ClassDecl, freeKeyNames, reserved set.Set[string], skip func(*FieldElem) bool) ([]implicitFieldInit, *FieldElem) {
+// declaration order, leaving out each field skip reports. A nil skip leaves out none. A
+// generated `_field<N>` parameter name avoids every name in reserved. keyIndex is as it is
+// for ImplicitConstructor.
+func implicitFieldInits(decl *ClassDecl, reserved set.Set[string], skip func(*FieldElem) bool, keyIndex func(*ComputedKey) Expr) []implicitFieldInit {
 	// Collected before any parameter is built, so a generated name can avoid them.
 	// `class C { _field1: number, "a-b": string }` would otherwise bind `_field1`
 	// twice, a SyntaxError, and assign the first field's value to the second.
-	taken := reserved.Union(freeKeyNames)
+	taken := reserved.Clone()
 	for _, bodyElem := range decl.Body {
 		if field, ok := bodyElem.(*FieldElem); ok && TakesConstructorParam(field) && !skipped(skip, field) {
-			if name, direct := directParamName(field.Name, freeKeyNames); direct {
+			if name, direct := directParamName(field.Name); direct {
 				taken.Add(name)
 			}
 		}
@@ -173,7 +162,7 @@ func implicitFieldInits(decl *ClassDecl, freeKeyNames, reserved set.Set[string],
 		var lhs Expr
 		selfRef := NewIdent(selfParamName, fieldSpan)
 
-		if name, direct := directParamName(field.Name, freeKeyNames); direct {
+		if name, direct := directParamName(field.Name); direct {
 			paramName = name
 			lhs = NewMember(selfRef, NewIdentifier(name, fieldSpan), false, fieldSpan)
 		} else {
@@ -189,12 +178,10 @@ func implicitFieldInits(decl *ClassDecl, freeKeyNames, reserved set.Set[string],
 			case *NumLit:
 				keyExpr = NewLitExpr(NewNumber(k.Value, fieldSpan))
 			case *ComputedKey:
-				if !stableKeyExpr(k.Expr) {
-					// Stop rather than emit a constructor that assigns the wrong
-					// property.
-					return nil, field
-				}
 				keyExpr = k.Expr
+				if keyIndex != nil {
+					keyExpr = keyIndex(k)
+				}
 			default:
 				panic("implicitFieldInits: unexpected ObjKey variant")
 			}
@@ -216,88 +203,12 @@ func implicitFieldInits(decl *ClassDecl, freeKeyNames, reserved set.Set[string],
 			lhs:   lhs,
 		})
 	}
-	return inits, nil
+	return inits
 }
 
 // skipped reports whether skip leaves field out. A nil skip leaves out nothing.
 func skipped(skip func(*FieldElem) bool, field *FieldElem) bool {
 	return skip != nil && skip(field)
-}
-
-// stableKeyExpr reports whether reading expr again gives what it gave when the class was
-// defined. JavaScript evaluates a computed class-member key once, where the class is
-// defined, and the synthesized body reads it per construction, so only an expression
-// that cannot change between the two belongs there.
-//
-// Two shapes qualify. A variable read is pinned by the key's own type. A computed key
-// has to name one property, and a binding typed by a single literal or a `unique symbol`
-// has no second value to hold. `var k = Symbol()` widens to `symbol`, which is rejected
-// as a key before synthesis is reached.
-//
-// `Symbol.<name>` is the other, which is what `[Symbol.iterator]` writes. A property of
-// the global `Symbol` is a data property, so reading it runs no user code.
-//
-// Every other shape is left to a hand-written constructor, since reading it again can
-// answer differently. A call is the plainest case: `declare fn makeKey() -> unique
-// symbol` type-checks as a key and answers with a fresh symbol per call, so
-// `self[makeKey()] = v` would assign a property no reader can name. A property read off
-// anything but `Symbol` is excluded because a getter is a call this package cannot tell
-// from a field, which `declare val keys: {get k(&self) -> unique symbol}` makes
-// `[keys.k]`.
-//
-// #1831 removes the distinction by evaluating the key once beside the class, after which
-// every computed key gets a constructor and this goes away.
-func stableKeyExpr(expr Expr) bool {
-	switch e := expr.(type) {
-	case *IdentExpr:
-		return true
-	case *MemberExpr:
-		obj, isIdent := e.Object.(*IdentExpr)
-		return !e.OptChain && e.Prop != nil && isIdent && obj.Name == symbolGlobalName
-	default:
-		return false
-	}
-}
-
-// symbolGlobalName is the global whose properties a computed key may read. See
-// stableKeyExpr.
-const symbolGlobalName = "Symbol"
-
-// FreeNamesInComputedKeys returns the names this class's computed keys read from the
-// surrounding scope, the free names of those key expressions. No parameter the emitted
-// constructor binds may use one, since the constructor reads each key after binding its
-// parameters, and a parameter of that name would shadow what the key meant where the
-// class was defined.
-//
-// ImplicitConstructor keeps the names it chooses off this list. JavaScript emission has
-// its own, the `temp<N>` a lowered parameter takes, so it reads this to keep those off it
-// too.
-//
-// Only a free name counts, so `[Symbol.iterator]` contributes `Symbol` and not
-// `iterator`. A property is a name on the object rather than a binding, so a field named
-// `iterator` shadows nothing and keeps its own parameter.
-func FreeNamesInComputedKeys(decl *ClassDecl) set.Set[string] {
-	names := set.NewSet[string]()
-	for _, bodyElem := range decl.Body {
-		field, ok := bodyElem.(*FieldElem)
-		if !ok || !TakesConstructorParam(field) {
-			continue
-		}
-		key, computed := field.Name.(*ComputedKey)
-		if !computed || !stableKeyExpr(key.Expr) {
-			continue
-		}
-		switch keyExpr := key.Expr.(type) {
-		case *IdentExpr:
-			names.Add(keyExpr.Name)
-		case *MemberExpr:
-			// stableKeyExpr admits no deeper chain, so the object is the free name.
-			if obj, isIdent := keyExpr.Object.(*IdentExpr); isIdent {
-				names.Add(obj.Name)
-			}
-		}
-	}
-	return names
 }
 
 // TakesConstructorParam reports whether a field's value arrives through a constructor
@@ -309,17 +220,12 @@ func TakesConstructorParam(field *FieldElem) bool {
 
 // directParamName returns the parameter name a key binds under, and reports whether it
 // binds one at all. A key binds its own spelling, so `x: number` arrives in a parameter
-// named `x`. Four kinds bind none: a number, a computed expression, a name
-// canBindParamName rejects, and a name in freeKeyNames. Such a field is assigned by
-// index under a generated name.
-//
-// freeKeyNames comes from FreeNamesInComputedKeys. Binding one of those names would
-// shadow it for the rest of the constructor, so `class C { k: number, [k]: string }`
-// would store the second field under the first field's value.
+// named `x`. Three kinds bind none: a number, a computed expression, and a name
+// canBindParamName rejects. Such a field is assigned by index under a generated name.
 //
 // An identifier key and a string key are held to the same test, since
 // `class C { class: … }` and `class C { "class": … }` name the same field.
-func directParamName(key ObjKey, freeKeyNames set.Set[string]) (string, bool) {
+func directParamName(key ObjKey) (string, bool) {
 	var name string
 	switch k := key.(type) {
 	case *IdentExpr:
@@ -329,7 +235,7 @@ func directParamName(key ObjKey, freeKeyNames set.Set[string]) (string, bool) {
 	default:
 		return "", false
 	}
-	if !canBindParamName(name) || freeKeyNames.Contains(name) {
+	if !canBindParamName(name) {
 		return "", false
 	}
 	return name, true
