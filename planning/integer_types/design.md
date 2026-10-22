@@ -415,14 +415,42 @@ A `number` scrutinee is exhaustive with arms `x: int` and `x: ~int`, or with an
 ### 4.4. `Exclude` and conditional types
 
 The prelude defines `Exclude<T, U>` as `if T : U { never } else { T }`, which
-distributes over the members of a union `T`. A range is one atom rather than a
-union of literals, so `Exclude<0..10, 3>` checks `0..10 : 3`, finds it false,
-and returns `0..10` unchanged. `0..10 & ~3` gives the precise `0..3 | 4..10`.
+distributes over the members of a union `T`. Each member is either inside `U`
+and dropped, or not inside it and kept whole. A range is one member rather than
+a union of literals, so the plain filter would check `0..10 : 3`, find it
+false, and keep all of `0..10`.
 
-Splitting a range into literals for distribution would turn `0..Infinity` into an
-infinite union, so this design does not distribute over ranges. The language
-guide should point readers at `T & ~U` for numeric exclusion. Section 13
-records the decision to keep the distributive definition.
+Splitting a range into literals before distributing does not work either, since
+`0..Infinity` would become an infinite union.
+
+The solver already has a rule for this shape. A regex type is neither inside
+`string` nor disjoint from it, so a conditional over one takes both branches,
+reading the check as `string & ~/re/` in the `else` branch. That rule lives in
+`reduceRegexSplit` in `internal/solver/typeops_negation.go`. Integer types
+get the same treatment:
+
+- The rule applies when a distributed member is a subtype of `int` and the
+  member is neither inside `U` nor disjoint from it.
+- The conditional then takes both branches. The `then` branch sees the member
+  as `member & U`, and the `else` branch sees it as `member & ~U`. The result
+  is the union of the two branches.
+- Every other member, including every object, takes the plain filter.
+
+```esc
+Exclude<0..4, 3>                          // 0..3
+Exclude<0..10, 3>                         // 0..3 | 4..10
+Exclude<0..10, 0..5>                      // 5..10
+Exclude<int, 0>                           // int & ~0
+Extract<0..10, 0..5>                      // 0..5
+Exclude<0 | 1 | 2 | 3, 3>                 // 0 | 1 | 2, by the plain filter
+Exclude<{x: number, ...}, {x: 0, ...}>    // {x: number, ...}, by the plain filter
+```
+
+The interval sets from sections 3 and 4.1 compute `member & U` and
+`member & ~U` exactly, so the split never leaves a residual. Objects keep the
+filter because their difference would print as a residual such as
+`{x: number, ...} & ~{x: 0, ...}`, and because ported TypeScript code expects
+the filter there.
 
 ## 5. Operators
 
@@ -857,6 +885,8 @@ These sites switch on primitives or literals and each needs a case for
   end is infinite. A finite interval is coverable arm by arm.
 - `solver/ucs_coverage.go`. Coverage over the number family becomes an
   interval union. See section 4.3.
+- `solver/typeops_negation.go`. `reduceRegexSplit` grows into a split that
+  also covers integer members of a distributive conditional. See section 4.4.
 - `solver/typeops.go`, `isNumericKey` and `indexTuple`. See section 8.4.
 - `soltype/print.go` and `soltype/visitor.go`. Printing, and a leaf `Accept`.
 - `solver/type_ann.go`. `resolveTypeAnnType` resolves `RangeTypeAnn` and the
@@ -1235,7 +1265,8 @@ if val k: int = i {
    and the right-hand union normalization from section 3.3. The literal-union
    `.d.ts` emission lands here too.
 3. **Negation.** Covers the difference rewrite from section 4.1, residuals that
-   leave `int`, and tests over `~int` and `~(m..n)`.
+   leave `int`, the conditional split from section 4.4, and tests over `~int`
+   and `~(m..n)`.
 4. **Integer arithmetic.** Covers the result types in section 5.1, computed from
    concrete operand types.
 5. **Range values.** Covers `RangeExpr`, the `IntRange` prelude class and its
@@ -1273,14 +1304,15 @@ records the decision.
    followed by `total += price` into an error far from its cause. An integral
    `var` costs one annotation, and `for ... in` over a range covers most
    counters.
-3. **`Exclude` over ranges.** Section 4.4 keeps the distributive definition,
-   which leaves ranges whole. `Exclude<0..4, 3>` is `0..4`, where `0..4 & ~3`
-   is `0..3`. Redefining `Exclude<T, U>` as `T & ~U` would fix ranges, and it
-   would also turn a partly overlapping object member into a residual such as
+3. **`Exclude` over ranges.** A distributive `Exclude` keeps a range whole, so
+   `Exclude<0..4, 3>` would be `0..4`, where `0..4 & ~3` is `0..3`. Redefining
+   `Exclude<T, U>` as `T & ~U` would fix ranges, and it would also turn a partly
+   overlapping object member into a residual such as
    `{x: number, ...} & ~{x: 0, ...}`.
 
-   Decision: keep the distributive definition. The language guide points
-   readers at `T & ~U` for numeric exclusion.
+   Decision: keep the distributive definition, and split integer members the
+   way the solver already splits regex types. Section 4.4 gives the rule.
+   `Exclude<0..4, 3>` is `0..3`, and objects keep the plain filter.
 4. **Stepped types.** `step` and `reversed` in section 6.2 change iteration
    only, so no type names every even integer in `0..100`. A `by` form such as
    `0..100 by 2` could add stepped types later. It needs a lattice atom that
