@@ -43,6 +43,10 @@ fn use(s: Seq) { for x in s { return x } }`,
 				"`fn () -> Iterator<number, undefined, unknown>` declared by `Base`"},
 		},
 		{
+			// Only the declaration is reported. `val b: Base = s` is an ordinary upcast,
+			// since `Seq` extends `Base`. The read `b.v` returns a `string` typed as
+			// `number` only because `Seq` redeclared `v`, so rejecting that declaration
+			// rules the unsound read out.
 			name: "UnsoundUpcast",
 			src: `interface Base { v: number }
 interface Seq extends Base { v: string }
@@ -50,6 +54,34 @@ declare val s: Seq
 val b: Base = s
 val n: number = b.v`,
 			want: []string{"2:30-2:39: interface `Seq` redeclares inherited member `v` with type `string`, " +
+				"which is not compatible with `number` declared by `Base`"},
+		},
+		{
+			name: "OverrideInALaterMergedDeclaration",
+			src: `interface Base { v: number }
+interface Seq extends Base { w: number }
+interface Seq { v: string }`,
+			want: []string{"3:17-3:26: interface `Seq` redeclares inherited member `v` with type `string`, " +
+				"which is not compatible with `number` declared by `Base`"},
+		},
+		{
+			name: "ExtendsInALaterMergedDeclaration",
+			src: `interface Base { v: number }
+interface Seq { v: string }
+interface Seq extends Base { w: number }`,
+			want: []string{"2:17-2:26: interface `Seq` redeclares inherited member `v` with type `string`, " +
+				"which is not compatible with `number` declared by `Base`"},
+		},
+		{
+			// The declarations of an interface merge, so an override can sit in a
+			// declaration other than the one with the `extends` clause. The diagnostic
+			// points at the declaration that writes the member, and at the last one when
+			// several do.
+			name: "MemberInBothMergedDeclarations",
+			src: `interface Base { v: number }
+interface Seq extends Base { v: string }
+interface Seq { v: string }`,
+			want: []string{"3:17-3:26: interface `Seq` redeclares inherited member `v` with type `string`, " +
 				"which is not compatible with `number` declared by `Base`"},
 		},
 		{
@@ -149,4 +181,31 @@ interface Base { v: number, s: Seq }`,
 			require.Equal(t, tt.want, got)
 		})
 	}
+}
+
+// TestInterfaceOverrideInALoadedPackage asserts that a package load skips the override check
+// for an interface whose every declaration is written `declare`, and runs it for an
+// interface merged from a `declare` declaration and a plain one. `AllDeclared` is
+// incompatible with `Base` but goes unreported, and `Mixed` is reported.
+func TestInterfaceOverrideInALoadedPackage(t *testing.T) {
+	t.Parallel()
+
+	res := InferModuleWithSource(
+		parseModule(t, `
+			import "shapes"
+			val n = 1
+		`),
+		sourceOf(t, map[string]string{
+			"shapes": `
+				export declare interface Base { v: number }
+				export declare interface AllDeclared extends Base { v: string }
+				export declare interface Mixed extends Base { w: number }
+				export interface Mixed { v: string }
+			`,
+		}),
+	)
+
+	require.Equal(t, []string{"2:4-2:19: package \"shapes\" (shapes.esc) has 1 error(s):\n" +
+		"  interface `Mixed` redeclares inherited member `v` with type `string`, " +
+		"which is not compatible with `number` declared by `Base`"}, messagesWithSpan(t, res.Errors))
 }
