@@ -46,7 +46,8 @@ The rest of the document covers the following, in order:
 - Sections 7 to 10 cover parsing, the solver, codegen, and TypeScript interop.
 - Section 11 applies the new types to arrays, tuples, and the rest of the
   standard library.
-- Section 12 lists milestones and section 13 lists open questions.
+- Section 12 lists milestones and section 13 records the decisions on the
+  questions left open during the design.
 
 ## 2. Semantics
 
@@ -299,8 +300,8 @@ same pass proves `int <: -Infinity..0 | 0..Infinity`.
 `val x = 5` keeps the literal type `5`. `var x = 5` widens to `number` today, and
 this design keeps that. Widening to `int` would reject the common
 `var total = 0` followed by `total += price`. A `var` that should stay integral
-takes an annotation, as in `var i: int = 0`. Section 13 lists widening to `int`
-as an open question.
+takes an annotation, as in `var i: int = 0`. Section 13 records why `var` does
+not widen to `int`.
 
 ### 3.5. `NaN` and the infinities
 
@@ -332,7 +333,9 @@ As a type, `NaN` equals itself, even though the value `NaN` is not equal to
 itself at runtime. That has two consequences:
 
 - `x === NaN` is always `false` at runtime, so a program tests for `NaN` with
-  a pattern, as in `if val n: NaN = x`, or with `Number.isNaN`.
+  a pattern, as in `if val n: NaN = x`, or with `Number.isNaN`. The checker
+  reports `==`, `===`, `!=`, and `!==` with a `NaN` operand as an error, since
+  each always gives the same answer. The message points at `Number.isNaN`.
 - A `NaN` pattern or type test compiles to `Number.isNaN(x)`. An `Infinity`
   pattern compiles to `x === Infinity`.
 
@@ -418,8 +421,8 @@ and returns `0..10` unchanged. `0..10 & ~3` gives the precise `0..3 | 4..10`.
 
 Splitting a range into literals for distribution would turn `0..Infinity` into an
 infinite union, so this design does not distribute over ranges. The language
-guide should point readers at `T & ~U` for numeric exclusion. Section 13 asks
-whether `Exclude` should be redefined in terms of negation.
+guide should point readers at `T & ~U` for numeric exclusion. Section 13
+records the decision to keep the distributive definition.
 
 ## 5. Operators
 
@@ -525,8 +528,9 @@ if val small: -Infinity..10 = i {
 The pattern `j: 0..10` compiles to `i >= 0 && i < 10` on an `int` scrutinee,
 the same test the comparison would make. See section 9.2. Unlike a guard such
 as `j if j < 10`, a range pattern also counts toward exhaustiveness, since a
-guarded arm covers nothing. Section 13 asks whether a guard that compares a
-binding with a literal should be read as a range pattern.
+guarded arm covers nothing. When a guarded arm leaves a `match`
+non-exhaustive, the error suggests the equivalent range pattern. For example, it
+suggests `j: -Infinity..10` for `j if j < 10`.
 
 ## 6. Range values
 
@@ -599,7 +603,8 @@ declare class IntRangeIter<T: int> {
 ```
 
 `length` is `number` because it is `Infinity` for an unbounded
-range. Open question 13 covers giving it an exact type such as `Sub<E, S>`.
+range. Decision 13 in section 13 gives it the exact type `Sub<E, S>` once the
+`Sub` intrinsic lands.
 
 ### 6.2. Iteration
 
@@ -636,8 +641,8 @@ Two methods change the order or spacing. They follow Rust's `rev` and
   type does not record the step. `(0..10).step(2)` yields elements of type
   `0..10`, which contains every element it yields.
 
-Neither method has a type-level counterpart. Section 13 lists stepped types as
-an open question.
+Neither method has a type-level counterpart. Section 13 records the decision to
+defer stepped types.
 
 ### 6.3. Bounds
 
@@ -1014,8 +1019,7 @@ declaration and slows TypeScript's checker, so it falls back to `number`.
 
 TypeScript callers can pass any `number` where Escalier expects an `int`, since
 nothing checks at the boundary. Exported functions emit no runtime validation
-under this design. Section 13 asks whether an opt-in boundary check is worth
-adding.
+under this design. Section 13 records the decision to defer boundary checks.
 
 The planned `@esctype` tag carries the exact Escalier type next to the
 TypeScript one. It is described in
@@ -1155,7 +1159,9 @@ exact range:
 The range is the read type. A write takes any `number`, since JavaScript wraps
 or clamps the value into the range rather than throwing. Writing `300` into a
 `Uint8Array` stores `44`. The element signature therefore needs separate read
-and write types. Section 13 asks how the stdlib should spell that.
+and write types. Until the stdlib has them, typed array elements stay `number`
+for both reads and writes, and this table applies once they land. Decision 10 in
+section 13 covers the feature.
 
 `Float32Array`, `Float64Array`, and the `BigInt` arrays keep `number` and
 `bigint` elements. The `DataView` getters follow the same table. For example,
@@ -1242,89 +1248,148 @@ if val k: int = i {
 7. **Standard library.** Covers section 11: the length and index aliases, the
    `Indices` and `At` intrinsics, the array, tuple, typed array, and string
    signatures, and the `Math` rounding overloads.
-8. **Later work.** Covers interval arithmetic and generic bounds.
+8. **Later work.** Covers interval arithmetic, generic bounds, and the `Add`,
+   `Sub`, and `Mul` intrinsics from decision 13 in section 13.
 
 The `float32` printing fix from section 9.4 lands before milestone 5.
 
-## 13. Open questions
+## 13. Decisions
+
+Each question below was open during the design. The paragraph after it
+records the decision.
 
 1. **Name.** The working name is `int`. `integer` reads closer to
-   `Number.isInteger` and avoids suggesting a fixed-width type. `int` is shorter.
+   `Number.isInteger` and avoids suggesting a fixed-width type. `int` is
+   shorter.
+
+   Decision: keep `int`. It matches the short lowercase names `number`,
+   `string`, `bigint`, and `finite`, and it reads better in signatures. The
+   language guide states that `int` has no fixed width.
 2. **Widening `var`.** Section 3.4 keeps `var i = 0` as `number`. Widening an
    integral literal to `int` would help counting loops and would reject
    accumulators that later receive fractions.
+
+   Decision: keep `number`. Widening to `int` would turn `var total = 0`
+   followed by `total += price` into an error far from its cause. An integral
+   `var` costs one annotation, and `for ... in` over a range covers most
+   counters.
 3. **`Exclude` over ranges.** Section 4.4 keeps the distributive definition,
-   which leaves ranges whole. Redefining `Exclude<T, U>` as `T & ~U` would
-   change its result for object types too.
+   which leaves ranges whole. `Exclude<0..4, 3>` is `0..4`, where `0..4 & ~3`
+   is `0..3`. Redefining `Exclude<T, U>` as `T & ~U` would fix ranges, and it
+   would also turn a partly overlapping object member into a residual such as
+   `{x: number, ...} & ~{x: 0, ...}`.
+
+   Decision: keep the distributive definition. The language guide points
+   readers at `T & ~U` for numeric exclusion.
 4. **Stepped types.** `step` and `reversed` in section 6.2 change iteration
    only, so no type names every even integer in `0..100`. A `by` form such as
-   `0..100 by 2` could add stepped types later without conflicting with the
-   methods. It needs a lattice atom that records a remainder for the step, and
-   meets that compute least common multiples.
+   `0..100 by 2` could add stepped types later. It needs a lattice atom that
+   records a remainder for the step, and meets that compute least common
+   multiples.
+
+   Decision: defer. No use case so far needs stepped types, and they are the
+   most expensive part of the lattice. The methods do not block adding `by`
+   later.
 5. **Boundary checks.** Exported functions could validate `int` and range
    parameters when called from TypeScript, behind a compiler flag.
+
+   Decision: defer, and do not build it for `int` alone. Exact objects and
+   other Escalier-only guarantees have the same gap at the TypeScript boundary.
+   A runtime check, if it comes, covers all of them in one feature.
 6. **Literal-union threshold.** Section 10.1 uses 16 members as the cutoff for
    emitting a range as a TypeScript literal union.
+
+   Decision: keep 16 as a fixed constant rather than a compiler option. It
+   covers dice, weekdays, months, and hex digits, and keeps TypeScript hover
+   text readable.
 7. **`bigint` ranges.** `1n..10n` would need a parallel interval atom in the
    `bigint` family. The lexer does not read `bigint` literals yet.
+
+   Decision: defer until the lexer reads `bigint` literals. A `bigint` range
+   is simpler than a `number` range, since `bigint` has no `NaN`, no
+   infinities, and no rounding, so it can reuse the interval logic.
 8. **Template literal types.** `` `${int}` `` could match strings of decimal
    digits with an optional sign. The checker has the regex machinery for it.
+
+   Decision: add it at low priority. `String(n)` switches to exponent form at
+   `1e21`, so `` `${1e21}` `` is `"1e+21"`. A digits-only pattern is correct for
+   a range whose bounds lie within `±1e21`. Any other `int` type falls back to
+   `` `${number}` ``.
 9. **Comparing with `NaN`.** `x == NaN` is always `false`. The checker could
    report it and point at `Number.isNaN`.
-10. **Split element types.** Section 11.4 reads typed array elements as a range
-   and writes them as `number`. This design does not settle how the stdlib
-   spells an index signature whose read and write types differ.
+
+   Decision: report it as an error. `x == NaN` and `x === NaN` are always
+   `false`, and `x != NaN` and `x !== NaN` are always `true`, so none of them is
+   what the program means. Section 3.5 describes the error.
+10. **Split element types.** Section 11.4 reads typed array elements as a
+    range and writes them as `number`. The stdlib needs a way to spell an index
+    signature whose read and write types differ.
+
+    Decision: solve it once for the stdlib, as separate read and write types on
+    index signatures and accessors. That fits the mutability work, which
+    already separates reads from writes. Until it lands, typed array elements
+    stay `number`, and section 11.4 applies when the feature exists.
 11. **Guards as range patterns.** Section 5.5 refines through range patterns,
-   and a guard covers nothing for exhaustiveness. The checker could read a
-   guard that compares the arm's own binding with a literal, such as
-   `j if j < 10`, as the pattern `j: -Infinity..10`. The refinement would
-   still land on the new binding `j`, so it keeps the no-flow-typing rule. The
-   cost is a second way to write the same arm.
+    and a guard covers nothing for exhaustiveness. The checker could read a
+    guard that compares the arm's own binding with a literal, such as
+    `j if j < 10`, as the pattern `j: -Infinity..10`.
+
+    Decision: no. That would add a second way to write the same arm. When a
+    guarded arm leaves a `match` non-exhaustive, the error suggests the
+    equivalent range pattern instead, as section 5.5 describes.
 12. **Flow typing.** Section 5.5 keeps Escalier's rule that a refinement binds
-   a new name. Flow typing would instead re-type an existing variable after a
-   test. Several `int` and range idioms read more naturally that way:
-   - A bounds check before an index. After `if i >= 0 && i < 10`, `i` could
-     have type `0..10` in the `then` branch, so `t[i]` on a 10-element tuple
-     would check without a second name.
-   - An early return. After `if n < 0 { return }`, `n` could have type
-     `0..Infinity` for the rest of the function. `val k: 0..Infinity = n else
-     { return }` covers this today, at the cost of a second name.
-   - A loop counter. In `var i: int = 0` followed by `while i < t.length { t[i];
-     i += 1 }` over a 3-element tuple `t`, `i` could have type `0..3` inside the
-     body. A `for ... in`
-     over a range covers the common case, but not a loop that advances by a
-     variable amount.
-   - A divisor check. After `if d != 0`, `d` could have type `int & ~0`, so
-     `a % d` would return `int` under section 5.1.
-   - A `NaN` or infinity check. After `if !Number.isFinite(x) { return }`, `x`
-     could have type `finite`, so `Math.floor(x)` would pick the `finite`
-     overload and return `int`.
+    a new name. Flow typing would instead re-type an existing variable after a
+    test. Several `int` and range idioms read more naturally that way:
+    - A bounds check before an index. After `if i >= 0 && i < 10`, `i` could
+      have type `0..10` in the `then` branch, so `t[i]` on a 10-element tuple
+      would check without a second name.
+    - An early return. After `if n < 0 { return }`, `n` could have type
+      `0..Infinity` for the rest of the function. `val k: 0..Infinity = n else
+      { return }` covers this today, at the cost of a second name.
+    - A loop counter. In `var i: int = 0` followed by `while i < t.length {
+      t[i]; i += 1 }` over a 3-element tuple `t`, `i` could have type `0..3`
+      inside the body. A `for ... in` over a range covers the common case, but
+      not a loop that advances by a variable amount.
+    - A divisor check. After `if d != 0`, `d` could have type `int & ~0`, so
+      `a % d` would return `int` under section 5.1.
+    - A `NaN` or infinity check. After `if !Number.isFinite(x) { return }`, `x`
+      could have type `finite`, so `Math.floor(x)` would pick the `finite`
+      overload and return `int`.
 
-   The costs are the reasons Escalier avoids flow typing today. A binding would
-   no longer have one type for its whole scope, which the checker's principal
-   types rely on. A `var` that is reassigned after the test, or captured by a
-   closure that may reassign it, would lose the refinement. Each comparison
-   operator would also need a rule for the range it implies on each branch.
+    The costs are the reasons Escalier avoids flow typing today. A binding
+    would no longer have one type for its whole scope, which the checker's
+    principal types rely on. A `var` that is reassigned after the test, or
+    captured by a closure that may reassign it, would lose the refinement. Each
+    comparison operator would also need a rule for the range it implies on each
+    branch.
+
+    Decision: no flow typing in this design. Adopting it is a language-wide
+    decision, and these cases alone do not justify it. Patterns, `val … else`,
+    and the `finite` overloads cover each case above with a second name.
 13. **Arithmetic on types.** Section 5.3 computes the result of `+`, `-`, and
-   `*` on ranges inside the checker. Exposing the same operations in type
-   annotations would let a signature state how its result depends on its
-   arguments:
-   ```esc
-   fn inc<N: int>(n: N) -> Add<N, 1>
-   fn concat<A, B>(a: A, b: B) -> ... // length Add<A["length"], B["length"]>
-   fn slice<S: int, E: int>(...) -> ... // length Sub<E, S>
-   type Grid = 0..Mul<Width, Height>
-   ```
-   Named intrinsics such as `Add`, `Sub`, and `Mul` need no new syntax. Infix
-   operators in types would read better, but `-` already means a negative
-   literal and a mapped-type modifier, as in `-readonly`.
+    `*` on ranges inside the checker. Exposing the same operations in type
+    annotations would let a signature state how its result depends on its
+    arguments:
+    ```esc
+    fn inc<N: int>(n: N) -> Add<N, 1>
+    fn concat<A, B>(a: A, b: B) -> ... // length Add<A["length"], B["length"]>
+    fn slice<S: int, E: int>(...) -> ... // length Sub<E, S>
+    type Grid = 0..Mul<Width, Height>
+    ```
+    Named intrinsics such as `Add`, `Sub`, and `Mul` need no new syntax. Infix
+    operators in types would read better, but `-` already means a negative
+    literal and a mapped-type modifier, as in `-readonly`.
 
-   Type-level arithmetic is a step toward dependent typing, where a type names
-   a value. `i: Indices<typeof arr>` would tie an index to a particular array.
-   `typeof arr` gives `arr`'s declared type, though, not its runtime length. For
-   an `Array<T>` that type has the length `ArrayLength`, so the index type is
-   just `ArrayIndex`. Tying a type to a value's length needs the checker to
-   track that value symbolically. A precise result also needs a solver for
-   linear integer constraints, as in proving `i + 1 < arr.length` from
-   `i < arr.length - 1`. The intrinsics are cheap and fit the current solver.
-   Full dependent typing is a much larger change.
+    Type-level arithmetic is a step toward dependent typing, where a type names
+    a value. `i: Indices<typeof arr>` would tie an index to a particular array.
+    `typeof arr` gives `arr`'s declared type, though, not its runtime length.
+    For an `Array<T>` that type has the length `ArrayLength`, so the index type
+    is just `ArrayIndex`. Tying a type to a value's length needs the checker to
+    track that value symbolically. A precise result also needs a solver for
+    linear integer constraints, as in proving `i + 1 < arr.length` from
+    `i < arr.length - 1`.
+
+    Decision: add the `Add`, `Sub`, and `Mul` intrinsics in the later-work
+    milestone, and do not pursue dependent typing. The checker already computes
+    the interval arithmetic, so exposing it is cheap. The intrinsics also give
+    `IntRange` an exact `length` of `Sub<E, S>`.
