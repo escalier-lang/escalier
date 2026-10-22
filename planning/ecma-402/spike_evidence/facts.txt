@@ -1,0 +1,86 @@
+77 ECMA-402 builtins in the graph
+Array.prototype.toLocaleString returns:fresh throws:TypeError rejects:none
+BigInt.prototype.toLocaleString receiver:borrow returns:unknown throws:none rejects:none
+Collator Compare Functions receiver:none returns:unknown throws:TypeError rejects:none
+Date.prototype.toLocaleDateString receiver:borrow returns:unknown throws:RangeError|TypeError rejects:none
+Date.prototype.toLocaleString receiver:borrow returns:unknown throws:RangeError|TypeError rejects:none
+Date.prototype.toLocaleTimeString receiver:borrow returns:unknown throws:RangeError|TypeError rejects:none
+DateTime Format Functions receiver:none returns:unknown throws:RangeError|TypeError rejects:none
+Intl.Collator receiver:none returns:fresh throws:RangeError|TypeError rejects:none
+Intl.Collator.prototype.resolvedOptions returns:fresh throws:TypeError rejects:none
+Intl.Collator.supportedLocalesOf receiver:none returns:unknown throws:RangeError|TypeError rejects:none
+Intl.DateTimeFormat receiver:none returns:unknown throws:RangeError|TypeError rejects:none
+Intl.DateTimeFormat.prototype.formatRange receiver:borrow returns:unknown throws:RangeError|TypeError rejects:none
+Intl.DateTimeFormat.prototype.formatRangeToParts receiver:borrow returns:unknown throws:RangeError|TypeError rejects:none
+Intl.DateTimeFormat.prototype.formatToParts receiver:borrow returns:unknown throws:RangeError|TypeError rejects:none
+Intl.DateTimeFormat.prototype.resolvedOptions returns:fresh throws:TypeError rejects:none
+Intl.DateTimeFormat.supportedLocalesOf receiver:none returns:unknown throws:RangeError|TypeError rejects:none
+Intl.DisplayNames receiver:none returns:fresh throws:RangeError|TypeError rejects:none
+Intl.DisplayNames.prototype.of returns:unknown throws:RangeError|TypeError rejects:none
+Intl.DisplayNames.prototype.resolvedOptions returns:fresh throws:TypeError rejects:none
+Intl.DisplayNames.supportedLocalesOf receiver:none returns:unknown throws:RangeError|TypeError rejects:none
+Intl.DurationFormat receiver:none returns:fresh throws:RangeError|TypeError rejects:none
+Intl.DurationFormat.prototype.format returns:fresh throws:RangeError|TypeError rejects:none
+Intl.DurationFormat.prototype.formatToParts returns:fresh throws:RangeError|TypeError rejects:none
+Intl.DurationFormat.prototype.resolvedOptions returns:fresh throws:TypeError rejects:none
+Intl.DurationFormat.supportedLocalesOf receiver:none returns:unknown throws:RangeError|TypeError rejects:none
+Intl.ListFormat receiver:none returns:fresh throws:RangeError|TypeError rejects:none
+Intl.ListFormat.prototype.format receiver:borrow returns:unknown throws:TypeError|unknown rejects:none
+Intl.ListFormat.prototype.formatToParts receiver:borrow returns:unknown throws:TypeError|unknown rejects:none
+Intl.ListFormat.prototype.resolvedOptions returns:fresh throws:TypeError rejects:none
+Intl.ListFormat.supportedLocalesOf receiver:none returns:unknown throws:RangeError|TypeError rejects:none
+Intl.Locale receiver:none returns:fresh throws:RangeError|TypeError rejects:none
+Intl.Locale.prototype.maximize returns:unknown throws:TypeError rejects:none
+Intl.Locale.prototype.minimize returns:unknown throws:TypeError rejects:none
+Intl.Locale.prototype.toString receiver:borrow returns:unknown throws:TypeError rejects:none
+Intl.NumberFormat receiver:none returns:unknown throws:RangeError|TypeError rejects:none
+Intl.NumberFormat.prototype.formatRange receiver:borrow returns:unknown throws:RangeError|TypeError rejects:none
+Intl.NumberFormat.prototype.formatRangeToParts receiver:borrow returns:unknown throws:RangeError|TypeError rejects:none
+Intl.NumberFormat.prototype.formatToParts receiver:borrow returns:unknown throws:TypeError rejects:none
+Intl.NumberFormat.prototype.resolvedOptions returns:fresh throws:TypeError rejects:none
+Intl.NumberFormat.supportedLocalesOf receiver:none returns:unknown throws:RangeError|TypeError rejects:none
+Intl.PluralRules receiver:none returns:fresh throws:RangeError|TypeError rejects:none
+Intl.PluralRules.prototype.resolvedOptions returns:fresh throws:TypeError rejects:none
+Intl.PluralRules.prototype.select returns:unknown throws:TypeError rejects:none
+Intl.PluralRules.prototype.selectRange receiver:borrow returns:unknown throws:RangeError|TypeError rejects:none
+Intl.PluralRules.supportedLocalesOf receiver:none returns:unknown throws:RangeError|TypeError rejects:none
+Intl.RelativeTimeFormat receiver:none returns:fresh throws:RangeError|TypeError rejects:none
+Intl.RelativeTimeFormat.prototype.format receiver:borrow returns:unknown throws:RangeError|TypeError rejects:none
+Intl.RelativeTimeFormat.prototype.formatToParts receiver:borrow returns:unknown throws:RangeError|TypeError rejects:none
+Intl.RelativeTimeFormat.prototype.resolvedOptions returns:fresh throws:TypeError rejects:none
+Intl.RelativeTimeFormat.supportedLocalesOf receiver:none returns:unknown throws:RangeError|TypeError rejects:none
+Intl.Segmenter receiver:none returns:fresh throws:RangeError|TypeError rejects:none
+Intl.Segmenter.prototype.resolvedOptions returns:fresh throws:TypeError rejects:none
+Intl.Segmenter.prototype.segment receiver:borrow returns:unknown throws:TypeError rejects:none
+Intl.Segmenter.supportedLocalesOf receiver:none returns:unknown throws:RangeError|TypeError rejects:none
+Intl.getCanonicalLocales receiver:none returns:fresh throws:RangeError|TypeError rejects:none
+Intl.supportedValuesOf receiver:none returns:fresh throws:RangeError|TypeError rejects:none
+IntlSegmentIteratorPrototype.next receiver:borrow returns:fresh throws:TypeError rejects:none
+IntlSegmentsPrototype [ @@iterator ] receiver:borrow returns:unknown throws:TypeError rejects:none
+IntlSegmentsPrototype.containing receiver:borrow returns:unknown throws:TypeError rejects:none
+Number Format Functions receiver:none returns:unknown throws:TypeError rejects:none
+Number.prototype.toLocaleString receiver:borrow returns:unknown throws:none rejects:none
+String.prototype.localeCompare returns:unknown throws:TypeError|unknown rejects:none
+String.prototype.toLocaleLowerCase receiver:borrow returns:unknown throws:RangeError|TypeError|unknown rejects:none
+String.prototype.toLocaleUpperCase receiver:borrow returns:unknown throws:RangeError|TypeError|unknown rejects:none
+get Intl.Collator.prototype.compare returns:unknown throws:TypeError rejects:none
+get Intl.DateTimeFormat.prototype.format returns:unknown throws:TypeError rejects:none
+get Intl.Locale.prototype.baseName receiver:borrow returns:unknown throws:TypeError rejects:none
+get Intl.Locale.prototype.calendar receiver:borrow returns:unknown throws:TypeError rejects:none
+get Intl.Locale.prototype.caseFirst receiver:borrow returns:unknown throws:TypeError rejects:none
+get Intl.Locale.prototype.collation receiver:borrow returns:unknown throws:TypeError rejects:none
+get Intl.Locale.prototype.hourCycle receiver:borrow returns:unknown throws:TypeError rejects:none
+get Intl.Locale.prototype.language receiver:borrow returns:unknown throws:TypeError rejects:none
+get Intl.Locale.prototype.numberingSystem receiver:borrow returns:unknown throws:TypeError rejects:none
+get Intl.Locale.prototype.numeric receiver:borrow returns:unknown throws:TypeError rejects:none
+get Intl.Locale.prototype.region receiver:borrow returns:unknown throws:TypeError rejects:none
+get Intl.Locale.prototype.script receiver:borrow returns:unknown throws:TypeError rejects:none
+get Intl.NumberFormat.prototype.format returns:unknown throws:TypeError rejects:none
+unclassified receiver — ECMA-402: 20 of 77 (26%), ECMA-262: 20 of 496 (4%)
+    ECMA-402 open on receiver: Array.prototype.toLocaleString, Intl.Collator.prototype.resolvedOptions, Intl.DateTimeFormat.prototype.resolvedOptions, Intl.DisplayNames.prototype.of, Intl.DisplayNames.prototype.resolvedOptions, Intl.DurationFormat.prototype.format, Intl.DurationFormat.prototype.formatToParts, Intl.DurationFormat.prototype.resolvedOptions, Intl.ListFormat.prototype.resolvedOptions, Intl.Locale.prototype.maximize, Intl.Locale.prototype.minimize, Intl.NumberFormat.prototype.resolvedOptions, Intl.PluralRules.prototype.resolvedOptions, Intl.PluralRules.prototype.select, Intl.RelativeTimeFormat.prototype.resolvedOptions, Intl.Segmenter.prototype.resolvedOptions, String.prototype.localeCompare, get Intl.Collator.prototype.compare, get Intl.DateTimeFormat.prototype.format, get Intl.NumberFormat.prototype.format
+unclassified returns — ECMA-402: 54 of 77 (70%), ECMA-262: 246 of 496 (50%)
+    ECMA-402 open on returns: BigInt.prototype.toLocaleString, Collator Compare Functions, Date.prototype.toLocaleDateString, Date.prototype.toLocaleString, Date.prototype.toLocaleTimeString, DateTime Format Functions, Intl.Collator.supportedLocalesOf, Intl.DateTimeFormat, Intl.DateTimeFormat.prototype.formatRange, Intl.DateTimeFormat.prototype.formatRangeToParts, Intl.DateTimeFormat.prototype.formatToParts, Intl.DateTimeFormat.supportedLocalesOf, Intl.DisplayNames.prototype.of, Intl.DisplayNames.supportedLocalesOf, Intl.DurationFormat.supportedLocalesOf, Intl.ListFormat.prototype.format, Intl.ListFormat.prototype.formatToParts, Intl.ListFormat.supportedLocalesOf, Intl.Locale.prototype.maximize, Intl.Locale.prototype.minimize, Intl.Locale.prototype.toString, Intl.NumberFormat, Intl.NumberFormat.prototype.formatRange, Intl.NumberFormat.prototype.formatRangeToParts, Intl.NumberFormat.prototype.formatToParts, Intl.NumberFormat.supportedLocalesOf, Intl.PluralRules.prototype.select, Intl.PluralRules.prototype.selectRange, Intl.PluralRules.supportedLocalesOf, Intl.RelativeTimeFormat.prototype.format, Intl.RelativeTimeFormat.prototype.formatToParts, Intl.RelativeTimeFormat.supportedLocalesOf, Intl.Segmenter.prototype.segment, Intl.Segmenter.supportedLocalesOf, IntlSegmentsPrototype [ @@iterator ], IntlSegmentsPrototype.containing, Number Format Functions, Number.prototype.toLocaleString, String.prototype.localeCompare, String.prototype.toLocaleLowerCase, String.prototype.toLocaleUpperCase, get Intl.Collator.prototype.compare, get Intl.DateTimeFormat.prototype.format, get Intl.Locale.prototype.baseName, get Intl.Locale.prototype.calendar, get Intl.Locale.prototype.caseFirst, get Intl.Locale.prototype.collation, get Intl.Locale.prototype.hourCycle, get Intl.Locale.prototype.language, get Intl.Locale.prototype.numberingSystem, get Intl.Locale.prototype.numeric, get Intl.Locale.prototype.region, get Intl.Locale.prototype.script, get Intl.NumberFormat.prototype.format
+unclassified throws — ECMA-402: 0 of 77 (0%), ECMA-262: 0 of 496 (0%)
+    ECMA-402 open on throws: 
+unclassified rejects — ECMA-402: 0 of 77 (0%), ECMA-262: 0 of 496 (0%)
+    ECMA-402 open on rejects: 
