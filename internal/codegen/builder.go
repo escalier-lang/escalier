@@ -1998,9 +1998,6 @@ func (b *Builder) implicitConstructor(d *ast.ClassDecl) (*ast.ConstructorElem, m
 	// constructor runs once per instance, so it indexes with a binding the key was
 	// evaluated into instead of evaluating the key again. `class C { [makeKey()]: number }`
 	// then calls `makeKey` once.
-	//
-	// A binding's name avoids every name the constructor may bind, since a field named
-	// `temp1` binds `temp1` in the constructor and would otherwise shadow it.
 	var superParams []string
 	var inherited func(*ast.FieldElem) bool
 	subclass := false
@@ -2010,15 +2007,20 @@ func (b *Builder) implicitConstructor(d *ast.ClassDecl) (*ast.ConstructorElem, m
 			return nil, nil
 		}
 	}
+
+	// A binding's name avoids every name the constructor may bind, since a field named
+	// `temp1` binds `temp1` in the constructor and would otherwise shadow it.
 	prevReserved := b.reservedTempNames
 	b.reservedTempNames = prevReserved.Union(implicitBindableNames(d, superParams))
 	defer func() { b.reservedTempNames = prevReserved }()
+
 	bindings := map[*ast.ComputedKey]string{}
 	keyIndex := func(key *ast.ComputedKey) ast.Expr {
 		name := b.NewTempId()
 		bindings[key] = name
 		return ast.NewIdent(name, key.Span())
 	}
+
 	// A subclass's constructor passes its superclass's parameters to `super(…)`, and only
 	// the solver knows those.
 	if subclass {
