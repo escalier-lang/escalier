@@ -339,26 +339,36 @@ Vitest uses the same mechanism on its `Assertion<T>` interface. Escalier has no
 module augmentation, and [third_party](../third_party/requirements.md) lists
 cross-package augmentation as out of scope, so no design covers it yet.
 
-There are three candidate approaches.
+Escalier will get module augmentation: a declaration that adds members to an
+interface declared in another package. Custom matchers are one user of it.
+Other TypeScript packages rely on augmentation too, and Escalier needs it to use
+those packages as their authors intend. A Jest-specific mechanism would leave
+them unsupported.
+
+The augmentation design belongs to the cross-package augmentation work that
+third_party defers, and typed custom matchers wait on it. Testing adds these
+requirements to that design.
+
+- An augmentation can target an interface that a third-party `.d.ts` declares,
+  such as Jest's `Matchers<R>` or Vitest's `Assertion<T>`.
+- An augmentation declared once in a package is visible to every test file in
+  that package, not only to the file that declares it. Each test file is
+  checked on its own, so this does not follow from the script rules in
+  section 4.
+- An augmentation changes types only and emits no code.
+
+Two alternatives were considered and rejected.
 
 1. **Override fragment.** The project declares the matchers in a Tier 1b
-   override fragment under `<project>/overrides/`. The fragment adds members to
-   the framework's matcher interface. This reuses the merge model from
-   third_party FR2. That model describes refinements of existing declarations,
-   so it would need to accept an added member as well.
-2. **Module augmentation.** Escalier gets a declaration that adds members to an
-   interface in another package, written in a setup file or a test file. This
-   is the general mechanism. It belongs to the cross-package augmentation work
-   that third_party defers.
-3. **Inference from `expect.extend`.** The checker reads the type of the object
-   passed to `expect.extend` and adds one matcher member per entry. Each member
-   drops the first parameter and returns the framework's `R`. This needs no
-   declaration, but it special-cases one framework API in the checker. It also
-   works only where the `extend` call is visible to the file being checked,
-   which a setup file is not.
-
-Option 1 fits the first version because it needs no new syntax. Option 2 can
-replace it once cross-package augmentation is designed.
+   override fragment under `<project>/overrides/`. This reuses the merge model
+   from third_party FR2, but it solves the problem only for packages a project
+   overrides by hand. It does nothing for a TypeScript package whose own
+   `.d.ts` augments another package.
+2. **Inference from `expect.extend`.** The checker reads the type of the object
+   passed to `expect.extend` and adds one matcher member per entry. This
+   special-cases one framework API in the checker, and it works only where the
+   `extend` call is visible to the file being checked, which a setup file is
+   not.
 
 ## 9. Open questions
 
