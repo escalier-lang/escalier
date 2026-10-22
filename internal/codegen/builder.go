@@ -984,8 +984,15 @@ func (b *Builder) buildDeclWithNamespace(decl ast.Decl, nsName string) []Stmt {
 		b.reservedTempNames = prevReserved.Union(ast.FreeNamesInComputedKeys(d))
 
 		elems := d.Body
+		// A subclass's constructor passes its superclass's parameters to `super(…)`.
+		// Only the checker knows those, so it says whether to synthesize one and with
+		// what. At most one of the two applies, since only a subclass gets the second.
 		if synth, _ := ast.ImplicitConstructor(d); synth != nil {
 			elems = append([]ast.ClassElem{synth}, d.Body...)
+		} else if superParams, inherited, ok := b.types().ImplicitSubclassConstructor(d); ok {
+			if synth, _, _ := ast.ImplicitSubclassConstructor(d, superParams, inherited); synth != nil {
+				elems = append([]ast.ClassElem{synth}, d.Body...)
+			}
 		}
 		classElems, classStmts := b.buildClassElems(elems, superClass != nil)
 		b.reservedTempNames = prevReserved

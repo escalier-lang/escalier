@@ -25,6 +25,9 @@ type SolTypes interface {
 	AbsentKeys(p *ast.ObjectPat) []string
 	// Expand returns t with each alias on the outside expanded, until none is left.
 	Expand(t soltype.Type) soltype.Type
+	// ImplicitSubclassConstructor returns what the run synthesized for a subclass that
+	// declares no constructor, and reports whether it synthesized one.
+	ImplicitSubclassConstructor(decl *ast.ClassDecl) (superParams []string, inherited func(*ast.FieldElem) bool, ok bool)
 }
 
 // SolverJSTypes answers from one internal/solver run.
@@ -106,6 +109,12 @@ func (s SolverJSTypes) NullableArms(e ast.Expr) (bool, bool) {
 		}
 	}
 	return hasNull, hasUndefined
+}
+
+// ImplicitSubclassConstructor reads what the run recorded when it synthesized decl's
+// constructor.
+func (s SolverJSTypes) ImplicitSubclassConstructor(decl *ast.ClassDecl) ([]string, func(*ast.FieldElem) bool, bool) {
+	return s.Types.ImplicitSubclassConstructor(decl)
 }
 
 // MemberJSExpr reads the `@js("…")` argument off the declaration the member resolved

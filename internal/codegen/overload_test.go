@@ -20,6 +20,13 @@ import (
 // checker installed. A fieldless class therefore emits an empty `constructor() {}`.
 func buildSource(t *testing.T, src string) string {
 	t.Helper()
+	return buildSourceWith(t, src, nil)
+}
+
+// buildSourceWith is buildSource with jsTypes answering what emission asks about inferred
+// types. A nil jsTypes answers the way an untyped tree does.
+func buildSourceWith(t *testing.T, src string, jsTypes JSTypes) string {
+	t.Helper()
 	ctx := context.Background()
 
 	module, errs := parser.ParseLibFiles(ctx, []*ast.Source{
@@ -28,7 +35,7 @@ func buildSource(t *testing.T, src string) string {
 	require.Empty(t, errs, "parse errors: %v", errs)
 
 	depGraph := dep_graph.BuildDepGraph(module)
-	builder := &Builder{tempId: 0, depGraph: depGraph}
+	builder := &Builder{tempId: 0, depGraph: depGraph, jsTypes: jsTypes}
 	out := builder.BuildTopLevelDecls(depGraph)
 
 	printer := NewPrinter()

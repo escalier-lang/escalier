@@ -1,0 +1,20 @@
+export class Base {
+    foo: string,
+}
+
+export class Derived1 extends Base {
+    foo: string,
+    bar: number,
+}
+
+export class Derived2 extends Base {
+    bar: number,
+}
+
+export class Leaf extends Derived2 {
+    baz: boolean,
+}
+
+val d1 = Derived1("a", 1)
+val d2 = Derived2("b", 2)
+val leaf = Leaf("c", 3, true)

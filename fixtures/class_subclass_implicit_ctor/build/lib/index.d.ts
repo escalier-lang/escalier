@@ -1,0 +1,11 @@
+export declare type Base = {foo: string};
+export declare const Base: {new (foo: string): Base};
+export declare type Derived1 = {foo: string, bar: number};
+export declare const Derived1: {new (foo: string, bar: number): Derived1};
+export declare type Derived2 = {bar: number};
+export declare const Derived2: {new (foo: string, bar: number): Derived2};
+export declare type Leaf = {baz: boolean};
+export declare const Leaf: {new (foo: string, bar: number, baz: boolean): Leaf};
+declare const d1: Derived1;
+declare const d2: Derived2;
+declare const leaf: Leaf;

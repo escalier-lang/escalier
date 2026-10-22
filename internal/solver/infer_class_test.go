@@ -2341,14 +2341,6 @@ func TestInferClassErrors(t *testing.T) {
 			want: "Field 'x' cannot have a `= expr` initializer; only static fields may use this form. Initialize instance fields in the constructor body.",
 		},
 		{
-			name: "SubclassConstructorRequired",
-			src: `
-				class A { x: number }
-				class B extends A { }
-			`,
-			want: "Subclasses must declare an explicit `constructor` block; constructor synthesis is not supported for classes with an `extends` clause.",
-		},
-		{
 			name: "ConstraintViolated",
 			src: `
 				class Box<T: number> { value: T }
