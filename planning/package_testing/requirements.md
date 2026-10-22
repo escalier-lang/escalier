@@ -41,9 +41,10 @@ behavior.
   the follow-up.
 - Shipping a test runner or an assertion library. Tests use Jest, Vitest, or any
   runner that executes ES modules.
-- Mocking symbols of other packages. A test mocks another package through its
-  runner's module-mocking facility, such as `vi.mock`, as it would in
-  TypeScript.
+- Mocking symbols of other packages in the first version. A test mocks another
+  package through its runner's module-mocking facility, such as `vi.mock`, as it
+  would in TypeScript. Section 10 describes how a published test build could
+  lift this.
 
 ## 4. Test files
 
@@ -73,6 +74,11 @@ symbols until it imports the package's test build, as section 5 describes. The
 location of a test file under `lib/` does not put the namespace of its directory
 in scope either. `lib/geo/shapes.test.esc` reaches `Point` as `my_lib.geo.Point`.
 
+The test framework is imported explicitly too. Escalier has no ambient globals,
+so a test file imports whatever framework it uses. A Vitest test writes
+`import "vitest"`, and a Jest test writes `import "@jest/globals"` in place of
+the globals Jest would otherwise inject.
+
 The explicit import exists because the test reads symbols through the same
 object it mocks on. Binding `greet` by name into the test's scope would hand the
 test a second path to the function, one that a spy on the test-build object does
@@ -87,8 +93,11 @@ the `?test` flag:
 import "my_lib?test"
 ```
 
-The binding follows the existing import rule, so `my_lib?test` binds as
-`my_lib`, and `@acme/vec?test` binds as `vec`. The `?test` flag uses the
+The binding follows the existing import rule from
+[packages_vs_globals](../packages_vs_globals/requirements.md) R10.1. It strips
+the scope prefix and replaces each character that is not valid in an identifier
+with `_`. So `my_lib?test` binds as `my_lib`, `@acme/vec?test` binds as `vec`,
+and `basics-comments?test` binds as `basics_comments`. The `?test` flag uses the
 binding-shape slot that [03 Imports](../../docs/03_imports.md) reserves for
 future flags.
 
@@ -258,6 +267,7 @@ build/
   test/
     lib/
       index.js      # test build of the lib module, default export only
+      index.d.ts    # type of the default export
       index.test.js
       geo/
         shapes.test.js
@@ -275,22 +285,20 @@ The workflow for the first version is:
 Source maps map the compiled test files and the test build back to the `.esc`
 sources, so runner failures report Escalier line numbers.
 
+`index.d.ts` declares the default export with the binding type from section
+5.1. Escalier tests in the same package read that type from the lib check and
+do not need the file. It exists so a consumer outside the package can type the
+test build, as section 10 describes.
+
 ## 8. Open questions
 
-1. **Binding name for hyphenated package names.** The fixtures use names such
-   as `basics-comments`. The import rule binds as the last specifier segment,
-   which is not a valid identifier here. Whatever rule settles this for npm
-   imports should apply to `?test` as well.
-2. **Typing of runner APIs.** `vi.spyOn(obj, "fetchUser")` constrains its key
+1. **Typing of runner APIs.** `vi.spyOn(obj, "fetchUser")` constrains its key
    argument with mapped and conditional types from Vitest's `.d.ts`. Checking
    that call depends on how much of those types the third-party loader handles.
-   See [third_party](../third_party/requirements.md).
-3. **Globals-based runners.** Jest injects `describe`, `test`, and `expect` as
-   globals. Escalier has no ambient globals, so a Jest test imports
-   `@jest/globals` instead. Confirm this works with Jest's ESM mode.
-4. **`.d.ts` for the test build.** Escalier tests read the binding's type from
-   the lib check, so the first version can skip it. A TypeScript test against an
-   Escalier package would need one.
+   See [third_party](../third_party/requirements.md). This needs investigation,
+   and it does not need the test harness. A fixture whose `lib/` imports
+   `vitest` and calls `vi.spyOn` on a plain object exercises the same check
+   through `go test ./cmd/...`, without running any tests.
 
 ## 9. Follow-up: runner integration
 
@@ -302,3 +310,17 @@ build step goes away. For Vitest this is a Vite plugin that does two things:
 
 Jest would get the equivalent transformer. Sections 4 through 6 stay the same.
 Only the step that produces the files changes.
+
+## 10. Follow-up: publishing the test build
+
+A published Escalier package could ship its `build/test/lib/` output. Another
+Escalier package's tests could then import it and mock the published package's
+symbols, private ones included, the same way they mock their own.
+
+This needs two changes to the first version.
+
+- The `?test` flag accepts a dependency's name, not only the importing file's
+  own package. The binding's type comes from the published `index.d.ts`.
+- The package's own code must read the dependency through the dependency's test
+  build when it runs under test, so that a mock reaches it. One way is to
+  compile the package's own test build against the dependency's test build.
