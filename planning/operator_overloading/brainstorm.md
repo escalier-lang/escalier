@@ -96,6 +96,38 @@ does three things.
 - A structural bound can name the method, which Option C needs.
 - Two packages that both define an `add` method cannot collide with the operator.
 
+#### `ops.add` or `Symbol.add`
+
+The key could instead be spelled `Symbol.add`, as a new Escalier-specific
+well-known symbol. The checker side is cheap. `resolveWellKnownSymbols` in
+[internal/solver/prelude_classes.go](../../internal/solver/prelude_classes.go)
+reads every name in `soltype.WellKnownSymbols` off the prelude's `Symbol` value,
+so adding `add` means extending that list and declaring the member on
+`SymbolConstructor`. The spelling also matches `[Symbol.iterator]` and
+`[Symbol.asyncDispose]` and needs no import.
+
+The runtime side is where the two differ.
+
+- `ops.add` is a constant exported from `std:ops`. Escalier owns that namespace,
+  the import is visible like any other library value, and emitted `.d.ts` files
+  refer to it with an ordinary import.
+- `Symbol.add` is a property of JavaScript's global `Symbol` object. Making it
+  real means assigning `Symbol.add` on the global, which Escalier avoids
+  everywhere else. TC39 owns the `Symbol.*` names, so a future JavaScript
+  `Symbol.add` could collide. Two bundled copies of the runtime would each mint
+  their own symbol unless both use `Symbol.for`. TypeScript consumers would need
+  a `declare global` augmentation of `SymbolConstructor` in every project that
+  installs an Escalier package.
+- `Symbol.add` also suggests a protocol every JavaScript engine honors, the way
+  `Symbol.iterator` drives `for…of`. Only Escalier's compiler honors it.
+
+A compromise keeps `[Symbol.add]` as the source spelling and treats it as a
+reserved Escalier symbol. Codegen lowers it to a module constant such as
+`const $add = Symbol.for("escalier.add")` and never touches the global. Emitted
+`.d.ts` files export those constants, so on the JavaScript side the compromise is
+the `ops.add` design. What it changes is the spelling and whether the name looks
+built in.
+
 The scalar-on-the-left case needs a second form. A `static operator` takes both
 operands explicitly and is found on either operand's class:
 
@@ -183,15 +215,63 @@ The result type comes from the chosen arm, so heterogeneous operators fall out
 of ordinary overload resolution. `m * v` picks `operator *(&self, v: &Vec3) -> Vec3`
 on `Mat3`, and `m * n` picks the `Mat3` arm.
 
+## Several arms for one operator
+
+A matrix class wants `*` to mean four things.
+
+```esc
+class Mat {
+    ...
+    operator *(&self, rhs: &Mat) -> Mat { ... }                    // m * n
+    operator *(&self, rhs: &Vec) -> Vec { ... }                    // m * v
+    operator *(&self, k: number) -> Mat { ... }                    // m * 2
+    static operator *(k: number, m: &Mat) -> Mat { return m * k }  // 2 * m
+}
+```
+
+The three instance arms are an ordinary method overload set. Resolution picks one
+by the right operand's type, and each arm returns its own result type. For
+`2 * m` the left operand is a `number`, which has no methods, so the checker
+searches the right operand's class for a `static operator *` whose first
+parameter accepts `number`.
+
+A class can carry only one method under the `[ops.mul]` key, so the arms need a
+compiled form.
+
+- Each arm compiles to its own module function, such as `Mat$mul$Vec(m, v)`.
+- `[ops.mul]` on the prototype is one merged method that tests the right operand
+  with `typeof` and `instanceof` and forwards to the matching arm. This is how a
+  free-function overload set compiles today.
+- Static arms go under a separate static key, such as `Mat[ops.mulLeft]`, so a
+  runtime dispatcher can find `2 * m`.
+
 ## Codegen
 
-A call site with a resolved arm emits a direct call. For a class method that is
-`a[ops.add](b)`. A faster form emits each operator as a module-level function,
-such as `Vec2$add(a, b)`, and installs the symbol method as a thin forwarder for
-interop. Only generic bodies from Option C need the runtime helper.
+A call site whose arm the checker resolved, inside the package that declares the
+class, emits a direct call to that arm's module function. Every other site
+calls the symbol method, as in `a[ops.mul](b)`. That covers calls from other
+packages, since the arm functions are not exported, and calls from TypeScript.
+Only generic bodies from Option C need the runtime helper.
 
 `number` arithmetic keeps emitting the bare JS operator, so existing programs
 compile to identical output.
+
+## Operators on values from other packages
+
+Suppose a package exports `fn makeVector() -> Vector` and does not export
+`Vector`. Under Options A and C the caller can still write `a + b` on two results
+with no import. The operator arms are members of `Vector`'s class, so lookup
+finds them through the operand's type, the same way it finds `v.length()`. The
+checker knows the return type from the function's declaration, and that type
+carries the class's members, its `static operator` arms included. The compiler
+inserts the reference to `std:ops` itself.
+
+Codegen at such a site emits the symbol-method call described above, which works
+on any `Vector` object at runtime.
+
+Under Option B the arms are bindings, so a caller has to import them. That is the
+coherence problem again. Two files with different imports can resolve `a + b`
+differently.
 
 ## Which operators to allow
 
@@ -232,12 +312,103 @@ wait. If compound assignment arrives, `a += b` could resolve to an
 `a = a + b` otherwise, which is Kotlin's rule. The exclusivity checks in
 [08 Mutability](../../docs/08_mutability.md) then reject `m += m`.
 
+## Downsides of Options A and C
+
+- **No retrofitting.** A TypeScript class such as three.js's `Vector3`, or a
+  structural type such as `[number, number]`, cannot gain operators. A program
+  has to wrap it in its own class.
+- **Classes only.** Object types, tuples, and enums have no prototype to carry a
+  symbol-keyed method. Much of Escalier's data modeling is structural, so
+  `type Vec2 = {x: number, y: number}` gets no operators.
+- **Mixed-type arms need an owner.** `Mat * Vec` lives on `Mat`, or as a
+  `static operator` on `Vec`. If both define it, an ambiguity rule has to pick
+  one. If the two classes come from different packages, the later package has to
+  know about the earlier one.
+- **Generic code needs explicit bounds.** An unannotated `fn f(a, b) { a * b }`
+  falls back to `number`. Using it on vectors takes a bound such as
+  `T: Mul<T, T>`, and a function that uses several operators takes several
+  bounds. `number` does not satisfy those bounds structurally, so the checker
+  special-cases it and generic bodies call a runtime helper.
+- **Runtime dispatch on some paths.** Calls from other packages and generic calls
+  go through the merged symbol method, which tests operand types on every
+  operation. In a hot linear algebra loop that cost is measurable.
+- **Allocation per operation.** Values are immutable by default, so `a + b * c`
+  creates an intermediate object. In-place updates wait for compound assignment
+  with `&mut self` arms.
+- **Subclasses.** On a non-`final` class a subclass can override an arm or arrive
+  as an operand. Specificity ranking for class arguments is still open as [escalier-lang/escalier#723](https://github.com/escalier-lang/escalier/issues/723).
+  Allowing operators only on `final` classes at first avoids the question.
+- **Dependencies.** Method overload resolution from M5 and the `std:ops` package
+  have to land first.
+- **TypeScript ergonomics.** TypeScript callers write `v[ops.add](w)`. A
+  TypeScript-authored class can opt in by implementing the symbol, but only if
+  its `.d.ts` declares it.
+
+The first two cut most against Escalier's structural style.
+
+## Interface merging as a partial remedy
+
+Escalier plans TypeScript-style interface merging, where same-named `interface`
+declarations combine. See
+[exact-types](../exact-types/requirements.md) and R7.5 in
+[packages_vs_globals](../packages_vs_globals/requirements.md). A merge can add
+operator members to a type the program does not own.
+
+```esc
+interface Vector3 {
+    [ops.add](&self, rhs: &Vector3) -> Vector3,
+    [ops.mul](&self, k: number) -> Vector3,
+}
+```
+
+At the type level this addresses three of the downsides.
+
+- **Retrofitting.** three.js's `Vector3` gains operator arms, and the Option A
+  lookup finds them through the operand's type.
+- **`number` and Option C bounds.** The prelude can merge the `ops` members into
+  the `Number` interface. `number` then satisfies `T: Add<T, T>` structurally and
+  the checker needs no special case.
+- **Mixed-type ownership.** The package that declares `Mat` can merge an
+  `[ops.mul](&self, m: &Mat)` arm onto `Vec`. `Vec`'s package needs no knowledge
+  of `Mat`.
+
+It leaves three problems open.
+
+- **Nothing exists at runtime.** A merge only declares the method. Nothing puts
+  it on `Vector3.prototype`, so `v[ops.add](w)` throws unless something installs
+  it. Installing it means patching another library's prototype when a module
+  loads. If that module is not loaded, the types describe a method that does not
+  exist, which breaks the soundness the rest of Escalier aims for. The `Number`
+  merge has to stay type-level only, and codegen keeps emitting the bare `+` or
+  the runtime helper.
+- **Conflicts become global.** Option B could resolve `a + b` differently in two
+  files. A merge is visible everywhere, so the risk becomes two packages adding
+  the same arm to `Vector3` with different bodies. That needs a rule, either an
+  error or a single owner.
+- **Structural types still miss out.** Only interfaces merge. Type aliases such
+  as `type Vec2 = {x: number, y: number}`, tuples, and nominal classes do not.
+
+Merging therefore gives the type half of Kotlin-style extension operators. A
+sound version pairs it with a form the compiler controls, such as:
+
+```esc
+extend Vector3 {
+    operator +(&self, rhs: &Vector3) -> Vector3 { ... },
+}
+```
+
+The block merges the members into `Vector3`'s type and emits the prototype
+installation. The import that brings the block into scope makes the runtime
+dependency explicit, so the checker can require that import wherever the arm is
+used.
+
 ## Recommendation for a first cut
 
 Option A plus Option C. Class-declared operators that lower to `std:ops` symbol
 methods, `static operator` for scalar-on-the-left, the free-variable fallback to
-`number`, and structural bounds for generic code. Defer Option B until there is a
-concrete retrofitting need, and decide coherence then.
+`number`, and structural bounds for generic code. Allow operators only on `final`
+classes at first. Defer retrofitting until there is a concrete need, then choose
+between a scoped Option B and an `extend` block.
 
 ## Open questions
 
@@ -249,5 +420,9 @@ concrete retrofitting need, and decide coherence then.
   prototype to carry a method.
 - How do operators on imported TypeScript classes surface, given TypeScript
   cannot declare them?
+- Spell the key `ops.add` or `Symbol.add`? Both compile to the same registered
+  symbol under the compromise above.
+- If two `extend` blocks add the same arm to one type, is that an error at the
+  second declaration or only at a use site that sees both?
 - Is the free-variable fallback surprising when a later annotation would have
   picked a different arm? M3's "defer until ground enough" might apply first.
