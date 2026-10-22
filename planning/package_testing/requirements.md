@@ -37,13 +37,13 @@ behavior.
 ## 3. Non-goals
 
 - Having the test runner compile `.esc` files itself. The first version requires
-  the user to run the Escalier build before running the tests. Section 9 covers
+  the user to run the Escalier build before running the tests. Section 10 covers
   the follow-up.
 - Shipping a test runner or an assertion library. Tests use Jest, Vitest, or any
   runner that executes ES modules.
 - Mocking symbols of other packages in the first version. A test mocks another
   package through its runner's module-mocking facility, such as `vi.mock`, as it
-  would in TypeScript. Section 10 describes how a published test build could
+  would in TypeScript. Section 11 describes how a published test build could
   lift this.
 
 ## 4. Test files
@@ -288,19 +288,91 @@ sources, so runner failures report Escalier line numbers.
 `index.d.ts` declares the default export with the binding type from section
 5.1. Escalier tests in the same package read that type from the lib check and
 do not need the file. It exists so a consumer outside the package can type the
-test build, as section 10 describes.
+test build, as section 11 describes.
 
-## 8. Open questions
+## 8. Custom matchers
 
-1. **Typing of runner APIs.** `vi.spyOn(obj, "fetchUser")` constrains its key
-   argument with mapped and conditional types from Vitest's `.d.ts`. Checking
-   that call depends on how much of those types the third-party loader handles.
-   See [third_party](../third_party/requirements.md). This needs investigation,
-   and it does not need the test harness. A fixture whose `lib/` imports
-   `vitest` and calls `vi.spyOn` on a plain object exercises the same check
-   through `go test ./cmd/...`, without running any tests.
+Jest and Vitest let a project add its own matchers through `expect.extend`. At
+runtime this is one call, and it works from Escalier as written. The
+`@jest/globals` import binds as `globals` under the rule in section 5.
 
-## 9. Follow-up: runner integration
+```escalier
+import "@jest/globals"
+
+globals.expect.extend({
+    toBeWithinRange: fn (actual: number, floor: number, ceiling: number) {
+        return {
+            pass: actual >= floor && actual <= ceiling,
+            message: fn () { return `expected ${actual} to be in [${floor}, ${ceiling}]` },
+        }
+    },
+})
+```
+
+### 8.1 Setup files
+
+The `expect.extend` call has to run before any test uses the matcher. Jest
+loads files listed in `setupFilesAfterEnv` for this, and Vitest loads files
+listed in `setupFiles`. A setup file is another entry point.
+
+A file under `lib/` whose name ends in `.setup.esc` is a setup file. It is
+checked and compiled the same way as a test file, and its output goes to
+`build/test/lib/` beside the compiled tests. The user lists the compiled file
+in the runner's config.
+
+### 8.2 Typing the matchers
+
+The types are the hard part. After the call above, `expect(x).toBeWithinRange(1,
+10)` is a type error, because `toBeWithinRange` is not a member of the
+framework's matcher interface. A TypeScript project fixes this with module
+augmentation, which adds members to an interface declared in another package:
+
+```ts
+declare module "expect" {
+  interface Matchers<R> {
+    toBeWithinRange(floor: number, ceiling: number): R
+  }
+}
+```
+
+Vitest uses the same mechanism on its `Assertion<T>` interface. Escalier has no
+module augmentation, and [third_party](../third_party/requirements.md) lists
+cross-package augmentation as out of scope, so no design covers it yet.
+
+There are three candidate approaches.
+
+1. **Override fragment.** The project declares the matchers in a Tier 1b
+   override fragment under `<project>/overrides/`. The fragment adds members to
+   the framework's matcher interface. This reuses the merge model from
+   third_party FR2. That model describes refinements of existing declarations,
+   so it would need to accept an added member as well.
+2. **Module augmentation.** Escalier gets a declaration that adds members to an
+   interface in another package, written in a setup file or a test file. This
+   is the general mechanism. It belongs to the cross-package augmentation work
+   that third_party defers.
+3. **Inference from `expect.extend`.** The checker reads the type of the object
+   passed to `expect.extend` and adds one matcher member per entry. Each member
+   drops the first parameter and returns the framework's `R`. This needs no
+   declaration, but it special-cases one framework API in the checker. It also
+   works only where the `extend` call is visible to the file being checked,
+   which a setup file is not.
+
+Option 1 fits the first version because it needs no new syntax. Option 2 can
+replace it once cross-package augmentation is designed.
+
+## 9. Open questions
+
+1. **Typing of runner APIs.** Vitest's `vi.spyOn(obj, "fetchUser")` and Jest's
+   `jest.spyOn(obj, "fetchUser")` both constrain their key argument with mapped
+   and conditional types from the framework's `.d.ts`. Checking those calls
+   depends on how much of those types the third-party loader handles. See
+   [third_party](../third_party/requirements.md). This needs investigation, and
+   it does not need the test harness. Two fixtures exercise the check through
+   `go test ./cmd/...` without running any tests. One imports `vitest` and
+   calls `vi.spyOn` on a plain object. The other imports `@jest/globals` and
+   calls `jest.spyOn` the same way.
+
+## 10. Follow-up: runner integration
 
 A later version lets the runner compile `.esc` files on demand, so the separate
 build step goes away. For Vitest this is a Vite plugin that does two things:
@@ -311,7 +383,7 @@ build step goes away. For Vitest this is a Vite plugin that does two things:
 Jest would get the equivalent transformer. Sections 4 through 6 stay the same.
 Only the step that produces the files changes.
 
-## 10. Follow-up: publishing the test build
+## 11. Follow-up: publishing the test build
 
 A published Escalier package could ship its `build/test/lib/` output. Another
 Escalier package's tests could then import it and mock the published package's
