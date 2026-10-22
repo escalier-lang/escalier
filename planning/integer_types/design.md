@@ -643,8 +643,11 @@ declare class IntRangeIter<T: int> {
 }
 ```
 
-`length` is `number` because it is `Infinity` for an unbounded
-range. Decision 13 in section 13 gives it the exact type `Sub<E, S>` once the
+`length` counts the safe integers the range yields, as section 6.2 defines, so
+it is finite even for an unbounded range. Its type is `number` because the
+count can reach `2 ** 54 - 2` for a range that spans the safe integers, and
+counts that large round. For a range whose bounds are both safe integers,
+decision 13 in section 13 gives `length` the exact type `Sub<E, S>` once the
 `Sub` intrinsic lands.
 
 ### 6.2. Iteration
@@ -1019,7 +1022,7 @@ for (let i = a, $end = b; i < $end; i++) { body }
 for (let i = a, $end = b; i <= $end; i++) { body }
 
 // for i in a..Infinity { body }
-for (let i = a; ; i++) { body }
+for (let i = a; i <= 9007199254740991; i++) { body }
 
 // for i in (a..b).step(k) { body }
 for (let i = a, $end = b, $k = k; i < $end; i += $k) { body }
@@ -1030,6 +1033,10 @@ for (let i = b - 1, $start = a; i >= $start; i--) { body }
 // for i in (a..=b).reversed().step(k) { body }
 for (let i = b, $start = a, $k = k; i >= $start; i -= $k) { body }
 ```
+
+The `a..Infinity` loop tests `i <= 9007199254740991` even when `a` is a safe
+integer. A safe start does not keep later values safe, and a loop that runs
+long enough would reach `2 ** 53`, where `i++` stops advancing.
 
 When a bound's type reaches past the safe integers, as `int` does, codegen
 clamps that bound once before the loop. That gives the iteration from section
@@ -1475,4 +1482,5 @@ records the decision.
     Decision: add the `Add`, `Sub`, and `Mul` intrinsics in the later-work
     milestone, and do not pursue dependent typing. The checker already computes
     the interval arithmetic, so exposing it is cheap. The intrinsics also give
-    `IntRange` an exact `length` of `Sub<E, S>`.
+    `IntRange` an exact `length` of `Sub<E, S>` when both bounds are safe
+    integers.
