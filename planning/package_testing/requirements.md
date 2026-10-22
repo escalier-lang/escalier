@@ -345,9 +345,9 @@ Other TypeScript packages rely on augmentation too, and Escalier needs it to use
 those packages as their authors intend. A Jest-specific mechanism would leave
 them unsupported.
 
-The augmentation design belongs to the cross-package augmentation work that
-third_party defers, and typed custom matchers wait on it. Testing adds these
-requirements to that design.
+[cross_package_augmentation](../cross_package_augmentation/requirements.md)
+specifies the mechanism, and typed custom matchers wait on it. Testing needs
+these properties from it.
 
 - An augmentation can target an interface that a third-party `.d.ts` declares,
   such as Jest's `Matchers<R>` or Vitest's `Assertion<T>`.
