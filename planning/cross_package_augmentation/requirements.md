@@ -118,6 +118,10 @@ Both have to work.
   class through a same-named interface, this can be revisited.
 - Augmenting the `std:` and `web:` pseudo-packages from user code. Those are
   Escalier-owned surfaces, refined through the override system instead.
+  The custom-elements work deferred in builtins section 4 can lift this for the
+  `web:dom` registries. When it does, it must check what `createElement` and
+  `querySelector` return for a tag that `HTMLElementTagNameMap` does not
+  declare.
 - Changing generated JavaScript. Augmentation affects types only.
 
 ## 5. Syntax
@@ -337,17 +341,3 @@ Each message below is the full text the checker reports.
 | The block holds another declaration kind | `a declare module block may contain only interfaces and namespaces` |
 | `declare global` in Escalier source | `declare global is not supported: Escalier has no ambient globals` |
 | The target is a `std:` or `web:` package | `cannot augment "web:dom": use an override file to refine a platform package` |
-
-## 12. Open questions
-
-1. **Augmenting pseudo-packages.** With section 9 in place, the `web:dom`
-   registries could become augmentable again. Custom elements, the deferred
-   user of that work, could then register through user-code augmentation of
-   `HTMLElementTagNameMap`. Section 4 excludes this for now.
-   `HTMLElementTagNameMap` is an interface, so exact-types section 2.4 already
-   makes it inexact. Today, though, nothing can add a key to it, so its keys are
-   in practice the ones `web:dom` declares. Allowing augmentation makes the
-   inexactness real. Before opening any `std:` or `web:` interface to
-   augmentation, work through what follows. That covers `keyof
-   HTMLElementTagNameMap` and what `createElement` and `querySelector` return
-   for a tag the registry did not declare.
