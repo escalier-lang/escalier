@@ -67,6 +67,11 @@ Both have to work.
 - Interfaces merge within one namespace. Two `interface Foo` declarations in
   the same namespace combine, and an interface that shares a name with a type
   alias, class, or enum is a `ConflictingTypeDeclarationError`.
+- The `.d.ts` converter already merges an interface into a same-named
+  `declare class`, as TypeScript does. The interface's members join the class's
+  instance side. The `std:` and `web:` packages are generated through this
+  step. Escalier source cannot write the same merge, because the solver
+  reports it as a `ConflictingTypeDeclarationError`.
 - Interfaces and namespaces are inexact, per
   [exact-types](../exact-types/requirements.md) sections 2.4 and 2.5, because
   their member set is not closed at one declaration site. Augmentation relies
@@ -103,8 +108,8 @@ Both have to work.
 
 - Adding new top-level declarations to another package. TypeScript forbids this
   in an augmentation, and Escalier follows it.
-- Augmenting a class, enum, type alias, or function. Section 6.3 lists what may
-  be augmented.
+- Augmenting an enum, type alias, or function. Section 6.3 lists what may be
+  augmented.
 - Augmenting the `std:` and `web:` pseudo-packages from user code. Those are
   Escalier-owned surfaces, refined through the override system instead.
 - Changing generated JavaScript. Augmentation affects types only.
@@ -166,12 +171,19 @@ error.
 An augmentation may target these declarations in the target package:
 
 - an interface;
-- a namespace, whose interfaces and nested namespaces are augmented by the
-  same rules.
+- a class, whose instance side gains the augmenting interface's members;
+- a namespace, whose interfaces, classes, and nested namespaces are augmented
+  by the same rules.
+
+An augmentation always writes `interface`, whatever its target is. Merging an
+interface into a class follows the rule the `.d.ts` converter already applies
+to a class and a same-named interface. A property becomes a field, and a method
+signature becomes a method. The class keeps its own `extends` clause, and an
+`extends` on the augmentation adds to its `implements` list.
 
 Naming a declaration the target does not have is an error, so a misspelled
 interface name is reported rather than silently declaring a new interface.
-Naming a class, enum, type alias, or function is an error.
+Naming an enum, type alias, or function is an error.
 
 ## 7. Augmentations in `.d.ts` files
 
@@ -277,6 +289,21 @@ builtins work found, where `keyof HTMLElementTagNameMap` was resolved where
 A dependency is still loaded and converted once per build. Only the merged
 interfaces differ between views.
 
+### 9.1 Sharing between views
+
+Most interfaces have no active augmentation in any view. Every view reads those
+from the target package's own declaration, and the checker builds no merged
+form for them.
+
+The test view contains the lib view, so the lib view is the test view's base
+view. The test view stores only the merged forms that its own augmentations
+change, and it reads every other merged form from the lib view. A custom
+matcher declared in a setup file gives the test view its own `Matchers<R>`.
+Every other merged form exists once and is shared by both views.
+
+The same layering applies to any view a later design adds. Each view names a
+base view and stores only the interfaces its own augmentations add to.
+
 ## 10. Emitting `.d.ts`
 
 An augmentation in a lib-view file is part of the package's public types. The
@@ -305,7 +332,7 @@ Each message below is the full text the checker reports.
 |---|---|
 | The specifier does not resolve | `cannot augment "fastify": package not found` |
 | The target has no such declaration | `cannot augment FastifyInstanc: "fastify" does not declare it` |
-| The target is not an interface or namespace | `cannot augment Router: only interfaces and namespaces can be augmented` |
+| The target is an enum, type alias, or function | `cannot augment RouteParams: only interfaces, classes, and namespaces can be augmented` |
 | Type parameters differ | `augmentation of Matchers must declare the type parameters <R>` |
 | A property's type differs | `augmentation of FastifyInstance redeclares db as string, but it is pg.Pool` |
 | The block holds another declaration kind | `a declare module block may contain only interfaces and namespaces` |
@@ -314,13 +341,14 @@ Each message below is the full text the checker reports.
 
 ## 12. Open questions
 
-1. **Interfaces merged with classes.** TypeScript merges an interface into a
-   class of the same name, and some packages are augmented that way. Decide
-   whether a later version allows a class as a target.
-2. **Cost of views.** The checker builds merged forms per view. Measure how
-   many interfaces a large dependency graph makes augmentable before deciding
-   whether to build them eagerly or on first use.
-3. **DOM registries.** With section 9 in place, the `web:dom` registries could
-   become augmentable again. Decide whether custom elements, the deferred user
-   of that work, should register through user-code augmentation of
-   `HTMLElementTagNameMap`, which section 4 excludes for `web:` packages.
+1. **Augmenting pseudo-packages.** With section 9 in place, the `web:dom`
+   registries could become augmentable again. Custom elements, the deferred
+   user of that work, could then register through user-code augmentation of
+   `HTMLElementTagNameMap`. Section 4 excludes this for now.
+   `HTMLElementTagNameMap` is an interface, so exact-types section 2.4 already
+   makes it inexact. Today, though, nothing can add a key to it, so its keys are
+   in practice the ones `web:dom` declares. Allowing augmentation makes the
+   inexactness real. Before opening any `std:` or `web:` interface to
+   augmentation, work through what follows. That covers `keyof
+   HTMLElementTagNameMap` and what `createElement` and `querySelector` return
+   for a tag the registry did not declare.
