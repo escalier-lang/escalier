@@ -272,6 +272,44 @@ import "@testing-library/jest-dom" as _
 `_` form. A later change can allow `as <name>` to rename a binding, and
 `as _` is then the case that discards it.
 
+### 8.5 Activating a package for a whole view
+
+A package can also be activated for a whole view in its `package.json`, under
+the `"escalier"` key that already holds `"ambient"`:
+
+```json
+"escalier": {
+  "types": {
+    "test": ["@testing-library/jest-dom"]
+  }
+}
+```
+
+- `types` maps a view name, `lib` or `test`, to a list of package
+  specifiers.
+- Section 8.2 treats each listed package as imported by every file of that
+  view, so its augmentations are active across the view.
+- The test view contains the lib view, so a package listed under `lib` is
+  active in the test view too.
+- A listed package binds no name in any file. A file that calls the package's
+  API still imports it.
+- Listing a package affects types only. A package whose module code must run,
+  such as `jest-dom` registering its matchers, is still loaded at runtime by
+  an import or by the runner's setup config.
+- A listed specifier that does not resolve is an error, reported against
+  `package.json`.
+
+This plays the role of the `types` array in a `tsconfig.json`, which
+`jest-dom`'s instructions tell TypeScript users to edit. Escalier reads its own
+key in `package.json` instead of a `tsconfig.json`, for two reasons:
+
+- TypeScript applies only the config of the project it is compiling. It never
+  reads a `tsconfig.json` inside a dependency, so a published Escalier package
+  gains no interop from shipping one.
+- `compilerOptions.types` has one list per project. It cannot give the lib and
+  test views different lists, which is why TypeScript projects often add a
+  separate `tsconfig.test.json`.
+
 ## 9. Resolving augmented interfaces
 
 An augmented interface's members are those of the merged form in the viewing
@@ -323,6 +361,12 @@ declare module "fastify" {
 }
 ```
 
+A package's public types can depend on another package's augmentation. A
+package listed under `types.lib` in section 8.5 is one example. The emitted
+`index.d.ts` then starts with `/// <reference types="<specifier>" />` for
+that package, so the augmentation is part of any TypeScript program that reads
+the file.
+
 An augmentation in a test-view file is not emitted to `build/lib/`. When the
 test build's `index.d.ts` from package_testing section 7 is published, it
 carries the test view's augmentations.
@@ -334,6 +378,7 @@ Each message below is the full text the checker reports.
 | Condition | Message |
 |---|---|
 | The specifier does not resolve | `cannot augment "fastify": package not found` |
+| A `types` entry in `package.json` does not resolve | `cannot activate "@testing-library/jest-dom" for the test view: package not found` |
 | The target has no such declaration | `cannot augment FastifyInstanc: "fastify" does not declare it` |
 | The target is not an interface or namespace | `cannot augment Router: only interfaces and namespaces can be augmented` |
 | Type parameters differ | `augmentation of Matchers must declare the type parameters <R>` |
