@@ -69,9 +69,10 @@ Both have to work.
   alias, class, or enum is a `ConflictingTypeDeclarationError`.
 - The `.d.ts` converter already merges an interface into a same-named
   `declare class`, as TypeScript does. The interface's members join the class's
-  instance side. The `std:` and `web:` packages are generated through this
-  step. Escalier source cannot write the same merge, because the solver
-  reports it as a `ConflictingTypeDeclarationError`.
+  instance side. This step exists for the `std:` and `web:` packages, whose
+  source is the `.d.ts` files that ship with TypeScript, and those files rely
+  on the merge. Escalier source cannot write it, because the solver reports it
+  as a `ConflictingTypeDeclarationError`.
 - Interfaces and namespaces are inexact, per
   [exact-types](../exact-types/requirements.md) sections 2.4 and 2.5, because
   their member set is not closed at one declaration site. Augmentation relies
@@ -108,8 +109,13 @@ Both have to work.
 
 - Adding new top-level declarations to another package. TypeScript forbids this
   in an augmentation, and Escalier follows it.
-- Augmenting an enum, type alias, or function. Section 6.3 lists what may be
-  augmented.
+- Augmenting a class, enum, type alias, or function. Section 6.3 lists what may
+  be augmented.
+- Merging an interface into a class outside the pseudo-package conversion.
+  Third-party `.d.ts` files declare class types with `declare class` and keep
+  `interface` for interfaces, so their augmentations target interfaces.
+  Escalier source has the same split. If a library turns up that augments a
+  class through a same-named interface, this can be revisited.
 - Augmenting the `std:` and `web:` pseudo-packages from user code. Those are
   Escalier-owned surfaces, refined through the override system instead.
 - Changing generated JavaScript. Augmentation affects types only.
@@ -171,19 +177,12 @@ error.
 An augmentation may target these declarations in the target package:
 
 - an interface;
-- a class, whose instance side gains the augmenting interface's members;
-- a namespace, whose interfaces, classes, and nested namespaces are augmented
-  by the same rules.
-
-An augmentation always writes `interface`, whatever its target is. Merging an
-interface into a class follows the rule the `.d.ts` converter already applies
-to a class and a same-named interface. A property becomes a field, and a method
-signature becomes a method. The class keeps its own `extends` clause, and an
-`extends` on the augmentation adds to its `implements` list.
+- a namespace, whose interfaces and nested namespaces are augmented by the
+  same rules.
 
 Naming a declaration the target does not have is an error, so a misspelled
 interface name is reported rather than silently declaring a new interface.
-Naming an enum, type alias, or function is an error.
+Naming a class, enum, type alias, or function is an error.
 
 ## 7. Augmentations in `.d.ts` files
 
@@ -332,7 +331,7 @@ Each message below is the full text the checker reports.
 |---|---|
 | The specifier does not resolve | `cannot augment "fastify": package not found` |
 | The target has no such declaration | `cannot augment FastifyInstanc: "fastify" does not declare it` |
-| The target is an enum, type alias, or function | `cannot augment RouteParams: only interfaces, classes, and namespaces can be augmented` |
+| The target is not an interface or namespace | `cannot augment Router: only interfaces and namespaces can be augmented` |
 | Type parameters differ | `augmentation of Matchers must declare the type parameters <R>` |
 | A property's type differs | `augmentation of FastifyInstance redeclares db as string, but it is pg.Pool` |
 | The block holds another declaration kind | `a declare module block may contain only interfaces and namespaces` |
