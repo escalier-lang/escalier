@@ -238,6 +238,25 @@ for every distinct import set. A view needs one per view.
 Views keep goal 4. What a file sees depends only on its own package. A sibling
 package in the same monorepo never changes it.
 
+### 8.4 Importing a package for its effects
+
+A file that imports a package only to activate its augmentations, or to run its
+module code, discards the binding with `_`:
+
+```escalier
+import "@testing-library/jest-dom" as _
+```
+
+- `as _` binds nothing, so the file gains no `jest_dom` name.
+- The import still activates the package's augmentations under section 8.2.
+- Codegen emits a bare `import "@testing-library/jest-dom";`. The package's
+  module code runs when the compiled file loads. `jest-dom` relies on this,
+  because it calls `expect.extend` when it loads.
+
+`as` is new syntax on an import statement. This document defines only the
+`_` form. A later change can allow `as <name>` to rename a binding, and
+`as _` is then the case that discards it.
+
 ## 9. Resolving augmented interfaces
 
 An augmented interface's members are those of the merged form in the viewing
@@ -295,17 +314,13 @@ Each message below is the full text the checker reports.
 
 ## 12. Open questions
 
-1. **Bare imports for activation.** A setup file activates
-   `@testing-library/jest-dom` by importing it, and the import binds
-   `jest_dom` even though nothing reads the binding. Decide whether that unused
-   binding is reported, or whether a side-effect-only import form is needed.
-2. **Interfaces merged with classes.** TypeScript merges an interface into a
+1. **Interfaces merged with classes.** TypeScript merges an interface into a
    class of the same name, and some packages are augmented that way. Decide
    whether a later version allows a class as a target.
-3. **Cost of views.** The checker builds merged forms per view. Measure how
+2. **Cost of views.** The checker builds merged forms per view. Measure how
    many interfaces a large dependency graph makes augmentable before deciding
    whether to build them eagerly or on first use.
-4. **DOM registries.** With section 9 in place, the `web:dom` registries could
+3. **DOM registries.** With section 9 in place, the `web:dom` registries could
    become augmentable again. Decide whether custom elements, the deferred user
    of that work, should register through user-code augmentation of
    `HTMLElementTagNameMap`, which section 4 excludes for `web:` packages.
