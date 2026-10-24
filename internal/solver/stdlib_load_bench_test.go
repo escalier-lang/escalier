@@ -25,8 +25,9 @@ import (
 // copies the loaded packages rather than inferring them, so Warm measures that
 // copy.
 //
-// Cold adds parsing, which a process pays once per distinct file because of the
-// cache in stdlib_parse_cache.go. It is what a language server pays at startup.
+// Cold adds parsing the files and inferring the packages, which a process pays once
+// per distinct tree because of the caches in stdlib_parse_cache.go and
+// stdlib_run_cache.go. It is what a language server pays at startup.
 //
 // Run with:
 //
@@ -58,7 +59,8 @@ func BenchmarkStdlibClosureLoad(b *testing.B) {
 		module := benchEntryModule(b, tt.uris)
 
 		b.Run(tt.name+"/Warm", func(b *testing.B) {
-			// Prime the parse cache, so the loop measures inference alone.
+			// Prime both caches, so the loop measures what a run pays once the tree is
+			// loaded.
 			InferModuleAgainstStdlib(module, benchTree, Options{})
 			b.ResetTimer()
 			for range b.N {
@@ -69,7 +71,7 @@ func BenchmarkStdlibClosureLoad(b *testing.B) {
 		b.Run(tt.name+"/Cold", func(b *testing.B) {
 			for range b.N {
 				b.StopTimer()
-				restore := emptyTheParseCache()
+				restore := emptyTheStdlibCaches()
 				b.StartTimer()
 
 				InferModuleAgainstStdlib(module, benchTree, Options{})
@@ -125,14 +127,25 @@ func benchEntryModule(b *testing.B, uris []string) *ast.Module {
 	return module
 }
 
-// emptyTheParseCache swaps in a cache holding nothing and returns a function
-// restoring the one the process was using.
+// emptyTheStdlibCaches swaps in a parse cache and a checker cache holding nothing,
+// and returns a function restoring the ones the process was using.
 //
 // A cold load is the first in a process. Source ids restart from the base, which
-// the swapped-in cache alone hands out, so no id it issues reaches an entry the
-// restored cache holds.
-func emptyTheParseCache() func() {
-	prev := stdlibParses
+// the swapped-in parse cache alone hands out, so no id it issues reaches an entry
+// the restored cache holds.
+func emptyTheStdlibCaches() func() {
+	prevParses := stdlibParses
 	stdlibParses = newParsedModuleCache(stdlibSourceIDBase)
-	return func() { stdlibParses = prev }
+
+	ambientCheckers.mu.Lock()
+	prevEntries, prevOrder := ambientCheckers.entries, ambientCheckers.order
+	ambientCheckers.entries, ambientCheckers.order = map[ambientKey]*ambientEntry{}, nil
+	ambientCheckers.mu.Unlock()
+
+	return func() {
+		stdlibParses = prevParses
+		ambientCheckers.mu.Lock()
+		ambientCheckers.entries, ambientCheckers.order = prevEntries, prevOrder
+		ambientCheckers.mu.Unlock()
+	}
 }
