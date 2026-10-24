@@ -43,21 +43,21 @@ func (f *fakeSolNamespace) Namespace(name string) (SolNamespace, bool) {
 	return ns, true
 }
 
-// renderDeclFromSol emits decl's statements and prints them, so a case reads as the
+// renderDecl emits decl's statements and prints them, so a case reads as the
 // declarations a consumer of the `.d.ts` would see.
-func renderDeclFromSol(t *testing.T, source string, ns *fakeSolNamespace, isTopLevel bool) string {
+func renderDecl(t *testing.T, source string, ns *fakeSolNamespace, isTopLevel bool) string {
 	t.Helper()
 	builder := &Builder{}
-	stmts := builder.buildDeclStmtFromSol(parseDecl(t, source), ns, solNames{preludePrefix: solPreludePrefix}, isTopLevel)
+	stmts := builder.buildDeclStmt(parseDecl(t, source), ns, solNames{preludePrefix: solPreludePrefix}, isTopLevel)
 	printer := NewPrinter()
 	printer.PrintModule(&Module{Stmts: stmts})
 	return printer.Output
 }
 
-// TestBuildDeclStmtFromSol checks what each declaration kind emits from solver types.
+// TestBuildDeclStmt checks what each declaration kind emits from solver types.
 // The types come from a fake namespace rather than a run, so each case names exactly
 // the inference result it depends on.
-func TestBuildDeclStmtFromSol(t *testing.T) {
+func TestBuildDeclStmt(t *testing.T) {
 	tests := []struct {
 		name       string
 		source     string
@@ -320,15 +320,15 @@ func TestBuildDeclStmtFromSol(t *testing.T) {
 
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
-			require.Equal(t, test.want, renderDeclFromSol(t, test.source, test.ns, test.isTopLevel))
+			require.Equal(t, test.want, renderDecl(t, test.source, test.ns, test.isTopLevel))
 		})
 	}
 }
 
-// TestBuildDeclStmtFromSolSelfType checks that a binding whose type mentions `Self`
+// TestBuildDeclStmtSelfType checks that a binding whose type mentions `Self`
 // moves into an interface. TypeScript spells `Self` as `this` and accepts it only
 // inside one, so `declare const inc: (n: number) => this` would not compile.
-func TestBuildDeclStmtFromSolSelfType(t *testing.T) {
+func TestBuildDeclStmtSelfType(t *testing.T) {
 	ns := &fakeSolNamespace{
 		values: map[string]soltype.Type{
 			"inc": solFn([]*soltype.FuncParam{solParam("n", solNum())}, solSelf("Counter")),
@@ -336,12 +336,12 @@ func TestBuildDeclStmtFromSolSelfType(t *testing.T) {
 	}
 	require.Equal(t,
 		"interface __inc_self__ {(n: number): this}\ndeclare const inc: __inc_self__;\n",
-		renderDeclFromSol(t, `val inc = counter.increment`, ns, true))
+		renderDecl(t, `val inc = counter.increment`, ns, true))
 }
 
-// TestFindNamespaceFromSol checks the walk's namespace lookup, which resolves a dotted
+// TestFindNamespace checks the walk's namespace lookup, which resolves a dotted
 // path one segment at a time.
-func TestFindNamespaceFromSol(t *testing.T) {
+func TestFindNamespace(t *testing.T) {
 	leaf := &fakeSolNamespace{}
 	root := &fakeSolNamespace{nested: map[string]*fakeSolNamespace{
 		"outer": {nested: map[string]*fakeSolNamespace{"inner": leaf}},
@@ -362,7 +362,7 @@ func TestFindNamespaceFromSol(t *testing.T) {
 
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
-			got, found := findNamespaceFromSol(root, test.path)
+			got, found := findNamespace(root, test.path)
 			require.Equal(t, test.found, found)
 			require.Equal(t, test.want, got)
 		})

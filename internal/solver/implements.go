@@ -289,7 +289,7 @@ func (ic implementsComparison) check(ifaceElem soltype.ObjTypeElem) SolverError 
 			if !ic.receiverMatches(ifaceElem, ie.SelfParam, ce.SelfParam) {
 				return ic.mismatch(name, "self receiver does not match")
 			}
-			if !ic.fits(ie.Param, ce.Param) {
+			if !ic.fits(ie.Param.Type, ce.Param.Type) {
 				return ic.mismatch(name, "setter argument type does not match")
 			}
 		case *soltype.PropertyElem:
@@ -299,7 +299,7 @@ func (ic implementsComparison) check(ifaceElem soltype.ObjTypeElem) SolverError 
 			if ce.Readonly {
 				return ic.readonlyMismatch(name)
 			}
-			if !ic.fits(ie.Param, ce.Type) {
+			if !ic.fits(ie.Param.Type, ce.Type) {
 				return ic.mismatch(name, "property type does not match setter")
 			}
 		default:
@@ -368,7 +368,7 @@ func (ic implementsComparison) checkAccessorsAgainstField(ie *soltype.PropertyEl
 	}
 	setter, ok := ic.view.WriteMember(name)
 	if s, isSetter := setter.(*soltype.SetterElem); ok && isSetter {
-		if !ic.fits(ie.Type, s.Param) {
+		if !ic.fits(ie.Type, s.Param.Type) {
 			return ic.mismatch(name, "setter argument type does not match")
 		}
 		return nil

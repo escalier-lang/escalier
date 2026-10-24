@@ -365,7 +365,7 @@ func staticMemberType(static *soltype.ObjectType, elem ast.ClassElem, name strin
 			}
 		case *soltype.SetterElem:
 			if _, isSetter := elem.(*ast.SetterElem); isSetter && e.Name == name {
-				return e.Param
+				return e.Param.Type
 			}
 		}
 	}
@@ -1736,9 +1736,9 @@ func (c *checker) buildMemberSigs(
 				c.report(&SetterArityError{Name: name, Elem: elem, Count: len(elem.Fn.Params)})
 			}
 			stub := c.memberSigStub(scope, lvl, elem.Fn)
-			var param soltype.Type = &soltype.UnknownType{}
+			param := &soltype.FuncParam{Type: &soltype.UnknownType{}}
 			if len(stub.Params) > 0 {
-				param = stub.Params[0].Type
+				param = stub.Params[0]
 			}
 			setter := &soltype.SetterElem{
 				Name:      name,
@@ -1753,7 +1753,7 @@ func (c *checker) buildMemberSigs(
 				apply: func(bodyFt *soltype.FuncType) {
 					setter.SelfParam = bodyFt.SelfParam
 					if len(bodyFt.Params) > 0 {
-						setter.Param = bodyFt.Params[0].Type
+						setter.Param = bodyFt.Params[0]
 					}
 					setter.Throws = bodyFt.Throws
 				},
@@ -2368,7 +2368,7 @@ func freezeMember(
 		return &soltype.SetterElem{
 			Name:      e.Name,
 			SelfParam: e.SelfParam,
-			Param:     coalesceKeeping(e.Param, soltype.Negative, keep, flow, keepLts),
+			Param:     e.Param.WithType(coalesceKeeping(e.Param.Type, soltype.Negative, keep, flow, keepLts)),
 			// A setter's written value coalesces negatively, but what the write raises
 			// flows out to the writer, so its throws position still coalesces positively.
 			Throws: coalesceThrows(e.Throws, keep, flow, keepLts),

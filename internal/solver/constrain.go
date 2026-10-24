@@ -3016,7 +3016,7 @@ func (c *Context) constrainObjMember(superElem soltype.ObjTypeElem, sub, sup *so
 		}
 	case *soltype.SetterElem:
 		if ss, ok := subElem.(*soltype.SetterElem); ok {
-			errs := c.constrain(se.Param, ss.Param, seen, mutCtx) // contravariant write
+			errs := c.constrain(se.Param.Type, ss.Param.Type, seen, mutCtx) // contravariant write
 			// The written value is contravariant, but what the write raises flows out to
 			// the writer, so the throws position stays covariant.
 			return append(errs, c.constrain(ss.ThrowsOrNever(), se.ThrowsOrNever(), seen, mutCtx)...)
@@ -3048,7 +3048,7 @@ func (c *Context) constrainGetterIntoProp(
 	if _, never := s.ThrowsOrNever().(*soltype.NeverType); !never {
 		return append(errs, &ReadonlyFieldSubtypeError{Field: prop.Name})
 	}
-	return append(errs, c.constrain(prop.Type, s.Param, seen, mutCtx)...)
+	return append(errs, c.constrain(prop.Type, s.Param.Type, seen, mutCtx)...)
 }
 
 // constrainStrLitToRegex checks a literal against a regex type. A string literal is a value

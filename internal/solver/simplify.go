@@ -30,7 +30,7 @@ import (
 // renders the non-compact `fn <T0, T1>(y: T0 & T1) -> [T0, T1]`. Those three always
 // occur together, so merging collapses them to `fn <T0>(y: T0) -> [T0, T0]`.
 //
-// The algorithm ports internal/simplesub/simplify.go to soltype:
+// The algorithm:
 //
 //  1. collect every variable reachable from the scheme body,
 //  2. symmetrize the var↔var subtyping edges (constrain records each on one

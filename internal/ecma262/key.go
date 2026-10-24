@@ -36,9 +36,9 @@ const (
 	SymKey MemberKeyKind = "sym"
 )
 
-// MemberKey names one member of an owner. It mirrors
-// type_system.ObjTypeKey so a symbol-keyed member joins by kind plus
-// payload, matching how ClassifyMethodByName's callers in
+// MemberKey names one member of an owner. It carries a key kind beside
+// the name so a symbol-keyed member joins by kind plus payload, matching
+// how ClassifyMethodByName's callers in
 // internal/dts_to_esc already tell string- from symbol-keyed names apart.
 type MemberKey struct {
 	Kind MemberKeyKind

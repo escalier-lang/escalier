@@ -4,7 +4,6 @@ import (
 	"strings"
 
 	"github.com/escalier-lang/escalier/internal/ast"
-	"github.com/escalier-lang/escalier/internal/type_system"
 )
 
 // This file implements the `@js("...")` codegen lowering described in
@@ -27,7 +26,7 @@ import (
 // decorator. Loader rules §3.4 already reject malformed `@js` on
 // pseudo-package decls, so reaching this from production code means
 // well-formed or absent — both handled by ast.FindJsDecorator.
-func jsExprFromOwner(owner type_system.BindingOwner) (string, bool) {
+func jsExprFromOwner(owner ast.BindingOwner) (string, bool) {
 	decl, ok := owner.(ast.Decl)
 	if !ok {
 		return "", false

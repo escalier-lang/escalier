@@ -437,9 +437,9 @@ func (l *objAnnLowering) lower(elem ast.ObjTypeAnnElem) (soltype.ObjTypeElem, bo
 		if len(sig.Params) != 1 {
 			l.c.report(&SetterArityError{Name: name, Elem: elem.Name, Count: len(sig.Params)})
 		}
-		var param soltype.Type = &soltype.UnknownType{}
+		param := &soltype.FuncParam{Type: &soltype.UnknownType{}}
 		if len(sig.Params) > 0 {
-			param = sig.Params[0].Type
+			param = sig.Params[0]
 		}
 		return &soltype.SetterElem{Name: name, Param: param, Throws: sig.Throws}, true
 	case *ast.ConstructorTypeAnn:

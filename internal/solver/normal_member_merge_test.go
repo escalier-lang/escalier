@@ -37,19 +37,19 @@ func TestObjectMemberMeet(t *testing.T) {
 		{
 			name: "a shared setter with equal raises joins the value it accepts",
 			in:   "{set x(&self, v: number) -> undefined} & {set x(&self, v: string) -> undefined}",
-			want: "{set x(&self, value: number | string)}",
+			want: "{set x(&self, v: number | string)}",
 		},
 		{
 			name: "a shared setter with an equal written value meets its raises",
 			in: `{set x(&self, v: number) -> undefined throws "a" | "b"} & ` +
 				`{set x(&self, v: number) -> undefined throws "b" | "c"}`,
-			want: `{set x(&self, value: number) throws "b"}`,
+			want: `{set x(&self, v: number) throws "b"}`,
 		},
 		{
 			name: "a shared setter differing in both value and raises keeps both atoms",
 			in: `{set x(&self, v: number) -> undefined throws "a"} & ` +
 				`{set x(&self, v: string) -> undefined throws "b"}`,
-			want: `{set x(&self, value: number) throws "a"} & {set x(&self, value: string) throws "b"}`,
+			want: `{set x(&self, v: number) throws "a"} & {set x(&self, v: string) throws "b"}`,
 		},
 		{
 			name: "a shared constructor joins its domain over a shared return",
@@ -97,8 +97,8 @@ func TestObjectMemberMeet(t *testing.T) {
 			name: "a get/set accessor pair keeps both atoms unfused",
 			in: "{a: number, get x(&self) -> number, set x(&self, v: number) -> undefined} & " +
 				"{b: number, get x(&self) -> number, set x(&self, v: number) -> undefined}",
-			want: "{a: number, get x(&self) -> number, set x(&self, value: number)} & " +
-				"{b: number, get x(&self) -> number, set x(&self, value: number)}",
+			want: "{a: number, get x(&self) -> number, set x(&self, v: number)} & " +
+				"{b: number, get x(&self) -> number, set x(&self, v: number)}",
 		},
 	}
 	for _, tt := range tests {
@@ -144,7 +144,7 @@ func TestObjectMemberJoin(t *testing.T) {
 		{
 			name: "objects differing in a setter keep both atoms",
 			in:   "{set x(&self, v: number) -> undefined} | {set x(&self, v: string) -> undefined}",
-			want: "{set x(&self, value: number)} | {set x(&self, value: string)}",
+			want: "{set x(&self, v: number)} | {set x(&self, v: string)}",
 		},
 		{
 			name: "objects differing in a constructor keep both atoms",
