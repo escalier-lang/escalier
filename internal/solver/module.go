@@ -279,14 +279,11 @@ func (c *checker) inferDepGraph(scope *Scope, lvl int, module *ast.Module, g *de
 	// unsupported decl always fails cleanly rather than being silently dropped.
 	module.Namespaces.Scan(func(nsPath string, ns *ast.Namespace) bool {
 		for _, d := range ns.Decls {
-			switch d.(type) {
-			case *ast.ExportAssignmentStmt, *ast.ExportAsNamespaceStmt:
-				// Neither binds a name in this module. At the top level, exportedSurface
-				// reads the first and loadPackage reads the second. Nothing reads one
-				// inside a namespace, so that one is reported.
-				if nsPath == "" {
-					continue
-				}
+			// `export = X` binds no name in this module. At the top level
+			// exportedSurface reads it. Nothing reads one inside a namespace, so that
+			// one is reported.
+			if _, assigns := d.(*ast.ExportAssignmentStmt); assigns && nsPath == "" {
+				continue
 			}
 			if !handled.Contains(d) {
 				c.reportUnsupported(d)

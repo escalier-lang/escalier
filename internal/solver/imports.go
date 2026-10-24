@@ -84,13 +84,6 @@ func (c *checker) bindImport(fileScope *Scope, stmt *ast.ImportStmt) []SolverErr
 	}
 
 	c.bindImportedNamespace(fileScope, stmt.LocalName(), ns)
-	// A package whose `.d.ts` writes `export as namespace React` declares the global
-	// React. The importing file reaches the package under that name as well. It goes
-	// in the file scope, as every import does, so a sibling file that does not import
-	// the package does not see it.
-	if global := c.ctx.packages.GlobalName(uri); global != "" && global != stmt.LocalName() {
-		c.bindImportedNamespace(fileScope, global, ns)
-	}
 	return errs
 }
 
