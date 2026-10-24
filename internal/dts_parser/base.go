@@ -13,7 +13,7 @@ import (
 type DtsParser struct {
 	lexer            *Lexer
 	errors           []*Error
-	inAmbientContext bool // true when inside a declare namespace or declare module
+	inAmbientContext bool // true inside a declare namespace, a declare module, or an exported declaration
 }
 
 // ParserState represents a lightweight snapshot of parser state for backtracking

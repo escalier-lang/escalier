@@ -6,6 +6,7 @@ import (
 	"github.com/escalier-lang/escalier/internal/ast"
 	"github.com/escalier-lang/escalier/internal/snapshot"
 	"github.com/gkampitakis/go-snaps/snaps"
+	"github.com/stretchr/testify/require"
 )
 
 // ============================================================================
@@ -654,6 +655,124 @@ func TestTopLevelVariableRequiresDeclare(t *testing.T) {
 			if len(errors) == 0 {
 				t.Error("Expected parse errors for top-level variable without 'declare', but got none")
 			}
+		})
+	}
+}
+
+// TestExportedDeclarationWithoutDeclare covers top-level declarations that
+// TypeScript makes ambient through `export` alone, such as the
+// `export function jsx(...)` that `@types/react/jsx-runtime.d.ts` declares.
+func TestExportedDeclarationWithoutDeclare(t *testing.T) {
+	tests := []struct {
+		name      string
+		input     string
+		want      Statement
+		isDefault bool
+	}{
+		{
+			name:  "export function",
+			input: "export function f(): void;",
+			want:  &FuncDecl{},
+		},
+		{
+			name: "export function with a multi-line parameter list",
+			input: `export function jsx(
+    type: React.ElementType,
+    props: unknown,
+    key?: React.Key,
+): React.ReactElement;`,
+			want: &FuncDecl{},
+		},
+		{
+			name:      "export default function",
+			input:     "export default function f(): void;",
+			want:      &FuncDecl{},
+			isDefault: true,
+		},
+		{
+			name:  "export const",
+			input: "export const x: number;",
+			want:  &VarDecl{},
+		},
+		{
+			name:  "export let",
+			input: "export let x: number;",
+			want:  &VarDecl{},
+		},
+		{
+			name:  "export var",
+			input: "export var x: number;",
+			want:  &VarDecl{},
+		},
+		{
+			name:  "export class",
+			input: "export class C { m(): void; }",
+			want:  &ClassDecl{},
+		},
+		{
+			name:  "export abstract class",
+			input: "export abstract class C { abstract m(): void; }",
+			want:  &ClassDecl{},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			source := &ast.Source{Path: "test.d.ts", Contents: tt.input, ID: 0}
+			module, errs := NewDtsParser(source).ParseModule()
+
+			require.Empty(t, errs)
+			require.Len(t, module.Statements, 1)
+			stmt := module.Statements[0]
+			require.IsType(t, tt.want, stmt)
+			decl, ok := stmt.(Decl)
+			require.True(t, ok)
+			require.True(t, decl.Export())
+			require.Equal(t, tt.isDefault, decl.Default())
+			require.False(t, decl.Declare())
+		})
+	}
+}
+
+// TestTopLevelDeclarationRequiresDeclareOrExport asserts the error for a
+// top-level declaration that has neither `declare` nor `export`. Each input
+// opens with an exported declaration, so the test also asserts that parsing
+// it leaves the ambient context unset for the next statement.
+func TestTopLevelDeclarationRequiresDeclareOrExport(t *testing.T) {
+	tests := []struct {
+		name  string
+		input string
+		want  string
+	}{
+		{
+			name:  "function",
+			input: "export function f(): void;\nfunction g(): void;",
+			want:  "Function declarations require 'declare' or 'export' keyword at top level",
+		},
+		{
+			name:  "var",
+			input: "export var x: number;\nvar y: number;",
+			want:  "Variable declarations require 'declare' or 'export' keyword at top level",
+		},
+		{
+			name:  "class",
+			input: "export class C {}\nclass D {}",
+			want:  "Class declarations require 'declare' or 'export' keyword at top level",
+		},
+		{
+			name:  "abstract class",
+			input: "export abstract class C {}\nabstract class D {}",
+			want:  "Abstract class declarations require 'declare' or 'export' keyword at top level",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			source := &ast.Source{Path: "test.d.ts", Contents: tt.input, ID: 0}
+			_, errs := NewDtsParser(source).ParseModule()
+
+			require.NotEmpty(t, errs)
+			require.Equal(t, tt.want, errs[0].Message)
 		})
 	}
 }

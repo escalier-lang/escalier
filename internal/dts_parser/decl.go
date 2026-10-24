@@ -111,7 +111,7 @@ func (p *DtsParser) parseTopLevelDeclaration() Statement {
 		}
 		p.lexer.RestoreState(nextToken)
 
-		// Allow const variable declarations inside ambient namespaces
+		// Allow const variable declarations in an ambient context
 		if p.inAmbientContext {
 			return p.parseVariableDeclaration()
 		}
@@ -119,25 +119,25 @@ func (p *DtsParser) parseTopLevelDeclaration() Statement {
 		p.reportError(token.Span, "Expected 'enum' after 'const' at top level")
 		return nil
 	case Var, Let:
-		// Allow var/let variable declarations inside ambient namespaces
+		// Allow var/let variable declarations in an ambient context
 		if p.inAmbientContext {
 			return p.parseVariableDeclaration()
 		}
-		p.reportError(token.Span, "Variable declarations require 'declare' keyword at top level")
+		p.reportError(token.Span, "Variable declarations require 'declare' or 'export' keyword at top level")
 		return nil
 	case Function:
-		// Allow function declarations inside ambient namespaces
+		// Allow function declarations in an ambient context
 		if p.inAmbientContext {
 			return p.parseFunctionDeclaration()
 		}
-		p.reportError(token.Span, "Function declarations require 'declare' keyword at top level")
+		p.reportError(token.Span, "Function declarations require 'declare' or 'export' keyword at top level")
 		return nil
 	case Class:
-		// Allow class declarations inside ambient namespaces
+		// Allow class declarations in an ambient context
 		if p.inAmbientContext {
 			return p.parseClassDeclaration()
 		}
-		p.reportError(token.Span, "Class declarations require 'declare' keyword at top level")
+		p.reportError(token.Span, "Class declarations require 'declare' or 'export' keyword at top level")
 		return nil
 	case Abstract:
 		// Check if this is 'abstract class'
@@ -145,11 +145,11 @@ func (p *DtsParser) parseTopLevelDeclaration() Statement {
 		p.consume() // consume 'abstract'
 		if p.peek().Type == Class {
 			p.lexer.RestoreState(nextToken)
-			// Allow abstract class declarations inside ambient namespaces
+			// Allow abstract class declarations in an ambient context
 			if p.inAmbientContext {
 				return p.parseClassDeclaration()
 			}
-			p.reportError(token.Span, "Abstract class declarations require 'declare' keyword at top level")
+			p.reportError(token.Span, "Abstract class declarations require 'declare' or 'export' keyword at top level")
 			return nil
 		}
 		p.lexer.RestoreState(nextToken)
@@ -161,6 +161,17 @@ func (p *DtsParser) parseTopLevelDeclaration() Statement {
 		p.reportError(token.Span, "Expected interface, type, enum, or namespace declaration")
 		return nil
 	}
+}
+
+// parseTopLevelDeclarationAsAmbient parses a top-level declaration with the
+// ambient context set, so `var`, `let`, `const`, `function`, and `class`
+// declarations parse without `declare`. It restores the previous ambient
+// context before returning.
+func (p *DtsParser) parseTopLevelDeclarationAsAmbient() Statement {
+	saved := p.inAmbientContext
+	p.inAmbientContext = true
+	defer func() { p.inAmbientContext = saved }()
+	return p.parseTopLevelDeclaration()
 }
 
 // ============================================================================
