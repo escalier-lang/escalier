@@ -333,3 +333,19 @@ func TestSettleLoadedDefinitionsMeasuresAProvisionalClass(t *testing.T) {
 	require.False(t, def.varianceProvisional)
 	require.Equal(t, measured, def.Variance)
 }
+
+// TestAmbientCheckerServesRuns asserts that the cache serves the committed tree, so the
+// tests comparing cached runs with fresh ones compare against a cached run rather than
+// the fallback to a fresh load.
+func TestAmbientCheckerServesRuns(t *testing.T) {
+	groups, err := BuildPackageClosure(benchTree, ambientPackages)
+	require.NoError(t, err)
+	source := StdlibSource(benchTree)
+
+	first, ok := ambientChecker(benchTree, source, groups, Options{})
+	require.True(t, ok)
+	second, ok := ambientChecker(benchTree, source, groups, Options{})
+	require.True(t, ok)
+	require.NotSame(t, first, second)
+	require.NotSame(t, first.ctx, second.ctx)
+}
