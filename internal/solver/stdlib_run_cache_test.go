@@ -176,7 +176,11 @@ func inferFresh(t *testing.T, dir, src string, opts Options) (map[string]string,
 func TestAmbientCheckerRunInfoHoldsOnlyTheModule(t *testing.T) {
 	module := parseModule(t, `val xs: Array<number> = [1, 2]`)
 	res := InferModuleAgainstStdlib(module, benchTree, Options{})
+	// An empty table would pass the loop below without checking anything.
 	require.NotEmpty(t, res.Info.types)
+	// A node's span records the source it was parsed from. The module parses under
+	// id 0, and every stdlib file parses under an id from stdlibSourceIDBase up, so
+	// an entry the cached load recorded for a stdlib node fails this comparison.
 	for node := range res.Info.types {
 		require.Equal(t, module.Files[0].SourceID, node.Span().SourceID)
 	}
