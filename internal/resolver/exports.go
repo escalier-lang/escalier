@@ -8,7 +8,7 @@ import (
 )
 
 // exports.go reads the package.json fields that map an import's subpath to a file:
-// `exports`, and `typesVersions`. Both are JSON objects whose first matching key wins,
+// `exports` and `typesVersions`. Both are JSON objects whose first matching key wins,
 // so they are decoded with their keys kept in source order.
 
 // typeScriptVersion is the TypeScript version that a `types@<range>` condition and a
