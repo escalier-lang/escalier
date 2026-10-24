@@ -4,6 +4,7 @@ import (
 	"os"
 	"testing"
 
+	"github.com/escalier-lang/escalier/internal/soltype"
 	"github.com/gkampitakis/go-snaps/snaps"
 	"github.com/vektah/gqlparser/v2"
 	"github.com/vektah/gqlparser/v2/ast"
@@ -73,8 +74,8 @@ func TestInferGraphQLQuery_GetUserAndPosts(t *testing.T) {
 	}
 
 	// Snapshot test the inferred types
-	snaps.MatchSnapshot(t, result.ResultType.String())
-	snaps.MatchSnapshot(t, result.VariablesType.String())
+	snaps.MatchSnapshot(t, soltype.Print(result.ResultType))
+	snaps.MatchSnapshot(t, soltype.Print(result.VariablesType))
 }
 
 func TestInferGraphQLQuery_CreatePostAndComment(t *testing.T) {
@@ -130,8 +131,8 @@ func TestInferGraphQLQuery_CreatePostAndComment(t *testing.T) {
 	}
 
 	// Snapshot test the inferred types
-	snaps.MatchSnapshot(t, result.ResultType.String())
-	snaps.MatchSnapshot(t, result.VariablesType.String())
+	snaps.MatchSnapshot(t, soltype.Print(result.ResultType))
+	snaps.MatchSnapshot(t, soltype.Print(result.VariablesType))
 }
 
 func TestInferGraphQLQuery_SearchContentWithUnion(t *testing.T) {
@@ -182,8 +183,8 @@ func TestInferGraphQLQuery_SearchContentWithUnion(t *testing.T) {
 		t.Error("Expected VariablesType to be non-nil")
 	}
 	// Snapshot test the inferred types
-	snaps.MatchSnapshot(t, result.ResultType.String())
-	snaps.MatchSnapshot(t, result.VariablesType.String())
+	snaps.MatchSnapshot(t, soltype.Print(result.ResultType))
+	snaps.MatchSnapshot(t, soltype.Print(result.VariablesType))
 }
 
 func TestInferGraphQLQuery_ScalarTypes(t *testing.T) {
@@ -211,8 +212,8 @@ func TestInferGraphQLQuery_ScalarTypes(t *testing.T) {
 		t.Error("Expected VariablesType to be non-nil")
 	}
 
-	snaps.MatchSnapshot(t, result.ResultType.String())
-	snaps.MatchSnapshot(t, result.VariablesType.String())
+	snaps.MatchSnapshot(t, soltype.Print(result.ResultType))
+	snaps.MatchSnapshot(t, soltype.Print(result.VariablesType))
 }
 
 func TestInferGraphQLQuery_ListTypes(t *testing.T) {
@@ -242,8 +243,8 @@ func TestInferGraphQLQuery_ListTypes(t *testing.T) {
 		t.Error("Expected VariablesType to be non-nil")
 	}
 
-	snaps.MatchSnapshot(t, result.ResultType.String())
-	snaps.MatchSnapshot(t, result.VariablesType.String())
+	snaps.MatchSnapshot(t, soltype.Print(result.ResultType))
+	snaps.MatchSnapshot(t, soltype.Print(result.VariablesType))
 }
 
 func TestInferGraphQLQuery_InputObjectTypes(t *testing.T) {
@@ -274,8 +275,8 @@ func TestInferGraphQLQuery_InputObjectTypes(t *testing.T) {
 		t.Error("Expected VariablesType to be non-nil")
 	}
 
-	snaps.MatchSnapshot(t, result.ResultType.String())
-	snaps.MatchSnapshot(t, result.VariablesType.String())
+	snaps.MatchSnapshot(t, soltype.Print(result.ResultType))
+	snaps.MatchSnapshot(t, soltype.Print(result.VariablesType))
 }
 
 func TestInferGraphQLQuery_SubscriptionTypes(t *testing.T) {
@@ -305,8 +306,8 @@ func TestInferGraphQLQuery_SubscriptionTypes(t *testing.T) {
 		t.Error("Expected VariablesType to be non-nil")
 	}
 
-	snaps.MatchSnapshot(t, result.ResultType.String())
-	snaps.MatchSnapshot(t, result.VariablesType.String())
+	snaps.MatchSnapshot(t, soltype.Print(result.ResultType))
+	snaps.MatchSnapshot(t, soltype.Print(result.VariablesType))
 }
 
 func TestInferGraphQLQuery_InterfaceTypes(t *testing.T) {
@@ -355,8 +356,8 @@ func TestInferGraphQLQuery_InterfaceTypes(t *testing.T) {
 		t.Error("Expected VariablesType to be non-nil")
 	}
 
-	snaps.MatchSnapshot(t, result.ResultType.String())
-	snaps.MatchSnapshot(t, result.VariablesType.String())
+	snaps.MatchSnapshot(t, soltype.Print(result.ResultType))
+	snaps.MatchSnapshot(t, soltype.Print(result.VariablesType))
 }
 
 func TestInferGraphQLQuery_NullableFields(t *testing.T) {
@@ -391,8 +392,8 @@ func TestInferGraphQLQuery_NullableFields(t *testing.T) {
 		t.Error("Expected VariablesType to be non-nil")
 	}
 
-	snaps.MatchSnapshot(t, result.ResultType.String())
-	snaps.MatchSnapshot(t, result.VariablesType.String())
+	snaps.MatchSnapshot(t, soltype.Print(result.ResultType))
+	snaps.MatchSnapshot(t, soltype.Print(result.VariablesType))
 }
 
 func TestInferGraphQLQuery_ComplexMutation(t *testing.T) {
@@ -433,8 +434,8 @@ func TestInferGraphQLQuery_ComplexMutation(t *testing.T) {
 		t.Error("Expected VariablesType to be non-nil")
 	}
 
-	snaps.MatchSnapshot(t, result.ResultType.String())
-	snaps.MatchSnapshot(t, result.VariablesType.String())
+	snaps.MatchSnapshot(t, soltype.Print(result.ResultType))
+	snaps.MatchSnapshot(t, soltype.Print(result.VariablesType))
 }
 
 func TestInferGraphQLQuery_SubscriptionWithVariables(t *testing.T) {
@@ -468,6 +469,6 @@ func TestInferGraphQLQuery_SubscriptionWithVariables(t *testing.T) {
 		t.Error("Expected VariablesType to be non-nil")
 	}
 
-	snaps.MatchSnapshot(t, result.ResultType.String())
-	snaps.MatchSnapshot(t, result.VariablesType.String())
+	snaps.MatchSnapshot(t, soltype.Print(result.ResultType))
+	snaps.MatchSnapshot(t, soltype.Print(result.VariablesType))
 }

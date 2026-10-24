@@ -1,19 +1,9 @@
 package graphql
 
 import (
-	"github.com/escalier-lang/escalier/internal/provenance"
-	. "github.com/escalier-lang/escalier/internal/type_system"
+	. "github.com/escalier-lang/escalier/internal/soltype"
 	gqlast "github.com/vektah/gqlparser/v2/ast"
 )
-
-// GraphQLProvenance tracks the source of a type from GraphQL schema/query
-type GraphQLProvenance struct {
-	Position *gqlast.Position
-}
-
-func (*GraphQLProvenance) IsProvenance() {}
-
-var _ provenance.Provenance = (*GraphQLProvenance)(nil)
 
 // GraphQLInferenceResult contains the inferred types for a GraphQL operation
 type GraphQLInferenceResult struct {
@@ -42,8 +32,7 @@ func inferUnionType(schema *gqlast.Schema, unionDef *gqlast.Definition, selectio
 		}
 		unionTypes = append(unionTypes, inferSelectionSet(schema, typeDef, selSetForType))
 	}
-	provenance := &GraphQLProvenance{Position: unionDef.Position}
-	unionType := NewUnionType(provenance, unionTypes...)
+	unionType := &UnionType{Types: unionTypes}
 	return unionType
 }
 
@@ -74,9 +63,6 @@ func inferSelectionSet(schema *gqlast.Schema, parentType *gqlast.Definition, sel
 		}
 
 		var fieldType Type
-		fieldDefProvenance := &GraphQLProvenance{
-			Position: fieldDef.Position,
-		}
 
 		// Check if the field type is a list
 		if fieldDef.Type.Elem != nil {
@@ -97,16 +83,12 @@ func inferSelectionSet(schema *gqlast.Schema, parentType *gqlast.Definition, sel
 			}
 
 			// Wrap in Array type
-			arrayType := NewTypeRefType(nil, "Array", nil, elemType)
-			arrayType.SetProvenance(&GraphQLProvenance{
-				Position: field.Position,
-			})
-			fieldType = arrayType
+			fieldType = &ClassType{Name: "Array", TypeArgs: []Type{elemType}}
 
 			// Check if the list itself is nullable
 			if !fieldDef.Type.NonNull {
-				nullType := NewNullType(nil)
-				fieldType = NewUnionType(fieldDefProvenance, fieldType, nullType)
+				nullType := &NullType{}
+				fieldType = &UnionType{Types: []Type{fieldType, nullType}}
 			}
 		} else {
 			// Not a list type - handle as before
@@ -117,8 +99,8 @@ func inferSelectionSet(schema *gqlast.Schema, parentType *gqlast.Definition, sel
 
 				// Check if this object field is nullable and add | null if so
 				if !fieldDef.Type.NonNull {
-					nullType := NewNullType(nil)
-					fieldType = NewUnionType(fieldDefProvenance, fieldType, nullType)
+					nullType := &NullType{}
+					fieldType = &UnionType{Types: []Type{fieldType, nullType}}
 				}
 			} else if fieldTypeDef != nil && fieldTypeDef.Kind == gqlast.Union {
 				// For unions, use the field's selection set for inline fragments
@@ -134,16 +116,15 @@ func inferSelectionSet(schema *gqlast.Schema, parentType *gqlast.Definition, sel
 
 		// Create property element with optional flag for nullable fields
 		propertyElem := &PropertyElem{
-			Name:     NewStrKey(field.Name),
+			Name:     field.Name,
 			Optional: isNullable,
 			Readonly: false,
-			Value:    fieldType,
+			Type:     fieldType,
 		}
 		elems = append(elems, propertyElem)
 	}
 
-	provenance := &GraphQLProvenance{Position: parentType.Position}
-	objType := NewObjectType(provenance, elems)
+	objType := &ObjectType{Elems: elems}
 	return objType
 }
 
@@ -191,15 +172,14 @@ func InferGraphQLQuery(schema *gqlast.Schema, doc *gqlast.QueryDocument) *GraphQ
 		isNullable := !varDef.Type.NonNull
 
 		propertyElem := &PropertyElem{
-			Name:     NewStrKey(varDef.Variable),
+			Name:     varDef.Variable,
 			Optional: isNullable,
 			Readonly: false,
-			Value:    varType,
+			Type:     varType,
 		}
 		variablesElems = append(variablesElems, propertyElem)
 	}
-	provenance := &GraphQLProvenance{Position: op.Position}
-	variablesType := NewObjectType(provenance, variablesElems)
+	variablesType := &ObjectType{Elems: variablesElems}
 
 	return &GraphQLInferenceResult{
 		ResultType:    resultType,
@@ -209,40 +189,34 @@ func InferGraphQLQuery(schema *gqlast.Schema, doc *gqlast.QueryDocument) *GraphQ
 
 // InferGraphQLType converts a GraphQL type definition to an Escalier type
 func InferGraphQLType(schema *gqlast.Schema, gqlType *gqlast.Type) Type {
-	gqlTypeProvenance := &GraphQLProvenance{
-		Position: gqlType.Position,
-	}
 	// Handle named types
 	if gqlType.NamedType != "" {
 		var baseType Type
 		switch gqlType.NamedType {
 		case "String":
-			baseType = NewStrPrimType(gqlTypeProvenance)
+			baseType = &PrimType{Prim: StrPrim}
 		case "Int", "Float":
-			baseType = NewNumPrimType(gqlTypeProvenance)
+			baseType = &PrimType{Prim: NumPrim}
 		case "Boolean":
-			baseType = NewBoolPrimType(gqlTypeProvenance)
+			baseType = &PrimType{Prim: BoolPrim}
 		case "ID":
 			// Keep ID as a type reference to preserve the ID semantics
-			baseType = NewTypeRefType(gqlTypeProvenance, "ID", nil)
+			baseType = &AliasType{Name: "ID"}
 		default:
 			// Check if it's a defined type in the schema
 			if typeDef := schema.Types[gqlType.NamedType]; typeDef != nil {
-				typeDefProvenance := &GraphQLProvenance{Position: typeDef.Position}
-
 				switch typeDef.Kind {
 				case gqlast.Enum:
 					// Expand enums as a union of string literal types
 					var enumTypes []Type
 					for _, v := range typeDef.EnumValues {
-						provenance := &GraphQLProvenance{Position: v.Position}
-						enumType := NewStrLitType(provenance, v.Name)
+						enumType := &LitType{Lit: &StrLit{Value: v.Name}}
 						enumTypes = append(enumTypes, enumType)
 					}
-					baseType = NewUnionType(typeDefProvenance, enumTypes...)
+					baseType = &UnionType{Types: enumTypes}
 				case gqlast.Scalar:
 					// For custom scalars, fall back to the base type or use a type reference
-					baseType = NewTypeRefType(typeDefProvenance, gqlType.NamedType, nil)
+					baseType = &AliasType{Name: gqlType.NamedType}
 				case gqlast.InputObject:
 					// For input objects, create an object type with all fields
 					var elems []ObjTypeElem
@@ -250,31 +224,31 @@ func InferGraphQLType(schema *gqlast.Schema, gqlType *gqlast.Type) Type {
 						fieldType := InferGraphQLType(schema, field.Type)
 						isNullable := !field.Type.NonNull
 						propertyElem := &PropertyElem{
-							Name:     NewStrKey(field.Name),
+							Name:     field.Name,
 							Optional: isNullable,
 							Readonly: false,
-							Value:    fieldType,
+							Type:     fieldType,
 						}
 						elems = append(elems, propertyElem)
 					}
-					baseType = NewObjectType(typeDefProvenance, elems)
+					baseType = &ObjectType{Elems: elems}
 				case gqlast.Object, gqlast.Interface, gqlast.Union:
 					// For other types (Object, Interface, Union), use type reference
-					baseType = NewTypeRefType(typeDefProvenance, gqlType.NamedType, nil)
+					baseType = &AliasType{Name: gqlType.NamedType}
 				default:
 					// Fallback for any other types
-					baseType = NewTypeRefType(typeDefProvenance, gqlType.NamedType, nil)
+					baseType = &AliasType{Name: gqlType.NamedType}
 				}
 			} else {
 				// Fallback to type reference for unknown types
-				baseType = NewTypeRefType(gqlTypeProvenance, gqlType.NamedType, nil)
+				baseType = &AliasType{Name: gqlType.NamedType}
 			}
 		}
 
 		// If the type is nullable (NonNull is false), create union with null
 		if !gqlType.NonNull {
-			nullType := NewNullType(nil)
-			return NewUnionType(gqlTypeProvenance, baseType, nullType)
+			nullType := &NullType{}
+			return &UnionType{Types: []Type{baseType, nullType}}
 		}
 		return baseType
 	}
