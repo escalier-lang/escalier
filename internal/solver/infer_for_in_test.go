@@ -392,3 +392,123 @@ func TestForInBackEdgeBorrows(t *testing.T) {
 		})
 	}
 }
+
+// TestForInPatternRebindsEachIteration covers moves out of a for-in loop's pattern
+// bindings. Each iteration binds the pattern afresh, so a move of the loop variable in
+// one iteration does not reach the next. The same holds for a `val` declared in the
+// body. A value bound outside the loop is not rebound, so moving it inside the body is
+// still a use-after-move on the next iteration. An if-val or match binding names the
+// target's value, so it is not rebound either.
+func TestForInPatternRebindsEachIteration(t *testing.T) {
+	tests := map[string]struct {
+		src  string
+		want []string
+	}{
+		"MoveLoopVariable": {
+			src: `
+				fn f() {
+					val ys: Array<Array<number>> = [[1]]
+					for x in ys {
+						val mut m = x
+						m.push(1)
+					}
+				}
+			`,
+		},
+		"MoveDestructuredLoopVariable": {
+			src: `
+				fn f() {
+					val ys: Array<{a: Array<number>}> = [{a: [1]}]
+					for {a} in ys {
+						val mut m = a
+						m.push(1)
+					}
+				}
+			`,
+		},
+		"MoveLoopVariableField": {
+			src: `
+				fn f() {
+					val ys: Array<{a: Array<number>}> = [{a: [1]}]
+					for y in ys {
+						val mut m = y.a
+						m.push(1)
+					}
+				}
+			`,
+		},
+		"MoveBodyLocal": {
+			src: `
+				fn f() {
+					val ys: Array<Array<number>> = [[1]]
+					for x in ys {
+						val w: Array<number> = [1]
+						val mut m = w
+						m.push(1)
+					}
+				}
+			`,
+		},
+		"MoveBranchyBodyLocal": {
+			src: `
+				fn f(c: boolean) {
+					val ys: Array<Array<number>> = [[1]]
+					for x in ys {
+						val w: Array<number> = if c { [1] } else { [2] }
+						val mut m = w
+						m.push(1)
+					}
+				}
+			`,
+		},
+		"MoveIfValBindingInLoop": {
+			src: `
+				fn f(z: Array<number> | null) {
+					val ys: Array<Array<number>> = [[1]]
+					for x in ys {
+						if val w = z {
+							val mut m = w
+							m.push(1)
+						}
+					}
+				}
+			`,
+			want: []string{`6:20-6:21: use of moved value 'w'`},
+		},
+		"MoveMatchBindingInLoop": {
+			src: `
+				fn f(z: Array<number>) {
+					val ys: Array<Array<number>> = [[1]]
+					for x in ys {
+						match z {
+							w => {
+								val mut m = w
+								m.push(1)
+							}
+						}
+					}
+				}
+			`,
+			want: []string{`7:21-7:22: use of moved value 'w'`},
+		},
+		"MoveOuterValueInLoop": {
+			src: `
+				fn f() {
+					val ys: Array<Array<number>> = [[1]]
+					val z: Array<number> = [1]
+					for x in ys {
+						val mut m = z
+						m.push(1)
+					}
+				}
+			`,
+			want: []string{`6:19-6:20: use of moved value 'z'`},
+		},
+	}
+	for name, tc := range tests {
+		t.Run(name, func(t *testing.T) {
+			_, _, errs := inferSource(t, tc.src)
+			require.Equal(t, tc.want, messagesWithSpan(t, errs))
+		})
+	}
+}

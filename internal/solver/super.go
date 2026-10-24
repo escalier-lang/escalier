@@ -127,7 +127,7 @@ func (c *checker) checkSuperCalls(ctx *superCtx, ctor *ast.ConstructorElem) {
 			stmt.Accept(col)
 		}
 	}
-	info := liveness.AnalyzeMoves(cfg, col.gens)
+	info := liveness.AnalyzeMoves(cfg, col.gens, nil)
 
 	// StmtIdx -1 reads the exit block's entry state, the join over every predecessor.
 	exitRef := liveness.StmtRef{BlockID: cfg.Exit.ID, StmtIdx: -1}

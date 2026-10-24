@@ -71,7 +71,7 @@ func TestMovesIfElseOneBranch(t *testing.T) {
 
 	info := AnalyzeMoves(cfg, moves(map[StmtRef][]VarID{
 		{BlockID: 1, StmtIdx: 0}: {x},
-	}))
+	}), nil)
 
 	require.Equal(t, Moved, info.StateAfter(StmtRef{BlockID: 1, StmtIdx: 0}, x))
 	// The else block has no statements, so query its entry position (StmtIdx -1).
@@ -97,7 +97,7 @@ func TestMovesIfElseBothBranches(t *testing.T) {
 	info := AnalyzeMoves(cfg, moves(map[StmtRef][]VarID{
 		{BlockID: 1, StmtIdx: 0}: {x},
 		{BlockID: 2, StmtIdx: 0}: {x},
-	}))
+	}), nil)
 
 	require.Equal(t, Moved, info.StateBefore(StmtRef{BlockID: 3, StmtIdx: 0}, x))
 }
@@ -115,7 +115,7 @@ func TestMovesIfElseNeitherBranch(t *testing.T) {
 	mvEdge(els, merge)
 	cfg := newCFG(entry, then, els, merge)
 
-	info := AnalyzeMoves(cfg, moves(nil))
+	info := AnalyzeMoves(cfg, moves(nil), nil)
 	require.Equal(t, NotMoved, info.StateBefore(StmtRef{BlockID: 3, StmtIdx: 0}, x))
 }
 
@@ -138,7 +138,7 @@ func TestMovesMatchArms(t *testing.T) {
 		for _, arm := range armsMoving {
 			entries[StmtRef{BlockID: arm, StmtIdx: 0}] = []VarID{x}
 		}
-		return AnalyzeMoves(cfg, moves(entries))
+		return AnalyzeMoves(cfg, moves(entries), nil)
 	}
 
 	twoOfThree := build([]int{1, 2})
@@ -165,7 +165,7 @@ func TestMovesLoopBackEdge(t *testing.T) {
 
 	info := AnalyzeMoves(cfg, moves(map[StmtRef][]VarID{
 		{BlockID: 2, StmtIdx: 0}: {x},
-	}))
+	}), nil)
 
 	require.Equal(t, MaybeMoved, info.StateBefore(StmtRef{BlockID: 1, StmtIdx: 0}, x))
 	require.Equal(t, MaybeMoved, info.StateBefore(StmtRef{BlockID: 3, StmtIdx: 0}, x))
@@ -180,7 +180,7 @@ func TestMovesSequentialWithinBlock(t *testing.T) {
 
 	info := AnalyzeMoves(cfg, moves(map[StmtRef][]VarID{
 		{BlockID: 0, StmtIdx: 1}: {x},
-	}))
+	}), nil)
 
 	require.Equal(t, NotMoved, info.StateBefore(StmtRef{BlockID: 0, StmtIdx: 0}, x))
 	require.Equal(t, NotMoved, info.StateBefore(StmtRef{BlockID: 0, StmtIdx: 1}, x))
@@ -198,7 +198,7 @@ func TestMovesDoubleMoveStaysMoved(t *testing.T) {
 	info := AnalyzeMoves(cfg, moves(map[StmtRef][]VarID{
 		{BlockID: 0, StmtIdx: 0}: {x},
 		{BlockID: 0, StmtIdx: 1}: {x},
-	}))
+	}), nil)
 
 	require.Equal(t, Moved, info.StateAfter(StmtRef{BlockID: 0, StmtIdx: 0}, x))
 	require.Equal(t, Moved, info.StateAfter(StmtRef{BlockID: 0, StmtIdx: 1}, x))
@@ -220,7 +220,7 @@ func TestMovesIndependentBindings(t *testing.T) {
 
 	info := AnalyzeMoves(cfg, moves(map[StmtRef][]VarID{
 		{BlockID: 1, StmtIdx: 0}: {x},
-	}))
+	}), nil)
 
 	require.Equal(t, MaybeMoved, info.StateBefore(StmtRef{BlockID: 3, StmtIdx: 0}, x))
 	require.Equal(t, NotMoved, info.StateBefore(StmtRef{BlockID: 3, StmtIdx: 0}, y))
@@ -235,11 +235,49 @@ func TestMovesSyntheticEntryPosition(t *testing.T) {
 
 	info := AnalyzeMoves(cfg, moves(map[StmtRef][]VarID{
 		{BlockID: 0, StmtIdx: -1}: {x},
-	}))
+	}), nil)
 
 	// Before the -1 position the entry move has not yet applied; after it, and
 	// before statement 0, it has.
 	require.Equal(t, NotMoved, info.StateBefore(StmtRef{BlockID: 0, StmtIdx: -1}, x))
 	require.Equal(t, Moved, info.StateAfter(StmtRef{BlockID: 0, StmtIdx: -1}, x))
 	require.Equal(t, Moved, info.StateBefore(StmtRef{BlockID: 0, StmtIdx: 0}, x))
+}
+
+// A def resets a binding to NotMoved. In a loop whose body binds x and then moves
+// it, the back edge carries x Moved to the header, but the body's def clears it
+// before the move, so the move never meets an already-moved x.
+func TestMovesDefResetsAcrossBackEdge(t *testing.T) {
+	const x VarID = 1
+	entry := newBlock(0, 0)
+	header := newBlock(1, 0)
+	body := newBlock(2, 2) // bind x, move x
+	post := newBlock(3, 1)
+	mvEdge(entry, header)
+	mvEdge(header, body)
+	mvEdge(body, header)
+	mvEdge(header, post)
+	cfg := newCFG(entry, header, body, post)
+
+	movesAt := moves(map[StmtRef][]VarID{{BlockID: 2, StmtIdx: 1}: {x}})
+	defsAt := moves(map[StmtRef][]VarID{{BlockID: 2, StmtIdx: 0}: {x}})
+	info := AnalyzeMoves(cfg, movesAt, defsAt)
+
+	require.Equal(t, MaybeMoved, info.StateBefore(StmtRef{BlockID: 2, StmtIdx: 0}, x))
+	require.Equal(t, NotMoved, info.StateAfter(StmtRef{BlockID: 2, StmtIdx: 0}, x))
+	require.Equal(t, NotMoved, info.StateBefore(StmtRef{BlockID: 2, StmtIdx: 1}, x))
+	require.Equal(t, Moved, info.StateAfter(StmtRef{BlockID: 2, StmtIdx: 1}, x))
+}
+
+// The moves at a point apply before the defs at the same point, so a binding both
+// moved and defined at one point is NotMoved just after it.
+func TestMovesDefAppliesAfterMoveAtSamePoint(t *testing.T) {
+	const x VarID = 1
+	entry := newBlock(0, 1)
+	cfg := newCFG(entry)
+
+	ref := StmtRef{BlockID: 0, StmtIdx: 0}
+	info := AnalyzeMoves(cfg, moves(map[StmtRef][]VarID{ref: {x}}), moves(map[StmtRef][]VarID{ref: {x}}))
+
+	require.Equal(t, NotMoved, info.StateAfter(ref, x))
 }

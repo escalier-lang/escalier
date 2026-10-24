@@ -84,12 +84,13 @@ type MoveInfo struct {
 	// position. blockIn and blockEntry hold the two answers such a query returns.
 	//
 	// blockIn[blockID][v] is v's state on entry to the block: the join of every
-	// predecessor's blockOut, taken before any move recorded at the -1 position is
-	// applied. StateBefore returns it for a -1 query.
+	// predecessor's blockOut, taken before any move or def recorded at the -1
+	// position is applied. StateBefore returns it for a -1 query.
 	blockIn []map[VarID]MoveState
-	// blockEntry[blockID][v] is blockIn after the moves recorded at the block's -1
-	// position are applied, so it is the state just after that position. For a
-	// non-empty block it equals before[blockID][0], the state before statement 0.
+	// blockEntry[blockID][v] is blockIn after the moves and defs recorded at the
+	// block's -1 position are applied, so it is the state just after that position.
+	// For a non-empty block it equals before[blockID][0], the state before
+	// statement 0.
 	// StateAfter returns it for a -1 query.
 	blockEntry []map[VarID]MoveState
 }
@@ -98,36 +99,30 @@ type MoveInfo struct {
 // records, for each statement, the VarIDs that statement moves — the consume sites
 // PR 6 collects while walking the body. A statement absent from the map moves nothing.
 //
+// The defs map records, for each statement, the VarIDs that statement binds afresh.
+// A def resets its VarID to NotMoved. The moves at a point apply before the defs at
+// the same point, matching an initializer that runs before its binding. A nil map
+// defines nothing.
+//
 // The dataflow mirrors AnalyzeFunction's structure but runs FORWARD: liveness
 // flows backward from uses, moves flow forward from consume sites.
 //
 //	MoveIn[b]  = ⊔ { MoveOut[p] | p ∈ predecessors(b) }
-//	MoveOut[b] = MoveIn[b] with b's moves set to Moved
+//	MoveOut[b] = MoveIn[b] with each statement's moves set to Moved and its
+//	             defs reset to NotMoved, in statement order
 //
 // MoveIn[entry] is empty (every binding NotMoved). The join at a merge block with
 // disagreeing predecessors raises a binding to MaybeMoved. A loop back edge feeds
 // the body's MoveOut into the header's MoveIn, so a binding moved inside the loop
 // is MaybeMoved at the header — a use there is a conditional use-after-move. The
-// fixed point converges because state only ever rises in the finite lattice.
+// fixed point converges because each block's transfer is monotone over the finite
+// lattice, so MoveIn and MoveOut only ever rise between passes.
 //
 // A StmtRef.StmtIdx of -1 is the synthetic position before a block's first
-// statement. The moves map entries at index -1 are applied at block entry, before
-// statement 0, matching how a decomposed DeclStmt's move would land.
-func AnalyzeMoves(cfg *CFG, moves map[StmtRef]set.Set[VarID]) *MoveInfo {
+// statement. The moves and defs map entries at index -1 are applied at block entry,
+// before statement 0, matching how a decomposed DeclStmt's move would land.
+func AnalyzeMoves(cfg *CFG, moves, defs map[StmtRef]set.Set[VarID]) *MoveInfo {
 	numBlocks := len(cfg.Blocks)
-
-	// Per-block move set: the union of every statement's moves in the block,
-	// including the synthetic -1 entry position. Applying the block's moves means
-	// overriding each to Moved, since a value cannot be un-moved.
-	blockMoves := make([]set.Set[VarID], numBlocks)
-	for i := range numBlocks {
-		blockMoves[i] = set.NewSet[VarID]()
-	}
-	for ref, vs := range moves {
-		for v := range vs {
-			blockMoves[ref.BlockID].Add(v)
-		}
-	}
 
 	blockIn := make([]map[VarID]MoveState, numBlocks)
 	blockOut := make([]map[VarID]MoveState, numBlocks)
@@ -147,7 +142,7 @@ func AnalyzeMoves(cfg *CFG, moves map[StmtRef]set.Set[VarID]) *MoveInfo {
 			block := cfg.Blocks[i]
 
 			newIn := joinPreds(block, blockOut)
-			newOut := applyMoves(newIn, blockMoves[i])
+			newOut := walkBlock(block, newIn, moves, defs, nil)
 
 			if !equalMoveMap(blockIn[i], newIn) || !equalMoveMap(blockOut[i], newOut) {
 				changed = true
@@ -158,11 +153,11 @@ func AnalyzeMoves(cfg *CFG, moves map[StmtRef]set.Set[VarID]) *MoveInfo {
 	}
 
 	// Per-statement state within each block: start from blockIn and walk forward,
-	// applying each statement's moves in order. applyMoves returns a fresh map and
-	// never mutates its input, so each map the cursor produces is immutable once
-	// created. The slots can therefore store the reference directly — logically equal
-	// points such as after[idx] and before[idx+1] share one map, which is safe because
-	// nothing writes to these maps after AnalyzeMoves returns.
+	// applying each statement's moves and defs in order. applyPoint never mutates
+	// its input, so each map the cursor produces is immutable once created. The
+	// slots can therefore store the reference directly. Logically equal points such
+	// as after[idx] and before[idx+1] share one map, which is safe because nothing
+	// writes to these maps after AnalyzeMoves returns.
 	before := make([][]map[VarID]MoveState, numBlocks)
 	after := make([][]map[VarID]MoveState, numBlocks)
 	blockEntry := make([]map[VarID]MoveState, numBlocks)
@@ -170,18 +165,39 @@ func AnalyzeMoves(cfg *CFG, moves map[StmtRef]set.Set[VarID]) *MoveInfo {
 		n := len(block.Stmts)
 		before[block.ID] = make([]map[VarID]MoveState, n)
 		after[block.ID] = make([]map[VarID]MoveState, n)
-
-		// Apply any moves recorded at the synthetic -1 entry position first.
-		state := applyMoves(blockIn[block.ID], movesAt(moves, block.ID, -1))
-		blockEntry[block.ID] = state
-		for idx := range n {
-			before[block.ID][idx] = state
-			state = applyMoves(state, movesAt(moves, block.ID, idx))
-			after[block.ID][idx] = state
-		}
+		walkBlock(block, blockIn[block.ID], moves, defs, func(idx int, pre, post map[VarID]MoveState) {
+			if idx < 0 {
+				blockEntry[block.ID] = post
+				return
+			}
+			before[block.ID][idx] = pre
+			after[block.ID][idx] = post
+		})
 	}
 
 	return &MoveInfo{before: before, after: after, blockIn: blockIn, blockEntry: blockEntry}
+}
+
+// walkBlock applies a block's moves and defs to its entry state in program order
+// and returns the block's exit state. The synthetic -1 entry position comes first,
+// then each statement. When record is non-nil it is called once per position with
+// the state before and after that position.
+func walkBlock(
+	block *BasicBlock,
+	in map[VarID]MoveState,
+	moves, defs map[StmtRef]set.Set[VarID],
+	record func(idx int, pre, post map[VarID]MoveState),
+) map[VarID]MoveState {
+	state := in
+	for idx := -1; idx < len(block.Stmts); idx++ {
+		ref := StmtRef{BlockID: block.ID, StmtIdx: idx}
+		next := applyPoint(state, moves[ref], defs[ref])
+		if record != nil {
+			record(idx, state, next)
+		}
+		state = next
+	}
+	return state
 }
 
 // joinPreds computes a block's entry state as the lattice join of every
@@ -215,25 +231,25 @@ func joinPreds(block *BasicBlock, blockOut []map[VarID]MoveState) map[VarID]Move
 	return in
 }
 
-// applyMoves returns a copy of state with each VarID in moved overridden to
-// Moved. A move sets the binding to Moved regardless of its prior state, since a
-// value cannot be un-moved; a double move along one path lands on Moved, the case
-// PR 6 reads as an unconditional use-after-move.
-func applyMoves(state map[VarID]MoveState, moved set.Set[VarID]) map[VarID]MoveState {
+// applyPoint returns state with each VarID in moved overridden to Moved and then
+// each VarID in defined reset to NotMoved. A move sets the binding to Moved
+// regardless of its prior state; a double move along one path lands on Moved, the
+// case PR 6 reads as an unconditional use-after-move. A def drops the binding from
+// the sparse map, since an absent key reads as NotMoved. Either set may be nil.
+// When both are empty it returns state itself, otherwise a fresh map, so it never
+// mutates its input.
+func applyPoint(state map[VarID]MoveState, moved, defined set.Set[VarID]) map[VarID]MoveState {
+	if len(moved) == 0 && len(defined) == 0 {
+		return state
+	}
 	out := cloneMoveMap(state)
 	for v := range moved {
 		out[v] = Moved
 	}
-	return out
-}
-
-// movesAt returns the VarIDs moved at one program point, or an empty set when the
-// point moves nothing.
-func movesAt(moves map[StmtRef]set.Set[VarID], blockID, stmtIdx int) set.Set[VarID] {
-	if vs, ok := moves[StmtRef{BlockID: blockID, StmtIdx: stmtIdx}]; ok {
-		return vs
+	for v := range defined {
+		delete(out, v)
 	}
-	return set.NewSet[VarID]()
+	return out
 }
 
 func cloneMoveMap(m map[VarID]MoveState) map[VarID]MoveState {

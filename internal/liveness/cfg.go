@@ -2,6 +2,7 @@ package liveness
 
 import (
 	"github.com/escalier-lang/escalier/internal/ast"
+	"github.com/escalier-lang/escalier/internal/set"
 )
 
 // BasicBlock represents a maximal sequence of statements with no internal
@@ -32,6 +33,9 @@ type CFG struct {
 	Exit            *BasicBlock
 	Blocks          []*BasicBlock
 	decomposedStmts []decomposedStmt
+	// forInBodies lists the body block of each for-in loop, whose ExtraDefs are
+	// the loop pattern's bindings.
+	forInBodies []*BasicBlock
 }
 
 // BuildCFG constructs a control flow graph from a function body.
@@ -49,7 +53,13 @@ func BuildCFG(body ast.Block) *CFG {
 		b.addEdge(final, exit)
 	}
 
-	return &CFG{Entry: entry, Exit: exit, Blocks: b.blocks, decomposedStmts: b.decomposedStmts}
+	return &CFG{
+		Entry:           entry,
+		Exit:            exit,
+		Blocks:          b.blocks,
+		decomposedStmts: b.decomposedStmts,
+		forInBodies:     b.forInBodies,
+	}
 }
 
 // BuildStmtToRef constructs a mapping from AST statement nodes to their
@@ -79,6 +89,7 @@ type cfgBuilder struct {
 	blocks          []*BasicBlock
 	exit            *BasicBlock
 	decomposedStmts []decomposedStmt
+	forInBodies     []*BasicBlock
 }
 
 func (b *cfgBuilder) newBlock() *BasicBlock {
@@ -455,6 +466,7 @@ func (b *cfgBuilder) processForIn(s *ast.ForInStmt, current *BasicBlock) *BasicB
 	// Body block with loop variable bindings.
 	bodyBlock := b.newBlock()
 	bodyBlock.ExtraDefs = collectPatVarDefs(s.Pattern)
+	b.forInBodies = append(b.forInBodies, bodyBlock)
 	b.addEdge(header, bodyBlock)
 
 	bodyEnd := b.processStmts(s.Body.Stmts, bodyBlock)
@@ -490,4 +502,49 @@ func collectPatVarDefs(pat ast.Pat) []VarID {
 	c := &collector{}
 	c.collectPatDefs(pat)
 	return c.defs
+}
+
+// BindingDefs returns, for each program point in the CFG, the VarIDs a `val` or
+// `var` declaration or a for-in pattern binds there:
+//   - A declaration in a block's statements binds at that statement.
+//   - A declaration whose initializer branches binds at its join block's -1
+//     entry position.
+//   - A for-in pattern binds at its body block's -1 entry position.
+//
+// Reassignments are left out, and so are if-val, match, and val-else pattern
+// bindings.
+func BindingDefs(cfg *CFG) map[StmtRef]set.Set[VarID] {
+	out := map[StmtRef]set.Set[VarID]{}
+	add := func(ref StmtRef, defs []VarID) {
+		if len(defs) > 0 {
+			out[ref] = set.FromSlice(defs)
+		}
+	}
+	for _, block := range cfg.Blocks {
+		for idx, stmt := range block.Stmts {
+			if vd, ok := varDeclOf(stmt); ok {
+				add(StmtRef{BlockID: block.ID, StmtIdx: idx}, collectPatVarDefs(vd.Pattern))
+			}
+		}
+	}
+	for _, ds := range cfg.decomposedStmts {
+		if vd, ok := varDeclOf(ds.Stmt); ok {
+			add(StmtRef{BlockID: ds.Block.ID, StmtIdx: -1}, collectPatVarDefs(vd.Pattern))
+		}
+	}
+	for _, body := range cfg.forInBodies {
+		add(StmtRef{BlockID: body.ID, StmtIdx: -1}, body.ExtraDefs)
+	}
+	return out
+}
+
+// varDeclOf returns the `val`/`var` declaration a statement holds, and false for
+// any other statement.
+func varDeclOf(stmt ast.Stmt) (*ast.VarDecl, bool) {
+	ds, ok := stmt.(*ast.DeclStmt)
+	if !ok {
+		return nil, false
+	}
+	vd, ok := ds.Decl.(*ast.VarDecl)
+	return vd, ok
 }

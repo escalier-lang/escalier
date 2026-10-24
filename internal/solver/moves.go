@@ -758,14 +758,20 @@ func (c *checker) checkUseAfterMoves() {
 	if len(c.fn.useSites) == 0 && len(c.fn.moveSites) == 0 && len(c.fn.pendingTransitions) == 0 && len(c.fn.escapeSites) == 0 && len(c.fn.globalClosureStores) == 0 && len(c.fn.borrowSites) == 0 {
 		return
 	}
-	info := liveness.AnalyzeMoves(c.fn.cfg, c.fn.moveSites)
+	// Each declaration and each for-in iteration binds a fresh value, so the
+	// bindings they introduce start NotMoved even when the back edge carries a
+	// move of the previous iteration's value.
+	bindingDefs := liveness.BindingDefs(c.fn.cfg)
+	info := liveness.AnalyzeMoves(c.fn.cfg, c.fn.moveSites, c.moveDefs(bindingDefs))
 	// Decide deferred escapes against the move lattice and the flow-sensitive borrow-edge
 	// graph, then fold any component-move consumes back into moveSites and recompute, so a
 	// use after a co-moved local is caught.
 	if len(c.fn.escapeSites) > 0 || len(c.fn.globalClosureStores) > 0 {
 		flowBorrowGraph := c.analyzeBorrows()
 		if c.resolveComponentEscapes(info, flowBorrowGraph) {
-			info = liveness.AnalyzeMoves(c.fn.cfg, c.fn.moveSites)
+			// Component moves can register new field places, so the defs are rebuilt to
+			// cover them.
+			info = liveness.AnalyzeMoves(c.fn.cfg, c.fn.moveSites, c.moveDefs(bindingDefs))
 		}
 		// These loans have to be in place before checkUsesAgainstLoans below weighs the
 		// body's writes and moves.
@@ -807,6 +813,32 @@ func (c *checker) checkUseAfterMoves() {
 	c.checkNestedBorrows()
 	c.checkUsesAgainstLoans(reported)
 	c.resolvePhaseTransitions(info)
+}
+
+// moveDefs returns bindingDefs with every moved field place added at the point
+// that binds its root. A field place has its own lattice VarID, so binding y afresh
+// lists the VarID of each moved y.a alongside y's own. bindingDefs is not mutated.
+func (c *checker) moveDefs(bindingDefs map[liveness.StmtRef]set.Set[liveness.VarID]) map[liveness.StmtRef]set.Set[liveness.VarID] {
+	fieldsByRoot := map[liveness.VarID][]liveness.VarID{}
+	for id, p := range c.fn.movePlaces {
+		if len(p.path) > 0 {
+			fieldsByRoot[p.root] = append(fieldsByRoot[p.root], id)
+		}
+	}
+	if len(fieldsByRoot) == 0 {
+		return bindingDefs
+	}
+	out := make(map[liveness.StmtRef]set.Set[liveness.VarID], len(bindingDefs))
+	for ref, roots := range bindingDefs {
+		vs := roots.Clone()
+		for root := range roots {
+			for _, id := range fieldsByRoot[root] {
+				vs.Add(id)
+			}
+		}
+		out[ref] = vs
+	}
+	return out
 }
 
 // movedConflict finds the strongest consumed state among the moved places that

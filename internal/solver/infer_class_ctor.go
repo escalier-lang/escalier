@@ -283,7 +283,7 @@ func (c *checker) checkConstructorInit(body *soltype.ObjectType, ctor *ast.Const
 		col.write(be, name)
 	}
 
-	info := liveness.AnalyzeMoves(cfg, col.gens)
+	info := liveness.AnalyzeMoves(cfg, col.gens, nil)
 
 	// A readonly write the collector did not reach sits in a nested function, which may run
 	// after construction, or in unreachable code. A write that follows another write to the
