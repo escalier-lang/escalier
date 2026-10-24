@@ -173,6 +173,10 @@ func (c *checker) inferVarDeclInit(scope *Scope, lvl int, d *ast.VarDecl, ns str
 		}
 	}
 	initT := c.inferExpr(scope, lvl, d.Init)
+	// The pre-pass could not resolve a call of a function this body declares, since that
+	// function's body had not been walked. It has been by now, so a local bound from its
+	// result is marked here.
+	c.markSharedLeaves(scope, d.Pattern, d.Init)
 	switch {
 	case d.TypeAnn == nil && isMutableIdentPat(d.Pattern) && c.callReturnsOwned(d.Init, initT):
 		// An unannotated `val mut d = f()` whose call returns an owned value binds it
@@ -541,9 +545,11 @@ func (c *checker) acceptsBorrowLeaf(leaf ast.Expr) bool {
 // callReturnsOwned reports whether e is a call whose result is an owned value. An owned
 // return type is the callee's statement that it kept nothing, so the caller holds the only
 // reference to what comes back. A callee that did keep the value returns a borrow instead,
-// which ownedCarrier declines.
+// which ownedCarrier declines. A call of a function whose body returns a shared value is not
+// owned either, whatever its return type says, since the value stays reachable from outside.
 func (c *checker) callReturnsOwned(e ast.Expr, t soltype.Type) bool {
-	if _, ok := e.(*ast.CallExpr); !ok {
+	call, ok := e.(*ast.CallExpr)
+	if !ok || c.callReturnsShared(nil, call) {
 		return false
 	}
 	return c.ownedCarrier(t) != nil
@@ -749,7 +755,14 @@ func (c *checker) bindingMovesOwnedPlace(pat ast.Pat, init ast.Expr, initT solty
 // the move engine enforces the consume. This is the place-move half of both
 // bindingMovesOwnedPlace and the isUniquelyOwned leaf check.
 func (c *checker) movesOwnedPlace(init ast.Expr, initT soltype.Type) bool {
-	if _, ok := exprPlace(init); !ok {
+	p, ok := exprPlace(init)
+	if !ok {
+		return false
+	}
+	// A place rooted at a binding that may hold a shared value is not uniquely owned. The
+	// move empties the place in this frame but leaves the outer binding holding the same
+	// object, so the destination is not its sole owner.
+	if c.fn != nil && c.fn.sharedLocals.Contains(p.root) {
 		return false
 	}
 	if c.isConcreteOwned(initT) {

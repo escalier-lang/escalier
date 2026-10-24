@@ -650,6 +650,9 @@ func (c *checker) inferFunc(scope *Scope, lvl int, sig ast.FuncSig, body *ast.Bl
 		// to admit a borrow leaf, and popFuncCtx below restores the outer context, so asking at
 		// the annotation check would answer no for every borrow a body returns.
 		returnsUniquelyOwned = c.allReturnsUniquelyOwned(retExprs)
+		if c.fn.returnsShared {
+			c.sharedReturns.Add(node)
+		}
 		throws = c.fn.throws
 		raised = c.fn.raised
 		yielded = c.fn.yielded
@@ -2523,6 +2526,13 @@ func (c *checker) inferAssign(scope *Scope, lvl int, e *ast.BinaryExpr) soltype.
 		}
 	}
 	sourceT := c.inferExpr(scope, lvl, e.Right)
+	// The walk resolves a call the pre-pass could not, so a store of its result marks the
+	// local it writes, the way a binding's initializer does in inferVarDeclInit.
+	if c.fn != nil && c.fn.sharedLocals != nil && c.mayYieldShared(scope, e.Right) {
+		if p, ok := exprPlace(e.Left); ok {
+			c.fn.sharedLocals.Add(p.root)
+		}
+	}
 	// Record `undefined` on e up front as the recovery type. Every error path below
 	// returns undefinedT without recording a type, so this guarantees the node is typed
 	// on failure. The success path overwrites it with the stored value's type; see the
