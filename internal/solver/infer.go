@@ -591,6 +591,10 @@ type funcCtx struct {
 	// seeds it before the walk, and the walk adds a binding whose initializer calls a
 	// function the walk has learned returns such a value.
 	sharedLocals set.Set[liveness.VarID]
+	// sharedCaptureWrites holds the name of each capture this body stores a shared value
+	// into. Once the body is walked, the enclosing body marks the local each name captures
+	// as shared, since the store reaches that local.
+	sharedCaptureWrites set.Set[string]
 	// returnsShared records that some `return` in this body may return a value a binding
 	// outside the frame also reaches.
 	returnsShared bool
@@ -933,8 +937,9 @@ func (c *checker) forScript(pkgURI string) *checker {
 		groups:            c.groups,
 		checkJsDecorators: c.checkJsDecorators,
 		// A script calls the module's functions, so it reads what the module recorded about
-		// their returns.
-		sharedReturns: c.sharedReturns.Clone(),
+		// their returns. Each function is keyed by its own node, so the script's entries
+		// never collide with the module's.
+		sharedReturns: c.sharedReturns,
 	}
 	// Point the recorder at the script, so a fusion its walk records lands in the
 	// script's Prov table rather than the module's.

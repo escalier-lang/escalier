@@ -660,7 +660,9 @@ func (c *checker) inferFunc(scope *Scope, lvl int, sig ast.FuncSig, body *ast.Bl
 			gen.delegateNexts = c.fn.delegateNexts
 		}
 		recvReads := c.fn.inferredRecvReads
+		captureWrites := c.fn.sharedCaptureWrites
 		collected = c.popFuncCtx(saved)
+		c.markSharedCaptureWrites(scope, captureWrites)
 		// A read inside this body can still learn its receiver's type from the enclosing body,
 		// as a callback's parameter does from the call it is passed to, so the enclosing body
 		// decides it. The outermost body decides once everything it encloses is walked.
@@ -2528,11 +2530,7 @@ func (c *checker) inferAssign(scope *Scope, lvl int, e *ast.BinaryExpr) soltype.
 	sourceT := c.inferExpr(scope, lvl, e.Right)
 	// The walk resolves a call the pre-pass could not, so a store of its result marks the
 	// local it writes, the way a binding's initializer does in inferVarDeclInit.
-	if c.fn != nil && c.fn.sharedLocals != nil && c.mayYieldShared(scope, e.Right) {
-		if p, ok := exprPlace(e.Left); ok {
-			c.fn.sharedLocals.Add(p.root)
-		}
-	}
+	c.markSharedFlow(scope, placeRootVarIDs(e.Left), e.Right)
 	// Record `undefined` on e up front as the recovery type. Every error path below
 	// returns undefinedT without recording a type, so this guarantees the node is typed
 	// on failure. The success path overwrites it with the stored value's type; see the
