@@ -407,7 +407,7 @@ func halfType(elem soltype.ObjTypeElem, half memberHalf) soltype.Type {
 	case *soltype.GetterElem:
 		return elem.Type
 	case *soltype.SetterElem:
-		return elem.Param
+		return elem.Param.Type
 	case *soltype.MethodElem:
 		return methodReadType(elem)
 	}

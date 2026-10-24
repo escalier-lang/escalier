@@ -19,8 +19,7 @@ import (
 //   - isValueType / isMutableType, the two type predicates the transition checker
 //     consults, and
 //   - the binding model: a captured variable's identity comes from
-//     ValueBinding.VarID and its mutability from the binding's coalesced soltype,
-//     not from a type_system.Binding.
+//     ValueBinding.VarID and its mutability from the binding's coalesced soltype.
 //
 // checkMutabilityTransition's Rule 1 / Rule 2 / Rule 3 logic is unchanged. It talks
 // only to liveness.LivenessInfo and liveness.AliasTracker. The whole pass runs inside a
@@ -115,8 +114,7 @@ func (e *MutabilityTransitionError) Message() string {
 // such types. Value types have copy semantics. Assigning one to another variable
 // creates an independent copy, so alias tracking is unnecessary.
 //
-// Ported from check_transitions.go, which first calls type_system.Prune. There is no
-// equivalent here. Every caller passes a binding's coalesced display type, which carries
+// Every caller passes a binding's coalesced display type, which carries
 // no inference-variable indirection to prune. A bare *soltype.TypeVarType falls through to
 // false and is classified as a reference. Mis-seeing a value type as a reference only adds
 // a spurious alias edge or loan, so it over-reports rather than under-reports.

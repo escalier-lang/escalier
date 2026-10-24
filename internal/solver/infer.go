@@ -18,8 +18,7 @@ import (
 // existing visitor" convention: constraint generation is bottom-up and
 // value-producing (every node synthesizes a soltype.Type), which the visitor —
 // shaped for enter/exit transformation with no per-node synthesized value — does
-// not model cleanly. The shape matches both the simplesub spike's typeTerm and
-// the old checker's inferExpr. See m2-implementation-plan §3.2.
+// not model cleanly. See m2-implementation-plan §3.2.
 type checker struct {
 	ctx  *Context      // M1: freshVar(level), Constrain(sub, super) []SolverError
 	info *Info         // M1: node → soltype.Type side table (unexported setType)

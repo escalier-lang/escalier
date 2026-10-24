@@ -1487,9 +1487,6 @@ func appendDistinct(parts []soltype.Type, t soltype.Type) []soltype.Type {
 }
 
 // dedup removes structurally-equal parts, preserving first-occurrence order.
-// The spike deduplicated by rendered string (via type_system.PrintType); M1
-// has no printer in `solver` yet (it ships in PR4, in `soltype`), so M1
-// deduplicates by structural equality instead.
 func dedup(parts []soltype.Type) []soltype.Type {
 	out := make([]soltype.Type, 0, len(parts))
 	for _, p := range parts {
@@ -2138,7 +2135,7 @@ func equalObjElem(a, b soltype.ObjTypeElem, ctx *alphaCtx) bool {
 			equalTypeWith(a.ThrowsOrNever(), b.ThrowsOrNever(), ctx)
 	case *soltype.SetterElem:
 		b, ok := b.(*soltype.SetterElem)
-		return ok && equalSelfParam(a.SelfParam, b.SelfParam, ctx) && equalTypeWith(a.Param, b.Param, ctx) &&
+		return ok && equalSelfParam(a.SelfParam, b.SelfParam, ctx) && equalTypeWith(a.Param.Type, b.Param.Type, ctx) &&
 			equalTypeWith(a.ThrowsOrNever(), b.ThrowsOrNever(), ctx)
 	case *soltype.ConstructorElem:
 		b, ok := b.(*soltype.ConstructorElem)

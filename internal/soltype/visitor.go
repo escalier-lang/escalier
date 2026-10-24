@@ -13,8 +13,8 @@ type EnterResult struct {
 	SkipChildren bool // true = skip the structural rebuild, go straight to ExitType
 }
 
-// TypeVisitor is a polarity-threading rewriting visitor over soltype.Type. Unlike
-// type_system's visitor it carries Polarity, and Accept flips it on contravariant
+// TypeVisitor is a polarity-threading rewriting visitor over soltype.Type. It
+// carries Polarity, and Accept flips it on contravariant
 // positions (function parameters) so variance knowledge lives in ONE place rather
 // than being re-spelled in every type→type transform (coalesce / extrude /
 // freshenAbove). EnterType fires before child traversal — it may prune, replace,
@@ -699,15 +699,15 @@ func AcceptObjElem(e ObjTypeElem, v TypeVisitor, pol Polarity) ObjTypeElem {
 		return &GetterElem{Name: e.Name, SelfParam: self, Type: rt, Throws: throws}
 	case *SetterElem:
 		self, selfChanged := acceptSelfParam(e.SelfParam, v, pol) // receiver contravariant
-		pt := e.Param.Accept(v, pol.Flip())                       // contravariant write
+		pt := e.Param.Type.Accept(v, pol.Flip())                  // contravariant write
 		throws := e.Throws
 		if throws != nil {
 			throws = throws.Accept(v, pol) // covariant, unlike the written value
 		}
-		if !selfChanged && pt == e.Param && throws == e.Throws {
+		if !selfChanged && pt == e.Param.Type && throws == e.Throws {
 			return e
 		}
-		return &SetterElem{Name: e.Name, SelfParam: self, Param: pt, Throws: throws}
+		return &SetterElem{Name: e.Name, SelfParam: self, Param: e.Param.WithType(pt), Throws: throws}
 	case *MethodElem:
 		sigs, changed := acceptSignatures(e.Signatures, v, pol)
 		if !changed {

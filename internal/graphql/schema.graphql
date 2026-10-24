@@ -33,6 +33,8 @@ type User implements Node {
     contactInfo: ContactInfo!
     role: Role!
     posts: [Post!]!
+    verified: Boolean!
+    tags: [String]
 }
 
 type Post implements Node {

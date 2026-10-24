@@ -1,7 +1,6 @@
 package ast
 
 import (
-	"github.com/escalier-lang/escalier/internal/type_system"
 	"github.com/tidwall/btree"
 )
 
@@ -9,13 +8,6 @@ type Node interface {
 	Span() Span
 	Accept(v Visitor)
 	Commented
-}
-
-type Type type_system.Type
-
-type Inferrable interface {
-	InferredType() Type
-	SetInferredType(Type)
 }
 
 // Documented is implemented by any node that can carry a leading JSDoc

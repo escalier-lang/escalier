@@ -25,9 +25,10 @@ import (
 // reads the loaded packages rather than inferring them, so Warm measures the rest of
 // the run.
 //
-// Cold adds parsing the files and inferring the packages, which a process pays once
-// per distinct tree because of the caches in stdlib_parse_cache.go and
-// stdlib_run_cache.go. It is what a language server pays at startup.
+// Cold adds reading the import graph, parsing the files, and inferring the packages,
+// which a process pays once per distinct tree because of the caches in
+// stdlib_closure.go, stdlib_parse_cache.go, and stdlib_run_cache.go. It is what a
+// language server pays at startup.
 //
 // Run with:
 //
@@ -59,7 +60,7 @@ func BenchmarkStdlibClosureLoad(b *testing.B) {
 		module := benchEntryModule(b, tt.uris)
 
 		b.Run(tt.name+"/Warm", func(b *testing.B) {
-			// Prime both caches, so the loop measures what a run pays once the tree is
+			// Prime the caches, so the loop measures what a run pays once the tree is
 			// loaded.
 			InferModuleAgainstStdlib(module, benchTree, Options{})
 			b.ResetTimer()
@@ -127,15 +128,17 @@ func benchEntryModule(b *testing.B, uris []string) *ast.Module {
 	return module
 }
 
-// emptyTheStdlibCaches swaps in a parse cache and a checker cache holding nothing,
-// and returns a function restoring the ones the process was using.
+// emptyTheStdlibCaches swaps in a parse cache, an import graph cache, and a checker
+// cache holding nothing, and returns a function restoring the ones the process was
+// using.
 //
 // A cold load is the first in a process. Source ids restart from the base, which
 // the swapped-in parse cache alone hands out, so no id it issues reaches an entry
 // the restored cache holds.
 func emptyTheStdlibCaches() func() {
-	prevParses := stdlibParses
+	prevParses, prevGraphs := stdlibParses, packageGraphs
 	stdlibParses = newParsedModuleCache(stdlibSourceIDBase)
+	packageGraphs = newPackageGraphCache()
 
 	ambientCheckers.mu.Lock()
 	prevEntries, prevOrder := ambientCheckers.entries, ambientCheckers.order
@@ -143,7 +146,7 @@ func emptyTheStdlibCaches() func() {
 	ambientCheckers.mu.Unlock()
 
 	return func() {
-		stdlibParses = prevParses
+		stdlibParses, packageGraphs = prevParses, prevGraphs
 		ambientCheckers.mu.Lock()
 		ambientCheckers.entries, ambientCheckers.order = prevEntries, prevOrder
 		ambientCheckers.mu.Unlock()

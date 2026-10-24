@@ -36,8 +36,7 @@ import (
 // it is safe here and would not be in output.
 //
 // A key kind beside the name is the better shape, and the rest of the tree already has
-// it: `type_system.ObjTypeKey` carries `{Kind, Str, Num, Sym}`, and `ecma262.MemberKey`
-// carries `{Kind, Name}` and says it mirrors the former. Encoding into the name instead
+// it: `ecma262.MemberKey` carries `{Kind, Name}`. Encoding into the name instead
 // is what costs the collision below. Giving an object element the same kind-plus-payload
 // key retires this file, which is what #1246 tracks.
 //
