@@ -33,8 +33,11 @@ type ambientKey struct {
 	// digest is a hash over the contents of the prelude and of every file in
 	// closure, so an edit to the tree misses the cache rather than reading a stale
 	// load. The prelude loads alone, outside any group, so closure does not name it.
-	digest         [sha256.Size]byte
-	noAmbientNames bool
+	digest [sha256.Size]byte
+	// noAmbientNames and checkJsDecorators are the Options fields that change what
+	// loading the packages binds or reports.
+	noAmbientNames    bool
+	checkJsDecorators bool
 }
 
 // ambientEntry holds one cached checker. once guards the load, so concurrent runs
@@ -59,11 +62,11 @@ var ambientCheckers = struct {
 }{entries: map[ambientKey]*ambientEntry{}}
 
 // ambientChecker returns a checker for one run against the tree in dir, with the
-// prelude and the ambient packages loaded and bound. groups are the run's groups
-// from BuildPackageClosure. ok is false when a file in the closure cannot be read or
+// prelude and the ambient packages loaded and bound. The run loads every other
+// package through source. groups are the run's groups from BuildPackageClosure. ok is false when a file in the closure cannot be read or
 // an earlier load of the same tree panicked, and the caller then starts from
 // newRunChecker.
-func ambientChecker(dir string, groups PackageGroups, opts Options) (c *checker, ok bool) {
+func ambientChecker(dir string, source ModuleSource, groups PackageGroups, opts Options) (c *checker, ok bool) {
 	key, ok := ambientKeyOf(dir, groups, opts)
 	if !ok {
 		return nil, false
@@ -89,7 +92,9 @@ func ambientChecker(dir string, groups PackageGroups, opts Options) (c *checker,
 	if entry.checker == nil {
 		return nil, false
 	}
-	return entry.checker.fork(StdlibSource(dir), StdlibGroupSource(dir), groups), true
+	run := entry.checker.fork(source, StdlibGroupSource(dir), groups)
+	run.dependencies = opts.Dependencies
+	return run, true
 }
 
 // ambientKeyOf returns the cache key for a run against dir that loads groups.
@@ -114,9 +119,10 @@ func ambientKeyOf(dir string, groups PackageGroups, opts Options) (ambientKey, b
 	}
 
 	key := ambientKey{
-		dir:            dir,
-		closure:        strings.Join(uris, ","),
-		noAmbientNames: opts.NoAmbientNames,
+		dir:               dir,
+		closure:           strings.Join(uris, ","),
+		noAmbientNames:    opts.NoAmbientNames,
+		checkJsDecorators: opts.CheckJsDecorators,
 	}
 	copy(key.digest[:], sum.Sum(nil))
 	return key, true
@@ -144,7 +150,12 @@ func writeHashedFile(digest hash.Hash, uri string, contents []byte) {
 // dir loaded and bound, ready for fork. It holds nothing that refers to the run
 // that built it.
 func loadAmbientChecker(dir string, groups PackageGroups, opts Options) *checker {
-	c := newRunChecker(StdlibSource(dir), StdlibGroupSource(dir), groups, opts)
+	// The packages loaded here are pseudo-packages, which never reach node_modules
+	// or the project's dependency list, so the load ignores both.
+	c := newRunChecker(StdlibSource(dir), StdlibGroupSource(dir), groups, Options{
+		NoAmbientNames:    opts.NoAmbientNames,
+		CheckJsDecorators: opts.CheckJsDecorators,
+	})
 	c.ambientScope()
 	c.bindAmbientExports()
 

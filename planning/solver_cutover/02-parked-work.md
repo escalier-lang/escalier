@@ -120,8 +120,6 @@ The P1 ledger is what keeps its size visible.
    import, tracked by #2099. `internal/solver/jsx_test.go` asserts JSX,
    tracked by #2100. Each skips with its issue number, and the fix removes the
    `t.Skip`.
-   `TestPseudoPackageLoaderRules` in `internal/solver/stdlib_import_test.go`
-   asserts the `@js` loader rules on pseudo-package files, tracked by #2101.
 2. **Say so in the release notes for the flip.** A program importing from
    `node_modules`, and a program using JSX, type-check before P5 and do not
    after it.

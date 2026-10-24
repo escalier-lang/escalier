@@ -241,17 +241,28 @@ type checker struct {
 	// package this run loads. It sits between the process-wide operator table and
 	// the ambient scope, so an ambient name shadows a prelude export.
 	prelude *Scope
-	// ambient is the per-run scope ambientScope builds over the prelude, holding the
-	// builtins a program reaches without an import. The entry module's scope is its
-	// child, so a module declaration shadows an ambient name and a file's import
-	// shadows both. A loaded package parents its scope at the prelude and never sees
-	// this one. It is nil until a run asks for it.
+	// globals is the per-run scope globalsScope builds over the prelude, holding the
+	// exports of every package in ambientPackages. An npm package's scope is its
+	// child. It is nil until a run asks for it.
+	globals *Scope
+	// globalsBound is set once bindGlobals has filled the globals scope.
+	globalsBound bool
+	// ambient is the empty scope ambientScope builds over the prelude in a run with
+	// Options.NoAmbientNames set. Every other run uses globals as its ambient scope.
+	// The entry module's scope is a child of the ambient scope, so a module
+	// declaration shadows an ambient name and a file's import shadows both. A
+	// pseudo-package parents its scope at the prelude and never sees either one.
 	ambient *Scope
 	// noAmbientNames is Options.NoAmbientNames for this run.
 	noAmbientNames bool
-	// ambientBound is set once bindAmbientExports has run.
+	// dependencies is Options.Dependencies for this run.
+	dependencies set.Set[string]
+	// checkJsDecorators is Options.CheckJsDecorators for this run.
+	checkJsDecorators bool
+	// ambientBound is set once bindAmbientExports has loaded the literal classes' packages
+	// in a run with Options.NoAmbientNames set.
 	ambientBound bool
-	// heldLoadErrs maps a package URI to the diagnostics its ambient load returned,
+	// heldLoadErrs maps a package URI to the diagnostics its library load returned,
 	// and heldLoadOrder lists each of those once, in load order. holdLoadErrors fills
 	// both.
 	heldLoadErrs  map[string]*heldLoadErrors
@@ -903,15 +914,16 @@ func newChecker() *checker {
 // and the diagnostics start empty, so the script's results cover the script alone.
 func (c *checker) forScript(pkgURI string) *checker {
 	sc := &checker{
-		ctx:          c.ctx,
-		pkgURI:       pkgURI,
-		info:         NewInfo(),
-		prov:         maps.Clone(c.prov),
-		varIDCounter: c.varIDCounter,
-		prelude:      c.prelude,
-		source:       c.source,
-		groupSource:  c.groupSource,
-		groups:       c.groups,
+		ctx:               c.ctx,
+		pkgURI:            pkgURI,
+		info:              NewInfo(),
+		prov:              maps.Clone(c.prov),
+		varIDCounter:      c.varIDCounter,
+		prelude:           c.prelude,
+		source:            c.source,
+		groupSource:       c.groupSource,
+		groups:            c.groups,
+		checkJsDecorators: c.checkJsDecorators,
 	}
 	// Point the recorder at the script, so a fusion its walk records lands in the
 	// script's Prov table rather than the module's.

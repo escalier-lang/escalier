@@ -1,65 +1,132 @@
 package resolver
 
 import (
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/stretchr/testify/require"
 )
 
-func TestResolveTypesPackage(t *testing.T) {
-	// Create a temp directory structure with node_modules/@types/react
-	tmpDir := t.TempDir()
-
-	reactTypesDir := filepath.Join(tmpDir, "node_modules", "@types", "react")
-	if err := os.MkdirAll(reactTypesDir, 0755); err != nil {
-		t.Fatalf("Failed to create test directory: %v", err)
+// TestResolveTypesEntryPoint covers the places ResolveTypesEntryPoint finds a package's
+// types. Each case writes files under a temporary root and resolves from the directory
+// `from` names under it. `want` is the entry point's path under the root.
+func TestResolveTypesEntryPoint(t *testing.T) {
+	tests := []struct {
+		name   string
+		files  []string
+		module string
+		from   string
+		want   string
+	}{
+		{
+			name:   "a package that ships its own types",
+			files:  []string{"node_modules/plain/index.d.ts"},
+			module: "plain",
+			want:   "node_modules/plain/index.d.ts",
+		},
+		{
+			name:   "a package whose types are in @types",
+			files:  []string{"node_modules/@types/react/index.d.ts"},
+			module: "react",
+			want:   "node_modules/@types/react/index.d.ts",
+		},
+		{
+			name:   "a scoped package whose types are in @types",
+			files:  []string{"node_modules/@types/scope__pkg/index.d.ts"},
+			module: "@scope/pkg",
+			want:   "node_modules/@types/scope__pkg/index.d.ts",
+		},
+		{
+			name:   "a subpath that names a file",
+			files:  []string{"node_modules/@types/react/index.d.ts", "node_modules/@types/react/jsx-runtime.d.ts"},
+			module: "react/jsx-runtime",
+			want:   "node_modules/@types/react/jsx-runtime.d.ts",
+		},
+		{
+			name:   "a package that ships no types beside its @types package",
+			files:  []string{"node_modules/react/index.js", "node_modules/react/package.json", "node_modules/@types/react/index.d.ts"},
+			module: "react",
+			want:   "node_modules/@types/react/index.d.ts",
+		},
+		{
+			name:   "a package above the directory resolved from",
+			files:  []string{"node_modules/@types/react/index.d.ts", "src/components/deep/.keep"},
+			module: "react",
+			from:   "src/components/deep",
+			want:   "node_modules/@types/react/index.d.ts",
+		},
 	}
-
-	// Test: Find @types/react in node_modules
-	result, err := ResolveTypesPackage("react", tmpDir)
-	if err != nil {
-		t.Errorf("Expected to find @types/react, got error: %v", err)
-	}
-	if result != reactTypesDir {
-		t.Errorf("Expected %s, got %s", reactTypesDir, result)
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			root := t.TempDir()
+			for _, file := range test.files {
+				path := filepath.Join(root, filepath.FromSlash(file))
+				require.NoError(t, os.MkdirAll(filepath.Dir(path), 0o755))
+				require.NoError(t, os.WriteFile(path, nil, 0o644))
+			}
+			got, err := ResolveTypesEntryPoint(test.module, filepath.Join(root, filepath.FromSlash(test.from)))
+			require.NoError(t, err)
+			require.Equal(t, filepath.Join(root, filepath.FromSlash(test.want)), got)
+		})
 	}
 }
 
-func TestResolveTypesPackageWalkUp(t *testing.T) {
-	// Create a temp directory structure with @types/react in root node_modules
-	tmpDir := t.TempDir()
-
-	reactTypesDir := filepath.Join(tmpDir, "node_modules", "@types", "react")
-	if err := os.MkdirAll(reactTypesDir, 0755); err != nil {
-		t.Fatalf("Failed to create test directory: %v", err)
+// TestResolveTypeReferencePrefersTheTypesPackage asserts that a `types` reference resolves
+// `@types/<name>` ahead of a package of the same name that ships its own types.
+func TestResolveTypeReferencePrefersTheTypesPackage(t *testing.T) {
+	root := t.TempDir()
+	for _, file := range []string{"node_modules/node/index.d.ts", "node_modules/@types/node/index.d.ts"} {
+		path := filepath.Join(root, filepath.FromSlash(file))
+		require.NoError(t, os.MkdirAll(filepath.Dir(path), 0o755))
+		require.NoError(t, os.WriteFile(path, nil, 0o644))
 	}
+	got, err := ResolveTypeReference("node", root)
+	require.NoError(t, err)
+	require.Equal(t, filepath.Join(root, "node_modules", "@types", "node", "index.d.ts"), got)
+}
 
-	// Create a nested source directory
-	nestedDir := filepath.Join(tmpDir, "src", "components", "deep")
-	if err := os.MkdirAll(nestedDir, 0755); err != nil {
-		t.Fatalf("Failed to create nested directory: %v", err)
+// TestPackageName covers the package a module specifier names, with and without a
+// scope and a subpath.
+func TestPackageName(t *testing.T) {
+	tests := []struct {
+		moduleName string
+		want       string
+	}{
+		{"react", "react"},
+		{"react/jsx-runtime", "react"},
+		{"lodash/fp/map", "lodash"},
+		{"@scope/pkg", "@scope/pkg"},
+		{"@scope/pkg/sub", "@scope/pkg"},
 	}
-
-	// Test: Find @types/react by walking up from nested directory
-	result, err := ResolveTypesPackage("react", nestedDir)
-	if err != nil {
-		t.Errorf("Expected to find @types/react, got error: %v", err)
-	}
-	if result != reactTypesDir {
-		t.Errorf("Expected %s, got %s", reactTypesDir, result)
+	for _, test := range tests {
+		t.Run(test.moduleName, func(t *testing.T) {
+			require.Equal(t, test.want, PackageName(test.moduleName))
+		})
 	}
 }
 
-func TestResolveTypesPackageNotFound(t *testing.T) {
-	// Create a temp directory without @types
-	tmpDir := t.TempDir()
-
-	// Test: @types/react not installed
-	_, err := ResolveTypesPackage("react", tmpDir)
-	if err == nil {
-		t.Error("Expected error for missing @types/react, got nil")
+// TestResolveTypesEntryPointRejectsARelativePath asserts that a module name with a `.` or
+// `..` segment resolves nothing, rather than reaching outside `node_modules`.
+func TestResolveTypesEntryPointRejectsARelativePath(t *testing.T) {
+	for _, module := range []string{"./local", "../shared", "pkg/../other"} {
+		_, err := ResolveTypesEntryPoint(module, t.TempDir())
+		require.EqualError(t, err, fmt.Sprintf("%q is a relative path, not a package name", module))
 	}
+}
+
+// TestResolveTypesEntryPointReportsABrokenEntryPoint asserts that a package directory whose
+// `types` field names a missing file reports that, rather than a generic not-found.
+func TestResolveTypesEntryPointReportsABrokenEntryPoint(t *testing.T) {
+	root := t.TempDir()
+	pkgDir := filepath.Join(root, "node_modules", "broken")
+	require.NoError(t, os.MkdirAll(pkgDir, 0o755))
+	require.NoError(t, os.WriteFile(filepath.Join(pkgDir, "package.json"), []byte(`{"types": "missing.d.ts"}`), 0o644))
+	_, err := ResolveTypesEntryPoint("broken", root)
+	require.EqualError(t, err, fmt.Sprintf("types entry point not found: %s (from 'types' field)",
+		filepath.Join(pkgDir, "missing.d.ts")))
 }
 
 func TestGetTypesEntryPointFromTypes(t *testing.T) {
@@ -353,23 +420,10 @@ func TestIntegrationWithRealTypesReact(t *testing.T) {
 	}
 
 	// Try to resolve @types/react from the project root
-	reactDir, err := ResolveTypesPackage("react", projectRoot)
+	entryPoint, err := ResolveTypesEntryPoint("react", projectRoot)
 	if err != nil {
 		t.Skip("@types/react not installed, skipping integration test")
 		return
-	}
-
-	t.Logf("Found @types/react at: %s", reactDir)
-
-	// Verify the package directory exists
-	if _, err := os.Stat(reactDir); err != nil {
-		t.Errorf("@types/react directory does not exist: %v", err)
-	}
-
-	// Get the entry point
-	entryPoint, err := GetTypesEntryPoint(reactDir)
-	if err != nil {
-		t.Fatalf("Failed to get entry point for @types/react: %v", err)
 	}
 
 	t.Logf("Entry point: %s", entryPoint)

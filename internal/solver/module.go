@@ -17,6 +17,17 @@ type Options struct {
 	// through `std:prelude` or its own imports. The ambient packages still load, since
 	// a primitive's members and a regex literal's type are read from them.
 	NoAmbientNames bool
+	// PackageDir is the directory an import with no URI scheme resolves from, through
+	// the `node_modules` directories at and above it. An empty PackageDir resolves no
+	// such import.
+	PackageDir string
+	// Dependencies lists the packages the module's own imports with no URI scheme may
+	// name. An import of any other package reports UnlistedDependencyError. A nil
+	// Dependencies lets such an import name any package.
+	Dependencies set.Set[string]
+	// CheckJsDecorators reports a pseudo-package file whose values break the `@js`
+	// rules jsDecoratorErrors lists, at the import that loads it.
+	CheckJsDecorators bool
 }
 
 // InferModule builds the dep graph for a single parsed module, infers every
@@ -150,6 +161,8 @@ func newRunChecker(source ModuleSource, groupSource GroupSource, groups PackageG
 	c.groupSource = groupSource
 	c.groups = groups
 	c.noAmbientNames = opts.NoAmbientNames
+	c.checkJsDecorators = opts.CheckJsDecorators
+	c.dependencies = opts.Dependencies
 	return c
 }
 

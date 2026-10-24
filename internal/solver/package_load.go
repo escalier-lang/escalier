@@ -68,20 +68,30 @@ func (c *checker) loadPackage(uri string, span ast.Span) (*Namespace, []SolverEr
 		}}
 	}
 
+	// A pseudo-package file lowers each value it exports to the JS expression its
+	// `@js` names, so a value without one has nothing to lower to. Its types lower
+	// to nothing, and an unexported one is a private helper exportedSurface leaves
+	// out of what an importer reaches. The span is the import's, since the
+	// declaration's own span points into a file the importer did not write.
+	var loaderErrs []SolverError
+	if c.checkJsDecorators && IsSchemePrefixedImport(uri) {
+		loaderErrs = jsDecoratorErrors(path, module, "", span)
+	}
+
 	c.ctx.packages.markLoading(uri, path)
 	c.loadStack = append(c.loadStack, uri)
 	ns, pkgErrs := c.inferPackage(uri, module)
 	c.loadStack = c.loadStack[:len(c.loadStack)-1]
 	c.ctx.packages.publish(uri, ns)
 	if len(pkgErrs) > 0 {
-		return ns, []SolverError{&PackageInferenceError{
+		return ns, append(loaderErrs, &PackageInferenceError{
 			URI:      uri,
 			Path:     path,
 			Messages: messagesOf(pkgErrs),
 			span:     span,
-		}}
+		})
 	}
-	return ns, nil
+	return ns, loaderErrs
 }
 
 // cycleChain returns the packages the cycle runs through, starting and ending at
@@ -133,10 +143,11 @@ func messagesOf(errs []SolverError) []string {
 
 // inferPackage infers one package's module and returns the surface it exports.
 //
-// The package's declarations go into a child of the run's prelude scope rather
-// than of the importer, so nothing the importer declares is visible to it while
-// the prelude package's exports still are. pkgURI is set for the duration, which
-// puts the URI on every key the walk registers.
+// The package's declarations go into a child of a scope the run shares rather
+// than of the importer, so nothing the importer declares is visible to it. A
+// pseudo-package's parent is the prelude scope. An npm package's parent is the
+// globals scope, which has to be bound first. pkgURI is set for the duration,
+// which puts the URI on every key the walk registers.
 func (c *checker) inferPackage(uri string, module *ast.Module) (*Namespace, []SolverError) {
 	prevURI := c.pkgURI
 	c.pkgURI = uri
@@ -148,6 +159,13 @@ func (c *checker) inferPackage(uri string, module *ast.Module) (*Namespace, []So
 	c.errs = nil
 
 	scope := c.preludeScope().Child()
+	// A `.d.ts` is written against TypeScript's global library, which the globals
+	// scope holds. `Console` is one such name. The globals scope is used even when
+	// the run sets Options.NoAmbientNames, since that option governs the names the
+	// project's own files reach.
+	if !IsSchemePrefixedImport(uri) {
+		scope = c.globalsScope().Child()
+	}
 	c.bindFileImports(scope, module)
 	c.inferDepGraph(scope, 0, module, dep_graph.BuildDepGraph(module))
 

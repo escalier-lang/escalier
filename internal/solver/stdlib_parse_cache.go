@@ -76,9 +76,10 @@ type parseKey struct {
 	contents string
 }
 
-// groupKey identifies a merged parse by every member's synthetic path and
-// contents, in order.
+// groupKey identifies a merged parse by its name and by every member's synthetic
+// path and contents, in order.
 type groupKey struct {
+	name     string
 	paths    string
 	contents string
 }
@@ -153,7 +154,18 @@ func (c *parsedModuleCache) getGroup(
 	paths, contents []string,
 	parse func(firstSourceID int) (*ast.Module, error),
 ) (*ast.Module, error) {
-	key := groupKey{paths: joinParts(paths), contents: joinParts(contents)}
+	return c.getNamedGroup("", paths, contents, parse)
+}
+
+// getNamedGroup is getGroup for a parse whose module depends on name as well as
+// on its members. Two calls with the same members and different names are cached
+// apart.
+func (c *parsedModuleCache) getNamedGroup(
+	name string,
+	paths, contents []string,
+	parse func(firstSourceID int) (*ast.Module, error),
+) (*ast.Module, error) {
+	key := groupKey{name: name, paths: joinParts(paths), contents: joinParts(contents)}
 
 	c.mu.Lock()
 	defer c.mu.Unlock()

@@ -35,9 +35,9 @@ func TestAmbientCheckerMatchesFreshLoad(t *testing.T) {
 	}
 	for _, tt := range cases {
 		t.Run(tt.name, func(t *testing.T) {
-			wantValues, wantMsgs := inferFresh(t, benchTree, tt.src)
+			wantValues, wantMsgs := inferFresh(t, benchTree, tt.src, Options{})
 			for range 2 {
-				values, msgs := inferCached(t, benchTree, tt.src)
+				values, msgs := inferCached(t, benchTree, tt.src, Options{})
 				require.Equal(t, wantValues, values)
 				require.Equal(t, wantMsgs, msgs)
 			}
@@ -66,14 +66,14 @@ func TestAmbientCheckerReloadsEditedPrelude(t *testing.T) {
 	dir := seedStdlib(t, withPreludeClasses(map[string]string{
 		"std/prelude.esc": "export declare val marker: number\n",
 	}))
-	values, msgs := inferCached(t, dir, `val m = marker`)
+	values, msgs := inferCached(t, dir, `val m = marker`, Options{})
 	require.Empty(t, msgs)
 	require.Equal(t, "number", values["m"])
 
 	path := filepath.Join(dir, "std", "prelude.esc")
 	edited := "export declare val marker: string\n" + minimalPreludeClasses
 	require.NoError(t, os.WriteFile(path, []byte(edited), 0o644))
-	values, msgs = inferCached(t, dir, `val m = marker`)
+	values, msgs = inferCached(t, dir, `val m = marker`, Options{})
 	require.Empty(t, msgs)
 	require.Equal(t, "string", values["m"])
 }
@@ -82,34 +82,58 @@ func TestAmbientCheckerReloadsEditedPrelude(t *testing.T) {
 // loads with a diagnostic reports it at the import naming it, on a cached run as on
 // a fresh one, and with no span when nothing imports it.
 func TestAmbientCheckerReportsLoadErrorAtImport(t *testing.T) {
-	dir := seedStdlib(t, withPreludeClasses(map[string]string{
+	inferDir := seedStdlib(t, withPreludeClasses(map[string]string{
 		"std/math.esc": `export val PI: number = "pi"`,
 	}))
-	path := filepath.Join(dir, "std", "math.esc")
-	loadErr := `package "std:math" (` + path + `) has 1 error(s):` + "\n" +
-		`  cannot constrain "pi" <: number`
+	inferErr := `package "std:math" (` + filepath.Join(inferDir, "std", "math.esc") +
+		`) has 1 error(s):` + "\n" + `  cannot constrain "pi" <: number`
+	jsDir := seedStdlib(t, withJsPreludeClasses(map[string]string{
+		"std/math.esc": `export declare val PI: number`,
+	}))
+	jsErr := `exported value "PI" in pseudo-package file ` + filepath.Join(jsDir, "std", "math.esc") +
+		" is missing an `@js(\"...\")` decorator"
+	jsOpts := Options{CheckJsDecorators: true}
+
 	cases := []struct {
 		name string
+		dir  string
+		opts Options
 		src  string
 		want []string
 	}{
 		{
-			name: "imported",
+			name: "inference error imported",
+			dir:  inferDir,
 			src:  "import \"std:math\"\nval p = math.PI",
-			want: []string{"1:1-1:18: " + loadErr},
+			want: []string{"1:1-1:18: " + inferErr},
 		},
 		{
-			name: "not imported",
+			name: "inference error not imported",
+			dir:  inferDir,
 			src:  `val p = 1`,
-			want: []string{"1:1-1:1: " + loadErr},
+			want: []string{"1:1-1:1: " + inferErr},
+		},
+		{
+			name: "loader rule imported",
+			dir:  jsDir,
+			opts: jsOpts,
+			src:  "import \"std:math\"\nval p = math.PI",
+			want: []string{"1:1-1:18: " + jsErr},
+		},
+		{
+			name: "loader rule not imported",
+			dir:  jsDir,
+			opts: jsOpts,
+			src:  `val p = 1`,
+			want: []string{"1:1-1:1: " + jsErr},
 		},
 	}
 	for _, tt := range cases {
 		t.Run(tt.name, func(t *testing.T) {
-			_, fresh := inferFresh(t, dir, tt.src)
+			_, fresh := inferFresh(t, tt.dir, tt.src, tt.opts)
 			require.Equal(t, tt.want, fresh)
 			for range 2 {
-				_, cached := inferCached(t, dir, tt.src)
+				_, cached := inferCached(t, tt.dir, tt.src, tt.opts)
 				require.Equal(t, tt.want, cached)
 			}
 		})
@@ -119,21 +143,21 @@ func TestAmbientCheckerReportsLoadErrorAtImport(t *testing.T) {
 // inferCached infers src against dir through InferModuleAgainstStdlib, which starts
 // from the cached checker. It returns the module's rendered value bindings and its
 // diagnostics with their spans.
-func inferCached(t *testing.T, dir, src string) (map[string]string, []string) {
+func inferCached(t *testing.T, dir, src string, opts Options) (map[string]string, []string) {
 	t.Helper()
-	res := InferModuleAgainstStdlib(parseModule(t, src), dir, Options{})
+	res := InferModuleAgainstStdlib(parseModule(t, src), dir, opts)
 	return renderedValues(res), messagesWithSpan(t, res.Errors)
 }
 
 // inferFresh is inferCached on a checker that loads the tree itself rather than one
 // forked from the cache.
-func inferFresh(t *testing.T, dir, src string) (map[string]string, []string) {
+func inferFresh(t *testing.T, dir, src string, opts Options) (map[string]string, []string) {
 	t.Helper()
 	module := parseModule(t, src)
 	roots := append(pseudoPackageImportsOf(module), ambientPackages...)
 	sort.Strings(roots)
 	groups, err := BuildPackageClosure(dir, roots)
 	require.NoError(t, err)
-	res := inferModuleWithGroups(module, StdlibSource(dir), StdlibGroupSource(dir), groups, Options{})
+	res := inferModuleWithGroups(module, StdlibSource(dir), StdlibGroupSource(dir), groups, opts)
 	return renderedValues(res), messagesWithSpan(t, res.Errors)
 }

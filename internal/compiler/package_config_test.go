@@ -1,11 +1,13 @@
 package compiler
 
 import (
+	"fmt"
 	"os"
 	"path/filepath"
 	"testing"
 
 	"github.com/escalier-lang/escalier/internal/ast"
+	"github.com/escalier-lang/escalier/internal/set"
 	"github.com/stretchr/testify/require"
 )
 
@@ -22,6 +24,16 @@ func TestReadPackageConfig(t *testing.T) {
 		{name: "NoEscalierField", packageJSON: `{"name": "p"}`, want: PackageConfig{}},
 		{name: "AmbientTrue", packageJSON: `{"escalier": {"ambient": true}}`, want: PackageConfig{}},
 		{name: "AmbientFalse", packageJSON: `{"escalier": {"ambient": false}}`, want: PackageConfig{NoAmbientNames: true}},
+		{
+			name: "Dependencies",
+			packageJSON: `{
+				"dependencies": {"a": "1"},
+				"peerDependencies": {"b": "1"},
+				"optionalDependencies": {"c": "1"},
+				"devDependencies": {"d": "1"}
+			}`,
+			want: PackageConfig{Dependencies: set.FromSlice([]string{"a", "b", "c"})},
+		},
 		{name: "Malformed", packageJSON: `{"escalier": `, wantErr: true},
 	}
 	for _, test := range tests {
@@ -33,10 +45,20 @@ func TestReadPackageConfig(t *testing.T) {
 			got, err := ReadPackageConfig(dir)
 			if test.wantErr {
 				require.Error(t, err)
+				// A caller that goes on with the config still resolves imports from
+				// Dir, and no import is restricted.
+				require.Equal(t, PackageConfig{Dir: dir}, got)
 				return
 			}
 			require.NoError(t, err)
-			require.Equal(t, test.want, got)
+			// Dir is the temporary directory, so each case's want leaves it out. A
+			// package.json that parses lists its Dependencies even when it names none.
+			want := test.want
+			want.Dir = dir
+			if test.packageJSON != "" && want.Dependencies == nil {
+				want.Dependencies = set.NewSet[string]()
+			}
+			require.Equal(t, want, got)
 		})
 	}
 }
@@ -66,4 +88,120 @@ func TestCheckPackageAmbientNames(t *testing.T) {
 			require.Equal(t, test.wantErrs, messages(out.TypeErrors))
 		})
 	}
+}
+
+// TestCheckPackageResolvesNodeModules covers a lib/ file importing an npm package from the
+// `node_modules` beside the package.json ReadPackageConfig read. The import resolves only
+// when the package.json lists the package. A directory with no package.json restricts no
+// import, and a config with no Dir resolves no such import.
+func TestCheckPackageResolvesNodeModules(t *testing.T) {
+	tests := []struct {
+		name string
+		// dependencies is the package.json's `dependencies` field.
+		dependencies string
+		// devDependencies is the package.json's `devDependencies` field.
+		devDependencies string
+		src             string
+		noDir           bool
+		noPackageJSON   bool
+		wantErrs        []string
+	}{
+		{
+			name:         "ListedDependency",
+			dependencies: `{"plain": "1"}`,
+			src:          "import \"plain\" as p\nval v: string = p.version\n",
+			wantErrs:     []string{},
+		},
+		{
+			name:         "ListedTypesPackage",
+			dependencies: `{"@types/typed": "1"}`,
+			src:          "import \"typed\" as t\nval v: string = t.version\n",
+			wantErrs:     []string{},
+		},
+		{
+			name:         "Subpath",
+			dependencies: `{"plain": "1"}`,
+			src:          "import \"plain/sub\" as s\nval v: string = s.version\n",
+			wantErrs:     []string{},
+		},
+		{
+			name:         "ScopedTypesPackage",
+			dependencies: `{"@types/scope__pkg": "1"}`,
+			src:          "import \"@scope/pkg\" as pkg\nval v: string = pkg.version\n",
+			wantErrs:     []string{},
+		},
+		{
+			name:     "Unlisted",
+			src:      "import \"plain\" as p\nval v: string = p.version\n",
+			wantErrs: []string{`"plain" is not listed in package.json dependencies`, "Unknown identifier: p"},
+		},
+		{
+			name:     "UnlistedSubpath",
+			src:      "import \"plain/sub\" as s\nval v: string = s.version\n",
+			wantErrs: []string{`"plain" is not listed in package.json dependencies`, "Unknown identifier: s"},
+		},
+		{
+			name:            "DevDependency",
+			devDependencies: `{"plain": "1"}`,
+			src:             "import \"plain\" as p\nval v: string = p.version\n",
+			wantErrs:        []string{`"plain" is not listed in package.json dependencies`, "Unknown identifier: p"},
+		},
+		{
+			name:          "NoPackageJSON",
+			noPackageJSON: true,
+			src:           "import \"plain\" as p\nval v: string = p.version\n",
+			wantErrs:      []string{},
+		},
+		{
+			name:         "RelativePath",
+			dependencies: `{"plain": "1"}`,
+			src:          "import \"../plain\" as p\n",
+			wantErrs:     []string{`cannot resolve import "../plain": "../plain" is a relative path, not a package name`},
+		},
+		{
+			name:  "NoDir",
+			src:   "import \"plain\" as p\nval v: string = p.version\n",
+			noDir: true,
+			wantErrs: []string{
+				`cannot resolve import "plain": unrecognized scheme in "plain"`,
+				"Unknown identifier: p",
+			},
+		},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			dir := t.TempDir()
+			for path, contents := range map[string]string{
+				"node_modules/plain/index.d.ts":             "export declare const version: string;\n",
+				"node_modules/plain/sub.d.ts":               "export declare const version: string;\n",
+				"node_modules/@types/typed/index.d.ts":      "export declare const version: string;\n",
+				"node_modules/@types/scope__pkg/index.d.ts": "export declare const version: string;\n",
+				"package.json": fmt.Sprintf(`{"dependencies": %s, "devDependencies": %s}`,
+					orEmptyObject(test.dependencies), orEmptyObject(test.devDependencies)),
+			} {
+				if path == "package.json" && test.noPackageJSON {
+					continue
+				}
+				full := filepath.Join(dir, filepath.FromSlash(path))
+				require.NoError(t, os.MkdirAll(filepath.Dir(full), 0o755))
+				require.NoError(t, os.WriteFile(full, []byte(contents), 0o644))
+			}
+			config, err := ReadPackageConfig(dir)
+			require.NoError(t, err)
+			if test.noDir {
+				config = PackageConfig{}
+			}
+			out := CheckPackage([]*ast.Source{{ID: 1, Path: "lib/index.esc", Contents: test.src}}, config)
+			require.Empty(t, out.ParseErrors)
+			require.Equal(t, test.wantErrs, messages(out.TypeErrors))
+		})
+	}
+}
+
+// orEmptyObject returns field, or `{}` when field is empty.
+func orEmptyObject(field string) string {
+	if field == "" {
+		return "{}"
+	}
+	return field
 }
