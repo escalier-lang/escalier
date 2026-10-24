@@ -461,3 +461,33 @@ func TestSettleLoadedDefinitionsMeasuresAProvisionalClass(t *testing.T) {
 	require.False(t, def.varianceProvisional)
 	require.Equal(t, measured, def.Variance)
 }
+
+// TestShareForkReportsHeldDiagnosticsPerRun asserts that each fork of one loaded
+// checker reports the diagnostics its load held at that fork's own import, so a run
+// that claims them leaves them unclaimed for the next.
+func TestShareForkReportsHeldDiagnosticsPerRun(t *testing.T) {
+	dir := seedStdlib(t, withPreludeClasses(map[string]string{
+		"std/math.esc": `export val PI: number = "pi"`,
+	}))
+	groups, err := BuildPackageClosure(dir, ambientPackages)
+	require.NoError(t, err)
+	loaded := loadAmbientChecker(dir, groups, Options{})
+	loadErr := `package "std:math" (` + filepath.Join(dir, "std", "math.esc") +
+		`) has 1 error(s):` + "\n" + `  cannot constrain "pi" <: number`
+
+	for range 2 {
+		run := loaded.shareFork(StdlibSource(dir), StdlibGroupSource(dir), groups)
+		res := inferModuleOn(run, parseModule(t, "import \"std:math\"\nval p = math.PI"))
+		require.Equal(t, []string{"1:1-1:18: " + loadErr}, messagesWithSpan(t, res.Errors))
+	}
+}
+
+func TestClipValues(t *testing.T) {
+	require.Nil(t, clipValues[string, int](nil))
+
+	roomy := make([]int, 1, 4)
+	roomy[0] = 7
+	clipped := clipValues(map[string][]int{"a": roomy})
+	require.Equal(t, map[string][]int{"a": {7}}, clipped)
+	require.Equal(t, 1, cap(clipped["a"]))
+}
