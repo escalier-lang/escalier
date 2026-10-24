@@ -161,3 +161,15 @@ func inferFresh(t *testing.T, dir, src string, opts Options) (map[string]string,
 	res := inferModuleWithGroups(module, StdlibSource(dir), StdlibGroupSource(dir), groups, opts)
 	return renderedValues(res), messagesWithSpan(t, res.Errors)
 }
+
+// TestAmbientCheckerRunInfoHoldsOnlyTheModule asserts that a cached run's Info records
+// types for the module's own nodes alone, none for the stdlib nodes the cached load
+// inferred.
+func TestAmbientCheckerRunInfoHoldsOnlyTheModule(t *testing.T) {
+	module := parseModule(t, `val xs: Array<number> = [1, 2]`)
+	res := InferModuleAgainstStdlib(module, benchTree, Options{})
+	require.NotEmpty(t, res.Info.types)
+	for node := range res.Info.types {
+		require.Equal(t, module.Files[0].SourceID, node.Span().SourceID)
+	}
+}
