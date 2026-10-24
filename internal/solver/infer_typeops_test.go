@@ -396,6 +396,22 @@ val s: Tuple["0"] = "a"`,
 val v: Tuple[keyof Tuple] = true`,
 		},
 		{
+			name: "a position past an inexact tuple's listed ones reads its open tail",
+			src: `type Tuple = [string, number, ...]
+val v: Tuple[2] = true`,
+		},
+		{
+			name: "a string spelling a position past an inexact tuple's listed ones reads its open tail",
+			src: `type Tuple = [string, number, ...]
+val v: Tuple["2"] = true`,
+		},
+		{
+			name: "a position past an exact tuple's end is out of range",
+			src: `type Tuple = [string, number]
+val v: Tuple["2"] = true`,
+			wantErrs: []string{"2:21-2:25: index 2 is out of range for tuple [string, number]"},
+		},
+		{
 			name: "the length of an inexact tuple is a number",
 			src: `type Tuple = [string, number, ...]
 val n: Tuple["length"] = 7`,

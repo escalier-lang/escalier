@@ -1740,8 +1740,10 @@ func isNumericKey(t soltype.Type) bool {
 }
 
 // indexTuple reduces `tup[n]` for a ground tuple. A numeric-literal key selects the element at
-// that position. An index outside `[0, len)`, or a non-integer or negative literal, records a
-// TupleIndexOutOfRangeError and reduces to the error sentinel. A bare `number` key names no single
+// that position. A position past the listed ones of an inexact tuple falls in its open tail, so
+// `[number, string, ...][2]` reduces to `unknown`. Any other index outside `[0, len)`, or a
+// non-integer or negative literal, records a TupleIndexOutOfRangeError and reduces to the error
+// sentinel. A bare `number` key names no single
 // position, so it reads the join of every element type, and an inexact tuple joins its unlisted
 // trailing positions in as `unknown`, so `[number, string, ...][number]` reduces to `unknown`.
 //
@@ -1775,6 +1777,9 @@ func (e *typeEvaluator) indexTuple(tup *soltype.TupleType, index soltype.Type, i
 		return &soltype.IndexType{Target: tup, Index: index, Inexact: inexact}
 	}
 	i := int(num.Value)
+	if tup.Inexact && float64(i) == num.Value && i >= len(tup.Elems) {
+		return &soltype.UnknownType{}
+	}
 	if float64(i) != num.Value || i < 0 || i >= len(tup.Elems) {
 		e.errs = append(e.errs, &TupleIndexOutOfRangeError{Tuple: tup, Index: num.Value})
 		return &soltype.ErrorType{}
