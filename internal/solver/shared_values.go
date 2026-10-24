@@ -473,32 +473,22 @@ func (e *SharedOwnedArgError) Message() string {
 	return fmt.Sprintf("cannot move shared value '%s' into an owned parameter. Make the parameter a borrow and pass `&%s`", e.Arg, e.Arg)
 }
 
-// rejectSharedArg reports a SharedOwnedArgError for arg when it may be a shared value judged
-// from scope, and reports whether it did. It reports nothing outside a function body.
-func (c *checker) rejectSharedArg(scope *Scope, arg ast.Expr) bool {
-	if c.fn == nil || c.fn.shared == nil {
-		return false
-	}
-	if !c.mayYieldShared(scope, arg, c.fn.shared.locals) {
-		return false
-	}
-	name, _ := pathName(arg)
-	c.report(&SharedOwnedArgError{Arg: name, node: arg})
-	return true
+// isSharedArg reports whether the call argument arg may be a shared value, judged from scope.
+// It answers false outside a function body.
+func (c *checker) isSharedArg(scope *Scope, arg ast.Expr) bool {
+	return c.fn != nil && c.fn.shared != nil && c.mayYieldShared(scope, arg, c.fn.shared.locals)
 }
 
 // calleeFromLibrary reports whether the callee e resolved to fn is declared in a package the
 // run loaded, such as the prelude, a `std:` package, or an npm package's types. It reads the
 // first of these the call has:
 //
-//   - the declaration fn was inferred from, or the one the signature it was instantiated
-//     from was;
+//   - the declaration fn was inferred from, reached through any instantiation that copied it;
 //   - the declaration the callee names, as a namespace member or a bare identifier;
 //   - the class a static method is read off, when the receiver names one;
-//   - the class or interface of a method call's receiver.
+//   - the named class or alias of a method call's receiver.
 //
-// A callee none of these resolves, such as a function stored in an object field, answers
-// false.
+// A callee none of these resolves answers false.
 func (c *checker) calleeFromLibrary(e *ast.CallExpr, fn *soltype.FuncType) bool {
 	packages := c.ctx.packages
 	if packages == nil {

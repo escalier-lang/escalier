@@ -117,7 +117,8 @@ func (r *PackageRegistry) publish(uri string, ns *Namespace) {
 }
 
 // markLibrary records module as a loaded package's declarations, inferred with keyURI as the
-// URI qualifyDecl prefixes their keys with.
+// URI qualifyDecl prefixes their keys with. module's SourceIDs must not be shared with any
+// file of the program being checked, or isLibrarySource answers true for that file too.
 func (r *PackageRegistry) markLibrary(keyURI string, module *ast.Module) {
 	for id := range module.Sources {
 		r.librarySources.Add(id)

@@ -2108,23 +2108,27 @@ func (c *checker) calleeReceiver(callee ast.Expr) (ast.Expr, *soltype.FuncParam)
 
 // consumeCallArgs consumes each argument ownedParamArgs returns for the resolved callee,
 // recording the move at ref, the call's statement. An argument that may be a shared value,
-// judged from scope, cannot move, so it is reported through rejectSharedArg and left
+// judged from scope, cannot move, so it is reported as a SharedOwnedArgError and left
 // unconsumed.
 func (c *checker) consumeCallArgs(scope *Scope, e *ast.CallExpr, fn *soltype.FuncType, ref liveness.StmtRef) {
-	owned := c.ownedParamArgs(e, fn)
-	if len(owned) == 0 {
-		return
-	}
-	// A package's declarations come from TypeScript's types, either an npm package's `.d.ts`
-	// or the TypeScript library the `std:` packages are generated from. TypeScript gives a
-	// parameter no ownership meaning, so a call into a package is not checked for shared
-	// arguments.
-	checkShared := !c.calleeFromLibrary(e, fn)
-	for _, a := range owned {
+	// fromLibrary is set by the first shared argument, so a call with none skips the lookup.
+	libraryKnown, fromLibrary := false, false
+	for _, a := range c.ownedParamArgs(e, fn) {
 		// The immutable→mutable upgrade already rejects a shared argument to an owned-mutable
 		// parameter, so only a parameter that stays immutable is checked here.
-		if checkShared && !isOwnedMut(c.expandAliasChain(a.param)) && c.rejectSharedArg(scope, a.arg) {
-			continue
+		if !isOwnedMut(c.expandAliasChain(a.param)) && c.isSharedArg(scope, a.arg) {
+			if !libraryKnown {
+				// A package's declarations come from TypeScript's types. Those are an npm
+				// package's `.d.ts`, or the TypeScript library the `std:` packages are
+				// generated from. TypeScript gives a parameter no ownership meaning, so a call
+				// into a package is not checked for shared arguments.
+				libraryKnown, fromLibrary = true, c.calleeFromLibrary(e, fn)
+			}
+			if !fromLibrary {
+				name, _ := pathName(a.arg)
+				c.report(&SharedOwnedArgError{Arg: name, node: a.arg})
+				continue
+			}
 		}
 		c.consumeOwned(a.arg, c.info.TypeOf(a.arg), a.arg, ref)
 		// A consuming argument carries its value out of the frame into the callee, so a

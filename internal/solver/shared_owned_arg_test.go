@@ -130,19 +130,6 @@ fn f() { take(xs) }`,
 			want: []string{"cannot constrain immutable Array<number> <: mutable Array<number>"},
 		},
 		{
-			// The upgrade check reports this spelling twice. The case asserts that no
-			// SharedOwnedArgError joins those reports.
-			name: "a module-level val passed to an owned-mutable parameter spelled by an alias",
-			src: `val xs: Array<number> = [1, 2]
-type M = mut Array<number>
-fn take(x: M) { x.push(3) }
-fn f() { take(xs) }`,
-			want: []string{
-				"cannot constrain immutable Array<number> <: mutable Array<number>",
-				"cannot constrain immutable Array<number> <: mutable Array<number>",
-			},
-		},
-		{
 			name: "an owned local used after the call consumes it",
 			src: `fn take(x: Array<number>) {}
 fn f() {
@@ -222,6 +209,21 @@ fn f() {
 	}
 }
 
+// TestSharedValuePassedToAliasedMutParam asserts that a shared value passed to an
+// owned-mutable parameter spelled through an alias reports the rejected upgrade and no
+// SharedOwnedArgError. The upgrade check may report more than once, so the test does not
+// assert how many reports there are.
+func TestSharedValuePassedToAliasedMutParam(t *testing.T) {
+	t.Parallel()
+
+	got := inferWithPushPrelude(t, `val xs: Array<number> = [1, 2]
+type M = mut Array<number>
+fn take(x: M) { x.push(3) }
+fn f() { take(xs) }`, nil)
+	require.Contains(t, got, "cannot constrain immutable Array<number> <: mutable Array<number>")
+	require.NotContains(t, got, "cannot move shared value 'xs' into an owned parameter. Make the parameter a borrow and pass `&xs`")
+}
+
 // TestSharedValuePassedToNpmOwnedParam covers calls into an npm package's types. A `.d.ts`
 // gives a parameter no ownership meaning, so none of these calls rejects the module-level val
 // it passes to a parameter the package declares owned.
@@ -244,6 +246,8 @@ export declare function make(): Coll;`,
 		body string
 	}{
 		{name: "a function", body: `val n = lod.sum(xs)`},
+		{name: "a function bound to a local", body: `val s = lod.sum
+	val n = s(xs)`},
 		{name: "a generic function", body: `val n = lod.wrap(o)`},
 		{name: "a constructor", body: `val b = lod.Box(xs)`},
 		{name: "an instance method", body: `val mut b = lod.Box([3])
