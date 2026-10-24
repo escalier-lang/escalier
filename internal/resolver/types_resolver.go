@@ -16,11 +16,12 @@ import (
 //  2. `node_modules/@types/<name>`, a package whose types are published apart. A
 //     scoped `@scope/pkg` publishes them as `@types/scope__pkg`.
 //
-// A subpath such as `lodash/fp` resolves to the directory of that name inside the
-// package, or to a `.d.ts` file of that name. A moduleName with a `.` or `..`
-// segment names no package and is rejected. When nothing holds types, the error is
-// GetTypesEntryPoint's for the first package directory that exists but has no entry
-// point. With no such directory, it names every directory the lookup tried.
+// Each package directory is read as packageTypesFile describes, so a subpath such as
+// `lodash/fp` goes through the package's `exports` and `typesVersions` before the
+// directory or `.d.ts` file of that name. A moduleName with a `.` or `..` segment
+// names no package and is rejected. When nothing holds types, the error is the first
+// one a package directory that exists reported. With no such error, it names every
+// path the lookup tried.
 func ResolveTypesEntryPoint(moduleName string, fromDir string) (string, error) {
 	return resolveTypes(moduleName, fromDir, false)
 }
@@ -38,38 +39,36 @@ func resolveTypes(moduleName string, fromDir string, typesFirst bool) (string, e
 	if err := ValidateModuleName(moduleName); err != nil {
 		return "", err
 	}
+	name := PackageName(moduleName)
+	subpath := strings.TrimPrefix(strings.TrimPrefix(moduleName, name), "/")
 	var tried []string
 	var entryErr error
 	for dir := fromDir; ; {
 		nodeModules := filepath.Join(dir, "node_modules")
 		candidates := []string{
-			filepath.Join(nodeModules, filepath.FromSlash(moduleName)),
-			filepath.Join(nodeModules, "@types", filepath.FromSlash(TypesPackageName(moduleName))),
+			filepath.Join(nodeModules, filepath.FromSlash(name)),
+			filepath.Join(nodeModules, "@types", filepath.FromSlash(TypesPackageName(name))),
 		}
 		if typesFirst {
 			candidates[0], candidates[1] = candidates[1], candidates[0]
 		}
 		for _, pkgDir := range candidates {
-			tried = append(tried, pkgDir)
-			if isDir(pkgDir) {
-				path, err := GetTypesEntryPoint(pkgDir)
-				if err == nil {
-					return path, nil
-				}
-				// A subpath such as `react/jsx-runtime` can name a file beside a
-				// directory of the same name.
-				if file := pkgDir + ".d.ts"; isFile(file) {
+			tried = append(tried, joinRel(pkgDir, subpath))
+			if !isDir(pkgDir) {
+				// A package of one file sits beside the directory it would have had.
+				if file := pkgDir + ".d.ts"; subpath == "" && isFile(file) {
 					return file, nil
-				}
-				// The lookup goes on, since `node_modules/react` holds only
-				// JavaScript and its types are in `node_modules/@types/react`.
-				if entryErr == nil {
-					entryErr = err
 				}
 				continue
 			}
-			if file := pkgDir + ".d.ts"; isFile(file) {
-				return file, nil
+			path, err := packageTypesFile(pkgDir, subpath)
+			if path != "" {
+				return path, nil
+			}
+			// The lookup goes on, since `node_modules/react` holds only
+			// JavaScript and its types are in `node_modules/@types/react`.
+			if err != nil && entryErr == nil {
+				entryErr = err
 			}
 		}
 		parent := filepath.Dir(dir)
@@ -135,123 +134,178 @@ func isFile(path string) bool {
 	return err == nil && info.Mode().IsRegular()
 }
 
-// GetTypesEntryPoint returns the main .d.ts file for a types package.
-// Returns an error if the resolved entry point file does not exist.
+// GetTypesEntryPoint returns the `.d.ts` file the types of the package in packageDir
+// start at. It returns an error when the package names an entry point that does not
+// exist, or names none and holds no `index.d.ts`.
 //
-// Resolution priority:
-// 1. exports["types"] or exports["."]["types"] (modern package.json exports)
-// 2. "types" field in package.json
-// 3. "typings" field in package.json (older convention)
-// 4. "main" field with extension replaced by .d.ts
-// 5. Fallback to index.d.ts
+// It reads the package.json beside it in this order, using the first that applies:
+//
+//  1. the `exports` entry for `.`, read as exportsTarget describes;
+//  2. the `types` field;
+//  3. the `typings` field, an older name for `types`;
+//  4. the `main` field, with its JavaScript extension replaced by `.d.ts`;
+//  5. `index.d.ts`.
+//
+// A `typesVersions` field redirects the file the last four name.
 func GetTypesEntryPoint(packageDir string) (string, error) {
-	pkgJsonPath := filepath.Join(packageDir, "package.json")
+	return packageTypesFile(packageDir, "")
+}
 
-	data, err := os.ReadFile(pkgJsonPath)
+// packageManifest holds the package.json fields the resolver reads.
+type packageManifest struct {
+	// found is false when the package has no package.json.
+	found         bool
+	types         string
+	typings       string
+	main          string
+	exports       *jsonNode
+	typesVersions *jsonNode
+}
+
+// readManifest reads the package.json in pkgDir. A directory with none gives a
+// manifest whose found is false.
+func readManifest(pkgDir string) (packageManifest, error) {
+	data, err := os.ReadFile(filepath.Join(pkgDir, "package.json"))
 	if err != nil {
-		// No package.json, try index.d.ts
-		indexPath := filepath.Join(packageDir, "index.d.ts")
-		if _, statErr := os.Stat(indexPath); statErr != nil {
-			return "", fmt.Errorf("types entry point not found: %s", indexPath)
-		}
-		return indexPath, nil
+		return packageManifest{}, nil
 	}
-
-	var pkg struct {
-		Types   string `json:"types"`
-		Typings string `json:"typings"`
-		Main    string `json:"main"`
-		Exports any    `json:"exports"` // Can be string, object, or nested
+	var fields struct {
+		Types         string          `json:"types"`
+		Typings       string          `json:"typings"`
+		Main          string          `json:"main"`
+		Exports       json.RawMessage `json:"exports"`
+		TypesVersions json.RawMessage `json:"typesVersions"`
 	}
-	if err := json.Unmarshal(data, &pkg); err != nil {
-		return "", fmt.Errorf("failed to parse package.json: %w", err)
+	if err := json.Unmarshal(data, &fields); err != nil {
+		return packageManifest{}, fmt.Errorf("failed to parse package.json: %w", err)
 	}
-
-	// Priority: exports["types"] > exports["."]["types"] > types > typings > main > index.d.ts
-
-	// Check exports field for types (handles modern package.json exports)
-	if pkg.Exports != nil {
-		if typesPath := resolveExportsTypes(pkg.Exports); typesPath != "" {
-			fullPath := filepath.Join(packageDir, typesPath)
-			if _, statErr := os.Stat(fullPath); statErr != nil {
-				return "", fmt.Errorf("types entry point from exports not found: %s", fullPath)
-			}
-			return fullPath, nil
+	manifest := packageManifest{found: true, types: fields.Types, typings: fields.Typings, main: fields.Main}
+	if len(fields.Exports) > 0 {
+		if manifest.exports, err = decodeOrdered(fields.Exports); err != nil {
+			return packageManifest{}, fmt.Errorf("failed to parse package.json: %w", err)
 		}
 	}
-
-	if pkg.Types != "" {
-		fullPath := filepath.Join(packageDir, pkg.Types)
-		if _, statErr := os.Stat(fullPath); statErr != nil {
-			return "", fmt.Errorf("types entry point not found: %s (from 'types' field)", fullPath)
+	if len(fields.TypesVersions) > 0 {
+		if manifest.typesVersions, err = decodeOrdered(fields.TypesVersions); err != nil {
+			return packageManifest{}, fmt.Errorf("failed to parse package.json: %w", err)
 		}
-		return fullPath, nil
 	}
+	return manifest, nil
+}
 
-	if pkg.Typings != "" {
-		fullPath := filepath.Join(packageDir, pkg.Typings)
-		if _, statErr := os.Stat(fullPath); statErr != nil {
-			return "", fmt.Errorf("types entry point not found: %s (from 'typings' field)", fullPath)
+// packageTypesFile returns the `.d.ts` file the types for subpath of the package in
+// pkgDir start at. subpath is "" for the package itself, or a path inside it such as
+// `jsx-runtime`.
+//
+// A package.json with an `exports` field decides first. A subpath it does not list is
+// an error, since Node and TypeScript refuse to import one. An entry that leads only to
+// JavaScript files leaves the lookup to the fields GetTypesEntryPoint lists for the
+// package itself, and to typesVersionsFile then subpathFile for a subpath. It returns
+// "" and no error when the package holds no types for subpath, so the lookup can go on
+// to another package directory.
+func packageTypesFile(pkgDir, subpath string) (string, error) {
+	manifest, err := readManifest(pkgDir)
+	if err != nil {
+		return "", err
+	}
+	if manifest.exports != nil {
+		key := "."
+		if subpath != "" {
+			key = "./" + subpath
 		}
-		return fullPath, nil
+		value, star, listed := exportsEntry(manifest.exports, key)
+		if !listed {
+			return "", fmt.Errorf("%s does not export %q", filepath.Join(pkgDir, "package.json"), key)
+		}
+		path, missing := exportsTarget(pkgDir, value, star)
+		if path != "" {
+			return path, nil
+		}
+		if missing != "" {
+			return "", fmt.Errorf("types entry point from exports not found: %s", missing)
+		}
 	}
+	if subpath != "" {
+		if path := typesVersionsFile(pkgDir, manifest, subpath); path != "" {
+			return path, nil
+		}
+		return subpathFile(pkgDir, subpath)
+	}
+	return entryFile(pkgDir, manifest)
+}
 
-	if pkg.Main != "" {
-		// Strip any JS-type extension (.js, .cjs, .mjs) before appending .d.ts
-		mainWithoutExt := pkg.Main
+// entryFile returns the file the `types`, `typings` or `main` field of manifest names,
+// or `index.d.ts`, as GetTypesEntryPoint orders them. A `typesVersions` redirect of
+// the named file wins when it leads to a file that exists.
+func entryFile(pkgDir string, manifest packageManifest) (string, error) {
+	type field struct {
+		rel, source string
+	}
+	var chosen field
+	switch {
+	case !manifest.found:
+		chosen = field{rel: "index.d.ts"}
+	case manifest.types != "":
+		chosen = field{rel: manifest.types, source: " (from 'types' field)"}
+	case manifest.typings != "":
+		chosen = field{rel: manifest.typings, source: " (from 'typings' field)"}
+	case manifest.main != "":
+		main := manifest.main
 		for _, ext := range []string{".mjs", ".cjs", ".js"} {
-			if cut, found := strings.CutSuffix(mainWithoutExt, ext); found {
-				mainWithoutExt = cut
+			if cut, found := strings.CutSuffix(main, ext); found {
+				main = cut
 				break
 			}
 		}
-		dtsMain := mainWithoutExt + ".d.ts"
-		fullPath := filepath.Join(packageDir, dtsMain)
-		if _, statErr := os.Stat(fullPath); statErr != nil {
-			return "", fmt.Errorf("types entry point not found: %s (derived from 'main' field)", fullPath)
-		}
-		return fullPath, nil
+		chosen = field{rel: main + ".d.ts", source: " (derived from 'main' field)"}
+	default:
+		chosen = field{rel: "index.d.ts", source: " (fallback)"}
 	}
-
-	// Fallback to index.d.ts
-	indexPath := filepath.Join(packageDir, "index.d.ts")
-	if _, statErr := os.Stat(indexPath); statErr != nil {
-		return "", fmt.Errorf("types entry point not found: %s (fallback)", indexPath)
+	rel := strings.TrimPrefix(filepath.ToSlash(chosen.rel), "./")
+	if path := typesVersionsFile(pkgDir, manifest, rel); path != "" {
+		return path, nil
 	}
-	return indexPath, nil
+	path := joinRel(pkgDir, rel)
+	if !isFile(path) {
+		return "", fmt.Errorf("types entry point not found: %s%s", path, chosen.source)
+	}
+	return path, nil
 }
 
-// resolveExportsTypes extracts the types path from package.json exports field.
-// Handles various shapes:
-//   - exports: "./index.d.ts" (string - if ends in .d.ts)
-//   - exports: { "types": "./index.d.ts" }
-//   - exports: { ".": { "types": "./index.d.ts" } }
-//   - exports: { ".": { "import": { "types": "./index.d.ts" }, "require": { "types": "./index.d.ts" } } }
-func resolveExportsTypes(exports any) string {
-	switch e := exports.(type) {
-	case string:
-		// Direct string export - only use if it's a .d.ts file
-		if strings.HasSuffix(e, ".d.ts") {
-			return e
-		}
-		return ""
-	case map[string]any:
-		// Check for direct "types" key
-		if types, ok := e["types"].(string); ok {
-			return types
-		}
-		// Check for "." entry (main entry point)
-		if dot, ok := e["."]; ok {
-			return resolveExportsTypes(dot)
-		}
-		// Check for nested condition maps (import/require/default)
-		for _, key := range []string{"import", "require", "default"} {
-			if nested, ok := e[key]; ok {
-				if result := resolveExportsTypes(nested); result != "" {
-					return result
-				}
-			}
+// typesVersionsFile returns the first file a `typesVersions` redirect of rel leads to
+// inside pkgDir, or "" when the field redirects rel nowhere that exists.
+func typesVersionsFile(pkgDir string, manifest packageManifest, rel string) string {
+	for _, redirected := range typesVersionsPaths(manifest.typesVersions, rel) {
+		if path := firstDeclarationFile(pkgDir, strings.TrimPrefix(redirected, "./")); path != "" {
+			return path
 		}
 	}
 	return ""
+}
+
+// subpathFile returns the file a subpath names inside the package in pkgDir, found on
+// disk. A directory of that name is read as a package of its own, and a `.d.ts` file
+// of that name stands for it. It returns "" and no error when neither exists.
+func subpathFile(pkgDir, subpath string) (string, error) {
+	target := joinRel(pkgDir, subpath)
+	if isDir(target) {
+		path, err := GetTypesEntryPoint(target)
+		if err == nil {
+			return path, nil
+		}
+		// `react/jsx-runtime` can name a file beside a directory of the same name.
+		if file := target + ".d.ts"; isFile(file) {
+			return file, nil
+		}
+		return "", err
+	}
+	if file := target + ".d.ts"; isFile(file) {
+		return file, nil
+	}
+	return "", nil
+}
+
+// joinRel joins rel, a slash-separated path inside a package, onto pkgDir.
+func joinRel(pkgDir, rel string) string {
+	return filepath.Join(pkgDir, filepath.FromSlash(rel))
 }

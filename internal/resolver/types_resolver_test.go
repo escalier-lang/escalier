@@ -12,14 +12,16 @@ import (
 
 // TestResolveTypesEntryPoint covers the places ResolveTypesEntryPoint finds a package's
 // types. Each case writes files under a temporary root and resolves from the directory
-// `from` names under it. `want` is the entry point's path under the root.
+// `from` names under it. `files` are written empty and `manifests` maps a
+// package.json path to its contents. `want` is the entry point's path under the root.
 func TestResolveTypesEntryPoint(t *testing.T) {
 	tests := []struct {
-		name   string
-		files  []string
-		module string
-		from   string
-		want   string
+		name      string
+		files     []string
+		manifests map[string]string
+		module    string
+		from      string
+		want      string
 	}{
 		{
 			name:   "a package that ships its own types",
@@ -58,18 +60,168 @@ func TestResolveTypesEntryPoint(t *testing.T) {
 			from:   "src/components/deep",
 			want:   "node_modules/@types/react/index.d.ts",
 		},
+		{
+			name:      "a subpath the exports field maps",
+			files:     []string{"node_modules/lib/dist/index.d.ts", "node_modules/lib/dist/utils/index.d.ts"},
+			manifests: map[string]string{"node_modules/lib/package.json": `{"exports": {".": {"types": "./dist/index.d.ts"}, "./utils": {"types": "./dist/utils/index.d.ts"}}}`},
+			module:    "lib/utils",
+			want:      "node_modules/lib/dist/utils/index.d.ts",
+		},
+		{
+			name:      "a subpath an exports pattern maps",
+			files:     []string{"node_modules/lib/dist/a/b.d.ts"},
+			manifests: map[string]string{"node_modules/lib/package.json": `{"exports": {"./*": {"types": "./dist/*.d.ts"}}}`},
+			module:    "lib/a/b",
+			want:      "node_modules/lib/dist/a/b.d.ts",
+		},
+		{
+			name:      "the longer of two exports patterns",
+			files:     []string{"node_modules/lib/all/a.d.ts", "node_modules/lib/features/a.d.ts"},
+			manifests: map[string]string{"node_modules/lib/package.json": `{"exports": {"./*": "./all/*.d.ts", "./features/*": "./features/*.d.ts"}}`},
+			module:    "lib/features/a",
+			want:      "node_modules/lib/features/a.d.ts",
+		},
+		{
+			name:      "the first condition that applies, in source order",
+			files:     []string{"node_modules/lib/esm/index.d.ts", "node_modules/lib/cjs/index.d.ts"},
+			manifests: map[string]string{"node_modules/lib/package.json": `{"exports": {".": {"import": {"types": "./esm/index.d.ts"}, "require": {"types": "./cjs/index.d.ts"}}}}`},
+			module:    "lib",
+			want:      "node_modules/lib/esm/index.d.ts",
+		},
+		{
+			name:      "a types condition for older TypeScript versions",
+			files:     []string{"node_modules/lib/ts5.0/index.d.ts", "node_modules/lib/index.d.ts"},
+			manifests: map[string]string{"node_modules/lib/package.json": `{"exports": {".": {"types@<=5.0": {"default": "./ts5.0/index.d.ts"}, "types": {"default": "./index.d.ts"}}}}`},
+			module:    "lib",
+			want:      "node_modules/lib/index.d.ts",
+		},
+		{
+			name:      "a condition the resolver does not read",
+			files:     []string{"node_modules/lib/browser.d.ts", "node_modules/lib/index.d.ts"},
+			manifests: map[string]string{"node_modules/lib/package.json": `{"exports": {"browser": "./browser.d.ts", "default": "./index.js"}}`},
+			module:    "lib",
+			want:      "node_modules/lib/index.d.ts",
+		},
+		{
+			name:  "an exports field that leads only to JavaScript, beside an @types package",
+			files: []string{"node_modules/@types/lib/jsx-runtime.d.ts", "node_modules/@types/lib/index.d.ts"},
+			manifests: map[string]string{
+				"node_modules/lib/package.json":        `{"exports": {".": "./index.js", "./jsx-runtime": "./jsx-runtime.js"}}`,
+				"node_modules/@types/lib/package.json": `{"exports": {".": {"types": "./index.d.ts"}, "./jsx-runtime": {"types": "./jsx-runtime.d.ts"}}}`,
+			},
+			module: "lib/jsx-runtime",
+			want:   "node_modules/@types/lib/jsx-runtime.d.ts",
+		},
+		{
+			name:      "a package that typesVersions redirects",
+			files:     []string{"node_modules/lib/index.d.ts", "node_modules/lib/ts4/index.d.ts"},
+			manifests: map[string]string{"node_modules/lib/package.json": `{"types": "index.d.ts", "typesVersions": {"<=4.0": {"*": ["ts3/*"]}, ">=4.0": {"*": ["ts4/*"]}}}`},
+			module:    "lib",
+			want:      "node_modules/lib/ts4/index.d.ts",
+		},
+		{
+			name:      "a subpath that typesVersions redirects",
+			files:     []string{"node_modules/lib/ts4/utils.d.ts"},
+			manifests: map[string]string{"node_modules/lib/package.json": `{"typesVersions": {"*": {"*": ["ts4/*"]}}}`},
+			module:    "lib/utils",
+			want:      "node_modules/lib/ts4/utils.d.ts",
+		},
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
-			root := t.TempDir()
-			for _, file := range test.files {
-				path := filepath.Join(root, filepath.FromSlash(file))
-				require.NoError(t, os.MkdirAll(filepath.Dir(path), 0o755))
-				require.NoError(t, os.WriteFile(path, nil, 0o644))
-			}
+			root := writeTree(t, test.files, test.manifests)
 			got, err := ResolveTypesEntryPoint(test.module, filepath.Join(root, filepath.FromSlash(test.from)))
 			require.NoError(t, err)
 			require.Equal(t, filepath.Join(root, filepath.FromSlash(test.want)), got)
+		})
+	}
+}
+
+// writeTree writes files, empty, and manifests, with their contents, under a new
+// temporary directory and returns it. Both are keyed by slash-separated paths.
+func writeTree(t *testing.T, files []string, manifests map[string]string) string {
+	t.Helper()
+	root := t.TempDir()
+	contents := map[string]string{}
+	for _, file := range files {
+		contents[file] = ""
+	}
+	for file, manifest := range manifests {
+		contents[file] = manifest
+	}
+	for file, text := range contents {
+		path := filepath.Join(root, filepath.FromSlash(file))
+		require.NoError(t, os.MkdirAll(filepath.Dir(path), 0o755))
+		require.NoError(t, os.WriteFile(path, []byte(text), 0o644))
+	}
+	return root
+}
+
+// TestResolveTypesEntryPointReportsAnExportsError covers an exports field that leaves an
+// import with no types. `want` is the full error, with `<root>` standing for the
+// temporary root.
+func TestResolveTypesEntryPointReportsAnExportsError(t *testing.T) {
+	tests := []struct {
+		name      string
+		files     []string
+		manifests map[string]string
+		module    string
+		want      string
+	}{
+		{
+			name:      "a subpath the exports field does not list",
+			files:     []string{"node_modules/lib/index.d.ts", "node_modules/lib/internal.d.ts"},
+			manifests: map[string]string{"node_modules/lib/package.json": `{"exports": {".": "./index.d.ts"}}`},
+			module:    "lib/internal",
+			want:      `<root>/node_modules/lib/package.json does not export "./internal"`,
+		},
+		{
+			name:      "a package whose exports field lists only subpaths",
+			files:     []string{"node_modules/lib/index.d.ts"},
+			manifests: map[string]string{"node_modules/lib/package.json": `{"exports": {"./utils": "./utils.d.ts"}}`},
+			module:    "lib",
+			want:      `<root>/node_modules/lib/package.json does not export "."`,
+		},
+		{
+			name:      "a types target that names a missing file",
+			manifests: map[string]string{"node_modules/lib/package.json": `{"exports": {".": {"types": "./dist/index.d.ts"}}}`},
+			module:    "lib",
+			want:      "types entry point from exports not found: <root>/node_modules/lib/dist/index.d.ts",
+		},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			root := writeTree(t, test.files, test.manifests)
+			_, err := ResolveTypesEntryPoint(test.module, root)
+			require.EqualError(t, err, filepath.FromSlash(strings.ReplaceAll(test.want, "<root>", root)))
+		})
+	}
+}
+
+// TestMatchesVersionRange covers the ranges a `types@` condition and a `typesVersions`
+// key spell, matched against typeScriptVersion, 5.9.0.
+func TestMatchesVersionRange(t *testing.T) {
+	tests := []struct {
+		versions string
+		want     bool
+	}{
+		{"*", true},
+		{">=4.1", true},
+		{">=6", false},
+		{"<=5.0", false},
+		{"<=5.9", true},
+		{"<6", true},
+		{">5", false},
+		{">=4.1 <6", true},
+		{">=4.1 <5", false},
+		{"5.9", true},
+		{"=5", true},
+		{"~5.9", false},
+		{"", false},
+	}
+	for _, test := range tests {
+		t.Run(test.versions, func(t *testing.T) {
+			require.Equal(t, test.want, matchesVersionRange(test.versions))
 		})
 	}
 }
@@ -439,80 +591,5 @@ func TestIntegrationWithRealTypesReact(t *testing.T) {
 
 	if !strings.HasSuffix(entryPoint, ".d.ts") {
 		t.Errorf("Entry point should be a .d.ts file, got: %s", entryPoint)
-	}
-}
-
-func TestResolveExportsTypes(t *testing.T) {
-	tests := []struct {
-		name     string
-		exports  any
-		expected string
-	}{
-		{
-			name:     "direct .d.ts string",
-			exports:  "./index.d.ts",
-			expected: "./index.d.ts",
-		},
-		{
-			name:     "direct .js string (not .d.ts)",
-			exports:  "./index.js",
-			expected: "",
-		},
-		{
-			name:     "object with types key",
-			exports:  map[string]any{"types": "./dist/index.d.ts"},
-			expected: "./dist/index.d.ts",
-		},
-		{
-			name:     "object with dot entry",
-			exports:  map[string]any{".": map[string]any{"types": "./lib/index.d.ts"}},
-			expected: "./lib/index.d.ts",
-		},
-		{
-			name: "nested import condition",
-			exports: map[string]any{
-				".": map[string]any{
-					"import": map[string]any{"types": "./esm/index.d.ts"},
-				},
-			},
-			expected: "./esm/index.d.ts",
-		},
-		{
-			name: "nested require condition",
-			exports: map[string]any{
-				".": map[string]any{
-					"require": map[string]any{"types": "./cjs/index.d.ts"},
-				},
-			},
-			expected: "./cjs/index.d.ts",
-		},
-		{
-			name: "nested default condition",
-			exports: map[string]any{
-				".": map[string]any{
-					"default": map[string]any{"types": "./default/index.d.ts"},
-				},
-			},
-			expected: "./default/index.d.ts",
-		},
-		{
-			name:     "empty object",
-			exports:  map[string]any{},
-			expected: "",
-		},
-		{
-			name:     "nil",
-			exports:  nil,
-			expected: "",
-		},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			result := resolveExportsTypes(tt.exports)
-			if result != tt.expected {
-				t.Errorf("Expected %q, got %q", tt.expected, result)
-			}
-		})
 	}
 }
