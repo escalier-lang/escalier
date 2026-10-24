@@ -259,6 +259,8 @@ type checker struct {
 	dependencies set.Set[string]
 	// checkJsDecorators is Options.CheckJsDecorators for this run.
 	checkJsDecorators bool
+	// definitionsSettled is set once settleLoadedDefinitions has run.
+	definitionsSettled bool
 	// ambientBound is set once bindAmbientExports has loaded the literal classes' packages
 	// in a run with Options.NoAmbientNames set.
 	ambientBound bool

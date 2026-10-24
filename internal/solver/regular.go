@@ -125,7 +125,7 @@ func (c *Context) uniformKnotOf(name string) *uniformKnot {
 	if !registered || def.Body == nil {
 		return &uniformKnot{}
 	}
-	c.checkThawedAlias(def, name, "uniformKnotOf")
+	c.checkThawedAlias(def, name, "probing the uniform knot")
 	if c.uniformKnots == nil {
 		c.uniformKnots = map[string]*uniformKnot{}
 	}

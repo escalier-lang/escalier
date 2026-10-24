@@ -4,8 +4,10 @@ import (
 	"context"
 	"fmt"
 	"io/fs"
+	"maps"
 	"os"
 	"path/filepath"
+	"slices"
 	"sort"
 	"testing"
 
@@ -238,36 +240,70 @@ func sourcesOf(srcs map[string]string) []*ast.Source {
 	return sources
 }
 
-// TestCheckThawedRejectsAStdlibVar asserts that a run forked from the cached checker
-// panics when it adds a bound to a type variable the stdlib load minted.
-func TestCheckThawedRejectsAStdlibVar(t *testing.T) {
+// TestCheckThawedRejectsStdlibState asserts that a run forked from the cached checker
+// panics on work that would write to a variable or definition the stdlib load created.
+func TestCheckThawedRejectsStdlibState(t *testing.T) {
 	groups, err := BuildPackageClosure(benchTree, ambientPackages)
 	require.NoError(t, err)
-	run, ok := ambientChecker(benchTree, StdlibSource(benchTree), groups, Options{})
-	require.True(t, ok)
-	require.NotEmpty(t, run.ctx.frozenVars)
-
-	var stdlibVar *soltype.TypeVarType
-	for v := range run.ctx.frozenVars {
-		if stdlibVar == nil || v.ID < stdlibVar.ID {
-			stdlibVar = v
-		}
+	// Each case readies a write on run and returns the panic it expects with the write.
+	cases := []struct {
+		name  string
+		ready func(run *checker) (want string, write func())
+	}{
+		{
+			name: "type variable bound",
+			ready: func(run *checker) (string, func()) {
+				var v *soltype.TypeVarType
+				for frozen := range run.ctx.frozenVars {
+					if v == nil || frozen.ID < v.ID {
+						v = frozen
+					}
+				}
+				return fmt.Sprintf("a type bound wrote stdlib type variable %d", v.ID), func() {
+					run.ctx.addUpperBound(v, &soltype.PrimType{Prim: soltype.NumPrim})
+				}
+			},
+		},
+		{
+			name: "class variance",
+			ready: func(run *checker) (string, func()) {
+				def := run.ctx.classes[run.ctx.arrayClass]
+				def.varianceProvisional = true
+				def.varianceTriedAt = -1
+				return "settleVariance wrote stdlib class " + def.varianceSelf, func() {
+					run.ctx.settleVariance(def)
+				}
+			},
+		},
+		{
+			name: "alias uniform knot",
+			ready: func(run *checker) (string, func()) {
+				name := slices.Min(slices.Collect(maps.Keys(run.ctx.aliases)))
+				delete(run.ctx.uniformKnots, name)
+				return "probing the uniform knot for stdlib alias " + name, func() {
+					run.ctx.uniformKnotOf(name)
+				}
+			},
+		},
 	}
-	want := fmt.Sprintf("a type bound wrote stdlib type variable %d", stdlibVar.ID)
-	require.PanicsWithValue(t, want, func() {
-		run.ctx.addUpperBound(stdlibVar, &soltype.PrimType{Prim: soltype.NumPrim})
-	})
+	for _, tt := range cases {
+		t.Run(tt.name, func(t *testing.T) {
+			run, ok := ambientChecker(benchTree, StdlibSource(benchTree), groups, Options{})
+			require.True(t, ok)
+			want, write := tt.ready(run)
+			require.PanicsWithValue(t, want, write)
+		})
+	}
 }
 
 // TestAmbientCheckerSettlesLoadedDefinitions asserts that the cached checker holds no
-// class whose variance a run would measure again, and a memoized uniform knot for
-// every alias.
+// provisional class, and a memoized uniform knot for every alias.
 func TestAmbientCheckerSettlesLoadedDefinitions(t *testing.T) {
 	groups, err := BuildPackageClosure(benchTree, ambientPackages)
 	require.NoError(t, err)
 	c := loadAmbientChecker(benchTree, groups, Options{})
 	for name, def := range c.ctx.classes {
-		require.False(t, def.varianceProvisional && !def.varianceUnsettled, name)
+		require.False(t, def.varianceProvisional, name)
 	}
 	for name := range c.ctx.aliases {
 		require.Contains(t, c.ctx.uniformKnots, name)

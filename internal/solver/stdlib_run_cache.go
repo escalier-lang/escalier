@@ -211,19 +211,31 @@ func reachableVars(c *checker) (set.Set[*soltype.TypeVarType], set.Set[*soltype.
 	return vars, lts
 }
 
-// settleLoadedDefinitions computes every fact about the loaded classes and aliases that
-// would otherwise be computed the first time a run reads it:
+// settleLoadedDefinitions computes every fact about the classes and aliases registered so
+// far that would otherwise be computed the first time something reads it:
 //
 //  1. Each provisional class is measured again until no class settles. A class still
-//     provisional after that keeps Invariant throughout and is marked unsettled, so
-//     settleVariance does not measure it again.
+//     provisional after that has its Invariant vectors stored as final.
 //  2. Each alias's uniform knot is probed and memoized.
 //
-// Both draw any variable they mint from the library counters.
+// A second call does nothing. The type variables and unique symbols it mints come from
+// the library counters. The μ-binders a knot mints continue the run's own count, since
+// two knots composed into one type need distinct binders.
 func (c *checker) settleLoadedDefinitions() {
+	if c.definitionsSettled {
+		return
+	}
+	c.definitionsSettled = true
 	classNames := slices.Sorted(maps.Keys(c.ctx.classes))
 	aliasNames := slices.Sorted(maps.Keys(c.ctx.aliases))
 	c.withLibCounters(func() {
+		// settleVariance skips a class tried at the current count, and a try that waited
+		// on a class measured later bumped nothing. Each is tried once more regardless.
+		for _, name := range classNames {
+			if def := c.ctx.classes[name]; def.varianceProvisional {
+				def.varianceTriedAt = -1
+			}
+		}
 		for {
 			settled := c.ctx.measuredClasses
 			for _, name := range classNames {
@@ -234,10 +246,13 @@ func (c *checker) settleLoadedDefinitions() {
 			}
 		}
 		for _, name := range classNames {
-			// A loaded class waits only on other loaded classes, so no run's classes can
-			// settle it later.
+			// Every class these wait on is registered and measured by now, so no later
+			// measurement settles them. Invariant is sound for every parameter. Storing it
+			// as final keeps settleVarianceGroup from pulling the class into the group of
+			// a class declared after this point.
 			if def := c.ctx.classes[name]; def.varianceProvisional {
-				def.varianceUnsettled = true
+				def.varianceProvisional = false
+				def.varianceWaitsOn = nil
 			}
 		}
 		for _, name := range aliasNames {

@@ -257,11 +257,12 @@ func (c *Context) checkThawedClass(def *ClassDef, site string) {
 	}
 }
 
-// checkThawedAlias is checkThawed for an alias definition. name is the alias's
-// registered name.
+// checkThawedAlias panics when def is an alias definition registered on the cached stdlib
+// checker. name is the alias's registered name, and site names the work about to be done
+// for it, for the panic message.
 func (c *Context) checkThawedAlias(def *AliasDef, name, site string) {
 	if c.frozenAliases.Contains(def) {
-		panic(fmt.Sprintf("%s wrote stdlib alias %s", site, name))
+		panic(fmt.Sprintf("%s for stdlib alias %s", site, name))
 	}
 }
 
