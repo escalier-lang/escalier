@@ -786,6 +786,7 @@ func (c *checker) runLivenessPrePass(scope *Scope, astParams []*ast.Param, recv 
 	}
 	c.fn.paramVarIDs = c.fn.paramVarIDs.Union(captureVarIDs)
 	c.fn.captureVarIDs = captureVarIDs
+	c.collectSharedLocals(scope, body)
 
 	if selfName != "" {
 		c.seedSelfCaptureEdges(scope, closure, renameResult.ExtraParamVarIDs[selfName], renameResult.ExtraParamVarIDs)
