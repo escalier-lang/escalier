@@ -678,6 +678,12 @@ func (c *Context) peelTransparent(t soltype.Type) soltype.Type {
 			t = c.expandAlias(ty)
 		case *soltype.RecursiveType:
 			t = unfoldRecursive(ty)
+		case *soltype.TypeAppType:
+			reduced, ok := c.reduceTypeApp(ty)
+			if !ok {
+				return t
+			}
+			t = reduced
 		default:
 			return t
 		}
@@ -1143,6 +1149,13 @@ func (c *Context) constrain(sub, super soltype.Type, seen *seenPairs, mutCtx boo
 		if superVar.Rigid != nil && superVar.Rigid.FromBelow && len(typeVarsIn(sub)) == 0 {
 			return c.constrain(sub, c.rigidSkolem(superVar), seen, mutCtx)
 		}
+	}
+
+	// An application or a constructor is decided by the rules for type-constructor heads. This
+	// runs ahead of alias expansion, so `F<A>` matches an alias instance by its name before the
+	// name is expanded away.
+	if errs, ok := c.constrainTypeApp(sub, super, seen, mutCtx); ok {
+		return errs
 	}
 
 	// An alias, a `typeof` query, a `keyof`, an indexed access `T[K]`, and a conditional are

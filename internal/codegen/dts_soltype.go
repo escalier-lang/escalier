@@ -336,6 +336,11 @@ func (b *solTypeAnnBuilder) typeAnn(t soltype.Type) TypeAnn {
 		// TypeScript has no complement. `unknown` reduces the `A & ~B` a narrowed
 		// match remainder produces to `A`, keeping the type it refines.
 		return NewUnknownTypeAnn(nil)
+	case *soltype.TypeAppType, *soltype.TypeCtorType:
+		// TypeScript has no type-constructor parameters, so `F<A>` and a constructor argument
+		// such as `Array` in `Functor<Array>` both render as `unknown`.
+		// TODO: emit the URI-registry encoding so the relation between arguments survives.
+		return NewUnknownTypeAnn(nil)
 	}
 	panic(fmt.Sprintf("typeAnn: unhandled %T", t))
 }

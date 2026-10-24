@@ -383,6 +383,9 @@ type TypeParam struct {
 	Default    Type // nil ⇒ required
 	UpperBound Type // nil ⇒ unbounded
 	LowerBound Type // nil ⇒ none
+	// Arity is the number of arguments the parameter takes when it stands for a type
+	// constructor, as 1 for `F<_>`. It is 0 for a parameter that stands for a type.
+	Arity int
 }
 
 // DeclaredUpperBounds returns tp's upper bounds as its binder states them. That is the
@@ -1638,6 +1641,18 @@ func LevelOf(t Type) int {
 		// type parameter lifts the level and the freshener/extruder prune descends to
 		// freshen the operand.
 		return LevelOf(t.Operand)
+	case *TypeAppType:
+		// An application's level is the max over its head and arguments, so an out-of-level
+		// constructor variable in the head lifts the level the way an argument does.
+		return max(LevelOf(t.Head), maxMemberLevel(t.Args))
+	case *TypeCtorType:
+		m := 0
+		for _, f := range t.Fixed {
+			if f != nil {
+				m = max(m, LevelOf(f))
+			}
+		}
+		return m
 	case *IndexType:
 		// An indexed-access residual's level is the max over its two operands, so a `T[K]`
 		// with an out-of-level target or index lifts the level and the freshener/extruder

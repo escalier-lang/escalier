@@ -839,6 +839,15 @@ func (v *varianceVisitor) withMutable(m bool) *varianceVisitor {
 
 func (v *varianceVisitor) EnterType(t soltype.Type, pol soltype.Polarity) soltype.EnterResult {
 	switch t := t.(type) {
+	case *soltype.TypeAppType:
+		// constrainTypeApp relates an application's arguments invariantly, so a parameter
+		// reached through `F<T>` occupies both positions. The head reads as written.
+		t.Head.Accept(v, pol)
+		for _, arg := range t.Args {
+			arg.Accept(v, pol)
+			arg.Accept(v, pol.Flip())
+		}
+		return soltype.EnterResult{SkipChildren: true}
 	case *soltype.RefType:
 		if !t.Mut {
 			// Nothing writes through an immutable borrow, so its pointee reads as written
