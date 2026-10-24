@@ -6,6 +6,7 @@ import (
 	"github.com/escalier-lang/escalier/internal/ast"
 	"github.com/escalier-lang/escalier/internal/snapshot"
 	"github.com/gkampitakis/go-snaps/snaps"
+	"github.com/stretchr/testify/require"
 )
 
 // ============================================================================
@@ -620,40 +621,111 @@ func TestAmbientNamespaceVariableDeclarations(t *testing.T) {
 	}
 }
 
-// TestTopLevelVariableRequiresDeclare tests that variable declarations
-// at the top level (not inside a namespace) still require the 'declare' keyword
-func TestTopLevelVariableRequiresDeclare(t *testing.T) {
+// TestExportedDeclarationWithoutDeclare covers top-level declarations that
+// TypeScript makes ambient through `export` alone, such as the
+// `export function jsx(...)` that `@types/react/jsx-runtime.d.ts` declares.
+func TestExportedDeclarationWithoutDeclare(t *testing.T) {
 	tests := []struct {
-		name  string
-		input string
+		name      string
+		input     string
+		want      Statement
+		isDefault bool
 	}{
 		{
-			"top-level var without declare",
-			"var x: number;",
+			name:  "export function",
+			input: "export function f(): void;",
+			want:  &FuncDecl{},
 		},
 		{
-			"top-level let without declare",
-			"let y: string;",
+			name: "export function with a multi-line parameter list",
+			input: `export function jsx(
+    type: React.ElementType,
+    props: unknown,
+    key?: React.Key,
+): React.ReactElement;`,
+			want: &FuncDecl{},
 		},
 		{
-			"top-level const without declare",
-			"const z: boolean;",
+			name:      "export default function",
+			input:     "export default function f(): void;",
+			want:      &FuncDecl{},
+			isDefault: true,
+		},
+		{
+			name:  "export const",
+			input: "export const x: number;",
+			want:  &VarDecl{},
+		},
+		{
+			name:  "export let",
+			input: "export let x: number;",
+			want:  &VarDecl{},
+		},
+		{
+			name:  "export var",
+			input: "export var x: number;",
+			want:  &VarDecl{},
+		},
+		{
+			name:  "export class",
+			input: "export class C { m(): void; }",
+			want:  &ClassDecl{},
+		},
+		{
+			name:  "export abstract class",
+			input: "export abstract class C { abstract m(): void; }",
+			want:  &ClassDecl{},
 		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			source := &ast.Source{
-				Path:     "test.d.ts",
-				Contents: tt.input,
-				ID:       0,
-			}
-			parser := NewDtsParser(source)
-			_, errors := parser.ParseModule()
+			source := &ast.Source{Path: "test.d.ts", Contents: tt.input, ID: 0}
+			module, errs := NewDtsParser(source).ParseModule()
 
-			if len(errors) == 0 {
-				t.Error("Expected parse errors for top-level variable without 'declare', but got none")
-			}
+			require.Empty(t, errs)
+			require.Len(t, module.Statements, 1)
+			stmt := module.Statements[0]
+			require.IsType(t, tt.want, stmt)
+			decl, ok := stmt.(Decl)
+			require.True(t, ok)
+			require.True(t, decl.Export())
+			require.Equal(t, tt.isDefault, decl.Default())
+			require.False(t, decl.Declare())
+		})
+	}
+}
+
+// TestTopLevelDeclarationWithoutDeclareOrExport covers top-level declarations
+// that carry neither `declare` nor `export`. Every declaration in a .d.ts file
+// is ambient, so each one parses as a declaration that is not exported.
+func TestTopLevelDeclarationWithoutDeclareOrExport(t *testing.T) {
+	tests := []struct {
+		name  string
+		input string
+		want  Statement
+	}{
+		{name: "function", input: "function f(): void;", want: &FuncDecl{}},
+		{name: "var", input: "var x: number;", want: &VarDecl{}},
+		{name: "let", input: "let x: number;", want: &VarDecl{}},
+		{name: "const", input: "const x: number;", want: &VarDecl{}},
+		{name: "class", input: "class C { m(): void; }", want: &ClassDecl{}},
+		{name: "abstract class", input: "abstract class C { abstract m(): void; }", want: &ClassDecl{}},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			source := &ast.Source{Path: "test.d.ts", Contents: tt.input, ID: 0}
+			module, errs := NewDtsParser(source).ParseModule()
+
+			require.Empty(t, errs)
+			require.Len(t, module.Statements, 1)
+			stmt := module.Statements[0]
+			require.IsType(t, tt.want, stmt)
+			decl, ok := stmt.(Decl)
+			require.True(t, ok)
+			require.False(t, decl.Export())
+			require.False(t, decl.Declare())
 		})
 	}
 }
