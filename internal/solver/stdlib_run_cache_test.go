@@ -173,3 +173,19 @@ func TestAmbientCheckerRunInfoHoldsOnlyTheModule(t *testing.T) {
 		require.Equal(t, module.Files[0].SourceID, node.Span().SourceID)
 	}
 }
+
+// TestAmbientCheckerServesRuns asserts that the cache serves the committed tree, so the
+// tests comparing cached runs with fresh ones compare against a cached run rather than
+// the fallback to a fresh load.
+func TestAmbientCheckerServesRuns(t *testing.T) {
+	groups, err := BuildPackageClosure(benchTree, ambientPackages)
+	require.NoError(t, err)
+	source := StdlibSource(benchTree)
+
+	first, ok := ambientChecker(benchTree, source, groups, Options{})
+	require.True(t, ok)
+	second, ok := ambientChecker(benchTree, source, groups, Options{})
+	require.True(t, ok)
+	require.NotSame(t, first, second)
+	require.NotSame(t, first.ctx, second.ctx)
+}
