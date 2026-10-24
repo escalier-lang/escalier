@@ -45,14 +45,17 @@ func TestReadPackageConfig(t *testing.T) {
 			got, err := ReadPackageConfig(dir)
 			if test.wantErr {
 				require.Error(t, err)
+				// A caller that goes on with the config still resolves imports from
+				// Dir, and no import is restricted.
+				require.Equal(t, PackageConfig{Dir: dir}, got)
 				return
 			}
 			require.NoError(t, err)
-			// Dir is the temporary directory, so each case's want leaves it out. A case
-			// that leaves Dependencies out lists none.
+			// Dir is the temporary directory, so each case's want leaves it out. A
+			// package.json that parses lists its Dependencies even when it names none.
 			want := test.want
 			want.Dir = dir
-			if want.Dependencies == nil {
+			if test.packageJSON != "" && want.Dependencies == nil {
 				want.Dependencies = set.NewSet[string]()
 			}
 			require.Equal(t, want, got)
@@ -89,7 +92,8 @@ func TestCheckPackageAmbientNames(t *testing.T) {
 
 // TestCheckPackageResolvesNodeModules covers a lib/ file importing an npm package from the
 // `node_modules` beside the package.json ReadPackageConfig read. The import resolves only
-// when the package.json lists the package, and a config with no Dir resolves no such import.
+// when the package.json lists the package. A directory with no package.json restricts no
+// import, and a config with no Dir resolves no such import.
 func TestCheckPackageResolvesNodeModules(t *testing.T) {
 	tests := []struct {
 		name string
@@ -99,6 +103,7 @@ func TestCheckPackageResolvesNodeModules(t *testing.T) {
 		devDependencies string
 		src             string
 		noDir           bool
+		noPackageJSON   bool
 		wantErrs        []string
 	}{
 		{
@@ -142,6 +147,18 @@ func TestCheckPackageResolvesNodeModules(t *testing.T) {
 			wantErrs:        []string{`"plain" is not listed in package.json dependencies`, "Unknown identifier: p"},
 		},
 		{
+			name:          "NoPackageJSON",
+			noPackageJSON: true,
+			src:           "import \"plain\" as p\nval v: string = p.version\n",
+			wantErrs:      []string{},
+		},
+		{
+			name:         "RelativePath",
+			dependencies: `{"plain": "1"}`,
+			src:          "import \"../plain\" as p\n",
+			wantErrs:     []string{`cannot resolve import "../plain": "../plain" is a relative path, not a package name`},
+		},
+		{
 			name:  "NoDir",
 			src:   "import \"plain\" as p\nval v: string = p.version\n",
 			noDir: true,
@@ -162,6 +179,9 @@ func TestCheckPackageResolvesNodeModules(t *testing.T) {
 				"package.json": fmt.Sprintf(`{"dependencies": %s, "devDependencies": %s}`,
 					orEmptyObject(test.dependencies), orEmptyObject(test.devDependencies)),
 			} {
+				if path == "package.json" && test.noPackageJSON {
+					continue
+				}
 				full := filepath.Join(dir, filepath.FromSlash(path))
 				require.NoError(t, os.MkdirAll(filepath.Dir(full), 0o755))
 				require.NoError(t, os.WriteFile(full, []byte(contents), 0o644))

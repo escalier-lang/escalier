@@ -35,10 +35,8 @@ func ResolveTypeReference(name string, fromDir string) (string, error) {
 // resolveTypes is ResolveTypesEntryPoint, trying the `@types` package first in each
 // directory when typesFirst is set.
 func resolveTypes(moduleName string, fromDir string, typesFirst bool) (string, error) {
-	for _, segment := range strings.Split(moduleName, "/") {
-		if segment == "." || segment == ".." || segment == "" {
-			return "", fmt.Errorf("%q is a relative path, not a package name", moduleName)
-		}
+	if err := ValidateModuleName(moduleName); err != nil {
+		return "", err
 	}
 	var tried []string
 	var entryErr error
@@ -86,7 +84,7 @@ func resolveTypes(moduleName string, fromDir string, typesFirst bool) (string, e
 	return "", fmt.Errorf("no types found for %q; looked in %s", moduleName, strings.Join(tried, ", "))
 }
 
-// typesPackageName returns the `@types` package name for moduleName. A scoped package
+// TypesPackageName returns the `@types` package name for moduleName. A scoped package
 // `@scope/name` publishes its types as `@types/scope__name`, and any subpath after the
 // package name is kept.
 func TypesPackageName(moduleName string) string {
@@ -98,6 +96,17 @@ func TypesPackageName(moduleName string) string {
 		return moduleName
 	}
 	return scope + "__" + rest
+}
+
+// ValidateModuleName returns an error when moduleName has an empty, `.` or `..`
+// segment, which makes it a path rather than a package name.
+func ValidateModuleName(moduleName string) error {
+	for _, segment := range strings.Split(moduleName, "/") {
+		if segment == "." || segment == ".." || segment == "" {
+			return fmt.Errorf("%q is a relative path, not a package name", moduleName)
+		}
+	}
+	return nil
 }
 
 // PackageName returns the package a module specifier names, leaving out any subpath.

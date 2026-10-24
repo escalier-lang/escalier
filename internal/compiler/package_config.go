@@ -25,8 +25,8 @@ type PackageConfig struct {
 	// Dependencies holds the packages the package.json lists under `dependencies`,
 	// `peerDependencies` and `optionalDependencies`. An import with no URI scheme
 	// resolves only when it names one of them. `devDependencies` are left out, since
-	// a published package's own code cannot rely on them being installed. It is nil
-	// in the zero value, which lets such an import name any package.
+	// a published package's own code cannot rely on them being installed. A nil
+	// Dependencies lets such an import name any package.
 	Dependencies set.Set[string]
 }
 
@@ -41,9 +41,10 @@ type packageJSON struct {
 }
 
 // ReadPackageConfig reads the PackageConfig from the package.json in dir, and records dir
-// as its absolute Dir. A package.json with no `escalier` field gives the defaults. A
-// directory with no package.json, or a package.json that does not parse, also lists no
-// Dependencies. It returns an error when the file cannot be read or does not parse.
+// as its absolute Dir. A directory with no package.json, or a package.json with no
+// `escalier` field, gives the defaults. Dependencies is non-nil only when a package.json
+// parses, so a directory without one, or one mid-edit, restricts no import. It returns
+// an error when the file cannot be read or does not parse.
 func ReadPackageConfig(dir string) (PackageConfig, error) {
 	absDir, err := filepath.Abs(dir)
 	if err != nil {
@@ -52,7 +53,7 @@ func ReadPackageConfig(dir string) (PackageConfig, error) {
 	path := filepath.Join(absDir, "package.json")
 	contents, err := os.ReadFile(path)
 	if errors.Is(err, fs.ErrNotExist) {
-		return PackageConfig{Dir: absDir, Dependencies: set.NewSet[string]()}, nil
+		return PackageConfig{Dir: absDir}, nil
 	}
 	if err != nil {
 		return PackageConfig{}, err
@@ -61,7 +62,7 @@ func ReadPackageConfig(dir string) (PackageConfig, error) {
 	if err := json.Unmarshal(contents, &pkg); err != nil {
 		// Dir is still known, so a caller that goes on with the defaults resolves the
 		// package's imports.
-		return PackageConfig{Dir: absDir, Dependencies: set.NewSet[string]()}, fmt.Errorf("failed to parse %s: %w", path, err)
+		return PackageConfig{Dir: absDir}, fmt.Errorf("failed to parse %s: %w", path, err)
 	}
 	config := PackageConfig{Dir: absDir, Dependencies: set.NewSet[string]()}
 	for _, deps := range []map[string]string{pkg.Dependencies, pkg.PeerDependencies, pkg.OptionalDependencies} {
