@@ -46,7 +46,7 @@ type sharedState struct {
 }
 
 // sharedFlowCollector gathers every sharedFlow of one function body. It stops at a nested
-// function, whose body runs its own pre-pass.
+// function, whose body runs its own collectSharedLocals.
 type sharedFlowCollector struct {
 	ast.DefaultVisitor
 	state *sharedState
@@ -244,8 +244,8 @@ func (c *checker) markSharedCaptures(scope *Scope, names []string) {
 		if c.fn.varIDNames[id] != name {
 			continue
 		}
-		// A store inside a closure is a flow of this body that the pre-pass did not see, so
-		// it joins the flows a later settle replays.
+		// A store inside a closure is a flow of this body that collectSharedLocals did not
+		// see, so it joins the flows a later settle replays.
 		c.fn.shared.flows = append(c.fn.shared.flows, sharedFlow{targets: []liveness.VarID{id}})
 	}
 	c.settleSharedLocals()
@@ -266,8 +266,9 @@ func (c *checker) isSharedLocal(id liveness.VarID) bool {
 //   - a call of a function whose body returns such a value.
 //
 // A value that copies, such as a number, is never shared. Once e is walked its recorded type
-// decides that. Before then, as in the pre-pass, only a binding outside the frame is known to
-// copy, so a local read is judged by its flows alone. scope resolves a name outside the frame.
+// decides that. Before then, as when collectSharedLocals runs, only a binding outside the
+// frame is known to copy, so a local read is judged by its flows alone. scope resolves a name
+// outside the frame.
 func (c *checker) mayYieldShared(scope *Scope, e ast.Expr, shared set.Set[liveness.VarID]) bool {
 	if e == nil {
 		return false

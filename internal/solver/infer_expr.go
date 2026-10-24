@@ -2535,9 +2535,9 @@ func (c *checker) inferAssign(scope *Scope, lvl int, e *ast.BinaryExpr) soltype.
 		}
 	}
 	sourceT := c.inferExpr(scope, lvl, e.Right)
-	// The pre-pass could not resolve a call of a function this body declares. The walk has
-	// reached that function by now, so a store of the call's result marks the local it writes,
-	// the way a binding's initializer does in inferVarDeclInit.
+	// collectSharedLocals could not resolve a call of a function this body declares. The walk
+	// has reached that function by now, so a store of the call's result marks the local it
+	// writes, the way a binding's initializer does in inferVarDeclInit.
 	c.markSharedFlow(scope, placeRootVarIDs(e.Left), e.Right)
 	// Record `undefined` on e up front as the recovery type. Every error path below
 	// returns undefinedT without recording a type, so this guarantees the node is typed
