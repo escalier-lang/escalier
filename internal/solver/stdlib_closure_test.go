@@ -1,9 +1,11 @@
 package solver
 
 import (
+	"os"
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/escalier-lang/escalier/internal/soltype"
 	"github.com/stretchr/testify/require"
@@ -891,5 +893,52 @@ func TestTheCommittedTypedArraysResolveTheirOwnNames(t *testing.T) {
 
 	for _, msg := range errorMessagesOf(res.Errors) {
 		require.NotContains(t, msg, "cannot find type")
+	}
+}
+
+// An edit to a file between two closure builds over the same directory changes
+// the second closure, whether or not the first build's graph was cached. Each
+// case backdates the tree so the first build caches its graph, then rewrites
+// std/beta.esc to import std:gamma, an import of the same length as std:alpha.
+func TestTheClosurePicksUpAnEditBetweenBuilds(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name string
+		// editedAt is the modification time the edited file is given, or zero to
+		// keep the time the write itself recorded.
+		editedAt time.Time
+	}{
+		{name: "edited just now"},
+		{name: "edited at an older time with the same size", editedAt: time.Now().Add(-2 * time.Hour)},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			dir := seedStdlib(t, map[string]string{
+				"std/alpha.esc": `export declare val a: number`,
+				"std/beta.esc":  `import "std:alpha"`,
+				"std/gamma.esc": `export declare val c: number`,
+			})
+			past := time.Now().Add(-time.Hour)
+			for _, name := range []string{"alpha.esc", "beta.esc", "gamma.esc"} {
+				require.NoError(t, os.Chtimes(filepath.Join(dir, "std", name), past, past))
+			}
+
+			closure, err := BuildPackageClosure(dir, []string{"std:beta"})
+			require.NoError(t, err)
+			require.Equal(t, []string{"std:alpha", "std:beta"}, closure["std:beta"])
+
+			beta := filepath.Join(dir, "std", "beta.esc")
+			require.NoError(t, os.WriteFile(beta, []byte(`import "std:gamma"`), 0o644))
+			if !tt.editedAt.IsZero() {
+				require.NoError(t, os.Chtimes(beta, tt.editedAt, tt.editedAt))
+			}
+
+			closure, err = BuildPackageClosure(dir, []string{"std:beta"})
+			require.NoError(t, err)
+			require.Equal(t, []string{"std:beta", "std:gamma"}, closure["std:beta"])
+		})
 	}
 }

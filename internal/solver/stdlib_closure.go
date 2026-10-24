@@ -8,6 +8,8 @@ import (
 	"slices"
 	"sort"
 	"strings"
+	"sync"
+	"time"
 
 	"github.com/escalier-lang/escalier/internal/ast"
 	"github.com/escalier-lang/escalier/internal/parser"
@@ -91,10 +93,45 @@ func reachable(edges map[string][]string, roots []string) []string {
 	return out
 }
 
-// buildPackageGraph reads every `.esc` file under dir's scheme subdirectories
-// and returns the URIs each one imports.
+// buildPackageGraph returns the URIs each `.esc` file under dir's scheme
+// subdirectories imports.
+//
+// Every run asks for the same tree's graph, and reading the tree costs a few
+// megabytes of I/O per run. So the graph is cached per directory and reused
+// while each file's size and modification time match what the cache recorded.
 func buildPackageGraph(dir string) (map[string][]string, error) {
-	edges := map[string][]string{}
+	stamps, err := scanPackageFiles(dir)
+	if err != nil {
+		return nil, err
+	}
+	if edges, held := packageGraphs.get(dir, stamps); held {
+		return edges, nil
+	}
+
+	edges := make(map[string][]string, len(stamps))
+	for _, stamp := range stamps {
+		imports, err := readPackageImports(stamp.path)
+		if err != nil {
+			return nil, err
+		}
+		edges[stamp.uri] = imports
+	}
+	packageGraphs.put(dir, stamps, edges)
+	return edges, nil
+}
+
+// packageFileStamp identifies one pseudo-package file by what a stat reports.
+type packageFileStamp struct {
+	uri     string
+	path    string
+	size    int64
+	modTime time.Time
+}
+
+// scanPackageFiles stats every `.esc` file under dir's scheme subdirectories,
+// in scheme order and then by file name.
+func scanPackageFiles(dir string) ([]packageFileStamp, error) {
+	var stamps []packageFileStamp
 	for _, scheme := range closureSchemes {
 		schemeDir := filepath.Join(dir, scheme)
 		entries, err := os.ReadDir(schemeDir)
@@ -110,15 +147,79 @@ func buildPackageGraph(dir string) (map[string][]string, error) {
 			if entry.IsDir() || !strings.HasSuffix(entry.Name(), ".esc") {
 				continue
 			}
-			uri := scheme + ":" + strings.TrimSuffix(entry.Name(), ".esc")
-			imports, err := readPackageImports(filepath.Join(schemeDir, entry.Name()))
+			path := filepath.Join(schemeDir, entry.Name())
+			// os.Stat rather than entry.Info, so an edit to the target of a
+			// symlinked file changes the stamp.
+			info, err := os.Stat(path)
 			if err != nil {
-				return nil, err
+				return nil, fmt.Errorf("cannot stat %s: %w", path, err)
 			}
-			edges[uri] = imports
+			stamps = append(stamps, packageFileStamp{
+				uri:     scheme + ":" + strings.TrimSuffix(entry.Name(), ".esc"),
+				path:    path,
+				size:    info.Size(),
+				modTime: info.ModTime(),
+			})
 		}
 	}
-	return edges, nil
+	return stamps, nil
+}
+
+// packageGraphCache holds one import graph per stdlib directory, with the stamps
+// of the files it was read from.
+//
+// A stamp misses an edit that keeps the file's size and lands within the
+// filesystem's timestamp granularity of the previous write. put guards against
+// that by refusing a graph read from any file modified within racyWindow of the
+// read, so a later edit can only produce a modification time the cache has not
+// recorded.
+type packageGraphCache struct {
+	mu      sync.Mutex
+	entries map[string]packageGraphEntry
+}
+
+// packageGraphEntry is one directory's graph and the stamps it was read under.
+type packageGraphEntry struct {
+	stamps []packageFileStamp
+	edges  map[string][]string
+}
+
+// racyWindow is the coarsest timestamp granularity a filesystem the stdlib may
+// sit on records. FAT records two seconds.
+const racyWindow = 2 * time.Second
+
+var packageGraphs = &packageGraphCache{entries: map[string]packageGraphEntry{}}
+
+// get returns the graph cached for dir when it was read under exactly stamps.
+// The caller must not mutate the returned map or its slices.
+func (c *packageGraphCache) get(dir string, stamps []packageFileStamp) (map[string][]string, bool) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	entry, held := c.entries[dir]
+	if !held || !slices.EqualFunc(entry.stamps, stamps, sameStamp) {
+		return nil, false
+	}
+	return entry.edges, true
+}
+
+// put records edges as dir's graph under stamps. It records nothing when a file
+// was modified within racyWindow of now, and drops whatever dir held before.
+func (c *packageGraphCache) put(dir string, stamps []packageFileStamp, edges map[string][]string) {
+	cutoff := time.Now().Add(-racyWindow)
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	for _, stamp := range stamps {
+		if !stamp.modTime.Before(cutoff) {
+			delete(c.entries, dir)
+			return
+		}
+	}
+	c.entries[dir] = packageGraphEntry{stamps: stamps, edges: edges}
+}
+
+// sameStamp reports whether a and b describe the same file at the same state.
+func sameStamp(a, b packageFileStamp) bool {
+	return a.uri == b.uri && a.path == b.path && a.size == b.size && a.modTime.Equal(b.modTime)
 }
 
 // readPackageImports returns the pseudo-package URIs one file imports.
