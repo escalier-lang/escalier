@@ -539,7 +539,7 @@ func TestInferThrowsFromAnAccessor(t *testing.T) {
 					static set s(v: number) throws string { if true { throw "s" } },
 				}
 			`,
-			want: "{new () -> C, get g() -> number throws string, set s(value: number) throws string}",
+			want: "{new () -> C, get g() -> number throws string, set s(v: number) throws string}",
 		},
 		{
 			// A getter on a generic class projects its return to the instance's argument

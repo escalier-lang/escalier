@@ -1906,7 +1906,7 @@ func (c *Context) meetSetters(a, b *soltype.SetterElem) (soltype.ObjTypeElem, bo
 	if !equalSelfParam(a.SelfParam, b.SelfParam, &alphaCtx{}) {
 		return nil, false
 	}
-	if equalType(a.Param, b.Param) {
+	if equalType(a.Param.Type, b.Param.Type) {
 		return &soltype.SetterElem{
 			Name:      a.Name,
 			SelfParam: a.SelfParam,
@@ -1918,7 +1918,7 @@ func (c *Context) meetSetters(a, b *soltype.SetterElem) (soltype.ObjTypeElem, bo
 		return &soltype.SetterElem{
 			Name:      a.Name,
 			SelfParam: a.SelfParam,
-			Param:     c.joinTypes(a.Param, b.Param),
+			Param:     a.Param.WithType(c.joinTypes(a.Param.Type, b.Param.Type)),
 			Throws:    a.Throws,
 		}, true
 	}

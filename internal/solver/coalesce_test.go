@@ -666,8 +666,8 @@ func TestEqualTypeGetterSetterSelfParam(t *testing.T) {
 		},
 		{
 			name: "setter receiver mutability differs",
-			a:    exactObj(&soltype.SetterElem{Name: "s", SelfParam: selfRecv(owned()), Param: num()}),
-			b:    exactObj(&soltype.SetterElem{Name: "s", SelfParam: selfRecv(mutSelf()), Param: num()}),
+			a:    exactObj(&soltype.SetterElem{Name: "s", SelfParam: selfRecv(owned()), Param: &soltype.FuncParam{Type: num()}}),
+			b:    exactObj(&soltype.SetterElem{Name: "s", SelfParam: selfRecv(mutSelf()), Param: &soltype.FuncParam{Type: num()}}),
 			want: false,
 		},
 	}
@@ -714,23 +714,23 @@ func TestEqualTypeObjectMembers(t *testing.T) {
 		{
 			name: "getter and setter with the same name stay distinct",
 			a:    exactObj(&soltype.GetterElem{Name: "x", Type: num()}),
-			b:    exactObj(&soltype.SetterElem{Name: "x", Param: num()}),
+			b:    exactObj(&soltype.SetterElem{Name: "x", Param: &soltype.FuncParam{Type: num()}}),
 			want: false,
 		},
 		{
 			name: "setter param differs",
-			a:    exactObj(&soltype.SetterElem{Name: "s", Param: num()}),
-			b:    exactObj(&soltype.SetterElem{Name: "s", Param: str()}),
+			a:    exactObj(&soltype.SetterElem{Name: "s", Param: &soltype.FuncParam{Type: num()}}),
+			b:    exactObj(&soltype.SetterElem{Name: "s", Param: &soltype.FuncParam{Type: str()}}),
 			want: false,
 		},
 		{
 			name: "matching getter and setter sharing a name",
 			a: exactObj(
 				&soltype.GetterElem{Name: "x", Type: num()},
-				&soltype.SetterElem{Name: "x", Param: num()},
+				&soltype.SetterElem{Name: "x", Param: &soltype.FuncParam{Type: num()}},
 			),
 			b: exactObj(
-				&soltype.SetterElem{Name: "x", Param: num()},
+				&soltype.SetterElem{Name: "x", Param: &soltype.FuncParam{Type: num()}},
 				&soltype.GetterElem{Name: "x", Type: num()},
 			),
 			want: true,

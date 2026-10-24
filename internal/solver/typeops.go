@@ -683,7 +683,7 @@ func (e *typeEvaluator) reduceElem(el soltype.ObjTypeElem) soltype.ObjTypeElem {
 	case *soltype.GetterElem:
 		return &soltype.GetterElem{Name: el.Name, SelfParam: el.SelfParam, Type: e.reduce(el.Type), Throws: e.reduceThrows(el.Throws)}
 	case *soltype.SetterElem:
-		return &soltype.SetterElem{Name: el.Name, SelfParam: el.SelfParam, Param: e.reduce(el.Param), Throws: e.reduceThrows(el.Throws)}
+		return &soltype.SetterElem{Name: el.Name, SelfParam: el.SelfParam, Param: el.Param.WithType(e.reduce(el.Param.Type)), Throws: e.reduceThrows(el.Throws)}
 	default:
 		return el
 	}

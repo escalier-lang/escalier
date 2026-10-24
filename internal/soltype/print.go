@@ -669,7 +669,7 @@ func freeTypeVars(t Type) []*TypeVarType {
 					if e.SelfParam != nil {
 						walk(e.SelfParam.Type)
 					}
-					walk(e.Param)
+					walk(e.Param.Type)
 					if e.Throws != nil {
 						walk(e.Throws)
 					}
@@ -1331,7 +1331,13 @@ func (p *namedPrinter) printObjElem(e ObjTypeElem) string {
 		if e.SelfParam != nil {
 			recv = p.printSelfReceiver(e.SelfParam) + ", "
 		}
-		return "set " + p.printObjectKey(e.Name) + "(" + recv + "value: " + p.printType(e.Param) + ")" +
+		// A setter built without a source pattern names its parameter `value`, the name
+		// TypeScript's lib files give a setter's parameter.
+		name, ok := printPat(e.Param.Pattern)
+		if !ok {
+			name = "value"
+		}
+		return "set " + p.printObjectKey(e.Name) + "(" + recv + name + ": " + p.printType(e.Param.Type) + ")" +
 			p.printThrowsClause(e.ThrowsOrNever())
 	case *ConstructorElem:
 		// A class value's constructor renders as the unnamed call signature

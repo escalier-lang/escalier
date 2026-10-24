@@ -649,14 +649,20 @@ func (b *solTypeAnnBuilder) objTypeAnnElems(elem soltype.ObjTypeElem) []ObjTypeA
 		if !ok {
 			return nil
 		}
+		// A setter built without a source pattern names its parameter `value`, the name
+		// TypeScript's lib files give a setter's parameter.
+		pattern, named := patToPat(elem.Param.Pattern, &paramNamer{n: 0})
+		if !named {
+			pattern = NewIdentPat("value", nil, nil)
+		}
 		return []ObjTypeAnnElem{&SetterTypeAnn{
 			Name: key,
 			Fn: FuncTypeAnn{
 				TypeParams: nil,
 				Params: []*Param{{
-					Pattern:  NewIdentPat("value", nil, nil),
+					Pattern:  pattern,
 					Optional: false,
-					TypeAnn:  b.typeAnn(elem.Param),
+					TypeAnn:  b.typeAnn(elem.Param.Type),
 				}},
 				Return: NewVoidTypeAnn(nil),
 				Throws: nil,

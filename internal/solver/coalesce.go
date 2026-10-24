@@ -2135,7 +2135,7 @@ func equalObjElem(a, b soltype.ObjTypeElem, ctx *alphaCtx) bool {
 			equalTypeWith(a.ThrowsOrNever(), b.ThrowsOrNever(), ctx)
 	case *soltype.SetterElem:
 		b, ok := b.(*soltype.SetterElem)
-		return ok && equalSelfParam(a.SelfParam, b.SelfParam, ctx) && equalTypeWith(a.Param, b.Param, ctx) &&
+		return ok && equalSelfParam(a.SelfParam, b.SelfParam, ctx) && equalTypeWith(a.Param.Type, b.Param.Type, ctx) &&
 			equalTypeWith(a.ThrowsOrNever(), b.ThrowsOrNever(), ctx)
 	case *soltype.ConstructorElem:
 		b, ok := b.(*soltype.ConstructorElem)

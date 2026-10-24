@@ -871,8 +871,8 @@ func TestConstrainObjectMethodMembers(t *testing.T) {
 			// A setter's write type is contravariant: the super's written value must be
 			// acceptable to the sub's setter.
 			name:  "setter contravariant",
-			sub:   exactObj(&soltype.SetterElem{Name: "s", Param: num()}),
-			super: exactObj(&soltype.SetterElem{Name: "s", Param: numLit(5)}),
+			sub:   exactObj(&soltype.SetterElem{Name: "s", Param: &soltype.FuncParam{Type: num()}}),
+			super: exactObj(&soltype.SetterElem{Name: "s", Param: &soltype.FuncParam{Type: numLit(5)}}),
 		},
 	}
 	for _, tt := range tests {

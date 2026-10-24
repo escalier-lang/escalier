@@ -536,14 +536,22 @@ func (e *GetterElem) ThrowsOrNever() Type {
 	return e.Throws
 }
 
-// SetterElem is a computed write property `set x(&mut self, v: T)`. Param is the value the
-// setter accepts, in write position, so it is read contravariantly. SelfParam is the
-// receiver of an instance setter and nil for a static setter, mirroring
+// WithType returns a copy of p whose type is t, keeping its pattern and markers.
+func (p *FuncParam) WithType(t Type) *FuncParam {
+	cp := *p
+	cp.Type = t
+	return &cp
+}
+
+// SetterElem is a computed write property `set x(&mut self, v: T)`. Param is the parameter
+// the setter accepts, carrying the pattern the source named it with and the type of the
+// value written. That type is in write position, so it is read contravariantly. SelfParam
+// is the receiver of an instance setter and nil for a static setter, mirroring
 // FuncType.SelfParam.
 type SetterElem struct {
 	Name      string
 	SelfParam *FuncParam // nil ⇒ static setter; non-nil ⇒ instance setter
-	Param     Type
+	Param     *FuncParam
 	// Throws is the type writing this property may raise. It is covariant even though
 	// Param is contravariant. What a write raises flows out to the writer, just as what a
 	// getter raises flows out to the reader. Nil reads as `never`.
@@ -1748,7 +1756,7 @@ func levelOfElem(e ObjTypeElem) int {
 	case *GetterElem:
 		return max(selfLevel(e.SelfParam), LevelOf(e.Type), throwsLevel(e.Throws))
 	case *SetterElem:
-		return max(selfLevel(e.SelfParam), LevelOf(e.Param), throwsLevel(e.Throws))
+		return max(selfLevel(e.SelfParam), LevelOf(e.Param.Type), throwsLevel(e.Throws))
 	case *ConstructorElem:
 		m := 0
 		for _, sig := range e.Signatures {

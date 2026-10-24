@@ -810,7 +810,7 @@ func compareObjElem(a, b soltype.ObjTypeElem) int {
 		if c := compareSelfParam(a.SelfParam, b.SelfParam); c != 0 {
 			return c
 		}
-		if c := compareType(a.Param, b.Param); c != 0 {
+		if c := compareType(a.Param.Type, b.Param.Type); c != 0 {
 			return c
 		}
 		return compareType(a.ThrowsOrNever(), b.ThrowsOrNever())

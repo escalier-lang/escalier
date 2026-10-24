@@ -1226,7 +1226,7 @@ func TestBuildTypeAnnFormers(t *testing.T) {
 			"{get x(): number}",
 		},
 		"Setter": {
-			solObj(&soltype.SetterElem{Name: "x", SelfParam: nil, Param: solNum(), Throws: nil}),
+			solObj(&soltype.SetterElem{Name: "x", SelfParam: nil, Param: &soltype.FuncParam{Type: solNum()}, Throws: nil}),
 			"{set x(value: number)}",
 		},
 		"IndexSignature": {solObj(solIndexSig(solStr(), solNum())), "{[K in string]?: number}"},
