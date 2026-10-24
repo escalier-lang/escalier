@@ -22,13 +22,11 @@ import (
 //	}
 
 // sharedFlow is one place a value enters a local. Each local in targets receives the value the
-// flow carries. That value is the one source produces when source is non-nil. Otherwise it is
-// the value of the local fromLocal, or a shared value outright when always is set.
+// flow carries. That value is the one source produces, or a shared value outright when source
+// is nil.
 type sharedFlow struct {
-	targets   []liveness.VarID
-	source    ast.Expr
-	fromLocal liveness.VarID
-	always    bool
+	targets []liveness.VarID
+	source  ast.Expr
 }
 
 // sharedState is one body's record of which of its bindings may hold a shared value.
@@ -40,15 +38,11 @@ type sharedFlow struct {
 //   - scope is the scope the body's parameters bind into, which resolves a name outside the
 //     frame.
 //   - locals holds every binding that may hold a shared value, starting from the captures.
-//   - ownLocals holds every binding that may hold a shared value when no capture is counted
-//     as shared. A closure reports it to its enclosing body, which decides for itself whether
-//     each capture is shared.
 type sharedState struct {
 	flows       []sharedFlow
 	valueLocals set.Set[liveness.VarID]
 	scope       *Scope
 	locals      set.Set[liveness.VarID]
-	ownLocals   set.Set[liveness.VarID]
 }
 
 // sharedFlowCollector gathers every sharedFlow of one function body. It stops at a nested
@@ -147,34 +141,25 @@ func (c *checker) collectSharedLocals(scope *Scope, body *ast.Block) {
 		valueLocals: set.NewSet[liveness.VarID](),
 		scope:       scope,
 		locals:      c.fn.captureVarIDs.Clone(),
-		ownLocals:   set.NewSet[liveness.VarID](),
 	}
 	body.Accept(&sharedFlowCollector{state: state})
 	c.fn.shared = state
 	c.settleSharedLocals()
 }
 
-// settleSharedLocals grows the body's shared locals and own shared locals to a fixpoint over
-// its flows. A set only grows, so a decision already taken against it stays valid.
+// settleSharedLocals adds to the body's shared locals every local some flow may carry a shared
+// value into, judging each flow against the set as it grows, until nothing more is added. The
+// set only grows.
 func (c *checker) settleSharedLocals() {
-	state := c.fn.shared
-	c.sharedFixpoint(state.locals)
-	c.sharedFixpoint(state.ownLocals)
-}
-
-// sharedFixpoint adds to shared every local some flow of the body may carry a shared value
-// into, judging each flow's value against shared itself, until nothing more is added.
-func (c *checker) sharedFixpoint(shared set.Set[liveness.VarID]) {
 	state := c.fn.shared
 	for changed := true; changed; {
 		changed = false
 		for _, f := range state.flows {
-			if !c.flowCarriesShared(f, shared) {
+			if f.source != nil && !c.mayYieldShared(state.scope, f.source, state.locals) {
 				continue
 			}
 			for _, id := range f.targets {
-				if !state.valueLocals.Contains(id) && !shared.Contains(id) {
-					shared.Add(id)
+				if c.addSharedLocal(id) {
 					changed = true
 				}
 			}
@@ -182,111 +167,88 @@ func (c *checker) sharedFixpoint(shared set.Set[liveness.VarID]) {
 	}
 }
 
-// flowCarriesShared reports whether f may carry a shared value, judging a local by whether
-// shared holds it.
-func (c *checker) flowCarriesShared(f sharedFlow, shared set.Set[liveness.VarID]) bool {
-	switch {
-	case f.always:
-		return true
-	case f.source != nil:
-		return c.mayYieldShared(c.fn.shared.scope, f.source, shared)
-	default:
-		return shared.Contains(f.fromLocal)
+// addSharedLocal adds id to the body's shared locals and reports whether it was added. A
+// local in valueLocals is never added.
+func (c *checker) addSharedLocal(id liveness.VarID) bool {
+	state := c.fn.shared
+	if state.valueLocals.Contains(id) || state.locals.Contains(id) {
+		return false
 	}
+	state.locals.Add(id)
+	return true
 }
 
-// resettleSharedLocals settles the body's shared locals again when the walk shows that source,
-// which flows into targets, may yield a shared value some target is not yet marked for. The
-// walk knows what the pre-pass did not: the types of what it has walked, and the declaration
-// of each function this body declares and calls. It is a no-op outside a function body.
-func (c *checker) resettleSharedLocals(scope *Scope, targets []liveness.VarID, source ast.Expr) {
-	if c.fn == nil || c.fn.shared == nil || len(targets) == 0 {
+// markSharedFlow adds each local in targets to the body's shared locals when source may yield
+// a shared value judged from scope, then settles the set so every local reading one of them
+// is added too. It is a no-op outside a function body.
+func (c *checker) markSharedFlow(scope *Scope, targets []liveness.VarID, source ast.Expr) {
+	if c.fn == nil || c.fn.shared == nil {
 		return
 	}
 	state := c.fn.shared
-	for _, shared := range []set.Set[liveness.VarID]{state.locals, state.ownLocals} {
-		if !set.FromSlice(targets).IsSubset(shared) && c.mayYieldShared(scope, source, shared) {
-			c.settleSharedLocals()
-			return
-		}
-	}
-}
-
-// captureShare is what a closure reports to its enclosing body about one capture: the
-// closure may store a shared value into it. always says the value is shared whatever the
-// enclosing body holds. from names the other captures whose value the closure may store
-// into it, so the capture is shared when any of them is.
-type captureShare struct {
-	name   string
-	always bool
-	from   []string
-}
-
-// captureShares returns what the current body reports to its enclosing body about each of
-// its captures. Each fixpoint it runs starts from the body's own shared locals and counts
-// one capture as shared, which shows the captures a value stored from that one reaches.
-func (c *checker) captureShares() []captureShare {
-	state := c.fn.shared
-	if state == nil || c.fn.captureVarIDs.Len() == 0 {
-		return nil
-	}
-	captures := c.fn.captureVarIDs.ToSlice()
-	slices.Sort(captures)
-	reached := map[liveness.VarID][]string{}
-	for _, from := range captures {
-		shared := state.ownLocals.Clone()
-		shared.Add(from)
-		c.sharedFixpoint(shared)
-		for _, to := range captures {
-			if to != from && shared.Contains(to) && !state.ownLocals.Contains(to) {
-				reached[to] = append(reached[to], c.fn.varIDNames[from])
-			}
-		}
-	}
-	var shares []captureShare
-	for _, id := range captures {
-		always := state.ownLocals.Contains(id)
-		if always || len(reached[id]) > 0 {
-			shares = append(shares, captureShare{name: c.fn.varIDNames[id], always: always, from: reached[id]})
-		}
-	}
-	return shares
-}
-
-// applyCaptureShares adds to the current body the flows a closure declared in scope reported
-// through shares, then settles the body's shared locals. A name that resolves to no local of
-// the current body is skipped.
-func (c *checker) applyCaptureShares(scope *Scope, shares []captureShare) {
-	if c.fn == nil || c.fn.shared == nil || len(shares) == 0 {
+	if !slices.ContainsFunc(targets, func(id liveness.VarID) bool {
+		return !state.valueLocals.Contains(id) && !state.locals.Contains(id)
+	}) {
 		return
 	}
-	for _, share := range shares {
-		target, ok := c.bodyLocal(scope, share.name)
-		if !ok {
-			continue
-		}
-		targets := []liveness.VarID{target}
-		if share.always {
-			c.fn.shared.flows = append(c.fn.shared.flows, sharedFlow{targets: targets, always: true})
-		}
-		for _, name := range share.from {
-			if from, ok := c.bodyLocal(scope, name); ok {
-				c.fn.shared.flows = append(c.fn.shared.flows, sharedFlow{targets: targets, fromLocal: from})
-			}
-		}
+	if !c.mayYieldShared(scope, source, state.locals) {
+		return
+	}
+	for _, id := range targets {
+		c.addSharedLocal(id)
 	}
 	c.settleSharedLocals()
 }
 
-// bodyLocal returns the VarID of the current body's binding that name resolves to in scope.
-// ok is false when the name resolves to a binding of another body or to none.
-func (c *checker) bodyLocal(scope *Scope, name string) (liveness.VarID, bool) {
-	b, found := scope.GetValue(name)
-	if !found || b.VarID <= 0 {
-		return 0, false
+// sharedCaptureStores returns the name of each capture of the current body that some flow
+// may store a shared value into, in VarID order. Every capture counts as shared here, so a
+// store of one capture into another is reported too.
+func (c *checker) sharedCaptureStores() []string {
+	state := c.fn.shared
+	if state == nil {
+		return nil
 	}
-	id := liveness.VarID(b.VarID)
-	return id, c.fn.varIDNames[id] == name
+	stored := set.NewSet[liveness.VarID]()
+	for _, f := range state.flows {
+		if f.source != nil && !c.mayYieldShared(state.scope, f.source, state.locals) {
+			continue
+		}
+		for _, id := range f.targets {
+			if c.fn.captureVarIDs.Contains(id) {
+				stored.Add(id)
+			}
+		}
+	}
+	ids := stored.ToSlice()
+	slices.Sort(ids)
+	names := make([]string, len(ids))
+	for i, id := range ids {
+		names[i] = c.fn.varIDNames[id]
+	}
+	return names
+}
+
+// markSharedCaptures adds to the current body's shared locals the binding each name in names
+// resolves to in scope, then settles the set. A name that resolves to a binding of another
+// body, or to none, is skipped.
+func (c *checker) markSharedCaptures(scope *Scope, names []string) {
+	if c.fn == nil || c.fn.shared == nil || len(names) == 0 {
+		return
+	}
+	for _, name := range names {
+		b, found := scope.GetValue(name)
+		if !found || b.VarID <= 0 {
+			continue
+		}
+		id := liveness.VarID(b.VarID)
+		if c.fn.varIDNames[id] != name {
+			continue
+		}
+		// A store inside a closure is a flow of this body that the pre-pass did not see, so
+		// it joins the flows a later settle replays.
+		c.fn.shared.flows = append(c.fn.shared.flows, sharedFlow{targets: []liveness.VarID{id}})
+	}
+	c.settleSharedLocals()
 }
 
 // isSharedLocal reports whether the current body's binding id may hold a shared value.

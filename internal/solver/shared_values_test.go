@@ -1,8 +1,11 @@
 package solver
 
 import (
+	"context"
 	"testing"
 
+	"github.com/escalier-lang/escalier/internal/ast"
+	"github.com/escalier-lang/escalier/internal/parser"
 	"github.com/stretchr/testify/require"
 )
 
@@ -191,7 +194,8 @@ fn f() {
 			want: []string{rejected},
 		},
 		{
-			name: "a closure storing one fresh local into another it captures",
+			// The store leaves `a` and `b` naming one array, and `b` stays live in `f`.
+			name: "a nested closure storing one fresh local into another it captures",
 			src: `fn f() {
 	var a: Array<number> = [1]
 	val b: Array<number> = [2]
@@ -199,6 +203,18 @@ fn f() {
 		val h = fn() { a = b }
 		h()
 	}
+	g()
+	val mut m = a
+	m.push(1)
+	val n = b
+}`,
+			want: []string{rejected},
+		},
+		{
+			name: "a closure storing a fresh literal into a local it captures",
+			src: `fn f() {
+	var a: Array<number> = [1]
+	val g = fn() { a = [2] }
 	g()
 	val mut m = a
 	m.push(1)
@@ -315,4 +331,31 @@ fn h() {
 			require.Equal(t, tt.want, got)
 		})
 	}
+}
+
+// TestScriptCallOfLibraryFunctionReturningSharedValue asserts that a script checked against a
+// library reads which library functions return a shared value, and that checking the script
+// leaves the library's record of them as it was.
+func TestScriptCallOfLibraryFunctionReturningSharedValue(t *testing.T) {
+	ctx := context.Background()
+	libSource := &ast.Source{ID: 0, Path: "lib/index.esc", Contents: `export val xs: Array<number> = [1]
+export fn g() -> Array<number> { return xs }`}
+	module, libParseErrors := parser.ParseLibFiles(ctx, []*ast.Source{libSource})
+	require.Empty(t, libParseErrors)
+	scriptSource := &ast.Source{ID: 1, Path: "bin/index.esc", Contents: `fn h() { return xs }
+val mut m = g()
+m.push(1)`}
+	script, scriptParseErrors := parser.NewParser(ctx, scriptSource).ParseScript()
+	require.Empty(t, scriptParseErrors)
+	registerTestSources(t, map[int]*ast.Source{libSource.ID: libSource, scriptSource.ID: scriptSource})
+
+	lib := InferModuleWithSource(module, testStdlibSource())
+	require.Empty(t, lib.Errors)
+	libShared := lib.checker.sharedReturns.Clone()
+
+	_, _, errs := InferScriptInLib(script, lib)
+	require.Equal(t,
+		[]string{"cannot constrain immutable Array<number> <: mutable Array<number>"},
+		errorMessagesOf(errs))
+	require.Equal(t, libShared, lib.checker.sharedReturns)
 }
