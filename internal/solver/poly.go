@@ -557,7 +557,7 @@ func (c *checker) sealUsageObjects(t soltype.Type, lvl int) {
 	// reachable through them. Without this, `fn f(open p) { p.a.b }` would accept an
 	// extra field on p but seal `p.a` and reject an extra field there — the same
 	// "richer object" request answered differently by depth.
-	propagateOpen(vars)
+	propagateOpen(c.ctx, vars)
 
 	for id, v := range vars {
 		if v.Open || v.Level <= lvl {
@@ -572,6 +572,7 @@ func (c *checker) sealUsageObjects(t soltype.Type, lvl int) {
 		// shows, breaking the round-trip. Close BOTH bound directions so the operative
 		// type matches the display, which inlines the pinned var to its exact bound.
 		if hasEqualBounds(v) {
+			c.ctx.checkThawed(v, "sealUsageObjects")
 			v.UpperBounds = foldUsageBounds(v.UpperBounds, v.Open)
 			v.LowerBounds = foldUsageBounds(v.LowerBounds, v.Open)
 			continue
@@ -591,6 +592,7 @@ func (c *checker) sealUsageObjects(t soltype.Type, lvl int) {
 		// this loop skips. v.Open is always false here since open vars are skipped
 		// above; passing it keeps the operative and display folds on one exactness
 		// rule. A var with no inexact object bound folds to itself, a no-op.
+		c.ctx.checkThawed(v, "sealUsageObjects")
 		v.UpperBounds = foldUsageBounds(v.UpperBounds, v.Open)
 	}
 }
@@ -602,7 +604,7 @@ func (c *checker) sealUsageObjects(t soltype.Type, lvl int) {
 // whose property types are the nested receiver vars (`p.a`'s var is the type of
 // `p`'s `a` property). Opening a var that carries no object bound is inert, so the
 // closure never widens anything that was not already a usage shape.
-func propagateOpen(vars map[int]*soltype.TypeVarType) {
+func propagateOpen(ctx *Context, vars map[int]*soltype.TypeVarType) {
 	work := make([]*soltype.TypeVarType, 0, len(vars))
 	for _, v := range vars {
 		if v.Open {
@@ -626,6 +628,7 @@ func propagateOpen(vars map[int]*soltype.TypeVarType) {
 				}
 				pv, ok := prop.Type.(*soltype.TypeVarType)
 				if ok && !pv.Open {
+					ctx.checkThawed(pv, "propagateOpen")
 					pv.Open = true
 					work = append(work, pv)
 				}

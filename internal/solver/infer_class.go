@@ -1266,7 +1266,7 @@ func (c *checker) buildClassInstance(scope *Scope, ct *soltype.ClassType, ref *a
 		// declaration's own.
 		return ct
 	}
-	c.checkTypeArgBounds(params, args, ltParams, ltArgs, ref)
+	c.checkTypeArgBounds(params, args, ltParams, ltArgs, ref, lvl)
 	return &soltype.ClassType{
 		Name:         ct.Name,
 		TypeArgs:     args,

@@ -297,7 +297,7 @@ func (c *checker) buildAliasInstance(scope *Scope, at *soltype.AliasType, ref *a
 		}
 		return &soltype.AliasType{Name: at.Name, LifetimeArgs: ltArgs}
 	}
-	c.checkTypeArgBounds(params, args, ltParams, ltArgs, ref)
+	c.checkTypeArgBounds(params, args, ltParams, ltArgs, ref, lvl)
 	return &soltype.AliasType{Name: at.Name, TypeArgs: args, Defaults: paramDefaults(params), LifetimeArgs: ltArgs}
 }
 

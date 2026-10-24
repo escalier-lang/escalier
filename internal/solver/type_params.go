@@ -399,13 +399,15 @@ func (c *checker) reportDefaultForwardRef(params []*ast.TypeParam, i int) bool {
 // `type Widen<B> where string: B` rejects `Widen<number>`. Every generic class, enum, and alias
 // reference routes through here. Arguments are substituted into each bound first, which lets a
 // bound name a sibling as the `B: A` of `<A, B: A>` does. The comparison is live rather than a
-// discarded trial, so a variable argument carries the bound to its instantiation.
+// discarded trial, so a variable argument carries the bound to its instantiation. lvl is the
+// level the reference resolves at.
 func (c *checker) checkTypeArgBounds(
 	params []*soltype.TypeParam,
 	args []soltype.Type,
 	ltParams []*soltype.LifetimeParam,
 	ltArgs []soltype.Lifetime,
 	ref *ast.TypeRefTypeAnn,
+	lvl int,
 ) {
 	bounded := func(p *soltype.TypeParam) bool { return p.UpperBound != nil || p.LowerBound != nil }
 	if !slices.ContainsFunc(params, bounded) {
@@ -434,19 +436,48 @@ func (c *checker) checkTypeArgBounds(
 		// Read each declared bound from the parameter rather than from its var's lists. A
 		// `<T: A & B>` bound resolves to one IntersectionType, so this is the whole of what
 		// the source wrote, and it cannot be displaced by a bound solving inferred.
+		//
+		// The bound's `_` holes are variables the declaration minted once. Each reference
+		// fills them for itself, so the comparison runs against copies of them. Without the
+		// copies, every reference to `Parameters<F>` would add bounds to the same holes in
+		// `fn (...args: Array<_>) -> _`.
 		if p.UpperBound != nil {
-			bound := p.UpperBound.Accept(subst, soltype.Positive)
-			if !fromDefault || bound != p.UpperBound {
+			declared := c.freshenBoundHoles(p.UpperBound, lvl)
+			if bound := declared.Accept(subst, soltype.Positive); !fromDefault || bound != declared {
 				c.constrainTypeArg(site, args[i], bound)
 			}
 		}
 		if p.LowerBound != nil {
-			lower := p.LowerBound.Accept(subst, soltype.Positive)
-			if !fromDefault || lower != p.LowerBound {
+			declared := c.freshenBoundHoles(p.LowerBound, lvl)
+			if lower := declared.Accept(subst, soltype.Positive); !fromDefault || lower != declared {
 				c.constrainTypeArg(site, lower, args[i])
 			}
 		}
 	}
+}
+
+// freshenBoundHoles returns bound with each `_` hole's variable replaced by a fresh copy
+// at lvl that carries the hole's bounds. Every other type variable and every lifetime is
+// kept. bound itself is returned when it holds no hole.
+func (c *checker) freshenBoundHoles(bound soltype.Type, lvl int) soltype.Type {
+	cache := map[*soltype.TypeVarType]*soltype.TypeVarType{}
+	holes := false
+	for _, v := range typeVarsIn(bound) {
+		if c.ctx.holeVars.Contains(v) {
+			holes = true
+		} else {
+			cache[v] = v
+		}
+	}
+	if !holes {
+		return bound
+	}
+	return bound.Accept(&allFreshener{
+		c:     c,
+		lvl:   lvl,
+		cache: cache,
+		lt:    ltFreshener{ctx: c.ctx, lvl: lvl, freshenSet: set.NewSet[*soltype.LifetimeVar]()},
+	}, soltype.Positive)
 }
 
 // constrainTypeArg runs one of checkTypeArgBounds' comparisons, sub <: super, or queues it
