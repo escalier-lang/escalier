@@ -94,6 +94,9 @@ type Namespace struct {
 	// is not a value. A package whose `.d.ts` writes `export = equal` sets it to the
 	// binding of `equal`. A member this namespace does not hold is read off this value.
 	AsValue *ValueBinding
+	// ExportAssigned is true for the surface of a package that writes
+	// `export = X`, whose default import reads the whole surface as X.
+	ExportAssigned bool
 }
 
 // Scope is the solver's multi-sorted lexical scope. It has one map per binding sort plus

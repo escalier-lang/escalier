@@ -133,15 +133,16 @@ func isDeclarationFile(path string) bool {
 // class arrives as both its constructor and its instance type, and a namespace
 // arrives as a namespace.
 //
-// A `default` that ns does not export binds ns itself as a namespace. Any other
-// name ns exports in no sort is reported and binds nothing.
+// A `default` that ns does not export binds ns itself when ns is the surface of an
+// `export =` package. Any other name ns exports in no sort is reported and binds
+// nothing.
 func (c *checker) bindImportedNames(fileScope *Scope, stmt *ast.ImportStmt, ns *Namespace) []SolverError {
 	var errs []SolverError
 	for _, name := range stmt.Names {
 		value, isValue := ns.Values[name.Imported]
 		typ, isType := ns.Types[name.Imported]
 		nested, isNested := ns.Nested[name.Imported]
-		if !isValue && !isType && !isNested && name.Imported == defaultExport {
+		if !isValue && !isType && !isNested && name.Imported == defaultExport && ns.ExportAssigned {
 			// TypeScript's esModuleInterop reads a default import of an
 			// `export = X` module as X, and ns is the surface X's module exports.
 			c.bindImportedNamespace(fileScope, name.Local, ns)

@@ -249,6 +249,7 @@ func rootDecl[T ast.Decl](module *ast.Module) (T, bool) {
 //	export = debug;
 func assignedSurface(uri string, module *ast.Module, scope *Scope, target string) *Namespace {
 	surface := newNamespace(uri)
+	surface.ExportAssigned = true
 	module.Namespaces.Scan(func(nsPath string, ns *ast.Namespace) bool {
 		switch {
 		case nsPath == target:
