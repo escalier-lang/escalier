@@ -7,6 +7,8 @@ import (
 	"io/fs"
 	"os"
 	"path/filepath"
+
+	"github.com/escalier-lang/escalier/internal/set"
 )
 
 // PackageConfig is the part of a package's package.json the compiler reads. The zero
@@ -20,6 +22,12 @@ type PackageConfig struct {
 	// with no URI scheme resolves through the `node_modules` directories at and
 	// above it.
 	Dir string
+	// Dependencies holds the packages the package.json lists under `dependencies`,
+	// `peerDependencies` and `optionalDependencies`. An import with no URI scheme
+	// resolves only when it names one of them. `devDependencies` are left out, since
+	// a published package's own code cannot rely on them being installed. A nil
+	// Dependencies lets such an import name any package.
+	Dependencies set.Set[string]
 }
 
 // packageJSON is the shape of the package.json fields ReadPackageConfig reads.
@@ -27,12 +35,16 @@ type packageJSON struct {
 	Escalier struct {
 		Ambient *bool `json:"ambient"`
 	} `json:"escalier"`
+	Dependencies         map[string]string `json:"dependencies"`
+	PeerDependencies     map[string]string `json:"peerDependencies"`
+	OptionalDependencies map[string]string `json:"optionalDependencies"`
 }
 
 // ReadPackageConfig reads the PackageConfig from the package.json in dir, and records dir
 // as its absolute Dir. A directory with no package.json, or a package.json with no
-// `escalier` field, gives the defaults. It returns an error when the file cannot be read
-// or does not parse.
+// `escalier` field, gives the defaults. Dependencies is non-nil only when a package.json
+// parses, so a directory without one, or one mid-edit, restricts no import. It returns
+// an error when the file cannot be read or does not parse.
 func ReadPackageConfig(dir string) (PackageConfig, error) {
 	absDir, err := filepath.Abs(dir)
 	if err != nil {
@@ -52,7 +64,12 @@ func ReadPackageConfig(dir string) (PackageConfig, error) {
 		// package's imports.
 		return PackageConfig{Dir: absDir}, fmt.Errorf("failed to parse %s: %w", path, err)
 	}
-	config := PackageConfig{Dir: absDir}
+	config := PackageConfig{Dir: absDir, Dependencies: set.NewSet[string]()}
+	for _, deps := range []map[string]string{pkg.Dependencies, pkg.PeerDependencies, pkg.OptionalDependencies} {
+		for name := range deps {
+			config.Dependencies.Add(name)
+		}
+	}
 	if pkg.Escalier.Ambient != nil {
 		config.NoAmbientNames = !*pkg.Escalier.Ambient
 	}

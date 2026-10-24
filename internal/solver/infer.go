@@ -255,6 +255,8 @@ type checker struct {
 	ambient *Scope
 	// noAmbientNames is Options.NoAmbientNames for this run.
 	noAmbientNames bool
+	// dependencies is Options.Dependencies for this run.
+	dependencies set.Set[string]
 	// checkJsDecorators is Options.CheckJsDecorators for this run.
 	checkJsDecorators bool
 	// ambientBound is set once bindAmbientExports has loaded the literal classes' packages

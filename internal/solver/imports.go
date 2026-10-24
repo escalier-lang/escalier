@@ -5,6 +5,7 @@ import (
 	"sort"
 
 	"github.com/escalier-lang/escalier/internal/ast"
+	"github.com/escalier-lang/escalier/internal/resolver"
 	"github.com/escalier-lang/escalier/internal/set"
 )
 
@@ -64,6 +65,13 @@ func (c *checker) bindImport(fileScope *Scope, stmt *ast.ImportStmt) []SolverErr
 	uri := stmt.PackageName
 	if IsSchemePrefixedImport(uri) {
 		return c.bindPseudoPackageImport(fileScope, stmt)
+	}
+	// A package's own imports belong to its own package.json, so only the entry
+	// module's are checked against the project's. A specifier that names no package
+	// is left to the load, which reports why.
+	if c.pkgURI == "" && c.dependencies != nil && resolver.ValidateModuleName(uri) == nil &&
+		!listedDependency(c.dependencies, uri) {
+		return []SolverError{&UnlistedDependencyError{Package: resolver.PackageName(uri), span: stmt.Span()}}
 	}
 	// An npm package's declarations read the globals scope, so it has to be full
 	// before the package infers.
