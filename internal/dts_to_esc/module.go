@@ -174,8 +174,8 @@ func processNamespace(
 			continue
 
 		case *dts_parser.NamedExportStmt, *dts_parser.ExportAllStmt, *dts_parser.ExportAsNamespaceStmt:
-			// Skip these - they're processed directly in the checker during inferParsedTypeDef.
-			// See processExportStatements() in infer_import.go for implementation.
+			// These are dropped. `export as namespace N` names a global that only a
+			// script file can read, and every Escalier file is a module.
 			continue
 
 		default:

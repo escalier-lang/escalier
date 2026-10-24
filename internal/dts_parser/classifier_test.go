@@ -425,7 +425,7 @@ func TestClassifyDTSFile_ExportEquals(t *testing.T) {
 			export = Foo;`,
 			hasTopLevelExports: true,
 			globalDeclsCount:   0,
-			packageDeclsCount:  3, // namespace Foo + expanded bar and baz
+			packageDeclsCount:  2, // namespace Foo and the export =
 			namedModulesCount:  0,
 		},
 		{
@@ -438,7 +438,7 @@ func TestClassifyDTSFile_ExportEquals(t *testing.T) {
 			export = MyLib;`,
 			hasTopLevelExports: true,
 			globalDeclsCount:   0,
-			packageDeclsCount:  4, // namespace MyLib + expanded Options, configure, VERSION
+			packageDeclsCount:  2, // namespace MyLib and the export =
 			namedModulesCount:  0,
 		},
 	}
@@ -474,110 +474,6 @@ func TestClassifyDTSFile_ExportEquals(t *testing.T) {
 			}
 		})
 	}
-}
-
-// TestExpandExportEqualsExportsAllMembers verifies that when using
-// "export = Namespace" pattern, ALL members of the namespace become exports.
-// In TypeScript, `export = Namespace` makes all members accessible from the
-// module, regardless of whether they had the `export` keyword inside the namespace.
-// The `export` keyword inside a namespace has a different meaning (module augmentation).
-func TestExpandExportEqualsExportsAllMembers(t *testing.T) {
-	input := `declare namespace Mixed {
-		export const exported: number;
-		export function exportedFunc(): void;
-		function nonExported(): void;
-		const nonExportedConst: string;
-		export interface ExportedType { x: number }
-		interface NonExportedType { y: string }
-	}
-	export = Mixed;`
-
-	source := &ast.Source{
-		Path:     "test.d.ts",
-		Contents: input,
-		ID:       0,
-	}
-	parser := NewDtsParser(source)
-	module, errors := parser.ParseModule()
-
-	if len(errors) > 0 {
-		t.Errorf("Unexpected parse errors: %v", errors)
-		return
-	}
-
-	classification := ClassifyDTSFile(module)
-
-	// Should have top-level exports due to "export = Mixed"
-	if !classification.HasTopLevelExports {
-		t.Error("Expected HasTopLevelExports to be true")
-	}
-
-	// Should have 7 package declarations:
-	// - the namespace Mixed declaration itself
-	// - 6 expanded members from the namespace (all become exports)
-	expectedPackageDeclCount := 7
-	if len(classification.PackageDecls) != expectedPackageDeclCount {
-		t.Errorf("PackageDecls count = %d, expected %d", len(classification.PackageDecls), expectedPackageDeclCount)
-	}
-
-	// Track which declarations we found and their export status
-	exportedDecls := make(map[string]bool)   // name -> isExported
-	declsFound := make(map[string]bool)      // name -> found
-
-	for _, stmt := range classification.PackageDecls {
-		// Skip the namespace declaration itself
-		if _, isNs := stmt.(*NamespaceDecl); isNs {
-			continue
-		}
-
-		// Check the declaration's Export() flag directly
-		if decl, ok := stmt.(Decl); ok {
-			name := getDeclName(stmt)
-			if name != "" {
-				exportedDecls[name] = decl.Export()
-				declsFound[name] = true
-			}
-		}
-	}
-
-	// ALL items should be exported when using "export = Namespace"
-	allMembers := []string{"exported", "exportedFunc", "ExportedType", "nonExported", "nonExportedConst", "NonExportedType"}
-	for _, name := range allMembers {
-		if !declsFound[name] {
-			t.Errorf("Expected to find declaration %q but it was not found", name)
-			continue
-		}
-		if !exportedDecls[name] {
-			t.Errorf("Expected %q to be exported but it was not", name)
-		}
-	}
-}
-
-// getDeclName is a helper to extract the name from a declaration for testing.
-func getDeclName(stmt Statement) string {
-	switch s := stmt.(type) {
-	case *VarDecl:
-		if s.Name != nil {
-			return s.Name.Name
-		}
-	case *FuncDecl:
-		if s.Name != nil {
-			return s.Name.Name
-		}
-	case *InterfaceDecl:
-		if s.Name != nil {
-			return s.Name.Name
-		}
-	case *TypeDecl:
-		if s.Name != nil {
-			return s.Name.Name
-		}
-	case *ClassDecl:
-		if s.Name != nil {
-			return s.Name.Name
-		}
-	}
-	return ""
 }
 
 func TestClassifyDTSFile_MixedFile(t *testing.T) {

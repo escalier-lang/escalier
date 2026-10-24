@@ -260,8 +260,14 @@ func (c *checker) inferDepGraph(scope *Scope, lvl int, module *ast.Module, g *de
 	// NamespaceDecl — yields no component and would vanish without a diagnostic.
 	// Report every top-level declaration that no component visited, so an
 	// unsupported decl always fails cleanly rather than being silently dropped.
-	module.Namespaces.Scan(func(_ string, ns *ast.Namespace) bool {
+	module.Namespaces.Scan(func(nsPath string, ns *ast.Namespace) bool {
 		for _, d := range ns.Decls {
+			// `export = X` binds no name in this module. At the top level
+			// exportedSurface reads it. Nothing reads one inside a namespace, so that
+			// one is reported.
+			if _, assigns := d.(*ast.ExportAssignmentStmt); assigns && nsPath == "" {
+				continue
+			}
 			if !handled.Contains(d) {
 				c.reportUnsupported(d)
 			}
