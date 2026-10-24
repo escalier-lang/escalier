@@ -267,9 +267,21 @@ func ConvertModuleWithOverrides(dtsModule *dts_parser.Module, store OverrideLook
 		return nil, fmt.Errorf("converting module: %w", err)
 	}
 
-	mod := ast.NewModule(namespaces)
+	module := ast.NewModule(namespaces)
+	module.DefaultExport = defaultExportName(dtsModule.Statements)
 	// A package's declarations resolve against the committed tree, which
 	// declares `Array`, `Map` and `Set` but none of their readonly twins.
-	renameLibReadonlyTwinRefs(mod)
-	return mod, nil
+	renameLibReadonlyTwinRefs(module)
+	return module, nil
+}
+
+// defaultExportName returns the name of the declaration among stmts that
+// `export default` marks, or "" when none does.
+func defaultExportName(stmts []dts_parser.Statement) string {
+	for _, stmt := range stmts {
+		if decl, ok := stmt.(dts_parser.Decl); ok && decl.Default() {
+			return topLevelName(stmt)
+		}
+	}
+	return ""
 }

@@ -228,8 +228,25 @@ func exportedSurface(uri string, module *ast.Module, scope *Scope) *Namespace {
 		}
 		return true
 	})
+	// `import X from "pkg"` reads the member `default`, so the declaration
+	// `export default` marks is published under that name beside its own.
+	if name := module.DefaultExport; name != "" {
+		if b, ok := surface.Values[name]; ok {
+			surface.Values[defaultExport] = b
+		}
+		if b, ok := surface.Types[name]; ok {
+			surface.Types[defaultExport] = b
+		}
+		if ns, ok := surface.Nested[name]; ok {
+			surface.Nested[defaultExport] = ns
+		}
+	}
 	return surface
 }
+
+// defaultExport is the member name a package's default export is published
+// under.
+const defaultExport = "default"
 
 // newNamespace returns an empty namespace under the given name.
 func newNamespace(name string) *Namespace {
