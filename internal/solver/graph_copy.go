@@ -74,10 +74,10 @@ type typePlan struct {
 	// elem is the plan for what a pointer points at, or for a slice's or an
 	// array's element. key is the plan for a map's key, and value for its value.
 	//
-	// A pointer's, a slice's, and a map's are filled on first copy rather than
-	// when this plan is built. A type can reach itself only through one of those
-	// three or an interface, so building every plan the moment its type is met
-	// would find a plan still in progress. That plan's kind is not settled yet.
+	// For a pointer, a slice, or a map, these are built on first copy rather than
+	// with this plan. A type can refer to itself only through one of those three
+	// or an interface. Building them with this plan would read the kind of a plan
+	// still being built, and that kind is not settled yet.
 	elem       *typePlan
 	key, value *typePlan
 	// bytes holds the runs of a struct's memory that hold no pointer, and fields

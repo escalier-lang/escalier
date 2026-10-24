@@ -45,8 +45,9 @@ type ambientEntry struct {
 }
 
 // maxAmbientCheckers is how many cached checkers ambientCheckers keeps. A process
-// checking one tree needs one per distinct closure its modules import, and a test
-// suite seeding many small trees needs none to stay.
+// checking one tree needs one per distinct closure its modules import. The bound
+// stops a test suite that seeds a fresh tree for each test from keeping a checker
+// for every one of them.
 const maxAmbientCheckers = 8
 
 // ambientCheckers holds the cached checkers. order lists their keys oldest first,
@@ -130,8 +131,8 @@ func readStdlibFile(dir, uri string) ([]byte, error) {
 	return os.ReadFile(path)
 }
 
-// writeHashedFile writes uri and contents to hash, each behind its length, so moving
-// bytes from the end of one file to the start of the next changes the hash.
+// writeHashedFile writes uri and contents to digest, each behind its length, so
+// moving bytes from the end of one file to the start of the next changes the hash.
 func writeHashedFile(digest hash.Hash, uri string, contents []byte) {
 	digest.Write(binary.AppendUvarint(nil, uint64(len(uri))))
 	digest.Write([]byte(uri))
@@ -158,10 +159,12 @@ func loadAmbientChecker(dir string, groups PackageGroups, opts Options) *checker
 	return c
 }
 
-// fork returns a deep copy of c that runs with source, groupSource, and groups. AST
-// nodes are shared with c, since inference records what it learns about a node in
-// Info rather than on the node.
+// fork returns a deep copy of c that runs with source, groupSource, and groups. A
+// pointer to an AST node is not copied, so the copy reads the same parsed modules c
+// does.
 func (c *checker) fork(source ModuleSource, groupSource GroupSource, groups PackageGroups) *checker {
+	// The parsed modules are already shared by every run through the parse cache,
+	// so copying them here would only cost time.
 	f := copyPtr(newGraphCopier(isASTPointer), c)
 	f.ctx.fusionRecorder = f.recordFusionEdge
 	f.source, f.groupSource, f.groups = source, groupSource, groups

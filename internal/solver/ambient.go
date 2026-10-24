@@ -80,8 +80,7 @@ func (c *checker) ambientScope() *Scope {
 // package that loads with diagnostics of its own has them held back by
 // holdLoadErrors. The first package to claim a name keeps it.
 //
-// A second call does nothing, so a checker forked from ambientChecker keeps the
-// bindings it was copied with.
+// A second call does nothing.
 //
 // A run with Options.NoAmbientNames set binds nothing, so the ambient scope stays empty.
 // It loads only the packages literalClassPackages lists.
