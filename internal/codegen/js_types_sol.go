@@ -33,8 +33,7 @@ type SolverJSTypes struct {
 }
 
 // IsNominalTypeRef reports whether the reference resolved to a class. A class is
-// nominal in soltype by being a `ClassType` at all, where type_system marks an object
-// type nominal with a flag, so there is no shape to inspect.
+// nominal in soltype by being a `ClassType` at all, so there is no shape to inspect.
 //
 // An alias of a class answers false, even though the class it names is nominal. The
 // guard this feeds tests the name the annotation wrote, and an alias declares no

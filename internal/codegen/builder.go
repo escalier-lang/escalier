@@ -33,7 +33,7 @@ type Builder struct {
 	// reads as noJSTypes through b.types(), which is what a hand-built AST wants.
 	jsTypes JSTypes
 	// solSymbolKeys maps a unique symbol's id to the top-level value that names it in the
-	// module BuildDefinitionsFromSol is emitting. See symbolKeysFromSol.
+	// module BuildDefinitions is emitting. See uniqueSymbolKeys.
 	solSymbolKeys map[int]string
 	// solSymbolOwners maps the name of each type that declares a unique symbol on a
 	// `readonly` property to the path of the value the symbol is named after. See
@@ -44,7 +44,7 @@ type Builder struct {
 	// member under the same name. It is empty at the module root.
 	solShadowed set.Set[string]
 	// solSymbolAliases maps the id of a unique symbol that a shadowed name holds to the
-	// private top-level value BuildDefinitionsFromSol declares for it, in the order the
+	// private top-level value BuildDefinitions declares for it, in the order the
 	// aliases were needed. solSymbolAliasNames holds their names.
 	solSymbolAliases    []solSymbolAlias
 	solSymbolAliasNames map[int]string

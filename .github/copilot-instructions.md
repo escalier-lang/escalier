@@ -17,7 +17,6 @@ Escalier is a programming language compiler with strong TypeScript interoperabil
 - `internal/parser/` - Source code parsing
 - `internal/codegen/` - Code generation to JavaScript
 - `internal/compiler/` - Main compilation orchestration
-- `internal/type_system/` - Type system implementation
 - `internal/graphql/` - GraphQL-specific functionality
 
 ### TypeScript/JavaScript Packages

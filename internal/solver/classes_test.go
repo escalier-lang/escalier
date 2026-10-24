@@ -361,7 +361,7 @@ func TestInferBodyVariance(t *testing.T) {
 			def: oneParam(func(tv *soltype.TypeVarType) (*soltype.ObjectType, []*soltype.ClassType) {
 				return exactObj(
 					&soltype.GetterElem{Name: "value", Type: tv},
-					&soltype.SetterElem{Name: "value", Param: tv},
+					&soltype.SetterElem{Name: "value", Param: &soltype.FuncParam{Type: tv}},
 				), nil
 			}),
 			want:    []Variance{Covariant},

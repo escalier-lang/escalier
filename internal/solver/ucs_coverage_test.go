@@ -81,6 +81,29 @@ func TestMatchCoverageNonExhaustive(t *testing.T) {
 			`,
 			want: "3:13-6:7: match is not exhaustive; add a branch for `3`",
 		},
+		// A `boolean` holds `true` and `false`, so an arm naming only one leaves the other.
+		"BooleanMissingAValue": {
+			src: `
+				fn f(b: boolean) {
+					return match b {
+						true => "yes"
+					}
+				}
+			`,
+			want: "3:13-5:7: match is not exhaustive; add a branch for `false`",
+		},
+		// A `boolean` member of a union is covered only once both of its values are named.
+		"BooleanMemberMissingAValue": {
+			src: `
+				fn f(u: string | boolean) {
+					return match u {
+						s: string => s,
+						true => "yes"
+					}
+				}
+			`,
+			want: "3:13-6:7: match is not exhaustive; add a branch for `false`",
+		},
 	}
 
 	for name, tt := range tests {
