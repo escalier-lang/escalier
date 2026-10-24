@@ -245,7 +245,7 @@ func (r *renamer) renameDecl(decl ast.Decl) {
 		// Interface declarations don't introduce variable bindings.
 	case *ast.EnumDecl:
 		// Enum declarations don't introduce variable bindings.
-	case *ast.ExportAssignmentStmt:
+	case *ast.ExportAssignmentStmt, *ast.ExportAsNamespaceStmt:
 		// Nothing to do for variable renaming.
 	}
 }

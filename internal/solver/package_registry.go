@@ -27,6 +27,9 @@ type packageEntry struct {
 	ns      *Namespace
 	path    string
 	loading bool
+	// globalName is the name the package's `export as namespace N` gives it, or ""
+	// when it declares none.
+	globalName string
 }
 
 // PackageRegistry maps a package URI to the exported surface inferred for it.
@@ -75,6 +78,23 @@ func (r *PackageRegistry) Path(uri string) string {
 		return entry.path
 	}
 	return ""
+}
+
+// GlobalName returns the name the package at uri declares with `export as namespace
+// N`, or "" for a package that declares none or a URI the registry does not hold.
+func (r *PackageRegistry) GlobalName(uri string) string {
+	if entry, ok := r.packages[uri]; ok {
+		return entry.globalName
+	}
+	return ""
+}
+
+// setGlobalName records name as the one the package at uri declares with `export
+// as namespace`. A URI the registry does not hold is left out.
+func (r *PackageRegistry) setGlobalName(uri, name string) {
+	if entry, ok := r.packages[uri]; ok {
+		entry.globalName = name
+	}
 }
 
 // URIs returns every URI the registry holds, loading ones included, in

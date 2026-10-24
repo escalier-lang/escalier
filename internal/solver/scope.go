@@ -52,6 +52,10 @@ type ValueBinding struct {
 	// Inside `class P`, the scheme holds the structural view of P's body and Nominal holds
 	// the receiver over `P`, so `return self` produces `P` while `self.x` reads the view.
 	Nominal soltype.Type
+	// Members is the namespace a member or index read off this binding looks in first,
+	// or nil when every such read is off the binding's value. bindNamespace sets it on
+	// the value it binds beside a namespace whose AsValue is set.
+	Members *Namespace
 }
 
 // IsOverloaded reports whether this binding is an overload set. Consumers MUST
@@ -86,6 +90,10 @@ type Namespace struct {
 	Values map[string]ValueBinding
 	Types  map[string]TypeBinding
 	Nested map[string]*Namespace
+	// AsValue is the value the namespace's own name stands for, or nil when the name
+	// is not a value. A package whose `.d.ts` writes `export = equal` sets it to the
+	// binding of `equal`. A member this namespace does not hold is read off this value.
+	AsValue *ValueBinding
 }
 
 // Scope is the solver's multi-sorted lexical scope. It has one map per binding sort plus
@@ -177,6 +185,17 @@ func (s *Scope) defineType(name string, b TypeBinding) {
 // defineNamespace inserts ns under name in this scope's namespace map.
 func (s *Scope) defineNamespace(name string, ns *Namespace) {
 	s.namespaces[name] = ns
+}
+
+// bindNamespace binds ns under name in this scope. When ns has an AsValue, it also
+// binds that value under name, with Members set to ns.
+func (s *Scope) bindNamespace(name string, ns *Namespace) {
+	s.defineNamespace(name, ns)
+	if ns.AsValue != nil {
+		b := *ns.AsValue
+		b.Members = ns
+		s.defineValue(name, b)
+	}
 }
 
 // defineUnprefixed binds every member ns holds, now or later, under its own name
