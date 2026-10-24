@@ -173,8 +173,8 @@ func (c *checker) inferVarDeclInit(scope *Scope, lvl int, d *ast.VarDecl, ns str
 		}
 	}
 	initT := c.inferExpr(scope, lvl, d.Init)
-	// The pre-pass could not resolve a call of a function this body declares, since that
-	// function's body had not been walked. It has been by now, so a local bound from the
+	// collectSharedLocals could not resolve a call of a function this body declares, since
+	// that function's body had not been walked. It has been by now, so a local bound from the
 	// call's result is marked here, along with every local that reads it.
 	c.markSharedFlow(scope, patVarIDs(d.Pattern), d.Init)
 	switch {
@@ -473,7 +473,9 @@ func (c *checker) immutableTarget(target soltype.Type) (soltype.Type, bool) {
 //   - A consuming move of an owned place returns true. In `val m: mut {x} = cfg` the move
 //     consumes `cfg` and leaves `m` the sole owner, so again no live alias remains, and a
 //     later use of `cfg` is a use-after-move. exprPlace ties the place to a VarID, so this
-//     case holds only inside a function body where the move engine records the consume.
+//     case holds only inside a function body where the move engine records the consume. It
+//     fails when `cfg` may hold a value a binding outside the frame also reaches, since the
+//     move leaves that outer binding holding the same object.
 //
 //   - A call whose return type is owned returns true. In `val m: mut Counter = make()` the
 //     callee kept nothing, so the caller holds the only reference to the result. It is the
@@ -752,8 +754,10 @@ func (c *checker) bindingMovesOwnedPlace(pat ast.Pat, init ast.Expr, initT solty
 // instance, or owned RefType, or a variable every value of which is one. The move consumes
 // the place and leaves the destination its sole owner. exprPlace fails outside a function
 // body, where the rename pass has assigned no VarID, so a move is confined to bodies where
-// the move engine enforces the consume. This is the place-move half of both
-// bindingMovesOwnedPlace and the isUniquelyOwned leaf check.
+// the move engine enforces the consume. A place rooted at a binding that may hold a shared
+// value, one a binding outside the frame also reaches, is never uniquely owned, so it
+// answers false. This is the place-move half of both bindingMovesOwnedPlace and the
+// isUniquelyOwned leaf check.
 func (c *checker) movesOwnedPlace(init ast.Expr, initT soltype.Type) bool {
 	p, ok := exprPlace(init)
 	if !ok {

@@ -303,9 +303,9 @@ func DetermineAliasSource(expr ast.Expr) AliasSource {
 	}
 }
 
-// BlockResultExpr returns the result expression of a block (the last
-// statement if it's an ExprStmt), or nil if the block is empty or ends
-// with a non-expression statement.
+// BlockResultExpr returns the result expression of a block, which is the
+// expression of its last statement when that statement is an ExprStmt. It
+// returns nil if the block is empty or ends with a non-expression statement.
 func BlockResultExpr(b ast.Block) ast.Expr {
 	if len(b.Stmts) == 0 {
 		return nil
