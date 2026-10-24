@@ -84,6 +84,39 @@ val r = match p {
 }`,
 		},
 		{
+			// `{}` matches every value lacking `x`, which is every value `{x}` misses.
+			name: "a catch-all below arms covering an optional key and its absence",
+			src: `declare val p: {x?: number}
+val r = match p {
+	{x} => 1,
+	{} => 2,
+	_ => 3,
+}`,
+			wantErrs: []string{"5:2-5:8: " + coveredArmMsg},
+		},
+		{
+			// `{y}` names a key the member requires, so it matches the values lacking `x`.
+			name: "a catch-all below arms covering an optional key of a union member and its absence",
+			src: `declare val p: string | {x?: number, y: number}
+val r = match p {
+	s: string => 1,
+	{x} => 2,
+	{y} => 3,
+	_ => 4,
+}`,
+			wantErrs: []string{"6:2-6:8: " + coveredArmMsg},
+		},
+		{
+			// `{y}` names a second optional key, so a value lacking both still escapes.
+			name: "a catch-all below arms testing two optional keys",
+			src: `declare val p: {x?: number, y?: number}
+val r = match p {
+	{x} => 1,
+	{y} => 2,
+	_ => 3,
+}`,
+		},
+		{
 			name: "a catch-all over values the arms above miss",
 			src: `declare val u: string | number | boolean
 val r = match u {

@@ -371,7 +371,7 @@ func (c *checker) condCoverage(scope *Scope, lvl int, norm ucs.Norm, shape solty
 		// primitive scrutinee instead, whose catch-all requirement the infiniteInhabitants rule
 		// below handles.
 		if uncovered.empty() {
-			return nil, !c.optionalKeyTested(carrier, cov.covering.tests)
+			return nil, !c.optionalKeyUncovered(carrier, cov.covering)
 		}
 		return uncovered.errorAt(split.Origin), false
 	}
@@ -398,13 +398,13 @@ func (c *checker) condCoverage(scope *Scope, lvl int, norm ucs.Norm, shape solty
 	// branch that destructures its shape.
 	if shape, ok := c.ctx.variadicShape(carrier); ok {
 		if variadicTagged(shape, cov.covering.tests) {
-			return nil, !c.optionalKeyTested(carrier, cov.covering.tests)
+			return nil, !c.optionalKeyUncovered(carrier, cov.covering)
 		}
 	} else if hasStructuralTag(cov.covering.tests) {
 		// Exhaustiveness accepts any structural tag here, but only one whose shape fits the
 		// scrutinee shows that the arms cover it.
 		return nil, c.structuralTagged(carrier, cov.covering.tests) &&
-			!c.optionalKeyTested(carrier, cov.covering.tests)
+			!c.optionalKeyUncovered(carrier, cov.covering)
 	}
 	// The whole scrutinee is the witness, since a structural scrutinee has no members to
 	// single out. The expanded carrier stands in for it rather than the alias name a
@@ -417,10 +417,16 @@ func (c *checker) condCoverage(scope *Scope, lvl int, norm ucs.Norm, shape solty
 	return uncovered.errorAt(split.Origin), false
 }
 
-// optionalKeyTested reports whether an object test among tests names a key that carrier, or a
-// member of it when it is a union, declares optional. `{x}` over a `{x?: number}` is such a
-// test. Coverage credits it with the member, but a value lacking `x` fails it at runtime.
-func (c *checker) optionalKeyTested(carrier soltype.Type, tests []ucs.Test) bool {
+// optionalKeyUncovered reports whether a member of carrier, or carrier itself when it is no
+// union, holds values that every tag in group fails because they lack an optional key. A
+// member is at risk when an object test in group names a key the member declares optional.
+// `{x}` over a `{x?: number}` is such a test. Coverage credits it with the member, but a value
+// lacking `x` fails it at runtime.
+//
+// Another tag in group can still match the values lacking the key. That is either an
+// annotation admitting the whole member or an object test fitting the member that names none
+// of its optional keys. `{x}` followed by `{}` covers `{x?: number}`.
+func (c *checker) optionalKeyUncovered(carrier soltype.Type, group tagGroup) bool {
 	members := []soltype.Type{carrier}
 	if u, isUnion := carrier.(*soltype.UnionType); isUnion {
 		members = u.Types
@@ -438,16 +444,28 @@ func (c *checker) optionalKeyTested(carrier soltype.Type, tests []ucs.Test) bool
 		if !isObj {
 			continue
 		}
-		for _, tag := range tests {
-			test, isObjTest := tag.(*ucs.ObjectTest)
-			if !isObjTest {
-				continue
-			}
+		namesOptional := func(test *ucs.ObjectTest) bool {
 			for _, key := range test.Keys {
 				if prop, ok := obj.Prop(key.Name); ok && prop.Optional {
 					return true
 				}
 			}
+			return false
+		}
+		tested, rescued := false, c.annAdmits(member, group)
+		for _, tag := range group.tests {
+			test, isObjTest := tag.(*ucs.ObjectTest)
+			if !isObjTest {
+				continue
+			}
+			if namesOptional(test) {
+				tested = true
+			} else if c.testMatchesMemberShape(test, member) {
+				rescued = true
+			}
+		}
+		if tested && !rescued {
+			return true
 		}
 	}
 	return false
