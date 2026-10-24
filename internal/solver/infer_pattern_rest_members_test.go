@@ -38,7 +38,7 @@ func TestInferObjectRestConvertsAccessors(t *testing.T) {
 					val {x, ...rest} = p
 					return rest
 				}`,
-			want: "fn (p: {x: number, set y(value: string)}) -> {y: undefined}",
+			want: "fn (p: {x: number, set y(v: string)}) -> {y: undefined}",
 		},
 		{
 			// A getter and setter sharing a name are one readable name, so the pair
@@ -49,7 +49,7 @@ func TestInferObjectRestConvertsAccessors(t *testing.T) {
 					val {x, ...rest} = p
 					return rest
 				}`,
-			want: "fn (p: {x: number, get y() -> string, set y(value: string)}) -> {y: string}",
+			want: "fn (p: {x: number, get y() -> string, set y(v: string)}) -> {y: string}",
 		},
 		{
 			// A `throws` on the getter is raised by the destructuring itself, so the stored
@@ -109,7 +109,7 @@ func TestInferObjectRestMembersStayUsable(t *testing.T) {
 			}
 		`)
 		require.Empty(t, errs)
-		require.Equal(t, "fn (p: {x: number, set y(value: string)}) -> undefined", values["f"])
+		require.Equal(t, "fn (p: {x: number, set y(v: string)}) -> undefined", values["f"])
 	})
 
 	t.Run("a class's converted setter-only name reads undefined too", func(t *testing.T) {

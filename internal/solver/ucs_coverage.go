@@ -310,8 +310,8 @@ func (c *checker) checkCondExhaustive(scope *Scope, lvl int, norm ucs.Norm, shap
 // condCoverage decides whether the arms of one conditional form cover every value of its
 // scrutinee. It reports nothing. It returns a NonExhaustiveMatchError when the arms leave a
 // value uncovered. Otherwise `covered` says whether the arms were shown to cover every value.
-// It is false where the rules below decline to ask, such as for a `boolean` scrutinee or one
-// whose type is still unsolved.
+// It is false where the rules below decline to ask, such as for a scrutinee whose type is
+// still unsolved.
 //
 // `shape` is the scrutinee snapshot taken before any arm bound, which the union members and the
 // structural exactness are read off. The message names the construct the top-level split
@@ -359,13 +359,19 @@ func (c *checker) condCoverage(scope *Scope, lvl int, norm ucs.Norm, shape solty
 	if c.annAdmits(carrier, cov.covering) {
 		return nil, true
 	}
+	// A `boolean` holds exactly the values `true` and `false`, so reading it as that union
+	// lets the per-member rule credit `match b { true => 1, false => 2 }` and name `false`
+	// as the witness when only a `true` arm is written.
+	if isBoolean(carrier) {
+		carrier = &soltype.UnionType{Types: []soltype.Type{booleanLit(true), booleanLit(false)}}
+	}
 	if u, isUnion := carrier.(*soltype.UnionType); isUnion {
 		uncovered := c.uncoveredMembers(scope, u, cov)
 		// A closed union is exhaustive once its members are covered. Openness is carried by a
 		// primitive scrutinee instead, whose catch-all requirement the infiniteInhabitants rule
 		// below handles.
 		if uncovered.empty() {
-			return nil, !c.optionalKeyTested(carrier, cov.covering.tests)
+			return nil, !c.optionalKeyUncovered(carrier, cov.covering)
 		}
 		return uncovered.errorAt(split.Origin), false
 	}
@@ -392,13 +398,13 @@ func (c *checker) condCoverage(scope *Scope, lvl int, norm ucs.Norm, shape solty
 	// branch that destructures its shape.
 	if shape, ok := c.ctx.variadicShape(carrier); ok {
 		if variadicTagged(shape, cov.covering.tests) {
-			return nil, !c.optionalKeyTested(carrier, cov.covering.tests)
+			return nil, !c.optionalKeyUncovered(carrier, cov.covering)
 		}
 	} else if hasStructuralTag(cov.covering.tests) {
 		// Exhaustiveness accepts any structural tag here, but only one whose shape fits the
 		// scrutinee shows that the arms cover it.
 		return nil, c.structuralTagged(carrier, cov.covering.tests) &&
-			!c.optionalKeyTested(carrier, cov.covering.tests)
+			!c.optionalKeyUncovered(carrier, cov.covering)
 	}
 	// The whole scrutinee is the witness, since a structural scrutinee has no members to
 	// single out. The expanded carrier stands in for it rather than the alias name a
@@ -411,10 +417,16 @@ func (c *checker) condCoverage(scope *Scope, lvl int, norm ucs.Norm, shape solty
 	return uncovered.errorAt(split.Origin), false
 }
 
-// optionalKeyTested reports whether an object test among tests names a key that carrier, or a
-// member of it when it is a union, declares optional. `{x}` over a `{x?: number}` is such a
-// test. Coverage credits it with the member, but a value lacking `x` fails it at runtime.
-func (c *checker) optionalKeyTested(carrier soltype.Type, tests []ucs.Test) bool {
+// optionalKeyUncovered reports whether a member of carrier, or carrier itself when it is no
+// union, holds values that every tag in group fails because they lack an optional key. A
+// member is at risk when an object test in group names a key the member declares optional.
+// `{x}` over a `{x?: number}` is such a test. Coverage credits it with the member, but a value
+// lacking `x` fails it at runtime.
+//
+// Another tag in group can still match the values lacking the key. That is either an
+// annotation admitting the whole member or an object test fitting the member that names none
+// of its optional keys. `{x}` followed by `{}` covers `{x?: number}`.
+func (c *checker) optionalKeyUncovered(carrier soltype.Type, group tagGroup) bool {
 	members := []soltype.Type{carrier}
 	if u, isUnion := carrier.(*soltype.UnionType); isUnion {
 		members = u.Types
@@ -432,16 +444,28 @@ func (c *checker) optionalKeyTested(carrier soltype.Type, tests []ucs.Test) bool
 		if !isObj {
 			continue
 		}
-		for _, tag := range tests {
-			test, isObjTest := tag.(*ucs.ObjectTest)
-			if !isObjTest {
-				continue
-			}
+		namesOptional := func(test *ucs.ObjectTest) bool {
 			for _, key := range test.Keys {
 				if prop, ok := obj.Prop(key.Name); ok && prop.Optional {
 					return true
 				}
 			}
+			return false
+		}
+		tested, rescued := false, c.annAdmits(member, group)
+		for _, tag := range group.tests {
+			test, isObjTest := tag.(*ucs.ObjectTest)
+			if !isObjTest {
+				continue
+			}
+			if namesOptional(test) {
+				tested = true
+			} else if c.testMatchesMemberShape(test, member) {
+				rescued = true
+			}
+		}
+		if tested && !rescued {
+			return true
 		}
 	}
 	return false
@@ -607,6 +631,13 @@ func (c *checker) uncoveredMembers(scope *Scope, u *soltype.UnionType, cov cover
 		if c.memberTagged(scope, member, cov.covering) {
 			continue
 		}
+		// A `boolean` member with one of its values named leaves only the other, so that
+		// value is the witness. `true` alone over `string | boolean` asks for `false`.
+		if isBoolean(member) {
+			if missing, partly := c.missingBoolean(cov.covering); partly {
+				member = missing
+			}
+		}
 		// A guarded catch-all arm names every value, so it is what leaves this member
 		// uncovered whenever no tag of its own does.
 		uncovered.add(member,
@@ -628,6 +659,11 @@ func (c *checker) memberTagged(scope *Scope, member soltype.Type, group tagGroup
 	switch m := member.(type) {
 	case *soltype.LitType:
 		return c.litTagged(m, group.tests)
+	case *soltype.PrimType:
+		// A `boolean` member is named once both of its values are.
+		return m.Prim == soltype.BoolPrim &&
+			c.litTagged(booleanLit(true), group.tests) &&
+			c.litTagged(booleanLit(false), group.tests)
 	case *soltype.NullType, *soltype.UndefinedType:
 		return atomTagged(member, group.tests)
 	case *soltype.ClassType:
@@ -644,6 +680,32 @@ func (c *checker) memberTagged(scope *Scope, member soltype.Type, group tagGroup
 	default:
 		return false
 	}
+}
+
+// missingBoolean returns the boolean value no literal test in group names, when the group
+// names exactly one of `true` and `false`.
+func (c *checker) missingBoolean(group tagGroup) (*soltype.LitType, bool) {
+	hasTrue := c.litTagged(booleanLit(true), group.tests)
+	hasFalse := c.litTagged(booleanLit(false), group.tests)
+	switch {
+	case hasTrue && !hasFalse:
+		return booleanLit(false), true
+	case hasFalse && !hasTrue:
+		return booleanLit(true), true
+	default:
+		return nil, false
+	}
+}
+
+// isBoolean reports whether t is the `boolean` primitive.
+func isBoolean(t soltype.Type) bool {
+	p, isPrim := t.(*soltype.PrimType)
+	return isPrim && p.Prim == soltype.BoolPrim
+}
+
+// booleanLit returns the literal type of the boolean value v.
+func booleanLit(v bool) *soltype.LitType {
+	return &soltype.LitType{Lit: &soltype.BoolLit{Value: v}}
 }
 
 // variadicTagged reports whether the tuple tests among `tags` together match every length

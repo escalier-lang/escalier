@@ -7,7 +7,6 @@ import "github.com/escalier-lang/escalier/internal/set"
 type Pat interface {
 	isPat()
 	Node
-	Inferrable
 }
 
 func (*IdentPat) isPat()     {}
@@ -20,18 +19,17 @@ func (*LitPat) isPat()       {}
 func (*WildcardPat) isPat()  {}
 
 type IdentPat struct {
-	Name         string
-	VarID        int     // set by the rename pass (liveness.VarID); 0 = unset
-	Mutable      bool    // `mut` prefix on the binding (e.g. `val mut x = …`)
-	TypeAnn      TypeAnn // optional
-	Default      Expr    // optional
-	span         Span
-	inferredType Type
+	Name    string
+	VarID   int     // set by the rename pass (liveness.VarID); 0 = unset
+	Mutable bool    // `mut` prefix on the binding (e.g. `val mut x = …`)
+	TypeAnn TypeAnn // optional
+	Default Expr    // optional
+	span    Span
 	commentSlots
 }
 
 func NewIdentPat(name string, mutable bool, typeAnn TypeAnn, _default Expr, span Span) *IdentPat {
-	return &IdentPat{Name: name, Mutable: mutable, TypeAnn: typeAnn, Default: _default, span: span, inferredType: nil, commentSlots: commentSlots{}}
+	return &IdentPat{Name: name, Mutable: mutable, TypeAnn: typeAnn, Default: _default, span: span, commentSlots: commentSlots{}}
 }
 func (p *IdentPat) Accept(v Visitor) {
 	if v.EnterPat(p) {
@@ -55,15 +53,14 @@ func (*ObjShorthandPat) isObjPatElem() {}
 func (*ObjRestPat) isObjPatElem()      {}
 
 type ObjKeyValuePat struct {
-	Key          *Ident
-	Value        Pat
-	span         Span
-	inferredType Type
+	Key   *Ident
+	Value Pat
+	span  Span
 	commentSlots
 }
 
 func NewObjKeyValuePat(key *Ident, value Pat, span Span) *ObjKeyValuePat {
-	return &ObjKeyValuePat{Key: key, Value: value, span: span, inferredType: nil, commentSlots: commentSlots{}}
+	return &ObjKeyValuePat{Key: key, Value: value, span: span, commentSlots: commentSlots{}}
 }
 func (p *ObjKeyValuePat) Accept(v Visitor) {
 	// TODO
@@ -103,14 +100,13 @@ func (p *ObjRestPat) Accept(v Visitor) {
 }
 
 type ObjectPat struct {
-	Elems        []ObjPatElem
-	span         Span
-	inferredType Type
+	Elems []ObjPatElem
+	span  Span
 	commentSlots
 }
 
 func NewObjectPat(elems []ObjPatElem, span Span) *ObjectPat {
-	return &ObjectPat{Elems: elems, span: span, inferredType: nil, commentSlots: commentSlots{}}
+	return &ObjectPat{Elems: elems, span: span, commentSlots: commentSlots{}}
 }
 func (p *ObjectPat) Accept(v Visitor) {
 	if v.EnterPat(p) {
@@ -134,14 +130,13 @@ func (p *ObjectPat) Accept(v Visitor) {
 }
 
 type TuplePat struct {
-	Elems        []Pat
-	span         Span
-	inferredType Type
+	Elems []Pat
+	span  Span
 	commentSlots
 }
 
 func NewTuplePat(elems []Pat, span Span) *TuplePat {
-	return &TuplePat{Elems: elems, span: span, inferredType: nil, commentSlots: commentSlots{}}
+	return &TuplePat{Elems: elems, span: span, commentSlots: commentSlots{}}
 }
 func (p *TuplePat) Accept(v Visitor) {
 	if v.EnterPat(p) {
@@ -153,15 +148,14 @@ func (p *TuplePat) Accept(v Visitor) {
 }
 
 type ExtractorPat struct {
-	Name         QualIdent
-	Args         []Pat
-	span         Span
-	inferredType Type
+	Name QualIdent
+	Args []Pat
+	span Span
 	commentSlots
 }
 
 func NewExtractorPat(name QualIdent, args []Pat, span Span) *ExtractorPat {
-	return &ExtractorPat{Name: name, Args: args, span: span, inferredType: nil, commentSlots: commentSlots{}}
+	return &ExtractorPat{Name: name, Args: args, span: span, commentSlots: commentSlots{}}
 }
 func (p *ExtractorPat) Accept(v Visitor) {
 	if v.EnterPat(p) {
@@ -173,15 +167,14 @@ func (p *ExtractorPat) Accept(v Visitor) {
 }
 
 type InstancePat struct {
-	ClassName    QualIdent
-	Object       *ObjectPat
-	span         Span
-	inferredType Type
+	ClassName QualIdent
+	Object    *ObjectPat
+	span      Span
 	commentSlots
 }
 
 func NewInstancePat(className QualIdent, object *ObjectPat, span Span) *InstancePat {
-	return &InstancePat{ClassName: className, Object: object, span: span, inferredType: nil, commentSlots: commentSlots{}}
+	return &InstancePat{ClassName: className, Object: object, span: span, commentSlots: commentSlots{}}
 }
 func (p *InstancePat) Accept(v Visitor) {
 	if v.EnterPat(p) {
@@ -191,14 +184,13 @@ func (p *InstancePat) Accept(v Visitor) {
 }
 
 type RestPat struct {
-	Pattern      Pat
-	span         Span
-	inferredType Type
+	Pattern Pat
+	span    Span
 	commentSlots
 }
 
 func NewRestPat(pattern Pat, span Span) *RestPat {
-	return &RestPat{Pattern: pattern, span: span, inferredType: nil, commentSlots: commentSlots{}}
+	return &RestPat{Pattern: pattern, span: span, commentSlots: commentSlots{}}
 }
 func (p *RestPat) Accept(v Visitor) {
 	if v.EnterPat(p) {
@@ -208,14 +200,13 @@ func (p *RestPat) Accept(v Visitor) {
 }
 
 type LitPat struct {
-	Lit          Lit
-	span         Span
-	inferredType Type
+	Lit  Lit
+	span Span
 	commentSlots
 }
 
 func NewLitPat(lit Lit, span Span) *LitPat {
-	return &LitPat{Lit: lit, span: span, inferredType: nil, commentSlots: commentSlots{}}
+	return &LitPat{Lit: lit, span: span, commentSlots: commentSlots{}}
 }
 func (p *LitPat) Accept(v Visitor) {
 	if v.EnterPat(p) {
@@ -225,13 +216,12 @@ func (p *LitPat) Accept(v Visitor) {
 }
 
 type WildcardPat struct {
-	span         Span
-	inferredType Type
+	span Span
 	commentSlots
 }
 
 func NewWildcardPat(span Span) *WildcardPat {
-	return &WildcardPat{span: span, inferredType: nil, commentSlots: commentSlots{}}
+	return &WildcardPat{span: span, commentSlots: commentSlots{}}
 }
 func (p *WildcardPat) Accept(v Visitor) {
 	v.EnterPat(p)

@@ -4,11 +4,9 @@
 // `ast` nodes.
 //
 // Classify decides each class member's receiver mutability from a
-// seven-tier ladder. Two of those tiers read the runtime override store
-// in internal/interop. This package reaches that store through the
-// `OverrideLookup` interface instead of importing it, which is what
-// keeps the store's type representation off the converter's import
-// graph.
+// seven-tier ladder. Two of those tiers read a runtime override store
+// through the `OverrideLookup` interface. Nothing implements that interface
+// yet, so every caller passes a nil store and those two tiers never fire.
 package dts_to_esc
 
 import (
@@ -350,23 +348,6 @@ type trioTable struct {
 // `ReadonlyArray<T>`, so every param and member type reaches the class
 // already written the long way. Recognition was the only place the two
 // spellings had to be told apart.
-//
-// # The same rule at the type level
-//
-// internal/interop/class_shapes.go recognises the idiom a second time, over
-// inferred types rather than `.d.ts` statements, because the prelude reaches the
-// lib files through ConvertModule instead of this converter. The two state one
-// rule, checked against each other name by name:
-//
-//   - The named constructor side is tryFuseTrio: `Types[Foo]`,
-//     `Types[FooConstructor]`, and `Values[Foo]` a reference resolving to that
-//     same alias. Like detectTrios, it does not read what the constructor side
-//     declares.
-//   - The constructor side written inline on the binding is tryFuseEscalierClass:
-//     `Values[Foo]` an object type carrying a construct signature, with
-//     `Types[Foo]` as the instance side. That matches constructorSide's
-//     requirement that an inline object type carry a `new` returning the
-//     instance.
 //
 // # A `declare class` on the instance side
 //

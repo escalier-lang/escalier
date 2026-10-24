@@ -233,15 +233,16 @@ func TestInferKeyofNamedTypeStaysSymbolic(t *testing.T) {
 			wantExpanded: "never",
 		},
 		{
-			// A tuple yields only its own numeric indices, the keys Object.keys returns. It omits
-			// "length" and the inherited Array.prototype members TypeScript's keyof includes.
+			// A tuple yields its numeric indices, "length", and the named keys of the `Array` it
+			// is a subtype of, matching TypeScript. `Array` methods are omitted the same way
+			// they are for any class body.
 			name: "Tuple",
 			src: `
 				type Tup = [number, string]
 				type Result = keyof Tup
 			`,
 			wantSymbolic: "keyof Tup",
-			wantExpanded: "0 | 1",
+			wantExpanded: `0 | 1 | "length"`,
 		},
 		{
 			// keyof of a primitive is never, since a primitive has no enumerable keys.
@@ -334,6 +335,96 @@ func TestInferKeyofNamedTypeStaysSymbolic(t *testing.T) {
 			// Reducing with the alias environment — what constrain does to check a constraint —
 			// expands the named operand to the referenced type's keys.
 			require.Equal(t, tt.wantExpanded, soltype.Print(expandResidual(ctx, result)))
+		})
+	}
+}
+
+// TestInferKeyofTuple covers the keys a value of `keyof` a tuple may take and what reading a
+// tuple at its `"length"` key yields.
+func TestInferKeyofTuple(t *testing.T) {
+	tests := []struct {
+		name     string
+		src      string
+		wantErrs []string
+	}{
+		{
+			name: "an index",
+			src: `type Tuple = [string, number, boolean]
+val k: keyof Tuple = 2`,
+		},
+		{
+			name: "length",
+			src: `type Tuple = [string, number, boolean]
+val k: keyof Tuple = "length"`,
+		},
+		{
+			name: "length of an inexact tuple",
+			src: `type Tuple = [string, number, ...]
+val k: keyof Tuple = "length"`,
+		},
+		{
+			name: "an index past the end",
+			src: `type Tuple = [string, number, boolean]
+val k: keyof Tuple = 3`,
+			wantErrs: []string{`2:22-2:23: cannot constrain 3 <: 0 | 1 | 2 | "length"`},
+		},
+		{
+			name: "a key Array does not declare",
+			src: `type Tuple = [string, number, boolean]
+val k: keyof Tuple = "size"`,
+			wantErrs: []string{`2:22-2:28: cannot constrain "size" <: 0 | 1 | 2 | "length"`},
+		},
+		{
+			name: "the length of an exact tuple is its count of positions",
+			src: `type Tuple = [string, number, boolean]
+val n: Tuple["length"] = 3`,
+		},
+		{
+			name: "the length of an exact tuple rejects another count",
+			src: `type Tuple = [string, number, boolean]
+val n: Tuple["length"] = 2`,
+			wantErrs: []string{`2:26-2:27: cannot constrain 2 <: 3`},
+		},
+		{
+			name: "a string spelling a position reads that position",
+			src: `type Tuple = [string, number, boolean]
+val s: Tuple["0"] = "a"`,
+		},
+		{
+			name: "every key reads an element or the length",
+			src: `type Tuple = [string, number, boolean]
+val v: Tuple[keyof Tuple] = true`,
+		},
+		{
+			name: "a position past an inexact tuple's listed ones reads its open tail",
+			src: `type Tuple = [string, number, ...]
+val v: Tuple[2] = true`,
+		},
+		{
+			name: "a string spelling a position past an inexact tuple's listed ones reads its open tail",
+			src: `type Tuple = [string, number, ...]
+val v: Tuple["2"] = true`,
+		},
+		{
+			name: "a position past an exact tuple's end is out of range",
+			src: `type Tuple = [string, number]
+val v: Tuple["2"] = true`,
+			wantErrs: []string{"2:21-2:25: index 2 is out of range for tuple [string, number]"},
+		},
+		{
+			name: "the length of an inexact tuple is a number",
+			src: `type Tuple = [string, number, ...]
+val n: Tuple["length"] = 7`,
+		},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			_, _, errs := inferSource(t, test.src)
+			if test.wantErrs == nil {
+				require.Empty(t, messagesWithSpan(t, errs))
+				return
+			}
+			require.Equal(t, test.wantErrs, messagesWithSpan(t, errs))
 		})
 	}
 }
@@ -830,7 +921,7 @@ func TestInferKeyofKeyofIsNever(t *testing.T) {
 	}{
 		// The inner `keyof` grounds to `"a" | "b"`, whose members are string literals.
 		{"Object", `type Result = keyof keyof {a: number, b: string}`},
-		// The inner `keyof` grounds to `0 | 1`, whose members are number literals.
+		// The inner `keyof` grounds to `0 | 1 | "length"`, whose members are literals.
 		{"Tuple", `type Result = keyof keyof [number, string]`},
 		// The inner `keyof` grounds to `never`, the empty key set.
 		{"Never", `type Result = keyof keyof never`},
@@ -1884,7 +1975,7 @@ func TestInferKeyofIndexOverSpreadTuple(t *testing.T) {
 			name:         "KeyofGroundSpread",
 			src:          `type Result = keyof [...[number, string], boolean]`,
 			wantSymbolic: "keyof [...[number, string], boolean]",
-			wantExpanded: "0 | 1 | 2",
+			wantExpanded: `0 | 1 | 2 | "length"`,
 		},
 		{
 			// keyof over an abstract spread operand stays symbolic.
@@ -3264,15 +3355,16 @@ func TestInferMappedTypeReduction(t *testing.T) {
 			wantExpanded: `{a: boolean, "1": boolean}`,
 		},
 		{
-			// A tuple's keys are number literals, so a homomorphic map over one emits a field per
-			// index. The value expression still indexes the tuple positionally.
+			// A tuple's positions are number literals, so a homomorphic map over one emits a field
+			// per index. The value expression still indexes the tuple positionally. The `"length"`
+			// key reads the count of the tuple's positions.
 			name: "TupleKeys",
 			src: `
 				type Pair = [number, string]
 				type Result = {[K: keyof Pair]: Pair[K]}
 			`,
 			wantSymbolic: "{[K: keyof Pair]: Pair[K]}",
-			wantExpanded: `{"0": number, "1": string}`,
+			wantExpanded: `{"0": number, "1": string, length: 2}`,
 		},
 		{
 			// A single-key operand emits a single-field object; `keyof` collapsed its union to the
