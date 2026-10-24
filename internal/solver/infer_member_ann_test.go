@@ -32,11 +32,11 @@ func TestInferMemberTypeAnnRoundTrip(t *testing.T) {
 		},
 		{"Getter", `type Result = {get a(&self) -> number}`, "{get a() -> number}"},
 		// A setter returns nothing, so it writes no `-> R`, the way a class body declares one.
-		{"Setter", `type Result = {set a(&mut self, v: number)}`, "{set a(value: number)}"},
+		{"Setter", `type Result = {set a(&mut self, v: number)}`, "{set a(v: number)}"},
 		{
 			"GetterAndSetter",
 			`type Result = {get a(&self) -> number, set a(&mut self, v: number)}`,
-			"{get a() -> number, set a(value: number)}",
+			"{get a() -> number, set a(v: number)}",
 		},
 		{
 			"BesideProperty",
@@ -152,17 +152,17 @@ func TestInferAccessorTypeAnnThrowsRoundTrip(t *testing.T) {
 		{
 			"Setter",
 			`type Result = {set a(&mut self, v: number) throws string}`,
-			"{set a(value: number) throws string}",
+			"{set a(v: number) throws string}",
 		},
 		{
 			"SetterWithReturnType",
 			`type Result = {set a(&mut self, v: number) -> undefined throws string}`,
-			"{set a(value: number) throws string}",
+			"{set a(v: number) throws string}",
 		},
 		{
 			"Pair",
 			`type Result = {get a(&self) -> number throws string, set a(&mut self, v: number) throws boolean}`,
-			"{get a() -> number throws string, set a(value: number) throws boolean}",
+			"{get a() -> number throws string, set a(v: number) throws boolean}",
 		},
 		{"NoClause", `type Result = {get a(&self) -> number}`, "{get a() -> number}"},
 	}
@@ -481,7 +481,7 @@ func TestInferMemberTypeAnnDeduplicates(t *testing.T) {
 			name: "TwoSetters",
 			src:  `type Result = {set a(&mut self, v: number), set a(&mut self, v: string)}`,
 			want: []string{"1:49-1:50: An object type may declare 'a' only once."},
-			obj:  "{set a(value: string)}",
+			obj:  "{set a(v: string)}",
 		},
 		{
 			name: "GetterThenProperty",
@@ -511,13 +511,13 @@ func TestInferMemberTypeAnnDeduplicates(t *testing.T) {
 			name: "GetterThenSetterOverAProperty",
 			src:  `type Result = {a: number, get a(&self) -> string, set a(&mut self, v: string)}`,
 			want: []string{"1:31-1:32: An object type may declare 'a' only once."},
-			obj:  "{get a() -> string, set a(value: string)}",
+			obj:  "{get a() -> string, set a(v: string)}",
 		},
 		{
 			name: "AccessorPairCoexists",
 			src:  `type Result = {get a(&self) -> number, set a(&mut self, v: number)}`,
 			want: nil,
-			obj:  "{get a() -> number, set a(value: number)}",
+			obj:  "{get a() -> number, set a(v: number)}",
 		},
 		{
 			name: "MethodsAreOverloadArms",
@@ -564,7 +564,7 @@ func TestInferSetterTypeAnnArity(t *testing.T) {
 			name: "TwoValueParams",
 			src:  `type Result = {set a(&mut self, v: number, w: string)}`,
 			want: []string{"1:20-1:21: Setter 'a' must declare exactly one value parameter; found 2."},
-			obj:  "{set a(value: number)}",
+			obj:  "{set a(v: number)}",
 		},
 	}
 	for _, tt := range tests {

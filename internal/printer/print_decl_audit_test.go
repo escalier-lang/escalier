@@ -16,8 +16,7 @@ import (
 // Escalier source string, parse it, print it, re-parse the printed
 // output, print again, and assert the two printed strings match.
 //
-// This mirrors type_system.TestPrintTypeAudit_RoundTrip but at the
-// declaration level. Forms that currently fail to round-trip are listed
+// Forms that currently fail to round-trip are listed
 // in TestPrintDeclAudit_KnownGaps below, with the work that must land
 // before §5 (converter MVP) can emit them.
 //

@@ -13,7 +13,7 @@ Escalier is a programming language with a Go-based compiler. The compiler pipeli
 
 - [internal/lexer_util/](internal/lexer_util/), [internal/parser/](internal/parser/) — lexing and parsing
 - [internal/ast/](internal/ast/) — AST definitions and visitor
-- [internal/type_system/](internal/type_system/) — type representations and visitor
+- [internal/soltype/](internal/soltype/) — type representations and visitor
 - [internal/solver/](internal/solver/) — type inference and checking
 - [internal/codegen/](internal/codegen/), [internal/printer/](internal/printer/) — output
 - [internal/resolver/](internal/resolver/), [internal/dep_graph/](internal/dep_graph/) — module/name resolution
@@ -32,7 +32,7 @@ Escalier is a programming language with a Go-based compiler. The compiler pipeli
 
 ## Code conventions
 
-- When traversing tree-like structures, use the existing visitor for that tree — see [internal/ast/visitor.go](internal/ast/visitor.go) for AST and [internal/type_system/visitor.go](internal/type_system/visitor.go) for types. Don't hand-roll a new traversal.
+- When traversing tree-like structures, use the existing visitor for that tree — see [internal/ast/visitor.go](internal/ast/visitor.go) for AST and [internal/soltype/visitor.go](internal/soltype/visitor.go) for types. Don't hand-roll a new traversal.
 - Use the `Set` ADT from [internal/set/](internal/set/) (`set.NewSet[T]()`, `set.FromSlice(...)`) instead of `map[T]struct{}` or `map[T]bool`.
 - Don't shadow Go builtins (`any`, `error`, `new`, `len`, etc.) or imported type/package aliases with local identifiers. Pick a distinct name (e.g. `anyT`, `errVal`).
 - Name a function for what it produces or does, not for why a caller wants it. `immutableTarget` says it converts a mutable target to its immutable form, where `ownedMutUpgradeTarget` named the rule the conversion serves and left readers asking what was upgraded. A name built from the reason also goes stale as soon as a second caller needs the same operation for a different reason.

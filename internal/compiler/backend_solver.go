@@ -92,7 +92,7 @@ type solverDts struct {
 
 func (d *solverDts) buildDefinitions(b *codegen.Builder, depGraph *dep_graph.DepGraph) *codegen.Module {
 	root := &solverDtsScope{module: d.module}
-	return b.BuildDefinitionsFromSol(depGraph, root, solver.PreludeKeyPrefix(), d.module.Symbols)
+	return b.BuildDefinitions(depGraph, root, solver.PreludeKeyPrefix(), d.module.Symbols)
 }
 
 // solverDtsScope reads the module's own top level, where a declaration a namespace

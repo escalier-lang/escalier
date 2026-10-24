@@ -4,6 +4,7 @@ import (
 	"fmt"
 
 	"github.com/escalier-lang/escalier/internal/ast"
+	"github.com/escalier-lang/escalier/internal/provenance"
 	"github.com/escalier-lang/escalier/internal/soltype"
 )
 
@@ -60,6 +61,16 @@ type FromNormalization struct {
 }
 
 func (FromNormalization) isOrigin() {}
+
+// FromExternal is the leaf for a type minted from a source outside Escalier, such as a
+// GraphQL schema or query. Source names that origin. Its package defines the concrete
+// provenance, so the solver depends on no external format. NodeFor resolves only FromAST,
+// so a FromExternal entry yields no AST node.
+type FromExternal struct {
+	Source provenance.Provenance
+}
+
+func (FromExternal) isOrigin() {}
 
 // ASTOriginKind tags WHY a node minted a type, so a renderer/LSP can phrase blame
 // ("the literal here", "this argument", "field `x`") without re-deriving it from

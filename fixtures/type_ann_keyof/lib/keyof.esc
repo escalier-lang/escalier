@@ -1,6 +1,10 @@
 type Tuple = [string, number, boolean]
 val i: keyof Tuple = 2
 val j: keyof Tuple = 3
+val l: keyof Tuple = "length"
+val v: Tuple[keyof Tuple] = 5
+val s: Tuple["0"] = "a"
+val n: Tuple["length"] = 3
 
 type Point = {x: number, y: number}
 val coord1: keyof Point = "y"

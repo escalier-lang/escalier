@@ -3070,14 +3070,14 @@ func (c *checker) inferAccessorAssign(
 	c.raiseAccessorThrows(lvl, e, describeSite("assigning", "this assignment", e.Left), setter.ThrowsOrNever())
 	errsBefore := len(c.errs)
 	c.checkReceiverMut(e.Left, name, recv, setter.SelfParam)
-	c.constrain(e.Right, source, setter.Param)
+	c.constrain(e.Right, source, setter.Param.Type)
 	// A concretely owned parameter takes the value out of this frame, so the source
 	// binding is consumed and a later use of it is a use-after-move. This mirrors
 	// consumeCallArgs, since a setter write is a call on the argument side. The move
 	// records against the assignment's statement, resolved from assignStmt rather than
 	// c.fn.currentStmt, which inferring the receiver and source may have overwritten with
 	// an inner branch statement. A rejected write records no move.
-	if c.fn != nil && len(c.errs) == errsBefore && c.isConcreteOwned(setter.Param) {
+	if c.fn != nil && len(c.errs) == errsBefore && c.isConcreteOwned(setter.Param.Type) {
 		if ref, ok := c.fn.stmtToRef[assignStmt]; ok {
 			c.consumeOwned(e.Right, source, e.Right, ref)
 			c.recordEscapeSite(e.Right, ref)

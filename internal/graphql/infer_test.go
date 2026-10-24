@@ -1,12 +1,18 @@
 package graphql
 
 import (
+	"fmt"
 	"os"
 	"testing"
 
+	"github.com/escalier-lang/escalier/internal/soltype"
+	"github.com/escalier-lang/escalier/internal/solver"
 	"github.com/gkampitakis/go-snaps/snaps"
+	"github.com/stretchr/testify/require"
 	"github.com/vektah/gqlparser/v2"
 	"github.com/vektah/gqlparser/v2/ast"
+	"github.com/vektah/gqlparser/v2/parser"
+	"github.com/vektah/gqlparser/v2/validator"
 	"github.com/vektah/gqlparser/v2/validator/rules"
 )
 
@@ -73,8 +79,8 @@ func TestInferGraphQLQuery_GetUserAndPosts(t *testing.T) {
 	}
 
 	// Snapshot test the inferred types
-	snaps.MatchSnapshot(t, result.ResultType.String())
-	snaps.MatchSnapshot(t, result.VariablesType.String())
+	snaps.MatchSnapshot(t, soltype.Print(result.ResultType))
+	snaps.MatchSnapshot(t, soltype.Print(result.VariablesType))
 }
 
 func TestInferGraphQLQuery_CreatePostAndComment(t *testing.T) {
@@ -130,8 +136,8 @@ func TestInferGraphQLQuery_CreatePostAndComment(t *testing.T) {
 	}
 
 	// Snapshot test the inferred types
-	snaps.MatchSnapshot(t, result.ResultType.String())
-	snaps.MatchSnapshot(t, result.VariablesType.String())
+	snaps.MatchSnapshot(t, soltype.Print(result.ResultType))
+	snaps.MatchSnapshot(t, soltype.Print(result.VariablesType))
 }
 
 func TestInferGraphQLQuery_SearchContentWithUnion(t *testing.T) {
@@ -182,8 +188,8 @@ func TestInferGraphQLQuery_SearchContentWithUnion(t *testing.T) {
 		t.Error("Expected VariablesType to be non-nil")
 	}
 	// Snapshot test the inferred types
-	snaps.MatchSnapshot(t, result.ResultType.String())
-	snaps.MatchSnapshot(t, result.VariablesType.String())
+	snaps.MatchSnapshot(t, soltype.Print(result.ResultType))
+	snaps.MatchSnapshot(t, soltype.Print(result.VariablesType))
 }
 
 func TestInferGraphQLQuery_ScalarTypes(t *testing.T) {
@@ -211,8 +217,8 @@ func TestInferGraphQLQuery_ScalarTypes(t *testing.T) {
 		t.Error("Expected VariablesType to be non-nil")
 	}
 
-	snaps.MatchSnapshot(t, result.ResultType.String())
-	snaps.MatchSnapshot(t, result.VariablesType.String())
+	snaps.MatchSnapshot(t, soltype.Print(result.ResultType))
+	snaps.MatchSnapshot(t, soltype.Print(result.VariablesType))
 }
 
 func TestInferGraphQLQuery_ListTypes(t *testing.T) {
@@ -242,8 +248,8 @@ func TestInferGraphQLQuery_ListTypes(t *testing.T) {
 		t.Error("Expected VariablesType to be non-nil")
 	}
 
-	snaps.MatchSnapshot(t, result.ResultType.String())
-	snaps.MatchSnapshot(t, result.VariablesType.String())
+	snaps.MatchSnapshot(t, soltype.Print(result.ResultType))
+	snaps.MatchSnapshot(t, soltype.Print(result.VariablesType))
 }
 
 func TestInferGraphQLQuery_InputObjectTypes(t *testing.T) {
@@ -274,8 +280,8 @@ func TestInferGraphQLQuery_InputObjectTypes(t *testing.T) {
 		t.Error("Expected VariablesType to be non-nil")
 	}
 
-	snaps.MatchSnapshot(t, result.ResultType.String())
-	snaps.MatchSnapshot(t, result.VariablesType.String())
+	snaps.MatchSnapshot(t, soltype.Print(result.ResultType))
+	snaps.MatchSnapshot(t, soltype.Print(result.VariablesType))
 }
 
 func TestInferGraphQLQuery_SubscriptionTypes(t *testing.T) {
@@ -305,8 +311,8 @@ func TestInferGraphQLQuery_SubscriptionTypes(t *testing.T) {
 		t.Error("Expected VariablesType to be non-nil")
 	}
 
-	snaps.MatchSnapshot(t, result.ResultType.String())
-	snaps.MatchSnapshot(t, result.VariablesType.String())
+	snaps.MatchSnapshot(t, soltype.Print(result.ResultType))
+	snaps.MatchSnapshot(t, soltype.Print(result.VariablesType))
 }
 
 func TestInferGraphQLQuery_InterfaceTypes(t *testing.T) {
@@ -355,8 +361,8 @@ func TestInferGraphQLQuery_InterfaceTypes(t *testing.T) {
 		t.Error("Expected VariablesType to be non-nil")
 	}
 
-	snaps.MatchSnapshot(t, result.ResultType.String())
-	snaps.MatchSnapshot(t, result.VariablesType.String())
+	snaps.MatchSnapshot(t, soltype.Print(result.ResultType))
+	snaps.MatchSnapshot(t, soltype.Print(result.VariablesType))
 }
 
 func TestInferGraphQLQuery_NullableFields(t *testing.T) {
@@ -391,8 +397,8 @@ func TestInferGraphQLQuery_NullableFields(t *testing.T) {
 		t.Error("Expected VariablesType to be non-nil")
 	}
 
-	snaps.MatchSnapshot(t, result.ResultType.String())
-	snaps.MatchSnapshot(t, result.VariablesType.String())
+	snaps.MatchSnapshot(t, soltype.Print(result.ResultType))
+	snaps.MatchSnapshot(t, soltype.Print(result.VariablesType))
 }
 
 func TestInferGraphQLQuery_ComplexMutation(t *testing.T) {
@@ -433,8 +439,8 @@ func TestInferGraphQLQuery_ComplexMutation(t *testing.T) {
 		t.Error("Expected VariablesType to be non-nil")
 	}
 
-	snaps.MatchSnapshot(t, result.ResultType.String())
-	snaps.MatchSnapshot(t, result.VariablesType.String())
+	snaps.MatchSnapshot(t, soltype.Print(result.ResultType))
+	snaps.MatchSnapshot(t, soltype.Print(result.VariablesType))
 }
 
 func TestInferGraphQLQuery_SubscriptionWithVariables(t *testing.T) {
@@ -468,6 +474,87 @@ func TestInferGraphQLQuery_SubscriptionWithVariables(t *testing.T) {
 		t.Error("Expected VariablesType to be non-nil")
 	}
 
-	snaps.MatchSnapshot(t, result.ResultType.String())
-	snaps.MatchSnapshot(t, result.VariablesType.String())
+	snaps.MatchSnapshot(t, soltype.Print(result.ResultType))
+	snaps.MatchSnapshot(t, soltype.Print(result.VariablesType))
+}
+
+// TestInferGraphQLQuery_BooleanAndNullableListFields asserts that a `Boolean` field infers
+// `boolean`, and that a nullable list of nullable elements infers an optional `Array` that
+// may also be `null`.
+func TestInferGraphQLQuery_BooleanAndNullableListFields(t *testing.T) {
+	schema := loadSchema(t)
+
+	queryStr := `
+		query GetUserFlags($userId: ID!) {
+			getUser(id: $userId) {
+				verified
+				tags
+			}
+		}
+	`
+
+	queryDoc := gqlparser.MustLoadQueryWithRules(schema, queryStr, rules.NewDefaultRules())
+	result := InferGraphQLQuery(schema, queryDoc)
+
+	require.NotNil(t, result.ResultType)
+	snaps.MatchInlineSnapshot(t, soltype.Print(result.ResultType), snaps.Inline("{getUser?: {verified: boolean, tags?: Array<string | null> | null} | null}"))
+}
+
+// TestInferGraphQLQueryRecordsProvenance covers the schema and query positions the inference
+// records in its Prov table for the types it mints.
+func TestInferGraphQLQueryRecordsProvenance(t *testing.T) {
+	schema := loadSchema(t)
+
+	queryStr := `query GetUserFlags($userId: ID!) {
+	getUser(id: $userId) {
+		role
+		tags
+	}
+}`
+
+	queryDoc, err := parser.ParseQuery(&ast.Source{Name: "query.graphql", Input: queryStr})
+	require.NoError(t, err)
+	require.Empty(t, validator.ValidateWithRules(schema, queryDoc, rules.NewDefaultRules()))
+	result := InferGraphQLQuery(schema, queryDoc)
+
+	getUser := propType(t, result.ResultType, "getUser")
+	user := getUser.(*soltype.UnionType).Types[0]
+	tests := []struct {
+		name string
+		typ  soltype.Type
+		want string
+	}{
+		{name: "the result object reads the Query type", typ: result.ResultType, want: "schema.graphql:77"},
+		{name: "the variables object reads the operation", typ: result.VariablesType, want: "query.graphql:1"},
+		{name: "a nullable field reads its field definition", typ: getUser, want: "schema.graphql:80"},
+		{name: "an enum reads its type definition", typ: propType(t, user, "role"), want: "schema.graphql:12"},
+		{name: "a list reads its field selection", typ: listOf(t, propType(t, user, "tags")), want: "query.graphql:4"},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			origin, ok := result.Prov[test.typ].(solver.FromExternal)
+			require.True(t, ok)
+			gql, ok := origin.Source.(*GraphQLProvenance)
+			require.True(t, ok)
+			require.Equal(t, test.want, fmt.Sprintf("%s:%d", gql.Position.Src.Name, gql.Position.Line))
+		})
+	}
+}
+
+// propType returns the type of the property name on the object t.
+func propType(t *testing.T, typ soltype.Type, name string) soltype.Type {
+	t.Helper()
+	obj, ok := typ.(*soltype.ObjectType)
+	require.True(t, ok)
+	prop, ok := obj.Prop(name)
+	require.True(t, ok)
+	return prop.Type
+}
+
+// listOf returns the Array member of a nullable list type `Array<T> | null`.
+func listOf(t *testing.T, typ soltype.Type) soltype.Type {
+	t.Helper()
+	union, ok := typ.(*soltype.UnionType)
+	require.True(t, ok)
+	return union.Types[0]
 }

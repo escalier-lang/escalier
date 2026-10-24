@@ -66,13 +66,12 @@ type VarDecl struct {
 	Init    Expr    // optional
 	// Else is the `else` block of a `let`-`else` binding, run when the pattern fails
 	// to match. It is nil for a plain `val`/`var`.
-	Else         *Block
-	Decorators   []*Decorator
-	export       bool
-	declare      bool
-	override     bool
-	span         Span
-	InferredType Type // optional, used to store the inferred pattern type
+	Else       *Block
+	Decorators []*Decorator
+	export     bool
+	declare    bool
+	override   bool
+	span       Span
 	declProvenance
 	commentSlots
 }
@@ -94,7 +93,6 @@ func NewVarDecl(
 		export:         export,
 		declare:        declare,
 		span:           span,
-		InferredType:   nil,
 		declProvenance: declProvenance{},
 		commentSlots:   commentSlots{},
 	}
@@ -450,7 +448,7 @@ func (e *ExportAssignmentStmt) Accept(v Visitor) {
 // in Escalier source (.esc files), optionally prefixed by `override`.
 //
 // Note: .d.ts files are handled by an entirely separate pipeline
-// (internal/dts_parser + internal/interop) that has its own
+// (internal/dts_parser + internal/dts_to_esc) that has its own
 // dts_parser.ModuleDecl and dts_parser.GlobalDecl types. Those are
 // classified and converted into Escalier AST nodes before they ever
 // reach this package. DeclareModuleDecl and DeclareGlobalDecl below

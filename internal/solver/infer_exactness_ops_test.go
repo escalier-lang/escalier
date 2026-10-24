@@ -20,14 +20,15 @@ func TestInferOperatorExactnessPropagates(t *testing.T) {
 		wantExpanded string
 	}{
 		{
-			// An exact tuple's index set is closed: it has exactly the positions it lists.
+			// An exact tuple's index set is closed: it has exactly the positions it lists. The
+			// tuple also carries the keys of the `Array` it is a subtype of.
 			name: "KeyofExactTuple",
 			src: `
 				type Tup = [number, string]
 				type Result = keyof Tup
 			`,
 			wantSymbolic: "keyof Tup",
-			wantExpanded: "0 | 1",
+			wantExpanded: `0 | 1 | "length"`,
 		},
 		{
 			// An inexact tuple has unknown trailing positions, so its index set is open. An open set
@@ -38,7 +39,7 @@ func TestInferOperatorExactnessPropagates(t *testing.T) {
 				type Result = keyof Tup
 			`,
 			wantSymbolic: "keyof Tup",
-			wantExpanded: "number",
+			wantExpanded: `number | "length"`,
 		},
 		{
 			// `T[keyof T]` over an exact object reads every key the object declares, and those are
@@ -64,15 +65,16 @@ func TestInferOperatorExactnessPropagates(t *testing.T) {
 			wantExpanded: "unknown",
 		},
 		{
-			// The tuple twin: `keyof` of an inexact tuple is `number`, and reading the tuple at a
-			// bare `number` joins its unlisted trailing positions in as `unknown`.
+			// The tuple twin: the positions of an inexact tuple are `number`, and reading the
+			// tuple at a bare `number` joins its unlisted trailing positions in as `unknown`.
+			// Its `"length"` is the `number` the `Array` declares, since the count is open.
 			name: "IndexEveryIndexOfInexactTuple",
 			src: `
 				type Tup = [number, string, ...]
 				type Result = Tup[keyof Tup]
 			`,
 			wantSymbolic: "Tup[keyof Tup]",
-			wantExpanded: "unknown",
+			wantExpanded: "unknown | number",
 		},
 		{
 			// An exact target union lists every member, so reading K off each reads every value K

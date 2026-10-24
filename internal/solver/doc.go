@@ -1,6 +1,5 @@
-// Package solver is the production algebraic-subtyping engine for Escalier's new
-// checker, promoted from the internal/simplesub spike (Milestone M1 of the
-// SimpleSub migration). It implements the core of Lionel Parreaux's "Simple-sub"
+// Package solver is the production algebraic-subtyping engine for Escalier's
+// checker. It implements the core of Lionel Parreaux's "Simple-sub"
 // algorithm over the structural-core subset of the type system:
 //
 //   - fresh inference variables that carry lower/upper *bound lists* plus a level
@@ -14,8 +13,8 @@
 // sibling internal/soltype package; the engine (constrain/extrude),
 // coalescing, and the mutable Context live here. solver imports soltype and
 // internal/ast (for the
-// Info side table's key type); neither ast nor type_system imports solver, so
-// the package is acyclic and additive — it shares no code with type_system.
+// Info side table's key type); ast does not import solver, so the package is
+// acyclic.
 //
 // M3 (PR1) adds let-generalization on top of M2's walk: TypeSchemes (poly.go —
 // MonoScheme/PolyScheme + ValueBinding.Schemes), instantiate/freshenAbove for

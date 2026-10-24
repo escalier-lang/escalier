@@ -229,7 +229,7 @@ func objectToSoltype(t *testing.T, env map[string]soltype.Type, ta *ast.ObjectTy
 			// parameter is what the setter accepts and its throws is what writing raises.
 			fn := methodFuncToSoltype(t, env, e.Fn, e.Receiver)
 			require.Len(t, fn.Params, 1, "parseType: a setter takes one value parameter")
-			elems = append(elems, &soltype.SetterElem{Name: objKeyNameReq(t, e.Name), SelfParam: fn.SelfParam, Param: fn.Params[0].Type, Throws: fn.Throws})
+			elems = append(elems, &soltype.SetterElem{Name: objKeyNameReq(t, e.Name), SelfParam: fn.SelfParam, Param: fn.Params[0], Throws: fn.Throws})
 		case *ast.ConstructorTypeAnn:
 			elems = append(elems, &soltype.ConstructorElem{Signatures: []*soltype.FuncType{funcToSoltype(t, env, e.Fn)}})
 		case *ast.MappedTypeAnn:

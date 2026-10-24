@@ -10,8 +10,8 @@ import (
 	"github.com/escalier-lang/escalier/internal/set"
 )
 
-// Precedence levels for type operators, matching the Escalier parser (and
-// type_system/print_type.go). Higher values bind more tightly. precPrefix covers the
+// Precedence levels for type operators, matching the Escalier parser.
+// Higher values bind more tightly. precPrefix covers the
 // prefix forms — the `mut`/lifetime borrow prefix (RefType) and the `keyof` operator
 // (KeyofType); the `...T` spread prefix lands with tuple/object spread types.
 const (
@@ -54,8 +54,7 @@ func typePrec(t Type) int {
 		return precAtom
 	case *CondType:
 		// `if C : E { T } else { E }` is self-delimiting — the leading `if` and trailing `}` bound
-		// it — so it binds like an atom and never needs outer parens, matching type_system's
-		// CondType rendering.
+		// it — so it binds like an atom and never needs outer parens.
 		return precAtom
 	case *InferType:
 		// The `infer U` binder leads with a keyword, so it binds like the other prefixes. A
@@ -102,10 +101,8 @@ func typePrec(t Type) int {
 
 // Print renders a coalesced Type as an Escalier type-annotation string.
 //
-// This is Delta #2 of m1-implementation-plan §2.2: a native soltype printer that
-// shares NO code with type_system.PrintType but deliberately mirrors its surface
-// forms so the two checkers' rendered types stay string-comparable in M7's
-// differential harness. It renders the M1 coalesced type set only
+// This is Delta #2 of m1-implementation-plan §2.2, a native soltype printer. It
+// renders the M1 coalesced type set only
 // (PrimType/LitType/FuncType/TupleType/UndefinedType/NeverType/UnknownType/UnionType/
 // IntersectionType). Print itself emits no <T0, ...> quantifier prefix — a
 // monotype has no parameters to name; PrintAsScheme renders the generalized form.
@@ -672,7 +669,7 @@ func freeTypeVars(t Type) []*TypeVarType {
 					if e.SelfParam != nil {
 						walk(e.SelfParam.Type)
 					}
-					walk(e.Param)
+					walk(e.Param.Type)
 					if e.Throws != nil {
 						walk(e.Throws)
 					}
@@ -894,8 +891,7 @@ func (p *namedPrinter) borrowLifetimeName(lt Lifetime) string {
 }
 
 // printTypeMinPrec prints a child type, wrapping it in parentheses when its
-// precedence is below the required minimum — mirrors type_system's helper of the
-// same shape, so e.g. a function inside a union renders as
+// precedence is below the required minimum, so e.g. a function inside a union renders as
 // `(fn () -> number) | string`.
 func (p *namedPrinter) printTypeMinPrec(t Type, minPrec int) string {
 	result := p.printType(t)
@@ -1113,7 +1109,7 @@ func (p *namedPrinter) printType(t Type) string {
 	case *FuncType:
 		return "fn " + p.printFuncTail(t)
 	case *KeyofType:
-		// `keyof T`, mirroring type_system's KeyOfType rendering. The operand prints at
+		// `keyof T`. The operand prints at
 		// precPrefix so a looser operand such as a union gets parenthesized: `keyof (A | B)`.
 		return "keyof " + p.printTypeMinPrec(t.Operand, precPrefix)
 	case *IndexType:
@@ -1335,7 +1331,13 @@ func (p *namedPrinter) printObjElem(e ObjTypeElem) string {
 		if e.SelfParam != nil {
 			recv = p.printSelfReceiver(e.SelfParam) + ", "
 		}
-		return "set " + p.printObjectKey(e.Name) + "(" + recv + "value: " + p.printType(e.Param) + ")" +
+		// A setter built without a source pattern names its parameter `value`, the name
+		// TypeScript's lib files give a setter's parameter.
+		name, ok := printPat(e.Param.Pattern)
+		if !ok {
+			name = "value"
+		}
+		return "set " + p.printObjectKey(e.Name) + "(" + recv + name + ": " + p.printType(e.Param.Type) + ")" +
 			p.printThrowsClause(e.ThrowsOrNever())
 	case *ConstructorElem:
 		// A class value's constructor renders as the unnamed call signature
@@ -1819,8 +1821,7 @@ func isIdent(name string) bool {
 	return true
 }
 
-// printPrim maps a Prim to its Escalier surface name — mirrors
-// type_system/print_type.go's printPrimType.
+// printPrim maps a Prim to its Escalier surface name.
 func printPrim(p Prim) string {
 	switch p {
 	case NumPrim:
@@ -1846,9 +1847,6 @@ func printLit(lit Lit) string {
 		// 64-bit precision, matching solver's describe() (see its comment):
 		// NumLit.Value is a float64, so bitSize 32 would round-trip through
 		// float32 and misrender values beyond float32's range/mantissa.
-		// type_system's printer still uses bitSize 32 here — a latent bug noted
-		// in describe — so this is the one surface form where Print is
-		// deliberately more correct than the renderer it otherwise mirrors.
 		return strconv.FormatFloat(lit.Value, 'f', -1, 64)
 	case *BoolLit:
 		return strconv.FormatBool(lit.Value)
