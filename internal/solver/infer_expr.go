@@ -650,6 +650,9 @@ func (c *checker) inferFunc(scope *Scope, lvl int, sig ast.FuncSig, body *ast.Bl
 		// to admit a borrow leaf, and popFuncCtx below restores the outer context, so asking at
 		// the annotation check would answer no for every borrow a body returns.
 		returnsUniquelyOwned = c.allReturnsUniquelyOwned(retExprs)
+		if c.fn.returnsShared {
+			c.sharedReturns.Add(node)
+		}
 		throws = c.fn.throws
 		raised = c.fn.raised
 		yielded = c.fn.yielded
@@ -657,7 +660,16 @@ func (c *checker) inferFunc(scope *Scope, lvl int, sig ast.FuncSig, body *ast.Bl
 			gen.delegateNexts = c.fn.delegateNexts
 		}
 		recvReads := c.fn.inferredRecvReads
+		// A closure may store a shared value into a local it captures. The enclosing body still
+		// holds that local after the call, so it counts the local as shared from here on. A
+		// store of one capture into another counts too, since the move it makes inside the
+		// closure leaves the enclosing body's binding live, and the two now alias.
+		var sharedStores []string
+		if saved != nil {
+			sharedStores = c.sharedCaptureStores()
+		}
 		collected = c.popFuncCtx(saved)
+		c.markSharedCaptures(scope, sharedStores)
 		// A read inside this body can still learn its receiver's type from the enclosing body,
 		// as a callback's parameter does from the call it is passed to, so the enclosing body
 		// decides it. The outermost body decides once everything it encloses is walked.
@@ -2523,6 +2535,10 @@ func (c *checker) inferAssign(scope *Scope, lvl int, e *ast.BinaryExpr) soltype.
 		}
 	}
 	sourceT := c.inferExpr(scope, lvl, e.Right)
+	// collectSharedLocals could not resolve a call of a function this body declares. The walk
+	// has reached that function by now, so a store of the call's result marks the local it
+	// writes, the way a binding's initializer does in inferVarDeclInit.
+	c.markSharedFlow(scope, placeRootVarIDs(e.Left), e.Right)
 	// Record `undefined` on e up front as the recovery type. Every error path below
 	// returns undefinedT without recording a type, so this guarantees the node is typed
 	// on failure. The success path overwrites it with the stored value's type; see the
