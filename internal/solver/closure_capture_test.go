@@ -79,19 +79,19 @@ func TestClosureCapturedPlaces(t *testing.T) {
 			`,
 			want: []string{"7:47-7:53: cannot borrow 'x' as mutable while it is borrowed as immutable"},
 		},
-		// Inside the closure, the first call moves x and the second reads the moved value.
+		// Inside the closure, the first binding moves x and the second reads the moved value.
 		"CaptureMovedTwiceInsideClosure": {
 			src: captureDecls + `
 				fn g() {
 					val x = {v: 1}
 					val f = fn () {
-						take(x)
-						take(x)
+						val a = x
+						val b = x
 					}
 					f()
 				}
 			`,
-			want: []string{"11:12-11:13: use of moved value 'x'"},
+			want: []string{"11:15-11:16: use of moved value 'x'"},
 		},
 		"PlainMovedTwice": {
 			src: captureDecls + `

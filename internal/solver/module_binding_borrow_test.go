@@ -22,18 +22,18 @@ func TestModuleBindingMovesAndBorrows(t *testing.T) {
 			src: decls + `
 				val x = {v: 1}
 				fn test() {
-					take(x)
-					take(x)
+					val a = x
+					val b = x
 				}
 			`,
-			want: []string{"8:11-8:12: use of moved value 'x'"},
+			want: []string{"8:14-8:15: use of moved value 'x'"},
 		},
 		"CallReadsAfterTheMove": {
 			src: decls + `
 				val x = {v: 1}
 				fn peek() { readRead(&x, &x) }
 				fn test() {
-					take(x)
+					val a = x
 					peek()
 				}
 			`,
