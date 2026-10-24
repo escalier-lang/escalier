@@ -1,6 +1,7 @@
 package solver
 
 import (
+	"fmt"
 	"slices"
 
 	"github.com/escalier-lang/escalier/internal/ast"
@@ -450,4 +451,72 @@ func (c *checker) funcReturnsShared(decl ast.Node) bool {
 		decl = vd.Init
 	}
 	return c.sharedReturns.Contains(decl) || c.librarySharedReturns.Contains(decl)
+}
+
+// SharedOwnedArgError reports a shared value passed to a parameter that takes ownership of it.
+// Passing an argument to an owned parameter moves it into the callee, and a shared value cannot
+// move, since the binding outside the frame keeps reaching it.
+type SharedOwnedArgError struct {
+	// Arg spells the argument as source, `xs` or `o.items`, and is empty when the argument is
+	// not a name or a chain of member reads off one.
+	Arg  string
+	node ast.Node
+}
+
+func (*SharedOwnedArgError) isSolverError()        {}
+func (e *SharedOwnedArgError) Span() ast.Span      { return e.node.Span() }
+func (e *SharedOwnedArgError) Related() []ast.Span { return nil }
+func (e *SharedOwnedArgError) Message() string {
+	if e.Arg == "" {
+		return "cannot move a shared value into an owned parameter. Make the parameter a borrow and borrow the argument with `&`"
+	}
+	return fmt.Sprintf("cannot move shared value '%s' into an owned parameter. Make the parameter a borrow and pass `&%s`", e.Arg, e.Arg)
+}
+
+// rejectSharedArg reports a SharedOwnedArgError for arg when it may be a shared value judged
+// from scope, and reports whether it did. param is the owned parameter type arg fills. It
+// reports nothing outside a function body, or when param is owned-mutable, since the
+// immutable→mutable upgrade already rejects a shared argument there.
+func (c *checker) rejectSharedArg(scope *Scope, arg ast.Expr, param soltype.Type) bool {
+	if c.fn == nil || c.fn.shared == nil || isOwnedMut(param) {
+		return false
+	}
+	if !c.mayYieldShared(scope, arg, c.fn.shared.locals) {
+		return false
+	}
+	name, _ := pathName(arg)
+	c.report(&SharedOwnedArgError{Arg: name, node: arg})
+	return true
+}
+
+// calleeFromNpmPackage reports whether the callee e resolved to fn is declared in an npm
+// package's types. It reads the first of these the call has:
+//
+//   - the declaration fn was inferred from;
+//   - the declaration the callee names, as a namespace member or a bare identifier;
+//   - the class of a method call's receiver.
+//
+// A callee reached any other way, such as a method of an interface, answers false.
+func (c *checker) calleeFromNpmPackage(e *ast.CallExpr, fn *soltype.FuncType) bool {
+	packages := c.ctx.packages
+	if packages == nil {
+		return false
+	}
+	if origin, ok := c.prov[fn].(FromAST); ok {
+		return packages.isNpmSource(origin.Node.Span().SourceID)
+	}
+	if decl, ok := c.info.NamespaceMemberDecl(e.Callee); ok {
+		return packages.isNpmSource(decl.Span().SourceID)
+	}
+	if ident, ok := e.Callee.(*ast.IdentExpr); ok {
+		if decl, ok := c.info.DeclOf(ident); ok {
+			return packages.isNpmSource(decl.Span().SourceID)
+		}
+	}
+	if object, _ := c.calleeReceiver(e.Callee); object != nil {
+		if class, ok := c.classCarrier(peelBorrows(c.info.TypeOf(object))); ok {
+			return packages.isNpmKey(class.Name)
+		}
+	}
+	return false
 }

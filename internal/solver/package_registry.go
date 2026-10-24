@@ -1,7 +1,10 @@
 package solver
 
 import (
+	"strings"
+
 	"github.com/escalier-lang/escalier/internal/ast"
+	"github.com/escalier-lang/escalier/internal/set"
 )
 
 // package_registry.go holds the packages one inference run has loaded, so a
@@ -36,11 +39,13 @@ type packageEntry struct {
 // lexical lookup.
 type PackageRegistry struct {
 	packages map[string]*packageEntry
+	// npmSources holds the SourceID of every file an npm package's types were read from.
+	npmSources set.Set[int]
 }
 
 // NewPackageRegistry returns an empty registry.
 func NewPackageRegistry() *PackageRegistry {
-	return &PackageRegistry{packages: map[string]*packageEntry{}}
+	return &PackageRegistry{packages: map[string]*packageEntry{}, npmSources: set.NewSet[int]()}
 }
 
 // Lookup returns the exported surface of a loaded package.
@@ -102,4 +107,27 @@ func (r *PackageRegistry) publish(uri string, ns *Namespace) {
 	}
 	entry.ns = ns
 	entry.loading = false
+}
+
+// markNpmSources records every file of module as one an npm package's types were read from.
+func (r *PackageRegistry) markNpmSources(module *ast.Module) {
+	for id := range module.Sources {
+		r.npmSources.Add(id)
+	}
+}
+
+// isNpmSource reports whether the file sourceID names holds an npm package's types.
+func (r *PackageRegistry) isNpmSource(sourceID int) bool {
+	return r.npmSources.Contains(sourceID)
+}
+
+// isNpmKey reports whether key is the key qualifyDecl built for a declaration of a loaded npm
+// package. Such a key starts with the prefix packageKeyPrefix builds from the package's URI.
+func (r *PackageRegistry) isNpmKey(key string) bool {
+	for uri := range r.packages {
+		if !IsSchemePrefixedImport(uri) && strings.HasPrefix(key, packageKeyPrefix(uri)+".") {
+			return true
+		}
+	}
+	return false
 }
