@@ -918,10 +918,10 @@ func (c *checker) forScript(pkgURI string) *checker {
 		info:         NewInfo(),
 		prov:         maps.Clone(c.prov),
 		varIDCounter: c.varIDCounter,
-		// The script renames its own bodies into a table of its own, so a re-check
-		// leaves the module's table unchanged. It still reads the module's VarIDs
-		// for a module body it walks.
-		varIDs:            c.varIDs.Child(),
+		// A fresh table, because the script looks up only nodes in its own bodies,
+		// which its own rename pass records. Sharing the module's table would grow
+		// it on every re-check of the script.
+		varIDs:            liveness.NewVarIDs(),
 		prelude:           c.prelude,
 		source:            c.source,
 		groupSource:       c.groupSource,

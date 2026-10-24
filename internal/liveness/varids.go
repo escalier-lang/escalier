@@ -9,10 +9,7 @@ import "github.com/escalier-lang/escalier/internal/ast"
 // The table lives outside the AST because one parsed module can be shared by
 // inference runs on different goroutines. Each run renames into a table of its own.
 type VarIDs struct {
-	// parent is the table Of reads when t holds no entry for a node. It is nil
-	// for a table from NewVarIDs. Set writes only to t, never to parent.
-	parent *VarIDs
-	ids    map[ast.Node]VarID
+	ids map[ast.Node]VarID
 }
 
 // NewVarIDs returns an empty table.
@@ -20,21 +17,10 @@ func NewVarIDs() *VarIDs {
 	return &VarIDs{ids: map[ast.Node]VarID{}}
 }
 
-// Child returns an empty table that reads through to t for a node it holds no
-// entry for. Writes to the child leave t unchanged.
-func (t *VarIDs) Child() *VarIDs {
-	return &VarIDs{parent: t, ids: map[ast.Node]VarID{}}
-}
-
 // Of returns the VarID the rename pass assigned to node, or 0 when no rename
 // visited it.
 func (t *VarIDs) Of(node ast.Node) VarID {
-	for table := t; table != nil; table = table.parent {
-		if id, ok := table.ids[node]; ok {
-			return id
-		}
-	}
-	return 0
+	return t.ids[node]
 }
 
 // Set records id as the VarID of node, replacing any earlier entry in t.
