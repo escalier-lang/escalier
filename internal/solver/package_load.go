@@ -34,8 +34,12 @@ func (c *checker) loadPackage(uri string, span ast.Span) (*Namespace, []SolverEr
 			}}
 		}
 		// A package bindAmbientExports loaded with diagnostics reports them at the
-		// first import naming it, as it would had that import loaded it.
-		return ns, c.claimHeldLoadErrors(uri, span)
+		// entry module's first import naming it, as it would had that import loaded it.
+		// An import inside a package being inferred leaves them for the entry module.
+		if c.pkgURI == "" {
+			return ns, c.claimHeldLoadErrors(uri, span)
+		}
+		return ns, nil
 	}
 	if c.source == nil {
 		return nil, []SolverError{&UnresolvedPackageError{
