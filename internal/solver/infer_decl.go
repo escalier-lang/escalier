@@ -174,9 +174,9 @@ func (c *checker) inferVarDeclInit(scope *Scope, lvl int, d *ast.VarDecl, ns str
 	}
 	initT := c.inferExpr(scope, lvl, d.Init)
 	// The pre-pass could not resolve a call of a function this body declares, since that
-	// function's body had not been walked. It has been by now, so a local bound from its
-	// result is marked here.
-	c.markSharedFlow(scope, patVarIDs(d.Pattern), d.Init)
+	// function's body had not been walked. It has been by now, so a local bound from the
+	// call's result is marked here, along with every local that reads it.
+	c.resettleSharedLocals(scope, patVarIDs(d.Pattern), d.Init)
 	switch {
 	case d.TypeAnn == nil && isMutableIdentPat(d.Pattern) && c.callReturnsOwned(d.Init, initT):
 		// An unannotated `val mut d = f()` whose call returns an owned value binds it
@@ -762,7 +762,7 @@ func (c *checker) movesOwnedPlace(init ast.Expr, initT soltype.Type) bool {
 	// A place rooted at a binding that may hold a shared value is not uniquely owned. The
 	// move empties the place in this frame but leaves the outer binding holding the same
 	// object, so the destination is not its sole owner.
-	if c.fn != nil && c.fn.sharedLocals.Contains(p.root) {
+	if c.isSharedLocal(p.root) {
 		return false
 	}
 	if c.isConcreteOwned(initT) {

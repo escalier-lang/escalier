@@ -44,6 +44,10 @@ type checker struct {
 	// return a value a binding outside its frame also reaches. callReturnsOwned reads it, so a
 	// call of such a function does not hand its caller an owned value.
 	sharedReturns set.Set[ast.Node]
+	// librarySharedReturns is the library's sharedReturns when this checker checks a script
+	// against a library, and nil otherwise. A script reads it but records its own functions in
+	// sharedReturns, so a re-checked script leaves the library's set as it was.
+	librarySharedReturns set.Set[ast.Node]
 
 	// pendingRecvReads holds the member reads off inferred receivers that top-level bodies
 	// collected. A value initializer can still pass such a body to a call that types its
@@ -586,15 +590,9 @@ type funcCtx struct {
 	// captureVarIDs holds the VarID of every local a closure's body captures. The pre-pass
 	// defines each as a parameter of the body, so each is in paramVarIDs too.
 	captureVarIDs set.Set[liveness.VarID]
-	// sharedLocals holds the VarID of every binding of this body that may hold a value a
-	// binding outside the frame also reaches. It holds every capture. collectSharedLocals
-	// seeds it before the walk, and the walk adds a binding whose initializer calls a
-	// function the walk has learned returns such a value.
-	sharedLocals set.Set[liveness.VarID]
-	// sharedCaptureWrites holds the name of each capture this body stores a shared value
-	// into. Once the body is walked, the enclosing body marks the local each name captures
-	// as shared, since the store reaches that local.
-	sharedCaptureWrites set.Set[string]
+	// shared records which bindings of this body may hold a value a binding outside the frame
+	// also reaches. collectSharedLocals builds it before the walk, and the walk grows it.
+	shared *sharedState
 	// returnsShared records that some `return` in this body may return a value a binding
 	// outside the frame also reaches.
 	returnsShared bool
@@ -896,12 +894,12 @@ func (c *checker) popFuncCtx(saved *funcCtx) []soltype.Type {
 // method returns.
 func newChecker() *checker {
 	c := &checker{
-		ctx:           &Context{packages: NewPackageRegistry()},
-		info:          NewInfo(),
-		prov:          Prov{},
-		varIDCounter:  1,
-		sharedReturns: set.NewSet[ast.Node](),
+		ctx:          &Context{packages: NewPackageRegistry()},
+		info:         NewInfo(),
+		prov:         Prov{},
+		varIDCounter: 1,
 	}
+	c.sharedReturns = set.NewSet[ast.Node]()
 	c.ctx.fusionRecorder = c.recordFusionEdge
 	c.info.ctx = c.ctx
 	registerIteratorResultAliases(c.ctx)
@@ -936,11 +934,9 @@ func (c *checker) forScript(pkgURI string) *checker {
 		groupSource:       c.groupSource,
 		groups:            c.groups,
 		checkJsDecorators: c.checkJsDecorators,
-		// A script calls the module's functions, so it reads what the module recorded about
-		// their returns. Each function is keyed by its own node, so the script's entries
-		// never collide with the module's.
-		sharedReturns: c.sharedReturns,
 	}
+	sc.sharedReturns = set.NewSet[ast.Node]()
+	sc.librarySharedReturns = c.sharedReturns
 	// Point the recorder at the script, so a fusion its walk records lands in the
 	// script's Prov table rather than the module's.
 	sc.ctx.fusionRecorder = sc.recordFusionEdge
