@@ -37,16 +37,21 @@ func (c *checker) bindFileImports(scope *Scope, module *ast.Module) map[int]*Sco
 	// binds the ambient scope first, and a pseudo-package the ambient scope loads
 	// reports its diagnostics with no span. Bound first, the pseudo-package reports
 	// them at the import that names it.
-	for _, pseudo := range []bool{true, false} {
-		for _, file := range module.Files {
-			for _, stmt := range file.Imports {
-				if IsSchemePrefixedImport(stmt.PackageName) == pseudo {
-					c.errs = append(c.errs, c.bindImport(fileScopes[file.SourceID], stmt)...)
-				}
+	for _, file := range module.Files {
+		for _, stmt := range file.Imports {
+			if IsSchemePrefixedImport(stmt.PackageName) {
+				c.errs = append(c.errs, c.bindImport(fileScopes[file.SourceID], stmt)...)
 			}
 		}
 	}
-	// After the loop, not before. Loading an imported package reenters this
+	for _, file := range module.Files {
+		for _, stmt := range file.Imports {
+			if !IsSchemePrefixedImport(stmt.PackageName) {
+				c.errs = append(c.errs, c.bindImport(fileScopes[file.SourceID], stmt)...)
+			}
+		}
+	}
+	// After the loops, not before. Loading an imported package reenters this
 	// function, so assigning early would leave the innermost load's map in place
 	// of this one's.
 	c.fileScopes = fileScopes
