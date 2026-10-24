@@ -176,7 +176,7 @@ func (c *checker) inferVarDeclInit(scope *Scope, lvl int, d *ast.VarDecl, ns str
 	// The pre-pass could not resolve a call of a function this body declares, since that
 	// function's body had not been walked. It has been by now, so a local bound from the
 	// call's result is marked here, along with every local that reads it.
-	c.resettleSharedLocals(scope, patVarIDs(d.Pattern), d.Init)
+	c.markSharedFlow(scope, patVarIDs(d.Pattern), d.Init)
 	switch {
 	case d.TypeAnn == nil && isMutableIdentPat(d.Pattern) && c.callReturnsOwned(d.Init, initT):
 		// An unannotated `val mut d = f()` whose call returns an owned value binds it
