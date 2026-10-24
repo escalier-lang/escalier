@@ -7,12 +7,14 @@ import (
 	"maps"
 	"os"
 	"path/filepath"
+	"reflect"
 	"slices"
 	"sort"
 	"testing"
 
 	"github.com/escalier-lang/escalier/internal/ast"
 	"github.com/escalier-lang/escalier/internal/parser"
+	"github.com/escalier-lang/escalier/internal/set"
 	"github.com/escalier-lang/escalier/internal/soltype"
 	"github.com/stretchr/testify/require"
 )
@@ -197,37 +199,163 @@ func init() {
 // checkThawed panics on such a write, and the subtest reports the panic as its
 // failure.
 func TestFixturesLeaveStdlibVarsUntouched(t *testing.T) {
-	paths, err := filepath.Glob("../../fixtures/*/lib")
-	require.NoError(t, err)
-	require.NotEmpty(t, paths)
-	for _, lib := range paths {
-		t.Run(filepath.Base(filepath.Dir(lib)), func(t *testing.T) {
-			srcs := map[string]string{}
-			err := filepath.WalkDir(lib, func(path string, d fs.DirEntry, err error) error {
-				if err != nil || d.IsDir() || filepath.Ext(path) != ".esc" {
-					return err
-				}
-				contents, err := os.ReadFile(path)
-				if err != nil {
-					return err
-				}
-				rel, err := filepath.Rel(lib, path)
-				srcs[filepath.ToSlash(rel)] = string(contents)
-				return err
-			})
-			require.NoError(t, err)
-			module, parseErrs := parser.ParseLibFiles(context.Background(), sourcesOf(srcs))
-			if len(parseErrs) > 0 {
-				t.Skip("the fixture's library does not parse")
-			}
+	for _, fixture := range fixtureLibraries(t) {
+		t.Run(fixture.name, func(t *testing.T) {
 			defer func() {
 				if r := recover(); r != nil {
 					t.Fatal(r)
 				}
 			}()
-			InferModuleAgainstStdlib(module, benchTree, Options{})
+			InferModuleAgainstStdlib(fixture.parse(t), benchTree, Options{})
 		})
 	}
+}
+
+// TestShareForkLeavesCachedCheckerUnchanged asserts that inferring a fixture's library
+// on a fork that shares a loaded checker changes nothing that checker holds. Each
+// fixture snapshots the checker with a deep copy before its fork, and every object the
+// copy holds is compared with the object it was copied from.
+func TestShareForkLeavesCachedCheckerUnchanged(t *testing.T) {
+	groups, err := BuildPackageClosure(benchTree, ambientPackages)
+	require.NoError(t, err)
+	for _, opts := range []Options{{}, {NoAmbientNames: true}} {
+		loaded := loadAmbientChecker(benchTree, groups, opts)
+		for _, fixture := range fixtureLibraries(t) {
+			t.Run(fmt.Sprintf("%s/NoAmbientNames=%t", fixture.name, opts.NoAmbientNames), func(t *testing.T) {
+				module := fixture.parse(t)
+				if !loadsGroups(t, module, groups) {
+					t.Skip("the fixture imports a package outside the ambient packages' closure")
+				}
+				g := newGraphCopier(isASTPointer)
+				copyPtr(g, loaded)
+				inferModuleOn(loaded.shareFork(StdlibSource(benchTree), StdlibGroupSource(benchTree), groups), module)
+				require.Empty(t, diffAgainstSnapshot(g))
+			})
+		}
+	}
+}
+
+// TestShareForkMatchesFork asserts that a fixture's library infers the same bindings
+// and diagnostics on a fork that shares the loaded checker as on a deep copy of it. The
+// shared forks run concurrently, so a race between them shows under -race.
+func TestShareForkMatchesFork(t *testing.T) {
+	groups, err := BuildPackageClosure(benchTree, ambientPackages)
+	require.NoError(t, err)
+	loaded := loadAmbientChecker(benchTree, groups, Options{})
+	for _, fixture := range fixtureLibraries(t) {
+		t.Run(fixture.name, func(t *testing.T) {
+			t.Parallel()
+			// Inference writes to the AST it walks, so each run reads its own parse.
+			copiedModule, sharedModule := fixture.parse(t), fixture.parse(t)
+			if !loadsGroups(t, copiedModule, groups) {
+				t.Skip("the fixture imports a package outside the ambient packages' closure")
+			}
+			copied := inferModuleOn(loaded.fork(StdlibSource(benchTree), StdlibGroupSource(benchTree), groups), copiedModule)
+			shared := inferModuleOn(loaded.shareFork(StdlibSource(benchTree), StdlibGroupSource(benchTree), groups), sharedModule)
+			require.Equal(t, renderedValues(copied), renderedValues(shared))
+			require.Equal(t, messagesWithSpan(t, copied.Errors), messagesWithSpan(t, shared.Errors))
+		})
+	}
+}
+
+// TestShareForkCopiesEveryContainer asserts that each map a loaded checker or its Context
+// holds reaches a fork as a map of its own, apart from the read-only ones listed below,
+// and that each slice reaches it with no spare capacity. A container field added later
+// fails here until shareFork copies it or this test names it read-only.
+func TestShareForkCopiesEveryContainer(t *testing.T) {
+	groups, err := BuildPackageClosure(benchTree, ambientPackages)
+	require.NoError(t, err)
+	loaded := loadAmbientChecker(benchTree, groups, Options{})
+	run := loaded.shareFork(StdlibSource(benchTree), StdlibGroupSource(benchTree), groups)
+
+	readOnly := set.FromSlice([]string{
+		// The run's own groups replace the loaded checker's.
+		"checker.groups",
+		// Written once while the prelude loads.
+		"Context.wellKnownSymbolMembers",
+		"Context.wellKnownSymbolTypes",
+		// Read by the frozen-state checks alone.
+		"Context.frozenVars",
+		"Context.frozenLts",
+		"Context.frozenClasses",
+		"Context.frozenAliases",
+	})
+	var check func(path string, loadedValue, runValue reflect.Value)
+	check = func(path string, loadedValue, runValue reflect.Value) {
+		switch loadedValue.Kind() {
+		case reflect.Map:
+			if loadedValue.IsNil() || readOnly.Contains(path) {
+				return
+			}
+			require.NotEqual(t, loadedValue.UnsafePointer(), runValue.UnsafePointer(), path)
+		case reflect.Slice:
+			require.Equal(t, runValue.Len(), runValue.Cap(), path)
+		case reflect.Struct:
+			for i := range loadedValue.NumField() {
+				name := path + "." + loadedValue.Type().Field(i).Name
+				check(name, loadedValue.Field(i), runValue.Field(i))
+			}
+		}
+	}
+	check("checker", reflect.ValueOf(loaded).Elem(), reflect.ValueOf(run).Elem())
+	check("Context", reflect.ValueOf(loaded.ctx).Elem(), reflect.ValueOf(run.ctx).Elem())
+	require.NotEqual(t, reflect.ValueOf(loaded.ctx.packages.packages).UnsafePointer(),
+		reflect.ValueOf(run.ctx.packages.packages).UnsafePointer())
+}
+
+// loadsGroups reports whether module, checked against the committed tree, loads the
+// packages groups names and no others.
+func loadsGroups(t *testing.T, module *ast.Module, groups PackageGroups) bool {
+	t.Helper()
+	roots := set.FromSlice(append(pseudoPackageImportsOf(module), ambientPackages...)).ToSlice()
+	sort.Strings(roots)
+	own, err := BuildPackageClosure(benchTree, roots)
+	require.NoError(t, err)
+	return reflect.DeepEqual(own, groups)
+}
+
+type fixtureLibrary struct {
+	name string
+	srcs map[string]string
+}
+
+// parse returns a fresh parse of the library.
+func (f fixtureLibrary) parse(t *testing.T) *ast.Module {
+	t.Helper()
+	module, parseErrs := parser.ParseLibFiles(context.Background(), sourcesOf(f.srcs))
+	require.Empty(t, parseErrs)
+	return module
+}
+
+// fixtureLibraries returns, in name order, the library of every fixture whose library
+// parses. A fixture with parse errors is left out.
+func fixtureLibraries(t *testing.T) []fixtureLibrary {
+	t.Helper()
+	libs, err := filepath.Glob("../../fixtures/*/lib")
+	require.NoError(t, err)
+	require.NotEmpty(t, libs)
+	var out []fixtureLibrary
+	for _, lib := range libs {
+		srcs := map[string]string{}
+		err := filepath.WalkDir(lib, func(path string, d fs.DirEntry, err error) error {
+			if err != nil || d.IsDir() || filepath.Ext(path) != ".esc" {
+				return err
+			}
+			contents, err := os.ReadFile(path)
+			if err != nil {
+				return err
+			}
+			rel, err := filepath.Rel(lib, path)
+			srcs[filepath.ToSlash(rel)] = string(contents)
+			return err
+		})
+		require.NoError(t, err)
+		if _, parseErrs := parser.ParseLibFiles(context.Background(), sourcesOf(srcs)); len(parseErrs) > 0 {
+			continue
+		}
+		out = append(out, fixtureLibrary{name: filepath.Base(filepath.Dir(lib)), srcs: srcs})
+	}
+	return out
 }
 
 // sourcesOf returns srcs as sources numbered in path order.
@@ -336,6 +464,36 @@ func TestSettleLoadedDefinitionsMeasuresAProvisionalClass(t *testing.T) {
 
 	require.False(t, def.varianceProvisional)
 	require.Equal(t, measured, def.Variance)
+}
+
+// TestShareForkReportsHeldDiagnosticsPerRun asserts that each fork of one loaded
+// checker reports the diagnostics its load held at that fork's own import, so a run
+// that claims them leaves them unclaimed for the next.
+func TestShareForkReportsHeldDiagnosticsPerRun(t *testing.T) {
+	dir := seedStdlib(t, withPreludeClasses(map[string]string{
+		"std/math.esc": `export val PI: number = "pi"`,
+	}))
+	groups, err := BuildPackageClosure(dir, ambientPackages)
+	require.NoError(t, err)
+	loaded := loadAmbientChecker(dir, groups, Options{})
+	loadErr := `package "std:math" (` + filepath.Join(dir, "std", "math.esc") +
+		`) has 1 error(s):` + "\n" + `  cannot constrain "pi" <: number`
+
+	for range 2 {
+		run := loaded.shareFork(StdlibSource(dir), StdlibGroupSource(dir), groups)
+		res := inferModuleOn(run, parseModule(t, "import \"std:math\"\nval p = math.PI"))
+		require.Equal(t, []string{"1:1-1:18: " + loadErr}, messagesWithSpan(t, res.Errors))
+	}
+}
+
+func TestClipValues(t *testing.T) {
+	require.Nil(t, clipValues[string, int](nil))
+
+	roomy := make([]int, 1, 4)
+	roomy[0] = 7
+	clipped := clipValues(map[string][]int{"a": roomy})
+	require.Equal(t, map[string][]int{"a": {7}}, clipped)
+	require.Equal(t, 1, cap(clipped["a"]))
 }
 
 // TestAmbientCheckerServesRuns asserts that the cache serves the committed tree, so the
