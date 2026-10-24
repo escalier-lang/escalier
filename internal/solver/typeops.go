@@ -1137,7 +1137,8 @@ func (s *mappedKeySubst) ExitType(t soltype.Type, _ soltype.Polarity) soltype.Ty
 // reduceKeyof reduces `keyof operand` to the union of the operand's keys:
 //
 //   - an object projects its property, getter, and setter names as string-literal types;
-//   - a tuple yields only its own numeric indices, omitting the inherited "length"; see keyofTuple;
+//   - a tuple yields its numeric indices, "length", and the string-named keys of `Array`; see
+//     keyofTuple;
 //   - `keyof` distributes over a union or intersection, intersecting each member's keys for a
 //     union and unioning them for an intersection;
 //   - `keyof` of a primitive, literal, `never`, or `unknown` is `never`, since none has
@@ -1328,25 +1329,66 @@ func (c *Context) keyofObjectNamed(obj *soltype.ObjectType) soltype.Type {
 	return newUnion(nil, keys)
 }
 
-// keyofTuple yields a tuple's own keys: one number-literal type per positional element, the
-// indices Object.keys returns. `keyof [number, string]` reduces to `0 | 1`. This deliberately
-// deviates from TypeScript, whose keyof of a tuple also includes "length" and the other
-// Array.prototype members. Those are inherited rather than own keys, so Escalier omits them.
-// TODO: decide how keyof should account for inherited prototype members once interop is designed.
+// keyofTuple yields a tuple's keys. A tuple is a subtype of the `Array` of its element union,
+// so its keys are its own positions, `"length"`, and the string-named keys of that `Array`'s
+// body. `keyof [number, string]` reduces to `0 | 1 | "length"`. The `Array` keys omit methods,
+// the same way keyofObject does for a class body.
+//
+// The `Array` body is read by its named keys whatever its exactness. A non-final class body is
+// inexact because a subclass may add keys, but a tuple value is an `Array` and not an instance
+// of some subclass, so it carries no keys beyond the named ones.
+//
+// Symbol-named keys are left out. The one `Array` declares is `[Symbol.unscopables]`, whose
+// value is a mapped type over `keyof mut Array<any>` that indexed access does not reduce, so
+// keeping its key would leave `Tup[keyof Tup]` symbolic instead of the union of the elements.
 //
 // An inexact tuple has unknown trailing positions, so its index set is open the same way an inexact
 // object's key set is. An open set of positions is exactly `number`, the top of the index domain,
-// so `keyof [number, string, ...]` reduces to `number`. The domain top is `number` rather than the
-// `string` an object's open key set takes, since an index is a position and not a name.
+// so the positions of `[number, string, ...]` are `number`. The domain top is `number` rather than
+// the `string` an object's open key set takes, since an index is a position and not a name.
 func (e *typeEvaluator) keyofTuple(tup *soltype.TupleType) soltype.Type {
+	var keys []soltype.Type
 	if tup.Inexact {
-		return &soltype.PrimType{Prim: soltype.NumPrim}
+		keys = append(keys, &soltype.PrimType{Prim: soltype.NumPrim})
+	} else {
+		for i := range tup.Elems {
+			keys = append(keys, &soltype.LitType{Lit: &soltype.NumLit{Value: float64(i)}})
+		}
 	}
-	keys := make([]soltype.Type, 0, len(tup.Elems))
-	for i := range tup.Elems {
-		keys = append(keys, &soltype.LitType{Lit: &soltype.NumLit{Value: float64(i)}})
+	keys = append(keys, strLitType("length"))
+	if arr, isClass := e.ctx.arrayOf(e.tupleElemUnion(tup)).(*soltype.ClassType); isClass {
+		if body, ok := e.ctx.projectClassBody(arr); ok {
+			for _, elem := range body.Elems {
+				switch elem.(type) {
+				case *soltype.PropertyElem, *soltype.GetterElem, *soltype.SetterElem:
+					if key, isStr := e.ctx.memberKeyType(soltype.ObjElemName(elem)).(*soltype.LitType); isStr {
+						keys = append(keys, key)
+					}
+				}
+			}
+		}
 	}
-	return newUnion(nil, keys)
+	return newUnion(e.ctx, keys)
+}
+
+// tupleElemUnion returns the union of every value the ground tuple tup holds. An inexact tuple's
+// open tail may hold anything, so its union is `unknown`.
+func (e *typeEvaluator) tupleElemUnion(tup *soltype.TupleType) soltype.Type {
+	if tup.Inexact {
+		return &soltype.UnknownType{}
+	}
+	return newUnion(e.ctx, tup.Elems)
+}
+
+// canonicalIndex returns the position a member name spells when it is the canonical decimal
+// form of a non-negative integer, the form JavaScript gives an array index as a property key.
+// `"0"` and `"12"` spell positions, where `"01"` and `"-1"` do not.
+func canonicalIndex(name string) (int, bool) {
+	n, err := strconv.Atoi(name)
+	if err != nil || n < 0 || strconv.Itoa(n) != name {
+		return 0, false
+	}
+	return n, true
 }
 
 // keyofUnion intersects the keys of a union operand's members. A value typed `A | B` is either
@@ -1701,9 +1743,21 @@ func isNumericKey(t soltype.Type) bool {
 // that position. An index outside `[0, len)`, or a non-integer or negative literal, records a
 // TupleIndexOutOfRangeError and reduces to the error sentinel. A bare `number` key names no single
 // position, so it reads the join of every element type, and an inexact tuple joins its unlisted
-// trailing positions in as `unknown`, so `[number, string, ...][number]` reduces to `unknown`. Any
-// other non-numeric-literal key leaves the access symbolic.
+// trailing positions in as `unknown`, so `[number, string, ...][number]` reduces to `unknown`.
+//
+// A string-literal or unique-symbol key reads a member of the `Array` the tuple is a subtype of,
+// matching the keys keyofTuple yields. A string spelling a position, such as `"0"`, reads that
+// position the way the number literal does. `"length"` of an exact tuple is the literal count of
+// its positions, so `[number, string]["length"]` reduces to `2`. Any other key leaves the access
+// symbolic.
 func (e *typeEvaluator) indexTuple(tup *soltype.TupleType, index soltype.Type, inexact bool) soltype.Type {
+	if name, isMember := e.ctx.keyMemberName(index); isMember {
+		if pos, isPos := canonicalIndex(name); isPos {
+			index = &soltype.LitType{Lit: &soltype.NumLit{Value: float64(pos)}}
+		} else {
+			return e.indexTupleMember(tup, name, index, inexact)
+		}
+	}
 	if prim, ok := index.(*soltype.PrimType); ok && prim.Prim == soltype.NumPrim {
 		if tup.Inexact {
 			// An inexact tuple's unlisted trailing positions have unknown type, so the join of
@@ -1726,6 +1780,19 @@ func (e *typeEvaluator) indexTuple(tup *soltype.TupleType, index soltype.Type, i
 		return &soltype.ErrorType{}
 	}
 	return tup.Elems[i]
+}
+
+// indexTupleMember reduces `tup[index]` where index is the key whose member name is key. It
+// reads the member of the `Array` tup is a subtype of, except that `"length"` of an exact tuple
+// is the literal count of its positions.
+func (e *typeEvaluator) indexTupleMember(tup *soltype.TupleType, key string, index soltype.Type, inexact bool) soltype.Type {
+	if key == "length" && !tup.Inexact {
+		return &soltype.LitType{Lit: &soltype.NumLit{Value: float64(len(tup.Elems))}}
+	}
+	if arr, isClass := e.ctx.arrayOf(e.tupleElemUnion(tup)).(*soltype.ClassType); isClass {
+		return e.reduceIndex(arr, index, inexact)
+	}
+	return &soltype.IndexType{Target: tup, Index: index, Inexact: inexact}
 }
 
 // reduceTemplateLit reduces a template literal to the union of string literals its interpolations
