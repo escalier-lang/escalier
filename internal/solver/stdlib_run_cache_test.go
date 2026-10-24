@@ -3,6 +3,7 @@ package solver
 import (
 	"context"
 	"fmt"
+	"io/fs"
 	"os"
 	"path/filepath"
 	"sort"
@@ -187,25 +188,37 @@ func init() {
 
 // TestFixturesLeaveStdlibVarsUntouched asserts that checking each fixture's library
 // against the committed tree writes to no variable the stdlib load minted.
-// checkThawed panics on such a write, which fails the subtest.
+// checkThawed panics on such a write, and the subtest reports the panic as its
+// failure.
 func TestFixturesLeaveStdlibVarsUntouched(t *testing.T) {
 	paths, err := filepath.Glob("../../fixtures/*/lib")
 	require.NoError(t, err)
 	require.NotEmpty(t, paths)
 	for _, lib := range paths {
 		t.Run(filepath.Base(filepath.Dir(lib)), func(t *testing.T) {
-			files, err := filepath.Glob(filepath.Join(lib, "*.esc"))
-			require.NoError(t, err)
 			srcs := map[string]string{}
-			for _, file := range files {
-				contents, err := os.ReadFile(file)
-				require.NoError(t, err)
-				srcs[filepath.Base(file)] = string(contents)
-			}
+			err := filepath.WalkDir(lib, func(path string, d fs.DirEntry, err error) error {
+				if err != nil || d.IsDir() || filepath.Ext(path) != ".esc" {
+					return err
+				}
+				contents, err := os.ReadFile(path)
+				if err != nil {
+					return err
+				}
+				rel, err := filepath.Rel(lib, path)
+				srcs[filepath.ToSlash(rel)] = string(contents)
+				return err
+			})
+			require.NoError(t, err)
 			module, parseErrs := parser.ParseLibFiles(context.Background(), sourcesOf(srcs))
 			if len(parseErrs) > 0 {
 				t.Skip("the fixture's library does not parse")
 			}
+			defer func() {
+				if r := recover(); r != nil {
+					t.Fatal(r)
+				}
+			}()
 			InferModuleAgainstStdlib(module, benchTree, Options{})
 		})
 	}

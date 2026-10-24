@@ -254,6 +254,7 @@ func (c *checker) resolveTypeAnnType(scope *Scope, ta ast.TypeAnn, lvl int) (sol
 		// current level. `Promise<_>` on an async fn's return relies on this: the body's return
 		// flows into the variable, inferring the inner.
 		t := c.freshAt(lvl)
+		c.ctx.markHole(t)
 		c.recordProv(t, ta, WildcardAnnotation)
 		return t, true
 	default:

@@ -211,11 +211,25 @@ type Context struct {
 	// what an installed recorder writes.
 	fusionRecorder func(fused soltype.Type, from []soltype.Type)
 
-	// frozenVars and frozenLts hold the type and lifetime variables a cached stdlib
-	// load minted, in a run forked from it while frozenVarChecks is set. They are
-	// empty otherwise. checkThawed and checkThawedLt read them.
+	// holeVars holds the variable each `_` written outside a conditional's pattern
+	// resolved to. markHole fills it and freshenBoundHoles reads it.
+	holeVars set.Set[*soltype.TypeVarType]
+
+	// frozenVars and frozenLts hold the type and lifetime variables reachable from a
+	// cached stdlib checker, when frozenVarChecks is set. loadAmbientChecker fills
+	// them on the cached checker, and a fork's copy of each names the fork's copies of
+	// those variables. They are empty otherwise. checkThawed and checkThawedLt read
+	// them.
 	frozenVars set.Set[*soltype.TypeVarType]
 	frozenLts  set.Set[*soltype.LifetimeVar]
+}
+
+// markHole records v as the variable a `_` resolved to.
+func (c *Context) markHole(v *soltype.TypeVarType) {
+	if c.holeVars == nil {
+		c.holeVars = set.NewSet[*soltype.TypeVarType]()
+	}
+	c.holeVars.Add(v)
 }
 
 // frozenVarChecks makes loadAmbientChecker record the variables the stdlib load

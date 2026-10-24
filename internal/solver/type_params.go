@@ -442,30 +442,31 @@ func (c *checker) checkTypeArgBounds(
 		// copies, every reference to `Parameters<F>` would add bounds to the same holes in
 		// `fn (...args: Array<_>) -> _`.
 		if p.UpperBound != nil {
-			if bound := p.UpperBound.Accept(subst, soltype.Positive); !fromDefault || bound != p.UpperBound {
-				c.constrainTypeArg(site, args[i], c.freshenBoundHoles(p.UpperBound, lvl).Accept(subst, soltype.Positive))
+			declared := c.freshenBoundHoles(p.UpperBound, lvl)
+			if bound := declared.Accept(subst, soltype.Positive); !fromDefault || bound != declared {
+				c.constrainTypeArg(site, args[i], bound)
 			}
 		}
 		if p.LowerBound != nil {
-			if lower := p.LowerBound.Accept(subst, soltype.Positive); !fromDefault || lower != p.LowerBound {
-				c.constrainTypeArg(site, c.freshenBoundHoles(p.LowerBound, lvl).Accept(subst, soltype.Positive), args[i])
+			declared := c.freshenBoundHoles(p.LowerBound, lvl)
+			if lower := declared.Accept(subst, soltype.Positive); !fromDefault || lower != declared {
+				c.constrainTypeArg(site, lower, args[i])
 			}
 		}
 	}
 }
 
-// freshenBoundHoles returns bound with each type variable that is not a type parameter's
-// replaced by a fresh variable at lvl. A type parameter's variable, the reference's own or
-// an enclosing declaration's, is kept, and so is every lifetime. bound itself is returned
-// when it holds no other variable.
+// freshenBoundHoles returns bound with each `_` hole's variable replaced by a fresh copy
+// at lvl that carries the hole's bounds. Every other type variable and every lifetime is
+// kept. bound itself is returned when it holds no hole.
 func (c *checker) freshenBoundHoles(bound soltype.Type, lvl int) soltype.Type {
 	cache := map[*soltype.TypeVarType]*soltype.TypeVarType{}
 	holes := false
 	for _, v := range typeVarsIn(bound) {
-		if c.ctx.isParamVar(v) {
-			cache[v] = v
-		} else {
+		if c.ctx.holeVars.Contains(v) {
 			holes = true
+		} else {
+			cache[v] = v
 		}
 	}
 	if !holes {
