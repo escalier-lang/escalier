@@ -6,7 +6,6 @@ package ast
 type TypeAnn interface {
 	isTypeAnn()
 	Node
-	Inferrable
 }
 
 func (*LitTypeAnn) isTypeAnn()          {}
@@ -42,14 +41,13 @@ func (*ErrorTypeAnn) isTypeAnn()        {}
 func (*RestSpreadTypeAnn) isTypeAnn()   {}
 
 type LitTypeAnn struct {
-	Lit          Lit
-	span         Span
-	inferredType Type
+	Lit  Lit
+	span Span
 	commentSlots
 }
 
 func NewLitTypeAnn(lit Lit, span Span) *LitTypeAnn {
-	return &LitTypeAnn{Lit: lit, span: span, inferredType: nil, commentSlots: commentSlots{}}
+	return &LitTypeAnn{Lit: lit, span: span, commentSlots: commentSlots{}}
 }
 func (t *LitTypeAnn) Accept(v Visitor) {
 	if v.EnterTypeAnn(t) {
@@ -59,13 +57,12 @@ func (t *LitTypeAnn) Accept(v Visitor) {
 }
 
 type NumberTypeAnn struct {
-	span         Span
-	inferredType Type
+	span Span
 	commentSlots
 }
 
 func NewNumberTypeAnn(span Span) *NumberTypeAnn {
-	return &NumberTypeAnn{span: span, inferredType: nil, commentSlots: commentSlots{}}
+	return &NumberTypeAnn{span: span, commentSlots: commentSlots{}}
 }
 func (t *NumberTypeAnn) Accept(v Visitor) {
 	v.EnterTypeAnn(t)
@@ -73,13 +70,12 @@ func (t *NumberTypeAnn) Accept(v Visitor) {
 }
 
 type StringTypeAnn struct {
-	span         Span
-	inferredType Type
+	span Span
 	commentSlots
 }
 
 func NewStringTypeAnn(span Span) *StringTypeAnn {
-	return &StringTypeAnn{span: span, inferredType: nil, commentSlots: commentSlots{}}
+	return &StringTypeAnn{span: span, commentSlots: commentSlots{}}
 }
 func (t *StringTypeAnn) Accept(v Visitor) {
 	v.EnterTypeAnn(t)
@@ -87,13 +83,12 @@ func (t *StringTypeAnn) Accept(v Visitor) {
 }
 
 type BooleanTypeAnn struct {
-	span         Span
-	inferredType Type
+	span Span
 	commentSlots
 }
 
 func NewBooleanTypeAnn(span Span) *BooleanTypeAnn {
-	return &BooleanTypeAnn{span: span, inferredType: nil, commentSlots: commentSlots{}}
+	return &BooleanTypeAnn{span: span, commentSlots: commentSlots{}}
 }
 func (t *BooleanTypeAnn) Accept(v Visitor) {
 	v.EnterTypeAnn(t)
@@ -101,13 +96,12 @@ func (t *BooleanTypeAnn) Accept(v Visitor) {
 }
 
 type SymbolTypeAnn struct {
-	span         Span
-	inferredType Type
+	span Span
 	commentSlots
 }
 
 func NewSymbolTypeAnn(span Span) *SymbolTypeAnn {
-	return &SymbolTypeAnn{span: span, inferredType: nil, commentSlots: commentSlots{}}
+	return &SymbolTypeAnn{span: span, commentSlots: commentSlots{}}
 }
 func (t *SymbolTypeAnn) Accept(v Visitor) {
 	v.EnterTypeAnn(t)
@@ -115,13 +109,12 @@ func (t *SymbolTypeAnn) Accept(v Visitor) {
 }
 
 type UniqueSymbolTypeAnn struct {
-	span         Span
-	inferredType Type
+	span Span
 	commentSlots
 }
 
 func NewUniqueSymbolTypeAnn(span Span) *UniqueSymbolTypeAnn {
-	return &UniqueSymbolTypeAnn{span: span, inferredType: nil, commentSlots: commentSlots{}}
+	return &UniqueSymbolTypeAnn{span: span, commentSlots: commentSlots{}}
 }
 func (t *UniqueSymbolTypeAnn) Accept(v Visitor) {
 	v.EnterTypeAnn(t)
@@ -129,13 +122,12 @@ func (t *UniqueSymbolTypeAnn) Accept(v Visitor) {
 }
 
 type BigintTypeAnn struct {
-	span         Span
-	inferredType Type
+	span Span
 	commentSlots
 }
 
 func NewBigintTypeAnn(span Span) *BigintTypeAnn {
-	return &BigintTypeAnn{span: span, inferredType: nil, commentSlots: commentSlots{}}
+	return &BigintTypeAnn{span: span, commentSlots: commentSlots{}}
 }
 func (t *BigintTypeAnn) Accept(v Visitor) {
 	v.EnterTypeAnn(t)
@@ -143,13 +135,12 @@ func (t *BigintTypeAnn) Accept(v Visitor) {
 }
 
 type AnyTypeAnn struct {
-	span         Span
-	inferredType Type
+	span Span
 	commentSlots
 }
 
 func NewAnyTypeAnn(span Span) *AnyTypeAnn {
-	return &AnyTypeAnn{span: span, inferredType: nil, commentSlots: commentSlots{}}
+	return &AnyTypeAnn{span: span, commentSlots: commentSlots{}}
 }
 func (t *AnyTypeAnn) Accept(v Visitor) {
 	v.EnterTypeAnn(t)
@@ -157,13 +148,12 @@ func (t *AnyTypeAnn) Accept(v Visitor) {
 }
 
 type UnknownTypeAnn struct {
-	span         Span
-	inferredType Type
+	span Span
 	commentSlots
 }
 
 func NewUnknownTypeAnn(span Span) *UnknownTypeAnn {
-	return &UnknownTypeAnn{span: span, inferredType: nil, commentSlots: commentSlots{}}
+	return &UnknownTypeAnn{span: span, commentSlots: commentSlots{}}
 }
 func (t *UnknownTypeAnn) Accept(v Visitor) {
 	v.EnterTypeAnn(t)
@@ -171,13 +161,12 @@ func (t *UnknownTypeAnn) Accept(v Visitor) {
 }
 
 type NeverTypeAnn struct {
-	span         Span
-	inferredType Type
+	span Span
 	commentSlots
 }
 
 func NewNeverTypeAnn(span Span) *NeverTypeAnn {
-	return &NeverTypeAnn{span: span, inferredType: nil, commentSlots: commentSlots{}}
+	return &NeverTypeAnn{span: span, commentSlots: commentSlots{}}
 }
 func (t *NeverTypeAnn) Accept(v Visitor) {
 	v.EnterTypeAnn(t)
@@ -416,14 +405,13 @@ type RestSpreadTypeAnn struct {
 	// ConstructorTypeAnn, and MappedTypeAnn return a constant `""`. A
 	// hand-authored `interface F { /** doc */ ...Bar }` round-trips its JSDoc.
 	declDoc
-	Value        TypeAnn
-	span         Span
-	inferredType Type
+	Value TypeAnn
+	span  Span
 	commentSlots
 }
 
 func NewRestSpreadTypeAnn(value TypeAnn, span Span) *RestSpreadTypeAnn {
-	return &RestSpreadTypeAnn{Value: value, span: span, inferredType: nil, commentSlots: commentSlots{}}
+	return &RestSpreadTypeAnn{Value: value, span: span, commentSlots: commentSlots{}}
 }
 
 func (t *RestSpreadTypeAnn) Accept(v Visitor) {
@@ -434,15 +422,14 @@ func (t *RestSpreadTypeAnn) Accept(v Visitor) {
 }
 
 type ObjectTypeAnn struct {
-	Elems        []ObjTypeAnnElem
-	Inexact      bool // trailing `...` marker: `{x: number, ...}` tolerates extra fields
-	span         Span
-	inferredType Type
+	Elems   []ObjTypeAnnElem
+	Inexact bool // trailing `...` marker: `{x: number, ...}` tolerates extra fields
+	span    Span
 	commentSlots
 }
 
 func NewObjectTypeAnn(elems []ObjTypeAnnElem, span Span) *ObjectTypeAnn {
-	return &ObjectTypeAnn{Elems: elems, span: span, inferredType: nil, commentSlots: commentSlots{}}
+	return &ObjectTypeAnn{Elems: elems, span: span, commentSlots: commentSlots{}}
 }
 func (t *ObjectTypeAnn) Accept(v Visitor) {
 	if v.EnterTypeAnn(t) {
@@ -524,15 +511,14 @@ func (t *MappedTypeAnn) Accept(v Visitor) {
 }
 
 type TupleTypeAnn struct {
-	Elems        []TypeAnn
-	Inexact      bool // trailing `...` marker: `[number, ...]` tolerates extra elements
-	span         Span
-	inferredType Type
+	Elems   []TypeAnn
+	Inexact bool // trailing `...` marker: `[number, ...]` tolerates extra elements
+	span    Span
 	commentSlots
 }
 
 func NewTupleTypeAnn(elems []TypeAnn, span Span) *TupleTypeAnn {
-	return &TupleTypeAnn{Elems: elems, span: span, inferredType: nil, commentSlots: commentSlots{}}
+	return &TupleTypeAnn{Elems: elems, span: span, commentSlots: commentSlots{}}
 }
 func (t *TupleTypeAnn) Accept(v Visitor) {
 	if v.EnterTypeAnn(t) {
@@ -544,14 +530,13 @@ func (t *TupleTypeAnn) Accept(v Visitor) {
 }
 
 type UnionTypeAnn struct {
-	Types        []TypeAnn
-	span         Span
-	inferredType Type
+	Types []TypeAnn
+	span  Span
 	commentSlots
 }
 
 func NewUnionTypeAnn(types []TypeAnn, span Span) *UnionTypeAnn {
-	return &UnionTypeAnn{Types: types, span: span, inferredType: nil, commentSlots: commentSlots{}}
+	return &UnionTypeAnn{Types: types, span: span, commentSlots: commentSlots{}}
 }
 func (t *UnionTypeAnn) Accept(v Visitor) {
 	if v.EnterTypeAnn(t) {
@@ -563,14 +548,13 @@ func (t *UnionTypeAnn) Accept(v Visitor) {
 }
 
 type IntersectionTypeAnn struct {
-	Types        []TypeAnn
-	span         Span
-	inferredType Type
+	Types []TypeAnn
+	span  Span
 	commentSlots
 }
 
 func NewIntersectionTypeAnn(types []TypeAnn, span Span) *IntersectionTypeAnn {
-	return &IntersectionTypeAnn{Types: types, span: span, inferredType: nil, commentSlots: commentSlots{}}
+	return &IntersectionTypeAnn{Types: types, span: span, commentSlots: commentSlots{}}
 }
 func (t *IntersectionTypeAnn) Accept(v Visitor) {
 	if v.EnterTypeAnn(t) {
@@ -587,12 +571,11 @@ type TypeRefTypeAnn struct {
 	LifetimeArgs []LifetimeAnnNode // bare lifetime args in `<>` (e.g. `View<'a>`)
 	Lifetime     LifetimeAnnNode   // optional, e.g. 'a in `'a Point` or `mut 'a Point`
 	span         Span
-	inferredType Type
 	commentSlots
 }
 
 func NewRefTypeAnn(name QualIdent, typeArgs []TypeAnn, span Span) *TypeRefTypeAnn {
-	return &TypeRefTypeAnn{Name: name, TypeArgs: typeArgs, span: span, inferredType: nil, commentSlots: commentSlots{}}
+	return &TypeRefTypeAnn{Name: name, TypeArgs: typeArgs, span: span, commentSlots: commentSlots{}}
 }
 func (t *TypeRefTypeAnn) Accept(v Visitor) {
 	if v.EnterTypeAnn(t) {
@@ -617,7 +600,6 @@ type FuncTypeAnn struct {
 	Throws         TypeAnn // optionanl
 	Inexact        bool    // trailing `...` marker: fn(a, ...) tolerates extra args (#677 §4.1)
 	span           Span
-	inferredType   Type
 	commentSlots
 }
 
@@ -636,7 +618,6 @@ func NewFuncTypeAnn(
 		Return:         ret,
 		Throws:         throws,
 		span:           span,
-		inferredType:   nil,
 		commentSlots:   commentSlots{},
 	}
 }
@@ -663,14 +644,13 @@ func (t *FuncTypeAnn) Accept(v Visitor) {
 }
 
 type KeyOfTypeAnn struct {
-	Type         TypeAnn
-	span         Span
-	inferredType Type
+	Type TypeAnn
+	span Span
 	commentSlots
 }
 
 func NewKeyOfTypeAnn(typ TypeAnn, span Span) *KeyOfTypeAnn {
-	return &KeyOfTypeAnn{Type: typ, span: span, inferredType: nil, commentSlots: commentSlots{}}
+	return &KeyOfTypeAnn{Type: typ, span: span, commentSlots: commentSlots{}}
 }
 func (t *KeyOfTypeAnn) Accept(v Visitor) {
 	if v.EnterTypeAnn(t) {
@@ -682,14 +662,13 @@ func (t *KeyOfTypeAnn) Accept(v Visitor) {
 // NegationTypeAnn is the prefix `~T`, the set-theoretic complement admitting every value
 // its operand rejects. It resolves to a soltype.NegationType.
 type NegationTypeAnn struct {
-	Type         TypeAnn
-	span         Span
-	inferredType Type
+	Type TypeAnn
+	span Span
 	commentSlots
 }
 
 func NewNegationTypeAnn(typ TypeAnn, span Span) *NegationTypeAnn {
-	return &NegationTypeAnn{Type: typ, span: span, inferredType: nil, commentSlots: commentSlots{}}
+	return &NegationTypeAnn{Type: typ, span: span, commentSlots: commentSlots{}}
 }
 func (t *NegationTypeAnn) Accept(v Visitor) {
 	if v.EnterTypeAnn(t) {
@@ -699,14 +678,13 @@ func (t *NegationTypeAnn) Accept(v Visitor) {
 }
 
 type TypeOfTypeAnn struct {
-	Value        QualIdent
-	span         Span
-	inferredType Type
+	Value QualIdent
+	span  Span
 	commentSlots
 }
 
 func NewTypeOfTypeAnn(value QualIdent, span Span) *TypeOfTypeAnn {
-	return &TypeOfTypeAnn{Value: value, span: span, inferredType: nil, commentSlots: commentSlots{}}
+	return &TypeOfTypeAnn{Value: value, span: span, commentSlots: commentSlots{}}
 }
 func (t *TypeOfTypeAnn) Accept(v Visitor) {
 	v.EnterTypeAnn(t)
@@ -714,15 +692,14 @@ func (t *TypeOfTypeAnn) Accept(v Visitor) {
 }
 
 type IndexTypeAnn struct {
-	Target       TypeAnn
-	Index        TypeAnn
-	span         Span
-	inferredType Type
+	Target TypeAnn
+	Index  TypeAnn
+	span   Span
 	commentSlots
 }
 
 func NewIndexTypeAnn(target TypeAnn, index TypeAnn, span Span) *IndexTypeAnn {
-	return &IndexTypeAnn{Target: target, Index: index, span: span, inferredType: nil, commentSlots: commentSlots{}}
+	return &IndexTypeAnn{Target: target, Index: index, span: span, commentSlots: commentSlots{}}
 }
 func (t *IndexTypeAnn) Accept(v Visitor) {
 	if v.EnterTypeAnn(t) {
@@ -733,17 +710,16 @@ func (t *IndexTypeAnn) Accept(v Visitor) {
 }
 
 type CondTypeAnn struct {
-	Check        TypeAnn
-	Extends      TypeAnn
-	Then         TypeAnn
-	Else         TypeAnn
-	span         Span
-	inferredType Type
+	Check   TypeAnn
+	Extends TypeAnn
+	Then    TypeAnn
+	Else    TypeAnn
+	span    Span
 	commentSlots
 }
 
 func NewCondTypeAnn(check, extends, _then, _else TypeAnn, span Span) *CondTypeAnn {
-	return &CondTypeAnn{Check: check, Extends: extends, Then: _then, Else: _else, span: span, inferredType: nil, commentSlots: commentSlots{}}
+	return &CondTypeAnn{Check: check, Extends: extends, Then: _then, Else: _else, span: span, commentSlots: commentSlots{}}
 }
 func (t *CondTypeAnn) Accept(v Visitor) {
 	if v.EnterTypeAnn(t) {
@@ -756,10 +732,9 @@ func (t *CondTypeAnn) Accept(v Visitor) {
 }
 
 type MatchTypeAnn struct {
-	Target       TypeAnn
-	Cases        []*MatchTypeAnnCase
-	span         Span
-	inferredType Type
+	Target TypeAnn
+	Cases  []*MatchTypeAnnCase
+	span   Span
 	commentSlots
 }
 
@@ -769,7 +744,7 @@ type MatchTypeAnnCase struct {
 }
 
 func NewMatchTypeAnn(target TypeAnn, cases []*MatchTypeAnnCase, span Span) *MatchTypeAnn {
-	return &MatchTypeAnn{Target: target, Cases: cases, span: span, inferredType: nil, commentSlots: commentSlots{}}
+	return &MatchTypeAnn{Target: target, Cases: cases, span: span, commentSlots: commentSlots{}}
 }
 func (t *MatchTypeAnn) Accept(v Visitor) {
 	if v.EnterTypeAnn(t) {
@@ -783,14 +758,13 @@ func (t *MatchTypeAnn) Accept(v Visitor) {
 }
 
 type InferTypeAnn struct {
-	Name         string
-	span         Span
-	inferredType Type
+	Name string
+	span Span
 	commentSlots
 }
 
 func NewInferTypeAnn(name string, span Span) *InferTypeAnn {
-	return &InferTypeAnn{Name: name, span: span, inferredType: nil, commentSlots: commentSlots{}}
+	return &InferTypeAnn{Name: name, span: span, commentSlots: commentSlots{}}
 }
 func (t *InferTypeAnn) Accept(v Visitor) {
 	v.EnterTypeAnn(t)
@@ -798,13 +772,12 @@ func (t *InferTypeAnn) Accept(v Visitor) {
 }
 
 type WildcardTypeAnn struct {
-	span         Span
-	inferredType Type
+	span Span
 	commentSlots
 }
 
 func NewWildcardTypeAnn(span Span) *WildcardTypeAnn {
-	return &WildcardTypeAnn{span: span, inferredType: nil, commentSlots: commentSlots{}}
+	return &WildcardTypeAnn{span: span, commentSlots: commentSlots{}}
 }
 func (t *WildcardTypeAnn) Accept(v Visitor) {
 	v.EnterTypeAnn(t)
@@ -817,15 +790,14 @@ type Quasi struct {
 }
 
 type TemplateLitTypeAnn struct {
-	Quasis       []*Quasi
-	TypeAnns     []TypeAnn
-	span         Span
-	inferredType Type
+	Quasis   []*Quasi
+	TypeAnns []TypeAnn
+	span     Span
 	commentSlots
 }
 
 func NewTemplateLitTypeAnn(quasis []*Quasi, typeAnns []TypeAnn, span Span) *TemplateLitTypeAnn {
-	return &TemplateLitTypeAnn{Quasis: quasis, TypeAnns: typeAnns, span: span, inferredType: nil, commentSlots: commentSlots{}}
+	return &TemplateLitTypeAnn{Quasis: quasis, TypeAnns: typeAnns, span: span, commentSlots: commentSlots{}}
 }
 func (t *TemplateLitTypeAnn) Accept(v Visitor) {
 	if v.EnterTypeAnn(t) {
@@ -837,13 +809,12 @@ func (t *TemplateLitTypeAnn) Accept(v Visitor) {
 }
 
 type IntrinsicTypeAnn struct {
-	span         Span
-	inferredType Type
+	span Span
 	commentSlots
 }
 
 func NewIntrinsicTypeAnn(span Span) *IntrinsicTypeAnn {
-	return &IntrinsicTypeAnn{span: span, inferredType: nil, commentSlots: commentSlots{}}
+	return &IntrinsicTypeAnn{span: span, commentSlots: commentSlots{}}
 }
 func (t *IntrinsicTypeAnn) Accept(v Visitor) {
 	v.EnterTypeAnn(t)
@@ -851,16 +822,15 @@ func (t *IntrinsicTypeAnn) Accept(v Visitor) {
 }
 
 type ImportTypeAnn struct {
-	Source       string
-	Qualifier    QualIdent // the import is like a namespace and the qualifier can be used to access imported symbols
-	TypeArgs     []TypeAnn
-	span         Span
-	inferredType Type
+	Source    string
+	Qualifier QualIdent // the import is like a namespace and the qualifier can be used to access imported symbols
+	TypeArgs  []TypeAnn
+	span      Span
 	commentSlots
 }
 
 func NewImportType(source string, qualifier QualIdent, typeArgs []TypeAnn, span Span) *ImportTypeAnn {
-	return &ImportTypeAnn{Source: source, Qualifier: qualifier, TypeArgs: typeArgs, span: span, inferredType: nil, commentSlots: commentSlots{}}
+	return &ImportTypeAnn{Source: source, Qualifier: qualifier, TypeArgs: typeArgs, span: span, commentSlots: commentSlots{}}
 }
 func (t *ImportTypeAnn) Accept(v Visitor) {
 	if v.EnterTypeAnn(t) {
@@ -872,14 +842,13 @@ func (t *ImportTypeAnn) Accept(v Visitor) {
 }
 
 type MutableTypeAnn struct {
-	Target       TypeAnn
-	span         Span
-	inferredType Type
+	Target TypeAnn
+	span   Span
 	commentSlots
 }
 
 func NewMutableTypeAnn(target TypeAnn, span Span) *MutableTypeAnn {
-	return &MutableTypeAnn{Target: target, span: span, inferredType: nil, commentSlots: commentSlots{}}
+	return &MutableTypeAnn{Target: target, span: span, commentSlots: commentSlots{}}
 }
 func (t *MutableTypeAnn) Accept(v Visitor) {
 	if v.EnterTypeAnn(t) {
@@ -898,16 +867,15 @@ func (t *MutableTypeAnn) Accept(v Visitor) {
 // The prefix `&` binds tight to a single atom, so `&A | B` is `(&A) | B`.
 // A borrow of a compound is written with explicit parens, `&(A | B)`.
 type RefTypeAnn struct {
-	Mut          bool
-	Lifetime     LifetimeAnnNode // optional
-	Inner        TypeAnn
-	span         Span
-	inferredType Type
+	Mut      bool
+	Lifetime LifetimeAnnNode // optional
+	Inner    TypeAnn
+	span     Span
 	commentSlots
 }
 
 func NewBorrowTypeAnn(mut bool, lifetime LifetimeAnnNode, inner TypeAnn, span Span) *RefTypeAnn {
-	return &RefTypeAnn{Mut: mut, Lifetime: lifetime, Inner: inner, span: span, inferredType: nil, commentSlots: commentSlots{}}
+	return &RefTypeAnn{Mut: mut, Lifetime: lifetime, Inner: inner, span: span, commentSlots: commentSlots{}}
 }
 func (t *RefTypeAnn) Accept(v Visitor) {
 	if v.EnterTypeAnn(t) {
@@ -920,13 +888,12 @@ func (t *RefTypeAnn) Accept(v Visitor) {
 }
 
 type ErrorTypeAnn struct {
-	span         Span
-	inferredType Type
+	span Span
 	commentSlots
 }
 
 func NewErrorTypeAnn(span Span) *ErrorTypeAnn {
-	return &ErrorTypeAnn{span: span, inferredType: nil, commentSlots: commentSlots{}}
+	return &ErrorTypeAnn{span: span, commentSlots: commentSlots{}}
 }
 func (t *ErrorTypeAnn) Accept(v Visitor) {
 	v.EnterTypeAnn(t)

@@ -6,7 +6,6 @@ import (
 	"math/big"
 
 	"github.com/escalier-lang/escalier/internal/provenance"
-	"github.com/escalier-lang/escalier/internal/type_system"
 )
 
 // NamespaceID represents a unique identifier for a namespace
@@ -18,7 +17,6 @@ const RootNamespaceID NamespaceID = 0
 type Expr interface {
 	isExpr()
 	Node
-	Inferrable
 }
 
 func (*ErrorExpr) isExpr()             {}
@@ -50,13 +48,12 @@ func (*YieldExpr) isExpr()             {}
 func (*ArraySpreadExpr) isExpr()       {}
 
 type ErrorExpr struct {
-	span         Span
-	inferredType Type
+	span Span
 	commentSlots
 }
 
 func NewError(span Span) *ErrorExpr {
-	return &ErrorExpr{span: span, inferredType: nil, commentSlots: commentSlots{}}
+	return &ErrorExpr{span: span, commentSlots: commentSlots{}}
 }
 func (e *ErrorExpr) Accept(v Visitor) {
 	v.EnterExpr(e)
@@ -108,16 +105,15 @@ var Precedence = map[BinaryOp]int{
 }
 
 type BinaryExpr struct {
-	Left         Expr
-	Op           BinaryOp
-	Right        Expr
-	span         Span
-	inferredType Type
+	Left  Expr
+	Op    BinaryOp
+	Right Expr
+	span  Span
 	commentSlots
 }
 
 func NewBinary(left, right Expr, op BinaryOp, span Span) *BinaryExpr {
-	return &BinaryExpr{Left: left, Right: right, Op: op, span: span, inferredType: nil, commentSlots: commentSlots{}}
+	return &BinaryExpr{Left: left, Right: right, Op: op, span: span, commentSlots: commentSlots{}}
 }
 func (e *BinaryExpr) Accept(v Visitor) {
 	if v.EnterExpr(e) {
@@ -136,15 +132,14 @@ const (
 )
 
 type UnaryExpr struct {
-	Op           UnaryOp
-	Arg          Expr
-	span         Span
-	inferredType Type
+	Op   UnaryOp
+	Arg  Expr
+	span Span
 	commentSlots
 }
 
 func NewUnary(op UnaryOp, arg Expr, span Span) *UnaryExpr {
-	return &UnaryExpr{Op: op, Arg: arg, span: span, inferredType: nil, commentSlots: commentSlots{}}
+	return &UnaryExpr{Op: op, Arg: arg, span: span, commentSlots: commentSlots{}}
 }
 func (e *UnaryExpr) Accept(v Visitor) {
 	if v.EnterExpr(e) {
@@ -161,15 +156,14 @@ func (e *UnaryExpr) Accept(v Visitor) {
 // The prefix `&` binds looser than the postfix `.` and `[]`, so `&obj.f`
 // parses as `&(obj.f)`, a borrow of the whole place path.
 type BorrowExpr struct {
-	Mut          bool
-	Arg          Expr
-	span         Span
-	inferredType Type
+	Mut  bool
+	Arg  Expr
+	span Span
 	commentSlots
 }
 
 func NewBorrow(mut bool, arg Expr, span Span) *BorrowExpr {
-	return &BorrowExpr{Mut: mut, Arg: arg, span: span, inferredType: nil, commentSlots: commentSlots{}}
+	return &BorrowExpr{Mut: mut, Arg: arg, span: span, commentSlots: commentSlots{}}
 }
 func (e *BorrowExpr) Accept(v Visitor) {
 	if v.EnterExpr(e) {
@@ -228,9 +222,8 @@ type UndefinedLit struct {
 }
 
 type LiteralExpr struct {
-	Lit          Lit
-	span         Span
-	inferredType Type
+	Lit  Lit
+	span Span
 	commentSlots
 }
 
@@ -345,7 +338,7 @@ func (e *LiteralExpr) Accept(v Visitor) {
 }
 
 func NewLitExpr(lit Lit) *LiteralExpr {
-	return &LiteralExpr{Lit: lit, span: lit.Span(), inferredType: nil, commentSlots: commentSlots{}}
+	return &LiteralExpr{Lit: lit, span: lit.Span(), commentSlots: commentSlots{}}
 }
 
 type IdentExpr struct {
@@ -361,18 +354,17 @@ type IdentExpr struct {
 	// value. Carried so codegen can walk back to the declaration's
 	// decorators (e.g. `@js("Math.sin")`) without a re-lookup. See
 	// planning/builtins/implementation_plan.md §3.
-	Owner        type_system.BindingOwner
-	span         Span
-	inferredType Type
+	Owner BindingOwner
+	span  Span
 	commentSlots
 }
 
 func NewIdent(name string, span Span) *IdentExpr {
-	return &IdentExpr{Name: name, Namespace: RootNamespaceID, Source: nil, span: span, inferredType: nil, commentSlots: commentSlots{}}
+	return &IdentExpr{Name: name, Namespace: RootNamespaceID, Source: nil, span: span, commentSlots: commentSlots{}}
 }
 
 func NewIdentWithNamespace(name string, namespace NamespaceID, span Span) *IdentExpr {
-	return &IdentExpr{Name: name, Namespace: namespace, Source: nil, span: span, inferredType: nil, commentSlots: commentSlots{}}
+	return &IdentExpr{Name: name, Namespace: namespace, Source: nil, span: span, commentSlots: commentSlots{}}
 }
 func (e *IdentExpr) Accept(v Visitor) {
 	v.EnterExpr(e)
@@ -439,9 +431,8 @@ type FuncSig struct {
 
 type FuncExpr struct {
 	FuncSig
-	Body         *Block
-	span         Span
-	inferredType Type
+	Body *Block
+	span Span
 	commentSlots
 }
 
@@ -466,7 +457,6 @@ func NewFuncExpr(
 		},
 		Body:         body,
 		span:         span,
-		inferredType: nil,
 		commentSlots: commentSlots{},
 	}
 }
@@ -494,39 +484,16 @@ func (e *FuncExpr) Accept(v Visitor) {
 }
 
 type CallExpr struct {
-	Callee         Expr
-	Args           []Expr
-	OptChain       bool
-	span           Span
-	inferredType   Type
-	resolvedThrows Type
+	Callee   Expr
+	Args     []Expr
+	OptChain bool
+	span     Span
 	commentSlots
 }
 
 func NewCall(callee Expr, args []Expr, optChain bool, span Span) *CallExpr {
-	return &CallExpr{Callee: callee, Args: args, OptChain: optChain, span: span, inferredType: nil, commentSlots: commentSlots{}}
+	return &CallExpr{Callee: callee, Args: args, OptChain: optChain, span: span, commentSlots: commentSlots{}}
 }
-
-// ResolvedThrows returns the post-instantiation `Throws` type of the
-// function actually dispatched to at this call site — i.e. the picked
-// overload arm and/or the generic substitution.
-//
-//   - nil           → no dispatch was resolved (error paths)
-//   - NeverType     → resolved to a non-throwing arm (sentinel: the
-//     callee declared no throws clause)
-//   - any other Type → the resolved throws type
-//
-// Callers that just want "what does this call throw" should treat
-// NeverType the same as nil; the distinction only matters for deciding
-// whether to fall back to walking the declaration-time callee type.
-func (e *CallExpr) ResolvedThrows() Type { return e.resolvedThrows }
-
-// SetResolvedThrows records the throws type from the function signature
-// that was selected and instantiated for this call. Should be set by
-// inferCallExpr at every successful dispatch site. Pass a NeverType
-// sentinel (not nil) to mark "resolved but non-throwing" so that
-// readers can distinguish that case from "unresolved".
-func (e *CallExpr) SetResolvedThrows(t Type) { e.resolvedThrows = t }
 
 // SuperCallExpr is a `super(...)` written in a subclass constructor body. It runs the
 // superclass constructor with the arguments given, so the members the subclass inherits
@@ -537,14 +504,13 @@ func (e *CallExpr) SetResolvedThrows(t Type) { e.resolvedThrows = t }
 // which Escalier does not parse yet, so there is nothing for a standalone `super` expression
 // to mean.
 type SuperCallExpr struct {
-	Args         []Expr
-	span         Span
-	inferredType Type
+	Args []Expr
+	span Span
 	commentSlots
 }
 
 func NewSuperCall(args []Expr, span Span) *SuperCallExpr {
-	return &SuperCallExpr{Args: args, span: span, inferredType: nil, commentSlots: commentSlots{}}
+	return &SuperCallExpr{Args: args, span: span, commentSlots: commentSlots{}}
 }
 
 func (e *SuperCallExpr) Accept(v Visitor) {
@@ -567,16 +533,15 @@ func (e *CallExpr) Accept(v Visitor) {
 }
 
 type IndexExpr struct {
-	Object       Expr
-	Index        Expr
-	OptChain     bool
-	span         Span
-	inferredType Type
+	Object   Expr
+	Index    Expr
+	OptChain bool
+	span     Span
 	commentSlots
 }
 
 func NewIndex(object, index Expr, optChain bool, span Span) *IndexExpr {
-	return &IndexExpr{Object: object, Index: index, OptChain: optChain, span: span, inferredType: nil, commentSlots: commentSlots{}}
+	return &IndexExpr{Object: object, Index: index, OptChain: optChain, span: span, commentSlots: commentSlots{}}
 }
 func (e *IndexExpr) Accept(v Visitor) {
 	if v.EnterExpr(e) {
@@ -587,16 +552,15 @@ func (e *IndexExpr) Accept(v Visitor) {
 }
 
 type MemberExpr struct {
-	Object       Expr
-	Prop         *Ident
-	OptChain     bool
-	span         Span
-	inferredType Type
+	Object   Expr
+	Prop     *Ident
+	OptChain bool
+	span     Span
 	commentSlots
 }
 
 func NewMember(object Expr, prop *Ident, optChain bool, span Span) *MemberExpr {
-	return &MemberExpr{Object: object, Prop: prop, OptChain: optChain, span: span, inferredType: nil, commentSlots: commentSlots{}}
+	return &MemberExpr{Object: object, Prop: prop, OptChain: optChain, span: span, commentSlots: commentSlots{}}
 }
 func (e *MemberExpr) Accept(v Visitor) {
 	if v.EnterExpr(e) {
@@ -606,14 +570,13 @@ func (e *MemberExpr) Accept(v Visitor) {
 }
 
 type TupleExpr struct {
-	Elems        []Expr
-	span         Span
-	inferredType Type
+	Elems []Expr
+	span  Span
 	commentSlots
 }
 
 func NewArray(elems []Expr, span Span) *TupleExpr {
-	return &TupleExpr{Elems: elems, span: span, inferredType: nil, commentSlots: commentSlots{}}
+	return &TupleExpr{Elems: elems, span: span, commentSlots: commentSlots{}}
 }
 func (e *TupleExpr) Accept(v Visitor) {
 	if v.EnterExpr(e) {
@@ -715,9 +678,8 @@ func (e *PropertyExpr) Accept(v Visitor) {
 
 // ArraySpreadExpr represents a spread element in an array context: [...expr]
 type ArraySpreadExpr struct {
-	Value        Expr
-	span         Span
-	inferredType Type
+	Value Expr
+	span  Span
 	commentSlots
 }
 
@@ -733,9 +695,8 @@ func (e *ArraySpreadExpr) Accept(v Visitor) {
 
 // ObjSpreadExpr represents a spread element in an object context: {...expr}
 type ObjSpreadExpr struct {
-	Value        Expr
-	span         Span
-	inferredType Type
+	Value Expr
+	span  Span
 	commentSlots
 }
 
@@ -750,14 +711,13 @@ func (e *ObjSpreadExpr) Accept(v Visitor) {
 }
 
 type ObjectExpr struct {
-	Elems        []ObjExprElem
-	span         Span
-	inferredType Type
+	Elems []ObjExprElem
+	span  Span
 	commentSlots
 }
 
 func NewObject(elems []ObjExprElem, span Span) *ObjectExpr {
-	return &ObjectExpr{Elems: elems, span: span, inferredType: nil, commentSlots: commentSlots{}}
+	return &ObjectExpr{Elems: elems, span: span, commentSlots: commentSlots{}}
 }
 func (e *ObjectExpr) Accept(v Visitor) {
 	if v.EnterExpr(e) {
@@ -769,16 +729,15 @@ func (e *ObjectExpr) Accept(v Visitor) {
 }
 
 type IfElseExpr struct {
-	Cond         Expr
-	Cons         Block
-	Alt          *BlockOrExpr // optional
-	span         Span
-	inferredType Type
+	Cond Expr
+	Cons Block
+	Alt  *BlockOrExpr // optional
+	span Span
 	commentSlots
 }
 
 func NewIfElse(cond Expr, cons Block, alt *BlockOrExpr, span Span) *IfElseExpr {
-	return &IfElseExpr{Cond: cond, Cons: cons, Alt: alt, span: span, inferredType: nil, commentSlots: commentSlots{}}
+	return &IfElseExpr{Cond: cond, Cons: cons, Alt: alt, span: span, commentSlots: commentSlots{}}
 }
 func (e *IfElseExpr) Accept(v Visitor) {
 	if v.EnterExpr(e) {
@@ -798,17 +757,16 @@ func (e *IfElseExpr) Accept(v Visitor) {
 }
 
 type IfValExpr struct {
-	Pattern      Pat
-	Target       Expr
-	Cons         Block
-	Alt          *BlockOrExpr // optional
-	span         Span
-	inferredType Type
+	Pattern Pat
+	Target  Expr
+	Cons    Block
+	Alt     *BlockOrExpr // optional
+	span    Span
 	commentSlots
 }
 
 func NewIfVal(pattern Pat, target Expr, cons Block, alt *BlockOrExpr, span Span) *IfValExpr {
-	return &IfValExpr{Pattern: pattern, Target: target, Cons: cons, Alt: alt, span: span, inferredType: nil, commentSlots: commentSlots{}}
+	return &IfValExpr{Pattern: pattern, Target: target, Cons: cons, Alt: alt, span: span, commentSlots: commentSlots{}}
 }
 func (e *IfValExpr) Accept(v Visitor) {
 	if v.EnterExpr(e) {
@@ -843,15 +801,14 @@ func NewMatchCase(pattern Pat, guard Expr, body BlockOrExpr, span Span) *MatchCa
 func (e *MatchCase) Span() Span { return e.span }
 
 type MatchExpr struct {
-	Target       Expr
-	Cases        []*MatchCase
-	span         Span
-	inferredType Type
+	Target Expr
+	Cases  []*MatchCase
+	span   Span
 	commentSlots
 }
 
 func NewMatch(target Expr, cases []*MatchCase, span Span) *MatchExpr {
-	return &MatchExpr{Target: target, Cases: cases, span: span, inferredType: nil, commentSlots: commentSlots{}}
+	return &MatchExpr{Target: target, Cases: cases, span: span, commentSlots: commentSlots{}}
 }
 func (e *MatchExpr) Accept(v Visitor) {
 	if v.EnterExpr(e) {
@@ -873,15 +830,14 @@ func (e *MatchExpr) Accept(v Visitor) {
 }
 
 type TryCatchExpr struct {
-	Try          Block
-	Catch        []*MatchCase // optional
-	span         Span
-	inferredType Type
+	Try   Block
+	Catch []*MatchCase // optional
+	span  Span
 	commentSlots
 }
 
 func NewTryCatch(try Block, catch []*MatchCase, span Span) *TryCatchExpr {
-	return &TryCatchExpr{Try: try, Catch: catch, span: span, inferredType: nil, commentSlots: commentSlots{}}
+	return &TryCatchExpr{Try: try, Catch: catch, span: span, commentSlots: commentSlots{}}
 }
 func (e *TryCatchExpr) Accept(v Visitor) {
 	if v.EnterExpr(e) {
@@ -903,14 +859,13 @@ func (e *TryCatchExpr) Accept(v Visitor) {
 }
 
 type ThrowExpr struct {
-	Arg          Expr
-	span         Span
-	inferredType Type
+	Arg  Expr
+	span Span
 	commentSlots
 }
 
 func NewThrow(arg Expr, span Span) *ThrowExpr {
-	return &ThrowExpr{Arg: arg, span: span, inferredType: nil, commentSlots: commentSlots{}}
+	return &ThrowExpr{Arg: arg, span: span, commentSlots: commentSlots{}}
 }
 func (e *ThrowExpr) Accept(v Visitor) {
 	if v.EnterExpr(e) {
@@ -920,14 +875,13 @@ func (e *ThrowExpr) Accept(v Visitor) {
 }
 
 type DoExpr struct {
-	Body         Block
-	span         Span
-	inferredType Type
+	Body Block
+	span Span
 	commentSlots
 }
 
 func NewDo(body Block, span Span) *DoExpr {
-	return &DoExpr{Body: body, span: span, inferredType: nil, commentSlots: commentSlots{}}
+	return &DoExpr{Body: body, span: span, commentSlots: commentSlots{}}
 }
 func (e *DoExpr) Accept(v Visitor) {
 	if v.EnterExpr(e) {
@@ -937,14 +891,13 @@ func (e *DoExpr) Accept(v Visitor) {
 }
 
 type AwaitExpr struct {
-	Arg          Expr
-	span         Span
-	inferredType Type
+	Arg  Expr
+	span Span
 	commentSlots
 }
 
 func NewAwait(arg Expr, span Span) *AwaitExpr {
-	return &AwaitExpr{Arg: arg, span: span, inferredType: nil, commentSlots: commentSlots{}}
+	return &AwaitExpr{Arg: arg, span: span, commentSlots: commentSlots{}}
 }
 func (e *AwaitExpr) Accept(v Visitor) {
 	if v.EnterExpr(e) {
@@ -954,10 +907,9 @@ func (e *AwaitExpr) Accept(v Visitor) {
 }
 
 type YieldExpr struct {
-	Value        Expr // The yielded value (nil for bare `yield`)
-	IsDelegate   bool // true for `yield from` (compiles to yield*)
-	span         Span
-	inferredType Type
+	Value      Expr // The yielded value (nil for bare `yield`)
+	IsDelegate bool // true for `yield from` (compiles to yield*)
+	span       Span
 	commentSlots
 }
 
@@ -980,15 +932,14 @@ func (e *YieldExpr) Accept(v Visitor) {
 }
 
 type TemplateLitExpr struct {
-	Quasis       []*Quasi
-	Exprs        []Expr
-	span         Span
-	inferredType Type
+	Quasis []*Quasi
+	Exprs  []Expr
+	span   Span
 	commentSlots
 }
 
 func NewTemplateLit(quasis []*Quasi, exprs []Expr, span Span) *TemplateLitExpr {
-	return &TemplateLitExpr{Quasis: quasis, Exprs: exprs, span: span, inferredType: nil, commentSlots: commentSlots{}}
+	return &TemplateLitExpr{Quasis: quasis, Exprs: exprs, span: span, commentSlots: commentSlots{}}
 }
 func (e *TemplateLitExpr) Accept(v Visitor) {
 	if v.EnterExpr(e) {
@@ -1000,16 +951,15 @@ func (e *TemplateLitExpr) Accept(v Visitor) {
 }
 
 type TaggedTemplateLitExpr struct {
-	Tag          Expr
-	Quasis       []*Quasi
-	Exprs        []Expr
-	span         Span
-	inferredType Type
+	Tag    Expr
+	Quasis []*Quasi
+	Exprs  []Expr
+	span   Span
 	commentSlots
 }
 
 func NewTaggedTemplateLit(tag Expr, quasis []*Quasi, exprs []Expr, span Span) *TaggedTemplateLitExpr {
-	return &TaggedTemplateLitExpr{Tag: tag, Quasis: quasis, Exprs: exprs, span: span, inferredType: nil, commentSlots: commentSlots{}}
+	return &TaggedTemplateLitExpr{Tag: tag, Quasis: quasis, Exprs: exprs, span: span, commentSlots: commentSlots{}}
 }
 func (e *TaggedTemplateLitExpr) Accept(v Visitor) {
 	if v.EnterExpr(e) {
@@ -1022,16 +972,15 @@ func (e *TaggedTemplateLitExpr) Accept(v Visitor) {
 }
 
 type JSXElementExpr struct {
-	Opening      *JSXOpening
-	Closing      *JSXClosing // optional
-	Children     []JSXChild
-	span         Span
-	inferredType Type
+	Opening  *JSXOpening
+	Closing  *JSXClosing // optional
+	Children []JSXChild
+	span     Span
 	commentSlots
 }
 
 func NewJSXElement(opening *JSXOpening, closing *JSXClosing, children []JSXChild, span Span) *JSXElementExpr {
-	return &JSXElementExpr{Opening: opening, Closing: closing, Children: children, span: span, inferredType: nil, commentSlots: commentSlots{}}
+	return &JSXElementExpr{Opening: opening, Closing: closing, Children: children, span: span, commentSlots: commentSlots{}}
 }
 func (e *JSXElementExpr) Accept(v Visitor) {
 	v.EnterExpr(e) // TODO(#490): expand visitor to handle JSX
@@ -1039,16 +988,15 @@ func (e *JSXElementExpr) Accept(v Visitor) {
 }
 
 type JSXFragmentExpr struct {
-	Opening      *JSXOpening
-	Closing      *JSXClosing
-	Children     []JSXChild
-	span         Span
-	inferredType Type
+	Opening  *JSXOpening
+	Closing  *JSXClosing
+	Children []JSXChild
+	span     Span
 	commentSlots
 }
 
 func NewJSXFragment(opening *JSXOpening, closing *JSXClosing, children []JSXChild, span Span) *JSXFragmentExpr {
-	return &JSXFragmentExpr{Opening: opening, Closing: closing, Children: children, span: span, inferredType: nil, commentSlots: commentSlots{}}
+	return &JSXFragmentExpr{Opening: opening, Closing: closing, Children: children, span: span, commentSlots: commentSlots{}}
 }
 func (e *JSXFragmentExpr) Accept(v Visitor) {
 	v.EnterExpr(e) // TODO(#490): expand visitor to handle JSX
@@ -1056,15 +1004,14 @@ func (e *JSXFragmentExpr) Accept(v Visitor) {
 }
 
 type TypeCastExpr struct {
-	Expr         Expr
-	TypeAnn      TypeAnn
-	span         Span
-	inferredType Type
+	Expr    Expr
+	TypeAnn TypeAnn
+	span    Span
 	commentSlots
 }
 
 func NewTypeCast(expr Expr, typeAnn TypeAnn, span Span) *TypeCastExpr {
-	return &TypeCastExpr{Expr: expr, TypeAnn: typeAnn, span: span, inferredType: nil, commentSlots: commentSlots{}}
+	return &TypeCastExpr{Expr: expr, TypeAnn: typeAnn, span: span, commentSlots: commentSlots{}}
 }
 func (e *TypeCastExpr) Accept(v Visitor) {
 	if v.EnterExpr(e) {

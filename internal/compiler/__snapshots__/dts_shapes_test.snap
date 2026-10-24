@@ -363,7 +363,7 @@ declare function k(): Promise<5>;
 ---
 
 [TestEachDeclarationShapeEmitsDefinitions/AClassGetterAndSetter - 1]
-declare type C = {v: number, get val(): number, set val(value: number)};
+declare type C = {v: number, get val(): number, set val(n: number)};
 declare const C: {new (v: number): C};
 
 ---

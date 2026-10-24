@@ -75,10 +75,8 @@ type ClassifyContext struct {
 }
 
 // OverrideLookup reports the receiver mutability that an override file
-// records for a class member. The runtime override store in
-// internal/interop implements it. Keeping the lookup behind an interface
-// is what lets this package convert `.d.ts` declarations without linking
-// against the store's type representation.
+// records for a class member. Nothing implements it yet, so ClassifyContext.Store
+// is nil at every call site.
 //
 // The second return value is false when no override addresses the member
 // in ctx, which leaves the remaining tiers to decide.
@@ -222,9 +220,8 @@ func memberKeyOf(key dts_parser.PropertyKey) (ecma262.MemberKey, bool) {
 // keyed by an owner are not among them, the ECMA-262 facts included, because
 // this entry point holds no owner. `Classify` is the one that does.
 //
-// Used by the checker prelude pass on .d.ts-loaded lib types, where the
-// caller has a type_system.MethodElem and a string name but no
-// dts_parser.ClassMember to feed the full Classify entry point.
+// It serves a caller that has a method name but no dts_parser.ClassMember
+// to feed the full Classify entry point.
 //
 // Returns (mut, true) when a tier classifies the name; (false, false)
 // when no tier matches and the caller should keep its own default.
@@ -285,12 +282,9 @@ var ImmutableOwners = set.FromSlice([]string{
 // does not belong here. The reader applies the heuristics as a fall-through
 // for any method with no entry.
 //
-// Two readers consult it. `Classify` reads it at tier 4, beside the override
-// store of `internal/interop`, whose built-in subtree is still empty.
-// `checker.UpdateMethodMutability` reads it to strip `&mut self` from the
-// `.d.ts`-loaded lib types. That second reader is why the entries a published
-// fact answers are still here: the prelude reads no fact, so an entry is what
-// carries the claim there. See planning/ecma-262/validation_diff.md.
+// `Classify` reads it at tier 4, beside the override store. See
+// planning/ecma-262/validation_diff.md for how its entries compare with the
+// published facts.
 //
 // The key is the name of the interface the `.d.ts` declares the member on.
 //

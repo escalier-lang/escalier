@@ -421,7 +421,7 @@ func TestIsIdent(t *testing.T) {
 }
 
 // TestPrintNestedPrecedence covers the shapes where operator precedence forces
-// parenthesization, mirroring type_system/print_type.go's behavior. These use
+// parenthesization. These use
 // inline snapshots per CLAUDE.md since they're the richer rendered forms.
 func TestPrintNestedPrecedence(t *testing.T) {
 	// A function inside a union: precFunc < precUnion, so the function is parenthesized.

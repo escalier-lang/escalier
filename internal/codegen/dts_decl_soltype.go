@@ -12,9 +12,7 @@ import (
 )
 
 // dts_decl_soltype.go walks a module's declarations and emits `.d.ts` statements from
-// solver results, the twin of the type_system-driven walk in dts.go. It carries the
-// `FromSol` suffix dts_soltype.go establishes for a counterpart of a function there,
-// and goes when internal/type_system does.
+// solver results.
 
 // SolNamespace is the solver surface the declaration walk reads at one namespace level,
 // an interface so this package keeps reading type representations rather than the checker
@@ -39,13 +37,12 @@ type SolNamespace interface {
 	Namespace(name string) (SolNamespace, bool)
 }
 
-// BuildDefinitionsFromSol builds `.d.ts` definitions from a solver module run, grouping
-// declarations by namespace the way the type_system walk does and emitting them in the
-// order depGraph typed them. Namespace names are sorted, so one module's output does not
-// depend on map order. preludePrefix is the key the prelude's declarations are registered
-// under, which tells a reference to a prelude type from a user's own of the same name.
+// BuildDefinitions builds `.d.ts` definitions from a solver module run, grouping
+// declarations by namespace and emitting them in the order depGraph typed them.
+// Namespace names are sorted, so one module's output does not depend on map order.
+// preludePrefix is the key the prelude's declarations are registered under, which tells a reference to a prelude type from a user's own of the same name.
 // symbols describes the unique symbols the module declares.
-func (b *Builder) BuildDefinitionsFromSol(
+func (b *Builder) BuildDefinitions(
 	depGraph *dep_graph.DepGraph,
 	root SolNamespace,
 	preludePrefix string,
@@ -68,11 +65,11 @@ func (b *Builder) BuildDefinitionsFromSol(
 	}
 	sort.Strings(namespaceNames)
 
-	b.solSymbolKeys = symbolKeysFromSol(depGraph, root, namespaceGroups[""], symbols.Minted)
+	b.solSymbolKeys = uniqueSymbolKeys(depGraph, root, namespaceGroups[""], symbols.Minted)
 	b.solSymbolOwners = symbols.Owners
 	b.solSymbolAliases = nil
 	b.solSymbolAliasNames = map[int]string{}
-	b.solModuleNames = moduleNamesFromSol(namespaceGroups)
+	b.solModuleNames = declaredModuleNames(namespaceGroups)
 
 	// A class and an enum each hold a type binding and a value binding pointing at one
 	// declaration, so the walk would reach the declaration twice without this.
@@ -83,8 +80,8 @@ func (b *Builder) BuildDefinitionsFromSol(
 		declNS := root
 		if namespace != "" {
 			// A namespace the walk cannot find leaves its declarations reading the
-			// module's own bindings, which is what the type_system walk falls back to.
-			if found, ok := findNamespaceFromSol(root, namespace); ok {
+			// module's own bindings.
+			if found, ok := findNamespace(root, namespace); ok {
 				declNS = found
 			}
 		}
@@ -98,8 +95,8 @@ func (b *Builder) BuildDefinitionsFromSol(
 				}
 				processedDecls.Add(decl)
 
-				b.solShadowed = shadowedNamesFromSol(namespaceGroups, namespace)
-				declStmts := b.buildDeclStmtFromSol(decl, declNS, names, namespace == "")
+				b.solShadowed = shadowedNames(namespaceGroups, namespace)
+				declStmts := b.buildDeclStmt(decl, declNS, names, namespace == "")
 				namespaceStmts = append(namespaceStmts, declStmts...)
 			}
 		}
@@ -120,7 +117,7 @@ func (b *Builder) BuildDefinitionsFromSol(
 
 	// The aliases go first. TypeScript resolves a name anywhere in the file, so the order
 	// is only for a reader, who meets each alias before the namespace that uses it.
-	return &Module{Stmts: append(symbolAliasStmtsFromSol(b.solSymbolAliases), stmts...)}
+	return &Module{Stmts: append(symbolAliasStmts(b.solSymbolAliases), stmts...)}
 }
 
 // solSymbolAlias is one private top-level value that holds a unique symbol under a name
@@ -131,10 +128,10 @@ type solSymbolAlias struct {
 	path string
 }
 
-// symbolAliasStmtsFromSol declares each alias as `declare const name: typeof path`. The
+// symbolAliasStmts declares each alias as `declare const name: typeof path`. The
 // alias's type is the original symbol, so `typeof name` and a `[name]` key both name it.
 // An alias is not exported, since it exists only for this file's namespace blocks.
-func symbolAliasStmtsFromSol(aliases []solSymbolAlias) []Stmt {
+func symbolAliasStmts(aliases []solSymbolAlias) []Stmt {
 	stmts := make([]Stmt, 0, len(aliases))
 	for _, alias := range aliases {
 		stmts = append(stmts, &DeclStmt{
@@ -142,7 +139,7 @@ func symbolAliasStmtsFromSol(aliases []solSymbolAlias) []Stmt {
 				Kind: ValKind,
 				Decls: []*Declarator{{
 					Pattern: NewIdentPat(alias.name, nil, nil),
-					TypeAnn: NewTypeOfTypeAnn(convertQualIdentFromSol(alias.path)),
+					TypeAnn: NewTypeOfTypeAnn(convertQualIdent(alias.path)),
 					Init:    nil,
 				}},
 				declare: true,
@@ -157,9 +154,9 @@ func symbolAliasStmtsFromSol(aliases []solSymbolAlias) []Stmt {
 	return stmts
 }
 
-// moduleNamesFromSol returns every name a module declares: each binding's own name and
+// declaredModuleNames returns every name a module declares: each binding's own name and
 // each namespace segment, at every level.
-func moduleNamesFromSol(namespaceGroups map[string][]dep_graph.BindingKey) set.Set[string] {
+func declaredModuleNames(namespaceGroups map[string][]dep_graph.BindingKey) set.Set[string] {
 	names := set.NewSet[string]()
 	for namespace, keys := range namespaceGroups {
 		if namespace != "" {
@@ -174,11 +171,11 @@ func moduleNamesFromSol(namespaceGroups map[string][]dep_graph.BindingKey) set.S
 	return names
 }
 
-// shadowedNamesFromSol returns the names that a declaration inside `namespace` reads as a
+// shadowedNames returns the names that a declaration inside `namespace` reads as a
 // namespace member rather than as the module root's binding. That is every member the
 // block or an enclosing block declares, including a nested namespace's name. The module
 // root shadows nothing.
-func shadowedNamesFromSol(namespaceGroups map[string][]dep_graph.BindingKey, namespace string) set.Set[string] {
+func shadowedNames(namespaceGroups map[string][]dep_graph.BindingKey, namespace string) set.Set[string] {
 	shadowed := set.NewSet[string]()
 	if namespace == "" {
 		return shadowed
@@ -251,7 +248,7 @@ func (b *Builder) symbolAlias(id int, path string) string {
 	return name
 }
 
-// symbolKeysFromSol maps each unique symbol the module declares to the path a key off it
+// uniqueSymbolKeys maps each unique symbol the module declares to the path a key off it
 // is written through, the map solTypeAnnBuilder.symbolKeys reads. `keys` holds the
 // module's top-level bindings in the order the dependency graph typed them, and `minted`
 // holds the symbols the solver minted for the module.
@@ -266,7 +263,7 @@ func (b *Builder) symbolAlias(id int, path string) string {
 // and `val k = v.key` names it `k`. A symbol named after a binding in a namespace block
 // falls back the same way. A declaration outside the block reaches that binding only
 // through the namespace's path, and only when the block exports it.
-func symbolKeysFromSol(
+func uniqueSymbolKeys(
 	depGraph *dep_graph.DepGraph,
 	root SolNamespace,
 	keys []dep_graph.BindingKey,
@@ -312,8 +309,8 @@ func symbolKeysFromSol(
 }
 
 // solRenderer returns a renderer for one declaration of the module
-// BuildDefinitionsFromSol is walking, which keys a member off a unique symbol through
-// the names symbolKeysFromSol found.
+// BuildDefinitions is walking, which keys a member off a unique symbol through
+// the names uniqueSymbolKeys found.
 func (b *Builder) solRenderer(names solNames, companionPrefix string, typeParams []*soltype.TypeParam) *solTypeAnnBuilder {
 	render := newSolTypeAnnBuilder(names, companionPrefix, typeParams)
 	render.symbolKeys = b.symbolKeysForBlock()
@@ -321,9 +318,9 @@ func (b *Builder) solRenderer(names solNames, companionPrefix string, typeParams
 	return render
 }
 
-// findNamespaceFromSol resolves a dotted namespace path against ns, one segment at a
+// findNamespace resolves a dotted namespace path against ns, one segment at a
 // time. A path whose every segment resolves returns the namespace it names.
-func findNamespaceFromSol(ns SolNamespace, path string) (SolNamespace, bool) {
+func findNamespace(ns SolNamespace, path string) (SolNamespace, bool) {
 	if path == "" {
 		return ns, true
 	}
@@ -338,12 +335,12 @@ func findNamespaceFromSol(ns SolNamespace, path string) (SolNamespace, bool) {
 	return current, true
 }
 
-// buildDeclStmtFromSol emits the statements one declaration contributes. isTopLevel
+// buildDeclStmt emits the statements one declaration contributes. isTopLevel
 // marks a declaration at the module's own level, which is what carries `declare`. One
 // inside a namespace block does not. A declaration whose types the run did not record
 // emits nothing rather than a half-written statement, and the solver has already
 // reported the fault that left them missing.
-func (b *Builder) buildDeclStmtFromSol(
+func (b *Builder) buildDeclStmt(
 	decl ast.Decl,
 	ns SolNamespace,
 	names solNames,
@@ -351,26 +348,26 @@ func (b *Builder) buildDeclStmtFromSol(
 ) []Stmt {
 	switch decl := decl.(type) {
 	case *ast.VarDecl:
-		return b.buildVarDeclFromSol(decl, ns, names, isTopLevel)
+		return b.buildVarDecl(decl, ns, names, isTopLevel)
 	case *ast.FuncDecl:
-		return b.buildFuncDeclFromSol(decl, ns, names, isTopLevel)
+		return b.buildFuncDecl(decl, ns, names, isTopLevel)
 	case *ast.TypeDecl:
-		return b.buildTypeDeclFromSol(decl, ns, names, isTopLevel)
+		return b.buildTypeDecl(decl, ns, names, isTopLevel)
 	case *ast.InterfaceDecl:
-		return b.buildInterfaceDeclFromSol(decl, ns, names, isTopLevel)
+		return b.buildInterfaceDecl(decl, ns, names, isTopLevel)
 	case *ast.ClassDecl:
-		return b.buildClassDeclFromSol(decl, ns, names, isTopLevel)
+		return b.buildClassDecl(decl, ns, names, isTopLevel)
 	case *ast.EnumDecl:
-		return b.buildEnumDeclFromSol(decl, ns, names, isTopLevel)
+		return b.buildEnumDecl(decl, ns, names, isTopLevel)
 	default:
 		return nil
 	}
 }
 
-// buildVarDeclFromSol emits one `declare const` per name the declaration's pattern
+// buildVarDecl emits one `declare const` per name the declaration's pattern
 // binds, in sorted order so a destructuring declaration emits the same way on every
 // run. Each name carries its own type, since `val {x, y} = …` binds two.
-func (b *Builder) buildVarDeclFromSol(
+func (b *Builder) buildVarDecl(
 	decl *ast.VarDecl,
 	ns SolNamespace,
 	names solNames,
@@ -403,13 +400,13 @@ func (b *Builder) buildVarDeclFromSol(
 			typeAnn = NewUniqueSymbolTypeAnn(nil)
 		}
 		var selfStmts []Stmt
-		if containsSelfTypeFromSol(bindingType) {
+		if containsSelfType(bindingType) {
 			ifaceName := "__" + localName + "_self__"
 			selfStmts = append(selfStmts, &DeclStmt{
 				Decl: &TypeDecl{
 					Name:       NewIdentifier(ifaceName, nil),
 					TypeParams: nil,
-					TypeAnn:    interfaceBodyFromSol(typeAnn),
+					TypeAnn:    interfaceBody(typeAnn),
 					Interface:  true,
 					// Held back from the output's exports on purpose. The name exists
 					// to give `this` a body, not for a consumer to write.
@@ -424,7 +421,7 @@ func (b *Builder) buildVarDeclFromSol(
 			typeAnn = NewRefTypeAnn(ifaceName, nil)
 		}
 
-		stmts = append(stmts, companionStmtsFromSol(render)...)
+		stmts = append(stmts, companionStmts(render)...)
 		stmts = append(stmts, selfStmts...)
 		stmts = append(stmts, &DeclStmt{
 			Decl: &VarDecl{
@@ -446,10 +443,10 @@ func (b *Builder) buildVarDeclFromSol(
 	return stmts
 }
 
-// interfaceBodyFromSol wraps a callable type as an interface body, since
+// interfaceBody wraps a callable type as an interface body, since
 // `interface Name { (args): Ret }` is the only interface form a function type has.
 // Every other type is already a body.
-func interfaceBodyFromSol(typeAnn TypeAnn) TypeAnn {
+func interfaceBody(typeAnn TypeAnn) TypeAnn {
 	fn, ok := typeAnn.(*FuncTypeAnn)
 	if !ok {
 		return typeAnn
@@ -457,11 +454,11 @@ func interfaceBodyFromSol(typeAnn TypeAnn) TypeAnn {
 	return NewObjectTypeAnn([]ObjTypeAnnElem{&CallableTypeAnn{Fn: *fn}})
 }
 
-// buildFuncDeclFromSol emits a `declare function` from the signature inference gave
+// buildFuncDecl emits a `declare function` from the signature inference gave
 // the name. The type parameters come from that signature rather than from the `<…>` the
 // declaration wrote, so a parameter an un-annotated function picked up only through
 // generalization is declared too.
-func (b *Builder) buildFuncDeclFromSol(
+func (b *Builder) buildFuncDecl(
 	decl *ast.FuncDecl,
 	ns SolNamespace,
 	names solNames,
@@ -485,7 +482,7 @@ func (b *Builder) buildFuncDeclFromSol(
 	render := b.solRenderer(names, localName, nil)
 	sig := render.declFuncTypeAnn(funcType)
 
-	stmts := companionStmtsFromSol(render)
+	stmts := companionStmts(render)
 	return append(stmts, &DeclStmt{
 		Decl: &FuncDecl{
 			Name:       NewIdentifier(localName, decl.Name),
@@ -505,9 +502,9 @@ func (b *Builder) buildFuncDeclFromSol(
 	})
 }
 
-// buildTypeDeclFromSol emits a type alias from the body registered under the
+// buildTypeDecl emits a type alias from the body registered under the
 // declaration's name.
-func (b *Builder) buildTypeDeclFromSol(
+func (b *Builder) buildTypeDecl(
 	decl *ast.TypeDecl,
 	ns SolNamespace,
 	names solNames,
@@ -524,9 +521,9 @@ func (b *Builder) buildTypeDeclFromSol(
 	// module root while the alias sits in a namespace block.
 	render.valuePath = b.solSymbolOwners[names.qualified(localName)]
 	typeAnn := render.render(body)
-	declTypeParams := typeParamsFromSol(render, typeParams)
+	declTypeParams := typeParamClause(render, typeParams)
 
-	stmts := companionStmtsFromSol(render)
+	stmts := companionStmts(render)
 	return append(stmts, &DeclStmt{
 		Decl: &TypeDecl{
 			Name:       NewIdentifier(localName, decl.Name),
@@ -543,8 +540,8 @@ func (b *Builder) buildTypeDeclFromSol(
 	})
 }
 
-// buildInterfaceDeclFromSol emits an interface from the body its arms merged into.
-func (b *Builder) buildInterfaceDeclFromSol(
+// buildInterfaceDecl emits an interface from the body its arms merged into.
+func (b *Builder) buildInterfaceDecl(
 	decl *ast.InterfaceDecl,
 	ns SolNamespace,
 	names solNames,
@@ -560,10 +557,10 @@ func (b *Builder) buildInterfaceDeclFromSol(
 	// are named after the value the solver chose as their owner. That value may sit at
 	// the module root while the interface sits in a namespace block.
 	render.valuePath = b.solSymbolOwners[names.qualified(localName)]
-	members, extends := interfacePartsFromSol(render.render(body))
-	declTypeParams := typeParamsFromSol(render, typeParams)
+	members, extends := interfaceParts(render.render(body))
+	declTypeParams := typeParamClause(render, typeParams)
 
-	stmts := companionStmtsFromSol(render)
+	stmts := companionStmts(render)
 	return append(stmts, &DeclStmt{
 		Decl: &InterfaceDecl{
 			Name:       NewIdentifier(localName, decl.Name),
@@ -580,12 +577,12 @@ func (b *Builder) buildInterfaceDeclFromSol(
 	})
 }
 
-// interfacePartsFromSol splits a rendered interface body into the members it declares
+// interfaceParts splits a rendered interface body into the members it declares
 // and the interfaces it extends. An interface extending another is registered as the
 // intersection of the parent and the members this one adds, so `interface Employee
 // extends Person` arrives as `Person & {employeeId: number}`. Each object arm contributes
 // members and every other arm names a parent.
-func interfacePartsFromSol(typeAnn TypeAnn) ([]ObjTypeAnnElem, []TypeAnn) {
+func interfaceParts(typeAnn TypeAnn) ([]ObjTypeAnnElem, []TypeAnn) {
 	switch t := typeAnn.(type) {
 	case *ObjectTypeAnn:
 		return t.Elems, nil
@@ -605,11 +602,11 @@ func interfacePartsFromSol(typeAnn TypeAnn) ([]ObjTypeAnnElem, []TypeAnn) {
 	}
 }
 
-// buildClassDeclFromSol emits a class as the two declarations TypeScript needs for
+// buildClassDecl emits a class as the two declarations TypeScript needs for
 // one: a type naming the instance members, and a value holding the constructor and
 // the statics. A class binds both sorts under one name, and `.d.ts` has no `class`
 // form that carries the inferred members.
-func (b *Builder) buildClassDeclFromSol(
+func (b *Builder) buildClassDecl(
 	decl *ast.ClassDecl,
 	ns SolNamespace,
 	names solNames,
@@ -630,9 +627,9 @@ func (b *Builder) buildClassDeclFromSol(
 	// type and the static side mint the same name for two different bodies.
 	instanceRender := b.solRenderer(names, localName, typeParams)
 	instanceAnn := instanceRender.render(instance)
-	instanceTypeParams := typeParamsFromSol(instanceRender, typeParams)
+	instanceTypeParams := typeParamClause(instanceRender, typeParams)
 
-	stmts := companionStmtsFromSol(instanceRender)
+	stmts := companionStmts(instanceRender)
 	stmts = append(stmts, &DeclStmt{
 		Decl: &TypeDecl{
 			Name:       NewIdentifier(localName, decl.Name),
@@ -658,7 +655,7 @@ func (b *Builder) buildClassDeclFromSol(
 		staticRender.valuePath = localName
 	}
 	staticAnn := staticRender.render(staticType)
-	stmts = append(stmts, companionStmtsFromSol(staticRender)...)
+	stmts = append(stmts, companionStmts(staticRender)...)
 	return append(stmts, &DeclStmt{
 		Decl: &VarDecl{
 			Kind: ValKind,
@@ -677,14 +674,14 @@ func (b *Builder) buildClassDeclFromSol(
 	})
 }
 
-// buildEnumDeclFromSol emits an enum as a namespace holding one type and one constructor
+// buildEnumDecl emits an enum as a namespace holding one type and one constructor
 // per variant, beside a type alias naming the union of those variants, so `Color.Hex` is
 // both a type and a callable.
 //
-// An enum with no variant namespace emits nothing at all, matching its twin. The union
+// An enum with no variant namespace emits nothing at all. The union
 // names each variant through that namespace, so emitting the alias without it would
 // declare `type Color = Color.Red` against a `Color.Red` nothing declares.
-func (b *Builder) buildEnumDeclFromSol(
+func (b *Builder) buildEnumDecl(
 	decl *ast.EnumDecl,
 	ns SolNamespace,
 	names solNames,
@@ -708,7 +705,7 @@ func (b *Builder) buildEnumDeclFromSol(
 			continue
 		}
 		namespaceStmts = append(namespaceStmts,
-			b.buildEnumVariantFromSol(variant, variantNS, variantNames)...)
+			b.buildEnumVariant(variant, variantNS, variantNames)...)
 	}
 
 	var stmts []Stmt
@@ -733,9 +730,9 @@ func (b *Builder) buildEnumDeclFromSol(
 	}
 	render := b.solRenderer(names, localName, typeParams)
 	unionAnn := render.render(union)
-	declTypeParams := typeParamsFromSol(render, typeParams)
+	declTypeParams := typeParamClause(render, typeParams)
 
-	stmts = append(stmts, companionStmtsFromSol(render)...)
+	stmts = append(stmts, companionStmts(render)...)
 	return append(stmts, &DeclStmt{
 		Decl: &TypeDecl{
 			Name:       NewIdentifier(localName, decl.Name),
@@ -752,10 +749,10 @@ func (b *Builder) buildEnumDeclFromSol(
 	})
 }
 
-// buildEnumVariantFromSol emits one variant's type and its constructor, both exported
+// buildEnumVariant emits one variant's type and its constructor, both exported
 // from the enum's namespace and neither carrying `declare`, which a namespace member
 // does not take.
-func (b *Builder) buildEnumVariantFromSol(
+func (b *Builder) buildEnumVariant(
 	variant *ast.EnumVariant,
 	variantNS SolNamespace,
 	names solNames,
@@ -766,8 +763,8 @@ func (b *Builder) buildEnumVariantFromSol(
 	if body, typeParams, ok := variantNS.DeclaredType(name); ok && body != nil {
 		render := b.solRenderer(names, name, typeParams)
 		typeAnn := render.render(body)
-		declTypeParams := typeParamsFromSol(render, typeParams)
-		stmts = append(stmts, companionStmtsFromSol(render)...)
+		declTypeParams := typeParamClause(render, typeParams)
+		stmts = append(stmts, companionStmts(render)...)
 		stmts = append(stmts, &DeclStmt{
 			Decl: &TypeDecl{
 				Name:       NewIdentifier(name, variant.Name),
@@ -789,7 +786,7 @@ func (b *Builder) buildEnumVariantFromSol(
 		// name for two bodies.
 		render := b.solRenderer(names, name+"_ctor", nil)
 		ctorAnn := render.render(ctorType)
-		stmts = append(stmts, companionStmtsFromSol(render)...)
+		stmts = append(stmts, companionStmts(render)...)
 		stmts = append(stmts, &DeclStmt{
 			Decl: &VarDecl{
 				Kind: ValKind,
@@ -811,10 +808,10 @@ func (b *Builder) buildEnumVariantFromSol(
 	return stmts
 }
 
-// typeParamsFromSol emits a declaration's own `<…>` clause. The names come from the
+// typeParamClause emits a declaration's own `<…>` clause. The names come from the
 // renderer, which registered each parameter under the name the declaration wrote, so
 // the clause and every reference to it in the body agree.
-func typeParamsFromSol(render *solTypeAnnBuilder, typeParams []*soltype.TypeParam) []*TypeParam {
+func typeParamClause(render *solTypeAnnBuilder, typeParams []*soltype.TypeParam) []*TypeParam {
 	if len(typeParams) == 0 {
 		return nil
 	}
@@ -833,10 +830,10 @@ func typeParamsFromSol(render *solTypeAnnBuilder, typeParams []*soltype.TypePara
 	return out
 }
 
-// companionStmtsFromSol wraps the declarations a render minted. They carry what
+// companionStmts wraps the declarations a render minted. They carry what
 // TypeScript has no inline form for, such as a recursive type's body, so each must be
 // emitted before the declaration whose type refers to it.
-func companionStmtsFromSol(render *solTypeAnnBuilder) []Stmt {
+func companionStmts(render *solTypeAnnBuilder) []Stmt {
 	companions := render.companionDecls()
 	if len(companions) == 0 {
 		return nil
@@ -846,4 +843,58 @@ func companionStmtsFromSol(render *solTypeAnnBuilder) []Stmt {
 		stmts[i] = &DeclStmt{Decl: companion, span: nil, source: nil}
 	}
 	return stmts
+}
+
+// buildNamespaceDecl creates a namespace declaration with nested namespaces if needed
+func (b *Builder) buildNamespaceDecl(namespace string, stmts []Stmt) Decl {
+	parts := strings.Split(namespace, ".")
+
+	// Start from the innermost namespace and work outward
+	currentStmts := stmts
+
+	// Build nested namespace declarations from inside out
+	for i := len(parts) - 1; i >= 0; i-- {
+		namespaceName := parts[i]
+
+		namespaceDecl := &NamespaceDecl{
+			Name:    NewIdentifier(namespaceName, nil),
+			Body:    currentStmts,
+			export:  false,  // Namespaces in .d.ts files are typically not exported at the individual level
+			declare: i == 0, // Only the outermost namespace is declared
+			span:    nil,
+			source:  nil,
+		}
+
+		// Wrap this namespace declaration in a DeclStmt for the next level
+		currentStmts = []Stmt{&DeclStmt{
+			Decl:   namespaceDecl,
+			span:   nil,
+			source: nil,
+		}}
+	}
+
+	// Return the outermost namespace declaration
+	if len(currentStmts) > 0 {
+		if declStmt, ok := currentStmts[0].(*DeclStmt); ok {
+			return declStmt.Decl
+		}
+	}
+
+	// Fallback: create a simple namespace with the full name
+	return &NamespaceDecl{
+		Name:    NewIdentifier(namespace, nil),
+		Body:    stmts,
+		export:  false,
+		declare: true,
+		span:    nil,
+		source:  nil,
+	}
+}
+
+// extractLocalName extracts the local name from a qualified name by removing the namespace prefix
+func extractLocalName(qualifiedName string) string {
+	if lastDot := strings.LastIndex(qualifiedName, "."); lastDot != -1 {
+		return qualifiedName[lastDot+1:]
+	}
+	return qualifiedName
 }

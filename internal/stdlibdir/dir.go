@@ -105,8 +105,7 @@ func resolveStdlibDir(in stdlibDirInputs) (string, error) {
 // This helper lives in a non-test file (despite its `ForTest` name)
 // because symbols defined in `*_test.go` files are visible only within
 // the same package's test binary; cross-package test callers require a
-// regular .go file. The same constraint applies to
-// `SetBuiltinsDirForTest`.
+// regular .go file.
 func SetStdlibDirForTest() error {
 	cwd, err := os.Getwd()
 	if err != nil {
