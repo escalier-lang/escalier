@@ -549,9 +549,15 @@ func (c *checker) acceptsBorrowLeaf(leaf ast.Expr) bool {
 // reference to what comes back. A callee that did keep the value returns a borrow instead,
 // which ownedCarrier declines. A call of a function whose body returns a shared value is not
 // owned either, whatever its return type says, since the value stays reachable from outside.
+// Nor is a call of a namespace member that readonlyViewCallee accepts.
 func (c *checker) callReturnsOwned(e ast.Expr, t soltype.Type) bool {
 	call, ok := e.(*ast.CallExpr)
 	if !ok || c.callReturnsShared(nil, call) {
+		return false
+	}
+	// TypeScript's `readonly` promises the caller a view it may not change. It says nothing
+	// about who else holds the collection, so the package may keep its own reference to it.
+	if c.readonlyViewCallee(nil, call.Callee) {
 		return false
 	}
 	return c.ownedCarrier(t) != nil

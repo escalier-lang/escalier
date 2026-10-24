@@ -570,6 +570,10 @@ type TypeRefTypeAnn struct {
 	TypeArgs     []TypeAnn
 	LifetimeArgs []LifetimeAnnNode // bare lifetime args in `<>` (e.g. `View<'a>`)
 	Lifetime     LifetimeAnnNode   // optional, e.g. 'a in `'a Point` or `mut 'a Point`
+	// ReadonlyView marks a reference that a TypeScript declaration spelled as a readonly
+	// collection. dts_to_esc sets it when it renames `ReadonlyArray<T>` or `readonly T[]` to
+	// `Array<T>`, and likewise for `ReadonlyMap` and `ReadonlySet`. The printer ignores it.
+	ReadonlyView bool
 	span         Span
 	commentSlots
 }

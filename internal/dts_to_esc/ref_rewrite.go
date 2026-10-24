@@ -13,7 +13,8 @@ import (
 //
 //   - `TypeRefTypeAnn{Name: ReadonlyFoo, TypeArgs: …}` is renamed in
 //     place to `Foo` (the readonly name has no place in the converter
-//     output once references are spelled in Escalier's idiom).
+//     output once references are spelled in Escalier's idiom). The
+//     renamed reference has ReadonlyView set.
 //   - `TypeRefTypeAnn{Name: Foo, TypeArgs: …}` (where Foo is a twin's
 //     mutable name) is wrapped in `MutableTypeAnn`, printing as
 //     `mut Foo<…>`.
@@ -59,7 +60,8 @@ var libReadonlyTwins = map[string]string{
 
 // renameLibReadonlyTwinRefs renames each type reference in mod whose name is a
 // key of libReadonlyTwins to the matching mutable name, so `ReadonlyArray<T>`
-// becomes `Array<T>`. It wraps nothing in `mut`.
+// becomes `Array<T>`. It sets ReadonlyView on each reference it renames and wraps
+// nothing in `mut`.
 func renameLibReadonlyTwinRefs(mod *ast.Module) {
 	rw := &refRewriter{readonlyToMutable: libReadonlyTwins}
 	mod.Namespaces.Scan(func(_ string, ns *ast.Namespace) bool {
@@ -375,6 +377,7 @@ func (r *refRewriter) renameTypeRefInPlace(ref *ast.TypeRefTypeAnn) {
 	}
 	if mutableName, ok := r.readonlyToMutable[id.Name]; ok {
 		id.Name = mutableName
+		ref.ReadonlyView = true
 		return
 	}
 	r.qualifyRef(ref, id)
@@ -429,6 +432,7 @@ func (r *refRewriter) rewrite(t ast.TypeAnn) ast.TypeAnn {
 		}
 		if mutableName, ok := r.readonlyToMutable[id.Name]; ok {
 			id.Name = mutableName
+			tt.ReadonlyView = true
 			return tt
 		}
 		if r.mutable.Contains(id.Name) {

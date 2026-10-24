@@ -48,6 +48,18 @@ type checker struct {
 	// against a library, and nil otherwise. A script reads it but records its own functions in
 	// sharedReturns, so a re-checked script leaves the library's set as it was.
 	librarySharedReturns set.Set[ast.Node]
+	// readonlyViewCallees holds each namespace member read whose binding is a function
+	// declared to return a readonly collection that a TypeScript declaration wrote.
+	// readonlyViewCallee reads it.
+	readonlyViewCallees set.Set[ast.Node]
+	// libraryReadonlyViewCallees is the library's readonlyViewCallees when this checker
+	// checks a script against a library, and nil otherwise. A script reads it but records its
+	// own member reads in readonlyViewCallees, so a re-checked script leaves the library's set
+	// as it was.
+	libraryReadonlyViewCallees set.Set[ast.Node]
+	// readonlyViewDecls maps each declaration bindingReturnsReadonlyView has walked to its
+	// answer.
+	readonlyViewDecls map[ast.Node]bool
 
 	// pendingRecvReads holds the member reads off inferred receivers that top-level bodies
 	// collected. A value initializer can still pass such a body to a call that types its
@@ -900,6 +912,8 @@ func newChecker() *checker {
 		varIDCounter: 1,
 	}
 	c.sharedReturns = set.NewSet[ast.Node]()
+	c.readonlyViewCallees = set.NewSet[ast.Node]()
+	c.readonlyViewDecls = map[ast.Node]bool{}
 	c.ctx.fusionRecorder = c.recordFusionEdge
 	c.info.ctx = c.ctx
 	registerIteratorResultAliases(c.ctx)
@@ -937,6 +951,9 @@ func (c *checker) forScript(pkgURI string) *checker {
 	}
 	sc.sharedReturns = set.NewSet[ast.Node]()
 	sc.librarySharedReturns = c.sharedReturns
+	sc.readonlyViewCallees = set.NewSet[ast.Node]()
+	sc.libraryReadonlyViewCallees = c.readonlyViewCallees
+	sc.readonlyViewDecls = map[ast.Node]bool{}
 	// Point the recorder at the script, so a fusion its walk records lands in the
 	// script's Prov table rather than the module's.
 	sc.ctx.fusionRecorder = sc.recordFusionEdge
