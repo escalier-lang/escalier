@@ -162,6 +162,49 @@ fn f() {
 			want: []string{rejected},
 		},
 		{
+			name: "a closure storing a shared local into a local it captures",
+			src: `val xs: Array<number> = [1]
+fn f() {
+	var a: Array<number> = [1]
+	val b = xs
+	val g = fn() { a = b }
+	g()
+	val mut m = a
+	m.push(1)
+}`,
+			want: []string{rejected},
+		},
+		{
+			name: "a nested closure storing a module-level val into a local it captures",
+			src: `val xs: Array<number> = [1]
+fn f() {
+	var a: Array<number> = [1]
+	val g = fn() {
+		val h = fn() { a = xs }
+		h()
+	}
+	g()
+	val c = a
+	val mut m = c
+	m.push(1)
+}`,
+			want: []string{rejected},
+		},
+		{
+			name: "a closure storing one fresh local into another it captures",
+			src: `fn f() {
+	var a: Array<number> = [1]
+	val b: Array<number> = [2]
+	val g = fn() {
+		val h = fn() { a = b }
+		h()
+	}
+	g()
+	val mut m = a
+	m.push(1)
+}`,
+		},
+		{
 			name: "an element of a spread copy of a module-level val",
 			src: `val xss: Array<Array<number>> = [[1]]
 fn f() {

@@ -1,6 +1,8 @@
 package solver
 
 import (
+	"slices"
+
 	"github.com/escalier-lang/escalier/internal/ast"
 	"github.com/escalier-lang/escalier/internal/liveness"
 	"github.com/escalier-lang/escalier/internal/set"
@@ -19,28 +21,46 @@ import (
 //		val mut m = a  // must not make `m` a mutable view of it
 //	}
 
-// sharedFlow is one place a value enters a local. Each local in targets receives the value
-// source produces.
+// sharedFlow is one place a value enters a local. Each local in targets receives the value the
+// flow carries. That value is the one source produces when source is non-nil. Otherwise it is
+// the value of the local fromLocal, or a shared value outright when always is set.
 type sharedFlow struct {
-	targets []liveness.VarID
-	source  ast.Expr
+	targets   []liveness.VarID
+	source    ast.Expr
+	fromLocal liveness.VarID
+	always    bool
+}
+
+// sharedState is one body's record of which of its bindings may hold a shared value.
+//
+//   - flows lists every place a value enters a local of the body.
+//   - valueLocals holds each `val` or `var` binding with no annotation whose initializer is a
+//     number, string, boolean, or bigint literal. Its type is that primitive, so every value
+//     it holds is a copy and never shared.
+//   - scope is the scope the body's parameters bind into, which resolves a name outside the
+//     frame.
+//   - locals holds every binding that may hold a shared value, starting from the captures.
+//   - ownLocals holds every binding that may hold a shared value when no capture is counted
+//     as shared. A closure reports it to its enclosing body, which decides for itself whether
+//     each capture is shared.
+type sharedState struct {
+	flows       []sharedFlow
+	valueLocals set.Set[liveness.VarID]
+	scope       *Scope
+	locals      set.Set[liveness.VarID]
+	ownLocals   set.Set[liveness.VarID]
 }
 
 // sharedFlowCollector gathers every sharedFlow of one function body. It stops at a nested
 // function, whose body runs its own pre-pass.
-//
-// valueLocals holds each `val` or `var` binding with no annotation whose initializer is a
-// primitive literal, such as `var n = 0`. Its type is that primitive, so every value it
-// holds is a copy and never shared.
 type sharedFlowCollector struct {
 	ast.DefaultVisitor
-	flows       []sharedFlow
-	valueLocals set.Set[liveness.VarID]
+	state *sharedState
 }
 
 func (v *sharedFlowCollector) add(targets []liveness.VarID, source ast.Expr) {
 	if source != nil && len(targets) > 0 {
-		v.flows = append(v.flows, sharedFlow{targets: targets, source: source})
+		v.state.flows = append(v.state.flows, sharedFlow{targets: targets, source: source})
 	}
 }
 
@@ -48,10 +68,8 @@ func (v *sharedFlowCollector) EnterDecl(d ast.Decl) bool {
 	switch d := d.(type) {
 	case *ast.VarDecl:
 		v.add(patVarIDs(d.Pattern), d.Init)
-		if pat, ok := d.Pattern.(*ast.IdentPat); ok && pat.VarID > 0 && d.TypeAnn == nil {
-			if _, ok := d.Init.(*ast.LiteralExpr); ok {
-				v.valueLocals.Add(liveness.VarID(pat.VarID))
-			}
+		if pat, ok := d.Pattern.(*ast.IdentPat); ok && pat.VarID > 0 && d.TypeAnn == nil && isCopiedLiteral(d.Init) {
+			v.state.valueLocals.Add(liveness.VarID(pat.VarID))
 		}
 	case *ast.FuncDecl:
 		return false
@@ -84,6 +102,19 @@ func (v *sharedFlowCollector) EnterExpr(e ast.Expr) bool {
 	return true
 }
 
+// isCopiedLiteral reports whether e is a number, string, boolean, or bigint literal.
+func isCopiedLiteral(e ast.Expr) bool {
+	lit, ok := e.(*ast.LiteralExpr)
+	if !ok {
+		return false
+	}
+	switch lit.Lit.(type) {
+	case *ast.NumLit, *ast.StrLit, *ast.BoolLit, *ast.BigIntLit:
+		return true
+	}
+	return false
+}
+
 // patVarIDs returns the VarID of each leaf binding of pat that the rename pass numbered.
 func patVarIDs(pat ast.Pat) []liveness.VarID {
 	var ids []liveness.VarID
@@ -105,27 +136,45 @@ func placeRootVarIDs(lhs ast.Expr) []liveness.VarID {
 	return nil
 }
 
-// collectSharedLocals sets the body's shared locals to the VarIDs of its bindings that may
-// hold a shared value. It runs after the rename pass, so every binding in body carries its
-// VarID, and before the body is walked. scope is the scope the body's parameters bind into.
+// collectSharedLocals builds the body's sharedState. It runs after the rename pass, so every
+// binding in body carries its VarID, and before the body is walked. scope is the scope the
+// body's parameters bind into.
 //
-// The set starts from the body's captures and grows to a fixpoint over every binding,
-// assignment, loop variable, and pattern in body. A local joins it when any value flowing
-// into it may be shared. Each flow is visited regardless of its position in the body, so a
-// reassignment later in a loop still marks a local read earlier in the loop.
+// Each flow is visited regardless of its position in the body, so a reassignment later in a
+// loop still marks a local read earlier in the loop.
 func (c *checker) collectSharedLocals(scope *Scope, body *ast.Block) {
-	c.fn.sharedLocals = c.fn.captureVarIDs.Clone()
-	c.fn.sharedCaptureWrites = set.NewSet[string]()
-	collector := &sharedFlowCollector{valueLocals: set.NewSet[liveness.VarID]()}
-	body.Accept(collector)
+	state := &sharedState{
+		valueLocals: set.NewSet[liveness.VarID](),
+		scope:       scope,
+		locals:      c.fn.captureVarIDs.Clone(),
+		ownLocals:   set.NewSet[liveness.VarID](),
+	}
+	body.Accept(&sharedFlowCollector{state: state})
+	c.fn.shared = state
+	c.settleSharedLocals()
+}
+
+// settleSharedLocals grows the body's shared locals and own shared locals to a fixpoint over
+// its flows. A set only grows, so a decision already taken against it stays valid.
+func (c *checker) settleSharedLocals() {
+	state := c.fn.shared
+	c.sharedFixpoint(state.locals)
+	c.sharedFixpoint(state.ownLocals)
+}
+
+// sharedFixpoint adds to shared every local some flow of the body may carry a shared value
+// into, judging each flow's value against shared itself, until nothing more is added.
+func (c *checker) sharedFixpoint(shared set.Set[liveness.VarID]) {
+	state := c.fn.shared
 	for changed := true; changed; {
 		changed = false
-		for _, f := range collector.flows {
-			if !c.mayYieldShared(scope, f.source) {
+		for _, f := range state.flows {
+			if !c.flowCarriesShared(f, shared) {
 				continue
 			}
 			for _, id := range f.targets {
-				if !collector.valueLocals.Contains(id) && c.markShared(id) {
+				if !state.valueLocals.Contains(id) && !shared.Contains(id) {
+					shared.Add(id)
 					changed = true
 				}
 			}
@@ -133,53 +182,122 @@ func (c *checker) collectSharedLocals(scope *Scope, body *ast.Block) {
 	}
 }
 
-// markShared adds id to the body's shared locals and reports whether it was not there yet.
-// When id is a capture, it also records the captured name in the body's capture writes.
-func (c *checker) markShared(id liveness.VarID) bool {
-	if c.fn.captureVarIDs.Contains(id) {
-		c.fn.sharedCaptureWrites.Add(c.fn.varIDNames[id])
-	}
-	if c.fn.sharedLocals.Contains(id) {
-		return false
-	}
-	c.fn.sharedLocals.Add(id)
-	return true
-}
-
-// markSharedFlow marks each local in targets as shared when source may yield a shared value.
-// It is a no-op outside a function body.
-func (c *checker) markSharedFlow(scope *Scope, targets []liveness.VarID, source ast.Expr) {
-	if c.fn == nil || c.fn.sharedLocals == nil || !c.mayYieldShared(scope, source) {
-		return
-	}
-	for _, id := range targets {
-		c.markShared(id)
+// flowCarriesShared reports whether f may carry a shared value, judging a local by whether
+// shared holds it.
+func (c *checker) flowCarriesShared(f sharedFlow, shared set.Set[liveness.VarID]) bool {
+	switch {
+	case f.always:
+		return true
+	case f.source != nil:
+		return c.mayYieldShared(c.fn.shared.scope, f.source, shared)
+	default:
+		return shared.Contains(f.fromLocal)
 	}
 }
 
-// markSharedCaptureWrites marks, in the current body, each local that names records a
-// closure of this body storing a shared value into. scope is the scope the closure is
-// declared in. A name that resolves to no local of the current body is skipped.
-func (c *checker) markSharedCaptureWrites(scope *Scope, names set.Set[string]) {
-	if c.fn == nil || c.fn.sharedLocals == nil {
+// resettleSharedLocals settles the body's shared locals again when the walk shows that source,
+// which flows into targets, may yield a shared value some target is not yet marked for. The
+// walk knows what the pre-pass did not: the types of what it has walked, and the declaration
+// of each function this body declares and calls. It is a no-op outside a function body.
+func (c *checker) resettleSharedLocals(scope *Scope, targets []liveness.VarID, source ast.Expr) {
+	if c.fn == nil || c.fn.shared == nil || len(targets) == 0 {
 		return
 	}
-	for name := range names {
-		b, found := scope.GetValue(name)
-		if !found || b.VarID <= 0 {
+	state := c.fn.shared
+	for _, shared := range []set.Set[liveness.VarID]{state.locals, state.ownLocals} {
+		if !set.FromSlice(targets).IsSubset(shared) && c.mayYieldShared(scope, source, shared) {
+			c.settleSharedLocals()
+			return
+		}
+	}
+}
+
+// captureShare is what a closure reports to its enclosing body about one capture: the
+// closure may store a shared value into it. always says the value is shared whatever the
+// enclosing body holds. from names the other captures whose value the closure may store
+// into it, so the capture is shared when any of them is.
+type captureShare struct {
+	name   string
+	always bool
+	from   []string
+}
+
+// captureShares returns what the current body reports to its enclosing body about each of
+// its captures. Each fixpoint it runs starts from the body's own shared locals and counts
+// one capture as shared, which shows the captures a value stored from that one reaches.
+func (c *checker) captureShares() []captureShare {
+	state := c.fn.shared
+	if state == nil || c.fn.captureVarIDs.Len() == 0 {
+		return nil
+	}
+	captures := c.fn.captureVarIDs.ToSlice()
+	slices.Sort(captures)
+	reached := map[liveness.VarID][]string{}
+	for _, from := range captures {
+		shared := state.ownLocals.Clone()
+		shared.Add(from)
+		c.sharedFixpoint(shared)
+		for _, to := range captures {
+			if to != from && shared.Contains(to) && !state.ownLocals.Contains(to) {
+				reached[to] = append(reached[to], c.fn.varIDNames[from])
+			}
+		}
+	}
+	var shares []captureShare
+	for _, id := range captures {
+		always := state.ownLocals.Contains(id)
+		if always || len(reached[id]) > 0 {
+			shares = append(shares, captureShare{name: c.fn.varIDNames[id], always: always, from: reached[id]})
+		}
+	}
+	return shares
+}
+
+// applyCaptureShares adds to the current body the flows a closure declared in scope reported
+// through shares, then settles the body's shared locals. A name that resolves to no local of
+// the current body is skipped.
+func (c *checker) applyCaptureShares(scope *Scope, shares []captureShare) {
+	if c.fn == nil || c.fn.shared == nil || len(shares) == 0 {
+		return
+	}
+	for _, share := range shares {
+		target, ok := c.bodyLocal(scope, share.name)
+		if !ok {
 			continue
 		}
-		id := liveness.VarID(b.VarID)
-		if c.fn.varIDNames[id] == name {
-			c.markShared(id)
+		targets := []liveness.VarID{target}
+		if share.always {
+			c.fn.shared.flows = append(c.fn.shared.flows, sharedFlow{targets: targets, always: true})
+		}
+		for _, name := range share.from {
+			if from, ok := c.bodyLocal(scope, name); ok {
+				c.fn.shared.flows = append(c.fn.shared.flows, sharedFlow{targets: targets, fromLocal: from})
+			}
 		}
 	}
+	c.settleSharedLocals()
 }
 
-// mayYieldShared reports whether the value e produces may be a shared value. It answers
-// true when e may be one of these:
+// bodyLocal returns the VarID of the current body's binding that name resolves to in scope.
+// ok is false when the name resolves to a binding of another body or to none.
+func (c *checker) bodyLocal(scope *Scope, name string) (liveness.VarID, bool) {
+	b, found := scope.GetValue(name)
+	if !found || b.VarID <= 0 {
+		return 0, false
+	}
+	id := liveness.VarID(b.VarID)
+	return id, c.fn.varIDNames[id] == name
+}
+
+// isSharedLocal reports whether the current body's binding id may hold a shared value.
+func (c *checker) isSharedLocal(id liveness.VarID) bool {
+	return c.fn != nil && c.fn.shared != nil && c.fn.shared.locals.Contains(id)
+}
+
+// mayYieldShared reports whether the value e produces may be a shared value, judging a local
+// of the current body by whether shared holds it. It answers true when e may be one of these:
 //
-//   - a binding outside the frame, or a local in the body's shared locals;
+//   - a binding outside the frame, or a local that shared holds;
 //   - a field or element read off such a value;
 //   - a literal holding such a value, directly or through a spread;
 //   - a branch result of a conditional, match, `do`, or `try` that is such a value;
@@ -187,9 +305,8 @@ func (c *checker) markSharedCaptureWrites(scope *Scope, names set.Set[string]) {
 //
 // A value that copies, such as a number, is never shared. Once e is walked its recorded type
 // decides that. Before then, as in the pre-pass, only a binding outside the frame is known to
-// copy, so a local read is judged by its flows alone. scope resolves a name outside the frame
-// and may be nil, which leaves a call resolved only by the declaration the walk recorded.
-func (c *checker) mayYieldShared(scope *Scope, e ast.Expr) bool {
+// copy, so a local read is judged by its flows alone. scope resolves a name outside the frame.
+func (c *checker) mayYieldShared(scope *Scope, e ast.Expr, shared set.Set[liveness.VarID]) bool {
 	if e == nil {
 		return false
 	}
@@ -199,29 +316,29 @@ func (c *checker) mayYieldShared(scope *Scope, e ast.Expr) bool {
 	switch e := e.(type) {
 	case *ast.IdentExpr:
 		if e.VarID > 0 {
-			return c.fn != nil && c.fn.sharedLocals.Contains(liveness.VarID(e.VarID))
+			return shared.Contains(liveness.VarID(e.VarID))
 		}
 		if t := c.outerBindingType(scope, e); t != nil && isValueType(t) {
 			return false
 		}
 		return true
 	case *ast.MemberExpr:
-		return c.mayYieldShared(scope, e.Object)
+		return c.mayYieldShared(scope, e.Object, shared)
 	case *ast.IndexExpr:
-		return c.mayYieldShared(scope, e.Object)
+		return c.mayYieldShared(scope, e.Object, shared)
 	case *ast.TypeCastExpr:
-		return c.mayYieldShared(scope, e.Expr)
+		return c.mayYieldShared(scope, e.Expr, shared)
 	case *ast.AwaitExpr:
-		return c.mayYieldShared(scope, e.Arg)
+		return c.mayYieldShared(scope, e.Arg, shared)
 	case *ast.ObjectExpr:
 		for _, elem := range e.Elems {
 			switch elem := elem.(type) {
 			case *ast.PropertyExpr:
-				if c.mayYieldShared(scope, elem.ValueExpr()) {
+				if c.mayYieldShared(scope, elem.ValueExpr(), shared) {
 					return true
 				}
 			case *ast.ObjSpreadExpr:
-				if c.spreadYieldsShared(scope, elem.Value) {
+				if c.spreadYieldsShared(scope, elem.Value, shared) {
 					return true
 				}
 			}
@@ -230,28 +347,29 @@ func (c *checker) mayYieldShared(scope *Scope, e ast.Expr) bool {
 	case *ast.TupleExpr:
 		for _, elem := range e.Elems {
 			if spread, ok := elem.(*ast.ArraySpreadExpr); ok {
-				if c.spreadYieldsShared(scope, spread.Value) {
+				if c.spreadYieldsShared(scope, spread.Value, shared) {
 					return true
 				}
 				continue
 			}
-			if c.mayYieldShared(scope, elem) {
+			if c.mayYieldShared(scope, elem, shared) {
 				return true
 			}
 		}
 		return false
 	case *ast.IfElseExpr:
-		return c.mayYieldShared(scope, liveness.BlockResultExpr(e.Cons)) ||
-			c.mayYieldShared(scope, liveness.BlockOrExprResultExpr(e.Alt))
+		return c.mayYieldShared(scope, liveness.BlockResultExpr(e.Cons), shared) ||
+			c.mayYieldShared(scope, liveness.BlockOrExprResultExpr(e.Alt), shared)
 	case *ast.IfValExpr:
-		return c.mayYieldShared(scope, liveness.BlockResultExpr(e.Cons)) ||
-			c.mayYieldShared(scope, liveness.BlockOrExprResultExpr(e.Alt))
+		return c.mayYieldShared(scope, liveness.BlockResultExpr(e.Cons), shared) ||
+			c.mayYieldShared(scope, liveness.BlockOrExprResultExpr(e.Alt), shared)
 	case *ast.MatchExpr:
-		return c.anyCaseYieldsShared(scope, e.Cases)
+		return c.anyCaseYieldsShared(scope, e.Cases, shared)
 	case *ast.DoExpr:
-		return c.mayYieldShared(scope, liveness.BlockResultExpr(e.Body))
+		return c.mayYieldShared(scope, liveness.BlockResultExpr(e.Body), shared)
 	case *ast.TryCatchExpr:
-		return c.mayYieldShared(scope, liveness.BlockResultExpr(e.Try)) || c.anyCaseYieldsShared(scope, e.Catch)
+		return c.mayYieldShared(scope, liveness.BlockResultExpr(e.Try), shared) ||
+			c.anyCaseYieldsShared(scope, e.Catch, shared)
 	case *ast.CallExpr:
 		return c.callReturnsShared(scope, e)
 	}
@@ -263,10 +381,9 @@ func (c *checker) mayYieldShared(scope *Scope, e ast.Expr) bool {
 // value only when src may be shared and some element or field of it is not a value type.
 // src's type is read from scope when src names a binding outside the frame or a capture of
 // one, and from the walk otherwise.
-func (c *checker) spreadYieldsShared(scope *Scope, src ast.Expr) bool {
+func (c *checker) spreadYieldsShared(scope *Scope, src ast.Expr, shared set.Set[liveness.VarID]) bool {
 	var t soltype.Type
-	if ident, ok := src.(*ast.IdentExpr); ok &&
-		(ident.VarID <= 0 || c.fn.captureVarIDs.Contains(liveness.VarID(ident.VarID))) {
+	if ident, ok := src.(*ast.IdentExpr); ok && (ident.VarID <= 0 || c.isCapture(ident)) {
 		t = c.outerBindingType(scope, ident)
 	} else {
 		t = c.info.TypeOf(src)
@@ -274,7 +391,12 @@ func (c *checker) spreadYieldsShared(scope *Scope, src ast.Expr) bool {
 	if t != nil && c.holdsOnlyValues(t) {
 		return false
 	}
-	return c.mayYieldShared(scope, src)
+	return c.mayYieldShared(scope, src, shared)
+}
+
+// isCapture reports whether ident reads a variable the current body captures.
+func (c *checker) isCapture(ident *ast.IdentExpr) bool {
+	return c.fn != nil && c.fn.captureVarIDs.Contains(liveness.VarID(ident.VarID))
 }
 
 // holdsOnlyValues reports whether every element or field of t is a value type. It answers for
@@ -318,9 +440,9 @@ func (c *checker) outerBindingType(scope *Scope, ident *ast.IdentExpr) soltype.T
 }
 
 // anyCaseYieldsShared reports whether the body of any case in cases may yield a shared value.
-func (c *checker) anyCaseYieldsShared(scope *Scope, cases []*ast.MatchCase) bool {
+func (c *checker) anyCaseYieldsShared(scope *Scope, cases []*ast.MatchCase, shared set.Set[liveness.VarID]) bool {
 	for _, mc := range cases {
-		if c.mayYieldShared(scope, liveness.BlockOrExprResultExpr(&mc.Body)) {
+		if c.mayYieldShared(scope, liveness.BlockOrExprResultExpr(&mc.Body), shared) {
 			return true
 		}
 	}
@@ -364,5 +486,5 @@ func (c *checker) funcReturnsShared(decl ast.Node) bool {
 		}
 		decl = vd.Init
 	}
-	return c.sharedReturns.Contains(decl)
+	return c.sharedReturns.Contains(decl) || c.librarySharedReturns.Contains(decl)
 }
