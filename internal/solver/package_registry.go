@@ -39,13 +39,20 @@ type packageEntry struct {
 // lexical lookup.
 type PackageRegistry struct {
 	packages map[string]*packageEntry
-	// npmSources holds the SourceID of every file an npm package's types were read from.
-	npmSources set.Set[int]
+	// librarySources holds the SourceID of every file a loaded package was read from, and
+	// libraryKeyPrefixes the prefix packageKeyPrefix builds for each loaded package's URI.
+	// markLibrary fills both.
+	librarySources     set.Set[int]
+	libraryKeyPrefixes set.Set[string]
 }
 
 // NewPackageRegistry returns an empty registry.
 func NewPackageRegistry() *PackageRegistry {
-	return &PackageRegistry{packages: map[string]*packageEntry{}, npmSources: set.NewSet[int]()}
+	return &PackageRegistry{
+		packages:           map[string]*packageEntry{},
+		librarySources:     set.NewSet[int](),
+		libraryKeyPrefixes: set.NewSet[string](),
+	}
 }
 
 // Lookup returns the exported surface of a loaded package.
@@ -109,25 +116,24 @@ func (r *PackageRegistry) publish(uri string, ns *Namespace) {
 	entry.loading = false
 }
 
-// markNpmSources records every file of module as one an npm package's types were read from.
-func (r *PackageRegistry) markNpmSources(module *ast.Module) {
+// markLibrary records module as a loaded package's declarations, inferred with keyURI as the
+// URI qualifyDecl prefixes their keys with.
+func (r *PackageRegistry) markLibrary(keyURI string, module *ast.Module) {
 	for id := range module.Sources {
-		r.npmSources.Add(id)
+		r.librarySources.Add(id)
 	}
+	r.libraryKeyPrefixes.Add(packageKeyPrefix(keyURI))
 }
 
-// isNpmSource reports whether the file sourceID names holds an npm package's types.
-func (r *PackageRegistry) isNpmSource(sourceID int) bool {
-	return r.npmSources.Contains(sourceID)
+// isLibrarySource reports whether the file sourceID names was read for a loaded package.
+func (r *PackageRegistry) isLibrarySource(sourceID int) bool {
+	return r.librarySources.Contains(sourceID)
 }
 
-// isNpmKey reports whether key is the key qualifyDecl built for a declaration of a loaded npm
-// package. Such a key starts with the prefix packageKeyPrefix builds from the package's URI.
-func (r *PackageRegistry) isNpmKey(key string) bool {
-	for uri := range r.packages {
-		if !IsSchemePrefixedImport(uri) && strings.HasPrefix(key, packageKeyPrefix(uri)+".") {
-			return true
-		}
-	}
-	return false
+// isLibraryKey reports whether key is one qualifyDecl built for a loaded package's
+// declaration. Such a key is a package prefix, a `.`, and the qualified name. The prefix holds
+// no `.`, since packageKeyPrefix escapes every `.` in the URI.
+func (r *PackageRegistry) isLibraryKey(key string) bool {
+	prefix, _, found := strings.Cut(key, ".")
+	return found && r.libraryKeyPrefixes.Contains(prefix)
 }

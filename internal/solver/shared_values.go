@@ -474,11 +474,9 @@ func (e *SharedOwnedArgError) Message() string {
 }
 
 // rejectSharedArg reports a SharedOwnedArgError for arg when it may be a shared value judged
-// from scope, and reports whether it did. param is the owned parameter type arg fills. It
-// reports nothing outside a function body, or when param is owned-mutable, since the
-// immutable→mutable upgrade already rejects a shared argument there.
-func (c *checker) rejectSharedArg(scope *Scope, arg ast.Expr, param soltype.Type) bool {
-	if c.fn == nil || c.fn.shared == nil || isOwnedMut(param) {
+// from scope, and reports whether it did. It reports nothing outside a function body.
+func (c *checker) rejectSharedArg(scope *Scope, arg ast.Expr) bool {
+	if c.fn == nil || c.fn.shared == nil {
 		return false
 	}
 	if !c.mayYieldShared(scope, arg, c.fn.shared.locals) {
@@ -489,34 +487,94 @@ func (c *checker) rejectSharedArg(scope *Scope, arg ast.Expr, param soltype.Type
 	return true
 }
 
-// calleeFromNpmPackage reports whether the callee e resolved to fn is declared in an npm
-// package's types. It reads the first of these the call has:
+// calleeFromLibrary reports whether the callee e resolved to fn is declared in a package the
+// run loaded, such as the prelude, a `std:` package, or an npm package's types. It reads the
+// first of these the call has:
 //
-//   - the declaration fn was inferred from;
+//   - the declaration fn was inferred from, or the one the signature it was instantiated
+//     from was;
 //   - the declaration the callee names, as a namespace member or a bare identifier;
-//   - the class of a method call's receiver.
+//   - the class a static method is read off, when the receiver names one;
+//   - the class or interface of a method call's receiver.
 //
-// A callee reached any other way, such as a method of an interface, answers false.
-func (c *checker) calleeFromNpmPackage(e *ast.CallExpr, fn *soltype.FuncType) bool {
+// A callee none of these resolves, such as a function stored in an object field, answers
+// false.
+func (c *checker) calleeFromLibrary(e *ast.CallExpr, fn *soltype.FuncType) bool {
 	packages := c.ctx.packages
 	if packages == nil {
 		return false
 	}
-	if origin, ok := c.prov[fn].(FromAST); ok {
-		return packages.isNpmSource(origin.Node.Span().SourceID)
+	if node, ok := c.originNode(fn); ok {
+		return packages.isLibrarySource(node.Span().SourceID)
 	}
-	if decl, ok := c.info.NamespaceMemberDecl(e.Callee); ok {
-		return packages.isNpmSource(decl.Span().SourceID)
+	if decl, ok := c.exprDecl(e.Callee); ok {
+		return packages.isLibrarySource(decl.Span().SourceID)
 	}
-	if ident, ok := e.Callee.(*ast.IdentExpr); ok {
-		if decl, ok := c.info.DeclOf(ident); ok {
-			return packages.isNpmSource(decl.Span().SourceID)
+	var object ast.Expr
+	switch callee := e.Callee.(type) {
+	case *ast.MemberExpr:
+		object = callee.Object
+	case *ast.IndexExpr:
+		object = callee.Object
+	default:
+		return false
+	}
+	if decl, ok := c.exprDecl(object); ok {
+		if _, isClass := decl.(*ast.ClassDecl); isClass {
+			return packages.isLibrarySource(decl.Span().SourceID)
 		}
 	}
-	if object, _ := c.calleeReceiver(e.Callee); object != nil {
-		if class, ok := c.classCarrier(peelBorrows(c.info.TypeOf(object))); ok {
-			return packages.isNpmKey(class.Name)
-		}
+	if name, ok := c.receiverTypeName(c.info.TypeOf(object)); ok {
+		return packages.isLibraryKey(name)
 	}
 	return false
+}
+
+// originNode returns the AST node t was minted from, following each instantiation back to the
+// signature it copied. It answers false when the chain ends without a node.
+func (c *checker) originNode(t soltype.Type) (ast.Node, bool) {
+	for range maxExpandDepth {
+		switch origin := c.prov[t].(type) {
+		case FromAST:
+			return origin.Node, true
+		case FromInstantiation:
+			t = origin.From
+		default:
+			return nil, false
+		}
+	}
+	return nil, false
+}
+
+// exprDecl returns the declaration e names when e is a bare identifier or a namespace member.
+func (c *checker) exprDecl(e ast.Expr) (ast.Node, bool) {
+	if decl, ok := c.info.NamespaceMemberDecl(e); ok {
+		return decl, true
+	}
+	if ident, ok := e.(*ast.IdentExpr); ok {
+		return c.info.DeclOf(ident)
+	}
+	return nil, false
+}
+
+// receiverTypeName returns the registry key of the class or alias a receiver of type t is an
+// instance of. A borrow is read through, and a variable answers for its sole lower bound.
+func (c *checker) receiverTypeName(t soltype.Type) (string, bool) {
+	named, ok := soleLowerBound(t, func(x soltype.Type) (soltype.Type, bool) {
+		switch x := peelBorrows(x).(type) {
+		case *soltype.ClassType, *soltype.AliasType:
+			return x, true
+		}
+		return nil, false
+	})
+	if !ok {
+		return "", false
+	}
+	switch named := named.(type) {
+	case *soltype.ClassType:
+		return named.Name, true
+	case *soltype.AliasType:
+		return named.Name, true
+	}
+	return "", false
 }

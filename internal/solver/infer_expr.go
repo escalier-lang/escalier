@@ -2115,11 +2115,15 @@ func (c *checker) consumeCallArgs(scope *Scope, e *ast.CallExpr, fn *soltype.Fun
 	if len(owned) == 0 {
 		return
 	}
-	// An npm package's `.d.ts` gives a parameter no ownership meaning, so a call into one
-	// is not checked for shared arguments.
-	checkShared := !c.calleeFromNpmPackage(e, fn)
+	// A package's declarations come from TypeScript's types, either an npm package's `.d.ts`
+	// or the TypeScript library the `std:` packages are generated from. TypeScript gives a
+	// parameter no ownership meaning, so a call into a package is not checked for shared
+	// arguments.
+	checkShared := !c.calleeFromLibrary(e, fn)
 	for _, a := range owned {
-		if checkShared && c.rejectSharedArg(scope, a.arg, a.param) {
+		// The immutable→mutable upgrade already rejects a shared argument to an owned-mutable
+		// parameter, so only a parameter that stays immutable is checked here.
+		if checkShared && !isOwnedMut(c.expandAliasChain(a.param)) && c.rejectSharedArg(scope, a.arg) {
 			continue
 		}
 		c.consumeOwned(a.arg, c.info.TypeOf(a.arg), a.arg, ref)

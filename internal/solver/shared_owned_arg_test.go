@@ -130,6 +130,19 @@ fn f() { take(xs) }`,
 			want: []string{"cannot constrain immutable Array<number> <: mutable Array<number>"},
 		},
 		{
+			// The upgrade check reports this spelling twice. The case asserts that no
+			// SharedOwnedArgError joins those reports.
+			name: "a module-level val passed to an owned-mutable parameter spelled by an alias",
+			src: `val xs: Array<number> = [1, 2]
+type M = mut Array<number>
+fn take(x: M) { x.push(3) }
+fn f() { take(xs) }`,
+			want: []string{
+				"cannot constrain immutable Array<number> <: mutable Array<number>",
+				"cannot constrain immutable Array<number> <: mutable Array<number>",
+			},
+		},
+		{
 			name: "an owned local used after the call consumes it",
 			src: `fn take(x: Array<number>) {}
 fn f() {
@@ -209,26 +222,47 @@ fn f() {
 	}
 }
 
-// TestSharedValuePassedToNpmOwnedParam asserts that a call into an npm package's types does
-// not reject a shared argument. A `.d.ts` gives a parameter no ownership meaning, so each
-// call here passes a module-level val to a parameter the package declares owned.
+// TestSharedValuePassedToNpmOwnedParam covers calls into an npm package's types. A `.d.ts`
+// gives a parameter no ownership meaning, so none of these calls rejects the module-level val
+// it passes to a parameter the package declares owned.
 func TestSharedValuePassedToNpmOwnedParam(t *testing.T) {
 	t.Parallel()
 
 	files := map[string]string{
 		"node_modules/lod/index.d.ts": `export declare function sum(xs: number[]): number;
-export declare class Box { constructor(items: number[]); put(items: number[]): void; }`,
+export declare function wrap<T>(o: {items: T[]}): T;
+export declare class Box {
+	constructor(items: number[]);
+	put(items: number[]): void;
+	static of(items: number[]): Box;
+}
+export interface Coll { add(items: number[]): void }
+export declare function make(): Coll;`,
 	}
-	src := `import "lod" as lod
+	tests := []struct {
+		name string
+		body string
+	}{
+		{name: "a function", body: `val n = lod.sum(xs)`},
+		{name: "a generic function", body: `val n = lod.wrap(o)`},
+		{name: "a constructor", body: `val b = lod.Box(xs)`},
+		{name: "an instance method", body: `val mut b = lod.Box([3])
+	b.put(xs)`},
+		{name: "a static method", body: `val b = lod.Box.of(xs)`},
+		{name: "an interface method", body: `val c = lod.make()
+	c.add(xs)`},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			src := `import "lod" as lod
 val xs: Array<number> = [1, 2]
-val ys: Array<number> = [3]
-val zs: Array<number> = [4]
+val o = {items: xs}
 fn f() {
-	val n = lod.sum(xs)
-	val mut b = lod.Box([3])
-	val c = lod.Box(ys)
-	b.put(zs)
+	` + tt.body + `
 }`
-	res, _ := inferAgainstNodeModules(t, src, files)
-	require.Empty(t, errorMessagesOf(res.Errors))
+			res, _ := inferAgainstNodeModules(t, src, files)
+			require.Empty(t, errorMessagesOf(res.Errors))
+		})
+	}
 }

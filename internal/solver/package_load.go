@@ -65,9 +65,7 @@ func (c *checker) loadPackage(uri string, span ast.Span) (*Namespace, []SolverEr
 			span:   span,
 		}}
 	}
-	if !IsSchemePrefixedImport(uri) {
-		c.ctx.packages.markNpmSources(module)
-	}
+	c.ctx.packages.markLibrary(uri, module)
 
 	// A pseudo-package file lowers each value it exports to the JS expression its
 	// `@js` names, so a value without one has nothing to lower to. Its types lower
