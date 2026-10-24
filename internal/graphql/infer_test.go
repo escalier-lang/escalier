@@ -6,6 +6,7 @@ import (
 
 	"github.com/escalier-lang/escalier/internal/soltype"
 	"github.com/gkampitakis/go-snaps/snaps"
+	"github.com/stretchr/testify/require"
 	"github.com/vektah/gqlparser/v2"
 	"github.com/vektah/gqlparser/v2/ast"
 	"github.com/vektah/gqlparser/v2/validator/rules"
@@ -471,4 +472,26 @@ func TestInferGraphQLQuery_SubscriptionWithVariables(t *testing.T) {
 
 	snaps.MatchSnapshot(t, soltype.Print(result.ResultType))
 	snaps.MatchSnapshot(t, soltype.Print(result.VariablesType))
+}
+
+// TestInferGraphQLQuery_BooleanAndNullableListFields asserts that a `Boolean` field infers
+// `boolean`, and that a nullable list of nullable elements infers an optional `Array` that
+// may also be `null`.
+func TestInferGraphQLQuery_BooleanAndNullableListFields(t *testing.T) {
+	schema := loadSchema(t)
+
+	queryStr := `
+		query GetUserFlags($userId: ID!) {
+			getUser(id: $userId) {
+				verified
+				tags
+			}
+		}
+	`
+
+	queryDoc := gqlparser.MustLoadQueryWithRules(schema, queryStr, rules.NewDefaultRules())
+	result := InferGraphQLQuery(schema, queryDoc)
+
+	require.NotNil(t, result.ResultType)
+	snaps.MatchInlineSnapshot(t, soltype.Print(result.ResultType), snaps.Inline("{getUser?: {verified: boolean, tags?: Array<string | null> | null} | null}"))
 }
