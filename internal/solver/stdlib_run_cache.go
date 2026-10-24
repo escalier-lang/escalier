@@ -3,6 +3,7 @@ package solver
 import (
 	"crypto/sha256"
 	"encoding/binary"
+	"hash"
 	"os"
 	"reflect"
 	"sort"
@@ -29,8 +30,9 @@ type ambientKey struct {
 	// with commas. Two runs whose modules import different packages load
 	// different groups, and those infer differently.
 	closure string
-	// digest is a hash over the contents of every file in closure, so an edit to
-	// the tree misses the cache rather than reading a stale load.
+	// digest is a hash over the contents of the prelude and of every file in
+	// closure, so an edit to the tree misses the cache rather than reading a stale
+	// load. The prelude loads alone, outside any group, so closure does not name it.
 	digest         [sha256.Size]byte
 	noAmbientNames bool
 }
@@ -42,15 +44,24 @@ type ambientEntry struct {
 	checker *checker
 }
 
+// maxAmbientCheckers is how many cached checkers ambientCheckers keeps. A process
+// checking one tree needs one per distinct closure its modules import, and a test
+// suite seeding many small trees needs none to stay.
+const maxAmbientCheckers = 8
+
+// ambientCheckers holds the cached checkers. order lists their keys oldest first,
+// and the oldest is dropped when a new key would exceed maxAmbientCheckers.
 var ambientCheckers = struct {
 	mu      sync.Mutex
 	entries map[ambientKey]*ambientEntry
+	order   []ambientKey
 }{entries: map[ambientKey]*ambientEntry{}}
 
 // ambientChecker returns a checker for one run against the tree in dir, with the
 // prelude and the ambient packages loaded and bound. groups are the run's groups
-// from BuildPackageClosure. ok is false when a file in the closure cannot be read,
-// and the caller then starts from newRunChecker.
+// from BuildPackageClosure. ok is false when a file in the closure cannot be read or
+// an earlier load of the same tree panicked, and the caller then starts from
+// newRunChecker.
 func ambientChecker(dir string, groups PackageGroups, opts Options) (c *checker, ok bool) {
 	key, ok := ambientKeyOf(dir, groups, opts)
 	if !ok {
@@ -62,12 +73,21 @@ func ambientChecker(dir string, groups PackageGroups, opts Options) (c *checker,
 	if !held {
 		entry = &ambientEntry{}
 		ambientCheckers.entries[key] = entry
+		ambientCheckers.order = append(ambientCheckers.order, key)
+		if len(ambientCheckers.order) > maxAmbientCheckers {
+			delete(ambientCheckers.entries, ambientCheckers.order[0])
+			ambientCheckers.order = ambientCheckers.order[1:]
+		}
 	}
 	ambientCheckers.mu.Unlock()
 
 	entry.once.Do(func() {
 		entry.checker = loadAmbientChecker(dir, groups, opts)
 	})
+	// A load that panicked leaves no checker, and once does not run it again.
+	if entry.checker == nil {
+		return nil, false
+	}
 	return entry.checker.fork(StdlibSource(dir), StdlibGroupSource(dir), groups), true
 }
 
@@ -79,22 +99,17 @@ func ambientKeyOf(dir string, groups PackageGroups, opts Options) (ambientKey, b
 	}
 	sort.Strings(uris)
 
-	hash := sha256.New()
+	sum := sha256.New()
+	// A tree the prelude cannot be read from loads without one, so it hashes as
+	// empty rather than turning the cache off.
+	prelude, _ := readStdlibFile(dir, preludeURI)
+	writeHashedFile(sum, preludeURI, prelude)
 	for _, uri := range uris {
-		path, err := resolveStdlibPath(dir, uri)
+		contents, err := readStdlibFile(dir, uri)
 		if err != nil {
 			return ambientKey{}, false
 		}
-		contents, err := os.ReadFile(path)
-		if err != nil {
-			return ambientKey{}, false
-		}
-		// Each file is written with its URI and length ahead of it, so moving
-		// bytes from the end of one file to the start of the next changes the hash.
-		hash.Write(binary.AppendUvarint(nil, uint64(len(uri))))
-		hash.Write([]byte(uri))
-		hash.Write(binary.AppendUvarint(nil, uint64(len(contents))))
-		hash.Write(contents)
+		writeHashedFile(sum, uri, contents)
 	}
 
 	key := ambientKey{
@@ -102,8 +117,26 @@ func ambientKeyOf(dir string, groups PackageGroups, opts Options) (ambientKey, b
 		closure:        strings.Join(uris, ","),
 		noAmbientNames: opts.NoAmbientNames,
 	}
-	copy(key.digest[:], hash.Sum(nil))
+	copy(key.digest[:], sum.Sum(nil))
 	return key, true
+}
+
+// readStdlibFile returns the contents of the file uri names in dir.
+func readStdlibFile(dir, uri string) ([]byte, error) {
+	path, err := resolveStdlibPath(dir, uri)
+	if err != nil {
+		return nil, err
+	}
+	return os.ReadFile(path)
+}
+
+// writeHashedFile writes uri and contents to hash, each behind its length, so moving
+// bytes from the end of one file to the start of the next changes the hash.
+func writeHashedFile(digest hash.Hash, uri string, contents []byte) {
+	digest.Write(binary.AppendUvarint(nil, uint64(len(uri))))
+	digest.Write([]byte(uri))
+	digest.Write(binary.AppendUvarint(nil, uint64(len(contents))))
+	digest.Write(contents)
 }
 
 // loadAmbientChecker returns a checker with the prelude and the ambient packages of

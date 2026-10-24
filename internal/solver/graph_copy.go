@@ -11,6 +11,11 @@ import (
 // copied once, so two fields that referred to one object in the source refer to one
 // object in the copy.
 //
+// That holds only for a pointer to a whole object. A pointer to a field of a struct
+// or to an element of a slice is copied apart from the struct or slice it points
+// into. Two slices over one backing array each get their own array too. A write
+// through one copy then no longer reaches the other.
+//
 // It refuses a non-nil channel, unsafe pointer, or func, since none of them can be
 // copied without knowing what they refer to. A caller that has to carry a func
 // clears it before the copy and sets it on the copy afterwards.
@@ -67,10 +72,13 @@ type typePlan struct {
 	typ  reflect.Type
 	kind copyKind
 	// elem is the plan for what a pointer points at, or for a slice's or an
-	// array's element. It is filled on first use, since a recursive type would
-	// otherwise build its plans forever.
-	elem *typePlan
-	// key is the plan for a map's key, and value for its value.
+	// array's element. key is the plan for a map's key, and value for its value.
+	//
+	// A pointer's, a slice's, and a map's are filled on first copy rather than
+	// when this plan is built. A type can reach itself only through one of those
+	// three or an interface, so building every plan the moment its type is met
+	// would find a plan still in progress. That plan's kind is not settled yet.
+	elem       *typePlan
 	key, value *typePlan
 	// bytes holds the runs of a struct's memory that hold no pointer, and fields
 	// holds the fields that do.
@@ -120,8 +128,6 @@ func (g *graphCopier) planFor(t reflect.Type) *typePlan {
 		plan.shared = g.shared(t)
 	case reflect.Map:
 		plan.kind = copyMap
-		plan.key = g.planFor(t.Key())
-		plan.value = g.planFor(t.Elem())
 	case reflect.Slice:
 		plan.kind = copySlice
 	case reflect.Interface:
@@ -242,6 +248,10 @@ func (g *graphCopier) copyMap(plan *typePlan, dst, src unsafe.Pointer) {
 	}
 	copied := reflect.MakeMapWithSize(plan.typ, srcMap.Len())
 	g.maps[srcMap.UnsafePointer()] = copied
+	if plan.key == nil {
+		plan.key = g.planFor(plan.typ.Key())
+		plan.value = g.planFor(plan.typ.Elem())
+	}
 
 	// SetMapIndex copies its arguments, so one set of slots serves every entry.
 	srcKey := reflect.New(plan.key.typ).Elem()

@@ -13,9 +13,9 @@ import (
 //
 // Every inference run loads `std:prelude`, thousands of times over one run of
 // the solver's suite, and parsing is about half the cost of a load. The other
-// half is inference, which stays per run: the prelude's declarations mint type
-// variables and register definitions on the run's Context, both mutable state a
-// second run must not share. #1567 covers that half.
+// half is inference. A run through InferModuleAgainstStdlib or
+// InferScriptAgainstStdlib copies the inferred packages from the cache in
+// stdlib_run_cache.go. Any other run infers them itself.
 //
 // Sharing the parsed module is safe because the solver never writes to an AST
 // node, recording inferred types in the per-run Info side table instead.

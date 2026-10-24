@@ -32,6 +32,15 @@ func (c *copyCircle) area() int { return 3 * c.radius * c.radius }
 
 type copyLeaf struct{ label string }
 
+// copyOuter reaches itself by value through a map, so planning copyInner meets
+// copyOuter while copyOuter's own plan is still being built.
+type copyOuter struct {
+	inners map[string]copyInner
+	leaf   *copyLeaf
+}
+
+type copyInner struct{ outer copyOuter }
+
 func copyNoLeaves(reflect.Type) bool { return false }
 
 func copySharedLeaves(t reflect.Type) bool { return t == reflect.TypeFor[*copyLeaf]() }
@@ -127,6 +136,15 @@ func TestGraphCopier(t *testing.T) {
 			tt.check(t, src, dst)
 		})
 	}
+}
+
+func TestGraphCopierCopiesValueRecursiveType(t *testing.T) {
+	src := &copyOuter{inners: map[string]copyInner{
+		"a": {outer: copyOuter{leaf: &copyLeaf{label: "inner"}}},
+	}}
+	dst := copyPtr(newGraphCopier(copyNoLeaves), src)
+	require.NotSame(t, src.inners["a"].outer.leaf, dst.inners["a"].outer.leaf)
+	require.Equal(t, "inner", dst.inners["a"].outer.leaf.label)
 }
 
 func TestGraphCopierRefusesFunc(t *testing.T) {

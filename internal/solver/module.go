@@ -159,11 +159,14 @@ func inferModuleOn(c *checker, module *ast.Module) *ModuleResult {
 	// for a handle from inside a speculation trial, where a load would publish a
 	// package whose bounds a discard then truncates.
 	scope := c.ambientScope().Child()
+	// Before the imports, so a package the module imports from the ambient packages'
+	// group finds it loaded on the library counters. A forked checker has already
+	// run this and skips it.
+	c.bindAmbientExports()
 	fileScopes := c.bindFileImports(scope, module)
 	// After the imports, so a failure in a package the module imports is reported at
-	// its import statement. The ambient packages share its load group and are
-	// published by then.
-	c.bindAmbientExports()
+	// its import statement.
+	c.reportHeldLoadErrors()
 	g := dep_graph.BuildDepGraph(module)
 	symbols := c.inferDepGraph(scope, 0, module, g)
 	return &ModuleResult{

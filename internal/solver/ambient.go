@@ -77,8 +77,8 @@ func (c *checker) ambientScope() *Scope {
 // type `Collator` into `Intl`.
 //
 // A package the source does not answer for binds nothing and reports nothing. A
-// package that loads and reports diagnostics of its own reaches the run with them.
-// The first package to claim a name keeps it.
+// package that loads with diagnostics of its own has them held back by
+// holdLoadErrors. The first package to claim a name keeps it.
 //
 // A second call does nothing, so a checker forked from ambientChecker keeps the
 // bindings it was copied with.
@@ -111,11 +111,71 @@ func (c *checker) bindAmbientExports() {
 		if ns == nil {
 			continue
 		}
-		for _, err := range errs {
-			c.report(err)
-		}
+		c.holdLoadErrors(uri, errs)
 		if !c.noAmbientNames {
 			b.bindPackage(ns)
+		}
+	}
+}
+
+// heldLoadErrors is the diagnostics one ambient load returned, shared by every member
+// of the group that load inferred.
+type heldLoadErrors struct {
+	errs     []SolverError
+	reported bool
+}
+
+// holdLoadErrors records the diagnostics loading uri returned, under uri and every
+// package in its group, instead of reporting them. loadPackage reports them at the
+// first import that names one of those packages, and reportHeldLoadErrors reports
+// the ones no import named.
+func (c *checker) holdLoadErrors(uri string, errs []SolverError) {
+	if len(errs) == 0 {
+		return
+	}
+	held := &heldLoadErrors{errs: errs}
+	c.heldLoadOrder = append(c.heldLoadOrder, held)
+	members, grouped := c.groups.GroupOf(uri)
+	if !grouped {
+		members = []string{uri}
+	}
+	if c.heldLoadErrs == nil {
+		c.heldLoadErrs = map[string]*heldLoadErrors{}
+	}
+	for _, member := range members {
+		c.heldLoadErrs[member] = held
+	}
+}
+
+// claimHeldLoadErrors returns the diagnostics held for uri, placed at span, and marks
+// them reported. It returns nil when nothing is held or they were already reported.
+func (c *checker) claimHeldLoadErrors(uri string, span ast.Span) []SolverError {
+	held := c.heldLoadErrs[uri]
+	if held == nil || held.reported {
+		return nil
+	}
+	held.reported = true
+	errs := make([]SolverError, len(held.errs))
+	for i, err := range held.errs {
+		errs[i] = err
+		if pkgErr, ok := err.(*PackageInferenceError); ok {
+			placed := *pkgErr
+			placed.span = span
+			errs[i] = &placed
+		}
+	}
+	return errs
+}
+
+// reportHeldLoadErrors reports, in load order, the held diagnostics no import claimed.
+func (c *checker) reportHeldLoadErrors() {
+	for _, held := range c.heldLoadOrder {
+		if held.reported {
+			continue
+		}
+		held.reported = true
+		for _, err := range held.errs {
+			c.report(err)
 		}
 	}
 }

@@ -66,6 +66,8 @@ func inferScriptWithGroups(
 // inferScriptOn infers script on c, a checker from newRunChecker or ambientChecker.
 func inferScriptOn(c *checker, script *ast.Script) (*Scope, *Info, []SolverError) {
 	c.bindAmbientExports()
+	// A script binds no imports, so nothing claims a held diagnostic.
+	c.reportHeldLoadErrors()
 	return c.inferScriptIn(c.ambientScope().Child(), script)
 }
 
