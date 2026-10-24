@@ -195,6 +195,11 @@ func (c *checker) inferPackage(uri string, module *ast.Module) (*Namespace, []So
 		scope = c.globalsScope().Child()
 	}
 
+	// The imports bind before the globals are claimed. A package an import loads
+	// claims and publishes every global file it reaches, so a file this package
+	// shares with it is bound by the time this package claims, and this package
+	// reads that file's names from the globals scope.
+	c.bindFileImports(scope, module)
 	inferred := module
 	var merge *globalsMerge
 	if globals := c.claimGlobals(module); globals != nil {
@@ -203,7 +208,6 @@ func (c *checker) inferPackage(uri string, module *ast.Module) (*Namespace, []So
 	}
 	prevMerge := c.globalsMerge
 	c.globalsMerge = merge
-	c.bindFileImports(scope, inferred)
 	// Inference only reads the graph, and a package's graph depends on its module
 	// alone, so every run loading the same cached module shares one graph. A module
 	// merged with claimed globals is built for this run, so its graph is built afresh.
