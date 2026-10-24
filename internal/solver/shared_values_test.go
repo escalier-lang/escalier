@@ -150,6 +150,48 @@ fn g() -> mut Array<number> { return xs }`,
 			want: []string{rejected},
 		},
 		{
+			name: "a closure storing a module-level val into a local it captures",
+			src: `val xs: Array<number> = [1]
+fn f() {
+	var a: Array<number> = [1]
+	val g = fn() { a = xs }
+	g()
+	val mut m = a
+	m.push(1)
+}`,
+			want: []string{rejected},
+		},
+		{
+			name: "an element of a spread copy of a module-level val",
+			src: `val xss: Array<Array<number>> = [[1]]
+fn f() {
+	val a = [...xss]
+	val mut m = a[0]
+	m.push(1)
+}`,
+			want: []string{rejected},
+		},
+		{
+			name: "a spread copy of a module-level val of numbers",
+			src: `val xs: Array<number> = [1]
+fn f() {
+	val a: Array<number> = [...xs]
+	val mut m = a
+	m.push(1)
+}`,
+		},
+		{
+			name: "a literal holding a number read off a module-level val",
+			src: `val o = {c: 5}
+fn f() {
+	var n = 0
+	n = o.c
+	val a = {c: n}
+	val mut m = a
+	m.c = 3
+}`,
+		},
+		{
 			name: "a fresh literal",
 			src:  `fn f() { val m: mut Array<number> = [1] }`,
 		},
@@ -221,7 +263,8 @@ fn h() {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
-			got := inferWithPushPrelude(t, tt.src, nil)
+			_, _, errs := inferSource(t, tt.src)
+			got := errorMessagesOf(errs)
 			if len(tt.want) == 0 {
 				require.Empty(t, got)
 				return
