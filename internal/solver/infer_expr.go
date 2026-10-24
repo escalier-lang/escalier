@@ -4331,6 +4331,9 @@ func (c *checker) resolveNamespaceMember(lvl int, node ast.Expr, ns *Namespace, 
 		t := c.bindingValue(lvl, b)
 		c.recordType(node, t)
 		c.recordNamespaceMember(node, b)
+		if c.bindingReturnsReadonlyView(ns, b) {
+			c.readonlyViewCallees.Add(node)
+		}
 		return pathResult{value: t}
 	}
 	c.report(&UnknownNamespaceMemberError{Node: node, NS: ns, Name: name})
