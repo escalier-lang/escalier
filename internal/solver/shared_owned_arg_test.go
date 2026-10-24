@@ -1,6 +1,7 @@
 package solver
 
 import (
+	"strings"
 	"testing"
 
 	"github.com/stretchr/testify/require"
@@ -226,6 +227,25 @@ fn f() { take(xs) }`, nil)
 
 // TestSharedValuePassedToNpmOwnedParam covers calls into an npm package's types. A `.d.ts`
 // gives a parameter no ownership meaning, so none of these calls rejects the module-level val
+// TestSharedOwnedArgErrorSpansTheArgument asserts that the error for a shared argument
+// spans that argument and relates no other span.
+func TestSharedOwnedArgErrorSpansTheArgument(t *testing.T) {
+	t.Parallel()
+
+	src := `val xs: Array<number> = [1, 2]
+fn take(x: Array<number>) {}
+fn f() { take(xs) }`
+	dir := seedStdlib(t, map[string]string{"std/prelude.esc": pushPrelude})
+	res := InferModuleAgainstStdlib(parseModule(t, src), dir, Options{PackageDir: dir})
+	require.Len(t, res.Errors, 1)
+	err := res.Errors[0]
+	require.IsType(t, &SharedOwnedArgError{}, err)
+	start := strings.Index(src, "take(xs)") + len("take(")
+	require.Equal(t, start, err.Span().Start.Offset)
+	require.Equal(t, start+len("xs"), err.Span().End.Offset)
+	require.Nil(t, err.Related())
+}
+
 // it passes to a parameter the package declares owned.
 func TestSharedValuePassedToNpmOwnedParam(t *testing.T) {
 	t.Parallel()
@@ -253,6 +273,9 @@ export declare function make(): Coll;`,
 		{name: "an instance method", body: `val mut b = lod.Box([3])
 	b.put(xs)`},
 		{name: "a static method", body: `val b = lod.Box.of(xs)`},
+		{name: "a static method read by index", body: `val b = lod.Box["of"](xs)`},
+		{name: "an instance method read by index", body: `val mut b = lod.Box([3])
+	b["put"](xs)`},
 		{name: "an interface method", body: `val c = lod.make()
 	c.add(xs)`},
 	}

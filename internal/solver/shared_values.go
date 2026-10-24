@@ -491,9 +491,6 @@ func (c *checker) isSharedArg(scope *Scope, arg ast.Expr) bool {
 // A callee none of these resolves answers false.
 func (c *checker) calleeFromLibrary(e *ast.CallExpr, fn *soltype.FuncType) bool {
 	packages := c.ctx.packages
-	if packages == nil {
-		return false
-	}
 	if node, ok := c.originNode(fn); ok {
 		return packages.isLibrarySource(node.Span().SourceID)
 	}
