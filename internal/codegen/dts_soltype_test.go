@@ -5,7 +5,6 @@ import (
 
 	"github.com/escalier-lang/escalier/internal/soltype"
 	"github.com/escalier-lang/escalier/internal/solver"
-	type_sys "github.com/escalier-lang/escalier/internal/type_system"
 	"github.com/stretchr/testify/require"
 )
 
@@ -81,7 +80,7 @@ func solSelf(className string) *soltype.SelfType {
 	return &soltype.SelfType{Class: solClass(className)}
 }
 
-func TestBuildTypeAnnFromSolAtoms(t *testing.T) {
+func TestBuildTypeAnnAtoms(t *testing.T) {
 	tests := map[string]struct {
 		ty       soltype.Type
 		expected string
@@ -113,7 +112,7 @@ func TestBuildTypeAnnFromSolAtoms(t *testing.T) {
 	}
 }
 
-func TestBuildTypeAnnFromSolUnresolvedTypeVar(t *testing.T) {
+func TestBuildTypeAnnUnresolvedTypeVar(t *testing.T) {
 	// Generalization inlines every variable into its bounds, so one that survives
 	// to emission is unresolved and falls back to `unknown`.
 	v := &soltype.TypeVarType{
@@ -123,7 +122,7 @@ func TestBuildTypeAnnFromSolUnresolvedTypeVar(t *testing.T) {
 	require.Equal(t, "unknown", renderSol(t, v))
 }
 
-func TestBuildTypeAnnFromSolNominalRefs(t *testing.T) {
+func TestBuildTypeAnnNominalRefs(t *testing.T) {
 	tests := map[string]struct {
 		ty       soltype.Type
 		expected string
@@ -191,14 +190,14 @@ func TestBuildTypeAnnFromSolNominalRefs(t *testing.T) {
 	}
 }
 
-// TestBuildTypeAnnFromSolInferredTypeParams asserts the binders for a generic
+// TestBuildTypeAnnInferredTypeParams asserts the binders for a generic
 // function that declares none.
 //
 // An un-annotated `fn f(x) { return x }` coalesces to `fn (x: t1) -> t1`, a
 // signature whose TypeParams list is empty and whose parameter and return share
 // one retained variable. Rendering each occurrence on its own would emit
 // `(x: unknown) => unknown` and lose the link the variable carries.
-func TestBuildTypeAnnFromSolInferredTypeParams(t *testing.T) {
+func TestBuildTypeAnnInferredTypeParams(t *testing.T) {
 	freshVar := func(id int) *soltype.TypeVarType {
 		return &soltype.TypeVarType{
 			ID: id, Level: 1, LowerBounds: nil, UpperBounds: nil,
@@ -232,9 +231,8 @@ func TestBuildTypeAnnFromSolInferredTypeParams(t *testing.T) {
 		require.Equal(t, "<T0 extends string>(x: T0) => T0", renderSol(t, sig))
 	})
 
-	// Several bounds would meet to an intersection, which the type_system twin never
-	// emitted, so the binder renders unbounded while both checkers have to agree.
-	// #1781 carries the intersection form.
+	// Several bounds would meet to an intersection, which the renderer does not emit
+	// yet, so the binder renders unbounded. #1781 carries the intersection form.
 	t.Run("SeveralBoundsRenderNoClause", func(t *testing.T) {
 		v := freshVar(1)
 		v.UpperBounds = []soltype.Type{solObj(solProp("a", solNum())), solObj(solProp("b", solStr()))}
@@ -345,17 +343,17 @@ func TestBuildTypeAnnFromSolInferredTypeParams(t *testing.T) {
 	})
 }
 
-// TestBuildTypeAnnFromSolFromSource renders types the checker built from real
+// TestBuildTypeAnnFromSource renders types the checker built from real
 // Escalier source, so each case reads as the annotation a user would write beside
 // the declaration it emits.
 //
 // It covers every former source can spell.
-// TestBuildTypeAnnFromSolFormersSourceCannotReach covers the four it cannot, each
+// TestBuildTypeAnnFormersSourceCannotReach covers the four it cannot, each
 // for a reason stated on the case. The hand-built tests around them cover what no
 // declaration produces either: the error sentinel, a skolem, an unresolved
 // inference variable, an `import:`-prefixed name from another package, a
 // signature-less overload set, and a parameter pattern that binds no name.
-func TestBuildTypeAnnFromSolFromSource(t *testing.T) {
+func TestBuildTypeAnnFromSource(t *testing.T) {
 	tests := map[string]struct {
 		decls    string
 		ann      string
@@ -556,7 +554,7 @@ func TestBuildTypeAnnFromSolFromSource(t *testing.T) {
 		// the same names is a different type and keeps every argument. This stdlib
 		// declares no `PromiseLike`, `Generator`, or `AsyncGenerator`, so the trim
 		// over a declared one of those is asserted by
-		// TestBuildTypeAnnFromSolNominalRefs. The generator rows below reach the
+		// TestBuildTypeAnnNominalRefs. The generator rows below reach the
 		// built-in former instead, which is the other way one is written.
 		"UserGenerator": {
 			"declare interface Generator<T, TReturn, TNext, E = never> { next(&self) -> T }",
@@ -606,11 +604,11 @@ func TestBuildTypeAnnFromSolFromSource(t *testing.T) {
 	}
 }
 
-// TestBuildTypeAnnFromSolFormersSourceCannotReach covers the formers that
-// TestBuildTypeAnnFromSolFromSource cannot exercise, each for its own reason,
+// TestBuildTypeAnnFormersSourceCannotReach covers the formers that
+// TestBuildTypeAnnFromSource cannot exercise, each for its own reason,
 // stated on the case. Every other former is spellable and is covered there
 // against real solver output.
-func TestBuildTypeAnnFromSolFormersSourceCannotReach(t *testing.T) {
+func TestBuildTypeAnnFormersSourceCannotReach(t *testing.T) {
 	tests := map[string]struct {
 		ty       soltype.Type
 		expected string
@@ -659,10 +657,10 @@ func TestBuildTypeAnnFromSolFormersSourceCannotReach(t *testing.T) {
 	}
 }
 
-// TestBuildTypeAnnFromSolInferBinder asserts the binder on its own. A conditional
+// TestBuildTypeAnnInferBinder asserts the binder on its own. A conditional
 // carrying one reaches it through the source-driven table below; this is the
 // clause by itself, which no annotation writes.
-func TestBuildTypeAnnFromSolInferBinder(t *testing.T) {
+func TestBuildTypeAnnInferBinder(t *testing.T) {
 	binder := &soltype.InferType{ID: 1, Name: "U", Binder: true}
 	require.Equal(t, "infer U", renderSol(t, binder))
 }
@@ -675,7 +673,7 @@ func TestBuildTypeAnnFromSolInferBinder(t *testing.T) {
 // declaration. There the companion would be the error "Type alias circularly
 // references itself", so the knot keeps the older rendering: one level of the
 // unfolding with `any` at the binder.
-func TestBuildTypeAnnFromSolRecursive(t *testing.T) {
+func TestBuildTypeAnnRecursive(t *testing.T) {
 	// body takes the binder so each case can close its own knot over it.
 	tests := map[string]struct {
 		body     func(binder soltype.Type) soltype.Type
@@ -818,13 +816,13 @@ func TestReferencesNameEagerly(t *testing.T) {
 }
 
 // A type carrying no knot mints nothing.
-func TestBuildTypeAnnFromSolMintsNoCompanionWithoutAKnot(t *testing.T) {
+func TestBuildTypeAnnMintsNoCompanionWithoutAKnot(t *testing.T) {
 	builder := newSolTypeAnnBuilder(solNames{preludePrefix: solPreludePrefix}, "x", nil)
 	builder.render(solObj(solProp("x", solNum())))
 	require.Empty(t, builder.companionDecls())
 }
 
-func TestBuildTypeAnnFromSolWithParams(t *testing.T) {
+func TestBuildTypeAnnWithParams(t *testing.T) {
 	// A generic class or alias declares its parameters on the declaration, so
 	// nothing inside the body binds them.
 	v := &soltype.TypeVarType{
@@ -840,7 +838,7 @@ func TestBuildTypeAnnFromSolWithParams(t *testing.T) {
 	require.Equal(t, "{value: unknown}", renderSol(t, body))
 }
 
-func TestContainsSelfTypeFromSol(t *testing.T) {
+func TestContainsSelfType(t *testing.T) {
 	self := solSelf("Point")
 
 	tests := map[string]struct {
@@ -858,14 +856,14 @@ func TestContainsSelfTypeFromSol(t *testing.T) {
 
 	for name, test := range tests {
 		t.Run(name, func(t *testing.T) {
-			require.Equal(t, test.found, containsSelfTypeFromSol(test.ty))
+			require.Equal(t, test.found, containsSelfType(test.ty))
 		})
 	}
 }
 
-// TestObjKeyFromSol covers each kind of member name objKeyFromSol renders. The builder
+// TestObjKey covers each kind of member name objKey renders. The builder
 // knows `sym` as the value holding `unique symbol#3` and nothing for `unique symbol#4`.
-func TestObjKeyFromSol(t *testing.T) {
+func TestObjKey(t *testing.T) {
 	builder := newSolTypeAnnBuilder(solNames{preludePrefix: solPreludePrefix}, "t", nil)
 	builder.symbolKeys = map[int]string{3: "sym"}
 
@@ -888,10 +886,10 @@ func TestObjKeyFromSol(t *testing.T) {
 	}
 }
 
-// TestUniqueSymbolTypeFromSol covers how a unique symbol renders in type position. The
+// TestUniqueSymbolType covers how a unique symbol renders in type position. The
 // builder knows `sym` as the value holding the symbol with id 3, so that symbol renders
 // as `typeof sym`. Nothing holds the symbol with id 4, so it keeps `unique symbol`.
-func TestUniqueSymbolTypeFromSol(t *testing.T) {
+func TestUniqueSymbolType(t *testing.T) {
 	builder := newSolTypeAnnBuilder(solNames{preludePrefix: solPreludePrefix}, "t", nil)
 	builder.symbolKeys = map[int]string{3: "sym"}
 
@@ -917,7 +915,7 @@ func TestUniqueSymbolTypeFromSol(t *testing.T) {
 	}
 }
 
-func TestConvertQualIdentFromSol(t *testing.T) {
+func TestConvertQualIdent(t *testing.T) {
 	tests := map[string]struct {
 		ident    string
 		expected string
@@ -930,13 +928,13 @@ func TestConvertQualIdentFromSol(t *testing.T) {
 	for name, test := range tests {
 		t.Run(name, func(t *testing.T) {
 			printer := NewPrinter()
-			printer.PrintTypeAnn(NewTypeOfTypeAnn(convertQualIdentFromSol(test.ident)))
+			printer.PrintTypeAnn(NewTypeOfTypeAnn(convertQualIdent(test.ident)))
 			require.Equal(t, "typeof "+test.expected, printer.Output)
 		})
 	}
 }
 
-// TestBuildTypeAnnFromSolParamPatterns asserts how each parameter pattern binds in
+// TestBuildTypeAnnParamPatterns asserts how each parameter pattern binds in
 // the emitted signature.
 //
 // TypeScript needs a name at every binding position. A pattern that supplies
@@ -946,7 +944,7 @@ func TestConvertQualIdentFromSol(t *testing.T) {
 // The type on each parameter is the annotated one, never one read off the
 // pattern. `fn (1: number)` accepts any number, so `arg0: number` is what it
 // means.
-func TestBuildTypeAnnFromSolParamPatterns(t *testing.T) {
+func TestBuildTypeAnnParamPatterns(t *testing.T) {
 	const enumDecl = "enum Opt { Some(number), None }"
 	const classDecl = "class Point { x: number, y: number }"
 
@@ -1004,9 +1002,9 @@ func TestBuildTypeAnnFromSolParamPatterns(t *testing.T) {
 	}
 }
 
-// TestBuildTypeAnnFromSolEmptyOverloadSets asserts what an element carrying no
+// TestBuildTypeAnnEmptyOverloadSets asserts what an element carrying no
 // signature emits. It describes no callable, so it contributes no member.
-func TestBuildTypeAnnFromSolEmptyOverloadSets(t *testing.T) {
+func TestBuildTypeAnnEmptyOverloadSets(t *testing.T) {
 	tests := map[string]soltype.ObjTypeElem{
 		"Method": &soltype.MethodElem{
 			Name: "m", Signatures: nil, Static: false, Optional: false,
@@ -1037,8 +1035,8 @@ func solIndexSig(keys, value soltype.Type) *soltype.MappedElem {
 	}
 }
 
-// TestRefNameFromSol asserts how a registry key becomes a name TypeScript can write.
-func TestRefNameFromSol(t *testing.T) {
+// TestUnprefixedRefName asserts how a registry key becomes a name TypeScript can write.
+func TestUnprefixedRefName(t *testing.T) {
 	tests := map[string]struct {
 		qualifiedName string
 		expected      string
@@ -1058,14 +1056,14 @@ func TestRefNameFromSol(t *testing.T) {
 
 	for name, test := range tests {
 		t.Run(name, func(t *testing.T) {
-			require.Equal(t, test.expected, refNameFromSol(test.qualifiedName))
+			require.Equal(t, test.expected, unprefixedRefName(test.qualifiedName))
 		})
 	}
 }
 
 // TestSolNamesLocalName covers how a reference reads inside the namespace a declaration
 // is emitted into. A type that namespace declares drops its prefix, and every other
-// reference keeps the name refNameFromSol gives it.
+// reference keeps the name unprefixedRefName gives it.
 func TestSolNamesLocalName(t *testing.T) {
 	tests := map[string]struct {
 		names         solNames
@@ -1118,7 +1116,7 @@ func TestNamespaceReferenceAvoidsATypeParameter(t *testing.T) {
 // a caller that forgets the prefix gets a declaration its own use site rejects.
 // That is the intended failure: the alternative of falling back to a bare-name
 // match would quietly cut an argument off a user's unrelated `Promise`.
-// TestBuildTypeAnnFromSolNominalRefs/LookalikePromise covers that one.
+// TestBuildTypeAnnNominalRefs/LookalikePromise covers that one.
 func TestArityTrimNeedsThePreludePrefix(t *testing.T) {
 	promise := solClass(solPreludePrefix+".Promise", solNum(), solStr())
 
@@ -1137,10 +1135,10 @@ func TestArityTrimNeedsThePreludePrefix(t *testing.T) {
 	})
 }
 
-// TestBuildTypeAnnFromSolUnnamedTypeParam asserts that a type parameter its binder
+// TestBuildTypeAnnUnnamedTypeParam asserts that a type parameter its binder
 // left unnamed falls back to `unknown`. Nothing can render a reference to it, so
 // binding the empty name is not an option.
-func TestBuildTypeAnnFromSolUnnamedTypeParam(t *testing.T) {
+func TestBuildTypeAnnUnnamedTypeParam(t *testing.T) {
 	v := &soltype.TypeVarType{
 		ID: 1, Level: 1, LowerBounds: nil, UpperBounds: nil, Open: false, Widenable: false,
 	}
@@ -1149,205 +1147,98 @@ func TestBuildTypeAnnFromSolUnnamedTypeParam(t *testing.T) {
 		renderSolWithParams(t, solObj(solProp("value", v)), []*soltype.TypeParam{unnamed}))
 }
 
-// TestBuildTypeAnnFromSolParity pairs each solver type with the type_system type
-// the checker builds for the same source and asserts both render to the same
-// TypeScript. It is what makes the port a twin rather than a second renderer that
-// happens to work: a case that drifts fails here rather than in a golden .d.ts.
-//
-// Three pairings need a word.
-//
-//   - `Self` reaches the type_system renderer as a type reference named Self, which
-//     buildDeclStmt rewrites to `this` before rendering. soltype carries Self as a
-//     kind of its own, so the rewrite folds into the renderer and the pairing runs
-//     the rewrite on the type_system side to compare like with like.
-//   - A getter and a setter carry a signature in type_system and the value type
-//     alone in soltype, so the pairing builds the signature the getter implies.
-//   - An index signature is its own element kind in type_system and a settled
-//     mapped member in soltype.
-//
-// The prelude types that carry a trailing raise parameter are left out. The twin
-// trims only a reference whose whole name is the literal `Promise`, where the port
-// trims each of the four against the prelude's own package key.
-// TestBuildTypeAnnFromSolNominalRefs covers them instead.
-func TestBuildTypeAnnFromSolParity(t *testing.T) {
-	b := &Builder{tempId: 0, depGraph: nil}
-	tsNum := type_sys.NewNumPrimType(nil)
-	tsStr := type_sys.NewStrPrimType(nil)
-	tsBool := type_sys.NewBoolPrimType(nil)
-	tsSelfRef := type_sys.NewTypeRefType(nil, "Self", nil)
-	mmAdd := type_sys.MMAdd
-
-	tsFn := func(params []*type_sys.FuncParam, ret type_sys.Type) *type_sys.FuncType {
-		return type_sys.NewFuncType(nil, nil, params, ret, nil)
-	}
-	tsParam := func(name string, ty type_sys.Type) *type_sys.FuncParam {
-		return type_sys.NewFuncParam(type_sys.NewIdentPat(name), ty)
-	}
-
+// TestBuildTypeAnnFormers covers the type formers that wrap other types,
+// each built directly from soltype.
+func TestBuildTypeAnnFormers(t *testing.T) {
 	tests := map[string]struct {
-		typeSys type_sys.Type
-		sol     soltype.Type
+		sol      soltype.Type
+		expected string
 	}{
-		"Number":    {tsNum, solNum()},
-		"String":    {tsStr, solStr()},
-		"Boolean":   {tsBool, solBool()},
-		"Symbol":    {type_sys.NewSymPrimType(nil), &soltype.PrimType{Prim: soltype.SymPrim}},
-		"NumLit":    {type_sys.NewNumLitType(nil, 5), &soltype.LitType{Lit: &soltype.NumLit{Value: 5}}},
-		"StrLit":    {type_sys.NewStrLitType(nil, "hi"), &soltype.LitType{Lit: &soltype.StrLit{Value: "hi"}}},
-		"BoolLit":   {type_sys.NewBoolLitType(nil, true), &soltype.LitType{Lit: &soltype.BoolLit{Value: true}}},
-		"Null":      {type_sys.NewNullType(nil), &soltype.NullType{}},
-		"Undefined": {type_sys.NewUndefinedType(nil), &soltype.UndefinedType{}},
-		"Never":     {type_sys.NewNeverType(nil), &soltype.NeverType{}},
-		"Unknown":   {type_sys.NewUnknownType(nil), &soltype.UnknownType{}},
-		"UniqueSymbol": {
-			type_sys.NewUniqueSymbolType(nil, 1),
-			&soltype.UniqueSymbolType{ID: 1},
-		},
-		"Self": {
-			type_sys.Prune(replaceSelfWithThis(tsSelfRef)),
-			solSelf("Point"),
-		},
-		"NominalRef": {
-			type_sys.NewTypeRefType(nil, "Point", nil),
-			solClass("Point"),
-		},
-		"GenericRef": {
-			type_sys.NewTypeRefType(nil, "Box", nil, tsNum),
-			solAlias("Box", solNum()),
-		},
+		"NominalRef": {solClass("Point"), "Point"},
+		"GenericRef": {solAlias("Box", solNum()), "Box<number>"},
 		"Generator": {
-			type_sys.NewTypeRefType(nil, "Generator", nil, tsNum, tsStr, tsBool),
 			&soltype.GeneratorType{Yield: solNum(), Ret: solStr(), Next: solBool(), Throws: nil, Async: false},
+			"Generator<number, string, boolean>",
 		},
 		"Tuple": {
-			type_sys.NewTupleType(nil, tsNum, tsStr),
 			&soltype.TupleType{Elems: []soltype.Type{solNum(), solStr()}, Inexact: false},
+			"[number, string]",
 		},
 		"Union": {
-			type_sys.NewUnionType(nil, tsNum, tsStr),
 			&soltype.UnionType{Types: []soltype.Type{solNum(), solStr()}},
+			"number | string",
 		},
-		// The members are objects rather than primitives because
-		// NewIntersectionType normalizes an empty meet such as `number & string`
-		// to `never` before the renderer ever sees it.
 		"Intersection": {
-			type_sys.NewIntersectionType(nil,
-				type_sys.NewObjectType(nil, []type_sys.ObjTypeElem{
-					type_sys.NewPropertyElem(type_sys.NewStrKey("x"), tsNum),
-				}),
-				type_sys.NewObjectType(nil, []type_sys.ObjTypeElem{
-					type_sys.NewPropertyElem(type_sys.NewStrKey("y"), tsStr),
-				}),
-			),
 			&soltype.IntersectionType{Types: []soltype.Type{
 				solObj(solProp("x", solNum())),
 				solObj(solProp("y", solStr())),
 			}},
+			"{x: number} & {y: string}",
 		},
-		// A `mut` wrapper in type_system and a reference in soltype both render as
-		// the value they wrap.
+		// Ownership has no TypeScript form, so a `mut` reference renders as the value
+		// it wraps.
 		"Mutable": {
-			type_sys.NewMutType(nil, type_sys.NewObjectType(nil, []type_sys.ObjTypeElem{
-				type_sys.NewPropertyElem(type_sys.NewStrKey("x"), tsNum),
-			})),
 			&soltype.RefType{Mut: true, Lt: nil, Inner: solObj(solProp("x", solNum()))},
+			"{x: number}",
 		},
 		"KeyOf": {
-			type_sys.NewKeyOfType(nil, type_sys.NewTypeRefType(nil, "T", nil)),
-			&soltype.KeyofType{
-				Operand: solAlias("T"),
-				Inexact: false,
-			},
+			&soltype.KeyofType{Operand: solAlias("T"), Inexact: false},
+			"keyof T",
 		},
 		"Index": {
-			type_sys.NewIndexType(nil, type_sys.NewTypeRefType(nil, "T", nil), type_sys.NewStrLitType(nil, "x")),
 			&soltype.IndexType{
 				Target:  solAlias("T"),
 				Index:   &soltype.LitType{Lit: &soltype.StrLit{Value: "x"}},
 				Inexact: false,
 			},
+			`T["x"]`,
 		},
 		"TypeOf": {
-			type_sys.NewTypeOfType(nil, &type_sys.Member{
-				Left: type_sys.NewIdent("p"), Right: type_sys.NewIdent("inner"),
-			}),
 			&soltype.TypeofType{Ident: "p.inner", Ty: solNum()},
+			"typeof p.inner",
 		},
 		"Cond": {
-			type_sys.NewCondType(nil, tsNum, tsStr, tsBool, tsNum),
 			&soltype.CondType{
 				Check: solNum(), Extends: solStr(), Then: solBool(), Else: solNum(), Distribute: false,
 			},
+			"number extends string ? boolean : number",
 		},
 		"TemplateLit": {
-			type_sys.NewTemplateLitType(nil,
-				[]*type_sys.Quasi{{Value: "on"}, {Value: ""}},
-				[]type_sys.Type{tsStr},
-			),
 			&soltype.TemplateLitType{Quasis: []string{"on", ""}, Interps: []soltype.Type{solStr()}},
+			"`on${string}`",
 		},
 		"Func": {
-			tsFn([]*type_sys.FuncParam{tsParam("x", tsNum)}, tsStr),
 			solFn([]*soltype.FuncParam{solParam("x", solNum())}, solStr()),
+			"(x: number) => string",
 		},
-		"Property": {
-			type_sys.NewObjectType(nil, []type_sys.ObjTypeElem{
-				type_sys.NewPropertyElem(type_sys.NewStrKey("x"), tsNum),
-			}),
-			solObj(solProp("x", solNum())),
-		},
+		"Property": {solObj(solProp("x", solNum())), "{x: number}"},
 		"Method": {
-			type_sys.NewObjectType(nil, []type_sys.ObjTypeElem{
-				type_sys.NewMethodElem(type_sys.NewStrKey("m"), tsFn([]*type_sys.FuncParam{tsParam("x", tsNum)}, tsStr)),
-			}),
 			solObj(&soltype.MethodElem{
 				Name:       "m",
 				Signatures: []*soltype.FuncType{solFn([]*soltype.FuncParam{solParam("x", solNum())}, solStr())},
 				Static:     false,
 				Optional:   false,
 			}),
+			"{m(x: number): string}",
 		},
 		"Getter": {
-			type_sys.NewObjectType(nil, []type_sys.ObjTypeElem{
-				type_sys.NewGetterElem(type_sys.NewStrKey("x"), tsFn(nil, tsNum)),
-			}),
 			solObj(&soltype.GetterElem{Name: "x", SelfParam: nil, Type: solNum(), Throws: nil}),
+			"{get x(): number}",
 		},
 		"Setter": {
-			type_sys.NewObjectType(nil, []type_sys.ObjTypeElem{
-				type_sys.NewSetterElem(type_sys.NewStrKey("x"), tsFn([]*type_sys.FuncParam{tsParam("value", tsNum)}, type_sys.NewVoidType(nil))),
-			}),
 			solObj(&soltype.SetterElem{Name: "x", SelfParam: nil, Param: solNum(), Throws: nil}),
+			"{set x(value: number)}",
 		},
-		"IndexSignature": {
-			type_sys.NewObjectType(nil, []type_sys.ObjTypeElem{
-				&type_sys.MappedElem{
-					TypeParam: &type_sys.IndexParam{Name: "K", Constraint: tsStr},
-					Name:      nil,
-					Value:     tsNum,
-					Optional:  &mmAdd,
-					Readonly:  nil,
-					Check:     nil,
-					Extends:   nil,
-				},
-			}),
-			solObj(solIndexSig(solStr(), solNum())),
-		},
+		"IndexSignature": {solObj(solIndexSig(solStr(), solNum())), "{[K in string]?: number}"},
 		"ObjectSpread": {
-			type_sys.NewObjectType(nil, []type_sys.ObjTypeElem{
-				type_sys.NewRestSpreadElem(type_sys.NewTypeRefType(nil, "A", nil)),
-			}),
-			solObj(&soltype.SpreadElem{
-				Type: solAlias("A"),
-			}),
+			solObj(&soltype.SpreadElem{Type: solAlias("A")}),
+			"{...A}",
 		},
 	}
 
 	for name, test := range tests {
 		t.Run(name, func(t *testing.T) {
-			twin := NewPrinter()
-			twin.PrintTypeAnn(b.buildTypeAnn(test.typeSys))
-			require.Equal(t, twin.Output, renderSol(t, test.sol))
+			require.Equal(t, test.expected, renderSol(t, test.sol))
 		})
 	}
 }

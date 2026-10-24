@@ -9,9 +9,7 @@ import (
 	"github.com/escalier-lang/escalier/internal/soltype"
 )
 
-// dts_soltype.go renders solver types as TypeScript declarations, the twin of
-// the type_system-driven half of dts.go. The `FromSol` suffix marks the
-// counterpart of a function there, and goes when internal/type_system does.
+// dts_soltype.go renders solver types as TypeScript declarations.
 //
 // A former TypeScript cannot express degrades rather than failing; each arm says
 // how and why.
@@ -45,7 +43,7 @@ func (n solNames) qualified(name string) string {
 
 // localName returns qualifiedName as a reference written inside the emitted namespace
 // reads it. A type the namespace declares drops the namespace's prefix, and any other
-// keeps the name refNameFromSol gives it. The namespace's own name keeps its name too,
+// keeps the name unprefixedRefName gives it. The namespace's own name keeps its name too,
 // since only a dotted name carries the prefix.
 //
 // The prefix is matched against the registry key itself. A type another package declares
@@ -57,7 +55,7 @@ func (n solNames) localName(qualifiedName string) string {
 			return local
 		}
 	}
-	return refNameFromSol(qualifiedName)
+	return unprefixedRefName(qualifiedName)
 }
 
 // solTypeAnnBuilder renders soltype values as .d.ts type annotations.
@@ -146,12 +144,12 @@ func (b *solTypeAnnBuilder) bindTypeParams(typeParams []*soltype.TypeParam) {
 // refName returns the name a reference to the class or alias qualifiedName is written
 // under. It is the namespace-local name names.localName gives, unless a type parameter
 // this render has named already holds that name and would capture the reference. Then the
-// reference keeps the name refNameFromSol gives it.
+// reference keeps the name unprefixedRefName gives it.
 func (b *solTypeAnnBuilder) refName(qualifiedName string) string {
 	local := b.names.localName(qualifiedName)
 	for _, name := range b.typeParamNames {
 		if name == local {
-			return refNameFromSol(qualifiedName)
+			return unprefixedRefName(qualifiedName)
 		}
 	}
 	return local
@@ -206,7 +204,7 @@ func (b *solTypeAnnBuilder) typeAnn(t soltype.Type) TypeAnn {
 			panic(fmt.Sprintf("typeAnn: unknown primitive %d", int(t.Prim)))
 		}
 	case *soltype.LitType:
-		return NewLitTypeAnn(litToLitFromSol(t.Lit))
+		return NewLitTypeAnn(litToLit(t.Lit))
 	case *soltype.NullType:
 		return NewNullTypeAnn(nil)
 	case *soltype.UndefinedType:
@@ -228,7 +226,7 @@ func (b *solTypeAnnBuilder) typeAnn(t soltype.Type) TypeAnn {
 		// reaches an existing one names the value holding it, `typeof sym`. A symbol no
 		// top-level value holds keeps the `unique symbol` spelling.
 		if name, named := b.symbolKeys[t.ID]; named {
-			return NewTypeOfTypeAnn(convertQualIdentFromSol(name))
+			return NewTypeOfTypeAnn(convertQualIdent(name))
 		}
 		return NewUniqueSymbolTypeAnn(nil)
 	case *soltype.SelfType:
@@ -275,7 +273,7 @@ func (b *solTypeAnnBuilder) typeAnn(t soltype.Type) TypeAnn {
 	case *soltype.IndexType:
 		return NewIndexTypeAnn(b.typeAnn(t.Target), b.typeAnn(t.Index))
 	case *soltype.TypeofType:
-		return NewTypeOfTypeAnn(convertQualIdentFromSol(t.Ident))
+		return NewTypeOfTypeAnn(convertQualIdent(t.Ident))
 	case *soltype.CondType:
 		// A regex type emits as `string`, which declares none of the names its groups
 		// capture. The Then branch reads each such name as the string type it captures, so
@@ -462,7 +460,7 @@ func (b *solTypeAnnBuilder) typeArgs(name string, args, defaults []soltype.Type)
 	if arity, declared := b.typeScriptArity(name); declared && len(args) > arity {
 		args = args[:arity]
 	}
-	args = args[:trimmedArgCountFromSol(args, defaults)]
+	args = args[:trimmedArgCount(args, defaults)]
 	typeArgs := make([]TypeAnn, len(args))
 	for i, arg := range args {
 		typeArgs[i] = b.typeAnn(arg)
@@ -470,7 +468,7 @@ func (b *solTypeAnnBuilder) typeArgs(name string, args, defaults []soltype.Type)
 	return typeArgs
 }
 
-// trimmedArgCountFromSol is how many type arguments a reference has to write. Resolution
+// trimmedArgCount is how many type arguments a reference has to write. Resolution
 // fills in every argument a declaration defaults, so `Iterable<number>` arrives carrying
 // the three `Iterable<number, undefined, unknown>` and would read back longer than it was
 // written. Each trailing argument that repeats the default at its position is dropped.
@@ -478,7 +476,7 @@ func (b *solTypeAnnBuilder) typeArgs(name string, args, defaults []soltype.Type)
 // The walk stops at the first argument that differs, since an argument is addressed by
 // position and TypeScript has no way to omit one before a supplied one. A reference whose
 // declaration was out of reach carries no defaults and keeps every argument.
-func trimmedArgCountFromSol(args, defaults []soltype.Type) int {
+func trimmedArgCount(args, defaults []soltype.Type) int {
 	count := len(args)
 	for count > 0 && count <= len(defaults) {
 		i := count - 1
@@ -572,7 +570,7 @@ func (b *solTypeAnnBuilder) uniqueSymbolProperty(path string, elem soltype.ObjTy
 	if !isSym || b.symbolPaths[sym.ID] != path+"."+prop.Name {
 		return nil, false
 	}
-	key, ok := b.objKeyFromSol(prop.Name)
+	key, ok := b.objKey(prop.Name)
 	if !ok {
 		return nil, false
 	}
@@ -590,7 +588,7 @@ func (b *solTypeAnnBuilder) uniqueSymbolProperty(path string, elem soltype.ObjTy
 func (b *solTypeAnnBuilder) objTypeAnnElems(elem soltype.ObjTypeElem) []ObjTypeAnnElem {
 	switch elem := elem.(type) {
 	case *soltype.PropertyElem:
-		key, ok := b.objKeyFromSol(elem.Name)
+		key, ok := b.objKey(elem.Name)
 		if !ok {
 			return nil
 		}
@@ -601,7 +599,7 @@ func (b *solTypeAnnBuilder) objTypeAnnElems(elem soltype.ObjTypeElem) []ObjTypeA
 			Value:    b.typeAnn(elem.Type),
 		}}
 	case *soltype.MethodElem:
-		key, ok := b.objKeyFromSol(elem.Name)
+		key, ok := b.objKey(elem.Name)
 		if !ok {
 			return nil
 		}
@@ -629,7 +627,7 @@ func (b *solTypeAnnBuilder) objTypeAnnElems(elem soltype.ObjTypeElem) []ObjTypeA
 	case *soltype.GetterElem:
 		// soltype carries the value a getter returns rather than a signature, so
 		// the parameterless one TypeScript wants is built here.
-		key, ok := b.objKeyFromSol(elem.Name)
+		key, ok := b.objKey(elem.Name)
 		if !ok {
 			return nil
 		}
@@ -647,7 +645,7 @@ func (b *solTypeAnnBuilder) objTypeAnnElems(elem soltype.ObjTypeElem) []ObjTypeA
 	case *soltype.SetterElem:
 		// TypeScript forbids a return type on a setter, so the printer drops the
 		// Return this fills in.
-		key, ok := b.objKeyFromSol(elem.Name)
+		key, ok := b.objKey(elem.Name)
 		if !ok {
 			return nil
 		}
@@ -679,8 +677,8 @@ func (b *solTypeAnnBuilder) objTypeAnnElems(elem soltype.ObjTypeElem) []ObjTypeA
 }
 
 // mappedTypeAnn renders a mapped member as `[K in Keys]: V`. The
-// `if Check : Extends` filter is dropped, matching the type_system and AST paths.
-// Lowering it to an `as` clause is unimplemented on all three.
+// `if Check : Extends` filter is dropped. Lowering it to an `as` clause is
+// unimplemented.
 func (b *solTypeAnnBuilder) mappedTypeAnn(elem *soltype.MappedElem) *MappedTypeAnn {
 	var nameTypeAnn TypeAnn
 	if elem.Name != nil {
@@ -693,8 +691,8 @@ func (b *solTypeAnnBuilder) mappedTypeAnn(elem *soltype.MappedElem) *MappedTypeA
 		},
 		Name:     nameTypeAnn,
 		Value:    b.typeAnn(elem.Value),
-		Optional: mapMappedModifierFromSol(elem.Optional),
-		ReadOnly: mapMappedModifierFromSol(elem.Readonly),
+		Optional: mapMappedModifier(elem.Optional),
+		ReadOnly: mapMappedModifier(elem.Readonly),
 	}
 }
 
@@ -704,7 +702,7 @@ func (b *solTypeAnnBuilder) funcTypeToParams(funcType *soltype.FuncType) []*Para
 	params := make([]*Param, len(funcType.Params))
 	names := &paramNamer{n: 0}
 	for i, param := range funcType.Params {
-		pattern, named := patToPatFromSol(param.Pattern, names)
+		pattern, named := patToPat(param.Pattern, names)
 		if !named {
 			pattern = NewIdentPat(names.next(), nil, nil)
 		}
@@ -821,10 +819,8 @@ func (b *solTypeAnnBuilder) bindInferredTypeParams(funcType *soltype.FuncType) [
 	params := make([]*TypeParam, len(bind))
 	for i, v := range bind {
 		var constraint TypeAnn
-		// Several bounds would meet to an intersection, which the type_system twin
-		// never emitted. Emitting one while both checkers run would open a diff
-		// between them rather than close one, so only a lone bound renders. #1781
-		// carries the intersection form, after the flip.
+		// Several bounds would meet to an intersection, which this renderer does not
+		// emit yet, so only a lone bound renders. #1781 carries the intersection form.
 		if len(v.UpperBounds) == 1 {
 			// An `unknown` bound admits every type, so `T0 extends unknown` and `T0`
 			// are the same binder and the shorter one is written. The test is on the
@@ -953,7 +949,7 @@ func commonPrefix(a, b []*soltype.FuncType) []*soltype.FuncType {
 	return a[:n]
 }
 
-// objKeyFromSol renders a member name as an object key. soltype stores a member
+// objKey renders a member name as an object key. soltype stores a member
 // keyed off a symbol under a reserved spelling, which renders back as a computed key:
 //
 //   - A well-known symbol's `@@name` renders as `[Symbol.name]`.
@@ -968,7 +964,7 @@ func commonPrefix(a, b []*soltype.FuncType) []*soltype.FuncType {
 // leaves that member out. TypeScript has no key a declaration could write for a symbol
 // no value in scope holds, and an index signature over `symbol` in its place would
 // claim a value at every other symbol as well.
-func (b *solTypeAnnBuilder) objKeyFromSol(name string) (ObjKey, bool) {
+func (b *solTypeAnnBuilder) objKey(name string) (ObjKey, bool) {
 	if sym, isSymbol := soltype.SymbolOfMemberName(name); isSymbol {
 		return NewComputedKey(
 			NewMemberExpr(NewIdentExpr("Symbol", "", nil), NewIdentifier(sym, nil), false, nil),
@@ -980,7 +976,7 @@ func (b *solTypeAnnBuilder) objKeyFromSol(name string) (ObjKey, bool) {
 		if !named {
 			return nil, false
 		}
-		return NewComputedKey(qualifiedExprFromSol(symName), nil), true
+		return NewComputedKey(qualifiedExpr(symName), nil), true
 	}
 	if num, isNum := numericKey(name); isNum {
 		return NewNumLit(num, nil), true
@@ -999,9 +995,9 @@ func numericKey(name string) (float64, bool) {
 	return num, true
 }
 
-// qualifiedExprFromSol splits a dotted value path such as `i.key`, which soltype carries
+// qualifiedExpr splits a dotted value path such as `i.key`, which soltype carries
 // as one string, into the member expression that reads it.
-func qualifiedExprFromSol(path string) Expr {
+func qualifiedExpr(path string) Expr {
 	parts := strings.Split(path, ".")
 	var expr Expr = NewIdentExpr(parts[0], "", nil)
 	for _, part := range parts[1:] {
@@ -1010,9 +1006,9 @@ func qualifiedExprFromSol(path string) Expr {
 	return expr
 }
 
-// convertQualIdentFromSol splits a dotted reference such as `p.inner`, which
+// convertQualIdent splits a dotted reference such as `p.inner`, which
 // soltype carries as one string, into the identifier a `typeof` holds.
-func convertQualIdentFromSol(ident string) QualIdent {
+func convertQualIdent(ident string) QualIdent {
 	parts := strings.Split(ident, ".")
 	var qual QualIdent = NewIdent(parts[0], Span{})
 	for _, part := range parts[1:] {
@@ -1021,7 +1017,7 @@ func convertQualIdentFromSol(ident string) QualIdent {
 	return qual
 }
 
-func mapMappedModifierFromSol(mod soltype.MappedModifier) *MappedModifier {
+func mapMappedModifier(mod soltype.MappedModifier) *MappedModifier {
 	switch mod {
 	case soltype.ModNone:
 		return nil
@@ -1032,10 +1028,10 @@ func mapMappedModifierFromSol(mod soltype.MappedModifier) *MappedModifier {
 		result := MMRemove
 		return &result
 	}
-	panic(fmt.Sprintf("mapMappedModifierFromSol: unhandled MappedModifier %d", int(mod)))
+	panic(fmt.Sprintf("mapMappedModifier: unhandled MappedModifier %d", int(mod)))
 }
 
-func litToLitFromSol(lit soltype.Lit) Lit {
+func litToLit(lit soltype.Lit) Lit {
 	switch lit := lit.(type) {
 	case *soltype.BoolLit:
 		return NewBoolLit(lit.Value, nil)
@@ -1044,21 +1040,21 @@ func litToLitFromSol(lit soltype.Lit) Lit {
 	case *soltype.StrLit:
 		return NewStrLit(lit.Value, nil)
 	}
-	panic(fmt.Sprintf("litToLitFromSol: unhandled %T", lit))
+	panic(fmt.Sprintf("litToLit: unhandled %T", lit))
 }
 
-// patToPatFromSol renders a parameter pattern, reporting false when it binds no
+// patToPat renders a parameter pattern, reporting false when it binds no
 // name TypeScript can write. The caller then draws one from names, since
 // TypeScript needs a name at every binding position. A sub-pattern is named here
 // instead, because only this walk reaches it.
-func patToPatFromSol(pat soltype.Pat, names *paramNamer) (Pat, bool) {
+func patToPat(pat soltype.Pat, names *paramNamer) (Pat, bool) {
 	switch pat := pat.(type) {
 	case *soltype.IdentPat:
 		return NewIdentPat(pat.Name, nil, nil), true
 	case *soltype.TuplePat:
 		elems := make([]Pat, len(pat.Elems))
 		for i, elem := range pat.Elems {
-			sub, named := patToPatFromSol(elem, names)
+			sub, named := patToPat(elem, names)
 			if !named {
 				sub = NewIdentPat(names.next(), nil, nil)
 			}
@@ -1068,7 +1064,7 @@ func patToPatFromSol(pat soltype.Pat, names *paramNamer) (Pat, bool) {
 	case *soltype.ObjectPat:
 		elems := make([]ObjPatElem, 0, len(pat.Fields)+1)
 		for _, field := range pat.Fields {
-			value, named := patToPatFromSol(field.Value, names)
+			value, named := patToPat(field.Value, names)
 			if !named {
 				// A sub-pattern that binds no name takes one from names, and that name is
 				// not the field's, so the field keeps its long form.
@@ -1084,7 +1080,7 @@ func patToPatFromSol(pat soltype.Pat, names *paramNamer) (Pat, bool) {
 			elems = append(elems, NewObjKeyValuePat(field.Name, value, nil, nil))
 		}
 		if pat.Rest != nil {
-			rest, named := patToPatFromSol(pat.Rest, names)
+			rest, named := patToPat(pat.Rest, names)
 			if !named {
 				rest = NewIdentPat(names.next(), nil, nil)
 			}
@@ -1095,7 +1091,7 @@ func patToPatFromSol(pat soltype.Pat, names *paramNamer) (Pat, bool) {
 		// Binding the tail is a fact about the element, not the sub-pattern it binds
 		// through: dropping the `...` would turn `[a, ..._]` into `[a, arg0]`,
 		// binding one element where the source bound every remaining one.
-		sub, named := patToPatFromSol(pat.Pattern, names)
+		sub, named := patToPat(pat.Pattern, names)
 		if !named {
 			sub = NewIdentPat(names.next(), nil, nil)
 		}
@@ -1106,7 +1102,7 @@ func patToPatFromSol(pat soltype.Pat, names *paramNamer) (Pat, bool) {
 		if pat.Object == nil {
 			return nil, false
 		}
-		return patToPatFromSol(pat.Object, names)
+		return patToPat(pat.Object, names)
 	}
 	// A wildcard, a literal, `null`, `undefined`, and a nil pattern bind nothing.
 	// An extractor binds positionally behind a constructor, which no TypeScript
@@ -1114,7 +1110,7 @@ func patToPatFromSol(pat soltype.Pat, names *paramNamer) (Pat, bool) {
 	return nil, false
 }
 
-// refNameFromSol is the name a nominal reference renders under. A class or alias
+// unprefixedRefName is the name a nominal reference renders under. A class or alias
 // carries its registry key, which for another package's declaration leads with an
 // `import:<uri>.` prefix TypeScript cannot write. Dropping it keeps the namespace
 // path: `import:std:array.Foo` renders `Foo`, and `Geometry.Point` is unchanged.
@@ -1126,7 +1122,7 @@ func patToPatFromSol(pat soltype.Pat, names *paramNamer) (Pat, bool) {
 //
 // The solver escapes the dots inside the URI, so the first dot after the prefix
 // is where the path starts.
-func refNameFromSol(qualifiedName string) string {
+func unprefixedRefName(qualifiedName string) string {
 	// The marker the solver writes at the head of a package's registry keys; see
 	// packageKeyHead in internal/solver/infer_class.go.
 	const packageKeyHead = "import:"
@@ -1156,9 +1152,9 @@ func isGroupNamespace(name string) bool {
 	return false
 }
 
-// containsSelfTypeFromSol reports whether t mentions `Self`. A binding whose type
+// containsSelfType reports whether t mentions `Self`. A binding whose type
 // does renders as an interface, since `this` is only legal inside one.
-func containsSelfTypeFromSol(t soltype.Type) bool {
+func containsSelfType(t soltype.Type) bool {
 	visitor := &solSelfTypeVisitor{found: false}
 	t.Accept(visitor, soltype.Positive)
 	return visitor.found

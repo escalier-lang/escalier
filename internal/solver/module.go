@@ -183,8 +183,7 @@ func inferModuleWithGroups(
 // inferDepGraph infers every component of g into scope. BuildDepGraph returns
 // Components in topological order (a dependency's component precedes its
 // dependents'), so a straight iteration types each binding only after everything
-// it refers to — mirroring the old checker's InferDepGraph loop, over soltype
-// instead of type_system. The shared `handled` set guards against inferring a
+// it refers to. The shared `handled` set guards against inferring a
 // single declaration twice when it contributes to several binding keys (a
 // destructuring `val [a, b] = …` registers under both value:a and value:b), and
 // drives the reconciliation pass that reports any top-level declaration the dep

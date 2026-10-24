@@ -13,8 +13,8 @@ type EnterResult struct {
 	SkipChildren bool // true = skip the structural rebuild, go straight to ExitType
 }
 
-// TypeVisitor is a polarity-threading rewriting visitor over soltype.Type. Unlike
-// type_system's visitor it carries Polarity, and Accept flips it on contravariant
+// TypeVisitor is a polarity-threading rewriting visitor over soltype.Type. It
+// carries Polarity, and Accept flips it on contravariant
 // positions (function parameters) so variance knowledge lives in ONE place rather
 // than being re-spelled in every type→type transform (coalesce / extrude /
 // freshenAbove). EnterType fires before child traversal — it may prune, replace,

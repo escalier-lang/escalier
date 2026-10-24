@@ -44,8 +44,7 @@ type ValueBinding struct {
 	// body's rename pass (M4 G1), or 0 for a binding outside any liveness-analysed
 	// body (every top-level binding, and any binding minted before its enclosing
 	// body's prepass runs). The mutability-transition checker reads it to resolve a
-	// captured outer variable back to its alias set — the new-checker analogue of the
-	// old checker's type_system.Binding.VarID. It is metadata for transition checking
+	// captured outer variable back to its alias set. It is metadata for transition checking
 	// only and never participates in type inference.
 	VarID int
 	// Nominal is the type a read of the binding has when it is not the root of a member
@@ -89,8 +88,7 @@ type Namespace struct {
 	Nested map[string]*Namespace
 }
 
-// Scope is the package-owned, multi-sorted analogue of type_system's scope (the
-// milestone forbids reusing type_system's). It has one map per binding sort plus
+// Scope is the solver's multi-sorted lexical scope. It has one map per binding sort plus
 // a parent link for lexical lookup.
 //
 // Why namespaces are stored by pointer while values/types are stored by value:

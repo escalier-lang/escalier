@@ -116,9 +116,8 @@ func (v *TypeVarType) BoundsAt(pol Polarity) []Type {
 	return v.UpperBounds
 }
 
-// Prim is the closed set of primitives. Mirrors the type_system package's Prim
-// enum. The literal kinds BigIntLit, NullLit and UndefinedLit are absent,
-// and each is inert from constrain's perspective — the same literal arms with
+// Prim is the closed set of primitives. The literal kinds BigIntLit, NullLit and
+// UndefinedLit are absent, and each is inert from constrain's perspective — the same literal arms with
 // one more concrete — so their absence is scope rather than design.
 //
 // SymPrim is the type of every symbol, the one a `unique symbol` is a subtype
@@ -140,8 +139,7 @@ const (
 
 type PrimType struct{ Prim Prim }
 
-// Lit is the sealed interface for literal values inside a LitType.
-// Mirrors type_system.Lit (with NumLit/StrLit/BoolLit concretes) so each
+// Lit is the sealed interface for literal values inside a LitType. Each
 // literal kind carries exactly the value field it needs — no flat struct
 // where two of three value fields are dead per instance.
 type Lit interface{ isLit() }
@@ -195,8 +193,8 @@ func Equal(a, b Type) bool {
 	return printIdentity(a) == printIdentity(b)
 }
 
-// Pat is the sealed interface for parameter patterns. Mirrors the role of
-// type_system.Pat (and ast.Pat) but lives in soltype to keep soltype ast-free.
+// Pat is the sealed interface for parameter patterns. It mirrors the role of
+// ast.Pat but lives in soltype to keep soltype ast-free.
 // M1 ships a single concrete (IdentPat); M2 adds destructuring concretes
 // (TuplePat, RecordPat, …) as the parser bridge surfaces them, with no
 // FuncParam restructuring.
@@ -290,7 +288,7 @@ type InstancePat struct {
 
 func (*InstancePat) isPat() {}
 
-// FuncParam mirrors type_system.FuncParam. Pattern is reachable only through Pat
+// FuncParam is one declared parameter of a FuncType. Pattern is reachable only through Pat
 // concretes M1 defines (IdentPat). M3 (PR4) adds Optional: an `x?` parameter
 // lowers the function's `required` count (the accept-set lower bound) without
 // removing the parameter from the declared list — it stays at its position with
@@ -486,9 +484,8 @@ type ObjectType struct {
 	Class string
 }
 
-// ObjTypeElem is the sealed set of object members, mirroring type_system's
-// ObjTypeElem. M4 ships PropertyElem only; method/getter/setter members (M5),
-// index signatures and the object rest/spread (M9) add arms later.
+// ObjTypeElem is the sealed set of object members. M4 ships PropertyElem only;
+// method/getter/setter members (M5), index signatures and the object rest/spread (M9) add arms later.
 type ObjTypeElem interface{ isObjTypeElem() }
 
 // PropertyElem is one named value property of an ObjectType.
@@ -904,8 +901,7 @@ func (o *ObjectType) Callable() (*CallableElem, bool) {
 // kinds, so any other element reaching one is a wiring bug: a member kind added
 // without extending that call site. It panics rather than silently skipping, so a
 // missed element kind fails loudly instead of vanishing from subtyping, equality,
-// or rendering. This matches type_system's convention, where print_type.go panics
-// on an unhandled ObjTypeElem. Use it only at property-only sites. A site that must
+// or rendering. Use it only at property-only sites. A site that must
 // visit every element kind switches on the kind instead. Name lookups like Prop
 // legitimately skip non-matching kinds.
 func AsProperty(e ObjTypeElem) *PropertyElem {
@@ -1038,15 +1034,14 @@ type UndefinedType struct{}
 
 // NeverType (⊥) and UnknownType (⊤) are the bottom/top of the subtype lattice —
 // the coalesced output of an empty-bounds single-polarity variable (positive ⇒
-// never, negative ⇒ unknown). The spike emits these via type_system; M1 carries
-// them natively because they're fundamental to the lattice, not optional sugar.
+// never, negative ⇒ unknown). soltype carries them natively because they're
+// fundamental to the lattice, not optional sugar.
 type NeverType struct{}
 type UnknownType struct{}
 
 // UnionType / IntersectionType are coalesced-output nodes for multi-bound
 // single-polarity variables (positive ⇒ union of lowers, negative ⇒ intersection
-// of uppers). The spike emits these via type_system.NewUnionType /
-// NewIntersectionType; M1 carries them natively so coalescing returns
+// of uppers). soltype carries them natively so coalescing returns
 // soltype.Type in every case. M6 promotes them to first-class lattice members:
 // legal `constrain` inputs (M6 PR2), writable annotations (M6 PR2), and the
 // subjects of a normalization pass (M6 PR1).
@@ -1330,9 +1325,8 @@ type MappedElem struct {
 	Readonly MappedModifier
 }
 
-// RestSpreadType is the residual `...P` spread element inside a tuple type, mirroring the old
-// checker's RestSpreadType (internal/type_system/types.go). It is only meaningful as an element of
-// a TupleType.Elems list: `[...P, x]` is a TupleType whose first element is a RestSpreadType. A
+// RestSpreadType is the residual `...P` spread element inside a tuple type. It is only
+// meaningful as an element of a TupleType.Elems list: `[...P, x]` is a TupleType whose first element is a RestSpreadType. A
 // tuple carrying one is inert — constrain passes it through untouched, the "adds no new mutable
 // solver state" invariant it shares with KeyofType — until the evaluator splices Operand's tuple
 // elements in at its position. A spread over a type parameter never grounds, so it stays symbolic
