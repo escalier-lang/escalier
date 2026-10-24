@@ -21,6 +21,7 @@ type Diagnostic interface {
 func newBackend(config PackageConfig) backend {
 	return solverBackend{options: solver.Options{
 		NoAmbientNames: config.NoAmbientNames,
+		PackageDir:     config.Dir,
 		// The compiler lowers each pseudo-package value to the JS its `@js` names.
 		CheckJsDecorators: true,
 	}}

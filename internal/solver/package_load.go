@@ -141,10 +141,11 @@ func messagesOf(errs []SolverError) []string {
 
 // inferPackage infers one package's module and returns the surface it exports.
 //
-// The package's declarations go into a child of the run's prelude scope rather
-// than of the importer, so nothing the importer declares is visible to it while
-// the prelude package's exports still are. pkgURI is set for the duration, which
-// puts the URI on every key the walk registers.
+// The package's declarations go into a child of a scope the run shares rather
+// than of the importer, so nothing the importer declares is visible to it. A
+// pseudo-package's parent is the prelude scope. An npm package's parent is the
+// globals scope, which has to be bound first. pkgURI is set for the duration,
+// which puts the URI on every key the walk registers.
 func (c *checker) inferPackage(uri string, module *ast.Module) (*Namespace, []SolverError) {
 	prevURI := c.pkgURI
 	c.pkgURI = uri
@@ -156,6 +157,13 @@ func (c *checker) inferPackage(uri string, module *ast.Module) (*Namespace, []So
 	c.errs = nil
 
 	scope := c.preludeScope().Child()
+	// A `.d.ts` is written against TypeScript's global library, which the globals
+	// scope holds. `Console` is one such name. The globals scope is used even when
+	// the run sets Options.NoAmbientNames, since that option governs the names the
+	// project's own files reach.
+	if !IsSchemePrefixedImport(uri) {
+		scope = c.globalsScope().Child()
+	}
 	c.bindFileImports(scope, module)
 	c.inferDepGraph(scope, 0, module, dep_graph.BuildDepGraph(module))
 
