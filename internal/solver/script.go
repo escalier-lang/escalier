@@ -60,11 +60,11 @@ func inferScriptWithGroups(
 	groups PackageGroups,
 	opts Options,
 ) (*Scope, *Info, []SolverError) {
-	c := newChecker()
-	c.source = source
-	c.groupSource = groupSource
-	c.groups = groups
-	c.noAmbientNames = opts.NoAmbientNames
+	return inferScriptOn(newRunChecker(source, groupSource, groups, opts), script)
+}
+
+// inferScriptOn infers script on c, a checker from newRunChecker or ambientChecker.
+func inferScriptOn(c *checker, script *ast.Script) (*Scope, *Info, []SolverError) {
 	c.bindAmbientExports()
 	return c.inferScriptIn(c.ambientScope().Child(), script)
 }

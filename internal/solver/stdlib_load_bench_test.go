@@ -20,9 +20,10 @@ import (
 // directory uses. InferModuleWithSource would load each package on its own and
 // measure a path no such run takes.
 //
-// Warm is the figure to watch. A `checker` is per inference run and no inferred
-// form is shared between runs, so a language server pays it on every
-// re-inference. #1567 is what would remove it.
+// Warm is the figure to watch, since a language server pays it on every
+// re-inference. A run whose closure the cache in stdlib_run_cache.go already holds
+// copies the loaded packages rather than inferring them, so Warm measures that
+// copy.
 //
 // Cold adds parsing, which a process pays once per distinct file because of the
 // cache in stdlib_parse_cache.go. It is what a language server pays at startup.

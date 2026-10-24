@@ -235,6 +235,9 @@ func InferModuleAgainstStdlib(module *ast.Module, dir string, opts Options) *Mod
 		})
 		return result
 	}
+	if c, ok := ambientChecker(dir, groups, opts); ok {
+		return inferModuleOn(c, module)
+	}
 	return inferModuleWithGroups(module, StdlibSource(dir), StdlibGroupSource(dir), groups, opts)
 }
 
@@ -248,6 +251,9 @@ func InferScriptAgainstStdlib(script *ast.Script, dir string, opts Options) (*Sc
 		return scope, info, append(errs, &UnresolvedPackageError{
 			URI: dir, Reason: err.Error(), span: ast.Span{},
 		})
+	}
+	if c, ok := ambientChecker(dir, groups, opts); ok {
+		return inferScriptOn(c, script)
 	}
 	return inferScriptWithGroups(script, StdlibSource(dir), StdlibGroupSource(dir), groups, opts)
 }

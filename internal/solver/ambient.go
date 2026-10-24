@@ -80,9 +80,16 @@ func (c *checker) ambientScope() *Scope {
 // package that loads and reports diagnostics of its own reaches the run with them.
 // The first package to claim a name keeps it.
 //
+// A second call does nothing, so a checker forked from ambientChecker keeps the
+// bindings it was copied with.
+//
 // A run with Options.NoAmbientNames set binds nothing, so the ambient scope stays empty.
 // It loads only the packages literalClassPackages lists.
 func (c *checker) bindAmbientExports() {
+	if c.ambientBound {
+		return
+	}
+	c.ambientBound = true
 	// The packages draw from the range the prelude draws from, so a program's own
 	// variables and symbols are numbered the same whether or not any builtin loaded.
 	programVars, programSymbols := c.ctx.varCounter, c.ctx.symbolCounter
