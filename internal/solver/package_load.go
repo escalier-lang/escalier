@@ -66,20 +66,30 @@ func (c *checker) loadPackage(uri string, span ast.Span) (*Namespace, []SolverEr
 		}}
 	}
 
+	// A pseudo-package file lowers each value it exports to the JS expression its
+	// `@js` names, so a value without one has nothing to lower to. Its types lower
+	// to nothing, and an unexported one is a private helper exportedSurface leaves
+	// out of what an importer reaches. The span is the import's, since the
+	// declaration's own span points into a file the importer did not write.
+	var loaderErrs []SolverError
+	if c.checkJsDecorators && IsSchemePrefixedImport(uri) {
+		loaderErrs = jsDecoratorErrors(path, module, "", span)
+	}
+
 	c.ctx.packages.markLoading(uri, path)
 	c.loadStack = append(c.loadStack, uri)
 	ns, pkgErrs := c.inferPackage(uri, module)
 	c.loadStack = c.loadStack[:len(c.loadStack)-1]
 	c.ctx.packages.publish(uri, ns)
 	if len(pkgErrs) > 0 {
-		return ns, []SolverError{&PackageInferenceError{
+		return ns, append(loaderErrs, &PackageInferenceError{
 			URI:      uri,
 			Path:     path,
 			Messages: messagesOf(pkgErrs),
 			span:     span,
-		}}
+		})
 	}
-	return ns, nil
+	return ns, loaderErrs
 }
 
 // cycleChain returns the packages the cycle runs through, starting and ending at

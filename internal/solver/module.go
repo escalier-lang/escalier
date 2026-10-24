@@ -17,6 +17,9 @@ type Options struct {
 	// through `std:prelude` or its own imports. The ambient packages still load, since
 	// a primitive's members and a regex literal's type are read from them.
 	NoAmbientNames bool
+	// CheckJsDecorators reports a pseudo-package file whose values break the `@js`
+	// rules jsDecoratorErrors lists, at the import that loads it.
+	CheckJsDecorators bool
 }
 
 // InferModule builds the dep graph for a single parsed module, infers every
@@ -144,6 +147,7 @@ func inferModuleWithGroups(
 	c.groupSource = groupSource
 	c.groups = groups
 	c.noAmbientNames = opts.NoAmbientNames
+	c.checkJsDecorators = opts.CheckJsDecorators
 	// The prelude package is loaded before anything is walked, so no rule reaches
 	// for a handle from inside a speculation trial, where a load would publish a
 	// package whose bounds a discard then truncates.

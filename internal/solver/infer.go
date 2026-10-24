@@ -249,6 +249,8 @@ type checker struct {
 	ambient *Scope
 	// noAmbientNames is Options.NoAmbientNames for this run.
 	noAmbientNames bool
+	// checkJsDecorators is Options.CheckJsDecorators for this run.
+	checkJsDecorators bool
 	// regexpReported is set once the run has reported that it loaded no usable `RegExp`,
 	// so a second regex literal does not report it again.
 	regexpReported bool
@@ -896,15 +898,16 @@ func newChecker() *checker {
 // and the diagnostics start empty, so the script's results cover the script alone.
 func (c *checker) forScript(pkgURI string) *checker {
 	sc := &checker{
-		ctx:          c.ctx,
-		pkgURI:       pkgURI,
-		info:         NewInfo(),
-		prov:         maps.Clone(c.prov),
-		varIDCounter: c.varIDCounter,
-		prelude:      c.prelude,
-		source:       c.source,
-		groupSource:  c.groupSource,
-		groups:       c.groups,
+		ctx:               c.ctx,
+		pkgURI:            pkgURI,
+		info:              NewInfo(),
+		prov:              maps.Clone(c.prov),
+		varIDCounter:      c.varIDCounter,
+		prelude:           c.prelude,
+		source:            c.source,
+		groupSource:       c.groupSource,
+		groups:            c.groups,
+		checkJsDecorators: c.checkJsDecorators,
 	}
 	// Point the recorder at the script, so a fusion its walk records lands in the
 	// script's Prov table rather than the module's.

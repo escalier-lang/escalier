@@ -112,6 +112,15 @@ func (c *checker) loadPackageGroup(group []string, span ast.Span) []SolverError 
 		}}
 	}
 
+	// Each member's declarations sit under its own namespace in the merged module,
+	// which is what ties a declaration back to the file that wrote it.
+	var loaderErrs []SolverError
+	if c.checkJsDecorators {
+		for _, uri := range group {
+			loaderErrs = append(loaderErrs, jsDecoratorErrors(paths[uri], module, groupNamespace(uri), span)...)
+		}
+	}
+
 	for _, uri := range group {
 		c.ctx.packages.markLoading(uri, paths[uri])
 	}
@@ -168,14 +177,14 @@ func (c *checker) loadPackageGroup(group []string, span ast.Span) []SolverError 
 	}
 
 	if len(errs) > 0 {
-		return []SolverError{&PackageInferenceError{
+		return append(loaderErrs, &PackageInferenceError{
 			URI:      strings.Join(group, ", "),
 			Path:     paths[group[0]],
 			Messages: messagesOf(errs),
 			span:     span,
-		}}
+		})
 	}
-	return nil
+	return loaderErrs
 }
 
 // memberImportNamespaces maps each file of a merged group to the imports it
