@@ -342,10 +342,9 @@ func NewLitExpr(lit Lit) *LiteralExpr {
 }
 
 type IdentExpr struct {
-	Name      string
-	Namespace NamespaceID
-	VarID     int // set by the rename pass (liveness.VarID); 0 = unset
-	Source    provenance.Provenance
+	Name   string
+	VarID  int // set by the rename pass (liveness.VarID); 0 = unset
+	Source provenance.Provenance
 	// Owner is the resolved binding's owning top-level declaration —
 	// the `FuncDecl` / `VarDecl` / `ClassDecl` that introduced the
 	// name. Stamped by inference when this identifier resolves to a
@@ -360,12 +359,9 @@ type IdentExpr struct {
 }
 
 func NewIdent(name string, span Span) *IdentExpr {
-	return &IdentExpr{Name: name, Namespace: RootNamespaceID, Source: nil, span: span, commentSlots: commentSlots{}}
+	return &IdentExpr{Name: name, Source: nil, span: span, commentSlots: commentSlots{}}
 }
 
-func NewIdentWithNamespace(name string, namespace NamespaceID, span Span) *IdentExpr {
-	return &IdentExpr{Name: name, Namespace: namespace, Source: nil, span: span, commentSlots: commentSlots{}}
-}
 func (e *IdentExpr) Accept(v Visitor) {
 	v.EnterExpr(e)
 	v.ExitExpr(e)

@@ -17,8 +17,9 @@ import (
 // variables and register definitions on the run's Context, both mutable state a
 // second run must not share. #1567 covers that half.
 //
-// Sharing the parsed module is safe because the solver never writes to an AST
-// node, recording inferred types in the per-run Info side table instead.
+// Sharing the parsed module is safe because neither the solver nor the
+// dependency graph writes to an AST node. Inferred types go in the per-run Info
+// side table, and resolved namespaces go in DepGraph.IdentNamespaces.
 
 // parsedModuleCache holds one parsed module per distinct source, keyed by the
 // file's basename and contents, which are the two inputs the parse reads.
