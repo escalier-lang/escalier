@@ -181,6 +181,14 @@ func loadAmbientChecker(dir string, groups PackageGroups, opts Options) *checker
 	// fork has none to copy.
 	c.info = NewInfo()
 	c.info.ctx = c.ctx
+	// These are keyed by the node or function being inferred, and only while it is, so
+	// a run never reads the loaded packages' entries either.
+	c.ltMarks, c.memberFuncNames, c.methodSelfParams = nil, nil, nil
+	c.closureCaptureInfo, c.moduleCaptures = nil, nil
+	// The copy allocates every slice with no spare capacity. An append by a run to a
+	// slice the cached checker holds then allocates, rather than writing into an array
+	// that every run sharing the checker can see.
+	c = copyPtr(newGraphCopier(isASTPointer), c)
 	if frozenVarChecks {
 		c.ctx.frozenVars, c.ctx.frozenLts = reachableVars(c)
 		c.ctx.frozenClasses = set.FromSlice(slices.Collect(maps.Values(c.ctx.classes)))

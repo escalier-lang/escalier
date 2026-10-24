@@ -70,12 +70,24 @@ func (d *graphDiff) compare(plan *typePlan, live, snap unsafe.Pointer, path stri
 		if lw[0] == nil {
 			return
 		}
-		if dynamic := d.g.dynamicPlans[lw[0]]; dynamic != nil && dynamic.kind == copyPointer {
+		dynamic := d.g.dynamicPlans[lw[0]]
+		if dynamic == nil {
+			d.note(path, "holds a type the snapshot never held")
+			return
+		}
+		if dynamic.kind == copyPointer {
 			want, ok := d.snapshotOf(dynamic, lw[1])
 			if !ok || want != sw[1] {
 				d.note(path, "points elsewhere")
 			}
+			return
 		}
+		// Any other dynamic value is compared through an addressable copy of each side.
+		a := reflect.New(dynamic.typ).Elem()
+		a.Set(reflect.NewAt(plan.typ, live).Elem().Elem())
+		b := reflect.New(dynamic.typ).Elem()
+		b.Set(reflect.NewAt(plan.typ, snap).Elem().Elem())
+		d.compare(dynamic, a.Addr().UnsafePointer(), b.Addr().UnsafePointer(), path+"(dynamic)")
 	case copySlice:
 		ls, ss := reflect.NewAt(plan.typ, live).Elem(), reflect.NewAt(plan.typ, snap).Elem()
 		if ls.Len() != ss.Len() {
@@ -102,6 +114,12 @@ func (d *graphDiff) compare(plan *typePlan, live, snap unsafe.Pointer, path stri
 		for i := range plan.typ.Len() {
 			offset := uintptr(i) * size
 			d.compare(plan.elem, unsafe.Add(live, offset), unsafe.Add(snap, offset), path+"[]")
+		}
+	case copyRefuse:
+		// The copier copied no non-nil func, channel, or unsafe pointer, so the snapshot
+		// holds nil and any other live value was set since.
+		if *(*unsafe.Pointer)(live) != *(*unsafe.Pointer)(snap) {
+			d.note(path, "was set")
 		}
 	}
 }
