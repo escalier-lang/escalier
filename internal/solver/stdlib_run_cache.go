@@ -4,8 +4,10 @@ import (
 	"crypto/sha256"
 	"encoding/binary"
 	"hash"
+	"maps"
 	"os"
 	"reflect"
+	"slices"
 	"sort"
 	"strings"
 	"sync"
@@ -160,6 +162,10 @@ func loadAmbientChecker(dir string, groups PackageGroups, opts Options) *checker
 	})
 	c.ambientScope()
 	c.bindAmbientExports()
+	// A run reads a loaded class's variance and an alias's uniform knot through the
+	// cached definitions. Settling both now means no run writes to those definitions,
+	// and fork copies the settled answers.
+	c.settleLoadedDefinitions()
 
 	// fork copies the checker field by field and cannot copy a func, so every
 	// field holding one is cleared here and fork sets it again on the copy.
@@ -177,6 +183,8 @@ func loadAmbientChecker(dir string, groups PackageGroups, opts Options) *checker
 	c.info.ctx = c.ctx
 	if frozenVarChecks {
 		c.ctx.frozenVars, c.ctx.frozenLts = reachableVars(c)
+		c.ctx.frozenClasses = set.FromSlice(slices.Collect(maps.Values(c.ctx.classes)))
+		c.ctx.frozenAliases = set.FromSlice(slices.Collect(maps.Values(c.ctx.aliases)))
 	}
 	return c
 }
@@ -201,6 +209,41 @@ func reachableVars(c *checker) (set.Set[*soltype.TypeVarType], set.Set[*soltype.
 		}
 	}
 	return vars, lts
+}
+
+// settleLoadedDefinitions computes every fact about the loaded classes and aliases that
+// would otherwise be computed the first time a run reads it:
+//
+//  1. Each provisional class is measured again until no class settles. A class still
+//     provisional after that keeps Invariant throughout and is marked unsettled, so
+//     settleVariance does not measure it again.
+//  2. Each alias's uniform knot is probed and memoized.
+//
+// Both draw any variable they mint from the library counters.
+func (c *checker) settleLoadedDefinitions() {
+	classNames := slices.Sorted(maps.Keys(c.ctx.classes))
+	aliasNames := slices.Sorted(maps.Keys(c.ctx.aliases))
+	c.withLibCounters(func() {
+		for {
+			settled := c.ctx.measuredClasses
+			for _, name := range classNames {
+				c.ctx.settleVariance(c.ctx.classes[name])
+			}
+			if c.ctx.measuredClasses == settled {
+				break
+			}
+		}
+		for _, name := range classNames {
+			// A loaded class waits only on other loaded classes, so no run's classes can
+			// settle it later.
+			if def := c.ctx.classes[name]; def.varianceProvisional {
+				def.varianceUnsettled = true
+			}
+		}
+		for _, name := range aliasNames {
+			c.ctx.uniformKnotOf(name)
+		}
+	})
 }
 
 // fork returns a deep copy of c that runs with source, groupSource, and groups. A

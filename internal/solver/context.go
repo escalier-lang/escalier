@@ -222,6 +222,11 @@ type Context struct {
 	// them.
 	frozenVars set.Set[*soltype.TypeVarType]
 	frozenLts  set.Set[*soltype.LifetimeVar]
+	// frozenClasses and frozenAliases hold the class and alias definitions registered on
+	// a cached stdlib checker, the same way. checkThawedClass and checkThawedAlias read
+	// them.
+	frozenClasses set.Set[*ClassDef]
+	frozenAliases set.Set[*AliasDef]
 }
 
 // markHole records v as the variable a `_` resolved to.
@@ -242,6 +247,21 @@ var frozenVarChecks bool
 func (c *Context) checkThawed(v *soltype.TypeVarType, site string) {
 	if c.frozenVars.Contains(v) {
 		panic(fmt.Sprintf("%s wrote stdlib type variable %d", site, v.ID))
+	}
+}
+
+// checkThawedClass is checkThawed for a class definition.
+func (c *Context) checkThawedClass(def *ClassDef, site string) {
+	if c.frozenClasses.Contains(def) {
+		panic(fmt.Sprintf("%s wrote stdlib class %s", site, def.varianceSelf))
+	}
+}
+
+// checkThawedAlias is checkThawed for an alias definition. name is the alias's
+// registered name.
+func (c *Context) checkThawedAlias(def *AliasDef, name, site string) {
+	if c.frozenAliases.Contains(def) {
+		panic(fmt.Sprintf("%s wrote stdlib alias %s", site, name))
 	}
 }
 

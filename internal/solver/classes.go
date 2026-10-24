@@ -232,6 +232,7 @@ func (c *Context) settleVariance(def *ClassDef) {
 		def.varianceTriedAt == c.measuredClasses {
 		return
 	}
+	c.checkThawedClass(def, "settleVariance")
 	def.varianceSettling = true
 	c.measureVariance(def)
 	def.varianceSettling = false

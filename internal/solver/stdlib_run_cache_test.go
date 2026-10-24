@@ -258,3 +258,18 @@ func TestCheckThawedRejectsAStdlibVar(t *testing.T) {
 		run.ctx.addUpperBound(stdlibVar, &soltype.PrimType{Prim: soltype.NumPrim})
 	})
 }
+
+// TestAmbientCheckerSettlesLoadedDefinitions asserts that the cached checker holds no
+// class whose variance a run would measure again, and a memoized uniform knot for
+// every alias.
+func TestAmbientCheckerSettlesLoadedDefinitions(t *testing.T) {
+	groups, err := BuildPackageClosure(benchTree, ambientPackages)
+	require.NoError(t, err)
+	c := loadAmbientChecker(benchTree, groups, Options{})
+	for name, def := range c.ctx.classes {
+		require.False(t, def.varianceProvisional && !def.varianceUnsettled, name)
+	}
+	for name := range c.ctx.aliases {
+		require.Contains(t, c.ctx.uniformKnots, name)
+	}
+}
