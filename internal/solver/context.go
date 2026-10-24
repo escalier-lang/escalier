@@ -217,9 +217,8 @@ type Context struct {
 
 	// frozenVars and frozenLts hold the type and lifetime variables reachable from a
 	// cached stdlib checker, when frozenVarChecks is set. loadAmbientChecker fills
-	// them on the cached checker, and a fork's copy of each names the fork's copies of
-	// those variables. They are empty otherwise. checkThawed and checkThawedLt read
-	// them.
+	// them, and every fork of the cached checker shares them along with the variables
+	// they hold. They are empty otherwise. checkThawed and checkThawedLt read them.
 	frozenVars set.Set[*soltype.TypeVarType]
 	frozenLts  set.Set[*soltype.LifetimeVar]
 	// frozenClasses and frozenAliases hold the class and alias definitions registered on
