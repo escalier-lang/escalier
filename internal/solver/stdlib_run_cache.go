@@ -4,8 +4,10 @@ import (
 	"crypto/sha256"
 	"encoding/binary"
 	"hash"
+	"maps"
 	"os"
 	"reflect"
+	"slices"
 	"sort"
 	"strings"
 	"sync"
@@ -160,6 +162,10 @@ func loadAmbientChecker(dir string, groups PackageGroups, opts Options) *checker
 	})
 	c.ambientScope()
 	c.bindAmbientExports()
+	// A run reads a loaded class's variance and an alias's uniform knot through the
+	// cached definitions. Settling both now means no run writes to those definitions,
+	// and fork copies the settled answers.
+	c.settleLoadedDefinitions()
 
 	// fork copies the checker field by field and cannot copy a func, so every
 	// field holding one is cleared here and fork sets it again on the copy.
@@ -177,6 +183,8 @@ func loadAmbientChecker(dir string, groups PackageGroups, opts Options) *checker
 	c.info.ctx = c.ctx
 	if frozenVarChecks {
 		c.ctx.frozenVars, c.ctx.frozenLts = reachableVars(c)
+		c.ctx.frozenClasses = set.FromSlice(slices.Collect(maps.Values(c.ctx.classes)))
+		c.ctx.frozenAliases = set.FromSlice(slices.Collect(maps.Values(c.ctx.aliases)))
 	}
 	return c
 }
@@ -201,6 +209,56 @@ func reachableVars(c *checker) (set.Set[*soltype.TypeVarType], set.Set[*soltype.
 		}
 	}
 	return vars, lts
+}
+
+// settleLoadedDefinitions computes every fact about the classes and aliases registered so
+// far that would otherwise be computed the first time something reads it:
+//
+//  1. Each provisional class is measured again until no class settles. A class still
+//     provisional after that has its Invariant vectors stored as final.
+//  2. Each alias's uniform knot is probed and memoized.
+//
+// A second call does nothing. The type variables and unique symbols it mints come from
+// the library counters. The μ-binders a knot mints continue the run's own count, since
+// two knots composed into one type need distinct binders.
+func (c *checker) settleLoadedDefinitions() {
+	if c.definitionsSettled {
+		return
+	}
+	c.definitionsSettled = true
+	classNames := slices.Sorted(maps.Keys(c.ctx.classes))
+	aliasNames := slices.Sorted(maps.Keys(c.ctx.aliases))
+	c.withLibCounters(func() {
+		// settleVariance skips a class tried at the current count, and a try that waited
+		// on a class measured later bumped nothing. Each is tried once more regardless.
+		for _, name := range classNames {
+			if def := c.ctx.classes[name]; def.varianceProvisional {
+				def.varianceTriedAt = -1
+			}
+		}
+		for {
+			settled := c.ctx.measuredClasses
+			for _, name := range classNames {
+				c.ctx.settleVariance(c.ctx.classes[name])
+			}
+			if c.ctx.measuredClasses == settled {
+				break
+			}
+		}
+		for _, name := range classNames {
+			// Every class these wait on is registered and measured by now, so no later
+			// measurement settles them. Invariant is sound for every parameter. Storing it
+			// as final keeps settleVarianceGroup from pulling the class into the group of
+			// a class declared after this point.
+			if def := c.ctx.classes[name]; def.varianceProvisional {
+				def.varianceProvisional = false
+				def.varianceWaitsOn = nil
+			}
+		}
+		for _, name := range aliasNames {
+			c.ctx.uniformKnotOf(name)
+		}
+	})
 }
 
 // fork returns a deep copy of c that runs with source, groupSource, and groups. A
