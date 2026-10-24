@@ -284,9 +284,7 @@ func (p *DtsParser) parseExportDeclaration() Statement {
 			// export default class or export default abstract class
 			declaration = p.parseClassDeclaration()
 		} else {
-			// TypeScript accepts `export` in place of `declare` on a top-level
-			// declaration in a .d.ts file, so the declaration is ambient.
-			declaration = p.parseTopLevelDeclarationAsAmbient()
+			declaration = p.parseTopLevelDeclaration()
 		}
 
 		if declaration == nil {
@@ -393,10 +391,7 @@ func (p *DtsParser) parseExportDeclaration() Statement {
 		isDeclare = true
 		declaration = p.parseAmbientDeclaration()
 	} else {
-		// TypeScript accepts `export` in place of `declare` on a top-level
-		// declaration in a .d.ts file, so `export function f(): void;` is
-		// ambient.
-		declaration = p.parseTopLevelDeclarationAsAmbient()
+		declaration = p.parseTopLevelDeclaration()
 	}
 
 	if declaration == nil {
