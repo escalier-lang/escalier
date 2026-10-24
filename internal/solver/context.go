@@ -239,8 +239,15 @@ func (c *Context) markHole(v *soltype.TypeVarType) {
 
 // frozenVarChecks makes loadAmbientChecker record the variables the stdlib load
 // minted, so a run forked from it panics when it writes to one. The solver's tests
-// set it.
+// set it, and other packages' tests set it through EnableFrozenStdlibChecks.
 var frozenVarChecks bool
+
+// EnableFrozenStdlibChecks makes every run forked from a cached stdlib checker panic
+// when it writes to state the stdlib load created. It covers only checkers cached
+// after the call, so call it before the first inference run. It is for tests and is not safe to call concurrently with one.
+func EnableFrozenStdlibChecks() {
+	frozenVarChecks = true
+}
 
 // checkThawed panics when v is a variable the cached stdlib load minted. site names
 // the write, for the panic message.
