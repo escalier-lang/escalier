@@ -348,7 +348,7 @@ func TestBuildTypeAnnInferredTypeParams(t *testing.T) {
 // the declaration it emits.
 //
 // It covers every former source can spell.
-// TestBuildTypeAnnFormersSourceCannotReach covers the four it cannot, each
+// TestBuildTypeAnnFormersSourceCannotReach covers the ones it cannot, each
 // for a reason stated on the case. The hand-built tests around them cover what no
 // declaration produces either: the error sentinel, a skolem, an unresolved
 // inference variable, an `import:`-prefixed name from another package, a
