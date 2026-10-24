@@ -3357,6 +3357,7 @@ func (c *Context) binderMintedAt(ft *soltype.FuncType, lvl int) bool {
 func (c *Context) bindFuncBinderInPlace(ft *soltype.FuncType) *soltype.FuncType {
 	for _, tp := range ft.TypeParams {
 		if tp.Default != nil && tp.Var.Default == nil {
+			c.checkThawed(tp.Var, "bindFuncBinderInPlace")
 			tp.Var.Default = &soltype.VarDefault{
 				Type:  tp.Default,
 				Lower: len(tp.Var.LowerBounds),
