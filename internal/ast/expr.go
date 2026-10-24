@@ -343,7 +343,6 @@ func NewLitExpr(lit Lit) *LiteralExpr {
 
 type IdentExpr struct {
 	Name   string
-	VarID  int // set by the rename pass (liveness.VarID); 0 = unset
 	Source provenance.Provenance
 	// Owner is the resolved binding's owning top-level declaration —
 	// the `FuncDecl` / `VarDecl` / `ClassDecl` that introduced the

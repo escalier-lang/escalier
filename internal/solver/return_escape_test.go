@@ -990,7 +990,8 @@ func TestComponentEscapeCyclicGraph(t *testing.T) {
 			c.fn = &funcCtx{
 				paramVarIDs: set.NewSet[liveness.VarID](),
 			}
-			e := &ast.IdentExpr{Name: "root", VarID: int(tc.root)}
+			e := &ast.IdentExpr{Name: "root"}
+			c.varIDs.Set(e, tc.root)
 			got := c.escapingLocalsOf(e, tc.edges).ToSlice()
 			require.ElementsMatch(t, tc.want, got)
 		})
