@@ -62,6 +62,7 @@ func block(stmts ...ast.Stmt) ast.Block {
 // module-wide counter gets VarIDs unique across bodies. UniqueVarCount stays the count
 // of locals defined, independent of the starting id.
 func TestRenameFromStartsAtFirstID(t *testing.T) {
+	ids := NewVarIDs()
 	// val a = 1; val b = a  — two locals, started at id 10.
 	a := identPat("a")
 	b := identPat("b")
@@ -71,13 +72,13 @@ func TestRenameFromStartsAtFirstID(t *testing.T) {
 		valDecl(b, aRef),
 	)
 
-	result := RenameFrom(nil, body, map[string]VarID{}, 10)
+	result := RenameFrom(ids, nil, body, map[string]VarID{}, 10)
 
 	require.Empty(t, result.Errors)
-	require.Equal(t, 2, result.UniqueVarCount)  // count is start-independent
-	require.Equal(t, VarID(10), VarID(a.VarID)) // first local takes firstID
-	require.Equal(t, VarID(11), VarID(b.VarID)) // second is firstID+1
-	require.Equal(t, a.VarID, aRef.VarID)       // use resolves to binding
+	require.Equal(t, 2, result.UniqueVarCount) // count is start-independent
+	require.Equal(t, VarID(10), ids.Of(a))     // first local takes firstID
+	require.Equal(t, VarID(11), ids.Of(b))     // second is firstID+1
+	require.Equal(t, ids.Of(a), ids.Of(aRef))  // use resolves to binding
 	// Next free id = firstID + UniqueVarCount, so a following body starts at 12.
 	require.Equal(t, 12, 10+result.UniqueVarCount)
 }
@@ -86,12 +87,13 @@ func TestRenameFromStartsAtFirstID(t *testing.T) {
 // off, gives every local a VarID unique across both bodies. That is the property that
 // lets a binding's VarID name the same variable in any frame.
 func TestRenameFromDisjointAcrossBodies(t *testing.T) {
+	ids := NewVarIDs()
 	// Body 1: val a = 1; val b = a
 	a := identPat("a")
 	b := identPat("b")
 	body1 := block(valDecl(a, numLit(1)), valDecl(b, ident("a")))
 
-	r1 := RenameFrom(nil, body1, map[string]VarID{}, 1)
+	r1 := RenameFrom(ids, nil, body1, map[string]VarID{}, 1)
 	require.Empty(t, r1.Errors)
 
 	// Body 2 starts at the next free id, so its locals cannot collide with body 1's.
@@ -99,11 +101,11 @@ func TestRenameFromDisjointAcrossBodies(t *testing.T) {
 	d := identPat("d")
 	body2 := block(valDecl(c, numLit(2)), valDecl(d, ident("c")))
 
-	r2 := RenameFrom(nil, body2, map[string]VarID{}, 1+VarID(r1.UniqueVarCount))
+	r2 := RenameFrom(ids, nil, body2, map[string]VarID{}, 1+VarID(r1.UniqueVarCount))
 	require.Empty(t, r2.Errors)
 
-	body1IDs := []int{a.VarID, b.VarID}
-	body2IDs := []int{c.VarID, d.VarID}
+	body1IDs := []VarID{ids.Of(a), ids.Of(b)}
+	body2IDs := []VarID{ids.Of(c), ids.Of(d)}
 	for _, id1 := range body1IDs {
 		for _, id2 := range body2IDs {
 			require.NotEqual(t, id1, id2, "VarIDs must be disjoint across bodies")
@@ -112,6 +114,7 @@ func TestRenameFromDisjointAcrossBodies(t *testing.T) {
 }
 
 func TestSimpleBindingAndUse(t *testing.T) {
+	ids := NewVarIDs()
 	// val x = 1; print(x)
 	x := identPat("x")
 	xRef := ident("x")
@@ -120,15 +123,16 @@ func TestSimpleBindingAndUse(t *testing.T) {
 		exprStmt(call(ident("print"), xRef)),
 	)
 
-	result := Rename(nil, body, map[string]VarID{"print": -1})
+	result := Rename(ids, nil, body, map[string]VarID{"print": -1})
 
 	require.Empty(t, result.Errors)
 	require.Equal(t, 1, result.UniqueVarCount) // one local variable
-	require.Equal(t, x.VarID, xRef.VarID)      // use resolves to binding
-	require.NotEqual(t, 0, x.VarID)            // VarID is set
+	require.Equal(t, ids.Of(x), ids.Of(xRef))  // use resolves to binding
+	require.NotEqual(t, VarID(0), ids.Of(x))   // VarID is set
 }
 
 func TestCrossScopeShadowing(t *testing.T) {
+	ids := NewVarIDs()
 	// val x = 1; do { val x = 2; print(x) }; print(x)
 	outerX := identPat("x")
 	innerX := identPat("x")
@@ -144,16 +148,17 @@ func TestCrossScopeShadowing(t *testing.T) {
 		exprStmt(call(ident("print"), outerRef)),
 	)
 
-	result := Rename(nil, body, map[string]VarID{"print": -1})
+	result := Rename(ids, nil, body, map[string]VarID{"print": -1})
 
 	require.Empty(t, result.Errors)
 	require.Equal(t, 2, result.UniqueVarCount) // two distinct local variables
-	require.NotEqual(t, outerX.VarID, innerX.VarID)
-	require.Equal(t, innerX.VarID, innerRef.VarID) // inner print(x) → inner x
-	require.Equal(t, outerX.VarID, outerRef.VarID) // outer print(x) → outer x
+	require.NotEqual(t, ids.Of(outerX), ids.Of(innerX))
+	require.Equal(t, ids.Of(innerX), ids.Of(innerRef)) // inner print(x) → inner x
+	require.Equal(t, ids.Of(outerX), ids.Of(outerRef)) // outer print(x) → outer x
 }
 
 func TestSameScopeShadowing(t *testing.T) {
+	ids := NewVarIDs()
 	// val x = 1; val y = x; val x = 2; print(x)
 	x1 := identPat("x")
 	y := identPat("y")
@@ -168,16 +173,17 @@ func TestSameScopeShadowing(t *testing.T) {
 		exprStmt(call(ident("print"), xRef2)),
 	)
 
-	result := Rename(nil, body, map[string]VarID{"print": -1})
+	result := Rename(ids, nil, body, map[string]VarID{"print": -1})
 
 	require.Empty(t, result.Errors)
 	require.Equal(t, 3, result.UniqueVarCount) // x1, y, x2
-	require.NotEqual(t, x1.VarID, x2.VarID)
-	require.Equal(t, x1.VarID, xRef1.VarID) // val y = x → first x
-	require.Equal(t, x2.VarID, xRef2.VarID) // print(x) → second x
+	require.NotEqual(t, ids.Of(x1), ids.Of(x2))
+	require.Equal(t, ids.Of(x1), ids.Of(xRef1)) // val y = x → first x
+	require.Equal(t, ids.Of(x2), ids.Of(xRef2)) // print(x) → second x
 }
 
 func TestFunctionParameters(t *testing.T) {
+	ids := NewVarIDs()
 	// fn f(a, b) { print(a) }
 	a := identPat("a")
 	b := identPat("b")
@@ -191,15 +197,16 @@ func TestFunctionParameters(t *testing.T) {
 		exprStmt(call(ident("print"), aRef)),
 	)
 
-	result := Rename(params, body, map[string]VarID{"print": -1})
+	result := Rename(ids, params, body, map[string]VarID{"print": -1})
 
 	require.Empty(t, result.Errors)
 	require.Equal(t, 2, result.UniqueVarCount) // a, b
-	require.NotEqual(t, a.VarID, b.VarID)
-	require.Equal(t, a.VarID, aRef.VarID) // print(a) → parameter a
+	require.NotEqual(t, ids.Of(a), ids.Of(b))
+	require.Equal(t, ids.Of(a), ids.Of(aRef)) // print(a) → parameter a
 }
 
 func TestDestructuring(t *testing.T) {
+	ids := NewVarIDs()
 	// val {a, b} = obj
 	a := ast.NewObjShorthandPat(ast.NewIdentifier("a", span()), false, nil, nil, span())
 	b := ast.NewObjShorthandPat(ast.NewIdentifier("b", span()), false, nil, nil, span())
@@ -209,22 +216,23 @@ func TestDestructuring(t *testing.T) {
 		valDecl(objPat, ident("obj")),
 	)
 
-	result := Rename(nil, body, map[string]VarID{"obj": -1})
+	result := Rename(ids, nil, body, map[string]VarID{"obj": -1})
 
 	require.Empty(t, result.Errors)
 	require.Equal(t, 2, result.UniqueVarCount)
-	require.NotEqual(t, a.VarID, b.VarID)
-	require.NotEqual(t, 0, a.VarID)
-	require.NotEqual(t, 0, b.VarID)
+	require.NotEqual(t, ids.Of(a), ids.Of(b))
+	require.NotEqual(t, VarID(0), ids.Of(a))
+	require.NotEqual(t, VarID(0), ids.Of(b))
 }
 
 func TestUnresolvedLocalName(t *testing.T) {
+	ids := NewVarIDs()
 	// print(unknown)
 	body := block(
 		exprStmt(call(ident("print"), ident("unknown"))),
 	)
 
-	result := Rename(nil, body, map[string]VarID{"print": -1})
+	result := Rename(ids, nil, body, map[string]VarID{"print": -1})
 
 	require.Equal(t, []RenameError{
 		{Name: "unknown", Span: span()},
@@ -232,6 +240,7 @@ func TestUnresolvedLocalName(t *testing.T) {
 }
 
 func TestModuleLevelName(t *testing.T) {
+	ids := NewVarIDs()
 	// print(globalVar)
 	gRef := ident("globalVar")
 
@@ -239,13 +248,14 @@ func TestModuleLevelName(t *testing.T) {
 		exprStmt(call(ident("print"), gRef)),
 	)
 
-	result := Rename(nil, body, map[string]VarID{"print": -1, "globalVar": -2})
+	result := Rename(ids, nil, body, map[string]VarID{"print": -1, "globalVar": -2})
 
 	require.Empty(t, result.Errors)
-	require.Equal(t, -2, gRef.VarID) // resolved to outer binding
+	require.Equal(t, VarID(-2), ids.Of(gRef)) // resolved to outer binding
 }
 
 func TestScopeRestorationAfterBlock(t *testing.T) {
+	ids := NewVarIDs()
 	// val x = 1; do { val x = 2 }; print(x)
 	outerX := identPat("x")
 	innerX := identPat("x")
@@ -259,14 +269,15 @@ func TestScopeRestorationAfterBlock(t *testing.T) {
 		exprStmt(call(ident("print"), xRef)),
 	)
 
-	result := Rename(nil, body, map[string]VarID{"print": -1})
+	result := Rename(ids, nil, body, map[string]VarID{"print": -1})
 
 	require.Empty(t, result.Errors)
-	require.Equal(t, outerX.VarID, xRef.VarID) // print(x) → outer x
-	require.NotEqual(t, innerX.VarID, xRef.VarID)
+	require.Equal(t, ids.Of(outerX), ids.Of(xRef)) // print(x) → outer x
+	require.NotEqual(t, ids.Of(innerX), ids.Of(xRef))
 }
 
 func TestForInLoop(t *testing.T) {
+	ids := NewVarIDs()
 	// for item in items { print(item) }
 	item := identPat("item")
 	itemRef := ident("item")
@@ -277,14 +288,15 @@ func TestForInLoop(t *testing.T) {
 		), false, span()),
 	)
 
-	result := Rename(nil, body, map[string]VarID{"print": -1, "items": -2})
+	result := Rename(ids, nil, body, map[string]VarID{"print": -1, "items": -2})
 
 	require.Empty(t, result.Errors)
-	require.Equal(t, item.VarID, itemRef.VarID)
+	require.Equal(t, ids.Of(item), ids.Of(itemRef))
 	require.Equal(t, 1, result.UniqueVarCount) // only item is a local variable
 }
 
 func TestForInLoopScopeIsolation(t *testing.T) {
+	ids := NewVarIDs()
 	// for item in items { print(item) }; print(item)  // second print should fail
 	item := identPat("item")
 	itemRefInside := ident("item")
@@ -297,15 +309,16 @@ func TestForInLoopScopeIsolation(t *testing.T) {
 		exprStmt(call(ident("print"), itemRefOutside)),
 	)
 
-	result := Rename(nil, body, map[string]VarID{"print": -1, "items": -2})
+	result := Rename(ids, nil, body, map[string]VarID{"print": -1, "items": -2})
 
 	require.Equal(t, []RenameError{
 		{Name: "item", Span: span()},
 	}, result.Errors)
-	require.Equal(t, item.VarID, itemRefInside.VarID) // inside resolves fine
+	require.Equal(t, ids.Of(item), ids.Of(itemRefInside)) // inside resolves fine
 }
 
 func TestMatchExpr(t *testing.T) {
+	ids := NewVarIDs()
 	// match x { Some(v) => print(v), None => 0 }
 	v := identPat("v")
 	vRef := ident("v")
@@ -331,13 +344,14 @@ func TestMatchExpr(t *testing.T) {
 
 	body := block(exprStmt(matchExpr))
 
-	result := Rename(nil, body, map[string]VarID{"x": -1, "print": -2})
+	result := Rename(ids, nil, body, map[string]VarID{"x": -1, "print": -2})
 
 	require.Empty(t, result.Errors)
-	require.Equal(t, v.VarID, vRef.VarID)
+	require.Equal(t, ids.Of(v), ids.Of(vRef))
 }
 
 func TestTupleDestructuring(t *testing.T) {
+	ids := NewVarIDs()
 	// val [a, b] = pair
 	a := identPat("a")
 	b := identPat("b")
@@ -347,14 +361,15 @@ func TestTupleDestructuring(t *testing.T) {
 		valDecl(tuplePat, ident("pair")),
 	)
 
-	result := Rename(nil, body, map[string]VarID{"pair": -1})
+	result := Rename(ids, nil, body, map[string]VarID{"pair": -1})
 
 	require.Empty(t, result.Errors)
 	require.Equal(t, 2, result.UniqueVarCount)
-	require.NotEqual(t, a.VarID, b.VarID)
+	require.NotEqual(t, ids.Of(a), ids.Of(b))
 }
 
 func TestFuncDeclBindsName(t *testing.T) {
+	ids := NewVarIDs()
 	// fn add(a, b) { a + b }; add(1, 2)
 	addRef := ident("add")
 
@@ -380,14 +395,15 @@ func TestFuncDeclBindsName(t *testing.T) {
 		exprStmt(call(addRef, numLit(1), numLit(2))),
 	)
 
-	result := Rename(nil, body, map[string]VarID{})
+	result := Rename(ids, nil, body, map[string]VarID{})
 
 	require.Empty(t, result.Errors)
-	require.NotEqual(t, 0, addRef.VarID)           // add is resolved
-	require.Equal(t, funcDecl.VarID, addRef.VarID) // use resolves to FuncDecl binding
+	require.NotEqual(t, VarID(0), ids.Of(addRef))      // add is resolved
+	require.Equal(t, ids.Of(funcDecl), ids.Of(addRef)) // use resolves to FuncDecl binding
 }
 
 func TestIfValPattern(t *testing.T) {
+	ids := NewVarIDs()
 	// if val Some(v) = x { print(v) }
 	v := identPat("v")
 	vRef := ident("v")
@@ -402,13 +418,14 @@ func TestIfValPattern(t *testing.T) {
 
 	body := block(exprStmt(ifLetExpr))
 
-	result := Rename(nil, body, map[string]VarID{"x": -1, "print": -2})
+	result := Rename(ids, nil, body, map[string]VarID{"x": -1, "print": -2})
 
 	require.Empty(t, result.Errors)
-	require.Equal(t, v.VarID, vRef.VarID)
+	require.Equal(t, ids.Of(v), ids.Of(vRef))
 }
 
 func TestAssignmentResolvesExistingBinding(t *testing.T) {
+	ids := NewVarIDs()
 	// var x = 1; x = 2
 	x := identPat("x")
 	xAssignTarget := ident("x")
@@ -420,14 +437,15 @@ func TestAssignmentResolvesExistingBinding(t *testing.T) {
 		exprStmt(assignExpr),
 	)
 
-	result := Rename(nil, body, map[string]VarID{})
+	result := Rename(ids, nil, body, map[string]VarID{})
 
 	require.Empty(t, result.Errors)
-	require.Equal(t, x.VarID, xAssignTarget.VarID)
+	require.Equal(t, ids.Of(x), ids.Of(xAssignTarget))
 	require.Equal(t, 1, result.UniqueVarCount) // only one variable
 }
 
 func TestObjKeyValueDestructuring(t *testing.T) {
+	ids := NewVarIDs()
 	// val {key: value} = obj
 	value := identPat("value")
 	objPat := ast.NewObjectPat([]ast.ObjPatElem{
@@ -438,14 +456,15 @@ func TestObjKeyValueDestructuring(t *testing.T) {
 		valDecl(objPat, ident("obj")),
 	)
 
-	result := Rename(nil, body, map[string]VarID{"obj": -1})
+	result := Rename(ids, nil, body, map[string]VarID{"obj": -1})
 
 	require.Empty(t, result.Errors)
-	require.NotEqual(t, 0, value.VarID)
+	require.NotEqual(t, VarID(0), ids.Of(value))
 	require.Equal(t, 1, result.UniqueVarCount)
 }
 
 func TestNestedFuncExprNotWalked(t *testing.T) {
+	ids := NewVarIDs()
 	// fn outer() {
 	//   val x = 1
 	//   val f = fn (y) { x + y }
@@ -481,21 +500,22 @@ func TestNestedFuncExprNotWalked(t *testing.T) {
 		exprStmt(call(fRef, xRef)),
 	)
 
-	result := Rename(nil, body, map[string]VarID{})
+	result := Rename(ids, nil, body, map[string]VarID{})
 
 	require.Empty(t, result.Errors)
 	require.Equal(t, 2, result.UniqueVarCount) // x, f (not y)
-	require.Equal(t, x.VarID, xRef.VarID)      // f(x) → outer x
-	require.NotEqual(t, 0, f.VarID)
-	require.Equal(t, f.VarID, fRef.VarID)
+	require.Equal(t, ids.Of(x), ids.Of(xRef))  // f(x) → outer x
+	require.NotEqual(t, VarID(0), ids.Of(f))
+	require.Equal(t, ids.Of(f), ids.Of(fRef))
 
 	// Inner function nodes should be untouched by the outer rename pass.
-	require.Equal(t, 0, yParam.VarID)
-	require.Equal(t, 0, yRef.VarID)
-	require.Equal(t, 0, innerXRef.VarID)
+	require.Equal(t, VarID(0), ids.Of(yParam))
+	require.Equal(t, VarID(0), ids.Of(yRef))
+	require.Equal(t, VarID(0), ids.Of(innerXRef))
 }
 
 func TestNestedFuncDeclNotWalked(t *testing.T) {
+	ids := NewVarIDs()
 	// fn outer() {
 	//   val x = 1
 	//   fn inner(y) { x + y }
@@ -536,20 +556,21 @@ func TestNestedFuncDeclNotWalked(t *testing.T) {
 		exprStmt(call(innerRef, xRef)),
 	)
 
-	result := Rename(nil, body, map[string]VarID{})
+	result := Rename(ids, nil, body, map[string]VarID{})
 
 	require.Empty(t, result.Errors)
-	require.Equal(t, 2, result.UniqueVarCount) // x, inner (not y)
-	require.Equal(t, x.VarID, xRef.VarID)      // inner(x) → outer x
-	require.NotEqual(t, 0, innerRef.VarID)     // inner is resolved
+	require.Equal(t, 2, result.UniqueVarCount)      // x, inner (not y)
+	require.Equal(t, ids.Of(x), ids.Of(xRef))       // inner(x) → outer x
+	require.NotEqual(t, VarID(0), ids.Of(innerRef)) // inner is resolved
 
 	// Inner function nodes should be untouched by the outer rename pass.
-	require.Equal(t, 0, yParam.VarID)
-	require.Equal(t, 0, yRef.VarID)
-	require.Equal(t, 0, innerXRef.VarID)
+	require.Equal(t, VarID(0), ids.Of(yParam))
+	require.Equal(t, VarID(0), ids.Of(yRef))
+	require.Equal(t, VarID(0), ids.Of(innerXRef))
 }
 
 func TestIfElseShadowing(t *testing.T) {
+	ids := NewVarIDs()
 	// val x = 1
 	// val y = if cond {
 	//   val x = 2
@@ -589,26 +610,27 @@ func TestIfElseShadowing(t *testing.T) {
 		exprStmt(call(ident("print"), outerXRef)),
 	)
 
-	result := Rename(nil, body, map[string]VarID{"cond": -1, "print": -2})
+	result := Rename(ids, nil, body, map[string]VarID{"cond": -1, "print": -2})
 
 	require.Empty(t, result.Errors)
 	// outerX, consX, altX, y = 4 unique local variables
 	require.Equal(t, 4, result.UniqueVarCount)
 
 	// All three x's have distinct VarIDs.
-	require.NotEqual(t, outerX.VarID, consX.VarID)
-	require.NotEqual(t, outerX.VarID, altX.VarID)
-	require.NotEqual(t, consX.VarID, altX.VarID)
+	require.NotEqual(t, ids.Of(outerX), ids.Of(consX))
+	require.NotEqual(t, ids.Of(outerX), ids.Of(altX))
+	require.NotEqual(t, ids.Of(consX), ids.Of(altX))
 
 	// Each branch's reference resolves to its own shadow.
-	require.Equal(t, consX.VarID, consXRef.VarID)
-	require.Equal(t, altX.VarID, altXRef.VarID)
+	require.Equal(t, ids.Of(consX), ids.Of(consXRef))
+	require.Equal(t, ids.Of(altX), ids.Of(altXRef))
 
 	// After the if/else, the outer x is visible again.
-	require.Equal(t, outerX.VarID, outerXRef.VarID)
+	require.Equal(t, ids.Of(outerX), ids.Of(outerXRef))
 }
 
 func TestExtraParamNames(t *testing.T) {
+	ids := NewVarIDs()
 	// Simulates a method body with an implicit 'self' parameter:
 	// fn method(a) { print(self); print(a) }
 	// where 'self' is passed as an extra param name, not an AST param.
@@ -624,7 +646,7 @@ func TestExtraParamNames(t *testing.T) {
 		exprStmt(call(ident("print"), aRef)),
 	)
 
-	result := Rename(params, body, map[string]VarID{"print": -1}, "self")
+	result := Rename(ids, params, body, map[string]VarID{"print": -1}, "self")
 
 	require.Empty(t, result.Errors)
 	require.Equal(t, 2, result.UniqueVarCount) // a, self
@@ -636,27 +658,29 @@ func TestExtraParamNames(t *testing.T) {
 	require.Greater(t, int(selfVarID), 0, "extra param should get a positive VarID")
 
 	// The reference to 'self' in the body should resolve to the extra param's VarID.
-	require.Equal(t, int(selfVarID), selfRef.VarID)
+	require.Equal(t, selfVarID, ids.Of(selfRef))
 
 	// Regular param still works.
-	require.Equal(t, a.VarID, aRef.VarID)
+	require.Equal(t, ids.Of(a), ids.Of(aRef))
 
 	// Extra param VarID should also appear in VarIDNames.
 	require.Equal(t, "self", result.VarIDNames[selfVarID])
 }
 
 func TestExtraParamNamesEmpty(t *testing.T) {
+	ids := NewVarIDs()
 	// When no extra param names are passed, ExtraParamVarIDs should be nil.
 	body := block(
 		exprStmt(numLit(1)),
 	)
 
-	result := Rename(nil, body, map[string]VarID{})
+	result := Rename(ids, nil, body, map[string]VarID{})
 
 	require.Nil(t, result.ExtraParamVarIDs)
 }
 
 func TestJSXExpressions(t *testing.T) {
+	ids := NewVarIDs()
 	// val name = "world"
 	// val el = <div class={name}>{name}</div>
 	name := identPat("name")
@@ -685,9 +709,9 @@ func TestJSXExpressions(t *testing.T) {
 		valDecl(identPat("el"), jsxExpr),
 	)
 
-	result := Rename(nil, body, map[string]VarID{})
+	result := Rename(ids, nil, body, map[string]VarID{})
 
 	require.Empty(t, result.Errors)
-	require.Equal(t, name.VarID, attrRef.VarID)  // attribute expression
-	require.Equal(t, name.VarID, childRef.VarID) // child expression
+	require.Equal(t, ids.Of(name), ids.Of(attrRef))  // attribute expression
+	require.Equal(t, ids.Of(name), ids.Of(childRef)) // child expression
 }

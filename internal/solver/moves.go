@@ -270,24 +270,24 @@ type movePlace struct {
 //
 // An optional link names the place the plain link does, so `a?.b` is the place `a.b`.
 // Whenever the link reads anything, it reads that place.
-func exprPlace(e ast.Expr) (movePlace, bool) {
+func (c *checker) exprPlace(e ast.Expr) (movePlace, bool) {
 	switch e := e.(type) {
 	case *ast.IdentExpr:
-		if e.VarID <= 0 {
+		if c.varIDs.Of(e) <= 0 {
 			return movePlace{}, false
 		}
-		return movePlace{root: liveness.VarID(e.VarID)}, true
+		return movePlace{root: c.varIDs.Of(e)}, true
 	case *ast.MemberExpr:
 		if e.Prop == nil || e.Prop.Name == "" {
 			return movePlace{}, false
 		}
-		base, ok := exprPlace(e.Object)
+		base, ok := c.exprPlace(e.Object)
 		if !ok {
 			return movePlace{}, false
 		}
 		return extendPlace(base, e.Prop.Name), true
 	case *ast.IndexExpr:
-		base, ok := exprPlace(e.Object)
+		base, ok := c.exprPlace(e.Object)
 		if !ok {
 			return movePlace{}, false
 		}
@@ -429,7 +429,7 @@ func (c *checker) currentStmtRef() (liveness.StmtRef, bool) {
 // consumed too. A read of a value type, a non-local, or a binding outside a function
 // body records nothing.
 func (c *checker) recordUse(e *ast.IdentExpr, t soltype.Type) {
-	if c.fn == nil || c.fn.cfg == nil || e.VarID <= 0 {
+	if c.fn == nil || c.fn.cfg == nil || c.varIDs.Of(e) <= 0 {
 		return
 	}
 	if !c.isReferenceShaped(t) {
@@ -439,7 +439,7 @@ func (c *checker) recordUse(e *ast.IdentExpr, t soltype.Type) {
 	if !ok {
 		return
 	}
-	p := movePlace{root: liveness.VarID(e.VarID)}
+	p := movePlace{root: c.varIDs.Of(e)}
 	c.fn.useSites = append(c.fn.useSites, moveUse{place: p, ref: ref, node: e, loanSeqAt: c.fn.loanSeq + 1})
 }
 
@@ -453,7 +453,7 @@ func (c *checker) recordMemberUse(e ast.Expr) {
 	if c.fn == nil || c.fn.cfg == nil {
 		return
 	}
-	p, ok := exprPlace(e)
+	p, ok := c.exprPlace(e)
 	if !ok || len(p.path) == 0 {
 		return
 	}
@@ -479,7 +479,7 @@ func (c *checker) consumeOwned(source ast.Expr, sourceT soltype.Type, moveNode a
 	if c.fn == nil || c.fn.cfg == nil || sourceT == nil {
 		return
 	}
-	p, ok := exprPlace(source)
+	p, ok := c.exprPlace(source)
 	if !ok {
 		return
 	}
@@ -505,7 +505,7 @@ func (c *checker) movesSourceInto(source ast.Expr, destT soltype.Type) bool {
 	if source == nil || isBorrowType(destT) {
 		return false
 	}
-	if _, ok := exprPlace(source); !ok {
+	if _, ok := c.exprPlace(source); !ok {
 		return false
 	}
 	return c.isOwnedMovable(c.info.TypeOf(source))
@@ -543,7 +543,7 @@ func (c *checker) consumeDestructureLeaves(scope *Scope, pat ast.Pat, init ast.E
 	if c.fn == nil || c.fn.cfg == nil || init == nil {
 		return
 	}
-	src, ok := exprPlace(init)
+	src, ok := c.exprPlace(init)
 	if !ok || src.root <= 0 || !c.isOwnedMovable(c.info.TypeOf(init)) {
 		return
 	}
@@ -567,12 +567,12 @@ type destructureMover struct {
 func (m *destructureMover) walk(pat ast.Pat, at movePlace) {
 	switch pat := pat.(type) {
 	case *ast.IdentPat:
-		m.leaf(pat.Name, pat.VarID, at)
+		m.leaf(pat.Name, m.c.varIDs.Of(pat), at)
 	case *ast.ObjectPat:
 		for _, elem := range pat.Elems {
 			switch e := elem.(type) {
 			case *ast.ObjShorthandPat:
-				m.leaf(e.Key.Name, e.VarID, extendPlace(at, e.Key.Name))
+				m.leaf(e.Key.Name, m.c.varIDs.Of(e), extendPlace(at, e.Key.Name))
 			case *ast.ObjKeyValuePat:
 				m.walk(e.Value, extendPlace(at, e.Key.Name))
 			case *ast.ObjRestPat:
@@ -589,9 +589,9 @@ func (m *destructureMover) walk(pat ast.Pat, at movePlace) {
 }
 
 // leaf moves the place `at` into the leaf binding `name` when that binding takes it by value.
-func (m *destructureMover) leaf(name string, varID int, at movePlace) {
+func (m *destructureMover) leaf(name string, varID liveness.VarID, at movePlace) {
 	if _, ok := m.ownedLeaf(name, varID); ok {
-		m.moveInto(liveness.VarID(varID), nil, at)
+		m.moveInto(varID, nil, at)
 	}
 }
 
@@ -604,11 +604,11 @@ func (m *destructureMover) rest(pat ast.Pat, at movePlace) {
 		m.walk(pat, at)
 		return
 	}
-	t, ok := m.ownedLeaf(ident.Name, ident.VarID)
+	dest := m.c.varIDs.Of(ident)
+	t, ok := m.ownedLeaf(ident.Name, dest)
 	if !ok {
 		return
 	}
-	dest := liveness.VarID(ident.VarID)
 	if ref, isRef := t.(*soltype.RefType); isRef {
 		t = ref.Inner
 	}
@@ -626,7 +626,7 @@ func (m *destructureMover) rest(pat ast.Pat, at movePlace) {
 
 // ownedLeaf returns the type of the leaf binding `name`, and `false` when the leaf takes
 // nothing by value.
-func (m *destructureMover) ownedLeaf(name string, varID int) (soltype.Type, bool) {
+func (m *destructureMover) ownedLeaf(name string, varID liveness.VarID) (soltype.Type, bool) {
 	if varID <= 0 {
 		return nil, false
 	}
@@ -661,7 +661,7 @@ func (c *checker) consumeAtGlobalWrite(source ast.Expr, sourceT soltype.Type, mo
 	if c.fn == nil || c.fn.cfg == nil || sourceT == nil {
 		return
 	}
-	p, ok := exprPlace(source)
+	p, ok := c.exprPlace(source)
 	if !ok {
 		return
 	}

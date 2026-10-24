@@ -43,11 +43,11 @@ type Info struct {
 // NewInfo returns an empty Info side table ready to record inferred types.
 func NewInfo() *Info {
 	return &Info{
-		types:         map[ast.Node]soltype.Type{},
-		nsMembers:     map[ast.Node]ast.Decl{},
-		methodReads:   set.NewSet[ast.Node](),
-		absentKeys:    map[*ast.ObjectPat][]string{},
-		decls:         map[*ast.IdentExpr]ast.Node{},
+		types:       map[ast.Node]soltype.Type{},
+		nsMembers:   map[ast.Node]ast.Decl{},
+		methodReads: set.NewSet[ast.Node](),
+		absentKeys:  map[*ast.ObjectPat][]string{},
+		decls:       map[*ast.IdentExpr]ast.Node{},
 	}
 }
 
