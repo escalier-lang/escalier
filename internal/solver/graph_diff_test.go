@@ -8,7 +8,8 @@ import (
 
 // graphDiff compares a live object graph against a snapshot graphCopier took of it. Each
 // object the copier copied is compared field by field with its copy, and a field that
-// differs is recorded under the object's type and the field's path.
+// differs is recorded under the object's type and the name of its field the difference
+// sits in.
 type graphDiff struct {
 	g     *graphCopier
 	diffs map[string]string
@@ -19,14 +20,39 @@ type graphDiff struct {
 func diffAgainstSnapshot(g *graphCopier) map[string]string {
 	d := &graphDiff{g: g, diffs: map[string]string{}}
 	for key, snap := range g.pointers {
-		d.compare(key.plan, key.addr, snap, key.plan.typ.String())
+		d.compare(key.plan, key.addr, snap, diffPath{owner: key.plan})
 	}
 	return d.diffs
 }
 
-func (d *graphDiff) note(path, change string) {
-	if _, seen := d.diffs[path]; !seen {
-		d.diffs[path] = change
+// diffPath names where a difference sits: the object it was found in, and the field of
+// that object it was found under. Its string is built only when a difference is noted.
+type diffPath struct {
+	owner *typePlan
+	field uintptr
+	// inField is set once the walk has descended into one of owner's fields.
+	inField bool
+}
+
+func (p diffPath) into(offset uintptr) diffPath {
+	if p.inField {
+		return p
+	}
+	return diffPath{owner: p.owner, field: offset, inField: true}
+}
+
+func (p diffPath) String() string {
+	name := p.owner.typ.String()
+	if p.inField {
+		name += "." + fieldAt(p.owner.typ, p.field)
+	}
+	return name
+}
+
+func (d *graphDiff) note(path diffPath, change string) {
+	key := path.String()
+	if _, seen := d.diffs[key]; !seen {
+		d.diffs[key] = change
 	}
 }
 
@@ -45,7 +71,7 @@ func (d *graphDiff) snapshotOf(plan *typePlan, live unsafe.Pointer) (unsafe.Poin
 
 // compare records each difference between the live value at live and the snapshot value
 // at snap, both of plan's type.
-func (d *graphDiff) compare(plan *typePlan, live, snap unsafe.Pointer, path string) {
+func (d *graphDiff) compare(plan *typePlan, live, snap unsafe.Pointer, path diffPath) {
 	switch plan.kind {
 	case copyBytes:
 		size := plan.typ.Size()
@@ -87,7 +113,7 @@ func (d *graphDiff) compare(plan *typePlan, live, snap unsafe.Pointer, path stri
 		a.Set(reflect.NewAt(plan.typ, live).Elem().Elem())
 		b := reflect.New(dynamic.typ).Elem()
 		b.Set(reflect.NewAt(plan.typ, snap).Elem().Elem())
-		d.compare(dynamic, a.Addr().UnsafePointer(), b.Addr().UnsafePointer(), path+"(dynamic)")
+		d.compare(dynamic, a.Addr().UnsafePointer(), b.Addr().UnsafePointer(), path)
 	case copySlice:
 		ls, ss := reflect.NewAt(plan.typ, live).Elem(), reflect.NewAt(plan.typ, snap).Elem()
 		if ls.Len() != ss.Len() {
@@ -100,20 +126,26 @@ func (d *graphDiff) compare(plan *typePlan, live, snap unsafe.Pointer, path stri
 		size := plan.elem.typ.Size()
 		for i := range ls.Len() {
 			offset := uintptr(i) * size
-			d.compare(plan.elem, unsafe.Add(ls.UnsafePointer(), offset), unsafe.Add(ss.UnsafePointer(), offset), path+"[]")
+			d.compare(plan.elem, unsafe.Add(ls.UnsafePointer(), offset), unsafe.Add(ss.UnsafePointer(), offset), path)
 		}
 	case copyMap:
 		d.compareMap(plan, live, snap, path)
 	case copyStruct:
-		for i := range plan.typ.NumField() {
-			field := plan.typ.Field(i)
-			d.compare(d.g.planFor(field.Type), unsafe.Add(live, field.Offset), unsafe.Add(snap, field.Offset), path+"."+field.Name)
+		for _, run := range plan.bytes {
+			l := unsafe.Slice((*byte)(unsafe.Add(live, run.offset)), run.size)
+			s := unsafe.Slice((*byte)(unsafe.Add(snap, run.offset)), run.size)
+			if string(l) != string(s) {
+				d.note(path.into(run.offset), "changed")
+			}
+		}
+		for _, field := range plan.fields {
+			d.compare(field.plan, unsafe.Add(live, field.offset), unsafe.Add(snap, field.offset), path.into(field.offset))
 		}
 	case copyArray:
 		size := plan.elem.typ.Size()
 		for i := range plan.typ.Len() {
 			offset := uintptr(i) * size
-			d.compare(plan.elem, unsafe.Add(live, offset), unsafe.Add(snap, offset), path+"[]")
+			d.compare(plan.elem, unsafe.Add(live, offset), unsafe.Add(snap, offset), path)
 		}
 	case copyRefuse:
 		// The copier copied no non-nil func, channel, or unsafe pointer, so the snapshot
@@ -124,9 +156,19 @@ func (d *graphDiff) compare(plan *typePlan, live, snap unsafe.Pointer, path stri
 	}
 }
 
+// fieldAt returns the name of the first field of t at offset.
+func fieldAt(t reflect.Type, offset uintptr) string {
+	for i := range t.NumField() {
+		if t.Field(i).Offset == offset {
+			return t.Field(i).Name
+		}
+	}
+	return "?"
+}
+
 // compareMap compares two maps by length and, for each live key whose snapshot key it can
 // name, by the value under it.
-func (d *graphDiff) compareMap(plan *typePlan, live, snap unsafe.Pointer, path string) {
+func (d *graphDiff) compareMap(plan *typePlan, live, snap unsafe.Pointer, path diffPath) {
 	lm, sm := reflect.NewAt(plan.typ, live).Elem(), reflect.NewAt(plan.typ, snap).Elem()
 	if lm.IsNil() != sm.IsNil() {
 		d.note(path, "was created or dropped")
@@ -148,19 +190,19 @@ func (d *graphDiff) compareMap(plan *typePlan, live, snap unsafe.Pointer, path s
 		liveKey.SetIterKey(iter)
 		snapKey, ok := d.snapshotKey(plan.key, liveKey)
 		if !ok {
-			d.note(path+"{}", "holds a key the snapshot lacks")
+			d.note(path, "holds a key the snapshot lacks")
 			continue
 		}
 		snapValue := sm.MapIndex(snapKey)
 		if !snapValue.IsValid() {
-			d.note(path+"{}", "holds a key the snapshot lacks")
+			d.note(path, "holds a key the snapshot lacks")
 			continue
 		}
 		a := reflect.New(plan.value.typ).Elem()
 		a.Set(iter.Value())
 		b := reflect.New(plan.value.typ).Elem()
 		b.Set(snapValue)
-		d.compare(plan.value, a.Addr().UnsafePointer(), b.Addr().UnsafePointer(), path+"{}")
+		d.compare(plan.value, a.Addr().UnsafePointer(), b.Addr().UnsafePointer(), path)
 	}
 }
 
