@@ -105,6 +105,11 @@ type Module struct {
 	// SourceID and sorted by start offset. Comments are not children of any
 	// node; NewCommentMap associates them with nodes on demand.
 	Comments map[int][]*Comment
+	// Globals holds the global-scope declarations of a module read from `.d.ts`
+	// files. They come from its `declare global { … }` blocks and from every file
+	// it reaches that has no top-level export. It is nil for a module with none,
+	// which includes every module parsed from Escalier source.
+	Globals *Module
 }
 
 func NewModule(namespaces btree.Map[string, *Namespace]) *Module {
