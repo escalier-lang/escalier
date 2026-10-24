@@ -36,7 +36,7 @@ func TestThirdPartyImportResolves(t *testing.T) {
 import "react/jsx-runtime" as rt
 val f = react.Fragment
 val j = rt.jsx`,
-			blockedBy: "#2108, #2110, #2112, #2113, #322 and #328",
+			blockedBy: "#2108, #2110, #2112, #2113 and #328",
 		},
 	}
 	for _, test := range tests {

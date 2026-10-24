@@ -239,3 +239,30 @@ func TestTheParseCacheKeepsGroupsApart(t *testing.T) {
 
 	require.Equal(t, 2, parses, "a joined key must not collide with the members it joins")
 }
+
+// TestTheParseCacheKeepsNamedGroupsApart asserts that two groups with the same
+// members and different names are parsed and cached apart, and that each name's
+// module is reused.
+func TestTheParseCacheKeepsNamedGroupsApart(t *testing.T) {
+	t.Parallel()
+
+	cache := newParsedModuleCache(1 << 20)
+	parses := 0
+	parse := func(int) (*ast.Module, error) {
+		parses++
+		return &ast.Module{}, nil
+	}
+
+	paths := []string{"node_modules/pkg/index.d.ts"}
+	bodies := []string{`declare module "pkg" {}`}
+	pkg, err := cache.getNamedGroup("pkg", paths, bodies, parse)
+	require.NoError(t, err)
+	index, err := cache.getNamedGroup("pkg/index", paths, bodies, parse)
+	require.NoError(t, err)
+	again, err := cache.getNamedGroup("pkg", paths, bodies, parse)
+	require.NoError(t, err)
+
+	require.Equal(t, 2, parses)
+	require.NotSame(t, pkg, index)
+	require.Same(t, pkg, again)
+}
