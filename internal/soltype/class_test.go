@@ -140,7 +140,7 @@ func TestPrintGetterSetterSelfReceiver(t *testing.T) {
 		},
 		{
 			"instance setter with mut self",
-			&ObjectType{Elems: []ObjTypeElem{&SetterElem{Name: "size", SelfParam: selfRecv(&RefType{Mut: true, Inner: &ClassType{Name: "List"}}), Param: numP()}}},
+			&ObjectType{Elems: []ObjTypeElem{&SetterElem{Name: "size", SelfParam: selfRecv(&RefType{Mut: true, Inner: &ClassType{Name: "List"}}), Param: &FuncParam{Type: numP()}}}},
 			"{set size(mut self, value: number)}",
 		},
 		{
@@ -150,7 +150,7 @@ func TestPrintGetterSetterSelfReceiver(t *testing.T) {
 		},
 		{
 			"static setter has no receiver",
-			&ObjectType{Elems: []ObjTypeElem{&SetterElem{Name: "size", Param: numP()}}},
+			&ObjectType{Elems: []ObjTypeElem{&SetterElem{Name: "size", Param: &FuncParam{Type: numP()}}}},
 			"{set size(value: number)}",
 		},
 	}
@@ -168,7 +168,7 @@ func TestAcceptGetterSetterReceiverContravariant(t *testing.T) {
 	setterRecv := &TypeVarType{ID: 2}
 	obj := &ObjectType{Elems: []ObjTypeElem{
 		&GetterElem{Name: "g", SelfParam: selfRecv(getterRecv), Type: numP()},
-		&SetterElem{Name: "s", SelfParam: selfRecv(setterRecv), Param: numP()},
+		&SetterElem{Name: "s", SelfParam: selfRecv(setterRecv), Param: &FuncParam{Type: numP()}},
 	}}
 
 	r := &recorder{seen: map[Type]Polarity{}}
@@ -183,7 +183,7 @@ func TestAcceptGetterSetterReceiverContravariant(t *testing.T) {
 func TestAcceptSetterSelfParamCopyOnWrite(t *testing.T) {
 	str := &PrimType{Prim: StrPrim}
 	a := &TypeVarType{ID: 1}
-	setter := &SetterElem{Name: "s", SelfParam: selfRecv(&ClassType{Name: "Box", TypeArgs: []Type{a}}), Param: numP()}
+	setter := &SetterElem{Name: "s", SelfParam: selfRecv(&ClassType{Name: "Box", TypeArgs: []Type{a}}), Param: &FuncParam{Type: numP()}}
 	obj := &ObjectType{Elems: []ObjTypeElem{setter}}
 
 	got := obj.Accept(&replaceVar{target: a, repl: str}, Positive).(*ObjectType)
@@ -287,7 +287,7 @@ func TestPrintObjectMembers(t *testing.T) {
 		},
 		{
 			"setter",
-			&ObjectType{Elems: []ObjTypeElem{&SetterElem{Name: "x", Param: numP()}}},
+			&ObjectType{Elems: []ObjTypeElem{&SetterElem{Name: "x", Param: &FuncParam{Type: numP()}}}},
 			"{set x(value: number)}",
 		},
 		{
@@ -295,7 +295,7 @@ func TestPrintObjectMembers(t *testing.T) {
 			&ObjectType{Elems: []ObjTypeElem{
 				method("greet", &FuncType{Ret: strP()}),
 				&GetterElem{Name: "size", Type: numP()},
-				&SetterElem{Name: "size", Param: numP()},
+				&SetterElem{Name: "size", Param: &FuncParam{Type: numP()}},
 			}},
 			"{greet() -> string, get size() -> number, set size(value: number)}",
 		},
@@ -360,7 +360,7 @@ func TestAcceptObjectMembersIdentityPreservation(t *testing.T) {
 	obj := &ObjectType{Elems: []ObjTypeElem{
 		method("f", &FuncType{Params: []*FuncParam{identP("x", numP())}, Ret: strP()}),
 		&GetterElem{Name: "g", Type: numP()},
-		&SetterElem{Name: "s", Param: numP()},
+		&SetterElem{Name: "s", Param: &FuncParam{Type: numP()}},
 	}}
 	require.Same(t, obj, obj.Accept(identityVisitor{}, Positive), "an unchanged object keeps its pointer")
 }
@@ -375,7 +375,7 @@ func TestAcceptObjectMemberVariance(t *testing.T) {
 	methodRetT := &TypeVarType{ID: 4}
 	obj := &ObjectType{Elems: []ObjTypeElem{
 		&GetterElem{Name: "g", Type: getterT},
-		&SetterElem{Name: "s", Param: setterT},
+		&SetterElem{Name: "s", Param: &FuncParam{Type: setterT}},
 		method("m", &FuncType{Params: []*FuncParam{identP("x", methodParamT)}, Ret: methodRetT}),
 	}}
 
@@ -394,7 +394,7 @@ func TestAcceptObjectSetterCopyOnWrite(t *testing.T) {
 	str := &PrimType{Prim: StrPrim}
 	a := &TypeVarType{ID: 1}
 	prop := &PropertyElem{Name: "p", Type: numP()}
-	setter := &SetterElem{Name: "s", Param: a}
+	setter := &SetterElem{Name: "s", Param: &FuncParam{Type: a}}
 	obj := &ObjectType{Elems: []ObjTypeElem{prop, setter}}
 
 	got := obj.Accept(&replaceVar{target: a, repl: str}, Positive).(*ObjectType)
@@ -403,7 +403,7 @@ func TestAcceptObjectSetterCopyOnWrite(t *testing.T) {
 	require.Same(t, prop, got.Elems[0], "the unchanged property keeps its pointer")
 	gotSetter := got.Elems[1].(*SetterElem)
 	require.NotSame(t, setter, gotSetter, "the changed setter is a fresh element")
-	require.Same(t, str, gotSetter.Param, "the setter param took the replacement")
+	require.Same(t, str, gotSetter.Param.Type, "the setter param took the replacement")
 }
 
 // A constructor's parameter is in write position, so Accept visits it in the FLIPPED
@@ -453,7 +453,7 @@ func TestLevelOfObjectMembers(t *testing.T) {
 	obj := &ObjectType{Elems: []ObjTypeElem{
 		method("m", &FuncType{Params: []*FuncParam{identP("x", &TypeVarType{ID: 1, Level: 3})}, Ret: numP()}),
 		&GetterElem{Name: "g", Type: &TypeVarType{ID: 2, Level: 7}},
-		&SetterElem{Name: "s", Param: &TypeVarType{ID: 3, Level: 4}},
+		&SetterElem{Name: "s", Param: &FuncParam{Type: &TypeVarType{ID: 3, Level: 4}}},
 	}}
 	require.Equal(t, 7, LevelOf(obj), "the level is the max over all member types")
 }
@@ -479,7 +479,7 @@ func TestFreeTypeVarsObjectMembers(t *testing.T) {
 	obj := &ObjectType{Elems: []ObjTypeElem{
 		method("m", &FuncType{Params: []*FuncParam{identP("x", a)}, Ret: numP()}),
 		&GetterElem{Name: "g", Type: b},
-		&SetterElem{Name: "s", Param: c},
+		&SetterElem{Name: "s", Param: &FuncParam{Type: c}},
 	}}
 	require.Equal(t, "<T0, T1, T2> {m(x: T0) -> number, get g() -> T1, set s(value: T2)}", PrintAsScheme(obj))
 }
@@ -519,7 +519,7 @@ func TestObjectMember(t *testing.T) {
 // choose by direction. This asserts Member's first-declared-wins behavior.
 func TestObjectMemberGetterSetterSameName(t *testing.T) {
 	getter := &GetterElem{Name: "x", Type: numP()}
-	setter := &SetterElem{Name: "x", Param: strP()}
+	setter := &SetterElem{Name: "x", Param: &FuncParam{Type: strP()}}
 
 	got, ok := (&ObjectType{Elems: []ObjTypeElem{getter, setter}}).Member("x")
 	require.True(t, ok)
@@ -544,7 +544,7 @@ func TestObjectMemberGetterSetterSameName(t *testing.T) {
 // the pointed `Property 'x' is write-only` / `is read-only`.
 func TestObjectReadWriteMember(t *testing.T) {
 	getter := &GetterElem{Name: "x", Type: numP()}
-	setter := &SetterElem{Name: "x", Param: strP()}
+	setter := &SetterElem{Name: "x", Param: &FuncParam{Type: strP()}}
 	prop := &PropertyElem{Name: "p", Type: numP()}
 	m := method("m", &FuncType{Ret: numP()})
 

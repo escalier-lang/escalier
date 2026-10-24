@@ -17,9 +17,8 @@ import (
 // The hand-written answer is the union of two sources. nonMutatingOverrides
 // names, per owner, the methods an override marks non-mutating.
 // ClassifyMethodByName answers from the method's name alone. An entry is read
-// first, matching the order `checker.UpdateMethodMutability` reads the two in,
-// and the verdicts below rank it above the fact for the same reason: it is an
-// answer a person wrote down about that one method.
+// first, and the verdicts below rank it above the fact, because it is an answer
+// a person wrote down about that one method.
 //
 // The diff is over methods, not statics. A fact for a static carries the
 // receiver kind `none`, which claims nothing about mutability, and the

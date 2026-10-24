@@ -202,7 +202,7 @@ func TestMemberObject(t *testing.T) {
 				declare val v: {set a(&mut self, v: number)} | {set a(&mut self, v: string)}
 				val probe = v
 			`,
-			expected: "{set a(value: number)}",
+			expected: "{set a(v: number)}",
 		},
 		{
 			name: "UnionOfMethodAndProperty",

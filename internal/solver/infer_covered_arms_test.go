@@ -84,6 +84,39 @@ val r = match p {
 }`,
 		},
 		{
+			// `{}` matches every value lacking `x`, which is every value `{x}` misses.
+			name: "a catch-all below arms covering an optional key and its absence",
+			src: `declare val p: {x?: number}
+val r = match p {
+	{x} => 1,
+	{} => 2,
+	_ => 3,
+}`,
+			wantErrs: []string{"5:2-5:8: " + coveredArmMsg},
+		},
+		{
+			// `{y}` names a key the member requires, so it matches the values lacking `x`.
+			name: "a catch-all below arms covering an optional key of a union member and its absence",
+			src: `declare val p: string | {x?: number, y: number}
+val r = match p {
+	s: string => 1,
+	{x} => 2,
+	{y} => 3,
+	_ => 4,
+}`,
+			wantErrs: []string{"6:2-6:8: " + coveredArmMsg},
+		},
+		{
+			// `{y}` names a second optional key, so a value lacking both still escapes.
+			name: "a catch-all below arms testing two optional keys",
+			src: `declare val p: {x?: number, y?: number}
+val r = match p {
+	{x} => 1,
+	{y} => 2,
+	_ => 3,
+}`,
+		},
+		{
 			name: "a catch-all over values the arms above miss",
 			src: `declare val u: string | number | boolean
 val r = match u {
@@ -103,8 +136,15 @@ val r = match foo {
 }`,
 		},
 		{
-			// The arms above may cover `boolean`, but coverage over a non-union finite
-			// carrier is not decided, so the catch-all is left alone.
+			// A `boolean` is the union `true | false`, so the catch-all still runs for `false`.
+			name: "a catch-all below an arm naming one value of a boolean",
+			src: `declare val b: boolean
+val r = match b {
+	true => 1,
+	_ => 2,
+}`,
+		},
+		{
 			name: "a catch-all over a boolean",
 			src: `declare val b: boolean
 val r = match b {
@@ -112,6 +152,18 @@ val r = match b {
 	false => 2,
 	_ => 3,
 }`,
+			wantErrs: []string{"5:2-5:8: " + coveredArmMsg},
+		},
+		{
+			name: "a catch-all below arms covering a boolean member of a union",
+			src: `declare val u: string | boolean
+val r = match u {
+	s: string => 1,
+	true => 2,
+	false => 3,
+	_ => 4,
+}`,
+			wantErrs: []string{"6:2-6:8: " + coveredArmMsg},
 		},
 		{
 			// The nested `{x}` can fail to match, so the second arm is reachable.

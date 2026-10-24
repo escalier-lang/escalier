@@ -29,14 +29,10 @@ func sharedPrelude() *Scope {
 // two hand-seeded sorts:
 //
 //   - operator/builtin value bindings — the monomorphic-over-primitives schemes
-//     the BinaryExpr and UnaryExpr walks resolve by operator name. A
-//     near-mechanical port of the old checker's addOperatorBindings from
-//     type_system constructors to soltype ones.
+//     the BinaryExpr and UnaryExpr walks resolve by operator name.
 //   - placeholder stdlib *type* bindings (§3.8) — opaque stubs so a reference to
 //     Promise/Iterable/… resolves without an unbound-name error. M2 seeds
 //     placeholders only; real ingestion (real structures, arity) is M7.
-//
-// Nothing here imports internal/type_system.
 func NewPrelude() *Scope {
 	s := NewScope()
 	s.builtin = true
