@@ -382,8 +382,9 @@ func sourcesOf(srcs map[string]string) []*ast.Source {
 
 // TestCheckThawedRejectsStdlibState asserts that a run forked from a loaded checker
 // panics on work that would write to a variable or definition the stdlib load created.
-// Each case readies its write by changing the loaded checker, so the loaded checker is
-// this test's own rather than the cache's.
+// Each case forks a checker loaded for it alone. The class case readies its write by
+// changing a definition the loaded checker holds, which would reach every later run of
+// the cache's.
 func TestCheckThawedRejectsStdlibState(t *testing.T) {
 	groups, err := BuildPackageClosure(benchTree, ambientPackages)
 	require.NoError(t, err)

@@ -15,8 +15,10 @@ type graphDiff struct {
 	diffs map[string]string
 }
 
-// diffAgainstSnapshot returns, by type and field path, each change made to an object of
-// the graph g copied since the copy. A path's value describes its first change.
+// diffAgainstSnapshot returns each change made since the copy to an object of the graph g
+// copied. A key names the changed object's type, and for a struct, the field of it the
+// change sits in, as `solver.Context.classes`. Its value describes the first change
+// found there.
 func diffAgainstSnapshot(g *graphCopier) map[string]string {
 	d := &graphDiff{g: g, diffs: map[string]string{}}
 	for key, snap := range g.pointers {
@@ -35,7 +37,7 @@ type diffPath struct {
 }
 
 func (p diffPath) into(offset uintptr) diffPath {
-	if p.inField {
+	if p.inField || p.owner.typ.Kind() != reflect.Struct {
 		return p
 	}
 	return diffPath{owner: p.owner, field: offset, inField: true}
@@ -135,7 +137,7 @@ func (d *graphDiff) compare(plan *typePlan, live, snap unsafe.Pointer, path diff
 			l := unsafe.Slice((*byte)(unsafe.Add(live, run.offset)), run.size)
 			s := unsafe.Slice((*byte)(unsafe.Add(snap, run.offset)), run.size)
 			if string(l) != string(s) {
-				d.note(path.into(run.offset), "changed")
+				d.compareRun(plan, run, live, snap, path)
 			}
 		}
 		for _, field := range plan.fields {
@@ -153,6 +155,18 @@ func (d *graphDiff) compare(plan *typePlan, live, snap unsafe.Pointer, path diff
 		if *(*unsafe.Pointer)(live) != *(*unsafe.Pointer)(snap) {
 			d.note(path, "was set")
 		}
+	}
+}
+
+// compareRun notes each field of plan's struct type inside run whose bytes differ
+// between live and snap.
+func (d *graphDiff) compareRun(plan *typePlan, run byteRun, live, snap unsafe.Pointer, path diffPath) {
+	for i := range plan.typ.NumField() {
+		field := plan.typ.Field(i)
+		if field.Offset < run.offset || field.Offset >= run.offset+run.size {
+			continue
+		}
+		d.compare(d.g.planFor(field.Type), unsafe.Add(live, field.Offset), unsafe.Add(snap, field.Offset), path.into(field.Offset))
 	}
 }
 
