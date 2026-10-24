@@ -167,6 +167,12 @@ func loadAmbientChecker(dir string, groups PackageGroups, opts Options) *checker
 	// They are read only while the declaration they key is inferred, and every
 	// declaration in the loaded packages is finished.
 	c.classShells, c.builtClassSigs = nil, nil
+	// Every Info read is keyed by a node of the module being inferred, or by a node
+	// of the user's own source in codegen and the language server. A run never reads
+	// the entries the load recorded for stdlib nodes, so the cache keeps none and
+	// fork has none to copy.
+	c.info = NewInfo()
+	c.info.ctx = c.ctx
 	return c
 }
 
