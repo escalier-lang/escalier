@@ -451,3 +451,27 @@ func TestAmbientCheckerSettlesLoadedDefinitions(t *testing.T) {
 		require.Contains(t, c.ctx.uniformKnots, name)
 	}
 }
+
+// TestSettleLoadedDefinitionsMeasuresAProvisionalClass asserts that settling a loaded
+// checker measures a provisional class again even when its last try was at the current
+// count. A class left provisional holds Invariant throughout, which the measurement
+// replaces with the variance its body gives.
+func TestSettleLoadedDefinitionsMeasuresAProvisionalClass(t *testing.T) {
+	groups, err := BuildPackageClosure(benchTree, ambientPackages)
+	require.NoError(t, err)
+	c := loadAmbientChecker(benchTree, groups, Options{})
+	def := c.ctx.classes[c.ctx.arrayClass]
+	measured := slices.Clone(def.Variance)
+	require.NotEqual(t, uniformVariance(len(measured), Invariant), measured)
+
+	// The settling below is the load's own, which runs before the checker is frozen.
+	c.ctx.frozenClasses = nil
+	def.Variance = uniformVariance(len(measured), Invariant)
+	def.varianceProvisional = true
+	def.varianceTriedAt = c.ctx.measuredClasses
+	c.definitionsSettled = false
+	c.settleLoadedDefinitions()
+
+	require.False(t, def.varianceProvisional)
+	require.Equal(t, measured, def.Variance)
+}
