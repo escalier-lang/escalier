@@ -1137,8 +1137,7 @@ func (s *mappedKeySubst) ExitType(t soltype.Type, _ soltype.Polarity) soltype.Ty
 // reduceKeyof reduces `keyof operand` to the union of the operand's keys:
 //
 //   - an object projects its property, getter, and setter names as string-literal types;
-//   - a tuple yields its numeric indices, "length", and the string-named keys of `Array`; see
-//     keyofTuple;
+//   - a tuple yields its numeric indices and "length"; see keyofTuple;
 //   - `keyof` distributes over a union or intersection, intersecting each member's keys for a
 //     union and unioning them for an intersection;
 //   - `keyof` of a primitive, literal, `never`, or `unknown` is `never`, since none has
@@ -1329,18 +1328,13 @@ func (c *Context) keyofObjectNamed(obj *soltype.ObjectType) soltype.Type {
 	return newUnion(nil, keys)
 }
 
-// keyofTuple yields a tuple's keys. A tuple is a subtype of the `Array` of its element union,
-// so its keys are its own positions, `"length"`, and the string-named keys of that `Array`'s
-// body. `keyof [number, string]` reduces to `0 | 1 | "length"`. The `Array` keys omit methods,
-// the same way keyofObject does for a class body.
-//
-// The `Array` body is read by its named keys whatever its exactness. A non-final class body is
-// inexact because a subclass may add keys, but a tuple value is an `Array` and not an instance
-// of some subclass, so it carries no keys beyond the named ones.
-//
-// Symbol-named keys are left out. The one `Array` declares is `[Symbol.unscopables]`, whose
-// value is a mapped type over `keyof mut Array<any>` that indexed access does not reduce, so
-// keeping its key would leave `Tup[keyof Tup]` symbolic instead of the union of the elements.
+// keyofTuple yields a tuple's keys, its own positions and `"length"`. `keyof [number, string]`
+// reduces to `0 | 1 | "length"`. A tuple is a subtype of the `Array` of its element union, and
+// those are the keys that `Array` declares outside its methods, which keyof omits for any class
+// body the way keyofObject does. `[Symbol.unscopables]` is the one other such member. It is left
+// out because its value is a mapped type over `keyof mut Array<any>` that indexed access does not
+// reduce, so keeping its key would leave `Tup[keyof Tup]` symbolic instead of the union of the
+// elements.
 //
 // An inexact tuple has unknown trailing positions, so its index set is open the same way an inexact
 // object's key set is. An open set of positions is exactly `number`, the top of the index domain,
@@ -1356,18 +1350,6 @@ func (e *typeEvaluator) keyofTuple(tup *soltype.TupleType) soltype.Type {
 		}
 	}
 	keys = append(keys, strLitType("length"))
-	if arr, isClass := e.ctx.arrayOf(e.tupleElemUnion(tup)).(*soltype.ClassType); isClass {
-		if body, ok := e.ctx.projectClassBody(arr); ok {
-			for _, elem := range body.Elems {
-				switch elem.(type) {
-				case *soltype.PropertyElem, *soltype.GetterElem, *soltype.SetterElem:
-					if key, isStr := e.ctx.memberKeyType(soltype.ObjElemName(elem)).(*soltype.LitType); isStr {
-						keys = append(keys, key)
-					}
-				}
-			}
-		}
-	}
 	return newUnion(e.ctx, keys)
 }
 
