@@ -9,6 +9,8 @@ import "github.com/escalier-lang/escalier/internal/ast"
 // The table lives outside the AST because one parsed module can be shared by
 // inference runs on different goroutines. Each run renames into a table of its own.
 type VarIDs struct {
+	// parent is the table Of reads when t holds no entry for a node. It is nil
+	// for a table from NewVarIDs. Set writes only to t, never to parent.
 	parent *VarIDs
 	ids    map[ast.Node]VarID
 }
