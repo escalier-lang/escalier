@@ -215,8 +215,9 @@ func (r *refRewriter) rewriteDecl(decl ast.Decl) {
 		r.pushTypeParams(d.TypeParams)
 		defer r.popTypeParams(d.TypeParams)
 		r.rewriteTypeParams(d.TypeParams)
-	case *ast.ExportAssignmentStmt:
-		// `export = Name` carries only a value-side ident — nothing to rewrite.
+	case *ast.ExportAssignmentStmt, *ast.ExportAsNamespaceStmt:
+		// `export = Name` and `export as namespace Name` carry only a value-side
+		// ident, so there is nothing to rewrite.
 	case *ast.NamespaceDecl:
 		for _, inner := range d.Decls {
 			r.rewriteDecl(inner)

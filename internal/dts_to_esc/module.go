@@ -173,9 +173,15 @@ func processNamespace(
 			decls = append(decls, exportAssignment)
 			continue
 
-		case *dts_parser.NamedExportStmt, *dts_parser.ExportAllStmt, *dts_parser.ExportAsNamespaceStmt:
-			// Skip these - they're processed directly in the checker during inferParsedTypeDef.
-			// See processExportStatements() in infer_import.go for implementation.
+		case *dts_parser.ExportAsNamespaceStmt:
+			// A file importing the package also reaches it under this name.
+			decls = append(decls, ast.NewExportAsNamespaceStmt(
+				ast.NewIdentifier(s.Name.Name, convertSpan(s.Name.Span())),
+				convertSpan(s.Span()),
+			))
+			continue
+
+		case *dts_parser.NamedExportStmt, *dts_parser.ExportAllStmt:
 			continue
 
 		default:

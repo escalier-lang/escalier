@@ -81,6 +81,9 @@ func (c *checker) loadPackage(uri string, span ast.Span) (*Namespace, []SolverEr
 	ns, pkgErrs := c.inferPackage(uri, module)
 	c.loadStack = c.loadStack[:len(c.loadStack)-1]
 	c.ctx.packages.publish(uri, ns)
+	if umd, declared := rootDecl[*ast.ExportAsNamespaceStmt](module); declared && umd.Name != nil {
+		c.ctx.packages.setGlobalName(uri, umd.Name.Name)
+	}
 	if len(pkgErrs) > 0 {
 		return ns, append(loaderErrs, &PackageInferenceError{
 			URI:      uri,
@@ -176,59 +179,119 @@ func (c *checker) inferPackage(uri string, module *ast.Module) (*Namespace, []So
 // declarations out of scope and into a namespace an importer can read. An
 // unexported declaration is left behind: the whole module was inferred into one
 // scope, and this walk is the only thing narrowing it to a public surface.
+//
+// A module holding `export = X` exports X alone, so its surface is the one
+// assignedSurface builds for X.
 func exportedSurface(uri string, module *ast.Module, scope *Scope) *Namespace {
+	if assign, assigned := rootDecl[*ast.ExportAssignmentStmt](module); assigned && assign.Name != nil {
+		return assignedSurface(uri, module, scope, assign.Name.Name)
+	}
 	surface := newNamespace(uri)
 	module.Namespaces.Scan(func(nsPath string, ns *ast.Namespace) bool {
 		target := surface
 		if nsPath != "" {
 			target = surface.nest(nsPath)
 		}
-		for _, decl := range ns.Decls {
-			if !decl.Export() {
-				continue
-			}
-			// A `namespace` block carries its whole Namespace onto the surface, since
-			// its members are reached through it rather than named beside it.
-			// ast.DeclNames answers nothing for a block, so it is taken here instead.
-			if nsDecl, isNS := decl.(*ast.NamespaceDecl); isNS {
-				if nsDecl.Name != nil && nsDecl.Name.Name != "" {
-					if bound, ok := scope.GetNamespace(qualify(nsPath, nsDecl.Name.Name)); ok {
-						target.Nested[nsDecl.Name.Name] = exportedMembers(nsDecl, bound)
-					}
-				}
-				continue
-			}
-			for _, name := range ast.DeclNames(decl) {
-				// Both sorts bind under the namespace-qualified name the walk defined
-				// them under, and both are re-keyed to the bare name here, since an
-				// importer names a member without the qualifier.
-				//
-				// scope is the module scope the package inferred into, and only its own
-				// maps are read. Walking the chain would reach the prelude, so a package
-				// declaring `val Promise` would publish the prelude's `Promise` TYPE
-				// beside its own value and an importer's `thing.Promise<number>` would
-				// check against it.
-				key := qualify(nsPath, name)
-				if b, ok := scope.OwnValue(key); ok {
-					target.Values[name] = b
-				}
-				if b, ok := scope.OwnType(key); ok {
-					target.Types[name] = b
-				}
-				// An enum binds its variant constructors under a namespace of its own
-				// name. Without it the type arrives but `Color.Red()` names nothing.
-				// Only an enum: any other declaration sharing a name with an unrelated
-				// namespace would otherwise pick that namespace up.
-				if _, isEnum := decl.(*ast.EnumDecl); isEnum {
-					if enumNs, ok := scope.GetNamespace(name); ok {
-						target.Nested[name] = enumNs
-					}
-				}
-			}
-		}
+		publishExportedDecls(target, nsPath, ns, scope)
 		return true
 	})
 	return surface
+}
+
+// rootDecl returns the first declaration of type T at module's top level, and
+// reports whether module holds one.
+func rootDecl[T ast.Decl](module *ast.Module) (T, bool) {
+	var zero T
+	root, found := module.Namespaces.Get("")
+	if !found {
+		return zero, false
+	}
+	for _, decl := range root.Decls {
+		if match, ok := decl.(T); ok {
+			return match, true
+		}
+	}
+	return zero, false
+}
+
+// assignedSurface returns the surface of a module whose `export = target` names
+// everything it exports. The surface holds the exported members of the namespace
+// named target, and of every namespace nested in it, without the `target.`
+// prefix. Its AsValue is the value named target, when module declares one.
+//
+// target names a function, a class, a `const`, a namespace, or a function and a
+// namespace of one name. A function and a namespace of one name give a surface with
+// both members and an AsValue. This `.d.ts` is one such package:
+//
+//	declare function debug(name: string): number;
+//	declare namespace debug { const enabled: boolean; }
+//	export = debug;
+func assignedSurface(uri string, module *ast.Module, scope *Scope, target string) *Namespace {
+	surface := newNamespace(uri)
+	module.Namespaces.Scan(func(nsPath string, ns *ast.Namespace) bool {
+		switch {
+		case nsPath == target:
+			publishExportedDecls(surface, nsPath, ns, scope)
+		case strings.HasPrefix(nsPath, target+"."):
+			publishExportedDecls(surface.nest(strings.TrimPrefix(nsPath, target+".")), nsPath, ns, scope)
+		}
+		return true
+	})
+	// The value need not be exported. Inside `declare module "pkg" { … }`, a
+	// `const equal` that `export = equal` names carries no `export` of its own.
+	if b, found := scope.OwnValue(target); found {
+		surface.AsValue = &b
+	}
+	return surface
+}
+
+// publishExportedDecls copies the bindings of the exported declarations ns holds
+// out of scope and into target. nsPath is the qualified name ns was declared
+// under, which is the prefix scope keys its bindings with.
+func publishExportedDecls(target *Namespace, nsPath string, ns *ast.Namespace, scope *Scope) {
+	for _, decl := range ns.Decls {
+		if !decl.Export() {
+			continue
+		}
+		// A `namespace` block carries its whole Namespace onto the surface, since
+		// its members are reached through it rather than named beside it.
+		// ast.DeclNames answers nothing for a block, so it is taken here instead.
+		if nsDecl, isNS := decl.(*ast.NamespaceDecl); isNS {
+			if nsDecl.Name != nil && nsDecl.Name.Name != "" {
+				if bound, ok := scope.GetNamespace(qualify(nsPath, nsDecl.Name.Name)); ok {
+					target.Nested[nsDecl.Name.Name] = exportedMembers(nsDecl, bound)
+				}
+			}
+			continue
+		}
+		for _, name := range ast.DeclNames(decl) {
+			// Both sorts bind under the namespace-qualified name the walk defined
+			// them under, and both are re-keyed to the bare name here, since an
+			// importer names a member without the qualifier.
+			//
+			// scope is the module scope the package inferred into, and only its own
+			// maps are read. Walking the chain would reach the prelude, so a package
+			// declaring `val Promise` would publish the prelude's `Promise` TYPE
+			// beside its own value and an importer's `thing.Promise<number>` would
+			// check against it.
+			key := qualify(nsPath, name)
+			if b, ok := scope.OwnValue(key); ok {
+				target.Values[name] = b
+			}
+			if b, ok := scope.OwnType(key); ok {
+				target.Types[name] = b
+			}
+			// An enum binds its variant constructors under a namespace of its own
+			// name. Without it the type arrives but `Color.Red()` names nothing.
+			// Only an enum: any other declaration sharing a name with an unrelated
+			// namespace would otherwise pick that namespace up.
+			if _, isEnum := decl.(*ast.EnumDecl); isEnum {
+				if enumNs, ok := scope.GetNamespace(name); ok {
+					target.Nested[name] = enumNs
+				}
+			}
+		}
+	}
 }
 
 // newNamespace returns an empty namespace under the given name.

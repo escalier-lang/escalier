@@ -41,15 +41,16 @@ type declProvenance struct {
 func (d *declProvenance) Provenance() provenance.Provenance     { return d.provenance }
 func (d *declProvenance) SetProvenance(p provenance.Provenance) { d.provenance = p }
 
-func (*VarDecl) isDecl()              {}
-func (*FuncDecl) isDecl()             {}
-func (*TypeDecl) isDecl()             {}
-func (*InterfaceDecl) isDecl()        {}
-func (*EnumDecl) isDecl()             {}
-func (*ExportAssignmentStmt) isDecl() {}
-func (*DeclareModuleDecl) isDecl()    {}
-func (*DeclareGlobalDecl) isDecl()    {}
-func (*NamespaceDecl) isDecl()        {}
+func (*VarDecl) isDecl()               {}
+func (*FuncDecl) isDecl()              {}
+func (*TypeDecl) isDecl()              {}
+func (*InterfaceDecl) isDecl()         {}
+func (*EnumDecl) isDecl()              {}
+func (*ExportAssignmentStmt) isDecl()  {}
+func (*ExportAsNamespaceStmt) isDecl() {}
+func (*DeclareModuleDecl) isDecl()     {}
+func (*DeclareGlobalDecl) isDecl()     {}
+func (*NamespaceDecl) isDecl()         {}
 
 type VariableKind int
 
@@ -441,6 +442,33 @@ func (e *ExportAssignmentStmt) Accept(v Visitor) {
 	if v.EnterDecl(e) {
 		// Nothing to walk - ExportAssignmentStmt has no child nodes to visit
 	}
+	v.ExitDecl(e)
+}
+
+// ExportAsNamespaceStmt represents `export as namespace Name`, which declares a
+// global named Name that holds the module's exports. It is used when converting a
+// TypeScript .d.ts file that declares a UMD global. Escalier's parser does not
+// produce this node.
+type ExportAsNamespaceStmt struct {
+	declDoc
+	Name     *Ident
+	override bool
+	span     Span
+	declProvenance
+	commentSlots
+}
+
+func NewExportAsNamespaceStmt(name *Ident, span Span) *ExportAsNamespaceStmt {
+	return &ExportAsNamespaceStmt{Name: name, span: span}
+}
+func (e *ExportAsNamespaceStmt) Export() bool       { return true }
+func (e *ExportAsNamespaceStmt) SetExport(bool)     {}
+func (e *ExportAsNamespaceStmt) Declare() bool      { return true }
+func (e *ExportAsNamespaceStmt) Override() bool     { return e.override }
+func (e *ExportAsNamespaceStmt) SetOverride(o bool) { e.override = o }
+func (e *ExportAsNamespaceStmt) Span() Span         { return e.span }
+func (e *ExportAsNamespaceStmt) Accept(v Visitor) {
+	v.EnterDecl(e)
 	v.ExitDecl(e)
 }
 
