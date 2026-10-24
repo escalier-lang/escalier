@@ -105,6 +105,10 @@ type Module struct {
 	// SourceID and sorted by start offset. Comments are not children of any
 	// node; NewCommentMap associates them with nodes on demand.
 	Comments map[int][]*Comment
+	// DefaultExport names the top-level declaration the module exports as
+	// `default`, or is "" when it exports none. Only a module converted from a
+	// `.d.ts` sets it, for a declaration such as `export default function f(): void`.
+	DefaultExport string
 }
 
 func NewModule(namespaces btree.Map[string, *Namespace]) *Module {
