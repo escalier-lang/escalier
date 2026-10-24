@@ -192,6 +192,36 @@ func TestPartitionLib_PinnedLibSet_RoutesConvertsAndWrites(t *testing.T) {
 	}
 }
 
+// TestPartitionLib_ReadonlyTwinsMatchLibReadonlyTwins asserts that the readonly twins
+// fuseReadonlyTwins finds across the pinned lib set are exactly the ones in
+// libReadonlyTwins, which ConvertModuleWithOverrides renames in an npm package's types.
+func TestPartitionLib_ReadonlyTwinsMatchLibReadonlyTwins(t *testing.T) {
+	t.Parallel()
+
+	repoRoot, err := findRepoRoot()
+	require.NoError(t, err)
+	libDir := filepath.Join(repoRoot, "node_modules", "typescript", "lib")
+	if _, err := os.Stat(libDir); err != nil {
+		t.Skipf("pinned TypeScript lib set not present at %s: %v", libDir, err)
+	}
+
+	basenames, err := DiscoverLibFiles(libDir)
+	require.NoError(t, err)
+	inputs, err := ParseLibFiles(libDir, basenames)
+	require.NoError(t, err)
+	res, err := PartitionLibWithOverlay(inputs, committedOverlay(t))
+	require.NoError(t, err)
+
+	found := map[string]string{}
+	for _, stmts := range res.Buckets {
+		_, twins := fuseReadonlyTwins(stmts)
+		for _, twin := range twins {
+			found[twin.readonlyName] = twin.mutableName
+		}
+	}
+	require.Equal(t, libReadonlyTwins, found)
+}
+
 // A trio fuses on its three names alone, so a constructor side with no `new`
 // still produces a class. `SymbolConstructor`, `BigIntConstructor` and
 // `IteratorConstructor` are the pinned lib set's three, and the specification

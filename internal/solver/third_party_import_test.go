@@ -26,9 +26,8 @@ func TestThirdPartyImportResolves(t *testing.T) {
 			blockedBy: "#2108",
 		},
 		{
-			name:      "a package whose types name a readonly array",
-			src:       `import "csstype" as css`,
-			blockedBy: "#2112",
+			name: "a package whose types name a readonly array",
+			src:  `import "csstype" as css`,
 		},
 		{
 			name: "a subpath import beside the package's own",
@@ -36,7 +35,7 @@ func TestThirdPartyImportResolves(t *testing.T) {
 import "react/jsx-runtime" as rt
 val f = react.Fragment
 val j = rt.jsx`,
-			blockedBy: "#2108, #2110, #2112 and #328",
+			blockedBy: "#2108, #2110 and #328",
 		},
 	}
 	for _, test := range tests {
