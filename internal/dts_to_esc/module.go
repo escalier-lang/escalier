@@ -173,15 +173,9 @@ func processNamespace(
 			decls = append(decls, exportAssignment)
 			continue
 
-		case *dts_parser.ExportAsNamespaceStmt:
-			// A file importing the package also reaches it under this name.
-			decls = append(decls, ast.NewExportAsNamespaceStmt(
-				ast.NewIdentifier(s.Name.Name, convertSpan(s.Name.Span())),
-				convertSpan(s.Span()),
-			))
-			continue
-
-		case *dts_parser.NamedExportStmt, *dts_parser.ExportAllStmt:
+		case *dts_parser.NamedExportStmt, *dts_parser.ExportAllStmt, *dts_parser.ExportAsNamespaceStmt:
+			// These are dropped. `export as namespace N` names a global that only a
+			// script file can read, and every Escalier file is a module.
 			continue
 
 		default:

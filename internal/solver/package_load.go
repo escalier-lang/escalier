@@ -81,9 +81,6 @@ func (c *checker) loadPackage(uri string, span ast.Span) (*Namespace, []SolverEr
 	ns, pkgErrs := c.inferPackage(uri, module)
 	c.loadStack = c.loadStack[:len(c.loadStack)-1]
 	c.ctx.packages.publish(uri, ns)
-	if umd, declared := rootDecl[*ast.ExportAsNamespaceStmt](module); declared && umd.Name != nil {
-		c.ctx.packages.setGlobalName(uri, umd.Name.Name)
-	}
 	if len(pkgErrs) > 0 {
 		return ns, append(loaderErrs, &PackageInferenceError{
 			URI:      uri,

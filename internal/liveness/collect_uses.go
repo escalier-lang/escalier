@@ -92,8 +92,7 @@ func (c *collector) collectDecl(decl ast.Decl) {
 		if d.Name != nil {
 			c.addDef(d.VarID)
 		}
-	case *ast.TypeDecl, *ast.InterfaceDecl, *ast.EnumDecl, *ast.ExportAssignmentStmt,
-		*ast.ExportAsNamespaceStmt:
+	case *ast.TypeDecl, *ast.InterfaceDecl, *ast.EnumDecl, *ast.ExportAssignmentStmt:
 		// No variable bindings relevant to liveness.
 	}
 }
