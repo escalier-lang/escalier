@@ -310,8 +310,8 @@ func (c *checker) checkCondExhaustive(scope *Scope, lvl int, norm ucs.Norm, shap
 // condCoverage decides whether the arms of one conditional form cover every value of its
 // scrutinee. It reports nothing. It returns a NonExhaustiveMatchError when the arms leave a
 // value uncovered. Otherwise `covered` says whether the arms were shown to cover every value.
-// It is false where the rules below decline to ask, such as for a `boolean` scrutinee or one
-// whose type is still unsolved.
+// It is false where the rules below decline to ask, such as for a scrutinee whose type is
+// still unsolved.
 //
 // `shape` is the scrutinee snapshot taken before any arm bound, which the union members and the
 // structural exactness are read off. The message names the construct the top-level split
@@ -358,6 +358,12 @@ func (c *checker) condCoverage(scope *Scope, lvl int, norm ucs.Norm, shape solty
 	// union, since the per-member rule below never runs for one.
 	if c.annAdmits(carrier, cov.covering) {
 		return nil, true
+	}
+	// A `boolean` holds exactly the values `true` and `false`, so reading it as that union
+	// lets the per-member rule credit `match b { true => 1, false => 2 }` and name `false`
+	// as the witness when only a `true` arm is written.
+	if isBoolean(carrier) {
+		carrier = &soltype.UnionType{Types: []soltype.Type{booleanLit(true), booleanLit(false)}}
 	}
 	if u, isUnion := carrier.(*soltype.UnionType); isUnion {
 		uncovered := c.uncoveredMembers(scope, u, cov)
@@ -607,6 +613,13 @@ func (c *checker) uncoveredMembers(scope *Scope, u *soltype.UnionType, cov cover
 		if c.memberTagged(scope, member, cov.covering) {
 			continue
 		}
+		// A `boolean` member with one of its values named leaves only the other, so that
+		// value is the witness. `true` alone over `string | boolean` asks for `false`.
+		if isBoolean(member) {
+			if missing, partly := c.missingBoolean(cov.covering); partly {
+				member = missing
+			}
+		}
 		// A guarded catch-all arm names every value, so it is what leaves this member
 		// uncovered whenever no tag of its own does.
 		uncovered.add(member,
@@ -628,6 +641,11 @@ func (c *checker) memberTagged(scope *Scope, member soltype.Type, group tagGroup
 	switch m := member.(type) {
 	case *soltype.LitType:
 		return c.litTagged(m, group.tests)
+	case *soltype.PrimType:
+		// A `boolean` member is named once both of its values are.
+		return m.Prim == soltype.BoolPrim &&
+			c.litTagged(booleanLit(true), group.tests) &&
+			c.litTagged(booleanLit(false), group.tests)
 	case *soltype.NullType, *soltype.UndefinedType:
 		return atomTagged(member, group.tests)
 	case *soltype.ClassType:
@@ -644,6 +662,32 @@ func (c *checker) memberTagged(scope *Scope, member soltype.Type, group tagGroup
 	default:
 		return false
 	}
+}
+
+// missingBoolean returns the boolean value no literal test in group names, when the group
+// names exactly one of `true` and `false`.
+func (c *checker) missingBoolean(group tagGroup) (*soltype.LitType, bool) {
+	hasTrue := c.litTagged(booleanLit(true), group.tests)
+	hasFalse := c.litTagged(booleanLit(false), group.tests)
+	switch {
+	case hasTrue && !hasFalse:
+		return booleanLit(false), true
+	case hasFalse && !hasTrue:
+		return booleanLit(true), true
+	default:
+		return nil, false
+	}
+}
+
+// isBoolean reports whether t is the `boolean` primitive.
+func isBoolean(t soltype.Type) bool {
+	p, isPrim := t.(*soltype.PrimType)
+	return isPrim && p.Prim == soltype.BoolPrim
+}
+
+// booleanLit returns the literal type of the boolean value v.
+func booleanLit(v bool) *soltype.LitType {
+	return &soltype.LitType{Lit: &soltype.BoolLit{Value: v}}
 }
 
 // variadicTagged reports whether the tuple tests among `tags` together match every length
