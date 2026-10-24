@@ -95,8 +95,10 @@ func decodeNode(dec *json.Decoder) (*jsonNode, error) {
 //
 // A field that is a string, an array, or an object with no key starting with `.` is
 // the entry for `.` alone. Otherwise a key equal to subpath wins. Failing that, a key
-// holding one `*` matches when subpath starts with the text before the `*` and ends
-// with the text after it, and the key with the longest text before the `*` wins.
+// holding one `*` matches when subpath starts with the text before the `*`, ends
+// with the text after it, and leaves at least one character for the `*`. The key
+// with the longest text before the `*` wins, and between two of equal length the
+// longer key wins.
 func exportsEntry(exports *jsonNode, subpath string) (value *jsonNode, star string, listed bool) {
 	if !hasSubpathKeys(exports) {
 		return exports, "", subpath == "."
@@ -124,7 +126,7 @@ func hasSubpathKeys(node *jsonNode) bool {
 // text a `*` in that key stands for, by the rules exportsEntry lists. found is false
 // when no key matches.
 func patternMatch(keys []string, subpath string) (index int, star string, found bool) {
-	best, bestPrefix := -1, -1
+	best, bestPrefix, bestLen := -1, -1, -1
 	for i, key := range keys {
 		if key == subpath {
 			return i, "", true
@@ -133,12 +135,12 @@ func patternMatch(keys []string, subpath string) (index int, star string, found 
 		if !hasStar || strings.Contains(suffix, "*") {
 			continue
 		}
-		if len(subpath) < len(prefix)+len(suffix) ||
+		if len(subpath) <= len(prefix)+len(suffix) ||
 			!strings.HasPrefix(subpath, prefix) || !strings.HasSuffix(subpath, suffix) {
 			continue
 		}
-		if len(prefix) > bestPrefix {
-			best, bestPrefix = i, len(prefix)
+		if len(prefix) > bestPrefix || (len(prefix) == bestPrefix && len(key) > bestLen) {
+			best, bestPrefix, bestLen = i, len(prefix), len(key)
 			star = subpath[len(prefix) : len(subpath)-len(suffix)]
 		}
 	}
@@ -147,7 +149,8 @@ func patternMatch(keys []string, subpath string) (index int, star string, found 
 
 // exportsTarget returns the declaration file an `exports` value leads to inside the
 // package at pkgDir, with star replacing each `*` in a target. A target names a file
-// relative to pkgDir and starts with `./`. The value is read this way:
+// relative to pkgDir. It starts with `./` and has no `..` or `node_modules`
+// segment, so it stays inside the package. The value is read this way:
 //
 //   - A string is a target. A `.d.ts` target is that file, and a `.js` target leads
 //     to the `.d.ts` file beside it.
@@ -163,7 +166,7 @@ func exportsTarget(pkgDir string, value *jsonNode, star string) (path, missing s
 	case jsonString:
 		target := strings.ReplaceAll(value.str, "*", star)
 		rel, relative := strings.CutPrefix(target, "./")
-		if !relative {
+		if !relative || leavesPackage(rel) {
 			return "", ""
 		}
 		if path := firstDeclarationFile(pkgDir, rel); path != "" {
@@ -197,6 +200,16 @@ func exportsTarget(pkgDir string, value *jsonNode, star string) (path, missing s
 		}
 	}
 	return "", missing
+}
+
+// leavesPackage reports whether rel has a `..` or `node_modules` segment.
+func leavesPackage(rel string) bool {
+	for _, segment := range strings.Split(rel, "/") {
+		if segment == ".." || segment == "node_modules" {
+			return true
+		}
+	}
+	return false
 }
 
 // activeCondition reports whether an `exports` condition applies when reading types.

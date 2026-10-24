@@ -65,6 +65,11 @@ func resolveTypes(moduleName string, fromDir string, typesFirst bool) (string, e
 			if path != "" {
 				return path, nil
 			}
+			// A package of one file can also sit beside a directory that holds only
+			// JavaScript.
+			if file := pkgDir + ".d.ts"; subpath == "" && isFile(file) {
+				return file, nil
+			}
 			// The lookup goes on, since `node_modules/react` holds only
 			// JavaScript and its types are in `node_modules/@types/react`.
 			if err != nil && entryErr == nil {
@@ -184,6 +189,10 @@ func readManifest(pkgDir string) (packageManifest, error) {
 		if manifest.exports, err = decodeOrdered(fields.Exports); err != nil {
 			return packageManifest{}, fmt.Errorf("failed to parse package.json: %w", err)
 		}
+		// `"exports": null` reads as no `exports` field.
+		if manifest.exports.kind == jsonNull {
+			manifest.exports = nil
+		}
 	}
 	if len(fields.TypesVersions) > 0 {
 		if manifest.typesVersions, err = decodeOrdered(fields.TypesVersions); err != nil {
@@ -197,12 +206,13 @@ func readManifest(pkgDir string) (packageManifest, error) {
 // pkgDir start at. subpath is "" for the package itself, or a path inside it such as
 // `jsx-runtime`.
 //
-// A package.json with an `exports` field decides first. A subpath it does not list is
-// an error, since Node and TypeScript refuse to import one. An entry that leads only to
-// JavaScript files leaves the lookup to the fields GetTypesEntryPoint lists for the
-// package itself, and to typesVersionsFile then subpathFile for a subpath. It returns
-// "" and no error when the package holds no types for subpath, so the lookup can go on
-// to another package directory.
+// A package.json with an `exports` field decides first, and a subpath it does not
+// list is an error. When the entry for a subpath leads only to JavaScript files, the
+// package holds no types for it. When the entry for the package itself does, the
+// fields GetTypesEntryPoint lists next decide. Without an `exports` field, a subpath
+// goes to typesVersionsFile and then subpathFile. It returns "" and no error when the
+// package holds no types for subpath, so the lookup can go on to another package
+// directory.
 func packageTypesFile(pkgDir, subpath string) (string, error) {
 	manifest, err := readManifest(pkgDir)
 	if err != nil {
@@ -214,6 +224,8 @@ func packageTypesFile(pkgDir, subpath string) (string, error) {
 			key = "./" + subpath
 		}
 		value, star, listed := exportsEntry(manifest.exports, key)
+		// Node and TypeScript refuse to import a subpath the field does not list,
+		// even when a file of that name exists.
 		if !listed {
 			return "", fmt.Errorf("%s does not export %q", filepath.Join(pkgDir, "package.json"), key)
 		}
@@ -224,6 +236,12 @@ func packageTypesFile(pkgDir, subpath string) (string, error) {
 		if missing != "" {
 			return "", fmt.Errorf("types entry point from exports not found: %s", missing)
 		}
+		if subpath != "" {
+			return "", nil
+		}
+		// An `exports` field written for JavaScript alone is common beside a
+		// `types` field, so the package itself still reads that field.
+		return entryFile(pkgDir, manifest)
 	}
 	if subpath != "" {
 		if path := typesVersionsFile(pkgDir, manifest, subpath); path != "" {
@@ -243,8 +261,6 @@ func entryFile(pkgDir string, manifest packageManifest) (string, error) {
 	}
 	var chosen field
 	switch {
-	case !manifest.found:
-		chosen = field{rel: "index.d.ts"}
 	case manifest.types != "":
 		chosen = field{rel: manifest.types, source: " (from 'types' field)"}
 	case manifest.typings != "":
@@ -259,7 +275,10 @@ func entryFile(pkgDir string, manifest packageManifest) (string, error) {
 		}
 		chosen = field{rel: main + ".d.ts", source: " (derived from 'main' field)"}
 	default:
-		chosen = field{rel: "index.d.ts", source: " (fallback)"}
+		chosen = field{rel: "index.d.ts"}
+		if manifest.found {
+			chosen.source = " (fallback)"
+		}
 	}
 	rel := strings.TrimPrefix(filepath.ToSlash(chosen.rel), "./")
 	if path := typesVersionsFile(pkgDir, manifest, rel); path != "" {
@@ -284,25 +303,24 @@ func typesVersionsFile(pkgDir string, manifest packageManifest, rel string) stri
 }
 
 // subpathFile returns the file a subpath names inside the package in pkgDir, found on
-// disk. A directory of that name is read as a package of its own, and a `.d.ts` file
-// of that name stands for it. It returns "" and no error when neither exists.
+// disk. A directory of that name is read as a package of its own. Otherwise, or when
+// that directory holds no types, the first of the subpath's declarationCandidates that
+// exists stands for it. It returns "" and no error when nothing does, and
+// GetTypesEntryPoint's error when the directory exists and nothing else does.
 func subpathFile(pkgDir, subpath string) (string, error) {
-	target := joinRel(pkgDir, subpath)
-	if isDir(target) {
+	var dirErr error
+	if target := joinRel(pkgDir, subpath); isDir(target) {
 		path, err := GetTypesEntryPoint(target)
 		if err == nil {
 			return path, nil
 		}
-		// `react/jsx-runtime` can name a file beside a directory of the same name.
-		if file := target + ".d.ts"; isFile(file) {
-			return file, nil
-		}
-		return "", err
+		dirErr = err
 	}
-	if file := target + ".d.ts"; isFile(file) {
-		return file, nil
+	// `react/jsx-runtime` can name a file beside a directory of the same name.
+	if path := firstDeclarationFile(pkgDir, subpath); path != "" {
+		return path, nil
 	}
-	return "", nil
+	return "", dirErr
 }
 
 // joinRel joins rel, a slash-separated path inside a package, onto pkgDir.
