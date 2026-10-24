@@ -11,6 +11,8 @@ import (
 	"github.com/stretchr/testify/require"
 	"github.com/vektah/gqlparser/v2"
 	"github.com/vektah/gqlparser/v2/ast"
+	"github.com/vektah/gqlparser/v2/parser"
+	"github.com/vektah/gqlparser/v2/validator"
 	"github.com/vektah/gqlparser/v2/validator/rules"
 )
 
@@ -510,7 +512,9 @@ func TestInferGraphQLQueryRecordsProvenance(t *testing.T) {
 	}
 }`
 
-	queryDoc := gqlparser.MustLoadQueryWithRules(schema, queryStr, rules.NewDefaultRules())
+	queryDoc, err := parser.ParseQuery(&ast.Source{Name: "query.graphql", Input: queryStr})
+	require.NoError(t, err)
+	require.Empty(t, validator.ValidateWithRules(schema, queryDoc, rules.NewDefaultRules()))
 	result := InferGraphQLQuery(schema, queryDoc)
 
 	getUser := propType(t, result.ResultType, "getUser")
@@ -521,10 +525,10 @@ func TestInferGraphQLQueryRecordsProvenance(t *testing.T) {
 		want string
 	}{
 		{name: "the result object reads the Query type", typ: result.ResultType, want: "schema.graphql:77"},
-		{name: "the variables object reads the operation", typ: result.VariablesType, want: ":1"},
+		{name: "the variables object reads the operation", typ: result.VariablesType, want: "query.graphql:1"},
 		{name: "a nullable field reads its field definition", typ: getUser, want: "schema.graphql:80"},
 		{name: "an enum reads its type definition", typ: propType(t, user, "role"), want: "schema.graphql:12"},
-		{name: "a list reads its field selection", typ: listOf(t, propType(t, user, "tags")), want: ":4"},
+		{name: "a list reads its field selection", typ: listOf(t, propType(t, user, "tags")), want: "query.graphql:4"},
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
