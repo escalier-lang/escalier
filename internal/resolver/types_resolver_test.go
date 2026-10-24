@@ -88,6 +88,26 @@ func TestResolveTypeReferencePrefersTheTypesPackage(t *testing.T) {
 	require.Equal(t, filepath.Join(root, "node_modules", "@types", "node", "index.d.ts"), got)
 }
 
+// TestPackageName covers the package a module specifier names, with and without a
+// scope and a subpath.
+func TestPackageName(t *testing.T) {
+	tests := []struct {
+		moduleName string
+		want       string
+	}{
+		{"react", "react"},
+		{"react/jsx-runtime", "react"},
+		{"lodash/fp/map", "lodash"},
+		{"@scope/pkg", "@scope/pkg"},
+		{"@scope/pkg/sub", "@scope/pkg"},
+	}
+	for _, test := range tests {
+		t.Run(test.moduleName, func(t *testing.T) {
+			require.Equal(t, test.want, PackageName(test.moduleName))
+		})
+	}
+}
+
 // TestResolveTypesEntryPointRejectsARelativePath asserts that a module name with a `.` or
 // `..` segment resolves nothing, rather than reaching outside `node_modules`.
 func TestResolveTypesEntryPointRejectsARelativePath(t *testing.T) {

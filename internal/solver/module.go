@@ -21,6 +21,10 @@ type Options struct {
 	// the `node_modules` directories at and above it. An empty PackageDir resolves no
 	// such import.
 	PackageDir string
+	// Dependencies lists the packages the module's own imports with no URI scheme may
+	// name. An import of any other package reports UnlistedDependencyError. A nil
+	// Dependencies lets such an import name any package.
+	Dependencies set.Set[string]
 	// CheckJsDecorators reports a pseudo-package file whose values break the `@js`
 	// rules jsDecoratorErrors lists, at the import that loads it.
 	CheckJsDecorators bool
@@ -152,6 +156,7 @@ func inferModuleWithGroups(
 	c.groups = groups
 	c.noAmbientNames = opts.NoAmbientNames
 	c.checkJsDecorators = opts.CheckJsDecorators
+	c.dependencies = opts.Dependencies
 	// The prelude package is loaded before anything is walked, so no rule reaches
 	// for a handle from inside a speculation trial, where a load would publish a
 	// package whose bounds a discard then truncates.

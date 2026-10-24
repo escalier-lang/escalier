@@ -46,7 +46,7 @@ func resolveTypes(moduleName string, fromDir string, typesFirst bool) (string, e
 		nodeModules := filepath.Join(dir, "node_modules")
 		candidates := []string{
 			filepath.Join(nodeModules, filepath.FromSlash(moduleName)),
-			filepath.Join(nodeModules, "@types", filepath.FromSlash(typesPackageName(moduleName))),
+			filepath.Join(nodeModules, "@types", filepath.FromSlash(TypesPackageName(moduleName))),
 		}
 		if typesFirst {
 			candidates[0], candidates[1] = candidates[1], candidates[0]
@@ -89,7 +89,7 @@ func resolveTypes(moduleName string, fromDir string, typesFirst bool) (string, e
 // typesPackageName returns the `@types` package name for moduleName. A scoped package
 // `@scope/name` publishes its types as `@types/scope__name`, and any subpath after the
 // package name is kept.
-func typesPackageName(moduleName string) string {
+func TypesPackageName(moduleName string) string {
 	if !strings.HasPrefix(moduleName, "@") {
 		return moduleName
 	}
@@ -98,6 +98,20 @@ func typesPackageName(moduleName string) string {
 		return moduleName
 	}
 	return scope + "__" + rest
+}
+
+// PackageName returns the package a module specifier names, leaving out any subpath.
+// `react/jsx-runtime` names `react`, and `@scope/pkg/sub` names `@scope/pkg`.
+func PackageName(moduleName string) string {
+	segments := 1
+	if strings.HasPrefix(moduleName, "@") {
+		segments = 2
+	}
+	parts := strings.SplitN(moduleName, "/", segments+1)
+	if len(parts) > segments {
+		parts = parts[:segments]
+	}
+	return strings.Join(parts, "/")
 }
 
 // isDir reports whether path names a directory, following a symlink.
