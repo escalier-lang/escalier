@@ -6,6 +6,7 @@ import (
 	"errors"
 
 	"github.com/escalier-lang/escalier/internal/ast"
+	"github.com/escalier-lang/escalier/internal/dep_graph"
 	"github.com/escalier-lang/escalier/internal/soltype"
 	"github.com/stretchr/testify/require"
 )
@@ -265,4 +266,66 @@ func TestTheParseCacheKeepsNamedGroupsApart(t *testing.T) {
 	require.Equal(t, 2, parses)
 	require.NotSame(t, pkg, index)
 	require.Same(t, pkg, again)
+}
+
+// TestTheParseCacheSharesADepGraph covers when depGraph reuses a graph. A module the
+// cache holds gets one graph per group it loads as, and a module it does not hold
+// gets a fresh graph on every call.
+func TestTheParseCacheSharesADepGraph(t *testing.T) {
+	t.Parallel()
+
+	tests := map[string]struct {
+		cached     bool
+		groups     [2][]string
+		wantBuilds int
+		wantSame   bool
+	}{
+		"CachedSameGroup": {
+			cached:     true,
+			groups:     [2][]string{{"std:map", "std:set"}, {"std:map", "std:set"}},
+			wantBuilds: 1,
+			wantSame:   true,
+		},
+		"CachedDifferentGroup": {
+			cached:     true,
+			groups:     [2][]string{{"std:map", "std:set"}, {"std:map"}},
+			wantBuilds: 2,
+			wantSame:   false,
+		},
+		"Uncached": {
+			cached:     false,
+			groups:     [2][]string{nil, nil},
+			wantBuilds: 2,
+			wantSame:   false,
+		},
+	}
+	for name, tc := range tests {
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+
+			cache := newParsedModuleCache(1 << 20)
+			module := &ast.Module{}
+			if tc.cached {
+				_, err := cache.get("box.esc", "export val a: number = 1", func(int) (*ast.Module, error) {
+					return module, nil
+				})
+				require.NoError(t, err)
+			}
+			builds := 0
+			build := func() *dep_graph.DepGraph {
+				builds++
+				return dep_graph.NewDepGraph(nil)
+			}
+
+			first := cache.depGraph(module, tc.groups[0], build)
+			second := cache.depGraph(module, tc.groups[1], build)
+
+			require.Equal(t, tc.wantBuilds, builds)
+			if tc.wantSame {
+				require.Same(t, first, second)
+			} else {
+				require.NotSame(t, first, second)
+			}
+		})
+	}
 }
