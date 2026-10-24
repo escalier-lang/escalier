@@ -280,3 +280,102 @@ var astPackage = reflect.TypeFor[ast.Span]().PkgPath()
 func isASTPointer(t reflect.Type) bool {
 	return t.Elem().PkgPath() == astPackage
 }
+
+// shareFork returns a checker that runs with source, groupSource, and groups over what c
+// loaded. The two share every type, definition, scope, and namespace c holds, and the
+// fork gets its own copy of every container a run adds to.
+//
+// c must not be written to while it is shared. Two forks of c can run concurrently, and
+// neither reaches the other's state.
+func (c *checker) shareFork(source ModuleSource, groupSource GroupSource, groups PackageGroups) *checker {
+	f := *c
+	f.ctx = c.ctx.shareFork()
+	f.ctx.fusionRecorder = f.recordFusionEdge
+	f.info = NewInfo()
+	f.info.ctx = f.ctx
+	f.source, f.groupSource, f.groups = source, groupSource, groups
+
+	f.prov = maps.Clone(c.prov)
+	f.errs = slices.Clip(c.errs)
+	f.memberFuncNames = maps.Clone(c.memberFuncNames)
+	f.closureCaptureInfo = clipValues(c.closureCaptureInfo)
+	f.moduleCaptures = clipValues(c.moduleCaptures)
+	f.openVars = maps.Clone(c.openVars)
+	f.preludeNames = slices.Clip(c.preludeNames)
+	f.namedLifetimes = maps.Clone(c.namedLifetimes)
+	f.ltMarks = maps.Clone(c.ltMarks)
+	f.methodSelfParams = maps.Clone(c.methodSelfParams)
+	f.declLifetimes = maps.Clone(c.declLifetimes)
+	f.componentClasses = maps.Clone(c.componentClasses)
+	f.componentClassOf = maps.Clone(c.componentClassOf)
+	f.memberNamespaces = maps.Clone(c.memberNamespaces)
+	f.nsIndex = maps.Clone(c.nsIndex)
+	f.symbolOwners = maps.Clone(c.symbolOwners)
+	f.fileScopes = maps.Clone(c.fileScopes)
+	f.activeGroup = maps.Clone(c.activeGroup)
+	f.moduleDeclared = declaredNames{values: maps.Clone(c.moduleDeclared.values), types: maps.Clone(c.moduleDeclared.types)}
+	f.loadStack = slices.Clip(c.loadStack)
+	f.pendingRecvReads = slices.Clip(c.pendingRecvReads)
+	f.deferredArgBounds = slices.Clip(c.deferredArgBounds)
+	f.pendingReturns = slices.Clip(c.pendingReturns)
+	f.pendingOverrides = slices.Clip(c.pendingOverrides)
+	f.pendingImplements = slices.Clip(c.pendingImplements)
+	f.provisionalVariance = slices.Clip(c.provisionalVariance)
+
+	// Whether each held diagnostic is reported is the run's own.
+	f.heldLoadErrs = make(map[string]*heldLoadErrors, len(c.heldLoadErrs))
+	f.heldLoadOrder = make([]*heldLoadErrors, len(c.heldLoadOrder))
+	copies := make(map[*heldLoadErrors]*heldLoadErrors, len(c.heldLoadOrder))
+	for i, held := range c.heldLoadOrder {
+		copied := *held
+		f.heldLoadOrder[i] = &copied
+		copies[held] = &copied
+	}
+	for uri, held := range c.heldLoadErrs {
+		f.heldLoadErrs[uri] = copies[held]
+	}
+
+	// A run that binds the globals scope itself, as one with Options.NoAmbientNames does
+	// when it loads an npm package, fills a scope of its own.
+	if !c.globalsBound {
+		f.globals = nil
+	}
+	return &f
+}
+
+// shareFork returns a Context that shares every definition and type c holds and has its
+// own copy of every container a run adds to. c's counters carry over, and the fork has
+// no probe open.
+func (c *Context) shareFork() *Context {
+	f := *c
+	f.probe = nil
+	f.paramVars = maps.Clone(c.paramVars)
+	f.readRaises = clipValues(c.readRaises)
+	f.pendingRigidLts = slices.Clip(c.pendingRigidLts)
+	f.packages = &PackageRegistry{packages: maps.Clone(c.packages.packages)}
+	f.ltProxyOrigin = maps.Clone(c.ltProxyOrigin)
+	f.methodLifetimes = maps.Clone(c.methodLifetimes)
+	f.classes = maps.Clone(c.classes)
+	f.aliases = maps.Clone(c.aliases)
+	f.aliasInterns = maps.Clone(c.aliasInterns)
+	f.uniformKnots = maps.Clone(c.uniformKnots)
+	f.unfoldingAliases = maps.Clone(c.unfoldingAliases)
+	f.buildingAliases = maps.Clone(c.buildingAliases)
+	f.borrowedReads = clipValues(c.borrowedReads)
+	f.unionCommits = maps.Clone(c.unionCommits)
+	f.holeVars = maps.Clone(c.holeVars)
+	return &f
+}
+
+// clipValues returns a copy of m whose slice values have no spare capacity, so an append
+// to one of them allocates rather than writing into the array m's value shares.
+func clipValues[K comparable, V any](m map[K][]V) map[K][]V {
+	if m == nil {
+		return nil
+	}
+	out := make(map[K][]V, len(m))
+	for k, v := range m {
+		out[k] = slices.Clip(v)
+	}
+	return out
+}

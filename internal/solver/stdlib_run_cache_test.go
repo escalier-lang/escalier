@@ -193,37 +193,97 @@ func init() {
 // checkThawed panics on such a write, and the subtest reports the panic as its
 // failure.
 func TestFixturesLeaveStdlibVarsUntouched(t *testing.T) {
-	paths, err := filepath.Glob("../../fixtures/*/lib")
-	require.NoError(t, err)
-	require.NotEmpty(t, paths)
-	for _, lib := range paths {
-		t.Run(filepath.Base(filepath.Dir(lib)), func(t *testing.T) {
-			srcs := map[string]string{}
-			err := filepath.WalkDir(lib, func(path string, d fs.DirEntry, err error) error {
-				if err != nil || d.IsDir() || filepath.Ext(path) != ".esc" {
-					return err
-				}
-				contents, err := os.ReadFile(path)
-				if err != nil {
-					return err
-				}
-				rel, err := filepath.Rel(lib, path)
-				srcs[filepath.ToSlash(rel)] = string(contents)
-				return err
-			})
-			require.NoError(t, err)
-			module, parseErrs := parser.ParseLibFiles(context.Background(), sourcesOf(srcs))
-			if len(parseErrs) > 0 {
-				t.Skip("the fixture's library does not parse")
-			}
+	for _, fixture := range fixtureModules(t) {
+		t.Run(fixture.name, func(t *testing.T) {
 			defer func() {
 				if r := recover(); r != nil {
 					t.Fatal(r)
 				}
 			}()
-			InferModuleAgainstStdlib(module, benchTree, Options{})
+			InferModuleAgainstStdlib(fixture.module, benchTree, Options{})
 		})
 	}
+}
+
+// TestShareForkLeavesCachedCheckerUnchanged asserts that inferring every fixture's
+// library on forks that share one loaded checker changes nothing that checker holds.
+// The snapshot is a deep copy taken before the first fork, and every object it copied
+// is compared with the object it was copied from.
+func TestShareForkLeavesCachedCheckerUnchanged(t *testing.T) {
+	groups, err := BuildPackageClosure(benchTree, ambientPackages)
+	require.NoError(t, err)
+	loaded := loadAmbientChecker(benchTree, groups, Options{})
+	g := newGraphCopier(isASTPointer)
+	copyPtr(g, loaded)
+
+	for _, fixture := range fixtureModules(t) {
+		// A fixture that imports a package outside the ambient packages' closure loads
+		// a different group, and so does not fork this checker.
+		if len(pseudoPackageImportsOf(fixture.module)) > 0 {
+			continue
+		}
+		run := loaded.shareFork(StdlibSource(benchTree), StdlibGroupSource(benchTree), groups)
+		inferModuleOn(run, fixture.module)
+	}
+	require.Empty(t, diffAgainstSnapshot(g))
+}
+
+// TestShareForkMatchesFork asserts that a fixture's library infers the same bindings
+// and diagnostics on a fork that shares the loaded checker as on a deep copy of it. The
+// shared forks run concurrently, so a race between them shows under -race.
+func TestShareForkMatchesFork(t *testing.T) {
+	groups, err := BuildPackageClosure(benchTree, ambientPackages)
+	require.NoError(t, err)
+	loaded := loadAmbientChecker(benchTree, groups, Options{})
+	for _, fixture := range fixtureModules(t) {
+		if len(pseudoPackageImportsOf(fixture.module)) > 0 {
+			continue
+		}
+		t.Run(fixture.name, func(t *testing.T) {
+			t.Parallel()
+			copied := inferModuleOn(loaded.fork(StdlibSource(benchTree), StdlibGroupSource(benchTree), groups), fixture.module)
+			shared := inferModuleOn(loaded.shareFork(StdlibSource(benchTree), StdlibGroupSource(benchTree), groups), fixture.module)
+			require.Equal(t, renderedValues(copied), renderedValues(shared))
+			require.Equal(t, messagesWithSpan(t, copied.Errors), messagesWithSpan(t, shared.Errors))
+		})
+	}
+}
+
+type fixtureModule struct {
+	name   string
+	module *ast.Module
+}
+
+// fixtureModules returns, in name order, the parsed library of every fixture whose
+// library parses. A fixture with parse errors is left out.
+func fixtureModules(t *testing.T) []fixtureModule {
+	t.Helper()
+	libs, err := filepath.Glob("../../fixtures/*/lib")
+	require.NoError(t, err)
+	require.NotEmpty(t, libs)
+	var out []fixtureModule
+	for _, lib := range libs {
+		srcs := map[string]string{}
+		err := filepath.WalkDir(lib, func(path string, d fs.DirEntry, err error) error {
+			if err != nil || d.IsDir() || filepath.Ext(path) != ".esc" {
+				return err
+			}
+			contents, err := os.ReadFile(path)
+			if err != nil {
+				return err
+			}
+			rel, err := filepath.Rel(lib, path)
+			srcs[filepath.ToSlash(rel)] = string(contents)
+			return err
+		})
+		require.NoError(t, err)
+		module, parseErrs := parser.ParseLibFiles(context.Background(), sourcesOf(srcs))
+		if len(parseErrs) > 0 {
+			continue
+		}
+		out = append(out, fixtureModule{name: filepath.Base(filepath.Dir(lib)), module: module})
+	}
+	return out
 }
 
 // sourcesOf returns srcs as sources numbered in path order.
