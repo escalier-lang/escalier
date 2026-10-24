@@ -63,7 +63,7 @@ func (c *checker) loadPackage(uri string, span ast.Span) (*Namespace, []SolverEr
 		return ns, errs
 	}
 
-	module, path, err := c.source(uri)
+	module, path, err := c.readSource(uri)
 	if err != nil {
 		return nil, []SolverError{&UnresolvedPackageError{
 			URI:    uri,
@@ -96,6 +96,27 @@ func (c *checker) loadPackage(uri string, span ast.Span) (*Namespace, []SolverEr
 		})
 	}
 	return ns, loaderErrs
+}
+
+// sourceResult is what a ModuleSource returned for one URI.
+type sourceResult struct {
+	module *ast.Module
+	path   string
+	err    error
+}
+
+// readSource returns what c.source returns for uri. It calls c.source on the run's
+// first request for uri and returns the same result on every later one.
+func (c *checker) readSource(uri string) (*ast.Module, string, error) {
+	if r, held := c.sources[uri]; held {
+		return r.module, r.path, r.err
+	}
+	module, path, err := c.source(uri)
+	if c.sources == nil {
+		c.sources = map[string]sourceResult{}
+	}
+	c.sources[uri] = sourceResult{module: module, path: path, err: err}
+	return module, path, err
 }
 
 // cycleChain returns the packages the cycle runs through, starting and ending at
@@ -152,6 +173,9 @@ func messagesOf(errs []SolverError) []string {
 // pseudo-package's parent is the prelude scope. An npm package's parent is the
 // globals scope, which has to be bound first. pkgURI is set for the duration,
 // which puts the URI on every key the walk registers.
+//
+// The global declarations of module that claimGlobals claims infer beside the
+// package's own, and publishGlobals then adds them to the globals scope.
 func (c *checker) inferPackage(uri string, module *ast.Module) (*Namespace, []SolverError) {
 	prevURI := c.pkgURI
 	c.pkgURI = uri
@@ -170,16 +194,32 @@ func (c *checker) inferPackage(uri string, module *ast.Module) (*Namespace, []So
 	if !IsSchemePrefixedImport(uri) {
 		scope = c.globalsScope().Child()
 	}
-	c.bindFileImports(scope, module)
+
+	inferred := module
+	var merge *globalsMerge
+	if globals := c.claimGlobals(module); globals != nil {
+		inferred = withGlobals(module, globals)
+		merge = newGlobalsMerge(globals)
+	}
+	prevMerge := c.globalsMerge
+	c.globalsMerge = merge
+	c.bindFileImports(scope, inferred)
 	// Inference only reads the graph, and a package's graph depends on its module
-	// alone, so every run loading the same cached module shares one graph.
-	g := stdlibParses.depGraph(module, nil, func() *dep_graph.DepGraph {
-		return dep_graph.BuildDepGraph(module)
+	// alone, so every run loading the same cached module shares one graph. A module
+	// merged with claimed globals is built for this run, so its graph is built afresh.
+	g := stdlibParses.depGraph(inferred, nil, func() *dep_graph.DepGraph {
+		return dep_graph.BuildDepGraph(inferred)
 	})
-	c.inferDepGraph(scope, 0, module, g)
+	c.inferDepGraph(scope, 0, inferred, g)
+	c.globalsMerge = prevMerge
+	if merge != nil {
+		c.publishGlobals(scope, merge)
+	}
 
 	errs := c.errs
 	c.errs = prevErrs
+	// The surface reads module rather than inferred, so a global the package marks
+	// `export` is not also a member of the package.
 	return exportedSurface(uri, module, scope), errs
 }
 

@@ -256,6 +256,15 @@ type checker struct {
 	globals *Scope
 	// globalsBound is set once bindGlobals has filled the globals scope.
 	globalsBound bool
+	// boundGlobalFiles holds the path of every `.d.ts` file whose global declarations
+	// claimGlobals has claimed for a package. It is nil until the first claim.
+	boundGlobalFiles set.Set[string]
+	// globalsMerge is what the package under inference adds to the globals scope, and
+	// nil while no package with global declarations is inferring. inferPackage sets it.
+	globalsMerge *globalsMerge
+	// sources memoizes what source returned for each URI, so a package the import
+	// binder inspects before loading it reads its files once.
+	sources map[string]sourceResult
 	// ambient is the empty scope ambientScope builds over the prelude in a run with
 	// Options.NoAmbientNames set. Every other run uses globals as its ambient scope.
 	// The entry module's scope is a child of the ambient scope, so a module
