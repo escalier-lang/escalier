@@ -68,7 +68,7 @@ func BenchmarkStdlibClosureLoad(b *testing.B) {
 		b.Run(tt.name+"/Cold", func(b *testing.B) {
 			for range b.N {
 				b.StopTimer()
-				restore := emptyTheParseCache()
+				restore := emptyTheStdlibCaches()
 				b.StartTimer()
 
 				InferModuleAgainstStdlib(module, benchTree, Options{})
@@ -124,14 +124,15 @@ func benchEntryModule(b *testing.B, uris []string) *ast.Module {
 	return module
 }
 
-// emptyTheParseCache swaps in a cache holding nothing and returns a function
-// restoring the one the process was using.
+// emptyTheStdlibCaches swaps in a parse cache and an import graph cache holding
+// nothing, and returns a function restoring the ones the process was using.
 //
 // A cold load is the first in a process. Source ids restart from the base, which
 // the swapped-in cache alone hands out, so no id it issues reaches an entry the
 // restored cache holds.
-func emptyTheParseCache() func() {
-	prev := stdlibParses
+func emptyTheStdlibCaches() func() {
+	prevParses, prevGraphs := stdlibParses, packageGraphs
 	stdlibParses = newParsedModuleCache(stdlibSourceIDBase)
-	return func() { stdlibParses = prev }
+	packageGraphs = newPackageGraphCache()
+	return func() { stdlibParses, packageGraphs = prevParses, prevGraphs }
 }
