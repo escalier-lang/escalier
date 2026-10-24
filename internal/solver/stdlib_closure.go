@@ -96,15 +96,22 @@ func reachable(edges map[string][]string, roots []string) []string {
 // buildPackageGraph returns the URIs each `.esc` file under dir's scheme
 // subdirectories imports.
 //
-// Every run asks for the same tree's graph, and reading the tree costs a few
-// megabytes of I/O per run. So the graph is cached per directory and reused
-// while each file's size and modification time match what the cache recorded.
+// Every run asks for the same tree's graph, and reading the committed tree
+// costs about two megabytes of I/O per run. So the graph is cached per
+// directory and reused while each file's size and modification time match what
+// the cache recorded. The caller must not mutate the returned map or its slices.
 func buildPackageGraph(dir string) (map[string][]string, error) {
 	stamps, err := scanPackageFiles(dir)
 	if err != nil {
 		return nil, err
 	}
-	if edges, held := packageGraphs.get(dir, stamps); held {
+	// The absolute path, so two spellings of one directory share an entry and a
+	// relative path read from two working directories does not.
+	key, err := filepath.Abs(dir)
+	if err != nil {
+		return nil, fmt.Errorf("cannot resolve %s: %w", dir, err)
+	}
+	if edges, held := packageGraphs.get(key, stamps); held {
 		return edges, nil
 	}
 
@@ -116,7 +123,7 @@ func buildPackageGraph(dir string) (map[string][]string, error) {
 		}
 		edges[stamp.uri] = imports
 	}
-	packageGraphs.put(dir, stamps, edges)
+	packageGraphs.put(key, stamps, edges)
 	return edges, nil
 }
 
@@ -188,7 +195,12 @@ type packageGraphEntry struct {
 // sit on records. FAT records two seconds.
 const racyWindow = 2 * time.Second
 
-var packageGraphs = &packageGraphCache{entries: map[string]packageGraphEntry{}}
+func newPackageGraphCache() *packageGraphCache {
+	return &packageGraphCache{entries: map[string]packageGraphEntry{}}
+}
+
+// packageGraphs is the process-wide cache buildPackageGraph reads.
+var packageGraphs = newPackageGraphCache()
 
 // get returns the graph cached for dir when it was read under exactly stamps.
 // The caller must not mutate the returned map or its slices.
@@ -218,8 +230,9 @@ func (c *packageGraphCache) put(dir string, stamps []packageFileStamp, edges map
 }
 
 // sameStamp reports whether a and b describe the same file at the same state.
+// The uri is derived from the path, so comparing the path covers it.
 func sameStamp(a, b packageFileStamp) bool {
-	return a.uri == b.uri && a.path == b.path && a.size == b.size && a.modTime.Equal(b.modTime)
+	return a.path == b.path && a.size == b.size && a.modTime.Equal(b.modTime)
 }
 
 // readPackageImports returns the pseudo-package URIs one file imports.

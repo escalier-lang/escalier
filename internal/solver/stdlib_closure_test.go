@@ -929,6 +929,8 @@ func TestTheClosurePicksUpAnEditBetweenBuilds(t *testing.T) {
 			closure, err := BuildPackageClosure(dir, []string{"std:beta"})
 			require.NoError(t, err)
 			require.Equal(t, []string{"std:alpha", "std:beta"}, closure["std:beta"])
+			_, cached := packageGraphs.get(dir, mustScanPackageFiles(t, dir))
+			require.True(t, cached, "the backdated tree's graph is cached")
 
 			beta := filepath.Join(dir, "std", "beta.esc")
 			require.NoError(t, os.WriteFile(beta, []byte(`import "std:gamma"`), 0o644))
@@ -941,4 +943,12 @@ func TestTheClosurePicksUpAnEditBetweenBuilds(t *testing.T) {
 			require.Equal(t, []string{"std:beta", "std:gamma"}, closure["std:beta"])
 		})
 	}
+}
+
+// mustScanPackageFiles returns the stamps scanPackageFiles reads for dir.
+func mustScanPackageFiles(t *testing.T, dir string) []packageFileStamp {
+	t.Helper()
+	stamps, err := scanPackageFiles(dir)
+	require.NoError(t, err)
+	return stamps
 }
