@@ -1,10 +1,12 @@
 package graphql
 
 import (
+	"fmt"
 	"os"
 	"testing"
 
 	"github.com/escalier-lang/escalier/internal/soltype"
+	"github.com/escalier-lang/escalier/internal/solver"
 	"github.com/gkampitakis/go-snaps/snaps"
 	"github.com/stretchr/testify/require"
 	"github.com/vektah/gqlparser/v2"
@@ -494,4 +496,61 @@ func TestInferGraphQLQuery_BooleanAndNullableListFields(t *testing.T) {
 
 	require.NotNil(t, result.ResultType)
 	snaps.MatchInlineSnapshot(t, soltype.Print(result.ResultType), snaps.Inline("{getUser?: {verified: boolean, tags?: Array<string | null> | null} | null}"))
+}
+
+// TestInferGraphQLQueryRecordsProvenance covers the schema and query positions the inference
+// records in its Prov table for the types it mints.
+func TestInferGraphQLQueryRecordsProvenance(t *testing.T) {
+	schema := loadSchema(t)
+
+	queryStr := `query GetUserFlags($userId: ID!) {
+	getUser(id: $userId) {
+		role
+		tags
+	}
+}`
+
+	queryDoc := gqlparser.MustLoadQueryWithRules(schema, queryStr, rules.NewDefaultRules())
+	result := InferGraphQLQuery(schema, queryDoc)
+
+	getUser := propType(t, result.ResultType, "getUser")
+	user := getUser.(*soltype.UnionType).Types[0]
+	tests := []struct {
+		name string
+		typ  soltype.Type
+		want string
+	}{
+		{name: "the result object reads the Query type", typ: result.ResultType, want: "schema.graphql:77"},
+		{name: "the variables object reads the operation", typ: result.VariablesType, want: ":1"},
+		{name: "a nullable field reads its field definition", typ: getUser, want: "schema.graphql:80"},
+		{name: "an enum reads its type definition", typ: propType(t, user, "role"), want: "schema.graphql:12"},
+		{name: "a list reads its field selection", typ: listOf(t, propType(t, user, "tags")), want: ":4"},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			origin, ok := result.Prov[test.typ].(solver.FromExternal)
+			require.True(t, ok)
+			gql, ok := origin.Source.(*GraphQLProvenance)
+			require.True(t, ok)
+			require.Equal(t, test.want, fmt.Sprintf("%s:%d", gql.Position.Src.Name, gql.Position.Line))
+		})
+	}
+}
+
+// propType returns the type of the property name on the object t.
+func propType(t *testing.T, typ soltype.Type, name string) soltype.Type {
+	t.Helper()
+	obj, ok := typ.(*soltype.ObjectType)
+	require.True(t, ok)
+	prop, ok := obj.Prop(name)
+	require.True(t, ok)
+	return prop.Type
+}
+
+// listOf returns the Array member of a nullable list type `Array<T> | null`.
+func listOf(t *testing.T, typ soltype.Type) soltype.Type {
+	t.Helper()
+	union, ok := typ.(*soltype.UnionType)
+	require.True(t, ok)
+	return union.Types[0]
 }
