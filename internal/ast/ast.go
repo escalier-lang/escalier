@@ -109,6 +109,9 @@ type Module struct {
 	// `default`, or is "" when it exports none. Only a module converted from a
 	// `.d.ts` sets it, for a declaration such as `export default function f(): void`.
 	DefaultExport string
+	// ExportAssigned is true when the module, converted from a `.d.ts`, writes
+	// `export = X`, so the whole module stands for X.
+	ExportAssigned bool
 }
 
 func NewModule(namespaces btree.Map[string, *Namespace]) *Module {

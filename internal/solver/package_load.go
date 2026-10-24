@@ -178,6 +178,7 @@ func (c *checker) inferPackage(uri string, module *ast.Module) (*Namespace, []So
 // scope, and this walk is the only thing narrowing it to a public surface.
 func exportedSurface(uri string, module *ast.Module, scope *Scope) *Namespace {
 	surface := newNamespace(uri)
+	surface.ExportAssigned = module.ExportAssigned
 	module.Namespaces.Scan(func(nsPath string, ns *ast.Namespace) bool {
 		target := surface
 		if nsPath != "" {

@@ -86,6 +86,9 @@ type Namespace struct {
 	Values map[string]ValueBinding
 	Types  map[string]TypeBinding
 	Nested map[string]*Namespace
+	// ExportAssigned is true for the surface of a package that writes
+	// `export = X`, whose default import reads the whole surface as X.
+	ExportAssigned bool
 }
 
 // Scope is the solver's multi-sorted lexical scope. It has one map per binding sort plus
