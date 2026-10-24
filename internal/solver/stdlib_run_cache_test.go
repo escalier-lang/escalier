@@ -476,10 +476,10 @@ func TestSettleLoadedDefinitionsMeasuresAProvisionalClass(t *testing.T) {
 	require.Equal(t, measured, def.Variance)
 }
 
-// TestShareForkReportsHeldDiagnosticsPerRun asserts that each fork of one loaded
+// TestForkReportsHeldDiagnosticsPerRun asserts that each fork of one loaded
 // checker reports the diagnostics its load held at that fork's own import, so a run
 // that claims them leaves them unclaimed for the next.
-func TestShareForkReportsHeldDiagnosticsPerRun(t *testing.T) {
+func TestForkReportsHeldDiagnosticsPerRun(t *testing.T) {
 	dir := seedStdlib(t, withPreludeClasses(map[string]string{
 		"std/math.esc": `export val PI: number = "pi"`,
 	}))
@@ -490,7 +490,7 @@ func TestShareForkReportsHeldDiagnosticsPerRun(t *testing.T) {
 		`) has 1 error(s):` + "\n" + `  cannot constrain "pi" <: number`
 
 	for range 2 {
-		run := loaded.shareFork(StdlibSource(dir), StdlibGroupSource(dir), groups)
+		run := loaded.fork(StdlibSource(dir), StdlibGroupSource(dir), groups)
 		res := inferModuleOn(run, parseModule(t, "import \"std:math\"\nval p = math.PI"))
 		require.Equal(t, []string{"1:1-1:18: " + loadErr}, messagesWithSpan(t, res.Errors))
 	}
