@@ -150,6 +150,12 @@ func inferModuleWithGroups(
 	groups PackageGroups,
 	opts Options,
 ) *ModuleResult {
+	return inferModuleOn(newRunChecker(source, groupSource, groups, opts), module)
+}
+
+// newRunChecker returns a checker for one run that loads packages through source and
+// groupSource. groups and opts are as inferModuleWithGroups takes them.
+func newRunChecker(source ModuleSource, groupSource GroupSource, groups PackageGroups, opts Options) *checker {
 	c := newChecker()
 	c.source = source
 	c.groupSource = groupSource
@@ -157,15 +163,23 @@ func inferModuleWithGroups(
 	c.noAmbientNames = opts.NoAmbientNames
 	c.checkJsDecorators = opts.CheckJsDecorators
 	c.dependencies = opts.Dependencies
+	return c
+}
+
+// inferModuleOn infers module on c, a checker from newRunChecker or ambientChecker.
+func inferModuleOn(c *checker, module *ast.Module) *ModuleResult {
 	// The prelude package is loaded before anything is walked, so no rule reaches
 	// for a handle from inside a speculation trial, where a load would publish a
 	// package whose bounds a discard then truncates.
 	scope := c.ambientScope().Child()
+	// Before the imports, so a package the module imports from the ambient packages'
+	// group finds it loaded on the library counters. A forked checker has already
+	// run this and skips it.
+	c.bindAmbientExports()
 	fileScopes := c.bindFileImports(scope, module)
 	// After the imports, so a failure in a package the module imports is reported at
-	// its import statement. The ambient packages share its load group and are
-	// published by then.
-	c.bindAmbientExports()
+	// its import statement.
+	c.reportHeldLoadErrors()
 	g := dep_graph.BuildDepGraph(module)
 	symbols := c.inferDepGraph(scope, 0, module, g)
 	return &ModuleResult{

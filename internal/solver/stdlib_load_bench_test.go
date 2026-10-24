@@ -20,12 +20,15 @@ import (
 // directory uses. InferModuleWithSource would load each package on its own and
 // measure a path no such run takes.
 //
-// Warm is the figure to watch. A `checker` is per inference run and no inferred
-// form is shared between runs, so a language server pays it on every
-// re-inference. #1567 is what would remove it.
+// Warm is the figure to watch, since a language server pays it on every
+// re-inference. A run whose closure the cache in stdlib_run_cache.go already holds
+// copies the loaded packages rather than inferring them, so Warm measures that
+// copy.
 //
-// Cold adds parsing, which a process pays once per distinct file because of the
-// cache in stdlib_parse_cache.go. It is what a language server pays at startup.
+// Cold adds reading the import graph, parsing the files, and inferring the packages,
+// which a process pays once per distinct tree because of the caches in
+// stdlib_closure.go, stdlib_parse_cache.go, and stdlib_run_cache.go. It is what a
+// language server pays at startup.
 //
 // Run with:
 //
@@ -57,7 +60,8 @@ func BenchmarkStdlibClosureLoad(b *testing.B) {
 		module := benchEntryModule(b, tt.uris)
 
 		b.Run(tt.name+"/Warm", func(b *testing.B) {
-			// Prime the parse cache, so the loop measures inference alone.
+			// Prime the caches, so the loop measures what a run pays once the tree is
+			// loaded.
 			InferModuleAgainstStdlib(module, benchTree, Options{})
 			b.ResetTimer()
 			for range b.N {
@@ -124,15 +128,27 @@ func benchEntryModule(b *testing.B, uris []string) *ast.Module {
 	return module
 }
 
-// emptyTheStdlibCaches swaps in a parse cache and an import graph cache holding
-// nothing, and returns a function restoring the ones the process was using.
+// emptyTheStdlibCaches swaps in a parse cache, an import graph cache, and a checker
+// cache holding nothing, and returns a function restoring the ones the process was
+// using.
 //
 // A cold load is the first in a process. Source ids restart from the base, which
-// the swapped-in cache alone hands out, so no id it issues reaches an entry the
-// restored cache holds.
+// the swapped-in parse cache alone hands out, so no id it issues reaches an entry
+// the restored cache holds.
 func emptyTheStdlibCaches() func() {
 	prevParses, prevGraphs := stdlibParses, packageGraphs
 	stdlibParses = newParsedModuleCache(stdlibSourceIDBase)
 	packageGraphs = newPackageGraphCache()
-	return func() { stdlibParses, packageGraphs = prevParses, prevGraphs }
+
+	ambientCheckers.mu.Lock()
+	prevEntries, prevOrder := ambientCheckers.entries, ambientCheckers.order
+	ambientCheckers.entries, ambientCheckers.order = map[ambientKey]*ambientEntry{}, nil
+	ambientCheckers.mu.Unlock()
+
+	return func() {
+		stdlibParses, packageGraphs = prevParses, prevGraphs
+		ambientCheckers.mu.Lock()
+		ambientCheckers.entries, ambientCheckers.order = prevEntries, prevOrder
+		ambientCheckers.mu.Unlock()
+	}
 }
