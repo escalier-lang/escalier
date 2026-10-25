@@ -1,6 +1,7 @@
 package solver
 
 import (
+	"maps"
 	"strings"
 
 	"github.com/escalier-lang/escalier/internal/ast"
@@ -52,6 +53,16 @@ func NewPackageRegistry() *PackageRegistry {
 		packages:           map[string]*packageEntry{},
 		librarySources:     set.NewSet[int](),
 		libraryKeyPrefixes: set.NewSet[string](),
+	}
+}
+
+// clone returns a registry holding its own copy of each of r's maps and sets, so a
+// package one of them records leaves r unchanged.
+func (r *PackageRegistry) clone() *PackageRegistry {
+	return &PackageRegistry{
+		packages:           maps.Clone(r.packages),
+		librarySources:     r.librarySources.Clone(),
+		libraryKeyPrefixes: r.libraryKeyPrefixes.Clone(),
 	}
 }
 
