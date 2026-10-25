@@ -61,18 +61,62 @@ var libReadonlyTwins = map[string]string{
 // key of libReadonlyTwins to the matching mutable name, so `ReadonlyArray<T>`
 // becomes `Array<T>`. It wraps nothing in `mut`. A renamed reference in a
 // function's return type becomes a `'static` borrow, so `readonly T[]`
-// returned there reads `&'static Array<T>`.
+// returned there reads `&'static Array<T>`. So does a reference in a return
+// type to a type alias readonlyAliases finds in mod.
 func renameLibReadonlyTwinRefs(mod *ast.Module) {
 	// TypeScript's `readonly` on a returned collection promises the caller a view it
 	// may not change. It says nothing about who else holds the collection, and a
 	// package may keep its own reference to it for the rest of the program.
-	rw := &refRewriter{readonlyToMutable: libReadonlyTwins, borrowReadonlyReturns: true}
+	rw := &refRewriter{
+		readonlyToMutable:     libReadonlyTwins,
+		borrowReadonlyReturns: true,
+		readonlyAliases:       readonlyAliases(mod),
+	}
 	mod.Namespaces.Scan(func(_ string, ns *ast.Namespace) bool {
 		for _, decl := range ns.Decls {
 			rw.rewriteDecl(decl)
 		}
 		return true
 	})
+}
+
+// readonlyAliases returns the name of each type alias declared at the top level
+// of a namespace in mod whose definition is a readonly collection. The definition
+// is a reference to a key of libReadonlyTwins, or to another alias in the set, so
+// `type Items = readonly number[]` and `type More = Items` are both included. It
+// reads the definitions before renameLibReadonlyTwinRefs renames them.
+func readonlyAliases(mod *ast.Module) set.Set[string] {
+	defs := map[string]string{}
+	mod.Namespaces.Scan(func(_ string, ns *ast.Namespace) bool {
+		for _, decl := range ns.Decls {
+			td, ok := decl.(*ast.TypeDecl)
+			if !ok || td.Name == nil {
+				continue
+			}
+			if ref, ok := td.TypeAnn.(*ast.TypeRefTypeAnn); ok {
+				if id, ok := ref.Name.(*ast.Ident); ok {
+					defs[td.Name.Name] = id.Name
+				}
+			}
+		}
+		return true
+	})
+	aliases := set.NewSet[string]()
+	// Each pass adds the aliases one more step from a readonly collection, so the
+	// loop stops once a pass adds none.
+	for changed := true; changed; {
+		changed = false
+		for name, target := range defs {
+			if aliases.Contains(name) {
+				continue
+			}
+			if _, twin := libReadonlyTwins[target]; twin || aliases.Contains(target) {
+				aliases.Add(name)
+				changed = true
+			}
+		}
+	}
+	return aliases
 }
 
 // rewriteConsumedCtorRefs respells every reference to a constructor interface trio fusion
@@ -135,6 +179,10 @@ type refRewriter struct {
 	// borrowReadonlyReturns wraps a renamed readonly reference in a `'static`
 	// borrow when it sits in a function's return type.
 	borrowReadonlyReturns bool
+	// readonlyAliases holds each type alias whose definition is a readonly
+	// collection. A reference to one in a function's return type is wrapped the
+	// way borrowReadonlyReturns wraps a readonly reference.
+	readonlyAliases set.Set[string]
 	// inReturnTypeAnn is true while the pass walks a function's return type
 	// annotation, outside the parameters of any function type nested in it.
 	inReturnTypeAnn bool
@@ -453,11 +501,11 @@ func (r *refRewriter) rewrite(t ast.TypeAnn) ast.TypeAnn {
 		}
 		if mutableName, ok := r.readonlyToMutable[id.Name]; ok {
 			id.Name = mutableName
-			if r.borrowReadonlyReturns && r.inReturnTypeAnn {
-				static := ast.NewLifetimeAnn("static", tt.Span())
-				return ast.NewBorrowTypeAnn(false, static, tt, tt.Span())
-			}
-			return tt
+			return r.borrowInReturnTypeAnn(tt)
+		}
+		// A type parameter of the same name shadows the alias.
+		if _, bound := r.bound[id.Name]; !bound && r.readonlyAliases.Contains(id.Name) {
+			return r.borrowInReturnTypeAnn(tt)
 		}
 		if r.mutable.Contains(id.Name) {
 			return ast.NewMutableTypeAnn(tt, tt.Span())
@@ -579,6 +627,16 @@ func (r *refRewriter) rewrite(t ast.TypeAnn) ast.TypeAnn {
 	default:
 		panic(fmt.Sprintf("refRewriter.rewrite: unhandled type-ann %T — extend this switch so the readonly-twin rewrite does not silently skip a new TypeAnn variant", t))
 	}
+}
+
+// borrowInReturnTypeAnn returns ref wrapped in a `'static` borrow when the pass borrows
+// readonly returns and is walking a function's return type, and ref otherwise.
+func (r *refRewriter) borrowInReturnTypeAnn(ref *ast.TypeRefTypeAnn) ast.TypeAnn {
+	if !r.borrowReadonlyReturns || !r.inReturnTypeAnn {
+		return ref
+	}
+	static := ast.NewLifetimeAnn("static", ref.Span())
+	return ast.NewBorrowTypeAnn(false, static, ref, ref.Span())
 }
 
 // stripTopLevelMut returns t with a `mut` removed from its top level and from
