@@ -335,11 +335,11 @@ func BranchResults(e ast.Expr) ([]ast.Expr, bool) {
 	case *ast.IfValExpr:
 		return condResults(e.Cons, e.Alt), true
 	case *ast.MatchExpr:
-		return caseResults(nil, e.Cases), true
+		return caseResults(e.Cases), true
 	case *ast.DoExpr:
 		return []ast.Expr{BlockResultExpr(e.Body)}, true
 	case *ast.TryCatchExpr:
-		return caseResults([]ast.Expr{BlockResultExpr(e.Try)}, e.Catch), true
+		return append([]ast.Expr{BlockResultExpr(e.Try)}, caseResults(e.Catch)...), true
 	}
 	return nil, false
 }
@@ -354,8 +354,9 @@ func condResults(cons ast.Block, alt *ast.BlockOrExpr) []ast.Expr {
 	return results
 }
 
-// caseResults appends the result expression of each case body in cases to results.
-func caseResults(results []ast.Expr, cases []*ast.MatchCase) []ast.Expr {
+// caseResults returns the result expression of each case body in cases.
+func caseResults(cases []*ast.MatchCase) []ast.Expr {
+	results := make([]ast.Expr, 0, len(cases))
 	for _, mc := range cases {
 		results = append(results, BlockOrExprResultExpr(&mc.Body))
 	}
