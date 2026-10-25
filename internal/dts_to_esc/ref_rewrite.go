@@ -2,6 +2,7 @@ package dts_to_esc
 
 import (
 	"fmt"
+	"strings"
 
 	"github.com/escalier-lang/escalier/internal/ast"
 	"github.com/escalier-lang/escalier/internal/set"
@@ -62,7 +63,7 @@ var libReadonlyTwins = map[string]string{
 // becomes `Array<T>`. It wraps nothing in `mut`. A renamed reference in a
 // function's return type becomes a `'static` borrow, so `readonly T[]`
 // returned there reads `&'static Array<T>`. So does a reference in a return
-// type to a type alias readonlyAliases finds in mod.
+// type to a type alias whose definition is a readonly collection.
 func renameLibReadonlyTwinRefs(mod *ast.Module) {
 	// TypeScript's `readonly` on a returned collection promises the caller a view it
 	// may not change. It says nothing about who else holds the collection, and a
@@ -72,7 +73,8 @@ func renameLibReadonlyTwinRefs(mod *ast.Module) {
 		borrowReadonlyReturns: true,
 		readonlyAliases:       readonlyAliases(mod),
 	}
-	mod.Namespaces.Scan(func(_ string, ns *ast.Namespace) bool {
+	mod.Namespaces.Scan(func(nsPath string, ns *ast.Namespace) bool {
+		rw.nsPath = nsPath
 		for _, decl := range ns.Decls {
 			rw.rewriteDecl(decl)
 		}
@@ -80,43 +82,129 @@ func renameLibReadonlyTwinRefs(mod *ast.Module) {
 	})
 }
 
-// readonlyAliases returns the name of each type alias declared at the top level
-// of a namespace in mod whose definition is a readonly collection. The definition
-// is a reference to a key of libReadonlyTwins, or to another alias in the set, so
-// `type Items = readonly number[]` and `type More = Items` are both included. It
-// reads the definitions before renameLibReadonlyTwinRefs renames them.
-func readonlyAliases(mod *ast.Module) set.Set[string] {
-	defs := map[string]string{}
-	mod.Namespaces.Scan(func(_ string, ns *ast.Namespace) bool {
-		for _, decl := range ns.Decls {
-			td, ok := decl.(*ast.TypeDecl)
-			if !ok || td.Name == nil {
-				continue
-			}
-			if ref, ok := td.TypeAnn.(*ast.TypeRefTypeAnn); ok {
-				if id, ok := ref.Name.(*ast.Ident); ok {
-					defs[td.Name.Name] = id.Name
+// readonlyAliasIndex records the type aliases of a module whose definition is a
+// readonly collection, keyed by the namespace that declares each one.
+type readonlyAliasIndex struct {
+	// types holds the namespace-qualified name of every type the module declares.
+	// `type Items` inside `namespace ro` is `ro.Items`, and one at the top level is
+	// `Items`.
+	types set.Set[string]
+	// readonly holds the qualified name of each alias in types whose definition is
+	// a readonly collection.
+	readonly set.Set[string]
+}
+
+// resolve returns the qualified name of the type that a reference spelled ref
+// names from inside namespace nsPath, or "" when the module declares none. It
+// tries nsPath and then each enclosing namespace in turn, so a type the nearer
+// namespace declares hides one of the same name further out.
+func (x *readonlyAliasIndex) resolve(nsPath, ref string) string {
+	for {
+		key := qualifyNamespace(nsPath, ref)
+		if x.types.Contains(key) {
+			return key
+		}
+		if nsPath == "" {
+			return ""
+		}
+		nsPath = parentNamespace(nsPath)
+	}
+}
+
+// contains reports whether a reference spelled ref, written inside namespace
+// nsPath, names a readonly alias. A nil index contains nothing.
+func (x *readonlyAliasIndex) contains(nsPath, ref string) bool {
+	if x == nil {
+		return false
+	}
+	key := x.resolve(nsPath, ref)
+	return key != "" && x.readonly.Contains(key)
+}
+
+// qualifyNamespace joins a namespace path and a name with a dot, returning the
+// name alone at the top level.
+func qualifyNamespace(nsPath, name string) string {
+	if nsPath == "" {
+		return name
+	}
+	return nsPath + "." + name
+}
+
+// parentNamespace returns the path of the namespace that encloses nsPath, so
+// `a.b` gives `a` and `a` gives "".
+func parentNamespace(nsPath string) string {
+	if i := strings.LastIndex(nsPath, "."); i >= 0 {
+		return nsPath[:i]
+	}
+	return ""
+}
+
+// readonlyAliases returns the index of the type aliases in mod whose definition
+// is a readonly collection. The definition is a reference to a key of
+// libReadonlyTwins, or to another alias in the index, so `type Items = readonly
+// number[]` and `type More = Items` are both included. A reference in a definition
+// resolves from the namespace that declares the alias. It reads the definitions
+// before renameLibReadonlyTwinRefs renames them.
+func readonlyAliases(mod *ast.Module) *readonlyAliasIndex {
+	type aliasDef struct {
+		nsPath string
+		target string
+	}
+	index := &readonlyAliasIndex{types: set.NewSet[string](), readonly: set.NewSet[string]()}
+	defs := map[string]aliasDef{}
+	var collect func(nsPath string, decls []ast.Decl)
+	collect = func(nsPath string, decls []ast.Decl) {
+		for _, decl := range decls {
+			switch d := decl.(type) {
+			case *ast.TypeDecl:
+				if d.Name == nil {
+					continue
+				}
+				index.types.Add(qualifyNamespace(nsPath, d.Name.Name))
+				if ref, ok := d.TypeAnn.(*ast.TypeRefTypeAnn); ok {
+					defs[qualifyNamespace(nsPath, d.Name.Name)] = aliasDef{nsPath, ast.QualIdentToString(ref.Name)}
+				}
+			case *ast.InterfaceDecl:
+				if d.Name != nil {
+					index.types.Add(qualifyNamespace(nsPath, d.Name.Name))
+				}
+			case *ast.ClassDecl:
+				if d.Name != nil {
+					index.types.Add(qualifyNamespace(nsPath, d.Name.Name))
+				}
+			case *ast.EnumDecl:
+				if d.Name != nil {
+					index.types.Add(qualifyNamespace(nsPath, d.Name.Name))
+				}
+			case *ast.NamespaceDecl:
+				if d.Name != nil {
+					collect(qualifyNamespace(nsPath, d.Name.Name), d.Decls)
 				}
 			}
 		}
+	}
+	mod.Namespaces.Scan(func(nsPath string, ns *ast.Namespace) bool {
+		collect(nsPath, ns.Decls)
 		return true
 	})
-	aliases := set.NewSet[string]()
 	// Each pass adds the aliases one more step from a readonly collection, so the
 	// loop stops once a pass adds none.
 	for changed := true; changed; {
 		changed = false
-		for name, target := range defs {
-			if aliases.Contains(name) {
+		for key, def := range defs {
+			if index.readonly.Contains(key) {
 				continue
 			}
-			if _, twin := libReadonlyTwins[target]; twin || aliases.Contains(target) {
-				aliases.Add(name)
+			resolved := index.resolve(def.nsPath, def.target)
+			_, twin := libReadonlyTwins[def.target]
+			// A twin name the package itself declares names that declaration.
+			if (twin && resolved == "") || index.readonly.Contains(resolved) {
+				index.readonly.Add(key)
 				changed = true
 			}
 		}
 	}
-	return aliases
+	return index
 }
 
 // rewriteConsumedCtorRefs respells every reference to a constructor interface trio fusion
@@ -181,8 +269,12 @@ type refRewriter struct {
 	borrowReadonlyReturns bool
 	// readonlyAliases holds each type alias whose definition is a readonly
 	// collection. A reference to one in a function's return type is wrapped the
-	// way borrowReadonlyReturns wraps a readonly reference.
-	readonlyAliases set.Set[string]
+	// way borrowReadonlyReturns wraps a readonly reference. Nil when the pass
+	// wraps no aliases.
+	readonlyAliases *readonlyAliasIndex
+	// nsPath is the path of the namespace whose declarations the pass is walking,
+	// such as `a.b`, or "" at the top level.
+	nsPath string
 	// inReturnTypeAnn is true while the pass walks a function's return type
 	// annotation, outside the parameters of any function type nested in it.
 	inReturnTypeAnn bool
@@ -283,9 +375,14 @@ func (r *refRewriter) rewriteDecl(decl ast.Decl) {
 	case *ast.ExportAssignmentStmt:
 		// `export = Name` carries only a value-side ident — nothing to rewrite.
 	case *ast.NamespaceDecl:
+		outerNS := r.nsPath
+		if d.Name != nil {
+			r.nsPath = qualifyNamespace(r.nsPath, d.Name.Name)
+		}
 		for _, inner := range d.Decls {
 			r.rewriteDecl(inner)
 		}
+		r.nsPath = outerNS
 	case *ast.DeclareModuleDecl:
 		for _, inner := range d.Decls {
 			r.rewriteDecl(inner)
@@ -480,6 +577,10 @@ func (r *refRewriter) rewrite(t ast.TypeAnn) ast.TypeAnn {
 		}
 		id, ok := tt.Name.(*ast.Ident)
 		if !ok {
+			// A qualified reference such as `ro.Items` can name an alias too.
+			if r.readonlyAliases.contains(r.nsPath, ast.QualIdentToString(tt.Name)) {
+				return r.borrowInReturnTypeAnn(tt)
+			}
 			return tt
 		}
 		if sub, ok := r.substitutions[id.Name]; ok {
@@ -504,7 +605,7 @@ func (r *refRewriter) rewrite(t ast.TypeAnn) ast.TypeAnn {
 			return r.borrowInReturnTypeAnn(tt)
 		}
 		// A type parameter of the same name shadows the alias.
-		if _, bound := r.bound[id.Name]; !bound && r.readonlyAliases.Contains(id.Name) {
+		if _, bound := r.bound[id.Name]; !bound && r.readonlyAliases.contains(r.nsPath, id.Name) {
 			return r.borrowInReturnTypeAnn(tt)
 		}
 		if r.mutable.Contains(id.Name) {
