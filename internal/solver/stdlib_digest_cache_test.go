@@ -10,77 +10,79 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-// TestFileDigestCache covers when digest reuses a recorded digest and when it reads
-// the file again. Each row writes a file, takes its digest, changes the file, and
-// takes the digest again. A reuse shows as the first contents' digest coming back
-// for the second contents.
-//
-// Rewriting a file with contents of the same size and setting the old modification
-// time back leaves the stamp unchanged, which is the case the stamp cannot tell
-// from an unchanged file.
-func TestFileDigestCache(t *testing.T) {
+// writeDigestFile writes contents to path and, when at is non-zero, sets the file's
+// modification time to at.
+func writeDigestFile(t *testing.T, path, contents string, at time.Time) {
+	t.Helper()
+	require.NoError(t, os.WriteFile(path, []byte(contents), 0o644))
+	if !at.IsZero() {
+		require.NoError(t, os.Chtimes(path, at, at))
+	}
+}
+
+// requireDigest asserts that the cache returns the SHA-256 of want for path.
+func requireDigest(t *testing.T, cache *fileDigestCache, path, want string) {
+	t.Helper()
+	got, err := cache.digest(path)
+	require.NoError(t, err)
+	require.Equal(t, sha256.Sum256([]byte(want)), got)
+}
+
+// TestFileDigestCacheReusesAnUnchangedStamp asserts that digest returns the recorded
+// digest when the size and modification time match. The second write keeps the size
+// and sets the old time back, so the stamp cannot tell it from an unchanged file, and
+// the first contents' digest comes back for the second contents.
+func TestFileDigestCacheReusesAnUnchangedStamp(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "file.esc")
 	past := time.Now().Add(-time.Hour)
-	later := past.Add(time.Minute)
-	cases := []struct {
-		name   string
-		first  string
-		second string
-		// firstAt and secondAt are the modification times the file is given after
-		// each write. A zero time leaves the time the write gave it.
-		firstAt, secondAt time.Time
-		wantReuse         bool
-	}{
-		{
-			name: "unchanged stamp reuses the digest", first: "abc", second: "xyz",
-			firstAt: past, secondAt: past, wantReuse: true,
-		},
-		{
-			name: "changed size reads the file again", first: "abc", second: "abcd",
-			firstAt: past, secondAt: past,
-		},
-		{
-			name: "changed modification time reads the file again", first: "abc", second: "xyz",
-			firstAt: past, secondAt: later,
-		},
-		{
-			name: "a file written within the mtime granularity is not recorded", first: "abc", second: "xyz",
-			secondAt: time.Time{},
-		},
-	}
-	for _, tt := range cases {
-		t.Run(tt.name, func(t *testing.T) {
-			path := filepath.Join(t.TempDir(), "file.esc")
-			write := func(contents string, at time.Time) {
-				require.NoError(t, os.WriteFile(path, []byte(contents), 0o644))
-				if !at.IsZero() {
-					require.NoError(t, os.Chtimes(path, at, at))
-				}
-			}
-			cache := newFileDigestCache()
+	cache := newFileDigestCache()
 
-			write(tt.first, tt.firstAt)
-			first, err := cache.digest(path)
-			require.NoError(t, err)
-			require.Equal(t, sha256.Sum256([]byte(tt.first)), first)
+	writeDigestFile(t, path, "abc", past)
+	requireDigest(t, cache, path, "abc")
+	writeDigestFile(t, path, "xyz", past)
+	requireDigest(t, cache, path, "abc")
+}
 
-			// The mtime-granularity row keeps the write's own time for both writes, so it
-			// sets the first one back to the same time as the second.
-			if tt.firstAt.IsZero() {
-				info, err := os.Stat(path)
-				require.NoError(t, err)
-				write(tt.second, info.ModTime())
-			} else {
-				write(tt.second, tt.secondAt)
-			}
-			second, err := cache.digest(path)
-			require.NoError(t, err)
-			if tt.wantReuse {
-				require.Equal(t, first, second)
-			} else {
-				require.Equal(t, sha256.Sum256([]byte(tt.second)), second)
-			}
-		})
-	}
+// TestFileDigestCacheRereadsAChangedSize asserts that digest reads the file again when
+// its size changes, even with the modification time unchanged.
+func TestFileDigestCacheRereadsAChangedSize(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "file.esc")
+	past := time.Now().Add(-time.Hour)
+	cache := newFileDigestCache()
+
+	writeDigestFile(t, path, "abc", past)
+	requireDigest(t, cache, path, "abc")
+	writeDigestFile(t, path, "abcd", past)
+	requireDigest(t, cache, path, "abcd")
+}
+
+// TestFileDigestCacheRereadsAChangedModTime asserts that digest reads the file again
+// when its modification time changes, even with the size unchanged.
+func TestFileDigestCacheRereadsAChangedModTime(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "file.esc")
+	past := time.Now().Add(-time.Hour)
+	cache := newFileDigestCache()
+
+	writeDigestFile(t, path, "abc", past)
+	requireDigest(t, cache, path, "abc")
+	writeDigestFile(t, path, "xyz", past.Add(time.Minute))
+	requireDigest(t, cache, path, "xyz")
+}
+
+// TestFileDigestCacheSkipsARecentWrite asserts that digest does not record a file
+// modified within mtimeGranularity of the read. The second write keeps the size and
+// sets the first write's time back, so only the missing entry makes digest read the
+// file again.
+func TestFileDigestCacheSkipsARecentWrite(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "file.esc")
+	cache := newFileDigestCache()
+
+	writeDigestFile(t, path, "abc", time.Time{})
+	requireDigest(t, cache, path, "abc")
+	info, err := os.Stat(path)
+	require.NoError(t, err)
+	writeDigestFile(t, path, "xyz", info.ModTime())
+	requireDigest(t, cache, path, "xyz")
 }
 
 // TestFileDigestCacheReportsAMissingFile asserts that digest returns the error os.Stat
