@@ -59,9 +59,14 @@ var libReadonlyTwins = map[string]string{
 
 // renameLibReadonlyTwinRefs renames each type reference in mod whose name is a
 // key of libReadonlyTwins to the matching mutable name, so `ReadonlyArray<T>`
-// becomes `Array<T>`. It wraps nothing in `mut`.
+// becomes `Array<T>`. It wraps nothing in `mut`. A renamed reference in a
+// function's return type becomes a `'static` borrow, so `readonly T[]`
+// returned there reads `&'static Array<T>`.
 func renameLibReadonlyTwinRefs(mod *ast.Module) {
-	rw := &refRewriter{readonlyToMutable: libReadonlyTwins}
+	// TypeScript's `readonly` on a returned collection promises the caller a view it
+	// may not change. It says nothing about who else holds the collection, and a
+	// package may keep its own reference to it for the rest of the program.
+	rw := &refRewriter{readonlyToMutable: libReadonlyTwins, borrowReadonlyReturns: true}
 	mod.Namespaces.Scan(func(_ string, ns *ast.Namespace) bool {
 		for _, decl := range ns.Decls {
 			rw.rewriteDecl(decl)
@@ -127,6 +132,18 @@ type refRewriter struct {
 	// elideVacuous drops a signature's type parameter that occurs once and only
 	// among its parameters, rewriting that occurrence in place.
 	elideVacuous bool
+	// borrowReadonlyReturns wraps a renamed readonly reference in a `'static`
+	// borrow when it sits in a function's return type.
+	borrowReadonlyReturns bool
+	// inReturnTypeAnn is true while the pass walks a function's return type
+	// annotation, outside the parameters of any function type nested in it.
+	inReturnTypeAnn bool
+	// paramDepth counts the function parameter lists the pass is inside.
+	// inReturnTypeAnn is set only when it is zero. In
+	// `onItems(cb: () => readonly number[]): void`, the `readonly number[]` is the
+	// return type of `cb`, which sits in the parameters of `onItems`. The caller
+	// writes `cb` and hands that array to the package, so it stays owned.
+	paramDepth int
 	// declaredNames is every name the tree declares. A qualified reference whose
 	// head is among them resolves already and is left alone.
 	declaredNames set.Set[string]
@@ -246,17 +263,24 @@ func (r *refRewriter) rewriteFuncSig(sig *ast.FuncSig) {
 	r.pushTypeParams(tps)
 	defer r.popTypeParams(tps)
 
+	outerReturn := r.inReturnTypeAnn
+	defer func() { r.inReturnTypeAnn = outerReturn }()
+	r.inReturnTypeAnn = false
 	r.rewriteTypeParams(sig.TypeParams)
+	r.paramDepth++
 	for _, p := range sig.Params {
 		if p.TypeAnn != nil {
 			p.TypeAnn = r.rewrite(p.TypeAnn)
 		}
 	}
+	r.paramDepth--
 	if sig.Return != nil {
 		// A caller owns what a function returns and can bind it mutably with
 		// `val mut`, so a mutable twin keeps its bare name in this slot.
+		r.inReturnTypeAnn = r.paramDepth == 0
 		sig.Return = stripTopLevelMut(r.rewrite(sig.Return))
 	}
+	r.inReturnTypeAnn = false
 	if sig.Throws != nil {
 		sig.Throws = r.rewrite(sig.Throws)
 	}
@@ -429,6 +453,10 @@ func (r *refRewriter) rewrite(t ast.TypeAnn) ast.TypeAnn {
 		}
 		if mutableName, ok := r.readonlyToMutable[id.Name]; ok {
 			id.Name = mutableName
+			if r.borrowReadonlyReturns && r.inReturnTypeAnn {
+				static := ast.NewLifetimeAnn("static", tt.Span())
+				return ast.NewBorrowTypeAnn(false, static, tt, tt.Span())
+			}
 			return tt
 		}
 		if r.mutable.Contains(id.Name) {
@@ -459,17 +487,24 @@ func (r *refRewriter) rewrite(t ast.TypeAnn) ast.TypeAnn {
 		r.pushTypeParams(tt.TypeParams)
 		defer r.popTypeParams(tt.TypeParams)
 
+		outerReturn := r.inReturnTypeAnn
+		defer func() { r.inReturnTypeAnn = outerReturn }()
+		r.inReturnTypeAnn = false
 		r.rewriteTypeParams(tt.TypeParams)
+		r.paramDepth++
 		for _, p := range tt.Params {
 			if p.TypeAnn != nil {
 				p.TypeAnn = r.rewrite(p.TypeAnn)
 			}
 		}
+		r.paramDepth--
 		if tt.Return != nil {
 			// A caller owns what a function returns and can bind it mutably with
 			// `val mut`, so a mutable twin keeps its bare name in this slot.
+			r.inReturnTypeAnn = r.paramDepth == 0
 			tt.Return = stripTopLevelMut(r.rewrite(tt.Return))
 		}
+		r.inReturnTypeAnn = false
 		if tt.Throws != nil {
 			tt.Throws = r.rewrite(tt.Throws)
 		}
