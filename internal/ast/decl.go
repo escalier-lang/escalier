@@ -138,8 +138,7 @@ func (p *Param) Span() Span {
 
 type FuncDecl struct {
 	declDoc
-	Name  *Ident
-	VarID int // Set by the rename pass (liveness Phase 2)
+	Name *Ident
 	FuncSig
 	Body       *Block // optional
 	Decorators []*Decorator
@@ -538,7 +537,7 @@ func DeclNames(decl Decl) []string {
 	switch d := decl.(type) {
 	case *VarDecl:
 		var names []string
-		ForEachLeafBinding(d.Pattern, func(name string, _ int) {
+		ForEachLeafBinding(d.Pattern, func(name string, _ Node) {
 			names = append(names, name)
 		})
 		return names

@@ -224,7 +224,7 @@ func (c *checker) checkConstructorInit(body *soltype.ObjectType, ctor *ast.Const
 		return
 	}
 
-	cfg := liveness.BuildCFG(*ctor.Fn.Body)
+	cfg := liveness.BuildCFG(c.varIDs, *ctor.Fn.Body)
 	col := &initCollector{
 		c:           c,
 		fieldIDs:    fieldIDs,

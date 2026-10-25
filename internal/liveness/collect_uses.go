@@ -28,11 +28,11 @@ type StmtUses struct {
 // conservative (variables may appear live longer than necessary) but
 // safe. See #485 for decomposing nested branching in the CFG.
 //
-// VarIDs are read directly from AST nodes (set by the rename pass in Phase 2).
-func CollectUses(stmts []ast.Stmt) []StmtUses {
+// ids holds the VarIDs the rename pass assigned to the statements' bindings and uses.
+func CollectUses(ids *VarIDs, stmts []ast.Stmt) []StmtUses {
 	result := make([]StmtUses, len(stmts))
 	for i, stmt := range stmts {
-		c := &collector{}
+		c := &collector{ids: ids}
 		c.collectStmt(stmt)
 		result[i] = StmtUses{Uses: c.uses, Defs: c.defs}
 	}
@@ -41,19 +41,20 @@ func CollectUses(stmts []ast.Stmt) []StmtUses {
 
 // collector accumulates uses and defs for a single statement.
 type collector struct {
+	ids  *VarIDs
 	uses []VarID
 	defs []VarID
 }
 
-func (c *collector) addUse(id int) {
+func (c *collector) addUse(id VarID) {
 	if id > 0 {
-		c.uses = append(c.uses, VarID(id))
+		c.uses = append(c.uses, id)
 	}
 }
 
-func (c *collector) addDef(id int) {
+func (c *collector) addDef(id VarID) {
 	if id > 0 {
-		c.defs = append(c.defs, VarID(id))
+		c.defs = append(c.defs, id)
 	}
 }
 
@@ -90,7 +91,7 @@ func (c *collector) collectDecl(decl ast.Decl) {
 	case *ast.FuncDecl:
 		// The function name is a definition. Don't recurse into the body.
 		if d.Name != nil {
-			c.addDef(d.VarID)
+			c.addDef(c.ids.Of(d))
 		}
 	case *ast.TypeDecl, *ast.InterfaceDecl, *ast.EnumDecl, *ast.ExportAssignmentStmt:
 		// No variable bindings relevant to liveness.
@@ -101,14 +102,14 @@ func (c *collector) collectDecl(decl ast.Decl) {
 func (c *collector) collectPatDefs(pat ast.Pat) {
 	switch p := pat.(type) {
 	case *ast.IdentPat:
-		c.addDef(p.VarID)
+		c.addDef(c.ids.Of(p))
 	case *ast.ObjectPat:
 		for _, elem := range p.Elems {
 			switch e := elem.(type) {
 			case *ast.ObjKeyValuePat:
 				c.collectPatDefs(e.Value)
 			case *ast.ObjShorthandPat:
-				c.addDef(e.VarID)
+				c.addDef(c.ids.Of(e))
 			case *ast.ObjRestPat:
 				c.collectPatDefs(e.Pattern)
 			}
@@ -151,7 +152,7 @@ func (c *collector) collectBlockOrExpr(boe *ast.BlockOrExpr) {
 func (c *collector) collectExpr(expr ast.Expr) {
 	switch e := expr.(type) {
 	case *ast.IdentExpr:
-		c.addUse(e.VarID)
+		c.addUse(c.ids.Of(e))
 	case *ast.BinaryExpr:
 		if e.Op == ast.Assign {
 			// Plain assignment: RHS is a use, LHS is a definition.
@@ -265,7 +266,7 @@ func (c *collector) collectAssignTarget(expr ast.Expr) {
 	switch e := expr.(type) {
 	case *ast.IdentExpr:
 		// Assignment to a variable: definition only, no use.
-		c.addDef(e.VarID)
+		c.addDef(c.ids.Of(e))
 	case *ast.MemberExpr:
 		// obj.field = val: obj is used (read), field is being set.
 		c.collectExpr(e.Object)

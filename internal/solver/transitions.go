@@ -407,8 +407,8 @@ func (c *checker) trackAliasesForVarDecl(scope *Scope, decl *ast.VarDecl, bindin
 
 	// When the initializer is a FuncExpr, add the closure variable to each captured
 	// variable's alias set.
-	if funcExpr, ok := decl.Init.(*ast.FuncExpr); ok && pat.VarID > 0 {
-		c.trackCapturedAliases(scope, funcExpr, liveness.VarID(pat.VarID))
+	if funcExpr, ok := decl.Init.(*ast.FuncExpr); ok && c.varIDs.Of(pat) > 0 {
+		c.trackCapturedAliases(scope, funcExpr, c.varIDs.Of(pat))
 	}
 }
 
@@ -451,10 +451,10 @@ func (c *checker) trackAliasesForIdentPat(
 	enclosingStmt ast.Stmt,
 	node ast.Node,
 ) {
-	if identPat.VarID <= 0 {
+	if c.varIDs.Of(identPat) <= 0 {
 		return
 	}
-	targetVarID := liveness.VarID(identPat.VarID)
+	targetVarID := c.varIDs.Of(identPat)
 	targetMut := isMutableType(bindingT)
 	aliasMut := aliasMutability(targetMut)
 	c.recordVarIDType(targetVarID, bindingT)
@@ -467,9 +467,9 @@ func (c *checker) trackAliasesForIdentPat(
 	// run the exclusivity check against the source's OTHER aliases with sourceConsumed
 	// set, which skips the source's own self-conflict.
 	if c.movesSourceInto(init, bindingT) {
-		if ident, ok := init.(*ast.IdentExpr); ok && ident.VarID > 0 {
+		if ident, ok := init.(*ast.IdentExpr); ok && c.varIDs.Of(ident) > 0 {
 			c.checkTransitionsAgainst(
-				[]liveness.VarID{liveness.VarID(ident.VarID)},
+				[]liveness.VarID{c.varIDs.Of(ident)},
 				targetVarID, identPat.Name, targetMut, enclosingStmt, node, true,
 			)
 		}
@@ -477,7 +477,7 @@ func (c *checker) trackAliasesForIdentPat(
 		return
 	}
 
-	source := liveness.DetermineAliasSource(init)
+	source := liveness.DetermineAliasSource(c.varIDs, init)
 	switch source.RootKind() {
 	case liveness.AliasSourceVariable, liveness.AliasSourceMultiple:
 		// The target aliases every source, whether one variable or several under
@@ -535,10 +535,10 @@ func (c *checker) trackCapturedAliases(scope *Scope, closure ast.Func, closureVa
 // resolve a valid-but-wrong CFG StmtRef and run the liveness query at the wrong
 // program point.
 func (c *checker) trackAliasesForAssignment(target *ast.IdentExpr, rhs ast.Expr, targetType soltype.Type, enclosingStmt ast.Stmt) {
-	if c.fn == nil || c.fn.aliases == nil || target.VarID <= 0 {
+	if c.fn == nil || c.fn.aliases == nil || c.varIDs.Of(target) <= 0 {
 		return
 	}
-	targetVarID := liveness.VarID(target.VarID)
+	targetVarID := c.varIDs.Of(target)
 	targetMut := isMutableType(targetType)
 	aliasMut := aliasMutability(targetMut)
 	c.recordVarIDType(targetVarID, targetType)
@@ -551,9 +551,9 @@ func (c *checker) trackAliasesForAssignment(target *ast.IdentExpr, rhs ast.Expr,
 	// borrow of the source, so run the exclusivity check against p's OTHER aliases with
 	// sourceConsumed set, which skips p's own self-conflict.
 	if c.movesSourceInto(rhs, targetType) {
-		if ident, ok := rhs.(*ast.IdentExpr); ok && ident.VarID > 0 {
+		if ident, ok := rhs.(*ast.IdentExpr); ok && c.varIDs.Of(ident) > 0 {
 			c.checkTransitionsAgainst(
-				[]liveness.VarID{liveness.VarID(ident.VarID)},
+				[]liveness.VarID{c.varIDs.Of(ident)},
 				targetVarID, target.Name, targetMut, enclosingStmt, target, true,
 			)
 		}
@@ -561,7 +561,7 @@ func (c *checker) trackAliasesForAssignment(target *ast.IdentExpr, rhs ast.Expr,
 		return
 	}
 
-	source := liveness.DetermineAliasSource(rhs)
+	source := liveness.DetermineAliasSource(c.varIDs, rhs)
 	switch source.RootKind() {
 	case liveness.AliasSourceVariable:
 		// Check the transition before reassigning. The single-source reassign rewires
@@ -606,7 +606,7 @@ func (c *checker) checkGlobalWriteTransition(target *ast.IdentExpr, rhs ast.Expr
 	if !hasRef {
 		return
 	}
-	source := liveness.DetermineAliasSource(rhs)
+	source := liveness.DetermineAliasSource(c.varIDs, rhs)
 	switch source.RootKind() {
 	case liveness.AliasSourceVariable, liveness.AliasSourceMultiple:
 		targetMut := isMutableType(targetType)
@@ -629,11 +629,11 @@ func (c *checker) trackAliasesForPropAssignment(lhs ast.Expr, rhs ast.Expr) {
 	if c.fn == nil || c.fn.aliases == nil {
 		return
 	}
-	objVarID := liveness.VarID(ast.RootObjectVarID(lhs))
+	objVarID := c.varIDs.RootObject(lhs)
 	if objVarID <= 0 {
 		return
 	}
-	source := liveness.DetermineAliasSource(rhs)
+	source := liveness.DetermineAliasSource(c.varIDs, rhs)
 	switch source.RootKind() {
 	case liveness.AliasSourceVariable:
 		c.fn.aliases.MergeAliasSets(objVarID, source.UniqueVarIDs()[0])
@@ -673,8 +673,8 @@ func (c *checker) varIDToName(id liveness.VarID) string {
 
 // runLivenessPrePass runs name resolution, CFG construction, and liveness analysis
 // on the function body about to be walked, populating the transition-checking state
-// on c.fn. The rename pass writes VarIDs directly onto the body's AST nodes, so
-// DetermineAliasSource and the downstream IdentPat/IdentExpr reads see them.
+// on c.fn. The rename pass records VarIDs in c.varIDs, which DetermineAliasSource and
+// the downstream IdentPat/IdentExpr reads consult.
 // paramTypes maps each parameter name to its soltype, the mutability the alias
 // seeding records.
 //
@@ -737,10 +737,10 @@ func (c *checker) runLivenessPrePass(scope *Scope, astParams []*ast.Param, recv 
 	// unique across every body in the run, then advance it past them. UniqueVarCount
 	// is the number of locals this body defined, so the next body starts just after.
 	firstID := liveness.VarID(c.varIDCounter)
-	renameResult := liveness.RenameFrom(astParams, *body, outerBindings, firstID, extraParams...)
+	renameResult := liveness.RenameFrom(c.varIDs, astParams, *body, outerBindings, firstID, extraParams...)
 	c.varIDCounter += renameResult.UniqueVarCount
 
-	cfg := liveness.BuildCFG(*body)
+	cfg := liveness.BuildCFG(c.varIDs, *body)
 	livenessInfo := liveness.AnalyzeFunction(cfg)
 	stmtToRef := liveness.BuildStmtToRef(cfg)
 
@@ -751,7 +751,7 @@ func (c *checker) runLivenessPrePass(scope *Scope, astParams []*ast.Param, recv 
 	// mutability it derives from the same type.
 	aliases := liveness.NewAliasTracker()
 	varIDTypes := map[liveness.VarID]soltype.Type{}
-	seedParamLeafAliases(astParams, paramTypes, aliases, varIDTypes)
+	seedParamLeafAliases(c.varIDs, astParams, paramTypes, aliases, varIDTypes)
 	selfVarID := renameResult.ExtraParamVarIDs["self"]
 	if selfVarID > 0 {
 		seedSelfAlias(scope, selfVarID, aliases, varIDTypes)
@@ -780,7 +780,7 @@ func (c *checker) runLivenessPrePass(scope *Scope, astParams []*ast.Param, recv 
 	c.fn.borrowGens = map[liveness.StmtRef][]borrowAssign{}
 	c.fn.borrowDirty = set.NewSet[liveness.VarID]()
 
-	c.fn.paramVarIDs = collectParamVarIDs(astParams)
+	c.fn.paramVarIDs = collectParamVarIDs(c.varIDs, astParams)
 	if selfVarID > 0 {
 		c.fn.paramVarIDs.Add(selfVarID)
 	}
@@ -805,7 +805,7 @@ func (c *checker) runLivenessPrePass(scope *Scope, astParams []*ast.Param, recv 
 func paramsBind(params []*ast.Param, name string) bool {
 	found := false
 	for _, param := range params {
-		ast.ForEachLeafBinding(param.Pattern, func(leaf string, _ int) {
+		ast.ForEachLeafBinding(param.Pattern, func(leaf string, _ ast.Node) {
 			found = found || leaf == name
 		})
 	}
@@ -846,7 +846,7 @@ func (c *checker) seedSelfCaptureEdges(scope *Scope, closure ast.Func, selfID li
 func (c *checker) collectModuleCaptures(scope *Scope, fn ast.Func, outerBindings map[string]liveness.VarID) ([]string, map[string][]ast.Func) {
 	reached := map[string]bool{}
 	funcs := map[string][]ast.Func{}
-	for _, capture := range liveness.ClosureCaptures(fn, outerBindings) {
+	for _, capture := range liveness.ClosureCaptures(c.varIDs, fn, outerBindings) {
 		b, found := scope.GetValue(capture.Name)
 		if !found || !b.ModuleLevel {
 			continue
@@ -977,7 +977,7 @@ func (c *checker) seedModuleFuncEdges(fn ast.Func, fnID liveness.VarID, ids map[
 // pre-pass renames the closure's body again right after this, and each nested body is renamed
 // by its own pre-pass before the walk reaches it.
 func (c *checker) collectClosureCaptures(scope *Scope, closure ast.Func, outerBindings map[string]liveness.VarID) ([]string, map[string][]ast.Func) {
-	captures := liveness.ClosureCaptures(closure, outerBindings)
+	captures := liveness.ClosureCaptures(c.varIDs, closure, outerBindings)
 
 	funcs := map[string][]ast.Func{}
 	for _, capture := range captures {
@@ -1031,7 +1031,7 @@ func (c *checker) closureCaptures(closure ast.Func) []liveness.CaptureInfo {
 	if captures, ok := c.closureCaptureInfo[closure]; ok {
 		return captures
 	}
-	return liveness.AnalyzeCaptures(closure)
+	return liveness.AnalyzeCaptures(c.varIDs, closure)
 }
 
 // seedSelfAlias seeds the alias tracker with the receiver's own alias set and records its
@@ -1074,12 +1074,12 @@ func recordExtraParamVarIDs(fnScope *Scope, ids map[string]liveness.VarID) {
 // collectParamVarIDs returns the VarID of every parameter leaf binding. The escape check
 // consults it to exempt a borrow of a parameter, which carries a caller-supplied lifetime
 // that already outlives the frame, from an escaping borrow of a function-local.
-func collectParamVarIDs(astParams []*ast.Param) set.Set[liveness.VarID] {
+func collectParamVarIDs(varIDs *liveness.VarIDs, astParams []*ast.Param) set.Set[liveness.VarID] {
 	ids := set.NewSet[liveness.VarID]()
 	for _, param := range astParams {
-		ast.ForEachLeafBinding(param.Pattern, func(_ string, varID int) {
-			if varID > 0 {
-				ids.Add(liveness.VarID(varID))
+		ast.ForEachLeafBinding(param.Pattern, func(_ string, leaf ast.Node) {
+			if varID := varIDs.Of(leaf); varID > 0 {
+				ids.Add(varID)
 			}
 		})
 	}
@@ -1098,9 +1098,10 @@ func collectParamVarIDs(astParams []*ast.Param) set.Set[liveness.VarID] {
 // out of an owned param already carries its thawed owned-mutable type and a leaf
 // projected from a `&mut` param its mutable borrow. isMutableType therefore sees a
 // RefType and seeds AliasMutable for those leaves.
-func seedParamLeafAliases(astParams []*ast.Param, paramTypes map[string]soltype.Type, aliases *liveness.AliasTracker, varIDTypes map[liveness.VarID]soltype.Type) {
+func seedParamLeafAliases(varIDs *liveness.VarIDs, astParams []*ast.Param, paramTypes map[string]soltype.Type, aliases *liveness.AliasTracker, varIDTypes map[liveness.VarID]soltype.Type) {
 	for _, param := range astParams {
-		ast.ForEachLeafBinding(param.Pattern, func(name string, varID int) {
+		ast.ForEachLeafBinding(param.Pattern, func(name string, leaf ast.Node) {
+			varID := varIDs.Of(leaf)
 			if varID <= 0 {
 				return
 			}
@@ -1114,9 +1115,9 @@ func seedParamLeafAliases(astParams []*ast.Param, paramTypes map[string]soltype.
 				// and a lifetime it later escapes to 'static is visible through it. A
 				// destructured leaf records the type bindPattern resolved for it,
 				// including the `mut`/borrow wrapper its binding mode applied.
-				varIDTypes[liveness.VarID(varID)] = t
+				varIDTypes[varID] = t
 			}
-			aliases.NewValue(liveness.VarID(varID), mut)
+			aliases.NewValue(varID, mut)
 		})
 	}
 }
@@ -1181,14 +1182,15 @@ func sortedValueNames(s *Scope) []string {
 // its alias set through trackCapturedAliases. It walks every leaf, so a
 // destructuring parameter's leaves (M4 E1) are covered alongside a plain IdentPat
 // parameter. Runs after the pre-pass, since the rename is what assigns the VarIDs.
-func recordParamVarIDs(fnScope *Scope, params []*ast.Param) {
+func recordParamVarIDs(varIDs *liveness.VarIDs, fnScope *Scope, params []*ast.Param) {
 	for _, p := range params {
-		ast.ForEachLeafBinding(p.Pattern, func(name string, varID int) {
+		ast.ForEachLeafBinding(p.Pattern, func(name string, leaf ast.Node) {
+			varID := varIDs.Of(leaf)
 			if varID <= 0 {
 				return
 			}
 			if b, found := fnScope.GetValue(name); found {
-				b.VarID = varID
+				b.VarID = int(varID)
 				fnScope.defineValue(name, b)
 			}
 		})
@@ -1211,7 +1213,8 @@ func recordParamVarIDs(fnScope *Scope, params []*ast.Param) {
 // scope binding therefore reports the resolved mutability, which isMutableType reads
 // to seed AliasMutable.
 func (c *checker) trackDestructureLeaves(scope *Scope, pat ast.Pat) {
-	ast.ForEachLeafBinding(pat, func(name string, varID int) {
+	ast.ForEachLeafBinding(pat, func(name string, leaf ast.Node) {
+		varID := c.varIDs.Of(leaf)
 		if varID <= 0 {
 			return
 		}
@@ -1219,10 +1222,10 @@ func (c *checker) trackDestructureLeaves(scope *Scope, pat ast.Pat) {
 		if !found {
 			return
 		}
-		b.VarID = varID
+		b.VarID = int(varID)
 		scope.defineValue(name, b)
 		if c.fn != nil && c.fn.aliases != nil {
-			c.fn.aliases.NewValue(liveness.VarID(varID), aliasMutability(isMutableType(bindingType(b))))
+			c.fn.aliases.NewValue(varID, aliasMutability(isMutableType(bindingType(b))))
 		}
 	})
 }

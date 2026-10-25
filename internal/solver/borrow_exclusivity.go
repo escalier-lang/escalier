@@ -259,8 +259,8 @@ func (c *checker) noteLoanRead(e ast.Expr) {
 // loanPlace returns the place a borrow argument reaches. `&mut x.a` reaches x.a, and a bare
 // name already holding a borrow reaches whatever that name reaches, which for now is the name
 // itself. ok is false when the operand is not a place, such as a call result.
-func loanPlace(arg ast.Expr) (movePlace, bool) {
-	p, ok := exprPlace(borrowOperand(arg))
+func (c *checker) loanPlace(arg ast.Expr) (movePlace, bool) {
+	p, ok := c.exprPlace(borrowOperand(arg))
 	if !ok || p.root <= 0 {
 		return movePlace{}, false
 	}
@@ -358,19 +358,19 @@ func (c *checker) checkAgainstHeldLoans(fresh loan) {
 // recordBorrowLoan records the loan a `val`/`var` initializer creates, after reporting any
 // conflict with a borrow already live. `val a = &mut x` binds a loan of x to a, which then
 // lasts as long as a is read.
-func (c *checker) recordBorrowLoan(holder int, init ast.Expr, ref liveness.StmtRef) {
+func (c *checker) recordBorrowLoan(holder liveness.VarID, init ast.Expr, ref liveness.StmtRef) {
 	if c.fn == nil || holder <= 0 || init == nil {
 		return
 	}
 	// A reassignment repoints the binding, so whatever it borrowed before is unreachable
 	// through it. `var a = &mut x` followed by `a = &mut y` leaves no loan of x behind. This
 	// is the strong update the flow-sensitive borrow graph makes for the same statement.
-	c.dropLoansHeldBy(liveness.VarID(holder))
+	c.dropLoansHeldBy(holder)
 	borrow, ok := init.(*ast.BorrowExpr)
 	if !ok {
 		return
 	}
-	place, ok := loanPlace(borrow)
+	place, ok := c.loanPlace(borrow)
 	if !ok {
 		return
 	}
@@ -378,7 +378,7 @@ func (c *checker) recordBorrowLoan(holder int, init ast.Expr, ref liveness.StmtR
 	fresh := loan{
 		place:  place,
 		mut:    borrow.Mut,
-		holder: liveness.VarID(holder),
+		holder: holder,
 		ref:    ref,
 		node:   borrow,
 		seq:    c.nextLoanSeq(),
@@ -451,11 +451,11 @@ func (c *checker) recordCaptureLoans(scope *Scope, closure ast.Func) {
 // write when any edge writes it. Any expression other than a name records nothing.
 func (c *checker) useClosureCaptures(expr ast.Expr, ref liveness.StmtRef, runs bool) {
 	e, ok := expr.(*ast.IdentExpr)
-	if !ok || c.fn == nil || e.VarID <= 0 {
+	if !ok || c.fn == nil || c.varIDs.Of(e) <= 0 {
 		return
 	}
 	writes := map[liveness.VarID]bool{}
-	for _, edge := range c.fn.eagerBorrowGraph[liveness.VarID(e.VarID)] {
+	for _, edge := range c.fn.eagerBorrowGraph[c.varIDs.Of(e)] {
 		if edge.capture {
 			writes[edge.referent] = writes[edge.referent] || edge.mut
 		}
@@ -656,7 +656,7 @@ func (c *checker) checkNestedBorrows() {
 		if c.fn.loanReads.Contains(operand) {
 			continue
 		}
-		place, ok := loanPlace(site.borrow)
+		place, ok := c.loanPlace(site.borrow)
 		if !ok {
 			continue
 		}
@@ -702,7 +702,7 @@ func (c *checker) noteFieldWrite(target, object ast.Expr) {
 	if c.fn == nil {
 		return
 	}
-	written, ok := exprPlace(target)
+	written, ok := c.exprPlace(target)
 	if !ok || written.root <= 0 {
 		return
 	}
@@ -928,7 +928,7 @@ func (c *checker) checkCallBorrowExclusivity(e *ast.CallExpr, fn *soltype.FuncTy
 		if !isBorrow {
 			continue
 		}
-		place, ok := loanPlace(arg)
+		place, ok := c.loanPlace(arg)
 		if !ok {
 			continue
 		}
@@ -1021,7 +1021,7 @@ func (c *checker) recordGlobalCaptureLoans(flowBorrowGraph *flowBorrowGraph) {
 				collectAllEdgesFrom(local.root, set.NewSet[liveness.VarID](), graph, &edges)
 			}
 		}
-		if p, ok := exprPlace(store.expr); ok && p.root > 0 {
+		if p, ok := c.exprPlace(store.expr); ok && p.root > 0 {
 			collectEdgesFrom(p.root, p.path, set.NewSet[liveness.VarID](), graph, &edges)
 		}
 		for _, edge := range edges {
