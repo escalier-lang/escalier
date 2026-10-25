@@ -1766,7 +1766,7 @@ func (c *checker) resolveCallPath(scope *Scope, lvl int, e *ast.CallExpr, preset
 	} else {
 		ret, fn = c.applyCallShape(lvl, e, target.callee, target.fn, target.secondInstance, args)
 	}
-	c.recordCallArgEffects(e, fn, consumeRef, hasConsumeRef)
+	c.recordCallArgEffects(scope, e, fn, consumeRef, hasConsumeRef)
 	if hasConsumeRef {
 		c.consumeOnceCallee(e, consumeRef)
 	}
@@ -2108,48 +2108,71 @@ func (c *checker) calleeReceiver(callee ast.Expr) (ast.Expr, *soltype.FuncParam)
 	return object, self
 }
 
-// consumeCallArgs consumes each owned argument passed to a bare owned parameter of
-// the resolved callee, recording the move at ref, the call's statement. A `&`/`&mut`
-// parameter borrows, so it leaves the argument usable. An unannotated parameter, whose
-// ownership is a fresh inference variable rather than a concrete owned shape, is left
-// to borrow conservatively, so only a parameter typed as a concrete owned object,
-// tuple, or owned RefType consumes its argument. An extra argument beyond the declared
-// parameters, the surplus of a too-many-arguments call, has no parameter to move into,
-// so it is skipped.
-//
-// A rest slot is read through its element type, since each argument it gathers fills one
-// element of the array the callee owns rather than the array itself.
-func (c *checker) consumeCallArgs(e *ast.CallExpr, fn *soltype.FuncType, ref liveness.StmtRef) {
-	for i, arg := range e.Args {
-		if i >= len(fn.Params) {
-			break
+// consumeCallArgs consumes each argument ownedParamArgs returns for the resolved callee,
+// recording the move at ref, the call's statement. A callee declared in a package moves none
+// of its arguments. An argument moved out of a module-level `val` or `var` cannot move, so it
+// is reported as an ModuleLevelMoveError and left unconsumed. scope resolves the argument's root.
+func (c *checker) consumeCallArgs(scope *Scope, e *ast.CallExpr, fn *soltype.FuncType, ref liveness.StmtRef) {
+	owned := c.ownedParamArgs(e, fn)
+	// A package's declarations come from TypeScript's types. Those are an npm package's
+	// `.d.ts`, or the TypeScript library the `std:` packages are generated from. TypeScript
+	// gives a parameter no ownership meaning, so a call into a package takes its arguments
+	// without moving them. A borrow an argument carries still leaves the frame with it.
+	if len(owned) > 0 && c.calleeFromLibrary(e, fn) {
+		for _, arg := range owned {
+			c.recordEscapeSite(arg, ref)
 		}
-		if fn.Params[i].Rest {
-			// The slot gathers this argument and every later one into an array the callee
-			// owns, so each is carried out of the frame the way a bare owned parameter's
-			// argument is. A slot that is not an array of a concrete owned element moves
-			// nothing, the same conservative reading a fixed position takes.
-			elem, isArray := c.ctx.restSlotElem(fn.Params[i].Type)
-			if !isArray || !c.isConcreteOwned(elem) {
-				return
+		return
+	}
+	for _, arg := range owned {
+		moved := false
+		for _, r := range branchResults(arg) {
+			if c.movesModuleLevelPlace(scope, r, c.info.TypeOf(r)) {
+				c.reportModuleLevelMoveIntoParam(r)
+				moved = true
 			}
-			for _, absorbed := range e.Args[i:] {
-				c.consumeOwned(absorbed, c.info.TypeOf(absorbed), absorbed, ref)
-				c.recordEscapeSite(absorbed, ref)
-			}
-			return
 		}
-		if !c.isConcreteOwned(fn.Params[i].Type) {
+		if moved {
 			continue
 		}
 		c.consumeOwned(arg, c.info.TypeOf(arg), arg, ref)
 		// A consuming argument carries its value out of the frame into the callee, so a
 		// borrow of a local the argument carries escapes unless the argument owns a
 		// self-contained component the move re-anchors. recordEscapeSite records the
-		// argument for the post-pass to decide. A `&`/`&mut` parameter borrows instead of
-		// consuming, so the isConcreteOwned gate above skips it.
+		// argument for the post-pass to decide.
 		c.recordEscapeSite(arg, ref)
 	}
+}
+
+// ownedParamArgs returns, in order, each argument of e that fn takes ownership of. Only a
+// parameter typed as a concrete owned object, tuple, class instance, or owned RefType takes
+// ownership. A `&`/`&mut` parameter borrows its argument. An unannotated parameter, whose
+// ownership is a fresh inference variable rather than a concrete owned shape, is read as a
+// borrow conservatively. An extra argument beyond the declared parameters, the surplus of a
+// too-many-arguments call, has no parameter to move into, so it is left out.
+//
+// A rest slot is read through its element type, since each argument it gathers fills one
+// element of the array the callee owns rather than the array itself. A slot that is not an
+// array of a concrete owned element takes none of its arguments, the same conservative
+// reading a fixed position takes.
+func (c *checker) ownedParamArgs(e *ast.CallExpr, fn *soltype.FuncType) []ast.Expr {
+	var owned []ast.Expr
+	for i, arg := range e.Args {
+		if i >= len(fn.Params) {
+			break
+		}
+		if fn.Params[i].Rest {
+			elem, isArray := c.ctx.restSlotElem(fn.Params[i].Type)
+			if isArray && c.isConcreteOwned(elem) {
+				owned = append(owned, e.Args[i:]...)
+			}
+			break
+		}
+		if c.isConcreteOwned(fn.Params[i].Type) {
+			owned = append(owned, arg)
+		}
+	}
+	return owned
 }
 
 // upgradeCallShapeParams applies the immutable→mutable argument upgrade across a call shape's
@@ -2290,18 +2313,20 @@ func (c *checker) inferCallArgs(scope *Scope, lvl int, e *ast.CallExpr, preset m
 // inferCallTarget read off the callee, or the arm resolveOverload picked. Keeping them here is what stops one path from
 // forgetting them, which is how #1508 came about.
 //
+// scope is the scope the call is inferred in.
+//
 // fn is nil when no arm accepted the call or the callee's signature is still a variable. Nothing
 // is moved then, since no signature says which arguments the call consumes. The call still takes
 // the loans of the closures it runs.
 func (c *checker) recordCallArgEffects(
-	e *ast.CallExpr, fn *soltype.FuncType, consumeRef liveness.StmtRef, hasConsumeRef bool,
+	scope *Scope, e *ast.CallExpr, fn *soltype.FuncType, consumeRef liveness.StmtRef, hasConsumeRef bool,
 ) {
 	if !hasConsumeRef {
 		return
 	}
 
 	if fn != nil {
-		c.consumeCallArgs(e, fn, consumeRef)
+		c.consumeCallArgs(scope, e, fn, consumeRef)
 	}
 
 	// Calling a closure runs its body, and a callee handed a closure may call it during the
