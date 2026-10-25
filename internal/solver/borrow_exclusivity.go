@@ -408,6 +408,7 @@ func (c *checker) recordCaptureLoans(scope *Scope, closure ast.Func) {
 		return
 	}
 	ref, hasRef := c.currentStmtRef()
+	moved := c.capturesMovedBy[closure]
 	var captured []capturedLocal
 	for _, capture := range c.closureCaptures(closure) {
 		b, found := scope.GetValue(capture.Name)
@@ -422,6 +423,19 @@ func (c *checker) recordCaptureLoans(scope *Scope, closure ast.Func) {
 		// the move.
 		if hasRef {
 			c.fn.useSites = append(c.fn.useSites, moveUse{place: movePlace{root: root}, ref: ref, node: closure, loanSeqAt: c.fn.loanSeq + 1})
+		}
+		// A closure that moves the local takes it here and owns it from then on, so the local
+		// is moved rather than lent. The move blames the expression in the closure that moves
+		// it. A module-level name a module's function captures cannot move at all.
+		if moveNode, ok := moved[capture.Name]; ok {
+			if c.fn.capturesModule && c.fn.captureVarIDs.Contains(root) {
+				c.reportModuleLevelMove(moveNode)
+				continue
+			}
+			if hasRef {
+				c.recordMovePlace(movePlace{root: root}, moveNode, ref)
+				continue
+			}
 		}
 		if c.fn.capturedTypes == nil {
 			c.fn.capturedTypes = map[liveness.VarID]soltype.Type{}

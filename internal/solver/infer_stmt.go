@@ -77,7 +77,10 @@ func (c *checker) inferStmt(scope *Scope, lvl int, s ast.Stmt) soltype.Type {
 			// flows out at its own lifetime and is not consumed here.
 			if s.Expr != nil {
 				if ref, ok := c.fn.stmtToRef[s]; ok {
-					c.consumeOwned(s.Expr, t, s.Expr, ref)
+					// A function declared to return a borrow hands the value out without moving it.
+					if c.fn.returnsBorrow || !c.rejectModuleLevelMove(scope, s.Expr) {
+						c.consumeOwned(s.Expr, t, s.Expr, ref)
+					}
 					// A returned value must not borrow a function-local, which dies when the
 					// frame returns and would leave the borrow dangling, unless it owns a
 					// self-contained component the move re-anchors. checkReturnEscape records
@@ -170,8 +173,11 @@ func (c *checker) inferStmt(scope *Scope, lvl int, s ast.Stmt) soltype.Type {
 			// monomorphic projections.
 			c.inferDestructureDecl(scope, lvl, vd)
 			if c.fn != nil {
+				moduleLevel := c.rejectModuleLevelDestructure(scope, vd.Pattern, vd.Init)
 				if ref, ok := c.fn.stmtToRef[s]; ok {
-					c.consumeDestructureLeaves(scope, vd.Pattern, vd.Init, ref)
+					if !moduleLevel {
+						c.consumeDestructureLeaves(scope, vd.Pattern, vd.Init, ref)
+					}
 					c.flushBorrowDirty(ref)
 				}
 			}

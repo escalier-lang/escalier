@@ -173,6 +173,13 @@ func (c *checker) inferVarDeclInit(scope *Scope, lvl int, d *ast.VarDecl, ns str
 		}
 	}
 	initT := c.inferExpr(scope, lvl, d.Init)
+	// A binding that takes its initializer by value moves it. A move out of a module-level
+	// binding is reported here, before the upgrade below asks movesOwnedPlace about it.
+	if _, isIdent := d.Pattern.(*ast.IdentPat); isIdent {
+		if _, borrowAnn := d.TypeAnn.(*ast.RefTypeAnn); !borrowAnn {
+			c.rejectModuleLevelMove(scope, d.Init)
+		}
+	}
 	switch {
 	case d.TypeAnn == nil && isMutableIdentPat(d.Pattern) && c.callReturnsOwned(d.Init, initT):
 		// An unannotated `val mut d = f()` whose call returns an owned value binds it
@@ -749,6 +756,12 @@ func (c *checker) bindingMovesOwnedPlace(pat ast.Pat, init ast.Expr, initT solty
 // the move engine enforces the consume. This is the place-move half of both
 // bindingMovesOwnedPlace and the isUniquelyOwned leaf check.
 func (c *checker) movesOwnedPlace(init ast.Expr, initT soltype.Type) bool {
+	// A move out of a module-level binding is reported where the value moves and records no
+	// move. Accepting it here types the destination as the move would, so the binding reports
+	// nothing more.
+	if c.fn != nil && c.fn.moduleLevelMoves.Contains(init) {
+		return true
+	}
 	if _, ok := c.exprPlace(init); !ok {
 		return false
 	}

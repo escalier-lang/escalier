@@ -302,10 +302,10 @@ func DetermineAliasSource(ids *VarIDs, expr ast.Expr) AliasSource {
 	}
 }
 
-// blockResultExpr returns the result expression of a block (the last
-// statement if it's an ExprStmt), or nil if the block is empty or ends
-// with a non-expression statement.
-func blockResultExpr(b ast.Block) ast.Expr {
+// BlockResultExpr returns the result expression of a block, which is the
+// expression of its last statement when that statement is an ExprStmt. It
+// returns nil if the block is empty or ends with a non-expression statement.
+func BlockResultExpr(b ast.Block) ast.Expr {
 	if len(b.Stmts) == 0 {
 		return nil
 	}
@@ -315,8 +315,8 @@ func blockResultExpr(b ast.Block) ast.Expr {
 	return nil
 }
 
-// blockOrExprResultExpr returns the result expression from a BlockOrExpr.
-func blockOrExprResultExpr(boe *ast.BlockOrExpr) ast.Expr {
+// BlockOrExprResultExpr returns the result expression from a BlockOrExpr.
+func BlockOrExprResultExpr(boe *ast.BlockOrExpr) ast.Expr {
 	if boe == nil {
 		return nil
 	}
@@ -324,7 +324,7 @@ func blockOrExprResultExpr(boe *ast.BlockOrExpr) ast.Expr {
 		return boe.Expr
 	}
 	if boe.Block != nil {
-		return blockResultExpr(*boe.Block)
+		return BlockResultExpr(*boe.Block)
 	}
 	return nil
 }
@@ -390,8 +390,8 @@ func collectBranchSources(ids *VarIDs, exprs []ast.Expr) AliasSource {
 // determineConditionalAliasSource determines alias sources for an if-else
 // expression by collecting sources from both branches.
 func determineConditionalAliasSource(ids *VarIDs, expr *ast.IfElseExpr) AliasSource {
-	consExpr := blockResultExpr(expr.Cons)
-	altExpr := blockOrExprResultExpr(expr.Alt)
+	consExpr := BlockResultExpr(expr.Cons)
+	altExpr := BlockOrExprResultExpr(expr.Alt)
 
 	// If there's no alt branch, the else produces undefined (a fresh
 	// value). Only the consequent may contribute alias sources.
@@ -655,7 +655,7 @@ func determineMatchAliasSource(ids *VarIDs, expr *ast.MatchExpr) AliasSource {
 
 	branchExprs := make([]ast.Expr, len(expr.Cases))
 	for i, matchCase := range expr.Cases {
-		branchExprs[i] = blockOrExprResultExpr(&matchCase.Body)
+		branchExprs[i] = BlockOrExprResultExpr(&matchCase.Body)
 	}
 
 	return collectBranchSources(ids, branchExprs)

@@ -40,6 +40,12 @@ type checker struct {
 	// to the member's name, which the expression does not carry. funcName reads it.
 	memberFuncNames map[*ast.FuncExpr]string
 
+	// capturesMovedBy maps each closure whose body moves a local it captures to the names of
+	// those locals, each mapped to the expression in the closure that moves it.
+	// recordCaptureLoans moves them out of the enclosing body where the closure is written, and
+	// consumeOnceCallee moves a binding holding the closure at each call.
+	capturesMovedBy map[ast.Func]map[string]ast.Node
+
 	// pendingRecvReads holds the member reads off inferred receivers that top-level bodies
 	// collected. A value initializer can still pass such a body to a call that types its
 	// receiver, so checkPendingRecvReads checks them once the component is constrained.
@@ -420,6 +426,9 @@ type funcCtx struct {
 	// immutable→mutable upgrade at a `mut` return annotation. The upgrade fires only when
 	// every returned value is uniquely owned, so the join of the returns is too.
 	returnExprs []ast.Expr
+	// returnsBorrow is true when the function's return annotation is a borrow, `&T` or
+	// `&mut T`.
+	returnsBorrow bool
 
 	// throws is this body's exceptional SINK: the single type every `throw` and every call
 	// is constrained against, the twin of the joined return type. inferFunc seeds it from
@@ -521,6 +530,9 @@ type funcCtx struct {
 	// such as the b in `val y = b`. checkUsesAgainstLoans reads it to report a move of
 	// borrowed data as a move rather than as a plain use.
 	movedSources set.Set[ast.Node]
+	// moduleLevelMoves holds each expression reported as a move out of a module-level binding.
+	// The sites that record a move read it, so such a move records nothing.
+	moduleLevelMoves set.Set[ast.Node]
 	// placeCopies lists each place a binding takes its value from, such as the b in `val q = b`
 	// or in `a.peer = b`. movedOrigins keeps the ones movedSources says were moved, so the
 	// escape check can follow a local into the binding that owns its data afterwards.
@@ -585,6 +597,9 @@ type funcCtx struct {
 	// captureVarIDs holds the VarID of every local a closure's body captures. The pre-pass
 	// defines each as a parameter of the body, so each is in paramVarIDs too.
 	captureVarIDs set.Set[liveness.VarID]
+	// capturesModule is true when this body is a module's function, whose captures are the
+	// module-level names it reads rather than locals of an enclosing body.
+	capturesModule bool
 	// capturedLocals holds, for each closure written in this body, the locals of this body it
 	// captures that hold a reference-shaped value.
 	capturedLocals map[ast.Func][]capturedLocal
