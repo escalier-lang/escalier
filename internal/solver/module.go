@@ -176,6 +176,9 @@ func inferModuleOn(c *checker, module *ast.Module) *ModuleResult {
 	// group finds it loaded on the library counters. A forked checker has already
 	// run this and skips it.
 	c.bindAmbientExports()
+	// A run that loaded the ambient packages itself settles them the way a cached
+	// checker's are settled, so the two read the same answers.
+	c.settleLoadedDefinitions()
 	fileScopes := c.bindFileImports(scope, module)
 	// After the imports, so a failure in a package the module imports is reported at
 	// its import statement.

@@ -4,8 +4,10 @@ import (
 	"context"
 	"fmt"
 	"io/fs"
+	"maps"
 	"os"
 	"path/filepath"
+	"slices"
 	"sort"
 	"testing"
 
@@ -242,13 +244,20 @@ func sourcesOf(srcs map[string]string) []*ast.Source {
 	return sources
 }
 
-// TestCheckThawedRejectsAStdlibVar asserts that a run forked from the cached checker
-// panics when it adds a bound to a type variable the stdlib load minted.
-func TestCheckThawedRejectsAStdlibVar(t *testing.T) {
+// forkCachedChecker returns a run forked from the cached checker for the committed tree.
+func forkCachedChecker(t *testing.T) *checker {
+	t.Helper()
 	groups, err := BuildPackageClosure(benchTree, ambientPackages)
 	require.NoError(t, err)
 	run, ok := ambientChecker(benchTree, StdlibSource(benchTree), groups, Options{})
 	require.True(t, ok)
+	return run
+}
+
+// TestCheckThawedRejectsAStdlibVar asserts that a run forked from the cached checker
+// panics when it adds a bound to a type variable the stdlib load minted.
+func TestCheckThawedRejectsAStdlibVar(t *testing.T) {
+	run := forkCachedChecker(t)
 	require.NotEmpty(t, run.ctx.frozenVars)
 
 	var stdlibVar *soltype.TypeVarType
@@ -261,6 +270,76 @@ func TestCheckThawedRejectsAStdlibVar(t *testing.T) {
 	require.PanicsWithValue(t, want, func() {
 		run.ctx.addUpperBound(stdlibVar, &soltype.PrimType{Prim: soltype.NumPrim})
 	})
+}
+
+// TestCheckThawedRejectsAStdlibClass asserts that a run forked from the cached checker
+// panics when it settles the variance of a class the stdlib load registered.
+func TestCheckThawedRejectsAStdlibClass(t *testing.T) {
+	run := forkCachedChecker(t)
+
+	// The cached Array class is settled, so it is marked provisional again to reach the
+	// write settleVariance makes.
+	def := run.ctx.classes[run.ctx.arrayClass]
+	def.varianceProvisional = true
+	def.varianceTriedAt = -1
+	want := "settleVariance wrote stdlib class " + def.varianceSelf
+	require.PanicsWithValue(t, want, func() {
+		run.ctx.settleVariance(def)
+	})
+}
+
+// TestCheckThawedRejectsAStdlibAlias asserts that a run forked from the cached checker
+// panics when it probes the uniform knot of an alias the stdlib load registered.
+func TestCheckThawedRejectsAStdlibAlias(t *testing.T) {
+	run := forkCachedChecker(t)
+
+	// The cached knot is dropped from the run's copy of the memo, so the probe computes
+	// it again rather than reading the memoized one.
+	name := slices.Min(slices.Collect(maps.Keys(run.ctx.aliases)))
+	delete(run.ctx.uniformKnots, name)
+	want := "probing the uniform knot for stdlib alias " + name
+	require.PanicsWithValue(t, want, func() {
+		run.ctx.uniformKnotOf(name)
+	})
+}
+
+// TestAmbientCheckerSettlesLoadedDefinitions asserts that the cached checker holds no
+// provisional class, and a memoized uniform knot for every alias.
+func TestAmbientCheckerSettlesLoadedDefinitions(t *testing.T) {
+	groups, err := BuildPackageClosure(benchTree, ambientPackages)
+	require.NoError(t, err)
+	c := loadAmbientChecker(benchTree, groups, Options{})
+	for name, def := range c.ctx.classes {
+		require.False(t, def.varianceProvisional, name)
+	}
+	for name := range c.ctx.aliases {
+		require.Contains(t, c.ctx.uniformKnots, name)
+	}
+}
+
+// TestSettleLoadedDefinitionsMeasuresAProvisionalClass asserts that settling a loaded
+// checker measures a provisional class again even when its last try was at the current
+// count. It puts the loaded Array class back into the state a provisional class is in,
+// with Invariant in every slot, and requires settling to restore the variance Array's
+// body gives.
+func TestSettleLoadedDefinitionsMeasuresAProvisionalClass(t *testing.T) {
+	groups, err := BuildPackageClosure(benchTree, ambientPackages)
+	require.NoError(t, err)
+	c := loadAmbientChecker(benchTree, groups, Options{})
+	def := c.ctx.classes[c.ctx.arrayClass]
+	measured := slices.Clone(def.Variance)
+	require.NotEqual(t, uniformVariance(len(measured), Invariant), measured)
+
+	// The settling below is the load's own, which runs before the checker is frozen.
+	c.ctx.frozenClasses = nil
+	def.Variance = uniformVariance(len(measured), Invariant)
+	def.varianceProvisional = true
+	def.varianceTriedAt = c.ctx.measuredClasses
+	c.definitionsSettled = false
+	c.settleLoadedDefinitions()
+
+	require.False(t, def.varianceProvisional)
+	require.Equal(t, measured, def.Variance)
 }
 
 // TestAmbientCheckerServesRuns asserts that the cache serves the committed tree, so the
