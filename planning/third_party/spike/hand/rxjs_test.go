@@ -26,7 +26,7 @@ func init() {
 
 			// Subject.next(value)
 			impl("Subject.next", "value").
-				to("", "util/errorContext", Lit(), V("fn:next/closure")).
+				to("", "util/errorContext", Lit(), G("fn:next/closure")).
 				to("", "Subject._throwIfClosed", V("this$")).
 				builtin("copy", "Array.from", Lit(), Prop(V("this$"))).
 				set(V("this$"), V("copy")).
@@ -39,7 +39,7 @@ func init() {
 
 			// Subject.complete()
 			impl("Subject.complete").
-				to("", "util/errorContext", Lit(), V("fn:complete/closure")).
+				to("", "util/errorContext", Lit(), G("fn:complete/closure")).
 				to("", "Subject._throwIfClosed", V("this$")).
 				set(V("this$"), Lit()).
 				let("observers", Prop(V("this$"))).
@@ -64,14 +64,14 @@ func init() {
 
 			// pipeFromArray(fns)
 			impl("util/pipe#pipeFromArray", "fns").
-				ret(V("fn:identity")).
+				ret(G("fn:identity")).
 				ret(Prop(V("fns"))).
 				// function piped(input) { return fns.reduce((prev, fn) => fn(prev), input) }
 				let("input", Unknown()).
 				let("prev", Unknown()).let("cfn", Unknown()).
 				unresolved("", "closure-param:fn(prev)", V("prev")).
-				builtin("", "Array.prototype.reduce", V("fns"), V("fn:piped/closure"), V("input")).
-				ret(V("fn:piped")),
+				builtin("", "Array.prototype.reduce", V("fns"), G("fn:piped/closure"), V("input")).
+				ret(G("fn:piped")),
 
 			// Observable.pipe(...operations): pipeFromArray(operations)(this)
 			impl("Observable.pipe", "operations").
@@ -83,12 +83,12 @@ func init() {
 			// source.lift with a function that calls init.
 			impl("util/lift#operate", "init").
 				let("source", Unknown()).
-				unresolved("", "closure-param:source.lift(...)", V("source"), V("fn:operate/closure2")).
+				unresolved("", "closure-param:source.lift(...)", V("source"), G("fn:operate/closure2")).
 				let("liftedSource", Unknown()).
 				call("", "init", V("liftedSource"), Unknown()).
 				unresolved("", "untyped:this.error(err)", Unknown(), Unknown()).
 				throw(Alloc()).
-				ret(V("fn:operate/closure")),
+				ret(G("fn:operate/closure")),
 
 			// map(project, thisArg): operate((source, subscriber) => {...})
 			impl("operators/map#map", "project", "thisArg").
@@ -97,9 +97,9 @@ func init() {
 				let("value", Unknown()).
 				unresolved("pv", "closure-param:project.call(thisArg, value, index++)", V("project"), V("thisArg"), V("value"), Lit()).
 				unresolved("", "closure-param:subscriber.next(...)", V("subscriber"), V("pv")).
-				unresolved("os", "not-lowered:createOperatorSubscriber(subscriber, ...)", Lit(), V("subscriber"), V("fn:map/closure2")).
+				unresolved("os", "not-lowered:createOperatorSubscriber(subscriber, ...)", Lit(), V("subscriber"), G("fn:map/closure2")).
 				unresolved("", "closure-param:source.subscribe(...)", V("source"), V("os")).
-				to("r", "util/lift#operate", Lit(), V("fn:map/closure")).
+				to("r", "util/lift#operate", Lit(), G("fn:map/closure")).
 				ret(V("r")),
 		},
 		members: []member{

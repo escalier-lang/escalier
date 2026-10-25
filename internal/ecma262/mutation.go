@@ -225,9 +225,10 @@ func NewMutationSummary(cfg *CFG) *MutationSummary {
 		},
 		callers: make(map[*Func][]*Func, len(cfg.Funcs)),
 	}
+	origins := NewOriginMaps(cfg)
 	for _, fn := range cfg.Funcs {
 		a.summary.facts[fn] = &facts{args: set.NewSet[int]()}
-		a.summary.origins[fn] = NewOriginMap(fn)
+		a.summary.origins[fn] = origins[fn]
 	}
 	for _, fn := range cfg.Funcs {
 		for _, callee := range a.callees(cfg, fn) {
@@ -394,11 +395,11 @@ func (a *analysis) transfer(cfg *CFG, fn *Func) bool {
 				// not an interior. `[[Prototype]]` and `[[Extensible]]` are
 				// the shape. They describe how the object behaves rather than
 				// what it holds.
-			case o.Kind == OriginFresh:
+			case o.Kind == OriginFresh, o.Kind == OriginGlobal:
 				// The algorithm computes the slot, so the curated list cannot
 				// answer for the write at all. A write onto a value the
-				// function allocated itself stays invisible to the caller
-				// whichever slot it lands on.
+				// function allocated itself, or onto a module-level value,
+				// reaches nothing the caller passed whichever slot it lands on.
 			default:
 				// A computed slot on a value the analysis cannot place.
 				changed = f.markIncomplete() || changed
@@ -533,6 +534,10 @@ func (a *analysis) attribute(f *facts, origin *OriginMap, e Expr) bool {
 	case OriginFresh:
 		// A write to a value the function allocated itself, which its caller
 		// never sees.
+		return false
+	case OriginGlobal:
+		// A write to a module-level value. The caller did not pass it, so it
+		// charges neither the receiver nor a parameter.
 		return false
 	default:
 		// OriginUnknown. A mutation the analysis cannot place.

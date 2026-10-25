@@ -13,7 +13,7 @@ func init() {
 		funcs: []*fn{
 			// rng(): crypto.getRandomValues(rnds8)
 			impl("rng").
-				unresolved("r", "host-api:crypto.getRandomValues(rnds8)", V("crypto"), V("rnds8")).
+				unresolved("r", "host-api:crypto.getRandomValues(rnds8)", G("crypto"), G("rnds8")).
 				ret(V("r")),
 
 			// unsafeStringify(arr, offset = 0)
@@ -23,7 +23,7 @@ func init() {
 
 			// validate(uuid): typeof uuid === 'string' && REGEX.test(uuid)
 			impl("validate", "uuid").
-				builtin("t", "RegExp.prototype.test", V("REGEX"), V("uuid")).
+				builtin("t", "RegExp.prototype.test", G("REGEX"), V("uuid")).
 				ret(Lit()),
 
 			// stringify(arr, offset = 0)
@@ -62,7 +62,7 @@ func init() {
 
 			// v4(options, buf, offset)
 			impl("v4", "options", "buf", "offset").
-				unresolved("u", "host-api:crypto.randomUUID()", V("crypto")).
+				unresolved("u", "host-api:crypto.randomUUID()", G("crypto")).
 				ret(V("u")).
 				to("r", "v4#_v4", Lit(), V("options"), V("buf"), V("offset")).
 				ret(V("r")),
@@ -103,7 +103,7 @@ func init() {
 
 			// v5(value, namespace, buf, offset)
 			impl("v5", "value", "namespace", "buf", "offset").
-				to("r", "v35", Lit(), Lit(), V("fn:sha1"), V("value"), V("namespace"), V("buf"), V("offset")).
+				to("r", "v35", Lit(), Lit(), G("fn:sha1"), V("value"), V("namespace"), V("buf"), V("offset")).
 				ret(V("r")),
 		},
 		members: []member{

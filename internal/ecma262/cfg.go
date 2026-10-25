@@ -181,18 +181,27 @@ type Expr interface {
 	isExpr()
 }
 
-func (*VarExpr) isExpr()   {}
-func (*ThisExpr) isExpr()  {}
-func (*LitExpr) isExpr()   {}
-func (*CallExpr) isExpr()  {}
-func (*SlotExpr) isExpr()  {}
-func (*PropExpr) isExpr()  {}
-func (*AllocExpr) isExpr() {}
+func (*VarExpr) isExpr()    {}
+func (*GlobalExpr) isExpr() {}
+func (*ThisExpr) isExpr()   {}
+func (*LitExpr) isExpr()    {}
+func (*CallExpr) isExpr()   {}
+func (*SlotExpr) isExpr()   {}
+func (*PropExpr) isExpr()   {}
+func (*AllocExpr) isExpr()  {}
 
 // VarExpr names a value. The name also reaches a closure passed as a value,
 // which resolves against the abstract operations the way a callee does.
 // Serialized as kind "var".
 type VarExpr struct {
+	Var string
+}
+
+// GlobalExpr names a module-level value, such as a regex or a cache a library
+// declares at the top of a module. ECMA-262 has none, so tools/spec-extract
+// never emits one. A front end lowering a library's own source does. Serialized
+// as kind "global".
+type GlobalExpr struct {
 	Var string
 }
 
@@ -233,13 +242,14 @@ type AllocExpr struct {
 type ExprKind string
 
 const (
-	ExprVar   ExprKind = "var"
-	ExprThis  ExprKind = "this"
-	ExprLit   ExprKind = "lit"
-	ExprCall  ExprKind = "call"
-	ExprSlot  ExprKind = "slot"
-	ExprProp  ExprKind = "prop"
-	ExprAlloc ExprKind = "alloc"
+	ExprVar    ExprKind = "var"
+	ExprGlobal ExprKind = "global"
+	ExprThis   ExprKind = "this"
+	ExprLit    ExprKind = "lit"
+	ExprCall   ExprKind = "call"
+	ExprSlot   ExprKind = "slot"
+	ExprProp   ExprKind = "prop"
+	ExprAlloc  ExprKind = "alloc"
 )
 
 // LoadCFG reads and decodes a serialized control-flow graph.
@@ -530,6 +540,11 @@ func (d *decodeExpr) toExpr() (Expr, error) {
 			return nil, err
 		}
 		return &VarExpr{Var: d.Var}, nil
+	case ExprGlobal:
+		if err := d.check("var"); err != nil {
+			return nil, err
+		}
+		return &GlobalExpr{Var: d.Var}, nil
 	case ExprThis:
 		if err := d.check(); err != nil {
 			return nil, err

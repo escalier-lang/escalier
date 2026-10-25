@@ -10,7 +10,6 @@ Number.prototype.toFixed
 Number.prototype.toLocaleString
 Number.prototype.toPrecision
 RegExp.prototype [ @@matchAll ]
-RegExp.prototype [ @@replace ]
 RegExp.prototype [ @@split ]
 RegExpStringIteratorPrototype.next
 SharedArrayBuffer.prototype.grow

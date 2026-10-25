@@ -19,7 +19,7 @@ func init() {
 			// die(error, ...args) formats a message from a module-level table
 			// whose entries are strings or functions.
 			impl("die", "error", "args").
-				let("e", Prop(V("errors"))).
+				let("e", Prop(G("errors"))).
 				to("f", "isFunction", Lit(), V("e")).
 				unresolved("msg", "property-value:e.apply(null, args)", V("e"), Lit(), Prop(V("args"))).
 				throw(Alloc()).
@@ -36,9 +36,9 @@ func init() {
 				builtin("h", "Object.prototype.hasOwnProperty", V("proto"), Lit()).
 				let("Ctor", Prop(V("proto"))).
 				to("f", "isFunction", Lit(), V("Ctor")).
-				builtin("cs", "WeakMap.prototype.get", V("cachedCtorStrings"), V("Ctor")).
+				builtin("cs", "WeakMap.prototype.get", G("cachedCtorStrings"), V("Ctor")).
 				builtin("s", "Function.prototype.toString", V("Ctor")).
-				builtin("", "WeakMap.prototype.set", V("cachedCtorStrings"), V("Ctor"), V("s")).
+				builtin("", "WeakMap.prototype.set", G("cachedCtorStrings"), V("Ctor"), V("s")).
 				ret(Lit()),
 
 			// isDraftable(value)
@@ -73,10 +73,10 @@ func init() {
 				// keys.forEach(key => { iter(key, obj[key], obj) })
 				let("key", Unknown()).
 				call("", "iter", V("key"), Prop(V("obj")), V("obj")).
-				builtin("", "Array.prototype.forEach", V("keys"), V("fn:each/closure")).
+				builtin("", "Array.prototype.forEach", V("keys"), G("fn:each/closure")).
 				// obj.forEach((entry, index) => iter(index, entry, obj)), where
 				// obj is `any`.
-				unresolved("", "untyped:obj.forEach(...)", V("obj"), V("fn:each/closure2")).
+				unresolved("", "untyped:obj.forEach(...)", V("obj"), G("fn:each/closure2")).
 				ret(Lit()),
 
 			// freeze(obj, deep = false)
@@ -86,12 +86,12 @@ func init() {
 				to("c", "isDraftable", Lit(), V("obj")).
 				ret(V("obj")).
 				to("t", "getArchtype", Lit(), V("obj")).
-				builtin("", "Object.defineProperties", Lit(), V("obj"), Alloc(V("dontMutateMethodOverride"))).
+				builtin("", "Object.defineProperties", Lit(), V("obj"), Alloc(G("dontMutateMethodOverride"))).
 				builtin("", "Object.freeze", Lit(), V("obj")).
 				// each(obj, (_key, value) => { freeze(value, true) }, false)
 				let("value", Unknown()).
 				to("", "freeze", Lit(), V("value"), Lit()).
-				to("", "each", Lit(), V("obj"), V("fn:freeze/closure"), Lit()).
+				to("", "each", Lit(), V("obj"), G("fn:freeze/closure"), Lit()).
 				ret(V("obj")),
 
 			// original(value)
@@ -104,7 +104,7 @@ func init() {
 			// curried branch returns a closure and is lowered as an allocation.
 			impl("Immer.produce", "base", "recipe", "patchListener").
 				to("fb", "isFunction", Lit(), V("base")).
-				ret(V("fn:curriedProduce")).
+				ret(G("fn:curriedProduce")).
 				to("", "die", Lit(), Lit(), Alloc()).
 				to("dr", "isDraftable", Lit(), V("base")).
 				// enterScope, createProxy and processResult build the draft

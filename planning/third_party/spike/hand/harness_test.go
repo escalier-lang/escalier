@@ -13,7 +13,7 @@
 //
 // Each package file lowers a few exported members, plus the package-internal
 // helpers they call, with the conventions below. The analysis itself is the
-// unmodified one in internal/ecma262.
+// one in internal/ecma262, which the builtins also run through.
 //
 //   - Every function is an abstract operation named `impl:<name>`. Its
 //     parameter 0 is `this$`, the receiver, and its declared parameters follow.
@@ -30,6 +30,10 @@
 //     no body, so the analysis marks the caller incomplete.
 //   - A call through a parameter is a call to that parameter's name, which the
 //     analysis treats as a callback.
+//   - A module-level binding is a GlobalExpr, written G(name). So is one of the
+//     package's own functions passed as a value. A value a method's closure
+//     captures, such as mitt's `all`, is not module-level, so it stays a name
+//     the method does not bind.
 package hand
 
 import (
@@ -63,6 +67,10 @@ func Alloc(args ...expr) expr {
 	}
 	return expr{"kind": "alloc", "args": args}
 }
+
+// G names a module-level value, such as a regex, a cache, or one of the
+// package's own functions passed as a value.
+func G(name string) expr { return expr{"kind": "global", "var": name} }
 
 // Unknown reads a name no function binds, which the origin map reads as
 // Unknown.
@@ -202,9 +210,31 @@ func builtinStubs(t *testing.T, funcs []*fn) []*fn {
 		for _, arg := range m.Args {
 			stub.set(V(stub.params[arg+1]), Lit())
 		}
+		// The stub returns what the builtin's fact says it returns, so a call
+		// to it takes that origin. An unknown return leaves the stub with no
+		// return at all, which reads as Unknown.
+		for _, ref := range returnRefs(fact.Returns) {
+			switch ref.Kind {
+			case ecma262.AliasFresh:
+				stub.ret(Alloc())
+			case ecma262.AliasReceiver:
+				stub.ret(V("recv"))
+			case ecma262.AliasParam:
+				stub.ret(V(stub.params[*ref.Index+1]))
+			}
+		}
 		stubs = append(stubs, stub)
 	}
 	return stubs
+}
+
+// returnRefs lists the values a builtin's return fact names, one for a single
+// kind and every member for a union.
+func returnRefs(r ecma262.ReturnFact) []ecma262.AliasRef {
+	if r.Kind == ecma262.AliasUnion {
+		return r.Members
+	}
+	return []ecma262.AliasRef{{Kind: r.Kind, Index: r.Index}}
 }
 
 // ---------------------------------------------------------------------------
@@ -279,6 +309,7 @@ func describe(p paramResult) string {
 type run struct {
 	cfg     *ecma262.CFG
 	summary *ecma262.MutationSummary
+	origins map[*ecma262.Func]*ecma262.OriginMap
 	byName  map[string]*fn
 }
 
@@ -294,7 +325,7 @@ func analyze(t *testing.T, p pkg) []memberResult {
 	require.NoError(t, err)
 	cfg, err := ecma262.ParseCFG(data)
 	require.NoError(t, err)
-	r := &run{cfg: cfg, summary: ecma262.NewMutationSummary(cfg), byName: byName}
+	r := &run{cfg: cfg, summary: ecma262.NewMutationSummary(cfg), origins: ecma262.NewOriginMaps(cfg), byName: byName}
 
 	var results []memberResult
 	for _, m := range p.members {
@@ -327,7 +358,7 @@ func (r *run) classify(m member, target *ecma262.Func) memberResult {
 		}
 		res.params = append(res.params, pr)
 	}
-	res.returns = returnAlias(target)
+	res.returns = returnAlias(r.origins[target])
 	res.blockers = blockers
 	return res
 }
@@ -343,7 +374,7 @@ func (r *run) blockers(root *ecma262.Func) []string {
 			return
 		}
 		seen.Add(f)
-		origins := ecma262.NewOriginMap(f)
+		origins := r.origins[f]
 		for _, n := range f.Nodes {
 			switch n := n.(type) {
 			case *ecma262.CallNode:
@@ -442,8 +473,8 @@ func sourceKind(e ecma262.Expr) string {
 
 // returnAlias reads what every return hands back, in member positions: the
 // receiver, a 0-based declared parameter, a fresh value, or unknown.
-func returnAlias(f *ecma262.Func) string {
-	origins := ecma262.NewOriginMap(f)
+func returnAlias(origins *ecma262.OriginMap) string {
+	f := origins.Func()
 	kinds := set.NewSet[string]()
 	for _, n := range f.Nodes {
 		ret, ok := n.(*ecma262.ReturnNode)
@@ -452,6 +483,8 @@ func returnAlias(f *ecma262.Func) string {
 		}
 		o := origins.Eval(ret.Value)
 		switch {
+		case o.Kind == ecma262.OriginGlobal:
+			kinds.Add("global")
 		case o.Interior:
 			kinds.Add("unknown")
 		case o.Kind == ecma262.OriginParam && o.Index == 0:

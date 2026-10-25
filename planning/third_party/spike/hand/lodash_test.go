@@ -23,7 +23,7 @@ func init() {
 
 			// isIndex(value, length): reIsUint.test(value)
 			impl("_isIndex", "value", "length").
-				builtin("", "RegExp.prototype.test", V("reIsUint"), V("value")).
+				builtin("", "RegExp.prototype.test", G("reIsUint"), V("value")).
 				ret(Lit()),
 
 			// getRawTag(value) masks Symbol.toStringTag on the value itself
@@ -67,8 +67,8 @@ func init() {
 			impl("_isKey", "value", "object").
 				builtin("a", "Array.isArray", Lit(), V("value")).
 				to("s", "isSymbol", Lit(), V("value")).
-				builtin("p", "RegExp.prototype.test", V("reIsPlainProp"), V("value")).
-				builtin("d", "RegExp.prototype.test", V("reIsDeepProp"), V("value")).
+				builtin("p", "RegExp.prototype.test", G("reIsPlainProp"), V("value")).
+				builtin("d", "RegExp.prototype.test", G("reIsDeepProp"), V("value")).
 				builtin("o", "Object", Lit(), V("object")).
 				ret(Lit()),
 
@@ -83,7 +83,7 @@ func init() {
 			impl("_baseToString", "value").
 				ret(V("value")).
 				builtin("a", "Array.isArray", Lit(), V("value")).
-				to("m", "_arrayMap", Lit(), V("value"), V("fn:_baseToString")).
+				to("m", "_arrayMap", Lit(), V("value"), G("fn:_baseToString")).
 				ret(Lit()).
 				to("s", "isSymbol", Lit(), V("value")).
 				builtin("t", "Symbol.prototype.toString", V("value")).
@@ -182,24 +182,24 @@ func init() {
 				ret(V("value")).
 				to("t", "_baseTrim", Lit(), V("value")).
 				let("value", V("t")).
-				builtin("b", "RegExp.prototype.test", V("reIsBinary"), V("value")).
-				builtin("c", "RegExp.prototype.test", V("reIsOctal"), V("value")).
+				builtin("b", "RegExp.prototype.test", G("reIsBinary"), V("value")).
+				builtin("c", "RegExp.prototype.test", G("reIsOctal"), V("value")).
 				builtin("sl", "String.prototype.slice", V("value"), Lit()).
 				builtin("pi", "parseInt", Lit(), V("sl"), Lit()).
-				builtin("h", "RegExp.prototype.test", V("reIsBadHex"), V("value")).
+				builtin("h", "RegExp.prototype.test", G("reIsBadHex"), V("value")).
 				ret(Lit()),
 
 			// trimmedEndIndex(string)
 			impl("_trimmedEndIndex", "string").
 				builtin("ch", "String.prototype.charAt", V("string"), Lit()).
-				builtin("w", "RegExp.prototype.test", V("reWhitespace"), V("ch")).
+				builtin("w", "RegExp.prototype.test", G("reWhitespace"), V("ch")).
 				ret(Lit()),
 
 			// baseTrim(string)
 			impl("_baseTrim", "string").
 				to("e", "_trimmedEndIndex", Lit(), V("string")).
 				builtin("s", "String.prototype.slice", V("string"), Lit(), Lit()).
-				builtin("r", "String.prototype.replace", V("s"), V("reTrimStart"), Lit()).
+				builtin("r", "String.prototype.replace", V("s"), G("reTrimStart"), Lit()).
 				ret(V("r")).
 				ret(V("string")),
 
@@ -250,11 +250,11 @@ func init() {
 			impl("_baseUnary", "func").
 				let("value", Unknown()).
 				call("r", "func", V("value")).
-				ret(V("fn:baseUnary/closure")),
+				ret(G("fn:baseUnary/closure")),
 
 			// basePullAll(array, values, iteratee, comparator)
 			impl("_basePullAll", "array", "values", "iteratee", "comparator").
-				let("indexOf", V("fn:baseIndexOfWith")).let("indexOf", V("fn:baseIndexOf")).
+				let("indexOf", G("fn:baseIndexOfWith")).let("indexOf", G("fn:baseIndexOf")).
 				let("seen", V("array")).
 				to("cv", "_copyArray", Lit(), V("values")).
 				let("values", V("cv")).
@@ -278,7 +278,7 @@ func init() {
 			// baseIteratee(value)
 			impl("_baseIteratee", "value").
 				ret(V("value")).
-				ret(V("fn:identity")).
+				ret(G("fn:identity")).
 				builtin("a", "Array.isArray", Lit(), V("value")).
 				// baseMatchesProperty, baseMatches and property build matcher
 				// closures from the value. They are not lowered here, because
@@ -298,7 +298,7 @@ func init() {
 				// baseForOwn(object, function (value, key, object) {...}), with
 				// the closure inlined. baseFor is `createBaseFor()`, a value
 				// computed at module load.
-				unresolved("", "package-value:baseFor(object, iteratee, keys)", Lit(), V("object"), V("fn:mapValues/closure"), V("fn:keys")).
+				unresolved("", "package-value:baseFor(object, iteratee, keys)", Lit(), V("object"), G("fn:mapValues/closure"), G("fn:keys")).
 				let("cvalue", Unknown()).let("ckey", Unknown()).let("cobject", Unknown()).
 				call("x", "iteratee", V("cvalue"), V("ckey"), V("cobject")).
 				to("", "_baseAssignValue", Lit(), V("result"), V("ckey"), V("x")).

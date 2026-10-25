@@ -4,72 +4,82 @@
 [source_analysis.md](source_analysis.md).
 
 The check lowered 56 exported members of ten npm packages by hand into the
-control-flow IR that [internal/ecma262/](../../internal/ecma262/) reads. It
-then ran the unmodified ECMA-262 mutation analysis over them. The question was
-what fraction of members the analysis settles. A member is settled when every
-parameter, and the receiver for a method, comes out as a proven `&` or a
-proven `&mut` rather than unknown.
+control-flow IR that [internal/ecma262/](../../internal/ecma262/) reads, then
+ran the ECMA-262 mutation analysis over them. The question was what fraction
+of members the analysis settles. A member is settled when every parameter,
+and the receiver for a method, comes out as a proven `&` or a proven `&mut`
+rather than unknown.
+
+The check ran twice. The first run used the analysis as the builtins
+workstream left it. The second ran after the origin-lattice changes that
+section A below describes, which are now part of `internal/ecma262`.
 
 ## Result
 
-The analysis as it stands settles 14 of the 56 members. One of the 14 has only
-primitive parameters, so 13 of 55 non-trivial members settle. The plan's gate
-asked for about half of the utility packages' members. `date-fns` settled 0 of
-6 and `lodash-es` 1 of 6, so the current analysis is well short of the gate.
+| Package         | First run | After lattice changes | Shape                                      |
+| --------------- | --------- | --------------------- | ------------------------------------------ |
+| `date-fns`      | 0/6       | 0/6                   | pure functions over a shared `toDate`      |
+| `lodash-es`     | 1/6       | 1/6                   | untyped utility helpers, many layers deep  |
+| `mitt`          | 1/4       | 1/4                   | methods are closures over a captured map   |
+| `eventemitter3` | 2/6       | 5/6                   | ES5 prototype methods over `this._events`  |
+| `express`       | 2/7       | 3/7                   | CommonJS prototype objects, many deps      |
+| `immer`         | 2/5       | 3/5                   | class-field arrows, module-level caches    |
+| `lru-cache`     | 1/5       | 1/5                   | private fields holding closures            |
+| `rxjs`          | 2/6       | 2/6                   | classes, operators built from closures     |
+| `uuid`          | 1/5       | 3/5                   | compiled TypeScript, host `crypto` calls   |
+| `zod`           | 2/6       | 3/6                   | classes built at runtime by `$constructor` |
+| Total           | 14/56     | 22/56                 |                                            |
 
-Every answer the analysis did give is correct. All 14 settled members match
-what the source does. So do the 14 proven positions inside members that stayed
-open, such as `pullAll`'s `&mut` array. The analysis is sound but blind. It
-never claimed a wrong answer, and it withheld most of them.
+The lattice changes took the settled members from 14 to 22. One member in each
+run has only primitive parameters, so the non-trivial counts are 13 of 55 and
+21 of 55. The plan's gate asked for about half of the utility packages'
+members. `date-fns` still settles 0 of 6 and `lodash-es` 1 of 6, so the
+analysis is still short of the gate.
+
+Every answer but one is correct. The first run's 14 settled members all match
+the source. In the second run 21 of 22 match, and so do the 12 proven
+positions inside members that stayed open, such as `pullAll`'s `&mut` array.
+The exception is `app.enabled`, which comes out `&mut self` where the source
+only reads. The analysis ignores control flow, as the caveats below describe,
+so that answer is sound but stricter than needed. The analysis never claimed
+`&` for a value the source writes.
 
 Receivers are the determination the plan rated highest. Of 30 instance
-members, 16 receivers settled, but 10 of those are proven `&mut self`. Only 6
-methods came out as a proven `&self`, and they are the simplest ones in the
-sample, such as `BehaviorSubject.getValue` and `ZodType.brand`.
+members, 19 receivers settle after the changes, up from 16. Twelve of those
+are a proven `&mut self` and 7 a proven `&self`. The `&self` methods are the
+simple ones in the sample, such as `BehaviorSubject.getValue`,
+`ZodType.brand` and `EventEmitter.listenerCount`.
 
-| Package         | Settled | Shape                                       |
-| --------------- | ------- | ------------------------------------------- |
-| `date-fns`      | 0/6     | pure functions over a shared `toDate`       |
-| `lodash-es`     | 1/6     | untyped utility helpers, many layers deep   |
-| `mitt`          | 1/4     | methods are closures over a captured map    |
-| `eventemitter3` | 2/6     | ES5 prototype methods over `this._events`   |
-| `express`       | 2/7     | CommonJS prototype objects, many deps       |
-| `immer`         | 2/5     | class-field arrows, module-level caches     |
-| `lru-cache`     | 1/5     | private fields holding closures             |
-| `rxjs`          | 2/6     | classes, operators built from closures      |
-| `uuid`          | 1/5     | compiled TypeScript, host `crypto` calls    |
-| `zod`           | 2/6     | classes built at runtime by `$constructor`  |
-
-The return alias is known for 24 of 56 members. Nearly all of those are a
-fresh value or a primitive. The borrows it found are `return this` and
-`freeze`'s `return obj`, which matches the plan's expectation that lifetimes
-beyond those shapes stay out of reach.
+The return alias is known for 35 of 56 members, up from 24. Nearly all of
+those are a fresh value or a primitive. The borrows it found are
+`return this` and `freeze`'s `return obj`, which matches the plan's
+expectation that lifetimes beyond those shapes stay out of reach.
 
 ## What blocks the rest
 
-Each open member was blocked by one or more causes, which group into six
-themes. The first column counts the open members a theme blocks at all. The
-second counts those it blocks alone.
+Each open member is blocked by one or more causes, which group into six
+themes. The table counts the open members a theme blocks at all, and those it
+blocks alone, in each run.
 
-| Theme                                                       | Blocks | Alone |
-| ----------------------------------------------------------- | ------ | ----- |
-| A. Origin lattice: writes through properties, call results  | 23     | 4     |
-| B. Module-level and captured state                          | 10     | 3     |
-| C. Callbacks the caller supplies                            | 16     | 1     |
-| D. Dynamic dispatch and functions built at runtime          | 29     | 4     |
-| E. Code outside the package                                 | 11     | 0     |
-| F. Not lowered for this check                               | 4      | 0     |
+| Theme                                                       | First run | Alone | After | Alone |
+| ----------------------------------------------------------- | --------- | ----- | ----- | ----- |
+| A. Origin lattice: writes through properties, call results  | 23        | 4     | 11    | 0     |
+| B. Module-level and captured state                          | 10        | 3     | 2     | 0     |
+| C. Callbacks the caller supplies                            | 16        | 1     | 16    | 1     |
+| D. Dynamic dispatch and functions built at runtime          | 29        | 4     | 29    | 5     |
+| E. Code outside the package                                 | 11        | 0     | 10    | 1     |
+| F. Not lowered for this check                               | 4         | 0     | 4     | 0     |
 
-Removing the themes one at a time, in that order, settles this many of the 42
-open members:
+Removing the themes one at a time, in that order, settles this many of the
+open members. There were 42 in the first run and 34 after the changes.
 
-| Themes removed | Open members that would settle |
-| -------------- | ------------------------------ |
-| A              | 4                              |
-| A–B            | 9                              |
-| A–C            | 10                             |
-| A–D            | 28                             |
-| A–E            | 38                             |
+| Themes removed | First run | After lattice changes |
+| -------------- | --------- | --------------------- |
+| A              | 4         | 0                     |
+| A–B            | 9         | 2                     |
+| A–C            | 10        | 3                     |
+| A–D            | 28        | 21                    |
+| A–E            | 38        | 30                    |
 
 A member that settles on this ladder is no longer blocked. Its answer could
 still turn out to be `&mut`.
@@ -78,8 +88,8 @@ still turn out to be `&mut`.
 
 The analysis gives every value one of four origins: the receiver, a
 parameter, a fresh allocation, or Unknown. A write is charged to its holder
-only when the written value has one of the first three. Library code writes
-through values the lattice cannot place in four ways:
+only when the written value has one of the first three. In the first run,
+library code wrote through values the lattice could not place in four ways:
 
 - **Through a property.** `this._events[evt] = listener` in `eventemitter3`
   writes `this._events`, a property read, which comes out Unknown. The spec
@@ -94,13 +104,47 @@ through values the lattice cannot place in four ways:
 - **Through a closure parameter.** `arr.forEach((x) => { x.n = 1 })` writes an
   element whose origin the closure does not know.
 
-These are changes to `internal/ecma262`, not to a front end. Escalier's `mut`
-is deep ([docs/08_mutability.md](../../docs/08_mutability.md)), so a write
-through a property of the receiver is a write to the receiver. A property read
-off the receiver or a parameter can therefore be interior to it. A join of a
-parameter with a fresh value can stay the parameter, since writing the fresh
-half is invisible to the caller. A call into a summarized function can take
-its result's origin from the callee's return alias.
+The changes to `internal/ecma262/origin.go` address the first three:
+
+- **A property read is interior to its holder.** Escalier's `mut` is deep
+  ([docs/08_mutability.md](../../docs/08_mutability.md)), so a write through a
+  property of the receiver is a write to the receiver. A property read off the
+  receiver or a parameter is now interior to it, the way a backing-store slot
+  already was.
+- **A parameter joined with a fresh value stays the parameter.** The join is
+  marked shallow. A write to it is charged to the parameter, which is sound
+  because writing the fresh half is invisible. A read inside it is Unknown,
+  since its contents may come from either half.
+- **A call result takes its origin from the callee.** `NewOriginMaps`
+  computes every function's origin map together, in rounds. A call into an
+  abstract operation reads that operation's returns from the round before.
+  The first round answers every call Unknown, so each round is sound and the
+  rounds only sharpen.
+
+What remains in theme A is mostly a consequence of other themes. `addDays`
+still writes a call result, because `toDate` returns whatever the `options.in`
+callback returns. lodash's `path = castPath(path)` joins a parameter with a
+call result that is itself blocked by an unresolved call. The closure-parameter
+case is unchanged.
+
+#### What the changes do to the builtins
+
+The changes apply to the ECMA-262 builtins too. Of 501 builtin facts, 115
+changed, and every change gives a more precise answer:
+
+- 96 returns went from `unknown` to `fresh`. `Date.prototype.setTime`
+  returns what `TimeClip` computes, and every return in `TimeClip` is a fresh
+  number.
+- `Object.defineProperties` now returns `param(0)`, its target, and `RegExp`
+  gained a union return.
+- `RegExp.prototype [ @@replace ]` no longer needs its curated receiver. The
+  list its appends land on comes from `__FLAT_LIST__`, which now reads as
+  fresh, so the analysis proves `&mut self` itself. The curated entry is
+  retired.
+- 16 builtins lost an `unattributable` warning, among them `Function` and the
+  typed-array constructors.
+
+No receiver claim weakened, and `dts_to_esc`'s generated tree is unchanged.
 
 ### B. Module-level and captured state
 
@@ -113,11 +157,16 @@ blocks every parameter. The writes found were:
   `stringToPath`;
 - the map `mitt`'s methods capture.
 
-A module-level origin, distinct from Unknown, would let a write to it pass
-without blocking the parameters. `mitt` needs the opposite answer. Its
-captured map is the receiver's state, so writing it should charge the
-receiver. A closure over the object a factory returns is the same shape as
-`this`.
+The IR now has a `GlobalExpr` for a module-level binding, with an origin of
+its own. A write to one charges neither the receiver nor a parameter, so it no
+longer blocks them. The hand-lowered members name their module-level regexes,
+caches and function values that way.
+
+`mitt` needs the opposite answer and is still open. Its methods capture the
+map the factory created, which is the emitter's own state, so a write to it
+should charge the receiver. A closure over the object a factory returns is the
+same shape as `this`. Recognizing that takes a front end, not a change to the
+lattice.
 
 ### C. Callbacks
 
@@ -129,6 +178,13 @@ always calls with a closure it writes itself, such as lodash's `arrayMap`,
 parameter as the caller's responsibility settles the first kind. The second
 kind needs the callee's summary to take the closure argument's effects into
 account.
+
+`mitt`'s `Emitter.emit` is the one member callbacks block alone. It reads
+the handlers registered for `type` and calls each with `evt`. Today the call
+leaves `evt` unknown, because a handler could do anything with it. Under the
+caller's-responsibility reading, `evt`'s disposition is whatever the handler's
+declared parameter says. With handlers declared as taking `&T`, `emit` takes
+`evt: &T`, and Escalier rejects a mutating handler where it is registered.
 
 ### D. Dynamic dispatch and functions built at runtime
 
@@ -197,22 +253,23 @@ A general front end would recognize some of these and miss the rest.
   something else as well, so leaving the helper out changes no count.
 - The analysis ignores control flow. `app.enabled` calls `this.set(setting)`
   with one argument, which only reads, but the analysis sees the writing
-  branch too. That member is open for other reasons, so it causes no
-  mismatch here. Once theme A charges `this.settings[setting] = val` to the
-  receiver, it would come out a sound but wrong `&mut self`.
+  branch too. In the first run the member was open for other reasons. After
+  the lattice changes charge `this.settings[setting] = val` to the receiver,
+  it comes out a sound but over-strict `&mut self`, the one mismatch in the
+  second run.
 
 ## What this suggests
 
-Themes A and B are changes to the existing analysis, and they also benefit the
-builtins. The hand-lowered members are a fixture that can measure those
-changes without a front end. Making them first and re-running this check
-would show how far the lattice alone moves the numbers. The ladder puts it at
-9 of 42 open members.
+The lattice changes did what the first run's ladder predicted. They settled 8
+more members against a predicted 9, sharpened 115 builtin facts, and cost
+nothing a front end has to supply.
 
-Theme D decides the rest, and it is the expensive part. Most of the remaining
-members wait on resolving functions that exist only at runtime. Settling the
-ladder's 28 would take a front end that handles that well. Whether to build
-one is the decision for the spike.
+What remains is theme D, and it is the expensive part. Most open members wait
+on resolving functions that exist only at runtime. The ladder puts the
+members a front end that handles theme D could settle at 21 of the 34 still
+open. Whether to build one is the decision for the spike. Callbacks are the
+other open question. They block 16 open members, but only alongside other
+themes, so their rule matters once theme D is solved.
 
 ## Reproducing
 

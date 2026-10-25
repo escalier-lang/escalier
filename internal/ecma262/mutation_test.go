@@ -118,11 +118,11 @@ func TestMutationSummarySampleFunctions(t *testing.T) {
 		// arguments, so the buffer is fresh and the write is discarded.
 		// Only the prose step §3 could not lower is left to report.
 		"InteriorOfAFreshAllocation": {"TypedArray.prototype.slice", "incomplete"},
-		// InitializeTypedArrayFromTypedArray writes the buffer behind an
-		// AllocateTypedArray result, and that allocator stores the name it was
-		// given into the array, so reading inside its result can reach a
-		// caller's value and the write cannot be placed.
-		"InteriorOfAShallowAllocation": {"InitializeTypedArrayFromTypedArray", "args{0} unattributable"},
+		// InitializeTypedArrayFromTypedArray stores bytes into `data`, a buffer
+		// that either CloneArrayBuffer or AllocateArrayBuffer allocated. Both
+		// return a fresh buffer, so the store reaches nothing the caller holds,
+		// and only the slot writes onto `O` are charged.
+		"WriteIntoAFreshBuffer": {"InitializeTypedArrayFromTypedArray", "args{0}"},
 		// indexOf only reads the receiver, and every String method coerces its
 		// receiver to a fresh string before touching it.
 		"ReadOnlyMethod": {"Array.prototype.indexOf", "none"},
@@ -139,10 +139,11 @@ func TestMutationSummarySampleFunctions(t *testing.T) {
 		"ParameterPastReadOnlyInternalMethods": {"Object.assign", "args{0}"},
 		// @@replace calls `Set(rx, "lastIndex", 0, true)` on its receiver, and
 		// separately appends to three lists through writes whose slot the
-		// algorithm computes. The appends land on values the analysis cannot
-		// place, so the mutation it found stands alongside the warning that it
-		// could not read the whole algorithm.
-		"MutatingAndIncomplete": {"RegExp.prototype [ @@replace ]", "receiver incomplete"},
+		// algorithm computes. Every list is fresh. `replacerArgs` is the one
+		// `__FLAT_LIST__` returns, which takes its origin from that operation's
+		// own return, so the appends are discarded and the receiver write stands
+		// alone.
+		"MutatingThroughFreshLists": {"RegExp.prototype [ @@replace ]", "receiver"},
 		// setPrototypeOf performs no write of its own. It ends in
 		// `O.[[SetPrototypeOf]](proto)`, a dispatch that resolves to no body,
 		// and the internal-method table is what reports the write at all.
@@ -279,8 +280,22 @@ func TestMutationSummaryChargesAComputedSlotWriteOnAnInterior(t *testing.T) {
 
 // A write whose slot the algorithm computes leaves the function incomplete when
 // the written value is neither fresh nor an interior. The analysis knows
-// neither what the write reached nor whose value it was.
+// neither what the write reached nor whose value it was. Here `y` is the result
+// of a call the graph holds no body for.
 func TestMutationSummaryComputedSlotWriteOnAnUnplaceableValue(t *testing.T) {
+	cfg, err := ParseCFG([]byte(
+		`{"specTarget":"abc","funcs":[` +
+			`{"name":"Demo","kind":"builtin-static","params":["x"],"nodes":[` +
+			`{"kind":"call","target":"y","callee":"Elsewhere","args":[{"kind":"var","var":"x"}],"guard":"plain"},` +
+			`{"kind":"slotwrite","object":{"kind":"var","var":"y"},"value":{"kind":"lit"}}]}]}`))
+	require.NoError(t, err)
+
+	require.Equal(t, "incomplete", NewMutationSummary(cfg).Of(cfg.Builtin("Demo")).String())
+}
+
+// A write whose slot the algorithm computes is charged to the parameter it lands
+// inside of, since a property read off a parameter is interior to it.
+func TestMutationSummaryComputedSlotWriteInsideAParameter(t *testing.T) {
 	cfg, err := ParseCFG([]byte(
 		`{"specTarget":"abc","funcs":[` +
 			`{"name":"Demo","kind":"builtin-static","params":["x"],"nodes":[` +
@@ -288,7 +303,29 @@ func TestMutationSummaryComputedSlotWriteOnAnUnplaceableValue(t *testing.T) {
 			`{"kind":"slotwrite","object":{"kind":"var","var":"y"},"value":{"kind":"lit"}}]}]}`))
 	require.NoError(t, err)
 
-	require.Equal(t, "incomplete", NewMutationSummary(cfg).Of(cfg.Builtin("Demo")).String())
+	require.Equal(t, "args{0}", NewMutationSummary(cfg).Of(cfg.Builtin("Demo")).String())
+}
+
+// A write onto a module-level value charges nothing, since the caller did not
+// pass it, and leaves no warning behind.
+func TestMutationSummaryWriteOnAGlobal(t *testing.T) {
+	cfg, err := ParseCFG([]byte(
+		`{"specTarget":"abc","funcs":[` +
+			`{"name":"Set","kind":"abstract-op","params":["O","P","V"],"nodes":[]},` +
+			`{"name":"Demo","kind":"builtin-static","params":["x"],"nodes":[` +
+			`{"kind":"call","callee":"Set","args":[{"kind":"global","var":"cache"},{"kind":"lit"},{"kind":"var","var":"x"}],"guard":"plain"},` +
+			`{"kind":"call","callee":"Set","args":[{"kind":"prop","object":{"kind":"global","var":"cache"}},{"kind":"lit"},{"kind":"lit"}],"guard":"plain"}]}]}`))
+	require.NoError(t, err)
+
+	require.Equal(t, "none", NewMutationSummary(cfg).Of(cfg.Builtin("Demo")).String())
+}
+
+// A parameter an algorithm reassigns to a fresh value on one path is charged
+// for a write on either path, since writing the fresh one is invisible.
+// `MakeConstructor ( F [ , writablePrototype [ , prototype ] ] )` allocates
+// `prototype` when the caller omits it and then writes it.
+func TestMutationSummaryWriteOnAParameterJoinedWithAFreshValue(t *testing.T) {
+	require.Equal(t, "args{0,2}", mutationsOf(t, "MakeConstructor").String())
 }
 
 // A write whose slot the algorithm computes is discarded when it lands on a
@@ -338,6 +375,8 @@ CopyDataBlockBytes: toBlock
 GatherAvailableAncestors: execList
 InnerModuleEvaluation: stack
 InnerModuleLinking: stack
+Record[SourceTextModuleRecord].GetExportedNames: exportStarSet
+Record[SourceTextModuleRecord].ResolveExport: resolveSet
 __APPEND_LIST__: to
 __REMOVE_ELEM__: list`))
 }
@@ -586,7 +625,12 @@ func TestGraphHoldsNoneOfTheHandWrittenShapes(t *testing.T) {
 		"a callee bound to a parameter shares a name with a seed or internal-method entry; "+
 			"TestMutationSummaryCalleeNamingAParameterIsACallback and "+
 			"TestInternalMethodTableSkipsACallback describe how that call is treated")
-	require.Empty(t, found.shortCall,
+	// CreateDynamicFunction calls MakeConstructor without its optional
+	// `prototype`, which MakeConstructor then allocates and writes. The write
+	// is charged to that position, as
+	// TestMutationSummaryWriteOnAParameterJoinedWithAFreshValue describes, so
+	// the call leaves CreateDynamicFunction incomplete.
+	require.Equal(t, []string{"CreateDynamicFunction calls MakeConstructor"}, found.shortCall,
 		"a call omits an argument position its callee mutates; "+
 			"TestMutationSummaryCallOmittingTheMutatedArgument describes how it is treated")
 	require.Empty(t, found.shortDispatch,
@@ -685,7 +729,7 @@ func TestMutationSummaryTallies(t *testing.T) {
 			kind, byKind["total"], byKind["receiver"], byKind["args"], byKind["unattributable"], byKind["incomplete"], byKind["classifiable"]))
 	}
 	sort.Strings(kinds)
-	snaps.MatchInlineSnapshot(t, strings.Join(kinds, "\n"), snaps.Inline(`abstract-op: total 701, receiver 0, args 50, unattributable 39, incomplete 226, classifiable 449
-builtin-method: total 313, receiver 65, args 0, unattributable 3, incomplete 22, classifiable 289
-builtin-static: total 188, receiver 0, args 20, unattributable 21, incomplete 38, classifiable 145`))
+	snaps.MatchInlineSnapshot(t, strings.Join(kinds, "\n"), snaps.Inline(`abstract-op: total 701, receiver 0, args 51, unattributable 35, incomplete 227, classifiable 452
+builtin-method: total 313, receiver 65, args 0, unattributable 3, incomplete 21, classifiable 290
+builtin-static: total 188, receiver 0, args 20, unattributable 5, incomplete 34, classifiable 149`))
 }

@@ -47,32 +47,24 @@ settled 1/4 members, 1/4 excluding trivial ones; return alias known for 4/4
 
 ## eventemitter3@5.0.4
 
-EventEmitter.on                    open     self:&mut p0:prim p1:? p2:?; returns unknown
-    blocked by write to unknown in addListener: property read
-EventEmitter.once                  open     self:&mut p0:prim p1:? p2:?; returns unknown
-    blocked by write to unknown in addListener: property read
+EventEmitter.on                    settled  self:&mut p0:prim p1:& p2:&; returns self (matches source)
+EventEmitter.once                  settled  self:&mut p0:prim p1:& p2:&; returns self (matches source)
 EventEmitter.emit                  open     self:&mut p0:prim p1:?; returns fresh
     blocked by unresolved property-value:listeners.fn.apply(listeners.context, args)
     blocked by unresolved property-value:listeners.fn.call(listeners.context, a1)
     blocked by unresolved property-value:listeners[i].fn.call(listeners[i].context, a1)
-    blocked by write to unknown in EventEmitter.removeListener: property read
-    blocked by write to unknown in clearEvent: property read
-EventEmitter.removeListener        open     self:&mut p0:prim p1:? p2:? p3:prim; returns self
-    blocked by write to unknown in EventEmitter.removeListener: property read
-    blocked by write to unknown in clearEvent: property read
-EventEmitter.eventNames            settled  self:&; returns unknown (matches source)
+EventEmitter.removeListener        settled  self:&mut p0:prim p1:& p2:& p3:prim; returns self (matches source)
+EventEmitter.eventNames            settled  self:&; returns fresh (matches source)
 EventEmitter.listenerCount         settled  self:& p0:prim; returns fresh (matches source)
 
-settled 2/6 members, 2/6 excluding trivial ones; return alias known for 3/6
+settled 5/6 members, 5/6 excluding trivial ones; return alias known for 6/6
 
 ## express@5.3.0
 
-app.set                            open     self:? p0:prim p1:?; returns unknown
+app.set                            open     self:&mut p0:prim p1:?; returns unknown
     blocked by unresolved external-package:debug('set "%s" to %o', setting, val)
-    blocked by write to unknown in app.set: property read
-app.enabled                        open     self:? p0:prim; returns fresh
+app.enabled                        settled  self:&mut p0:prim; returns fresh (MISMATCH, source says self:& p0:prim)
     blocked by unresolved external-package:debug('set "%s" to %o', setting, val)
-    blocked by write to unknown in app.set: property read
 app.use                            open     self:? p0:?; returns self
     blocked by unresolved external-package:debug('.use app under %s', path)
     blocked by unresolved untyped:fn.emit('mount', this)
@@ -94,7 +86,7 @@ res.json                           open     self:? p0:?; returns unknown
     blocked by unresolved untyped:this.setHeader(field, value)
 req.get                            settled  self:& p0:prim; returns unknown (matches source)
 
-settled 2/7 members, 2/7 excluding trivial ones; return alias known for 4/7
+settled 3/7 members, 3/7 excluding trivial ones; return alias known for 4/7
 
 ## immer@11.2.9
 
@@ -110,38 +102,28 @@ produce                            open     p0:? p1:? p2:?; returns unknown
     blocked by unresolved untyped:obj.forEach(...)
     blocked by write to unknown in Immer.produce: copy+fresh (r)
     blocked by write to unknown in freeze: closure parameter (value)
-    blocked by write to unknown in isPlainObject: free name (cachedCtorStrings)
 freeze                             settled  p0:&mut p1:prim; returns p0 (matches source)
     blocked by callback iter
     blocked by unresolved untyped:obj.forEach(...)
     blocked by write to unknown in freeze: closure parameter (value)
-    blocked by write to unknown in isPlainObject: free name (cachedCtorStrings)
 original                           open     p0:?; returns unknown
     blocked by unresolved property-value:e.apply(null, args)
 isDraft                            settled  p0:&; returns fresh (matches source)
-isDraftable                        open     p0:?; returns fresh
-    blocked by write to unknown in isPlainObject: free name (cachedCtorStrings)
+isDraftable                        settled  p0:&; returns fresh (matches source)
 
-settled 2/5 members, 2/5 excluding trivial ones; return alias known for 3/5
+settled 3/5 members, 3/5 excluding trivial ones; return alias known for 3/5
 
 ## lodash-es@4.18.1
 
 chunk                              open     p0:? p1:prim; returns fresh
     blocked by unresolved untyped:value.valueOf()
-    blocked by write to unknown in _isIndex: free name (reIsUint)
-    blocked by write to unknown in _trimmedEndIndex: free name (reWhitespace)
     blocked by write to unknown in toNumber: copy+fresh (value)
-    blocked by write to unknown in toNumber: free name (reIsBadHex)
-    blocked by write to unknown in toNumber: free name (reIsBinary)
-    blocked by write to unknown in toNumber: free name (reIsOctal)
 get                                open     p0:? p1:? p2:?; returns unknown
     blocked by callback iteratee
     blocked by unresolved package-value:stringToPath(toString(value))
     blocked by write to unknown in _baseGet: copy (path)
     blocked by write to unknown in _baseGet: property read
-    blocked by write to unknown in _isKey: free name (reIsDeepProp)
-    blocked by write to unknown in _isKey: free name (reIsPlainProp)
-set                                open     p0:? p1:? p2:?; returns unknown
+set                                open     p0:? p1:? p2:?; returns p0
     blocked by callback customizer
     blocked by callback iteratee
     blocked by unresolved package-value:defineProperty(object, key, {...})
@@ -149,15 +131,10 @@ set                                open     p0:? p1:? p2:?; returns unknown
     blocked by write to unknown in _baseSet: copy (path)
     blocked by write to unknown in _baseSet: copy+property read (nested)
     blocked by write to unknown in _baseSet: property read
-    blocked by write to unknown in _isIndex: free name (reIsUint)
-    blocked by write to unknown in _isKey: free name (reIsDeepProp)
-    blocked by write to unknown in _isKey: free name (reIsPlainProp)
-pullAll                            open     p0:&mut p1:?; returns unknown
+pullAll                            open     p0:&mut p1:?; returns p0
     blocked by callback func
     blocked by callback iteratee
     blocked by unresolved local-value:indexOf(seen, computed, fromIndex, comparator)
-    blocked by write to unknown in _basePullAll: copy (seen)
-    blocked by write to unknown in _copyArray: fresh (array)
 mapValues                          open     p0:? p1:?; returns fresh
     blocked by unresolved iteratee
     blocked by unresolved not-lowered:baseMatches(value)
@@ -167,24 +144,20 @@ mapValues                          open     p0:? p1:?; returns fresh
     blocked by unresolved package-value:defineProperty(object, key, {...})
 isSymbol                           settled  p0:&mut; returns fresh (matches source)
 
-settled 1/6 members, 1/6 excluding trivial ones; return alias known for 3/6
+settled 1/6 members, 1/6 excluding trivial ones; return alias known for 5/6
 
 ## lru-cache@11.5.3
 
 LRUCache.size                      settled  self:&; returns unknown (matches source)
-LRUCache.has                       open     self:? p0:? p1:&mut; returns unknown
+LRUCache.has                       open     self:? p0:? p1:&mut; returns fresh
     blocked by unresolved external-package:metrics.publish(status)
     blocked by unresolved property-value:this.#isStale(index)
     blocked by unresolved property-value:this.#statusTTL(status, index)
     blocked by unresolved property-value:this.#updateItemAge(index)
-    blocked by write to unknown in LRUCache.#has: property read (status)
-    blocked by write to unknown in LRUCache.has: fresh+property read (status)
 LRUCache.peek                      open     self:? p0:? p1:&mut; returns unknown
     blocked by unresolved external-package:hasSubscribers()
     blocked by unresolved external-package:metrics.publish(status)
     blocked by unresolved property-value:this.#isStale(index)
-    blocked by write to unknown in LRUCache.#peek: property read (status)
-    blocked by write to unknown in LRUCache.peek: fresh+property read (status)
 LRUCache.get                       open     self:&mut p0:? p1:&mut; returns unknown
     blocked by unresolved external-package:metrics.publish(status)
     blocked by unresolved external-package:metrics.publish({...})
@@ -196,29 +169,22 @@ LRUCache.get                       open     self:&mut p0:? p1:&mut; returns unkn
     blocked by unresolved property-value:this.#statusTTL(status, index)
     blocked by unresolved property-value:this.#updateItemAge(index)
     blocked by unresolved property-value:v.__abortController.abort(...)
-    blocked by write to unknown in LRUCache.#clear: property read
-    blocked by write to unknown in LRUCache.#connect: property read
-    blocked by write to unknown in LRUCache.#delete: property read
-    blocked by write to unknown in LRUCache.#get: property read (status)
-    blocked by write to unknown in LRUCache.get: fresh+property read (status)
-LRUCache.delete                    open     self:&mut p0:?; returns unknown
+LRUCache.delete                    open     self:&mut p0:?; returns fresh
     blocked by unresolved external-package:metrics.publish({...})
     blocked by unresolved host-api:clearTimeout(...)
     blocked by unresolved property-value:this.#dispose(v, k, reason)
     blocked by unresolved property-value:this.#disposeAfter(...task)
     blocked by unresolved property-value:this.#removeItemSize(index)
     blocked by unresolved property-value:v.__abortController.abort(...)
-    blocked by write to unknown in LRUCache.#clear: property read
-    blocked by write to unknown in LRUCache.#delete: property read
 
-settled 1/5 members, 1/5 excluding trivial ones; return alias known for 0/5
+settled 1/5 members, 1/5 excluding trivial ones; return alias known for 2/5
 
 ## rxjs@7.8.2
 
 Observable.pipe                    open     self:? p0:?; returns unknown
     blocked by unresolved closure-param:fn(prev)
     blocked by unresolved local-value:pipeFromArray(operations)(this)
-map                                open     p0:? p1:?; returns unknown
+map                                open     p0:? p1:?; returns global
     blocked by callback init
     blocked by unresolved closure-param:project.call(thisArg, value, index++)
     blocked by unresolved closure-param:source.lift(...)
@@ -232,13 +198,12 @@ Subject.next                       open     self:&mut p0:?; returns fresh
 Subject.complete                   settled  self:&mut; returns fresh (matches source)
     blocked by callback cb
     blocked by unresolved interface-dispatch:observers.shift()!.complete()
-    blocked by write to unknown in Subject.complete: property read (observers)
 BehaviorSubject.getValue           settled  self:&; returns unknown (matches source)
 BehaviorSubject.next               open     self:&mut p0:?; returns fresh
     blocked by callback cb
     blocked by unresolved interface-dispatch:observer.next(value)
 
-settled 2/6 members, 2/6 excluding trivial ones; return alias known for 3/6
+settled 2/6 members, 2/6 excluding trivial ones; return alias known for 4/6
 
 ## uuid@14.0.3
 
@@ -247,19 +212,15 @@ v4                                 open     p0:? p1:&mut p2:prim; returns unknow
     blocked by unresolved host-api:crypto.randomUUID()
     blocked by unresolved property-value:options.rng()
     blocked by write to unknown in v4#_v4: copy+property read (rnds)
-v5                                 open     p0:? p1:? p2:&mut p3:prim; returns unknown
+v5                                 open     p0:? p1:? p2:&mut p3:prim; returns p2
     blocked by callback hash
     blocked by unresolved builtin-unkeyed:unescape(...)
     blocked by write to unknown in v35: copy+fresh (bytes)
-    blocked by write to unknown in validate: free name (REGEX)
-stringify                          open     p0:? p1:prim; returns unknown
-    blocked by write to unknown in validate: free name (REGEX)
-validate                           open     p0:?; returns fresh
-    blocked by write to unknown in validate: free name (REGEX)
-parse                              settled  p0:prim; returns unknown (matches source)
-    blocked by write to unknown in validate: free name (REGEX)
+stringify                          settled  p0:& p1:prim; returns fresh (matches source)
+validate                           settled  p0:&; returns fresh (matches source)
+parse                              settled  p0:prim; returns fresh (matches source)
 
-settled 1/5 members, 0/4 excluding trivial ones; return alias known for 1/5
+settled 3/5 members, 2/4 excluding trivial ones; return alias known for 4/5
 
 ## zod@4.6.7
 
@@ -270,23 +231,20 @@ optional                           open     p0:?; returns unknown
 ZodType.optional                   open     self:?; returns unknown
     blocked by unresolved package-value:new ZodOptional({...})
 ZodType.brand                      settled  self:&; returns self (matches source)
-ZodType.register                   open     self:? p0:? p1:?; returns self
-    blocked by write to unknown in core/registries#$ZodRegistry.add: property read
+ZodType.register                   settled  self:& p0:&mut p1:&; returns self (matches source)
 ZodType.parse                      open     self:? p0:? p1:?; returns unknown
     blocked by unresolved package-value:parse.parse(this, data, params, { callee: _parse })
 
-settled 2/6 members, 2/6 excluding trivial ones; return alias known for 2/6
+settled 3/6 members, 3/6 excluding trivial ones; return alias known for 2/6
 
 ## Total
 
-settled 14/56 members, 13/55 excluding trivial ones; return alias known for 24/56
-hand check: 14/14 settled members match the source, and 14/14 settled positions of open members
+settled 22/56 members, 21/55 excluding trivial ones; return alias known for 35/56
+hand check: 21/22 settled members match the source, and 12/12 settled positions of open members
 
 blocker classes, counted once per open member they block:
    14  callback parameter called
-   13  write to unknown: property read
-   10  write to unknown: free name
-    9  unresolved: external-package
+    8  unresolved: external-package
     8  unresolved: property-value
     6  unresolved: dynamic
     6  unresolved: package-value
@@ -295,30 +253,30 @@ blocker classes, counted once per open member they block:
     4  write to unknown: call result
     3  unresolved: closure-param
     3  unresolved: host-api
-    3  write to unknown: copy
     3  write to unknown: copy+fresh
-    3  write to unknown: fresh+property read
     2  unresolved: interface-dispatch
     2  unresolved: local-value
     2  write to unknown: closure parameter
+    2  write to unknown: copy
     2  write to unknown: copy+property read
+    2  write to unknown: free name
+    2  write to unknown: property read
     1  unresolved: bound-function
     1  unresolved: builtin-unkeyed
     1  unresolved: iteratee
-    1  write to unknown: fresh
 
 open members each theme blocks, and those it alone blocks:
-  A. origin lattice: writes through properties, call results and joins 23   4
-  B. module-level and captured state                                 10   3
+  A. origin lattice: writes through properties, call results and joins 11   0
+  B. module-level and captured state                                  2   0
   C. callbacks the caller supplies                                   16   1
-  D. dynamic dispatch and functions built at runtime                 29   4
-  E. code outside the package                                        11   0
+  D. dynamic dispatch and functions built at runtime                 29   5
+  E. code outside the package                                        10   1
   F. not lowered for this check                                       4   0
 
 open members whose every blocker falls in the themes so far, cumulative:
-  + A. origin lattice: writes through properties, call results and joins  4/42
-  + B. module-level and captured state                              9/42
-  + C. callbacks the caller supplies                               10/42
-  + D. dynamic dispatch and functions built at runtime             28/42
-  + E. code outside the package                                    38/42
-  + F. not lowered for this check                                  42/42
+  + A. origin lattice: writes through properties, call results and joins  0/34
+  + B. module-level and captured state                              2/34
+  + C. callbacks the caller supplies                                3/34
+  + D. dynamic dispatch and functions built at runtime             21/34
+  + E. code outside the package                                    30/34
+  + F. not lowered for this check                                  34/34

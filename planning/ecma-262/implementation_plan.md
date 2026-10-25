@@ -2414,6 +2414,8 @@ type Node struct {
 type ExprKind string
 const (
     ExprVar  ExprKind = "var"  // a named value
+    ExprGlobal ExprKind = "global" // a module-level value; never emitted for ECMA-262,
+                                   // only by a front end lowering library source
     ExprThis ExprKind = "this" // the this value
     ExprLit  ExprKind = "lit"  // literal / primitive
     ExprCall ExprKind = "call" // nested AO call, e.g. ToObject(x)
@@ -2427,7 +2429,7 @@ const (
 
 type Expr struct {
     Kind   ExprKind `json:"kind"`
-    Var    string   `json:"var,omitempty"`    // ExprVar; also names a closure passed as a value,
+    Var    string   `json:"var,omitempty"`    // ExprVar, ExprGlobal; ExprVar also names a closure passed as a value,
                                               // which resolves against Funcs like a Callee does
     Callee string   `json:"callee,omitempty"` // ExprCall
     Args   []Expr   `json:"args,omitempty"`   // ExprCall / ExprAlloc

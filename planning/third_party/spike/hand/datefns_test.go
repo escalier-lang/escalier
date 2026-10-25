@@ -62,11 +62,11 @@ func init() {
 				let("context", Prop(V("options"))).
 				// dates.forEach((date) => { ... }), with the closure inlined.
 				let("date", Unknown()).
-				builtin("bound", "Function.prototype.bind", V("fn:constructFrom"), Lit(), V("date")).
+				builtin("bound", "Function.prototype.bind", G("fn:constructFrom"), Lit(), V("date")).
 				let("context", V("bound")).
 				to("date_", "toDate", Lit(), V("date"), V("context")).
 				let("result", V("date_")).
-				builtin("", "Array.prototype.forEach", V("dates"), V("fn:max/closure")).
+				builtin("", "Array.prototype.forEach", V("dates"), G("fn:max/closure")).
 				let("res", V("result")).let("res", Lit()).
 				to("r", "constructFrom", Lit(), V("context"), V("res")).
 				ret(V("r")),
@@ -75,9 +75,9 @@ func init() {
 			impl("_lib/normalizeDates", "context", "dates").
 				// dates.find((date) => typeof date === "object")
 				let("date", Unknown()).
-				builtin("found", "Array.prototype.find", V("dates"), V("fn:normalizeDates/closure")).
+				builtin("found", "Array.prototype.find", V("dates"), G("fn:normalizeDates/closure")).
 				let("c", V("context")).let("c", V("found")).
-				builtin("normalize", "Function.prototype.bind", V("fn:constructFrom"), Lit(), V("c")).
+				builtin("normalize", "Function.prototype.bind", G("fn:constructFrom"), Lit(), V("c")).
 				// dates.map(normalize) calls the bound constructFrom, which the
 				// three IR additions do not resolve.
 				unresolved("e", "bound-function:normalize(date)", Prop(V("dates"))).
@@ -94,7 +94,7 @@ func init() {
 				to("date_", "toDate", Lit(), V("date")).
 				builtin("", "isNaN", Lit(), Lit()).
 				builtin("", "Math.abs", Lit(), Lit()).
-				builtin("", "Array.prototype.forEach", V("dates"), V("fn:closestIndexTo/closure")).
+				builtin("", "Array.prototype.forEach", V("dates"), G("fn:closestIndexTo/closure")).
 				ret(Lit()),
 
 			// closestTo(dateToCompare, dates, options)

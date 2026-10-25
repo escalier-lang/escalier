@@ -40,7 +40,7 @@ func init() {
 
 			// string(params): core._string(ZodString, params)
 			impl("string", "params").
-				to("r", "core/api#_string", Lit(), V("ZodString"), V("params")).
+				to("r", "core/api#_string", Lit(), G("ZodString"), V("params")).
 				ret(V("r")),
 
 			// optional(innerType): new ZodOptional({ type, innerType })

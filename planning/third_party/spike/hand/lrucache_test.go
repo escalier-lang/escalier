@@ -46,7 +46,7 @@ func init() {
 				set(V("status"), V("k")).
 				set(V("status"), V("this$")).
 				to("result", "LRUCache.#has", V("this$"), V("k"), V("hasOptions")).
-				unresolved("", "external-package:metrics.publish(status)", V("metrics"), V("status")).
+				unresolved("", "external-package:metrics.publish(status)", G("metrics"), V("status")).
 				ret(V("result")),
 
 			// #has(k, hasOptions = {})
@@ -72,7 +72,7 @@ func init() {
 				set(V("status"), V("this$")).
 				set(V("peekOptions"), V("status")).
 				to("result", "LRUCache.#peek", V("this$"), V("k"), V("peekOptions")).
-				unresolved("", "external-package:metrics.publish(status)", V("metrics"), V("status")).
+				unresolved("", "external-package:metrics.publish(status)", G("metrics"), V("status")).
 				ret(V("result")),
 
 			// #peek(k, peekOptions)
@@ -99,7 +99,7 @@ func init() {
 				set(V("status"), V("this$")).
 				to("result", "LRUCache.#get", V("this$"), V("k"), V("getOptions")).
 				set(V("status"), V("result")).
-				unresolved("", "external-package:metrics.publish(status)", V("metrics"), V("status")).
+				unresolved("", "external-package:metrics.publish(status)", G("metrics"), V("status")).
 				ret(V("result")),
 
 			// #get(k, getOptions = {})
@@ -124,7 +124,7 @@ func init() {
 
 			// #delete(k, reason)
 			impl("LRUCache.#delete", "k", "reason").
-				unresolved("", "external-package:metrics.publish({...})", V("metrics"), Alloc(V("k"), V("this$"))).
+				unresolved("", "external-package:metrics.publish({...})", G("metrics"), Alloc(V("k"), V("this$"))).
 				builtin("index", "Map.prototype.get", Prop(V("this$")), V("k")).
 				unresolved("", "host-api:clearTimeout(...)", Lit(), Prop(Prop(V("this$")))).
 				set(Prop(V("this$")), Lit()).
