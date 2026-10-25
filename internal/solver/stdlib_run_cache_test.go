@@ -13,6 +13,7 @@ import (
 	"testing"
 
 	"github.com/escalier-lang/escalier/internal/ast"
+	"github.com/escalier-lang/escalier/internal/graphcopy"
 	"github.com/escalier-lang/escalier/internal/parser"
 	"github.com/escalier-lang/escalier/internal/set"
 	"github.com/escalier-lang/escalier/internal/soltype"
@@ -223,8 +224,8 @@ func TestForkLeavesCachedCheckerUnchanged(t *testing.T) {
 	require.NoError(t, err)
 	for _, opts := range []Options{{}, {NoAmbientNames: true}} {
 		loaded := loadAmbientChecker(benchTree, groups, opts)
-		g := newGraphCopier(isASTPointer)
-		copyPtr(g, loaded)
+		g := graphcopy.New(isASTPointer)
+		graphcopy.Copy(g, loaded)
 		for _, fixture := range fixtureLibraries(t) {
 			t.Run(fmt.Sprintf("%s/NoAmbientNames=%t", fixture.name, opts.NoAmbientNames), func(t *testing.T) {
 				module := fixture.parse(t)
@@ -232,7 +233,7 @@ func TestForkLeavesCachedCheckerUnchanged(t *testing.T) {
 					t.Skip("the fixture imports a package outside the ambient packages' closure")
 				}
 				inferModuleOn(loaded.fork(StdlibSource(benchTree), StdlibGroupSource(benchTree), groups), module)
-				require.Empty(t, diffAgainstSnapshot(g))
+				require.Empty(t, g.Diff())
 			})
 		}
 	}
@@ -320,7 +321,7 @@ func loadsGroups(t *testing.T, module *ast.Module, groups PackageGroups) bool {
 // deepFork returns a deep copy of c that runs with source, groupSource, and groups, the
 // baseline TestForkMatchesDeepFork compares fork against. AST nodes are shared.
 func (c *checker) deepFork(source ModuleSource, groupSource GroupSource, groups PackageGroups) *checker {
-	f := copyPtr(newGraphCopier(isASTPointer), c)
+	f := graphcopy.Copy(graphcopy.New(isASTPointer), c)
 	f.ctx.fusionRecorder = f.recordFusionEdge
 	f.source, f.groupSource, f.groups = source, groupSource, groups
 	return f

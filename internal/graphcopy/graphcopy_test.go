@@ -1,4 +1,4 @@
-package solver
+package graphcopy
 
 import (
 	"reflect"
@@ -45,7 +45,7 @@ func copyNoLeaves(reflect.Type) bool { return false }
 
 func copySharedLeaves(t reflect.Type) bool { return t == reflect.TypeFor[*copyLeaf]() }
 
-func TestGraphCopier(t *testing.T) {
+func TestCopy(t *testing.T) {
 	cases := []struct {
 		name   string
 		shared func(reflect.Type) bool
@@ -131,25 +131,127 @@ func TestGraphCopier(t *testing.T) {
 	for _, tt := range cases {
 		t.Run(tt.name, func(t *testing.T) {
 			src := tt.build()
-			dst := copyPtr(newGraphCopier(tt.shared), src)
+			dst := Copy(New(tt.shared), src)
 			require.NotSame(t, src, dst)
 			tt.check(t, src, dst)
 		})
 	}
 }
 
-func TestGraphCopierCopiesValueRecursiveType(t *testing.T) {
+func TestCopyCopiesValueRecursiveType(t *testing.T) {
 	src := &copyOuter{inners: map[string]copyInner{
 		"a": {outer: copyOuter{leaf: &copyLeaf{label: "inner"}}},
 	}}
-	dst := copyPtr(newGraphCopier(copyNoLeaves), src)
+	dst := Copy(New(copyNoLeaves), src)
 	require.NotSame(t, src.inners["a"].outer.leaf, dst.inners["a"].outer.leaf)
 	require.Equal(t, "inner", dst.inners["a"].outer.leaf.label)
 }
 
-func TestGraphCopierRefusesFunc(t *testing.T) {
+func TestCopyRefusesFunc(t *testing.T) {
 	src := &copyNode{callback: func() {}}
-	require.PanicsWithValue(t, "graphCopier: cannot copy a non-nil func()", func() {
-		copyPtr(newGraphCopier(copyNoLeaves), src)
+	require.PanicsWithValue(t, "graphcopy: cannot copy a non-nil func()", func() {
+		Copy(New(copyNoLeaves), src)
 	})
+}
+
+// TestCopies asserts that Copies returns the copy of each object of the type it names,
+// and of no other type.
+func TestCopies(t *testing.T) {
+	src := &copyNode{name: "a", next: &copyNode{name: "b"}, leaf: &copyLeaf{label: "l"}}
+	g := New(copyNoLeaves)
+	dst := Copy(g, src)
+
+	nodes := Copies[copyNode](g)
+	require.ElementsMatch(t, []*copyNode{dst, dst.next}, nodes)
+	require.Equal(t, []*copyLeaf{dst.leaf}, Copies[copyLeaf](g))
+	require.Empty(t, Copies[copyOuter](g))
+}
+
+// TestDiff covers the changes Diff reports for a graph written to after it was copied.
+// Each row changes one field of the source and expects the key and the description
+// Diff gives it.
+func TestDiff(t *testing.T) {
+	cases := []struct {
+		name   string
+		change func(src *copyNode)
+		want   map[string]string
+	}{
+		{
+			name:   "unchanged",
+			change: func(*copyNode) {},
+			want:   map[string]string{},
+		},
+		{
+			name:   "scalar",
+			change: func(src *copyNode) { src.count = 4 },
+			want:   map[string]string{"graphcopy.copyNode.count": "3 became 4"},
+		},
+		{
+			name:   "string",
+			change: func(src *copyNode) { src.name = "b" },
+			want:   map[string]string{"graphcopy.copyNode.name": `"a" became "b"`},
+		},
+		{
+			name:   "pointer",
+			change: func(src *copyNode) { src.next = &copyNode{} },
+			want:   map[string]string{"graphcopy.copyNode.next": "points elsewhere"},
+		},
+		{
+			name:   "slice length",
+			change: func(src *copyNode) { src.children = append(src.children, src) },
+			want:   map[string]string{"graphcopy.copyNode.children": "length 1 became 2"},
+		},
+		{
+			name:   "map length",
+			change: func(src *copyNode) { src.byNode[&copyNode{}] = "x" },
+			want:   map[string]string{"graphcopy.copyNode.byNode": "length 1 became 2"},
+		},
+		{
+			name:   "map value",
+			change: func(src *copyNode) { src.byNode[src] = "other" },
+			want:   map[string]string{"graphcopy.copyNode.byNode": `"self" became "other"`},
+		},
+		{
+			name:   "interface holding a value",
+			change: func(src *copyNode) { src.value = 6 },
+			want:   map[string]string{"graphcopy.copyNode.value": "5 became 6"},
+		},
+		{
+			name:   "interface holding another type",
+			change: func(src *copyNode) { src.shape = copySquare{side: 1} },
+			want:   map[string]string{"graphcopy.copyNode.shape": "holds another type"},
+		},
+		{
+			name:   "interface holding another pointer",
+			change: func(src *copyNode) { src.shape = &copyCircle{radius: 1} },
+			want:   map[string]string{"graphcopy.copyNode.shape": "points elsewhere"},
+		},
+		{
+			name:   "array element",
+			change: func(src *copyNode) { src.pair[1] = src },
+			want:   map[string]string{"graphcopy.copyNode.pair": "points elsewhere"},
+		},
+		{
+			name:   "func",
+			change: func(src *copyNode) { src.callback = func() {} },
+			want:   map[string]string{"graphcopy.copyNode.callback": "was set"},
+		},
+		{
+			name:   "nested object",
+			change: func(src *copyNode) { src.leaf.label = "m" },
+			want:   map[string]string{"graphcopy.copyLeaf.label": `"l" became "m"`},
+		},
+	}
+	for _, tt := range cases {
+		t.Run(tt.name, func(t *testing.T) {
+			src := &copyNode{name: "a", count: 3, leaf: &copyLeaf{label: "l"}, value: 5, shape: &copyCircle{radius: 1}}
+			src.children = []*copyNode{src}
+			src.pair = [2]*copyNode{src, nil}
+			src.byNode = map[*copyNode]string{src: "self"}
+			g := New(copyNoLeaves)
+			Copy(g, src)
+			tt.change(src)
+			require.Equal(t, tt.want, g.Diff())
+		})
+	}
 }
