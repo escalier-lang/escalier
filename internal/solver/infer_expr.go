@@ -224,6 +224,13 @@ func (c *checker) resolveIdentPath(scope *Scope, lvl int, e *ast.IdentExpr, objP
 	// A declaration binds under its namespace-qualified name, so `base` written in
 	// namespace `math` finds its sibling `math.base` before a root-namespace `base`.
 	if b, ok := c.lookupValueBinding(scope, e.Name); ok && len(b.Schemes) > 0 {
+		// `import "pkg" as p` over a `.d.ts` writing `export = f` binds `p` as both
+		// f's value and the package's namespace. A member read `p.x` looks in the
+		// namespace, which reads `x` off f's value when the namespace has no `x`.
+		if objPos && b.Members != nil {
+			c.recordDecl(e, b)
+			return pathResult{ns: b.Members}
+		}
 		t := c.bindingValue(lvl, b)
 		// A bare `self` that leaves the body, as in `return self` or `f(self)`, is an
 		// instance of the class. The structural view shares the class body's own element
@@ -1590,7 +1597,7 @@ func (c *checker) inferBorrowOfMember(scope *Scope, lvl int, e *ast.BorrowExpr, 
 		// of a value receiver. resolveNamespaceMember records the resolved
 		// value's type on accessNode and reports an unknown name. The wrap
 		// then runs on the value with no receiver-bounded lifetime.
-		nsResult := c.resolveNamespaceMember(lvl, accessNode, obj.ns, propName)
+		nsResult := c.resolveNamespaceMember(lvl, accessNode, provNode, obj.ns, propName)
 		sub := c.demandValue(nsResult, accessNode)
 		return c.wrapBorrow(e, lvl, sub)
 	}
@@ -3834,7 +3841,7 @@ func (c *checker) resolveMemberPath(scope *Scope, lvl int, e *ast.MemberExpr, ob
 		return pathResult{value: t}
 	}
 	if obj.ns != nil {
-		return c.resolveNamespaceMember(lvl, e, obj.ns, e.Prop.Name)
+		return c.resolveNamespaceMember(lvl, e, e.Prop, obj.ns, e.Prop.Name)
 	}
 	// Record the read of this place as the outermost read of the chain, so a later
 	// use-after-move test sees the full path `pair.a` rather than the spine's bare
@@ -4119,11 +4126,17 @@ func (c *checker) resolveIndexPath(scope *Scope, lvl int, e *ast.IndexExpr, objP
 	}
 	if obj.ns != nil {
 		name, ok := constStringKey(e.Index)
-		if !ok {
+		switch {
+		case ok:
+			return c.resolveNamespaceMember(lvl, e, e.Index, obj.ns, name)
+		case obj.ns.AsValue != nil && len(obj.ns.AsValue.Schemes) > 0:
+			// A dynamic key indexes the value a package's `export = arr` names, as in
+			// `arr[i]`.
+			obj = pathResult{value: c.bindingValue(lvl, *obj.ns.AsValue), shortCircuits: obj.shortCircuits}
+		default:
 			c.report(&DynamicNamespaceIndexError{Index: e, NS: obj.ns})
 			return pathResult{err: true}
 		}
-		return c.resolveNamespaceMember(lvl, e, obj.ns, name)
 	}
 	var r pathResult
 	if name, ok := c.indexKeyName(scope, lvl, e, obj.value); ok {
@@ -4333,10 +4346,12 @@ func (c *checker) markOpenVar(t soltype.Type) {
 // namespace member resolution reads the namespace's OWN maps, never walking a
 // parent scope (unlike Scope.GetValue/GetType/GetNamespace). A nested namespace is
 // returned as a namespace so a longer chain keeps walking; a value member is
-// instantiated and recorded against node; an absent name is an
-// UnknownNamespaceMemberError. node is the member/index expression, for blame and
-// the Info record.
-func (c *checker) resolveNamespaceMember(lvl int, node ast.Expr, ns *Namespace, name string) pathResult {
+// instantiated and recorded against node. A name ns does not hold is read off
+// ns.AsValue when that is set, and is otherwise an UnknownNamespaceMemberError.
+// node is the member/index expression, for blame and the Info record. provNode is
+// the `.prop` identifier or the index key, which a read off ns.AsValue records its
+// provenance against.
+func (c *checker) resolveNamespaceMember(lvl int, node ast.Expr, provNode ast.Node, ns *Namespace, name string) pathResult {
 	if nested, ok := ns.Nested[name]; ok {
 		return pathResult{ns: nested}
 	}
@@ -4345,6 +4360,9 @@ func (c *checker) resolveNamespaceMember(lvl int, node ast.Expr, ns *Namespace, 
 		c.recordType(node, t)
 		c.recordNamespaceMember(node, b)
 		return pathResult{value: t}
+	}
+	if ns.AsValue != nil && len(ns.AsValue.Schemes) > 0 {
+		return c.valueProp(lvl, node, provNode, name, c.bindingValue(lvl, *ns.AsValue))
 	}
 	c.report(&UnknownNamespaceMemberError{Node: node, NS: ns, Name: name})
 	return pathResult{err: true}

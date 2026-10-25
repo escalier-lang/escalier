@@ -83,8 +83,23 @@ func (c *checker) bindImport(fileScope *Scope, stmt *ast.ImportStmt) []SolverErr
 		return errs
 	}
 
-	fileScope.defineNamespace(stmt.LocalName(), ns)
+	c.bindImportedNamespace(fileScope, stmt.LocalName(), ns)
 	return errs
+}
+
+// bindImportedNamespace binds ns under name in fileScope. It binds ns.AsValue under
+// name as well, unless the module declares a value of that name.
+func (c *checker) bindImportedNamespace(fileScope *Scope, name string, ns *Namespace) {
+	// The file scope is a child of the module scope, so a value bound here would
+	// shadow the module's own declaration. Binding the namespace alone keeps the
+	// module's value in reach, the way a plain namespace import does.
+	if c.moduleDeclared.values.Contains(name) {
+		fileScope.defineNamespace(name, ns)
+		return
+	}
+	// A package whose `.d.ts` writes `export = f` binds f's value too, so the file can
+	// call `p(…)` as well as read `p.member`.
+	fileScope.bindNamespace(name, ns)
 }
 
 // bindPseudoPackageImport binds what a `std:` / `web:` / `node:` import names.

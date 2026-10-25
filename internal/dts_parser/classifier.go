@@ -111,16 +111,11 @@ func ClassifyDTSFile(module *Module) *FileClassification {
 		}
 
 		// If the file has top-level exports, all declarations go to PackageDecls
-		// The export flag on ast.Decl will distinguish exported from non-exported
+		// The export flag on ast.Decl will distinguish exported from non-exported.
+		// An `export = Foo` is kept as a statement, and the consumer resolves
+		// what Foo names.
 		if classification.HasTopLevelExports {
-			if isTopLevelExport(stmt) {
-				// Exported declarations - expand export = Namespace if needed
-				expanded := expandExportEquals(stmt, module)
-				classification.PackageDecls = append(classification.PackageDecls, expanded...)
-			} else {
-				// Non-exported declarations also go to PackageDecls
-				classification.PackageDecls = append(classification.PackageDecls, stmt)
-			}
+			classification.PackageDecls = append(classification.PackageDecls, stmt)
 		} else {
 			// No top-level exports means all declarations are globals
 			classification.GlobalDecls = append(classification.GlobalDecls, stmt)
@@ -170,64 +165,6 @@ func extractNamedModule(stmt Statement) *NamedModuleDecl {
 func extractGlobalAugmentation(stmt Statement) []Statement {
 	if globalDecl, ok := stmt.(*GlobalDecl); ok {
 		return globalDecl.Statements
-	}
-	return nil
-}
-
-// expandExportEquals handles the `export = Namespace` syntax.
-// When a file uses `export = Foo` where Foo is a namespace, we need to
-// treat the namespace's members as the top-level exports of the package.
-//
-// Example:
-//
-//	declare namespace Foo {
-//	    export const bar: number;
-//	    function baz(): string;  // no export keyword, but still accessible
-//	}
-//	export = Foo;
-//
-// This is equivalent to:
-//
-//	export const bar: number;
-//	export function baz(): string;  // all items become exports
-//
-// Returns the expanded declarations, or the original statement in a slice if not an export = pattern.
-func expandExportEquals(stmt Statement, module *Module) []Statement {
-	exportAssignment, ok := stmt.(*ExportAssignmentStmt)
-	if !ok {
-		return []Statement{stmt}
-	}
-
-	// Find the namespace/interface/type with that name in the module
-	ns := findNamespaceDecl(exportAssignment.Name.Name, module)
-	if ns == nil {
-		// Not a namespace export, just return the original
-		return []Statement{stmt}
-	}
-
-	// Return the namespace's statements as top-level exports
-	// Each statement from the namespace becomes a package declaration.
-	// Only mark all declarations as exported if the namespace is ambient
-	// (declared with `declare namespace`). For non-ambient namespaces,
-	// only items with explicit `export` are exported.
-	if ns.Declare() {
-		for _, s := range ns.Statements {
-			if decl, ok := s.(Decl); ok {
-				decl.SetExport(true)
-			}
-		}
-	}
-	return ns.Statements
-}
-
-// findNamespaceDecl searches for a namespace declaration with the given name in the module.
-func findNamespaceDecl(name string, module *Module) *NamespaceDecl {
-	for _, stmt := range module.Statements {
-		if nsDecl, ok := stmt.(*NamespaceDecl); ok {
-			if nsDecl.Name != nil && nsDecl.Name.Name == name {
-				return nsDecl
-			}
-		}
 	}
 	return nil
 }
