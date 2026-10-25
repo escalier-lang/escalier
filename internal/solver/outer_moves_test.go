@@ -23,7 +23,7 @@ func inferWithPushPrelude(t *testing.T, src string, files map[string]string) []s
 	}
 	dir := seedStdlib(t, tree)
 	res := InferModuleAgainstStdlib(parseModule(t, src), dir, Options{PackageDir: dir})
-	return errorMessagesOf(res.Errors)
+	return messagesWithSpan(t, res.Errors)
 }
 
 // TestMoveOutOfModuleLevelValue covers moves inside a function body out of a module-level
@@ -43,13 +43,13 @@ fn f() {
 	val mut m = xs
 	m.push(1)
 }`,
-			want: []string{"cannot move module-level value 'xs' inside a function. Borrow it with `&xs`"},
+			want: []string{"3:14-3:16: cannot move module-level value 'xs' inside a function. Borrow it with `&xs`"},
 		},
 		{
 			name: "bound to an annotated mut local",
 			src: `val xs: Array<number> = [1]
 fn f() { val m: mut Array<number> = xs }`,
-			want: []string{"cannot move module-level value 'xs' inside a function. Borrow it with `&xs`"},
+			want: []string{"2:37-2:39: cannot move module-level value 'xs' inside a function. Borrow it with `&xs`"},
 		},
 		{
 			name: "bound to a local",
@@ -59,19 +59,19 @@ fn f() {
 	val mut m = a
 	m.push(1)
 }`,
-			want: []string{"cannot move module-level value 'xs' inside a function. Borrow it with `&xs`"},
+			want: []string{"3:10-3:12: cannot move module-level value 'xs' inside a function. Borrow it with `&xs`"},
 		},
 		{
 			name: "a field bound to a local",
 			src: `val cfg: {items: Array<number>} = {items: [1]}
 fn f() { val a = cfg.items }`,
-			want: []string{"cannot move module-level value 'cfg.items' inside a function. Borrow it with `&cfg.items`"},
+			want: []string{"2:18-2:27: cannot move module-level value 'cfg.items' inside a function. Borrow it with `&cfg.items`"},
 		},
 		{
 			name: "an element bound to a local",
 			src: `val xss: Array<Array<number>> = [[1]]
 fn f() { val a = xss[0] }`,
-			want: []string{"cannot move module-level value 'xss[0]' inside a function. Borrow it with `&xss[0]`"},
+			want: []string{"2:18-2:24: cannot move module-level value 'xss[0]' inside a function. Borrow it with `&xss[0]`"},
 		},
 		{
 			name: "a branch result bound to a local",
@@ -80,7 +80,7 @@ fn f(c: boolean) {
 	val ys: Array<number> = [2]
 	val a = if c { xs } else { ys }
 }`,
-			want: []string{"cannot move module-level value 'xs' inside a function. Borrow it with `&xs`"},
+			want: []string{"4:17-4:19: cannot move module-level value 'xs' inside a function. Borrow it with `&xs`"},
 		},
 		{
 			name: "a match arm result returned",
@@ -91,37 +91,37 @@ fn f(n: number) -> Array<number> {
 		_ => [2],
 	}
 }`,
-			want: []string{"cannot move module-level value 'xs' inside a function. Borrow it with `&xs`"},
+			want: []string{"4:8-4:10: cannot move module-level value 'xs' inside a function. Borrow it with `&xs`"},
 		},
 		{
 			name: "wrapped in an object literal",
 			src: `val xs: Array<number> = [1]
 fn f() { val a = {inner: xs} }`,
-			want: []string{"cannot move module-level value 'xs' inside a function. Borrow it with `&xs`"},
+			want: []string{"2:26-2:28: cannot move module-level value 'xs' inside a function. Borrow it with `&xs`"},
 		},
 		{
 			name: "wrapped in a tuple literal",
 			src: `val xs: Array<number> = [1]
 fn f() { val a = [xs] }`,
-			want: []string{"cannot move module-level value 'xs' inside a function. Borrow it with `&xs`"},
+			want: []string{"2:19-2:21: cannot move module-level value 'xs' inside a function. Borrow it with `&xs`"},
 		},
 		{
 			name: "spread into a literal",
 			src: `val xss: Array<Array<number>> = [[1]]
 fn f() { val a = [...xss] }`,
-			want: []string{"cannot move module-level value 'xss' inside a function. Borrow it with `&xss`"},
+			want: []string{"2:22-2:25: cannot move module-level value 'xss' inside a function. Borrow it with `&xss`"},
 		},
 		{
 			name: "returned",
 			src: `val xs: Array<number> = [1]
 fn g() -> Array<number> { return xs }`,
-			want: []string{"cannot move module-level value 'xs' inside a function. Borrow it with `&xs`"},
+			want: []string{"2:34-2:36: cannot move module-level value 'xs' inside a function. Borrow it with `&xs`"},
 		},
 		{
 			name: "returned as mut",
 			src: `val xs: Array<number> = [1]
 fn g() -> mut Array<number> { return xs }`,
-			want: []string{"cannot move module-level value 'xs' inside a function. Borrow it with `&xs`"},
+			want: []string{"2:38-2:40: cannot move module-level value 'xs' inside a function. Borrow it with `&xs`"},
 		},
 		{
 			name: "assigned to a local",
@@ -130,14 +130,14 @@ fn f() {
 	var a: Array<number> = [1]
 	a = xs
 }`,
-			want: []string{"cannot move module-level value 'xs' inside a function. Borrow it with `&xs`"},
+			want: []string{"4:6-4:8: cannot move module-level value 'xs' inside a function. Borrow it with `&xs`"},
 		},
 		{
 			name: "assigned to another module-level binding",
 			src: `val xs: Array<number> = [1]
 var ys: Array<number> = [2]
 fn f() { ys = xs }`,
-			want: []string{"cannot move module-level value 'xs' inside a function. Borrow it with `&xs`"},
+			want: []string{"3:15-3:17: cannot move module-level value 'xs' inside a function. Borrow it with `&xs`"},
 		},
 		{
 			name: "stored into a field",
@@ -146,13 +146,13 @@ fn f() {
 	val o: mut {a: Array<number>} = {a: [1]}
 	o.a = xs
 }`,
-			want: []string{"cannot move module-level value 'xs' inside a function. Borrow it with `&xs`"},
+			want: []string{"4:8-4:10: cannot move module-level value 'xs' inside a function. Borrow it with `&xs`"},
 		},
 		{
 			name: "destructured into an owned leaf",
 			src: `val cfg: {items: Array<number>, n: number} = {items: [1], n: 1}
 fn f() { val {items} = cfg }`,
-			want: []string{"cannot move module-level value 'cfg' inside a function. Borrow it with `&cfg`"},
+			want: []string{"2:24-2:27: cannot move module-level value 'cfg' inside a function. Borrow it with `&cfg`"},
 		},
 		{
 			name: "stored into a capture by a closure",
@@ -162,7 +162,7 @@ fn f() {
 	val g = fn() { a = xs }
 	g()
 }`,
-			want: []string{"cannot move module-level value 'xs' inside a function. Borrow it with `&xs`"},
+			want: []string{"4:21-4:23: cannot move module-level value 'xs' inside a function. Borrow it with `&xs`"},
 		},
 		{
 			name: "borrowed",
@@ -244,7 +244,7 @@ fn h() {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
 			_, _, errs := inferSource(t, tt.src)
-			got := errorMessagesOf(errs)
+			got := messagesWithSpan(t, errs)
 			if len(tt.want) == 0 {
 				require.Empty(t, got)
 				return
@@ -271,7 +271,7 @@ func TestClosureMovesCapture(t *testing.T) {
 	val g = fn() -> Array<number> { return a }
 	val n = a
 }`,
-			want: []string{"use of moved value 'a'"},
+			want: []string{"4:10-4:11: use of moved value 'a'"},
 		},
 		{
 			name: "the closure called twice",
@@ -281,7 +281,7 @@ func TestClosureMovesCapture(t *testing.T) {
 	val m = g()
 	val n = g()
 }`,
-			want: []string{"use of moved value 'g'"},
+			want: []string{"5:10-5:11: use of moved value 'g'"},
 		},
 		{
 			name: "the closure called in a loop",
@@ -290,7 +290,7 @@ func TestClosureMovesCapture(t *testing.T) {
 	val g = fn() { val b = a }
 	for i in [1, 2] { g() }
 }`,
-			want: []string{"use of moved value 'g'"},
+			want: []string{"4:20-4:21: use of moved value 'g'"},
 		},
 		{
 			name: "a nested closure moving a capture of its enclosing closure",
@@ -301,7 +301,7 @@ func TestClosureMovesCapture(t *testing.T) {
 	}
 	val n = a
 }`,
-			want: []string{"use of moved value 'a'"},
+			want: []string{"6:10-6:11: use of moved value 'a'"},
 		},
 		{
 			name: "one capture stored into another",
@@ -311,7 +311,7 @@ func TestClosureMovesCapture(t *testing.T) {
 	val g = fn() { a = b }
 	val n = b
 }`,
-			want: []string{"use of moved value 'b'"},
+			want: []string{"5:10-5:11: use of moved value 'b'"},
 		},
 		{
 			name: "the closure called once and its result mutated",
@@ -348,7 +348,7 @@ func TestClosureMovesCapture(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
 			_, _, errs := inferSource(t, tt.src)
-			got := errorMessagesOf(errs)
+			got := messagesWithSpan(t, errs)
 			if len(tt.want) == 0 {
 				require.Empty(t, got)
 				return
@@ -374,5 +374,5 @@ func TestScriptMovesLibraryValue(t *testing.T) {
 	require.Empty(t, lib.Errors)
 
 	_, _, errs := InferScriptInLib(script, lib)
-	require.Equal(t, []string{"cannot move module-level value 'xs' inside a function. Borrow it with `&xs`"}, errorMessagesOf(errs))
+	require.Equal(t, []string{"1:17-1:19: cannot move module-level value 'xs' inside a function. Borrow it with `&xs`"}, messagesWithSpan(t, errs))
 }
