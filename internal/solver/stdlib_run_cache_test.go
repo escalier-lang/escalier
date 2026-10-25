@@ -460,8 +460,9 @@ func TestAmbientCheckerSettlesLoadedDefinitions(t *testing.T) {
 
 // TestSettleLoadedDefinitionsMeasuresAProvisionalClass asserts that settling a loaded
 // checker measures a provisional class again even when its last try was at the current
-// count. A class left provisional holds Invariant throughout, which the measurement
-// replaces with the variance its body gives.
+// count. It puts the loaded Array class back into the state a provisional class is in,
+// with Invariant in every slot, and requires settling to restore the variance Array's
+// body gives.
 func TestSettleLoadedDefinitionsMeasuresAProvisionalClass(t *testing.T) {
 	groups, err := BuildPackageClosure(benchTree, ambientPackages)
 	require.NoError(t, err)
