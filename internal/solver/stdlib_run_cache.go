@@ -65,8 +65,8 @@ var ambientCheckers = struct {
 
 // ambientChecker returns a checker for one run against the standard library in dir,
 // with the prelude and the ambient packages loaded and bound. dir is the root of the
-// stdlib tree, the directory holding the `std/` and `web/` pseudo-package files, so
-// one dir serves every package checked against that stdlib.
+// stdlib tree, the directory holding the `std/`, `web/`, and `node/` pseudo-package
+// files, so one dir serves every package checked against that stdlib.
 //
 // The run loads every other package through source. groups are the run's groups from
 // BuildPackageClosure. ok is false when a file in the closure cannot be read or an
