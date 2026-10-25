@@ -49,6 +49,7 @@ type sharedState struct {
 // function, whose body runs its own collectSharedLocals.
 type sharedFlowCollector struct {
 	ast.DefaultVisitor
+	c     *checker
 	state *sharedState
 }
 
@@ -61,9 +62,9 @@ func (v *sharedFlowCollector) add(targets []liveness.VarID, source ast.Expr) {
 func (v *sharedFlowCollector) EnterDecl(d ast.Decl) bool {
 	switch d := d.(type) {
 	case *ast.VarDecl:
-		v.add(patVarIDs(d.Pattern), d.Init)
-		if pat, ok := d.Pattern.(*ast.IdentPat); ok && pat.VarID > 0 && d.TypeAnn == nil && isCopiedLiteral(d.Init) {
-			v.state.valueLocals.Add(liveness.VarID(pat.VarID))
+		v.add(v.c.patVarIDs(d.Pattern), d.Init)
+		if pat, ok := d.Pattern.(*ast.IdentPat); ok && v.c.varIDs.Of(pat) > 0 && d.TypeAnn == nil && isCopiedLiteral(d.Init) {
+			v.state.valueLocals.Add(v.c.varIDs.Of(pat))
 		}
 	case *ast.FuncDecl:
 		return false
@@ -73,7 +74,7 @@ func (v *sharedFlowCollector) EnterDecl(d ast.Decl) bool {
 
 func (v *sharedFlowCollector) EnterStmt(s ast.Stmt) bool {
 	if s, ok := s.(*ast.ForInStmt); ok {
-		v.add(patVarIDs(s.Pattern), s.Iterable)
+		v.add(v.c.patVarIDs(s.Pattern), s.Iterable)
 	}
 	return true
 }
@@ -84,13 +85,13 @@ func (v *sharedFlowCollector) EnterExpr(e ast.Expr) bool {
 		return false
 	case *ast.BinaryExpr:
 		if e.Op == ast.Assign {
-			v.add(placeRootVarIDs(e.Left), e.Right)
+			v.add(v.c.placeRootVarIDs(e.Left), e.Right)
 		}
 	case *ast.IfValExpr:
-		v.add(patVarIDs(e.Pattern), e.Target)
+		v.add(v.c.patVarIDs(e.Pattern), e.Target)
 	case *ast.MatchExpr:
 		for _, mc := range e.Cases {
-			v.add(patVarIDs(mc.Pattern), e.Target)
+			v.add(v.c.patVarIDs(mc.Pattern), e.Target)
 		}
 	}
 	return true
@@ -110,11 +111,11 @@ func isCopiedLiteral(e ast.Expr) bool {
 }
 
 // patVarIDs returns the VarID of each leaf binding of pat that the rename pass numbered.
-func patVarIDs(pat ast.Pat) []liveness.VarID {
+func (c *checker) patVarIDs(pat ast.Pat) []liveness.VarID {
 	var ids []liveness.VarID
-	ast.ForEachLeafBinding(pat, func(_ string, varID int) {
-		if varID > 0 {
-			ids = append(ids, liveness.VarID(varID))
+	ast.ForEachLeafBinding(pat, func(_ string, leaf ast.Node) {
+		if id := c.varIDs.Of(leaf); id > 0 {
+			ids = append(ids, id)
 		}
 	})
 	return ids
@@ -123,16 +124,16 @@ func patVarIDs(pat ast.Pat) []liveness.VarID {
 // placeRootVarIDs returns the VarID of the binding the assignment target lhs is rooted at, or
 // nil when lhs names no place. A store into a field writes into the whole binding, so
 // `a.inner = xs` yields `a`.
-func placeRootVarIDs(lhs ast.Expr) []liveness.VarID {
-	if p, ok := exprPlace(lhs); ok {
+func (c *checker) placeRootVarIDs(lhs ast.Expr) []liveness.VarID {
+	if p, ok := c.exprPlace(lhs); ok {
 		return []liveness.VarID{p.root}
 	}
 	return nil
 }
 
-// collectSharedLocals builds the body's sharedState. It runs after the rename pass, so every
-// binding in body carries its VarID, and before the body is walked. scope is the scope the
-// body's parameters bind into.
+// collectSharedLocals builds the body's sharedState. It runs after the rename pass, so the
+// run's VarIDs table numbers every binding in body, and before the body is walked. scope is
+// the scope the body's parameters bind into.
 //
 // Each flow is visited regardless of its position in the body, so a reassignment later in a
 // loop still marks a local read earlier in the loop.
@@ -142,7 +143,7 @@ func (c *checker) collectSharedLocals(scope *Scope, body *ast.Block) {
 		scope:       scope,
 		locals:      c.fn.captureVarIDs.Clone(),
 	}
-	body.Accept(&sharedFlowCollector{state: state})
+	body.Accept(&sharedFlowCollector{c: c, state: state})
 	c.fn.shared = state
 	c.settleSharedLocals()
 }
@@ -278,8 +279,8 @@ func (c *checker) mayYieldShared(scope *Scope, e ast.Expr, shared set.Set[livene
 	}
 	switch e := e.(type) {
 	case *ast.IdentExpr:
-		if e.VarID > 0 {
-			return shared.Contains(liveness.VarID(e.VarID))
+		if id := c.varIDs.Of(e); id > 0 {
+			return shared.Contains(id)
 		}
 		if t := c.outerBindingType(scope, e); t != nil && isValueType(t) {
 			return false
@@ -346,7 +347,7 @@ func (c *checker) mayYieldShared(scope *Scope, e ast.Expr, shared set.Set[livene
 // one, and from the walk otherwise.
 func (c *checker) spreadYieldsShared(scope *Scope, src ast.Expr, shared set.Set[liveness.VarID]) bool {
 	var t soltype.Type
-	if ident, ok := src.(*ast.IdentExpr); ok && (ident.VarID <= 0 || c.isCapture(ident)) {
+	if ident, ok := src.(*ast.IdentExpr); ok && (c.varIDs.Of(ident) <= 0 || c.isCapture(ident)) {
 		t = c.outerBindingType(scope, ident)
 	} else {
 		t = c.info.TypeOf(src)
@@ -359,7 +360,7 @@ func (c *checker) spreadYieldsShared(scope *Scope, src ast.Expr, shared set.Set[
 
 // isCapture reports whether ident reads a variable the current body captures.
 func (c *checker) isCapture(ident *ast.IdentExpr) bool {
-	return c.fn != nil && c.fn.captureVarIDs.Contains(liveness.VarID(ident.VarID))
+	return c.fn != nil && c.fn.captureVarIDs.Contains(c.varIDs.Of(ident))
 }
 
 // holdsOnlyValues reports whether every element or field of t is a value type. It answers for
