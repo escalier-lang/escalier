@@ -145,8 +145,22 @@ export val xs: Array<number> = [1, 2]          // importers see &'static Array<n
 export val counts: mut Array<number> = []      // importers see &'static mut Array<number>
 ```
 
-Rust treats a `static` the same way. The proposal keeps every pattern that only
-reads or mutates module-level state, and changes these things:
+Rust treats a `static` the same way. Rust has no `let` at the top level of a
+file, and every use of a `static` is a `&'static` borrow, so `let v = XS;`
+reports `cannot move out of static item`. The proposal differs from Rust in two
+places:
+
+- Rust requires a constant initializer. `static XS: Vec<i32> = Vec::new();`
+  compiles because `Vec::new` is a `const fn`, but `vec![1, 2]` allocates and
+  is rejected. A filled vector needs `LazyLock::new(|| vec![1, 2])`, which builds
+  it on first access. An Escalier initializer can be any expression.
+- Rust requires a `static` to be `Sync`, so shared mutable state goes in a
+  `Mutex`, an `RwLock` or an atomic. `static mut` exists, but every use of it
+  needs `unsafe`. Escalier would allow a plain `&'static mut` borrow, for the
+  reason given at the end of this section.
+
+The proposal keeps every pattern that only reads or mutates module-level state,
+and changes these things:
 
 - The special errors from 2.1 become the ordinary borrow error,
   `cannot use borrowed &Array<number> as owned Array<number>`. The friendlier
