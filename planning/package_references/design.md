@@ -20,10 +20,13 @@ The rules rest on the ownership model in
 [docs/09_ownership.md](../../docs/09_ownership.md). Two parts of it matter most:
 
 - An owned value has one holder, who may make it mutable or move it.
-- A borrow `&T` reads a value someone else owns. A `'static` borrow reads one
-  that lives for the rest of the program, such as module-level state. A borrow
-  never becomes mutable, and passing it where an owned value is expected is an
-  error.
+- A borrow reaches a value someone else owns, and comes in two kinds. An
+  immutable borrow `&T` only reads the value and never becomes mutable. A
+  mutable borrow `&mut T` may also change the value through that borrow.
+  Neither kind can be moved or kept as an owned value, so passing a borrow where
+  an owned value is expected is an error.
+- A `'static` borrow, of either kind, reaches a value that lives for the rest of
+  the program, such as module-level state.
 
 ## 2. Escalier packages
 
@@ -57,14 +60,26 @@ export fn copyOf() -> Array<number> { return [...xs] }    // fn () -> Array<numb
 export fn leak() -> Array<number> { return xs }           // rejected
 ```
 
-`get` returns a borrow of module-level state, so a caller can read the result
-but not make it mutable. `fresh` and `copyOf` build a new value on each call, so
-the caller owns it. `leak` is rejected by the rule in 2.1, since returning `xs`
-as owned would move it.
+`get` returns an immutable borrow of module-level state, so a caller can read
+the result but not make it mutable. `fresh` and `copyOf` build a new value on
+each call, so the caller owns it. `leak` is rejected by the rule in 2.1, since
+returning `xs` as owned would move it.
+
+A package can also let callers change its state without owning it, by returning
+a mutable borrow. The module-level value has to be declared mutable for this:
+
+```esc
+export val counts: mut Array<number> = []
+
+export fn tally() { return &mut counts }                   // fn () -> &mut Array<number>
+```
+
+A caller of `tally` can push to the array, but cannot move it or keep it as an
+owned value. Taking `&mut` of an immutable module-level `val` is rejected.
 
 Nothing about an Escalier package needs a heuristic. A package author who wants
-callers to own a result returns a fresh value, and one who wants to share state
-returns a borrow.
+callers to own a result returns a fresh value. One who wants to share state
+returns an immutable borrow, or a mutable borrow when callers may change it.
 
 ### 2.3 Scripts
 
@@ -138,16 +153,17 @@ borrow and a mutable borrow.
 
 - A readonly collection in an interface field stays owned, because the field is
   not in a return position. #2218 lists this as a case to decide on.
-- A mutable `T[]` that the package also keeps reads as owned. TypeScript gives
-  no way to tell this apart from a fresh array, so the rule trusts the missing
-  `readonly`.
+- A mutable `T[]` that the package also keeps reads as owned. In Escalier terms
+  it is a `'static` mutable borrow, `&'static mut Array<T>`. TypeScript gives no
+  way to tell it apart from a fresh array, so the rule trusts the missing
+  `readonly`. Only an override can mark it, as section 4.3 describes.
 - `val mut m = d.make()` on a borrowed result has no effect, since a borrow's
   mutability belongs to its type. The first error appears at the first write.
   #2223 tracks a diagnostic at the binding itself.
 
 ## 4. Fresh versus shared readonly returns
 
-Every readonly return is a `'static` borrow today. That is sound but too strict
+Every readonly return is an immutable `'static` borrow today. That is sound but too strict
 for a function that builds a new collection on each call:
 
 ```ts
@@ -162,7 +178,7 @@ other readonly return stays a `'static` borrow.
 
 ### 4.1 Default
 
-A return that no signal decides stays a `'static` borrow. Treating a shared
+A return that no signal decides stays an immutable `'static` borrow. Treating a shared
 collection as owned lets the caller mutate state the package still reads, which
 is unsound. Treating a fresh one as a borrow only rejects a program that would
 have been safe.
@@ -194,9 +210,13 @@ keeps the borrow.
 ### 4.3 Overrides
 
 Heuristics will guess wrong for some packages, so the override mechanism has to
-reach return ownership. #2222 needs the same mechanism for parameters, and the
-receiver-mutability policy in #577 and #500 already reads per-package
-overrides. One override file per package should answer all three questions.
+reach return ownership. An override picks one of three answers for a return:
+owned, an immutable `'static` borrow, or a mutable `'static` borrow. The last is
+the only way a converted package can hand out shared state its callers may
+change, since no `.d.ts` spelling implies it. #2222 needs the same mechanism for
+parameters, and the receiver-mutability policy in #577 and #500 already reads
+per-package overrides. One override file per package should answer all three
+questions.
 
 ### 4.4 Done when
 
