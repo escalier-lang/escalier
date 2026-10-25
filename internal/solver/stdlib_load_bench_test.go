@@ -22,8 +22,8 @@ import (
 //
 // Warm is the figure to watch, since a language server pays it on every
 // re-inference. A run whose closure the cache in stdlib_run_cache.go already holds
-// copies the loaded packages rather than inferring them, so Warm measures that
-// copy.
+// reads the loaded packages rather than inferring them, so Warm measures the rest of
+// the run.
 //
 // Cold adds reading the import graph, parsing the files, and inferring the packages,
 // which a process pays once per distinct tree because of the caches in

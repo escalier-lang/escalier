@@ -56,9 +56,10 @@ func TestAmbientCheckerMatchesFreshLoad(t *testing.T) {
 }
 
 // TestAmbientCheckerForksAreIndependent asserts that two runs from one cached checker
-// hold separate registries, so a definition one run fills is not the other's.
+// share the stdlib's definitions and hold separate registries, so a class one run
+// declares is not registered on the other.
 func TestAmbientCheckerForksAreIndependent(t *testing.T) {
-	first := InferModuleAgainstStdlib(parseModule(t, `val a = 1`), benchTree, Options{})
+	first := InferModuleAgainstStdlib(parseModule(t, `class Mine {}`), benchTree, Options{})
 	second := InferModuleAgainstStdlib(parseModule(t, `val b = 2`), benchTree, Options{})
 
 	require.NotSame(t, first.checker.ctx, second.checker.ctx)
@@ -66,7 +67,8 @@ func TestAmbientCheckerForksAreIndependent(t *testing.T) {
 	require.True(t, ok)
 	secondArray, ok := second.checker.ctx.classDef(second.checker.ctx.arrayClass)
 	require.True(t, ok)
-	require.NotSame(t, firstArray, secondArray)
+	require.Same(t, firstArray, secondArray)
+	require.Equal(t, len(second.checker.ctx.classes)+1, len(first.checker.ctx.classes))
 }
 
 // TestAmbientCheckerReloadsEditedPrelude asserts that editing the prelude in place
@@ -211,34 +213,35 @@ func TestFixturesLeaveStdlibVarsUntouched(t *testing.T) {
 	}
 }
 
-// TestShareForkLeavesCachedCheckerUnchanged asserts that inferring a fixture's library
-// on a fork that shares a loaded checker changes nothing that checker holds. Each
-// fixture snapshots the checker with a deep copy before its fork, and every object the
-// copy holds is compared with the object it was copied from.
-func TestShareForkLeavesCachedCheckerUnchanged(t *testing.T) {
+// TestForkLeavesCachedCheckerUnchanged asserts that inferring a fixture's library
+// on a fork that shares a loaded checker changes nothing that checker holds. The
+// checker is snapshotted once with a deep copy, and after each fixture every object the
+// copy holds is compared with the object it was copied from. The first fixture that
+// writes to the checker is the first to fail.
+func TestForkLeavesCachedCheckerUnchanged(t *testing.T) {
 	groups, err := BuildPackageClosure(benchTree, ambientPackages)
 	require.NoError(t, err)
 	for _, opts := range []Options{{}, {NoAmbientNames: true}} {
 		loaded := loadAmbientChecker(benchTree, groups, opts)
+		g := newGraphCopier(isASTPointer)
+		copyPtr(g, loaded)
 		for _, fixture := range fixtureLibraries(t) {
 			t.Run(fmt.Sprintf("%s/NoAmbientNames=%t", fixture.name, opts.NoAmbientNames), func(t *testing.T) {
 				module := fixture.parse(t)
 				if !loadsGroups(t, module, groups) {
 					t.Skip("the fixture imports a package outside the ambient packages' closure")
 				}
-				g := newGraphCopier(isASTPointer)
-				copyPtr(g, loaded)
-				inferModuleOn(loaded.shareFork(StdlibSource(benchTree), StdlibGroupSource(benchTree), groups), module)
+				inferModuleOn(loaded.fork(StdlibSource(benchTree), StdlibGroupSource(benchTree), groups), module)
 				require.Empty(t, diffAgainstSnapshot(g))
 			})
 		}
 	}
 }
 
-// TestShareForkMatchesFork asserts that a fixture's library infers the same bindings
-// and diagnostics on a fork that shares the loaded checker as on a deep copy of it. The
+// TestForkMatchesDeepFork asserts that a fixture's library infers the same bindings and
+// diagnostics on a fork that shares the loaded checker as on a deep copy of it. The
 // shared forks run concurrently, so a race between them shows under -race.
-func TestShareForkMatchesFork(t *testing.T) {
+func TestForkMatchesDeepFork(t *testing.T) {
 	groups, err := BuildPackageClosure(benchTree, ambientPackages)
 	require.NoError(t, err)
 	loaded := loadAmbientChecker(benchTree, groups, Options{})
@@ -250,23 +253,23 @@ func TestShareForkMatchesFork(t *testing.T) {
 			if !loadsGroups(t, copiedModule, groups) {
 				t.Skip("the fixture imports a package outside the ambient packages' closure")
 			}
-			copied := inferModuleOn(loaded.fork(StdlibSource(benchTree), StdlibGroupSource(benchTree), groups), copiedModule)
-			shared := inferModuleOn(loaded.shareFork(StdlibSource(benchTree), StdlibGroupSource(benchTree), groups), sharedModule)
+			copied := inferModuleOn(loaded.deepFork(StdlibSource(benchTree), StdlibGroupSource(benchTree), groups), copiedModule)
+			shared := inferModuleOn(loaded.fork(StdlibSource(benchTree), StdlibGroupSource(benchTree), groups), sharedModule)
 			require.Equal(t, renderedValues(copied), renderedValues(shared))
 			require.Equal(t, messagesWithSpan(t, copied.Errors), messagesWithSpan(t, shared.Errors))
 		})
 	}
 }
 
-// TestShareForkCopiesEveryContainer asserts that each map a loaded checker or its Context
+// TestForkCopiesEveryContainer asserts that each map a loaded checker or its Context
 // holds reaches a fork as a map of its own, apart from the read-only ones listed below,
 // and that each slice reaches it with no spare capacity. A container field added later
-// fails here until shareFork copies it or this test names it read-only.
-func TestShareForkCopiesEveryContainer(t *testing.T) {
+// fails here until fork copies it or this test names it read-only.
+func TestForkCopiesEveryContainer(t *testing.T) {
 	groups, err := BuildPackageClosure(benchTree, ambientPackages)
 	require.NoError(t, err)
 	loaded := loadAmbientChecker(benchTree, groups, Options{})
-	run := loaded.shareFork(StdlibSource(benchTree), StdlibGroupSource(benchTree), groups)
+	run := loaded.fork(StdlibSource(benchTree), StdlibGroupSource(benchTree), groups)
 
 	readOnly := set.FromSlice([]string{
 		// The run's own groups replace the loaded checker's.
@@ -312,6 +315,15 @@ func loadsGroups(t *testing.T, module *ast.Module, groups PackageGroups) bool {
 	own, err := BuildPackageClosure(benchTree, roots)
 	require.NoError(t, err)
 	return reflect.DeepEqual(own, groups)
+}
+
+// deepFork returns a deep copy of c that runs with source, groupSource, and groups, the
+// baseline TestForkMatchesDeepFork compares fork against. AST nodes are shared.
+func (c *checker) deepFork(source ModuleSource, groupSource GroupSource, groups PackageGroups) *checker {
+	f := copyPtr(newGraphCopier(isASTPointer), c)
+	f.ctx.fusionRecorder = f.recordFusionEdge
+	f.source, f.groupSource, f.groups = source, groupSource, groups
+	return f
 }
 
 type fixtureLibrary struct {
@@ -372,20 +384,21 @@ func sourcesOf(srcs map[string]string) []*ast.Source {
 	return sources
 }
 
-// forkCachedChecker returns a run forked from the cached checker for the committed tree.
-func forkCachedChecker(t *testing.T) *checker {
+// forkLoadedChecker returns a run forked from a checker loaded for the committed tree
+// for this call alone. A fork shares the loaded checker's definitions, so a test that
+// readies its write by changing one changes only the checker it loaded, never the one
+// the cache holds for every later run.
+func forkLoadedChecker(t *testing.T) *checker {
 	t.Helper()
 	groups, err := BuildPackageClosure(benchTree, ambientPackages)
 	require.NoError(t, err)
-	run, ok := ambientChecker(benchTree, StdlibSource(benchTree), groups, Options{})
-	require.True(t, ok)
-	return run
+	return loadAmbientChecker(benchTree, groups, Options{}).fork(StdlibSource(benchTree), StdlibGroupSource(benchTree), groups)
 }
 
-// TestCheckThawedRejectsAStdlibVar asserts that a run forked from the cached checker
+// TestCheckThawedRejectsAStdlibVar asserts that a run forked from a loaded checker
 // panics when it adds a bound to a type variable the stdlib load minted.
 func TestCheckThawedRejectsAStdlibVar(t *testing.T) {
-	run := forkCachedChecker(t)
+	run := forkLoadedChecker(t)
 	require.NotEmpty(t, run.ctx.frozenVars)
 
 	var stdlibVar *soltype.TypeVarType
@@ -400,12 +413,12 @@ func TestCheckThawedRejectsAStdlibVar(t *testing.T) {
 	})
 }
 
-// TestCheckThawedRejectsAStdlibClass asserts that a run forked from the cached checker
+// TestCheckThawedRejectsAStdlibClass asserts that a run forked from a loaded checker
 // panics when it settles the variance of a class the stdlib load registered.
 func TestCheckThawedRejectsAStdlibClass(t *testing.T) {
-	run := forkCachedChecker(t)
+	run := forkLoadedChecker(t)
 
-	// The cached Array class is settled, so it is marked provisional again to reach the
+	// The loaded Array class is settled, so it is marked provisional again to reach the
 	// write settleVariance makes.
 	def := run.ctx.classes[run.ctx.arrayClass]
 	def.varianceProvisional = true
@@ -416,12 +429,12 @@ func TestCheckThawedRejectsAStdlibClass(t *testing.T) {
 	})
 }
 
-// TestCheckThawedRejectsAStdlibAlias asserts that a run forked from the cached checker
+// TestCheckThawedRejectsAStdlibAlias asserts that a run forked from a loaded checker
 // panics when it probes the uniform knot of an alias the stdlib load registered.
 func TestCheckThawedRejectsAStdlibAlias(t *testing.T) {
-	run := forkCachedChecker(t)
+	run := forkLoadedChecker(t)
 
-	// The cached knot is dropped from the run's copy of the memo, so the probe computes
+	// The loaded knot is dropped from the run's copy of the memo, so the probe computes
 	// it again rather than reading the memoized one.
 	name := slices.Min(slices.Collect(maps.Keys(run.ctx.aliases)))
 	delete(run.ctx.uniformKnots, name)
@@ -470,10 +483,10 @@ func TestSettleLoadedDefinitionsMeasuresAProvisionalClass(t *testing.T) {
 	require.Equal(t, measured, def.Variance)
 }
 
-// TestShareForkReportsHeldDiagnosticsPerRun asserts that each fork of one loaded
+// TestForkReportsHeldDiagnosticsPerRun asserts that each fork of one loaded
 // checker reports the diagnostics its load held at that fork's own import, so a run
 // that claims them leaves them unclaimed for the next.
-func TestShareForkReportsHeldDiagnosticsPerRun(t *testing.T) {
+func TestForkReportsHeldDiagnosticsPerRun(t *testing.T) {
 	dir := seedStdlib(t, withPreludeClasses(map[string]string{
 		"std/math.esc": `export val PI: number = "pi"`,
 	}))
@@ -484,7 +497,7 @@ func TestShareForkReportsHeldDiagnosticsPerRun(t *testing.T) {
 		`) has 1 error(s):` + "\n" + `  cannot constrain "pi" <: number`
 
 	for range 2 {
-		run := loaded.shareFork(StdlibSource(dir), StdlibGroupSource(dir), groups)
+		run := loaded.fork(StdlibSource(dir), StdlibGroupSource(dir), groups)
 		res := inferModuleOn(run, parseModule(t, "import \"std:math\"\nval p = math.PI"))
 		require.Equal(t, []string{"1:1-1:18: " + loadErr}, messagesWithSpan(t, res.Errors))
 	}

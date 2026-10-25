@@ -18,14 +18,21 @@ import (
 )
 
 // stdlib_run_cache.go keeps one checker per standard library tree with the prelude
-// and the ambient packages already loaded. A run against that tree starts from a
-// deep copy of it instead of inferring the packages again.
+// and the ambient packages already loaded. A run against that tree starts from a fork
+// of it instead of inferring the packages again.
 //
-// The copy is what keeps runs apart. Constrain mutates a type variable's bounds in
-// place, and loading a package registers its classes and aliases on the Context, so a
-// run that shared the cached checker would write into every other run's state. Each
-// run gets its own variables, registry, and side tables, and the cached checker is
-// only ever read.
+// A fork shares every type, definition, scope, and namespace the cached checker holds,
+// and has its own copy of each container a run adds to. Sharing is safe because no run
+// writes to anything the load created:
+//
+//   - A run constrains copies of a stdlib type's variables, never the variables
+//     themselves. checkThawed enforces this when frozenVarChecks is set.
+//   - settleLoadedDefinitions computes before caching every fact about a loaded class
+//     or alias that a run would otherwise compute and store on it.
+//   - A run adds its own entries to its own copy of each registry and side table.
+//
+// The cached checker is therefore only ever read, and runs against one tree can run
+// concurrently.
 
 // ambientKey names one cached checker.
 type ambientKey struct {
@@ -167,12 +174,11 @@ func loadAmbientChecker(dir string, groups PackageGroups, opts Options) *checker
 	c.ambientScope()
 	c.bindAmbientExports()
 	// A run reads a loaded class's variance and an alias's uniform knot through the
-	// cached definitions. Settling both now means no run writes to those definitions,
-	// and fork copies the settled answers.
+	// cached definitions. Settling both now means no run writes to those definitions.
 	c.settleLoadedDefinitions()
 
-	// fork copies the checker field by field and cannot copy a func, so every
-	// field holding one is cleared here and fork sets it again on the copy.
+	// The copy below cannot copy a func, so every field holding one is cleared here.
+	// fork sets each one again on a run's checker.
 	c.ctx.fusionRecorder = nil
 	c.source, c.groupSource, c.groups = nil, nil, nil
 	// Both hold the signature phase's per-declaration state, which carries funcs.
@@ -181,8 +187,7 @@ func loadAmbientChecker(dir string, groups PackageGroups, opts Options) *checker
 	c.classShells, c.builtClassSigs = nil, nil
 	// Every Info read is keyed by a node of the module being inferred, or by a node
 	// of the user's own source in codegen and the language server. A run never reads
-	// the entries the load recorded for stdlib nodes, so the cache keeps none and
-	// fork has none to copy.
+	// the entries the load recorded for stdlib nodes, so the cache keeps none.
 	c.info = NewInfo()
 	c.info.ctx = c.ctx
 	// These are keyed by the node or function being inferred, and only while it is, so
@@ -272,18 +277,6 @@ func (c *checker) settleLoadedDefinitions() {
 	})
 }
 
-// fork returns a deep copy of c that runs with source, groupSource, and groups. A
-// pointer to an AST node is not copied, so the copy reads the same parsed modules c
-// does.
-func (c *checker) fork(source ModuleSource, groupSource GroupSource, groups PackageGroups) *checker {
-	// The parsed modules are already shared by every run through the parse cache,
-	// so copying them here would only cost time.
-	f := copyPtr(newGraphCopier(isASTPointer), c)
-	f.ctx.fusionRecorder = f.recordFusionEdge
-	f.source, f.groupSource, f.groups = source, groupSource, groups
-	return f
-}
-
 // astPackage is the import path of internal/ast.
 var astPackage = reflect.TypeFor[ast.Span]().PkgPath()
 
@@ -292,15 +285,15 @@ func isASTPointer(t reflect.Type) bool {
 	return t.Elem().PkgPath() == astPackage
 }
 
-// shareFork returns a checker that runs with source, groupSource, and groups over what c
+// fork returns a checker that runs with source, groupSource, and groups over what c
 // loaded. The two share every type, definition, scope, and namespace c holds, and the
 // fork gets its own copy of every container a run adds to.
 //
 // c must not be written to while it is shared. Two forks of c can run concurrently, and
 // neither reaches the other's state.
-func (c *checker) shareFork(source ModuleSource, groupSource GroupSource, groups PackageGroups) *checker {
+func (c *checker) fork(source ModuleSource, groupSource GroupSource, groups PackageGroups) *checker {
 	f := *c
-	f.ctx = c.ctx.shareFork()
+	f.ctx = c.ctx.fork()
 	f.ctx.fusionRecorder = f.recordFusionEdge
 	f.info = NewInfo()
 	f.info.ctx = f.ctx
@@ -355,10 +348,10 @@ func (c *checker) shareFork(source ModuleSource, groupSource GroupSource, groups
 	return &f
 }
 
-// shareFork returns a Context that shares every definition and type c holds and has its
+// fork returns a Context that shares every definition and type c holds and has its
 // own copy of every container a run adds to. c's counters carry over, and the fork has
 // no probe open.
-func (c *Context) shareFork() *Context {
+func (c *Context) fork() *Context {
 	f := *c
 	f.probe = nil
 	f.paramVars = maps.Clone(c.paramVars)
