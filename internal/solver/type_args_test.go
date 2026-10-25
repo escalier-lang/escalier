@@ -3,6 +3,7 @@ package solver
 import (
 	"testing"
 
+	"github.com/escalier-lang/escalier/internal/dep_graph"
 	"github.com/stretchr/testify/require"
 )
 
@@ -808,4 +809,54 @@ func TestAClassValueBindsEveryParameterOnItsConstructor(t *testing.T) {
 	`)
 	require.Empty(t, errorMessagesOf(errs))
 	require.Equal(t, "{new <T, E = never>() -> Task<T, E>}", values["Task"])
+}
+
+// TestTypeArgBoundHoles covers a bound holding `_` holes, which checkTypeArgBounds compares
+// against a fresh copy of each hole per reference. Each row asserts that no hole variable the
+// declarations minted carries a bound afterwards, so one reference's argument never reaches
+// another's comparison. The second row also asserts that a variable in the bound that is not a
+// hole still takes the reference's argument: `A` in `fn (x: A) -> _` reads as `number` there,
+// so the `string` parameter fails the bound.
+func TestTypeArgBoundHoles(t *testing.T) {
+	tests := []struct {
+		name string
+		src  string
+		want []string
+	}{
+		{
+			name: "TwoReferencesLeaveTheHolesUnbounded",
+			src: `
+				type Params<F: fn (...args: Array<_>) -> _> = if F : fn (...args: infer P) -> _ { P } else { never }
+				type A = Params<fn (x: number) -> string>
+				type B = Params<fn (y: boolean) -> null>
+			`,
+		},
+		{
+			name: "ANonHoleVariableTakesTheArgument",
+			src: `
+				type Apply<A, F: fn (x: A) -> _> = F
+				type Ok = Apply<number, fn (x: number) -> string>
+				type Bad = Apply<number, fn (x: string) -> string>
+			`,
+			want: []string{"cannot constrain number <: string"},
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			module := parseModule(t, tt.src)
+			c := newTestChecker()
+			c.inferDepGraph(c.preludeScope().Child(), 0, module, dep_graph.BuildDepGraph(module))
+			messages := make([]string, len(c.errs))
+			for i, err := range c.errs {
+				messages[i] = err.Message()
+			}
+			require.Equal(t, tt.want, nilIfEmpty(messages))
+
+			require.NotEmpty(t, c.ctx.holeVars)
+			for v := range c.ctx.holeVars {
+				require.Empty(t, v.LowerBounds, "hole variable %d", v.ID)
+				require.Empty(t, v.UpperBounds, "hole variable %d", v.ID)
+			}
+		})
+	}
 }
