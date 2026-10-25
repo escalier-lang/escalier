@@ -2125,8 +2125,14 @@ func (c *checker) consumeCallArgs(scope *Scope, e *ast.CallExpr, fn *soltype.Fun
 		return
 	}
 	for _, arg := range owned {
-		if c.movesModuleLevelPlace(scope, arg, c.info.TypeOf(arg)) {
-			c.reportModuleLevelMoveIntoParam(arg)
+		moved := false
+		for _, r := range branchResults(arg) {
+			if c.movesModuleLevelPlace(scope, r, c.info.TypeOf(r)) {
+				c.reportModuleLevelMoveIntoParam(r)
+				moved = true
+			}
+		}
+		if moved {
 			continue
 		}
 		c.consumeOwned(arg, c.info.TypeOf(arg), arg, ref)

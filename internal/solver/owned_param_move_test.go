@@ -62,6 +62,16 @@ fn f() {
 			want: []string{"9:8-9:10: cannot move module-level value 'xs' into an owned parameter. Make the parameter a borrow and pass `&xs`"},
 		},
 		{
+			name: "a module-level val passed through an if branch",
+			src: `val xs: Array<number> = [1, 2]
+fn take(x: Array<number>) {
+	val mut m = x
+	m.push(3)
+}
+fn f(c: boolean) { take(if c { xs } else { [1] }) }`,
+			want: []string{"6:32-6:34: cannot move module-level value 'xs' into an owned parameter. Make the parameter a borrow and pass `&xs`"},
+		},
+		{
 			name: "a local read from a module-level val",
 			src: `val xs: Array<number> = [1, 2]
 fn take(x: Array<number>) {}
