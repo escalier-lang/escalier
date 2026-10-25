@@ -1,6 +1,10 @@
 package liveness
 
-import "github.com/escalier-lang/escalier/internal/ast"
+import (
+	"maps"
+
+	"github.com/escalier-lang/escalier/internal/ast"
+)
 
 // VarIDs maps each binding and use site the rename pass visited to the VarID it
 // assigned. The sites are *ast.IdentExpr, *ast.IdentPat, *ast.ObjShorthandPat and
@@ -15,6 +19,12 @@ type VarIDs struct {
 // NewVarIDs returns an empty table.
 func NewVarIDs() *VarIDs {
 	return &VarIDs{ids: map[ast.Node]VarID{}}
+}
+
+// Clone returns a table holding the same entries as t, which a Set on either one
+// leaves out of the other.
+func (t *VarIDs) Clone() *VarIDs {
+	return &VarIDs{ids: maps.Clone(t.ids)}
 }
 
 // Of returns the VarID the rename pass assigned to node, or 0 when no rename
