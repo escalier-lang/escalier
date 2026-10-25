@@ -197,38 +197,29 @@ func (c *checker) rejectModuleLevelMove(scope *Scope, source ast.Expr) bool {
 }
 
 // branchResults returns the expressions whose value e produces. It descends through the
-// branches of a conditional, `match`, `do`, and `try`, and through a type cast. Any other
-// expression produces its own value, so it returns e alone.
+// branches liveness.BranchResults returns, and through a type cast, until it reaches an
+// expression that does neither.
 func branchResults(e ast.Expr) []ast.Expr {
-	var results []ast.Expr
-	var visit func(ast.Expr)
-	visit = func(e ast.Expr) {
-		switch e := e.(type) {
-		case nil:
-		case *ast.IfElseExpr:
-			visit(liveness.BlockResultExpr(e.Cons))
-			visit(liveness.BlockOrExprResultExpr(e.Alt))
-		case *ast.IfValExpr:
-			visit(liveness.BlockResultExpr(e.Cons))
-			visit(liveness.BlockOrExprResultExpr(e.Alt))
-		case *ast.MatchExpr:
-			for _, mc := range e.Cases {
-				visit(liveness.BlockOrExprResultExpr(&mc.Body))
-			}
-		case *ast.DoExpr:
-			visit(liveness.BlockResultExpr(e.Body))
-		case *ast.TryCatchExpr:
-			visit(liveness.BlockResultExpr(e.Try))
-			for _, mc := range e.Catch {
-				visit(liveness.BlockOrExprResultExpr(&mc.Body))
-			}
-		case *ast.TypeCastExpr:
-			visit(e.Expr)
-		default:
-			results = append(results, e)
-		}
+	return appendBranchResults(nil, e)
+}
+
+// appendBranchResults appends to results the expressions branchResults returns for e.
+func appendBranchResults(results []ast.Expr, e ast.Expr) []ast.Expr {
+	if cast, ok := e.(*ast.TypeCastExpr); ok {
+		return appendBranchResults(results, cast.Expr)
 	}
-	visit(e)
+	branches, ok := liveness.BranchResults(e)
+	if !ok {
+		// A branch with no result expression moves nothing, and the other branches still move
+		// what they produce.
+		if e == nil {
+			return results
+		}
+		return append(results, e)
+	}
+	for _, branch := range branches {
+		results = appendBranchResults(results, branch)
+	}
 	return results
 }
 

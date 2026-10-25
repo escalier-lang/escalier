@@ -269,20 +269,6 @@ func DetermineAliasSource(ids *VarIDs, expr ast.Expr) AliasSource {
 	case *ast.IndexExpr:
 		return determineIndexAliasSource(ids, e)
 
-	// Conditionals: aliases all branches (Phase 7.4).
-	case *ast.IfElseExpr:
-		return determineConditionalAliasSource(ids, e)
-	case *ast.IfValExpr:
-		return unknownSource()
-	case *ast.MatchExpr:
-		return determineMatchAliasSource(ids, e)
-
-	// Do expressions, try-catch: complex control flow, treat as unknown
-	case *ast.DoExpr:
-		return unknownSource()
-	case *ast.TryCatchExpr:
-		return unknownSource()
-
 	// Throw/yield don't produce values that get assigned
 	case *ast.ThrowExpr:
 		return freshSource()
@@ -298,6 +284,12 @@ func DetermineAliasSource(ids *VarIDs, expr ast.Expr) AliasSource {
 		return unknownSource()
 
 	default:
+		// A conditional, `match`, `do`, or `try` aliases what each of its branches produces.
+		// A missing `else` produces a fresh `undefined`, so it adds no alias. A `match` with no
+		// cases produces no value to alias.
+		if results, ok := BranchResults(e); ok && len(results) > 0 {
+			return collectBranchSources(ids, results)
+		}
 		return unknownSource()
 	}
 }
@@ -329,6 +321,48 @@ func BlockOrExprResultExpr(boe *ast.BlockOrExpr) ast.Expr {
 	return nil
 }
 
+// BranchResults returns the result expression of each branch of e, and whether e is an
+// expression that branches. Those are a conditional, an `if val`, a `match`, a `do`, and a
+// `try`. A `do` has one branch, its body. A `try` has its body and each `catch` case.
+//
+// An entry is nil for a branch whose block ends in something other than an expression. A
+// conditional or `if val` without an `else` yields only its consequent. The branches are not
+// descended into, so a branch that itself branches is returned whole.
+func BranchResults(e ast.Expr) ([]ast.Expr, bool) {
+	switch e := e.(type) {
+	case *ast.IfElseExpr:
+		return condResults(e.Cons, e.Alt), true
+	case *ast.IfValExpr:
+		return condResults(e.Cons, e.Alt), true
+	case *ast.MatchExpr:
+		return caseResults(e.Cases), true
+	case *ast.DoExpr:
+		return []ast.Expr{BlockResultExpr(e.Body)}, true
+	case *ast.TryCatchExpr:
+		return append([]ast.Expr{BlockResultExpr(e.Try)}, caseResults(e.Catch)...), true
+	}
+	return nil, false
+}
+
+// condResults returns the result expressions of a conditional's consequent cons and its
+// `else` alt, leaving alt out when it is nil.
+func condResults(cons ast.Block, alt *ast.BlockOrExpr) []ast.Expr {
+	results := []ast.Expr{BlockResultExpr(cons)}
+	if alt != nil {
+		results = append(results, BlockOrExprResultExpr(alt))
+	}
+	return results
+}
+
+// caseResults returns the result expression of each case body in cases.
+func caseResults(cases []*ast.MatchCase) []ast.Expr {
+	results := make([]ast.Expr, 0, len(cases))
+	for _, mc := range cases {
+		results = append(results, BlockOrExprResultExpr(&mc.Body))
+	}
+	return results
+}
+
 // collectBranchSources collects alias sources from a list of expressions,
 // deduplicating leaves across branches by (root, projection path) so that
 // fresh-container shapes like {head:a} vs {tail:a} (same root, different
@@ -343,7 +377,8 @@ func collectBranchSources(ids *VarIDs, exprs []ast.Expr) AliasSource {
 
 	for _, expr := range exprs {
 		if expr == nil {
-			// A branch with no result expression — treat as unknown.
+			// A branch with no result expression may end in a `return` or in a declaration whose
+			// binding it yields, so what it aliases is not known.
 			return unknownSource()
 		}
 		source := DetermineAliasSource(ids, expr)
@@ -385,21 +420,6 @@ func collectBranchSources(ids *VarIDs, exprs []ast.Expr) AliasSource {
 		origin = AliasOriginAlias
 	}
 	return AliasSource{Origin: origin, Leaves: leaves}
-}
-
-// determineConditionalAliasSource determines alias sources for an if-else
-// expression by collecting sources from both branches.
-func determineConditionalAliasSource(ids *VarIDs, expr *ast.IfElseExpr) AliasSource {
-	consExpr := BlockResultExpr(expr.Cons)
-	altExpr := BlockOrExprResultExpr(expr.Alt)
-
-	// If there's no alt branch, the else produces undefined (a fresh
-	// value). Only the consequent may contribute alias sources.
-	if expr.Alt == nil {
-		return collectBranchSources(ids, []ast.Expr{consExpr})
-	}
-
-	return collectBranchSources(ids, []ast.Expr{consExpr, altExpr})
 }
 
 // appendStepToLeaves returns a new AliasSource whose leaves each have
@@ -644,19 +664,4 @@ func floatAsInt(v float64) (int, bool) {
 		return i, true
 	}
 	return 0, false
-}
-
-// determineMatchAliasSource determines alias sources for a match expression
-// by collecting sources from all case bodies.
-func determineMatchAliasSource(ids *VarIDs, expr *ast.MatchExpr) AliasSource {
-	if len(expr.Cases) == 0 {
-		return unknownSource()
-	}
-
-	branchExprs := make([]ast.Expr, len(expr.Cases))
-	for i, matchCase := range expr.Cases {
-		branchExprs[i] = BlockOrExprResultExpr(&matchCase.Body)
-	}
-
-	return collectBranchSources(ids, branchExprs)
 }
