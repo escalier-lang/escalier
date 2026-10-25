@@ -192,12 +192,11 @@ func loadAmbientChecker(dir string, groups PackageGroups, opts Options) *checker
 	// The copy allocates every slice with no spare capacity. An append by a run to a
 	// slice the cached checker holds then allocates, rather than writing into an array
 	// that every run sharing the checker can see.
-	c = copyPtr(newGraphCopier(isASTPointer), c)
+	g := newGraphCopier(isASTPointer)
+	c = copyPtr(g, c)
 	if frozenVarChecks {
-		// The checker cached is a copy of c, so the copier's table of what it copied
-		// names every variable the cached checker reaches.
-		g := newGraphCopier(isASTPointer)
-		c = copyPtr(g, c)
+		// The copier's table of what it copied names every variable the cached checker
+		// reaches.
 		c.ctx.frozenVars, c.ctx.frozenLts = copiedVars(g)
 		c.ctx.frozenClasses = set.FromSlice(slices.Collect(maps.Values(c.ctx.classes)))
 		c.ctx.frozenAliases = set.FromSlice(slices.Collect(maps.Values(c.ctx.aliases)))
