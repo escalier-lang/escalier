@@ -261,39 +261,16 @@ func TestForkMatchesDeepFork(t *testing.T) {
 	}
 }
 
-// loadedFork returns a checker loaded for the committed tree and a run fork made from
-// it.
-func loadedFork(t *testing.T) (loaded, run *checker) {
-	t.Helper()
+// TestForkCopiesEveryContainer asserts that each map a loaded checker or its Context
+// holds reaches a fork as a map of its own, apart from the read-only ones listed below,
+// and that each slice reaches it with no spare capacity. A container field added later
+// fails here until fork copies it or this test names it read-only.
+func TestForkCopiesEveryContainer(t *testing.T) {
 	groups, err := BuildPackageClosure(benchTree, ambientPackages)
 	require.NoError(t, err)
-	loaded = loadAmbientChecker(benchTree, groups, Options{})
-	return loaded, loaded.fork(StdlibSource(benchTree), StdlibGroupSource(benchTree), groups)
-}
+	loaded := loadAmbientChecker(benchTree, groups, Options{})
+	run := loaded.fork(StdlibSource(benchTree), StdlibGroupSource(benchTree), groups)
 
-// visitForkFields calls visit with each field of loaded and of its Context, paired with
-// the same field of run. It descends into struct fields and names each field by its path,
-// such as "Context.classes". A field behind a pointer is visited as the pointer.
-func visitForkFields(loaded, run *checker, visit func(path string, loadedValue, runValue reflect.Value)) {
-	var walk func(path string, loadedValue, runValue reflect.Value)
-	walk = func(path string, loadedValue, runValue reflect.Value) {
-		if loadedValue.Kind() != reflect.Struct {
-			visit(path, loadedValue, runValue)
-			return
-		}
-		for i := range loadedValue.NumField() {
-			walk(path+"."+loadedValue.Type().Field(i).Name, loadedValue.Field(i), runValue.Field(i))
-		}
-	}
-	walk("checker", reflect.ValueOf(loaded).Elem(), reflect.ValueOf(run).Elem())
-	walk("Context", reflect.ValueOf(loaded.ctx).Elem(), reflect.ValueOf(run.ctx).Elem())
-}
-
-// TestForkCopiesEveryMap asserts that each map a loaded checker or its Context holds
-// reaches a fork as a map of its own, apart from the read-only ones listed below. A map
-// field added later fails here until fork copies it or this test names it read-only.
-func TestForkCopiesEveryMap(t *testing.T) {
-	loaded, run := loadedFork(t)
 	readOnly := set.FromSlice([]string{
 		// The run's own groups replace the loaded checker's.
 		"checker.groups",
@@ -306,27 +283,27 @@ func TestForkCopiesEveryMap(t *testing.T) {
 		"Context.frozenClasses",
 		"Context.frozenAliases",
 	})
-	visitForkFields(loaded, run, func(path string, loadedValue, runValue reflect.Value) {
-		if loadedValue.Kind() != reflect.Map || loadedValue.IsNil() || readOnly.Contains(path) {
-			return
+	var check func(path string, loadedValue, runValue reflect.Value)
+	check = func(path string, loadedValue, runValue reflect.Value) {
+		switch loadedValue.Kind() {
+		case reflect.Map:
+			if loadedValue.IsNil() || readOnly.Contains(path) {
+				return
+			}
+			require.NotEqual(t, loadedValue.UnsafePointer(), runValue.UnsafePointer(), path)
+		case reflect.Slice:
+			require.Equal(t, runValue.Len(), runValue.Cap(), path)
+		case reflect.Struct:
+			for i := range loadedValue.NumField() {
+				name := path + "." + loadedValue.Type().Field(i).Name
+				check(name, loadedValue.Field(i), runValue.Field(i))
+			}
 		}
-		require.NotEqual(t, loadedValue.UnsafePointer(), runValue.UnsafePointer(), path)
-	})
-	// The package registry sits behind a pointer, which the walk does not follow.
+	}
+	check("checker", reflect.ValueOf(loaded).Elem(), reflect.ValueOf(run).Elem())
+	check("Context", reflect.ValueOf(loaded.ctx).Elem(), reflect.ValueOf(run.ctx).Elem())
 	require.NotEqual(t, reflect.ValueOf(loaded.ctx.packages.packages).UnsafePointer(),
 		reflect.ValueOf(run.ctx.packages.packages).UnsafePointer())
-}
-
-// TestForkClipsEverySlice asserts that each slice a loaded checker or its Context
-// holds reaches a fork with no spare capacity, so an append by the run allocates a new
-// array rather than writing into the loaded checker's.
-func TestForkClipsEverySlice(t *testing.T) {
-	loaded, run := loadedFork(t)
-	visitForkFields(loaded, run, func(path string, _, runValue reflect.Value) {
-		if runValue.Kind() == reflect.Slice {
-			require.Equal(t, runValue.Len(), runValue.Cap(), path)
-		}
-	})
 }
 
 // loadsGroups reports whether module, checked against the committed tree, loads the
