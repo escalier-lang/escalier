@@ -297,6 +297,7 @@ func (c *checker) fork(source ModuleSource, groupSource GroupSource, groups Pack
 	f.source, f.groupSource, f.groups = source, groupSource, groups
 
 	f.prov = maps.Clone(c.prov)
+	f.varIDs = c.varIDs.Clone()
 	f.errs = slices.Clip(c.errs)
 	f.memberFuncNames = maps.Clone(c.memberFuncNames)
 	f.closureCaptureInfo = clipValues(c.closureCaptureInfo)
