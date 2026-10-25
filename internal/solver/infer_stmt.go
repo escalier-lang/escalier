@@ -72,15 +72,15 @@ func (c *checker) inferStmt(scope *Scope, lvl int, s ast.Stmt) soltype.Type {
 		if c.fn != nil {
 			c.fn.returns = append(c.fn.returns, t)
 			c.fn.returnExprs = append(c.fn.returnExprs, s.Expr)
-			if c.fn.shared != nil && c.mayYieldShared(scope, s.Expr, c.fn.shared.locals) {
-				c.fn.returnsShared = true
-			}
 			// Returning an owned value moves it out of the call frame, so the source
 			// binding is consumed and a later use is a use-after-move. A returned borrow
 			// flows out at its own lifetime and is not consumed here.
 			if s.Expr != nil {
 				if ref, ok := c.fn.stmtToRef[s]; ok {
-					c.consumeOwned(s.Expr, t, s.Expr, ref)
+					// A function declared to return a borrow hands the value out without moving it.
+					if c.fn.returnsBorrow || !c.rejectOuterMove(scope, s.Expr, t) {
+						c.consumeOwned(s.Expr, t, s.Expr, ref)
+					}
 					// A returned value must not borrow a function-local, which dies when the
 					// frame returns and would leave the borrow dangling, unless it owns a
 					// self-contained component the move re-anchors. checkReturnEscape records
@@ -173,8 +173,11 @@ func (c *checker) inferStmt(scope *Scope, lvl int, s ast.Stmt) soltype.Type {
 			// monomorphic projections.
 			c.inferDestructureDecl(scope, lvl, vd)
 			if c.fn != nil {
+				outer := c.rejectOuterDestructure(scope, vd.Pattern, vd.Init)
 				if ref, ok := c.fn.stmtToRef[s]; ok {
-					c.consumeDestructureLeaves(scope, vd.Pattern, vd.Init, ref)
+					if !outer {
+						c.consumeDestructureLeaves(scope, vd.Pattern, vd.Init, ref)
+					}
 					c.flushBorrowDirty(ref)
 				}
 			}

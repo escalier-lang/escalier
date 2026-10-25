@@ -173,10 +173,13 @@ func (c *checker) inferVarDeclInit(scope *Scope, lvl int, d *ast.VarDecl, ns str
 		}
 	}
 	initT := c.inferExpr(scope, lvl, d.Init)
-	// collectSharedLocals could not resolve a call of a function this body declares, since
-	// that function's body had not been walked. It has been by now, so a local bound from the
-	// call's result is marked here, along with every local that reads it.
-	c.markSharedFlow(scope, c.patVarIDs(d.Pattern), d.Init)
+	// A binding that takes its initializer by value moves it. A move out of a module-level
+	// binding is reported here, before the upgrade below asks movesOwnedPlace about it.
+	if _, isIdent := d.Pattern.(*ast.IdentPat); isIdent {
+		if _, borrowAnn := d.TypeAnn.(*ast.RefTypeAnn); !borrowAnn {
+			c.rejectOuterMove(scope, d.Init, initT)
+		}
+	}
 	switch {
 	case d.TypeAnn == nil && isMutableIdentPat(d.Pattern) && c.callReturnsOwned(d.Init, initT):
 		// An unannotated `val mut d = f()` whose call returns an owned value binds it
@@ -473,9 +476,7 @@ func (c *checker) immutableTarget(target soltype.Type) (soltype.Type, bool) {
 //   - A consuming move of an owned place returns true. In `val m: mut {x} = cfg` the move
 //     consumes `cfg` and leaves `m` the sole owner, so again no live alias remains, and a
 //     later use of `cfg` is a use-after-move. exprPlace ties the place to a VarID, so this
-//     case holds only inside a function body where the move engine records the consume. It
-//     fails when `cfg` may hold a value a binding outside the frame also reaches, since the
-//     move leaves that outer binding holding the same object.
+//     case holds only inside a function body where the move engine records the consume.
 //
 //   - A call whose return type is owned returns true. In `val m: mut Counter = make()` the
 //     callee kept nothing, so the caller holds the only reference to the result. It is the
@@ -547,11 +548,9 @@ func (c *checker) acceptsBorrowLeaf(leaf ast.Expr) bool {
 // callReturnsOwned reports whether e is a call whose result is an owned value. An owned
 // return type is the callee's statement that it kept nothing, so the caller holds the only
 // reference to what comes back. A callee that did keep the value returns a borrow instead,
-// which ownedCarrier declines. A call of a function whose body returns a shared value is not
-// owned either, whatever its return type says, since the value stays reachable from outside.
+// which ownedCarrier declines.
 func (c *checker) callReturnsOwned(e ast.Expr, t soltype.Type) bool {
-	call, ok := e.(*ast.CallExpr)
-	if !ok || c.callReturnsShared(nil, call) {
+	if _, ok := e.(*ast.CallExpr); !ok {
 		return false
 	}
 	return c.ownedCarrier(t) != nil
@@ -754,19 +753,16 @@ func (c *checker) bindingMovesOwnedPlace(pat ast.Pat, init ast.Expr, initT solty
 // instance, or owned RefType, or a variable every value of which is one. The move consumes
 // the place and leaves the destination its sole owner. exprPlace fails outside a function
 // body, where the rename pass has assigned no VarID, so a move is confined to bodies where
-// the move engine enforces the consume. A place rooted at a binding that may hold a shared
-// value, one a binding outside the frame also reaches, is never uniquely owned, so it
-// answers false. This is the place-move half of both bindingMovesOwnedPlace and the
-// isUniquelyOwned leaf check.
+// the move engine enforces the consume. This is the place-move half of both
+// bindingMovesOwnedPlace and the isUniquelyOwned leaf check.
 func (c *checker) movesOwnedPlace(init ast.Expr, initT soltype.Type) bool {
-	p, ok := c.exprPlace(init)
-	if !ok {
-		return false
+	// A move out of a module-level binding is reported where the value moves and records no
+	// move. Accepting it here types the destination as the move would, so the binding reports
+	// nothing more.
+	if c.fn != nil && c.fn.outerMoves.Contains(init) {
+		return true
 	}
-	// A place rooted at a binding that may hold a shared value is not uniquely owned. The
-	// move empties the place in this frame but leaves the outer binding holding the same
-	// object, so the destination is not its sole owner.
-	if c.isSharedLocal(p.root) {
+	if _, ok := c.exprPlace(init); !ok {
 		return false
 	}
 	if c.isConcreteOwned(initT) {

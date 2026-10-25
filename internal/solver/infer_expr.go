@@ -607,6 +607,7 @@ func (c *checker) inferFunc(scope *Scope, lvl int, sig ast.FuncSig, body *ast.Bl
 		// body opens its own context, so its returns never leak out here).
 		saved := c.pushFuncCtx(sig.Async, node, lvl)
 		c.fn.throws = declaredThrows
+		_, c.fn.returnsBorrow = sig.Return.(*ast.RefTypeAnn)
 		switch {
 		case gen != nil && gen.ann != nil && gen.ann.Raises():
 			c.fn.throwsAnn, c.fn.throwsForm = sig.Return, throwsGenerator
@@ -650,9 +651,6 @@ func (c *checker) inferFunc(scope *Scope, lvl int, sig ast.FuncSig, body *ast.Bl
 		// to admit a borrow leaf, and popFuncCtx below restores the outer context, so asking at
 		// the annotation check would answer no for every borrow a body returns.
 		returnsUniquelyOwned = c.allReturnsUniquelyOwned(retExprs)
-		if c.fn.returnsShared {
-			c.sharedReturns.Add(node)
-		}
 		throws = c.fn.throws
 		raised = c.fn.raised
 		yielded = c.fn.yielded
@@ -660,16 +658,17 @@ func (c *checker) inferFunc(scope *Scope, lvl int, sig ast.FuncSig, body *ast.Bl
 			gen.delegateNexts = c.fn.delegateNexts
 		}
 		recvReads := c.fn.inferredRecvReads
-		// A closure may store a shared value into a local it captures. The enclosing body still
-		// holds that local after the call, so it counts the local as shared from here on. A
-		// store of one capture into another counts too, since the move it makes inside the
-		// closure leaves the enclosing body's binding live, and the two now alias.
-		var sharedStores []string
-		if saved != nil {
-			sharedStores = c.sharedCaptureStores()
+		// A closure that moves a local it captures takes the local from the body it is
+		// written in. recordCaptureLoans reads these names there.
+		if fn, ok := node.(ast.Func); ok && saved != nil {
+			if moved := c.movedCaptures(); len(moved) > 0 {
+				if c.capturesMovedBy == nil {
+					c.capturesMovedBy = map[ast.Func]map[string]ast.Node{}
+				}
+				c.capturesMovedBy[fn] = moved
+			}
 		}
 		collected = c.popFuncCtx(saved)
-		c.markSharedCaptures(scope, sharedStores)
 		// A read inside this body can still learn its receiver's type from the enclosing body,
 		// as a callback's parameter does from the call it is passed to, so the enclosing body
 		// decides it. The outermost body decides once everything it encloses is walked.
@@ -1768,6 +1767,9 @@ func (c *checker) resolveCallPath(scope *Scope, lvl int, e *ast.CallExpr, preset
 		ret, fn = c.applyCallShape(lvl, e, target.callee, target.fn, target.secondInstance, args)
 	}
 	c.recordCallArgEffects(e, fn, consumeRef, hasConsumeRef)
+	if hasConsumeRef {
+		c.consumeOnceCallee(e, consumeRef)
+	}
 	c.recordType(e, ret)
 	return pathResult{value: ret, shortCircuits: target.shortCircuits}
 }
@@ -2535,10 +2537,6 @@ func (c *checker) inferAssign(scope *Scope, lvl int, e *ast.BinaryExpr) soltype.
 		}
 	}
 	sourceT := c.inferExpr(scope, lvl, e.Right)
-	// collectSharedLocals could not resolve a call of a function this body declares. The walk
-	// has reached that function by now, so a store of the call's result marks the local it
-	// writes, the way a binding's initializer does in inferVarDeclInit.
-	c.markSharedFlow(scope, c.placeRootVarIDs(e.Left), e.Right)
 	// Record `undefined` on e up front as the recovery type. Every error path below
 	// returns undefinedT without recording a type, so this guarantees the node is typed
 	// on failure. The success path overwrites it with the stored value's type; see the
@@ -2655,7 +2653,9 @@ func (c *checker) inferAssign(scope *Scope, lvl int, e *ast.BinaryExpr) soltype.
 			// any OTHER live alias of the same value.
 			if c.fn != nil {
 				if ref, ok := c.fn.stmtToRef[assignStmt]; ok {
-					c.consumeAtGlobalWrite(e.Right, sourceT, e.Right, ref)
+					if isBorrowType(bindingType(b)) || !c.rejectOuterMove(scope, e.Right, sourceT) {
+						c.consumeAtGlobalWrite(e.Right, sourceT, e.Right, ref)
+					}
 					// Anything can call a closure in a module-level binding from here on, so what
 					// it writes has to stay borrowed for the rest of the body.
 					c.noteGlobalClosureStore(target.Name, e.Right, ref)
@@ -2687,7 +2687,8 @@ func (c *checker) inferAssign(scope *Scope, lvl int, e *ast.BinaryExpr) soltype.
 		// A non-module reassignment that moves its source consumes it. The global-write
 		// branch above runs its own consume, so this covers only the local-binding
 		// reassignment.
-		if !b.ModuleLevel && c.movesSourceInto(e.Right, bindingType(b)) {
+		outer := !b.ModuleLevel && !isBorrowType(bindingType(b)) && c.rejectOuterMove(scope, e.Right, c.info.TypeOf(e.Right))
+		if !b.ModuleLevel && !outer && c.movesSourceInto(e.Right, bindingType(b)) {
 			if ref, ok := c.fn.stmtToRef[assignStmt]; ok {
 				c.consumeOwned(e.Right, c.info.TypeOf(e.Right), e.Right, ref)
 			}
@@ -2765,14 +2766,14 @@ func (c *checker) inferMemberAssign(scope *Scope, lvl int, e *ast.BinaryExpr, m 
 		return undefinedT
 	}
 	recv := c.inferWriteReceiver(scope, lvl, m.Object)
-	return c.inferFieldAssign(lvl, e, m.Object, m.Prop.Name, recv, source, assignStmt)
+	return c.inferFieldAssign(scope, lvl, e, m.Object, m.Prop.Name, recv, source, assignStmt)
 }
 
 // inferFieldAssign types a write of field `name` on the receiver object, whose type
 // recv the caller has inferred. e is the assignment and e.Left is `object.name` or a
 // bracket form naming the same field, such as `object["name"]`. The rules are the
 // ones inferMemberAssign documents.
-func (c *checker) inferFieldAssign(lvl int, e *ast.BinaryExpr, object ast.Expr, name string, recv, source soltype.Type, assignStmt ast.Stmt) soltype.Type {
+func (c *checker) inferFieldAssign(scope *Scope, lvl int, e *ast.BinaryExpr, object ast.Expr, name string, recv, source soltype.Type, assignStmt ast.Stmt) soltype.Type {
 	// The receiver's reads are part of this write, so the use check weighs them as a write to
 	// the target rather than as reads of the receiver.
 	c.noteFieldWrite(e.Left, object)
@@ -2787,7 +2788,7 @@ func (c *checker) inferFieldAssign(lvl int, e *ast.BinaryExpr, object ast.Expr, 
 	// no setter to call.
 	switch member.(type) {
 	case *soltype.SetterElem, *soltype.GetterElem:
-		return c.inferAccessorAssign(lvl, e, name, recv, source, member, assignStmt)
+		return c.inferAccessorAssign(scope, lvl, e, name, recv, source, member, assignStmt)
 	}
 	w := widen(source)
 	// A write to a declared readonly field is reported here, blamed on the target, so every
@@ -2863,7 +2864,11 @@ func (c *checker) inferFieldAssign(lvl int, e *ast.BinaryExpr, object ast.Expr, 
 		// rather than c.fn.currentStmt, which inferring the receiver and source may have
 		// overwritten with an inner branch statement.
 		if ref, ok := c.fn.stmtToRef[assignStmt]; ok {
-			c.consumeOwned(e.Right, source, e.Right, ref)
+			// A field declared as a borrow takes the value without moving it.
+			borrowField := hasDeclared && isBorrowType(declared.Type)
+			if borrowField || !c.rejectOuterMove(scope, e.Right, source) {
+				c.consumeOwned(e.Right, source, e.Right, ref)
+			}
 			// Storing a value that borrows a local into a borrow parameter's field hands the
 			// local to the caller, since the parameter's object outlives the frame.
 			// checkParamFieldStoreEscape applies only when the receiver is such a parameter,
@@ -2905,9 +2910,9 @@ func (c *checker) inferIndexAssign(scope *Scope, lvl int, e *ast.BinaryExpr, ix 
 	// JavaScript evaluates the receiver before the key.
 	recv := c.inferWriteReceiver(scope, lvl, ix.Object)
 	if name, ok := c.indexKeyName(scope, lvl, ix, recv); ok {
-		return c.inferFieldAssign(lvl, e, ix.Object, name, recv, source, assignStmt)
+		return c.inferFieldAssign(scope, lvl, e, ix.Object, name, recv, source, assignStmt)
 	}
-	return c.inferElementAssign(lvl, e, ix, recv, source, assignStmt)
+	return c.inferElementAssign(scope, lvl, e, ix, recv, source, assignStmt)
 }
 
 // inferElementAssign types a write `recv[k] = source` whose key names no single property,
@@ -2931,7 +2936,7 @@ func (c *checker) inferIndexAssign(scope *Scope, lvl int, e *ast.BinaryExpr, ix 
 //
 // The assignment evaluates to the value just stored, widened the way a field write
 // widens it.
-func (c *checker) inferElementAssign(lvl int, e *ast.BinaryExpr, ix *ast.IndexExpr, recv, source soltype.Type, assignStmt ast.Stmt) soltype.Type {
+func (c *checker) inferElementAssign(scope *Scope, lvl int, e *ast.BinaryExpr, ix *ast.IndexExpr, recv, source soltype.Type, assignStmt ast.Stmt) soltype.Type {
 	undefinedT := soltype.Type(&soltype.UndefinedType{})
 	c.noteFieldWrite(e.Left, ix.Object)
 	if _, failed := c.info.TypeOf(ix.Index).(*soltype.ErrorType); failed {
@@ -2980,7 +2985,11 @@ func (c *checker) inferElementAssign(lvl int, e *ast.BinaryExpr, ix *ast.IndexEx
 		if ref, ok := c.fn.stmtToRef[assignStmt]; ok {
 			// Storing an owned value into an element moves it into the receiver, and storing
 			// a borrow of a local into a parameter's element escapes, as a field store does.
-			c.consumeOwned(e.Right, source, e.Right, ref)
+			// Slots that all hold borrows take the value without moving it.
+			borrowSlots := !slices.ContainsFunc(slots, func(slot soltype.Type) bool { return !isBorrowType(slot) })
+			if borrowSlots || !c.rejectOuterMove(scope, e.Right, source) {
+				c.consumeOwned(e.Right, source, e.Right, ref)
+			}
 			c.checkParamElementStoreEscape(ix.Object, e.Right, ref)
 			c.recordElementStoreEdges(ix.Object, e.Right, ref)
 		}
@@ -3065,6 +3074,7 @@ func (c *Context) keyReaches(key soltype.Type, name string) bool {
 // its `self`, and it raises whatever the setter declares. It records nothing in `written`,
 // since a setter has no cell a later read could shortcut to.
 func (c *checker) inferAccessorAssign(
+	scope *Scope,
 	lvl int,
 	e *ast.BinaryExpr,
 	name string,
@@ -3095,7 +3105,9 @@ func (c *checker) inferAccessorAssign(
 	// an inner branch statement. A rejected write records no move.
 	if c.fn != nil && len(c.errs) == errsBefore && c.isConcreteOwned(setter.Param.Type) {
 		if ref, ok := c.fn.stmtToRef[assignStmt]; ok {
-			c.consumeOwned(e.Right, source, e.Right, ref)
+			if !c.rejectOuterMove(scope, e.Right, source) {
+				c.consumeOwned(e.Right, source, e.Right, ref)
+			}
 			c.recordEscapeSite(e.Right, ref)
 		}
 	}
@@ -3285,7 +3297,7 @@ func (c *checker) inferTuple(scope *Scope, lvl int, e *ast.TupleExpr) soltype.Ty
 			elemT := c.inferExpr(scope, lvl, el)
 			pieces = append(pieces, tuplePiece{fixed: []soltype.Type{elemT}})
 			// Building an owned value into the tuple moves it.
-			c.consumeIntoLiteral(el, elemT, stmtRef, hasStmtRef)
+			c.consumeIntoLiteral(scope, el, elemT, stmtRef, hasStmtRef)
 			continue
 		}
 		switch op := c.inferExpr(scope, lvl, spread.Value).(type) {
@@ -3309,7 +3321,7 @@ func (c *checker) inferTuple(scope *Scope, lvl int, e *ast.TupleExpr) soltype.Ty
 			if piece.inexact == nil || piece.last {
 				// Spreading an owned tuple moves its elements into the new tuple, so the
 				// spread operand is consumed.
-				c.consumeIntoLiteral(spread.Value, op, stmtRef, hasStmtRef)
+				c.consumeSpreadIntoLiteral(scope, spread.Value, op, stmtRef, hasStmtRef)
 			}
 			pieces = append(pieces, piece)
 		case *soltype.ErrorType:
@@ -3323,12 +3335,12 @@ func (c *checker) inferTuple(scope *Scope, lvl int, e *ast.TupleExpr) soltype.Ty
 			}
 			pieces = append(pieces, tuplePiece{shape: &tupleShape{rest: elem}})
 			variadic = true
-			c.consumeIntoLiteral(spread.Value, op, stmtRef, hasStmtRef)
+			c.consumeSpreadIntoLiteral(scope, spread.Value, op, stmtRef, hasStmtRef)
 		}
 	}
 	var t soltype.Type
 	if variadic {
-		t = c.variadicLiteral(pieces, stmtRef, hasStmtRef)
+		t = c.variadicLiteral(scope, pieces, stmtRef, hasStmtRef)
 	} else {
 		t = c.fixedLiteral(pieces)
 	}
@@ -3381,8 +3393,9 @@ func (c *checker) fixedLiteral(pieces []tuplePiece) *soltype.TupleType {
 //
 // `[0, ...xs]` over `xs: Array<number>` is `[0, ...Array<number>]`, which keeps the
 // minimum length of one. A literal with no fixed value on either side is the `Array`
-// itself, so `[...xs]` is `Array<number>`.
-func (c *checker) variadicLiteral(pieces []tuplePiece, stmtRef liveness.StmtRef, hasStmtRef bool) soltype.Type {
+// itself, so `[...xs]` is `Array<number>`. scope resolves the root of a spread operand
+// the literal moves.
+func (c *checker) variadicLiteral(scope *Scope, pieces []tuplePiece, stmtRef liveness.StmtRef, hasStmtRef bool) soltype.Type {
 	var prefix, middle, suffix []soltype.Type
 	inMiddle := false
 	addVariadic := func(shape tupleShape) {
@@ -3403,7 +3416,7 @@ func (c *checker) variadicLiteral(pieces []tuplePiece, stmtRef liveness.StmtRef,
 			addVariadic(*piece.shape)
 		case piece.inexact != nil:
 			if !piece.last {
-				c.consumeIntoLiteral(piece.spread.Value, piece.inexact, stmtRef, hasStmtRef)
+				c.consumeSpreadIntoLiteral(scope, piece.spread.Value, piece.inexact, stmtRef, hasStmtRef)
 			}
 			addVariadic(tupleShape{prefix: piece.inexactPrefix, rest: &soltype.UnknownType{}})
 		case inMiddle:
@@ -3469,7 +3482,7 @@ func (c *checker) inferObject(scope *Scope, lvl int, e *ast.ObjectExpr) soltype.
 			inexact = inexact || obj.Inexact
 			// Spreading an owned object moves it into the new object, the object twin of the
 			// array-spread move.
-			c.consumeIntoLiteral(spread.Value, op, stmtRef, hasStmtRef)
+			c.consumeSpreadIntoLiteral(scope, spread.Value, op, stmtRef, hasStmtRef)
 			continue
 		}
 		prop, ok := elem.(*ast.PropertyExpr)
@@ -3495,7 +3508,7 @@ func (c *checker) inferObject(scope *Scope, lvl int, e *ast.ObjectExpr) soltype.
 			// JavaScript evaluates a computed key before the value it labels.
 			keyT := c.inferExpr(scope, lvl, computed.Expr)
 			ft := c.inferExpr(scope, lvl, value)
-			c.consumeIntoLiteral(value, ft, stmtRef, hasStmtRef)
+			c.consumeIntoLiteral(scope, value, ft, stmtRef, hasStmtRef)
 			keyName, keySet, ok := c.computedObjKey(computed, keyT)
 			switch {
 			case !ok:
@@ -3515,7 +3528,7 @@ func (c *checker) inferObject(scope *Scope, lvl int, e *ast.ObjectExpr) soltype.
 		// A literal property is never optional or readonly.
 		operandElems = append(operandElems, []soltype.ObjTypeElem{&soltype.PropertyElem{Name: name, Type: ft}})
 		// Building an owned value into the object moves it.
-		c.consumeIntoLiteral(value, ft, stmtRef, hasStmtRef)
+		c.consumeIntoLiteral(scope, value, ft, stmtRef, hasStmtRef)
 	}
 	elems := mergeSpreadOperands(operandElems)
 	if len(sigKeys) > 0 {

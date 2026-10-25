@@ -40,14 +40,11 @@ type checker struct {
 	// to the member's name, which the expression does not carry. funcName reads it.
 	memberFuncNames map[*ast.FuncExpr]string
 
-	// sharedReturns holds every function, by its FuncDecl or FuncExpr node, whose body may
-	// return a value a binding outside its frame also reaches. callReturnsOwned reads it, so a
-	// call of such a function does not hand its caller an owned value.
-	sharedReturns set.Set[ast.Node]
-	// librarySharedReturns is the library's sharedReturns when this checker checks a script
-	// against a library, and nil otherwise. A script reads it but records its own functions in
-	// sharedReturns, so a re-checked script leaves the library's set as it was.
-	librarySharedReturns set.Set[ast.Node]
+	// capturesMovedBy maps each closure whose body moves a local it captures to the names of
+	// those locals, each mapped to the expression in the closure that moves it.
+	// recordCaptureLoans moves them out of the enclosing body where the closure is written, and
+	// consumeOnceCallee moves a binding holding the closure at each call.
+	capturesMovedBy map[ast.Func]map[string]ast.Node
 
 	// pendingRecvReads holds the member reads off inferred receivers that top-level bodies
 	// collected. A value initializer can still pass such a body to a call that types its
@@ -429,6 +426,9 @@ type funcCtx struct {
 	// immutable→mutable upgrade at a `mut` return annotation. The upgrade fires only when
 	// every returned value is uniquely owned, so the join of the returns is too.
 	returnExprs []ast.Expr
+	// returnsBorrow is true when the function's return annotation is a borrow, `&T` or
+	// `&mut T`.
+	returnsBorrow bool
 
 	// throws is this body's exceptional SINK: the single type every `throw` and every call
 	// is constrained against, the twin of the joined return type. inferFunc seeds it from
@@ -530,6 +530,9 @@ type funcCtx struct {
 	// such as the b in `val y = b`. checkUsesAgainstLoans reads it to report a move of
 	// borrowed data as a move rather than as a plain use.
 	movedSources set.Set[ast.Node]
+	// outerMoves holds each expression rejectOuterMove has reported, so a move that two sites
+	// record reports once.
+	outerMoves set.Set[ast.Node]
 	// placeCopies lists each place a binding takes its value from, such as the b in `val q = b`
 	// or in `a.peer = b`. movedOrigins keeps the ones movedSources says were moved, so the
 	// escape check can follow a local into the binding that owns its data afterwards.
@@ -594,12 +597,9 @@ type funcCtx struct {
 	// captureVarIDs holds the VarID of every local a closure's body captures. The pre-pass
 	// defines each as a parameter of the body, so each is in paramVarIDs too.
 	captureVarIDs set.Set[liveness.VarID]
-	// shared records which bindings of this body may hold a value a binding outside the frame
-	// also reaches. collectSharedLocals builds it before the walk, and the walk grows it.
-	shared *sharedState
-	// returnsShared records that some `return` in this body may return a value a binding
-	// outside the frame also reaches.
-	returnsShared bool
+	// capturesModule is true when this body is a module's function, whose captures are the
+	// module-level names it reads rather than locals of an enclosing body.
+	capturesModule bool
 	// capturedLocals holds, for each closure written in this body, the locals of this body it
 	// captures that hold a reference-shaped value.
 	capturedLocals map[ast.Func][]capturedLocal
@@ -904,7 +904,6 @@ func newChecker() *checker {
 		varIDCounter: 1,
 		varIDs:       liveness.NewVarIDs(),
 	}
-	c.sharedReturns = set.NewSet[ast.Node]()
 	c.ctx.fusionRecorder = c.recordFusionEdge
 	c.info.ctx = c.ctx
 	registerIteratorResultAliases(c.ctx)
@@ -944,8 +943,6 @@ func (c *checker) forScript(pkgURI string) *checker {
 		groups:            c.groups,
 		checkJsDecorators: c.checkJsDecorators,
 	}
-	sc.sharedReturns = set.NewSet[ast.Node]()
-	sc.librarySharedReturns = c.sharedReturns
 	// Point the recorder at the script, so a fusion its walk records lands in the
 	// script's Prov table rather than the module's.
 	sc.ctx.fusionRecorder = sc.recordFusionEdge

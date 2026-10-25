@@ -517,6 +517,10 @@ func (c *checker) movesSourceInto(source ast.Expr, destT soltype.Type) bool {
 // an explicit `&p` initializer, which is a BorrowExpr rather than a plain
 // identifier and so names no owned source to consume.
 func (c *checker) consumeBindingInit(vd *ast.VarDecl, bindingT soltype.Type, stmt ast.Stmt) {
+	// inferVarDeclInit reported a move out of a module-level binding, which records no move.
+	if c.fn.outerMoves.Contains(vd.Init) {
+		return
+	}
 	if !c.movesSourceInto(vd.Init, bindingT) {
 		return
 	}
@@ -677,7 +681,8 @@ func (c *checker) consumeAtGlobalWrite(source ast.Expr, sourceT soltype.Type, mo
 // use-after-move. A value-type element copies and a non-place element names no
 // storage, so neither consumes. hasRef is false when the literal has no resolvable
 // statement point, in which case nothing is recorded rather than mis-attributing the
-// move to the zero StmtRef.
+// move to the zero StmtRef. An element moved out of a module-level binding is reported
+// by rejectOuterMove instead and records no move. scope resolves the element's root.
 //
 // inferTuple and inferObject call it for each element built from a source place:
 //
@@ -691,8 +696,8 @@ func (c *checker) consumeAtGlobalWrite(source ast.Expr, sourceT soltype.Type, mo
 //	val ys = [pair.a]   // pair.a moves into the tuple
 //	pair.a              // ERROR: use of moved value 'pair.a'
 //	pair.b              // OK: sibling untouched
-func (c *checker) consumeIntoLiteral(el ast.Expr, elemT soltype.Type, ref liveness.StmtRef, hasRef bool) {
-	if !hasRef {
+func (c *checker) consumeIntoLiteral(scope *Scope, el ast.Expr, elemT soltype.Type, ref liveness.StmtRef, hasRef bool) {
+	if c.rejectOuterMove(scope, el, elemT) || !hasRef {
 		return
 	}
 	c.consumeOwned(el, elemT, el, ref)
