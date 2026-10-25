@@ -266,6 +266,72 @@ borrow and a mutable borrow.
   mutability belongs to its type. The first error appears at the first write.
   #2223 tracks a diagnostic at the binding itself.
 
+### 3.5 Guesses, heuristics and overrides
+
+A `.d.ts` file says nothing about ownership, mutability or lifetimes, so every
+answer the conversion gives is a guess, and some guesses will be wrong. The
+conversion makes these guesses today:
+
+- A mutable `T[]` return is owned, as 3.2 describes. A package that keeps the
+  array gets two owners for it.
+- A readonly return is an immutable `'static` borrow. A function that builds a
+  fresh readonly array is rejected more often than it needs to be.
+- A parameter moves nothing, as 3.3 describes. A function that keeps or mutates
+  its argument is unsound to call.
+- Every borrowed return has the `'static` lifetime. A function whose result
+  borrows from an argument, such as `first<T>(xs: readonly T[]): T`, is not
+  tied to that argument.
+
+Heuristics can improve these guesses. None of them is implemented yet for
+ownership or lifetimes.
+
+- **Readonly returns.** Section 4.2 ranks the signals for telling a fresh
+  return from a shared one: an annotation, the declaration form, the
+  parameters, and the function name. #2219 tracks this.
+- **Parameters.** The function name and the parameter name both carry a signal.
+  `register`, `add`, `subscribe` and `set` suggest the function keeps its
+  argument. `sort`, `fill`, `push` and a parameter named `out`, `target` or
+  `dest` suggest a mutable borrow. #2222 tracks this.
+- **Lifetimes.** Phase 12 of `planning/lifetimes/implementation_plan.md` lists
+  rules for tying a returned borrow to a parameter. For example, a return whose
+  type matches a parameter's type is assumed to alias it, and a method that
+  returns `this` aliases its receiver. No ticket tracks these rules yet.
+- **Receiver mutability.** `Classify` in `internal/dts_to_esc/mutability.go`
+  already decides whether a method mutates `self`. It uses a `get` prefix rule
+  and other name heuristics, below user and built-in overrides. #577 and #500
+  cover this.
+
+When a guess is wrong, the fix is an override. An override restates a
+package's declaration in Escalier syntax, and the stated types replace the
+converted ones. `planning/interop_mutability/requirements.md` defines the
+format:
+
+- Override files are `.esc` files under an `overrides/` directory next to a
+  `package.json`.
+- The consuming project's own `overrides/` wins over overrides a dependency
+  ships in `node_modules/<dep>/overrides/`, and both win over the built-in
+  overrides bundled with the compiler.
+- An `override declare module "x" { ... }` block patches the exports of
+  package `x`. `override declare global { ... }` patches globals.
+
+An override that fixes the cases above could read:
+
+```esc
+override declare module "some-lib" {
+  export fn range(n: number) -> Array<number>             // fresh, so owned
+  export fn getItems() -> &'static mut Array<Item>        // shared and mutable
+  export fn register(handlers: Array<Handler>) -> void    // keeps handlers
+  export fn sortInPlace(xs: &mut Array<number>) -> void   // mutates xs
+  export fn first<'a, T>(xs: &'a Array<T>) -> &'a T       // borrows from xs
+}
+```
+
+Nothing reads override files yet. `OverrideLookup` in
+`internal/dts_to_esc/mutability.go` has no implementation, so every caller
+passes a nil store. #2207 tracks loading override files in `internal/solver`.
+The override format covers receiver mutability today. It also needs to carry
+return and parameter ownership, mutability and lifetimes, as 4.3 says.
+
 ## 4. Fresh versus shared readonly returns
 
 Every readonly return is an immutable `'static` borrow today. That is sound but too strict
@@ -425,6 +491,7 @@ adopts them.
 - #2218: readonly collections returned through type aliases. Fixed by #2220.
 - #2219: telling a fresh readonly return from a shared one.
 - #2222: the ownership and mutability of `.d.ts` parameters.
+- #2207: loading interop override files for `.d.ts` packages.
 - #2223: a diagnostic for `val mut` on a borrow.
 - #2230: a module-level initializer can give one mutable value two owners.
 - #2231: a module-level value can be moved twice by module-level initializers.
