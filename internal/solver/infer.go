@@ -271,6 +271,11 @@ type checker struct {
 	// ambientBound is set once bindAmbientExports has loaded the literal classes' packages
 	// in a run with Options.NoAmbientNames set.
 	ambientBound bool
+	// heldLoadErrs maps a package URI to the diagnostics its library load returned,
+	// and heldLoadOrder lists each of those once, in load order. holdLoadErrors fills
+	// both.
+	heldLoadErrs  map[string]*heldLoadErrors
+	heldLoadOrder []*heldLoadErrors
 	// regexpReported is set once the run has reported that it loaded no usable `RegExp`,
 	// so a second regex literal does not report it again.
 	regexpReported bool
