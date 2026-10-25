@@ -77,6 +77,30 @@ export fn tally() { return &mut counts }                   // fn () -> &mut Arra
 A caller of `tally` can push to the array, but cannot move it or keep it as an
 owned value. Taking `&mut` of an immutable module-level `val` is rejected.
 
+An importer sees each function's inferred signature and each module-level
+value's declared type. With the declarations above in a package named `stats`,
+an importer reads them like this:
+
+```esc
+import "stats"
+
+val a = stats.get()                        // &Array<number>
+val b = stats.tally()                      // &mut Array<number>
+val c = stats.fresh()                      // [1, 2]
+val d = stats.copyOf()                     // Array<number>
+
+fn read() { val r = &stats.xs }            // r: &Array<number>
+fn write() { val w = &mut stats.counts }   // w: &mut Array<number>
+fn take() { val m = stats.counts }         // rejected
+```
+
+`stats.counts` itself keeps the type it was declared with, `mut Array<number>`.
+It is not a borrow. The rule from 2.1 is what stops `take`, which reports
+`cannot move module-level value 'stats.counts' inside a function. Borrow it with
+&stats.counts`. Taking `&mut stats.xs` reports `cannot constrain immutable
+Array<number> <: mutable Array<number>`. Under the proposal in 2.5,
+`stats.counts` would itself type as `&'static mut Array<number>`.
+
 Nothing about an Escalier package needs a heuristic. A package author who wants
 callers to own a result returns a fresh value. One who wants to share state
 returns an immutable borrow, or a mutable borrow when callers may change it.
@@ -96,8 +120,9 @@ The rules in 2.1 run only inside function bodies. Three cases slip past them:
 - A module-level initializer can move another module-level value. With
   `val ys: mut Array<number> = xs`, both bindings own the same array, and a
   function can mutate it through either one. `Holder(xs)`, `take(xs)` and
-  `{items: xs}` in an initializer hand `xs` to a new owner the same way. #2230
-  tracks this.
+  `{items: xs}` in an initializer hand `xs` to a new owner the same way, and so
+  does an importer's initializer such as `val m = stats.counts`. #2230 tracks
+  this.
 - Two initializers can move the same value, as in `val ys = xs` followed by
   `val zs = xs`. #2231 tracks this.
 - A method that takes owned `self` moves a module-level receiver inside a
