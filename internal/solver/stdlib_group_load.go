@@ -150,8 +150,12 @@ func (c *checker) loadPackageGroup(group []string, span ast.Span) []SolverError 
 	defer func() { c.memberNamespaces = prevMembers }()
 
 	c.bindFileImports(scope, module)
-	c.inferDepGraph(scope, 0, module,
-		dep_graph.BuildDepGraphWithImports(module, memberImportNamespaces(module, c.activeGroup)))
+	// Inference only reads the graph, and a group's graph depends on its module and
+	// members alone, so every run loading the same cached group shares one graph.
+	g := stdlibParses.depGraph(module, group, func() *dep_graph.DepGraph {
+		return dep_graph.BuildDepGraphWithImports(module, memberImportNamespaces(module, c.activeGroup))
+	})
+	c.inferDepGraph(scope, 0, module, g)
 
 	errs := c.errs
 	c.errs = prevErrs

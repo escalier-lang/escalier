@@ -27,8 +27,8 @@ func (s *scope) lookup(name string) (VarID, bool) {
 	return 0, false
 }
 
-// RenameResult holds the output of the rename pass for a function body.
-// VarIDs are stored directly on AST nodes (IdentExpr, IdentPat, etc.).
+// RenameResult holds the output of the rename pass for a function body. The
+// VarIDs themselves go in the VarIDs table the pass was given.
 type RenameResult struct {
 	// UniqueVarCount is the number of distinct local variables found (for sizing
 	// data structures in later phases).
@@ -57,6 +57,7 @@ type RenameError struct {
 
 // renamer holds the mutable state of the rename pass.
 type renamer struct {
+	ids        *VarIDs
 	nextID     VarID
 	scope      *scope
 	errors     []RenameError
@@ -66,10 +67,11 @@ type renamer struct {
 	nested bool
 }
 
-func newRenamer(outerBindings map[string]VarID, firstID VarID) *renamer {
+func newRenamer(ids *VarIDs, outerBindings map[string]VarID, firstID VarID) *renamer {
 	s := newScope(nil)
 	maps.Copy(s.bindings, outerBindings)
 	return &renamer{
+		ids:        ids,
 		nextID:     firstID,
 		scope:      s,
 		varIDNames: make(map[VarID]string),
@@ -109,8 +111,7 @@ func (r *renamer) resolve(name string, span ast.Span) VarID {
 
 // Rename walks a function body, assigns VarIDs to all local binding and
 // use sites, and validates that all variable uses resolve to in-scope
-// bindings. VarIDs are set directly on AST nodes (IdentExpr.VarID,
-// IdentPat.VarID, etc.). Module-level and prelude bindings are supplied
+// bindings. It records each VarID in ids, keyed by the node it names. Module-level and prelude bindings are supplied
 // via outerBindings so that free variables can be distinguished from
 // truly unresolved names.
 //
@@ -122,10 +123,9 @@ func (r *renamer) resolve(name string, span ast.Span) VarID {
 // params are the function's parameters — they are assigned local VarIDs
 // and are in scope for the entire body.
 //
-// After this function returns, the internal scope stack is discarded.
-// All downstream phases read VarIDs directly from AST nodes.
-func Rename(params []*ast.Param, body ast.Block, outerBindings map[string]VarID, extraParamNames ...string) *RenameResult {
-	return RenameFrom(params, body, outerBindings, 1, extraParamNames...)
+// Downstream phases read the VarIDs back from ids.
+func Rename(ids *VarIDs, params []*ast.Param, body ast.Block, outerBindings map[string]VarID, extraParamNames ...string) *RenameResult {
+	return RenameFrom(ids, params, body, outerBindings, 1, extraParamNames...)
 }
 
 // RenameFrom is Rename with an explicit starting id for the positive local VarIDs.
@@ -136,8 +136,8 @@ func Rename(params []*ast.Param, body ast.Block, outerBindings map[string]VarID,
 // tables can no longer collide with an unrelated local. firstID must be >= 1. The id 0
 // is the unset sentinel, and negative ids mark non-local bindings. The next free id is
 // firstID + the returned UniqueVarCount.
-func RenameFrom(params []*ast.Param, body ast.Block, outerBindings map[string]VarID, firstID VarID, extraParamNames ...string) *RenameResult {
-	r := newRenamer(outerBindings, firstID)
+func RenameFrom(ids *VarIDs, params []*ast.Param, body ast.Block, outerBindings map[string]VarID, firstID VarID, extraParamNames ...string) *RenameResult {
+	r := newRenamer(ids, outerBindings, firstID)
 
 	// Process function parameters — they are in scope for the entire body.
 	// Parameters share the root scope with outerBindings. This is fine because
@@ -232,7 +232,7 @@ func (r *renamer) renameDecl(decl ast.Decl) {
 	case *ast.FuncDecl:
 		// The function name is a binding in the current scope.
 		if d.Name != nil {
-			d.VarID = int(r.define(d.Name.Name))
+			r.ids.Set(d, r.define(d.Name.Name))
 		}
 		// Don't recurse into the function body — it gets its own rename
 		// pass when inferFuncBody is called for it.
@@ -257,7 +257,7 @@ func (r *renamer) renamePat(pat ast.Pat) {
 		if p.Default != nil {
 			r.renameExpr(p.Default)
 		}
-		p.VarID = int(r.define(p.Name))
+		r.ids.Set(p, r.define(p.Name))
 	case *ast.ObjectPat:
 		for _, elem := range p.Elems {
 			switch e := elem.(type) {
@@ -267,7 +267,7 @@ func (r *renamer) renamePat(pat ast.Pat) {
 				if e.Default != nil {
 					r.renameExpr(e.Default)
 				}
-				e.VarID = int(r.define(e.Key.Name))
+				r.ids.Set(e, r.define(e.Key.Name))
 			case *ast.ObjRestPat:
 				r.renamePat(e.Pattern)
 			}
@@ -294,7 +294,7 @@ func (r *renamer) renamePat(pat ast.Pat) {
 func (r *renamer) renameExpr(expr ast.Expr) {
 	switch e := expr.(type) {
 	case *ast.IdentExpr:
-		e.VarID = int(r.resolve(e.Name, e.Span()))
+		r.ids.Set(e, r.resolve(e.Name, e.Span()))
 	case *ast.BinaryExpr:
 		// For assignment, the RHS is evaluated first, then the LHS is
 		// resolved (it's a use site for reassignment, not a new binding).

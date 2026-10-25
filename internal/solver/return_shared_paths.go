@@ -249,14 +249,14 @@ func (c *checker) elementReferents(
 		if _, ok := c.isLocalReferent(borrow.Arg); !ok {
 			return nil
 		}
-		p, ok := exprPlace(borrow.Arg)
+		p, ok := c.exprPlace(borrow.Arg)
 		if !ok || p.root <= 0 {
 			return nil
 		}
 		pl = p
 		out = append(out, elementReach{place: pl, mut: borrow.Mut})
 	} else {
-		p, ok := exprPlace(elem)
+		p, ok := c.exprPlace(elem)
 		if !ok || p.root <= 0 {
 			return nil
 		}

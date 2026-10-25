@@ -146,7 +146,7 @@ func (c *checker) returnIndexOf(e ast.Expr) int {
 //     rewrite. The component move still consumes the borrowed local; only the type keeps its
 //     borrow.
 func (c *checker) carrierGraph(e ast.Expr, snapshot map[liveness.VarID][]fieldBorrow) (map[liveness.VarID][]fieldBorrow, liveness.VarID, bool) {
-	if p, ok := exprPlace(e); ok && p.root > 0 && len(p.path) == 0 {
+	if p, ok := c.exprPlace(e); ok && p.root > 0 && len(p.path) == 0 {
 		return snapshot, p.root, true
 	}
 	switch e.(type) {
