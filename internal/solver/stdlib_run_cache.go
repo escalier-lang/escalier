@@ -63,10 +63,14 @@ var ambientCheckers = struct {
 	order   []ambientKey
 }{entries: map[ambientKey]*ambientEntry{}}
 
-// ambientChecker returns a checker for one run against the tree in dir, with the
-// prelude and the ambient packages loaded and bound. The run loads every other
-// package through source. groups are the run's groups from BuildPackageClosure. ok is false when a file in the closure cannot be read or
-// an earlier load of the same tree panicked, and the caller then starts from
+// ambientChecker returns a checker for one run against the standard library in dir,
+// with the prelude and the ambient packages loaded and bound. dir is the root of the
+// stdlib tree, the directory holding the `std/` and `web/` pseudo-package files, so
+// one dir serves every package checked against that stdlib.
+//
+// The run loads every other package through source. groups are the run's groups from
+// BuildPackageClosure. ok is false when a file in the closure cannot be read or an
+// earlier load of the same tree panicked, and the caller then starts from
 // newRunChecker.
 func ambientChecker(dir string, source ModuleSource, groups PackageGroups, opts Options) (c *checker, ok bool) {
 	key, ok := ambientKeyOf(dir, groups, opts)
