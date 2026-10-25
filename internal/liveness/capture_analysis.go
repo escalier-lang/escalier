@@ -31,13 +31,14 @@ type CaptureInfo struct {
 // as mutable even though primitives have value semantics. The caller
 // (trackCapturedAliases in the checker) is responsible for skipping alias
 // tracking for value types.
-func AnalyzeCaptures(fn ast.Func) []CaptureInfo {
+func AnalyzeCaptures(ids *VarIDs, fn ast.Func) []CaptureInfo {
 	body := fn.FuncBody()
 	if body == nil || len(body.Stmts) == 0 {
 		return nil
 	}
 
 	v := &captureVisitor{
+		ids:      ids,
 		captures: make(map[VarID]CaptureInfo),
 	}
 	body.Accept(v)
@@ -52,17 +53,18 @@ func AnalyzeCaptures(fn ast.Func) []CaptureInfo {
 //   - A `&mut` borrow of a captured variable, or of a place rooted at one, counts as a write.
 //
 // outerBindings maps each name visible where `closure` is written to a negative VarID.
-// ClosureCaptures renames `closure`'s body and every body nested in it, so each body has to be
-// renamed again before anything reads its VarIDs.
-func ClosureCaptures(closure ast.Func, outerBindings map[string]VarID) []CaptureInfo {
+// ClosureCaptures renames `closure`'s body and every body nested in it into ids, so each body
+// has to be renamed again before anything reads its VarIDs.
+func ClosureCaptures(ids *VarIDs, closure ast.Func, outerBindings map[string]VarID) []CaptureInfo {
 	body := closure.FuncBody()
 	if body == nil {
 		return nil
 	}
-	r := newRenamer(outerBindings, 1)
+	r := newRenamer(ids, outerBindings, 1)
 	r.nested = true
 	r.renameNestedFunc(closure.Signature().Params, body)
 	v := &captureVisitor{
+		ids:      ids,
 		captures: make(map[VarID]CaptureInfo),
 		nested:   true,
 	}
@@ -92,6 +94,7 @@ func (v *captureVisitor) sorted() []CaptureInfo {
 // handling.
 type captureVisitor struct {
 	ast.DefaultVisitor
+	ids      *VarIDs
 	captures map[VarID]CaptureInfo
 	// nested makes the walk descend into nested function bodies and count a `&mut` borrow
 	// of a capture as a write.
@@ -100,8 +103,7 @@ type captureVisitor struct {
 
 // recordCapture records a read-only capture for an outer variable reference.
 // If the variable is already recorded (possibly as mutable), this is a no-op.
-func (v *captureVisitor) recordCapture(varID int, name string) {
-	id := VarID(varID)
+func (v *captureVisitor) recordCapture(id VarID, name string) {
 	if _, exists := v.captures[id]; !exists {
 		v.captures[id] = CaptureInfo{ID: id, Name: name, IsMutable: false}
 	}
@@ -110,8 +112,7 @@ func (v *captureVisitor) recordCapture(varID int, name string) {
 // markMutable marks a captured variable as mutably captured. This is called
 // when the variable (or a property/index path rooted at it) appears on the
 // left side of an assignment.
-func (v *captureVisitor) markMutable(varID int, name string) {
-	id := VarID(varID)
+func (v *captureVisitor) markMutable(id VarID, name string) {
 	info := v.captures[id]
 	info.ID = id
 	info.Name = name
@@ -127,8 +128,8 @@ func (v *captureVisitor) markMutable(varID int, name string) {
 func (v *captureVisitor) markMutableLHS(lhs ast.Expr) {
 	switch e := lhs.(type) {
 	case *ast.IdentExpr:
-		if e.VarID < 0 {
-			v.markMutable(e.VarID, e.Name)
+		if id := v.ids.Of(e); id < 0 {
+			v.markMutable(id, e.Name)
 		}
 	case *ast.MemberExpr:
 		v.markMutableLHS(e.Object)
@@ -152,8 +153,8 @@ func (v *captureVisitor) markMutableLHS(lhs ast.Expr) {
 func (v *captureVisitor) EnterExpr(expr ast.Expr) bool {
 	switch e := expr.(type) {
 	case *ast.IdentExpr:
-		if e.VarID < 0 {
-			v.recordCapture(e.VarID, e.Name)
+		if id := v.ids.Of(e); id < 0 {
+			v.recordCapture(id, e.Name)
 		}
 		return true
 	case *ast.BinaryExpr:
@@ -254,8 +255,8 @@ func (v *captureVisitor) walkJSXChildren(children []ast.JSXChild) {
 // the name IS a variable reference, so we must check it here.
 func (v *captureVisitor) EnterObjExprElem(elem ast.ObjExprElem) bool {
 	if prop, ok := elem.(*ast.PropertyExpr); ok && prop.Value == nil {
-		if ident, ok := prop.Name.(*ast.IdentExpr); ok && ident.VarID < 0 {
-			v.recordCapture(ident.VarID, ident.Name)
+		if ident, ok := prop.Name.(*ast.IdentExpr); ok && v.ids.Of(ident) < 0 {
+			v.recordCapture(v.ids.Of(ident), ident.Name)
 		}
 	}
 	return true

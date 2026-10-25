@@ -32,14 +32,19 @@ type CFG struct {
 	Exit            *BasicBlock
 	Blocks          []*BasicBlock
 	decomposedStmts []decomposedStmt
+	// ids holds the VarIDs of the body the CFG was built from.
+	ids *VarIDs
 }
 
 // BuildCFG constructs a control flow graph from a function body.
 // Each basic block contains a sequence of statements with no internal
 // branching. Control flow constructs (if/else, match, for-in, etc.) are
 // decomposed into separate blocks connected by edges.
-func BuildCFG(body ast.Block) *CFG {
-	b := &cfgBuilder{}
+//
+// ids holds the VarIDs the rename pass assigned to the body. The CFG keeps it, so
+// AnalyzeFunction reads the same table.
+func BuildCFG(ids *VarIDs, body ast.Block) *CFG {
+	b := &cfgBuilder{ids: ids}
 	entry := b.newBlock()
 	exit := b.newBlock()
 	b.exit = exit
@@ -49,7 +54,7 @@ func BuildCFG(body ast.Block) *CFG {
 		b.addEdge(final, exit)
 	}
 
-	return &CFG{Entry: entry, Exit: exit, Blocks: b.blocks, decomposedStmts: b.decomposedStmts}
+	return &CFG{Entry: entry, Exit: exit, Blocks: b.blocks, decomposedStmts: b.decomposedStmts, ids: ids}
 }
 
 // BuildStmtToRef constructs a mapping from AST statement nodes to their
@@ -76,6 +81,7 @@ func BuildStmtToRef(cfg *CFG) map[ast.Stmt]StmtRef {
 
 // cfgBuilder accumulates basic blocks while walking the AST.
 type cfgBuilder struct {
+	ids             *VarIDs
 	blocks          []*BasicBlock
 	exit            *BasicBlock
 	decomposedStmts []decomposedStmt
@@ -182,8 +188,8 @@ func (b *cfgBuilder) processAssignBranch(be *ast.BinaryExpr, current *BasicBlock
 	// Only track local variables (VarID > 0). Non-local idents (VarID < 0)
 	// are ignored by liveness analysis, so they don't need joinDefs.
 	var joinDefs []VarID
-	if ident, ok := be.Left.(*ast.IdentExpr); ok && ident.VarID > 0 {
-		joinDefs = []VarID{VarID(ident.VarID)}
+	if ident, ok := be.Left.(*ast.IdentExpr); ok && b.ids.Of(ident) > 0 {
+		joinDefs = []VarID{b.ids.Of(ident)}
 	} else {
 		// For member/index access, the LHS is evaluated before branching
 		// (e.g., obj and idx in obj[idx] = if ...). Add it as a synthetic
@@ -215,7 +221,7 @@ func (b *cfgBuilder) processDeclStmt(s *ast.DeclStmt, current *BasicBlock) *Basi
 		return b.processValElse(vd, current)
 	}
 
-	joinDefs := collectPatVarDefs(vd.Pattern)
+	joinDefs := b.collectPatVarDefs(vd.Pattern)
 	if join := b.decomposeBranch(vd.Init, joinDefs, current); join != nil {
 		b.recordDecomposed(s, join)
 		return join
@@ -239,7 +245,7 @@ func (b *cfgBuilder) processValElse(vd *ast.VarDecl, current *BasicBlock) *Basic
 	}
 
 	join := b.newBlock()
-	join.ExtraDefs = collectPatVarDefs(vd.Pattern)
+	join.ExtraDefs = b.collectPatVarDefs(vd.Pattern)
 
 	elseBlock := b.newBlock()
 	b.addEdge(current, elseBlock)
@@ -328,7 +334,7 @@ func (b *cfgBuilder) processIfVal(e *ast.IfValExpr, joinDefs []VarID, current *B
 
 	// Consequent branch with pattern bindings.
 	consBlock := b.newBlock()
-	consBlock.ExtraDefs = collectPatVarDefs(e.Pattern)
+	consBlock.ExtraDefs = b.collectPatVarDefs(e.Pattern)
 	b.addEdge(current, consBlock)
 	consEnd := b.processStmts(e.Cons.Stmts, consBlock)
 	if consEnd != nil {
@@ -359,7 +365,7 @@ func (b *cfgBuilder) processMatch(e *ast.MatchExpr, joinDefs []VarID, current *B
 
 	for _, mc := range e.Cases {
 		armBlock := b.newBlock()
-		armBlock.ExtraDefs = collectPatVarDefs(mc.Pattern)
+		armBlock.ExtraDefs = b.collectPatVarDefs(mc.Pattern)
 		b.addEdge(current, armBlock)
 
 		armStmts := blockOrExprToStmts(&mc.Body)
@@ -419,7 +425,7 @@ func (b *cfgBuilder) processTryCatch(e *ast.TryCatchExpr, joinDefs []VarID, curr
 	// than necessary rather than dropping them too early).
 	for _, mc := range e.Catch {
 		catchBlock := b.newBlock()
-		catchBlock.ExtraDefs = collectPatVarDefs(mc.Pattern)
+		catchBlock.ExtraDefs = b.collectPatVarDefs(mc.Pattern)
 		b.addEdge(tryBlock, catchBlock)
 		for _, tb := range tryBodyBlocks {
 			b.addEdge(tb, catchBlock)
@@ -454,7 +460,7 @@ func (b *cfgBuilder) processForIn(s *ast.ForInStmt, current *BasicBlock) *BasicB
 
 	// Body block with loop variable bindings.
 	bodyBlock := b.newBlock()
-	bodyBlock.ExtraDefs = collectPatVarDefs(s.Pattern)
+	bodyBlock.ExtraDefs = b.collectPatVarDefs(s.Pattern)
 	b.addEdge(header, bodyBlock)
 
 	bodyEnd := b.processStmts(s.Body.Stmts, bodyBlock)
@@ -486,8 +492,8 @@ func blockOrExprToStmts(boe *ast.BlockOrExpr) []ast.Stmt {
 }
 
 // collectPatVarDefs returns the VarIDs defined by a pattern.
-func collectPatVarDefs(pat ast.Pat) []VarID {
-	c := &collector{}
+func (b *cfgBuilder) collectPatVarDefs(pat ast.Pat) []VarID {
+	c := &collector{ids: b.ids}
 	c.collectPatDefs(pat)
 	return c.defs
 }

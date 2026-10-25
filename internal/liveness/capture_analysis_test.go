@@ -12,13 +12,13 @@ import (
 // findFuncExpr parses a script, finds the first FuncExpr in a variable
 // declaration, and runs the rename pass on both the outer scope and the
 // inner function body so that VarIDs are set correctly.
-func findFuncExpr(t *testing.T, input string) *ast.FuncExpr {
+func findFuncExpr(t *testing.T, ids *VarIDs, input string) *ast.FuncExpr {
 	t.Helper()
 	script := parseScript(t, input)
 
 	// Run rename on the outer scope to assign VarIDs to outer vars.
 	outerBindings := make(map[string]VarID)
-	Rename(nil, ast.Block{Stmts: script.Stmts}, outerBindings)
+	Rename(ids, nil, ast.Block{Stmts: script.Stmts}, outerBindings)
 
 	// Find the first FuncExpr in a variable declaration.
 	for _, stmt := range script.Stmts {
@@ -39,7 +39,7 @@ func findFuncExpr(t *testing.T, input string) *ast.FuncExpr {
 							}
 						}
 					}
-					Rename(funcExpr.FuncSig.Params, *funcExpr.Body, innerOuter)
+					Rename(ids, funcExpr.FuncSig.Params, *funcExpr.Body, innerOuter)
 					return funcExpr
 				}
 			}
@@ -68,51 +68,56 @@ func formatCaptures(captures []CaptureInfo) string {
 }
 
 func TestAnalyzeCaptures_ReadOnly(t *testing.T) {
-	funcExpr := findFuncExpr(t, `
+	ids := NewVarIDs()
+	funcExpr := findFuncExpr(t, ids, `
 		val items = [1, 2, 3]
 		val f = fn() { items }
 	`)
 
 	// items is read but not written — immutable capture
-	require.Equal(t, "items(immut)", formatCaptures(AnalyzeCaptures(funcExpr)))
+	require.Equal(t, "items(immut)", formatCaptures(AnalyzeCaptures(ids, funcExpr)))
 }
 
 func TestAnalyzeCaptures_MutableDirectAssign(t *testing.T) {
-	funcExpr := findFuncExpr(t, `
+	ids := NewVarIDs()
+	funcExpr := findFuncExpr(t, ids, `
 		var count = 0
 		val f = fn() { count = count + 1 }
 	`)
 
 	// count is assigned to inside the closure — mutable capture
-	require.Equal(t, "count(mut)", formatCaptures(AnalyzeCaptures(funcExpr)))
+	require.Equal(t, "count(mut)", formatCaptures(AnalyzeCaptures(ids, funcExpr)))
 }
 
 func TestAnalyzeCaptures_MutablePropertyAssign(t *testing.T) {
-	funcExpr := findFuncExpr(t, `
+	ids := NewVarIDs()
+	funcExpr := findFuncExpr(t, ids, `
 		val obj = {x: 0}
 		val f = fn() { obj.x = 1 }
 	`)
 
 	// obj.x is assigned — obj is mutably captured
-	require.Equal(t, "obj(mut)", formatCaptures(AnalyzeCaptures(funcExpr)))
+	require.Equal(t, "obj(mut)", formatCaptures(AnalyzeCaptures(ids, funcExpr)))
 }
 
 func TestAnalyzeCaptures_NoCaptures(t *testing.T) {
-	funcExpr := findFuncExpr(t, `
+	ids := NewVarIDs()
+	funcExpr := findFuncExpr(t, ids, `
 		val f = fn(x: number) { x + 1 }
 	`)
 
 	// No outer variables referenced — no captures
-	require.Equal(t, "[]", formatCaptures(AnalyzeCaptures(funcExpr)))
+	require.Equal(t, "[]", formatCaptures(AnalyzeCaptures(ids, funcExpr)))
 }
 
 func TestAnalyzeCaptures_ReadInAssignmentLHS(t *testing.T) {
+	ids := NewVarIDs()
 	// Build manually because parseFuncExpr picks the first FuncExpr,
 	// which would be getObj's function rather than f's.
 	// Build: fn() { getObj().field = 1 }
 	// where getObj is an outer reference (VarID = -1)
 	getObjIdent := ast.NewIdent("getObj", ast.Span{})
-	getObjIdent.VarID = -1
+	ids.Set(getObjIdent, -1)
 
 	callExpr := ast.NewCall(getObjIdent, nil, false, ast.Span{})
 	memberExpr := ast.NewMember(callExpr, ast.NewIdentifier("field", ast.Span{}), false, ast.Span{})
@@ -122,44 +127,48 @@ func TestAnalyzeCaptures_ReadInAssignmentLHS(t *testing.T) {
 	funcExpr := ast.NewFuncExpr(nil, nil, nil, nil, nil, false, body, ast.Span{})
 
 	// getObj is called (read) on the LHS of an assignment, not mutated itself
-	require.Equal(t, "getObj(immut)", formatCaptures(AnalyzeCaptures(funcExpr)))
+	require.Equal(t, "getObj(immut)", formatCaptures(AnalyzeCaptures(ids, funcExpr)))
 }
 
 func TestAnalyzeCaptures_JSXElement_ExprInChild(t *testing.T) {
-	funcExpr := findFuncExpr(t, `
+	ids := NewVarIDs()
+	funcExpr := findFuncExpr(t, ids, `
 		val captured = 1
 		val f = fn() { <div>{captured}</div> }
 	`)
 
 	// captured is used inside a JSX expression container in a child position
-	require.Equal(t, "captured(immut)", formatCaptures(AnalyzeCaptures(funcExpr)))
+	require.Equal(t, "captured(immut)", formatCaptures(AnalyzeCaptures(ids, funcExpr)))
 }
 
 func TestAnalyzeCaptures_JSXElement_ExprInAttr(t *testing.T) {
-	funcExpr := findFuncExpr(t, `
+	ids := NewVarIDs()
+	funcExpr := findFuncExpr(t, ids, `
 		val captured = 1
 		val f = fn() { <div prop={captured} /> }
 	`)
 
 	// captured is used inside a JSX attribute value
-	require.Equal(t, "captured(immut)", formatCaptures(AnalyzeCaptures(funcExpr)))
+	require.Equal(t, "captured(immut)", formatCaptures(AnalyzeCaptures(ids, funcExpr)))
 }
 
 func TestAnalyzeCaptures_JSXElement_SpreadAttr(t *testing.T) {
-	funcExpr := findFuncExpr(t, `
+	ids := NewVarIDs()
+	funcExpr := findFuncExpr(t, ids, `
 		val captured = {a: 1}
 		val f = fn() { <div {...captured} /> }
 	`)
 
 	// captured is used in a JSX spread attribute
-	require.Equal(t, "captured(immut)", formatCaptures(AnalyzeCaptures(funcExpr)))
+	require.Equal(t, "captured(immut)", formatCaptures(AnalyzeCaptures(ids, funcExpr)))
 }
 
 func TestAnalyzeCaptures_NestedFuncExpr_NotRecursedInto(t *testing.T) {
+	ids := NewVarIDs()
 	// Build manually: fn() { {f: fn() { outerRef }} }
 	// The nested function body contains outerRef but should NOT be recursed into.
 	outerRef := ast.NewIdent("outerRef", ast.Span{})
-	outerRef.VarID = -1
+	ids.Set(outerRef, -1)
 
 	innerBody := &ast.Block{Stmts: []ast.Stmt{ast.NewExprStmt(outerRef, ast.Span{})}}
 	innerFn := ast.NewFuncExpr(nil, nil, nil, nil, nil, false, innerBody, ast.Span{})
@@ -170,11 +179,12 @@ func TestAnalyzeCaptures_NestedFuncExpr_NotRecursedInto(t *testing.T) {
 	funcExpr := ast.NewFuncExpr(nil, nil, nil, nil, nil, false, body, ast.Span{})
 
 	// Nested function bodies are not walked — each gets its own capture analysis
-	require.Equal(t, "[]", formatCaptures(AnalyzeCaptures(funcExpr)))
+	require.Equal(t, "[]", formatCaptures(AnalyzeCaptures(ids, funcExpr)))
 }
 
 func TestAnalyzeCaptures_MultipleCaptures_SortedByVarID(t *testing.T) {
-	funcExpr := findFuncExpr(t, `
+	ids := NewVarIDs()
+	funcExpr := findFuncExpr(t, ids, `
 		val zebra = 1
 		val alpha = 2
 		val middle = 3
@@ -183,12 +193,13 @@ func TestAnalyzeCaptures_MultipleCaptures_SortedByVarID(t *testing.T) {
 
 	// Output is sorted by VarID (declaration order: zebra=-1, alpha=-2, middle=-3)
 	// which means reverse alphabetical in this case
-	require.Equal(t, "middle(immut), alpha(immut), zebra(immut)", formatCaptures(AnalyzeCaptures(funcExpr)))
+	require.Equal(t, "middle(immut), alpha(immut), zebra(immut)", formatCaptures(AnalyzeCaptures(ids, funcExpr)))
 }
 
 // TestClosureCaptures covers ClosureCaptures, which counts captures a nested function makes
 // and counts a `&mut` borrow of a capture as a write.
 func TestClosureCaptures(t *testing.T) {
+	ids := NewVarIDs()
 	tests := map[string]struct {
 		src  string
 		want string
@@ -239,9 +250,9 @@ func TestClosureCaptures(t *testing.T) {
 	}
 	for name, tc := range tests {
 		t.Run(name, func(t *testing.T) {
-			closure := findFuncExpr(t, tc.src)
+			closure := findFuncExpr(t, ids, tc.src)
 			outer := map[string]VarID{"x": -1}
-			require.Equal(t, tc.want, formatCaptures(ClosureCaptures(closure, outer)))
+			require.Equal(t, tc.want, formatCaptures(ClosureCaptures(ids, closure, outer)))
 		})
 	}
 }

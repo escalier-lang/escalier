@@ -61,34 +61,35 @@ func parseExpr(t *testing.T, input string) ast.Expr {
 	return exprStmt.Expr
 }
 
-// setVarIDs walks an expression AST and sets VarID on every IdentExpr whose
-// name appears in the provided map. This simulates what the rename pass does.
-func setVarIDs(expr ast.Expr, ids map[string]int) {
-	v := &varIDSetter{ids: ids}
+// setVarIDs walks an expression AST and records in table a VarID for every
+// IdentExpr whose name appears in ids. This simulates what the rename pass does.
+func setVarIDs(table *VarIDs, expr ast.Expr, ids map[string]int) {
+	v := &varIDSetter{table: table, ids: ids}
 	expr.Accept(v)
 }
 
 type varIDSetter struct {
 	ast.DefaultVisitor
-	ids map[string]int
+	table *VarIDs
+	ids   map[string]int
 }
 
 func (v *varIDSetter) EnterExpr(expr ast.Expr) bool {
 	if ident, ok := expr.(*ast.IdentExpr); ok {
 		if id, found := v.ids[ident.Name]; found {
-			ident.VarID = id
+			v.table.Set(ident, VarID(id))
 		}
 	}
 	return true
 }
 
-// EnterObjExprElem sets VarID on the key of a shorthand property `{x}`, which the
+// EnterObjExprElem records a VarID for the key of a shorthand property `{x}`, which the
 // visitor skips as a label but which rename resolves as a read of x.
 func (v *varIDSetter) EnterObjExprElem(elem ast.ObjExprElem) bool {
 	if prop, ok := elem.(*ast.PropertyExpr); ok && prop.Value == nil {
 		if ident, ok := prop.Name.(*ast.IdentExpr); ok {
 			if id, found := v.ids[ident.Name]; found {
-				ident.VarID = id
+				v.table.Set(ident, VarID(id))
 			}
 		}
 	}
@@ -96,23 +97,26 @@ func (v *varIDSetter) EnterObjExprElem(elem ast.ObjExprElem) bool {
 }
 
 func TestDetermineAliasSource_Identifier(t *testing.T) {
+	ids := NewVarIDs()
 	ident := ast.NewIdent("x", ast.Span{})
-	ident.VarID = 1
+	ids.Set(ident, 1)
 	names := map[VarID]string{1: "x"}
 
 	// A local identifier aliases the variable it refers to
-	require.Equal(t, "variable [x]", formatAliasSource(DetermineAliasSource(ident), names))
+	require.Equal(t, "variable [x]", formatAliasSource(DetermineAliasSource(ids, ident), names))
 }
 
 func TestDetermineAliasSource_NonLocalIdentifier(t *testing.T) {
+	ids := NewVarIDs()
 	ident := ast.NewIdent("x", ast.Span{})
-	ident.VarID = -1
+	ids.Set(ident, -1)
 
 	// Non-local variables (negative VarID) can't be tracked intraprocedurally
-	require.Equal(t, "unknown", formatAliasSource(DetermineAliasSource(ident), nil))
+	require.Equal(t, "unknown", formatAliasSource(DetermineAliasSource(ids, ident), nil))
 }
 
 func TestDetermineAliasSource_FreshExpressions(t *testing.T) {
+	ids := NewVarIDs()
 	tests := []struct {
 		name  string
 		input string
@@ -127,139 +131,154 @@ func TestDetermineAliasSource_FreshExpressions(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			expr := parseExpr(t, tc.input)
 			// Constructors and operators produce new values, not aliases
-			require.Equal(t, "fresh", formatAliasSource(DetermineAliasSource(expr), nil))
+			require.Equal(t, "fresh", formatAliasSource(DetermineAliasSource(ids, expr), nil))
 		})
 	}
 }
 
 func TestDetermineAliasSource_MemberExpr(t *testing.T) {
+	ids := NewVarIDs()
 	expr := parseExpr(t, "obj.field")
-	setVarIDs(expr, map[string]int{"obj": 5})
+	setVarIDs(ids, expr, map[string]int{"obj": 5})
 	names := map[VarID]string{5: "obj"}
 
 	// obj.field aliases obj — property access recurses into the object
-	require.Equal(t, "variable [obj]", formatAliasSource(DetermineAliasSource(expr), names))
+	require.Equal(t, "variable [obj]", formatAliasSource(DetermineAliasSource(ids, expr), names))
 }
 
 func TestDetermineAliasSource_MemberExpr_NonLocal(t *testing.T) {
+	ids := NewVarIDs()
 	expr := parseExpr(t, "obj.field")
-	setVarIDs(expr, map[string]int{"obj": -1})
+	setVarIDs(ids, expr, map[string]int{"obj": -1})
 
 	// Property access on a non-local object is still unknown
-	require.Equal(t, "unknown", formatAliasSource(DetermineAliasSource(expr), nil))
+	require.Equal(t, "unknown", formatAliasSource(DetermineAliasSource(ids, expr), nil))
 }
 
 func TestDetermineAliasSource_IndexExpr(t *testing.T) {
+	ids := NewVarIDs()
 	expr := parseExpr(t, "obj[0]")
-	setVarIDs(expr, map[string]int{"obj": 5})
+	setVarIDs(ids, expr, map[string]int{"obj": 5})
 	names := map[VarID]string{5: "obj"}
 
 	// obj[0] aliases obj — index access recurses into the object
-	require.Equal(t, "variable [obj]", formatAliasSource(DetermineAliasSource(expr), names))
+	require.Equal(t, "variable [obj]", formatAliasSource(DetermineAliasSource(ids, expr), names))
 }
 
 func TestDetermineAliasSource_IndexExpr_NonLocal(t *testing.T) {
+	ids := NewVarIDs()
 	expr := parseExpr(t, "obj[0]")
-	setVarIDs(expr, map[string]int{"obj": -1})
+	setVarIDs(ids, expr, map[string]int{"obj": -1})
 
 	// Index access on a non-local object is still unknown
-	require.Equal(t, "unknown", formatAliasSource(DetermineAliasSource(expr), nil))
+	require.Equal(t, "unknown", formatAliasSource(DetermineAliasSource(ids, expr), nil))
 }
 
 func TestDetermineAliasSource_TypeCast(t *testing.T) {
+	ids := NewVarIDs()
 	ident := ast.NewIdent("x", ast.Span{})
-	ident.VarID = 3
+	ids.Set(ident, 3)
 	names := map[VarID]string{3: "x"}
 	cast := ast.NewTypeCast(ident, nil, ast.Span{})
 
 	// Type casts are transparent — the result aliases the inner expression
-	require.Equal(t, "variable [x]", formatAliasSource(DetermineAliasSource(cast), names))
+	require.Equal(t, "variable [x]", formatAliasSource(DetermineAliasSource(ids, cast), names))
 }
 
 func TestDetermineAliasSource_TypeCast_NonLocal(t *testing.T) {
+	ids := NewVarIDs()
 	ident := ast.NewIdent("x", ast.Span{})
-	ident.VarID = -1
+	ids.Set(ident, -1)
 	cast := ast.NewTypeCast(ident, nil, ast.Span{})
 
 	// Casting a non-local variable is still unknown
-	require.Equal(t, "unknown", formatAliasSource(DetermineAliasSource(cast), nil))
+	require.Equal(t, "unknown", formatAliasSource(DetermineAliasSource(ids, cast), nil))
 }
 
 func TestDetermineAliasSource_IfElseExpr_BothVariables(t *testing.T) {
+	ids := NewVarIDs()
 	expr := parseExpr(t, "if true { a } else { b }")
-	setVarIDs(expr, map[string]int{"a": 1, "b": 2})
+	setVarIDs(ids, expr, map[string]int{"a": 1, "b": 2})
 	names := map[VarID]string{1: "a", 2: "b"}
 
 	// Both branches return different variables, so the result may alias either
-	require.Equal(t, "multiple [a, b]", formatAliasSource(DetermineAliasSource(expr), names))
+	require.Equal(t, "multiple [a, b]", formatAliasSource(DetermineAliasSource(ids, expr), names))
 }
 
 func TestDetermineAliasSource_IfElseExpr_OneVariableOneFresh(t *testing.T) {
+	ids := NewVarIDs()
 	expr := parseExpr(t, "if true { a } else { {x: 1} }")
-	setVarIDs(expr, map[string]int{"a": 1})
+	setVarIDs(ids, expr, map[string]int{"a": 1})
 	names := map[VarID]string{1: "a"}
 
 	// Only one branch aliases a variable; the fresh branch doesn't contribute
-	require.Equal(t, "variable [a]", formatAliasSource(DetermineAliasSource(expr), names))
+	require.Equal(t, "variable [a]", formatAliasSource(DetermineAliasSource(ids, expr), names))
 }
 
 func TestDetermineAliasSource_IfElseExpr_BothFresh(t *testing.T) {
+	ids := NewVarIDs()
 	expr := parseExpr(t, "if true { {x: 1} } else { {x: 2} }")
 
 	// Both branches produce fresh values, so the result is fresh
-	require.Equal(t, "fresh", formatAliasSource(DetermineAliasSource(expr), nil))
+	require.Equal(t, "fresh", formatAliasSource(DetermineAliasSource(ids, expr), nil))
 }
 
 func TestDetermineAliasSource_IfElseExpr_NoAlt_Variable(t *testing.T) {
+	ids := NewVarIDs()
 	expr := parseExpr(t, "if true { a }")
-	setVarIDs(expr, map[string]int{"a": 1})
+	setVarIDs(ids, expr, map[string]int{"a": 1})
 	names := map[VarID]string{1: "a"}
 
 	// Missing else is implicitly undefined (fresh), so only the cons branch contributes
-	require.Equal(t, "variable [a]", formatAliasSource(DetermineAliasSource(expr), names))
+	require.Equal(t, "variable [a]", formatAliasSource(DetermineAliasSource(ids, expr), names))
 }
 
 func TestDetermineAliasSource_IfElseExpr_NoAlt_Fresh(t *testing.T) {
+	ids := NewVarIDs()
 	expr := parseExpr(t, "if true { {x: 1} }")
 
 	// Cons is fresh, missing else is implicitly fresh — both fresh
-	require.Equal(t, "fresh", formatAliasSource(DetermineAliasSource(expr), nil))
+	require.Equal(t, "fresh", formatAliasSource(DetermineAliasSource(ids, expr), nil))
 }
 
 func TestDetermineAliasSource_IfElseExpr_UnknownAndVariable(t *testing.T) {
+	ids := NewVarIDs()
 	expr := parseExpr(t, "if true { ext } else { a }")
-	setVarIDs(expr, map[string]int{"ext": -1, "a": 1})
+	setVarIDs(ids, expr, map[string]int{"ext": -1, "a": 1})
 	names := map[VarID]string{1: "a"}
 
 	// Unknown branches are skipped — we still track aliases from known branches
-	require.Equal(t, "variable [a]", formatAliasSource(DetermineAliasSource(expr), names))
+	require.Equal(t, "variable [a]", formatAliasSource(DetermineAliasSource(ids, expr), names))
 }
 
 func TestDetermineAliasSource_IfElseExpr_SameVariable(t *testing.T) {
+	ids := NewVarIDs()
 	expr := parseExpr(t, "if true { a } else { a }")
-	setVarIDs(expr, map[string]int{"a": 1})
+	setVarIDs(ids, expr, map[string]int{"a": 1})
 	names := map[VarID]string{1: "a"}
 
 	// Same variable in both branches is deduplicated to a single variable source
-	require.Equal(t, "variable [a]", formatAliasSource(DetermineAliasSource(expr), names))
+	require.Equal(t, "variable [a]", formatAliasSource(DetermineAliasSource(ids, expr), names))
 }
 
 func TestDetermineAliasSource_MatchExpr_MultipleVariables(t *testing.T) {
+	ids := NewVarIDs()
 	expr := parseExpr(t, "match 1 { _ => a, _ => b, _ => c }")
-	setVarIDs(expr, map[string]int{"a": 1, "b": 2, "c": 3})
+	setVarIDs(ids, expr, map[string]int{"a": 1, "b": 2, "c": 3})
 	names := map[VarID]string{1: "a", 2: "b", 3: "c"}
 
 	// Each arm returns a different variable, so the result may alias any of them
-	require.Equal(t, "multiple [a, b, c]", formatAliasSource(DetermineAliasSource(expr), names))
+	require.Equal(t, "multiple [a, b, c]", formatAliasSource(DetermineAliasSource(ids, expr), names))
 }
 
 func TestDetermineAliasSource_MatchExpr_SameVariable(t *testing.T) {
+	ids := NewVarIDs()
 	expr := parseExpr(t, "match 1 { _ => a, _ => a }")
-	setVarIDs(expr, map[string]int{"a": 1})
+	setVarIDs(ids, expr, map[string]int{"a": 1})
 	names := map[VarID]string{1: "a"}
 
 	// Same variable in all arms is deduplicated to a single variable source
-	require.Equal(t, "variable [a]", formatAliasSource(DetermineAliasSource(expr), names))
+	require.Equal(t, "variable [a]", formatAliasSource(DetermineAliasSource(ids, expr), names))
 }
 
 // formatLeaves returns a compact, deterministic string of an alias
@@ -301,43 +320,47 @@ func formatPath(path []ProjectionStep) string {
 }
 
 func TestDetermineAliasSource_MemberExpr_AppendsProperty(t *testing.T) {
+	ids := NewVarIDs()
 	expr := parseExpr(t, "obj.field.inner")
-	setVarIDs(expr, map[string]int{"obj": 5})
+	setVarIDs(ids, expr, map[string]int{"obj": 5})
 	names := map[VarID]string{5: "obj"}
 
-	src := DetermineAliasSource(expr)
+	src := DetermineAliasSource(ids, expr)
 	require.Equal(t, AliasOriginAlias, src.Origin)
 	require.Equal(t, "obj.field.inner", formatLeaves(src, names))
 }
 
 func TestDetermineAliasSource_IndexExpr_ConstAppendsIndex(t *testing.T) {
+	ids := NewVarIDs()
 	expr := parseExpr(t, "obj[2]")
-	setVarIDs(expr, map[string]int{"obj": 5})
+	setVarIDs(ids, expr, map[string]int{"obj": 5})
 	names := map[VarID]string{5: "obj"}
 
-	src := DetermineAliasSource(expr)
+	src := DetermineAliasSource(ids, expr)
 	require.Equal(t, AliasOriginAlias, src.Origin)
 	require.Equal(t, "obj[2]", formatLeaves(src, names))
 }
 
 func TestDetermineAliasSource_IndexExpr_NonConstFallsBack(t *testing.T) {
+	ids := NewVarIDs()
 	expr := parseExpr(t, "obj[i]")
-	setVarIDs(expr, map[string]int{"obj": 5, "i": 7})
+	setVarIDs(ids, expr, map[string]int{"obj": 5, "i": 7})
 	names := map[VarID]string{5: "obj"}
 
 	// Non-constant indexes can't be slotted statically — leaf has no
 	// IndexOf step, just the bare root.
-	src := DetermineAliasSource(expr)
+	src := DetermineAliasSource(ids, expr)
 	require.Equal(t, AliasOriginAlias, src.Origin)
 	require.Equal(t, "obj", formatLeaves(src, names))
 }
 
 func TestDetermineAliasSource_TupleExpr_ProducesIndexLeaves(t *testing.T) {
+	ids := NewVarIDs()
 	expr := parseExpr(t, "[a, b]")
-	setVarIDs(expr, map[string]int{"a": 1, "b": 2})
+	setVarIDs(ids, expr, map[string]int{"a": 1, "b": 2})
 	names := map[VarID]string{1: "a", 2: "b"}
 
-	src := DetermineAliasSource(expr)
+	src := DetermineAliasSource(ids, expr)
 	// Root is freshly constructed — the alias tracker should still see
 	// "fresh" via the legacy Kind() so it doesn't merge alias sets at
 	// the root level.
@@ -347,18 +370,20 @@ func TestDetermineAliasSource_TupleExpr_ProducesIndexLeaves(t *testing.T) {
 }
 
 func TestDetermineAliasSource_TupleExpr_AllFreshHasNoLeaves(t *testing.T) {
+	ids := NewVarIDs()
 	expr := parseExpr(t, "[1, 2]")
-	src := DetermineAliasSource(expr)
+	src := DetermineAliasSource(ids, expr)
 	require.Equal(t, AliasOriginFresh, src.Origin)
 	require.Empty(t, src.Leaves)
 }
 
 func TestDetermineAliasSource_ObjectExpr_ProducesPropertyLeaves(t *testing.T) {
+	ids := NewVarIDs()
 	expr := parseExpr(t, "{head: a, tail: b}")
-	setVarIDs(expr, map[string]int{"a": 1, "b": 2})
+	setVarIDs(ids, expr, map[string]int{"a": 1, "b": 2})
 	names := map[VarID]string{1: "a", 2: "b"}
 
-	src := DetermineAliasSource(expr)
+	src := DetermineAliasSource(ids, expr)
 	require.Equal(t, "fresh", formatAliasSource(src, names))
 	require.Equal(t, AliasOriginFresh, src.Origin)
 	require.Equal(t, "a.head, b.tail", formatLeaves(src, names))
@@ -366,92 +391,100 @@ func TestDetermineAliasSource_ObjectExpr_ProducesPropertyLeaves(t *testing.T) {
 
 // A shorthand property `{b}` reads b into the field b, the same leaf `{b: b}` produces.
 func TestDetermineAliasSource_ObjectExpr_ShorthandProducesPropertyLeaf(t *testing.T) {
+	ids := NewVarIDs()
 	expr := parseExpr(t, "{head: a, b}")
-	setVarIDs(expr, map[string]int{"a": 1, "b": 2})
+	setVarIDs(ids, expr, map[string]int{"a": 1, "b": 2})
 	names := map[VarID]string{1: "a", 2: "b"}
 
-	src := DetermineAliasSource(expr)
+	src := DetermineAliasSource(ids, expr)
 	require.Equal(t, AliasOriginFresh, src.Origin)
 	require.Equal(t, "a.head, b.b", formatLeaves(src, names))
 }
 
 func TestDetermineAliasSource_NestedTupleInObject(t *testing.T) {
+	ids := NewVarIDs()
 	expr := parseExpr(t, "{items: [a, b]}")
-	setVarIDs(expr, map[string]int{"a": 1, "b": 2})
+	setVarIDs(ids, expr, map[string]int{"a": 1, "b": 2})
 	names := map[VarID]string{1: "a", 2: "b"}
 
-	src := DetermineAliasSource(expr)
+	src := DetermineAliasSource(ids, expr)
 	require.Equal(t, AliasOriginFresh, src.Origin)
 	require.Equal(t, "a.items[0], b.items[1]", formatLeaves(src, names))
 }
 
 func TestDetermineAliasSource_TupleOfMember(t *testing.T) {
+	ids := NewVarIDs()
 	expr := parseExpr(t, "[obj.x]")
-	setVarIDs(expr, map[string]int{"obj": 9})
+	setVarIDs(ids, expr, map[string]int{"obj": 9})
 	names := map[VarID]string{9: "obj"}
 
 	// `[obj.x]` — fresh root, one leaf rooted at obj with path
 	// [IndexOf(0), PropertyOf("x")] describing the slot in the new
 	// container followed by the projection into obj.
-	src := DetermineAliasSource(expr)
+	src := DetermineAliasSource(ids, expr)
 	require.Equal(t, AliasOriginFresh, src.Origin)
 	require.Equal(t, "obj[0].x", formatLeaves(src, names))
 }
 
 func TestDetermineAliasSource_TupleExpr_RepeatedRootKeepsBothSlots(t *testing.T) {
+	ids := NewVarIDs()
 	expr := parseExpr(t, "[a, a]")
-	setVarIDs(expr, map[string]int{"a": 1})
+	setVarIDs(ids, expr, map[string]int{"a": 1})
 	names := map[VarID]string{1: "a"}
 
 	// `[a, a]` — two distinct slots, both rooted at `a`. The dedupe key
 	// must be (RootVarID, Path), not RootVarID alone, otherwise IndexOf(1)
 	// is dropped and the second slot loses its lifetime attachment.
-	src := DetermineAliasSource(expr)
+	src := DetermineAliasSource(ids, expr)
 	require.Equal(t, AliasOriginFresh, src.Origin)
 	require.Equal(t, "a[0], a[1]", formatLeaves(src, names))
 }
 
 func TestDetermineAliasSource_ObjectExpr_RepeatedRootKeepsBothProps(t *testing.T) {
+	ids := NewVarIDs()
 	expr := parseExpr(t, "{head: a, tail: a}")
-	setVarIDs(expr, map[string]int{"a": 1})
+	setVarIDs(ids, expr, map[string]int{"a": 1})
 	names := map[VarID]string{1: "a"}
 
-	src := DetermineAliasSource(expr)
+	src := DetermineAliasSource(ids, expr)
 	require.Equal(t, AliasOriginFresh, src.Origin)
 	require.Equal(t, "a.head, a.tail", formatLeaves(src, names))
 }
 
 func TestDetermineAliasSource_IfElseExpr_BothFreshContainersStaysFresh(t *testing.T) {
+	ids := NewVarIDs()
 	expr := parseExpr(t, "if true { [a] } else { [b] }")
-	setVarIDs(expr, map[string]int{"a": 1, "b": 2})
+	setVarIDs(ids, expr, map[string]int{"a": 1, "b": 2})
 	names := map[VarID]string{1: "a", 2: "b"}
 
 	// Both branches produce fresh containers with element-level leaves.
 	// The merged origin should remain Fresh so path-aware lifetime
 	// attachment descends into the array's element type, rather than
 	// attaching at the top.
-	src := DetermineAliasSource(expr)
+	src := DetermineAliasSource(ids, expr)
 	require.Equal(t, AliasOriginFresh, src.Origin)
 	require.Equal(t, "a[0], b[0]", formatLeaves(src, names))
 }
 
 func TestDetermineAliasSource_IfElseExpr_MixedFreshAndAliasIsAlias(t *testing.T) {
+	ids := NewVarIDs()
 	expr := parseExpr(t, "if true { [a] } else { b }")
-	setVarIDs(expr, map[string]int{"a": 1, "b": 2})
+	setVarIDs(ids, expr, map[string]int{"a": 1, "b": 2})
 
 	// One branch is fresh-rooted with an element leaf; the other is an
 	// alias-rooted bare variable. The merged origin must be Alias because
 	// at least one branch's value root aliases an existing variable.
-	src := DetermineAliasSource(expr)
+	src := DetermineAliasSource(ids, expr)
 	require.Equal(t, AliasOriginAlias, src.Origin)
 }
 
 func TestDetermineAliasSource_AwaitExpr_AppendsAwait(t *testing.T) {
+	ids := NewVarIDs()
 	expr := parseExpr(t, "await p")
-	setVarIDs(expr, map[string]int{"p": 4})
+	setVarIDs(ids, expr, map[string]int{"p": 4})
 	names := map[VarID]string{4: "p"}
 
-	src := DetermineAliasSource(expr)
+	src := DetermineAliasSource(ids, expr)
 	require.Equal(t, AliasOriginAlias, src.Origin)
 	require.Equal(t, "p.await", formatLeaves(src, names))
 }
@@ -466,10 +499,11 @@ func TestLeafKey_NoCollisionWithDelimiterInPropertyName(t *testing.T) {
 }
 
 func TestDetermineAliasSource_MatchExpr_VariableAndFresh(t *testing.T) {
+	ids := NewVarIDs()
 	expr := parseExpr(t, "match 1 { _ => a, _ => [1] }")
-	setVarIDs(expr, map[string]int{"a": 1})
+	setVarIDs(ids, expr, map[string]int{"a": 1})
 	names := map[VarID]string{1: "a"}
 
 	// Only one arm aliases a variable; the fresh arm doesn't contribute
-	require.Equal(t, "variable [a]", formatAliasSource(DetermineAliasSource(expr), names))
+	require.Equal(t, "variable [a]", formatAliasSource(DetermineAliasSource(ids, expr), names))
 }

@@ -44,6 +44,7 @@ func findBlockContaining(cfg *CFG, expr ast.Expr) int {
 // --- CFG Construction Tests ---
 
 func TestCFGStraightLine(t *testing.T) {
+	ids := NewVarIDs()
 	// val x = 1; print(x)
 	// Should produce: entry block with 2 stmts → exit
 	x := identPat("x")
@@ -52,9 +53,9 @@ func TestCFGStraightLine(t *testing.T) {
 		valDecl(x, numLit(1)),
 		exprStmt(call(ident("print"), xRef)),
 	)
-	Rename(nil, body, map[string]VarID{"print": -1})
+	Rename(ids, nil, body, map[string]VarID{"print": -1})
 
-	cfg := BuildCFG(body)
+	cfg := BuildCFG(ids, body)
 
 	// Entry + exit = 2 blocks
 	require.Equal(t, 2, len(cfg.Blocks))
@@ -64,6 +65,7 @@ func TestCFGStraightLine(t *testing.T) {
 }
 
 func TestCFGIfElse(t *testing.T) {
+	ids := NewVarIDs()
 	// if cond { print(a) } else { print(b) }
 	// Should produce: entry(cond) → [cons, alt] → join → exit
 	aRef := ident("a")
@@ -79,9 +81,9 @@ func TestCFGIfElse(t *testing.T) {
 			span(),
 		)),
 	)
-	Rename(nil, body, map[string]VarID{"cond": -1, "print": -1, "a": -2, "b": -3})
+	Rename(ids, nil, body, map[string]VarID{"cond": -1, "print": -1, "a": -2, "b": -3})
 
-	cfg := BuildCFG(body)
+	cfg := BuildCFG(ids, body)
 
 	// entry, join, cons, alt, exit = 5 blocks
 	require.Equal(t, 5, len(cfg.Blocks))
@@ -90,6 +92,7 @@ func TestCFGIfElse(t *testing.T) {
 }
 
 func TestCFGValElse(t *testing.T) {
+	ids := NewVarIDs()
 	// val x = u else { return d }
 	// print(x)
 	// The else block is its own branch off the initializer's block; the matched path
@@ -111,9 +114,9 @@ func TestCFGValElse(t *testing.T) {
 		valElse,
 		exprStmt(call(ident("print"), xRef)),
 	)
-	Rename(nil, body, map[string]VarID{"u": -1, "d": -2, "print": -3})
+	Rename(ids, nil, body, map[string]VarID{"u": -1, "d": -2, "print": -3})
 
-	cfg := BuildCFG(body)
+	cfg := BuildCFG(ids, body)
 
 	// Entry evaluates the initializer and branches to the else block and the join.
 	require.Equal(t, 1, len(cfg.Entry.Stmts)) // ExprStmt(u)
@@ -124,10 +127,11 @@ func TestCFGValElse(t *testing.T) {
 	require.Equal(t, cfg.Exit, elseBlock.Successors[0])
 	// The join defines x and continues to print(x).
 	join := cfg.Entry.Successors[1]
-	require.Equal(t, []VarID{VarID(x.VarID)}, []VarID(join.ExtraDefs))
+	require.Equal(t, []VarID{ids.Of(x)}, []VarID(join.ExtraDefs))
 }
 
 func TestCFGValElseNonDivergingFallback(t *testing.T) {
+	ids := NewVarIDs()
 	// val x = u else { d }
 	// print(x)
 	// The else does not diverge; it supplies a fallback, so its block falls through to
@@ -149,9 +153,9 @@ func TestCFGValElseNonDivergingFallback(t *testing.T) {
 		valElse,
 		exprStmt(call(ident("print"), xRef)),
 	)
-	Rename(nil, body, map[string]VarID{"u": -1, "d": -2, "print": -3})
+	Rename(ids, nil, body, map[string]VarID{"u": -1, "d": -2, "print": -3})
 
-	cfg := BuildCFG(body)
+	cfg := BuildCFG(ids, body)
 
 	require.Equal(t, 2, len(cfg.Entry.Successors))
 	elseBlock := cfg.Entry.Successors[0]
@@ -162,6 +166,7 @@ func TestCFGValElseNonDivergingFallback(t *testing.T) {
 }
 
 func TestCFGValElseBranchyInit(t *testing.T) {
+	ids := NewVarIDs()
 	// val x: number = match u { 1 => a, _ => b } else { return d }
 	// The initializer is the `match` expression; `else { return d }` is the val-else's
 	// own else. A branchy initializer must contribute its own CFG edges, so the entry
@@ -189,15 +194,16 @@ func TestCFGValElseBranchyInit(t *testing.T) {
 		Span:  span(),
 	}
 	body := block(ast.NewDeclStmt(vd, span()))
-	Rename(nil, body, map[string]VarID{"u": -1, "a": -2, "b": -3, "d": -4})
+	Rename(ids, nil, body, map[string]VarID{"u": -1, "a": -2, "b": -3, "d": -4})
 
-	cfg := BuildCFG(body)
+	cfg := BuildCFG(ids, body)
 
 	// The entry holds the match target and branches into the match's two arms.
 	require.Equal(t, 2, len(cfg.Entry.Successors))
 }
 
 func TestCFGReturn(t *testing.T) {
+	ids := NewVarIDs()
 	// val x = 1; return x; print(x)
 	// return terminates the path; print(x) is unreachable
 	x := identPat("x")
@@ -208,9 +214,9 @@ func TestCFGReturn(t *testing.T) {
 		ast.NewReturnStmt(xRef1, span()),
 		exprStmt(call(ident("print"), xRef2)),
 	)
-	Rename(nil, body, map[string]VarID{"print": -1})
+	Rename(ids, nil, body, map[string]VarID{"print": -1})
 
-	cfg := BuildCFG(body)
+	cfg := BuildCFG(ids, body)
 
 	// Entry block has 2 stmts (val x, return x). print(x) is unreachable.
 	require.Equal(t, 2, len(cfg.Entry.Stmts))
@@ -220,6 +226,7 @@ func TestCFGReturn(t *testing.T) {
 }
 
 func TestCFGForIn(t *testing.T) {
+	ids := NewVarIDs()
 	// for i in items { print(i) }
 	// Should produce: entry(iterable) → header → [body, post] → exit
 	i := identPat("i")
@@ -231,9 +238,9 @@ func TestCFGForIn(t *testing.T) {
 			false, span(),
 		),
 	)
-	Rename(nil, body, map[string]VarID{"items": -1, "print": -2})
+	Rename(ids, nil, body, map[string]VarID{"items": -1, "print": -2})
 
-	cfg := BuildCFG(body)
+	cfg := BuildCFG(ids, body)
 
 	// entry, header, body, post, exit = 5 blocks
 	require.Equal(t, 5, len(cfg.Blocks))
@@ -248,6 +255,7 @@ func TestCFGForIn(t *testing.T) {
 // --- Liveness with Control Flow Tests ---
 
 func TestLivenessIfElseOneBranchUse(t *testing.T) {
+	ids := NewVarIDs()
 	// val x = 1; val y = 2
 	// val z = if cond { x } else { y }
 	// x is used only in the then branch, y only in the else branch
@@ -270,13 +278,13 @@ func TestLivenessIfElseOneBranchUse(t *testing.T) {
 			span(),
 		)),
 	)
-	Rename(nil, body, map[string]VarID{"cond": -1})
+	Rename(ids, nil, body, map[string]VarID{"cond": -1})
 
-	cfg := BuildCFG(body)
+	cfg := BuildCFG(ids, body)
 	info := AnalyzeFunction(cfg)
 
-	xID := VarID(x.VarID)
-	yID := VarID(y.VarID)
+	xID := ids.Of(x)
+	yID := ids.Of(y)
 
 	consBlockID := findBlockContaining(cfg, xRef)
 	altBlockID := findBlockContaining(cfg, yRef)
@@ -291,6 +299,7 @@ func TestLivenessIfElseOneBranchUse(t *testing.T) {
 }
 
 func TestLivenessIfWithoutElse(t *testing.T) {
+	ids := NewVarIDs()
 	// val x = 1
 	// if cond { print(x) }
 	// print(x)
@@ -309,12 +318,12 @@ func TestLivenessIfWithoutElse(t *testing.T) {
 		)),
 		exprStmt(call(ident("print"), xRef2)),
 	)
-	Rename(nil, body, map[string]VarID{"cond": -1, "print": -2})
+	Rename(ids, nil, body, map[string]VarID{"cond": -1, "print": -2})
 
-	cfg := BuildCFG(body)
+	cfg := BuildCFG(ids, body)
 	info := AnalyzeFunction(cfg)
 
-	xID := VarID(x.VarID)
+	xID := ids.Of(x)
 
 	// x should be live in the entry block after its definition
 	require.True(t, info.LiveAfter[cfg.Entry.ID][0].Contains(xID),
@@ -327,6 +336,7 @@ func TestLivenessIfWithoutElse(t *testing.T) {
 }
 
 func TestLivenessForLoop(t *testing.T) {
+	ids := NewVarIDs()
 	// val x = 1
 	// for i in items { print(x) }
 	// x is used inside the loop body, so it should be live for the
@@ -343,12 +353,12 @@ func TestLivenessForLoop(t *testing.T) {
 			false, span(),
 		),
 	)
-	Rename(nil, body, map[string]VarID{"items": -1, "print": -2})
+	Rename(ids, nil, body, map[string]VarID{"items": -1, "print": -2})
 
-	cfg := BuildCFG(body)
+	cfg := BuildCFG(ids, body)
 	info := AnalyzeFunction(cfg)
 
-	xID := VarID(x.VarID)
+	xID := ids.Of(x)
 
 	// x is live after its definition (used in loop body)
 	require.True(t, info.LiveAfter[cfg.Entry.ID][0].Contains(xID),
@@ -361,6 +371,7 @@ func TestLivenessForLoop(t *testing.T) {
 }
 
 func TestLivenessEarlyReturn(t *testing.T) {
+	ids := NewVarIDs()
 	// val x = 1; val y = 2
 	// if cond { return x }
 	// print(y)
@@ -381,13 +392,13 @@ func TestLivenessEarlyReturn(t *testing.T) {
 		)),
 		exprStmt(call(ident("print"), yRef)),
 	)
-	Rename(nil, body, map[string]VarID{"cond": -1, "print": -2})
+	Rename(ids, nil, body, map[string]VarID{"cond": -1, "print": -2})
 
-	cfg := BuildCFG(body)
+	cfg := BuildCFG(ids, body)
 	info := AnalyzeFunction(cfg)
 
-	xID := VarID(x.VarID)
-	yID := VarID(y.VarID)
+	xID := ids.Of(x)
+	yID := ids.Of(y)
 
 	consBlockID := findBlockContaining(cfg, xRef)
 	joinBlockID := findBlockContaining(cfg, yRef)
@@ -406,6 +417,7 @@ func TestLivenessEarlyReturn(t *testing.T) {
 }
 
 func TestLivenessThrow(t *testing.T) {
+	ids := NewVarIDs()
 	// val x = 1; val y = 2
 	// if cond { throw x }
 	// print(y)
@@ -426,12 +438,12 @@ func TestLivenessThrow(t *testing.T) {
 		)),
 		exprStmt(call(ident("print"), yRef)),
 	)
-	Rename(nil, body, map[string]VarID{"cond": -1, "print": -2})
+	Rename(ids, nil, body, map[string]VarID{"cond": -1, "print": -2})
 
-	cfg := BuildCFG(body)
+	cfg := BuildCFG(ids, body)
 	info := AnalyzeFunction(cfg)
 
-	yID := VarID(y.VarID)
+	yID := ids.Of(y)
 
 	consBlockID := findBlockContaining(cfg, xRef)
 
@@ -441,6 +453,7 @@ func TestLivenessThrow(t *testing.T) {
 }
 
 func TestLivenessMatchExpr(t *testing.T) {
+	ids := NewVarIDs()
 	// val x = 1; val y = 2; val z = 3
 	// val r = match target {
 	//   case _ => x    // arm 0 uses x
@@ -481,14 +494,14 @@ func TestLivenessMatchExpr(t *testing.T) {
 		)),
 		exprStmt(call(ident("print"), rRef)),
 	)
-	Rename(nil, body, map[string]VarID{"target": -1, "print": -2})
+	Rename(ids, nil, body, map[string]VarID{"target": -1, "print": -2})
 
-	cfg := BuildCFG(body)
+	cfg := BuildCFG(ids, body)
 	info := AnalyzeFunction(cfg)
 
-	xID := VarID(x.VarID)
-	yID := VarID(y.VarID)
-	zID := VarID(z.VarID)
+	xID := ids.Of(x)
+	yID := ids.Of(y)
+	zID := ids.Of(z)
 
 	arm0ID := findBlockContaining(cfg, xRef)
 	arm1ID := findBlockContaining(cfg, yRef)
@@ -505,6 +518,7 @@ func TestLivenessMatchExpr(t *testing.T) {
 }
 
 func TestLivenessNestedControlFlow(t *testing.T) {
+	ids := NewVarIDs()
 	// val x = 1
 	// for i in items {
 	//   if cond { print(x) }
@@ -530,13 +544,13 @@ func TestLivenessNestedControlFlow(t *testing.T) {
 			false, span(),
 		),
 	)
-	Rename(nil, body, map[string]VarID{"items": -1, "cond": -2, "print": -3})
+	Rename(ids, nil, body, map[string]VarID{"items": -1, "cond": -2, "print": -3})
 
-	cfg := BuildCFG(body)
+	cfg := BuildCFG(ids, body)
 	info := AnalyzeFunction(cfg)
 
-	xID := VarID(x.VarID)
-	iID := VarID(i.VarID)
+	xID := ids.Of(x)
+	iID := ids.Of(i)
 
 	// CFG structure: entry → header → [bodyBlock, post]
 	// bodyBlock contains ExprStmt(cond) and branches to [consBlock, join]
@@ -569,6 +583,7 @@ func TestLivenessNestedControlFlow(t *testing.T) {
 }
 
 func TestLivenessDoExpr(t *testing.T) {
+	ids := NewVarIDs()
 	// val x = 1
 	// val y = do { val a = x + 1; a }
 	// print(y)
@@ -591,13 +606,13 @@ func TestLivenessDoExpr(t *testing.T) {
 		)),
 		exprStmt(call(ident("print"), yRef)),
 	)
-	Rename(nil, body, map[string]VarID{"print": -1})
+	Rename(ids, nil, body, map[string]VarID{"print": -1})
 
-	cfg := BuildCFG(body)
+	cfg := BuildCFG(ids, body)
 	info := AnalyzeFunction(cfg)
 
-	xID := VarID(x.VarID)
-	aID := VarID(a.VarID)
+	xID := ids.Of(x)
+	aID := ids.Of(a)
 
 	// x should be live after its definition (used in the do block)
 	require.True(t, info.LiveAfter[cfg.Entry.ID][0].Contains(xID),
@@ -614,6 +629,7 @@ func TestLivenessDoExpr(t *testing.T) {
 }
 
 func TestLivenessIfElseVarUsedInBranch(t *testing.T) {
+	ids := NewVarIDs()
 	// Phase 3 limitation: val y = if true { x } else { 0 }
 	// x was not detected as used. Phase 4 fixes this.
 	x := identPat("x")
@@ -633,12 +649,12 @@ func TestLivenessIfElseVarUsedInBranch(t *testing.T) {
 			span(),
 		)),
 	)
-	Rename(nil, body, map[string]VarID{"cond": -1})
+	Rename(ids, nil, body, map[string]VarID{"cond": -1})
 
-	cfg := BuildCFG(body)
+	cfg := BuildCFG(ids, body)
 	info := AnalyzeFunction(cfg)
 
-	xID := VarID(x.VarID)
+	xID := ids.Of(x)
 
 	// x should be live after its definition (used in then branch)
 	require.True(t, info.LiveAfter[cfg.Entry.ID][0].Contains(xID),
@@ -646,6 +662,7 @@ func TestLivenessIfElseVarUsedInBranch(t *testing.T) {
 }
 
 func TestLivenessForLoopVarDef(t *testing.T) {
+	ids := NewVarIDs()
 	// for i in items { print(i) }
 	// The loop variable i should be defined (ExtraDefs) in the body block.
 	i := identPat("i")
@@ -658,12 +675,12 @@ func TestLivenessForLoopVarDef(t *testing.T) {
 			false, span(),
 		),
 	)
-	Rename(nil, body, map[string]VarID{"items": -1, "print": -2})
+	Rename(ids, nil, body, map[string]VarID{"items": -1, "print": -2})
 
-	cfg := BuildCFG(body)
+	cfg := BuildCFG(ids, body)
 	info := AnalyzeFunction(cfg)
 
-	iID := VarID(i.VarID)
+	iID := ids.Of(i)
 
 	// Find the body block (has ExtraDefs containing iID)
 	var bodyBlock *BasicBlock
@@ -682,6 +699,7 @@ func TestLivenessForLoopVarDef(t *testing.T) {
 }
 
 func TestLivenessAllBranchesReturn(t *testing.T) {
+	ids := NewVarIDs()
 	// val x = 1
 	// if cond { return x } else { return x }
 	// val y = 2  // unreachable
@@ -704,12 +722,12 @@ func TestLivenessAllBranchesReturn(t *testing.T) {
 		)),
 		valDecl(y, numLit(2)),
 	)
-	Rename(nil, body, map[string]VarID{"cond": -1})
+	Rename(ids, nil, body, map[string]VarID{"cond": -1})
 
-	cfg := BuildCFG(body)
+	cfg := BuildCFG(ids, body)
 	info := AnalyzeFunction(cfg)
 
-	yID := VarID(y.VarID)
+	yID := ids.Of(y)
 
 	// y should never be live anywhere in the CFG
 	for _, blk := range cfg.Blocks {
@@ -723,6 +741,7 @@ func TestLivenessAllBranchesReturn(t *testing.T) {
 }
 
 func TestLivenessMatchWithGuard(t *testing.T) {
+	ids := NewVarIDs()
 	// val x = 1; val g = true
 	// match target {
 	//   case _ if g => x
@@ -756,13 +775,13 @@ func TestLivenessMatchWithGuard(t *testing.T) {
 			span(),
 		)),
 	)
-	Rename(nil, body, map[string]VarID{"target": -1, "true": -2})
+	Rename(ids, nil, body, map[string]VarID{"target": -1, "true": -2})
 
-	cfg := BuildCFG(body)
+	cfg := BuildCFG(ids, body)
 	info := AnalyzeFunction(cfg)
 
-	xID := VarID(x.VarID)
-	gID := VarID(g.VarID)
+	xID := ids.Of(x)
+	gID := ids.Of(g)
 
 	arm0ID := findBlockContaining(cfg, xRef)
 
@@ -774,6 +793,7 @@ func TestLivenessMatchWithGuard(t *testing.T) {
 }
 
 func TestLivenessTryCatch(t *testing.T) {
+	ids := NewVarIDs()
 	// val x = 1; val y = 2
 	// val r = try {
 	//   print(x)
@@ -812,13 +832,13 @@ func TestLivenessTryCatch(t *testing.T) {
 		)),
 		exprStmt(call(ident("print"), rRef)),
 	)
-	Rename(nil, body, map[string]VarID{"print": -1})
+	Rename(ids, nil, body, map[string]VarID{"print": -1})
 
-	cfg := BuildCFG(body)
+	cfg := BuildCFG(ids, body)
 	info := AnalyzeFunction(cfg)
 
-	xID := VarID(x.VarID)
-	yID := VarID(y.VarID)
+	xID := ids.Of(x)
+	yID := ids.Of(y)
 
 	// x should be live after its definition (used in try block)
 	require.True(t, info.LiveAfter[cfg.Entry.ID][0].Contains(xID),

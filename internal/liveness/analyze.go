@@ -62,14 +62,14 @@ func computeLastUse(stmtUses []StmtUses, blockID int, lastUse map[VarID]StmtRef)
 //     LiveAfter[prev] = LiveBefore[stmt]
 //  3. A variable is "dead" at a point if it is not in LiveBefore or LiveAfter
 //
-// VarIDs are read directly from AST nodes (set by the rename pass in Phase 2).
-func AnalyzeBlock(stmts []ast.Stmt) *LivenessInfo {
+// ids holds the VarIDs the rename pass assigned to the statements.
+func AnalyzeBlock(ids *VarIDs, stmts []ast.Stmt) *LivenessInfo {
 	// For Phase 3, everything is in a single block (blockID = 0).
 	blockID := 0
 	lastUse := make(map[VarID]StmtRef)
 
 	// Collect per-statement uses and defs.
-	stmtUses := CollectUses(stmts)
+	stmtUses := CollectUses(ids, stmts)
 
 	before, after := analyzeStmts(stmtUses, set.NewSet[VarID]())
 
@@ -127,7 +127,7 @@ func AnalyzeFunction(cfg *CFG) *LivenessInfo {
 		}
 
 		// Process statements in order.
-		su := CollectUses(block.Stmts)
+		su := CollectUses(cfg.ids, block.Stmts)
 		perStmtUses[block.ID] = su
 
 		for _, s := range su {
