@@ -5,7 +5,6 @@ import (
 	"encoding/binary"
 	"hash"
 	"maps"
-	"os"
 	"reflect"
 	"slices"
 	"sort"
@@ -123,14 +122,17 @@ func ambientKeyOf(dir string, groups PackageGroups, opts Options) (ambientKey, b
 	sum := sha256.New()
 	// A tree the prelude cannot be read from loads without one, so it hashes as
 	// empty rather than turning the cache off.
-	prelude, _ := readStdlibFile(dir, preludeURI)
+	prelude, err := stdlibFileDigest(dir, preludeURI)
+	if err != nil {
+		prelude = sha256.Sum256(nil)
+	}
 	writeHashedFile(sum, preludeURI, prelude)
 	for _, uri := range uris {
-		contents, err := readStdlibFile(dir, uri)
+		digest, err := stdlibFileDigest(dir, uri)
 		if err != nil {
 			return ambientKey{}, false
 		}
-		writeHashedFile(sum, uri, contents)
+		writeHashedFile(sum, uri, digest)
 	}
 
 	key := ambientKey{
@@ -143,22 +145,21 @@ func ambientKeyOf(dir string, groups PackageGroups, opts Options) (ambientKey, b
 	return key, true
 }
 
-// readStdlibFile returns the contents of the file uri names in dir.
-func readStdlibFile(dir, uri string) ([]byte, error) {
+// stdlibFileDigest returns the SHA-256 of the file uri names in dir.
+func stdlibFileDigest(dir, uri string) ([sha256.Size]byte, error) {
 	path, err := resolveStdlibPath(dir, uri)
 	if err != nil {
-		return nil, err
+		return [sha256.Size]byte{}, err
 	}
-	return os.ReadFile(path)
+	return fileDigests.digest(path)
 }
 
-// writeHashedFile writes uri and contents to digest, each behind its length, so
-// moving bytes from the end of one file to the start of the next changes the hash.
-func writeHashedFile(digest hash.Hash, uri string, contents []byte) {
-	digest.Write(binary.AppendUvarint(nil, uint64(len(uri))))
-	digest.Write([]byte(uri))
-	digest.Write(binary.AppendUvarint(nil, uint64(len(contents))))
-	digest.Write(contents)
+// writeHashedFile writes uri and the digest of its file to sum, uri behind its
+// length, so no two lists of files hash to the same key.
+func writeHashedFile(sum hash.Hash, uri string, digest [sha256.Size]byte) {
+	sum.Write(binary.AppendUvarint(nil, uint64(len(uri))))
+	sum.Write([]byte(uri))
+	sum.Write(digest[:])
 }
 
 // loadAmbientChecker returns a checker with the prelude and the ambient packages of
