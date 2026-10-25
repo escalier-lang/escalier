@@ -197,32 +197,31 @@ func loadAmbientChecker(dir string, groups PackageGroups, opts Options) *checker
 	// The copy allocates every slice with no spare capacity. An append by a run to a
 	// slice the cached checker holds then allocates, rather than writing into an array
 	// that every run sharing the checker can see.
-	c = copyPtr(newGraphCopier(isASTPointer), c)
+	g := newGraphCopier(isASTPointer)
+	c = copyPtr(g, c)
 	if frozenVarChecks {
-		c.ctx.frozenVars, c.ctx.frozenLts = reachableVars(c)
+		// The copier's table of what it copied names every variable the cached checker
+		// reaches.
+		c.ctx.frozenVars, c.ctx.frozenLts = copiedVars(g)
 		c.ctx.frozenClasses = set.FromSlice(slices.Collect(maps.Values(c.ctx.classes)))
 		c.ctx.frozenAliases = set.FromSlice(slices.Collect(maps.Values(c.ctx.aliases)))
 	}
 	return c
 }
 
-// reachableVars returns every type variable and every lifetime variable reachable
-// from c.
-func reachableVars(c *checker) (set.Set[*soltype.TypeVarType], set.Set[*soltype.LifetimeVar]) {
-	// A copy visits every object reachable from c, and the copier's table of the
-	// objects it copied names each one.
-	g := newGraphCopier(isASTPointer)
-	copyPtr(g, c)
+// copiedVars returns every type variable and every lifetime variable g has copied, as
+// they sit in the copies.
+func copiedVars(g *graphCopier) (set.Set[*soltype.TypeVarType], set.Set[*soltype.LifetimeVar]) {
 	typeVar := reflect.TypeFor[soltype.TypeVarType]()
 	lifetimeVar := reflect.TypeFor[soltype.LifetimeVar]()
 	vars := set.NewSet[*soltype.TypeVarType]()
 	lts := set.NewSet[*soltype.LifetimeVar]()
-	for key := range g.pointers {
+	for key, copied := range g.pointers {
 		switch key.plan.typ {
 		case typeVar:
-			vars.Add((*soltype.TypeVarType)(key.addr))
+			vars.Add((*soltype.TypeVarType)(copied))
 		case lifetimeVar:
-			lts.Add((*soltype.LifetimeVar)(key.addr))
+			lts.Add((*soltype.LifetimeVar)(copied))
 		}
 	}
 	return vars, lts
