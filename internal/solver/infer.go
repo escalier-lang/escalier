@@ -5,7 +5,6 @@ import (
 	"github.com/escalier-lang/escalier/internal/liveness"
 	"github.com/escalier-lang/escalier/internal/set"
 	"github.com/escalier-lang/escalier/internal/soltype"
-	"maps"
 )
 
 // checker is the per-inference-run carrier for the M2 constraint-generating
@@ -22,7 +21,7 @@ import (
 type checker struct {
 	ctx  *Context      // M1: freshVar(level), Constrain(sub, super) []SolverError
 	info *Info         // M1: node → soltype.Type side table (unexported setType)
-	prov Prov          // M2.5: soltype.Type → Origin (leaf FromAST only), the inverse of info
+	prov *provTable    // M2.5: soltype.Type → Origin (leaf FromAST only), the inverse of info
 	errs []SolverError // accumulated; mirrors the spike's []error threading
 
 	// fn is the enclosing function context for the body currently being walked —
@@ -907,7 +906,7 @@ func newChecker() *checker {
 	c := &checker{
 		ctx:          &Context{packages: NewPackageRegistry()},
 		info:         NewInfo(),
-		prov:         Prov{},
+		prov:         newProvTable(),
 		varIDCounter: 1,
 		varIDs:       liveness.NewVarIDs(),
 	}
@@ -930,15 +929,16 @@ func newChecker() *checker {
 // definition. The prefix is stripped for display, so the class still renders as
 // `Point`.
 //
-// prov is copied rather than shared, so what the script records stays out of the
-// module's table, which a re-checked script would otherwise grow without bound. Info
-// and the diagnostics start empty, so the script's results cover the script alone.
+// prov is a layer over the module's table, so what the script records stays out of
+// the module's table, which a re-checked script would otherwise grow without bound.
+// The module's table is frozen from then on. Info and the diagnostics start empty, so
+// the script's results cover the script alone.
 func (c *checker) forScript(pkgURI string) *checker {
 	sc := &checker{
 		ctx:          c.ctx,
 		pkgURI:       pkgURI,
 		info:         NewInfo(),
-		prov:         maps.Clone(c.prov),
+		prov:         c.prov.child(),
 		varIDCounter: c.varIDCounter,
 		// A fresh table, because the script looks up only nodes in its own bodies,
 		// which its own rename pass records. Sharing the module's table would grow

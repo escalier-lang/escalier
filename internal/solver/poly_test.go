@@ -111,7 +111,7 @@ func TestInstantiateRecordsFromInstantiation(t *testing.T) {
 	scheme := &PolyScheme{Level: 0, Body: a}
 
 	got := c.instantiate(scheme, 0)
-	o, ok := c.prov[got]
+	o, ok := c.prov.get(got)
 	require.True(t, ok, "the freshened var should carry a provenance edge")
 	fi, ok := o.(FromInstantiation)
 	require.True(t, ok, "the edge is FromInstantiation")
