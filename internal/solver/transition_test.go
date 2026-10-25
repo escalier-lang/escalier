@@ -574,6 +574,33 @@ func TestMutabilityTransitionsFromSource(t *testing.T) {
 				"4:6-4:40: cannot assign 'items' to immutable 'snapshot': 'items' is still used mutably after this point",
 			},
 		},
+		// A `do` or a `try` produces what its branches produce, so the borrow aliases items.
+		"Rule1_SourceLiveThroughDo_Error": {
+			src: `
+				fn test() {
+					val items: mut {x: number} = {x: 1}
+					val snapshot: &{x: number} = do { items }
+					items.x = 2
+					snapshot
+				}
+			`,
+			want: []string{
+				"4:6-4:47: cannot assign 'items' to immutable 'snapshot': 'items' is still used mutably after this point",
+			},
+		},
+		"Rule1_SourceLiveThroughTry_Error": {
+			src: `
+				fn test() {
+					val items: mut {x: number} = {x: 1}
+					val snapshot: &{x: number} = try { items } catch { e => items }
+					items.x = 2
+					snapshot
+				}
+			`,
+			want: []string{
+				"4:6-4:67: cannot assign 'items' to immutable 'snapshot': 'items' is still used mutably after this point",
+			},
+		},
 		// Rule 1: safe when the mutable source is dead after the borrow.
 		"Rule1_SourceDead_OK": {
 			src: `
