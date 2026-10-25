@@ -177,7 +177,7 @@ func (c *checker) inferVarDeclInit(scope *Scope, lvl int, d *ast.VarDecl, ns str
 	// binding is reported here, before the upgrade below asks movesOwnedPlace about it.
 	if _, isIdent := d.Pattern.(*ast.IdentPat); isIdent {
 		if _, borrowAnn := d.TypeAnn.(*ast.RefTypeAnn); !borrowAnn {
-			c.rejectModuleLevelMove(scope, d.Init, initT)
+			c.rejectModuleLevelMove(scope, d.Init)
 		}
 	}
 	switch {

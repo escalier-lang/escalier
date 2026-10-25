@@ -180,22 +180,14 @@ func (c *checker) holdsConcreteOwned(t soltype.Type, seen set.Set[*soltype.TypeV
 	})
 }
 
-// rejectModuleLevelMove reports whether moving source, a value of type sourceT, moves a value out of a
-// place rooted at a module-level `val` or `var` or an import. The value moved is source
-// itself, or a result of one of its branches when source is a conditional, `match`, `do`, or
-// `try`. It reports a ModuleLevelMoveError for each such place, once per expression. The caller
-// records no move for source when it answers true. scope resolves the root.
-func (c *checker) rejectModuleLevelMove(scope *Scope, source ast.Expr, sourceT soltype.Type) bool {
-	results := branchResults(source)
-	if len(results) == 1 && results[0] == source {
-		if !c.movesModuleLevelPlace(scope, source, sourceT) {
-			return false
-		}
-		c.reportModuleLevelMove(source)
-		return true
-	}
+// rejectModuleLevelMove reports whether moving source moves a value out of a place rooted at a
+// module-level `val` or `var` or an import. The value moved is source itself, or a result of
+// one of its branches when source is a conditional, `match`, `do`, or `try`. It reports a
+// ModuleLevelMoveError for each such place. The caller records no move for source when it
+// answers true. scope resolves the root.
+func (c *checker) rejectModuleLevelMove(scope *Scope, source ast.Expr) bool {
 	moved := false
-	for _, r := range results {
+	for _, r := range branchResults(source) {
 		if c.movesModuleLevelPlace(scope, r, c.info.TypeOf(r)) {
 			c.reportModuleLevelMove(r)
 			moved = true
@@ -317,8 +309,13 @@ func (c *checker) funcMovesCaptures(decl ast.Node) bool {
 }
 
 // consumeOnceCallee moves the local binding call's callee names when that binding holds a
-// closure whose body moves a local it captures. The read of the callee is recorded as a use, so
-// a second call is a use-after-move. ref is the call's statement.
+// closure whose body moves a local it captures. ref is the call's statement.
+//
+// The read of the callee is recorded as a use, so a second call is a use-after-move. The read
+// is recorded here because recordUse records only a read of a reference-shaped value, and a
+// function value is not one, so the walk records no use of the callee by itself.
+// The use blames the callee name rather than the whole call, so in a second `g()` the
+// use-after-move error points at `g`, the binding that moved.
 func (c *checker) consumeOnceCallee(call *ast.CallExpr, ref liveness.StmtRef) {
 	ident, ok := call.Callee.(*ast.IdentExpr)
 	if !ok || c.varIDs.Of(ident) <= 0 {

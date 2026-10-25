@@ -697,7 +697,7 @@ func (c *checker) consumeAtGlobalWrite(source ast.Expr, sourceT soltype.Type, mo
 //	pair.a              // ERROR: use of moved value 'pair.a'
 //	pair.b              // OK: sibling untouched
 func (c *checker) consumeIntoLiteral(scope *Scope, el ast.Expr, elemT soltype.Type, ref liveness.StmtRef, hasRef bool) {
-	if c.rejectModuleLevelMove(scope, el, elemT) || !hasRef {
+	if c.rejectModuleLevelMove(scope, el) || !hasRef {
 		return
 	}
 	c.consumeOwned(el, elemT, el, ref)
