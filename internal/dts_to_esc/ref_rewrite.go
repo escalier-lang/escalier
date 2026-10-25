@@ -68,6 +68,10 @@ func renameLibReadonlyTwinRefs(mod *ast.Module) {
 	// TypeScript's `readonly` on a returned collection promises the caller a view it
 	// may not change. It says nothing about who else holds the collection, and a
 	// package may keep its own reference to it for the rest of the program.
+	//
+	// Every readonly return is treated as shared. A function that builds a fresh
+	// collection on each call could hand it back owned instead. #2219 tracks the
+	// heuristics for telling a fresh collection from a shared one.
 	rw := &refRewriter{
 		readonlyToMutable:     libReadonlyTwins,
 		borrowReadonlyReturns: true,
