@@ -133,7 +133,7 @@ The rules in 2.1 run only inside function bodies. Four cases slip past them:
 
 ### 2.5 Proposal: module-level bindings as `'static` borrows
 
-This is a proposal, not a decision.
+This is a proposal, not a decision. #2234 tracks implementing it.
 
 The module owns each module-level value, and every use of the binding reads it
 through a `'static` borrow. That covers uses in other initializers as well as
@@ -180,9 +180,9 @@ and changes these things:
 - Generated `.d.ts` files could mark an immutable module-level value `readonly`.
   Today `export val nums = [5, 1.23, -1]` emits
   `export declare const nums: [5, 1.23, -1]`, which TypeScript callers can
-  mutate.
+  mutate. #2235 tracks this, and it doesn't depend on the rest of the proposal.
 - Displayed types could leave out `'static` where the borrow is implied, to
-  keep signatures short.
+  keep signatures short. #2236 tracks this.
 
 Shared `&'static mut` state does not conflict with the borrow rules, since
 Rule 3 in `planning/lifetimes/requirements.md` allows several mutable
@@ -431,4 +431,8 @@ adopts them.
 - #2232: a consuming method can move a module-level instance inside a function.
 - #2233: an importer's top-level initializer can move another package's
   module-level value.
+- #2234: read every module-level reference value through a `'static` borrow.
+- #2235: emit an immutable module-level value as `readonly` in `.d.ts` output.
+- #2236: omit the implied `'static` when rendering a module-level value's
+  borrow type.
 - #577 and #500: receiver mutability for `.d.ts` methods.
