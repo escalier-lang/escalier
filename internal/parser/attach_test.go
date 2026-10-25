@@ -248,6 +248,26 @@ func TestAttachModuleCommentsKeepsFilesApart(t *testing.T) {
 // A comment at the end of a block belongs to the block. Without the check that
 // a neighbour lies inside the node enclosing the comment, it would lead the
 // statement after the closing brace instead.
+// TestAttachModuleCommentsEnclosesInEachFile asserts that a comment with no sibling
+// after it dangles on its own file's function. The second file's comment comes
+// first by offset, and the first file's function spans that offset, so a search
+// across both files would find the first file's function for it.
+func TestAttachModuleCommentsEnclosesInEachFile(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+	first := &ast.Source{ID: 0, Path: "lib/a.esc", Contents: "fn f() {\n  val a = 1\n  // inside f\n}\n"}
+	second := &ast.Source{ID: 1, Path: "lib/b.esc", Contents: "fn g() {\n  // inside g\n}\n"}
+	module, errors := ParseLibFiles(ctx, []*ast.Source{first, second})
+	require.Empty(t, errors)
+
+	c := &attachmentLister{DefaultVisitor: ast.DefaultVisitor{}}
+	module.Accept(c)
+	require.Equal(t, []string{
+		"dangling *ast.FuncDecl // inside f",
+		"dangling *ast.FuncDecl // inside g",
+	}, c.lines)
+}
+
 func TestAttachCommentsKeepsTheLastCommentInABlock(t *testing.T) {
 	t.Parallel()
 	require.Equal(t, []string{"dangling *ast.FuncDecl // nothing here"},

@@ -1,6 +1,9 @@
 package ast
 
-import "sort"
+import (
+	"slices"
+	"sort"
+)
 
 // AttachComments assigns every comment to one node in root and fills that
 // node's leading, trailing, or dangling slot. It returns the comments no node
@@ -149,13 +152,28 @@ func (a *attachment) apply() {
 	}
 }
 
-// nodeIndex holds the nodes of one tree in the two orders the placement rules
-// search: byStart finds the node after a comment, and byEnd finds the node
-// before it. Both put an enclosing node ahead of the nodes it encloses when
-// several share the offset being searched for, so the widest node wins.
+// nodeIndex holds the nodes of one tree, grouped by the source each came from. A
+// comment's neighbours and enclosing node always come from its own source, so each
+// search reads only that source's nodes.
 type nodeIndex struct {
+	sources map[int]*sourceNodes
+}
+
+// sourceNodes holds the nodes of one source in the two orders the placement rules
+// search: byStart finds the node after a comment, and byEnd finds the node before
+// it. Both put an enclosing node ahead of the nodes it encloses when several share
+// the offset being searched for, so the widest node wins.
+//
+// enclosing sweeps byStart forward as comments arrive, so it keeps its place in
+// next and the nodes that may still enclose a comment in open.
+type sourceNodes struct {
 	byStart []Node
 	byEnd   []Node
+	// next is the position in byStart of the first node not yet added to open.
+	next int
+	// open holds the nodes before next that end at or after the start of the last
+	// comment enclosing was asked about, in byStart order.
+	open []Node
 }
 
 // collectNodes gathers every node in root that covers a real range of source.
@@ -165,43 +183,60 @@ func collectNodes(root Walkable) *nodeIndex {
 	c := &nodeCollector{DefaultVisitor: DefaultVisitor{}}
 	root.Accept(c)
 
-	byStart := c.nodes
-	byEnd := make([]Node, len(byStart))
-	copy(byEnd, byStart)
-
-	sort.SliceStable(byStart, func(i, j int) bool {
-		a, b := byStart[i].Span(), byStart[j].Span()
-		if a.Start.Offset != b.Start.Offset {
+	counts := map[int]int{}
+	for _, node := range c.nodes {
+		counts[node.Span().SourceID]++
+	}
+	x := &nodeIndex{sources: make(map[int]*sourceNodes, len(counts))}
+	for id, n := range counts {
+		x.sources[id] = &sourceNodes{byStart: make([]Node, 0, n)}
+	}
+	for _, node := range c.nodes {
+		source := x.sources[node.Span().SourceID]
+		source.byStart = append(source.byStart, node)
+	}
+	for _, source := range x.sources {
+		source.byEnd = slices.Clone(source.byStart)
+		sort.SliceStable(source.byStart, func(i, j int) bool {
+			a, b := source.byStart[i].Span(), source.byStart[j].Span()
+			if a.Start.Offset != b.Start.Offset {
+				return a.Start.Offset < b.Start.Offset
+			}
+			return a.End.Offset > b.End.Offset
+		})
+		sort.SliceStable(source.byEnd, func(i, j int) bool {
+			a, b := source.byEnd[i].Span(), source.byEnd[j].Span()
+			if a.End.Offset != b.End.Offset {
+				return a.End.Offset < b.End.Offset
+			}
 			return a.Start.Offset < b.Start.Offset
-		}
-		return a.End.Offset > b.End.Offset
-	})
-	sort.SliceStable(byEnd, func(i, j int) bool {
-		a, b := byEnd[i].Span(), byEnd[j].Span()
-		if a.End.Offset != b.End.Offset {
-			return a.End.Offset < b.End.Offset
-		}
-		return a.Start.Offset < b.Start.Offset
-	})
-	return &nodeIndex{byStart: byStart, byEnd: byEnd}
+		})
+	}
+	return x
 }
 
 // place gives comment to a node and reports whether one took it. It applies
 // rules 1 through 4 of the order AttachComments documents. A comment it turns
 // down is one no node in the tree covers, which AttachComments then offers to
 // the file's own container.
+//
+// The comments of one source must be placed in order of their start offsets.
 func (x *nodeIndex) place(comment *Comment, lineMap *LineMap, slots *attachment) bool {
 	if lineMap == nil {
 		return false
 	}
 	span := comment.span
+	source, ok := x.sources[span.SourceID]
+	if !ok {
+		return false
+	}
 
 	// inner is the innermost node the comment sits inside. A neighbour outside
 	// it cannot own the comment. Were it allowed to, the last comment in a
 	// block would lead whatever follows the closing brace.
-	inner := x.enclosing(span)
-	next := x.after(span.End.Offset, span.SourceID)
-	prev := x.before(span.Start.Offset, span.SourceID)
+	inner := source.enclosing(span)
+	next := source.after(span.End.Offset)
+	prev := source.before(span.Start.Offset)
 
 	if next != nil && enclosedBy(inner, next) &&
 		lineMap.SameLine(span.End.Offset, next.Span().Start.Offset) {
@@ -224,56 +259,52 @@ func (x *nodeIndex) place(comment *Comment, lineMap *LineMap, slots *attachment)
 
 // after returns the first node starting at or past offset, preferring the
 // widest of the nodes that start there.
-func (x *nodeIndex) after(offset, sourceID int) Node {
-	i := sort.Search(len(x.byStart), func(i int) bool {
-		return x.byStart[i].Span().Start.Offset >= offset
+func (s *sourceNodes) after(offset int) Node {
+	i := sort.Search(len(s.byStart), func(i int) bool {
+		return s.byStart[i].Span().Start.Offset >= offset
 	})
-	for ; i < len(x.byStart); i++ {
-		if x.byStart[i].Span().SourceID == sourceID {
-			return x.byStart[i]
-		}
+	if i == len(s.byStart) {
+		return nil
 	}
-	return nil
+	return s.byStart[i]
 }
 
-// before returns the last node of sourceID ending at or before offset,
-// preferring the widest of the nodes that end there.
-//
-// A module holds the nodes of all its files in one index. The node nearest a
-// comment by offset therefore often belongs to another file, and the one this
-// looks for lies further back. The scan walks back over every node ending at
-// or before offset until it reaches one of sourceID.
-func (x *nodeIndex) before(offset, sourceID int) Node {
-	i := sort.Search(len(x.byEnd), func(i int) bool {
-		return x.byEnd[i].Span().End.Offset > offset
-	})
-	for i--; i >= 0; i-- {
-		if x.byEnd[i].Span().SourceID != sourceID {
+// before returns the last node ending at or before offset, preferring the
+// widest of the nodes that end there.
+func (s *sourceNodes) before(offset int) Node {
+	i := sort.Search(len(s.byEnd), func(i int) bool {
+		return s.byEnd[i].Span().End.Offset > offset
+	}) - 1
+	if i < 0 {
+		return nil
+	}
+	// byEnd puts a node ahead of the nodes it encloses when they end together,
+	// so walking back to the start of the run reaches the widest.
+	end := s.byEnd[i].Span().End.Offset
+	for i > 0 && s.byEnd[i-1].Span().End.Offset == end {
+		i--
+	}
+	return s.byEnd[i]
+}
+
+// enclosing returns the innermost node whose span contains span. Each call must
+// pass a span starting at or after the start of the span the previous call passed.
+func (s *sourceNodes) enclosing(span Span) Node {
+	for s.next < len(s.byStart) && s.byStart[s.next].Span().Start.Offset <= span.Start.Offset {
+		s.open = append(s.open, s.byStart[s.next])
+		s.next++
+	}
+	// A node ending before span starts encloses neither span nor any later one,
+	// so it leaves open for good.
+	kept := s.open[:0]
+	var found Node
+	for _, node := range s.open {
+		outer := node.Span()
+		if outer.End.Offset < span.Start.Offset {
 			continue
 		}
-		// byEnd puts a node ahead of the nodes it encloses when they end
-		// together, so walking back to the start of the run reaches the widest.
-		end := x.byEnd[i].Span().End.Offset
-		found := x.byEnd[i]
-		for j := i - 1; j >= 0 && x.byEnd[j].Span().End.Offset == end; j-- {
-			if x.byEnd[j].Span().SourceID == sourceID {
-				found = x.byEnd[j]
-			}
-		}
-		return found
-	}
-	return nil
-}
-
-// enclosing returns the innermost node whose span contains span.
-func (x *nodeIndex) enclosing(span Span) Node {
-	var found Node
-	for _, node := range x.byStart {
-		outer := node.Span()
-		if outer.Start.Offset > span.Start.Offset {
-			break
-		}
-		if outer.SourceID != span.SourceID || outer.End.Offset < span.End.Offset {
+		kept = append(kept, node)
+		if outer.End.Offset < span.End.Offset {
 			continue
 		}
 		// Two nodes can cover the same range, as a statement does with the
@@ -284,6 +315,7 @@ func (x *nodeIndex) enclosing(span Span) Node {
 			found = node
 		}
 	}
+	s.open = kept
 	return found
 }
 
