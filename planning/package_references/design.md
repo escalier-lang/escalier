@@ -214,7 +214,7 @@ A function's return type decides whether the caller owns the result.
 
 | `.d.ts` return | Converted return | Why |
 |---|---|---|
-| `number[]` | `Array<number>` | Nothing says the package keeps it, so the caller owns it. |
+| `number[]` | `Array<number>` | The rule assumes a mutable return is fresh, as with `map` or `slice`. A package that keeps the array breaks this, as 3.4 notes. |
 | `readonly number[]`, `ReadonlyArray<number>` | `&'static Array<number>` | The package may keep its own reference. |
 | `ReadonlyMap<K, V>`, `ReadonlySet<T>` | `&'static Map<K, V>`, `&'static Set<T>` | As above. |
 | `Items`, where `type Items = readonly number[]` | `&'static Items` | An alias of a readonly collection is one too. |
