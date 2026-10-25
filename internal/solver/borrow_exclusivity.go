@@ -429,7 +429,7 @@ func (c *checker) recordCaptureLoans(scope *Scope, closure ast.Func) {
 		// it. A module-level name a module's function captures cannot move at all.
 		if moveNode, ok := moved[capture.Name]; ok {
 			if c.fn.capturesModule && c.fn.captureVarIDs.Contains(root) {
-				c.reportOuterMove(moveNode)
+				c.reportModuleLevelMove(moveNode)
 				continue
 			}
 			if hasRef {

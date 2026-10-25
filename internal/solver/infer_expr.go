@@ -2653,7 +2653,7 @@ func (c *checker) inferAssign(scope *Scope, lvl int, e *ast.BinaryExpr) soltype.
 			// any OTHER live alias of the same value.
 			if c.fn != nil {
 				if ref, ok := c.fn.stmtToRef[assignStmt]; ok {
-					if isBorrowType(bindingType(b)) || !c.rejectOuterMove(scope, e.Right, sourceT) {
+					if isBorrowType(bindingType(b)) || !c.rejectModuleLevelMove(scope, e.Right, sourceT) {
 						c.consumeAtGlobalWrite(e.Right, sourceT, e.Right, ref)
 					}
 					// Anything can call a closure in a module-level binding from here on, so what
@@ -2687,8 +2687,8 @@ func (c *checker) inferAssign(scope *Scope, lvl int, e *ast.BinaryExpr) soltype.
 		// A non-module reassignment that moves its source consumes it. The global-write
 		// branch above runs its own consume, so this covers only the local-binding
 		// reassignment.
-		outer := !b.ModuleLevel && !isBorrowType(bindingType(b)) && c.rejectOuterMove(scope, e.Right, c.info.TypeOf(e.Right))
-		if !b.ModuleLevel && !outer && c.movesSourceInto(e.Right, bindingType(b)) {
+		moduleLevel := !b.ModuleLevel && !isBorrowType(bindingType(b)) && c.rejectModuleLevelMove(scope, e.Right, c.info.TypeOf(e.Right))
+		if !b.ModuleLevel && !moduleLevel && c.movesSourceInto(e.Right, bindingType(b)) {
 			if ref, ok := c.fn.stmtToRef[assignStmt]; ok {
 				c.consumeOwned(e.Right, c.info.TypeOf(e.Right), e.Right, ref)
 			}
@@ -2866,7 +2866,7 @@ func (c *checker) inferFieldAssign(scope *Scope, lvl int, e *ast.BinaryExpr, obj
 		if ref, ok := c.fn.stmtToRef[assignStmt]; ok {
 			// A field declared as a borrow takes the value without moving it.
 			borrowField := hasDeclared && isBorrowType(declared.Type)
-			if borrowField || !c.rejectOuterMove(scope, e.Right, source) {
+			if borrowField || !c.rejectModuleLevelMove(scope, e.Right, source) {
 				c.consumeOwned(e.Right, source, e.Right, ref)
 			}
 			// Storing a value that borrows a local into a borrow parameter's field hands the
@@ -2987,7 +2987,7 @@ func (c *checker) inferElementAssign(scope *Scope, lvl int, e *ast.BinaryExpr, i
 			// a borrow of a local into a parameter's element escapes, as a field store does.
 			// Slots that all hold borrows take the value without moving it.
 			borrowSlots := !slices.ContainsFunc(slots, func(slot soltype.Type) bool { return !isBorrowType(slot) })
-			if borrowSlots || !c.rejectOuterMove(scope, e.Right, source) {
+			if borrowSlots || !c.rejectModuleLevelMove(scope, e.Right, source) {
 				c.consumeOwned(e.Right, source, e.Right, ref)
 			}
 			c.checkParamElementStoreEscape(ix.Object, e.Right, ref)
@@ -3105,7 +3105,7 @@ func (c *checker) inferAccessorAssign(
 	// an inner branch statement. A rejected write records no move.
 	if c.fn != nil && len(c.errs) == errsBefore && c.isConcreteOwned(setter.Param.Type) {
 		if ref, ok := c.fn.stmtToRef[assignStmt]; ok {
-			if !c.rejectOuterMove(scope, e.Right, source) {
+			if !c.rejectModuleLevelMove(scope, e.Right, source) {
 				c.consumeOwned(e.Right, source, e.Right, ref)
 			}
 			c.recordEscapeSite(e.Right, ref)

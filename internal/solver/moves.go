@@ -518,7 +518,7 @@ func (c *checker) movesSourceInto(source ast.Expr, destT soltype.Type) bool {
 // identifier and so names no owned source to consume.
 func (c *checker) consumeBindingInit(vd *ast.VarDecl, bindingT soltype.Type, stmt ast.Stmt) {
 	// inferVarDeclInit reported a move out of a module-level binding, which records no move.
-	if c.fn.outerMoves.Contains(vd.Init) {
+	if c.fn.moduleLevelMoves.Contains(vd.Init) {
 		return
 	}
 	if !c.movesSourceInto(vd.Init, bindingT) {
@@ -682,7 +682,7 @@ func (c *checker) consumeAtGlobalWrite(source ast.Expr, sourceT soltype.Type, mo
 // storage, so neither consumes. hasRef is false when the literal has no resolvable
 // statement point, in which case nothing is recorded rather than mis-attributing the
 // move to the zero StmtRef. An element moved out of a module-level binding is reported
-// by rejectOuterMove instead and records no move. scope resolves the element's root.
+// by rejectModuleLevelMove instead and records no move. scope resolves the element's root.
 //
 // inferTuple and inferObject call it for each element built from a source place:
 //
@@ -697,7 +697,7 @@ func (c *checker) consumeAtGlobalWrite(source ast.Expr, sourceT soltype.Type, mo
 //	pair.a              // ERROR: use of moved value 'pair.a'
 //	pair.b              // OK: sibling untouched
 func (c *checker) consumeIntoLiteral(scope *Scope, el ast.Expr, elemT soltype.Type, ref liveness.StmtRef, hasRef bool) {
-	if c.rejectOuterMove(scope, el, elemT) || !hasRef {
+	if c.rejectModuleLevelMove(scope, el, elemT) || !hasRef {
 		return
 	}
 	c.consumeOwned(el, elemT, el, ref)

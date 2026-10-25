@@ -149,6 +149,35 @@ fn f() {
 			want: []string{"4:8-4:10: cannot move module-level value 'xs' inside a function. Borrow it with `&xs`"},
 		},
 		{
+			name: "stored into an element",
+			src: `val xs: Array<number> = [1]
+fn f(i: number) {
+	val a: mut Array<Array<number>> = [[1]]
+	a[i] = xs
+}`,
+			want: []string{"4:9-4:11: cannot move module-level value 'xs' inside a function. Borrow it with `&xs`"},
+		},
+		{
+			name: "stored through a setter",
+			src: `val xs: Array<number> = [1]
+class Box {
+	items: Array<number>,
+	constructor(&mut self) { self.items = [] },
+	set all(&mut self, v: Array<number>) { self.items = v },
+}
+fn f() {
+	val mut b = Box()
+	b.all = xs
+}`,
+			want: []string{"9:10-9:12: cannot move module-level value 'xs' inside a function. Borrow it with `&xs`"},
+		},
+		{
+			name: "a tuple of arrays spread into a literal",
+			src: `val t: [Array<number>, Array<number>] = [[1], [2]]
+fn f() { val a = [...t] }`,
+			want: []string{"2:22-2:23: cannot move module-level value 't' inside a function. Borrow it with `&t`"},
+		},
+		{
 			name: "destructured into an owned leaf",
 			src: `val cfg: {items: Array<number>, n: number} = {items: [1], n: 1}
 fn f() { val {items} = cfg }`,
@@ -212,6 +241,12 @@ fn f() {
 }`,
 		},
 		{
+			name: "a tuple of numbers spread into a literal",
+			src: `val t: [number, number] = [1, 2]
+fn f() { val a = [...t] }`,
+			want: nil,
+		},
+		{
 			name: "destructured into a copied leaf",
 			src: `val cfg: {items: Array<number>, n: number} = {items: [1], n: 1}
 fn f() { val {n} = cfg }`,
@@ -244,12 +279,7 @@ fn h() {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
 			_, _, errs := inferSource(t, tt.src)
-			got := messagesWithSpan(t, errs)
-			if len(tt.want) == 0 {
-				require.Empty(t, got)
-				return
-			}
-			require.Equal(t, tt.want, got)
+			require.Equal(t, tt.want, messagesWithSpan(t, errs))
 		})
 	}
 }
@@ -314,6 +344,18 @@ func TestClosureMovesCapture(t *testing.T) {
 			want: []string{"5:10-5:11: use of moved value 'b'"},
 		},
 		{
+			name: "a closure moving two fields of one capture",
+			src: `fn f() {
+	val a: {p: Array<number>, q: Array<number>} = {p: [1], q: [2]}
+	val g = fn() {
+		val x = a.p
+		val y = a.q
+	}
+	val n = a
+}`,
+			want: []string{"7:10-7:11: use of moved value 'a'"},
+		},
+		{
 			name: "the closure called once and its result mutated",
 			src: `fn f() {
 	val a: Array<number> = [1]
@@ -348,18 +390,13 @@ func TestClosureMovesCapture(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
 			_, _, errs := inferSource(t, tt.src)
-			got := messagesWithSpan(t, errs)
-			if len(tt.want) == 0 {
-				require.Empty(t, got)
-				return
-			}
-			require.Equal(t, tt.want, got)
+			require.Equal(t, tt.want, messagesWithSpan(t, errs))
 		})
 	}
 }
 
 // TestScriptMovesLibraryValue asserts that a script function moving a value its library exports
-// reports an OuterMoveError.
+// reports a ModuleLevelMoveError.
 func TestScriptMovesLibraryValue(t *testing.T) {
 	ctx := context.Background()
 	libSource := &ast.Source{ID: 0, Path: "lib/index.esc", Contents: `export val xs: Array<number> = [1]`}

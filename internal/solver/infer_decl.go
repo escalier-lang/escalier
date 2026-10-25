@@ -177,7 +177,7 @@ func (c *checker) inferVarDeclInit(scope *Scope, lvl int, d *ast.VarDecl, ns str
 	// binding is reported here, before the upgrade below asks movesOwnedPlace about it.
 	if _, isIdent := d.Pattern.(*ast.IdentPat); isIdent {
 		if _, borrowAnn := d.TypeAnn.(*ast.RefTypeAnn); !borrowAnn {
-			c.rejectOuterMove(scope, d.Init, initT)
+			c.rejectModuleLevelMove(scope, d.Init, initT)
 		}
 	}
 	switch {
@@ -759,7 +759,7 @@ func (c *checker) movesOwnedPlace(init ast.Expr, initT soltype.Type) bool {
 	// A move out of a module-level binding is reported where the value moves and records no
 	// move. Accepting it here types the destination as the move would, so the binding reports
 	// nothing more.
-	if c.fn != nil && c.fn.outerMoves.Contains(init) {
+	if c.fn != nil && c.fn.moduleLevelMoves.Contains(init) {
 		return true
 	}
 	if _, ok := c.exprPlace(init); !ok {

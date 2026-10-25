@@ -78,7 +78,7 @@ func (c *checker) inferStmt(scope *Scope, lvl int, s ast.Stmt) soltype.Type {
 			if s.Expr != nil {
 				if ref, ok := c.fn.stmtToRef[s]; ok {
 					// A function declared to return a borrow hands the value out without moving it.
-					if c.fn.returnsBorrow || !c.rejectOuterMove(scope, s.Expr, t) {
+					if c.fn.returnsBorrow || !c.rejectModuleLevelMove(scope, s.Expr, t) {
 						c.consumeOwned(s.Expr, t, s.Expr, ref)
 					}
 					// A returned value must not borrow a function-local, which dies when the
@@ -173,9 +173,9 @@ func (c *checker) inferStmt(scope *Scope, lvl int, s ast.Stmt) soltype.Type {
 			// monomorphic projections.
 			c.inferDestructureDecl(scope, lvl, vd)
 			if c.fn != nil {
-				outer := c.rejectOuterDestructure(scope, vd.Pattern, vd.Init)
+				moduleLevel := c.rejectModuleLevelDestructure(scope, vd.Pattern, vd.Init)
 				if ref, ok := c.fn.stmtToRef[s]; ok {
-					if !outer {
+					if !moduleLevel {
 						c.consumeDestructureLeaves(scope, vd.Pattern, vd.Init, ref)
 					}
 					c.flushBorrowDirty(ref)

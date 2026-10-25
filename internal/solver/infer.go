@@ -530,9 +530,9 @@ type funcCtx struct {
 	// such as the b in `val y = b`. checkUsesAgainstLoans reads it to report a move of
 	// borrowed data as a move rather than as a plain use.
 	movedSources set.Set[ast.Node]
-	// outerMoves holds each expression rejectOuterMove has reported, so a move that two sites
-	// record reports once.
-	outerMoves set.Set[ast.Node]
+	// moduleLevelMoves holds each expression reported as a move out of a module-level binding.
+	// The sites that record a move read it, so such a move records nothing.
+	moduleLevelMoves set.Set[ast.Node]
 	// placeCopies lists each place a binding takes its value from, such as the b in `val q = b`
 	// or in `a.peer = b`. movedOrigins keeps the ones movedSources says were moved, so the
 	// escape check can follow a local into the binding that owns its data afterwards.

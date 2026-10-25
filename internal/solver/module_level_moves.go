@@ -14,7 +14,7 @@ import (
 // A move takes an owned value out of the place holding it and leaves the destination its sole
 // owner. Inside a function body the move engine tracks moves out of the body's own locals. A
 // module-level binding or an import lives outside every call frame, so a move out of one would
-// leave two owners of the same object. OuterMoveError rejects that move, and a borrow reads the
+// leave two owners of the same object. ModuleLevelMoveError rejects that move, and a borrow reads the
 // value instead.
 //
 //	val xs: Array<number> = [1]
@@ -35,28 +35,31 @@ import (
 //		val n = g()                                 // ERROR: use of moved value 'g'
 //	}
 
-// OuterMoveError is reported when a function body moves an owned value out of a module-level
+// ModuleLevelMoveError is reported when a function body moves an owned value out of a module-level
 // binding or an import.
-type OuterMoveError struct {
+type ModuleLevelMoveError struct {
 	// Source is the source text of the moved place, such as `xs` or `cfg.items`.
 	Source string
 	node   ast.Node
 }
 
-func (*OuterMoveError) isSolverError()      {}
-func (e *OuterMoveError) Span() ast.Span    { return e.node.Span() }
-func (*OuterMoveError) Related() []ast.Span { return nil }
-func (e *OuterMoveError) Message() string {
+func (*ModuleLevelMoveError) isSolverError()      {}
+func (e *ModuleLevelMoveError) Span() ast.Span    { return e.node.Span() }
+func (*ModuleLevelMoveError) Related() []ast.Span { return nil }
+func (e *ModuleLevelMoveError) Message() string {
 	return fmt.Sprintf("cannot move module-level value '%s' inside a function. Borrow it with `&%s`", e.Source, e.Source)
 }
 
-// outerRootBinding returns the binding the place e is rooted at when that binding is a `val` or
-// `var` outside every function frame. e is such a binding's name, or a static member or index
-// chain off one. The binding is a name the rename pass left unnumbered, or a module-level name a
-// module's function captures. A member chain off a namespace is rooted at the namespace's value
-// it reads first. A class or enum name is not such a binding, and neither is a class value.
-// scope resolves the root. It answers false outside a function body.
-func (c *checker) outerRootBinding(scope *Scope, e ast.Expr) (ValueBinding, bool) {
+// moduleLevelRootInBody returns the binding the place e is rooted at, when e is read inside a
+// function body and that binding is a module-level `val` or `var` or an import. e is such a
+// binding's name, or a static member or index chain off one. Inside a body, such a binding is a
+// name the rename pass left unnumbered, or a module-level name a module's function captures. A
+// member chain off a namespace is rooted at the namespace's value it reads first. A class or enum
+// name is not such a binding, and neither is a class value. scope resolves the root.
+//
+// It answers false for code outside a function body, since that code moves nothing the move
+// engine tracks.
+func (c *checker) moduleLevelRootInBody(scope *Scope, e ast.Expr) (ValueBinding, bool) {
 	if c.fn == nil || c.fn.cfg == nil || scope == nil {
 		return ValueBinding{}, false
 	}
@@ -75,11 +78,11 @@ func (c *checker) outerRootBinding(scope *Scope, e ast.Expr) (ValueBinding, bool
 				if !isNamespace {
 					return ValueBinding{}, false
 				}
-				if b, found = namespaceMember(ns, members); !found {
-					return ValueBinding{}, false
-				}
+				// A path that reaches no value leaves b the zero binding, whose type is
+				// nil and so holds nothing that moves.
+				b, _ = namespaceMember(ns, members)
 			}
-			if declaresTypeValue(b) || c.isClassValue(bindingType(b)) {
+			if declaredAsClassOrEnum(b) || c.isClassValue(bindingType(b)) {
 				return ValueBinding{}, false
 			}
 			return b, true
@@ -115,8 +118,8 @@ func namespaceMember(ns *Namespace, path []string) (ValueBinding, bool) {
 	return ValueBinding{}, false
 }
 
-// declaresTypeValue reports whether some declaration of b is a class or an enum.
-func declaresTypeValue(b ValueBinding) bool {
+// declaredAsClassOrEnum reports whether some declaration of b is a class or an enum.
+func declaredAsClassOrEnum(b ValueBinding) bool {
 	for _, src := range b.Sources {
 		if np, ok := src.(*ast.NodeProvenance); ok {
 			switch np.Node.(type) {
@@ -128,15 +131,12 @@ func declaresTypeValue(b ValueBinding) bool {
 	return false
 }
 
-// movesOuterPlace reports whether moving source, a value of type sourceT, moves it out of a
-// place rooted at a `val` or `var` outside every function frame. A bare name is judged by its
+// movesModuleLevelPlace reports whether moving source, a value of type sourceT, moves it out of a
+// place rooted at a module-level `val` or `var` or an import. A bare name is judged by its
 // binding's type. The value moves only when its type is known to be an owned reference shape,
 // so a value whose type is still unresolved is not taken to move. scope resolves the root.
-func (c *checker) movesOuterPlace(scope *Scope, source ast.Expr, sourceT soltype.Type) bool {
-	if source == nil {
-		return false
-	}
-	b, ok := c.outerRootBinding(scope, source)
+func (c *checker) movesModuleLevelPlace(scope *Scope, source ast.Expr, sourceT soltype.Type) bool {
+	b, ok := c.moduleLevelRootInBody(scope, source)
 	if !ok {
 		return false
 	}
@@ -180,24 +180,24 @@ func (c *checker) holdsConcreteOwned(t soltype.Type, seen set.Set[*soltype.TypeV
 	})
 }
 
-// rejectOuterMove reports whether moving source, a value of type sourceT, moves a value out of a
-// place rooted at a `val` or `var` outside every function frame. The value moved is source
+// rejectModuleLevelMove reports whether moving source, a value of type sourceT, moves a value out of a
+// place rooted at a module-level `val` or `var` or an import. The value moved is source
 // itself, or a result of one of its branches when source is a conditional, `match`, `do`, or
-// `try`. It reports an OuterMoveError for each such place, once per expression. The caller
+// `try`. It reports a ModuleLevelMoveError for each such place, once per expression. The caller
 // records no move for source when it answers true. scope resolves the root.
-func (c *checker) rejectOuterMove(scope *Scope, source ast.Expr, sourceT soltype.Type) bool {
+func (c *checker) rejectModuleLevelMove(scope *Scope, source ast.Expr, sourceT soltype.Type) bool {
 	results := branchResults(source)
 	if len(results) == 1 && results[0] == source {
-		if !c.movesOuterPlace(scope, source, sourceT) {
+		if !c.movesModuleLevelPlace(scope, source, sourceT) {
 			return false
 		}
-		c.reportOuterMove(source)
+		c.reportModuleLevelMove(source)
 		return true
 	}
 	moved := false
 	for _, r := range results {
-		if c.movesOuterPlace(scope, r, c.info.TypeOf(r)) {
-			c.reportOuterMove(r)
+		if c.movesModuleLevelPlace(scope, r, c.info.TypeOf(r)) {
+			c.reportModuleLevelMove(r)
 			moved = true
 		}
 	}
@@ -240,29 +240,25 @@ func branchResults(e ast.Expr) []ast.Expr {
 	return results
 }
 
-// reportOuterMove reports an OuterMoveError blaming source, the expression whose value moves,
-// once per expression.
-func (c *checker) reportOuterMove(source ast.Node) {
-	if c.fn.outerMoves == nil {
-		c.fn.outerMoves = set.NewSet[ast.Node]()
+// reportModuleLevelMove reports a ModuleLevelMoveError blaming source, the expression whose
+// value moves, and records source in moduleLevelMoves.
+func (c *checker) reportModuleLevelMove(source ast.Node) {
+	if c.fn.moduleLevelMoves == nil {
+		c.fn.moduleLevelMoves = set.NewSet[ast.Node]()
 	}
-	if c.fn.outerMoves.Contains(source) {
-		return
-	}
-	c.fn.outerMoves.Add(source)
-	text, err := printer.Print(source, printer.DefaultOptions())
-	if err != nil {
-		text = "?"
-	}
-	c.report(&OuterMoveError{Source: text, node: source})
+	c.fn.moduleLevelMoves.Add(source)
+	// A place expression is a name, member read, or index read, all of which the printer
+	// renders.
+	text, _ := printer.Print(source, printer.DefaultOptions())
+	c.report(&ModuleLevelMoveError{Source: text, node: source})
 }
 
-// rejectOuterDestructure reports whether init is a place rooted at a `val` or `var` outside
-// every function frame. It reports an OuterMoveError when the destructuring of init into pat
+// rejectModuleLevelDestructure reports whether init is a place rooted at a module-level `val` or
+// `var` or an import. It reports a ModuleLevelMoveError when the destructuring of init into pat
 // takes some leaf of it by value. scope resolves the root and the leaf bindings. The caller
 // records no move for such an init.
-func (c *checker) rejectOuterDestructure(scope *Scope, pat ast.Pat, init ast.Expr) bool {
-	if _, ok := c.outerRootBinding(scope, init); !ok {
+func (c *checker) rejectModuleLevelDestructure(scope *Scope, pat ast.Pat, init ast.Expr) bool {
+	if _, ok := c.moduleLevelRootInBody(scope, init); !ok {
 		return false
 	}
 	ownedLeaf := false
@@ -272,18 +268,16 @@ func (c *checker) rejectOuterDestructure(scope *Scope, pat ast.Pat, init ast.Exp
 		}
 	})
 	if ownedLeaf {
-		c.reportOuterMove(init)
+		c.reportModuleLevelMove(init)
 	}
 	return true
 }
 
 // movedCaptures maps the name of each local of the enclosing body that the current closure
 // moves, wholly or in part, to the expression that moves it. Only a capture of a concrete owned
-// type counts. It returns nil for a module's function.
+// type counts. The current body must be a closure, whose captures are locals of the body that
+// encloses it.
 func (c *checker) movedCaptures() map[string]ast.Node {
-	if c.fn.capturesModule {
-		return nil
-	}
 	// Places are visited in VarID order, so a capture moved through several places blames
 	// the same one on every run.
 	ids := make([]liveness.VarID, 0, len(c.fn.movePlaces))
@@ -316,9 +310,6 @@ func (c *checker) movedCaptures() map[string]ast.Node {
 // is the function expression.
 func (c *checker) funcMovesCaptures(decl ast.Node) bool {
 	if vd, ok := decl.(*ast.VarDecl); ok {
-		if vd.Init == nil {
-			return false
-		}
 		decl = vd.Init
 	}
 	fn, ok := decl.(ast.Func)
@@ -329,9 +320,6 @@ func (c *checker) funcMovesCaptures(decl ast.Node) bool {
 // closure whose body moves a local it captures. The read of the callee is recorded as a use, so
 // a second call is a use-after-move. ref is the call's statement.
 func (c *checker) consumeOnceCallee(call *ast.CallExpr, ref liveness.StmtRef) {
-	if c.fn == nil || c.fn.cfg == nil {
-		return
-	}
 	ident, ok := call.Callee.(*ast.IdentExpr)
 	if !ok || c.varIDs.Of(ident) <= 0 {
 		return
@@ -347,11 +335,11 @@ func (c *checker) consumeOnceCallee(call *ast.CallExpr, ref liveness.StmtRef) {
 
 // consumeSpreadIntoLiteral is consumeIntoLiteral for the operand src of a spread, whose type is
 // t. A spread copies the elements or fields of src into the new literal. When src is rooted at a
-// binding outside every function frame and every element or field of it is a value type, the
+// module-level binding and every element or field of it is a value type, the
 // spread copies values only and moves nothing. A bare name's type is read from the binding scope
 // resolves it to.
 func (c *checker) consumeSpreadIntoLiteral(scope *Scope, src ast.Expr, t soltype.Type, ref liveness.StmtRef, hasRef bool) {
-	if b, ok := c.outerRootBinding(scope, src); ok {
+	if b, ok := c.moduleLevelRootInBody(scope, src); ok {
 		srcT := t
 		if _, isIdent := src.(*ast.IdentExpr); isIdent {
 			srcT = bindingType(b)
