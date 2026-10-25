@@ -116,7 +116,7 @@ func (c *checker) checkSuperCalls(ctx *superCtx, ctor *ast.ConstructorElem) {
 		return
 	}
 
-	cfg := liveness.BuildCFG(*ctor.Fn.Body)
+	cfg := liveness.BuildCFG(c.varIDs, *ctor.Fn.Body)
 	col := &superCollector{gens: map[liveness.StmtRef]set.Set[liveness.VarID]{}}
 	// Walk each CFG block's statements. The builder has already flattened control flow into
 	// blocks, so the per-statement scan attributes every call and every mention of `self` to

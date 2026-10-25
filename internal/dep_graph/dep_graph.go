@@ -88,6 +88,13 @@ type DepGraph struct {
 	// All namespace names in the module, indexed by NamespaceID.
 	Namespaces []string
 
+	// IdentNamespaces maps each identifier that resolves to one of the graph's
+	// value bindings to the namespace that binding is declared in. An identifier
+	// missing from the map belongs to the root namespace. The graph records this
+	// here rather than on the IdentExpr because parsed stdlib modules are shared
+	// across inference runs and must not be written to.
+	IdentNamespaces map[*ast.IdentExpr]ast.NamespaceID
+
 	// ImportNamespaces maps a source id to the import bindings that file makes
 	// for packages merged into this module, each naming the namespace the
 	// package's declarations bind under. An entry keyed UnprefixedImport names a
@@ -112,11 +119,12 @@ const UnprefixedImport = ""
 // NewDepGraph creates a new DepGraph with initialized empty maps.
 func NewDepGraph(namespaceMap []string) *DepGraph {
 	return &DepGraph{
-		Decls:         btree.Map[BindingKey, []ast.Decl]{},
-		DeclDeps:      btree.Map[BindingKey, btree.Set[BindingKey]]{},
-		DeclNamespace: btree.Map[BindingKey, string]{},
-		Components:    [][]BindingKey{},
-		Namespaces:    namespaceMap,
+		Decls:           btree.Map[BindingKey, []ast.Decl]{},
+		DeclDeps:        btree.Map[BindingKey, btree.Set[BindingKey]]{},
+		DeclNamespace:   btree.Map[BindingKey, string]{},
+		Components:      [][]BindingKey{},
+		Namespaces:      namespaceMap,
+		IdentNamespaces: map[*ast.IdentExpr]ast.NamespaceID{},
 	}
 }
 
@@ -144,6 +152,15 @@ func (g *DepGraph) GetNamespaceString(id ast.NamespaceID) string {
 		return g.Namespaces[id]
 	}
 	return ""
+}
+
+// IdentNamespace returns the ID of the namespace that declares the binding expr
+// resolves to. It returns RootNamespaceID when expr is not in IdentNamespaces.
+func (g *DepGraph) IdentNamespace(expr *ast.IdentExpr) ast.NamespaceID {
+	if id, ok := g.IdentNamespaces[expr]; ok {
+		return id
+	}
+	return ast.RootNamespaceID
 }
 
 // AllBindings returns all binding keys in the graph in deterministic order
@@ -409,7 +426,7 @@ func (v *DependencyVisitor) addValueDependency(name string, expr *ast.IdentExpr)
 		key := ValueBindingKey(qualifiedName)
 		if v.Graph.HasBinding(key) {
 			if expr != nil {
-				expr.Namespace = v.NamespaceMap[v.CurrentNamespace]
+				v.Graph.IdentNamespaces[expr] = v.NamespaceMap[v.CurrentNamespace]
 			}
 			v.Dependencies.Insert(key)
 			return true
@@ -422,7 +439,7 @@ func (v *DependencyVisitor) addValueDependency(name string, expr *ast.IdentExpr)
 		// Set the namespace based on where the binding was declared
 		if expr != nil {
 			if declNS, ok := v.Graph.DeclNamespace.Get(key); ok {
-				expr.Namespace = v.NamespaceMap[declNS]
+				v.Graph.IdentNamespaces[expr] = v.NamespaceMap[declNS]
 			}
 		}
 		v.Dependencies.Insert(key)
@@ -909,7 +926,7 @@ func FindDeclDependencies(key BindingKey, graph *DepGraph) btree.Set[BindingKey]
 	decls := graph.GetDecls(key)
 	currentNamespace := graph.GetNamespace(key)
 
-	// Build namespace map for setting IdentExpr.Namespace
+	// Build namespace map for recording DepGraph.IdentNamespaces
 	namespaceMap := make(map[string]ast.NamespaceID)
 	for i, nsName := range graph.Namespaces {
 		namespaceMap[nsName] = ast.NamespaceID(i)

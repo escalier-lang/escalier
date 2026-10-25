@@ -6,6 +6,8 @@ import (
 	"sync"
 
 	"github.com/escalier-lang/escalier/internal/ast"
+	"github.com/escalier-lang/escalier/internal/dep_graph"
+	"github.com/escalier-lang/escalier/internal/set"
 )
 
 // stdlib_parse_cache.go keeps the parsed form of each pseudo-package file, so a
@@ -17,8 +19,11 @@ import (
 // InferScriptAgainstStdlib reads the inferred packages from the cache in
 // stdlib_run_cache.go. Any other run infers them itself.
 //
-// Sharing the parsed module is safe because the solver never writes to an AST
-// node, recording inferred types in the per-run Info side table instead.
+// Sharing the parsed module is safe because nothing that runs over it writes to
+// an AST node. Inferred types go in the per-run Info side table, rename-pass
+// VarIDs go in the per-run liveness.VarIDs table, and resolved namespaces go in
+// DepGraph.IdentNamespaces. A dependency graph is built once per cached module
+// and shared too, since inference only reads it.
 
 // parsedModuleCache holds one parsed module per distinct source, keyed by the
 // file's basename and contents, which are the two inputs the parse reads.
@@ -68,6 +73,18 @@ type parsedModuleCache struct {
 	// it, and two packages sharing one would make a "declared here" from either
 	// read as the other's.
 	nextSourceID int
+	// modules holds every module an entry in entries or groups holds.
+	modules set.Set[*ast.Module]
+	// graphs holds one dependency graph per cached module and the group it loads as.
+	graphs map[depGraphKey]*dep_graph.DepGraph
+}
+
+// depGraphKey identifies a dependency graph by the module it is built over and by
+// the members of the group the module loads as. group is empty for a module that
+// loads as a single package.
+type depGraphKey struct {
+	module *ast.Module
+	group  string
 }
 
 // parseKey identifies a source by the two inputs the parse reads.
@@ -108,6 +125,8 @@ func newParsedModuleCache(firstSourceID int) *parsedModuleCache {
 	return &parsedModuleCache{
 		entries:      map[parseKey]parsedModuleEntry{},
 		groups:       map[groupKey]parsedModuleEntry{},
+		modules:      set.NewSet[*ast.Module](),
+		graphs:       map[depGraphKey]*dep_graph.DepGraph{},
 		nextSourceID: firstSourceID,
 	}
 }
@@ -123,23 +142,7 @@ func (c *parsedModuleCache) get(
 	parse func(sourceID int) (*ast.Module, error),
 ) (*ast.Module, error) {
 	key := parseKey{name: name, contents: contents}
-
-	c.mu.Lock()
-	defer c.mu.Unlock()
-	if entry, held := c.entries[key]; held {
-		return entry.module, nil
-	}
-
-	sourceID := c.nextSourceID
-	module, err := parse(sourceID)
-	if err != nil {
-		// A failure is not cached, and the id it would have used is not consumed.
-		// The next load of the same source retries.
-		return nil, err
-	}
-	c.nextSourceID++
-	c.entries[key] = parsedModuleEntry{module: module, sourceID: sourceID}
-	return module, nil
+	return parseOnce(c, c.entries, key, 1, parse)
 }
 
 // getGroup returns the module parsed from the members called paths holding
@@ -166,23 +169,69 @@ func (c *parsedModuleCache) getNamedGroup(
 	parse func(firstSourceID int) (*ast.Module, error),
 ) (*ast.Module, error) {
 	key := groupKey{name: name, paths: joinParts(paths), contents: joinParts(contents)}
+	return parseOnce(c, c.groups, key, len(paths), parse)
+}
 
+// parseOnce returns the module entries holds under key, calling parse with the
+// next free source id on a miss. A successful parse consumes ids consecutive
+// source ids, starting at the one parse was given, and its module joins
+// c.modules. A failure is not cached and consumes no ids, so the next load of the
+// same key retries.
+//
+// parseOnce holds c.mu for the whole call, parse included.
+func parseOnce[K comparable](
+	c *parsedModuleCache,
+	entries map[K]parsedModuleEntry,
+	key K,
+	ids int,
+	parse func(firstSourceID int) (*ast.Module, error),
+) (*ast.Module, error) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
-	if entry, held := c.groups[key]; held {
+	if entry, held := entries[key]; held {
 		return entry.module, nil
 	}
 
 	firstSourceID := c.nextSourceID
 	module, err := parse(firstSourceID)
 	if err != nil {
-		// Not cached and no id consumed, so the next load of the same members
-		// retries. The single-source path answers a failure the same way.
 		return nil, err
 	}
-	c.nextSourceID += len(paths)
-	c.groups[key] = parsedModuleEntry{module: module, sourceID: firstSourceID}
+	c.nextSourceID += ids
+	entries[key] = parsedModuleEntry{module: module, sourceID: firstSourceID}
+	c.modules.Add(module)
 	return module, nil
+}
+
+// depGraph returns the dependency graph build produces for module loaded as the
+// group with members group, sorted. group is empty for a module that loads as a
+// single package.
+//
+// The graph is built once per module and group when the cache holds module, and
+// every later call returns that same graph. A caller must only read it. A module
+// the cache does not hold gets a fresh graph on every call, so the graphs held
+// grow only with the parsed modules.
+//
+// For a cached module, build runs with the lock held, the way a parse does, so a
+// second caller for the same module waits rather than building it again.
+func (c *parsedModuleCache) depGraph(
+	module *ast.Module,
+	group []string,
+	build func() *dep_graph.DepGraph,
+) *dep_graph.DepGraph {
+	c.mu.Lock()
+	if !c.modules.Contains(module) {
+		c.mu.Unlock()
+		return build()
+	}
+	defer c.mu.Unlock()
+	key := depGraphKey{module: module, group: joinParts(group)}
+	if g, held := c.graphs[key]; held {
+		return g
+	}
+	g := build()
+	c.graphs[key] = g
+	return g
 }
 
 // stdlibParses is the process-wide cache every StdlibSource reads. Its ids start

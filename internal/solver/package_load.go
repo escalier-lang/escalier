@@ -171,7 +171,12 @@ func (c *checker) inferPackage(uri string, module *ast.Module) (*Namespace, []So
 		scope = c.globalsScope().Child()
 	}
 	c.bindFileImports(scope, module)
-	c.inferDepGraph(scope, 0, module, dep_graph.BuildDepGraph(module))
+	// Inference only reads the graph, and a package's graph depends on its module
+	// alone, so every run loading the same cached module shares one graph.
+	g := stdlibParses.depGraph(module, nil, func() *dep_graph.DepGraph {
+		return dep_graph.BuildDepGraph(module)
+	})
+	c.inferDepGraph(scope, 0, module, g)
 
 	errs := c.errs
 	c.errs = prevErrs

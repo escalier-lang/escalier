@@ -11,24 +11,21 @@ import (
 
 // DtsParser parses TypeScript .d.ts declaration files
 type DtsParser struct {
-	lexer            *Lexer
-	errors           []*Error
-	inAmbientContext bool // true when inside a declare namespace or declare module
+	lexer  *Lexer
+	errors []*Error
 }
 
 // ParserState represents a lightweight snapshot of parser state for backtracking
 type ParserState struct {
-	lexerState       *Lexer
-	errorCount       int
-	inAmbientContext bool
+	lexerState *Lexer
+	errorCount int
 }
 
 // NewDtsParser creates a new parser for TypeScript declaration files
 func NewDtsParser(source *ast.Source) *DtsParser {
 	return &DtsParser{
-		lexer:            NewLexer(source),
-		errors:           []*Error{},
-		inAmbientContext: false,
+		lexer:  NewLexer(source),
+		errors: []*Error{},
 	}
 }
 
@@ -162,9 +159,8 @@ func attachDoc(n any, doc string) {
 // Returns a lightweight snapshot that only tracks error count instead of copying errors
 func (p *DtsParser) saveState() *ParserState {
 	return &ParserState{
-		lexerState:       p.lexer.SaveState(),
-		errorCount:       len(p.errors),
-		inAmbientContext: p.inAmbientContext,
+		lexerState: p.lexer.SaveState(),
+		errorCount: len(p.errors),
 	}
 }
 
@@ -173,7 +169,6 @@ func (p *DtsParser) saveState() *ParserState {
 func (p *DtsParser) restoreState(saved *ParserState) {
 	p.lexer.RestoreState(saved.lexerState)
 	p.errors = p.errors[:saved.errorCount]
-	p.inAmbientContext = saved.inAmbientContext
 }
 
 // ============================================================================

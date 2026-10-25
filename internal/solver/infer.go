@@ -73,6 +73,10 @@ type checker struct {
 	// is the unset sentinel, and negative ids mark non-local bindings.
 	varIDCounter int
 
+	// varIDs holds the VarID every rename pass in this run assigned, keyed by the AST
+	// node it names.
+	varIDs *liveness.VarIDs
+
 	// closureCaptureInfo holds the captures each closure's pre-pass found, keyed by the
 	// closure. The pre-pass defines a captured local as a parameter of the closure's body, so
 	// the closure's AST no longer marks it as captured once the pre-pass has run.
@@ -890,6 +894,7 @@ func newChecker() *checker {
 		info:         NewInfo(),
 		prov:         Prov{},
 		varIDCounter: 1,
+		varIDs:       liveness.NewVarIDs(),
 	}
 	c.ctx.fusionRecorder = c.recordFusionEdge
 	c.info.ctx = c.ctx
@@ -915,11 +920,15 @@ func newChecker() *checker {
 // and the diagnostics start empty, so the script's results cover the script alone.
 func (c *checker) forScript(pkgURI string) *checker {
 	sc := &checker{
-		ctx:               c.ctx,
-		pkgURI:            pkgURI,
-		info:              NewInfo(),
-		prov:              maps.Clone(c.prov),
-		varIDCounter:      c.varIDCounter,
+		ctx:          c.ctx,
+		pkgURI:       pkgURI,
+		info:         NewInfo(),
+		prov:         maps.Clone(c.prov),
+		varIDCounter: c.varIDCounter,
+		// A fresh table, because the script looks up only nodes in its own bodies,
+		// which its own rename pass records. Sharing the module's table would grow
+		// it on every re-check of the script.
+		varIDs:            liveness.NewVarIDs(),
 		prelude:           c.prelude,
 		source:            c.source,
 		groupSource:       c.groupSource,
