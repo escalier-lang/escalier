@@ -115,14 +115,16 @@ the value, and a later use of it is a use-after-move.
 
 ### 2.4 Gaps in the module-level rules
 
-The rules in 2.1 run only inside function bodies. Three cases slip past them:
+The rules in 2.1 run only inside function bodies. Four cases slip past them:
 
 - A module-level initializer can move another module-level value. With
   `val ys: mut Array<number> = xs`, both bindings own the same array, and a
   function can mutate it through either one. `Holder(xs)`, `take(xs)` and
-  `{items: xs}` in an initializer hand `xs` to a new owner the same way, and so
-  does an importer's initializer such as `val m = stats.counts`. #2230 tracks
-  this.
+  `{items: xs}` in an initializer hand `xs` to a new owner the same way. #2230
+  tracks this.
+- An importer's top-level initializer can move another package's module-level
+  value. `val m = stats.counts` binds the array `stats` owns, while the same
+  binding inside a function is rejected. #2233 tracks this.
 - Two initializers can move the same value, as in `val ys = xs` followed by
   `val zs = xs`. #2231 tracks this.
 - A method that takes owned `self` moves a module-level receiver inside a
@@ -149,7 +151,7 @@ reads or mutates module-level state, and changes these things:
 - The special errors from 2.1 become the ordinary borrow error,
   `cannot use borrowed &Array<number> as owned Array<number>`. The friendlier
   module-level wording can stay as the message for that case.
-- The three gaps in 2.4 are rejected by the same rule, with no separate checks
+- The four gaps in 2.4 are rejected by the same rule, with no separate checks
   for initializers or receivers.
 - A one-time handoff in an initializer, such as `val h = Holder(xs)`, is
   rejected. The author writes the value inline, as `Holder([1, 2])`, or gives
@@ -413,4 +415,6 @@ adopts them.
 - #2230: a module-level initializer can give one mutable value two owners.
 - #2231: a module-level value can be moved twice by module-level initializers.
 - #2232: a consuming method can move a module-level instance inside a function.
+- #2233: an importer's top-level initializer can move another package's
+  module-level value.
 - #577 and #500: receiver mutability for `.d.ts` methods.
