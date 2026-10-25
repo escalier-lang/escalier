@@ -247,6 +247,12 @@ func (c *checker) inferDepGraph(scope *Scope, lvl int, module *ast.Module, g *de
 	//
 	//	fn f(b: B) { return b.m() }
 	//	class B { m(&self) { return 1 } }
+	// A package this module loads partway through runs its own inferDepGraph, which drains
+	// the interface queue. Start this module's queue empty and put the outer one back after
+	// the drain below, so a nested load never checks an interface whose parents are unbuilt.
+	prevInterfaceOverrides := c.pendingInterfaceOverrides
+	c.pendingInterfaceOverrides = nil
+	defer func() { c.pendingInterfaceOverrides = prevInterfaceOverrides }()
 	for _, component := range classBodiesFirst(g) {
 		c.inferComponent(scope, lvl, module, g, component, handled, destructured)
 	}
