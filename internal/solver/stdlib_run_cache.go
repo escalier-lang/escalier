@@ -11,6 +11,8 @@ import (
 	"sync"
 
 	"github.com/escalier-lang/escalier/internal/ast"
+	"github.com/escalier-lang/escalier/internal/set"
+	"github.com/escalier-lang/escalier/internal/soltype"
 )
 
 // stdlib_run_cache.go keeps one checker per standard library tree with the prelude
@@ -177,7 +179,32 @@ func loadAmbientChecker(dir string, groups PackageGroups, opts Options) *checker
 	// fork has none to copy.
 	c.info = NewInfo()
 	c.info.ctx = c.ctx
+	if frozenVarChecks {
+		// The checker cached is a copy of c, so the copier's table of what it copied
+		// names every variable the cached checker reaches.
+		g := newGraphCopier(isASTPointer)
+		c = copyPtr(g, c)
+		c.ctx.frozenVars, c.ctx.frozenLts = copiedVars(g)
+	}
 	return c
+}
+
+// copiedVars returns every type variable and every lifetime variable g has copied, as
+// they sit in the copies.
+func copiedVars(g *graphCopier) (set.Set[*soltype.TypeVarType], set.Set[*soltype.LifetimeVar]) {
+	typeVar := reflect.TypeFor[soltype.TypeVarType]()
+	lifetimeVar := reflect.TypeFor[soltype.LifetimeVar]()
+	vars := set.NewSet[*soltype.TypeVarType]()
+	lts := set.NewSet[*soltype.LifetimeVar]()
+	for key, copied := range g.pointers {
+		switch key.plan.typ {
+		case typeVar:
+			vars.Add((*soltype.TypeVarType)(copied))
+		case lifetimeVar:
+			lts.Add((*soltype.LifetimeVar)(copied))
+		}
+	}
+	return vars, lts
 }
 
 // fork returns a deep copy of c that runs with source, groupSource, and groups. A

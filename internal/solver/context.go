@@ -1,6 +1,7 @@
 package solver
 
 import (
+	"fmt"
 	"slices"
 	"strings"
 
@@ -209,6 +210,53 @@ type Context struct {
 	// carries no such table, where a fusion records nothing. See recordFusionEdge for
 	// what an installed recorder writes.
 	fusionRecorder func(fused soltype.Type, from []soltype.Type)
+
+	// holeVars holds the variable each `_` written outside a conditional's pattern
+	// resolved to. markHole fills it and freshenBoundHoles reads it.
+	holeVars set.Set[*soltype.TypeVarType]
+
+	// frozenVars and frozenLts hold the type and lifetime variables reachable from a
+	// cached stdlib checker, when frozenVarChecks is set. loadAmbientChecker fills
+	// them on the cached checker, and a fork's copy of each names the fork's copies of
+	// those variables. They are empty otherwise. checkThawed and checkThawedLt read
+	// them.
+	frozenVars set.Set[*soltype.TypeVarType]
+	frozenLts  set.Set[*soltype.LifetimeVar]
+}
+
+// markHole records v as the variable a `_` resolved to.
+func (c *Context) markHole(v *soltype.TypeVarType) {
+	if c.holeVars == nil {
+		c.holeVars = set.NewSet[*soltype.TypeVarType]()
+	}
+	c.holeVars.Add(v)
+}
+
+// frozenVarChecks makes loadAmbientChecker record the variables the stdlib load
+// minted, so a run forked from it panics when it writes to one. The solver's tests
+// set it, and other packages' tests set it through EnableFrozenStdlibChecks.
+var frozenVarChecks bool
+
+// EnableFrozenStdlibChecks makes every run forked from a cached stdlib checker panic
+// when it writes to state the stdlib load created. It covers only checkers cached
+// after the call, so call it before the first inference run. It is for tests and is not safe to call concurrently with one.
+func EnableFrozenStdlibChecks() {
+	frozenVarChecks = true
+}
+
+// checkThawed panics when v is a variable the cached stdlib load minted. site names
+// the write, for the panic message.
+func (c *Context) checkThawed(v *soltype.TypeVarType, site string) {
+	if c.frozenVars.Contains(v) {
+		panic(fmt.Sprintf("%s wrote stdlib type variable %d", site, v.ID))
+	}
+}
+
+// checkThawedLt is checkThawed for a lifetime variable.
+func (c *Context) checkThawedLt(v *soltype.LifetimeVar, site string) {
+	if c.frozenLts.Contains(v) {
+		panic(fmt.Sprintf("%s wrote stdlib lifetime variable %d", site, v.ID))
+	}
 }
 
 // recordFusion records that fused came from merging the atoms in from, when a carrier
@@ -421,6 +469,7 @@ func (c *Context) markTypeParamsRigid(params []*soltype.TypeParam, fromBelow boo
 		if tp.Var.Rigid != nil {
 			continue
 		}
+		c.checkThawed(tp.Var, "rigidifying a type parameter")
 		tp.Var.Rigid = &soltype.RigidParam{
 			Name:      tp.Name,
 			Uppers:    slices.Clone(tp.AllUpperBounds()),
@@ -616,6 +665,7 @@ func (c *Context) findLtProxy(bounds []soltype.Lifetime, origin soltype.Lifetime
 // no-op when no probe is open; recordLt dedups per probe, so the first touch's
 // snapshot covers every later append to v under the same probe.
 func (c *Context) recordLtMutation(v *soltype.LifetimeVar) {
+	c.checkThawedLt(v, "a lifetime bound")
 	if c.probe != nil {
 		c.probe.recordLt(v)
 	}
@@ -665,6 +715,7 @@ func (c *Context) addBorrowedRead(v *soltype.TypeVarType, r borrowedRead) {
 // snapshot already covers every later append to v under the same probe. Reached
 // only through addLowerBound/addUpperBound.
 func (c *Context) recordMutation(v *soltype.TypeVarType) {
+	c.checkThawed(v, "a type bound")
 	if c.probe != nil {
 		c.probe.record(v)
 	}

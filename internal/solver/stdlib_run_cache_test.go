@@ -1,11 +1,17 @@
 package solver
 
 import (
+	"context"
+	"fmt"
+	"io/fs"
 	"os"
 	"path/filepath"
 	"sort"
 	"testing"
 
+	"github.com/escalier-lang/escalier/internal/ast"
+	"github.com/escalier-lang/escalier/internal/parser"
+	"github.com/escalier-lang/escalier/internal/soltype"
 	"github.com/stretchr/testify/require"
 )
 
@@ -176,6 +182,85 @@ func TestAmbientCheckerRunInfoHoldsOnlyTheModule(t *testing.T) {
 	for node := range res.Info.types {
 		require.Equal(t, module.Files[0].SourceID, node.Span().SourceID)
 	}
+}
+
+func init() {
+	// Every solver test that runs against a cached stdlib checker fails when it writes
+	// to a variable the stdlib load minted.
+	frozenVarChecks = true
+}
+
+// TestFixturesLeaveStdlibVarsUntouched asserts that checking each fixture's library
+// against the committed tree writes to no variable the stdlib load minted.
+// checkThawed panics on such a write, and the subtest reports the panic as its
+// failure.
+func TestFixturesLeaveStdlibVarsUntouched(t *testing.T) {
+	paths, err := filepath.Glob("../../fixtures/*/lib")
+	require.NoError(t, err)
+	require.NotEmpty(t, paths)
+	for _, lib := range paths {
+		t.Run(filepath.Base(filepath.Dir(lib)), func(t *testing.T) {
+			srcs := map[string]string{}
+			err := filepath.WalkDir(lib, func(path string, d fs.DirEntry, err error) error {
+				if err != nil || d.IsDir() || filepath.Ext(path) != ".esc" {
+					return err
+				}
+				contents, err := os.ReadFile(path)
+				if err != nil {
+					return err
+				}
+				rel, err := filepath.Rel(lib, path)
+				srcs[filepath.ToSlash(rel)] = string(contents)
+				return err
+			})
+			require.NoError(t, err)
+			module, parseErrs := parser.ParseLibFiles(context.Background(), sourcesOf(srcs))
+			if len(parseErrs) > 0 {
+				t.Skip("the fixture's library does not parse")
+			}
+			defer func() {
+				if r := recover(); r != nil {
+					t.Fatal(r)
+				}
+			}()
+			InferModuleAgainstStdlib(module, benchTree, Options{})
+		})
+	}
+}
+
+// sourcesOf returns srcs as sources numbered in path order.
+func sourcesOf(srcs map[string]string) []*ast.Source {
+	paths := make([]string, 0, len(srcs))
+	for path := range srcs {
+		paths = append(paths, path)
+	}
+	sort.Strings(paths)
+	sources := make([]*ast.Source, len(paths))
+	for id, path := range paths {
+		sources[id] = &ast.Source{ID: id, Path: path, Contents: srcs[path]}
+	}
+	return sources
+}
+
+// TestCheckThawedRejectsAStdlibVar asserts that a run forked from the cached checker
+// panics when it adds a bound to a type variable the stdlib load minted.
+func TestCheckThawedRejectsAStdlibVar(t *testing.T) {
+	groups, err := BuildPackageClosure(benchTree, ambientPackages)
+	require.NoError(t, err)
+	run, ok := ambientChecker(benchTree, StdlibSource(benchTree), groups, Options{})
+	require.True(t, ok)
+	require.NotEmpty(t, run.ctx.frozenVars)
+
+	var stdlibVar *soltype.TypeVarType
+	for v := range run.ctx.frozenVars {
+		if stdlibVar == nil || v.ID < stdlibVar.ID {
+			stdlibVar = v
+		}
+	}
+	want := fmt.Sprintf("a type bound wrote stdlib type variable %d", stdlibVar.ID)
+	require.PanicsWithValue(t, want, func() {
+		run.ctx.addUpperBound(stdlibVar, &soltype.PrimType{Prim: soltype.NumPrim})
+	})
 }
 
 // TestAmbientCheckerServesRuns asserts that the cache serves the committed tree, so the
