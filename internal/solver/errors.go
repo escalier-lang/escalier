@@ -818,9 +818,16 @@ func spanOf(p NodeResolver, op soltype.Type, site ast.Node) ast.Span {
 func spanOfFirst(p NodeResolver, site ast.Node, ops ...soltype.Type) ast.Span {
 	if p != nil {
 		for _, op := range ops {
-			if n, ok := p.NodeFor(op); ok {
-				return n.Span()
+			n, ok := p.NodeFor(op)
+			if !ok {
+				continue
 			}
+			// A type declared in another source, such as a package's `.d.ts` file, names no
+			// node of the code being checked, so the site is blamed instead.
+			if site != nil && n.Span().SourceID != site.Span().SourceID {
+				continue
+			}
+			return n.Span()
 		}
 	}
 	return spanOfNode(site)
