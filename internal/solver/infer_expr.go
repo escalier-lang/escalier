@@ -631,7 +631,7 @@ func (c *checker) inferFunc(scope *Scope, lvl int, sig ast.FuncSig, body *ast.Bl
 		// freshly-assigned VarID onto its binding so a closure capturing the param
 		// resolves to its alias set.
 		extraVarIDs := c.runLivenessPrePass(fnScope, sig.Params, recv, closure, enclosed, paramTypes, body)
-		recordParamVarIDs(fnScope, sig.Params)
+		recordParamVarIDs(c.varIDs, fnScope, sig.Params)
 		recordExtraParamVarIDs(fnScope, extraVarIDs)
 		// Walk the body for type-checking and to collect its ReturnStmts; the
 		// block's TAIL value is intentionally discarded. Unlike a value-position
@@ -2345,7 +2345,7 @@ func (c *checker) consumeReceiver(access ast.Node) {
 	if !ok || c.fn.cfg == nil {
 		return
 	}
-	p, ok := exprPlace(recv)
+	p, ok := c.exprPlace(recv)
 	if !ok {
 		return
 	}
@@ -2661,7 +2661,7 @@ func (c *checker) inferAssign(scope *Scope, lvl int, e *ast.BinaryExpr) soltype.
 		// union-super exists rule, which trials each member under a probe.
 		c.constrain(e, sourceT, targetT)
 	}
-	if c.fn != nil && len(c.errs) == assignErrsBefore && target.VarID > 0 {
+	if c.fn != nil && len(c.errs) == assignErrsBefore && c.varIDs.Of(target) > 0 {
 		// Track against the binding's own type, not the freshened targetT. The G2
 		// escape query reads the recorded type, and a later global write forces the
 		// lifetime on the binding's shared pointer. The freshened copy carries an
@@ -2682,12 +2682,12 @@ func (c *checker) inferAssign(scope *Scope, lvl int, e *ast.BinaryExpr) soltype.
 		// edge set at this statement's CFG point so the flow-sensitive graph joins it at
 		// later merges.
 		if !b.ModuleLevel {
-			c.recordBorrowEdges(target.VarID, e.Right)
+			c.recordBorrowEdges(c.varIDs.Of(target), e.Right)
 			if ref, ok := c.fn.stmtToRef[assignStmt]; ok {
 				c.flushBorrowDirty(ref)
 				// The reassignment repoints the binding, so the loan it held is gone and the
 				// borrow it now holds takes its place.
-				c.recordBorrowLoan(target.VarID, e.Right, ref)
+				c.recordBorrowLoan(c.varIDs.Of(target), e.Right, ref)
 			}
 		}
 	}
@@ -4903,8 +4903,8 @@ func (c *checker) bindNarrowedIdent(scope *Scope, lvl int, ip *ast.IdentPat, ann
 	}
 	// Carry the rename-assigned VarID onto the binding so a later closure capture or
 	// alias-set check resolves this name, matching the ordinary body-level decl path.
-	if ip.VarID > 0 {
-		binding.VarID = ip.VarID
+	if id := c.varIDs.Of(ip); id > 0 {
+		binding.VarID = int(id)
 	}
 	scope.defineValue(ip.Name, binding)
 	c.recordType(ip, narrowed)

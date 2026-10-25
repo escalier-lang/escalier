@@ -199,13 +199,12 @@ func rootSource(id VarID) AliasSource {
 }
 
 // DetermineAliasSource examines an expression and returns its alias source.
-// When the expression is an IdentExpr, the VarID is read directly from the
-// node (set by the rename pass in Phase 2).
-func DetermineAliasSource(expr ast.Expr) AliasSource {
+// ids holds the VarIDs the rename pass assigned to the expression's identifiers.
+func DetermineAliasSource(ids *VarIDs, expr ast.Expr) AliasSource {
 	switch e := expr.(type) {
 	case *ast.IdentExpr:
-		if e.VarID > 0 {
-			return rootSource(VarID(e.VarID))
+		if id := ids.Of(e); id > 0 {
+			return rootSource(id)
 		}
 		// Non-local variable (VarID <= 0) — treat as unknown since we
 		// can't track aliases across function boundaries.
@@ -215,9 +214,9 @@ func DetermineAliasSource(expr ast.Expr) AliasSource {
 	case *ast.LiteralExpr:
 		return freshSource()
 	case *ast.ObjectExpr:
-		return determineObjectAliasSource(e)
+		return determineObjectAliasSource(ids, e)
 	case *ast.TupleExpr:
-		return determineTupleAliasSource(e)
+		return determineTupleAliasSource(ids, e)
 	case *ast.FuncExpr:
 		return freshSource()
 	case *ast.TemplateLitExpr:
@@ -243,12 +242,12 @@ func DetermineAliasSource(expr ast.Expr) AliasSource {
 	// projection step, but it carries no slot information; treating it as
 	// transparent matches today's behavior and keeps paths shorter.
 	case *ast.TypeCastExpr:
-		return DetermineAliasSource(e.Expr)
+		return DetermineAliasSource(ids, e.Expr)
 
 	// Await: append AwaitOf to each leaf so that lifetime attachment can
 	// descend into Promise<T>'s inner T.
 	case *ast.AwaitExpr:
-		return appendStepToLeaves(DetermineAliasSource(e.Arg), AwaitOf{})
+		return appendStepToLeaves(DetermineAliasSource(ids, e.Arg), AwaitOf{})
 
 	// A borrow is deliberately NOT an alias source, even though `&x` does alias x. The
 	// obvious arm is to pass through to the operand, and doing that makes the transition
@@ -266,17 +265,17 @@ func DetermineAliasSource(expr ast.Expr) AliasSource {
 	// Property access: the value projects into the object. Append
 	// PropertyOf(name) so each leaf records the additional descent.
 	case *ast.MemberExpr:
-		return ProjectStep(DetermineAliasSource(e.Object), PropertyOf{Key: e.Prop.Name})
+		return ProjectStep(DetermineAliasSource(ids, e.Object), PropertyOf{Key: e.Prop.Name})
 	case *ast.IndexExpr:
-		return determineIndexAliasSource(e)
+		return determineIndexAliasSource(ids, e)
 
 	// Conditionals: aliases all branches (Phase 7.4).
 	case *ast.IfElseExpr:
-		return determineConditionalAliasSource(e)
+		return determineConditionalAliasSource(ids, e)
 	case *ast.IfValExpr:
 		return unknownSource()
 	case *ast.MatchExpr:
-		return determineMatchAliasSource(e)
+		return determineMatchAliasSource(ids, e)
 
 	// Do expressions, try-catch: complex control flow, treat as unknown
 	case *ast.DoExpr:
@@ -336,7 +335,7 @@ func blockOrExprResultExpr(boe *ast.BlockOrExpr) ast.Expr {
 // slot) are preserved. The merged Origin is Fresh when every contributing
 // branch's value root is fresh; Alias when at least one branch's root
 // itself aliases an existing variable.
-func collectBranchSources(exprs []ast.Expr) AliasSource {
+func collectBranchSources(ids *VarIDs, exprs []ast.Expr) AliasSource {
 	seen := set.NewSet[string]()
 	var leaves []AliasLeaf
 	allFresh := true
@@ -347,7 +346,7 @@ func collectBranchSources(exprs []ast.Expr) AliasSource {
 			// A branch with no result expression — treat as unknown.
 			return unknownSource()
 		}
-		source := DetermineAliasSource(expr)
+		source := DetermineAliasSource(ids, expr)
 		if len(source.Leaves) > 0 {
 			allFresh = false
 			if source.Origin == AliasOriginAlias {
@@ -390,17 +389,17 @@ func collectBranchSources(exprs []ast.Expr) AliasSource {
 
 // determineConditionalAliasSource determines alias sources for an if-else
 // expression by collecting sources from both branches.
-func determineConditionalAliasSource(expr *ast.IfElseExpr) AliasSource {
+func determineConditionalAliasSource(ids *VarIDs, expr *ast.IfElseExpr) AliasSource {
 	consExpr := blockResultExpr(expr.Cons)
 	altExpr := blockOrExprResultExpr(expr.Alt)
 
 	// If there's no alt branch, the else produces undefined (a fresh
 	// value). Only the consequent may contribute alias sources.
 	if expr.Alt == nil {
-		return collectBranchSources([]ast.Expr{consExpr})
+		return collectBranchSources(ids, []ast.Expr{consExpr})
 	}
 
-	return collectBranchSources([]ast.Expr{consExpr, altExpr})
+	return collectBranchSources(ids, []ast.Expr{consExpr, altExpr})
 }
 
 // appendStepToLeaves returns a new AliasSource whose leaves each have
@@ -474,14 +473,14 @@ func ProjectStep(src AliasSource, step ProjectionStep) AliasSource {
 // The lifetime-attachment side decides whether to interpret these as
 // element-of-array or per-slot tuple positions based on the surrounding
 // type.
-func determineTupleAliasSource(expr *ast.TupleExpr) AliasSource {
+func determineTupleAliasSource(ids *VarIDs, expr *ast.TupleExpr) AliasSource {
 	var leaves []AliasLeaf
 	seen := set.NewSet[string]()
 	for i, elem := range expr.Elems {
 		if elem == nil {
 			continue
 		}
-		child := DetermineAliasSource(elem)
+		child := DetermineAliasSource(ids, elem)
 		for _, leaf := range child.Leaves {
 			// Build a new path with IndexOf{Index: i} prepended to leaf.Path.
 			newPath := append([]ProjectionStep{IndexOf{Index: i}}, leaf.Path...)
@@ -505,7 +504,7 @@ func determineTupleAliasSource(expr *ast.TupleExpr) AliasSource {
 // Spread elements, methods, getters/setters, and computed keys without
 // a static name are skipped — their alias contributions can't be slotted
 // to a known property of the new container.
-func determineObjectAliasSource(expr *ast.ObjectExpr) AliasSource {
+func determineObjectAliasSource(ids *VarIDs, expr *ast.ObjectExpr) AliasSource {
 	var leaves []AliasLeaf
 	seen := set.NewSet[string]()
 	for _, elem := range expr.Elems {
@@ -517,7 +516,7 @@ func determineObjectAliasSource(expr *ast.ObjectExpr) AliasSource {
 		if !ok {
 			continue
 		}
-		child := DetermineAliasSource(prop.ValueExpr())
+		child := DetermineAliasSource(ids, prop.ValueExpr())
 		for _, leaf := range child.Leaves {
 			// Build a new path with PropertyOf{Key: key} prepended to leaf.Path.
 			newPath := append([]ProjectionStep{PropertyOf{Key: key}}, leaf.Path...)
@@ -614,8 +613,8 @@ func FormatNumKey(v float64) string {
 // the slot statically). Non-constant indexes fall back to a transparent
 // descent into the object — the same conservative approximation as
 // before Phase 8.9.
-func determineIndexAliasSource(expr *ast.IndexExpr) AliasSource {
-	src := DetermineAliasSource(expr.Object)
+func determineIndexAliasSource(ids *VarIDs, expr *ast.IndexExpr) AliasSource {
+	src := DetermineAliasSource(ids, expr.Object)
 	if step, ok := IndexLiteralStep(expr); ok {
 		return ProjectStep(src, step)
 	}
@@ -649,7 +648,7 @@ func floatAsInt(v float64) (int, bool) {
 
 // determineMatchAliasSource determines alias sources for a match expression
 // by collecting sources from all case bodies.
-func determineMatchAliasSource(expr *ast.MatchExpr) AliasSource {
+func determineMatchAliasSource(ids *VarIDs, expr *ast.MatchExpr) AliasSource {
 	if len(expr.Cases) == 0 {
 		return unknownSource()
 	}
@@ -659,5 +658,5 @@ func determineMatchAliasSource(expr *ast.MatchExpr) AliasSource {
 		branchExprs[i] = blockOrExprResultExpr(&matchCase.Body)
 	}
 
-	return collectBranchSources(branchExprs)
+	return collectBranchSources(ids, branchExprs)
 }

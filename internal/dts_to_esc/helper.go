@@ -425,10 +425,12 @@ func convertTypeAnn(ta dts_parser.TypeAnn) (ast.TypeAnn, error) {
 			return nil, fmt.Errorf("converting array element type: %w", err)
 		}
 		// Array types in TypeScript are represented as TypeRef to
-		// Array<T>; the `readonly` modifier maps to a ReadonlyArray<T>
-		// reference so the readonly-twin rewrite in ConvertBucket can
-		// flip it to Escalier's immutable `Array<T>` spelling (and
-		// leave `mut Array<T>` to be wrapped onto the plain form).
+		// Array<T>. The `readonly` modifier maps to a ReadonlyArray<T>
+		// reference, which both conversion paths rename to Escalier's
+		// immutable `Array<T>` spelling. ConvertBucket does it through
+		// rewriteReadonlyTwinRefs, which also wraps the plain form in
+		// `mut`. ConvertModuleWithOverrides does it through
+		// renameLibReadonlyTwinRefs.
 		//
 		// t.Readonly is only set for the `readonly T[]` shorthand;
 		// a source written as `ReadonlyArray<T>` lands in the

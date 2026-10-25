@@ -48,6 +48,28 @@ func rewriteReadonlyTwinRefs(mod *StandaloneModule, twins []readonlyTwin) {
 	})
 }
 
+// libReadonlyTwins maps each readonly interface in TypeScript's lib to the
+// mutable interface fuseReadonlyTwins pairs it with. The committed tree declares
+// only the mutable name, as a class whose bare spelling is the immutable view.
+var libReadonlyTwins = map[string]string{
+	"ReadonlyArray": "Array",
+	"ReadonlyMap":   "Map",
+	"ReadonlySet":   "Set",
+}
+
+// renameLibReadonlyTwinRefs renames each type reference in mod whose name is a
+// key of libReadonlyTwins to the matching mutable name, so `ReadonlyArray<T>`
+// becomes `Array<T>`. It wraps nothing in `mut`.
+func renameLibReadonlyTwinRefs(mod *ast.Module) {
+	rw := &refRewriter{readonlyToMutable: libReadonlyTwins}
+	mod.Namespaces.Scan(func(_ string, ns *ast.Namespace) bool {
+		for _, decl := range ns.Decls {
+			rw.rewriteDecl(decl)
+		}
+		return true
+	})
+}
+
 // rewriteConsumedCtorRefs respells every reference to a constructor interface trio fusion
 // consumed. `interface ArrayConstructor` is folded into `class Array`, so the name no longer
 // denotes anything and `static readonly [Symbol.species]: ArrayConstructor` would not resolve.

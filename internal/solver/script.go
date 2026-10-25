@@ -5,7 +5,6 @@ import (
 	"strconv"
 
 	"github.com/escalier-lang/escalier/internal/ast"
-	"github.com/escalier-lang/escalier/internal/liveness"
 	"github.com/escalier-lang/escalier/internal/provenance"
 	"github.com/escalier-lang/escalier/internal/set"
 	"github.com/escalier-lang/escalier/internal/soltype"
@@ -244,7 +243,7 @@ func (c *checker) bindScriptFuncWithBody(scope *Scope, lvl int, s ast.Stmt, decl
 
 	scheme := c.generalize(t, lvl)
 	c.recordType(decl.Name, schemeType(scheme))
-	b := ValueBinding{Schemes: []TypeScheme{scheme}, Sources: sources, Kind: ast.ValKind, VarID: decl.VarID}
+	b := ValueBinding{Schemes: []TypeScheme{scheme}, Sources: sources, Kind: ast.ValKind, VarID: int(c.varIDs.Of(decl))}
 	scope.defineValue(name, b)
 
 	// The name's capture edges let a call of it take the capture loans, the way a call of a
@@ -261,21 +260,21 @@ func (c *checker) trackFuncDeclCaptures(scope *Scope, decl *ast.FuncDecl, bindin
 		return
 	}
 
-	id := liveness.VarID(decl.VarID)
-	if decl.VarID > 0 && c.fn.aliases != nil {
+	id := c.varIDs.Of(decl)
+	if id > 0 && c.fn.aliases != nil {
 		c.recordVarIDType(id, bindingT)
 		c.fn.aliases.NewValue(id, aliasMutability(isMutableType(bindingT)))
 		c.trackCapturedAliases(scope, decl, id)
 	}
 
-	if decl.VarID > 0 && c.fn.eagerBorrowGraph != nil {
+	if id > 0 && c.fn.eagerBorrowGraph != nil {
 		c.clearEagerSubtree(id, nil)
 		c.addCaptureEdges(id, nil, decl)
 	}
 
 	if ref, ok := c.fn.stmtToRef[s]; ok {
 		c.flushBorrowDirty(ref)
-		if decl.VarID > 0 {
+		if id > 0 {
 			c.dropLoansHeldBy(id)
 		}
 	}

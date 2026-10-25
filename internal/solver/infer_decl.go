@@ -749,7 +749,7 @@ func (c *checker) bindingMovesOwnedPlace(pat ast.Pat, init ast.Expr, initT solty
 // the move engine enforces the consume. This is the place-move half of both
 // bindingMovesOwnedPlace and the isUniquelyOwned leaf check.
 func (c *checker) movesOwnedPlace(init ast.Expr, initT soltype.Type) bool {
-	if _, ok := exprPlace(init); !ok {
+	if _, ok := c.exprPlace(init); !ok {
 		return false
 	}
 	if c.isConcreteOwned(initT) {
@@ -1045,13 +1045,13 @@ func (c *checker) inferDestructureDecl(scope *Scope, lvl int, d *ast.VarDecl) {
 // sub-expression is not statically present, such as a property supplied by a spread,
 // records nothing.
 func (c *checker) recordDestructureBorrowEdges(pat ast.Pat, init ast.Expr) {
-	if p, ok := exprPlace(init); ok && p.root > 0 {
+	if p, ok := c.exprPlace(init); ok && p.root > 0 {
 		c.recordPatternPlaceEdges(pat, p)
 		return
 	}
 	switch pat := pat.(type) {
 	case *ast.IdentPat:
-		c.recordBorrowEdges(pat.VarID, init)
+		c.recordBorrowEdges(c.varIDs.Of(pat), init)
 	case *ast.ObjectPat:
 		obj, ok := init.(*ast.ObjectExpr)
 		if !ok {
@@ -1069,11 +1069,11 @@ func (c *checker) recordDestructureBorrowEdges(pat ast.Pat, init ast.Expr) {
 			switch e := elem.(type) {
 			case *ast.ObjShorthandPat:
 				if v, ok := props[e.Key.Name]; ok {
-					c.recordBorrowEdges(e.VarID, v)
+					c.recordBorrowEdges(c.varIDs.Of(e), v)
 				} else if e.Default != nil {
 					// The property is absent from the initializer, so the leaf takes the
 					// shorthand default, such as `val {peer = &mut b} = obj`.
-					c.recordBorrowEdges(e.VarID, e.Default)
+					c.recordBorrowEdges(c.varIDs.Of(e), e.Default)
 				}
 			case *ast.ObjKeyValuePat:
 				if v, ok := props[e.Key.Name]; ok {
