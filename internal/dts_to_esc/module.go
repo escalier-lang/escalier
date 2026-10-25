@@ -251,6 +251,10 @@ func ConvertModule(dtsModule *dts_parser.Module) (*ast.Module, error) {
 // package's package decls (e.g. "lodash/fp"); the module name for
 // `declare module "X" { ... }` blocks (passed by the caller, since the
 // classifier strips that wrapper before getting here).
+//
+// A reference to a name in libReadonlyTwins comes out as its mutable
+// counterpart, so `readonly T[]` and `ReadonlyArray<T>` both convert to
+// `Array<T>`.
 func ConvertModuleWithOverrides(dtsModule *dts_parser.Module, store OverrideLookup, modulePath string) (*ast.Module, error) {
 	cctx := &convertCtx{store: store, modulePath: modulePath}
 	var namespaces btree.Map[string, *ast.Namespace]
@@ -263,5 +267,9 @@ func ConvertModuleWithOverrides(dtsModule *dts_parser.Module, store OverrideLook
 		return nil, fmt.Errorf("converting module: %w", err)
 	}
 
-	return ast.NewModule(namespaces), nil
+	mod := ast.NewModule(namespaces)
+	// A package's declarations resolve against the committed tree, which
+	// declares `Array`, `Map` and `Set` but none of their readonly twins.
+	renameLibReadonlyTwinRefs(mod)
+	return mod, nil
 }

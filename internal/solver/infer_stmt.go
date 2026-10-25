@@ -2,6 +2,7 @@ package solver
 
 import (
 	"github.com/escalier-lang/escalier/internal/ast"
+	"github.com/escalier-lang/escalier/internal/liveness"
 	"github.com/escalier-lang/escalier/internal/soltype"
 )
 
@@ -195,8 +196,8 @@ func (c *checker) inferStmt(scope *Scope, lvl int, s ast.Stmt) soltype.Type {
 // borrow edges, and loans the declaration creates. A later closure capture of the
 // binding resolves to its alias set through that VarID.
 func (c *checker) defineLocal(scope *Scope, name string, vd *ast.VarDecl, b ValueBinding, s ast.Stmt) {
-	if ip, ok := vd.Pattern.(*ast.IdentPat); ok && ip.VarID > 0 {
-		b.VarID = ip.VarID
+	if ip, ok := vd.Pattern.(*ast.IdentPat); ok && c.varIDs.Of(ip) > 0 {
+		b.VarID = int(c.varIDs.Of(ip))
 	}
 	scope.defineValue(name, b)
 	if c.fn == nil {
@@ -206,11 +207,11 @@ func (c *checker) defineLocal(scope *Scope, name string, vd *ast.VarDecl, b Valu
 	c.consumeBindingInit(vd, bindingType(b), s)
 	// Record which function-locals this binding's initializer borrows, so a later
 	// flow-out of the binding can find a borrow of a local that would escape the frame.
-	c.recordBorrowEdges(b.VarID, vd.Init)
+	c.recordBorrowEdges(liveness.VarID(b.VarID), vd.Init)
 	if ref, ok := c.fn.stmtToRef[s]; ok {
 		c.flushBorrowDirty(ref)
 		// An initializer that borrows a place binds a loan of it to this binding, which
 		// then has to stay exclusive for as long as the binding is read.
-		c.recordBorrowLoan(b.VarID, vd.Init, ref)
+		c.recordBorrowLoan(liveness.VarID(b.VarID), vd.Init, ref)
 	}
 }
