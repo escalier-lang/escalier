@@ -172,10 +172,6 @@ func readonlyAliases(mod *ast.Module) *readonlyAliasIndex {
 				if d.Name != nil {
 					index.types.Add(qualifyNamespace(nsPath, d.Name.Name))
 				}
-			case *ast.EnumDecl:
-				if d.Name != nil {
-					index.types.Add(qualifyNamespace(nsPath, d.Name.Name))
-				}
 			case *ast.NamespaceDecl:
 				if d.Name != nil {
 					collect(qualifyNamespace(nsPath, d.Name.Name), d.Decls)
