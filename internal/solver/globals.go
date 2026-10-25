@@ -242,21 +242,10 @@ func rootNames(module *ast.Module) (values, types, namespaces set.Set[string]) {
 // withMissingMembers returns a copy of into that also holds each value, type, and
 // nested namespace of from whose name into does not hold. into is left unchanged.
 func withMissingMembers(into, from *Namespace) *Namespace {
-	merged := &Namespace{
-		Name:   into.Name,
-		Values: maps.Clone(into.Values),
-		Types:  maps.Clone(into.Types),
-		Nested: maps.Clone(into.Nested),
-	}
-	if merged.Values == nil {
-		merged.Values = map[string]ValueBinding{}
-	}
-	if merged.Types == nil {
-		merged.Types = map[string]TypeBinding{}
-	}
-	if merged.Nested == nil {
-		merged.Nested = map[string]*Namespace{}
-	}
+	merged := newNamespace(into.Name)
+	maps.Copy(merged.Values, into.Values)
+	maps.Copy(merged.Types, into.Types)
+	maps.Copy(merged.Nested, into.Nested)
 	for name, b := range from.Values {
 		if _, held := merged.Values[name]; !held {
 			merged.Values[name] = b
