@@ -269,3 +269,69 @@ fn f() {
 		})
 	}
 }
+
+// TestScriptValuePassedToOwnedParam covers a script's top-level value passed to an owned
+// parameter. A script's top-level bindings are locals, so a closure that passes one to an
+// owned parameter takes it when the closure is created rather than reporting a
+// ModuleLevelMoveError.
+func TestScriptValuePassedToOwnedParam(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name string
+		src  string
+		want []string
+	}{
+		{
+			name: "a closure passing the value to an owned param",
+			src: `val ys: Array<number> = [1]
+fn take(x: Array<number>) {}
+val g = fn() { take(ys) }
+g()`,
+			want: nil,
+		},
+		{
+			name: "a use of the value after a closure takes it",
+			src: `val ys: Array<number> = [1]
+fn take(x: Array<number>) {}
+val g = fn() { take(ys) }
+g()
+ys`,
+			want: []string{"5:1-5:3: use of moved value 'ys'"},
+		},
+		{
+			name: "a second call of a closure that moves the value",
+			src: `val ys: Array<number> = [1]
+fn take(x: Array<number>) {}
+val g = fn() { take(ys) }
+g()
+g()`,
+			want: []string{"5:1-5:2: use of moved value 'g'"},
+		},
+		{
+			name: "a closure passing a borrow of the value",
+			src: `val ys: Array<number> = [1]
+fn read(x: &Array<number>) -> number { return x.length }
+val g = fn() -> number { return read(&ys) }
+g()
+g()
+ys`,
+			want: nil,
+		},
+		{
+			name: "a use of the value after a top-level call takes it",
+			src: `val ys: Array<number> = [1]
+fn take(x: Array<number>) {}
+take(ys)
+ys`,
+			want: []string{"4:1-4:3: use of moved value 'ys'"},
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			_, _, errs := inferScriptSource(t, tt.src)
+			require.Equal(t, tt.want, messagesWithSpan(t, errs))
+		})
+	}
+}
