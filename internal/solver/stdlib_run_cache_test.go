@@ -384,62 +384,64 @@ func sourcesOf(srcs map[string]string) []*ast.Source {
 	return sources
 }
 
-// TestCheckThawedRejectsStdlibState asserts that a run forked from a loaded checker
-// panics on work that would write to a variable or definition the stdlib load created.
-// Each case forks a checker loaded for it alone. The class case readies its write by
-// changing a definition the loaded checker holds, which would reach every later run of
-// the cache's.
-func TestCheckThawedRejectsStdlibState(t *testing.T) {
+// forkLoadedChecker returns a run forked from a checker loaded for the committed tree
+// for this call alone. A fork shares the loaded checker's definitions, so a test that
+// readies its write by changing one changes only the checker it loaded, never the one
+// the cache holds for every later run.
+func forkLoadedChecker(t *testing.T) *checker {
+	t.Helper()
 	groups, err := BuildPackageClosure(benchTree, ambientPackages)
 	require.NoError(t, err)
-	// Each case readies a write on run and returns the panic it expects with the write.
-	cases := []struct {
-		name  string
-		ready func(run *checker) (want string, write func())
-	}{
-		{
-			name: "type variable bound",
-			ready: func(run *checker) (string, func()) {
-				var v *soltype.TypeVarType
-				for frozen := range run.ctx.frozenVars {
-					if v == nil || frozen.ID < v.ID {
-						v = frozen
-					}
-				}
-				return fmt.Sprintf("a type bound wrote stdlib type variable %d", v.ID), func() {
-					run.ctx.addUpperBound(v, &soltype.PrimType{Prim: soltype.NumPrim})
-				}
-			},
-		},
-		{
-			name: "class variance",
-			ready: func(run *checker) (string, func()) {
-				def := run.ctx.classes[run.ctx.arrayClass]
-				def.varianceProvisional = true
-				def.varianceTriedAt = -1
-				return "settleVariance wrote stdlib class " + def.varianceSelf, func() {
-					run.ctx.settleVariance(def)
-				}
-			},
-		},
-		{
-			name: "alias uniform knot",
-			ready: func(run *checker) (string, func()) {
-				name := slices.Min(slices.Collect(maps.Keys(run.ctx.aliases)))
-				delete(run.ctx.uniformKnots, name)
-				return "probing the uniform knot for stdlib alias " + name, func() {
-					run.ctx.uniformKnotOf(name)
-				}
-			},
-		},
+	return loadAmbientChecker(benchTree, groups, Options{}).fork(StdlibSource(benchTree), StdlibGroupSource(benchTree), groups)
+}
+
+// TestCheckThawedRejectsAStdlibVar asserts that a run forked from a loaded checker
+// panics when it adds a bound to a type variable the stdlib load minted.
+func TestCheckThawedRejectsAStdlibVar(t *testing.T) {
+	run := forkLoadedChecker(t)
+	require.NotEmpty(t, run.ctx.frozenVars)
+
+	var stdlibVar *soltype.TypeVarType
+	for v := range run.ctx.frozenVars {
+		if stdlibVar == nil || v.ID < stdlibVar.ID {
+			stdlibVar = v
+		}
 	}
-	for _, tt := range cases {
-		t.Run(tt.name, func(t *testing.T) {
-			run := loadAmbientChecker(benchTree, groups, Options{}).fork(StdlibSource(benchTree), StdlibGroupSource(benchTree), groups)
-			want, write := tt.ready(run)
-			require.PanicsWithValue(t, want, write)
-		})
-	}
+	want := fmt.Sprintf("a type bound wrote stdlib type variable %d", stdlibVar.ID)
+	require.PanicsWithValue(t, want, func() {
+		run.ctx.addUpperBound(stdlibVar, &soltype.PrimType{Prim: soltype.NumPrim})
+	})
+}
+
+// TestCheckThawedRejectsAStdlibClass asserts that a run forked from a loaded checker
+// panics when it settles the variance of a class the stdlib load registered.
+func TestCheckThawedRejectsAStdlibClass(t *testing.T) {
+	run := forkLoadedChecker(t)
+
+	// The loaded Array class is settled, so it is marked provisional again to reach the
+	// write settleVariance makes.
+	def := run.ctx.classes[run.ctx.arrayClass]
+	def.varianceProvisional = true
+	def.varianceTriedAt = -1
+	want := "settleVariance wrote stdlib class " + def.varianceSelf
+	require.PanicsWithValue(t, want, func() {
+		run.ctx.settleVariance(def)
+	})
+}
+
+// TestCheckThawedRejectsAStdlibAlias asserts that a run forked from a loaded checker
+// panics when it probes the uniform knot of an alias the stdlib load registered.
+func TestCheckThawedRejectsAStdlibAlias(t *testing.T) {
+	run := forkLoadedChecker(t)
+
+	// The loaded knot is dropped from the run's copy of the memo, so the probe computes
+	// it again rather than reading the memoized one.
+	name := slices.Min(slices.Collect(maps.Keys(run.ctx.aliases)))
+	delete(run.ctx.uniformKnots, name)
+	want := "probing the uniform knot for stdlib alias " + name
+	require.PanicsWithValue(t, want, func() {
+		run.ctx.uniformKnotOf(name)
+	})
 }
 
 // TestAmbientCheckerSettlesLoadedDefinitions asserts that the cached checker holds no
