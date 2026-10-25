@@ -44,8 +44,8 @@ every importer. It lives for the whole program.
 - Passing it to an owned parameter is a move, so it reports
   `cannot move module-level value 'xs' into an owned parameter. Make the
   parameter a borrow and pass &xs`. #2215 adds this rule.
-- A closure that moves a capture takes it when the closure is created, and can
-  then be called only once.
+- A closure body counts as a function body, so a closure may borrow it but may
+  not move it either.
 
 ### 2.2 Functions that return reference values
 
