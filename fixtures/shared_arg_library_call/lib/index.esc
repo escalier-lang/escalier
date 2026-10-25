@@ -1,0 +1,14 @@
+val point = {x: 1, y: 2}
+val xs: Array<number> = [1, 2]
+
+export fn keysOfPoint() -> Array<string> {
+    return Object.keys(point)
+}
+
+export fn copyOfXs() -> Array<number> {
+    return Array.from(xs)
+}
+
+export fn joined() -> Array<number> {
+    return xs.concat(xs)
+}
