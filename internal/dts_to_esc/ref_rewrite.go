@@ -135,12 +135,14 @@ type refRewriter struct {
 	// borrowReadonlyReturns wraps a renamed readonly reference in a `'static`
 	// borrow when it sits in a function's return type.
 	borrowReadonlyReturns bool
-	// inReturn is true while the pass walks a function's return type, outside
-	// the parameters of any function type nested in it.
-	inReturn bool
-	// paramDepth counts the function parameter lists the pass is inside. A return
-	// type reached inside one is not a return position, since the caller supplies
-	// that value.
+	// inReturnTypeAnn is true while the pass walks a function's return type
+	// annotation, outside the parameters of any function type nested in it.
+	inReturnTypeAnn bool
+	// paramDepth counts the function parameter lists the pass is inside.
+	// inReturnTypeAnn is set only when it is zero. In
+	// `onItems(cb: () => readonly number[]): void`, the `readonly number[]` is the
+	// return type of `cb`, which sits in the parameters of `onItems`. The caller
+	// writes `cb` and hands that array to the package, so it stays owned.
 	paramDepth int
 	// declaredNames is every name the tree declares. A qualified reference whose
 	// head is among them resolves already and is left alone.
@@ -261,9 +263,9 @@ func (r *refRewriter) rewriteFuncSig(sig *ast.FuncSig) {
 	r.pushTypeParams(tps)
 	defer r.popTypeParams(tps)
 
-	outerReturn := r.inReturn
-	defer func() { r.inReturn = outerReturn }()
-	r.inReturn = false
+	outerReturn := r.inReturnTypeAnn
+	defer func() { r.inReturnTypeAnn = outerReturn }()
+	r.inReturnTypeAnn = false
 	r.rewriteTypeParams(sig.TypeParams)
 	r.paramDepth++
 	for _, p := range sig.Params {
@@ -275,10 +277,10 @@ func (r *refRewriter) rewriteFuncSig(sig *ast.FuncSig) {
 	if sig.Return != nil {
 		// A caller owns what a function returns and can bind it mutably with
 		// `val mut`, so a mutable twin keeps its bare name in this slot.
-		r.inReturn = r.paramDepth == 0
+		r.inReturnTypeAnn = r.paramDepth == 0
 		sig.Return = stripTopLevelMut(r.rewrite(sig.Return))
 	}
-	r.inReturn = false
+	r.inReturnTypeAnn = false
 	if sig.Throws != nil {
 		sig.Throws = r.rewrite(sig.Throws)
 	}
@@ -451,7 +453,7 @@ func (r *refRewriter) rewrite(t ast.TypeAnn) ast.TypeAnn {
 		}
 		if mutableName, ok := r.readonlyToMutable[id.Name]; ok {
 			id.Name = mutableName
-			if r.borrowReadonlyReturns && r.inReturn {
+			if r.borrowReadonlyReturns && r.inReturnTypeAnn {
 				static := ast.NewLifetimeAnn("static", tt.Span())
 				return ast.NewBorrowTypeAnn(false, static, tt, tt.Span())
 			}
@@ -485,9 +487,9 @@ func (r *refRewriter) rewrite(t ast.TypeAnn) ast.TypeAnn {
 		r.pushTypeParams(tt.TypeParams)
 		defer r.popTypeParams(tt.TypeParams)
 
-		outerReturn := r.inReturn
-		defer func() { r.inReturn = outerReturn }()
-		r.inReturn = false
+		outerReturn := r.inReturnTypeAnn
+		defer func() { r.inReturnTypeAnn = outerReturn }()
+		r.inReturnTypeAnn = false
 		r.rewriteTypeParams(tt.TypeParams)
 		r.paramDepth++
 		for _, p := range tt.Params {
@@ -499,10 +501,10 @@ func (r *refRewriter) rewrite(t ast.TypeAnn) ast.TypeAnn {
 		if tt.Return != nil {
 			// A caller owns what a function returns and can bind it mutably with
 			// `val mut`, so a mutable twin keeps its bare name in this slot.
-			r.inReturn = r.paramDepth == 0
+			r.inReturnTypeAnn = r.paramDepth == 0
 			tt.Return = stripTopLevelMut(r.rewrite(tt.Return))
 		}
-		r.inReturn = false
+		r.inReturnTypeAnn = false
 		if tt.Throws != nil {
 			tt.Throws = r.rewrite(tt.Throws)
 		}
