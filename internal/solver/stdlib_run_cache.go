@@ -201,6 +201,8 @@ func loadAmbientChecker(dir string, groups PackageGroups, opts Options) *checker
 	// that every run sharing the checker can see.
 	g := graphcopy.New(isASTPointer)
 	c = graphcopy.Copy(g, c)
+	// Every run's fork reads through this table, and forks run concurrently.
+	c.prov.freeze()
 	if frozenVarChecks {
 		// The copier's table of what it copied names every variable the cached checker
 		// reaches.
@@ -272,7 +274,8 @@ func isASTPointer(t reflect.Type) bool {
 
 // fork returns a checker that runs with source, groupSource, and groups over what c
 // loaded. The two share every type, definition, scope, and namespace c holds, and the
-// fork gets its own copy of every container a run adds to.
+// fork gets its own copy of every container a run adds to. The fork's Prov is a layer
+// over c's, so it reads every origin c recorded and writes only its own.
 //
 // c must not be written to while it is shared. Two forks of c can run concurrently, and
 // neither reaches the other's state.
@@ -284,7 +287,7 @@ func (c *checker) fork(source ModuleSource, groupSource GroupSource, groups Pack
 	f.info.ctx = f.ctx
 	f.source, f.groupSource, f.groups = source, groupSource, groups
 
-	f.prov = maps.Clone(c.prov)
+	f.prov = c.prov.child()
 	f.varIDs = c.varIDs.Clone()
 	f.errs = slices.Clip(c.errs)
 	f.memberFuncNames = maps.Clone(c.memberFuncNames)

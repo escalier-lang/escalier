@@ -96,10 +96,12 @@ func TestProbeDiscardRunsSideTableCleanups(t *testing.T) {
 	c.closeProbe(p, false) // discard
 
 	require.Nil(t, c.info.TypeOf(fresh), "a node first typed under the probe loses its entry")
-	require.NotContains(t, c.prov, speculative, "its provenance is gone too")
+	_, ok := c.prov.get(speculative)
+	require.False(t, ok, "its provenance is gone too")
 
 	require.Same(t, pre, c.info.TypeOf(existing), "the pre-probe Info entry is restored")
-	o, ok := c.prov[pre].(FromAST)
+	prev, _ := c.prov.get(pre)
+	o, ok := prev.(FromAST)
 	require.True(t, ok)
 	require.Equal(t, LiteralInference, o.Kind, "the pre-probe Prov entry (kind) is restored")
 }
@@ -116,7 +118,8 @@ func TestProbeCommitKeepsSideTableWrites(t *testing.T) {
 	c.closeProbe(p, true) // commit
 
 	require.Same(t, ty, c.info.TypeOf(n), "committed Info write survives")
-	require.Contains(t, c.prov, ty, "committed Prov write survives")
+	_, ok := c.prov.get(ty)
+	require.True(t, ok, "committed Prov write survives")
 }
 
 // A nested probe that COMMITS hands its rollback obligation up to its parent, so

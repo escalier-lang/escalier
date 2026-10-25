@@ -983,7 +983,7 @@ func TestInferScriptInLibLeavesTheLibraryTableAlone(t *testing.T) {
 
 	lib := InferModuleWithSource(module, testStdlibSource())
 	require.Empty(t, lib.Errors)
-	before := len(lib.checker.prov)
+	before := lib.checker.prov.size()
 
 	for range 5 {
 		script, scriptParseErrors := parser.NewParser(ctx, scriptSource).ParseScript()
@@ -992,7 +992,7 @@ func TestInferScriptInLibLeavesTheLibraryTableAlone(t *testing.T) {
 		require.Empty(t, errs)
 	}
 
-	require.Equal(t, before, len(lib.checker.prov))
+	require.Equal(t, before, lib.checker.prov.size())
 }
 
 // TestInferScriptInLibRechecksAScript checks what a second check of one script

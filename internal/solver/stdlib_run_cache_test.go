@@ -324,6 +324,8 @@ func (c *checker) deepFork(source ModuleSource, groupSource GroupSource, groups 
 	f := graphcopy.Copy(graphcopy.New(isASTPointer), c)
 	f.ctx.fusionRecorder = f.recordFusionEdge
 	f.source, f.groupSource, f.groups = source, groupSource, groups
+	// The copy's table is its own, so no fork reads through it.
+	f.prov.frozen.Store(false)
 	return f
 }
 

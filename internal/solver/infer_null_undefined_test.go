@@ -97,7 +97,7 @@ func TestResolveAtomAnnotationRecordsNoProvenance(t *testing.T) {
 			require.True(t, ok)
 			require.NotPanics(t, func() { c.resolveTypeAnn(scope, second, 0) })
 			require.Empty(t, c.errs)
-			require.Empty(t, c.prov, "an atom annotation must record no provenance")
+			require.Zero(t, c.prov.size(), "an atom annotation must record no provenance")
 			// The two annotations resolve to the same atom, which is what makes a Prov entry
 			// unsafe in the first place.
 			require.Equal(t, tt.name, soltype.Print(firstType))

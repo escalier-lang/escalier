@@ -129,7 +129,8 @@ func (p Prov) NodeFor(t soltype.Type) (ast.Node, bool) {
 
 // hasProv reports whether t already carries a FromAST origin in the Prov table.
 func (c *checker) hasProv(t soltype.Type) bool {
-	_, ok := c.prov[t].(FromAST)
+	o, _ := c.prov.get(t)
+	_, ok := o.(FromAST)
 	return ok
 }
 
@@ -148,12 +149,13 @@ func (c *checker) hasProv(t soltype.Type) bool {
 // compiler. Re-recording the same node is idempotent and allowed.
 func (c *checker) recordProv(t soltype.Type, n ast.Node, kind ASTOriginKind) {
 	if c.debugProv {
-		if prev, ok := c.prov[t].(FromAST); ok && prev.Node != n {
+		prev, _ := c.prov.get(t)
+		if prev, ok := prev.(FromAST); ok && prev.Node != n {
 			panic(fmt.Sprintf("recordProv: type %p re-recorded against a different node (was %T, now %T) — the unique-pointer invariant is violated", t, prev.Node, n))
 		}
 	}
 	c.snapshotProv(t)
-	c.prov[t] = FromAST{Node: n, Kind: kind}
+	c.prov.set(t, FromAST{Node: n, Kind: kind})
 }
 
 // recordProvForResult records provenance for an annotation result whose smart
@@ -215,7 +217,7 @@ func sharedSingleton(t soltype.Type) bool {
 // does not consult debugProv, since a fused pointer can legitimately already carry
 // an origin through interning. A re-record is skipped rather than crashing.
 func (c *checker) recordFusionEdge(fused soltype.Type, from []soltype.Type) {
-	if _, ok := c.prov[fused]; ok {
+	if _, ok := c.prov.get(fused); ok {
 		return
 	}
 	for _, src := range from {
@@ -224,16 +226,20 @@ func (c *checker) recordFusionEdge(fused soltype.Type, from []soltype.Type) {
 		}
 	}
 	c.snapshotProv(fused)
-	c.prov[fused] = FromNormalization{From: from}
+	c.prov.set(fused, FromNormalization{From: from})
 }
 
 // snapshotProv registers a probe rollback for a pending write to t's Prov entry,
 // so a discarded speculative trial leaves Prov exactly as it was. A no-op when no
 // probe is open. recordProv, recordInstantiation, and recordFusionEdge all route
-// through it, so each speculative side-table write is reversible. It delegates to
-// the same snapshotMapEntry helper as recordType's Info write.
+// through it, so each speculative side-table write is reversible.
 func (c *checker) snapshotProv(t soltype.Type) {
-	snapshotMapEntry(c, c.prov, t)
+	if c.ctx.probe == nil {
+		return
+	}
+	prov := c.prov
+	prev, had := prov.own[t]
+	c.ctx.probe.onRollback(func() { prov.restore(t, prev, had) })
 }
 
 // recordInstantiation records the FromInstantiation interior edge minted by
@@ -244,10 +250,10 @@ func (c *checker) snapshotProv(t soltype.Type) {
 // practice — it backstops a future change that reuses a pointer.
 func (c *checker) recordInstantiation(nv *soltype.TypeVarType, from soltype.Type) {
 	if c.debugProv {
-		if prev, ok := c.prov[nv]; ok {
+		if prev, ok := c.prov.get(nv); ok {
 			panic(fmt.Sprintf("recordInstantiation: var %p already has provenance (%T) — the unique-pointer invariant is violated", nv, prev))
 		}
 	}
 	c.snapshotProv(nv)
-	c.prov[nv] = FromInstantiation{From: from}
+	c.prov.set(nv, FromInstantiation{From: from})
 }
