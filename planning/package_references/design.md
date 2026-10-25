@@ -89,6 +89,70 @@ the value, and a later use of it is a use-after-move.
 `TestScriptValuePassedToOwnedParam`, which #2215 adds to
 `internal/solver/owned_param_move_test.go`, covers this.
 
+### 2.4 Gaps in the module-level rules
+
+The rules in 2.1 run only inside function bodies. Three cases slip past them:
+
+- A module-level initializer can move another module-level value. With
+  `val ys: mut Array<number> = xs`, both bindings own the same array, and a
+  function can mutate it through either one. `Holder(xs)`, `take(xs)` and
+  `{items: xs}` in an initializer hand `xs` to a new owner the same way. #2230
+  tracks this.
+- Two initializers can move the same value, as in `val ys = xs` followed by
+  `val zs = xs`. #2231 tracks this.
+- A method that takes owned `self` moves a module-level receiver inside a
+  function. `fn f() { return tok.consume() }` checks clean, and each call of
+  `f` consumes `tok` again. #2232 tracks this.
+
+### 2.5 Proposal: module-level bindings as `'static` borrows
+
+This is a proposal, not a decision.
+
+The module owns each module-level value, and every use of the binding reads it
+through a `'static` borrow. That covers uses in other initializers as well as
+uses in function bodies. A `val` gives an immutable borrow, and a `val` declared
+`mut` gives a mutable one:
+
+```esc
+export val xs: Array<number> = [1, 2]          // importers see &'static Array<number>
+export val counts: mut Array<number> = []      // importers see &'static mut Array<number>
+```
+
+Rust treats a `static` the same way. The proposal keeps every pattern that only
+reads or mutates module-level state, and changes these things:
+
+- The special errors from 2.1 become the ordinary borrow error,
+  `cannot use borrowed &Array<number> as owned Array<number>`. The friendlier
+  module-level wording can stay as the message for that case.
+- The three gaps in 2.4 are rejected by the same rule, with no separate checks
+  for initializers or receivers.
+- A one-time handoff in an initializer, such as `val h = Holder(xs)`, is
+  rejected. The author writes the value inline, as `Holder([1, 2])`, or gives
+  `Holder` a borrow parameter. This is the change developers would notice most.
+- A `var` can still be reassigned with a fresh value inside a function, since
+  the module takes ownership of the new value. A `val` can still be initialized
+  from a fresh value or from a function's owned result.
+- Objects at module level can still hold borrows of other module-level values,
+  because the borrows are `'static`.
+- An Escalier package's exports read the same way a TypeScript package's consts
+  do in 3.1.
+- Generated `.d.ts` files could mark an immutable module-level value `readonly`.
+  Today `export val nums = [5, 1.23, -1]` emits
+  `export declare const nums: [5, 1.23, -1]`, which TypeScript callers can
+  mutate.
+- Displayed types could leave out `'static` where the borrow is implied, to
+  keep signatures short.
+
+Shared `&'static mut` state does not conflict with the borrow rules, since
+Rule 3 in `planning/lifetimes/requirements.md` allows several mutable
+references to one value. Scripts are unaffected, because their top-level
+bindings are locals.
+
+Banning owned reference values at module level outright was considered and
+rejected. Module-level lookup tables, configuration objects, registries, caches
+and class instances are common in JavaScript-style code, and a ban would push
+each of them into a function or a lazily built value.
+
 ## 3. TypeScript packages
 
 A `.d.ts` file says nothing about ownership. TypeScript lets any holder of an
@@ -321,4 +385,7 @@ adopts them.
 - #2219: telling a fresh readonly return from a shared one.
 - #2222: the ownership and mutability of `.d.ts` parameters.
 - #2223: a diagnostic for `val mut` on a borrow.
+- #2230: a module-level initializer can give one mutable value two owners.
+- #2231: a module-level value can be moved twice by module-level initializers.
+- #2232: a consuming method can move a module-level instance inside a function.
 - #577 and #500: receiver mutability for `.d.ts` methods.
