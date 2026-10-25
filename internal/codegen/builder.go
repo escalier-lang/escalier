@@ -1561,7 +1561,7 @@ func (b *Builder) buildExpr(expr ast.Expr, parent ast.Expr) (Expr, []Stmt) {
 		}
 		var namespaceStr string
 		if b.depGraph != nil {
-			namespaceStr = b.depGraph.GetNamespaceString(expr.Namespace)
+			namespaceStr = b.depGraph.GetNamespaceString(b.depGraph.IdentNamespace(expr))
 		}
 		return NewIdentExpr(expr.Name, namespaceStr, expr), []Stmt{}
 	case *ast.SuperCallExpr:

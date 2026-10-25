@@ -262,7 +262,7 @@ func (c *checker) resolveComponentEscapes(
 			// site already, so it is skipped here — a borrow cycle can route an edge back to
 			// the root, and consuming it twice at one program point is a spurious double-move.
 			var rootID liveness.VarID
-			if p, ok := exprPlace(es.expr); ok {
+			if p, ok := c.exprPlace(es.expr); ok {
 				rootID = p.root
 			}
 			ids := escaping.ToSlice()
@@ -386,7 +386,7 @@ func (c *checker) reachesOf(e ast.Expr, fieldBorrowGraph map[liveness.VarID][]fi
 	}
 	out := c.elementReferents(e, fieldBorrowGraph)
 	if _, isBorrow := e.(*ast.BorrowExpr); !isBorrow {
-		if _, isPlace := exprPlace(e); !isPlace {
+		if _, isPlace := c.exprPlace(e); !isPlace {
 			for _, b := range borrowsIn(e) {
 				out = append(out, c.elementReferents(b, fieldBorrowGraph)...)
 			}
@@ -777,7 +777,7 @@ func (c *checker) componentMoveCovers(
 		return false
 	}
 	component := escaping.Clone()
-	if p, ok := exprPlace(e); ok && p.root > 0 {
+	if p, ok := c.exprPlace(e); ok && p.root > 0 {
 		component.Add(p.root)
 	}
 	for root, edges := range fieldBorrowGraph {
@@ -833,7 +833,7 @@ func (c *checker) escapesAsOwnedCarrier(
 	case *ast.ObjectExpr, *ast.TupleExpr:
 		return true
 	}
-	p, ok := exprPlace(e)
+	p, ok := c.exprPlace(e)
 	if !ok || p.root <= 0 {
 		return false
 	}
@@ -984,7 +984,7 @@ func (c *checker) isLocalReferent(arg ast.Expr) (liveness.VarID, bool) {
 // recording an edge can say which part of the referent the borrow reaches. `&mut b.x` gives
 // root b and path [x].
 func (c *checker) localReferentPlace(arg ast.Expr) (movePlace, bool) {
-	p, ok := exprPlace(arg)
+	p, ok := c.exprPlace(arg)
 	if !ok || p.root <= 0 {
 		return movePlace{}, false
 	}
@@ -1021,7 +1021,7 @@ func (c *checker) escapingLocalsOf(
 			out.Add(captured.root)
 		}
 	}
-	if p, ok := exprPlace(e); ok && p.root > 0 {
+	if p, ok := c.exprPlace(e); ok && p.root > 0 {
 		c.collectBorrowedFrom(p.root, p.path, out, set.NewSet[liveness.VarID](), fieldBorrowGraph)
 	}
 	return out
@@ -1044,17 +1044,16 @@ func (c *checker) addEdge(root liveness.VarID, fb fieldBorrow) {
 	c.markBorrowDirty(root)
 }
 
-// recordBorrowEdges records which function-locals the binding destVarID borrows and at
+// recordBorrowEdges records which function-locals the binding root borrows and at
 // which field. `val a = {peer: &mut b}` records a → b at path [peer], and a whole-binding
 // move `val a2 = a` carries a's edges into a2 at the same paths. A `var` reassignment reuses
 // the same VarID, so recording clears the binding's prior edges first: `a = &mut e` after `a =
 // &mut d` leaves only a → e. The caller flushes the dirtied roots into borrowGens once the
 // statement's borrows are recorded.
-func (c *checker) recordBorrowEdges(destVarID int, init ast.Expr) {
-	if c.fn == nil || c.fn.eagerBorrowGraph == nil || destVarID <= 0 || init == nil {
+func (c *checker) recordBorrowEdges(root liveness.VarID, init ast.Expr) {
+	if c.fn == nil || c.fn.eagerBorrowGraph == nil || root <= 0 || init == nil {
 		return
 	}
-	root := liveness.VarID(destVarID)
 	c.clearEagerSubtree(root, nil)
 	c.recordBorrowSources(root, nil, init)
 }
@@ -1120,7 +1119,7 @@ func (c *checker) recordBorrowSources(root liveness.VarID, base []placeSeg, e as
 	default:
 		// A place names another binding whose value e copies, as in `val a2 = a` or `val c =
 		// a.peer`. copyPlaceEdges transfers that binding's edges to root, re-rooted at base.
-		if p, ok := exprPlace(e); ok && p.root > 0 {
+		if p, ok := c.exprPlace(e); ok && p.root > 0 {
 			c.copyPlaceEdges(root, base, p)
 			c.fn.placeCopies = append(c.fn.placeCopies, placeCopy{dest: root, destPath: base, src: p, expr: e})
 			return
@@ -1174,20 +1173,20 @@ func (c *checker) copyPlaceEdges(root liveness.VarID, base []placeSeg, src moveP
 func (c *checker) recordPatternPlaceEdges(pat ast.Pat, src movePlace) {
 	switch pat := pat.(type) {
 	case *ast.IdentPat:
-		if pat.VarID > 0 {
-			c.copyPlaceEdges(liveness.VarID(pat.VarID), nil, src)
+		if c.varIDs.Of(pat) > 0 {
+			c.copyPlaceEdges(c.varIDs.Of(pat), nil, src)
 		}
 	case *ast.ObjectPat:
 		for _, elem := range pat.Elems {
 			switch e := elem.(type) {
 			case *ast.ObjShorthandPat:
-				if e.VarID > 0 {
-					c.copyPlaceEdges(liveness.VarID(e.VarID), nil, extendPlace(src, e.Key.Name))
+				if c.varIDs.Of(e) > 0 {
+					c.copyPlaceEdges(c.varIDs.Of(e), nil, extendPlace(src, e.Key.Name))
 				}
 				if e.Default != nil {
 					// The property may be absent, so the leaf can take the shorthand
 					// default, such as `val {peer = &mut b} = obj`.
-					c.recordBorrowEdges(e.VarID, e.Default)
+					c.recordBorrowEdges(c.varIDs.Of(e), e.Default)
 				}
 			case *ast.ObjKeyValuePat:
 				c.recordPatternPlaceEdges(e.Value, extendPlace(src, e.Key.Name))
@@ -1258,7 +1257,7 @@ func (c *checker) checkParamFieldStoreEscape(recv ast.Expr, field string, source
 	if c.fn == nil || c.fn.eagerBorrowGraph == nil {
 		return
 	}
-	rp, ok := exprPlace(recv)
+	rp, ok := c.exprPlace(recv)
 	if !ok || rp.root <= 0 || !c.paramReferentOutlivesFrame(rp.root) {
 		return
 	}
@@ -1285,7 +1284,7 @@ func (c *checker) checkParamElementStoreEscape(recv, source ast.Expr, stmtRef li
 	if c.fn == nil || c.fn.eagerBorrowGraph == nil {
 		return
 	}
-	rp, ok := exprPlace(recv)
+	rp, ok := c.exprPlace(recv)
 	if !ok || rp.root <= 0 || !c.paramReferentOutlivesFrame(rp.root) {
 		return
 	}
@@ -1310,7 +1309,7 @@ func (c *checker) recordFieldStoreEdges(
 	if c.fn == nil || c.fn.eagerBorrowGraph == nil {
 		return
 	}
-	rp, ok := exprPlace(recv)
+	rp, ok := c.exprPlace(recv)
 	if !ok || rp.root <= 0 || c.paramReferentOutlivesFrame(rp.root) {
 		return
 	}
@@ -1326,7 +1325,7 @@ func (c *checker) recordFieldStoreEdges(
 	// second borrow or a read has to respect. This is the field-store twin of the loan
 	// recordCallStoreEdges derives from a call's store effect.
 	if borrow, ok := source.(*ast.BorrowExpr); ok {
-		if place, ok := loanPlace(borrow); ok {
+		if place, ok := c.loanPlace(borrow); ok {
 			c.recordStoreEdgeLoan(place, borrow.Mut, rp.root, base, stmtRef, borrow)
 		}
 	}
@@ -1341,14 +1340,14 @@ func (c *checker) recordElementStoreEdges(recv, source ast.Expr, stmtRef livenes
 	if c.fn == nil || c.fn.eagerBorrowGraph == nil {
 		return
 	}
-	rp, ok := exprPlace(recv)
+	rp, ok := c.exprPlace(recv)
 	if !ok || rp.root <= 0 || c.paramReferentOutlivesFrame(rp.root) {
 		return
 	}
 	c.recordBorrowSources(rp.root, rp.path, source)
 	c.flushBorrowDirty(stmtRef)
 	if borrow, ok := source.(*ast.BorrowExpr); ok {
-		if place, ok := loanPlace(borrow); ok {
+		if place, ok := c.loanPlace(borrow); ok {
 			c.recordStoreEdgeLoan(place, borrow.Mut, rp.root, rp.path, stmtRef, borrow)
 		}
 	}

@@ -5,6 +5,7 @@ import (
 	"testing"
 
 	"github.com/escalier-lang/escalier/internal/set"
+	"github.com/stretchr/testify/require"
 )
 
 // Helper function to create an empty span for testing
@@ -253,7 +254,7 @@ func TestForEachLeafBinding(t *testing.T) {
 	}
 	collect := func(pat Pat) []string {
 		var names []string
-		ForEachLeafBinding(pat, func(name string, _ int) { names = append(names, name) })
+		ForEachLeafBinding(pat, func(name string, _ Node) { names = append(names, name) })
 		return names
 	}
 
@@ -305,17 +306,15 @@ func TestForEachLeafBinding(t *testing.T) {
 	}
 }
 
-// ForEachLeafBinding passes through each leaf's VarID, including for leaves reached
-// through an extractor pattern's arguments.
-func TestForEachLeafBindingVarID(t *testing.T) {
+// TestForEachLeafBindingLeaf asserts that ForEachLeafBinding passes each leaf's own
+// node, including for a leaf reached through an extractor pattern's arguments.
+func TestForEachLeafBindingLeaf(t *testing.T) {
 	v := NewIdentPat("v", false, nil, nil, emptySpan())
-	v.VarID = 42
 	pat := NewExtractorPat(NewIdentifier("Some", emptySpan()), []Pat{v}, emptySpan())
 
-	got := map[string]int{}
-	ForEachLeafBinding(pat, func(name string, varID int) { got[name] = varID })
+	got := map[string]Node{}
+	ForEachLeafBinding(pat, func(name string, leaf Node) { got[name] = leaf })
 
-	if got["v"] != 42 {
-		t.Fatalf("leaf v VarID = %d, want 42", got["v"])
-	}
+	require.Len(t, got, 1)
+	require.Same(t, v, got["v"])
 }

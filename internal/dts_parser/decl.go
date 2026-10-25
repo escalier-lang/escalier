@@ -110,47 +110,20 @@ func (p *DtsParser) parseTopLevelDeclaration() Statement {
 			return p.parseEnumDeclaration()
 		}
 		p.lexer.RestoreState(nextToken)
-
-		// Allow const variable declarations inside ambient namespaces
-		if p.inAmbientContext {
-			return p.parseVariableDeclaration()
-		}
-
-		p.reportError(token.Span, "Expected 'enum' after 'const' at top level")
-		return nil
+		return p.parseVariableDeclaration()
 	case Var, Let:
-		// Allow var/let variable declarations inside ambient namespaces
-		if p.inAmbientContext {
-			return p.parseVariableDeclaration()
-		}
-		p.reportError(token.Span, "Variable declarations require 'declare' keyword at top level")
-		return nil
+		return p.parseVariableDeclaration()
 	case Function:
-		// Allow function declarations inside ambient namespaces
-		if p.inAmbientContext {
-			return p.parseFunctionDeclaration()
-		}
-		p.reportError(token.Span, "Function declarations require 'declare' keyword at top level")
-		return nil
+		return p.parseFunctionDeclaration()
 	case Class:
-		// Allow class declarations inside ambient namespaces
-		if p.inAmbientContext {
-			return p.parseClassDeclaration()
-		}
-		p.reportError(token.Span, "Class declarations require 'declare' keyword at top level")
-		return nil
+		return p.parseClassDeclaration()
 	case Abstract:
 		// Check if this is 'abstract class'
 		nextToken := p.lexer.SaveState()
 		p.consume() // consume 'abstract'
 		if p.peek().Type == Class {
 			p.lexer.RestoreState(nextToken)
-			// Allow abstract class declarations inside ambient namespaces
-			if p.inAmbientContext {
-				return p.parseClassDeclaration()
-			}
-			p.reportError(token.Span, "Abstract class declarations require 'declare' keyword at top level")
-			return nil
+			return p.parseClassDeclaration()
 		}
 		p.lexer.RestoreState(nextToken)
 		p.reportError(token.Span, "Expected 'class' after 'abstract'")
@@ -731,10 +704,6 @@ func (p *DtsParser) parseNamespaceDeclaration() Statement {
 		return nil
 	}
 
-	// Set ambient context for parsing namespace body
-	savedAmbientContext := p.inAmbientContext
-	p.inAmbientContext = true
-
 	statements := make([]Statement, 0, 8) // pre-allocate for typical namespace size
 	for p.peek().Type != CloseBrace && p.peek().Type != EndOfFile {
 		// Capture leading JSDoc before parsing the next statement.
@@ -754,9 +723,6 @@ func (p *DtsParser) parseNamespaceDeclaration() Statement {
 			p.consume()
 		}
 	}
-
-	// Restore ambient context
-	p.inAmbientContext = savedAmbientContext
 
 	endToken := p.expect(CloseBrace)
 	if endToken == nil {
@@ -789,10 +755,6 @@ func (p *DtsParser) parseAmbientModuleDeclaration(startToken *Token) Statement {
 		return nil
 	}
 
-	// Set ambient context for parsing module body
-	savedAmbientContext := p.inAmbientContext
-	p.inAmbientContext = true
-
 	statements := make([]Statement, 0, 8) // pre-allocate for typical module size
 	for p.peek().Type != CloseBrace && p.peek().Type != EndOfFile {
 		doc := p.consumeLeadingDoc()
@@ -810,9 +772,6 @@ func (p *DtsParser) parseAmbientModuleDeclaration(startToken *Token) Statement {
 			p.consume()
 		}
 	}
-
-	// Restore ambient context
-	p.inAmbientContext = savedAmbientContext
 
 	endToken := p.expect(CloseBrace)
 	if endToken == nil {
@@ -844,10 +803,6 @@ func (p *DtsParser) parseGlobalDeclaration() Statement {
 		return nil
 	}
 
-	// Set ambient context for parsing global body
-	savedAmbientContext := p.inAmbientContext
-	p.inAmbientContext = true
-
 	statements := make([]Statement, 0, 8) // pre-allocate for typical global size
 	for p.peek().Type != CloseBrace && p.peek().Type != EndOfFile {
 		doc := p.consumeLeadingDoc()
@@ -866,9 +821,6 @@ func (p *DtsParser) parseGlobalDeclaration() Statement {
 			p.consume()
 		}
 	}
-
-	// Restore ambient context
-	p.inAmbientContext = savedAmbientContext
 
 	endToken := p.expect(CloseBrace)
 	if endToken == nil {

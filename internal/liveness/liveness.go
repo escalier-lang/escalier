@@ -3,10 +3,9 @@ package liveness
 import "github.com/escalier-lang/escalier/internal/set"
 
 // VarID uniquely identifies a variable within a function body.
-// Sequential integer IDs are assigned during name resolution (Phase 2)
-// and stored directly on AST nodes (IdentExpr.VarID, IdentPat.VarID,
-// etc.). The rename pass sets these; liveness and alias analysis read
-// them from the AST nodes.
+// The rename pass assigns sequential integer IDs and records them in a
+// VarIDs table keyed by AST node. Liveness and alias analysis read them
+// from that table.
 //
 // A VarID of 0 indicates an unresolved or unset ID. Local variable IDs
 // start at 1. Non-local variables (module-level, prelude) are assigned

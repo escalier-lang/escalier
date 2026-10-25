@@ -441,7 +441,7 @@ func (c *checker) recordCallStoreEdges(
 		}
 		// An edge hangs off a binding, so the target has to name one. An argument built inline
 		// names no place and leaves nothing to root the edge at.
-		target, isPlace := exprPlace(borrowOperand(targetExpr))
+		target, isPlace := c.exprPlace(borrowOperand(targetExpr))
 		if !isPlace || target.root <= 0 {
 			continue
 		}
@@ -470,7 +470,7 @@ func (c *checker) recordCallStoreEdges(
 			ids := carried.ToSlice()
 			slices.Sort(ids)
 			for _, referent := range ids {
-				place := storeLoanPlace(argExpr, referent, edge.direct)
+				place := c.storeLoanPlace(argExpr, referent, edge.direct)
 				escaping[edge.arg] = append(escaping[edge.arg], elementReach{place: place, mut: sourceMut})
 				// The target holds the loan while the body can still read it, so a move or
 				// conflicting borrow of the local that a later read through the target would
@@ -495,7 +495,7 @@ func (c *checker) recordCallStoreEdges(
 			c.addBorrowEdge(target.root, appendPath(target.path, edge.path), referent, nil, sourceMut)
 			// The target reaches the referent from here on, so it holds a borrow of it that a
 			// second borrow or a read of the referent has to respect.
-			c.recordStoreEdgeLoan(storeLoanPlace(argExpr, referent, edge.direct),
+			c.recordStoreEdgeLoan(c.storeLoanPlace(argExpr, referent, edge.direct),
 				sourceMut, target.root, appendPath(target.path, edge.path), ref, argExpr)
 			recorded = true
 		}
@@ -537,7 +537,7 @@ func (c *checker) recordCallStoreEdges(
 // false positive on `val s = {held: &mut q}` for a parameter q, which carries nothing that
 // can leave the frame.
 func (c *checker) collectStoredLocals(arg ast.Expr, referents []liveness.VarID, out set.Set[liveness.VarID]) {
-	if p, isPlace := exprPlace(borrowOperand(arg)); isPlace && p.root > 0 {
+	if p, isPlace := c.exprPlace(borrowOperand(arg)); isPlace && p.root > 0 {
 		c.collectBorrowedFrom(p.root, p.path, out, set.NewSet[liveness.VarID](), c.fn.eagerBorrowGraph)
 		return
 	}
@@ -571,7 +571,7 @@ func (c *checker) storedReferents(arg ast.Expr) []liveness.VarID {
 // borrow-edge graph, which is how a borrow that arrived by an earlier store is found. It reads
 // the whole-body graph, since the per-point one belongs to the escape post-pass.
 func (c *checker) placeReferents(arg ast.Expr) []liveness.VarID {
-	pl, ok := exprPlace(borrowOperand(arg))
+	pl, ok := c.exprPlace(borrowOperand(arg))
 	if !ok || pl.root <= 0 {
 		return nil
 	}
@@ -610,12 +610,12 @@ func storeSourceMut(fn *soltype.FuncType, self *soltype.FuncParam, arg int) bool
 // An INDIRECT store puts what the argument HOLDS there, which the argument's own place does not
 // name, so the whole referent is the answer. The same applies when the argument names no place,
 // such as an inline carrier.
-func storeLoanPlace(argExpr ast.Expr, referent liveness.VarID, direct bool) movePlace {
+func (c *checker) storeLoanPlace(argExpr ast.Expr, referent liveness.VarID, direct bool) movePlace {
 	whole := movePlace{root: referent}
 	if !direct {
 		return whole
 	}
-	p, ok := loanPlace(argExpr)
+	p, ok := c.loanPlace(argExpr)
 	if !ok || p.root != referent {
 		return whole
 	}
