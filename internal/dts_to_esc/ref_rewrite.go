@@ -138,6 +138,10 @@ type refRewriter struct {
 	// inReturn is true while the pass walks a function's return type, outside
 	// the parameters of any function type nested in it.
 	inReturn bool
+	// paramDepth counts the function parameter lists the pass is inside. A return
+	// type reached inside one is not a return position, since the caller supplies
+	// that value.
+	paramDepth int
 	// declaredNames is every name the tree declares. A qualified reference whose
 	// head is among them resolves already and is left alone.
 	declaredNames set.Set[string]
@@ -261,15 +265,17 @@ func (r *refRewriter) rewriteFuncSig(sig *ast.FuncSig) {
 	defer func() { r.inReturn = outerReturn }()
 	r.inReturn = false
 	r.rewriteTypeParams(sig.TypeParams)
+	r.paramDepth++
 	for _, p := range sig.Params {
 		if p.TypeAnn != nil {
 			p.TypeAnn = r.rewrite(p.TypeAnn)
 		}
 	}
+	r.paramDepth--
 	if sig.Return != nil {
 		// A caller owns what a function returns and can bind it mutably with
 		// `val mut`, so a mutable twin keeps its bare name in this slot.
-		r.inReturn = true
+		r.inReturn = r.paramDepth == 0
 		sig.Return = stripTopLevelMut(r.rewrite(sig.Return))
 	}
 	r.inReturn = false
@@ -483,15 +489,17 @@ func (r *refRewriter) rewrite(t ast.TypeAnn) ast.TypeAnn {
 		defer func() { r.inReturn = outerReturn }()
 		r.inReturn = false
 		r.rewriteTypeParams(tt.TypeParams)
+		r.paramDepth++
 		for _, p := range tt.Params {
 			if p.TypeAnn != nil {
 				p.TypeAnn = r.rewrite(p.TypeAnn)
 			}
 		}
+		r.paramDepth--
 		if tt.Return != nil {
 			// A caller owns what a function returns and can bind it mutably with
 			// `val mut`, so a mutable twin keeps its bare name in this slot.
-			r.inReturn = true
+			r.inReturn = r.paramDepth == 0
 			tt.Return = stripTopLevelMut(r.rewrite(tt.Return))
 		}
 		r.inReturn = false
