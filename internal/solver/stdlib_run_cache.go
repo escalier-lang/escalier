@@ -13,6 +13,7 @@ import (
 	"sync"
 
 	"github.com/escalier-lang/escalier/internal/ast"
+	"github.com/escalier-lang/escalier/internal/graphcopy"
 	"github.com/escalier-lang/escalier/internal/set"
 	"github.com/escalier-lang/escalier/internal/soltype"
 )
@@ -197,34 +198,17 @@ func loadAmbientChecker(dir string, groups PackageGroups, opts Options) *checker
 	// The copy allocates every slice with no spare capacity. An append by a run to a
 	// slice the cached checker holds then allocates, rather than writing into an array
 	// that every run sharing the checker can see.
-	g := newGraphCopier(isASTPointer)
-	c = copyPtr(g, c)
+	g := graphcopy.New(isASTPointer)
+	c = graphcopy.Copy(g, c)
 	if frozenVarChecks {
 		// The copier's table of what it copied names every variable the cached checker
 		// reaches.
-		c.ctx.frozenVars, c.ctx.frozenLts = copiedVars(g)
+		c.ctx.frozenVars = set.FromSlice(graphcopy.Copies[soltype.TypeVarType](g))
+		c.ctx.frozenLts = set.FromSlice(graphcopy.Copies[soltype.LifetimeVar](g))
 		c.ctx.frozenClasses = set.FromSlice(slices.Collect(maps.Values(c.ctx.classes)))
 		c.ctx.frozenAliases = set.FromSlice(slices.Collect(maps.Values(c.ctx.aliases)))
 	}
 	return c
-}
-
-// copiedVars returns every type variable and every lifetime variable g has copied, as
-// they sit in the copies.
-func copiedVars(g *graphCopier) (set.Set[*soltype.TypeVarType], set.Set[*soltype.LifetimeVar]) {
-	typeVar := reflect.TypeFor[soltype.TypeVarType]()
-	lifetimeVar := reflect.TypeFor[soltype.LifetimeVar]()
-	vars := set.NewSet[*soltype.TypeVarType]()
-	lts := set.NewSet[*soltype.LifetimeVar]()
-	for key, copied := range g.pointers {
-		switch key.plan.typ {
-		case typeVar:
-			vars.Add((*soltype.TypeVarType)(copied))
-		case lifetimeVar:
-			lts.Add((*soltype.LifetimeVar)(copied))
-		}
-	}
-	return vars, lts
 }
 
 // settleLoadedDefinitions computes every fact about the classes and aliases registered so

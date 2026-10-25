@@ -1,4 +1,4 @@
-package solver
+package graphcopy
 
 import (
 	"fmt"
@@ -6,20 +6,19 @@ import (
 	"unsafe"
 )
 
-// graphDiff compares a live object graph against a snapshot graphCopier took of it. Each
+// graphDiff compares a live object graph against a snapshot a Copier took of it. Each
 // object the copier copied is compared field by field with its copy, and a field that
 // differs is recorded under the object's type and the name of its field the difference
 // sits in.
 type graphDiff struct {
-	g     *graphCopier
+	g     *Copier
 	diffs map[string]string
 }
 
-// diffAgainstSnapshot returns each change made since the copy to an object of the graph g
-// copied. A key names the changed object's type, and for a struct, the field of it the
-// change sits in, as `solver.Context.classes`. Its value describes the first change
-// found there.
-func diffAgainstSnapshot(g *graphCopier) map[string]string {
+// Diff returns each change made since the copy to an object of the graph g copied. A key
+// names the changed object's type, and for a struct, the field of it the change sits in,
+// as `solver.Context.classes`. Its value describes the first change found there.
+func (g *Copier) Diff() map[string]string {
 	d := &graphDiff{g: g, diffs: map[string]string{}}
 	for key, snap := range g.pointers {
 		d.compare(key.plan, key.addr, snap, diffPath{owner: key.plan})

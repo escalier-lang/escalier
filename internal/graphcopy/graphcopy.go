@@ -1,4 +1,6 @@
-package solver
+// Package graphcopy deep-copies an object graph through reflect and unsafe, and reports
+// what changed in the source graph since a copy was taken.
+package graphcopy
 
 import (
 	"fmt"
@@ -6,7 +8,7 @@ import (
 	"unsafe"
 )
 
-// graphCopier deep-copies an object graph. Every pointer, map, and slice it reaches
+// Copier deep-copies an object graph. Every pointer, map, and slice it reaches
 // gets a fresh copy, unexported fields included. A pointer or map reached twice is
 // copied once, so two fields that referred to one object in the source refer to one
 // object in the copy.
@@ -23,7 +25,7 @@ import (
 // The copy walks memory through unsafe pointers rather than reflect.Value, since a
 // reflect.Value assignment checks the types on every write and dominates the cost.
 // reflect still describes each type once, in the typePlan built for it.
-type graphCopier struct {
+type Copier struct {
 	// shared reports whether a pointer of the given type is left pointing at the
 	// source object rather than copied.
 	shared func(reflect.Type) bool
@@ -97,8 +99,8 @@ type byteRun struct {
 	offset, size uintptr
 }
 
-func newGraphCopier(shared func(reflect.Type) bool) *graphCopier {
-	return &graphCopier{
+func New(shared func(reflect.Type) bool) *Copier {
+	return &Copier{
 		shared:       shared,
 		plans:        map[reflect.Type]*typePlan{},
 		dynamicPlans: map[unsafe.Pointer]*typePlan{},
@@ -107,14 +109,27 @@ func newGraphCopier(shared func(reflect.Type) bool) *graphCopier {
 	}
 }
 
-// copyPtr returns a deep copy of the object p points at.
-func copyPtr[T any](g *graphCopier, p *T) *T {
+// Copy returns a deep copy of the object p points at.
+func Copy[T any](g *Copier, p *T) *T {
 	plan := g.planFor(reflect.TypeFor[*T]())
 	return (*T)(g.copyPointer(plan, unsafe.Pointer(p)))
 }
 
+// Copies returns the copy of every object of type T that g has copied, in no fixed
+// order.
+func Copies[T any](g *Copier) []*T {
+	t := reflect.TypeFor[T]()
+	var copies []*T
+	for key, copied := range g.pointers {
+		if key.plan.typ == t {
+			copies = append(copies, (*T)(copied))
+		}
+	}
+	return copies
+}
+
 // planFor returns the plan for t, building it on first use.
-func (g *graphCopier) planFor(t reflect.Type) *typePlan {
+func (g *Copier) planFor(t reflect.Type) *typePlan {
 	if plan, done := g.plans[t]; done {
 		return plan
 	}
@@ -175,7 +190,7 @@ func (p *typePlan) addBytes(offset, size uintptr) {
 
 // copyInto writes a deep copy of the value at src into dst. Both hold plan's type,
 // and dst holds its zero value.
-func (g *graphCopier) copyInto(plan *typePlan, dst, src unsafe.Pointer) {
+func (g *Copier) copyInto(plan *typePlan, dst, src unsafe.Pointer) {
 	switch plan.kind {
 	case copyBytes:
 		size := plan.typ.Size()
@@ -210,14 +225,14 @@ func (g *graphCopier) copyInto(plan *typePlan, dst, src unsafe.Pointer) {
 		}
 	case copyRefuse:
 		if *(*unsafe.Pointer)(src) != nil {
-			panic(fmt.Sprintf("graphCopier: cannot copy a non-nil %s", plan.typ))
+			panic(fmt.Sprintf("graphcopy: cannot copy a non-nil %s", plan.typ))
 		}
 	}
 }
 
 // copyPointer returns the copy of the object src points at, where plan is the
 // plan for src's pointer type.
-func (g *graphCopier) copyPointer(plan *typePlan, src unsafe.Pointer) unsafe.Pointer {
+func (g *Copier) copyPointer(plan *typePlan, src unsafe.Pointer) unsafe.Pointer {
 	if src == nil || plan.shared {
 		return src
 	}
@@ -236,7 +251,7 @@ func (g *graphCopier) copyPointer(plan *typePlan, src unsafe.Pointer) unsafe.Poi
 	return dst
 }
 
-func (g *graphCopier) copyMap(plan *typePlan, dst, src unsafe.Pointer) {
+func (g *Copier) copyMap(plan *typePlan, dst, src unsafe.Pointer) {
 	srcMap := reflect.NewAt(plan.typ, src).Elem()
 	if srcMap.IsNil() {
 		return
@@ -271,7 +286,7 @@ func (g *graphCopier) copyMap(plan *typePlan, dst, src unsafe.Pointer) {
 	dstSlot.Set(copied)
 }
 
-func (g *graphCopier) copySlice(plan *typePlan, dst, src unsafe.Pointer) {
+func (g *Copier) copySlice(plan *typePlan, dst, src unsafe.Pointer) {
 	srcSlice := reflect.NewAt(plan.typ, src).Elem()
 	if srcSlice.IsNil() {
 		return
@@ -296,7 +311,7 @@ func (g *graphCopier) copySlice(plan *typePlan, dst, src unsafe.Pointer) {
 // method table, then the data. A pointer dynamic value is the data word itself, so
 // its copy is the same first word over the copied pointer. Any other dynamic value
 // goes through reflect.
-func (g *graphCopier) copyInterface(plan *typePlan, dst, src unsafe.Pointer) {
+func (g *Copier) copyInterface(plan *typePlan, dst, src unsafe.Pointer) {
 	words := *(*[2]unsafe.Pointer)(src)
 	if words[0] == nil {
 		return
