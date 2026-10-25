@@ -142,24 +142,7 @@ func (c *parsedModuleCache) get(
 	parse func(sourceID int) (*ast.Module, error),
 ) (*ast.Module, error) {
 	key := parseKey{name: name, contents: contents}
-
-	c.mu.Lock()
-	defer c.mu.Unlock()
-	if entry, held := c.entries[key]; held {
-		return entry.module, nil
-	}
-
-	sourceID := c.nextSourceID
-	module, err := parse(sourceID)
-	if err != nil {
-		// A failure is not cached, and the id it would have used is not consumed.
-		// The next load of the same source retries.
-		return nil, err
-	}
-	c.nextSourceID++
-	c.entries[key] = parsedModuleEntry{module: module, sourceID: sourceID}
-	c.modules.Add(module)
-	return module, nil
+	return parseOnce(c, c.entries, key, 1, parse)
 }
 
 // getGroup returns the module parsed from the members called paths holding
@@ -186,22 +169,36 @@ func (c *parsedModuleCache) getNamedGroup(
 	parse func(firstSourceID int) (*ast.Module, error),
 ) (*ast.Module, error) {
 	key := groupKey{name: name, paths: joinParts(paths), contents: joinParts(contents)}
+	return parseOnce(c, c.groups, key, len(paths), parse)
+}
 
+// parseOnce returns the module entries holds under key, calling parse with the
+// next free source id on a miss. A successful parse consumes ids consecutive
+// source ids, starting at the one parse was given, and its module joins
+// c.modules. A failure is not cached and consumes no ids, so the next load of the
+// same key retries.
+//
+// parseOnce holds c.mu for the whole call, parse included.
+func parseOnce[K comparable](
+	c *parsedModuleCache,
+	entries map[K]parsedModuleEntry,
+	key K,
+	ids int,
+	parse func(firstSourceID int) (*ast.Module, error),
+) (*ast.Module, error) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
-	if entry, held := c.groups[key]; held {
+	if entry, held := entries[key]; held {
 		return entry.module, nil
 	}
 
 	firstSourceID := c.nextSourceID
 	module, err := parse(firstSourceID)
 	if err != nil {
-		// Not cached and no id consumed, so the next load of the same members
-		// retries. The single-source path answers a failure the same way.
 		return nil, err
 	}
-	c.nextSourceID += len(paths)
-	c.groups[key] = parsedModuleEntry{module: module, sourceID: firstSourceID}
+	c.nextSourceID += ids
+	entries[key] = parsedModuleEntry{module: module, sourceID: firstSourceID}
 	c.modules.Add(module)
 	return module, nil
 }
