@@ -15,9 +15,10 @@ import (
 //
 // An entry is keyed by the file's absolute path and holds the size and
 // modification time the file was read under. A stat that reports the same pair
-// reuses the digest. The same racy-write rule packageGraphCache follows applies: a
-// file modified within racyWindow of the read is hashed but not recorded, so a
-// later same-size edit can only produce a modification time the cache has not seen.
+// reuses the digest. packageGraphCache follows the same rule for recently written
+// files: a file modified within mtimeGranularity of the read is hashed but not
+// recorded, so a later same-size edit can only produce a modification time the
+// cache has not seen.
 
 // fileDigestCache holds one digest per file path.
 type fileDigestCache struct {
@@ -68,7 +69,7 @@ func (c *fileDigestCache) digest(path string) ([sha256.Size]byte, error) {
 
 	c.mu.Lock()
 	defer c.mu.Unlock()
-	if info.ModTime().Before(time.Now().Add(-racyWindow)) {
+	if info.ModTime().Before(time.Now().Add(-mtimeGranularity)) {
 		c.entries[abs] = fileDigestEntry{size: info.Size(), modTime: info.ModTime(), digest: digest}
 	} else {
 		delete(c.entries, abs)

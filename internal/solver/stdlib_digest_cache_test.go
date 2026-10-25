@@ -43,7 +43,7 @@ func TestFileDigestCache(t *testing.T) {
 			firstAt: past, secondAt: later,
 		},
 		{
-			name: "a file written within the racy window is not recorded", first: "abc", second: "xyz",
+			name: "a file written within the mtime granularity is not recorded", first: "abc", second: "xyz",
 			secondAt: time.Time{},
 		},
 	}
@@ -63,7 +63,7 @@ func TestFileDigestCache(t *testing.T) {
 			require.NoError(t, err)
 			require.Equal(t, sha256.Sum256([]byte(tt.first)), first)
 
-			// The racy-window row keeps the write's own time for both writes, so it
+			// The mtime-granularity row keeps the write's own time for both writes, so it
 			// sets the first one back to the same time as the second.
 			if tt.firstAt.IsZero() {
 				info, err := os.Stat(path)

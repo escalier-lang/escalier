@@ -177,7 +177,7 @@ func scanPackageFiles(dir string) ([]packageFileStamp, error) {
 //
 // A stamp misses an edit that keeps the file's size and lands within the
 // filesystem's timestamp granularity of the previous write. put guards against
-// that by refusing a graph read from any file modified within racyWindow of the
+// that by refusing a graph read from any file modified within mtimeGranularity of the
 // read, so a later edit can only produce a modification time the cache has not
 // recorded.
 type packageGraphCache struct {
@@ -191,9 +191,9 @@ type packageGraphEntry struct {
 	edges  map[string][]string
 }
 
-// racyWindow is the coarsest timestamp granularity a filesystem the stdlib may
-// sit on records. FAT records two seconds.
-const racyWindow = 2 * time.Second
+// mtimeGranularity is the coarsest modification-time granularity of any filesystem
+// the stdlib may sit on. FAT records two seconds.
+const mtimeGranularity = 2 * time.Second
 
 func newPackageGraphCache() *packageGraphCache {
 	return &packageGraphCache{entries: map[string]packageGraphEntry{}}
@@ -215,9 +215,9 @@ func (c *packageGraphCache) get(dir string, stamps []packageFileStamp) (map[stri
 }
 
 // put records edges as dir's graph under stamps. It records nothing when a file
-// was modified within racyWindow of now, and drops whatever dir held before.
+// was modified within mtimeGranularity of now, and drops whatever dir held before.
 func (c *packageGraphCache) put(dir string, stamps []packageFileStamp, edges map[string][]string) {
-	cutoff := time.Now().Add(-racyWindow)
+	cutoff := time.Now().Add(-mtimeGranularity)
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	for _, stamp := range stamps {
