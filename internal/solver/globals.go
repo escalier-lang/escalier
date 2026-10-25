@@ -212,8 +212,9 @@ func (c *checker) publishGlobals(scope *Scope, merge *globalsMerge) {
 		if !held {
 			continue
 		}
+		// The bound namespace may be shared with another run, so the merge binds a copy.
 		if bound, owned := target.OwnNamespace(name); owned {
-			addMissingMembers(bound, ns)
+			target.defineNamespace(name, withMissingMembers(bound, ns))
 			continue
 		}
 		if _, taken := target.GetNamespace(name); !taken {
@@ -238,22 +239,38 @@ func rootNames(module *ast.Module) (values, types, namespaces set.Set[string]) {
 	return declared.values, declared.types, namespaces
 }
 
-// addMissingMembers adds to into each value, type, and nested namespace of from whose
-// name into does not hold.
-func addMissingMembers(into, from *Namespace) {
+// withMissingMembers returns a copy of into that also holds each value, type, and
+// nested namespace of from whose name into does not hold. into is left unchanged.
+func withMissingMembers(into, from *Namespace) *Namespace {
+	merged := &Namespace{
+		Name:   into.Name,
+		Values: maps.Clone(into.Values),
+		Types:  maps.Clone(into.Types),
+		Nested: maps.Clone(into.Nested),
+	}
+	if merged.Values == nil {
+		merged.Values = map[string]ValueBinding{}
+	}
+	if merged.Types == nil {
+		merged.Types = map[string]TypeBinding{}
+	}
+	if merged.Nested == nil {
+		merged.Nested = map[string]*Namespace{}
+	}
 	for name, b := range from.Values {
-		if _, held := into.Values[name]; !held {
-			into.Values[name] = b
+		if _, held := merged.Values[name]; !held {
+			merged.Values[name] = b
 		}
 	}
 	for name, b := range from.Types {
-		if _, held := into.Types[name]; !held {
-			into.Types[name] = b
+		if _, held := merged.Types[name]; !held {
+			merged.Types[name] = b
 		}
 	}
 	for name, nested := range from.Nested {
-		if _, held := into.Nested[name]; !held {
-			into.Nested[name] = nested
+		if _, held := merged.Nested[name]; !held {
+			merged.Nested[name] = nested
 		}
 	}
+	return merged
 }
