@@ -87,13 +87,14 @@ element, and a `mut Array<&Point>` cannot write any point. A `mut` annotation
 on a single field is rejected, since the enclosing value decides the field's
 mutability.
 
-**T4. A borrow's mutability narrows and never widens.** `&mut T` satisfies
-`&T`. `&T` does not satisfy `&mut T`. Every write through a borrow, and every
-`&mut self` call through one, requires a `&mut` borrow, and T4 is the rule that
-decides each of them. T7 states the matching rule for an owned value. A function holding `p: &mut {x: number}`
-can pass `p` to a parameter typed `&{x: number}`. A function holding
-`p: &{x: number}` cannot pass it to a parameter typed `&mut {x: number}`, and
-the call reports `cannot constrain immutable object <: mutable object`.
+**T4. A borrow's mutability narrows and never widens.** `&mut T` satisfies `&T`.
+`&T` does not satisfy `&mut T`. Every write through a borrow, and every `&mut
+self` call through one, requires a `&mut` borrow, and T4 is the rule that
+decides each of them. T7 states the matching rule for an owned value. A function
+holding `p: &mut {x: number}` can pass `p` to a parameter typed `&{x: number}`.
+A function holding `p: &{x: number}` cannot pass it to a parameter typed `&mut
+{x: number}`, and the call reports `cannot constrain immutable object <: mutable
+object`.
 
 **T5. `readonly` forbids reassigning a slot.** A write to a `readonly` field is
 rejected after the field's one initialization. A `readonly` field does not
