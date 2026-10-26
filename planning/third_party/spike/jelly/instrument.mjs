@@ -6,10 +6,12 @@
 //
 // Two rewrites cover it:
 //
-//   - A call or `new` expression becomes `__dyn.r(__dyn.p(site), call)`. The
-//     first argument pushes the site before the call's own operands run, so a
-//     call nested in them pushes and pops above it, and the callee finds the
-//     site on top when its body starts. The second pops it.
+//   - A call `f(a, b)` becomes `__dyn.r(__dyn.d(), f(...__dyn.a(site, [a, b])))`,
+//     and a `new` expression the same way. `d` reads the stack depth first.
+//     `a` runs once the callee and the arguments are evaluated, pushes the
+//     site, and hands the arguments back, so a getter that runs while they
+//     are evaluated is not charged to the call. The callee then finds the site
+//     on top when its body starts, and `r` cuts the stack back to its depth.
 //   - Every function body starts with `__dyn.f(fn)`, which records an edge
 //     from the site on top to the function.
 //
@@ -76,10 +78,13 @@ function plugin(file) {
             if (!node.loc || node._dyn) return;
             if (t.isImport(node.callee) || t.isSuper(node.callee)) return;
             node._dyn = true;
-            const push = t.callExpression(dyn("p"), [t.stringLiteral(loc(file, node))]);
-            const wrapped = t.callExpression(dyn("r"), [push, node]);
+            const args = t.callExpression(dyn("a"), [t.stringLiteral(loc(file, node)), t.arrayExpression(node.arguments)]);
+            args._dyn = true;
+            node.arguments = [t.spreadElement(args)];
+            const depth = t.callExpression(dyn("d"), []);
+            depth._dyn = true;
+            const wrapped = t.callExpression(dyn("r"), [depth, node]);
             wrapped._dyn = true;
-            push._dyn = true;
             p.replaceWith(wrapped);
             p.skip();
           },

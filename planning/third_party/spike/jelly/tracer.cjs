@@ -15,14 +15,17 @@ const claimed = [];
 const edges = new Set();
 
 globalThis.__dyn = {
-  p(site) {
-    stack.push(site);
-    claimed.push(false);
+  d() {
     return stack.length;
   },
+  a(site, args) {
+    stack.push(site);
+    claimed.push(false);
+    return args;
+  },
   r(depth, value) {
-    stack.length = depth - 1;
-    claimed.length = depth - 1;
+    stack.length = depth;
+    claimed.length = depth;
     return value;
   },
   f(fn) {
@@ -39,6 +42,11 @@ function write() {
   fs.writeFileSync(out, JSON.stringify([...edges].map((e) => e.split("\t"))));
 }
 process.on("exit", write);
+
+// The drivers call every method with placeholder arguments, so plenty of them
+// reject. A rejection left unhandled would end the run before the rest of the
+// driver's calls.
+process.on("unhandledRejection", () => {});
 
 // A driver can leave a server or a timer running, so the process ends a few
 // seconds after the driver's own code finishes.
