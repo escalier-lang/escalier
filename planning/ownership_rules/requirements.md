@@ -117,7 +117,8 @@ Each case below follows from that:
 
 - A `return` outlives the frame, so it is an owned destination.
 - A store into module-level state outlives every local, so it is an owned
-  destination.
+  destination. [D9](#d9-whether-an-escaping-value-moves-or-borrows) asks whether
+  it should be a 'static borrow instead.
 - An unannotated parameter is owned when the body lets the parameter escape, and
   a borrow otherwise.
 - A closure that is returned owns what it captures. A closure that stays in the
@@ -129,10 +130,13 @@ annotation or a `&` initializer is a borrow destination.
 
 ## Lifetime rules
 
-**L1. Every borrow produces an outlives constraint.** When a borrow of a place
-flows into a destination, the place's region must outlive the destination. A
-borrow whose destination outlives the place's owner is rejected. A borrow that
-flows into module-level state forces its lifetime to `'static`.
+**L1. A borrow's lifetime is how long its path stays live.** When a borrow of a
+place flows into a destination, the borrow's lifetime is extended to cover the
+destination. A borrow may outlive the binding that owns its place. The garbage
+collector keeps the value alive while any path reaches it, so outliving the owner
+is never an error on its own. The lifetime matters only to E2, which reads it to
+decide how long the path is live. A borrow that flows into module-level state
+gets the lifetime `'static`, so its path stays live for the rest of the program.
 
 **L2. A signature states exactly the lifetime relations its body needs.** A
 body-carrying function must declare every outlives relation between its
@@ -159,7 +163,10 @@ branch.
 **E2. A shared path and a mutable path to one place are never live together.** At
 no program point are a shared path and a mutable path to overlapping places both
 live. The owner's own writes count as a mutable path. Several shared paths may be
-live at once, and so may several mutable paths.
+live at once, and so may several mutable paths. A path with a `'static` lifetime
+is live at every later point, so a value with a `'static` shared path is never
+written again, and a value with a `'static` mutable path never gets a new shared
+path.
 
 **E3. A place with a live borrow cannot be moved.** Moving `p` while a borrow of
 a place overlapping `p` is live is rejected, because the borrow would point into
@@ -209,7 +216,7 @@ Rust has no matching feature.
 | F1 copy, borrow, or move | `Copy` types copy, `&T` copies, and an owned value moves into an owned destination | Differs | Two changes. A `&mut` source copies, because Escalier allows aliased `&mut`. An owned value fills a `&` annotation by borrowing, where Rust reports a type mismatch |
 | F2 owned when it escapes | Every parameter type is written. A closure captures by reference unless it is marked `move` | Differs | Escalier infers an unannotated parameter's ownership and a returned closure's moves. Rust requires both to be written |
 | F2 binding always moves | `let q = p` moves `p` whatever `q`'s scope | Same | |
-| L1 borrows outlive constraints | A borrow cannot outlive its referent, and storing one in a `static` requires `'static` | Same | |
+| L1 lifetime is liveness | A borrow cannot outlive its referent, and storing one in a `static` requires `'static` | Differs | A borrow may outlive its owner, because the garbage collector keeps the value alive. Lifetimes only bound how long a path is live for E2 |
 | L2 signature states the body's relations | Lifetimes are inferred only inside a body, never in a signature. A declared bound is an assumption the body may use | Differs | Escalier infers signature lifetimes for an unannotated function and treats a declared bound as an obligation. See D4 |
 | L3 render only connecting lifetimes | Elision follows fixed syntactic rules, such as one input lifetime flowing to every output | Differs | Escalier elides by whether a lifetime connects anything, which also covers signatures Rust's elision rules reject |
 | E1 no use after move | Flow-sensitive per branch, with partial moves, and reassignment re-initializes | Same | Reassignment does not yet re-initialize in Escalier. See [#1269](https://github.com/escalier-lang/escalier/issues/1269) |
@@ -228,8 +235,8 @@ Rust has no matching feature.
 The differences come from four sources:
 
 - **The runtime.** Single-threaded JavaScript with a garbage collector removes
-  data races and dangling pointers. That permits aliased `&mut` in F1 and E2 and
-  the per-call closure borrows in E4.
+  data races and dangling pointers. That permits aliased `&mut` in F1 and E2,
+  borrows that outlive their owner in L1, and the per-call closure borrows in E4.
 - **A deep immutability guarantee.** Escalier's invariant promises that an
   immutable value never changes. Rust's interior mutability would break that
   promise, so T2 has no escape hatch.
@@ -263,7 +270,7 @@ each row crossed with each column of [Conformance tests](#conformance-tests).
 The rules suggest one checker, which is the target of the simplification:
 
 1. Each flow site lowers to one event: copy, borrow of a kind, or move. Each
-   borrow also lowers to its L1 outlives constraint.
+   borrow also gets the lifetime L1 gives it.
 2. Each read, write, and call lowers to a use event on a place. A call that may
    run a closure also produces the E4 uses.
 3. The lifetime solver settles F2's escape questions from the outlives
@@ -275,9 +282,10 @@ Type rules T1 through T5 stay in the type checker, where they already sit.
 
 ## Open decisions
 
-The solver enforces each item below today, but no document states it. Each needs
-a choice before the rules are final. The current behaviour comes from reading the
-code, and the file references point at where it lives.
+The solver enforces D1 through D8 today, but no document states them. D9 and D10
+are design questions the rules above leave open. Each needs a choice before the
+rules are final. The current behaviour comes from reading the code, and the file
+references point at where it lives.
 
 ### D1. Moving out of a module-level binding
 
@@ -362,8 +370,56 @@ a borrow ([moves.go](../../internal/solver/moves.go)). This contradicts F1, unde
 which a borrow is copied and never consumed.
 
 Recommendation: drop the special case. A borrow stored into module-level state
-is handled by L1, which forces its lifetime to `'static` and rejects it unless
-the borrowed place is itself `'static`.
+is copied by F1 and gets a `'static` lifetime by L1. E2 then keeps any
+conflicting path from forming for the rest of the program.
+
+### D9. Whether an escaping value moves or borrows
+
+F2 makes a destination with no written type owned when the value escapes, so an
+escape always moves the source. L1 allows a second answer. The destination could
+be a `'static` borrow instead, and the source would stay usable under E2.
+
+Take a library that memoizes its argument into module-level state:
+
+```js
+const seen = new Map();
+export function remember(value) { seen.set("last", value); }
+```
+
+The converter can declare the parameter three ways:
+
+| Declaration | Caller after `remember(...)` |
+|---|---|
+| `value: {retries: number}` | `opts` is moved, so any later use is an error |
+| `value: &'static {retries: number}` | `opts` can still be read, but never written again |
+| `value: &'static mut {retries: number}` | `opts` can still be written, but never borrowed as `&` again |
+
+The owned form works for every caller that does not use the value afterward. The
+`'static &` form fits a caller that keeps reading the value, which is the common
+case for a memoization key or a configuration object. A function whose body
+writes the stored value needs one of the other two forms.
+
+Recommendation: infer a `'static &` borrow for an escaping parameter that the
+body never writes, and an owned parameter otherwise. A written annotation
+overrides the inference either way.
+
+### D10. Recording that a callback is not retained
+
+A function value is a value type, so it carries no lifetime, and nothing in the
+rules distinguishes a callee that only calls a callback from one that stores it.
+The source-analysis plan for third-party packages expects to record exactly that
+fact. [#1267](https://github.com/escalier-lang/escalier/issues/1267) tracks the
+same gap for Escalier's own functions.
+
+The options are:
+
+- Give function types an optional lifetime, as in `&'a fn () -> undefined`.
+  The lifetime bounds how long the callee may keep the function, and E4 reads it
+  to decide how long the captures stay borrowed.
+- Add a marker on the parameter that says the callee does not keep it, and treat
+  every unmarked function parameter as retained.
+
+Recommendation: the lifetime form. It reuses L1 and E4 instead of adding a rule.
 
 ## Known bugs
 
@@ -383,6 +439,35 @@ export fn go() -> number {
     return p.x + h.slot.x
 }
 ```
+
+**B2. A `'static` shared path does not block a later write.** Each program
+below checks clean, and each should report an E2 error on its last write or
+borrow:
+
+```esc
+var cache: &{retries: number} = &{retries: 0}
+
+export fn go() -> number {
+    val mut opts = {retries: 3}
+    cache = &opts
+    opts.retries = 4
+    return opts.retries
+}
+```
+
+```esc
+declare fn track(value: &'static mut {retries: number}) -> undefined
+declare fn read(value: &{retries: number}) -> number
+
+export fn go() -> number {
+    val mut opts = {retries: 3}
+    track(&mut opts)
+    return read(&opts)
+}
+```
+
+The store and the call themselves are fine under L1. The bug is that E2 does not
+treat the `'static` path as live afterward.
 
 ## Divergences from the docs
 
@@ -409,6 +494,38 @@ the docs change.
   decides moves separately at each flow site with its own conditions. The checking
   model above is the proposal to make the docs true.
 
+## Interop
+
+These rules decide how the TypeScript declaration converter and any source
+analysis map a TypeScript type onto the rules above.
+
+**I1. `Readonly<T>` maps to `&T` only when the whole of `T` is read-only.**
+TypeScript's `Readonly<T>` and `readonly T[]` forbid writes at the top level
+only. `Readonly<{a: {b: number}}>` still allows `x.a.b = 1`. Escalier's `&`
+is read-only all the way down, by T2. So the converter reads `Readonly<T>` as
+`&T` only when every property and element type inside `T` is a value type, or
+is itself wrapped in `Readonly` or `readonly` all the way down. A recursive
+helper type such as `DeepReadonly<T>` counts when its structure shows it. Any
+other `Readonly<T>` gives no signal, and the converter's lower tiers decide.
+
+`classifyExplicitSignal` in
+[mutability.go](../../internal/dts_to_esc/mutability.go) maps `this:
+Readonly<T>` to `&self` today without checking the nested types.
+
+**I2. A value-type parameter is written as its bare type.** A primitive,
+function, or promise parameter is copied, so the converter writes the bare type
+and no borrow marker.
+
+**I3. An uncertain answer takes the form that rejects more programs.** When the
+converter or an analysis cannot settle a fact, it picks the form under which the
+rules reject every program the true answer would reject:
+
+- `&mut` over `&` for a receiver or parameter that may be written.
+- Escaping over not escaping for a parameter that may be stored.
+- A borrow of the inputs over an owned value for a return that may share
+  structure with an input. A shallow copy such as `{...opts}` shares everything
+  below its top level, so it returns a borrow of `opts`.
+
 ## Conformance tests
 
 Each flow site in the [flow-site table](#flow-site-table) gets one test per
@@ -425,7 +542,8 @@ with the full expected diagnostic, as `CLAUDE.md` asks.
 | borrow | owned | borrow | use the source | Accepted | F1.3 |
 | move | owned | owned | use the source | Use of moved value | F1.4, E1 |
 | move on one branch | owned | owned, in one branch | use after the join | Use of moved value | E1 |
-| borrow escape | owned | borrow that outlives it | none | Borrow escapes | L1 |
+| outlive owner | owned | borrow that outlives the source's binding | use the destination | Accepted | L1 |
+| write after `'static` share | owned `mut` | `'static` `&T` | write the source | Exclusivity error | L1, E2 |
 | borrow into owned | `&T` | owned | none | Borrow cannot fill owned | T5 |
 | write while shared | owned `mut` | `&T` | write the source, then use the destination | Exclusivity error | E2 |
 | sequential phases | owned `mut` | `&T` | write the source, then create and use the destination | Accepted | E2 |
