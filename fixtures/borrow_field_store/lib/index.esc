@@ -1,0 +1,7 @@
+export fn go() -> number {
+    val p = {x: 1}
+    val q = {x: 2}
+    val h: mut {slot: &{x: number}} = {slot: &q}
+    h.slot = p
+    return p.x + h.slot.x
+}

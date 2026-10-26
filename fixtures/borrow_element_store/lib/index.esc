@@ -1,0 +1,8 @@
+export fn go() -> number {
+    val p = {x: 1}
+    val q = {x: 2}
+    val t: mut Array<&{x: number}> = [&q]
+    val i = 0
+    t[i] = p
+    return p.x + t[i].x
+}

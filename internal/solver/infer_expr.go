@@ -2871,9 +2871,11 @@ func (c *checker) inferFieldAssign(scope *Scope, lvl int, e *ast.BinaryExpr, obj
 		// rather than c.fn.currentStmt, which inferring the receiver and source may have
 		// overwritten with an inner branch statement.
 		if ref, ok := c.fn.stmtToRef[assignStmt]; ok {
-			// A field declared as a borrow takes the value without moving it.
+			// A field declared as a borrow takes the value without moving it, so the
+			// store neither consumes the source nor counts as a move out of a module-level
+			// binding.
 			borrowField := hasDeclared && isBorrowType(declared.Type)
-			if borrowField || !c.rejectModuleLevelMove(scope, e.Right) {
+			if !borrowField && !c.rejectModuleLevelMove(scope, e.Right) {
 				c.consumeOwned(e.Right, source, e.Right, ref)
 			}
 			// Storing a value that borrows a local into a borrow parameter's field hands the
@@ -2992,9 +2994,10 @@ func (c *checker) inferElementAssign(scope *Scope, lvl int, e *ast.BinaryExpr, i
 		if ref, ok := c.fn.stmtToRef[assignStmt]; ok {
 			// Storing an owned value into an element moves it into the receiver, and storing
 			// a borrow of a local into a parameter's element escapes, as a field store does.
-			// Slots that all hold borrows take the value without moving it.
+			// Slots that all hold borrows take the value without moving it, as a borrow
+			// field does.
 			borrowSlots := !slices.ContainsFunc(slots, func(slot soltype.Type) bool { return !isBorrowType(slot) })
-			if borrowSlots || !c.rejectModuleLevelMove(scope, e.Right) {
+			if !borrowSlots && !c.rejectModuleLevelMove(scope, e.Right) {
 				c.consumeOwned(e.Right, source, e.Right, ref)
 			}
 			c.checkParamElementStoreEscape(ix.Object, e.Right, ref)
