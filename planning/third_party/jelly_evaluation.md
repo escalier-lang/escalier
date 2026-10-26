@@ -66,7 +66,7 @@ I found nothing relevant in Semgrep or in Datalog analyses for JavaScript.
 - **Closures stored in fields.** Resolved once a driver constructs the class. The default stub shows up as a second target, and that is correct, since both can run.
 - **Values computed at module load.** Resolved for lodash. Zod's `$constructor` needs `--approx` and comes back imprecise. The extra targets would union in other schemas' summaries, which makes the result over-approximate, not wrong.
 - **Calls through interfaces.** Resolved to the package's own implementations. A callback the caller supplies stays a caller-supplied value, which is theme C's policy anyway.
-- **`bind`, `call` and `apply`.** Modeled, as `func.apply` and `listeners.fn.call` show.
+- **`bind`, `call` and `apply`.** Modeled, as lodash's `func.apply` shows.
 - **Untyped JavaScript.** CommonJS and dynamic mixins resolve under `--approx`. Plain JavaScript gains the most over the TypeScript checker.
 - **Code outside the package.** Jelly follows `require` into dependencies, but Node built-ins stay unknown. Theme E still needs fact tables.
 
