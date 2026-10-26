@@ -110,8 +110,8 @@ object`, and `val q: &{x: number} = r` is accepted.
 ## Flow rules
 
 Every flow site has a source and a destination, and the destination has a type.
-The destination type is either written or inferred. These two rules decide what
-the site does from those types alone.
+The destination type is either written or inferred. These rules decide what the
+site does from those types alone.
 
 **F1. Each flow site is a copy, a borrow, or a move.** The outcome depends only
 on the source type and the destination type:
@@ -120,8 +120,9 @@ on the source type and the destination type:
    another `&` borrow of the same value.
 2. A `&mut` source flowing into a `&` or `&mut` destination is copied as a
    borrow of the same kind or narrower, as T4 allows.
-3. An owned source flowing into a borrow destination is borrowed. The source
-   keeps ownership.
+3. An owned source written as `&p` or `&mut p` flowing into a borrow
+   destination is borrowed. The source keeps ownership. F3 rejects an owned
+   source that reaches a borrow destination without the `&`.
 4. An owned source flowing into an owned destination is moved. The source place
    is consumed.
 
@@ -134,7 +135,7 @@ fn go(r: &{x: number}) -> number {
     val a = n                  // copy, since n is a value type
     val b = r                  // copy, since r is a & borrow
     val p = {x: 1}
-    val c: &{x: number} = p    // borrow, so p stays usable
+    val c = &p                 // borrow, so p stays usable
     val q = {x: 2}
     val d = q                  // move, so q is consumed
     return a + b.x + c.x + p.x + d.x
@@ -155,8 +156,16 @@ Each case below follows from that:
   body or is stored into a caller-owned object borrows what it captures.
 
 A `val` or `var` binding of an owned value is always an owned destination, even
-when the binding's scope is shorter than the source's. A binding with a `&`
-annotation or a `&` initializer is a borrow destination.
+when the binding's scope is shorter than the source's. A binding whose
+initializer is a `&` or `&mut` expression is a borrow destination.
+
+**F3. Borrowing an owned value is always written.** An owned source reaches a
+borrow destination only through `&p` or `&mut p`. This holds at every flow
+site, including bindings, arguments, field and element stores, returns, and
+literal elements. A method receiver is the one exception, since the method's own
+`self` declares the borrow. A site that borrows without the `&` is an error,
+so every borrow is visible where it is taken. `val c: &{x: number} = p` is
+rejected, and `val c: &{x: number} = &p` and `val c = &p` are accepted.
 
 ## Lifetime rules
 
@@ -199,15 +208,14 @@ path with a `'static` lifetime is live at every later point, so a value with a
 mutable path never gets a new immutable path.
 
 The two functions below differ only in statement order. In the first, `q` is
-read after the write to `p`, so the two paths overlap and the binding of `q`
-reports `cannot assign 'p' to immutable 'q': 'p' is still used mutably after
-this point`. In the second, the write is `p`'s last mutable use, so nothing
-overlaps.
+read after the write to `p`, so the two paths overlap and the write reports
+`cannot assign to 'p.x' while it is borrowed as immutable`. In the second, the
+write is `p`'s last mutable use, so nothing overlaps.
 
 ```esc
 fn overlapping() -> number {
     val mut p = {x: 0}
-    val q: &{x: number} = p
+    val q: &{x: number} = &p
     p.x = 1
     return q.x
 }
@@ -215,14 +223,33 @@ fn overlapping() -> number {
 fn sequential() -> number {
     val mut p = {x: 0}
     p.x = 1
-    val q: &{x: number} = p
+    val q: &{x: number} = &p
     return q.x
 }
 ```
 
 **E3. A place with a live borrow cannot be moved.** Moving `p` while a borrow of
-a place overlapping `p` is live is rejected, because the borrow would point into
-storage the move consumed.
+a place overlapping `p` is live is rejected. The move makes the destination an
+owner, and an owner can always make its value mutable by moving it into a
+`val mut` binding. The live borrow would then observe that owner's writes, even
+when every path is immutable at the moment of the move. Below, `go` never
+writes `p`, but `take` thaws its argument and writes it while `c` is still
+live, so the call reports `cannot move 'p' while it is borrowed`.
+
+```esc
+fn take(p: {x: number}) -> number {
+    val mut q = p
+    q.x = 5
+    return q.x
+}
+
+fn go() -> number {
+    val p = {x: 1}
+    val c = &p
+    val n = take(p)
+    return c.x + n
+}
+```
 
 **E4. A closure call is a use of each borrow the closure holds.** A call to a
 closure, or a call that may run a closure, uses each borrow the closure holds. A
@@ -246,9 +273,8 @@ The rules above produce each of the following. None of them is a separate rule.
 - **The owned-to-`mut` upgrade.** A uniquely owned source can fill a `mut`
   destination because F1 moves it. E3 confirms no live path remains, so no immutable
   path can observe the new mutability.
-- **Mutability transitions created by annotation.** `val q: &{x: number} = p`
-  borrows `p` by F1. A later write to `p` while `q` is live is rejected by E2.
-  Rejecting the same program written with `val q = &p` follows from the same rule.
+- **Mutability transitions.** `val q = &p` borrows `p` by F1 and F3. A later
+  write to `p` while `q` is live is rejected by E2.
 
 ## Comparison with Rust
 
@@ -266,9 +292,10 @@ Rust has no matching feature.
 | T4 narrow, never widen | `&mut T` coerces to `&T`, never the reverse | Same | |
 | T5 `readonly` | No `readonly` fields. Rust restricts writes through field privacy instead | No equivalent | Inherited from TypeScript |
 | T6 borrow into owned | `&T` does not satisfy `T`. Moving a field out of a borrow is rejected with E0507 | Differs | Escalier reads `r.f` through a borrow as a borrow of the field. Rust rejects the move and asks for `&r.f`, unless the field's type is `Copy` |
-| F1 copy, borrow, or move | `Copy` types copy, `&T` copies, and an owned value moves into an owned destination | Differs | Two changes. A `&mut` source copies, because Escalier allows aliased `&mut`. An owned value fills a `&` annotation by borrowing, where Rust reports a type mismatch |
+| F1 copy, borrow, or move | `Copy` types copy, `&T` copies, and an owned value moves into an owned destination | Differs | A `&mut` source copies, because Escalier allows aliased `&mut` |
 | F2 owned when it escapes | Every parameter type is written. A closure captures by reference unless it is marked `move` | Differs | Escalier infers an unannotated parameter's ownership and a returned closure's moves. Rust requires both to be written |
 | F2 binding always moves | `let q = p` moves `p` whatever `q`'s scope | Same | |
+| F3 borrows are written | `&` and `&mut` are written to borrow an owned value, except on a method receiver, which auto-borrows | Same | |
 | L1 lifetime is liveness | A borrow cannot outlive its referent, and storing one in a `static` requires `'static` | Differs | A borrow may outlive its owner, because the garbage collector keeps the value alive. Lifetimes only bound how long a path is live for E2 |
 | L2 signature states the body's relations | Lifetimes are inferred only inside a body, never in a signature. A declared bound is an assumption the body may use | Differs | Escalier infers signature lifetimes for an unannotated function and treats a declared bound as an obligation. See D4 |
 | L3 render only connecting lifetimes | Elision follows fixed syntactic rules, such as one input lifetime flowing to every output | Differs | Escalier elides by whether a lifetime connects anything, which also covers signatures Rust's elision rules reject |
@@ -282,7 +309,6 @@ Rust has no matching feature.
 | D4 declared bounds are obligations | Declared bounds are assumptions | Differs | Follows from L3 |
 | D5 `readonly` initialized once | A struct literal initializes every field at once | No equivalent | |
 | D6 getter and setter receivers | No getters or setters | No equivalent | |
-| D7 written `&` at a call site | `&` and `&mut` are written at the call, except on a method receiver | Same | |
 | Freezing and thawing | `let frozen = v; let mut thawed = frozen;` moves between bindings of different mutability | Same | `docs/09_ownership.md` says Rust has no equivalent. The moves are the same, but interior mutability keeps Rust's freeze from being deep |
 
 The differences come from four sources:
@@ -411,10 +437,12 @@ rules. They do not interact with flow.
 `ImplicitBorrowArgError` requires an owned argument passed to a borrow parameter
 to be written `&p` or `&mut p`
 ([borrow_exclusivity.go](../../internal/solver/borrow_exclusivity.go)). The docs
-say the compiler still inserts the borrow.
+say the compiler still inserts the borrow. Other flow sites still borrow without
+the `&`. The compiler accepts `val c: &{x: number} = p`, and a store into a
+`&` field without the `&` moves the source, as B1 describes.
 
-Recommendation: keep the requirement and update the docs. It is a syntax rule,
-not an ownership rule, so it sits outside this document's rule list.
+Recommendation: adopt F3, which extends the call-site requirement to every flow
+site, and update the docs to match.
 
 ### D8. A global write moves a borrow
 
@@ -476,12 +504,13 @@ Recommendation: the lifetime form. It reuses L1 and E4 instead of adding a rule.
 
 ## Known bugs
 
-**B1. A store into a `&` field moves the source.** The field and element store
-paths in `inferFieldAssign` call `consumeOwned` even when the destination is
-declared as a borrow
-([infer_expr.go](../../internal/solver/infer_expr.go)). F1 says this is a borrow.
-The program below reports `use of moved value 'p'` on its last line and should
-check clean:
+**B1. A store into a `&` field without `&` moves the source.** The field and
+element store paths in `inferFieldAssign` call `consumeOwned` even when the
+destination is declared as a borrow
+([infer_expr.go](../../internal/solver/infer_expr.go)). The program below
+reports `use of moved value 'p'` on its last line. Under F3 it should instead
+reject `h.slot = p` for the missing `&`. Written as `h.slot = &p`, it checks
+clean today.
 
 ```esc
 export fn go() -> number {
@@ -522,6 +551,28 @@ export fn go() -> number {
 The store and the call themselves are fine under L1. The bug is that E2 does not
 treat the `'static` path as live afterward.
 
+**B3. A borrow taken by an annotation alone escapes E3.** The binding
+`val c: &{x: number} = p` borrows `p`, but the move check does not see that
+borrow. The program below
+checks clean, and `take` changes the value `c` reads. Written with
+`val c = &p`, the same program reports `cannot move 'p' while it is borrowed`.
+F3 rejects the annotation-only form, which closes the hole.
+
+```esc
+fn take(p: {x: number}) -> number {
+    val mut q = p
+    q.x = 5
+    return q.x
+}
+
+export fn go() -> number {
+    val p = {x: 1}
+    val c: &{x: number} = p
+    val n = take(p)
+    return c.x + n
+}
+```
+
 ## Divergences from the docs
 
 These came from reading the code and need confirming with a fixture each before
@@ -534,6 +585,9 @@ the docs change.
   [#794](https://github.com/escalier-lang/escalier/issues/794).
 - An owned argument to a borrow parameter needs a written `&`. The docs say the
   borrow is still inserted for the user. See D7.
+- Both docs borrow an owned value with an annotation alone, as in
+  `val q: &{x: number} = p`. F3 rejects that form, so those examples change to
+  `&p`.
 - A call to a `&mut self` method on an immutable binding goes through
   `checkReceiverMut` in [classes.go](../../internal/solver/classes.go), which
   appears to reject it. `docs/08_mutability.md` says the call is accepted.
@@ -597,7 +651,8 @@ with the full expected diagnostic, as `CLAUDE.md` asks.
 | immutable copy | `&T` | `&T` | use the source | Accepted | F1.1 |
 | narrow | `&mut T` | `&T` | use both | Accepted | F1.2, T4 |
 | widen | `&T` | `&mut T` | none | Mutability mismatch | T4 |
-| borrow | owned | borrow | use the source | Accepted | F1.3 |
+| borrow | owned, written `&p` | borrow | use the source | Accepted | F1.3, F3 |
+| unwritten borrow | owned, written `p` | borrow | none | Missing `&` | F3 |
 | move | owned | owned | use the source | Use of moved value | F1.4, E1 |
 | move on one branch | owned | owned, in one branch | use after the join | Use of moved value | E1 |
 | outlive owner | owned | borrow that outlives the source's binding | use the destination | Accepted | L1 |
