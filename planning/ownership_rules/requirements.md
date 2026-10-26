@@ -199,6 +199,69 @@ A `val` or `var` binding of an owned value is always an owned destination, even
 when the binding's scope is shorter than the source's. A binding whose
 initializer is a `&` or `&mut` expression is a borrow destination.
 
+A return with no written type is owned when it returns a local, and carries the
+parameter's borrow when it returns one:
+
+```esc
+fn make() {
+    val p = {x: 1}
+    return p    // moves p out, so make returns an owned value
+}
+
+fn same(p: &{x: number}) {
+    return p    // same: fn <'a>(p: &'a {x: number}) -> &'a {x: number}
+}
+```
+
+An unannotated parameter takes its ownership from the body. `store` lets `p`
+escape into module-level state, so its parameter is owned and the call moves
+`a`. `read` only reads `p`, so its parameter is a borrow and the call borrows
+`b`:
+
+```esc
+var sink = {x: 0}
+
+fn store(p) { sink = p }     // store: fn (p: {x: number}) -> undefined
+fn read(p) { return p.x }    // read: fn (p: &{x: number}) -> number
+
+fn go() -> number {
+    val a = {x: 1}
+    store(a)                 // moves a
+    val b = {x: 2}
+    val n = read(&b)         // borrows b, so b stays usable
+    return b.x + n
+}
+```
+
+A closure that stays in the body borrows its captures, and one that is returned
+owns them:
+
+```esc
+fn local() -> number {
+    val p = {x: 1}
+    val f = fn () { return p.x }    // borrows p
+    val a = f()
+    return a + p.x                  // p is still usable
+}
+
+fn returned() {
+    val p = {x: 1}
+    return fn () { return p.x }     // owns p, since it outlives the frame
+}
+```
+
+A binding moves an owned value even when the binding dies first:
+
+```esc
+fn go() -> number {
+    val p = {x: 0}
+    if true {
+        val q = p       // moves p
+    }
+    return p.x          // use of moved value 'p'
+}
+```
+
 **F4. Borrowing an owned value is always written.** An owned source reaches a
 borrow destination only through `&p` or `&mut p`. This holds at every flow
 site, including bindings, arguments, field and element stores, returns, and
@@ -609,6 +672,33 @@ fn resetMapped(x: &mut Readonly<{a: {b: number}}>) {
     x.a.b = 0
 }
 ```
+
+**B5. A call to an unannotated escaping parameter does not move its argument.**
+The compiler infers `store` below as `fn (p: {x: number}) -> undefined`, an
+owned parameter, yet `store(a)` records no move and `a.x` checks clean. With
+the parameter written as `p: {x: number}`, the same call reports
+`use of moved value 'a'`. The unannotated form leaves `a` usable while
+`sink` holds the same value, so a later thaw of `a` could write what `sink`
+reads.
+
+```esc
+var sink = {x: 0}
+
+fn store(p) { sink = p }
+
+fn go() -> number {
+    val a = {x: 1}
+    store(a)
+    return a.x
+}
+```
+
+**B6. An unannotated parameter that does not escape is inferred as owned.** The
+compiler infers `fn read(p) { return p.x }` as
+`fn <T0>(p: {x: T0}) -> T0`. F3 makes that parameter a borrow, so the
+signature should be `fn <T0>(p: &{x: T0}) -> T0`. Today `read(&b)` reports
+`cannot use borrowed &object as owned object`, and `read(b)` is accepted
+without moving `b`.
 
 ## Divergences from the docs
 
