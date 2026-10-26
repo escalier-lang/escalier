@@ -329,6 +329,22 @@ annotation that produces the same type when written back.
 These rules run over the control-flow graph. They use the copy, borrow, and move
 events from F2 and the liveness of each path.
 
+The table below combines E1 through E3. Each row is what is already live on a
+place `p` that a `val mut` binding owns, and each column is the next operation
+on `p`. A borrow is live while it is used again later. After its last use, the
+row drops back to "Nothing", which is how an immutable phase can follow a
+mutable one. The `'static` rows never drop back. When `p` is a `val` binding
+instead, T2 and T7 also reject "Write `p`" and "`&mut p`" in every row.
+
+| Already live on `p` | Read `p` | Write `p` | `&p` | `&mut p` | Move `p` |
+|---|---|---|---|---|---|
+| Nothing | Allowed | Allowed | Allowed | Allowed | Allowed |
+| An immutable borrow, `val a = &p` | Allowed | Rejected by E2 | Allowed | Rejected by E2 | Rejected by E3 |
+| A mutable borrow, `val b = &mut p` | Allowed | Allowed | Rejected by E2 | Allowed | Rejected by E3 |
+| A `'static` immutable borrow | Allowed | Rejected by E2 | Allowed | Rejected by E2 | Rejected by E3 |
+| A `'static` mutable borrow | Allowed | Allowed | Rejected by E2 | Allowed | Rejected by E3 |
+| `p` was moved | Rejected by E1 | Rejected by E1 | Rejected by E1 | Rejected by E1 | Rejected by E1 |
+
 **E1. A moved place is not used until it is reassigned.** After a move of place
 `p`, no path through the control-flow graph uses `p` or a place overlapping `p`
 until `p` is reassigned. A use is a read, a write, a method call, a borrow, or a
