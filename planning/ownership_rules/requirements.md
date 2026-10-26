@@ -115,8 +115,9 @@ borrows its receiver mutably. With `val p = {x: 1}`, `&mut p` reports
 `val mut p = {x: 1}`, both `&p` and `&mut p` are accepted.
 
 **T9. A writable slot widens the literal types in its initializer.** A slot is
-writable when it is a `var` binding, or a field of a `mut` value that is not
-`readonly`. When no type is written, the slot's inferred type replaces each
+writable when it is a `var` binding, a field of a `mut` value, or a class
+field, since any instance of the class may be `mut`. A `readonly` field is
+never writable. When no type is written, the slot's inferred type replaces each
 literal type in its initializer with that literal's primitive, since a later
 write can store any value of the primitive. A slot that cannot be written keeps
 the literal type, because it can never hold anything else. An annotation fixes
@@ -131,6 +132,20 @@ whichever type it names.
 - A `readonly` field keeps its literal type, since T5 forbids writing it. A
   value behind a `&` or `&mut` keeps the type of the value it borrows, since
   the borrow carries its own mutability.
+
+A `readonly` field meets T9 when a class declares a field with an initializer
+and no type. In the class below, a `mut` instance can write `retries` but
+never `method`, so only `retries` widens. The static fields follow the same
+rule.
+
+```esc
+class Request {
+    readonly method = "GET",      // method: "GET"
+    retries = 0,                  // retries: number
+    readonly static version = 2,  // version: 2
+    static count = 0,             // count: number
+}
+```
 
 ## Flow rules
 
