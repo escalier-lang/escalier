@@ -280,3 +280,14 @@ open members whose every blocker falls in the themes so far, cumulative:
   + D. dynamic dispatch and functions built at runtime             21/34
   + E. code outside the package                                    30/34
   + F. not lowered for this check                                  34/34
+
+with the Jelly prototype's call targets, of 34 open members:
+   6 would settle: immer original, rxjs Subject.next, rxjs BehaviorSubject.next, zod optional, zod ZodType.optional, zod ZodType.parse
+  13 would settle if callbacks were the caller's responsibility: date-fns isAfter, date-fns getYear, date-fns max, date-fns closestTo, mitt Emitter.emit, immer original, lodash-es pullAll, rxjs Observable.pipe, rxjs Subject.next, rxjs BehaviorSubject.next, zod optional, zod ZodType.optional, zod ZodType.parse
+  open members each theme still blocks:
+    A. origin lattice: writes through properties, call results and joins 11
+    B. module-level and captured state                                  2
+    C. callbacks the caller supplies                                   18
+    D. dynamic dispatch and functions built at runtime                  4
+    E. code outside the package                                        10
+    F. not lowered for this check                                       4

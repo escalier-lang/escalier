@@ -19,7 +19,7 @@ I installed `@cs-au-dk/jelly@0.13.0` outside the repository and ran it on the ha
 | Runtime-built class | zod `s.parse`, `s.brand` | none | right target plus about 24 spurious ones |
 | Same, inside `$constructor` | zod `initializer(inst, def)` | 10 candidates, context-insensitive merge | — |
 | Call through an interface | rxjs `observer.next`, `destination.error` | resolved to the 4–5 in-package implementations | — |
-| Function read out of state | eventemitter3 `listeners.fn.call(...)` | none, dynamic key `this._events[evt]` | resolved |
+| Function read out of state | eventemitter3 `listeners.fn.call(...)` | none, dynamic key `this._events[evt]` | none; [jelly_prototype.md](jelly_prototype.md) re-ran it |
 | CommonJS prototype mixin | express `app.set`, `this.set` | none, because `merge-descriptors` copies with dynamic names | resolved precisely |
 
 There were three surprises.

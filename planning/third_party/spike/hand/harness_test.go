@@ -165,6 +165,38 @@ type pkg struct {
 	version string
 	funcs   []*fn
 	members []member
+	// jelly holds the functions as lowered with the call targets the Jelly
+	// prototype resolved, in planning/third_party/spike/jelly/. Each one
+	// replaces the function of the same name in funcs, or joins them when no
+	// function has that name. Set JELLY=1 to run the check over them.
+	jelly []*fn
+}
+
+// loweredFuncs returns p's functions, with the Jelly lowerings swapped in when
+// JELLY is set.
+func loweredFuncs(p pkg) []*fn {
+	if os.Getenv("JELLY") == "" || len(p.jelly) == 0 {
+		return p.funcs
+	}
+	replaced := map[string]*fn{}
+	for _, f := range p.jelly {
+		replaced[f.name] = f
+	}
+	var out []*fn
+	for _, f := range p.funcs {
+		if r, ok := replaced[f.name]; ok {
+			out = append(out, r)
+			delete(replaced, f.name)
+		} else {
+			out = append(out, f)
+		}
+	}
+	for _, f := range p.jelly {
+		if _, ok := replaced[f.name]; ok {
+			out = append(out, f)
+		}
+	}
+	return out
 }
 
 var packages []pkg
@@ -314,7 +346,8 @@ type run struct {
 }
 
 func analyze(t *testing.T, p pkg) []memberResult {
-	all := append(append([]*fn{}, p.funcs...), builtinStubs(t, p.funcs)...)
+	funcs := loweredFuncs(p)
+	all := append(append([]*fn{}, funcs...), builtinStubs(t, funcs)...)
 	byName := map[string]*fn{}
 	var decoded []map[string]any
 	for _, f := range all {
@@ -524,6 +557,8 @@ func TestHandLowering(t *testing.T) {
 	var total tally
 	blockerCounts := map[string]int{}
 	var openThemes []set.Set[string]
+	var openBlockers [][]string
+	var openNames []string
 
 	for _, p := range packages {
 		results := analyze(t, p)
@@ -586,6 +621,8 @@ func TestHandLowering(t *testing.T) {
 					blockerCounts[c]++
 				}
 				openThemes = append(openThemes, themes)
+				openBlockers = append(openBlockers, r.blockers)
+				openNames = append(openNames, p.name+" "+r.name)
 			}
 		}
 		fmt.Fprintf(&sb, "\nsettled %d/%d members, %d/%d excluding trivial ones; return alias known for %d/%d\n\n",
@@ -646,10 +683,16 @@ func TestHandLowering(t *testing.T) {
 		fmt.Fprintf(&sb, "  + %-62s %2d/%d\n", theme, n, len(openThemes))
 	}
 
+	writeJellyLadder(t, &sb, openNames, openBlockers)
+
 	t.Log("\n" + sb.String())
 	if os.Getenv("WRITE_REPORT") != "" {
 		_, here, _, _ := runtime.Caller(0)
-		require.NoError(t, os.WriteFile(filepath.Join(filepath.Dir(here), "report.txt"), []byte(sb.String()), 0o644))
+		name := "report.txt"
+		if os.Getenv("JELLY") != "" {
+			name = "report-jelly.txt"
+		}
+		require.NoError(t, os.WriteFile(filepath.Join(filepath.Dir(here), name), []byte(sb.String()), 0o644))
 	}
 }
 
@@ -708,5 +751,76 @@ func TestPrintStubs(t *testing.T) {
 	}
 	for _, s := range builtinStubs(t, all) {
 		t.Logf("%s(%s): %v", s.name, strings.Join(s.params, ", "), s.nodes)
+	}
+}
+
+// jellySite is one entry of planning/third_party/spike/jelly/sites.json: a
+// blocker this check found and what the Jelly prototype said about its call
+// site.
+type jellySite struct {
+	Package string `json:"package"`
+	Site    string `json:"site"`
+	Blocker string `json:"blocker"`
+	Outcome string `json:"outcome"`
+	Jelly   string `json:"jelly"`
+}
+
+// writeJellyLadder reports how many open members would settle once Jelly's
+// call targets replace the blockers it resolved. A blocker Jelly resolves to
+// package code or to a builtin is dropped. One it traces to a value the
+// caller supplies counts as a callback, and one it traces outside the package
+// counts as outside code. The count is an upper bound, since a resolved
+// target can bring blockers of its own.
+func writeJellyLadder(t *testing.T, sb *strings.Builder, names []string, blockers [][]string) {
+	_, here, _, _ := runtime.Caller(0)
+	data, err := os.ReadFile(filepath.Join(filepath.Dir(here), "../jelly/sites.json"))
+	require.NoError(t, err)
+	var sites []jellySite
+	require.NoError(t, json.Unmarshal(data, &sites))
+	byBlocker := map[string]jellySite{}
+	for _, s := range sites {
+		byBlocker[s.Blocker] = s
+	}
+
+	themesAfter := func(bs []string) set.Set[string] {
+		themes := set.NewSet[string]()
+		for _, b := range bs {
+			theme := themeOf(blockerClass(b))
+			if s, ok := byBlocker[b]; ok {
+				switch s.Outcome {
+				case "resolved", "builtin":
+					continue
+				case "caller":
+					theme = themeOrder[2]
+				case "external", "dependency":
+					theme = themeOrder[4]
+				}
+			}
+			themes.Add(theme)
+		}
+		return themes
+	}
+
+	var settled, withCallbacks []string
+	remaining := map[string]int{}
+	for i, bs := range blockers {
+		themes := themesAfter(bs)
+		if themes.Len() == 0 {
+			settled = append(settled, names[i])
+		}
+		themes.Remove(themeOrder[2])
+		if themes.Len() == 0 {
+			withCallbacks = append(withCallbacks, names[i])
+		}
+		for _, theme := range themesAfter(bs).ToSlice() {
+			remaining[theme]++
+		}
+	}
+	fmt.Fprintf(sb, "\nwith the Jelly prototype's call targets, of %d open members:\n", len(blockers))
+	fmt.Fprintf(sb, "  %2d would settle: %s\n", len(settled), strings.Join(settled, ", "))
+	fmt.Fprintf(sb, "  %2d would settle if callbacks were the caller's responsibility: %s\n", len(withCallbacks), strings.Join(withCallbacks, ", "))
+	fmt.Fprintf(sb, "  open members each theme still blocks:\n")
+	for _, theme := range themeOrder {
+		fmt.Fprintf(sb, "    %-66s %2d\n", theme, remaining[theme])
 	}
 }

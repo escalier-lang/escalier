@@ -1,0 +1,299 @@
+## date-fns@4.4.0
+
+addDays                            open     p0:? p1:prim p2:?; returns unknown
+    blocked by callback date
+    blocked by unresolved dynamic:date[constructFromSymbol](value)
+    blocked by unresolved dynamic:new date.constructor(value)
+    blocked by write to unknown in addDays: call result (_date)
+startOfDay                         open     p0:? p1:?; returns unknown
+    blocked by callback date
+    blocked by unresolved dynamic:date[constructFromSymbol](value)
+    blocked by unresolved dynamic:new date.constructor(value)
+    blocked by write to unknown in startOfDay: call result (_date)
+isAfter                            open     p0:? p1:?; returns fresh
+    blocked by callback date
+    blocked by unresolved dynamic:date[constructFromSymbol](value)
+    blocked by unresolved dynamic:new date.constructor(value)
+getYear                            open     p0:? p1:?; returns unknown
+    blocked by callback date
+    blocked by unresolved dynamic:date[constructFromSymbol](value)
+    blocked by unresolved dynamic:new date.constructor(value)
+max                                open     p0:? p1:?; returns unknown
+    blocked by callback date
+    blocked by unresolved dynamic:date[constructFromSymbol](value)
+    blocked by unresolved dynamic:new date.constructor(value)
+closestTo                          open     p0:? p1:? p2:?; returns unknown
+    blocked by callback date
+    blocked by unresolved dynamic:date[constructFromSymbol](value)
+    blocked by unresolved dynamic:new date.constructor(value)
+
+settled 0/6 members, 0/6 excluding trivial ones; return alias known for 1/6
+
+## mitt@3.0.1
+
+mitt                               settled  p0:&; returns fresh (matches source)
+Emitter.on                         open     self:? p0:prim p1:?; returns fresh
+    blocked by write to unknown in on: call result (handlers)
+    blocked by write to unknown in on: free name (all)
+Emitter.off                        open     self:? p0:prim p1:?; returns fresh
+    blocked by write to unknown in off: call result (handlers)
+    blocked by write to unknown in off: free name (all)
+Emitter.emit                       open     self:? p0:prim p1:?; returns fresh
+    blocked by unresolved closure-param:handler(evt)
+    blocked by unresolved closure-param:handler(type, evt)
+
+settled 1/4 members, 1/4 excluding trivial ones; return alias known for 4/4
+
+## eventemitter3@5.0.4
+
+EventEmitter.on                    settled  self:&mut p0:prim p1:& p2:&; returns self (matches source)
+EventEmitter.once                  settled  self:&mut p0:prim p1:& p2:&; returns self (matches source)
+EventEmitter.emit                  open     self:&mut p0:prim p1:?; returns fresh
+    blocked by unresolved property-value:listeners.fn.apply(listeners.context, args)
+    blocked by unresolved property-value:listeners.fn.call(listeners.context, a1)
+    blocked by unresolved property-value:listeners[i].fn.call(listeners[i].context, a1)
+EventEmitter.removeListener        settled  self:&mut p0:prim p1:& p2:& p3:prim; returns self (matches source)
+EventEmitter.eventNames            settled  self:&; returns fresh (matches source)
+EventEmitter.listenerCount         settled  self:& p0:prim; returns fresh (matches source)
+
+settled 5/6 members, 5/6 excluding trivial ones; return alias known for 6/6
+
+## express@5.3.0
+
+app.set                            open     self:&mut p0:prim p1:?; returns unknown
+    blocked by unresolved external-package:debug('set "%s" to %o', setting, val)
+app.enabled                        settled  self:&mut p0:prim; returns fresh (MISMATCH, source says self:& p0:prim)
+    blocked by unresolved external-package:debug('set "%s" to %o', setting, val)
+app.use                            open     self:? p0:?; returns self
+    blocked by unresolved external-package:debug('.use app under %s', path)
+    blocked by unresolved untyped:fn.emit('mount', this)
+    blocked by unresolved untyped:router.use(path, fn)
+    blocked by unresolved untyped:router.use(path, mounted_app)
+    blocked by write to unknown in app.use: closure parameter (cfn)
+res.status                         settled  self:&mut p0:prim; returns self (matches source)
+res.set                            open     self:? p0:? p1:?; returns self
+    blocked by unresolved external-package:mime.contentType(value)
+    blocked by unresolved untyped:this.setHeader(field, value)
+res.json                           open     self:? p0:?; returns unknown
+    blocked by unresolved external-package:mime.contentType(value)
+    blocked by unresolved not-lowered:stringify(obj, replacer, spaces, escape)
+    blocked by unresolved not-lowered:this.send(body)
+    blocked by unresolved untyped:app.get('json escape')
+    blocked by unresolved untyped:app.get('json replacer')
+    blocked by unresolved untyped:app.get('json spaces')
+    blocked by unresolved untyped:this.get('Content-Type')
+    blocked by unresolved untyped:this.setHeader(field, value)
+req.get                            settled  self:& p0:prim; returns unknown (matches source)
+
+settled 3/7 members, 3/7 excluding trivial ones; return alias known for 4/7
+
+## immer@11.2.9
+
+produce                            open     p0:? p1:? p2:?; returns unknown
+    blocked by callback iter
+    blocked by callback patchListener
+    blocked by callback recipe
+    blocked by unresolved not-lowered:createProxy(scope, base, undefined)
+    blocked by unresolved not-lowered:enterScope(this)
+    blocked by unresolved not-lowered:processResult(result, scope)
+    blocked by unresolved not-lowered:usePatchesInScope(scope, patchListener)
+    blocked by write to unknown in Immer.produce: copy+fresh (r)
+    blocked by write to unknown in freeze: closure parameter (value)
+freeze                             settled  p0:&mut p1:prim; returns p0 (matches source)
+    blocked by callback iter
+    blocked by write to unknown in freeze: closure parameter (value)
+original                           settled  p0:&; returns unknown (matches source)
+isDraft                            settled  p0:&; returns fresh (matches source)
+isDraftable                        settled  p0:&; returns fresh (matches source)
+
+settled 4/5 members, 4/5 excluding trivial ones; return alias known for 3/5
+
+## lodash-es@4.18.1
+
+chunk                              open     p0:? p1:prim; returns fresh
+    blocked by unresolved untyped:value.valueOf()
+    blocked by write to unknown in toNumber: copy+fresh (value)
+get                                open     p0:? p1:? p2:?; returns unknown
+    blocked by callback iteratee
+    blocked by write to unknown in _baseGet: copy (path)
+    blocked by write to unknown in _baseGet: property read
+set                                open     p0:? p1:? p2:?; returns p0
+    blocked by callback customizer
+    blocked by callback iteratee
+    blocked by write to unknown in _baseSet: copy (path)
+    blocked by write to unknown in _baseSet: copy+property read (nested)
+    blocked by write to unknown in _baseSet: property read
+pullAll                            open     p0:&mut p1:?; returns p0
+    blocked by callback comparator
+    blocked by callback func
+    blocked by callback iteratee
+    blocked by callback predicate
+mapValues                          open     p0:? p1:?; returns fresh
+    blocked by callback iteratee
+    blocked by callback keysFunc
+    blocked by unresolved iteratee
+    blocked by unresolved not-lowered:baseMatches(value)
+    blocked by unresolved not-lowered:baseMatchesProperty(value[0], value[1])
+    blocked by unresolved not-lowered:property(value)
+isSymbol                           settled  p0:&mut; returns fresh (matches source)
+
+settled 1/6 members, 1/6 excluding trivial ones; return alias known for 5/6
+
+## lru-cache@11.5.3
+
+LRUCache.size                      settled  self:&; returns unknown (matches source)
+LRUCache.has                       open     self:? p0:? p1:&mut; returns fresh
+    blocked by unresolved external-package:metrics.publish(status)
+    blocked by unresolved external-package:this.#perf.now()
+    blocked by unresolved host-api:clearTimeout(purgeTimers[index])
+    blocked by unresolved host-api:setTimeout(() => (cachedNow = 0), ttlResolution)
+    blocked by unresolved host-api:setTimeout(...)
+    blocked by unresolved host-api:t.unref()
+    blocked by write to unknown in LRUCache#setPurgeTimer: free name (purgeTimers)
+    blocked by write to unknown in LRUCache#updateItemAge: free name (starts)
+LRUCache.peek                      open     self:? p0:? p1:&mut; returns unknown
+    blocked by unresolved external-package:hasSubscribers()
+    blocked by unresolved external-package:metrics.publish(status)
+    blocked by unresolved external-package:this.#perf.now()
+    blocked by unresolved host-api:setTimeout(() => (cachedNow = 0), ttlResolution)
+    blocked by unresolved host-api:t.unref()
+LRUCache.get                       open     self:&mut p0:? p1:&mut; returns unknown
+    blocked by unresolved closure-param:this.#dispose(v, k, reason), the caller's dispose option
+    blocked by unresolved closure-param:this.#disposeAfter(...task), the caller's disposeAfter option
+    blocked by unresolved external-package:metrics.publish(status)
+    blocked by unresolved external-package:metrics.publish({...})
+    blocked by unresolved external-package:this.#perf.now()
+    blocked by unresolved host-api:clearTimeout(...)
+    blocked by unresolved host-api:clearTimeout(purgeTimers[index])
+    blocked by unresolved host-api:setTimeout(() => (cachedNow = 0), ttlResolution)
+    blocked by unresolved host-api:setTimeout(...)
+    blocked by unresolved host-api:t.unref()
+    blocked by unresolved host-api:v.__abortController.abort(...)
+    blocked by write to unknown in LRUCache#removeItemSize: free name (self)
+    blocked by write to unknown in LRUCache#removeItemSize: free name (sizes)
+    blocked by write to unknown in LRUCache#setPurgeTimer: free name (purgeTimers)
+    blocked by write to unknown in LRUCache#updateItemAge: free name (starts)
+LRUCache.delete                    open     self:&mut p0:?; returns fresh
+    blocked by unresolved closure-param:this.#dispose(v, k, reason), the caller's dispose option
+    blocked by unresolved closure-param:this.#disposeAfter(...task), the caller's disposeAfter option
+    blocked by unresolved external-package:metrics.publish({...})
+    blocked by unresolved host-api:clearTimeout(...)
+    blocked by unresolved host-api:v.__abortController.abort(...)
+    blocked by write to unknown in LRUCache#removeItemSize: free name (self)
+    blocked by write to unknown in LRUCache#removeItemSize: free name (sizes)
+
+settled 1/5 members, 1/5 excluding trivial ones; return alias known for 2/5
+
+## rxjs@7.8.2
+
+Observable.pipe                    open     self:? p0:?; returns unknown
+    blocked by unresolved closure-param:fn(prev)
+    blocked by unresolved not-lowered:piped(this), operate's closure and take's
+map                                open     p0:? p1:?; returns global
+    blocked by callback init
+    blocked by unresolved closure-param:project.call(thisArg, value, index++)
+    blocked by unresolved closure-param:source.lift(...)
+    blocked by unresolved closure-param:source.subscribe(...)
+    blocked by unresolved closure-param:subscriber.next(...)
+    blocked by unresolved not-lowered:createOperatorSubscriber(subscriber, ...)
+    blocked by unresolved untyped:this.error(err)
+Subject.next                       open     self:&mut p0:?; returns fresh
+    blocked by unresolved not-lowered:Subscriber.next and its destination's next
+Subject.complete                   settled  self:&mut; returns fresh (matches source)
+    blocked by unresolved not-lowered:Subscriber.complete and its destination's complete
+    blocked by write to unknown in Subject.complete: call result (o)
+BehaviorSubject.getValue           settled  self:&; returns unknown (matches source)
+BehaviorSubject.next               open     self:&mut p0:?; returns fresh
+    blocked by unresolved not-lowered:Subscriber.next and its destination's next
+
+settled 2/6 members, 2/6 excluding trivial ones; return alias known for 4/6
+
+## uuid@14.0.3
+
+v4                                 open     p0:? p1:&mut p2:prim; returns unknown
+    blocked by unresolved host-api:crypto.getRandomValues(rnds8)
+    blocked by unresolved host-api:crypto.randomUUID()
+    blocked by unresolved property-value:options.rng()
+    blocked by write to unknown in v4#_v4: copy+property read (rnds)
+v5                                 open     p0:? p1:? p2:&mut p3:prim; returns p2
+    blocked by unresolved builtin-unkeyed:unescape(...)
+stringify                          settled  p0:& p1:prim; returns fresh (matches source)
+validate                           settled  p0:&; returns fresh (matches source)
+parse                              settled  p0:prim; returns fresh (matches source)
+
+settled 3/5 members, 2/4 excluding trivial ones; return alias known for 4/5
+
+## zod@4.6.7
+
+string                             settled  p0:&mut; returns fresh (matches source)
+    blocked by unresolved external-package:globalThis.__zod_globalConfig.postProcessor(inst)
+    blocked by unresolved not-lowered:initializer(inst, def), 10 candidates
+    blocked by unresolved property-value:fn() for each deferred closure
+    blocked by write to unknown in core#constructor: call result (proto)
+optional                           open     p0:?; returns fresh
+    blocked by unresolved external-package:globalThis.__zod_globalConfig.postProcessor(inst)
+    blocked by unresolved not-lowered:initializer(inst, def), 10 candidates
+    blocked by unresolved property-value:fn() for each deferred closure
+    blocked by write to unknown in core#constructor: call result (proto)
+ZodType.optional                   open     self:?; returns fresh
+    blocked by unresolved external-package:globalThis.__zod_globalConfig.postProcessor(inst)
+    blocked by unresolved not-lowered:initializer(inst, def), 10 candidates
+    blocked by unresolved property-value:fn() for each deferred closure
+    blocked by write to unknown in core#constructor: call result (proto)
+ZodType.brand                      settled  self:&; returns self (matches source)
+ZodType.register                   settled  self:& p0:&mut p1:&; returns self (matches source)
+ZodType.parse                      open     self:? p0:? p1:?; returns unknown
+    blocked by unresolved not-lowered:schema._zod.run(...), 50 candidates
+
+settled 3/6 members, 3/6 excluding trivial ones; return alias known for 5/6
+
+## Total
+
+settled 23/56 members, 22/55 excluding trivial ones; return alias known for 38/56
+hand check: 22/23 settled members match the source, and 12/12 settled positions of open members
+
+blocker classes, counted once per open member they block:
+   12  callback parameter called
+   10  unresolved: external-package
+   10  unresolved: not-lowered
+    6  unresolved: dynamic
+    6  write to unknown: call result
+    5  unresolved: closure-param
+    5  unresolved: host-api
+    5  unresolved: untyped
+    5  write to unknown: free name
+    4  unresolved: property-value
+    2  write to unknown: closure parameter
+    2  write to unknown: copy
+    2  write to unknown: copy+fresh
+    2  write to unknown: copy+property read
+    2  write to unknown: property read
+    1  unresolved: builtin-unkeyed
+    1  unresolved: iteratee
+
+open members each theme blocks, and those it alone blocks:
+  A. origin lattice: writes through properties, call results and joins 12   0
+  B. module-level and captured state                                  5   0
+  C. callbacks the caller supplies                                   16   2
+  D. dynamic dispatch and functions built at runtime                 16   1
+  E. code outside the package                                        12   3
+  F. not lowered for this check                                      10   3
+
+open members whose every blocker falls in the themes so far, cumulative:
+  + A. origin lattice: writes through properties, call results and joins  0/33
+  + B. module-level and captured state                              2/33
+  + C. callbacks the caller supplies                                6/33
+  + D. dynamic dispatch and functions built at runtime             14/33
+  + E. code outside the package                                    23/33
+  + F. not lowered for this check                                  33/33
+
+with the Jelly prototype's call targets, of 33 open members:
+   0 would settle: 
+   6 would settle if callbacks were the caller's responsibility: date-fns isAfter, date-fns getYear, date-fns max, date-fns closestTo, mitt Emitter.emit, lodash-es pullAll
+  open members each theme still blocks:
+    A. origin lattice: writes through properties, call results and joins 12
+    B. module-level and captured state                                  5
+    C. callbacks the caller supplies                                   18
+    D. dynamic dispatch and functions built at runtime                  6
+    E. code outside the package                                        12
+    F. not lowered for this check                                      10
