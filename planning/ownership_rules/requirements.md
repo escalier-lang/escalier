@@ -436,7 +436,7 @@ write is `p`'s last mutable use, so nothing overlaps.
 fn overlapping() -> number {
     val mut p = {x: 0}
     val q: &{x: number} = &p
-    p.x = 1
+    p.x = 1    // error: cannot assign to 'p.x' while it is borrowed as immutable
     return q.x
 }
 
