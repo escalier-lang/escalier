@@ -191,6 +191,53 @@ The rules above produce each of the following. None of them is a separate rule.
   borrows `p` by F1. A later write to `p` while `q` is live is rejected by E2.
   Rejecting the same program written with `val q = &p` follows from the same rule.
 
+## Comparison with Rust
+
+Escalier's model starts from Rust's. The table compares each rule with the Rust
+behaviour closest to it. A rule marked "same" accepts and rejects the programs
+Rust would, once both are written in the same shape. A rule marked "differs"
+changes that set, and the note says in which direction. "No equivalent" means
+Rust has no matching feature.
+
+| Rule | Rust behaviour | Verdict | Note |
+|---|---|---|---|
+| T1 ownership in the type | `T` is owned and `&T` or `&mut T` borrows | Differs | Rust puts the mutability of an owned value on the binding, as `let mut x`. Escalier puts it in the type, as `mut T` |
+| T2 deep `mut` | Inherited mutability: a mutable owner can write every field it owns, and a reference field carries its own mutability | Differs | Same rule, but Rust adds interior mutability through `Cell` and `RefCell`. Escalier has no escape hatch, which is what makes freezing deep |
+| T3 narrow, never widen | `&mut T` coerces to `&T`, never the reverse | Same | |
+| T4 `readonly` | No `readonly` fields. Rust restricts writes through field privacy instead | No equivalent | Inherited from TypeScript |
+| T5 borrow into owned | `&T` does not satisfy `T`. Moving a field out of a borrow is rejected with E0507 | Differs | Escalier reads `r.f` through a borrow as a borrow of the field. Rust rejects the move and asks for `&r.f`, unless the field's type is `Copy` |
+| F1 copy, borrow, or move | `Copy` types copy, `&T` copies, and an owned value moves into an owned destination | Differs | Two changes. A `&mut` source copies, because Escalier allows aliased `&mut`. An owned value fills a `&` annotation by borrowing, where Rust reports a type mismatch |
+| F2 owned when it escapes | Every parameter type is written. A closure captures by reference unless it is marked `move` | Differs | Escalier infers an unannotated parameter's ownership and a returned closure's moves. Rust requires both to be written |
+| F2 binding always moves | `let q = p` moves `p` whatever `q`'s scope | Same | |
+| L1 borrows outlive constraints | A borrow cannot outlive its referent, and storing one in a `static` requires `'static` | Same | |
+| L2 signature states the body's relations | Lifetimes are inferred only inside a body, never in a signature. A declared bound is an assumption the body may use | Differs | Escalier infers signature lifetimes for an unannotated function and treats a declared bound as an obligation. See D4 |
+| L3 render only connecting lifetimes | Elision follows fixed syntactic rules, such as one input lifetime flowing to every output | Differs | Escalier elides by whether a lifetime connects anything, which also covers signatures Rust's elision rules reject |
+| E1 no use after move | Flow-sensitive per branch, with partial moves, and reassignment re-initializes | Same | Reassignment does not yet re-initialize in Escalier. See [#1269](https://github.com/escalier-lang/escalier/issues/1269) |
+| E2 no shared and mutable path live together | Aliasing XOR mutability over non-lexical lifetimes: one `&mut`, or any number of `&` | Differs | Escalier allows several live mutable paths at once. The target is single-threaded and garbage collected, so the only hazard left is a shared path observing a write |
+| E3 no move while borrowed | Rejected with E0505 | Same | |
+| E4 closure calls use its borrows | A closure holds its captured borrows from creation to its last use | Differs | Escalier counts the borrows only at each call, so a write to a captured value between two calls is accepted. Rust rejects it. A closure stored into module-level state needs `move` and `'static` captures in Rust |
+| D1 no move out of module-level state | Moving out of a `static` is rejected with E0507 | Same | |
+| D2 a moving closure is called once | `FnOnce` | Same | |
+| D3 mixed owned and borrowed branches | `if` branches must have one type, so `T` and `&T` do not join | Same | |
+| D4 declared bounds are obligations | Declared bounds are assumptions | Differs | Follows from L3 |
+| D5 `readonly` initialized once | A struct literal initializes every field at once | No equivalent | |
+| D6 getter and setter receivers | No getters or setters | No equivalent | |
+| D7 written `&` at a call site | `&` and `&mut` are written at the call, except on a method receiver | Same | |
+| Freezing and thawing | `let frozen = v; let mut thawed = frozen;` moves between bindings of different mutability | Same | `docs/09_ownership.md` says Rust has no equivalent. The moves are the same, but interior mutability keeps Rust's freeze from being deep |
+
+The differences come from four sources:
+
+- **The runtime.** Single-threaded JavaScript with a garbage collector removes
+  data races and dangling pointers. That permits aliased `&mut` in F1 and E2 and
+  the per-call closure borrows in E4.
+- **A deep immutability guarantee.** Escalier's invariant promises that an
+  immutable value never changes. Rust's interior mutability would break that
+  promise, so T2 has no escape hatch.
+- **Inference over annotation.** F2, L2, and L3 infer what Rust requires the
+  user to write: parameter ownership, closure moves, and signature lifetimes.
+- **TypeScript heritage.** T4, D5, and D6 cover `readonly` fields, getters, and
+  setters, which Rust does not have.
+
 ## Flow-site table
 
 The table lists each flow site's destination. Its outcome then follows from F1,
