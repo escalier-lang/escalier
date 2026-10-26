@@ -73,11 +73,14 @@ These rules constrain types alone. They need no flow or liveness information.
 type written `&T`, `&mut T`, `&'a T`, or `&'a mut T` is borrowed. This holds in
 every annotation position: bindings, parameters, returns, and fields.
 
-**T2. `mut` is deep through owned structure and stops at a borrow.** `mut T`
-makes every layer of `T` that the value owns writable, including type arguments.
-A `&` or `&mut` inside `T` carries its own mutability. A `mut` annotation on a
-single field is rejected, since the enclosing value decides the field's
-mutability.
+**T2. Every type is immutable unless it is written `mut`, and `mut` is deep
+through owned structure.** A bare `T` and a borrow `&T` are both immutable.
+Only `mut T` and `&mut T` permit writes. A fresh value, such as a literal or a
+constructor call, is immutable until a `mut` annotation or a `val mut` binding
+makes it mutable. `mut T` makes every layer of `T` that the value owns
+writable, including type arguments. The `mut` stops at a borrow, since a `&` or
+`&mut` inside `T` carries its own mutability. A `mut` annotation on a single
+field is rejected, since the enclosing value decides the field's mutability.
 
 **T3. A borrow's mutability narrows and never widens.** `&mut T` satisfies
 `&T`. `&T` does not satisfy `&mut T`. Every write, every `&mut` borrow, and every
@@ -210,7 +213,7 @@ Rust has no matching feature.
 | Rule | Rust behaviour | Verdict | Note |
 |---|---|---|---|
 | T1 ownership in the type | `T` is owned and `&T` or `&mut T` borrows | Differs | Rust puts the mutability of an owned value on the binding, as `let mut x`. Escalier puts it in the type, as `mut T` |
-| T2 deep `mut` | Inherited mutability: a mutable owner can write every field it owns, and a reference field carries its own mutability | Differs | Same rule, but Rust adds interior mutability through `Cell` and `RefCell`. Escalier has no escape hatch, which is what makes freezing deep |
+| T2 immutable by default, deep `mut` | Bindings and references are immutable unless written `mut`. Inherited mutability: a mutable owner can write every field it owns, and a reference field carries its own mutability | Differs | Same defaults and the same inheritance, but Rust adds interior mutability through `Cell` and `RefCell`. Escalier has no escape hatch, which is what makes freezing deep |
 | T3 narrow, never widen | `&mut T` coerces to `&T`, never the reverse | Same | |
 | T4 `readonly` | No `readonly` fields. Rust restricts writes through field privacy instead | No equivalent | Inherited from TypeScript |
 | T5 borrow into owned | `&T` does not satisfy `T`. Moving a field out of a borrow is rejected with E0507 | Differs | Escalier reads `r.f` through a borrow as a borrow of the field. Rust rejects the move and asks for `&r.f`, unless the field's type is `Copy` |
