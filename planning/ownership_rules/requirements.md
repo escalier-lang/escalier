@@ -199,8 +199,8 @@ operation that passes the value does not change it.
 | Mutable borrow, `&mut T` | Rejected by T6 | Copy, narrowed to `&` by T4 | Copy |
 
 A value type has no borrow form, so its destination is always bare. Each binding
-in the function below shows one outcome. Reading `q.x` after `val d = q` would
-report `use of moved value 'q'`.
+in the function below shows one outcome, and the read of `q.x` shows the error a
+use after a move reports.
 
 ```esc
 fn go(r: &{x: number}) -> number {
@@ -211,6 +211,7 @@ fn go(r: &{x: number}) -> number {
     val c = &p                 // borrow, so p stays usable
     val q = {x: 2}
     val d = q                  // move, so q is consumed
+    val e = q.x                // error: use of moved value 'q'
     return a + b.x + c.x + p.x + d.x
 }
 ```
@@ -291,7 +292,7 @@ fn go() -> number {
     if true {
         val q = p       // moves p
     }
-    return p.x          // use of moved value 'p'
+    return p.x          // error: use of moved value 'p'
 }
 ```
 
@@ -466,7 +467,7 @@ fn take(p: {x: number}) -> number {
 fn go() -> number {
     val p = {x: 1}
     val c = &p
-    val n = take(p)
+    val n = take(p)    // error: cannot move 'p' while it is borrowed
     return c.x + n
 }
 ```
@@ -775,8 +776,8 @@ fn take(p: {x: number}) -> number {
 
 export fn go() -> number {
     val p = {x: 1}
-    val c: &{x: number} = p
-    val n = take(p)
+    val c: &{x: number} = p    // no error today. F4 rejects it for the missing &
+    val n = take(p)            // no error today, and take changes what c reads
     return c.x + n
 }
 ```
