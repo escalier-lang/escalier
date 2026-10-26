@@ -340,7 +340,9 @@ word. See [D4](#d4-declared-lifetime-bounds-are-obligations).
 
 `pick` declares that its result lives as long as `p`, and its body returns `p`.
 `wrong` makes the same declaration but returns `q`, so its body needs a relation
-the signature does not state. `unproven` declares `'b: 'a`, but its body never
+the signature does not state. `either` can return `q` as an `'a` result only
+because `q` outlives `'a`, so its body establishes `'b: 'a` and the declared
+bound is accepted. `unproven` declares the same bound, but its body never
 relates `q` to anything, so it does not establish the bound.
 
 ```esc
@@ -350,6 +352,13 @@ fn pick<'a>(p: &'a {x: number}, q: &{x: number}) -> &'a {x: number} {
 
 fn wrong<'a>(p: &'a {x: number}, q: &{x: number}) -> &'a {x: number} {
     return q    // rejected, since the result's tie to q is not declared
+}
+
+fn either<'a, 'b: 'a>(p: &'a {x: number}, q: &'b {x: number}, first: boolean) -> &'a {x: number} {
+    if first {
+        return p
+    }
+    return q    // accepted, since returning q establishes 'b: 'a
 }
 
 fn unproven<'a, 'b: 'a>(p: &'a {x: number}, q: &'b {x: number}) -> &'a {x: number} {
